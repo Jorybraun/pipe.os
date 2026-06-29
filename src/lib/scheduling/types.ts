@@ -137,6 +137,7 @@ export interface AssessmentProgressSnapshot {
   hasAiInteraction: boolean;
   hasTranscriptEvidence: boolean;
   hasTestEvidence: boolean;
+  hasVerificationGap?: boolean;
   evidenceCounts: Array<{ kind: string; count: number }>;
   sourceRefCounts: Array<{ kind: string; count: number }>;
   challenge: {

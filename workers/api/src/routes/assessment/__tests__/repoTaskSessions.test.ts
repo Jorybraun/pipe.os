@@ -685,6 +685,7 @@ Fix stale popover listener cleanup.`;
         hasCommitSubmission: boolean;
         hasWorkEvidence: boolean;
         hasTestEvidence: boolean;
+        hasVerificationGap: boolean;
         latestEvent: { kind: string };
         commit: {
           repositoryUrl: string;
@@ -703,6 +704,7 @@ Fix stale popover listener cleanup.`;
       hasCommitSubmission: true,
       hasWorkEvidence: true,
       hasTestEvidence: true,
+      hasVerificationGap: false,
       latestEvent: { kind: 'commit_submission' },
       commit: {
         repositoryUrl: 'https://github.com/open-source/widgets',
@@ -763,6 +765,77 @@ Fix stale popover listener cleanup.`;
         summary: 'Candidate produced a focused source-backed commit.',
       },
     });
+  });
+
+  it('surfaces source-backed verification gaps separately from real test evidence', async () => {
+    const session = await createSession(app, env, {
+      ingestionKey: 'assessment-session:verification-gap',
+      mode: 'OPEN_SOURCE_BUG_FIX',
+      candidateId: 'candidate-gap',
+    });
+    const baseCommitSha = 'aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa';
+    const commitSha = 'bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb';
+    const commitText = `commit ${commitSha}
+Author: Candidate <candidate@example.com>
+
+Fix retry cleanup without captured tests.`;
+    const diffText = `diff --git a/src/retry.ts b/src/retry.ts
+--- a/src/retry.ts
++++ b/src/retry.ts
+@@ -1,3 +1,4 @@
++cleanupRetryState();`;
+    const verificationGapText = 'I could not run tests because dependency installation failed before the suite could start.';
+
+    const commitResponse = await app.request(
+      `/api/v1/assessment/repo-task/sessions/${session.id}/commit-submissions`,
+      jsonRequest({
+        ingestionKey: 'assessment-event:verification-gap-commit',
+        actorType: 'candidate',
+        actorId: 'candidate-gap',
+        narrative: 'Candidate submitted a commit and recorded why test output is missing.',
+        repositoryUrl: 'https://github.com/open-source/widgets',
+        forkRepositoryUrl: 'https://github.com/candidate/widgets',
+        branchName: 'pipe-assessment/retry-cleanup',
+        baseCommitSha,
+        commitSha,
+        commitUrl: `https://github.com/candidate/widgets/commit/${commitSha}`,
+        changedFiles: [{ path: 'src/retry.ts', status: 'modified' }],
+        sourceRefs: [
+          await sourceRef('git_commit', commitSha, commitText),
+          await sourceRef('code_diff', `${baseCommitSha}..${commitSha}`, diffText),
+          await sourceRef('verification_gap', `${commitSha}:test-evidence-missing`, verificationGapText),
+        ],
+      }),
+      env,
+    );
+    expect(commitResponse.status).toBe(201);
+
+    const progressResponse = await app.request(
+      `/api/v1/assessment/repo-task/sessions/${session.id}/progress`,
+      { method: 'GET' },
+      env,
+    );
+    expect(progressResponse.status).toBe(200);
+    const progressBody = await progressResponse.json() as {
+      progress: {
+        hasCommitSubmission: boolean;
+        hasWorkEvidence: boolean;
+        hasTestEvidence: boolean;
+        hasVerificationGap: boolean;
+        sourceRefCounts: Array<{ kind: string; count: number }>;
+      };
+    };
+    expect(progressBody.progress).toMatchObject({
+      hasCommitSubmission: true,
+      hasWorkEvidence: true,
+      hasTestEvidence: false,
+      hasVerificationGap: true,
+    });
+    expect(progressBody.progress.sourceRefCounts).toEqual(expect.arrayContaining([
+      { kind: 'code_diff', count: 1 },
+      { kind: 'git_commit', count: 1 },
+      { kind: 'verification_gap', count: 1 },
+    ]));
   });
 
   it('rejects unsupported positive claims and records unavailable AI providers as diagnostics', async () => {

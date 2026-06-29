@@ -185,6 +185,30 @@ export function ClippyAssistant({
     onAgentRoomAction,
   ]);
 
+  const reportedAgentName = agentConn.agentName.trim();
+  const agentDisplayName = reportedAgentName || 'the real agent';
+
+  const agentRoomActionPrompt: ClippyMessage | null = latestAgentRoomAction
+    ? {
+        text: latestAgentRoomAction.text
+          ?? `${reportedAgentName || 'The connected agent'} suggests: ${latestAgentRoomAction.label}.`,
+        hold: true,
+        actions: [{
+          id: 'agent-room-action',
+          label: latestAgentRoomAction.label,
+        }],
+      }
+    : null;
+
+  const currentPrompt = agentRoomActionPrompt ?? (messages.length > 0 ? messages[messages.length - 1] : null);
+  const currentPromptSignature = currentPrompt
+    ? [
+        currentPrompt.text,
+        currentPrompt.hold ? 'hold' : 'release',
+        currentPrompt.actions?.map((action) => `${action.id}:${action.label}:${action.disabled ? 'disabled' : 'enabled'}`).join('|') ?? '',
+      ].join('::')
+    : null;
+
   const canOpenAgentBridgeChat = agentEnabled || canLaunchAgentWorkspace;
   const chatOpen = (controlledChatOpen ?? localChatOpen) && canOpenAgentBridgeChat;
 
@@ -199,9 +223,10 @@ export function ClippyAssistant({
   }, [canOpenAgentBridgeChat, onChatOpen]);
 
   const closeChat = useCallback(() => {
+    setDismissedPromptSignature((current) => currentPromptSignature ?? current);
     setLocalChatOpen(false);
     onChatClose?.();
-  }, [onChatClose]);
+  }, [currentPromptSignature, onChatClose]);
 
   useEffect(() => {
     if (openChatRequest === undefined || openChatRequest <= 0) return;
@@ -244,29 +269,6 @@ export function ClippyAssistant({
     onAction?.(actionId);
   }, [latestAgentRoomAction, onAction, onAgentRoomAction]);
 
-  const reportedAgentName = agentConn.agentName.trim();
-  const agentDisplayName = reportedAgentName || 'the real agent';
-
-  const agentRoomActionPrompt: ClippyMessage | null = latestAgentRoomAction
-    ? {
-        text: latestAgentRoomAction.text
-          ?? `${reportedAgentName || 'The connected agent'} suggests: ${latestAgentRoomAction.label}.`,
-        hold: true,
-        actions: [{
-          id: 'agent-room-action',
-          label: latestAgentRoomAction.label,
-        }],
-      }
-    : null;
-
-  const currentPrompt = agentRoomActionPrompt ?? (messages.length > 0 ? messages[messages.length - 1] : null);
-  const currentPromptSignature = currentPrompt
-    ? [
-        currentPrompt.text,
-        currentPrompt.hold ? 'hold' : 'release',
-        currentPrompt.actions?.map((action) => `${action.id}:${action.label}:${action.disabled ? 'disabled' : 'enabled'}`).join('|') ?? '',
-      ].join('::')
-    : null;
   const showPrompt = Boolean(currentPrompt && !chatOpen && currentPromptSignature !== dismissedPromptSignature);
 
   const handleDismiss = useCallback(() => {

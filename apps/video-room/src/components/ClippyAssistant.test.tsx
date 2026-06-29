@@ -244,7 +244,7 @@ describe('ClippyAssistant', () => {
     expect(screen.queryByTestId('clippy-chat')).toBeNull();
   });
 
-  it('hides the proactive Clippy prompt while chat is open and restores it after chat closes', async () => {
+  it('hides the proactive Clippy prompt while chat is open and keeps it dismissed after chat closes', async () => {
     const onChatClose = vi.fn();
     const onDismiss = vi.fn();
 
@@ -268,7 +268,8 @@ describe('ClippyAssistant', () => {
     expect(onChatClose).toHaveBeenCalledTimes(1);
     expect(onDismiss).not.toHaveBeenCalled();
     expect(screen.queryByTestId('clippy-chat')).toBeNull();
-    expect(screen.getByTestId('clippy-proactive-card').textContent).toContain('Need help opening the workspace?');
+    expect(screen.queryByTestId('clippy-proactive-card')).toBeNull();
+    expect(screen.queryByTestId('clippy-character')).toBeNull();
   });
 
   it('uses the room chat-open state so the proactive prompt cannot overlap the bridge', () => {

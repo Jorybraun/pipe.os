@@ -2410,6 +2410,7 @@ interface RoomAssessmentProgressPayload {
   hasAiInteraction: boolean;
   hasTranscriptEvidence: boolean;
   hasTestEvidence: boolean;
+  hasVerificationGap: boolean;
   evidenceCounts: AssessmentProgressSnapshot['evidenceCounts'];
   sourceRefCounts: AssessmentProgressSnapshot['sourceRefCounts'];
   latestEvent: Omit<NonNullable<AssessmentProgressSnapshot['latestEvent']>, 'id'> | null;
@@ -2448,6 +2449,7 @@ function serializeRoomAssessmentProgress(
     hasAiInteraction: progress.hasAiInteraction,
     hasTranscriptEvidence: progress.hasTranscriptEvidence,
     hasTestEvidence: progress.hasTestEvidence,
+    hasVerificationGap: progress.hasVerificationGap,
     evidenceCounts: progress.evidenceCounts,
     sourceRefCounts: progress.sourceRefCounts,
     latestEvent: progress.latestEvent

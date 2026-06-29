@@ -323,6 +323,7 @@ export interface AssessmentProgressSnapshot {
   hasAiInteraction: boolean;
   hasTranscriptEvidence: boolean;
   hasTestEvidence: boolean;
+  hasVerificationGap: boolean;
   evidenceCounts: AssessmentEvidenceKindCount[];
   sourceRefCounts: AssessmentEvidenceKindCount[];
   challenge: AssessmentProgressSourceRef | null;
@@ -1085,6 +1086,7 @@ export class RepoTaskInterviewSessionStore {
     const hasTranscriptEvidence = hasEventKind(evidenceCounts, ['transcript_span']);
     const hasTestEvidence = hasEventKind(evidenceCounts, ['test_run'])
       || hasEventKind(sourceRefCounts, ['test_run']);
+    const hasVerificationGap = hasEventKind(sourceRefCounts, ['verification_gap']);
     const hasChallengePacket = challenge !== null;
     const { stage, nextAction } = progressStageAndAction({
       session,
@@ -1107,6 +1109,7 @@ export class RepoTaskInterviewSessionStore {
       hasAiInteraction,
       hasTranscriptEvidence,
       hasTestEvidence,
+      hasVerificationGap,
       evidenceCounts,
       sourceRefCounts,
       challenge,

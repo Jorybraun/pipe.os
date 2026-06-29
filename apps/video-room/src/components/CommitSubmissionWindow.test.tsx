@@ -95,7 +95,52 @@ describe('CommitSubmissionWindow', () => {
   it('requires either real test output or a source-backed missing-test note before submitting', async () => {
     const commitSha = 'c'.repeat(40);
     const onSubmit = vi.fn(async (_payload: RoomCommitSubmissionRequest): Promise<RoomCommitSubmissionResponse> => {
-      throw new Error('submit should not be called without verification evidence');
+      return {
+        submission: {
+          accepted: true,
+          repositoryUrl: 'https://github.com/pipe/source-backed-worker',
+          branchName: 'pipe-assessment',
+          commitSha,
+          commitUrl: `https://github.com/candidate/source-backed-worker/commit/${commitSha}`,
+        },
+        progress: {
+          mode: 'OPEN_SOURCE_BUG_FIX',
+          state: 'SUBMITTED',
+          stage: 'READY_FOR_EVALUATION',
+          nextAction: 'START_EVALUATION',
+          nextActionLabel: 'Start source-backed evaluation.',
+          hasChallengePacket: true,
+          hasWorkEvidence: true,
+          hasCommitSubmission: true,
+          hasFinalSubmission: false,
+          hasAiInteraction: false,
+          hasTranscriptEvidence: false,
+          hasTestEvidence: false,
+          hasVerificationGap: true,
+          evidenceCounts: [{ kind: 'commit_submission', count: 1 }],
+          sourceRefCounts: [
+            { kind: 'git_commit', count: 1 },
+            { kind: 'code_diff', count: 1 },
+            { kind: 'verification_gap', count: 1 },
+          ],
+          latestEvent: {
+            kind: 'COMMIT_SUBMITTED',
+            sequence: 2,
+            occurredAt: '2026-06-29T19:00:00.000Z',
+          },
+          commit: {
+            repositoryUrl: 'https://github.com/pipe/source-backed-worker',
+            forkRepositoryUrl: 'https://github.com/candidate/source-backed-worker',
+            branchName: 'pipe-assessment',
+            baseCommitSha: 'd'.repeat(40),
+            commitSha,
+            commitUrl: `https://github.com/candidate/source-backed-worker/commit/${commitSha}`,
+            changedFiles: [{ path: 'src/retry.ts', status: 'modified' }],
+            occurredAt: '2026-06-29T19:00:00.000Z',
+          },
+          evaluation: null,
+        },
+      };
     });
 
     render(
@@ -145,6 +190,10 @@ describe('CommitSubmissionWindow', () => {
         exactText: expect.stringContaining('Tests were not run because'),
       }),
     ]));
+    const progress = await screen.findByTestId('commit-submission-progress');
+    expect(progress.textContent).toContain('Test evidence: Missing');
+    expect(progress.textContent).toContain('Verification gap: Captured');
+    expect(progress.textContent).toContain('verification gap source');
   });
 
   it('keeps candidate-entered values when packet defaults refresh', () => {

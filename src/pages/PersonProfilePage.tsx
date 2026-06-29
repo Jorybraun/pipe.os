@@ -76,6 +76,12 @@ interface CodeReviewProofItem {
   text: string | null;
 }
 
+interface CodeReviewBasisItem {
+  label: string;
+  value: string;
+  satisfied: boolean;
+}
+
 interface CodeReviewDecisionProjection {
   sessionId: string | null;
   outcome: string | null;
@@ -96,6 +102,11 @@ interface CodeReviewDecisionProjection {
   probes: string[];
   proofCount: number;
   proofItems: CodeReviewProofItem[];
+  basisItems: CodeReviewBasisItem[];
+}
+
+function compactCountLabel(count: number, singular: string, plural = `${singular}s`): string {
+  return `${count} ${count === 1 ? singular : plural}`;
 }
 
 function formatDate(value: string | null | undefined): string {
@@ -768,6 +779,30 @@ function deriveCodeReviewDecision(
     probes,
   });
   const nextAction = nextActionForDecision(recommendation.value, score);
+  const basisItems: CodeReviewBasisItem[] = [
+    {
+      label: 'Score report',
+      value: scoreLabel ?? 'Missing',
+      satisfied: Boolean(scoreLabel),
+    },
+    {
+      label: 'Review transcript',
+      value: transcriptRecord ? 'Captured' : 'Missing',
+      satisfied: Boolean(transcriptRecord),
+    },
+    {
+      label: 'Repo challenge',
+      value: challengeLabel ?? 'Missing',
+      satisfied: hasMatchedReviewChallenge(challenge),
+    },
+    {
+      label: 'Match proof',
+      value: hasMatchProvenance && matchRecord
+        ? compactCountLabel(matchRecord.sources.length, 'source')
+        : 'Missing',
+      satisfied: hasMatchProvenance,
+    },
+  ];
 
   return {
     sessionId,
@@ -789,6 +824,7 @@ function deriveCodeReviewDecision(
     probes,
     proofCount: proofItems.length,
     proofItems,
+    basisItems,
   };
 }
 
@@ -962,6 +998,21 @@ function CodeReviewDecisionCard({ decision }: { decision: CodeReviewDecisionProj
           <p style={DECISION_COPY}>{decision.recommendationDetail}</p>
         </div>
         <CheckCircle size={24} color="var(--pipe-accent)" />
+      </div>
+
+      <div data-testid="person-code-review-decision-basis" style={DECISION_BASIS}>
+        <div style={DECISION_BASIS_TITLE}>Decision basis</div>
+        <div style={DECISION_BASIS_GRID}>
+          {decision.basisItems.map((item) => (
+            <div
+              key={item.label}
+              style={item.satisfied ? DECISION_BASIS_ITEM_OK : DECISION_BASIS_ITEM_MISSING}
+            >
+              <div style={DECISION_FACT_LABEL}>{item.label}</div>
+              <div style={DECISION_BASIS_VALUE}>{item.value}</div>
+            </div>
+          ))}
+        </div>
       </div>
 
       <div style={DECISION_FACT_GRID}>
@@ -1664,6 +1715,57 @@ const DECISION_FACT_GRID: CSSProperties = {
   display: 'grid',
   gridTemplateColumns: 'repeat(auto-fit, minmax(170px, 1fr))',
   gap: 10,
+};
+
+const DECISION_BASIS: CSSProperties = {
+  display: 'grid',
+  gap: 8,
+  padding: 12,
+  border: '1px solid var(--pipe-border-light)',
+  borderRadius: 6,
+  background: 'var(--pipe-surface)',
+};
+
+const DECISION_BASIS_TITLE: CSSProperties = {
+  color: 'var(--pipe-text-dim)',
+  fontSize: 10,
+  fontWeight: 800,
+  letterSpacing: '0.08em',
+  textTransform: 'uppercase',
+};
+
+const DECISION_BASIS_GRID: CSSProperties = {
+  display: 'grid',
+  gridTemplateColumns: 'repeat(auto-fit, minmax(130px, 1fr))',
+  gap: 8,
+};
+
+const DECISION_BASIS_ITEM_OK: CSSProperties = {
+  display: 'grid',
+  gap: 5,
+  minWidth: 0,
+  padding: 10,
+  border: '1px solid rgba(74,222,128,0.26)',
+  borderRadius: 5,
+  background: 'rgba(74,222,128,0.08)',
+};
+
+const DECISION_BASIS_ITEM_MISSING: CSSProperties = {
+  display: 'grid',
+  gap: 5,
+  minWidth: 0,
+  padding: 10,
+  border: '1px solid rgba(251,191,36,0.32)',
+  borderRadius: 5,
+  background: 'rgba(251,191,36,0.08)',
+};
+
+const DECISION_BASIS_VALUE: CSSProperties = {
+  color: 'var(--pipe-text)',
+  fontSize: 12,
+  fontWeight: 800,
+  lineHeight: 1.35,
+  overflowWrap: 'anywhere',
 };
 
 const DECISION_FACT: CSSProperties = {

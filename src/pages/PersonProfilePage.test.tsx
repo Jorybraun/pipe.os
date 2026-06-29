@@ -393,6 +393,16 @@ describe('PersonProfilePage', () => {
     expect(decision).toHaveTextContent('Probe: Probe how they balance timing trade-offs under pushback.');
     expect(decision).toHaveTextContent('Next action');
     expect(decision).toHaveTextContent('Schedule focused technical calibration');
+    const basis = screen.getByTestId('person-code-review-decision-basis');
+    expect(basis).toHaveTextContent('Decision basis');
+    expect(basis).toHaveTextContent('Score report');
+    expect(basis).toHaveTextContent('82/100 Strong');
+    expect(basis).toHaveTextContent('Review transcript');
+    expect(basis).toHaveTextContent('Captured');
+    expect(basis).toHaveTextContent('Repo challenge');
+    expect(basis).toHaveTextContent('pierre/diffs PR #95');
+    expect(basis).toHaveTextContent('Match proof');
+    expect(basis).toHaveTextContent('2 sources');
 
     const proof = screen.getByTestId('person-code-review-source-proof');
     const proofSummary = proof.querySelector('summary');
@@ -457,6 +467,15 @@ describe('PersonProfilePage', () => {
     expect(decision).toHaveTextContent('Source-backed repo match decision provenance');
     expect(decision).not.toHaveTextContent('Usable source-backed signal');
     expect(decision).not.toHaveTextContent('Advance with focused probe');
+    const basis = screen.getByTestId('person-code-review-decision-basis');
+    expect(basis).toHaveTextContent('Score report');
+    expect(basis).toHaveTextContent('82/100 Strong');
+    expect(basis).toHaveTextContent('Review transcript');
+    expect(basis).toHaveTextContent('Captured');
+    expect(basis).toHaveTextContent('Repo challenge');
+    expect(basis).toHaveTextContent('Missing');
+    expect(basis).toHaveTextContent('Match proof');
+    expect(basis).toHaveTextContent('Missing');
   });
 
   it('shows a visible profile error instead of spinning forever when the person id is missing', async () => {

@@ -67,6 +67,8 @@ function AssessmentProgressPanel({
   const baseSha = shortSha(progress.commit?.baseCommitSha ?? null);
   const changedFileCount = progress.commit?.changedFiles.length ?? 0;
   const sourceRefCounts = progress.sourceRefCounts ?? [];
+  const hasVerificationGap = progress.hasVerificationGap === true
+    || sourceRefCounts.some((evidence) => evidence.kind === 'verification_gap' && evidence.count > 0);
   const latestEventLabel = progress.latestEvent
     ? `${formatProgressLabel(progress.latestEvent.kind)} #${progress.latestEvent.sequence}`
     : null;
@@ -132,6 +134,7 @@ function AssessmentProgressPanel({
         <span>AI interaction: {evidenceFlagLabel(progress.hasAiInteraction)}</span>
         <span>Transcript evidence: {evidenceFlagLabel(progress.hasTranscriptEvidence)}</span>
         <span>Test evidence: {evidenceFlagLabel(progress.hasTestEvidence)}</span>
+        {hasVerificationGap && <span>Verification gap: Captured</span>}
       </div>
 
       {progress.evidenceCounts.length > 0 && (
