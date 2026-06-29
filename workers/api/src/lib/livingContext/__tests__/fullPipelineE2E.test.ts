@@ -136,6 +136,10 @@ const transcriptProjectionMigration = readFileSync(
   new URL('../../../../migrations/0091_transcript_semantic_projections.sql', import.meta.url),
   'utf8',
 );
+const conceptRegistryMigration = readFileSync(
+  new URL('../../../../migrations/0094_concept_registry.sql', import.meta.url),
+  'utf8',
+);
 const contextRecordMigration = readFileSync(
   new URL('../../../../migrations/0095_context_records.sql', import.meta.url),
   'utf8',
@@ -204,6 +208,7 @@ describe('full-pipeline E2E: contact → transcript → match → explanation �
     sqlite.exec(livingMigration);
     sqlite.exec(matchingMigration);
     sqlite.exec(transcriptProjectionMigration);
+    sqlite.exec(conceptRegistryMigration);
     sqlite.exec(contextRecordMigration);
     sqlite.exec(backfillCheckpointsMigration);
     sqlite.exec(rolloutGatesMigration);

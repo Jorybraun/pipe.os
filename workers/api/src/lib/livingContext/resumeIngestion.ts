@@ -25,10 +25,15 @@ import {
   OPEN_TERM_RESOLVER_VERSION,
   openSemanticTerm,
 } from './openTerms';
+import { createConceptRegistry } from './conceptRegistry';
 import type { EvidenceLevel, JsonObject, JsonValue } from './types';
 
 const RESUME_INGESTION_VERSION = 'resume-living-context-v1';
 const SIGNAL_POLICY_VERSION = 'living-context-signal-noisy-or-v1';
+
+function nowSeconds(): number {
+  return Math.floor(Date.now() / 1000);
+}
 
 export interface ResumeSection {
   /** Stable identifier for this section across re-ingestions. */
@@ -462,6 +467,28 @@ export async function ingestResumeToLivingContext(
           },
         });
         signalEvidenceCount++;
+      }
+    }
+
+    // 5b. Track concept co-occurrence adjacency
+    if (contextRecordConcepts.length >= 2) {
+      const registry = createConceptRegistry(db);
+      for (let i = 0; i < contextRecordConcepts.length; i++) {
+        for (let j = i + 1; j < contextRecordConcepts.length; j++) {
+          const left = contextRecordConcepts[i]!;
+          const right = contextRecordConcepts[j]!;
+          await registry.addAdjacency({
+            fromConceptId: left.conceptId,
+            toConceptId: right.conceptId,
+            dimension: 'co_occurrence',
+            stretchAllowed: true,
+            confidence: boundedScore(assertionInput.confidence) ?? 0.7,
+            evidenceEntityType: 'assertion',
+            evidenceEntityId: assertion.id,
+            evidenceLocator: `resume:${input.candidateId}:${assertionInput.primarySectionId}`,
+            observedAt: nowSeconds(),
+          });
+        }
       }
     }
 
