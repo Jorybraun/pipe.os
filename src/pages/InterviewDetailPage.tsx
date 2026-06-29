@@ -1022,16 +1022,30 @@ function personContextModeText(mode: string | null, reason: string | null): stri
   return null;
 }
 
-function relatedEvidenceRelationshipLabel(relationship: string): string {
-  switch (relationship) {
+function relatedEvidenceRelationshipLabel(
+  related: NonNullable<ScheduledInterviewDetail['relatedEvidenceInterviews']>[number],
+): string {
+  switch (related.relationship) {
     case 'code_review_evidence_follow_up':
       return 'Evidence follow-up';
     case 'originating_code_review':
       return 'Original code review';
     case 'same_person_assessment':
-      return 'Same person assessment';
+      switch (related.interviewType) {
+        case 'CODE_REVIEW':
+          return 'Related code review';
+        case 'DEV_CONTAINER_CHALLENGE':
+          return 'Related dev challenge';
+        case 'OPEN_SOURCE_BUG_FIX':
+          return 'Related open-source task';
+        case 'VIDEO':
+        case 'SCREENING':
+          return 'Related conversation';
+        default:
+          return 'Related interaction';
+      }
     default:
-      return titleCaseToken(relationship);
+      return titleCaseToken(related.relationship);
   }
 }
 
@@ -1050,7 +1064,7 @@ function relatedEvidenceDetail(related: NonNullable<ScheduledInterviewDetail['re
 function relatedEvidenceDisplayName(related: NonNullable<ScheduledInterviewDetail['relatedEvidenceInterviews']>[number]): string {
   return related.displayName
     ?? related.primaryEmail
-    ?? relatedEvidenceRelationshipLabel(related.relationship);
+    ?? relatedEvidenceRelationshipLabel(related);
 }
 
 function StatusBadge({ status }: { status: string | null | undefined }): JSX.Element {
@@ -2500,7 +2514,7 @@ export default function InterviewDetailPage(): JSX.Element {
                         style={RELATED_EVIDENCE_ROW}
                       >
                         <span style={RELATED_EVIDENCE_MAIN}>
-                          <span style={TRANSCRIPT_ROLE}>{relatedEvidenceRelationshipLabel(related.relationship)}</span>
+                          <span style={TRANSCRIPT_ROLE}>{relatedEvidenceRelationshipLabel(related)}</span>
                           <span style={TRANSCRIPT_TEXT}>{relatedEvidenceDisplayName(related)}</span>
                           <span style={CONTEXT_RECORD_NARRATIVE}>{relatedEvidenceDetail(related)}</span>
                         </span>

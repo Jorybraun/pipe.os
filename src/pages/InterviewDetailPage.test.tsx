@@ -1100,7 +1100,8 @@ describe('InterviewDetailPage', () => {
     expect(related).toHaveTextContent('assessment in progress');
     expect(related).toHaveTextContent('meeting room attached');
     expect(related).not.toHaveTextContent('meeting-context-1');
-    expect(related).toHaveTextContent('Same person assessment');
+    expect(related).toHaveTextContent('Related code review');
+    expect(related).not.toHaveTextContent('Same person assessment');
     expect(related).toHaveTextContent('ada@example.com');
     expect(related).toHaveTextContent('Code review');
     expect(related).not.toHaveTextContent('interview-second-code-review');
