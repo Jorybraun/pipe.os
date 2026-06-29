@@ -316,6 +316,10 @@ describe('PersonProfilePage', () => {
     expect(decision).toHaveTextContent('4 source-backed proof items');
     expect(decision).toHaveTextContent('Assessment validity');
     expect(decision).toHaveTextContent('Usable source-backed signal');
+    expect(decision).toHaveTextContent('Uncertainty');
+    expect(decision).toHaveTextContent('Focused calibration needed');
+    expect(decision).toHaveTextContent('Missing context');
+    expect(decision).toHaveTextContent('Probe: Probe how they balance timing trade-offs under pushback.');
     expect(decision).toHaveTextContent('Next action');
     expect(decision).toHaveTextContent('Schedule focused technical calibration');
 

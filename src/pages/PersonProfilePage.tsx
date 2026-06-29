@@ -66,6 +66,9 @@ interface CodeReviewDecisionProjection {
   outcome: string | null;
   recommendation: string;
   recommendationDetail: string;
+  uncertainty: string;
+  uncertaintyDetail: string;
+  missingContext: string[];
   assessmentValidity: string;
   assessmentValidityDetail: string;
   nextAction: string;
@@ -346,7 +349,8 @@ function assessmentValidityForDecision(input: {
   proofCount: number;
   hasTranscript: boolean;
 }): { value: string; detail: string } {
-  const hasScore = input.score?.score !== null && input.score?.score !== undefined;
+  const scoreValue = input.score?.score;
+  const hasScore = scoreValue !== null && scoreValue !== undefined;
   const hasMatchedChallenge = input.challenge?.matchStatus === 'MATCHED' || Boolean(input.challenge?.repoLabel);
   if (hasScore && hasMatchedChallenge && input.hasTranscript && input.proofCount >= 4) {
     return {
@@ -398,6 +402,74 @@ function nextActionForDecision(
     value: 'Schedule focused technical calibration',
     detail: 'Use the next conversation to probe the weakest review dimension and confirm the signal generalizes.',
   };
+}
+
+function uncertaintyForDecision(input: {
+  score: CodeReviewScoreProjection | null;
+  challenge: CodeReviewChallengeProjection | null;
+  proofCount: number;
+  hasTranscript: boolean;
+  probes: string[];
+}): { value: string; detail: string } {
+  const scoreValue = input.score?.score;
+  const hasScore = scoreValue !== null && scoreValue !== undefined;
+  const hasMatchedChallenge = input.challenge?.matchStatus === 'MATCHED' || Boolean(input.challenge?.repoLabel);
+  if (!hasMatchedChallenge) {
+    return {
+      value: 'Repo fit unknown',
+      detail: 'PIPE has not proven that the assigned repo or PR is a fair test of this person yet.',
+    };
+  }
+  if (!hasScore) {
+    return {
+      value: 'Performance not scored',
+      detail: 'The assessment has not produced a durable score report, so the profile should not imply technical strength yet.',
+    };
+  }
+  if (!input.hasTranscript || input.proofCount < 4) {
+    return {
+      value: 'Evidence chain incomplete',
+      detail: 'A score exists, but the supporting transcript, challenge, or source proof is not complete enough to treat as high-confidence signal.',
+    };
+  }
+  if (scoreValue !== null && scoreValue !== undefined && scoreValue < 60) {
+    return {
+      value: 'Assignment fairness risk',
+      detail: 'The weak signal may reflect the candidate, the selected PR, or incomplete context. Check fit before rejecting from this result.',
+    };
+  }
+  if (input.probes.length > 0) {
+    return {
+      value: 'Focused calibration needed',
+      detail: input.probes[0] ?? 'Use the next conversation to calibrate the remaining code-review uncertainty.',
+    };
+  }
+  return {
+    value: 'Low remaining uncertainty',
+    detail: 'The main remaining question is whether this signal generalizes beyond the selected PR.',
+  };
+}
+
+function missingContextForDecision(input: {
+  score: CodeReviewScoreProjection | null;
+  challenge: CodeReviewChallengeProjection | null;
+  proofCount: number;
+  hasTranscript: boolean;
+  probes: string[];
+}): string[] {
+  const items: string[] = [];
+  const hasScore = input.score?.score !== null && input.score?.score !== undefined;
+  const hasMatchedChallenge = input.challenge?.matchStatus === 'MATCHED' || Boolean(input.challenge?.repoLabel);
+  if (!hasMatchedChallenge) items.push('Source-backed repo challenge selection');
+  if (!hasScore) items.push('Completed code-review score report');
+  if (!input.hasTranscript) items.push('Candidate review transcript or review conversation');
+  if (input.proofCount < 4) items.push('Complete candidate/repo provenance chain');
+  for (const probe of input.probes.slice(0, 2)) {
+    items.push(`Probe: ${probe}`);
+  }
+  return items.length > 0
+    ? items.slice(0, 4)
+    : ['No blocking evidence gap; confirm the signal transfers beyond this PR.'];
 }
 
 function sourceProofLabel(source: LivingContextRecordSourceRef): string {
@@ -460,6 +532,21 @@ function deriveCodeReviewDecision(
     proofCount: proofSources.length,
     hasTranscript: Boolean(transcriptRecord),
   });
+  const probes = score?.growthAreas ?? [];
+  const uncertainty = uncertaintyForDecision({
+    score,
+    challenge,
+    proofCount: proofSources.length,
+    hasTranscript: Boolean(transcriptRecord),
+    probes,
+  });
+  const missingContext = missingContextForDecision({
+    score,
+    challenge,
+    proofCount: proofSources.length,
+    hasTranscript: Boolean(transcriptRecord),
+    probes,
+  });
   const nextAction = nextActionForDecision(recommendation.value, score);
 
   return {
@@ -467,6 +554,9 @@ function deriveCodeReviewDecision(
     outcome: verdictLabel(optionalString(transcriptRecord?.qualifiers.finalVerdictDecision)),
     recommendation: recommendation.value,
     recommendationDetail: recommendation.detail,
+    uncertainty: uncertainty.value,
+    uncertaintyDetail: uncertainty.detail,
+    missingContext,
     assessmentValidity: assessmentValidity.value,
     assessmentValidityDetail: assessmentValidity.detail,
     nextAction: nextAction.value,
@@ -476,7 +566,7 @@ function deriveCodeReviewDecision(
     challengeUrl: challengeUrlForProjection(challenge),
     narrative: score?.narrative ?? transcriptRecord?.narrative ?? scoreRecord?.narrative ?? null,
     strengths: score?.strengths ?? [],
-    probes: score?.growthAreas ?? [],
+    probes,
     proofCount: proofSources.length,
     proofItems: proofSources.slice(0, 6).map(({ record, source }, index) => ({
       id: `${record.id}:${source.sourceRefId ?? source.sourceSpanId ?? index}`,
@@ -578,6 +668,19 @@ function CodeReviewDecisionCard({ decision }: { decision: CodeReviewDecisionProj
           <div style={DECISION_FACT_LABEL}>Assessment validity</div>
           <div style={DECISION_FACT_VALUE}>{decision.assessmentValidity}</div>
           <p style={DECISION_FACT_DETAIL}>{decision.assessmentValidityDetail}</p>
+        </div>
+        <div style={DECISION_FACT}>
+          <div style={DECISION_FACT_LABEL}>Uncertainty</div>
+          <div style={DECISION_FACT_VALUE}>{decision.uncertainty}</div>
+          <p style={DECISION_FACT_DETAIL}>{decision.uncertaintyDetail}</p>
+        </div>
+        <div style={DECISION_FACT}>
+          <div style={DECISION_FACT_LABEL}>Missing context</div>
+          <ul style={DECISION_LIST}>
+            {decision.missingContext.map((item) => (
+              <li key={item}>{item}</li>
+            ))}
+          </ul>
         </div>
         <div style={DECISION_FACT}>
           <div style={DECISION_FACT_LABEL}>Next action</div>
@@ -1036,6 +1139,14 @@ const DECISION_FACT_VALUE: CSSProperties = {
 
 const DECISION_FACT_DETAIL: CSSProperties = {
   margin: '8px 0 0',
+  color: 'var(--pipe-text-muted)',
+  fontSize: 11,
+  lineHeight: 1.45,
+};
+
+const DECISION_LIST: CSSProperties = {
+  margin: 0,
+  paddingLeft: 16,
   color: 'var(--pipe-text-muted)',
   fontSize: 11,
   lineHeight: 1.45,
