@@ -34,6 +34,7 @@ import {
 } from './codeReview';
 import type { CodeReviewTranscript } from './codeReview';
 import { LivingContextStore } from './persistence';
+import { ingestHistoricalCultureTranscript } from './cultureTranscriptBackfill';
 import { processProjectionOutbox } from './projection';
 import { checkGate } from './rolloutEnforcement';
 
@@ -76,6 +77,11 @@ export const BACKFILL_TASKS: BackfillTaskDefinition[] = [
     dependsOn: [],
   },
   {
+    taskKey: 'culture_sessions_to_living_context',
+    description: 'Ingest culture interview session transcripts into candidate person graphs with per-turn source spans',
+    dependsOn: ['candidates_to_living_context'],
+  },
+  {
     taskKey: 'projection_outbox_drain',
     description: 'Process all pending neo4j projection outbox jobs',
     dependsOn: [
@@ -84,6 +90,7 @@ export const BACKFILL_TASKS: BackfillTaskDefinition[] = [
       'resumes_to_living_context',
       'meetings_to_living_context',
       'phone_calls_to_living_context',
+      'culture_sessions_to_living_context',
       'code_reviews_to_living_context',
       'repo_assertions_to_living_context',
     ],
@@ -172,6 +179,15 @@ interface RepoArtifactPathRow {
   path: string | null;
 }
 
+interface CultureSessionRow {
+  id: string;
+  candidate_id: string;
+  assessment_id: string;
+  state: string;
+  transcript: string | null;
+  created_at: string;
+  updated_at: string;
+}
 interface BackfillBatchResult {
   processed: number;
   failed: number;
@@ -661,6 +677,56 @@ async function backfillRepoAssertionsBatch(
   return { processed, failed, cursor: lastId, done: assertions.length < BATCH_SIZE };
 }
 
+async function backfillCultureSessionsBatch(
+  db: D1Database,
+  cursor: string | null,
+): Promise<BackfillBatchResult> {
+  const rows = await db.prepare(
+    `SELECT cis.id, cis.candidate_id, cis.assessment_id, cis.state,
+            cis.transcript, cis.created_at, cis.updated_at
+     FROM culture_interview_sessions cis
+     WHERE cis.state IN ('scored', 'completed', 'scoring')
+       AND cis.transcript IS NOT NULL AND cis.transcript != ''
+       AND NOT EXISTS (
+         SELECT 1 FROM interactions i
+         WHERE i.interaction_type = 'culture_interview'
+           AND i.external_reference = cis.id
+       )
+       AND (?1 IS NULL OR cis.id > ?1)
+     ORDER BY cis.id
+     LIMIT ?2`,
+  ).bind(cursor, BATCH_SIZE).all<CultureSessionRow>();
+
+  const sessions = rows.results ?? [];
+  if (sessions.length === 0) return { processed: 0, failed: 0, cursor, done: true };
+
+  let processed = 0;
+  let failed = 0;
+  let lastId = cursor;
+
+  for (const row of sessions) {
+    try {
+      const transcript = JSON.parse(row.transcript!) as import('../cultureAgent').CultureTranscript;
+      await ingestHistoricalCultureTranscript(db, {
+        candidateId: row.candidate_id,
+        sessionId: row.id,
+        transcript,
+        extractSemantics: false,
+        fallbackObservedAt: row.updated_at,
+        sessionStartedAt: row.created_at,
+        sessionEndedAt: ['scored', 'completed'].includes(row.state) ? row.updated_at : null,
+      });
+      processed++;
+    } catch (err) {
+      console.error('[backfill] culture session LC failed:', row.id, err);
+      failed++;
+    }
+    lastId = row.id;
+  }
+
+  return { processed, failed, cursor: lastId, done: sessions.length < BATCH_SIZE };
+}
+
 export interface BackfillScheduledResult {
   gateEnabled: boolean;
   status: BackfillOrchestratorStatus;
@@ -723,6 +789,9 @@ export async function runScheduledBackfill(env: Env): Promise<BackfillScheduledR
           break;
         case 'repo_assertions_to_living_context':
           result = await backfillRepoAssertionsBatch(db, cursor);
+          break;
+        case 'culture_sessions_to_living_context':
+          result = await backfillCultureSessionsBatch(db, cursor);
           break;
         case 'projection_outbox_drain': {
           const projResult = await processProjectionOutbox(env);

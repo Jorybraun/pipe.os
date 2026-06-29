@@ -26,6 +26,7 @@ import { ingestMeetingTranscriptToLivingContext } from '../meetingTranscript';
 import { ensureCandidateLivingContext } from '../compatibility';
 import { loadCandidateLivingContext, searchSourceContent } from '../readModel';
 import { BackfillOrchestrator } from '../backfillOrchestrator';
+import { ingestHistoricalCultureTranscript } from '../cultureTranscriptBackfill';
 import { LivingContextStore } from '../persistence';
 
 const require = createRequire(import.meta.url);
@@ -788,5 +789,135 @@ describe('full-pipeline E2E: contact → transcript → match → explanation �
     expect(run1.prNumber).toBe(run2.prNumber);
     expect(run1.repoId).toBe(run2.repoId);
     expect(run1.explanation!.evidence.length).toBe(run2.explanation!.evidence.length);
+  });
+
+  it('backfills historical culture interview transcripts into the living context graph', async () => {
+    // Seed a candidate
+    sqlite.prepare(
+      `INSERT INTO candidates (id, owner_id, name, email, status)
+       VALUES ('candidate-culture', 'workspace-1', 'Ada Culture', 'ada@culture.dev', 'active')`,
+    ).run();
+    await ensureCandidateLivingContext(db, 'candidate-culture');
+
+    // Ingest a historical culture transcript with 2 answered turns
+    const result = await ingestHistoricalCultureTranscript(db, {
+      candidateId: 'candidate-culture',
+      sessionId: 'culture-session-1',
+      transcript: {
+        turns: [
+          {
+            idx: 0,
+            questionId: 'q1',
+            questionText: 'Tell me about a time you resolved a team conflict.',
+            candidateResponse: 'I mediated a disagreement between two engineers over API design. I facilitated a meeting where both presented their approaches, then we voted as a team.',
+            timestamp: '2026-06-01T10:00:00Z',
+            probeOf: null,
+            videoR2Key: null,
+          },
+          {
+            idx: 1,
+            questionId: 'q2',
+            questionText: 'How do you handle tight deadlines?',
+            candidateResponse: 'I break down the work into smaller milestones and prioritize ruthlessly. I communicate early when scope needs to change.',
+            timestamp: '2026-06-01T10:05:00Z',
+            probeOf: null,
+            videoR2Key: null,
+          },
+          {
+            idx: 2,
+            questionId: 'q3',
+            questionText: 'What motivates you at work?',
+            candidateResponse: null,
+            timestamp: null,
+            probeOf: null,
+            videoR2Key: null,
+          },
+        ],
+        scratchpad: {
+          competencyScores: {},
+          mode: 'role_fit',
+          contextualTurns: [],
+        },
+      },
+      extractSemantics: false,
+      fallbackObservedAt: '2026-06-01T10:10:00Z',
+      sessionStartedAt: '2026-06-01T10:00:00Z',
+      sessionEndedAt: '2026-06-01T10:10:00Z',
+    });
+
+    expect(result.answeredTurns).toBe(2);
+    expect(result.ingestedTurns).toBe(2);
+    expect(result.sourceOnlyTurns).toBe(2);
+
+    // Verify interactions were created
+    const interactions = sqlite.prepare(
+      `SELECT * FROM interactions WHERE interaction_type = 'culture_interview'`,
+    ).all() as Array<{ external_reference: string }>;
+    expect(interactions.length).toBe(1);
+    expect(interactions[0]!.external_reference).toBe('culture-session-1');
+
+    // Verify artifacts (one per turn)
+    const artifacts = sqlite.prepare(
+      `SELECT * FROM artifacts WHERE artifact_type = 'culture_interview_turn'`,
+    ).all() as unknown[];
+    expect(artifacts.length).toBe(2);
+
+    // Verify source spans: question + answer per turn = 4 minimum
+    const sourceSpans = sqlite.prepare(
+      `SELECT ss.exact_text, ss.metadata_json FROM source_spans ss
+       JOIN artifact_versions av ON av.id = ss.artifact_version_id
+       JOIN artifacts a ON a.id = av.artifact_id
+       WHERE a.artifact_type = 'culture_interview_turn'`,
+    ).all() as Array<{ exact_text: string; metadata_json: string }>;
+    expect(sourceSpans.length).toBeGreaterThanOrEqual(4);
+
+    // Verify context records
+    const contextRecords = sqlite.prepare(
+      `SELECT * FROM context_records WHERE record_type = 'culture_interview_turn'`,
+    ).all() as unknown[];
+    expect(contextRecords.length).toBe(2);
+
+    // Verify idempotency: re-ingesting produces the same result
+    const result2 = await ingestHistoricalCultureTranscript(db, {
+      candidateId: 'candidate-culture',
+      sessionId: 'culture-session-1',
+      transcript: {
+        turns: [
+          {
+            idx: 0, questionId: 'q1',
+            questionText: 'Tell me about a time you resolved a team conflict.',
+            candidateResponse: 'I mediated a disagreement between two engineers over API design. I facilitated a meeting where both presented their approaches, then we voted as a team.',
+            timestamp: '2026-06-01T10:00:00Z', probeOf: null, videoR2Key: null,
+          },
+          {
+            idx: 1, questionId: 'q2',
+            questionText: 'How do you handle tight deadlines?',
+            candidateResponse: 'I break down the work into smaller milestones and prioritize ruthlessly. I communicate early when scope needs to change.',
+            timestamp: '2026-06-01T10:05:00Z', probeOf: null, videoR2Key: null,
+          },
+          {
+            idx: 2, questionId: 'q3',
+            questionText: 'What motivates you at work?',
+            candidateResponse: null, timestamp: null, probeOf: null, videoR2Key: null,
+          },
+        ],
+        scratchpad: { competencyScores: {}, mode: 'role_fit', contextualTurns: [] },
+      },
+      extractSemantics: false,
+      fallbackObservedAt: '2026-06-01T10:10:00Z',
+      sessionStartedAt: '2026-06-01T10:00:00Z',
+      sessionEndedAt: '2026-06-01T10:10:00Z',
+    });
+
+    // Reused from prior projection (reusedTurns is a subset of ingestedTurns)
+    expect(result2.answeredTurns).toBe(2);
+    expect(result2.reusedTurns).toBe(2);
+    expect(result2.ingestedTurns).toBe(2);
+
+    // Counts should not have doubled
+    const artifactsAfter = sqlite.prepare(
+      `SELECT * FROM artifacts WHERE artifact_type = 'culture_interview_turn'`,
+    ).all() as unknown[];
+    expect(artifactsAfter.length).toBe(2);
   });
 });

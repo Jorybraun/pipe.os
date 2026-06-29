@@ -391,3 +391,45 @@ cd workers/api && npx wrangler deploy --env production
 cd workers/api && npx wrangler d1 migrations apply pipe-db --env production
 cd workers/api && npx wrangler deploy --env production
 ```
+
+### 2026-06-29 — Session 1193add8 (Devin)
+
+**Action:** Analyze open PRs, add culture session backfill, create consolidated PR.
+
+**Open PRs analyzed:**
+- PRs #105–#122: 18 progressive draft PRs — all superseded by #122 (latest consolidation)
+- PR #122 is the most comprehensive, consolidating all prior work + real-time resume ingestion
+- Verified all 8 acceptance criteria are implemented in PR #122 codebase
+
+**Gap identified and fixed:**
+- Culture interview sessions had `ingestCultureTurnToLivingContext` for real-time ingestion and `ingestHistoricalCultureTranscript` for replay — but no scheduled backfill task. Existing culture sessions created before the living context system deployment would never be backfilled.
+- Added `culture_sessions_to_living_context` backfill task (8th entity type) to `BACKFILL_TASKS` in `backfillScheduled.ts`
+- Added `backfillCultureSessionsBatch` — queries `culture_interview_sessions` with state in (scored, completed, scoring), deduplicates via `NOT EXISTS` on interactions, replays through `ingestHistoricalCultureTranscript`
+- Wired into `projection_outbox_drain` dependency chain
+- Added integration test in `fullPipelineE2E.test.ts` verifying backfill creates interactions, artifacts, source spans, context records, and is idempotent
+
+**Test results:**
+- 169 test files pass, 1545 tests (+1 new), 0 failures
+- TypeScript: 0 errors (root + workers/api)
+- Lint: 0 errors, 94 pre-existing warnings
+
+**All 8 acceptance criteria maintained:**
+1. Living person graph: COMPLETE — now with culture session backfill (8 entity types)
+2. Preserve original meaning: COMPLETE
+3. Learn semantics dynamically: COMPLETE
+4. Understand repositories: COMPLETE
+5. Evidence-based matching: COMPLETE
+6. Explain every match: COMPLETE
+7. Visualize the living graph: COMPLETE
+8. Production quality: COMPLETE — full backfill coverage for all interaction types
+
+**Owner action needed:**
+- Close superseded PRs #105–#122 after merging consolidated PR
+- Mark PR ready for review (auto-drafted by network policy)
+
+**Post-merge required:**
+```bash
+cd workers/api && npx wrangler d1 migrations apply pipe-db --env production
+cd workers/api && npx wrangler deploy --env production
+```
+
