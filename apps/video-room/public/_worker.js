@@ -261,10 +261,10 @@ async function withCleanBase(response, request) {
     : html.replace(/<head>/i, `<head><base href="${escapeHtml(baseHref)}">`);
   const headers = new Headers(response.headers);
   headers.delete('Content-Length');
+  headers.delete('Clear-Site-Data');
+  headers.delete('Pragma');
+  headers.delete('Expires');
   headers.set('Cache-Control', 'no-store');
-  headers.set('Clear-Site-Data', DEV_HTML_CACHE_RESET);
-  headers.set('Pragma', 'no-cache');
-  headers.set('Expires', '0');
   return new Response(withBase, {
     status: response.status,
     statusText: response.statusText,

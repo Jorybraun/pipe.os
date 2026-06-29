@@ -6,26 +6,6 @@ import { ClippyAssistant } from './ClippyAssistant';
 import { useAgentConnection } from '../hooks/useAgentConnection';
 import type { AgentChatMessage } from '../hooks/useAgentConnection';
 
-vi.mock('clippyjs', () => ({
-  initAgent: vi.fn(async () => ({
-    animate: vi.fn(),
-    dispose: vi.fn(),
-    hide: vi.fn(),
-    moveTo: vi.fn(),
-    play: vi.fn(),
-    show: vi.fn(),
-    speak: vi.fn(),
-  })),
-}));
-
-vi.mock('clippyjs/agents/clippy', () => ({
-  default: {
-    agent: {},
-    map: {},
-    sound: {},
-  },
-}));
-
 vi.mock('../hooks/useAgentConnection', () => ({
   useAgentConnection: vi.fn(),
 }));
@@ -54,6 +34,20 @@ describe('ClippyAssistant', () => {
   beforeEach(() => {
     vi.clearAllMocks();
     mockAgentConnection();
+  });
+
+  it('does not mount a second clippyjs sprite outside the controlled Win95 UI', () => {
+    render(
+      <ClippyAssistant
+        messages={[{ text: 'Need help opening the workspace?', hold: true }]}
+        onDismiss={vi.fn()}
+        agentEnabled={false}
+        agentWsUrl={null}
+      />,
+    );
+
+    expect(document.querySelector('[data-clippy-anchor]')).toBeNull();
+    expect(screen.getByTestId('clippy-proactive-card').textContent).toContain('Need help opening the workspace?');
   });
 
   it('opens a real-agent status panel before the workspace bridge is active', async () => {

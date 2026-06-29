@@ -1,6 +1,4 @@
 import { useEffect, useMemo, useRef, useState, useCallback } from 'react';
-import { initAgent } from 'clippyjs';
-import ClippyLoaders from 'clippyjs/agents/clippy';
 import {
   useAgentConnection,
   type AgentChatMessage,
@@ -11,8 +9,6 @@ import {
 } from '../hooks/useAgentConnection';
 import type { ClippyPromptActor } from '../lib/clippyPromptIdentity';
 import { buildClippyBrowserPromptIdentity } from '../lib/clippyPromptIdentity';
-
-type Agent = Awaited<ReturnType<typeof initAgent>>;
 
 const BLOCKED_PROMPT_MESSAGES: Record<AgentPromptBlockedReason, string> = {
   workspace_required: 'Clippy could not send that because the dev workspace is not running.',
@@ -39,7 +35,6 @@ export interface ClippyAction {
 export interface ClippyAssistantProps {
   messages: ClippyMessage[];
   onDismiss: () => void;
-  onClippyClick?: () => void;
   onChatOpen?: () => void;
   onChatClose?: () => void;
   agentWsUrl?: string | null;
@@ -65,7 +60,6 @@ export interface ClippyAssistantProps {
 export function ClippyAssistant({
   messages,
   onDismiss,
-  onClippyClick,
   onChatOpen,
   onChatClose,
   agentWsUrl,
@@ -87,9 +81,6 @@ export function ClippyAssistant({
   onAgentStatus,
   onAgentFileChange,
 }: ClippyAssistantProps) {
-  const agentRef = useRef<Agent | null>(null);
-  const [ready, setReady] = useState(false);
-  const spokenMessagesRef = useRef<Set<string>>(new Set());
   const [chatOpen, setChatOpen] = useState(false);
   const [chatInput, setChatInput] = useState('');
   const [localChatMessages, setLocalChatMessages] = useState<AgentChatMessage[]>([]);
@@ -106,78 +97,6 @@ export function ClippyAssistant({
     promptActor,
     promptWorkspaceSessionId,
   });
-
-  const typingTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
-  const isTypingRef = useRef(false);
-  const idleTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
-
-  const initClippy = useCallback(async () => {
-    if (agentRef.current) return;
-
-    const agent = await initAgent({
-      agent: ClippyLoaders.agent,
-      map: ClippyLoaders.map,
-      sound: ClippyLoaders.sound,
-    });
-
-    agentRef.current = agent;
-
-    // Position Clippy in the bottom-right area, above the taskbar
-    agent.moveTo(
-      window.innerWidth - 180,
-      window.innerHeight - 140,
-      0,
-    );
-
-    agent.show(true);
-
-    // Play the classic Show animation
-    agent.play('Show');
-
-    setReady(true);
-  }, []);
-
-  useEffect(() => {
-    initClippy().catch((err) => {
-      console.error('[ClippyAssistant] Failed to init Clippy:', err);
-    });
-
-    return () => {
-      if (typingTimerRef.current) clearTimeout(typingTimerRef.current);
-      if (idleTimerRef.current) clearTimeout(idleTimerRef.current);
-      if (agentRef.current) {
-        try {
-          agentRef.current.hide(true, undefined);
-          agentRef.current.dispose();
-        } catch {
-          // ignore
-        }
-        agentRef.current = null;
-      }
-    };
-  }, [initClippy]);
-
-  useEffect(() => {
-    if (!ready || !agentRef.current) return;
-
-    const clippyAgent = agentRef.current;
-    messages.forEach((msg) => {
-      const signature = `${msg.text}|${msg.actions?.map((action) => action.id).join(',') ?? ''}`;
-      if (spokenMessagesRef.current.has(signature)) return;
-      spokenMessagesRef.current.add(signature);
-      clippyAgent.speak(msg.text, msg.hold ?? false);
-    });
-  }, [messages, ready]);
-
-  useEffect(() => {
-    if (!ready || !agentRef.current) return;
-    if (agentConn.messages.length === 0) return;
-
-    const lastMsg = agentConn.messages[agentConn.messages.length - 1];
-    if (lastMsg.role === 'agent') {
-      agentRef.current.speak(lastMsg.text, false);
-    }
-  }, [agentConn.messages, ready]);
 
   useEffect(() => {
     messagesEndRef.current?.scrollIntoView?.({ behavior: 'smooth' });
@@ -233,36 +152,13 @@ export function ClippyAssistant({
   ]);
 
   const handleDismiss = useCallback(() => {
-    if (agentRef.current) {
-      agentRef.current.hide(true, undefined);
-    }
     onDismiss();
   }, [onDismiss]);
 
-  const handleClick = useCallback(() => {
-    if (agentRef.current) {
-      agentRef.current.animate();
-    }
-    setChatOpen((v) => {
-      const nextOpen = !v;
-      if (nextOpen) {
-        onChatOpen?.();
-      } else {
-        onChatClose?.();
-      }
-      return nextOpen;
-    });
-    onClippyClick?.();
-  }, [onChatClose, onChatOpen, onClippyClick]);
-
   const openChat = useCallback(() => {
-    if (agentRef.current) {
-      agentRef.current.animate();
-    }
     setChatOpen(true);
     onChatOpen?.();
-    onClippyClick?.();
-  }, [onChatOpen, onClippyClick]);
+  }, [onChatOpen]);
 
   const closeChat = useCallback(() => {
     setChatOpen(false);
@@ -278,23 +174,7 @@ export function ClippyAssistant({
 
   const handleChatInputChange = useCallback((e: React.ChangeEvent<HTMLInputElement>) => {
     setChatInput(e.target.value);
-    if (!agentRef.current || !ready) return;
-    // Trigger Writing animation when user starts typing
-    if (!isTypingRef.current) {
-      isTypingRef.current = true;
-      agentRef.current.play('Writing');
-    }
-    // Reset typing state after 800ms of no input
-    if (typingTimerRef.current) clearTimeout(typingTimerRef.current);
-    typingTimerRef.current = setTimeout(() => {
-      isTypingRef.current = false;
-      // Play a random idle animation when user stops typing
-      if (agentRef.current) {
-        const idleAnims = ['IdleFingerTap', 'IdleHeadScratch', 'IdleSideToSide', 'IdleEyeBrowRaise'];
-        agentRef.current.play(idleAnims[Math.floor(Math.random() * idleAnims.length)]);
-      }
-    }, 800);
-  }, [ready]);
+  }, []);
 
   const handleAuthClick = useCallback(() => {
     if (agentConn.authUrl && onOpenBrowser) {
@@ -307,16 +187,10 @@ export function ClippyAssistant({
   }, [agentConn, onCheckAuth, onOpenAuthBrowser, onOpenBrowser]);
 
   const handleAuthTerminalClick = useCallback(() => {
-    if (agentRef.current) {
-      agentRef.current.animate();
-    }
     onOpenAuthTerminal?.();
   }, [onOpenAuthTerminal]);
 
   const handleOpenTerminalClick = useCallback(() => {
-    if (agentRef.current) {
-      agentRef.current.animate();
-    }
     if (onAction) {
       onAction('open-terminal');
       return;
@@ -325,9 +199,6 @@ export function ClippyAssistant({
   }, [onAction, onOpenTerminal]);
 
   const handleActionClick = useCallback((actionId: string) => {
-    if (agentRef.current) {
-      agentRef.current.animate();
-    }
     if (actionId === 'agent-room-action' && latestAgentRoomAction) {
       onAgentRoomAction?.(latestAgentRoomAction);
       return;
@@ -487,12 +358,6 @@ export function ClippyAssistant({
 
   return (
     <>
-      <div
-        style={{ display: 'none' }}
-        data-clippy-anchor="true"
-        onClick={handleClick}
-      />
-
       {currentPrompt && (
         <div className="win95-clippy-prompt" data-testid="clippy-proactive-card">
           <div className="win95-clippy-prompt-title">
