@@ -27,6 +27,7 @@ import type { CultureTranscript } from '../src/lib/cultureAgent';
 import { createCultureAgentProvider } from '../src/lib/llm/createProvider';
 import type { ProviderEnv, ProviderName } from '../src/lib/llm/createProvider';
 import {
+  BackfillOrchestrator,
   ensureCandidateLivingContext,
   ensureContactLivingContext,
   ingestCodeReviewScoreReportToLivingContext,
@@ -39,6 +40,7 @@ import {
   parseStoredMeetingTranscript,
   type CodeReviewTranscript,
 } from '../src/lib/livingContext';
+import type { BackfillTaskDefinition } from '../src/lib/livingContext/backfillOrchestrator';
 import {
   OPEN_TERM_RESOLVER_VERSION,
   openSemanticTermRecord,
@@ -49,11 +51,7 @@ import { D1Client, loadD1Config } from './crawl-repos/shared/d1Client.js';
 const scriptDir = dirname(fileURLToPath(import.meta.url));
 const apiRoot = resolve(scriptDir, '..');
 const require = createRequire(import.meta.url);
-const { DatabaseSync } = require('node:sqlite') as {
-  DatabaseSync: {
-  new (path: string): SqliteDatabase;
-  };
-};
+const BetterSqlite3 = require('better-sqlite3') as new (path: string) => SqliteDatabase;
 dotenv.config({ path: resolve(apiRoot, '.dev.vars') });
 
 type SqlValue = string | number | null;
@@ -310,6 +308,30 @@ function parseArgs(argv: string[]): Options {
   };
 }
 
+function rewriteNumberedParams(
+  sql: string,
+  params: SqlValue[],
+): { sql: string; args: SqlValue[] } {
+  const numbered = /\?(\d+)/g;
+  let match = numbered.exec(sql);
+  if (!match) return { sql, args: params };
+
+  const args: SqlValue[] = [];
+  let rewritten = '';
+  let lastIndex = 0;
+
+  numbered.lastIndex = 0;
+  while ((match = numbered.exec(sql)) !== null) {
+    rewritten += sql.slice(lastIndex, match.index) + '?';
+    const paramIndex = Number.parseInt(match[1]!, 10) - 1;
+    args.push(params[paramIndex] ?? null);
+    lastIndex = numbered.lastIndex;
+  }
+  rewritten += sql.slice(lastIndex);
+
+  return { sql: rewritten, args };
+}
+
 class LocalStatement implements PreparedStatementLike {
   private values: SqlValue[] = [];
 
@@ -324,18 +346,21 @@ class LocalStatement implements PreparedStatementLike {
   }
 
   async first<T>(): Promise<T | null> {
-    return (this.database.prepare(this.sql).get(...this.values) as T | undefined) ?? null;
+    const { sql, args } = rewriteNumberedParams(this.sql, this.values);
+    return (this.database.prepare(sql).get(...args) as T | undefined) ?? null;
   }
 
   async all<T>(): Promise<QueryResult<T>> {
+    const { sql, args } = rewriteNumberedParams(this.sql, this.values);
     return {
-      results: this.database.prepare(this.sql).all(...this.values) as T[],
+      results: this.database.prepare(sql).all(...args) as T[],
       success: true,
     };
   }
 
   async run(): Promise<QueryResult<never>> {
-    this.database.prepare(this.sql).run(...this.values);
+    const { sql, args } = rewriteNumberedParams(this.sql, this.values);
+    this.database.prepare(sql).run(...args);
     return { results: [], success: true };
   }
 }
@@ -576,8 +601,10 @@ async function backfillIdentities(
   kind: 'candidates' | 'contacts',
   options: Options,
   stats: EntityStats,
+  startCursor?: string,
+  onProgress?: (cursor: string, processed: number, failed: number) => Promise<void>,
 ): Promise<void> {
-  let afterId = '';
+  let afterId = startCursor ?? '';
   while (shouldContinue(options, stats)) {
     const rows = await fetchIdPage(db, kind, afterId, pageSize(options, stats));
     if (rows.length === 0) break;
@@ -599,6 +626,7 @@ async function backfillIdentities(
     }
 
     afterId = rows.at(-1)!.id;
+    if (onProgress) await onProgress(afterId, stats.processed, stats.failed);
     console.log(
       `[living-context] ${kind}: discovered=${stats.discovered} processed=${stats.processed} failed=${stats.failed}`,
     );
@@ -609,8 +637,10 @@ async function backfillCandidateNodes(
   db: D1Like,
   options: Options,
   stats: EntityStats,
+  startCursor?: string,
+  onProgress?: (cursor: string, processed: number, failed: number) => Promise<void>,
 ): Promise<number> {
-  let afterId = '';
+  let afterId = startCursor ?? '';
   let semanticTermUpgrades = 0;
   while (shouldContinue(options, stats)) {
     const rows = await fetchCandidateNodePage(db, afterId, pageSize(options, stats));
@@ -643,6 +673,7 @@ async function backfillCandidateNodes(
     }
 
     afterId = rows.at(-1)!.id;
+    if (onProgress) await onProgress(afterId, stats.processed, stats.failed);
     console.log(
       `[living-context] candidateNodes: discovered=${stats.discovered} processed=${stats.processed} failed=${stats.failed}`,
     );
@@ -654,8 +685,10 @@ async function backfillMeetings(
   db: D1Like,
   options: Options,
   stats: EntityStats,
+  startCursor?: string,
+  onProgress?: (cursor: string, processed: number, failed: number) => Promise<void>,
 ): Promise<void> {
-  let afterId = '';
+  let afterId = startCursor ?? '';
   while (shouldContinue(options, stats)) {
     const rows = await fetchMeetingPage(db, afterId, pageSize(options, stats));
     if (rows.length === 0) break;
@@ -685,6 +718,7 @@ async function backfillMeetings(
     }
 
     afterId = rows.at(-1)!.id;
+    if (onProgress) await onProgress(afterId, stats.processed, stats.failed);
     console.log(
       `[living-context] meetings: discovered=${stats.discovered} processed=${stats.processed} failed=${stats.failed}`,
     );
@@ -696,8 +730,10 @@ async function backfillCultureSessions(
   options: Options,
   stats: EntityStats,
   provider: ReturnType<typeof createCultureAgentProvider>,
+  startCursor?: string,
+  onProgress?: (cursor: string, processed: number, failed: number) => Promise<void>,
 ): Promise<void> {
-  let afterId = '';
+  let afterId = startCursor ?? '';
   while (shouldContinue(options, stats)) {
     const rows = await fetchCultureSessionPage(db, afterId, pageSize(options, stats));
     if (rows.length === 0) break;
@@ -736,6 +772,7 @@ async function backfillCultureSessions(
     }
 
     afterId = rows.at(-1)!.id;
+    if (onProgress) await onProgress(afterId, stats.processed, stats.failed);
     console.log(
       `[living-context] cultureSessions: discovered=${stats.discovered} processed=${stats.processed} failed=${stats.failed}`,
     );
@@ -746,8 +783,10 @@ async function backfillPhoneCalls(
   db: D1Like,
   options: Options,
   stats: EntityStats,
+  startCursor?: string,
+  onProgress?: (cursor: string, processed: number, failed: number) => Promise<void>,
 ): Promise<void> {
-  let afterId = '';
+  let afterId = startCursor ?? '';
   while (shouldContinue(options, stats)) {
     const rows = await fetchPhoneCallPage(db, afterId, pageSize(options, stats));
     if (rows.length === 0) break;
@@ -795,6 +834,7 @@ async function backfillPhoneCalls(
     }
 
     afterId = rows.at(-1)!.id;
+    if (onProgress) await onProgress(afterId, stats.processed, stats.failed);
     console.log(
       `[living-context] phoneCalls: discovered=${stats.discovered} processed=${stats.processed} failed=${stats.failed}`,
     );
@@ -805,8 +845,10 @@ export async function backfillCodeReviewSessions(
   db: D1Like,
   options: Options,
   stats: EntityStats,
+  startCursor?: string,
+  onProgress?: (cursor: string, processed: number, failed: number) => Promise<void>,
 ): Promise<void> {
-  let afterId = '';
+  let afterId = startCursor ?? '';
   while (shouldContinue(options, stats)) {
     const rows = await fetchCodeReviewSessionPage(db, afterId, pageSize(options, stats));
     if (rows.length === 0) break;
@@ -867,6 +909,7 @@ export async function backfillCodeReviewSessions(
     }
 
     afterId = rows.at(-1)!.id;
+    if (onProgress) await onProgress(afterId, stats.processed, stats.failed);
     console.log(
       `[living-context] codeReviewSessions: discovered=${stats.discovered} processed=${stats.processed} failed=${stats.failed}`,
     );
@@ -899,6 +942,7 @@ async function verifySchema(db: D1Like): Promise<void> {
     'artifact_interactions',
     'source_span_attributions',
     'semantic_projection_runs',
+    'backfill_checkpoints',
   ];
   for (const table of requiredTables) {
     const row = await db.prepare(
@@ -912,6 +956,47 @@ async function verifySchema(db: D1Like): Promise<void> {
   }
 }
 
+const BACKFILL_TASKS: BackfillTaskDefinition[] = [
+  { taskKey: 'candidates', description: 'Backfill candidate identities', dependsOn: [] },
+  { taskKey: 'contacts', description: 'Backfill contact identities', dependsOn: [] },
+  { taskKey: 'candidateNodes', description: 'Mirror candidate nodes', dependsOn: ['candidates'] },
+  { taskKey: 'meetings', description: 'Ingest meeting transcripts', dependsOn: ['contacts'] },
+  { taskKey: 'cultureSessions', description: 'Ingest culture interview transcripts', dependsOn: ['candidates'] },
+  { taskKey: 'phoneCalls', description: 'Ingest phone call transcripts', dependsOn: ['candidates'] },
+  { taskKey: 'codeReviewSessions', description: 'Ingest code review sessions', dependsOn: ['candidates'] },
+];
+
+async function runOrchestratedTask(
+  orchestrator: BackfillOrchestrator,
+  taskKey: string,
+  execute: (
+    startCursor: string | undefined,
+    onProgress: (cursor: string, processed: number, failed: number) => Promise<void>,
+  ) => Promise<void>,
+): Promise<void> {
+  const status = await orchestrator.getStatus();
+  const checkpoint = status.tasks.find((t) => t.taskKey === taskKey);
+  if (checkpoint?.status === 'completed') {
+    console.log(`[living-context] ${taskKey}: already completed, skipping`);
+    return;
+  }
+  const startCursor = checkpoint?.cursor ?? undefined;
+  await orchestrator.markRunning(taskKey);
+  try {
+    await execute(
+      startCursor,
+      async (cursor, processed, failed) => {
+        await orchestrator.updateProgress(taskKey, cursor, processed, failed);
+      },
+    );
+    await orchestrator.markCompleted(taskKey);
+  } catch (error) {
+    const message = error instanceof Error ? error.message : String(error);
+    await orchestrator.markFailed(taskKey, message.slice(0, 2000));
+    throw error;
+  }
+}
+
 async function main(): Promise<void> {
   const options = parseArgs(process.argv.slice(2));
   let localDatabase: SqliteDatabase | undefined;
@@ -922,7 +1007,7 @@ async function main(): Promise<void> {
     console.log('[living-context] target=remote');
   } else {
     const databasePath = discoverLocalDatabase(options.databasePath);
-    localDatabase = new DatabaseSync(databasePath);
+    localDatabase = new BetterSqlite3(databasePath);
     localDatabase.exec('PRAGMA foreign_keys = ON');
     db = new LocalD1(localDatabase);
     console.log(`[living-context] target=local database=${databasePath}`);
@@ -930,6 +1015,13 @@ async function main(): Promise<void> {
 
   try {
     await verifySchema(db);
+
+    const orchestrator = new BackfillOrchestrator(
+      db as unknown as D1Database,
+      BACKFILL_TASKS,
+    );
+    await orchestrator.ensureCheckpoints();
+
     const providerEnv: ProviderEnv = {
       ...(process.env as ProviderEnv),
       ...(options.cultureProvider
@@ -954,23 +1046,32 @@ async function main(): Promise<void> {
       codeReviewSessions: emptyEntityStats(),
     };
 
-    await backfillIdentities(db, 'candidates', options, stats.candidates);
-    await backfillIdentities(db, 'contacts', options, stats.contacts);
-    await backfillCultureSessions(
-      db,
-      options,
-      stats.cultureSessions,
-      provider,
+    await runOrchestratedTask(orchestrator, 'candidates', (cursor, onProgress) =>
+      backfillIdentities(db, 'candidates', options, stats.candidates, cursor, onProgress),
     );
-    await backfillPhoneCalls(db, options, stats.phoneCalls);
-    await backfillCodeReviewSessions(db, options, stats.codeReviewSessions);
-    const candidateSemanticTermUpgrades = await backfillCandidateNodes(
-      db,
-      options,
-      stats.candidateNodes,
+    await runOrchestratedTask(orchestrator, 'contacts', (cursor, onProgress) =>
+      backfillIdentities(db, 'contacts', options, stats.contacts, cursor, onProgress),
     );
-    await backfillMeetings(db, options, stats.meetings);
+    await runOrchestratedTask(orchestrator, 'cultureSessions', (cursor, onProgress) =>
+      backfillCultureSessions(db, options, stats.cultureSessions, provider, cursor, onProgress),
+    );
+    await runOrchestratedTask(orchestrator, 'phoneCalls', (cursor, onProgress) =>
+      backfillPhoneCalls(db, options, stats.phoneCalls, cursor, onProgress),
+    );
+    await runOrchestratedTask(orchestrator, 'codeReviewSessions', (cursor, onProgress) =>
+      backfillCodeReviewSessions(db, options, stats.codeReviewSessions, cursor, onProgress),
+    );
+    let candidateSemanticTermUpgrades = 0;
+    await runOrchestratedTask(orchestrator, 'candidateNodes', async (cursor, onProgress) => {
+      candidateSemanticTermUpgrades = await backfillCandidateNodes(
+        db, options, stats.candidateNodes, cursor, onProgress,
+      );
+    });
+    await runOrchestratedTask(orchestrator, 'meetings', (cursor, onProgress) =>
+      backfillMeetings(db, options, stats.meetings, cursor, onProgress),
+    );
 
+    const orchestratorStatus = await orchestrator.getStatus();
     const failed = Object.values(stats).reduce((sum, entry) => sum + entry.failed, 0);
     const partial = Object.values(stats).reduce((sum, entry) => sum + entry.partial, 0);
     console.log(JSON.stringify({
@@ -979,6 +1080,9 @@ async function main(): Promise<void> {
       dryRun: options.dryRun,
       batchSize: options.batchSize,
       limitPerEntity: options.limit ?? null,
+      orchestratorStatus: orchestratorStatus.overallStatus,
+      completedTasks: orchestratorStatus.completedCount,
+      totalTasks: orchestratorStatus.totalCount,
       stats,
       candidateSemanticTermUpgrades,
       failed,
