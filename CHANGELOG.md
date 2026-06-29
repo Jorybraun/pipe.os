@@ -7,6 +7,13 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Added — Evaluation corpus seeder (criterion #8)
+
+- `POST /api/v1/internal/evaluation-corpus-seed` extracts evaluation corpus data from real match decisions in D1. Loads candidate living context evidence (assertions + source spans), role requirements, challenge packets, and generates draft expert labels from match scores. Draft labels are marked `labeledBy: 'corpus-seeder'` so they fail the production corpus gate until experts upgrade them.
+- `seedCorpusFromMatchRuns(db, options)` in `evaluation/corpusSeeder.ts` — orchestrates the extraction pipeline with configurable `limit`, `statusFilter`, `roleContextId` filters.
+- `persistSeededCorpus(db, corpus)` — persists the generated corpus to `evaluation_corpora` for subsequent evaluation runs.
+- 5 new tests covering empty state, full provenance extraction, persistence, orphan warnings, and status filtering.
+
 ### Added — Data integrity validation endpoint (criterion #8)
 
 - `GET /api/v1/internal/living-context-integrity` validates referential integrity across the living context entity chain: persons → workspace_people → interactions → episodes → assertions → source_spans, plus context record source ref coverage and source span non-emptiness. Returns per-check pass/fail with counts of orphaned or dangling entities.

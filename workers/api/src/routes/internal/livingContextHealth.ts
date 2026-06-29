@@ -15,6 +15,7 @@ import { Hono } from 'hono';
 import { z } from 'zod';
 import { scheduleFullProjectionRebuild } from '../../lib/livingContext/projection';
 import { runScheduledBackfill, BACKFILL_TASKS } from '../../lib/livingContext/backfillScheduled';
+import { seedCorpusFromMatchRuns, persistSeededCorpus } from '../../lib/challengeMatching/evaluation/corpusSeeder';
 import type { Env } from '../../types';
 
 interface SubsystemHealth {
@@ -557,6 +558,51 @@ app.post('/living-context-backfill-trigger', async (c) => {
       description: t.description,
       dependsOn: t.dependsOn,
     })),
+  });
+});
+
+/**
+ * POST /api/v1/internal/evaluation-corpus-seed
+ *
+ * Seeds an evaluation corpus from real match decisions. Extracts candidate
+ * evidence, role requirements, and challenge packets from persisted match_runs,
+ * generates draft labels for expert review, and persists the corpus.
+ *
+ * Body: { limit?: number, statusFilter?: string, roleContextId?: string, description?: string, persist?: boolean }
+ */
+app.post('/evaluation-corpus-seed', async (c) => {
+  interface SeedRequestBody {
+    limit?: number;
+    statusFilter?: string;
+    roleContextId?: string;
+    description?: string;
+    persist?: boolean;
+  }
+  const body: SeedRequestBody = await c.req.json<SeedRequestBody>().catch(() => ({} as SeedRequestBody));
+
+  const result = await seedCorpusFromMatchRuns(c.env.DB, {
+    limit: body.limit,
+    statusFilter: body.statusFilter,
+    roleContextId: body.roleContextId,
+    description: body.description,
+  });
+
+  let persisted = false;
+  if (body.persist !== false) {
+    const persistResult = await persistSeededCorpus(c.env.DB, result.corpus);
+    persisted = persistResult.persisted;
+  }
+
+  return c.json({
+    corpusId: result.corpus.corpusId,
+    persisted,
+    matchRunCount: result.matchRunCount,
+    candidateCount: result.candidateCount,
+    roleCount: result.roleCount,
+    challengeCount: result.challengeCount,
+    labelCount: result.corpus.expertLabels.length,
+    expectedPacketCount: result.corpus.expectedPackets?.length ?? 0,
+    warnings: result.warnings,
   });
 });
 
