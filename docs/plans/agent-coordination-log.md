@@ -477,3 +477,34 @@ cd workers/api && npx wrangler d1 migrations apply pipe-db --env production
 cd workers/api && npx wrangler deploy --env production
 ```
 
+---
+
+### 2026-06-29 — Session 8d59c4f4 (Devin)
+
+**Action:** Consolidate + advance living context system — evidence depth scoring.
+
+**PR analysis:**
+- Reviewed PRs #105–#128. Identified PR #127/128 as the fully consolidated branch
+- PR #128 (`devin/1782713052-living-context-production`) is the authoritative living context PR
+- Cannot push directly to main; PR requires owner merge
+
+**New features added (criteria #7/#8):**
+- `GET /:candidateId/living-context/evidence-depth` — per-source-type evidence scoring endpoint
+  - Computes `sourceDiversity` (0–1) from distinct interaction types
+  - Reports `totalInteractions`, `totalAssertions`, `totalSourceSpans`, `totalContextRecords`
+  - Returns per-type breakdown in `sources` map
+  - Returns `topConcepts` ranked by evidence count (top 20)
+- New test file: `routes/cockpit/__tests__/evidenceDepth.test.ts` (4 tests)
+
+**Purpose:** Gives recruiters visibility into how much evidence the system has for a candidate across all source types. A diversity score near 0 means only one type of interaction contributes evidence; 1.0 means all 6 source types (resume, meeting, culture interview, code review, phone call, assessment) are represented.
+
+**Test results:**
+- New tests: 4/4 pass
+- Full suite: verified against existing 170 test files + new file
+
+**Next priorities:**
+1. Owner merges PR #128 to main
+2. Close superseded PRs #105–#127
+3. Wire evidence-depth into the match quality gate (minimum diversity threshold before matching)
+4. Add evidence-depth visualization to the frontend `LivingContextGraph` component
+

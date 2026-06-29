@@ -7,6 +7,12 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Added — Candidate evidence depth endpoint (criteria #7/#8)
+
+- Added `GET /api/v1/candidates/:id/living-context/evidence-depth` endpoint — returns per-source-type evidence scoring including source diversity (0–1), total counts for interactions/assertions/source spans/context records, per-type breakdown, and top 20 concepts ranked by evidence count.
+- Source diversity metric: ratio of distinct interaction types present vs maximum possible (6: resume, meeting, culture interview, code review, phone call, assessment). Helps recruiters and the quality gate assess whether a candidate has enough independent evidence sources for a reliable match.
+- Added 4 new tests covering zero-state, source diversity computation, top concepts ranking, and full-diversity scenarios.
+
 ### Added — Person evidence timeline API (criterion #7)
 
 - Added `GET /api/v1/candidates/:id/living-context/timeline` endpoint — returns a chronological feed of evidence accumulation merging interactions, assertions, and context records into a single time-ordered stream. Supports pagination via `limit`, `before`, and `after` query parameters.

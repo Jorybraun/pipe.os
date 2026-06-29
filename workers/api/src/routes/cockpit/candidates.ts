@@ -1708,6 +1708,102 @@ candidateOps.get('/:candidateId/living-context/match-narrative', async (c) => {
   });
 });
 
+// GET /:candidateId/living-context/evidence-depth — per-source-type evidence scoring
+candidateOps.get('/:candidateId/living-context/evidence-depth', async (c) => {
+  const userId = c.var.userId;
+  const { candidateId } = c.req.param();
+  const db = c.env.DB;
+
+  const candidate = await db.prepare(
+    `SELECT c.id
+       FROM candidates c
+       LEFT JOIN pipelines p ON p.id = c.pipeline_id
+      WHERE c.id = ?1 AND (c.owner_id = ?2 OR p.owner_id = ?2)`,
+  ).bind(candidateId, userId).first<{ id: string }>();
+  if (!candidate) return apiError(c, 'NOT_FOUND', 'Candidate not found.');
+
+  const wp = await db.prepare(
+    `SELECT wp.id
+       FROM applications app
+       JOIN workspace_people wp ON wp.id = app.workspace_person_id
+      WHERE app.legacy_candidate_id = ?1
+      LIMIT 1`,
+  ).bind(candidateId).first<{ id: string }>();
+  if (!wp) {
+    return c.json({
+      candidateId,
+      workspacePersonId: null,
+      sourceDiversity: 0,
+      totalInteractions: 0,
+      totalAssertions: 0,
+      totalSourceSpans: 0,
+      totalContextRecords: 0,
+      sources: {},
+      topConcepts: [],
+    });
+  }
+
+  const [interactionBreakdown, assertionCount, sourceSpanCount, contextRecordCount, topConcepts] = await Promise.all([
+    db.prepare(
+      `SELECT interaction_type, COUNT(*) AS cnt
+         FROM interactions
+        WHERE workspace_person_id = ?1
+        GROUP BY interaction_type
+        ORDER BY cnt DESC`,
+    ).bind(wp.id).all<{ interaction_type: string; cnt: number }>(),
+    db.prepare(
+      `SELECT COUNT(*) AS cnt FROM semantic_assertions WHERE workspace_person_id = ?1`,
+    ).bind(wp.id).first<{ cnt: number }>(),
+    db.prepare(
+      `SELECT COUNT(*) AS cnt
+         FROM source_spans ss
+         JOIN artifact_versions av ON av.id = ss.artifact_version_id
+         JOIN artifacts a ON a.id = av.artifact_id
+        WHERE a.workspace_person_id = ?1`,
+    ).bind(wp.id).first<{ cnt: number }>(),
+    db.prepare(
+      `SELECT COUNT(*) AS cnt FROM context_records WHERE workspace_person_id = ?1`,
+    ).bind(wp.id).first<{ cnt: number }>(),
+    db.prepare(
+      `SELECT c.canonical_key, c.label, COUNT(DISTINCT ac.assertion_id) AS evidence_count
+         FROM concepts c
+         JOIN assertion_concepts ac ON ac.concept_id = c.id
+         JOIN semantic_assertions sa ON sa.id = ac.assertion_id
+        WHERE sa.workspace_person_id = ?1
+        GROUP BY c.id, c.canonical_key, c.label
+        ORDER BY evidence_count DESC
+        LIMIT 20`,
+    ).bind(wp.id).all<{ canonical_key: string; label: string; evidence_count: number }>(),
+  ]);
+
+  const sources: Record<string, number> = {};
+  let totalInteractions = 0;
+  for (const row of interactionBreakdown.results ?? []) {
+    sources[row.interaction_type] = row.cnt;
+    totalInteractions += row.cnt;
+  }
+
+  const distinctSourceTypes = Object.keys(sources).length;
+  const maxSourceTypes = 6; // resume, meeting, culture_interview, code_review, phone_call, assessment
+  const sourceDiversity = Math.min(distinctSourceTypes / maxSourceTypes, 1);
+
+  return c.json({
+    candidateId,
+    workspacePersonId: wp.id,
+    sourceDiversity,
+    totalInteractions,
+    totalAssertions: assertionCount?.cnt ?? 0,
+    totalSourceSpans: sourceSpanCount?.cnt ?? 0,
+    totalContextRecords: contextRecordCount?.cnt ?? 0,
+    sources,
+    topConcepts: (topConcepts.results ?? []).map((row) => ({
+      key: row.canonical_key,
+      label: row.label,
+      evidenceCount: row.evidence_count,
+    })),
+  });
+});
+
 // GET /:candidateId — full profile with stages + challenge submissions
 candidateOps.get('/:candidateId', async (c) => {
   const userId = c.var.userId;
