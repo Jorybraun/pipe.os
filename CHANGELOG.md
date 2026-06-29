@@ -7,6 +7,13 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Added — Culture interview session backfill (criterion #1/#8)
+
+- Added `culture_sessions_to_living_context` backfill task to the scheduled cron runner. Existing culture interview sessions (scored/completed/scoring) with transcripts are now replayed through `ingestHistoricalCultureTranscript`, creating per-turn source spans, context records, and enqueuing neo4j projections. The backfill covers the 8th entity type, completing full-graph coverage for all interaction types.
+- Added `backfillCultureSessionsBatch` with cursor-based batch processing, `NOT EXISTS` deduplication against the `interactions` table, and standard error isolation per session.
+- Wired culture backfill into `projection_outbox_drain` dependency chain so projections drain after culture ingestion completes.
+- Added integration test verifying culture transcript backfill creates interactions, artifacts, source spans, context records, and is idempotent on re-run.
+
 ### Added — Real-time living context ingestion on resume upload
 
 - Wired `ingestResumeToLivingContext` into `processResumeFromR2` so resumes enter the living context graph immediately upon upload — no longer deferred to scheduled backfill cron. Both recruiter upload and candidate INTAKE submission paths now trigger real-time ingestion.
