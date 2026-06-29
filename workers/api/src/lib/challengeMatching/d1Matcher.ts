@@ -24,6 +24,12 @@ import {
 import { LivingContextStore } from '../livingContext/persistence';
 import { openSemanticTerm } from '../livingContext/openTerms';
 import { ensureCandidateLivingContext } from '../livingContext/compatibility';
+import {
+  applyTemporalDecay,
+  parseObservedAtMs,
+  DEFAULT_DECAY_CONFIG,
+  type TemporalDecayConfig,
+} from './temporalDecay';
 import type {
   ContextRecordConceptInput,
   ContextRecordEntityInput,
@@ -52,6 +58,7 @@ interface CandidateEvidenceRow {
   qualifiers_json: string;
   concept_key: string | null;
   concept_weight: number | null;
+  observed_at: string | null;
 }
 
 interface PacketRow {
@@ -219,11 +226,14 @@ function candidateSourceRef(row: CandidateEvidenceRow): SourceRef {
 async function loadCandidateSignals(
   db: D1Database,
   candidateId: string,
+  decayConfig?: TemporalDecayConfig,
 ): Promise<CandidateSignal[]> {
+  const decay = decayConfig ?? { ...DEFAULT_DECAY_CONFIG, referenceTimeMs: Date.now() };
   const result = await db.prepare(
     `SELECT NULL AS context_record_id, sa.id AS assertion_id, ss.id AS source_span_id,
             sa.episode_id, sa.narrative, sa.confidence,
             sa.qualifiers_json,
+            COALESCE(sa.observed_at, sa.created_at) AS observed_at,
             (SELECT evidence_level
                FROM signal_evidence selected_evidence
               WHERE selected_evidence.assertion_id = sa.id
@@ -258,6 +268,7 @@ async function loadCandidateSignals(
     `SELECT cr.id AS context_record_id, cr.assertion_id, ss.id AS source_span_id,
             cr.episode_id, cr.narrative, cr.confidence,
             cr.qualifiers_json,
+            COALESCE(cr.observed_at, cr.created_at) AS observed_at,
             (SELECT evidence_level
                FROM signal_evidence selected_evidence
               WHERE cr.assertion_id IS NOT NULL
@@ -300,15 +311,20 @@ async function loadCandidateSignals(
     ].join('\u0000');
     if (seen.has(dedupeKey)) continue;
     seen.add(dedupeKey);
+    const rawStrength = row.strength != null && row.concept_weight != null
+      ? row.strength * row.concept_weight
+      : null;
+    const observedMs = parseObservedAtMs(row.observed_at);
+    const decayedStrength = rawStrength != null && observedMs != null
+      ? applyTemporalDecay(rawStrength, observedMs, decay)
+      : rawStrength;
     const signal: CandidateSignal = {
       id,
       episodeId: row.episode_id ?? baseId,
       narrative: row.narrative,
       purpose,
       evidenceLevel: row.evidence_level,
-      evidenceStrength: row.strength != null && row.concept_weight != null
-        ? row.strength * row.concept_weight
-        : null,
+      evidenceStrength: decayedStrength,
       confidence: row.confidence,
       concepts,
       sourceRefs: [sourceRef],
@@ -798,6 +814,8 @@ export interface CandidateReviewChallengeOptions {
   minEvidenceInteractions?: number;
   /** Override minimum source diversity threshold 0–1 (default: 0). */
   minEvidenceDiversity?: number;
+  /** Temporal decay configuration for evidence freshness weighting. */
+  temporalDecay?: Partial<TemporalDecayConfig>;
 }
 
 function sourceRefToContextSource(
@@ -1491,7 +1509,9 @@ export async function matchCandidateToReviewChallenge(
 ): Promise<CandidateReviewChallengeMatch> {
   await ensureCandidateMatchBridge(db, candidateId);
   const [signals, challengeLoad, evidenceDepth] = await Promise.all([
-    loadCandidateSignals(db, candidateId),
+    loadCandidateSignals(db, candidateId, options.temporalDecay
+      ? { ...DEFAULT_DECAY_CONFIG, ...options.temporalDecay, referenceTimeMs: options.temporalDecay.referenceTimeMs ?? Date.now() }
+      : undefined),
     loadChallengePackets(db, options.roleConcepts),
     loadCandidateEvidenceDepth(db, candidateId),
   ]);

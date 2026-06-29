@@ -22,6 +22,7 @@ import {
   ensureCandidateLivingContext,
   ensureContactLivingContext,
 } from '../../lib/livingContext/compatibility';
+import { loadAggregatedCandidateEvidence, type LoadAggregatedEvidenceConfig } from '../../lib/livingContext/evidenceAggregation';
 import type { Env } from '../../types';
 
 interface SubsystemHealth {
@@ -946,6 +947,42 @@ app.post('/person-identity-link', async (c) => {
     mergedFromPersonId: sourcePersonId,
     targetWorkspacePersonId: targetWpId,
     mergedWorkspacePersonId: sourceWpId,
+  });
+});
+
+/**
+ * GET /api/v1/internal/candidate-aggregated-evidence
+ * Returns time-weighted aggregated concept evidence for a candidate.
+ * Query params: candidateId (required), halfLifeDays, gracePeriodDays, floorMultiplier
+ */
+app.get('/candidate-aggregated-evidence', async (c) => {
+  const db = c.env.DB;
+  const candidateId = c.req.query('candidateId');
+  if (!candidateId) {
+    return c.json({ error: 'candidateId query parameter required' }, 400);
+  }
+
+  const halfLifeDaysParam = c.req.query('halfLifeDays');
+  const gracePeriodDaysParam = c.req.query('gracePeriodDays');
+  const floorMultiplierParam = c.req.query('floorMultiplier');
+
+  const decayOverrides: {
+    halfLifeDays?: number;
+    gracePeriodDays?: number;
+    floorMultiplier?: number;
+  } = {};
+  if (halfLifeDaysParam) decayOverrides.halfLifeDays = Number(halfLifeDaysParam);
+  if (gracePeriodDaysParam) decayOverrides.gracePeriodDays = Number(gracePeriodDaysParam);
+  if (floorMultiplierParam) decayOverrides.floorMultiplier = Number(floorMultiplierParam);
+
+  const aggregated = await loadAggregatedCandidateEvidence(db, candidateId, {
+    decay: Object.keys(decayOverrides).length > 0 ? decayOverrides : undefined,
+  });
+
+  return c.json({
+    candidateId,
+    totalConcepts: aggregated.length,
+    concepts: aggregated,
   });
 });
 

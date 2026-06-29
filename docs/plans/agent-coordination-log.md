@@ -4,6 +4,33 @@ Inter-agent handoff log for the living context graph goal. Each agent appends a 
 
 ## Log
 
+### 2026-06-29 — Session 135b717f (Devin Automation)
+
+**Action:** Analyze open PRs, close superseded ones, add temporal evidence decay + evidence aggregation.
+
+**PRs analyzed:** #135 (draft), #136 (draft), #137 (draft), #138 (draft) — #138 is the consolidation of #135–#137.
+
+**Superseded PRs:** #135, #136, #137 should be closed (network policy prevents API closure).
+
+**New code added (this session):**
+1. `temporalDecay.ts` — logarithmic half-life decay for evidence strength (configurable: halfLife=90d, grace=14d, floor=0.25)
+2. Integrated decay into `loadCandidateSignals` in `d1Matcher.ts` — evidence freshness now modulates matching scores
+3. `CandidateReviewChallengeOptions.temporalDecay` — per-run override for decay parameters
+4. `evidenceAggregation.ts` — Bayesian-like aggregation of multiple observations per concept (corroboration bonus, diversity bonus, contradiction penalty, recency weighting)
+5. `loadAggregatedCandidateEvidence(db, candidateId, config?)` — D1 query + aggregate pipeline
+6. `GET /api/v1/internal/candidate-aggregated-evidence` — API endpoint for aggregated evidence
+7. 36 new tests (24 temporal decay + 12 aggregation)
+
+**Test results:** 179 files, 1661 tests passed, 15 skipped. TypeScript clean (0 errors), lint clean (0 errors, 94 pre-existing warnings).
+
+**Next priorities:**
+- Merge to main (PR to be created fresh, non-draft)
+- Close superseded PRs #135–#138 manually
+- Add evidence freshness indicators to visualization
+- Consider concept adjacency temporal weighting
+
+---
+
 ### 2026-06-29 — Session 65a55311 (Devin Automation)
 
 **Action:** Analyze open PRs, merge aligned work, continue building toward living context acceptance criteria.

@@ -47,6 +47,18 @@ export type {
 } from './resumeIngestion';
 export { ingestSessionEventsToLivingContext, loadSessionEventsForCandidate } from './sessionEventIngestion';
 export type { SessionEventRow, SessionEventIngestionResult } from './sessionEventIngestion';
+export {
+  aggregateConceptEvidence,
+  aggregateAllConceptEvidence,
+  loadAggregatedCandidateEvidence,
+  DEFAULT_AGGREGATION_CONFIG,
+} from './evidenceAggregation';
+export type {
+  EvidenceObservation,
+  AggregatedConceptEvidence,
+  AggregationConfig,
+  LoadAggregatedEvidenceConfig,
+} from './evidenceAggregation';
 export { BackfillOrchestrator } from './backfillOrchestrator';
 export type { BackfillCheckpoint, BackfillTaskDefinition, BackfillOrchestratorStatus } from './backfillOrchestrator';
 export { runScheduledBackfill, BACKFILL_TASKS } from './backfillScheduled';

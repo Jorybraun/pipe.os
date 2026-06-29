@@ -7,6 +7,21 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Added — Temporal evidence decay for matcher scoring (criterion #5)
+
+- `temporalDecay.ts` — time-based attenuation of evidence strength with configurable half-life, grace period, and floor multiplier. Evidence within the grace period (default 14 days) retains full weight; older evidence decays logarithmically with a 90-day half-life, never dropping below 25%.
+- Integrated into `loadCandidateSignals` in `d1Matcher.ts` — candidate signal strengths are now modulated by evidence freshness before entering the matching pipeline.
+- `CandidateReviewChallengeOptions.temporalDecay` — optional override for decay parameters per match run.
+- 24 new tests covering decay curve characteristics, boundary conditions, and integration.
+
+### Added — Evidence confidence aggregation (criterion #1, #5)
+
+- `evidenceAggregation.ts` — aggregates multiple observations of the same concept across interactions into composite confidence/strength scores without mutating underlying evidence.
+- Corroboration bonus (multiple sources agreeing), diversity bonus (evidence from different interaction types), contradiction penalty, and recency-weighted averaging.
+- `loadAggregatedCandidateEvidence(db, candidateId, config?)` — loads and aggregates all concept evidence for a candidate from D1.
+- `GET /api/v1/internal/candidate-aggregated-evidence` — API endpoint for aggregated evidence with tunable decay parameters.
+- 12 new tests covering aggregation logic, corroboration, diversity, contradictions, and grouping.
+
 ### Added — Session event → living context ingestion (criterion #1)
 
 - `ingestSessionEventsToLivingContext(db, candidateId, sessionId, events)` — ingests interview session events (answer_submitted, scoring_complete, question_asked, stage_advanced, match_assigned) across all session types into the living context graph as source-backed assertions.
