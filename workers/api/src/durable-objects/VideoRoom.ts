@@ -27,6 +27,7 @@ type SignalStatus = SessionStatus | 'LEFT';
 type RoomSurface = 'standard' | 'win95';
 const TERMINAL_FINGERPRINT_RE = /^terminal_[0-9a-f]{8}$/;
 const TERMINAL_COMMAND_ID_RE = /^.+:command:(host|guest):\d+:\d+:terminal_[0-9a-f]{8}$/;
+const ROOM_CHAT_MESSAGE_FINGERPRINT_RE = /^chat_[0-9a-f]{8}$/;
 const CLIPPY_PROMPT_FINGERPRINT_RE = /^clippy_[0-9a-f]{8}$/;
 const BROWSER_PROMPT_ID_RE = /^[a-zA-Z0-9:_-]+:(host|guest):prompt:\d+:clippy_[0-9a-f]{8}$/;
 const CLIPPY_ACTION_EVENT_ID_RE = /^clippy-action:(host|guest|agent):\d+:[a-z_]+:[a-z_]+:[a-z_]+:[a-zA-Z0-9:_-]+$/;
@@ -57,6 +58,8 @@ const MAX_RECORDING_FAILURE_MESSAGE_LENGTH = 240;
 const CURSOR_PRESENCE_SAMPLE_INTERVAL_MS = 15_000;
 const CURSOR_PRESENCE_MOVEMENT_THRESHOLD = 0.03;
 const CURSOR_SAMPLE_ID_RE = /^cursor:(host|guest):\d+:\d+:\d+$/;
+const FNV_32_OFFSET = 0x811c9dc5;
+const FNV_32_PRIME = 0x01000193;
 const ROOM_FILE_PROJECTION_EVIDENCE_METADATA_KEY = 'roomFileProjectionEvidence';
 const ROOM_FILE_PROJECTION_EVIDENCE_KEYS = [
   'source',
@@ -139,6 +142,15 @@ function safeEvidenceIdPart(value: unknown): string {
     .replace(/[^a-zA-Z0-9:_-]+/g, '-')
     .replace(/^-+|-+$/g, '');
   return normalized || 'none';
+}
+
+function roomChatMessageFingerprint(text: string): string {
+  let hash = FNV_32_OFFSET;
+  for (let index = 0; index < text.length; index += 1) {
+    hash ^= text.charCodeAt(index);
+    hash = Math.imul(hash, FNV_32_PRIME);
+  }
+  return `chat_${(hash >>> 0).toString(16).padStart(8, '0')}`;
 }
 
 function hasOptionalBrowserPromptRef(evidence: Record<string, unknown>): boolean {
@@ -1387,6 +1399,9 @@ export class VideoRoom {
     if (typeof value.messageLength === 'number' && Number.isFinite(value.messageLength)) {
       evidence.messageLength = value.messageLength;
     }
+    if (typeof value.messageFingerprint === 'string' && ROOM_CHAT_MESSAGE_FINGERPRINT_RE.test(value.messageFingerprint)) {
+      evidence.messageFingerprint = value.messageFingerprint;
+    }
     if (deliveryStatus) evidence.deliveryStatus = deliveryStatus;
     if (surface) evidence.surface = surface;
     if (typeof roomPhase === 'string') evidence.roomPhase = roomPhase;
@@ -1405,6 +1420,7 @@ export class VideoRoom {
       clientId: message.clientId,
       messageCreatedAt: message.createdAt,
       messageLength: message.text.length,
+      messageFingerprint: roomChatMessageFingerprint(message.text),
       deliveryStatus: 'accepted',
     };
   }
@@ -1415,6 +1431,7 @@ export class VideoRoom {
     const actor = this.isHostRole(role) ? 'host' : 'guest';
     const messageCreatedAt = evidence.messageCreatedAt;
     const messageLength = evidence.messageLength;
+    const messageFingerprint = evidence.messageFingerprint;
     return evidence.source === 'room_chat_client_submit'
       && evidence.chatEventSource === 'browser_room_chat_window'
       && evidence.actor === actor
@@ -1426,6 +1443,9 @@ export class VideoRoom {
       && messageCreatedAt >= 0
       && messageLength === message.text.length
       && typeof messageLength === 'number'
+      && typeof messageFingerprint === 'string'
+      && ROOM_CHAT_MESSAGE_FINGERPRINT_RE.test(messageFingerprint)
+      && messageFingerprint === roomChatMessageFingerprint(message.text)
       && evidence.deliveryStatus === 'accepted'
       && typeof evidence.surface === 'string'
       && this.isRoomSurface(evidence.surface)

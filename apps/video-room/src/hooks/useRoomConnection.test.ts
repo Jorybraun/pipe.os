@@ -35,6 +35,7 @@ import {
   type RoomRecordingStateEvent,
   type RoomTerminalEvent,
 } from './useRoomConnection';
+import { roomChatMessageFingerprint } from '../lib/chatEvidence';
 
 describe('decideRoomSurfaceSnapshot', () => {
   it('applies the Durable Object snapshot on a new socket so missed surface changes resync', () => {
@@ -863,6 +864,7 @@ describe('mergeRoomChatMessage', () => {
         clientId: 'host-client',
         messageCreatedAt: 1000,
         messageLength: text.length,
+        messageFingerprint: roomChatMessageFingerprint(text),
         deliveryStatus: 'pending',
         surface: 'win95',
         roomPhase: 'connected',
@@ -890,6 +892,7 @@ describe('mergeRoomChatMessage', () => {
         clientId: 'host-client',
         messageCreatedAt: 1000,
         messageLength: text.length,
+        messageFingerprint: roomChatMessageFingerprint(text),
         deliveryStatus: 'accepted',
         surface: 'win95',
         roomPhase: 'connected',
@@ -916,6 +919,7 @@ describe('mergeRoomChatMessage', () => {
         clientId: 'host-client',
         messageCreatedAt: 1000,
         messageLength: text.length,
+        messageFingerprint: roomChatMessageFingerprint(text),
         deliveryStatus: 'accepted',
         surface: 'win95',
         roomPhase: 'connected',
@@ -923,6 +927,35 @@ describe('mergeRoomChatMessage', () => {
       },
     };
 
+    expect(hasSourceBackedChatEvidence(accepted, 'HOST')).toBe(false);
+  });
+
+  it('rejects room chat evidence when the text no longer matches the source fingerprint', () => {
+    const text = 'Can you see this?';
+    const accepted: RoomChatMessage = {
+      id: 'chat-1',
+      clientId: 'host-client',
+      createdAt: 1000,
+      role: 'HOST',
+      text,
+      deliveryStatus: 'accepted',
+      evidence: {
+        source: 'room_chat_client_submit',
+        chatEventSource: 'browser_room_chat_window',
+        actor: 'host',
+        roomMessageId: 'chat-1',
+        clientId: 'host-client',
+        messageCreatedAt: 1000,
+        messageLength: text.length,
+        messageFingerprint: roomChatMessageFingerprint('Can we see those?'),
+        deliveryStatus: 'accepted',
+        surface: 'win95',
+        roomPhase: 'connected',
+        durableObjectReplayExpected: true,
+      },
+    };
+
+    expect('Can we see those?').toHaveLength(text.length);
     expect(hasSourceBackedChatEvidence(accepted, 'HOST')).toBe(false);
   });
 

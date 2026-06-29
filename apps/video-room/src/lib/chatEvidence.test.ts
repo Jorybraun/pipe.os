@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest';
-import { buildRoomChatEvidence } from './chatEvidence';
+import { buildRoomChatEvidence, roomChatMessageFingerprint } from './chatEvidence';
 
 describe('chat evidence', () => {
   it('builds source-backed room chat evidence from the shared message identity', () => {
@@ -25,6 +25,7 @@ describe('chat evidence', () => {
         clientId: 'browser-client-1',
         messageCreatedAt: 1782602000000,
         messageLength: 50,
+        messageFingerprint: roomChatMessageFingerprint('I think the retry test should fail before the fix.'),
         deliveryStatus: 'pending',
         surface: 'win95',
         roomPhase: 'connected',
@@ -71,6 +72,7 @@ describe('chat evidence', () => {
       clientId: 'browser-client-2',
       messageCreatedAt: 1782603000000,
       messageLength: 'The patch is ready for review.'.length,
+      messageFingerprint: roomChatMessageFingerprint('The patch is ready for review.'),
       deliveryStatus: 'accepted',
       durableObjectReplayExpected: true,
     });
@@ -92,6 +94,7 @@ describe('chat evidence', () => {
       clientId: 'browser-client-2',
       messageCreatedAt: 1782603000000,
       messageLength: 'The patch is ready for review.'.length,
+      messageFingerprint: roomChatMessageFingerprint('The patch is ready for review.'),
       deliveryStatus: 'rejected',
       durableObjectReplayExpected: true,
     });

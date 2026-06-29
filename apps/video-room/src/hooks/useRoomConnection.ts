@@ -17,6 +17,7 @@ import {
   inferWindowStateAction,
   windowDataValueFingerprint,
 } from '../lib/windowEvidence';
+import { roomChatMessageFingerprint } from '../lib/chatEvidence';
 import type { OpenWindowConfig, WindowType } from './useWindowManager';
 import type { SessionEventType } from './useSessionEvents';
 
@@ -64,6 +65,7 @@ const SHA256_HEX_RE = /^[a-f0-9]{64}$/i;
 const CODE_SERVER_SAVE_ACTIONS = new Set(['created', 'modified', 'renamed']);
 const TERMINAL_FINGERPRINT_RE = /^terminal_[0-9a-f]{8}$/;
 const TERMINAL_COMMAND_ID_RE = /^.+:command:(host|guest):\d+:\d+:terminal_[0-9a-f]{8}$/;
+const ROOM_CHAT_MESSAGE_FINGERPRINT_RE = /^chat_[0-9a-f]{8}$/;
 const CURSOR_SAMPLE_ID_RE = /^cursor:(host|guest):\d+:\d{1,4}:\d{1,4}$/;
 const ROOM_FILE_PROJECTION_EVIDENCE_METADATA_KEY = 'roomFileProjectionEvidence';
 const ROOM_FILE_CONTENT_HASH_RE = /^content_[a-f0-9]{32}$/;
@@ -1520,6 +1522,7 @@ export function hasSourceBackedChatEvidence(
   const actor = role === 'HOST' ? 'host' : 'guest';
   const messageCreatedAt = evidence.messageCreatedAt;
   const messageLength = evidence.messageLength;
+  const messageFingerprint = evidence.messageFingerprint;
   const deliveryStatus = message.deliveryStatus ?? expectedStatus;
   return message.role === role
     && evidence.source === 'room_chat_client_submit'
@@ -1533,6 +1536,9 @@ export function hasSourceBackedChatEvidence(
     && messageCreatedAt >= 0
     && messageLength === message.text.length
     && typeof messageLength === 'number'
+    && typeof messageFingerprint === 'string'
+    && ROOM_CHAT_MESSAGE_FINGERPRINT_RE.test(messageFingerprint)
+    && messageFingerprint === roomChatMessageFingerprint(message.text)
     && deliveryStatus === expectedStatus
     && evidence.deliveryStatus === expectedStatus
     && isRoomSurface(evidence.surface)
@@ -3438,6 +3444,7 @@ export function useRoomConnection(
         clientId: desktopClientIdRef.current,
         messageCreatedAt: createdAt,
         messageLength: trimmed.length,
+        messageFingerprint: roomChatMessageFingerprint(trimmed),
         deliveryStatus: 'pending',
         surface: roomSurface,
         roomPhase: phaseRef.current,

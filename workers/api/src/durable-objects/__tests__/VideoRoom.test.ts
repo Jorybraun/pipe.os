@@ -2,6 +2,8 @@ import { describe, expect, it, vi } from 'vitest';
 import { VideoRoom } from '../VideoRoom';
 
 type Role = 'HOST' | 'GUEST';
+const FNV_32_OFFSET = 0x811c9dc5;
+const FNV_32_PRIME = 0x01000193;
 
 class FakeSocket {
   sent: string[] = [];
@@ -54,6 +56,15 @@ function makeState(entries: Array<[FakeSocket, Role]>): {
 
 function parseSent(socket: FakeSocket): Array<Record<string, unknown>> {
   return socket.sent.map((message) => JSON.parse(message) as Record<string, unknown>);
+}
+
+function roomChatMessageFingerprint(text: string): string {
+  let hash = FNV_32_OFFSET;
+  for (let index = 0; index < text.length; index += 1) {
+    hash ^= text.charCodeAt(index);
+    hash = Math.imul(hash, FNV_32_PRIME);
+  }
+  return `chat_${(hash >>> 0).toString(16).padStart(8, '0')}`;
 }
 
 describe('VideoRoom Durable Object signaling lifecycle', () => {
@@ -991,6 +1002,7 @@ describe('VideoRoom Durable Object signaling lifecycle', () => {
       clientId: 'host-client',
       messageCreatedAt: 42,
       messageLength: 'Can you see this message?'.length,
+      messageFingerprint: roomChatMessageFingerprint('Can you see this message?'),
       deliveryStatus: 'accepted',
       surface: 'win95',
       roomPhase: 'connected',

@@ -14,6 +14,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Fixed — Video room
 
+- Room chat messages now carry and verify an exact text fingerprint in source-backed evidence, preventing same-length stale or tampered chat payloads from replaying as valid meeting evidence.
 - Win95 shared room-surface toggles now require deterministic integer capture times and known room phases before replaying, preventing malformed surface evidence from moving both participants between the standard call and desktop.
 - Win95 shared window open/close events now reconstruct lifecycle ids and verify open-window metadata before replaying, preventing stale lifecycle evidence from launching or closing the wrong shared window.
 - Win95 shared window-state events now reconstruct state patches, actions, and source ids before replaying, preventing stale move, resize, focus, minimize, or maximize evidence from syncing across participants.
