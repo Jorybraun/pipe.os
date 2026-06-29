@@ -66,6 +66,10 @@ interface CodeReviewDecisionProjection {
   outcome: string | null;
   recommendation: string;
   recommendationDetail: string;
+  assessmentValidity: string;
+  assessmentValidityDetail: string;
+  nextAction: string;
+  nextActionDetail: string;
   scoreLabel: string | null;
   challengeLabel: string | null;
   challengeUrl: string | null;
@@ -244,6 +248,66 @@ function recommendationForScore(
   };
 }
 
+function assessmentValidityForDecision(input: {
+  score: CodeReviewScoreProjection | null;
+  challenge: CodeReviewChallengeProjection | null;
+  proofCount: number;
+  hasTranscript: boolean;
+}): { value: string; detail: string } {
+  const hasScore = input.score?.score !== null && input.score?.score !== undefined;
+  const hasMatchedChallenge = input.challenge?.matchStatus === 'MATCHED' || Boolean(input.challenge?.repoLabel);
+  if (hasScore && hasMatchedChallenge && input.hasTranscript && input.proofCount >= 4) {
+    return {
+      value: 'Usable source-backed signal',
+      detail: 'Score, review transcript, selected PR, and match provenance are all present. Use it as evidence, not as an automatic decision.',
+    };
+  }
+  if (hasScore && input.proofCount > 0) {
+    return {
+      value: 'Partial source-backed signal',
+      detail: 'A score exists, but the supporting transcript or match provenance is incomplete. Calibrate before relying on it.',
+    };
+  }
+  if (hasMatchedChallenge) {
+    return {
+      value: 'Assignment ready, score missing',
+      detail: 'The PR challenge has source-backed context, but the candidate review has not produced a score report yet.',
+    };
+  }
+  return {
+    value: 'Needs more evidence',
+    detail: 'PIPE should collect more candidate or role evidence before treating this as a fair code-review assessment.',
+  };
+}
+
+function nextActionForDecision(
+  recommendation: string,
+  score: CodeReviewScoreProjection | null,
+): { value: string; detail: string } {
+  if (recommendation === 'Collect missing evidence') {
+    return {
+      value: 'Schedule evidence-gathering call',
+      detail: 'Ask targeted background questions before assigning or refreshing the repo match.',
+    };
+  }
+  if (recommendation === 'Wait for review signal') {
+    return {
+      value: 'Wait for candidate submission',
+      detail: 'Do not make a hiring call until the code-review transcript or score report exists.',
+    };
+  }
+  if (score?.score !== null && score?.score !== undefined && score.score < 60) {
+    return {
+      value: 'Review assignment fairness before rejecting',
+      detail: 'Check whether the repo challenge was well matched before treating the weak score as candidate signal.',
+    };
+  }
+  return {
+    value: 'Schedule focused technical calibration',
+    detail: 'Use the next conversation to probe the weakest review dimension and confirm the signal generalizes.',
+  };
+}
+
 function sourceProofLabel(source: LivingContextRecordSourceRef): string {
   return (source.evidenceRole ?? source.sourceRefType ?? 'source')
     .replace(/[_-]+/g, ' ')
@@ -294,12 +358,23 @@ function deriveCodeReviewDecision(
   const proofSources = [scoreRecord, transcriptRecord]
     .filter((record): record is LivingContextRecord => record !== null)
     .flatMap((record) => record.sources.map((source) => ({ record, source })));
+  const assessmentValidity = assessmentValidityForDecision({
+    score,
+    challenge,
+    proofCount: proofSources.length,
+    hasTranscript: Boolean(transcriptRecord),
+  });
+  const nextAction = nextActionForDecision(recommendation.value, score);
 
   return {
     sessionId,
     outcome: verdictLabel(optionalString(transcriptRecord?.qualifiers.finalVerdictDecision)),
     recommendation: recommendation.value,
     recommendationDetail: recommendation.detail,
+    assessmentValidity: assessmentValidity.value,
+    assessmentValidityDetail: assessmentValidity.detail,
+    nextAction: nextAction.value,
+    nextActionDetail: nextAction.detail,
     scoreLabel,
     challengeLabel,
     challengeUrl: challenge?.repoUrl ?? null,
@@ -403,6 +478,16 @@ function CodeReviewDecisionCard({ decision }: { decision: CodeReviewDecisionProj
           <div style={DECISION_FACT_LABEL}>Proof</div>
           <div style={DECISION_FACT_VALUE}>{decision.proofCount} source-backed proof items</div>
         </div>
+        <div style={DECISION_FACT}>
+          <div style={DECISION_FACT_LABEL}>Assessment validity</div>
+          <div style={DECISION_FACT_VALUE}>{decision.assessmentValidity}</div>
+          <p style={DECISION_FACT_DETAIL}>{decision.assessmentValidityDetail}</p>
+        </div>
+        <div style={DECISION_FACT}>
+          <div style={DECISION_FACT_LABEL}>Next action</div>
+          <div style={DECISION_FACT_VALUE}>{decision.nextAction}</div>
+          <p style={DECISION_FACT_DETAIL}>{decision.nextActionDetail}</p>
+        </div>
       </div>
 
       {decision.narrative && (
@@ -457,7 +542,7 @@ export default function PersonProfilePage(): JSX.Element {
   const [livingContext, setLivingContext] = useState<LivingContextReadModel | null>(null);
   const [isLoading, setIsLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
-  const [showSourceGraph, setShowSourceGraph] = useState(true);
+  const [showSourceGraph, setShowSourceGraph] = useState(false);
 
   const contextEndpoint = personId ? `/api/v1/contacts/${personId}/living-context` : null;
 
@@ -851,6 +936,13 @@ const DECISION_FACT_VALUE: CSSProperties = {
   fontSize: 13,
   fontWeight: 800,
   overflowWrap: 'anywhere',
+};
+
+const DECISION_FACT_DETAIL: CSSProperties = {
+  margin: '8px 0 0',
+  color: 'var(--pipe-text-muted)',
+  fontSize: 11,
+  lineHeight: 1.45,
 };
 
 const DECISION_LINK: CSSProperties = {

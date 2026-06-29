@@ -261,11 +261,17 @@ describe('PersonProfilePage', () => {
     expect(decision).toHaveTextContent('Candidate found the missing retry test and defended the review.');
     expect(decision).toHaveTextContent('Probe how they balance timing trade-offs under pushback.');
     expect(decision).toHaveTextContent('4 source-backed proof items');
+    expect(decision).toHaveTextContent('Assessment validity');
+    expect(decision).toHaveTextContent('Usable source-backed signal');
+    expect(decision).toHaveTextContent('Next action');
+    expect(decision).toHaveTextContent('Schedule focused technical calibration');
 
     const proof = screen.getByTestId('person-code-review-source-proof');
     expect(proof).toHaveTextContent('Source proof');
     expect(proof).toHaveTextContent('score report');
     expect(proof).toHaveTextContent('transcript segment');
     expect(proof).toHaveTextContent('review-session-1');
+    expect(screen.queryByTestId('mock-living-context-graph')).not.toBeInTheDocument();
+    expect(screen.getByRole('button', { name: 'Open graph' })).toBeInTheDocument();
   });
 });
