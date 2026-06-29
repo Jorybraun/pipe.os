@@ -46,6 +46,10 @@ const matchingMigration = readFileSync(
   new URL('../../../../migrations/0083_repo_semantic_graph_and_match_runs.sql', import.meta.url),
   'utf8',
 );
+const conceptRegistryMigration = readFileSync(
+  new URL('../../../../migrations/0094_concept_registry.sql', import.meta.url),
+  'utf8',
+);
 const contextRecordMigration = readFileSync(
   new URL('../../../../migrations/0095_context_records.sql', import.meta.url),
   'utf8',
@@ -1671,6 +1675,7 @@ describe('matchCandidateToReviewChallenge', () => {
     sqlite.exec(candidateNodeIdempotencyMigration);
     sqlite.exec(livingMigration);
     sqlite.exec(matchingMigration);
+    sqlite.exec(conceptRegistryMigration);
     sqlite.exec(contextRecordMigration);
     sqlite.exec(transcriptProjectionMigration);
   });

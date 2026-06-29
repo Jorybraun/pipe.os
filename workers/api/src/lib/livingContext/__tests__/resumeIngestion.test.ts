@@ -17,6 +17,10 @@ const transcriptProjectionMigration = readFileSync(
   new URL('../../../../migrations/0091_transcript_semantic_projections.sql', import.meta.url),
   'utf8',
 );
+const conceptRegistryMigration = readFileSync(
+  new URL('../../../../migrations/0094_concept_registry.sql', import.meta.url),
+  'utf8',
+);
 const contextRecordMigration = readFileSync(
   new URL('../../../../migrations/0095_context_records.sql', import.meta.url),
   'utf8',
@@ -59,6 +63,7 @@ describe('ingestResumeToLivingContext — native resume → living context', () 
     `);
     sqlite.exec(livingContextMigration);
     sqlite.exec(transcriptProjectionMigration);
+    sqlite.exec(conceptRegistryMigration);
     sqlite.exec(contextRecordMigration);
     db = createMockD1(sqlite);
 
@@ -377,6 +382,56 @@ PostgreSQL, Redis, Kafka, GraphQL, AWS, Terraform, CI/CD`;
     expect(result).not.toBeNull();
     expect(result!.assertionCount).toBe(1);
     expect(result!.conceptCount).toBeGreaterThanOrEqual(1);
+  });
+
+  it('creates concept adjacency records when assertions have multiple concepts', async () => {
+    const input: ResumeIngestionInput = {
+      candidateId: 'cand-1',
+      storageKey: 'resumes/multi-concept.pdf',
+      mediaType: 'application/pdf',
+      resumeText: 'EXPERIENCE\nBuilt React TypeScript GraphQL apps at scale.',
+      sections: [
+        {
+          stableId: 'exp-1',
+          heading: 'Experience',
+          text: 'Built React TypeScript GraphQL apps at scale.',
+          sectionType: 'experience',
+        },
+      ],
+      semanticAssertions: [
+        {
+          sourceSectionIds: ['exp-1'],
+          primarySectionId: 'exp-1',
+          predicate: 'has_experience',
+          narrative: 'Built React TypeScript GraphQL applications',
+          concepts: [
+            { surface: 'React', relationship: 'demonstrated', weight: 0.9, evidenceLevel: 'demonstrated', strength: 0.8 },
+            { surface: 'TypeScript', relationship: 'demonstrated', weight: 0.9, evidenceLevel: 'demonstrated', strength: 0.8 },
+            { surface: 'GraphQL', relationship: 'demonstrated', weight: 0.8, evidenceLevel: 'demonstrated', strength: 0.7 },
+          ],
+        },
+      ],
+    };
+
+    await ingestResumeToLivingContext(db, input);
+
+    const adjacencies = sqlite.prepare(
+      `SELECT from_concept_id, to_concept_id, dimension, stretch_allowed, confidence
+         FROM concept_adjacency`,
+    ).all() as Array<{
+      from_concept_id: string;
+      to_concept_id: string;
+      dimension: string;
+      stretch_allowed: number;
+      confidence: number | null;
+    }>;
+
+    // 3 concepts → 3 pairs: (React,TypeScript), (React,GraphQL), (TypeScript,GraphQL)
+    expect(adjacencies.length).toBe(3);
+    for (const adj of adjacencies) {
+      expect(adj.dimension).toBe('co_occurrence');
+      expect(adj.stretch_allowed).toBe(1);
+    }
   });
 });
 
