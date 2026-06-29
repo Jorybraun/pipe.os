@@ -1092,6 +1092,60 @@ describe('InterviewDetailPage', () => {
             createdAt: '2026-06-24T16:00:00.000Z',
             updatedAt: '2026-06-24T16:00:00.000Z',
           },
+          {
+            id: 'interview-background-call',
+            relationship: 'same_person_assessment',
+            interviewType: 'VIDEO',
+            meetingType: 'DIRECT_VIDEO_CALL',
+            status: 'COMPLETED',
+            scheduledAt: null,
+            candidateId: 'candidate-3',
+            contactId: null,
+            displayName: 'Background call',
+            primaryEmail: 'ada@example.com',
+            linkedMeetingId: 'meeting-background',
+            transcriptStatus: 'READY',
+            assessmentSessionId: null,
+            assessmentSessionState: null,
+            createdAt: '2026-06-24T17:00:00.000Z',
+            updatedAt: '2026-06-24T17:00:00.000Z',
+          },
+          {
+            id: 'interview-dev-challenge',
+            relationship: 'same_person_assessment',
+            interviewType: 'DEV_CONTAINER_CHALLENGE',
+            meetingType: null,
+            status: 'INVITED',
+            scheduledAt: null,
+            candidateId: 'candidate-4',
+            contactId: null,
+            displayName: 'Dev challenge',
+            primaryEmail: 'ada@example.com',
+            linkedMeetingId: null,
+            transcriptStatus: null,
+            assessmentSessionId: 'assessment-dev-1',
+            assessmentSessionState: 'READY',
+            createdAt: '2026-06-24T18:00:00.000Z',
+            updatedAt: '2026-06-24T18:00:00.000Z',
+          },
+          {
+            id: 'interview-hidden-extra',
+            relationship: 'same_person_assessment',
+            interviewType: 'SCREENING',
+            meetingType: 'SCREENING_INTERVIEW',
+            status: 'INVITED',
+            scheduledAt: null,
+            candidateId: 'candidate-5',
+            contactId: null,
+            displayName: 'Hidden extra context',
+            primaryEmail: 'ada@example.com',
+            linkedMeetingId: null,
+            transcriptStatus: null,
+            assessmentSessionId: null,
+            assessmentSessionState: null,
+            createdAt: '2026-06-24T19:00:00.000Z',
+            updatedAt: '2026-06-24T19:00:00.000Z',
+          },
         ],
       }),
     });
@@ -1106,6 +1160,8 @@ describe('InterviewDetailPage', () => {
     const related = screen.getByTestId('interview-related-evidence-interviews');
     expect(related).toHaveTextContent('Related evidence interviews');
     expect(related).toHaveTextContent('Open the person profile for the full cross-meeting graph. These links are context, not evidence owned by this meeting.');
+    expect(related).toHaveTextContent('Showing 4 of 5 related context previews.');
+    expect(related).toHaveTextContent('Open full person graph');
     expect(related).toHaveTextContent('Evidence follow-up');
     expect(related).toHaveTextContent('assessment in progress');
     expect(related).toHaveTextContent('meeting room attached');
@@ -1114,6 +1170,9 @@ describe('InterviewDetailPage', () => {
     expect(related).not.toHaveTextContent('Same person assessment');
     expect(related).toHaveTextContent('ada@example.com');
     expect(related).toHaveTextContent('Code review');
+    expect(related).toHaveTextContent('Background call');
+    expect(related).toHaveTextContent('Dev challenge');
+    expect(related).not.toHaveTextContent('Hidden extra context');
     expect(related).not.toHaveTextContent('interview-second-code-review');
     expect(screen.queryByTestId('interview-person-context-timeline')).toBeNull();
     expect(screen.queryByText('Code Review Context Call Recommendation')).toBeNull();

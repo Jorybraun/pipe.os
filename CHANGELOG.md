@@ -46,6 +46,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Fixed — Candidate repo matching
 
+- CODE_REVIEW person-context panels now label related meetings as capped context previews, show the preview count, and link to the full person graph so interview pages do not read like they own every interaction.
 - Win95 commit submission now requires either real test output or a source-backed missing-test note, so repo-task assessments record verification gaps honestly instead of silently omitting test evidence.
 - CODE_REVIEW interview details now explain claimed assessment links as opened-with-or-without-submission states and show compact score signal-basis chips for scored reports, annotations, pushback, and match proof before recruiters rely on the decision.
 - Person profile decision cockpits now surface missing context as a top-level card, so hiring managers can see blocking evidence gaps or calibration probes without opening raw proof.

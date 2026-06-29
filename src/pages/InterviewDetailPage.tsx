@@ -288,6 +288,7 @@ function assessmentEvidenceSummary(input: {
   hasAiInteraction: boolean;
   hasTranscriptEvidence: boolean;
   hasTestEvidence: boolean;
+  hasVerificationGap?: boolean;
 }): string {
   const ready = [
     input.hasChallengePacket ? 'challenge' : null,
@@ -296,6 +297,7 @@ function assessmentEvidenceSummary(input: {
     input.hasAiInteraction ? 'AI use' : null,
     input.hasTranscriptEvidence ? 'transcript' : null,
     input.hasTestEvidence ? 'tests' : null,
+    input.hasVerificationGap ? 'verification gap' : null,
   ].filter((value): value is string => Boolean(value));
   return ready.length > 0 ? ready.join(', ') : 'No evidence yet';
 }
@@ -1641,7 +1643,9 @@ export default function InterviewDetailPage(): JSX.Element {
     ? 'READY'
     : interview.status;
   const contextSummary = interview.livingContext?.summary ?? null;
+  const relatedEvidenceTotal = interview.relatedEvidenceInterviews?.length ?? 0;
   const relatedEvidenceInterviews = interview.relatedEvidenceInterviews?.slice(0, 4) ?? [];
+  const relatedEvidenceHiddenCount = Math.max(relatedEvidenceTotal - relatedEvidenceInterviews.length, 0);
   const hasLivingContextEvidence = Boolean(
     contextSummary && (
       contextSummary.interactionCount > 0
@@ -2120,6 +2124,14 @@ export default function InterviewDetailPage(): JSX.Element {
                   <span style={FIELD_LABEL}>Evaluation</span>
                   <span style={{ ...FIELD_VALUE, lineHeight: 1.5 }}>
                     {assessmentEvaluationStatusLabel(assessmentProgress.evaluation.status)} · {assessmentProgress.evaluation.summary}
+                  </span>
+                </div>
+              )}
+              {assessmentProgress.hasVerificationGap && (
+                <div style={{ ...EVIDENCE_ROW, alignItems: 'flex-start' }}>
+                  <span style={FIELD_LABEL}>Verification gap</span>
+                  <span style={{ ...FIELD_VALUE, lineHeight: 1.5 }}>
+                    Test evidence is missing; the candidate submitted a source-backed explanation instead of silent verification.
                   </span>
                 </div>
               )}
@@ -2644,6 +2656,22 @@ export default function InterviewDetailPage(): JSX.Element {
                   <div style={FIELD_LABEL}>Related evidence interviews</div>
                   <div style={CONTEXT_RECORD_NARRATIVE}>
                     Open the person profile for the full cross-meeting graph. These links are context, not evidence owned by this meeting.
+                  </div>
+                  <div style={RELATED_EVIDENCE_SCOPE}>
+                    <span style={CONTEXT_RECORD_NARRATIVE}>
+                      {relatedEvidenceHiddenCount > 0
+                        ? `Showing ${relatedEvidenceInterviews.length} of ${relatedEvidenceTotal} related context previews.`
+                        : `Showing ${countLabel(relatedEvidenceInterviews.length, 'related context preview')}.`}
+                    </span>
+                    {personProfilePath && (
+                      <button
+                        type="button"
+                        onClick={() => navigate(personProfilePath)}
+                        style={RELATED_EVIDENCE_PROFILE_BUTTON}
+                      >
+                        Open full person graph
+                      </button>
+                    )}
                   </div>
                   <div style={RELATED_EVIDENCE_LIST}>
                     {relatedEvidenceInterviews.map((related) => (
@@ -3498,6 +3526,34 @@ const CONTEXT_METRIC_LABEL: CSSProperties = {
 const RELATED_EVIDENCE_LIST: CSSProperties = {
   display: 'grid',
   gap: 8,
+};
+
+const RELATED_EVIDENCE_SCOPE: CSSProperties = {
+  display: 'flex',
+  alignItems: 'center',
+  justifyContent: 'space-between',
+  flexWrap: 'wrap',
+  gap: 10,
+  minWidth: 0,
+  padding: '8px 10px',
+  border: '1px solid var(--pipe-border)',
+  borderRadius: 5,
+  background: 'rgba(96,165,250,0.06)',
+};
+
+const RELATED_EVIDENCE_PROFILE_BUTTON: CSSProperties = {
+  flex: '0 0 auto',
+  padding: '6px 8px',
+  border: '1px solid rgba(96,165,250,0.36)',
+  borderRadius: 5,
+  background: 'rgba(96,165,250,0.08)',
+  color: 'var(--pipe-info)',
+  fontFamily: FONT,
+  fontSize: 10,
+  fontWeight: 800,
+  letterSpacing: '0.08em',
+  textTransform: 'uppercase',
+  cursor: 'pointer',
 };
 
 const RELATED_EVIDENCE_ROW: CSSProperties = {
