@@ -288,6 +288,52 @@ describe('hasSourceBackedDesktopEventEvidence', () => {
     workspaceTelemetryPersisted: true,
     proxyUrlPersisted: false,
   };
+  const openWindowEvent: RoomDesktopEvent = {
+    id: 'open-window-1',
+    clientId: 'guest-client',
+    createdAt: 1700000003500,
+    kind: 'OPEN_WINDOW',
+    window: {
+      id: 'chat',
+      windowType: 'chat',
+      title: 'Room Chat',
+    },
+    evidence: {
+      source: 'window_lifecycle_client_submit',
+      lifecycleSource: 'win95_desktop_ui',
+      lifecycleKind: 'open',
+      actor: 'guest',
+      windowId: 'chat',
+      windowType: 'chat',
+      windowTitle: 'Room Chat',
+      windowLifecycleId: 'window-lifecycle:guest:1700000003500:open:chat',
+      capturedAtMs: 1700000003500,
+      surface: 'win95',
+      roomPhase: 'connected',
+      durableObjectReplayExpected: true,
+    },
+  };
+  const closeWindowEvent: RoomDesktopEvent = {
+    id: 'close-window-1',
+    clientId: 'guest-client',
+    createdAt: 1700000003600,
+    kind: 'CLOSE_WINDOW',
+    windowId: 'chat',
+    evidence: {
+      source: 'window_lifecycle_client_submit',
+      lifecycleSource: 'win95_window_chrome',
+      lifecycleKind: 'close',
+      actor: 'guest',
+      windowId: 'chat',
+      windowType: 'chat',
+      windowTitle: 'Room Chat',
+      windowLifecycleId: 'window-lifecycle:guest:1700000003600:close:chat',
+      capturedAtMs: 1700000003600,
+      surface: 'win95',
+      roomPhase: 'connected',
+      durableObjectReplayExpected: true,
+    },
+  };
   const windowDataEvent: RoomDesktopEvent = {
     id: 'window-data-event-1',
     clientId: 'guest-client',
@@ -382,6 +428,32 @@ describe('hasSourceBackedDesktopEventEvidence', () => {
         id: 'chat',
         windowType: 'chat',
         title: 'Chat',
+      },
+    }, 'GUEST')).toBe(false);
+  });
+
+  it('accepts window lifecycle events only when evidence reconstructs the exact open or close event', () => {
+    expect(hasSourceBackedDesktopEventEvidence(openWindowEvent, 'GUEST')).toBe(true);
+    expect(hasSourceBackedDesktopEventEvidence(closeWindowEvent, 'GUEST')).toBe(true);
+    expect(hasSourceBackedDesktopEventEvidence({
+      ...openWindowEvent,
+      window: {
+        ...openWindowEvent.window,
+        title: 'Chat',
+      },
+    }, 'GUEST')).toBe(false);
+    expect(hasSourceBackedDesktopEventEvidence({
+      ...openWindowEvent,
+      evidence: {
+        ...openWindowEvent.evidence!,
+        windowLifecycleId: 'window-lifecycle:guest:1700000003500:close:chat',
+      },
+    }, 'GUEST')).toBe(false);
+    expect(hasSourceBackedDesktopEventEvidence({
+      ...closeWindowEvent,
+      evidence: {
+        ...closeWindowEvent.evidence!,
+        lifecycleKind: 'open',
       },
     }, 'GUEST')).toBe(false);
   });

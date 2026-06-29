@@ -983,6 +983,11 @@ export function hasSourceBackedDesktopEventEvidence(event: RoomDesktopEvent, rol
   if (event.kind === 'OPEN_WINDOW' || event.kind === 'CLOSE_WINDOW') {
     const kind = event.kind === 'OPEN_WINDOW' ? 'open' : 'close';
     const windowId = event.kind === 'OPEN_WINDOW' ? event.window.id : event.windowId;
+    const capturedAtMs = evidence.capturedAtMs;
+    const openWindowMetadataMatches = event.kind === 'CLOSE_WINDOW' || (
+      evidence.windowType === event.window.windowType
+      && evidence.windowTitle === event.window.title
+    );
     return evidence.source === 'window_lifecycle_client_submit'
       && typeof evidence.lifecycleSource === 'string'
       && WINDOW_LIFECYCLE_SOURCES.has(evidence.lifecycleSource)
@@ -992,8 +997,16 @@ export function hasSourceBackedDesktopEventEvidence(event: RoomDesktopEvent, rol
       && typeof evidence.windowType === 'string'
       && typeof evidence.windowTitle === 'string'
       && typeof evidence.windowLifecycleId === 'string'
-      && typeof evidence.capturedAtMs === 'number'
-      && Number.isFinite(evidence.capturedAtMs)
+      && typeof capturedAtMs === 'number'
+      && Number.isFinite(capturedAtMs)
+      && evidence.windowLifecycleId === [
+        'window-lifecycle',
+        actor,
+        Math.max(0, Math.round(capturedAtMs)),
+        kind,
+        windowId,
+      ].join(':')
+      && openWindowMetadataMatches
       && evidence.surface === 'win95'
       && typeof evidence.roomPhase === 'string'
       && evidence.durableObjectReplayExpected === true;
