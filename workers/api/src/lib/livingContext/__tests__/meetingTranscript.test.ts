@@ -769,6 +769,97 @@ describe('meeting transcript living-context ingestion', () => {
     });
   });
 
+  it('recovers a blocked evidence-plan follow-up when a later transcript is attributable', async () => {
+    sqlite.exec(assessmentLayerMigration);
+    sqlite.prepare(
+      `INSERT INTO assessment_sessions (
+         id, ingestion_key, interview_id, mode, state, candidate_id, workspace_id,
+         created_by, metadata_json, created_at, updated_at
+       ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
+    ).run(
+      'assessment-plan-retry-attributed',
+      'assessment-session:code-review-evidence-plan:code-review-1:scheduled-interview-1',
+      'scheduled-interview-1',
+      'TECHNICAL',
+      'IN_PROGRESS',
+      'candidate-1',
+      'workspace-1',
+      'code-review-evidence-plan',
+      JSON.stringify({
+        source: 'code_review_evidence_plan',
+        originalInterviewId: 'code-review-1',
+        contextCallInterviewId: 'scheduled-interview-1',
+        matchRunId: 'match-run-1',
+        matchStatus: 'NEEDS_MORE_EVIDENCE',
+      }),
+      '2026-06-13T09:30:00.000Z',
+      '2026-06-13T09:30:00.000Z',
+    );
+
+    await ingestMeetingTranscriptToLivingContext(db, {
+      meetingId: 'meeting-1',
+      ownerId: 'workspace-1',
+      scheduledInterviewId: 'scheduled-interview-1',
+      provider: 'workers-ai-whisper-summary-only',
+      segments: [{
+        stableSegmentId: 'mixed-1',
+        text: 'I reviewed checkout retry behavior, but this audio is mixed.',
+        speakerRole: 'guest',
+        speakerLabel: 'mixed',
+        contactId: 'contact-1',
+      }],
+      semanticAssertions: [],
+      personContextMode: 'summary_only',
+      personContextReason: 'mixed_audio_without_speaker_attribution',
+    });
+    expect(sqlite.prepare(
+      `SELECT state
+         FROM assessment_sessions
+        WHERE id = 'assessment-plan-retry-attributed'`,
+    ).get()).toEqual({ state: 'BLOCKED' });
+
+    const retryText = 'I personally reviewed checkout retry idempotency and added regression coverage before approval.';
+    await ingestMeetingTranscriptToLivingContext(db, {
+      meetingId: 'meeting-1',
+      ownerId: 'workspace-1',
+      scheduledInterviewId: 'scheduled-interview-1',
+      provider: 'deepgram-multichannel',
+      segments: [{
+        stableSegmentId: 'guest-retry-1',
+        text: retryText,
+        speakerRole: 'guest',
+        speakerLabel: 'Guest',
+        contactId: 'contact-1',
+        channel: 1,
+        confidence: 0.97,
+      }],
+      semanticAssertions: [],
+      personContextMode: 'attributed',
+    });
+
+    expect(sqlite.prepare(
+      `SELECT state
+         FROM assessment_sessions
+        WHERE id = 'assessment-plan-retry-attributed'`,
+    ).get()).toEqual({ state: 'EVALUATED' });
+    expect(sqlite.prepare(
+      `SELECT json_extract(output_json, '$.status') AS status,
+              json_extract(output_json, '$.sourceSpanCount') AS source_span_count
+         FROM assessment_evaluation_reports
+        WHERE session_id = 'assessment-plan-retry-attributed'`,
+    ).get()).toEqual({
+      status: 'READY_FOR_REPO_MATCH_REFRESH',
+      source_span_count: 1,
+    });
+    expect(sqlite.prepare(
+      `SELECT r.exact_text
+         FROM assessment_evidence_events e
+         JOIN assessment_event_source_refs r ON r.event_id = e.id
+        WHERE e.session_id = 'assessment-plan-retry-attributed'
+          AND e.kind = 'evidence_plan_response_span'`,
+    ).get()).toEqual({ exact_text: retryText });
+  });
+
   it('grows a person-centered living context graph from a meeting transcript', async () => {
     const input = {
       meetingId: 'meeting-1',

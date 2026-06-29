@@ -285,7 +285,7 @@ async function captureEvidencePlanTranscriptEvidence(
 
   await transitionIfState(db, store, {
     sessionId: planSession.id,
-    allowedStates: ['INTAKE', 'IN_PROGRESS'],
+    allowedStates: ['INTAKE', 'IN_PROGRESS', 'BLOCKED'],
     toState: 'FINAL_SUBMITTED',
     reason: 'Evidence-plan follow-up transcript source spans were captured.',
   });
