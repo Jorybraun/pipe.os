@@ -643,13 +643,15 @@ describe('meeting transcript living-context ingestion', () => {
         WHERE session_id = 'assessment-plan-1'`,
     ).get() as { status: string; summary: string; output_json: string };
     expect(report.status).toBe('NEEDS_HUMAN_REVIEW');
-    expect(report.summary).toBe('Evidence call captured 1 source-backed transcript span for repo-match refresh.');
+    expect(report.summary).toBe('Evidence call captured 1 concrete source-backed transcript span for repo-match refresh.');
     expect(JSON.parse(report.output_json)).toMatchObject({
       schemaVersion: 'code-review-evidence-plan-result-v1',
       status: 'READY_FOR_REPO_MATCH_REFRESH',
       meetingId: 'meeting-1',
       scheduledInterviewId: 'scheduled-interview-1',
       sourceSpanCount: 1,
+      capturedSpanCount: 1,
+      evidenceQualityGate: 'concrete_candidate_work_evidence_v1',
       originalInterviewId: 'code-review-1',
       contextCallInterviewId: 'scheduled-interview-1',
       matchRunId: 'match-run-1',
@@ -766,6 +768,80 @@ describe('meeting transcript living-context ingestion', () => {
     expect(transition).toEqual({
       to_state: 'BLOCKED',
       reason: 'Evidence-plan follow-up transcript was summary-only and cannot be attributed to the candidate.',
+    });
+  });
+
+  it('blocks generic evidence-plan answers without unlocking repo-match refresh', async () => {
+    sqlite.exec(assessmentLayerMigration);
+    sqlite.prepare(
+      `INSERT INTO assessment_sessions (
+         id, ingestion_key, interview_id, mode, state, candidate_id, workspace_id,
+         created_by, metadata_json, created_at, updated_at
+       ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
+    ).run(
+      'assessment-plan-generic-answer',
+      'assessment-session:code-review-evidence-plan:code-review-1:scheduled-interview-1',
+      'scheduled-interview-1',
+      'TECHNICAL',
+      'IN_PROGRESS',
+      'candidate-1',
+      'workspace-1',
+      'code-review-evidence-plan',
+      JSON.stringify({
+        source: 'code_review_evidence_plan',
+        originalInterviewId: 'code-review-1',
+        contextCallInterviewId: 'scheduled-interview-1',
+        matchRunId: 'match-run-1',
+        matchStatus: 'NEEDS_MORE_EVIDENCE',
+      }),
+      '2026-06-13T09:30:00.000Z',
+      '2026-06-13T09:30:00.000Z',
+    );
+
+    await ingestMeetingTranscriptToLivingContext(db, {
+      meetingId: 'meeting-1',
+      ownerId: 'workspace-1',
+      scheduledInterviewId: 'scheduled-interview-1',
+      provider: 'deepgram-multichannel',
+      segments: [{
+        stableSegmentId: 'guest-generic-1',
+        text: 'Yes, I can do React code reviews.',
+        speakerRole: 'guest',
+        speakerLabel: 'Guest',
+        contactId: 'contact-1',
+        channel: 1,
+        confidence: 0.97,
+      }],
+      semanticAssertions: [],
+      personContextMode: 'attributed',
+    });
+
+    expect(sqlite.prepare(
+      `SELECT state
+         FROM assessment_sessions
+        WHERE id = 'assessment-plan-generic-answer'`,
+    ).get()).toEqual({ state: 'BLOCKED' });
+    expect(sqlite.prepare(
+      `SELECT COUNT(*) AS count
+         FROM assessment_evidence_events
+        WHERE session_id = 'assessment-plan-generic-answer'
+          AND kind = 'evidence_plan_response_span'`,
+    ).get()).toEqual({ count: 1 });
+    expect(sqlite.prepare(
+      `SELECT COUNT(*) AS count
+         FROM assessment_evaluation_reports
+        WHERE session_id = 'assessment-plan-generic-answer'
+          AND json_extract(output_json, '$.status') = 'READY_FOR_REPO_MATCH_REFRESH'`,
+    ).get()).toEqual({ count: 0 });
+    expect(sqlite.prepare(
+      `SELECT to_state, reason
+         FROM assessment_state_transitions
+        WHERE session_id = 'assessment-plan-generic-answer'
+        ORDER BY sequence DESC
+        LIMIT 1`,
+    ).get()).toEqual({
+      to_state: 'BLOCKED',
+      reason: 'Evidence-plan follow-up transcript did not include concrete candidate-owned PR, bug, code review, trade-off, or verification evidence.',
     });
   });
 

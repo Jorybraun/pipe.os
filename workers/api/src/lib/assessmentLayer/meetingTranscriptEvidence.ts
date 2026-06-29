@@ -118,6 +118,47 @@ function segmentNarrative(segment: MeetingTranscriptAssessmentSegment): string {
   return `Meeting transcript segment spoken by ${role}.`;
 }
 
+const GENERIC_EVIDENCE_PLAN_BLOCKED_REASON =
+  'Evidence-plan follow-up transcript did not include concrete candidate-owned PR, bug, code review, trade-off, or verification evidence.';
+
+const CONCRETE_WORK_EVIDENCE_PATTERNS = [
+  /\bpr\b/i,
+  /\bpull request\b/i,
+  /\bbug\b/i,
+  /\bcode review\b/i,
+  /\breview(?:ed|ing)?\b/i,
+  /\bdiff\b/i,
+  /\btest(?:ed|s|ing)?\b/i,
+  /\bregression\b/i,
+  /\bdebug(?:ged|ging)?\b/i,
+  /\bfix(?:ed|ing)?\b/i,
+  /\bimplement(?:ed|ing)?\b/i,
+  /\bship(?:ped|ping)?\b/i,
+  /\bdeploy(?:ed|ing)?\b/i,
+  /\bverif(?:y|ied|ication)\b/i,
+  /\btrade-?off\b/i,
+  /\bconstraint\b/i,
+  /\bincident\b/i,
+  /\bproduction\b/i,
+  /\brace condition\b/i,
+  /\bidempotenc(?:y|e)\b/i,
+  /\bmigration\b/i,
+];
+
+function countConcreteWorkEvidenceSignals(text: string): number {
+  return CONCRETE_WORK_EVIDENCE_PATTERNS.reduce(
+    (count, pattern) => count + (pattern.test(text) ? 1 : 0),
+    0,
+  );
+}
+
+function isConcreteEvidencePlanAnswer(segment: MeetingTranscriptAssessmentSegment): boolean {
+  const text = segment.text.replace(/\s+/g, ' ').trim();
+  if (text.length < 64) return false;
+  if (!/\b(i|i'm|i’ve|ive|my|me|personally|we|our)\b/i.test(text)) return false;
+  return countConcreteWorkEvidenceSignals(text) >= 3;
+}
+
 async function transcriptSegmentSourceRef(input: {
   meetingId: string;
   scheduledInterviewId?: string | null;
@@ -239,6 +280,10 @@ async function captureEvidencePlanTranscriptEvidence(
 
   const metadata = parseSessionMetadata(planSession.metadata_json);
   const sourceRefs: AssessmentEvidenceSourceRefInput[] = [];
+  const capturedResponses: Array<{
+    segment: MeetingTranscriptAssessmentSegment;
+    sourceRef: AssessmentEvidenceSourceRefInput;
+  }> = [];
   const responseSegments = input.segments.filter((segment) =>
     actorForSegment(segment).actorType === 'candidate'
   );
@@ -257,6 +302,7 @@ async function captureEvidencePlanTranscriptEvidence(
       segment,
     });
     sourceRefs.push(sourceRef);
+    capturedResponses.push({ segment, sourceRef });
     const { actorType, actorId } = actorForSegment(segment);
     await store.recordAssessmentEvent({
       sessionId: planSession.id,
@@ -283,6 +329,20 @@ async function captureEvidencePlanTranscriptEvidence(
 
   if (sourceRefs.length === 0) return;
 
+  const concreteSourceRefs = capturedResponses
+    .filter(({ segment }) => isConcreteEvidencePlanAnswer(segment))
+    .map(({ sourceRef }) => sourceRef);
+
+  if (concreteSourceRefs.length === 0) {
+    await transitionIfState(db, store, {
+      sessionId: planSession.id,
+      allowedStates: ['INTAKE', 'IN_PROGRESS', 'BLOCKED'],
+      toState: 'BLOCKED',
+      reason: GENERIC_EVIDENCE_PLAN_BLOCKED_REASON,
+    });
+    return;
+  }
+
   await transitionIfState(db, store, {
     sessionId: planSession.id,
     allowedStates: ['INTAKE', 'IN_PROGRESS', 'BLOCKED'],
@@ -290,7 +350,7 @@ async function captureEvidencePlanTranscriptEvidence(
     reason: 'Evidence-plan follow-up transcript source spans were captured.',
   });
 
-  const summary = `Evidence call captured ${sourceRefs.length} source-backed transcript span${sourceRefs.length === 1 ? '' : 's'} for repo-match refresh.`;
+  const summary = `Evidence call captured ${concreteSourceRefs.length} concrete source-backed transcript span${concreteSourceRefs.length === 1 ? '' : 's'} for repo-match refresh.`;
   await store.createEvaluationReport({
     sessionId: planSession.id,
     ingestionKey: `assessment-report:code-review-evidence-plan:${planSession.id}:${input.meetingId}:${input.artifactVersionId}:ready-for-match-refresh`,
@@ -303,7 +363,9 @@ async function captureEvidencePlanTranscriptEvidence(
       scheduledInterviewId: input.scheduledInterviewId ?? null,
       artifactId: input.artifactId,
       artifactVersionId: input.artifactVersionId,
-      sourceSpanCount: sourceRefs.length,
+      sourceSpanCount: concreteSourceRefs.length,
+      capturedSpanCount: sourceRefs.length,
+      evidenceQualityGate: 'concrete_candidate_work_evidence_v1',
       originalInterviewId: typeof metadata.originalInterviewId === 'string' ? metadata.originalInterviewId : null,
       contextCallInterviewId: typeof metadata.contextCallInterviewId === 'string' ? metadata.contextCallInterviewId : input.scheduledInterviewId ?? null,
       matchRunId: typeof metadata.matchRunId === 'string' ? metadata.matchRunId : null,
@@ -315,7 +377,7 @@ async function captureEvidencePlanTranscriptEvidence(
       dimension: 'repo_match_refresh_readiness',
       narrative: summary,
       confidence: 1,
-      sourceRefs,
+      sourceRefs: concreteSourceRefs,
     }],
     diagnostics: [],
   });
