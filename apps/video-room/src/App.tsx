@@ -560,6 +560,18 @@ function Room({ token, metadata }: { token: string; metadata: RoomMetadata }): J
     captureSessionEvent('chat_message', evidence.text, roomActor, evidence.properties);
   };
 
+  const openDefaultRoomWindows = useCallback((): void => {
+    if (!wm.isWindowOpen('video')) {
+      wm.openWindow({ id: 'video', windowType: 'video', title: 'Video Call', x: 60, y: 30, width: 480, height: 360 });
+    }
+    if (!wm.isWindowOpen('chat')) {
+      wm.openWindow({ id: 'chat', windowType: 'chat', title: 'Room Chat', x: 560, y: 30, width: 340, height: 400 });
+    }
+    if (workspace?.enabled && !wm.isWindowOpen('workspace')) {
+      wm.openWindow({ id: 'workspace', windowType: 'workspace', title: workspace?.repoUrl ?? 'VS Code', x: 80, y: 80, width: 800, height: 500 });
+    }
+  }, [wm, workspace?.enabled, workspace?.repoUrl]);
+
   useEffect(() => {
     if (metadata.role !== 'GUEST' || room.phase !== 'offer_received' || autoAcceptingRef.current) {
       return;
@@ -572,6 +584,7 @@ function Room({ token, metadata }: { token: string; metadata: RoomMetadata }): J
 
   const joinLobby = (): void => {
     if (!preview) return;
+    openDefaultRoomWindows();
     room.setLocalStream(preview);
     setPreview(null);
     setEnteredRoom(true);
@@ -580,17 +593,8 @@ function Room({ token, metadata }: { token: string; metadata: RoomMetadata }): J
 
   useEffect(() => {
     if (!enteredRoom) return;
-    if (!wm.isWindowOpen('video')) {
-      wm.openWindow({ id: 'video', windowType: 'video', title: 'Video Call', x: 60, y: 30, width: 480, height: 360 });
-    }
-    if (!wm.isWindowOpen('chat')) {
-      wm.openWindow({ id: 'chat', windowType: 'chat', title: 'Room Chat', x: 560, y: 30, width: 340, height: 400 });
-    }
-    if (workspace?.enabled && !wm.isWindowOpen('workspace')) {
-      wm.openWindow({ id: 'workspace', windowType: 'workspace', title: workspace?.repoUrl ?? 'VS Code', x: 80, y: 80, width: 800, height: 500 });
-    }
-  // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [enteredRoom, workspace?.enabled, workspace?.repoUrl]);
+    openDefaultRoomWindows();
+  }, [enteredRoom, openDefaultRoomWindows]);
 
   useEffect(() => {
     if (!enteredRoom || !room.desktopSnapshot) return;
