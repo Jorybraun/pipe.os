@@ -1915,8 +1915,8 @@ export default function InterviewDetailPage(): JSX.Element {
             )}
             {interview.linkedMeeting?.id && (
               <div style={EVIDENCE_ROW}>
-                <span style={FIELD_LABEL}>Pipe meeting</span>
-                <span style={FIELD_VALUE}>{interview.linkedMeeting.id}</span>
+                <span style={FIELD_LABEL}>Meeting room</span>
+                <span style={FIELD_VALUE}>Linked to this interview</span>
               </div>
             )}
           </div>

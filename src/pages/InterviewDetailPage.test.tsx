@@ -144,6 +144,9 @@ describe('InterviewDetailPage', () => {
 
     await flushAsyncUpdates();
     expect(screen.getByText('Ada Candidate')).toBeTruthy();
+    expect(screen.getByText('Meeting room')).toBeTruthy();
+    expect(screen.getByText('Linked to this interview')).toBeTruthy();
+    expect(screen.queryByText('meeting-1')).toBeNull();
 
     await act(async () => {
       await vi.advanceTimersByTimeAsync(5000);
@@ -328,7 +331,9 @@ describe('InterviewDetailPage', () => {
     expect(screen.getByText('Scheduling')).toBeTruthy();
     expect(screen.getByText('CALENDLY')).toBeTruthy();
     expect(screen.getByText('event-katherine')).toBeTruthy();
-    expect(screen.getByText('meeting-katherine')).toBeTruthy();
+    expect(screen.getByText('Meeting room')).toBeTruthy();
+    expect(screen.getByText('Linked to this interview')).toBeTruthy();
+    expect(screen.queryByText('meeting-katherine')).toBeNull();
   });
 
   it('leads completed code-review interviews with recruiter decision value', async () => {
