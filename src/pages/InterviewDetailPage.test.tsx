@@ -1287,6 +1287,8 @@ describe('InterviewDetailPage', () => {
     expect(linkPanel).toHaveTextContent('One-use candidate invite');
     expect(screen.getByTestId('interview-assessment-link-state')).toHaveTextContent('Active');
     expect(screen.getByTestId('interview-assessment-link-state')).toHaveTextContent('Copyable one-use link');
+    expect(screen.getByTestId('interview-assessment-link-state')).toHaveTextContent('ASSESSMENT');
+    expect(screen.getByTestId('interview-assessment-link-state')).toHaveTextContent('Awaiting candidate submission');
     expect(screen.getByTestId('interview-assessment-link-state')).toHaveTextContent('Copy the candidate link, or resend if the candidate needs a new email.');
     expect(linkPanel).toHaveTextContent('CANDIDATE ASSESSMENT URL');
     expect(screen.getByDisplayValue(deliveredUrl)).toBeTruthy();
@@ -1437,6 +1439,8 @@ describe('InterviewDetailPage', () => {
     expect(linkPanel).toHaveTextContent('The candidate opened this one-use assessment link, but this interview has no submitted assessment evidence yet.');
     expect(screen.getByTestId('interview-assessment-link-state')).toHaveTextContent('Claimed');
     expect(screen.getByTestId('interview-assessment-link-state')).toHaveTextContent('Historical link only');
+    expect(screen.getByTestId('interview-assessment-link-state')).toHaveTextContent('ASSESSMENT');
+    expect(screen.getByTestId('interview-assessment-link-state')).toHaveTextContent('Opened, no submission');
     expect(screen.getByTestId('interview-assessment-link-state')).toHaveTextContent('Resend the invite to issue a fresh one-use assessment link.');
     expect(linkPanel).toHaveTextContent('LAST CANDIDATE ASSESSMENT URL');
     expect(screen.queryByText('COPY CANDIDATE LINK')).toBeNull();
@@ -1485,6 +1489,8 @@ describe('InterviewDetailPage', () => {
     expect(linkPanel).toHaveTextContent('This is an older delivered assessment link.');
     expect(screen.getByTestId('interview-assessment-link-state')).toHaveTextContent('Stale');
     expect(screen.getByTestId('interview-assessment-link-state')).toHaveTextContent('Older token, do not share');
+    expect(screen.getByTestId('interview-assessment-link-state')).toHaveTextContent('ASSESSMENT');
+    expect(screen.getByTestId('interview-assessment-link-state')).toHaveTextContent('No current assessment evidence');
     expect(screen.getByTestId('interview-assessment-link-state')).toHaveTextContent('Resend the invite before sharing a candidate assessment link.');
     expect(linkPanel).toHaveTextContent('LAST CANDIDATE ASSESSMENT URL');
     expect(linkPanel).toHaveTextContent('RESEND ASSESSMENT INVITE');

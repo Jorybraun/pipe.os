@@ -47,6 +47,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Fixed — Candidate repo matching
 
+- CODE_REVIEW assessment invite panels now show the assessment evidence state separately from link validity, making claimed-without-submission invites visibly distinct from completed assessment evidence.
 - Person code-review decision cards now show a quiet decision-basis row for score report, review transcript, repo challenge, and match proof so hiring managers can see why the recommendation is usable without opening raw evidence.
 - CODE_REVIEW person-context panels now label related meetings as capped context previews, show the preview count, and link to the full person graph so interview pages do not read like they own every interaction.
 - Win95 commit submission now requires either real test output or a source-backed missing-test note, so repo-task assessments record verification gaps honestly instead of silently omitting test evidence.

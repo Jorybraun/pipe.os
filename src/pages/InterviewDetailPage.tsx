@@ -1142,6 +1142,17 @@ function assessmentInviteValidityLabel(state: AssessmentInviteLinkState, hasUrl:
   }
 }
 
+function assessmentInviteEvidenceLabel(
+  state: AssessmentInviteLinkState,
+  input: { hasUrl: boolean; hasSubmittedEvidence: boolean },
+): string {
+  if (input.hasSubmittedEvidence) return 'Assessment evidence attached';
+  if (!input.hasUrl) return 'No assessment link sent';
+  if (state === 'claimed') return 'Opened, no submission';
+  if (state === 'stale') return 'No current assessment evidence';
+  return 'Awaiting candidate submission';
+}
+
 function assessmentInviteNextActionLabel(
   state: AssessmentInviteLinkState,
   input: { hasUrl: boolean; hasEmail: boolean },
@@ -1696,6 +1707,10 @@ export default function InterviewDetailPage(): JSX.Element {
   const canCopyAssessmentInvite = Boolean(assessmentInviteUrl && assessmentInviteState === 'active');
   const assessmentInviteStatus = assessmentInviteStatusLabel(assessmentInviteState, hasAssessmentInviteUrl);
   const assessmentInviteValidity = assessmentInviteValidityLabel(assessmentInviteState, hasAssessmentInviteUrl);
+  const assessmentInviteEvidenceState = assessmentInviteEvidenceLabel(assessmentInviteState, {
+    hasUrl: hasAssessmentInviteUrl,
+    hasSubmittedEvidence: hasSubmittedAssessmentEvidence,
+  });
   const assessmentInviteNextAction = assessmentInviteNextActionLabel(assessmentInviteState, {
     hasUrl: hasAssessmentInviteUrl,
     hasEmail: Boolean(personEmail),
@@ -1940,6 +1955,10 @@ export default function InterviewDetailPage(): JSX.Element {
               <div style={ASSESSMENT_INVITE_STATE_ITEM}>
                 <span style={ROOM_GUEST_LINK_TEXT}>VALIDITY</span>
                 <span style={ASSESSMENT_INVITE_STATE_VALUE}>{assessmentInviteValidity}</span>
+              </div>
+              <div style={ASSESSMENT_INVITE_STATE_ITEM}>
+                <span style={ROOM_GUEST_LINK_TEXT}>ASSESSMENT</span>
+                <span style={ASSESSMENT_INVITE_STATE_VALUE}>{assessmentInviteEvidenceState}</span>
               </div>
               <div style={ASSESSMENT_INVITE_STATE_ITEM}>
                 <span style={ROOM_GUEST_LINK_TEXT}>NEXT ACTION</span>
