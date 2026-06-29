@@ -90,6 +90,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Fixed — 95 Until Infinity desktop tools
 
+- Recording snapshots now require the stored room state to reconstruct to source-backed browser MediaRecorder evidence before the room client hydrates recording indicators.
 - Media-control snapshots now carry the accepted source-backed browser control evidence into Durable Object state and reject source-thin snapshot hydration in the room client.
 - Clippy prompts and Clippy/Devin interaction events now require source-backed browser or bridge provenance before local optimistic display, peer replay, or prompt snapshot hydration, preventing source-less assistant state from appearing as real evidence.
 - Room Chat messages now require source-backed browser chat evidence with stable room message ids, client ids, timestamps, lengths, delivery status, surface, and room phase before local optimistic display, peer replay, ACK handling, or room snapshot hydration.

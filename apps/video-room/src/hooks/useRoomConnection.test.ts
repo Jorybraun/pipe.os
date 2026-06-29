@@ -13,6 +13,7 @@ import {
   hasSourceBackedMediaControlEvidence,
   hasSourceBackedMediaControlStateEvidence,
   hasSourceBackedRecordingStateEvidence,
+  hasSourceBackedRecordingStateSnapshotEvidence,
   hasSourceBackedRoomFileSystemEvidence,
   hasSourceBackedTerminalEvidence,
   mergePeerCursorPresence,
@@ -28,6 +29,7 @@ import {
   type RoomFileSystemEvent,
   type RoomMediaControlEvent,
   type RoomMediaControlState,
+  type RoomRecordingState,
   type RoomRecordingStateEvent,
   type RoomTerminalEvent,
 } from './useRoomConnection';
@@ -605,6 +607,34 @@ describe('hasSourceBackedRecordingStateEvidence', () => {
         recordingActive: false,
       },
     }, 'HOST')).toBe(false);
+  });
+
+  it('accepts recording snapshot state only when it reconstructs to source-backed MediaRecorder evidence', () => {
+    const snapshot: RoomRecordingState = {
+      role: 'HOST',
+      status: 'recording',
+      active: true,
+      updatedAt: 1700000003000,
+      evidence: sourceBackedRecordingStart.evidence,
+    };
+
+    expect(hasSourceBackedRecordingStateSnapshotEvidence(snapshot)).toBe(true);
+  });
+
+  it('rejects recording snapshot state without matching source evidence', () => {
+    expect(hasSourceBackedRecordingStateSnapshotEvidence({
+      role: 'HOST',
+      status: 'recording',
+      active: false,
+      updatedAt: 1700000003000,
+      evidence: sourceBackedRecordingStart.evidence,
+    })).toBe(false);
+    expect(hasSourceBackedRecordingStateSnapshotEvidence({
+      role: 'HOST',
+      status: 'recording',
+      active: true,
+      updatedAt: 1700000003000,
+    })).toBe(false);
   });
 });
 

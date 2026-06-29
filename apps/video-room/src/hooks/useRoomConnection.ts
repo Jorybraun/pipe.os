@@ -1722,6 +1722,23 @@ export function hasSourceBackedRecordingStateEvidence(
     && transcriptionMimeTypeOk;
 }
 
+export function hasSourceBackedRecordingStateSnapshotEvidence(state: RoomRecordingState): boolean {
+  const evidence = state.evidence;
+  if (!isRecord(evidence)) return false;
+  const lifecycleKind = evidence.recordingLifecycleKind;
+  if (!isRoomRecordingLifecycleKind(lifecycleKind)) return false;
+  return hasSourceBackedRecordingStateEvidence({
+    id: typeof evidence.recordingStateEventId === 'string' ? evidence.recordingStateEventId : 'recording-state-snapshot',
+    clientId: 'recording-state-snapshot',
+    createdAt: state.updatedAt,
+    role: state.role,
+    lifecycleKind,
+    status: state.status,
+    active: state.active,
+    evidence,
+  }, state.role);
+}
+
 function isRoomCodeServerFileEventType(value: unknown): value is RoomCodeServerFileEventType {
   return value === 'code_editor_save' || value === 'file_change';
 }
@@ -2793,6 +2810,11 @@ export function useRoomConnection(
         } else if (message.type === 'ROOM_RECORDING_STATE_SNAPSHOT') {
           const snapshot = parseRecordingStateSnapshot(message.payload);
           if (!snapshot) return;
+          if (snapshot.state === null) {
+            setRecordingState(null);
+            return;
+          }
+          if (!hasSourceBackedRecordingStateSnapshotEvidence(snapshot.state)) return;
           setRecordingState(snapshot.state);
         } else if (message.type === 'ROOM_CODE_SERVER_FILE_EVENT') {
           const event = parseCodeServerFileEvent(message.payload);
