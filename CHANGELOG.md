@@ -43,6 +43,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Fixed — Candidate repo matching
 
+- CODE_REVIEW interview match panels now collapse assessment-quality rubric details behind a quiet quality gate, keeping the recruiter decision readable while preserving source-backed checks.
 - Repo-task AI evaluation prompts now include a deterministic source-ref coverage contract, making missing test, terminal, editor, or AI-assistance evidence explicit and preserving that coverage in the evaluation report.
 - CODE_REVIEW match proof drawers now use human evidence fallbacks instead of exposing source-span, atom, demand, or gap ids when exact source text is unavailable.
 - Interview related-evidence and follow-up cards now use human labels instead of falling back to raw interview ids in the hiring-manager cockpit.

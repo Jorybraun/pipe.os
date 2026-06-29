@@ -735,6 +735,11 @@ describe('InterviewDetailPage', () => {
     expect(screen.queryByText('Confidence')).toBeNull();
     expect(screen.queryByTestId('interview-code-review-evidence-plan')).toBeNull();
 
+    const qualityGate = screen.getByTestId('interview-code-review-match-quality');
+    expect(qualityGate).not.toHaveAttribute('open');
+    expect(qualityGate.querySelector('summary')).toHaveTextContent('Assessment quality gate');
+    expect(qualityGate.querySelector('summary')).toHaveTextContent('STRONG · 10/12 · 1 rubric check');
+
     const sourceProof = screen.getByText('Source proof').closest('details');
     expect(sourceProof).not.toHaveAttribute('open');
   });

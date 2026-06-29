@@ -2484,28 +2484,37 @@ export default function InterviewDetailPage(): JSX.Element {
               </div>
 
               {codeReviewMatch.assessmentQuality && (
-                <div data-testid="interview-code-review-match-quality" style={CONTEXT_RECORD}>
-                  <div style={{ display: 'flex', justifyContent: 'space-between', gap: 12, alignItems: 'center' }}>
-                    <div style={FIELD_LABEL}>Why this is useful</div>
+                <details data-testid="interview-code-review-match-quality" style={DETAILS_CARD}>
+                  <summary style={DETAILS_SUMMARY}>
+                    Assessment quality gate
+                    <span style={DETAILS_HINT}>
+                      {codeReviewMatch.assessmentQuality.verdict}
+                      {' · '}
+                      {codeReviewMatch.assessmentQuality.score}/{codeReviewMatch.assessmentQuality.maxScore}
+                      {' · '}
+                      {countLabel(recruiterAssessmentMetrics.length, 'rubric check')}
+                    </span>
+                  </summary>
+                  <div style={MATCH_QUALITY_BODY}>
                     <div style={{ display: 'flex', alignItems: 'center', gap: 8, flexWrap: 'wrap' }}>
                       <span style={MATCH_BADGE}>{codeReviewMatch.assessmentQuality.verdict}</span>
                       <span style={FIELD_VALUE}>
                         {codeReviewMatch.assessmentQuality.score}/{codeReviewMatch.assessmentQuality.maxScore}
                       </span>
                     </div>
-                  </div>
-                  <div style={{ display: 'grid', gap: 8 }}>
-                    {recruiterAssessmentMetrics.map((metric) => (
-                      <div key={metric.id} style={MATCH_METRIC_ROW}>
-                        <div style={{ minWidth: 0 }}>
-                          <div style={TRANSCRIPT_ROLE}>{metric.label}</div>
-                          <div style={CONTEXT_RECORD_NARRATIVE}>{metric.reason}</div>
+                    <div style={{ display: 'grid', gap: 8 }}>
+                      {recruiterAssessmentMetrics.map((metric) => (
+                        <div key={metric.id} style={MATCH_METRIC_ROW}>
+                          <div style={{ minWidth: 0 }}>
+                            <div style={TRANSCRIPT_ROLE}>{metric.label}</div>
+                            <div style={CONTEXT_RECORD_NARRATIVE}>{metric.reason}</div>
+                          </div>
+                          <div style={MATCH_SCORE}>{metric.score}/{metric.maxScore}</div>
                         </div>
-                        <div style={MATCH_SCORE}>{metric.score}/{metric.maxScore}</div>
-                      </div>
-                    ))}
+                      ))}
+                    </div>
                   </div>
-                </div>
+                </details>
               )}
 
               {codeReviewProfile && (
@@ -3490,6 +3499,12 @@ const MATCH_METRIC_ROW: CSSProperties = {
   alignItems: 'center',
   padding: '10px 0',
   borderTop: '1px solid var(--pipe-border)',
+};
+
+const MATCH_QUALITY_BODY: CSSProperties = {
+  display: 'grid',
+  gap: 10,
+  paddingTop: 12,
 };
 
 const MATCH_SCORE: CSSProperties = {
