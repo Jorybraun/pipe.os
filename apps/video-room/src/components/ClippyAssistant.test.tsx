@@ -130,7 +130,7 @@ describe('ClippyAssistant', () => {
     expect(screen.queryByTestId('clippy-chat')).toBeNull();
   });
 
-  it('keeps the proactive Clippy prompt mounted when only the chat panel closes', async () => {
+  it('hides the proactive Clippy prompt while chat is open and restores it after chat closes', async () => {
     const onChatClose = vi.fn();
     const onDismiss = vi.fn();
 
@@ -146,7 +146,7 @@ describe('ClippyAssistant', () => {
     );
 
     expect(await screen.findByTestId('clippy-chat')).toBeTruthy();
-    expect(screen.getByTestId('clippy-proactive-card').textContent).toContain('Need help opening the workspace?');
+    expect(screen.queryByTestId('clippy-proactive-card')).toBeNull();
 
     fireEvent.click(screen.getByTestId('clippy-chat-close'));
 

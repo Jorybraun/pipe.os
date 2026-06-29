@@ -222,6 +222,7 @@ export function ClippyAssistant({
     : null;
 
   const currentPrompt = agentRoomActionPrompt ?? (messages.length > 0 ? messages[messages.length - 1] : null);
+  const showPrompt = Boolean(currentPrompt && !chatOpen);
 
   const statusLabel: Record<string, string> = {
     starting: 'Starting...',
@@ -358,7 +359,7 @@ export function ClippyAssistant({
 
   return (
     <>
-      {currentPrompt && (
+      {showPrompt && currentPrompt && (
         <div className="win95-clippy-prompt" data-testid="clippy-proactive-card">
           <div className="win95-clippy-prompt-title">
             <span>Clippy</span>
