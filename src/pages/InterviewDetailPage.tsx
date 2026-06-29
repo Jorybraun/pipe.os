@@ -1102,17 +1102,21 @@ export default function InterviewDetailPage(): JSX.Element {
   const codeReviewEvidenceRefresh = codeReviewMatch?.evidenceRefresh ?? null;
   const codeReviewEvidenceFollowUp = codeReviewMatch?.evidenceFollowUp ?? null;
   const codeReviewEvidenceFollowUpBlocked = codeReviewEvidenceFollowUp?.state === 'BLOCKED';
+  const codeReviewEvidenceRefreshConsumed = Boolean(codeReviewEvidenceRefresh?.consumedByMatchRunId);
   const codeReviewEvidenceRefreshUsed = Boolean(
-    codeReviewEvidenceRefresh && codeReviewMatch?.status === 'MATCHED',
+    codeReviewEvidenceRefresh
+      && (codeReviewEvidenceRefresh.consumedByMatchStatus === 'MATCHED'
+        || (!codeReviewEvidenceRefreshConsumed && codeReviewMatch?.status === 'MATCHED')),
   );
   const codeReviewEvidenceRefreshStillMissing = Boolean(
     codeReviewEvidenceRefresh
       && !codeReviewEvidenceRefreshUsed
-      && codeReviewMatch?.status
-      && codeReviewMatch.status !== 'MATCHED'
-      && codeReviewMatch.matchRunId
-      && codeReviewEvidenceRefresh.matchRunId
-      && codeReviewMatch.matchRunId !== codeReviewEvidenceRefresh.matchRunId,
+      && (codeReviewEvidenceRefreshConsumed
+        || (codeReviewMatch?.status
+          && codeReviewMatch.status !== 'MATCHED'
+          && codeReviewMatch.matchRunId
+          && codeReviewEvidenceRefresh.matchRunId
+          && codeReviewMatch.matchRunId !== codeReviewEvidenceRefresh.matchRunId)),
   );
   const shouldShowEvidencePlan = codeReviewEvidencePlan.length > 0
     && !codeReviewEvidenceRefresh

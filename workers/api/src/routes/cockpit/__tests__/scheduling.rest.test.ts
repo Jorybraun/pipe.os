@@ -1220,6 +1220,10 @@ describe('GET /interviews/:id detail', () => {
       sourceSpanCount: 3,
       matchRunId: 'match-run-refresh-ready',
       matchStatus: 'NEEDS_MORE_EVIDENCE',
+      consumptionReportId: null,
+      consumedByMatchRunId: null,
+      consumedByMatchStatus: null,
+      consumedAt: null,
       completedAt: '2026-06-22T19:00:00.000Z',
       updatedAt: '2026-06-22T19:01:00.000Z',
       evidenceSnippets: [{
@@ -1481,7 +1485,16 @@ describe('GET /interviews/:id detail', () => {
       repoId: number;
       repoUrl: string;
       prNumber: number;
-      codeReviewMatch: { status: string; matchRunId: string | null } | null;
+      codeReviewMatch: {
+        status: string;
+        matchRunId: string | null;
+        evidenceRefresh: {
+          consumptionReportId: string | null;
+          consumedByMatchRunId: string | null;
+          consumedByMatchStatus: string | null;
+          consumedAt: string | null;
+        } | null;
+      } | null;
     };
     expect(body).toMatchObject({
       refreshed: true,
@@ -1493,8 +1506,14 @@ describe('GET /interviews/:id detail', () => {
       codeReviewMatch: {
         status: 'MATCHED',
         matchRunId: 'match-run-after-refresh',
+        evidenceRefresh: {
+          consumedByMatchRunId: 'match-run-after-refresh',
+          consumedByMatchStatus: 'MATCHED',
+        },
       },
     });
+    expect(body.codeReviewMatch?.evidenceRefresh?.consumptionReportId).toEqual(expect.stringMatching(/^assessment_evaluation_report_/));
+    expect(body.codeReviewMatch?.evidenceRefresh?.consumedAt).toBeTruthy();
     const row = sqlite!.prepare(
       `SELECT matched_repo_id, github_repo_url, github_pr_number
          FROM scheduled_interviews
@@ -1508,6 +1527,28 @@ describe('GET /interviews/:id detail', () => {
       matched_repo_id: 77,
       github_repo_url: 'https://github.com/pipe-labs/orders',
       github_pr_number: 314,
+    });
+    const consumptionReport = sqlite!.prepare(
+      `SELECT status, summary, output_json
+         FROM assessment_evaluation_reports
+        WHERE session_id = 'assessment-plan-refresh-run'
+          AND json_extract(output_json, '$.schemaVersion') = 'code-review-evidence-plan-consumption-v1'
+        LIMIT 1`,
+    ).get() as { status: string; summary: string; output_json: string };
+    expect(consumptionReport.status).toBe('EVALUATED');
+    expect(consumptionReport.summary).toContain('was consumed by repo-match rerun match-run-after-refresh');
+    expect(JSON.parse(consumptionReport.output_json)).toMatchObject({
+      schemaVersion: 'code-review-evidence-plan-consumption-v1',
+      status: 'USED_FOR_REPO_MATCH_REFRESH',
+      readyReportId: 'assessment-report-refresh-run',
+      assessmentSessionId: 'assessment-plan-refresh-run',
+      originalInterviewId: 'interview-code-review-refresh-run',
+      consumedByMatchRunId: 'match-run-after-refresh',
+      consumedByMatchStatus: 'MATCHED',
+      refreshed: true,
+      repoId: 77,
+      repoUrl: 'https://github.com/pipe-labs/orders',
+      prNumber: 314,
     });
   });
 
@@ -1596,7 +1637,15 @@ describe('GET /interviews/:id detail', () => {
       refreshed: boolean;
       status: string;
       matchRunId: string;
-      codeReviewMatch: { status: string; matchRunId: string | null } | null;
+      codeReviewMatch: {
+        status: string;
+        matchRunId: string | null;
+        evidenceRefresh: {
+          consumptionReportId: string | null;
+          consumedByMatchRunId: string | null;
+          consumedByMatchStatus: string | null;
+        } | null;
+      } | null;
     };
     expect(body).toMatchObject({
       refreshed: false,
@@ -1604,8 +1653,13 @@ describe('GET /interviews/:id detail', () => {
       matchRunId: 'match-run-after-refresh-still-blocked',
       codeReviewMatch: {
         status: 'NEEDS_MORE_EVIDENCE',
+        evidenceRefresh: {
+          consumedByMatchRunId: 'match-run-after-refresh-still-blocked',
+          consumedByMatchStatus: 'NEEDS_MORE_EVIDENCE',
+        },
       },
     });
+    expect(body.codeReviewMatch?.evidenceRefresh?.consumptionReportId).toEqual(expect.stringMatching(/^assessment_evaluation_report_/));
     const row = sqlite!.prepare(
       `SELECT matched_repo_id, github_repo_url, github_pr_number
          FROM scheduled_interviews
@@ -1619,6 +1673,28 @@ describe('GET /interviews/:id detail', () => {
       matched_repo_id: null,
       github_repo_url: null,
       github_pr_number: null,
+    });
+    const consumptionReport = sqlite!.prepare(
+      `SELECT status, summary, output_json
+         FROM assessment_evaluation_reports
+        WHERE session_id = 'assessment-plan-refresh-still-blocked'
+          AND json_extract(output_json, '$.schemaVersion') = 'code-review-evidence-plan-consumption-v1'
+        LIMIT 1`,
+    ).get() as { status: string; summary: string; output_json: string };
+    expect(consumptionReport.status).toBe('NEEDS_MORE_EVIDENCE');
+    expect(consumptionReport.summary).toContain('but the matcher returned NEEDS_MORE_EVIDENCE');
+    expect(JSON.parse(consumptionReport.output_json)).toMatchObject({
+      schemaVersion: 'code-review-evidence-plan-consumption-v1',
+      status: 'USED_FOR_REPO_MATCH_REFRESH',
+      readyReportId: 'assessment-report-refresh-still-blocked',
+      assessmentSessionId: 'assessment-plan-refresh-still-blocked',
+      originalInterviewId: 'interview-code-review-refresh-still-blocked',
+      consumedByMatchRunId: 'match-run-after-refresh-still-blocked',
+      consumedByMatchStatus: 'NEEDS_MORE_EVIDENCE',
+      refreshed: false,
+      repoId: null,
+      repoUrl: null,
+      prNumber: null,
     });
   });
 

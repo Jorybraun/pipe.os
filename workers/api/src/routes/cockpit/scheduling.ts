@@ -559,6 +559,10 @@ interface ScheduledCodeReviewEvidenceRefresh {
   evidenceSnippets: ScheduledCodeReviewEvidenceSnippet[];
   matchRunId: string | null;
   matchStatus: string | null;
+  consumptionReportId: string | null;
+  consumedByMatchRunId: string | null;
+  consumedByMatchStatus: string | null;
+  consumedAt: string | null;
   completedAt: string | null;
   updatedAt: string | null;
 }
@@ -1414,6 +1418,10 @@ async function loadCodeReviewEvidenceRefresh(
 
     const sourceSpanCount = numberOrNull(output.sourceSpanCount);
     const evidenceSnippets = await loadCodeReviewEvidenceSnippets(db, row.assessment_session_id);
+    const consumption = await loadCodeReviewEvidenceRefreshConsumption(db, {
+      assessmentSessionId: row.assessment_session_id,
+      readyReportId: row.report_id,
+    });
     return {
       status,
       assessmentSessionId: row.assessment_session_id,
@@ -1426,12 +1434,65 @@ async function loadCodeReviewEvidenceRefresh(
       evidenceSnippets,
       matchRunId: optionalString(output.matchRunId) ?? optionalString(metadata.matchRunId) ?? null,
       matchStatus: optionalString(output.matchStatus) ?? optionalString(metadata.matchStatus) ?? null,
+      consumptionReportId: consumption.consumptionReportId,
+      consumedByMatchRunId: consumption.consumedByMatchRunId,
+      consumedByMatchStatus: consumption.consumedByMatchStatus,
+      consumedAt: consumption.consumedAt,
       completedAt: row.session_completed_at ?? row.report_created_at,
       updatedAt: row.report_updated_at ?? row.session_updated_at,
     };
   }
 
   return null;
+}
+
+async function loadCodeReviewEvidenceRefreshConsumption(
+  db: D1Database,
+  input: { assessmentSessionId: string; readyReportId: string },
+): Promise<{
+  consumptionReportId: string | null;
+  consumedByMatchRunId: string | null;
+  consumedByMatchStatus: string | null;
+  consumedAt: string | null;
+}> {
+  if (!await tableExists(db, 'assessment_evaluation_reports')) {
+    return {
+      consumptionReportId: null,
+      consumedByMatchRunId: null,
+      consumedByMatchStatus: null,
+      consumedAt: null,
+    };
+  }
+
+  const row = await db.prepare(
+    `SELECT id, output_json, created_at
+       FROM assessment_evaluation_reports
+      WHERE session_id = ?1
+        AND json_extract(output_json, '$.schemaVersion') = 'code-review-evidence-plan-consumption-v1'
+        AND json_extract(output_json, '$.readyReportId') = ?2
+      ORDER BY created_at DESC, id DESC
+      LIMIT 1`,
+  ).bind(input.assessmentSessionId, input.readyReportId).first<{
+    id: string;
+    output_json: string | null;
+    created_at: string;
+  }>();
+  if (!row) {
+    return {
+      consumptionReportId: null,
+      consumedByMatchRunId: null,
+      consumedByMatchStatus: null,
+      consumedAt: null,
+    };
+  }
+
+  const output = parseJsonObject(row.output_json);
+  return {
+    consumptionReportId: row.id,
+    consumedByMatchRunId: optionalString(output.consumedByMatchRunId) ?? null,
+    consumedByMatchStatus: optionalString(output.consumedByMatchStatus) ?? null,
+    consumedAt: optionalString(output.consumedAt) ?? row.created_at,
+  };
 }
 
 async function loadCodeReviewEvidenceSnippets(
@@ -1502,6 +1563,64 @@ function evidenceRefreshAlreadyTried(
   if (latestMatchRun.id === evidenceRefresh.matchRunId) return false;
   if (!latestMatchRun.created_at || !evidenceRefresh.updatedAt) return true;
   return latestMatchRun.created_at >= evidenceRefresh.updatedAt;
+}
+
+function evidenceRefreshConsumptionReportStatus(
+  matchStatus: string,
+): 'EVALUATED' | 'NEEDS_MORE_EVIDENCE' | 'NO_ROLE_SAFE_CHALLENGE' {
+  if (matchStatus === 'MATCHED') return 'EVALUATED';
+  if (matchStatus === 'NO_ROLE_SAFE_CHALLENGE') return 'NO_ROLE_SAFE_CHALLENGE';
+  return 'NEEDS_MORE_EVIDENCE';
+}
+
+async function recordCodeReviewEvidenceRefreshConsumption(
+  db: D1Database,
+  input: {
+    evidenceRefresh: ScheduledCodeReviewEvidenceRefresh;
+    originalInterviewId: string;
+    candidateId: string;
+    refreshed: boolean;
+    consumedByMatchRunId: string;
+    consumedByMatchStatus: string;
+    repoId?: number | null;
+    repoUrl?: string | null;
+    prNumber?: number | null;
+    consumedAt: string;
+  },
+): Promise<void> {
+  if (!await hasAssessmentLayerSchema(db)) return;
+
+  const summary = input.refreshed
+    ? `Evidence-plan follow-up ${input.evidenceRefresh.reportId} was consumed by repo-match rerun ${input.consumedByMatchRunId} and selected ${input.repoUrl ?? `repo ${input.repoId ?? 'unknown'}`} PR #${input.prNumber ?? 'unknown'}.`
+    : `Evidence-plan follow-up ${input.evidenceRefresh.reportId} was consumed by repo-match rerun ${input.consumedByMatchRunId}, but the matcher returned ${input.consumedByMatchStatus}.`;
+  const store = new AssessmentLayerStore(db, () => input.consumedAt);
+  await store.createEvaluationReport({
+    sessionId: input.evidenceRefresh.assessmentSessionId,
+    ingestionKey: `assessment-report:code-review-evidence-plan:${input.evidenceRefresh.assessmentSessionId}:${input.evidenceRefresh.reportId}:${input.consumedByMatchRunId}:consumed`,
+    status: evidenceRefreshConsumptionReportStatus(input.consumedByMatchStatus),
+    summary,
+    output: {
+      schemaVersion: 'code-review-evidence-plan-consumption-v1',
+      status: 'USED_FOR_REPO_MATCH_REFRESH',
+      originalInterviewId: input.originalInterviewId,
+      candidateId: input.candidateId,
+      readyReportId: input.evidenceRefresh.reportId,
+      assessmentSessionId: input.evidenceRefresh.assessmentSessionId,
+      contextCallInterviewId: input.evidenceRefresh.contextCallInterviewId,
+      sourceSpanCount: input.evidenceRefresh.sourceSpanCount,
+      sourceMatchRunId: input.evidenceRefresh.matchRunId,
+      sourceMatchStatus: input.evidenceRefresh.matchStatus,
+      consumedByMatchRunId: input.consumedByMatchRunId,
+      consumedByMatchStatus: input.consumedByMatchStatus,
+      refreshed: input.refreshed,
+      repoId: input.repoId ?? null,
+      repoUrl: input.repoUrl ?? null,
+      prNumber: input.prNumber ?? null,
+      consumedAt: input.consumedAt,
+    },
+    claims: [],
+    diagnostics: [],
+  });
 }
 
 function parseRoleContextVersion(rcdJson: string | null): string | null {
@@ -3768,6 +3887,15 @@ schedulingAuth.post('/interviews/:id/code-review-match/refresh', async (c) => {
   const matchOptions = await loadScheduledCodeReviewMatchOptions(db, source.pipeline_id);
   const match = await d1Matcher.matchCandidateToReviewChallenge(db, source.candidate_id, matchOptions);
   if (match.status !== 'MATCHED' || !match.repoId || !match.prNumber) {
+    await recordCodeReviewEvidenceRefreshConsumption(db, {
+      evidenceRefresh,
+      originalInterviewId: source.id,
+      candidateId: source.candidate_id,
+      refreshed: false,
+      consumedByMatchRunId: match.matchRunId,
+      consumedByMatchStatus: match.status,
+      consumedAt: new Date().toISOString(),
+    });
     const codeReviewMatch = await loadScheduledCodeReviewMatchDetail(db, {
       id: source.id,
       candidate_id: source.candidate_id,
@@ -3802,6 +3930,19 @@ schedulingAuth.post('/interviews/:id/code-review-match/refresh', async (c) => {
             updated_at = ?4
       WHERE id = ?5 AND owner_id = ?6`,
   ).bind(match.repoId, repo.github_url, match.prNumber, now, source.id, userId).run();
+
+  await recordCodeReviewEvidenceRefreshConsumption(db, {
+    evidenceRefresh,
+    originalInterviewId: source.id,
+    candidateId: source.candidate_id,
+    refreshed: true,
+    consumedByMatchRunId: match.matchRunId,
+    consumedByMatchStatus: match.status,
+    repoId: match.repoId,
+    repoUrl: repo.github_url,
+    prNumber: match.prNumber,
+    consumedAt: now,
+  });
 
   const codeReviewMatch = await loadScheduledCodeReviewMatchDetail(db, {
     id: source.id,

@@ -270,6 +270,10 @@ export interface CodeReviewEvidenceRefresh {
   evidenceSnippets?: CodeReviewEvidenceSnippet[];
   matchRunId: string | null;
   matchStatus: string | null;
+  consumptionReportId?: string | null;
+  consumedByMatchRunId?: string | null;
+  consumedByMatchStatus?: string | null;
+  consumedAt?: string | null;
   completedAt: string | null;
   updatedAt: string | null;
 }
