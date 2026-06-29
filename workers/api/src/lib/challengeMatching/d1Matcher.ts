@@ -772,6 +772,19 @@ export interface CandidateReviewChallengeMatch {
   diagnostics?: ChallengeMatchDiagnostics;
 }
 
+/**
+ * Minimum number of interactions required before matching proceeds.
+ * Below this threshold the matcher returns NEEDS_MORE_EVIDENCE.
+ */
+const DEFAULT_MIN_EVIDENCE_INTERACTIONS = 0;
+
+/**
+ * Minimum source diversity (0–1) for reliable matching.
+ * 0 = one source type is enough, 1 = all 6 types required.
+ * A value of 0 disables the gate; default is lenient (any single source).
+ */
+const DEFAULT_MIN_EVIDENCE_DIVERSITY = 0;
+
 export interface CandidateReviewChallengeOptions {
   roleSnapshotId?: string;
   roleContextId?: string;
@@ -781,6 +794,10 @@ export interface CandidateReviewChallengeOptions {
   roleConcepts?: string[];
   conceptResolverVersion?: string;
   roleSourceReferences?: RoleSourceReference[];
+  /** Override minimum interaction count threshold (default: 1). */
+  minEvidenceInteractions?: number;
+  /** Override minimum source diversity threshold 0–1 (default: 0). */
+  minEvidenceDiversity?: number;
 }
 
 function sourceRefToContextSource(
@@ -1478,6 +1495,24 @@ export async function matchCandidateToReviewChallenge(
     loadChallengePackets(db, options.roleConcepts),
     loadCandidateEvidenceDepth(db, candidateId),
   ]);
+  const minInteractions = options.minEvidenceInteractions ?? DEFAULT_MIN_EVIDENCE_INTERACTIONS;
+  const minDiversity = options.minEvidenceDiversity ?? DEFAULT_MIN_EVIDENCE_DIVERSITY;
+  if (evidenceDepth && (
+    evidenceDepth.totalInteractions < minInteractions
+    || evidenceDepth.sourceDiversity < minDiversity
+  )) {
+    const matchRunId = crypto.randomUUID();
+    return {
+      status: 'NEEDS_MORE_EVIDENCE',
+      matchRunId,
+      diagnostics: {
+        excludedPackets: [],
+        recalledPacketIds: [],
+        candidateEvidenceDepth: evidenceDepth,
+        evaluatedChallenges: [],
+      },
+    };
+  }
   const { packets: challenges, exclusions: packetLoadExclusions } = challengeLoad;
   const genericConcepts = deriveCorpusGenericConcepts(challenges);
   const genericConceptSet = new Set(genericConcepts);

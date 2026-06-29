@@ -7,6 +7,12 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Added — Evidence diversity gate in matcher (criteria #5/#8)
+
+- Added configurable evidence diversity gate to `matchCandidateToReviewChallenge`. When `minEvidenceDiversity` or `minEvidenceInteractions` thresholds are set and the candidate's evidence depth falls below them, the matcher returns `NEEDS_MORE_EVIDENCE` early — preventing unreliable matches from sparse evidence.
+- Defaults are lenient (0/0) to preserve existing behavior; callers opt into stricter gating by passing higher thresholds.
+- Added 3 new tests covering diversity-below-threshold, default-preserving behavior, and interaction-count gating.
+
 ### Added — Evidence depth integration in match diagnostics (criteria #5/#7/#8)
 
 - Evidence depth is now computed and included in `ChallengeMatchDiagnostics.candidateEvidenceDepth` during every match run. This gives recruiters and the quality gate visibility into how many distinct source types (resume, meeting, culture interview, code review, phone call, assessment) contributed evidence before a match decision was made.

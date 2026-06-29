@@ -2845,6 +2845,60 @@ describe('matchCandidateToReviewChallenge', () => {
     expect(selectedRepoContextRefs.length).toBeGreaterThanOrEqual(2);
     expect(new Set(selectedRepoContextRefs.map((ref) => ref.source_ref_id))).toEqual(explanationRepoRefIds);
   });
+
+  it('returns NEEDS_MORE_EVIDENCE when evidence diversity is below threshold', async () => {
+    const db = createNodeSqliteD1(sqlite);
+    await ensureCandidateLivingContext(db, 'candidate-1');
+
+    await ingestMeetingTranscriptToLivingContext(db, {
+      meetingId: 'meeting-1',
+      ownerId: 'workspace-1',
+      transcript: 'Discussed distributed systems architecture',
+      segments: [{ speaker: 'host', text: 'Discussed distributed systems architecture', timestampMs: 0 }],
+      startedAt: OBSERVED_AT,
+      endedAt: OBSERVED_AT,
+      provider: 'test',
+    });
+
+    const result = await matchCandidateToReviewChallenge(db, 'candidate-1', {
+      minEvidenceDiversity: 0.5,
+    });
+
+    expect(result.status).toBe('NEEDS_MORE_EVIDENCE');
+    expect(result.diagnostics?.candidateEvidenceDepth).toBeDefined();
+    expect(result.diagnostics!.candidateEvidenceDepth!.sourceDiversity).toBeLessThan(0.5);
+    expect(result.diagnostics!.evaluatedChallenges).toEqual([]);
+  });
+
+  it('does not gate when defaults are zero (preserves existing behavior)', async () => {
+    const db = createNodeSqliteD1(sqlite);
+    await ensureCandidateLivingContext(db, 'candidate-1');
+
+    const result = await matchCandidateToReviewChallenge(db, 'candidate-1', {
+      minEvidenceDiversity: 0,
+      minEvidenceInteractions: 0,
+    });
+
+    // Defaults are 0/0, so the evidence depth gate never fires.
+    // The engine proceeds and returns NEEDS_MORE_EVIDENCE because no signals exist.
+    expect(result.status).toBe('NEEDS_MORE_EVIDENCE');
+    expect(result.diagnostics?.candidateEvidenceDepth).toBeDefined();
+    // The explanation is populated by the engine (not short-circuited by our gate).
+    expect(result.explanation).toBeDefined();
+  });
+
+  it('returns NEEDS_MORE_EVIDENCE when interaction count is below threshold', async () => {
+    const db = createNodeSqliteD1(sqlite);
+    await ensureCandidateLivingContext(db, 'candidate-1');
+
+    const result = await matchCandidateToReviewChallenge(db, 'candidate-1', {
+      minEvidenceInteractions: 5,
+    });
+
+    expect(result.status).toBe('NEEDS_MORE_EVIDENCE');
+    expect(result.diagnostics?.candidateEvidenceDepth).toBeDefined();
+    expect(result.diagnostics!.candidateEvidenceDepth!.totalInteractions).toBeLessThan(5);
+  });
 });
 
 describe('deriveCorpusGenericConcepts', () => {

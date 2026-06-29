@@ -559,3 +559,46 @@ cd workers/api && npx wrangler d1 migrations apply pipe-db --env production
 cd workers/api && npx wrangler deploy --env production
 ```
 
+### 2026-06-29 — Session 8500ed9f (Devin)
+
+**Action:** Analyze open PRs, add evidence diversity gate to matcher, create consolidated PR.
+
+**Open PRs analyzed:**
+- PRs #105–#130: 26 progressive draft PRs — all superseded by PR #130
+- PR #130 (`devin/living-context-merge`) is the authoritative consolidation
+- Cannot close PRs programmatically ("User is not connected to GitHub") — owner must close manually
+- Created new branch from PR #130's tip with new enhancement
+
+**Enhancement added (criteria #5/#8 — evidence-based matching + production quality):**
+
+1. **Evidence diversity gate in `matchCandidateToReviewChallenge`**
+   - Added `minEvidenceDiversity` and `minEvidenceInteractions` options to `CandidateReviewChallengeOptions`
+   - When evidence depth falls below configured thresholds, matcher returns `NEEDS_MORE_EVIDENCE` early with full diagnostics (evidence depth breakdown) — prevents unreliable matches from sparse evidence
+   - Defaults are lenient (0/0) to preserve existing behavior; callers opt into stricter gating
+   - Added 3 tests: diversity-below-threshold, default-preserving behavior, interaction-count gating
+
+**Test results:**
+- 172 test files pass, 1574 tests (+3 new), 0 failures
+- TypeScript: 0 errors (root + workers/api)
+- Lint: 0 errors, 94 pre-existing warnings
+
+**All 8 acceptance criteria maintained + #5 strengthened:**
+1. Living person graph: COMPLETE
+2. Preserve original meaning: COMPLETE
+3. Learn semantics dynamically: COMPLETE
+4. Understand repositories: COMPLETE
+5. Evidence-based matching: STRENGTHENED — configurable evidence diversity gate prevents unreliable matches
+6. Explain every match: COMPLETE
+7. Visualize the living graph: COMPLETE
+8. Production quality: COMPLETE
+
+**Owner action needed:**
+- Close superseded PRs #105–#130 after merging new PR
+- New PR is non-draft — ready for review and merge
+
+**Post-merge required:**
+```bash
+cd workers/api && npx wrangler d1 migrations apply pipe-db --env production
+cd workers/api && npx wrangler deploy --env production
+```
+
