@@ -1001,6 +1001,12 @@ function relatedEvidenceDetail(related: NonNullable<ScheduledInterviewDetail['re
   return parts.length > 0 ? parts.join(' · ') : 'Evidence interview';
 }
 
+function relatedEvidenceDisplayName(related: NonNullable<ScheduledInterviewDetail['relatedEvidenceInterviews']>[number]): string {
+  return related.displayName
+    ?? related.primaryEmail
+    ?? relatedEvidenceRelationshipLabel(related.relationship);
+}
+
 function StatusBadge({ status }: { status: string | null | undefined }): JSX.Element {
   const label = status ?? 'INVITED';
   const color = STATUS_COLORS[label] ?? '#9ca3af';
@@ -2143,8 +2149,8 @@ export default function InterviewDetailPage(): JSX.Element {
                   {codeReviewEvidenceFollowUp.contextCallInterviewId && (
                     <div style={DECISION_FOLLOW_UP_ITEM}>
                       <div style={FIELD_LABEL}>Linked evidence interview</div>
-                      <div style={{ ...TRANSCRIPT_TEXT, overflowWrap: 'anywhere' }}>
-                        {codeReviewEvidenceFollowUp.contextCallInterviewId}
+                      <div style={TRANSCRIPT_TEXT}>
+                        Follow-up assessment ready
                       </div>
                       <div style={CONTEXT_RECORD_NARRATIVE}>
                         Same person graph; this follow-up adds source evidence to the original code-review match.
@@ -2367,7 +2373,7 @@ export default function InterviewDetailPage(): JSX.Element {
                       >
                         <span style={RELATED_EVIDENCE_MAIN}>
                           <span style={TRANSCRIPT_ROLE}>{relatedEvidenceRelationshipLabel(related.relationship)}</span>
-                          <span style={TRANSCRIPT_TEXT}>{related.displayName ?? related.id}</span>
+                          <span style={TRANSCRIPT_TEXT}>{relatedEvidenceDisplayName(related)}</span>
                           <span style={CONTEXT_RECORD_NARRATIVE}>{relatedEvidenceDetail(related)}</span>
                         </span>
                         <span style={MATCH_BADGE}>{titleCaseToken(related.status)}</span>

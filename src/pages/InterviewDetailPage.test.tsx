@@ -995,7 +995,7 @@ describe('InterviewDetailPage', () => {
             scheduledAt: null,
             candidateId: 'candidate-2',
             contactId: null,
-            displayName: 'Ada Candidate',
+            displayName: null,
             primaryEmail: 'ada@example.com',
             linkedMeetingId: null,
             transcriptStatus: null,
@@ -1023,7 +1023,9 @@ describe('InterviewDetailPage', () => {
     expect(related).toHaveTextContent('meeting room attached');
     expect(related).not.toHaveTextContent('meeting-context-1');
     expect(related).toHaveTextContent('Same person assessment');
+    expect(related).toHaveTextContent('ada@example.com');
     expect(related).toHaveTextContent('Code review');
+    expect(related).not.toHaveTextContent('interview-second-code-review');
     expect(screen.queryByTestId('interview-person-context-timeline')).toBeNull();
     expect(screen.queryByText('Code Review Context Call Recommendation')).toBeNull();
     expect(screen.queryByText('Scheduled Interview Invite Delivery')).toBeNull();
@@ -1344,7 +1346,8 @@ describe('InterviewDetailPage', () => {
     expect(followUp).toHaveTextContent('Follow-up assessment open');
     expect(followUp).toHaveTextContent('Waiting for source-backed response');
     expect(followUp).toHaveTextContent('Linked evidence interview');
-    expect(followUp).toHaveTextContent('context-call-pending-1');
+    expect(followUp).toHaveTextContent('Follow-up assessment ready');
+    expect(followUp).not.toHaveTextContent('context-call-pending-1');
     expect(followUp).toHaveTextContent('Same person graph');
     expect(followUp).toHaveTextContent('adds source evidence to the original code-review match');
     expect(followUp).toHaveTextContent(SOURCE_BACKED_WORK_EVIDENCE_QUESTION);
