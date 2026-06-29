@@ -1060,6 +1060,160 @@ describe('GET /interviews/:id detail', () => {
     });
   });
 
+  it('returns source-backed assessment progress on the interview list', async () => {
+    seedInterviewDetailFixture();
+    const now = '2026-06-22T18:42:00.000Z';
+    const baseCommitSha = '5555555555555555555555555555555555555555';
+    const commitSha = 'aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa';
+    const challengeText = [
+      'Repo: https://github.com/open-source/widgets',
+      `Base commit: ${baseCommitSha}`,
+      'Task: fix the assessment list progress regression.',
+      'Success: commit a focused patch with tests.',
+    ].join('\n');
+    const commitText = `commit ${commitSha}\nAuthor: Candidate <candidate@example.com>\n\nShow list progress.`;
+    const diffText = 'diff --git a/src/list.ts b/src/list.ts\n+showAssessmentProgress();';
+
+    sqlite!.prepare(`
+      UPDATE scheduled_interviews
+         SET interview_type = 'OPEN_SOURCE_BUG_FIX',
+             github_repo_url = 'https://github.com/open-source/widgets',
+             github_pr_number = NULL
+       WHERE id = 'interview-1'
+    `).run();
+    sqlite!.prepare(`
+      INSERT INTO assessment_sessions (
+        id, ingestion_key, interview_id, mode, state, candidate_id, workspace_id,
+        metadata_json, created_at, updated_at
+      ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+    `).run(
+      'assessment-session-progress-list',
+      'assessment-session:progress-list',
+      'interview-1',
+      'OPEN_SOURCE_BUG_FIX',
+      'FINAL_SUBMITTED',
+      'candidate-1',
+      'workspace-1',
+      '{}',
+      now,
+      now,
+    );
+    sqlite!.prepare(`
+      INSERT INTO assessment_evidence_events (
+        id, ingestion_key, session_id, sequence, kind, actor_type, actor_id,
+        narrative, payload_json, context_record_id, occurred_at, created_at
+      ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, NULL, ?, ?)
+    `).run(
+      'assessment-event-list-challenge',
+      'assessment-event:progress-list-challenge',
+      'assessment-session-progress-list',
+      1,
+      'recruiter_note',
+      'recruiter',
+      'owner-1',
+      'Recruiter assigned a concrete open-source challenge packet.',
+      JSON.stringify({ repositoryUrl: 'https://github.com/open-source/widgets' }),
+      now,
+      now,
+    );
+    sqlite!.prepare(`
+      INSERT INTO assessment_evidence_events (
+        id, ingestion_key, session_id, sequence, kind, actor_type, actor_id,
+        narrative, payload_json, context_record_id, occurred_at, created_at
+      ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, NULL, ?, ?)
+    `).run(
+      'assessment-event-list-commit',
+      'assessment-event:progress-list-commit',
+      'assessment-session-progress-list',
+      2,
+      'commit_submission',
+      'candidate',
+      'candidate-1',
+      'Candidate submitted the source-backed assessment commit.',
+      JSON.stringify({
+        repositoryUrl: 'https://github.com/open-source/widgets',
+        forkRepositoryUrl: 'https://github.com/candidate/widgets',
+        branchName: 'pipe-assessment/list-progress',
+        baseCommitSha,
+        commitSha,
+        commitUrl: `https://github.com/candidate/widgets/commit/${commitSha}`,
+        changedFiles: [{ path: 'src/list.ts', status: 'modified' }],
+      }),
+      now,
+      now,
+    );
+    for (const sourceRef of [
+      {
+        id: 'assessment-source-list-challenge',
+        eventId: 'assessment-event-list-challenge',
+        type: 'review_challenge_packet',
+        refId: 'challenge-packet-progress-list',
+        locator: { repositoryUrl: 'https://github.com/open-source/widgets', baseCommitSha },
+        text: challengeText,
+      },
+      {
+        id: 'assessment-source-list-commit',
+        eventId: 'assessment-event-list-commit',
+        type: 'git_commit',
+        refId: commitSha,
+        locator: { commitUrl: `https://github.com/candidate/widgets/commit/${commitSha}` },
+        text: commitText,
+      },
+      {
+        id: 'assessment-source-list-diff',
+        eventId: 'assessment-event-list-commit',
+        type: 'code_diff',
+        refId: `${commitSha}:diff`,
+        locator: { path: 'src/list.ts' },
+        text: diffText,
+      },
+    ]) {
+      sqlite!.prepare(`
+        INSERT INTO assessment_event_source_refs (
+          id, event_id, source_ref_type, source_ref_id, source_span_id, evidence_role,
+          locator_json, exact_text, content_hash, metadata_json, created_at
+        ) VALUES (?, ?, ?, ?, NULL, 'support', ?, ?, ?, '{}', ?)
+      `).run(
+        sourceRef.id,
+        sourceRef.eventId,
+        sourceRef.type,
+        sourceRef.refId,
+        JSON.stringify(sourceRef.locator),
+        sourceRef.text,
+        sha256Hex(sourceRef.text),
+        now,
+      );
+    }
+
+    const app = mountSchedulingApp();
+    const response = await app.request('/interviews');
+    expect(response.status).toBe(200);
+    const body = await response.json() as {
+      interviews: Array<{
+        id: string;
+        assessmentProgress: {
+          stage: string;
+          nextAction: string;
+          hasChallengePacket: boolean;
+          hasCommitSubmission: boolean;
+          commit: { commitSha: string | null; branchName: string | null } | null;
+        } | null;
+      }>;
+    };
+
+    const interview = body.interviews.find((item) => item.id === 'interview-1');
+    expect(interview?.assessmentProgress).toMatchObject({
+      stage: 'READY_FOR_EVALUATION',
+      nextAction: 'START_EVALUATION',
+      hasChallengePacket: true,
+      hasCommitSubmission: true,
+      commit: {
+        commitSha,
+        branchName: 'pipe-assessment/list-progress',
+      },
+    });
+  });
+
   it('returns source-backed CODE_REVIEW match hyperedges for recruiter detail', async () => {
     seedInterviewDetailFixture();
     sqlite!.prepare(`

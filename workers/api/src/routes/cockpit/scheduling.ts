@@ -40,7 +40,10 @@ import {
   type JsonObject,
 } from '../../lib/livingContext';
 import { AssessmentLayerStore, type AssessmentEvidenceSourceRefInput } from '../../lib/assessmentLayer/persistence';
-import { RepoTaskInterviewSessionStore } from '../../lib/repoTaskInterviewSession';
+import {
+  RepoTaskInterviewSessionStore,
+  type AssessmentProgressSnapshot,
+} from '../../lib/repoTaskInterviewSession';
 import * as d1Matcher from '../../lib/challengeMatching/d1Matcher';
 import type { CandidateReviewChallengeOptions } from '../../lib/challengeMatching/d1Matcher';
 import { loadRoleChallengeSemantics } from '../../lib/challengeMatching/roleGuardrails';
@@ -2441,7 +2444,7 @@ async function loadScheduledCodeReviewScoreSummary(
 async function loadScheduledAssessmentProgress(
   db: D1Database,
   interviewId: string,
-): Promise<Awaited<ReturnType<RepoTaskInterviewSessionStore['loadProgress']>> | null> {
+): Promise<AssessmentProgressSnapshot | null> {
   if (!await tableExists(db, 'assessment_sessions')
     || !await tableExists(db, 'assessment_evidence_events')
     || !await tableExists(db, 'assessment_event_source_refs')
@@ -2459,6 +2462,45 @@ async function loadScheduledAssessmentProgress(
   if (!row) return null;
 
   return new RepoTaskInterviewSessionStore(db).loadProgress(row.id);
+}
+
+async function loadScheduledAssessmentProgressByInterviewIds(
+  db: D1Database,
+  interviewIds: readonly string[],
+): Promise<Map<string, AssessmentProgressSnapshot>> {
+  const uniqueInterviewIds = [...new Set(interviewIds)].filter((id) => id.length > 0);
+  const progressByInterviewId = new Map<string, AssessmentProgressSnapshot>();
+  if (uniqueInterviewIds.length === 0) return progressByInterviewId;
+
+  if (!await tableExists(db, 'assessment_sessions')
+    || !await tableExists(db, 'assessment_evidence_events')
+    || !await tableExists(db, 'assessment_event_source_refs')
+    || !await tableExists(db, 'assessment_evaluation_reports')) {
+    return progressByInterviewId;
+  }
+
+  const placeholders = uniqueInterviewIds.map((_, index) => `?${index + 1}`).join(', ');
+  const result = await db.prepare(
+    `SELECT id, interview_id
+       FROM (
+         SELECT id,
+                interview_id,
+                ROW_NUMBER() OVER (
+                  PARTITION BY interview_id
+                  ORDER BY updated_at DESC, id DESC
+                ) AS rn
+           FROM assessment_sessions
+          WHERE interview_id IN (${placeholders})
+       )
+      WHERE rn = 1
+        AND interview_id IS NOT NULL`,
+  ).bind(...uniqueInterviewIds).all<{ id: string; interview_id: string }>();
+
+  const store = new RepoTaskInterviewSessionStore(db);
+  await Promise.all((result.results ?? []).map(async (row) => {
+    progressByInterviewId.set(row.interview_id, await store.loadProgress(row.id));
+  }));
+  return progressByInterviewId;
 }
 
 async function ensureRecipientContact(
@@ -3923,7 +3965,13 @@ schedulingAuth.get('/interviews', async (c) => {
       guest_waiting: number | null;
     }>();
 
-  const interviews = (result.results ?? []).map((r) => {
+  const rows = result.results ?? [];
+  const assessmentProgressByInterviewId = await loadScheduledAssessmentProgressByInterviewIds(
+    db,
+    rows.map((row) => row.id),
+  );
+
+  const interviews = rows.map((r) => {
     return {
       id: r.id,
       candidateId: r.candidate_id,
@@ -3954,6 +4002,7 @@ schedulingAuth.get('/interviews', async (c) => {
         githubRepoUrl: r.github_repo_url,
         githubPrNumber: r.github_pr_number,
       }),
+      assessmentProgress: assessmentProgressByInterviewId.get(r.id) ?? null,
       completedAt: r.completed_at,
       createdAt: r.created_at,
       updatedAt: r.updated_at,

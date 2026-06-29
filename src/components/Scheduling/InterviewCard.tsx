@@ -30,6 +30,7 @@ interface InterviewCardProps {
 }
 
 const FIFTEEN_MINUTES_MS = 15 * 60 * 1000;
+const ASSESSMENT_INTERVIEW_TYPES = new Set(['CODE_REVIEW', 'DEV_CONTAINER_CHALLENGE', 'OPEN_SOURCE_BUG_FIX']);
 
 function providerEventLabel(value: string | null | undefined): string | null {
   if (!value) return null;
@@ -48,6 +49,39 @@ function isJoinable(interview: ScheduledInterview): boolean {
   const diff = new Date(interview.scheduledAt).getTime() - Date.now();
   // Joinable within 15 minutes before or any time after the start
   return diff <= FIFTEEN_MINUTES_MS;
+}
+
+function sentenceCaseToken(value: string): string {
+  const normalized = value.toLowerCase().replace(/_/g, ' ').trim();
+  if (!normalized) return value;
+  return `${normalized.charAt(0).toUpperCase()}${normalized.slice(1)}`;
+}
+
+function compactText(value: string, maxLength = 150): string {
+  const trimmed = value.replace(/\s+/g, ' ').trim();
+  if (trimmed.length <= maxLength) return trimmed;
+  return `${trimmed.slice(0, maxLength - 1).trimEnd()}...`;
+}
+
+function isAssessmentInterviewType(value: ScheduledInterview['interviewType']): boolean {
+  return typeof value === 'string' && ASSESSMENT_INTERVIEW_TYPES.has(value);
+}
+
+function assessmentEvidenceSummary(input: {
+  hasChallengePacket: boolean;
+  hasWorkEvidence: boolean;
+  hasCommitSubmission: boolean;
+  hasAiInteraction: boolean;
+  hasTranscriptEvidence: boolean;
+}): string {
+  const ready = [
+    input.hasChallengePacket ? 'challenge' : null,
+    input.hasWorkEvidence ? 'work evidence' : null,
+    input.hasCommitSubmission ? 'commit' : null,
+    input.hasAiInteraction ? 'AI use' : null,
+    input.hasTranscriptEvidence ? 'transcript' : null,
+  ].filter((value): value is string => Boolean(value));
+  return ready.length > 0 ? ready.join(', ') : 'no evidence yet';
 }
 
 export function InterviewCard({
@@ -124,6 +158,23 @@ export function InterviewCard({
   );
   const displayStatusLabel =
     interview.status === 'INVITED' && !hasInviteDelivery ? 'Ready' : undefined;
+  const assessmentProgress = interview.assessmentProgress ?? null;
+  const assessmentSetup = interview.assessmentSetup ?? null;
+  const showsAssessmentSnapshot = isAssessmentInterviewType(interview.interviewType)
+    || Boolean(assessmentProgress);
+  const assessmentStageLabel = assessmentProgress
+    ? sentenceCaseToken(assessmentProgress.stage)
+    : assessmentSetup?.blocksPositiveAssessment
+      ? 'Setup gap'
+      : 'Assessment ready';
+  const assessmentNextAction = assessmentProgress?.nextActionLabel
+    ?? assessmentSetup?.message
+    ?? 'Assessment evidence will appear after the session starts.';
+  const assessmentEvidence = assessmentProgress
+    ? assessmentEvidenceSummary(assessmentProgress)
+    : assessmentSetup?.status === 'reviewable_task_assigned'
+      ? 'challenge assigned'
+      : 'no assessment session yet';
 
   return (
     <>
@@ -204,6 +255,42 @@ export function InterviewCard({
           {provider && providerEventId && (
             <div style={{ fontSize: 9, color: '#60a5fa', fontFamily: '"Space Mono", monospace', marginTop: 4, letterSpacing: '0.08em' }}>
               {provider} ACCEPTED · {providerEventId}
+            </div>
+          )}
+          {showsAssessmentSnapshot && (
+            <div
+              data-testid="interview-card-assessment-progress"
+              style={{
+                display: 'grid',
+                gridTemplateColumns: 'minmax(120px, max-content) minmax(0, 1fr)',
+                gap: '4px 10px',
+                marginTop: 10,
+                padding: '9px 10px',
+                border: '1px solid var(--pipe-border)',
+                borderRadius: 6,
+                background: 'rgba(255,255,255,0.03)',
+                fontFamily: '"Space Mono", monospace',
+                lineHeight: 1.45,
+              }}
+            >
+              <div style={{ fontSize: 9, color: '#93c5fd', letterSpacing: '0.12em', fontWeight: 700 }}>
+                ASSESSMENT
+              </div>
+              <div style={{ minWidth: 0, fontSize: 10, color: 'var(--pipe-text)', fontWeight: 700, overflowWrap: 'anywhere' }}>
+                {assessmentStageLabel}
+              </div>
+              <div style={{ fontSize: 9, color: 'var(--pipe-text-muted)', letterSpacing: '0.12em', fontWeight: 700 }}>
+                NEXT
+              </div>
+              <div style={{ minWidth: 0, fontSize: 10, color: 'var(--pipe-text-dim)', overflowWrap: 'anywhere' }}>
+                {compactText(assessmentNextAction)}
+              </div>
+              <div style={{ fontSize: 9, color: 'var(--pipe-text-muted)', letterSpacing: '0.12em', fontWeight: 700 }}>
+                EVIDENCE
+              </div>
+              <div style={{ minWidth: 0, fontSize: 10, color: 'var(--pipe-text-dim)', overflowWrap: 'anywhere' }}>
+                {assessmentEvidence}
+              </div>
             </div>
           )}
         </div>

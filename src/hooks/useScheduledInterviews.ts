@@ -2,6 +2,7 @@ import { useState, useEffect, useCallback, useRef } from 'react';
 import { useApiClient } from './useApiClient';
 import type { ApiClient } from '../lib/api/client';
 import type {
+  AssessmentProgressSnapshot,
   AssessmentSetupProjection,
   ScheduledInterview,
   InterviewStatus,
@@ -65,6 +66,7 @@ export function useScheduledInterviews(): UseScheduledInterviewsResult {
           githubRepoUrl: string | null;
           githubPrNumber: number | null;
           assessmentSetup?: AssessmentSetupProjection | null;
+          assessmentProgress?: AssessmentProgressSnapshot | null;
           completedAt: string | null;
           createdAt: string;
           updatedAt: string;
@@ -107,6 +109,7 @@ export function useScheduledInterviews(): UseScheduledInterviewsResult {
           githubRepoUrl: r.githubRepoUrl,
           githubPrNumber: r.githubPrNumber,
           assessmentSetup: r.assessmentSetup ?? null,
+          assessmentProgress: r.assessmentProgress ?? null,
           completedAt: r.completedAt,
           candidateName: r.candidateName,
           candidateEmail: r.candidateEmail,
