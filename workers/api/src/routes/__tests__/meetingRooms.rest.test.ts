@@ -5156,6 +5156,333 @@ describe('meeting room recording living-context route', () => {
     }));
   });
 
+  it('accepts a source-backed commit submission from the guest assessment room token', async () => {
+    const app = mountApp();
+    const { ctx } = buildCtx();
+    sqlite.exec(assessmentLayerMigration);
+    const now = new Date().toISOString();
+    const scheduledInterviewId = 'scheduled-interview-room-commit';
+    const assessmentSessionId = 'assessment-session-room-commit';
+    const baseCommitSha = 'a'.repeat(40);
+    const commitSha = 'b'.repeat(40);
+
+    sqlite.prepare(
+      `INSERT INTO scheduled_interviews (
+         id, owner_id, recipient_name, recipient_email, interview_type,
+         github_repo_url, status, updated_at
+       ) VALUES (?, ?, ?, ?, 'OPEN_SOURCE_BUG_FIX', ?, 'INVITED', ?)`,
+    ).run(
+      scheduledInterviewId,
+      'owner-1',
+      'Commit Candidate',
+      'commit-candidate@example.com',
+      'https://github.com/pipe/source-backed-worker',
+      now,
+    );
+
+    const createMeetingRes = await app.request('/meetings', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({
+        recipientName: 'Commit Candidate',
+        recipientEmail: 'commit-candidate@example.com',
+        title: 'Open-source commit assessment',
+        meetingType: 'INTERVIEW',
+        scheduledInterviewId,
+      }),
+    }, env, ctx);
+    expect(createMeetingRes.status).toBe(201);
+    const created = await createMeetingRes.json() as {
+      meeting: { id: string; contactId: string };
+    };
+
+    const roomRes = await app.request(`/meetings/${created.meeting.id}/room`, {
+      method: 'POST',
+    }, env, ctx);
+    expect(roomRes.status).toBe(200);
+    const roomBody = await roomRes.json() as {
+      room: { guestUrl: string };
+    };
+    const guestToken = new URL(roomBody.room.guestUrl).pathname.split('/').filter(Boolean).pop();
+    expect(guestToken).toBeTruthy();
+
+    sqlite.prepare(
+      `INSERT INTO assessment_sessions (
+         id, ingestion_key, interview_id, mode, state, candidate_id, workspace_id,
+         created_by, metadata_json, created_at, updated_at
+       ) VALUES (?, ?, ?, 'OPEN_SOURCE_BUG_FIX', 'IN_PROGRESS', ?, ?, ?, '{}', ?, ?)`,
+    ).run(
+      assessmentSessionId,
+      `assessment-session:open-source:${scheduledInterviewId}`,
+      scheduledInterviewId,
+      created.meeting.contactId,
+      'owner-1',
+      'owner-1',
+      now,
+      now,
+    );
+    sqlite.prepare(
+      `INSERT INTO assessment_evidence_events (
+         id, ingestion_key, session_id, sequence, kind, actor_type, actor_id,
+         narrative, payload_json, occurred_at, created_at
+       ) VALUES (?, ?, ?, 1, 'dev_container_event', 'system', NULL, ?, ?, ?, ?)`,
+    ).run(
+      'assessment-event-room-challenge',
+      `assessment-event:challenge:${scheduledInterviewId}`,
+      assessmentSessionId,
+      'Assigned open-source challenge packet for source-backed-worker.',
+      JSON.stringify({
+        repositoryUrl: 'https://github.com/pipe/source-backed-worker',
+        baseCommitSha,
+        task: 'Fix the source-backed worker retry path.',
+      }),
+      now,
+      now,
+    );
+    sqlite.prepare(
+      `INSERT INTO assessment_event_source_refs (
+         id, event_id, source_ref_type, source_ref_id, evidence_role,
+         locator_json, exact_text, content_hash, metadata_json, created_at
+       ) VALUES (?, ?, 'open_source_challenge_packet', ?, 'assigned_challenge', ?, ?, ?, '{}', ?)`,
+    ).run(
+      'assessment-source-room-challenge',
+      'assessment-event-room-challenge',
+      `challenge:${scheduledInterviewId}`,
+      JSON.stringify({
+        repositoryUrl: 'https://github.com/pipe/source-backed-worker',
+        baseCommitSha,
+      }),
+      `Repo: https://github.com/pipe/source-backed-worker\nBase commit: ${baseCommitSha}\nTask: Fix the source-backed worker retry path.`,
+      'challenge-content-hash',
+      now,
+    );
+
+    const diffText = [
+      'diff --git a/src/retry.ts b/src/retry.ts',
+      'index 1111111..2222222 100644',
+      '--- a/src/retry.ts',
+      '+++ b/src/retry.ts',
+      '@@ -1,3 +1,4 @@',
+      '+export const retryBackoff = "source-backed";',
+    ].join('\n');
+    const submitRes = await app.request(`/meeting/${guestToken}/assessment/commit-submission`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({
+        narrative: 'Candidate submitted a focused retry-path fix with tests passing locally.',
+        repositoryUrl: 'https://github.com/pipe/source-backed-worker',
+        forkRepositoryUrl: 'https://github.com/candidate/source-backed-worker',
+        branchName: 'pipe-assessment/retry-path',
+        baseCommitSha,
+        commitSha,
+        commitUrl: `https://github.com/candidate/source-backed-worker/commit/${commitSha}`,
+        upstreamPrConsent: false,
+        changedFiles: [{
+          path: 'src/retry.ts',
+          status: 'modified',
+          additions: 1,
+          deletions: 0,
+        }],
+        occurredAt: now,
+        sourceRefs: [
+          {
+            sourceRefType: 'git_commit',
+            sourceRefId: commitSha,
+            evidenceRole: 'submitted_commit',
+            locator: {
+              repositoryUrl: 'https://github.com/candidate/source-backed-worker',
+              commitSha,
+            },
+            exactText: `commit ${commitSha}\nAuthor: Commit Candidate\n\nFix retry path`,
+            contentHash: 'commit-content-hash',
+          },
+          {
+            sourceRefType: 'code_diff',
+            sourceRefId: `${baseCommitSha}..${commitSha}`,
+            evidenceRole: 'submitted_diff',
+            locator: {
+              repositoryUrl: 'https://github.com/candidate/source-backed-worker',
+              baseCommitSha,
+              commitSha,
+            },
+            exactText: diffText,
+            contentHash: 'diff-content-hash',
+          },
+        ],
+      }),
+    }, env, ctx);
+    expect(submitRes.status).toBe(201);
+    const body = await submitRes.json() as {
+      submission: {
+        accepted: boolean;
+        repositoryUrl: string;
+        branchName: string;
+        commitSha: string;
+        commitUrl: string;
+      };
+      progress: {
+        mode: string;
+        state: string;
+        stage: string;
+        nextAction: string;
+        hasChallengePacket: boolean;
+        hasCommitSubmission: boolean;
+        latestEvent: { kind: string; sequence: number };
+        commit: { commitSha: string; branchName: string; changedFiles: unknown[] };
+      };
+    };
+
+    expect(body.submission).toMatchObject({
+      accepted: true,
+      repositoryUrl: 'https://github.com/pipe/source-backed-worker',
+      branchName: 'pipe-assessment/retry-path',
+      commitSha,
+      commitUrl: `https://github.com/candidate/source-backed-worker/commit/${commitSha}`,
+    });
+    expect(body.progress).toMatchObject({
+      mode: 'OPEN_SOURCE_BUG_FIX',
+      state: 'FINAL_SUBMITTED',
+      stage: 'READY_FOR_EVALUATION',
+      nextAction: 'START_EVALUATION',
+      hasChallengePacket: true,
+      hasCommitSubmission: true,
+      latestEvent: { kind: 'commit_submission', sequence: 2 },
+    });
+    expect(body.progress.commit).toMatchObject({
+      commitSha,
+      branchName: 'pipe-assessment/retry-path',
+    });
+    expect(body.progress.commit.changedFiles).toHaveLength(1);
+    const serializedResponse = JSON.stringify(body);
+    expect(serializedResponse).not.toContain(assessmentSessionId);
+    expect(serializedResponse).not.toContain(`assessment-session:open-source:${scheduledInterviewId}`);
+    expect(serializedResponse).not.toContain(created.meeting.contactId);
+
+    const persistedCommit = sqlite.prepare(
+      `SELECT e.kind, e.actor_type, e.actor_id, e.narrative, e.payload_json,
+              COUNT(sr.id) AS source_ref_count
+         FROM assessment_evidence_events e
+         JOIN assessment_event_source_refs sr ON sr.event_id = e.id
+        WHERE e.session_id = ?
+          AND e.kind = 'commit_submission'
+        GROUP BY e.id`,
+    ).get(assessmentSessionId) as {
+      kind: string;
+      actor_type: string;
+      actor_id: string | null;
+      narrative: string;
+      payload_json: string;
+      source_ref_count: number;
+    };
+    expect(persistedCommit).toMatchObject({
+      kind: 'commit_submission',
+      actor_type: 'candidate',
+      actor_id: created.meeting.contactId,
+      narrative: 'Candidate submitted a focused retry-path fix with tests passing locally.',
+      source_ref_count: 2,
+    });
+    expect(JSON.parse(persistedCommit.payload_json)).toMatchObject({
+      repositoryUrl: 'https://github.com/pipe/source-backed-worker',
+      forkRepositoryUrl: 'https://github.com/candidate/source-backed-worker',
+      branchName: 'pipe-assessment/retry-path',
+      baseCommitSha,
+      commitSha,
+      upstreamPrConsent: false,
+    });
+    expect(sqlite.prepare(
+      'SELECT state FROM assessment_sessions WHERE id = ?',
+    ).get(assessmentSessionId)).toEqual({ state: 'FINAL_SUBMITTED' });
+  });
+
+  it('rejects room commit submissions when no assessment session exists for the scheduled interview', async () => {
+    const app = mountApp();
+    const { ctx } = buildCtx();
+    sqlite.exec(assessmentLayerMigration);
+    const now = new Date().toISOString();
+    const scheduledInterviewId = 'scheduled-interview-room-commit-missing-session';
+    const baseCommitSha = 'a'.repeat(40);
+    const commitSha = 'c'.repeat(40);
+
+    sqlite.prepare(
+      `INSERT INTO scheduled_interviews (
+         id, owner_id, recipient_name, recipient_email, interview_type,
+         github_repo_url, status, updated_at
+       ) VALUES (?, ?, ?, ?, 'OPEN_SOURCE_BUG_FIX', ?, 'INVITED', ?)`,
+    ).run(
+      scheduledInterviewId,
+      'owner-1',
+      'Missing Session Candidate',
+      'missing-session@example.com',
+      'https://github.com/pipe/source-backed-worker',
+      now,
+    );
+
+    const createMeetingRes = await app.request('/meetings', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({
+        recipientName: 'Missing Session Candidate',
+        recipientEmail: 'missing-session@example.com',
+        title: 'Open-source commit missing session',
+        meetingType: 'INTERVIEW',
+        scheduledInterviewId,
+      }),
+    }, env, ctx);
+    expect(createMeetingRes.status).toBe(201);
+    const created = await createMeetingRes.json() as { meeting: { id: string } };
+
+    const roomRes = await app.request(`/meetings/${created.meeting.id}/room`, {
+      method: 'POST',
+    }, env, ctx);
+    expect(roomRes.status).toBe(200);
+    const roomBody = await roomRes.json() as {
+      room: { guestUrl: string };
+    };
+    const guestToken = new URL(roomBody.room.guestUrl).pathname.split('/').filter(Boolean).pop();
+    expect(guestToken).toBeTruthy();
+
+    const submitRes = await app.request(`/meeting/${guestToken}/assessment/commit-submission`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({
+        narrative: 'Candidate submitted a commit, but no assessment session exists.',
+        repositoryUrl: 'https://github.com/pipe/source-backed-worker',
+        branchName: 'pipe-assessment/missing-session',
+        baseCommitSha,
+        commitSha,
+        changedFiles: [{
+          path: 'src/retry.ts',
+          status: 'modified',
+        }],
+        sourceRefs: [
+          {
+            sourceRefType: 'git_commit',
+            sourceRefId: commitSha,
+            exactText: `commit ${commitSha}`,
+            contentHash: 'commit-content-hash',
+          },
+          {
+            sourceRefType: 'code_diff',
+            sourceRefId: `${baseCommitSha}..${commitSha}`,
+            exactText: 'diff --git a/src/retry.ts b/src/retry.ts',
+            contentHash: 'diff-content-hash',
+          },
+        ],
+      }),
+    }, env, ctx);
+    expect(submitRes.status).toBe(409);
+    const body = await submitRes.json() as { error: { code: string; message: string } };
+    expect(body.error).toMatchObject({
+      code: 'CONFLICT',
+      message: 'This room is not linked to an assessment session. Create the assessment session before accepting commit evidence.',
+    });
+    expect(sqlite.prepare(
+      `SELECT COUNT(*) AS count
+         FROM assessment_evidence_events
+        WHERE kind = 'commit_submission'`,
+    ).get()).toEqual({ count: 0 });
+  });
+
   it('keeps standard meeting rooms off the workspace desktop path', async () => {
     const app = mountApp();
     const { ctx } = buildCtx();

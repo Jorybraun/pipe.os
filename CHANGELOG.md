@@ -38,6 +38,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Fixed — Candidate repo matching
 
+- Dev-container assessment rooms now expose a room-token commit submission endpoint that records real candidate commits through the source-backed assessment session spine while hiding internal assessment ids from candidate responses.
 - Person CODE_REVIEW decision cards now call out uncertainty and missing context as first-class hiring-manager fields, so the profile explains what remains unproven before the next action.
 - Interview list cards now include a compact assessment snapshot for CODE_REVIEW and repo-task interviews, showing stage, next action, and evidence readiness without exposing raw assessment ids.
 - Interview list assessment-progress loading now chunks D1 lookups and skips only malformed progress snapshots, so recruiters with more than 100 interviews or one corrupted CODE_REVIEW row do not lose the whole interview list.

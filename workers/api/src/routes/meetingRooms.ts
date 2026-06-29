@@ -22,6 +22,12 @@ import {
   MIN_TTL_SECONDS,
 } from '../lib/devContainerTtl';
 import {
+  RepoTaskInterviewSessionStore,
+  type AssessmentActorType,
+  type AssessmentProgressSnapshot,
+  type CommitSubmissionChangedFileStatus,
+} from '../lib/repoTaskInterviewSession';
+import {
   getLatestSessionForRoom,
   getSessionByIdForRoom,
   insertRoomSession,
@@ -31,6 +37,7 @@ import {
 } from '../lib/devContainerSessions';
 import type {
   JsonObject,
+  JsonValue,
   MeetingTranscriptAssertionInput,
   MeetingTranscriptSegmentInput,
 } from '../lib/livingContext';
@@ -2250,6 +2257,225 @@ meetingRooms.get('/:token/workspace', async (c) => {
 
 const workspaceLaunchSchema = z.object({
   repoUrl: z.string().url().optional(),
+});
+
+const assessmentJsonValueSchema: z.ZodType<JsonValue> = z.lazy(() => z.union([
+  z.string(),
+  z.number(),
+  z.boolean(),
+  z.null(),
+  z.array(assessmentJsonValueSchema),
+  z.record(assessmentJsonValueSchema),
+]));
+const assessmentJsonObjectSchema: z.ZodType<JsonObject> = z.record(assessmentJsonValueSchema);
+
+const roomCommitSourceRefSchema = z.object({
+  sourceRefType: z.string().trim().min(1),
+  sourceRefId: z.string().trim().min(1),
+  sourceSpanId: z.string().trim().min(1).nullable().optional(),
+  evidenceRole: z.string().trim().min(1).optional(),
+  locator: assessmentJsonObjectSchema.optional(),
+  exactText: z.string().min(1),
+  contentHash: z.string().trim().min(1),
+  metadata: assessmentJsonObjectSchema.optional(),
+});
+
+const roomCommitChangedFileStatusSchema = z.enum([
+  'added',
+  'modified',
+  'deleted',
+  'renamed',
+  'copied',
+] satisfies [CommitSubmissionChangedFileStatus, ...CommitSubmissionChangedFileStatus[]]);
+
+const roomCommitChangedFileSchema = z.object({
+  path: z.string().trim().min(1),
+  status: roomCommitChangedFileStatusSchema,
+  previousPath: z.string().trim().min(1).nullable().optional(),
+  additions: z.number().int().min(0).nullable().optional(),
+  deletions: z.number().int().min(0).nullable().optional(),
+});
+
+const roomCommitSubmissionSchema = z.object({
+  narrative: z.string().trim().min(1),
+  repositoryUrl: z.string().trim().min(1),
+  forkRepositoryUrl: z.string().trim().min(1).nullable().optional(),
+  branchName: z.string().trim().min(1),
+  baseCommitSha: z.string().trim().min(1),
+  commitSha: z.string().trim().min(1),
+  commitUrl: z.string().trim().min(1).nullable().optional(),
+  upstreamPullRequestUrl: z.string().trim().min(1).nullable().optional(),
+  upstreamPrConsent: z.boolean().optional(),
+  changedFiles: z.array(roomCommitChangedFileSchema).min(1),
+  occurredAt: z.string().trim().min(1).nullable().optional(),
+  sourceRefs: z.array(roomCommitSourceRefSchema).min(2),
+});
+
+interface RoomAssessmentSessionRow {
+  id: string;
+  mode: string;
+  state: string;
+}
+
+interface RoomAssessmentProgressPayload {
+  mode: string;
+  state: string;
+  stage: AssessmentProgressSnapshot['stage'];
+  nextAction: AssessmentProgressSnapshot['nextAction'];
+  nextActionLabel: string;
+  hasChallengePacket: boolean;
+  hasWorkEvidence: boolean;
+  hasCommitSubmission: boolean;
+  hasFinalSubmission: boolean;
+  hasAiInteraction: boolean;
+  hasTranscriptEvidence: boolean;
+  evidenceCounts: AssessmentProgressSnapshot['evidenceCounts'];
+  latestEvent: Omit<NonNullable<AssessmentProgressSnapshot['latestEvent']>, 'id'> | null;
+  commit: Omit<NonNullable<AssessmentProgressSnapshot['commit']>, 'eventId'> | null;
+  evaluation: Omit<NonNullable<AssessmentProgressSnapshot['evaluation']>, 'id'> | null;
+}
+
+async function loadLatestAssessmentSessionForRoom(
+  db: D1Database,
+  room: ResolvedRoom,
+): Promise<RoomAssessmentSessionRow | null> {
+  if (!room.scheduled_interview_id) return null;
+  return db.prepare(
+    `SELECT id, mode, state
+       FROM assessment_sessions
+      WHERE interview_id = ?1
+        AND state <> 'CANCELLED'
+      ORDER BY created_at DESC
+      LIMIT 1`,
+  ).bind(room.scheduled_interview_id).first<RoomAssessmentSessionRow>();
+}
+
+function serializeRoomAssessmentProgress(
+  progress: AssessmentProgressSnapshot,
+): RoomAssessmentProgressPayload {
+  return {
+    mode: progress.session.mode,
+    state: progress.session.state,
+    stage: progress.stage,
+    nextAction: progress.nextAction,
+    nextActionLabel: progress.nextActionLabel,
+    hasChallengePacket: progress.hasChallengePacket,
+    hasWorkEvidence: progress.hasWorkEvidence,
+    hasCommitSubmission: progress.hasCommitSubmission,
+    hasFinalSubmission: progress.hasFinalSubmission,
+    hasAiInteraction: progress.hasAiInteraction,
+    hasTranscriptEvidence: progress.hasTranscriptEvidence,
+    evidenceCounts: progress.evidenceCounts,
+    latestEvent: progress.latestEvent
+      ? {
+          kind: progress.latestEvent.kind,
+          sequence: progress.latestEvent.sequence,
+          occurredAt: progress.latestEvent.occurredAt,
+        }
+      : null,
+    commit: progress.commit
+      ? {
+          repositoryUrl: progress.commit.repositoryUrl,
+          forkRepositoryUrl: progress.commit.forkRepositoryUrl,
+          branchName: progress.commit.branchName,
+          baseCommitSha: progress.commit.baseCommitSha,
+          commitSha: progress.commit.commitSha,
+          commitUrl: progress.commit.commitUrl,
+          changedFiles: progress.commit.changedFiles,
+          occurredAt: progress.commit.occurredAt,
+        }
+      : null,
+    evaluation: progress.evaluation
+      ? {
+          status: progress.evaluation.status,
+          summary: progress.evaluation.summary,
+          createdAt: progress.evaluation.createdAt,
+        }
+      : null,
+  };
+}
+
+function roomAssessmentActor(room: ResolvedRoom): { actorType: AssessmentActorType; actorId: string | null } {
+  if (room.role === 'GUEST') {
+    return { actorType: 'candidate', actorId: room.guest_contact_id };
+  }
+  return { actorType: 'recruiter', actorId: room.owner_id };
+}
+
+function roomAssessmentErrorResponse(c: Context<{ Bindings: Env }>, error: unknown): Response {
+  const message = error instanceof Error ? error.message : 'Commit submission failed.';
+  if (message.includes('does not exist')) return apiError(c, 'NOT_FOUND', message);
+  if (
+    message.includes('requires')
+    || message.includes('must')
+    || message.includes('cannot transition')
+  ) {
+    return apiError(c, 'VALIDATION_ERROR', message);
+  }
+  console.error('[meetingRooms.assessment.commitSubmission] failed:', message);
+  return apiError(c, 'INTERNAL_ERROR', 'Commit submission failed.');
+}
+
+meetingRooms.post('/:token/assessment/commit-submission', async (c) => {
+  const token = c.req.param('token');
+  const room = await resolveRoom(c.env.DB, token);
+  if (!room) return apiError(c, 'NOT_FOUND', 'Room link is invalid or expired.');
+
+  const workspace = await buildRoomWorkspacePayload(c.env.DB, token, room);
+  if (!workspace.enabled) {
+    return apiError(c, 'CONFLICT', 'Commit assessment submission requires a dev-container assessment room.');
+  }
+
+  const body = roomCommitSubmissionSchema.safeParse(await c.req.json().catch(() => null));
+  if (!body.success) {
+    return apiError(c, 'VALIDATION_ERROR', body.error.issues[0]?.message ?? 'Invalid commit submission body.');
+  }
+
+  const assessmentSession = await loadLatestAssessmentSessionForRoom(c.env.DB, room);
+  if (!assessmentSession) {
+    return apiError(
+      c,
+      'CONFLICT',
+      'This room is not linked to an assessment session. Create the assessment session before accepting commit evidence.',
+    );
+  }
+
+  const actor = roomAssessmentActor(room);
+  const store = new RepoTaskInterviewSessionStore(c.env.DB);
+  const commitSha = body.data.commitSha.trim().toLowerCase();
+  try {
+    await store.submitCommit({
+      sessionId: assessmentSession.id,
+      ingestionKey: `assessment-event:room-commit:${assessmentSession.id}:${commitSha}`,
+      actorType: actor.actorType,
+      actorId: actor.actorId,
+      narrative: body.data.narrative,
+      repositoryUrl: body.data.repositoryUrl,
+      forkRepositoryUrl: body.data.forkRepositoryUrl,
+      branchName: body.data.branchName,
+      baseCommitSha: body.data.baseCommitSha,
+      commitSha: body.data.commitSha,
+      commitUrl: body.data.commitUrl,
+      upstreamPullRequestUrl: body.data.upstreamPullRequestUrl,
+      upstreamPrConsent: body.data.upstreamPrConsent,
+      changedFiles: body.data.changedFiles,
+      occurredAt: body.data.occurredAt,
+      sourceRefs: body.data.sourceRefs,
+    });
+    const progress = await store.loadProgress(assessmentSession.id);
+    return c.json({
+      submission: {
+        accepted: true,
+        repositoryUrl: progress.commit?.repositoryUrl ?? body.data.repositoryUrl,
+        branchName: progress.commit?.branchName ?? body.data.branchName,
+        commitSha: progress.commit?.commitSha ?? commitSha,
+        commitUrl: progress.commit?.commitUrl ?? body.data.commitUrl ?? null,
+      },
+      progress: serializeRoomAssessmentProgress(progress),
+    }, 201);
+  } catch (error) {
+    return roomAssessmentErrorResponse(c, error);
+  }
 });
 
 meetingRooms.post('/:token/workspace/launch', async (c) => {
