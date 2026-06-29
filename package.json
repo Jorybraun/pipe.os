@@ -21,6 +21,7 @@
     "smoke:code-review-assess-dev:matrix": "node scripts/smoke-code-review-assess-dev-matrix.mjs",
     "smoke:code-review-assess-dev:loop": "node scripts/smoke-code-review-assess-dev-loop.mjs",
     "smoke:code-review-workspace-dev": "node scripts/smoke-code-review-workspace-dev.mjs",
+    "smoke:clippy-devin-chat-dev": "node scripts/smoke-clippy-devin-chat-dev.mjs",
     "turn:usage": "node scripts/check-cloudflare-turn-usage.mjs",
     "storybook": "storybook dev -p 6006",
     "build-storybook": "storybook build",
