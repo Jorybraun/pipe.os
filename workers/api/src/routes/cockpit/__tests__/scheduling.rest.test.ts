@@ -64,6 +64,11 @@ function sha256Hex(value: string): string {
   return createHash('sha256').update(value).digest('hex');
 }
 
+const SOURCE_BACKED_WORK_EVIDENCE_QUESTION =
+  'Describe one real PR, bug, or code review you personally handled that best represents the work PIPE should assess. Include the codebase context, your role, trade-offs, verification/tests, and outcome.';
+const SOURCE_BACKED_WORK_EVIDENCE_FOLLOW_UP =
+  'What did you inspect, which constraints mattered, and what source evidence would help PIPE map that work to a fair repo challenge?';
+
 // ─── Validation schema tests ────────────────────────────────────────────────
 
 describe('Create interview validation', () => {
@@ -1068,7 +1073,7 @@ describe('GET /interviews/:id detail', () => {
       expect.objectContaining({
         missingSignal: 'Source-backed candidate work evidence',
         recommendedAssessment: 'recorded_evidence_question',
-        question: 'Walk me through a real code review or debugging task that best matches the work PIPE should assess here.',
+        question: SOURCE_BACKED_WORK_EVIDENCE_QUESTION,
         source: {
           matchRunId: 'match-run-needs-candidate-evidence',
           matchStatus: 'NEEDS_MORE_EVIDENCE',
@@ -2460,7 +2465,8 @@ describe('GET /interviews/:id detail', () => {
     const evidenceAssessmentSessionId = body.contextCall.evidenceAssessmentSessionId;
     expect(evidenceAssessmentSessionId).toEqual(expect.stringMatching(/^assessment_session_/));
     if (!evidenceAssessmentSessionId) throw new Error('expected evidence assessment session id');
-    expect(body.contextCall.questions).toContain('Walk me through a real code review or debugging task that best matches the work PIPE should assess here.');
+    expect(body.contextCall.questions).toContain(SOURCE_BACKED_WORK_EVIDENCE_QUESTION);
+    expect(body.contextCall.questions).toContain(SOURCE_BACKED_WORK_EVIDENCE_FOLLOW_UP);
     expect(body.contextCall.recruiterNotes).toContain('Only one source-backed candidate signal aligned with the repo challenge.');
 
     const followUpRow = sqlite!.prepare(
@@ -2509,7 +2515,8 @@ describe('GET /interviews/:id detail', () => {
     expect(contextRow.narrative).toContain('Ada Lovelace');
     expect(contextRow.exact_text).toContain('Original interview id: interview-code-review-blocked');
     expect(contextRow.exact_text).toContain('Match status: NO_ROLE_SAFE_CHALLENGE');
-    expect(contextRow.exact_text).toContain('Question 1: Walk me through a real code review or debugging task that best matches the work PIPE should assess here.');
+    expect(contextRow.exact_text).toContain(`Question 1: ${SOURCE_BACKED_WORK_EVIDENCE_QUESTION}`);
+    expect(contextRow.exact_text).toContain(`Question 2: ${SOURCE_BACKED_WORK_EVIDENCE_FOLLOW_UP}`);
 
     const assessmentSession = sqlite!.prepare(
       `SELECT id, interview_id, mode, state, candidate_id, workspace_id, created_by, metadata_json
@@ -2571,7 +2578,8 @@ describe('GET /interviews/:id detail', () => {
     });
     expect(assessmentEvent.narrative).toContain('source-backed evidence plan');
     expect(assessmentEvent.exact_text).toContain('Context call interview id:');
-    expect(assessmentEvent.exact_text).toContain('Question 1: Walk me through a real code review or debugging task that best matches the work PIPE should assess here.');
+    expect(assessmentEvent.exact_text).toContain(`Question 1: ${SOURCE_BACKED_WORK_EVIDENCE_QUESTION}`);
+    expect(assessmentEvent.exact_text).toContain(`Question 2: ${SOURCE_BACKED_WORK_EVIDENCE_FOLLOW_UP}`);
     expect(JSON.parse(assessmentEvent.payload_json)).toMatchObject({
       originalInterviewId: 'interview-code-review-blocked',
       contextCallInterviewId: body.contextCall.id,
@@ -2864,7 +2872,7 @@ describe('GET /interviews/:id detail', () => {
       state: 'IN_PROGRESS',
     });
     expect(detail.interview.codeReviewMatch?.evidenceFollowUp?.questions).toContain(
-      'Walk me through a real code review or debugging task that best matches the work PIPE should assess here.',
+      SOURCE_BACKED_WORK_EVIDENCE_QUESTION,
     );
   });
 

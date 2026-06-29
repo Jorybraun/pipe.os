@@ -302,10 +302,18 @@ const inviteToCallSchema = z.object({
   sendEmail: z.boolean().optional(),
 });
 
+const SOURCE_BACKED_WORK_EVIDENCE_QUESTION =
+  'Describe one real PR, bug, or code review you personally handled that best represents the work PIPE should assess. Include the codebase context, your role, trade-offs, verification/tests, and outcome.';
+const SOURCE_BACKED_WORK_EVIDENCE_FOLLOW_UP =
+  'What did you inspect, which constraints mattered, and what source evidence would help PIPE map that work to a fair repo challenge?';
+const CANDIDATE_ALIGNMENT_QUESTION =
+  'Describe a project closest to this kind of repo challenge. Include the stack, behavior you owned, debugging or review actions, and why it would be a fair stretch.';
+const ROLE_SAFE_CHALLENGE_QUESTION =
+  'Name a real repo, PR, or codebase area that would fairly test you. What issue style, constraints, and scoring signals would be meaningful, and what would be misleading?';
 const CONTEXT_CALL_QUESTIONS = [
-  'Walk me through a real code review or debugging task that best matches the work PIPE should assess here.',
-  'What did you inspect, what trade-offs mattered, and how did you verify the outcome?',
-  'Which codebase constraints or PR style would make the assessment fair rather than misleading?',
+  SOURCE_BACKED_WORK_EVIDENCE_QUESTION,
+  SOURCE_BACKED_WORK_EVIDENCE_FOLLOW_UP,
+  ROLE_SAFE_CHALLENGE_QUESTION,
 ] as const;
 
 interface ScheduledCodeReviewEvidencePlanItem {
@@ -937,7 +945,7 @@ function codeReviewEvidencePlanForGap(input: {
       whyItMatters: 'PIPE cannot fairly select a real PR challenge until it has evidence of what kinds of engineering work this person has actually done.',
       recommendedAssessment: 'recorded_evidence_question',
       expectedEvidence: 'A short recorded or written answer with a concrete project, personal actions, technical constraints, and verification details.',
-      question: CONTEXT_CALL_QUESTIONS[0],
+      question: SOURCE_BACKED_WORK_EVIDENCE_QUESTION,
       source,
     };
   }
@@ -949,7 +957,7 @@ function codeReviewEvidencePlanForGap(input: {
       whyItMatters: 'The candidate may have usable evidence, but PIPE does not have a source-backed PR that safely tests it yet.',
       recommendedAssessment: 'manual_review_selection',
       expectedEvidence: 'A recruiter-selected or generated PR packet with source spans, expected review demands, planted issues, and scoring criteria.',
-      question: CONTEXT_CALL_QUESTIONS[2],
+      question: ROLE_SAFE_CHALLENGE_QUESTION,
       source,
     };
   }
@@ -961,7 +969,7 @@ function codeReviewEvidencePlanForGap(input: {
       whyItMatters: 'A challenge should test a real stretch from the person graph, not a generic repo that merely looks plausible.',
       recommendedAssessment: 'recorded_evidence_question',
       expectedEvidence: 'A specific example that can be mapped to the repo demand: stack, behavior, debugging/review action, and outcome.',
-      question: CONTEXT_CALL_QUESTIONS[1],
+      question: CANDIDATE_ALIGNMENT_QUESTION,
       source,
     };
   }
@@ -974,7 +982,7 @@ function codeReviewEvidencePlanForGap(input: {
       ? 'manual_review_selection'
       : 'recorded_evidence_question',
     expectedEvidence: 'Source-backed context that explains the relevant project history, technical constraints, and assessment fit.',
-    question: CONTEXT_CALL_QUESTIONS[0],
+    question: SOURCE_BACKED_WORK_EVIDENCE_QUESTION,
     source,
   };
 }
@@ -997,6 +1005,23 @@ function buildCodeReviewEvidencePlan(input: {
       matchRunId: input.matchRunId,
       matchStatus: input.matchStatus,
     }));
+}
+
+function codeReviewContextCallQuestionsForPlan(
+  plan: ScheduledCodeReviewEvidencePlanItem[],
+): string[] {
+  const questions = plan.length > 0
+    ? plan.map((item) => item.question.trim()).filter((question) => question.length > 0)
+    : [...CONTEXT_CALL_QUESTIONS];
+
+  if (
+    questions.includes(SOURCE_BACKED_WORK_EVIDENCE_QUESTION)
+    && !questions.includes(SOURCE_BACKED_WORK_EVIDENCE_FOLLOW_UP)
+  ) {
+    questions.push(SOURCE_BACKED_WORK_EVIDENCE_FOLLOW_UP);
+  }
+
+  return Array.from(new Set(questions)).slice(0, 3);
 }
 
 function isPassedCodeReviewVerdict(verdict: string | null | undefined): boolean {
@@ -3604,10 +3629,15 @@ schedulingAuth.post('/interviews/:id/context-call', async (c) => {
 
   const contextCallId = crypto.randomUUID();
   const now = new Date().toISOString();
-  const questions = [...CONTEXT_CALL_QUESTIONS];
   const gaps = match?.gaps.filter((gap) => gap.trim().length > 0) ?? [];
   const matchStatus = match?.status ?? 'NO_MATCH_DATA';
   const matchSummary = match?.summary ?? 'No source-backed match record was available when the context call was requested.';
+  const evidencePlan = buildCodeReviewEvidencePlan({
+    matchStatus,
+    matchRunId: match?.matchRunId ?? null,
+    gaps,
+  });
+  const questions = codeReviewContextCallQuestionsForPlan(evidencePlan);
   const recruiterNotes = [
     'PIPE context call for blocked code-review matching.',
     `Original CODE_REVIEW interview: ${source.id}`,

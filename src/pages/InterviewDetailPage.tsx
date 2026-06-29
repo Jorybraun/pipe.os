@@ -440,6 +440,9 @@ function codeReviewRefreshSuccessNotice(
     : 'Repo match refreshed from captured evidence.';
 }
 
+const SOURCE_BACKED_WORK_EVIDENCE_QUESTION =
+  'Describe one real PR, bug, or code review you personally handled that best represents the work PIPE should assess. Include the codebase context, your role, trade-offs, verification/tests, and outcome.';
+
 function fallbackEvidencePlanItem(
   match: CodeReviewMatchDetail,
   gap: string,
@@ -460,7 +463,7 @@ function fallbackEvidencePlanItem(
       ? 'manual_review_selection'
       : 'recorded_evidence_question',
     expectedEvidence: 'A concrete project, personal action, technical constraint, and verification detail that can be cited back to the candidate.',
-    question: 'Walk me through a real code review or debugging task that best matches the work PIPE should assess here.',
+    question: SOURCE_BACKED_WORK_EVIDENCE_QUESTION,
     source: {
       matchRunId: match.matchRunId,
       matchStatus: match.status,

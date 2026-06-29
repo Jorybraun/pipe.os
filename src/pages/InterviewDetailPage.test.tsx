@@ -11,6 +11,11 @@ const mocks = vi.hoisted(() => ({
   },
 }));
 
+const SOURCE_BACKED_WORK_EVIDENCE_QUESTION =
+  'Describe one real PR, bug, or code review you personally handled that best represents the work PIPE should assess. Include the codebase context, your role, trade-offs, verification/tests, and outcome.';
+const SOURCE_BACKED_WORK_EVIDENCE_FOLLOW_UP =
+  'What did you inspect, which constraints mattered, and what source evidence would help PIPE map that work to a fair repo challenge?';
+
 vi.mock('../hooks/useApiClient', () => ({
   useApiClient: () => mocks.api,
 }));
@@ -83,8 +88,8 @@ function evidenceFollowUpNotes(): string {
     'Match summary: PIPE needs source-backed candidate work evidence before selecting a fair PR.',
     'Evidence gap 1: NO_SCOREABLE_SOURCE_BACKED_CANDIDATE_EVIDENCE',
     'Suggested questions:',
-    '1. Walk me through a real code review or debugging task that best matches the work PIPE should assess here.',
-    '2. What did you inspect, what trade-offs mattered, and how did you verify the outcome?',
+    `1. ${SOURCE_BACKED_WORK_EVIDENCE_QUESTION}`,
+    `2. ${SOURCE_BACKED_WORK_EVIDENCE_FOLLOW_UP}`,
   ].join('\n');
 }
 
@@ -400,7 +405,7 @@ describe('InterviewDetailPage', () => {
             whyItMatters: 'PIPE cannot fairly select a real PR challenge until it has evidence of what kinds of engineering work this person has actually done.',
             recommendedAssessment: 'recorded_evidence_question',
             expectedEvidence: 'A short recorded or written answer with a concrete project, personal actions, technical constraints, and verification details.',
-            question: 'Walk me through a real code review or debugging task that best matches the work PIPE should assess here.',
+            question: SOURCE_BACKED_WORK_EVIDENCE_QUESTION,
             source: {
               matchRunId: 'match-run-blocked-1',
               matchStatus: 'NEEDS_MORE_EVIDENCE',
@@ -428,7 +433,7 @@ describe('InterviewDetailPage', () => {
     expect(evidencePlan).toHaveTextContent('What PIPE needs');
     expect(evidencePlan).toHaveTextContent('Source-backed candidate work evidence');
     expect(evidencePlan).toHaveTextContent('What to ask');
-    expect(evidencePlan).toHaveTextContent('Walk me through a real code review or debugging task that best matches the work PIPE should assess here.');
+    expect(evidencePlan).toHaveTextContent(SOURCE_BACKED_WORK_EVIDENCE_QUESTION);
     expect(evidencePlan).toHaveTextContent('What good evidence looks like');
     expect(evidencePlan).toHaveTextContent('A short recorded or written answer with a concrete project, personal actions, technical constraints, and verification details.');
     expect(evidencePlan).toHaveTextContent('CREATE FOLLOW-UP ASSESSMENT');
@@ -544,7 +549,7 @@ describe('InterviewDetailPage', () => {
             whyItMatters: 'PIPE cannot fairly select a real PR challenge until it has evidence of what kinds of engineering work this person has actually done.',
             recommendedAssessment: 'recorded_evidence_question',
             expectedEvidence: 'A short recorded or written answer with a concrete project, personal actions, technical constraints, and verification details.',
-            question: 'Walk me through a real code review or debugging task that best matches the work PIPE should assess here.',
+            question: SOURCE_BACKED_WORK_EVIDENCE_QUESTION,
             source: {
               matchRunId: 'match-run-blocked-1',
               matchStatus: 'NEEDS_MORE_EVIDENCE',
@@ -620,7 +625,7 @@ describe('InterviewDetailPage', () => {
             whyItMatters: 'PIPE cannot fairly select a real PR challenge until it has evidence of what kinds of engineering work this person has actually done.',
             recommendedAssessment: 'recorded_evidence_question',
             expectedEvidence: 'A short recorded or written answer with a concrete project, personal actions, technical constraints, and verification details.',
-            question: 'Walk me through a real code review or debugging task that best matches the work PIPE should assess here.',
+            question: SOURCE_BACKED_WORK_EVIDENCE_QUESTION,
             source: {
               matchRunId: 'match-run-blocked-1',
               matchStatus: 'NEEDS_MORE_EVIDENCE',
@@ -634,7 +639,7 @@ describe('InterviewDetailPage', () => {
             matchRunId: 'match-run-blocked-1',
             matchStatus: 'NEEDS_MORE_EVIDENCE',
             gaps: ['NO_SCOREABLE_SOURCE_BACKED_CANDIDATE_EVIDENCE'],
-            questions: ['Walk me through a real code review or debugging task that best matches the work PIPE should assess here.'],
+            questions: [SOURCE_BACKED_WORK_EVIDENCE_QUESTION],
             createdAt: '2026-06-22T18:00:00.000Z',
             updatedAt: '2026-06-22T18:05:00.000Z',
           },
@@ -649,7 +654,7 @@ describe('InterviewDetailPage', () => {
     const followUp = screen.getByTestId('interview-code-review-evidence-follow-up');
     expect(followUp).toHaveTextContent('Follow-up assessment open');
     expect(followUp).toHaveTextContent('Waiting for source-backed response');
-    expect(followUp).toHaveTextContent('Walk me through a real code review or debugging task that best matches the work PIPE should assess here.');
+    expect(followUp).toHaveTextContent(SOURCE_BACKED_WORK_EVIDENCE_QUESTION);
     expect(followUp).toHaveTextContent('OPEN FOLLOW-UP ASSESSMENT');
     expect(screen.queryByTestId('interview-code-review-context-call-cta')).toBeNull();
     expect(screen.queryByTestId('interview-code-review-evidence-plan')).toBeNull();
@@ -855,7 +860,7 @@ describe('InterviewDetailPage', () => {
     expect(plan).toHaveTextContent('interview-code-review-blocked');
     expect(plan).toHaveTextContent('NEEDS MORE EVIDENCE');
     expect(plan).toHaveTextContent('Ask this first');
-    expect(plan).toHaveTextContent('Walk me through a real code review or debugging task that best matches the work PIPE should assess here.');
+    expect(plan).toHaveTextContent(SOURCE_BACKED_WORK_EVIDENCE_QUESTION);
     expect(plan).toHaveTextContent('Candidate answer becomes source-backed context for repo matching.');
     expect(plan).toHaveTextContent('The invite includes this question so the call has a concrete purpose.');
   });
@@ -899,12 +904,12 @@ describe('InterviewDetailPage', () => {
       '/api/v1/scheduling/interviews/context-call-1/invite',
       expect.objectContaining({
         email: 'ada@example.com',
-        message: expect.stringContaining('Walk me through a real code review or debugging task'),
+        message: expect.stringContaining(SOURCE_BACKED_WORK_EVIDENCE_QUESTION),
       }),
     );
     const invitePayload = mocks.api.post.mock.calls[0]?.[1] as { message?: string };
     expect(invitePayload.message).toContain('source-backed context');
-    expect(invitePayload.message).toContain('concrete project');
+    expect(invitePayload.message).toContain('codebase context');
   });
 
   it('creates a linked context call from a blocked code-review match', async () => {
