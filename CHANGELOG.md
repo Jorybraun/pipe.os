@@ -19,6 +19,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Fixed — Video room
 
+- Code-first assessment rooms now keep the source-backed assessment status visible outside the video picture-in-picture and update it with the accepted commit submission progress snapshot, including stage, commit SHA, next action, and captured evidence coverage.
 - Dev-container assessment rooms now open into a code-first room layout by default, with the VS Code workspace as the primary surface, video/chat supporting the session, and Submit Work present as the completion path instead of hiding the real assessment behind retro desktop discovery.
 - Win95 Submit Work now validates GitHub repo/fork/commit/PR URLs, full commit SHAs, assessment branch names, and diff-to-file alignment before sending source-backed commit evidence, and shows the exact Git commands candidates should paste.
 - Video rooms now show a compact assessment status strip with mode, repo/PR/base commit, workspace state, challenge task, and next action so standard calls, code reviews, and dev-container assessments are legible inside the call.

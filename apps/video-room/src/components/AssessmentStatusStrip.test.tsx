@@ -7,7 +7,7 @@ import {
   assessmentModeForRoom,
   assessmentModeLabel,
 } from './AssessmentStatusStrip';
-import type { RoomWorkspace } from '../types';
+import type { RoomAssessmentProgressSnapshot, RoomWorkspace } from '../types';
 
 const challengePacket = {
   sourceRefType: 'open_source_challenge_packet',
@@ -60,6 +60,39 @@ function workspace(overrides: Partial<RoomWorkspace> = {}): RoomWorkspace {
   };
 }
 
+const progress: RoomAssessmentProgressSnapshot = {
+  mode: 'OPEN_SOURCE_BUG_FIX',
+  state: 'FINAL_SUBMITTED',
+  stage: 'READY_FOR_EVALUATION',
+  nextAction: 'START_EVALUATION',
+  nextActionLabel: 'Start source-backed AI or human evaluation.',
+  hasChallengePacket: true,
+  hasWorkEvidence: true,
+  hasCommitSubmission: true,
+  hasFinalSubmission: false,
+  hasAiInteraction: true,
+  hasTranscriptEvidence: false,
+  hasTestEvidence: true,
+  evidenceCounts: [{ kind: 'commit_submission', count: 1 }],
+  sourceRefCounts: [{ kind: 'test_run', count: 1 }],
+  latestEvent: {
+    kind: 'commit_submission',
+    sequence: 4,
+    occurredAt: '2026-06-29T22:00:00.000Z',
+  },
+  commit: {
+    repositoryUrl: 'https://github.com/pipe/source-backed-worker',
+    forkRepositoryUrl: 'https://github.com/candidate/source-backed-worker',
+    branchName: 'pipe-assessment/retry-path',
+    baseCommitSha: 'd'.repeat(40),
+    commitSha: 'c'.repeat(40),
+    commitUrl: `https://github.com/candidate/source-backed-worker/commit/${'c'.repeat(40)}`,
+    changedFiles: [{ path: 'src/retry.ts', status: 'modified' }],
+    occurredAt: '2026-06-29T22:00:00.000Z',
+  },
+  evaluation: null,
+};
+
 describe('AssessmentStatusStrip', () => {
   it('classifies standard, code review, and dev-container assessment modes', () => {
     expect(assessmentModeForRoom({ meetingType: 'DIRECT_VIDEO_CALL', workspaceEnabled: false })).toBe('standard_call');
@@ -94,6 +127,21 @@ describe('AssessmentStatusStrip', () => {
 
     expect(onOpenWorkspace).toHaveBeenCalledTimes(1);
     expect(onOpenSubmission).toHaveBeenCalledTimes(1);
+  });
+
+  it('surfaces durable assessment progress after commit submission', () => {
+    render(
+      <AssessmentStatusStrip
+        meetingType="DEV_CONTAINER_CHALLENGE"
+        workspace={workspace()}
+        assessmentProgress={progress}
+      />,
+    );
+
+    expect(screen.getByTestId('assessment-progress-stage').textContent).toContain('Ready For Evaluation');
+    expect(screen.getByTestId('assessment-progress-commit').textContent).toContain('Commit cccccccc');
+    expect(screen.getByText('Start source-backed AI or human evaluation.')).not.toBeNull();
+    expect(screen.getByTestId('assessment-progress-coverage').textContent).toContain('challenge, work, commit, AI, tests');
   });
 
   it('shows a launch action when the host can start the controlled workspace', () => {

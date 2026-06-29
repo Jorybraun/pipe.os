@@ -1,6 +1,7 @@
 import {
   AlertTriangle,
   ClipboardCheck,
+  CheckCircle2,
   GitPullRequest,
   Loader2,
   Play,
@@ -8,7 +9,7 @@ import {
   Upload,
   Video,
 } from 'lucide-react';
-import type { RoomWorkspace } from '../types';
+import type { RoomAssessmentProgressSnapshot, RoomWorkspace } from '../types';
 import { summarizeChallengePacket } from '../lib/challengePacketSummary';
 
 export type AssessmentRoomMode = 'standard_call' | 'code_review' | 'dev_container_assessment';
@@ -19,6 +20,7 @@ interface AssessmentStatusStripProps {
   workspaceLoading?: boolean;
   workspaceError?: string | null;
   canLaunchWorkspace?: boolean;
+  assessmentProgress?: RoomAssessmentProgressSnapshot | null;
   onLaunchWorkspace?: () => void;
   onOpenWorkspace?: () => void;
   onOpenSubmission?: () => void;
@@ -89,12 +91,27 @@ function modeIcon(mode: AssessmentRoomMode): typeof Video {
   return Video;
 }
 
+function formatProgressToken(value: string | null | undefined): string {
+  const normalized = value?.trim();
+  if (!normalized) return 'Unknown';
+  return normalized
+    .replace(/[_-]+/g, ' ')
+    .toLowerCase()
+    .replace(/\b\w/g, (letter) => letter.toUpperCase());
+}
+
+function shortSha(value: string | null | undefined): string | null {
+  const trimmed = value?.trim();
+  return trimmed ? trimmed.slice(0, 8) : null;
+}
+
 export function AssessmentStatusStrip({
   meetingType,
   workspace,
   workspaceLoading = false,
   workspaceError = null,
   canLaunchWorkspace = false,
+  assessmentProgress = null,
   onLaunchWorkspace,
   onOpenWorkspace,
   onOpenSubmission,
@@ -111,7 +128,7 @@ export function AssessmentStatusStrip({
   const statusInfo = workspaceStatusInfo(workspace, workspaceError);
   const workspaceReady = statusInfo.state === 'ready';
   const challengeNeedsAttention = workspace?.challenge.status === 'missing_reviewable_task';
-  const nextAction = workspace?.enabled
+  const nextAction = assessmentProgress?.nextActionLabel ?? (workspace?.enabled
     ? workspaceReady
       ? 'Commit changes, then submit work'
       : canLaunchWorkspace
@@ -121,7 +138,8 @@ export function AssessmentStatusStrip({
           : 'Host launches the workspace'
     : mode === 'code_review'
       ? 'Review the assigned code with source-backed notes'
-      : 'Use video, chat, and recording';
+      : 'Use video, chat, and recording');
+  const progressCommitSha = shortSha(assessmentProgress?.commit?.commitSha ?? null);
 
   return (
     <section
@@ -152,6 +170,17 @@ export function AssessmentStatusStrip({
         {baseCommit && (
           <span className="assessment-status-pill" title={baseCommit} data-testid="assessment-base-commit">
             Base {baseCommit.slice(0, 8)}
+          </span>
+        )}
+        {assessmentProgress && (
+          <span className="assessment-status-pill is-progress" data-testid="assessment-progress-stage">
+            <CheckCircle2 size={12} />
+            {formatProgressToken(assessmentProgress.stage)}
+          </span>
+        )}
+        {progressCommitSha && (
+          <span className="assessment-status-pill is-progress" data-testid="assessment-progress-commit">
+            Commit {progressCommitSha}
           </span>
         )}
       </div>
@@ -205,6 +234,19 @@ export function AssessmentStatusStrip({
           <span className="assessment-status-evidence" title={summary.expectedEvidence.join('\n')}>
             <ClipboardCheck size={13} />
             {summary.expectedEvidence.length} evidence items
+          </span>
+        )}
+        {assessmentProgress && (
+          <span className="assessment-status-evidence" data-testid="assessment-progress-coverage">
+            <ClipboardCheck size={13} />
+            {[
+              assessmentProgress.hasChallengePacket ? 'challenge' : null,
+              assessmentProgress.hasWorkEvidence ? 'work' : null,
+              assessmentProgress.hasCommitSubmission ? 'commit' : null,
+              assessmentProgress.hasAiInteraction ? 'AI' : null,
+              assessmentProgress.hasTranscriptEvidence ? 'transcript' : null,
+              assessmentProgress.hasTestEvidence ? 'tests' : null,
+            ].filter(Boolean).join(', ') || 'no evidence yet'}
           </span>
         )}
       </div>

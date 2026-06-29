@@ -5,6 +5,7 @@ import type { WindowManagerApi, WindowState } from '../hooks/useWindowManager';
 interface StandardLayoutProps {
   wm: WindowManagerApi;
   renderWindowContent: (win: WindowState) => ReactNode;
+  assessmentHeader?: ReactNode;
   recordingLabel?: string;
   recordingActive?: boolean;
   canEnterDesktop?: boolean;
@@ -16,6 +17,7 @@ interface StandardLayoutProps {
 export function StandardLayout({
   wm,
   renderWindowContent,
+  assessmentHeader,
   recordingLabel,
   recordingActive,
   canEnterDesktop = false,
@@ -55,6 +57,12 @@ export function StandardLayout({
           </div>
         )}
       </div>
+
+      {workspaceIsPrimary && assessmentHeader && (
+        <div className="standard-assessment-header" data-testid="standard-assessment-header">
+          {assessmentHeader}
+        </div>
+      )}
 
       {/* Bottom control bar */}
       <div className="standard-controls-bar" data-testid="standard-controls">

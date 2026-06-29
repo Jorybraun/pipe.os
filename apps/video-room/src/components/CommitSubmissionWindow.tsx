@@ -17,6 +17,7 @@ interface CommitSubmissionWindowProps {
   challengePacket?: RoomWorkspaceChallengePacket | null;
   disabledReason?: string | null;
   onSubmit: (payload: RoomCommitSubmissionRequest) => Promise<RoomCommitSubmissionResponse>;
+  onProgressChange?: (progress: RoomAssessmentProgressSnapshot) => void;
 }
 
 const EMPTY_FIELDS: CommitSubmissionFormFields = {
@@ -166,6 +167,7 @@ export function CommitSubmissionWindow({
   challengePacket,
   disabledReason,
   onSubmit,
+  onProgressChange,
 }: CommitSubmissionWindowProps): JSX.Element {
   const submissionDefaults = buildCommitSubmissionDefaults({
     repositoryUrl: defaultRepositoryUrl,
@@ -218,6 +220,7 @@ export function CommitSubmissionWindow({
       const payload = await buildCommitSubmissionPayload(fields);
       const response = await onSubmit(payload);
       setResult(response);
+      onProgressChange?.(response.progress);
     } catch (err) {
       setError(err instanceof Error ? err.message : 'Commit submission failed.');
     } finally {

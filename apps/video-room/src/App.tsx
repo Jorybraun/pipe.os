@@ -135,6 +135,7 @@ import type {
   RoomMetadata,
   RoomPhase,
   RoomWorkspace,
+  RoomAssessmentProgressSnapshot,
   RoomCommitSubmissionRequest,
   RoomCommitSubmissionResponse,
 } from './types';
@@ -412,6 +413,7 @@ function Room({ token, metadata }: { token: string; metadata: RoomMetadata }): J
   const publishClippyInteractionEvent = room.publishClippyInteractionEvent;
   const publishCodeServerFileEvent = room.publishCodeServerFileEvent;
   const [workspace, setWorkspace] = useState<RoomWorkspace | null>(metadata.workspace ?? null);
+  const [assessmentProgress, setAssessmentProgress] = useState<RoomAssessmentProgressSnapshot | null>(null);
   const [workspaceLoading, setWorkspaceLoading] = useState(false);
   const [workspaceError, setWorkspaceError] = useState<string | null>(null);
   const [workspaceRepoInput, setWorkspaceRepoInput] = useState('');
@@ -2158,7 +2160,11 @@ function Room({ token, metadata }: { token: string; metadata: RoomMetadata }): J
 
   const submitCommitFromRoom = (
     payload: RoomCommitSubmissionRequest,
-  ): Promise<RoomCommitSubmissionResponse> => submitRoomAssessmentCommit(token, payload);
+  ): Promise<RoomCommitSubmissionResponse> => submitRoomAssessmentCommit(token, payload)
+    .then((response) => {
+      setAssessmentProgress(response.progress);
+      return response;
+    });
 
   const handleClippyAction = (actionId: string): void => {
     executeRoomAction(actionId);
@@ -2375,6 +2381,20 @@ function Room({ token, metadata }: { token: string; metadata: RoomMetadata }): J
     cameraEnabled: room.cameraEnabled,
   });
 
+  const renderAssessmentStatusStrip = (): JSX.Element => (
+    <AssessmentStatusStrip
+      meetingType={metadata.meetingType}
+      workspace={workspace}
+      workspaceLoading={workspaceLoading}
+      workspaceError={workspaceError}
+      canLaunchWorkspace={canLaunchWorkspace}
+      assessmentProgress={assessmentProgress}
+      onLaunchWorkspace={() => void launchWorkspace()}
+      onOpenWorkspace={() => openWorkspaceWindow('win95_desktop_ui')}
+      onOpenSubmission={() => openSubmissionWindow('win95_desktop_ui')}
+    />
+  );
+
   const renderWindowContent = (win: WindowState): JSX.Element => {
     switch (win.windowType) {
       case 'video':
@@ -2436,16 +2456,7 @@ function Room({ token, metadata }: { token: string; metadata: RoomMetadata }): J
               </div>
             </div>
 
-            <AssessmentStatusStrip
-              meetingType={metadata.meetingType}
-              workspace={workspace}
-              workspaceLoading={workspaceLoading}
-              workspaceError={workspaceError}
-              canLaunchWorkspace={canLaunchWorkspace}
-              onLaunchWorkspace={() => void launchWorkspace()}
-              onOpenWorkspace={() => openWorkspaceWindow('win95_desktop_ui')}
-              onOpenSubmission={() => openSubmissionWindow('win95_desktop_ui')}
-            />
+            {renderAssessmentStatusStrip()}
 
             <div className="win95-video-controls">
               <button
@@ -2671,6 +2682,7 @@ function Room({ token, metadata }: { token: string; metadata: RoomMetadata }): J
               ? null
               : 'Commit submission is only available for dev-container assessment rooms.'}
             onSubmit={submitCommitFromRoom}
+            onProgressChange={setAssessmentProgress}
           />
         );
 
@@ -2708,6 +2720,9 @@ function Room({ token, metadata }: { token: string; metadata: RoomMetadata }): J
     <StandardLayout
       wm={wm}
       renderWindowContent={renderWindowContent}
+      assessmentHeader={roomAssessmentMode === 'dev_container_assessment'
+        ? renderAssessmentStatusStrip()
+        : undefined}
       recordingLabel={visibleRecordingLabel}
       recordingActive={visibleRecordingActive}
       canEnterDesktop={canControlRoomSurface}

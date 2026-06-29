@@ -67,6 +67,7 @@ describe('StandardLayout', () => {
     render(
       <StandardLayout
         wm={wm}
+        assessmentHeader={<div>assessment status header</div>}
         renderWindowContent={(win) => <div>{win.windowType === 'workspace' ? 'code workspace' : 'video call'}</div>}
         modeLabel="Dev-container assessment"
         primarySurface="workspace"
@@ -75,6 +76,7 @@ describe('StandardLayout', () => {
 
     expect(screen.getByTestId('standard-primary-workspace').textContent).toContain('code workspace');
     expect(screen.getByTestId('standard-video-pip').textContent).toContain('video call');
+    expect(screen.getByTestId('standard-assessment-header').textContent).toContain('assessment status header');
     expect(screen.queryByTitle('Toggle workspace')).toBeNull();
   });
 });

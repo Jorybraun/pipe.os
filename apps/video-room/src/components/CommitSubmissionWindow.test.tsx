@@ -143,6 +143,7 @@ describe('CommitSubmissionWindow', () => {
 
   it('requires either real test output or a source-backed missing-test note before submitting', async () => {
     const commitSha = 'c'.repeat(40);
+    const onProgressChange = vi.fn();
     const onSubmit = vi.fn(async (_payload: RoomCommitSubmissionRequest): Promise<RoomCommitSubmissionResponse> => {
       return {
         submission: {
@@ -197,6 +198,7 @@ describe('CommitSubmissionWindow', () => {
         defaultRepositoryUrl="https://github.com/fallback/repo"
         challengePacket={packet}
         onSubmit={onSubmit}
+        onProgressChange={onProgressChange}
       />,
     );
 
@@ -243,6 +245,11 @@ describe('CommitSubmissionWindow', () => {
     expect(progress.textContent).toContain('Test evidence: Missing');
     expect(progress.textContent).toContain('Verification gap: Captured');
     expect(progress.textContent).toContain('verification gap source');
+    expect(onProgressChange).toHaveBeenCalledWith(expect.objectContaining({
+      stage: 'READY_FOR_EVALUATION',
+      hasCommitSubmission: true,
+      commit: expect.objectContaining({ commitSha }),
+    }));
   });
 
   it('keeps candidate-entered values when packet defaults refresh', () => {
