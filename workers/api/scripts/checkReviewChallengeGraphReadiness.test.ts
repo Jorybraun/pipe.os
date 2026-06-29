@@ -59,7 +59,8 @@ function setupReadyDb(): BetterSqliteDb {
       repo_id INTEGER NOT NULL,
       pr_number INTEGER NOT NULL,
       production_ready INTEGER NOT NULL,
-      repo_snapshot_id TEXT NOT NULL
+      repo_snapshot_id TEXT NOT NULL,
+      packet_json TEXT NOT NULL DEFAULT '{}'
     );
     CREATE TABLE context_records (
       id TEXT PRIMARY KEY,
