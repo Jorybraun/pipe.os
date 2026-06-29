@@ -358,6 +358,7 @@ describe('PersonProfilePage', () => {
 
     const cockpit = screen.getByTestId('person-decision-cockpit');
     expect(cockpit).toHaveTextContent('Decision cockpit');
+    expect(cockpit).toHaveTextContent('6 source proof items');
     expect(cockpit).toHaveTextContent('Current recommendation');
     expect(cockpit).toHaveTextContent('Advance with focused probe');
     expect(cockpit).toHaveTextContent('Assessment validity');
@@ -374,7 +375,7 @@ describe('PersonProfilePage', () => {
     expect(decision).toHaveTextContent('pierre/diffs PR #95');
     expect(decision).toHaveTextContent('Candidate found the missing retry test and defended the review.');
     expect(decision).toHaveTextContent('Probe how they balance timing trade-offs under pushback.');
-    expect(decision).toHaveTextContent('4 source-backed proof items');
+    expect(decision).toHaveTextContent('6 source-backed proof items');
     expect(decision).toHaveTextContent('Assessment validity');
     expect(decision).toHaveTextContent('Usable source-backed signal');
     expect(decision).toHaveTextContent('Uncertainty');
@@ -401,6 +402,39 @@ describe('PersonProfilePage', () => {
     expect(screen.queryByText('candidate_node_625b5cd373443f0aef79af73749894fb')).not.toBeInTheDocument();
     expect(screen.queryByTestId('mock-living-context-graph')).not.toBeInTheDocument();
     expect(screen.getByRole('button', { name: 'Open graph' })).toBeInTheDocument();
+  });
+
+  it('does not trust a scored code review when repo-match provenance is missing', async () => {
+    const context = makeLivingContext();
+    context.contextRecords = context.contextRecords.filter((record) =>
+      record.recordType !== 'candidate_pr_match_decision'
+    );
+
+    mocks.api.get
+      .mockResolvedValueOnce({ contact: makeContact() })
+      .mockResolvedValueOnce(context);
+
+    renderPage();
+    await flushAsyncUpdates();
+
+    const cockpit = screen.getByTestId('person-decision-cockpit');
+    expect(cockpit).toHaveTextContent('Current recommendation');
+    expect(cockpit).toHaveTextContent('Collect missing evidence');
+    expect(cockpit).toHaveTextContent('Assessment validity');
+    expect(cockpit).toHaveTextContent('Partial source-backed signal');
+    expect(cockpit).toHaveTextContent('Uncertainty');
+    expect(cockpit).toHaveTextContent('Repo fit unknown');
+    expect(cockpit).toHaveTextContent('Next action');
+    expect(cockpit).toHaveTextContent('Schedule evidence-gathering call');
+
+    const decision = await screen.findByTestId('person-code-review-decision');
+    expect(decision).toHaveTextContent('Collect missing evidence');
+    expect(decision).toHaveTextContent('Partial source-backed signal');
+    expect(decision).toHaveTextContent('Repo fit unknown');
+    expect(decision).toHaveTextContent('Source-backed repo challenge selection');
+    expect(decision).toHaveTextContent('Source-backed repo match decision provenance');
+    expect(decision).not.toHaveTextContent('Usable source-backed signal');
+    expect(decision).not.toHaveTextContent('Advance with focused probe');
   });
 
   it('shows a visible profile error instead of spinning forever when the person id is missing', async () => {

@@ -396,6 +396,13 @@ function challengeUrlForProjection(challenge: CodeReviewChallengeProjection | nu
   return challenge.prNumber !== null ? `${repoUrl}/pull/${challenge.prNumber}` : repoUrl;
 }
 
+function hasMatchedReviewChallenge(challenge: CodeReviewChallengeProjection | null): boolean {
+  if (!challenge) return false;
+  const status = challenge.matchStatus?.toUpperCase();
+  if (status && status !== 'MATCHED') return false;
+  return Boolean(challenge.repoLabel || challenge.repoUrl || challenge.prNumber !== null);
+}
+
 function verdictLabel(verdict: string | null): string | null {
   if (!verdict) return null;
   switch (verdict.toLowerCase()) {
@@ -417,6 +424,12 @@ function recommendationForScore(
   score: CodeReviewScoreProjection | null,
   challenge: CodeReviewChallengeProjection | null,
 ): { value: string; detail: string } {
+  if (!hasMatchedReviewChallenge(challenge)) {
+    return {
+      value: 'Collect missing evidence',
+      detail: 'PIPE has not proven a source-backed repo challenge match yet, so any score should stay out of the hiring recommendation.',
+    };
+  }
   if (score?.score !== null && score?.score !== undefined) {
     if (score.score >= 80) {
       return {
@@ -435,12 +448,6 @@ function recommendationForScore(
       detail: 'The review did not produce enough positive technical evidence. Confirm whether the assignment was fair before rejecting.',
     };
   }
-  if (challenge?.matchStatus && challenge.matchStatus !== 'MATCHED') {
-    return {
-      value: 'Collect missing evidence',
-      detail: 'PIPE does not have enough source-backed candidate evidence to trust a repo challenge recommendation yet.',
-    };
-  }
   return {
     value: 'Wait for review signal',
     detail: 'The code-review assignment has source-backed context, but no score report has been captured yet.',
@@ -452,11 +459,12 @@ function assessmentValidityForDecision(input: {
   challenge: CodeReviewChallengeProjection | null;
   proofCount: number;
   hasTranscript: boolean;
+  hasMatchProvenance: boolean;
 }): { value: string; detail: string } {
   const scoreValue = input.score?.score;
   const hasScore = scoreValue !== null && scoreValue !== undefined;
-  const hasMatchedChallenge = input.challenge?.matchStatus === 'MATCHED' || Boolean(input.challenge?.repoLabel);
-  if (hasScore && hasMatchedChallenge && input.hasTranscript && input.proofCount >= 4) {
+  const hasMatchedChallenge = hasMatchedReviewChallenge(input.challenge);
+  if (hasScore && hasMatchedChallenge && input.hasTranscript && input.hasMatchProvenance && input.proofCount >= 4) {
     return {
       value: 'Usable source-backed signal',
       detail: 'Score, review transcript, selected PR, and match provenance are all present. Use it as evidence, not as an automatic decision.',
@@ -465,13 +473,19 @@ function assessmentValidityForDecision(input: {
   if (hasScore && input.proofCount > 0) {
     return {
       value: 'Partial source-backed signal',
-      detail: 'A score exists, but the supporting transcript or match provenance is incomplete. Calibrate before relying on it.',
+      detail: 'A score exists, but the supporting transcript, selected PR, or match provenance is incomplete. Calibrate before relying on it.',
+    };
+  }
+  if (hasMatchedChallenge && input.hasMatchProvenance) {
+    return {
+      value: 'Assignment ready, score missing',
+      detail: 'The PR challenge and match provenance are source-backed, but the candidate review has not produced a score report yet.',
     };
   }
   if (hasMatchedChallenge) {
     return {
-      value: 'Assignment ready, score missing',
-      detail: 'The PR challenge has source-backed context, but the candidate review has not produced a score report yet.',
+      value: 'Match provenance incomplete',
+      detail: 'A repo or PR is visible, but PIPE has not attached the source-backed match decision proof yet.',
     };
   }
   return {
@@ -513,15 +527,22 @@ function uncertaintyForDecision(input: {
   challenge: CodeReviewChallengeProjection | null;
   proofCount: number;
   hasTranscript: boolean;
+  hasMatchProvenance: boolean;
   probes: string[];
 }): { value: string; detail: string } {
   const scoreValue = input.score?.score;
   const hasScore = scoreValue !== null && scoreValue !== undefined;
-  const hasMatchedChallenge = input.challenge?.matchStatus === 'MATCHED' || Boolean(input.challenge?.repoLabel);
+  const hasMatchedChallenge = hasMatchedReviewChallenge(input.challenge);
   if (!hasMatchedChallenge) {
     return {
       value: 'Repo fit unknown',
       detail: 'PIPE has not proven that the assigned repo or PR is a fair test of this person yet.',
+    };
+  }
+  if (!input.hasMatchProvenance) {
+    return {
+      value: 'Repo-match proof incomplete',
+      detail: 'PIPE has a visible repo challenge, but the source-backed match decision record is missing from the person graph.',
     };
   }
   if (!hasScore) {
@@ -559,12 +580,14 @@ function missingContextForDecision(input: {
   challenge: CodeReviewChallengeProjection | null;
   proofCount: number;
   hasTranscript: boolean;
+  hasMatchProvenance: boolean;
   probes: string[];
 }): string[] {
   const items: string[] = [];
   const hasScore = input.score?.score !== null && input.score?.score !== undefined;
-  const hasMatchedChallenge = input.challenge?.matchStatus === 'MATCHED' || Boolean(input.challenge?.repoLabel);
+  const hasMatchedChallenge = hasMatchedReviewChallenge(input.challenge);
   if (!hasMatchedChallenge) items.push('Source-backed repo challenge selection');
+  if (!input.hasMatchProvenance) items.push('Source-backed repo match decision provenance');
   if (!hasScore) items.push('Completed code-review score report');
   if (!input.hasTranscript) items.push('Candidate review transcript or review conversation');
   if (input.proofCount < 4) items.push('Complete candidate/repo provenance chain');
@@ -616,10 +639,12 @@ function deriveCodeReviewDecision(
   const matchRecord = livingContext.contextRecords
     .filter((record) => record.recordType === 'candidate_pr_match_decision' || record.predicate === 'selects review challenge')
     .sort((a, b) => recordTimestamp(b) - recordTimestamp(a))[0] ?? null;
-  const challenge = readChallengeProjection(scoreRecord)
+  const matchChallenge = readChallengeProjection(matchRecord);
+  const challenge = matchChallenge
+    ?? readChallengeProjection(scoreRecord)
     ?? readChallengeProjection(transcriptRecord)
-    ?? readChallengeProjection(matchRecord)
     ?? readChallengeProjection(codeReviewRecords[0] ?? null);
+  const hasMatchProvenance = Boolean(matchRecord && matchRecord.sources.length > 0 && hasMatchedReviewChallenge(matchChallenge));
   const recommendation = recommendationForScore(score, challenge);
   const scoreLabel = score?.score !== null && score?.score !== undefined
     ? `${Math.round(score.score)}/100${score.band ? ` ${titleCaseToken(score.band)}` : ''}`
@@ -627,14 +652,20 @@ function deriveCodeReviewDecision(
   const challengeLabel = challenge?.repoLabel
     ? `${challenge.repoLabel}${challenge.prNumber !== null ? ` PR #${challenge.prNumber}` : ''}`
     : null;
-  const proofSources = [scoreRecord, transcriptRecord]
+  const proofSources = [scoreRecord, transcriptRecord, matchRecord]
     .filter((record): record is LivingContextRecord => record !== null)
     .flatMap((record) => record.sources.map((source) => ({ record, source })));
+  const proofItems = proofSources.slice(0, 6).map(({ record, source }, index) => ({
+    id: `${record.id}:${index}:${source.sourceRefId ?? source.sourceSpanId ?? 'source'}`,
+    label: sourceProofLabel(source),
+    text: sourceProofText(source),
+  }));
   const assessmentValidity = assessmentValidityForDecision({
     score,
     challenge,
     proofCount: proofSources.length,
     hasTranscript: Boolean(transcriptRecord),
+    hasMatchProvenance,
   });
   const probes = score?.growthAreas ?? [];
   const uncertainty = uncertaintyForDecision({
@@ -642,6 +673,7 @@ function deriveCodeReviewDecision(
     challenge,
     proofCount: proofSources.length,
     hasTranscript: Boolean(transcriptRecord),
+    hasMatchProvenance,
     probes,
   });
   const missingContext = missingContextForDecision({
@@ -649,6 +681,7 @@ function deriveCodeReviewDecision(
     challenge,
     proofCount: proofSources.length,
     hasTranscript: Boolean(transcriptRecord),
+    hasMatchProvenance,
     probes,
   });
   const nextAction = nextActionForDecision(recommendation.value, score);
@@ -671,12 +704,8 @@ function deriveCodeReviewDecision(
     narrative: score?.narrative ?? transcriptRecord?.narrative ?? scoreRecord?.narrative ?? null,
     strengths: score?.strengths ?? [],
     probes,
-    proofCount: proofSources.length,
-    proofItems: proofSources.slice(0, 6).map(({ record, source }, index) => ({
-      id: `${record.id}:${index}:${source.sourceRefId ?? source.sourceSpanId ?? 'source'}`,
-      label: sourceProofLabel(source),
-      text: sourceProofText(source),
-    })),
+    proofCount: proofItems.length,
+    proofItems,
   };
 }
 
@@ -733,6 +762,9 @@ function ProfileDecisionCockpit({
     || (livingContext?.summary.contextRecordCount ?? 0) > 0
     || (livingContext?.summary.artifactCount ?? 0) > 0;
   const proofCount = decision?.proofCount ?? livingContext?.summary.sourceSpanCount ?? 0;
+  const proofLabel = decision
+    ? `source proof ${proofCount === 1 ? 'item' : 'items'}`
+    : `source ${proofCount === 1 ? 'span' : 'spans'}`;
   const cards = decision
     ? [
         {
@@ -796,7 +828,7 @@ function ProfileDecisionCockpit({
         <div style={PROFILE_COCKPIT_PROOF}>
           <div style={FIELD_LABEL}>Proof trail</div>
           <div style={PROFILE_COCKPIT_PROOF_VALUE}>
-            {proofCount} source {proofCount === 1 ? 'span' : 'spans'}
+            {proofCount} {proofLabel}
           </div>
         </div>
       </div>
