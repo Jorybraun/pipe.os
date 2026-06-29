@@ -17,6 +17,8 @@ import type {
 
 // Timeline grouping
 type TimelineGroup = 'TODAY' | 'TOMORROW' | 'THIS_WEEK' | 'LATER' | 'PAST' | 'UNSCHEDULED';
+type InterviewSortMode = 'CREATED_DESC' | 'TIMELINE' | 'CREATED_ASC';
+type InterviewListGroup = TimelineGroup | 'CREATED_DESC' | 'CREATED_ASC';
 
 interface InviteResponse {
   success: boolean;
@@ -68,6 +70,38 @@ const TIMELINE_LABELS: Record<TimelineGroup, string> = {
   UNSCHEDULED: 'UNSCHEDULED',
 };
 
+const CREATED_LABELS: Record<Exclude<InterviewListGroup, TimelineGroup>, string> = {
+  CREATED_DESC: 'NEWEST CREATED',
+  CREATED_ASC: 'OLDEST CREATED',
+};
+
+const SORT_OPTIONS: ReadonlyArray<{ label: string; value: InterviewSortMode }> = [
+  { label: 'Newest', value: 'CREATED_DESC' },
+  { label: 'Timeline', value: 'TIMELINE' },
+  { label: 'Oldest', value: 'CREATED_ASC' },
+];
+
+function getGroupLabel(group: InterviewListGroup): string {
+  return group in TIMELINE_LABELS
+    ? TIMELINE_LABELS[group as TimelineGroup]
+    : CREATED_LABELS[group as Exclude<InterviewListGroup, TimelineGroup>];
+}
+
+function getCreatedTime(interview: ScheduledInterview): number {
+  const time = new Date(interview.createdAt).getTime();
+  return Number.isFinite(time) ? time : 0;
+}
+
+function compareByCreatedNewest(a: ScheduledInterview, b: ScheduledInterview): number {
+  const createdDiff = getCreatedTime(b) - getCreatedTime(a);
+  return createdDiff === 0 ? a.id.localeCompare(b.id) : createdDiff;
+}
+
+function compareByCreatedOldest(a: ScheduledInterview, b: ScheduledInterview): number {
+  const createdDiff = getCreatedTime(a) - getCreatedTime(b);
+  return createdDiff === 0 ? a.id.localeCompare(b.id) : createdDiff;
+}
+
 // ---------------------------------------------------------------------------
 // SchedulingDashboard
 // ---------------------------------------------------------------------------
@@ -117,6 +151,7 @@ export function SchedulingDashboard(): JSX.Element {
   const { notifications, isConnected } = useBookingNotifications();
   const api = useApiClient();
   const [showInviteModal, setShowInviteModal] = useState(false);
+  const [sortMode, setSortMode] = useState<InterviewSortMode>('CREATED_DESC');
   const [searchParams, setSearchParams] = useSearchParams();
   const [toasts, setToasts] = useState<ToastItem[]>([]);
   const seenNotificationIds = useRef<Set<string>>(new Set());
@@ -154,8 +189,20 @@ export function SchedulingDashboard(): JSX.Element {
     }
   }, [notifications, refetch]);
 
-  // Group interviews by timeline, then sort within each group by time
+  // Group interviews by the selected recruiter view.
   const groupedInterviews = useMemo(() => {
+    if (sortMode === 'CREATED_DESC') {
+      return [
+        ['CREATED_DESC', [...interviews].sort(compareByCreatedNewest)],
+      ] as Array<[InterviewListGroup, ScheduledInterview[]]>;
+    }
+
+    if (sortMode === 'CREATED_ASC') {
+      return [
+        ['CREATED_ASC', [...interviews].sort(compareByCreatedOldest)],
+      ] as Array<[InterviewListGroup, ScheduledInterview[]]>;
+    }
+
     const groups = new Map<TimelineGroup, ScheduledInterview[]>();
 
     interviews.forEach((iv) => {
@@ -171,15 +218,16 @@ export function SchedulingDashboard(): JSX.Element {
       .sort((a, b) => TIMELINE_ORDER[a[0]] - TIMELINE_ORDER[b[0]])
       .map(([group, ivs]) => [
         group,
-        ivs.sort((a, b) => {
+        [...ivs].sort((a, b) => {
           if (!a.scheduledAt) return 1;
           if (!b.scheduledAt) return -1;
-          return new Date(a.scheduledAt).getTime() - new Date(b.scheduledAt).getTime();
+          const scheduleDiff = new Date(a.scheduledAt).getTime() - new Date(b.scheduledAt).getTime();
+          return scheduleDiff === 0 ? compareByCreatedNewest(a, b) : scheduleDiff;
         }),
-      ] as [TimelineGroup, ScheduledInterview[]]);
+      ] as [InterviewListGroup, ScheduledInterview[]]);
 
     return sorted;
-  }, [interviews]);
+  }, [interviews, sortMode]);
 
   // ---------------------------------------------------------------------------
   // Render
@@ -284,7 +332,7 @@ export function SchedulingDashboard(): JSX.Element {
               <span style={{ marginLeft: 8, color: '#4ade80', fontSize: 8 }}>● LIVE</span>
             )}
           </div>
-          <h1 style={{ fontSize: 28, fontWeight: 800, color: 'var(--pipe-text)', letterSpacing: '-0.02em' }}>
+          <h1 style={{ fontSize: 28, fontWeight: 800, color: 'var(--pipe-text)', letterSpacing: 0 }}>
             Interviews
           </h1>
         </div>
@@ -313,6 +361,45 @@ export function SchedulingDashboard(): JSX.Element {
           <span style={{ fontSize: 13, color: 'var(--pipe-text-dim)', fontFamily: '"Space Mono", monospace' }}>
             {interviews.length} total
           </span>
+          <div
+            role="group"
+            aria-label="Interview sort"
+            style={{
+              display: 'inline-grid',
+              gridTemplateColumns: 'repeat(3, minmax(72px, 1fr))',
+              border: '1px solid var(--pipe-border)',
+              borderRadius: 6,
+              overflow: 'hidden',
+              background: 'var(--pipe-surface-solid)',
+              minHeight: 32,
+            }}
+          >
+            {SORT_OPTIONS.map((option) => {
+              const active = sortMode === option.value;
+              return (
+                <button
+                  key={option.value}
+                  type="button"
+                  aria-pressed={active}
+                  onClick={() => setSortMode(option.value)}
+                  style={{
+                    border: 'none',
+                    borderLeft: option.value === 'CREATED_DESC' ? 'none' : '1px solid var(--pipe-border)',
+                    background: active ? 'var(--pipe-text)' : 'transparent',
+                    color: active ? 'var(--pipe-bg)' : 'var(--pipe-text-dim)',
+                    fontFamily: '"Space Mono", monospace',
+                    fontSize: 10,
+                    fontWeight: 700,
+                    minHeight: 32,
+                    padding: '0 10px',
+                    cursor: 'pointer',
+                  }}
+                >
+                  {option.label}
+                </button>
+              );
+            })}
+          </div>
         </div>
       </div>
 
@@ -346,7 +433,7 @@ export function SchedulingDashboard(): JSX.Element {
                   textTransform: 'uppercase',
                 }}
               >
-                {TIMELINE_LABELS[group]}
+                {getGroupLabel(group)}
               </div>
               <div style={{ display: 'flex', flexDirection: 'column', gap: 8 }}>
                 {ivs.map((iv) => {

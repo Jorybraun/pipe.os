@@ -7,6 +7,10 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Fixed — Scheduling
+
+- Interview lists now default to newest-created ordering and include Newest, Timeline, and Oldest controls so recruiters can scan recent invites without losing the existing scheduled-time view.
+
 ### Fixed — Video room
 
 - Clippy no longer mounts the unmanaged `clippyjs` paperclip sprite over the Win95 desktop; the controlled tray, proactive card, and chat window remain as the only Clippy surfaces.
@@ -17,6 +21,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Fixed — Candidate repo matching
 
+- CODE_REVIEW repo-match refresh now requires completed follow-up evidence to have a matcher-visible living-context projection before rerunning, and the recruiter UI shows projection-pending evidence instead of offering a stale rerun.
 - CODE_REVIEW evidence-plan follow-up transcript answers now materialize as source-backed living-context records with dynamic open-term concepts, so repo-match refreshes consume the new candidate evidence instead of only seeing an assessment-layer ready flag.
 - CODE_REVIEW interview detail now shows related evidence interviews from the same person graph, so follow-up calls and multiple assessment invites for one email remain visible as separate source-backed evidence moments.
 - CODE_REVIEW evidence-plan follow-ups now require concrete candidate-owned PR, bug, review, trade-off, or verification evidence before unlocking repo-match reruns, while preserving generic answers as blocked source evidence.
