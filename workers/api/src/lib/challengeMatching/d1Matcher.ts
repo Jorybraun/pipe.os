@@ -110,9 +110,18 @@ export interface RoleGuardrailChallengeExclusion {
 
 export type ChallengeMatchExclusion = ChallengePacketLoadExclusion | RoleGuardrailChallengeExclusion;
 
+export interface CandidateEvidenceDepth {
+  sourceDiversity: number;
+  totalInteractions: number;
+  totalAssertions: number;
+  totalSourceSpans: number;
+  sourceTypes: Record<string, number>;
+}
+
 export interface ChallengeMatchDiagnostics {
   excludedPackets: ChallengeMatchExclusion[];
   recalledPacketIds: string[];
+  candidateEvidenceDepth?: CandidateEvidenceDepth;
   evaluatedChallenges: Array<{
     challengeId: string;
     repoId: string;
@@ -763,6 +772,19 @@ export interface CandidateReviewChallengeMatch {
   diagnostics?: ChallengeMatchDiagnostics;
 }
 
+/**
+ * Minimum number of interactions required before matching proceeds.
+ * Below this threshold the matcher returns NEEDS_MORE_EVIDENCE.
+ */
+const DEFAULT_MIN_EVIDENCE_INTERACTIONS = 0;
+
+/**
+ * Minimum source diversity (0–1) for reliable matching.
+ * 0 = one source type is enough, 1 = all 6 types required.
+ * A value of 0 disables the gate; default is lenient (any single source).
+ */
+const DEFAULT_MIN_EVIDENCE_DIVERSITY = 0;
+
 export interface CandidateReviewChallengeOptions {
   roleSnapshotId?: string;
   roleContextId?: string;
@@ -772,6 +794,10 @@ export interface CandidateReviewChallengeOptions {
   roleConcepts?: string[];
   conceptResolverVersion?: string;
   roleSourceReferences?: RoleSourceReference[];
+  /** Override minimum interaction count threshold (default: 1). */
+  minEvidenceInteractions?: number;
+  /** Override minimum source diversity threshold 0–1 (default: 0). */
+  minEvidenceDiversity?: number;
 }
 
 function sourceRefToContextSource(
@@ -1412,16 +1438,81 @@ function buildRunExplanation(input: {
   };
 }
 
+async function loadCandidateEvidenceDepth(
+  db: D1Database,
+  candidateId: string,
+): Promise<CandidateEvidenceDepth | null> {
+  const wp = await db.prepare(
+    `SELECT wp.id
+       FROM applications app
+       JOIN workspace_people wp ON wp.id = app.workspace_person_id
+      WHERE app.legacy_candidate_id = ?1
+      LIMIT 1`,
+  ).bind(candidateId).first<{ id: string }>();
+  if (!wp) return null;
+  const [interactionBreakdown, assertionCount, sourceSpanCount] = await Promise.all([
+    db.prepare(
+      `SELECT interaction_type, COUNT(*) AS cnt
+         FROM interactions
+        WHERE workspace_person_id = ?1
+        GROUP BY interaction_type`,
+    ).bind(wp.id).all<{ interaction_type: string; cnt: number }>(),
+    db.prepare(
+      `SELECT COUNT(*) AS cnt FROM semantic_assertions WHERE workspace_person_id = ?1`,
+    ).bind(wp.id).first<{ cnt: number }>(),
+    db.prepare(
+      `SELECT COUNT(*) AS cnt
+         FROM source_spans ss
+         JOIN artifact_versions av ON av.id = ss.artifact_version_id
+         JOIN artifacts a ON a.id = av.artifact_id
+        WHERE a.workspace_person_id = ?1`,
+    ).bind(wp.id).first<{ cnt: number }>(),
+  ]);
+  const sourceTypes: Record<string, number> = {};
+  let totalInteractions = 0;
+  for (const row of interactionBreakdown.results ?? []) {
+    sourceTypes[row.interaction_type] = row.cnt;
+    totalInteractions += row.cnt;
+  }
+  const maxSourceTypes = 6;
+  return {
+    sourceDiversity: Math.min(Object.keys(sourceTypes).length / maxSourceTypes, 1),
+    totalInteractions,
+    totalAssertions: assertionCount?.cnt ?? 0,
+    totalSourceSpans: sourceSpanCount?.cnt ?? 0,
+    sourceTypes,
+  };
+}
+
 export async function matchCandidateToReviewChallenge(
   db: D1Database,
   candidateId: string,
   options: CandidateReviewChallengeOptions = {},
 ): Promise<CandidateReviewChallengeMatch> {
   await ensureCandidateMatchBridge(db, candidateId);
-  const [signals, challengeLoad] = await Promise.all([
+  const [signals, challengeLoad, evidenceDepth] = await Promise.all([
     loadCandidateSignals(db, candidateId),
     loadChallengePackets(db, options.roleConcepts),
+    loadCandidateEvidenceDepth(db, candidateId),
   ]);
+  const minInteractions = options.minEvidenceInteractions ?? DEFAULT_MIN_EVIDENCE_INTERACTIONS;
+  const minDiversity = options.minEvidenceDiversity ?? DEFAULT_MIN_EVIDENCE_DIVERSITY;
+  if (evidenceDepth && (
+    evidenceDepth.totalInteractions < minInteractions
+    || evidenceDepth.sourceDiversity < minDiversity
+  )) {
+    const matchRunId = crypto.randomUUID();
+    return {
+      status: 'NEEDS_MORE_EVIDENCE',
+      matchRunId,
+      diagnostics: {
+        excludedPackets: [],
+        recalledPacketIds: [],
+        candidateEvidenceDepth: evidenceDepth,
+        evaluatedChallenges: [],
+      },
+    };
+  }
   const { packets: challenges, exclusions: packetLoadExclusions } = challengeLoad;
   const genericConcepts = deriveCorpusGenericConcepts(challenges);
   const genericConceptSet = new Set(genericConcepts);
@@ -1511,6 +1602,7 @@ export async function matchCandidateToReviewChallenge(
   const diagnostics: ChallengeMatchDiagnostics = {
     excludedPackets,
     recalledPacketIds: recalled.challenges.map((item) => item.challenge.id),
+    candidateEvidenceDepth: evidenceDepth ?? undefined,
     evaluatedChallenges,
   };
   const matchRunId = crypto.randomUUID();
