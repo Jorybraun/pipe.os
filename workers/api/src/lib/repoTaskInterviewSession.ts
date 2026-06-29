@@ -234,6 +234,82 @@ export interface PersistedCommitAssessmentSubmission {
   transition: PersistedAssessmentStateTransition | null;
 }
 
+export type AssessmentProgressStage =
+  | 'WAITING_FOR_CHALLENGE'
+  | 'CHALLENGE_READY'
+  | 'WORK_IN_PROGRESS'
+  | 'READY_FOR_EVALUATION'
+  | 'EVALUATED'
+  | 'NEEDS_ATTENTION'
+  | 'CANCELLED';
+
+export type AssessmentProgressNextAction =
+  | 'ASSIGN_CHALLENGE'
+  | 'OPEN_ROOM_OR_WORKSPACE'
+  | 'CAPTURE_WORK_EVIDENCE'
+  | 'SUBMIT_COMMIT'
+  | 'START_EVALUATION'
+  | 'REVIEW_EVALUATION'
+  | 'RESOLVE_DIAGNOSTIC'
+  | 'NONE';
+
+export interface AssessmentEvidenceKindCount {
+  kind: string;
+  count: number;
+}
+
+export interface AssessmentProgressSourceRef {
+  sourceRefType: string;
+  sourceRefId: string;
+  evidenceRole: string;
+  exactText: string;
+  locator: JsonObject;
+}
+
+export interface AssessmentProgressLatestEvent {
+  id: string;
+  kind: string;
+  sequence: number;
+  occurredAt: string;
+}
+
+export interface AssessmentProgressCommit {
+  eventId: string;
+  repositoryUrl: string | null;
+  forkRepositoryUrl: string | null;
+  branchName: string | null;
+  baseCommitSha: string | null;
+  commitSha: string | null;
+  commitUrl: string | null;
+  changedFiles: JsonValue[];
+  occurredAt: string;
+}
+
+export interface AssessmentProgressEvaluation {
+  id: string;
+  status: EvaluationReportStatus;
+  summary: string;
+  createdAt: string;
+}
+
+export interface AssessmentProgressSnapshot {
+  session: PersistedRepoTaskInterviewSession;
+  stage: AssessmentProgressStage;
+  nextAction: AssessmentProgressNextAction;
+  nextActionLabel: string;
+  hasChallengePacket: boolean;
+  hasWorkEvidence: boolean;
+  hasCommitSubmission: boolean;
+  hasFinalSubmission: boolean;
+  hasAiInteraction: boolean;
+  hasTranscriptEvidence: boolean;
+  evidenceCounts: AssessmentEvidenceKindCount[];
+  challenge: AssessmentProgressSourceRef | null;
+  latestEvent: AssessmentProgressLatestEvent | null;
+  commit: AssessmentProgressCommit | null;
+  evaluation: AssessmentProgressEvaluation | null;
+}
+
 const ALLOWED_TRANSITIONS: Record<RepoTaskInterviewState, readonly RepoTaskInterviewState[]> = {
   INTAKE: ['IN_PROGRESS', 'DIAGNOSTIC', 'CANCELLED'],
   IN_PROGRESS: ['FINAL_SUBMITTED', 'DIAGNOSTIC', 'CANCELLED'],
@@ -497,6 +573,91 @@ function changedFilesToJson(
     if (file.deletions !== undefined && file.deletions !== null) changedFile.deletions = file.deletions;
     return changedFile;
   });
+}
+
+function parseJsonObject(value: string | null): JsonObject {
+  if (!value) return {};
+  const parsed = JSON.parse(value) as JsonValue;
+  if (parsed === null || Array.isArray(parsed) || typeof parsed !== 'object') return {};
+  return parsed;
+}
+
+function jsonStringValue(value: JsonValue | undefined): string | null {
+  return typeof value === 'string' && value.trim().length > 0 ? value : null;
+}
+
+function jsonArrayValue(value: JsonValue | undefined): JsonValue[] {
+  return Array.isArray(value) ? value : [];
+}
+
+function hasEventKind(
+  counts: readonly AssessmentEvidenceKindCount[],
+  kinds: readonly string[],
+): boolean {
+  return counts.some((count) => kinds.includes(count.kind) && count.count > 0);
+}
+
+function modeRequiresCommit(mode: RepoTaskInterviewMode): boolean {
+  return mode === 'OPEN_SOURCE_BUG_FIX' || mode === 'DEV_CONTAINER_REPO_TASK';
+}
+
+function progressNextActionLabel(action: AssessmentProgressNextAction): string {
+  switch (action) {
+    case 'ASSIGN_CHALLENGE':
+      return 'Assign a concrete repo challenge packet.';
+    case 'OPEN_ROOM_OR_WORKSPACE':
+      return 'Open the assessment room and start the workspace.';
+    case 'CAPTURE_WORK_EVIDENCE':
+      return 'Capture terminal, code, transcript, chat, and AI-use evidence.';
+    case 'SUBMIT_COMMIT':
+      return 'Submit a source-backed assessment commit.';
+    case 'START_EVALUATION':
+      return 'Start source-backed AI or human evaluation.';
+    case 'REVIEW_EVALUATION':
+      return 'Review the assessment report and evidence.';
+    case 'RESOLVE_DIAGNOSTIC':
+      return 'Resolve the blocking diagnostic before continuing.';
+    case 'NONE':
+      return 'No further assessment action is required.';
+  }
+}
+
+function progressStageAndAction(input: {
+  session: PersistedRepoTaskInterviewSession;
+  hasChallengePacket: boolean;
+  hasWorkEvidence: boolean;
+  hasCommitSubmission: boolean;
+  hasFinalSubmission: boolean;
+  evaluation: AssessmentProgressEvaluation | null;
+}): { stage: AssessmentProgressStage; nextAction: AssessmentProgressNextAction } {
+  if (input.session.state === 'CANCELLED') {
+    return { stage: 'CANCELLED', nextAction: 'NONE' };
+  }
+  if (input.session.state === 'DIAGNOSTIC') {
+    return { stage: 'NEEDS_ATTENTION', nextAction: 'RESOLVE_DIAGNOSTIC' };
+  }
+  if (input.evaluation) {
+    if (input.evaluation.status === 'EVALUATED') {
+      return { stage: 'EVALUATED', nextAction: 'REVIEW_EVALUATION' };
+    }
+    return { stage: 'NEEDS_ATTENTION', nextAction: 'RESOLVE_DIAGNOSTIC' };
+  }
+  if (!input.hasChallengePacket) {
+    return { stage: 'WAITING_FOR_CHALLENGE', nextAction: 'ASSIGN_CHALLENGE' };
+  }
+  if (modeRequiresCommit(input.session.mode) && !input.hasCommitSubmission) {
+    if (input.hasWorkEvidence || input.hasFinalSubmission) {
+      return { stage: 'WORK_IN_PROGRESS', nextAction: 'SUBMIT_COMMIT' };
+    }
+    return { stage: 'CHALLENGE_READY', nextAction: 'OPEN_ROOM_OR_WORKSPACE' };
+  }
+  if (input.hasCommitSubmission || input.hasFinalSubmission || input.session.state === 'FINAL_SUBMITTED') {
+    return { stage: 'READY_FOR_EVALUATION', nextAction: 'START_EVALUATION' };
+  }
+  if (input.hasWorkEvidence) {
+    return { stage: 'WORK_IN_PROGRESS', nextAction: 'CAPTURE_WORK_EVIDENCE' };
+  }
+  return { stage: 'CHALLENGE_READY', nextAction: 'OPEN_ROOM_OR_WORKSPACE' };
 }
 
 export class RepoTaskInterviewSessionStore {
@@ -804,6 +965,183 @@ export class RepoTaskInterviewSessionStore {
       reportId: row.report_id,
       code: row.code,
       severity: row.severity,
+    };
+  }
+
+  async loadProgress(sessionId: string): Promise<AssessmentProgressSnapshot> {
+    const session = await this.loadSession(sessionId);
+    const evidenceCounts = await this.loadEvidenceCounts(session.id);
+    const challenge = await this.loadChallengeSourceRef(session.id);
+    const latestEvent = await this.loadLatestEvent(session.id);
+    const commit = await this.loadLatestCommitSubmission(session.id);
+    const evaluation = await this.loadLatestEvaluation(session.id);
+
+    const hasWorkEvidence = hasEventKind(evidenceCounts, [
+      'terminal_output',
+      'test_run',
+      'code_diff',
+      'ai_interaction',
+      'tool_usage',
+      'transcript_span',
+      'dev_container_event',
+      'message',
+      'commit_submission',
+    ]);
+    const hasCommitSubmission = commit !== null;
+    const hasFinalSubmission = hasEventKind(evidenceCounts, ['final_submission']);
+    const hasAiInteraction = hasEventKind(evidenceCounts, ['ai_interaction']);
+    const hasTranscriptEvidence = hasEventKind(evidenceCounts, ['transcript_span']);
+    const hasChallengePacket = challenge !== null;
+    const { stage, nextAction } = progressStageAndAction({
+      session,
+      hasChallengePacket,
+      hasWorkEvidence,
+      hasCommitSubmission,
+      hasFinalSubmission,
+      evaluation,
+    });
+
+    return {
+      session,
+      stage,
+      nextAction,
+      nextActionLabel: progressNextActionLabel(nextAction),
+      hasChallengePacket,
+      hasWorkEvidence,
+      hasCommitSubmission,
+      hasFinalSubmission,
+      hasAiInteraction,
+      hasTranscriptEvidence,
+      evidenceCounts,
+      challenge,
+      latestEvent,
+      commit,
+      evaluation,
+    };
+  }
+
+  private async loadEvidenceCounts(sessionId: string): Promise<AssessmentEvidenceKindCount[]> {
+    const result = await this.db.prepare(
+      `SELECT kind, COUNT(*) AS count
+         FROM assessment_evidence_events
+        WHERE session_id = ?1
+        GROUP BY kind
+        ORDER BY kind`,
+    ).bind(sessionId).all<{ kind: string; count: number }>();
+    return (result.results ?? []).map((row) => ({
+      kind: row.kind,
+      count: row.count,
+    }));
+  }
+
+  private async loadChallengeSourceRef(sessionId: string): Promise<AssessmentProgressSourceRef | null> {
+    const row = await this.db.prepare(
+      `SELECT sr.source_ref_type, sr.source_ref_id, sr.evidence_role, sr.exact_text, sr.locator_json
+         FROM assessment_event_source_refs sr
+         JOIN assessment_evidence_events e ON e.id = sr.event_id
+        WHERE e.session_id = ?1
+          AND (
+            sr.source_ref_type IN (
+              'review_challenge_packet',
+              'repo_challenge_packet',
+              'repo_task_challenge_packet',
+              'open_source_challenge_packet',
+              'challenge_packet'
+            )
+            OR sr.evidence_role IN (
+              'selected_review_challenge',
+              'assigned_challenge',
+              'challenge_packet'
+            )
+          )
+        ORDER BY e.sequence DESC, sr.created_at DESC
+        LIMIT 1`,
+    ).bind(sessionId).first<{
+      source_ref_type: string;
+      source_ref_id: string;
+      evidence_role: string;
+      exact_text: string;
+      locator_json: string | null;
+    }>();
+    if (!row) return null;
+    return {
+      sourceRefType: row.source_ref_type,
+      sourceRefId: row.source_ref_id,
+      evidenceRole: row.evidence_role,
+      exactText: row.exact_text,
+      locator: parseJsonObject(row.locator_json),
+    };
+  }
+
+  private async loadLatestEvent(sessionId: string): Promise<AssessmentProgressLatestEvent | null> {
+    const row = await this.db.prepare(
+      `SELECT id, kind, sequence, occurred_at
+         FROM assessment_evidence_events
+        WHERE session_id = ?1
+        ORDER BY sequence DESC
+        LIMIT 1`,
+    ).bind(sessionId).first<{
+      id: string;
+      kind: string;
+      sequence: number;
+      occurred_at: string;
+    }>();
+    if (!row) return null;
+    return {
+      id: row.id,
+      kind: row.kind,
+      sequence: row.sequence,
+      occurredAt: row.occurred_at,
+    };
+  }
+
+  private async loadLatestCommitSubmission(sessionId: string): Promise<AssessmentProgressCommit | null> {
+    const row = await this.db.prepare(
+      `SELECT id, payload_json, occurred_at
+         FROM assessment_evidence_events
+        WHERE session_id = ?1
+          AND kind = 'commit_submission'
+        ORDER BY sequence DESC
+        LIMIT 1`,
+    ).bind(sessionId).first<{
+      id: string;
+      payload_json: string;
+      occurred_at: string;
+    }>();
+    if (!row) return null;
+    const payload = parseJsonObject(row.payload_json);
+    return {
+      eventId: row.id,
+      repositoryUrl: jsonStringValue(payload.repositoryUrl),
+      forkRepositoryUrl: jsonStringValue(payload.forkRepositoryUrl),
+      branchName: jsonStringValue(payload.branchName),
+      baseCommitSha: jsonStringValue(payload.baseCommitSha),
+      commitSha: jsonStringValue(payload.commitSha),
+      commitUrl: jsonStringValue(payload.commitUrl),
+      changedFiles: jsonArrayValue(payload.changedFiles),
+      occurredAt: row.occurred_at,
+    };
+  }
+
+  private async loadLatestEvaluation(sessionId: string): Promise<AssessmentProgressEvaluation | null> {
+    const row = await this.db.prepare(
+      `SELECT id, status, summary, created_at
+         FROM assessment_evaluation_reports
+        WHERE session_id = ?1
+        ORDER BY created_at DESC, id DESC
+        LIMIT 1`,
+    ).bind(sessionId).first<{
+      id: string;
+      status: EvaluationReportStatus;
+      summary: string;
+      created_at: string;
+    }>();
+    if (!row) return null;
+    return {
+      id: row.id,
+      status: row.status,
+      summary: row.summary,
+      createdAt: row.created_at,
     };
   }
 

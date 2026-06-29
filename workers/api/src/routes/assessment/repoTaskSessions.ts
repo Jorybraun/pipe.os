@@ -298,6 +298,16 @@ repoTaskSessions.post('/sessions/:sessionId/events', async (c) => {
   }
 });
 
+repoTaskSessions.get('/sessions/:sessionId/progress', async (c) => {
+  try {
+    const store = new RepoTaskInterviewSessionStore(c.env.DB);
+    const progress = await store.loadProgress(c.req.param('sessionId'));
+    return c.json({ progress });
+  } catch (error) {
+    return storeErrorResponse(c, error);
+  }
+});
+
 repoTaskSessions.post('/sessions/:sessionId/state', async (c) => {
   const body = transitionStateSchema.safeParse(await c.req.json().catch(() => null));
   if (!body.success) {

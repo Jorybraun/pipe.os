@@ -551,6 +551,206 @@ index 5c7b20a..7f9a12e 100644
     ).get(session.id)).toEqual({ count: 0 });
   });
 
+  it('summarizes source-backed repo-task progress from challenge assignment through evaluation', async () => {
+    const session = await createSession(app, env, {
+      ingestionKey: 'assessment-session:progress-snapshot',
+      mode: 'OPEN_SOURCE_BUG_FIX',
+      candidateId: 'candidate-progress',
+    });
+
+    const initialProgressResponse = await app.request(
+      `/api/v1/assessment/repo-task/sessions/${session.id}/progress`,
+      { method: 'GET' },
+      env,
+    );
+    expect(initialProgressResponse.status).toBe(200);
+    const initialProgressBody = await initialProgressResponse.json() as {
+      progress: {
+        stage: string;
+        nextAction: string;
+        hasChallengePacket: boolean;
+        hasCommitSubmission: boolean;
+      };
+    };
+    expect(initialProgressBody.progress).toMatchObject({
+      stage: 'WAITING_FOR_CHALLENGE',
+      nextAction: 'ASSIGN_CHALLENGE',
+      hasChallengePacket: false,
+      hasCommitSubmission: false,
+    });
+
+    const challengeText = [
+      'Repo: https://github.com/open-source/widgets',
+      'Base commit: 3333333333333333333333333333333333333333',
+      'Task: fix stale popover listener cleanup and add a regression test.',
+      'Success: commit a focused patch with passing popover tests.',
+    ].join('\n');
+    const challengeSourceRef = {
+      ...await sourceRef('review_challenge_packet', 'challenge-packet-popover-cleanup', challengeText),
+      evidenceRole: 'assigned_challenge',
+      locator: {
+        repositoryUrl: 'https://github.com/open-source/widgets',
+        baseCommitSha: '3333333333333333333333333333333333333333',
+      },
+    };
+    const challengeEventResponse = await app.request(
+      `/api/v1/assessment/repo-task/sessions/${session.id}/events`,
+      jsonRequest({
+        ingestionKey: 'assessment-event:progress-challenge',
+        kind: 'recruiter_note',
+        actorType: 'recruiter',
+        actorId: 'recruiter-1',
+        narrative: 'Recruiter assigned a concrete source-backed open-source challenge packet.',
+        payload: { repositoryUrl: 'https://github.com/open-source/widgets' },
+        sourceRefs: [challengeSourceRef],
+      }),
+      env,
+    );
+    expect(challengeEventResponse.status).toBe(201);
+
+    const challengeProgressResponse = await app.request(
+      `/api/v1/assessment/repo-task/sessions/${session.id}/progress`,
+      { method: 'GET' },
+      env,
+    );
+    expect(challengeProgressResponse.status).toBe(200);
+    const challengeProgressBody = await challengeProgressResponse.json() as {
+      progress: {
+        stage: string;
+        nextAction: string;
+        hasChallengePacket: boolean;
+        challenge: { sourceRefType: string; sourceRefId: string; exactText: string };
+      };
+    };
+    expect(challengeProgressBody.progress).toMatchObject({
+      stage: 'CHALLENGE_READY',
+      nextAction: 'OPEN_ROOM_OR_WORKSPACE',
+      hasChallengePacket: true,
+      challenge: {
+        sourceRefType: 'review_challenge_packet',
+        sourceRefId: 'challenge-packet-popover-cleanup',
+        exactText: challengeText,
+      },
+    });
+
+    const baseCommitSha = '3333333333333333333333333333333333333333';
+    const commitSha = 'dddddddddddddddddddddddddddddddddddddddd';
+    const commitText = `commit ${commitSha}
+Author: Candidate <candidate@example.com>
+
+Fix stale popover listener cleanup.`;
+    const diffText = `diff --git a/src/popover.ts b/src/popover.ts
+--- a/src/popover.ts
++++ b/src/popover.ts
+@@ -42,6 +42,7 @@ export function closePopover() {
++  cleanupStaleHandler();
+ }`;
+    const commitSourceRef = await sourceRef('git_commit', commitSha, commitText);
+    const codeDiffSourceRef = await sourceRef('code_diff', `${commitSha}:diff`, diffText);
+    const commitResponse = await app.request(
+      `/api/v1/assessment/repo-task/sessions/${session.id}/commit-submissions`,
+      jsonRequest({
+        ingestionKey: 'assessment-event:progress-commit',
+        actorType: 'candidate',
+        actorId: 'candidate-progress',
+        narrative: 'Candidate submitted the source-backed assessment commit.',
+        repositoryUrl: 'https://github.com/open-source/widgets',
+        forkRepositoryUrl: 'https://github.com/candidate/widgets',
+        branchName: 'pipe-assessment/progress-popover',
+        baseCommitSha,
+        commitSha,
+        commitUrl: `https://github.com/candidate/widgets/commit/${commitSha}`,
+        changedFiles: [{ path: 'src/popover.ts', status: 'modified', additions: 1, deletions: 0 }],
+        sourceRefs: [commitSourceRef, codeDiffSourceRef],
+      }),
+      env,
+    );
+    expect(commitResponse.status).toBe(201);
+
+    const commitProgressResponse = await app.request(
+      `/api/v1/assessment/repo-task/sessions/${session.id}/progress`,
+      { method: 'GET' },
+      env,
+    );
+    expect(commitProgressResponse.status).toBe(200);
+    const commitProgressBody = await commitProgressResponse.json() as {
+      progress: {
+        stage: string;
+        nextAction: string;
+        hasCommitSubmission: boolean;
+        hasWorkEvidence: boolean;
+        latestEvent: { kind: string };
+        commit: {
+          repositoryUrl: string;
+          forkRepositoryUrl: string;
+          branchName: string;
+          commitSha: string;
+          changedFiles: Array<{ path: string; status: string }>;
+        };
+        evidenceCounts: Array<{ kind: string; count: number }>;
+      };
+    };
+    expect(commitProgressBody.progress).toMatchObject({
+      stage: 'READY_FOR_EVALUATION',
+      nextAction: 'START_EVALUATION',
+      hasCommitSubmission: true,
+      hasWorkEvidence: true,
+      latestEvent: { kind: 'commit_submission' },
+      commit: {
+        repositoryUrl: 'https://github.com/open-source/widgets',
+        forkRepositoryUrl: 'https://github.com/candidate/widgets',
+        branchName: 'pipe-assessment/progress-popover',
+        commitSha,
+        changedFiles: [{ path: 'src/popover.ts', status: 'modified' }],
+      },
+    });
+    expect(commitProgressBody.progress.evidenceCounts).toEqual(expect.arrayContaining([
+      { kind: 'commit_submission', count: 1 },
+      { kind: 'recruiter_note', count: 1 },
+    ]));
+
+    const evaluationResponse = await app.request(
+      `/api/v1/assessment/repo-task/sessions/${session.id}/evaluation-reports`,
+      jsonRequest({
+        ingestionKey: 'evaluation:progress-commit-quality',
+        status: 'EVALUATED',
+        summary: 'Candidate produced a focused source-backed commit.',
+        claims: [{
+          id: 'claim-focused-commit',
+          polarity: 'positive',
+          dimension: 'commit_quality',
+          narrative: 'The patch is focused on the stale popover listener cleanup.',
+          sourceRefs: [codeDiffSourceRef],
+        }],
+        diagnostics: [],
+      }),
+      env,
+    );
+    expect(evaluationResponse.status).toBe(201);
+
+    const evaluatedProgressResponse = await app.request(
+      `/api/v1/assessment/repo-task/sessions/${session.id}/progress`,
+      { method: 'GET' },
+      env,
+    );
+    expect(evaluatedProgressResponse.status).toBe(200);
+    const evaluatedProgressBody = await evaluatedProgressResponse.json() as {
+      progress: {
+        stage: string;
+        nextAction: string;
+        evaluation: { status: string; summary: string };
+      };
+    };
+    expect(evaluatedProgressBody.progress).toMatchObject({
+      stage: 'EVALUATED',
+      nextAction: 'REVIEW_EVALUATION',
+      evaluation: {
+        status: 'EVALUATED',
+        summary: 'Candidate produced a focused source-backed commit.',
+      },
+    });
+  });
+
   it('rejects unsupported positive claims and records unavailable AI providers as diagnostics', async () => {
     const session = await createSession(app, env, {
       ingestionKey: 'assessment-session:unsupported-positive',
