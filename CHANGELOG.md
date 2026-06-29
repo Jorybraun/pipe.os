@@ -41,6 +41,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Fixed — Candidate repo matching
 
+- Win95 Submit Work now renders the backend assessment progress snapshot after commit submission, including stage, state, commit, evidence counts, AI/transcript flags, latest event, and evaluator status.
 - Win95 challenge packets now render task, success criteria, and expected evidence from exact source-backed packet text while staying quiet when those sections are absent.
 - Uploaded CVs now always create a visible candidate-ingestion state before parsing, failed parsing is recorded instead of swallowed, and candidate assessment routes can restart matching when a resume exists but no ingestion row was ever recorded; recruiter interview details also expose the last delivered assessment link for CODE_REVIEW/dev-container invites.
 - People list pages now use the same recruiter surface shell, header, segmented controls, search panel, and card frame as person profiles and interview details, so moving between people index and profile no longer feels like a different app.

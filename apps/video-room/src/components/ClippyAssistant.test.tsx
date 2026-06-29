@@ -226,6 +226,37 @@ describe('ClippyAssistant', () => {
     expect(screen.getByTestId('clippy-proactive-card').textContent).toContain('Need help opening the workspace?');
   });
 
+  it('uses the room chat-open state so the proactive prompt cannot overlap the bridge', () => {
+    const { rerender } = render(
+      <ClippyAssistant
+        messages={[{ text: "I'll keep the desktop ready while they join.", hold: true }]}
+        onDismiss={vi.fn()}
+        chatOpen
+        agentEnabled={false}
+        agentWsUrl={null}
+      />,
+    );
+
+    expect(screen.getByTestId('clippy-chat')).toBeTruthy();
+    expect(screen.queryByTestId('clippy-proactive-card')).toBeNull();
+    expect(screen.getByTestId('clippy-chat-buddy').contains(screen.getByTestId('clippy-character'))).toBe(true);
+
+    rerender(
+      <ClippyAssistant
+        messages={[{ text: "I'll keep the desktop ready while they join.", hold: true }]}
+        onDismiss={vi.fn()}
+        chatOpen={false}
+        agentEnabled={false}
+        agentWsUrl={null}
+      />,
+    );
+
+    expect(screen.queryByTestId('clippy-chat')).toBeNull();
+    expect(screen.getByTestId('clippy-proactive-card').textContent).toContain(
+      "I'll keep the desktop ready while they join.",
+    );
+  });
+
   it('does not render or enable a fake Devin identity before the bridge reports an agent name', async () => {
     const sendMessage = vi.fn(() => null);
     const onUserChatMessage = vi.fn();

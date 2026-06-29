@@ -8,6 +8,7 @@ import {
 import type {
   RoomCommitSubmissionRequest,
   RoomCommitSubmissionResponse,
+  RoomAssessmentProgressSnapshot,
   RoomWorkspaceChallengePacket,
 } from '../types';
 
@@ -32,6 +33,116 @@ const EMPTY_FIELDS: CommitSubmissionFormFields = {
   commitEvidenceText: '',
   diffText: '',
 };
+
+function formatProgressLabel(value: string | null | undefined): string {
+  const normalized = value?.trim();
+  if (!normalized) return 'Unknown';
+  return normalized
+    .replace(/[_-]+/g, ' ')
+    .toLowerCase()
+    .replace(/\b\w/g, (letter) => letter.toUpperCase());
+}
+
+function formatEvidenceKind(kind: string): string {
+  return kind.trim().replace(/[_-]+/g, ' ').toLowerCase();
+}
+
+function shortSha(value: string | null | undefined): string | null {
+  const trimmed = value?.trim();
+  return trimmed ? trimmed.slice(0, 12) : null;
+}
+
+function evidenceFlagLabel(value: boolean): string {
+  return value ? 'Captured' : 'Missing';
+}
+
+function AssessmentProgressPanel({
+  progress,
+}: {
+  progress: RoomAssessmentProgressSnapshot;
+}): JSX.Element {
+  const commitSha = shortSha(progress.commit?.commitSha ?? null);
+  const baseSha = shortSha(progress.commit?.baseCommitSha ?? null);
+  const changedFileCount = progress.commit?.changedFiles.length ?? 0;
+  const latestEventLabel = progress.latestEvent
+    ? `${formatProgressLabel(progress.latestEvent.kind)} #${progress.latestEvent.sequence}`
+    : null;
+
+  return (
+    <section
+      className="commit-submission-progress"
+      data-testid="commit-submission-progress"
+      aria-label="Assessment progress"
+    >
+      <div className="commit-submission-progress-header">
+        <CheckCircle2 size={16} />
+        <div>
+          <strong>Assessment progress</strong>
+          <span>{progress.nextActionLabel}</span>
+        </div>
+      </div>
+
+      <dl className="commit-submission-progress-grid">
+        <dt>Mode</dt>
+        <dd>{formatProgressLabel(progress.mode)}</dd>
+        <dt>Stage</dt>
+        <dd data-testid="commit-submission-progress-stage">{formatProgressLabel(progress.stage)}</dd>
+        <dt>State</dt>
+        <dd>{formatProgressLabel(progress.state)}</dd>
+        {progress.commit && (
+          <>
+            <dt>Commit</dt>
+            <dd data-testid="commit-submission-progress-commit">{commitSha ?? 'Recorded'}</dd>
+            <dt>Branch</dt>
+            <dd>{progress.commit.branchName ?? 'Recorded'}</dd>
+            {baseSha && (
+              <>
+                <dt>Base</dt>
+                <dd>{baseSha}</dd>
+              </>
+            )}
+            <dt>Changed files</dt>
+            <dd>{changedFileCount}</dd>
+          </>
+        )}
+        {latestEventLabel && (
+          <>
+            <dt>Latest event</dt>
+            <dd>{latestEventLabel}</dd>
+          </>
+        )}
+        {progress.evaluation && (
+          <>
+            <dt>Evaluation</dt>
+            <dd>
+              {formatProgressLabel(progress.evaluation.status)}
+              {progress.evaluation.summary ? ` - ${progress.evaluation.summary}` : ''}
+            </dd>
+          </>
+        )}
+      </dl>
+
+      <div className="commit-submission-progress-flags">
+        <span>Challenge packet: {evidenceFlagLabel(progress.hasChallengePacket)}</span>
+        <span>Work evidence: {evidenceFlagLabel(progress.hasWorkEvidence)}</span>
+        <span>Commit submission: {evidenceFlagLabel(progress.hasCommitSubmission)}</span>
+        <span>AI interaction: {evidenceFlagLabel(progress.hasAiInteraction)}</span>
+        <span>Transcript evidence: {evidenceFlagLabel(progress.hasTranscriptEvidence)}</span>
+      </div>
+
+      {progress.evidenceCounts.length > 0 && (
+        <ul className="commit-submission-evidence-counts" data-testid="commit-submission-evidence-counts">
+          {progress.evidenceCounts.map((evidence) => (
+            <li key={evidence.kind}>
+              <strong>{evidence.count}</strong>
+              <span>{formatEvidenceKind(evidence.kind)}</span>
+            </li>
+          ))}
+        </ul>
+      )}
+    </section>
+  );
+}
 
 export function CommitSubmissionWindow({
   defaultRepositoryUrl,
@@ -243,6 +354,9 @@ export function CommitSubmissionWindow({
           <CheckCircle2 size={16} />
           <span>{result.progress.nextActionLabel}</span>
         </div>
+      )}
+      {result && (
+        <AssessmentProgressPanel progress={result.progress} />
       )}
 
       <div className="commit-submission-actions">

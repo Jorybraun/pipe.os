@@ -36,6 +36,7 @@ export interface ClippyAction {
 export interface ClippyAssistantProps {
   messages: ClippyMessage[];
   onDismiss: () => void;
+  chatOpen?: boolean;
   onChatOpen?: () => void;
   onChatClose?: () => void;
   agentWsUrl?: string | null;
@@ -86,6 +87,7 @@ function ClippyCharacter({
 export function ClippyAssistant({
   messages,
   onDismiss,
+  chatOpen: controlledChatOpen,
   onChatOpen,
   onChatClose,
   agentWsUrl,
@@ -107,7 +109,7 @@ export function ClippyAssistant({
   onAgentStatus,
   onAgentFileChange,
 }: ClippyAssistantProps) {
-  const [chatOpen, setChatOpen] = useState(false);
+  const [localChatOpen, setLocalChatOpen] = useState(false);
   const [chatInput, setChatInput] = useState('');
   const [localChatMessages, setLocalChatMessages] = useState<AgentChatMessage[]>([]);
   const [dismissedPromptSignature, setDismissedPromptSignature] = useState<string | null>(null);
@@ -178,13 +180,15 @@ export function ClippyAssistant({
     onAgentRoomAction,
   ]);
 
+  const chatOpen = controlledChatOpen ?? localChatOpen;
+
   const openChat = useCallback(() => {
-    setChatOpen(true);
+    setLocalChatOpen(true);
     onChatOpen?.();
   }, [onChatOpen]);
 
   const closeChat = useCallback(() => {
-    setChatOpen(false);
+    setLocalChatOpen(false);
     onChatClose?.();
   }, [onChatClose]);
 
@@ -433,7 +437,7 @@ export function ClippyAssistant({
         <div className="win95-clippy-chat" data-testid="clippy-chat">
           <div className="win95-clippy-chat-header">
             <span className="win95-clippy-chat-title">
-              <ClippyCharacter compact status={agentEnabled ? agentConn.status : 'unavailable'} />
+              <Paperclip size={14} />
               <span>Clippy — {chatAgentName}</span>
             </span>
             <button
@@ -447,6 +451,9 @@ export function ClippyAssistant({
           </div>
 
           <div className="win95-clippy-chat-messages">
+            <div className="win95-clippy-chat-buddy" data-testid="clippy-chat-buddy">
+              <ClippyCharacter status={agentEnabled ? agentConn.status : 'unavailable'} />
+            </div>
             {chatMessages.length === 0 && (
               <div className="win95-clippy-chat-msg agent">
                 {emptyChatMessage}

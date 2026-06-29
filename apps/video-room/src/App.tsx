@@ -2667,6 +2667,7 @@ function Room({ token, metadata }: { token: string; metadata: RoomMetadata }): J
         <ClippyAssistant
           messages={clippyMessages}
           onDismiss={dismissClippy}
+          chatOpen={clippyChatOpen}
           onChatOpen={() => setClippyChatOpen(true)}
           onChatClose={closeClippyChat}
           agentWsUrl={workspaceSession && hasActiveWorkspace

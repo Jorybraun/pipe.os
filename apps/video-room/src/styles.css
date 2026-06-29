@@ -3073,6 +3073,40 @@ button:focus-visible {
   gap: 6px;
 }
 
+.win95-clippy-chat-buddy {
+  display: flex;
+  justify-content: center;
+  padding: 2px 0 4px;
+}
+
+.win95-clippy-chat-buddy .win95-clippy-character {
+  width: 58px;
+  height: 64px;
+  color: #6b7280;
+  filter: drop-shadow(1px 2px 0 rgba(0, 0, 0, 0.25));
+}
+
+.win95-clippy-chat-buddy .win95-clippy-character-body svg {
+  width: 48px;
+  height: 48px;
+}
+
+.win95-clippy-chat-buddy .win95-clippy-character-eyes {
+  top: 16px;
+  left: 20px;
+  gap: 4px;
+}
+
+.win95-clippy-chat-buddy .win95-clippy-character-eyes span {
+  width: 5px;
+  height: 7px;
+}
+
+.win95-clippy-chat-buddy .win95-clippy-character-shadow {
+  width: 38px;
+  height: 7px;
+}
+
 .win95-clippy-chat-msg {
   padding: 4px 8px;
   border-radius: 2px;
@@ -3962,6 +3996,83 @@ button:focus-visible {
 .commit-submission-status.is-success {
   background: #e6ffe6;
   color: #063f06;
+}
+
+.commit-submission-progress {
+  display: grid;
+  grid-template-columns: 1fr;
+  gap: 8px;
+  padding: 8px;
+  border: 2px solid;
+  border-color: #808080 #dfdfdf #dfdfdf #808080;
+  background: #fff;
+  color: #111;
+  font-size: 11px;
+  line-height: 1.35;
+}
+
+.commit-submission-progress-header {
+  display: flex;
+  align-items: flex-start;
+  gap: 6px;
+}
+
+.commit-submission-progress-header strong {
+  display: block;
+  color: #000080;
+  text-transform: uppercase;
+}
+
+.commit-submission-progress-header span {
+  display: block;
+  margin-top: 2px;
+  color: #222;
+}
+
+.commit-submission-progress-grid {
+  display: grid;
+  grid-template-columns: max-content minmax(0, 1fr);
+  gap: 3px 8px;
+  margin: 0;
+}
+
+.commit-submission-progress-grid dt {
+  color: #404040;
+  font-weight: 700;
+}
+
+.commit-submission-progress-grid dd {
+  margin: 0;
+  min-width: 0;
+  overflow-wrap: anywhere;
+}
+
+.commit-submission-progress-flags {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 4px;
+}
+
+.commit-submission-progress-flags span,
+.commit-submission-evidence-counts li {
+  border: 1px solid #808080;
+  background: #dfdfdf;
+  padding: 2px 5px;
+}
+
+.commit-submission-evidence-counts {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 4px;
+  margin: 0;
+  padding: 0;
+  list-style: none;
+}
+
+.commit-submission-evidence-counts li {
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
 }
 
 .commit-submission-actions {
