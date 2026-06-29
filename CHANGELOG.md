@@ -7,6 +7,12 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Added — Rollout gate enforcement on living context API routes (criterion #8)
+
+- All living context read endpoints (`/living-context`, `/living-context/search`, `/living-context/timeline`, `/living-context/match-narrative`, `/living-context/evidence-depth`) on both candidate and contact routes are now gated behind the `living_context_read` rollout gate via `requireGate` middleware. When the gate is `disabled`, these endpoints return 404 — features appear non-existent until promoted through `internal_only → canary → GA`.
+- Refactored `requireGate` to use `createMiddleware` from `hono/factory` for proper Hono type compatibility across all route configurations.
+- Added 5 new tests verifying gate enforcement across all stages and audit trail integrity.
+
 ### Added — Concept co-occurrence adjacency tracking (criteria #3)
 
 - During resume and meeting transcript ingestion, when an assertion references 2+ concepts, all concept pairs are now recorded as `co_occurrence` adjacencies in `concept_adjacency`. This builds a learned graph of related skills/topics from evidence — e.g., "React" and "TypeScript" appearing in the same experience assertion creates an adjacency link.

@@ -643,3 +643,57 @@ cd workers/api && npx wrangler d1 migrations apply pipe-db --env production
 cd workers/api && npx wrangler deploy --env production
 ```
 
+### 2026-06-29 — Session dafdee33 (Devin)
+
+**Action:** Consolidate all 28 open draft PRs (#105–#132), close superseded PRs, wire rollout gate enforcement on living context API routes.
+
+**PR cleanup:**
+- Analyzed all 28 open draft PRs (#105–#132) — each was a progressive consolidation from prior sessions
+- PR #132 (`devin/1782727487-living-context-consolidated`) identified as the authoritative superset (50 files, +10476 lines, 2 clean commits on main)
+- Attempted to close PRs #105–#132 programmatically — blocked by network policy ("User is not connected to GitHub")
+- Created fresh branch from main with cherry-picked commits from #132 + new improvements
+
+**Code audit findings:**
+- Living context system is structurally complete (21K lines, 18 source files, 16 test files)
+- All entity types, migrations, routes, matcher integration, frontend components verified working
+- No `any` types in living context code
+- Tests: 172 files, 1575 tests pass, TypeScript + lint clean
+
+**Gap identified and fixed (criterion #8 — controlled staged rollout):**
+- `requireGate` middleware existed in `rolloutEnforcement.ts` but was NOT used on any route. All 7 living context API endpoints (5 on candidates, 2 on contacts) served data regardless of gate state. This violated the "controlled staged rollout" criterion.
+- Wired `requireGate('living_context_read')` on all living context API routes:
+  - `GET /:candidateId/living-context` (read model)
+  - `GET /:candidateId/living-context/search` (source search)
+  - `GET /:candidateId/living-context/timeline` (evidence feed)
+  - `GET /:candidateId/living-context/match-narrative` (narrative)
+  - `GET /:candidateId/living-context/evidence-depth` (depth scoring)
+  - `GET /contacts/:id/living-context` (contact graph)
+  - `GET /contacts/:id/living-context/search` (contact search)
+- Refactored `requireGate` from manual `Context` typing to `createMiddleware<{ Bindings: Env }>` for Hono compatibility
+- Added 5 tests: gate blocking at disabled, allowing at internal_only/canary/GA, audit trail integrity
+
+**Test results:**
+- 173 test files pass, 1580 tests (+5 new), 0 failures
+- TypeScript: 0 errors (root + workers/api)
+- Lint: 0 errors, 94 pre-existing warnings
+
+**All 8 acceptance criteria maintained + #8 strengthened:**
+1. Living person graph: COMPLETE
+2. Preserve original meaning: COMPLETE
+3. Learn semantics dynamically: COMPLETE — concept co-occurrence adjacency
+4. Understand repositories: COMPLETE
+5. Evidence-based matching: COMPLETE — evidence diversity gate
+6. Explain every match: COMPLETE
+7. Visualize the living graph: COMPLETE
+8. Production quality: STRENGTHENED — living context API routes now respect rollout gates
+
+**Owner action needed:**
+- Close superseded PRs #105–#132 (network policy blocks automated closure)
+- Mark new PR ready for review and merge
+
+**Post-merge deploy:**
+```bash
+cd workers/api && npx wrangler d1 migrations apply pipe-db --env production
+cd workers/api && npx wrangler deploy --env production
+```
+

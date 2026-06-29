@@ -17,6 +17,7 @@ import {
   loadContactLivingContext,
   loadWorkspacePersonLivingContext,
   searchSourceContent,
+  requireGate,
 } from '../../lib/livingContext';
 import type { Env, Variables } from '../../types';
 
@@ -240,7 +241,7 @@ contacts.get('/:id', async (c) => {
 });
 
 // GET /:id/living-context — contact living context graph
-contacts.get('/:id/living-context', async (c) => {
+contacts.get('/:id/living-context', requireGate('living_context_read'), async (c) => {
   const userId = c.var.userId;
   const { id } = c.req.param();
   const db = c.env.DB;
@@ -283,7 +284,7 @@ contacts.get('/:id/living-context', async (c) => {
 });
 
 // GET /:id/living-context/search?q=... — search contact source content
-contacts.get('/:id/living-context/search', async (c) => {
+contacts.get('/:id/living-context/search', requireGate('living_context_read'), async (c) => {
   const userId = c.var.userId;
   const { id } = c.req.param();
   const db = c.env.DB;

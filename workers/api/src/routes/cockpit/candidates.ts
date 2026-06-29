@@ -21,6 +21,7 @@ import {
   loadCandidateLivingContext,
   LivingContextStore,
   searchSourceContent,
+  requireGate,
 } from '../../lib/livingContext';
 import {
   formatMatchNarrative,
@@ -1564,7 +1565,7 @@ candidateOps.post('/', async (c) => {
 });
 
 // GET /:candidateId/living-context — source-backed person graph read model
-candidateOps.get('/:candidateId/living-context', async (c) => {
+candidateOps.get('/:candidateId/living-context', requireGate('living_context_read'), async (c) => {
   const userId = c.var.userId;
   const { candidateId } = c.req.param();
   const db = c.env.DB;
@@ -1585,7 +1586,7 @@ candidateOps.get('/:candidateId/living-context', async (c) => {
 });
 
 // GET /:candidateId/living-context/search?q=... — search candidate source content
-candidateOps.get('/:candidateId/living-context/search', async (c) => {
+candidateOps.get('/:candidateId/living-context/search', requireGate('living_context_read'), async (c) => {
   const userId = c.var.userId;
   const { candidateId } = c.req.param();
   const db = c.env.DB;
@@ -1613,7 +1614,7 @@ candidateOps.get('/:candidateId/living-context/search', async (c) => {
 });
 
 // GET /:candidateId/living-context/timeline — chronological evidence accumulation feed
-candidateOps.get('/:candidateId/living-context/timeline', async (c) => {
+candidateOps.get('/:candidateId/living-context/timeline', requireGate('living_context_read'), async (c) => {
   const userId = c.var.userId;
   const { candidateId } = c.req.param();
   const db = c.env.DB;
@@ -1645,7 +1646,7 @@ candidateOps.get('/:candidateId/living-context/timeline', async (c) => {
 });
 
 // GET /:candidateId/living-context/match-narrative — recruiter-facing match narrative
-candidateOps.get('/:candidateId/living-context/match-narrative', async (c) => {
+candidateOps.get('/:candidateId/living-context/match-narrative', requireGate('living_context_read'), async (c) => {
   const userId = c.var.userId;
   const { candidateId } = c.req.param();
   const db = c.env.DB;
@@ -1709,7 +1710,7 @@ candidateOps.get('/:candidateId/living-context/match-narrative', async (c) => {
 });
 
 // GET /:candidateId/living-context/evidence-depth — per-source-type evidence scoring
-candidateOps.get('/:candidateId/living-context/evidence-depth', async (c) => {
+candidateOps.get('/:candidateId/living-context/evidence-depth', requireGate('living_context_read'), async (c) => {
   const userId = c.var.userId;
   const { candidateId } = c.req.param();
   const db = c.env.DB;

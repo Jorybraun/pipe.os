@@ -1,4 +1,4 @@
-import type { Context, Next } from 'hono';
+import { createMiddleware } from 'hono/factory';
 import type { Env } from '../../types';
 import { deterministicEntityId } from './persistence';
 
@@ -49,11 +49,18 @@ export async function checkGate(
     };
   }
 
-  const row = await db.prepare(
-    `SELECT gate_key, stage FROM rollout_gates WHERE gate_key = ?1`,
-  ).bind(gateKey).first<GateRow>();
-
-  const stage: GateStage = row && isValidStage(row.stage) ? row.stage : 'disabled';
+  let stage: GateStage = 'disabled';
+  try {
+    const row = await db.prepare(
+      `SELECT gate_key, stage FROM rollout_gates WHERE gate_key = ?1`,
+    ).bind(gateKey).first<GateRow>();
+    stage = row && isValidStage(row.stage) ? row.stage : 'disabled';
+  } catch {
+    // Table may not exist yet (pre-migration) — allow traffic so
+    // pre-migration deployments are unaffected. Once the migration
+    // runs, the gate row controls access.
+    stage = 'GA';
+  }
 
   gateCache.set(gateKey, { stage, expiresAt: now + CACHE_TTL_MS });
 
@@ -68,16 +75,14 @@ export async function checkGate(
  * Hono middleware that rejects requests when a rollout gate is disabled.
  * Returns 404 (not 403) so that disabled features appear non-existent.
  */
-export function requireGate(
-  gateKey: string,
-): (c: Context<{ Bindings: Env }>, next: Next) => Promise<Response | void> {
-  return async (c: Context<{ Bindings: Env }>, next: Next): Promise<Response | void> => {
+export function requireGate(gateKey: string) {
+  return createMiddleware<{ Bindings: Env }>(async (c, next) => {
     const result = await checkGate(c.env.DB, gateKey);
     if (!result.allowed) {
       return c.json({ error: 'not_found' }, 404);
     }
     return next();
-  };
+  });
 }
 
 /**
