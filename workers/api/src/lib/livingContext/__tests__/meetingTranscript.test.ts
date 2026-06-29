@@ -692,6 +692,72 @@ describe('meeting transcript living-context ingestion', () => {
     expect(transitions.map((transition) => transition.to_state)).toEqual(['FINAL_SUBMITTED', 'EVALUATED']);
   });
 
+  it('does not mark summary-only evidence-plan transcripts ready for repo-match refresh', async () => {
+    sqlite.exec(assessmentLayerMigration);
+    sqlite.prepare(
+      `INSERT INTO assessment_sessions (
+         id, ingestion_key, interview_id, mode, state, candidate_id, workspace_id,
+         created_by, metadata_json, created_at, updated_at
+       ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
+    ).run(
+      'assessment-plan-summary-only',
+      'assessment-session:code-review-evidence-plan:code-review-1:scheduled-interview-1',
+      'scheduled-interview-1',
+      'TECHNICAL',
+      'IN_PROGRESS',
+      'candidate-1',
+      'workspace-1',
+      'code-review-evidence-plan',
+      JSON.stringify({
+        source: 'code_review_evidence_plan',
+        originalInterviewId: 'code-review-1',
+        contextCallInterviewId: 'scheduled-interview-1',
+        matchRunId: 'match-run-1',
+        matchStatus: 'NEEDS_MORE_EVIDENCE',
+      }),
+      '2026-06-13T09:30:00.000Z',
+      '2026-06-13T09:30:00.000Z',
+    );
+
+    await ingestMeetingTranscriptToLivingContext(db, {
+      meetingId: 'meeting-1',
+      ownerId: 'workspace-1',
+      scheduledInterviewId: 'scheduled-interview-1',
+      recordingKey: 'meetings/workspace-1/meeting-1/recording.webm',
+      provider: 'workers-ai-whisper-summary-only',
+      segments: [{
+        stableSegmentId: 'mixed-1',
+        text: 'I reviewed a checkout retry bug, but this audio is mixed and cannot prove who said it.',
+        speakerRole: 'guest',
+        speakerLabel: 'mixed',
+        contactId: 'contact-1',
+        channel: 0,
+        confidence: 0.42,
+      }],
+      semanticAssertions: [],
+      personContextMode: 'summary_only',
+      personContextReason: 'mixed_audio_without_speaker_attribution',
+    });
+
+    const planSession = sqlite.prepare(
+      `SELECT state
+         FROM assessment_sessions
+        WHERE id = 'assessment-plan-summary-only'`,
+    ).get() as { state: string };
+    expect(planSession.state).toBe('IN_PROGRESS');
+    expect(sqlite.prepare(
+      `SELECT COUNT(*) AS count
+         FROM assessment_evidence_events
+        WHERE session_id = 'assessment-plan-summary-only'
+          AND kind = 'evidence_plan_response_span'`,
+    ).get()).toEqual({ count: 0 });
+    expect(sqlite.prepare(
+      `SELECT COUNT(*) AS count
+         FROM assessment_evaluation_reports
+        WHERE session_id = 'assessment-plan-summary-only'`,
+    ).get()).toEqual({ count: 0 });
+  });
+
   it('grows a person-centered living context graph from a meeting transcript', async () => {
     const input = {
       meetingId: 'meeting-1',

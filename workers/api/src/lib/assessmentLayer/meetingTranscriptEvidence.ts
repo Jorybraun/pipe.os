@@ -223,6 +223,8 @@ async function captureEvidencePlanTranscriptEvidence(
   db: D1Database,
   input: MeetingTranscriptAssessmentEvidenceInput,
 ): Promise<void> {
+  if (input.personContextMode !== 'attributed') return;
+
   const planSession = await loadEvidencePlanSessionForInterview(db, input.scheduledInterviewId);
   if (!planSession) return;
 
