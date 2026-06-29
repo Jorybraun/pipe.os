@@ -1,10 +1,38 @@
 // @vitest-environment jsdom
 
-import { fireEvent, render, screen } from '@testing-library/react';
+import { fireEvent, render, screen, waitFor } from '@testing-library/react';
 import { beforeEach, describe, expect, it, vi } from 'vitest';
 import { ClippyAssistant } from './ClippyAssistant';
 import { useAgentConnection } from '../hooks/useAgentConnection';
 import type { AgentChatMessage } from '../hooks/useAgentConnection';
+
+const clippyMock = vi.hoisted(() => {
+  const agent = {
+    moveTo: vi.fn(),
+    show: vi.fn(),
+    play: vi.fn(),
+    animate: vi.fn(),
+    speak: vi.fn(),
+    hide: vi.fn(),
+    dispose: vi.fn(),
+  };
+  return {
+    agent,
+    initAgent: vi.fn(),
+  };
+});
+
+vi.mock('clippyjs', () => ({
+  initAgent: clippyMock.initAgent,
+}));
+
+vi.mock('clippyjs/agents/clippy', () => ({
+  default: {
+    agent: {},
+    map: '',
+    sound: {},
+  },
+}));
 
 vi.mock('../hooks/useAgentConnection', () => ({
   useAgentConnection: vi.fn(),
@@ -33,10 +61,11 @@ function mockAgentConnection(overrides: Partial<ReturnType<typeof useAgentConnec
 describe('ClippyAssistant', () => {
   beforeEach(() => {
     vi.clearAllMocks();
+    clippyMock.initAgent.mockResolvedValue(clippyMock.agent);
     mockAgentConnection();
   });
 
-  it('renders one controlled Clippy character without mounting the old duplicate clippyjs sprite', () => {
+  it('uses the authentic Clippy sprite without rendering a fake proactive Win95 dialog', async () => {
     render(
       <ClippyAssistant
         messages={[{ text: 'Need help opening the workspace?', hold: true }]}
@@ -46,13 +75,17 @@ describe('ClippyAssistant', () => {
       />,
     );
 
-    expect(document.querySelector('[data-clippy-anchor]')).toBeNull();
-    expect(screen.getByTestId('clippy-character')).not.toBeNull();
-    expect(document.querySelector('.win95-clippy-character-paper-stack')).not.toBeNull();
-    expect(screen.getByTestId('clippy-proactive-card').textContent).toContain('Need help opening the workspace?');
+    expect(screen.queryByTestId('clippy-proactive-card')).toBeNull();
+    expect(screen.queryByTestId('clippy-proactive-shell')).toBeNull();
+    expect(screen.getByTestId('clippy-hotspot')).toBeTruthy();
+    await waitFor(() => expect(clippyMock.initAgent).toHaveBeenCalledTimes(1));
+    await waitFor(() => expect(clippyMock.agent.speak).toHaveBeenCalledWith(
+      'Need help opening the workspace?',
+      false,
+    ));
   });
 
-  it('anchors the proactive speech bubble to a visible Clippy character', () => {
+  it('keeps the authentic sprite controlled through one hotspot instead of duplicate React characters', async () => {
     render(
       <ClippyAssistant
         messages={[{ text: 'I can help when the workspace is ready.', hold: true }]}
@@ -62,13 +95,10 @@ describe('ClippyAssistant', () => {
       />,
     );
 
-    const shell = screen.getByTestId('clippy-proactive-shell');
-    const card = screen.getByTestId('clippy-proactive-card');
-    const character = screen.getByTestId('clippy-character');
-
-    expect(shell.contains(card)).toBe(true);
-    expect(shell.contains(character)).toBe(true);
-    expect(shell.children.item(shell.children.length - 1)).toBe(character);
+    expect(screen.queryByTestId('clippy-character')).toBeNull();
+    expect(screen.queryByTestId('clippy-proactive-card')).toBeNull();
+    expect(screen.getAllByTestId('clippy-hotspot')).toHaveLength(1);
+    await waitFor(() => expect(clippyMock.agent.show).toHaveBeenCalledWith(true));
   });
 
   it('dismisses only the current prompt, leaving Clippy chat recoverable when a workspace can launch', async () => {
@@ -86,10 +116,12 @@ describe('ClippyAssistant', () => {
       />,
     );
 
-    fireEvent.click(screen.getByTestId('clippy-dismiss'));
+    await waitFor(() => expect(clippyMock.initAgent).toHaveBeenCalledTimes(1));
+    fireEvent.doubleClick(screen.getByTestId('clippy-hotspot'));
 
     expect(onDismiss).toHaveBeenCalledTimes(1);
     expect(screen.queryByTestId('clippy-proactive-card')).toBeNull();
+    expect(clippyMock.agent.hide).toHaveBeenCalledWith(true, undefined);
 
     rerender(
       <ClippyAssistant
@@ -107,7 +139,7 @@ describe('ClippyAssistant', () => {
     expect(onChatOpen).toHaveBeenCalledTimes(1);
   });
 
-  it('keeps a controlled Clippy character visible in the agent bridge chat', async () => {
+  it('keeps the authentic Clippy sprite available while the agent bridge chat is open', async () => {
     render(
       <ClippyAssistant
         messages={[]}
@@ -120,11 +152,11 @@ describe('ClippyAssistant', () => {
     );
 
     expect(await screen.findByTestId('clippy-chat')).toBeTruthy();
-    expect(screen.getByTestId('clippy-character')).not.toBeNull();
-    expect(document.querySelector('[data-clippy-anchor]')).toBeNull();
+    expect(screen.queryByTestId('clippy-character')).toBeNull();
+    await waitFor(() => expect(clippyMock.agent.show).toHaveBeenCalledWith(true));
   });
 
-  it('revives the Clippy prompt without opening the agent bridge dialog in a standard call', async () => {
+  it('revives authentic Clippy without opening the agent bridge dialog in a standard call', async () => {
     const onChatOpen = vi.fn();
     const onChatClose = vi.fn();
     const { rerender } = render(
@@ -139,7 +171,7 @@ describe('ClippyAssistant', () => {
       />,
     );
 
-    fireEvent.click(screen.getByTestId('clippy-dismiss'));
+    fireEvent.doubleClick(screen.getByTestId('clippy-hotspot'));
     expect(screen.queryByTestId('clippy-proactive-card')).toBeNull();
 
     rerender(
@@ -155,10 +187,8 @@ describe('ClippyAssistant', () => {
     );
 
     expect(screen.queryByTestId('clippy-chat')).toBeNull();
-    expect(screen.getByTestId('clippy-proactive-card').textContent).toContain(
-      "I'll keep the desktop ready while they join.",
-    );
-    expect(screen.getByTestId('clippy-character')).not.toBeNull();
+    expect(screen.queryByTestId('clippy-proactive-card')).toBeNull();
+    expect(screen.getByTestId('clippy-hotspot')).toBeTruthy();
     expect(onChatOpen).not.toHaveBeenCalled();
     expect(onChatClose).not.toHaveBeenCalled();
   });
@@ -269,7 +299,7 @@ describe('ClippyAssistant', () => {
     expect(onDismiss).not.toHaveBeenCalled();
     expect(screen.queryByTestId('clippy-chat')).toBeNull();
     expect(screen.queryByTestId('clippy-proactive-card')).toBeNull();
-    expect(screen.queryByTestId('clippy-character')).toBeNull();
+    expect(screen.queryByTestId('clippy-proactive-shell')).toBeNull();
   });
 
   it('uses the room chat-open state so the proactive prompt cannot overlap the bridge', () => {
@@ -286,7 +316,7 @@ describe('ClippyAssistant', () => {
 
     expect(screen.getByTestId('clippy-chat')).toBeTruthy();
     expect(screen.queryByTestId('clippy-proactive-card')).toBeNull();
-    expect(screen.getByTestId('clippy-chat-buddy').contains(screen.getByTestId('clippy-character'))).toBe(true);
+    expect(screen.queryByTestId('clippy-chat-buddy')).toBeNull();
 
     rerender(
       <ClippyAssistant
@@ -300,9 +330,8 @@ describe('ClippyAssistant', () => {
     );
 
     expect(screen.queryByTestId('clippy-chat')).toBeNull();
-    expect(screen.getByTestId('clippy-proactive-card').textContent).toContain(
-      "I'll keep the desktop ready while they join.",
-    );
+    expect(screen.queryByTestId('clippy-proactive-card')).toBeNull();
+    expect(screen.getByTestId('clippy-hotspot')).toBeTruthy();
   });
 
   it('does not render or enable a fake Devin identity before the bridge reports an agent name', async () => {

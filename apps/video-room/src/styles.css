@@ -2792,6 +2792,24 @@ button:focus-visible {
 }
 
 /* Clippy Chat UI */
+.win95-clippy-hotspot {
+  position: fixed;
+  right: 18px;
+  bottom: 48px;
+  width: 142px;
+  height: 132px;
+  z-index: 2147483001;
+  padding: 0;
+  border: 0;
+  background: transparent;
+  cursor: pointer;
+}
+
+.win95-clippy-hotspot:focus-visible {
+  outline: 1px dotted #fff;
+  outline-offset: -4px;
+}
+
 .win95-clippy-prompt-shell {
   position: fixed;
   right: 12px;
