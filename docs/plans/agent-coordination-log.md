@@ -4,6 +4,32 @@ Inter-agent handoff log for the living context graph goal. Each agent appends a 
 
 ## Log
 
+### 2026-06-29 — Session ceb4da80 (Devin)
+
+**Action:** Consolidate PRs #105–#134 into non-draft PR #135, add evaluation corpus seeder.
+
+**PR #135 created:** `devin/1782738226-living-context-production-merge` → main
+- Consolidation of all living context work from PRs #105–#134
+- 1591 tests pass (174 files), 0 failures
+- TypeScript: 0 errors (frontend + workers)
+- Lint: 0 errors (94 pre-existing warnings)
+
+**New code added (this session):**
+1. `POST /api/v1/internal/evaluation-corpus-seed` — seeds evaluation corpus from real match decisions in D1. Extracts candidate living context evidence (assertions + source spans), role requirements, challenge packets, generates draft labels from match scores.
+2. `evaluation/corpusSeeder.ts` — `seedCorpusFromMatchRuns()` + `persistSeededCorpus()` with configurable filters (limit, statusFilter, roleContextId).
+3. 5 new tests covering empty state, full provenance extraction, persistence, orphan warnings, and status filtering.
+
+**CI status:** 4 failures — all pre-existing on main (BlobNotFound Azure infrastructure issue).
+
+**Superseded PRs:** #105–#134 should be closed manually (GitHub write ops blocked for this session).
+
+**Next priorities:**
+- Merge PR #135 to main
+- Close superseded PRs #105–#134
+- Run corpus seeder against production D1 after deploy
+- Have domain experts upgrade seeded labels from `corpus-seeder` to production-grade
+- Monitor integrity endpoint post-deploy
+
 ### 2026-06-29 — Session 40b620fb (Devin)
 
 **Action:** Consolidate PRs #105–#133, create PR #134, add production observability endpoints.
