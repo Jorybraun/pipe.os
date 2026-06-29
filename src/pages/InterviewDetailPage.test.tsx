@@ -1077,6 +1077,127 @@ describe('InterviewDetailPage', () => {
     expect(screen.queryByTestId('interview-code-review-evidence-plan')).toBeNull();
   });
 
+  it('shows a copyable assessment link for code-review interviews after invite delivery', async () => {
+    const deliveredUrl = 'https://app-dev.hire-pipe.com/assess/recruiter-visible-token';
+    const writeText = vi.fn().mockResolvedValue(undefined);
+    Object.defineProperty(navigator, 'clipboard', {
+      configurable: true,
+      value: { writeText },
+    });
+    mocks.api.get.mockResolvedValueOnce({
+      interview: makeInterview({
+        interviewType: 'CODE_REVIEW',
+        candidateId: 'candidate-1',
+        assessmentSetup: {
+          status: 'waiting_for_source_backed_match',
+          kind: 'auto_match',
+          source: 'candidate_id',
+          blocksPositiveAssessment: true,
+          message: 'Candidate evidence is available for matching, but no source-backed PR task has been assigned yet.',
+          lastDeliveredUrl: deliveredUrl,
+        },
+      }),
+    });
+
+    renderDetail();
+
+    await flushAsyncUpdates();
+    const linkPanel = screen.getByTestId('interview-assessment-link');
+    expect(linkPanel).toHaveTextContent('Assessment invite');
+    expect(linkPanel).toHaveTextContent('Candidate assessment link');
+    expect(screen.getByDisplayValue(deliveredUrl)).toBeTruthy();
+
+    fireEvent.click(screen.getByText('COPY ASSESSMENT LINK'));
+    await flushAsyncUpdates();
+
+    expect(writeText).toHaveBeenCalledWith(deliveredUrl);
+    expect(linkPanel).toHaveTextContent('Assessment link copied.');
+  });
+
+  it('uses the selected assessment link input when async clipboard writes may stall', async () => {
+    const deliveredUrl = 'https://app-dev.hire-pipe.com/assess/recruiter-visible-token';
+    const writeText = vi.fn(() => new Promise<void>(() => undefined));
+    const execCommand = vi.fn().mockReturnValue(true);
+    Object.defineProperty(navigator, 'clipboard', {
+      configurable: true,
+      value: { writeText },
+    });
+    Object.defineProperty(document, 'execCommand', {
+      configurable: true,
+      value: execCommand,
+    });
+    mocks.api.get.mockResolvedValueOnce({
+      interview: makeInterview({
+        interviewType: 'CODE_REVIEW',
+        candidateId: 'candidate-1',
+        assessmentSetup: {
+          status: 'waiting_for_source_backed_match',
+          kind: 'auto_match',
+          source: 'candidate_id',
+          blocksPositiveAssessment: true,
+          message: 'Candidate evidence is available for matching, but no source-backed PR task has been assigned yet.',
+          lastDeliveredUrl: deliveredUrl,
+        },
+      }),
+    });
+
+    renderDetail();
+
+    await flushAsyncUpdates();
+    const input = screen.getByDisplayValue(deliveredUrl);
+    fireEvent.click(screen.getByText('COPY ASSESSMENT LINK'));
+    await flushAsyncUpdates();
+
+    expect(writeText).not.toHaveBeenCalled();
+    expect(execCommand).toHaveBeenCalledWith('copy');
+    expect(document.activeElement).toBe(input);
+    expect(screen.getByTestId('interview-assessment-link')).toHaveTextContent('Assessment link copied.');
+  });
+
+  it('keeps the assessment link selected when browser clipboard APIs are blocked', async () => {
+    const deliveredUrl = 'https://app-dev.hire-pipe.com/assess/recruiter-visible-token';
+    const writeText = vi.fn(() => new Promise<void>(() => undefined));
+    const execCommand = vi.fn().mockReturnValue(false);
+    Object.defineProperty(navigator, 'clipboard', {
+      configurable: true,
+      value: { writeText },
+    });
+    Object.defineProperty(document, 'execCommand', {
+      configurable: true,
+      value: execCommand,
+    });
+    mocks.api.get.mockResolvedValueOnce({
+      interview: makeInterview({
+        interviewType: 'CODE_REVIEW',
+        candidateId: 'candidate-1',
+        assessmentSetup: {
+          status: 'waiting_for_source_backed_match',
+          kind: 'auto_match',
+          source: 'candidate_id',
+          blocksPositiveAssessment: true,
+          message: 'Candidate evidence is available for matching, but no source-backed PR task has been assigned yet.',
+          lastDeliveredUrl: deliveredUrl,
+        },
+      }),
+    });
+
+    renderDetail();
+
+    await flushAsyncUpdates();
+    const input = screen.getByDisplayValue(deliveredUrl);
+    fireEvent.click(screen.getByText('COPY ASSESSMENT LINK'));
+    await act(async () => {
+      await vi.advanceTimersByTimeAsync(801);
+    });
+    await flushAsyncUpdates();
+
+    expect(execCommand).toHaveBeenCalledWith('copy');
+    expect(writeText).toHaveBeenCalledWith(deliveredUrl);
+    expect(document.activeElement).toBe(input);
+    expect(screen.getByTestId('interview-assessment-link')).toHaveTextContent('Assessment link selected. Press Cmd+C to copy.');
+    expect(screen.getByTestId('interview-assessment-link')).not.toHaveTextContent('Copy failed');
+  });
+
   it('offers repo-match refresh so captured evidence can prepare matcher-visible context', async () => {
     mocks.api.get.mockResolvedValueOnce({
       interview: makeInterview({

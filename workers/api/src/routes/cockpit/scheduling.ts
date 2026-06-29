@@ -173,6 +173,7 @@ interface ScheduledAssessmentSetupProjection {
   source: ScheduledAssessmentSetupSource;
   blocksPositiveAssessment: boolean;
   message: string | null;
+  lastDeliveredUrl?: string | null;
 }
 
 function buildScheduledAssessmentSetup(input: {
@@ -181,7 +182,9 @@ function buildScheduledAssessmentSetup(input: {
   matchedRepoId: number | null | undefined;
   githubRepoUrl: string | null | undefined;
   githubPrNumber: number | null | undefined;
+  lastDeliveredUrl?: string | null | undefined;
 }): ScheduledAssessmentSetupProjection {
+  const lastDeliveredUrl = input.lastDeliveredUrl ?? null;
   if (!isWorkspaceAssessmentInterviewType(input.interviewType)) {
     return {
       status: 'not_applicable',
@@ -189,6 +192,7 @@ function buildScheduledAssessmentSetup(input: {
       source: 'not_workspace_assessment',
       blocksPositiveAssessment: false,
       message: null,
+      lastDeliveredUrl: null,
     };
   }
 
@@ -199,6 +203,7 @@ function buildScheduledAssessmentSetup(input: {
       source: 'recruiter_manual_override',
       blocksPositiveAssessment: false,
       message: 'A concrete GitHub PR was assigned by the recruiter. PIPE can launch that task, but candidate-specific alignment is not inferred from this manual override.',
+      lastDeliveredUrl,
     };
   }
 
@@ -209,6 +214,7 @@ function buildScheduledAssessmentSetup(input: {
       source: 'matched_repo_id',
       blocksPositiveAssessment: true,
       message: 'A matched repository exists, but no GitHub PR or task was assigned. Treat this as an assessment setup gap, not candidate evidence.',
+      lastDeliveredUrl,
     };
   }
 
@@ -219,6 +225,7 @@ function buildScheduledAssessmentSetup(input: {
       source: 'contact_first_invite',
       blocksPositiveAssessment: true,
       message: 'This contact-first assessment invite has no candidate evidence yet. PIPE must ingest source-backed resume, transcript, chat, or interview evidence before selecting a PR task.',
+      lastDeliveredUrl,
     };
   }
 
@@ -228,6 +235,7 @@ function buildScheduledAssessmentSetup(input: {
     source: 'candidate_id',
     blocksPositiveAssessment: true,
     message: 'Candidate evidence is available for matching, but no source-backed PR task has been assigned yet.',
+    lastDeliveredUrl,
   };
 }
 
@@ -491,6 +499,31 @@ async function loadScheduledInterviewLivingContext(
 
   await ensureContactLivingContext(db, contactId);
   return loadContactLivingContext(db, contactId);
+}
+
+async function loadLatestDeliveredAssessmentUrl(
+  db: D1Database,
+  interviewId: string,
+): Promise<string | null> {
+  try {
+    if (!await tableExists(db, 'interactions')) return null;
+    const row = await db.prepare(
+      `SELECT metadata_json
+         FROM interactions
+        WHERE interaction_type = 'scheduled_interview_invite_delivery'
+          AND external_reference = ?1
+        ORDER BY started_at DESC, created_at DESC
+        LIMIT 1`,
+    ).bind(interviewId).first<{ metadata_json: string | null }>();
+    const metadata = parseJsonObject(row?.metadata_json ?? null);
+    const deliveredUrl = metadata.deliveredUrl;
+    if (typeof deliveredUrl !== 'string') return null;
+    const trimmed = deliveredUrl.trim();
+    return trimmed.includes('/assess/') ? trimmed : null;
+  } catch (err) {
+    console.error('[scheduling/detail] failed to load delivered assessment url:', err instanceof Error ? err.message : String(err));
+    return null;
+  }
 }
 
 interface ScheduledRelatedEvidenceInterview {
@@ -4376,6 +4409,7 @@ schedulingAuth.get('/interviews/:id', async (c) => {
   const codeReviewMatch = await loadScheduledCodeReviewMatchDetail(db, interview);
   const codeReviewScore = await loadScheduledCodeReviewScoreSummary(db, interview);
   const assessmentProgress = await loadScheduledAssessmentProgress(db, interview.id);
+  const lastDeliveredAssessmentUrl = await loadLatestDeliveredAssessmentUrl(db, interview.id);
 
   return c.json({
     interview: {
@@ -4412,6 +4446,7 @@ schedulingAuth.get('/interviews/:id', async (c) => {
         matchedRepoId: interview.matched_repo_id,
         githubRepoUrl: interview.github_repo_url,
         githubPrNumber: interview.github_pr_number,
+        lastDeliveredUrl: lastDeliveredAssessmentUrl,
       }),
       submissionJson: interview.submission_json,
       completedAt: interview.completed_at,

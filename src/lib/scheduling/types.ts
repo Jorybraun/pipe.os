@@ -72,6 +72,7 @@ export interface AssessmentSetupProjection {
   source: AssessmentSetupSource;
   blocksPositiveAssessment: boolean;
   message: string | null;
+  lastDeliveredUrl?: string | null;
 }
 
 export type AssessmentProgressStage =

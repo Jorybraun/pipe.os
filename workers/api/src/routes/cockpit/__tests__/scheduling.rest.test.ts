@@ -924,6 +924,55 @@ describe('GET /interviews/:id detail', () => {
     });
   });
 
+  it('returns the latest delivered assessment URL on assessment interview details', async () => {
+    seedInterviewDetailFixture();
+    const db = createMockD1(sqlite!);
+    const identity = await ensureCandidateLivingContext(db, 'candidate-1');
+    if (!identity) throw new Error('candidate living context was not created');
+    const deliveredUrl = 'http://localhost:5173/assess/recruiter-visible-token';
+
+    sqlite!.prepare(`
+      UPDATE scheduled_interviews
+         SET interview_type = 'CODE_REVIEW',
+             stage_id = NULL,
+             invite_link_sent_at = '2026-06-22T18:40:00.000Z',
+             email_sent_at = '2026-06-22T18:40:00.000Z'
+       WHERE id = 'interview-1'
+    `).run();
+
+    const store = new LivingContextStore(db, () => '2026-06-22T18:40:01.000Z');
+    await store.upsertInteraction({
+      ingestionKey: 'scheduled-interview:interview-1:invite-delivery:latest',
+      workspacePersonId: identity.workspacePersonId,
+      applicationId: identity.applicationId,
+      interactionType: 'scheduled_interview_invite_delivery',
+      externalReference: 'interview-1',
+      startedAt: '2026-06-22T18:40:00.000Z',
+      metadata: {
+        scheduledInterviewId: 'interview-1',
+        emailSent: true,
+        deliveredUrl,
+      },
+    });
+
+    const app = mountSchedulingApp();
+    const response = await app.request('/interviews/interview-1');
+    expect(response.status).toBe(200);
+    const body = await response.json() as {
+      interview: {
+        assessmentSetup: {
+          status: string;
+          lastDeliveredUrl: string | null;
+        };
+      };
+    };
+
+    expect(body.interview.assessmentSetup).toMatchObject({
+      status: 'waiting_for_source_backed_match',
+      lastDeliveredUrl: deliveredUrl,
+    });
+  });
+
   it('returns source-backed assessment progress on workspace interview details', async () => {
     seedInterviewDetailFixture();
     const now = '2026-06-22T18:40:00.000Z';

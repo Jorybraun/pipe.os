@@ -2,6 +2,7 @@ import { beforeEach, describe, expect, it, vi } from 'vitest';
 
 import type { Env } from '../../../types';
 import {
+  MISSING_INGESTION_RETRY_REASON,
   STALLED_INGESTION_RETRY_REASON,
   isRetryableStaleWorkersAIModelFailure,
   isRetryableStalledInProgressIngestion,
@@ -268,6 +269,58 @@ describe('stale Workers AI candidate-ingestion retry', () => {
       candidateId: 'stalled',
       resumeText: expect.stringContaining('synchronized desktop tools'),
     }));
+  });
+
+  it('queues and runs ingestion when a candidate has an uploaded resume but no ingestion row', async () => {
+    const db = fakeD1({
+      first: {
+        resume_s3_key: 'candidate-documents/candidate-missing/resume.pdf',
+        status: null,
+        current_step: null,
+        error_text: null,
+        updated_at: null,
+      },
+    });
+    const env = buildEnv(db, fakeStorage('unused'));
+
+    await expect(maybeQueueRetryableStandaloneIngestion(env, null, 'candidate-missing')).resolves.toMatchObject({
+      reason: MISSING_INGESTION_RETRY_REASON,
+      reasonCode: 'missing_candidate_evidence_ingestion',
+      originalStep: null,
+      originalUpdatedAt: null,
+    });
+
+    const queuedCall = db.__calls.find((call) =>
+      call.ran
+      && call.sql.includes('INSERT INTO candidate_ingestion')
+      && call.sql.includes("current_step = 'retry_queued'")
+      && call.params[0] === 'candidate-missing'
+    );
+    expect(queuedCall).toBeDefined();
+
+    const retryEventCall = db.__calls.find((call) =>
+      call.ran
+      && call.sql.includes('INSERT INTO session_events')
+      && call.params[1] === 'ingestion-candidate-missing'
+      && call.params[4] === 'ingestion_retry_queued'
+    );
+    expect(retryEventCall).toBeDefined();
+    expect(JSON.parse(retryEventCall!.params[5] as string)).toMatchObject({
+      trigger: 'candidate_rpc',
+      reason: 'missing_candidate_evidence_ingestion',
+      staleFailureStep: 'not_recorded',
+      originalStep: null,
+      sourceRef: {
+        type: 'resume_r2_object',
+        key: 'candidate-documents/candidate-missing/resume.pdf',
+      },
+    });
+    expect(processResumeFromR2).toHaveBeenCalledWith({
+      env,
+      db,
+      candidateId: 'candidate-missing',
+      r2Key: 'candidate-documents/candidate-missing/resume.pdf',
+    });
   });
 
   it('cron processes a bounded batch of stale discovery failures', async () => {

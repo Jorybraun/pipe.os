@@ -11,10 +11,14 @@ const MAX_RETRY_EVENT_ERROR_CHARS = 700;
 const STALE_IN_PROGRESS_RETRY_AFTER_MS = 10 * 60 * 1000;
 
 type RetryTrigger = 'candidate_rpc' | 'scheduled_worker';
-type RetryReasonCode = 'stale_workers_ai_model_failure' | 'stalled_candidate_evidence_ingestion';
+type RetryReasonCode =
+  | 'stale_workers_ai_model_failure'
+  | 'stalled_candidate_evidence_ingestion'
+  | 'missing_candidate_evidence_ingestion';
 
 export const STALE_WORKERS_AI_RETRY_REASON = 'Retrying candidate evidence ingestion after a stale Workers AI model failure.';
 export const STALLED_INGESTION_RETRY_REASON = 'Retrying candidate evidence ingestion from the original source after the previous run stalled.';
+export const MISSING_INGESTION_RETRY_REASON = 'Starting candidate evidence ingestion from the uploaded resume because no ingestion run was recorded.';
 
 interface RetryContext {
   trigger: RetryTrigger;
@@ -83,6 +87,17 @@ export function isRetryableStalledInProgressIngestion(row: {
 function retryContextForRow(row: StaleWorkersAIRow, trigger: RetryTrigger): (RetryContext & {
   publicReason: string;
 }) | null {
+  if (!row.status && !row.current_step && row.resume_s3_key) {
+    return {
+      trigger,
+      reasonCode: 'missing_candidate_evidence_ingestion',
+      publicReason: MISSING_INGESTION_RETRY_REASON,
+      originalErrorText: row.error_text,
+      originalStep: null,
+      originalUpdatedAt: row.updated_at ?? null,
+    };
+  }
+
   if (isRetryableStaleWorkersAIModelFailure(row)) {
     return {
       trigger,
@@ -331,7 +346,7 @@ async function queueAndRunRetry(
   await recordRetryEvent(env, candidateId, 'ingestion_retry_queued', resumeS3Key, {
     trigger: context.trigger,
     reason: context.reasonCode,
-    staleFailureStep: context.originalStep ?? 'discover_profile',
+    staleFailureStep: context.originalStep ?? 'not_recorded',
     originalStep: context.originalStep ?? null,
     originalUpdatedAt: context.originalUpdatedAt ?? null,
     originalErrorText: boundedText(context.originalErrorText),
@@ -352,7 +367,7 @@ async function markRetryFailed(
   await recordRetryEvent(env, candidateId, 'ingestion_retry_failed', resumeS3Key, {
     trigger: context?.trigger ?? 'candidate_rpc',
     reason: context?.reasonCode ?? 'stale_workers_ai_model_failure',
-    staleFailureStep: context?.originalStep ?? 'discover_profile',
+    staleFailureStep: context?.originalStep ?? 'not_recorded',
     originalStep: context?.originalStep ?? null,
     originalUpdatedAt: context?.originalUpdatedAt ?? null,
     originalErrorText: boundedText(context?.originalErrorText),

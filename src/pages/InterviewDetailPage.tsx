@@ -60,6 +60,7 @@ const STATUS_COLORS: Record<string, string> = {
 };
 
 const LIVE_RECORDING_STALE_AFTER_MS = 4 * 60 * 60 * 1000;
+const CLIPBOARD_WRITE_TIMEOUT_MS = 800;
 
 interface PreparedRoomLinks {
   id: string;
@@ -161,6 +162,8 @@ interface EvidenceFollowUpPlan {
   gaps: string[];
   questions: string[];
 }
+
+type CopyTextResult = 'copied' | 'selected' | 'failed';
 
 function formatDate(value: string | null | undefined, fallback = 'Not scheduled'): string {
   if (!value) return fallback;
@@ -622,6 +625,42 @@ function codeReviewRefreshSuccessNotice(
     : 'Repo match refreshed from captured evidence.';
 }
 
+async function writeClipboardWithTimeout(value: string): Promise<boolean> {
+  if (!navigator.clipboard?.writeText) return false;
+  let timeoutId: number | undefined;
+  const timeout = new Promise<boolean>((resolve) => {
+    timeoutId = window.setTimeout(() => resolve(false), CLIPBOARD_WRITE_TIMEOUT_MS);
+  });
+  const write = navigator.clipboard.writeText(value)
+    .then(() => true)
+    .catch(() => false);
+  const copied = await Promise.race([write, timeout]);
+  if (timeoutId !== undefined) window.clearTimeout(timeoutId);
+  return copied;
+}
+
+function copySelectedInputToClipboard(value: string, fallbackInput: HTMLInputElement | null): { copied: boolean; selected: boolean } {
+  if (!fallbackInput) return { copied: false, selected: false };
+
+  fallbackInput.focus();
+  fallbackInput.select();
+  fallbackInput.setSelectionRange(0, value.length);
+  if (typeof document.execCommand !== 'function') return { copied: false, selected: true };
+
+  try {
+    return { copied: document.execCommand('copy'), selected: true };
+  } catch {
+    return { copied: false, selected: true };
+  }
+}
+
+async function copyTextToClipboard(value: string, fallbackInput: HTMLInputElement | null): Promise<CopyTextResult> {
+  const fallback = copySelectedInputToClipboard(value, fallbackInput);
+  if (fallback.copied) return 'copied';
+  if (await writeClipboardWithTimeout(value)) return 'copied';
+  return fallback.selected ? 'selected' : 'failed';
+}
+
 const SOURCE_BACKED_WORK_EVIDENCE_QUESTION =
   'Describe one real PR, bug, or code review you personally handled that best represents the work PIPE should assess. Include the codebase context, your role, trade-offs, verification/tests, and outcome.';
 
@@ -919,11 +958,15 @@ export default function InterviewDetailPage(): JSX.Element {
   const [isRefreshingMatch, setIsRefreshingMatch] = useState(false);
   const [assessmentEvaluationError, setAssessmentEvaluationError] = useState<string | null>(null);
   const [assessmentEvaluationNotice, setAssessmentEvaluationNotice] = useState<string | null>(null);
+  const [assessmentLinkError, setAssessmentLinkError] = useState<string | null>(null);
+  const [assessmentLinkNotice, setAssessmentLinkNotice] = useState<string | null>(null);
   const [isStartingAssessmentEvaluation, setIsStartingAssessmentEvaluation] = useState(false);
   const [workspaceRepoUrl, setWorkspaceRepoUrl] = useState('');
   const [workspacePrNumber, setWorkspacePrNumber] = useState('');
   const [isSavingWorkspace, setIsSavingWorkspace] = useState(false);
   const hasLoadedOnceRef = useRef(false);
+  const guestLinkInputRef = useRef<HTMLInputElement | null>(null);
+  const assessmentLinkInputRef = useRef<HTMLInputElement | null>(null);
 
   const load = useCallback(async (options?: { showLoading?: boolean }) => {
     if (!interviewId) return;
@@ -1047,15 +1090,37 @@ export default function InterviewDetailPage(): JSX.Element {
     const links = existingGuestUrl ? null : await ensureRoomLinks();
     const guestUrl = existingGuestUrl ?? links?.guestUrl ?? null;
     if (!guestUrl) return;
-    try {
-      await navigator.clipboard.writeText(guestUrl);
+    const copyResult = await copyTextToClipboard(guestUrl, guestLinkInputRef.current);
+    if (copyResult === 'copied') {
       setRoomNotice('Guest link copied.');
       setRoomError(null);
-    } catch {
-      setRoomNotice(null);
-      setRoomError('Copy failed. Select the guest link below.');
+      return;
     }
+    if (copyResult === 'selected') {
+      setRoomNotice('Guest link selected. Press Cmd+C to copy.');
+      setRoomError(null);
+      return;
+    }
+    setRoomNotice(null);
+    setRoomError('Copy failed. Select the guest link below.');
   }, [ensureRoomLinks, interview?.linkedMeeting?.meetingUrl, roomLinks?.guestUrl]);
+
+  const copyAssessmentInviteLink = useCallback(async () => {
+    const assessmentUrl = interview?.assessmentSetup?.lastDeliveredUrl ?? null;
+    if (!assessmentUrl) return;
+    setAssessmentLinkError(null);
+    setAssessmentLinkNotice(null);
+    const copyResult = await copyTextToClipboard(assessmentUrl, assessmentLinkInputRef.current);
+    if (copyResult === 'copied') {
+      setAssessmentLinkNotice('Assessment link copied.');
+      return;
+    }
+    if (copyResult === 'selected') {
+      setAssessmentLinkNotice('Assessment link selected. Press Cmd+C to copy.');
+      return;
+    }
+    setAssessmentLinkError('Copy failed. Select the assessment link below.');
+  }, [interview?.assessmentSetup?.lastDeliveredUrl]);
 
   const sendInvite = useCallback(async () => {
     if (!interview) return;
@@ -1315,6 +1380,7 @@ export default function InterviewDetailPage(): JSX.Element {
   const usesWorkspaceInterview = interview.interviewType === 'DEV_CONTAINER_CHALLENGE'
     || interview.interviewType === 'OPEN_SOURCE_BUG_FIX';
   const assessmentProgress = interview.assessmentProgress ?? null;
+  const assessmentInviteUrl = interview.assessmentSetup?.lastDeliveredUrl ?? null;
   const showsAssessmentProgress = usesWorkspaceInterview || Boolean(assessmentProgress);
   const assessmentProgressStage = assessmentProgress
     ? assessmentProgressStageLabel(assessmentProgress.stage)
@@ -1491,6 +1557,7 @@ export default function InterviewDetailPage(): JSX.Element {
               <label style={ROOM_GUEST_LINK_LABEL}>
                 <span style={ROOM_GUEST_LINK_TEXT}>GUEST LINK</span>
                 <input
+                  ref={guestLinkInputRef}
                   readOnly
                   value={guestRoomUrl}
                   onFocus={(event) => event.currentTarget.select()}
@@ -1500,6 +1567,43 @@ export default function InterviewDetailPage(): JSX.Element {
             )}
             {roomNotice && <div style={SUCCESS_NOTE}>{roomNotice}</div>}
             {roomError && <div style={ERROR_NOTE}>{roomError}</div>}
+          </div>
+        </section>
+      )}
+
+      {assessmentInviteUrl && (
+        <section data-testid="interview-assessment-link" style={ROOM_PANEL}>
+          <div style={{ minWidth: 0 }}>
+            <div style={{ ...SECTION_TITLE, marginBottom: 10 }}>
+              <Mail size={15} />
+              Assessment invite
+            </div>
+            <h2 style={ROOM_TITLE}>Candidate assessment link</h2>
+            <div style={ROOM_LINK_TEXT}>
+              Resend invite issues a fresh one-use link when needed.
+            </div>
+          </div>
+          <div style={ROOM_ACTIONS}>
+            <button
+              type="button"
+              onClick={() => void copyAssessmentInviteLink()}
+              style={{ ...PRIMARY_BUTTON, ...ROOM_SECONDARY_BUTTON }}
+            >
+              <Copy size={14} />
+              COPY ASSESSMENT LINK
+            </button>
+            <label style={ROOM_GUEST_LINK_LABEL}>
+              <span style={ROOM_GUEST_LINK_TEXT}>LAST DELIVERED LINK</span>
+              <input
+                ref={assessmentLinkInputRef}
+                readOnly
+                value={assessmentInviteUrl}
+                onFocus={(event) => event.currentTarget.select()}
+                style={ROOM_GUEST_LINK_INPUT}
+              />
+            </label>
+            {assessmentLinkNotice && <div style={SUCCESS_NOTE}>{assessmentLinkNotice}</div>}
+            {assessmentLinkError && <div style={ERROR_NOTE}>{assessmentLinkError}</div>}
           </div>
         </section>
       )}

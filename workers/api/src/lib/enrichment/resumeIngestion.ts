@@ -14,6 +14,7 @@
 import type { Env } from '../../types';
 import { parseResume, persistParsedCV, extractTextFromPDF } from '../cvParser';
 import { runCandidateIngestion } from '../candidateDiscovery/orchestrate';
+import { markIngestionFailed } from '../candidateDiscovery/persist';
 
 export interface ProcessResumeInput {
   env: Env;
@@ -28,6 +29,47 @@ export interface ProcessResumeResult {
   success: boolean;
   parsed: Awaited<ReturnType<typeof parseResume>> | null;
   error?: string;
+}
+
+function normalizeResumeContentType(contentType: string | null | undefined, r2Key: string): string {
+  const normalized = (contentType ?? '').split(';')[0]?.trim().toLowerCase() ?? '';
+  if (normalized === 'application/pdf') return 'application/pdf';
+  if (r2Key.toLowerCase().endsWith('.pdf')) return 'application/pdf';
+  return normalized || 'application/octet-stream';
+}
+
+async function markResumeIngestionPending(
+  db: D1Database,
+  candidateId: string,
+  step: string,
+): Promise<void> {
+  const now = new Date().toISOString();
+  try {
+    await db.prepare(
+      `INSERT INTO candidate_ingestion (candidate_id, status, current_step, error_text, created_at, updated_at)
+       VALUES (?1, 'pending', ?2, NULL, ?3, ?3)
+       ON CONFLICT(candidate_id) DO UPDATE SET
+         status = 'pending',
+         current_step = excluded.current_step,
+         error_text = NULL,
+         updated_at = excluded.updated_at`,
+    ).bind(candidateId, step, now).run();
+  } catch (err) {
+    console.error('[resumeIngestion] failed to mark pending ingestion:', err instanceof Error ? err.message : String(err));
+  }
+}
+
+async function failResumeIngestion(
+  db: D1Database,
+  candidateId: string,
+  message: string,
+): Promise<ProcessResumeResult> {
+  try {
+    await markIngestionFailed(db, candidateId, message);
+  } catch (err) {
+    console.error('[resumeIngestion] failed to mark ingestion failed:', err instanceof Error ? err.message : String(err));
+  }
+  return { success: false, parsed: null, error: message };
 }
 
 /**
@@ -55,9 +97,11 @@ export async function processResumeFromR2(
       return { success: false, parsed: null, error: `Resume not found in R2: ${r2Key}` };
     }
 
+    await markResumeIngestionPending(db, candidateId, 'parse_resume');
+
     const arrayBuffer = await object.arrayBuffer();
     const fileBuffer = arrayBuffer.slice(0);
-    const contentType = object.httpMetadata?.contentType ?? 'application/pdf';
+    const contentType = normalizeResumeContentType(object.httpMetadata?.contentType, r2Key);
 
     // 2. Parse resume (or use pre-parsed result)
     let parseResult = preParsed ?? null;
@@ -69,18 +113,39 @@ export async function processResumeFromR2(
       });
     }
 
+    if (!parseResult) {
+      return await failResumeIngestion(
+        db,
+        candidateId,
+        `Resume parsing failed or produced no text for ${r2Key}.`,
+      );
+    }
+
     const parsed = parseResult?.parsedCV ?? null;
     const decompositionResult = parseResult?.decompositionResult ?? null;
 
-    // 3. Persist parsed CV
-    if (parsed) {
-      await persistParsedCV(db, candidateId, parsed);
+    if (!parsed) {
+      return await failResumeIngestion(
+        db,
+        candidateId,
+        `Resume parsing did not produce a candidate profile for ${r2Key}.`,
+      );
     }
+
+    // 3. Persist parsed CV
+    await persistParsedCV(db, candidateId, parsed);
 
     // 4. Run full ingestion pipeline (PDF only — DOCX ingestion can be added later)
     if (contentType === 'application/pdf') {
       try {
         const resumeText = await extractTextFromPDF(arrayBuffer);
+        if (resumeText.trim().length < 20) {
+          return await failResumeIngestion(
+            db,
+            candidateId,
+            `Resume text extraction produced insufficient source evidence for ${r2Key}.`,
+          );
+        }
         await runCandidateIngestion({
           env,
           db,
@@ -92,14 +157,24 @@ export async function processResumeFromR2(
       } catch (err) {
         const msg = err instanceof Error ? err.message : String(err);
         console.error('[resumeIngestion] background ingestion error:', msg);
-        // Non-fatal: return success=true because parsing succeeded
+        return await failResumeIngestion(
+          db,
+          candidateId,
+          `Resume ingestion failed after parsing ${r2Key}: ${msg}`,
+        );
       }
+    } else {
+      return await failResumeIngestion(
+        db,
+        candidateId,
+        `Resume ingestion does not support content type ${contentType} for ${r2Key}.`,
+      );
     }
 
     return { success: true, parsed: parseResult };
   } catch (err) {
     const msg = err instanceof Error ? err.message : String(err);
     console.error('[resumeIngestion] fatal error:', msg);
-    return { success: false, parsed: null, error: msg };
+    return await failResumeIngestion(db, candidateId, msg);
   }
 }
