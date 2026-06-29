@@ -658,6 +658,10 @@ describe('InterviewDetailPage', () => {
     const followUp = screen.getByTestId('interview-code-review-evidence-follow-up');
     expect(followUp).toHaveTextContent('Follow-up assessment open');
     expect(followUp).toHaveTextContent('Waiting for source-backed response');
+    expect(followUp).toHaveTextContent('Linked evidence interview');
+    expect(followUp).toHaveTextContent('context-call-pending-1');
+    expect(followUp).toHaveTextContent('Same person graph');
+    expect(followUp).toHaveTextContent('adds source evidence to the original code-review match');
     expect(followUp).toHaveTextContent(SOURCE_BACKED_WORK_EVIDENCE_QUESTION);
     expect(followUp).toHaveTextContent('OPEN FOLLOW-UP ASSESSMENT');
     expect(screen.queryByTestId('interview-code-review-context-call-cta')).toBeNull();

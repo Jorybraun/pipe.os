@@ -1436,6 +1436,17 @@ export default function InterviewDetailPage(): JSX.Element {
                         ?? 'The previous follow-up did not produce attributable candidate transcript evidence, so PIPE did not use it for repo matching.')
                       : 'PIPE already has an evidence-plan assessment linked to this code-review match gap.'}
                   </div>
+                  {codeReviewEvidenceFollowUp.contextCallInterviewId && (
+                    <div style={DECISION_FOLLOW_UP_ITEM}>
+                      <div style={FIELD_LABEL}>Linked evidence interview</div>
+                      <div style={{ ...TRANSCRIPT_TEXT, overflowWrap: 'anywhere' }}>
+                        {codeReviewEvidenceFollowUp.contextCallInterviewId}
+                      </div>
+                      <div style={CONTEXT_RECORD_NARRATIVE}>
+                        Same person graph; this follow-up adds source evidence to the original code-review match.
+                      </div>
+                    </div>
+                  )}
                   {codeReviewEvidenceFollowUp.questions.length > 0 && (
                     <>
                       <div style={FIELD_LABEL}>Question plan</div>
