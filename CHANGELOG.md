@@ -37,6 +37,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Fixed — Candidate repo matching
 
+- CODE_REVIEW app-dev smoke now opens the authenticated recruiter detail page for matched and blocked outcomes, proving the hiring-manager decision surface renders without errors, fallback loaders, or missing next actions.
 - Blocked CODE_REVIEW evidence-plan cards now label the lower plan details as evidence to collect instead of repeating the top-level recommended-next-step heading.
 - CODE_REVIEW recruiter details no longer show raw matcher confidence beside the hiring decision; the default readout now favors match status, assessment fit, score, pushback, and source-backed proof.
 - CODE_REVIEW recruiter details now hide empty call-record panels unless transcript, recording, error, or live-call evidence exists, keeping code-review decisions focused on assessment signal instead of operational placeholders.

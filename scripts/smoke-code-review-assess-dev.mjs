@@ -13,6 +13,7 @@ const BASIC_USER = process.env.PIPE_DEV_BASIC_AUTH_USER || process.env.DEV_BASIC
 const BASIC_PASSWORD = process.env.PIPE_DEV_BASIC_AUTH_PASSWORD || process.env.DEV_BASIC_AUTH_PASSWORD || '';
 const SEND_EMAIL = process.env.CODE_REVIEW_SMOKE_SEND_EMAIL === '1';
 const SKIP_BROWSER = process.env.CODE_REVIEW_SMOKE_SKIP_BROWSER === '1';
+const SKIP_RECRUITER_BROWSER = process.env.CODE_REVIEW_SMOKE_SKIP_RECRUITER_BROWSER === '1';
 const AUTO_MATCH = process.env.CODE_REVIEW_SMOKE_AUTO_MATCH === '1';
 const ROLE_BACKED = process.env.CODE_REVIEW_SMOKE_ROLE_BACKED === '1';
 const SUBMIT_REVIEW = process.env.CODE_REVIEW_SMOKE_SUBMIT === '1'
@@ -587,6 +588,58 @@ function runBrowserSmoke({ deliveredUrl, inviteToken, session, expectedMatchProo
   return { skipped: false };
 }
 
+function runRecruiterDetailBrowserSmoke({
+  interviewId,
+  expectedOutcome,
+  expectedRepoUrl = '',
+  expectedPrNumber = '',
+  expectSubmission = false,
+  expectScore = false,
+  requireHyperedges = false,
+}) {
+  if (SKIP_BROWSER || SKIP_RECRUITER_BROWSER) {
+    return {
+      skipped: true,
+      reason: SKIP_BROWSER
+        ? 'CODE_REVIEW_SMOKE_SKIP_BROWSER=1'
+        : 'CODE_REVIEW_SMOKE_SKIP_RECRUITER_BROWSER=1',
+    };
+  }
+
+  const result = spawnSync(
+    'npx',
+    [
+      'playwright',
+      'test',
+      'e2e/code-review-recruiter-detail-smoke.spec.ts',
+      '--project=authenticated',
+      '--reporter=line',
+    ],
+    {
+      cwd: process.cwd(),
+      stdio: 'inherit',
+      env: {
+        ...process.env,
+        APP_BASE,
+        API_BASE,
+        VIDEO_ROOM_BASE,
+        CODE_REVIEW_RECRUITER_INTERVIEW_ID: interviewId,
+        CODE_REVIEW_RECRUITER_EXPECT_OUTCOME: expectedOutcome,
+        CODE_REVIEW_RECRUITER_EXPECT_REPO_URL: expectedRepoUrl,
+        CODE_REVIEW_RECRUITER_EXPECT_PR_NUMBER: String(expectedPrNumber ?? ''),
+        CODE_REVIEW_RECRUITER_EXPECT_SUBMISSION: expectSubmission ? '1' : '0',
+        CODE_REVIEW_RECRUITER_EXPECT_SCORE: expectScore ? '1' : '0',
+        CODE_REVIEW_RECRUITER_REQUIRE_HYPEREDGES: requireHyperedges ? '1' : '0',
+      },
+    },
+  );
+  if (result.error) throw result.error;
+  if (result.status !== 0) {
+    throw new Error(`Playwright recruiter detail smoke failed with exit code ${result.status}`);
+  }
+  return { skipped: false };
+}
+
 async function initReviewSession(sessionToken, challenge) {
   const challengeId = challenge.reviewSession?.challengeId ?? challenge.id;
   assert(challenge.reviewSession?.requiresInit === true, 'CODE_REVIEW challenge does not require review session init.');
@@ -1133,6 +1186,11 @@ async function main() {
         `Expected repo_matching pipeline step to be blocked: ${JSON.stringify(challenge?.config?.diagnostics?.pipeline)}`,
       );
 
+      const recruiterBrowserSmoke = runRecruiterDetailBrowserSmoke({
+        interviewId: invite.interviewId,
+        expectedOutcome: 'blocked',
+      });
+
       console.log(JSON.stringify({
         ok: true,
         interviewId: invite.interviewId,
@@ -1153,6 +1211,7 @@ async function main() {
           rawNodeCount: challenge.config.diagnostics.rawNodeCount ?? null,
           autoRefresh: challenge.config.autoRefresh ?? null,
         },
+        recruiterBrowserSmoke,
         stageConfig: {
           initialStageId: initialStageConfig.stageId,
           initialCurrentIndex: initialStageConfig.currentIndex ?? null,
@@ -1220,6 +1279,15 @@ async function main() {
       challenge,
       interviewId: invite.interviewId,
     });
+    const recruiterBrowserSmoke = runRecruiterDetailBrowserSmoke({
+      interviewId: invite.interviewId,
+      expectedOutcome: 'matched',
+      expectedRepoUrl: challenge.githubRepoUrl,
+      expectedPrNumber: challenge.githubPrNumber,
+      expectSubmission: SUBMIT_REVIEW,
+      expectScore: SUBMIT_REVIEW,
+      requireHyperedges: !REPO_URL && !PR_NUMBER,
+    });
 
     console.log(JSON.stringify({
       ok: true,
@@ -1251,6 +1319,7 @@ async function main() {
           : [],
       },
       browserSmoke,
+      recruiterBrowserSmoke,
       submissionSmoke,
     }, null, 2));
   } catch (error) {

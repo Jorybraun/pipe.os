@@ -188,7 +188,11 @@ npm run smoke:code-review-assess-dev:matrix
 The matrix creates fresh CODE_REVIEW invites and covers both happy-path and
 pushback behavior. The matchable profile submits a full browser-visible review,
 waits for AI developer pushback, verifies recruiter/profile projections, and
-checks remote D1 score persistence. The accessibility-state and
+checks remote D1 score persistence. Each profile also opens the authenticated
+recruiter interview detail page in a browser: matched runs must render the
+assignment, match decision, and score summary; blocked runs must render the
+needs-more-evidence decision, evidence-to-collect plan, and follow-up assessment
+CTA without an error page or matching loop. The accessibility-state and
 frontend-quality profiles are intentional ambiguous/near-tie lanes: they must
 return explicit blocked `repo_matching` attention states with diagnostics, no
 auto-refresh loop, and no video-room fallback. Use
