@@ -1239,6 +1239,96 @@ describe('GET /interviews/:id detail', () => {
     });
   });
 
+  it('returns blocked evidence-plan follow-up state with the attribution reason', async () => {
+    seedInterviewDetailFixture();
+    sqlite!.prepare(`
+      INSERT INTO scheduled_interviews (
+        id, candidate_id, pipeline_id, stage_id, owner_id, interview_type,
+        meeting_type, status, scheduled_at, meeting_url, scheduling_provider,
+        scheduling_url, external_event_id, recruiter_notes, sync_source,
+        last_synced_at, invite_link_sent_at, email_sent_at, recipient_name,
+        recipient_email, matched_repo_id, github_repo_url, github_pr_number,
+        submission_json, completed_at, created_at, updated_at
+      ) VALUES (
+        'interview-code-review-blocked-follow-up', 'candidate-1', 'pipeline-1', 'stage-1', 'owner-1',
+        'CODE_REVIEW', NULL, 'INVITED', NULL,
+        NULL, 'MANUAL', NULL, NULL, 'Assess PR review judgment.',
+        'MANUAL', NULL, NULL, NULL,
+        NULL, NULL, NULL, NULL, NULL, NULL, NULL,
+        '2026-06-22T17:30:00.000Z', '2026-06-22T17:45:00.000Z'
+      )
+    `).run();
+    sqlite!.prepare(`
+      INSERT INTO match_runs (
+        id, candidate_id, role_snapshot_id, status, ranked_results_json,
+        selected_packet_id, query_json, created_at
+      ) VALUES (
+        'match-run-blocked-follow-up', 'candidate-1', 'standalone-code-review-v1',
+        'NEEDS_MORE_EVIDENCE', '[]', NULL, '{}', '2026-06-22T17:46:00.000Z'
+      )
+    `).run();
+    sqlite!.prepare(`
+      INSERT INTO assessment_sessions (
+        id, ingestion_key, interview_id, mode, state, candidate_id, created_by,
+        metadata_json, completed_at, created_at, updated_at
+      ) VALUES (
+        'assessment-plan-blocked-follow-up',
+        'assessment-session:code-review-evidence-plan:interview-code-review-blocked-follow-up:context-call-blocked-follow-up',
+        'context-call-blocked-follow-up', 'TECHNICAL', 'BLOCKED', 'candidate-1',
+        'code-review-evidence-plan', ?,
+        NULL,
+        '2026-06-22T18:00:00.000Z',
+        '2026-06-22T19:00:00.000Z'
+      )
+    `).run(JSON.stringify({
+      originalInterviewId: 'interview-code-review-blocked-follow-up',
+      contextCallInterviewId: 'context-call-blocked-follow-up',
+      matchRunId: 'match-run-blocked-follow-up',
+      matchStatus: 'NEEDS_MORE_EVIDENCE',
+      gaps: ['NO_SCOREABLE_SOURCE_BACKED_CANDIDATE_EVIDENCE'],
+      questions: [SOURCE_BACKED_WORK_EVIDENCE_QUESTION],
+    }));
+    sqlite!.prepare(`
+      INSERT INTO assessment_state_transitions (
+        id, session_id, sequence, from_state, to_state, reason,
+        actor_type, actor_id, created_at
+      ) VALUES (
+        'assessment-state-transition-blocked-follow-up',
+        'assessment-plan-blocked-follow-up', 1,
+        'IN_PROGRESS', 'BLOCKED',
+        'Evidence-plan follow-up transcript was summary-only and cannot be attributed to the candidate.',
+        'system', NULL, '2026-06-22T19:00:00.000Z'
+      )
+    `).run();
+
+    const app = mountSchedulingApp();
+    const response = await app.request('/interviews/interview-code-review-blocked-follow-up');
+    expect(response.status).toBe(200);
+    const body = await response.json() as {
+      interview: {
+        codeReviewMatch: {
+          evidenceFollowUp: {
+            assessmentSessionId: string;
+            contextCallInterviewId: string | null;
+            state: string;
+            blockedReason?: string | null;
+            questions: string[];
+          } | null;
+          evidenceRefresh: unknown | null;
+        } | null;
+      };
+    };
+
+    expect(body.interview.codeReviewMatch?.evidenceFollowUp).toMatchObject({
+      assessmentSessionId: 'assessment-plan-blocked-follow-up',
+      contextCallInterviewId: 'context-call-blocked-follow-up',
+      state: 'BLOCKED',
+      blockedReason: 'Evidence-plan follow-up transcript was summary-only and cannot be attributed to the candidate.',
+      questions: [SOURCE_BACKED_WORK_EVIDENCE_QUESTION],
+    });
+    expect(body.interview.codeReviewMatch?.evidenceRefresh).toBeNull();
+  });
+
   it('refuses CODE_REVIEW match refresh until completed follow-up evidence exists', async () => {
     seedInterviewDetailFixture();
     sqlite!.prepare(`

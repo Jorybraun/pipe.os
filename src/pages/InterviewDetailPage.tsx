@@ -1432,7 +1432,8 @@ export default function InterviewDetailPage(): JSX.Element {
                   </div>
                   <div style={CONTEXT_RECORD_NARRATIVE}>
                     {codeReviewEvidenceFollowUpBlocked
-                      ? 'The previous follow-up did not produce attributable candidate transcript evidence, so PIPE did not use it for repo matching.'
+                      ? (codeReviewEvidenceFollowUp.blockedReason
+                        ?? 'The previous follow-up did not produce attributable candidate transcript evidence, so PIPE did not use it for repo matching.')
                       : 'PIPE already has an evidence-plan assessment linked to this code-review match gap.'}
                   </div>
                   {codeReviewEvidenceFollowUp.questions.length > 0 && (

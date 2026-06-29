@@ -683,6 +683,7 @@ describe('InterviewDetailPage', () => {
             assessmentSessionId: 'assessment-plan-blocked-1',
             contextCallInterviewId: 'context-call-blocked-1',
             state: 'BLOCKED',
+            blockedReason: 'Evidence-plan follow-up transcript was summary-only and cannot be attributed to the candidate.',
             matchRunId: 'match-run-blocked-1',
             matchStatus: 'NEEDS_MORE_EVIDENCE',
             gaps: ['NO_SCOREABLE_SOURCE_BACKED_CANDIDATE_EVIDENCE'],
@@ -701,6 +702,7 @@ describe('InterviewDetailPage', () => {
     const followUp = screen.getByTestId('interview-code-review-evidence-follow-up');
     expect(followUp).toHaveTextContent('Follow-up needs attribution');
     expect(followUp).toHaveTextContent('Record another answer with clear candidate audio before rerunning matching.');
+    expect(followUp).toHaveTextContent('Evidence-plan follow-up transcript was summary-only and cannot be attributed to the candidate.');
     expect(followUp).not.toHaveTextContent('Waiting for source-backed response');
     expect(followUp).toHaveTextContent(SOURCE_BACKED_WORK_EVIDENCE_QUESTION);
     expect(screen.getByTestId('interview-code-review-open-follow-up-assessment')).toHaveTextContent('OPEN FOLLOW-UP ASSESSMENT');

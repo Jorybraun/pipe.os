@@ -540,6 +540,7 @@ interface ScheduledCodeReviewEvidenceFollowUp {
   assessmentSessionId: string;
   contextCallInterviewId: string | null;
   state: string;
+  blockedReason: string | null;
   matchRunId: string | null;
   matchStatus: string | null;
   gaps: string[];
@@ -1290,6 +1291,14 @@ async function loadCodeReviewEvidenceFollowUp(
             s.interview_id AS context_call_interview_id,
             s.state,
             s.metadata_json,
+            (
+              SELECT t.reason
+                FROM assessment_state_transitions t
+               WHERE t.session_id = s.id
+                 AND t.to_state = 'BLOCKED'
+               ORDER BY t.sequence DESC
+               LIMIT 1
+            ) AS blocked_reason,
             s.created_at,
             s.updated_at
        FROM assessment_sessions s
@@ -1315,6 +1324,7 @@ async function loadCodeReviewEvidenceFollowUp(
     context_call_interview_id: string | null;
     state: string;
     metadata_json: string | null;
+    blocked_reason: string | null;
     created_at: string;
     updated_at: string;
   }>();
@@ -1329,6 +1339,7 @@ async function loadCodeReviewEvidenceFollowUp(
         ?? optionalString(row.context_call_interview_id)
         ?? null,
       state: row.state,
+      blockedReason: row.state === 'BLOCKED' ? optionalString(row.blocked_reason) ?? null : null,
       matchRunId: optionalString(metadata.matchRunId) ?? null,
       matchStatus: optionalString(metadata.matchStatus) ?? null,
       gaps: stringArray(metadata.gaps),

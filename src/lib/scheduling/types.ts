@@ -251,6 +251,7 @@ export interface CodeReviewEvidenceFollowUp {
   assessmentSessionId: string;
   contextCallInterviewId: string | null;
   state: string;
+  blockedReason?: string | null;
   matchRunId: string | null;
   matchStatus: string | null;
   gaps: string[];
