@@ -64,6 +64,30 @@ function sha256Hex(value: string): string {
   return createHash('sha256').update(value).digest('hex');
 }
 
+function createMockD1WithNumberedParamLimit(sqlite: BetterSqliteDb, maxParam: number): D1Database {
+  const base = createMockD1(sqlite);
+  return {
+    prepare(query: string): D1PreparedStatement {
+      for (const match of query.matchAll(/\?(\d+)/g)) {
+        const paramNumber = Number(match[1]);
+        if (paramNumber > maxParam) {
+          throw new Error(`D1_ERROR: variable number must be between ?1 and ?${maxParam}`);
+        }
+      }
+      return base.prepare(query);
+    },
+    batch(statements: D1PreparedStatement[]): Promise<D1Result[]> {
+      return base.batch(statements);
+    },
+    exec(query: string): Promise<D1ExecResult> {
+      return base.exec(query);
+    },
+    dump(): Promise<ArrayBuffer> {
+      return base.dump();
+    },
+  } as D1Database;
+}
+
 async function seedEvidencePlanMatcherContext(
   sqlite: BetterSqliteDb,
   input: {
@@ -1208,34 +1232,115 @@ describe('GET /interviews/:id detail', () => {
         `2026-06-22T19:${String(index % 60).padStart(2, '0')}:00.000Z`,
       );
     }
+    sqlite!.prepare(`
+      INSERT INTO scheduled_interviews (
+        id, candidate_id, pipeline_id, stage_id, owner_id, interview_type,
+        meeting_type, status, scheduled_at, meeting_url, scheduling_provider,
+        scheduling_url, external_event_id, recruiter_notes, sync_source,
+        last_synced_at, invite_link_sent_at, email_sent_at, recipient_name,
+        recipient_email, matched_repo_id, github_repo_url, github_pr_number,
+        submission_json, completed_at, created_at, updated_at
+      ) VALUES ('interview-list-corrupt-progress', 'candidate-1', 'pipeline-1', 'stage-1', 'owner-1',
+        'CODE_REVIEW', NULL, 'MATCHED', NULL,
+        NULL, 'MANUAL', NULL, NULL, 'Corrupted assessment progress should not break the list.',
+        'MANUAL', NULL, NULL, NULL,
+        NULL, NULL, 77, 'https://github.com/open-source/widgets', 101, NULL, NULL,
+        ?, ?
+      )
+    `).run(now, now);
+    sqlite!.prepare(`
+      INSERT INTO assessment_sessions (
+        id, ingestion_key, interview_id, mode, state, candidate_id, workspace_id,
+        metadata_json, created_at, updated_at
+      ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+    `).run(
+      'assessment-session-progress-list-corrupt',
+      'assessment-session:progress-list-corrupt',
+      'interview-list-corrupt-progress',
+      'CODE_REVIEW',
+      'FINAL_SUBMITTED',
+      'candidate-1',
+      'workspace-1',
+      '{}',
+      now,
+      now,
+    );
+    sqlite!.prepare(`
+      INSERT INTO assessment_evidence_events (
+        id, ingestion_key, session_id, sequence, kind, actor_type, actor_id,
+        narrative, payload_json, context_record_id, occurred_at, created_at
+      ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, NULL, ?, ?)
+    `).run(
+      'assessment-event-list-corrupt-challenge',
+      'assessment-event:progress-list-corrupt-challenge',
+      'assessment-session-progress-list-corrupt',
+      1,
+      'recruiter_note',
+      'recruiter',
+      'owner-1',
+      'This intentionally malformed source ref proves one bad progress row cannot crash the list.',
+      JSON.stringify({ repositoryUrl: 'https://github.com/open-source/widgets' }),
+      now,
+      now,
+    );
+    sqlite!.prepare(`
+      INSERT INTO assessment_event_source_refs (
+        id, event_id, source_ref_type, source_ref_id, source_span_id, evidence_role,
+        locator_json, exact_text, content_hash, metadata_json, created_at
+      ) VALUES (?, ?, ?, ?, NULL, 'assigned_challenge', ?, ?, ?, '{}', ?)
+    `).run(
+      'assessment-source-list-corrupt-challenge',
+      'assessment-event-list-corrupt-challenge',
+      'review_challenge_packet',
+      'challenge-packet-progress-list-corrupt',
+      '{not-valid-json',
+      'Corrupt source ref',
+      sha256Hex('Corrupt source ref'),
+      now,
+    );
 
-    const app = mountSchedulingApp();
-    const response = await app.request('/interviews');
-    expect(response.status).toBe(200);
-    const body = await response.json() as {
-      interviews: Array<{
-        id: string;
-        assessmentProgress: {
-          stage: string;
-          nextAction: string;
-          hasChallengePacket: boolean;
-          hasCommitSubmission: boolean;
-          commit: { commitSha: string | null; branchName: string | null } | null;
-        } | null;
-      }>;
-    };
+    const errorSpy = vi.spyOn(console, 'error').mockImplementation(() => {});
+    try {
+      const app = mountSchedulingApp({ DB: createMockD1WithNumberedParamLimit(sqlite!, 100) });
+      const response = await app.request('/interviews');
+      expect(response.status).toBe(200);
+      const body = await response.json() as {
+        interviews: Array<{
+          id: string;
+          assessmentProgress: {
+            stage: string;
+            nextAction: string;
+            hasChallengePacket: boolean;
+            hasCommitSubmission: boolean;
+            commit: { commitSha: string | null; branchName: string | null } | null;
+          } | null;
+        }>;
+      };
 
-    const interview = body.interviews.find((item) => item.id === 'interview-1');
-    expect(interview?.assessmentProgress).toMatchObject({
-      stage: 'READY_FOR_EVALUATION',
-      nextAction: 'START_EVALUATION',
-      hasChallengePacket: true,
-      hasCommitSubmission: true,
-      commit: {
-        commitSha,
-        branchName: 'pipe-assessment/list-progress',
-      },
-    });
+      expect(body.interviews.length).toBeGreaterThan(100);
+      const interview = body.interviews.find((item) => item.id === 'interview-1');
+      expect(interview?.assessmentProgress).toMatchObject({
+        stage: 'READY_FOR_EVALUATION',
+        nextAction: 'START_EVALUATION',
+        hasChallengePacket: true,
+        hasCommitSubmission: true,
+        commit: {
+          commitSha,
+          branchName: 'pipe-assessment/list-progress',
+        },
+      });
+      const corruptInterview = body.interviews.find((item) => item.id === 'interview-list-corrupt-progress');
+      expect(corruptInterview?.assessmentProgress).toBeNull();
+      expect(errorSpy).toHaveBeenCalledWith(
+        '[scheduling/listAssessmentProgress] failed to load assessment progress:',
+        expect.objectContaining({
+          interviewId: 'interview-list-corrupt-progress',
+          assessmentSessionId: 'assessment-session-progress-list-corrupt',
+        }),
+      );
+    } finally {
+      errorSpy.mockRestore();
+    }
   });
 
   it('returns source-backed CODE_REVIEW match hyperedges for recruiter detail', async () => {
