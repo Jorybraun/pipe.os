@@ -51,10 +51,10 @@ describe('Win95Desktop', () => {
     const guestCursor = screen.getByTestId('room-peer-cursor-guest');
     const hostCursor = screen.getByTestId('room-peer-cursor-host');
 
-    expect(guestCursor.style.left).toBe('1.5%');
-    expect(guestCursor.style.top).toBe('96%');
-    expect(hostCursor.style.left).toBe('50%');
-    expect(hostCursor.style.top).toBe('25%');
+    expect(guestCursor.style.getPropertyValue('--peer-cursor-x')).toBe('1.5vw');
+    expect(guestCursor.style.getPropertyValue('--peer-cursor-y')).toBe('96dvh');
+    expect(hostCursor.style.getPropertyValue('--peer-cursor-x')).toBe('50vw');
+    expect(hostCursor.style.getPropertyValue('--peer-cursor-y')).toBe('25dvh');
   });
 
   it('renders Clippy as a system tray button beside the clock', () => {

@@ -156,9 +156,9 @@ export function Win95Desktop({
           const x = Math.min(0.985, Math.max(0.015, cursor.x));
           const y = Math.min(0.96, Math.max(0.015, cursor.y));
           const cursorStyle = {
-            left: `${x * 100}%`,
-            top: `${y * 100}%`,
-          } as CSSProperties;
+            '--peer-cursor-x': `${x * 100}vw`,
+            '--peer-cursor-y': `${y * 100}dvh`,
+          } as CSSProperties & Record<'--peer-cursor-x' | '--peer-cursor-y', string>;
           return (
             <div
               key={cursor.role}

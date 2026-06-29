@@ -7,6 +7,10 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Fixed — Video room
+
+- Win95 peer cursors now render through isolated transform layers instead of top/left repainting, reducing stale cursor trails while preserving shared cursor evidence and sync state.
+
 ### Fixed — Candidate repo matching
 
 - CODE_REVIEW evidence refresh reruns now append an immutable consumption report linking the ready follow-up evidence report to the match run that consumed it.
