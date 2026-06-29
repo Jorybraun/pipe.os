@@ -184,7 +184,7 @@ describe('InterviewDetailPage', () => {
   });
 
   it('shows source-backed assessment progress and next action for open-source workspaces', async () => {
-    mocks.api.get.mockResolvedValue({
+    mocks.api.get.mockResolvedValueOnce({
       interview: makeInterview({
         interviewType: 'OPEN_SOURCE_BUG_FIX',
         githubRepoUrl: 'https://github.com/open-source/widgets',
@@ -253,9 +253,9 @@ describe('InterviewDetailPage', () => {
 
     const progress = screen.getByTestId('interview-assessment-progress');
     expect(progress).toHaveTextContent('Assessment progress');
-    expect(progress).toHaveTextContent('Ready For Evaluation');
+    expect(progress).toHaveTextContent('Ready for evaluation');
     expect(progress).toHaveTextContent('Start source-backed AI or human evaluation.');
-    expect(progress).toHaveTextContent('challenge, work, commit, AI use, transcript');
+    expect(progress).toHaveTextContent('challenge, work evidence, commit, AI use, transcript');
     expect(progress).toHaveTextContent('abcdef1234');
     expect(progress).toHaveTextContent('Fix the popover cleanup regression.');
     expect(progress).toHaveTextContent('pipe-assessment/popover-cleanup');
@@ -582,7 +582,7 @@ describe('InterviewDetailPage', () => {
     expect(progress).toHaveTextContent('Assessment progress');
     expect(progress).toHaveTextContent('Evaluated');
     expect(progress).toHaveTextContent('Review the assessment report and evidence.');
-    expect(progress).toHaveTextContent('challenge, work, commit, AI use, transcript');
+    expect(progress).toHaveTextContent('challenge, work evidence, commit, AI use, transcript');
     expect(progress).toHaveTextContent('ffffffffff');
     expect(progress).toHaveTextContent('fix the popover cleanup regression.');
     expect(progress).toHaveTextContent('Candidate fixed the regression and added focused tests.');
