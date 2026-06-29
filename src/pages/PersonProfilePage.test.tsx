@@ -306,6 +306,10 @@ describe('PersonProfilePage', () => {
     renderPage();
     await flushAsyncUpdates();
 
+    expect(screen.getByText('PERSON CONTEXT')).toBeInTheDocument();
+    expect(screen.getByText('Source-backed profile')).toBeInTheDocument();
+    expect(screen.getByText('Interactions')).toBeInTheDocument();
+
     const decision = await screen.findByTestId('person-code-review-decision');
     expect(decision).toHaveTextContent('Code-review decision');
     expect(decision).toHaveTextContent('Advance with focused probe');

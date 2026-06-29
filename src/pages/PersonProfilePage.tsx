@@ -26,6 +26,8 @@ import {
   contextRecordTypeLabel,
 } from '../lib/livingContextDisplay';
 
+const FONT = '"Space Mono", monospace';
+
 interface PersonContact {
   id: string;
   email: string;
@@ -578,16 +580,11 @@ function deriveCodeReviewDecision(
 
 function Metric({ label, value }: { label: string; value: number }): JSX.Element {
   return (
-    <div style={{
-      border: '1px solid var(--pipe-border-light)',
-      background: 'var(--pipe-surface-solid)',
-      padding: 14,
-      minHeight: 72,
-    }}>
-      <div style={{ fontSize: 20, fontWeight: 800, color: 'var(--pipe-text)', lineHeight: 1 }}>
+    <div style={METRIC_CARD}>
+      <div style={METRIC_VALUE}>
         {value}
       </div>
-      <div style={{ marginTop: 8, fontSize: 10, color: 'var(--pipe-text-dim)' }}>
+      <div style={FIELD_LABEL}>
         {label}
       </div>
     </div>
@@ -596,11 +593,11 @@ function Metric({ label, value }: { label: string; value: number }): JSX.Element
 
 function InfoRow({ icon, label, value }: { icon: JSX.Element; label: string; value: string | null | undefined }): JSX.Element {
   return (
-    <div style={{ display: 'flex', alignItems: 'flex-start', gap: 10 }}>
+    <div style={INFO_ROW}>
       <div style={{ color: 'var(--pipe-text-dim)', marginTop: 1 }}>{icon}</div>
       <div style={{ minWidth: 0 }}>
-        <div style={{ fontSize: 10, color: 'var(--pipe-text-dim)', marginBottom: 3 }}>{label}</div>
-        <div style={{ fontSize: 12, color: 'var(--pipe-text)', overflowWrap: 'anywhere' }}>
+        <div style={FIELD_LABEL}>{label}</div>
+        <div style={FIELD_VALUE}>
           {value || 'Not recorded'}
         </div>
       </div>
@@ -612,6 +609,7 @@ function EmptyPanel({ children }: { children: string }): JSX.Element {
   return (
     <div style={{
       border: '1px dashed var(--pipe-border)',
+      borderRadius: 6,
       color: 'var(--pipe-text-dim)',
       padding: 24,
       textAlign: 'center',
@@ -773,6 +771,11 @@ export default function PersonProfilePage(): JSX.Element {
     ?? livingContext?.person?.displayName
     ?? contact?.email
     ?? 'Person';
+  const relationshipLabel = typeLabel(contact?.type);
+  const roleContext = contact?.role ?? livingContext?.person?.roles[0]?.label ?? 'Relationship graph';
+  const relationshipSummary = livingContext?.person?.relationshipSummary
+    ?? contact?.notes
+    ?? 'No relationship summary has been earned from evidence yet.';
 
   const recentInteractions = livingContext?.interactions.slice(0, 5) ?? [];
   const recentRecords = livingContext?.contextRecords.slice(0, 5) ?? [];
@@ -802,106 +805,56 @@ export default function PersonProfilePage(): JSX.Element {
   }
 
   return (
-    <div style={{ padding: '28px 32px 48px', maxWidth: 1320, margin: '0 auto' }}>
-      <button onClick={() => navigate('/people')} style={backButtonStyle}>
-        <ArrowLeft size={14} /> PEOPLE
-      </button>
-
-      <section style={{
-        display: 'grid',
-        gridTemplateColumns: 'repeat(auto-fit, minmax(280px, 1fr))',
-        gap: 24,
-        alignItems: 'stretch',
-        marginTop: 18,
-      }}>
-        <div style={{
-          border: '1px solid var(--pipe-border)',
-          background: 'var(--pipe-surface-solid)',
-          padding: 24,
-          minHeight: 260,
-        }}>
-          <div style={{
-            width: 56,
-            height: 56,
-            border: '1px solid var(--pipe-accent-border)',
-            background: 'var(--pipe-accent-surface)',
-            display: 'flex',
-            alignItems: 'center',
-            justifyContent: 'center',
-            marginBottom: 20,
-            color: 'var(--pipe-accent)',
-          }}>
-            <UserRound size={26} />
+    <div style={PAGE}>
+      <header style={HEADER}>
+        <div style={HEADER_PRIMARY}>
+          <button onClick={() => navigate('/people')} style={backButtonStyle}>
+            <ArrowLeft size={13} /> PEOPLE
+          </button>
+          <div style={PROFILE_TITLE_ROW}>
+            <div style={PROFILE_ICON}>
+              <UserRound size={22} />
+            </div>
+            <div style={{ minWidth: 0 }}>
+              <div style={EYEBROW}>PERSON CONTEXT</div>
+              <h1 style={TITLE}>{displayName}</h1>
+              <div style={SUBTITLE}>
+                {relationshipLabel} · {roleContext}
+              </div>
+            </div>
           </div>
-          <div style={{ fontSize: 11, color: 'var(--pipe-text-dim)', marginBottom: 8 }}>
-            {typeLabel(contact.type)}
-          </div>
-          <h1 style={{
-            margin: 0,
-            color: 'var(--pipe-text)',
-            fontSize: 34,
-            lineHeight: 1.05,
-            letterSpacing: 0,
-          }}>
-            {displayName}
-          </h1>
-          <p style={{ color: 'var(--pipe-text-muted)', margin: '12px 0 0', fontSize: 13, lineHeight: 1.5 }}>
-            {livingContext?.person?.relationshipSummary
-              ?? contact.notes
-              ?? 'No relationship summary has been earned from evidence yet.'}
-          </p>
-          <div style={{
-            marginTop: 18,
-            padding: 12,
-            border: '1px solid var(--pipe-border-light)',
-            borderRadius: 8,
-            background: 'var(--pipe-surface)',
-            color: 'var(--pipe-text-muted)',
-            fontSize: 12,
-            lineHeight: 1.55,
-          }}>
-            {evidenceSummaryText(livingContext)}
-          </div>
+          <p style={PROFILE_SUMMARY}>{relationshipSummary}</p>
         </div>
 
-        <div style={{
-          border: '1px solid var(--pipe-border)',
-          background: 'var(--pipe-surface)',
-          padding: 24,
-          display: 'grid',
-          gridTemplateColumns: 'repeat(2, minmax(0, 1fr))',
-          gap: 18,
-          alignContent: 'start',
-        }}>
+        <div style={PROFILE_META_PANEL}>
           <InfoRow icon={<Mail size={14} />} label="Email" value={contact.email} />
           <InfoRow icon={<Phone size={14} />} label="Phone" value={contact.phone ?? livingContext?.person?.primaryPhone} />
-          <InfoRow icon={<Briefcase size={14} />} label="Role / context" value={contact.role ?? livingContext?.person?.roles[0]?.label} />
+          <InfoRow icon={<Briefcase size={14} />} label="Role / context" value={roleContext} />
           <InfoRow icon={<Calendar size={14} />} label="Known since" value={formatDate(contact.created_at)} />
         </div>
-      </section>
+      </header>
 
-      <section style={{
-        display: 'grid',
-        gridTemplateColumns: 'repeat(auto-fit, minmax(150px, 1fr))',
-        gap: 10,
-        marginTop: 18,
-      }}>
-        <Metric label="Interactions" value={livingContext?.summary.interactionCount ?? 0} />
-        <Metric label="Learned context" value={livingContext?.summary.contextRecordCount ?? 0} />
-        <Metric label="Original spans" value={livingContext?.summary.sourceSpanCount ?? 0} />
-        <Metric label="Source artifacts" value={livingContext?.summary.artifactCount ?? 0} />
+      <section style={EVIDENCE_STRIP}>
+        <div style={EVIDENCE_STRIP_COPY}>
+          <div style={SECTION_TITLE}>
+            <Network size={15} />
+            Source-backed profile
+          </div>
+          <div style={BODY_COPY}>{evidenceSummaryText(livingContext)}</div>
+        </div>
+        <div style={METRIC_GRID}>
+          <Metric label="Interactions" value={livingContext?.summary.interactionCount ?? 0} />
+          <Metric label="Learned context" value={livingContext?.summary.contextRecordCount ?? 0} />
+          <Metric label="Original spans" value={livingContext?.summary.sourceSpanCount ?? 0} />
+          <Metric label="Source artifacts" value={livingContext?.summary.artifactCount ?? 0} />
+        </div>
       </section>
 
       {codeReviewDecision && (
         <CodeReviewDecisionCard decision={codeReviewDecision} />
       )}
 
-      <section style={{
-        display: 'grid',
-        gridTemplateColumns: 'repeat(auto-fit, minmax(280px, 1fr))',
-        gap: 18,
-        marginTop: 18,
-      }}>
+      <section style={EVIDENCE_GRID}>
         <Panel title="Relationship Timeline" icon={<Calendar size={15} />}>
           {recentInteractions.length === 0 ? (
             <EmptyPanel>No interactions have been captured yet.</EmptyPanel>
@@ -989,7 +942,7 @@ export default function PersonProfilePage(): JSX.Element {
         </Panel>
       </section>
 
-      <section style={{ marginTop: 22 }}>
+      <section style={GRAPH_SECTION}>
         <div style={GRAPH_HEADER}>
           <div style={{ display: 'flex', alignItems: 'center', gap: 10, minWidth: 0 }}>
             <Network size={16} color="var(--pipe-accent)" />
@@ -1028,30 +981,223 @@ export default function PersonProfilePage(): JSX.Element {
 
 function Panel({ title, icon, children }: { title: string; icon: JSX.Element; children: ReactNode }): JSX.Element {
   return (
-    <section style={{
-      border: '1px solid var(--pipe-border)',
-      background: 'var(--pipe-surface-solid)',
-      minHeight: 240,
-    }}>
-      <div style={{
-        padding: '14px 16px',
-        borderBottom: '1px solid var(--pipe-border-light)',
-        display: 'flex',
-        alignItems: 'center',
-        gap: 9,
-        color: 'var(--pipe-text)',
-        fontSize: 12,
-        fontWeight: 800,
-      }}>
+    <section style={SECTION}>
+      <div style={SECTION_TITLE}>
         <span style={{ color: 'var(--pipe-text-dim)' }}>{icon}</span>
         {title}
       </div>
-      <div style={{ padding: 16, display: 'grid', gap: 10 }}>
+      <div style={PANEL_BODY}>
         {children}
       </div>
     </section>
   );
 }
+
+const PAGE: CSSProperties = {
+  display: 'flex',
+  flexDirection: 'column',
+  gap: 20,
+  width: '100%',
+  maxWidth: 1180,
+  margin: '0 auto',
+  padding: 22,
+  border: '1px solid var(--pipe-border)',
+  borderRadius: 8,
+  background: 'var(--pipe-surface-elevated)',
+  boxShadow: '0 24px 80px var(--pipe-shadow)',
+};
+
+const HEADER: CSSProperties = {
+  display: 'flex',
+  alignItems: 'flex-start',
+  justifyContent: 'space-between',
+  gap: 22,
+  paddingBottom: 24,
+  borderBottom: '1px solid var(--pipe-border)',
+  flexWrap: 'wrap',
+};
+
+const HEADER_PRIMARY: CSSProperties = {
+  display: 'flex',
+  flexDirection: 'column',
+  gap: 14,
+  minWidth: 280,
+  flex: '1 1 440px',
+};
+
+const PROFILE_TITLE_ROW: CSSProperties = {
+  display: 'flex',
+  alignItems: 'flex-start',
+  gap: 14,
+  minWidth: 0,
+};
+
+const PROFILE_ICON: CSSProperties = {
+  flex: '0 0 auto',
+  width: 44,
+  height: 44,
+  border: '1px solid var(--pipe-accent-border)',
+  borderRadius: 8,
+  background: 'var(--pipe-accent-surface)',
+  display: 'flex',
+  alignItems: 'center',
+  justifyContent: 'center',
+  color: 'var(--pipe-accent)',
+};
+
+const PROFILE_SUMMARY: CSSProperties = {
+  maxWidth: 760,
+  margin: 0,
+  color: 'var(--pipe-text-muted)',
+  fontSize: 13,
+  lineHeight: 1.55,
+};
+
+const PROFILE_META_PANEL: CSSProperties = {
+  display: 'grid',
+  gridTemplateColumns: 'repeat(auto-fit, minmax(180px, 1fr))',
+  gap: 14,
+  minWidth: 280,
+  flex: '1 1 380px',
+  padding: 14,
+  border: '1px solid var(--pipe-border)',
+  borderRadius: 8,
+  background: 'var(--pipe-surface-solid)',
+};
+
+const EVIDENCE_STRIP: CSSProperties = {
+  display: 'grid',
+  gridTemplateColumns: 'repeat(auto-fit, minmax(280px, 1fr))',
+  gap: 14,
+  alignItems: 'stretch',
+  border: '1px solid var(--pipe-border)',
+  borderRadius: 8,
+  background: 'var(--pipe-surface-solid)',
+  padding: 18,
+};
+
+const EVIDENCE_STRIP_COPY: CSSProperties = {
+  minWidth: 0,
+};
+
+const METRIC_GRID: CSSProperties = {
+  display: 'grid',
+  gridTemplateColumns: 'repeat(auto-fit, minmax(130px, 1fr))',
+  gap: 10,
+  minWidth: 0,
+};
+
+const METRIC_CARD: CSSProperties = {
+  display: 'grid',
+  alignContent: 'start',
+  gap: 8,
+  minWidth: 0,
+  minHeight: 82,
+  border: '1px solid var(--pipe-border)',
+  borderRadius: 6,
+  background: 'rgba(255,255,255,0.03)',
+  padding: 12,
+};
+
+const METRIC_VALUE: CSSProperties = {
+  color: 'var(--pipe-text)',
+  fontFamily: FONT,
+  fontSize: 22,
+  fontWeight: 800,
+  lineHeight: 1,
+};
+
+const INFO_ROW: CSSProperties = {
+  display: 'flex',
+  alignItems: 'flex-start',
+  gap: 10,
+  minWidth: 0,
+};
+
+const EVIDENCE_GRID: CSSProperties = {
+  display: 'grid',
+  gridTemplateColumns: 'repeat(auto-fit, minmax(280px, 1fr))',
+  gap: 14,
+  minWidth: 0,
+};
+
+const SECTION: CSSProperties = {
+  minHeight: 240,
+  border: '1px solid var(--pipe-border)',
+  borderRadius: 8,
+  background: 'var(--pipe-surface-solid)',
+  padding: 18,
+};
+
+const SECTION_TITLE: CSSProperties = {
+  display: 'flex',
+  alignItems: 'center',
+  gap: 8,
+  marginBottom: 16,
+  color: 'var(--pipe-text)',
+  fontFamily: FONT,
+  fontSize: 11,
+  fontWeight: 700,
+  letterSpacing: '0.12em',
+  textTransform: 'uppercase',
+};
+
+const PANEL_BODY: CSSProperties = {
+  display: 'grid',
+  gap: 10,
+};
+
+const FIELD_LABEL: CSSProperties = {
+  marginBottom: 5,
+  color: 'var(--pipe-text-dim)',
+  fontFamily: FONT,
+  fontSize: 9,
+  fontWeight: 700,
+  letterSpacing: '0.12em',
+  textTransform: 'uppercase',
+};
+
+const FIELD_VALUE: CSSProperties = {
+  minWidth: 0,
+  overflowWrap: 'anywhere',
+  color: 'var(--pipe-text)',
+  fontSize: 12,
+  lineHeight: 1.5,
+};
+
+const BODY_COPY: CSSProperties = {
+  color: 'var(--pipe-text-muted)',
+  fontSize: 12,
+  lineHeight: 1.55,
+};
+
+const EYEBROW: CSSProperties = {
+  marginBottom: 8,
+  color: 'var(--pipe-text-dim)',
+  fontFamily: FONT,
+  fontSize: 10,
+  fontWeight: 700,
+  letterSpacing: '0.18em',
+  textTransform: 'uppercase',
+};
+
+const TITLE: CSSProperties = {
+  margin: 0,
+  color: 'var(--pipe-text)',
+  fontSize: 32,
+  fontWeight: 800,
+  lineHeight: 1.1,
+  letterSpacing: 0,
+  overflowWrap: 'anywhere',
+};
+
+const SUBTITLE: CSSProperties = {
+  marginTop: 8,
+  color: 'var(--pipe-text-dim)',
+  fontFamily: FONT,
+  fontSize: 12,
+  lineHeight: 1.5,
+};
 
 const backButtonStyle = {
   display: 'inline-flex',
@@ -1061,20 +1207,23 @@ const backButtonStyle = {
   background: 'transparent',
   color: 'var(--pipe-text-dim)',
   cursor: 'pointer',
-  fontSize: 11,
+  fontFamily: FONT,
+  fontSize: 10,
+  fontWeight: 700,
+  letterSpacing: '0.12em',
   padding: 0,
 } satisfies CSSProperties;
 
 const listItemStyle = {
   border: '1px solid var(--pipe-border-light)',
-  borderRadius: 8,
+  borderRadius: 6,
   background: 'var(--pipe-surface)',
   padding: 12,
 } satisfies CSSProperties;
 
 const CODE_REVIEW_DECISION: CSSProperties = {
-  marginTop: 18,
   border: '1px solid var(--pipe-accent-border)',
+  borderRadius: 8,
   background: 'var(--pipe-surface-solid)',
   padding: 18,
   display: 'grid',
@@ -1118,6 +1267,7 @@ const DECISION_FACT_GRID: CSSProperties = {
 
 const DECISION_FACT: CSSProperties = {
   border: '1px solid var(--pipe-border-light)',
+  borderRadius: 6,
   background: 'var(--pipe-surface)',
   padding: 12,
   minHeight: 70,
@@ -1178,6 +1328,7 @@ const DECISION_COLUMNS: CSSProperties = {
 
 const DECISION_PROOF: CSSProperties = {
   border: '1px solid var(--pipe-border-light)',
+  borderRadius: 6,
   background: 'var(--pipe-surface)',
   padding: 12,
 };
@@ -1205,6 +1356,13 @@ const DECISION_PROOF_TEXT: CSSProperties = {
   fontSize: 11,
   lineHeight: 1.45,
   overflowWrap: 'anywhere',
+};
+
+const GRAPH_SECTION: CSSProperties = {
+  border: '1px solid var(--pipe-border)',
+  borderRadius: 8,
+  background: 'var(--pipe-surface-solid)',
+  padding: 18,
 };
 
 const GRAPH_HEADER: CSSProperties = {
