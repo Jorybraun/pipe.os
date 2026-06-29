@@ -744,7 +744,7 @@ describe('meeting transcript living-context ingestion', () => {
          FROM assessment_sessions
         WHERE id = 'assessment-plan-summary-only'`,
     ).get() as { state: string };
-    expect(planSession.state).toBe('IN_PROGRESS');
+    expect(planSession.state).toBe('BLOCKED');
     expect(sqlite.prepare(
       `SELECT COUNT(*) AS count
          FROM assessment_evidence_events
@@ -756,6 +756,17 @@ describe('meeting transcript living-context ingestion', () => {
          FROM assessment_evaluation_reports
         WHERE session_id = 'assessment-plan-summary-only'`,
     ).get()).toEqual({ count: 0 });
+    const transition = sqlite.prepare(
+      `SELECT to_state, reason
+         FROM assessment_state_transitions
+        WHERE session_id = 'assessment-plan-summary-only'
+        ORDER BY sequence DESC
+        LIMIT 1`,
+    ).get() as { to_state: string; reason: string };
+    expect(transition).toEqual({
+      to_state: 'BLOCKED',
+      reason: 'Evidence-plan follow-up transcript was summary-only and cannot be attributed to the candidate.',
+    });
   });
 
   it('grows a person-centered living context graph from a meeting transcript', async () => {

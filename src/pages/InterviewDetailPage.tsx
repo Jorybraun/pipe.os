@@ -1101,6 +1101,7 @@ export default function InterviewDetailPage(): JSX.Element {
   const codeReviewEvidencePlan = codeReviewEvidencePlanItems(codeReviewMatch, codeReviewSubmission);
   const codeReviewEvidenceRefresh = codeReviewMatch?.evidenceRefresh ?? null;
   const codeReviewEvidenceFollowUp = codeReviewMatch?.evidenceFollowUp ?? null;
+  const codeReviewEvidenceFollowUpBlocked = codeReviewEvidenceFollowUp?.state === 'BLOCKED';
   const codeReviewEvidenceRefreshUsed = Boolean(
     codeReviewEvidenceRefresh && codeReviewMatch?.status === 'MATCHED',
   );
@@ -1421,10 +1422,18 @@ export default function InterviewDetailPage(): JSX.Element {
               )}
               {codeReviewEvidenceFollowUp && !codeReviewEvidenceRefresh && (
                 <div data-testid="interview-code-review-evidence-follow-up" style={DECISION_FOLLOW_UP}>
-                  <div style={FIELD_LABEL}>Follow-up assessment open</div>
-                  <div style={DECISION_PLAN_SIGNAL}>Waiting for source-backed response</div>
+                  <div style={FIELD_LABEL}>
+                    {codeReviewEvidenceFollowUpBlocked ? 'Follow-up needs attribution' : 'Follow-up assessment open'}
+                  </div>
+                  <div style={DECISION_PLAN_SIGNAL}>
+                    {codeReviewEvidenceFollowUpBlocked
+                      ? 'Record another answer with clear candidate audio before rerunning matching.'
+                      : 'Waiting for source-backed response'}
+                  </div>
                   <div style={CONTEXT_RECORD_NARRATIVE}>
-                    PIPE already has an evidence-plan assessment linked to this code-review match gap.
+                    {codeReviewEvidenceFollowUpBlocked
+                      ? 'The previous follow-up did not produce attributable candidate transcript evidence, so PIPE did not use it for repo matching.'
+                      : 'PIPE already has an evidence-plan assessment linked to this code-review match gap.'}
                   </div>
                   {codeReviewEvidenceFollowUp.questions.length > 0 && (
                     <>

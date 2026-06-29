@@ -223,13 +223,21 @@ async function captureEvidencePlanTranscriptEvidence(
   db: D1Database,
   input: MeetingTranscriptAssessmentEvidenceInput,
 ): Promise<void> {
-  if (input.personContextMode !== 'attributed') return;
-
   const planSession = await loadEvidencePlanSessionForInterview(db, input.scheduledInterviewId);
   if (!planSession) return;
+  const store = new AssessmentLayerStore(db, () => input.observedAt);
+
+  if (input.personContextMode !== 'attributed') {
+    await transitionIfState(db, store, {
+      sessionId: planSession.id,
+      allowedStates: ['INTAKE', 'IN_PROGRESS'],
+      toState: 'BLOCKED',
+      reason: 'Evidence-plan follow-up transcript was summary-only and cannot be attributed to the candidate.',
+    });
+    return;
+  }
 
   const metadata = parseSessionMetadata(planSession.metadata_json);
-  const store = new AssessmentLayerStore(db, () => input.observedAt);
   const sourceRefs: AssessmentEvidenceSourceRefInput[] = [];
   const responseSegments = input.segments.filter((segment) =>
     actorForSegment(segment).actorType === 'candidate'

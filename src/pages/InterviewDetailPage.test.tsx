@@ -660,6 +660,53 @@ describe('InterviewDetailPage', () => {
     expect(screen.queryByTestId('interview-code-review-evidence-plan')).toBeNull();
   });
 
+  it('shows blocked follow-up assessment attribution state instead of waiting forever', async () => {
+    mocks.api.get.mockResolvedValueOnce({
+      interview: makeInterview({
+        interviewType: 'CODE_REVIEW',
+        status: 'INVITED',
+        codeReviewMatch: {
+          status: 'NEEDS_MORE_EVIDENCE',
+          matchRunId: 'match-run-blocked-1',
+          packetId: null,
+          summary: 'No quality-gated source-backed PR challenge was selected.',
+          score: 0,
+          assessmentQuality: null,
+          reviewProfile: null,
+          validatorAgent: null,
+          roleSources: [],
+          evidence: [],
+          evidenceHyperedges: [],
+          gaps: ['NO_SCOREABLE_SOURCE_BACKED_CANDIDATE_EVIDENCE'],
+          evidencePlan: [],
+          evidenceFollowUp: {
+            assessmentSessionId: 'assessment-plan-blocked-1',
+            contextCallInterviewId: 'context-call-blocked-1',
+            state: 'BLOCKED',
+            matchRunId: 'match-run-blocked-1',
+            matchStatus: 'NEEDS_MORE_EVIDENCE',
+            gaps: ['NO_SCOREABLE_SOURCE_BACKED_CANDIDATE_EVIDENCE'],
+            questions: [SOURCE_BACKED_WORK_EVIDENCE_QUESTION],
+            createdAt: '2026-06-22T18:00:00.000Z',
+            updatedAt: '2026-06-22T18:05:00.000Z',
+          },
+          evidenceRefresh: null,
+        },
+      }),
+    });
+
+    renderDetail();
+
+    await flushAsyncUpdates();
+    const followUp = screen.getByTestId('interview-code-review-evidence-follow-up');
+    expect(followUp).toHaveTextContent('Follow-up needs attribution');
+    expect(followUp).toHaveTextContent('Record another answer with clear candidate audio before rerunning matching.');
+    expect(followUp).not.toHaveTextContent('Waiting for source-backed response');
+    expect(followUp).toHaveTextContent(SOURCE_BACKED_WORK_EVIDENCE_QUESTION);
+    expect(screen.getByTestId('interview-code-review-open-follow-up-assessment')).toHaveTextContent('OPEN FOLLOW-UP ASSESSMENT');
+    expect(screen.queryByTestId('interview-code-review-evidence-plan')).toBeNull();
+  });
+
   it('refreshes the code-review match from captured follow-up evidence', async () => {
     mocks.api.get.mockResolvedValueOnce({
       interview: makeInterview({
