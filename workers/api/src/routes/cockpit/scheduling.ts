@@ -402,6 +402,151 @@ async function loadScheduledInterviewLivingContext(
   return loadContactLivingContext(db, contactId);
 }
 
+interface ScheduledRelatedEvidenceInterview {
+  id: string;
+  relationship: 'code_review_evidence_follow_up' | 'originating_code_review' | 'same_person_assessment';
+  interviewType: string | null;
+  meetingType: string | null;
+  status: string;
+  scheduledAt: string | null;
+  candidateId: string | null;
+  contactId: string | null;
+  displayName: string | null;
+  primaryEmail: string | null;
+  linkedMeetingId: string | null;
+  transcriptStatus: string | null;
+  assessmentSessionId: string | null;
+  assessmentSessionState: string | null;
+  createdAt: string;
+  updatedAt: string;
+}
+
+async function loadRelatedEvidenceInterviews(
+  db: D1Database,
+  ownerId: string,
+  currentInterviewId: string,
+  livingContext: InterviewLivingContext,
+): Promise<ScheduledRelatedEvidenceInterview[]> {
+  const workspacePersonId = livingContext?.person.workspacePersonId ?? null;
+  if (!workspacePersonId) return [];
+
+  const rows = await db.prepare(
+    `SELECT si.id,
+            si.interview_type,
+            si.meeting_type,
+            si.status,
+            si.scheduled_at,
+            si.candidate_id,
+            rc.id AS contact_id,
+            COALESCE(c.name, si.recipient_name, rc.name) AS display_name,
+            lower(COALESCE(c.email, si.recipient_email, rc.email)) AS primary_email,
+            si.created_at,
+            si.updated_at,
+            m.id AS linked_meeting_id,
+            m.transcript_status,
+            s.id AS assessment_session_id,
+            s.state AS assessment_session_state,
+            s.metadata_json AS assessment_metadata_json
+       FROM scheduled_interviews si
+       LEFT JOIN candidates c ON c.id = si.candidate_id
+       LEFT JOIN applications app ON app.legacy_candidate_id = si.candidate_id
+       LEFT JOIN contacts rc ON rc.id = (
+         SELECT contact.id
+           FROM contacts contact
+          WHERE contact.owner_id = si.owner_id
+            AND si.recipient_email IS NOT NULL
+            AND lower(contact.email) = lower(si.recipient_email)
+          ORDER BY contact.updated_at DESC
+          LIMIT 1
+       )
+       LEFT JOIN workspace_people contact_wp ON contact_wp.workspace_id = si.owner_id
+        AND rc.id IS NOT NULL
+        AND json_extract(contact_wp.context_json, '$.contactId') = rc.id
+       LEFT JOIN meetings m ON m.id = (
+         SELECT lm.id
+           FROM meetings lm
+          WHERE lm.scheduled_interview_id = si.id
+            AND lm.owner_id = si.owner_id
+          ORDER BY lm.created_at DESC
+          LIMIT 1
+       )
+       LEFT JOIN assessment_sessions s ON s.id = (
+         SELECT latest_s.id
+           FROM assessment_sessions latest_s
+          WHERE latest_s.interview_id = si.id
+          ORDER BY latest_s.updated_at DESC, latest_s.id DESC
+          LIMIT 1
+       )
+      WHERE si.owner_id = ?1
+        AND si.id <> ?2
+        AND (
+          app.workspace_person_id = ?3
+          OR contact_wp.id = ?3
+        )
+      ORDER BY
+        CASE
+          WHEN s.created_by = 'code-review-evidence-plan'
+           AND json_extract(s.metadata_json, '$.originalInterviewId') = ?2
+          THEN 0
+          WHEN s.created_by = 'code-review-evidence-plan'
+           AND json_extract(s.metadata_json, '$.contextCallInterviewId') = ?2
+          THEN 1
+          ELSE 2
+        END,
+        si.created_at DESC,
+        si.id DESC
+      LIMIT 8`,
+  ).bind(ownerId, currentInterviewId, workspacePersonId).all<{
+    id: string;
+    interview_type: string | null;
+    meeting_type: string | null;
+    status: string;
+    scheduled_at: string | null;
+    candidate_id: string | null;
+    contact_id: string | null;
+    display_name: string | null;
+    primary_email: string | null;
+    created_at: string;
+    updated_at: string;
+    linked_meeting_id: string | null;
+    transcript_status: string | null;
+    assessment_session_id: string | null;
+    assessment_session_state: string | null;
+    assessment_metadata_json: string | null;
+  }>();
+
+  return (rows.results ?? []).map((row) => {
+    const metadata = parseJsonObject(row.assessment_metadata_json);
+    const originalInterviewId = optionalString(metadata.originalInterviewId);
+    const contextCallInterviewId = optionalString(metadata.contextCallInterviewId);
+    const relationship: ScheduledRelatedEvidenceInterview['relationship'] =
+      originalInterviewId === currentInterviewId
+        ? 'code_review_evidence_follow_up'
+        : contextCallInterviewId === currentInterviewId
+          ? 'originating_code_review'
+          : 'same_person_assessment';
+
+    return {
+      id: row.id,
+      relationship,
+      interviewType: row.interview_type,
+      meetingType: row.meeting_type,
+      status: row.status,
+      scheduledAt: row.scheduled_at,
+      candidateId: row.candidate_id,
+      contactId: row.contact_id,
+      displayName: row.display_name,
+      primaryEmail: row.primary_email,
+      linkedMeetingId: row.linked_meeting_id,
+      transcriptStatus: row.transcript_status,
+      assessmentSessionId: row.assessment_session_id,
+      assessmentSessionState: row.assessment_session_state,
+      createdAt: row.created_at,
+      updatedAt: row.updated_at,
+    };
+  });
+}
+
 interface ScheduledCodeReviewSourceRef {
   sourceRefType?: string;
   sourceRefId?: string;
@@ -3478,6 +3623,12 @@ schedulingAuth.get('/interviews/:id', async (c) => {
     }>();
 
   const livingContext = await loadScheduledInterviewLivingContext(db, userId, interview);
+  const relatedEvidenceInterviews = await loadRelatedEvidenceInterviews(
+    db,
+    userId,
+    interview.id,
+    livingContext,
+  );
   const codeReviewMatch = await loadScheduledCodeReviewMatchDetail(db, interview);
 
   return c.json({
@@ -3557,6 +3708,7 @@ schedulingAuth.get('/interviews/:id', async (c) => {
         updatedAt: linkedMeeting.updated_at,
       } : null,
       livingContext,
+      relatedEvidenceInterviews,
       codeReviewMatch,
       createdAt: interview.created_at,
       updatedAt: interview.updated_at,

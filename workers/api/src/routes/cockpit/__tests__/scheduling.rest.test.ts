@@ -1243,6 +1243,140 @@ describe('GET /interviews/:id detail', () => {
     });
   });
 
+  it('returns related evidence interviews for the same person graph without collapsing them into one meeting', async () => {
+    seedInterviewDetailFixture();
+    sqlite!.prepare(`
+      INSERT INTO scheduled_interviews (
+        id, candidate_id, pipeline_id, stage_id, owner_id, interview_type,
+        meeting_type, status, scheduled_at, meeting_url, scheduling_provider,
+        scheduling_url, external_event_id, recruiter_notes, sync_source,
+        last_synced_at, invite_link_sent_at, email_sent_at, recipient_name,
+        recipient_email, matched_repo_id, github_repo_url, github_pr_number,
+        submission_json, completed_at, created_at, updated_at
+      ) VALUES
+      (
+        'interview-code-review-related-origin', 'candidate-1', 'pipeline-1', 'stage-1', 'owner-1',
+        'CODE_REVIEW', NULL, 'INVITED', NULL,
+        NULL, 'MANUAL', NULL, NULL, 'Assess PR review judgment.',
+        'MANUAL', NULL, NULL, NULL,
+        NULL, NULL, NULL, NULL, NULL, NULL, NULL,
+        '2026-06-22T17:30:00.000Z', '2026-06-22T17:45:00.000Z'
+      ),
+      (
+        'context-call-related-1', 'candidate-1', 'pipeline-1', 'stage-1', 'owner-1',
+        'VIDEO', 'SCREENING_INTERVIEW', 'INVITED', NULL,
+        NULL, 'MANUAL', NULL, NULL, 'PIPE context call for blocked code-review matching.',
+        'MANUAL', NULL, NULL, NULL,
+        NULL, NULL, NULL, NULL, NULL, NULL, NULL,
+        '2026-06-22T18:00:00.000Z', '2026-06-22T18:05:00.000Z'
+      )
+    `).run();
+    sqlite!.prepare(`
+      INSERT INTO candidates (
+        id, pipeline_id, owner_id, name, email, invite_token, status,
+        current_stage_id, created_at, updated_at
+      ) VALUES (
+        'candidate-related-second-app', NULL, 'owner-1', 'Ada Candidate',
+        'ADA@example.com', 'invite-related-second-app', 'INVITED',
+        NULL, '2026-06-22T18:10:00.000Z', '2026-06-22T18:10:00.000Z'
+      )
+    `).run();
+    await ensureCandidateLivingContext(createMockD1(sqlite!), 'candidate-related-second-app');
+    sqlite!.prepare(`
+      INSERT INTO scheduled_interviews (
+        id, candidate_id, pipeline_id, stage_id, owner_id, interview_type,
+        meeting_type, status, scheduled_at, meeting_url, scheduling_provider,
+        scheduling_url, external_event_id, recruiter_notes, sync_source,
+        last_synced_at, invite_link_sent_at, email_sent_at, recipient_name,
+        recipient_email, matched_repo_id, github_repo_url, github_pr_number,
+        submission_json, completed_at, created_at, updated_at
+      ) VALUES (
+        'interview-related-second-assessment', 'candidate-related-second-app', NULL, NULL, 'owner-1',
+        'CODE_REVIEW', NULL, 'INVITED', NULL,
+        NULL, 'MANUAL', NULL, NULL, 'Second code-review invite for the same person.',
+        'MANUAL', NULL, NULL, NULL,
+        NULL, NULL, NULL, NULL, NULL, NULL, NULL,
+        '2026-06-22T18:10:00.000Z', '2026-06-22T18:11:00.000Z'
+      )
+    `).run();
+    sqlite!.prepare(`
+      INSERT INTO meetings (
+        id, owner_id, title, description, status, scheduled_at, meeting_type,
+        scheduled_interview_id, transcript_status, transcript_summary,
+        created_at, updated_at
+      ) VALUES
+      (
+        'meeting-related-context-call', 'owner-1', 'Ada Candidate context call',
+        'Evidence follow-up', 'SCHEDULED', NULL, 'INTERVIEW',
+        'context-call-related-1', 'NONE', NULL,
+        '2026-06-22T18:00:00.000Z', '2026-06-22T18:00:00.000Z'
+      ),
+      (
+        'meeting-related-second-assessment', 'owner-1', 'Ada Candidate second code review',
+        'Standalone assessment', 'SCHEDULED', NULL, 'INTERVIEW',
+        'interview-related-second-assessment', 'NONE', NULL,
+        '2026-06-22T18:10:00.000Z', '2026-06-22T18:10:00.000Z'
+      )
+    `).run();
+    sqlite!.prepare(`
+      INSERT INTO assessment_sessions (
+        id, ingestion_key, interview_id, mode, state, candidate_id, created_by,
+        metadata_json, completed_at, created_at, updated_at
+      ) VALUES (
+        'assessment-plan-related',
+        'assessment-session:code-review-evidence-plan:interview-code-review-related-origin:context-call-related-1',
+        'context-call-related-1', 'TECHNICAL', 'IN_PROGRESS', 'candidate-1',
+        'code-review-evidence-plan', ?,
+        NULL, '2026-06-22T18:00:00.000Z', '2026-06-22T18:00:00.000Z'
+      )
+    `).run(JSON.stringify({
+      originalInterviewId: 'interview-code-review-related-origin',
+      contextCallInterviewId: 'context-call-related-1',
+      matchRunId: 'match-run-related-origin',
+      matchStatus: 'NEEDS_MORE_EVIDENCE',
+      questions: [SOURCE_BACKED_WORK_EVIDENCE_QUESTION],
+    }));
+
+    const app = mountSchedulingApp();
+    const response = await app.request('/interviews/interview-code-review-related-origin');
+    expect(response.status).toBe(200);
+    const body = await response.json() as {
+      interview: {
+        relatedEvidenceInterviews: Array<{
+          id: string;
+          relationship: string;
+          interviewType: string | null;
+          candidateId: string | null;
+          primaryEmail: string | null;
+          linkedMeetingId: string | null;
+          assessmentSessionState: string | null;
+        }>;
+      };
+    };
+
+    expect(body.interview.relatedEvidenceInterviews).toEqual(expect.arrayContaining([
+      expect.objectContaining({
+        id: 'context-call-related-1',
+        relationship: 'code_review_evidence_follow_up',
+        interviewType: 'VIDEO',
+        candidateId: 'candidate-1',
+        primaryEmail: 'ada@example.com',
+        linkedMeetingId: 'meeting-related-context-call',
+        assessmentSessionState: 'IN_PROGRESS',
+      }),
+      expect.objectContaining({
+        id: 'interview-related-second-assessment',
+        relationship: 'same_person_assessment',
+        interviewType: 'CODE_REVIEW',
+        candidateId: 'candidate-related-second-app',
+        primaryEmail: 'ada@example.com',
+        linkedMeetingId: 'meeting-related-second-assessment',
+        assessmentSessionState: null,
+      }),
+    ]));
+    expect(body.interview.relatedEvidenceInterviews).toHaveLength(3);
+  });
+
   it('returns blocked evidence-plan follow-up state with the attribution reason', async () => {
     seedInterviewDetailFixture();
     sqlite!.prepare(`

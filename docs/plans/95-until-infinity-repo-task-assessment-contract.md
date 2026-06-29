@@ -96,6 +96,10 @@ The controlling product rule remains:
 
 ## Current Implementation Status
 
+- CODE_REVIEW interview detail now returns and renders related evidence
+  interviews from the same person graph, so context calls and multiple
+  same-email assessment invites stay visible as separate evidence-producing
+  moments instead of collapsing into one meeting.
 - `OPEN_SOURCE_BUG_FIX` is a first-class scheduled interview type.
 - Scheduling and invite creation can create an assessment invite for the mode.
 - Candidate assessment routing currently serves it through the existing

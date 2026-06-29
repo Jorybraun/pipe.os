@@ -644,6 +644,29 @@ function personContextModeText(mode: string | null, reason: string | null): stri
   return null;
 }
 
+function relatedEvidenceRelationshipLabel(relationship: string): string {
+  switch (relationship) {
+    case 'code_review_evidence_follow_up':
+      return 'Evidence follow-up';
+    case 'originating_code_review':
+      return 'Original code review';
+    case 'same_person_assessment':
+      return 'Same person assessment';
+    default:
+      return titleCaseToken(relationship);
+  }
+}
+
+function relatedEvidenceDetail(related: NonNullable<ScheduledInterviewDetail['relatedEvidenceInterviews']>[number]): string {
+  const parts = [
+    related.interviewType ? titleCaseToken(related.interviewType) : null,
+    related.assessmentSessionState ? `assessment ${titleCaseToken(related.assessmentSessionState)}` : null,
+    related.transcriptStatus ? `transcript ${titleCaseToken(related.transcriptStatus)}` : null,
+    related.linkedMeetingId ? `meeting ${related.linkedMeetingId}` : null,
+  ].filter((part): part is string => part !== null);
+  return parts.length > 0 ? parts.join(' · ') : 'Evidence interview';
+}
+
 function StatusBadge({ status }: { status: string | null | undefined }): JSX.Element {
   const label = status ?? 'INVITED';
   const color = STATUS_COLORS[label] ?? '#9ca3af';
@@ -1048,6 +1071,7 @@ export default function InterviewDetailPage(): JSX.Element {
   const contextSummary = interview.livingContext?.summary ?? null;
   const contextRecords = interview.livingContext?.contextRecords ?? [];
   const contextInteractions = interview.livingContext?.interactions.slice(0, 4) ?? [];
+  const relatedEvidenceInterviews = interview.relatedEvidenceInterviews?.slice(0, 4) ?? [];
   const hasLivingContextEvidence = Boolean(
     contextSummary && (
       contextSummary.interactionCount > 0
@@ -1651,6 +1675,31 @@ export default function InterviewDetailPage(): JSX.Element {
                   Accumulates source-backed evidence from invites, follow-ups, transcripts, and assessments.
                 </div>
               </div>
+              {relatedEvidenceInterviews.length > 0 && (
+                <div data-testid="interview-related-evidence-interviews" style={CONTEXT_RECORD}>
+                  <div style={FIELD_LABEL}>Related evidence interviews</div>
+                  <div style={CONTEXT_RECORD_NARRATIVE}>
+                    Same person graph; each row keeps its own invite, meeting, transcript, and assessment state.
+                  </div>
+                  <div style={RELATED_EVIDENCE_LIST}>
+                    {relatedEvidenceInterviews.map((related) => (
+                      <button
+                        key={related.id}
+                        type="button"
+                        onClick={() => navigate(`/interviews/${related.id}`)}
+                        style={RELATED_EVIDENCE_ROW}
+                      >
+                        <span style={RELATED_EVIDENCE_MAIN}>
+                          <span style={TRANSCRIPT_ROLE}>{relatedEvidenceRelationshipLabel(related.relationship)}</span>
+                          <span style={TRANSCRIPT_TEXT}>{related.displayName ?? related.id}</span>
+                          <span style={CONTEXT_RECORD_NARRATIVE}>{relatedEvidenceDetail(related)}</span>
+                        </span>
+                        <span style={MATCH_BADGE}>{titleCaseToken(related.status)}</span>
+                      </button>
+                    ))}
+                  </div>
+                </div>
+              )}
               <div style={CONTEXT_METRICS}>
                 <div style={CONTEXT_METRIC}>
                   <span style={CONTEXT_METRIC_VALUE}>{contextSummary.interactionCount}</span>
@@ -2551,6 +2600,33 @@ const PERSON_CONTEXT_TIMELINE: CSSProperties = {
   display: 'grid',
   gap: 10,
   marginBottom: 14,
+};
+
+const RELATED_EVIDENCE_LIST: CSSProperties = {
+  display: 'grid',
+  gap: 8,
+};
+
+const RELATED_EVIDENCE_ROW: CSSProperties = {
+  display: 'flex',
+  alignItems: 'flex-start',
+  justifyContent: 'space-between',
+  gap: 10,
+  width: '100%',
+  minWidth: 0,
+  padding: 10,
+  border: '1px solid var(--pipe-border)',
+  borderRadius: 5,
+  background: 'rgba(255,255,255,0.03)',
+  color: 'inherit',
+  textAlign: 'left',
+  cursor: 'pointer',
+};
+
+const RELATED_EVIDENCE_MAIN: CSSProperties = {
+  display: 'grid',
+  gap: 4,
+  minWidth: 0,
 };
 
 const CONTEXT_RECORD: CSSProperties = {

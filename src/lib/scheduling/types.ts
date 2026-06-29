@@ -316,6 +316,25 @@ export interface LinkedMeetingSummary {
   updatedAt: string;
 }
 
+export interface RelatedEvidenceInterview {
+  id: string;
+  relationship: 'code_review_evidence_follow_up' | 'originating_code_review' | 'same_person_assessment';
+  interviewType?: InterviewType | string | null;
+  meetingType?: MeetingType | string | null;
+  status: string;
+  scheduledAt?: string | null;
+  candidateId?: string | null;
+  contactId?: string | null;
+  displayName?: string | null;
+  primaryEmail?: string | null;
+  linkedMeetingId?: string | null;
+  transcriptStatus?: string | null;
+  assessmentSessionId?: string | null;
+  assessmentSessionState?: string | null;
+  createdAt: string;
+  updatedAt: string;
+}
+
 export interface ScheduledInterviewDetail extends ScheduledInterview {
   externalEventId?: string | null;
   candidateName?: string | null;
@@ -323,6 +342,7 @@ export interface ScheduledInterviewDetail extends ScheduledInterview {
   pipelineTitle?: string | null;
   stageTitle?: string | null;
   linkedMeeting: LinkedMeetingSummary | null;
+  relatedEvidenceInterviews?: RelatedEvidenceInterview[];
   livingContext?: LivingContextReadModel | null;
   codeReviewMatch?: CodeReviewMatchDetail | null;
 }

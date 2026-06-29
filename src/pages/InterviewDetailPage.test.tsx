@@ -507,6 +507,44 @@ describe('InterviewDetailPage', () => {
           signals: [],
           relationships: [],
         },
+        relatedEvidenceInterviews: [
+          {
+            id: 'context-call-1',
+            relationship: 'code_review_evidence_follow_up',
+            interviewType: 'VIDEO',
+            meetingType: 'SCREENING_INTERVIEW',
+            status: 'INVITED',
+            scheduledAt: null,
+            candidateId: 'candidate-1',
+            contactId: null,
+            displayName: 'Ada Candidate',
+            primaryEmail: 'ada@example.com',
+            linkedMeetingId: 'meeting-context-1',
+            transcriptStatus: 'NONE',
+            assessmentSessionId: 'assessment-plan-1',
+            assessmentSessionState: 'IN_PROGRESS',
+            createdAt: '2026-06-24T15:35:00.000Z',
+            updatedAt: '2026-06-24T15:35:00.000Z',
+          },
+          {
+            id: 'interview-second-code-review',
+            relationship: 'same_person_assessment',
+            interviewType: 'CODE_REVIEW',
+            meetingType: null,
+            status: 'INVITED',
+            scheduledAt: null,
+            candidateId: 'candidate-2',
+            contactId: null,
+            displayName: 'Ada Candidate',
+            primaryEmail: 'ada@example.com',
+            linkedMeetingId: null,
+            transcriptStatus: null,
+            assessmentSessionId: null,
+            assessmentSessionState: null,
+            createdAt: '2026-06-24T16:00:00.000Z',
+            updatedAt: '2026-06-24T16:00:00.000Z',
+          },
+        ],
       }),
     });
 
@@ -518,6 +556,14 @@ describe('InterviewDetailPage', () => {
     expect(relationship).toHaveTextContent('One person graph');
     expect(relationship).toHaveTextContent('3 evidence moments');
     expect(relationship).toHaveTextContent('source-backed evidence from invites, follow-ups, transcripts, and assessments');
+    const related = screen.getByTestId('interview-related-evidence-interviews');
+    expect(related).toHaveTextContent('Related evidence interviews');
+    expect(related).toHaveTextContent('Same person graph; each row keeps its own invite, meeting, transcript, and assessment state.');
+    expect(related).toHaveTextContent('Evidence follow-up');
+    expect(related).toHaveTextContent('assessment IN PROGRESS');
+    expect(related).toHaveTextContent('meeting meeting-context-1');
+    expect(related).toHaveTextContent('Same person assessment');
+    expect(related).toHaveTextContent('CODE REVIEW');
     expect(timeline).toHaveTextContent('Evidence timeline');
     expect(timeline).toHaveTextContent('Code Review Context Call Recommendation');
     expect(timeline).toHaveTextContent('Scheduled Interview Invite Delivery');
