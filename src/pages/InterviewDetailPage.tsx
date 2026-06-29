@@ -1433,6 +1433,25 @@ export default function InterviewDetailPage(): JSX.Element {
                       </div>
                     </div>
                   )}
+                  {codeReviewEvidenceRefreshStillMissing && codeReviewEvidencePlan.length > 0 && (
+                    <div style={DECISION_FOLLOW_UP_ITEM}>
+                      <div style={FIELD_LABEL}>Next evidence to collect</div>
+                      <div style={DECISION_FOLLOW_UP_LIST}>
+                        {codeReviewEvidencePlan.slice(0, 3).map((item) => (
+                          <div key={`refresh:${item.id}`} style={DECISION_FOLLOW_UP_ITEM}>
+                            <div style={FIELD_LABEL}>What PIPE needs</div>
+                            <div style={DECISION_PLAN_SIGNAL}>{item.missingSignal}</div>
+                            <div style={FIELD_LABEL}>What to ask</div>
+                            <div>{item.question}</div>
+                            <div style={FIELD_LABEL}>What good evidence looks like</div>
+                            <div style={CONTEXT_RECORD_NARRATIVE}>
+                              {item.expectedEvidence}
+                            </div>
+                          </div>
+                        ))}
+                      </div>
+                    </div>
+                  )}
                   {!codeReviewEvidenceRefreshUsed && !codeReviewEvidenceRefreshStillMissing && (
                     <button
                       data-testid="interview-code-review-refresh-match-cta"

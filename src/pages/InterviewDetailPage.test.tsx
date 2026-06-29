@@ -1015,6 +1015,12 @@ describe('InterviewDetailPage', () => {
     expect(refresh).toHaveTextContent('Capture another concrete source-backed answer before rerunning.');
     expect(refresh).toHaveTextContent('Still missing');
     expect(refresh).toHaveTextContent('NO SCOREABLE SOURCE BACKED CANDIDATE EVIDENCE');
+    expect(refresh).toHaveTextContent('Next evidence to collect');
+    expect(refresh).toHaveTextContent('Source-backed candidate work evidence');
+    expect(refresh).toHaveTextContent('What to ask');
+    expect(refresh).toHaveTextContent(SOURCE_BACKED_WORK_EVIDENCE_QUESTION);
+    expect(refresh).toHaveTextContent('What good evidence looks like');
+    expect(refresh).toHaveTextContent('A concrete project, personal action, technical constraint, and verification detail that can be cited back to the candidate.');
     expect(screen.queryByTestId('interview-code-review-refresh-match-cta')).toBeNull();
 
     const nextFollowUp = screen.getByTestId('interview-code-review-next-follow-up-cta');
