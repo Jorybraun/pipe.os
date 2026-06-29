@@ -4,6 +4,7 @@ import {
   FolderOpen,
   Globe,
   Palette,
+  ClipboardCheck,
   SquareTerminal,
   Video,
   MessageSquare,
@@ -31,6 +32,7 @@ const DESKTOP_ICONS: DesktopIcon[] = [
   { windowType: 'paint', label: 'Paint', icon: Palette },
   { windowType: 'browser', label: 'Microsoft Edge', icon: Globe },
   { windowType: 'terminal', label: 'Terminal', icon: SquareTerminal },
+  { windowType: 'submission', label: 'Submit Work', icon: ClipboardCheck },
 ];
 
 interface Win95DesktopProps {
@@ -56,6 +58,7 @@ interface Win95DesktopProps {
   onStartMenuStateChange?: (open: boolean, source: StartMenuEventSource) => void;
   peerCursors?: RoomCursorPresence[];
   onCursorMove?: (position: { x: number; y: number }) => void;
+  assessmentEnabled?: boolean;
 }
 
 export function Win95Desktop({
@@ -80,8 +83,12 @@ export function Win95Desktop({
   onStartMenuStateChange,
   peerCursors = [],
   onCursorMove,
+  assessmentEnabled = false,
 }: Win95DesktopProps): JSX.Element {
   const [startMenuOpen, setStartMenuOpen] = useState(false);
+  const desktopIcons = assessmentEnabled
+    ? DESKTOP_ICONS
+    : DESKTOP_ICONS.filter((icon) => icon.windowType !== 'submission');
 
   useEffect(() => {
     if (!startMenuState) return;
@@ -180,7 +187,7 @@ export function Win95Desktop({
         })}
       </div>
       <div className="win95-desktop-icons">
-        {DESKTOP_ICONS.map((icon) => {
+        {desktopIcons.map((icon) => {
           const Icon = icon.icon;
           return (
             <button
@@ -204,7 +211,7 @@ export function Win95Desktop({
             <span className="win95-start-menu-brand">95<span>∞</span></span>
           </div>
           <div className="win95-start-menu-items">
-            {DESKTOP_ICONS.map((icon) => {
+            {desktopIcons.map((icon) => {
               const Icon = icon.icon;
               return (
                 <button

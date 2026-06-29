@@ -1,5 +1,5 @@
 import { useEffect, useState } from 'react';
-import { FileText, FolderOpen, Globe, Monitor, MessageSquare, Palette, Paperclip, Video, SquareTerminal } from 'lucide-react';
+import { ClipboardCheck, FileText, FolderOpen, Globe, Monitor, MessageSquare, Palette, Paperclip, Video, SquareTerminal } from 'lucide-react';
 import type { WindowState, WindowType } from '../hooks/useWindowManager';
 import type { AgentStatus } from '../hooks/useAgentConnection';
 
@@ -27,6 +27,7 @@ const WINDOW_ICONS: Record<WindowType, typeof Video> = {
   notepad: FileText,
   paint: Palette,
   terminal: SquareTerminal,
+  submission: ClipboardCheck,
   custom: Monitor,
 };
 

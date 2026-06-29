@@ -22,6 +22,7 @@ import {
   roomWorkspaceProxyUrl,
   roomAgentWsUrl,
   roomTerminalWsUrl,
+  submitRoomAssessmentCommit,
   uploadRecording,
 } from './lib/api';
 import {
@@ -116,6 +117,7 @@ import {
 import { NotepadWindow } from './components/NotepadWindow';
 import { PaintWindow, type PaintCanvasItem, type PaintShape, type PaintStroke } from './components/PaintWindow';
 import { RoomFileSystemWindow } from './components/RoomFileSystemWindow';
+import { CommitSubmissionWindow } from './components/CommitSubmissionWindow';
 import { useSessionEvents } from './hooks/useSessionEvents';
 import { API_BASE } from './lib/api';
 import type { OpenWindowConfig, WindowState, WindowStatePatch, WindowType } from './hooks/useWindowManager';
@@ -125,6 +127,8 @@ import type {
   RoomMetadata,
   RoomPhase,
   RoomWorkspace,
+  RoomCommitSubmissionRequest,
+  RoomCommitSubmissionResponse,
 } from './types';
 
 type RecordingState = 'idle' | 'starting' | 'recording' | 'uploading' | 'saved' | 'failed';
@@ -1879,6 +1883,18 @@ function Room({ token, metadata }: { token: string; metadata: RoomMetadata }): J
     }, lifecycleSource);
   };
 
+  const openSubmissionWindow = (lifecycleSource: WindowLifecycleSource = 'win95_desktop_ui'): void => {
+    openSharedWindow({
+      id: 'submission',
+      windowType: 'submission',
+      title: 'Submit Work',
+      x: 150,
+      y: 70,
+      width: 680,
+      height: 560,
+    }, lifecycleSource);
+  };
+
   const openFilesWindow = (lifecycleSource: WindowLifecycleSource = 'win95_desktop_ui'): void => {
     openSharedWindow({
       id: 'tasks',
@@ -2059,6 +2075,10 @@ function Room({ token, metadata }: { token: string; metadata: RoomMetadata }): J
         if (!captureClippyAction(actionId, `${source === 'agent' ? 'Agent' : 'Clippy'} action: open terminal`, actionEvidence)) return;
         openTerminalWindow('clippy_action');
         break;
+      case 'open-submission':
+        if (!captureClippyAction(actionId, `${source === 'agent' ? 'Agent' : 'Clippy'} action: open submission`, actionEvidence)) return;
+        openSubmissionWindow('clippy_action');
+        break;
       case 'open-browser':
         if (!captureClippyAction(actionId, `${source === 'agent' ? 'Agent' : 'Clippy'} action: open browser`, actionEvidence)) return;
         openBrowserWindow(options.url ?? '', 'clippy_action');
@@ -2091,6 +2111,10 @@ function Room({ token, metadata }: { token: string; metadata: RoomMetadata }): J
     setQueuedTerminalCommand(DEVIN_AUTH_TERMINAL_COMMAND);
     setQueuedTerminalCommandRequest(queuedTerminalCommandRequestRef.current);
   };
+
+  const submitCommitFromRoom = (
+    payload: RoomCommitSubmissionRequest,
+  ): Promise<RoomCommitSubmissionResponse> => submitRoomAssessmentCommit(token, payload);
 
   const handleClippyAction = (actionId: string): void => {
     executeRoomAction(actionId);
@@ -2289,6 +2313,9 @@ function Room({ token, metadata }: { token: string; metadata: RoomMetadata }): J
         break;
       case 'terminal':
         openTerminalWindow(launchSource);
+        break;
+      case 'submission':
+        openSubmissionWindow(launchSource);
         break;
       default:
         break;
@@ -2565,6 +2592,17 @@ function Room({ token, metadata }: { token: string; metadata: RoomMetadata }): J
           />
         );
 
+      case 'submission':
+        return (
+          <CommitSubmissionWindow
+            defaultRepositoryUrl={workspace?.repoUrl ?? null}
+            disabledReason={workspace?.enabled
+              ? null
+              : 'Commit submission is only available for dev-container assessment rooms.'}
+            onSubmit={submitCommitFromRoom}
+          />
+        );
+
       default:
         return <div style={{ padding: '8px', color: '#000' }}>Window content</div>;
     }
@@ -2593,6 +2631,7 @@ function Room({ token, metadata }: { token: string; metadata: RoomMetadata }): J
       onStartMenuStateChange={publishStartMenuStateChange}
       peerCursors={room.peerCursors}
       onCursorMove={handleCursorMove}
+      assessmentEnabled={Boolean(workspace?.enabled)}
     />
   ) : (
     <StandardLayout

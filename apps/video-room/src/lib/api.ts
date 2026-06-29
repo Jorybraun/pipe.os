@@ -1,5 +1,7 @@
 import type {
   IceServerProvider,
+  RoomCommitSubmissionRequest,
+  RoomCommitSubmissionResponse,
   RecordingSpeakerMetadata,
   RoomMetadata,
   RoomWorkspace,
@@ -151,6 +153,20 @@ export async function launchRoomWorkspace(token: string, repoUrl?: string): Prom
   });
   const body = await parseResponse<{ workspace: RoomWorkspace }>(response);
   return body.workspace;
+}
+
+export async function submitRoomAssessmentCommit(
+  token: string,
+  payload: RoomCommitSubmissionRequest,
+): Promise<RoomCommitSubmissionResponse> {
+  const response = await fetch(apiUrl(`/api/v1/meeting-rooms/${token}/assessment/commit-submission`), {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify(payload),
+    cache: 'no-store',
+    credentials: 'same-origin',
+  });
+  return parseResponse<RoomCommitSubmissionResponse>(response);
 }
 
 export function roomWorkspaceProxyUrl(token: string, sessionId: string): string {

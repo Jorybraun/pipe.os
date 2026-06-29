@@ -3619,9 +3619,107 @@ button:focus-visible {
   border-color: #000080;
 }
 
+/* Commit Submission Window */
+
+.commit-submission-window {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+  min-height: 100%;
+  color: #000;
+}
+
+.commit-submission-grid {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 8px;
+}
+
+.commit-submission-window label {
+  display: flex;
+  flex-direction: column;
+  gap: 3px;
+  min-width: 0;
+  font-size: 11px;
+  font-weight: 700;
+}
+
+.commit-submission-window input,
+.commit-submission-window textarea {
+  width: 100%;
+  min-width: 0;
+  border: 2px solid;
+  border-color: #808080 #dfdfdf #dfdfdf #808080;
+  background: #fff;
+  color: #000;
+  font-family: 'MS Sans Serif', 'Segoe UI', Tahoma, sans-serif;
+  font-size: 12px;
+  line-height: 1.35;
+  padding: 4px 6px;
+  resize: vertical;
+}
+
+.commit-submission-window textarea {
+  min-height: 44px;
+}
+
+.commit-submission-window input:focus,
+.commit-submission-window textarea:focus {
+  outline: none;
+  border-color: #000080;
+}
+
+.commit-submission-window input:disabled,
+.commit-submission-window textarea:disabled {
+  color: #808080;
+  background: #dfdfdf;
+}
+
+.commit-submission-checkbox {
+  flex-direction: row !important;
+  align-items: center;
+  gap: 6px !important;
+}
+
+.commit-submission-checkbox input {
+  width: auto;
+}
+
+.commit-submission-status {
+  display: flex;
+  align-items: flex-start;
+  gap: 6px;
+  border: 2px solid;
+  border-color: #808080 #dfdfdf #dfdfdf #808080;
+  padding: 6px;
+  font-size: 12px;
+  line-height: 1.35;
+}
+
+.commit-submission-status.is-error,
+.commit-submission-status.is-blocked {
+  background: #fff4d6;
+  color: #3d2400;
+}
+
+.commit-submission-status.is-success {
+  background: #e6ffe6;
+  color: #063f06;
+}
+
+.commit-submission-actions {
+  display: flex;
+  justify-content: flex-end;
+  padding-bottom: 2px;
+}
+
 /* Win95 Desktop Responsive */
 
 @media (max-width: 640px) {
+  .commit-submission-grid {
+    grid-template-columns: 1fr;
+  }
+
   .win95-desktop-icon {
     width: 60px;
   }

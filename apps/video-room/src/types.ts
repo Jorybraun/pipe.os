@@ -76,6 +76,90 @@ export interface RoomWorkspace {
   session: RoomWorkspaceSession | null;
 }
 
+export type RoomCommitChangedFileStatus = 'added' | 'modified' | 'deleted' | 'renamed' | 'copied';
+
+export interface RoomCommitChangedFile {
+  path: string;
+  status: RoomCommitChangedFileStatus;
+  previousPath?: string | null;
+  additions?: number | null;
+  deletions?: number | null;
+}
+
+export interface RoomCommitSourceRef {
+  sourceRefType: string;
+  sourceRefId: string;
+  sourceSpanId?: string | null;
+  evidenceRole?: string;
+  locator?: Record<string, unknown>;
+  exactText: string;
+  contentHash: string;
+  metadata?: Record<string, unknown>;
+}
+
+export interface RoomCommitSubmissionRequest {
+  narrative: string;
+  repositoryUrl: string;
+  forkRepositoryUrl?: string | null;
+  branchName: string;
+  baseCommitSha: string;
+  commitSha: string;
+  commitUrl?: string | null;
+  upstreamPullRequestUrl?: string | null;
+  upstreamPrConsent?: boolean;
+  changedFiles: RoomCommitChangedFile[];
+  occurredAt?: string | null;
+  sourceRefs: RoomCommitSourceRef[];
+}
+
+export interface RoomAssessmentProgressCommit {
+  repositoryUrl: string | null;
+  forkRepositoryUrl: string | null;
+  branchName: string | null;
+  baseCommitSha: string | null;
+  commitSha: string | null;
+  commitUrl: string | null;
+  changedFiles: unknown[];
+  occurredAt: string;
+}
+
+export interface RoomAssessmentProgressSnapshot {
+  mode: string;
+  state: string;
+  stage: string;
+  nextAction: string;
+  nextActionLabel: string;
+  hasChallengePacket: boolean;
+  hasWorkEvidence: boolean;
+  hasCommitSubmission: boolean;
+  hasFinalSubmission: boolean;
+  hasAiInteraction: boolean;
+  hasTranscriptEvidence: boolean;
+  evidenceCounts: Array<{ kind: string; count: number }>;
+  latestEvent: {
+    kind: string;
+    sequence: number;
+    occurredAt: string;
+  } | null;
+  commit: RoomAssessmentProgressCommit | null;
+  evaluation: {
+    status: string;
+    summary: string;
+    createdAt: string;
+  } | null;
+}
+
+export interface RoomCommitSubmissionResponse {
+  submission: {
+    accepted: boolean;
+    repositoryUrl: string;
+    branchName: string;
+    commitSha: string;
+    commitUrl: string | null;
+  };
+  progress: RoomAssessmentProgressSnapshot;
+}
+
 export interface RecordingSpeakerChannel {
   channel: number;
   role: RecordingSpeakerRole;

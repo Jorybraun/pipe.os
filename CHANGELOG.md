@@ -40,6 +40,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 - CODE_REVIEW interview related-evidence rows now describe follow-up meetings and same-person assessments as human evidence moments without exposing raw linked-meeting ids in the hiring-manager cockpit.
 - Dev-container assessment rooms now expose a room-token commit submission endpoint that records real candidate commits through the source-backed assessment session spine while hiding internal assessment ids from candidate responses.
+- Win95 dev-container assessment rooms now include a Submit Work window that posts exact commit and diff evidence to the room-token assessment endpoint, making real commit submission available from the candidate room UI.
 - Person CODE_REVIEW decision cards now call out uncertainty and missing context as first-class hiring-manager fields, so the profile explains what remains unproven before the next action.
 - Person profiles now use the same compact cockpit shell, header hierarchy, metric strip, and evidence panels as interview details, making person-level context feel like the same hiring-manager surface.
 - Interview list cards now include a compact assessment snapshot for CODE_REVIEW and repo-task interviews, showing stage, next action, and evidence readiness without exposing raw assessment ids.

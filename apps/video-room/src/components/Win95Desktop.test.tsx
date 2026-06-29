@@ -151,6 +151,45 @@ describe('Win95Desktop', () => {
     expect(onStartMenuStateChange).toHaveBeenNthCalledWith(2, false, 'win95_start_menu_item');
   });
 
+  it('shows Submit Work only for assessment-enabled desktops', () => {
+    const { rerender } = render(
+      <Win95Desktop
+        wm={makeWindowManager()}
+        renderWindowContent={() => null}
+      />,
+    );
+
+    expect(screen.queryByTestId('room-desktop-icon-submission')).toBeNull();
+
+    rerender(
+      <Win95Desktop
+        wm={makeWindowManager()}
+        renderWindowContent={() => null}
+        assessmentEnabled
+      />,
+    );
+
+    expect(screen.getByTestId('room-desktop-icon-submission')).not.toBeNull();
+  });
+
+  it('reports Submit Work launches with Start menu provenance', () => {
+    const onIconDoubleClick = vi.fn();
+
+    render(
+      <Win95Desktop
+        wm={makeWindowManager()}
+        renderWindowContent={() => null}
+        onIconDoubleClick={onIconDoubleClick}
+        assessmentEnabled
+      />,
+    );
+
+    fireEvent.click(screen.getByTestId('win95-start-btn'));
+    fireEvent.click(within(screen.getByTestId('win95-start-menu')).getByRole('button', { name: 'Submit Work' }));
+
+    expect(onIconDoubleClick).toHaveBeenCalledWith('submission', 'win95_start_menu');
+  });
+
   it('reports desktop-click Start menu closes with desktop provenance', () => {
     const onStartMenuStateChange = vi.fn();
 
