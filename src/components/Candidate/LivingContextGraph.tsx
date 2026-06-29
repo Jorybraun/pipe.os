@@ -26,6 +26,8 @@ import type {
   StandaloneReviewPacketQualityGate,
   StandaloneReviewRoleSource,
   StandaloneReviewSourceRef,
+  StandaloneReviewMatchNarrative,
+  StandaloneReviewStretchArea,
 } from '../../lib/api/types';
 import { useLivingContext } from '../../hooks/useLivingContext';
 import { buildLivingContextBranches } from '../../lib/livingContextTree';
@@ -823,6 +825,143 @@ function RepoPacketPanel({
   );
 }
 
+function StretchAreasPanel({
+  stretchAreas,
+}: {
+  stretchAreas: StandaloneReviewStretchArea[];
+}): JSX.Element | null {
+  if (stretchAreas.length === 0) return null;
+  return (
+    <section
+      className="living-context__stretch-areas"
+      aria-label="Stretch areas"
+      data-testid="stretch-areas-panel"
+    >
+      <div className="living-context__section-head">
+        <div>
+          <div className="living-context__section-title">Stretch areas</div>
+          <div className="living-context__eyebrow">
+            {stretchAreas.length} demand{stretchAreas.length === 1 ? '' : 's'} matched via adjacent experience
+          </div>
+        </div>
+      </div>
+      <div className="living-context__diagnostic-list">
+        {stretchAreas.map((area) => (
+          <article
+            key={`${area.atomId}:${area.demandId}`}
+            className="living-context__stretch-row"
+            data-testid="stretch-area-row"
+          >
+            <div className="living-context__stretch-head">
+              <span className="living-context__stretch-dimension">{titleCase(area.dimension)}</span>
+              <span className="living-context__stretch-concepts">
+                {area.atomConcept} → {area.demandConcept}
+              </span>
+            </div>
+            <div className="living-context__repo-source-grid">
+              <ReviewSourceList label="Candidate source" sources={area.candidateSourceRefs} />
+              <ReviewSourceList label="PR demand source" sources={area.challengeSourceRefs} />
+            </div>
+          </article>
+        ))}
+      </div>
+    </section>
+  );
+}
+
+function UnmatchedDemandsPanel({
+  unmatchedDemandIds,
+  packet,
+}: {
+  unmatchedDemandIds: string[];
+  packet: StandaloneReviewPacketDetail | null;
+}): JSX.Element | null {
+  if (unmatchedDemandIds.length === 0) return null;
+  const demandDetails = packet?.demands.filter((demand) =>
+    unmatchedDemandIds.includes(demand.id)
+  ) ?? [];
+  return (
+    <section
+      className="living-context__unmatched-demands"
+      aria-label="Unmatched demands"
+      data-testid="unmatched-demands-panel"
+    >
+      <div className="living-context__section-head">
+        <div>
+          <div className="living-context__section-title">Unmatched demands</div>
+          <div className="living-context__eyebrow">
+            {unmatchedDemandIds.length} PR demand{unmatchedDemandIds.length === 1 ? '' : 's'} without candidate evidence
+          </div>
+        </div>
+      </div>
+      <div className="living-context__diagnostic-list">
+        {demandDetails.length > 0 ? (
+          demandDetails.map((demand) => (
+            <div
+              key={demand.id}
+              className="living-context__diagnostic-row"
+              data-testid="unmatched-demand-row"
+            >
+              <strong>{demand.id}</strong>
+              <span className="living-context__concept">{demand.family}</span>
+              {demand.narrative && <p>{demand.narrative}</p>}
+              {demand.conceptKeys.length > 0 && (
+                <div className="living-context__concepts">
+                  {demand.conceptKeys.slice(0, 5).map((concept) => (
+                    <span key={`${demand.id}:${concept}`} className="living-context__concept">
+                      {concept}
+                    </span>
+                  ))}
+                </div>
+              )}
+            </div>
+          ))
+        ) : (
+          unmatchedDemandIds.map((demandId) => (
+            <div key={demandId} className="living-context__diagnostic-row">
+              <strong>{demandId}</strong>
+              <span className="living-context__missing-evidence">No candidate alignment</span>
+            </div>
+          ))
+        )}
+      </div>
+    </section>
+  );
+}
+
+function MatchNarrativePanel({
+  narrative,
+}: {
+  narrative: StandaloneReviewMatchNarrative | null;
+}): JSX.Element | null {
+  if (!narrative) return null;
+  return (
+    <section
+      className="living-context__match-narrative"
+      aria-label="Match narrative"
+      data-testid="match-narrative-panel"
+    >
+      <div className="living-context__section-head">
+        <div>
+          <div className="living-context__section-title">{narrative.title}</div>
+          <div className="living-context__eyebrow">{narrative.verdict}</div>
+        </div>
+        <Quote size={14} color="var(--lc-source)" />
+      </div>
+      {narrative.sections.map((section) => (
+        <div key={section.heading} className="living-context__narrative-section">
+          <div className="living-context__eyebrow">{section.heading}</div>
+          <ul>
+            {section.items.map((item, index) => (
+              <li key={`${section.heading}:${index}`}>{item}</li>
+            ))}
+          </ul>
+        </div>
+      ))}
+    </section>
+  );
+}
+
 function StandaloneReviewMatchPanel({
   match,
 }: {
@@ -979,6 +1118,15 @@ function StandaloneReviewMatchPanel({
       <RepositoryOverlayPanel match={match} />
 
       <RepoPacketPanel match={match} />
+
+      <StretchAreasPanel stretchAreas={match.stretchAreas} />
+
+      <UnmatchedDemandsPanel
+        unmatchedDemandIds={match.unmatchedDemandIds}
+        packet={match.packet}
+      />
+
+      <MatchNarrativePanel narrative={match.matchNarrative} />
 
       {match.gaps.length > 0 && (
         <div className="living-context__review-gaps">
@@ -1343,6 +1491,51 @@ function MeetingEvidencePanel({
   );
 }
 
+const ALL_SOURCE_TYPES = ['resume', 'meeting', 'culture_interview', 'code_review', 'phone_call', 'assessment'] as const;
+
+function EvidenceDepthPanel({
+  livingContext,
+}: {
+  livingContext: LivingContextReadModel;
+}): JSX.Element | null {
+  const sourceTypeCounts = useMemo(() => {
+    const counts: Record<string, number> = {};
+    for (const interaction of livingContext.interactions) {
+      const type = interaction.interactionType;
+      counts[type] = (counts[type] ?? 0) + 1;
+    }
+    return counts;
+  }, [livingContext.interactions]);
+  const presentTypes = Object.keys(sourceTypeCounts).length;
+  const diversity = Math.min(presentTypes / ALL_SOURCE_TYPES.length, 1);
+  if (livingContext.interactions.length === 0) return null;
+  return (
+    <div className="living-context__evidence-depth" data-testid="evidence-depth-panel">
+      <div className="living-context__section-head">
+        <div className="living-context__section-title">Evidence depth</div>
+        <div className="living-context__count">
+          {Math.round(diversity * 100)}% diversity
+        </div>
+      </div>
+      <div className="living-context__evidence-bar">
+        {ALL_SOURCE_TYPES.map((type) => {
+          const count = sourceTypeCounts[type] ?? 0;
+          return (
+            <div
+              key={type}
+              className={`living-context__evidence-segment ${count > 0 ? 'living-context__evidence-segment--active' : ''}`}
+              title={`${titleCase(type)}: ${count} interaction${count === 1 ? '' : 's'}`}
+            >
+              <span className="living-context__evidence-type">{titleCase(type)}</span>
+              <span className="living-context__evidence-count">{count}</span>
+            </div>
+          );
+        })}
+      </div>
+    </div>
+  );
+}
+
 export function LivingContextGraph({
   candidateId,
   livingContextEndpoint,
@@ -1582,6 +1775,8 @@ export function LivingContextGraph({
           ))}
         </div>
       )}
+
+      <EvidenceDepthPanel livingContext={livingContext} />
 
       <MeetingEvidencePanel
         livingContext={livingContext}
