@@ -1542,115 +1542,112 @@ function Room({ token, metadata }: { token: string; metadata: RoomMetadata }): J
   const inLobby = room.localStream === null;
   const previewIsSynthetic = isSyntheticMedia(preview);
   const localIsSynthetic = isSyntheticMedia(room.localStream);
-  if (inLobby) {
-    const isDeviceChecking = deviceState === 'checking';
-    const hasDeviceError = deviceState === 'error';
-    const joinButtonLabel = hasDeviceError
-      ? 'Allow camera and microphone'
-      : isDeviceChecking
-        ? 'Preparing devices'
-        : 'Enter room';
-    const joinButtonHint = hasDeviceError
-      ? 'Enable camera and microphone access in your browser, then try again.'
-      : isDeviceChecking
-        ? 'Preparing your camera and microphone preview.'
-        : 'You will enter the private room with camera and microphone ready.';
-    const joinButtonIcon = hasDeviceError
-      ? <CameraOff size={17} />
-      : isDeviceChecking
-        ? <Loader2 size={17} className="spin" />
-        : <Video size={17} />;
+  const isDeviceChecking = deviceState === 'checking';
+  const hasDeviceError = deviceState === 'error';
+  const joinButtonLabel = hasDeviceError
+    ? 'Allow camera and microphone'
+    : isDeviceChecking
+      ? 'Preparing devices'
+      : 'Enter room';
+  const joinButtonHint = hasDeviceError
+    ? 'Enable camera and microphone access in your browser, then try again.'
+    : isDeviceChecking
+      ? 'Preparing your camera and microphone preview.'
+      : 'You will enter the private room with camera and microphone ready.';
+  const joinButtonIcon = hasDeviceError
+    ? <CameraOff size={17} />
+    : isDeviceChecking
+      ? <Loader2 size={17} className="spin" />
+      : <Video size={17} />;
+  const lobbySurface = (
+    <main className="lobby">
+      <section className="lobby-copy">
+        <BrandMark />
+        <div className="brand-line" />
+        <div className="eyebrow">{metadata.meetingType.replace(/_/g, ' ')}</div>
+        <h1>{metadata.title}</h1>
+        {metadata.description && <p>{metadata.description}</p>}
+        <div className="privacy-line">
+          <ShieldCheck size={16} />
+          <span>Private link · host controls recording after everyone connects</span>
+        </div>
+      </section>
+      <section className="device-panel" data-testid="device-check">
+        <div className="device-brand">
+          <span>Room prejoin</span>
+        </div>
+        <div className="preview-shell">
+          {preview && <StreamVideo stream={preview} muted className="preview-video" testId="preview-video" />}
+          {!preview && <DevicePlaceholder state={deviceState} />}
+          {previewIsSynthetic && (
+            <span className="media-watermark" data-testid="synthetic-media-label">
+              Test camera
+            </span>
+          )}
+        </div>
+        <div className="device-meta">
+          <span>Camera preview</span>
+          <span><ShieldCheck size={13} /> Private room</span>
+        </div>
+        <button
+          className={`primary${hasDeviceError ? ' is-action-needed' : ''}`}
+          onClick={hasDeviceError ? () => void requestDevices() : joinLobby}
+          disabled={isDeviceChecking}
+          data-testid="join-room"
+        >
+          {joinButtonIcon}
+          {joinButtonLabel}
+        </button>
+        <p className="join-hint">{joinButtonHint}</p>
 
-    return (
-      <main className="lobby">
-        <section className="lobby-copy">
-          <BrandMark />
-          <div className="brand-line" />
-          <div className="eyebrow">{metadata.meetingType.replace(/_/g, ' ')}</div>
-          <h1>{metadata.title}</h1>
-          {metadata.description && <p>{metadata.description}</p>}
-          <div className="privacy-line">
-            <ShieldCheck size={16} />
-            <span>Private link · host controls recording after everyone connects</span>
-          </div>
-        </section>
-        <section className="device-panel" data-testid="device-check">
-          <div className="device-brand">
-            <span>Room prejoin</span>
-          </div>
-          <div className="preview-shell">
-            {preview && <StreamVideo stream={preview} muted className="preview-video" testId="preview-video" />}
-            {!preview && <DevicePlaceholder state={deviceState} />}
-            {previewIsSynthetic && (
-              <span className="media-watermark" data-testid="synthetic-media-label">
-                Test camera
-              </span>
+        {metadata.role === 'HOST' && hasWorkspaceFeature && (
+          <div className="prejoin-workspace" data-testid="prejoin-workspace">
+            <div className="prejoin-workspace-header">
+              <SquareTerminal size={14} />
+              <span>WORKSPACE</span>
+            </div>
+            {workspaceSession?.status === 'READY' || workspaceSession?.status === 'SLEEPING' ? (
+              <p className="prejoin-workspace-ready">Container ready — editor will open when you enter.</p>
+            ) : workspaceSession?.status === 'LAUNCHING' ? (
+              <div className="prejoin-workspace-launching">
+                <Loader2 size={14} className="spin" />
+                <span>Starting container...</span>
+                <button className="prejoin-refresh" onClick={() => void refreshWorkspace()}>
+                  <RefreshCcw size={12} /> Refresh
+                </button>
+              </div>
+            ) : (
+              <>
+                {needsRepoUrl && (
+                  <input
+                    type="url"
+                    className="workspace-repo-input"
+                    placeholder="https://github.com/org/repo"
+                    value={workspaceRepoInput}
+                    onChange={(e) => setWorkspaceRepoInput(e.target.value)}
+                    data-testid="prejoin-repo-input"
+                  />
+                )}
+                <button
+                  className="prejoin-launch-btn"
+                  onClick={() => void launchWorkspace()}
+                  disabled={needsRepoUrl && !workspaceRepoInput.trim() || workspaceLoading}
+                  data-testid="prejoin-launch"
+                >
+                  {workspaceLoading ? <Loader2 size={14} className="spin" /> : <SquareTerminal size={14} />}
+                  Launch workspace
+                </button>
+                {workspaceChallengeMessage && (
+                  <p className="prejoin-workspace-diagnostic">{workspaceChallengeMessage}</p>
+                )}
+                {workspaceError && <p className="prejoin-workspace-error">{workspaceError}</p>}
+              </>
             )}
           </div>
-          <div className="device-meta">
-            <span>Camera preview</span>
-            <span><ShieldCheck size={13} /> Private room</span>
-          </div>
-          <button
-            className={`primary${hasDeviceError ? ' is-action-needed' : ''}`}
-            onClick={hasDeviceError ? () => void requestDevices() : joinLobby}
-            disabled={isDeviceChecking}
-            data-testid="join-room"
-          >
-            {joinButtonIcon}
-            {joinButtonLabel}
-          </button>
-          <p className="join-hint">{joinButtonHint}</p>
-
-          {metadata.role === 'HOST' && hasWorkspaceFeature && (
-            <div className="prejoin-workspace" data-testid="prejoin-workspace">
-              <div className="prejoin-workspace-header">
-                <SquareTerminal size={14} />
-                <span>WORKSPACE</span>
-              </div>
-              {workspaceSession?.status === 'READY' || workspaceSession?.status === 'SLEEPING' ? (
-                <p className="prejoin-workspace-ready">Container ready — editor will open when you enter.</p>
-              ) : workspaceSession?.status === 'LAUNCHING' ? (
-                <div className="prejoin-workspace-launching">
-                  <Loader2 size={14} className="spin" />
-                  <span>Starting container...</span>
-                  <button className="prejoin-refresh" onClick={() => void refreshWorkspace()}>
-                    <RefreshCcw size={12} /> Refresh
-                  </button>
-                </div>
-              ) : (
-                <>
-                  {needsRepoUrl && (
-                    <input
-                      type="url"
-                      className="workspace-repo-input"
-                      placeholder="https://github.com/org/repo"
-                      value={workspaceRepoInput}
-                      onChange={(e) => setWorkspaceRepoInput(e.target.value)}
-                      data-testid="prejoin-repo-input"
-                    />
-                  )}
-                  <button
-                    className="prejoin-launch-btn"
-                    onClick={() => void launchWorkspace()}
-                    disabled={needsRepoUrl && !workspaceRepoInput.trim() || workspaceLoading}
-                    data-testid="prejoin-launch"
-                  >
-                    {workspaceLoading ? <Loader2 size={14} className="spin" /> : <SquareTerminal size={14} />}
-                    Launch workspace
-                  </button>
-                  {workspaceChallengeMessage && (
-                    <p className="prejoin-workspace-diagnostic">{workspaceChallengeMessage}</p>
-                  )}
-                  {workspaceError && <p className="prejoin-workspace-error">{workspaceError}</p>}
-                </>
-              )}
-            </div>
-          )}
-        </section>
-      </main>
-    );
-  }
+        )}
+      </section>
+    </main>
+  );
 
   const setSharedRoomSurface = (surface: RoomSurface): void => {
     if (!canControlRoomSurface || room.roomSurface === surface) return;
@@ -2562,6 +2559,10 @@ function Room({ token, metadata }: { token: string; metadata: RoomMetadata }): J
       onEnterDesktop={enterWin95Desktop}
     />
   );
+
+  if (inLobby) {
+    return lobbySurface;
+  }
 
   return (
     <>
