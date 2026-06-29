@@ -84,6 +84,12 @@ interface CodeReviewMatchRefreshResponse {
 
 interface StartAssessmentEvaluationResponse {
   progress: AssessmentProgressSnapshot;
+  report?: {
+    id: string;
+    sessionId: string;
+    status: string;
+    contextRecordId: string | null;
+  } | null;
   diagnostic?: {
     id: string;
     sessionId: string;
@@ -173,6 +179,32 @@ function sentenceCaseToken(value: string): string {
   return words
     .map((word, index) => (index === 0 ? `${word.charAt(0).toUpperCase()}${word.slice(1)}` : word))
     .join(' ');
+}
+
+function assessmentEvaluationStatusLabel(status: string): string {
+  switch (status) {
+    case 'AI_DEVELOPER_UNAVAILABLE':
+      return 'Evaluator unavailable';
+    case 'PROVENANCE_INCOMPLETE':
+      return 'Provenance incomplete';
+    case 'EVALUATION_NEEDS_HUMAN_REVIEW':
+    case 'NEEDS_HUMAN_REVIEW':
+      return 'Needs human review';
+    case 'EVALUATED':
+      return 'Evaluated';
+    default:
+      return sentenceCaseToken(status);
+  }
+}
+
+function assessmentEvaluationNoticeForResult(result: StartAssessmentEvaluationResponse): string {
+  if (result.report || result.progress.evaluation?.status === 'EVALUATED') {
+    return 'Source-backed assessment report is ready to review.';
+  }
+  if (result.diagnostic) {
+    return `Evaluation needs attention: ${result.progress.evaluation?.summary ?? result.diagnostic.code}.`;
+  }
+  return 'Source-backed assessment evaluation started.';
 }
 
 function formatMatchScore(score: number | null | undefined): string | null {
@@ -1108,11 +1140,7 @@ export default function InterviewDetailPage(): JSX.Element {
       setInterview((current) => current
         ? { ...current, assessmentProgress: result.progress }
         : current);
-      setAssessmentEvaluationNotice(
-        result.diagnostic
-          ? 'Human review required before PIPE can score this submission.'
-          : 'Source-backed assessment evaluation started.',
-      );
+      setAssessmentEvaluationNotice(assessmentEvaluationNoticeForResult(result));
     } catch (err) {
       setAssessmentEvaluationError(err instanceof Error ? err.message : 'Unable to start assessment evaluation');
     } finally {
@@ -1594,7 +1622,7 @@ export default function InterviewDetailPage(): JSX.Element {
                 <div style={{ ...EVIDENCE_ROW, alignItems: 'flex-start' }}>
                   <span style={FIELD_LABEL}>Evaluation</span>
                   <span style={{ ...FIELD_VALUE, lineHeight: 1.5 }}>
-                    {sentenceCaseToken(assessmentProgress.evaluation.status)} · {assessmentProgress.evaluation.summary}
+                    {assessmentEvaluationStatusLabel(assessmentProgress.evaluation.status)} · {assessmentProgress.evaluation.summary}
                   </span>
                 </div>
               )}

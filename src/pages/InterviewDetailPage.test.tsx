@@ -265,7 +265,7 @@ describe('InterviewDetailPage', () => {
     expect(progress).not.toHaveTextContent('challenge-packet-popover');
   });
 
-  it('starts source-backed assessment evaluation and surfaces an honest human-review diagnostic', async () => {
+  it('starts source-backed assessment evaluation and surfaces a specific evaluator diagnostic', async () => {
     const readyProgress: NonNullable<ScheduledInterviewDetail['assessmentProgress']> = {
       session: {
         id: 'assessment-session-ready',
@@ -331,9 +331,9 @@ describe('InterviewDetailPage', () => {
         { kind: 'recruiter_note', count: 2 },
       ],
       evaluation: {
-        id: 'assessment-report-human-review',
-        status: 'NEEDS_HUMAN_REVIEW',
-        summary: 'Automated source-backed open-source commit evaluation is not configured yet. Human review is required before PIPE can score this submission.',
+        id: 'assessment-report-ai-unavailable',
+        status: 'AI_DEVELOPER_UNAVAILABLE',
+        summary: 'Workers AI is not configured for source-backed repo-task evaluation.',
         createdAt: '2026-06-23T00:22:00.000Z',
       },
     };
@@ -347,12 +347,13 @@ describe('InterviewDetailPage', () => {
     mocks.api.post.mockResolvedValueOnce({
       progress: diagnosticProgress,
       diagnostic: {
-        id: 'assessment-diagnostic-human-review',
+        id: 'assessment-diagnostic-ai-unavailable',
         sessionId: 'assessment-session-ready',
-        reportId: 'assessment-report-human-review',
-        code: 'EVALUATION_NEEDS_HUMAN_REVIEW',
+        reportId: 'assessment-report-ai-unavailable',
+        code: 'AI_DEVELOPER_UNAVAILABLE',
         severity: 'blocking',
       },
+      report: null,
     });
 
     renderDetail();
@@ -368,8 +369,113 @@ describe('InterviewDetailPage', () => {
     const progress = screen.getByTestId('interview-assessment-progress');
     expect(progress).toHaveTextContent('Needs attention');
     expect(progress).toHaveTextContent('Resolve the blocking diagnostic before continuing.');
-    expect(progress).toHaveTextContent('Needs human review · Automated source-backed open-source commit evaluation is not configured yet. Human review is required before PIPE can score this submission.');
-    expect(progress).toHaveTextContent('Human review required before PIPE can score this submission.');
+    expect(progress).toHaveTextContent('Evaluator unavailable · Workers AI is not configured for source-backed repo-task evaluation.');
+    expect(progress).toHaveTextContent('Evaluation needs attention: Workers AI is not configured for source-backed repo-task evaluation.');
+    expect(screen.queryByRole('button', { name: /start evaluation/i })).toBeNull();
+  });
+
+  it('starts source-backed assessment evaluation and surfaces a report-ready notice when evaluated', async () => {
+    const readyProgress: NonNullable<ScheduledInterviewDetail['assessmentProgress']> = {
+      session: {
+        id: 'assessment-session-ready',
+        ingestionKey: 'assessment-session:ready',
+        interviewId: 'interview-1',
+        candidateId: 'candidate-1',
+        workspaceId: 'workspace-1',
+        workspacePersonId: null,
+        applicationId: null,
+        mode: 'OPEN_SOURCE_BUG_FIX',
+        state: 'FINAL_SUBMITTED',
+        createdAt: '2026-06-23T00:00:00.000Z',
+        updatedAt: '2026-06-23T00:20:00.000Z',
+      },
+      stage: 'READY_FOR_EVALUATION',
+      nextAction: 'START_EVALUATION',
+      nextActionLabel: 'Start source-backed AI or human evaluation.',
+      hasChallengePacket: true,
+      hasWorkEvidence: true,
+      hasCommitSubmission: true,
+      hasFinalSubmission: false,
+      hasAiInteraction: true,
+      hasTranscriptEvidence: true,
+      evidenceCounts: [{ kind: 'commit_submission', count: 1 }],
+      challenge: {
+        sourceRefType: 'review_challenge_packet',
+        sourceRefId: 'challenge-packet-ready',
+        evidenceRole: 'assigned_challenge',
+        exactText: 'Task: fix the popover cleanup regression.',
+        locator: { repositoryUrl: 'https://github.com/open-source/widgets' },
+      },
+      latestEvent: {
+        id: 'assessment-event-commit-ready',
+        kind: 'commit_submission',
+        sequence: 2,
+        occurredAt: '2026-06-23T00:18:00.000Z',
+      },
+      commit: {
+        eventId: 'assessment-event-commit-ready',
+        repositoryUrl: 'https://github.com/open-source/widgets',
+        forkRepositoryUrl: 'https://github.com/candidate/widgets',
+        branchName: 'pipe-assessment/popover-cleanup',
+        baseCommitSha: '1111111111111111111111111111111111111111',
+        commitSha: 'abcdef1234567890abcdef1234567890abcdef12',
+        commitUrl: 'https://github.com/candidate/widgets/commit/abcdef1234567890abcdef1234567890abcdef12',
+        changedFiles: [{ path: 'src/popover.ts', status: 'modified' }],
+        occurredAt: '2026-06-23T00:18:00.000Z',
+      },
+      evaluation: null,
+    };
+    const evaluatedProgress: NonNullable<ScheduledInterviewDetail['assessmentProgress']> = {
+      ...readyProgress,
+      session: {
+        ...readyProgress.session,
+        state: 'EVALUATED',
+        updatedAt: '2026-06-23T00:22:00.000Z',
+      },
+      stage: 'EVALUATED',
+      nextAction: 'REVIEW_EVALUATION',
+      nextActionLabel: 'Review the assessment report and evidence.',
+      evidenceCounts: [
+        { kind: 'ai_interaction', count: 1 },
+        { kind: 'commit_submission', count: 1 },
+        { kind: 'recruiter_note', count: 2 },
+      ],
+      evaluation: {
+        id: 'assessment-report-source-backed',
+        status: 'EVALUATED',
+        summary: 'Candidate made a focused source-backed change and cited the submitted diff evidence.',
+        createdAt: '2026-06-23T00:22:00.000Z',
+      },
+    };
+    mocks.api.get.mockResolvedValueOnce({
+      interview: makeInterview({
+        interviewType: 'OPEN_SOURCE_BUG_FIX',
+        status: 'COMPLETED',
+        assessmentProgress: readyProgress,
+      }),
+    });
+    mocks.api.post.mockResolvedValueOnce({
+      progress: evaluatedProgress,
+      report: {
+        id: 'assessment-report-source-backed',
+        sessionId: 'assessment-session-ready',
+        status: 'EVALUATED',
+        contextRecordId: null,
+      },
+      diagnostic: null,
+    });
+
+    renderDetail();
+    await flushAsyncUpdates();
+
+    fireEvent.click(screen.getByRole('button', { name: /start evaluation/i }));
+    await flushAsyncUpdates();
+
+    const progress = screen.getByTestId('interview-assessment-progress');
+    expect(progress).toHaveTextContent('Evaluated');
+    expect(progress).toHaveTextContent('Review the assessment report and evidence.');
+    expect(progress).toHaveTextContent('Evaluated · Candidate made a focused source-backed change and cited the submitted diff evidence.');
+    expect(progress).toHaveTextContent('Source-backed assessment report is ready to review.');
     expect(screen.queryByRole('button', { name: /start evaluation/i })).toBeNull();
   });
 
