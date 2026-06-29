@@ -153,9 +153,69 @@ function titleCaseToken(value: string): string {
     .replace(/\b\w/g, (char) => char.toUpperCase());
 }
 
+function sentenceCaseToken(value: string): string {
+  const words = value
+    .toLowerCase()
+    .split(/[_-]+/)
+    .filter(Boolean);
+  return words
+    .map((word, index) => (index === 0 ? `${word.charAt(0).toUpperCase()}${word.slice(1)}` : word))
+    .join(' ');
+}
+
 function formatMatchScore(score: number | null | undefined): string | null {
   if (typeof score !== 'number' || !Number.isFinite(score)) return null;
   return score.toFixed(3).replace(/0+$/, '').replace(/\.$/, '');
+}
+
+function shortCommitSha(value: string | null | undefined): string {
+  if (!value) return 'No commit';
+  return value.length > 10 ? value.slice(0, 10) : value;
+}
+
+function compactEvidenceText(value: string, maxLength = 160): string | null {
+  const trimmed = value.replace(/\s+/g, ' ').trim();
+  if (!trimmed) return null;
+  if (trimmed.length <= maxLength) return trimmed;
+  return `${trimmed.slice(0, maxLength - 1).trimEnd()}...`;
+}
+
+function assessmentChallengeSummary(challenge: {
+  exactText: string;
+  sourceRefType: string;
+} | null | undefined): string | null {
+  if (!challenge) return null;
+  const lines = challenge.exactText
+    .split(/\r?\n/)
+    .map((line) => line.trim())
+    .filter(Boolean);
+  const taskLine = lines.find((line) => /^task:/i.test(line));
+  const successLine = lines.find((line) => /^success:/i.test(line));
+  const contextLine = lines.find((line) => !/^base commit:/i.test(line));
+  const bestLine = taskLine ?? successLine ?? contextLine ?? null;
+  const readable = bestLine?.replace(/^(task|success):\s*/i, '') ?? null;
+  return readable ? compactEvidenceText(readable) : sentenceCaseToken(challenge.sourceRefType);
+}
+
+function assessmentProgressStageLabel(stage: string): string {
+  return sentenceCaseToken(stage);
+}
+
+function assessmentEvidenceSummary(input: {
+  hasChallengePacket: boolean;
+  hasWorkEvidence: boolean;
+  hasCommitSubmission: boolean;
+  hasAiInteraction: boolean;
+  hasTranscriptEvidence: boolean;
+}): string {
+  const ready = [
+    input.hasChallengePacket ? 'challenge' : null,
+    input.hasWorkEvidence ? 'work evidence' : null,
+    input.hasCommitSubmission ? 'commit' : null,
+    input.hasAiInteraction ? 'AI use' : null,
+    input.hasTranscriptEvidence ? 'transcript' : null,
+  ].filter((value): value is string => Boolean(value));
+  return ready.length > 0 ? ready.join(', ') : 'No evidence yet';
 }
 
 function sourceRefText(ref: CodeReviewMatchSourceRef | null | undefined): string | null {
@@ -1168,6 +1228,20 @@ export default function InterviewDetailPage(): JSX.Element {
   const isCodeReviewInterview = interview.interviewType === 'CODE_REVIEW';
   const usesWorkspaceInterview = interview.interviewType === 'DEV_CONTAINER_CHALLENGE'
     || interview.interviewType === 'OPEN_SOURCE_BUG_FIX';
+  const assessmentProgress = interview.assessmentProgress ?? null;
+  const showsAssessmentProgress = usesWorkspaceInterview || Boolean(assessmentProgress);
+  const assessmentProgressStage = assessmentProgress
+    ? assessmentProgressStageLabel(assessmentProgress.stage)
+    : 'Not started';
+  const assessmentProgressNextAction = assessmentProgress?.nextActionLabel
+    ?? interview.assessmentSetup?.message
+    ?? 'Open or configure the assessment room to start collecting evidence.';
+  const assessmentProgressEvidence = assessmentProgress
+    ? assessmentEvidenceSummary(assessmentProgress)
+    : 'No assessment session';
+  const assessmentChallengeText = assessmentProgress
+    ? assessmentChallengeSummary(assessmentProgress.challenge)
+    : null;
   const showsRoomPanel = !isCodeReviewInterview;
   const hasCallRecordEvidence = Boolean(
     interview.transcriptArtifact
@@ -1391,6 +1465,85 @@ export default function InterviewDetailPage(): JSX.Element {
               {evidenceFollowUpPlan.questions.slice(1, 3).map((question) => (
                 <div key={question} style={CONTEXT_RECORD_NARRATIVE}>{question}</div>
               ))}
+            </div>
+          )}
+        </section>
+      )}
+
+      {showsAssessmentProgress && (
+        <section data-testid="interview-assessment-progress" style={ASSESSMENT_PROGRESS_PANEL}>
+          <div style={{ display: 'flex', justifyContent: 'space-between', gap: 14, alignItems: 'flex-start', flexWrap: 'wrap' }}>
+            <div style={{ minWidth: 0 }}>
+              <div style={{ ...SECTION_TITLE, marginBottom: 8 }}>
+                <CheckCircle size={15} />
+                Assessment progress
+              </div>
+              <div style={ROOM_LINK_TEXT}>
+                {interview.assessmentSetup?.message ?? 'Source-backed assessment evidence is tracked against this interview.'}
+              </div>
+            </div>
+            <span style={MATCH_BADGE}>{assessmentProgressStage}</span>
+          </div>
+          <div style={ASSESSMENT_PROGRESS_GRID}>
+            <div style={ASSESSMENT_PROGRESS_CARD}>
+              <div style={FIELD_LABEL}>Mode</div>
+              <div style={MATCH_DECISION_VALUE}>{sentenceCaseToken(interview.interviewType ?? 'VIDEO')}</div>
+            </div>
+            <div style={ASSESSMENT_PROGRESS_CARD}>
+              <div style={FIELD_LABEL}>Next action</div>
+              <div style={ASSESSMENT_PROGRESS_VALUE}>{assessmentProgressNextAction}</div>
+            </div>
+            <div style={ASSESSMENT_PROGRESS_CARD}>
+              <div style={FIELD_LABEL}>Evidence</div>
+              <div style={ASSESSMENT_PROGRESS_VALUE}>{assessmentProgressEvidence}</div>
+            </div>
+            <div style={ASSESSMENT_PROGRESS_CARD}>
+              <div style={FIELD_LABEL}>Commit</div>
+              {assessmentProgress?.commit?.commitUrl ? (
+                <a href={assessmentProgress.commit.commitUrl} target="_blank" rel="noopener noreferrer" style={INLINE_LINK}>
+                  {shortCommitSha(assessmentProgress.commit.commitSha)}
+                </a>
+              ) : (
+                <div style={ASSESSMENT_PROGRESS_VALUE}>{shortCommitSha(assessmentProgress?.commit?.commitSha)}</div>
+              )}
+            </div>
+          </div>
+          {assessmentProgress ? (
+            <div style={ASSESSMENT_PROGRESS_DETAIL}>
+              {assessmentProgress.challenge && (
+                <div style={EVIDENCE_ROW}>
+                  <span style={FIELD_LABEL}>Challenge</span>
+                  <span style={FIELD_VALUE}>
+                    {assessmentChallengeText ?? 'Challenge packet captured'}
+                  </span>
+                </div>
+              )}
+              {assessmentProgress.commit?.repositoryUrl && (
+                <div style={EVIDENCE_ROW}>
+                  <span style={FIELD_LABEL}>Repository</span>
+                  <a href={assessmentProgress.commit.repositoryUrl} target="_blank" rel="noopener noreferrer" style={INLINE_LINK}>
+                    {assessmentProgress.commit.repositoryUrl.replace(/^https:\/\/github\.com\//, '')}
+                  </a>
+                </div>
+              )}
+              {assessmentProgress.commit?.branchName && (
+                <div style={EVIDENCE_ROW}>
+                  <span style={FIELD_LABEL}>Branch</span>
+                  <span style={FIELD_VALUE}>{assessmentProgress.commit.branchName}</span>
+                </div>
+              )}
+              {assessmentProgress.evaluation && (
+                <div style={{ ...EVIDENCE_ROW, alignItems: 'flex-start' }}>
+                  <span style={FIELD_LABEL}>Evaluation</span>
+                  <span style={{ ...FIELD_VALUE, lineHeight: 1.5 }}>
+                    {titleCaseToken(assessmentProgress.evaluation.status)} · {assessmentProgress.evaluation.summary}
+                  </span>
+                </div>
+              )}
+            </div>
+          ) : (
+            <div style={EMPTY_TEXT}>
+              Assessment session evidence will appear after PIPE creates the session for this interview.
             </div>
           )}
         </section>
@@ -2305,6 +2458,48 @@ const WORKSPACE_CONFIG_PANEL: CSSProperties = {
   borderRadius: 8,
   background: 'var(--pipe-surface-solid)',
   padding: 18,
+};
+
+const ASSESSMENT_PROGRESS_PANEL: CSSProperties = {
+  display: 'grid',
+  gap: 14,
+  border: '1px solid var(--pipe-border)',
+  borderRadius: 8,
+  background: 'var(--pipe-surface-solid)',
+  padding: 18,
+};
+
+const ASSESSMENT_PROGRESS_GRID: CSSProperties = {
+  display: 'grid',
+  gridTemplateColumns: 'repeat(auto-fit, minmax(170px, 1fr))',
+  gap: 10,
+};
+
+const ASSESSMENT_PROGRESS_CARD: CSSProperties = {
+  display: 'grid',
+  alignContent: 'start',
+  gap: 7,
+  minWidth: 0,
+  minHeight: 86,
+  border: '1px solid var(--pipe-border)',
+  borderRadius: 6,
+  background: 'rgba(255,255,255,0.03)',
+  padding: 12,
+};
+
+const ASSESSMENT_PROGRESS_VALUE: CSSProperties = {
+  color: 'var(--pipe-text)',
+  fontFamily: FONT,
+  fontSize: 12,
+  lineHeight: 1.5,
+  overflowWrap: 'anywhere',
+};
+
+const ASSESSMENT_PROGRESS_DETAIL: CSSProperties = {
+  display: 'grid',
+  gap: 8,
+  borderTop: '1px solid var(--pipe-border)',
+  paddingTop: 12,
 };
 
 const WORKSPACE_CONFIG_FORM: CSSProperties = {

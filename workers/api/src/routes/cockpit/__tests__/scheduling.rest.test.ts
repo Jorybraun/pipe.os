@@ -900,6 +900,166 @@ describe('GET /interviews/:id detail', () => {
     });
   });
 
+  it('returns source-backed assessment progress on workspace interview details', async () => {
+    seedInterviewDetailFixture();
+    const now = '2026-06-22T18:40:00.000Z';
+    const baseCommitSha = '5555555555555555555555555555555555555555';
+    const commitSha = 'ffffffffffffffffffffffffffffffffffffffff';
+    const challengeText = [
+      'Repo: https://github.com/open-source/widgets',
+      `Base commit: ${baseCommitSha}`,
+      'Task: fix the popover cleanup regression.',
+      'Success: commit a focused patch with tests.',
+    ].join('\n');
+    const commitText = `commit ${commitSha}\nAuthor: Candidate <candidate@example.com>\n\nFix popover cleanup.`;
+    const diffText = 'diff --git a/src/popover.ts b/src/popover.ts\n+cleanupStaleHandler();';
+
+    sqlite!.prepare(`
+      UPDATE scheduled_interviews
+         SET interview_type = 'OPEN_SOURCE_BUG_FIX',
+             github_repo_url = 'https://github.com/open-source/widgets',
+             github_pr_number = NULL
+       WHERE id = 'interview-1'
+    `).run();
+    sqlite!.prepare(`
+      INSERT INTO assessment_sessions (
+        id, ingestion_key, interview_id, mode, state, candidate_id, workspace_id,
+        metadata_json, created_at, updated_at
+      ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+    `).run(
+      'assessment-session-progress-detail',
+      'assessment-session:progress-detail',
+      'interview-1',
+      'OPEN_SOURCE_BUG_FIX',
+      'FINAL_SUBMITTED',
+      'candidate-1',
+      'workspace-1',
+      '{}',
+      now,
+      now,
+    );
+    sqlite!.prepare(`
+      INSERT INTO assessment_evidence_events (
+        id, ingestion_key, session_id, sequence, kind, actor_type, actor_id,
+        narrative, payload_json, context_record_id, occurred_at, created_at
+      ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, NULL, ?, ?)
+    `).run(
+      'assessment-event-progress-challenge',
+      'assessment-event:progress-detail-challenge',
+      'assessment-session-progress-detail',
+      1,
+      'recruiter_note',
+      'recruiter',
+      'owner-1',
+      'Recruiter assigned a concrete open-source challenge packet.',
+      JSON.stringify({ repositoryUrl: 'https://github.com/open-source/widgets' }),
+      now,
+      now,
+    );
+    sqlite!.prepare(`
+      INSERT INTO assessment_evidence_events (
+        id, ingestion_key, session_id, sequence, kind, actor_type, actor_id,
+        narrative, payload_json, context_record_id, occurred_at, created_at
+      ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, NULL, ?, ?)
+    `).run(
+      'assessment-event-progress-commit',
+      'assessment-event:progress-detail-commit',
+      'assessment-session-progress-detail',
+      2,
+      'commit_submission',
+      'candidate',
+      'candidate-1',
+      'Candidate submitted the source-backed assessment commit.',
+      JSON.stringify({
+        repositoryUrl: 'https://github.com/open-source/widgets',
+        forkRepositoryUrl: 'https://github.com/candidate/widgets',
+        branchName: 'pipe-assessment/popover-cleanup',
+        baseCommitSha,
+        commitSha,
+        commitUrl: `https://github.com/candidate/widgets/commit/${commitSha}`,
+        changedFiles: [{ path: 'src/popover.ts', status: 'modified' }],
+      }),
+      now,
+      now,
+    );
+    sqlite!.prepare(`
+      INSERT INTO assessment_event_source_refs (
+        id, event_id, source_ref_type, source_ref_id, source_span_id, evidence_role,
+        locator_json, exact_text, content_hash, metadata_json, created_at
+      ) VALUES (?, ?, ?, ?, NULL, ?, ?, ?, ?, '{}', ?)
+    `).run(
+      'assessment-source-progress-challenge',
+      'assessment-event-progress-challenge',
+      'review_challenge_packet',
+      'challenge-packet-progress-detail',
+      'assigned_challenge',
+      JSON.stringify({ repositoryUrl: 'https://github.com/open-source/widgets', baseCommitSha }),
+      challengeText,
+      sha256Hex(challengeText),
+      now,
+    );
+    sqlite!.prepare(`
+      INSERT INTO assessment_event_source_refs (
+        id, event_id, source_ref_type, source_ref_id, source_span_id, evidence_role,
+        locator_json, exact_text, content_hash, metadata_json, created_at
+      ) VALUES (?, ?, ?, ?, NULL, ?, ?, ?, ?, '{}', ?)
+    `).run(
+      'assessment-source-progress-commit',
+      'assessment-event-progress-commit',
+      'git_commit',
+      commitSha,
+      'support',
+      JSON.stringify({ commitUrl: `https://github.com/candidate/widgets/commit/${commitSha}` }),
+      commitText,
+      sha256Hex(commitText),
+      now,
+    );
+    sqlite!.prepare(`
+      INSERT INTO assessment_event_source_refs (
+        id, event_id, source_ref_type, source_ref_id, source_span_id, evidence_role,
+        locator_json, exact_text, content_hash, metadata_json, created_at
+      ) VALUES (?, ?, ?, ?, NULL, ?, ?, ?, ?, '{}', ?)
+    `).run(
+      'assessment-source-progress-diff',
+      'assessment-event-progress-commit',
+      'code_diff',
+      `${commitSha}:diff`,
+      'support',
+      JSON.stringify({ path: 'src/popover.ts' }),
+      diffText,
+      sha256Hex(diffText),
+      now,
+    );
+
+    const app = mountSchedulingApp();
+    const response = await app.request('/interviews/interview-1');
+    expect(response.status).toBe(200);
+    const body = await response.json() as {
+      interview: {
+        assessmentProgress: {
+          stage: string;
+          nextAction: string;
+          hasChallengePacket: boolean;
+          hasCommitSubmission: boolean;
+          challenge: { sourceRefId: string } | null;
+          commit: { commitSha: string | null; repositoryUrl: string | null } | null;
+        } | null;
+      };
+    };
+
+    expect(body.interview.assessmentProgress).toMatchObject({
+      stage: 'READY_FOR_EVALUATION',
+      nextAction: 'START_EVALUATION',
+      hasChallengePacket: true,
+      hasCommitSubmission: true,
+      challenge: { sourceRefId: 'challenge-packet-progress-detail' },
+      commit: {
+        commitSha,
+        repositoryUrl: 'https://github.com/open-source/widgets',
+      },
+    });
+  });
+
   it('returns source-backed CODE_REVIEW match hyperedges for recruiter detail', async () => {
     seedInterviewDetailFixture();
     sqlite!.prepare(`

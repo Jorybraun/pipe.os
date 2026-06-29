@@ -183,6 +183,85 @@ describe('InterviewDetailPage', () => {
     expect(screen.getByText('Call is being processed.')).toBeTruthy();
   });
 
+  it('shows source-backed assessment progress and next action for open-source workspaces', async () => {
+    mocks.api.get.mockResolvedValue({
+      interview: makeInterview({
+        interviewType: 'OPEN_SOURCE_BUG_FIX',
+        githubRepoUrl: 'https://github.com/open-source/widgets',
+        assessmentSetup: {
+          status: 'reviewable_task_assigned',
+          kind: 'github_pr',
+          source: 'recruiter_manual_override',
+          blocksPositiveAssessment: false,
+          message: 'A reviewable open-source task is assigned.',
+        },
+        assessmentProgress: {
+          session: {
+            id: 'assessment-session-1',
+            ingestionKey: 'assessment-session:interview-1',
+            interviewId: 'interview-1',
+            candidateId: null,
+            workspaceId: 'workspace-1',
+            workspacePersonId: null,
+            applicationId: null,
+            mode: 'OPEN_SOURCE_BUG_FIX',
+            state: 'FINAL_SUBMITTED',
+            createdAt: '2026-06-23T00:00:00.000Z',
+            updatedAt: '2026-06-23T00:20:00.000Z',
+          },
+          stage: 'READY_FOR_EVALUATION',
+          nextAction: 'START_EVALUATION',
+          nextActionLabel: 'Start source-backed AI or human evaluation.',
+          hasChallengePacket: true,
+          hasWorkEvidence: true,
+          hasCommitSubmission: true,
+          hasFinalSubmission: false,
+          hasAiInteraction: true,
+          hasTranscriptEvidence: true,
+          evidenceCounts: [{ kind: 'commit_submission', count: 1 }],
+          challenge: {
+            sourceRefType: 'review_challenge_packet',
+            sourceRefId: 'challenge-packet-popover',
+            evidenceRole: 'assigned_challenge',
+            exactText: 'Fix the popover cleanup regression.',
+            locator: { repositoryUrl: 'https://github.com/open-source/widgets' },
+          },
+          latestEvent: {
+            id: 'assessment-event-commit',
+            kind: 'commit_submission',
+            sequence: 2,
+            occurredAt: '2026-06-23T00:18:00.000Z',
+          },
+          commit: {
+            eventId: 'assessment-event-commit',
+            repositoryUrl: 'https://github.com/open-source/widgets',
+            forkRepositoryUrl: 'https://github.com/candidate/widgets',
+            branchName: 'pipe-assessment/popover-cleanup',
+            baseCommitSha: '1111111111111111111111111111111111111111',
+            commitSha: 'abcdef1234567890abcdef1234567890abcdef12',
+            commitUrl: 'https://github.com/candidate/widgets/commit/abcdef1234567890abcdef1234567890abcdef12',
+            changedFiles: [{ path: 'src/popover.ts', status: 'modified' }],
+            occurredAt: '2026-06-23T00:18:00.000Z',
+          },
+          evaluation: null,
+        },
+      }),
+    });
+
+    renderDetail();
+    await flushAsyncUpdates();
+
+    const progress = screen.getByTestId('interview-assessment-progress');
+    expect(progress).toHaveTextContent('Assessment progress');
+    expect(progress).toHaveTextContent('Ready For Evaluation');
+    expect(progress).toHaveTextContent('Start source-backed AI or human evaluation.');
+    expect(progress).toHaveTextContent('challenge, work, commit, AI use, transcript');
+    expect(progress).toHaveTextContent('abcdef1234');
+    expect(progress).toHaveTextContent('Fix the popover cleanup regression.');
+    expect(progress).toHaveTextContent('pipe-assessment/popover-cleanup');
+    expect(progress).not.toHaveTextContent('challenge-packet-popover');
+  });
+
   it('does not poll forever for pending local transcript artifacts', async () => {
     mocks.api.get.mockResolvedValueOnce({
       interview: makeInterview({
@@ -421,6 +500,94 @@ describe('InterviewDetailPage', () => {
 
     const sourceProof = screen.getByText('Source proof').closest('details');
     expect(sourceProof).not.toHaveAttribute('open');
+  });
+
+  it('shows assessment progress as a quiet hiring-manager snapshot', async () => {
+    mocks.api.get.mockResolvedValueOnce({
+      interview: makeInterview({
+        interviewType: 'CODE_REVIEW',
+        status: 'COMPLETED',
+        assessmentProgress: {
+          session: {
+            id: 'assessment-session-progress-detail',
+            ingestionKey: 'assessment-session:progress-detail',
+            interviewId: 'interview-1',
+            candidateId: 'candidate-1',
+            workspaceId: 'workspace-1',
+            workspacePersonId: null,
+            applicationId: null,
+            mode: 'CODE_REVIEW',
+            state: 'EVALUATED',
+            createdAt: '2026-06-23T00:00:00.000Z',
+            updatedAt: '2026-06-23T00:10:00.000Z',
+          },
+          stage: 'EVALUATED',
+          nextAction: 'REVIEW_EVALUATION',
+          nextActionLabel: 'Review the assessment report and evidence.',
+          hasChallengePacket: true,
+          hasWorkEvidence: true,
+          hasCommitSubmission: true,
+          hasFinalSubmission: true,
+          hasAiInteraction: true,
+          hasTranscriptEvidence: true,
+          evidenceCounts: [
+            { kind: 'recruiter_note', count: 1 },
+            { kind: 'commit_submission', count: 1 },
+          ],
+          challenge: {
+            sourceRefType: 'review_challenge_packet',
+            sourceRefId: 'challenge-packet-progress-detail',
+            evidenceRole: 'assigned_challenge',
+            exactText: [
+              'Repo: https://github.com/open-source/widgets',
+              'Base commit: 5555555555555555555555555555555555555555',
+              'Task: fix the popover cleanup regression.',
+              'Success: commit a focused patch with tests.',
+            ].join('\n'),
+            locator: {
+              repositoryUrl: 'https://github.com/open-source/widgets',
+            },
+          },
+          latestEvent: {
+            id: 'assessment-event-progress-commit',
+            kind: 'commit_submission',
+            sequence: 2,
+            occurredAt: '2026-06-23T00:05:00.000Z',
+          },
+          commit: {
+            eventId: 'assessment-event-progress-commit',
+            repositoryUrl: 'https://github.com/open-source/widgets',
+            forkRepositoryUrl: 'https://github.com/candidate/widgets',
+            branchName: 'pipe-assessment/popover-cleanup',
+            baseCommitSha: '5555555555555555555555555555555555555555',
+            commitSha: 'ffffffffffffffffffffffffffffffffffffffff',
+            commitUrl: 'https://github.com/candidate/widgets/commit/ffffffffffffffffffffffffffffffffffffffff',
+            changedFiles: [{ path: 'src/popover.ts', status: 'modified' }],
+            occurredAt: '2026-06-23T00:05:00.000Z',
+          },
+          evaluation: {
+            id: 'assessment-report-progress',
+            status: 'EVALUATED',
+            summary: 'Candidate fixed the regression and added focused tests.',
+            createdAt: '2026-06-23T00:09:00.000Z',
+          },
+        },
+      }),
+    });
+
+    renderDetail();
+
+    await flushAsyncUpdates();
+    const progress = screen.getByTestId('interview-assessment-progress');
+    expect(progress).toHaveTextContent('Assessment progress');
+    expect(progress).toHaveTextContent('Evaluated');
+    expect(progress).toHaveTextContent('Review the assessment report and evidence.');
+    expect(progress).toHaveTextContent('challenge, work, commit, AI use, transcript');
+    expect(progress).toHaveTextContent('ffffffffff');
+    expect(progress).toHaveTextContent('fix the popover cleanup regression.');
+    expect(progress).toHaveTextContent('Candidate fixed the regression and added focused tests.');
+    expect(progress).not.toHaveTextContent('assessment-session-progress-detail');
+    expect(progress).not.toHaveTextContent('challenge-packet-progress-detail');
   });
 
   it('labels blocked code-review matching as an assignment issue, not a candidate delay', async () => {

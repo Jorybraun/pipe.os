@@ -74,6 +74,81 @@ export interface AssessmentSetupProjection {
   message: string | null;
 }
 
+export type AssessmentProgressStage =
+  | 'WAITING_FOR_CHALLENGE'
+  | 'CHALLENGE_READY'
+  | 'WORK_IN_PROGRESS'
+  | 'READY_FOR_EVALUATION'
+  | 'EVALUATED'
+  | 'NEEDS_ATTENTION'
+  | 'CANCELLED';
+
+export type AssessmentProgressNextAction =
+  | 'ASSIGN_CHALLENGE'
+  | 'OPEN_ROOM_OR_WORKSPACE'
+  | 'CAPTURE_WORK_EVIDENCE'
+  | 'SUBMIT_COMMIT'
+  | 'START_EVALUATION'
+  | 'REVIEW_EVALUATION'
+  | 'RESOLVE_DIAGNOSTIC'
+  | 'NONE';
+
+export interface AssessmentProgressSnapshot {
+  session: {
+    id: string;
+    ingestionKey: string;
+    interviewId: string | null;
+    candidateId: string | null;
+    workspaceId: string | null;
+    workspacePersonId: string | null;
+    applicationId: string | null;
+    mode: string;
+    state: string;
+    createdAt: string;
+    updatedAt: string;
+  };
+  stage: AssessmentProgressStage;
+  nextAction: AssessmentProgressNextAction;
+  nextActionLabel: string;
+  hasChallengePacket: boolean;
+  hasWorkEvidence: boolean;
+  hasCommitSubmission: boolean;
+  hasFinalSubmission: boolean;
+  hasAiInteraction: boolean;
+  hasTranscriptEvidence: boolean;
+  evidenceCounts: Array<{ kind: string; count: number }>;
+  challenge: {
+    sourceRefType: string;
+    sourceRefId: string;
+    evidenceRole: string;
+    exactText: string;
+    locator: Record<string, unknown>;
+  } | null;
+  latestEvent: {
+    id: string;
+    kind: string;
+    sequence: number;
+    occurredAt: string;
+  } | null;
+  commit: {
+    eventId: string;
+    repositoryUrl: string | null;
+    forkRepositoryUrl: string | null;
+    branchName: string | null;
+    baseCommitSha: string | null;
+    commitSha: string | null;
+    commitUrl: string | null;
+    changedFiles: unknown[];
+    occurredAt: string;
+  } | null;
+  evaluation: {
+    id: string;
+    status: string;
+    summary: string;
+    createdAt: string;
+  } | null;
+}
+
 export interface ScheduledInterview {
   readonly id: string;
   readonly createdAt: string;
@@ -108,6 +183,7 @@ export interface ScheduledInterview {
   githubRepoUrl?: string | null;
   githubPrNumber?: number | null;
   assessmentSetup?: AssessmentSetupProjection | null;
+  assessmentProgress?: AssessmentProgressSnapshot | null;
   submissionJson?: string | null;
   completedAt?: string | null;
   // Room status (enriched from meeting_rooms join)

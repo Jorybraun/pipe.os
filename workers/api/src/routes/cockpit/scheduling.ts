@@ -40,6 +40,7 @@ import {
   type JsonObject,
 } from '../../lib/livingContext';
 import { AssessmentLayerStore, type AssessmentEvidenceSourceRefInput } from '../../lib/assessmentLayer/persistence';
+import { RepoTaskInterviewSessionStore } from '../../lib/repoTaskInterviewSession';
 import * as d1Matcher from '../../lib/challengeMatching/d1Matcher';
 import type { CandidateReviewChallengeOptions } from '../../lib/challengeMatching/d1Matcher';
 import { loadRoleChallengeSemantics } from '../../lib/challengeMatching/roleGuardrails';
@@ -2437,6 +2438,29 @@ async function loadScheduledCodeReviewScoreSummary(
   };
 }
 
+async function loadScheduledAssessmentProgress(
+  db: D1Database,
+  interviewId: string,
+): Promise<Awaited<ReturnType<RepoTaskInterviewSessionStore['loadProgress']>> | null> {
+  if (!await tableExists(db, 'assessment_sessions')
+    || !await tableExists(db, 'assessment_evidence_events')
+    || !await tableExists(db, 'assessment_event_source_refs')
+    || !await tableExists(db, 'assessment_evaluation_reports')) {
+    return null;
+  }
+
+  const row = await db.prepare(
+    `SELECT id
+       FROM assessment_sessions
+      WHERE interview_id = ?1
+      ORDER BY updated_at DESC, id DESC
+      LIMIT 1`,
+  ).bind(interviewId).first<{ id: string }>();
+  if (!row) return null;
+
+  return new RepoTaskInterviewSessionStore(db).loadProgress(row.id);
+}
+
 async function ensureRecipientContact(
   db: D1Database,
   ownerId: string,
@@ -4090,6 +4114,7 @@ schedulingAuth.get('/interviews/:id', async (c) => {
   );
   const codeReviewMatch = await loadScheduledCodeReviewMatchDetail(db, interview);
   const codeReviewScore = await loadScheduledCodeReviewScoreSummary(db, interview);
+  const assessmentProgress = await loadScheduledAssessmentProgress(db, interview.id);
 
   return c.json({
     interview: {
@@ -4171,6 +4196,7 @@ schedulingAuth.get('/interviews/:id', async (c) => {
       relatedEvidenceInterviews,
       codeReviewMatch,
       codeReviewScore,
+      assessmentProgress,
       createdAt: interview.created_at,
       updatedAt: interview.updated_at,
     },
