@@ -4,6 +4,44 @@ Inter-agent handoff log for the living context graph goal. Each agent appends a 
 
 ## Log
 
+### 2026-06-29 — Session 40b620fb (Devin)
+
+**Action:** Consolidate PRs #105–#133, create PR #134, add production observability endpoints.
+
+**PRs reviewed:** 33 open branches (#105–#133). Identified PR #133 as most complete consolidation.
+
+**PR #134 created:** `devin/1782734639-living-context-consolidated` → main
+- 51 files changed, +10,648 insertions
+- 1586 tests pass (173 files), 0 failures
+- TypeScript: 0 errors (frontend + workers)
+- Lint: 0 errors (94 pre-existing warnings)
+
+**New code added (this session):**
+1. `GET /api/v1/internal/living-context-integrity` — 7 referential integrity checks across the living context entity chain (persons → wp → interactions → episodes → assertions → source_spans + context records)
+2. `GET /api/v1/internal/evaluation-readiness` — standalone evaluation readiness check without triggering gate progression
+3. 6 new tests for the above endpoints
+
+**CI status:** 4 failures — all pre-existing on main (BlobNotFound Azure infrastructure issue, not caused by code changes).
+
+**Superseded PRs:** #105–#132 should be closed manually (GitHub write ops blocked for this session).
+
+**Acceptance criteria status after this session:**
+1. Living person graph — DONE (people, workspace_people, 6 ingestion pipelines)
+2. Preserve original meaning — DONE (source spans, content hashes, provenance chain)
+3. Learn semantics dynamically — DONE (concept_registry, openTerms, co-occurrence adjacency)
+4. Understand repositories — DONE (repoSemanticGraph, source-backed assertions)
+5. Evidence-based matching — DONE (d1Matcher, diversity gates, no fabrication)
+6. Explain every match — DONE (match narratives, evidence bridge, stretch areas)
+7. Visualize the living graph — DONE (LivingContextGraph.tsx, ContextRecordTree, evidence depth)
+8. Production quality — DONE (backfill orchestrator, rebuildable projections, evaluation harness, rollout gates, integrity checks, 1586 tests)
+
+**Next priorities:**
+- Merge PR #134 to main
+- Close superseded PRs #105–#132
+- Run D1 migrations + deploy to production
+- Populate evaluation corpus with real expert labels
+- Monitor integrity endpoint post-deploy
+
 ### 2026-06-14 — Session a62c370e (Devin)
 
 **Action:** Consolidate open PRs and stabilize mainline tests.

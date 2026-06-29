@@ -153,6 +153,185 @@ app.get('/living-context-health', async (c) => {
 });
 
 /**
+ * GET /api/v1/internal/living-context-integrity
+ *
+ * Data integrity validation for the living context graph. Checks referential
+ * integrity across the entity chain (persons → workspace_people → interactions
+ * → episodes → assertions → source_spans) and context record coverage.
+ * Returns per-check pass/fail with counts of orphaned or dangling entities.
+ */
+app.get('/living-context-integrity', async (c) => {
+  const db = c.env.DB;
+
+  interface IntegrityCheck {
+    name: string;
+    passed: boolean;
+    count: number;
+    detail: string;
+  }
+
+  const checks: IntegrityCheck[] = [];
+
+  const safeQuery = async (sql: string): Promise<number> => {
+    try {
+      const row = await db.prepare(sql).first<{ cnt: number }>();
+      return row?.cnt ?? 0;
+    } catch {
+      return -1;
+    }
+  };
+
+  // 1. Workspace people without a valid person
+  const orphanedWp = await safeQuery(
+    `SELECT COUNT(*) AS cnt FROM workspace_people wp
+     WHERE NOT EXISTS (SELECT 1 FROM people p WHERE p.id = wp.person_id)`,
+  );
+  checks.push({
+    name: 'workspace_people_with_valid_person',
+    passed: orphanedWp === 0,
+    count: orphanedWp,
+    detail: orphanedWp === 0
+      ? 'All workspace_people reference a valid person'
+      : `${orphanedWp} workspace_people reference a missing person`,
+  });
+
+  // 2. Interactions without a valid workspace_person
+  const orphanedInteractions = await safeQuery(
+    `SELECT COUNT(*) AS cnt FROM interactions i
+     WHERE NOT EXISTS (SELECT 1 FROM workspace_people wp WHERE wp.id = i.workspace_person_id)`,
+  );
+  checks.push({
+    name: 'interactions_with_valid_workspace_person',
+    passed: orphanedInteractions === 0,
+    count: orphanedInteractions,
+    detail: orphanedInteractions === 0
+      ? 'All interactions reference a valid workspace_person'
+      : `${orphanedInteractions} interactions reference a missing workspace_person`,
+  });
+
+  // 3. Assertions without any source spans
+  const unsourcedAssertions = await safeQuery(
+    `SELECT COUNT(*) AS cnt FROM semantic_assertions sa
+     WHERE NOT EXISTS (SELECT 1 FROM assertion_source_spans ass WHERE ass.assertion_id = sa.id)`,
+  );
+  const totalAssertions = await safeQuery(`SELECT COUNT(*) AS cnt FROM semantic_assertions`);
+  const sourcedPct = totalAssertions > 0
+    ? Math.round(((totalAssertions - unsourcedAssertions) / totalAssertions) * 100)
+    : 100;
+  checks.push({
+    name: 'assertions_with_source_spans',
+    passed: unsourcedAssertions === 0,
+    count: unsourcedAssertions,
+    detail: `${sourcedPct}% of assertions have source spans (${unsourcedAssertions} unsourced of ${totalAssertions} total)`,
+  });
+
+  // 4. Context records without any source refs
+  const unsourcedRecords = await safeQuery(
+    `SELECT COUNT(*) AS cnt FROM context_records cr
+     WHERE NOT EXISTS (SELECT 1 FROM context_record_source_refs crsr WHERE crsr.context_record_id = cr.id)`,
+  );
+  const totalRecords = await safeQuery(`SELECT COUNT(*) AS cnt FROM context_records`);
+  const recordSourcedPct = totalRecords > 0
+    ? Math.round(((totalRecords - unsourcedRecords) / totalRecords) * 100)
+    : 100;
+  checks.push({
+    name: 'context_records_with_source_refs',
+    passed: unsourcedRecords === 0,
+    count: unsourcedRecords,
+    detail: `${recordSourcedPct}% of context records have source refs (${unsourcedRecords} unsourced of ${totalRecords} total)`,
+  });
+
+  // 5. Source spans with empty exact_text
+  const emptySpans = await safeQuery(
+    `SELECT COUNT(*) AS cnt FROM source_spans
+     WHERE exact_text IS NULL OR LENGTH(TRIM(exact_text)) = 0`,
+  );
+  checks.push({
+    name: 'source_spans_non_empty',
+    passed: emptySpans === 0,
+    count: emptySpans,
+    detail: emptySpans === 0
+      ? 'All source spans contain non-empty exact text'
+      : `${emptySpans} source spans have empty or null exact_text`,
+  });
+
+  // 6. Episodes without a valid workspace_person
+  const orphanedEpisodes = await safeQuery(
+    `SELECT COUNT(*) AS cnt FROM episodes e
+     WHERE NOT EXISTS (SELECT 1 FROM workspace_people wp WHERE wp.id = e.workspace_person_id)`,
+  );
+  checks.push({
+    name: 'episodes_with_valid_workspace_person',
+    passed: orphanedEpisodes === 0,
+    count: orphanedEpisodes,
+    detail: orphanedEpisodes === 0
+      ? 'All episodes reference a valid workspace_person'
+      : `${orphanedEpisodes} episodes reference a missing workspace_person`,
+  });
+
+  // 7. Projection outbox stale entries (stuck > 10 min)
+  const staleProjections = await safeQuery(
+    `SELECT COUNT(*) AS cnt FROM projection_outbox
+     WHERE status = 'processing' AND updated_at < datetime('now', '-10 minutes')`,
+  );
+  checks.push({
+    name: 'projection_outbox_no_stale',
+    passed: staleProjections === 0,
+    count: staleProjections,
+    detail: staleProjections === 0
+      ? 'No stale projection outbox entries'
+      : `${staleProjections} projection jobs stuck in processing > 10 min`,
+  });
+
+  const allPassed = checks.every((check) => check.passed);
+
+  return c.json({
+    healthy: allPassed,
+    totalChecks: checks.length,
+    passed: checks.filter((check) => check.passed).length,
+    failed: checks.filter((check) => !check.passed).length,
+    checks,
+  });
+});
+
+/**
+ * GET /api/v1/internal/evaluation-readiness?corpusId=...&stage=shadow|canary|production
+ *
+ * Standalone evaluation readiness check without triggering gate progression.
+ * Returns the full readiness report including metrics, failures, and warnings.
+ */
+app.get('/evaluation-readiness', async (c) => {
+  const corpusId = c.req.query('corpusId');
+  if (!corpusId) {
+    return c.json({ ok: false, reason: 'corpusId query parameter required' }, 400);
+  }
+
+  const stage = c.req.query('stage') ?? 'shadow';
+  const validStages = ['shadow', 'canary', 'production'] as const;
+  type EvalStage = typeof validStages[number];
+  if (!validStages.includes(stage as EvalStage)) {
+    return c.json(
+      { ok: false, reason: `Invalid stage "${stage}". Valid: ${validStages.join(', ')}` },
+      400,
+    );
+  }
+
+  const { checkLatestProductionEvaluation, generateEvaluationReadinessReport } = await import(
+    '../../lib/challengeMatching/evaluation/readiness'
+  );
+
+  const report = await checkLatestProductionEvaluation(c.env.DB, {
+    corpusId,
+    stage: stage as EvalStage,
+  });
+
+  return c.json({
+    ...report,
+    reportText: generateEvaluationReadinessReport(report),
+  });
+});
+
+/**
  * POST /api/v1/internal/living-context-rebuild-projections
  *
  * Enqueue rebuild operations for all workspace persons. The projection outbox

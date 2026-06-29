@@ -7,6 +7,17 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Added — Data integrity validation endpoint (criterion #8)
+
+- `GET /api/v1/internal/living-context-integrity` validates referential integrity across the living context entity chain: persons → workspace_people → interactions → episodes → assertions → source_spans, plus context record source ref coverage and source span non-emptiness. Returns per-check pass/fail with counts of orphaned or dangling entities.
+- 7 integrity checks: workspace_people↔person, interactions↔workspace_person, assertions↔source_spans, context_records↔source_refs, source_span non-empty text, episodes↔workspace_person, projection outbox staleness.
+- Added 3 tests covering healthy graph, orphaned assertions detection, and empty graph.
+
+### Added — Standalone evaluation readiness endpoint (criterion #8)
+
+- `GET /api/v1/internal/evaluation-readiness?corpusId=...&stage=shadow|canary|production` provides a read-only evaluation readiness check without triggering gate progression. Returns the full readiness report including metrics, failures, warnings, and a human-readable report text.
+- Added 3 tests covering missing corpusId, no evaluation result, and invalid stage.
+
 ### Added — Rollout gate enforcement on living context API routes (criterion #8)
 
 - All living context read endpoints (`/living-context`, `/living-context/search`, `/living-context/timeline`, `/living-context/match-narrative`, `/living-context/evidence-depth`) on both candidate and contact routes are now gated behind the `living_context_read` rollout gate via `requireGate` middleware. When the gate is `disabled`, these endpoints return 404 — features appear non-existent until promoted through `internal_only → canary → GA`.

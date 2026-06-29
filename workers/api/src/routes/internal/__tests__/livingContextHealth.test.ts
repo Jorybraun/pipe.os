@@ -301,3 +301,211 @@ describe('GET /living-context-backfill', () => {
     emptySqlite.close();
   });
 });
+
+describe('GET /living-context-integrity', () => {
+  let sqlite: BetterSqliteDb;
+
+  beforeEach(() => {
+    sqlite = new Database(':memory:');
+    sqlite.exec('PRAGMA foreign_keys = ON;');
+    sqlite.exec('CREATE TABLE candidates (id TEXT PRIMARY KEY);');
+    sqlite.exec('CREATE TABLE contacts (id TEXT PRIMARY KEY);');
+    sqlite.exec(livingContextMigration);
+    sqlite.exec(contextRecordsMigration);
+    sqlite.exec(checkpointMigration);
+    sqlite.exec(gatesMigration);
+  });
+
+  afterEach(() => {
+    sqlite.close();
+  });
+
+  it('reports all checks passed on a healthy graph', async () => {
+    sqlite.exec(`
+      INSERT INTO people (id, ingestion_key, created_at, updated_at)
+      VALUES ('p-1', 'person:p1', datetime('now'), datetime('now'));
+    `);
+    sqlite.exec(`
+      INSERT INTO workspace_people (id, ingestion_key, workspace_id, person_id, created_at, updated_at)
+      VALUES ('wp-1', 'wp:1', 'ws-1', 'p-1', datetime('now'), datetime('now'));
+    `);
+    sqlite.exec(`
+      INSERT INTO interactions (id, ingestion_key, workspace_person_id, interaction_type, created_at, updated_at)
+      VALUES ('i-1', 'int:1', 'wp-1', 'resume_upload', datetime('now'), datetime('now'));
+    `);
+    sqlite.exec(`
+      INSERT INTO episodes (id, ingestion_key, workspace_person_id, interaction_id, created_at, updated_at)
+      VALUES ('ep-1', 'ep:1', 'wp-1', 'i-1', datetime('now'), datetime('now'));
+    `);
+    sqlite.exec(`
+      INSERT INTO artifacts (id, ingestion_key, interaction_id, artifact_type, created_at, updated_at)
+      VALUES ('a-1', 'art:1', 'i-1', 'resume', datetime('now'), datetime('now'));
+    `);
+    sqlite.exec(`
+      INSERT INTO artifact_versions (id, ingestion_key, artifact_id, version_number, content_hash, media_type, content_text, created_at)
+      VALUES ('av-1', 'av:1', 'a-1', 1, 'hash1', 'text/plain', 'Some resume text content', datetime('now'));
+    `);
+    sqlite.exec(`
+      INSERT INTO source_spans (id, ingestion_key, artifact_version_id, exact_text, exact_text_hash, created_at)
+      VALUES ('ss-1', 'ss:1', 'av-1', 'Some resume text content', 'hash-ss1', datetime('now'));
+    `);
+    sqlite.exec(`
+      INSERT INTO semantic_assertions (id, ingestion_key, workspace_person_id, episode_id, subject_type, predicate, narrative, created_at, updated_at)
+      VALUES ('sa-1', 'sa:1', 'wp-1', 'ep-1', 'skill', 'has_skill', 'Has TypeScript', datetime('now'), datetime('now'));
+    `);
+    sqlite.exec(`
+      INSERT INTO assertion_source_spans (assertion_id, source_span_id, evidence_role, created_at)
+      VALUES ('sa-1', 'ss-1', 'primary', datetime('now'));
+    `);
+    sqlite.exec(`
+      INSERT INTO context_records (id, ingestion_key, scope_type, scope_id, workspace_person_id, interaction_id, record_type, narrative, created_at, updated_at)
+      VALUES ('cr-1', 'cr:1', 'workspace_person', 'wp-1', 'wp-1', 'i-1', 'skill', 'TypeScript experience', datetime('now'), datetime('now'));
+    `);
+    sqlite.exec(`
+      INSERT INTO context_record_source_refs (context_record_id, source_ref_type, source_ref_id, source_span_id, evidence_role, locator_json, metadata_json, created_at)
+      VALUES ('cr-1', 'source_span', 'ss-1', 'ss-1', 'primary', '{}', '{}', datetime('now'));
+    `);
+
+    const db = createMockD1(sqlite);
+    const app = new Hono();
+    app.route('/', livingContextHealth);
+
+    const res = await app.request('/living-context-integrity', undefined, { DB: db });
+    expect(res.status).toBe(200);
+
+    const body = await res.json() as {
+      healthy: boolean;
+      totalChecks: number;
+      passed: number;
+      failed: number;
+      checks: Array<{ name: string; passed: boolean; count: number }>;
+    };
+    expect(body.healthy).toBe(true);
+    expect(body.passed).toBe(body.totalChecks);
+    expect(body.failed).toBe(0);
+  });
+
+  it('detects assertions without source spans', async () => {
+    sqlite.exec(`
+      INSERT INTO people (id, ingestion_key, created_at, updated_at)
+      VALUES ('p-1', 'person:p1', datetime('now'), datetime('now'));
+    `);
+    sqlite.exec(`
+      INSERT INTO workspace_people (id, ingestion_key, workspace_id, person_id, created_at, updated_at)
+      VALUES ('wp-1', 'wp:1', 'ws-1', 'p-1', datetime('now'), datetime('now'));
+    `);
+    sqlite.exec(`
+      INSERT INTO semantic_assertions (id, ingestion_key, workspace_person_id, subject_type, predicate, narrative, created_at, updated_at)
+      VALUES ('sa-orphan', 'sa:orphan', 'wp-1', 'skill', 'has_skill', 'Orphaned assertion', datetime('now'), datetime('now'));
+    `);
+
+    const db = createMockD1(sqlite);
+    const app = new Hono();
+    app.route('/', livingContextHealth);
+
+    const res = await app.request('/living-context-integrity', undefined, { DB: db });
+    expect(res.status).toBe(200);
+
+    const body = await res.json() as {
+      healthy: boolean;
+      checks: Array<{ name: string; passed: boolean; count: number }>;
+    };
+    expect(body.healthy).toBe(false);
+
+    const assertionCheck = body.checks.find((c) => c.name === 'assertions_with_source_spans');
+    expect(assertionCheck?.passed).toBe(false);
+    expect(assertionCheck?.count).toBe(1);
+  });
+
+  it('reports healthy on empty graph', async () => {
+    const db = createMockD1(sqlite);
+    const app = new Hono();
+    app.route('/', livingContextHealth);
+
+    const res = await app.request('/living-context-integrity', undefined, { DB: db });
+    expect(res.status).toBe(200);
+
+    const body = await res.json() as { healthy: boolean };
+    expect(body.healthy).toBe(true);
+  });
+});
+
+describe('GET /evaluation-readiness', () => {
+  let sqlite: BetterSqliteDb;
+
+  beforeEach(() => {
+    sqlite = new Database(':memory:');
+    sqlite.exec('PRAGMA foreign_keys = ON;');
+    sqlite.exec('CREATE TABLE candidates (id TEXT PRIMARY KEY);');
+    sqlite.exec('CREATE TABLE contacts (id TEXT PRIMARY KEY);');
+    sqlite.exec(livingContextMigration);
+    sqlite.exec(contextRecordsMigration);
+    sqlite.exec(checkpointMigration);
+    sqlite.exec(gatesMigration);
+    sqlite.exec(`
+      CREATE TABLE IF NOT EXISTS evaluation_corpora (
+        corpus_id TEXT PRIMARY KEY,
+        corpus_json TEXT NOT NULL,
+        expert_label_count INTEGER NOT NULL DEFAULT 0,
+        synthetic_fixture_count INTEGER NOT NULL DEFAULT 0,
+        created_at TEXT NOT NULL DEFAULT (datetime('now'))
+      );
+    `);
+    sqlite.exec(`
+      CREATE TABLE IF NOT EXISTS evaluation_results (
+        id TEXT PRIMARY KEY,
+        corpus_id TEXT NOT NULL REFERENCES evaluation_corpora(corpus_id),
+        metrics_json TEXT NOT NULL,
+        corpus_json TEXT NOT NULL,
+        result_json TEXT NOT NULL,
+        passed INTEGER NOT NULL DEFAULT 0,
+        created_at INTEGER NOT NULL DEFAULT (unixepoch()),
+        FOREIGN KEY (corpus_id) REFERENCES evaluation_corpora(corpus_id)
+      );
+    `);
+  });
+
+  afterEach(() => {
+    sqlite.close();
+  });
+
+  it('returns 400 when corpusId is missing', async () => {
+    const db = createMockD1(sqlite);
+    const app = new Hono();
+    app.route('/', livingContextHealth);
+
+    const res = await app.request('/evaluation-readiness', undefined, { DB: db });
+    expect(res.status).toBe(400);
+
+    const body = await res.json() as { ok: boolean; reason: string };
+    expect(body.ok).toBe(false);
+    expect(body.reason).toContain('corpusId');
+  });
+
+  it('returns not ready when no evaluation result exists', async () => {
+    const db = createMockD1(sqlite);
+    const app = new Hono();
+    app.route('/', livingContextHealth);
+
+    const res = await app.request('/evaluation-readiness?corpusId=test-corpus', undefined, { DB: db });
+    expect(res.status).toBe(200);
+
+    const body = await res.json() as { ready: boolean; failures: string[]; reportText: string };
+    expect(body.ready).toBe(false);
+    expect(body.failures.length).toBeGreaterThan(0);
+    expect(body.reportText).toContain('NO');
+  });
+
+  it('returns 400 for invalid stage', async () => {
+    const db = createMockD1(sqlite);
+    const app = new Hono();
+    app.route('/', livingContextHealth);
+
+    const res = await app.request('/evaluation-readiness?corpusId=test-corpus&stage=bogus', undefined, { DB: db });
+    expect(res.status).toBe(400);
+
+    const body = await res.json() as { ok: boolean; reason: string };
+    expect(body.ok).toBe(false);
+    expect(body.reason).toContain('Invalid stage');
+  });
+});
