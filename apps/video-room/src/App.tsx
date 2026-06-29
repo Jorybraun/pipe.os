@@ -16,6 +16,7 @@ import {
   Video,
 } from 'lucide-react';
 import {
+  getRoomAssessmentProgress,
   getRoomWorkspace,
   launchRoomWorkspace,
   loadRoom,
@@ -550,6 +551,17 @@ function Room({ token, metadata }: { token: string; metadata: RoomMetadata }): J
       publishWorkspaceStateEvent(initialWorkspace, 'error', { errorMessage: message });
     });
   }, [metadata.workspace, publishWorkspaceStateEvent, token]);
+
+  useEffect(() => {
+    void getRoomAssessmentProgress(token).then((progress) => {
+      setAssessmentProgress(progress);
+    }).catch((error) => {
+      console.error('[Room] Failed to load assessment progress:', {
+        token,
+        error: error instanceof Error ? error.message : String(error),
+      });
+    });
+  }, [token]);
 
   const refreshWorkspace = useCallback(async (): Promise<void> => {
     try {

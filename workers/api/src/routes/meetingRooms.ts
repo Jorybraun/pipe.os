@@ -2503,6 +2503,29 @@ function roomAssessmentErrorResponse(c: Context<{ Bindings: Env }>, error: unkno
   return apiError(c, 'INTERNAL_ERROR', 'Commit submission failed.');
 }
 
+meetingRooms.get('/:token/assessment/progress', async (c) => {
+  const token = c.req.param('token');
+  const room = await resolveRoom(c.env.DB, token);
+  if (!room) return apiError(c, 'NOT_FOUND', 'Room link is invalid or expired.');
+
+  const assessmentSession = await loadLatestAssessmentSessionForRoom(c.env.DB, room);
+  if (!assessmentSession) {
+    return c.json({ progress: null });
+  }
+
+  try {
+    const progress = await new RepoTaskInterviewSessionStore(c.env.DB).loadProgress(assessmentSession.id);
+    return c.json({ progress: serializeRoomAssessmentProgress(progress) });
+  } catch (error) {
+    console.error('[meetingRooms.assessment.progress] failed:', {
+      roomId: room.room_id,
+      interviewId: room.scheduled_interview_id,
+      error: error instanceof Error ? error.message : String(error),
+    });
+    return apiError(c, 'INTERNAL_ERROR', 'Assessment progress failed.');
+  }
+});
+
 meetingRooms.post('/:token/assessment/commit-submission', async (c) => {
   const token = c.req.param('token');
   const room = await resolveRoom(c.env.DB, token);

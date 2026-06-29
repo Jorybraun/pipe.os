@@ -2,6 +2,7 @@ import type {
   IceServerProvider,
   RoomCommitSubmissionRequest,
   RoomCommitSubmissionResponse,
+  RoomAssessmentProgressSnapshot,
   RecordingSpeakerMetadata,
   RoomMetadata,
   RoomWorkspace,
@@ -153,6 +154,15 @@ export async function launchRoomWorkspace(token: string, repoUrl?: string): Prom
   });
   const body = await parseResponse<{ workspace: RoomWorkspace }>(response);
   return body.workspace;
+}
+
+export async function getRoomAssessmentProgress(token: string): Promise<RoomAssessmentProgressSnapshot | null> {
+  const response = await fetch(apiUrl(`/api/v1/meeting-rooms/${token}/assessment/progress`), {
+    cache: 'no-store',
+    credentials: 'same-origin',
+  });
+  const body = await parseResponse<{ progress: RoomAssessmentProgressSnapshot | null }>(response);
+  return body.progress;
 }
 
 export async function submitRoomAssessmentCommit(

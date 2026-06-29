@@ -5646,10 +5646,42 @@ describe('meeting room recording living-context route', () => {
       branchName: 'pipe-assessment/retry-path',
     });
     expect(body.progress.commit.changedFiles).toHaveLength(1);
+
+    const progressRes = await app.request(`/meeting/${guestToken}/assessment/progress`, {
+      method: 'GET',
+    }, env, ctx);
+    expect(progressRes.status).toBe(200);
+    const progressBody = await progressRes.json() as {
+      progress: {
+        mode: string;
+        state: string;
+        stage: string;
+        nextAction: string;
+        hasChallengePacket: boolean;
+        hasCommitSubmission: boolean;
+        commit: { commitSha: string; branchName: string; changedFiles: unknown[] };
+      };
+    };
+    expect(progressBody.progress).toMatchObject({
+      mode: 'OPEN_SOURCE_BUG_FIX',
+      state: 'FINAL_SUBMITTED',
+      stage: 'READY_FOR_EVALUATION',
+      nextAction: 'START_EVALUATION',
+      hasChallengePacket: true,
+      hasCommitSubmission: true,
+    });
+    expect(progressBody.progress.commit).toMatchObject({
+      commitSha,
+      branchName: 'pipe-assessment/retry-path',
+    });
     const serializedResponse = JSON.stringify(body);
     expect(serializedResponse).not.toContain(assessmentSessionId);
     expect(serializedResponse).not.toContain(`assessment-session:open-source:${scheduledInterviewId}`);
     expect(serializedResponse).not.toContain(created.meeting.contactId);
+    const serializedProgressResponse = JSON.stringify(progressBody);
+    expect(serializedProgressResponse).not.toContain(assessmentSessionId);
+    expect(serializedProgressResponse).not.toContain(`assessment-session:open-source:${scheduledInterviewId}`);
+    expect(serializedProgressResponse).not.toContain(created.meeting.contactId);
 
     const persistedCommit = sqlite.prepare(
       `SELECT e.kind, e.actor_type, e.actor_id, e.narrative, e.payload_json,
@@ -5769,6 +5801,11 @@ describe('meeting room recording living-context route', () => {
       code: 'CONFLICT',
       message: 'This room is not linked to an assessment session. Create the assessment session before accepting commit evidence.',
     });
+    const progressRes = await app.request(`/meeting/${guestToken}/assessment/progress`, {
+      method: 'GET',
+    }, env, ctx);
+    expect(progressRes.status).toBe(200);
+    await expect(progressRes.json()).resolves.toEqual({ progress: null });
     expect(sqlite.prepare(
       `SELECT COUNT(*) AS count
          FROM assessment_evidence_events

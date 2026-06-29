@@ -1,6 +1,6 @@
 import { describe, expect, it, vi } from 'vitest';
 
-import { submitRoomAssessmentCommit, uploadRecording } from './api';
+import { getRoomAssessmentProgress, submitRoomAssessmentCommit, uploadRecording } from './api';
 import type { RecordingSpeakerMetadata } from '../types';
 
 const speakerMetadata: RecordingSpeakerMetadata = {
@@ -119,6 +119,67 @@ describe('submitRoomAssessmentCommit', () => {
       credentials: 'same-origin',
     });
     expect(JSON.parse(String(fetchSpy.mock.calls[0]?.[1]?.body))).toEqual(payload);
+    fetchSpy.mockRestore();
+  });
+});
+
+describe('getRoomAssessmentProgress', () => {
+  it('loads durable room assessment progress without using cached state', async () => {
+    const fetchSpy = vi.spyOn(globalThis, 'fetch').mockResolvedValue(new Response(
+      JSON.stringify({
+        progress: {
+          mode: 'OPEN_SOURCE_BUG_FIX',
+          state: 'FINAL_SUBMITTED',
+          stage: 'READY_FOR_EVALUATION',
+          nextAction: 'START_EVALUATION',
+          nextActionLabel: 'Start source-backed evaluation.',
+          hasChallengePacket: true,
+          hasWorkEvidence: true,
+          hasCommitSubmission: true,
+          hasFinalSubmission: false,
+          hasAiInteraction: true,
+          hasTranscriptEvidence: false,
+          hasTestEvidence: true,
+          evidenceCounts: [{ kind: 'commit_submission', count: 1 }],
+          sourceRefCounts: [{ kind: 'test_run', count: 1 }],
+          latestEvent: { kind: 'commit_submission', sequence: 2, occurredAt: '2026-06-29T00:00:00.000Z' },
+          commit: {
+            repositoryUrl: 'https://github.com/pipe/source-backed-worker',
+            forkRepositoryUrl: 'https://github.com/candidate/source-backed-worker',
+            branchName: 'pipe-assessment/retry-fix',
+            baseCommitSha: 'a'.repeat(40),
+            commitSha: 'b'.repeat(40),
+            commitUrl: null,
+            changedFiles: [{ path: 'src/retry.ts', status: 'modified' }],
+            occurredAt: '2026-06-29T00:00:00.000Z',
+          },
+          evaluation: null,
+        },
+      }),
+      { status: 200, headers: { 'Content-Type': 'application/json' } },
+    ));
+
+    await expect(getRoomAssessmentProgress('room-token')).resolves.toMatchObject({
+      stage: 'READY_FOR_EVALUATION',
+      commit: { commitSha: 'b'.repeat(40) },
+    });
+
+    expect(fetchSpy).toHaveBeenCalledOnce();
+    expect(fetchSpy.mock.calls[0]?.[0]).toContain('/api/v1/meeting-rooms/room-token/assessment/progress');
+    expect(fetchSpy.mock.calls[0]?.[1]).toMatchObject({
+      cache: 'no-store',
+      credentials: 'same-origin',
+    });
+    fetchSpy.mockRestore();
+  });
+
+  it('returns null when no assessment session exists yet', async () => {
+    const fetchSpy = vi.spyOn(globalThis, 'fetch').mockResolvedValue(new Response(
+      JSON.stringify({ progress: null }),
+      { status: 200, headers: { 'Content-Type': 'application/json' } },
+    ));
+
+    await expect(getRoomAssessmentProgress('room-token')).resolves.toBeNull();
     fetchSpy.mockRestore();
   });
 });
