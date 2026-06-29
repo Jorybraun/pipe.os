@@ -253,3 +253,49 @@ cd workers/api && npx wrangler deploy --env production
 cd workers/api && npx wrangler d1 migrations apply pipe-db --env production
 cd workers/api && npx wrangler deploy --env production
 ```
+
+### 2026-06-29 — Session 386fa853 (Devin)
+
+**Action:** Analyze open PRs, add repo assertions → living context backfill bridge, create consolidated PR #123.
+
+**Open PRs analyzed:**
+- PRs #105–#122: 18 progressive draft PRs — all superseded by #123
+- Attempted to close #105–#121 programmatically — blocked ("User is not connected to GitHub")
+- Created PR #123 as consolidated PR on `devin/1782695415-living-context-merge`
+- PR #123: https://github.com/Jorybraun/pipe.os/pull/123
+
+**Gap identified and fixed (criterion #4 — understand repositories):**
+- `persistReviewChallengeGraph` creates challenge packet context records in real-time, but individual `repo_semantic_assertions` (structural facts, code episodes) were NOT flowing into the searchable `context_records` model.
+- Added `repo_assertions_to_living_context` backfill task to `backfillScheduled.ts`:
+  - Iterates all repo_semantic_assertions without a corresponding context_record
+  - Loads source spans with full provenance (byte ranges, line numbers, file paths)
+  - Resolves facets → upserts as living context concepts
+  - Creates idempotent context records keyed on assertion ID
+  - Gracefully skips assertions without source spans
+- Added 4 tests: ingestion with source provenance, idempotency, and skip behavior.
+
+**Test results:**
+- 170 test files pass, 1548 tests, 0 failures (+1 file, +4 tests)
+- TypeScript: 0 errors (root + workers/api)
+- Lint: 0 errors, 94 pre-existing warnings
+- CI: 4 failures are pre-existing infrastructure (BlobNotFound — identical to main/PR #104)
+
+**All 8 acceptance criteria maintained:**
+1. Living person graph: COMPLETE
+2. Preserve original meaning: COMPLETE
+3. Learn semantics dynamically: COMPLETE
+4. Understand repositories: STRENGTHENED — all repo assertions now flow into context_records
+5. Evidence-based matching: COMPLETE
+6. Explain every match: COMPLETE
+7. Visualize the living graph: COMPLETE
+8. Production quality: COMPLETE — 8 backfill tasks (was 7)
+
+**Owner action needed:**
+- Close superseded PRs #105–#122 after merging #123
+- PR #123 auto-drafted by network policy — mark ready and merge
+
+**Post-merge required:**
+```bash
+cd workers/api && npx wrangler d1 migrations apply pipe-db --env production
+cd workers/api && npx wrangler deploy --env production
+```
