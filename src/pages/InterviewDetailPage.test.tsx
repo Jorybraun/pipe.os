@@ -260,6 +260,27 @@ describe('InterviewDetailPage', () => {
         githubRepoUrl: 'https://github.com/mui/base-ui',
         githubPrNumber: 973,
         matchedRepoId: 973,
+        linkedMeeting: {
+          id: 'meeting-code-review-empty-call',
+          title: 'Code review assessment',
+          description: null,
+          status: 'ACTIVE',
+          scheduledAt: null,
+          startedAt: null,
+          endedAt: null,
+          durationSecs: null,
+          meetingUrl: 'https://room-dev.hire-pipe.com/room/guest-token',
+          meetingType: 'INTERVIEW',
+          transcriptStatus: 'NONE',
+          transcriptSummary: null,
+          transcriptJson: null,
+          transcriptAnalysisJson: null,
+          transcriptError: null,
+          recordingR2Key: null,
+          room: null,
+          createdAt: '2026-06-23T00:00:00.000Z',
+          updatedAt: '2026-06-23T00:00:00.000Z',
+        },
         submissionJson: JSON.stringify({
           type: 'CODE_REVIEW',
           verdict: 'request_changes',
@@ -393,6 +414,8 @@ describe('InterviewDetailPage', () => {
     expect(decision).toHaveTextContent('Strong assessment fit');
     expect(decision).toHaveTextContent('72/100 Adequate');
     expect(decision).toHaveTextContent('1 pushback thread');
+    expect(screen.queryByText('Call record')).toBeNull();
+    expect(screen.queryByText('Not recorded yet')).toBeNull();
     expect(screen.queryByTestId('interview-code-review-evidence-plan')).toBeNull();
 
     const sourceProof = screen.getByText('Source proof').closest('details');

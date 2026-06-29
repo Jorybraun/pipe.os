@@ -1199,7 +1199,19 @@ export default function InterviewDetailPage(): JSX.Element {
   const usesWorkspaceInterview = interview.interviewType === 'DEV_CONTAINER_CHALLENGE'
     || interview.interviewType === 'OPEN_SOURCE_BUG_FIX';
   const showsRoomPanel = !isCodeReviewInterview;
-  const showsCallRecord = !isCodeReviewInterview || Boolean(interview.linkedMeeting || interview.transcriptArtifact);
+  const hasCallRecordEvidence = Boolean(
+    interview.transcriptArtifact
+    || transcriptEntries.length > 0
+    || interview.linkedMeeting?.transcriptSummary
+    || interview.linkedMeeting?.recordingR2Key
+    || transcriptError
+    || transcriptStatus === 'PROCESSING'
+    || transcriptStatus === 'READY'
+    || transcriptStatus === 'COMPLETED'
+    || transcriptStatus === 'FAILED'
+    || isLiveRecording,
+  );
+  const showsCallRecord = !isCodeReviewInterview || hasCallRecordEvidence;
   const transcriptEmptyText = transcriptStatus === 'PROCESSING'
     ? 'Transcription is processing. Context will update when source-backed transcript spans are ready.'
     : isStaleRecording
