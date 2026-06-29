@@ -8,6 +8,14 @@ import type {
   SdpPayload,
 } from '../types';
 import { safeClippyEvidenceIdPart as safeEvidenceIdPart } from '../lib/clippyPromptIdentity';
+import {
+  browserNavigationUrlFingerprint,
+  normalizeBrowserNavigationUrl,
+} from '../lib/browserNavigationEvidence';
+import {
+  inferWindowDataAction,
+  windowDataValueFingerprint,
+} from '../lib/windowEvidence';
 import type { OpenWindowConfig, WindowType } from './useWindowManager';
 import type { SessionEventType } from './useSessionEvents';
 
@@ -865,6 +873,31 @@ function hasSourceBackedWorkspaceStateEvidence(event: RoomDesktopEvent, actor: '
     && event.proxyUrlPersisted === false;
 }
 
+function hasMatchingWindowDataEvidence(
+  data: Record<string, unknown>,
+  evidence: Record<string, unknown>,
+): boolean {
+  const dataKeys = Object.keys(data).sort();
+  const evidenceKeys = Array.isArray(evidence.dataKeys)
+    ? evidence.dataKeys
+    : [];
+  if (
+    dataKeys.length === 0
+    || evidenceKeys.length !== dataKeys.length
+    || !evidenceKeys.every((key): key is string => typeof key === 'string')
+  ) {
+    return false;
+  }
+  const sortedEvidenceKeys = [...evidenceKeys].sort();
+  if (!dataKeys.every((key, index) => key === sortedEvidenceKeys[index])) return false;
+
+  const fingerprints = evidence.dataValueFingerprints;
+  if (!isRecord(fingerprints)) return false;
+  return dataKeys.every((key) => (
+    fingerprints[key] === windowDataValueFingerprint(data[key])
+  ));
+}
+
 export function hasSourceBackedDesktopEventEvidence(event: RoomDesktopEvent, role?: RoomRole): boolean {
   const actor = roleActor(role);
   if (!actor) return false;
@@ -930,31 +963,53 @@ export function hasSourceBackedDesktopEventEvidence(event: RoomDesktopEvent, rol
   if (event.kind === 'UPDATE_WINDOW_DATA') {
     const isBrowserNavigation = typeof event.data.currentUrl === 'string';
     if (isBrowserNavigation) {
+      const normalizedUrl = normalizeBrowserNavigationUrl(event.data.currentUrl as string);
+      const capturedAtMs = evidence.capturedAtMs;
+      const navigationTrigger = evidence.navigationTrigger;
+      const urlFingerprint = normalizedUrl ? browserNavigationUrlFingerprint(normalizedUrl) : null;
       return evidence.source === 'room_browser_window'
         && evidence.navigationSource === 'browser_window_client_submit'
         && evidence.actor === actor
         && evidence.windowId === event.windowId
         && typeof evidence.browserNavigationId === 'string'
-        && typeof evidence.capturedAtMs === 'number'
-        && Number.isFinite(evidence.capturedAtMs)
-        && typeof evidence.navigationTrigger === 'string'
-        && typeof evidence.url === 'string'
-        && typeof evidence.urlFingerprint === 'string'
+        && typeof capturedAtMs === 'number'
+        && Number.isFinite(capturedAtMs)
+        && typeof navigationTrigger === 'string'
+        && normalizedUrl !== null
+        && evidence.url === normalizedUrl
+        && evidence.urlFingerprint === urlFingerprint
+        && evidence.browserNavigationId === [
+          'browser-navigation',
+          actor,
+          Math.max(0, Math.round(capturedAtMs)),
+          event.windowId,
+          navigationTrigger,
+          urlFingerprint,
+        ].join(':')
         && evidence.surface === 'win95'
         && typeof evidence.roomPhase === 'string'
         && evidence.durableObjectReplayExpected === true;
     }
+    const dataKeys = Object.keys(event.data).sort();
+    const capturedAtMs = evidence.capturedAtMs;
+    const expectedAction = inferWindowDataAction(event.windowId, dataKeys);
     return evidence.source === 'window_data_client_submit'
       && typeof evidence.dataSource === 'string'
       && WINDOW_DATA_SOURCES.has(evidence.dataSource)
       && evidence.actor === actor
       && evidence.windowId === event.windowId
       && typeof evidence.windowDataUpdateId === 'string'
-      && typeof evidence.capturedAtMs === 'number'
-      && Number.isFinite(evidence.capturedAtMs)
-      && Array.isArray(evidence.dataKeys)
-      && evidence.dataKeys.length > 0
-      && isRecord(evidence.dataValueFingerprints)
+      && typeof capturedAtMs === 'number'
+      && Number.isFinite(capturedAtMs)
+      && evidence.action === expectedAction
+      && evidence.windowDataUpdateId === [
+        'window-data',
+        actor,
+        Math.max(0, Math.round(capturedAtMs)),
+        event.windowId,
+        expectedAction,
+      ].join(':')
+      && hasMatchingWindowDataEvidence(event.data, evidence)
       && evidence.surface === 'win95'
       && typeof evidence.roomPhase === 'string'
       && evidence.durableObjectReplayExpected === true;

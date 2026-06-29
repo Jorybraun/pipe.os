@@ -66,7 +66,7 @@ export function isKnownEmbedBlockedUrl(target: string): boolean {
   }
 }
 
-function fingerprintText(value: string): string {
+export function browserNavigationUrlFingerprint(value: string): string {
   let hash = 0x811c9dc5;
   for (let index = 0; index < value.length; index += 1) {
     hash ^= value.charCodeAt(index);
@@ -84,7 +84,7 @@ export function buildBrowserNavigationEvidence(
   const capturedAtMs = Number.isFinite(input.capturedAtMs)
     ? Math.max(0, Math.round(input.capturedAtMs))
     : 0;
-  const urlFingerprint = fingerprintText(normalized);
+  const urlFingerprint = browserNavigationUrlFingerprint(normalized);
   return {
     text: normalized,
     properties: {

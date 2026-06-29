@@ -288,6 +288,50 @@ describe('hasSourceBackedDesktopEventEvidence', () => {
     workspaceTelemetryPersisted: true,
     proxyUrlPersisted: false,
   };
+  const windowDataEvent: RoomDesktopEvent = {
+    id: 'window-data-event-1',
+    clientId: 'guest-client',
+    createdAt: 1700000004000,
+    kind: 'UPDATE_WINDOW_DATA',
+    windowId: 'notepad',
+    data: { text: 'Candidate writes a replay test plan.' },
+    evidence: {
+      source: 'window_data_client_submit',
+      dataSource: 'win95_window_data_sync',
+      actor: 'guest',
+      windowId: 'notepad',
+      action: 'edit_text',
+      windowDataUpdateId: 'window-data:guest:1700000004000:notepad:edit_text',
+      capturedAtMs: 1700000004000,
+      surface: 'win95',
+      roomPhase: 'connected',
+      dataKeys: ['text'],
+      dataValueFingerprints: { text: 'data_81a94acf' },
+      durableObjectReplayExpected: true,
+    },
+  };
+  const browserNavigationEvent: RoomDesktopEvent = {
+    id: 'browser-navigation-event-1',
+    clientId: 'host-client',
+    createdAt: 1700000005000,
+    kind: 'UPDATE_WINDOW_DATA',
+    windowId: 'browser',
+    data: { currentUrl: 'https://example.com/review?step=1' },
+    evidence: {
+      source: 'room_browser_window',
+      navigationSource: 'browser_window_client_submit',
+      actor: 'host',
+      windowId: 'browser',
+      navigationTrigger: 'go_button',
+      browserNavigationId: 'browser-navigation:host:1700000005000:browser:go_button:nav_54d2c495',
+      capturedAtMs: 1700000005000,
+      urlFingerprint: 'nav_54d2c495',
+      url: 'https://example.com/review?step=1',
+      surface: 'win95',
+      roomPhase: 'connected',
+      durableObjectReplayExpected: true,
+    },
+  };
 
   it('accepts surface changes only when browser toggle evidence matches the room actor and transition', () => {
     expect(hasSourceBackedDesktopEventEvidence(surfaceEvent, 'HOST')).toBe(true);
@@ -321,6 +365,36 @@ describe('hasSourceBackedDesktopEventEvidence', () => {
 
   it('accepts workspace state only when the observer event id and session provenance match', () => {
     expect(hasSourceBackedDesktopEventEvidence(workspaceEvent, 'HOST')).toBe(true);
+  });
+
+  it('accepts window data updates only when evidence reconstructs from the exact shared data patch', () => {
+    expect(hasSourceBackedDesktopEventEvidence(windowDataEvent, 'GUEST')).toBe(true);
+    expect(hasSourceBackedDesktopEventEvidence({
+      ...windowDataEvent,
+      data: { text: 'Candidate writes a replay test plan!' },
+    }, 'GUEST')).toBe(false);
+    expect(hasSourceBackedDesktopEventEvidence({
+      ...windowDataEvent,
+      evidence: {
+        ...windowDataEvent.evidence!,
+        dataKeys: ['strokes'],
+      },
+    }, 'GUEST')).toBe(false);
+  });
+
+  it('accepts browser navigation updates only when URL evidence matches the shared browser URL', () => {
+    expect(hasSourceBackedDesktopEventEvidence(browserNavigationEvent, 'HOST')).toBe(true);
+    expect(hasSourceBackedDesktopEventEvidence({
+      ...browserNavigationEvent,
+      data: { currentUrl: 'https://example.com/review?step=2' },
+    }, 'HOST')).toBe(false);
+    expect(hasSourceBackedDesktopEventEvidence({
+      ...browserNavigationEvent,
+      evidence: {
+        ...browserNavigationEvent.evidence!,
+        browserNavigationId: 'browser-navigation:host:1700000005000:browser:reload_button:nav_54d2c495',
+      },
+    }, 'HOST')).toBe(false);
   });
 });
 

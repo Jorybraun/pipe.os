@@ -57,18 +57,18 @@ function isRecord(value: unknown): value is Record<string, unknown> {
   return Boolean(value) && typeof value === 'object' && !Array.isArray(value);
 }
 
-function stableDataValue(value: unknown): string {
+export function stableWindowDataValue(value: unknown): string {
   if (value === null) return 'null';
   if (typeof value === 'string' || typeof value === 'number' || typeof value === 'boolean') {
     return JSON.stringify(value);
   }
   if (Array.isArray(value)) {
-    return `[${value.map(stableDataValue).join(',')}]`;
+    return `[${value.map(stableWindowDataValue).join(',')}]`;
   }
   if (isRecord(value)) {
     return `{${Object.keys(value)
       .sort()
-      .map((key) => `${JSON.stringify(key)}:${stableDataValue(value[key])}`)
+      .map((key) => `${JSON.stringify(key)}:${stableWindowDataValue(value[key])}`)
       .join(',')}}`;
   }
   return JSON.stringify(String(value));
@@ -83,10 +83,14 @@ function fingerprintText(prefix: string, value: string): string {
   return `${prefix}_${(hash >>> 0).toString(16).padStart(8, '0')}`;
 }
 
-function inferWindowDataAction(windowId: string, dataKeys: string[]): string {
+export function inferWindowDataAction(windowId: string, dataKeys: string[]): string {
   if (windowId === 'notepad' || dataKeys.includes('text')) return 'edit_text';
   if (windowId === 'paint' || dataKeys.includes('strokes')) return 'edit_paint';
   return 'update_data';
+}
+
+export function windowDataValueFingerprint(value: unknown): string {
+  return fingerprintText('data', stableWindowDataValue(value));
 }
 
 export function buildWindowLifecycleEvidence(input: {
@@ -195,7 +199,7 @@ export function buildWindowDataUpdateEvidence(input: {
   const dataValueFingerprints = Object.fromEntries(
     dataKeys.map((key) => [
       key,
-      fingerprintText('data', stableDataValue(input.data[key])),
+      windowDataValueFingerprint(input.data[key]),
     ]),
   );
 
