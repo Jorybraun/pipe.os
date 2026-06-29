@@ -6,23 +6,33 @@ interface ChallengePacketPanelProps {
   compact?: boolean;
 }
 
-function locatorString(locator: Record<string, unknown>, key: string): string | null {
-  const value = locator[key];
-  return typeof value === 'string' && value.trim().length > 0 ? value : null;
+function firstLocatorString(locator: Record<string, unknown>, keys: string[]): string | null {
+  for (const key of keys) {
+    const value = locator[key];
+    if (typeof value === 'string' && value.trim().length > 0) return value.trim();
+  }
+  return null;
 }
 
-function locatorNumber(locator: Record<string, unknown>, key: string): number | null {
-  const value = locator[key];
-  return typeof value === 'number' && Number.isFinite(value) ? value : null;
+function firstLocatorNumber(locator: Record<string, unknown>, keys: string[]): number | null {
+  for (const key of keys) {
+    const value = locator[key];
+    if (typeof value === 'number' && Number.isFinite(value)) return value;
+    if (typeof value === 'string' && value.trim().length > 0) {
+      const parsed = Number(value.trim().replace(/^#/, ''));
+      if (Number.isInteger(parsed) && parsed > 0) return parsed;
+    }
+  }
+  return null;
 }
 
 export function ChallengePacketPanel({
   packet,
   compact = false,
 }: ChallengePacketPanelProps): JSX.Element {
-  const repositoryUrl = locatorString(packet.locator, 'repositoryUrl');
-  const baseCommitSha = locatorString(packet.locator, 'baseCommitSha');
-  const githubPrNumber = locatorNumber(packet.locator, 'githubPrNumber');
+  const repositoryUrl = firstLocatorString(packet.locator, ['repositoryUrl', 'githubRepoUrl', 'repoUrl']);
+  const baseCommitSha = firstLocatorString(packet.locator, ['baseCommitSha', 'baseCommit']);
+  const githubPrNumber = firstLocatorNumber(packet.locator, ['githubPrNumber', 'prNumber', 'pullRequestNumber']);
 
   return (
     <section

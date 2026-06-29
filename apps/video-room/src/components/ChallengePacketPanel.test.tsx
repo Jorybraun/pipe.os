@@ -51,4 +51,19 @@ describe('ChallengePacketPanel', () => {
       'Commit SHA on assessment branch',
     );
   });
+
+  it('accepts alternate persisted locator names from source-backed packets', () => {
+    render(<ChallengePacketPanel packet={{
+      ...packet,
+      locator: {
+        githubRepoUrl: 'https://github.com/pipe/alternate-worker',
+        prNumber: '145',
+        baseCommit: 'eeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeee',
+      },
+    }} />);
+
+    expect(screen.getByText('https://github.com/pipe/alternate-worker')).not.toBeNull();
+    expect(screen.getByText('#145')).not.toBeNull();
+    expect(screen.getByText('eeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeee')).not.toBeNull();
+  });
 });
