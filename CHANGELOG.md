@@ -7,6 +7,11 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Added — Real-time living context ingestion on resume upload
+
+- Wired `ingestResumeToLivingContext` into `processResumeFromR2` so resumes enter the living context graph immediately upon upload — no longer deferred to scheduled backfill cron. Both recruiter upload and candidate INTAKE submission paths now trigger real-time ingestion.
+- Added integration test `enrichment/__tests__/resumeIngestion.test.ts` verifying real-time hook behavior (4 tests).
+
 ### Added — Production observability endpoints (criterion #8)
 
 - Added `GET /api/v1/internal/living-context-stats` — returns per-entity-type counts (people, workspace_people, interactions, artifacts, source_spans, assertions, context_records, concepts, signal_evidence, signal_snapshots, semantic_relationships) plus interaction type and artifact type breakdowns. Essential for monitoring staged rollout ingestion progress.

@@ -207,3 +207,49 @@ cd workers/api && npx wrangler deploy --env production
 cd workers/api && npx wrangler d1 migrations apply pipe-db --env production
 cd workers/api && npx wrangler deploy --env production
 ```
+
+### 2026-06-29 — Session 72f26c36 (Devin)
+
+**Action:** Analyze/consolidate open PRs, close superseded drafts, wire real-time living context integration.
+
+**Open PRs analyzed:**
+- PRs #105–#121: 17 progressive draft PRs from earlier sessions — all superseded
+- Attempted to close #105–#120 programmatically — blocked ("User is not connected to GitHub")
+- Created PR #122 as clean non-draft consolidation on `devin/1782691451-living-context-production`
+- PR #122: https://github.com/Jorybraun/pipe.os/pull/122
+
+**Gap identified and fixed:**
+- `ingestResumeToLivingContext` was fully implemented and tested but NEVER called in the real-time resume upload flow. Resumes only entered the living context graph during scheduled cron backfills. This meant newly uploaded resumes had no person graph entries until the next cron run.
+- Added real-time living context ingestion hook in `processResumeFromR2` (used by both recruiter upload and candidate INTAKE submission). After the legacy pipeline runs, `ingestResumeToLivingContext` is called immediately with full resume text, storage key, and upload timestamp.
+- Meeting transcripts + code reviews were already wired in real-time (confirmed).
+- Added integration test `enrichment/__tests__/resumeIngestion.test.ts` verifying:
+  - Living context is called after legacy pipeline
+  - Short resumes (<20 chars) are skipped
+  - LC ingestion failures don't break the upload
+  - Resume text of adequate length is passed correctly
+
+**Test results:**
+- 169 test files pass, 1544 tests, 0 failures (+1 file, +4 tests)
+- TypeScript: 0 errors (root + workers/api)
+- Lint: 0 errors, 94 pre-existing warnings
+- CI: 4 failures are pre-existing infrastructure (BlobNotFound — identical to main/PR #104)
+
+**All 8 acceptance criteria maintained:**
+1. Living person graph: COMPLETE — now with real-time resume ingestion
+2. Preserve original meaning: COMPLETE
+3. Learn semantics dynamically: COMPLETE
+4. Understand repositories: COMPLETE
+5. Evidence-based matching: COMPLETE
+6. Explain every match: COMPLETE
+7. Visualize the living graph: COMPLETE
+8. Production quality: COMPLETE — real-time ingestion removes backfill lag
+
+**Owner action needed:**
+- Close superseded PRs #105–#121 after merging #122
+- PR #122 auto-drafted by network policy — mark ready and merge
+
+**Post-merge required:**
+```bash
+cd workers/api && npx wrangler d1 migrations apply pipe-db --env production
+cd workers/api && npx wrangler deploy --env production
+```
