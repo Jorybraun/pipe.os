@@ -110,13 +110,6 @@ function contextRecord(overrides: Partial<LivingContextRecord> = {}): LivingCont
     narrative: 'Code review score report evidence for session review-session-1.',
     qualifiers: {
       sessionId: 'review-session-1',
-      selectedReviewChallenge: {
-        repoFullName: 'pierre/diffs',
-        repoUrl: 'https://github.com/pierre/diffs',
-        prNumber: 95,
-        matchStatus: 'MATCHED',
-        packetQualityScore: 0.94,
-      },
     },
     confidence: null,
     polarity: 1,
@@ -181,12 +174,6 @@ function makeLivingContext(): LivingContextReadModel {
         qualifiers: {
           sessionId: 'review-session-1',
           finalVerdictDecision: 'request_changes',
-          selectedReviewChallenge: {
-            repoFullName: 'pierre/diffs',
-            repoUrl: 'https://github.com/pierre/diffs',
-            prNumber: 95,
-            matchStatus: 'MATCHED',
-          },
         },
         sources: [
           sourceSpan({

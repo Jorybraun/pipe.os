@@ -105,6 +105,15 @@ function optionalNumber(value: unknown): number | null {
   return typeof value === 'number' && Number.isFinite(value) ? value : null;
 }
 
+function optionalNumericValue(value: unknown): number | null {
+  if (typeof value === 'number' && Number.isFinite(value)) return value;
+  if (typeof value === 'string' && value.trim().length > 0) {
+    const parsed = Number(value);
+    return Number.isFinite(parsed) ? parsed : null;
+  }
+  return null;
+}
+
 function stringArray(value: unknown): string[] {
   return Array.isArray(value)
     ? value.filter((item): item is string => typeof item === 'string' && item.trim().length > 0)
@@ -184,17 +193,37 @@ function parseScoreProjection(record: LivingContextRecord | null): CodeReviewSco
 function readChallengeProjection(record: LivingContextRecord | null): CodeReviewChallengeProjection | null {
   if (!record) return null;
   const selected = record.qualifiers.selectedReviewChallenge;
-  if (!isRecord(selected)) return null;
-  const repoUrl = optionalString(selected.repoUrl) ?? optionalString(selected.githubRepoUrl);
-  const repoLabel = optionalString(selected.repoFullName)
-    ?? optionalString(selected.fullName)
-    ?? (repoUrl ? repoUrl.replace(/^https:\/\/github\.com\//, '') : null);
-  return {
-    repoLabel,
-    repoUrl,
-    prNumber: optionalNumber(selected.prNumber),
-    matchStatus: optionalString(selected.matchStatus),
-  };
+  if (isRecord(selected)) {
+    const repoUrl = optionalString(selected.repoUrl) ?? optionalString(selected.githubRepoUrl);
+    const repoLabel = optionalString(selected.repoFullName)
+      ?? optionalString(selected.fullName)
+      ?? (repoUrl ? repoUrl.replace(/^https:\/\/github\.com\//, '') : null);
+    return {
+      repoLabel,
+      repoUrl,
+      prNumber: optionalNumericValue(selected.prNumber),
+      matchStatus: optionalString(selected.matchStatus),
+    };
+  }
+
+  for (const source of record.sources) {
+    if (!('locator' in source) || !isRecord(source.locator)) continue;
+    const repoUrl = optionalString(source.locator.repoUrl) ?? optionalString(source.locator.githubRepoUrl);
+    const repoLabel = optionalString(source.locator.repoFullName)
+      ?? optionalString(source.locator.fullName)
+      ?? optionalString(source.locator.repo)
+      ?? (repoUrl ? repoUrl.replace(/^https:\/\/github\.com\//, '') : null);
+    const prNumber = optionalNumericValue(source.locator.prNumber ?? source.locator.githubPrNumber);
+    if (!repoLabel && !repoUrl && prNumber === null) continue;
+    return {
+      repoLabel,
+      repoUrl,
+      prNumber,
+      matchStatus: optionalString(source.locator.matchStatus) ?? optionalString(source.metadata.status),
+    };
+  }
+
+  return null;
 }
 
 function verdictLabel(verdict: string | null): string | null {
