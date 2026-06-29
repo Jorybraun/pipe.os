@@ -36,7 +36,7 @@ describe('ClippyAssistant', () => {
     mockAgentConnection();
   });
 
-  it('does not mount a second clippyjs sprite outside the controlled Win95 UI', () => {
+  it('renders one controlled Clippy character without mounting the old duplicate clippyjs sprite', () => {
     render(
       <ClippyAssistant
         messages={[{ text: 'Need help opening the workspace?', hold: true }]}
@@ -47,7 +47,24 @@ describe('ClippyAssistant', () => {
     );
 
     expect(document.querySelector('[data-clippy-anchor]')).toBeNull();
+    expect(screen.getByTestId('clippy-character')).not.toBeNull();
     expect(screen.getByTestId('clippy-proactive-card').textContent).toContain('Need help opening the workspace?');
+  });
+
+  it('keeps a controlled Clippy character visible in the agent bridge chat', async () => {
+    render(
+      <ClippyAssistant
+        messages={[]}
+        onDismiss={vi.fn()}
+        agentEnabled={false}
+        agentWsUrl={null}
+        openChatRequest={1}
+      />,
+    );
+
+    expect(await screen.findByTestId('clippy-chat')).toBeTruthy();
+    expect(screen.getByTestId('clippy-character')).not.toBeNull();
+    expect(document.querySelector('[data-clippy-anchor]')).toBeNull();
   });
 
   it('opens a real-agent status panel before the workspace bridge is active', async () => {

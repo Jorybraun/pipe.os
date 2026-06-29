@@ -19,6 +19,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Fixed — Video room
 
+- Clippy now renders as a single controlled Win95 paperclip character in the proactive prompt and agent bridge chat, preserving the no-duplicate-sprite fix without leaving only a floating dialog behind.
 - Clippy's proactive prompt now hides while the Clippy agent bridge window is open, preventing overlapping Win95 dialogs from blocking chat controls.
 - Video-room no-device joins now keep retry controls styled and disable unavailable mic/camera buttons instead of publishing source-less media-control actions.
 - Video rooms now let participants enter when camera or microphone access is unavailable, while keeping a retry-devices action for restoring media after joining.

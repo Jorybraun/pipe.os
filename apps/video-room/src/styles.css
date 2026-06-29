@@ -2792,30 +2792,121 @@ button:focus-visible {
 }
 
 /* Clippy Chat UI */
-.win95-clippy-prompt {
+.win95-clippy-prompt-shell {
   position: fixed;
-  right: 104px;
-  bottom: 92px;
-  width: min(320px, calc(100vw - 32px));
+  right: 24px;
+  bottom: 74px;
+  display: flex;
+  align-items: flex-end;
+  gap: 10px;
+  z-index: 100001;
+  pointer-events: none;
+}
+
+.win95-clippy-character {
+  position: relative;
+  width: 72px;
+  height: 88px;
+  flex: 0 0 auto;
+  display: grid;
+  place-items: end center;
+  color: #7a7f87;
+  filter: drop-shadow(2px 3px 0 rgba(0, 0, 0, 0.35));
+  pointer-events: none;
+}
+
+.win95-clippy-character.is-compact {
+  width: 28px;
+  height: 24px;
+  display: inline-grid;
+  place-items: center;
+  filter: none;
+}
+
+.win95-clippy-character-body {
+  position: relative;
+  display: block;
+  transform: rotate(-9deg);
+}
+
+.win95-clippy-character.is-working .win95-clippy-character-body,
+.win95-clippy-character.is-thinking .win95-clippy-character-body,
+.win95-clippy-character.is-starting .win95-clippy-character-body {
+  animation: clippy-bob 1s ease-in-out infinite;
+}
+
+.win95-clippy-character-body svg {
+  display: block;
+  stroke: currentColor;
+  fill: rgba(255, 255, 255, 0.58);
+}
+
+.win95-clippy-character-eyes {
+  position: absolute;
+  top: 20px;
+  left: 24px;
+  display: flex;
+  gap: 5px;
+  transform: rotate(9deg);
+}
+
+.win95-clippy-character.is-compact .win95-clippy-character-eyes {
+  top: 9px;
+  left: 10px;
+  gap: 3px;
+}
+
+.win95-clippy-character-eyes span {
+  width: 6px;
+  height: 8px;
+  border-radius: 50%;
+  background: #fff;
+  border: 1px solid #2d3742;
+  box-shadow: inset 2px 2px 0 #2d3742;
+}
+
+.win95-clippy-character.is-compact .win95-clippy-character-eyes span {
+  width: 3px;
+  height: 4px;
+  border-width: 1px;
+  box-shadow: inset 1px 1px 0 #2d3742;
+}
+
+.win95-clippy-character-shadow {
+  position: absolute;
+  bottom: 0;
+  width: 46px;
+  height: 9px;
+  border-radius: 50%;
+  background: rgba(0, 0, 0, 0.18);
+}
+
+.win95-clippy-character.is-compact .win95-clippy-character-shadow {
+  display: none;
+}
+
+.win95-clippy-prompt {
+  position: relative;
+  width: min(320px, calc(100vw - 128px));
   background: #ffffe1;
   border: 2px solid;
   border-color: #f8f8f8 #0a0a0a #0a0a0a #f8f8f8;
   box-shadow: 3px 3px 0 rgba(0, 0, 0, 0.45);
   color: #000;
-  z-index: 100001;
   font-family: 'Tahoma', 'MS Sans Serif', sans-serif;
   font-size: 12px;
+  pointer-events: auto;
 }
 
 .win95-clippy-prompt::after {
   content: '';
   position: absolute;
-  right: 30px;
-  bottom: -12px;
+  left: -12px;
+  bottom: 20px;
   width: 18px;
   height: 18px;
   background: #ffffe1;
-  border-right: 2px solid #0a0a0a;
+  border-left: 2px solid #f8f8f8;
   border-bottom: 2px solid #0a0a0a;
   transform: rotate(45deg);
 }
@@ -2936,6 +3027,20 @@ button:focus-visible {
   color: #fff;
   padding: 3px 8px;
   font-weight: bold;
+}
+
+.win95-clippy-chat-title {
+  display: flex;
+  min-width: 0;
+  align-items: center;
+  gap: 6px;
+}
+
+.win95-clippy-chat-title > span:last-child {
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
 }
 
 .win95-clippy-chat-header button {
@@ -3092,6 +3197,11 @@ button:focus-visible {
 @keyframes clippy-pulse {
   0%, 100% { opacity: 1; }
   50% { opacity: 0.3; }
+}
+
+@keyframes clippy-bob {
+  0%, 100% { transform: translateY(0) rotate(-9deg); }
+  50% { transform: translateY(-4px) rotate(-6deg); }
 }
 
 .win95-clippy-chat-auth-btn {

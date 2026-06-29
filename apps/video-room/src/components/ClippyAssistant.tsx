@@ -1,4 +1,5 @@
 import { useEffect, useMemo, useRef, useState, useCallback } from 'react';
+import { Paperclip } from 'lucide-react';
 import {
   useAgentConnection,
   type AgentChatMessage,
@@ -55,6 +56,31 @@ export interface ClippyAssistantProps {
   onAgentChatMessage?: (message: AgentChatMessage) => void;
   onAgentStatus?: (status: AgentStatus, agentName: string) => void;
   onAgentFileChange?: (event: AgentFileChangeEvent) => void;
+}
+
+function ClippyCharacter({
+  compact = false,
+  status = 'idle',
+}: {
+  compact?: boolean;
+  status?: AgentStatus | 'unavailable';
+}): JSX.Element {
+  return (
+    <div
+      className={`win95-clippy-character${compact ? ' is-compact' : ''} is-${status}`}
+      data-testid="clippy-character"
+      aria-label="Clippy"
+    >
+      <span className="win95-clippy-character-shadow" aria-hidden="true" />
+      <span className="win95-clippy-character-body" aria-hidden="true">
+        <Paperclip size={compact ? 28 : 62} strokeWidth={compact ? 2.4 : 1.8} />
+        <span className="win95-clippy-character-eyes">
+          <span />
+          <span />
+        </span>
+      </span>
+    </div>
+  );
 }
 
 export function ClippyAssistant({
@@ -360,41 +386,47 @@ export function ClippyAssistant({
   return (
     <>
       {showPrompt && currentPrompt && (
-        <div className="win95-clippy-prompt" data-testid="clippy-proactive-card">
-          <div className="win95-clippy-prompt-title">
-            <span>Clippy</span>
-            <button
-              type="button"
-              onClick={handleDismiss}
-              aria-label="Dismiss Clippy"
-              data-testid="clippy-dismiss"
-            >
-              ×
-            </button>
-          </div>
-          <p>{currentPrompt.text}</p>
-          {currentPrompt.actions && currentPrompt.actions.length > 0 && (
-            <div className="win95-clippy-prompt-actions">
-              {currentPrompt.actions.map((action) => (
-                <button
-                  key={action.id}
-                  type="button"
-                  onClick={() => handleActionClick(action.id)}
-                  disabled={action.disabled}
-                  data-testid={`clippy-action-${action.id}`}
-                >
-                  {action.label}
-                </button>
-              ))}
+        <div className="win95-clippy-prompt-shell">
+          <ClippyCharacter status={agentEnabled ? agentConn.status : 'unavailable'} />
+          <div className="win95-clippy-prompt" data-testid="clippy-proactive-card">
+            <div className="win95-clippy-prompt-title">
+              <span>Clippy</span>
+              <button
+                type="button"
+                onClick={handleDismiss}
+                aria-label="Dismiss Clippy"
+                data-testid="clippy-dismiss"
+              >
+                ×
+              </button>
             </div>
-          )}
+            <p>{currentPrompt.text}</p>
+            {currentPrompt.actions && currentPrompt.actions.length > 0 && (
+              <div className="win95-clippy-prompt-actions">
+                {currentPrompt.actions.map((action) => (
+                  <button
+                    key={action.id}
+                    type="button"
+                    onClick={() => handleActionClick(action.id)}
+                    disabled={action.disabled}
+                    data-testid={`clippy-action-${action.id}`}
+                  >
+                    {action.label}
+                  </button>
+                ))}
+              </div>
+            )}
+          </div>
         </div>
       )}
 
       {chatOpen && (
         <div className="win95-clippy-chat" data-testid="clippy-chat">
           <div className="win95-clippy-chat-header">
-            <span>Clippy — {chatAgentName}</span>
+            <span className="win95-clippy-chat-title">
+              <ClippyCharacter compact status={agentEnabled ? agentConn.status : 'unavailable'} />
+              <span>Clippy — {chatAgentName}</span>
+            </span>
             <button
               type="button"
               onClick={closeChat}
