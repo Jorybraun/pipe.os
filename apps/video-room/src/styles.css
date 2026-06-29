@@ -2794,11 +2794,12 @@ button:focus-visible {
 /* Clippy Chat UI */
 .win95-clippy-prompt-shell {
   position: fixed;
-  right: 18px;
-  bottom: 74px;
+  right: 14px;
+  bottom: 58px;
   display: flex;
+  max-width: calc(100vw - 28px);
   align-items: flex-end;
-  gap: 10px;
+  gap: 8px;
   z-index: 100001;
   pointer-events: none;
 }
@@ -2892,7 +2893,7 @@ button:focus-visible {
 
 .win95-clippy-prompt {
   position: relative;
-  width: min(320px, calc(100vw - 128px));
+  width: min(284px, calc(100vw - 112px));
   background: #ffffe1;
   border: 2px solid;
   border-color: #f8f8f8 #0a0a0a #0a0a0a #f8f8f8;

@@ -18,6 +18,7 @@ import {
 import { useApiClient } from '../hooks/useApiClient';
 import { asCodeReviewReviewProfile, ReviewProfileCard } from '../components/Assessment/CodeReviewChallenge';
 import type {
+  AssessmentEvidenceCoverageItem,
   AssessmentProgressSnapshot,
   CodeReviewEvidencePlanItem,
   CodeReviewMatchAlignment,
@@ -289,6 +290,38 @@ function assessmentEvidenceSummary(input: {
     input.hasTestEvidence ? 'tests' : null,
   ].filter((value): value is string => Boolean(value));
   return ready.length > 0 ? ready.join(', ') : 'No evidence yet';
+}
+
+function assessmentCoverageLabel(label: string): string {
+  switch (label) {
+    case 'test_run':
+      return 'Tests';
+    case 'terminal_activity':
+      return 'Terminal';
+    case 'code_editor_activity':
+      return 'Editor';
+    case 'ai_assistance':
+      return 'AI use';
+    case 'challenge_packet':
+      return 'Challenge';
+    case 'git_commit':
+      return 'Commit';
+    case 'code_diff':
+      return 'Diff';
+    default:
+      return sentenceCaseToken(label);
+  }
+}
+
+function assessmentCoverageItems(progress: AssessmentProgressSnapshot | null): AssessmentEvidenceCoverageItem[] {
+  const coverage = progress?.evaluation?.evidenceCoverage ?? null;
+  if (!coverage) return [];
+  return coverage.expectedForHighConfidence.filter((item) => [
+    'test_run',
+    'terminal_activity',
+    'code_editor_activity',
+    'ai_assistance',
+  ].includes(item.label));
 }
 
 function sourceRefText(ref: CodeReviewMatchSourceRef | null | undefined): string | null {
@@ -1523,6 +1556,7 @@ export default function InterviewDetailPage(): JSX.Element {
     ? assessmentChallengeSummary(assessmentProgress.challenge)
     : null;
   const assessmentProgressSourceRefCounts = assessmentProgress?.sourceRefCounts ?? [];
+  const assessmentCoverage = assessmentCoverageItems(assessmentProgress);
   const canStartAssessmentEvaluation = assessmentProgress?.nextAction === 'START_EVALUATION';
   const showsRoomPanel = !isCodeReviewInterview;
   const hasCallRecordEvidence = Boolean(
@@ -1877,6 +1911,22 @@ export default function InterviewDetailPage(): JSX.Element {
                   <span style={FIELD_LABEL}>Evaluation</span>
                   <span style={{ ...FIELD_VALUE, lineHeight: 1.5 }}>
                     {assessmentEvaluationStatusLabel(assessmentProgress.evaluation.status)} · {assessmentProgress.evaluation.summary}
+                  </span>
+                </div>
+              )}
+              {assessmentCoverage.length > 0 && (
+                <div style={{ ...EVIDENCE_ROW, alignItems: 'flex-start' }}>
+                  <span style={FIELD_LABEL}>Coverage</span>
+                  <span style={{ ...FIELD_VALUE, ...ASSESSMENT_COVERAGE_CHIPS }}>
+                    {assessmentCoverage.map((item) => (
+                      <span
+                        key={item.label}
+                        style={item.satisfied ? ASSESSMENT_COVERAGE_OK : ASSESSMENT_COVERAGE_MISSING}
+                        title={item.satisfied ? undefined : item.missingImpact}
+                      >
+                        {assessmentCoverageLabel(item.label)} {item.satisfied ? 'captured' : 'missing'}
+                      </span>
+                    ))}
                   </span>
                 </div>
               )}
@@ -2857,6 +2907,26 @@ const ASSESSMENT_PROGRESS_DETAIL: CSSProperties = {
   gap: 8,
   borderTop: '1px solid var(--pipe-border)',
   paddingTop: 12,
+};
+
+const ASSESSMENT_COVERAGE_CHIPS: CSSProperties = {
+  display: 'flex',
+  flexWrap: 'wrap',
+  gap: 6,
+};
+
+const ASSESSMENT_COVERAGE_OK: CSSProperties = {
+  ...recruiterTagStyle,
+  borderColor: 'rgba(74,222,128,0.32)',
+  background: 'rgba(74,222,128,0.08)',
+  color: '#86efac',
+};
+
+const ASSESSMENT_COVERAGE_MISSING: CSSProperties = {
+  ...recruiterTagStyle,
+  borderColor: 'rgba(248,113,113,0.36)',
+  background: 'rgba(248,113,113,0.08)',
+  color: '#fca5a5',
 };
 
 const WORKSPACE_CONFIG_FORM: CSSProperties = {

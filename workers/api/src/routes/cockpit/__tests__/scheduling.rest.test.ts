@@ -1531,7 +1531,14 @@ describe('GET /interviews/:id detail', () => {
         stage: string;
         nextAction: string;
         hasAiInteraction: boolean;
-        evaluation: { status: string; summary: string } | null;
+        evaluation: {
+          status: string;
+          summary: string;
+          evidenceCoverage?: {
+            schemaVersion?: string;
+            expectedForHighConfidence?: Array<{ label?: string; satisfied?: boolean }>;
+          } | null;
+        } | null;
         evidenceCounts: Array<{ kind: string; count: number }>;
       };
       report: { id: string; sessionId: string; status: string; contextRecordId: string | null } | null;
@@ -1588,6 +1595,12 @@ describe('GET /interviews/:id detail', () => {
       evaluation: {
         status: 'EVALUATED',
         summary: 'Candidate made a focused source-backed change and cited the submitted diff evidence.',
+        evidenceCoverage: {
+          schemaVersion: 'assessment-evidence-coverage-v1',
+          expectedForHighConfidence: expect.arrayContaining([
+            expect.objectContaining({ label: 'test_run', satisfied: false }),
+          ]),
+        },
       },
     });
     expect(body.progress.evidenceCounts).toEqual(expect.arrayContaining([

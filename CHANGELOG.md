@@ -19,6 +19,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Fixed — Video room
 
+- Standard-room Clippy tray clicks now restore the visible mascot prompt without opening or closing the dev-container agent bridge, and the prompt is tightened so the paperclip stays visible beside the bubble.
 - Win95 taskbar Clippy clicks now publish tray-origin source-backed evidence instead of leaking the DOM click event into the Clippy action origin.
 - Closing a Clippy speech bubble now dismisses only that prompt instead of hiding the assistant, keeping the paperclip recoverable from the tray and agent bridge chat.
 - Clippy now renders as a single controlled Win95 paperclip character in the proactive prompt and agent bridge chat, preserving the no-duplicate-sprite fix without leaving only a floating dialog behind.
@@ -43,6 +44,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Fixed — Candidate repo matching
 
+- Assessment progress snapshots now preserve evaluator evidence-coverage gates and show quiet captured/missing chips for tests, terminal, editor, and AI-use evidence, making repo-task scores easier to trust without exposing raw source refs.
 - CODE_REVIEW interview match panels now collapse assessment-quality rubric details behind a quiet quality gate, keeping the recruiter decision readable while preserving source-backed checks.
 - Repo-task AI evaluation prompts now include a deterministic source-ref coverage contract, making missing test, terminal, editor, or AI-assistance evidence explicit and preserving that coverage in the evaluation report.
 - CODE_REVIEW match proof drawers now use human evidence fallbacks instead of exposing source-span, atom, demand, or gap ids when exact source text is unavailable.

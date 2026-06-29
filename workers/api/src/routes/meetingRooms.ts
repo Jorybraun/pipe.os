@@ -2474,6 +2474,7 @@ function serializeRoomAssessmentProgress(
           status: progress.evaluation.status,
           summary: progress.evaluation.summary,
           createdAt: progress.evaluation.createdAt,
+          evidenceCoverage: progress.evaluation.evidenceCoverage,
         }
       : null,
   };

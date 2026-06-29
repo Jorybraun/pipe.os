@@ -187,12 +187,11 @@ export function ClippyAssistant({
     if (!canOpenAgentBridgeChat) {
       setDismissedPromptSignature(null);
       setLocalChatOpen(false);
-      onChatClose?.();
       return;
     }
     setLocalChatOpen(true);
     onChatOpen?.();
-  }, [canOpenAgentBridgeChat, onChatClose, onChatOpen]);
+  }, [canOpenAgentBridgeChat, onChatOpen]);
 
   const closeChat = useCallback(() => {
     setLocalChatOpen(false);

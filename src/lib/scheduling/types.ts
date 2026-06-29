@@ -94,6 +94,23 @@ export type AssessmentProgressNextAction =
   | 'RESOLVE_DIAGNOSTIC'
   | 'NONE';
 
+export interface AssessmentEvidenceCoverageItem {
+  label: string;
+  required: boolean;
+  sourceRefTypes: string[];
+  satisfied: boolean;
+  sourceRefKeys: string[];
+  missingImpact: string;
+}
+
+export interface AssessmentEvidenceCoverageSnapshot {
+  schemaVersion: string;
+  sourceRefCount: number;
+  sourceRefTypeCounts: Record<string, number>;
+  requiredForEvaluation: AssessmentEvidenceCoverageItem[];
+  expectedForHighConfidence: AssessmentEvidenceCoverageItem[];
+}
+
 export interface AssessmentProgressSnapshot {
   session: {
     id: string;
@@ -149,6 +166,7 @@ export interface AssessmentProgressSnapshot {
     status: string;
     summary: string;
     createdAt: string;
+    evidenceCoverage?: AssessmentEvidenceCoverageSnapshot | null;
   } | null;
 }
 

@@ -286,11 +286,29 @@ export interface AssessmentProgressCommit {
   occurredAt: string;
 }
 
+export interface AssessmentEvidenceCoverageItem {
+  label: string;
+  required: boolean;
+  sourceRefTypes: string[];
+  satisfied: boolean;
+  sourceRefKeys: string[];
+  missingImpact: string;
+}
+
+export interface AssessmentEvidenceCoverageSnapshot {
+  schemaVersion: string;
+  sourceRefCount: number;
+  sourceRefTypeCounts: Record<string, number>;
+  requiredForEvaluation: AssessmentEvidenceCoverageItem[];
+  expectedForHighConfidence: AssessmentEvidenceCoverageItem[];
+}
+
 export interface AssessmentProgressEvaluation {
   id: string;
   status: EvaluationReportStatus;
   summary: string;
   createdAt: string;
+  evidenceCoverage: AssessmentEvidenceCoverageSnapshot | null;
 }
 
 export interface AssessmentProgressSnapshot {
@@ -594,6 +612,73 @@ function jsonStringValue(value: JsonValue | undefined): string | null {
 
 function jsonArrayValue(value: JsonValue | undefined): JsonValue[] {
   return Array.isArray(value) ? value : [];
+}
+
+function jsonStringArrayValue(value: JsonValue | undefined): string[] {
+  return jsonArrayValue(value)
+    .filter((item): item is string => typeof item === 'string' && item.trim().length > 0);
+}
+
+function jsonNumberValue(value: JsonValue | undefined): number | null {
+  return typeof value === 'number' && Number.isFinite(value) ? value : null;
+}
+
+function jsonBooleanValue(value: JsonValue | undefined): boolean | null {
+  return typeof value === 'boolean' ? value : null;
+}
+
+function jsonObjectValue(value: JsonValue | undefined): JsonObject | null {
+  if (value === null || value === undefined || Array.isArray(value) || typeof value !== 'object') return null;
+  return value;
+}
+
+function parseCoverageTypeCounts(value: JsonValue | undefined): Record<string, number> {
+  const object = jsonObjectValue(value);
+  if (!object) return {};
+  const counts: Record<string, number> = {};
+  for (const [key, rawCount] of Object.entries(object)) {
+    const count = jsonNumberValue(rawCount);
+    if (count !== null && count >= 0) counts[key] = count;
+  }
+  return counts;
+}
+
+function parseCoverageItem(value: JsonValue): AssessmentEvidenceCoverageItem | null {
+  const object = jsonObjectValue(value);
+  if (!object) return null;
+  const label = jsonStringValue(object.label);
+  const required = jsonBooleanValue(object.required);
+  const satisfied = jsonBooleanValue(object.satisfied);
+  if (!label || required === null || satisfied === null) return null;
+  return {
+    label,
+    required,
+    sourceRefTypes: jsonStringArrayValue(object.sourceRefTypes),
+    satisfied,
+    sourceRefKeys: jsonStringArrayValue(object.sourceRefKeys),
+    missingImpact: jsonStringValue(object.missingImpact) ?? '',
+  };
+}
+
+function parseCoverageItems(value: JsonValue | undefined): AssessmentEvidenceCoverageItem[] {
+  return jsonArrayValue(value)
+    .map(parseCoverageItem)
+    .filter((item): item is AssessmentEvidenceCoverageItem => Boolean(item));
+}
+
+function parseEvidenceCoverage(output: JsonObject): AssessmentEvidenceCoverageSnapshot | null {
+  const coverage = jsonObjectValue(output.evidenceCoverage);
+  if (!coverage) return null;
+  const schemaVersion = jsonStringValue(coverage.schemaVersion);
+  if (schemaVersion !== 'assessment-evidence-coverage-v1') return null;
+
+  return {
+    schemaVersion,
+    sourceRefCount: jsonNumberValue(coverage.sourceRefCount) ?? 0,
+    sourceRefTypeCounts: parseCoverageTypeCounts(coverage.sourceRefTypeCounts),
+    requiredForEvaluation: parseCoverageItems(coverage.requiredForEvaluation),
+    expectedForHighConfidence: parseCoverageItems(coverage.expectedForHighConfidence),
+  };
 }
 
 function hasEventKind(
@@ -1153,7 +1238,7 @@ export class RepoTaskInterviewSessionStore {
 
   private async loadLatestEvaluation(sessionId: string): Promise<AssessmentProgressEvaluation | null> {
     const row = await this.db.prepare(
-      `SELECT id, status, summary, created_at
+      `SELECT id, status, summary, output_json, created_at
          FROM assessment_evaluation_reports
         WHERE session_id = ?1
         ORDER BY created_at DESC, id DESC
@@ -1162,14 +1247,17 @@ export class RepoTaskInterviewSessionStore {
       id: string;
       status: EvaluationReportStatus;
       summary: string;
+      output_json: string | null;
       created_at: string;
     }>();
     if (!row) return null;
+    const output = parseJsonObject(row.output_json);
     return {
       id: row.id,
       status: row.status,
       summary: row.summary,
       createdAt: row.created_at,
+      evidenceCoverage: parseEvidenceCoverage(output),
     };
   }
 

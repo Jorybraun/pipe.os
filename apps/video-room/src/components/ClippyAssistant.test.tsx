@@ -123,7 +123,7 @@ describe('ClippyAssistant', () => {
     expect(document.querySelector('[data-clippy-anchor]')).toBeNull();
   });
 
-  it('does not open the agent bridge dialog in a standard call without a workspace', async () => {
+  it('revives the Clippy prompt without opening the agent bridge dialog in a standard call', async () => {
     const onChatOpen = vi.fn();
     const onChatClose = vi.fn();
     const { rerender } = render(
@@ -159,7 +159,7 @@ describe('ClippyAssistant', () => {
     );
     expect(screen.getByTestId('clippy-character')).not.toBeNull();
     expect(onChatOpen).not.toHaveBeenCalled();
-    expect(onChatClose).toHaveBeenCalledTimes(1);
+    expect(onChatClose).not.toHaveBeenCalled();
   });
 
   it('opens a real-agent status panel before the workspace bridge is active', async () => {

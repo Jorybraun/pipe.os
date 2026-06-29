@@ -459,6 +459,75 @@ describe('InterviewDetailPage', () => {
         status: 'EVALUATED',
         summary: 'Candidate made a focused source-backed change and cited the submitted diff evidence.',
         createdAt: '2026-06-23T00:22:00.000Z',
+        evidenceCoverage: {
+          schemaVersion: 'assessment-evidence-coverage-v1',
+          sourceRefCount: 3,
+          sourceRefTypeCounts: {
+            review_challenge_packet: 1,
+            git_commit: 1,
+            code_diff: 1,
+          },
+          requiredForEvaluation: [
+            {
+              label: 'challenge_packet',
+              required: true,
+              sourceRefTypes: ['review_challenge_packet'],
+              satisfied: true,
+              sourceRefKeys: ['review_challenge_packet:challenge-packet-ready:assigned_challenge:'],
+              missingImpact: '',
+            },
+            {
+              label: 'git_commit',
+              required: true,
+              sourceRefTypes: ['git_commit'],
+              satisfied: true,
+              sourceRefKeys: ['git_commit:abcdef1234567890abcdef1234567890abcdef12:support:'],
+              missingImpact: '',
+            },
+            {
+              label: 'code_diff',
+              required: true,
+              sourceRefTypes: ['code_diff'],
+              satisfied: true,
+              sourceRefKeys: ['code_diff:abcdef1234567890abcdef1234567890abcdef12:diff:support:'],
+              missingImpact: '',
+            },
+          ],
+          expectedForHighConfidence: [
+            {
+              label: 'test_run',
+              required: false,
+              sourceRefTypes: ['test_run'],
+              satisfied: false,
+              sourceRefKeys: [],
+              missingImpact: 'Do not make positive test_strategy or verification claims without test_run evidence.',
+            },
+            {
+              label: 'terminal_activity',
+              required: false,
+              sourceRefTypes: ['terminal_command', 'terminal_output'],
+              satisfied: true,
+              sourceRefKeys: ['terminal_output:terminal-1:support:'],
+              missingImpact: '',
+            },
+            {
+              label: 'code_editor_activity',
+              required: false,
+              sourceRefTypes: ['code_editor_save'],
+              satisfied: false,
+              sourceRefKeys: [],
+              missingImpact: 'Treat edit process as unobserved when editor/file evidence is absent.',
+            },
+            {
+              label: 'ai_assistance',
+              required: false,
+              sourceRefTypes: ['clippy_user_prompt', 'clippy_agent_response'],
+              satisfied: false,
+              sourceRefKeys: [],
+              missingImpact: 'Treat AI usage as unobserved when Clippy/Devin or AI chat evidence is absent.',
+            },
+          ],
+        },
       },
     };
     mocks.api.get.mockResolvedValueOnce({
@@ -489,6 +558,10 @@ describe('InterviewDetailPage', () => {
     expect(progress).toHaveTextContent('Evaluated');
     expect(progress).toHaveTextContent('Review the assessment report and evidence.');
     expect(progress).toHaveTextContent('Evaluated · Candidate made a focused source-backed change and cited the submitted diff evidence.');
+    expect(progress).toHaveTextContent('Tests missing');
+    expect(progress).toHaveTextContent('Terminal captured');
+    expect(progress).toHaveTextContent('Editor missing');
+    expect(progress).toHaveTextContent('AI use missing');
     expect(progress).toHaveTextContent('Source-backed assessment report is ready to review.');
     expect(screen.queryByRole('button', { name: /start evaluation/i })).toBeNull();
   });
