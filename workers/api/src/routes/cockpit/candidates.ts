@@ -20,7 +20,17 @@ import {
   ensureCandidateLivingContext,
   loadCandidateLivingContext,
   LivingContextStore,
+  searchSourceContent,
 } from '../../lib/livingContext';
+import {
+  formatMatchNarrative,
+  type MatchNarrative,
+} from '../../lib/challengeMatching/matchNarrative';
+import type {
+  MatchExplanation,
+  SourceRef as MatchSourceRef,
+  RoleSourceReference,
+} from '../../lib/challengeMatching/types';
 import {
   hasSourceBackedReviewPacket,
   loadSourceBackedReviewPacketById,
@@ -161,12 +171,23 @@ interface StandaloneReviewRoleSource {
   contentHash?: string;
 }
 
+interface StandaloneReviewStretchArea {
+  atomId: string;
+  demandId: string;
+  atomConcept: string;
+  demandConcept: string;
+  dimension: string;
+  candidateSourceRefs: StandaloneReviewSourceRef[];
+  challengeSourceRefs: StandaloneReviewSourceRef[];
+}
+
 interface StandaloneReviewAlignment {
   atomId: string;
   demandId: string;
   purpose: string | null;
   pairScore: number;
   sharedConcepts: string[];
+  stretch: { dimension: string; atomConcept: string; demandConcept: string } | null;
   roleSourceRefs: StandaloneReviewRoleSource[];
   candidateSourceRefs: StandaloneReviewSourceRef[];
   challengeSourceRefs: StandaloneReviewSourceRef[];
@@ -184,7 +205,99 @@ interface StandaloneReviewRankedResult {
   provenanceComplete: boolean;
   eligible: boolean;
   alignments: StandaloneReviewAlignment[];
+  stretchAreas: StandaloneReviewStretchArea[];
+  unmatchedDemandIds: string[];
   rejectionReasons: string[];
+}
+
+interface StandaloneReviewMatchNarrative {
+  title: string;
+  verdict: string;
+  sections: Array<{ heading: string; items: string[] }>;
+  plainText: string;
+}
+
+function toMatchSourceRef(ref: StandaloneReviewSourceRef): MatchSourceRef {
+  return {
+    artifactId: ref.artifactId,
+    artifactVersion: ref.artifactVersion,
+    contentHash: ref.contentHash,
+    startOffset: ref.startOffset,
+    endOffset: ref.endOffset,
+    sourceRefType: ref.sourceRefType,
+    sourceRefId: ref.sourceRefId,
+    sourceSpanId: ref.sourceSpanId,
+    locator: ref.locator,
+    exactText: ref.exactText,
+  };
+}
+
+function toRoleSourceReference(ref: StandaloneReviewRoleSource): RoleSourceReference {
+  return {
+    entityId: ref.entityId,
+    locator: ref.locator,
+    conceptKeys: ref.conceptKeys,
+    sourceRefType: ref.sourceRefType,
+    sourceRefId: ref.sourceRefId,
+    sourceSpanId: ref.sourceSpanId,
+    exactText: ref.exactText,
+    contentHash: ref.contentHash,
+  };
+}
+
+function buildNarrativeFromResult(
+  matchStatus: StandaloneReviewMatchStatus,
+  result: StandaloneReviewRankedResult | null,
+  gaps: string[],
+): StandaloneReviewMatchNarrative | null {
+  if (!result && matchStatus === 'PENDING_INTAKE') return null;
+  const status: MatchExplanation['status'] = matchStatus === 'PENDING_INTAKE'
+    ? 'NEEDS_MORE_EVIDENCE'
+    : matchStatus;
+  const explanation: MatchExplanation = {
+    status,
+    challengeId: result?.challengeId,
+    repoId: result?.repoId,
+    prNumber: result?.prNumber,
+    score: result?.score ?? 0,
+    summary: '',
+    evidence: (result?.alignments ?? []).map((a) => ({
+      atomId: a.atomId,
+      demandId: a.demandId,
+      purpose: (a.purpose ?? 'validation') as 'validation' | 'deepening',
+      pairScore: a.pairScore,
+      episodeMultiplier: 1,
+      stretch: a.stretch
+        ? { atomConcept: a.stretch.atomConcept, demandConcept: a.stretch.demandConcept, dimension: a.stretch.dimension as 'technology' | 'mechanism' | 'domain' | 'scale' | 'review_practice' }
+        : undefined,
+      roleSourceRefs: a.roleSourceRefs.map(toRoleSourceReference),
+      candidateSourceRefs: a.candidateSourceRefs.map(toMatchSourceRef),
+      challengeSourceRefs: a.challengeSourceRefs.map(toMatchSourceRef),
+    })),
+    candidateSpans: [],
+    repoSpans: [],
+    roleSources: [],
+    rejectedPackets: [],
+    missingEvidence: gaps.map((reason) => ({ scope: 'candidate' as const, reason })),
+    stretchAreas: (result?.stretchAreas ?? []).map((s) => ({
+      atomId: s.atomId,
+      demandId: s.demandId,
+      atomConcept: s.atomConcept,
+      demandConcept: s.demandConcept,
+      dimension: s.dimension as 'technology' | 'mechanism' | 'domain' | 'scale' | 'review_practice',
+      candidateSourceRefs: s.candidateSourceRefs.map(toMatchSourceRef),
+      challengeSourceRefs: s.challengeSourceRefs.map(toMatchSourceRef),
+    })),
+    unmatchedDemandIds: result?.unmatchedDemandIds ?? [],
+    rejectionReasons: result?.rejectionReasons ?? [],
+  };
+  const narrative = formatMatchNarrative(explanation);
+  return {
+    title: narrative.title,
+    verdict: narrative.verdict,
+    sections: narrative.sections,
+    plainText: narrative.plainText,
+  };
 }
 
 interface StandaloneReviewPacketMetadata {
@@ -563,12 +676,20 @@ function parseStandaloneReviewRankedResults(
           }
           const sharedConcepts = asStringArray(alignment.sharedConcepts);
           const hasPersistedRoleSourceRefs = Array.isArray(alignment.roleSourceRefs);
+          const stretchRaw = isRecord(alignment.stretch) ? alignment.stretch : null;
+          const stretch = stretchRaw
+            && typeof stretchRaw.dimension === 'string'
+            && typeof stretchRaw.atomConcept === 'string'
+            && typeof stretchRaw.demandConcept === 'string'
+            ? { dimension: stretchRaw.dimension, atomConcept: stretchRaw.atomConcept, demandConcept: stretchRaw.demandConcept }
+            : null;
           return [{
             atomId,
             demandId,
             purpose: typeof alignment.purpose === 'string' ? alignment.purpose : null,
             pairScore,
             sharedConcepts,
+            stretch,
             roleSourceRefs: hasPersistedRoleSourceRefs
               ? parseStandaloneReviewRoleSources(alignment.roleSourceRefs)
               : roleSourcesForSharedConcepts(fallbackRoleSources, sharedConcepts),
@@ -577,6 +698,18 @@ function parseStandaloneReviewRankedResults(
           }];
         })
       : [];
+    const stretchAreas: StandaloneReviewStretchArea[] = alignments
+      .filter((entry): entry is StandaloneReviewAlignment & { stretch: NonNullable<StandaloneReviewAlignment['stretch']> } =>
+        entry.stretch !== null)
+      .map((entry) => ({
+        atomId: entry.atomId,
+        demandId: entry.demandId,
+        atomConcept: entry.stretch.atomConcept,
+        demandConcept: entry.stretch.demandConcept,
+        dimension: entry.stretch.dimension,
+        candidateSourceRefs: entry.candidateSourceRefs,
+        challengeSourceRefs: entry.challengeSourceRefs,
+      }));
     return [{
       rank,
       recallRank,
@@ -589,6 +722,8 @@ function parseStandaloneReviewRankedResults(
       provenanceComplete,
       eligible,
       alignments,
+      stretchAreas,
+      unmatchedDemandIds: asStringArray(item.unmatchedDemandIds),
       rejectionReasons: asStringArray(item.rejectionReasons),
     }];
   });
@@ -1449,6 +1584,226 @@ candidateOps.get('/:candidateId/living-context', async (c) => {
   return c.json({ livingContext });
 });
 
+// GET /:candidateId/living-context/search?q=... — search candidate source content
+candidateOps.get('/:candidateId/living-context/search', async (c) => {
+  const userId = c.var.userId;
+  const { candidateId } = c.req.param();
+  const db = c.env.DB;
+  const query = c.req.query('q') ?? '';
+
+  const candidate = await db.prepare(
+    `SELECT c.id
+       FROM candidates c
+       LEFT JOIN pipelines p ON p.id = c.pipeline_id
+      WHERE c.id = ?1 AND (c.owner_id = ?2 OR p.owner_id = ?2)`,
+  ).bind(candidateId, userId).first<{ id: string }>();
+  if (!candidate) return apiError(c, 'NOT_FOUND', 'Candidate not found.');
+
+  const wp = await db.prepare(
+    `SELECT wp.id
+       FROM applications app
+       JOIN workspace_people wp ON wp.id = app.workspace_person_id
+      WHERE app.legacy_candidate_id = ?1
+      LIMIT 1`,
+  ).bind(candidateId).first<{ id: string }>();
+  if (!wp) return c.json({ personId: candidateId, query, hits: [] });
+
+  const result = await searchSourceContent(db, wp.id, query);
+  return c.json(result);
+});
+
+// GET /:candidateId/living-context/timeline — chronological evidence accumulation feed
+candidateOps.get('/:candidateId/living-context/timeline', async (c) => {
+  const userId = c.var.userId;
+  const { candidateId } = c.req.param();
+  const db = c.env.DB;
+  const limitParam = c.req.query('limit');
+  const before = c.req.query('before') ?? undefined;
+  const after = c.req.query('after') ?? undefined;
+
+  const candidate = await db.prepare(
+    `SELECT c.id
+       FROM candidates c
+       LEFT JOIN pipelines p ON p.id = c.pipeline_id
+      WHERE c.id = ?1 AND (c.owner_id = ?2 OR p.owner_id = ?2)`,
+  ).bind(candidateId, userId).first<{ id: string }>();
+  if (!candidate) return apiError(c, 'NOT_FOUND', 'Candidate not found.');
+
+  const wp = await db.prepare(
+    `SELECT wp.id
+       FROM applications app
+       JOIN workspace_people wp ON wp.id = app.workspace_person_id
+      WHERE app.legacy_candidate_id = ?1
+      LIMIT 1`,
+  ).bind(candidateId).first<{ id: string }>();
+  if (!wp) return c.json({ workspacePersonId: null, totalEntries: 0, entries: [] });
+
+  const { loadPersonEvidenceTimeline } = await import('../../lib/livingContext');
+  const limit = limitParam ? Math.min(parseInt(limitParam, 10) || 100, 500) : 100;
+  const timeline = await loadPersonEvidenceTimeline(db, wp.id, { limit, before, after });
+  return c.json(timeline);
+});
+
+// GET /:candidateId/living-context/match-narrative — recruiter-facing match narrative
+candidateOps.get('/:candidateId/living-context/match-narrative', async (c) => {
+  const userId = c.var.userId;
+  const { candidateId } = c.req.param();
+  const db = c.env.DB;
+
+  const candidate = await db.prepare(
+    `SELECT c.id
+       FROM candidates c
+       LEFT JOIN pipelines p ON p.id = c.pipeline_id
+      WHERE c.id = ?1 AND (c.owner_id = ?2 OR p.owner_id = ?2)`,
+  ).bind(candidateId, userId).first<{ id: string }>();
+  if (!candidate) return apiError(c, 'NOT_FOUND', 'Candidate not found.');
+
+  const latestRun = await db.prepare(
+    `SELECT id, status, ranked_results_json, excluded_packets_json, query_json, selected_packet_id
+       FROM match_runs
+      WHERE candidate_id = ?1
+        AND role_snapshot_id = 'standalone-code-review-v1'
+      ORDER BY created_at DESC, id DESC
+      LIMIT 1`,
+  ).bind(candidateId).first<{
+    id: string;
+    status: 'MATCHED' | 'NEEDS_MORE_EVIDENCE' | 'NO_ROLE_SAFE_CHALLENGE' | 'FAILED';
+    ranked_results_json: string | null;
+    excluded_packets_json: string | null;
+    query_json: string | null;
+    selected_packet_id: string | null;
+  }>();
+
+  if (!latestRun) {
+    return c.json({
+      candidateId,
+      matchRunId: null,
+      narrative: null,
+    });
+  }
+
+  const roleSources = parseStandaloneReviewRoleSourcesFromQuery(latestRun.query_json);
+  const rankedResults = parseStandaloneReviewRankedResults(
+    latestRun.ranked_results_json,
+    roleSources,
+  );
+  const selectedResult = rankedResults.find((r) =>
+    r.challengeId === latestRun.selected_packet_id
+  ) ?? rankedResults.find((r) => r.rank === 1)
+    ?? rankedResults.find((r) => r.eligible)
+    ?? rankedResults[0]
+    ?? null;
+
+  const matchStatus: StandaloneReviewMatchStatus = latestRun.status === 'MATCHED'
+    || latestRun.status === 'NEEDS_MORE_EVIDENCE'
+    || latestRun.status === 'NO_ROLE_SAFE_CHALLENGE'
+      ? latestRun.status
+      : 'PENDING_INTAKE';
+
+  const narrative = buildNarrativeFromResult(matchStatus, selectedResult, []);
+  return c.json({
+    candidateId,
+    matchRunId: latestRun.id,
+    narrative,
+  });
+});
+
+// GET /:candidateId/living-context/evidence-depth — per-source-type evidence scoring
+candidateOps.get('/:candidateId/living-context/evidence-depth', async (c) => {
+  const userId = c.var.userId;
+  const { candidateId } = c.req.param();
+  const db = c.env.DB;
+
+  const candidate = await db.prepare(
+    `SELECT c.id
+       FROM candidates c
+       LEFT JOIN pipelines p ON p.id = c.pipeline_id
+      WHERE c.id = ?1 AND (c.owner_id = ?2 OR p.owner_id = ?2)`,
+  ).bind(candidateId, userId).first<{ id: string }>();
+  if (!candidate) return apiError(c, 'NOT_FOUND', 'Candidate not found.');
+
+  const wp = await db.prepare(
+    `SELECT wp.id
+       FROM applications app
+       JOIN workspace_people wp ON wp.id = app.workspace_person_id
+      WHERE app.legacy_candidate_id = ?1
+      LIMIT 1`,
+  ).bind(candidateId).first<{ id: string }>();
+  if (!wp) {
+    return c.json({
+      candidateId,
+      workspacePersonId: null,
+      sourceDiversity: 0,
+      totalInteractions: 0,
+      totalAssertions: 0,
+      totalSourceSpans: 0,
+      totalContextRecords: 0,
+      sources: {},
+      topConcepts: [],
+    });
+  }
+
+  const [interactionBreakdown, assertionCount, sourceSpanCount, contextRecordCount, topConcepts] = await Promise.all([
+    db.prepare(
+      `SELECT interaction_type, COUNT(*) AS cnt
+         FROM interactions
+        WHERE workspace_person_id = ?1
+        GROUP BY interaction_type
+        ORDER BY cnt DESC`,
+    ).bind(wp.id).all<{ interaction_type: string; cnt: number }>(),
+    db.prepare(
+      `SELECT COUNT(*) AS cnt FROM semantic_assertions WHERE workspace_person_id = ?1`,
+    ).bind(wp.id).first<{ cnt: number }>(),
+    db.prepare(
+      `SELECT COUNT(*) AS cnt
+         FROM source_spans ss
+         JOIN artifact_versions av ON av.id = ss.artifact_version_id
+         JOIN artifacts a ON a.id = av.artifact_id
+        WHERE a.workspace_person_id = ?1`,
+    ).bind(wp.id).first<{ cnt: number }>(),
+    db.prepare(
+      `SELECT COUNT(*) AS cnt FROM context_records WHERE workspace_person_id = ?1`,
+    ).bind(wp.id).first<{ cnt: number }>(),
+    db.prepare(
+      `SELECT c.canonical_key, c.label, COUNT(DISTINCT ac.assertion_id) AS evidence_count
+         FROM concepts c
+         JOIN assertion_concepts ac ON ac.concept_id = c.id
+         JOIN semantic_assertions sa ON sa.id = ac.assertion_id
+        WHERE sa.workspace_person_id = ?1
+        GROUP BY c.id, c.canonical_key, c.label
+        ORDER BY evidence_count DESC
+        LIMIT 20`,
+    ).bind(wp.id).all<{ canonical_key: string; label: string; evidence_count: number }>(),
+  ]);
+
+  const sources: Record<string, number> = {};
+  let totalInteractions = 0;
+  for (const row of interactionBreakdown.results ?? []) {
+    sources[row.interaction_type] = row.cnt;
+    totalInteractions += row.cnt;
+  }
+
+  const distinctSourceTypes = Object.keys(sources).length;
+  const maxSourceTypes = 6; // resume, meeting, culture_interview, code_review, phone_call, assessment
+  const sourceDiversity = Math.min(distinctSourceTypes / maxSourceTypes, 1);
+
+  return c.json({
+    candidateId,
+    workspacePersonId: wp.id,
+    sourceDiversity,
+    totalInteractions,
+    totalAssertions: assertionCount?.cnt ?? 0,
+    totalSourceSpans: sourceSpanCount?.cnt ?? 0,
+    totalContextRecords: contextRecordCount?.cnt ?? 0,
+    sources,
+    topConcepts: (topConcepts.results ?? []).map((row) => ({
+      key: row.canonical_key,
+      label: row.label,
+      evidenceCount: row.evidence_count,
+    })),
+  });
+});
+
 // GET /:candidateId — full profile with stages + challenge submissions
 candidateOps.get('/:candidateId', async (c) => {
   const userId = c.var.userId;
@@ -1887,7 +2242,10 @@ candidateOps.get('/:candidateId', async (c) => {
     summary: string;
     evidence: StandaloneReviewAlignment[];
     roleSources: StandaloneReviewRoleSource[];
+    stretchAreas: StandaloneReviewStretchArea[];
+    unmatchedDemandIds: string[];
     gaps: string[];
+    matchNarrative: StandaloneReviewMatchNarrative | null;
     diagnostics: StandaloneReviewDiagnostics;
     packet: StandaloneReviewPacketDetail | null;
     submitted: boolean;
@@ -2040,6 +2398,10 @@ candidateOps.get('/:candidateId', async (c) => {
         candidateId,
         standaloneInterview.submission_json,
       );
+      const selectedStretchAreas = selectedResultForDisplay?.stretchAreas ?? [];
+      const selectedUnmatchedDemandIds = selectedResultForDisplay?.unmatchedDemandIds ?? [];
+      const allGaps = [...graphContextGaps, ...summary.gaps];
+      const matchNarrative = buildNarrativeFromResult(matchStatus, selectedResultForDisplay, allGaps);
       standaloneReviewMatch = {
         interviewId: standaloneInterview.id,
         interviewStatus: standaloneInterview.status,
@@ -2056,7 +2418,10 @@ candidateOps.get('/:candidateId', async (c) => {
         summary: summary.summary,
         evidence: summary.evidence,
         roleSources,
-        gaps: [...graphContextGaps, ...summary.gaps],
+        stretchAreas: selectedStretchAreas,
+        unmatchedDemandIds: selectedUnmatchedDemandIds,
+        gaps: allGaps,
+        matchNarrative,
         diagnostics,
         packet: selectedPacketDetail,
         submitted: standaloneInterview.submission_json !== null,
