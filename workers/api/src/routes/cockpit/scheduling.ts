@@ -231,6 +231,8 @@ function buildScheduledAssessmentSetup(input: {
   };
 }
 
+const GIT_COMMIT_SHA_PATTERN = /^[0-9a-f]{40}$/i;
+
 const createInterviewSchema = z.object({
   candidateId: z.string().min(1).optional(),
   pipelineId: z.string().optional(),
@@ -245,6 +247,11 @@ const createInterviewSchema = z.object({
   matchedRepoId: z.number().int().positive().nullable().optional(),
   githubRepoUrl: z.string().trim().url().nullable().optional(),
   githubPrNumber: z.number().int().positive().nullable().optional(),
+  challengeBaseCommitSha: z.string().trim().regex(GIT_COMMIT_SHA_PATTERN, 'challengeBaseCommitSha must be a 40-character Git commit SHA.').optional(),
+  challengeTitle: z.string().trim().min(1).max(240).optional(),
+  challengeInstructions: z.string().trim().min(1).max(5000).optional(),
+  challengeSuccessCriteria: z.array(z.string().trim().min(1).max(500)).min(1).max(12).optional(),
+  challengeExpectedEvidence: z.array(z.string().trim().min(1).max(500)).min(1).max(12).optional(),
 }).superRefine((value, ctx) => {
   const hasCandidate = Boolean(value.candidateId);
   const hasRecipient = Boolean(value.recipientName && value.recipientEmail);
@@ -269,6 +276,22 @@ const createInterviewSchema = z.object({
     const hasMatchedRepo = value.matchedRepoId != null && value.matchedRepoId > 0;
     const hasRepoUrlAndPr = Boolean(value.githubRepoUrl && value.githubPrNumber);
     const hasPartialManual = Boolean(value.githubRepoUrl) !== Boolean(value.githubPrNumber);
+    const challengeFields = [
+      value.challengeBaseCommitSha,
+      value.challengeTitle,
+      value.challengeInstructions,
+      value.challengeSuccessCriteria,
+      value.challengeExpectedEvidence,
+    ];
+    const hasAnyChallengePacketField = challengeFields.some((field) =>
+      Array.isArray(field) ? field.length > 0 : Boolean(field));
+    const hasCompleteChallengePacket = Boolean(
+      value.challengeBaseCommitSha
+      && value.challengeTitle
+      && value.challengeInstructions
+      && value.challengeSuccessCriteria?.length
+      && value.challengeExpectedEvidence?.length,
+    );
     if (hasPartialManual) {
       ctx.addIssue({
         code: z.ZodIssueCode.custom,
@@ -285,6 +308,39 @@ const createInterviewSchema = z.object({
         path: ['matchedRepoId'],
       });
     }
+    if (hasAnyChallengePacketField && value.interviewType !== 'OPEN_SOURCE_BUG_FIX') {
+      ctx.addIssue({
+        code: z.ZodIssueCode.custom,
+        message: 'Manual open-source challenge packets can only be attached to OPEN_SOURCE_BUG_FIX interviews.',
+        path: ['interviewType'],
+      });
+    }
+    if (hasAnyChallengePacketField && !hasCompleteChallengePacket) {
+      ctx.addIssue({
+        code: z.ZodIssueCode.custom,
+        message: 'Manual open-source challenge packets require challengeBaseCommitSha, challengeTitle, challengeInstructions, challengeSuccessCriteria, and challengeExpectedEvidence.',
+        path: ['challengeBaseCommitSha'],
+      });
+    }
+    if (hasAnyChallengePacketField && !hasRepoUrlAndPr) {
+      ctx.addIssue({
+        code: z.ZodIssueCode.custom,
+        message: 'Manual open-source challenge packets require githubRepoUrl and githubPrNumber.',
+        path: ['githubRepoUrl'],
+      });
+    }
+  } else if (
+    value.challengeBaseCommitSha
+    || value.challengeTitle
+    || value.challengeInstructions
+    || value.challengeSuccessCriteria?.length
+    || value.challengeExpectedEvidence?.length
+  ) {
+    ctx.addIssue({
+      code: z.ZodIssueCode.custom,
+      message: 'Challenge packet fields require OPEN_SOURCE_BUG_FIX.',
+      path: ['interviewType'],
+    });
   }
 });
 
@@ -2516,6 +2572,118 @@ async function loadScheduledAssessmentSessionId(
   return row?.id ?? null;
 }
 
+interface ManualOpenSourceChallengePacketInput {
+  interviewId: string;
+  userId: string;
+  candidateId: string | null;
+  repositoryUrl: string;
+  githubPrNumber: number;
+  baseCommitSha: string;
+  title: string;
+  instructions: string;
+  successCriteria: readonly string[];
+  expectedEvidence: readonly string[];
+  createdAt: string;
+}
+
+function hasManualOpenSourceChallengePacket(input: {
+  interviewType: string;
+  githubRepoUrl: string | null | undefined;
+  githubPrNumber: number | null | undefined;
+  challengeBaseCommitSha: string | undefined;
+  challengeTitle: string | undefined;
+  challengeInstructions: string | undefined;
+  challengeSuccessCriteria: readonly string[] | undefined;
+  challengeExpectedEvidence: readonly string[] | undefined;
+}): boolean {
+  return input.interviewType === 'OPEN_SOURCE_BUG_FIX'
+    && Boolean(input.githubRepoUrl)
+    && typeof input.githubPrNumber === 'number'
+    && Boolean(input.challengeBaseCommitSha)
+    && Boolean(input.challengeTitle)
+    && Boolean(input.challengeInstructions)
+    && Boolean(input.challengeSuccessCriteria?.length)
+    && Boolean(input.challengeExpectedEvidence?.length);
+}
+
+function buildManualOpenSourceChallengeExactText(
+  input: ManualOpenSourceChallengePacketInput,
+): string {
+  return [
+    `Repo: ${input.repositoryUrl}`,
+    `Base commit: ${input.baseCommitSha.toLowerCase()}`,
+    `Pull request: #${input.githubPrNumber}`,
+    `Task: ${input.title}`,
+    `Instructions: ${input.instructions}`,
+    'Success criteria:',
+    ...input.successCriteria.map((criterion) => `- ${criterion}`),
+    'Expected evidence:',
+    ...input.expectedEvidence.map((evidence) => `- ${evidence}`),
+  ].join('\n');
+}
+
+async function createManualOpenSourceChallengeAssessmentSession(
+  db: D1Database,
+  input: ManualOpenSourceChallengePacketInput,
+): Promise<AssessmentProgressSnapshot> {
+  const store = new RepoTaskInterviewSessionStore(db);
+  const session = await store.createSession({
+    ingestionKey: `assessment-session:${input.interviewId}:manual-open-source-challenge`,
+    interviewId: input.interviewId,
+    mode: 'OPEN_SOURCE_BUG_FIX',
+    candidateId: input.candidateId,
+    createdBy: input.userId,
+    metadata: {
+      challengePacketSource: 'recruiter_manual_open_source_task',
+      repositoryUrl: input.repositoryUrl,
+      githubPrNumber: input.githubPrNumber,
+      baseCommitSha: input.baseCommitSha.toLowerCase(),
+      challengeTitle: input.title,
+    },
+  });
+  const exactText = buildManualOpenSourceChallengeExactText(input);
+  const contentHash = await deterministicEntityId('content', exactText);
+  const sourceRef: AssessmentEvidenceSourceRefInput = {
+    sourceRefType: 'open_source_challenge_packet',
+    sourceRefId: `scheduled-interview:${input.interviewId}:open-source-challenge:${contentHash}`,
+    evidenceRole: 'assigned_challenge',
+    locator: {
+      scheduledInterviewId: input.interviewId,
+      repositoryUrl: input.repositoryUrl,
+      githubPrNumber: input.githubPrNumber,
+      baseCommitSha: input.baseCommitSha.toLowerCase(),
+    },
+    exactText,
+    contentHash,
+    metadata: {
+      schemaVersion: 'manual-open-source-challenge-packet-v1',
+      source: 'recruiter_manual_open_source_task',
+    },
+  };
+
+  await store.recordEvent({
+    sessionId: session.id,
+    ingestionKey: `assessment-event:${session.id}:manual-open-source-challenge:${contentHash}`,
+    kind: 'recruiter_note',
+    actorType: 'recruiter',
+    actorId: input.userId,
+    narrative: 'Recruiter assigned a concrete open-source implementation challenge packet.',
+    payload: {
+      repositoryUrl: input.repositoryUrl,
+      githubPrNumber: input.githubPrNumber,
+      baseCommitSha: input.baseCommitSha.toLowerCase(),
+      title: input.title,
+      instructions: input.instructions,
+      successCriteria: [...input.successCriteria],
+      expectedEvidence: [...input.expectedEvidence],
+    },
+    occurredAt: input.createdAt,
+    sourceRefs: [sourceRef],
+  });
+
+  return store.loadProgress(session.id);
+}
+
 async function ensureRecipientContact(
   db: D1Database,
   ownerId: string,
@@ -4439,6 +4607,11 @@ schedulingAuth.post('/interviews', async (c) => {
     matchedRepoId,
     githubRepoUrl,
     githubPrNumber,
+    challengeBaseCommitSha,
+    challengeTitle,
+    challengeInstructions,
+    challengeSuccessCriteria,
+    challengeExpectedEvidence,
   } = parsed.data;
 
   let candidate: { id: string; pipeline_id: string | null } | null = null;
@@ -4491,6 +4664,7 @@ schedulingAuth.post('/interviews', async (c) => {
   const contactId = !candidateId && recipientName && recipientEmail
     ? await ensureRecipientContact(db, userId, { name: recipientName, email: recipientEmail })
     : null;
+  let assessmentProgress: AssessmentProgressSnapshot | null = null;
 
   await db
     .prepare(
@@ -4529,6 +4703,31 @@ schedulingAuth.post('/interviews', async (c) => {
     });
   }
 
+  if (hasManualOpenSourceChallengePacket({
+    interviewType: effectiveInterviewType,
+    githubRepoUrl,
+    githubPrNumber,
+    challengeBaseCommitSha,
+    challengeTitle,
+    challengeInstructions,
+    challengeSuccessCriteria,
+    challengeExpectedEvidence,
+  })) {
+    assessmentProgress = await createManualOpenSourceChallengeAssessmentSession(db, {
+      interviewId: id,
+      userId,
+      candidateId: candidateId ?? null,
+      repositoryUrl: githubRepoUrl!,
+      githubPrNumber: githubPrNumber!,
+      baseCommitSha: challengeBaseCommitSha!,
+      title: challengeTitle!,
+      instructions: challengeInstructions!,
+      successCriteria: challengeSuccessCriteria!,
+      expectedEvidence: challengeExpectedEvidence!,
+      createdAt: now,
+    });
+  }
+
   return c.json({
     interview: {
       id,
@@ -4548,6 +4747,7 @@ schedulingAuth.post('/interviews', async (c) => {
       githubRepoUrl: githubRepoUrl ?? null,
       githubPrNumber: githubPrNumber ?? null,
       assessmentSetup,
+      assessmentProgress,
     },
   }, 201);
 });

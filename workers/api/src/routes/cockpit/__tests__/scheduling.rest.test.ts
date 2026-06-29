@@ -6002,6 +6002,7 @@ describe('POST /interviews dev-container challenge (HAS-80)', () => {
     sqlite.exec(livingContextMigration);
     sqlite.exec(transcriptProjectionMigration);
     sqlite.exec(contextRecordsMigration);
+    sqlite.exec(assessmentLayerMigration);
   }
 
   it('creates a DEV_CONTAINER_CHALLENGE without a manual repo (auto-match default)', async () => {
@@ -6134,6 +6135,135 @@ describe('POST /interviews dev-container challenge (HAS-80)', () => {
     expect(row.candidate_id).toBeNull();
     expect(row.recipient_name).toBe('Margaret Hamilton');
     expect(row.recipient_email).toBe('margaret@example.com');
+  });
+
+  it('creates a source-backed open-source challenge packet when task details are provided', async () => {
+    seedDevContainerFixture();
+    const app = mountSchedulingApp();
+    const baseCommitSha = '1234567890abcdef1234567890abcdef12345678';
+
+    const response = await app.request('/interviews', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({
+        recipientName: 'Grace Hopper',
+        recipientEmail: 'grace@example.com',
+        meetingType: 'DIRECT_VIDEO_CALL',
+        interviewType: 'OPEN_SOURCE_BUG_FIX',
+        githubRepoUrl: 'https://github.com/hash-pipe/open-source-task',
+        githubPrNumber: 101,
+        challengeBaseCommitSha: baseCommitSha,
+        challengeTitle: 'Fix the failing assessment evaluator start state',
+        challengeInstructions: 'Reproduce the failing start-evaluation path, make the smallest production-ready fix, and preserve source-backed assessment evidence.',
+        challengeSuccessCriteria: [
+          'A focused commit changes only the evaluator start-state path.',
+          'The relevant scheduling and assessment tests pass.',
+        ],
+        challengeExpectedEvidence: [
+          'git_commit source ref for the submitted commit',
+          'code_diff source ref for the candidate patch',
+          'test_run source ref for the relevant verification command',
+        ],
+      }),
+    });
+    expect(response.status).toBe(201);
+    const body = await response.json() as {
+      interview: {
+        id: string;
+        assessmentProgress: {
+          stage: string;
+          nextAction: string;
+          hasChallengePacket: boolean;
+          hasCommitSubmission: boolean;
+          challenge: {
+            sourceRefType: string;
+            sourceRefId: string;
+            evidenceRole: string;
+            exactText: string;
+            locator: {
+              repositoryUrl?: string;
+              baseCommitSha?: string;
+              githubPrNumber?: number;
+            };
+          } | null;
+        } | null;
+      };
+    };
+
+    expect(body.interview.assessmentProgress).toMatchObject({
+      stage: 'CHALLENGE_READY',
+      nextAction: 'OPEN_ROOM_OR_WORKSPACE',
+      hasChallengePacket: true,
+      hasCommitSubmission: false,
+      challenge: {
+        sourceRefType: 'open_source_challenge_packet',
+        evidenceRole: 'assigned_challenge',
+        locator: {
+          repositoryUrl: 'https://github.com/hash-pipe/open-source-task',
+          baseCommitSha,
+          githubPrNumber: 101,
+        },
+      },
+    });
+    expect(body.interview.assessmentProgress?.challenge?.exactText.split('\n')).toEqual(expect.arrayContaining([
+      'Repo: https://github.com/hash-pipe/open-source-task',
+      `Base commit: ${baseCommitSha}`,
+      'Task: Fix the failing assessment evaluator start state',
+      'Instructions: Reproduce the failing start-evaluation path, make the smallest production-ready fix, and preserve source-backed assessment evidence.',
+      'Success criteria:',
+      '- A focused commit changes only the evaluator start-state path.',
+      '- The relevant scheduling and assessment tests pass.',
+      'Expected evidence:',
+      '- git_commit source ref for the submitted commit',
+      '- code_diff source ref for the candidate patch',
+      '- test_run source ref for the relevant verification command',
+    ]));
+
+    const session = sqlite!.prepare(
+      `SELECT id, mode, state, interview_id, metadata_json
+         FROM assessment_sessions
+        WHERE interview_id = ?`,
+    ).get(body.interview.id) as {
+      id: string;
+      mode: string;
+      state: string;
+      interview_id: string;
+      metadata_json: string;
+    } | undefined;
+    expect(session).toMatchObject({
+      mode: 'OPEN_SOURCE_BUG_FIX',
+      state: 'INTAKE',
+      interview_id: body.interview.id,
+    });
+    expect(JSON.parse(session?.metadata_json ?? '{}')).toMatchObject({
+      challengePacketSource: 'recruiter_manual_open_source_task',
+      repositoryUrl: 'https://github.com/hash-pipe/open-source-task',
+      baseCommitSha,
+      githubPrNumber: 101,
+    });
+
+    const sourceRef = sqlite!.prepare(
+      `SELECT sr.source_ref_type, sr.source_ref_id, sr.evidence_role,
+              sr.exact_text, sr.content_hash
+         FROM assessment_event_source_refs sr
+         JOIN assessment_evidence_events e ON e.id = sr.event_id
+        WHERE e.session_id = ?
+          AND sr.source_ref_type = 'open_source_challenge_packet'
+        LIMIT 1`,
+    ).get(session?.id) as {
+      source_ref_type: string;
+      source_ref_id: string;
+      evidence_role: string;
+      exact_text: string;
+      content_hash: string;
+    } | undefined;
+    expect(sourceRef).toMatchObject({
+      source_ref_type: 'open_source_challenge_packet',
+      evidence_role: 'assigned_challenge',
+    });
+    expect(sourceRef?.source_ref_id).toContain(body.interview.id);
+    expect(sourceRef?.content_hash).toMatch(/^content_/);
+    expect(sourceRef?.exact_text).toContain('Expected evidence:');
   });
 
   it('delivers OPEN_SOURCE_BUG_FIX invites to the assessment surface when a repo task is assigned', async () => {

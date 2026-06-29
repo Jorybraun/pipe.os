@@ -38,6 +38,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Fixed — Candidate repo matching
 
+- OPEN_SOURCE_BUG_FIX interview creation now accepts complete manual challenge packet fields, creates a linked source-backed assessment session, persists the exact open-source task packet as immutable evidence, and returns immediate assessment progress for the recruiter.
 - Person profiles now lead with an interview-detail-style decision cockpit and labeled profile record panel, so recommendation, uncertainty, next action, and source proof use the same hiring-manager hierarchy across surfaces.
 - Person profile timelines, source cards, and CODE_REVIEW proof drawers now use human evidence labels instead of raw session, resume, or candidate-node provenance ids by default.
 - Recruiter interview details now translate repo-task evaluator diagnostics and completed reports into truthful cockpit notices, including evaluator-unavailable and report-ready states.
