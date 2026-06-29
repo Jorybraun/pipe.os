@@ -48,6 +48,7 @@ describe('ClippyAssistant', () => {
 
     expect(document.querySelector('[data-clippy-anchor]')).toBeNull();
     expect(screen.getByTestId('clippy-character')).not.toBeNull();
+    expect(document.querySelector('.win95-clippy-character-paper-stack')).not.toBeNull();
     expect(screen.getByTestId('clippy-proactive-card').textContent).toContain('Need help opening the workspace?');
   });
 

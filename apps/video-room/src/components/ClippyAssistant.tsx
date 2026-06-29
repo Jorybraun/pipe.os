@@ -73,6 +73,11 @@ function ClippyCharacter({
       aria-label="Clippy"
     >
       <span className="win95-clippy-character-shadow" aria-hidden="true" />
+      <span className="win95-clippy-character-paper-stack" aria-hidden="true">
+        <span />
+        <span />
+        <span />
+      </span>
       <span className="win95-clippy-character-body" aria-hidden="true">
         <Paperclip size={compact ? 28 : 62} strokeWidth={compact ? 2.4 : 1.8} />
         <span className="win95-clippy-character-eyes">
