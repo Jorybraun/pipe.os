@@ -1182,7 +1182,6 @@ export default function InterviewDetailPage(): JSX.Element {
     ),
   );
   const matchHyperedges = codeReviewMatch?.evidenceHyperedges ?? [];
-  const matchScore = formatMatchScore(codeReviewMatch?.score);
   const codeReviewProfile = asCodeReviewReviewProfile(codeReviewMatch?.reviewProfile);
   const assessmentMetrics = codeReviewMatch?.assessmentQuality?.metrics ?? [];
   const recruiterAssessmentMetrics = assessmentMetrics
@@ -2018,12 +2017,6 @@ export default function InterviewDetailPage(): JSX.Element {
                     <div style={CONTEXT_RECORD_NARRATIVE}>
                       {codeReviewMatch.assessmentQuality.score}/{codeReviewMatch.assessmentQuality.maxScore}
                     </div>
-                  </div>
-                )}
-                {matchScore && (
-                  <div style={MATCH_DECISION_CARD}>
-                    <div style={FIELD_LABEL}>Confidence</div>
-                    <div style={MATCH_DECISION_VALUE}>{matchScore}</div>
                   </div>
                 )}
               </div>

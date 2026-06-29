@@ -37,6 +37,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Fixed — Candidate repo matching
 
+- CODE_REVIEW recruiter details no longer show raw matcher confidence beside the hiring decision; the default readout now favors match status, assessment fit, score, pushback, and source-backed proof.
 - CODE_REVIEW recruiter details now hide empty call-record panels unless transcript, recording, error, or live-call evidence exists, keeping code-review decisions focused on assessment signal instead of operational placeholders.
 - CODE_REVIEW recruiter details now derive a recommended next step from match status, review submission, score, and band, so hiring managers see whether to advance, probe, wait, or collect more evidence before reading the audit trail.
 - CODE_REVIEW recruiter details now surface the durable review score, band, narrative, strengths, and probe areas from the scored review session so hiring managers see candidate performance above the evidence audit trail.

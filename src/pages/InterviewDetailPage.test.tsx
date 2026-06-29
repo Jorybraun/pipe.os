@@ -416,6 +416,7 @@ describe('InterviewDetailPage', () => {
     expect(decision).toHaveTextContent('1 pushback thread');
     expect(screen.queryByText('Call record')).toBeNull();
     expect(screen.queryByText('Not recorded yet')).toBeNull();
+    expect(screen.queryByText('Confidence')).toBeNull();
     expect(screen.queryByTestId('interview-code-review-evidence-plan')).toBeNull();
 
     const sourceProof = screen.getByText('Source proof').closest('details');
