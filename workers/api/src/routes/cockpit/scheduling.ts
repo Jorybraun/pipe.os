@@ -1905,6 +1905,8 @@ async function ensureStandaloneCandidateForInterview(
     .bind(candidateId, now, interviewId)
     .run();
 
+  await ensureCandidateLivingContext(db, candidateId);
+
   return { candidateId, inviteToken };
 }
 

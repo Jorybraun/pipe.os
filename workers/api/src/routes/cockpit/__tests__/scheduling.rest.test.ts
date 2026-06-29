@@ -3252,7 +3252,27 @@ describe('GET /interviews/:id detail', () => {
          JOIN people p ON p.id = wp.person_id
         WHERE p.primary_email = ?`,
     ).get('barbara@example.com')).toEqual({ count: 0 });
-    expect(sqlite!.prepare('SELECT COUNT(*) AS count FROM applications').get()).toEqual({ count: 0 });
+    const inviteApplication = sqlite!.prepare(
+      `SELECT app.legacy_candidate_id,
+              app.pipeline_id,
+              wp.person_id,
+              p.primary_email
+         FROM applications app
+         JOIN workspace_people wp ON wp.id = app.workspace_person_id
+         JOIN people p ON p.id = wp.person_id
+         JOIN scheduled_interviews si ON si.candidate_id = app.legacy_candidate_id
+        WHERE si.id = ?`,
+    ).get(created.interview.id) as {
+      legacy_candidate_id: string;
+      pipeline_id: string | null;
+      person_id: string;
+      primary_email: string;
+    };
+    expect(inviteApplication).toMatchObject({
+      legacy_candidate_id: expect.any(String),
+      pipeline_id: null,
+      primary_email: 'barbara@example.com',
+    });
   });
 
   it('sends scheduled interview invites through the Cloudflare email binding when configured', async () => {
@@ -4560,6 +4580,49 @@ describe('POST /interviews dev-container challenge (HAS-80)', () => {
     expect(new Set(rows.map((row) => row.invite_token)).size).toBe(2);
     expect(firstInvite.deliveredUrl).toContain(`/assess/${rows[0]?.invite_token}`);
     expect(secondInvite.deliveredUrl).toContain(`/assess/${rows[1]?.invite_token}`);
+
+    const applicationGraphRows = sqlite!.prepare(
+      `SELECT app.legacy_candidate_id,
+              wp.person_id,
+              p.primary_email
+         FROM applications app
+         JOIN workspace_people wp ON wp.id = app.workspace_person_id
+         JOIN people p ON p.id = wp.person_id
+        WHERE app.legacy_candidate_id IN (?, ?)
+        ORDER BY app.legacy_candidate_id`,
+    ).all(rows[0]!.candidate_id, rows[1]!.candidate_id) as Array<{
+      legacy_candidate_id: string;
+      person_id: string;
+      primary_email: string;
+    }>;
+    expect(applicationGraphRows).toHaveLength(2);
+    expect(new Set(applicationGraphRows.map((row) => row.person_id)).size).toBe(1);
+    expect(applicationGraphRows.map((row) => row.primary_email)).toEqual([
+      'katherine@example.com',
+      'katherine@example.com',
+    ]);
+
+    const graphCounts = sqlite!.prepare(
+      `SELECT COUNT(DISTINCT m.id) AS meetingCount,
+              COUNT(DISTINCT cr.id) AS contextRecordCount,
+              COUNT(DISTINCT app.id) AS applicationCount
+         FROM people p
+         JOIN workspace_people wp ON wp.person_id = p.id
+         LEFT JOIN context_records cr ON cr.workspace_person_id = wp.id
+         LEFT JOIN applications app ON app.workspace_person_id = wp.id
+         LEFT JOIN meetings m ON m.owner_id = wp.workspace_id
+        WHERE p.primary_email = 'katherine@example.com'
+          AND (m.scheduled_interview_id IN (?, ?) OR m.id IS NULL)`,
+    ).get(firstCreated.interview.id, secondCreated.interview.id) as {
+      meetingCount: number;
+      contextRecordCount: number;
+      applicationCount: number;
+    };
+    expect(graphCounts).toEqual({
+      meetingCount: 2,
+      contextRecordCount: 4,
+      applicationCount: 2,
+    });
   });
 
   it('rejects CODE_REVIEW with partial manual repo (url without PR number)', async () => {
