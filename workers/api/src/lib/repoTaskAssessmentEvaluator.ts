@@ -86,6 +86,38 @@ type EvaluatorDiagnosticSeverity = 'info' | 'warning' | 'blocking';
 const MAX_SOURCE_REF_EXACT_TEXT_CHARS = 1800;
 const MAX_AI_PROMPT_SOURCE_REFS = 30;
 
+const EXPECTED_HIGH_CONFIDENCE_REF_GROUPS = [
+  {
+    label: 'test_run',
+    sourceRefTypes: ['test_run'],
+    missingImpact: 'Do not make positive test_strategy or verification claims without test_run evidence.',
+  },
+  {
+    label: 'terminal_activity',
+    sourceRefTypes: ['terminal_command', 'terminal_output', 'session_terminal_command', 'session_terminal_output'],
+    missingImpact: 'Treat candidate debugging process and command-line verification as unobserved when terminal evidence is absent.',
+  },
+  {
+    label: 'code_editor_activity',
+    sourceRefTypes: ['code_editor_save', 'code_file_change', 'file_change'],
+    missingImpact: 'Treat edit process and intermediate code-server activity as unobserved when editor/file evidence is absent.',
+  },
+  {
+    label: 'ai_assistance',
+    sourceRefTypes: [
+      'clippy_user_prompt',
+      'clippy_user_prompt_blocked',
+      'clippy_agent_response',
+      'clippy_agent_diagnostic',
+      'session_chat_agent',
+      'session_chat_user',
+      'ai_chat_user',
+      'ai_chat_agent',
+    ],
+    missingImpact: 'Treat AI usage as unobserved when Clippy/Devin or AI chat evidence is absent.',
+  },
+] as const;
+
 function parseJsonObject(value: string | null): JsonObject {
   if (!value) return {};
   const parsed = JSON.parse(value) as JsonValue;
@@ -137,6 +169,89 @@ function summarizeSourceRef(ref: SessionSourceRef): JsonObject {
     sourceRefId: ref.sourceRefId,
     evidenceRole: ref.evidenceRole ?? 'support',
     exactText: compactExactText(ref.exactText ?? ''),
+  };
+}
+
+function sourceRefKeysForTypes(
+  sourceRefs: readonly SessionSourceRef[],
+  sourceRefTypes: readonly string[],
+): string[] {
+  const allowedTypes = new Set(sourceRefTypes);
+  return sourceRefs
+    .filter((ref) => allowedTypes.has(ref.sourceRefType))
+    .map((ref) => ref.key);
+}
+
+function sourceRefKeysForChallenge(sourceRefs: readonly SessionSourceRef[]): string[] {
+  return sourceRefs
+    .filter((ref) => CHALLENGE_REF_TYPES.has(ref.sourceRefType) || ref.evidenceRole === 'assigned_challenge')
+    .map((ref) => ref.key);
+}
+
+function coverageItem(input: {
+  label: string;
+  required: boolean;
+  sourceRefTypes: readonly string[];
+  sourceRefKeys: readonly string[];
+  missingImpact: string;
+}): JsonObject {
+  return {
+    label: input.label,
+    required: input.required,
+    sourceRefTypes: [...input.sourceRefTypes],
+    satisfied: input.sourceRefKeys.length > 0,
+    sourceRefKeys: [...input.sourceRefKeys],
+    missingImpact: input.missingImpact,
+  };
+}
+
+function buildEvidenceCoverage(sourceRefs: readonly SessionSourceRef[]): JsonObject {
+  const sourceRefTypeCounts: JsonObject = {};
+  for (const ref of sourceRefs) {
+    const current = sourceRefTypeCounts[ref.sourceRefType];
+    sourceRefTypeCounts[ref.sourceRefType] = typeof current === 'number' ? current + 1 : 1;
+  }
+
+  const challengeKeys = sourceRefKeysForChallenge(sourceRefs);
+  const requiredForEvaluation = [
+    coverageItem({
+      label: 'challenge_packet',
+      required: true,
+      sourceRefTypes: [...CHALLENGE_REF_TYPES],
+      sourceRefKeys: challengeKeys,
+      missingImpact: 'Cannot evaluate a real open-source assessment without the assigned challenge packet.',
+    }),
+    coverageItem({
+      label: 'git_commit',
+      required: true,
+      sourceRefTypes: ['git_commit'],
+      sourceRefKeys: sourceRefKeysForTypes(sourceRefs, ['git_commit']),
+      missingImpact: 'Cannot evaluate a submission without exact commit evidence.',
+    }),
+    coverageItem({
+      label: 'code_diff',
+      required: true,
+      sourceRefTypes: ['code_diff'],
+      sourceRefKeys: sourceRefKeysForTypes(sourceRefs, ['code_diff']),
+      missingImpact: 'Cannot evaluate implementation quality without an exact diff.',
+    }),
+  ];
+
+  const expectedForHighConfidence = EXPECTED_HIGH_CONFIDENCE_REF_GROUPS.map((group) =>
+    coverageItem({
+      label: group.label,
+      required: false,
+      sourceRefTypes: group.sourceRefTypes,
+      sourceRefKeys: sourceRefKeysForTypes(sourceRefs, group.sourceRefTypes),
+      missingImpact: group.missingImpact,
+    }));
+
+  return {
+    schemaVersion: 'assessment-evidence-coverage-v1',
+    sourceRefCount: sourceRefs.length,
+    sourceRefTypeCounts,
+    requiredForEvaluation,
+    expectedForHighConfidence,
   };
 }
 
@@ -224,6 +339,8 @@ function buildSystemPrompt(): string {
     'You are PIPE-OS source-backed evaluator for real open-source coding assessments.',
     'Assess only the evidence provided in SOURCE_REFS. Do not invent repo behavior, tests, seniority, intent, or correctness.',
     'Every positive or negative claim must cite one or more exact sourceRefKeys from SOURCE_REFS.',
+    'Use EVIDENCE_COVERAGE before scoring. Missing expected evidence must become diagnostics or uncertainty, never positive claims.',
+    'Do not make positive test_strategy, verification, AI-usage, or process claims when the matching coverage item is unsatisfied.',
     'If evidence is missing, uncertain, ungrounded, or insufficient, return diagnostics instead of positive claims.',
     'Return only JSON with keys: summary, recommendation, claims, diagnostics.',
     'Allowed claim polarities: positive, negative, diagnostic.',
@@ -235,12 +352,14 @@ function buildUserPrompt(input: {
   sessionMode: RepoTaskInterviewMode;
   scheduledInterviewId: string;
   sourceRefs: readonly SessionSourceRef[];
+  evidenceCoverage: JsonObject;
 }): string {
   const sourceRefs = input.sourceRefs.slice(0, MAX_AI_PROMPT_SOURCE_REFS).map(summarizeSourceRef);
   return JSON.stringify({
     task: 'Evaluate the submitted open-source repo-task commit from exact source evidence.',
     scheduledInterviewId: input.scheduledInterviewId,
     sessionMode: input.sessionMode,
+    evidenceCoverage: input.evidenceCoverage,
     sourceRefs,
     outputContract: {
       summary: 'short source-grounded assessment summary',
@@ -352,6 +471,7 @@ async function recordAiInteraction(input: {
   provider: LLMProvider;
   prompt: string;
   response: string;
+  evidenceCoverage: JsonObject;
 }): Promise<void> {
   const exactText = [
     `Provider: ${input.provider.name}`,
@@ -374,6 +494,7 @@ async function recordAiInteraction(input: {
       provider: input.provider.name,
       model: input.provider.model,
       action: 'repo_task_assessment_evaluation',
+      evidenceCoverage: input.evidenceCoverage,
     },
     occurredAt: input.requestedAt,
     sourceRefs: [{
@@ -408,6 +529,7 @@ export async function evaluateRepoTaskAssessmentSession(
   const session = await input.store.loadSession(input.sessionId);
   const sourceRefs = await loadSessionSourceRefs(input.db, input.sessionId);
   const sourceRefByKey = new Map(sourceRefs.map((ref) => [ref.key, ref]));
+  const evidenceCoverage = buildEvidenceCoverage(sourceRefs);
 
   if (!hasRequiredEvidence(sourceRefs)) {
     return createDiagnostic({
@@ -452,6 +574,7 @@ export async function evaluateRepoTaskAssessmentSession(
     scheduledInterviewId: input.scheduledInterviewId,
     sessionMode: session.mode,
     sourceRefs,
+    evidenceCoverage,
   });
   const promptTrace = [
     'System prompt:',
@@ -476,6 +599,7 @@ export async function evaluateRepoTaskAssessmentSession(
       provider,
       prompt: promptTrace,
       response: rawResponse,
+      evidenceCoverage,
     });
     aiOutput = parseAiJson(rawResponse);
   } catch (error) {
@@ -534,6 +658,7 @@ export async function evaluateRepoTaskAssessmentSession(
       model: provider.model,
       scheduledInterviewId: input.scheduledInterviewId,
       requestEventId: input.requestEventId,
+      evidenceCoverage,
       claimIds: claims.map((claim) => claim.id),
       diagnosticCodes: diagnostics.map((diagnostic) => diagnostic.code),
     },

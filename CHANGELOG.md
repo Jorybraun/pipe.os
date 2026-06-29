@@ -43,6 +43,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Fixed — Candidate repo matching
 
+- Repo-task AI evaluation prompts now include a deterministic source-ref coverage contract, making missing test, terminal, editor, or AI-assistance evidence explicit and preserving that coverage in the evaluation report.
 - Interview related-evidence and follow-up cards now use human labels instead of falling back to raw interview ids in the hiring-manager cockpit.
 - Person profile next-action CTAs now open the new-interview flow with the current person prefilled, turning missing-context and calibration recommendations into an actionable follow-up path.
 - Person profile timelines now expose quiet `Open interaction` actions for evidence tied to scheduled interviews, making related meetings actionable without showing raw interview ids.

@@ -1540,6 +1540,42 @@ describe('GET /interviews/:id detail', () => {
 
     expect(aiRun).toHaveBeenCalledTimes(1);
     expect(JSON.stringify(aiRun.mock.calls[0])).toContain(diffSourceRefKey);
+    const aiInput = aiRun.mock.calls[0]?.[1] as {
+      messages?: Array<{ role?: string; content?: string | null }>;
+    } | undefined;
+    const userPrompt = aiInput?.messages?.find((message) => message.role === 'user')?.content ?? null;
+    expect(typeof userPrompt).toBe('string');
+    const userPromptPayload = JSON.parse(userPrompt ?? '{}') as {
+      evidenceCoverage?: {
+        schemaVersion?: string;
+        sourceRefTypeCounts?: Record<string, number>;
+        requiredForEvaluation?: Array<{ label?: string; satisfied?: boolean; sourceRefKeys?: string[] }>;
+        expectedForHighConfidence?: Array<{ label?: string; satisfied?: boolean; sourceRefKeys?: string[]; missingImpact?: string }>;
+      };
+    };
+    expect(userPromptPayload.evidenceCoverage).toMatchObject({
+      schemaVersion: 'assessment-evidence-coverage-v1',
+      sourceRefTypeCounts: {
+        code_diff: 1,
+        git_commit: 1,
+        review_challenge_packet: 1,
+      },
+    });
+    expect(userPromptPayload.evidenceCoverage?.requiredForEvaluation).toEqual(expect.arrayContaining([
+      expect.objectContaining({
+        label: 'code_diff',
+        satisfied: true,
+        sourceRefKeys: [diffSourceRefKey],
+      }),
+    ]));
+    expect(userPromptPayload.evidenceCoverage?.expectedForHighConfidence).toEqual(expect.arrayContaining([
+      expect.objectContaining({
+        label: 'test_run',
+        satisfied: false,
+        sourceRefKeys: [],
+        missingImpact: 'Do not make positive test_strategy or verification claims without test_run evidence.',
+      }),
+    ]));
     expect(body.diagnostic).toBeNull();
     expect(body.report).toMatchObject({
       sessionId: 'assessment-session-ai-evaluation',
@@ -1574,6 +1610,23 @@ describe('GET /interviews/:id detail', () => {
          FROM assessment_evaluation_claims
         WHERE dimension = 'test_strategy'`,
     ).get()).toEqual({ count: 0 });
+    const evaluationReport = sqlite!.prepare(
+      `SELECT output_json
+         FROM assessment_evaluation_reports
+        WHERE session_id = ?`,
+    ).get('assessment-session-ai-evaluation') as { output_json: string } | undefined;
+    const reportOutput = JSON.parse(evaluationReport?.output_json ?? '{}') as {
+      evidenceCoverage?: {
+        schemaVersion?: string;
+        expectedForHighConfidence?: Array<{ label?: string; satisfied?: boolean }>;
+      };
+    };
+    expect(reportOutput.evidenceCoverage).toMatchObject({
+      schemaVersion: 'assessment-evidence-coverage-v1',
+    });
+    expect(reportOutput.evidenceCoverage?.expectedForHighConfidence).toEqual(expect.arrayContaining([
+      expect.objectContaining({ label: 'test_run', satisfied: false }),
+    ]));
     const citedClaim = sqlite!.prepare(
       `SELECT c.dimension, c.polarity, csr.source_ref_type, csr.source_ref_id, csr.exact_text
          FROM assessment_evaluation_claims c
