@@ -414,6 +414,18 @@ describe('hasSourceBackedDesktopEventEvidence', () => {
     }, 'HOST')).toBe(false);
   });
 
+  it('rejects room surface evidence unless the timestamp and phase are deterministic', () => {
+    expect(hasSourceBackedDesktopEventEvidence({
+      ...surfaceEvent,
+      capturedAtMs: 1700000001000.5,
+      surfaceChangeId: 'surface:host:1700000001000.5:standard:win95',
+    }, 'HOST')).toBe(false);
+    expect(hasSourceBackedDesktopEventEvidence({
+      ...surfaceEvent,
+      roomPhase: 'hydrating' as never,
+    }, 'HOST')).toBe(false);
+  });
+
   it('accepts Start menu changes with source-backed Win95 menu evidence', () => {
     expect(hasSourceBackedDesktopEventEvidence(startMenuEvent, 'GUEST')).toBe(true);
   });

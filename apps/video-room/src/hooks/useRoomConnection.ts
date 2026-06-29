@@ -33,6 +33,18 @@ const WINDOW_TYPES = new Set<WindowType>([
   'custom',
 ]);
 
+const ROOM_PHASES = new Set<RoomPhase>([
+  'disconnected',
+  'waiting',
+  'peer_connected',
+  'offer_received',
+  'connecting',
+  'connected',
+  'peer_disconnected',
+  'ended',
+  'error',
+]);
+
 export interface RoomDesktopWindowConfig extends OpenWindowConfig {
   id: string;
   minimized?: boolean;
@@ -654,6 +666,10 @@ function isRoomSurface(value: unknown): value is RoomSurface {
   return value === 'standard' || value === 'win95';
 }
 
+function isRoomPhase(value: unknown): value is RoomPhase {
+  return typeof value === 'string' && ROOM_PHASES.has(value as RoomPhase);
+}
+
 export function decideRoomSurfaceSnapshot(input: {
   snapshotSurface: RoomSurface;
   surfaceEventSeenOnSocket: boolean;
@@ -734,7 +750,7 @@ function parseDesktopEvent(value: unknown): RoomDesktopEvent | null {
         : undefined,
       surfaceChangeId: typeof value.surfaceChangeId === 'string' ? value.surfaceChangeId : undefined,
       capturedAtMs: numberOrUndefined(value.capturedAtMs),
-      roomPhase: typeof value.roomPhase === 'string' ? value.roomPhase as RoomPhase : undefined,
+      roomPhase: isRoomPhase(value.roomPhase) ? value.roomPhase : undefined,
       durableObjectReplayExpected: booleanOrUndefined(value.durableObjectReplayExpected),
     };
   }
@@ -941,16 +957,18 @@ export function hasSourceBackedDesktopEventEvidence(event: RoomDesktopEvent, rol
   if (!actor) return false;
   if (event.kind === 'SET_ROOM_SURFACE') {
     const expectedAction = event.surface === 'win95' ? 'enter_desktop' : 'exit_desktop';
+    const capturedAtMs = event.capturedAtMs;
     return event.source === 'room_surface_control'
       && event.surfaceControlEventSource === 'browser_room_surface_toggle'
       && event.action === expectedAction
       && event.previousSurface !== undefined
       && event.previousSurface !== event.surface
       && typeof event.surfaceChangeId === 'string'
-      && typeof event.capturedAtMs === 'number'
-      && Number.isFinite(event.capturedAtMs)
-      && event.surfaceChangeId === `surface:${actor}:${event.capturedAtMs}:${event.previousSurface}:${event.surface}`
-      && typeof event.roomPhase === 'string'
+      && typeof capturedAtMs === 'number'
+      && Number.isInteger(capturedAtMs)
+      && capturedAtMs >= 0
+      && event.surfaceChangeId === `surface:${actor}:${capturedAtMs}:${event.previousSurface}:${event.surface}`
+      && isRoomPhase(event.roomPhase)
       && event.durableObjectReplayExpected === true;
   }
   if (event.kind === 'WORKSPACE_STATE_CHANGED') {
@@ -3583,7 +3601,7 @@ export function useRoomConnection(
         : undefined,
       surfaceChangeId: typeof evidence?.surfaceChangeId === 'string' ? evidence.surfaceChangeId : undefined,
       capturedAtMs: numberOrUndefined(evidence?.capturedAtMs),
-      roomPhase: typeof evidence?.roomPhase === 'string' ? evidence.roomPhase as RoomPhase : undefined,
+      roomPhase: isRoomPhase(evidence?.roomPhase) ? evidence.roomPhase : undefined,
       durableObjectReplayExpected: booleanOrUndefined(evidence?.durableObjectReplayExpected),
     });
   }, [publishDesktopEvent]);
