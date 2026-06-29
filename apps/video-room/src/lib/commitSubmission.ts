@@ -18,6 +18,7 @@ export interface CommitSubmissionFormFields {
   changedFilesText: string;
   commitEvidenceText: string;
   diffText: string;
+  testEvidenceText: string;
 }
 
 export interface CommitSubmissionDefaultInput {
@@ -126,6 +127,7 @@ export async function buildCommitSubmissionPayload(
   const changedFiles = parseChangedFiles(fields.changedFilesText);
   const commitEvidenceText = fields.commitEvidenceText.trim();
   const diffText = fields.diffText.trim();
+  const testEvidenceText = fields.testEvidenceText.trim();
   const narrative = fields.narrative.trim();
 
   if (!narrative) throw new Error('Submission note is required.');
@@ -184,6 +186,22 @@ export async function buildCommitSubmissionPayload(
           source: 'win95_commit_submission_window',
         },
       },
+      ...(testEvidenceText
+        ? [{
+            sourceRefType: 'test_run',
+            sourceRefId: `${commitSha}:test-run`,
+            evidenceRole: 'verification_test_output',
+            locator: {
+              repositoryUrl: sourceRepositoryUrl,
+              commitSha,
+            },
+            exactText: testEvidenceText,
+            contentHash: await sha256ContentHash(testEvidenceText),
+            metadata: {
+              source: 'win95_commit_submission_window',
+            },
+          }]
+        : []),
     ],
   };
 }

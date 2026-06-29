@@ -1229,8 +1229,14 @@ function Room({ token, metadata }: { token: string; metadata: RoomMetadata }): J
       : workspaceSession?.status === 'ERROR'
         ? `The VS Code workspace failed: ${workspaceSession.errorMessage ?? workspaceError ?? 'container startup did not complete'}. Clippy agent chat stays disabled until the workspace is relaunched.`
         : metadata.role === 'HOST' && canLaunchWorkspace
-          ? 'Launch the VS Code workspace to connect a real agent. Clippy chat stays disabled until the container bridge is connected.'
-          : 'The host needs to launch the VS Code workspace before Clippy can connect to a real agent.';
+        ? 'Launch the VS Code workspace to connect a real agent. Clippy chat stays disabled until the container bridge is connected.'
+        : 'The host needs to launch the VS Code workspace before Clippy can connect to a real agent.';
+  const canOpenClippyBridgePanel = hasWorkspaceFeature || hasActiveWorkspace || canLaunchWorkspace;
+  useEffect(() => {
+    if (!canOpenClippyBridgePanel && clippyChatOpen) {
+      setClippyChatOpen(false);
+    }
+  }, [canOpenClippyBridgePanel, clippyChatOpen]);
   useEffect(() => {
     if (!hasActiveWorkspace) {
       setClippyAgentStatus('disconnected');
@@ -1266,7 +1272,7 @@ function Room({ token, metadata }: { token: string; metadata: RoomMetadata }): J
   const openClippyChat = (origin: 'tray' | 'chat' = 'tray'): void => {
     captureClippyUiAction('open-clippy-chat', origin);
     setClippyVisible(true);
-    setClippyChatOpen(true);
+    setClippyChatOpen(canOpenClippyBridgePanel);
     setClippyChatRequest((request) => request + 1);
   };
   const closeClippyChat = (): void => {

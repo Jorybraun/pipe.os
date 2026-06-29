@@ -973,6 +973,46 @@ describe('GET /interviews/:id detail', () => {
     });
   });
 
+  it('falls back to the unclaimed candidate assessment token when delivery context is missing', async () => {
+    seedInterviewDetailFixture();
+    const fallbackToken = 'fallback-visible-token';
+    sqlite!.prepare(`
+      UPDATE candidates
+         SET invite_token = ?
+       WHERE id = 'candidate-1'
+    `).run(fallbackToken);
+    sqlite!.prepare(`
+      UPDATE scheduled_interviews
+         SET interview_type = 'CODE_REVIEW',
+             stage_id = NULL,
+             invite_link_sent_at = NULL,
+             email_sent_at = NULL
+       WHERE id = 'interview-1'
+    `).run();
+
+    const app = mountSchedulingApp();
+    const response = await app.request('/interviews/interview-1');
+    expect(response.status).toBe(200);
+    const body = await response.json() as {
+      interview: {
+        assessmentSetup: {
+          status: string;
+          lastDeliveredUrl: string | null;
+        };
+      };
+    };
+
+    expect(body.interview.assessmentSetup).toMatchObject({
+      status: 'waiting_for_source_backed_match',
+      lastDeliveredUrl: `http://localhost:5173/assess/${fallbackToken}`,
+    });
+
+    const candidate = sqlite!.prepare(
+      'SELECT invite_token FROM candidates WHERE id = ?',
+    ).get('candidate-1') as { invite_token: string };
+    expect(candidate.invite_token).toBe(fallbackToken);
+  });
+
   it('returns source-backed assessment progress on workspace interview details', async () => {
     seedInterviewDetailFixture();
     const now = '2026-06-22T18:40:00.000Z';

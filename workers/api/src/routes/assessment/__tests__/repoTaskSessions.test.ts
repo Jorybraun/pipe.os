@@ -644,9 +644,14 @@ Fix stale popover listener cleanup.`;
 +++ b/src/popover.ts
 @@ -42,6 +42,7 @@ export function closePopover() {
 +  cleanupStaleHandler();
- }`;
+}`;
     const commitSourceRef = await sourceRef('git_commit', commitSha, commitText);
     const codeDiffSourceRef = await sourceRef('code_diff', `${commitSha}:diff`, diffText);
+    const testRunSourceRef = await sourceRef(
+      'test_run',
+      `${commitSha}:test-run`,
+      'npm test -- popover\nPASS popover cleanup regression',
+    );
     const commitResponse = await app.request(
       `/api/v1/assessment/repo-task/sessions/${session.id}/commit-submissions`,
       jsonRequest({
@@ -661,7 +666,7 @@ Fix stale popover listener cleanup.`;
         commitSha,
         commitUrl: `https://github.com/candidate/widgets/commit/${commitSha}`,
         changedFiles: [{ path: 'src/popover.ts', status: 'modified', additions: 1, deletions: 0 }],
-        sourceRefs: [commitSourceRef, codeDiffSourceRef],
+        sourceRefs: [commitSourceRef, codeDiffSourceRef, testRunSourceRef],
       }),
       env,
     );
@@ -679,6 +684,7 @@ Fix stale popover listener cleanup.`;
         nextAction: string;
         hasCommitSubmission: boolean;
         hasWorkEvidence: boolean;
+        hasTestEvidence: boolean;
         latestEvent: { kind: string };
         commit: {
           repositoryUrl: string;
@@ -688,6 +694,7 @@ Fix stale popover listener cleanup.`;
           changedFiles: Array<{ path: string; status: string }>;
         };
         evidenceCounts: Array<{ kind: string; count: number }>;
+        sourceRefCounts: Array<{ kind: string; count: number }>;
       };
     };
     expect(commitProgressBody.progress).toMatchObject({
@@ -695,6 +702,7 @@ Fix stale popover listener cleanup.`;
       nextAction: 'START_EVALUATION',
       hasCommitSubmission: true,
       hasWorkEvidence: true,
+      hasTestEvidence: true,
       latestEvent: { kind: 'commit_submission' },
       commit: {
         repositoryUrl: 'https://github.com/open-source/widgets',
@@ -707,6 +715,12 @@ Fix stale popover listener cleanup.`;
     expect(commitProgressBody.progress.evidenceCounts).toEqual(expect.arrayContaining([
       { kind: 'commit_submission', count: 1 },
       { kind: 'recruiter_note', count: 1 },
+    ]));
+    expect(commitProgressBody.progress.sourceRefCounts).toEqual(expect.arrayContaining([
+      { kind: 'code_diff', count: 1 },
+      { kind: 'git_commit', count: 1 },
+      { kind: 'review_challenge_packet', count: 1 },
+      { kind: 'test_run', count: 1 },
     ]));
 
     const evaluationResponse = await app.request(

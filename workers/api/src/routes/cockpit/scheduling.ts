@@ -23,7 +23,7 @@ import { authMiddleware } from '../../middleware/auth';
 import { apiError } from '../../middleware/errors';
 import { sendTransactionalEmail } from '../../lib/transactionalEmail';
 import { buildPipeEmailLogoImg, resolvePipeEmailLogoUrl } from '../../lib/emailAssets';
-import { ensureUsableCandidateInviteToken } from '../../lib/candidateInviteTokens';
+import { ensureUsableCandidateInviteToken, isClaimedInviteToken } from '../../lib/candidateInviteTokens';
 import { ensureMeetingRoomLinks, withDevBasicAuth } from '../meetingRooms';
 import {
   OPEN_TERM_RESOLVER_VERSION,
@@ -524,6 +524,25 @@ async function loadLatestDeliveredAssessmentUrl(
     console.error('[scheduling/detail] failed to load delivered assessment url:', err instanceof Error ? err.message : String(err));
     return null;
   }
+}
+
+async function loadCandidateAssessmentInviteUrlFromToken(
+  db: D1Database,
+  env: Env,
+  input: {
+    interviewType: string | null | undefined;
+    candidateId: string | null | undefined;
+  },
+): Promise<string | null> {
+  if (!isWorkspaceAssessmentInterviewType(input.interviewType) || !input.candidateId) return null;
+  const candidate = await db
+    .prepare('SELECT invite_token FROM candidates WHERE id = ?1')
+    .bind(input.candidateId)
+    .first<{ invite_token: string | null }>();
+  const inviteToken = candidate?.invite_token?.trim() ?? '';
+  if (!inviteToken || isClaimedInviteToken(inviteToken)) return null;
+  const baseUrl = env.APP_BASE_URL ?? 'https://pipe.build';
+  return withDevBasicAuth(`${baseUrl}/assess/${inviteToken}`, env);
 }
 
 interface ScheduledRelatedEvidenceInterview {
@@ -4409,7 +4428,11 @@ schedulingAuth.get('/interviews/:id', async (c) => {
   const codeReviewMatch = await loadScheduledCodeReviewMatchDetail(db, interview);
   const codeReviewScore = await loadScheduledCodeReviewScoreSummary(db, interview);
   const assessmentProgress = await loadScheduledAssessmentProgress(db, interview.id);
-  const lastDeliveredAssessmentUrl = await loadLatestDeliveredAssessmentUrl(db, interview.id);
+  const lastDeliveredAssessmentUrl = await loadLatestDeliveredAssessmentUrl(db, interview.id)
+    ?? await loadCandidateAssessmentInviteUrlFromToken(db, c.env, {
+      interviewType: interview.interview_type,
+      candidateId: interview.candidate_id,
+    });
 
   return c.json({
     interview: {

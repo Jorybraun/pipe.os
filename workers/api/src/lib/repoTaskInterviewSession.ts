@@ -304,7 +304,9 @@ export interface AssessmentProgressSnapshot {
   hasFinalSubmission: boolean;
   hasAiInteraction: boolean;
   hasTranscriptEvidence: boolean;
+  hasTestEvidence: boolean;
   evidenceCounts: AssessmentEvidenceKindCount[];
+  sourceRefCounts: AssessmentEvidenceKindCount[];
   challenge: AssessmentProgressSourceRef | null;
   latestEvent: AssessmentProgressLatestEvent | null;
   commit: AssessmentProgressCommit | null;
@@ -975,6 +977,7 @@ export class RepoTaskInterviewSessionStore {
   async loadProgress(sessionId: string): Promise<AssessmentProgressSnapshot> {
     const session = await this.loadSession(sessionId);
     const evidenceCounts = await this.loadEvidenceCounts(session.id);
+    const sourceRefCounts = await this.loadSourceRefCounts(session.id);
     const challenge = await this.loadChallengeSourceRef(session.id);
     const latestEvent = await this.loadLatestEvent(session.id);
     const commit = await this.loadLatestCommitSubmission(session.id);
@@ -995,6 +998,8 @@ export class RepoTaskInterviewSessionStore {
     const hasFinalSubmission = hasEventKind(evidenceCounts, ['final_submission']);
     const hasAiInteraction = hasEventKind(evidenceCounts, ['ai_interaction']);
     const hasTranscriptEvidence = hasEventKind(evidenceCounts, ['transcript_span']);
+    const hasTestEvidence = hasEventKind(evidenceCounts, ['test_run'])
+      || hasEventKind(sourceRefCounts, ['test_run']);
     const hasChallengePacket = challenge !== null;
     const { stage, nextAction } = progressStageAndAction({
       session,
@@ -1016,7 +1021,9 @@ export class RepoTaskInterviewSessionStore {
       hasFinalSubmission,
       hasAiInteraction,
       hasTranscriptEvidence,
+      hasTestEvidence,
       evidenceCounts,
+      sourceRefCounts,
       challenge,
       latestEvent,
       commit,
@@ -1031,6 +1038,21 @@ export class RepoTaskInterviewSessionStore {
         WHERE session_id = ?1
         GROUP BY kind
         ORDER BY kind`,
+    ).bind(sessionId).all<{ kind: string; count: number }>();
+    return (result.results ?? []).map((row) => ({
+      kind: row.kind,
+      count: row.count,
+    }));
+  }
+
+  private async loadSourceRefCounts(sessionId: string): Promise<AssessmentEvidenceKindCount[]> {
+    const result = await this.db.prepare(
+      `SELECT sr.source_ref_type AS kind, COUNT(*) AS count
+         FROM assessment_event_source_refs sr
+         JOIN assessment_evidence_events e ON e.id = sr.event_id
+        WHERE e.session_id = ?1
+        GROUP BY sr.source_ref_type
+        ORDER BY sr.source_ref_type`,
     ).bind(sessionId).all<{ kind: string; count: number }>();
     return (result.results ?? []).map((row) => ({
       kind: row.kind,

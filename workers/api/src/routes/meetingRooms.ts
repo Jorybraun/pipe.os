@@ -2409,7 +2409,9 @@ interface RoomAssessmentProgressPayload {
   hasFinalSubmission: boolean;
   hasAiInteraction: boolean;
   hasTranscriptEvidence: boolean;
+  hasTestEvidence: boolean;
   evidenceCounts: AssessmentProgressSnapshot['evidenceCounts'];
+  sourceRefCounts: AssessmentProgressSnapshot['sourceRefCounts'];
   latestEvent: Omit<NonNullable<AssessmentProgressSnapshot['latestEvent']>, 'id'> | null;
   commit: Omit<NonNullable<AssessmentProgressSnapshot['commit']>, 'eventId'> | null;
   evaluation: Omit<NonNullable<AssessmentProgressSnapshot['evaluation']>, 'id'> | null;
@@ -2445,7 +2447,9 @@ function serializeRoomAssessmentProgress(
     hasFinalSubmission: progress.hasFinalSubmission,
     hasAiInteraction: progress.hasAiInteraction,
     hasTranscriptEvidence: progress.hasTranscriptEvidence,
+    hasTestEvidence: progress.hasTestEvidence,
     evidenceCounts: progress.evidenceCounts,
+    sourceRefCounts: progress.sourceRefCounts,
     latestEvent: progress.latestEvent
       ? {
           kind: progress.latestEvent.kind,

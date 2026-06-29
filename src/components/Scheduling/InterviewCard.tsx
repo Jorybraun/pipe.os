@@ -73,6 +73,7 @@ function assessmentEvidenceSummary(input: {
   hasCommitSubmission: boolean;
   hasAiInteraction: boolean;
   hasTranscriptEvidence: boolean;
+  hasTestEvidence: boolean;
 }): string {
   const ready = [
     input.hasChallengePacket ? 'challenge' : null,
@@ -80,6 +81,7 @@ function assessmentEvidenceSummary(input: {
     input.hasCommitSubmission ? 'commit' : null,
     input.hasAiInteraction ? 'AI use' : null,
     input.hasTranscriptEvidence ? 'transcript' : null,
+    input.hasTestEvidence ? 'tests' : null,
   ].filter((value): value is string => Boolean(value));
   return ready.length > 0 ? ready.join(', ') : 'no evidence yet';
 }

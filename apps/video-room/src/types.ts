@@ -144,7 +144,9 @@ export interface RoomAssessmentProgressSnapshot {
   hasFinalSubmission: boolean;
   hasAiInteraction: boolean;
   hasTranscriptEvidence: boolean;
+  hasTestEvidence: boolean;
   evidenceCounts: Array<{ kind: string; count: number }>;
+  sourceRefCounts: Array<{ kind: string; count: number }>;
   latestEvent: {
     kind: string;
     sequence: number;

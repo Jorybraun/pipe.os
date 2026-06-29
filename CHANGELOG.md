@@ -35,6 +35,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - Win95 shared window-data and browser-navigation events now reconstruct fingerprints and source ids from the exact shared payload before replaying, preventing stale Notepad/Paint/browser state from being accepted as source-backed desktop evidence.
 - Win95 shared file-system events and snapshots now require exact saved/deleted file content provenance before replaying, preventing Notepad, Paint, JSON, or link files from hydrating as source-backed evidence from hash-only or stale projections.
 - Clippy no longer mounts the unmanaged `clippyjs` paperclip sprite over the Win95 desktop; the controlled tray, proactive card, and chat window remain as the only Clippy surfaces.
+- Win95 Clippy no longer opens the agent bridge diagnostics panel in standard rooms that were not configured with a dev workspace; the visible mascot prompt remains recoverable from the tray.
 - Room-dev now clears stale origin cache only during the basic-auth handoff, while missing old hashed `/assets/*` bundles return 404 instead of the SPA shell so rapid deploys do not leave Safari on a blank stale room bundle.
 - Added a deployed Clippy/Devin chat smoke that launches a real dev-container room, waits for `AGENT_READY`, sends a real Devin API prompt, and fails unless the agent response and bridge diagnostics are source-backed and persisted.
 - Standard video rooms no longer publish no-op workspace desktop events, removing rejected source-backed evidence console noise while preserving real dev-container workspace diagnostics.
@@ -42,6 +43,10 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Fixed — Candidate repo matching
 
+- Recruiter interview details now recover the candidate assessment URL from an existing unclaimed invite token when the delivery artifact is missing, and label assessment links as one-use candidate invites so recruiters do not accidentally consume them.
+- CODE_REVIEW interview decision cards now show compact uncertainty and missing-context summaries at the top of the single-meeting recruiter view, keeping gaps visible without opening the raw proof drawer.
+- Interview assessment-progress cards now tolerate older progress snapshots without source-ref counts instead of crashing the recruiter detail page.
+- Commit submissions can now attach exact test-run output as source-backed evidence, and room/recruiter progress snapshots show whether test evidence was captured.
 - Person CODE_REVIEW decision cards now require source-backed repo-match provenance before labeling a scored assessment usable, and include the match decision sources in the quiet proof trail.
 - Win95 Submit Work now renders the backend assessment progress snapshot after commit submission, including stage, state, commit, evidence counts, AI/transcript flags, latest event, and evaluator status.
 - Win95 challenge packets now render task, success criteria, and expected evidence from exact source-backed packet text while staying quiet when those sections are absent.

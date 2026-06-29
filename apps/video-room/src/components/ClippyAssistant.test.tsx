@@ -70,7 +70,7 @@ describe('ClippyAssistant', () => {
     expect(shell.children.item(shell.children.length - 1)).toBe(character);
   });
 
-  it('dismisses only the current prompt, leaving Clippy chat recoverable', async () => {
+  it('dismisses only the current prompt, leaving Clippy chat recoverable when a workspace can launch', async () => {
     const onDismiss = vi.fn();
     const onChatOpen = vi.fn();
     const { rerender } = render(
@@ -80,6 +80,7 @@ describe('ClippyAssistant', () => {
         onChatOpen={onChatOpen}
         agentEnabled={false}
         agentWsUrl={null}
+        canLaunchAgentWorkspace
         openChatRequest={0}
       />,
     );
@@ -96,6 +97,7 @@ describe('ClippyAssistant', () => {
         onChatOpen={onChatOpen}
         agentEnabled={false}
         agentWsUrl={null}
+        canLaunchAgentWorkspace
         openChatRequest={1}
       />,
     );
@@ -111,6 +113,7 @@ describe('ClippyAssistant', () => {
         onDismiss={vi.fn()}
         agentEnabled={false}
         agentWsUrl={null}
+        canLaunchAgentWorkspace
         openChatRequest={1}
       />,
     );
@@ -118,6 +121,45 @@ describe('ClippyAssistant', () => {
     expect(await screen.findByTestId('clippy-chat')).toBeTruthy();
     expect(screen.getByTestId('clippy-character')).not.toBeNull();
     expect(document.querySelector('[data-clippy-anchor]')).toBeNull();
+  });
+
+  it('does not open the agent bridge dialog in a standard call without a workspace', async () => {
+    const onChatOpen = vi.fn();
+    const onChatClose = vi.fn();
+    const { rerender } = render(
+      <ClippyAssistant
+        messages={[{ text: "I'll keep the desktop ready while they join.", hold: true }]}
+        onDismiss={vi.fn()}
+        onChatOpen={onChatOpen}
+        onChatClose={onChatClose}
+        agentEnabled={false}
+        agentWsUrl={null}
+        openChatRequest={0}
+      />,
+    );
+
+    fireEvent.click(screen.getByTestId('clippy-dismiss'));
+    expect(screen.queryByTestId('clippy-proactive-card')).toBeNull();
+
+    rerender(
+      <ClippyAssistant
+        messages={[{ text: "I'll keep the desktop ready while they join.", hold: true }]}
+        onDismiss={vi.fn()}
+        onChatOpen={onChatOpen}
+        onChatClose={onChatClose}
+        agentEnabled={false}
+        agentWsUrl={null}
+        openChatRequest={1}
+      />,
+    );
+
+    expect(screen.queryByTestId('clippy-chat')).toBeNull();
+    expect(screen.getByTestId('clippy-proactive-card').textContent).toContain(
+      "I'll keep the desktop ready while they join.",
+    );
+    expect(screen.getByTestId('clippy-character')).not.toBeNull();
+    expect(onChatOpen).not.toHaveBeenCalled();
+    expect(onChatClose).toHaveBeenCalledTimes(1);
   });
 
   it('opens a real-agent status panel before the workspace bridge is active', async () => {
@@ -189,6 +231,7 @@ describe('ClippyAssistant', () => {
         onChatClose={onChatClose}
         agentEnabled={false}
         agentWsUrl={null}
+        canLaunchAgentWorkspace
         openChatRequest={1}
       />,
     );
@@ -211,6 +254,7 @@ describe('ClippyAssistant', () => {
         onChatClose={onChatClose}
         agentEnabled={false}
         agentWsUrl={null}
+        canLaunchAgentWorkspace
         openChatRequest={1}
       />,
     );
@@ -234,6 +278,7 @@ describe('ClippyAssistant', () => {
         chatOpen
         agentEnabled={false}
         agentWsUrl={null}
+        canLaunchAgentWorkspace
       />,
     );
 
@@ -248,6 +293,7 @@ describe('ClippyAssistant', () => {
         chatOpen={false}
         agentEnabled={false}
         agentWsUrl={null}
+        canLaunchAgentWorkspace
       />,
     );
 

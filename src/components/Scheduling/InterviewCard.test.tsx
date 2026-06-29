@@ -70,7 +70,9 @@ describe('InterviewCard assessment progress', () => {
         hasFinalSubmission: false,
         hasAiInteraction: true,
         hasTranscriptEvidence: true,
+        hasTestEvidence: true,
         evidenceCounts: [{ kind: 'commit_submission', count: 1 }],
+        sourceRefCounts: [{ kind: 'test_run', count: 1 }],
         challenge: {
           sourceRefType: 'review_challenge_packet',
           sourceRefId: 'challenge-packet-card',
@@ -103,7 +105,7 @@ describe('InterviewCard assessment progress', () => {
     expect(progress).toHaveTextContent('ASSESSMENT');
     expect(progress).toHaveTextContent('Ready for evaluation');
     expect(progress).toHaveTextContent('Start source-backed AI or human evaluation.');
-    expect(progress).toHaveTextContent('challenge, work evidence, commit, AI use, transcript');
+    expect(progress).toHaveTextContent('challenge, work evidence, commit, AI use, transcript, tests');
     expect(progress).not.toHaveTextContent('assessment-session-card');
     expect(progress).not.toHaveTextContent('challenge-packet-card');
   });

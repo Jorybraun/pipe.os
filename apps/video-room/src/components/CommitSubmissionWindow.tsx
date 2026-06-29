@@ -32,6 +32,7 @@ const EMPTY_FIELDS: CommitSubmissionFormFields = {
   changedFilesText: '',
   commitEvidenceText: '',
   diffText: '',
+  testEvidenceText: '',
 };
 
 function formatProgressLabel(value: string | null | undefined): string {
@@ -64,6 +65,7 @@ function AssessmentProgressPanel({
   const commitSha = shortSha(progress.commit?.commitSha ?? null);
   const baseSha = shortSha(progress.commit?.baseCommitSha ?? null);
   const changedFileCount = progress.commit?.changedFiles.length ?? 0;
+  const sourceRefCounts = progress.sourceRefCounts ?? [];
   const latestEventLabel = progress.latestEvent
     ? `${formatProgressLabel(progress.latestEvent.kind)} #${progress.latestEvent.sequence}`
     : null;
@@ -128,6 +130,7 @@ function AssessmentProgressPanel({
         <span>Commit submission: {evidenceFlagLabel(progress.hasCommitSubmission)}</span>
         <span>AI interaction: {evidenceFlagLabel(progress.hasAiInteraction)}</span>
         <span>Transcript evidence: {evidenceFlagLabel(progress.hasTranscriptEvidence)}</span>
+        <span>Test evidence: {evidenceFlagLabel(progress.hasTestEvidence)}</span>
       </div>
 
       {progress.evidenceCounts.length > 0 && (
@@ -136,6 +139,16 @@ function AssessmentProgressPanel({
             <li key={evidence.kind}>
               <strong>{evidence.count}</strong>
               <span>{formatEvidenceKind(evidence.kind)}</span>
+            </li>
+          ))}
+        </ul>
+      )}
+      {sourceRefCounts.length > 0 && (
+        <ul className="commit-submission-evidence-counts" data-testid="commit-submission-source-ref-counts">
+          {sourceRefCounts.map((evidence) => (
+            <li key={evidence.kind}>
+              <strong>{evidence.count}</strong>
+              <span>{formatEvidenceKind(evidence.kind)} source</span>
             </li>
           ))}
         </ul>
@@ -334,6 +347,18 @@ export function CommitSubmissionWindow({
           disabled={Boolean(disabledReason) || submitting}
           rows={7}
           data-testid="commit-submission-diff"
+        />
+      </label>
+
+      <label>
+        <span>Test evidence</span>
+        <textarea
+          value={fields.testEvidenceText}
+          onChange={(event) => setField('testEvidenceText', event.target.value)}
+          placeholder="Paste test command output, e.g. npm test -- retry"
+          disabled={Boolean(disabledReason) || submitting}
+          rows={4}
+          data-testid="commit-submission-test-evidence"
         />
       </label>
 

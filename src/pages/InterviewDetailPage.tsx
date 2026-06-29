@@ -155,6 +155,14 @@ interface CodeReviewNextStep {
   tone: CodeReviewNextStepTone;
 }
 
+interface CodeReviewDecisionRisk {
+  uncertainty: {
+    value: string;
+    detail: string;
+  };
+  missingContext: string[];
+}
+
 interface EvidenceFollowUpPlan {
   originalInterviewId: string | null;
   matchStatus: string | null;
@@ -270,6 +278,7 @@ function assessmentEvidenceSummary(input: {
   hasCommitSubmission: boolean;
   hasAiInteraction: boolean;
   hasTranscriptEvidence: boolean;
+  hasTestEvidence: boolean;
 }): string {
   const ready = [
     input.hasChallengePacket ? 'challenge' : null,
@@ -277,6 +286,7 @@ function assessmentEvidenceSummary(input: {
     input.hasCommitSubmission ? 'commit' : null,
     input.hasAiInteraction ? 'AI use' : null,
     input.hasTranscriptEvidence ? 'transcript' : null,
+    input.hasTestEvidence ? 'tests' : null,
   ].filter((value): value is string => Boolean(value));
   return ready.length > 0 ? ready.join(', ') : 'No evidence yet';
 }
@@ -606,6 +616,107 @@ function codeReviewNextStepRecommendation(
     value: 'Collect code-review signal',
     detail: 'Send or wait for the candidate review before making a hiring decision.',
     tone: 'neutral',
+  };
+}
+
+function readableGapLabel(value: string): string {
+  const trimmed = value.trim();
+  if (!trimmed) return 'Missing source-backed evidence';
+  if (/^[A-Z0-9_:-]+$/.test(trimmed)) {
+    return titleCaseToken(trimmed).replace(/\bPr\b/g, 'PR');
+  }
+  return trimmed;
+}
+
+function probeContextLabel(value: string): string {
+  return /^probe\b/i.test(value.trim()) ? value.trim() : `Probe: ${value.trim()}`;
+}
+
+function codeReviewDecisionRiskSummary(
+  score: CodeReviewScoreSummary | null,
+  submission: CodeReviewSubmissionDetail | null,
+  match: CodeReviewMatchDetail | null,
+): CodeReviewDecisionRisk {
+  const missingContext: string[] = [];
+  const matchStatus = match?.status?.toUpperCase() ?? null;
+  const hasMatchedChallenge = matchStatus === 'MATCHED';
+
+  if (!match) {
+    return {
+      uncertainty: {
+        value: 'Repo fit unknown',
+        detail: 'This meeting has no source-backed repo match yet, so it cannot support a code-review hiring signal.',
+      },
+      missingContext: ['Source-backed repo challenge selection'],
+    };
+  }
+
+  if (!hasMatchedChallenge) {
+    missingContext.push(
+      ...(match.gaps.length > 0
+        ? match.gaps.slice(0, 3).map(readableGapLabel)
+        : ['Source-backed candidate work evidence']),
+    );
+    return {
+      uncertainty: {
+        value: 'Repo fit not proven',
+        detail: match.summary || 'PIPE needs more source-backed person evidence before this meeting can assign a fair PR challenge.',
+      },
+      missingContext,
+    };
+  }
+
+  if (!submission) missingContext.push('Candidate review comments on the assigned PR');
+  if (!score) {
+    missingContext.push('Durable score report');
+  } else if (score.status !== 'scored') {
+    missingContext.push('Completed score report');
+  }
+  if (submission && submission.defenseThreads.length === 0) {
+    missingContext.push('Developer pushback calibration');
+  }
+  if (match.gaps.length > 0) {
+    missingContext.push(...match.gaps.slice(0, 2).map(readableGapLabel));
+  }
+  for (const area of score?.growthAreas.slice(0, 2) ?? []) {
+    missingContext.push(probeContextLabel(area));
+  }
+
+  const scoreValue = score?.score;
+  const scoreBand = score?.band?.toLowerCase() ?? null;
+  if (typeof scoreValue === 'number' && Number.isFinite(scoreValue) && (scoreValue < 50 || scoreBand === 'weak')) {
+    return {
+      uncertainty: {
+        value: 'High calibration risk',
+        detail: 'The score is weak enough that the next step should verify whether this reflects candidate ability, assignment fit, or missing context.',
+      },
+      missingContext: missingContext.slice(0, 4),
+    };
+  }
+  if ((score?.growthAreas.length ?? 0) > 0 || scoreBand === 'adequate' || (typeof scoreValue === 'number' && scoreValue < 75)) {
+    return {
+      uncertainty: {
+        value: 'Focused calibration needed',
+        detail: score?.growthAreas[0] ?? 'Use the next conversation to confirm the code-review signal generalizes beyond this PR.',
+      },
+      missingContext: missingContext.slice(0, 4),
+    };
+  }
+  if (missingContext.length > 0) {
+    return {
+      uncertainty: {
+        value: 'Evidence chain incomplete',
+        detail: 'The assigned PR is source-backed, but this meeting still needs the remaining candidate or scoring evidence before it is high-confidence.',
+      },
+      missingContext: missingContext.slice(0, 4),
+    };
+  }
+  return {
+    uncertainty: {
+      value: 'Low remaining uncertainty',
+      detail: 'The main remaining question is whether this code-review signal transfers beyond the selected PR.',
+    },
+    missingContext: ['No blocking evidence gap; confirm the signal transfers beyond this PR.'],
   };
 }
 
@@ -1394,6 +1505,7 @@ export default function InterviewDetailPage(): JSX.Element {
   const assessmentChallengeText = assessmentProgress
     ? assessmentChallengeSummary(assessmentProgress.challenge)
     : null;
+  const assessmentProgressSourceRefCounts = assessmentProgress?.sourceRefCounts ?? [];
   const canStartAssessmentEvaluation = assessmentProgress?.nextAction === 'START_EVALUATION';
   const showsRoomPanel = !isCodeReviewInterview;
   const hasCallRecordEvidence = Boolean(
@@ -1424,6 +1536,11 @@ export default function InterviewDetailPage(): JSX.Element {
   const codeReviewScoreValue = codeReviewScoreHeadline(codeReviewScore);
   const codeReviewScoreDetail = codeReviewScoreNarrative(codeReviewScore);
   const codeReviewNextStep = codeReviewNextStepRecommendation(
+    codeReviewScore,
+    codeReviewSubmission,
+    codeReviewMatch,
+  );
+  const codeReviewDecisionRisk = codeReviewDecisionRiskSummary(
     codeReviewScore,
     codeReviewSubmission,
     codeReviewMatch,
@@ -1580,7 +1697,7 @@ export default function InterviewDetailPage(): JSX.Element {
             </div>
             <h2 style={ROOM_TITLE}>Candidate assessment link</h2>
             <div style={ROOM_LINK_TEXT}>
-              Resend invite issues a fresh one-use link when needed.
+              One-use candidate invite. Copy or resend it for the candidate instead of opening it in a recruiter browser.
             </div>
           </div>
           <div style={ROOM_ACTIONS}>
@@ -1590,10 +1707,10 @@ export default function InterviewDetailPage(): JSX.Element {
               style={{ ...PRIMARY_BUTTON, ...ROOM_SECONDARY_BUTTON }}
             >
               <Copy size={14} />
-              COPY ASSESSMENT LINK
+              COPY CANDIDATE LINK
             </button>
             <label style={ROOM_GUEST_LINK_LABEL}>
-              <span style={ROOM_GUEST_LINK_TEXT}>LAST DELIVERED LINK</span>
+              <span style={ROOM_GUEST_LINK_TEXT}>CANDIDATE ASSESSMENT URL</span>
               <input
                 ref={assessmentLinkInputRef}
                 readOnly
@@ -1746,6 +1863,16 @@ export default function InterviewDetailPage(): JSX.Element {
                   </span>
                 </div>
               )}
+              {assessmentProgressSourceRefCounts.length > 0 && (
+                <div style={EVIDENCE_ROW}>
+                  <span style={FIELD_LABEL}>Source refs</span>
+                  <span style={FIELD_VALUE}>
+                    {assessmentProgressSourceRefCounts
+                      .map((count) => `${count.count} ${sentenceCaseToken(count.kind)}`)
+                      .join(', ')}
+                  </span>
+                </div>
+              )}
             </div>
           ) : (
             <div style={EMPTY_TEXT}>
@@ -1822,6 +1949,21 @@ export default function InterviewDetailPage(): JSX.Element {
                 <div style={FIELD_LABEL}>Recommended next step</div>
                 <div style={DECISION_NEXT_STEP_VALUE}>{codeReviewNextStep.value}</div>
                 <div style={CONTEXT_RECORD_NARRATIVE}>{codeReviewNextStep.detail}</div>
+              </div>
+              <div data-testid="interview-code-review-decision-risk" style={DECISION_RISK_GRID}>
+                <div style={DECISION_RISK_CARD}>
+                  <div style={FIELD_LABEL}>Uncertainty</div>
+                  <div style={DECISION_RISK_VALUE}>{codeReviewDecisionRisk.uncertainty.value}</div>
+                  <div style={CONTEXT_RECORD_NARRATIVE}>{codeReviewDecisionRisk.uncertainty.detail}</div>
+                </div>
+                <div style={DECISION_RISK_CARD}>
+                  <div style={FIELD_LABEL}>Missing context</div>
+                  <ul style={DECISION_RISK_LIST}>
+                    {codeReviewDecisionRisk.missingContext.map((item) => (
+                      <li key={item}>{item}</li>
+                    ))}
+                  </ul>
+                </div>
               </div>
               {codeReviewScore && (
                 <div data-testid="interview-code-review-score-summary" style={DECISION_SCORE_SUMMARY}>
@@ -3117,6 +3259,38 @@ const DECISION_NEXT_STEP_VALUE: CSSProperties = {
   fontWeight: 800,
   lineHeight: 1.25,
   overflowWrap: 'anywhere',
+};
+
+const DECISION_RISK_GRID: CSSProperties = {
+  display: 'grid',
+  gridTemplateColumns: 'repeat(auto-fit, minmax(220px, 1fr))',
+  gap: 10,
+};
+
+const DECISION_RISK_CARD: CSSProperties = {
+  display: 'grid',
+  gap: 7,
+  minWidth: 0,
+  padding: 12,
+  border: '1px solid var(--pipe-border)',
+  borderRadius: 6,
+  background: 'var(--pipe-surface)',
+};
+
+const DECISION_RISK_VALUE: CSSProperties = {
+  color: 'var(--pipe-text)',
+  fontSize: 14,
+  fontWeight: 800,
+  lineHeight: 1.3,
+  overflowWrap: 'anywhere',
+};
+
+const DECISION_RISK_LIST: CSSProperties = {
+  margin: 0,
+  paddingLeft: 16,
+  color: 'var(--pipe-text-muted)',
+  fontSize: 12,
+  lineHeight: 1.55,
 };
 
 const DECISION_SCORE_SUMMARY: CSSProperties = {

@@ -2,7 +2,11 @@ import { fireEvent, render, screen, waitFor } from '@testing-library/react';
 import { describe, expect, it, vi } from 'vitest';
 
 import { CommitSubmissionWindow } from './CommitSubmissionWindow';
-import type { RoomCommitSubmissionResponse, RoomWorkspaceChallengePacket } from '../types';
+import type {
+  RoomCommitSubmissionRequest,
+  RoomCommitSubmissionResponse,
+  RoomWorkspaceChallengePacket,
+} from '../types';
 
 const packet: RoomWorkspaceChallengePacket = {
   sourceRefType: 'open_source_challenge_packet',
@@ -95,10 +99,16 @@ describe('CommitSubmissionWindow', () => {
         hasFinalSubmission: false,
         hasAiInteraction: true,
         hasTranscriptEvidence: false,
+        hasTestEvidence: true,
         evidenceCounts: [
           { kind: 'challenge_packet', count: 1 },
           { kind: 'git_commit', count: 1 },
           { kind: 'code_diff', count: 1 },
+        ],
+        sourceRefCounts: [
+          { kind: 'git_commit', count: 1 },
+          { kind: 'code_diff', count: 1 },
+          { kind: 'test_run', count: 1 },
         ],
         latestEvent: {
           kind: 'COMMIT_SUBMITTED',
@@ -122,7 +132,7 @@ describe('CommitSubmissionWindow', () => {
         },
       },
     };
-    const onSubmit = vi.fn(async () => response);
+    const onSubmit = vi.fn(async (_payload: RoomCommitSubmissionRequest): Promise<RoomCommitSubmissionResponse> => response);
 
     render(
       <CommitSubmissionWindow
@@ -147,9 +157,21 @@ describe('CommitSubmissionWindow', () => {
     fireEvent.change(screen.getByTestId('commit-submission-diff'), {
       target: { value: `diff --git a/src/retry.ts b/src/retry.ts\n+// commit ${commitSha}` },
     });
+    fireEvent.change(screen.getByTestId('commit-submission-test-evidence'), {
+      target: { value: 'npm test -- retry\nPASS src/retry.test.ts' },
+    });
     fireEvent.click(screen.getByTestId('commit-submission-submit'));
 
     await waitFor(() => expect(onSubmit).toHaveBeenCalledTimes(1));
+    const submittedPayload = onSubmit.mock.calls[0]?.[0];
+    expect(submittedPayload).toBeDefined();
+    if (!submittedPayload) throw new Error('Expected commit submission payload.');
+    expect(submittedPayload.sourceRefs).toEqual(expect.arrayContaining([
+      expect.objectContaining({
+        sourceRefType: 'test_run',
+        exactText: expect.stringContaining('PASS src/retry.test.ts'),
+      }),
+    ]));
 
     const progress = screen.getByTestId('commit-submission-progress');
     expect(progress.textContent).toContain('Open Source Bug Fix');
@@ -163,6 +185,8 @@ describe('CommitSubmissionWindow', () => {
     expect(progress.textContent).toContain('code diff');
     expect(progress.textContent).toContain('AI interaction');
     expect(progress.textContent).toContain('Transcript evidence');
+    expect(progress.textContent).toContain('Test evidence');
+    expect(progress.textContent).toContain('test run source');
     expect(progress.textContent).toContain('Pending');
     expect(progress.textContent).toContain('Commit Submitted #4');
   });

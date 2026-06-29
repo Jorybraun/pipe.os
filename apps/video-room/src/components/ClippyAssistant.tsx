@@ -180,12 +180,19 @@ export function ClippyAssistant({
     onAgentRoomAction,
   ]);
 
-  const chatOpen = controlledChatOpen ?? localChatOpen;
+  const canOpenAgentBridgeChat = agentEnabled || canLaunchAgentWorkspace;
+  const chatOpen = (controlledChatOpen ?? localChatOpen) && canOpenAgentBridgeChat;
 
   const openChat = useCallback(() => {
+    if (!canOpenAgentBridgeChat) {
+      setDismissedPromptSignature(null);
+      setLocalChatOpen(false);
+      onChatClose?.();
+      return;
+    }
     setLocalChatOpen(true);
     onChatOpen?.();
-  }, [onChatOpen]);
+  }, [canOpenAgentBridgeChat, onChatClose, onChatOpen]);
 
   const closeChat = useCallback(() => {
     setLocalChatOpen(false);

@@ -55,11 +55,12 @@ describe('commit submission payloads', () => {
     ]);
   });
 
-  it('builds exact git commit and code diff source refs with content hashes', async () => {
+  it('builds exact git commit, code diff, and test run source refs with content hashes', async () => {
     const baseCommitSha = 'a'.repeat(40);
     const commitSha = 'b'.repeat(40);
     const commitEvidenceText = `commit ${commitSha}\nAuthor: Candidate\n\nFix retry flow`;
     const diffText = 'diff --git a/src/retry.ts b/src/retry.ts\n+export const retry = true;';
+    const testEvidenceText = 'npm test -- retry\nPASS src/retry.test.ts';
 
     const payload = await buildCommitSubmissionPayload({
       narrative: 'Submitted retry fix with local tests passing.',
@@ -74,6 +75,7 @@ describe('commit submission payloads', () => {
       changedFilesText: 'modified src/retry.ts',
       commitEvidenceText,
       diffText,
+      testEvidenceText,
     });
 
     expect(payload).toMatchObject({
@@ -101,7 +103,35 @@ describe('commit submission payloads', () => {
         exactText: diffText,
         contentHash: await sha256ContentHash(diffText),
       }),
+      expect.objectContaining({
+        sourceRefType: 'test_run',
+        sourceRefId: `${commitSha}:test-run`,
+        evidenceRole: 'verification_test_output',
+        exactText: testEvidenceText,
+        contentHash: await sha256ContentHash(testEvidenceText),
+      }),
     ]);
+  });
+
+  it('does not invent test evidence when the candidate leaves test output blank', async () => {
+    const commitSha = 'b'.repeat(40);
+    const payload = await buildCommitSubmissionPayload({
+      narrative: 'Submitted retry fix; tests were not captured.',
+      repositoryUrl: 'https://github.com/pipe/source-backed-worker',
+      forkRepositoryUrl: '',
+      branchName: 'pipe-assessment/retry-fix',
+      baseCommitSha: 'a'.repeat(40),
+      commitSha,
+      commitUrl: '',
+      upstreamPullRequestUrl: '',
+      upstreamPrConsent: false,
+      changedFilesText: 'modified src/retry.ts',
+      commitEvidenceText: `commit ${commitSha}\nAuthor: Candidate`,
+      diffText: 'diff --git a/src/retry.ts b/src/retry.ts',
+      testEvidenceText: '   ',
+    });
+
+    expect(payload.sourceRefs.map((ref) => ref.sourceRefType)).toEqual(['git_commit', 'code_diff']);
   });
 
   it('rejects commit evidence that does not contain the submitted commit SHA', async () => {
@@ -118,6 +148,7 @@ describe('commit submission payloads', () => {
       changedFilesText: 'src/retry.ts',
       commitEvidenceText: 'commit missing-sha',
       diffText: 'diff --git a/src/retry.ts b/src/retry.ts',
+      testEvidenceText: '',
     })).rejects.toThrow('Commit evidence text must contain the submitted commit SHA.');
   });
 });

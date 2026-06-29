@@ -221,7 +221,13 @@ describe('InterviewDetailPage', () => {
           hasFinalSubmission: false,
           hasAiInteraction: true,
           hasTranscriptEvidence: true,
+          hasTestEvidence: true,
           evidenceCounts: [{ kind: 'commit_submission', count: 1 }],
+          sourceRefCounts: [
+            { kind: 'git_commit', count: 1 },
+            { kind: 'code_diff', count: 1 },
+            { kind: 'test_run', count: 1 },
+          ],
           challenge: {
             sourceRefType: 'review_challenge_packet',
             sourceRefId: 'challenge-packet-popover',
@@ -258,7 +264,7 @@ describe('InterviewDetailPage', () => {
     expect(progress).toHaveTextContent('Assessment progress');
     expect(progress).toHaveTextContent('Ready for evaluation');
     expect(progress).toHaveTextContent('Start source-backed AI or human evaluation.');
-    expect(progress).toHaveTextContent('challenge, work evidence, commit, AI use, transcript');
+    expect(progress).toHaveTextContent('challenge, work evidence, commit, AI use, transcript, tests');
     expect(progress).toHaveTextContent('abcdef1234');
     expect(progress).toHaveTextContent('Fix the popover cleanup regression.');
     expect(progress).toHaveTextContent('pipe-assessment/popover-cleanup');
@@ -289,7 +295,9 @@ describe('InterviewDetailPage', () => {
       hasFinalSubmission: false,
       hasAiInteraction: true,
       hasTranscriptEvidence: true,
+      hasTestEvidence: false,
       evidenceCounts: [{ kind: 'commit_submission', count: 1 }],
+      sourceRefCounts: [],
       challenge: {
         sourceRefType: 'review_challenge_packet',
         sourceRefId: 'challenge-packet-ready',
@@ -398,7 +406,13 @@ describe('InterviewDetailPage', () => {
       hasFinalSubmission: false,
       hasAiInteraction: true,
       hasTranscriptEvidence: true,
+      hasTestEvidence: true,
       evidenceCounts: [{ kind: 'commit_submission', count: 1 }],
+      sourceRefCounts: [
+        { kind: 'git_commit', count: 1 },
+        { kind: 'code_diff', count: 1 },
+        { kind: 'test_run', count: 1 },
+      ],
       challenge: {
         sourceRefType: 'review_challenge_packet',
         sourceRefId: 'challenge-packet-ready',
@@ -708,6 +722,10 @@ describe('InterviewDetailPage', () => {
     expect(decision).toHaveTextContent('Recommended next step');
     expect(decision).toHaveTextContent('Advance with focused probe');
     expect(decision).toHaveTextContent('Verify the growth area in the next live interview before treating this as a clean pass.');
+    expect(decision).toHaveTextContent('Uncertainty');
+    expect(decision).toHaveTextContent('Focused calibration needed');
+    expect(decision).toHaveTextContent('Missing context');
+    expect(decision).toHaveTextContent('Probe how they would validate timing cleanup.');
     expect(decision).toHaveTextContent('Use the annotated lines and developer pushback to judge whether the requested changes are concrete, source-backed, and worth blocking the PR.');
     expect(decision).toHaveTextContent('Strong assessment fit');
     expect(decision).toHaveTextContent('72/100 Adequate');
@@ -749,9 +767,15 @@ describe('InterviewDetailPage', () => {
           hasFinalSubmission: true,
           hasAiInteraction: true,
           hasTranscriptEvidence: true,
+          hasTestEvidence: true,
           evidenceCounts: [
             { kind: 'recruiter_note', count: 1 },
             { kind: 'commit_submission', count: 1 },
+          ],
+          sourceRefCounts: [
+            { kind: 'git_commit', count: 1 },
+            { kind: 'code_diff', count: 1 },
+            { kind: 'test_run', count: 1 },
           ],
           challenge: {
             sourceRefType: 'review_challenge_packet',
@@ -801,7 +825,8 @@ describe('InterviewDetailPage', () => {
     expect(progress).toHaveTextContent('Assessment progress');
     expect(progress).toHaveTextContent('Evaluated');
     expect(progress).toHaveTextContent('Review the assessment report and evidence.');
-    expect(progress).toHaveTextContent('challenge, work evidence, commit, AI use, transcript');
+    expect(progress).toHaveTextContent('challenge, work evidence, commit, AI use, transcript, tests');
+    expect(progress).toHaveTextContent('1 Test run');
     expect(progress).toHaveTextContent('ffffffffff');
     expect(progress).toHaveTextContent('fix the popover cleanup regression.');
     expect(progress).toHaveTextContent('Candidate fixed the regression and added focused tests.');
@@ -854,6 +879,10 @@ describe('InterviewDetailPage', () => {
     expect(decision).toHaveTextContent('resolve missing evidence');
     expect(decision).toHaveTextContent('Recommended next step');
     expect(decision).toHaveTextContent('Collect missing evidence');
+    expect(decision).toHaveTextContent('Uncertainty');
+    expect(decision).toHaveTextContent('Repo fit not proven');
+    expect(decision).toHaveTextContent('Missing context');
+    expect(decision).toHaveTextContent('The deterministic repo matcher did not return a quality-gated PR.');
     expect(decision).not.toHaveTextContent('Waiting for candidate review');
     const evidencePlan = screen.getByTestId('interview-code-review-evidence-plan');
     expect(evidencePlan).toHaveTextContent('Resolve missing evidence');
@@ -1105,9 +1134,11 @@ describe('InterviewDetailPage', () => {
     const linkPanel = screen.getByTestId('interview-assessment-link');
     expect(linkPanel).toHaveTextContent('Assessment invite');
     expect(linkPanel).toHaveTextContent('Candidate assessment link');
+    expect(linkPanel).toHaveTextContent('One-use candidate invite');
+    expect(linkPanel).toHaveTextContent('CANDIDATE ASSESSMENT URL');
     expect(screen.getByDisplayValue(deliveredUrl)).toBeTruthy();
 
-    fireEvent.click(screen.getByText('COPY ASSESSMENT LINK'));
+    fireEvent.click(screen.getByText('COPY CANDIDATE LINK'));
     await flushAsyncUpdates();
 
     expect(writeText).toHaveBeenCalledWith(deliveredUrl);
@@ -1145,7 +1176,7 @@ describe('InterviewDetailPage', () => {
 
     await flushAsyncUpdates();
     const input = screen.getByDisplayValue(deliveredUrl);
-    fireEvent.click(screen.getByText('COPY ASSESSMENT LINK'));
+    fireEvent.click(screen.getByText('COPY CANDIDATE LINK'));
     await flushAsyncUpdates();
 
     expect(writeText).not.toHaveBeenCalled();
@@ -1185,7 +1216,7 @@ describe('InterviewDetailPage', () => {
 
     await flushAsyncUpdates();
     const input = screen.getByDisplayValue(deliveredUrl);
-    fireEvent.click(screen.getByText('COPY ASSESSMENT LINK'));
+    fireEvent.click(screen.getByText('COPY CANDIDATE LINK'));
     await act(async () => {
       await vi.advanceTimersByTimeAsync(801);
     });
