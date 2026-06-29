@@ -1067,6 +1067,52 @@ function relatedEvidenceDisplayName(related: NonNullable<ScheduledInterviewDetai
     ?? relatedEvidenceRelationshipLabel(related);
 }
 
+type AssessmentInviteLinkState = 'active' | 'claimed' | 'stale' | null;
+
+function assessmentInviteStatusLabel(state: AssessmentInviteLinkState, hasUrl: boolean): string {
+  if (!hasUrl) return 'Not sent';
+  switch (state) {
+    case 'active':
+      return 'Active';
+    case 'claimed':
+      return 'Claimed';
+    case 'stale':
+      return 'Stale';
+    default:
+      return 'Active';
+  }
+}
+
+function assessmentInviteValidityLabel(state: AssessmentInviteLinkState, hasUrl: boolean): string {
+  if (!hasUrl) return 'No candidate link exists yet';
+  switch (state) {
+    case 'claimed':
+      return 'Historical link only';
+    case 'stale':
+      return 'Older token, do not share';
+    case 'active':
+    default:
+      return 'Copyable one-use link';
+  }
+}
+
+function assessmentInviteNextActionLabel(
+  state: AssessmentInviteLinkState,
+  input: { hasUrl: boolean; hasEmail: boolean },
+): string {
+  if (!input.hasEmail) return 'Add a candidate email before sending an assessment invite.';
+  if (!input.hasUrl) return 'Send the assessment invite to create a one-use candidate link.';
+  switch (state) {
+    case 'claimed':
+      return 'Resend the invite to issue a fresh one-use assessment link.';
+    case 'stale':
+      return 'Resend the invite before sharing a candidate assessment link.';
+    case 'active':
+    default:
+      return 'Copy the candidate link, or resend if the candidate needs a new email.';
+  }
+}
+
 function StatusBadge({ status }: { status: string | null | undefined }): JSX.Element {
   const label = status ?? 'INVITED';
   const color = STATUS_COLORS[label] ?? '#9ca3af';
@@ -1592,7 +1638,14 @@ export default function InterviewDetailPage(): JSX.Element {
   const assessmentInviteUrl = interview.assessmentSetup?.lastDeliveredUrl ?? null;
   const assessmentInviteState = interview.assessmentSetup?.lastDeliveredUrlState
     ?? (assessmentInviteUrl ? 'active' : null);
+  const hasAssessmentInviteUrl = Boolean(assessmentInviteUrl);
   const canCopyAssessmentInvite = Boolean(assessmentInviteUrl && assessmentInviteState === 'active');
+  const assessmentInviteStatus = assessmentInviteStatusLabel(assessmentInviteState, hasAssessmentInviteUrl);
+  const assessmentInviteValidity = assessmentInviteValidityLabel(assessmentInviteState, hasAssessmentInviteUrl);
+  const assessmentInviteNextAction = assessmentInviteNextActionLabel(assessmentInviteState, {
+    hasUrl: hasAssessmentInviteUrl,
+    hasEmail: Boolean(personEmail),
+  });
   const showsAssessmentInvitePanel = Boolean(
     interview.assessmentSetup
       && interview.assessmentSetup.status !== 'not_applicable'
@@ -1813,6 +1866,20 @@ export default function InterviewDetailPage(): JSX.Element {
             <h2 style={ROOM_TITLE}>Candidate assessment link</h2>
             <div style={ROOM_LINK_TEXT}>
               {interview.assessmentSetup?.lastDeliveredUrlMessage ?? assessmentInviteDescription}
+            </div>
+            <div data-testid="interview-assessment-link-state" style={ASSESSMENT_INVITE_STATE_GRID}>
+              <div style={ASSESSMENT_INVITE_STATE_ITEM}>
+                <span style={ROOM_GUEST_LINK_TEXT}>STATUS</span>
+                <span style={ASSESSMENT_INVITE_STATE_VALUE}>{assessmentInviteStatus}</span>
+              </div>
+              <div style={ASSESSMENT_INVITE_STATE_ITEM}>
+                <span style={ROOM_GUEST_LINK_TEXT}>VALIDITY</span>
+                <span style={ASSESSMENT_INVITE_STATE_VALUE}>{assessmentInviteValidity}</span>
+              </div>
+              <div style={ASSESSMENT_INVITE_STATE_ITEM}>
+                <span style={ROOM_GUEST_LINK_TEXT}>NEXT ACTION</span>
+                <span style={ASSESSMENT_INVITE_STATE_VALUE}>{assessmentInviteNextAction}</span>
+              </div>
             </div>
           </div>
           <div style={ROOM_ACTIONS}>
@@ -3178,6 +3245,31 @@ const ROOM_LINK_TEXT: CSSProperties = {
   fontFamily: FONT,
   fontSize: 10,
   lineHeight: 1.5,
+};
+
+const ASSESSMENT_INVITE_STATE_GRID: CSSProperties = {
+  display: 'grid',
+  gridTemplateColumns: 'repeat(auto-fit, minmax(140px, 1fr))',
+  gap: 8,
+  marginTop: 14,
+};
+
+const ASSESSMENT_INVITE_STATE_ITEM: CSSProperties = {
+  display: 'grid',
+  gap: 5,
+  minWidth: 0,
+  padding: 10,
+  border: '1px solid var(--pipe-border)',
+  borderRadius: 6,
+  background: 'rgba(255,255,255,0.03)',
+};
+
+const ASSESSMENT_INVITE_STATE_VALUE: CSSProperties = {
+  color: 'var(--pipe-text)',
+  fontFamily: FONT,
+  fontSize: 11,
+  fontWeight: 700,
+  lineHeight: 1.45,
 };
 
 const ROOM_GUEST_LINK_LABEL: CSSProperties = {

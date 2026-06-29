@@ -45,6 +45,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Fixed — Candidate repo matching
 
+- CODE_REVIEW assessment invite panels now surface link status, shareability, and the next safe action as a compact validity summary, making claimed or stale candidate links obvious before recruiters try to share them.
 - Related evidence rows on CODE_REVIEW interview details now describe same-person items by interview kind, such as related code reviews or conversations, instead of the generic “same person assessment” label.
 - CODE_REVIEW assessment invite panels now distinguish active, claimed, and stale candidate links, hide copy actions for used links, and offer a resend action directly from the interview detail so recruiters can recover without sharing a burned token.
 - Assessment progress snapshots now preserve evaluator evidence-coverage gates and show quiet captured/missing chips for tests, terminal, editor, and AI-use evidence, making repo-task scores easier to trust without exposing raw source refs.
