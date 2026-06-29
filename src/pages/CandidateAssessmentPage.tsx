@@ -175,6 +175,7 @@ export default function CandidateAssessmentPage({ hideHeader = false }: Candidat
     followUpLoading,
     submitChallenge,
     onStart,
+    claimAssessmentStart,
     reset,
     refresh,
     sessionToken,
@@ -421,7 +422,7 @@ export default function CandidateAssessmentPage({ hideHeader = false }: Candidat
             ...(waitReason ? { reason: waitReason } : {}),
             ...(waitDiagnostics ? { diagnostics: waitDiagnostics } : {}),
           }}
-          onRefresh={() => void refresh()}
+          onRefresh={refresh}
           sessionToken={sessionToken}
         />
       </div>
@@ -458,7 +459,11 @@ export default function CandidateAssessmentPage({ hideHeader = false }: Candidat
         pipelineName={stageConfig.stageTitle ?? 'Assessment'}
         stageName="Getting Started"
         challenges={welcomeChallenges}
-        onStart={() => setIntakeWelcomeDismissed(true)}
+        onStart={() => {
+          void claimAssessmentStart().then(() => {
+            setIntakeWelcomeDismissed(true);
+          });
+        }}
       />
     );
   }

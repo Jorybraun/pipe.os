@@ -24,6 +24,7 @@ interface InviteCreationData {
   challengeInstructions?: string;
   challengeSuccessCriteria?: string[];
   challengeExpectedEvidence?: string[];
+  recruiterNotes?: string;
   features?: {
     videoEnabled: boolean;
     workspaceEnabled: boolean;
@@ -47,6 +48,7 @@ interface InviteCreationModalProps {
   initialInterviewType?: InterviewType;
   initialRecipientName?: string;
   initialRecipientEmail?: string;
+  initialRecruiterNotes?: string;
 }
 
 interface CreatedInviteState {
@@ -114,10 +116,12 @@ export function InviteCreationModal({
   initialInterviewType = 'VIDEO',
   initialRecipientName = '',
   initialRecipientEmail = '',
+  initialRecruiterNotes = '',
 }: InviteCreationModalProps): JSX.Element | null {
   const { connection } = useSchedulingConnection();
   const [recipientName, setRecipientName] = useState('');
   const [recipientEmail, setRecipientEmail] = useState('');
+  const [recruiterNotes, setRecruiterNotes] = useState('');
   const [interviewType, setInterviewType] = useState<InterviewType>(initialInterviewType);
   const [scheduledAt, setScheduledAt] = useState('');
   const [githubRepoUrl, setGithubRepoUrl] = useState('');
@@ -145,6 +149,7 @@ export function InviteCreationModal({
       setRecipientName(initialRecipientName);
       setRecipientEmail(initialRecipientEmail);
       setInterviewType(initialInterviewType);
+      setRecruiterNotes(initialRecruiterNotes);
       setSchedulingMode('manual');
       setGithubRepoUrl('');
       setGithubPrNumber('');
@@ -158,7 +163,7 @@ export function InviteCreationModal({
       setCreatedInvite(null);
       setCopied(false);
     }
-  }, [isOpen, initialInterviewType, initialRecipientEmail, initialRecipientName]);
+  }, [isOpen, initialInterviewType, initialRecipientEmail, initialRecipientName, initialRecruiterNotes]);
 
   // Auto-select Calendly mode for live interviews when Calendly is connected.
   useEffect(() => {
@@ -254,6 +259,10 @@ export function InviteCreationModal({
         meetingType: meetingTypeForInterviewType(interviewType),
         interviewType,
       };
+      const trimmedRecruiterNotes = recruiterNotes.trim();
+      if (trimmedRecruiterNotes.length > 0) {
+        inviteData.recruiterNotes = trimmedRecruiterNotes;
+      }
 
       if (supportsManualRepoOverride && manualRepoOverride) {
         const trimmedRepoUrl = githubRepoUrl.trim();
@@ -316,6 +325,7 @@ export function InviteCreationModal({
   const handleClose = () => {
     setRecipientName('');
     setRecipientEmail('');
+    setRecruiterNotes('');
     setInterviewType('VIDEO');
     setScheduledAt('');
     setGithubRepoUrl('');
@@ -636,6 +646,16 @@ export function InviteCreationModal({
                 onChange={(e) => setRecipientEmail(e.target.value)}
                 placeholder="jane@example.com"
                 style={inputStyle}
+              />
+            </div>
+
+            <div style={{ marginBottom: 20 }}>
+              <label style={labelStyle}>OBJECTIVE / NOTES</label>
+              <textarea
+                value={recruiterNotes}
+                onChange={(e) => setRecruiterNotes(e.target.value)}
+                placeholder="Why are we running this interview, and what should it clarify?"
+                style={{ ...inputStyle, minHeight: 104, lineHeight: 1.5, resize: 'vertical' }}
               />
             </div>
 

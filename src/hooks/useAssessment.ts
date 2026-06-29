@@ -129,6 +129,7 @@ interface AssessmentState {
 interface UseAssessmentReturn extends AssessmentState {
   submitChallenge: (submission: StageSubmission) => Promise<void>;
   onStart: () => Promise<void>;
+  claimAssessmentStart: () => Promise<void>;
   reset: () => void;
   refresh: () => Promise<void>;
   sessionToken: string | null;
@@ -368,6 +369,34 @@ export function useAssessment(inviteToken: string): UseAssessmentReturn {
     }
   }, [loadStageConfig, loadChallenge]);
 
+  const claimAssessmentStart = useCallback(async (): Promise<void> => {
+    try {
+      const result = await rpcPost<{ success: boolean; status?: string }>(
+        '/rpc/start-assessment',
+        {},
+        sessionTokenRef.current,
+      );
+      if (!result.success) {
+        throw new Error('Failed to start assessment');
+      }
+
+      setState((prev) => {
+        if (!prev.candidate) return prev;
+        const candidate = {
+          ...prev.candidate,
+          status: result.status ?? prev.candidate.status,
+        };
+        sessionStorage.setItem('pipe_session_candidate', JSON.stringify(candidate));
+        return { ...prev, candidate, error: null };
+      });
+    } catch (err) {
+      const error = err instanceof Error ? err : new Error('Failed to start assessment');
+      console.error('[useAssessment] start-assessment failed:', error);
+      setState((prev) => ({ ...prev, error }));
+      throw error;
+    }
+  }, []);
+
   // ── Advance to next challenge (or next stage, or complete) ─────────────
   const advance = useCallback(async () => {
     const { stageConfig, currentOrder } = state;
@@ -542,6 +571,7 @@ export function useAssessment(inviteToken: string): UseAssessmentReturn {
     ...state,
     submitChallenge,
     onStart,
+    claimAssessmentStart,
     reset,
     refresh,
     sessionToken: sessionTokenRef.current,

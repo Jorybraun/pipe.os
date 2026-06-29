@@ -560,6 +560,35 @@ function nextInterviewCtaLabel(decision: CodeReviewDecisionProjection | null): s
   return 'Create context interview';
 }
 
+function nextInterviewRecruiterNotes(decision: CodeReviewDecisionProjection | null): string {
+  if (!decision) {
+    return [
+      'PIPE person-profile next action',
+      'Recommendation: Collect source-backed context',
+      'Next action: Schedule targeted context gathering',
+      'Reason: Use this interview to collect missing evidence before treating the profile as hiring signal.',
+      'Uncertainty: Decision not ready',
+      'Missing context: first source-backed evidence',
+    ].join('\n');
+  }
+
+  const missingContext = decision.missingContext
+    .filter((item) => item.trim().length > 0)
+    .slice(0, 4);
+
+  return [
+    'PIPE person-profile next action',
+    `Recommendation: ${decision.recommendation}`,
+    `Next action: ${decision.nextAction}`,
+    `Reason: ${decision.nextActionDetail}`,
+    `Uncertainty: ${decision.uncertainty} - ${decision.uncertaintyDetail}`,
+    missingContext.length > 0
+      ? `Missing context: ${missingContext.join('; ')}`
+      : 'Missing context: no blocking evidence gap recorded',
+    `Source proof: ${decision.proofCount} source-backed proof ${decision.proofCount === 1 ? 'item' : 'items'}`,
+  ].join('\n');
+}
+
 function nextInterviewPath(contact: PersonContact, decision: CodeReviewDecisionProjection | null): string {
   const params = new URLSearchParams({
     new: '1',
@@ -574,6 +603,7 @@ function nextInterviewPath(contact: PersonContact, decision: CodeReviewDecisionP
   if (action.includes('code review') || action.includes('review signal')) {
     params.set('interviewType', 'CODE_REVIEW');
   }
+  params.set('recruiterNotes', nextInterviewRecruiterNotes(decision));
   return `/interviews?${params.toString()}`;
 }
 

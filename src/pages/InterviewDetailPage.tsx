@@ -1079,16 +1079,16 @@ function relatedEvidenceRelationshipLabel(
     case 'same_person_assessment':
       switch (related.interviewType) {
         case 'CODE_REVIEW':
-          return 'Related code review';
+          return 'Other code review';
         case 'DEV_CONTAINER_CHALLENGE':
-          return 'Related dev challenge';
+          return 'Other dev challenge';
         case 'OPEN_SOURCE_BUG_FIX':
-          return 'Related open-source task';
+          return 'Other open-source task';
         case 'VIDEO':
         case 'SCREENING':
-          return 'Related conversation';
+          return 'Other conversation';
         default:
-          return 'Related interaction';
+          return 'Other interaction';
       }
     default:
       return titleCaseToken(related.relationship);
@@ -1667,8 +1667,15 @@ export default function InterviewDetailPage(): JSX.Element {
       || contextSummary.signalCount > 0
     ),
   );
-  const hasCodeReviewEvidence = Boolean(interview.githubRepoUrl || interview.githubPrNumber || interview.matchedRepoId);
   const codeReviewMatch = interview.codeReviewMatch ?? null;
+  const isCodeReviewInterview = interview.interviewType === 'CODE_REVIEW';
+  const hasConcreteReviewAssignment = Boolean(interview.githubRepoUrl && interview.githubPrNumber);
+  const hasReviewSetupGap = Boolean(
+    isCodeReviewInterview
+      && !hasConcreteReviewAssignment
+      && (interview.githubRepoUrl || interview.githubPrNumber || interview.matchedRepoId),
+  );
+  const showsReviewAssignmentPanel = hasConcreteReviewAssignment || hasReviewSetupGap;
   const primaryMatchEvidence = codeReviewMatch?.evidence[0] ?? null;
   const primaryMatchHasRoleContext = Boolean(
     primaryMatchEvidence && (
@@ -1690,7 +1697,6 @@ export default function InterviewDetailPage(): JSX.Element {
   const matchPathLabel = primaryMatchHasRoleContext
     ? 'role context -> person evidence -> repo challenge'
     : 'candidate evidence -> repo challenge';
-  const isCodeReviewInterview = interview.interviewType === 'CODE_REVIEW';
   const usesWorkspaceInterview = interview.interviewType === 'DEV_CONTAINER_CHALLENGE'
     || interview.interviewType === 'OPEN_SOURCE_BUG_FIX';
   const assessmentProgress = interview.assessmentProgress ?? null;
@@ -2672,9 +2678,9 @@ export default function InterviewDetailPage(): JSX.Element {
               </div>
               {relatedEvidenceInterviews.length > 0 && (
                 <div data-testid="interview-related-evidence-interviews" style={CONTEXT_RECORD}>
-                  <div style={FIELD_LABEL}>Related evidence interviews</div>
+                  <div style={FIELD_LABEL}>Other interviews for this person</div>
                   <div style={CONTEXT_RECORD_NARRATIVE}>
-                    Open the person profile for the full cross-meeting graph. These links are context, not evidence owned by this meeting.
+                    These are separate interviews on the same person graph. Open the person profile for the full cross-meeting view.
                   </div>
                   <div style={RELATED_EVIDENCE_SCOPE}>
                     <span style={CONTEXT_RECORD_NARRATIVE}>
@@ -2747,16 +2753,18 @@ export default function InterviewDetailPage(): JSX.Element {
           )}
         </Section>
 
-        {hasCodeReviewEvidence && (
+        {showsReviewAssignmentPanel && (
           <Section
-            title="Review assignment"
+            title={hasConcreteReviewAssignment ? 'Review assignment' : 'Assignment setup gap'}
             icon={<GitPullRequest size={15} />}
             style={CODE_REVIEW_ASSIGNMENT_SECTION}
           >
             <div style={EVIDENCE_LIST}>
               {interview.githubRepoUrl && (
                 <div style={EVIDENCE_ROW}>
-                  <span style={FIELD_LABEL}>Repository</span>
+                  <span style={FIELD_LABEL}>
+                    {hasConcreteReviewAssignment ? 'Repository' : 'Draft repository'}
+                  </span>
                   <a href={interview.githubRepoUrl} target="_blank" rel="noopener noreferrer" style={INLINE_LINK}>
                     {interview.githubRepoUrl.replace(/^https:\/\/github\.com\//, '')}
                   </a>
@@ -2772,6 +2780,14 @@ export default function InterviewDetailPage(): JSX.Element {
                 <div style={{ ...EVIDENCE_ROW, alignItems: 'flex-start' }}>
                   <span style={FIELD_LABEL}>Why this PR</span>
                   <span style={{ ...FIELD_VALUE, lineHeight: 1.6 }}>{codeReviewMatch.summary}</span>
+                </div>
+              )}
+              {hasReviewSetupGap && (
+                <div style={{ ...EVIDENCE_ROW, alignItems: 'flex-start' }}>
+                  <span style={FIELD_LABEL}>Why it is not ready</span>
+                  <span style={{ ...FIELD_VALUE, lineHeight: 1.6 }}>
+                    This interview only has repository setup data. No reviewable PR or source-backed match is attached yet, so this should not be treated as the candidate's code-review assignment.
+                  </span>
                 </div>
               )}
             </div>

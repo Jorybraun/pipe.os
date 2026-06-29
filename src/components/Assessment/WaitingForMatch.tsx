@@ -36,7 +36,7 @@ interface WaitingForMatchProps {
     reason?: string;
     diagnostics?: WaitingForMatchDiagnostics;
   };
-  onRefresh: () => void;
+  onRefresh: () => void | Promise<void>;
   sessionToken?: string | null;
 }
 
@@ -156,11 +156,23 @@ export function WaitingForMatch({
   const isBlocked = config.state === 'blocked';
   const rows = diagnosticRows(config.diagnostics);
   const pipeline = config.diagnostics?.pipeline ?? [];
+  const profileReadyStatuses = new Set(['profile_generated', 'embedded', 'matched', 'enriched']);
+  const canViewProfile = Boolean(
+    sessionToken
+      && !isBlocked
+      && config.diagnostics?.ingestionStatus
+      && profileReadyStatuses.has(config.diagnostics.ingestionStatus),
+  );
+  const profileUnavailableMessage = isBlocked
+    ? 'Profile is unavailable while matching needs recruiter attention.'
+    : 'Profile appears after evidence decomposition.';
 
   const [dots, setDots] = useState('');
   const [showProfile, setShowProfile] = useState(false);
   const [profile, setProfile] = useState<CandidateProfile | null>(null);
   const [profileLoading, setProfileLoading] = useState(false);
+  const [profileError, setProfileError] = useState<string | null>(null);
+  const [refreshState, setRefreshState] = useState<'idle' | 'checking' | 'checked' | 'failed'>('idle');
 
   // Animated ellipsis
   useEffect(() => {
@@ -179,12 +191,28 @@ export function WaitingForMatch({
     return () => clearInterval(t);
   }, [config.autoRefresh, intervalSeconds, onRefresh]);
 
+  const handleRefresh = async () => {
+    if (refreshState === 'checking') return;
+    setRefreshState('checking');
+    try {
+      await onRefresh();
+      setRefreshState('checked');
+    } catch {
+      setRefreshState('failed');
+    }
+  };
+
   const handleViewProfile = async () => {
     if (!sessionToken) return;
+    setProfileError(null);
     setProfileLoading(true);
     const p = await fetchProfile(sessionToken);
     setProfile(p);
     setProfileLoading(false);
+    if (!p) {
+      setProfileError('Profile is not ready yet. Evidence decomposition has not produced a candidate profile.');
+      return;
+    }
     setShowProfile(true);
   };
   const activePipelineStep = currentPipelineStep(config.diagnostics, isBlocked);
@@ -435,7 +463,8 @@ export function WaitingForMatch({
 
         <div style={{ display: 'flex', gap: 10, justifyContent: 'center', flexWrap: 'wrap' }}>
           <button
-            onClick={onRefresh}
+            onClick={handleRefresh}
+            disabled={refreshState === 'checking'}
             style={{
               padding: '10px 24px',
               background: 'var(--pipe-surface-hover)',
@@ -444,21 +473,22 @@ export function WaitingForMatch({
               fontSize: 10,
               letterSpacing: '0.1em',
               fontFamily: '"Space Mono", monospace',
-              cursor: 'pointer',
+              cursor: refreshState === 'checking' ? 'wait' : 'pointer',
               borderRadius: 4,
               transition: 'all 0.2s',
+              opacity: refreshState === 'checking' ? 0.65 : 1,
             }}
             onMouseEnter={(e) => {
-              e.currentTarget.style.background = 'rgba(255,255,255,0.08)';
+              if (refreshState !== 'checking') e.currentTarget.style.background = 'rgba(255,255,255,0.08)';
             }}
             onMouseLeave={(e) => {
               e.currentTarget.style.background = 'var(--pipe-surface-hover)';
             }}
           >
-            CHECK STATUS NOW
+            {refreshState === 'checking' ? 'CHECKING...' : 'CHECK STATUS NOW'}
           </button>
 
-          {sessionToken && (
+          {canViewProfile ? (
             <button
               onClick={handleViewProfile}
               disabled={profileLoading}
@@ -488,8 +518,35 @@ export function WaitingForMatch({
               <User size={12} />
               {profileLoading ? 'LOADING...' : 'VIEW PROFILE'}
             </button>
+          ) : (
+            <span
+              style={{
+                alignSelf: 'center',
+                color: 'var(--pipe-text-dim)',
+                fontSize: 10,
+                lineHeight: 1.5,
+                fontFamily: '"Space Mono", monospace',
+              }}
+            >
+              {profileUnavailableMessage}
+            </span>
           )}
         </div>
+        {refreshState === 'checked' && (
+          <div style={{ marginTop: 12, color: '#4ade80', fontSize: 10, fontFamily: '"Space Mono", monospace' }}>
+            Status checked. If this state does not change, PIPE is still waiting on the evidence gate shown above.
+          </div>
+        )}
+        {refreshState === 'failed' && (
+          <div style={{ marginTop: 12, color: '#f87171', fontSize: 10, fontFamily: '"Space Mono", monospace' }}>
+            Status check failed. Refresh the page or contact the recruiter for a fresh invite.
+          </div>
+        )}
+        {profileError && (
+          <div style={{ marginTop: 12, color: '#fbbf24', fontSize: 10, lineHeight: 1.5, fontFamily: '"Space Mono", monospace' }}>
+            {profileError}
+          </div>
+        )}
       </LiquidMetalCard>
 
       <style>{`

@@ -45,12 +45,14 @@ vi.mock('./InviteCreationModal', () => ({
     initialRecipientName?: string;
     initialRecipientEmail?: string;
     initialInterviewType?: string;
+    initialRecruiterNotes?: string;
   }) => props.isOpen ? (
     <div
       data-testid="invite-modal"
       data-recipient-name={props.initialRecipientName ?? ''}
       data-recipient-email={props.initialRecipientEmail ?? ''}
       data-interview-type={props.initialInterviewType ?? ''}
+      data-recruiter-notes={props.initialRecruiterNotes ?? ''}
     />
   ) : null,
 }));
@@ -156,12 +158,13 @@ describe('SchedulingDashboard interview ordering', () => {
   it('opens the invite modal from a person next-action URL with prefilled context', () => {
     renderDashboard(
       interviews,
-      '/interviews?new=1&recipientName=Ada+Reviewer&recipientEmail=ada%40example.com&interviewType=VIDEO',
+      '/interviews?new=1&recipientName=Ada+Reviewer&recipientEmail=ada%40example.com&interviewType=VIDEO&recruiterNotes=Probe+repo+matching+confidence',
     );
 
     const modal = screen.getByTestId('invite-modal');
     expect(modal).toHaveAttribute('data-recipient-name', 'Ada Reviewer');
     expect(modal).toHaveAttribute('data-recipient-email', 'ada@example.com');
     expect(modal).toHaveAttribute('data-interview-type', 'VIDEO');
+    expect(modal).toHaveAttribute('data-recruiter-notes', 'Probe repo matching confidence');
   });
 });

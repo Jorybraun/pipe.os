@@ -51,6 +51,11 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Fixed — Candidate repo matching
 
+- Candidate assessment links now claim their one-use token only when the candidate starts the assessment or submits a response, so merely opening the invite page no longer burns the link.
+- Candidate waiting screens now hide unavailable profile actions, show manual status-check feedback, and avoid silent no-op buttons while evidence decomposition or repo matching is pending.
+- CODE_REVIEW interview detail now labels repo-only rows as assignment setup gaps until a concrete PR/source-backed match exists, preventing draft repositories from reading as validated review assignments.
+- CODE_REVIEW person-context previews now say “other interviews for this person,” making cross-meeting context clearly separate from the current interview record.
+- Person next-action interview CTAs now carry the recommendation, uncertainty, and missing-context objective into scheduled interview notes and source-backed invite evidence, preserving why the follow-up exists.
 - CODE_REVIEW assessment invite panels now show the assessment evidence state separately from link validity, making claimed-without-submission invites visibly distinct from completed assessment evidence.
 - Person code-review decision cards now show a quiet decision-basis row for score report, review transcript, repo challenge, and match proof so hiring managers can see why the recommendation is usable without opening raw evidence.
 - CODE_REVIEW person-context panels now label related meetings as capped context previews, show the preview count, and link to the full person graph so interview pages do not read like they own every interaction.

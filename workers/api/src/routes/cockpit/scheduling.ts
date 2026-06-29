@@ -297,6 +297,7 @@ const createInterviewSchema = z.object({
   challengeInstructions: z.string().trim().min(1).max(5000).optional(),
   challengeSuccessCriteria: z.array(z.string().trim().min(1).max(500)).min(1).max(12).optional(),
   challengeExpectedEvidence: z.array(z.string().trim().min(1).max(500)).min(1).max(12).optional(),
+  recruiterNotes: z.string().trim().max(5000).optional(),
 }).superRefine((value, ctx) => {
   const hasCandidate = Boolean(value.candidateId);
   const hasRecipient = Boolean(value.recipientName && value.recipientEmail);
@@ -3068,6 +3069,7 @@ function contactFirstInterviewSourceText(input: {
   scheduledAt: string | null;
   schedulingProvider: string | null;
   schedulingUrl: string | null;
+  recruiterNotes?: string | null;
   createdAt: string;
 }): string {
   return [
@@ -3084,6 +3086,7 @@ function contactFirstInterviewSourceText(input: {
     `Scheduled at: ${input.scheduledAt ?? 'unscheduled'}`,
     `Scheduling provider: ${input.schedulingProvider ?? 'none'}`,
     `Scheduling URL: ${input.schedulingUrl ?? 'none'}`,
+    `Recruiter notes: ${input.recruiterNotes?.trim() || 'none'}`,
     `Created at: ${input.createdAt}`,
   ].join('\n');
 }
@@ -3102,6 +3105,7 @@ async function persistContactFirstInterviewInviteContext(
     scheduledAt: string | null;
     schedulingProvider: string | null;
     schedulingUrl: string | null;
+    recruiterNotes?: string | null;
     createdAt: string;
   },
 ): Promise<void> {
@@ -3125,6 +3129,7 @@ async function persistContactFirstInterviewInviteContext(
       assessmentSetupKind: input.assessmentSetup.kind,
       assessmentSetupSource: input.assessmentSetup.source,
       assessmentSetupBlocksPositiveAssessment: input.assessmentSetup.blocksPositiveAssessment,
+      recruiterNotes: input.recruiterNotes ?? null,
     },
   });
   const artifact = await store.upsertArtifact({
@@ -4768,6 +4773,7 @@ schedulingAuth.post('/interviews', async (c) => {
     challengeInstructions,
     challengeSuccessCriteria,
     challengeExpectedEvidence,
+    recruiterNotes,
   } = parsed.data;
 
   let candidate: { id: string; pipeline_id: string | null } | null = null;
@@ -4829,8 +4835,8 @@ schedulingAuth.post('/interviews', async (c) => {
         interview_type, meeting_type, scheduled_at, scheduling_provider,
         scheduling_url, recipient_name, recipient_email, sync_source,
         matched_repo_id, github_repo_url, github_pr_number,
-        created_at, updated_at)
-       VALUES (?, ?, ?, ?, ?, 'INVITED', ?, ?, ?, ?, ?, ?, ?, 'MANUAL', ?, ?, ?, ?, ?)`
+        recruiter_notes, created_at, updated_at)
+       VALUES (?, ?, ?, ?, ?, 'INVITED', ?, ?, ?, ?, ?, ?, ?, 'MANUAL', ?, ?, ?, ?, ?, ?)`
     )
     .bind(
       id, candidateId ?? null, pipelineId ?? null, stageId ?? null, userId,
@@ -4838,6 +4844,7 @@ schedulingAuth.post('/interviews', async (c) => {
       schedulingProvider ?? null, schedulingUrl ?? null,
       recipientName ?? null, recipientEmail?.trim().toLowerCase() ?? null,
       matchedRepoId ?? null, githubRepoUrl ?? null, githubPrNumber ?? null,
+      recruiterNotes ?? null,
       now, now,
     )
     .run();
@@ -4855,6 +4862,7 @@ schedulingAuth.post('/interviews', async (c) => {
       scheduledAt: scheduledAt ?? null,
       schedulingProvider: schedulingProvider ?? null,
       schedulingUrl: schedulingUrl ?? null,
+      recruiterNotes: recruiterNotes ?? null,
       createdAt: now,
     });
   }
@@ -4902,6 +4910,7 @@ schedulingAuth.post('/interviews', async (c) => {
       matchedRepoId: matchedRepoId ?? null,
       githubRepoUrl: githubRepoUrl ?? null,
       githubPrNumber: githubPrNumber ?? null,
+      recruiterNotes: recruiterNotes ?? null,
       assessmentSetup,
       assessmentProgress,
     },

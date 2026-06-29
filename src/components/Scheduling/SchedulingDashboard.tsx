@@ -24,6 +24,7 @@ interface InvitePrefill {
   recipientName: string;
   recipientEmail: string;
   interviewType: InterviewType;
+  recruiterNotes: string;
 }
 
 interface InviteResponse {
@@ -170,6 +171,7 @@ export function SchedulingDashboard(): JSX.Element {
     recipientName: '',
     recipientEmail: '',
     interviewType: 'VIDEO',
+    recruiterNotes: '',
   });
   const [sortMode, setSortMode] = useState<InterviewSortMode>('CREATED_DESC');
   const [searchParams, setSearchParams] = useSearchParams();
@@ -183,6 +185,7 @@ export function SchedulingDashboard(): JSX.Element {
       recipientName: searchParams.get('recipientName') ?? '',
       recipientEmail: searchParams.get('recipientEmail') ?? '',
       interviewType: isInterviewType(requestedInterviewType) ? requestedInterviewType : 'VIDEO',
+      recruiterNotes: searchParams.get('recruiterNotes') ?? '',
     });
     setShowInviteModal(true);
     const next = new URLSearchParams(searchParams);
@@ -190,6 +193,7 @@ export function SchedulingDashboard(): JSX.Element {
     next.delete('recipientName');
     next.delete('recipientEmail');
     next.delete('interviewType');
+    next.delete('recruiterNotes');
     setSearchParams(next, { replace: true });
   }, [searchParams, setSearchParams]);
 
@@ -497,11 +501,13 @@ export function SchedulingDashboard(): JSX.Element {
         initialRecipientName={invitePrefill.recipientName}
         initialRecipientEmail={invitePrefill.recipientEmail}
         initialInterviewType={invitePrefill.interviewType}
+        initialRecruiterNotes={invitePrefill.recruiterNotes}
         onCreateInvite={async (data: {
           recipientName: string;
           recipientEmail: string;
           meetingType: MeetingType;
           interviewType: InterviewType;
+          recruiterNotes?: string;
           scheduledAt?: string;
           schedulingProvider?: SchedulingProvider;
           schedulingUrl?: string;

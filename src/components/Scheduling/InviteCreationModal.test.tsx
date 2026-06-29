@@ -24,11 +24,15 @@ describe('InviteCreationModal open-source challenge packets', () => {
         initialRecipientName="Ada Reviewer"
         initialRecipientEmail="ada@example.com"
         initialInterviewType="VIDEO"
+        initialRecruiterNotes="Probe source-backed repo matching confidence."
       />,
     );
 
     expect(screen.getByPlaceholderText('Jane Doe')).toHaveValue('Ada Reviewer');
     expect(screen.getByPlaceholderText('jane@example.com')).toHaveValue('ada@example.com');
+    expect(screen.getByPlaceholderText('Why are we running this interview, and what should it clarify?')).toHaveValue(
+      'Probe source-backed repo matching confidence.',
+    );
     expect(screen.getByRole('button', { name: /Video/i })).toHaveStyle({
       color: '#60a5fa',
     });
@@ -58,6 +62,9 @@ describe('InviteCreationModal open-source challenge packets', () => {
     });
     fireEvent.change(screen.getByPlaceholderText('jane@example.com'), {
       target: { value: 'ada@example.com' },
+    });
+    fireEvent.change(screen.getByPlaceholderText('Why are we running this interview, and what should it clarify?'), {
+      target: { value: 'Confirm the manual challenge is fair before treating the result as signal.' },
     });
     fireEvent.click(screen.getByRole('button', { name: 'Specify repo manually' }));
     fireEvent.change(screen.getByPlaceholderText('https://github.com/owner/repo'), {
@@ -94,6 +101,7 @@ describe('InviteCreationModal open-source challenge packets', () => {
       recipientEmail: 'ada@example.com',
       meetingType: 'DIRECT_VIDEO_CALL',
       interviewType: 'OPEN_SOURCE_BUG_FIX',
+      recruiterNotes: 'Confirm the manual challenge is fair before treating the result as signal.',
       githubRepoUrl: 'https://github.com/sourcegraph/sourcegraph',
       githubPrNumber: 42,
       challengeBaseCommitSha: '1111111111111111111111111111111111111111',

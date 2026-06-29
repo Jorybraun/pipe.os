@@ -1158,15 +1158,15 @@ describe('InterviewDetailPage', () => {
     expect(relationship).toHaveTextContent('3 evidence moments on the person profile');
     expect(relationship).toHaveTextContent('This meeting remains scoped to its own invite, room, transcript, and assessment evidence.');
     const related = screen.getByTestId('interview-related-evidence-interviews');
-    expect(related).toHaveTextContent('Related evidence interviews');
-    expect(related).toHaveTextContent('Open the person profile for the full cross-meeting graph. These links are context, not evidence owned by this meeting.');
+    expect(related).toHaveTextContent('Other interviews for this person');
+    expect(related).toHaveTextContent('These are separate interviews on the same person graph. Open the person profile for the full cross-meeting view.');
     expect(related).toHaveTextContent('Showing 4 of 5 related context previews.');
     expect(related).toHaveTextContent('Open full person graph');
     expect(related).toHaveTextContent('Evidence follow-up');
     expect(related).toHaveTextContent('assessment in progress');
     expect(related).toHaveTextContent('meeting room attached');
     expect(related).not.toHaveTextContent('meeting-context-1');
-    expect(related).toHaveTextContent('Related code review');
+    expect(related).toHaveTextContent('Other code review');
     expect(related).not.toHaveTextContent('Same person assessment');
     expect(related).toHaveTextContent('ada@example.com');
     expect(related).toHaveTextContent('Code review');
@@ -1177,6 +1177,40 @@ describe('InterviewDetailPage', () => {
     expect(screen.queryByTestId('interview-person-context-timeline')).toBeNull();
     expect(screen.queryByText('Code Review Context Call Recommendation')).toBeNull();
     expect(screen.queryByText('Scheduled Interview Invite Delivery')).toBeNull();
+  });
+
+  it('labels repo-only code-review rows as setup gaps instead of assignments', async () => {
+    mocks.api.get.mockResolvedValueOnce({
+      interview: makeInterview({
+        interviewType: 'CODE_REVIEW',
+        status: 'ACTIVE',
+        recipientName: 'Bob',
+        recipientEmail: 'bob@example.com',
+        githubRepoUrl: 'https://github.com/Jorybraun/agentic-engineering-book',
+        githubPrNumber: null,
+        matchedRepoId: null,
+        assessmentSetup: {
+          status: 'waiting_for_candidate_evidence',
+          kind: 'auto_match',
+          source: 'contact_first_invite',
+          blocksPositiveAssessment: true,
+          message: 'This contact-first assessment invite has no candidate evidence yet.',
+          lastDeliveredUrl: null,
+          lastDeliveredUrlState: null,
+          lastDeliveredUrlMessage: null,
+        },
+      }),
+    });
+
+    renderDetail();
+
+    await flushAsyncUpdates();
+    expect(screen.queryByText('Review assignment')).toBeNull();
+    const setupGap = screen.getByText('Assignment setup gap').closest('section');
+    expect(setupGap).toHaveTextContent('Draft repository');
+    expect(setupGap).toHaveTextContent('Jorybraun/agentic-engineering-book');
+    expect(setupGap).toHaveTextContent('Why it is not ready');
+    expect(setupGap).toHaveTextContent("No reviewable PR or source-backed match is attached yet, so this should not be treated as the candidate's code-review assignment.");
   });
 
   it('shows completed evidence-plan refresh state instead of the old missing-evidence prompt', async () => {

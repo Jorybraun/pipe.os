@@ -6,6 +6,7 @@
  *
  * Routes:
  *   POST /rpc/resolve-token      — Public: validate invite token, issue JWT
+ *   POST /rpc/start-assessment   — Candidate JWT: claim one-use invite token on first real start
  *   POST /rpc/get-stage-config   — Candidate JWT: return current stage metadata
  *   POST /rpc/get-challenge      — Candidate JWT: return challenge content by order
  *   POST /rpc/refresh-session    — Public: reissue JWT from expired token
@@ -2019,6 +2020,95 @@ async function handleIntakePayload(
 
 const rpcPublic = new Hono<{ Bindings: Env }>();
 
+type AssessmentStartClaimResult =
+  | { ok: true; status: string; alreadyStarted: boolean }
+  | {
+      ok: false;
+      status: 400 | 403 | 404 | 409;
+      error: { code: string; message: string };
+    };
+
+async function claimCandidateInviteTokenForAssessmentStart(
+  db: Env['DB'],
+  candidateId: string,
+  inviteToken: string | null,
+): Promise<AssessmentStartClaimResult> {
+  const candidate = await db
+    .prepare('SELECT invite_token, status FROM candidates WHERE id = ?1')
+    .bind(candidateId)
+    .first<{ invite_token: string | null; status: string }>();
+
+  if (!candidate) {
+    return {
+      ok: false,
+      status: 404,
+      error: { code: 'NOT_FOUND', message: 'Candidate not found.' },
+    };
+  }
+
+  if (candidate.status === 'COMPLETED') {
+    return {
+      ok: false,
+      status: 403,
+      error: { code: 'FORBIDDEN', message: 'Assessment already completed.' },
+    };
+  }
+
+  const currentToken = candidate.invite_token?.trim() ?? '';
+  if (!inviteToken) {
+    if (candidate.status === 'IN_PROGRESS' || currentToken.startsWith('CLAIMED::')) {
+      return { ok: true, status: candidate.status, alreadyStarted: true };
+    }
+    return {
+      ok: false,
+      status: 400,
+      error: { code: 'START_TOKEN_MISSING', message: 'This session cannot claim an assessment invite.' },
+    };
+  }
+
+  const claimedToken = `CLAIMED::${inviteToken}`;
+  if (currentToken === claimedToken) {
+    return { ok: true, status: candidate.status, alreadyStarted: true };
+  }
+
+  if (currentToken !== inviteToken) {
+    return {
+      ok: false,
+      status: 409,
+      error: currentToken.startsWith('CLAIMED::')
+        ? { code: 'TOKEN_ALREADY_CLAIMED', message: 'This invite link has already been used.' }
+        : { code: 'STALE_INVITE_TOKEN', message: 'This invite link is no longer current.' },
+    };
+  }
+
+  const now = new Date().toISOString();
+  const result = await db
+    .prepare(
+      `UPDATE candidates
+          SET invite_token = ?1,
+              status = CASE WHEN status = 'INVITED' THEN 'IN_PROGRESS' ELSE status END,
+              updated_at = ?2
+        WHERE id = ?3
+          AND invite_token = ?4`,
+    )
+    .bind(claimedToken, now, candidateId, inviteToken)
+    .run();
+
+  if (result.meta.changes === 0) {
+    return {
+      ok: false,
+      status: 409,
+      error: { code: 'TOKEN_ALREADY_CLAIMED', message: 'Token was already claimed.' },
+    };
+  }
+
+  return {
+    ok: true,
+    status: candidate.status === 'INVITED' ? 'IN_PROGRESS' : candidate.status,
+    alreadyStarted: false,
+  };
+}
+
 // ── POST /rpc/resolve-token ─────────────────────────────────────────────────
 
 rpcPublic.post('/resolve-token', async (c) => {
@@ -2098,28 +2188,14 @@ rpcPublic.post('/resolve-token', async (c) => {
 
   // Issue JWT session token
   const sessionToken = await signJwt(
-    { sub: candidate.id, pid: candidate.pipeline_id },
+    { sub: candidate.id, pid: candidate.pipeline_id, itk: trimmed },
     secret,
   );
-
-  // Claim the invite token atomically (one-time use)
-  const result = await c.env.DB.prepare(
-    `UPDATE candidates
-     SET invite_token = ?1, status = CASE WHEN status = 'INVITED' THEN 'IN_PROGRESS' ELSE status END, updated_at = ?2
-     WHERE id = ?3 AND invite_token = ?4`,
-  )
-    .bind(`CLAIMED::${trimmed}`, new Date().toISOString(), candidate.id, trimmed)
-    .run();
-
-  // If no rows affected, token was claimed by concurrent request
-  if (result.meta.changes === 0) {
-    return c.json({ error: { code: 'CONFLICT', message: 'Token was already claimed.' } }, 409);
-  }
 
   return c.json({
     id: candidate.id,
     pipelineId: candidate.pipeline_id,
-    status: candidate.status === 'INVITED' ? 'IN_PROGRESS' : candidate.status,
+    status: candidate.status,
     name: candidate.name,
     sessionToken,
   });
@@ -2169,7 +2245,7 @@ rpcPublic.post('/refresh-session', async (c) => {
 
   // Issue fresh JWT
   const sessionToken = await signJwt(
-    { sub: payload.sub, pid: payload.pid },
+    { sub: payload.sub, pid: payload.pid, itk: payload.itk ?? null },
     secret,
   );
 
@@ -2181,6 +2257,26 @@ rpcPublic.post('/refresh-session', async (c) => {
 const rpcAuth = new Hono<{ Bindings: Env; Variables: CandidateVariables }>();
 
 rpcAuth.use('*', candidateAuth);
+
+// ── POST /rpc/start-assessment ──────────────────────────────────────────────
+
+rpcAuth.post('/start-assessment', async (c) => {
+  const result = await claimCandidateInviteTokenForAssessmentStart(
+    c.env.DB,
+    c.get('candidateId'),
+    c.get('inviteToken'),
+  );
+
+  if (!result.ok) {
+    return c.json({ error: result.error }, result.status);
+  }
+
+  return c.json({
+    success: true,
+    status: result.status,
+    alreadyStarted: result.alreadyStarted,
+  });
+});
 
 // ── POST /rpc/get-stage-config ──────────────────────────────────────────────
 
@@ -3067,6 +3163,15 @@ rpcAuth.post('/submit-challenge-response', async (c) => {
       { error: { code: 'BAD_REQUEST', message: 'submission is required.' } },
       400,
     );
+  }
+
+  const startClaim = await claimCandidateInviteTokenForAssessmentStart(
+    c.env.DB,
+    candidateId,
+    c.get('inviteToken'),
+  );
+  if (!startClaim.ok) {
+    return c.json({ error: startClaim.error }, startClaim.status);
   }
 
   // Pipeline-free candidate (talent pool / standalone code review)

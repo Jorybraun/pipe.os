@@ -431,6 +431,11 @@ describe('PersonProfilePage', () => {
     expect(location).toHaveTextContent('interviewType=VIDEO');
     expect(location).toHaveTextContent('recipientName=Ada+Reviewer');
     expect(location).toHaveTextContent('recipientEmail=ada%40example.com');
+    const params = new URLSearchParams((location.textContent ?? '').split('?')[1] ?? '');
+    const recruiterNotes = params.get('recruiterNotes') ?? '';
+    expect(recruiterNotes).toContain('PIPE person-profile next action');
+    expect(recruiterNotes).toContain('Recommendation: Advance with focused probe');
+    expect(recruiterNotes).toContain('Missing context: Probe: Probe how they balance timing trade-offs under pushback.');
   });
 
   it('does not trust a scored code review when repo-match provenance is missing', async () => {

@@ -4318,6 +4318,7 @@ describe('GET /interviews/:id detail', () => {
         recipientEmail: 'EDSGER@example.com',
         meetingType: 'DIRECT_VIDEO_CALL',
         scheduledAt: '2026-06-24T18:00:00.000Z',
+        recruiterNotes: 'PIPE next action: ask how graph algorithms experience maps to repo review work.',
       }),
     });
     expect(response.status).toBe(201);
@@ -4345,7 +4346,7 @@ describe('GET /interviews/:id detail', () => {
     expect(body.interview.contactId).toEqual(expect.any(String));
 
     const scheduledRow = sqlite!.prepare(
-      `SELECT candidate_id, pipeline_id, stage_id, recipient_name, recipient_email, meeting_type
+      `SELECT candidate_id, pipeline_id, stage_id, recipient_name, recipient_email, meeting_type, recruiter_notes
          FROM scheduled_interviews
         WHERE id = ?`,
     ).get(body.interview.id) as {
@@ -4355,6 +4356,7 @@ describe('GET /interviews/:id detail', () => {
       recipient_name: string | null;
       recipient_email: string | null;
       meeting_type: string | null;
+      recruiter_notes: string | null;
     };
     expect(scheduledRow).toEqual({
       candidate_id: null,
@@ -4363,6 +4365,7 @@ describe('GET /interviews/:id detail', () => {
       recipient_name: 'Edsger Dijkstra',
       recipient_email: 'edsger@example.com',
       meeting_type: 'DIRECT_VIDEO_CALL',
+      recruiter_notes: 'PIPE next action: ask how graph algorithms experience maps to repo review work.',
     });
 
     const contactRow = sqlite!.prepare(
@@ -4429,6 +4432,7 @@ describe('GET /interviews/:id detail', () => {
       'Scheduled at: 2026-06-24T18:00:00.000Z',
       'Scheduling provider: none',
       'Scheduling URL: none',
+      'Recruiter notes: PIPE next action: ask how graph algorithms experience maps to repo review work.',
       expect.stringMatching(/^Created at: /),
     ]);
     expect(JSON.parse(graphRows[0]!.qualifiers_json ?? '{}')).toMatchObject({
@@ -4439,6 +4443,7 @@ describe('GET /interviews/:id detail', () => {
       assessmentSetupKind: 'not_applicable',
       assessmentSetupSource: 'not_workspace_assessment',
       assessmentSetupBlocksPositiveAssessment: false,
+      recruiterNotes: 'PIPE next action: ask how graph algorithms experience maps to repo review work.',
     });
 
     const detailResponse = await app.request(`/interviews/${body.interview.id}`);
