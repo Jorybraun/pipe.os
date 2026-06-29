@@ -38,8 +38,10 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Fixed — Candidate repo matching
 
+- Person CODE_REVIEW decision cards now join separate score, transcript, and candidate-PR match-decision records, so live person profiles can recognize a valid source-backed repo challenge instead of downgrading it to partial signal.
 - Person CODE_REVIEW decision cards now recover repo and PR proof from source locators when convenience challenge projections are absent, keeping assessment-validity labels grounded in provenance.
 - Repo-task assessment sessions now accept first-class source-backed commit submissions with validated GitHub repo/fork URLs, branch names, commit SHAs, changed files, and exact `git_commit` plus `code_diff` evidence before marking a session final.
+- Repo-task assessment sessions now expose source-backed progress snapshots that show challenge, work evidence, commit, evaluation status, and the next recruiter/candidate action.
 - Person CODE_REVIEW decision cards now name assessment validity and the next action while keeping the source graph closed by default, making person profiles read as hiring-manager decision cockpits instead of raw evidence dumps.
 - Person profiles now lead source-backed CODE_REVIEW evidence with a hiring-manager decision snapshot, candidate score, selected repo/PR, probe areas, and expandable source proof.
 - CODE_REVIEW interview details now keep accumulated person context as a compact rollup and person-profile CTA instead of rendering the whole cross-meeting evidence timeline inside one meeting.

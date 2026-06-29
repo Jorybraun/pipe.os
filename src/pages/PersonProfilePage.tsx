@@ -114,6 +114,26 @@ function optionalNumericValue(value: unknown): number | null {
   return null;
 }
 
+function githubRepoIdentityFromText(value: unknown): Pick<CodeReviewChallengeProjection, 'repoLabel' | 'repoUrl'> | null {
+  if (typeof value !== 'string') return null;
+  const match = value.match(/https:\/\/github\.com\/([A-Za-z0-9_.-]+\/[A-Za-z0-9_.-]+)/);
+  if (!match?.[1]) return null;
+  return {
+    repoLabel: match[1],
+    repoUrl: `https://github.com/${match[1]}`,
+  };
+}
+
+function githubRepoIdentityFromSources(
+  sources: LivingContextRecordSourceRef[],
+): Pick<CodeReviewChallengeProjection, 'repoLabel' | 'repoUrl'> | null {
+  for (const source of sources) {
+    const identity = githubRepoIdentityFromText(source.exactText);
+    if (identity) return identity;
+  }
+  return null;
+}
+
 function stringArray(value: unknown): string[] {
   return Array.isArray(value)
     ? value.filter((item): item is string => typeof item === 'string' && item.trim().length > 0)
@@ -206,6 +226,43 @@ function readChallengeProjection(record: LivingContextRecord | null): CodeReview
     };
   }
 
+  if (record.recordType === 'candidate_pr_match_decision' || record.predicate === 'selects review challenge') {
+    const selectedPacketId = optionalString(record.qualifiers.selectedPacketId);
+    const evaluatedChallenges = Array.isArray(record.qualifiers.evaluatedChallenges)
+      ? record.qualifiers.evaluatedChallenges.filter(isRecord)
+      : [];
+    const selectedEvaluation = evaluatedChallenges.find((challenge) =>
+      selectedPacketId && optionalString(challenge.challengeId) === selectedPacketId,
+    ) ?? evaluatedChallenges.find((challenge) =>
+      optionalNumericValue(challenge.rank) === 1 || challenge.eligible === true,
+    ) ?? null;
+    const validatorAgent = isRecord(record.qualifiers.validatorAgent) ? record.qualifiers.validatorAgent : null;
+    const sourceBridge = validatorAgent && isRecord(validatorAgent.sourceBridge) ? validatorAgent.sourceBridge : null;
+    const selectedEntity = record.entities.find((entity) =>
+      entity.relationship === 'selected_pull_request'
+      || entity.relationship === 'selected_packet'
+      || entity.relationship === 'selected_evaluation',
+    ) ?? null;
+    const entityMetadata = selectedEntity?.metadata ?? {};
+    const prNumber = optionalNumericValue(selectedEvaluation?.prNumber)
+      ?? optionalNumericValue(sourceBridge?.prNumber)
+      ?? optionalNumericValue(entityMetadata.prNumber);
+    const repoId = optionalString(selectedEvaluation?.repoId)
+      ?? optionalString(sourceBridge?.repoId)
+      ?? optionalString(entityMetadata.repoId);
+    const sourceIdentity = githubRepoIdentityFromSources(record.sources);
+    if (sourceIdentity || prNumber !== null || repoId) {
+      return {
+        repoLabel: sourceIdentity?.repoLabel ?? (repoId ? `repo ${repoId}` : null),
+        repoUrl: sourceIdentity?.repoUrl ?? null,
+        prNumber,
+        matchStatus: optionalString(record.qualifiers.status)
+          ?? optionalString(sourceBridge?.status)
+          ?? optionalString(selectedEntity?.value),
+      };
+    }
+  }
+
   for (const source of record.sources) {
     if (!('locator' in source) || !isRecord(source.locator)) continue;
     const repoUrl = optionalString(source.locator.repoUrl) ?? optionalString(source.locator.githubRepoUrl);
@@ -224,6 +281,12 @@ function readChallengeProjection(record: LivingContextRecord | null): CodeReview
   }
 
   return null;
+}
+
+function challengeUrlForProjection(challenge: CodeReviewChallengeProjection | null): string | null {
+  if (!challenge?.repoUrl) return null;
+  const repoUrl = challenge.repoUrl.replace(/\/$/, '');
+  return challenge.prNumber !== null ? `${repoUrl}/pull/${challenge.prNumber}` : repoUrl;
 }
 
 function verdictLabel(verdict: string | null): string | null {
@@ -374,8 +437,12 @@ function deriveCodeReviewDecision(
     record.recordType === 'code_review_transcript'
     && (!sessionId || sessionIdFromRecord(record) === sessionId),
   ) ?? codeReviewRecords.find((record) => record.recordType === 'code_review_transcript') ?? null;
+  const matchRecord = livingContext.contextRecords
+    .filter((record) => record.recordType === 'candidate_pr_match_decision' || record.predicate === 'selects review challenge')
+    .sort((a, b) => recordTimestamp(b) - recordTimestamp(a))[0] ?? null;
   const challenge = readChallengeProjection(scoreRecord)
     ?? readChallengeProjection(transcriptRecord)
+    ?? readChallengeProjection(matchRecord)
     ?? readChallengeProjection(codeReviewRecords[0] ?? null);
   const recommendation = recommendationForScore(score, challenge);
   const scoreLabel = score?.score !== null && score?.score !== undefined
@@ -406,7 +473,7 @@ function deriveCodeReviewDecision(
     nextActionDetail: nextAction.detail,
     scoreLabel,
     challengeLabel,
-    challengeUrl: challenge?.repoUrl ?? null,
+    challengeUrl: challengeUrlForProjection(challenge),
     narrative: score?.narrative ?? transcriptRecord?.narrative ?? scoreRecord?.narrative ?? null,
     strengths: score?.strengths ?? [],
     probes: score?.growthAreas ?? [],

@@ -117,9 +117,59 @@ function contextRecord(overrides: Partial<LivingContextRecord> = {}): LivingCont
     observedAt: '2026-06-28T16:00:00.000Z',
     entities: [],
     concepts: [],
-    sources: [sourceSpan(), genericSource()],
+    sources: [sourceSpan()],
     ...overrides,
   };
+}
+
+function matchDecisionRecord(): LivingContextRecord {
+  return contextRecord({
+    id: 'record-match',
+    recordType: 'candidate_pr_match_decision',
+    predicate: 'selects review challenge',
+    narrative: 'Matched candidate candidate-1 to PR #95 from repo repo-1.',
+    qualifiers: {
+      status: 'MATCHED',
+      selectedPacketId: 'challenge-packet-1',
+      evaluatedChallenges: [{
+        challengeId: 'challenge-packet-1',
+        eligible: true,
+        prNumber: 95,
+        repoId: 'repo-1',
+        rank: 1,
+      }],
+      validatorAgent: {
+        sourceBridge: {
+          challengeId: 'challenge-packet-1',
+          prNumber: 95,
+          repoId: 'repo-1',
+          provenanceComplete: true,
+        },
+      },
+    },
+    entities: [{
+      entityType: 'pull_request',
+      entityId: 'repo-1#95',
+      relationship: 'selected_pull_request',
+      value: null,
+      confidence: null,
+      metadata: {
+        prNumber: 95,
+        repoId: 'repo-1',
+      },
+    }],
+    sources: [
+      genericSource({
+        evidenceRole: 'decision_record',
+        locator: { status: 'MATCHED' },
+      }),
+      genericSource({
+        evidenceRole: 'selected_repo_evidence',
+        locator: { locator: 'src/diff.ts:1-20' },
+        exactText: 'Regression test from https://github.com/pierre/diffs/issues/12 covers the risky diff path.',
+      }),
+    ],
+  });
 }
 
 function makeLivingContext(): LivingContextReadModel {
@@ -184,9 +234,25 @@ function makeLivingContext(): LivingContextReadModel {
             exactText: 'Add a regression test around impatient hover click timing.',
             metadata: { sourceKind: 'review_comment' },
           }),
-          genericSource({ sourceRefType: 'review_challenge_packet', evidenceRole: 'selected_review_challenge' }),
+          sourceSpan({
+            sourceSpanId: 'source-span-transcript-2',
+            evidenceRole: 'transcript_segment',
+            artifactType: 'code_review_transcript',
+            mediaType: 'text/plain',
+            exactText: 'The timeout cleanup needs to be defended before merge.',
+            metadata: { sourceKind: 'review_comment' },
+          }),
+          sourceSpan({
+            sourceSpanId: 'source-span-transcript-3',
+            evidenceRole: 'transcript_segment',
+            artifactType: 'code_review_transcript',
+            mediaType: 'text/plain',
+            exactText: 'Candidate requested changes with a concrete regression plan.',
+            metadata: { sourceKind: 'review_comment' },
+          }),
         ],
       }),
+      matchDecisionRecord(),
     ],
     assertions: [],
     signals: [],
