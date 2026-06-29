@@ -816,12 +816,23 @@ export interface StandaloneReviewRoleSource {
   contentHash?: string;
 }
 
+export interface StandaloneReviewStretchArea {
+  atomId: string;
+  demandId: string;
+  atomConcept: string;
+  demandConcept: string;
+  dimension: string;
+  candidateSourceRefs: StandaloneReviewSourceRef[];
+  challengeSourceRefs: StandaloneReviewSourceRef[];
+}
+
 export interface StandaloneReviewAlignment {
   atomId: string;
   demandId: string;
   purpose: string | null;
   pairScore: number;
   sharedConcepts: string[];
+  stretch: { dimension: string; atomConcept: string; demandConcept: string } | null;
   roleSourceRefs: StandaloneReviewRoleSource[];
   candidateSourceRefs: StandaloneReviewSourceRef[];
   challengeSourceRefs: StandaloneReviewSourceRef[];
@@ -934,6 +945,18 @@ export interface StandaloneReviewPacketDetail {
   quality: StandaloneReviewPacketQuality | null;
 }
 
+export interface MatchNarrativeSection {
+  heading: string;
+  items: string[];
+}
+
+export interface StandaloneReviewMatchNarrative {
+  title: string;
+  verdict: string;
+  sections: MatchNarrativeSection[];
+  plainText: string;
+}
+
 export interface StandaloneReviewMatchRecord {
   interviewId: string;
   interviewStatus: string;
@@ -950,7 +973,10 @@ export interface StandaloneReviewMatchRecord {
   summary: string;
   evidence: StandaloneReviewAlignment[];
   roleSources: StandaloneReviewRoleSource[];
+  stretchAreas: StandaloneReviewStretchArea[];
+  unmatchedDemandIds: string[];
   gaps: string[];
+  matchNarrative: StandaloneReviewMatchNarrative | null;
   diagnostics: StandaloneReviewDiagnostics;
   packet: StandaloneReviewPacketDetail | null;
   submitted: boolean;

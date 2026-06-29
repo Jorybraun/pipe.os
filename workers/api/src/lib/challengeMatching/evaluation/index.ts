@@ -7,6 +7,7 @@
 
 export * from './types';
 export * from './corpus';
+export * from './corpusSeeder';
 export * from './metrics';
 export * from './cli';
 export * from './readiness';
