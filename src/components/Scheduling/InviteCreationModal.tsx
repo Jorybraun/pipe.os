@@ -19,6 +19,11 @@ interface InviteCreationData {
   schedulingUrl?: string;
   githubRepoUrl?: string | null;
   githubPrNumber?: number | null;
+  challengeBaseCommitSha?: string;
+  challengeTitle?: string;
+  challengeInstructions?: string;
+  challengeSuccessCriteria?: string[];
+  challengeExpectedEvidence?: string[];
   features?: {
     videoEnabled: boolean;
     workspaceEnabled: boolean;
@@ -93,6 +98,13 @@ function isWorkspaceAssessment(interviewType: InterviewType): boolean {
     || interviewType === 'OPEN_SOURCE_BUG_FIX';
 }
 
+function splitTextLines(value: string): string[] {
+  return value
+    .split('\n')
+    .map((line) => line.trim())
+    .filter((line) => line.length > 0);
+}
+
 export function InviteCreationModal({
   isOpen,
   onClose,
@@ -107,6 +119,11 @@ export function InviteCreationModal({
   const [githubRepoUrl, setGithubRepoUrl] = useState('');
   const [githubPrNumber, setGithubPrNumber] = useState('');
   const [manualRepoOverride, setManualRepoOverride] = useState(false);
+  const [challengeBaseCommitSha, setChallengeBaseCommitSha] = useState('');
+  const [challengeTitle, setChallengeTitle] = useState('');
+  const [challengeInstructions, setChallengeInstructions] = useState('');
+  const [challengeSuccessCriteria, setChallengeSuccessCriteria] = useState('');
+  const [challengeExpectedEvidence, setChallengeExpectedEvidence] = useState('');
   const [schedulingMode, setSchedulingMode] = useState<'manual' | 'calendly'>('manual');
   const [videoEnabled, setVideoEnabled] = useState(true);
   const [workspaceEnabled, setWorkspaceEnabled] = useState(true);
@@ -125,6 +142,12 @@ export function InviteCreationModal({
       setSchedulingMode('manual');
       setGithubRepoUrl('');
       setGithubPrNumber('');
+      setManualRepoOverride(false);
+      setChallengeBaseCommitSha('');
+      setChallengeTitle('');
+      setChallengeInstructions('');
+      setChallengeSuccessCriteria('');
+      setChallengeExpectedEvidence('');
     }
   }, [isOpen, initialInterviewType]);
 
@@ -183,10 +206,21 @@ export function InviteCreationModal({
   const hasManualRepoUrl = githubRepoUrl.trim().length > 0;
   const hasManualPrNumber = parsedPrNumber !== null && Number.isFinite(parsedPrNumber) && parsedPrNumber > 0;
   const manualRepoOverrideComplete = !manualRepoOverride || (hasManualRepoUrl && hasManualPrNumber);
+  const challengeSuccessCriteriaItems = splitTextLines(challengeSuccessCriteria);
+  const challengeExpectedEvidenceItems = splitTextLines(challengeExpectedEvidence);
+  const requiresManualChallengePacket = interviewType === 'OPEN_SOURCE_BUG_FIX' && manualRepoOverride;
+  const manualChallengePacketComplete = !requiresManualChallengePacket || (
+    challengeBaseCommitSha.trim().length === 40
+    && challengeTitle.trim().length > 0
+    && challengeInstructions.trim().length > 0
+    && challengeSuccessCriteriaItems.length > 0
+    && challengeExpectedEvidenceItems.length > 0
+  );
   const canCreate = recipientName.trim().length > 0
     && recipientEmail.trim().length > 0
     && (parsedPrNumber === null || hasManualPrNumber)
     && (!supportsManualRepoOverride || manualRepoOverrideComplete)
+    && manualChallengePacketComplete
     && (workspaceAssessment || schedulingMode !== 'calendly' || canUseCalendly);
   const createButtonLabel = isCreating
     ? 'CREATING...'
@@ -219,6 +253,13 @@ export function InviteCreationModal({
         }
         if (parsedPrNumber !== null) {
           inviteData.githubPrNumber = parsedPrNumber;
+        }
+        if (interviewType === 'OPEN_SOURCE_BUG_FIX') {
+          inviteData.challengeBaseCommitSha = challengeBaseCommitSha.trim();
+          inviteData.challengeTitle = challengeTitle.trim();
+          inviteData.challengeInstructions = challengeInstructions.trim();
+          inviteData.challengeSuccessCriteria = challengeSuccessCriteriaItems;
+          inviteData.challengeExpectedEvidence = challengeExpectedEvidenceItems;
         }
       }
 
@@ -270,6 +311,12 @@ export function InviteCreationModal({
     setScheduledAt('');
     setGithubRepoUrl('');
     setGithubPrNumber('');
+    setManualRepoOverride(false);
+    setChallengeBaseCommitSha('');
+    setChallengeTitle('');
+    setChallengeInstructions('');
+    setChallengeSuccessCriteria('');
+    setChallengeExpectedEvidence('');
     setSchedulingMode('manual');
     setCreateError(null);
     setCreatedInvite(null);
@@ -297,6 +344,8 @@ export function InviteCreationModal({
         style={{
           width: '100%',
           maxWidth: 480,
+          maxHeight: 'calc(100vh - 48px)',
+          overflowY: 'auto',
           background: 'var(--pipe-bg)',
           border: '1px solid var(--pipe-border)',
           borderRadius: 12,
@@ -620,8 +669,50 @@ export function InviteCreationModal({
                         style={inputStyle}
                       />
                     </div>
+                    {interviewType === 'OPEN_SOURCE_BUG_FIX' && (
+                      <div style={{ marginTop: 12 }}>
+                        <label style={labelStyle}>OPEN-SOURCE CHALLENGE PACKET</label>
+                        <div style={{ display: 'grid', gap: 8 }}>
+                          <input
+                            type="text"
+                            value={challengeBaseCommitSha}
+                            onChange={(e) => setChallengeBaseCommitSha(e.target.value)}
+                            placeholder="40-character base commit SHA"
+                            maxLength={40}
+                            style={inputStyle}
+                          />
+                          <input
+                            type="text"
+                            value={challengeTitle}
+                            onChange={(e) => setChallengeTitle(e.target.value)}
+                            placeholder="Fix streaming transcript ordering"
+                            style={inputStyle}
+                          />
+                          <textarea
+                            value={challengeInstructions}
+                            onChange={(e) => setChallengeInstructions(e.target.value)}
+                            placeholder="Describe the exact bug, task, and boundaries."
+                            style={{ ...inputStyle, minHeight: 76, resize: 'vertical' }}
+                          />
+                          <textarea
+                            value={challengeSuccessCriteria}
+                            onChange={(e) => setChallengeSuccessCriteria(e.target.value)}
+                            placeholder="One success criterion per line"
+                            style={{ ...inputStyle, minHeight: 76, resize: 'vertical' }}
+                          />
+                          <textarea
+                            value={challengeExpectedEvidence}
+                            onChange={(e) => setChallengeExpectedEvidence(e.target.value)}
+                            placeholder="One required evidence item per line"
+                            style={{ ...inputStyle, minHeight: 76, resize: 'vertical' }}
+                          />
+                        </div>
+                      </div>
+                    )}
                     <div style={{ fontSize: 10, color: 'var(--pipe-text-dim)', fontFamily: '"Space Mono", monospace', marginTop: 4, lineHeight: 1.5 }}>
-                      Manual override — this assessment will use the specified repo/PR.
+                      {interviewType === 'OPEN_SOURCE_BUG_FIX'
+                        ? 'Manual task packet — this assessment will use the exact repo, reference PR, base commit, task, criteria, and evidence plan.'
+                        : 'Manual override — this assessment will use the specified repo/PR.'}
                     </div>
                   </>
                 ) : (
