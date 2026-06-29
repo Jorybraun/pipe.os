@@ -1491,6 +1491,51 @@ function MeetingEvidencePanel({
   );
 }
 
+const ALL_SOURCE_TYPES = ['resume', 'meeting', 'culture_interview', 'code_review', 'phone_call', 'assessment'] as const;
+
+function EvidenceDepthPanel({
+  livingContext,
+}: {
+  livingContext: LivingContextReadModel;
+}): JSX.Element | null {
+  const sourceTypeCounts = useMemo(() => {
+    const counts: Record<string, number> = {};
+    for (const interaction of livingContext.interactions) {
+      const type = interaction.interactionType;
+      counts[type] = (counts[type] ?? 0) + 1;
+    }
+    return counts;
+  }, [livingContext.interactions]);
+  const presentTypes = Object.keys(sourceTypeCounts).length;
+  const diversity = Math.min(presentTypes / ALL_SOURCE_TYPES.length, 1);
+  if (livingContext.interactions.length === 0) return null;
+  return (
+    <div className="living-context__evidence-depth" data-testid="evidence-depth-panel">
+      <div className="living-context__section-head">
+        <div className="living-context__section-title">Evidence depth</div>
+        <div className="living-context__count">
+          {Math.round(diversity * 100)}% diversity
+        </div>
+      </div>
+      <div className="living-context__evidence-bar">
+        {ALL_SOURCE_TYPES.map((type) => {
+          const count = sourceTypeCounts[type] ?? 0;
+          return (
+            <div
+              key={type}
+              className={`living-context__evidence-segment ${count > 0 ? 'living-context__evidence-segment--active' : ''}`}
+              title={`${titleCase(type)}: ${count} interaction${count === 1 ? '' : 's'}`}
+            >
+              <span className="living-context__evidence-type">{titleCase(type)}</span>
+              <span className="living-context__evidence-count">{count}</span>
+            </div>
+          );
+        })}
+      </div>
+    </div>
+  );
+}
+
 export function LivingContextGraph({
   candidateId,
   livingContextEndpoint,
@@ -1730,6 +1775,8 @@ export function LivingContextGraph({
           ))}
         </div>
       )}
+
+      <EvidenceDepthPanel livingContext={livingContext} />
 
       <MeetingEvidencePanel
         livingContext={livingContext}

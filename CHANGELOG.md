@@ -7,6 +7,12 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Added — Evidence depth integration in match diagnostics (criteria #5/#7/#8)
+
+- Evidence depth is now computed and included in `ChallengeMatchDiagnostics.candidateEvidenceDepth` during every match run. This gives recruiters and the quality gate visibility into how many distinct source types (resume, meeting, culture interview, code review, phone call, assessment) contributed evidence before a match decision was made.
+- Added `EvidenceDepthPanel` component to `LivingContextGraph.tsx` — renders a 6-segment visual bar showing which source types have evidence and how many interactions each contributed. Displayed between the summary metrics and the meeting evidence panels.
+- Added CSS for evidence depth visualization with responsive grid layout.
+
 ### Added — Assessment evidence → living context ingestion (criteria #1/#2/#8)
 
 - Added `assessmentIngestion.ts` module: bridges the assessment layer (assessment_sessions, assessment_evidence_events, assessment_evaluation_claims) into the living context graph. Each assessment session maps to an interaction; evidence events map to episodes + assertions with exact source spans; evaluation claims map to assertions with source provenance and polarity tracking.

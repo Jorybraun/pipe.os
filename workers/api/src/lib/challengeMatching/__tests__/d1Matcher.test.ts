@@ -1695,10 +1695,17 @@ describe('matchCandidateToReviewChallenge', () => {
       rejectionReasons: ['NO_SCOREABLE_SOURCE_BACKED_CANDIDATE_EVIDENCE'],
     }));
     expect(result.explanation?.selectedPr).toBeUndefined();
-    expect(result.diagnostics).toEqual({
+    expect(result.diagnostics).toEqual(expect.objectContaining({
       excludedPackets: [],
       recalledPacketIds: [],
       evaluatedChallenges: [],
+    }));
+    expect(result.diagnostics?.candidateEvidenceDepth).toEqual({
+      sourceDiversity: 0,
+      totalInteractions: 0,
+      totalAssertions: 0,
+      totalSourceSpans: 0,
+      sourceTypes: {},
     });
     expect(sqlite.prepare(
       'SELECT status, selected_packet_id FROM match_runs WHERE id = ?',

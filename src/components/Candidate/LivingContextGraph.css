@@ -2233,6 +2233,62 @@ html[data-theme="pipe-blue"] .living-context {
   line-height: 1.6;
 }
 
+.living-context__evidence-depth {
+  margin-bottom: 16px;
+  padding: 12px 14px;
+  background: var(--lc-panel-soft);
+  border: 1px solid var(--lc-card-border);
+  border-radius: 7px;
+}
+
+.living-context__evidence-bar {
+  display: grid;
+  grid-template-columns: repeat(6, 1fr);
+  gap: 6px;
+  margin-top: 10px;
+}
+
+.living-context__evidence-segment {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 3px;
+  padding: 8px 4px;
+  border-radius: 5px;
+  background: var(--lc-panel);
+  border: 1px solid var(--lc-card-border);
+  opacity: 0.4;
+  transition: opacity 0.15s;
+}
+
+.living-context__evidence-segment--active {
+  opacity: 1;
+  border-color: var(--lc-source);
+  background: color-mix(in srgb, var(--lc-source) 8%, var(--lc-panel));
+}
+
+.living-context__evidence-type {
+  font: 8px "Space Mono", monospace;
+  color: var(--pipe-text-dim);
+  text-align: center;
+  line-height: 1.2;
+}
+
+.living-context__evidence-count {
+  font: 600 13px "Space Mono", monospace;
+  color: var(--pipe-text);
+}
+
+.living-context__evidence-segment--active .living-context__evidence-count {
+  color: var(--lc-source);
+}
+
+@container living-context (max-width: 520px) {
+  .living-context__evidence-bar {
+    grid-template-columns: repeat(3, 1fr);
+  }
+}
+
 @container living-context (max-width: 760px) {
   .living-context__packet-layout {
     grid-template-columns: minmax(0, 1fr);
