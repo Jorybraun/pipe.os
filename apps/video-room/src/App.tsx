@@ -462,6 +462,12 @@ function Room({ token, metadata }: { token: string; metadata: RoomMetadata }): J
   ): void => {
     if (metadata.role !== 'HOST') return;
     if (!nextWorkspace && !options.errorMessage) return;
+    if (
+      nextWorkspace
+      && !nextWorkspace.enabled
+      && !nextWorkspace.session
+      && !options.errorMessage
+    ) return;
     const event = buildWorkspaceStateDesktopEvent({
       workspace: nextWorkspace,
       actor: roomActor,

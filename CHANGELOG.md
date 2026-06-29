@@ -9,6 +9,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Fixed — Video room
 
+- Standard video rooms no longer publish no-op workspace desktop events, removing rejected source-backed evidence console noise while preserving real dev-container workspace diagnostics.
 - Win95 peer cursors now render through isolated transform layers instead of top/left repainting, reducing stale cursor trails while preserving shared cursor evidence and sync state.
 
 ### Fixed — Candidate repo matching
