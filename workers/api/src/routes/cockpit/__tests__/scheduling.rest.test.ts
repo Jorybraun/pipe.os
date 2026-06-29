@@ -6476,6 +6476,32 @@ describe('POST /interviews dev-container challenge (HAS-80)', () => {
     expect(body.error.message).toContain('Manual repo override requires both githubRepoUrl and githubPrNumber');
   });
 
+  it('rejects workspace assessment manual repo overrides that are not GitHub repositories', async () => {
+    seedDevContainerFixture();
+    const app = mountSchedulingApp();
+
+    const response = await app.request('/interviews', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({
+        recipientName: 'Grace Hopper',
+        recipientEmail: 'grace@example.com',
+        meetingType: 'DIRECT_VIDEO_CALL',
+        interviewType: 'OPEN_SOURCE_BUG_FIX',
+        githubRepoUrl: 'https://example.com/not-a-real-github-repo',
+        githubPrNumber: 17,
+        challengeBaseCommitSha: '1234567890abcdef1234567890abcdef12345678',
+        challengeTitle: 'Fix a source-backed task',
+        challengeInstructions: 'Make the smallest production-ready change and preserve exact evidence.',
+        challengeSuccessCriteria: ['The fix is demonstrated by a targeted test.'],
+        challengeExpectedEvidence: ['git_commit and code_diff source refs are attached.'],
+      }),
+    });
+    expect(response.status).toBe(422);
+    const body = await response.json() as { error: { message: string } };
+    expect(body.error.message).toContain('githubRepoUrl must be a GitHub HTTPS repository URL');
+  });
+
   it('creates a person-first CODE_REVIEW with explicit repo url + PR', async () => {
     seedDevContainerFixture();
     const app = mountSchedulingApp();

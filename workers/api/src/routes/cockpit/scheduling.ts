@@ -233,6 +233,23 @@ function buildScheduledAssessmentSetup(input: {
 
 const GIT_COMMIT_SHA_PATTERN = /^[0-9a-f]{40}$/i;
 
+function isGitHubRepositoryUrl(value: string): boolean {
+  let url: URL;
+  try {
+    url = new URL(value);
+  } catch {
+    return false;
+  }
+  if (url.protocol !== 'https:' || url.hostname.toLowerCase() !== 'github.com') {
+    return false;
+  }
+  const segments = url.pathname.split('/').filter(Boolean);
+  if (segments.length !== 2) return false;
+  const [owner, repoWithSuffix] = segments;
+  const repo = repoWithSuffix?.endsWith('.git') ? repoWithSuffix.slice(0, -4) : repoWithSuffix;
+  return Boolean(owner && repo);
+}
+
 const createInterviewSchema = z.object({
   candidateId: z.string().min(1).optional(),
   pipelineId: z.string().optional(),
@@ -297,6 +314,13 @@ const createInterviewSchema = z.object({
         code: z.ZodIssueCode.custom,
         message:
           'Manual repo override requires both githubRepoUrl and githubPrNumber, or omit both for auto-match.',
+        path: ['githubRepoUrl'],
+      });
+    }
+    if (value.githubRepoUrl && !isGitHubRepositoryUrl(value.githubRepoUrl)) {
+      ctx.addIssue({
+        code: z.ZodIssueCode.custom,
+        message: 'githubRepoUrl must be a GitHub HTTPS repository URL.',
         path: ['githubRepoUrl'],
       });
     }
