@@ -29,11 +29,6 @@ import type {
   TranscriptArtifact,
   TranscriptEntry,
 } from '../lib/scheduling/types';
-import type { LivingContextInteraction } from '../lib/api/types';
-import {
-  contextRecordTitle,
-  contextRecordTypeLabel,
-} from '../lib/livingContextDisplay';
 
 const FONT = '"Space Mono", monospace';
 
@@ -344,28 +339,6 @@ function parseCodeReviewSubmission(raw: string | null | undefined): CodeReviewSu
 
 function countLabel(count: number, singular: string, plural = `${singular}s`): string {
   return `${count} ${count === 1 ? singular : plural}`;
-}
-
-function interactionTypeLabel(interaction: LivingContextInteraction): string {
-  return titleCaseToken(interaction.interactionType);
-}
-
-function interactionEvidenceCounts(interaction: LivingContextInteraction): string {
-  const parts = [
-    interaction.artifactIds.length > 0
-      ? countLabel(interaction.artifactIds.length, 'source artifact')
-      : null,
-    interaction.contextRecordIds.length > 0
-      ? countLabel(interaction.contextRecordIds.length, 'learned record')
-      : null,
-    interaction.assertionIds.length > 0
-      ? countLabel(interaction.assertionIds.length, 'claim')
-      : null,
-    interaction.signalKeys.length > 0
-      ? countLabel(interaction.signalKeys.length, 'signal')
-      : null,
-  ].filter((part): part is string => part !== null);
-  return parts.length > 0 ? parts.join(' · ') : 'No extracted evidence yet';
 }
 
 function codeReviewVerdictLabel(
@@ -1158,8 +1131,6 @@ export default function InterviewDetailPage(): JSX.Element {
     ? 'READY'
     : interview.status;
   const contextSummary = interview.livingContext?.summary ?? null;
-  const contextRecords = interview.livingContext?.contextRecords ?? [];
-  const contextInteractions = interview.livingContext?.interactions.slice(0, 4) ?? [];
   const relatedEvidenceInterviews = interview.relatedEvidenceInterviews?.slice(0, 4) ?? [];
   const hasLivingContextEvidence = Boolean(
     contextSummary && (
@@ -1871,17 +1842,17 @@ export default function InterviewDetailPage(): JSX.Element {
           {hasLivingContextEvidence && contextSummary ? (
             <>
               <div data-testid="interview-person-context-relationship" style={CONTEXT_RECORD}>
-                <div style={FIELD_LABEL}>One person graph</div>
-                <div style={TRANSCRIPT_TEXT}>{countLabel(contextSummary.interactionCount, 'evidence moment')}</div>
+                <div style={FIELD_LABEL}>Person context rollup</div>
+                <div style={TRANSCRIPT_TEXT}>{countLabel(contextSummary.interactionCount, 'evidence moment')} on the person profile</div>
                 <div style={CONTEXT_RECORD_NARRATIVE}>
-                  Accumulates source-backed evidence from invites, follow-ups, transcripts, and assessments.
+                  This meeting remains scoped to its own invite, room, transcript, and assessment evidence.
                 </div>
               </div>
               {relatedEvidenceInterviews.length > 0 && (
                 <div data-testid="interview-related-evidence-interviews" style={CONTEXT_RECORD}>
                   <div style={FIELD_LABEL}>Related evidence interviews</div>
                   <div style={CONTEXT_RECORD_NARRATIVE}>
-                    Same person graph; each row keeps its own invite, meeting, transcript, and assessment state.
+                    Open the person profile for the full cross-meeting graph. These links are context, not evidence owned by this meeting.
                   </div>
                   <div style={RELATED_EVIDENCE_LIST}>
                     {relatedEvidenceInterviews.map((related) => (
@@ -1920,44 +1891,15 @@ export default function InterviewDetailPage(): JSX.Element {
                   <span style={CONTEXT_METRIC_LABEL}>claims</span>
                 </div>
               </div>
-              {contextInteractions.length > 0 && (
-                <div data-testid="interview-person-context-timeline" style={PERSON_CONTEXT_TIMELINE}>
-                  <div style={FIELD_LABEL}>Evidence timeline</div>
-                  <div style={{ display: 'flex', flexDirection: 'column', gap: 10 }}>
-                    {contextInteractions.map((interaction) => (
-                      <div key={interaction.id} style={CONTEXT_RECORD}>
-                        <div style={TRANSCRIPT_ROLE}>{interactionTypeLabel(interaction)}</div>
-                        <div style={TRANSCRIPT_TEXT}>
-                          {formatDate(interaction.startedAt ?? interaction.createdAt)}
-                        </div>
-                        {interaction.externalReference && (
-                          <div style={CONTEXT_RECORD_NARRATIVE}>{interaction.externalReference}</div>
-                        )}
-                        <div style={CONTEXT_RECORD_NARRATIVE}>
-                          {interactionEvidenceCounts(interaction)}
-                        </div>
-                      </div>
-                    ))}
-                  </div>
-                </div>
-              )}
-              {contextRecords.length > 0 ? (
-                <div style={{ display: 'flex', flexDirection: 'column', gap: 10 }}>
-                  {contextRecords.slice(0, 3).map((record) => {
-                    const title = contextRecordTitle(record);
-                    return (
-                      <div key={record.id} style={CONTEXT_RECORD}>
-                        <div style={TRANSCRIPT_ROLE}>{contextRecordTypeLabel(record)}</div>
-                        <div style={TRANSCRIPT_TEXT}>{title}</div>
-                        {record.narrative && record.narrative !== title && (
-                          <div style={CONTEXT_RECORD_NARRATIVE}>{record.narrative}</div>
-                        )}
-                      </div>
-                    );
-                  })}
-                </div>
-              ) : (
-                <div style={EMPTY_TEXT}>No person context has been extracted yet.</div>
+              {personProfilePath && (
+                <button
+                  type="button"
+                  onClick={() => navigate(personProfilePath)}
+                  style={{ ...PRIMARY_BUTTON, ...CONTEXT_CALL_BUTTON }}
+                >
+                  <User size={14} />
+                  OPEN PERSON PROFILE
+                </button>
               )}
             </>
           ) : (
@@ -2790,12 +2732,6 @@ const CONTEXT_METRIC_LABEL: CSSProperties = {
   fontWeight: 700,
   letterSpacing: '0.12em',
   textTransform: 'uppercase',
-};
-
-const PERSON_CONTEXT_TIMELINE: CSSProperties = {
-  display: 'grid',
-  gap: 10,
-  marginBottom: 14,
 };
 
 const RELATED_EVIDENCE_LIST: CSSProperties = {

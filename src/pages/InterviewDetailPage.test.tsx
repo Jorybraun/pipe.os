@@ -484,7 +484,7 @@ describe('InterviewDetailPage', () => {
     expect(evidencePlan).toHaveTextContent('CREATE FOLLOW-UP ASSESSMENT');
   });
 
-  it('shows the person evidence timeline from living context interactions', async () => {
+  it('keeps accumulated person context out of the meeting evidence timeline', async () => {
     mocks.api.get.mockResolvedValueOnce({
       interview: makeInterview({
         interviewType: 'CODE_REVIEW',
@@ -596,28 +596,21 @@ describe('InterviewDetailPage', () => {
     renderDetail();
 
     await flushAsyncUpdates();
-    const timeline = screen.getByTestId('interview-person-context-timeline');
     const relationship = screen.getByTestId('interview-person-context-relationship');
-    expect(relationship).toHaveTextContent('One person graph');
-    expect(relationship).toHaveTextContent('3 evidence moments');
-    expect(relationship).toHaveTextContent('source-backed evidence from invites, follow-ups, transcripts, and assessments');
+    expect(relationship).toHaveTextContent('Person context rollup');
+    expect(relationship).toHaveTextContent('3 evidence moments on the person profile');
+    expect(relationship).toHaveTextContent('This meeting remains scoped to its own invite, room, transcript, and assessment evidence.');
     const related = screen.getByTestId('interview-related-evidence-interviews');
     expect(related).toHaveTextContent('Related evidence interviews');
-    expect(related).toHaveTextContent('Same person graph; each row keeps its own invite, meeting, transcript, and assessment state.');
+    expect(related).toHaveTextContent('Open the person profile for the full cross-meeting graph. These links are context, not evidence owned by this meeting.');
     expect(related).toHaveTextContent('Evidence follow-up');
     expect(related).toHaveTextContent('assessment IN PROGRESS');
     expect(related).toHaveTextContent('meeting meeting-context-1');
     expect(related).toHaveTextContent('Same person assessment');
     expect(related).toHaveTextContent('CODE REVIEW');
-    expect(timeline).toHaveTextContent('Evidence timeline');
-    expect(timeline).toHaveTextContent('Code Review Context Call Recommendation');
-    expect(timeline).toHaveTextContent('Scheduled Interview Invite Delivery');
-    expect(timeline).toHaveTextContent('interview-code-review-blocked');
-    expect(timeline).toHaveTextContent('1 source artifact');
-    expect(timeline).toHaveTextContent('1 learned record');
-    expect(timeline).toHaveTextContent('1 signal');
-    expect(timeline).toHaveTextContent('interview-1');
-    expect(timeline).toHaveTextContent('1 claim');
+    expect(screen.queryByTestId('interview-person-context-timeline')).toBeNull();
+    expect(screen.queryByText('Code Review Context Call Recommendation')).toBeNull();
+    expect(screen.queryByText('Scheduled Interview Invite Delivery')).toBeNull();
   });
 
   it('shows completed evidence-plan refresh state instead of the old missing-evidence prompt', async () => {

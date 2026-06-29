@@ -5,7 +5,9 @@ import {
   ArrowLeft,
   Briefcase,
   Calendar,
+  CheckCircle,
   FileText,
+  GitPullRequest,
   Mail,
   Network,
   Phone,
@@ -14,7 +16,11 @@ import {
 } from 'lucide-react';
 import { LivingContextGraph } from '../components/Candidate/LivingContextGraph';
 import { createApiClient } from '../lib/api/client';
-import type { LivingContextReadModel } from '../lib/api/types';
+import type {
+  LivingContextReadModel,
+  LivingContextRecord,
+  LivingContextRecordSourceRef,
+} from '../lib/api/types';
 import {
   contextRecordTitle,
   contextRecordTypeLabel,
@@ -34,6 +40,42 @@ interface PersonContact {
   updated_at: string;
 }
 
+interface CodeReviewScoreProjection {
+  score: number | null;
+  band: string | null;
+  narrative: string | null;
+  strengths: string[];
+  growthAreas: string[];
+}
+
+interface CodeReviewChallengeProjection {
+  repoLabel: string | null;
+  repoUrl: string | null;
+  prNumber: number | null;
+  matchStatus: string | null;
+}
+
+interface CodeReviewProofItem {
+  id: string;
+  label: string;
+  text: string | null;
+}
+
+interface CodeReviewDecisionProjection {
+  sessionId: string | null;
+  outcome: string | null;
+  recommendation: string;
+  recommendationDetail: string;
+  scoreLabel: string | null;
+  challengeLabel: string | null;
+  challengeUrl: string | null;
+  narrative: string | null;
+  strengths: string[];
+  probes: string[];
+  proofCount: number;
+  proofItems: CodeReviewProofItem[];
+}
+
 function formatDate(value: string | null | undefined): string {
   if (!value) return 'Not recorded';
   const date = new Date(value);
@@ -45,6 +87,30 @@ function formatDate(value: string | null | undefined): string {
     hour: 'numeric',
     minute: '2-digit',
   });
+}
+
+function isRecord(value: unknown): value is Record<string, unknown> {
+  return typeof value === 'object' && value !== null && !Array.isArray(value);
+}
+
+function optionalString(value: unknown): string | null {
+  return typeof value === 'string' && value.trim().length > 0 ? value.trim() : null;
+}
+
+function optionalNumber(value: unknown): number | null {
+  return typeof value === 'number' && Number.isFinite(value) ? value : null;
+}
+
+function stringArray(value: unknown): string[] {
+  return Array.isArray(value)
+    ? value.filter((item): item is string => typeof item === 'string' && item.trim().length > 0)
+    : [];
+}
+
+function titleCaseToken(value: string): string {
+  return value
+    .replace(/[_-]+/g, ' ')
+    .replace(/\b\w/g, (char) => char.toUpperCase());
 }
 
 function typeLabel(value: string | null | undefined): string {
@@ -69,6 +135,184 @@ function evidenceSummaryText(livingContext: LivingContextReadModel | null): stri
     `${summary.sourceSpanCount} exact source ${summary.sourceSpanCount === 1 ? 'span' : 'spans'}`,
   ];
   return `PIPE currently knows this relationship from ${parts.join(', ')}.`;
+}
+
+function recordTimestamp(record: LivingContextRecord): number {
+  const value = record.observedAt ?? '';
+  const time = new Date(value).getTime();
+  return Number.isNaN(time) ? 0 : time;
+}
+
+function sessionIdFromRecord(record: LivingContextRecord | null): string | null {
+  if (!record) return null;
+  return optionalString(record.qualifiers.sessionId)
+    ?? record.entities
+      .map((entity) => entity.entityType === 'code_review_session' ? entity.entityId : null)
+      .find((value): value is string => typeof value === 'string' && value.length > 0)
+    ?? null;
+}
+
+function parseScoreProjection(record: LivingContextRecord | null): CodeReviewScoreProjection | null {
+  if (!record) return null;
+  const scoreSource = record.sources.find((source) =>
+    source.evidenceRole === 'score_report'
+    && typeof source.exactText === 'string'
+    && source.exactText.trim().length > 0,
+  );
+  if (!scoreSource || typeof scoreSource.exactText !== 'string') return null;
+
+  try {
+    const parsed = JSON.parse(scoreSource.exactText) as unknown;
+    if (!isRecord(parsed)) return null;
+    const overall = isRecord(parsed.overall) ? parsed.overall : parsed;
+    return {
+      score: optionalNumber(overall.score),
+      band: optionalString(overall.band),
+      narrative: optionalString(overall.narrative),
+      strengths: stringArray(overall.strengths),
+      growthAreas: stringArray(overall.growth_areas ?? overall.growthAreas),
+    };
+  } catch {
+    return null;
+  }
+}
+
+function readChallengeProjection(record: LivingContextRecord | null): CodeReviewChallengeProjection | null {
+  if (!record) return null;
+  const selected = record.qualifiers.selectedReviewChallenge;
+  if (!isRecord(selected)) return null;
+  const repoUrl = optionalString(selected.repoUrl) ?? optionalString(selected.githubRepoUrl);
+  const repoLabel = optionalString(selected.repoFullName)
+    ?? optionalString(selected.fullName)
+    ?? (repoUrl ? repoUrl.replace(/^https:\/\/github\.com\//, '') : null);
+  return {
+    repoLabel,
+    repoUrl,
+    prNumber: optionalNumber(selected.prNumber),
+    matchStatus: optionalString(selected.matchStatus),
+  };
+}
+
+function verdictLabel(verdict: string | null): string | null {
+  if (!verdict) return null;
+  switch (verdict.toLowerCase()) {
+    case 'request_changes':
+    case 'changes_requested':
+      return 'Candidate requested changes';
+    case 'approve':
+    case 'approved':
+      return 'Candidate approved the PR';
+    case 'comment':
+    case 'commented':
+      return 'Candidate left review comments';
+    default:
+      return `Candidate submitted ${titleCaseToken(verdict)}`;
+  }
+}
+
+function recommendationForScore(
+  score: CodeReviewScoreProjection | null,
+  challenge: CodeReviewChallengeProjection | null,
+): { value: string; detail: string } {
+  if (score?.score !== null && score?.score !== undefined) {
+    if (score.score >= 80) {
+      return {
+        value: 'Advance with focused probe',
+        detail: 'Treat this as a positive technical signal, then use the next conversation to pressure-test the remaining uncertainty.',
+      };
+    }
+    if (score.score >= 60) {
+      return {
+        value: 'Advance only with calibration',
+        detail: 'The review is usable evidence, but the next step should target the weak areas before a confident hiring decision.',
+      };
+    }
+    return {
+      value: 'Do not advance from this signal yet',
+      detail: 'The review did not produce enough positive technical evidence. Confirm whether the assignment was fair before rejecting.',
+    };
+  }
+  if (challenge?.matchStatus && challenge.matchStatus !== 'MATCHED') {
+    return {
+      value: 'Collect missing evidence',
+      detail: 'PIPE does not have enough source-backed candidate evidence to trust a repo challenge recommendation yet.',
+    };
+  }
+  return {
+    value: 'Wait for review signal',
+    detail: 'The code-review assignment has source-backed context, but no score report has been captured yet.',
+  };
+}
+
+function sourceProofLabel(source: LivingContextRecordSourceRef): string {
+  return (source.evidenceRole ?? source.sourceRefType ?? 'source')
+    .replace(/[_-]+/g, ' ')
+    .toLowerCase();
+}
+
+function sourceProofText(source: LivingContextRecordSourceRef): string | null {
+  if (typeof source.exactText === 'string' && source.exactText.trim()) {
+    return source.exactText.length > 180 ? `${source.exactText.slice(0, 180)}...` : source.exactText;
+  }
+  if ('locator' in source && isRecord(source.locator)) {
+    const repo = optionalString(source.locator.repoFullName)
+      ?? optionalString(source.locator.fullName)
+      ?? optionalString(source.locator.repoUrl);
+    const pr = optionalNumber(source.locator.prNumber);
+    if (repo && pr !== null) return `${repo} PR #${pr}`;
+    if (repo) return repo;
+  }
+  return 'Source reference preserved';
+}
+
+function deriveCodeReviewDecision(
+  livingContext: LivingContextReadModel | null,
+): CodeReviewDecisionProjection | null {
+  if (!livingContext) return null;
+  const codeReviewRecords = livingContext.contextRecords
+    .filter((record) => record.recordType === 'code_review_score_report' || record.recordType === 'code_review_transcript')
+    .sort((a, b) => recordTimestamp(b) - recordTimestamp(a));
+  if (codeReviewRecords.length === 0) return null;
+
+  const scoreRecord = codeReviewRecords.find((record) => record.recordType === 'code_review_score_report') ?? null;
+  const score = parseScoreProjection(scoreRecord);
+  const sessionId = sessionIdFromRecord(scoreRecord) ?? sessionIdFromRecord(codeReviewRecords[0] ?? null);
+  const transcriptRecord = codeReviewRecords.find((record) =>
+    record.recordType === 'code_review_transcript'
+    && (!sessionId || sessionIdFromRecord(record) === sessionId),
+  ) ?? codeReviewRecords.find((record) => record.recordType === 'code_review_transcript') ?? null;
+  const challenge = readChallengeProjection(scoreRecord)
+    ?? readChallengeProjection(transcriptRecord)
+    ?? readChallengeProjection(codeReviewRecords[0] ?? null);
+  const recommendation = recommendationForScore(score, challenge);
+  const scoreLabel = score?.score !== null && score?.score !== undefined
+    ? `${Math.round(score.score)}/100${score.band ? ` ${titleCaseToken(score.band)}` : ''}`
+    : null;
+  const challengeLabel = challenge?.repoLabel
+    ? `${challenge.repoLabel}${challenge.prNumber !== null ? ` PR #${challenge.prNumber}` : ''}`
+    : null;
+  const proofSources = [scoreRecord, transcriptRecord]
+    .filter((record): record is LivingContextRecord => record !== null)
+    .flatMap((record) => record.sources.map((source) => ({ record, source })));
+
+  return {
+    sessionId,
+    outcome: verdictLabel(optionalString(transcriptRecord?.qualifiers.finalVerdictDecision)),
+    recommendation: recommendation.value,
+    recommendationDetail: recommendation.detail,
+    scoreLabel,
+    challengeLabel,
+    challengeUrl: challenge?.repoUrl ?? null,
+    narrative: score?.narrative ?? transcriptRecord?.narrative ?? scoreRecord?.narrative ?? null,
+    strengths: score?.strengths ?? [],
+    probes: score?.growthAreas ?? [],
+    proofCount: proofSources.length,
+    proofItems: proofSources.slice(0, 6).map(({ record, source }, index) => ({
+      id: `${record.id}:${source.sourceRefId ?? source.sourceSpanId ?? index}`,
+      label: sourceProofLabel(source),
+      text: sourceProofText(source),
+    })),
+  };
 }
 
 function Metric({ label, value }: { label: string; value: number }): JSX.Element {
@@ -114,6 +358,92 @@ function EmptyPanel({ children }: { children: string }): JSX.Element {
     }}>
       {children}
     </div>
+  );
+}
+
+function CodeReviewDecisionCard({ decision }: { decision: CodeReviewDecisionProjection }): JSX.Element {
+  return (
+    <section data-testid="person-code-review-decision" style={CODE_REVIEW_DECISION}>
+      <div style={CODE_REVIEW_DECISION_HEADER}>
+        <div style={{ minWidth: 0 }}>
+          <div style={DECISION_EYEBROW}>Code-review decision</div>
+          <h2 style={DECISION_TITLE}>{decision.recommendation}</h2>
+          <p style={DECISION_COPY}>{decision.recommendationDetail}</p>
+        </div>
+        <CheckCircle size={24} color="var(--pipe-accent)" />
+      </div>
+
+      <div style={DECISION_FACT_GRID}>
+        {decision.scoreLabel && (
+          <div style={DECISION_FACT}>
+            <div style={DECISION_FACT_LABEL}>Candidate signal</div>
+            <div style={DECISION_FACT_VALUE}>{decision.scoreLabel}</div>
+          </div>
+        )}
+        {decision.challengeLabel && (
+          <div style={DECISION_FACT}>
+            <div style={DECISION_FACT_LABEL}>Repo challenge</div>
+            {decision.challengeUrl ? (
+              <a href={decision.challengeUrl} target="_blank" rel="noreferrer" style={DECISION_LINK}>
+                <GitPullRequest size={14} />
+                {decision.challengeLabel}
+              </a>
+            ) : (
+              <div style={DECISION_FACT_VALUE}>{decision.challengeLabel}</div>
+            )}
+          </div>
+        )}
+        {decision.outcome && (
+          <div style={DECISION_FACT}>
+            <div style={DECISION_FACT_LABEL}>Review outcome</div>
+            <div style={DECISION_FACT_VALUE}>{decision.outcome}</div>
+          </div>
+        )}
+        <div style={DECISION_FACT}>
+          <div style={DECISION_FACT_LABEL}>Proof</div>
+          <div style={DECISION_FACT_VALUE}>{decision.proofCount} source-backed proof items</div>
+        </div>
+      </div>
+
+      {decision.narrative && (
+        <p style={DECISION_NARRATIVE}>{decision.narrative}</p>
+      )}
+
+      {(decision.strengths.length > 0 || decision.probes.length > 0) && (
+        <div style={DECISION_COLUMNS}>
+          {decision.strengths.length > 0 && (
+            <div>
+              <div style={DECISION_FACT_LABEL}>Why it matters</div>
+              {decision.strengths.slice(0, 2).map((strength) => (
+                <p key={strength} style={DECISION_COPY}>{strength}</p>
+              ))}
+            </div>
+          )}
+          {decision.probes.length > 0 && (
+            <div>
+              <div style={DECISION_FACT_LABEL}>What to probe</div>
+              {decision.probes.slice(0, 2).map((probe) => (
+                <p key={probe} style={DECISION_COPY}>{probe}</p>
+              ))}
+            </div>
+          )}
+        </div>
+      )}
+
+      <details data-testid="person-code-review-source-proof" style={DECISION_PROOF}>
+        <summary style={DECISION_PROOF_SUMMARY}>
+          Source proof{decision.sessionId ? ` - ${decision.sessionId}` : ''}
+        </summary>
+        <div style={DECISION_PROOF_LIST}>
+          {decision.proofItems.map((item) => (
+            <div key={item.id} style={DECISION_PROOF_ITEM}>
+              <div style={DECISION_FACT_LABEL}>{item.label}</div>
+              {item.text && <div style={DECISION_PROOF_TEXT}>{item.text}</div>}
+            </div>
+          ))}
+        </div>
+      </details>
+    </section>
   );
 }
 
@@ -166,6 +496,7 @@ export default function PersonProfilePage(): JSX.Element {
     .filter((signal) => signal.evidence.some((evidence) => evidence.sources.length > 0))
     .slice(0, 5) ?? [];
   const evidenceArtifacts = livingContext?.artifacts.slice(0, 5) ?? [];
+  const codeReviewDecision = deriveCodeReviewDecision(livingContext);
 
   if (isLoading) {
     return (
@@ -276,6 +607,10 @@ export default function PersonProfilePage(): JSX.Element {
         <Metric label="Original spans" value={livingContext?.summary.sourceSpanCount ?? 0} />
         <Metric label="Source artifacts" value={livingContext?.summary.artifactCount ?? 0} />
       </section>
+
+      {codeReviewDecision && (
+        <CodeReviewDecisionCard decision={codeReviewDecision} />
+      )}
 
       <section style={{
         display: 'grid',
@@ -452,6 +787,126 @@ const listItemStyle = {
   background: 'var(--pipe-surface)',
   padding: 12,
 } satisfies CSSProperties;
+
+const CODE_REVIEW_DECISION: CSSProperties = {
+  marginTop: 18,
+  border: '1px solid var(--pipe-accent-border)',
+  background: 'var(--pipe-surface-solid)',
+  padding: 18,
+  display: 'grid',
+  gap: 14,
+};
+
+const CODE_REVIEW_DECISION_HEADER: CSSProperties = {
+  display: 'flex',
+  alignItems: 'flex-start',
+  justifyContent: 'space-between',
+  gap: 16,
+};
+
+const DECISION_EYEBROW: CSSProperties = {
+  color: 'var(--pipe-accent)',
+  fontSize: 10,
+  fontWeight: 800,
+  marginBottom: 7,
+};
+
+const DECISION_TITLE: CSSProperties = {
+  margin: 0,
+  color: 'var(--pipe-text)',
+  fontSize: 22,
+  lineHeight: 1.15,
+  letterSpacing: 0,
+};
+
+const DECISION_COPY: CSSProperties = {
+  margin: '7px 0 0',
+  color: 'var(--pipe-text-muted)',
+  fontSize: 12,
+  lineHeight: 1.55,
+};
+
+const DECISION_FACT_GRID: CSSProperties = {
+  display: 'grid',
+  gridTemplateColumns: 'repeat(auto-fit, minmax(170px, 1fr))',
+  gap: 10,
+};
+
+const DECISION_FACT: CSSProperties = {
+  border: '1px solid var(--pipe-border-light)',
+  background: 'var(--pipe-surface)',
+  padding: 12,
+  minHeight: 70,
+};
+
+const DECISION_FACT_LABEL: CSSProperties = {
+  color: 'var(--pipe-text-dim)',
+  fontSize: 10,
+  fontWeight: 800,
+  marginBottom: 7,
+};
+
+const DECISION_FACT_VALUE: CSSProperties = {
+  color: 'var(--pipe-text)',
+  fontSize: 13,
+  fontWeight: 800,
+  overflowWrap: 'anywhere',
+};
+
+const DECISION_LINK: CSSProperties = {
+  display: 'inline-flex',
+  alignItems: 'center',
+  gap: 7,
+  color: 'var(--pipe-accent)',
+  fontSize: 13,
+  fontWeight: 800,
+  textDecoration: 'none',
+  overflowWrap: 'anywhere',
+};
+
+const DECISION_NARRATIVE: CSSProperties = {
+  margin: 0,
+  color: 'var(--pipe-text)',
+  fontSize: 13,
+  lineHeight: 1.6,
+};
+
+const DECISION_COLUMNS: CSSProperties = {
+  display: 'grid',
+  gridTemplateColumns: 'repeat(auto-fit, minmax(220px, 1fr))',
+  gap: 14,
+};
+
+const DECISION_PROOF: CSSProperties = {
+  border: '1px solid var(--pipe-border-light)',
+  background: 'var(--pipe-surface)',
+  padding: 12,
+};
+
+const DECISION_PROOF_SUMMARY: CSSProperties = {
+  color: 'var(--pipe-text)',
+  cursor: 'pointer',
+  fontSize: 12,
+  fontWeight: 800,
+};
+
+const DECISION_PROOF_LIST: CSSProperties = {
+  display: 'grid',
+  gap: 8,
+  marginTop: 12,
+};
+
+const DECISION_PROOF_ITEM: CSSProperties = {
+  borderTop: '1px solid var(--pipe-border-light)',
+  paddingTop: 8,
+};
+
+const DECISION_PROOF_TEXT: CSSProperties = {
+  color: 'var(--pipe-text-muted)',
+  fontSize: 11,
+  lineHeight: 1.45,
+  overflowWrap: 'anywhere',
+};
 
 const GRAPH_HEADER: CSSProperties = {
   display: 'flex',

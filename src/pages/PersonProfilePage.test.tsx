@@ -1,0 +1,271 @@
+import { act, render, screen } from '@testing-library/react';
+import { MemoryRouter, Route, Routes } from 'react-router-dom';
+import { beforeEach, describe, expect, it, vi } from 'vitest';
+import PersonProfilePage from './PersonProfilePage';
+import type {
+  LivingContextGenericSourceRef,
+  LivingContextReadModel,
+  LivingContextRecord,
+  LivingContextSourceRef,
+} from '../lib/api/types';
+
+const mocks = vi.hoisted(() => ({
+  api: {
+    get: vi.fn(),
+  },
+}));
+
+vi.mock('@clerk/react', () => ({
+  useAuth: () => ({ getToken: vi.fn().mockResolvedValue('test-token') }),
+}));
+
+vi.mock('../lib/api/client', () => ({
+  createApiClient: () => mocks.api,
+}));
+
+vi.mock('../components/Candidate/LivingContextGraph', () => ({
+  LivingContextGraph: () => <div data-testid="mock-living-context-graph" />,
+}));
+
+interface PersonContact {
+  id: string;
+  email: string;
+  name: string | null;
+  company: string | null;
+  role: string | null;
+  phone: string | null;
+  linkedin: string | null;
+  notes: string | null;
+  type: string;
+  created_at: string;
+  updated_at: string;
+}
+
+function sourceSpan(overrides: Partial<LivingContextSourceRef> = {}): LivingContextSourceRef {
+  return {
+    sourceRefType: 'source_span',
+    sourceRefId: 'source-ref-1',
+    sourceSpanId: 'source-span-1',
+    evidenceRole: 'score_report',
+    artifactId: 'artifact-1',
+    artifactType: 'code_review_score_report',
+    artifactLogicalKey: 'review-session-1',
+    artifactVersionId: 'artifact-version-1',
+    artifactVersionNumber: 1,
+    mediaType: 'application/json',
+    storageKey: null,
+    stableSegmentId: 'score-report-full',
+    exactText: JSON.stringify({
+      overall: {
+        score: 82,
+        band: 'strong',
+        narrative: 'Candidate found the missing retry test and defended the review.',
+        strengths: ['Found the source-backed regression risk.'],
+        growth_areas: ['Probe how they balance timing trade-offs under pushback.'],
+      },
+    }),
+    byteStart: 0,
+    byteEnd: null,
+    charStart: 0,
+    charEnd: null,
+    lineStart: 1,
+    lineEnd: 1,
+    timestampStartMs: null,
+    timestampEndMs: null,
+    metadata: { sourceKind: 'score_report' },
+    ...overrides,
+  };
+}
+
+function genericSource(overrides: Partial<LivingContextGenericSourceRef> = {}): LivingContextGenericSourceRef {
+  return {
+    sourceRefType: 'match_run',
+    sourceRefId: 'match-run-1',
+    sourceSpanId: null,
+    evidenceRole: 'repo_match_decision',
+    locator: {
+      repoFullName: 'pierre/diffs',
+      repoUrl: 'https://github.com/pierre/diffs',
+      prNumber: 95,
+      matchStatus: 'MATCHED',
+    },
+    exactText: null,
+    contentHash: null,
+    metadata: { sourceKind: 'match_run', status: 'MATCHED' },
+    ...overrides,
+  };
+}
+
+function contextRecord(overrides: Partial<LivingContextRecord> = {}): LivingContextRecord {
+  return {
+    id: 'record-1',
+    scopeType: 'workspace_person',
+    scopeId: 'workspace-person-1',
+    interactionId: 'interaction-code-review',
+    applicationId: 'candidate-1',
+    episodeId: null,
+    assertionId: null,
+    recordType: 'code_review_score_report',
+    predicate: 'preserves code review score report',
+    narrative: 'Code review score report evidence for session review-session-1.',
+    qualifiers: {
+      sessionId: 'review-session-1',
+      selectedReviewChallenge: {
+        repoFullName: 'pierre/diffs',
+        repoUrl: 'https://github.com/pierre/diffs',
+        prNumber: 95,
+        matchStatus: 'MATCHED',
+        packetQualityScore: 0.94,
+      },
+    },
+    confidence: null,
+    polarity: 1,
+    extractionVersion: 'code-review-ingestion-v1',
+    observedAt: '2026-06-28T16:00:00.000Z',
+    entities: [],
+    concepts: [],
+    sources: [sourceSpan(), genericSource()],
+    ...overrides,
+  };
+}
+
+function makeLivingContext(): LivingContextReadModel {
+  return {
+    person: {
+      personId: 'person-1',
+      workspacePersonId: 'workspace-person-1',
+      applicationId: 'candidate-1',
+      displayName: 'Ada Reviewer',
+      primaryEmail: 'ada@example.com',
+      primaryPhone: null,
+      relationshipSummary: 'Senior frontend engineer with source-backed React review evidence.',
+      applicationStatus: null,
+      pipelineId: null,
+      roles: [],
+    },
+    summary: {
+      interactionCount: 1,
+      artifactCount: 2,
+      contextRecordCount: 2,
+      assertionCount: 0,
+      signalCount: 0,
+      sourceSpanCount: 4,
+    },
+    interactions: [{
+      id: 'interaction-code-review',
+      interactionType: 'code_review_assessment',
+      externalReference: 'review-session-1',
+      startedAt: '2026-06-28T15:00:00.000Z',
+      endedAt: '2026-06-28T16:00:00.000Z',
+      createdAt: '2026-06-28T15:00:00.000Z',
+      updatedAt: '2026-06-28T16:00:00.000Z',
+      metadata: {
+        sessionId: 'review-session-1',
+        challengeId: 'challenge-1',
+        assessmentId: 'assessment-1',
+        status: 'scored',
+      },
+      artifactIds: ['artifact-1', 'artifact-2'],
+      contextRecordIds: ['record-score', 'record-transcript'],
+      assertionIds: [],
+      signalKeys: [],
+    }],
+    artifacts: [],
+    contextRecords: [
+      contextRecord({ id: 'record-score' }),
+      contextRecord({
+        id: 'record-transcript',
+        recordType: 'code_review_transcript',
+        predicate: 'preserves code review transcript',
+        narrative: 'Candidate requested changes and defended the source-backed regression concern.',
+        qualifiers: {
+          sessionId: 'review-session-1',
+          finalVerdictDecision: 'request_changes',
+          selectedReviewChallenge: {
+            repoFullName: 'pierre/diffs',
+            repoUrl: 'https://github.com/pierre/diffs',
+            prNumber: 95,
+            matchStatus: 'MATCHED',
+          },
+        },
+        sources: [
+          sourceSpan({
+            sourceSpanId: 'source-span-transcript-1',
+            evidenceRole: 'transcript_segment',
+            artifactType: 'code_review_transcript',
+            mediaType: 'text/plain',
+            exactText: 'Add a regression test around impatient hover click timing.',
+            metadata: { sourceKind: 'review_comment' },
+          }),
+          genericSource({ sourceRefType: 'review_challenge_packet', evidenceRole: 'selected_review_challenge' }),
+        ],
+      }),
+    ],
+    assertions: [],
+    signals: [],
+    relationships: [],
+  };
+}
+
+function makeContact(): PersonContact {
+  return {
+    id: 'person-1',
+    email: 'ada@example.com',
+    name: 'Ada Reviewer',
+    company: null,
+    role: 'Senior frontend engineer',
+    phone: null,
+    linkedin: null,
+    notes: null,
+    type: 'candidate',
+    created_at: '2026-06-28T15:00:00.000Z',
+    updated_at: '2026-06-28T16:00:00.000Z',
+  };
+}
+
+async function flushAsyncUpdates(): Promise<void> {
+  await act(async () => {
+    await Promise.resolve();
+    await Promise.resolve();
+  });
+}
+
+function renderPage(): void {
+  render(
+    <MemoryRouter initialEntries={['/people/person-1']}>
+      <Routes>
+        <Route path="/people/:personId" element={<PersonProfilePage />} />
+      </Routes>
+    </MemoryRouter>,
+  );
+}
+
+describe('PersonProfilePage', () => {
+  beforeEach(() => {
+    mocks.api.get.mockReset();
+  });
+
+  it('leads source-backed code-review profiles with a concise hiring decision snapshot', async () => {
+    mocks.api.get
+      .mockResolvedValueOnce({ contact: makeContact() })
+      .mockResolvedValueOnce(makeLivingContext());
+
+    renderPage();
+    await flushAsyncUpdates();
+
+    const decision = await screen.findByTestId('person-code-review-decision');
+    expect(decision).toHaveTextContent('Code-review decision');
+    expect(decision).toHaveTextContent('Advance with focused probe');
+    expect(decision).toHaveTextContent('82/100 Strong');
+    expect(decision).toHaveTextContent('pierre/diffs PR #95');
+    expect(decision).toHaveTextContent('Candidate found the missing retry test and defended the review.');
+    expect(decision).toHaveTextContent('Probe how they balance timing trade-offs under pushback.');
+    expect(decision).toHaveTextContent('4 source-backed proof items');
+
+    const proof = screen.getByTestId('person-code-review-source-proof');
+    expect(proof).toHaveTextContent('Source proof');
+    expect(proof).toHaveTextContent('score report');
+    expect(proof).toHaveTextContent('transcript segment');
+    expect(proof).toHaveTextContent('review-session-1');
+  });
+});
