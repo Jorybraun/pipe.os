@@ -1084,7 +1084,7 @@ describe('GET /interviews/:id detail', () => {
     });
   });
 
-  it('starts assessment evaluation through the interview route and records a source-backed human-review diagnostic', async () => {
+  it('starts assessment evaluation through the interview route and records a source-backed AI-unavailable diagnostic when no AI binding exists', async () => {
     seedInterviewDetailFixture();
     const now = '2026-06-22T18:44:00.000Z';
     const baseCommitSha = '6666666666666666666666666666666666666666';
@@ -1227,18 +1227,20 @@ describe('GET /interviews/:id detail', () => {
         evidenceCounts: Array<{ kind: string; count: number }>;
       };
       diagnostic: { code: string; severity: string };
+      report: null;
     };
 
     expect(body.diagnostic).toMatchObject({
-      code: 'EVALUATION_NEEDS_HUMAN_REVIEW',
+      code: 'AI_DEVELOPER_UNAVAILABLE',
       severity: 'blocking',
     });
+    expect(body.report).toBeNull();
     expect(body.progress).toMatchObject({
       stage: 'NEEDS_ATTENTION',
       nextAction: 'RESOLVE_DIAGNOSTIC',
       evaluation: {
-        status: 'NEEDS_HUMAN_REVIEW',
-        summary: 'Automated source-backed open-source commit evaluation is not configured yet. Human review is required before PIPE can score this submission.',
+        status: 'AI_DEVELOPER_UNAVAILABLE',
+        summary: 'Workers AI is not configured for source-backed repo-task evaluation.',
       },
     });
     expect(body.progress.evidenceCounts).toEqual(expect.arrayContaining([
@@ -1260,12 +1262,249 @@ describe('GET /interviews/:id detail', () => {
       `SELECT dsr.exact_text
          FROM assessment_diagnostic_source_refs dsr
          JOIN assessment_diagnostics d ON d.id = dsr.diagnostic_id
-        WHERE d.code = 'EVALUATION_NEEDS_HUMAN_REVIEW'
+        WHERE d.code = 'AI_DEVELOPER_UNAVAILABLE'
         LIMIT 1`,
     ).get() as { exact_text: string } | undefined;
     expect(diagnosticSource?.exact_text).toContain(
-      'no automated open-source commit evaluator is configured yet',
+      'PIPE will evaluate only source-backed',
     );
+  });
+
+  it('starts source-backed AI assessment evaluation and persists only cited claims', async () => {
+    seedInterviewDetailFixture();
+    const now = '2026-06-22T18:46:00.000Z';
+    const baseCommitSha = '7777777777777777777777777777777777777777';
+    const commitSha = 'cccccccccccccccccccccccccccccccccccccccc';
+    const challengeText = [
+      'Repo: https://github.com/open-source/widgets',
+      `Base commit: ${baseCommitSha}`,
+      'Task: fix the start-evaluation regression with a real patch.',
+      'Success: commit a focused patch with tests.',
+    ].join('\n');
+    const commitText = `commit ${commitSha}\nAuthor: Candidate <candidate@example.com>\n\nFix start evaluation.`;
+    const diffText = 'diff --git a/src/evaluation.ts b/src/evaluation.ts\n+startEvaluation();';
+    const diffSourceRefKey = `code_diff:${commitSha}:diff:support:`;
+
+    sqlite!.prepare(`
+      UPDATE scheduled_interviews
+         SET interview_type = 'OPEN_SOURCE_BUG_FIX',
+             github_repo_url = 'https://github.com/open-source/widgets'
+       WHERE id = 'interview-1'
+    `).run();
+    sqlite!.prepare(`
+      INSERT INTO assessment_sessions (
+        id, ingestion_key, interview_id, mode, state, candidate_id, workspace_id,
+        metadata_json, created_at, updated_at
+      ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+    `).run(
+      'assessment-session-ai-evaluation',
+      'assessment-session:ai-evaluation',
+      'interview-1',
+      'OPEN_SOURCE_BUG_FIX',
+      'FINAL_SUBMITTED',
+      'candidate-1',
+      'workspace-1',
+      '{}',
+      now,
+      now,
+    );
+    sqlite!.prepare(`
+      INSERT INTO assessment_evidence_events (
+        id, ingestion_key, session_id, sequence, kind, actor_type, actor_id,
+        narrative, payload_json, context_record_id, occurred_at, created_at
+      ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, NULL, ?, ?)
+    `).run(
+      'assessment-event-ai-evaluation-challenge',
+      'assessment-event:ai-evaluation-challenge',
+      'assessment-session-ai-evaluation',
+      1,
+      'recruiter_note',
+      'recruiter',
+      'owner-1',
+      'Recruiter assigned a concrete open-source challenge packet.',
+      JSON.stringify({ repositoryUrl: 'https://github.com/open-source/widgets' }),
+      now,
+      now,
+    );
+    sqlite!.prepare(`
+      INSERT INTO assessment_evidence_events (
+        id, ingestion_key, session_id, sequence, kind, actor_type, actor_id,
+        narrative, payload_json, context_record_id, occurred_at, created_at
+      ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, NULL, ?, ?)
+    `).run(
+      'assessment-event-ai-evaluation-commit',
+      'assessment-event:ai-evaluation-commit',
+      'assessment-session-ai-evaluation',
+      2,
+      'commit_submission',
+      'candidate',
+      'candidate-1',
+      'Candidate submitted the source-backed assessment commit.',
+      JSON.stringify({
+        repositoryUrl: 'https://github.com/open-source/widgets',
+        forkRepositoryUrl: 'https://github.com/candidate/widgets',
+        branchName: 'pipe-assessment/ai-evaluation',
+        baseCommitSha,
+        commitSha,
+        commitUrl: `https://github.com/candidate/widgets/commit/${commitSha}`,
+        changedFiles: [{ path: 'src/evaluation.ts', status: 'modified' }],
+      }),
+      now,
+      now,
+    );
+    sqlite!.prepare(`
+      INSERT INTO assessment_event_source_refs (
+        id, event_id, source_ref_type, source_ref_id, source_span_id, evidence_role,
+        locator_json, exact_text, content_hash, metadata_json, created_at
+      ) VALUES (?, ?, ?, ?, NULL, ?, ?, ?, ?, '{}', ?)
+    `).run(
+      'assessment-source-ai-evaluation-challenge',
+      'assessment-event-ai-evaluation-challenge',
+      'review_challenge_packet',
+      'challenge-packet-ai-evaluation',
+      'assigned_challenge',
+      JSON.stringify({ repositoryUrl: 'https://github.com/open-source/widgets', baseCommitSha }),
+      challengeText,
+      sha256Hex(challengeText),
+      now,
+    );
+    sqlite!.prepare(`
+      INSERT INTO assessment_event_source_refs (
+        id, event_id, source_ref_type, source_ref_id, source_span_id, evidence_role,
+        locator_json, exact_text, content_hash, metadata_json, created_at
+      ) VALUES (?, ?, ?, ?, NULL, ?, ?, ?, ?, '{}', ?)
+    `).run(
+      'assessment-source-ai-evaluation-commit',
+      'assessment-event-ai-evaluation-commit',
+      'git_commit',
+      commitSha,
+      'support',
+      JSON.stringify({ commitUrl: `https://github.com/candidate/widgets/commit/${commitSha}` }),
+      commitText,
+      sha256Hex(commitText),
+      now,
+    );
+    sqlite!.prepare(`
+      INSERT INTO assessment_event_source_refs (
+        id, event_id, source_ref_type, source_ref_id, source_span_id, evidence_role,
+        locator_json, exact_text, content_hash, metadata_json, created_at
+      ) VALUES (?, ?, ?, ?, NULL, ?, ?, ?, ?, '{}', ?)
+    `).run(
+      'assessment-source-ai-evaluation-diff',
+      'assessment-event-ai-evaluation-commit',
+      'code_diff',
+      `${commitSha}:diff`,
+      'support',
+      JSON.stringify({ path: 'src/evaluation.ts' }),
+      diffText,
+      sha256Hex(diffText),
+      now,
+    );
+
+    const aiRun = vi.fn(async () => ({
+      response: JSON.stringify({
+        summary: 'Candidate made a focused source-backed change and cited the submitted diff evidence.',
+        recommendation: 'mixed_evidence_human_review',
+        claims: [{
+          id: 'focused-diff',
+          polarity: 'positive',
+          dimension: 'implementation_correctness',
+          narrative: 'The submitted diff adds startEvaluation in src/evaluation.ts.',
+          confidence: 0.74,
+          sourceRefKeys: [diffSourceRefKey],
+        }, {
+          id: 'uncited-claim',
+          polarity: 'positive',
+          dimension: 'test_strategy',
+          narrative: 'This claim has no persisted source citation and must be dropped.',
+          confidence: 0.2,
+          sourceRefKeys: ['missing:source:ref'],
+        }],
+        diagnostics: [{
+          code: 'MISSING_TEST_EVIDENCE',
+          severity: 'warning',
+          message: 'No test_run source ref was attached to the session.',
+          sourceRefKeys: [diffSourceRefKey],
+        }],
+      }),
+    }));
+
+    const app = mountSchedulingApp({
+      AI: { run: aiRun } as unknown as Ai,
+      CLOUDFLARE_AI_MODEL: '@cf/google/gemma-4-26b-a4b-it',
+    });
+    const response = await app.request('/interviews/interview-1/assessment/start-evaluation', {
+      method: 'POST',
+    });
+    expect(response.status).toBe(200);
+    const body = await response.json() as {
+      progress: {
+        stage: string;
+        nextAction: string;
+        hasAiInteraction: boolean;
+        evaluation: { status: string; summary: string } | null;
+        evidenceCounts: Array<{ kind: string; count: number }>;
+      };
+      report: { id: string; sessionId: string; status: string; contextRecordId: string | null } | null;
+      diagnostic: null;
+    };
+
+    expect(aiRun).toHaveBeenCalledTimes(1);
+    expect(JSON.stringify(aiRun.mock.calls[0])).toContain(diffSourceRefKey);
+    expect(body.diagnostic).toBeNull();
+    expect(body.report).toMatchObject({
+      sessionId: 'assessment-session-ai-evaluation',
+      status: 'EVALUATED',
+    });
+    expect(body.progress).toMatchObject({
+      stage: 'EVALUATED',
+      nextAction: 'REVIEW_EVALUATION',
+      hasAiInteraction: true,
+      evaluation: {
+        status: 'EVALUATED',
+        summary: 'Candidate made a focused source-backed change and cited the submitted diff evidence.',
+      },
+    });
+    expect(body.progress.evidenceCounts).toEqual(expect.arrayContaining([
+      { kind: 'ai_interaction', count: 1 },
+      { kind: 'commit_submission', count: 1 },
+      { kind: 'recruiter_note', count: 2 },
+    ]));
+
+    expect(sqlite!.prepare(
+      `SELECT state FROM assessment_sessions WHERE id = ?`,
+    ).get('assessment-session-ai-evaluation')).toEqual({ state: 'EVALUATED' });
+    expect(sqlite!.prepare(
+      `SELECT COUNT(*) AS count
+         FROM assessment_evidence_events
+        WHERE session_id = ?
+          AND kind = 'ai_interaction'`,
+    ).get('assessment-session-ai-evaluation')).toEqual({ count: 1 });
+    expect(sqlite!.prepare(
+      `SELECT COUNT(*) AS count
+         FROM assessment_evaluation_claims
+        WHERE dimension = 'test_strategy'`,
+    ).get()).toEqual({ count: 0 });
+    const citedClaim = sqlite!.prepare(
+      `SELECT c.dimension, c.polarity, csr.source_ref_type, csr.source_ref_id, csr.exact_text
+         FROM assessment_evaluation_claims c
+         JOIN assessment_claim_source_refs csr ON csr.claim_id = c.id
+        WHERE c.dimension = 'implementation_correctness'
+        LIMIT 1`,
+    ).get() as {
+      dimension: string;
+      polarity: string;
+      source_ref_type: string;
+      source_ref_id: string;
+      exact_text: string;
+    } | undefined;
+    expect(citedClaim).toMatchObject({
+      dimension: 'implementation_correctness',
+      polarity: 'positive',
+      source_ref_type: 'code_diff',
+      source_ref_id: `${commitSha}:diff`,
+      exact_text: diffText,
+    });
   });
 
   it('returns source-backed assessment progress on the interview list', async () => {

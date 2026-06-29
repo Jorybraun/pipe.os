@@ -36,6 +36,8 @@ export interface Env {
   STORAGE: R2Bucket;
   /** Workers AI binding — Qwen, Nemotron, etc. No API key needed. */
   AI: Ai;
+  /** Optional Workers AI text-generation model override. */
+  CLOUDFLARE_AI_MODEL?: string;
   /**
    * Vectorize index binding for repo_searchable_profile embeddings.
    * Used in discover.ts hybrid recall (STRATEGY Decision Log 2026-04-14).

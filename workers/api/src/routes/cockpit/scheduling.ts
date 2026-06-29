@@ -44,6 +44,7 @@ import {
   RepoTaskInterviewSessionStore,
   type AssessmentProgressSnapshot,
 } from '../../lib/repoTaskInterviewSession';
+import { evaluateRepoTaskAssessmentSession } from '../../lib/repoTaskAssessmentEvaluator';
 import * as d1Matcher from '../../lib/challengeMatching/d1Matcher';
 import type { CandidateReviewChallengeOptions } from '../../lib/challengeMatching/d1Matcher';
 import { loadRoleChallengeSemantics } from '../../lib/challengeMatching/roleGuardrails';
@@ -4310,7 +4311,7 @@ schedulingAuth.post('/interviews/:id/assessment/start-evaluation', async (c) => 
     const exactText = [
       `Recruiter ${userId} requested source-backed evaluation for scheduled interview ${id}.`,
       `Assessment session: ${sessionId}.`,
-      'Result: no automated open-source commit evaluator is configured yet; human review is required.',
+      'Result: PIPE will evaluate only source-backed challenge, commit, diff, test, transcript, chat, terminal, and AI evidence.',
     ].join('\n');
     const contentHash = await deterministicEntityId('content', exactText);
     const requestSourceRef: AssessmentEvidenceSourceRefInput = {
@@ -4338,7 +4339,7 @@ schedulingAuth.post('/interviews/:id/assessment/start-evaluation', async (c) => 
       payload: {
         scheduledInterviewId: id,
         action: 'start_evaluation',
-        evaluatorStatus: 'not_configured',
+        evaluatorStatus: 'source_backed_evaluator_requested',
       },
       occurredAt: requestedAt,
       sourceRefs: [requestSourceRef],
@@ -4352,25 +4353,24 @@ schedulingAuth.post('/interviews/:id/assessment/start-evaluation', async (c) => 
       createdBy: userId,
     });
 
-    const diagnostic = await store.recordDiagnostic({
-      code: 'EVALUATION_NEEDS_HUMAN_REVIEW',
-      severity: 'blocking',
-      message: 'Automated source-backed open-source commit evaluation is not configured yet. Human review is required before PIPE can score this submission.',
-      provider: 'repo_task_assessment_evaluator',
-      retryable: false,
-      details: {
-        scheduledInterviewId: id,
-        requestEventId: requestEvent.id,
-        reason: 'source_backed_evaluator_not_configured',
-      },
-      sourceRefs: [requestSourceRef],
-    }, {
+    const evaluation = await evaluateRepoTaskAssessmentSession({
+      db,
+      store,
+      env: c.env,
       sessionId,
-      reportId: null,
+      scheduledInterviewId: id,
+      requestedBy: userId,
+      requestedAt,
+      requestEventId: requestEvent.id,
+      requestSourceRef,
     });
 
     const progress = await store.loadProgress(sessionId);
-    return c.json({ progress, diagnostic });
+    return c.json({
+      progress,
+      report: evaluation.kind === 'evaluated' ? evaluation.report : null,
+      diagnostic: evaluation.kind === 'diagnostic' ? evaluation.diagnostic : null,
+    });
   } catch (error) {
     console.error('[scheduling/startAssessmentEvaluation] failed:', {
       interviewId: id,
