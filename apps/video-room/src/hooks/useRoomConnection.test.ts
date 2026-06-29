@@ -1,5 +1,6 @@
 import { describe, expect, it } from 'vitest';
 import {
+  addLocalMediaToPeer,
   applyRoomChatRejection,
   applyRoomMediaControlEvent,
   applyRoomRecordingStateEvent,
@@ -36,6 +37,57 @@ import {
   type RoomTerminalEvent,
 } from './useRoomConnection';
 import { roomChatMessageFingerprint } from '../lib/chatEvidence';
+
+function makePeerRecorder(): {
+  peer: RTCPeerConnection;
+  tracks: string[];
+  transceivers: Array<{ kind: string; direction: RTCRtpTransceiverDirection | undefined }>;
+} {
+  const tracks: string[] = [];
+  const transceivers: Array<{ kind: string; direction: RTCRtpTransceiverDirection | undefined }> = [];
+  const peer = {
+    addTrack(track: MediaStreamTrack): RTCRtpSender {
+      tracks.push(track.kind);
+      return {} as RTCRtpSender;
+    },
+    addTransceiver(kind: string, init?: RTCRtpTransceiverInit): RTCRtpTransceiver {
+      transceivers.push({ kind, direction: init?.direction });
+      return {} as RTCRtpTransceiver;
+    },
+  } as unknown as RTCPeerConnection;
+  return { peer, tracks, transceivers };
+}
+
+function mediaStreamWithTrackKinds(kinds: string[]): MediaStream {
+  return {
+    getTracks: () => kinds.map((kind) => ({ kind }) as MediaStreamTrack),
+  } as unknown as MediaStream;
+}
+
+describe('addLocalMediaToPeer', () => {
+  it('keeps the peer negotiable when no local camera or microphone is available', () => {
+    const { peer, tracks, transceivers } = makePeerRecorder();
+
+    addLocalMediaToPeer(peer, mediaStreamWithTrackKinds([]));
+
+    expect(tracks).toEqual([]);
+    expect(transceivers).toEqual([
+      { kind: 'audio', direction: 'recvonly' },
+      { kind: 'video', direction: 'recvonly' },
+    ]);
+  });
+
+  it('adds missing receive lanes without duplicating local tracks', () => {
+    const { peer, tracks, transceivers } = makePeerRecorder();
+
+    addLocalMediaToPeer(peer, mediaStreamWithTrackKinds(['audio']));
+
+    expect(tracks).toEqual(['audio']);
+    expect(transceivers).toEqual([
+      { kind: 'video', direction: 'recvonly' },
+    ]);
+  });
+});
 
 describe('decideRoomSurfaceSnapshot', () => {
   it('applies the Durable Object snapshot on a new socket so missed surface changes resync', () => {

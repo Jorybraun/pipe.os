@@ -18,6 +18,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Fixed — Video room
 
+- Video-room no-device joins now keep retry controls styled and disable unavailable mic/camera buttons instead of publishing source-less media-control actions.
 - Video rooms now let participants enter when camera or microphone access is unavailable, while keeping a retry-devices action for restoring media after joining.
 - Code-server file and terminal room evidence now uses deterministic source-backed event ids end to end, preventing replayed workspace evidence from being accepted under unrelated transport ids.
 - Video-room recording state events now require the event id to match the source-backed recording state id before optimistic updates, broadcasts, or Durable Object persistence, preventing stale recording/transcript state evidence from replaying under a different event identity.

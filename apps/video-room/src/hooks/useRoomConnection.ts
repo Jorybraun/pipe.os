@@ -613,7 +613,7 @@ const PEER_CURSOR_TTL_MS = 4000;
 export const ROOM_CURSOR_SEND_INTERVAL_MS = 160;
 const SURFACE_SNAPSHOT_LOCAL_EVENT_GUARD_MS = 5000;
 
-function addLocalMediaToPeer(peer: RTCPeerConnection, stream: MediaStream | null): void {
+export function addLocalMediaToPeer(peer: RTCPeerConnection, stream: MediaStream | null): void {
   const attachedKinds = new Set<string>();
   stream?.getTracks().forEach((track) => {
     attachedKinds.add(track.kind);
