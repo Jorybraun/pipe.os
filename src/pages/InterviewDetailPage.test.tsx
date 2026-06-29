@@ -363,6 +363,16 @@ describe('InterviewDetailPage', () => {
           ],
           gaps: [],
         },
+        codeReviewScore: {
+          reviewSessionId: 'review-session-1',
+          status: 'scored',
+          score: 72,
+          band: 'adequate',
+          narrative: 'Candidate found the interaction regression and gave a concrete blocking reason, but missed one verification detail.',
+          strengths: ['Concrete source-backed blocking comment.'],
+          growthAreas: ['Probe how they would validate timing cleanup.'],
+          updatedAt: '2026-06-23T01:00:00.000Z',
+        },
       }),
     });
 
@@ -371,9 +381,14 @@ describe('InterviewDetailPage', () => {
     await flushAsyncUpdates();
     const decision = screen.getByTestId('interview-code-review-decision-summary');
     expect(decision).toHaveTextContent('Candidate requested changes');
+    expect(decision).toHaveTextContent('Candidate signal');
+    expect(decision).toHaveTextContent('72/100 Adequate');
+    expect(decision).toHaveTextContent('Candidate found the interaction regression and gave a concrete blocking reason, but missed one verification detail.');
+    expect(decision).toHaveTextContent('Concrete source-backed blocking comment.');
+    expect(decision).toHaveTextContent('Probe how they would validate timing cleanup.');
     expect(decision).toHaveTextContent('Use the annotated lines and developer pushback to judge whether the requested changes are concrete, source-backed, and worth blocking the PR.');
     expect(decision).toHaveTextContent('Strong assessment fit');
-    expect(decision).toHaveTextContent('1 annotation');
+    expect(decision).toHaveTextContent('72/100 Adequate');
     expect(decision).toHaveTextContent('1 pushback thread');
     expect(screen.queryByTestId('interview-code-review-evidence-plan')).toBeNull();
 

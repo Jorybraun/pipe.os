@@ -23,6 +23,7 @@ import type {
   CodeReviewMatchDetail,
   CodeReviewMatchHyperedge,
   CodeReviewMatchHyperedgeNode,
+  CodeReviewScoreSummary,
   CodeReviewMatchSourceRef,
   ScheduledInterviewDetail,
   TranscriptArtifact,
@@ -422,6 +423,23 @@ function codeReviewFitDetail(match: CodeReviewMatchDetail | null): string {
   }
   const score = formatMatchScore(match?.score);
   return score ? `confidence ${score}` : 'waiting for source-backed match';
+}
+
+function codeReviewScoreHeadline(score: CodeReviewScoreSummary | null): string | null {
+  if (!score) return null;
+  if (typeof score.score === 'number' && Number.isFinite(score.score)) {
+    const band = score.band ? ` ${titleCaseToken(score.band)}` : '';
+    return `${Math.round(score.score)}/100${band}`;
+  }
+  return `Scoring ${titleCaseToken(score.status)}`;
+}
+
+function codeReviewScoreNarrative(score: CodeReviewScoreSummary | null): string | null {
+  if (!score) return null;
+  return score.narrative
+    ?? (score.status === 'scored'
+      ? 'Score report is available, but no narrative was returned.'
+      : 'The score report will appear after scoring completes.');
 }
 
 function githubRepoLabel(repoUrl: string | null | undefined): string | null {
@@ -1122,6 +1140,9 @@ export default function InterviewDetailPage(): JSX.Element {
         : 'Send an invite or open the host room to start collecting call evidence.';
   const codeReviewOutcome = codeReviewVerdictLabel(codeReviewSubmission?.verdict, codeReviewMatch);
   const codeReviewAction = codeReviewActionText(codeReviewSubmission, codeReviewMatch);
+  const codeReviewScore = interview.codeReviewScore ?? null;
+  const codeReviewScoreValue = codeReviewScoreHeadline(codeReviewScore);
+  const codeReviewScoreDetail = codeReviewScoreNarrative(codeReviewScore);
   const codeReviewEvidencePlan = codeReviewEvidencePlanItems(codeReviewMatch, codeReviewSubmission);
   const codeReviewEvidenceRefresh = codeReviewMatch?.evidenceRefresh ?? null;
   const codeReviewEvidenceFollowUp = codeReviewMatch?.evidenceFollowUp ?? null;
@@ -1155,9 +1176,9 @@ export default function InterviewDetailPage(): JSX.Element {
       detail: codeReviewFitDetail(codeReviewMatch),
     },
     {
-      label: 'Candidate review',
-      value: countLabel(codeReviewSubmission?.annotations.length ?? 0, 'annotation'),
-      detail: codeReviewSubmission?.summary ?? 'no submitted review yet',
+      label: codeReviewScore ? 'Candidate signal' : 'Candidate review',
+      value: codeReviewScoreValue ?? countLabel(codeReviewSubmission?.annotations.length ?? 0, 'annotation'),
+      detail: codeReviewScoreDetail ?? codeReviewSubmission?.summary ?? 'no submitted review yet',
     },
     {
       label: 'Pushback',
@@ -1372,6 +1393,42 @@ export default function InterviewDetailPage(): JSX.Element {
                 )}
               </div>
               <div style={DECISION_ACTION}>{codeReviewAction}</div>
+              {codeReviewScore && (
+                <div data-testid="interview-code-review-score-summary" style={DECISION_SCORE_SUMMARY}>
+                  <div style={DECISION_SCORE_HEADER}>
+                    <div style={{ minWidth: 0 }}>
+                      <div style={FIELD_LABEL}>Candidate signal</div>
+                      <div style={DECISION_SCORE_VALUE}>
+                        {codeReviewScoreValue ?? titleCaseToken(codeReviewScore.status)}
+                      </div>
+                    </div>
+                    <span style={MATCH_BADGE}>{titleCaseToken(codeReviewScore.status)}</span>
+                  </div>
+                  {codeReviewScoreDetail && (
+                    <div style={CONTEXT_RECORD_NARRATIVE}>{codeReviewScoreDetail}</div>
+                  )}
+                  {(codeReviewScore.strengths.length > 0 || codeReviewScore.growthAreas.length > 0) && (
+                    <div style={DECISION_SCORE_COLUMNS}>
+                      {codeReviewScore.strengths.length > 0 && (
+                        <div style={DECISION_SCORE_COLUMN}>
+                          <div style={FIELD_LABEL}>What looked good</div>
+                          {codeReviewScore.strengths.slice(0, 2).map((strength) => (
+                            <div key={strength} style={CONTEXT_RECORD_NARRATIVE}>{strength}</div>
+                          ))}
+                        </div>
+                      )}
+                      {codeReviewScore.growthAreas.length > 0 && (
+                        <div style={DECISION_SCORE_COLUMN}>
+                          <div style={FIELD_LABEL}>What to probe</div>
+                          {codeReviewScore.growthAreas.slice(0, 2).map((area) => (
+                            <div key={area} style={CONTEXT_RECORD_NARRATIVE}>{area}</div>
+                          ))}
+                        </div>
+                      )}
+                    </div>
+                  )}
+                </div>
+              )}
               {codeReviewEvidenceRefresh && (
                 <div data-testid="interview-code-review-evidence-refresh" style={DECISION_FOLLOW_UP}>
                   <div style={FIELD_LABEL}>
@@ -2719,6 +2776,45 @@ const DECISION_ACTION: CSSProperties = {
   color: 'var(--pipe-text)',
   fontSize: 14,
   lineHeight: 1.65,
+};
+
+const DECISION_SCORE_SUMMARY: CSSProperties = {
+  display: 'grid',
+  gap: 10,
+  padding: 14,
+  border: '1px solid rgba(74,222,128,0.28)',
+  borderRadius: 6,
+  background: 'rgba(74,222,128,0.08)',
+};
+
+const DECISION_SCORE_HEADER: CSSProperties = {
+  display: 'flex',
+  alignItems: 'flex-start',
+  justifyContent: 'space-between',
+  gap: 12,
+  minWidth: 0,
+};
+
+const DECISION_SCORE_VALUE: CSSProperties = {
+  color: 'var(--pipe-text)',
+  fontFamily: FONT,
+  fontSize: 20,
+  fontWeight: 800,
+  lineHeight: 1.15,
+  overflowWrap: 'anywhere',
+};
+
+const DECISION_SCORE_COLUMNS: CSSProperties = {
+  display: 'grid',
+  gridTemplateColumns: 'repeat(auto-fit, minmax(220px, 1fr))',
+  gap: 10,
+  paddingTop: 2,
+};
+
+const DECISION_SCORE_COLUMN: CSSProperties = {
+  display: 'grid',
+  gap: 6,
+  minWidth: 0,
 };
 
 const DECISION_FOLLOW_UP: CSSProperties = {

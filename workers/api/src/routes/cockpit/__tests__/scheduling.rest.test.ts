@@ -512,6 +512,23 @@ describe('GET /interviews/:id detail', () => {
         query_json TEXT,
         created_at TEXT
       );
+      CREATE TABLE review_sessions (
+        id TEXT PRIMARY KEY,
+        challenge_submission_id TEXT,
+        challenge_id TEXT,
+        assessment_id TEXT,
+        candidate_id TEXT,
+        implementer_persona TEXT,
+        current_round INTEGER,
+        max_rounds INTEGER,
+        status TEXT,
+        transcript TEXT,
+        next_comment_id INTEGER,
+        score_report TEXT,
+        created_at TEXT,
+        updated_at TEXT,
+        mode TEXT
+      );
     `);
     sqlite.exec(livingContextMigration);
     sqlite.exec(transcriptProjectionMigration);
@@ -804,6 +821,15 @@ describe('GET /interviews/:id detail', () => {
             sources: Array<{ exactText: string }>;
           }>;
         } | null;
+        codeReviewScore: {
+          reviewSessionId: string;
+          status: string;
+          score: number | null;
+          band: string | null;
+          narrative: string | null;
+          strengths: string[];
+          growthAreas: string[];
+        } | null;
       };
     };
 
@@ -890,7 +916,8 @@ describe('GET /interviews/:id detail', () => {
         NULL, 'MANUAL', NULL, NULL, 'Assess PR review judgment.',
         'MANUAL', NULL, '2026-06-22T17:40:00.000Z', '2026-06-22T17:40:00.000Z',
         NULL, NULL, 77, 'https://github.com/pipe-labs/orders', 314,
-        NULL, NULL, '2026-06-22T17:30:00.000Z', '2026-06-22T17:45:00.000Z'
+        '{"reviewSessionId":"review-session-code-review-1","verdict":"request_changes"}',
+        '2026-06-22T18:30:00.000Z', '2026-06-22T17:30:00.000Z', '2026-06-22T17:45:00.000Z'
       )
     `).run();
     sqlite!.prepare(`
@@ -1023,6 +1050,25 @@ describe('GET /interviews/:id detail', () => {
       JSON.stringify(rankedResults),
       JSON.stringify({ roleGuardrails: { sourceReferences: roleSources } }),
     );
+    sqlite!.prepare(`
+      INSERT INTO review_sessions (
+        id, challenge_submission_id, challenge_id, assessment_id, candidate_id,
+        implementer_persona, current_round, max_rounds, status, transcript,
+        next_comment_id, score_report, created_at, updated_at, mode
+      ) VALUES (
+        'review-session-code-review-1', 'submission-1', 'packet-code-review-314', 'assessment-1', 'candidate-1',
+        'defensive-ai-developer', 2, 4, 'scored', '{}', 3, ?,
+        '2026-06-22T18:00:00.000Z', '2026-06-22T18:31:00.000Z', 'bug_finding'
+      )
+    `).run(JSON.stringify({
+      overall: {
+        score: 72,
+        band: 'adequate',
+        narrative: 'Candidate found the merge-blocking retry risk but missed one verification detail.',
+        strengths: ['Concrete blocking comment tied to source behavior.'],
+        growth_areas: ['Probe how they validate the timing cleanup under load.'],
+      },
+    }));
 
     const app = mountSchedulingApp();
     const response = await app.request('/interviews/interview-code-review-1');
@@ -1110,6 +1156,15 @@ describe('GET /interviews/:id detail', () => {
           },
         },
       ],
+    });
+    expect(body.interview.codeReviewScore).toMatchObject({
+      reviewSessionId: 'review-session-code-review-1',
+      status: 'scored',
+      score: 72,
+      band: 'adequate',
+      narrative: 'Candidate found the merge-blocking retry risk but missed one verification detail.',
+      strengths: ['Concrete blocking comment tied to source behavior.'],
+      growthAreas: ['Probe how they validate the timing cleanup under load.'],
     });
   });
 

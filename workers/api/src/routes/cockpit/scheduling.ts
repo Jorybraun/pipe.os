@@ -742,6 +742,17 @@ interface ScheduledCodeReviewEvidenceSnippet {
   locator: Record<string, unknown>;
 }
 
+interface ScheduledCodeReviewScoreSummary {
+  reviewSessionId: string;
+  status: string;
+  score: number | null;
+  band: string | null;
+  narrative: string | null;
+  strengths: string[];
+  growthAreas: string[];
+  updatedAt: string;
+}
+
 function isRecord(value: unknown): value is Record<string, unknown> {
   return typeof value === 'object' && value !== null && !Array.isArray(value);
 }
@@ -2375,6 +2386,54 @@ async function loadScheduledCodeReviewMatchDetail(
     }),
     evidenceFollowUp,
     evidenceRefresh,
+  };
+}
+
+async function loadScheduledCodeReviewScoreSummary(
+  db: D1Database,
+  interview: {
+    interview_type: string | null;
+    candidate_id: string | null;
+    submission_json: string | null;
+  },
+): Promise<ScheduledCodeReviewScoreSummary | null> {
+  if (interview.interview_type !== 'CODE_REVIEW') return null;
+
+  const submission = parseJsonObject(interview.submission_json);
+  const reviewSessionId = optionalString(submission.reviewSessionId);
+  if (!reviewSessionId || !await tableExists(db, 'review_sessions')) return null;
+
+  const candidateClause = interview.candidate_id ? 'AND candidate_id = ?2' : '';
+  const row = await db.prepare(
+    `SELECT id, status, score_report, updated_at
+       FROM review_sessions
+      WHERE id = ?1
+        ${candidateClause}
+      LIMIT 1`,
+  ).bind(
+    reviewSessionId,
+    ...(interview.candidate_id ? [interview.candidate_id] : []),
+  ).first<{
+    id: string;
+    status: string;
+    score_report: string | null;
+    updated_at: string;
+  }>();
+
+  if (!row) return null;
+
+  const report = parseJsonObject(row.score_report);
+  const overall = isRecord(report.overall) ? report.overall : {};
+
+  return {
+    reviewSessionId: row.id,
+    status: row.status,
+    score: numberOrNull(overall.score),
+    band: optionalString(overall.band) ?? null,
+    narrative: optionalString(overall.narrative) ?? null,
+    strengths: stringArray(overall.strengths),
+    growthAreas: stringArray(overall.growth_areas),
+    updatedAt: row.updated_at,
   };
 }
 
@@ -4030,6 +4089,7 @@ schedulingAuth.get('/interviews/:id', async (c) => {
     livingContext,
   );
   const codeReviewMatch = await loadScheduledCodeReviewMatchDetail(db, interview);
+  const codeReviewScore = await loadScheduledCodeReviewScoreSummary(db, interview);
 
   return c.json({
     interview: {
@@ -4110,6 +4170,7 @@ schedulingAuth.get('/interviews/:id', async (c) => {
       livingContext,
       relatedEvidenceInterviews,
       codeReviewMatch,
+      codeReviewScore,
       createdAt: interview.created_at,
       updatedAt: interview.updated_at,
     },

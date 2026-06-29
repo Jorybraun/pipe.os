@@ -247,6 +247,17 @@ export interface CodeReviewMatchDetail {
   evidenceRefresh?: CodeReviewEvidenceRefresh | null;
 }
 
+export interface CodeReviewScoreSummary {
+  reviewSessionId: string;
+  status: string;
+  score: number | null;
+  band: string | null;
+  narrative: string | null;
+  strengths: string[];
+  growthAreas: string[];
+  updatedAt: string;
+}
+
 export interface CodeReviewEvidenceFollowUp {
   assessmentSessionId: string;
   contextCallInterviewId: string | null;
@@ -346,6 +357,7 @@ export interface ScheduledInterviewDetail extends ScheduledInterview {
   relatedEvidenceInterviews?: RelatedEvidenceInterview[];
   livingContext?: LivingContextReadModel | null;
   codeReviewMatch?: CodeReviewMatchDetail | null;
+  codeReviewScore?: CodeReviewScoreSummary | null;
 }
 
 /**
