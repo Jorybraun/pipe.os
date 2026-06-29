@@ -37,6 +37,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Fixed — Candidate repo matching
 
+- CODE_REVIEW recruiter details now keep the matched PR readout available when optional assessment-session tables are missing from a deployment, instead of crashing the whole interview detail page while loading related evidence.
 - CODE_REVIEW failed-refresh cards now show the next evidence question plan and expected answer shape before creating another follow-up assessment.
 - CODE_REVIEW recruiter evidence refresh cards now replace stale rerun actions with a next follow-up assessment CTA after consumed evidence still leaves matching blocked.
 - CODE_REVIEW repo-match refresh now repairs missing matcher-visible context from exact candidate-owned follow-up source spans before rerunning, so captured evidence no longer leaves recruiters stuck in a projection-pending state.

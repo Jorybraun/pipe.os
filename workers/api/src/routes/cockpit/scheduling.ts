@@ -436,6 +436,35 @@ async function loadRelatedEvidenceInterviews(
   const workspacePersonId = livingContext?.person.workspacePersonId ?? null;
   if (!workspacePersonId) return [];
 
+  const hasAssessmentSessions = await tableExists(db, 'assessment_sessions');
+  const assessmentSessionSelect = hasAssessmentSessions
+    ? `s.id AS assessment_session_id,
+            s.state AS assessment_session_state,
+            s.metadata_json AS assessment_metadata_json`
+    : `NULL AS assessment_session_id,
+            NULL AS assessment_session_state,
+            NULL AS assessment_metadata_json`;
+  const assessmentSessionJoin = hasAssessmentSessions
+    ? `LEFT JOIN assessment_sessions s ON s.id = (
+         SELECT latest_s.id
+           FROM assessment_sessions latest_s
+          WHERE latest_s.interview_id = si.id
+          ORDER BY latest_s.updated_at DESC, latest_s.id DESC
+          LIMIT 1
+       )`
+    : '';
+  const assessmentSessionOrder = hasAssessmentSessions
+    ? `CASE
+          WHEN s.created_by = 'code-review-evidence-plan'
+           AND json_extract(s.metadata_json, '$.originalInterviewId') = ?2
+          THEN 0
+          WHEN s.created_by = 'code-review-evidence-plan'
+           AND json_extract(s.metadata_json, '$.contextCallInterviewId') = ?2
+          THEN 1
+          ELSE 2
+        END,`
+    : '';
+
   const rows = await db.prepare(
     `SELECT si.id,
             si.interview_type,
@@ -450,9 +479,7 @@ async function loadRelatedEvidenceInterviews(
             si.updated_at,
             m.id AS linked_meeting_id,
             m.transcript_status,
-            s.id AS assessment_session_id,
-            s.state AS assessment_session_state,
-            s.metadata_json AS assessment_metadata_json
+            ${assessmentSessionSelect}
        FROM scheduled_interviews si
        LEFT JOIN candidates c ON c.id = si.candidate_id
        LEFT JOIN applications app ON app.legacy_candidate_id = si.candidate_id
@@ -476,13 +503,7 @@ async function loadRelatedEvidenceInterviews(
           ORDER BY lm.created_at DESC
           LIMIT 1
        )
-       LEFT JOIN assessment_sessions s ON s.id = (
-         SELECT latest_s.id
-           FROM assessment_sessions latest_s
-          WHERE latest_s.interview_id = si.id
-          ORDER BY latest_s.updated_at DESC, latest_s.id DESC
-          LIMIT 1
-       )
+       ${assessmentSessionJoin}
       WHERE si.owner_id = ?1
         AND si.id <> ?2
         AND (
@@ -490,15 +511,7 @@ async function loadRelatedEvidenceInterviews(
           OR contact_wp.id = ?3
         )
       ORDER BY
-        CASE
-          WHEN s.created_by = 'code-review-evidence-plan'
-           AND json_extract(s.metadata_json, '$.originalInterviewId') = ?2
-          THEN 0
-          WHEN s.created_by = 'code-review-evidence-plan'
-           AND json_extract(s.metadata_json, '$.contextCallInterviewId') = ?2
-          THEN 1
-          ELSE 2
-        END,
+        ${assessmentSessionOrder}
         si.created_at DESC,
         si.id DESC
       LIMIT 8`,

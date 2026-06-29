@@ -1113,6 +1113,127 @@ describe('GET /interviews/:id detail', () => {
     });
   });
 
+  it('keeps CODE_REVIEW recruiter detail available when optional assessment session tables are absent', async () => {
+    seedInterviewDetailFixture();
+    sqlite!.exec('DROP TABLE assessment_sessions');
+    sqlite!.prepare(`
+      INSERT INTO scheduled_interviews (
+        id, candidate_id, pipeline_id, stage_id, owner_id, interview_type,
+        meeting_type, status, scheduled_at, meeting_url, scheduling_provider,
+        scheduling_url, external_event_id, recruiter_notes, sync_source,
+        last_synced_at, invite_link_sent_at, email_sent_at, recipient_name,
+        recipient_email, matched_repo_id, github_repo_url, github_pr_number,
+        submission_json, completed_at, created_at, updated_at
+      ) VALUES (
+        'interview-code-review-no-assessment-table', 'candidate-1', 'pipeline-1', 'stage-1', 'owner-1',
+        'CODE_REVIEW', NULL, 'COMPLETED', NULL,
+        NULL, 'MANUAL', NULL, NULL, 'Assess PR review judgment.',
+        'MANUAL', NULL, '2026-06-22T17:40:00.000Z', '2026-06-22T17:40:00.000Z',
+        NULL, NULL, 973, 'https://github.com/mui/base-ui', 973,
+        '{"reviewSessionId":"review-session-1","submittedAt":"2026-06-22T18:30:00.000Z"}',
+        '2026-06-22T18:30:00.000Z',
+        '2026-06-22T17:30:00.000Z', '2026-06-22T18:35:00.000Z'
+      )
+    `).run();
+    sqlite!.prepare(`
+      INSERT INTO match_runs (
+        id, candidate_id, role_snapshot_id, status, ranked_results_json,
+        selected_packet_id, query_json, created_at
+      ) VALUES (
+        'match-run-no-assessment-table', 'candidate-1', NULL,
+        'MATCHED', ?, 'challenge_packet_base_ui_973', '{}', '2026-06-22T17:46:00.000Z'
+      )
+    `).run(JSON.stringify([{
+      rank: 1,
+      challengeId: 'challenge_packet_base_ui_973',
+      repoId: '973',
+      prNumber: 973,
+      score: 0.3249,
+      alignedDemandCount: 1,
+      stretchCount: 0,
+      provenanceComplete: true,
+      eligible: true,
+      assessmentQuality: {
+        verdict: 'usable',
+        score: 9,
+        maxScore: 12,
+        metrics: [],
+      },
+      validatorAgent: {
+        agentName: 'deterministic-code-review-match-gate',
+        agentVersion: 'test-v1',
+        mode: 'deterministic',
+        verdict: 'passed',
+        rationale: 'Selected PR #973 from source-backed candidate and repo evidence.',
+        checks: [],
+        sourceBridge: {
+          prNumber: 973,
+          candidateSourceCount: 1,
+          repoSourceCount: 1,
+          roleSourceCount: 0,
+          alignedDemandCount: 1,
+          stretchCount: 0,
+          provenanceComplete: true,
+        },
+      },
+      alignments: [{
+        atomId: 'candidate-atom-react',
+        demandId: 'repo-demand-popover',
+        pairScore: 0.71,
+        sharedConcepts: ['term:react'],
+        candidateSourceRefs: [{
+          sourceRefType: 'source_span',
+          sourceRefId: 'candidate-span-react',
+          sourceSpanId: 'candidate-span-react',
+          locator: 'resume.pdf:6',
+          exactText: 'Reviewed React interaction regressions for popup trigger behavior.',
+          contentHash: 'candidate-react-hash',
+        }],
+        challengeSourceRefs: [{
+          sourceRefType: 'repo_source_span',
+          sourceRefId: 'repo-span-popover',
+          locator: 'packages/react/src/popover/root/usePopoverRoot.ts',
+          exactText: 'Add regression coverage for impatient hover and click behavior.',
+          contentHash: 'repo-popover-hash',
+        }],
+      }],
+      rejectionReasons: [],
+    }]));
+
+    const app = mountSchedulingApp();
+    const response = await app.request('/interviews/interview-code-review-no-assessment-table');
+    expect(response.status).toBe(200);
+
+    const body = await response.json() as {
+      interview: {
+        relatedEvidenceInterviews: unknown[];
+        codeReviewMatch: {
+          status: string;
+          matchRunId: string | null;
+          packetId: string | null;
+          score: number | null;
+          evidenceHyperedges: unknown[];
+        } | null;
+      };
+    };
+
+    expect(body.interview.relatedEvidenceInterviews).toEqual([
+      expect.objectContaining({
+        id: 'interview-1',
+        relationship: 'same_person_assessment',
+        assessmentSessionId: null,
+        assessmentSessionState: null,
+      }),
+    ]);
+    expect(body.interview.codeReviewMatch).toMatchObject({
+      status: 'MATCHED',
+      matchRunId: 'match-run-no-assessment-table',
+      packetId: 'challenge_packet_base_ui_973',
+      score: 0.3249,
+    });
+    expect(body.interview.codeReviewMatch?.evidenceHyperedges).toHaveLength(1);
+  });
+
   it('returns a source-backed evidence plan when CODE_REVIEW matching needs candidate evidence', async () => {
     seedInterviewDetailFixture();
     sqlite!.prepare(`
