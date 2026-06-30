@@ -3081,3 +3081,108 @@ html[data-theme="pipe-blue"] .living-context {
   flex-shrink: 0;
   margin-top: 2px;
 }
+
+/* ─── Evidence Conflicts ─────────────────────────────────────────────────── */
+
+.living-context__conflicts-summary {
+  display: flex;
+  gap: 10px;
+  padding: 4px 0 8px;
+}
+
+.living-context__conflict-badge {
+  font-family: 'Space Mono', monospace;
+  font-size: 10px;
+  font-weight: 600;
+  text-transform: uppercase;
+  letter-spacing: 0.04em;
+}
+
+.living-context__conflicts-list {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+}
+
+.living-context__conflict-card {
+  border: 1px solid rgba(255, 255, 255, 0.06);
+  border-radius: 6px;
+  padding: 10px;
+  background: rgba(255, 255, 255, 0.02);
+}
+
+.living-context__conflict-card--high {
+  border-color: rgba(239, 68, 68, 0.25);
+  background: rgba(239, 68, 68, 0.04);
+}
+
+.living-context__conflict-card--medium {
+  border-color: rgba(245, 158, 11, 0.2);
+  background: rgba(245, 158, 11, 0.03);
+}
+
+.living-context__conflict-head {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  margin-bottom: 4px;
+}
+
+.living-context__conflict-severity {
+  font-family: 'Space Mono', monospace;
+  font-size: 9px;
+  text-transform: uppercase;
+  letter-spacing: 0.05em;
+}
+
+.living-context__conflict-desc {
+  font-size: 11px;
+  color: rgba(255, 255, 255, 0.7);
+  line-height: 1.4;
+  margin-bottom: 3px;
+}
+
+.living-context__conflict-impact {
+  font-size: 10px;
+  color: rgba(255, 255, 255, 0.45);
+  line-height: 1.3;
+  margin-bottom: 8px;
+  font-style: italic;
+}
+
+.living-context__conflict-sides {
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  gap: 8px;
+}
+
+.living-context__conflict-side {
+  border-radius: 4px;
+  padding: 6px;
+}
+
+.living-context__conflict-side--positive {
+  background: rgba(16, 185, 129, 0.06);
+  border: 1px solid rgba(16, 185, 129, 0.12);
+}
+
+.living-context__conflict-side--negative {
+  background: rgba(239, 68, 68, 0.06);
+  border: 1px solid rgba(239, 68, 68, 0.12);
+}
+
+.living-context__conflict-assertion {
+  padding: 3px 0;
+}
+
+.living-context__conflict-assertion-text {
+  font-size: 10px;
+  color: rgba(255, 255, 255, 0.65);
+  line-height: 1.3;
+}
+
+.living-context__conflict-assertion-meta {
+  font-size: 9px;
+  color: rgba(255, 255, 255, 0.35);
+  font-family: 'Space Mono', monospace;
+}

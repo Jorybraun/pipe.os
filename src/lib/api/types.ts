@@ -1835,6 +1835,48 @@ export interface EvidenceReadinessReport {
   computedAt: string;
 }
 
+// ─── Evidence Conflicts ────────────────────────────────────────────────────────
+
+export type ConflictType = 'polarity' | 'strength_divergence';
+export type ConflictSeverity = 'high' | 'medium' | 'low';
+
+export interface ConflictAssertion {
+  assertionId: string;
+  narrative: string;
+  conceptKey: string;
+  strength: number;
+  confidence: number;
+  polarity: number;
+  effectiveStrength: number;
+  observedAt: string | null;
+  interactionType: string;
+  exactText: string | null;
+  sourceSpanId: string | null;
+}
+
+export interface EvidenceConflict {
+  conflictId: string;
+  conceptKey: string;
+  conflictType: ConflictType;
+  severity: ConflictSeverity;
+  description: string;
+  positiveAssertions: ConflictAssertion[];
+  negativeAssertions: ConflictAssertion[];
+  strengthDivergence: number;
+  impactOnMatch: string;
+}
+
+export interface EvidenceConflictReport {
+  candidateId: string;
+  workspacePersonId: string | null;
+  totalConflicts: number;
+  highSeverity: number;
+  mediumSeverity: number;
+  lowSeverity: number;
+  conflicts: EvidenceConflict[];
+  analyzedAt: string;
+}
+
 export interface PostSynthesizeResponse {
   reasoning: string;
   persona: CandidatePersona;
