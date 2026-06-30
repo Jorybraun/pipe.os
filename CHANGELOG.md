@@ -7,6 +7,10 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Fixed — Review challenge packet source ref validation
+
+- `persistence.test.ts` — removed incorrect assertion expecting `exactText` validation against `packet_json` for `review_challenge_packet` source refs; content integrity is verified via `contentHash`/`source_hash`, while `exactText` is a human-readable evidence summary.
+
 ### Fixed — Test suite alignment with living context retry and ingestion behavior
 
 - `richAgent.test.ts` — stub LLM provider now includes the required `model` property from the `LLMProvider` interface, fixing 5 TypeError failures in the candidate discovery rich-agent v2 tests.
