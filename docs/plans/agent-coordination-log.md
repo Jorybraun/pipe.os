@@ -51,6 +51,22 @@ Inter-agent handoff log for the living context graph goal. Each agent appends a 
 
 **Decision:** Preserve all remote branches, keep the deploy branch focused on the paid-product open-source assessment E2E path, and only integrate queued remote work through bounded manual lifts with tests, `npx tsc --noEmit`, commit, push, deploy, and live verification.
 
+**Explorer branch triage:**
+
+| Branch | Disposition | Reason |
+| --- | --- | --- |
+| `origin/devin/1782817362-living-context-production` | Superseded; do not merge wholesale | Large stale living-context bundle conflicts with current terminal evidence, repo-task sessions, migrations, and route surfaces. |
+| `origin/devin/1782788597-living-context-production` | Superseded | Frontend evidence-gap/provenance panel work is covered by the richer current panel stack. |
+| `origin/devin/1782813771-living-context-production-merge` | Manual lift only if needed | Candidate-comparison library/test may be useful, but route additions need security review and session-event ingestion route is redundant with the current library/backfill layer. |
+| `origin/braunjory/has-80` | Do not merge | Would reintroduce older dev-container semantics and migration drift; current branch already has `DEV_CONTAINER_CHALLENGE` and `OPEN_SOURCE_BUG_FIX`. |
+| `origin/braunjory/has-81` | Superseded | Quiet living-context empty-state work is covered by current richer graph empty states. |
+| `origin/braunjory/has-83` | Superseded | Repo semantic graph backfill work is already present. |
+| `origin/braunjory/has-85` | Superseded | Transcript interaction read models/routes are present with newer assessment/session evidence. |
+| `origin/braunjory/has-87` | Superseded | Repo packet and match explanation UI/API parsing are covered by current code. |
+| `origin/braunjory/has-88` | Superseded | Evaluation rollout gate is present; remaining branch delta is stale type shape. |
+| `origin/braunjory/has-89` | Superseded | No-fabricated-video-link regression coverage is represented in current route tests/history. |
+| `origin/braunjory/has-96` | Superseded | Context-record projection exists and current branch adds full projection rebuild scheduling. |
+
 ### 2026-06-30 — Session 37893f56 (Devin Automation)
 
 **Action:** Analyze open PRs, consolidate, add match run history endpoint + panel.
