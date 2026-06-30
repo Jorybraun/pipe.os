@@ -24,6 +24,14 @@ import {
 import { LivingContextStore } from '../livingContext/persistence';
 import { openSemanticTerm } from '../livingContext/openTerms';
 import { ensureCandidateLivingContext } from '../livingContext/compatibility';
+import {
+  applyTemporalDecay,
+  parseObservedAtMs,
+  DEFAULT_DECAY_CONFIG,
+  type TemporalDecayConfig,
+} from './temporalDecay';
+import type { ConceptAdjacency } from './types';
+import { loadTemporalNeighborhood, type WeightedAdjacency } from '../livingContext/conceptAdjacencyDecay';
 import type {
   ContextRecordConceptInput,
   ContextRecordEntityInput,
@@ -52,6 +60,7 @@ interface CandidateEvidenceRow {
   qualifiers_json: string;
   concept_key: string | null;
   concept_weight: number | null;
+  observed_at: string | null;
 }
 
 interface PacketRow {
@@ -110,9 +119,18 @@ export interface RoleGuardrailChallengeExclusion {
 
 export type ChallengeMatchExclusion = ChallengePacketLoadExclusion | RoleGuardrailChallengeExclusion;
 
+export interface CandidateEvidenceDepth {
+  sourceDiversity: number;
+  totalInteractions: number;
+  totalAssertions: number;
+  totalSourceSpans: number;
+  sourceTypes: Record<string, number>;
+}
+
 export interface ChallengeMatchDiagnostics {
   excludedPackets: ChallengeMatchExclusion[];
   recalledPacketIds: string[];
+  candidateEvidenceDepth?: CandidateEvidenceDepth;
   evaluatedChallenges: Array<{
     challengeId: string;
     repoId: string;
@@ -210,11 +228,14 @@ function candidateSourceRef(row: CandidateEvidenceRow): SourceRef {
 async function loadCandidateSignals(
   db: D1Database,
   candidateId: string,
+  decayConfig?: TemporalDecayConfig,
 ): Promise<CandidateSignal[]> {
+  const decay = decayConfig ?? { ...DEFAULT_DECAY_CONFIG, referenceTimeMs: Date.now() };
   const result = await db.prepare(
     `SELECT NULL AS context_record_id, sa.id AS assertion_id, ss.id AS source_span_id,
             sa.episode_id, sa.narrative, sa.confidence,
             sa.qualifiers_json,
+            COALESCE(sa.observed_at, sa.created_at) AS observed_at,
             (SELECT evidence_level
                FROM signal_evidence selected_evidence
               WHERE selected_evidence.assertion_id = sa.id
@@ -249,6 +270,7 @@ async function loadCandidateSignals(
     `SELECT cr.id AS context_record_id, cr.assertion_id, ss.id AS source_span_id,
             cr.episode_id, cr.narrative, cr.confidence,
             cr.qualifiers_json,
+            COALESCE(cr.observed_at, cr.created_at) AS observed_at,
             (SELECT evidence_level
                FROM signal_evidence selected_evidence
               WHERE cr.assertion_id IS NOT NULL
@@ -291,15 +313,20 @@ async function loadCandidateSignals(
     ].join('\u0000');
     if (seen.has(dedupeKey)) continue;
     seen.add(dedupeKey);
+    const rawStrength = row.strength != null && row.concept_weight != null
+      ? row.strength * row.concept_weight
+      : null;
+    const observedMs = parseObservedAtMs(row.observed_at);
+    const decayedStrength = rawStrength != null && observedMs != null
+      ? applyTemporalDecay(rawStrength, observedMs, decay)
+      : rawStrength;
     const signal: CandidateSignal = {
       id,
       episodeId: row.episode_id ?? baseId,
       narrative: row.narrative,
       purpose,
       evidenceLevel: row.evidence_level,
-      evidenceStrength: row.strength != null && row.concept_weight != null
-        ? row.strength * row.concept_weight
-        : null,
+      evidenceStrength: decayedStrength,
       confidence: row.confidence,
       concepts,
       sourceRefs: [sourceRef],
@@ -763,6 +790,19 @@ export interface CandidateReviewChallengeMatch {
   diagnostics?: ChallengeMatchDiagnostics;
 }
 
+/**
+ * Minimum number of interactions required before matching proceeds.
+ * Below this threshold the matcher returns NEEDS_MORE_EVIDENCE.
+ */
+const DEFAULT_MIN_EVIDENCE_INTERACTIONS = 0;
+
+/**
+ * Minimum source diversity (0–1) for reliable matching.
+ * 0 = one source type is enough, 1 = all 6 types required.
+ * A value of 0 disables the gate; default is lenient (any single source).
+ */
+const DEFAULT_MIN_EVIDENCE_DIVERSITY = 0;
+
 export interface CandidateReviewChallengeOptions {
   roleSnapshotId?: string;
   roleContextId?: string;
@@ -772,6 +812,12 @@ export interface CandidateReviewChallengeOptions {
   roleConcepts?: string[];
   conceptResolverVersion?: string;
   roleSourceReferences?: RoleSourceReference[];
+  /** Override minimum interaction count threshold (default: 1). */
+  minEvidenceInteractions?: number;
+  /** Override minimum source diversity threshold 0–1 (default: 0). */
+  minEvidenceDiversity?: number;
+  /** Temporal decay configuration for evidence freshness weighting. */
+  temporalDecay?: Partial<TemporalDecayConfig>;
 }
 
 function sourceRefToContextSource(
@@ -1412,16 +1458,145 @@ function buildRunExplanation(input: {
   };
 }
 
+async function loadCandidateEvidenceDepth(
+  db: D1Database,
+  candidateId: string,
+): Promise<CandidateEvidenceDepth | null> {
+  const wp = await db.prepare(
+    `SELECT wp.id
+       FROM applications app
+       JOIN workspace_people wp ON wp.id = app.workspace_person_id
+      WHERE app.legacy_candidate_id = ?1
+      LIMIT 1`,
+  ).bind(candidateId).first<{ id: string }>();
+  if (!wp) return null;
+  const [interactionBreakdown, assertionCount, sourceSpanCount] = await Promise.all([
+    db.prepare(
+      `SELECT interaction_type, COUNT(*) AS cnt
+         FROM interactions
+        WHERE workspace_person_id = ?1
+        GROUP BY interaction_type`,
+    ).bind(wp.id).all<{ interaction_type: string; cnt: number }>(),
+    db.prepare(
+      `SELECT COUNT(*) AS cnt FROM semantic_assertions WHERE workspace_person_id = ?1`,
+    ).bind(wp.id).first<{ cnt: number }>(),
+    db.prepare(
+      `SELECT COUNT(*) AS cnt
+         FROM source_spans ss
+         JOIN artifact_versions av ON av.id = ss.artifact_version_id
+         JOIN artifacts a ON a.id = av.artifact_id
+        WHERE a.workspace_person_id = ?1`,
+    ).bind(wp.id).first<{ cnt: number }>(),
+  ]);
+  const sourceTypes: Record<string, number> = {};
+  let totalInteractions = 0;
+  for (const row of interactionBreakdown.results ?? []) {
+    sourceTypes[row.interaction_type] = row.cnt;
+    totalInteractions += row.cnt;
+  }
+  const maxSourceTypes = 6;
+  return {
+    sourceDiversity: Math.min(Object.keys(sourceTypes).length / maxSourceTypes, 1),
+    totalInteractions,
+    totalAssertions: assertionCount?.cnt ?? 0,
+    totalSourceSpans: sourceSpanCount?.cnt ?? 0,
+    sourceTypes,
+  };
+}
+
+const ADJACENCY_DIMENSION_MAP: Record<string, ConceptAdjacency['dimension']> = {
+  technology: 'technology',
+  mechanism: 'mechanism',
+  domain: 'domain',
+  scale: 'scale',
+  review_practice: 'review_practice',
+};
+
+function weightedAdjacencyToEngine(weighted: WeightedAdjacency): ConceptAdjacency | null {
+  const dimension = ADJACENCY_DIMENSION_MAP[weighted.dimension];
+  if (!dimension) return null;
+  if (weighted.effectiveConfidence < 0.2) return null;
+  return {
+    from: weighted.fromCanonicalKey,
+    to: weighted.toCanonicalKey,
+    dimension,
+    stretchAllowed: weighted.stretchAllowed,
+  };
+}
+
+async function loadStretchAdjacencies(
+  db: D1Database,
+  signals: CandidateSignal[],
+  decayConfig?: Partial<TemporalDecayConfig>,
+): Promise<ConceptAdjacency[]> {
+  const conceptKeys = new Set<string>();
+  for (const signal of signals) {
+    for (const concept of signal.concepts ?? []) {
+      conceptKeys.add(concept);
+    }
+  }
+  if (conceptKeys.size === 0) return [];
+
+  try {
+    const lookupResult = await db.prepare(
+      `SELECT id, canonical_key FROM concepts WHERE canonical_key IN (${
+        [...conceptKeys].map(() => '?').join(',')
+      })`,
+    ).bind(...[...conceptKeys]).all<{ id: string; canonical_key: string }>();
+
+    const conceptIds = (lookupResult.results ?? []).map((row) => row.id);
+    if (conceptIds.length === 0) return [];
+
+    const neighborhood = await loadTemporalNeighborhood(db, conceptIds, decayConfig);
+
+    const seen = new Set<string>();
+    const adjacencies: ConceptAdjacency[] = [];
+    for (const [, edges] of neighborhood) {
+      for (const edge of edges) {
+        const key = `${edge.fromCanonicalKey}|${edge.toCanonicalKey}|${edge.dimension}`;
+        if (seen.has(key)) continue;
+        seen.add(key);
+        const converted = weightedAdjacencyToEngine(edge);
+        if (converted) adjacencies.push(converted);
+      }
+    }
+    return adjacencies;
+  } catch {
+    return [];
+  }
+}
+
 export async function matchCandidateToReviewChallenge(
   db: D1Database,
   candidateId: string,
   options: CandidateReviewChallengeOptions = {},
 ): Promise<CandidateReviewChallengeMatch> {
   await ensureCandidateMatchBridge(db, candidateId);
-  const [signals, challengeLoad] = await Promise.all([
-    loadCandidateSignals(db, candidateId),
+  const [signals, challengeLoad, evidenceDepth] = await Promise.all([
+    loadCandidateSignals(db, candidateId, options.temporalDecay
+      ? { ...DEFAULT_DECAY_CONFIG, ...options.temporalDecay, referenceTimeMs: options.temporalDecay.referenceTimeMs ?? Date.now() }
+      : undefined),
     loadChallengePackets(db, options.roleConcepts),
+    loadCandidateEvidenceDepth(db, candidateId),
   ]);
+  const minInteractions = options.minEvidenceInteractions ?? DEFAULT_MIN_EVIDENCE_INTERACTIONS;
+  const minDiversity = options.minEvidenceDiversity ?? DEFAULT_MIN_EVIDENCE_DIVERSITY;
+  if (evidenceDepth && (
+    evidenceDepth.totalInteractions < minInteractions
+    || evidenceDepth.sourceDiversity < minDiversity
+  )) {
+    const matchRunId = crypto.randomUUID();
+    return {
+      status: 'NEEDS_MORE_EVIDENCE',
+      matchRunId,
+      diagnostics: {
+        excludedPackets: [],
+        recalledPacketIds: [],
+        candidateEvidenceDepth: evidenceDepth,
+        evaluatedChallenges: [],
+      },
+    };
+  }
   const { packets: challenges, exclusions: packetLoadExclusions } = challengeLoad;
   const genericConcepts = deriveCorpusGenericConcepts(challenges);
   const genericConceptSet = new Set(genericConcepts);
@@ -1445,9 +1620,16 @@ export async function matchCandidateToReviewChallenge(
       sourceReferences: options.roleSourceReferences,
     },
   });
-  const recalled = recallReviewChallenges({ query: compiled.query, challenges });
+  const stretchAdjacency = await loadStretchAdjacencies(
+    db,
+    signals,
+    options.temporalDecay
+      ? { ...DEFAULT_DECAY_CONFIG, ...options.temporalDecay, referenceTimeMs: options.temporalDecay.referenceTimeMs ?? Date.now() }
+      : undefined,
+  );
+  const recalled = recallReviewChallenges({ query: compiled.query, challenges, adjacency: stretchAdjacency });
   const alignments = recalled.challenges.map(({ challenge }) =>
-    alignCandidateToChallenge({ query: compiled.query, challenge }),
+    alignCandidateToChallenge({ query: compiled.query, challenge, adjacency: stretchAdjacency }),
   );
   const ranked = rankReviewChallenges(compiled.query, alignments);
   const selected = ranked.matches[0]?.alignment;
@@ -1511,6 +1693,7 @@ export async function matchCandidateToReviewChallenge(
   const diagnostics: ChallengeMatchDiagnostics = {
     excludedPackets,
     recalledPacketIds: recalled.challenges.map((item) => item.challenge.id),
+    candidateEvidenceDepth: evidenceDepth ?? undefined,
     evaluatedChallenges,
   };
   const matchRunId = crypto.randomUUID();

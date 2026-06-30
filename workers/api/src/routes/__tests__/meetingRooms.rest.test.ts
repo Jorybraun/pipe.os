@@ -34,6 +34,7 @@ const meetingRoomsMigration = readMigration('0081_meeting_rooms.sql');
 const livingContextMigration = readMigration('0082_living_context_graph.sql');
 const repoSemanticGraphMigration = readMigration('0083_repo_semantic_graph_and_match_runs.sql');
 const transcriptProjectionMigration = readMigration('0091_transcript_semantic_projections.sql');
+const conceptRegistryMigration = readMigration('0094_concept_registry.sql');
 const contextRecordsMigration = readMigration('0095_context_records.sql');
 const OBSERVED_AT = '2026-06-14T08:00:00.000Z';
 
@@ -734,6 +735,7 @@ function seedSchema(sqlite: BetterSqliteDb): void {
   sqlite.exec(livingContextMigration);
   sqlite.exec(repoSemanticGraphMigration);
   sqlite.exec(transcriptProjectionMigration);
+  sqlite.exec(conceptRegistryMigration);
   sqlite.exec(contextRecordsMigration);
 }
 

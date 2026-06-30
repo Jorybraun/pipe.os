@@ -15,6 +15,7 @@ import {
   type RepoTaskInterviewState,
 } from '../../lib/repoTaskInterviewSession';
 import type { JsonObject, JsonValue } from '../../lib/livingContext/types';
+import { ingestAssessmentSessionRealTime } from '../../lib/livingContext/assessmentIngestion';
 
 const repoTaskSessions = new Hono<{ Bindings: Env; Variables: Variables }>();
 repoTaskSessions.use('*', authMiddleware);
@@ -299,11 +300,22 @@ repoTaskSessions.post('/sessions/:sessionId/evaluation-reports', async (c) => {
     return apiError(c, 'BAD_REQUEST', body.error.issues[0]?.message ?? 'Invalid evaluation report body.');
   }
   try {
+    const sessionId = c.req.param('sessionId');
     const store = new RepoTaskInterviewSessionStore(c.env.DB);
     const report = await store.createEvaluationReport({
-      sessionId: c.req.param('sessionId'),
+      sessionId,
       ...body.data,
     });
+
+    // Real-time living context ingestion — flows assessment evidence into the
+    // person graph immediately instead of waiting for the scheduled backfill.
+    try {
+      await ingestAssessmentSessionRealTime(c.env.DB, sessionId);
+    } catch (err) {
+      const msg = err instanceof Error ? err.message : String(err);
+      console.error('[repoTaskSessions] living context ingestion error:', msg);
+    }
+
     return c.json({ report }, 201);
   } catch (error) {
     return storeErrorResponse(c, error);

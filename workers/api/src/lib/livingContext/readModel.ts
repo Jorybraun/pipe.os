@@ -329,6 +329,35 @@ export interface TranscriptSearchResult {
   hits: TranscriptSearchHit[];
 }
 
+export interface SourceContentSearchHit {
+  sourceSpanId: string;
+  artifactId: string;
+  artifactType: string;
+  artifactLogicalKey: string | null;
+  artifactVersionId: string;
+  artifactVersionNumber: number;
+  mediaType: string;
+  stableSegmentId: string | null;
+  exactText: string;
+  charStart: number | null;
+  charEnd: number | null;
+  lineStart: number | null;
+  lineEnd: number | null;
+  timestampStartMs: number | null;
+  timestampEndMs: number | null;
+  matchOffset: number;
+  matchLength: number;
+  citingAssertionIds: string[];
+  citingContextRecordIds: string[];
+  conceptKeys: string[];
+}
+
+export interface SourceContentSearchResult {
+  personId: string;
+  query: string;
+  hits: SourceContentSearchHit[];
+}
+
 interface IdentityRow {
   person_id: string;
   workspace_person_id: string;
@@ -2464,4 +2493,392 @@ export async function searchTranscriptSourceSpans(
   });
 
   return result;
+}
+
+const SOURCE_CONTENT_SEARCH_LIMIT = 50;
+
+/**
+ * Search all source content linked to a workspace person. Returns hits across
+ * every artifact (transcripts, resumes, assessment responses, code review
+ * evidence) with exact source span provenance, linked citing assertions and
+ * context records, and concept keys. Enables criterion #2: "original content
+ * remains semantically searchable — PIPE can always explain where a conclusion
+ * originated."
+ */
+export async function searchSourceContent(
+  db: D1Database,
+  workspacePersonId: string,
+  query: string,
+  limit = SOURCE_CONTENT_SEARCH_LIMIT,
+): Promise<SourceContentSearchResult> {
+  const trimmed = query.trim();
+  const result: SourceContentSearchResult = { personId: workspacePersonId, query: trimmed, hits: [] };
+  if (!trimmed) return result;
+
+  const person = await db.prepare(
+    `SELECT person_id FROM workspace_people WHERE id = ?1 LIMIT 1`,
+  ).bind(workspacePersonId).first<{ person_id: string }>();
+  if (!person) return result;
+
+  const escaped = trimmed.replace(/\\/g, '\\\\').replace(/%/g, '\\%').replace(/_/g, '\\_');
+  const like = `%${escaped}%`;
+
+  const spans = await db.prepare(
+    `SELECT ss.id AS source_span_id,
+            a.id AS artifact_id,
+            a.artifact_type,
+            a.logical_key,
+            av.id AS artifact_version_id,
+            av.version_number,
+            av.media_type,
+            ss.stable_segment_id,
+            ss.exact_text,
+            ss.char_start,
+            ss.char_end,
+            ss.line_start,
+            ss.line_end,
+            ss.timestamp_start_ms,
+            ss.timestamp_end_ms
+       FROM source_spans ss
+       JOIN artifact_versions av ON av.id = ss.artifact_version_id
+       JOIN artifacts a ON a.id = av.artifact_id
+       JOIN interactions i ON i.id = a.interaction_id
+      WHERE i.workspace_person_id = ?1
+        AND LOWER(ss.exact_text) LIKE LOWER(?2) ESCAPE '\\'
+      ORDER BY av.version_number DESC, ss.char_start, ss.timestamp_start_ms, ss.id
+      LIMIT ?3`,
+  ).bind(workspacePersonId, like, limit).all<{
+    source_span_id: string;
+    artifact_id: string;
+    artifact_type: string;
+    logical_key: string | null;
+    artifact_version_id: string;
+    version_number: number;
+    media_type: string;
+    stable_segment_id: string | null;
+    exact_text: string;
+    char_start: number | null;
+    char_end: number | null;
+    line_start: number | null;
+    line_end: number | null;
+    timestamp_start_ms: number | null;
+    timestamp_end_ms: number | null;
+  }>();
+
+  const spanIds = (spans.results ?? []).map((row) => row.source_span_id);
+  if (spanIds.length === 0) {
+    // Also search assertion narratives for concept-linked content
+    const assertionHits = await db.prepare(
+      `SELECT sa.id AS assertion_id, sa.narrative, sa.predicate
+         FROM semantic_assertions sa
+        WHERE sa.workspace_person_id = ?1
+          AND LOWER(sa.narrative) LIKE LOWER(?2) ESCAPE '\\'
+        ORDER BY sa.observed_at DESC, sa.id
+        LIMIT ?3`,
+    ).bind(workspacePersonId, like, limit).all<{
+      assertion_id: string;
+      narrative: string;
+      predicate: string;
+    }>();
+
+    const assertionIds = (assertionHits.results ?? []).map((row) => row.assertion_id);
+    if (assertionIds.length === 0) return result;
+
+    const aPlaceholders = assertionIds.map((_, i) => `?${i + 1}`).join(', ');
+    const conceptRows = await db.prepare(
+      `SELECT ac.assertion_id, c.canonical_key
+         FROM assertion_concepts ac
+         JOIN concepts c ON c.id = ac.concept_id
+        WHERE ac.assertion_id IN (${aPlaceholders})`,
+    ).bind(...assertionIds).all<{ assertion_id: string; canonical_key: string }>();
+
+    const conceptsByAssertion = new Map<string, string[]>();
+    for (const row of conceptRows.results ?? []) {
+      const keys = conceptsByAssertion.get(row.assertion_id) ?? [];
+      keys.push(row.canonical_key);
+      conceptsByAssertion.set(row.assertion_id, keys);
+    }
+
+    const lowerQuery = trimmed.toLowerCase();
+    result.hits = (assertionHits.results ?? []).map((row) => {
+      const matchOffset = row.narrative.toLowerCase().indexOf(lowerQuery);
+      return {
+        sourceSpanId: '',
+        artifactId: '',
+        artifactType: 'assertion',
+        artifactLogicalKey: null,
+        artifactVersionId: '',
+        artifactVersionNumber: 0,
+        mediaType: 'text/plain',
+        stableSegmentId: null,
+        exactText: row.narrative,
+        charStart: null,
+        charEnd: null,
+        lineStart: null,
+        lineEnd: null,
+        timestampStartMs: null,
+        timestampEndMs: null,
+        matchOffset: matchOffset >= 0 ? matchOffset : 0,
+        matchLength: trimmed.length,
+        citingAssertionIds: [row.assertion_id],
+        citingContextRecordIds: [],
+        conceptKeys: conceptsByAssertion.get(row.assertion_id) ?? [],
+      };
+    });
+
+    return result;
+  }
+
+  const placeholders = spanIds.map((_, i) => `?${i + 1}`).join(', ');
+  const [assertionLinks, contextRecordLinks, conceptLinks] = await Promise.all([
+    db.prepare(
+      `SELECT ass.source_span_id, ass.assertion_id
+         FROM assertion_source_spans ass
+        WHERE ass.source_span_id IN (${placeholders})`,
+    ).bind(...spanIds).all<{ source_span_id: string; assertion_id: string }>(),
+    db.prepare(
+      `SELECT crsr.source_span_id, crsr.context_record_id
+         FROM context_record_source_refs crsr
+        WHERE crsr.source_span_id IN (${placeholders})`,
+    ).bind(...spanIds).all<{ source_span_id: string; context_record_id: string }>(),
+    db.prepare(
+      `SELECT ass.source_span_id, c.canonical_key
+         FROM assertion_source_spans ass
+         JOIN assertion_concepts ac ON ac.assertion_id = ass.assertion_id
+         JOIN concepts c ON c.id = ac.concept_id
+        WHERE ass.source_span_id IN (${placeholders})`,
+    ).bind(...spanIds).all<{ source_span_id: string; canonical_key: string }>(),
+  ]);
+
+  const assertionsBySpan = new Map<string, string[]>();
+  for (const row of assertionLinks.results ?? []) {
+    const ids = assertionsBySpan.get(row.source_span_id) ?? [];
+    ids.push(row.assertion_id);
+    assertionsBySpan.set(row.source_span_id, ids);
+  }
+  const contextRecordsBySpan = new Map<string, string[]>();
+  for (const row of contextRecordLinks.results ?? []) {
+    const ids = contextRecordsBySpan.get(row.source_span_id) ?? [];
+    ids.push(row.context_record_id);
+    contextRecordsBySpan.set(row.source_span_id, ids);
+  }
+  const conceptsBySpan = new Map<string, string[]>();
+  for (const row of conceptLinks.results ?? []) {
+    const keys = conceptsBySpan.get(row.source_span_id) ?? [];
+    if (!keys.includes(row.canonical_key)) keys.push(row.canonical_key);
+    conceptsBySpan.set(row.source_span_id, keys);
+  }
+
+  const lowerQuery = trimmed.toLowerCase();
+  result.hits = (spans.results ?? []).map((row) => {
+    const matchOffset = row.exact_text.toLowerCase().indexOf(lowerQuery);
+    return {
+      sourceSpanId: row.source_span_id,
+      artifactId: row.artifact_id,
+      artifactType: row.artifact_type,
+      artifactLogicalKey: row.logical_key,
+      artifactVersionId: row.artifact_version_id,
+      artifactVersionNumber: row.version_number,
+      mediaType: row.media_type,
+      stableSegmentId: row.stable_segment_id,
+      exactText: row.exact_text,
+      charStart: row.char_start,
+      charEnd: row.char_end,
+      lineStart: row.line_start,
+      lineEnd: row.line_end,
+      timestampStartMs: row.timestamp_start_ms,
+      timestampEndMs: row.timestamp_end_ms,
+      matchOffset: matchOffset >= 0 ? matchOffset : 0,
+      matchLength: trimmed.length,
+      citingAssertionIds: assertionsBySpan.get(row.source_span_id) ?? [],
+      citingContextRecordIds: contextRecordsBySpan.get(row.source_span_id) ?? [],
+      conceptKeys: conceptsBySpan.get(row.source_span_id) ?? [],
+    };
+  });
+
+  return result;
+}
+
+// ─── Person Evidence Timeline ────────────────────────────────────────────────
+
+export interface TimelineEntry {
+  id: string;
+  timestamp: string;
+  entryType: 'interaction' | 'assertion' | 'context_record' | 'artifact';
+  interactionId: string | null;
+  interactionType: string | null;
+  narrative: string;
+  concepts: string[];
+  sourceCount: number;
+  confidence: number | null;
+}
+
+export interface PersonEvidenceTimeline {
+  workspacePersonId: string;
+  totalEntries: number;
+  entries: TimelineEntry[];
+}
+
+/**
+ * Load a chronological timeline of evidence accumulation for a workspace person.
+ * Merges interactions, assertions, and context records into a single time-ordered
+ * feed, enabling visualization of how evidence builds over time (criterion #7).
+ */
+export async function loadPersonEvidenceTimeline(
+  db: D1Database,
+  workspacePersonId: string,
+  options?: { limit?: number; before?: string; after?: string },
+): Promise<PersonEvidenceTimeline> {
+  const limit = Math.min(options?.limit ?? 100, 500);
+  const entries: TimelineEntry[] = [];
+
+  // 1. Interactions with their timestamps
+  interface InteractionTimelineRow {
+    id: string;
+    interaction_type: string;
+    started_at: string | null;
+    ended_at: string | null;
+    created_at: string;
+    metadata_json: string;
+  }
+
+  const interactionRows = await db.prepare(
+    `SELECT i.id, i.interaction_type, i.started_at, i.ended_at, i.created_at, i.metadata_json
+       FROM interactions i
+      WHERE i.workspace_person_id = ?1
+      ORDER BY COALESCE(i.started_at, i.created_at) DESC
+      LIMIT ?2`,
+  ).bind(workspacePersonId, limit).all<InteractionTimelineRow>();
+
+  for (const row of interactionRows.results ?? []) {
+    const ts = row.started_at ?? row.created_at;
+    if (options?.before && ts >= options.before) continue;
+    if (options?.after && ts <= options.after) continue;
+
+    let description = '';
+    try {
+      const meta: unknown = JSON.parse(row.metadata_json || '{}');
+      if (meta && typeof meta === 'object' && 'description' in meta) {
+        description = String((meta as Record<string, unknown>).description ?? '');
+      }
+    } catch { /* ignore */ }
+
+    entries.push({
+      id: row.id,
+      timestamp: ts,
+      entryType: 'interaction',
+      interactionId: row.id,
+      interactionType: row.interaction_type,
+      narrative: description || `${row.interaction_type} interaction`,
+      concepts: [],
+      sourceCount: 0,
+      confidence: null,
+    });
+  }
+
+  // 2. Assertions with observation timestamps (join through episodes to get interaction)
+  interface AssertionTimelineRow {
+    id: string;
+    interaction_id: string | null;
+    interaction_type: string | null;
+    predicate: string;
+    narrative: string;
+    confidence: number | null;
+    observed_at: string | null;
+    created_at: string;
+    source_count: number;
+  }
+
+  const assertionRows = await db.prepare(
+    `SELECT sa.id, e.interaction_id,
+            i.interaction_type,
+            sa.predicate, sa.narrative, sa.confidence,
+            sa.observed_at, sa.created_at,
+            (SELECT COUNT(*) FROM assertion_source_spans ass WHERE ass.assertion_id = sa.id) AS source_count
+       FROM semantic_assertions sa
+       LEFT JOIN episodes e ON e.id = sa.episode_id
+       LEFT JOIN interactions i ON i.id = e.interaction_id
+      WHERE sa.workspace_person_id = ?1
+      ORDER BY COALESCE(sa.observed_at, sa.created_at) DESC
+      LIMIT ?2`,
+  ).bind(workspacePersonId, limit).all<AssertionTimelineRow>();
+
+  for (const row of assertionRows.results ?? []) {
+    const ts = row.observed_at ?? row.created_at;
+    if (options?.before && ts >= options.before) continue;
+    if (options?.after && ts <= options.after) continue;
+
+    // Load concepts for this assertion
+    interface ConceptKeyRow { canonical_key: string }
+    const conceptRows = await db.prepare(
+      `SELECT c.canonical_key
+         FROM assertion_concepts ac
+         JOIN concepts c ON c.id = ac.concept_id
+        WHERE ac.assertion_id = ?1`,
+    ).bind(row.id).all<ConceptKeyRow>();
+
+    entries.push({
+      id: row.id,
+      timestamp: ts,
+      entryType: 'assertion',
+      interactionId: row.interaction_id,
+      interactionType: row.interaction_type,
+      narrative: row.narrative,
+      concepts: (conceptRows.results ?? []).map((c) => c.canonical_key),
+      sourceCount: row.source_count,
+      confidence: row.confidence,
+    });
+  }
+
+  // 3. Context records with observation timestamps
+  interface ContextRecordTimelineRow {
+    id: string;
+    interaction_id: string | null;
+    interaction_type: string | null;
+    record_type: string;
+    narrative: string;
+    confidence: number | null;
+    observed_at: string | null;
+    created_at: string;
+  }
+
+  const contextRows = await db.prepare(
+    `SELECT cr.id, cr.interaction_id,
+            i.interaction_type,
+            cr.record_type, cr.narrative, cr.confidence,
+            cr.observed_at, cr.created_at
+       FROM context_records cr
+       LEFT JOIN interactions i ON i.id = cr.interaction_id
+      WHERE cr.scope_type = 'workspace_person' AND cr.scope_id = ?1
+      ORDER BY COALESCE(cr.observed_at, cr.created_at) DESC
+      LIMIT ?2`,
+  ).bind(workspacePersonId, limit).all<ContextRecordTimelineRow>();
+
+  for (const row of contextRows.results ?? []) {
+    const ts = row.observed_at ?? row.created_at;
+    if (options?.before && ts >= options.before) continue;
+    if (options?.after && ts <= options.after) continue;
+
+    entries.push({
+      id: row.id,
+      timestamp: ts,
+      entryType: 'context_record',
+      interactionId: row.interaction_id,
+      interactionType: row.interaction_type,
+      narrative: row.narrative,
+      concepts: [],
+      sourceCount: 0,
+      confidence: row.confidence,
+    });
+  }
+
+  // Sort all entries chronologically (most recent first) and trim to limit
+  entries.sort((a, b) => b.timestamp.localeCompare(a.timestamp));
+  const trimmedEntries = entries.slice(0, limit);
+
+  return {
+    workspacePersonId,
+    totalEntries: trimmedEntries.length,
+    entries: trimmedEntries,
+  };
 }
