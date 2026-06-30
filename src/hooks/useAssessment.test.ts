@@ -74,7 +74,7 @@ describe('useAssessment', () => {
     );
   });
 
-  it('advances the synthetic welcome step locally before the real code review challenge', async () => {
+  it('opens the real code review challenge instead of trapping ready assessments on welcome', async () => {
     sessionStorage.setItem('pipe_session_token', 'session-token');
     sessionStorage.setItem('pipe_session_invite_token', 'invite-token');
     sessionStorage.setItem('pipe_session_candidate', JSON.stringify({
@@ -103,15 +103,6 @@ describe('useAssessment', () => {
       .mockResolvedValueOnce({
         ok: true,
         json: async () => ({
-          id: 'welcome',
-          type: 'WELCOME',
-          title: 'Welcome',
-          instructions: 'Start the assessment.',
-        }),
-      } as Response)
-      .mockResolvedValueOnce({
-        ok: true,
-        json: async () => ({
           id: 'challenge-1',
           type: 'CODE_REVIEW',
           title: 'Code Review',
@@ -129,14 +120,10 @@ describe('useAssessment', () => {
       await result.current.onStart();
     });
 
-    expect(result.current.challengeContent?.type).toBe('WELCOME');
-
-    await act(async () => {
-      await result.current.submitChallenge({});
-    });
-
     await waitFor(() => expect(result.current.challengeContent?.type).toBe('CODE_REVIEW'));
-    expect(fetchMock).toHaveBeenCalledTimes(3);
+    expect(result.current.currentOrder).toBe(1);
+    expect(fetchMock).toHaveBeenCalledTimes(2);
+    expect(JSON.parse(String(fetchMock.mock.calls[1]?.[1]?.body))).toEqual({ order: 1 });
     expect(fetchMock).not.toHaveBeenCalledWith(
       expect.stringContaining('/rpc/submit-challenge-response'),
       expect.anything(),

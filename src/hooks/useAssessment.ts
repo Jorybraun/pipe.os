@@ -336,8 +336,13 @@ export function useAssessment(inviteToken: string): UseAssessmentReturn {
         return;
       }
 
-      const currentIndex = config.currentIndex ?? 0;
-      const currentChallenge = config.challenges?.[currentIndex];
+      const configuredIndex = config.currentIndex ?? 0;
+      const configuredChallenge = config.challenges?.[configuredIndex];
+      const codeReviewIndex = configuredChallenge?.type === 'WELCOME'
+        && config.challenges?.[configuredIndex + 1]?.type === 'CODE_REVIEW'
+        ? configuredIndex + 1
+        : configuredIndex;
+      const currentChallenge = config.challenges?.[codeReviewIndex];
 
       // WAITING_FOR_MATCH: synthetic challenge — skip get-challenge, use waitingChallenge data
       let content: ChallengeContentDTO | null = null;
@@ -350,7 +355,7 @@ export function useAssessment(inviteToken: string): UseAssessmentReturn {
           config: config.waitingChallenge.config,
         };
       } else {
-        content = await loadChallenge(currentIndex);
+        content = await loadChallenge(codeReviewIndex);
       }
 
       setState((prev) => ({
@@ -358,7 +363,7 @@ export function useAssessment(inviteToken: string): UseAssessmentReturn {
         isLoading: false,
         stageConfig: config,
         challengeContent: content,
-        currentOrder: currentIndex,
+        currentOrder: codeReviewIndex,
         followUpQuestions: null,
         followUpLoading: false,
       }));
