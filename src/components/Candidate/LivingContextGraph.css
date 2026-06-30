@@ -2294,3 +2294,158 @@ html[data-theme="pipe-blue"] .living-context {
     grid-template-columns: minmax(0, 1fr);
   }
 }
+
+/* ─── Evidence Freshness Panel ──────────────────────────────────────────────── */
+
+.living-context__freshness {
+  margin-block: 16px;
+  padding: 14px 16px;
+  background: var(--lc-panel-soft);
+  border-radius: 8px;
+  border: 1px solid var(--lc-card-border);
+}
+
+.living-context__freshness-bar {
+  display: flex;
+  height: 8px;
+  border-radius: 4px;
+  overflow: hidden;
+  margin-block: 10px;
+  gap: 2px;
+}
+
+.living-context__freshness-segment {
+  border-radius: 2px;
+  transition: flex 0.3s ease;
+}
+
+.living-context__freshness-legend {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 12px;
+  font-size: 0.75rem;
+  color: var(--lc-record-muted);
+  margin-top: 8px;
+}
+
+.living-context__freshness-label {
+  display: inline-flex;
+  align-items: center;
+  gap: 5px;
+}
+
+.living-context__freshness-dot {
+  width: 8px;
+  height: 8px;
+  border-radius: 50%;
+  display: inline-block;
+}
+
+.living-context__freshness-stats {
+  display: flex;
+  gap: 16px;
+  font-size: 0.7rem;
+  color: var(--lc-record-dim);
+  margin-top: 6px;
+}
+
+/* ─── Evidence Lineage Panel ────────────────────────────────────────────────── */
+
+.living-context__lineage {
+  margin-block: 16px;
+  padding: 14px 16px;
+  background: var(--lc-panel-soft);
+  border-radius: 8px;
+  border: 1px solid var(--lc-card-border);
+}
+
+.living-context__lineage-concepts {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px;
+  margin-block: 10px;
+}
+
+.living-context__lineage-concept {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  padding: 4px 10px;
+  background: var(--lc-card);
+  border: 1px solid var(--lc-card-border);
+  border-radius: 6px;
+  font-size: 0.75rem;
+}
+
+.living-context__lineage-concept strong {
+  color: var(--lc-source);
+}
+
+.living-context__lineage-concept span {
+  color: var(--lc-record-muted);
+}
+
+.living-context__lineage-nodes {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+}
+
+.living-context__lineage-node {
+  padding: 10px 12px;
+  background: var(--lc-card);
+  border: 1px solid var(--lc-card-border);
+  border-radius: 6px;
+  border-left: 3px solid var(--lc-source);
+}
+
+.living-context__lineage-node--recent {
+  border-left-color: var(--lc-structural);
+}
+
+.living-context__lineage-node--aging {
+  border-left-color: var(--lc-record-dim);
+  opacity: 0.85;
+}
+
+.living-context__lineage-node--stale {
+  border-left-color: var(--lc-card-border);
+  opacity: 0.7;
+}
+
+.living-context__lineage-head {
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+}
+
+.living-context__lineage-narrative {
+  font-size: 0.82rem;
+  color: var(--lc-record-text);
+  line-height: 1.35;
+}
+
+.living-context__lineage-meta {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 10px;
+  font-size: 0.7rem;
+  color: var(--lc-record-muted);
+}
+
+.living-context__lineage-source {
+  margin: 6px 0 4px;
+  padding: 6px 10px;
+  border-left: 2px solid var(--lc-card-border);
+  font-size: 0.72rem;
+  color: var(--lc-record-muted);
+  line-height: 1.4;
+}
+
+.living-context__lineage-trace {
+  display: flex;
+  gap: 10px;
+  font-size: 0.68rem;
+  color: var(--lc-record-dim);
+  margin-top: 6px;
+}

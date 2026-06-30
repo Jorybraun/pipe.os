@@ -30,6 +30,8 @@ import {
   DEFAULT_DECAY_CONFIG,
   type TemporalDecayConfig,
 } from './temporalDecay';
+import type { ConceptAdjacency } from './types';
+import { loadTemporalNeighborhood, type WeightedAdjacency } from '../livingContext/conceptAdjacencyDecay';
 import type {
   ContextRecordConceptInput,
   ContextRecordEntityInput,
@@ -1502,6 +1504,68 @@ async function loadCandidateEvidenceDepth(
   };
 }
 
+const ADJACENCY_DIMENSION_MAP: Record<string, ConceptAdjacency['dimension']> = {
+  technology: 'technology',
+  mechanism: 'mechanism',
+  domain: 'domain',
+  scale: 'scale',
+  review_practice: 'review_practice',
+};
+
+function weightedAdjacencyToEngine(weighted: WeightedAdjacency): ConceptAdjacency | null {
+  const dimension = ADJACENCY_DIMENSION_MAP[weighted.dimension];
+  if (!dimension) return null;
+  if (weighted.effectiveConfidence < 0.2) return null;
+  return {
+    from: weighted.fromCanonicalKey,
+    to: weighted.toCanonicalKey,
+    dimension,
+    stretchAllowed: weighted.stretchAllowed,
+  };
+}
+
+async function loadStretchAdjacencies(
+  db: D1Database,
+  signals: CandidateSignal[],
+  decayConfig?: Partial<TemporalDecayConfig>,
+): Promise<ConceptAdjacency[]> {
+  const conceptKeys = new Set<string>();
+  for (const signal of signals) {
+    for (const concept of signal.concepts ?? []) {
+      conceptKeys.add(concept);
+    }
+  }
+  if (conceptKeys.size === 0) return [];
+
+  try {
+    const lookupResult = await db.prepare(
+      `SELECT id, canonical_key FROM concepts WHERE canonical_key IN (${
+        [...conceptKeys].map(() => '?').join(',')
+      })`,
+    ).bind(...[...conceptKeys]).all<{ id: string; canonical_key: string }>();
+
+    const conceptIds = (lookupResult.results ?? []).map((row) => row.id);
+    if (conceptIds.length === 0) return [];
+
+    const neighborhood = await loadTemporalNeighborhood(db, conceptIds, decayConfig);
+
+    const seen = new Set<string>();
+    const adjacencies: ConceptAdjacency[] = [];
+    for (const [, edges] of neighborhood) {
+      for (const edge of edges) {
+        const key = `${edge.fromCanonicalKey}|${edge.toCanonicalKey}|${edge.dimension}`;
+        if (seen.has(key)) continue;
+        seen.add(key);
+        const converted = weightedAdjacencyToEngine(edge);
+        if (converted) adjacencies.push(converted);
+      }
+    }
+    return adjacencies;
+  } catch {
+    return [];
+  }
+}
+
 export async function matchCandidateToReviewChallenge(
   db: D1Database,
   candidateId: string,
@@ -1556,9 +1620,16 @@ export async function matchCandidateToReviewChallenge(
       sourceReferences: options.roleSourceReferences,
     },
   });
-  const recalled = recallReviewChallenges({ query: compiled.query, challenges });
+  const stretchAdjacency = await loadStretchAdjacencies(
+    db,
+    signals,
+    options.temporalDecay
+      ? { ...DEFAULT_DECAY_CONFIG, ...options.temporalDecay, referenceTimeMs: options.temporalDecay.referenceTimeMs ?? Date.now() }
+      : undefined,
+  );
+  const recalled = recallReviewChallenges({ query: compiled.query, challenges, adjacency: stretchAdjacency });
   const alignments = recalled.challenges.map(({ challenge }) =>
-    alignCandidateToChallenge({ query: compiled.query, challenge }),
+    alignCandidateToChallenge({ query: compiled.query, challenge, adjacency: stretchAdjacency }),
   );
   const ranked = rankReviewChallenges(compiled.query, alignments);
   const selected = ranked.matches[0]?.alignment;

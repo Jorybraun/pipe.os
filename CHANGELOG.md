@@ -7,6 +7,24 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Added — Frontend evidence lineage visualization (criteria #2, #6)
+
+- `EvidenceLineagePanel` component in `LivingContextGraph.tsx` — renders assertion → source span → artifact → interaction trace with temporal decay coloring (fresh/recent/aging/stale border), concept tags, and original source text quotes.
+- `useEvidenceLineage` hook — fetches lineage data from `/api/v1/internal/evidence-lineage` with concept key filtering.
+- Frontend types: `EvidenceLineageResponse`, `EvidenceLineageNode`, `EvidenceLineageSourceSpan`, `EvidenceLineageArtifact`, `EvidenceLineageInteraction`.
+
+### Added — Frontend evidence freshness indicators (criterion #7)
+
+- `EvidenceFreshnessPanel` component in `LivingContextGraph.tsx` — stacked proportional bar (fresh/recent/aging/stale) with color legend, median age, and average decay statistics.
+- `useEvidenceFreshness` hook — fetches freshness summary from `/api/v1/internal/candidate-evidence-freshness`.
+- Frontend types: `EvidenceFreshnessResponse`, `EvidenceFreshnessEntry`, `FreshnessLevel`.
+
+### Added — Temporal concept adjacency in matcher stretch-area (criteria #3, #5)
+
+- `loadStretchAdjacencies()` in `d1Matcher.ts` — loads temporally-weighted concept co-occurrence edges from D1 via `loadTemporalNeighborhood`, converts to `ConceptAdjacency[]` format, and passes them to `recallReviewChallenges` + `alignCandidateToChallenge`. Stretch matching is now active when concept adjacency data exists.
+- Graceful degradation: if the `concept_adjacency` table is unavailable (e.g. older migrations), returns empty adjacency set — no stretch matching, no crash.
+- Effective confidence threshold: adjacency edges with `effectiveConfidence < 0.2` are filtered out to prevent stale co-occurrences from influencing stretch decisions.
+
 ### Added — Evidence lineage tracing (criteria #2, #6)
 
 - `evidenceLineage.ts` — traces match decisions back through the full evidence chain: assertion → source span → artifact → interaction. Includes temporal decay multipliers and effective strength at each node.

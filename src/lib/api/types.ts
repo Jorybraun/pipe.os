@@ -1341,6 +1341,97 @@ export interface ScopedLivingContextResponse {
   livingContext: ScopedLivingContextReadModel;
 }
 
+// ─── Evidence Lineage ─────────────────────────────────────────────────────────
+
+export interface EvidenceLineageSourceSpan {
+  sourceSpanId: string;
+  artifactVersionId: string;
+  contentHash: string;
+  exactText: string;
+  byteStart: number | null;
+  byteEnd: number | null;
+  charStart: number | null;
+  charEnd: number | null;
+  lineStart: number | null;
+  lineEnd: number | null;
+  timestampStartMs: number | null;
+  timestampEndMs: number | null;
+  stableSegmentId: string | null;
+}
+
+export interface EvidenceLineageArtifact {
+  artifactId: string;
+  artifactType: string;
+  logicalKey: string | null;
+  mediaType: string | null;
+  versionNumber: number;
+}
+
+export interface EvidenceLineageInteraction {
+  interactionId: string;
+  interactionType: string;
+  startedAt: string | null;
+  endedAt: string | null;
+}
+
+export interface EvidenceLineageNode {
+  assertion: {
+    assertionId: string;
+    narrative: string;
+    predicate: string;
+    confidence: number | null;
+    polarity: number;
+    observedAt: string | null;
+    concepts: Array<{ canonicalKey: string; namespace: string; weight: number }>;
+    sources: EvidenceLineageSourceSpan[];
+  };
+  signalEvidence: {
+    evidenceLevel: string;
+    strength: number;
+  } | null;
+  artifact: EvidenceLineageArtifact;
+  interaction: EvidenceLineageInteraction;
+  decayMultiplier: number;
+  effectiveStrength: number;
+}
+
+export interface EvidenceLineageResponse {
+  candidateId: string;
+  nodes: EvidenceLineageNode[];
+  conceptSummary: Array<{
+    canonicalKey: string;
+    avgEffectiveStrength: number;
+    nodeCount: number;
+  }>;
+}
+
+// ─── Evidence Freshness ───────────────────────────────────────────────────────
+
+export type FreshnessLevel = 'fresh' | 'recent' | 'aging' | 'stale';
+
+export interface EvidenceFreshnessEntry {
+  id: string;
+  observedAt: string | null;
+  ageDays: number;
+  decayMultiplier: number;
+  freshnessLevel: FreshnessLevel;
+  effectiveWeight: number;
+}
+
+export interface EvidenceFreshnessResponse {
+  candidateId: string;
+  totalEntries: number;
+  freshCount: number;
+  recentCount: number;
+  agingCount: number;
+  staleCount: number;
+  averageDecay: number;
+  medianAgeDays: number;
+  oldestObservedAt: string | null;
+  newestObservedAt: string | null;
+  entries: EvidenceFreshnessEntry[];
+}
+
 // ─── Interview State Machine (mirrors workers/api/src/lib/agents/interview/types.ts)
 
 export type InterviewPhase = 'CONTEXT' | 'DISCOVERY' | 'PRIORITIZE' | 'EVP_FRICTION' | 'WRAP_UP';

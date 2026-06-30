@@ -11,6 +11,8 @@ import {
   UserRound,
 } from 'lucide-react';
 import type {
+  EvidenceFreshnessResponse,
+  EvidenceLineageResponse,
   LivingContextArtifact,
   LivingContextAssertion,
   LivingContextInteraction,
@@ -29,6 +31,8 @@ import type {
   StandaloneReviewMatchNarrative,
   StandaloneReviewStretchArea,
 } from '../../lib/api/types';
+import { useEvidenceFreshness } from '../../hooks/useEvidenceFreshness';
+import { useEvidenceLineage } from '../../hooks/useEvidenceLineage';
 import { useLivingContext } from '../../hooks/useLivingContext';
 import { buildLivingContextBranches } from '../../lib/livingContextTree';
 import { ContextRecordForest } from './ContextRecordTree';
@@ -1493,6 +1497,152 @@ function MeetingEvidencePanel({
 
 const ALL_SOURCE_TYPES = ['resume', 'meeting', 'culture_interview', 'code_review', 'phone_call', 'assessment'] as const;
 
+const FRESHNESS_COLORS: Record<string, string> = {
+  fresh: 'var(--lc-source)',
+  recent: 'var(--lc-structural)',
+  aging: 'var(--pipe-text-dim)',
+  stale: 'var(--pipe-border)',
+};
+
+function EvidenceFreshnessPanel({
+  freshness,
+}: {
+  freshness: EvidenceFreshnessResponse | null;
+}): JSX.Element | null {
+  if (!freshness || freshness.totalEntries === 0) return null;
+  const segments = [
+    { level: 'fresh' as const, count: freshness.freshCount },
+    { level: 'recent' as const, count: freshness.recentCount },
+    { level: 'aging' as const, count: freshness.agingCount },
+    { level: 'stale' as const, count: freshness.staleCount },
+  ];
+  const total = freshness.totalEntries;
+  return (
+    <div className="living-context__freshness" data-testid="evidence-freshness-panel">
+      <div className="living-context__section-head">
+        <div className="living-context__section-title">Evidence freshness</div>
+        <div className="living-context__count">
+          {Math.round(freshness.averageDecay * 100)}% avg decay
+        </div>
+      </div>
+      <div className="living-context__freshness-bar" data-testid="freshness-bar">
+        {segments.map(({ level, count }) => (
+          count > 0 ? (
+            <div
+              key={level}
+              className={`living-context__freshness-segment living-context__freshness-segment--${level}`}
+              style={{ flex: count / total, backgroundColor: FRESHNESS_COLORS[level] }}
+              title={`${titleCase(level)}: ${count} entries (${Math.round((count / total) * 100)}%)`}
+              data-testid={`freshness-segment-${level}`}
+            />
+          ) : null
+        ))}
+      </div>
+      <div className="living-context__freshness-legend">
+        {segments.filter((s) => s.count > 0).map(({ level, count }) => (
+          <span key={level} className="living-context__freshness-label">
+            <span
+              className="living-context__freshness-dot"
+              style={{ backgroundColor: FRESHNESS_COLORS[level] }}
+            />
+            {titleCase(level)} ({count})
+          </span>
+        ))}
+      </div>
+      <div className="living-context__freshness-stats">
+        <span>Median age: {freshness.medianAgeDays.toFixed(1)}d</span>
+        <span>Total: {freshness.totalEntries} entries</span>
+      </div>
+    </div>
+  );
+}
+
+function EvidenceLineagePanel({
+  lineage,
+}: {
+  lineage: EvidenceLineageResponse | null;
+}): JSX.Element | null {
+  if (!lineage || lineage.nodes.length === 0) return null;
+  return (
+    <section className="living-context__lineage" data-testid="evidence-lineage-panel">
+      <div className="living-context__section-head">
+        <div>
+          <div className="living-context__section-title">Evidence lineage</div>
+          <div className="living-context__eyebrow">
+            assertion → source span → artifact → interaction
+          </div>
+        </div>
+        <Network size={14} color="var(--lc-source)" />
+      </div>
+
+      {lineage.conceptSummary.length > 0 && (
+        <div className="living-context__lineage-concepts" data-testid="lineage-concept-summary">
+          {lineage.conceptSummary.slice(0, 8).map((concept) => (
+            <div
+              key={concept.canonicalKey}
+              className="living-context__lineage-concept"
+              data-testid="lineage-concept"
+            >
+              <strong>{concept.canonicalKey}</strong>
+              <span>{Math.round(concept.avgEffectiveStrength * 100)}% effective</span>
+              <span>{concept.nodeCount} source{concept.nodeCount === 1 ? '' : 's'}</span>
+            </div>
+          ))}
+        </div>
+      )}
+
+      <div className="living-context__lineage-nodes">
+        {lineage.nodes.slice(0, 10).map((node) => (
+          <article
+            key={node.assertion.assertionId}
+            className={`living-context__lineage-node living-context__lineage-node--${node.decayMultiplier >= 0.9 ? 'fresh' : node.decayMultiplier >= 0.6 ? 'recent' : node.decayMultiplier >= 0.35 ? 'aging' : 'stale'}`}
+            data-testid="lineage-node"
+            data-decay={node.decayMultiplier.toFixed(2)}
+          >
+            <div className="living-context__lineage-head">
+              <div className="living-context__lineage-narrative">
+                {node.assertion.narrative}
+              </div>
+              <div className="living-context__lineage-meta">
+                <span>{Math.round(node.effectiveStrength * 100)}% strength</span>
+                <span>{titleCase(node.interaction.interactionType)}</span>
+                {node.assertion.observedAt && (
+                  <span>{formatDate(node.assertion.observedAt)}</span>
+                )}
+              </div>
+            </div>
+            {node.assertion.concepts.length > 0 && (
+              <div className="living-context__concepts">
+                {node.assertion.concepts.slice(0, 4).map((concept) => (
+                  <span key={`${node.assertion.assertionId}:${concept.canonicalKey}`} className="living-context__concept">
+                    {concept.canonicalKey}
+                  </span>
+                ))}
+              </div>
+            )}
+            {node.assertion.sources.length > 0 && node.assertion.sources[0] && (
+              <blockquote className="living-context__lineage-source">
+                {node.assertion.sources[0].exactText.slice(0, 200)}
+                {node.assertion.sources[0].exactText.length > 200 ? '…' : ''}
+              </blockquote>
+            )}
+            <div className="living-context__lineage-trace">
+              <span>{titleCase(node.artifact.artifactType)}</span>
+              <span>v{node.artifact.versionNumber}</span>
+              <span>decay: {Math.round(node.decayMultiplier * 100)}%</span>
+            </div>
+          </article>
+        ))}
+      </div>
+      {lineage.nodes.length > 10 && (
+        <div className="living-context__eyebrow" style={{ marginTop: 8 }}>
+          {lineage.nodes.length - 10} more lineage nodes
+        </div>
+      )}
+    </section>
+  );
+}
+
 function EvidenceDepthPanel({
   livingContext,
 }: {
@@ -1553,6 +1703,8 @@ export function LivingContextGraph({
       : { endpoint: livingContextEndpoint, initialLivingContext }
     : candidateId;
   const { livingContext, isLoading, error, refetch } = useLivingContext(livingContextSource);
+  const { lineage } = useEvidenceLineage(candidateId);
+  const { freshness } = useEvidenceFreshness(candidateId);
   const [selectedInteractionId, setSelectedInteractionId] = useState<string | null>(null);
   const [selectedSource, setSelectedSource] = useState<LivingContextSourceRef | null>(null);
   const [search, setSearch] = useState('');
@@ -1777,6 +1929,8 @@ export function LivingContextGraph({
       )}
 
       <EvidenceDepthPanel livingContext={livingContext} />
+      <EvidenceFreshnessPanel freshness={freshness} />
+      <EvidenceLineagePanel lineage={lineage} />
 
       <MeetingEvidencePanel
         livingContext={livingContext}

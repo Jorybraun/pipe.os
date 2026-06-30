@@ -4,6 +4,35 @@ Inter-agent handoff log for the living context graph goal. Each agent appends a 
 
 ## Log
 
+### 2026-06-30 — Session 61f63576 (Devin Automation)
+
+**Action:** Integrate evidence lineage, freshness, and concept adjacency decay into frontend visualization and matcher pipeline.
+
+**Work completed:**
+1. Frontend types added to `src/lib/api/types.ts`: `EvidenceLineageResponse`, `EvidenceLineageNode`, `EvidenceFreshnessResponse`, `FreshnessLevel`
+2. `useEvidenceLineage` hook — fetches lineage data from `/api/v1/internal/evidence-lineage`
+3. `useEvidenceFreshness` hook — fetches freshness summary from `/api/v1/internal/candidate-evidence-freshness`
+4. `EvidenceLineagePanel` in `LivingContextGraph.tsx` — displays lineage nodes with decay indicators, concept summaries, source quotes, and interaction trace (criteria #2, #6)
+5. `EvidenceFreshnessPanel` in `LivingContextGraph.tsx` — stacked bar showing fresh/recent/aging/stale distribution with legend and stats (criterion #7)
+6. `loadStretchAdjacencies()` in `d1Matcher.ts` — loads temporally-weighted concept adjacencies from D1 and passes them to `recallReviewChallenges` + `alignCandidateToChallenge`, enabling stretch matching via concept co-occurrence with temporal decay (criteria #3, #5)
+7. CSS for both new panels in `LivingContextGraph.css`
+
+**Criteria advanced:**
+- #2 (preserve original meaning): lineage panel shows exact source text per assertion
+- #3 (learn semantics dynamically): adjacency decay now wired into matcher stretch-area
+- #5 (evidence-based matching): stretch matches use temporally-weighted concept edges
+- #6 (explain every match): lineage panel traces decisions to source provenance
+- #7 (visualize living graph): freshness bar + lineage node visualization
+
+**Test results:** 182 files, 1686 tests passed, 15 skipped. TypeScript clean, lint clean (0 errors, 94 pre-existing warnings).
+
+**Next priorities:**
+- Visual BDD tests for new panels (Playwright)
+- Expert-labelled evaluation set for matcher quality (criterion #8)
+- Controlled rollout gates integration with frontend (criterion #8)
+
+---
+
 ### 2026-06-30 — Session 5656fd5c (Devin Automation)
 
 **Action:** Analyze open PRs, advance evidence lineage + temporal concept graph + freshness indicators.
