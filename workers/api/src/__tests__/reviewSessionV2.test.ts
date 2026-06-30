@@ -1275,6 +1275,76 @@ describe('POST /rpc/submit-challenge-response', () => {
     await waitUntilAll();
   });
 
+  it('queues standalone CODE_REVIEW submission attempts when no PR assignment is ready', async () => {
+    const db = fakeD1({
+      firstResponders: [
+        {
+          match: 'SELECT invite_token, status FROM candidates WHERE id',
+          value: { invite_token: 'CLAIMED::invite-token', status: 'IN_PROGRESS' },
+        },
+        {
+          match: "interview_type = 'CODE_REVIEW'",
+          value: {
+            id: 'standalone_unassigned',
+            status: 'INVITED',
+            matched_repo_id: null,
+            github_repo_url: null,
+            github_pr_number: null,
+            submission_json: null,
+          },
+        },
+        {
+          match: 'FROM candidates c WHERE c.id',
+          value: { resume_s3_key: 'text-intake/cand_1', node_count: 16 },
+        },
+        {
+          match: 'LEFT JOIN candidate_ingestion',
+          value: {
+            resume_s3_key: 'text-intake/cand_1',
+            status: 'embedded',
+            current_step: 'embed_profile',
+            error_text: null,
+            node_count: 16,
+            raw_node_count: 16,
+          },
+        },
+      ],
+    });
+    const env = buildEnv({ DB: db });
+
+    const res = await rpcAuth.request(
+      '/submit-challenge-response',
+      {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json',
+          Authorization: await authHeaderWithoutPipeline(),
+        },
+        body: JSON.stringify({
+          order: 0,
+          submission: {
+            verdict: 'request_changes',
+            summary: 'This should not be accepted before a source-backed PR is assigned.',
+          },
+        }),
+      },
+      env,
+    );
+
+    expect(res.status).toBe(200);
+    const body = await res.json() as { success?: boolean; complete?: boolean; queued?: boolean; next?: boolean };
+    expect(body).toMatchObject({
+      success: true,
+      complete: true,
+      queued: true,
+    });
+    expect(body.next).toBeUndefined();
+    expect(matchCandidateToReviewChallenge).not.toHaveBeenCalled();
+    expect(db.__calls.some((call) =>
+      call.ran && call.sql.includes("SET submission_json")
+    )).toBe(false);
+  });
+
   it('queues pipeline CODE_REVIEW intake without exposing internal matching as an active assessment', async () => {
     const db = fakeD1({
       firstResponders: [
@@ -1536,7 +1606,7 @@ describe('POST /rpc/get-challenge', () => {
     ]);
   });
 
-  it('does not live-fetch standalone review diffs when source spans cannot rebuild the packet diff', async () => {
+  it('queues standalone review when source spans cannot rebuild the packet diff', async () => {
     const fetchSpy = vi.spyOn(globalThis, 'fetch').mockRejectedValue(new Error('fetch should not be called'));
     const db = fakeD1({
       firstResponders: [
@@ -1593,14 +1663,15 @@ describe('POST /rpc/get-challenge', () => {
     );
 
     expect(res.status).toBe(200);
-    const body = await res.json() as { type: string; id: string };
-    expect(body.type).toBe('WAITING_FOR_MATCH');
-    expect(body.id).toBe('waiting-for-match');
+    const body = await res.json() as { type: string; id: string; instructions?: string };
+    expect(body.type).toBe('PROFILE_RECEIVED');
+    expect(body.id).toBe('profile-received');
+    expect(body.instructions).toContain('email you when your code review is ready');
     expect(fetchSpy).not.toHaveBeenCalled();
     fetchSpy.mockRestore();
   });
 
-  it('waits instead of matching standalone CODE_REVIEW while text-intake evidence is still building', async () => {
+  it('keeps standalone CODE_REVIEW queued while text-intake evidence is still building', async () => {
     const db = fakeD1({
       firstResponders: [
         { match: 'FROM candidates c WHERE c.id', value: { resume_s3_key: 'text-intake/cand_1', node_count: 0 } },
@@ -1647,15 +1718,16 @@ describe('POST /rpc/get-challenge', () => {
     );
 
     expect(res.status).toBe(200);
-    const body = await res.json() as { type: string; id: string };
+    const body = await res.json() as { type: string; id: string; instructions?: string };
     expect(body).toMatchObject({
-      id: 'waiting-for-match',
-      type: 'WAITING_FOR_MATCH',
+      id: 'profile-received',
+      type: 'PROFILE_RECEIVED',
     });
+    expect(body.instructions).toContain('email you when your code review is ready');
     expect(matchCandidateToReviewChallenge).not.toHaveBeenCalled();
   });
 
-  it('attempts standalone CODE_REVIEW matching once text intake has source-backed review evidence', async () => {
+  it('does not run standalone CODE_REVIEW matching from the candidate assessment runtime', async () => {
     const db = fakeD1({
       firstResponders: [
         { match: 'FROM candidates c WHERE c.id', value: { resume_s3_key: 'text-intake/cand_1', node_count: 16 } },
@@ -1703,15 +1775,16 @@ describe('POST /rpc/get-challenge', () => {
     );
 
     expect(res.status).toBe(200);
-    const body = await res.json() as { type: string; id: string };
+    const body = await res.json() as { type: string; id: string; instructions?: string };
     expect(body).toMatchObject({
-      id: 'waiting-for-match',
-      type: 'WAITING_FOR_MATCH',
+      id: 'profile-received',
+      type: 'PROFILE_RECEIVED',
     });
-    expect(matchCandidateToReviewChallenge).toHaveBeenCalledOnce();
+    expect(body.instructions).toContain('email you when your code review is ready');
+    expect(matchCandidateToReviewChallenge).not.toHaveBeenCalled();
   });
 
-  it('refreshes weak cached automatic standalone CODE_REVIEW matches before serving a challenge', async () => {
+  it('does not refresh weak cached automatic standalone CODE_REVIEW matches inside the candidate runtime', async () => {
     vi.mocked(matchCandidateToReviewChallenge).mockResolvedValueOnce({
       status: 'MATCHED',
       repoId: 973,
@@ -1793,31 +1866,25 @@ describe('POST /rpc/get-challenge', () => {
     );
 
     expect(res.status).toBe(200);
-    const body = await res.json() as {
-      type: string;
-      githubPrNumber?: number | null;
-      matchExplanation?: {
-        assessmentQuality?: { metrics?: Array<{ id: string; score: number }> };
-      };
-    };
-    expect(body.type).toBe('CODE_REVIEW');
-    expect(body.githubPrNumber).toBe(973);
-    expect(body.matchExplanation?.assessmentQuality?.metrics?.find((metric) =>
-      metric.id === 'contrast_separation'
-    )?.score).toBe(2);
-    expect(matchCandidateToReviewChallenge).toHaveBeenCalledOnce();
+    const body = await res.json() as { type: string; id: string; instructions?: string };
+    expect(body).toMatchObject({
+      id: 'profile-received',
+      type: 'PROFILE_RECEIVED',
+    });
+    expect(body.instructions).toContain('email you when your code review is ready');
+    expect(matchCandidateToReviewChallenge).not.toHaveBeenCalled();
     expect(db.__calls.some((call) =>
       call.ran && call.sql.includes('SET matched_repo_id = NULL')
-    )).toBe(true);
+    )).toBe(false);
     expect(db.__calls.some((call) =>
       call.ran
       && call.sql.includes('SET matched_repo_id = ?1')
       && call.params.includes(973)
       && call.params.includes('https://github.com/mui/base-ui')
-    )).toBe(true);
+    )).toBe(false);
   });
 
-  it('blocks roleless automatic standalone CODE_REVIEW near-ties with repo-matching diagnostics', async () => {
+  it('keeps roleless automatic standalone CODE_REVIEW near-ties out of the candidate runtime', async () => {
     vi.mocked(matchCandidateToReviewChallenge).mockResolvedValueOnce({
       status: 'MATCHED',
       repoId: 973,
@@ -1886,38 +1953,13 @@ describe('POST /rpc/get-challenge', () => {
     );
 
     expect(res.status).toBe(200);
-    const body = await res.json() as {
-      type: string;
-      config?: {
-        state?: string;
-        autoRefresh?: boolean;
-        reason?: string;
-        diagnostics?: {
-          phase?: string;
-          pipeline?: Array<{ id: string; status: string }>;
-        };
-      };
-    };
+    const body = await res.json() as { type: string; id: string; instructions?: string };
     expect(body).toMatchObject({
-      type: 'WAITING_FOR_MATCH',
-      config: {
-        state: 'blocked',
-        autoRefresh: false,
-        reason: 'The deterministic repo matcher did not return a quality-gated, source-backed PR challenge.',
-        diagnostics: {
-          phase: 'repo_matching',
-          pipeline: expect.arrayContaining([
-            expect.objectContaining({ id: 'intake', status: 'complete' }),
-            expect.objectContaining({ id: 'decomposition', status: 'complete' }),
-            expect.objectContaining({ id: 'repo_matching', status: 'blocked' }),
-            expect.objectContaining({ id: 'challenge', status: 'pending' }),
-            expect.objectContaining({ id: 'review', status: 'pending' }),
-            expect.objectContaining({ id: 'scoring', status: 'pending' }),
-          ]),
-        },
-      },
+      id: 'profile-received',
+      type: 'PROFILE_RECEIVED',
     });
-    expect(matchCandidateToReviewChallenge).toHaveBeenCalledOnce();
+    expect(body.instructions).toContain('email you when your code review is ready');
+    expect(matchCandidateToReviewChallenge).not.toHaveBeenCalled();
     expect(db.__calls.some((call) =>
       call.ran && call.sql.includes('SET matched_repo_id = ?1')
     )).toBe(false);

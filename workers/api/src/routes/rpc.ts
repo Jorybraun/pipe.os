@@ -446,6 +446,22 @@ const INTAKE_CHALLENGE_CONTENT = {
   config: JSON.stringify({ acceptedFormats: ['pdf', 'docx', 'doc'], maxSizeMb: 10 }),
 };
 
+function profileReceivedChallengeContent(): {
+  id: string;
+  type: 'PROFILE_RECEIVED';
+  title: string;
+  instructions: string;
+  config: Record<string, never>;
+} {
+  return {
+    id: 'profile-received',
+    type: 'PROFILE_RECEIVED',
+    title: 'Profile received',
+    instructions: 'Your profile has been received. PIPE will email you when your code review is ready.',
+    config: {},
+  };
+}
+
 function standaloneWaitingChallenge(options: {
   title?: string;
   instructions?: string;
@@ -1626,17 +1642,44 @@ async function getPendingStandaloneAssessment(
 
 async function hasReadyStandaloneCodeReviewAssignment(
   db: D1Database,
+  candidateId: string,
   assessment: StandaloneReviewRow | StandaloneDevContainerRow | null,
 ): Promise<boolean> {
-  if (!assessment || 'interview_type' in assessment) return false;
+  return (await loadReadyStandaloneCodeReviewAssignment(db, candidateId, assessment)) !== null;
+}
+
+async function loadReadyStandaloneCodeReviewAssignment(
+  db: D1Database,
+  candidateId: string,
+  assessment: StandaloneReviewRow | StandaloneDevContainerRow | null,
+): Promise<StandaloneReviewMatchResult | null> {
+  if (!assessment || 'interview_type' in assessment) return null;
   if (!assessment.github_repo_url || typeof assessment.github_pr_number !== 'number') {
-    return false;
+    return null;
   }
-  return hasSourceBackedReviewPacket(
+
+  const isSourceBacked = await hasSourceBackedReviewPacket(
     db,
     assessment.github_repo_url,
     assessment.github_pr_number,
   );
+  if (!isSourceBacked) return null;
+
+  const cachedExplanation = await loadCachedStandaloneReviewMatchExplanation(
+    db,
+    candidateId,
+    assessment.matched_repo_id,
+    assessment.github_pr_number,
+  );
+  if (cachedExplanation && !standaloneAutomaticMatchPasses(cachedExplanation)) {
+    return null;
+  }
+
+  return {
+    repoUrl: assessment.github_repo_url,
+    prNumber: assessment.github_pr_number,
+    matchExplanation: cachedExplanation ?? sourceBackedManualReviewExplanation(assessment.github_pr_number),
+  };
 }
 
 async function assessmentSessionsTableExists(db: D1Database): Promise<boolean> {
@@ -2804,10 +2847,12 @@ rpcAuth.post('/get-stage-config', async (c) => {
     const needsResume = await candidateNeedsCvIntake(c.env.DB, candidateId);
     const standaloneAssessment = await getPendingStandaloneAssessment(c.env.DB, candidateId);
 
-    // Standalone code-review interview: once source-backed CV evidence is ready, serve the review stage.
+    // Standalone code-review interview: serve the assessment only after a
+    // source-backed repo/PR assignment exists. Intake/matching stays upstream.
     if (!needsResume && standaloneAssessment && !('interview_type' in standaloneAssessment)) {
       const hasReadyAssignment = await hasReadyStandaloneCodeReviewAssignment(
         c.env.DB,
+        candidateId,
         standaloneAssessment,
       );
       if (!hasReadyAssignment) {
@@ -3208,28 +3253,10 @@ rpcAuth.post('/get-challenge', async (c) => {
       return c.json(INTAKE_CHALLENGE_CONTENT);
     }
 
-    const retryQueued = await maybeQueueRetryableStandaloneIngestion(c.env, optionalExecutionContext(c), candidateId);
-    if (retryQueued) {
-      return c.json(standaloneWaitingChallengeForReadiness(retryingStandaloneReviewReadiness(retryQueued.reason)));
-    }
-
-    const match = await matchStandaloneReview(c.env.DB, candidateId, standaloneAssessment);
+    const match = await loadReadyStandaloneCodeReviewAssignment(c.env.DB, candidateId, standaloneAssessment);
     if (!match) {
-      const readiness = await standaloneReviewEvidenceReadiness(c.env.DB, candidateId);
-      if (!readiness.ready) {
-        return c.json(standaloneWaitingChallengeForReadiness(readiness));
-      }
-      const reason = 'The deterministic repo matcher did not return a quality-gated, source-backed PR challenge.';
-      return c.json(standaloneWaitingChallenge({
-        state: 'blocked',
-        autoRefresh: false,
-        reason,
-        diagnostics: diagnosticsForStandaloneReviewReadiness(readiness, {
-          phase: 'repo_matching',
-          repoMatchingStatus: 'blocked',
-          repoMatchingDetail: reason,
-        }),
-      }));
+      await maybeQueueRetryableStandaloneIngestion(c.env, optionalExecutionContext(c), candidateId);
+      return c.json(profileReceivedChallengeContent());
     }
 
     let cachedDiffJson: unknown = null;
@@ -3245,11 +3272,7 @@ rpcAuth.post('/get-challenge', async (c) => {
     }
 
     if (!sourceBackedDiff || !cachedDiffJson) {
-      return c.json(standaloneWaitingChallenge({
-        state: 'blocked',
-        autoRefresh: false,
-        reason: 'The selected pull request is missing a rebuildable source-backed diff packet.',
-      }));
+      return c.json(profileReceivedChallengeContent());
     }
     const backing = await ensureStandaloneReviewBackingChallenge(
       c.env.DB,
@@ -3769,7 +3792,7 @@ rpcAuth.post('/submit-challenge-response', async (c) => {
     if (parseIntakePayload(submission)) {
       await handleIntakePayload(c.env, c.executionCtx, candidateId, submission, new Date().toISOString());
       const standaloneReview = await getPendingStandaloneReview(c.env.DB, candidateId);
-      if (await hasReadyStandaloneCodeReviewAssignment(c.env.DB, standaloneReview)) {
+      if (await hasReadyStandaloneCodeReviewAssignment(c.env.DB, candidateId, standaloneReview)) {
         return c.json({
           success: true,
           next: true,
@@ -3786,33 +3809,15 @@ rpcAuth.post('/submit-challenge-response', async (c) => {
 
     const standaloneReview = await getPendingStandaloneReview(c.env.DB, candidateId);
     if (standaloneReview) {
-      const retryQueued = await maybeQueueRetryableStandaloneIngestion(c.env, optionalExecutionContext(c), candidateId);
-      if (retryQueued) {
-        return c.json({
-          error: {
-            code: 'WAITING_FOR_MATCH',
-            message: retryQueued.reason,
-          },
-          challenge: standaloneWaitingChallengeForReadiness(retryingStandaloneReviewReadiness(retryQueued.reason)),
-        }, 409);
-      }
-
-      const match = await matchStandaloneReview(c.env.DB, candidateId, standaloneReview);
+      const match = await loadReadyStandaloneCodeReviewAssignment(c.env.DB, candidateId, standaloneReview);
       if (!match) {
-        const readiness = await standaloneReviewEvidenceReadiness(c.env.DB, candidateId);
+        await maybeQueueRetryableStandaloneIngestion(c.env, optionalExecutionContext(c), candidateId);
         return c.json({
-          error: {
-            code: 'WAITING_FOR_MATCH',
-            message: 'A source-backed review challenge has not been selected yet.',
-          },
-          challenge: readiness.ready
-            ? standaloneWaitingChallenge({
-                state: 'blocked',
-                autoRefresh: false,
-                reason: 'The deterministic repo matcher did not return a quality-gated, source-backed PR challenge.',
-              })
-            : standaloneWaitingChallengeForReadiness(readiness),
-        }, 409);
+          success: true,
+          complete: true,
+          queued: true,
+          message: 'Code review assignment is not ready yet',
+        });
       }
       const now = new Date().toISOString();
       const responseJson = typeof submission === 'string' ? submission : JSON.stringify(submission);

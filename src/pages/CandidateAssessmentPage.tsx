@@ -381,7 +381,7 @@ export default function CandidateAssessmentPage({ hideHeader = false }: Candidat
   // Completed state
   // ---------------------------------------------------------------------------
 
-  if (isSubmitted) {
+  if (isSubmitted || currentType === 'PROFILE_RECEIVED') {
     return (
       <div data-testid="assessment-submitted" style={{ minHeight: '100vh', display: 'flex', alignItems: 'center', justifyContent: 'center', background: '#0c0c0e', padding: 24 }}>
         <ChromeMeshGrid />

@@ -1253,7 +1253,7 @@ function evidenceItemCount(value: unknown): number {
   if (isRecord(value)) {
     const values = Object.values(value);
     if (values.length === 0) return 0;
-    return values.reduce((sum, item) => sum + evidenceItemCount(item), 0);
+    return values.reduce<number>((sum, item) => sum + evidenceItemCount(item), 0);
   }
   return 1;
 }
