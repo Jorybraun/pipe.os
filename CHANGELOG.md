@@ -7,6 +7,15 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Fixed — Test suite alignment
+
+- `richAgent.test.ts`: add missing `model` property to stub `LLMProvider` (5 test failures)
+- `resumeIngestion.test.ts`: expect `success: false` when resume text < 20 chars (matches `failResumeIngestion` guard)
+- `fullPipelineE2E.test.ts`: pass `personContextMode: 'attributed'` for assertion source-span linkage
+- `reviewSessionV2.test.ts`: isolate `retryable_standalone_ingestion` responder; add candidate DB mock for `submit-challenge-response`
+- `persistence.ts`: validate `review_challenge_packet` exactText against stored packet JSON when exactText is JSON
+- `backfillScheduled.test.ts`: add 8-test suite covering rollout gate enforcement, candidate/contact/resume/meeting batch backfill, idempotency, task dependency ordering, and task definition completeness
+
 ### Added — Human assessment decisions
 
 - Repo-task assessment sessions now support append-only `human_assessment_decision` events with exact source refs, SHA-256 content-hash validation, and provenance checks against session evidence, evaluation reports, evaluation claims, or diagnostics.
