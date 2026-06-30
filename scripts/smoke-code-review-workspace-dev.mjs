@@ -127,13 +127,15 @@ function waitForWorkspaceTerminalOutput(proxyBasePath, headers, command, expecte
       headers: mergedRoomAuthHeaders(headers),
     });
     let output = '';
+    let opened = false;
     const timeout = setTimeout(() => {
       ws.close();
-      reject(new Error(`Timed out waiting for terminal output "${expectedText}". Saw:\n${output}`));
+      reject(new Error(`Timed out waiting for terminal output "${expectedText}" after opened=${opened}. Saw:\n${output}`));
     }, 120_000);
 
     ws.on('open', () => {
-      ws.send(JSON.stringify({ type: 'TERMINAL_INPUT', data: `${command}\n` }));
+      opened = true;
+      ws.send(JSON.stringify({ type: 'TERMINAL_INPUT', data: `${command}\r` }));
     });
     ws.on('message', (data) => {
       output += websocketChunkText(data);
@@ -145,6 +147,10 @@ function waitForWorkspaceTerminalOutput(proxyBasePath, headers, command, expecte
     ws.on('error', (error) => {
       clearTimeout(timeout);
       reject(error);
+    });
+    ws.on('unexpected-response', (_request, response) => {
+      clearTimeout(timeout);
+      reject(new Error(`Terminal WebSocket upgrade failed with HTTP ${response.statusCode}.`));
     });
     ws.on('close', () => {
       clearTimeout(timeout);

@@ -19,7 +19,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Fixed — Video room
 
-- Workspace terminal sessions now decode browser `TERMINAL_INPUT` control frames before writing to bash, so candidate terminal commands execute as commands instead of JSON blobs.
+- Workspace terminal sessions now decode browser `TERMINAL_INPUT` control frames and normalize xterm carriage returns before writing to bash, so candidate terminal commands execute as commands instead of JSON blobs.
 - Workspace-enabled rooms now start in the standard code-first assessment surface and ignore synced legacy desktop window/file replay unless the room is explicitly switched into Win95 mode.
 - Workspace stops now append source-backed dev-container stop evidence to linked assessment sessions and return refreshed progress, keeping container lifecycle actions in the same durable interview spine as launch and commit evidence.
 - Workspace launches now append source-backed dev-container launch evidence to linked assessment sessions and return refreshed progress immediately, so opening VS Code is part of the durable assessment spine instead of only browser telemetry.
