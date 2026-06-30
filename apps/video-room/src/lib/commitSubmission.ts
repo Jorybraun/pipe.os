@@ -43,7 +43,6 @@ const CHANGED_FILE_STATUSES: ReadonlySet<RoomCommitChangedFileStatus> = new Set(
 ]);
 const DEFAULT_ASSESSMENT_BRANCH = 'pipe-assessment';
 const GIT_COMMIT_SHA_PATTERN = /^[a-f0-9]{40}$/i;
-const DEFAULT_BRANCH_NAMES = new Set(['main', 'master', 'trunk']);
 
 function normalizeOptionalText(value: string): string | null {
   const trimmed = value.trim();
@@ -108,6 +107,16 @@ function validateGithubPullRequestUrl(value: string): string {
     throw new Error('Upstream PR URL must point to a GitHub pull request.');
   }
   return value.trim();
+}
+
+function validateAssessmentBranchName(branchName: string): string {
+  if (
+    branchName !== DEFAULT_ASSESSMENT_BRANCH
+    && !branchName.startsWith(`${DEFAULT_ASSESSMENT_BRANCH}/`)
+  ) {
+    throw new Error('Branch must be pipe-assessment or a pipe-assessment/* branch.');
+  }
+  return branchName;
 }
 
 function diffMentionsChangedFile(diffText: string, changedFiles: RoomCommitChangedFile[]): boolean {
@@ -204,9 +213,7 @@ export async function buildCommitSubmissionPayload(
   if (!narrative) throw new Error('Submission note is required.');
   if (!repositoryUrl) throw new Error('Repository URL is required.');
   if (!branchName) throw new Error('Branch name is required.');
-  if (DEFAULT_BRANCH_NAMES.has(branchName.toLowerCase())) {
-    throw new Error('Branch must be an assessment branch, not the repository default branch.');
-  }
+  const validatedBranchName = validateAssessmentBranchName(branchName);
   if (!rawBaseCommitSha) throw new Error('Base commit SHA is required.');
   if (!rawCommitSha) throw new Error('Commit SHA is required.');
   const baseCommitSha = normalizeGitCommitSha(rawBaseCommitSha, 'Base commit SHA');
@@ -243,7 +250,7 @@ export async function buildCommitSubmissionPayload(
     narrative,
     repositoryUrl: validatedRepositoryUrl,
     forkRepositoryUrl: validatedForkRepositoryUrl,
-    branchName,
+    branchName: validatedBranchName,
     baseCommitSha,
     commitSha,
     commitUrl: validatedCommitUrl,

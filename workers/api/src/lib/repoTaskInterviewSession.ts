@@ -460,6 +460,7 @@ function primitiveDiagnosticDetails(
 
 const COMMIT_SHA_PATTERN = /^[0-9a-f]{40}$/i;
 const SAFE_BRANCH_PATTERN = /^[A-Za-z0-9._/-]+$/;
+const ASSESSMENT_BRANCH_NAME = 'pipe-assessment';
 
 function normalizeGitHubRepositoryUrl(value: string, fieldName: string): string {
   let url: URL;
@@ -507,6 +508,15 @@ function assertSafeBranchName(branchName: string): void {
     || branchName.split('/').some((segment) => segment.startsWith('.'))
   ) {
     throw new Error('branchName must be a safe Git branch name');
+  }
+}
+
+function assertAssessmentBranchName(branchName: string): void {
+  if (
+    branchName !== ASSESSMENT_BRANCH_NAME
+    && !branchName.startsWith(`${ASSESSMENT_BRANCH_NAME}/`)
+  ) {
+    throw new Error('branchName must be pipe-assessment or a pipe-assessment/* branch');
   }
 }
 
@@ -942,6 +952,7 @@ export class RepoTaskInterviewSessionStore {
       throw new Error('commitSha must differ from baseCommitSha');
     }
     assertSafeBranchName(input.branchName);
+    assertAssessmentBranchName(input.branchName);
     assertChangedFiles(input.changedFiles);
     assertCommitSubmissionSourceRefs(input);
     await assertSourceRefContentHashes(input.sourceRefs);

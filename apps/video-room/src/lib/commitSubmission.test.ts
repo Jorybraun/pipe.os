@@ -286,7 +286,12 @@ describe('commit submission payloads', () => {
     await expect(buildCommitSubmissionPayload({
       ...validFields,
       branchName: 'main',
-    })).rejects.toThrow('Branch must be an assessment branch');
+    })).rejects.toThrow('Branch must be pipe-assessment or a pipe-assessment/* branch.');
+
+    await expect(buildCommitSubmissionPayload({
+      ...validFields,
+      branchName: 'candidate-fix',
+    })).rejects.toThrow('Branch must be pipe-assessment or a pipe-assessment/* branch.');
 
     await expect(buildCommitSubmissionPayload({
       ...validFields,

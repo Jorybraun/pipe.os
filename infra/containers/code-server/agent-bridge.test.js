@@ -147,7 +147,7 @@ function git(args, cwd) {
   }).trimEnd();
 }
 
-function createCommittedWorkspace() {
+function createCommittedWorkspace(branchName = 'pipe-assessment') {
   const workspaceDir = mkdtempSync(path.join(tmpdir(), 'pipe-bridge-git-workspace-'));
   git(['init'], workspaceDir);
   git(['config', 'user.name', 'PIPE Test'], workspaceDir);
@@ -156,7 +156,7 @@ function createCommittedWorkspace() {
   git(['add', 'README.md'], workspaceDir);
   git(['commit', '-m', 'base'], workspaceDir);
   const baseCommitSha = git(['rev-parse', 'HEAD'], workspaceDir);
-  git(['checkout', '-b', 'pipe-assessment'], workspaceDir);
+  git(['checkout', '-B', branchName], workspaceDir);
   writeFileSync(path.join(workspaceDir, 'README.md'), '# Assessment repo\n\nFixed behavior with evidence.\n');
   git(['add', 'README.md'], workspaceDir);
   git(['commit', '-m', 'candidate fix'], workspaceDir);
@@ -539,6 +539,43 @@ describe('agent bridge readiness', () => {
         },
       });
       expect(verificationGap.exactText).toContain('No test command was provided');
+    } finally {
+      await captureServer.close();
+    }
+  });
+
+  it('blocks finalization when the workspace commit is not on the assessment branch namespace', async () => {
+    const captureServer = await startCommitSubmissionCaptureServer();
+    const { workspaceDir, baseCommitSha } = createCommittedWorkspace('main');
+    try {
+      const { port } = await startBridge('', {
+        AGENT_TYPE: '',
+        PATH: process.env.PATH ?? '',
+        PIPE_API_URL: captureServer.url,
+        ROOM_TOKEN: 'room-token',
+        REPO_GIT_URL: 'https://github.com/example/repo',
+        CHALLENGE_BASE_COMMIT_SHA: baseCommitSha,
+      }, {
+        installFakeDevin: false,
+        workspaceDir,
+      });
+
+      const response = await fetch(`http://127.0.0.1:${port}/assessment/finalize`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: '{}',
+      });
+
+      expect(response.status).toBe(409);
+      const body = await response.json();
+      expect(body).toMatchObject({
+        ok: false,
+        error: {
+          code: 'ASSESSMENT_FINALIZE_BLOCKED',
+        },
+      });
+      expect(body.error.message).toContain('HEAD must be pipe-assessment or a pipe-assessment/* branch');
+      expect(captureServer.submissions).toHaveLength(0);
     } finally {
       await captureServer.close();
     }

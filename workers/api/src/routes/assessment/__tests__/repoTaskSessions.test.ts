@@ -551,6 +551,52 @@ index 5c7b20a..7f9a12e 100644
     ).get(session.id)).toEqual({ count: 0 });
   });
 
+  it('rejects direct commit submissions from non-assessment branches', async () => {
+    const session = await createSession(app, env, {
+      ingestionKey: 'assessment-session:commit-submission-default-branch',
+      mode: 'OPEN_SOURCE_BUG_FIX',
+    });
+    const baseCommitSha = '1111111111111111111111111111111111111111';
+    const commitSha = 'cccccccccccccccccccccccccccccccccccccccc';
+    const commitText = `commit ${commitSha}
+Author: Candidate <candidate@example.com>
+
+Fix stale popover listener cleanup.`;
+    const diffText = `diff --git a/src/popover.ts b/src/popover.ts
+--- a/src/popover.ts
++++ b/src/popover.ts
+@@ -1,2 +1,3 @@
++cleanupStaleHandler();`;
+
+    const response = await app.request(
+      `/api/v1/assessment/repo-task/sessions/${session.id}/commit-submissions`,
+      jsonRequest({
+        ingestionKey: 'assessment-event:commit-submission-main-branch',
+        actorType: 'candidate',
+        narrative: 'Candidate tried to submit from the repository default branch.',
+        repositoryUrl: 'https://github.com/open-source/widgets',
+        branchName: 'main',
+        baseCommitSha,
+        commitSha,
+        changedFiles: [{ path: 'src/popover.ts', status: 'modified' }],
+        sourceRefs: [
+          await sourceRef('git_commit', commitSha, commitText),
+          await sourceRef('code_diff', `${commitSha}:diff`, diffText),
+        ],
+      }),
+      env,
+    );
+
+    expect(response.status).toBe(400);
+    const body = await response.json() as { error: { message: string } };
+    expect(body.error.message).toContain(
+      'branchName must be pipe-assessment or a pipe-assessment/* branch',
+    );
+    expect(sqlite.prepare(
+      'SELECT COUNT(*) AS count FROM assessment_evidence_events WHERE session_id = ?',
+    ).get(session.id)).toEqual({ count: 0 });
+  });
+
   it('treats dev-container challenges as commit-required assessment sessions', async () => {
     const session = await createSession(app, env, {
       ingestionKey: 'assessment-session:dev-container-commit-required',

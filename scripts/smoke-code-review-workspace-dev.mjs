@@ -529,6 +529,13 @@ async function main() {
   if (submittedBody?.commit?.commitSha !== workspaceCommit.commitSha) {
     throw new Error(`Workspace finalizer submitted the wrong commit: ${JSON.stringify(submittedBody?.commit)}`);
   }
+  const submittedBranchName = String(submittedBody?.commit?.branchName ?? '');
+  if (
+    submittedBranchName !== 'pipe-assessment'
+    && !submittedBranchName.startsWith('pipe-assessment/')
+  ) {
+    throw new Error(`Workspace finalizer did not submit an assessment branch: ${JSON.stringify(submittedBody?.commit)}`);
+  }
   const sourceRefTypes = submittedBody?.commit?.sourceRefTypes ?? [];
   for (const requiredSourceRefType of ['git_commit', 'code_diff', 'terminal_command', 'test_run']) {
     if (!sourceRefTypes.includes(requiredSourceRefType)) {
@@ -589,6 +596,7 @@ async function main() {
     finalizerEndpointBlocked: true,
     terminalCommitCreated: true,
     workspaceCommitSha: workspaceCommit.commitSha,
+    workspaceBranchName: submittedBranchName,
     workspaceChangeMode: workspaceCommit.mode,
     finalizerSubmitted: true,
     finalizerProgressStage: submittedBody.progress?.stage ?? null,

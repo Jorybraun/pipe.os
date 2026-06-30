@@ -39,6 +39,7 @@ const DEVIN_API_RESPONSE_TIMEOUT_MS = positiveIntEnv('DEVIN_API_RESPONSE_TIMEOUT
 const DEVIN_API_POLL_INTERVAL_MS = positiveIntEnv('DEVIN_API_POLL_INTERVAL_MS', 2500, 250);
 const DEVIN_AUTH_MESSAGE = 'Devin CLI is not logged in inside this container. Authenticate the real Devin CLI before using Clippy chat.';
 const ASSESSMENT_FINALIZE_TIMEOUT_MS = positiveIntEnv('ASSESSMENT_FINALIZE_TIMEOUT_MS', 120000, 1000);
+const ASSESSMENT_BRANCH_NAME = 'pipe-assessment';
 
 let agentAuthed = false;
 let agentProcess = null;
@@ -311,6 +312,15 @@ function defaultCommitNarrative(commitSha, changedFiles) {
   return `Candidate submitted commit ${commitSha} with changes to ${fileSummary}.`;
 }
 
+function assertAssessmentBranchName(branchName) {
+  if (
+    branchName !== ASSESSMENT_BRANCH_NAME
+    && !branchName.startsWith(`${ASSESSMENT_BRANCH_NAME}/`)
+  ) {
+    throw new Error('Cannot finalize assessment: HEAD must be pipe-assessment or a pipe-assessment/* branch.');
+  }
+}
+
 function buildTestEvidenceText(command, result) {
   return [
     `$ ${command}`,
@@ -360,6 +370,7 @@ async function buildWorkspaceCommitSubmission(body = {}) {
   }
 
   const branchName = runGit(['rev-parse', '--abbrev-ref', 'HEAD']).trim();
+  assertAssessmentBranchName(branchName);
   const repositoryUrl = normalizeOptionalString(body.repositoryUrl)
     || normalizeOptionalString(process.env.REPO_GIT_URL)
     || normalizeOptionalString(runGit(['config', '--get', 'remote.origin.url']));
