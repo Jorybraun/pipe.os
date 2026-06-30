@@ -13,6 +13,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - Recruiter and internal APIs can compare candidate evidence profiles by interaction mix, assertion depth, source diversity, shared concepts, unique concepts, and freshness-ranked coverage.
 - Living-context internal health routes now include evidence-readiness, candidate-comparison, and session-event ingestion coverage so assessment-room activity can be reconciled into the durable person graph.
 - The living context graph UI now includes an evidence-readiness panel and hook for per-dimension readiness bars, recommendation cards, and API-backed loading/error states.
+- The recruiter rematch hook now has focused unit coverage for matched, needs-more-evidence, pending, failure, and missing-candidate states, preserving the useful coverage from the consolidated living-context workstream.
 
 ### Fixed — Auth
 
@@ -83,6 +84,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Fixed — Candidate repo matching
 
+- Commit submissions now require `code_diff` source refs to identify the submitted `baseCommitSha..commitSha` range, preventing unrelated diffs from backing assessment commits.
 - Commit submissions now must match the assigned source-backed challenge packet's repository URL and base commit when those locator fields are present, preventing candidates from submitting unrelated repo or wrong-base work into the assessment spine.
 - Dev-container assessment rooms now poll the real assessment progress endpoint while active, keeping the candidate task brief, status strip, and submit-work path current when backend, host, guest, or container evidence changes after initial room load.
 - Repo-task assessment events, final bundles, and commit submissions now trigger best-effort real-time living-context ingestion, so candidate plans, room evidence, and submitted commits become person-graph evidence before the evaluator report exists.

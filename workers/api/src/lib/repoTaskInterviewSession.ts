@@ -640,11 +640,28 @@ function assertCommitSubmissionSourceRefs(input: SubmitCommitAssessmentInput): v
   const diffRef = input.sourceRefs.find((ref) => {
     if (ref.sourceRefType !== 'code_diff' || typeof ref.exactText !== 'string') return false;
     const exactText = ref.exactText;
-    return exactText.includes('diff --git') || changedPaths.some((path) => exactText.includes(path));
+    return diffSourceRefMatchesSubmittedRange(ref, input)
+      && (exactText.includes('diff --git') || changedPaths.some((path) => exactText.includes(path)));
   });
   if (!diffRef) {
-    throw new Error('commit submission requires a code_diff source ref for the submitted changes');
+    throw new Error('commit submission requires a code_diff source ref for the submitted baseCommitSha..commitSha changes');
   }
+}
+
+function diffSourceRefMatchesSubmittedRange(
+  ref: AssessmentEvidenceSourceRefInput,
+  input: SubmitCommitAssessmentInput,
+): boolean {
+  const expectedRange = `${input.baseCommitSha.toLowerCase()}..${input.commitSha.toLowerCase()}`;
+  if (ref.sourceRefId.toLowerCase() === expectedRange) {
+    return true;
+  }
+
+  const locator = ref.locator ?? {};
+  const locatorBaseCommitSha = stringLocatorValue(locator, 'baseCommitSha')?.toLowerCase();
+  const locatorCommitSha = stringLocatorValue(locator, 'commitSha')?.toLowerCase();
+  return locatorBaseCommitSha === input.baseCommitSha.toLowerCase()
+    && locatorCommitSha === input.commitSha.toLowerCase();
 }
 
 function stringLocatorValue(locator: JsonObject, key: string): string | null {

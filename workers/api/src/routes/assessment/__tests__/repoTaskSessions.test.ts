@@ -276,7 +276,7 @@ describe('repo task assessment session routes', () => {
         changedFiles: [{ path: 'src/stream.ts', status: 'modified', additions: 1, deletions: 0 }],
         sourceRefs: [
           await sourceRef('git_commit', commitSha, commitText),
-          await sourceRef('code_diff', `${commitSha}:diff`, diffText),
+          await sourceRef('code_diff', `${baseCommitSha}..${commitSha}`, diffText),
         ],
       }),
       env,
@@ -607,7 +607,7 @@ index 5c7b20a..7f9a12e 100644
         }],
         sourceRefs: [
           await sourceRef('git_commit', commitSha, commitText),
-          await sourceRef('code_diff', `${commitSha}:diff`, diffText),
+          await sourceRef('code_diff', `${baseCommitSha}..${commitSha}`, diffText),
         ],
       }),
       env,
@@ -664,7 +664,7 @@ index 5c7b20a..7f9a12e 100644
     ).all(body.submission.event.id)).toEqual([
       {
         source_ref_type: 'code_diff',
-        source_ref_id: `${commitSha}:diff`,
+        source_ref_id: `${baseCommitSha}..${commitSha}`,
         exact_text: diffText,
       },
       {
@@ -694,7 +694,7 @@ index 5c7b20a..7f9a12e 100644
         commitSha,
         changedFiles: [{ path: 'src/popover.ts', status: 'modified' }],
         sourceRefs: [
-          await sourceRef('code_diff', `${commitSha}:diff`, diffText),
+          await sourceRef('code_diff', `2222222222222222222222222222222222222222..${commitSha}`, diffText),
           await sourceRef('transcript_span', 'transcript-commit-claim', `I committed ${commitSha}`),
         ],
       }),
@@ -705,6 +705,52 @@ index 5c7b20a..7f9a12e 100644
     const body = await response.json() as { error: { message: string } };
     expect(body.error.message).toContain(
       'commit submission requires a git_commit source ref whose exact text contains commitSha',
+    );
+    expect(sqlite.prepare(
+      'SELECT COUNT(*) AS count FROM assessment_evidence_events WHERE session_id = ?',
+    ).get(session.id)).toEqual({ count: 0 });
+  });
+
+  it('rejects commit submissions whose diff source ref is not tied to the submitted commit range', async () => {
+    const session = await createSession(app, env, {
+      ingestionKey: 'assessment-session:commit-submission-loose-diff',
+      mode: 'OPEN_SOURCE_BUG_FIX',
+    });
+    const baseCommitSha = '2222222222222222222222222222222222222222';
+    const commitSha = 'bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb';
+    const commitText = `commit ${commitSha}
+Author: Candidate <candidate@example.com>
+
+Fix stale popover listener cleanup.`;
+    const diffText = `diff --git a/src/popover.ts b/src/popover.ts
+--- a/src/popover.ts
++++ b/src/popover.ts
+@@ -1,2 +1,3 @@
++cleanupStaleHandler();`;
+
+    const response = await app.request(
+      `/api/v1/assessment/repo-task/sessions/${session.id}/commit-submissions`,
+      jsonRequest({
+        ingestionKey: 'assessment-event:commit-submission-loose-diff',
+        actorType: 'candidate',
+        narrative: 'Candidate submitted a diff source ref that was not tied to the commit range.',
+        repositoryUrl: 'https://github.com/open-source/widgets',
+        branchName: 'pipe-assessment/popover-cleanup',
+        baseCommitSha,
+        commitSha,
+        changedFiles: [{ path: 'src/popover.ts', status: 'modified' }],
+        sourceRefs: [
+          await sourceRef('git_commit', commitSha, commitText),
+          await sourceRef('code_diff', `${commitSha}:diff`, diffText),
+        ],
+      }),
+      env,
+    );
+
+    expect(response.status).toBe(400);
+    const body = await response.json() as { error: { message: string } };
+    expect(body.error.message).toContain(
+      'commit submission requires a code_diff source ref for the submitted baseCommitSha..commitSha changes',
     );
     expect(sqlite.prepare(
       'SELECT COUNT(*) AS count FROM assessment_evidence_events WHERE session_id = ?',
@@ -787,7 +833,11 @@ Fix stale popover listener cleanup.`;
         changedFiles: [{ path: 'src/popover.ts', status: 'modified' }],
         sourceRefs: [
           await sourceRef('git_commit', repoCase.commitSha, repoCase.commitText),
-          await sourceRef('code_diff', `${repoCase.commitSha}:diff`, repoCase.diffText),
+          await sourceRef(
+            'code_diff',
+            `${repoCase.assignedBaseCommitSha}..${repoCase.commitSha}`,
+            repoCase.diffText,
+          ),
         ],
       }),
       env,
@@ -817,7 +867,7 @@ Fix stale popover listener cleanup.`;
         changedFiles: [{ path: 'src/popover.ts', status: 'modified' }],
         sourceRefs: [
           await sourceRef('git_commit', baseCase.commitSha, baseCase.commitText),
-          await sourceRef('code_diff', `${baseCase.commitSha}:diff`, baseCase.diffText),
+          await sourceRef('code_diff', `${wrongBaseCommitSha}..${baseCase.commitSha}`, baseCase.diffText),
         ],
       }),
       env,
@@ -863,7 +913,7 @@ Fix stale popover listener cleanup.`;
         changedFiles: [{ path: 'src/popover.ts', status: 'modified' }],
         sourceRefs: [
           await sourceRef('git_commit', commitSha, commitText),
-          await sourceRef('code_diff', `${commitSha}:diff`, diffText),
+          await sourceRef('code_diff', `${baseCommitSha}..${commitSha}`, diffText),
         ],
       }),
       env,
@@ -1065,7 +1115,7 @@ Fix stale popover listener cleanup.`;
 +  cleanupStaleHandler();
 }`;
     const commitSourceRef = await sourceRef('git_commit', commitSha, commitText);
-    const codeDiffSourceRef = await sourceRef('code_diff', `${commitSha}:diff`, diffText);
+    const codeDiffSourceRef = await sourceRef('code_diff', `${baseCommitSha}..${commitSha}`, diffText);
     const testRunSourceRef = await sourceRef(
       'test_run',
       `${commitSha}:test-run`,
