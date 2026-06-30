@@ -42,3 +42,11 @@ export type {
 export * from './d1Matcher';
 export * from './roleGuardrails';
 export * from './evaluation';
+export {
+  computeDecayMultiplier,
+  applyTemporalDecay,
+  parseObservedAtMs,
+  evidenceAgeDays,
+  DEFAULT_DECAY_CONFIG,
+} from './temporalDecay';
+export type { TemporalDecayConfig } from './temporalDecay';

@@ -2,6 +2,8 @@ import { describe, expect, it, vi } from 'vitest';
 import { fireEvent, render, screen, within } from '@testing-library/react';
 import { LivingContextGraph } from '../LivingContextGraph';
 import type {
+  EvidenceGapResponse,
+  MatchProvenanceResponse,
   LivingContextReadModel,
   LivingContextSourceRef,
   StandaloneReviewMatchRecord,
@@ -10,6 +12,8 @@ import type {
 const mocks = vi.hoisted(() => ({
   livingContext: null as LivingContextReadModel | null,
   refetch: vi.fn(),
+  gaps: null as EvidenceGapResponse | null,
+  provenance: null as MatchProvenanceResponse | null,
 }));
 
 vi.mock('../../../hooks/useLivingContext', () => ({
@@ -18,6 +22,42 @@ vi.mock('../../../hooks/useLivingContext', () => ({
     isLoading: false,
     error: null,
     refetch: mocks.refetch,
+  }),
+}));
+
+vi.mock('../../../hooks/useEvidenceLineage', () => ({
+  useEvidenceLineage: () => ({
+    lineage: null,
+    isLoading: false,
+    error: null,
+    refetch: vi.fn(),
+  }),
+}));
+
+vi.mock('../../../hooks/useEvidenceFreshness', () => ({
+  useEvidenceFreshness: () => ({
+    freshness: null,
+    isLoading: false,
+    error: null,
+    refetch: vi.fn(),
+  }),
+}));
+
+vi.mock('../../../hooks/useEvidenceGaps', () => ({
+  useEvidenceGaps: () => ({
+    gaps: mocks.gaps,
+    isLoading: false,
+    error: null,
+    refetch: vi.fn(),
+  }),
+}));
+
+vi.mock('../../../hooks/useMatchProvenance', () => ({
+  useMatchProvenance: () => ({
+    provenance: mocks.provenance,
+    isLoading: false,
+    error: null,
+    refetch: vi.fn(),
   }),
 }));
 
@@ -100,6 +140,7 @@ function makeStandaloneReviewMatch(): StandaloneReviewMatchRecord {
       purpose: 'validation',
       pairScore: 0.91,
       sharedConcepts: ['term:kafka-order-events'],
+      stretch: null,
       roleSourceRefs: [{
         entityId: 'context-record-jd',
         locator: 'simple_job_description:source_span:jd-span-1',
@@ -134,6 +175,8 @@ function makeStandaloneReviewMatch(): StandaloneReviewMatchRecord {
         exactText: 'Add idempotent retry handling around order event publication.',
       }],
     }],
+    stretchAreas: [],
+    unmatchedDemandIds: [],
     gaps: [
       'Candidate evidence does not yet prove ownership of Kafka partition rebalancing.',
     ],
@@ -177,6 +220,7 @@ function makeStandaloneReviewMatch(): StandaloneReviewMatchRecord {
         stretchCount: 1,
       }],
     },
+    matchNarrative: null,
     submitted: false,
     submission: null,
     completedAt: null,
@@ -209,6 +253,7 @@ function makeBackfilledRepoReviewMatch(): StandaloneReviewMatchRecord {
       demandId: 'demand-crystalline-quorum-ledger',
       purpose: 'source-backed-validation',
       pairScore: 0.93,
+      stretch: null,
       sharedConcepts: ['term:crystalline-quorum-ledger'],
       roleSourceRefs: [{
         entityId: 'context-record-role-backfill',
@@ -258,6 +303,8 @@ function makeBackfilledRepoReviewMatch(): StandaloneReviewMatchRecord {
         exactText: 'export function writeCrystallineQuorumLedger(orderId: string) { const ledgerKey = `crystalline:${orderId}`; return { ledgerKey, committed: true }; }',
       }],
     }],
+    stretchAreas: [],
+    unmatchedDemandIds: [],
     gaps: [],
     diagnostics: {
       recalledPacketIds: ['review-packet-77-42'],
@@ -275,6 +322,7 @@ function makeBackfilledRepoReviewMatch(): StandaloneReviewMatchRecord {
         stretchCount: 0,
       }],
     },
+    matchNarrative: null,
     submitted: false,
     submission: null,
     completedAt: null,
@@ -931,5 +979,320 @@ describe('LivingContextGraph empty state quietness', () => {
     expect(screen.queryAllByText('Accumulated context')).toHaveLength(0);
     expect(screen.queryAllByText('Source evidence')).toHaveLength(0);
     expect(screen.queryByLabelText('Search living context')).not.toBeInTheDocument();
+  });
+
+  it('renders the match narrative panel when matchNarrative is present', () => {
+    mocks.livingContext = makeLivingContext();
+
+    const match: StandaloneReviewMatchRecord = {
+      ...makeStandaloneReviewMatch(),
+      matchNarrative: {
+        title: 'Strong Kafka alignment',
+        verdict: 'Candidate demonstrates strong Kafka retry expertise.',
+        sections: [
+          {
+            heading: 'Strong alignments',
+            items: [
+              'Kafka retry publishing (91% — resume line 7 + src/orders/retry.ts:18)',
+            ],
+          },
+          {
+            heading: 'Evidence gaps',
+            items: ['No partition rebalancing experience found.'],
+          },
+        ],
+        plainText: 'Strong Kafka alignment\nCandidate demonstrates strong Kafka retry expertise.',
+      },
+    };
+
+    render(
+      <LivingContextGraph
+        candidateId="candidate-1"
+        standaloneReviewMatch={match}
+      />,
+    );
+
+    const narrativePanel = screen.getByTestId('match-narrative-panel');
+    expect(screen.getByLabelText('Match narrative')).toBe(narrativePanel);
+    expect(within(narrativePanel).getByText('Strong Kafka alignment')).toBeInTheDocument();
+    expect(within(narrativePanel).getByText('Candidate demonstrates strong Kafka retry expertise.')).toBeInTheDocument();
+    expect(within(narrativePanel).getByText('Strong alignments')).toBeInTheDocument();
+    expect(within(narrativePanel).getByText('Kafka retry publishing (91% — resume line 7 + src/orders/retry.ts:18)')).toBeInTheDocument();
+    expect(within(narrativePanel).getByText('Evidence gaps')).toBeInTheDocument();
+    expect(within(narrativePanel).getByText('No partition rebalancing experience found.')).toBeInTheDocument();
+  });
+
+  it('hides the match narrative panel when matchNarrative is null', () => {
+    mocks.livingContext = makeLivingContext();
+
+    render(
+      <LivingContextGraph
+        candidateId="candidate-1"
+        standaloneReviewMatch={makeStandaloneReviewMatch()}
+      />,
+    );
+
+    expect(screen.queryByTestId('match-narrative-panel')).toBeNull();
+  });
+});
+
+describe('LivingContextGraph evidence gap panel', () => {
+  it('renders the evidence gap analysis panel with coverage badges and demands', () => {
+    mocks.livingContext = makeMeetingLivingContext();
+    mocks.gaps = {
+      candidateId: 'candidate-1',
+      workspacePersonId: 'workspace-person-1',
+      challengeId: 'packet-source-backed',
+      demands: [
+        {
+          demandId: 'demand-retry',
+          demandNarrative: 'Review idempotent retry handling',
+          demandWeight: 0.9,
+          demandConcepts: ['term:kafka-order-events', 'term:idempotent-retry'],
+          coverageLevel: 'strong',
+          matchedConcepts: ['term:kafka-order-events'],
+          missingConcepts: ['term:idempotent-retry'],
+          evidenceCount: 2,
+          bestEvidenceLevel: 'demonstrated',
+          bestStrength: 0.91,
+          effectiveStrength: 0.87,
+          supportingAssertions: [{
+            assertionId: 'assertion-kafka',
+            narrative: 'Built Kafka retry flow',
+            conceptKey: 'term:kafka-order-events',
+            strength: 0.91,
+            decayMultiplier: 0.95,
+            effectiveStrength: 0.86,
+            observedAt: '2026-06-13T10:00:00.000Z',
+            exactText: 'Built Kafka order event retries for an ecommerce checkout platform.',
+          }],
+        },
+        {
+          demandId: 'demand-go',
+          demandNarrative: 'Experience with Go microservices',
+          demandWeight: 0.6,
+          demandConcepts: ['lang:go', 'framework:gin'],
+          coverageLevel: 'none',
+          matchedConcepts: [],
+          missingConcepts: ['lang:go', 'framework:gin'],
+          evidenceCount: 0,
+          bestEvidenceLevel: null,
+          bestStrength: 0,
+          effectiveStrength: 0,
+          supportingAssertions: [],
+        },
+      ],
+      summary: {
+        strongCount: 1,
+        partialCount: 0,
+        weakCount: 0,
+        noneCount: 1,
+        totalDemands: 2,
+        coverageScore: 0.5,
+        weightedCoverageScore: 0.58,
+      },
+      recommendations: ['No evidence for Go microservices. Missing: lang:go, framework:gin.'],
+    };
+
+    render(
+      <LivingContextGraph
+        candidateId="candidate-1"
+        standaloneReviewMatch={makeStandaloneReviewMatch()}
+      />,
+    );
+
+    const gapPanel = screen.getByTestId('evidence-gap-panel');
+    expect(gapPanel).toBeInTheDocument();
+    expect(within(gapPanel).getByText('Evidence gap analysis')).toBeInTheDocument();
+    expect(within(gapPanel).getByText(/2 demands/)).toBeInTheDocument();
+    expect(within(gapPanel).getByText(/58% weighted coverage/)).toBeInTheDocument();
+
+    const badges = within(gapPanel).getByTestId('gap-summary');
+    expect(within(badges).getByTestId('gap-badge-strong')).toBeInTheDocument();
+    expect(within(badges).getByTestId('gap-badge-none')).toBeInTheDocument();
+
+    const demands = within(gapPanel).getAllByTestId('gap-demand');
+    expect(demands).toHaveLength(2);
+    expect(demands[0]).toHaveAttribute('data-coverage', 'strong');
+    expect(demands[1]).toHaveAttribute('data-coverage', 'none');
+
+    expect(within(gapPanel).getByText('Review idempotent retry handling')).toBeInTheDocument();
+    expect(within(gapPanel).getByText('Experience with Go microservices')).toBeInTheDocument();
+    expect(within(gapPanel).getByText('term:kafka-order-events')).toBeInTheDocument();
+
+    const recommendations = within(gapPanel).getByTestId('gap-recommendations');
+    expect(within(recommendations).getByText(/No evidence for Go microservices/)).toBeInTheDocument();
+  });
+
+  it('hides the evidence gap panel when gaps are null', () => {
+    mocks.livingContext = makeMeetingLivingContext();
+    mocks.gaps = null;
+
+    render(
+      <LivingContextGraph
+        candidateId="candidate-1"
+        standaloneReviewMatch={makeStandaloneReviewMatch()}
+      />,
+    );
+
+    expect(screen.queryByTestId('evidence-gap-panel')).toBeNull();
+  });
+});
+
+describe('LivingContextGraph match provenance panel', () => {
+  it('renders the match provenance chain with demand links, signals, and interactions', () => {
+    mocks.livingContext = makeMeetingLivingContext();
+    mocks.provenance = {
+      decision: {
+        matchRunId: 'match-run-1',
+        candidateId: 'candidate-1',
+        status: 'MATCHED',
+        selectedPacketId: 'packet-source-backed',
+        policyVersion: 'v2.1',
+        createdAt: Date.now(),
+      },
+      chain: [
+        {
+          demandLink: {
+            demandId: 'demand-retry',
+            demandNarrative: 'Review idempotent retry handling',
+            demandWeight: 0.9,
+            demandConcepts: ['term:kafka-order-events'],
+            atomId: 'candidate-atom-kafka',
+            pairScore: 0.91,
+            stretch: null,
+          },
+          signals: [{
+            atomId: 'candidate-atom-kafka',
+            episodeId: 'episode-1',
+            narrative: 'Built Kafka order event retries',
+            purpose: 'validation',
+            evidenceLevel: 'demonstrated',
+            evidenceStrength: 0.91,
+            concepts: ['term:kafka-order-events'],
+            sourceRefs: [{
+              artifactId: 'resume-artifact',
+              contentHash: 'hash-1',
+              exactText: 'Built Kafka order event retries for an ecommerce checkout platform.',
+              startOffset: 14,
+              endOffset: 88,
+            }],
+          }],
+          assertions: [{
+            assertionId: 'assertion-kafka',
+            narrative: 'Candidate demonstrated Kafka retry expertise',
+            predicate: 'demonstrated_skill',
+            confidence: 0.91,
+            polarity: 1,
+            observedAt: '2026-06-13T10:00:00.000Z',
+            decayMultiplier: 0.95,
+            concepts: ['term:kafka-order-events'],
+            sourceSpans: [{
+              sourceSpanId: 'span-kafka-1',
+              exactText: 'Built Kafka order event retries for an ecommerce checkout platform.',
+              lineStart: 7,
+              lineEnd: 7,
+              charStart: 0,
+              charEnd: 67,
+            }],
+          }],
+          artifacts: [{
+            artifactId: 'resume-artifact',
+            artifactType: 'resume',
+            logicalKey: 'resume-v1',
+            mediaType: 'application/pdf',
+            contentHash: 'hash-1',
+          }],
+          interactions: [{
+            interactionId: 'interaction-resume-review',
+            interactionType: 'resume_review',
+            startedAt: '2026-06-10T09:00:00.000Z',
+          }],
+        },
+      ],
+    };
+
+    render(
+      <LivingContextGraph
+        candidateId="candidate-1"
+        standaloneReviewMatch={makeStandaloneReviewMatch()}
+      />,
+    );
+
+    const provenancePanel = screen.getByTestId('match-provenance-panel');
+    expect(provenancePanel).toBeInTheDocument();
+    expect(within(provenancePanel).getByText('Match provenance chain')).toBeInTheDocument();
+    expect(within(provenancePanel).getByText(/MATCHED/)).toBeInTheDocument();
+    expect(within(provenancePanel).getByText(/policy v2.1/)).toBeInTheDocument();
+    expect(within(provenancePanel).getByText(/1 demand links/)).toBeInTheDocument();
+
+    const entries = within(provenancePanel).getAllByTestId('provenance-entry');
+    expect(entries).toHaveLength(1);
+    expect(within(entries[0]!).getByText('91%')).toBeInTheDocument();
+    expect(within(entries[0]!).getByText('Review idempotent retry handling')).toBeInTheDocument();
+    expect(within(entries[0]!).getByText('Built Kafka order event retries')).toBeInTheDocument();
+    expect(within(entries[0]!).getByText('demonstrated')).toBeInTheDocument();
+    expect(within(entries[0]!).getByText(/95% fresh/)).toBeInTheDocument();
+    expect(within(entries[0]!).getByText(/Resume Review/)).toBeInTheDocument();
+  });
+
+  it('renders stretch information when present', () => {
+    mocks.livingContext = makeMeetingLivingContext();
+    mocks.provenance = {
+      decision: {
+        matchRunId: 'match-run-1',
+        candidateId: 'candidate-1',
+        status: 'MATCHED',
+        selectedPacketId: 'packet-source-backed',
+        policyVersion: 'v2.1',
+        createdAt: Date.now(),
+      },
+      chain: [
+        {
+          demandLink: {
+            demandId: 'demand-go',
+            demandNarrative: 'Go microservice experience',
+            demandWeight: 0.6,
+            demandConcepts: ['lang:go'],
+            atomId: 'candidate-atom-ts',
+            pairScore: 0.45,
+            stretch: {
+              atomConcept: 'lang:typescript',
+              demandConcept: 'lang:go',
+              dimension: 'language_family',
+            },
+          },
+          signals: [],
+          assertions: [],
+          artifacts: [],
+          interactions: [],
+        },
+      ],
+    };
+
+    render(
+      <LivingContextGraph
+        candidateId="candidate-1"
+        standaloneReviewMatch={makeStandaloneReviewMatch()}
+      />,
+    );
+
+    const provenancePanel = screen.getByTestId('match-provenance-panel');
+    expect(within(provenancePanel).getByText(/lang:typescript/)).toBeInTheDocument();
+    expect(within(provenancePanel).getByText(/lang:go/)).toBeInTheDocument();
+  });
+
+  it('hides the match provenance panel when provenance is null', () => {
+    mocks.livingContext = makeMeetingLivingContext();
+    mocks.provenance = null;
+
+    render(
+      <LivingContextGraph
+        candidateId="candidate-1"
+        standaloneReviewMatch={makeStandaloneReviewMatch()}
+      />,
+    );
+
+    expect(screen.queryByTestId('match-provenance-panel')).toBeNull();
   });
 });
