@@ -2816,7 +2816,14 @@ rpcAuth.post('/get-stage-config', async (c) => {
           ? retryingStandaloneReviewReadiness(retryQueued.reason)
           : await standaloneReviewEvidenceReadiness(c.env.DB, candidateId);
         if (!readiness.ready) {
-          return c.json(candidateIntakeQueuedComplete('Profile received'));
+          return c.json(waitingStageConfigForGate({
+            candidateId,
+            stageId: 'standalone-code-review',
+            stageTitle: 'Code Review',
+            stageMode: 'ASYNC',
+            timeLimit: null,
+            waitingChallenge: standaloneWaitingChallengeForReadiness(readiness),
+          }));
         }
       }
       return c.json({
