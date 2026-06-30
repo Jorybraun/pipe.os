@@ -1,6 +1,6 @@
 import { useState } from 'react';
 import { useNavigate } from 'react-router-dom';
-import { Mail, Video, Loader2, Radio } from 'lucide-react';
+import { CheckCircle, Mail, Video, Loader2, Radio } from 'lucide-react';
 import { INTERVIEW_TYPE_LABELS, type ScheduledInterview } from '../../lib/scheduling/types';
 import { InterviewStatusBadge } from './InterviewStatusBadge';
 import { StatusOverrideModal } from './StatusOverrideModal';
@@ -28,6 +28,15 @@ interface InterviewCardProps {
     }
   ) => Promise<void>;
   sendInvite: (id: string, email: string, message?: string) => Promise<void>;
+  startAssessmentEvaluation?: (id: string) => Promise<AssessmentEvaluationStartResult | void>;
+}
+
+interface AssessmentEvaluationStartResult {
+  report?: unknown | null;
+  diagnostic?: {
+    code?: string;
+    severity?: string;
+  } | null;
 }
 
 const FIFTEEN_MINUTES_MS = 15 * 60 * 1000;
@@ -205,6 +214,19 @@ function assessmentDecisionSummary(input: {
   return null;
 }
 
+function assessmentEvaluationStartNotice(result: AssessmentEvaluationStartResult | void): string {
+  if (result?.report) return 'Source-backed assessment report is ready.';
+  if (result?.diagnostic) {
+    const diagnosticLabel = sentenceCaseToken(result.diagnostic.code ?? 'diagnostic')
+      .replace(/\bai\b/g, 'AI')
+      .replace(/\bAi\b/g, 'AI')
+      .replace(/\bapi\b/g, 'API')
+      .replace(/\bApi\b/g, 'API');
+    return `Evaluation needs attention: ${diagnosticLabel}.`;
+  }
+  return 'Source-backed assessment evaluation requested.';
+}
+
 export function InterviewCard({
   interview,
   candidateName,
@@ -213,12 +235,16 @@ export function InterviewCard({
   stageTitle,
   updateStatus,
   sendInvite,
+  startAssessmentEvaluation,
 }: InterviewCardProps): JSX.Element {
   const navigate = useNavigate();
   const api = useApiClient();
   const [isModalOpen, setIsModalOpen] = useState(false);
   const [isInviteOpen, setIsInviteOpen] = useState(false);
   const [isJoining, setIsJoining] = useState(false);
+  const [isStartingAssessmentEvaluation, setIsStartingAssessmentEvaluation] = useState(false);
+  const [assessmentEvaluationNotice, setAssessmentEvaluationNotice] = useState<string | null>(null);
+  const [assessmentEvaluationError, setAssessmentEvaluationError] = useState<string | null>(null);
 
   const joinable = isJoinable(interview);
   const guestWaiting = interview.guestWaiting ?? false;
@@ -256,6 +282,24 @@ export function InterviewCard({
       navigate(`/interviews/${interview.id}`);
     } finally {
       setIsJoining(false);
+    }
+  };
+
+  const handleStartAssessmentEvaluation = async (event: React.MouseEvent): Promise<void> => {
+    event.stopPropagation();
+    if (!startAssessmentEvaluation) return;
+    setAssessmentEvaluationNotice(null);
+    setAssessmentEvaluationError(null);
+    setIsStartingAssessmentEvaluation(true);
+    try {
+      const result = await startAssessmentEvaluation(interview.id);
+      setAssessmentEvaluationNotice(assessmentEvaluationStartNotice(result));
+    } catch (err) {
+      setAssessmentEvaluationError(
+        err instanceof Error ? err.message : 'Unable to start assessment evaluation',
+      );
+    } finally {
+      setIsStartingAssessmentEvaluation(false);
     }
   };
 
@@ -317,12 +361,16 @@ export function InterviewCard({
     setup: assessmentSetup,
     progress: assessmentProgress,
   });
+  const canStartAssessmentEvaluation = Boolean(
+    startAssessmentEvaluation && assessmentProgress?.nextAction === 'START_EVALUATION',
+  );
   const workspaceSummary = workspaceSessionSummary(interview);
 
   return (
     <>
       <div
         role="button"
+        aria-label={`Open ${candidateName} interview details`}
         tabIndex={0}
         onClick={() => navigate(`/interviews/${interview.id}`)}
         onKeyDown={(event) => {
@@ -509,6 +557,16 @@ export function InterviewCard({
                   </div>
                 </>
               )}
+              {(assessmentEvaluationNotice || assessmentEvaluationError) && (
+                <>
+                  <div style={{ fontSize: 9, color: assessmentEvaluationError ? '#f87171' : '#93c5fd', letterSpacing: '0.12em', fontWeight: 700 }}>
+                    EVALUATION
+                  </div>
+                  <div style={{ minWidth: 0, fontSize: 10, color: assessmentEvaluationError ? '#fca5a5' : 'var(--pipe-text-dim)', overflowWrap: 'anywhere' }}>
+                    {assessmentEvaluationError ?? assessmentEvaluationNotice}
+                  </div>
+                </>
+              )}
             </div>
           )}
         </div>
@@ -520,6 +578,32 @@ export function InterviewCard({
 
         {/* Right: INVITE + JOIN button + overflow menu */}
         <div style={{ display: 'flex', alignItems: 'center', gap: 8, flexShrink: 0 }}>
+          {canStartAssessmentEvaluation && (
+            <button
+              disabled={isStartingAssessmentEvaluation}
+              onClick={(event) => void handleStartAssessmentEvaluation(event)}
+              title="Start source-backed assessment evaluation"
+              style={{
+                display: 'flex',
+                alignItems: 'center',
+                gap: 6,
+                padding: '8px 16px',
+                background: 'rgba(96,165,250,0.15)',
+                border: '1px solid rgba(96,165,250,0.35)',
+                color: '#93c5fd',
+                fontSize: 10,
+                letterSpacing: '0.1em',
+                fontFamily: '"Space Mono", monospace',
+                cursor: isStartingAssessmentEvaluation ? 'default' : 'pointer',
+                borderRadius: 4,
+                transition: 'all 0.2s',
+                whiteSpace: 'nowrap',
+              }}
+            >
+              {isStartingAssessmentEvaluation ? <Loader2 size={12} className="spin" /> : <CheckCircle size={12} />}
+              EVALUATE
+            </button>
+          )}
           <button
             onClick={(event) => {
               event.stopPropagation();

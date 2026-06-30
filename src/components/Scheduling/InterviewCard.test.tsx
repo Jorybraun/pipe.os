@@ -1,4 +1,4 @@
-import { render, screen } from '@testing-library/react';
+import { fireEvent, render, screen, waitFor } from '@testing-library/react';
 import { MemoryRouter } from 'react-router-dom';
 import { describe, expect, it, vi } from 'vitest';
 import { InterviewCard } from './InterviewCard';
@@ -14,7 +14,16 @@ vi.mock('../../hooks/useApiClient', () => ({
   useApiClient: () => mocks.api,
 }));
 
-function renderCard(interview: ScheduledInterview): void {
+function renderCard(
+  interview: ScheduledInterview,
+  options: {
+    startAssessmentEvaluation?: (id: string) => Promise<{ report?: unknown | null; diagnostic?: { code?: string } | null } | void>;
+  } = {},
+): void {
+  const optionalProps = options.startAssessmentEvaluation
+    ? { startAssessmentEvaluation: options.startAssessmentEvaluation }
+    : {};
+
   render(
     <MemoryRouter>
       <InterviewCard
@@ -25,6 +34,7 @@ function renderCard(interview: ScheduledInterview): void {
         stageTitle="Open-source assessment"
         updateStatus={vi.fn()}
         sendInvite={vi.fn()}
+        {...optionalProps}
       />
     </MemoryRouter>,
   );
@@ -257,6 +267,89 @@ describe('InterviewCard assessment progress', () => {
     expect(progress).toHaveTextContent('Setup gap');
     expect(progress).toHaveTextContent('PIPE must ingest source-backed evidence before selecting a PR task.');
     expect(progress).toHaveTextContent('no assessment session yet');
+  });
+
+  it('starts source-backed evaluation from a ready assessment card', async () => {
+    const startAssessmentEvaluation = vi.fn().mockResolvedValue({
+      diagnostic: {
+        code: 'WORKERS_AI_UNAVAILABLE',
+      },
+    });
+
+    renderCard({
+      id: 'interview-ready-evaluate',
+      createdAt: '2026-06-23T00:00:00.000Z',
+      updatedAt: '2026-06-23T00:20:00.000Z',
+      status: 'INVITED',
+      interviewType: 'OPEN_SOURCE_BUG_FIX',
+      meetingType: 'DIRECT_VIDEO_CALL',
+      scheduledAt: null,
+      assessmentSetup: {
+        status: 'reviewable_task_assigned',
+        kind: 'manual_open_source_task',
+        source: 'recruiter_manual_override',
+        blocksPositiveAssessment: false,
+        message: 'A concrete open-source task packet was assigned by the recruiter.',
+      },
+      assessmentProgress: {
+        session: {
+          id: 'assessment-session-ready',
+          ingestionKey: 'assessment-session:ready',
+          interviewId: 'interview-ready-evaluate',
+          candidateId: 'candidate-1',
+          workspaceId: 'workspace-1',
+          workspacePersonId: null,
+          applicationId: null,
+          mode: 'OPEN_SOURCE_BUG_FIX',
+          state: 'FINAL_SUBMITTED',
+          createdAt: '2026-06-23T00:00:00.000Z',
+          updatedAt: '2026-06-23T00:20:00.000Z',
+        },
+        stage: 'READY_FOR_EVALUATION',
+        nextAction: 'START_EVALUATION',
+        nextActionLabel: 'Start source-backed AI or human evaluation.',
+        hasChallengePacket: true,
+        hasWorkEvidence: true,
+        hasMessageEvidence: true,
+        hasDevContainerEvidence: true,
+        hasToolUsageEvidence: true,
+        hasCommitSubmission: true,
+        hasFinalSubmission: true,
+        hasAiInteraction: true,
+        hasTranscriptEvidence: false,
+        hasTestEvidence: true,
+        evidenceCounts: [{ kind: 'commit_submission', count: 1 }],
+        sourceRefCounts: [{ kind: 'test_run', count: 1 }],
+        challenge: null,
+        latestEvent: {
+          id: 'assessment-event-ready',
+          kind: 'final_submission',
+          sequence: 4,
+          occurredAt: '2026-06-23T00:20:00.000Z',
+        },
+        commit: {
+          eventId: 'assessment-event-ready',
+          repositoryUrl: 'https://github.com/open-source/widgets',
+          forkRepositoryUrl: 'https://github.com/candidate/widgets',
+          branchName: 'pipe-assessment/widgets',
+          baseCommitSha: '3333333333333333333333333333333333333333',
+          commitSha: '123456abcdef123456abcdef123456abcdef1234',
+          commitUrl: 'https://github.com/candidate/widgets/commit/123456abcdef123456abcdef123456abcdef1234',
+          changedFiles: [{ path: 'src/widget.ts', status: 'modified' }],
+          occurredAt: '2026-06-23T00:18:00.000Z',
+        },
+        evaluation: null,
+      },
+    }, { startAssessmentEvaluation });
+
+    fireEvent.click(screen.getByRole('button', { name: /evaluate/i }));
+
+    await waitFor(() => {
+      expect(startAssessmentEvaluation).toHaveBeenCalledWith('interview-ready-evaluate');
+    });
+    expect(screen.getByTestId('interview-card-assessment-progress')).toHaveTextContent(
+      'Evaluation needs attention: Workers AI unavailable.',
+    );
   });
 
   it('shows evaluated recommendation without exposing evaluator ids', () => {

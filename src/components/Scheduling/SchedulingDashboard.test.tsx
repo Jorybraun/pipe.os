@@ -29,6 +29,7 @@ vi.mock('./InterviewCard', () => ({
     interview: Pick<ScheduledInterview, 'id' | 'createdAt'>;
     candidateName: string;
     candidateEmail?: string | null;
+    startAssessmentEvaluation?: (id: string) => Promise<unknown>;
   }) => (
     <div
       data-testid="interview-card"
@@ -37,6 +38,11 @@ vi.mock('./InterviewCard', () => ({
       data-candidate-email={props.candidateEmail ?? ''}
     >
       {props.candidateName}
+      <button
+        type="button"
+        aria-label={`Evaluate ${props.interview.id}`}
+        onClick={() => void props.startAssessmentEvaluation?.(props.interview.id)}
+      />
     </div>
   ),
 }));
@@ -78,14 +84,19 @@ function cardNames(): string[] {
   return screen.getAllByTestId('interview-card').map((card) => card.textContent ?? '');
 }
 
-function renderDashboard(interviews: ScheduledInterview[], initialEntry = '/interviews'): void {
+function renderDashboard(
+  interviews: ScheduledInterview[],
+  initialEntry = '/interviews',
+  options: { refetch?: () => Promise<void> } = {},
+): { refetch: () => Promise<void> } {
+  const refetch = options.refetch ?? vi.fn().mockResolvedValue(undefined);
   mocks.useScheduledInterviews.mockReturnValue({
     interviews,
     isLoading: false,
     error: null,
     updateStatus: vi.fn(),
     sendInvite: vi.fn(),
-    refetch: vi.fn(),
+    refetch,
   });
   mocks.useBookingNotifications.mockReturnValue({
     notifications: [],
@@ -98,6 +109,7 @@ function renderDashboard(interviews: ScheduledInterview[], initialEntry = '/inte
       <SchedulingDashboard />
     </MemoryRouter>,
   );
+  return { refetch };
 }
 
 describe('SchedulingDashboard interview ordering', () => {
@@ -173,6 +185,39 @@ describe('SchedulingDashboard interview ordering', () => {
     expect(card).toHaveTextContent('Hannah follow-up');
     expect(card).not.toHaveTextContent('First saved name');
     expect(card).toHaveAttribute('data-candidate-email', 'shared@example.com');
+  });
+
+  it('starts source-backed evaluation from a list card and refreshes interviews', async () => {
+    const refetch = vi.fn().mockResolvedValue(undefined);
+    mocks.api.post.mockResolvedValue({
+      progress: null,
+      diagnostic: null,
+      report: {
+        id: 'evaluation-report-1',
+        sessionId: 'assessment-session-1',
+        status: 'EVALUATED',
+        contextRecordId: null,
+      },
+    });
+
+    renderDashboard([
+      makeInterview({
+        id: 'ready-evaluation-interview',
+        createdAt: '2026-06-28T10:00:00.000Z',
+        recipientName: 'Ready evaluation',
+        interviewType: 'OPEN_SOURCE_BUG_FIX',
+      }),
+    ], '/interviews', { refetch });
+
+    fireEvent.click(screen.getByRole('button', { name: 'Evaluate ready-evaluation-interview' }));
+
+    expect(mocks.api.post).toHaveBeenCalledWith(
+      '/api/v1/scheduling/interviews/ready-evaluation-interview/assessment/start-evaluation',
+      {},
+    );
+    await Promise.resolve();
+    await Promise.resolve();
+    expect(refetch).toHaveBeenCalled();
   });
 
   it('opens the invite modal from a person next-action URL with prefilled context', () => {

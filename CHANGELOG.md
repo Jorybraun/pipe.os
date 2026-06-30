@@ -13,6 +13,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Fixed — Scheduling
 
+- Recruiter interview cards now expose an `EVALUATE` action for assessment sessions that have captured commit evidence and are ready for source-backed AI/human evaluation, using the same real evaluation endpoint as the detail page and refreshing the list afterward.
 - Interview cards now show a compact assessment decision state for assigned tasks, submitted commits, evaluator readiness, evaluated recommendations, and diagnostics so recruiters can understand the next action without opening every interview.
 - Interview cards now show the assigned open-source assessment task, repo/PR, and base commit from the source-backed challenge packet before candidate work starts, so recruiters can trust what was assigned without opening the full detail page.
 - Calendly invites now include stable Pipe interview tracking, keep provider links free of dev basic-auth credentials, resolve same-email bookings by tracking id, and record booking-confirmation emails separately from original invite delivery.

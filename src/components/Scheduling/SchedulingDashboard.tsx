@@ -1,4 +1,4 @@
-import { useEffect, useMemo, useRef, useState } from 'react';
+import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { useSearchParams } from 'react-router-dom';
 import { Calendar, UserPlus, X, CheckCircle2, XCircle } from 'lucide-react';
 import { useScheduledInterviews } from '../../hooks/useScheduledInterviews';
@@ -8,6 +8,7 @@ import { InterviewCard } from './InterviewCard';
 import { InviteCreationModal } from './InviteCreationModal';
 import { Skeleton } from '../ui/Skeleton';
 import type {
+  AssessmentProgressSnapshot,
   AssessmentSetupProjection,
   InterviewType,
   MeetingType,
@@ -35,6 +36,23 @@ interface InviteResponse {
   deliveredUrl?: string | null;
   provider?: string;
   emailError?: string;
+}
+
+interface StartAssessmentEvaluationResponse {
+  progress: AssessmentProgressSnapshot;
+  report?: {
+    id: string;
+    sessionId: string;
+    status: string;
+    contextRecordId: string | null;
+  } | null;
+  diagnostic?: {
+    id: string;
+    sessionId: string;
+    reportId: string | null;
+    code: string;
+    severity: string;
+  } | null;
 }
 
 export function resolveInviteCreationGuestLink(
@@ -237,6 +255,15 @@ export function SchedulingDashboard(): JSX.Element {
       }
     }
   }, [notifications, refetch]);
+
+  const startAssessmentEvaluation = useCallback(async (interviewId: string): Promise<StartAssessmentEvaluationResponse> => {
+    const result = await api.post<StartAssessmentEvaluationResponse>(
+      `/api/v1/scheduling/interviews/${interviewId}/assessment/start-evaluation`,
+      {},
+    );
+    await refetch();
+    return result;
+  }, [api, refetch]);
 
   // Group interviews by the selected recruiter view.
   const groupedInterviews = useMemo(() => {
@@ -507,6 +534,7 @@ export function SchedulingDashboard(): JSX.Element {
                       stageTitle={stageTitle}
                       updateStatus={updateStatus}
                       sendInvite={sendInvite}
+                      startAssessmentEvaluation={startAssessmentEvaluation}
                     />
                   );
                 })}
