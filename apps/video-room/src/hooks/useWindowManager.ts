@@ -4,11 +4,6 @@ export type WindowType =
   | 'video'
   | 'workspace'
   | 'chat'
-  | 'tasks'
-  | 'snippet'
-  | 'browser'
-  | 'notepad'
-  | 'paint'
   | 'terminal'
   | 'submission'
   | 'custom';
@@ -84,11 +79,6 @@ const DEFAULT_SIZES: Record<WindowType, { width: number; height: number }> = {
   video: { width: 480, height: 360 },
   workspace: { width: 800, height: 560 },
   chat: { width: 360, height: 440 },
-  tasks: { width: 420, height: 480 },
-  snippet: { width: 480, height: 320 },
-  browser: { width: 800, height: 560 },
-  notepad: { width: 520, height: 420 },
-  paint: { width: 640, height: 480 },
   terminal: { width: 640, height: 400 },
   submission: { width: 680, height: 560 },
   custom: { width: 400, height: 300 },

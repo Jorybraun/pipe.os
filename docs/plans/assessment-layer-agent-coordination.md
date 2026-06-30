@@ -110,7 +110,7 @@ OPEN_SOURCE_BUG_FIX scheduled interview
 
 ## Branch And Merge Protocol
 
-- Start from latest pushed `codex/video-room-paint-recording-fixes` or PR #104.
+- Start from the latest pushed core-assessment branch or PR #104.
 - Prefer separate branches for parallel work.
 - Do not edit another agent's owned files without first adding a short note to
   this document under "Coordination Notes".

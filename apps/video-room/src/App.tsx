@@ -47,16 +47,8 @@ import {
 import {
   buildCodeEditorOpenEvidence,
   buildCodeServerFileChangeEvidence,
-  buildWorkspaceStateDesktopEvent,
+  buildWorkspaceStateEvidence,
 } from './lib/workspaceEvidence';
-import {
-  buildWindowDataUpdateEvidence,
-  buildWindowLifecycleEvidence,
-  buildWindowStateUpdateEvidence,
-  type WindowDataSource,
-  type WindowLifecycleSource,
-  type WindowStateSource,
-} from './lib/windowEvidence';
 import {
   buildMediaControlEvidence,
   type MediaControlKind,
@@ -107,7 +99,7 @@ import {
 import { defaultRoomWindowConfigs } from './lib/defaultRoomWindows';
 import { useSessionEvents } from './hooks/useSessionEvents';
 import { API_BASE } from './lib/api';
-import type { OpenWindowConfig, WindowState, WindowStatePatch } from './hooks/useWindowManager';
+import type { OpenWindowConfig, WindowState } from './hooks/useWindowManager';
 import type {
   IceServerProvider,
   RecordingSpeakerMetadata,
@@ -260,11 +252,6 @@ function isSyntheticMedia(stream: MediaStream | null): boolean {
   return stream.getTracks().some((track) => /fake|synthetic|virtual/i.test(track.label));
 }
 
-function stringWindowData(win: WindowState, key: string): string {
-  const value = win.data?.[key];
-  return typeof value === 'string' ? value : '';
-}
-
 function mediaStatusLabel(state: Pick<RoomMediaControlState, 'microphoneEnabled' | 'cameraEnabled'>): string {
   const parts: string[] = [];
   if (state.microphoneEnabled === false) parts.push('mic off');
@@ -328,7 +315,6 @@ function Room({ token, metadata }: { token: string; metadata: RoomMetadata }): J
   }, [captureSessionEvent, initialRoomSurface, roomActor]);
   const room = useRoomConnection(token, metadata.role, enteredRoom, initialRoomSurface, {
     onChatDeliveryEvidence: captureChatDeliveryEvidence,
-    ignoreInitialRoomSurfaceSnapshot: true,
   });
   const publishTerminalEvent = room.publishTerminalEvent;
   const publishAgentInteractionEvent = room.publishAgentInteractionEvent;
@@ -358,7 +344,6 @@ function Room({ token, metadata }: { token: string; metadata: RoomMetadata }): J
   const recordingDisposeRef = useRef<(() => Promise<void>) | null>(null);
   const recordingSpeakerMetadataRef = useRef<RecordingSpeakerMetadata | null>(null);
   const autoAcceptingRef = useRef(false);
-  const processedWorkspaceEventsRef = useRef<Set<string>>(new Set());
   const endingRef = useRef(false);
   const deviceRequestRef = useRef(0);
   const callStartedRef = useRef(false);
@@ -437,7 +422,7 @@ function Room({ token, metadata }: { token: string; metadata: RoomMetadata }): J
       && !nextWorkspace.session
       && !options.errorMessage
     ) return;
-    const event = buildWorkspaceStateDesktopEvent({
+    const evidence = buildWorkspaceStateEvidence({
       workspace: nextWorkspace,
       actor: roomActor,
       source,
@@ -445,14 +430,14 @@ function Room({ token, metadata }: { token: string; metadata: RoomMetadata }): J
       fallbackRepoUrl: options.fallbackRepoUrl,
       errorMessage: options.errorMessage,
     });
-    const signatureEvent: Record<string, unknown> = { ...event };
-    delete signatureEvent.workspaceStateEventId;
-    delete signatureEvent.capturedAtMs;
-    const signature = JSON.stringify(signatureEvent);
+    const signatureProperties: Record<string, unknown> = { ...evidence.properties };
+    delete signatureProperties.workspaceStateEventId;
+    delete signatureProperties.capturedAtMs;
+    const signature = JSON.stringify(signatureProperties);
     if (publishedWorkspaceStateSignatureRef.current === signature) return;
     publishedWorkspaceStateSignatureRef.current = signature;
-    room.publishDesktopEvent(event);
-  }, [metadata.role, room.publishDesktopEvent, roomActor]);
+    captureSessionEvent('workspace_state', evidence.text, roomActor, evidence.properties);
+  }, [captureSessionEvent, metadata.role, roomActor]);
 
   useEffect(() => {
     const initialWorkspace = metadata.workspace ?? null;
@@ -590,166 +575,11 @@ function Room({ token, metadata }: { token: string; metadata: RoomMetadata }): J
     openDefaultRoomWindows();
   }, [enteredRoom, openDefaultRoomWindows]);
 
-  useEffect(() => {
-    if (!enteredRoom) return;
-    for (const event of room.desktopEvents.filter((entry) => entry.kind === 'WORKSPACE_STATE_CHANGED')) {
-      if (processedWorkspaceEventsRef.current.has(event.id)) continue;
-      processedWorkspaceEventsRef.current.add(event.id);
-      if (event.kind === 'WORKSPACE_STATE_CHANGED') {
-        void refreshWorkspace();
-      }
-    }
-  }, [enteredRoom, refreshWorkspace, room.desktopEvents]);
-
-  const openSharedWindow = useCallback((
+  const openLocalPanel = useCallback((
     config: OpenWindowConfig & { id: string },
-    lifecycleSource: WindowLifecycleSource = 'standard_assessment_ui',
   ): void => {
     wm.openWindow(config);
-    const capturedAtMs = Date.now();
-    const evidence = buildWindowLifecycleEvidence({
-      kind: 'open',
-      actor: roomActor,
-      windowId: config.id,
-      windowType: config.windowType,
-      windowTitle: config.title,
-      source: lifecycleSource,
-      surface: room.roomSurface,
-      roomPhase: room.phase,
-      capturedAtMs,
-    });
-    captureSessionEvent('window_open', evidence.text, roomActor, evidence.properties);
-  }, [captureSessionEvent, room.phase, room.roomSurface, roomActor, wm]);
-
-  const closeSharedWindow = useCallback((id: string): void => {
-    const win = wm.windows.find((entry) => entry.id === id);
-    wm.closeWindow(id);
-    const capturedAtMs = Date.now();
-    const evidence = buildWindowLifecycleEvidence({
-      kind: 'close',
-      actor: roomActor,
-      windowId: id,
-      windowType: win?.windowType ?? 'custom',
-      windowTitle: win?.title ?? id,
-      source: 'standard_assessment_ui',
-      surface: room.roomSurface,
-      roomPhase: room.phase,
-      capturedAtMs,
-    });
-    captureSessionEvent('window_close', evidence.text, roomActor, evidence.properties);
-  }, [captureSessionEvent, room.phase, room.roomSurface, roomActor, wm]);
-
-  const updateSharedWindowData = useCallback((
-    id: string,
-    data: Partial<Record<string, unknown>>,
-    options?: {
-      browserNavigationTrigger?: BrowserNavigationTrigger;
-      windowDataSource?: WindowDataSource;
-    },
-  ): void => {
-    wm.updateWindowData(id, data);
-    const currentUrl = data.currentUrl;
-    const capturedAtMs = Date.now();
-    const navigationEvidence = typeof currentUrl === 'string'
-      ? buildBrowserNavigationEvidence({
-          actor: roomActor,
-          windowId: id,
-          url: currentUrl,
-          trigger: options?.browserNavigationTrigger ?? 'shared_state_sync',
-          surface: room.roomSurface,
-          roomPhase: room.phase,
-          capturedAtMs,
-        })
-      : null;
-    const dataEvidence = navigationEvidence
-      ? null
-      : buildWindowDataUpdateEvidence({
-          actor: roomActor,
-          windowId: id,
-          data,
-          dataSource: options?.windowDataSource,
-          surface: room.roomSurface,
-          roomPhase: room.phase,
-          capturedAtMs,
-        });
-    if (navigationEvidence) {
-      captureSessionEvent('browser_navigation', navigationEvidence.text, roomActor, navigationEvidence.properties);
-    }
-  }, [captureSessionEvent, room, roomActor, wm]);
-
-  const publishSharedWindowState = useCallback((
-    id: string,
-    patch: WindowStatePatch,
-    stateSource: WindowStateSource = 'standard_assessment_ui',
-  ): void => {
-    const capturedAtMs = Date.now();
-    const evidence = buildWindowStateUpdateEvidence({
-      actor: roomActor,
-      windowId: id,
-      patch: { ...patch },
-      source: stateSource,
-      surface: room.roomSurface,
-      roomPhase: room.phase,
-      capturedAtMs,
-    });
-    if (evidence) {
-      captureSessionEvent('window_update', evidence.text, roomActor, evidence.properties);
-    }
-  }, [captureSessionEvent, room.phase, room.roomSurface, roomActor]);
-
-  const focusSharedWindow = useCallback((
-    id: string,
-    stateSource: WindowStateSource = 'standard_assessment_ui',
-  ): void => {
-    wm.focusWindow(id);
-    publishSharedWindowState(id, { focused: true, minimized: false }, stateSource);
-  }, [publishSharedWindowState, wm]);
-
-  const minimizeSharedWindow = useCallback((
-    id: string,
-    stateSource: WindowStateSource = 'standard_assessment_ui',
-  ): void => {
-    wm.minimizeWindow(id);
-    publishSharedWindowState(id, { minimized: true, focused: false }, stateSource);
-  }, [publishSharedWindowState, wm]);
-
-  const restoreSharedWindow = useCallback((
-    id: string,
-    stateSource: WindowStateSource = 'standard_assessment_ui',
-  ): void => {
-    wm.restoreWindow(id);
-    publishSharedWindowState(id, { minimized: false, focused: true }, stateSource);
-  }, [publishSharedWindowState, wm]);
-
-  const maximizeSharedWindow = useCallback((id: string): void => {
-    const win = wm.windows.find((entry) => entry.id === id);
-    if (!win) return;
-    const patch: WindowStatePatch = win.maximized
-      ? {
-          maximized: false,
-          x: win.prevX ?? win.x,
-          y: win.prevY ?? win.y,
-          width: win.prevWidth ?? win.width,
-          height: win.prevHeight ?? win.height,
-          focused: true,
-          minimized: false,
-        }
-      : {
-          maximized: true,
-          focused: true,
-          minimized: false,
-        };
-    wm.toggleMaximize(id);
-    publishSharedWindowState(id, patch);
-  }, [publishSharedWindowState, wm]);
-
-  const moveSharedWindow = useCallback((id: string, x: number, y: number): void => {
-    wm.moveWindow(id, x, y);
   }, [wm]);
-
-  const publishSharedWindowMove = useCallback((id: string, x: number, y: number): void => {
-    publishSharedWindowState(id, { x, y });
-  }, [publishSharedWindowState]);
 
   const startRecording = useCallback(async (): Promise<void> => {
     if (
@@ -1465,7 +1295,7 @@ function Room({ token, metadata }: { token: string; metadata: RoomMetadata }): J
       ? 'Preparing devices'
       : 'Enter room';
   const joinButtonHint = hasDeviceError
-    ? 'Camera and microphone are unavailable here. You can still enter, chat, share desktop state, and retry devices later.'
+    ? 'Camera and microphone are unavailable here. You can still enter, chat, use the workspace, and retry devices later.'
     : isDeviceChecking
       ? 'Preparing your camera and microphone preview.'
       : 'You will enter the private room with camera and microphone ready.';
@@ -1634,9 +1464,9 @@ function Room({ token, metadata }: { token: string; metadata: RoomMetadata }): J
     });
   };
 
-  const openWorkspaceWindow = (lifecycleSource: WindowLifecycleSource = 'standard_assessment_ui'): void => {
+  const openWorkspaceWindow = (): void => {
     if (!showWorkspacePanel) return;
-    openSharedWindow({
+    openLocalPanel({
       id: 'workspace',
       windowType: 'workspace',
       title: workspace?.repoUrl ?? 'VS Code',
@@ -1644,7 +1474,7 @@ function Room({ token, metadata }: { token: string; metadata: RoomMetadata }): J
       y: 80,
       width: 800,
       height: 500,
-    }, lifecycleSource);
+    });
   };
 
   const openBrowserWindow = (url = ''): void => {
@@ -1665,8 +1495,8 @@ function Room({ token, metadata }: { token: string; metadata: RoomMetadata }): J
     }
   };
 
-  const openTerminalWindow = (lifecycleSource: WindowLifecycleSource = 'standard_assessment_ui'): void => {
-    openSharedWindow({
+  const openTerminalWindow = (): void => {
+    openLocalPanel({
       id: 'terminal',
       windowType: 'terminal',
       title: 'Container terminal',
@@ -1674,11 +1504,11 @@ function Room({ token, metadata }: { token: string; metadata: RoomMetadata }): J
       y: 80,
       width: 640,
       height: 400,
-    }, lifecycleSource);
+    });
   };
 
-  const openSubmissionWindow = (lifecycleSource: WindowLifecycleSource = 'standard_assessment_ui'): void => {
-    openSharedWindow({
+  const openSubmissionWindow = (): void => {
+    openLocalPanel({
       id: 'submission',
       windowType: 'submission',
       title: 'Submit Work',
@@ -1686,7 +1516,7 @@ function Room({ token, metadata }: { token: string; metadata: RoomMetadata }): J
       y: 70,
       width: 680,
       height: 560,
-    }, lifecycleSource);
+    });
   };
 
   const captureAgentAction = (
@@ -1747,20 +1577,20 @@ function Room({ token, metadata }: { token: string; metadata: RoomMetadata }): J
         break;
       case 'launch-workspace':
         if (!captureAgentAction(actionId, `${actorLabel} action: launch workspace`, actionEvidence)) return;
-        openWorkspaceWindow('agent_action');
+        openWorkspaceWindow();
         void launchWorkspace();
         break;
       case 'open-workspace':
         if (!captureAgentAction(actionId, `${actorLabel} action: open workspace`, actionEvidence)) return;
-        openWorkspaceWindow('agent_action');
+        openWorkspaceWindow();
         break;
       case 'open-terminal':
         if (!captureAgentAction(actionId, `${actorLabel} action: open terminal`, actionEvidence)) return;
-        openTerminalWindow('agent_action');
+        openTerminalWindow();
         break;
       case 'open-submission':
         if (!captureAgentAction(actionId, `${actorLabel} action: open submission`, actionEvidence)) return;
-        openSubmissionWindow('agent_action');
+        openSubmissionWindow();
         break;
       case 'open-browser':
         if (!captureAgentAction(actionId, `${actorLabel} action: open browser`, actionEvidence)) return;
@@ -1777,7 +1607,7 @@ function Room({ token, metadata }: { token: string; metadata: RoomMetadata }): J
       'Assistant action: open terminal for Devin authentication',
       { origin: 'prompt' },
     )) return;
-    openTerminalWindow('agent_action');
+    openTerminalWindow();
     queuedTerminalCommandRequestRef.current += 1;
     setQueuedTerminalCommand(DEVIN_AUTH_TERMINAL_COMMAND);
     setQueuedTerminalCommandRequest(queuedTerminalCommandRequestRef.current);
@@ -1976,8 +1806,8 @@ function Room({ token, metadata }: { token: string; metadata: RoomMetadata }): J
       canLaunchWorkspace={canLaunchWorkspace}
       assessmentProgress={assessmentProgress}
       onLaunchWorkspace={() => void launchWorkspace()}
-      onOpenWorkspace={() => openWorkspaceWindow('standard_assessment_ui')}
-      onOpenSubmission={() => openSubmissionWindow('standard_assessment_ui')}
+      onOpenWorkspace={() => openWorkspaceWindow()}
+      onOpenSubmission={() => openSubmissionWindow()}
     />
   );
 
@@ -1987,8 +1817,8 @@ function Room({ token, metadata }: { token: string; metadata: RoomMetadata }): J
       workspace={workspace}
       progress={assessmentProgress}
       workspaceReady={hasActiveWorkspace}
-      onOpenWorkspace={() => openWorkspaceWindow('standard_assessment_ui')}
-      onOpenSubmission={() => openSubmissionWindow('standard_assessment_ui')}
+      onOpenWorkspace={() => openWorkspaceWindow()}
+      onOpenSubmission={() => openSubmissionWindow()}
     />
   );
 

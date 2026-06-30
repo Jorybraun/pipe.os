@@ -212,7 +212,7 @@ export function buildAgentUiActionEvidence(input: {
         ? 'agent_call_controls_ui'
         : 'agent_prompt_ui';
   const actionSource = input.origin === 'tray'
-    ? 'assessment_taskbar_tray'
+    ? 'assessment_agent_tray'
     : input.origin === 'chat'
       ? 'agent_chat_window'
       : input.origin === 'call'

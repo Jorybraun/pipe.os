@@ -100,7 +100,7 @@ describe('StandardLayout', () => {
     expect(screen.getByTestId('standard-assessment-aside').textContent).toContain('source-backed task brief');
   });
 
-  it('does not expose a legacy desktop control', () => {
+  it('does not expose a decorative shell control', () => {
     render(
       <StandardLayout
         wm={makeWindowManager()}
@@ -108,6 +108,6 @@ describe('StandardLayout', () => {
       />,
     );
 
-    expect(screen.queryByRole('button', { name: /legacy desktop/i })).toBeNull();
+    expect(screen.queryByRole('button', { name: /decorative shell/i })).toBeNull();
   });
 });

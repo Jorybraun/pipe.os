@@ -80,8 +80,6 @@ const ROOM_ACTIONS = {
   'open-workspace': { label: 'Open Workspace', aliases: ['open workspace', 'workspace', 'editor', 'code server', 'code-server'] },
   'launch-workspace': { label: 'Launch Workspace', aliases: ['launch workspace', 'start workspace', 'launch container'] },
   'open-files': { label: 'Open Files', aliases: ['open files', 'files', 'file manager', 'explorer'] },
-  'open-notepad': { label: 'Open Notepad', aliases: ['open notepad', 'notepad', 'notes'] },
-  'open-paint': { label: 'Open Paint', aliases: ['open paint', 'paint', 'ms paint', 'mspaint'] },
   'start-recording': { label: 'Start Recording', aliases: ['start recording', 'record interview', 'begin recording'] },
 };
 

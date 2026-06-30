@@ -1358,7 +1358,7 @@ export class RepoTaskInterviewSessionStore {
     const hasToolUsageEvidence = hasEventKind(evidenceCounts, ['tool_usage'])
       || hasEventKind(sourceRefCounts, [
         'room_surface_change',
-        'assessment_start_menu_state',
+        'assessment_layout_menu_state',
         'room_browser_navigation',
         'room_window_lifecycle',
         'room_window_data_update',

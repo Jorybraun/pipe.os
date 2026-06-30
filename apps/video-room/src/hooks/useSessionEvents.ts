@@ -17,7 +17,6 @@ export type SessionEventType =
   | 'cursor_presence'
   | 'media_control'
   | 'room_surface_change'
-  | 'desktop_menu_toggle'
   | 'workspace_state'
   | 'agent_prompt'
   | 'agent_action'

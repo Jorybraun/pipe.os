@@ -238,7 +238,7 @@ describe('stale Workers AI candidate-ingestion retry', () => {
       },
     });
     const env = buildEnv(db, fakeStorage(
-      'Staff frontend engineer building dev container interviews, synchronized desktop tools, and evidence-backed tests.',
+      'Staff frontend engineer building dev container interviews, synchronized layout tools, and evidence-backed tests.',
     ));
 
     await expect(maybeQueueRetryableStandaloneIngestion(env, null, 'stalled')).resolves.toMatchObject({
@@ -267,7 +267,7 @@ describe('stale Workers AI candidate-ingestion retry', () => {
     });
     expect(runCandidateIngestion).toHaveBeenCalledWith(expect.objectContaining({
       candidateId: 'stalled',
-      resumeText: expect.stringContaining('synchronized desktop tools'),
+      resumeText: expect.stringContaining('synchronized layout tools'),
     }));
   });
 

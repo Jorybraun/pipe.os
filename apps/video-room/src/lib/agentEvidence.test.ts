@@ -31,7 +31,7 @@ describe('agent evidence', () => {
         actionId: 'open-agent-chat',
         origin: 'tray',
         executedBy: 'guest',
-        actionSource: 'assessment_taskbar_tray',
+        actionSource: 'assessment_agent_tray',
         executionStatus: 'opened',
         capturedAtMs: 1782594000000,
         agentActionEventId: 'agent-action:guest:1782594000000:agent_tray_ui:tray:opened:open-agent-chat',

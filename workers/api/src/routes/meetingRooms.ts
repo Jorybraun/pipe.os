@@ -118,11 +118,11 @@ const AGENT_PROMPT_FINGERPRINT_RE = /^(?:agent|agent)_[a-f0-9]{8}$/;
 const BROWSER_PROMPT_ID_RE = /^[a-zA-Z0-9:_-]+:(host|guest):prompt:\d+:(?:agent|agent)_[a-f0-9]{8}$/;
 const ROOM_SURFACES = new Set(['standard', 'assessment']);
 const WINDOW_LIFECYCLE_SOURCES = new Set([
-  'assessment_desktop_ui',
+  'assessment_layout_ui',
   'assessment_file_system',
-  'assessment_start_menu',
+  'assessment_layout_menu',
   'assessment_window_chrome',
-  'assessment_taskbar',
+  'assessment_agent_tray',
   'standard_assessment_ui',
   'agent_action',
   'shared_state_sync',
@@ -138,13 +138,13 @@ const WINDOW_STATE_ACTIONS = new Set([
   'update',
 ]);
 const WINDOW_STATE_SOURCES = new Set([
-  'assessment_desktop_ui',
-  'assessment_start_menu',
+  'assessment_layout_ui',
+  'assessment_layout_menu',
   'assessment_window_chrome',
-  'assessment_taskbar',
+  'assessment_agent_tray',
 ]);
 const WINDOW_STATE_KEYS = new Set(['x', 'y', 'width', 'height', 'minimized', 'maximized', 'focused']);
-const WINDOW_DATA_ACTIONS = new Set(['edit_text', 'edit_paint', 'update_data']);
+const WINDOW_DATA_ACTIONS = new Set(['edit_text', 'edit_diagram', 'update_data']);
 const WINDOW_DATA_SOURCES = new Set(['assessment_window_data_sync', 'assessment_file_delete_sync']);
 const CHAT_DELIVERY_STATUSES = new Set(['pending', 'accepted', 'rejected']);
 const AGENT_UI_SOURCES = new Set(['agent_tray_ui', 'agent_prompt_ui', 'agent_chat_ui']);
@@ -172,11 +172,11 @@ const CURSOR_PRESENCE_SAMPLE_INTERVAL_MS = 15_000;
 const CURSOR_PRESENCE_MOVEMENT_THRESHOLD = 0.03;
 const CURSOR_SAMPLE_ID_RE = /^cursor:(host|guest):\d+:\d+:\d+$/;
 const START_MENU_EVENT_SOURCES = new Set([
-  'assessment_start_button',
-  'assessment_desktop_click',
-  'assessment_start_menu_item',
+  'assessment_layout_button',
+  'assessment_layout_click',
+  'assessment_layout_menu_item',
 ]);
-const START_MENU_EVENT_ID_RE = /^start-menu:(host|guest):\d+:(open|close):[a-z0-9_]+$/;
+const START_MENU_EVENT_ID_RE = /^layout-menu:(host|guest):\d+:(open|close):[a-z0-9_]+$/;
 const MEDIA_CONTROL_ID_RE = /^media:(host|guest):(microphone|camera):\d+:(enabled|disabled)$/;
 const CODE_SERVER_SAVE_ACTIONS = new Set(['created', 'modified']);
 const SURFACE_CHANGE_ID_RE = /^surface:(host|guest):\d+:(standard|assessment):(standard|assessment)$/;
@@ -251,7 +251,7 @@ const sessionEventSchema = z.object({
     'cursor_presence',
     'media_control',
     'room_surface_change',
-    'desktop_menu_toggle',
+    'layout_menu_toggle',
     'workspace_state',
     'participant_join',
     'participant_leave',
@@ -333,7 +333,7 @@ const sessionEventSchema = z.object({
       if (actorOk && fileChangeIdOk && sharedOk && (upsertOk || deleteOk)) return;
       ctx.addIssue({
         code: z.ZodIssueCode.custom,
-        message: 'legacy desktop file-change evidence must include browser source, actor-bound file-change id, capture timestamp, file identity, operation, content hash, and file timestamps.',
+        message: 'legacy layout file-change evidence must include browser source, actor-bound file-change id, capture timestamp, file identity, operation, content hash, and file timestamps.',
         path: ['properties'],
       });
       return;
@@ -578,7 +578,7 @@ const sessionEventSchema = z.object({
     const surfacesOk = hasRoomSurface(properties.surface)
       && hasRoomSurface(properties.previousSurface)
       && properties.surface !== properties.previousSurface;
-    const expectedAction = properties.surface === 'assessment' ? 'enter_desktop' : 'exit_desktop';
+    const expectedAction = properties.surface === 'assessment' ? 'enter_assessment' : 'exit_assessment';
     const actionOk = properties.action === expectedAction;
     const roomPhaseOk = hasString(properties.roomPhase);
     const capturedAtMs = properties.capturedAtMs;
@@ -598,8 +598,8 @@ const sessionEventSchema = z.object({
     });
     return;
   }
-  if (event.type === 'desktop_menu_toggle') {
-    const sourceOk = properties.source === 'assessment_start_menu_control';
+  if (event.type === 'layout_menu_toggle') {
+    const sourceOk = properties.source === 'assessment_layout_menu_control';
     const actorOk = (event.actor === 'host' || event.actor === 'guest')
       && properties.actor === event.actor;
     const eventSource = properties.menuEventSource;
@@ -609,22 +609,22 @@ const sessionEventSchema = z.object({
     const menuOk = properties.menuId === 'start' && typeof open === 'boolean';
     const actionOk = expectedAction !== null
       && properties.action === expectedAction
-      && event.text === (open ? 'Start menu opened' : 'Start menu closed');
+      && event.text === (open ? 'layout menu opened' : 'layout menu closed');
     const capturedAtMs = properties.capturedAtMs;
-    const startMenuEventId = properties.startMenuEventId;
-    const idOk = typeof startMenuEventId === 'string'
-      && START_MENU_EVENT_ID_RE.test(startMenuEventId)
+    const layoutMenuEventId = properties.layoutMenuEventId;
+    const idOk = typeof layoutMenuEventId === 'string'
+      && START_MENU_EVENT_ID_RE.test(layoutMenuEventId)
       && typeof capturedAtMs === 'number'
       && Number.isInteger(capturedAtMs)
       && capturedAtMs >= 0
-      && startMenuEventId === `start-menu:${event.actor}:${capturedAtMs}:${expectedAction}:${eventSource}`;
+      && layoutMenuEventId === `layout-menu:${event.actor}:${capturedAtMs}:${expectedAction}:${eventSource}`;
     const contextOk = properties.surface === 'assessment'
       && hasString(properties.roomPhase)
       && properties.durableObjectReplayExpected === true;
     if (sourceOk && actorOk && eventSourceOk && menuOk && actionOk && idOk && contextOk) return;
     ctx.addIssue({
       code: z.ZodIssueCode.custom,
-      message: 'Start menu evidence must come from a legacy desktop desktop menu control with actor, source, stable event id, timestamp, action, surface, replay expectation, and room phase.',
+      message: 'layout menu evidence must come from a legacy layout layout menu control with actor, source, stable event id, timestamp, action, surface, replay expectation, and room phase.',
       path: ['properties'],
     });
     return;
@@ -739,7 +739,7 @@ const sessionEventSchema = z.object({
       && hasString(properties.roomPhase);
     if (typeof source === 'string' && AGENT_UI_SOURCES.has(source)) {
       const originOk = source === 'agent_tray_ui'
-        ? properties.origin === 'tray' && properties.actionSource === 'assessment_taskbar_tray'
+        ? properties.origin === 'tray' && properties.actionSource === 'assessment_agent_tray'
         : source === 'agent_chat_ui'
           ? properties.origin === 'chat' && properties.actionSource === 'agent_chat_window'
           : properties.origin === 'prompt' && properties.actionSource === 'agent_prompt_ui';
@@ -1033,7 +1033,7 @@ const sessionEventSchema = z.object({
     const sourceOk = properties.source === 'assessment_cursor_presence_client_sample';
     const actorOk = (event.actor === 'host' || event.actor === 'guest')
       && properties.actor === event.actor;
-    const eventSourceOk = properties.cursorEventSource === 'browser_assessment_desktop_pointermove';
+    const eventSourceOk = properties.cursorEventSource === 'browser_assessment_room_pointermove';
     const contextOk = properties.surface === 'assessment' && hasString(properties.roomPhase);
     const x = properties.normalizedX;
     const y = properties.normalizedY;
@@ -1075,7 +1075,7 @@ const sessionEventSchema = z.object({
     ) return;
     ctx.addIssue({
       code: z.ZodIssueCode.custom,
-      message: 'Cursor presence evidence must be an actor-bound sampled legacy desktop browser cursor event with stable sample provenance.',
+      message: 'Cursor presence evidence must be an actor-bound sampled legacy layout browser cursor event with stable sample provenance.',
       path: ['properties'],
     });
   }

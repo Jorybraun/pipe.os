@@ -344,7 +344,7 @@ class HarnessOrchestrator:
             {
                 "name": "cargo_clippy",
                 "type": "command",
-                "description": "Clippy warnings resolved",
+                "description": "assistant warnings resolved",
                 "cmd": ["cargo", "clippy", "--", "-D", "warnings"],
                 "timeout": 180,
                 "optional": True,

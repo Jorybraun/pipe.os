@@ -350,7 +350,7 @@ describe('sessionEvents', () => {
       }
     });
 
-    it('preserves exact legacy desktop text file content as source refs', async () => {
+    it('preserves exact legacy layout text file content as source refs', async () => {
       const { sqlite, db: realDb } = createSessionEvidenceDb();
       try {
         const exactText = 'Candidate identified retry bug evidence.\nAdd a failing replay test first.';
@@ -364,10 +364,10 @@ describe('sessionEvents', () => {
           properties: {
             source: 'assessment_shared_file_system',
             fileEventSource: 'browser_client_submit',
-            fileChangeId: 'file:guest:1782604300000:upsert:notepad',
+            fileChangeId: 'file:guest:1782604300000:upsert:notes',
             actor: 'guest',
             operation: 'upsert',
-            fileId: 'notepad',
+            fileId: 'notes',
             fileName: 'notes.txt',
             fileKind: 'text',
             surface: 'assessment',
@@ -402,7 +402,7 @@ describe('sessionEvents', () => {
 
         expect(contextSource).toMatchObject({
           source_ref_type: 'room_file_content',
-          source_ref_id: `${node!.id}:upsert:notepad`,
+          source_ref_id: `${node!.id}:upsert:notes`,
           evidence_role: 'file_content',
           exact_text: exactText,
           content_hash: await sha256Hex(exactText),
@@ -411,9 +411,9 @@ describe('sessionEvents', () => {
           sessionId: 'meeting-session-file-content',
           candidateId: 'cand-assessment',
           candidateNodeId: node!.id,
-          fileId: 'notepad',
+          fileId: 'notes',
           fileName: 'notes.txt',
-          fileChangeId: 'file:guest:1782604300000:upsert:notepad',
+          fileChangeId: 'file:guest:1782604300000:upsert:notes',
           operation: 'upsert',
         });
 
@@ -430,7 +430,7 @@ describe('sessionEvents', () => {
         } | undefined;
         expect(assessmentSource).toMatchObject({
           source_ref_type: 'room_file_content',
-          source_ref_id: `${node!.id}:upsert:notepad`,
+          source_ref_id: `${node!.id}:upsert:notes`,
           evidence_role: 'file_content',
           exact_text: exactText,
           content_hash: await sha256Hex(exactText),
@@ -448,7 +448,7 @@ describe('sessionEvents', () => {
         } | undefined;
         expect(fileEntity).toMatchObject({
           entity_type: 'room_file',
-          entity_id: 'notepad',
+          entity_id: 'notes',
           relationship: 'affected_file',
         });
         expect(JSON.parse(fileEntity?.metadata_json ?? '{}')).toMatchObject({
@@ -461,26 +461,26 @@ describe('sessionEvents', () => {
       }
     });
 
-    it('preserves exact legacy desktop drawing JSON as source refs without requiring previews', async () => {
+    it('preserves exact legacy layout drawing JSON as source refs without requiring previews', async () => {
       const { sqlite, db: realDb } = createSessionEvidenceDb();
       try {
         const exactJson = '[{"kind":"rectangle","start":{"x":1,"y":2},"end":{"x":3,"y":4}}]';
         const event: SessionEvent = {
           type: 'file_change',
-          sessionId: 'meeting-session-paint-content',
+          sessionId: 'meeting-session-diagram-content',
           candidateId: 'cand-assessment',
           timestamp: 1782604310,
           actor: 'host',
-          text: 'Sketch.pipe-paint',
+          text: 'Sketch.pipe-diagram',
           properties: {
             source: 'assessment_shared_file_system',
             fileEventSource: 'browser_client_submit',
-            fileChangeId: 'file:host:1782604310000:upsert:paint',
+            fileChangeId: 'file:host:1782604310000:upsert:diagram',
             actor: 'host',
             operation: 'upsert',
-            fileId: 'paint',
-            fileName: 'Sketch.pipe-paint',
-            fileKind: 'paint',
+            fileId: 'diagram',
+            fileName: 'Sketch.pipe-diagram',
+            fileKind: 'diagram',
             surface: 'assessment',
             roomPhase: 'connected',
             capturedAtMs: 1782604310000,
@@ -513,23 +513,23 @@ describe('sessionEvents', () => {
 
         expect(contextSource).toMatchObject({
           source_ref_type: 'room_file_content',
-          source_ref_id: `${node!.id}:upsert:paint`,
+          source_ref_id: `${node!.id}:upsert:diagram`,
           evidence_role: 'file_content',
           exact_text: exactJson,
           content_hash: await sha256Hex(exactJson),
         });
         expect(JSON.parse(contextSource?.locator_json ?? '{}')).toMatchObject({
-          sessionId: 'meeting-session-paint-content',
+          sessionId: 'meeting-session-diagram-content',
           candidateId: 'cand-assessment',
           candidateNodeId: node!.id,
-          fileId: 'paint',
-          fileName: 'Sketch.pipe-paint',
-          fileChangeId: 'file:host:1782604310000:upsert:paint',
+          fileId: 'diagram',
+          fileName: 'Sketch.pipe-diagram',
+          fileChangeId: 'file:host:1782604310000:upsert:diagram',
           operation: 'upsert',
         });
         expect(JSON.parse(contextSource?.metadata_json ?? '{}')).toMatchObject({
-          sourceKind: 'assessment_shared_file_system.paint_content',
-          fileKind: 'paint',
+          sourceKind: 'assessment_shared_file_system.diagram_content',
+          fileKind: 'diagram',
           operation: 'upsert',
           exactContentKey: 'contentExactJson',
         });
@@ -548,13 +548,13 @@ describe('sessionEvents', () => {
         } | undefined;
         expect(assessmentSource).toMatchObject({
           source_ref_type: 'room_file_content',
-          source_ref_id: `${node!.id}:upsert:paint`,
+          source_ref_id: `${node!.id}:upsert:diagram`,
           evidence_role: 'file_content',
           exact_text: exactJson,
           content_hash: await sha256Hex(exactJson),
         });
         expect(JSON.parse(assessmentSource?.metadata_json ?? '{}')).toMatchObject({
-          sourceKind: 'assessment_shared_file_system.paint_content',
+          sourceKind: 'assessment_shared_file_system.diagram_content',
           exactContentKey: 'contentExactJson',
         });
       } finally {
@@ -1364,7 +1364,7 @@ describe('sessionEvents', () => {
               actionId: 'open-agent-chat',
               origin: 'tray',
               executedBy: 'guest',
-              actionSource: 'assessment_taskbar_tray',
+              actionSource: 'assessment_agent_tray',
               executionStatus: 'opened',
               capturedAtMs: 1782604700000,
               agentActionEventId: trayOpenId,
@@ -1487,7 +1487,7 @@ describe('sessionEvents', () => {
       }
     });
 
-    it('preserves source-backed desktop, video, and workspace activity as direct source refs', async () => {
+    it('preserves source-backed layout, video, and workspace activity as direct source refs', async () => {
       const { sqlite, db: realDb } = createSessionEvidenceDb();
       try {
         const events: SessionEvent[] = [
@@ -1506,26 +1506,26 @@ describe('sessionEvents', () => {
               capturedAtMs: 1782604800000,
               previousSurface: 'standard',
               surface: 'assessment',
-              action: 'enter_desktop',
+              action: 'enter_assessment',
               roomPhase: 'connected',
               durableObjectReplayExpected: true,
             },
           },
           {
-            type: 'desktop_menu_toggle',
+            type: 'layout_menu_toggle',
             sessionId: 'meeting-session-room-activity',
             candidateId: 'cand-assessment',
             timestamp: 1782604801,
             actor: 'guest',
-            text: 'Start menu opened',
+            text: 'layout menu opened',
             properties: {
-              source: 'assessment_start_menu_control',
-              menuEventSource: 'assessment_start_button',
+              source: 'assessment_layout_menu_control',
+              menuEventSource: 'assessment_layout_button',
               actor: 'guest',
               menuId: 'start',
               action: 'open',
               open: true,
-              startMenuEventId: 'start-menu:guest:1782604801000:open:assessment_start_button',
+              layoutMenuEventId: 'layout-menu:guest:1782604801000:open:assessment_layout_button',
               capturedAtMs: 1782604801000,
               surface: 'assessment',
               roomPhase: 'connected',
@@ -1562,16 +1562,16 @@ describe('sessionEvents', () => {
             candidateId: 'cand-assessment',
             timestamp: 1782604803,
             actor: 'guest',
-            text: 'Notepad',
+            text: 'Notes',
             properties: {
               source: 'window_lifecycle_client_submit',
               lifecycleSource: 'assessment_file_system',
               lifecycleKind: 'open',
               actor: 'guest',
-              windowId: 'notepad',
-              windowType: 'notepad',
-              windowTitle: 'Notepad',
-              windowLifecycleId: 'window-lifecycle:guest:1782604803000:open:notepad',
+              windowId: 'notes',
+              windowType: 'notes',
+              windowTitle: 'Notes',
+              windowLifecycleId: 'window-lifecycle:guest:1782604803000:open:notes',
               capturedAtMs: 1782604803000,
               surface: 'assessment',
               roomPhase: 'connected',
@@ -1584,14 +1584,14 @@ describe('sessionEvents', () => {
             candidateId: 'cand-assessment',
             timestamp: 1782604804,
             actor: 'guest',
-            text: 'Window state updated: notepad',
+            text: 'Window state updated: notes',
             properties: {
               source: 'window_state_client_submit',
               stateSource: 'assessment_window_chrome',
               actor: 'guest',
-              windowId: 'notepad',
+              windowId: 'notes',
               action: 'move',
-              windowStateChangeId: 'window-state:guest:1782604804000:notepad:move',
+              windowStateChangeId: 'window-state:guest:1782604804000:notes:move',
               capturedAtMs: 1782604804000,
               surface: 'assessment',
               roomPhase: 'connected',
@@ -1606,14 +1606,14 @@ describe('sessionEvents', () => {
             candidateId: 'cand-assessment',
             timestamp: 1782604805,
             actor: 'guest',
-            text: 'Window data updated: notepad',
+            text: 'Window data updated: notes',
             properties: {
               source: 'window_data_client_submit',
               dataSource: 'assessment_window_data_sync',
               actor: 'guest',
-              windowId: 'notepad',
+              windowId: 'notes',
               action: 'edit_text',
-              windowDataUpdateId: 'window-data:guest:1782604805000:notepad:edit_text',
+              windowDataUpdateId: 'window-data:guest:1782604805000:notes:edit_text',
               capturedAtMs: 1782604805000,
               surface: 'assessment',
               roomPhase: 'connected',
@@ -1631,7 +1631,7 @@ describe('sessionEvents', () => {
             text: 'Guest cursor presence sampled in the assessment room',
             properties: {
               source: 'assessment_cursor_presence_client_sample',
-              cursorEventSource: 'browser_assessment_desktop_pointermove',
+              cursorEventSource: 'browser_assessment_room_pointermove',
               actor: 'guest',
               cursorSampleId: 'cursor:guest:1782604806000:420:610',
               sampledAtMs: 1782604806000,
@@ -1769,7 +1769,7 @@ describe('sessionEvents', () => {
         }
 
         const expectedRefs = [
-          ['assessment_start_menu_state', 'start-menu:guest:1782604801000:open:assessment_start_button', 'start_menu_opened'],
+          ['assessment_layout_menu_state', 'layout-menu:guest:1782604801000:open:assessment_layout_button', 'layout_menu_opened'],
           ['code_server_editor_open', 'code-editor-open:guest:1782604810000:workspace-session-1', 'code_editor_open'],
           ['dev_container_workspace_state', 'workspace-state:host:1782604809000:launch:workspace-session-1:READY', 'workspace_state'],
           ['room_browser_navigation', 'browser-navigation:guest:1782604802000:browser:go_button:nav_54d2c495', 'browser_navigation'],
@@ -1777,9 +1777,9 @@ describe('sessionEvents', () => {
           ['room_media_control', 'media:guest:microphone:1782604807000:disabled', 'microphone_disabled'],
           ['room_recording_state', 'recording:host:1782604808000:start:recording', 'recording_start'],
           ['room_surface_change', 'surface:host:1782604800000:standard:assessment', 'room_surface_transition'],
-          ['room_window_data_update', 'window-data:guest:1782604805000:notepad:edit_text', 'window_text_update'],
-          ['room_window_lifecycle', 'window-lifecycle:guest:1782604803000:open:notepad', 'window_open'],
-          ['room_window_state_change', 'window-state:guest:1782604804000:notepad:move', 'window_state_change'],
+          ['room_window_data_update', 'window-data:guest:1782604805000:notes:edit_text', 'window_text_update'],
+          ['room_window_lifecycle', 'window-lifecycle:guest:1782604803000:open:notes', 'window_open'],
+          ['room_window_state_change', 'window-state:guest:1782604804000:notes:move', 'window_state_change'],
         ];
 
         const sourceTypes = expectedRefs.map(([sourceRefType]) => `'${sourceRefType}'`).join(',');
@@ -1818,7 +1818,7 @@ describe('sessionEvents', () => {
         expect(JSON.parse(lifecycleSourcePayload?.exact_text ?? '{}')).toMatchObject({
           properties: {
             lifecycleSource: 'assessment_file_system',
-            windowId: 'notepad',
+            windowId: 'notes',
           },
         });
 
@@ -1841,7 +1841,7 @@ describe('sessionEvents', () => {
              FROM context_record_entities
             WHERE entity_type IN (
               'room_surface_change',
-              'start_menu_event',
+              'layout_menu_event',
               'room_browser_navigation',
               'room_window_lifecycle',
               'room_window_state_change',
@@ -1959,14 +1959,14 @@ describe('sessionEvents', () => {
           candidateId: 'cand-assessment',
           timestamp: 1782604900,
           actor: 'guest',
-          text: 'Window data updated: notepad',
+          text: 'Window data updated: notes',
           properties: {
             source: 'window_data_client_submit',
             dataSource: 'assessment_file_delete_sync',
             actor: 'guest',
-            windowId: 'notepad',
+            windowId: 'notes',
             action: 'edit_text',
-            windowDataUpdateId: 'window-data:guest:1782604900000:notepad:edit_text',
+            windowDataUpdateId: 'window-data:guest:1782604900000:notes:edit_text',
             capturedAtMs: 1782604900000,
             surface: 'assessment',
             roomPhase: 'connected',
@@ -1992,16 +1992,16 @@ describe('sessionEvents', () => {
         } | undefined;
         expect(contextSource).toMatchObject({
           source_ref_type: 'room_window_data_update',
-          source_ref_id: 'window-data:guest:1782604900000:notepad:edit_text',
+          source_ref_id: 'window-data:guest:1782604900000:notes:edit_text',
           evidence_role: 'window_text_update',
         });
         expect(contextSource?.content_hash).toBe(await sha256Hex(contextSource?.exact_text ?? ''));
         expect(JSON.parse(contextSource?.exact_text ?? '{}')).toMatchObject({
           sourceRefType: 'room_window_data_update',
-          sourceRefId: 'window-data:guest:1782604900000:notepad:edit_text',
+          sourceRefId: 'window-data:guest:1782604900000:notes:edit_text',
           properties: {
             dataSource: 'assessment_file_delete_sync',
-            windowId: 'notepad',
+            windowId: 'notes',
           },
         });
 
@@ -2175,7 +2175,7 @@ describe('sessionEvents', () => {
   describe('roomActivitySnapshotToSessionEvents', () => {
     it('converts durable room activity logs into source-backed session events', async () => {
       const events = await roomActivitySnapshotToSessionEvents({
-        desktopActivityLog: [
+        roomActivityLog: [
           {
             role: 'HOST',
             recordedAt: 1700000000000,
@@ -2186,7 +2186,7 @@ describe('sessionEvents', () => {
               kind: 'SET_ROOM_SURFACE',
               surface: 'assessment',
               previousSurface: 'standard',
-              action: 'enter_desktop',
+              action: 'enter_assessment',
               source: 'room_surface_control',
               surfaceControlEventSource: 'browser_room_surface_toggle',
               actor: 'host',
@@ -2200,19 +2200,19 @@ describe('sessionEvents', () => {
             role: 'GUEST',
             recordedAt: 1700000001300,
             event: {
-              id: 'evt-start-menu-open',
+              id: 'evt-layout-menu-open',
               clientId: 'guest-client',
               createdAt: 1700000001300,
               kind: 'START_MENU_STATE',
               open: true,
               evidence: {
-                source: 'assessment_start_menu_control',
-                menuEventSource: 'assessment_start_button',
+                source: 'assessment_layout_menu_control',
+                menuEventSource: 'assessment_layout_button',
                 actor: 'guest',
                 menuId: 'start',
                 action: 'open',
                 open: true,
-                startMenuEventId: 'start-menu:guest:1700000001300:open:assessment_start_button',
+                layoutMenuEventId: 'layout-menu:guest:1700000001300:open:assessment_layout_button',
                 capturedAtMs: 1700000001300,
                 surface: 'assessment',
                 roomPhase: 'connected',
@@ -2224,7 +2224,7 @@ describe('sessionEvents', () => {
             role: 'GUEST',
             recordedAt: 1700000001350,
             event: {
-              id: 'evt-source-less-start-menu',
+              id: 'evt-source-less-layout-menu',
               clientId: 'guest-client',
               createdAt: 1700000001350,
               kind: 'START_MENU_STATE',
@@ -2332,7 +2332,7 @@ describe('sessionEvents', () => {
               minimized: false,
               evidence: {
                 source: 'window_state_client_submit',
-                stateSource: 'assessment_taskbar',
+                stateSource: 'assessment_agent_tray',
                 actor: 'guest',
                 windowId: 'browser',
                 action: 'restore_or_focus',
@@ -2348,11 +2348,11 @@ describe('sessionEvents', () => {
             role: 'GUEST',
             recordedAt: 1700000002500,
             event: {
-              id: 'evt-notepad-data',
+              id: 'evt-notes-data',
               clientId: 'guest-client',
               createdAt: 1700000002500,
               kind: 'UPDATE_WINDOW_DATA',
-              windowId: 'notepad',
+              windowId: 'notes',
               data: {
                 text: 'Candidate writes a replay test plan.',
               },
@@ -2360,9 +2360,9 @@ describe('sessionEvents', () => {
                 source: 'window_data_client_submit',
                 dataSource: 'assessment_window_data_sync',
                 actor: 'guest',
-                windowId: 'notepad',
+                windowId: 'notes',
                 action: 'edit_text',
-                windowDataUpdateId: 'window-data:guest:1700000002500:notepad:edit_text',
+                windowDataUpdateId: 'window-data:guest:1700000002500:notes:edit_text',
                 capturedAtMs: 1700000002500,
                 surface: 'assessment',
                 roomPhase: 'connected',
@@ -2381,9 +2381,9 @@ describe('sessionEvents', () => {
               createdAt: 1700000002600,
               kind: 'OPEN_WINDOW',
               window: {
-                id: 'source-less-notepad',
-                windowType: 'notepad',
-                title: 'Source-less Notepad',
+                id: 'source-less-notes',
+                windowType: 'notes',
+                title: 'Source-less Notes',
               },
             },
           },
@@ -2574,7 +2574,7 @@ describe('sessionEvents', () => {
               updatedAt: 1700000002400,
               evidence: {
                 source: 'assessment_cursor_presence_client_sample',
-                cursorEventSource: 'browser_assessment_desktop_pointermove',
+                cursorEventSource: 'browser_assessment_room_pointermove',
                 actor: 'guest',
                 cursorSampleId: 'cursor:guest:1700000002400:420:610',
                 sampledAtMs: 1700000002400,
@@ -2868,7 +2868,7 @@ describe('sessionEvents', () => {
               createdAt: 1700000004000,
               kind: 'UPSERT_FILE',
               file: {
-                id: 'notepad',
+                id: 'notes',
                 name: 'notes.txt',
                 kind: 'text',
                 content: 'Candidate identified retry bug evidence.',
@@ -2879,10 +2879,10 @@ describe('sessionEvents', () => {
               evidence: {
                 source: 'assessment_shared_file_system',
                 fileEventSource: 'browser_client_submit',
-                fileChangeId: 'file:guest:1700000004000:upsert:notepad',
+                fileChangeId: 'file:guest:1700000004000:upsert:notes',
                 actor: 'guest',
                 operation: 'upsert',
-                fileId: 'notepad',
+                fileId: 'notes',
                 fileName: 'notes.txt',
                 fileKind: 'text',
                 surface: 'assessment',
@@ -2900,9 +2900,9 @@ describe('sessionEvents', () => {
               clientId: 'guest-client',
               createdAt: 1700000005000,
               kind: 'DELETE_FILE',
-              fileId: 'notepad',
+              fileId: 'notes',
               file: {
-                id: 'notepad',
+                id: 'notes',
                 name: 'notes.txt',
                 kind: 'text',
                 content: 'Candidate identified retry bug evidence.',
@@ -2913,10 +2913,10 @@ describe('sessionEvents', () => {
               evidence: {
                 source: 'assessment_shared_file_system',
                 fileEventSource: 'browser_client_submit',
-                fileChangeId: 'file:guest:1700000005000:delete:notepad',
+                fileChangeId: 'file:guest:1700000005000:delete:notes',
                 actor: 'guest',
                 operation: 'delete',
-                fileId: 'notepad',
+                fileId: 'notes',
                 fileName: 'notes.txt',
                 fileKind: 'text',
                 surface: 'assessment',
@@ -2930,14 +2930,14 @@ describe('sessionEvents', () => {
             role: 'GUEST',
             recordedAt: 1700000006000,
             event: {
-              id: 'fs-paint-save',
+              id: 'fs-diagram-save',
               clientId: 'guest-client',
               createdAt: 1700000006000,
               kind: 'UPSERT_FILE',
               file: {
-                id: 'paint',
-                name: 'Sketch.pipe-paint',
-                kind: 'paint',
+                id: 'diagram',
+                name: 'Sketch.pipe-diagram',
+                kind: 'diagram',
                 content: '[{"kind":"rectangle","start":{"x":1,"y":2},"end":{"x":3,"y":4}}]',
                 mimeType: 'application/json',
                 createdAt: 1700000006000,
@@ -2946,12 +2946,12 @@ describe('sessionEvents', () => {
               evidence: {
                 source: 'assessment_shared_file_system',
                 fileEventSource: 'browser_client_submit',
-                fileChangeId: 'file:guest:1700000006000:upsert:paint',
+                fileChangeId: 'file:guest:1700000006000:upsert:diagram',
                 actor: 'guest',
                 operation: 'upsert',
-                fileId: 'paint',
-                fileName: 'Sketch.pipe-paint',
-                fileKind: 'paint',
+                fileId: 'diagram',
+                fileName: 'Sketch.pipe-diagram',
+                fileKind: 'diagram',
                 surface: 'assessment',
                 roomPhase: 'connected',
                 capturedAtMs: 1700000006000,
@@ -2963,15 +2963,15 @@ describe('sessionEvents', () => {
             role: 'GUEST',
             recordedAt: 1700000007000,
             event: {
-              id: 'fs-paint-delete',
+              id: 'fs-diagram-delete',
               clientId: 'guest-client',
               createdAt: 1700000007000,
               kind: 'DELETE_FILE',
-              fileId: 'paint',
+              fileId: 'diagram',
               file: {
-                id: 'paint',
-                name: 'Sketch.pipe-paint',
-                kind: 'paint',
+                id: 'diagram',
+                name: 'Sketch.pipe-diagram',
+                kind: 'diagram',
                 content: '[{"kind":"rectangle","start":{"x":1,"y":2},"end":{"x":3,"y":4}}]',
                 mimeType: 'application/json',
                 createdAt: 1700000006000,
@@ -2980,12 +2980,12 @@ describe('sessionEvents', () => {
               evidence: {
                 source: 'assessment_shared_file_system',
                 fileEventSource: 'browser_client_submit',
-                fileChangeId: 'file:guest:1700000007000:delete:paint',
+                fileChangeId: 'file:guest:1700000007000:delete:diagram',
                 actor: 'guest',
                 operation: 'delete',
-                fileId: 'paint',
-                fileName: 'Sketch.pipe-paint',
-                fileKind: 'paint',
+                fileId: 'diagram',
+                fileName: 'Sketch.pipe-diagram',
+                fileKind: 'diagram',
                 surface: 'assessment',
                 roomPhase: 'connected',
                 capturedAtMs: 1700000007000,
@@ -3033,7 +3033,7 @@ describe('sessionEvents', () => {
             surfaceChangeId: 'surface:host:1700000000000:standard:assessment',
             surface: 'assessment',
             previousSurface: 'standard',
-            action: 'enter_desktop',
+            action: 'enter_assessment',
             roomPhase: 'connected',
             durableObjectReplayExpected: true,
           }),
@@ -3057,22 +3057,22 @@ describe('sessionEvents', () => {
           }),
         }),
         expect.objectContaining({
-          type: 'desktop_menu_toggle',
+          type: 'layout_menu_toggle',
           actor: 'guest',
-          text: 'Start menu opened',
+          text: 'layout menu opened',
           candidateId: 'cand-room',
           sessionId: 'meeting--room-sync',
           timestamp: 1700000001,
           properties: expect.objectContaining({
             roomActivitySource: 'durable_object',
-            roomActivityKind: 'desktop',
-            source: 'assessment_start_menu_control',
-            menuEventSource: 'assessment_start_button',
+            roomActivityKind: 'layout',
+            source: 'assessment_layout_menu_control',
+            menuEventSource: 'assessment_layout_button',
             actor: 'guest',
             menuId: 'start',
             action: 'open',
             open: true,
-            startMenuEventId: 'start-menu:guest:1700000001300:open:assessment_start_button',
+            layoutMenuEventId: 'layout-menu:guest:1700000001300:open:assessment_layout_button',
             capturedAtMs: 1700000001300,
             surface: 'assessment',
             roomPhase: 'connected',
@@ -3137,7 +3137,7 @@ describe('sessionEvents', () => {
             roomActivitySource: 'durable_object',
             roomActivityKind: 'cursor_presence',
             source: 'assessment_cursor_presence_client_sample',
-            cursorEventSource: 'browser_assessment_desktop_pointermove',
+            cursorEventSource: 'browser_assessment_room_pointermove',
             actor: 'guest',
             cursorSampleId: 'cursor:guest:1700000002400:420:610',
             sampledAtMs: 1700000002400,
@@ -3183,13 +3183,13 @@ describe('sessionEvents', () => {
         expect.objectContaining({
           type: 'window_update',
           actor: 'guest',
-          text: 'Window data updated: notepad',
+          text: 'Window data updated: notes',
           properties: expect.objectContaining({
             roomActivitySource: 'durable_object',
             source: 'window_data_client_submit',
             dataSource: 'assessment_window_data_sync',
             action: 'edit_text',
-            windowDataUpdateId: 'window-data:guest:1700000002500:notepad:edit_text',
+            windowDataUpdateId: 'window-data:guest:1700000002500:notes:edit_text',
             capturedAtMs: 1700000002500,
             dataKeys: ['text'],
             dataValueFingerprints: { text: 'data_81a94acf' },
@@ -3266,12 +3266,12 @@ describe('sessionEvents', () => {
         expect.objectContaining({
           type: 'file_change',
           actor: 'guest',
-          text: 'Sketch.pipe-paint',
+          text: 'Sketch.pipe-diagram',
         }),
         expect.objectContaining({
           type: 'file_change',
           actor: 'guest',
-          text: 'Sketch.pipe-paint',
+          text: 'Sketch.pipe-diagram',
         }),
       ]));
       const restoredWindowEvent = events.find((event) => (
@@ -3281,7 +3281,7 @@ describe('sessionEvents', () => {
       expect(restoredWindowEvent?.properties).toMatchObject({
         roomActivitySource: 'durable_object',
         source: 'window_state_client_submit',
-        stateSource: 'assessment_taskbar',
+        stateSource: 'assessment_agent_tray',
         actor: 'guest',
         windowId: 'browser',
         action: 'restore_or_focus',
@@ -3301,16 +3301,16 @@ describe('sessionEvents', () => {
       const upsertFileEvent = events.find((event) => (
         event.type === 'file_change'
         && event.actor === 'guest'
-        && event.properties?.fileChangeId === 'file:guest:1700000004000:upsert:notepad'
+        && event.properties?.fileChangeId === 'file:guest:1700000004000:upsert:notes'
       ));
       expect(upsertFileEvent?.properties).toMatchObject({
         roomActivitySource: 'durable_object',
         source: 'assessment_shared_file_system',
         fileEventSource: 'browser_client_submit',
-        fileChangeId: 'file:guest:1700000004000:upsert:notepad',
+        fileChangeId: 'file:guest:1700000004000:upsert:notes',
         actor: 'guest',
         operation: 'upsert',
-        fileId: 'notepad',
+        fileId: 'notes',
         fileName: 'notes.txt',
         fileKind: 'text',
         surface: 'assessment',
@@ -3324,16 +3324,16 @@ describe('sessionEvents', () => {
       const deleteFileEvent = events.find((event) => (
         event.type === 'file_change'
         && event.actor === 'guest'
-        && event.properties?.fileChangeId === 'file:guest:1700000005000:delete:notepad'
+        && event.properties?.fileChangeId === 'file:guest:1700000005000:delete:notes'
       ));
       expect(deleteFileEvent?.properties).toMatchObject({
         roomActivitySource: 'durable_object',
         source: 'assessment_shared_file_system',
         fileEventSource: 'browser_client_submit',
-        fileChangeId: 'file:guest:1700000005000:delete:notepad',
+        fileChangeId: 'file:guest:1700000005000:delete:notes',
         actor: 'guest',
         operation: 'delete',
-        fileId: 'notepad',
+        fileId: 'notes',
         fileName: 'notes.txt',
         fileKind: 'text',
         surface: 'assessment',
@@ -3345,55 +3345,55 @@ describe('sessionEvents', () => {
         deletedContentExactText: 'Candidate identified retry bug evidence.',
       });
       expect(deleteFileEvent?.properties?.deletedContentHash).toMatch(/^content_[a-f0-9]{32}$/);
-      const paintJson = '[{"kind":"rectangle","start":{"x":1,"y":2},"end":{"x":3,"y":4}}]';
-      const upsertPaintEvent = events.find((event) => (
+      const diagramJson = '[{"kind":"rectangle","start":{"x":1,"y":2},"end":{"x":3,"y":4}}]';
+      const upsertDiagramEvent = events.find((event) => (
         event.type === 'file_change'
         && event.actor === 'guest'
-        && event.properties?.fileChangeId === 'file:guest:1700000006000:upsert:paint'
+        && event.properties?.fileChangeId === 'file:guest:1700000006000:upsert:diagram'
       ));
-      expect(upsertPaintEvent?.properties).toMatchObject({
+      expect(upsertDiagramEvent?.properties).toMatchObject({
         roomActivitySource: 'durable_object',
         source: 'assessment_shared_file_system',
         fileEventSource: 'browser_client_submit',
-        fileChangeId: 'file:guest:1700000006000:upsert:paint',
+        fileChangeId: 'file:guest:1700000006000:upsert:diagram',
         actor: 'guest',
         operation: 'upsert',
-        fileId: 'paint',
-        fileName: 'Sketch.pipe-paint',
-        fileKind: 'paint',
+        fileId: 'diagram',
+        fileName: 'Sketch.pipe-diagram',
+        fileKind: 'diagram',
         surface: 'assessment',
         roomPhase: 'connected',
         capturedAtMs: 1700000006000,
         durableObjectReplayExpected: true,
-        contentLength: paintJson.length,
-        contentExactJson: paintJson,
+        contentLength: diagramJson.length,
+        contentExactJson: diagramJson,
       });
-      expect(upsertPaintEvent?.properties?.contentHash).toMatch(/^content_[a-f0-9]{32}$/);
-      expect(upsertPaintEvent?.properties).not.toHaveProperty('contentPreview');
-      const deletePaintEvent = events.find((event) => (
+      expect(upsertDiagramEvent?.properties?.contentHash).toMatch(/^content_[a-f0-9]{32}$/);
+      expect(upsertDiagramEvent?.properties).not.toHaveProperty('contentPreview');
+      const deleteDiagramEvent = events.find((event) => (
         event.type === 'file_change'
         && event.actor === 'guest'
-        && event.properties?.fileChangeId === 'file:guest:1700000007000:delete:paint'
+        && event.properties?.fileChangeId === 'file:guest:1700000007000:delete:diagram'
       ));
-      expect(deletePaintEvent?.properties).toMatchObject({
+      expect(deleteDiagramEvent?.properties).toMatchObject({
         roomActivitySource: 'durable_object',
         source: 'assessment_shared_file_system',
         fileEventSource: 'browser_client_submit',
-        fileChangeId: 'file:guest:1700000007000:delete:paint',
+        fileChangeId: 'file:guest:1700000007000:delete:diagram',
         actor: 'guest',
         operation: 'delete',
-        fileId: 'paint',
-        fileName: 'Sketch.pipe-paint',
-        fileKind: 'paint',
+        fileId: 'diagram',
+        fileName: 'Sketch.pipe-diagram',
+        fileKind: 'diagram',
         surface: 'assessment',
         roomPhase: 'connected',
         capturedAtMs: 1700000007000,
         durableObjectReplayExpected: true,
-        deletedContentLength: paintJson.length,
-        deletedContentExactJson: paintJson,
+        deletedContentLength: diagramJson.length,
+        deletedContentExactJson: diagramJson,
       });
-      expect(deletePaintEvent?.properties?.deletedContentHash).toMatch(/^content_[a-f0-9]{32}$/);
-      expect(deletePaintEvent?.properties).not.toHaveProperty('deletedContentPreview');
+      expect(deleteDiagramEvent?.properties?.deletedContentHash).toMatch(/^content_[a-f0-9]{32}$/);
+      expect(deleteDiagramEvent?.properties).not.toHaveProperty('deletedContentPreview');
       expect(events).not.toEqual(expect.arrayContaining([
         expect.objectContaining({
           type: 'agent_action',
@@ -3438,7 +3438,7 @@ describe('sessionEvents', () => {
       ]));
       for (const fallbackSource of [
         'room_surface_durable_object',
-        'start_menu_durable_object',
+        'layout_menu_durable_object',
         'window_lifecycle_durable_object',
         'browser_navigation_durable_object',
         'window_data_durable_object',

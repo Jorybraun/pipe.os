@@ -154,7 +154,7 @@ describe('VideoRoom Durable Object signaling lifecycle', () => {
     }));
   });
 
-  it('stores and broadcasts shared desktop window events', async () => {
+  it('stores and broadcasts shared layout window events', async () => {
     const host = new FakeSocket();
     const guest = new FakeSocket();
     const { state, storage } = makeState([
@@ -164,7 +164,7 @@ describe('VideoRoom Durable Object signaling lifecycle', () => {
     const room = new VideoRoom(state);
 
     await room.webSocketMessage(host as unknown as WebSocket, JSON.stringify({
-      type: 'ROOM_DESKTOP_EVENT',
+      type: 'ROOM_LAYOUT_EVENT',
       payload: {
         id: 'evt-open-browser',
         clientId: 'host-client',
@@ -197,7 +197,7 @@ describe('VideoRoom Durable Object signaling lifecycle', () => {
       },
     }));
 
-    expect(storage.get('desktopWindows')).toEqual([
+    expect(storage.get('roomPanels')).toEqual([
       expect.objectContaining({
         id: 'browser',
         windowType: 'browser',
@@ -206,7 +206,7 @@ describe('VideoRoom Durable Object signaling lifecycle', () => {
       }),
     ]);
     expect(parseSent(guest)).toContainEqual(expect.objectContaining({
-      type: 'ROOM_DESKTOP_EVENT',
+      type: 'ROOM_LAYOUT_EVENT',
       role: 'HOST',
       payload: expect.objectContaining({
         kind: 'OPEN_WINDOW',
@@ -216,7 +216,7 @@ describe('VideoRoom Durable Object signaling lifecycle', () => {
     }));
 
     await room.webSocketMessage(host as unknown as WebSocket, JSON.stringify({
-      type: 'ROOM_DESKTOP_EVENT',
+      type: 'ROOM_LAYOUT_EVENT',
       payload: {
         id: 'evt-browser-nav',
         clientId: 'host-client',
@@ -241,14 +241,14 @@ describe('VideoRoom Durable Object signaling lifecycle', () => {
       },
     }));
 
-    expect(storage.get('desktopWindows')).toEqual([
+    expect(storage.get('roomPanels')).toEqual([
       expect.objectContaining({
         id: 'browser',
         data: { currentUrl: 'https://example.com/review?step=1' },
       }),
     ]);
     expect(parseSent(guest)).toContainEqual(expect.objectContaining({
-      type: 'ROOM_DESKTOP_EVENT',
+      type: 'ROOM_LAYOUT_EVENT',
       role: 'HOST',
       payload: expect.objectContaining({
         kind: 'UPDATE_WINDOW_DATA',
@@ -262,7 +262,7 @@ describe('VideoRoom Durable Object signaling lifecycle', () => {
     }));
 
     await room.webSocketMessage(guest as unknown as WebSocket, JSON.stringify({
-      type: 'ROOM_DESKTOP_EVENT',
+      type: 'ROOM_LAYOUT_EVENT',
       payload: {
         id: 'evt-close-browser',
         clientId: 'guest-client',
@@ -286,9 +286,9 @@ describe('VideoRoom Durable Object signaling lifecycle', () => {
       },
     }));
 
-    expect(storage.get('desktopWindows')).toEqual([]);
+    expect(storage.get('roomPanels')).toEqual([]);
     expect(parseSent(host)).toContainEqual(expect.objectContaining({
-      type: 'ROOM_DESKTOP_EVENT',
+      type: 'ROOM_LAYOUT_EVENT',
       role: 'GUEST',
       payload: expect.objectContaining({
         kind: 'CLOSE_WINDOW',
@@ -297,14 +297,14 @@ describe('VideoRoom Durable Object signaling lifecycle', () => {
     }));
   });
 
-  it('persists and broadcasts shared desktop window state changes', async () => {
+  it('persists and broadcasts shared layout window state changes', async () => {
     const host = new FakeSocket();
     const guest = new FakeSocket();
     const { state, storage } = makeState([
       [host, 'HOST'],
       [guest, 'GUEST'],
     ]);
-    storage.set('desktopWindows', [
+    storage.set('roomPanels', [
       {
         id: 'browser',
         windowType: 'browser',
@@ -318,7 +318,7 @@ describe('VideoRoom Durable Object signaling lifecycle', () => {
     const room = new VideoRoom(state);
 
     await room.webSocketMessage(host as unknown as WebSocket, JSON.stringify({
-      type: 'ROOM_DESKTOP_EVENT',
+      type: 'ROOM_LAYOUT_EVENT',
       payload: {
         id: 'evt-move-browser',
         clientId: 'host-client',
@@ -331,7 +331,7 @@ describe('VideoRoom Durable Object signaling lifecycle', () => {
         focused: true,
         evidence: {
           source: 'window_state_client_submit',
-          stateSource: 'assessment_taskbar',
+          stateSource: 'assessment_agent_tray',
           actor: 'host',
           windowId: 'browser',
           action: 'restore_or_focus',
@@ -344,7 +344,7 @@ describe('VideoRoom Durable Object signaling lifecycle', () => {
       },
     }));
 
-    expect(storage.get('desktopWindows')).toEqual([
+    expect(storage.get('roomPanels')).toEqual([
       expect.objectContaining({
         id: 'browser',
         x: 260,
@@ -354,7 +354,7 @@ describe('VideoRoom Durable Object signaling lifecycle', () => {
       }),
     ]);
     expect(parseSent(guest)).toContainEqual(expect.objectContaining({
-      type: 'ROOM_DESKTOP_EVENT',
+      type: 'ROOM_LAYOUT_EVENT',
       role: 'HOST',
       payload: expect.objectContaining({
         kind: 'UPDATE_WINDOW_STATE',
@@ -364,7 +364,7 @@ describe('VideoRoom Durable Object signaling lifecycle', () => {
         focused: true,
       }),
     }));
-    expect(storage.get('desktopActivityLog')).toEqual([
+    expect(storage.get('roomActivityLog')).toEqual([
       expect.objectContaining({
         role: 'HOST',
         event: expect.objectContaining({
@@ -373,7 +373,7 @@ describe('VideoRoom Durable Object signaling lifecycle', () => {
           windowId: 'browser',
           evidence: expect.objectContaining({
             source: 'window_state_client_submit',
-            stateSource: 'assessment_taskbar',
+            stateSource: 'assessment_agent_tray',
             windowStateChangeId: 'window-state:host:3:browser:restore_or_focus',
           }),
         }),
@@ -391,16 +391,16 @@ describe('VideoRoom Durable Object signaling lifecycle', () => {
     const room = new VideoRoom(state);
 
     await room.webSocketMessage(host as unknown as WebSocket, JSON.stringify({
-      type: 'ROOM_DESKTOP_EVENT',
+      type: 'ROOM_LAYOUT_EVENT',
       payload: {
-        id: 'evt-open-notepad',
+        id: 'evt-open-notes',
         clientId: 'host-client',
         createdAt: 1,
         kind: 'OPEN_WINDOW',
         window: {
-          id: 'notepad',
-          windowType: 'notepad',
-          title: 'notes.txt - Notepad',
+          id: 'notes',
+          windowType: 'notes',
+          title: 'notes.txt - Notes',
           x: 100,
           y: 60,
           width: 520,
@@ -411,12 +411,12 @@ describe('VideoRoom Durable Object signaling lifecycle', () => {
           source: 'window_lifecycle_client_submit',
           lifecycleSource: 'assessment_file_system',
           lifecycleKind: 'open',
-          windowLifecycleId: 'window-lifecycle:host:1:open:notepad',
+          windowLifecycleId: 'window-lifecycle:host:1:open:notes',
           capturedAtMs: 1,
           actor: 'host',
-          windowId: 'notepad',
-          windowType: 'notepad',
-          windowTitle: 'notes.txt - Notepad',
+          windowId: 'notes',
+          windowType: 'notes',
+          windowTitle: 'notes.txt - Notes',
           surface: 'assessment',
           roomPhase: 'connected',
           durableObjectReplayExpected: true,
@@ -425,21 +425,21 @@ describe('VideoRoom Durable Object signaling lifecycle', () => {
     }));
 
     await room.webSocketMessage(host as unknown as WebSocket, JSON.stringify({
-      type: 'ROOM_DESKTOP_EVENT',
+      type: 'ROOM_LAYOUT_EVENT',
       payload: {
-        id: 'evt-delete-clears-notepad',
+        id: 'evt-delete-clears-notes',
         clientId: 'host-client',
         createdAt: 2,
         kind: 'UPDATE_WINDOW_DATA',
-        windowId: 'notepad',
+        windowId: 'notes',
         data: { text: '' },
         evidence: {
           source: 'window_data_client_submit',
           dataSource: 'assessment_file_delete_sync',
           actor: 'host',
-          windowId: 'notepad',
+          windowId: 'notes',
           action: 'edit_text',
-          windowDataUpdateId: 'window-data:host:2:notepad:edit_text',
+          windowDataUpdateId: 'window-data:host:2:notes:edit_text',
           capturedAtMs: 2,
           surface: 'assessment',
           roomPhase: 'connected',
@@ -450,27 +450,27 @@ describe('VideoRoom Durable Object signaling lifecycle', () => {
       },
     }));
 
-    expect(storage.get('desktopWindows')).toEqual([
+    expect(storage.get('roomPanels')).toEqual([
       expect.objectContaining({
-        id: 'notepad',
+        id: 'notes',
         data: { text: '' },
       }),
     ]);
     expect(parseSent(guest)).toContainEqual(expect.objectContaining({
-      type: 'ROOM_DESKTOP_EVENT',
+      type: 'ROOM_LAYOUT_EVENT',
       role: 'HOST',
       payload: expect.objectContaining({
         kind: 'UPDATE_WINDOW_DATA',
-        windowId: 'notepad',
+        windowId: 'notes',
         evidence: expect.objectContaining({
           dataSource: 'assessment_file_delete_sync',
-          windowDataUpdateId: 'window-data:host:2:notepad:edit_text',
+          windowDataUpdateId: 'window-data:host:2:notes:edit_text',
         }),
       }),
     }));
   });
 
-  it('rejects shared desktop window events without browser source evidence', async () => {
+  it('rejects shared layout window events without browser source evidence', async () => {
     const host = new FakeSocket();
     const guest = new FakeSocket();
     const { state, storage } = makeState([
@@ -480,16 +480,16 @@ describe('VideoRoom Durable Object signaling lifecycle', () => {
     const room = new VideoRoom(state);
 
     await room.webSocketMessage(host as unknown as WebSocket, JSON.stringify({
-      type: 'ROOM_DESKTOP_EVENT',
+      type: 'ROOM_LAYOUT_EVENT',
       payload: {
         id: 'evt-source-less-open',
         clientId: 'host-client',
         createdAt: 3.5,
         kind: 'OPEN_WINDOW',
         window: {
-          id: 'notepad',
-          windowType: 'notepad',
-          title: 'Notepad',
+          id: 'notes',
+          windowType: 'notes',
+          title: 'Notes',
           x: 80,
           y: 60,
           width: 520,
@@ -499,17 +499,17 @@ describe('VideoRoom Durable Object signaling lifecycle', () => {
     }));
 
     expect(parseSent(host)).toContainEqual(expect.objectContaining({
-      type: 'ROOM_DESKTOP_EVENT_REJECTED',
+      type: 'ROOM_LAYOUT_EVENT_REJECTED',
       reason: 'MISSING_SOURCE_EVIDENCE',
     }));
     expect(parseSent(guest)).not.toContainEqual(expect.objectContaining({
-      type: 'ROOM_DESKTOP_EVENT',
+      type: 'ROOM_LAYOUT_EVENT',
     }));
-    expect(storage.has('desktopWindows')).toBe(false);
-    expect(storage.has('desktopActivityLog')).toBe(false);
+    expect(storage.has('roomPanels')).toBe(false);
+    expect(storage.has('roomActivityLog')).toBe(false);
   });
 
-  it('persists participant-controlled desktop surface changes and records activity', async () => {
+  it('persists participant-controlled layout surface changes and records activity', async () => {
     const host = new FakeSocket();
     const guest = new FakeSocket();
     const { state, storage } = makeState([
@@ -519,7 +519,7 @@ describe('VideoRoom Durable Object signaling lifecycle', () => {
     const room = new VideoRoom(state);
 
     await room.webSocketMessage(guest as unknown as WebSocket, JSON.stringify({
-      type: 'ROOM_DESKTOP_EVENT',
+      type: 'ROOM_LAYOUT_EVENT',
       payload: {
         id: 'evt-guest-surface',
         clientId: 'guest-client',
@@ -527,7 +527,7 @@ describe('VideoRoom Durable Object signaling lifecycle', () => {
         kind: 'SET_ROOM_SURFACE',
         surface: 'assessment',
         previousSurface: 'standard',
-        action: 'enter_desktop',
+        action: 'enter_assessment',
         source: 'room_surface_control',
         surfaceControlEventSource: 'browser_room_surface_toggle',
         surfaceChangeId: 'surface:guest:1:standard:assessment',
@@ -539,7 +539,7 @@ describe('VideoRoom Durable Object signaling lifecycle', () => {
 
     expect(storage.get('roomSurface')).toBe('assessment');
     expect(parseSent(host)).toContainEqual(expect.objectContaining({
-      type: 'ROOM_DESKTOP_EVENT',
+      type: 'ROOM_LAYOUT_EVENT',
       role: 'GUEST',
       payload: expect.objectContaining({
         kind: 'SET_ROOM_SURFACE',
@@ -550,7 +550,7 @@ describe('VideoRoom Durable Object signaling lifecycle', () => {
     }));
 
     await room.webSocketMessage(host as unknown as WebSocket, JSON.stringify({
-      type: 'ROOM_DESKTOP_EVENT',
+      type: 'ROOM_LAYOUT_EVENT',
       payload: {
         id: 'evt-host-surface',
         clientId: 'host-client',
@@ -558,7 +558,7 @@ describe('VideoRoom Durable Object signaling lifecycle', () => {
         kind: 'SET_ROOM_SURFACE',
         surface: 'standard',
         previousSurface: 'assessment',
-        action: 'exit_desktop',
+        action: 'exit_assessment',
         source: 'room_surface_control',
         surfaceControlEventSource: 'browser_room_surface_toggle',
         surfaceChangeId: 'surface:host:2:assessment:standard',
@@ -570,7 +570,7 @@ describe('VideoRoom Durable Object signaling lifecycle', () => {
 
     expect(storage.get('roomSurface')).toBe('standard');
     expect(parseSent(guest)).toContainEqual(expect.objectContaining({
-      type: 'ROOM_DESKTOP_EVENT',
+      type: 'ROOM_LAYOUT_EVENT',
       role: 'HOST',
       payload: expect.objectContaining({
         kind: 'SET_ROOM_SURFACE',
@@ -579,7 +579,7 @@ describe('VideoRoom Durable Object signaling lifecycle', () => {
         surfaceChangeId: 'surface:host:2:assessment:standard',
       }),
     }));
-    expect(storage.get('desktopActivityLog')).toEqual([
+    expect(storage.get('roomActivityLog')).toEqual([
       expect.objectContaining({
         role: 'GUEST',
         event: expect.objectContaining({
@@ -601,7 +601,7 @@ describe('VideoRoom Durable Object signaling lifecycle', () => {
     ]);
   });
 
-  it('persists and broadcasts source-backed legacy desktop menu state', async () => {
+  it('persists and broadcasts source-backed legacy layout menu state', async () => {
     const host = new FakeSocket();
     const guest = new FakeSocket();
     const { state, storage } = makeState([
@@ -611,21 +611,21 @@ describe('VideoRoom Durable Object signaling lifecycle', () => {
     const room = new VideoRoom(state);
 
     await room.webSocketMessage(guest as unknown as WebSocket, JSON.stringify({
-      type: 'ROOM_DESKTOP_EVENT',
+      type: 'ROOM_LAYOUT_EVENT',
       payload: {
-        id: 'evt-guest-start-menu-open',
+        id: 'evt-guest-layout-menu-open',
         clientId: 'guest-client',
         createdAt: 3,
         kind: 'START_MENU_STATE',
         open: true,
         evidence: {
-          source: 'assessment_start_menu_control',
-          menuEventSource: 'assessment_start_button',
+          source: 'assessment_layout_menu_control',
+          menuEventSource: 'assessment_layout_button',
           actor: 'guest',
           menuId: 'start',
           action: 'open',
           open: true,
-          startMenuEventId: 'start-menu:guest:3000:open:assessment_start_button',
+          layoutMenuEventId: 'layout-menu:guest:3000:open:assessment_layout_button',
           capturedAtMs: 3000,
           surface: 'assessment',
           roomPhase: 'connected',
@@ -634,35 +634,35 @@ describe('VideoRoom Durable Object signaling lifecycle', () => {
       },
     }));
 
-    expect(storage.get('desktopStartMenuOpen')).toBe(true);
+    expect(storage.get('layoutMenuOpen')).toBe(true);
     expect(parseSent(host)).toContainEqual(expect.objectContaining({
-      type: 'ROOM_DESKTOP_EVENT',
+      type: 'ROOM_LAYOUT_EVENT',
       role: 'GUEST',
       payload: expect.objectContaining({
         kind: 'START_MENU_STATE',
         open: true,
         evidence: expect.objectContaining({
-          source: 'assessment_start_menu_control',
-          startMenuEventId: 'start-menu:guest:3000:open:assessment_start_button',
+          source: 'assessment_layout_menu_control',
+          layoutMenuEventId: 'layout-menu:guest:3000:open:assessment_layout_button',
         }),
       }),
     }));
-    expect(storage.get('desktopActivityLog')).toEqual([
+    expect(storage.get('roomActivityLog')).toEqual([
       expect.objectContaining({
         role: 'GUEST',
         event: expect.objectContaining({
-          id: 'evt-guest-start-menu-open',
+          id: 'evt-guest-layout-menu-open',
           kind: 'START_MENU_STATE',
           open: true,
           evidence: expect.objectContaining({
-            startMenuEventId: 'start-menu:guest:3000:open:assessment_start_button',
+            layoutMenuEventId: 'layout-menu:guest:3000:open:assessment_layout_button',
           }),
         }),
       }),
     ]);
   });
 
-  it('rejects legacy desktop menu state without source evidence', async () => {
+  it('rejects legacy layout menu state without source evidence', async () => {
     const host = new FakeSocket();
     const guest = new FakeSocket();
     const { state, storage } = makeState([
@@ -672,9 +672,9 @@ describe('VideoRoom Durable Object signaling lifecycle', () => {
     const room = new VideoRoom(state);
 
     await room.webSocketMessage(guest as unknown as WebSocket, JSON.stringify({
-      type: 'ROOM_DESKTOP_EVENT',
+      type: 'ROOM_LAYOUT_EVENT',
       payload: {
-        id: 'evt-source-less-start-menu',
+        id: 'evt-source-less-layout-menu',
         clientId: 'guest-client',
         createdAt: 3.5,
         kind: 'START_MENU_STATE',
@@ -683,19 +683,19 @@ describe('VideoRoom Durable Object signaling lifecycle', () => {
     }));
 
     expect(parseSent(guest)).toContainEqual(expect.objectContaining({
-      type: 'ROOM_DESKTOP_EVENT_REJECTED',
+      type: 'ROOM_LAYOUT_EVENT_REJECTED',
       reason: 'MISSING_SOURCE_EVIDENCE',
       payload: expect.objectContaining({
         surface: 'standard',
-        startMenuOpen: false,
+        layoutMenuOpen: false,
         windows: [],
       }),
     }));
     expect(parseSent(host)).not.toContainEqual(expect.objectContaining({
-      type: 'ROOM_DESKTOP_EVENT',
+      type: 'ROOM_LAYOUT_EVENT',
     }));
-    expect(storage.has('desktopStartMenuOpen')).toBe(false);
-    expect(storage.has('desktopActivityLog')).toBe(false);
+    expect(storage.has('layoutMenuOpen')).toBe(false);
+    expect(storage.has('roomActivityLog')).toBe(false);
   });
 
   it('rejects shared room surface changes without browser source evidence', async () => {
@@ -708,7 +708,7 @@ describe('VideoRoom Durable Object signaling lifecycle', () => {
     const room = new VideoRoom(state);
 
     await room.webSocketMessage(guest as unknown as WebSocket, JSON.stringify({
-      type: 'ROOM_DESKTOP_EVENT',
+      type: 'ROOM_LAYOUT_EVENT',
       payload: {
         id: 'evt-source-less-surface',
         clientId: 'guest-client',
@@ -719,14 +719,14 @@ describe('VideoRoom Durable Object signaling lifecycle', () => {
     }));
 
     expect(parseSent(guest)).toContainEqual(expect.objectContaining({
-      type: 'ROOM_DESKTOP_EVENT_REJECTED',
+      type: 'ROOM_LAYOUT_EVENT_REJECTED',
       reason: 'MISSING_SOURCE_EVIDENCE',
     }));
     expect(parseSent(host)).not.toContainEqual(expect.objectContaining({
-      type: 'ROOM_DESKTOP_EVENT',
+      type: 'ROOM_LAYOUT_EVENT',
     }));
     expect(storage.has('roomSurface')).toBe(false);
-    expect(storage.has('desktopActivityLog')).toBe(false);
+    expect(storage.has('roomActivityLog')).toBe(false);
   });
 
   it('broadcasts workspace state changes without changing shared windows', async () => {
@@ -736,7 +736,7 @@ describe('VideoRoom Durable Object signaling lifecycle', () => {
       [host, 'HOST'],
       [guest, 'GUEST'],
     ]);
-    storage.set('desktopWindows', [
+    storage.set('roomPanels', [
       {
         id: 'workspace',
         windowType: 'workspace',
@@ -746,7 +746,7 @@ describe('VideoRoom Durable Object signaling lifecycle', () => {
     const room = new VideoRoom(state);
 
     await room.webSocketMessage(host as unknown as WebSocket, JSON.stringify({
-      type: 'ROOM_DESKTOP_EVENT',
+      type: 'ROOM_LAYOUT_EVENT',
       payload: {
         id: 'evt-workspace-ready',
         clientId: 'host-client',
@@ -775,7 +775,7 @@ describe('VideoRoom Durable Object signaling lifecycle', () => {
       },
     }));
 
-    expect(storage.get('desktopWindows')).toEqual([
+    expect(storage.get('roomPanels')).toEqual([
       expect.objectContaining({
         id: 'workspace',
         windowType: 'workspace',
@@ -783,7 +783,7 @@ describe('VideoRoom Durable Object signaling lifecycle', () => {
       }),
     ]);
     expect(parseSent(guest)).toContainEqual(expect.objectContaining({
-      type: 'ROOM_DESKTOP_EVENT',
+      type: 'ROOM_LAYOUT_EVENT',
       role: 'HOST',
       payload: expect.objectContaining({
         kind: 'WORKSPACE_STATE_CHANGED',
@@ -806,7 +806,7 @@ describe('VideoRoom Durable Object signaling lifecycle', () => {
         proxyUrlPersisted: false,
       }),
     }));
-    expect(storage.get('desktopActivityLog')).toEqual([
+    expect(storage.get('roomActivityLog')).toEqual([
       expect.objectContaining({
         role: 'HOST',
         event: expect.objectContaining({
@@ -851,7 +851,7 @@ describe('VideoRoom Durable Object signaling lifecycle', () => {
     const rawDiagnostic = `Init failed DEVIN_API_KEY=${rawServiceKey} at /api/v1/meeting-rooms/${rawRoomToken}/workspace?token=${rawQueryToken}`;
 
     await room.webSocketMessage(host as unknown as WebSocket, JSON.stringify({
-      type: 'ROOM_DESKTOP_EVENT',
+      type: 'ROOM_LAYOUT_EVENT',
       payload: {
         id: 'evt-workspace-error',
         clientId: 'host-client',
@@ -882,7 +882,7 @@ describe('VideoRoom Durable Object signaling lifecycle', () => {
     }));
 
     const guestEvent = parseSent(guest).find((message) =>
-      message.type === 'ROOM_DESKTOP_EVENT'
+      message.type === 'ROOM_LAYOUT_EVENT'
       && (message.payload as { id?: string } | undefined)?.id === 'evt-workspace-error',
     );
     expect(guestEvent).toEqual(expect.objectContaining({
@@ -891,7 +891,7 @@ describe('VideoRoom Durable Object signaling lifecycle', () => {
       }),
     }));
 
-    const activityLog = storage.get('desktopActivityLog') as Array<{
+    const activityLog = storage.get('roomActivityLog') as Array<{
       event?: { errorMessage?: string | null };
     }>;
     expect(activityLog[0]?.event?.errorMessage).toBe(
@@ -914,7 +914,7 @@ describe('VideoRoom Durable Object signaling lifecycle', () => {
     const room = new VideoRoom(state);
 
     await room.webSocketMessage(host as unknown as WebSocket, JSON.stringify({
-      type: 'ROOM_DESKTOP_EVENT',
+      type: 'ROOM_LAYOUT_EVENT',
       payload: {
         id: 'evt-source-less-workspace',
         clientId: 'host-client',
@@ -927,13 +927,13 @@ describe('VideoRoom Durable Object signaling lifecycle', () => {
     }));
 
     expect(parseSent(host)).toContainEqual(expect.objectContaining({
-      type: 'ROOM_DESKTOP_EVENT_REJECTED',
+      type: 'ROOM_LAYOUT_EVENT_REJECTED',
       reason: 'MISSING_SOURCE_EVIDENCE',
     }));
     expect(parseSent(guest)).not.toContainEqual(expect.objectContaining({
-      type: 'ROOM_DESKTOP_EVENT',
+      type: 'ROOM_LAYOUT_EVENT',
     }));
-    expect(storage.has('desktopActivityLog')).toBe(false);
+    expect(storage.has('roomActivityLog')).toBe(false);
   });
 
   it('rejects live room cursor presence without source-backed sample evidence', async () => {
@@ -1611,7 +1611,7 @@ describe('VideoRoom Durable Object signaling lifecycle', () => {
         updatedAt: 1761592321000,
         evidence: {
           source: 'assessment_cursor_presence_client_sample',
-          cursorEventSource: 'browser_assessment_desktop_pointermove',
+          cursorEventSource: 'browser_assessment_room_pointermove',
           actor: 'guest',
           cursorSampleId: 'cursor:guest:1761592321000:420:610',
           sampledAtMs: 1761592321000,
@@ -2356,23 +2356,23 @@ describe('VideoRoom Durable Object signaling lifecycle', () => {
         createdAt: 4,
         kind: 'UPSERT_FILE',
         file: {
-          id: 'desktop-notes',
+          id: 'layout-notes',
           name: 'notes.txt',
           kind: 'text',
           content: 'Candidate asked about testing strategy.',
           mimeType: 'text/plain',
-          metadata: { app: 'notepad' },
+          metadata: { app: 'notes' },
           createdAt: 4,
           updatedAt: 4,
         },
         evidence: {
           source: 'assessment_shared_file_system',
           fileEventSource: 'browser_client_submit',
-          fileChangeId: 'file:host:4:upsert:desktop-notes',
+          fileChangeId: 'file:host:4:upsert:layout-notes',
           actor: 'host',
           operation: 'upsert',
           action: 'upsert',
-          fileId: 'desktop-notes',
+          fileId: 'layout-notes',
           fileName: 'notes.txt',
           fileKind: 'text',
           mimeType: 'text/plain',
@@ -2390,21 +2390,21 @@ describe('VideoRoom Durable Object signaling lifecycle', () => {
 
     expect(storage.get('roomFileSystem')).toEqual([
       expect.objectContaining({
-        id: 'desktop-notes',
+        id: 'layout-notes',
         name: 'notes.txt',
         kind: 'text',
         content: 'Candidate asked about testing strategy.',
         mimeType: 'text/plain',
         metadata: {
-          app: 'notepad',
+          app: 'notes',
           roomFileProjectionEvidence: expect.objectContaining({
             source: 'assessment_shared_file_system',
             fileEventSource: 'browser_client_submit',
-            fileChangeId: 'file:host:4:upsert:desktop-notes',
+            fileChangeId: 'file:host:4:upsert:layout-notes',
             actor: 'host',
             operation: 'upsert',
             action: 'upsert',
-            fileId: 'desktop-notes',
+            fileId: 'layout-notes',
             fileName: 'notes.txt',
             fileKind: 'text',
             mimeType: 'text/plain',
@@ -2426,12 +2426,12 @@ describe('VideoRoom Durable Object signaling lifecycle', () => {
       payload: expect.objectContaining({
         kind: 'UPSERT_FILE',
         file: expect.objectContaining({
-          id: 'desktop-notes',
+          id: 'layout-notes',
           name: 'notes.txt',
         }),
         evidence: expect.objectContaining({
           source: 'assessment_shared_file_system',
-          fileChangeId: 'file:host:4:upsert:desktop-notes',
+          fileChangeId: 'file:host:4:upsert:layout-notes',
         }),
       }),
     }));
@@ -2443,7 +2443,7 @@ describe('VideoRoom Durable Object signaling lifecycle', () => {
           kind: 'UPSERT_FILE',
           evidence: expect.objectContaining({
             source: 'assessment_shared_file_system',
-            fileChangeId: 'file:host:4:upsert:desktop-notes',
+            fileChangeId: 'file:host:4:upsert:layout-notes',
           }),
         }),
       }),
@@ -2456,14 +2456,14 @@ describe('VideoRoom Durable Object signaling lifecycle', () => {
         clientId: 'guest-client',
         createdAt: 5,
         kind: 'DELETE_FILE',
-        fileId: 'desktop-notes',
+        fileId: 'layout-notes',
         evidence: {
           source: 'assessment_shared_file_system',
           fileEventSource: 'browser_client_submit',
-          fileChangeId: 'file:guest:5:delete:desktop-notes',
+          fileChangeId: 'file:guest:5:delete:layout-notes',
           actor: 'guest',
           operation: 'delete',
-          fileId: 'desktop-notes',
+          fileId: 'layout-notes',
           fileName: 'notes.txt',
           fileKind: 'text',
           surface: 'assessment',
@@ -2480,15 +2480,15 @@ describe('VideoRoom Durable Object signaling lifecycle', () => {
       role: 'GUEST',
       payload: expect.objectContaining({
         kind: 'DELETE_FILE',
-        fileId: 'desktop-notes',
+        fileId: 'layout-notes',
         file: expect.objectContaining({
-          id: 'desktop-notes',
+          id: 'layout-notes',
           name: 'notes.txt',
           content: 'Candidate asked about testing strategy.',
         }),
         evidence: expect.objectContaining({
           source: 'assessment_shared_file_system',
-          fileChangeId: 'file:guest:5:delete:desktop-notes',
+          fileChangeId: 'file:guest:5:delete:layout-notes',
         }),
       }),
     }));
@@ -2505,15 +2505,15 @@ describe('VideoRoom Durable Object signaling lifecycle', () => {
         event: expect.objectContaining({
           id: 'fs-delete-notes',
           kind: 'DELETE_FILE',
-          fileId: 'desktop-notes',
+          fileId: 'layout-notes',
           file: expect.objectContaining({
-            id: 'desktop-notes',
+            id: 'layout-notes',
             name: 'notes.txt',
             content: 'Candidate asked about testing strategy.',
           }),
           evidence: expect.objectContaining({
             source: 'assessment_shared_file_system',
-            fileChangeId: 'file:guest:5:delete:desktop-notes',
+            fileChangeId: 'file:guest:5:delete:layout-notes',
           }),
         }),
       }),
@@ -2547,12 +2547,12 @@ describe('VideoRoom Durable Object signaling lifecycle', () => {
         createdAt: 6,
         kind: 'UPSERT_FILE',
         file: {
-          id: 'desktop-source-less-notes',
+          id: 'layout-source-less-notes',
           name: 'source-less-notes.txt',
           kind: 'text',
           content: 'This should not become graph evidence.',
           mimeType: 'text/plain',
-          metadata: { app: 'notepad' },
+          metadata: { app: 'notes' },
           createdAt: 6,
           updatedAt: 6,
         },
@@ -2939,7 +2939,7 @@ describe('VideoRoom Durable Object signaling lifecycle', () => {
     const room = new VideoRoom(state);
 
     await room.webSocketMessage(host as unknown as WebSocket, JSON.stringify({
-      type: 'ROOM_DESKTOP_EVENT',
+      type: 'ROOM_LAYOUT_EVENT',
       payload: {
         id: 'evt-enter-assessment',
         clientId: 'host-client',
@@ -2947,7 +2947,7 @@ describe('VideoRoom Durable Object signaling lifecycle', () => {
         kind: 'SET_ROOM_SURFACE',
         surface: 'assessment',
         previousSurface: 'standard',
-        action: 'enter_desktop',
+        action: 'enter_assessment',
         source: 'room_surface_control',
         surfaceControlEventSource: 'browser_room_surface_toggle',
         surfaceChangeId: 'surface:host:1000:standard:assessment',
@@ -3102,7 +3102,7 @@ describe('VideoRoom Durable Object signaling lifecycle', () => {
         createdAt: 3000,
         kind: 'UPSERT_FILE',
         file: {
-          id: 'notepad',
+          id: 'notes',
           name: 'notes.txt',
           kind: 'text',
           content: 'Candidate identified retry bug evidence.',
@@ -3113,10 +3113,10 @@ describe('VideoRoom Durable Object signaling lifecycle', () => {
         evidence: {
           source: 'assessment_shared_file_system',
           fileEventSource: 'browser_client_submit',
-          fileChangeId: 'file:host:3000:upsert:notepad',
+          fileChangeId: 'file:host:3000:upsert:notes',
           actor: 'host',
           operation: 'upsert',
-          fileId: 'notepad',
+          fileId: 'notes',
           fileName: 'notes.txt',
           fileKind: 'text',
           surface: 'assessment',
@@ -3130,7 +3130,7 @@ describe('VideoRoom Durable Object signaling lifecycle', () => {
     const response = await room.fetch(new Request('https://do/activity-log'));
     expect(response.status).toBe(200);
     const body = await response.json() as {
-      desktopActivityLog: unknown[];
+      roomActivityLog: unknown[];
       chatActivityLog: unknown[];
       mediaControlActivityLog: unknown[];
       agentInteractionActivityLog: unknown[];
@@ -3139,7 +3139,7 @@ describe('VideoRoom Durable Object signaling lifecycle', () => {
       fileSystemActivityLog: unknown[];
     };
 
-    expect(body.desktopActivityLog).toEqual([
+    expect(body.roomActivityLog).toEqual([
       expect.objectContaining({
         role: 'HOST',
         event: expect.objectContaining({
@@ -3235,7 +3235,7 @@ describe('VideoRoom Durable Object signaling lifecycle', () => {
           kind: 'UPSERT_FILE',
           evidence: expect.objectContaining({
             source: 'assessment_shared_file_system',
-            fileChangeId: 'file:host:3000:upsert:notepad',
+            fileChangeId: 'file:host:3000:upsert:notes',
           }),
         }),
       }),

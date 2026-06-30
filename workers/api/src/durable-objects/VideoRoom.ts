@@ -84,28 +84,28 @@ const ROOM_FILE_PROJECTION_EVIDENCE_KEYS = [
   'fileUpdatedAt',
 ] as const;
 const WINDOW_LIFECYCLE_SOURCES = new Set([
-  'assessment_desktop_ui',
+  'assessment_layout_ui',
   'assessment_file_system',
-  'assessment_start_menu',
+  'assessment_layout_menu',
   'assessment_window_chrome',
-  'assessment_taskbar',
+  'assessment_agent_tray',
   'standard_assessment_ui',
   'agent_action',
   'shared_state_sync',
 ]);
 const WINDOW_STATE_SOURCES = new Set([
-  'assessment_desktop_ui',
-  'assessment_start_menu',
+  'assessment_layout_ui',
+  'assessment_layout_menu',
   'assessment_window_chrome',
-  'assessment_taskbar',
+  'assessment_agent_tray',
 ]);
 const WINDOW_DATA_SOURCES = new Set(['assessment_window_data_sync', 'assessment_file_delete_sync']);
 const START_MENU_EVENT_SOURCES = new Set([
-  'assessment_start_button',
-  'assessment_desktop_click',
-  'assessment_start_menu_item',
+  'assessment_layout_button',
+  'assessment_layout_click',
+  'assessment_layout_menu_item',
 ]);
-const START_MENU_EVENT_ID_RE = /^start-menu:(host|guest):\d+:(open|close):[a-z0-9_]+$/;
+const START_MENU_EVENT_ID_RE = /^layout-menu:(host|guest):\d+:(open|close):[a-z0-9_]+$/;
 const WORKSPACE_REDACTED_SECRET = '[REDACTED_SECRET]';
 const WORKSPACE_BARE_SECRET_RE = /\b(?:cog|ghp|gho|ghu|ghs|ghr|devin)_[A-Za-z0-9_-]{20,}\b/g;
 const WORKSPACE_GITHUB_PAT_RE = /\bgithub_pat_[A-Za-z0-9_]{20,}\b/g;
@@ -122,7 +122,7 @@ interface SignalMessage {
     | 'ICE_CANDIDATE'
     | 'HANGUP'
     | 'STATUS_UPDATE'
-    | 'ROOM_DESKTOP_EVENT'
+    | 'ROOM_LAYOUT_EVENT'
     | 'ROOM_AGENT_PROMPT'
     | 'ROOM_AGENT_INTERACTION'
     | 'ROOM_CHAT_MESSAGE'
@@ -178,21 +178,21 @@ function hasOptionalBrowserPromptRef(evidence: Record<string, unknown>): boolean
     && promptId.endsWith(`:${promptTimestamp}:${promptFingerprint}`);
 }
 
-type RoomDesktopWindowType =
+type RoomLayoutWindowType =
   | 'video'
   | 'workspace'
   | 'chat'
   | 'tasks'
   | 'snippet'
   | 'browser'
-  | 'notepad'
-  | 'paint'
+  | 'notes'
+  | 'diagram'
   | 'terminal'
   | 'custom';
 
-interface RoomDesktopWindow {
+interface RoomLayoutWindow {
   id: string;
-  windowType: RoomDesktopWindowType;
+  windowType: RoomLayoutWindowType;
   title: string;
   icon?: string;
   x?: number;
@@ -205,7 +205,7 @@ interface RoomDesktopWindow {
   data?: Record<string, unknown>;
 }
 
-type RoomDesktopEvent =
+type RoomLayoutEvent =
   | {
       id: string;
       clientId: string;
@@ -226,7 +226,7 @@ type RoomDesktopEvent =
       clientId: string;
       createdAt: number;
       kind: 'OPEN_WINDOW';
-      window: RoomDesktopWindow;
+      window: RoomLayoutWindow;
       evidence?: Record<string, unknown>;
     }
   | {
@@ -299,8 +299,8 @@ type RoomDesktopEvent =
       proxyUrlPersisted?: boolean;
     };
 
-interface RoomDesktopActivityEntry {
-  event: RoomDesktopEvent;
+interface RoomLayoutActivityEntry {
+  event: RoomLayoutEvent;
   role: VideoRole;
   recordedAt: number;
 }
@@ -483,7 +483,7 @@ interface RoomTerminalActivityEntry {
   recordedAt: number;
 }
 
-type RoomFileKind = 'text' | 'paint' | 'json' | 'link';
+type RoomFileKind = 'text' | 'diagram' | 'json' | 'link';
 
 interface RoomFile {
   id: string;
@@ -594,7 +594,7 @@ export class VideoRoom {
     return Boolean(value) && typeof value === 'object' && !Array.isArray(value);
   }
 
-  private isRoomDesktopWindowType(value: unknown): value is RoomDesktopWindowType {
+  private isRoomLayoutWindowType(value: unknown): value is RoomLayoutWindowType {
     return typeof value === 'string'
       && [
         'video',
@@ -603,8 +603,8 @@ export class VideoRoom {
         'tasks',
         'snippet',
         'browser',
-        'notepad',
-        'paint',
+        'notes',
+        'diagram',
         'terminal',
         'custom',
       ].includes(value);
@@ -622,11 +622,11 @@ export class VideoRoom {
     return typeof value === 'number' && Number.isFinite(value) && value >= 0 && value <= 1;
   }
 
-  private parseDesktopWindow(value: unknown): RoomDesktopWindow | null {
+  private parseLayoutWindow(value: unknown): RoomLayoutWindow | null {
     if (!this.isRecord(value)) return null;
     if (
       typeof value.id !== 'string'
-      || !this.isRoomDesktopWindowType(value.windowType)
+      || !this.isRoomLayoutWindowType(value.windowType)
       || typeof value.title !== 'string'
     ) {
       return null;
@@ -647,7 +647,7 @@ export class VideoRoom {
     };
   }
 
-  private parseDesktopEvent(value: unknown): RoomDesktopEvent | null {
+  private parseLayoutEvent(value: unknown): RoomLayoutEvent | null {
     if (!this.isRecord(value)) return null;
     if (
       typeof value.id !== 'string'
@@ -657,7 +657,7 @@ export class VideoRoom {
       return null;
     }
     if (value.kind === 'OPEN_WINDOW') {
-      const windowConfig = this.parseDesktopWindow(value.window);
+      const windowConfig = this.parseLayoutWindow(value.window);
       if (!windowConfig) return null;
       return {
         id: value.id,
@@ -721,7 +721,7 @@ export class VideoRoom {
       };
     }
     if (value.kind === 'UPDATE_WINDOW_STATE' && typeof value.windowId === 'string') {
-      const event: RoomDesktopEvent = {
+      const event: RoomLayoutEvent = {
         id: value.id,
         clientId: value.clientId,
         createdAt: value.createdAt,
@@ -787,7 +787,7 @@ export class VideoRoom {
   }
 
   private hasSourceBackedWorkspaceStateEvidence(
-    event: Extract<RoomDesktopEvent, { kind: 'WORKSPACE_STATE_CHANGED' }>,
+    event: Extract<RoomLayoutEvent, { kind: 'WORKSPACE_STATE_CHANGED' }>,
     actor: 'host' | 'guest',
   ): boolean {
     const status = typeof event.status === 'string' && event.status.length > 0 ? event.status : null;
@@ -817,10 +817,10 @@ export class VideoRoom {
       && event.proxyUrlPersisted === false;
   }
 
-  private hasSourceBackedDesktopEventEvidence(event: RoomDesktopEvent, role: VideoRole): boolean {
+  private hasSourceBackedLayoutEventEvidence(event: RoomLayoutEvent, role: VideoRole): boolean {
     const actor = this.isHostRole(role) ? 'host' : 'guest';
     if (event.kind === 'SET_ROOM_SURFACE') {
-      const expectedAction = event.surface === 'assessment' ? 'enter_desktop' : 'exit_desktop';
+      const expectedAction = event.surface === 'assessment' ? 'enter_assessment' : 'exit_assessment';
       return event.source === 'room_surface_control'
         && event.surfaceControlEventSource === 'browser_room_surface_toggle'
         && event.action === expectedAction
@@ -842,20 +842,20 @@ export class VideoRoom {
       const action = event.open ? 'open' : 'close';
       const capturedAtMs = evidence.capturedAtMs;
       const menuEventSource = evidence.menuEventSource;
-      const startMenuEventId = evidence.startMenuEventId;
-      return evidence.source === 'assessment_start_menu_control'
+      const layoutMenuEventId = evidence.layoutMenuEventId;
+      return evidence.source === 'assessment_layout_menu_control'
         && typeof menuEventSource === 'string'
         && START_MENU_EVENT_SOURCES.has(menuEventSource)
         && evidence.actor === actor
         && evidence.menuId === 'start'
         && evidence.action === action
         && evidence.open === event.open
-        && typeof startMenuEventId === 'string'
-        && START_MENU_EVENT_ID_RE.test(startMenuEventId)
+        && typeof layoutMenuEventId === 'string'
+        && START_MENU_EVENT_ID_RE.test(layoutMenuEventId)
         && typeof capturedAtMs === 'number'
         && Number.isInteger(capturedAtMs)
         && capturedAtMs >= 0
-        && startMenuEventId === `start-menu:${actor}:${capturedAtMs}:${action}:${menuEventSource}`
+        && layoutMenuEventId === `layout-menu:${actor}:${capturedAtMs}:${action}:${menuEventSource}`
         && evidence.surface === 'assessment'
         && typeof evidence.roomPhase === 'string'
         && evidence.durableObjectReplayExpected === true;
@@ -927,11 +927,11 @@ export class VideoRoom {
     return false;
   }
 
-  private parseDesktopWindows(value: unknown): RoomDesktopWindow[] {
+  private parseLayoutWindows(value: unknown): RoomLayoutWindow[] {
     if (!Array.isArray(value)) return [];
     return value
-      .map((entry) => this.parseDesktopWindow(entry))
-      .filter((entry): entry is RoomDesktopWindow => entry !== null);
+      .map((entry) => this.parseLayoutWindow(entry))
+      .filter((entry): entry is RoomLayoutWindow => entry !== null);
   }
 
   private isRoomAgentPromptSource(value: unknown): value is RoomAgentPromptSource {
@@ -1023,13 +1023,13 @@ export class VideoRoom {
       && prompt.agentResponseClaimed === false;
   }
 
-  private async getDesktopWindows(): Promise<RoomDesktopWindow[]> {
-    return this.parseDesktopWindows(await this.state.storage.get<unknown>('desktopWindows'));
+  private async getLayoutWindows(): Promise<RoomLayoutWindow[]> {
+    return this.parseLayoutWindows(await this.state.storage.get<unknown>('roomPanels'));
   }
 
-  private parseDesktopActivityEntry(value: unknown): RoomDesktopActivityEntry | null {
+  private parseLayoutActivityEntry(value: unknown): RoomLayoutActivityEntry | null {
     if (!this.isRecord(value)) return null;
-    const event = this.parseDesktopEvent(value.event);
+    const event = this.parseLayoutEvent(value.event);
     if (
       event === null
       || !this.isVideoRole(value.role)
@@ -1041,11 +1041,11 @@ export class VideoRoom {
     return { event, role: value.role, recordedAt: value.recordedAt };
   }
 
-  private parseDesktopActivityLog(value: unknown): RoomDesktopActivityEntry[] {
+  private parseLayoutActivityLog(value: unknown): RoomLayoutActivityEntry[] {
     if (!Array.isArray(value)) return [];
     return value
-      .map((entry) => this.parseDesktopActivityEntry(entry))
-      .filter((entry): entry is RoomDesktopActivityEntry => entry !== null);
+      .map((entry) => this.parseLayoutActivityEntry(entry))
+      .filter((entry): entry is RoomLayoutActivityEntry => entry !== null);
   }
 
   private async getCurrentAgentPrompt(): Promise<RoomAgentPrompt | null> {
@@ -1273,7 +1273,7 @@ export class VideoRoom {
       const roomContextOk = surfaceOk && typeof evidence.roomPhase === 'string';
       if (source === 'agent_tray_ui' || source === 'agent_prompt_ui' || source === 'agent_chat_ui') {
         const originOk = source === 'agent_tray_ui'
-          ? origin === 'tray' && evidence.actionSource === 'assessment_taskbar_tray'
+          ? origin === 'tray' && evidence.actionSource === 'assessment_agent_tray'
           : source === 'agent_chat_ui'
             ? origin === 'chat' && evidence.actionSource === 'agent_chat_window'
             : (origin === 'prompt' && evidence.actionSource === 'agent_prompt_ui');
@@ -1865,7 +1865,7 @@ export class VideoRoom {
     const expectedSampleId = `cursor:${actor}:${sampledAtMs}:${Math.round(normalizedX * 1000)}:${Math.round(normalizedY * 1000)}`;
     return cursor.role === role
       && evidence.source === 'assessment_cursor_presence_client_sample'
-      && evidence.cursorEventSource === 'browser_assessment_desktop_pointermove'
+      && evidence.cursorEventSource === 'browser_assessment_room_pointermove'
       && evidence.actor === actor
       && evidence.surface === 'assessment'
       && typeof evidence.roomPhase === 'string'
@@ -2194,7 +2194,7 @@ export class VideoRoom {
   }
 
   private isRoomFileKind(value: unknown): value is RoomFileKind {
-    return value === 'text' || value === 'paint' || value === 'json' || value === 'link';
+    return value === 'text' || value === 'diagram' || value === 'json' || value === 'link';
   }
 
   private isSafeFileText(value: unknown, maxLength: number): value is string {
@@ -2373,25 +2373,25 @@ export class VideoRoom {
     await this.state.storage.put('roomSurface', surface);
   }
 
-  private async persistDesktopEvent(event: RoomDesktopEvent): Promise<RoomDesktopWindow[]> {
+  private async persistLayoutEvent(event: RoomLayoutEvent): Promise<RoomLayoutWindow[]> {
     if (event.kind === 'SET_ROOM_SURFACE') {
       await this.persistRoomSurface(event.surface);
-      return this.getDesktopWindows();
+      return this.getLayoutWindows();
     }
     if (event.kind === 'START_MENU_STATE') {
-      await this.state.storage.put('desktopStartMenuOpen', event.open);
-      return this.getDesktopWindows();
+      await this.state.storage.put('layoutMenuOpen', event.open);
+      return this.getLayoutWindows();
     }
-    const windows = await this.getDesktopWindows();
+    const windows = await this.getLayoutWindows();
     if (event.kind === 'OPEN_WINDOW') {
       const withoutExisting = windows.filter((windowConfig) => windowConfig.id !== event.window.id);
       const nextWindows = [...withoutExisting, event.window];
-      await this.state.storage.put('desktopWindows', nextWindows);
+      await this.state.storage.put('roomPanels', nextWindows);
       return nextWindows;
     }
     if (event.kind === 'CLOSE_WINDOW') {
       const nextWindows = windows.filter((windowConfig) => windowConfig.id !== event.windowId);
-      await this.state.storage.put('desktopWindows', nextWindows);
+      await this.state.storage.put('roomPanels', nextWindows);
       return nextWindows;
     }
     if (event.kind === 'WORKSPACE_STATE_CHANGED') {
@@ -2413,7 +2413,7 @@ export class VideoRoom {
           focused: event.focused ?? windowConfig.focused,
         };
       });
-      await this.state.storage.put('desktopWindows', nextWindows);
+      await this.state.storage.put('roomPanels', nextWindows);
       return nextWindows;
     }
     const nextWindows = windows.map((windowConfig) => (
@@ -2421,30 +2421,30 @@ export class VideoRoom {
         ? { ...windowConfig, data: { ...windowConfig.data, ...event.data } }
         : windowConfig
     ));
-    await this.state.storage.put('desktopWindows', nextWindows);
+    await this.state.storage.put('roomPanels', nextWindows);
     return nextWindows;
   }
 
-  private async sendDesktopEventRejected(ws: WebSocket, reason: string): Promise<void> {
-    const desktopStartMenuOpen = await this.state.storage.get<unknown>('desktopStartMenuOpen');
+  private async sendLayoutEventRejected(ws: WebSocket, reason: string): Promise<void> {
+    const layoutMenuOpen = await this.state.storage.get<unknown>('layoutMenuOpen');
     ws.send(JSON.stringify({
-      type: 'ROOM_DESKTOP_EVENT_REJECTED',
+      type: 'ROOM_LAYOUT_EVENT_REJECTED',
       reason,
       payload: {
-        windows: await this.getDesktopWindows(),
+        windows: await this.getLayoutWindows(),
         surface: this.roomSurface,
-        startMenuOpen: typeof desktopStartMenuOpen === 'boolean' ? desktopStartMenuOpen : false,
+        layoutMenuOpen: typeof layoutMenuOpen === 'boolean' ? layoutMenuOpen : false,
       },
     }));
   }
 
-  private async recordDesktopActivity(event: RoomDesktopEvent, role: VideoRole): Promise<void> {
-    const previous = this.parseDesktopActivityLog(await this.state.storage.get<unknown>('desktopActivityLog'));
+  private async recordLayoutActivity(event: RoomLayoutEvent, role: VideoRole): Promise<void> {
+    const previous = this.parseLayoutActivityLog(await this.state.storage.get<unknown>('roomActivityLog'));
     const next = [
       ...previous.slice(-249),
       { event, role, recordedAt: Date.now() },
     ];
-    await this.state.storage.put('desktopActivityLog', next);
+    await this.state.storage.put('roomActivityLog', next);
   }
 
   private async persistAgentPrompt(prompt: RoomAgentPrompt): Promise<void> {
@@ -2720,8 +2720,8 @@ export class VideoRoom {
 
     if (request.method === 'GET' && url.pathname === '/activity-log') {
       return new Response(JSON.stringify({
-        desktopActivityLog: this.parseDesktopActivityLog(
-          await this.state.storage.get<unknown>('desktopActivityLog'),
+        roomActivityLog: this.parseLayoutActivityLog(
+          await this.state.storage.get<unknown>('roomActivityLog'),
         ),
         chatActivityLog: this.parseChatActivityLog(
           await this.state.storage.get<unknown>('chatActivityLog'),
@@ -2788,14 +2788,14 @@ export class VideoRoom {
         peers: peerCount,
       }));
 
-      const desktopWindows = await this.getDesktopWindows();
-      const desktopStartMenuOpen = await this.state.storage.get<unknown>('desktopStartMenuOpen');
+      const roomPanels = await this.getLayoutWindows();
+      const layoutMenuOpen = await this.state.storage.get<unknown>('layoutMenuOpen');
       server.send(JSON.stringify({
-        type: 'ROOM_DESKTOP_STATE',
+        type: 'ROOM_LAYOUT_STATE',
         payload: {
-          windows: desktopWindows,
+          windows: roomPanels,
           surface: this.roomSurface,
-          startMenuOpen: typeof desktopStartMenuOpen === 'boolean' ? desktopStartMenuOpen : false,
+          layoutMenuOpen: typeof layoutMenuOpen === 'boolean' ? layoutMenuOpen : false,
         },
       }));
 
@@ -2943,24 +2943,24 @@ export class VideoRoom {
       return;
     }
 
-    if (message.type === 'ROOM_DESKTOP_EVENT') {
+    if (message.type === 'ROOM_LAYOUT_EVENT') {
       if (this.sessionStatus === 'ENDED') {
-        await this.sendDesktopEventRejected(ws, 'ROOM_ENDED');
+        await this.sendLayoutEventRejected(ws, 'ROOM_ENDED');
         return;
       }
-      const event = this.parseDesktopEvent(message.payload);
+      const event = this.parseLayoutEvent(message.payload);
       if (!event) {
-        await this.sendDesktopEventRejected(ws, 'INVALID_EVENT');
+        await this.sendLayoutEventRejected(ws, 'INVALID_EVENT');
         return;
       }
-      if (!this.hasSourceBackedDesktopEventEvidence(event, senderRole)) {
-        await this.sendDesktopEventRejected(ws, 'MISSING_SOURCE_EVIDENCE');
+      if (!this.hasSourceBackedLayoutEventEvidence(event, senderRole)) {
+        await this.sendLayoutEventRejected(ws, 'MISSING_SOURCE_EVIDENCE');
         return;
       }
-      await this.persistDesktopEvent(event);
-      await this.recordDesktopActivity(event, senderRole);
+      await this.persistLayoutEvent(event);
+      await this.recordLayoutActivity(event, senderRole);
       this.broadcastExcept(ws, JSON.stringify({
-        type: 'ROOM_DESKTOP_EVENT',
+        type: 'ROOM_LAYOUT_EVENT',
         role: senderRole,
         payload: event,
       }));

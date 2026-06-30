@@ -114,7 +114,7 @@ The controlling product rule remains:
 - Candidate assessment routing currently serves it through the existing
   dev-container `CODE_IMPLEMENTATION` runtime.
 - Meeting-room workspace provisioning treats it as a workspace-backed interview.
-- Host room end now replays the authoritative Durable Object desktop, chat,
+- Host room end now replays the authoritative Durable Object room, chat,
   and file activity logs into source-backed `meeting_session_event` evidence,
   so assessment-room interactions are captured as part of the interview lifecycle
   instead of only when a graph read is requested later.
@@ -137,11 +137,11 @@ The controlling product rule remains:
   when the candidate-created file content is summarized or preview-suppressed.
 - Shared file delete replay now preserves the deleted file snapshot when the
   Durable Object still has it, including deleted file name, kind, content hash,
-  and bounded preview, so removing a desktop artifact does not erase its
+  and bounded preview, so removing a room artifact does not erase its
   provenance.
-- Durable Object replay now includes synced window state changes as
+- Durable Object replay now includes accepted room panel state changes as
   source-backed `window_update` evidence, preserving focus, minimize, maximize,
-  and move patches from the shared assessment-room desktop activity log.
+  and move patches from the shared assessment-room activity log.
 - Browser direct, back, and forward navigation now publish shared workspace
   URL state and persist as `browser_navigation` evidence.
 - Accepted guest join/leave and recording start/stop room lifecycle events now
@@ -157,7 +157,7 @@ The controlling product rule remains:
 - Both host and guest can switch the shared room between the standard call and
   assessment room surfaces. Each browser action emits `room_surface_change`
   evidence with actor, previous surface, next surface, and room phase, while the
-  Durable Object desktop log remains the authoritative shared-state replay.
+  Durable Object room log remains the authoritative shared-state replay.
 - Terminal windows now capture completed dev-container commands and bounded
   output chunks as source-backed `meeting_session_event` evidence with
   workspace session and repo metadata.
@@ -180,7 +180,7 @@ The controlling product rule remains:
 - AI agent bridge/Devin room actions emitted from the real bridge stdout tag protocol
   now persist origin, bridge event type, action protocol, agent name, and
   browser execution role in `agent_action` evidence, so prompt-button actions
-  and real agent-directed desktop actions remain separate.
+  and real agent-directed room actions remain separate.
 - AI agent bridge/Devin process diagnostics now persist bounded and redacted bridge
   evidence for real stderr, context-primer failures, process exits, and startup
   errors, including diagnostic source, observed time, exit code, and signal

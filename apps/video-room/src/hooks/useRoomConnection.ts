@@ -9,30 +9,9 @@ import type {
 } from '../types';
 import { safeAgentEvidenceIdPart as safeEvidenceIdPart } from '../lib/agentPromptIdentity';
 import {
-  browserNavigationUrlFingerprint,
-  normalizeBrowserNavigationUrl,
-} from '../lib/browserNavigationEvidence';
-import {
-  inferWindowDataAction,
-  inferWindowStateAction,
-  windowDataValueFingerprint,
-} from '../lib/windowEvidence';
-import { roomChatMessageFingerprint } from '../lib/chatEvidence';
-import type { OpenWindowConfig, WindowType } from './useWindowManager';
+  roomChatMessageFingerprint,
+} from '../lib/chatEvidence';
 import type { SessionEventType } from './useSessionEvents';
-
-const WINDOW_TYPES = new Set<WindowType>([
-  'video',
-  'workspace',
-  'chat',
-  'tasks',
-  'snippet',
-  'browser',
-  'notepad',
-  'paint',
-  'terminal',
-  'custom',
-]);
 
 const ROOM_PHASES = new Set<RoomPhase>([
   'disconnected',
@@ -46,13 +25,6 @@ const ROOM_PHASES = new Set<RoomPhase>([
   'error',
 ]);
 
-export interface RoomDesktopWindowConfig extends OpenWindowConfig {
-  id: string;
-  minimized?: boolean;
-  maximized?: boolean;
-  focused?: boolean;
-}
-
 export type RoomSurface = 'standard' | 'assessment';
 export type RoomAgentPromptSource = 'system' | 'agent' | 'host' | 'guest';
 export type RoomAgentInteractionEventType = Extract<
@@ -60,7 +32,7 @@ export type RoomAgentInteractionEventType = Extract<
   'ai_chat_user' | 'ai_chat_agent' | 'ai_agent_status' | 'agent_action'
 >;
 export type RoomCodeServerFileEventType = Extract<SessionEventType, 'code_editor_save' | 'file_change'>;
-export type RoomFileKind = 'text' | 'paint' | 'json' | 'link';
+export type RoomFileKind = 'text' | 'json' | 'link';
 const SHA256_HEX_RE = /^[a-f0-9]{64}$/i;
 const CODE_SERVER_SAVE_ACTIONS = new Set(['created', 'modified', 'renamed']);
 const CODE_SERVER_FILE_CHANGE_ID_RE = /^code-server-file:[a-zA-Z0-9:_-]+:\d+:[a-zA-Z0-9:_-]+:path_[0-9a-f]{8}:[a-f0-9]{16}$/;
@@ -126,29 +98,6 @@ const RECORDING_FAILURE_SOURCES = new Set([
   'recording_upload_exception',
 ]);
 const MAX_RECORDING_FAILURE_MESSAGE_LENGTH = 240;
-const WINDOW_LIFECYCLE_SOURCES = new Set([
-  'assessment_desktop_ui',
-  'assessment_file_system',
-  'assessment_start_menu',
-  'assessment_window_chrome',
-  'assessment_taskbar',
-  'standard_assessment_ui',
-  'agent_action',
-  'shared_state_sync',
-]);
-const WINDOW_STATE_SOURCES = new Set([
-  'assessment_desktop_ui',
-  'assessment_start_menu',
-  'assessment_window_chrome',
-  'assessment_taskbar',
-]);
-const WINDOW_DATA_SOURCES = new Set(['assessment_window_data_sync', 'assessment_file_delete_sync']);
-const START_MENU_EVENT_SOURCES = new Set([
-  'assessment_start_button',
-  'assessment_desktop_click',
-  'assessment_start_menu_item',
-]);
-const START_MENU_EVENT_ID_RE = /^start-menu:(host|guest):\d+:(open|close):[a-z0-9_]+$/;
 
 export interface RoomAgentAction {
   id: string;
@@ -357,173 +306,6 @@ export interface RoomFileDraft {
   updatedAt?: number;
 }
 
-export type RoomDesktopEvent =
-  | {
-      id: string;
-      clientId: string;
-      createdAt: number;
-      kind: 'SET_ROOM_SURFACE';
-      surface: RoomSurface;
-      previousSurface?: RoomSurface;
-      action?: string;
-      source?: string;
-      surfaceControlEventSource?: string;
-      surfaceChangeId?: string;
-      capturedAtMs?: number;
-      roomPhase?: RoomPhase;
-      durableObjectReplayExpected?: boolean;
-    }
-  | {
-      id: string;
-      clientId: string;
-      createdAt: number;
-      kind: 'OPEN_WINDOW';
-      window: RoomDesktopWindowConfig;
-      evidence?: Record<string, unknown>;
-    }
-  | {
-      id: string;
-      clientId: string;
-      createdAt: number;
-      kind: 'START_MENU_STATE';
-      open: boolean;
-      evidence?: Record<string, unknown>;
-    }
-  | {
-      id: string;
-      clientId: string;
-      createdAt: number;
-      kind: 'CLOSE_WINDOW';
-      windowId: string;
-      evidence?: Record<string, unknown>;
-    }
-  | {
-      id: string;
-      clientId: string;
-      createdAt: number;
-      kind: 'UPDATE_WINDOW_DATA';
-      windowId: string;
-      data: Record<string, unknown>;
-      evidence?: Record<string, unknown>;
-    }
-  | {
-      id: string;
-      clientId: string;
-      createdAt: number;
-      kind: 'UPDATE_WINDOW_STATE';
-      windowId: string;
-      x?: number;
-      y?: number;
-      width?: number;
-      height?: number;
-      minimized?: boolean;
-      maximized?: boolean;
-      focused?: boolean;
-      evidence?: Record<string, unknown>;
-    }
-  | {
-      id: string;
-      clientId: string;
-      createdAt: number;
-      kind: 'WORKSPACE_STATE_CHANGED';
-      actor?: 'host' | 'guest';
-      workspaceStateEventId?: string;
-      capturedAtMs?: number;
-      status?: string | null;
-      workspaceSessionId?: string | null;
-      errorMessage?: string | null;
-      repoUrl?: string | null;
-      githubPrNumber?: number | null;
-      matchedRepoId?: number | null;
-      challengeStatus?: string | null;
-      challengeKind?: string | null;
-      challengeSource?: string | null;
-      challengeMessage?: string | null;
-      canLaunch?: boolean;
-      ttlSeconds?: number | null;
-      ttlSource?: string | null;
-      expiresAt?: string | null;
-      expiringSoon?: boolean;
-      source?: string;
-      workspaceEventSource?: string;
-      workspaceStateSource?: string;
-      workspaceTelemetryPersisted?: boolean;
-      proxyUrlPersisted?: boolean;
-    };
-
-export type RoomDesktopEventDraft =
-  | {
-      kind: 'SET_ROOM_SURFACE';
-      surface: RoomSurface;
-      previousSurface?: RoomSurface;
-      action?: string;
-      source?: string;
-      surfaceControlEventSource?: string;
-      surfaceChangeId?: string;
-      capturedAtMs?: number;
-      roomPhase?: RoomPhase;
-      durableObjectReplayExpected?: boolean;
-    }
-  | {
-      kind: 'OPEN_WINDOW';
-      window: RoomDesktopWindowConfig;
-      evidence?: Record<string, unknown>;
-    }
-  | {
-      kind: 'START_MENU_STATE';
-      open: boolean;
-      evidence?: Record<string, unknown>;
-    }
-  | {
-      kind: 'CLOSE_WINDOW';
-      windowId: string;
-      evidence?: Record<string, unknown>;
-    }
-  | {
-      kind: 'UPDATE_WINDOW_DATA';
-      windowId: string;
-      data: Record<string, unknown>;
-      evidence?: Record<string, unknown>;
-    }
-  | {
-      kind: 'UPDATE_WINDOW_STATE';
-      windowId: string;
-      x?: number;
-      y?: number;
-      width?: number;
-      height?: number;
-      minimized?: boolean;
-      maximized?: boolean;
-      focused?: boolean;
-      evidence?: Record<string, unknown>;
-    }
-  | {
-      kind: 'WORKSPACE_STATE_CHANGED';
-      actor?: 'host' | 'guest';
-      workspaceStateEventId?: string;
-      capturedAtMs?: number;
-      status?: string | null;
-      workspaceSessionId?: string | null;
-      errorMessage?: string | null;
-      repoUrl?: string | null;
-      githubPrNumber?: number | null;
-      matchedRepoId?: number | null;
-      challengeStatus?: string | null;
-      challengeKind?: string | null;
-      challengeSource?: string | null;
-      challengeMessage?: string | null;
-      canLaunch?: boolean;
-      ttlSeconds?: number | null;
-      ttlSource?: string | null;
-      expiresAt?: string | null;
-      expiringSoon?: boolean;
-      source?: string;
-      workspaceEventSource?: string;
-      workspaceStateSource?: string;
-      workspaceTelemetryPersisted?: boolean;
-      proxyUrlPersisted?: boolean;
-    };
-
 export type RoomFileSystemEvent =
   | {
       id: string;
@@ -562,9 +344,6 @@ interface RoomConnection {
   remoteStream: MediaStream | null;
   iceProvider: IceServerProvider;
   roomSurface: RoomSurface;
-  desktopEvents: RoomDesktopEvent[];
-  desktopSnapshot: RoomDesktopWindowConfig[] | null;
-  desktopStartMenuOpen: boolean | null;
   agentPrompt: RoomAgentPrompt | null;
   agentInteractionEvents: RoomAgentInteractionEvent[];
   chatMessages: RoomChatMessage[];
@@ -585,7 +364,6 @@ interface RoomConnection {
   toggleCamera: () => void;
   toggleMic: () => void;
   retryConnection: () => void;
-  publishDesktopEvent: (event: RoomDesktopEventDraft) => void;
   publishAgentPrompt: (prompt: RoomAgentPromptDraft) => void;
   publishAgentInteractionEvent: (event: RoomAgentInteractionEventDraft) => void;
   publishChatMessage: (text: string) => RoomChatMessage | null;
@@ -595,12 +373,10 @@ interface RoomConnection {
   publishTerminalEvent: (event: RoomTerminalEventDraft) => void;
   publishCursorPresence: (position: { x: number; y: number }, evidence?: Record<string, unknown>) => void;
   publishFileSystemEvent: (event: RoomFileSystemEventDraft) => void;
-  setRoomSurface: (surface: RoomSurface, evidence?: Record<string, unknown>) => void;
 }
 
 interface UseRoomConnectionOptions {
   onChatDeliveryEvidence?: (message: RoomChatMessage) => void;
-  ignoreInitialRoomSurfaceSnapshot?: boolean;
 }
 
 const FALLBACK_ICE: RTCIceServer[] = [
@@ -613,7 +389,6 @@ const PEER_FAILED_GRACE_MS = 12000;
 const PEER_RENEGOTIATE_DELAY_MS = 750;
 const PEER_CURSOR_TTL_MS = 4000;
 export const ROOM_CURSOR_SEND_INTERVAL_MS = 160;
-const SURFACE_SNAPSHOT_LOCAL_EVENT_GUARD_MS = 5000;
 
 export function addLocalMediaToPeer(peer: RTCPeerConnection, stream: MediaStream | null): void {
   const attachedKinds = new Set<string>();
@@ -627,16 +402,6 @@ export function addLocalMediaToPeer(peer: RTCPeerConnection, stream: MediaStream
   if (!attachedKinds.has('video')) {
     peer.addTransceiver('video', { direction: 'recvonly' });
   }
-}
-
-interface PendingLocalSurfaceEvent {
-  surface: RoomSurface;
-  createdAt: number;
-}
-
-interface SurfaceSnapshotDecision {
-  applySnapshot: boolean;
-  clearPendingLocalSurface: boolean;
 }
 
 function createPeerConfiguration(iceServers: RTCIceServer[]): RTCConfiguration {
@@ -653,10 +418,6 @@ function isRecord(value: unknown): value is Record<string, unknown> {
   return Boolean(value) && typeof value === 'object' && !Array.isArray(value);
 }
 
-function isWindowType(value: unknown): value is WindowType {
-  return typeof value === 'string' && WINDOW_TYPES.has(value as WindowType);
-}
-
 function numberOrUndefined(value: unknown): number | undefined {
   return typeof value === 'number' && Number.isFinite(value) ? value : undefined;
 }
@@ -670,11 +431,6 @@ function stringOrNull(value: unknown): string | null | undefined {
   return typeof value === 'string' && value.length > 0 ? value : undefined;
 }
 
-function numberOrNull(value: unknown): number | null | undefined {
-  if (value === null) return null;
-  return typeof value === 'number' && Number.isFinite(value) ? value : undefined;
-}
-
 function booleanOrUndefined(value: unknown): boolean | undefined {
   return typeof value === 'boolean' ? value : undefined;
 }
@@ -685,473 +441,6 @@ function recordOrUndefined(value: unknown): Record<string, unknown> | undefined 
 
 function isRoomSurface(value: unknown): value is RoomSurface {
   return value === 'standard' || value === 'assessment';
-}
-
-function isRoomPhase(value: unknown): value is RoomPhase {
-  return typeof value === 'string' && ROOM_PHASES.has(value as RoomPhase);
-}
-
-export function decideRoomSurfaceSnapshot(input: {
-  snapshotSurface: RoomSurface;
-  surfaceEventSeenOnSocket: boolean;
-  pendingLocalSurfaceEvent: PendingLocalSurfaceEvent | null;
-  nowMs: number;
-  guardMs?: number;
-  ignoreInitialSnapshot?: boolean;
-}): SurfaceSnapshotDecision {
-  const guardMs = input.guardMs ?? SURFACE_SNAPSHOT_LOCAL_EVENT_GUARD_MS;
-  const pending = input.pendingLocalSurfaceEvent;
-  if (pending) {
-    const pendingAgeMs = Math.max(0, input.nowMs - pending.createdAt);
-    const pendingIsFresh = pendingAgeMs <= guardMs;
-    if (pendingIsFresh && pending.surface !== input.snapshotSurface) {
-      return { applySnapshot: false, clearPendingLocalSurface: false };
-    }
-    return { applySnapshot: true, clearPendingLocalSurface: true };
-  }
-  if (input.surfaceEventSeenOnSocket) {
-    return { applySnapshot: false, clearPendingLocalSurface: false };
-  }
-  if (input.ignoreInitialSnapshot) {
-    return { applySnapshot: false, clearPendingLocalSurface: false };
-  }
-  return { applySnapshot: true, clearPendingLocalSurface: false };
-}
-
-function parseDesktopWindow(value: unknown): RoomDesktopWindowConfig | null {
-  if (!isRecord(value)) return null;
-  if (typeof value.id !== 'string' || !isWindowType(value.windowType) || typeof value.title !== 'string') {
-    return null;
-  }
-  return {
-    id: value.id,
-    windowType: value.windowType,
-    title: value.title,
-    icon: typeof value.icon === 'string' ? value.icon : undefined,
-    x: numberOrUndefined(value.x),
-    y: numberOrUndefined(value.y),
-    width: numberOrUndefined(value.width),
-    height: numberOrUndefined(value.height),
-    minimized: typeof value.minimized === 'boolean' ? value.minimized : undefined,
-    maximized: typeof value.maximized === 'boolean' ? value.maximized : undefined,
-    focused: typeof value.focused === 'boolean' ? value.focused : undefined,
-    data: recordOrUndefined(value.data),
-  };
-}
-
-function parseDesktopEvent(value: unknown): RoomDesktopEvent | null {
-  if (!isRecord(value)) return null;
-  if (
-    typeof value.id !== 'string'
-    || typeof value.clientId !== 'string'
-    || typeof value.createdAt !== 'number'
-  ) {
-    return null;
-  }
-  if (value.kind === 'OPEN_WINDOW') {
-    const windowConfig = parseDesktopWindow(value.window);
-    if (!windowConfig) return null;
-    return {
-      id: value.id,
-      clientId: value.clientId,
-      createdAt: value.createdAt,
-      kind: 'OPEN_WINDOW',
-      window: windowConfig,
-      evidence: recordOrUndefined(value.evidence),
-    };
-  }
-  if (value.kind === 'SET_ROOM_SURFACE' && isRoomSurface(value.surface)) {
-    return {
-      id: value.id,
-      clientId: value.clientId,
-      createdAt: value.createdAt,
-      kind: 'SET_ROOM_SURFACE',
-      surface: value.surface,
-      previousSurface: isRoomSurface(value.previousSurface) ? value.previousSurface : undefined,
-      action: typeof value.action === 'string' ? value.action : undefined,
-      source: typeof value.source === 'string' ? value.source : undefined,
-      surfaceControlEventSource: typeof value.surfaceControlEventSource === 'string'
-        ? value.surfaceControlEventSource
-        : undefined,
-      surfaceChangeId: typeof value.surfaceChangeId === 'string' ? value.surfaceChangeId : undefined,
-      capturedAtMs: numberOrUndefined(value.capturedAtMs),
-      roomPhase: isRoomPhase(value.roomPhase) ? value.roomPhase : undefined,
-      durableObjectReplayExpected: booleanOrUndefined(value.durableObjectReplayExpected),
-    };
-  }
-  if (value.kind === 'START_MENU_STATE' && typeof value.open === 'boolean') {
-    return {
-      id: value.id,
-      clientId: value.clientId,
-      createdAt: value.createdAt,
-      kind: 'START_MENU_STATE',
-      open: value.open,
-      evidence: recordOrUndefined(value.evidence),
-    };
-  }
-  if (value.kind === 'CLOSE_WINDOW' && typeof value.windowId === 'string') {
-    return {
-      id: value.id,
-      clientId: value.clientId,
-      createdAt: value.createdAt,
-      kind: 'CLOSE_WINDOW',
-      windowId: value.windowId,
-      evidence: recordOrUndefined(value.evidence),
-    };
-  }
-  if (value.kind === 'UPDATE_WINDOW_DATA' && typeof value.windowId === 'string' && isRecord(value.data)) {
-    return {
-      id: value.id,
-      clientId: value.clientId,
-      createdAt: value.createdAt,
-      kind: 'UPDATE_WINDOW_DATA',
-      windowId: value.windowId,
-      data: value.data,
-      evidence: recordOrUndefined(value.evidence),
-    };
-  }
-  if (value.kind === 'UPDATE_WINDOW_STATE' && typeof value.windowId === 'string') {
-    const event: RoomDesktopEvent = {
-      id: value.id,
-      clientId: value.clientId,
-      createdAt: value.createdAt,
-      kind: 'UPDATE_WINDOW_STATE',
-      windowId: value.windowId,
-      x: numberOrUndefined(value.x),
-      y: numberOrUndefined(value.y),
-      width: numberOrUndefined(value.width),
-      height: numberOrUndefined(value.height),
-      minimized: typeof value.minimized === 'boolean' ? value.minimized : undefined,
-      maximized: typeof value.maximized === 'boolean' ? value.maximized : undefined,
-      focused: typeof value.focused === 'boolean' ? value.focused : undefined,
-      evidence: recordOrUndefined(value.evidence),
-    };
-    if (
-      event.x === undefined
-      && event.y === undefined
-      && event.width === undefined
-      && event.height === undefined
-      && event.minimized === undefined
-      && event.maximized === undefined
-      && event.focused === undefined
-    ) {
-      return null;
-    }
-    return event;
-  }
-  if (value.kind === 'WORKSPACE_STATE_CHANGED') {
-    return {
-      id: value.id,
-      clientId: value.clientId,
-      createdAt: value.createdAt,
-      kind: 'WORKSPACE_STATE_CHANGED',
-      actor: value.actor === 'host' || value.actor === 'guest' ? value.actor : undefined,
-      workspaceStateEventId: stringOrNull(value.workspaceStateEventId) ?? undefined,
-      capturedAtMs: numberOrNull(value.capturedAtMs) ?? undefined,
-      status: typeof value.status === 'string' ? value.status : null,
-      workspaceSessionId: stringOrNull(value.workspaceSessionId),
-      errorMessage: stringOrNull(value.errorMessage),
-      repoUrl: stringOrNull(value.repoUrl),
-      githubPrNumber: numberOrNull(value.githubPrNumber),
-      matchedRepoId: numberOrNull(value.matchedRepoId),
-      challengeStatus: stringOrNull(value.challengeStatus),
-      challengeKind: stringOrNull(value.challengeKind),
-      challengeSource: stringOrNull(value.challengeSource),
-      challengeMessage: stringOrNull(value.challengeMessage),
-      canLaunch: booleanOrUndefined(value.canLaunch),
-      ttlSeconds: numberOrNull(value.ttlSeconds),
-      ttlSource: stringOrNull(value.ttlSource),
-      expiresAt: stringOrNull(value.expiresAt),
-      expiringSoon: booleanOrUndefined(value.expiringSoon),
-      source: typeof value.source === 'string' && value.source.length <= 80 ? value.source : undefined,
-      workspaceEventSource: typeof value.workspaceEventSource === 'string' && value.workspaceEventSource.length <= 80
-        ? value.workspaceEventSource
-        : undefined,
-      workspaceStateSource: typeof value.workspaceStateSource === 'string' && value.workspaceStateSource.length <= 80
-        ? value.workspaceStateSource
-        : undefined,
-      workspaceTelemetryPersisted: booleanOrUndefined(value.workspaceTelemetryPersisted),
-      proxyUrlPersisted: booleanOrUndefined(value.proxyUrlPersisted),
-    };
-  }
-  return null;
-}
-
-function roleActor(role?: RoomRole): 'host' | 'guest' | null {
-  if (role === 'HOST') return 'host';
-  if (role === 'GUEST') return 'guest';
-  return null;
-}
-
-function hasSourceBackedWorkspaceStateEvidence(event: RoomDesktopEvent, actor: 'host' | 'guest'): boolean {
-  if (event.kind !== 'WORKSPACE_STATE_CHANGED') return false;
-  const status = typeof event.status === 'string' && event.status.trim().length > 0
-    ? event.status
-    : null;
-  const workspaceStateSource = typeof event.workspaceStateSource === 'string'
-    ? event.workspaceStateSource
-    : null;
-  const capturedAtMs = event.capturedAtMs;
-  const workspaceSessionId = typeof event.workspaceSessionId === 'string' && event.workspaceSessionId.trim().length > 0
-    ? event.workspaceSessionId
-    : null;
-  const stateIdSession = workspaceSessionId ?? 'no-session';
-  return event.actor === actor
-    && status !== null
-    && event.source === 'browser_workspace_state_observer'
-    && event.workspaceEventSource === 'browser_workspace_state_observer'
-    && (
-      workspaceStateSource === 'initial_load'
-      || workspaceStateSource === 'launch'
-      || workspaceStateSource === 'refresh'
-      || workspaceStateSource === 'error'
-    )
-    && typeof capturedAtMs === 'number'
-    && Number.isInteger(capturedAtMs)
-    && capturedAtMs >= 0
-    && event.workspaceStateEventId === `workspace-state:${actor}:${capturedAtMs}:${workspaceStateSource}:${stateIdSession}:${status}`
-    && (status === 'ERROR' || status === 'NOT_LAUNCHED' || workspaceSessionId !== null)
-    && event.workspaceTelemetryPersisted === true
-    && event.proxyUrlPersisted === false;
-}
-
-function hasMatchingWindowDataEvidence(
-  data: Record<string, unknown>,
-  evidence: Record<string, unknown>,
-): boolean {
-  const dataKeys = Object.keys(data).sort();
-  const evidenceKeys = Array.isArray(evidence.dataKeys)
-    ? evidence.dataKeys
-    : [];
-  if (
-    dataKeys.length === 0
-    || evidenceKeys.length !== dataKeys.length
-    || !evidenceKeys.every((key): key is string => typeof key === 'string')
-  ) {
-    return false;
-  }
-  const sortedEvidenceKeys = [...evidenceKeys].sort();
-  if (!dataKeys.every((key, index) => key === sortedEvidenceKeys[index])) return false;
-
-  const fingerprints = evidence.dataValueFingerprints;
-  if (!isRecord(fingerprints)) return false;
-  return dataKeys.every((key) => (
-    fingerprints[key] === windowDataValueFingerprint(data[key])
-  ));
-}
-
-function windowStatePatchFromEvent(event: Extract<RoomDesktopEvent, { kind: 'UPDATE_WINDOW_STATE' }>): Record<string, number | boolean> {
-  const patch: Record<string, number | boolean> = {};
-  for (const key of ['x', 'y', 'width', 'height', 'minimized', 'maximized', 'focused'] as const) {
-    const value = event[key];
-    if (typeof value === 'number' || typeof value === 'boolean') {
-      patch[key] = value;
-    }
-  }
-  return patch;
-}
-
-function hasMatchingWindowStateEvidence(
-  event: Extract<RoomDesktopEvent, { kind: 'UPDATE_WINDOW_STATE' }>,
-  evidence: Record<string, unknown>,
-): { ok: boolean; action: string | null } {
-  const statePatch = windowStatePatchFromEvent(event);
-  const stateKeys = Object.keys(statePatch).sort();
-  const evidencePatch = evidence.statePatch;
-  if (stateKeys.length === 0 || !isRecord(evidencePatch)) {
-    return { ok: false, action: null };
-  }
-  const evidenceKeys = Array.isArray(evidence.stateKeys) ? evidence.stateKeys : [];
-  if (
-    evidenceKeys.length !== stateKeys.length
-    || !evidenceKeys.every((key): key is string => typeof key === 'string')
-  ) {
-    return { ok: false, action: null };
-  }
-  const sortedEvidenceKeys = [...evidenceKeys].sort();
-  if (!stateKeys.every((key, index) => key === sortedEvidenceKeys[index])) {
-    return { ok: false, action: null };
-  }
-  const patchMatches = stateKeys.every((key) => evidencePatch[key] === statePatch[key]);
-  if (!patchMatches) return { ok: false, action: null };
-  return { ok: true, action: inferWindowStateAction(statePatch) };
-}
-
-export function hasSourceBackedDesktopEventEvidence(event: RoomDesktopEvent, role?: RoomRole): boolean {
-  const actor = roleActor(role);
-  if (!actor) return false;
-  if (event.kind === 'SET_ROOM_SURFACE') {
-    const expectedAction = event.surface === 'assessment' ? 'enter_desktop' : 'exit_desktop';
-    const capturedAtMs = event.capturedAtMs;
-    return event.source === 'room_surface_control'
-      && event.surfaceControlEventSource === 'browser_room_surface_toggle'
-      && event.action === expectedAction
-      && event.previousSurface !== undefined
-      && event.previousSurface !== event.surface
-      && typeof event.surfaceChangeId === 'string'
-      && typeof capturedAtMs === 'number'
-      && Number.isInteger(capturedAtMs)
-      && capturedAtMs >= 0
-      && event.surfaceChangeId === `surface:${actor}:${capturedAtMs}:${event.previousSurface}:${event.surface}`
-      && isRoomPhase(event.roomPhase)
-      && event.durableObjectReplayExpected === true;
-  }
-  if (event.kind === 'WORKSPACE_STATE_CHANGED') {
-    return hasSourceBackedWorkspaceStateEvidence(event, actor);
-  }
-  const evidence = event.evidence;
-  if (!isRecord(evidence)) return false;
-  if (event.kind === 'START_MENU_STATE') {
-    const action = event.open ? 'open' : 'close';
-    const capturedAtMs = evidence.capturedAtMs;
-    const menuEventSource = evidence.menuEventSource;
-    const startMenuEventId = evidence.startMenuEventId;
-    return evidence.source === 'assessment_start_menu_control'
-      && typeof menuEventSource === 'string'
-      && START_MENU_EVENT_SOURCES.has(menuEventSource)
-      && evidence.actor === actor
-      && evidence.menuId === 'start'
-      && evidence.action === action
-      && evidence.open === event.open
-      && typeof startMenuEventId === 'string'
-      && START_MENU_EVENT_ID_RE.test(startMenuEventId)
-      && typeof capturedAtMs === 'number'
-      && Number.isInteger(capturedAtMs)
-      && capturedAtMs >= 0
-      && startMenuEventId === `start-menu:${actor}:${capturedAtMs}:${action}:${menuEventSource}`
-      && evidence.surface === 'assessment'
-      && typeof evidence.roomPhase === 'string'
-      && evidence.durableObjectReplayExpected === true;
-  }
-  if (event.kind === 'OPEN_WINDOW' || event.kind === 'CLOSE_WINDOW') {
-    const kind = event.kind === 'OPEN_WINDOW' ? 'open' : 'close';
-    const windowId = event.kind === 'OPEN_WINDOW' ? event.window.id : event.windowId;
-    const capturedAtMs = evidence.capturedAtMs;
-    const openWindowMetadataMatches = event.kind === 'CLOSE_WINDOW' || (
-      evidence.windowType === event.window.windowType
-      && evidence.windowTitle === event.window.title
-    );
-    return evidence.source === 'window_lifecycle_client_submit'
-      && typeof evidence.lifecycleSource === 'string'
-      && WINDOW_LIFECYCLE_SOURCES.has(evidence.lifecycleSource)
-      && evidence.lifecycleKind === kind
-      && evidence.actor === actor
-      && evidence.windowId === windowId
-      && typeof evidence.windowType === 'string'
-      && typeof evidence.windowTitle === 'string'
-      && typeof evidence.windowLifecycleId === 'string'
-      && typeof capturedAtMs === 'number'
-      && Number.isFinite(capturedAtMs)
-      && evidence.windowLifecycleId === [
-        'window-lifecycle',
-        actor,
-        Math.max(0, Math.round(capturedAtMs)),
-        kind,
-        windowId,
-      ].join(':')
-      && openWindowMetadataMatches
-      && evidence.surface === 'assessment'
-      && typeof evidence.roomPhase === 'string'
-      && evidence.durableObjectReplayExpected === true;
-  }
-  if (event.kind === 'UPDATE_WINDOW_DATA') {
-    const isBrowserNavigation = typeof event.data.currentUrl === 'string';
-    if (isBrowserNavigation) {
-      const normalizedUrl = normalizeBrowserNavigationUrl(event.data.currentUrl as string);
-      const capturedAtMs = evidence.capturedAtMs;
-      const navigationTrigger = evidence.navigationTrigger;
-      const urlFingerprint = normalizedUrl ? browserNavigationUrlFingerprint(normalizedUrl) : null;
-      return evidence.source === 'room_browser_window'
-        && evidence.navigationSource === 'browser_window_client_submit'
-        && evidence.actor === actor
-        && evidence.windowId === event.windowId
-        && typeof evidence.browserNavigationId === 'string'
-        && typeof capturedAtMs === 'number'
-        && Number.isFinite(capturedAtMs)
-        && typeof navigationTrigger === 'string'
-        && normalizedUrl !== null
-        && evidence.url === normalizedUrl
-        && evidence.urlFingerprint === urlFingerprint
-        && evidence.browserNavigationId === [
-          'browser-navigation',
-          actor,
-          Math.max(0, Math.round(capturedAtMs)),
-          event.windowId,
-          navigationTrigger,
-          urlFingerprint,
-        ].join(':')
-        && evidence.surface === 'assessment'
-        && typeof evidence.roomPhase === 'string'
-        && evidence.durableObjectReplayExpected === true;
-    }
-    const dataKeys = Object.keys(event.data).sort();
-    const capturedAtMs = evidence.capturedAtMs;
-    const expectedAction = inferWindowDataAction(event.windowId, dataKeys);
-    return evidence.source === 'window_data_client_submit'
-      && typeof evidence.dataSource === 'string'
-      && WINDOW_DATA_SOURCES.has(evidence.dataSource)
-      && evidence.actor === actor
-      && evidence.windowId === event.windowId
-      && typeof evidence.windowDataUpdateId === 'string'
-      && typeof capturedAtMs === 'number'
-      && Number.isFinite(capturedAtMs)
-      && evidence.action === expectedAction
-      && evidence.windowDataUpdateId === [
-        'window-data',
-        actor,
-        Math.max(0, Math.round(capturedAtMs)),
-        event.windowId,
-        expectedAction,
-      ].join(':')
-      && hasMatchingWindowDataEvidence(event.data, evidence)
-      && evidence.surface === 'assessment'
-      && typeof evidence.roomPhase === 'string'
-      && evidence.durableObjectReplayExpected === true;
-  }
-  if (event.kind === 'UPDATE_WINDOW_STATE') {
-    const capturedAtMs = evidence.capturedAtMs;
-    const stateEvidence = hasMatchingWindowStateEvidence(event, evidence);
-    const expectedAction = stateEvidence.action;
-    return evidence.source === 'window_state_client_submit'
-      && typeof evidence.stateSource === 'string'
-      && WINDOW_STATE_SOURCES.has(evidence.stateSource)
-      && evidence.actor === actor
-      && evidence.windowId === event.windowId
-      && typeof evidence.windowStateChangeId === 'string'
-      && typeof capturedAtMs === 'number'
-      && Number.isFinite(capturedAtMs)
-      && stateEvidence.ok
-      && evidence.action === expectedAction
-      && evidence.windowStateChangeId === [
-        'window-state',
-        actor,
-        Math.max(0, Math.round(capturedAtMs)),
-        event.windowId,
-        expectedAction,
-      ].join(':')
-      && evidence.surface === 'assessment'
-      && typeof evidence.roomPhase === 'string'
-      && evidence.durableObjectReplayExpected === true;
-  }
-  return false;
-}
-
-function parseDesktopSnapshot(value: unknown): {
-  windows: RoomDesktopWindowConfig[];
-  surface?: RoomSurface;
-  startMenuOpen?: boolean;
-} | null {
-  if (!isRecord(value) || !Array.isArray(value.windows)) return null;
-  const windows: RoomDesktopWindowConfig[] = [];
-  for (const entry of value.windows) {
-    const windowConfig = parseDesktopWindow(entry);
-    if (windowConfig) windows.push(windowConfig);
-  }
-  return {
-    windows,
-    surface: isRoomSurface(value.surface) ? value.surface : undefined,
-    startMenuOpen: typeof value.startMenuOpen === 'boolean' ? value.startMenuOpen : undefined,
-  };
 }
 
 function isRoomAgentPromptSource(value: unknown): value is RoomAgentPromptSource {
@@ -1443,7 +732,7 @@ export function hasSourceBackedAgentInteractionEvidence(
 
     if (source === 'agent_tray_ui' || source === 'agent_prompt_ui' || source === 'agent_chat_ui' || source === 'agent_call_controls_ui') {
       const originOk = source === 'agent_tray_ui'
-        ? origin === 'tray' && evidence.actionSource === 'assessment_taskbar_tray'
+        ? origin === 'tray' && evidence.actionSource === 'assessment_agent_tray'
         : source === 'agent_chat_ui'
           ? origin === 'chat' && evidence.actionSource === 'agent_chat_window'
           : source === 'agent_call_controls_ui'
@@ -2177,7 +1466,7 @@ export function hasSourceBackedCursorEvidence(cursor: RoomCursorPresence, role?:
   const expectedSampleId = `cursor:${actor}:${sampledAtMs}:${Math.round(normalizedX * 1000)}:${Math.round(normalizedY * 1000)}`;
   return cursor.role === role
     && evidence.source === 'assessment_cursor_presence_client_sample'
-    && evidence.cursorEventSource === 'browser_assessment_desktop_pointermove'
+    && evidence.cursorEventSource === 'browser_assessment_room_pointermove'
     && evidence.actor === actor
     && evidence.surface === 'assessment'
     && typeof evidence.roomPhase === 'string'
@@ -2194,7 +1483,7 @@ export function hasSourceBackedCursorEvidence(cursor: RoomCursorPresence, role?:
 }
 
 function isRoomFileKind(value: unknown): value is RoomFileKind {
-  return value === 'text' || value === 'paint' || value === 'json' || value === 'link';
+  return value === 'text' || value === 'json' || value === 'link';
 }
 
 function parseRoomFile(value: unknown): RoomFile | null {
@@ -2334,7 +1623,7 @@ function hasExactRoomFileContentEvidence(
   if (file.kind === 'text' || file.kind === 'link') {
     return evidence[`${prefix}ExactText`] === file.content;
   }
-  if (file.kind === 'paint' || file.kind === 'json') {
+  if (file.kind === 'json') {
     return evidence[`${prefix}ExactJson`] === file.content;
   }
   return false;
@@ -2449,10 +1738,7 @@ export function useRoomConnection(
   const [localStream, setLocalStreamState] = useState<MediaStream | null>(null);
   const [remoteStream, setRemoteStream] = useState<MediaStream | null>(null);
   const [iceProvider, setIceProvider] = useState<IceServerProvider>('unknown');
-  const [roomSurface, setRoomSurfaceState] = useState<RoomSurface>(initialSurface);
-  const [desktopEvents, setDesktopEvents] = useState<RoomDesktopEvent[]>([]);
-  const [desktopSnapshot, setDesktopSnapshot] = useState<RoomDesktopWindowConfig[] | null>(null);
-  const [desktopStartMenuOpen, setDesktopStartMenuOpen] = useState<boolean | null>(null);
+  const roomSurface = initialSurface;
   const [agentPrompt, setAgentPrompt] = useState<RoomAgentPrompt | null>(null);
   const [agentInteractionEvents, setAgentInteractionEvents] = useState<RoomAgentInteractionEvent[]>([]);
   const [chatMessages, setChatMessages] = useState<RoomChatMessage[]>([]);
@@ -2480,7 +1766,6 @@ export function useRoomConnection(
   const startingCallRef = useRef(false);
   const startCallRef = useRef<RoomConnection['startCall'] | null>(null);
   const autoStartTimerRef = useRef<number | null>(null);
-  const desktopOutboxRef = useRef<RoomDesktopEvent[]>([]);
   const agentOutboxRef = useRef<RoomAgentPrompt[]>([]);
   const agentInteractionOutboxRef = useRef<RoomAgentInteractionEvent[]>([]);
   const chatOutboxRef = useRef<RoomChatMessage[]>([]);
@@ -2489,27 +1774,16 @@ export function useRoomConnection(
   const codeServerFileOutboxRef = useRef<RoomCodeServerFileEvent[]>([]);
   const terminalOutboxRef = useRef<RoomTerminalEvent[]>([]);
   const fileSystemOutboxRef = useRef<RoomFileSystemEvent[]>([]);
-  const surfaceEventSeenRef = useRef(false);
-  const pendingLocalSurfaceEventRef = useRef<PendingLocalSurfaceEvent | null>(null);
   const lastCursorSentAtRef = useRef(0);
   const chatDeliveryEvidenceRef = useRef(options.onChatDeliveryEvidence);
-  const desktopClientIdRef = useRef(
+  const roomClientIdRef = useRef(
     typeof crypto.randomUUID === 'function'
       ? crypto.randomUUID()
-      : `desktop-${Date.now()}-${Math.random().toString(36).slice(2)}`,
+      : `room-${Date.now()}-${Math.random().toString(36).slice(2)}`,
   );
   chatDeliveryEvidenceRef.current = options.onChatDeliveryEvidence;
   chatMessagesRef.current = chatMessages;
   phaseRef.current = phase;
-
-  useEffect(() => {
-    if (!active) {
-      surfaceEventSeenRef.current = false;
-      pendingLocalSurfaceEventRef.current = null;
-      setRoomSurfaceState(initialSurface);
-      setDesktopStartMenuOpen(null);
-    }
-  }, [active, initialSurface]);
 
   const setConnectionPhase = useCallback((nextPhase: RoomPhase): void => {
     phaseRef.current = nextPhase;
@@ -2544,13 +1818,6 @@ export function useRoomConnection(
     wsRef.current!.send(JSON.stringify({ type: 'STATUS_UPDATE', status }));
     return true;
   }, [hasOpenSignal]);
-
-  const sendDesktopEvent = useCallback((event: RoomDesktopEvent): boolean => {
-    const socket = wsRef.current;
-    if (!socket || socket.readyState !== WebSocket.OPEN) return false;
-    socket.send(JSON.stringify({ type: 'ROOM_DESKTOP_EVENT', payload: event }));
-    return true;
-  }, []);
 
   const sendAgentPrompt = useCallback((prompt: RoomAgentPrompt): boolean => {
     const socket = wsRef.current;
@@ -2614,17 +1881,6 @@ export function useRoomConnection(
     socket.send(JSON.stringify({ type: 'ROOM_FILE_SYSTEM_EVENT', payload: event }));
     return true;
   }, []);
-
-  const flushDesktopOutbox = useCallback((): void => {
-    if (desktopOutboxRef.current.length === 0) return;
-    const pending = desktopOutboxRef.current.splice(0);
-    for (const event of pending) {
-      if (!sendDesktopEvent(event)) {
-        desktopOutboxRef.current.unshift(event, ...pending.slice(pending.indexOf(event) + 1));
-        return;
-      }
-    }
-  }, [sendDesktopEvent]);
 
   const flushAgentOutbox = useCallback((): void => {
     if (agentOutboxRef.current.length === 0) return;
@@ -2859,13 +2115,11 @@ export function useRoomConnection(
     const connect = (): void => {
       if (disposed) return;
       clearReconnect();
-      surfaceEventSeenRef.current = false;
       const ws = new WebSocket(roomWebSocketUrl(token));
       wsRef.current = ws;
 
       ws.onopen = () => {
         reconnectAttemptRef.current = 0;
-        flushDesktopOutbox();
         flushAgentOutbox();
         flushAgentInteractionOutbox();
         flushChatOutbox();
@@ -2961,55 +2215,6 @@ export function useRoomConnection(
           else void peerRef.current?.addIceCandidate(new RTCIceCandidate(candidate)).catch(() => undefined);
         } else if (message.type === 'HANGUP') {
           closePeer('ended');
-        } else if (message.type === 'ROOM_DESKTOP_EVENT') {
-          const event = parseDesktopEvent(message.payload);
-          if (
-            !event
-            || event.clientId === desktopClientIdRef.current
-            || !hasSourceBackedDesktopEventEvidence(event, isRoomRole(message.role) ? message.role : undefined)
-          ) return;
-          if (event.kind === 'SET_ROOM_SURFACE') {
-            surfaceEventSeenRef.current = true;
-            pendingLocalSurfaceEventRef.current = null;
-            setRoomSurfaceState(event.surface);
-          } else if (event.kind === 'START_MENU_STATE') {
-            setDesktopStartMenuOpen(event.open);
-          }
-          setDesktopEvents((prev) => [...prev.slice(-99), event]);
-        } else if (message.type === 'ROOM_DESKTOP_STATE') {
-          const snapshot = parseDesktopSnapshot(message.payload);
-          if (!snapshot) return;
-          if (snapshot.surface) {
-            const decision = decideRoomSurfaceSnapshot({
-              snapshotSurface: snapshot.surface,
-              surfaceEventSeenOnSocket: surfaceEventSeenRef.current,
-              pendingLocalSurfaceEvent: pendingLocalSurfaceEventRef.current,
-              nowMs: Date.now(),
-              ignoreInitialSnapshot: options.ignoreInitialRoomSurfaceSnapshot,
-            });
-            if (decision.clearPendingLocalSurface) {
-              pendingLocalSurfaceEventRef.current = null;
-            }
-            if (decision.applySnapshot) {
-              setRoomSurfaceState(snapshot.surface);
-            }
-          }
-          if (snapshot.startMenuOpen !== undefined) {
-            setDesktopStartMenuOpen(snapshot.startMenuOpen);
-          }
-          setDesktopSnapshot(snapshot.windows);
-        } else if (message.type === 'ROOM_DESKTOP_EVENT_REJECTED') {
-          const snapshot = parseDesktopSnapshot(message.payload);
-          pendingLocalSurfaceEventRef.current = null;
-          surfaceEventSeenRef.current = false;
-          if (!snapshot) return;
-          if (snapshot.surface) {
-            setRoomSurfaceState(snapshot.surface);
-          }
-          if (snapshot.startMenuOpen !== undefined) {
-            setDesktopStartMenuOpen(snapshot.startMenuOpen);
-          }
-          setDesktopSnapshot(snapshot.windows);
         } else if (message.type === 'ROOM_AGENT_PROMPT') {
           const prompt = parseAgentPrompt(message.payload);
           if (
@@ -3035,7 +2240,7 @@ export function useRoomConnection(
               : 'HOST';
           if (
             !event
-            || event.clientId === desktopClientIdRef.current
+            || event.clientId === roomClientIdRef.current
             || !hasSourceBackedAgentInteractionEvidence(event, eventRole)
           ) return;
           setAgentInteractionEvents((prev) => [...prev.slice(-199), event]);
@@ -3043,7 +2248,7 @@ export function useRoomConnection(
           const chatMessage = parseChatMessage(message.payload);
           if (
             !chatMessage
-            || chatMessage.clientId === desktopClientIdRef.current
+            || chatMessage.clientId === roomClientIdRef.current
             || !hasSourceBackedChatEvidence(chatMessage, isRoomRole(message.role) ? message.role : chatMessage.role)
           ) return;
           setChatMessages((prev) => mergeRoomChatMessage(prev, chatMessage));
@@ -3076,7 +2281,7 @@ export function useRoomConnection(
           const event = parseMediaControlEvent(message.payload);
           if (
             !event
-            || event.clientId === desktopClientIdRef.current
+            || event.clientId === roomClientIdRef.current
             || !hasSourceBackedMediaControlEvidence(event, isRoomRole(message.role) ? message.role : event.role)
           ) return;
           setMediaControlStates((prev) => applyRoomMediaControlEvent(prev, event));
@@ -3092,7 +2297,7 @@ export function useRoomConnection(
           const event = parseRecordingStateEvent(message.payload);
           if (
             !event
-            || event.clientId === desktopClientIdRef.current
+            || event.clientId === roomClientIdRef.current
             || !hasSourceBackedRecordingStateEvidence(event, isRoomRole(message.role) ? message.role : event.role)
           ) return;
           setRecordingState((prev) => applyRoomRecordingStateEvent(prev, event));
@@ -3113,7 +2318,7 @@ export function useRoomConnection(
           const event = parseCodeServerFileEvent(message.payload);
           if (
             !event
-            || event.clientId === desktopClientIdRef.current
+            || event.clientId === roomClientIdRef.current
             || !hasSourceBackedCodeServerFileEvidence(event)
           ) return;
           setCodeServerFileEvents((prev) => [...prev.slice(-199), event]);
@@ -3121,7 +2326,7 @@ export function useRoomConnection(
           const terminalEvent = parseTerminalEvent(message.payload);
           if (
             !terminalEvent
-            || terminalEvent.clientId === desktopClientIdRef.current
+            || terminalEvent.clientId === roomClientIdRef.current
             || !hasSourceBackedTerminalEvidence(
               terminalEvent,
               isRoomRole(message.role) ? message.role : undefined,
@@ -3132,7 +2337,7 @@ export function useRoomConnection(
           const cursor = parseCursorPresence(message.payload, message.role);
           if (
             !cursor
-            || cursor.clientId === desktopClientIdRef.current
+            || cursor.clientId === roomClientIdRef.current
             || !hasSourceBackedCursorEvidence(cursor, isRoomRole(message.role) ? message.role : undefined)
           ) return;
           setPeerCursors((prev) => mergePeerCursorPresence(prev, cursor));
@@ -3140,7 +2345,7 @@ export function useRoomConnection(
           const event = parseFileSystemEvent(message.payload);
           if (
             !event
-            || event.clientId === desktopClientIdRef.current
+            || event.clientId === roomClientIdRef.current
             || !hasSourceBackedRoomFileSystemEvidence(
               event,
               isRoomRole(message.role) ? message.role : undefined,
@@ -3192,7 +2397,6 @@ export function useRoomConnection(
     flushChatOutbox,
     flushAgentOutbox,
     flushCodeServerFileOutbox,
-    flushDesktopOutbox,
     flushFileSystemOutbox,
     flushMediaControlOutbox,
     flushRecordingStateOutbox,
@@ -3384,47 +2588,13 @@ export function useRoomConnection(
     setMicEnabled((value) => !value);
   }, []);
 
-  const publishDesktopEvent = useCallback((draft: RoomDesktopEventDraft): void => {
-    const event: RoomDesktopEvent = {
-      ...draft,
-      id: typeof crypto.randomUUID === 'function'
-        ? crypto.randomUUID()
-        : `event-${Date.now()}-${Math.random().toString(36).slice(2)}`,
-      clientId: desktopClientIdRef.current,
-      createdAt: Date.now(),
-    };
-    if (!hasSourceBackedDesktopEventEvidence(event, role)) {
-      console.error('[publishDesktopEvent] rejected desktop event without source-backed evidence:', {
-        kind: event.kind,
-        role,
-        source: event.kind === 'SET_ROOM_SURFACE' || event.kind === 'WORKSPACE_STATE_CHANGED'
-          ? event.source
-          : event.evidence?.source,
-      });
-      return;
-    }
-    if (event.kind === 'SET_ROOM_SURFACE') {
-      surfaceEventSeenRef.current = true;
-      pendingLocalSurfaceEventRef.current = {
-        surface: event.surface,
-        createdAt: event.createdAt,
-      };
-      setRoomSurfaceState(event.surface);
-    } else if (event.kind === 'START_MENU_STATE') {
-      setDesktopStartMenuOpen(event.open);
-    }
-    if (!sendDesktopEvent(event)) {
-      desktopOutboxRef.current.push(event);
-    }
-  }, [sendDesktopEvent]);
-
   const publishAgentPrompt = useCallback((draft: RoomAgentPromptDraft): void => {
     const prompt: RoomAgentPrompt = {
       ...draft,
       id: typeof crypto.randomUUID === 'function'
         ? crypto.randomUUID()
         : `agent-${Date.now()}-${Math.random().toString(36).slice(2)}`,
-      clientId: desktopClientIdRef.current,
+      clientId: roomClientIdRef.current,
       createdAt: Date.now(),
       source: draft.source ?? 'system',
     };
@@ -3450,7 +2620,7 @@ export function useRoomConnection(
       id: typeof crypto.randomUUID === 'function'
         ? crypto.randomUUID()
         : `agent-interaction-${createdAt}-${Math.random().toString(36).slice(2)}`,
-      clientId: desktopClientIdRef.current,
+      clientId: roomClientIdRef.current,
       createdAt,
     };
     if (!hasSourceBackedAgentInteractionEvidence(event, role)) {
@@ -3477,7 +2647,7 @@ export function useRoomConnection(
     const createdAt = Date.now();
     const message: RoomChatMessage = {
       id,
-      clientId: desktopClientIdRef.current,
+      clientId: roomClientIdRef.current,
       createdAt,
       role,
       text: trimmed,
@@ -3487,7 +2657,7 @@ export function useRoomConnection(
         chatEventSource: 'browser_room_chat_window',
         actor: role === 'HOST' ? 'host' : 'guest',
         roomMessageId: id,
-        clientId: desktopClientIdRef.current,
+        clientId: roomClientIdRef.current,
         messageCreatedAt: createdAt,
         messageLength: trimmed.length,
         messageFingerprint: roomChatMessageFingerprint(trimmed),
@@ -3521,7 +2691,7 @@ export function useRoomConnection(
       id: evidenceMediaControlId ?? (typeof crypto.randomUUID === 'function'
         ? crypto.randomUUID()
         : `media-${createdAt}-${Math.random().toString(36).slice(2)}`),
-      clientId: desktopClientIdRef.current,
+      clientId: roomClientIdRef.current,
       createdAt,
       role,
     };
@@ -3550,7 +2720,7 @@ export function useRoomConnection(
       id: evidenceRecordingStateEventId ?? (typeof crypto.randomUUID === 'function'
         ? crypto.randomUUID()
         : `recording-${createdAt}-${Math.random().toString(36).slice(2)}`),
-      clientId: desktopClientIdRef.current,
+      clientId: roomClientIdRef.current,
       createdAt,
       role,
     };
@@ -3580,7 +2750,7 @@ export function useRoomConnection(
       id: codeServerFileChangeId ?? (typeof crypto.randomUUID === 'function'
         ? crypto.randomUUID()
         : `code-file-${createdAt}-${Math.random().toString(36).slice(2)}`),
-      clientId: desktopClientIdRef.current,
+      clientId: roomClientIdRef.current,
       createdAt,
     };
     if (!hasSourceBackedCodeServerFileEvidence(event)) {
@@ -3612,7 +2782,7 @@ export function useRoomConnection(
       id: sourceBackedTerminalEventId ?? (typeof crypto.randomUUID === 'function'
         ? crypto.randomUUID()
         : `terminal-${createdAt}-${Math.random().toString(36).slice(2)}`),
-      clientId: desktopClientIdRef.current,
+      clientId: roomClientIdRef.current,
       createdAt,
     };
     if (!hasSourceBackedTerminalEvidence(event, role)) {
@@ -3641,7 +2811,7 @@ export function useRoomConnection(
     const x = numberOrUndefined(evidence?.normalizedX) ?? position.x;
     const y = numberOrUndefined(evidence?.normalizedY) ?? position.y;
     const cursor: RoomCursorPresence = {
-      clientId: desktopClientIdRef.current,
+      clientId: roomClientIdRef.current,
       role,
       x: Math.min(1, Math.max(0, x)),
       y: Math.min(1, Math.max(0, y)),
@@ -3658,29 +2828,12 @@ export function useRoomConnection(
     sendCursorPresence(cursor);
   }, [role, sendCursorPresence]);
 
-  const setRoomSurface = useCallback((surface: RoomSurface, evidence?: Record<string, unknown>): void => {
-    publishDesktopEvent({
-      kind: 'SET_ROOM_SURFACE',
-      surface,
-      previousSurface: isRoomSurface(evidence?.previousSurface) ? evidence.previousSurface : undefined,
-      action: typeof evidence?.action === 'string' ? evidence.action : undefined,
-      source: typeof evidence?.source === 'string' ? evidence.source : undefined,
-      surfaceControlEventSource: typeof evidence?.surfaceControlEventSource === 'string'
-        ? evidence.surfaceControlEventSource
-        : undefined,
-      surfaceChangeId: typeof evidence?.surfaceChangeId === 'string' ? evidence.surfaceChangeId : undefined,
-      capturedAtMs: numberOrUndefined(evidence?.capturedAtMs),
-      roomPhase: isRoomPhase(evidence?.roomPhase) ? evidence.roomPhase : undefined,
-      durableObjectReplayExpected: booleanOrUndefined(evidence?.durableObjectReplayExpected),
-    });
-  }, [publishDesktopEvent]);
-
   const publishFileSystemEvent = useCallback((draft: RoomFileSystemEventDraft): void => {
     const createdAt = Date.now();
     const event: RoomFileSystemEvent = draft.kind === 'UPSERT_FILE'
       ? {
           id: `fs-${createdAt}-${Math.random().toString(36).slice(2)}`,
-          clientId: desktopClientIdRef.current,
+          clientId: roomClientIdRef.current,
           createdAt,
           kind: 'UPSERT_FILE',
           file: {
@@ -3693,7 +2846,7 @@ export function useRoomConnection(
         }
       : {
           id: `fs-${createdAt}-${Math.random().toString(36).slice(2)}`,
-          clientId: desktopClientIdRef.current,
+          clientId: roomClientIdRef.current,
           createdAt,
           kind: 'DELETE_FILE',
           fileId: draft.fileId,
@@ -3749,9 +2902,6 @@ export function useRoomConnection(
     remoteStream,
     iceProvider,
     roomSurface,
-    desktopEvents,
-    desktopSnapshot,
-    desktopStartMenuOpen,
     agentPrompt,
     agentInteractionEvents,
     chatMessages,
@@ -3772,7 +2922,6 @@ export function useRoomConnection(
     toggleCamera,
     toggleMic,
     retryConnection,
-    publishDesktopEvent,
     publishAgentPrompt,
     publishAgentInteractionEvent,
     publishChatMessage,
@@ -3782,6 +2931,5 @@ export function useRoomConnection(
     publishTerminalEvent,
     publishCursorPresence,
     publishFileSystemEvent,
-    setRoomSurface,
   };
 }

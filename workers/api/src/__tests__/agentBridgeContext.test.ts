@@ -16,7 +16,7 @@ describe('dev-container agent bridge context endpoint', () => {
     expect(bridgeSource).not.toContain('Room context endpoint is available from the PIPE API bridge.');
   });
 
-  it('primes Devin with room context and the shared desktop action protocol', () => {
+  it('primes Devin with room context and the shared layout action protocol', () => {
     expect(bridgeSource).toContain('buildAgentContextPrompt');
     expect(bridgeSource).toContain('PIPE room context');
     expect(bridgeSource).toContain('[[room_action:open-workspace');

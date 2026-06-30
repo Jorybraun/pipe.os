@@ -47,7 +47,7 @@ export type SessionEventType =
   | 'cursor_presence'
   | 'media_control'
   | 'room_surface_change'
-  | 'desktop_menu_toggle'
+  | 'layout_menu_toggle'
   | 'workspace_state'
   | 'participant_join'
   | 'participant_leave'
@@ -71,20 +71,20 @@ export interface SessionEvent {
 type RoomActivityRole = 'RECRUITER' | 'CANDIDATE' | 'HOST' | 'GUEST';
 const WORKSPACE_STATE_SOURCES = new Set(['initial_load', 'launch', 'refresh', 'error']);
 const WINDOW_LIFECYCLE_SOURCES = new Set([
-  'assessment_desktop_ui',
+  'assessment_layout_ui',
   'assessment_file_system',
-  'assessment_start_menu',
+  'assessment_layout_menu',
   'assessment_window_chrome',
-  'assessment_taskbar',
+  'assessment_agent_tray',
   'standard_assessment_ui',
   'agent_action',
   'shared_state_sync',
 ]);
 const WINDOW_STATE_SOURCES = new Set([
-  'assessment_desktop_ui',
-  'assessment_start_menu',
+  'assessment_layout_ui',
+  'assessment_layout_menu',
   'assessment_window_chrome',
-  'assessment_taskbar',
+  'assessment_agent_tray',
 ]);
 const WINDOW_DATA_SOURCES = new Set(['assessment_window_data_sync', 'assessment_file_delete_sync']);
 const TERMINAL_FINGERPRINT_RE = /^terminal_[a-f0-9]{8}$/;
@@ -123,11 +123,11 @@ const CURSOR_PRESENCE_SAMPLE_INTERVAL_MS = 15_000;
 const CURSOR_PRESENCE_MOVEMENT_THRESHOLD = 0.03;
 const CURSOR_SAMPLE_ID_RE = /^cursor:(host|guest):\d+:\d+:\d+$/;
 const START_MENU_EVENT_SOURCES = new Set([
-  'assessment_start_button',
-  'assessment_desktop_click',
-  'assessment_start_menu_item',
+  'assessment_layout_button',
+  'assessment_layout_click',
+  'assessment_layout_menu_item',
 ]);
-const START_MENU_EVENT_ID_RE = /^start-menu:(host|guest):\d+:(open|close):[a-z0-9_]+$/;
+const START_MENU_EVENT_ID_RE = /^layout-menu:(host|guest):\d+:(open|close):[a-z0-9_]+$/;
 const CODE_EDITOR_OPEN_ID_RE = /^code-editor-open:(host|guest):\d+:[a-zA-Z0-9:_-]+$/;
 const AGENT_DIAGNOSTIC_REDACTED_SECRET = '[REDACTED_SECRET]';
 const AGENT_BARE_SECRET_RE = /\b(?:cog|ghp|gho|ghu|ghs|ghr|devin)_[A-Za-z0-9_-]{20,}\b/g;
@@ -434,7 +434,7 @@ function hasSourceBackedRoomSurfaceEvidence(
     && (surface === 'standard' || surface === 'assessment')
     && (previousSurface === 'standard' || previousSurface === 'assessment')
     && previousSurface !== surface
-    && action === (surface === 'assessment' ? 'enter_desktop' : 'exit_desktop')
+    && action === (surface === 'assessment' ? 'enter_assessment' : 'exit_assessment')
     && surfaceChangeId === `surface:${actor}:${capturedAtMs}:${previousSurface}:${surface}`
     && capturedAtMs !== null
     && capturedAtMs >= 0
@@ -442,7 +442,7 @@ function hasSourceBackedRoomSurfaceEvidence(
     && event.durableObjectReplayExpected === true;
 }
 
-function hasSourceBackedStartMenuEvidence(
+function hasSourceBackedLayoutMenuEvidence(
   evidence: Record<string, unknown> | null,
   actor: SessionEvent['actor'],
   open: boolean,
@@ -451,21 +451,21 @@ function hasSourceBackedStartMenuEvidence(
   if (actor !== 'host' && actor !== 'guest') return false;
   const action = open ? 'open' : 'close';
   const menuEventSource = stringOrNull(evidence.menuEventSource);
-  const startMenuEventId = stringOrNull(evidence.startMenuEventId);
+  const layoutMenuEventId = stringOrNull(evidence.layoutMenuEventId);
   const capturedAtMs = numberOrNull(evidence.capturedAtMs);
-  return evidence.source === 'assessment_start_menu_control'
+  return evidence.source === 'assessment_layout_menu_control'
     && menuEventSource !== null
     && START_MENU_EVENT_SOURCES.has(menuEventSource)
     && evidence.actor === actor
     && evidence.menuId === 'start'
     && evidence.action === action
     && evidence.open === open
-    && startMenuEventId !== null
-    && START_MENU_EVENT_ID_RE.test(startMenuEventId)
+    && layoutMenuEventId !== null
+    && START_MENU_EVENT_ID_RE.test(layoutMenuEventId)
     && capturedAtMs !== null
     && Number.isInteger(capturedAtMs)
     && capturedAtMs >= 0
-    && startMenuEventId === `start-menu:${actor}:${capturedAtMs}:${action}:${menuEventSource}`
+    && layoutMenuEventId === `layout-menu:${actor}:${capturedAtMs}:${action}:${menuEventSource}`
     && evidence.surface === 'assessment'
     && stringOrNull(evidence.roomPhase) !== null
     && evidence.durableObjectReplayExpected === true;
@@ -498,13 +498,13 @@ function hasSourceBackedWorkspaceStateEvidence(
     && event.proxyUrlPersisted === false;
 }
 
-function desktopActivityToSessionEvent(input: RoomActivitySyncInput, value: unknown): SessionEvent | null {
+function roomActivityToSessionEvent(input: RoomActivitySyncInput, value: unknown): SessionEvent | null {
   if (!isRecord(value) || !isRecord(value.event)) return null;
   const event = value.event;
   const role = isRoomActivityRole(value.role) ? value.role : null;
   const actor = actorFromRoomRole(role);
   const timestamp = unixTimestampFromActivity(event.createdAt, value.recordedAt);
-  const base = roomActivityBaseProperties('desktop', role, value.recordedAt);
+  const base = roomActivityBaseProperties('layout', role, value.recordedAt);
   const eventId = stringOrNull(event.id);
   const clientId = stringOrNull(event.clientId);
   if (eventId) base.roomEventId = eventId;
@@ -605,12 +605,12 @@ function desktopActivityToSessionEvent(input: RoomActivitySyncInput, value: unkn
   if (event.kind === 'START_MENU_STATE') {
     if (typeof event.open !== 'boolean') return null;
     const evidence = isRecord(event.evidence) ? event.evidence : null;
-    if (!hasSourceBackedStartMenuEvidence(evidence, actor, event.open)) return null;
+    if (!hasSourceBackedLayoutMenuEvidence(evidence, actor, event.open)) return null;
     return createSessionEvent(input, {
-      type: 'desktop_menu_toggle',
+      type: 'layout_menu_toggle',
       timestamp,
       actor,
-      text: event.open ? 'Start menu opened' : 'Start menu closed',
+      text: event.open ? 'layout menu opened' : 'layout menu closed',
       properties: {
         ...base,
         ...evidence,
@@ -1037,7 +1037,7 @@ function isSourceBackedCursorEvidence(
   }
   const expectedSampleId = `cursor:${actor}:${sampledAtMs}:${Math.round(normalizedX * 1000)}:${Math.round(normalizedY * 1000)}`;
   return evidence.source === 'assessment_cursor_presence_client_sample'
-    && evidence.cursorEventSource === 'browser_assessment_desktop_pointermove'
+    && evidence.cursorEventSource === 'browser_assessment_room_pointermove'
     && evidence.actor === actor
     && evidence.surface === 'assessment'
     && stringOrNull(evidence.roomPhase) !== null
@@ -1370,7 +1370,7 @@ function isSourceBackedAgentInteractionEvidence(
       && stringOrNull(evidence.roomPhase) !== null;
     if (source === 'agent_tray_ui' || source === 'agent_prompt_ui' || source === 'agent_chat_ui') {
       const originOk = source === 'agent_tray_ui'
-        ? origin === 'tray' && evidence.actionSource === 'assessment_taskbar_tray'
+        ? origin === 'tray' && evidence.actionSource === 'assessment_agent_tray'
         : source === 'agent_chat_ui'
           ? origin === 'chat' && evidence.actionSource === 'agent_chat_window'
           : origin === 'prompt' && evidence.actionSource === 'agent_prompt_ui';
@@ -1582,9 +1582,9 @@ async function fileSystemActivityToSessionEvent(input: RoomActivitySyncInput, va
       properties.contentLength = file.content.length;
       properties.contentHash = await deterministicEntityId('content', file.content);
       const preview = compactPreview(file.content);
-      if (preview && fileKind !== 'paint') properties.contentPreview = preview;
+      if (preview && fileKind !== 'diagram') properties.contentPreview = preview;
       if (fileKind === 'text') properties.contentExactText = file.content;
-      if (fileKind === 'paint') properties.contentExactJson = file.content;
+      if (fileKind === 'diagram') properties.contentExactJson = file.content;
     }
     return createSessionEvent(input, {
       type: 'file_change',
@@ -1623,9 +1623,9 @@ async function fileSystemActivityToSessionEvent(input: RoomActivitySyncInput, va
         properties.deletedContentLength = file.content.length;
         properties.deletedContentHash = await deterministicEntityId('content', file.content);
         const preview = compactPreview(file.content);
-        if (preview && fileKind !== 'paint') properties.deletedContentPreview = preview;
+        if (preview && fileKind !== 'diagram') properties.deletedContentPreview = preview;
         if (fileKind === 'text') properties.deletedContentExactText = file.content;
-        if (fileKind === 'paint') properties.deletedContentExactJson = file.content;
+        if (fileKind === 'diagram') properties.deletedContentExactJson = file.content;
       }
       const createdAt = numberOrNull(file.createdAt);
       const updatedAt = numberOrNull(file.updatedAt);
@@ -1654,7 +1654,7 @@ export async function roomActivitySnapshotToSessionEvents(
     if (event) events.push(event);
   };
 
-  const desktopActivityLog = Array.isArray(snapshot.desktopActivityLog) ? snapshot.desktopActivityLog : [];
+  const roomActivityLog = Array.isArray(snapshot.roomActivityLog) ? snapshot.roomActivityLog : [];
   const chatActivityLog = Array.isArray(snapshot.chatActivityLog) ? snapshot.chatActivityLog : [];
   const codeServerFileActivityLog = Array.isArray(snapshot.codeServerFileActivityLog)
     ? snapshot.codeServerFileActivityLog
@@ -1675,7 +1675,7 @@ export async function roomActivitySnapshotToSessionEvents(
     : [];
   const fileSystemActivityLog = Array.isArray(snapshot.fileSystemActivityLog) ? snapshot.fileSystemActivityLog : [];
 
-  desktopActivityLog.forEach((entry) => pushMapped(desktopActivityToSessionEvent(input, entry)));
+  roomActivityLog.forEach((entry) => pushMapped(roomActivityToSessionEvent(input, entry)));
   chatActivityLog.forEach((entry) => pushMapped(chatActivityToSessionEvent(input, entry)));
   codeServerFileActivityLog.forEach((entry) => pushMapped(codeServerFileActivityToSessionEvent(input, entry)));
   terminalActivityLog.forEach((entry) => pushMapped(terminalActivityToSessionEvent(input, entry)));
@@ -1752,7 +1752,7 @@ function mapEventTypeToNodeType(type: SessionEventType): string {
     cursor_presence: 'session_cursor_presence',
     media_control: 'session_media_control',
     room_surface_change: 'session_room_surface_change',
-    desktop_menu_toggle: 'session_desktop_menu_toggle',
+    layout_menu_toggle: 'session_layout_menu_toggle',
     workspace_state: 'session_workspace_state',
     participant_join: 'session_participant_join',
     participant_leave: 'session_participant_leave',
@@ -1799,7 +1799,7 @@ function formatEventNarrative(event: SessionEvent): string {
       return `[${time}] Media control changed: ${event.text}`;
     case 'room_surface_change':
       return `[${time}] ${event.text}`;
-    case 'desktop_menu_toggle':
+    case 'layout_menu_toggle':
       return `[${time}] ${event.text}`;
     case 'workspace_state':
       return `[${time}] ${event.text}`;
@@ -1910,9 +1910,9 @@ function sessionEventCorrelationRefs(event: SessionEvent, properties: JsonObject
     refs.agentAction = { actionEventId: agentActionEventId };
   }
 
-  const startMenuEventId = stringProperty(properties, 'startMenuEventId');
-  if (event.type === 'desktop_menu_toggle' && startMenuEventId) {
-    refs.startMenu = { eventId: startMenuEventId };
+  const layoutMenuEventId = stringProperty(properties, 'layoutMenuEventId');
+  if (event.type === 'layout_menu_toggle' && layoutMenuEventId) {
+    refs.layoutMenu = { eventId: layoutMenuEventId };
   }
 
   return Object.keys(refs).length > 0 ? refs : null;
@@ -2024,11 +2024,11 @@ function sessionEventEntities(input: {
     });
   }
 
-  const startMenuEventId = stringProperty(properties, 'startMenuEventId');
-  if (startMenuEventId) {
+  const layoutMenuEventId = stringProperty(properties, 'layoutMenuEventId');
+  if (layoutMenuEventId) {
     entities.push({
-      entityType: 'start_menu_event',
-      entityId: startMenuEventId,
+      entityType: 'layout_menu_event',
+      entityId: layoutMenuEventId,
       relationship: 'source_menu_event',
       metadata: {
         action: stringProperty(properties, 'action'),
@@ -2349,10 +2349,10 @@ async function roomFileContentSourceRef(input: {
 }): Promise<SessionEventExactSourceRef | null> {
   if (input.event.type !== 'file_change') return null;
   const fileKind = stringProperty(input.properties, 'fileKind');
-  if (fileKind !== 'text' && fileKind !== 'paint') return null;
+  if (fileKind !== 'text' && fileKind !== 'diagram') return null;
   const operation = stringProperty(input.properties, 'operation');
   if (operation !== 'upsert' && operation !== 'delete') return null;
-  const exactTextKey = fileKind === 'paint'
+  const exactTextKey = fileKind === 'diagram'
     ? (operation === 'delete' ? 'deletedContentExactJson' : 'contentExactJson')
     : (operation === 'delete' ? 'deletedContentExactText' : 'contentExactText');
   const exactText = stringProperty(input.properties, exactTextKey);
@@ -2983,20 +2983,20 @@ function directRoomActivitySourceSpec(
     };
   }
 
-  if (event.type === 'desktop_menu_toggle') {
+  if (event.type === 'layout_menu_toggle') {
     const open = properties.open;
-    const startMenuEventId = stringProperty(properties, 'startMenuEventId');
-    if (typeof open !== 'boolean' || !startMenuEventId || !hasSourceBackedStartMenuEvidence(properties, event.actor, open)) {
+    const layoutMenuEventId = stringProperty(properties, 'layoutMenuEventId');
+    if (typeof open !== 'boolean' || !layoutMenuEventId || !hasSourceBackedLayoutMenuEvidence(properties, event.actor, open)) {
       return null;
     }
     return {
-      sourceRefType: 'assessment_start_menu_state',
-      sourceRefId: startMenuEventId,
-      evidenceRole: open ? 'start_menu_opened' : 'start_menu_closed',
-      sourceKind: 'assessment.start_menu_control',
+      sourceRefType: 'assessment_layout_menu_state',
+      sourceRefId: layoutMenuEventId,
+      evidenceRole: open ? 'layout_menu_opened' : 'layout_menu_closed',
+      sourceKind: 'assessment.layout_menu_control',
       locator: {
         ...baseLocator,
-        startMenuEventId,
+        layoutMenuEventId,
         menuId: stringProperty(properties, 'menuId'),
         menuEventSource: stringProperty(properties, 'menuEventSource'),
         action: stringProperty(properties, 'action'),
@@ -3449,7 +3449,7 @@ function assessmentEventKindForSessionEvent(type: SessionEventType): string {
     case 'cursor_presence':
     case 'media_control':
     case 'room_surface_change':
-    case 'desktop_menu_toggle':
+    case 'layout_menu_toggle':
     case 'participant_join':
     case 'participant_leave':
     default:
@@ -3829,7 +3829,7 @@ export interface SessionContextNode {
 const CONTEXT_SOURCE_REF_KEYS = [
   'roomMessageId',
   'roomEventId',
-  'startMenuEventId',
+  'layoutMenuEventId',
   'workspaceStateEventId',
   'windowEventId',
   'windowDataUpdateId',

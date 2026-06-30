@@ -23,7 +23,7 @@ export interface AnswerEvaluation {
 
 // Warm, light-hearted follow-up templates — rotate so it never feels repetitive.
 const WARM_FOLLOW_UPS = [
-  "Could you paint me a quick picture of what that looks like day-to-day?",
+  "Could you give me a quick picture of what that looks like day-to-day?",
   "I'd love to hear a specific example if one comes to mind — no pressure.",
   "That makes sense at a high level. What would that actually look like in practice?",
   "Curious — was there a moment that crystallized that for you?",

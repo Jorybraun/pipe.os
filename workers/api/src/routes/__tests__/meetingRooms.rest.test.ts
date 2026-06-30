@@ -1841,7 +1841,7 @@ describe('meeting room recording living-context route', () => {
           actor: 'guest',
           surface: 'assessment',
           previousSurface: 'standard',
-          action: 'enter_desktop',
+          action: 'enter_assessment',
           roomPhase: 'connected',
         },
       }),
@@ -1863,7 +1863,7 @@ describe('meeting room recording living-context route', () => {
           capturedAtMs: 1782601510000,
           surface: 'assessment',
           previousSurface: 'standard',
-          action: 'enter_desktop',
+          action: 'enter_assessment',
           roomPhase: 'connected',
           durableObjectReplayExpected: true,
         },
@@ -1891,16 +1891,16 @@ describe('meeting room recording living-context route', () => {
       durableObjectReplayExpected: true,
     });
 
-    const sourceOnlyStartMenuRes = await app.request(`/meeting/${created.hostToken}/session-events`, {
+    const sourceOnlyLayoutMenuRes = await app.request(`/meeting/${created.hostToken}/session-events`, {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify({
-        type: 'desktop_menu_toggle',
-        text: 'Start menu opened',
+        type: 'layout_menu_toggle',
+        text: 'layout menu opened',
         actor: 'guest',
         properties: {
-          source: 'assessment_start_menu_control',
-          menuEventSource: 'assessment_start_button',
+          source: 'assessment_layout_menu_control',
+          menuEventSource: 'assessment_layout_button',
           actor: 'guest',
           menuId: 'start',
           action: 'open',
@@ -1910,23 +1910,23 @@ describe('meeting room recording living-context route', () => {
         },
       }),
     }, env, ctx);
-    expect(sourceOnlyStartMenuRes.status).toBe(422);
+    expect(sourceOnlyLayoutMenuRes.status).toBe(422);
 
-    const startMenuRes = await app.request(`/meeting/${created.hostToken}/session-events`, {
+    const layoutMenuRes = await app.request(`/meeting/${created.hostToken}/session-events`, {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify({
-        type: 'desktop_menu_toggle',
-        text: 'Start menu opened',
+        type: 'layout_menu_toggle',
+        text: 'layout menu opened',
         actor: 'guest',
         properties: {
-          source: 'assessment_start_menu_control',
-          menuEventSource: 'assessment_start_button',
+          source: 'assessment_layout_menu_control',
+          menuEventSource: 'assessment_layout_button',
           actor: 'guest',
           menuId: 'start',
           action: 'open',
           open: true,
-          startMenuEventId: 'start-menu:guest:1782601520000:open:assessment_start_button',
+          layoutMenuEventId: 'layout-menu:guest:1782601520000:open:assessment_layout_button',
           capturedAtMs: 1782601520000,
           surface: 'assessment',
           roomPhase: 'connected',
@@ -1934,23 +1934,23 @@ describe('meeting room recording living-context route', () => {
         },
       }),
     }, env, ctx);
-    expect(startMenuRes.status).toBe(200);
+    expect(layoutMenuRes.status).toBe(200);
 
-    const startMenuNode = sqlite.prepare(
+    const layoutMenuNode = sqlite.prepare(
       `SELECT node_type, extracted_properties_json
          FROM candidate_nodes
-        WHERE candidate_id = ? AND node_type = 'session_desktop_menu_toggle'
+        WHERE candidate_id = ? AND node_type = 'session_layout_menu_toggle'
         ORDER BY captured_at DESC
         LIMIT 1`,
     ).get(linked?.candidate_id) as {
       node_type: string;
       extracted_properties_json: string;
     } | undefined;
-    expect(JSON.parse(startMenuNode?.extracted_properties_json ?? '{}')).toMatchObject({
+    expect(JSON.parse(layoutMenuNode?.extracted_properties_json ?? '{}')).toMatchObject({
       actor: 'guest',
-      source: 'assessment_start_menu_control',
-      menuEventSource: 'assessment_start_button',
-      startMenuEventId: 'start-menu:guest:1782601520000:open:assessment_start_button',
+      source: 'assessment_layout_menu_control',
+      menuEventSource: 'assessment_layout_button',
+      layoutMenuEventId: 'layout-menu:guest:1782601520000:open:assessment_layout_button',
       menuId: 'start',
       action: 'open',
       open: true,
@@ -2667,7 +2667,7 @@ describe('meeting room recording living-context route', () => {
         actor: 'guest',
         properties: {
           source: 'assessment_cursor_presence_client_sample',
-          cursorEventSource: 'browser_assessment_desktop_pointermove',
+          cursorEventSource: 'browser_assessment_room_pointermove',
           actor: 'guest',
           cursorSampleId: 'cursor:guest:1761592321000:420:610',
           sampledAtMs: 1761592321000,
@@ -2705,7 +2705,7 @@ describe('meeting room recording living-context route', () => {
     expect(JSON.parse(cursorNode?.extracted_properties_json ?? '{}')).toMatchObject({
       actor: 'guest',
       source: 'assessment_cursor_presence_client_sample',
-      cursorEventSource: 'browser_assessment_desktop_pointermove',
+      cursorEventSource: 'browser_assessment_room_pointermove',
       cursorSampleId: 'cursor:guest:1761592321000:420:610',
       surface: 'assessment',
       normalizedX: 0.42,
@@ -2920,7 +2920,7 @@ describe('meeting room recording living-context route', () => {
       transcriptionBytes: 2345,
     });
 
-    const fakeLegacyDesktopFileChangeRes = await app.request(`/meeting/${created.hostToken}/session-events`, {
+    const fakeLegacyLayoutFileChangeRes = await app.request(`/meeting/${created.hostToken}/session-events`, {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify({
@@ -2931,7 +2931,7 @@ describe('meeting room recording living-context route', () => {
           source: 'assessment_shared_file_system',
           fileEventSource: 'browser_client_submit',
           operation: 'upsert',
-          fileId: 'desktop-notes',
+          fileId: 'layout-notes',
           fileName: 'Notes.txt',
           fileKind: 'text',
           surface: 'assessment',
@@ -2940,9 +2940,9 @@ describe('meeting room recording living-context route', () => {
         },
       }),
     }, env, ctx);
-    expect(fakeLegacyDesktopFileChangeRes.status).toBe(422);
+    expect(fakeLegacyLayoutFileChangeRes.status).toBe(422);
 
-    const legacyDesktopFileChangeRes = await app.request(`/meeting/${created.hostToken}/session-events`, {
+    const legacyLayoutFileChangeRes = await app.request(`/meeting/${created.hostToken}/session-events`, {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify({
@@ -2953,13 +2953,13 @@ describe('meeting room recording living-context route', () => {
           source: 'assessment_shared_file_system',
           fileEventSource: 'browser_client_submit',
           actor: 'guest',
-          fileChangeId: 'file:guest:1700000001100:upsert:desktop-notes',
+          fileChangeId: 'file:guest:1700000001100:upsert:layout-notes',
           operation: 'upsert',
-          fileId: 'desktop-notes',
+          fileId: 'layout-notes',
           fileName: 'Notes.txt',
           fileKind: 'text',
           mimeType: 'text/plain',
-          path: 'Desktop/Notes.txt',
+          path: 'Layout/Notes.txt',
           surface: 'assessment',
           roomPhase: 'connected',
           capturedAtMs: 1700000001100,
@@ -2972,7 +2972,7 @@ describe('meeting room recording living-context route', () => {
         },
       }),
     }, env, ctx);
-    expect(legacyDesktopFileChangeRes.status).toBe(200);
+    expect(legacyLayoutFileChangeRes.status).toBe(200);
 
     const assessmentFileChangeNode = sqlite.prepare(
       `SELECT node_type, narrative_text, source_type, extracted_properties_json
@@ -2994,9 +2994,9 @@ describe('meeting room recording living-context route', () => {
       actor: 'guest',
       source: 'assessment_shared_file_system',
       fileEventSource: 'browser_client_submit',
-      fileChangeId: 'file:guest:1700000001100:upsert:desktop-notes',
+      fileChangeId: 'file:guest:1700000001100:upsert:layout-notes',
       operation: 'upsert',
-      fileId: 'desktop-notes',
+      fileId: 'layout-notes',
       fileName: 'Notes.txt',
       contentHash: 'content_0123456789abcdef0123456789abcdef',
       capturedAtMs: 1700000001100,
@@ -3546,7 +3546,7 @@ describe('meeting room recording living-context route', () => {
     });
   });
 
-  it('persists legacy desktop source-specific window lifecycle evidence with exact source provenance', async () => {
+  it('persists legacy layout source-specific window lifecycle evidence with exact source provenance', async () => {
     const app = mountApp();
     const { ctx } = buildCtx();
     const now = new Date().toISOString();
@@ -3555,10 +3555,10 @@ describe('meeting room recording living-context route', () => {
          id, candidate_id, owner_id, recipient_name, recipient_email, interview_type, status, updated_at
        ) VALUES (?, NULL, ?, ?, ?, 'DEV_CONTAINER_CHALLENGE', 'INVITED', ?)`,
     ).run(
-      'scheduled-start-menu-window-evidence',
+      'scheduled-layout-menu-window-evidence',
       'owner-1',
-      'Start Menu Candidate',
-      'start-menu-window@example.com',
+      'layout menu Candidate',
+      'layout-menu-window@example.com',
       now,
     );
 
@@ -3566,11 +3566,11 @@ describe('meeting room recording living-context route', () => {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify({
-        recipientName: 'Start Menu Candidate',
-        recipientEmail: 'start-menu-window@example.com',
-        title: 'Start menu evidence room',
+        recipientName: 'layout menu Candidate',
+        recipientEmail: 'layout-menu-window@example.com',
+        title: 'layout menu evidence room',
         meetingType: 'INTERVIEW',
-        scheduledInterviewId: 'scheduled-start-menu-window-evidence',
+        scheduledInterviewId: 'scheduled-layout-menu-window-evidence',
       }),
     }, env, ctx);
     expect(createMeetingRes.status).toBe(201);
@@ -3581,18 +3581,18 @@ describe('meeting room recording living-context route', () => {
       headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify({
         type: 'window_open',
-        text: 'notes.txt - Notepad',
+        text: 'notes.txt - Notes',
         actor: 'guest',
         properties: {
           source: 'window_lifecycle_client_submit',
-          lifecycleSource: 'assessment_start_menu',
+          lifecycleSource: 'assessment_layout_menu',
           lifecycleKind: 'open',
-          windowLifecycleId: 'window-lifecycle:guest:1782601800000:open:notepad',
+          windowLifecycleId: 'window-lifecycle:guest:1782601800000:open:notes',
           capturedAtMs: 1782601800000,
           actor: 'guest',
-          windowId: 'notepad',
-          windowType: 'notepad',
-          windowTitle: 'notes.txt - Notepad',
+          windowId: 'notes',
+          windowType: 'notes',
+          windowTitle: 'notes.txt - Notes',
           surface: 'assessment',
           roomPhase: 'connected',
           durableObjectReplayExpected: true,
@@ -3603,7 +3603,7 @@ describe('meeting room recording living-context route', () => {
 
     const linked = sqlite.prepare(
       'SELECT candidate_id FROM scheduled_interviews WHERE id = ?',
-    ).get('scheduled-start-menu-window-evidence') as { candidate_id: string } | undefined;
+    ).get('scheduled-layout-menu-window-evidence') as { candidate_id: string } | undefined;
     const node = sqlite.prepare(
       `SELECT node_type, narrative_text, extracted_properties_json
          FROM candidate_nodes
@@ -3613,16 +3613,16 @@ describe('meeting room recording living-context route', () => {
       narrative_text: string;
       extracted_properties_json: string;
     } | undefined;
-    expect(node?.narrative_text).toContain('Window opened: notes.txt - Notepad');
+    expect(node?.narrative_text).toContain('Window opened: notes.txt - Notes');
     expect(JSON.parse(node?.extracted_properties_json ?? '{}')).toMatchObject({
       source: 'window_lifecycle_client_submit',
-      lifecycleSource: 'assessment_start_menu',
+      lifecycleSource: 'assessment_layout_menu',
       lifecycleKind: 'open',
       actor: 'guest',
-      windowId: 'notepad',
-      windowType: 'notepad',
-      windowTitle: 'notes.txt - Notepad',
-      windowLifecycleId: 'window-lifecycle:guest:1782601800000:open:notepad',
+      windowId: 'notes',
+      windowType: 'notes',
+      windowTitle: 'notes.txt - Notes',
+      windowLifecycleId: 'window-lifecycle:guest:1782601800000:open:notes',
       capturedAtMs: 1782601800000,
       surface: 'assessment',
     });
@@ -3632,18 +3632,18 @@ describe('meeting room recording living-context route', () => {
       headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify({
         type: 'window_open',
-        text: 'notes.txt - Notepad',
+        text: 'notes.txt - Notes',
         actor: 'guest',
         properties: {
           source: 'window_lifecycle_client_submit',
           lifecycleSource: 'assessment_file_system',
           lifecycleKind: 'open',
-          windowLifecycleId: 'window-lifecycle:guest:1782601800100:open:notepad',
+          windowLifecycleId: 'window-lifecycle:guest:1782601800100:open:notes',
           capturedAtMs: 1782601800100,
           actor: 'guest',
-          windowId: 'notepad',
-          windowType: 'notepad',
-          windowTitle: 'notes.txt - Notepad',
+          windowId: 'notes',
+          windowType: 'notes',
+          windowTitle: 'notes.txt - Notes',
           surface: 'assessment',
           roomPhase: 'connected',
           durableObjectReplayExpected: true,
@@ -3663,16 +3663,16 @@ describe('meeting room recording living-context route', () => {
       narrative_text: string;
       extracted_properties_json: string;
     } | undefined;
-    expect(fileManagerNode?.narrative_text).toContain('Window opened: notes.txt - Notepad');
+    expect(fileManagerNode?.narrative_text).toContain('Window opened: notes.txt - Notes');
     expect(JSON.parse(fileManagerNode?.extracted_properties_json ?? '{}')).toMatchObject({
       source: 'window_lifecycle_client_submit',
       lifecycleSource: 'assessment_file_system',
       lifecycleKind: 'open',
       actor: 'guest',
-      windowId: 'notepad',
-      windowType: 'notepad',
-      windowTitle: 'notes.txt - Notepad',
-      windowLifecycleId: 'window-lifecycle:guest:1782601800100:open:notepad',
+      windowId: 'notes',
+      windowType: 'notes',
+      windowTitle: 'notes.txt - Notes',
+      windowLifecycleId: 'window-lifecycle:guest:1782601800100:open:notes',
       capturedAtMs: 1782601800100,
       surface: 'assessment',
     });
@@ -3713,13 +3713,13 @@ describe('meeting room recording living-context route', () => {
       headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify({
         type: 'window_update',
-        text: 'Window data updated: notepad',
+        text: 'Window data updated: notes',
         actor: 'guest',
         properties: {
           source: 'window_data_client_submit',
           dataSource: 'assessment_window_data_sync',
           actor: 'guest',
-          windowId: 'notepad',
+          windowId: 'notes',
           action: 'edit_text',
           dataKeys: ['text'],
           dataValueFingerprints: { text: 'data_81a94acf' },
@@ -3736,15 +3736,15 @@ describe('meeting room recording living-context route', () => {
       headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify({
         type: 'window_update',
-        text: 'Window data updated: notepad',
+        text: 'Window data updated: notes',
         actor: 'guest',
         properties: {
           source: 'window_data_client_submit',
           dataSource: 'assessment_window_data_sync',
           actor: 'guest',
-          windowId: 'notepad',
+          windowId: 'notes',
           action: 'edit_text',
-          windowDataUpdateId: 'window-data:guest:1782601700000:notepad:edit_text',
+          windowDataUpdateId: 'window-data:guest:1782601700000:notes:edit_text',
           capturedAtMs: 1782601700000,
           dataKeys: ['text'],
           dataValueFingerprints: { text: 'data_81a94acf' },
@@ -3761,15 +3761,15 @@ describe('meeting room recording living-context route', () => {
       headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify({
         type: 'window_update',
-        text: 'Window data updated: notepad',
+        text: 'Window data updated: notes',
         actor: 'guest',
         properties: {
           source: 'window_data_client_submit',
           dataSource: 'assessment_file_delete_sync',
           actor: 'guest',
-          windowId: 'notepad',
+          windowId: 'notes',
           action: 'edit_text',
-          windowDataUpdateId: 'window-data:guest:1782601700100:notepad:edit_text',
+          windowDataUpdateId: 'window-data:guest:1782601700100:notes:edit_text',
           capturedAtMs: 1782601700100,
           dataKeys: ['text'],
           dataValueFingerprints: { text: 'data_12345678' },
@@ -3793,14 +3793,14 @@ describe('meeting room recording living-context route', () => {
       narrative_text: string;
       extracted_properties_json: string;
     } | undefined;
-    expect(node?.narrative_text).toContain('Window updated: Window data updated: notepad');
+    expect(node?.narrative_text).toContain('Window updated: Window data updated: notes');
     expect(JSON.parse(node?.extracted_properties_json ?? '{}')).toMatchObject({
       source: 'window_data_client_submit',
       dataSource: 'assessment_window_data_sync',
       actor: 'guest',
-      windowId: 'notepad',
+      windowId: 'notes',
       action: 'edit_text',
-      windowDataUpdateId: 'window-data:guest:1782601700000:notepad:edit_text',
+      windowDataUpdateId: 'window-data:guest:1782601700000:notes:edit_text',
       capturedAtMs: 1782601700000,
       dataKeys: ['text'],
       dataValueFingerprints: { text: 'data_81a94acf' },
@@ -3817,14 +3817,14 @@ describe('meeting room recording living-context route', () => {
       narrative_text: string;
       extracted_properties_json: string;
     } | undefined;
-    expect(deleteClearNode?.narrative_text).toContain('Window updated: Window data updated: notepad');
+    expect(deleteClearNode?.narrative_text).toContain('Window updated: Window data updated: notes');
     expect(JSON.parse(deleteClearNode?.extracted_properties_json ?? '{}')).toMatchObject({
       source: 'window_data_client_submit',
       dataSource: 'assessment_file_delete_sync',
       actor: 'guest',
-      windowId: 'notepad',
+      windowId: 'notes',
       action: 'edit_text',
-      windowDataUpdateId: 'window-data:guest:1782601700100:notepad:edit_text',
+      windowDataUpdateId: 'window-data:guest:1782601700100:notes:edit_text',
       capturedAtMs: 1782601700100,
       dataKeys: ['text'],
       dataValueFingerprints: { text: 'data_12345678' },
@@ -3873,7 +3873,7 @@ describe('meeting room recording living-context route', () => {
         actor: 'guest',
         properties: {
           source: 'window_state_client_submit',
-          stateSource: 'assessment_start_menu',
+          stateSource: 'assessment_layout_menu',
           actor: 'guest',
           windowId: 'browser',
           action: 'restore_or_focus',
@@ -3906,7 +3906,7 @@ describe('meeting room recording living-context route', () => {
     const app = mountApp();
     const { ctx } = buildCtx();
     const activitySnapshot = {
-      desktopActivityLog: [
+      roomActivityLog: [
         {
           role: 'HOST',
           recordedAt: 1700000000000,
@@ -3917,7 +3917,7 @@ describe('meeting room recording living-context route', () => {
             kind: 'SET_ROOM_SURFACE',
             surface: 'assessment',
             previousSurface: 'standard',
-            action: 'enter_desktop',
+            action: 'enter_assessment',
             source: 'room_surface_control',
             surfaceControlEventSource: 'browser_room_surface_toggle',
             actor: 'host',
@@ -4226,7 +4226,7 @@ describe('meeting room recording living-context route', () => {
             createdAt: 1700000004000,
             kind: 'UPSERT_FILE',
             file: {
-              id: 'notepad',
+              id: 'notes',
               name: 'notes.txt',
               kind: 'text',
               content: 'Candidate identified retry bug evidence.',
@@ -4237,10 +4237,10 @@ describe('meeting room recording living-context route', () => {
             evidence: {
               source: 'assessment_shared_file_system',
               fileEventSource: 'browser_client_submit',
-              fileChangeId: 'file:guest:1700000004000:upsert:notepad',
+              fileChangeId: 'file:guest:1700000004000:upsert:notes',
               actor: 'guest',
               operation: 'upsert',
-              fileId: 'notepad',
+              fileId: 'notes',
               fileName: 'notes.txt',
               fileKind: 'text',
               surface: 'assessment',
@@ -4431,7 +4431,7 @@ describe('meeting room recording living-context route', () => {
     expect(graphBody.events.at(-1)?.properties).toMatchObject({
       roomActivitySource: 'durable_object',
       operation: 'upsert',
-      fileId: 'notepad',
+      fileId: 'notes',
       contentPreview: 'Candidate identified retry bug evidence.',
     });
 
@@ -4474,7 +4474,7 @@ describe('meeting room recording living-context route', () => {
     const app = mountApp();
     const { ctx } = buildCtx();
     const activitySnapshot = {
-      desktopActivityLog: [
+      roomActivityLog: [
         {
           role: 'HOST',
           recordedAt: 1700000100000,
@@ -4485,7 +4485,7 @@ describe('meeting room recording living-context route', () => {
             kind: 'SET_ROOM_SURFACE',
             surface: 'assessment',
             previousSurface: 'standard',
-            action: 'enter_desktop',
+            action: 'enter_assessment',
             source: 'room_surface_control',
             surfaceControlEventSource: 'browser_room_surface_toggle',
             actor: 'host',
@@ -4662,7 +4662,7 @@ describe('meeting room recording living-context route', () => {
       const url = new URL(request.url);
       if (url.pathname === '/activity-log') {
         return new Response(JSON.stringify({
-          desktopActivityLog: [],
+          roomActivityLog: [],
           chatActivityLog: [],
           agentPromptActivityLog: [],
           fileSystemActivityLog: [],
@@ -6368,7 +6368,7 @@ describe('meeting room recording living-context route', () => {
     ).get()).toEqual({ count: 0 });
   });
 
-  it('keeps standard meeting rooms off the workspace desktop path', async () => {
+  it('keeps standard meeting rooms off the workspace layout path', async () => {
     const app = mountApp();
     const { ctx } = buildCtx();
     const ensureBodies: unknown[] = [];

@@ -422,7 +422,7 @@ describe('parseAgentBridgeMessage', () => {
     });
   });
 
-  it('does not turn CHAT_RESPONSE action arrays into executable desktop actions', () => {
+  it('does not turn CHAT_RESPONSE action arrays into executable room actions', () => {
     expect(parseAgentBridgeMessage({
       type: 'CHAT_RESPONSE',
       source: 'agent_stdout',

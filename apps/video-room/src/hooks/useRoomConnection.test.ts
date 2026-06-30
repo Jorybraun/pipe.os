@@ -4,13 +4,11 @@ import {
   applyRoomChatRejection,
   applyRoomMediaControlEvent,
   applyRoomRecordingStateEvent,
-  decideRoomSurfaceSnapshot,
   hasSourceBackedCodeServerFileEvidence,
   hasSourceBackedCursorEvidence,
   hasSourceBackedChatEvidence,
   hasSourceBackedAgentInteractionEvidence,
   hasSourceBackedAgentPromptEvidence,
-  hasSourceBackedDesktopEventEvidence,
   hasSourceBackedMediaControlEvidence,
   hasSourceBackedMediaControlStateEvidence,
   hasSourceBackedRecordingStateEvidence,
@@ -27,7 +25,6 @@ import {
   type RoomAgentPrompt,
   type RoomCodeServerFileEvent,
   type RoomCursorPresence,
-  type RoomDesktopEvent,
   type RoomFile,
   type RoomFileSystemEvent,
   type RoomMediaControlEvent,
@@ -86,77 +83,6 @@ describe('addLocalMediaToPeer', () => {
     expect(transceivers).toEqual([
       { kind: 'video', direction: 'recvonly' },
     ]);
-  });
-});
-
-describe('decideRoomSurfaceSnapshot', () => {
-  it('applies the Durable Object snapshot on a new socket so missed surface changes resync', () => {
-    expect(decideRoomSurfaceSnapshot({
-      snapshotSurface: 'standard',
-      surfaceEventSeenOnSocket: false,
-      pendingLocalSurfaceEvent: null,
-      nowMs: 10_000,
-    })).toEqual({
-      applySnapshot: true,
-      clearPendingLocalSurface: false,
-    });
-  });
-
-  it('does not let an older snapshot overwrite a fresh local surface toggle queued during reconnect', () => {
-    expect(decideRoomSurfaceSnapshot({
-      snapshotSurface: 'standard',
-      surfaceEventSeenOnSocket: false,
-      pendingLocalSurfaceEvent: {
-        surface: 'assessment',
-        createdAt: 9_900,
-      },
-      nowMs: 10_000,
-      guardMs: 5_000,
-    })).toEqual({
-      applySnapshot: false,
-      clearPendingLocalSurface: false,
-    });
-  });
-
-  it('ignores snapshots after a live surface event on the current socket', () => {
-    expect(decideRoomSurfaceSnapshot({
-      snapshotSurface: 'standard',
-      surfaceEventSeenOnSocket: true,
-      pendingLocalSurfaceEvent: null,
-      nowMs: 10_000,
-    })).toEqual({
-      applySnapshot: false,
-      clearPendingLocalSurface: false,
-    });
-  });
-
-  it('can ignore the initial Durable Object surface for code-first assessment rooms', () => {
-    expect(decideRoomSurfaceSnapshot({
-      snapshotSurface: 'assessment',
-      surfaceEventSeenOnSocket: false,
-      pendingLocalSurfaceEvent: null,
-      nowMs: 10_000,
-      ignoreInitialSnapshot: true,
-    })).toEqual({
-      applySnapshot: false,
-      clearPendingLocalSurface: false,
-    });
-  });
-
-  it('clears a pending local marker when the authoritative snapshot catches up', () => {
-    expect(decideRoomSurfaceSnapshot({
-      snapshotSurface: 'assessment',
-      surfaceEventSeenOnSocket: false,
-      pendingLocalSurfaceEvent: {
-        surface: 'assessment',
-        createdAt: 9_900,
-      },
-      nowMs: 10_000,
-      guardMs: 5_000,
-    })).toEqual({
-      applySnapshot: true,
-      clearPendingLocalSurface: true,
-    });
   });
 });
 
@@ -275,7 +201,7 @@ describe('hasSourceBackedAgentInteractionEvidence', () => {
         actionId: 'open-agent-chat',
         origin: 'tray',
         executedBy: 'host',
-        actionSource: 'assessment_taskbar_tray',
+        actionSource: 'assessment_agent_tray',
         executionStatus: 'opened',
         capturedAtMs: 1700000004000,
         agentActionEventId: 'agent-action:host:1700000004000:agent_tray_ui:tray:opened:open-agent-chat',
@@ -321,7 +247,7 @@ describe('hasSourceBackedAgentInteractionEvidence', () => {
         actionId: 'open-agent-chat',
         origin: 'tray',
         executedBy: 'guest',
-        actionSource: 'assessment_taskbar_tray',
+        actionSource: 'assessment_agent_tray',
         executionStatus: 'opened',
         capturedAtMs: 1700000005000,
         agentActionEventId: 'agent-action:guest:1700000005000:agent_call_controls_ui:tray:opened:open-agent-chat',
@@ -340,309 +266,6 @@ describe('hasSourceBackedAgentInteractionEvidence', () => {
         source: 'agent_tray_ui',
       },
     }, 'HOST')).toBe(false);
-  });
-});
-
-describe('hasSourceBackedDesktopEventEvidence', () => {
-  const surfaceEvent: RoomDesktopEvent = {
-    id: 'surface-event-1',
-    clientId: 'host-client',
-    createdAt: 1700000001000,
-    kind: 'SET_ROOM_SURFACE',
-    surface: 'assessment',
-    previousSurface: 'standard',
-    action: 'enter_desktop',
-    source: 'room_surface_control',
-    surfaceControlEventSource: 'browser_room_surface_toggle',
-    surfaceChangeId: 'surface:host:1700000001000:standard:assessment',
-    capturedAtMs: 1700000001000,
-    roomPhase: 'connected',
-    durableObjectReplayExpected: true,
-  };
-
-  const startMenuEvent: RoomDesktopEvent = {
-    id: 'start-menu-event-1',
-    clientId: 'guest-client',
-    createdAt: 1700000002000,
-    kind: 'START_MENU_STATE',
-    open: true,
-    evidence: {
-      source: 'assessment_start_menu_control',
-      menuEventSource: 'assessment_start_button',
-      actor: 'guest',
-      menuId: 'start',
-      action: 'open',
-      open: true,
-      startMenuEventId: 'start-menu:guest:1700000002000:open:assessment_start_button',
-      capturedAtMs: 1700000002000,
-      surface: 'assessment',
-      roomPhase: 'connected',
-      durableObjectReplayExpected: true,
-    },
-  };
-
-  const workspaceEvent: RoomDesktopEvent = {
-    id: 'workspace-state-event-1',
-    clientId: 'host-client',
-    createdAt: 1700000003000,
-    kind: 'WORKSPACE_STATE_CHANGED',
-    actor: 'host',
-    workspaceStateEventId: 'workspace-state:host:1700000003000:launch:workspace-session-1:READY',
-    capturedAtMs: 1700000003000,
-    status: 'READY',
-    workspaceSessionId: 'workspace-session-1',
-    repoUrl: 'https://github.com/cloudflare/workers-sdk',
-    source: 'browser_workspace_state_observer',
-    workspaceEventSource: 'browser_workspace_state_observer',
-    workspaceStateSource: 'launch',
-    workspaceTelemetryPersisted: true,
-    proxyUrlPersisted: false,
-  };
-  const openWindowEvent: RoomDesktopEvent = {
-    id: 'open-window-1',
-    clientId: 'guest-client',
-    createdAt: 1700000003500,
-    kind: 'OPEN_WINDOW',
-    window: {
-      id: 'chat',
-      windowType: 'chat',
-      title: 'Room Chat',
-    },
-    evidence: {
-      source: 'window_lifecycle_client_submit',
-      lifecycleSource: 'assessment_desktop_ui',
-      lifecycleKind: 'open',
-      actor: 'guest',
-      windowId: 'chat',
-      windowType: 'chat',
-      windowTitle: 'Room Chat',
-      windowLifecycleId: 'window-lifecycle:guest:1700000003500:open:chat',
-      capturedAtMs: 1700000003500,
-      surface: 'assessment',
-      roomPhase: 'connected',
-      durableObjectReplayExpected: true,
-    },
-  };
-  const closeWindowEvent: RoomDesktopEvent = {
-    id: 'close-window-1',
-    clientId: 'guest-client',
-    createdAt: 1700000003600,
-    kind: 'CLOSE_WINDOW',
-    windowId: 'chat',
-    evidence: {
-      source: 'window_lifecycle_client_submit',
-      lifecycleSource: 'assessment_window_chrome',
-      lifecycleKind: 'close',
-      actor: 'guest',
-      windowId: 'chat',
-      windowType: 'chat',
-      windowTitle: 'Room Chat',
-      windowLifecycleId: 'window-lifecycle:guest:1700000003600:close:chat',
-      capturedAtMs: 1700000003600,
-      surface: 'assessment',
-      roomPhase: 'connected',
-      durableObjectReplayExpected: true,
-    },
-  };
-  const windowDataEvent: RoomDesktopEvent = {
-    id: 'window-data-event-1',
-    clientId: 'guest-client',
-    createdAt: 1700000004000,
-    kind: 'UPDATE_WINDOW_DATA',
-    windowId: 'notepad',
-    data: { text: 'Candidate writes a replay test plan.' },
-    evidence: {
-      source: 'window_data_client_submit',
-      dataSource: 'assessment_window_data_sync',
-      actor: 'guest',
-      windowId: 'notepad',
-      action: 'edit_text',
-      windowDataUpdateId: 'window-data:guest:1700000004000:notepad:edit_text',
-      capturedAtMs: 1700000004000,
-      surface: 'assessment',
-      roomPhase: 'connected',
-      dataKeys: ['text'],
-      dataValueFingerprints: { text: 'data_81a94acf' },
-      durableObjectReplayExpected: true,
-    },
-  };
-  const browserNavigationEvent: RoomDesktopEvent = {
-    id: 'browser-navigation-event-1',
-    clientId: 'host-client',
-    createdAt: 1700000005000,
-    kind: 'UPDATE_WINDOW_DATA',
-    windowId: 'browser',
-    data: { currentUrl: 'https://example.com/review?step=1' },
-    evidence: {
-      source: 'room_browser_window',
-      navigationSource: 'browser_window_client_submit',
-      actor: 'host',
-      windowId: 'browser',
-      navigationTrigger: 'go_button',
-      browserNavigationId: 'browser-navigation:host:1700000005000:browser:go_button:nav_54d2c495',
-      capturedAtMs: 1700000005000,
-      urlFingerprint: 'nav_54d2c495',
-      url: 'https://example.com/review?step=1',
-      surface: 'assessment',
-      roomPhase: 'connected',
-      durableObjectReplayExpected: true,
-    },
-  };
-  const windowStateEvent: RoomDesktopEvent = {
-    id: 'window-state-event-1',
-    clientId: 'guest-client',
-    createdAt: 1700000006000,
-    kind: 'UPDATE_WINDOW_STATE',
-    windowId: 'workspace',
-    x: 120,
-    y: 80,
-    evidence: {
-      source: 'window_state_client_submit',
-      stateSource: 'assessment_window_chrome',
-      actor: 'guest',
-      windowId: 'workspace',
-      action: 'move',
-      windowStateChangeId: 'window-state:guest:1700000006000:workspace:move',
-      capturedAtMs: 1700000006000,
-      surface: 'assessment',
-      roomPhase: 'connected',
-      statePatch: { x: 120, y: 80 },
-      stateKeys: ['x', 'y'],
-      durableObjectReplayExpected: true,
-    },
-  };
-
-  it('accepts surface changes only when browser toggle evidence matches the room actor and transition', () => {
-    expect(hasSourceBackedDesktopEventEvidence(surfaceEvent, 'HOST')).toBe(true);
-  });
-
-  it('rejects source-less surface changes before optimistic desktop mode can change', () => {
-    expect(hasSourceBackedDesktopEventEvidence({
-      ...surfaceEvent,
-      source: undefined,
-      surfaceChangeId: undefined,
-    }, 'HOST')).toBe(false);
-  });
-
-  it('rejects room surface evidence unless the timestamp and phase are deterministic', () => {
-    expect(hasSourceBackedDesktopEventEvidence({
-      ...surfaceEvent,
-      capturedAtMs: 1700000001000.5,
-      surfaceChangeId: 'surface:host:1700000001000.5:standard:assessment',
-    }, 'HOST')).toBe(false);
-    expect(hasSourceBackedDesktopEventEvidence({
-      ...surfaceEvent,
-      roomPhase: 'hydrating' as never,
-    }, 'HOST')).toBe(false);
-  });
-
-  it('accepts Start menu changes with source-backed legacy desktop menu evidence', () => {
-    expect(hasSourceBackedDesktopEventEvidence(startMenuEvent, 'GUEST')).toBe(true);
-  });
-
-  it('rejects window lifecycle events without source-backed window evidence', () => {
-    expect(hasSourceBackedDesktopEventEvidence({
-      id: 'open-window-1',
-      clientId: 'guest-client',
-      createdAt: 1700000002500,
-      kind: 'OPEN_WINDOW',
-      window: {
-        id: 'chat',
-        windowType: 'chat',
-        title: 'Chat',
-      },
-    }, 'GUEST')).toBe(false);
-  });
-
-  it('accepts window lifecycle events only when evidence reconstructs the exact open or close event', () => {
-    expect(hasSourceBackedDesktopEventEvidence(openWindowEvent, 'GUEST')).toBe(true);
-    expect(hasSourceBackedDesktopEventEvidence(closeWindowEvent, 'GUEST')).toBe(true);
-    expect(hasSourceBackedDesktopEventEvidence({
-      ...openWindowEvent,
-      window: {
-        ...openWindowEvent.window,
-        title: 'Chat',
-      },
-    }, 'GUEST')).toBe(false);
-    expect(hasSourceBackedDesktopEventEvidence({
-      ...openWindowEvent,
-      evidence: {
-        ...openWindowEvent.evidence!,
-        windowLifecycleId: 'window-lifecycle:guest:1700000003500:close:chat',
-      },
-    }, 'GUEST')).toBe(false);
-    expect(hasSourceBackedDesktopEventEvidence({
-      ...closeWindowEvent,
-      evidence: {
-        ...closeWindowEvent.evidence!,
-        lifecycleKind: 'open',
-      },
-    }, 'GUEST')).toBe(false);
-  });
-
-  it('accepts workspace state only when the observer event id and session provenance match', () => {
-    expect(hasSourceBackedDesktopEventEvidence(workspaceEvent, 'HOST')).toBe(true);
-    expect(hasSourceBackedDesktopEventEvidence({
-      ...workspaceEvent,
-      workspaceStateEventId: 'workspace-state:host:1700000003000:initial_load:no-session:NOT_LAUNCHED',
-      workspaceStateSource: 'initial_load',
-      status: 'NOT_LAUNCHED',
-      workspaceSessionId: null,
-    }, 'HOST')).toBe(true);
-  });
-
-  it('accepts window data updates only when evidence reconstructs from the exact shared data patch', () => {
-    expect(hasSourceBackedDesktopEventEvidence(windowDataEvent, 'GUEST')).toBe(true);
-    expect(hasSourceBackedDesktopEventEvidence({
-      ...windowDataEvent,
-      data: { text: 'Candidate writes a replay test plan!' },
-    }, 'GUEST')).toBe(false);
-    expect(hasSourceBackedDesktopEventEvidence({
-      ...windowDataEvent,
-      evidence: {
-        ...windowDataEvent.evidence!,
-        dataKeys: ['strokes'],
-      },
-    }, 'GUEST')).toBe(false);
-  });
-
-  it('accepts browser navigation updates only when URL evidence matches the shared browser URL', () => {
-    expect(hasSourceBackedDesktopEventEvidence(browserNavigationEvent, 'HOST')).toBe(true);
-    expect(hasSourceBackedDesktopEventEvidence({
-      ...browserNavigationEvent,
-      data: { currentUrl: 'https://example.com/review?step=2' },
-    }, 'HOST')).toBe(false);
-    expect(hasSourceBackedDesktopEventEvidence({
-      ...browserNavigationEvent,
-      evidence: {
-        ...browserNavigationEvent.evidence!,
-        browserNavigationId: 'browser-navigation:host:1700000005000:browser:reload_button:nav_54d2c495',
-      },
-    }, 'HOST')).toBe(false);
-  });
-
-  it('accepts window state updates only when evidence reconstructs from the exact shared state patch', () => {
-    expect(hasSourceBackedDesktopEventEvidence(windowStateEvent, 'GUEST')).toBe(true);
-    expect(hasSourceBackedDesktopEventEvidence({
-      ...windowStateEvent,
-      x: 121,
-    }, 'GUEST')).toBe(false);
-    expect(hasSourceBackedDesktopEventEvidence({
-      ...windowStateEvent,
-      evidence: {
-        ...windowStateEvent.evidence!,
-        statePatch: { x: 120, y: 80, width: 640 },
-        stateKeys: ['width', 'x', 'y'],
-      },
-    }, 'GUEST')).toBe(false);
-    expect(hasSourceBackedDesktopEventEvidence({
-      ...windowStateEvent,
-      evidence: {
-        ...windowStateEvent.evidence!,
-        action: 'resize',
-        windowStateChangeId: 'window-state:guest:1700000006000:workspace:resize',
-      },
-    }, 'GUEST')).toBe(false);
   });
 });
 
@@ -738,10 +361,10 @@ describe('hasSourceBackedCursorEvidence', () => {
     role: 'GUEST',
     x: 0.42,
     y: 0.61,
-    updatedAt: 1761592321000,
-    evidence: {
-      source: 'assessment_cursor_presence_client_sample',
-      cursorEventSource: 'browser_assessment_desktop_pointermove',
+      updatedAt: 1761592321000,
+      evidence: {
+        source: 'assessment_cursor_presence_client_sample',
+        cursorEventSource: 'browser_assessment_room_pointermove',
       actor: 'guest',
       cursorSampleId: 'cursor:guest:1761592321000:420:610',
       sampledAtMs: 1761592321000,
@@ -759,7 +382,7 @@ describe('hasSourceBackedCursorEvidence', () => {
     },
   };
 
-  it('accepts cursor presence only when the legacy desktop browser sample evidence matches the payload', () => {
+  it('accepts cursor presence only when the browser room sample evidence matches the payload', () => {
     expect(hasSourceBackedCursorEvidence(sourceBackedCursor, 'GUEST')).toBe(true);
   });
 
@@ -1224,7 +847,7 @@ describe('hasSourceBackedRoomFileSystemEvidence', () => {
     createdAt: 4,
     kind: 'UPSERT_FILE',
     file: {
-      id: 'desktop-notes',
+      id: 'assessment-notes',
       name: 'notes.txt',
       kind: 'text',
       content: 'Candidate asked about testing strategy.',
@@ -1236,10 +859,10 @@ describe('hasSourceBackedRoomFileSystemEvidence', () => {
     evidence: {
       source: 'assessment_shared_file_system',
       fileEventSource: 'browser_client_submit',
-      fileChangeId: 'file:host:4:upsert:desktop-notes',
+      fileChangeId: 'file:host:4:upsert:assessment-notes',
       actor: 'host',
       operation: 'upsert',
-      fileId: 'desktop-notes',
+      fileId: 'assessment-notes',
       fileName: 'notes.txt',
       fileKind: 'text',
       mimeType: 'text/plain',
@@ -1260,15 +883,15 @@ describe('hasSourceBackedRoomFileSystemEvidence', () => {
     clientId: 'host-client',
     createdAt: 5,
     kind: 'DELETE_FILE',
-    fileId: 'desktop-notes',
+    fileId: 'assessment-notes',
     file: sourceBackedUpsert.file,
     evidence: {
       source: 'assessment_shared_file_system',
       fileEventSource: 'browser_client_submit',
-      fileChangeId: 'file:host:5:delete:desktop-notes',
+      fileChangeId: 'file:host:5:delete:assessment-notes',
       actor: 'host',
       operation: 'delete',
-      fileId: 'desktop-notes',
+      fileId: 'assessment-notes',
       fileName: 'notes.txt',
       fileKind: 'text',
       mimeType: 'text/plain',
@@ -1285,7 +908,7 @@ describe('hasSourceBackedRoomFileSystemEvidence', () => {
     },
   };
 
-  it('accepts legacy desktop file mutations only when browser evidence matches the event and actor', () => {
+  it('accepts room file mutations only when browser evidence matches the event and actor', () => {
     expect(hasSourceBackedRoomFileSystemEvidence(sourceBackedUpsert, 'HOST')).toBe(true);
   });
 
