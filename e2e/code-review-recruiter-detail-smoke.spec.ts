@@ -115,10 +115,30 @@ test.describe('Feature: assessment recruiter detail smoke', () => {
     const decision = page.getByTestId('interview-code-review-decision-summary');
     const workspaceDecision = page.getByTestId('interview-workspace-assessment-decision-summary');
     const visibleDecision = decision.or(workspaceDecision).first();
-    await expect(visibleDecision).toBeVisible({ timeout: 45_000 });
     await expect(page.locator('body')).not.toContainText('An unexpected error occurred');
     await expect(page.locator('body')).not.toContainText('MATCHING IN PROGRESS');
     await expect(page.locator('body')).not.toContainText('Building your personalized challenge');
+
+    if (EXPECTED_OUTCOME === 'blocked') {
+      const progress = page.getByTestId('interview-assessment-progress');
+      await expect(progress).toBeVisible({ timeout: 45_000 });
+
+      if (!await visibleDecision.isVisible()) {
+        await expect(progress).toContainText('Assessment progress');
+        await expect(progress).toContainText('Candidate evidence is available for matching');
+        await expect(progress).toContainText('no source-backed PR task has been assigned yet');
+        await expect(page.getByTestId('interview-assessment-assignment')).toContainText('Waiting for PIPE match');
+
+        const inviteState = page.getByTestId('interview-assessment-link-state');
+        await expect(inviteState).toBeVisible();
+        await expect(inviteState).toContainText('ASSESSMENT');
+        await expect(inviteState).toContainText(/Started, no submission|Profile handoff, no PR challenge|No assessment link sent/);
+        await expect(page.getByRole('button', { name: /send assessment invite|resend assessment invite/i })).toBeVisible();
+        return;
+      }
+    }
+
+    await expect(visibleDecision).toBeVisible({ timeout: 45_000 });
     await expect(visibleDecision).not.toContainText('Not recorded yet');
     await expectHumanDecisionState(page);
 
