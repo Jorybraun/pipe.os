@@ -169,6 +169,7 @@ export interface AssessmentProgressSnapshot {
     id: string;
     status: string;
     summary: string;
+    recommendation?: string | null;
     createdAt: string;
     evidenceCoverage?: AssessmentEvidenceCoverageSnapshot | null;
   } | null;

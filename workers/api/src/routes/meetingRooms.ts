@@ -2524,13 +2524,14 @@ function serializeRoomAssessmentProgress(
           occurredAt: progress.commit.occurredAt,
         }
       : null,
-    evaluation: progress.evaluation
-      ? {
-          status: progress.evaluation.status,
-          summary: progress.evaluation.summary,
-          createdAt: progress.evaluation.createdAt,
-          evidenceCoverage: progress.evaluation.evidenceCoverage,
-        }
+	    evaluation: progress.evaluation
+	      ? {
+	          status: progress.evaluation.status,
+	          summary: progress.evaluation.summary,
+	          recommendation: progress.evaluation.recommendation,
+	          createdAt: progress.evaluation.createdAt,
+	          evidenceCoverage: progress.evaluation.evidenceCoverage,
+	        }
       : null,
   };
 }

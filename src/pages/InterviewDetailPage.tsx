@@ -255,6 +255,11 @@ function assessmentEvaluationStatusLabel(status: string): string {
   }
 }
 
+function assessmentEvaluationRecommendationLabel(recommendation: string | null | undefined): string | null {
+  if (!recommendation) return null;
+  return sentenceCaseToken(recommendation);
+}
+
 function assessmentEvaluationNoticeForResult(result: StartAssessmentEvaluationResponse): string {
   if (result.report || result.progress.evaluation?.status === 'EVALUATED') {
     return 'Source-backed assessment report is ready to review.';
@@ -2458,7 +2463,11 @@ export default function InterviewDetailPage(): JSX.Element {
                 <div style={{ ...EVIDENCE_ROW, alignItems: 'flex-start' }}>
                   <span style={FIELD_LABEL}>Evaluation</span>
                   <span style={{ ...FIELD_VALUE, lineHeight: 1.5 }}>
-                    {assessmentEvaluationStatusLabel(assessmentProgress.evaluation.status)} · {assessmentProgress.evaluation.summary}
+                    {[
+                      assessmentEvaluationStatusLabel(assessmentProgress.evaluation.status),
+                      assessmentEvaluationRecommendationLabel(assessmentProgress.evaluation.recommendation),
+                      assessmentProgress.evaluation.summary,
+                    ].filter(Boolean).join(' · ')}
                   </span>
                 </div>
               )}

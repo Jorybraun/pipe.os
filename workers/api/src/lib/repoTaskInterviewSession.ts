@@ -308,6 +308,7 @@ export interface AssessmentProgressEvaluation {
   id: string;
   status: EvaluationReportStatus;
   summary: string;
+  recommendation: string | null;
   createdAt: string;
   evidenceCoverage: AssessmentEvidenceCoverageSnapshot | null;
 }
@@ -1297,6 +1298,7 @@ export class RepoTaskInterviewSessionStore {
       id: row.id,
       status: row.status,
       summary: row.summary,
+      recommendation: typeof output.recommendation === 'string' ? output.recommendation : null,
       createdAt: row.created_at,
       evidenceCoverage: parseEvidenceCoverage(output),
     };

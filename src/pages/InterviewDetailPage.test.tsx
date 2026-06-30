@@ -468,6 +468,7 @@ describe('InterviewDetailPage', () => {
         id: 'assessment-report-source-backed',
         status: 'EVALUATED',
         summary: 'Candidate made a focused source-backed change and cited the submitted diff evidence.',
+        recommendation: 'strong_evidence_to_advance',
         createdAt: '2026-06-23T00:22:00.000Z',
         evidenceCoverage: {
           schemaVersion: 'assessment-evidence-coverage-v1',
@@ -567,7 +568,7 @@ describe('InterviewDetailPage', () => {
     const progress = screen.getByTestId('interview-assessment-progress');
     expect(progress).toHaveTextContent('Evaluated');
     expect(progress).toHaveTextContent('Review the assessment report and evidence.');
-    expect(progress).toHaveTextContent('Evaluated · Candidate made a focused source-backed change and cited the submitted diff evidence.');
+    expect(progress).toHaveTextContent('Evaluated · Strong evidence to advance · Candidate made a focused source-backed change and cited the submitted diff evidence.');
     expect(progress).toHaveTextContent('Tests missing');
     expect(progress).toHaveTextContent('Terminal captured');
     expect(progress).toHaveTextContent('Editor missing');

@@ -34,6 +34,7 @@ const PR_NUMBER = RAW_PR_NUMBER ? Number(RAW_PR_NUMBER) : null;
 const RAW_MATCHED_REPO_ID = process.env.WORKSPACE_SMOKE_MATCHED_REPO_ID || '';
 const MATCHED_REPO_ID = RAW_MATCHED_REPO_ID ? Number(RAW_MATCHED_REPO_ID) : null;
 const BASE_COMMIT_SHA = process.env.WORKSPACE_SMOKE_BASE_COMMIT_SHA || '';
+const CHANGE_MODE = process.env.WORKSPACE_SMOKE_CHANGE_MODE || 'placeholder';
 const EXPECTED_BRIDGE_REVISION = process.env.WORKSPACE_SMOKE_EXPECTED_BRIDGE_REVISION
   || '2026-06-30-terminal-crlf-v3';
 const REMOTE = !APP_BASE.includes('localhost') && !APP_BASE.includes('127.0.0.1');
@@ -44,6 +45,9 @@ function assertEnv() {
   }
   if (MATCHED_REPO_ID !== null && INTERVIEW_TYPE !== 'OPEN_SOURCE_BUG_FIX') {
     throw new Error('WORKSPACE_SMOKE_MATCHED_REPO_ID is only supported for OPEN_SOURCE_BUG_FIX smoke runs.');
+  }
+  if (!['placeholder', 'mui-popover-fix'].includes(CHANGE_MODE)) {
+    throw new Error('WORKSPACE_SMOKE_CHANGE_MODE must be placeholder or mui-popover-fix.');
   }
   if (!REMOTE) return;
   if (!APP_BASIC_USER || !APP_BASIC_PASSWORD) {
@@ -173,14 +177,27 @@ function waitForWorkspaceTerminalOutput(proxyBasePath, headers, command, expecte
 
 async function commitWorkspaceSmokeChange(proxyBasePath, headers, unique) {
   const sentinel = `__PIPE_COMMIT_OK_${unique}__`;
-  const smokeText = `\nPIPE workspace smoke ${unique}\n`;
-  const command = [
+  const common = [
     'set -e',
     'git config user.name "PIPE Workspace Smoke"',
     'git config user.email "workspace-smoke@pipe-test.dev"',
-    `printf ${shellQuote(smokeText)} >> PIPE_WORKSPACE_SMOKE.md`,
-    'git add PIPE_WORKSPACE_SMOKE.md',
-    `git commit -m ${shellQuote(`pipe workspace smoke ${unique}`)}`,
+  ];
+  const modeSpecific = CHANGE_MODE === 'mui-popover-fix'
+    ? [
+        'git fetch --quiet origin pull/973/head:pipe-smoke-pr-973',
+        'git checkout pipe-smoke-pr-973 -- packages/react/src/popover/root/usePopoverRoot.ts packages/react/src/popover/trigger/PopoverTrigger.test.tsx packages/react/src/popover/utils/constants.ts',
+        'git diff --check',
+        'git add packages/react/src/popover/root/usePopoverRoot.ts packages/react/src/popover/trigger/PopoverTrigger.test.tsx packages/react/src/popover/utils/constants.ts',
+        `git commit -m ${shellQuote('fix popover impatient click handling')}`,
+      ]
+    : [
+        `printf ${shellQuote(`\nPIPE workspace smoke ${unique}\n`)} >> PIPE_WORKSPACE_SMOKE.md`,
+        'git add PIPE_WORKSPACE_SMOKE.md',
+        `git commit -m ${shellQuote(`pipe workspace smoke ${unique}`)}`,
+      ];
+  const command = [
+    ...common,
+    ...modeSpecific,
     `printf ${shellQuote(`${sentinel}%s${sentinel}\\n`)} "$(git rev-parse HEAD)"`,
   ].join(' && ');
   const output = await waitForWorkspaceTerminalOutput(proxyBasePath, headers, command, sentinel);
@@ -190,6 +207,13 @@ async function commitWorkspaceSmokeChange(proxyBasePath, headers, unique) {
   }
   return {
     commitSha: match[1],
+    mode: CHANGE_MODE,
+    narrative: CHANGE_MODE === 'mui-popover-fix'
+      ? 'Implemented the source-backed popover impatient-click fix, including the 500ms guard and regression tests for fast versus patient clicks.'
+      : `Workspace smoke submitted real commit ${match[1]}.`,
+    testCommand: CHANGE_MODE === 'mui-popover-fix'
+      ? 'git diff --check HEAD~1 HEAD && git diff --name-only HEAD~1 HEAD'
+      : 'git status --short',
     output,
   };
 }
@@ -400,8 +424,8 @@ async function main() {
       'Content-Type': 'application/json',
     },
     body: JSON.stringify({
-      narrative: `Workspace smoke submitted real commit ${workspaceCommit.commitSha}.`,
-      testCommand: 'git status --short',
+      narrative: workspaceCommit.narrative,
+      testCommand: workspaceCommit.testCommand,
     }),
   });
   const submittedText = await submittedResponse.text();
@@ -441,6 +465,19 @@ async function main() {
   if (evaluationProgress?.evaluation?.status !== 'EVALUATED') {
     throw new Error(`Workspace assessment progress did not expose evaluated status: ${JSON.stringify(evaluationProgress?.evaluation)}`);
   }
+  const recommendation = evaluationProgress?.evaluation?.recommendation
+    ?? evaluationBody?.report?.output?.recommendation
+    ?? null;
+  if (CHANGE_MODE === 'mui-popover-fix') {
+    const acceptedRecommendations = new Set(['strong_evidence_to_advance', 'mixed_evidence_human_review']);
+    const summary = `${evaluationProgress?.evaluation?.summary ?? ''} ${evaluationBody?.report?.summary ?? ''}`.toLowerCase();
+    if (!acceptedRecommendations.has(recommendation)) {
+      throw new Error(`Task-aligned workspace smoke did not receive a useful evaluator recommendation: ${JSON.stringify(evaluationBody?.report?.output)}`);
+    }
+    if (!summary.includes('popover') && !summary.includes('click')) {
+      throw new Error(`Task-aligned workspace smoke evaluation summary did not mention the challenged behavior: ${summary}`);
+    }
+  }
 
   console.log(JSON.stringify({
     ok: true,
@@ -461,6 +498,7 @@ async function main() {
     finalizerEndpointBlocked: true,
     terminalCommitCreated: true,
     workspaceCommitSha: workspaceCommit.commitSha,
+    workspaceChangeMode: workspaceCommit.mode,
     finalizerSubmitted: true,
     finalizerProgressStage: submittedBody.progress?.stage ?? null,
     finalizerNextAction: submittedBody.progress?.nextAction ?? null,
@@ -468,6 +506,7 @@ async function main() {
     evaluationStage: evaluationProgress.stage,
     evaluationNextAction: evaluationProgress.nextAction,
     evaluationStatus: evaluationProgress.evaluation?.status ?? null,
+    evaluationRecommendation: recommendation,
     evaluationSummary: evaluationProgress.evaluation?.summary ?? null,
     evaluationReportId: evaluationBody.report?.id ?? null,
   }, null, 2));
