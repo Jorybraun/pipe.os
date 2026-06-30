@@ -816,12 +816,23 @@ export interface StandaloneReviewRoleSource {
   contentHash?: string;
 }
 
+export interface StandaloneReviewStretchArea {
+  atomId: string;
+  demandId: string;
+  atomConcept: string;
+  demandConcept: string;
+  dimension: string;
+  candidateSourceRefs: StandaloneReviewSourceRef[];
+  challengeSourceRefs: StandaloneReviewSourceRef[];
+}
+
 export interface StandaloneReviewAlignment {
   atomId: string;
   demandId: string;
   purpose: string | null;
   pairScore: number;
   sharedConcepts: string[];
+  stretch: { dimension: string; atomConcept: string; demandConcept: string } | null;
   roleSourceRefs: StandaloneReviewRoleSource[];
   candidateSourceRefs: StandaloneReviewSourceRef[];
   challengeSourceRefs: StandaloneReviewSourceRef[];
@@ -934,6 +945,18 @@ export interface StandaloneReviewPacketDetail {
   quality: StandaloneReviewPacketQuality | null;
 }
 
+export interface MatchNarrativeSection {
+  heading: string;
+  items: string[];
+}
+
+export interface StandaloneReviewMatchNarrative {
+  title: string;
+  verdict: string;
+  sections: MatchNarrativeSection[];
+  plainText: string;
+}
+
 export interface StandaloneReviewMatchRecord {
   interviewId: string;
   interviewStatus: string;
@@ -950,7 +973,10 @@ export interface StandaloneReviewMatchRecord {
   summary: string;
   evidence: StandaloneReviewAlignment[];
   roleSources: StandaloneReviewRoleSource[];
+  stretchAreas: StandaloneReviewStretchArea[];
+  unmatchedDemandIds: string[];
   gaps: string[];
+  matchNarrative: StandaloneReviewMatchNarrative | null;
   diagnostics: StandaloneReviewDiagnostics;
   packet: StandaloneReviewPacketDetail | null;
   submitted: boolean;
@@ -1313,6 +1339,243 @@ export interface ScopedLivingContextReadModel {
 
 export interface ScopedLivingContextResponse {
   livingContext: ScopedLivingContextReadModel;
+}
+
+// ─── Evidence Lineage ─────────────────────────────────────────────────────────
+
+export interface EvidenceLineageSourceSpan {
+  sourceSpanId: string;
+  artifactVersionId: string;
+  contentHash: string;
+  exactText: string;
+  byteStart: number | null;
+  byteEnd: number | null;
+  charStart: number | null;
+  charEnd: number | null;
+  lineStart: number | null;
+  lineEnd: number | null;
+  timestampStartMs: number | null;
+  timestampEndMs: number | null;
+  stableSegmentId: string | null;
+}
+
+export interface EvidenceLineageArtifact {
+  artifactId: string;
+  artifactType: string;
+  logicalKey: string | null;
+  mediaType: string | null;
+  versionNumber: number;
+}
+
+export interface EvidenceLineageInteraction {
+  interactionId: string;
+  interactionType: string;
+  startedAt: string | null;
+  endedAt: string | null;
+}
+
+export interface EvidenceLineageNode {
+  assertion: {
+    assertionId: string;
+    narrative: string;
+    predicate: string;
+    confidence: number | null;
+    polarity: number;
+    observedAt: string | null;
+    concepts: Array<{ canonicalKey: string; namespace: string; weight: number }>;
+    sources: EvidenceLineageSourceSpan[];
+  };
+  signalEvidence: {
+    evidenceLevel: string;
+    strength: number;
+  } | null;
+  artifact: EvidenceLineageArtifact;
+  interaction: EvidenceLineageInteraction;
+  decayMultiplier: number;
+  effectiveStrength: number;
+}
+
+export interface EvidenceLineageResponse {
+  candidateId: string;
+  nodes: EvidenceLineageNode[];
+  conceptSummary: Array<{
+    canonicalKey: string;
+    avgEffectiveStrength: number;
+    nodeCount: number;
+  }>;
+}
+
+// ─── Evidence Freshness ───────────────────────────────────────────────────────
+
+export type FreshnessLevel = 'fresh' | 'recent' | 'aging' | 'stale';
+
+export interface EvidenceFreshnessEntry {
+  id: string;
+  observedAt: string | null;
+  ageDays: number;
+  decayMultiplier: number;
+  freshnessLevel: FreshnessLevel;
+  effectiveWeight: number;
+}
+
+export interface EvidenceFreshnessResponse {
+  candidateId: string;
+  totalEntries: number;
+  freshCount: number;
+  recentCount: number;
+  agingCount: number;
+  staleCount: number;
+  averageDecay: number;
+  medianAgeDays: number;
+  oldestObservedAt: string | null;
+  newestObservedAt: string | null;
+  entries: EvidenceFreshnessEntry[];
+}
+
+// ─── Evidence Gap Analysis ────────────────────────────────────────────────────
+
+export type CoverageLevel = 'strong' | 'partial' | 'weak' | 'none';
+
+export interface GapSupportingAssertion {
+  assertionId: string;
+  narrative: string;
+  conceptKey: string;
+  strength: number;
+  decayMultiplier: number;
+  effectiveStrength: number;
+  observedAt: string | null;
+  exactText: string | null;
+}
+
+export interface DemandCoverage {
+  demandId: string;
+  demandNarrative: string;
+  demandWeight: number;
+  demandConcepts: string[];
+  coverageLevel: CoverageLevel;
+  matchedConcepts: string[];
+  missingConcepts: string[];
+  evidenceCount: number;
+  bestEvidenceLevel: string | null;
+  bestStrength: number;
+  effectiveStrength: number;
+  supportingAssertions: GapSupportingAssertion[];
+}
+
+export interface GapSummary {
+  strongCount: number;
+  partialCount: number;
+  weakCount: number;
+  noneCount: number;
+  totalDemands: number;
+  coverageScore: number;
+  weightedCoverageScore: number;
+}
+
+export interface EvidenceGapReport {
+  candidateId: string;
+  workspacePersonId: string | null;
+  challengeId: string;
+  demands: DemandCoverage[];
+  summary: GapSummary;
+  recommendations: string[];
+}
+
+// ─── Match Provenance Chain ───────────────────────────────────────────────────
+
+export interface ProvenanceMatchDecision {
+  matchRunId: string;
+  candidateId: string;
+  status: string;
+  selectedPacketId: string | null;
+  policyVersion: string;
+  createdAt: number;
+}
+
+export interface ProvenanceDemandLink {
+  demandId: string;
+  demandNarrative: string;
+  demandWeight: number;
+  demandConcepts: string[];
+  atomId: string;
+  pairScore: number;
+  stretch: {
+    atomConcept: string;
+    demandConcept: string;
+    dimension: string;
+  } | null;
+}
+
+export interface ProvenanceSignalNode {
+  atomId: string;
+  episodeId: string;
+  narrative: string;
+  purpose: string;
+  evidenceLevel: string | null;
+  evidenceStrength: number | null;
+  concepts: string[];
+  sourceRefs: Array<{
+    artifactId: string;
+    contentHash: string;
+    exactText: string | null;
+    startOffset: number;
+    endOffset: number;
+  }>;
+}
+
+export interface ProvenanceAssertionNode {
+  assertionId: string;
+  narrative: string;
+  predicate: string;
+  confidence: number | null;
+  polarity: number;
+  observedAt: string | null;
+  decayMultiplier: number;
+  concepts: string[];
+  sourceSpans: Array<{
+    sourceSpanId: string;
+    exactText: string;
+    lineStart: number | null;
+    lineEnd: number | null;
+    charStart: number | null;
+    charEnd: number | null;
+  }>;
+}
+
+export interface ProvenanceArtifactNode {
+  artifactId: string;
+  artifactType: string;
+  logicalKey: string | null;
+  mediaType: string | null;
+  versionNumber: number;
+  contentHash: string;
+}
+
+export interface ProvenanceInteractionNode {
+  interactionId: string;
+  interactionType: string;
+  startedAt: string | null;
+  endedAt: string | null;
+}
+
+export interface ProvenanceChainEntry {
+  demandLink: ProvenanceDemandLink;
+  signals: ProvenanceSignalNode[];
+  assertions: ProvenanceAssertionNode[];
+  artifacts: ProvenanceArtifactNode[];
+  interactions: ProvenanceInteractionNode[];
+}
+
+export interface MatchProvenanceChain {
+  decision: ProvenanceMatchDecision;
+  challengeId: string | null;
+  repoId: string | null;
+  prNumber: number | null;
+  totalDemands: number;
+  alignedDemands: number;
+  unmatchedDemands: number;
+  stretchCount: number;
+  chain: ProvenanceChainEntry[];
 }
 
 // ─── Interview State Machine (mirrors workers/api/src/lib/agents/interview/types.ts)
