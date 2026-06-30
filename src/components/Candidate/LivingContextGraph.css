@@ -3255,3 +3255,136 @@ html[data-theme="pipe-blue"] .living-context {
   color: rgba(255, 255, 255, 0.35);
   font-family: 'Space Mono', monospace;
 }
+
+/* ── Candidate comparison ────────────────────────────────────────── */
+
+.living-context__comparison-summary {
+  display: flex;
+  gap: 12px;
+  padding: 6px 0;
+}
+
+.living-context__comparison-stat {
+  font-size: 10px;
+  color: rgba(255, 255, 255, 0.55);
+  font-family: 'Space Mono', monospace;
+}
+
+.living-context__comparison-profiles {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+  padding: 6px 0;
+}
+
+.living-context__comparison-card {
+  background: var(--lc-card);
+  border: 1px solid var(--lc-card-border);
+  border-radius: 6px;
+  padding: 8px 10px;
+}
+
+.living-context__comparison-card--current {
+  border-color: var(--lc-concept);
+  background: rgba(99, 102, 241, 0.06);
+}
+
+.living-context__comparison-card-name {
+  font-size: 11px;
+  font-weight: 600;
+  color: var(--lc-record-text);
+  display: flex;
+  align-items: center;
+  gap: 6px;
+}
+
+.living-context__comparison-badge {
+  font-size: 9px;
+  font-weight: 500;
+  color: var(--lc-concept);
+  background: rgba(99, 102, 241, 0.12);
+  padding: 1px 5px;
+  border-radius: 3px;
+}
+
+.living-context__comparison-card-stats {
+  display: flex;
+  gap: 10px;
+  font-size: 9px;
+  color: var(--lc-record-muted);
+  font-family: 'Space Mono', monospace;
+  margin-top: 3px;
+}
+
+.living-context__comparison-concepts {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 4px;
+  margin-top: 5px;
+}
+
+.living-context__comparison-grid {
+  padding: 6px 0;
+}
+
+.living-context__comparison-table {
+  width: 100%;
+  border-collapse: collapse;
+  font-size: 10px;
+  margin-top: 4px;
+}
+
+.living-context__comparison-table th {
+  font-size: 9px;
+  font-weight: 500;
+  color: var(--lc-record-muted);
+  text-align: left;
+  padding: 3px 6px;
+  border-bottom: 1px solid var(--lc-card-border);
+}
+
+.living-context__comparison-table td {
+  padding: 3px 6px;
+  font-family: 'Space Mono', monospace;
+  font-size: 9px;
+  border-bottom: 1px solid rgba(255, 255, 255, 0.04);
+}
+
+.living-context__comparison-rankings {
+  display: flex;
+  gap: 16px;
+  padding: 8px 0;
+}
+
+.living-context__ranking-col {
+  flex: 1;
+  min-width: 0;
+}
+
+.living-context__ranking-row {
+  display: flex;
+  gap: 6px;
+  align-items: center;
+  font-size: 10px;
+  color: var(--lc-record-text);
+  padding: 2px 0;
+}
+
+.living-context__ranking-row--current {
+  color: var(--lc-concept);
+  font-weight: 600;
+}
+
+.living-context__ranking-pos {
+  font-size: 9px;
+  font-family: 'Space Mono', monospace;
+  color: var(--lc-record-muted);
+  min-width: 20px;
+}
+
+.living-context__ranking-score {
+  margin-left: auto;
+  font-size: 9px;
+  font-family: 'Space Mono', monospace;
+  color: var(--lc-record-muted);
+}

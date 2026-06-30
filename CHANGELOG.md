@@ -7,6 +7,13 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Added — Cross-candidate evidence comparison UI
+
+- `CandidateComparisonPanel` — new visualization panel in `LivingContextGraph` that renders side-by-side candidate evidence profiles, concept coverage grids with coverage-level coloring, and source-diversity/evidence-depth rankings when `comparisonCandidateIds` are provided.
+- `useCandidateComparison` hook — fetches `POST /api/v1/candidates/compare` and exposes `report`, `isLoading`, `error`, and a manual `compare()` trigger.
+- Frontend types for `CandidateComparisonReport`, `CandidateEvidenceProfile`, `ConceptComparison`, and `ComparisonSummary` in `src/lib/api/types.ts`.
+- Unit tests for the comparison hook and component panel (10 tests).
+
 ### Added — Human assessment decisions
 
 - Repo-task assessment sessions now support append-only `human_assessment_decision` events with exact source refs, SHA-256 content-hash validation, and provenance checks against session evidence, evaluation reports, evaluation claims, or diagnostics.
