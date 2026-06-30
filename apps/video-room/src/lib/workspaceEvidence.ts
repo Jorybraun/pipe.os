@@ -205,7 +205,7 @@ export function buildWorkspaceStateDesktopEvent(input: {
 }): WorkspaceStateDesktopEvent {
   const session = input.workspace?.session ?? null;
   const errorMessage = redactWorkspaceDiagnostic(session?.errorMessage ?? input.errorMessage ?? null);
-  const status = session?.status ?? (errorMessage ? 'ERROR' : null);
+  const status = session?.status ?? (errorMessage ? 'ERROR' : input.workspace?.enabled ? 'NOT_LAUNCHED' : null);
   const workspaceSessionId = session?.sessionId ?? null;
   const capturedAtMs = Number.isFinite(input.capturedAtMs) ? Math.max(0, Math.round(input.capturedAtMs)) : 0;
   const stateIdSession = workspaceSessionId ?? 'no-session';

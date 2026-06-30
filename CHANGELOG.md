@@ -28,6 +28,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 - Workspace launch now has an explicit host opt-in for starting the real Devin bridge and sends `agentType: "devin"` only when selected, so Clippy agent chat remains honest instead of implying a fake assistant.
 - Room metadata now returns `videoEnabled`, `workspaceEnabled`, `recordingEnabled`, and `clippyEnabled` feature flags matching the frontend contract, preventing Clippy or recording controls from silently falling back around stale short-form keys.
+- Workspace-assessment rooms now publish an explicit `NOT_LAUNCHED` source-backed workspace state before a container session exists, removing rejected prejoin workspace telemetry noise.
 - Dev-container assessment rooms now ignore stale initial Win95 room-surface snapshots from the Durable Object, keeping old rooms code-first on join while still honoring live explicit legacy-desktop toggles.
 - Code-first dev-container rooms now keep a candidate-safe open-source task brief beside VS Code, showing repo, base commit, task, success criteria, expected evidence, current step, and Submit Work without exposing source hashes or internal provenance.
 - Meeting-room basic-auth route regressions now use the real room-dev host when asserting credential injection, keeping the tests aligned with the dev-host-only auth hardening.

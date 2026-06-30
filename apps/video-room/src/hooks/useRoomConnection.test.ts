@@ -582,6 +582,13 @@ describe('hasSourceBackedDesktopEventEvidence', () => {
 
   it('accepts workspace state only when the observer event id and session provenance match', () => {
     expect(hasSourceBackedDesktopEventEvidence(workspaceEvent, 'HOST')).toBe(true);
+    expect(hasSourceBackedDesktopEventEvidence({
+      ...workspaceEvent,
+      workspaceStateEventId: 'workspace-state:host:1700000003000:initial_load:no-session:NOT_LAUNCHED',
+      workspaceStateSource: 'initial_load',
+      status: 'NOT_LAUNCHED',
+      workspaceSessionId: null,
+    }, 'HOST')).toBe(true);
   });
 
   it('accepts window data updates only when evidence reconstructs from the exact shared data patch', () => {

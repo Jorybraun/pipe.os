@@ -910,7 +910,7 @@ function hasSourceBackedWorkspaceStateEvidence(event: RoomDesktopEvent, actor: '
     && Number.isInteger(capturedAtMs)
     && capturedAtMs >= 0
     && event.workspaceStateEventId === `workspace-state:${actor}:${capturedAtMs}:${workspaceStateSource}:${stateIdSession}:${status}`
-    && (status === 'ERROR' || workspaceSessionId !== null)
+    && (status === 'ERROR' || status === 'NOT_LAUNCHED' || workspaceSessionId !== null)
     && event.workspaceTelemetryPersisted === true
     && event.proxyUrlPersisted === false;
 }

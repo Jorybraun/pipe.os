@@ -254,6 +254,29 @@ describe('buildWorkspaceStateDesktopEvent', () => {
     });
   });
 
+  it('records an assigned workspace before launch without fabricating a session', () => {
+    expect(buildWorkspaceStateDesktopEvent({
+      workspace: { ...workspace, session: null, canLaunch: true },
+      actor: 'host',
+      source: 'initial_load',
+      capturedAtMs: 1700000007000,
+    })).toMatchObject({
+      kind: 'WORKSPACE_STATE_CHANGED',
+      actor: 'host',
+      workspaceStateEventId: 'workspace-state:host:1700000007000:initial_load:no-session:NOT_LAUNCHED',
+      capturedAtMs: 1700000007000,
+      status: 'NOT_LAUNCHED',
+      workspaceSessionId: null,
+      repoUrl: 'https://github.com/cloudflare/workers-sdk',
+      canLaunch: true,
+      source: 'browser_workspace_state_observer',
+      workspaceEventSource: 'browser_workspace_state_observer',
+      workspaceStateSource: 'initial_load',
+      workspaceTelemetryPersisted: true,
+      proxyUrlPersisted: false,
+    });
+  });
+
   it('redacts secrets and room tokens from workspace diagnostics before evidence is built', () => {
     const rawServiceKey = 'cog_abcdefghijklmnopqrstuvwxyz123456';
     const rawRoomToken = 'room-token-secret-123';
