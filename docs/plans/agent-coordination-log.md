@@ -4,6 +4,36 @@ Inter-agent handoff log for the living context graph goal. Each agent appends a 
 
 ## Log
 
+### 2026-06-30 — Session 8919695b (Devin Automation)
+
+**Action:** Analyze open PRs, consolidate + continue development, add recruiter-facing rematch endpoint.
+
+**Open PRs analyzed:** #135–#146 (all aligned with living context goal). PR #146 is the latest consolidation superset with BDD e2e tests.
+
+**Completed:**
+1. Verified PR #146 branch: 184 test files, 1708 tests pass, TypeScript clean, lint 0 errors
+2. Branch protection blocks direct merge to main — created new non-draft PR from PR #146's content
+3. Added `POST /api/v1/candidates/:id/living-context/rematch` — recruiter-triggered re-matching after new evidence arrives
+4. Added `rematch.test.ts` — 5 tests covering identity resolution, match shape, rank selection, insufficient evidence
+5. Final state: 185 test files, 1713 tests pass, TypeScript clean, lint 0 errors
+
+**New endpoint: POST /candidates/:id/living-context/rematch**
+- Allows recruiters to re-run candidate-to-PR matching after new evidence (resume, meeting, assessment) is ingested
+- Returns match status, matchRunId, selected repo/PR, top challenge diagnostics
+- Uses temporal decay (90-day half-life) for evidence freshness weighting
+- Gated by `living_context_read` rollout gate
+
+**PRs to close (superseded by this PR):** #135–#146
+
+**Next priorities:**
+- Merge this PR to main
+- Close superseded PRs #135–#146
+- Add frontend "Re-match" button in CandidateProfilePage CONTEXT_GRAPH tab
+- Wire re-match results into real-time UI update (invalidate match narrative cache)
+- Run BDD Playwright tests against local dev server end-to-end
+
+---
+
 ### 2026-06-30 — Session 41d4c588 (Devin Automation)
 
 **Action:** Analyze open PRs, create merge-ready consolidation PR #146, write BDD Playwright tests for living context endpoints.

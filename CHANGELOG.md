@@ -7,6 +7,11 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Added — Recruiter-triggered re-match endpoint (criteria #5, #6)
+
+- `POST /api/v1/candidates/:id/living-context/rematch` — allows recruiters to re-run the deterministic candidate-to-PR matcher after new evidence arrives (resume upload, meeting transcript, assessment completion). Returns match status, matchRunId, selected repo/PR, and top challenge diagnostics. Uses temporal decay (90-day half-life) for evidence freshness weighting. Gated by `living_context_read` rollout gate.
+- `rematch.test.ts` — 5 Vitest tests covering identity resolution, match result shape, rank selection logic, and insufficient evidence handling.
+
 ### Added — BDD Playwright tests for living context graph endpoints
 
 - `e2e/living-context-graph.spec.ts` — 16 BDD scenarios covering all living context API endpoints: person graph read model, source search, timeline, evidence depth, match narrative, evidence gap analysis, match provenance chain, evidence lineage, freshness, aggregation, concept graph, health, integrity, stats, and backfill. Tests seed realistic candidate evidence via the e2e fixture endpoint and verify round-trip source fidelity.

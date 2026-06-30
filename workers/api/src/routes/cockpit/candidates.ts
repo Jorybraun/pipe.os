@@ -1805,6 +1805,69 @@ candidateOps.get('/:candidateId/living-context/evidence-depth', requireGate('liv
   });
 });
 
+// POST /:candidateId/living-context/rematch — recruiter triggers a fresh match run
+candidateOps.post('/:candidateId/living-context/rematch', requireGate('living_context_read'), async (c) => {
+  const userId = c.var.userId;
+  const { candidateId } = c.req.param();
+  const db = c.env.DB;
+
+  const candidate = await db.prepare(
+    `SELECT c.id
+       FROM candidates c
+       LEFT JOIN pipelines p ON p.id = c.pipeline_id
+      WHERE c.id = ?1 AND (c.owner_id = ?2 OR p.owner_id = ?2)`,
+  ).bind(candidateId, userId).first<{ id: string }>();
+  if (!candidate) return apiError(c, 'NOT_FOUND', 'Candidate not found.');
+
+  const wp = await db.prepare(
+    `SELECT wp.id
+       FROM applications app
+       JOIN workspace_people wp ON wp.id = app.workspace_person_id
+      WHERE app.legacy_candidate_id = ?1
+      LIMIT 1`,
+  ).bind(candidateId).first<{ id: string }>();
+  if (!wp) {
+    return c.json({
+      candidateId,
+      status: 'NEEDS_MORE_EVIDENCE' as const,
+      matchRunId: null,
+      reason: 'Candidate has no living context workspace identity yet.',
+      evaluatedCount: 0,
+      topChallenge: null,
+    }, 200);
+  }
+
+  const { matchCandidateToReviewChallenge } = await import('../../lib/challengeMatching/d1Matcher');
+  const match = await matchCandidateToReviewChallenge(db, candidateId, {
+    temporalDecay: { halfLifeDays: 90 },
+  });
+
+  const evaluated = match.diagnostics?.evaluatedChallenges ?? [];
+  const top = evaluated.length > 0
+    ? evaluated.reduce((best, cur) =>
+        (cur.rank !== null && (best.rank === null || cur.rank < best.rank)) ? cur : best,
+      )
+    : null;
+
+  return c.json({
+    candidateId,
+    status: match.status,
+    matchRunId: match.matchRunId,
+    repoId: match.repoId ?? null,
+    prNumber: match.prNumber ?? null,
+    evaluatedCount: evaluated.length,
+    topChallenge: top ? {
+      challengeId: top.challengeId,
+      repoId: top.repoId,
+      prNumber: top.prNumber,
+      rank: top.rank,
+      alignedDemandCount: top.alignedDemandCount,
+      stretchCount: top.stretchCount,
+      eligible: top.eligible,
+    } : null,
+  });
+});
+
 // GET /:candidateId — full profile with stages + challenge submissions
 candidateOps.get('/:candidateId', async (c) => {
   const userId = c.var.userId;
