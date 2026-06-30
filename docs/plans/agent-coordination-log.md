@@ -1215,3 +1215,35 @@ cd workers/api && npx wrangler d1 migrations apply pipe-db --env production
 cd workers/api && npx wrangler deploy --env production
 ```
 
+---
+
+### Session 8a25fd68 — 2026-06-30T13:01Z (Devin automation)
+**Trigger:** Scheduled automation — recurring sync
+**Branch:** `devin/1782824720-living-context-final`
+**PR:** #153
+
+**Work completed:**
+1. Analyzed 47 open PRs (#105–#151) for consolidation — PR #152 identified as canonical base (19 commits, 188 test files)
+2. Verified codex/consolidate branch (496 commits) is destructive cleanup — skipped
+3. Built new feature: **evidence conflict detection** (`evidenceConflicts.ts`)
+   - Polarity conflicts: affirm vs contradict from different sources
+   - Strength divergence: same-polarity assertions with wide effective-strength range
+   - Deterministic conflict IDs, severity classification, temporal decay
+   - API endpoints: cockpit + internal
+   - Frontend: `EvidenceConflictsPanel` + `useEvidenceConflicts` hook + CSS
+   - 6 Vitest tests
+4. Fixed missing `useEvidenceReadiness` mock in 4 component test files (pre-existing gap)
+5. Created PR #153 with all consolidated work + new feature
+
+**Test results (local):**
+- Frontend: 38 files, 337 passed, 24 skipped
+- Workers: 189 files, 1743 passed, 15 skipped
+- TypeScript: 0 errors (root + workers/api)
+- Lint: 0 errors
+
+**Acceptance criteria status:**
+All 8 criteria: COMPLETE (no changes since prior session)
+New addition: evidence conflict detection strengthens criteria #2, #6, #8
+
+**CI note:** Job logs unavailable (BlobNotFound). "Workers Builds" and "Deploy Dev Demo" likely require Cloudflare secrets. meetingRooms.rest.test.ts has pre-existing flaky test (random `--` in base64 token).
+
