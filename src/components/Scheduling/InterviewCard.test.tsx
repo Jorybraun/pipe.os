@@ -125,6 +125,8 @@ describe('InterviewCard assessment progress', () => {
     const progress = screen.getByTestId('interview-card-assessment-progress');
     expect(progress).toHaveTextContent('ASSESSMENT');
     expect(progress).toHaveTextContent('Ready for evaluation');
+    expect(progress).toHaveTextContent('DECISION');
+    expect(progress).toHaveTextContent('Challenge and commit evidence are captured; run source-backed AI or human evaluation.');
     expect(progress).toHaveTextContent('Start source-backed AI or human evaluation.');
     expect(progress).toHaveTextContent('challenge, chat, workspace telemetry, room actions, commit, AI use, transcript, tests');
     expect(progress).toHaveTextContent('WORKSPACE');
@@ -218,6 +220,8 @@ describe('InterviewCard assessment progress', () => {
 
     const progress = screen.getByTestId('interview-card-assessment-progress');
     expect(progress).toHaveTextContent('Challenge ready');
+    expect(progress).toHaveTextContent('Task assigned');
+    expect(progress).toHaveTextContent('Waiting for candidate workspace evidence and assessment-branch commit.');
     expect(progress).toHaveTextContent('Open the room and launch the controlled workspace.');
     expect(progress).toHaveTextContent('challenge');
     expect(progress).toHaveTextContent('REPO');
@@ -253,5 +257,90 @@ describe('InterviewCard assessment progress', () => {
     expect(progress).toHaveTextContent('Setup gap');
     expect(progress).toHaveTextContent('PIPE must ingest source-backed evidence before selecting a PR task.');
     expect(progress).toHaveTextContent('no assessment session yet');
+  });
+
+  it('shows evaluated recommendation without exposing evaluator ids', () => {
+    renderCard({
+      id: 'interview-evaluated',
+      createdAt: '2026-06-23T00:00:00.000Z',
+      updatedAt: '2026-06-23T00:20:00.000Z',
+      status: 'COMPLETED',
+      interviewType: 'OPEN_SOURCE_BUG_FIX',
+      meetingType: 'DIRECT_VIDEO_CALL',
+      scheduledAt: null,
+      assessmentSetup: {
+        status: 'reviewable_task_assigned',
+        kind: 'manual_open_source_task',
+        source: 'recruiter_manual_override',
+        blocksPositiveAssessment: false,
+        message: 'A concrete open-source task packet was assigned by the recruiter.',
+      },
+      assessmentProgress: {
+        session: {
+          id: 'assessment-session-evaluated',
+          ingestionKey: 'assessment-session:evaluated',
+          interviewId: 'interview-evaluated',
+          candidateId: 'candidate-1',
+          workspaceId: null,
+          workspacePersonId: null,
+          applicationId: null,
+          mode: 'OPEN_SOURCE_BUG_FIX',
+          state: 'EVALUATED',
+          createdAt: '2026-06-23T00:00:00.000Z',
+          updatedAt: '2026-06-23T00:20:00.000Z',
+        },
+        stage: 'EVALUATED',
+        nextAction: 'REVIEW_EVALUATION',
+        nextActionLabel: 'Review the source-backed evaluator report.',
+        hasChallengePacket: true,
+        hasWorkEvidence: true,
+        hasMessageEvidence: true,
+        hasDevContainerEvidence: true,
+        hasToolUsageEvidence: true,
+        hasCommitSubmission: true,
+        hasFinalSubmission: true,
+        hasAiInteraction: true,
+        hasTranscriptEvidence: true,
+        hasTestEvidence: true,
+        evidenceCounts: [{ kind: 'commit_submission', count: 1 }],
+        sourceRefCounts: [{ kind: 'test_run', count: 1 }],
+        challenge: null,
+        latestEvent: {
+          id: 'assessment-event-evaluated',
+          kind: 'final_submission',
+          sequence: 4,
+          occurredAt: '2026-06-23T00:20:00.000Z',
+        },
+        commit: {
+          eventId: 'assessment-event-evaluated',
+          repositoryUrl: 'https://github.com/open-source/widgets',
+          forkRepositoryUrl: 'https://github.com/candidate/widgets',
+          branchName: 'pipe-assessment/widgets',
+          baseCommitSha: '3333333333333333333333333333333333333333',
+          commitSha: '123456abcdef123456abcdef123456abcdef1234',
+          commitUrl: 'https://github.com/candidate/widgets/commit/123456abcdef123456abcdef123456abcdef1234',
+          changedFiles: [{ path: 'src/widget.ts', status: 'modified' }],
+          occurredAt: '2026-06-23T00:18:00.000Z',
+        },
+        evaluation: {
+          id: 'assessment-evaluation-secret',
+          status: 'EVALUATED',
+          summary: 'Candidate produced a focused source-backed fix with commit and test evidence.',
+          recommendation: 'Strong evidence to advance',
+          createdAt: '2026-06-23T00:22:00.000Z',
+          evidenceCoverage: null,
+          claims: [],
+        },
+      },
+    });
+
+    const progress = screen.getByTestId('interview-card-assessment-progress');
+    expect(progress).toHaveTextContent('Evaluated');
+    expect(progress).toHaveTextContent('DECISION');
+    expect(progress).toHaveTextContent('Strong evidence to advance');
+    expect(progress).toHaveTextContent('Candidate produced a focused source-backed fix with commit and test evidence.');
+    expect(progress).toHaveTextContent('EVAL');
+    expect(progress).not.toHaveTextContent('assessment-evaluation-secret');
+    expect(progress).not.toHaveTextContent('assessment-session-evaluated');
   });
 });

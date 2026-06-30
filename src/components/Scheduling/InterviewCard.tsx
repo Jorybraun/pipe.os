@@ -133,6 +133,78 @@ function assessmentEvidenceSummary(input: {
   return ready.length > 0 ? ready.join(', ') : 'no evidence yet';
 }
 
+interface AssessmentDecisionSummary {
+  value: string;
+  detail: string;
+}
+
+function assessmentDecisionSummary(input: {
+  setup: ScheduledInterview['assessmentSetup'] | null;
+  progress: ScheduledInterview['assessmentProgress'] | null;
+}): AssessmentDecisionSummary | null {
+  const { setup, progress } = input;
+
+  if (progress?.evaluation) {
+    const status = progress.evaluation.status.toUpperCase();
+    if (status === 'EVALUATED') {
+      return {
+        value: progress.evaluation.recommendation?.trim() || 'Evaluated',
+        detail: compactText(
+          progress.evaluation.summary
+          || 'Review the source-backed evaluation report before advancing the candidate.',
+          150,
+        ),
+      };
+    }
+
+    return {
+      value: 'Evaluation needs attention',
+      detail: compactText(
+        progress.evaluation.summary
+        || `Evaluation is ${sentenceCaseToken(progress.evaluation.status)}; resolve diagnostics before using it as a hiring signal.`,
+        150,
+      ),
+    };
+  }
+
+  if (progress?.nextAction === 'RESOLVE_DIAGNOSTIC' || progress?.stage === 'NEEDS_ATTENTION') {
+    return {
+      value: 'Needs attention',
+      detail: compactText(progress.nextActionLabel || 'Resolve the assessment diagnostic before evaluation.', 150),
+    };
+  }
+
+  if (progress?.nextAction === 'START_EVALUATION' || progress?.stage === 'READY_FOR_EVALUATION') {
+    return {
+      value: 'Ready for evaluation',
+      detail: 'Challenge and commit evidence are captured; run source-backed AI or human evaluation.',
+    };
+  }
+
+  if (progress?.hasCommitSubmission) {
+    return {
+      value: 'Commit submitted',
+      detail: 'Run source-backed evaluation before using this as a hiring signal.',
+    };
+  }
+
+  if (progress?.hasChallengePacket || setup?.status === 'reviewable_task_assigned') {
+    return {
+      value: 'Task assigned',
+      detail: 'Waiting for candidate workspace evidence and assessment-branch commit.',
+    };
+  }
+
+  if (setup?.blocksPositiveAssessment) {
+    return {
+      value: 'Setup gap',
+      detail: compactText(setup.message || 'PIPE needs source-backed evidence before this can become an assessment.', 150),
+    };
+  }
+
+  return null;
+}
+
 export function InterviewCard({
   interview,
   candidateName,
@@ -241,6 +313,10 @@ export function InterviewCard({
   const assessmentEvaluationLabel = assessmentProgress?.evaluation?.status
     ? sentenceCaseToken(assessmentProgress.evaluation.status)
     : null;
+  const assessmentDecision = assessmentDecisionSummary({
+    setup: assessmentSetup,
+    progress: assessmentProgress,
+  });
   const workspaceSummary = workspaceSessionSummary(interview);
 
   return (
@@ -346,6 +422,21 @@ export function InterviewCard({
               <div style={{ minWidth: 0, fontSize: 10, color: 'var(--pipe-text)', fontWeight: 700, overflowWrap: 'anywhere' }}>
                 {assessmentStageLabel}
               </div>
+              {assessmentDecision && (
+                <>
+                  <div style={{ fontSize: 9, color: '#93c5fd', letterSpacing: '0.12em', fontWeight: 700 }}>
+                    DECISION
+                  </div>
+                  <div style={{ minWidth: 0, overflowWrap: 'anywhere' }}>
+                    <div style={{ fontSize: 10, color: 'var(--pipe-text)', fontWeight: 700 }}>
+                      {assessmentDecision.value}
+                    </div>
+                    <div style={{ fontSize: 10, color: 'var(--pipe-text-dim)' }}>
+                      {assessmentDecision.detail}
+                    </div>
+                  </div>
+                </>
+              )}
               <div style={{ fontSize: 9, color: 'var(--pipe-text-muted)', letterSpacing: '0.12em', fontWeight: 700 }}>
                 NEXT
               </div>
