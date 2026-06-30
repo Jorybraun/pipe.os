@@ -23,7 +23,10 @@ import {
 } from '../repoSemanticGraph';
 import { LivingContextStore } from '../livingContext/persistence';
 import { normalizeOpenTermSurface, openSemanticTerm } from '../livingContext/openTerms';
-import { ensureCandidateLivingContext } from '../livingContext/compatibility';
+import {
+  ensureCandidateLivingContext,
+  mirrorCandidateNodeToLivingContext,
+} from '../livingContext/compatibility';
 import { ingestMatchRunAssessmentEvidence } from '../assessmentLayer/matchEvidence';
 import {
   applyTemporalDecay,
@@ -41,6 +44,7 @@ import type {
   JsonObject,
   JsonValue,
 } from '../livingContext/types';
+import type { CandidateNode } from '../../types';
 
 interface CandidateEvidenceRow {
   context_record_id: string | null;
@@ -482,11 +486,32 @@ async function ensureCandidateMatchBridge(
   db: D1Database,
   candidateId: string,
 ): Promise<void> {
-  const existing = await db.prepare(
-    `SELECT id FROM applications WHERE legacy_candidate_id = ?1 LIMIT 1`,
-  ).bind(candidateId).first<{ id: string }>();
-  if (existing) return;
   await ensureCandidateLivingContext(db, candidateId);
+  const unprojected = await db.prepare(
+    `SELECT cn.*
+       FROM candidate_nodes cn
+      WHERE cn.candidate_id = ?1
+        AND cn.superseded_at IS NULL
+        AND NOT EXISTS (
+          SELECT 1
+            FROM context_records cr
+           WHERE cr.ingestion_key = 'candidate-node:' || cn.id || ':context-record'
+        )
+      ORDER BY cn.captured_at DESC, cn.id
+      LIMIT 100`,
+  ).bind(candidateId).all<CandidateNode>();
+
+  for (const node of unprojected.results ?? []) {
+    try {
+      await mirrorCandidateNodeToLivingContext(db, node);
+    } catch (error) {
+      console.error('[matchCandidateToReviewChallenge] candidate node projection repair failed:', {
+        candidateId,
+        nodeId: node.id,
+        error: error instanceof Error ? error.message : String(error),
+      });
+    }
+  }
 }
 
 function packetSourceRef(span: RepoSpanRow): SourceRef {

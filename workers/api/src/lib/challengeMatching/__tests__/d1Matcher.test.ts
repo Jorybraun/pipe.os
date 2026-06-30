@@ -1262,6 +1262,7 @@ async function seedMuiBaseUiMeetingTranscriptCandidateEvidence(
 
 async function seedMuiBaseUiResumeCandidateEvidence(
   sqlite: NodeSqliteDatabase,
+  options: { mirrorLivingContext?: boolean } = {},
 ): Promise<{ resumeText: string }> {
   const db = createNodeSqliteD1(sqlite);
   const resumeText = [
@@ -1301,27 +1302,31 @@ async function seedMuiBaseUiResumeCandidateEvidence(
   ];
 
   for (const [index, node] of nodeInputs.entries()) {
-    await insertCandidateNode(db, {
-      candidate_id: 'candidate-1',
-      node_type: node.type,
-      narrative_text: node.narrative,
-      extracted_properties_json: JSON.stringify({
-        semantic_terms: node.terms,
-        source_quote: resumeText,
-        source_quote_validated: true,
-        source_quote_char_start: 0,
-        source_quote_char_end: resumeText.length,
-        index,
-      }),
-      embedding_json: null,
-      source_type: 'resume',
-      source_reference: 'resume-smoke',
-      captured_at: capturedAt,
-      confidence: node.confidence,
-      supersedes: null,
-      superseded_at: null,
-      decomposition_version: 'test-resume-v1',
-    });
+    await insertCandidateNode(
+      db,
+      {
+        candidate_id: 'candidate-1',
+        node_type: node.type,
+        narrative_text: node.narrative,
+        extracted_properties_json: JSON.stringify({
+          semantic_terms: node.terms,
+          source_quote: resumeText,
+          source_quote_validated: true,
+          source_quote_char_start: 0,
+          source_quote_char_end: resumeText.length,
+          index,
+        }),
+        embedding_json: null,
+        source_type: 'resume',
+        source_reference: 'resume-smoke',
+        captured_at: capturedAt,
+        confidence: node.confidence,
+        supersedes: null,
+        superseded_at: null,
+        decomposition_version: 'test-resume-v1',
+      },
+      { mirrorLivingContext: options.mirrorLivingContext },
+    );
   }
 
   const identity = await ensureCandidateLivingContext(db, 'candidate-1');
@@ -2708,6 +2713,57 @@ describe('matchCandidateToReviewChallenge', () => {
     expect(sharedConcepts.has('term:popover')).toBe(true);
     expect(sharedConcepts.has('term:javascript-test-runner')).toBe(true);
     expect(rankedResult.alignments.every((alignment) => alignment.roleSourceRefs.length === 0)).toBe(true);
+  });
+
+  it('repairs unprojected resume candidate nodes before role-backed code-review matching', async () => {
+    const { resumeText } = await seedMuiBaseUiResumeCandidateEvidence(sqlite, {
+      mirrorLivingContext: false,
+    });
+    expect(sqlite.prepare(
+      `SELECT COUNT(*) AS count
+         FROM context_records
+        WHERE ingestion_key LIKE 'candidate-node:%:context-record'`,
+    ).get()).toEqual({ count: 0 });
+
+    sqlite.prepare('INSERT INTO qualified_repos (id) VALUES (?)').run(973);
+    const data = await buildMuiBaseUiPopoverChallengeFixture();
+    await persistReviewChallengeGraph(
+      createNodeSqliteD1(sqlite),
+      973,
+      data.input,
+      data.packet,
+      data.graph,
+    );
+
+    const result = await matchCandidateToReviewChallenge(createNodeSqliteD1(sqlite), 'candidate-1', {
+      roleConcepts: [
+        'term:patient-click-threshold',
+        'term:react',
+        'term:typescript',
+        'term:javascript-test-runner',
+        'term:use-popover-root',
+      ],
+      minEvidenceInteractions: 1,
+      minEvidenceDiversity: 0,
+    });
+
+    expect(result.status).toBe('MATCHED');
+    expect(result.repoId).toBe(973);
+    expect(result.prNumber).toBe(973);
+    expect(result.explanation?.selectedPr).toEqual({
+      challengeId: data.packet.id,
+      repoId: '973',
+      prNumber: 973,
+      sourceVersion: data.input.repoSnapshot.id,
+    });
+    expect(result.explanation?.candidateSpans.flatMap((span) =>
+      span.sourceRefs.map((source) => source.exactText),
+    )).toContain(resumeText);
+    expect(sqlite.prepare(
+      `SELECT COUNT(*) AS count
+         FROM context_records
+        WHERE ingestion_key LIKE 'candidate-node:%:context-record'`,
+    ).get()).toEqual({ count: 3 });
   });
 
   it('auto-matches roleless resume evidence to a live-shaped mui/base-ui PR packet', async () => {
