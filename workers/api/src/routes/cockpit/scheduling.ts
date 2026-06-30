@@ -3039,7 +3039,7 @@ function matchedPacketSuccessCriteria(packet: ChallengePacket): string[] {
 function matchedPacketExpectedEvidence(): string[] {
   return [
     'git_commit source ref for the submitted assessment commit',
-    'code_diff source ref for the candidate patch',
+    'code_diff source ref for the exact baseCommitSha..commitSha candidate patch',
     'terminal_command/test_run source refs for verification',
     'chat/transcript/AI source refs for explanation and AI-use behavior when present',
   ];

@@ -84,6 +84,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Fixed — Candidate repo matching
 
+- Assessment evaluator prompts, reports, and scheduling progress fixtures now cite `code_diff` evidence using the exact submitted `baseCommitSha..commitSha` range, keeping evaluator provenance aligned with commit-submission validation.
 - Commit submissions now require `code_diff` source refs to identify the submitted `baseCommitSha..commitSha` range, preventing unrelated diffs from backing assessment commits.
 - Commit submissions now must match the assigned source-backed challenge packet's repository URL and base commit when those locator fields are present, preventing candidates from submitting unrelated repo or wrong-base work into the assessment spine.
 - Dev-container assessment rooms now poll the real assessment progress endpoint while active, keeping the candidate task brief, status strip, and submit-work path current when backend, host, guest, or container evidence changes after initial room load.

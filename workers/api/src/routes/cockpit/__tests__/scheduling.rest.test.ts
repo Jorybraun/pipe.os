@@ -1412,9 +1412,9 @@ describe('GET /interviews/:id detail', () => {
       'assessment-source-progress-diff',
       'assessment-event-progress-commit',
       'code_diff',
-      `${commitSha}:diff`,
+      `${baseCommitSha}..${commitSha}`,
       'support',
-      JSON.stringify({ path: 'src/popover.ts' }),
+      JSON.stringify({ path: 'src/popover.ts', baseCommitSha, commitSha }),
       diffText,
       sha256Hex(diffText),
       now,
@@ -1595,9 +1595,9 @@ describe('GET /interviews/:id detail', () => {
       'assessment-source-start-evaluation-diff',
       'assessment-event-start-evaluation-commit',
       'code_diff',
-      `${commitSha}:diff`,
+      `${baseCommitSha}..${commitSha}`,
       'support',
-      JSON.stringify({ path: 'src/evaluation.ts' }),
+      JSON.stringify({ path: 'src/evaluation.ts', baseCommitSha, commitSha }),
       diffText,
       sha256Hex(diffText),
       now,
@@ -1676,7 +1676,8 @@ describe('GET /interviews/:id detail', () => {
       '+startEvaluation();',
       `+${'long evaluator prompt fixture '.repeat(90)}`,
     ].join('\n');
-    const diffSourceRefKey = `code_diff:${commitSha}:diff:support:`;
+    const diffSourceRefId = `${baseCommitSha}..${commitSha}`;
+    const diffSourceRefKey = `code_diff:${diffSourceRefId}:support:`;
     const fileObservationText = JSON.stringify({
       sourceKind: 'code_server_workspace.file_observation',
       path: 'src/evaluation.ts',
@@ -1795,9 +1796,9 @@ describe('GET /interviews/:id detail', () => {
       'assessment-source-ai-evaluation-diff',
       'assessment-event-ai-evaluation-commit',
       'code_diff',
-      `${commitSha}:diff`,
+      diffSourceRefId,
       'support',
-      JSON.stringify({ path: 'src/evaluation.ts' }),
+      JSON.stringify({ path: 'src/evaluation.ts', baseCommitSha, commitSha }),
       diffText,
       sha256Hex(diffText),
       now,
@@ -1832,7 +1833,7 @@ describe('GET /interviews/:id detail', () => {
       dimension: "implementation_correctness",
       narrative: "The submitted diff adds startEvaluation in src/evaluation.ts.",
       confidence: 0.74,
-      sourceRefKeys: ["${commitSha}:diff"]
+      sourceRefKeys: ["${diffSourceRefId}"]
     },
     {
       id: "uncited-claim",
@@ -1848,7 +1849,7 @@ describe('GET /interviews/:id detail', () => {
       code: "MISSING_TEST_EVIDENCE",
       severity: "warning",
       message: "No test_run source ref was attached to the session.",
-      sourceRefKeys: ["${commitSha}:diff"],
+      sourceRefKeys: ["${diffSourceRefId}"],
     },
   ],
 }
@@ -2041,7 +2042,7 @@ describe('GET /interviews/:id detail', () => {
       dimension: 'implementation_correctness',
       polarity: 'positive',
       source_ref_type: 'code_diff',
-      source_ref_id: `${commitSha}:diff`,
+      source_ref_id: diffSourceRefId,
       exact_text: diffText,
     });
   });
@@ -2149,8 +2150,8 @@ describe('GET /interviews/:id detail', () => {
         id: 'assessment-source-list-diff',
         eventId: 'assessment-event-list-commit',
         type: 'code_diff',
-        refId: `${commitSha}:diff`,
-        locator: { path: 'src/list.ts' },
+        refId: `${baseCommitSha}..${commitSha}`,
+        locator: { path: 'src/list.ts', baseCommitSha, commitSha },
         text: diffText,
       },
     ]) {
@@ -7452,7 +7453,7 @@ describe('POST /interviews dev-container challenge (HAS-80)', () => {
       '- Repair retry scheduling so terminal events are emitted exactly once.',
       'Expected evidence:',
       '- git_commit source ref for the submitted assessment commit',
-      '- code_diff source ref for the candidate patch',
+      '- code_diff source ref for the exact baseCommitSha..commitSha candidate patch',
     ]));
 
     const row = sqlite!.prepare(
