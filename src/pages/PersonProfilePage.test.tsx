@@ -424,6 +424,17 @@ describe('PersonProfilePage', () => {
     expect(coverage).toHaveTextContent('1 resume');
     expect(coverage).not.toHaveTextContent('review-session-1');
     expect(coverage).not.toHaveTextContent('resume:review-evidence:63');
+    const sourceAudit = screen.getByTestId('person-source-audit');
+    expect(sourceAudit).not.toHaveAttribute('open');
+    expect(screen.getByText('Evidence audit trail')).toBeVisible();
+    expect(screen.getByText('2 records · 2 artifacts')).toBeVisible();
+    expect(screen.getByText('Learned Context')).not.toBeVisible();
+    expect(screen.getByText('Original Sources')).not.toBeVisible();
+    fireEvent.click(screen.getByText('Evidence audit trail'));
+    expect(sourceAudit).toHaveAttribute('open');
+    expect(screen.getByText('Performance Signals')).toBeVisible();
+    expect(screen.getByText('Learned Context')).toBeVisible();
+    expect(screen.getByText('Original Sources')).toBeVisible();
     expect(screen.getByText('Candidate evidence')).toBeInTheDocument();
     expect(screen.getByText('Imported from resume decomposition')).toBeInTheDocument();
     expect(document.body).not.toHaveTextContent('review-session-1');

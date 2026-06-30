@@ -1399,7 +1399,19 @@ export default function PersonProfilePage(): JSX.Element {
             );
           })}
         </Panel>
+      </section>
 
+      <details data-testid="person-source-audit" style={SOURCE_AUDIT}>
+        <summary style={SOURCE_AUDIT_SUMMARY}>
+          <span style={SOURCE_AUDIT_TITLE}>
+            <FileText size={15} />
+            Evidence audit trail
+          </span>
+          <span style={SOURCE_AUDIT_META}>
+            {livingContext?.summary.contextRecordCount ?? 0} records · {livingContext?.summary.artifactCount ?? 0} artifacts
+          </span>
+        </summary>
+        <div style={SOURCE_AUDIT_GRID}>
         <Panel title="Performance Signals" icon={<Signal size={15} />}>
           {sourceBackedSignals.length === 0 ? (
             <EmptyPanel>No source-backed performance evidence yet.</EmptyPanel>
@@ -1460,7 +1472,8 @@ export default function PersonProfilePage(): JSX.Element {
             </article>
           ))}
         </Panel>
-      </section>
+        </div>
+      </details>
 
       <section style={GRAPH_SECTION}>
         <div style={GRAPH_HEADER}>
@@ -1625,6 +1638,56 @@ const EVIDENCE_GRID: CSSProperties = {
   gridTemplateColumns: 'repeat(auto-fit, minmax(280px, 1fr))',
   gap: 14,
   minWidth: 0,
+};
+
+const SOURCE_AUDIT: CSSProperties = {
+  border: '1px solid var(--pipe-border)',
+  borderRadius: 8,
+  background: 'var(--pipe-surface-solid)',
+  overflow: 'hidden',
+};
+
+const SOURCE_AUDIT_SUMMARY: CSSProperties = {
+  display: 'flex',
+  alignItems: 'center',
+  justifyContent: 'space-between',
+  gap: 14,
+  minHeight: 48,
+  padding: '14px 16px',
+  cursor: 'pointer',
+  listStyle: 'none',
+  borderBottom: '1px solid var(--pipe-border-light)',
+};
+
+const SOURCE_AUDIT_TITLE: CSSProperties = {
+  display: 'inline-flex',
+  alignItems: 'center',
+  gap: 9,
+  minWidth: 0,
+  color: 'var(--pipe-text)',
+  fontFamily: FONT,
+  fontSize: 12,
+  fontWeight: 800,
+  letterSpacing: '0.08em',
+  textTransform: 'uppercase',
+};
+
+const SOURCE_AUDIT_META: CSSProperties = {
+  flex: '0 0 auto',
+  color: 'var(--pipe-text-dim)',
+  fontFamily: FONT,
+  fontSize: 10,
+  fontWeight: 700,
+  letterSpacing: '0.06em',
+  textTransform: 'uppercase',
+};
+
+const SOURCE_AUDIT_GRID: CSSProperties = {
+  display: 'grid',
+  gridTemplateColumns: 'repeat(auto-fit, minmax(280px, 1fr))',
+  gap: 14,
+  minWidth: 0,
+  padding: 14,
 };
 
 const SECTION: CSSProperties = {
