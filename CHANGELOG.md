@@ -13,6 +13,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Fixed — Scheduling
 
+- Scheduled open-source, code-review, and dev-container assessment invites now create linked meeting rooms with explicit workspace, recording, and Clippy feature flags plus assessment-specific title/description copy, while standard video invites stay out of the dev-workspace path.
 - Assessment progress now carries evaluator diagnostic previews through recruiter and room APIs and shows evaluator cautions on interview details and cards, making missing-test or human-review risks visible beside source-backed claims.
 - Recruiter interview lists now include assessment filters and counts for action-needed, ready-to-evaluate, needs-attention, and evaluated sessions so source-backed assessment work is not buried in the general invite feed.
 - Recruiter interview cards now expose an `EVALUATE` action for assessment sessions that have captured commit evidence and are ready for source-backed AI/human evaluation, using the same real evaluation endpoint as the detail page and refreshing the list afterward.
@@ -25,6 +26,8 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Fixed — Video room
 
+- Workspace launch now has an explicit host opt-in for starting the real Devin bridge and sends `agentType: "devin"` only when selected, so Clippy agent chat remains honest instead of implying a fake assistant.
+- Room metadata now returns `videoEnabled`, `workspaceEnabled`, `recordingEnabled`, and `clippyEnabled` feature flags matching the frontend contract, preventing Clippy or recording controls from silently falling back around stale short-form keys.
 - Dev-container assessment rooms now ignore stale initial Win95 room-surface snapshots from the Durable Object, keeping old rooms code-first on join while still honoring live explicit legacy-desktop toggles.
 - Code-first dev-container rooms now keep a candidate-safe open-source task brief beside VS Code, showing repo, base commit, task, success criteria, expected evidence, current step, and Submit Work without exposing source hashes or internal provenance.
 - Meeting-room basic-auth route regressions now use the real room-dev host when asserting credential injection, keeping the tests aligned with the dev-host-only auth hardening.

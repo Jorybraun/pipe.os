@@ -147,11 +147,18 @@ export async function getRoomWorkspace(token: string): Promise<RoomWorkspace> {
   return body.workspace;
 }
 
-export async function launchRoomWorkspace(token: string, repoUrl?: string): Promise<RoomWorkspaceLaunchResponse> {
+export async function launchRoomWorkspace(
+  token: string,
+  repoUrl?: string,
+  agentType?: 'devin' | null,
+): Promise<RoomWorkspaceLaunchResponse> {
+  const body: { repoUrl?: string; agentType?: 'devin' } = {};
+  if (repoUrl) body.repoUrl = repoUrl;
+  if (agentType === 'devin') body.agentType = agentType;
   const response = await fetch(apiUrl(`/api/v1/meeting-rooms/${token}/workspace/launch`), {
     method: 'POST',
     headers: { 'Content-Type': 'application/json' },
-    body: JSON.stringify(repoUrl ? { repoUrl } : {}),
+    body: JSON.stringify(body),
     cache: 'no-store',
     credentials: 'same-origin',
   });

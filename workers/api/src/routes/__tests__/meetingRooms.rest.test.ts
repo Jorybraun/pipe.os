@@ -7748,10 +7748,32 @@ describe('meeting room recording living-context route', () => {
     const guestRoomRes = await app.request(`/meeting/${guestToken}`, {}, env, ctx);
     expect(guestRoomRes.status).toBe(200);
     const guestRoom = await guestRoomRes.json() as {
-      room: { id: string; sessionId: string; role: string };
+      room: {
+        id: string;
+        sessionId: string;
+        role: string;
+        features: {
+          videoEnabled: boolean;
+          workspaceEnabled: boolean;
+          recordingEnabled: boolean;
+          clippyEnabled: boolean;
+          video?: boolean;
+          workspace?: boolean;
+          recording?: boolean;
+          clippy?: boolean;
+        };
+      };
     };
     expect(guestRoom.room.role).toBe('GUEST');
     expect(guestRoom.room.sessionId).not.toContain('--');
+    expect(guestRoom.room.features).toMatchObject({
+      videoEnabled: true,
+      workspaceEnabled: true,
+      recordingEnabled: true,
+      clippyEnabled: true,
+    });
+    expect(guestRoom.room.features.video).toBeUndefined();
+    expect(guestRoom.room.features.clippy).toBeUndefined();
 
     // Reopening the room must still produce /room/ links, never /video/ fallbacks.
     const reopenRes = await app.request(`/meetings/${created.meeting.id}/room`, {

@@ -2325,10 +2325,10 @@ meetingRooms.get('/:token', async (c) => {
       participants: participants.results,
       workspace,
       features: {
-        video: room.video_enabled !== 0,
-        workspace: room.workspace_enabled !== 0,
-        recording: room.recording_enabled !== 0,
-        clippy: room.clippy_enabled !== 0,
+        videoEnabled: room.video_enabled !== 0,
+        workspaceEnabled: room.workspace_enabled !== 0,
+        recordingEnabled: room.recording_enabled !== 0,
+        clippyEnabled: room.clippy_enabled !== 0,
       },
     },
   });

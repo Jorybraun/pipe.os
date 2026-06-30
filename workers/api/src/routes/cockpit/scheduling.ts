@@ -148,6 +148,61 @@ function isWorkspaceAssessmentInterviewType(value: string | null | undefined): v
     || value === 'OPEN_SOURCE_BUG_FIX';
 }
 
+interface ScheduledInterviewRoomFeatures {
+  videoEnabled: boolean;
+  workspaceEnabled: boolean;
+  recordingEnabled: boolean;
+  clippyEnabled: boolean;
+}
+
+export function scheduledInterviewRoomFeatures(
+  interviewType: string | null | undefined,
+): ScheduledInterviewRoomFeatures {
+  const workspaceAssessment = isWorkspaceAssessmentInterviewType(interviewType);
+  return {
+    videoEnabled: true,
+    workspaceEnabled: workspaceAssessment,
+    recordingEnabled: true,
+    clippyEnabled: workspaceAssessment,
+  };
+}
+
+function scheduledInterviewAssessmentLabel(interviewType: string | null | undefined): string | null {
+  switch (interviewType) {
+    case 'OPEN_SOURCE_BUG_FIX':
+      return 'open-source bug-fix assessment';
+    case 'DEV_CONTAINER_CHALLENGE':
+      return 'dev-container assessment';
+    case 'CODE_REVIEW':
+      return 'code-review assessment';
+    default:
+      return null;
+  }
+}
+
+export function scheduledInterviewMeetingCopy(input: {
+  candidateName: string;
+  roleTitle: string;
+  stageTitle: string;
+  interviewType: string | null | undefined;
+}): { title: string; description: string } {
+  const assessmentLabel = scheduledInterviewAssessmentLabel(input.interviewType);
+  if (!assessmentLabel) {
+    return {
+      title: `${input.candidateName} interview`,
+      description: `${input.roleTitle} · ${input.stageTitle}`,
+    };
+  }
+  return {
+    title: `${input.candidateName} ${assessmentLabel}`,
+    description: [
+      input.roleTitle,
+      input.stageTitle,
+      'Controlled workspace with video, recording, chat, terminal, code-server, and real AI-bridge evidence',
+    ].join(' · '),
+  };
+}
+
 type ScheduledAssessmentSetupStatus =
   | 'not_applicable'
   | 'reviewable_task_assigned'
@@ -3363,36 +3418,69 @@ async function ensureScheduledInterviewRoomLinks(
     const meetingId = crypto.randomUUID();
     const role = interview.pipeline_title ?? 'Talent Pool';
     const stage = interview.stage_title ?? interview.interview_type ?? 'Interview';
+    const copy = scheduledInterviewMeetingCopy({
+      candidateName: name,
+      roleTitle: role,
+      stageTitle: stage,
+      interviewType: interview.interview_type,
+    });
+    const features = scheduledInterviewRoomFeatures(interview.interview_type);
     await db.prepare(
       `INSERT INTO meetings
        (id, owner_id, title, description, status, scheduled_at, meeting_type,
         scheduled_interview_id, scheduling_provider, external_event_id,
+        video_enabled, workspace_enabled, recording_enabled, clippy_enabled,
         created_at, updated_at)
-       VALUES (?1, ?2, ?3, ?4, 'SCHEDULED', ?5, 'INTERVIEW', ?6, ?7, ?8, ?9, ?9)`,
+       VALUES (?1, ?2, ?3, ?4, 'SCHEDULED', ?5, 'INTERVIEW', ?6, ?7, ?8, ?9, ?10, ?11, ?12, ?13, ?13)`,
     ).bind(
       meetingId,
       ownerId,
-      `${name} interview`,
-      `${role} · ${stage}`,
+      copy.title,
+      copy.description,
       interview.scheduled_at,
       interview.id,
       interview.scheduling_provider ?? null,
       interview.external_event_id ?? null,
+      features.videoEnabled ? 1 : 0,
+      features.workspaceEnabled ? 1 : 0,
+      features.recordingEnabled ? 1 : 0,
+      features.clippyEnabled ? 1 : 0,
       now,
     ).run();
     meeting = { id: meetingId };
   } else {
+    const role = interview.pipeline_title ?? 'Talent Pool';
+    const stage = interview.stage_title ?? interview.interview_type ?? 'Interview';
+    const copy = scheduledInterviewMeetingCopy({
+      candidateName: name,
+      roleTitle: role,
+      stageTitle: stage,
+      interviewType: interview.interview_type,
+    });
+    const features = scheduledInterviewRoomFeatures(interview.interview_type);
     await db.prepare(
       `UPDATE meetings
           SET scheduled_at = ?1,
               scheduling_provider = COALESCE(?2, scheduling_provider),
               external_event_id = COALESCE(?3, external_event_id),
-              updated_at = ?4
-        WHERE id = ?5`,
+              title = ?4,
+              description = ?5,
+              video_enabled = ?6,
+              workspace_enabled = ?7,
+              recording_enabled = ?8,
+              clippy_enabled = ?9,
+              updated_at = ?10
+        WHERE id = ?11`,
     ).bind(
       interview.scheduled_at,
       interview.scheduling_provider ?? null,
       interview.external_event_id ?? null,
+      copy.title,
+      copy.description,
+      features.videoEnabled ? 1 : 0,
+      features.workspaceEnabled ? 1 : 0,
+      features.recordingEnabled ? 1 : 0,
+      features.clippyEnabled ? 1 : 0,
       now,
       meeting.id,
     ).run();

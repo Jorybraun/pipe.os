@@ -431,6 +431,7 @@ function Room({ token, metadata }: { token: string; metadata: RoomMetadata }): J
   const [workspaceLoading, setWorkspaceLoading] = useState(false);
   const [workspaceError, setWorkspaceError] = useState<string | null>(null);
   const [workspaceRepoInput, setWorkspaceRepoInput] = useState('');
+  const [workspaceAgentEnabled, setWorkspaceAgentEnabled] = useState(false);
   const [iframeLoaded, setIframeLoaded] = useState(false);
   const wm = useWindowManager();
   const [deviceState, setDeviceState] = useState<DeviceState>('checking');
@@ -594,7 +595,11 @@ function Room({ token, metadata }: { token: string; metadata: RoomMetadata }): J
     setWorkspaceError(null);
     try {
       const repoUrl = workspace?.repoUrl ?? (workspaceRepoInput.trim() || undefined);
-      const launch = await launchRoomWorkspace(token, repoUrl);
+      const launch = await launchRoomWorkspace(
+        token,
+        repoUrl,
+        workspaceAgentEnabled ? 'devin' : null,
+      );
       setWorkspace(launch.workspace);
       if (launch.progress) setAssessmentProgress(launch.progress);
       publishWorkspaceStateEvent(launch.workspace, 'launch', { fallbackRepoUrl: repoUrl ?? null });
@@ -608,7 +613,7 @@ function Room({ token, metadata }: { token: string; metadata: RoomMetadata }): J
     } finally {
       setWorkspaceLoading(false);
     }
-  }, [publishWorkspaceStateEvent, token, workspace, workspaceRepoInput]);
+  }, [publishWorkspaceStateEvent, token, workspace, workspaceAgentEnabled, workspaceRepoInput]);
 
   useEffect(() => {
     if (!workspace?.enabled) return undefined;
@@ -1751,6 +1756,17 @@ function Room({ token, metadata }: { token: string; metadata: RoomMetadata }): J
                     data-testid="prejoin-repo-input"
                   />
                 )}
+                {canOpenClippyBridgePanel && (
+                  <label className="workspace-agent-toggle">
+                    <input
+                      type="checkbox"
+                      checked={workspaceAgentEnabled}
+                      onChange={(e) => setWorkspaceAgentEnabled(e.target.checked)}
+                      data-testid="prejoin-devin-agent-toggle"
+                    />
+                    <span>Start Devin bridge</span>
+                  </label>
+                )}
                 <button
                   className="prejoin-launch-btn"
                   onClick={() => void launchWorkspace()}
@@ -2658,14 +2674,27 @@ function Room({ token, metadata }: { token: string; metadata: RoomMetadata }): J
                   />
                 )}
                 {canLaunchWorkspace && (
-                  <button
-                    className="win95-workspace-launch-btn"
-                    onClick={() => void launchWorkspace()}
-                    disabled={needsRepoUrl && !workspaceRepoInput.trim()}
-                  >
-                    {workspaceLoading ? <Loader2 size={14} className="spin" /> : <SquareTerminal size={14} />}
-                    {workspaceLaunchActionLabel}
-                  </button>
+                  <>
+                    {canOpenClippyBridgePanel && (
+                      <label className="workspace-agent-toggle">
+                        <input
+                          type="checkbox"
+                          checked={workspaceAgentEnabled}
+                          onChange={(e) => setWorkspaceAgentEnabled(e.target.checked)}
+                          data-testid="workspace-devin-agent-toggle"
+                        />
+                        <span>Start Devin bridge</span>
+                      </label>
+                    )}
+                    <button
+                      className="win95-workspace-launch-btn"
+                      onClick={() => void launchWorkspace()}
+                      disabled={needsRepoUrl && !workspaceRepoInput.trim()}
+                    >
+                      {workspaceLoading ? <Loader2 size={14} className="spin" /> : <SquareTerminal size={14} />}
+                      {workspaceLaunchActionLabel}
+                    </button>
+                  </>
                 )}
                 {workspaceSession?.status === 'LAUNCHING' && (
                   <button className="win95-workspace-launch-btn" onClick={() => void refreshWorkspace()}>
