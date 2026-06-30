@@ -1869,6 +1869,9 @@ export default function InterviewDetailPage(): JSX.Element {
     hasUrl: hasAssessmentInviteUrl,
     hasSubmittedEvidence: hasSubmittedAssessmentEvidence,
   });
+  const assessmentInviteRecipient = personEmail
+    ? `${personName} · ${personEmail}`
+    : personName;
   const assessmentInviteNextAction = assessmentInviteNextActionLabel(assessmentInviteState, {
     hasUrl: hasAssessmentInviteUrl,
     hasEmail: Boolean(personEmail),
@@ -2123,6 +2126,10 @@ export default function InterviewDetailPage(): JSX.Element {
               <div style={ASSESSMENT_INVITE_STATE_ITEM}>
                 <span style={ROOM_GUEST_LINK_TEXT}>ASSESSMENT</span>
                 <span style={ASSESSMENT_INVITE_STATE_VALUE}>{assessmentInviteEvidenceState}</span>
+              </div>
+              <div style={ASSESSMENT_INVITE_STATE_ITEM}>
+                <span style={ROOM_GUEST_LINK_TEXT}>RECIPIENT</span>
+                <span style={ASSESSMENT_INVITE_STATE_VALUE}>{assessmentInviteRecipient}</span>
               </div>
               <div style={ASSESSMENT_INVITE_STATE_ITEM}>
                 <span style={ROOM_GUEST_LINK_TEXT}>NEXT ACTION</span>

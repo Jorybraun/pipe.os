@@ -1339,6 +1339,8 @@ describe('InterviewDetailPage', () => {
     expect(screen.getByTestId('interview-assessment-link-state')).toHaveTextContent('Copyable one-use link');
     expect(screen.getByTestId('interview-assessment-link-state')).toHaveTextContent('ASSESSMENT');
     expect(screen.getByTestId('interview-assessment-link-state')).toHaveTextContent('Awaiting candidate submission');
+    expect(screen.getByTestId('interview-assessment-link-state')).toHaveTextContent('RECIPIENT');
+    expect(screen.getByTestId('interview-assessment-link-state')).toHaveTextContent('Ada Candidate · ada@example.com');
     expect(screen.getByTestId('interview-assessment-link-state')).toHaveTextContent('Copy the candidate link, or resend if the candidate needs a new email.');
     expect(linkPanel).toHaveTextContent('CANDIDATE ASSESSMENT URL');
     expect(screen.getByDisplayValue(deliveredUrl)).toBeTruthy();
@@ -1491,6 +1493,8 @@ describe('InterviewDetailPage', () => {
     expect(screen.getByTestId('interview-assessment-link-state')).toHaveTextContent('Historical link only');
     expect(screen.getByTestId('interview-assessment-link-state')).toHaveTextContent('ASSESSMENT');
     expect(screen.getByTestId('interview-assessment-link-state')).toHaveTextContent('Started, no submission');
+    expect(screen.getByTestId('interview-assessment-link-state')).toHaveTextContent('RECIPIENT');
+    expect(screen.getByTestId('interview-assessment-link-state')).toHaveTextContent('Ada Candidate · ada@example.com');
     expect(screen.getByTestId('interview-assessment-link-state')).toHaveTextContent('Resend the invite to issue a fresh one-use assessment link.');
     expect(linkPanel).toHaveTextContent('LAST CANDIDATE ASSESSMENT URL');
     expect(screen.queryByText('COPY CANDIDATE LINK')).toBeNull();
