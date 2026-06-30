@@ -165,6 +165,40 @@ describe('AssessmentStatusStrip', () => {
     expect(onLaunchWorkspace).toHaveBeenCalledTimes(1);
   });
 
+  it('offers a relaunch action when the latest controlled workspace failed', () => {
+    const onLaunchWorkspace = vi.fn();
+    render(
+      <AssessmentStatusStrip
+        meetingType="DEV_CONTAINER_CHALLENGE"
+        workspace={workspace({
+          canLaunch: true,
+          session: {
+            sessionId: 'workspace-session-failed',
+            status: 'ERROR',
+            ttlSeconds: 3600,
+            ttlSource: 'container',
+            expiresAt: '2026-06-30T00:00:00.000Z',
+            warnedAt: null,
+            expiringSoon: false,
+            proxyPath: null,
+            errorMessage: 'Container stopped unexpectedly (exit code 0, reason exit).',
+          },
+        })}
+        canLaunchWorkspace
+        onLaunchWorkspace={onLaunchWorkspace}
+      />,
+    );
+
+    expect(screen.getByTestId('assessment-workspace-status').textContent).toContain(
+      'Container stopped unexpectedly',
+    );
+    expect(screen.getByText('Relaunch the controlled workspace')).not.toBeNull();
+    expect(screen.getByTestId('assessment-launch-workspace').textContent).toContain('Relaunch');
+
+    fireEvent.click(screen.getByTestId('assessment-launch-workspace'));
+    expect(onLaunchWorkspace).toHaveBeenCalledTimes(1);
+  });
+
   it('keeps code review rooms legible without pretending a dev container exists', () => {
     render(
       <AssessmentStatusStrip

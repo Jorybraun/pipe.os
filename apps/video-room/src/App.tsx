@@ -1263,6 +1263,17 @@ function Room({ token, metadata }: { token: string; metadata: RoomMetadata }): J
     && Boolean(workspace?.canLaunch)
     && !workspaceLoading
     && (!workspaceSession || ['ERROR', 'STOPPED', 'EXPIRED'].includes(workspaceSession.status));
+  const canRelaunchWorkspace = Boolean(workspaceSession && ['ERROR', 'STOPPED', 'EXPIRED'].includes(workspaceSession.status));
+  const workspaceLaunchActionLabel = canRelaunchWorkspace ? 'Relaunch workspace' : 'Launch workspace';
+  const workspaceFailureReason = (workspaceSession?.errorMessage ?? workspaceError ?? 'container startup did not complete')
+    .replace(/\.+$/, '');
+  const workspaceRecoveryNotice = canRelaunchWorkspace
+    ? workspaceSession?.status === 'ERROR'
+      ? `The previous workspace failed: ${workspaceFailureReason}. Relaunch creates a fresh controlled workspace for this assessment.`
+      : workspaceSession?.status === 'EXPIRED'
+        ? 'The previous workspace expired. Relaunch creates a fresh controlled workspace for this assessment.'
+        : 'The previous workspace was stopped. Relaunch creates a fresh controlled workspace for this assessment.'
+    : null;
   const showWorkspacePanel = hasWorkspaceFeature;
   const needsRepoUrl = canLaunchWorkspace && !workspace?.repoUrl;
   const hasActiveWorkspace = workspaceSession?.status === 'READY' || workspaceSession?.status === 'SLEEPING';
@@ -1510,7 +1521,7 @@ function Room({ token, metadata }: { token: string; metadata: RoomMetadata }): J
       if (hasActiveWorkspace) {
         workspaceActions.push({ id: 'open-workspace', label: 'Open workspace' });
       } else if (canLaunchWorkspace) {
-        workspaceActions.push({ id: 'launch-workspace', label: 'Launch workspace' });
+        workspaceActions.push({ id: 'launch-workspace', label: workspaceLaunchActionLabel });
       }
     }
 
@@ -1740,8 +1751,11 @@ function Room({ token, metadata }: { token: string; metadata: RoomMetadata }): J
                   data-testid="prejoin-launch"
                 >
                   {workspaceLoading ? <Loader2 size={14} className="spin" /> : <SquareTerminal size={14} />}
-                  Launch workspace
+                  {workspaceLaunchActionLabel}
                 </button>
+                {workspaceRecoveryNotice && (
+                  <p className="prejoin-workspace-diagnostic">{workspaceRecoveryNotice}</p>
+                )}
                 {workspaceChallengeMessage && (
                   <p className="prejoin-workspace-diagnostic">{workspaceChallengeMessage}</p>
                 )}
@@ -2596,11 +2610,15 @@ function Room({ token, metadata }: { token: string; metadata: RoomMetadata }): J
                     ? 'Starting workspace...'
                     : workspaceSession?.status === 'ERROR'
                       ? 'Workspace failed'
+                      : canRelaunchWorkspace
+                        ? 'Workspace needs relaunch'
                       : 'Workspace ready to launch'}
                 </h3>
                 <p>
                   {workspaceSession?.status === 'LAUNCHING'
                     ? 'The container is warming up. This can take 20-30 seconds.'
+                    : workspaceRecoveryNotice
+                      ? workspaceRecoveryNotice
                     : workspaceSession?.errorMessage
                       ? workspaceSession.errorMessage
                       : workspaceError
@@ -2628,7 +2646,7 @@ function Room({ token, metadata }: { token: string; metadata: RoomMetadata }): J
                     disabled={needsRepoUrl && !workspaceRepoInput.trim()}
                   >
                     {workspaceLoading ? <Loader2 size={14} className="spin" /> : <SquareTerminal size={14} />}
-                    Launch workspace
+                    {workspaceLaunchActionLabel}
                   </button>
                 )}
                 {workspaceSession?.status === 'LAUNCHING' && (

@@ -85,6 +85,11 @@ function workspaceStatusInfo(workspace: RoomWorkspace | null, workspaceError: st
   return { label: 'Workspace not launched', state: 'waiting' };
 }
 
+function canRecoverWorkspace(workspace: RoomWorkspace | null): boolean {
+  const status = workspace?.session?.status ?? null;
+  return status === 'ERROR' || status === 'STOPPED' || status === 'EXPIRED';
+}
+
 function modeIcon(mode: AssessmentRoomMode): typeof Video {
   if (mode === 'dev_container_assessment') return SquareTerminal;
   if (mode === 'code_review') return GitPullRequest;
@@ -127,12 +132,15 @@ export function AssessmentStatusStrip({
   const baseCommit = summary.baseCommitSha;
   const statusInfo = workspaceStatusInfo(workspace, workspaceError);
   const workspaceReady = statusInfo.state === 'ready';
+  const workspaceRecoverable = canRecoverWorkspace(workspace);
   const challengeNeedsAttention = workspace?.challenge.status === 'missing_reviewable_task';
   const nextAction = assessmentProgress?.nextActionLabel ?? (workspace?.enabled
     ? workspaceReady
       ? 'Commit changes, then submit work'
       : canLaunchWorkspace
-        ? 'Launch the controlled workspace'
+        ? workspaceRecoverable
+          ? 'Relaunch the controlled workspace'
+          : 'Launch the controlled workspace'
         : statusInfo.state === 'starting'
           ? 'Wait for the container'
           : 'Host launches the workspace'
@@ -205,7 +213,7 @@ export function AssessmentStatusStrip({
             data-testid="assessment-launch-workspace"
           >
             {workspaceLoading ? <Loader2 size={13} className="spin" /> : <Play size={13} />}
-            Launch
+            {workspaceRecoverable ? 'Relaunch' : 'Launch'}
           </button>
         )}
         {workspace?.enabled && workspaceReady && onOpenWorkspace && (
