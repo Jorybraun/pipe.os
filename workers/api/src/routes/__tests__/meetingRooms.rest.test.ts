@@ -5476,7 +5476,7 @@ describe('meeting room recording living-context route', () => {
       `INSERT INTO assessment_sessions (
          id, ingestion_key, interview_id, mode, state, candidate_id, workspace_id,
          created_by, metadata_json, created_at, updated_at
-       ) VALUES (?, ?, ?, 'OPEN_SOURCE_BUG_FIX', 'IN_PROGRESS', NULL, ?, ?, '{}', ?, ?)`,
+       ) VALUES (?, ?, ?, 'OPEN_SOURCE_BUG_FIX', 'INTAKE', NULL, ?, ?, '{}', ?, ?)`,
     ).run(
       assessmentSessionId,
       `assessment-session:open-source:${scheduledInterviewId}`,
@@ -5530,9 +5530,25 @@ describe('meeting room recording living-context route', () => {
       workspace: {
         session: { sessionId: string };
       };
+      progress: {
+        state: string;
+        hasChallengePacket: boolean;
+        hasWorkEvidence: boolean;
+        evidenceCounts: Array<{ kind: string; count: number }>;
+        sourceRefCounts: Array<{ kind: string; count: number }>;
+        latestEvent: { kind: string; sequence: number } | null;
+      } | null;
     };
     await waitUntilAll();
 
+    expect(body.progress).toMatchObject({
+      state: 'IN_PROGRESS',
+      hasChallengePacket: true,
+      hasWorkEvidence: true,
+      latestEvent: { kind: 'dev_container_event', sequence: 2 },
+    });
+    expect(body.progress?.evidenceCounts).toContainEqual({ kind: 'dev_container_event', count: 1 });
+    expect(body.progress?.sourceRefCounts).toContainEqual({ kind: 'dev_container_workspace_launch', count: 1 });
     expect(sqlite.prepare(
       `SELECT repo_git_url, challenge_branch, base_commit_sha
          FROM dev_container_sessions
@@ -5548,6 +5564,40 @@ describe('meeting room recording living-context route', () => {
       baseCommitSha,
       challengePacketContentHash: 'sha256:base-commit-packet-content-hash',
     }));
+    const launchEvidence = sqlite.prepare(
+      `SELECT e.session_id, e.kind, e.actor_type, e.payload_json,
+              sr.source_ref_type, sr.source_ref_id, sr.evidence_role,
+              sr.exact_text, sr.content_hash
+         FROM assessment_evidence_events e
+         JOIN assessment_event_source_refs sr ON sr.event_id = e.id
+        WHERE e.ingestion_key = ?`,
+    ).get(`assessment-event:room-workspace-launch:${assessmentSessionId}:${body.workspace.session.sessionId}`) as {
+      session_id: string;
+      kind: string;
+      actor_type: string;
+      payload_json: string;
+      source_ref_type: string;
+      source_ref_id: string;
+      evidence_role: string;
+      exact_text: string;
+      content_hash: string;
+    } | undefined;
+    expect(launchEvidence).toMatchObject({
+      session_id: assessmentSessionId,
+      kind: 'dev_container_event',
+      actor_type: 'recruiter',
+      source_ref_type: 'dev_container_workspace_launch',
+      source_ref_id: body.workspace.session.sessionId,
+      evidence_role: 'workspace_launch_request',
+    });
+    expect(launchEvidence?.exact_text).toContain('"baseCommitSha":"eeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeee"');
+    expect(launchEvidence?.exact_text).toContain('"repositoryUrl":"https://github.com/pipe/source-backed-worker"');
+    expect(launchEvidence?.content_hash).toMatch(/^[a-f0-9]{64}$/);
+    expect(JSON.parse(launchEvidence?.payload_json ?? '{}')).toMatchObject({
+      repositoryUrl: 'https://github.com/pipe/source-backed-worker',
+      baseCommitSha,
+      workspaceSessionId: body.workspace.session.sessionId,
+    });
     expect(JSON.stringify(initBodies)).not.toContain('assessment-session-workspace-base-commit');
     expect(JSON.stringify(initBodies)).not.toContain('assessment-event-workspace-base-commit');
     expect(JSON.stringify(initBodies)).not.toContain('source-ref-secret');

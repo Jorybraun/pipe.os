@@ -6,6 +6,7 @@ import type {
   RecordingSpeakerMetadata,
   RoomMetadata,
   RoomWorkspace,
+  RoomWorkspaceLaunchResponse,
 } from '../types';
 
 const localApiBase = window.location.hostname === 'localhost' || window.location.hostname === '127.0.0.1'
@@ -144,7 +145,7 @@ export async function getRoomWorkspace(token: string): Promise<RoomWorkspace> {
   return body.workspace;
 }
 
-export async function launchRoomWorkspace(token: string, repoUrl?: string): Promise<RoomWorkspace> {
+export async function launchRoomWorkspace(token: string, repoUrl?: string): Promise<RoomWorkspaceLaunchResponse> {
   const response = await fetch(apiUrl(`/api/v1/meeting-rooms/${token}/workspace/launch`), {
     method: 'POST',
     headers: { 'Content-Type': 'application/json' },
@@ -152,8 +153,7 @@ export async function launchRoomWorkspace(token: string, repoUrl?: string): Prom
     cache: 'no-store',
     credentials: 'same-origin',
   });
-  const body = await parseResponse<{ workspace: RoomWorkspace }>(response);
-  return body.workspace;
+  return parseResponse<RoomWorkspaceLaunchResponse>(response);
 }
 
 export async function getRoomAssessmentProgress(token: string): Promise<RoomAssessmentProgressSnapshot | null> {

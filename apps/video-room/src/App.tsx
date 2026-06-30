@@ -584,9 +584,10 @@ function Room({ token, metadata }: { token: string; metadata: RoomMetadata }): J
     setWorkspaceError(null);
     try {
       const repoUrl = workspace?.repoUrl ?? (workspaceRepoInput.trim() || undefined);
-      const nextWorkspace = await launchRoomWorkspace(token, repoUrl);
-      setWorkspace(nextWorkspace);
-      publishWorkspaceStateEvent(nextWorkspace, 'launch', { fallbackRepoUrl: repoUrl ?? null });
+      const launch = await launchRoomWorkspace(token, repoUrl);
+      setWorkspace(launch.workspace);
+      if (launch.progress) setAssessmentProgress(launch.progress);
+      publishWorkspaceStateEvent(launch.workspace, 'launch', { fallbackRepoUrl: repoUrl ?? null });
     } catch (error) {
       const message = error instanceof Error ? error.message : 'Workspace launch failed.';
       setWorkspaceError(message);

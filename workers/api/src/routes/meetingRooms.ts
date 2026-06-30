@@ -9,7 +9,7 @@ import {
   transcribeAudioWhisper,
   type StructuredTranscription,
 } from '../lib/transcribe';
-import { ingestMeetingTranscriptToLivingContext } from '../lib/livingContext';
+import { ingestMeetingTranscriptToLivingContext, stableJson } from '../lib/livingContext';
 import {
   loadMeetingTranscriptContext,
   searchTranscriptSourceSpans,
@@ -2422,6 +2422,17 @@ interface RoomAssessmentProgressPayload {
   evaluation: Omit<NonNullable<AssessmentProgressSnapshot['evaluation']>, 'id'> | null;
 }
 
+interface RoomWorkspaceLaunchEvidenceInput {
+  room: ResolvedRoom;
+  workspace: RoomWorkspacePayload;
+  sessionId: string;
+  repositoryUrl: string;
+  challengeBranch: string | null;
+  baseCommitSha: string | null;
+  ttlSeconds: number;
+  expiresAt: string;
+}
+
 async function loadLatestAssessmentSessionForRoom(
   db: D1Database,
   room: ResolvedRoom,
@@ -2510,6 +2521,85 @@ function roomAssessmentActor(room: ResolvedRoom): { actorType: AssessmentActorTy
     return { actorType: 'candidate', actorId: room.guest_contact_id };
   }
   return { actorType: 'recruiter', actorId: room.owner_id };
+}
+
+async function sha256Hex(value: string): Promise<string> {
+  const bytes = new TextEncoder().encode(value);
+  const digest = await crypto.subtle.digest('SHA-256', bytes);
+  return Array.from(new Uint8Array(digest), (byte) => byte.toString(16).padStart(2, '0')).join('');
+}
+
+async function recordWorkspaceLaunchAssessmentEvidence(
+  db: D1Database,
+  input: RoomWorkspaceLaunchEvidenceInput,
+): Promise<RoomAssessmentProgressPayload | null> {
+  const assessmentSession = await loadLatestAssessmentSessionForRoom(db, input.room);
+  if (!assessmentSession) return null;
+
+  const observedAt = new Date().toISOString();
+  const store = new RepoTaskInterviewSessionStore(db, () => observedAt);
+  const actor = roomAssessmentActor(input.room);
+  const launchSource: JsonObject = {
+    schemaVersion: 'room-workspace-launch-request-v1',
+    meetingId: input.room.meeting_id,
+    roomId: input.room.room_id,
+    scheduledInterviewId: input.room.scheduled_interview_id,
+    workspaceSessionId: input.sessionId,
+    repositoryUrl: input.repositoryUrl,
+    challengeBranch: input.challengeBranch,
+    baseCommitSha: input.baseCommitSha,
+    ttlSeconds: input.ttlSeconds,
+    expiresAt: input.expiresAt,
+    challengeStatus: input.workspace.challenge.status,
+    challengeKind: input.workspace.challenge.kind,
+    challengeSource: input.workspace.challenge.source,
+    challengePacketContentHash: input.workspace.challenge.packet?.contentHash ?? null,
+    requestedByRole: input.room.role,
+  };
+  const exactText = stableJson(launchSource);
+  const event = await store.recordEvent({
+    sessionId: assessmentSession.id,
+    ingestionKey: `assessment-event:room-workspace-launch:${assessmentSession.id}:${input.sessionId}`,
+    kind: 'dev_container_event',
+    actorType: actor.actorType,
+    actorId: actor.actorId,
+    narrative: `Workspace launch requested for ${input.repositoryUrl}.`,
+    payload: launchSource,
+    occurredAt: observedAt,
+    sourceRefs: [{
+      sourceRefType: 'dev_container_workspace_launch',
+      sourceRefId: input.sessionId,
+      evidenceRole: 'workspace_launch_request',
+      locator: {
+        meetingId: input.room.meeting_id,
+        roomId: input.room.room_id,
+        scheduledInterviewId: input.room.scheduled_interview_id,
+        workspaceSessionId: input.sessionId,
+      },
+      exactText,
+      contentHash: await sha256Hex(exactText),
+      metadata: {
+        sourceKind: 'meeting_room.workspace_launch',
+        repositoryUrl: input.repositoryUrl,
+        baseCommitSha: input.baseCommitSha,
+        challengeBranch: input.challengeBranch,
+        challengePacketContentHash: input.workspace.challenge.packet?.contentHash ?? null,
+      },
+    }],
+  });
+
+  const latestSession = await store.loadSession(assessmentSession.id);
+  if (latestSession.state === 'INTAKE') {
+    await store.transitionState({
+      sessionId: assessmentSession.id,
+      toState: 'IN_PROGRESS',
+      reason: 'Dev container workspace launched from assessment room.',
+      eventId: event.id,
+      createdBy: actor.actorId,
+    });
+  }
+
+  return serializeRoomAssessmentProgress(await store.loadProgress(assessmentSession.id));
 }
 
 function roomAssessmentErrorResponse(c: Context<{ Bindings: Env }>, error: unknown): Response {
@@ -2639,11 +2729,18 @@ meetingRooms.post('/:token/workspace/launch', async (c) => {
 
   const existingSession = await getLatestSessionForRoom(c.env.DB, room.room_id);
   if (existingSession && !WORKSPACE_TERMINAL_STATUSES.has(existingSession.status)) {
+    const assessmentSession = await loadLatestAssessmentSessionForRoom(c.env.DB, room);
+    const progress = assessmentSession
+      ? serializeRoomAssessmentProgress(
+          await new RepoTaskInterviewSessionStore(c.env.DB).loadProgress(assessmentSession.id),
+        )
+      : null;
     return c.json({
       workspace: {
         ...workspace,
         session: serializeWorkspaceSession(token, existingSession),
       },
+      progress,
     }, 200);
   }
 
@@ -2755,12 +2852,31 @@ meetingRooms.post('/:token/workspace/launch', async (c) => {
   );
 
   const session = await getSessionByIdForRoom(c.env.DB, sessionId, room.room_id);
+  const progress = await recordWorkspaceLaunchAssessmentEvidence(c.env.DB, {
+    room,
+    workspace,
+    sessionId,
+    repositoryUrl: effectiveRepoUrl,
+    challengeBranch,
+    baseCommitSha,
+    ttlSeconds: effective.ttlSeconds,
+    expiresAt,
+  }).catch((error: unknown) => {
+    console.error('[meetingRooms.workspace.launch] assessment evidence failed:', {
+      roomId: room.room_id,
+      interviewId: room.scheduled_interview_id,
+      sessionId,
+      error: error instanceof Error ? error.message : String(error),
+    });
+    return null;
+  });
   return c.json({
     workspace: {
       ...workspace,
       repoUrl: workspace.repoUrl ?? effectiveRepoUrl,
       session: serializeWorkspaceSession(token, session),
     },
+    progress,
   }, 201);
 });
 

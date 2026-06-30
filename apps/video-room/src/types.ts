@@ -161,6 +161,11 @@ export interface RoomAssessmentProgressSnapshot {
   } | null;
 }
 
+export interface RoomWorkspaceLaunchResponse {
+  workspace: RoomWorkspace;
+  progress: RoomAssessmentProgressSnapshot | null;
+}
+
 export interface RoomCommitSubmissionResponse {
   submission: {
     accepted: boolean;

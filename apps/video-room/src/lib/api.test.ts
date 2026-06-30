@@ -1,6 +1,11 @@
 import { describe, expect, it, vi } from 'vitest';
 
-import { getRoomAssessmentProgress, submitRoomAssessmentCommit, uploadRecording } from './api';
+import {
+  getRoomAssessmentProgress,
+  launchRoomWorkspace,
+  submitRoomAssessmentCommit,
+  uploadRecording,
+} from './api';
 import type { RecordingSpeakerMetadata } from '../types';
 
 const speakerMetadata: RecordingSpeakerMetadata = {
@@ -119,6 +124,79 @@ describe('submitRoomAssessmentCommit', () => {
       credentials: 'same-origin',
     });
     expect(JSON.parse(String(fetchSpy.mock.calls[0]?.[1]?.body))).toEqual(payload);
+    fetchSpy.mockRestore();
+  });
+});
+
+describe('launchRoomWorkspace', () => {
+  it('returns the launched workspace with refreshed assessment progress', async () => {
+    const fetchSpy = vi.spyOn(globalThis, 'fetch').mockResolvedValue(new Response(
+      JSON.stringify({
+        workspace: {
+          enabled: true,
+          canLaunch: true,
+          repoUrl: 'https://github.com/pipe/source-backed-worker',
+          githubPrNumber: 144,
+          matchedRepoId: null,
+          challenge: {
+            status: 'github_pr_assigned',
+            kind: 'github_pr',
+            source: 'scheduled_interview.github_pr_number',
+            message: null,
+            packet: null,
+          },
+          session: {
+            sessionId: 'workspace-session-1',
+            status: 'LAUNCHING',
+            ttlSeconds: 3600,
+            ttlSource: 'default',
+            expiresAt: '2026-06-29T12:00:00.000Z',
+            warnedAt: null,
+            expiringSoon: false,
+            proxyPath: null,
+            errorMessage: null,
+          },
+        },
+        progress: {
+          mode: 'OPEN_SOURCE_BUG_FIX',
+          state: 'IN_PROGRESS',
+          stage: 'WORK_IN_PROGRESS',
+          nextAction: 'COLLECT_WORK_EVIDENCE',
+          nextActionLabel: 'Capture source-backed work evidence.',
+          hasChallengePacket: true,
+          hasWorkEvidence: true,
+          hasCommitSubmission: false,
+          hasFinalSubmission: false,
+          hasAiInteraction: false,
+          hasTranscriptEvidence: false,
+          hasTestEvidence: false,
+          evidenceCounts: [{ kind: 'dev_container_event', count: 1 }],
+          sourceRefCounts: [{ kind: 'dev_container_workspace_launch', count: 1 }],
+          latestEvent: { kind: 'dev_container_event', sequence: 2, occurredAt: '2026-06-29T00:00:00.000Z' },
+          commit: null,
+          evaluation: null,
+        },
+      }),
+      { status: 201, headers: { 'Content-Type': 'application/json' } },
+    ));
+
+    await expect(
+      launchRoomWorkspace('room-token', 'https://github.com/pipe/source-backed-worker'),
+    ).resolves.toMatchObject({
+      workspace: { session: { sessionId: 'workspace-session-1' } },
+      progress: { state: 'IN_PROGRESS', hasWorkEvidence: true },
+    });
+
+    expect(fetchSpy).toHaveBeenCalledOnce();
+    expect(fetchSpy.mock.calls[0]?.[0]).toContain('/api/v1/meeting-rooms/room-token/workspace/launch');
+    expect(fetchSpy.mock.calls[0]?.[1]).toMatchObject({
+      method: 'POST',
+      cache: 'no-store',
+      credentials: 'same-origin',
+    });
+    expect(JSON.parse(String(fetchSpy.mock.calls[0]?.[1]?.body))).toEqual({
+      repoUrl: 'https://github.com/pipe/source-backed-worker',
+    });
     fetchSpy.mockRestore();
   });
 });
