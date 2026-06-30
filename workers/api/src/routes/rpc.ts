@@ -2109,6 +2109,30 @@ async function claimCandidateInviteTokenForAssessmentStart(
   };
 }
 
+async function markLinkedAssessmentInterviewsActive(
+  db: Env['DB'],
+  candidateId: string,
+): Promise<void> {
+  try {
+    await db
+      .prepare(
+        `UPDATE scheduled_interviews
+            SET status = 'ACTIVE',
+                updated_at = ?1
+          WHERE candidate_id = ?2
+            AND status IN ('INVITED', 'SCHEDULED')
+            AND interview_type IN ('CODE_REVIEW', 'DEV_CONTAINER_CHALLENGE', 'OPEN_SOURCE_BUG_FIX')`,
+      )
+      .bind(new Date().toISOString(), candidateId)
+      .run();
+  } catch (err) {
+    console.error(
+      '[start-assessment] failed to mark linked assessment interviews active:',
+      err instanceof Error ? err.message : String(err),
+    );
+  }
+}
+
 // ── POST /rpc/resolve-token ─────────────────────────────────────────────────
 
 rpcPublic.post('/resolve-token', async (c) => {
@@ -2296,6 +2320,8 @@ rpcAuth.post('/start-assessment', async (c) => {
   if (!result.ok) {
     return c.json({ error: result.error }, result.status);
   }
+
+  await markLinkedAssessmentInterviewsActive(c.env.DB, c.get('candidateId'));
 
   return c.json({
     success: true,

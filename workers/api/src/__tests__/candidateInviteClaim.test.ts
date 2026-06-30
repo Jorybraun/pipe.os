@@ -10,13 +10,22 @@ interface CandidateRow {
   name: string | null;
 }
 
-interface FakeD1 extends D1Database {
-  candidate: CandidateRow;
+interface ScheduledInterviewRow {
+  id: string;
+  candidate_id: string;
+  interview_type: string;
+  status: string;
 }
 
-function fakeD1(candidate: CandidateRow): FakeD1 {
+interface FakeD1 extends D1Database {
+  candidate: CandidateRow;
+  scheduledInterviews: ScheduledInterviewRow[];
+}
+
+function fakeD1(candidate: CandidateRow, scheduledInterviews: ScheduledInterviewRow[] = []): FakeD1 {
   const db = {
     candidate,
+    scheduledInterviews,
     prepare(sql: string): D1PreparedStatement {
       const statement = {
         params: [] as unknown[],
@@ -68,6 +77,21 @@ function fakeD1(candidate: CandidateRow): FakeD1 {
             }
             return { success: true, meta: { changes: 0 } };
           }
+          if (sql.includes('UPDATE scheduled_interviews')) {
+            const [, candidateId] = this.params;
+            let changes = 0;
+            for (const interview of db.scheduledInterviews) {
+              if (
+                interview.candidate_id === candidateId
+                && ['INVITED', 'SCHEDULED'].includes(interview.status)
+                && ['CODE_REVIEW', 'DEV_CONTAINER_CHALLENGE', 'OPEN_SOURCE_BUG_FIX'].includes(interview.interview_type)
+              ) {
+                interview.status = 'ACTIVE';
+                changes += 1;
+              }
+            }
+            return { success: true, meta: { changes } };
+          }
           return { success: true, meta: { changes: 0 } };
         },
         async raw() {
@@ -84,10 +108,13 @@ function fakeD1(candidate: CandidateRow): FakeD1 {
   return db as unknown as FakeD1;
 }
 
-function buildEnv(candidate: CandidateRow): Env & { DB: FakeD1 } {
+function buildEnv(
+  candidate: CandidateRow,
+  scheduledInterviews: ScheduledInterviewRow[] = [],
+): Env & { DB: FakeD1 } {
   return {
     SESSION_TOKEN_SECRET: 'test-secret',
-    DB: fakeD1(candidate),
+    DB: fakeD1(candidate, scheduledInterviews),
   } as Env & { DB: FakeD1 };
 }
 
@@ -122,7 +149,14 @@ describe('candidate invite claiming', () => {
       invite_token: 'invite-token-1',
       status: 'INVITED',
       name: 'Ada',
-    });
+    }, [
+      {
+        id: 'interview-1',
+        candidate_id: 'candidate-1',
+        interview_type: 'CODE_REVIEW',
+        status: 'INVITED',
+      },
+    ]);
 
     const resolveResponse = await rpcPublic.request('/resolve-token', {
       method: 'POST',
@@ -144,6 +178,7 @@ describe('candidate invite claiming', () => {
     });
     expect(env.DB.candidate.invite_token).toBe('CLAIMED::invite-token-1');
     expect(env.DB.candidate.status).toBe('IN_PROGRESS');
+    expect(env.DB.scheduledInterviews[0]?.status).toBe('ACTIVE');
   });
 
   it('repairs a pre-start claimed prefix instead of rejecting an invited candidate', async () => {
