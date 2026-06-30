@@ -325,11 +325,13 @@ export default function CandidateAssessmentPage({ hideHeader = false }: Candidat
               : isTokenClaimed ? 'This one-use assessment link has already started. Please contact your recruiter if you need a fresh link.'
               : 'There was an error connecting to our secure servers. Please try refreshing the page or clicking the button below.'}
           </p>
-          <button onClick={() => reset()} style={{
-            padding: '12px 24px', background: 'var(--pipe-surface-hover)',
-            border: '1px solid var(--pipe-border)', color: 'var(--pipe-text, #fff)',
-            fontSize: 10, letterSpacing: '0.1em', fontFamily: '"Space Mono", monospace', cursor: 'pointer'
-          }}>RETRY_CONNECTION</button>
+          {!isCompleted && !isTokenClaimed && (
+            <button onClick={() => reset()} style={{
+              padding: '12px 24px', background: 'var(--pipe-surface-hover)',
+              border: '1px solid var(--pipe-border)', color: 'var(--pipe-text, #fff)',
+              fontSize: 10, letterSpacing: '0.1em', fontFamily: '"Space Mono", monospace', cursor: 'pointer'
+            }}>RETRY_CONNECTION</button>
+          )}
         </LiquidMetalCard>
       </div>
     );

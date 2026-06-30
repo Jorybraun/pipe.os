@@ -55,6 +55,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Fixed — Candidate repo matching
 
+- Already-started candidate assessment links no longer show a retry button that cannot recover the one-use invite state.
 - Candidate-facing used assessment links now say the assessment already started instead of implying that merely opening the link consumed it.
 - Candidate assessment links now only show as used after the candidate has actually started the assessment; pre-start claimed-prefix rows are repaired and recruiter link state now says started instead of opened.
 - Person code-review decision basis now labels match provenance as a source-backed match instead of exposing raw source-count totals, keeping the hiring-manager view quieter and less misleading.

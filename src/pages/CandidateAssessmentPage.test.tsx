@@ -89,5 +89,6 @@ describe('CandidateAssessmentPage', () => {
     expect(screen.getByRole('heading', { name: 'Assessment Already Started' })).toBeInTheDocument();
     expect(screen.getByText('This one-use assessment link has already started. Please contact your recruiter if you need a fresh link.')).toBeInTheDocument();
     expect(screen.queryByText('Link Already Used')).not.toBeInTheDocument();
+    expect(screen.queryByRole('button', { name: 'RETRY_CONNECTION' })).not.toBeInTheDocument();
   });
 });
