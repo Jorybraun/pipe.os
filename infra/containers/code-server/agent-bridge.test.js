@@ -336,6 +336,32 @@ async function connectAgent(port) {
   return { ws, messages };
 }
 
+async function websocketDataText(data) {
+  if (typeof data === 'string') return data;
+  if (data instanceof ArrayBuffer) return Buffer.from(data).toString('utf8');
+  if (ArrayBuffer.isView(data)) {
+    return Buffer.from(data.buffer, data.byteOffset, data.byteLength).toString('utf8');
+  }
+  if (data && typeof data.arrayBuffer === 'function') {
+    return Buffer.from(await data.arrayBuffer()).toString('utf8');
+  }
+  return String(data);
+}
+
+async function connectTerminal(port) {
+  const ws = new WebSocket(`ws://127.0.0.1:${port}/terminal`);
+  ws.binaryType = 'arraybuffer';
+  const chunks = [];
+  ws.addEventListener('message', (event) => {
+    void websocketDataText(event.data).then((text) => chunks.push(text));
+  });
+  await new Promise((resolve, reject) => {
+    ws.addEventListener('open', resolve, { once: true });
+    ws.addEventListener('error', reject, { once: true });
+  });
+  return { ws, chunks };
+}
+
 async function waitForMessage(messages, predicate, timeoutMs = 2000) {
   const startedAt = Date.now();
   while (Date.now() - startedAt < timeoutMs) {
@@ -346,6 +372,16 @@ async function waitForMessage(messages, predicate, timeoutMs = 2000) {
   throw new Error(`Timed out waiting for bridge message. Saw: ${JSON.stringify(messages)}`);
 }
 
+async function waitForTerminalOutput(chunks, text, timeoutMs = 2000) {
+  const startedAt = Date.now();
+  while (Date.now() - startedAt < timeoutMs) {
+    const output = chunks.join('');
+    if (output.includes(text)) return output;
+    await delay(25);
+  }
+  throw new Error(`Timed out waiting for terminal output "${text}". Saw: ${chunks.join('')}`);
+}
+
 afterEach(async () => {
   for (const child of [...bridgeProcesses]) {
     child.kill('SIGTERM');
@@ -354,6 +390,23 @@ afterEach(async () => {
 });
 
 describe('agent bridge readiness', () => {
+  it('decodes browser terminal control messages before writing to bash', async () => {
+    const { port } = await startBridge('', {
+      AGENT_TYPE: '',
+      PATH: process.env.PATH ?? '',
+    }, {
+      installFakeDevin: false,
+    });
+
+    const { ws, chunks } = await connectTerminal(port);
+    ws.send(JSON.stringify({ type: 'TERMINAL_INPUT', data: 'printf "__PIPE_TERMINAL_OK__\\n"\n' }));
+    const output = await waitForTerminalOutput(chunks, '__PIPE_TERMINAL_OK__');
+
+    expect(output).toContain('__PIPE_TERMINAL_OK__');
+    expect(output).not.toContain('TERMINAL_INPUT');
+    ws.close();
+  });
+
   it('finalizes a real workspace commit into source-backed assessment evidence without a configured agent', async () => {
     const captureServer = await startCommitSubmissionCaptureServer();
     const { workspaceDir, baseCommitSha, commitSha } = createCommittedWorkspace();

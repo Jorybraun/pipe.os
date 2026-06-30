@@ -19,6 +19,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Fixed — Video room
 
+- Workspace terminal sessions now decode browser `TERMINAL_INPUT` control frames before writing to bash, so candidate terminal commands execute as commands instead of JSON blobs.
 - Workspace-enabled rooms now start in the standard code-first assessment surface and ignore synced legacy desktop window/file replay unless the room is explicitly switched into Win95 mode.
 - Workspace stops now append source-backed dev-container stop evidence to linked assessment sessions and return refreshed progress, keeping container lifecycle actions in the same durable interview spine as launch and commit evidence.
 - Workspace launches now append source-backed dev-container launch evidence to linked assessment sessions and return refreshed progress immediately, so opening VS Code is part of the durable assessment spine instead of only browser telemetry.
@@ -60,6 +61,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Fixed — Candidate repo matching
 
+- Deployed workspace smoke now creates a real commit through the live container terminal and finalizes it into source-backed assessment evidence, proving the open-source task path reaches a submitted commit.
 - Standalone `DEV_CONTAINER_CHALLENGE` and `OPEN_SOURCE_BUG_FIX` invites now use the source-backed D1 review-challenge matcher once candidate evidence is ready, caching the matched repo/PR on the scheduled interview instead of leaving candidates stuck without a repository assignment.
 - Contact-first scheduled interview context records now retain recruiter notes in graph qualifiers as well as exact source text.
 - Manual open-source challenge packets can now be repo-only with an exact base commit and task contract; the room treats source-backed repo task packets as assigned even without a PR number.

@@ -1811,10 +1811,29 @@ function acceptAgent(req, socket) {
   }
 }
 
+function terminalInputPayload(opcode, payload) {
+  if (opcode === 2) return payload;
+  if (opcode !== 1) return null;
+
+  const text = payload.toString('utf8');
+  try {
+    const message = JSON.parse(text);
+    if (!message || typeof message !== 'object') return text;
+    if (message.type === 'TERMINAL_INPUT' && typeof message.data === 'string') {
+      return message.data;
+    }
+    if (message.type === 'TERMINAL_RESIZE') return null;
+    return text;
+  } catch {
+    return text;
+  }
+}
+
 function acceptTerminal(req, socket) {
   const shell = spawn('bash', ['-l'], { cwd: WORKSPACE, env: process.env, stdio: ['pipe', 'pipe', 'pipe'] });
   const ws = acceptWebSocket(req, socket, (_client, opcode, payload) => {
-    if (opcode === 1 || opcode === 2) shell.stdin.write(payload);
+    const input = terminalInputPayload(opcode, payload);
+    if (input !== null) shell.stdin.write(input);
   });
   if (!ws) {
     shell.kill('SIGTERM');

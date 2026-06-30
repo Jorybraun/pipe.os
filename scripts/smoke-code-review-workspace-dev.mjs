@@ -3,6 +3,7 @@ import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { execFile } from 'node:child_process';
 import { promisify } from 'node:util';
+import WebSocket from 'ws';
 
 const execFileAsync = promisify(execFile);
 
@@ -91,6 +92,87 @@ function authHeadersFromUrl(rawUrl) {
   const user = decodeURIComponent(url.username);
   const password = decodeURIComponent(url.password);
   return basicAuthHeaders(user, password);
+}
+
+function mergedRoomAuthHeaders(roomHeaders = {}) {
+  return {
+    ...authHeadersFor(ROOM_BASE),
+    ...roomHeaders,
+  };
+}
+
+function websocketUrl(base, path) {
+  const url = new URL(`${base}${path}`);
+  url.protocol = url.protocol === 'https:' ? 'wss:' : 'ws:';
+  return url.toString();
+}
+
+function websocketChunkText(data) {
+  if (typeof data === 'string') return data;
+  if (Buffer.isBuffer(data)) return data.toString('utf8');
+  if (data instanceof ArrayBuffer) return Buffer.from(data).toString('utf8');
+  if (ArrayBuffer.isView(data)) {
+    return Buffer.from(data.buffer, data.byteOffset, data.byteLength).toString('utf8');
+  }
+  return String(data);
+}
+
+function shellQuote(value) {
+  return `'${String(value).replace(/'/g, "'\\''")}'`;
+}
+
+function waitForWorkspaceTerminalOutput(proxyBasePath, headers, command, expectedText) {
+  return new Promise((resolve, reject) => {
+    const ws = new WebSocket(websocketUrl(ROOM_BASE, `${proxyBasePath}/terminal`), {
+      headers: mergedRoomAuthHeaders(headers),
+    });
+    let output = '';
+    const timeout = setTimeout(() => {
+      ws.close();
+      reject(new Error(`Timed out waiting for terminal output "${expectedText}". Saw:\n${output}`));
+    }, 120_000);
+
+    ws.on('open', () => {
+      ws.send(JSON.stringify({ type: 'TERMINAL_INPUT', data: `${command}\n` }));
+    });
+    ws.on('message', (data) => {
+      output += websocketChunkText(data);
+      if (!output.includes(expectedText)) return;
+      clearTimeout(timeout);
+      ws.close();
+      resolve(output);
+    });
+    ws.on('error', (error) => {
+      clearTimeout(timeout);
+      reject(error);
+    });
+    ws.on('close', () => {
+      clearTimeout(timeout);
+    });
+  });
+}
+
+async function commitWorkspaceSmokeChange(proxyBasePath, headers, unique) {
+  const sentinel = `__PIPE_COMMIT_OK_${unique}__`;
+  const smokeText = `\nPIPE workspace smoke ${unique}\n`;
+  const command = [
+    'set -e',
+    'git config user.name "PIPE Workspace Smoke"',
+    'git config user.email "workspace-smoke@pipe-test.dev"',
+    `printf ${shellQuote(smokeText)} >> PIPE_WORKSPACE_SMOKE.md`,
+    'git add PIPE_WORKSPACE_SMOKE.md',
+    `git commit -m ${shellQuote(`pipe workspace smoke ${unique}`)}`,
+    `printf ${shellQuote(`${sentinel}%s${sentinel}\\n`)} "$(git rev-parse HEAD)"`,
+  ].join(' && ');
+  const output = await waitForWorkspaceTerminalOutput(proxyBasePath, headers, command, sentinel);
+  const match = output.match(new RegExp(`${sentinel}([a-f0-9]{40})${sentinel}`));
+  if (!match) {
+    throw new Error(`Terminal command completed without a parseable commit SHA. Saw:\n${output}`);
+  }
+  return {
+    commitSha: match[1],
+    output,
+  };
 }
 
 async function requestJson(base, path, init = {}) {
@@ -243,8 +325,7 @@ async function main() {
   const finalizeResponse = await fetch(`${ROOM_BASE}${proxyBasePath}/assessment/finalize`, {
     method: 'POST',
     headers: {
-      ...authHeadersFor(ROOM_BASE),
-      ...roomAuthHeaders,
+      ...mergedRoomAuthHeaders(roomAuthHeaders),
       'Content-Type': 'application/json',
     },
     body: '{}',
@@ -265,6 +346,43 @@ async function main() {
     throw new Error(`Workspace finalizer did not honestly block unchanged work: ${JSON.stringify(finalizeBody)}`);
   }
 
+  const workspaceCommit = await commitWorkspaceSmokeChange(proxyBasePath, roomAuthHeaders, unique);
+  const submittedResponse = await fetch(`${ROOM_BASE}${proxyBasePath}/assessment/finalize`, {
+    method: 'POST',
+    headers: {
+      ...mergedRoomAuthHeaders(roomAuthHeaders),
+      'Content-Type': 'application/json',
+    },
+    body: JSON.stringify({
+      narrative: `Workspace smoke submitted real commit ${workspaceCommit.commitSha}.`,
+      testCommand: 'git status --short',
+    }),
+  });
+  const submittedText = await submittedResponse.text();
+  let submittedBody = null;
+  if (submittedText) {
+    try {
+      submittedBody = JSON.parse(submittedText);
+    } catch {
+      submittedBody = submittedText;
+    }
+  }
+  if (!submittedResponse.ok || submittedBody?.submitted !== true) {
+    throw new Error(`Workspace finalizer did not accept committed work: ${JSON.stringify(submittedBody)}`);
+  }
+  if (submittedBody?.commit?.commitSha !== workspaceCommit.commitSha) {
+    throw new Error(`Workspace finalizer submitted the wrong commit: ${JSON.stringify(submittedBody?.commit)}`);
+  }
+  const sourceRefTypes = submittedBody?.commit?.sourceRefTypes ?? [];
+  for (const requiredSourceRefType of ['git_commit', 'code_diff', 'test_run']) {
+    if (!sourceRefTypes.includes(requiredSourceRefType)) {
+      throw new Error(`Workspace finalizer missed ${requiredSourceRefType} evidence: ${JSON.stringify(sourceRefTypes)}`);
+    }
+  }
+  if (submittedBody?.progress?.hasCommitSubmission !== true) {
+    throw new Error(`Workspace progress did not reflect the committed submission: ${JSON.stringify(submittedBody?.progress)}`);
+  }
+
   console.log(JSON.stringify({
     ok: true,
     interviewId,
@@ -280,6 +398,11 @@ async function main() {
     bridgeHealthReady: true,
     bridgeAgent: bridgeHealth.agent || null,
     finalizerEndpointBlocked: true,
+    terminalCommitCreated: true,
+    workspaceCommitSha: workspaceCommit.commitSha,
+    finalizerSubmitted: true,
+    finalizerProgressStage: submittedBody.progress?.stage ?? null,
+    finalizerNextAction: submittedBody.progress?.nextAction ?? null,
   }, null, 2));
 }
 

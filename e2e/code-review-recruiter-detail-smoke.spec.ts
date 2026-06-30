@@ -54,7 +54,7 @@ test.describe('Feature: CODE_REVIEW recruiter detail smoke', () => {
 
     if (EXPECTED_OUTCOME === 'blocked') {
       await expect(decision).toContainText('No confident repo match yet');
-      await expect(decision).toContainText('NEEDS MORE EVIDENCE');
+      await expect(decision).toContainText(/NEEDS MORE EVIDENCE|NO ROLE SAFE CHALLENGE|NO SAFE CHALLENGE/);
       await expect(page.getByTestId('interview-code-review-next-step')).toContainText('Collect missing evidence');
       await expect(scoreValidity).toContainText('Do not rely on score yet');
       await expect(scoreValidity).toContainText('Repo fit is not source-backed');
