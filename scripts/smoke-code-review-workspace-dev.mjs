@@ -33,7 +33,7 @@ const RAW_PR_NUMBER = process.env.WORKSPACE_SMOKE_PR_NUMBER || (INTERVIEW_TYPE =
 const PR_NUMBER = RAW_PR_NUMBER ? Number(RAW_PR_NUMBER) : null;
 const BASE_COMMIT_SHA = process.env.WORKSPACE_SMOKE_BASE_COMMIT_SHA || '';
 const EXPECTED_BRIDGE_REVISION = process.env.WORKSPACE_SMOKE_EXPECTED_BRIDGE_REVISION
-  || '2026-06-30-terminal-crlf-v2';
+  || '2026-06-30-terminal-crlf-v3';
 const REMOTE = !APP_BASE.includes('localhost') && !APP_BASE.includes('127.0.0.1');
 
 function assertEnv() {
