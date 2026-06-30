@@ -341,6 +341,7 @@ const ALLOWED_TRANSITIONS: Record<RepoTaskInterviewState, readonly RepoTaskInter
   EVALUATED: [],
   CANCELLED: [],
 };
+const SHA256_HEX_PATTERN = /^[a-f0-9]{64}$/i;
 
 function toCanonicalState(state: RepoTaskInterviewState): AssessmentSessionState {
   if (state === 'EVALUATING') return 'EVALUATING';
@@ -582,6 +583,39 @@ function assertCommitSubmissionSourceRefs(input: SubmitCommitAssessmentInput): v
   });
   if (!diffRef) {
     throw new Error('commit submission requires a code_diff source ref for the submitted changes');
+  }
+}
+
+async function sha256Hex(value: string): Promise<string> {
+  const bytes = new TextEncoder().encode(value);
+  const digest = await crypto.subtle.digest('SHA-256', bytes);
+  return Array.from(new Uint8Array(digest), (byte) => byte.toString(16).padStart(2, '0')).join('');
+}
+
+function normalizedSha256ContentHash(value: string): string | null {
+  const trimmed = value.trim().toLowerCase();
+  const maybeHex = trimmed.startsWith('sha256:') ? trimmed.slice('sha256:'.length) : trimmed;
+  return SHA256_HEX_PATTERN.test(maybeHex) ? maybeHex : null;
+}
+
+async function assertSourceRefContentHashes(
+  sourceRefs: readonly AssessmentEvidenceSourceRefInput[],
+): Promise<void> {
+  for (const ref of sourceRefs) {
+    if (typeof ref.exactText !== 'string' || ref.exactText.length === 0) {
+      throw new Error('source ref exactText is required before hashing');
+    }
+    if (typeof ref.contentHash !== 'string' || ref.contentHash.length === 0) {
+      throw new Error('source ref contentHash must be a SHA-256 hash of exactText');
+    }
+    const expectedHash = normalizedSha256ContentHash(ref.contentHash);
+    if (!expectedHash) {
+      throw new Error('source ref contentHash must be a SHA-256 hash of exactText');
+    }
+    const actualHash = await sha256Hex(ref.exactText);
+    if (actualHash !== expectedHash) {
+      throw new Error(`${ref.sourceRefType} source ref contentHash must match exactText`);
+    }
   }
 }
 
@@ -906,6 +940,7 @@ export class RepoTaskInterviewSessionStore {
     assertSafeBranchName(input.branchName);
     assertChangedFiles(input.changedFiles);
     assertCommitSubmissionSourceRefs(input);
+    await assertSourceRefContentHashes(input.sourceRefs);
 
     const repositoryUrl = normalizeGitHubRepositoryUrl(input.repositoryUrl, 'repositoryUrl');
     const forkRepositoryUrl = input.forkRepositoryUrl

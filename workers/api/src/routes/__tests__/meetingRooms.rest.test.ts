@@ -67,6 +67,15 @@ async function toArrayBuffer(value: unknown): Promise<ArrayBuffer> {
   return new ArrayBuffer(0);
 }
 
+async function sha256ContentHash(value: string): Promise<string> {
+  const bytes = new TextEncoder().encode(value);
+  const digest = await crypto.subtle.digest('SHA-256', bytes);
+  return `sha256:${Array.from(
+    new Uint8Array(digest),
+    (byte) => byte.toString(16).padStart(2, '0'),
+  ).join('')}`;
+}
+
 function createFakeStorage(): R2Bucket {
   const objects = new Map<string, {
     body: ArrayBuffer;
@@ -5780,7 +5789,31 @@ describe('meeting room recording living-context route', () => {
       '@@ -1,3 +1,4 @@',
       '+export const retryBackoff = "source-backed";',
     ].join('\n');
-    const submitRes = await app.request(`/meeting/${guestToken}/assessment/commit-submission`, {
+    const commitEvidenceText = `commit ${commitSha}\nAuthor: Commit Candidate\n\nFix retry path`;
+    const commitSourceRef = {
+      sourceRefType: 'git_commit',
+      sourceRefId: commitSha,
+      evidenceRole: 'submitted_commit',
+      locator: {
+        repositoryUrl: 'https://github.com/candidate/source-backed-worker',
+        commitSha,
+      },
+      exactText: commitEvidenceText,
+      contentHash: await sha256ContentHash(commitEvidenceText),
+    };
+    const diffSourceRef = {
+      sourceRefType: 'code_diff',
+      sourceRefId: `${baseCommitSha}..${commitSha}`,
+      evidenceRole: 'submitted_diff',
+      locator: {
+        repositoryUrl: 'https://github.com/candidate/source-backed-worker',
+        baseCommitSha,
+        commitSha,
+      },
+      exactText: diffText,
+      contentHash: await sha256ContentHash(diffText),
+    };
+    const tamperedHashRes = await app.request(`/meeting/${guestToken}/assessment/commit-submission`, {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify({
@@ -5801,28 +5834,43 @@ describe('meeting room recording living-context route', () => {
         occurredAt: now,
         sourceRefs: [
           {
-            sourceRefType: 'git_commit',
-            sourceRefId: commitSha,
-            evidenceRole: 'submitted_commit',
-            locator: {
-              repositoryUrl: 'https://github.com/candidate/source-backed-worker',
-              commitSha,
-            },
-            exactText: `commit ${commitSha}\nAuthor: Commit Candidate\n\nFix retry path`,
-            contentHash: 'commit-content-hash',
+            ...commitSourceRef,
+            contentHash: await sha256ContentHash(`${commitEvidenceText}\nnot the submitted exact text`),
           },
-          {
-            sourceRefType: 'code_diff',
-            sourceRefId: `${baseCommitSha}..${commitSha}`,
-            evidenceRole: 'submitted_diff',
-            locator: {
-              repositoryUrl: 'https://github.com/candidate/source-backed-worker',
-              baseCommitSha,
-              commitSha,
-            },
-            exactText: diffText,
-            contentHash: 'diff-content-hash',
-          },
+          diffSourceRef,
+        ],
+      }),
+    }, env, ctx);
+    expect(tamperedHashRes.status).toBe(422);
+    await expect(tamperedHashRes.json()).resolves.toMatchObject({
+      error: {
+        code: 'VALIDATION_ERROR',
+        message: 'git_commit source ref contentHash must match exactText',
+      },
+    });
+
+    const submitRes = await app.request(`/meeting/${guestToken}/assessment/commit-submission`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({
+        narrative: 'Candidate submitted a focused retry-path fix with tests passing locally.',
+        repositoryUrl: 'https://github.com/pipe/source-backed-worker',
+        forkRepositoryUrl: 'https://github.com/candidate/source-backed-worker',
+        branchName: 'pipe-assessment/retry-path',
+        baseCommitSha,
+        commitSha,
+        commitUrl: `https://github.com/candidate/source-backed-worker/commit/${commitSha}`,
+        upstreamPrConsent: false,
+        changedFiles: [{
+          path: 'src/retry.ts',
+          status: 'modified',
+          additions: 1,
+          deletions: 0,
+        }],
+        occurredAt: now,
+        sourceRefs: [
+          commitSourceRef,
+          diffSourceRef,
         ],
       }),
     }, env, ctx);
