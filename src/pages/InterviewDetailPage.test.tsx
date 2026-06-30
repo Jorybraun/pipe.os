@@ -1047,6 +1047,11 @@ describe('InterviewDetailPage', () => {
           narrative: 'Candidate found the interaction regression and gave a concrete blocking reason, but missed one verification detail.',
           strengths: ['Concrete source-backed blocking comment.'],
           growthAreas: ['Probe how they would validate timing cleanup.'],
+          provenance: {
+            rubricDimensionCount: 6,
+            evidenceItemCount: 2,
+            metricCount: 5,
+          },
           updatedAt: '2026-06-23T01:00:00.000Z',
         },
       }),
@@ -1110,6 +1115,10 @@ describe('InterviewDetailPage', () => {
     expect(scoreTrust).toHaveTextContent('Calibrate because');
     expect(scoreTrust).toHaveTextContent('adequate band');
     expect(scoreTrust).toHaveTextContent('Probe how they would validate timing cleanup.');
+    expect(scoreTrust).toHaveTextContent('Score provenance');
+    expect(scoreTrust).toHaveTextContent('6 rubric dimensions');
+    expect(scoreTrust).toHaveTextContent('2 evidence items');
+    expect(scoreTrust).toHaveTextContent('5 scoring metrics');
     expect(scoreTrust).toHaveTextContent('Use as');
     expect(scoreTrust).toHaveTextContent('source-backed signal, not an automatic decision');
     expect(screen.queryByText('Call record')).toBeNull();

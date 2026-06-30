@@ -190,6 +190,7 @@ interface CodeReviewSignalBasisItem {
 interface CodeReviewScoreTrust {
   validBecause: string;
   calibrateBecause: string;
+  provenance: string;
   useAs: string;
   tone: CodeReviewNextStepTone;
 }
@@ -1345,12 +1346,21 @@ function codeReviewScoreTrustSummary(input: {
     pushbackCount === 0 ? 'no developer pushback thread' : null,
     input.proofCount === 0 ? 'no rendered source bridge' : null,
   ].filter((item): item is string => Boolean(item));
+  const scoreProvenance = input.score.provenance;
+  const provenanceParts = scoreProvenance
+    ? [
+        countLabel(scoreProvenance.rubricDimensionCount, 'rubric dimension'),
+        countLabel(scoreProvenance.evidenceItemCount, 'evidence item'),
+        countLabel(scoreProvenance.metricCount, 'scoring metric'),
+      ]
+    : ['Score report did not expose compact provenance counters.'];
 
   return {
     validBecause: validParts.join(' · '),
     calibrateBecause: calibrators.length > 0
       ? calibrators.slice(0, 3).join(' · ')
       : 'No blocking calibration gap in this score packet.',
+    provenance: provenanceParts.join(' · '),
     useAs: input.validity.tone === 'positive'
       ? 'Use as source-backed signal, not an automatic decision.'
       : `${input.validity.value}: ${input.validity.detail}`,
@@ -3960,6 +3970,10 @@ export default function InterviewDetailPage(): JSX.Element {
                         <div style={DECISION_SCORE_TRUST_ITEM}>
                           <div style={FIELD_LABEL}>Calibrate because</div>
                           <div style={CONTEXT_RECORD_NARRATIVE}>{codeReviewScoreTrust.calibrateBecause}</div>
+                        </div>
+                        <div style={DECISION_SCORE_TRUST_ITEM}>
+                          <div style={FIELD_LABEL}>Score provenance</div>
+                          <div style={CONTEXT_RECORD_NARRATIVE}>{codeReviewScoreTrust.provenance}</div>
                         </div>
                         <div style={DECISION_SCORE_TRUST_ITEM}>
                           <div style={FIELD_LABEL}>Use as</div>

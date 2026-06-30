@@ -57,6 +57,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Fixed — Scheduling
 
+- CODE_REVIEW recruiter readouts now expose compact score provenance counters for rubric dimensions, scoring metrics, and evidence items, making scored assessments easier to calibrate without dumping raw scorer output.
 - Interview detail and person profile first paint now use lightweight living-context summaries, parallelized interview-detail reads, and compact code-review source refs; profile click-throughs no longer auto-fetch the full person graph until the recruiter opens the audit trail or graph.
 - CODE_REVIEW matching now repairs unprojected resume candidate nodes into living-context records, derives source-text phrase terms, and preserves role-overlap evidence atoms before selecting a PR, so role-backed repo matching can use decomposed evidence instead of falling back to queued intake.
 - CODE_REVIEW stage config now keeps blocked or pending repo matching inside an incomplete assessment stage with a `WAITING_FOR_MATCH` challenge instead of marking candidate intake complete.

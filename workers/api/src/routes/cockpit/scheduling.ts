@@ -1207,6 +1207,11 @@ interface ScheduledCodeReviewScoreSummary {
   narrative: string | null;
   strengths: string[];
   growthAreas: string[];
+  provenance: {
+    rubricDimensionCount: number;
+    evidenceItemCount: number;
+    metricCount: number;
+  };
   updatedAt: string;
 }
 
@@ -1232,6 +1237,25 @@ function stringArray(value: unknown): string[] {
   return Array.isArray(value)
     ? value.filter((item): item is string => typeof item === 'string' && item.trim().length > 0)
     : [];
+}
+
+function objectEntryCount(value: unknown): number {
+  if (Array.isArray(value)) return value.length;
+  if (isRecord(value)) return Object.keys(value).length;
+  return 0;
+}
+
+function evidenceItemCount(value: unknown): number {
+  if (value === null || value === undefined) return 0;
+  if (Array.isArray(value)) {
+    return value.reduce((sum, item) => sum + evidenceItemCount(item), 0);
+  }
+  if (isRecord(value)) {
+    const values = Object.values(value);
+    if (values.length === 0) return 0;
+    return values.reduce((sum, item) => sum + evidenceItemCount(item), 0);
+  }
+  return 1;
 }
 
 function numberOrNull(value: unknown): number | null {
@@ -2900,6 +2924,11 @@ async function loadScheduledCodeReviewScoreSummary(
     narrative: optionalString(overall.narrative) ?? null,
     strengths: stringArray(overall.strengths),
     growthAreas: stringArray(overall.growth_areas),
+    provenance: {
+      rubricDimensionCount: objectEntryCount(report.dimensions),
+      evidenceItemCount: evidenceItemCount(report.evidence),
+      metricCount: objectEntryCount(report.metrics),
+    },
     updatedAt: row.updated_at,
   };
 }

@@ -2526,6 +2526,20 @@ describe('GET /interviews/:id detail', () => {
         '2026-06-22T18:00:00.000Z', '2026-06-22T18:31:00.000Z', 'bug_finding'
       )
     `).run(JSON.stringify({
+      dimensions: {
+        issue_identification: 3,
+        prioritization: 3,
+        reasoning_quality: 3,
+      },
+      evidence: {
+        annotations: ['comment-1'],
+        pushback_threads: ['thread-1'],
+      },
+      metrics: {
+        true_finding_count: 1,
+        false_positive_count: 0,
+        bugs_found_pct: 50,
+      },
       overall: {
         score: 72,
         band: 'adequate',
@@ -2569,6 +2583,20 @@ describe('GET /interviews/:id detail', () => {
               };
             }>;
           }>;
+        } | null;
+        codeReviewScore: {
+          reviewSessionId: string;
+          status: string;
+          score: number | null;
+          band: string | null;
+          narrative: string | null;
+          strengths: string[];
+          growthAreas: string[];
+          provenance: {
+            rubricDimensionCount: number;
+            evidenceItemCount: number;
+            metricCount: number;
+          };
         } | null;
       };
     };
@@ -2630,6 +2658,11 @@ describe('GET /interviews/:id detail', () => {
       narrative: 'Candidate found the merge-blocking retry risk but missed one verification detail.',
       strengths: ['Concrete blocking comment tied to source behavior.'],
       growthAreas: ['Probe how they validate the timing cleanup under load.'],
+      provenance: {
+        rubricDimensionCount: 3,
+        evidenceItemCount: 2,
+        metricCount: 3,
+      },
     });
   });
 

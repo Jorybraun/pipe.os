@@ -411,6 +411,11 @@ export interface CodeReviewScoreSummary {
   narrative: string | null;
   strengths: string[];
   growthAreas: string[];
+  provenance?: {
+    rubricDimensionCount: number;
+    evidenceItemCount: number;
+    metricCount: number;
+  };
   updatedAt: string;
 }
 
