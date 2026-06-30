@@ -813,6 +813,9 @@ describe('PersonProfilePage', () => {
     expect(proofSummary).not.toHaveTextContent('review-session-1');
     expect(proof).toHaveTextContent('Source proof');
     expect(proof).toHaveTextContent('score report');
+    expect(proof).toHaveTextContent('82/100 Strong · 6 rubric dimensions · 2 evidence items · 5 scoring metrics');
+    expect(proof).not.toHaveTextContent('"overall"');
+    expect(proof).not.toHaveTextContent('"growth_areas"');
     expect(proof).toHaveTextContent('transcript segment');
     expect(screen.getByText('Code-review assessment evidence')).toBeInTheDocument();
     expect(screen.getByRole('button', { name: 'Open interaction' })).toBeInTheDocument();

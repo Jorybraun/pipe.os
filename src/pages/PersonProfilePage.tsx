@@ -569,6 +569,42 @@ function scoreProvenanceLabel(provenance: CodeReviewScoreProvenance | null): str
   ].join(' · ');
 }
 
+function scoreLabelForProjection(score: CodeReviewScoreProjection | null): string | null {
+  if (score?.score === null || score?.score === undefined) return null;
+  return `${Math.round(score.score)}/100${score.band ? ` ${titleCaseToken(score.band)}` : ''}`;
+}
+
+function codeReviewScoreProjectionFromReport(report: Record<string, unknown>): CodeReviewScoreProjection {
+  const overall = isRecord(report.overall) ? report.overall : report;
+  return {
+    score: optionalNumber(overall.score),
+    band: optionalString(overall.band),
+    narrative: optionalString(overall.narrative),
+    strengths: stringArray(overall.strengths),
+    growthAreas: stringArray(overall.growth_areas ?? overall.growthAreas),
+    provenance: scoreProvenanceFromReport(report),
+  };
+}
+
+function codeReviewScoreProjectionFromText(value: string): CodeReviewScoreProjection | null {
+  try {
+    const parsed = JSON.parse(value) as unknown;
+    return isRecord(parsed) ? codeReviewScoreProjectionFromReport(parsed) : null;
+  } catch {
+    return null;
+  }
+}
+
+function scoreProofTextFromExactText(value: string): string | null {
+  const score = codeReviewScoreProjectionFromText(value);
+  const scoreLabel = scoreLabelForProjection(score);
+  if (!scoreLabel) return null;
+  return [
+    scoreLabel,
+    scoreProvenanceLabel(score?.provenance ?? null),
+  ].filter((item): item is string => Boolean(item)).join(' · ');
+}
+
 function parseScoreProjection(record: LivingContextRecord | null): CodeReviewScoreProjection | null {
   if (!record) return null;
   const scoreSource = record.sources.find((source) =>
@@ -578,21 +614,7 @@ function parseScoreProjection(record: LivingContextRecord | null): CodeReviewSco
   );
   if (!scoreSource || typeof scoreSource.exactText !== 'string') return null;
 
-  try {
-    const parsed = JSON.parse(scoreSource.exactText) as unknown;
-    if (!isRecord(parsed)) return null;
-    const overall = isRecord(parsed.overall) ? parsed.overall : parsed;
-    return {
-      score: optionalNumber(overall.score),
-      band: optionalString(overall.band),
-      narrative: optionalString(overall.narrative),
-      strengths: stringArray(overall.strengths),
-      growthAreas: stringArray(overall.growth_areas ?? overall.growthAreas),
-      provenance: scoreProvenanceFromReport(parsed),
-    };
-  } catch {
-    return null;
-  }
+  return codeReviewScoreProjectionFromText(scoreSource.exactText);
 }
 
 function readChallengeProjection(record: LivingContextRecord | null): CodeReviewChallengeProjection | null {
@@ -979,6 +1001,10 @@ function sourceProofLabel(source: LivingContextRecordSourceRef): string {
 
 function sourceProofText(source: LivingContextRecordSourceRef): string | null {
   if (typeof source.exactText === 'string' && source.exactText.trim()) {
+    if (source.evidenceRole === 'score_report') {
+      const compactScoreProof = scoreProofTextFromExactText(source.exactText);
+      if (compactScoreProof) return compactScoreProof;
+    }
     return source.exactText.length > 180 ? `${source.exactText.slice(0, 180)}...` : source.exactText;
   }
   if ('locator' in source && isRecord(source.locator)) {
@@ -1018,9 +1044,7 @@ function deriveCodeReviewDecision(
     ?? readChallengeProjection(codeReviewRecords[0] ?? null);
   const hasMatchProvenance = Boolean(matchRecord && matchRecord.sources.length > 0 && hasMatchedReviewChallenge(matchChallenge));
   const recommendation = recommendationForScore(score, challenge);
-  const scoreLabel = score?.score !== null && score?.score !== undefined
-    ? `${Math.round(score.score)}/100${score.band ? ` ${titleCaseToken(score.band)}` : ''}`
-    : null;
+  const scoreLabel = scoreLabelForProjection(score);
   const challengeLabel = challenge?.repoLabel
     ? `${challenge.repoLabel}${challenge.prNumber !== null ? ` PR #${challenge.prNumber}` : ''}`
     : null;
