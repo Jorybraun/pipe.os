@@ -57,7 +57,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Fixed — Scheduling
 
-- CODE_REVIEW matching now repairs unprojected resume candidate nodes into living-context records before selecting a PR, so role-backed repo matching can use decomposed evidence instead of falling back to queued intake.
+- CODE_REVIEW matching now repairs unprojected resume candidate nodes into living-context records and derives source-text phrase terms before selecting a PR, so role-backed repo matching can use decomposed evidence instead of falling back to queued intake.
 - Standalone CODE_REVIEW intake now advances directly into an explicitly assigned source-backed PR review instead of incorrectly queuing the candidate behind background matching.
 - Source-backed assessment evaluation finalization now tolerates the production sequence where an evaluated report is already persisted while the session still reads as final-submitted, preventing workspace evaluation from returning a false 500 after durable evidence is written.
 - Source-backed assessment sessions can now record a recruiter human decision after evaluation, require that decision to cite persisted assessment evidence or report output, and surface the human decision on interview detail/readout cards.

@@ -242,10 +242,18 @@ const CANDIDATE_EXACT_MECHANISM_SEGMENTS = new Set([
   'deploy',
   'deployment',
   'deployments',
+  'dom',
+  'id',
+  'ids',
+  'javascript',
   'kv',
+  'patient',
+  'popover',
   'queue',
   'queues',
+  'react',
   'request',
+  'root',
   'routing',
   'runner',
   'runtime',
@@ -256,6 +264,8 @@ const CANDIDATE_EXACT_MECHANISM_SEGMENTS = new Set([
   'threshold',
   'tooling',
   'trigger',
+  'typescript',
+  'use',
   'workflow',
   'workflows',
   'wrangler',
@@ -285,6 +295,16 @@ function sourceTextOpenTerms(text: string, limit = 24): string[] {
     );
 
   const terms = new Set<string>();
+  for (const size of [3, 2]) {
+    for (let index = 0; index <= tokens.length - size; index += 1) {
+      const phraseTokens = tokens.slice(index, index + size);
+      if (!phraseTokens.some((token) => CANDIDATE_EXACT_MECHANISM_SEGMENTS.has(token))) {
+        continue;
+      }
+      addCanonicalTerm(terms, phraseTokens.join(' '));
+      if (terms.size >= limit) return [...terms];
+    }
+  }
   for (const token of tokens) {
     addCanonicalTerm(terms, token);
     if (terms.size >= limit) return [...terms];
