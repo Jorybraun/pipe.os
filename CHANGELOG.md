@@ -69,6 +69,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - Dev container workspaces now mark `/workspace` as a safe Git directory, start with explicit internet access, and use production cold-start timeouts so exact-base-commit repo tasks do not crash before VS Code can boot.
 - Room workspace launches no longer inject Devin by default; code-review rooms start a plain reliable code-server workspace unless the launch explicitly requests a configured agent.
 - Code-server containers now start the workspace bridge even when no AI agent is configured, keeping VS Code proxying, terminal access, bridge health, and commit finalization available without fake Clippy replies.
+- Dev-container launches now explicitly use the baked code-server entrypoint so deployed Cloudflare Containers expose the workspace bridge/router instead of bypassing it and serving code-server directly.
 - Workspace-backed repo tasks now expose a bridge finalizer that turns the candidate's real HEAD commit, diff, and optional test command output into source-backed commit-submission evidence for the linked assessment session.
 - `DEV_CONTAINER_CHALLENGE` assessment sessions now share the commit-required progress path with open-source bug-fix repo tasks, so reproduced work evidence leads to submit-commit instead of a generic capture-evidence state.
 - CODE_REVIEW recruiter decision and assignment panels now label assignment trust explicitly, distinguishing automatic matches from manual repo or PR tasks before managers treat the review as candidate-fit evidence.

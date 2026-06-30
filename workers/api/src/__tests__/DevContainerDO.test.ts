@@ -180,7 +180,7 @@ describe('DevContainerDO /__init — Step 11 warn-then-expire scheduling', () =>
       CHALLENGE_BRANCH: 'challenge/fix',
     });
     expect(startArg.startOptions.envVars).not.toHaveProperty('AGENT_TYPE');
-    expect(startArg.startOptions).not.toHaveProperty('entrypoint');
+    expect(startArg.startOptions.entrypoint).toEqual(['/usr/local/bin/entrypoint.sh']);
 
     const updates = db.__calls.filter(
       (c) => c.sql.includes('UPDATE dev_container_sessions') && c.ran,

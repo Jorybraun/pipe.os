@@ -21,6 +21,7 @@ import { markError, markExpired, markStatus, markWarned } from '../lib/devContai
 const DEFAULT_WARN_BEFORE_SECONDS = 60;
 const INTENTIONAL_SLEEP_KEY = 'intentional_sleep_stop';
 const MAX_CONTAINER_DIAGNOSTIC_CHARS = 1_000;
+const CODE_SERVER_ENTRYPOINT = '/usr/local/bin/entrypoint.sh';
 
 interface InitPayload {
   sessionId: string;
@@ -117,6 +118,7 @@ export class DevContainerDO extends Container<Env> {
         ports: this.requiredPorts,
         startOptions: {
           envVars: this.envVars,
+          entrypoint: [CODE_SERVER_ENTRYPOINT],
           enableInternet: true,
         },
         cancellationOptions: {
