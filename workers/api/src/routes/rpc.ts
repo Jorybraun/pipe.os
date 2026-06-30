@@ -65,7 +65,7 @@ import type { JsonObject, JsonValue } from '../lib/livingContext';
 
 // ─── Blocking gate for post-screener enrichment ─────────────────────────────
 
-interface WaitingChallenge {
+export interface WaitingChallenge {
   id: string;
   type: 'WAITING_FOR_MATCH';
   title: string;
@@ -493,6 +493,47 @@ function candidateIntakeQueuedComplete(stageTitle = 'Profile received'): {
     challenges: [],
     currentIndex: 0,
     message: 'Your profile has been received. PIPE will email you when your code review is ready.',
+  };
+}
+
+export function waitingStageConfigForGate(input: {
+  candidateId: string;
+  stageId: string;
+  stageTitle: string;
+  stageMode: string | null;
+  timeLimit: number | null;
+  waitingChallenge: WaitingChallenge;
+}): {
+  isComplete: false;
+  stageId: string;
+  candidateId: string;
+  stageTitle: string;
+  mode: string;
+  timeLimit: number | null;
+  challenges: Array<{ type: string; order: number; title: string }>;
+  currentIndex: 0;
+} {
+  const challenges: Array<{ type: string; order: number; title: string }> = [
+    { type: 'WELCOME', order: 0, title: 'Welcome' },
+  ];
+  if (input.stageMode === 'LIVE_VIDEO') {
+    challenges.push({ type: 'LIVE_VIDEO', order: challenges.length, title: 'Video Interview' });
+  }
+  challenges.push({
+    type: input.waitingChallenge.type,
+    order: challenges.length,
+    title: input.waitingChallenge.title,
+  });
+
+  return {
+    isComplete: false,
+    stageId: input.stageId,
+    candidateId: input.candidateId,
+    stageTitle: input.stageTitle,
+    mode: input.stageMode ?? 'ASYNC',
+    timeLimit: input.timeLimit,
+    challenges,
+    currentIndex: 0,
   };
 }
 
@@ -3024,7 +3065,14 @@ rpcAuth.post('/get-stage-config', async (c) => {
 
       const gateResult = await checkMatchingGate(c.env.DB, candidateId, effectivePipelineId, stage.id, nextChallenge.id, nextChallenge.type, c.env);
       if (gateResult.blocked && gateResult.syntheticChallenge) {
-        return c.json(candidateIntakeQueuedComplete('Profile received'));
+        return c.json(waitingStageConfigForGate({
+          candidateId,
+          stageId: stage.id,
+          stageTitle: stage.title,
+          stageMode: stage.mode,
+          timeLimit: stage.timeLimit,
+          waitingChallenge: gateResult.syntheticChallenge,
+        }));
       }
 
       const assessmentId = crypto.randomUUID();
