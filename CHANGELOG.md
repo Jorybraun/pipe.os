@@ -70,6 +70,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 ### Fixed — Candidate repo matching
 
 - Repo-task assessment reports now prefix evaluator summaries with the assigned challenge task from exact source-backed challenge-packet evidence, so live open-source bug-fix evaluations remain task-specific even when model prose is generic.
+- Repo-task assessment evaluation now extracts source-cited claims from structured plain-text Workers AI responses when the model ignores the JSON-only instruction, while still dropping source-less positive claims.
 - Meeting transcript living-context ingestion now skips only concept-adjacency persistence when partial schemas lack the adjacency table, preserving source-backed transcript and assessment evidence during staged rollout.
 - Repo-task assessment evaluation now repairs bare-key JSON object responses from Workers AI before validating source-backed claims, preventing matched open-source assessments from becoming diagnostics when the model returns JavaScript-style object syntax.
 - Interview detail assessment progress now renders the source-backed open-source challenge contract, including repo, base commit, task, success criteria, and expected evidence, so recruiters can review the actual assignment instead of a one-line challenge summary.

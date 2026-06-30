@@ -82,6 +82,12 @@ const CHALLENGE_REF_TYPES = new Set([
 
 const ALLOWED_CLAIM_POLARITIES = new Set(['positive', 'negative', 'diagnostic']);
 const ALLOWED_DIAGNOSTIC_SEVERITIES = new Set(['info', 'warning', 'blocking']);
+const ALLOWED_RECOMMENDATIONS = new Set([
+  'strong_evidence_to_advance',
+  'mixed_evidence_human_review',
+  'insufficient_evidence',
+  'not_demonstrated',
+]);
 type EvaluatorDiagnosticSeverity = 'info' | 'warning' | 'blocking';
 const MAX_SOURCE_REF_EXACT_TEXT_CHARS = 800;
 const MAX_AI_PROMPT_SOURCE_REFS = 16;
@@ -411,6 +417,7 @@ function buildSystemPrompt(): string {
     'If evidence is missing, uncertain, ungrounded, or insufficient, return diagnostics instead of positive claims.',
     'Keep the response compact: at most 4 claims and 4 diagnostics; summary and narratives must be one short sentence each.',
     'Return only JSON with keys: summary, recommendation, claims, diagnostics.',
+    'Do not include analysis, markdown, or prose before or after the JSON object.',
     'Allowed claim polarities: positive, negative, diagnostic.',
     'Useful dimensions include source_comprehension, implementation_correctness, debugging_reasoning, test_strategy, security_and_reliability, ai_output_verification, communication.',
   ].join('\n');
@@ -456,7 +463,129 @@ function buildUserPrompt(input: {
   });
 }
 
-function parseAiJson(content: string | null): AiAssessmentOutput {
+function extractBalancedJsonObjects(value: string): string[] {
+  const objects: string[] = [];
+  let start = -1;
+  let depth = 0;
+  let inString: '"' | '\'' | null = null;
+  let escaped = false;
+
+  for (let index = 0; index < value.length; index += 1) {
+    const char = value[index]!;
+    if (inString) {
+      if (escaped) {
+        escaped = false;
+      } else if (char === '\\') {
+        escaped = true;
+      } else if (char === inString) {
+        inString = null;
+      }
+      continue;
+    }
+
+    if (char === '"' || char === '\'') {
+      inString = char;
+      continue;
+    }
+
+    if (char === '{') {
+      if (depth === 0) start = index;
+      depth += 1;
+      continue;
+    }
+
+    if (char === '}' && depth > 0) {
+      depth -= 1;
+      if (depth === 0 && start >= 0) {
+        objects.push(value.slice(start, index + 1));
+        start = -1;
+      }
+    }
+  }
+
+  return objects.reverse();
+}
+
+function extractPlainTextSourceRefKeys(value: string): string[] {
+  const bracketGroups = Array.from(value.matchAll(/\[([^\]]+)\]/g)).map((match) => match[1] ?? '');
+  return bracketGroups.flatMap((group) =>
+    group.split(',')
+      .map((item) => item.trim().replace(/^`+|`+$/g, '').replace(/^["']|["']$/g, ''))
+      .filter((item) => item.includes(':') && !item.startsWith('evidenceCoverage.')));
+}
+
+function parsePlainTextAssessmentOutput(content: string): AiAssessmentOutput | null {
+  const summaryMatches = Array.from(content.matchAll(/^\s*(?:[-*]\s*)?Summary:\s*(.+)$/gim));
+  const recommendationMatches = Array.from(content.matchAll(/^\s*(?:[-*]\s*)?Recommendation:\s*`?([A-Za-z_]+)`?/gim));
+  const summary = stringValue(summaryMatches.at(-1)?.[1]);
+  const recommendationCandidate = stringValue(recommendationMatches.at(-1)?.[1]);
+  const recommendation = recommendationCandidate && ALLOWED_RECOMMENDATIONS.has(recommendationCandidate)
+    ? recommendationCandidate
+    : null;
+
+  const claims: AiAssessmentClaim[] = [];
+  const seenClaims = new Set<string>();
+  for (const match of content.matchAll(
+    /^\s*[-*]\s*(positive|negative|diagnostic)\s*\|\s*([A-Za-z0-9_-]+)\s*\|\s*(.+)$/gim,
+  )) {
+    const polarity = match[1];
+    const dimension = match[2];
+    const line = (match[3] ?? '').trim();
+    const narrative = stringValue(line.replace(/\s*\[[^\]]+\]\s*[.)]*\s*$/, ''));
+    if (!polarity || !dimension || !narrative) continue;
+    const sourceRefKeys = extractPlainTextSourceRefKeys(line);
+    const seenKey = `${polarity}:${dimension}:${narrative}:${sourceRefKeys.join(',')}`;
+    if (seenClaims.has(seenKey)) continue;
+    seenClaims.add(seenKey);
+    claims.push({
+      id: `${dimension}-${claims.length + 1}`,
+      polarity,
+      dimension,
+      narrative,
+      confidence: polarity === 'positive' ? 0.65 : 0.5,
+      sourceRefKeys,
+    });
+  }
+
+  const diagnostics: AiAssessmentDiagnostic[] = [];
+  const seenDiagnostics = new Set<string>();
+  for (const match of content.matchAll(
+    /^\s*[-*]\s*(info|warning|blocking)\s*\|\s*([A-Za-z0-9_-]+)\s*\|\s*(.+)$/gim,
+  )) {
+    const severity = match[1];
+    const code = match[2];
+    const line = (match[3] ?? '').trim();
+    const message = stringValue(line.replace(/\s*\[[^\]]+\]\s*[.)]*\s*$/, ''));
+    if (!severity || !code || !message) continue;
+    const sourceRefKeys = extractPlainTextSourceRefKeys(line);
+    const seenKey = `${severity}:${code}:${message}:${sourceRefKeys.join(',')}`;
+    if (seenDiagnostics.has(seenKey)) continue;
+    seenDiagnostics.add(seenKey);
+    diagnostics.push({ code, severity, message, sourceRefKeys });
+  }
+
+  for (const match of content.matchAll(/^\s*[-*]\s*([A-Z][A-Z0-9_]+):\s*(.+)$/gm)) {
+    const code = match[1];
+    const line = (match[2] ?? '').trim();
+    const message = stringValue(line.replace(/\s*\[[^\]]+\]\s*[.)]*\s*$/, ''));
+    if (!code || !message) continue;
+    const sourceRefKeys = extractPlainTextSourceRefKeys(line);
+    const seenKey = `info:${code}:${message}:${sourceRefKeys.join(',')}`;
+    if (seenDiagnostics.has(seenKey)) continue;
+    seenDiagnostics.add(seenKey);
+    diagnostics.push({ code, severity: 'info', message, sourceRefKeys });
+  }
+
+  if (!summary && !recommendation && claims.length === 0 && diagnostics.length === 0) return null;
+  return {
+    ...(summary ? { summary } : {}),
+    ...(recommendation ? { recommendation } : {}),
+    claims: claims.slice(0, 4),
+    diagnostics: diagnostics.slice(0, 4),
+  };
+}
+
+export function parseAiJson(content: string | null): AiAssessmentOutput {
   if (!content) throw new Error('assessment evaluator returned empty content');
   const trimmed = content.trim();
   const stripTrailingCommas = (value: string): string => value.replace(/,\s*([}\]])/g, '$1');
@@ -540,12 +669,17 @@ function parseAiJson(content: string | null): AiAssessmentOutput {
   } catch {
     const fenced = trimmed.match(/```(?:json)?\s*([\s\S]*?)```/i)?.[1]?.trim();
     if (fenced) return parseStrictOrRepairedJsonObject(fenced);
-    const objectStart = trimmed.indexOf('{');
-    const objectEnd = trimmed.lastIndexOf('}');
-    if (objectStart >= 0 && objectEnd > objectStart) {
-      return parseStrictOrRepairedJsonObject(trimmed.slice(objectStart, objectEnd + 1));
+    const jsonObjectCandidates = extractBalancedJsonObjects(trimmed);
+    for (const candidate of jsonObjectCandidates) {
+      try {
+        return parseStrictOrRepairedJsonObject(candidate);
+      } catch {
+        // Try the next balanced object candidate before falling back to plain text.
+      }
     }
-    throw new Error('assessment evaluator did not return parseable JSON');
+    const fallback = parsePlainTextAssessmentOutput(trimmed);
+    if (fallback) return fallback;
+    throw new Error('assessment evaluator did not return parseable JSON or structured assessment text');
   }
 }
 
