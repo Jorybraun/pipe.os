@@ -260,6 +260,30 @@ function assessmentEvaluationRecommendationLabel(recommendation: string | null |
   return sentenceCaseToken(recommendation);
 }
 
+function assessmentClaimPolarityLabel(polarity: string): string {
+  switch (polarity) {
+    case 'positive':
+      return 'Strength';
+    case 'negative':
+      return 'Risk';
+    case 'diagnostic':
+      return 'Diagnostic';
+    default:
+      return sentenceCaseToken(polarity);
+  }
+}
+
+function assessmentClaimConfidenceLabel(confidence: number | null | undefined): string | null {
+  if (typeof confidence !== 'number' || !Number.isFinite(confidence)) return null;
+  return `${Math.round(confidence * 100)}% confidence`;
+}
+
+function assessmentClaimSourceSummary(claim: { sourceRefCount: number; sourceRefTypes: string[] }): string {
+  const count = `${claim.sourceRefCount} source ${claim.sourceRefCount === 1 ? 'ref' : 'refs'}`;
+  const types = claim.sourceRefTypes.map(sentenceCaseToken).join(', ');
+  return types ? `${count}: ${types}` : count;
+}
+
 function assessmentEvaluationNoticeForResult(result: StartAssessmentEvaluationResponse): string {
   if (result.report || result.progress.evaluation?.status === 'EVALUATED') {
     return 'Source-backed assessment report is ready to review.';
@@ -2140,6 +2164,7 @@ export default function InterviewDetailPage(): JSX.Element {
   const assessmentProgressSourceRefCounts = assessmentProgress?.sourceRefCounts ?? [];
   const assessmentRequiredProof = assessmentRequiredProofItems(assessmentProgress);
   const assessmentConfidenceSignals = assessmentConfidenceSignalItems(assessmentProgress);
+  const assessmentEvaluationClaims = assessmentProgress?.evaluation?.claims?.slice(0, 3) ?? [];
   const canStartAssessmentEvaluation = assessmentProgress?.nextAction === 'START_EVALUATION';
   const showsRoomPanel = !isCodeReviewInterview;
   const hasCallRecordEvidence = Boolean(
@@ -2643,6 +2668,29 @@ export default function InterviewDetailPage(): JSX.Element {
                       assessmentEvaluationRecommendationLabel(assessmentProgress.evaluation.recommendation),
                       assessmentProgress.evaluation.summary,
                     ].filter(Boolean).join(' · ')}
+                  </span>
+                </div>
+              )}
+              {assessmentEvaluationClaims.length > 0 && (
+                <div
+                  data-testid="interview-assessment-evaluation-claims"
+                  style={{ ...EVIDENCE_ROW, alignItems: 'flex-start' }}
+                >
+                  <span style={FIELD_LABEL}>Evidence-backed claims</span>
+                  <span style={{ ...FIELD_VALUE, ...ASSESSMENT_CLAIM_LIST }}>
+                    {assessmentEvaluationClaims.map((claim) => (
+                      <span key={claim.id} style={ASSESSMENT_CLAIM_ROW}>
+                        <span style={ASSESSMENT_CLAIM_HEAD}>
+                          <span>{assessmentClaimPolarityLabel(claim.polarity)}</span>
+                          <span>{sentenceCaseToken(claim.dimension)}</span>
+                          {assessmentClaimConfidenceLabel(claim.confidence) && (
+                            <span>{assessmentClaimConfidenceLabel(claim.confidence)}</span>
+                          )}
+                        </span>
+                        <span style={ASSESSMENT_CLAIM_NARRATIVE}>{claim.narrative}</span>
+                        <span style={ASSESSMENT_CLAIM_SOURCES}>{assessmentClaimSourceSummary(claim)}</span>
+                      </span>
+                    ))}
                   </span>
                 </div>
               )}
@@ -3827,6 +3875,47 @@ const ASSESSMENT_COVERAGE_MISSING: CSSProperties = {
   borderColor: 'rgba(248,113,113,0.36)',
   background: 'rgba(248,113,113,0.08)',
   color: '#fca5a5',
+};
+
+const ASSESSMENT_CLAIM_LIST: CSSProperties = {
+  display: 'grid',
+  gap: 8,
+};
+
+const ASSESSMENT_CLAIM_ROW: CSSProperties = {
+  display: 'grid',
+  gap: 6,
+  minWidth: 0,
+  padding: 10,
+  border: '1px solid var(--pipe-border)',
+  borderRadius: 6,
+  background: 'rgba(255,255,255,0.03)',
+};
+
+const ASSESSMENT_CLAIM_HEAD: CSSProperties = {
+  display: 'flex',
+  flexWrap: 'wrap',
+  gap: 6,
+  color: 'var(--pipe-text-dim)',
+  fontFamily: FONT,
+  fontSize: 9,
+  fontWeight: 800,
+  letterSpacing: '0.08em',
+  textTransform: 'uppercase',
+};
+
+const ASSESSMENT_CLAIM_NARRATIVE: CSSProperties = {
+  color: 'var(--pipe-text)',
+  fontSize: 12,
+  lineHeight: 1.55,
+  overflowWrap: 'anywhere',
+};
+
+const ASSESSMENT_CLAIM_SOURCES: CSSProperties = {
+  color: 'var(--pipe-text-dim)',
+  fontFamily: FONT,
+  fontSize: 10,
+  lineHeight: 1.45,
 };
 
 const WORKSPACE_CONFIG_FORM: CSSProperties = {

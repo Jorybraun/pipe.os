@@ -911,7 +911,17 @@ Fix stale popover listener cleanup.`;
       progress: {
         stage: string;
         nextAction: string;
-        evaluation: { status: string; summary: string };
+        evaluation: {
+          status: string;
+          summary: string;
+          claims: Array<{
+            polarity: string;
+            dimension: string;
+            narrative: string;
+            sourceRefCount: number;
+            sourceRefTypes: string[];
+          }>;
+        };
       };
     };
     expect(evaluatedProgressBody.progress).toMatchObject({
@@ -920,6 +930,13 @@ Fix stale popover listener cleanup.`;
       evaluation: {
         status: 'EVALUATED',
         summary: 'Candidate produced a focused source-backed commit.',
+        claims: [{
+          polarity: 'positive',
+          dimension: 'commit_quality',
+          narrative: 'The patch is focused on the stale popover listener cleanup.',
+          sourceRefCount: 1,
+          sourceRefTypes: ['code_diff'],
+        }],
       },
     });
   });

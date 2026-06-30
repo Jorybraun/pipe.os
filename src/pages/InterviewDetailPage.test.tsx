@@ -496,6 +496,15 @@ describe('InterviewDetailPage', () => {
         summary: 'Candidate made a focused source-backed change and cited the submitted diff evidence.',
         recommendation: 'strong_evidence_to_advance',
         createdAt: '2026-06-23T00:22:00.000Z',
+        claims: [{
+          id: 'claim-focused-diff',
+          polarity: 'positive',
+          dimension: 'commit_quality',
+          narrative: 'The candidate produced a focused patch backed by the submitted diff.',
+          confidence: 0.82,
+          sourceRefCount: 2,
+          sourceRefTypes: ['code_diff', 'git_commit'],
+        }],
         evidenceCoverage: {
           schemaVersion: 'assessment-evidence-coverage-v1',
           sourceRefCount: 3,
@@ -595,6 +604,13 @@ describe('InterviewDetailPage', () => {
     expect(progress).toHaveTextContent('Evaluated');
     expect(progress).toHaveTextContent('Review the assessment report and evidence.');
     expect(progress).toHaveTextContent('Evaluated · Strong evidence to advance · Candidate made a focused source-backed change and cited the submitted diff evidence.');
+    const claims = screen.getByTestId('interview-assessment-evaluation-claims');
+    expect(claims).toHaveTextContent('Evidence-backed claims');
+    expect(claims).toHaveTextContent('Strength');
+    expect(claims).toHaveTextContent('Commit quality');
+    expect(claims).toHaveTextContent('82% confidence');
+    expect(claims).toHaveTextContent('The candidate produced a focused patch backed by the submitted diff.');
+    expect(claims).toHaveTextContent('2 source refs: Code diff, Git commit');
     expect(progress).toHaveTextContent('Required proof');
     expect(progress).toHaveTextContent('Challenge captured');
     expect(progress).toHaveTextContent('Commit captured');

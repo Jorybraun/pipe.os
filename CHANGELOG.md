@@ -67,6 +67,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - Interview detail assessment progress now renders the source-backed open-source challenge contract, including repo, base commit, task, success criteria, and expected evidence, so recruiters can review the actual assignment instead of a one-line challenge summary.
 - Assessment progress readouts now distinguish chat, workspace telemetry, and room action evidence instead of collapsing every captured interaction into a vague work-evidence bucket.
 - Recruiter assessment reports now separate required proof from confidence signals, making the challenge/commit/diff proof chain visible apart from optional tests, terminal, editor, and AI-use coverage.
+- Source-backed assessment progress now exposes evaluator claim previews, and recruiter reports render those claims with polarity, dimension, confidence, and source-ref counts/types.
 - Roleless CODE_REVIEW matching now has regression coverage for a live-shaped `mui/base-ui` PR packet and recruiter-visible evidence traces, verdict summaries, annotations, and AI developer pushback threads.
 - Commit submissions are now rejected unless the submitted HEAD is on `pipe-assessment` or a `pipe-assessment/*` branch, with the same rule enforced by the browser payload builder, durable assessment session store, and dev-container finalizer.
 - Workspace bridge revision `2026-06-30-assessment-branch-v1` forces dev containers onto the assessment-branch-enforcing finalizer during deployed smoke validation.

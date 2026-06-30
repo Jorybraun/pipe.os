@@ -162,7 +162,18 @@ export interface RoomAssessmentProgressSnapshot {
   evaluation: {
     status: string;
     summary: string;
+    recommendation?: string | null;
     createdAt: string;
+    evidenceCoverage?: unknown;
+    claims?: Array<{
+      id: string;
+      polarity: string;
+      dimension: string;
+      narrative: string;
+      confidence: number | null;
+      sourceRefCount: number;
+      sourceRefTypes: string[];
+    }>;
   } | null;
 }
 

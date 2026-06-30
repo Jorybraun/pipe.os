@@ -311,6 +311,17 @@ export interface AssessmentProgressEvaluation {
   recommendation: string | null;
   createdAt: string;
   evidenceCoverage: AssessmentEvidenceCoverageSnapshot | null;
+  claims: AssessmentProgressEvaluationClaim[];
+}
+
+export interface AssessmentProgressEvaluationClaim {
+  id: string;
+  polarity: AssessmentEvaluationClaimPolarity;
+  dimension: string;
+  narrative: string;
+  confidence: number | null;
+  sourceRefCount: number;
+  sourceRefTypes: string[];
 }
 
 export interface AssessmentProgressSnapshot {
@@ -1333,6 +1344,7 @@ export class RepoTaskInterviewSessionStore {
     }>();
     if (!row) return null;
     const output = parseJsonObject(row.output_json);
+    const claims = await this.loadEvaluationClaimPreviews(row.id);
     return {
       id: row.id,
       status: row.status,
@@ -1340,7 +1352,53 @@ export class RepoTaskInterviewSessionStore {
       recommendation: typeof output.recommendation === 'string' ? output.recommendation : null,
       createdAt: row.created_at,
       evidenceCoverage: parseEvidenceCoverage(output),
+      claims,
     };
+  }
+
+  private async loadEvaluationClaimPreviews(reportId: string): Promise<AssessmentProgressEvaluationClaim[]> {
+    const rows = await this.db.prepare(
+      `SELECT c.id,
+              c.polarity,
+              c.dimension,
+              c.narrative,
+              c.confidence,
+              COUNT(sr.id) AS source_ref_count,
+              GROUP_CONCAT(DISTINCT sr.source_ref_type) AS source_ref_types
+         FROM assessment_evaluation_claims c
+         LEFT JOIN assessment_claim_source_refs sr ON sr.claim_id = c.id
+        WHERE c.report_id = ?1
+        GROUP BY c.id, c.polarity, c.dimension, c.narrative, c.confidence
+        ORDER BY
+          CASE c.polarity
+            WHEN 'positive' THEN 0
+            WHEN 'negative' THEN 1
+            WHEN 'neutral' THEN 2
+            ELSE 3
+          END,
+          c.created_at,
+          c.id
+        LIMIT 3`,
+    ).bind(reportId).all<{
+      id: string;
+      polarity: AssessmentEvaluationClaimPolarity;
+      dimension: string;
+      narrative: string;
+      confidence: number | null;
+      source_ref_count: number;
+      source_ref_types: string | null;
+    }>();
+    return rows.results.map((row) => ({
+      id: row.id,
+      polarity: row.polarity,
+      dimension: row.dimension,
+      narrative: row.narrative,
+      confidence: row.confidence,
+      sourceRefCount: row.source_ref_count,
+      sourceRefTypes: row.source_ref_types
+        ? row.source_ref_types.split(',').map((value) => value.trim()).filter(Boolean)
+        : [],
+    }));
   }
 
   async loadSession(sessionId: string): Promise<PersistedRepoTaskInterviewSession> {

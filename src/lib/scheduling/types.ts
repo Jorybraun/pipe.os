@@ -175,7 +175,18 @@ export interface AssessmentProgressSnapshot {
     recommendation?: string | null;
     createdAt: string;
     evidenceCoverage?: AssessmentEvidenceCoverageSnapshot | null;
+    claims?: AssessmentEvaluationClaimPreview[];
   } | null;
+}
+
+export interface AssessmentEvaluationClaimPreview {
+  id: string;
+  polarity: string;
+  dimension: string;
+  narrative: string;
+  confidence: number | null;
+  sourceRefCount: number;
+  sourceRefTypes: string[];
 }
 
 export interface WorkspaceSessionSummary {
