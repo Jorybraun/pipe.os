@@ -205,6 +205,15 @@ interface CodeReviewAssignmentTrust {
   tone: CodeReviewNextStepTone;
 }
 
+interface CodeReviewMatchExplanation {
+  selectedChallenge: string;
+  whyThisChallenge: string;
+  proofSummary: string;
+  riskSummary: string;
+  remainingQuestion: string;
+  tone: CodeReviewNextStepTone;
+}
+
 interface EvidenceFollowUpPlan {
   originalInterviewId: string | null;
   matchStatus: string | null;
@@ -1427,6 +1436,95 @@ function codeReviewAssignmentTrustSummary(input: {
     value: 'Assignment unknown',
     detail: 'PIPE has not exposed enough assignment provenance to treat this as a trusted code-review signal.',
     tone: 'neutral',
+  };
+}
+
+function countMatchRefs(refs: CodeReviewMatchSourceRef[]): number {
+  return refs.filter((ref) => Boolean(ref.exactText || ref.sourceRefId || ref.sourceSpanId || ref.locator)).length;
+}
+
+function codeReviewSelectedChallengeLabel(input: {
+  repoUrl: string | null | undefined;
+  prNumber: number | null | undefined;
+  match: CodeReviewMatchDetail | null;
+}): string {
+  const repo = githubRepoLabel(input.repoUrl);
+  const pr = typeof input.prNumber === 'number'
+    ? ` PR #${input.prNumber}`
+    : '';
+  if (repo || pr) return `${repo ?? 'Selected repo'}${pr}`;
+  if (input.match?.status === 'MATCHED') return 'Matched PR challenge';
+  if (input.match) return titleCaseToken(input.match.status);
+  return 'No reviewable challenge yet';
+}
+
+function codeReviewMatchExplanation(input: {
+  repoUrl: string | null | undefined;
+  prNumber: number | null | undefined;
+  match: CodeReviewMatchDetail | null;
+  score: CodeReviewScoreSummary | null;
+  submission: CodeReviewSubmissionDetail | null;
+  assignmentTrust: CodeReviewAssignmentTrust;
+  validity: CodeReviewAssessmentValidity;
+  risk: CodeReviewDecisionRisk;
+  matchPathLabel: string;
+}): CodeReviewMatchExplanation {
+  const selectedChallenge = codeReviewSelectedChallengeLabel({
+    repoUrl: input.repoUrl,
+    prNumber: input.prNumber,
+    match: input.match,
+  });
+  const matchStatus = input.match?.status?.toUpperCase() ?? null;
+
+  if (!input.match || matchStatus !== 'MATCHED') {
+    return {
+      selectedChallenge,
+      whyThisChallenge: input.match?.summary
+        || 'PIPE has not selected a quality-gated, source-backed repo challenge for this interview.',
+      proofSummary: input.risk.missingContext[0]
+        ? `Missing: ${input.risk.missingContext[0]}`
+        : 'Missing source-backed candidate, role, or repo evidence.',
+      riskSummary: input.validity.detail,
+      remainingQuestion: input.risk.uncertainty.detail,
+      tone: 'blocked',
+    };
+  }
+
+  const primaryEvidence = input.match.evidence[0] ?? null;
+  const candidateRefCount = primaryEvidence ? countMatchRefs(primaryEvidence.candidateSourceRefs) : 0;
+  const roleRefCount = primaryEvidence ? countMatchRefs(primaryEvidence.roleSourceRefs) : 0;
+  const challengeRefCount = primaryEvidence ? countMatchRefs(primaryEvidence.challengeSourceRefs) : 0;
+  const bridge = input.match.validatorAgent?.sourceBridge ?? null;
+  const personSources = bridge?.candidateSourceCount ?? candidateRefCount;
+  const roleSources = bridge?.roleSourceCount ?? roleRefCount;
+  const repoSources = bridge?.repoSourceCount ?? challengeRefCount;
+  const hyperedgeCount = input.match.evidenceHyperedges.length;
+  const quality = input.match.assessmentQuality
+    ? `${input.match.assessmentQuality.score}/${input.match.assessmentQuality.maxScore} ${titleCaseToken(input.match.assessmentQuality.verdict.toLowerCase())}`
+    : formatMatchScore(input.match.score);
+  const scoreText = input.score?.status === 'scored'
+    ? (codeReviewScoreHeadline(input.score) ?? 'Score ready')
+    : input.submission
+      ? 'Candidate review submitted; scoring pending'
+      : 'Candidate review not submitted yet';
+  const proofParts = [
+    personSources > 0 ? countLabel(personSources, 'person source') : null,
+    roleSources > 0 ? countLabel(roleSources, 'role source') : null,
+    repoSources > 0 ? countLabel(repoSources, 'repo source') : null,
+    hyperedgeCount > 0 ? countLabel(hyperedgeCount, 'evidence bridge') : null,
+    quality ? `quality ${quality}` : null,
+  ].filter((part): part is string => Boolean(part));
+
+  return {
+    selectedChallenge,
+    whyThisChallenge: input.match.summary
+      || `PIPE aligned ${input.matchPathLabel} for this reviewable PR challenge.`,
+    proofSummary: proofParts.length > 0
+      ? proofParts.join(' · ')
+      : 'Source proof exists in the match packet; open source proof for exact spans.',
+    riskSummary: `${input.assignmentTrust.value}: ${input.assignmentTrust.detail}`,
+    remainingQuestion: `${input.validity.value}: ${input.validity.detail} ${scoreText}.`,
+    tone: input.validity.tone,
   };
 }
 
@@ -2763,6 +2861,17 @@ export default function InterviewDetailPage(): JSX.Element {
     setup: interview.assessmentSetup,
     match: codeReviewMatch,
   });
+  const codeReviewExplanation = codeReviewMatchExplanation({
+    repoUrl: interview.githubRepoUrl,
+    prNumber: interview.githubPrNumber,
+    match: codeReviewMatch,
+    score: codeReviewScore,
+    submission: codeReviewSubmission,
+    assignmentTrust: codeReviewAssignmentTrust,
+    validity: codeReviewAssessmentValidity,
+    risk: codeReviewDecisionRisk,
+    matchPathLabel,
+  });
   const codeReviewDecisionSignals = [
     {
       label: 'Assignment',
@@ -3564,6 +3673,34 @@ export default function InterviewDetailPage(): JSX.Element {
                       <div style={DECISION_COCKPIT_DETAIL}>{item.detail}</div>
                     </div>
                   ))}
+                </div>
+              </div>
+              <div
+                data-testid="interview-code-review-match-explanation"
+                style={{
+                  ...DECISION_MATCH_EXPLANATION,
+                  ...DECISION_NEXT_STEP_TONE[codeReviewExplanation.tone],
+                }}
+              >
+                <div style={FIELD_LABEL}>Why this challenge</div>
+                <div style={DECISION_NEXT_STEP_VALUE}>{codeReviewExplanation.selectedChallenge}</div>
+                <div style={DECISION_MATCH_EXPLANATION_GRID}>
+                  <div style={DECISION_MATCH_EXPLANATION_ITEM}>
+                    <div style={FIELD_LABEL}>Why selected</div>
+                    <div style={CONTEXT_RECORD_NARRATIVE}>{codeReviewExplanation.whyThisChallenge}</div>
+                  </div>
+                  <div style={DECISION_MATCH_EXPLANATION_ITEM}>
+                    <div style={FIELD_LABEL}>Valid because</div>
+                    <div style={CONTEXT_RECORD_NARRATIVE}>{codeReviewExplanation.proofSummary}</div>
+                  </div>
+                  <div style={DECISION_MATCH_EXPLANATION_ITEM}>
+                    <div style={FIELD_LABEL}>Do not over-trust because</div>
+                    <div style={CONTEXT_RECORD_NARRATIVE}>{codeReviewExplanation.riskSummary}</div>
+                  </div>
+                  <div style={DECISION_MATCH_EXPLANATION_ITEM}>
+                    <div style={FIELD_LABEL}>Remaining question</div>
+                    <div style={CONTEXT_RECORD_NARRATIVE}>{codeReviewExplanation.remainingQuestion}</div>
+                  </div>
                 </div>
               </div>
               <div
@@ -5275,6 +5412,32 @@ const DECISION_NEXT_STEP_VALUE: CSSProperties = {
   fontWeight: 800,
   lineHeight: 1.25,
   overflowWrap: 'anywhere',
+};
+
+const DECISION_MATCH_EXPLANATION: CSSProperties = {
+  display: 'grid',
+  gap: 10,
+  padding: 14,
+  border: '1px solid var(--pipe-border)',
+  borderRadius: 6,
+  background: 'var(--pipe-surface)',
+};
+
+const DECISION_MATCH_EXPLANATION_GRID: CSSProperties = {
+  display: 'grid',
+  gridTemplateColumns: 'repeat(auto-fit, minmax(210px, 1fr))',
+  gap: 8,
+  minWidth: 0,
+};
+
+const DECISION_MATCH_EXPLANATION_ITEM: CSSProperties = {
+  display: 'grid',
+  gap: 6,
+  minWidth: 0,
+  padding: 10,
+  border: '1px solid rgba(255,255,255,0.08)',
+  borderRadius: 6,
+  background: 'rgba(5,10,20,0.32)',
 };
 
 const DECISION_RISK_GRID: CSSProperties = {

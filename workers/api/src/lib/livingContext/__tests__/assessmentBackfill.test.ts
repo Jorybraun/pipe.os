@@ -185,11 +185,18 @@ describe('assessments_to_living_context backfill', () => {
     ).get() as { count: number };
     expect(reportEntitiesBefore.count).toBe(0);
 
-    await runScheduledBackfill({ DB: db } as unknown as Parameters<typeof runScheduledBackfill>[0]);
+    sqlite.exec(`
+      INSERT INTO backfill_checkpoints
+        (id, ingestion_key, task_key, cursor, status, processed, failed, metadata_json, started_at, completed_at, created_at, updated_at)
+      VALUES
+        ('checkpoint-candidates-completed', 'backfill:candidates_to_living_context', 'candidates_to_living_context', 'cand-assess-1', 'completed', 1, 0, '{}', datetime('now'), datetime('now'), datetime('now'), datetime('now')),
+        ('checkpoint-assessments-completed', 'backfill:assessments_to_living_context', 'assessments_to_living_context', 'sess-partial-1', 'completed', 1, 0, '{}', datetime('now'), datetime('now'), datetime('now'), datetime('now'));
+    `);
+
     const result = await runScheduledBackfill({ DB: db } as unknown as Parameters<typeof runScheduledBackfill>[0]);
 
     expect(result.gateEnabled).toBe(true);
-    expect(result.batchResults['assessments_to_living_context']).toMatchObject({
+    expect(result.batchResults['assessment_evaluations_to_living_context']).toMatchObject({
       processed: 1,
       failed: 0,
     });

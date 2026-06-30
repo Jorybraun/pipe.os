@@ -98,6 +98,11 @@ export const BACKFILL_TASKS: BackfillTaskDefinition[] = [
     dependsOn: ['candidates_to_living_context'],
   },
   {
+    taskKey: 'assessment_evaluations_to_living_context',
+    description: 'Catch up assessment evaluation report claims missing from partially ingested assessment person graphs',
+    dependsOn: ['candidates_to_living_context'],
+  },
+  {
     taskKey: 'session_events_to_living_context',
     description: 'Ingest session events (answer_submitted, scoring_complete, etc.) across all interview types into candidate person graphs',
     dependsOn: ['candidates_to_living_context'],
@@ -114,6 +119,7 @@ export const BACKFILL_TASKS: BackfillTaskDefinition[] = [
       'culture_sessions_to_living_context',
       'code_reviews_to_living_context',
       'assessments_to_living_context',
+      'assessment_evaluations_to_living_context',
       'session_events_to_living_context',
       'repo_assertions_to_living_context',
     ],
@@ -822,6 +828,71 @@ async function backfillAssessmentsBatch(
   return { processed, failed, cursor: lastId, done: sessions.length < BATCH_SIZE };
 }
 
+async function backfillAssessmentEvaluationsBatch(
+  db: D1Database,
+  cursor: string | null,
+): Promise<BackfillBatchResult> {
+  const hasTable = await db.prepare(
+    `SELECT name FROM sqlite_master WHERE type = 'table' AND name = 'assessment_sessions'`,
+  ).first<{ name: string }>();
+  if (!hasTable) return { processed: 0, failed: 0, cursor, done: true };
+
+  const rows = await db.prepare(
+    `SELECT ass.id, ass.interview_id, ass.mode, ass.state,
+            ass.candidate_id, ass.workspace_id, ass.workspace_person_id,
+            ass.application_id, ass.metadata_json,
+            ass.started_at, ass.submitted_at, ass.completed_at, ass.created_at
+       FROM assessment_sessions ass
+      WHERE ass.candidate_id IS NOT NULL
+        AND ass.state NOT IN ('INTAKE', 'CANCELLED')
+        AND EXISTS (
+          SELECT 1
+            FROM assessment_evaluation_reports aer
+           WHERE aer.session_id = ass.id
+             AND NOT EXISTS (
+               SELECT 1
+                 FROM context_record_entities cre
+                WHERE cre.entity_type = 'assessment_evaluation_report'
+                  AND cre.entity_id = aer.id
+             )
+        )
+        AND (?1 IS NULL OR ass.id > ?1)
+      ORDER BY ass.id
+      LIMIT ?2`,
+  ).bind(cursor, BATCH_SIZE).all<AssessmentSessionRow>();
+
+  const sessions = rows.results ?? [];
+  if (sessions.length === 0) return { processed: 0, failed: 0, cursor, done: true };
+
+  let processed = 0;
+  let failed = 0;
+  let lastId = cursor;
+
+  for (const session of sessions) {
+    try {
+      const data = await loadAssessmentSessionData(db, session.id);
+      if (data) {
+        await ingestAssessmentToLivingContext(
+          db,
+          data.session,
+          data.events,
+          data.eventSourceRefs,
+          data.reports,
+          data.claims,
+          data.claimSourceRefs,
+        );
+      }
+      processed++;
+    } catch (err) {
+      console.error('[backfill] assessment evaluation LC failed:', session.id, err);
+      failed++;
+    }
+    lastId = session.id;
+  }
+
+  return { processed, failed, cursor: lastId, done: sessions.length < BATCH_SIZE };
+}
+
 interface SessionEventCandidateRow {
   candidate_id: string;
   session_id: string;
@@ -943,6 +1014,9 @@ export async function runScheduledBackfill(env: Env): Promise<BackfillScheduledR
           break;
         case 'assessments_to_living_context':
           result = await backfillAssessmentsBatch(db, cursor);
+          break;
+        case 'assessment_evaluations_to_living_context':
+          result = await backfillAssessmentEvaluationsBatch(db, cursor);
           break;
         case 'session_events_to_living_context':
           result = await backfillSessionEventsBatch(db, cursor);

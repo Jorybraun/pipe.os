@@ -172,6 +172,13 @@ test.describe('Feature: assessment recruiter detail smoke', () => {
     }
 
     await expect(decision).toContainText('MATCHED');
+    const explanation = page.getByTestId('interview-code-review-match-explanation');
+    await expect(explanation).toBeVisible();
+    await expect(explanation).toContainText('Why this challenge');
+    await expect(explanation).toContainText('Why selected');
+    await expect(explanation).toContainText('Valid because');
+    await expect(explanation).toContainText('Do not over-trust because');
+    await expect(explanation).toContainText('Remaining question');
     await expect(page.getByTestId('interview-code-review-match')).toBeVisible();
     await expect(page.getByTestId('interview-code-review-match')).toContainText('MATCHED');
     if (EXPECT_SUBMISSION) {

@@ -1308,6 +1308,17 @@ describe('InterviewDetailPage', () => {
     expect(decision).toHaveTextContent('Score validity');
     expect(decision).toHaveTextContent('Do not rely on score yet');
     expect(decision).toHaveTextContent('Repo fit is not source-backed');
+    const explanation = screen.getByTestId('interview-code-review-match-explanation');
+    expect(explanation).toHaveTextContent('Why this challenge');
+    expect(explanation).toHaveTextContent('NEEDS MORE EVIDENCE');
+    expect(explanation).toHaveTextContent('Why selected');
+    expect(explanation).toHaveTextContent('No quality-gated source-backed PR challenge was selected.');
+    expect(explanation).toHaveTextContent('Valid because');
+    expect(explanation).toHaveTextContent('Missing: The deterministic repo matcher did not return a quality-gated PR.');
+    expect(explanation).toHaveTextContent('Do not over-trust because');
+    expect(explanation).toHaveTextContent('Repo fit is not source-backed');
+    expect(explanation).toHaveTextContent('Remaining question');
+    expect(explanation).toHaveTextContent('No quality-gated source-backed PR challenge was selected.');
     expect(decision).not.toHaveTextContent('Waiting for candidate review');
     const evidencePlan = screen.getByTestId('interview-code-review-evidence-plan');
     expect(evidencePlan).toHaveTextContent('Resolve missing evidence');
@@ -2539,6 +2550,19 @@ describe('InterviewDetailPage', () => {
     expect(reviewProfile).toHaveTextContent('75 min');
     expect(reviewProfile).toHaveTextContent('443');
     expect(reviewProfile).toHaveTextContent('28');
+
+    const explanation = screen.getByTestId('interview-code-review-match-explanation');
+    expect(explanation).toHaveTextContent('Why this challenge');
+    expect(explanation).toHaveTextContent('mui/base-ui PR #973');
+    expect(explanation).toHaveTextContent('Why selected');
+    expect(explanation).toHaveTextContent('Matched 2 source-backed demands.');
+    expect(explanation).toHaveTextContent('Valid because');
+    expect(explanation).toHaveTextContent('1 evidence bridge');
+    expect(explanation).toHaveTextContent('quality 0.82');
+    expect(explanation).toHaveTextContent('Do not over-trust because');
+    expect(explanation).toHaveTextContent('PIPE selected this challenge from source-backed candidate evidence');
+    expect(explanation).toHaveTextContent('Remaining question');
+    expect(explanation).toHaveTextContent('No score signal yet');
 
     const hyperedges = screen.getByTestId('interview-code-review-match-hyperedges');
     expect(screen.getByText('Source proof')).toBeTruthy();
