@@ -43,6 +43,7 @@ import type {
   StandaloneReviewStretchArea,
 } from '../../lib/api/types';
 import { useConceptGraph } from '../../hooks/useConceptGraph';
+import { useEvidenceConflicts } from '../../hooks/useEvidenceConflicts';
 import { useEvidenceReadiness } from '../../hooks/useEvidenceReadiness';
 import { useEvidenceFreshness } from '../../hooks/useEvidenceFreshness';
 import { useEvidenceGaps } from '../../hooks/useEvidenceGaps';
@@ -2297,6 +2298,115 @@ function EvidenceReadinessPanel({
   );
 }
 
+function EvidenceConflictsPanel({
+  candidateId,
+}: {
+  candidateId: string;
+}): JSX.Element | null {
+  const { report, isLoading, error, refetch } = useEvidenceConflicts(candidateId);
+
+  if (isLoading && !report) return null;
+  if (error || !report || report.totalConflicts === 0) return null;
+
+  const severityColor: Record<string, string> = {
+    high: 'var(--lc-gap-none, #ef4444)',
+    medium: 'var(--lc-gap-weak, #f59e0b)',
+    low: 'var(--lc-structural, rgba(255,255,255,0.4))',
+  };
+
+  return (
+    <section
+      className="living-context__panel"
+      data-testid="evidence-conflicts-panel"
+    >
+      <div className="living-context__section-head">
+        <div style={{ display: 'flex', gap: 6, alignItems: 'center' }}>
+          <AlertTriangle size={13} color={report.highSeverity > 0 ? severityColor.high : severityColor.medium} />
+          <div className="living-context__section-title">Evidence conflicts</div>
+          <div className="living-context__count">{report.totalConflicts}</div>
+        </div>
+        <button
+          type="button"
+          className="living-context__refresh"
+          onClick={() => void refetch()}
+          title="Refresh conflicts"
+          aria-label="Refresh conflicts"
+        >
+          <RefreshCw size={12} />
+        </button>
+      </div>
+
+      <div className="living-context__conflicts-summary" data-testid="conflicts-summary">
+        {report.highSeverity > 0 && (
+          <span className="living-context__conflict-badge" style={{ color: severityColor.high }}>
+            {report.highSeverity} high
+          </span>
+        )}
+        {report.mediumSeverity > 0 && (
+          <span className="living-context__conflict-badge" style={{ color: severityColor.medium }}>
+            {report.mediumSeverity} medium
+          </span>
+        )}
+        {report.lowSeverity > 0 && (
+          <span className="living-context__conflict-badge" style={{ color: severityColor.low }}>
+            {report.lowSeverity} low
+          </span>
+        )}
+      </div>
+
+      <div className="living-context__conflicts-list">
+        {report.conflicts.map((conflict) => (
+          <div
+            key={conflict.conflictId}
+            className={`living-context__conflict-card living-context__conflict-card--${conflict.severity}`}
+            data-testid={`conflict-${conflict.conflictId}`}
+          >
+            <div className="living-context__conflict-head">
+              <span className="living-context__concept">{conflict.conceptKey}</span>
+              <span
+                className="living-context__conflict-severity"
+                style={{ color: severityColor[conflict.severity] }}
+              >
+                {conflict.severity}
+              </span>
+            </div>
+            <div className="living-context__conflict-desc">{conflict.description}</div>
+            <div className="living-context__conflict-impact">{conflict.impactOnMatch}</div>
+            <div className="living-context__conflict-sides">
+              <div className="living-context__conflict-side living-context__conflict-side--positive">
+                <div className="living-context__eyebrow">
+                  {conflict.conflictType === 'strength_divergence' ? 'Stronger evidence' : 'Affirming'} ({conflict.positiveAssertions.length})
+                </div>
+                {conflict.positiveAssertions.slice(0, 3).map((a) => (
+                  <div key={a.assertionId} className="living-context__conflict-assertion">
+                    <div className="living-context__conflict-assertion-text">{a.narrative}</div>
+                    <div className="living-context__conflict-assertion-meta">
+                      {a.interactionType} · strength {(a.effectiveStrength * 100).toFixed(0)}%
+                    </div>
+                  </div>
+                ))}
+              </div>
+              <div className="living-context__conflict-side living-context__conflict-side--negative">
+                <div className="living-context__eyebrow">
+                  {conflict.conflictType === 'strength_divergence' ? 'Weaker evidence' : 'Contradicting'} ({conflict.negativeAssertions.length})
+                </div>
+                {conflict.negativeAssertions.slice(0, 3).map((a) => (
+                  <div key={a.assertionId} className="living-context__conflict-assertion">
+                    <div className="living-context__conflict-assertion-text">{a.narrative}</div>
+                    <div className="living-context__conflict-assertion-meta">
+                      {a.interactionType} · strength {(a.effectiveStrength * 100).toFixed(0)}%
+                    </div>
+                  </div>
+                ))}
+              </div>
+            </div>
+          </div>
+        ))}
+      </div>
+    </section>
+  );
+}
+
 function RematchButton({
   candidateId,
   onRematchComplete,
@@ -2612,6 +2722,7 @@ export function LivingContextGraph({
       )}
 
       <EvidenceReadinessPanel candidateId={candidateId} />
+      <EvidenceConflictsPanel candidateId={candidateId} />
       <EvidenceDepthPanel livingContext={livingContext} />
       <EvidenceFreshnessPanel freshness={freshness} />
       <EvidenceLineagePanel lineage={lineage} />

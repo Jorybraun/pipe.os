@@ -1,7 +1,8 @@
-import { describe, expect, it, vi } from 'vitest';
+import { beforeEach, describe, expect, it, vi } from 'vitest';
 import { fireEvent, render, screen, within } from '@testing-library/react';
 import { LivingContextGraph } from '../LivingContextGraph';
 import type {
+  EvidenceConflictReport,
   LivingContextReadModel,
   LivingContextSourceRef,
   StandaloneReviewMatchRecord,
@@ -9,6 +10,7 @@ import type {
 
 const mocks = vi.hoisted(() => ({
   livingContext: null as LivingContextReadModel | null,
+  evidenceConflictsReport: null as EvidenceConflictReport | null,
   refetch: vi.fn(),
 }));
 
@@ -93,14 +95,20 @@ vi.mock('../../../hooks/useMatchHistory', () => ({
   }),
 }));
 
-vi.mock('../../../hooks/useEvidenceReadiness', () => ({
-  useEvidenceReadiness: () => ({
-    report: null,
+vi.mock('../../../hooks/useEvidenceConflicts', () => ({
+  useEvidenceConflicts: () => ({
+    report: mocks.evidenceConflictsReport,
     isLoading: false,
     error: null,
     refetch: vi.fn(),
   }),
 }));
+
+beforeEach(() => {
+  mocks.livingContext = null;
+  mocks.evidenceConflictsReport = null;
+  mocks.refetch.mockReset();
+});
 
 function makeLivingContext(): LivingContextReadModel {
   return {
@@ -138,6 +146,53 @@ function makeLivingContext(): LivingContextReadModel {
     assertions: [],
     signals: [],
     relationships: [],
+  };
+}
+
+function makeEvidenceConflictReport(): EvidenceConflictReport {
+  return {
+    candidateId: 'candidate-1',
+    workspacePersonId: 'workspace-person-1',
+    totalConflicts: 1,
+    highSeverity: 1,
+    mediumSeverity: 0,
+    lowSeverity: 0,
+    analyzedAt: '2026-06-30T13:45:00.000Z',
+    conflicts: [{
+      conflictId: 'conflict-high-react',
+      conceptKey: 'react',
+      conflictType: 'polarity',
+      severity: 'high',
+      description: '2 source(s) affirm "react" while 1 source(s) contradict it.',
+      impactOnMatch: 'Match score for "react" is unreliable — recruiter review recommended before trusting this signal.',
+      strengthDivergence: 0.42,
+      positiveAssertions: [{
+        assertionId: 'assertion-resume-react',
+        narrative: 'Resume claims production React ownership.',
+        conceptKey: 'react',
+        strength: 0.9,
+        confidence: 0.88,
+        polarity: 1,
+        effectiveStrength: 0.86,
+        observedAt: '2026-06-29T12:00:00.000Z',
+        interactionType: 'resume_review',
+        exactText: 'Owned React checkout flows.',
+        sourceSpanId: 'resume-span-react',
+      }],
+      negativeAssertions: [{
+        assertionId: 'assertion-interview-react',
+        narrative: 'Interview answer struggled with React state ownership.',
+        conceptKey: 'react',
+        strength: 0.72,
+        confidence: 0.81,
+        polarity: -1,
+        effectiveStrength: 0.68,
+        observedAt: '2026-06-30T12:00:00.000Z',
+        interactionType: 'technical_interview',
+        exactText: 'I usually let AI handle React state.',
+        sourceSpanId: 'transcript-span-react',
+      }],
+    }],
   };
 }
 
@@ -858,6 +913,26 @@ describe('LivingContextGraph standalone review explanation', () => {
     expect(screen.getByText(
       'Roleless follow-up: the same person can discuss temporal shard knitting and join the talent pool.',
     )).toBeInTheDocument();
+  });
+
+  it('surfaces evidence conflicts with source-backed opposing claims', () => {
+    mocks.livingContext = makeMeetingLivingContext({ includeRolelessMessage: true });
+    mocks.evidenceConflictsReport = makeEvidenceConflictReport();
+
+    render(<LivingContextGraph candidateId="candidate-1" />);
+
+    const panel = screen.getByTestId('evidence-conflicts-panel');
+    expect(within(panel).getByText('Evidence conflicts')).toBeInTheDocument();
+    expect(within(panel).getByText('1 high')).toBeInTheDocument();
+
+    const conflict = within(panel).getByTestId('conflict-conflict-high-react');
+    expect(within(conflict).getByText('react')).toBeInTheDocument();
+    expect(within(conflict).getByText('2 source(s) affirm "react" while 1 source(s) contradict it.')).toBeInTheDocument();
+    expect(within(conflict).getByText(/recruiter review recommended/i)).toBeInTheDocument();
+    expect(within(conflict).getByText('Affirming (1)')).toBeInTheDocument();
+    expect(within(conflict).getByText('Contradicting (1)')).toBeInTheDocument();
+    expect(within(conflict).getByText('Resume claims production React ownership.')).toBeInTheDocument();
+    expect(within(conflict).getByText('Interview answer struggled with React state ownership.')).toBeInTheDocument();
   });
 
   it('renders the repo packet view with files, spans, symbols, structural facts, episodes, assertions, and concepts', () => {

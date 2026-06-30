@@ -94,8 +94,8 @@ vi.mock('../../../hooks/useMatchHistory', () => ({
   }),
 }));
 
-vi.mock('../../../hooks/useEvidenceReadiness', () => ({
-  useEvidenceReadiness: () => ({
+vi.mock('../../../hooks/useEvidenceConflicts', () => ({
+  useEvidenceConflicts: () => ({
     report: null,
     isLoading: false,
     error: null,

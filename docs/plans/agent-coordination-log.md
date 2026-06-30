@@ -1170,6 +1170,20 @@ cd workers/api && npx wrangler d1 migrations apply pipe-db --env production
 cd workers/api && npx wrangler deploy --env production
 ```
 
+### 2026-06-30 — Codex consolidation pass
+
+**Action:** Consolidated active worktree state into `codex/consolidate-open-source-assessment-living-context`.
+
+**Findings:**
+- `git worktree list` shows one registered PIPE-OS worktree: `/Users/hans/Code/PIPE/PIPE-OS`.
+- Current branch contains `origin/main` and the prior Devin living-context consolidated branch.
+- Latest remote `origin/devin/1782824720-living-context-final` had only 3 unique commits but was stale relative to this branch by hundreds of commits, so a wholesale merge would have removed current assessment/runtime work.
+
+**Consolidation decision:**
+- Integrated the safe product-relevant slice from the latest Devin branch: evidence conflict detection, recruiter/internal endpoints, frontend hook/types, and living-context graph panel.
+- Kept existing evidence-readiness test mocks while adding evidence-conflict mocks.
+- Skipped copying the stale branch coordination note verbatim because it described this branch as destructive cleanup rather than the current canonical consolidation branch.
+
 ### 2026-06-29 — Session dafdee33 (Devin)
 
 **Action:** Consolidate all 28 open draft PRs (#105–#132), close superseded PRs, wire rollout gate enforcement on living context API routes.

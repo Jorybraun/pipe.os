@@ -134,3 +134,12 @@ export type {
   MatchProvenanceChain,
   ProvenanceChainOptions,
 } from './matchProvenanceChain';
+export { detectEvidenceConflicts } from './evidenceConflicts';
+export type {
+  ConflictType,
+  ConflictSeverity,
+  ConflictAssertion,
+  EvidenceConflict,
+  EvidenceConflictReport,
+  EvidenceConflictOptions,
+} from './evidenceConflicts';

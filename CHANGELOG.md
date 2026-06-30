@@ -7,6 +7,16 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Added — Evidence conflict detection (criteria #2, #6, #8)
+
+- `GET /api/v1/candidates/:id/living-context/evidence-conflicts` — detects contradictory evidence across sources for a candidate. Identifies polarity conflicts (one source affirms, another contradicts) and strength divergence (same polarity but wide strength range). Returns severity classification (high/medium/low), deterministic conflict IDs, per-side assertion lists with effective strengths, and match impact descriptions. Gated by `living_context_read`.
+- `GET /api/v1/internal/evidence-conflicts?candidateId=xxx` — internal version for backfill/evaluation use.
+- `evidenceConflicts.ts` — core module: `detectEvidenceConflicts()` queries assertions via signal evidence, joins concept registry for canonical keys, groups by concept, detects polarity and strength-divergence conflicts, applies temporal decay, classifies severity, and produces deterministic conflict IDs.
+- `evidenceConflicts.test.ts` — 6 Vitest tests: no workspace identity, no conflicts, polarity detection, high-severity classification, deterministic IDs, severity sorting.
+- `EvidenceConflictsPanel` component in `LivingContextGraph.tsx` — renders conflict cards with severity badges, affirming/contradicting side-by-side views, and match impact descriptions.
+- `useEvidenceConflicts` hook (`src/hooks/useEvidenceConflicts.ts`) — fetches conflict report for a candidate.
+- Frontend types: `ConflictType`, `ConflictSeverity`, `ConflictAssertion`, `EvidenceConflict`, `EvidenceConflictReport`.
+
 ### Added — Evidence readiness and candidate comparison
 
 - Living-context candidate profiles now expose evidence-readiness scoring across resume, interview, assessment, code-review, meeting, phone-call, culture, and learned-concept dimensions, with temporal decay, strongest/weakest dimensions, and recruiter-facing recommendations.

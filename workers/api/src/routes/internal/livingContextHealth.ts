@@ -1302,4 +1302,20 @@ app.get('/evidence-readiness', async (c) => {
   return c.json(report);
 });
 
+/**
+ * GET /api/v1/internal/evidence-conflicts?candidateId=xxx
+ *
+ * Internal endpoint for evidence conflict detection.
+ */
+app.get('/evidence-conflicts', async (c) => {
+  const candidateId = c.req.query('candidateId');
+  if (!candidateId) {
+    return c.json({ error: 'candidateId query param required' }, 400);
+  }
+
+  const { detectEvidenceConflicts } = await import('../../lib/livingContext/evidenceConflicts');
+  const report = await detectEvidenceConflicts(c.env.DB, candidateId);
+  return c.json(report);
+});
+
 export default app;
