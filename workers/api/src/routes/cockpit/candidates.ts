@@ -2081,6 +2081,34 @@ candidateOps.post('/compare', requireGate('living_context_read'), async (c) => {
   return c.json(report);
 });
 
+// GET /:candidateId/pipeline-siblings — other candidates in the same pipeline
+candidateOps.get('/:candidateId/pipeline-siblings', async (c) => {
+  const userId = c.var.userId;
+  const { candidateId } = c.req.param();
+  const db = c.env.DB;
+
+  const candidate = await db.prepare(
+    `SELECT c.id, c.pipeline_id
+       FROM candidates c
+       LEFT JOIN pipelines p ON p.id = c.pipeline_id
+      WHERE c.id = ?1 AND (c.owner_id = ?2 OR p.owner_id = ?2)`,
+  ).bind(candidateId, userId).first<{ id: string; pipeline_id: string | null }>();
+  if (!candidate) return apiError(c, 'NOT_FOUND', 'Candidate not found.');
+  if (!candidate.pipeline_id) return c.json({ pipelineId: null, siblingIds: [] });
+
+  const siblings = await db.prepare(
+    `SELECT id FROM candidates
+      WHERE pipeline_id = ?1 AND id != ?2 AND status != 'ARCHIVED'
+      ORDER BY created_at DESC
+      LIMIT 20`,
+  ).bind(candidate.pipeline_id, candidateId).all<{ id: string }>();
+
+  return c.json({
+    pipelineId: candidate.pipeline_id,
+    siblingIds: (siblings.results ?? []).map((r) => r.id),
+  });
+});
+
 // GET /:candidateId — full profile with stages + challenge submissions
 candidateOps.get('/:candidateId', async (c) => {
   const userId = c.var.userId;
