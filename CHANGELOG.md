@@ -7,6 +7,10 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Added — BDD Playwright tests for living context graph endpoints
+
+- `e2e/living-context-graph.spec.ts` — 16 BDD scenarios covering all living context API endpoints: person graph read model, source search, timeline, evidence depth, match narrative, evidence gap analysis, match provenance chain, evidence lineage, freshness, aggregation, concept graph, health, integrity, stats, and backfill. Tests seed realistic candidate evidence via the e2e fixture endpoint and verify round-trip source fidelity.
+
 ### Added — Vitest component tests for EvidenceGapPanel and MatchProvenancePanel
 
 - `EvidenceGapPanel.test.tsx` — 3 tests covering null report, empty demands, full gap analysis rendering (coverage bar segments, demand cards with badges, matched/missing concepts, supporting assertion quotes, recommendations).
