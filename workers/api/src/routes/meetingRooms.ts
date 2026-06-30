@@ -1760,20 +1760,20 @@ function buildRoomWorkspaceChallenge(
       packet: null,
     };
   }
-  if (Number.isInteger(interview?.github_pr_number) && (interview?.github_pr_number ?? 0) > 0) {
-    return {
-      status: 'github_pr_assigned',
-      kind: 'github_pr',
-      source: 'scheduled_interview.github_pr_number',
-      message: null,
-      packet,
-    };
-  }
   if (packet && interview?.github_repo_url) {
     return {
       status: 'repo_task_assigned',
       kind: 'repo_only',
       source: 'scheduled_interview.challenge_packet',
+      message: null,
+      packet,
+    };
+  }
+  if (Number.isInteger(interview?.github_pr_number) && (interview?.github_pr_number ?? 0) > 0) {
+    return {
+      status: 'github_pr_assigned',
+      kind: 'github_pr',
+      source: 'scheduled_interview.github_pr_number',
       message: null,
       packet,
     };

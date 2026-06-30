@@ -5377,6 +5377,210 @@ describe('meeting room recording living-context route', () => {
     expect(serialized).not.toContain(sourceRefId);
   });
 
+  it('treats matched open-source PR packets as repo-task assignments and launches from the packet base commit', async () => {
+    const app = mountApp();
+    const { ctx, waitUntilAll } = buildCtx();
+    sqlite.exec(assessmentLayerMigration);
+    const initBodies: unknown[] = [];
+    const doFetch = vi.fn(async (_url: string, init?: RequestInit) => {
+      initBodies.push(JSON.parse(String(init?.body ?? '{}')));
+      return new Response(null, { status: 204 });
+    });
+    env.DEV_CONTAINER = {
+      idFromName: vi.fn(() => ({}) as DurableObjectId),
+      get: vi.fn(() => ({ fetch: doFetch }) as unknown as DurableObjectStub),
+    } as unknown as DurableObjectNamespace;
+
+    const now = new Date().toISOString();
+    const scheduledInterviewId = 'scheduled-interview-matched-packet-pr';
+    const assessmentSessionId = 'assessment-session-matched-packet-pr';
+    const eventId = 'assessment-event-matched-packet-pr';
+    const baseCommitSha = 'f'.repeat(40);
+    const headCommitSha = '1'.repeat(40);
+    const packetText = [
+      'Repo: https://github.com/pipe/source-backed-worker',
+      `Base commit: ${baseCommitSha}`,
+      'Pull request: #5110',
+      'Task: Fix the matched retry scheduler packet.',
+      'Success criteria:',
+      '- Launch uses the immutable base commit',
+      'Expected evidence:',
+      '- Commit SHA on assessment branch',
+    ].join('\n');
+
+    sqlite.prepare(
+      `INSERT INTO scheduled_interviews (
+         id, owner_id, recipient_name, recipient_email, interview_type,
+         matched_repo_id, github_repo_url, github_pr_number, status, updated_at
+       ) VALUES (?, ?, ?, ?, 'OPEN_SOURCE_BUG_FIX', ?, ?, ?, 'INVITED', ?)`,
+    ).run(
+      scheduledInterviewId,
+      'owner-1',
+      'Matched Packet Candidate',
+      'matched-packet-candidate@example.com',
+      973,
+      'https://github.com/pipe/source-backed-worker',
+      5110,
+      now,
+    );
+
+    const createMeetingRes = await app.request('/meetings', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({
+        recipientName: 'Matched Packet Candidate',
+        recipientEmail: 'matched-packet-candidate@example.com',
+        title: 'Matched open-source packet room',
+        meetingType: 'INTERVIEW',
+        scheduledInterviewId,
+      }),
+    }, env, ctx);
+    expect(createMeetingRes.status).toBe(201);
+    const created = await createMeetingRes.json() as {
+      hostToken: string;
+    };
+
+    sqlite.prepare(
+      `INSERT INTO assessment_sessions (
+         id, ingestion_key, interview_id, mode, state, candidate_id, workspace_id,
+         created_by, metadata_json, created_at, updated_at
+       ) VALUES (?, ?, ?, 'OPEN_SOURCE_BUG_FIX', 'INTAKE', NULL, ?, ?, ?, ?, ?)`,
+    ).run(
+      assessmentSessionId,
+      `assessment-session:${scheduledInterviewId}:matched-open-source-challenge:challenge-packet-5110`,
+      scheduledInterviewId,
+      'owner-1',
+      'owner-1',
+      JSON.stringify({
+        challengePacketSource: 'matched_review_challenge_packet',
+        matchedRepoId: 973,
+        githubPrNumber: 5110,
+        baseCommitSha,
+      }),
+      now,
+      now,
+    );
+    sqlite.prepare(
+      `INSERT INTO assessment_evidence_events (
+         id, ingestion_key, session_id, sequence, kind, actor_type, actor_id,
+         narrative, payload_json, occurred_at, created_at
+       ) VALUES (?, ?, ?, 1, 'match_decision', 'system', 'pipe-matcher', ?, ?, ?, ?)`,
+    ).run(
+      eventId,
+      `assessment-event:${assessmentSessionId}:matched-open-source-challenge:challenge-packet-5110`,
+      assessmentSessionId,
+      'PIPE assigned a source-backed open-source implementation challenge packet from the matched repository.',
+      JSON.stringify({
+        repositoryUrl: 'https://github.com/pipe/source-backed-worker',
+        githubPrNumber: 5110,
+        baseCommitSha,
+      }),
+      now,
+      now,
+    );
+    sqlite.prepare(
+      `INSERT INTO assessment_event_source_refs (
+         id, event_id, source_ref_type, source_ref_id, evidence_role,
+         locator_json, exact_text, content_hash, metadata_json, created_at
+       ) VALUES (?, ?, 'review_challenge_packet', 'challenge-packet-5110', 'assigned_challenge', ?, ?, ?, '{}', ?)`,
+    ).run(
+      'assessment-source-matched-packet-pr',
+      eventId,
+      JSON.stringify({
+        scheduledInterviewId,
+        matchedRepoId: 973,
+        repositoryUrl: 'https://github.com/pipe/source-backed-worker',
+        githubPrNumber: 5110,
+        pullRequestUrl: 'https://github.com/pipe/source-backed-worker/pull/5110',
+        baseCommitSha,
+        headCommitSha,
+        repoSnapshotId: 'snapshot-matched-packet-pr',
+      }),
+      packetText,
+      'sha256:matched-packet-pr-content-hash',
+      now,
+    );
+
+    const workspaceRes = await app.request(`/meeting/${created.hostToken}/workspace`, {
+      method: 'GET',
+    }, env, ctx);
+    expect(workspaceRes.status).toBe(200);
+    const workspaceBody = await workspaceRes.json() as {
+      workspace: {
+        repoUrl: string;
+        githubPrNumber: number | null;
+        matchedRepoId: number | null;
+        challenge: {
+          status: string;
+          kind: string | null;
+          source: string;
+          packet: {
+            sourceRefType: string;
+            locator: Record<string, unknown>;
+            contentHash: string;
+          } | null;
+        };
+      };
+    };
+    expect(workspaceBody.workspace.repoUrl).toBe('https://github.com/pipe/source-backed-worker');
+    expect(workspaceBody.workspace.githubPrNumber).toBe(5110);
+    expect(workspaceBody.workspace.matchedRepoId).toBe(973);
+    expect(workspaceBody.workspace.challenge).toMatchObject({
+      status: 'repo_task_assigned',
+      kind: 'repo_only',
+      source: 'scheduled_interview.challenge_packet',
+      packet: {
+        sourceRefType: 'review_challenge_packet',
+        locator: {
+          matchedRepoId: 973,
+          githubPrNumber: 5110,
+          baseCommitSha,
+          headCommitSha,
+        },
+        contentHash: 'sha256:matched-packet-pr-content-hash',
+      },
+    });
+
+    const launchRes = await app.request(`/meeting/${created.hostToken}/workspace/launch`, {
+      method: 'POST',
+    }, env, ctx);
+    expect(launchRes.status).toBe(201);
+    const launchBody = await launchRes.json() as {
+      workspace: {
+        challenge: {
+          status: string;
+          source: string;
+        };
+        session: { sessionId: string };
+      };
+    };
+    expect(launchBody.workspace.challenge).toMatchObject({
+      status: 'repo_task_assigned',
+      source: 'scheduled_interview.challenge_packet',
+    });
+    await waitUntilAll();
+
+    expect(sqlite.prepare(
+      `SELECT repo_git_url, challenge_branch, base_commit_sha
+         FROM dev_container_sessions
+        WHERE session_id = ?`,
+    ).get(launchBody.workspace.session.sessionId)).toEqual({
+      repo_git_url: 'https://github.com/pipe/source-backed-worker',
+      challenge_branch: null,
+      base_commit_sha: baseCommitSha,
+    });
+    expect(initBodies).toContainEqual(expect.objectContaining({
+      repoGitUrl: 'https://github.com/pipe/source-backed-worker',
+      challengeBranch: null,
+      baseCommitSha,
+      challengePacketContentHash: 'sha256:matched-packet-pr-content-hash',
+      matchedRepoId: 973,
+      githubPrNumber: 5110,
+      challengeStatus: 'repo_task_assigned',
+      challengeSource: 'scheduled_interview.challenge_packet',
+    }));
+  });
+
   it('returns refreshed assessment progress after source-backed room events', async () => {
     const app = mountApp();
     const { ctx } = buildCtx();

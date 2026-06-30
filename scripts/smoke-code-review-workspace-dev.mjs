@@ -31,21 +31,29 @@ const REPO_URL = process.env.WORKSPACE_SMOKE_REPO_URL || 'https://github.com/oct
 const INTERVIEW_TYPE = process.env.WORKSPACE_SMOKE_INTERVIEW_TYPE || 'DEV_CONTAINER_CHALLENGE';
 const RAW_PR_NUMBER = process.env.WORKSPACE_SMOKE_PR_NUMBER || (INTERVIEW_TYPE === 'OPEN_SOURCE_BUG_FIX' ? '' : '1');
 const PR_NUMBER = RAW_PR_NUMBER ? Number(RAW_PR_NUMBER) : null;
+const RAW_MATCHED_REPO_ID = process.env.WORKSPACE_SMOKE_MATCHED_REPO_ID || '';
+const MATCHED_REPO_ID = RAW_MATCHED_REPO_ID ? Number(RAW_MATCHED_REPO_ID) : null;
 const BASE_COMMIT_SHA = process.env.WORKSPACE_SMOKE_BASE_COMMIT_SHA || '';
 const EXPECTED_BRIDGE_REVISION = process.env.WORKSPACE_SMOKE_EXPECTED_BRIDGE_REVISION
   || '2026-06-30-terminal-crlf-v3';
 const REMOTE = !APP_BASE.includes('localhost') && !APP_BASE.includes('127.0.0.1');
 
 function assertEnv() {
+  if (MATCHED_REPO_ID !== null && (!Number.isInteger(MATCHED_REPO_ID) || MATCHED_REPO_ID <= 0)) {
+    throw new Error('WORKSPACE_SMOKE_MATCHED_REPO_ID must be a positive integer when provided.');
+  }
+  if (MATCHED_REPO_ID !== null && INTERVIEW_TYPE !== 'OPEN_SOURCE_BUG_FIX') {
+    throw new Error('WORKSPACE_SMOKE_MATCHED_REPO_ID is only supported for OPEN_SOURCE_BUG_FIX smoke runs.');
+  }
   if (!REMOTE) return;
   if (!APP_BASIC_USER || !APP_BASIC_PASSWORD) {
     throw new Error(
       'Set PIPE_APP_DEV_BASIC_AUTH_USER/PASSWORD or PIPE_DEV_BASIC_AUTH_USER/PASSWORD to smoke deployed app-dev.',
     );
   }
-  if (INTERVIEW_TYPE === 'OPEN_SOURCE_BUG_FIX' && !/^[a-f0-9]{40}$/i.test(BASE_COMMIT_SHA)) {
+  if (INTERVIEW_TYPE === 'OPEN_SOURCE_BUG_FIX' && MATCHED_REPO_ID === null && !/^[a-f0-9]{40}$/i.test(BASE_COMMIT_SHA)) {
     throw new Error(
-      'Set WORKSPACE_SMOKE_BASE_COMMIT_SHA to the real 40-character base commit SHA for OPEN_SOURCE_BUG_FIX smoke runs.',
+      'Set WORKSPACE_SMOKE_BASE_COMMIT_SHA to the real 40-character base commit SHA, or set WORKSPACE_SMOKE_MATCHED_REPO_ID for matched OPEN_SOURCE_BUG_FIX smoke runs.',
     );
   }
 }
@@ -58,18 +66,21 @@ async function git(args, cwd) {
   });
 }
 
-async function assertReachableBaseCommit() {
+async function assertReachableBaseCommit(repoUrl, baseCommitSha) {
   if (INTERVIEW_TYPE !== 'OPEN_SOURCE_BUG_FIX') return;
+  if (!/^[a-f0-9]{40}$/i.test(baseCommitSha)) {
+    throw new Error(`Open-source workspace smoke requires a real 40-character base commit SHA; got ${baseCommitSha || 'empty'}.`);
+  }
   const dir = await mkdtemp(join(tmpdir(), 'pipe-workspace-smoke-'));
   try {
     await git(['init', '--quiet'], dir);
-    await git(['remote', 'add', 'origin', REPO_URL], dir);
-    await git(['fetch', '--quiet', '--depth=1', 'origin', BASE_COMMIT_SHA], dir);
-    await git(['cat-file', '-e', `${BASE_COMMIT_SHA}^{commit}`], dir);
+    await git(['remote', 'add', 'origin', repoUrl], dir);
+    await git(['fetch', '--quiet', '--depth=1', 'origin', baseCommitSha], dir);
+    await git(['cat-file', '-e', `${baseCommitSha}^{commit}`], dir);
   } catch (error) {
     const message = error instanceof Error ? error.message : String(error);
     throw new Error(
-      `Base commit ${BASE_COMMIT_SHA} is not reachable from ${REPO_URL}; use a real source-backed commit before launching deployed workspace smoke. ${message}`,
+      `Base commit ${baseCommitSha} is not reachable from ${repoUrl}; use a real source-backed commit before launching deployed workspace smoke. ${message}`,
     );
   } finally {
     await rm(dir, { recursive: true, force: true });
@@ -242,11 +253,11 @@ async function pollWorkspaceReady(token, headers = {}) {
 
 async function main() {
   assertEnv();
-  await assertReachableBaseCommit();
 
   const unique = Date.now();
   const recipientEmail = `workspace-smoke-${unique}@pipe-test.dev`;
-  const openSourceTaskFields = INTERVIEW_TYPE === 'OPEN_SOURCE_BUG_FIX'
+  const useMatchedRepo = MATCHED_REPO_ID !== null;
+  const openSourceTaskFields = INTERVIEW_TYPE === 'OPEN_SOURCE_BUG_FIX' && !useMatchedRepo
     ? {
         challengeBaseCommitSha: BASE_COMMIT_SHA,
         challengeTitle: 'Fix deterministic smoke ordering',
@@ -263,6 +274,12 @@ async function main() {
         ],
       }
     : {};
+  const challengeAssignmentFields = useMatchedRepo
+    ? { matchedRepoId: MATCHED_REPO_ID }
+    : {
+        githubRepoUrl: REPO_URL,
+        ...(PR_NUMBER ? { githubPrNumber: PR_NUMBER } : {}),
+      };
   const created = await requestJson(APP_BASE, '/api/v1/scheduling/interviews', {
     method: 'POST',
     body: JSON.stringify({
@@ -270,18 +287,34 @@ async function main() {
       recipientEmail,
       meetingType: 'DIRECT_VIDEO_CALL',
       interviewType: INTERVIEW_TYPE,
-      githubRepoUrl: REPO_URL,
-      ...(PR_NUMBER ? { githubPrNumber: PR_NUMBER } : {}),
+      ...challengeAssignmentFields,
       ...openSourceTaskFields,
     }),
   });
   const interviewId = created?.interview?.id;
   if (!interviewId) throw new Error(`Create response missing interview id: ${JSON.stringify(created)}`);
+  const expectedRepoUrl = useMatchedRepo
+    ? created?.interview?.githubRepoUrl
+    : REPO_URL;
+  const expectedGithubPrNumber = useMatchedRepo
+    ? created?.interview?.githubPrNumber ?? null
+    : PR_NUMBER;
+  const expectedBaseCommitSha = useMatchedRepo
+    ? created?.interview?.assessmentProgress?.challenge?.locator?.baseCommitSha ?? ''
+    : BASE_COMMIT_SHA;
   if (INTERVIEW_TYPE === 'OPEN_SOURCE_BUG_FIX') {
     const setup = created?.interview?.assessmentSetup;
-    if (setup?.kind !== 'manual_open_source_task' || setup?.status !== 'reviewable_task_assigned') {
+    const expectedSetupKind = useMatchedRepo ? 'auto_match' : 'manual_open_source_task';
+    if (setup?.kind !== expectedSetupKind || setup?.status !== 'reviewable_task_assigned') {
       throw new Error(`Open-source task setup was not ready: ${JSON.stringify(setup)}`);
     }
+    if (!expectedRepoUrl) {
+      throw new Error(`Open-source task did not expose a repository URL: ${JSON.stringify(created?.interview)}`);
+    }
+    if (created?.interview?.assessmentProgress?.challenge?.sourceRefType !== (useMatchedRepo ? 'review_challenge_packet' : 'open_source_challenge_packet')) {
+      throw new Error(`Open-source task did not expose the expected challenge source ref: ${JSON.stringify(created?.interview?.assessmentProgress)}`);
+    }
+    await assertReachableBaseCommit(expectedRepoUrl, expectedBaseCommitSha);
   }
 
   const invited = await requestJson(APP_BASE, `/api/v1/scheduling/interviews/${interviewId}/invite`, {
@@ -298,7 +331,7 @@ async function main() {
   });
   const workspace = room?.room?.workspace;
   if (!workspace?.enabled) throw new Error(`Workspace was not enabled: ${JSON.stringify(workspace)}`);
-  if (workspace.repoUrl !== REPO_URL) {
+  if (workspace.repoUrl !== expectedRepoUrl) {
     throw new Error(`Workspace repo mismatch: ${JSON.stringify(workspace)}`);
   }
   if (INTERVIEW_TYPE === 'OPEN_SOURCE_BUG_FIX') {
@@ -306,7 +339,7 @@ async function main() {
     if (challenge?.status !== 'repo_task_assigned' || challenge?.source !== 'scheduled_interview.challenge_packet') {
       throw new Error(`Workspace challenge did not expose the repo task packet: ${JSON.stringify(challenge)}`);
     }
-    if (challenge?.packet?.locator?.baseCommitSha !== BASE_COMMIT_SHA) {
+    if (challenge?.packet?.locator?.baseCommitSha !== expectedBaseCommitSha) {
       throw new Error(`Workspace packet base commit mismatch: ${JSON.stringify(challenge?.packet)}`);
     }
   }
@@ -415,7 +448,8 @@ async function main() {
     hostUrl: cleanRoomUrl(invited.room.hostUrl),
     guestUrl: cleanRoomUrl(invited.room.guestUrl),
     repoUrl: workspace.repoUrl,
-    githubPrNumber: PR_NUMBER,
+    githubPrNumber: expectedGithubPrNumber,
+    matchedRepoId: MATCHED_REPO_ID,
     interviewType: INTERVIEW_TYPE,
     challengeStatus: workspace.challenge?.status ?? null,
     challengeSource: workspace.challenge?.source ?? null,

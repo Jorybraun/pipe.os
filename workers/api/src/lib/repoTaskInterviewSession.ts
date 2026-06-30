@@ -42,6 +42,7 @@ export type AssessmentEvidenceEventKind =
   | 'transcript_span'
   | 'commit_submission'
   | 'final_submission'
+  | 'match_decision'
   | 'recruiter_note'
   | 'dev_container_event'
   | 'system_diagnostic';

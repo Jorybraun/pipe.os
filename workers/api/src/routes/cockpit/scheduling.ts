@@ -5236,7 +5236,7 @@ schedulingAuth.post('/interviews', async (c) => {
       expectedEvidence: challengeExpectedEvidence!,
       createdAt: now,
     });
-  } else if (matchedOpenSourceChallengePacket) {
+  } else if (matchedOpenSourceChallengePacket && typeof matchedRepoId === 'number') {
     assessmentProgress = await createMatchedOpenSourceChallengeAssessmentSession(db, {
       interviewId: id,
       userId,

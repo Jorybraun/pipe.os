@@ -61,6 +61,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Fixed — Candidate repo matching
 
+- Matched open-source challenge packets now remain the room/workspace assignment source even when they include an upstream PR number, so workspaces launch from the packet's immutable base commit instead of the PR head; the deployed workspace smoke can now verify this matched-repo path.
 - Person profiles now keep source signals, learned context, and original source artifacts inside a collapsed evidence audit trail by default, leaving the decision cockpit and relationship timeline as the first-read hiring-manager surface.
 - `OPEN_SOURCE_BUG_FIX` scheduling now promotes a matched repo into an assigned assessment only when a production-ready review challenge packet has exact source provenance, creating the source-backed assessment session from that packet and failing closed otherwise.
 - Scheduled interview detail now redacts accumulated person-level evidence arrays from its `livingContext` payload, keeping meeting pages scoped to summary counts and related-interview previews while the full graph stays on the person profile.
