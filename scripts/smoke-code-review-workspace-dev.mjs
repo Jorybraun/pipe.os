@@ -3,7 +3,11 @@ import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { execFile } from 'node:child_process';
 import { promisify } from 'node:util';
+import dotenv from 'dotenv';
 import WebSocket from 'ws';
+
+dotenv.config({ path: '.env.local' });
+dotenv.config({ path: '.env' });
 
 const execFileAsync = promisify(execFile);
 
