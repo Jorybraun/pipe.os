@@ -724,7 +724,9 @@ function hasEventKind(
 }
 
 function modeRequiresCommit(mode: RepoTaskInterviewMode): boolean {
-  return mode === 'OPEN_SOURCE_BUG_FIX' || mode === 'DEV_CONTAINER_REPO_TASK';
+  return mode === 'OPEN_SOURCE_BUG_FIX'
+    || mode === 'DEV_CONTAINER_REPO_TASK'
+    || mode === 'DEV_CONTAINER_CHALLENGE';
 }
 
 function progressNextActionLabel(action: AssessmentProgressNextAction): string {

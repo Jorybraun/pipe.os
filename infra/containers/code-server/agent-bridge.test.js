@@ -1,4 +1,4 @@
-import { spawn } from 'node:child_process';
+import { execFileSync, spawn } from 'node:child_process';
 import { mkdtempSync, mkdirSync, readFileSync, writeFileSync } from 'node:fs';
 import { chmod } from 'node:fs/promises';
 import { tmpdir } from 'node:os';
@@ -81,7 +81,7 @@ async function startBridge(scriptBody, extraEnv = {}, options = {}) {
   const installFakeDevin = options.installFakeDevin !== false;
   const port = await freePort();
   const codeServerPort = await freePort();
-  const workspaceDir = mkdtempSync(path.join(tmpdir(), 'pipe-bridge-workspace-'));
+  const workspaceDir = options.workspaceDir || mkdtempSync(path.join(tmpdir(), 'pipe-bridge-workspace-'));
   const fakeDevin = installFakeDevin ? await writeFakeDevin(scriptBody) : null;
   const emptyBinDir = mkdtempSync(path.join(tmpdir(), 'pipe-empty-bin-'));
   const bridgePathEnv = fakeDevin
@@ -130,6 +130,38 @@ async function startBridge(scriptBody, extraEnv = {}, options = {}) {
   child.on('exit', () => bridgeProcesses.delete(child));
   await waitForHealth(port, output);
   return { child, port, workspaceDir };
+}
+
+function git(args, cwd) {
+  return execFileSync('git', args, {
+    cwd,
+    encoding: 'utf8',
+    env: {
+      ...process.env,
+      GIT_AUTHOR_NAME: 'PIPE Test',
+      GIT_AUTHOR_EMAIL: 'pipe-test@example.com',
+      GIT_COMMITTER_NAME: 'PIPE Test',
+      GIT_COMMITTER_EMAIL: 'pipe-test@example.com',
+    },
+    stdio: ['ignore', 'pipe', 'pipe'],
+  }).trimEnd();
+}
+
+function createCommittedWorkspace() {
+  const workspaceDir = mkdtempSync(path.join(tmpdir(), 'pipe-bridge-git-workspace-'));
+  git(['init'], workspaceDir);
+  git(['config', 'user.name', 'PIPE Test'], workspaceDir);
+  git(['config', 'user.email', 'pipe-test@example.com'], workspaceDir);
+  writeFileSync(path.join(workspaceDir, 'README.md'), '# Assessment repo\n\nOriginal behavior.\n');
+  git(['add', 'README.md'], workspaceDir);
+  git(['commit', '-m', 'base'], workspaceDir);
+  const baseCommitSha = git(['rev-parse', 'HEAD'], workspaceDir);
+  git(['checkout', '-b', 'pipe-assessment'], workspaceDir);
+  writeFileSync(path.join(workspaceDir, 'README.md'), '# Assessment repo\n\nFixed behavior with evidence.\n');
+  git(['add', 'README.md'], workspaceDir);
+  git(['commit', '-m', 'candidate fix'], workspaceDir);
+  const commitSha = git(['rev-parse', 'HEAD'], workspaceDir);
+  return { workspaceDir, baseCommitSha, commitSha };
 }
 
 async function startFakeDevinApiServer() {
@@ -240,6 +272,57 @@ async function startSessionEventCaptureServer() {
   };
 }
 
+async function startCommitSubmissionCaptureServer() {
+  const submissions = [];
+  const port = await freePort();
+  const server = createServer((req, res) => {
+    if (
+      req.method !== 'POST'
+      || req.url !== '/api/v1/meeting-rooms/room-token/assessment/commit-submission'
+    ) {
+      res.writeHead(404, { 'Content-Type': 'application/json' });
+      res.end(JSON.stringify({ error: 'not found' }));
+      return;
+    }
+
+    let body = '';
+    req.setEncoding('utf8');
+    req.on('data', (chunk) => {
+      body += chunk;
+    });
+    req.on('end', () => {
+      const jsonBody = JSON.parse(body);
+      submissions.push(jsonBody);
+      res.writeHead(201, { 'Content-Type': 'application/json' });
+      res.end(JSON.stringify({
+        submission: {
+          accepted: true,
+          repositoryUrl: jsonBody.repositoryUrl,
+          branchName: jsonBody.branchName,
+          commitSha: jsonBody.commitSha,
+          commitUrl: jsonBody.commitUrl ?? null,
+        },
+        progress: {
+          stage: 'READY_FOR_EVALUATION',
+          nextAction: 'START_EVALUATION',
+          hasCommitSubmission: true,
+        },
+      }));
+    });
+  });
+
+  await new Promise((resolve, reject) => {
+    server.on('error', reject);
+    server.listen(port, '127.0.0.1', resolve);
+  });
+
+  return {
+    submissions,
+    url: `http://127.0.0.1:${port}`,
+    close: () => new Promise((resolve) => server.close(resolve)),
+  };
+}
+
 async function connectAgent(port) {
   const ws = new WebSocket(`ws://127.0.0.1:${port}/ws`);
   const messages = [];
@@ -271,6 +354,130 @@ afterEach(async () => {
 });
 
 describe('agent bridge readiness', () => {
+  it('finalizes a real workspace commit into source-backed assessment evidence without a configured agent', async () => {
+    const captureServer = await startCommitSubmissionCaptureServer();
+    const { workspaceDir, baseCommitSha, commitSha } = createCommittedWorkspace();
+    try {
+      const { port } = await startBridge('', {
+        AGENT_TYPE: '',
+        PATH: process.env.PATH ?? '',
+        PIPE_API_URL: captureServer.url,
+        ROOM_TOKEN: 'room-token',
+        REPO_GIT_URL: 'https://github.com/example/repo',
+        CHALLENGE_BASE_COMMIT_SHA: baseCommitSha,
+        PIPE_TEST_COMMAND: 'node -e "console.log(42)"',
+      }, {
+        installFakeDevin: false,
+        workspaceDir,
+      });
+
+      const response = await fetch(`http://127.0.0.1:${port}/assessment/finalize`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ narrative: 'Candidate fixed the assessment repo behavior.' }),
+      });
+
+      expect(response.status).toBe(201);
+      const body = await response.json();
+      expect(body).toMatchObject({
+        ok: true,
+        submitted: true,
+        commit: {
+          repositoryUrl: 'https://github.com/example/repo',
+          branchName: 'pipe-assessment',
+          baseCommitSha,
+          commitSha,
+          sourceRefTypes: ['git_commit', 'code_diff', 'test_run'],
+        },
+      });
+
+      expect(captureServer.submissions).toHaveLength(1);
+      const submission = captureServer.submissions[0];
+      expect(submission).toMatchObject({
+        narrative: 'Candidate fixed the assessment repo behavior.',
+        repositoryUrl: 'https://github.com/example/repo',
+        forkRepositoryUrl: null,
+        branchName: 'pipe-assessment',
+        baseCommitSha,
+        commitSha,
+        upstreamPrConsent: false,
+        changedFiles: [{ path: 'README.md', status: 'modified' }],
+      });
+      expect(submission.sourceRefs.map((ref) => ref.sourceRefType)).toEqual([
+        'git_commit',
+        'code_diff',
+        'test_run',
+      ]);
+      expect(submission.sourceRefs.every((ref) => /^sha256:[a-f0-9]{64}$/.test(ref.contentHash))).toBe(true);
+      expect(submission.sourceRefs[0]).toMatchObject({
+        sourceRefType: 'git_commit',
+        sourceRefId: commitSha,
+        evidenceRole: 'submitted_commit',
+        metadata: { source: 'agent_bridge_workspace_finalize' },
+      });
+      expect(submission.sourceRefs[0].exactText).toContain(commitSha);
+      expect(submission.sourceRefs[1]).toMatchObject({
+        sourceRefType: 'code_diff',
+        sourceRefId: `${baseCommitSha}..${commitSha}`,
+      });
+      expect(submission.sourceRefs[1].exactText).toContain('diff --git');
+      expect(submission.sourceRefs[1].exactText).toContain('README.md');
+      expect(submission.sourceRefs[2]).toMatchObject({
+        sourceRefType: 'test_run',
+        sourceRefId: `${commitSha}:test-run`,
+        evidenceRole: 'verification_test_output',
+        locator: {
+          command: 'node -e "console.log(42)"',
+          exitCode: 0,
+        },
+      });
+      expect(submission.sourceRefs[2].exactText).toContain('$ node -e "console.log(42)"');
+      expect(submission.sourceRefs[2].exactText).toContain('exitCode: 0');
+      expect(submission.sourceRefs[2].exactText).toContain('42');
+    } finally {
+      await captureServer.close();
+    }
+  });
+
+  it('records a verification gap instead of inventing test output when no test command is configured', async () => {
+    const captureServer = await startCommitSubmissionCaptureServer();
+    const { workspaceDir, baseCommitSha, commitSha } = createCommittedWorkspace();
+    try {
+      const { port } = await startBridge('', {
+        AGENT_TYPE: '',
+        PATH: process.env.PATH ?? '',
+        PIPE_API_URL: captureServer.url,
+        ROOM_TOKEN: 'room-token',
+        REPO_GIT_URL: 'https://github.com/example/repo',
+        CHALLENGE_BASE_COMMIT_SHA: baseCommitSha,
+      }, {
+        installFakeDevin: false,
+        workspaceDir,
+      });
+
+      const response = await fetch(`http://127.0.0.1:${port}/assessment/finalize`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: '{}',
+      });
+
+      expect(response.status).toBe(201);
+      const submission = captureServer.submissions[0];
+      const verificationGap = submission.sourceRefs.find((ref) => ref.sourceRefType === 'verification_gap');
+      expect(verificationGap).toMatchObject({
+        sourceRefId: `${commitSha}:test-evidence-missing`,
+        evidenceRole: 'missing_test_evidence_note',
+        metadata: {
+          source: 'agent_bridge_workspace_finalize',
+          missingEvidence: 'test_run',
+        },
+      });
+      expect(verificationGap.exactText).toContain('No test command was provided');
+    } finally {
+      await captureServer.close();
+    }
+  });
+
   it('does not fabricate a Devin bridge when AGENT_TYPE is missing', async () => {
     const { port } = await startBridge(`
 process.stdin.setEncoding('utf8');

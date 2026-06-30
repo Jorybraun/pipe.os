@@ -68,7 +68,9 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - Deployed workspace smoke now preflights that the requested base commit is reachable from the selected repository before creating any invite or launching a container.
 - Dev container workspaces now mark `/workspace` as a safe Git directory, start with explicit internet access, and use production cold-start timeouts so exact-base-commit repo tasks do not crash before VS Code can boot.
 - Room workspace launches no longer inject Devin by default; code-review rooms start a plain reliable code-server workspace unless the launch explicitly requests a configured agent.
+- Code-server containers now start the workspace bridge even when no AI agent is configured, keeping VS Code proxying, terminal access, bridge health, and commit finalization available without fake Clippy replies.
 - Workspace-backed repo tasks now expose a bridge finalizer that turns the candidate's real HEAD commit, diff, and optional test command output into source-backed commit-submission evidence for the linked assessment session.
+- `DEV_CONTAINER_CHALLENGE` assessment sessions now share the commit-required progress path with open-source bug-fix repo tasks, so reproduced work evidence leads to submit-commit instead of a generic capture-evidence state.
 - CODE_REVIEW recruiter decision and assignment panels now label assignment trust explicitly, distinguishing automatic matches from manual repo or PR tasks before managers treat the review as candidate-fit evidence.
 - CODE_REVIEW and dev-container recruiter projections now label matched repo+PR assignments as source-backed automatic matches instead of manual PR overrides, preserving assignment provenance after repo matching caches the selected challenge.
 - WAITING_FOR_MATCH browser coverage now waits for the visible candidate gate state instead of `networkidle`, preventing the auto-refresh smoke from timing out on intentional polling activity.

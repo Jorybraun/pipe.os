@@ -551,6 +551,80 @@ index 5c7b20a..7f9a12e 100644
     ).get(session.id)).toEqual({ count: 0 });
   });
 
+  it('treats dev-container challenges as commit-required assessment sessions', async () => {
+    const session = await createSession(app, env, {
+      ingestionKey: 'assessment-session:dev-container-commit-required',
+      mode: 'DEV_CONTAINER_CHALLENGE',
+      candidateId: 'candidate-dev-container',
+    });
+
+    const challengeText = [
+      'Repo: https://github.com/open-source/widgets',
+      'Base commit: 3333333333333333333333333333333333333333',
+      'Task: fix stale popover listener cleanup and add a regression test.',
+    ].join('\n');
+    const challengeResponse = await app.request(
+      `/api/v1/assessment/repo-task/sessions/${session.id}/events`,
+      jsonRequest({
+        ingestionKey: 'assessment-event:dev-container-challenge-packet',
+        kind: 'recruiter_note',
+        actorType: 'recruiter',
+        actorId: 'recruiter-1',
+        narrative: 'Recruiter assigned the concrete source-backed dev-container challenge.',
+        sourceRefs: [{
+          ...await sourceRef('review_challenge_packet', 'challenge-packet-dev-container', challengeText),
+          evidenceRole: 'assigned_challenge',
+        }],
+      }),
+      env,
+    );
+    expect(challengeResponse.status).toBe(201);
+
+    const terminalText = 'npm test -- popover\nFAIL stale handler remains attached';
+    const workResponse = await app.request(
+      `/api/v1/assessment/repo-task/sessions/${session.id}/events`,
+      jsonRequest({
+        ingestionKey: 'assessment-event:dev-container-terminal-before-commit',
+        kind: 'terminal_output',
+        actorType: 'dev_container',
+        narrative: 'Candidate reproduced the failure in the dev container before committing.',
+        payload: { command: 'npm test -- popover', exitCode: 1 },
+        sourceRefs: [await sourceRef('terminal_output', 'terminal-before-commit', terminalText)],
+      }),
+      env,
+    );
+    expect(workResponse.status).toBe(201);
+
+    const progressResponse = await app.request(
+      `/api/v1/assessment/repo-task/sessions/${session.id}/progress`,
+      { method: 'GET' },
+      env,
+    );
+    expect(progressResponse.status).toBe(200);
+    const progressBody = await progressResponse.json() as {
+      progress: {
+        session: {
+          mode: string;
+        };
+        stage: string;
+        nextAction: string;
+        hasChallengePacket: boolean;
+        hasWorkEvidence: boolean;
+        hasCommitSubmission: boolean;
+      };
+    };
+    expect(progressBody.progress).toMatchObject({
+      session: {
+        mode: 'DEV_CONTAINER_CHALLENGE',
+      },
+      stage: 'WORK_IN_PROGRESS',
+      nextAction: 'SUBMIT_COMMIT',
+      hasChallengePacket: true,
+      hasWorkEvidence: true,
+      hasCommitSubmission: false,
+    });
+  });
+
   it('summarizes source-backed repo-task progress from challenge assignment through evaluation', async () => {
     const session = await createSession(app, env, {
       ingestionKey: 'assessment-session:progress-snapshot',

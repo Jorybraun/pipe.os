@@ -233,6 +233,13 @@ async function main() {
   if (!readySession.proxyPath) {
     throw new Error(`Ready workspace did not expose a proxy path: ${JSON.stringify(readySession)}`);
   }
+  const proxyBasePath = readySession.proxyPath.replace(/\/$/, '');
+  const bridgeHealth = await requestJson(ROOM_BASE, `${proxyBasePath}/health`, {
+    headers: roomAuthHeaders,
+  });
+  if (bridgeHealth?.ok !== true) {
+    throw new Error(`Workspace bridge health check failed: ${JSON.stringify(bridgeHealth)}`);
+  }
 
   console.log(JSON.stringify({
     ok: true,
@@ -246,6 +253,8 @@ async function main() {
     challengeSource: workspace.challenge?.source ?? null,
     workspaceStatus: readySession.status,
     proxyPathReady: Boolean(readySession.proxyPath),
+    bridgeHealthReady: true,
+    bridgeAgent: bridgeHealth.agent || null,
   }, null, 2));
 }
 

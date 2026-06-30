@@ -30,4 +30,15 @@ describe('code-server container entrypoint', () => {
       'base commit not found for repo ${REPO_GIT_URL:-unknown}: ${CHALLENGE_BASE_COMMIT_SHA}',
     );
   });
+
+  it('starts the workspace bridge whenever the image contains agent-bridge.js', () => {
+    const script = readFileSync(
+      path.join(process.cwd(), 'infra/containers/code-server/entrypoint.sh'),
+      'utf8',
+    );
+
+    expect(script).toContain('if [[ -f /usr/local/bin/agent-bridge.js ]]; then');
+    expect(script).toContain('Starting workspace bridge/router on 0.0.0.0:${AGENT_BRIDGE_PORT}');
+    expect(script).not.toContain('[[ -n "${AGENT_TYPE:-}" && "${AGENT_TYPE}" != "none"');
+  });
 });
