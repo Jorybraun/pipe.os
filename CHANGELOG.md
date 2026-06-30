@@ -59,6 +59,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Fixed — Candidate repo matching
 
+- CODE_REVIEW recruiter decision panels now show score validity before the score details, making clear whether the score is usable, pending, incomplete, or unsafe to rely on when repo fit is not proven.
 - CODE_REVIEW related-meeting panels now lead with a quiet decision summary, source-backed next action, and signal counts before showing preview rows, so cross-meeting context supports the current decision instead of reading like noisy extra evidence.
 - Starting a candidate assessment now marks only the delivered or selected linked code-review/dev-container/open-source interview active, so recruiter headers no longer remain stuck at invited without activating unrelated meetings for the same person.
 - Fresh direct code-review and dev-container assessment links now stop at the candidate start gate and only claim the one-use invite after the candidate clicks start.

@@ -166,6 +166,12 @@ interface CodeReviewDecisionRisk {
   missingContext: string[];
 }
 
+interface CodeReviewAssessmentValidity {
+  value: string;
+  detail: string;
+  tone: CodeReviewNextStepTone;
+}
+
 interface CodeReviewSignalBasisItem {
   label: string;
   value: string;
@@ -655,6 +661,65 @@ function codeReviewSignalBasisItems(input: {
       satisfied: input.proofCount > 0 || Boolean(input.match?.assessmentQuality),
     },
   ];
+}
+
+function codeReviewAssessmentValiditySummary(input: {
+  score: CodeReviewScoreSummary | null;
+  submission: CodeReviewSubmissionDetail | null;
+  match: CodeReviewMatchDetail | null;
+  proofCount: number;
+}): CodeReviewAssessmentValidity {
+  const matchReady = input.match?.status === 'MATCHED';
+  const scoreReady = input.score?.status === 'scored' && typeof input.score.score === 'number' && Number.isFinite(input.score.score);
+  const annotationCount = input.submission?.annotations.length ?? 0;
+  const pushbackCount = input.submission?.defenseThreads.length ?? 0;
+  const hasMatchProof = input.proofCount > 0 || Boolean(input.match?.assessmentQuality);
+
+  if (!matchReady) {
+    return {
+      value: 'Do not rely on score yet',
+      detail: 'Repo fit is not source-backed, so this interview can only guide evidence collection until a quality-gated PR challenge exists.',
+      tone: 'blocked',
+    };
+  }
+
+  if (scoreReady && annotationCount > 0 && pushbackCount > 0 && hasMatchProof) {
+    return {
+      value: 'Usable with calibration',
+      detail: 'Score, review comments, developer pushback, and match proof are present; use this as a source-backed signal, not an automatic hiring decision.',
+      tone: 'positive',
+    };
+  }
+
+  if (scoreReady && annotationCount > 0 && hasMatchProof) {
+    return {
+      value: 'Usable but incomplete',
+      detail: 'Score and review evidence are present, but developer pushback is missing, so validate the judgment in the next conversation.',
+      tone: 'neutral',
+    };
+  }
+
+  if (scoreReady) {
+    return {
+      value: 'Score needs human calibration',
+      detail: 'A score report exists, but the review evidence or match proof is incomplete; read the source trail before relying on it.',
+      tone: 'watch',
+    };
+  }
+
+  if (input.submission) {
+    return {
+      value: 'Submitted, scoring pending',
+      detail: 'Candidate review evidence exists; wait for the durable score report before treating this as a scored assessment.',
+      tone: 'neutral',
+    };
+  }
+
+  return {
+    value: 'No score signal yet',
+    detail: 'The PR assignment is ready, but the candidate still needs to complete the code-review assessment.',
+    tone: 'neutral',
+  };
 }
 
 function codeReviewNextStepRecommendation(
@@ -1912,6 +1977,12 @@ export default function InterviewDetailPage(): JSX.Element {
     match: codeReviewMatch,
     proofCount: matchHyperedges.length,
   });
+  const codeReviewAssessmentValidity = codeReviewAssessmentValiditySummary({
+    score: codeReviewScore,
+    submission: codeReviewSubmission,
+    match: codeReviewMatch,
+    proofCount: matchHyperedges.length,
+  });
   const codeReviewDecisionSignals = [
     {
       label: 'Assignment',
@@ -2364,6 +2435,17 @@ export default function InterviewDetailPage(): JSX.Element {
                     ))}
                   </ul>
                 </div>
+              </div>
+              <div
+                data-testid="interview-code-review-score-validity"
+                style={{
+                  ...DECISION_NEXT_STEP,
+                  ...DECISION_NEXT_STEP_TONE[codeReviewAssessmentValidity.tone],
+                }}
+              >
+                <div style={FIELD_LABEL}>Score validity</div>
+                <div style={DECISION_NEXT_STEP_VALUE}>{codeReviewAssessmentValidity.value}</div>
+                <div style={CONTEXT_RECORD_NARRATIVE}>{codeReviewAssessmentValidity.detail}</div>
               </div>
               {codeReviewScore && (
                 <div data-testid="interview-code-review-score-summary" style={DECISION_SCORE_SUMMARY}>

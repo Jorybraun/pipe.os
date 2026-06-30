@@ -799,6 +799,9 @@ describe('InterviewDetailPage', () => {
     expect(decision).toHaveTextContent('Focused calibration needed');
     expect(decision).toHaveTextContent('Missing context');
     expect(decision).toHaveTextContent('Probe how they would validate timing cleanup.');
+    expect(decision).toHaveTextContent('Score validity');
+    expect(decision).toHaveTextContent('Usable with calibration');
+    expect(decision).toHaveTextContent('Score, review comments, developer pushback, and match proof are present');
     expect(decision).toHaveTextContent('Use the annotated lines and developer pushback to judge whether the requested changes are concrete, source-backed, and worth blocking the PR.');
     expect(decision).toHaveTextContent('Strong assessment fit');
     expect(decision).toHaveTextContent('72/100 Adequate');
@@ -971,6 +974,9 @@ describe('InterviewDetailPage', () => {
     expect(decision).toHaveTextContent('Repo fit not proven');
     expect(decision).toHaveTextContent('Missing context');
     expect(decision).toHaveTextContent('The deterministic repo matcher did not return a quality-gated PR.');
+    expect(decision).toHaveTextContent('Score validity');
+    expect(decision).toHaveTextContent('Do not rely on score yet');
+    expect(decision).toHaveTextContent('Repo fit is not source-backed');
     expect(decision).not.toHaveTextContent('Waiting for candidate review');
     const evidencePlan = screen.getByTestId('interview-code-review-evidence-plan');
     expect(evidencePlan).toHaveTextContent('Resolve missing evidence');
