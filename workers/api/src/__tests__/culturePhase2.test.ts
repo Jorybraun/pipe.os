@@ -30,6 +30,7 @@ import {
   applyDispositionalWeight,
   evaluateDealbreakers,
   scoreCultureInterview,
+  CultureScorerUnavailableError,
   COMPETENCY_BARS_RUBRICS,
   type OrgCultureBenchmark,
 } from '../lib/cultureScorer';
@@ -479,15 +480,12 @@ describe('evaluateDealbreakers', () => {
   });
 });
 
-// ─── 6. End-to-end mock-provider scoring with team context ──────────────────
+// ─── 6. Scoring provider boundary with team context ─────────────────────────
 
-describe('scoreCultureInterview with teamContext (mock path)', () => {
-  it('passes the mock path when provider is null and still surfaces dealbreakers as HITL flags', async () => {
-    // Mock path always returns neutral scores — dealbreaker flagging is
-    // gated on the live-provider branch, so the mock report has empty flags
-    // by design. This test documents that contract.
+describe('scoreCultureInterview with teamContext and no provider', () => {
+  it('rejects instead of fabricating neutral culture scores', async () => {
     const transcript = defaultCultureTranscript();
-    const report = await scoreCultureInterview({
+    await expect(scoreCultureInterview({
       provider: null,
       transcript,
       orgBenchmark: MOCK_ORG_BENCHMARK,
@@ -500,12 +498,9 @@ describe('scoreCultureInterview with teamContext (mock path)', () => {
         barsOverrides: MOCK_BARS_OVERRIDES,
         dealbreakers: MOCK_DEALBREAKERS,
       },
-    });
-
-    // Mock path: all neutral, no flags, HITL false.
-    expect(report.competencyScores).toHaveLength(5);
-    expect(report.competencyScores.every((c) => c.score === 3)).toBe(true);
-    expect(report.dealbreakerFlags).toEqual([]);
-    expect(report.hitlReviewRequired).toBe(false);
+    })).rejects.toMatchObject({
+      name: 'CultureScorerUnavailableError',
+      provider: null,
+    } satisfies Partial<CultureScorerUnavailableError>);
   });
 });

@@ -13,6 +13,7 @@ const BASIC_USER = process.env.PIPE_DEV_BASIC_AUTH_USER || process.env.DEV_BASIC
 const BASIC_PASSWORD = process.env.PIPE_DEV_BASIC_AUTH_PASSWORD || process.env.DEV_BASIC_AUTH_PASSWORD || '';
 const SEND_EMAIL = process.env.CODE_REVIEW_SMOKE_SEND_EMAIL === '1';
 const SKIP_BROWSER = process.env.CODE_REVIEW_SMOKE_SKIP_BROWSER === '1';
+const SKIP_RECRUITER_BROWSER = process.env.CODE_REVIEW_SMOKE_SKIP_RECRUITER_BROWSER === '1';
 const AUTO_MATCH = process.env.CODE_REVIEW_SMOKE_AUTO_MATCH === '1';
 const ROLE_BACKED = process.env.CODE_REVIEW_SMOKE_ROLE_BACKED === '1';
 const SUBMIT_REVIEW = process.env.CODE_REVIEW_SMOKE_SUBMIT === '1'
@@ -26,6 +27,7 @@ const EXPECT_AUTOMATCH = process.env.CODE_REVIEW_EXPECT_AUTOMATCH
   ?? (AUTO_MATCH ? '1' : '0');
 const REQUIRE_CONTRAST = process.env.CODE_REVIEW_REQUIRE_CONTRAST
   ?? (!REPO_URL && !PR_NUMBER ? '1' : '0');
+const EXPECT_BLOCKED_MATCH = process.env.CODE_REVIEW_EXPECT_BLOCKED_MATCH === '1';
 
 const DEFAULT_RESUME_TEXT = [
   'Senior frontend platform engineer with deep React and TypeScript experience.',
@@ -57,10 +59,10 @@ const ROLE_SELECTED_TERMS = (
         'React',
         'TypeScript',
         'usePopoverRoot',
-        'popup trigger id ownership',
-        'DOM id registry',
-        'patient click threshold',
-        'JavaScript test runner',
+        'rendered trigger id ownership',
+        'DOM id versus internal registry state',
+        'patient click thresholds',
+        'JavaScript test runner regression tests',
       ]
 );
 const DEFAULT_REVIEW_SUMMARY = [
@@ -521,15 +523,21 @@ async function bootstrapStageConfig(sessionToken) {
   return stageConfig;
 }
 
-async function pollCodeReviewChallenge(sessionToken, order = 0) {
+async function pollCodeReviewChallenge(sessionToken, order = 0, options = {}) {
   const deadline = Date.now() + 120_000;
   let last = null;
   while (Date.now() < deadline) {
     last = await getChallenge(sessionToken, order);
-    if (last?.type === 'CODE_REVIEW') return last;
+    if (last?.type === 'CODE_REVIEW') {
+      if (options.expectBlocked) {
+        throw new Error(`Expected repo matching to block, but CODE_REVIEW became ready: ${JSON.stringify(challengePreview(last))}`);
+      }
+      return last;
+    }
     if (last?.type !== 'WAITING_FOR_MATCH') {
       throw new Error(`Expected CODE_REVIEW or WAITING_FOR_MATCH, got: ${JSON.stringify(last).slice(0, 800)}`);
     }
+    if (options.expectBlocked && last?.config?.state === 'blocked') return last;
     await sleep(5_000);
   }
   throw new Error(`CODE_REVIEW challenge did not become ready. Last response: ${JSON.stringify(last).slice(0, 1200)}`);
@@ -576,6 +584,58 @@ function runBrowserSmoke({ deliveredUrl, inviteToken, session, expectedMatchProo
   if (result.error) throw result.error;
   if (result.status !== 0) {
     throw new Error(`Playwright assess smoke failed with exit code ${result.status}`);
+  }
+  return { skipped: false };
+}
+
+function runRecruiterDetailBrowserSmoke({
+  interviewId,
+  expectedOutcome,
+  expectedRepoUrl = '',
+  expectedPrNumber = '',
+  expectSubmission = false,
+  expectScore = false,
+  requireHyperedges = false,
+}) {
+  if (SKIP_BROWSER || SKIP_RECRUITER_BROWSER) {
+    return {
+      skipped: true,
+      reason: SKIP_BROWSER
+        ? 'CODE_REVIEW_SMOKE_SKIP_BROWSER=1'
+        : 'CODE_REVIEW_SMOKE_SKIP_RECRUITER_BROWSER=1',
+    };
+  }
+
+  const result = spawnSync(
+    'npx',
+    [
+      'playwright',
+      'test',
+      'e2e/code-review-recruiter-detail-smoke.spec.ts',
+      '--project=authenticated',
+      '--reporter=line',
+    ],
+    {
+      cwd: process.cwd(),
+      stdio: 'inherit',
+      env: {
+        ...process.env,
+        APP_BASE,
+        API_BASE,
+        VIDEO_ROOM_BASE,
+        CODE_REVIEW_RECRUITER_INTERVIEW_ID: interviewId,
+        CODE_REVIEW_RECRUITER_EXPECT_OUTCOME: expectedOutcome,
+        CODE_REVIEW_RECRUITER_EXPECT_REPO_URL: expectedRepoUrl,
+        CODE_REVIEW_RECRUITER_EXPECT_PR_NUMBER: String(expectedPrNumber ?? ''),
+        CODE_REVIEW_RECRUITER_EXPECT_SUBMISSION: expectSubmission ? '1' : '0',
+        CODE_REVIEW_RECRUITER_EXPECT_SCORE: expectScore ? '1' : '0',
+        CODE_REVIEW_RECRUITER_REQUIRE_HYPEREDGES: requireHyperedges ? '1' : '0',
+      },
+    },
+  );
+  if (result.error) throw result.error;
+  if (result.status !== 0) {
+    throw new Error(`Playwright recruiter detail smoke failed with exit code ${result.status}`);
   }
   return { skipped: false };
 }
@@ -846,9 +906,28 @@ function sqlString(value) {
 }
 
 function localD1Query(command) {
+  return d1Query(command, { remote: false });
+}
+
+function smokeD1DatabaseName(remote) {
+  return process.env.CODE_REVIEW_SMOKE_D1_DATABASE || (remote ? 'pipe-db-test' : 'pipe-db');
+}
+
+function d1Query(command, { remote }) {
+  const databaseName = smokeD1DatabaseName(remote);
+  const args = [
+    'wrangler',
+    'd1',
+    'execute',
+    databaseName,
+    remote ? '--remote' : '--local',
+    '--json',
+    '--command',
+    command,
+  ];
   const result = spawnSync(
     'npx',
-    ['wrangler', 'd1', 'execute', 'pipe-db', '--local', '--json', '--command', command],
+    args,
     {
       cwd: `${process.cwd()}/workers/api`,
       encoding: 'utf8',
@@ -856,10 +935,16 @@ function localD1Query(command) {
     },
   );
   if (result.status !== 0) {
-    throw new Error(`Local D1 query failed (${result.status}): ${result.stderr || result.stdout}`);
+    const target = remote ? 'remote' : 'local';
+    throw new Error(`${target} D1 query failed (${result.status}) for ${databaseName}: ${result.stderr || result.stdout}`);
   }
   const parsed = JSON.parse(result.stdout);
   return Array.isArray(parsed?.[0]?.results) ? parsed[0].results : [];
+}
+
+function scoreD1Query(command) {
+  const remote = !isLocalBase(API_BASE) && !isLocalBase(RPC_BASE);
+  return d1Query(command, { remote });
 }
 
 async function verifyLocalAssessmentEvidence(reviewSessionId) {
@@ -933,6 +1018,109 @@ async function verifyLocalAssessmentEvidence(reviewSessionId) {
   throw new Error(`Assessment evidence did not become durable for review session ${reviewSessionId}: ${JSON.stringify(latest)}`);
 }
 
+async function verifyScorePersistence(reviewSessionId) {
+  const command = `
+    WITH target_session AS (
+      SELECT id, assessment_id, challenge_id, status, score_report
+        FROM review_sessions
+       WHERE id = ${sqlString(reviewSessionId)}
+       LIMIT 1
+    ),
+    target_submission AS (
+      SELECT id, score, score_report_json, scored_at
+        FROM challenge_submissions
+       WHERE assessment_id = (SELECT assessment_id FROM target_session)
+         AND challenge_id = (SELECT challenge_id FROM target_session)
+       LIMIT 1
+    )
+    SELECT
+      (SELECT id FROM target_session) AS review_session_id,
+      (SELECT status FROM target_session) AS review_status,
+      (SELECT score_report IS NOT NULL AND length(score_report) > 0 FROM target_session) AS review_score_report_present,
+      json_extract((SELECT score_report FROM target_session), '$.overall.score') AS review_score,
+      json_extract((SELECT score_report FROM target_session), '$.overall.band') AS review_band,
+      (SELECT id FROM target_submission) AS challenge_submission_id,
+      (SELECT score FROM target_submission) AS challenge_submission_score,
+      (SELECT score_report_json IS NOT NULL AND length(score_report_json) > 0 FROM target_submission) AS challenge_submission_score_report_present,
+      (SELECT scored_at FROM target_submission) AS challenge_submission_scored_at,
+      (SELECT score FROM assessments WHERE id = (SELECT assessment_id FROM target_session)) AS assessment_score
+  `;
+
+  const deadline = Date.now() + 90_000;
+  let latest = null;
+  while (Date.now() < deadline) {
+    latest = scoreD1Query(command)[0] ?? null;
+    const reviewScore = Number(latest?.review_score);
+    const challengeSubmissionScore = Number(latest?.challenge_submission_score);
+    const assessmentScore = Number(latest?.assessment_score);
+    if (
+      latest?.review_session_id === reviewSessionId
+      && latest.review_status === 'scored'
+      && Number(latest.review_score_report_present) === 1
+      && Number.isFinite(reviewScore)
+      && latest.challenge_submission_id
+      && Number.isFinite(challengeSubmissionScore)
+      && Number(latest.challenge_submission_score_report_present) === 1
+      && Number.isFinite(assessmentScore)
+    ) {
+      return {
+        skipped: false,
+        reviewStatus: latest.review_status,
+        reviewScore,
+        reviewBand: latest.review_band ?? null,
+        challengeSubmissionId: latest.challenge_submission_id,
+        challengeSubmissionScore,
+        challengeSubmissionScoredAt: latest.challenge_submission_scored_at ?? null,
+        assessmentScore,
+        d1Target: isLocalBase(API_BASE) || isLocalBase(RPC_BASE) ? 'local' : 'remote',
+      };
+    }
+    await sleep(2_000);
+  }
+
+  throw new Error(`Score persistence did not become durable for review session ${reviewSessionId}: ${JSON.stringify(latest)}`);
+}
+
+async function verifyReviewStatusPipeline(sessionToken, reviewSessionId) {
+  const deadline = Date.now() + 60_000;
+  let latest = null;
+  while (Date.now() < deadline) {
+    latest = await requestJson(`/rpc/review/${reviewSessionId}/status`, {
+      headers: {
+        Authorization: `Bearer ${sessionToken}`,
+      },
+    }, { basicAuth: false });
+    const pipeline = Array.isArray(latest?.pipeline) ? latest.pipeline : [];
+    const reviewStep = pipeline.find((step) => step?.id === 'review');
+    const scoringStep = pipeline.find((step) => step?.id === 'scoring');
+    if (
+      latest?.status === 'scored'
+      && latest?.phase === 'scoring'
+      && reviewStep?.status === 'complete'
+      && scoringStep?.status === 'complete'
+      && Number.isFinite(Number(latest?.scoreReport?.overall))
+      && typeof latest?.scoreReport?.band === 'string'
+    ) {
+      return {
+        status: latest.status,
+        phase: latest.phase,
+        currentRound: latest.currentRound ?? null,
+        maxRounds: latest.maxRounds ?? null,
+        scoreOverall: latest.scoreReport.overall,
+        scoreBand: latest.scoreReport.band,
+        pipeline: pipeline.map((step) => ({
+          id: step.id ?? null,
+          status: step.status ?? null,
+          detail: step.detail ?? null,
+        })),
+      };
+    }
+    await sleep(2_000);
+  }
+
+  throw new Error(`Review status pipeline did not expose durable scoring for ${reviewSessionId}: ${JSON.stringify(latest)}`);
+}
+
 async function runFullSubmissionSmoke({ session, challenge, interviewId }) {
   if (!SUBMIT_REVIEW) return { skipped: true };
 
@@ -949,6 +1137,8 @@ async function runFullSubmissionSmoke({ session, challenge, interviewId }) {
   });
   const judgeExample = await verifyJudgeExample(init.sessionId);
   const assessmentEvidence = await verifyLocalAssessmentEvidence(init.sessionId);
+  const scorePersistence = await verifyScorePersistence(init.sessionId);
+  const reviewStatusPipeline = await verifyReviewStatusPipeline(session.sessionToken, init.sessionId);
 
   return {
     skipped: false,
@@ -961,6 +1151,8 @@ async function runFullSubmissionSmoke({ session, challenge, interviewId }) {
     judgeExample,
     recruiterResults,
     assessmentEvidence,
+    scorePersistence,
+    reviewStatusPipeline,
   };
 }
 
@@ -975,7 +1167,61 @@ async function main() {
     await submitIntake(session.sessionToken);
     const initialStageConfig = await bootstrapStageConfig(session.sessionToken);
     const challengeOrder = ROLE_BACKED ? 1 : 0;
-    const challenge = await pollCodeReviewChallenge(session.sessionToken, challengeOrder);
+    const challenge = await pollCodeReviewChallenge(session.sessionToken, challengeOrder, {
+      expectBlocked: EXPECT_BLOCKED_MATCH,
+    });
+    if (EXPECT_BLOCKED_MATCH) {
+      assert(challenge?.type === 'WAITING_FOR_MATCH', `Expected WAITING_FOR_MATCH, got: ${JSON.stringify(challenge)}`);
+      assert(challenge?.config?.state === 'blocked', `Expected blocked repo matching state, got: ${JSON.stringify(challenge)}`);
+      assert(challenge?.config?.autoRefresh === false, `Blocked repo matching should not auto-refresh: ${JSON.stringify(challenge)}`);
+      assert(
+        challenge?.config?.diagnostics?.phase === 'repo_matching',
+        `Expected repo_matching diagnostics, got: ${JSON.stringify(challenge?.config?.diagnostics)}`,
+      );
+      assert(
+        Array.isArray(challenge?.config?.diagnostics?.pipeline)
+          && challenge.config.diagnostics.pipeline.some((step) =>
+            step?.id === 'repo_matching' && step?.status === 'blocked'
+          ),
+        `Expected repo_matching pipeline step to be blocked: ${JSON.stringify(challenge?.config?.diagnostics?.pipeline)}`,
+      );
+
+      const recruiterBrowserSmoke = runRecruiterDetailBrowserSmoke({
+        interviewId: invite.interviewId,
+        expectedOutcome: 'blocked',
+      });
+
+      console.log(JSON.stringify({
+        ok: true,
+        interviewId: invite.interviewId,
+        roleContextId: invite.roleContextId ?? null,
+        pipelineId: invite.pipelineId ?? session.pipelineId ?? null,
+        stageId: invite.stageId ?? null,
+        emailSent: SEND_EMAIL,
+        matchMode: currentMatchMode(),
+        expectedOutcome: 'blocked',
+        deliveredUrl: cleanUrl(invite.deliveredUrl),
+        roomGuestUrl: cleanUrl(invite.invited?.room?.guestUrl),
+        blockedMatch: {
+          title: challenge.title ?? null,
+          state: challenge.config.state,
+          reason: challenge.config.reason ?? null,
+          phase: challenge.config.diagnostics.phase ?? null,
+          matchableNodeCount: challenge.config.diagnostics.matchableNodeCount ?? null,
+          rawNodeCount: challenge.config.diagnostics.rawNodeCount ?? null,
+          autoRefresh: challenge.config.autoRefresh ?? null,
+        },
+        recruiterBrowserSmoke,
+        stageConfig: {
+          initialStageId: initialStageConfig.stageId,
+          initialCurrentIndex: initialStageConfig.currentIndex ?? null,
+          initialChallengeTypes: Array.isArray(initialStageConfig.challenges)
+            ? initialStageConfig.challenges.map((candidateChallenge) => candidateChallenge?.type ?? null)
+            : [],
+        },
+      }, null, 2));
+      return;
+    }
     const readyStageConfig = await bootstrapStageConfig(session.sessionToken);
     const preview = challengePreview(challenge);
     assert(challenge.githubRepoUrl, `CODE_REVIEW challenge missing githubRepoUrl: ${JSON.stringify(preview)}`);
@@ -1033,6 +1279,15 @@ async function main() {
       challenge,
       interviewId: invite.interviewId,
     });
+    const recruiterBrowserSmoke = runRecruiterDetailBrowserSmoke({
+      interviewId: invite.interviewId,
+      expectedOutcome: 'matched',
+      expectedRepoUrl: challenge.githubRepoUrl,
+      expectedPrNumber: challenge.githubPrNumber,
+      expectSubmission: SUBMIT_REVIEW,
+      expectScore: SUBMIT_REVIEW,
+      requireHyperedges: !REPO_URL && !PR_NUMBER,
+    });
 
     console.log(JSON.stringify({
       ok: true,
@@ -1064,6 +1319,7 @@ async function main() {
           : [],
       },
       browserSmoke,
+      recruiterBrowserSmoke,
       submissionSmoke,
     }, null, 2));
   } catch (error) {

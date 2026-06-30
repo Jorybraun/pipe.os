@@ -8,10 +8,19 @@ import {
   OPEN_TERM_RESOLVER_VERSION,
   openSemanticTerm,
 } from './openTerms';
+import {
+  ingestMeetingTranscriptAssessmentEvidence,
+} from '../assessmentLayer/meetingTranscriptEvidence';
+import type { AssessmentSessionMode } from '../assessmentLayer/persistence';
+import { createConceptRegistry } from './conceptRegistry';
 import type { EvidenceLevel, JsonObject, JsonValue } from './types';
 
 const TRANSCRIPT_PROJECTION_TYPE = 'meeting_transcript_semantics';
 const SIGNAL_POLICY_VERSION = 'living-context-signal-noisy-or-v1';
+
+function nowSeconds(): number {
+  return Math.floor(Date.now() / 1000);
+}
 
 export interface MeetingTranscriptSegmentInput {
   stableSegmentId?: string | null;
@@ -62,6 +71,10 @@ export interface MeetingTranscriptIngestionInput {
   transcriptionAudioKey?: string | null;
   provider?: string | null;
   speakerMetadata?: JsonObject | null;
+  speakerMetadataOrigin?: string | null;
+  personContextMode?: 'attributed' | 'summary_only' | null;
+  personContextReason?: string | null;
+  assessmentMode?: AssessmentSessionMode;
 }
 
 interface CanonicalSegment extends MeetingTranscriptSegmentInput {
@@ -79,6 +92,25 @@ interface CanonicalSegment extends MeetingTranscriptSegmentInput {
 interface CanonicalTranscript {
   contentText: string;
   segments: CanonicalSegment[];
+}
+
+interface TranscriptSourceSpanRef {
+  id: string;
+  contactId: string | null;
+  stableSegmentId: string;
+  exactText: string;
+  contentHash: string;
+  charStart: number;
+  charEnd: number;
+  lineStart: number;
+  lineEnd: number;
+  timestampStartMs: number | null;
+  timestampEndMs: number | null;
+  speakerLabel: string | null;
+  speakerRole: string | null;
+  channel: number | null;
+  confidence: number | null;
+  metadata: JsonObject | undefined;
 }
 
 interface ParticipantRow {
@@ -520,6 +552,13 @@ export async function ingestMeetingTranscriptToLivingContext(
   assertionCount: number;
 }> {
   const canonical = canonicalizeMeetingTranscript(input);
+  const personContextMode = input.personContextMode === 'summary_only'
+    ? 'summary_only'
+    : input.personContextMode === 'attributed'
+      ? 'attributed'
+      : null;
+  const personContextReason = input.personContextReason?.trim() || null;
+  const canAttachPersonContext = personContextMode === 'attributed';
   const participants = await db.prepare(
     `SELECT mp.contact_id, mp.role, m.started_at, m.ended_at, m.updated_at
        FROM meeting_participants mp
@@ -573,6 +612,9 @@ export async function ingestMeetingTranscriptToLivingContext(
       transcriptionAudioKey: input.transcriptionAudioKey ?? null,
       provider: input.provider ?? null,
       speakerMetadata: input.speakerMetadata ?? null,
+      speakerMetadataOrigin: input.speakerMetadataOrigin ?? null,
+      personContextMode,
+      personContextReason,
       transcriptStatus: 'READY',
     },
   });
@@ -613,6 +655,7 @@ export async function ingestMeetingTranscriptToLivingContext(
         recordingKey: input.recordingKey ?? null,
         transcriptionAudioKey: input.transcriptionAudioKey ?? null,
         speakerMetadata: input.speakerMetadata ?? null,
+        speakerMetadataOrigin: input.speakerMetadataOrigin ?? null,
         transcriptStatus: 'READY',
         segmentCount: canonical.segments.length,
       },
@@ -620,11 +663,9 @@ export async function ingestMeetingTranscriptToLivingContext(
     version = { id: persisted.id, version_number: versionNumber };
   }
 
-  const spanBySegmentId = new Map<string, {
-    id: string;
-    contactId: string | null;
-  }>();
+  const spanBySegmentId = new Map<string, TranscriptSourceSpanRef>();
   for (const segment of canonical.segments) {
+    const segmentContentHash = await deterministicEntityId('content', segment.text);
     const span = await store.createSourceSpan({
       ingestionKey: `meeting:${input.meetingId}:transcript:${version.id}:segment:${segment.stableSegmentId}`,
       artifactVersionId: version.id,
@@ -642,11 +683,14 @@ export async function ingestMeetingTranscriptToLivingContext(
         speakerLabel: segment.speakerLabel ?? null,
         speakerRole: segment.speakerRole ?? null,
         channel: segment.channel ?? null,
+        speakerMetadataOrigin: input.speakerMetadataOrigin ?? null,
         providerConfidence: boundedScore(segment.confidence),
         ...(segment.metadata ?? {}),
       },
     });
-    const attributed = segment.contactId ? identities.get(segment.contactId) : null;
+    const attributed = canAttachPersonContext && segment.contactId
+      ? identities.get(segment.contactId)
+      : null;
     if (attributed) {
       await db.prepare(
         `INSERT INTO source_span_attributions (
@@ -665,6 +709,7 @@ export async function ingestMeetingTranscriptToLivingContext(
           speakerLabel: segment.speakerLabel ?? null,
           speakerRole: segment.speakerRole ?? null,
           channel: segment.channel ?? null,
+          speakerMetadataOrigin: input.speakerMetadataOrigin ?? null,
           speakerMetadataRole: segment.metadata?.speakerMetadataRole ?? null,
           speakerMetadataSource: segment.metadata?.speakerMetadataSource ?? null,
           providerSegmentId: segment.metadata?.providerSegmentId ?? null,
@@ -675,8 +720,61 @@ export async function ingestMeetingTranscriptToLivingContext(
     spanBySegmentId.set(segment.stableSegmentId, {
       id: span.id,
       contactId: attributed ? segment.contactId ?? null : null,
+      stableSegmentId: segment.stableSegmentId,
+      exactText: segment.text,
+      contentHash: segmentContentHash,
+      charStart: segment.charStart,
+      charEnd: segment.charEnd,
+      lineStart: segment.lineStart,
+      lineEnd: segment.lineEnd,
+      timestampStartMs: segment.timestampStartMs,
+      timestampEndMs: segment.timestampEndMs,
+      speakerLabel: segment.speakerLabel ?? null,
+      speakerRole: segment.speakerRole ?? null,
+      channel: segment.channel ?? null,
+      confidence: segment.confidence ?? null,
+      metadata: segment.metadata,
     });
   }
+
+  await ingestMeetingTranscriptAssessmentEvidence(db, {
+    meetingId: input.meetingId,
+    ownerId: input.ownerId,
+    scheduledInterviewId: input.scheduledInterviewId ?? null,
+    artifactId: artifact.id,
+    artifactVersionId: version.id,
+    versionNumber: version.version_number,
+    provider: input.provider ?? null,
+    recordingKey: input.recordingKey ?? null,
+    transcriptionAudioKey: input.transcriptionAudioKey ?? null,
+    speakerMetadata: input.speakerMetadata ?? null,
+    speakerMetadataOrigin: input.speakerMetadataOrigin ?? null,
+    personContextMode,
+    personContextReason,
+    assessmentMode: input.assessmentMode,
+    observedAt,
+    segments: canonical.segments.flatMap((segment) => {
+      const sourceSpan = spanBySegmentId.get(segment.stableSegmentId);
+      if (!sourceSpan) return [];
+      return [{
+        stableSegmentId: segment.stableSegmentId,
+        text: segment.text,
+        sourceSpanId: sourceSpan.id,
+        charStart: segment.charStart,
+        charEnd: segment.charEnd,
+        lineStart: segment.lineStart,
+        lineEnd: segment.lineEnd,
+        speakerLabel: segment.speakerLabel ?? null,
+        speakerRole: segment.speakerRole ?? null,
+        contactId: segment.contactId ?? null,
+        channel: segment.channel ?? null,
+        timestampStartMs: segment.timestampStartMs,
+        timestampEndMs: segment.timestampEndMs,
+        confidence: segment.confidence ?? null,
+        metadata: segment.metadata,
+      }];
+    }),
+  });
 
   if (canonical.segments.length > 0) {
     await store.upsertContextRecord({
@@ -694,17 +792,51 @@ export async function ingestMeetingTranscriptToLivingContext(
         recordingKey: input.recordingKey ?? null,
         transcriptionAudioKey: input.transcriptionAudioKey ?? null,
         speakerMetadata: input.speakerMetadata ?? null,
+        speakerMetadataOrigin: input.speakerMetadataOrigin ?? null,
+        personContextMode,
+        personContextReason,
         transcriptStatus: 'READY',
         segmentCount: canonical.segments.length,
       },
       confidence: null,
       extractionVersion: 'meeting-transcript-ingestion-v1',
       observedAt,
-      sources: canonical.segments.map((segment) => ({
-        sourceSpanId: spanBySegmentId.get(segment.stableSegmentId)?.id,
-        evidenceRole: 'transcript_segment',
-        exactText: segment.text,
-      })),
+      sources: canonical.segments.flatMap((segment) => {
+        const sourceSpan = spanBySegmentId.get(segment.stableSegmentId);
+        if (!sourceSpan) return [];
+        return [{
+          sourceSpanId: sourceSpan.id,
+          sourceRefType: 'source_span',
+          sourceRefId: sourceSpan.id,
+          evidenceRole: 'transcript_segment',
+          locator: {
+            meetingId: input.meetingId,
+            scheduledInterviewId: input.scheduledInterviewId ?? null,
+            artifactId: artifact.id,
+            artifactVersionId: version.id,
+            stableSegmentId: sourceSpan.stableSegmentId,
+            charStart: sourceSpan.charStart,
+            charEnd: sourceSpan.charEnd,
+            lineStart: sourceSpan.lineStart,
+            lineEnd: sourceSpan.lineEnd,
+            timestampStartMs: sourceSpan.timestampStartMs,
+            timestampEndMs: sourceSpan.timestampEndMs,
+            speakerRole: sourceSpan.speakerRole,
+            speakerLabel: sourceSpan.speakerLabel,
+            channel: sourceSpan.channel,
+          },
+          exactText: sourceSpan.exactText,
+          contentHash: sourceSpan.contentHash,
+          metadata: {
+            sourceKind: 'meeting_transcript.source_span',
+            provider: input.provider ?? null,
+            confidence: sourceSpan.confidence,
+            contactId: sourceSpan.contactId,
+            speakerMetadataOrigin: input.speakerMetadataOrigin ?? null,
+            segmentMetadata: sourceSpan.metadata ?? {},
+          },
+        }];
+      }),
       entities: [
         {
           entityType: 'meeting',
@@ -728,7 +860,7 @@ export async function ingestMeetingTranscriptToLivingContext(
   if (input.semanticAssertions !== undefined) {
     const priorSignals = await removePriorSemanticProjection(db, artifact.id);
     const extractorVersion = input.extractorVersion ?? 'meeting-transcript-open-v1';
-    const assertions = input.semanticAssertions;
+    const assertions = canAttachPersonContext ? input.semanticAssertions : [];
     outputHash = await deterministicEntityId(
       'semantic_projection',
       stableJson(assertions as unknown as JsonValue),
@@ -774,7 +906,7 @@ export async function ingestMeetingTranscriptToLivingContext(
       if (!identity) continue;
       const sourceSpans = [...new Set(extracted.sourceSegmentIds)]
         .map((segmentId) => spanBySegmentId.get(segmentId))
-        .filter((span): span is { id: string; contactId: string | null } => Boolean(span));
+        .filter((span): span is TranscriptSourceSpanRef => Boolean(span));
       if (
         sourceSpans.length === 0
         || !extracted.sourceSegmentIds.includes(extracted.subjectSegmentId)
@@ -885,7 +1017,34 @@ export async function ingestMeetingTranscriptToLivingContext(
         observedAt,
         sources: sourceSpans.map((sourceSpan) => ({
           sourceSpanId: sourceSpan.id,
-          evidenceRole: 'source',
+          sourceRefType: 'source_span',
+          sourceRefId: sourceSpan.id,
+          evidenceRole: 'transcript_assertion_source',
+          locator: {
+            meetingId: input.meetingId,
+            scheduledInterviewId: input.scheduledInterviewId ?? null,
+            artifactId: artifact.id,
+            artifactVersionId: version.id,
+            stableSegmentId: sourceSpan.stableSegmentId,
+            charStart: sourceSpan.charStart,
+            charEnd: sourceSpan.charEnd,
+            lineStart: sourceSpan.lineStart,
+            lineEnd: sourceSpan.lineEnd,
+            timestampStartMs: sourceSpan.timestampStartMs,
+            timestampEndMs: sourceSpan.timestampEndMs,
+            speakerRole: sourceSpan.speakerRole,
+            speakerLabel: sourceSpan.speakerLabel,
+            channel: sourceSpan.channel,
+          },
+          exactText: sourceSpan.exactText,
+          contentHash: sourceSpan.contentHash,
+          metadata: {
+            sourceKind: 'meeting_transcript.assertion_source_span',
+            provider: input.provider ?? null,
+            confidence: sourceSpan.confidence,
+            contactId: sourceSpan.contactId,
+            segmentMetadata: sourceSpan.metadata ?? {},
+          },
         })),
         entities: [
           {
@@ -944,6 +1103,33 @@ export async function ingestMeetingTranscriptToLivingContext(
             signalKey: concept.canonicalKey,
             interactionId: identity.interactionId,
           });
+        }
+      }
+      // Track concept co-occurrence adjacency
+      if (contextConcepts.length >= 2) {
+        try {
+          const registry = createConceptRegistry(db);
+          for (let i = 0; i < contextConcepts.length; i++) {
+            for (let j = i + 1; j < contextConcepts.length; j++) {
+              const left = contextConcepts[i]!;
+              const right = contextConcepts[j]!;
+              await registry.addAdjacency({
+                fromConceptId: left.conceptId,
+                toConceptId: right.conceptId,
+                dimension: 'co_occurrence',
+                stretchAllowed: true,
+                confidence: boundedScore(extracted.confidence) ?? 0.7,
+                evidenceEntityType: 'assertion',
+                evidenceEntityId: assertion.id,
+                evidenceLocator: `meeting:${input.meetingId}:${extracted.predicate}`,
+                observedAt: nowSeconds(),
+              });
+            }
+          }
+        } catch (err) {
+          const message = err instanceof Error ? err.message : String(err);
+          if (!message.includes('concept_adjacency')) throw err;
+          console.error('[meetingTranscript] skipped concept adjacency persistence:', message);
         }
       }
       assertionCount++;

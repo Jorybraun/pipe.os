@@ -12,9 +12,24 @@ import type { LLMProvider } from '../../llm/types';
 function makeStubProvider(response: unknown, name = 'stub-gemma'): LLMProvider {
   return {
     name,
+    model: name,
     supportsTools: false,
     async complete() {
       return { content: typeof response === 'string' ? response : JSON.stringify(response) };
+    },
+  };
+}
+
+function makeModelKeyProvider(response: unknown, modelKey: string): LLMProvider & { getModelKey(): string } {
+  return {
+    name: 'cloudflare-ai',
+    model: '@cf/meta/llama-3.1-8b-instruct',
+    supportsTools: false,
+    async complete() {
+      return { content: typeof response === 'string' ? response : JSON.stringify(response) };
+    },
+    getModelKey() {
+      return modelKey;
     },
   };
 }
@@ -59,6 +74,30 @@ describe('discoverCandidateProfile', () => {
     expect(result.modelUsed).toBe('stub-gemma');
   });
 
+  it('records the exact provider model key when the provider exposes one', async () => {
+    const provider = makeModelKeyProvider({
+      candidate_searchable_profile: PROFILE_400,
+      key_concepts: {
+        mustHaveSkills: ['TypeScript', 'Cloudflare Workers'],
+        niceToHaveSkills: ['Vitest'],
+        seniority: 'senior',
+        primary_language: 'typescript',
+        detected_domain: 'developer-tools',
+      },
+    }, 'workers-ai/@cf/google/gemma-4-26b-a4b-it');
+
+    const result = await discoverCandidateProfile({
+      provider,
+      parsed: {
+        skills: ['TypeScript', 'Cloudflare Workers'],
+        yearsOfExperience: 8,
+      },
+      resumeText: 'Full resume body here...',
+    });
+
+    expect(result.modelUsed).toBe('workers-ai/@cf/google/gemma-4-26b-a4b-it');
+  });
+
   it('strips markdown code fences around the JSON response', async () => {
     const provider = makeStubProvider(
       '```json\n' +
@@ -81,6 +120,50 @@ describe('discoverCandidateProfile', () => {
     });
 
     expect(result.keyConcepts.primary_language).toBe('go');
+  });
+
+  it('extracts a balanced JSON object from provider preamble without accepting plain prose', async () => {
+    const provider = makeStubProvider(
+      'Here is the JSON object you requested:\n' +
+        JSON.stringify({
+          candidate_searchable_profile: `${PROFILE_400} They also mention JSON-shaped snippets like {"not":"outer"} inside the narrative without breaking parsing.`,
+          key_concepts: {
+            mustHaveSkills: ['Cloudflare Workers', 'TypeScript'],
+            niceToHaveSkills: ['Vitest'],
+            seniority: null,
+            primary_language: 'typescript',
+            detected_domain: 'developer-tools',
+          },
+        }) +
+        '\nDone.',
+    );
+
+    const result = await discoverCandidateProfile({
+      provider,
+      parsed: { skills: ['TypeScript', 'Cloudflare Workers'] },
+    });
+
+    expect(result.keyConcepts.mustHaveSkills).toEqual(['cloudflare workers', 'typescript']);
+    expect(result.keyConcepts.primary_language).toBe('typescript');
+  });
+
+  it('rejects array-shaped provider output instead of accepting an inner object', async () => {
+    const provider = makeStubProvider([
+      {
+        candidate_searchable_profile: PROFILE_400,
+        key_concepts: {
+          mustHaveSkills: ['go'],
+          niceToHaveSkills: [],
+          seniority: 'senior',
+          primary_language: 'go',
+          detected_domain: 'infrastructure',
+        },
+      },
+    ]);
+
+    await expect(
+      discoverCandidateProfile({ provider, parsed: { skills: ['Go'] } }),
+    ).rejects.toThrow(/JSON object/i);
   });
 
   it('throws if the profile is shorter than MIN_PROFILE_CHARS', async () => {
@@ -112,6 +195,64 @@ describe('discoverCandidateProfile', () => {
     });
 
     expect(result.keyConcepts.seniority).toBeNull();
+  });
+
+  it('does not fabricate a greenfield ratio when model output is unsupported', async () => {
+    const provider = makeStubProvider({
+      candidate_searchable_profile: PROFILE_400,
+      key_concepts: {
+        mustHaveSkills: ['go'],
+        niceToHaveSkills: [],
+        seniority: 'senior',
+        primary_language: 'go',
+        detected_domain: 'infrastructure',
+      },
+      career_context: {
+        company_stages: ['growth'],
+        company_size_exposure: ['200-1000'],
+        tenure_pattern: 'stable',
+        progression_velocity: 'normal',
+        ownership_depth: 'service',
+        system_scale_exposure: ['distributed-systems'],
+        greenfield_ratio: 'unclear',
+      },
+    });
+
+    const result = await discoverCandidateProfile({
+      provider,
+      parsed: { skills: ['Go'] },
+    });
+
+    expect(result.careerContext.greenfield_ratio).toBeNull();
+  });
+
+  it('preserves a source-backed greenfield ratio when the model provides a valid number', async () => {
+    const provider = makeStubProvider({
+      candidate_searchable_profile: PROFILE_400,
+      key_concepts: {
+        mustHaveSkills: ['go'],
+        niceToHaveSkills: [],
+        seniority: 'senior',
+        primary_language: 'go',
+        detected_domain: 'infrastructure',
+      },
+      career_context: {
+        company_stages: ['growth'],
+        company_size_exposure: ['200-1000'],
+        tenure_pattern: 'stable',
+        progression_velocity: 'normal',
+        ownership_depth: 'service',
+        system_scale_exposure: ['distributed-systems'],
+        greenfield_ratio: 0.75,
+      },
+    });
+
+    const result = await discoverCandidateProfile({
+      provider,
+      parsed: { skills: ['Go'] },
+    });
+
+    expect(result.careerContext.greenfield_ratio).toBe(0.75);
   });
 
   it('dedupes and normalizes skill arrays', async () => {

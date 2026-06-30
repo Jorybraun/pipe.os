@@ -10,9 +10,9 @@ import {
 export async function insertCandidateNode(
   db: D1Database,
   node: Omit<CandidateNode, 'id' | 'created_at' | 'updated_at'>,
-  options: { mirrorLivingContext?: boolean } = {},
+  options: { mirrorLivingContext?: boolean; ingestionKeyOverride?: string } = {},
 ): Promise<CandidateNode> {
-  const ingestionKey = [
+  const ingestionKey = options.ingestionKeyOverride ?? [
     node.candidate_id,
     node.source_type,
     node.source_reference ?? '',

@@ -9,11 +9,12 @@ import {
   transcribeAudioWhisper,
   type StructuredTranscription,
 } from '../lib/transcribe';
-import { ingestMeetingTranscriptToLivingContext } from '../lib/livingContext';
+import { ingestMeetingTranscriptToLivingContext, stableJson } from '../lib/livingContext';
 import {
   loadMeetingTranscriptContext,
   searchTranscriptSourceSpans,
 } from '../lib/livingContext/readModel';
+import { ingestMeetingTranscriptProcessingFailure } from '../lib/assessmentLayer/transcriptProcessingEvidence';
 import { getTurnIceServers } from '../lib/turnCredentials';
 import { sendTransactionalEmail } from '../lib/transactionalEmail';
 import {
@@ -21,14 +22,22 @@ import {
   MIN_TTL_SECONDS,
 } from '../lib/devContainerTtl';
 import {
+  RepoTaskInterviewSessionStore,
+  type AssessmentActorType,
+  type AssessmentProgressSnapshot,
+  type CommitSubmissionChangedFileStatus,
+} from '../lib/repoTaskInterviewSession';
+import {
   getLatestSessionForRoom,
   getSessionByIdForRoom,
   insertRoomSession,
+  markError,
   markStopped,
   type DevContainerSessionRow,
 } from '../lib/devContainerSessions';
 import type {
   JsonObject,
+  JsonValue,
   MeetingTranscriptAssertionInput,
   MeetingTranscriptSegmentInput,
 } from '../lib/livingContext';
@@ -97,9 +106,129 @@ const E2E_TRANSCRIPT_OVERRIDE_MAX_BYTES = 24 * 1024;
 const DEFAULT_DEV_CONTAINER_TTL_SECONDS = 3600;
 const DEFAULT_DEV_CONTAINER_MAX_TTL_SECONDS = 7200;
 const DEFAULT_DEV_CONTAINER_INSTANCE_TYPE = 'standard-1';
+const MAX_WORKSPACE_INIT_DIAGNOSTIC_CHARS = 1_000;
 const WORKSPACE_INTERVIEW_TYPES = new Set(['DEV_CONTAINER_CHALLENGE', 'OPEN_SOURCE_BUG_FIX']);
 const WORKSPACE_TERMINAL_STATUSES = new Set(['ERROR', 'STOPPED', 'EXPIRED']);
 const WORKSPACE_PROXY_ALLOWED_STATUS: ReadonlySet<string> = new Set(['READY', 'SLEEPING']);
+const LIVING_CONTENT_HASH_RE = /^content_[a-f0-9]{32}$/;
+const SHA256_HEX_RE = /^[a-f0-9]{64}$/;
+const TERMINAL_FINGERPRINT_RE = /^terminal_[a-f0-9]{8}$/;
+const TERMINAL_COMMAND_ID_RE = /^.+:command:(host|guest):\d+:\d+:terminal_[a-f0-9]{8}$/;
+const CLIPPY_PROMPT_FINGERPRINT_RE = /^clippy_[a-f0-9]{8}$/;
+const BROWSER_PROMPT_ID_RE = /^[a-zA-Z0-9:_-]+:(host|guest):prompt:\d+:clippy_[a-f0-9]{8}$/;
+const ROOM_SURFACES = new Set(['standard', 'win95']);
+const WINDOW_LIFECYCLE_SOURCES = new Set([
+  'win95_desktop_ui',
+  'win95_file_system',
+  'win95_start_menu',
+  'win95_window_chrome',
+  'win95_taskbar',
+  'standard_assessment_ui',
+  'clippy_action',
+  'shared_state_sync',
+]);
+const WINDOW_STATE_ACTIONS = new Set([
+  'focus',
+  'maximize',
+  'minimize',
+  'move',
+  'resize',
+  'restore_or_focus',
+  'restore_size',
+  'update',
+]);
+const WINDOW_STATE_SOURCES = new Set([
+  'win95_desktop_ui',
+  'win95_start_menu',
+  'win95_window_chrome',
+  'win95_taskbar',
+]);
+const WINDOW_STATE_KEYS = new Set(['x', 'y', 'width', 'height', 'minimized', 'maximized', 'focused']);
+const WINDOW_DATA_ACTIONS = new Set(['edit_text', 'edit_paint', 'update_data']);
+const WINDOW_DATA_SOURCES = new Set(['win95_window_data_sync', 'win95_file_delete_sync']);
+const CHAT_DELIVERY_STATUSES = new Set(['pending', 'accepted', 'rejected']);
+const CLIPPY_UI_SOURCES = new Set(['clippy_tray_ui', 'clippy_prompt_ui', 'clippy_chat_ui']);
+const CLIPPY_UI_EXECUTION_STATUSES = new Set(['opened', 'closed', 'dismissed', 'executed']);
+const CLIPPY_PROMPT_EVENT_SOURCES = new Set(['browser_proactive_clippy_prompt', 'clippy_agent_bridge']);
+const CLIPPY_ACTION_EVENT_ID_RE = /^clippy-action:(host|guest|agent):\d+:(clippy_tray_ui|clippy_prompt_ui|clippy_chat_ui|clippy_agent_bridge):(tray|prompt|chat|agent):(opened|closed|dismissed|executed|suggested):[a-zA-Z0-9:_-]+$/;
+const AGENT_STATUSES = new Set(['starting', 'idle', 'thinking', 'working', 'auth_needed', 'disconnected']);
+const AGENT_STATUS_MESSAGE_SOURCES = new Set(['agent_status', 'bridge_diagnostic', 'bridge_observation', 'agent_stdout', 'agent_api_response']);
+const AGENT_STATUS_EVENT_ID_RE = /^agent-status:[a-zA-Z0-9:_-]+:\d+:(agent_status|bridge_diagnostic|bridge_observation|agent_stdout|agent_api_response):[a-zA-Z0-9:_-]+:[a-zA-Z0-9:_-]+$/;
+const AGENT_CHAT_RESPONSE_ID_RE = /^agent-chat:[a-zA-Z0-9:_-]+:\d+:CHAT_RESPONSE:agent_[a-f0-9]{8}$/;
+const AGENT_CHAT_RESPONSE_FINGERPRINT_RE = /^agent_[a-f0-9]{8}$/;
+const BROWSER_NAVIGATION_TRIGGERS = new Set([
+  'address_bar',
+  'go_button',
+  'history_back',
+  'history_forward',
+  'reload_button',
+  'external_open',
+  'file_system_link_open',
+  'open_window_initial_url',
+  'shared_state_sync',
+]);
+const WORKSPACE_STATE_SOURCES = new Set(['initial_load', 'launch', 'refresh', 'error']);
+const CURSOR_PRESENCE_SAMPLE_INTERVAL_MS = 15_000;
+const CURSOR_PRESENCE_MOVEMENT_THRESHOLD = 0.03;
+const CURSOR_SAMPLE_ID_RE = /^cursor:(host|guest):\d+:\d+:\d+$/;
+const START_MENU_EVENT_SOURCES = new Set([
+  'win95_start_button',
+  'win95_desktop_click',
+  'win95_start_menu_item',
+]);
+const START_MENU_EVENT_ID_RE = /^start-menu:(host|guest):\d+:(open|close):[a-z0-9_]+$/;
+const MEDIA_CONTROL_ID_RE = /^media:(host|guest):(microphone|camera):\d+:(enabled|disabled)$/;
+const CODE_SERVER_SAVE_ACTIONS = new Set(['created', 'modified']);
+const SURFACE_CHANGE_ID_RE = /^surface:(host|guest):\d+:(standard|win95):(standard|win95)$/;
+const WORKSPACE_STATE_EVENT_ID_RE = /^workspace-state:(host|guest):\d+:(initial_load|launch|refresh|error):[^:]+:.+$/;
+const WINDOW_LIFECYCLE_ID_RE = /^window-lifecycle:(host|guest):\d+:(open|close):[^:]+$/;
+const WINDOW_STATE_CHANGE_ID_RE = /^window-state:(host|guest):\d+:[^:]+:[a-z_]+$/;
+const WINDOW_DATA_UPDATE_ID_RE = /^window-data:(host|guest):\d+:[^:]+:[a-z_]+$/;
+const WINDOW_DATA_FINGERPRINT_RE = /^data_[a-f0-9]{8}$/;
+const BROWSER_NAVIGATION_ID_RE = /^browser-navigation:(host|guest):\d+:[^:]+:[a-z_]+:nav_[a-f0-9]{8}$/;
+const BROWSER_NAVIGATION_FINGERPRINT_RE = /^nav_[a-f0-9]{8}$/;
+const FILE_CHANGE_ID_RE = /^file:(host|guest):\d+:(upsert|delete):[^:]+$/;
+const CODE_EDITOR_OPEN_ID_RE = /^code-editor-open:(host|guest):\d+:.+$/;
+
+function browserNavigationFingerprint(value: string): string {
+  let hash = 0x811c9dc5;
+  for (let index = 0; index < value.length; index += 1) {
+    hash ^= value.charCodeAt(index);
+    hash = Math.imul(hash, 0x01000193);
+  }
+  return `nav_${(hash >>> 0).toString(16).padStart(8, '0')}`;
+}
+
+function safeEvidenceIdPart(value: unknown): string {
+  const normalized = (typeof value === 'string' ? value : 'none')
+    .trim()
+    .replace(/[^a-zA-Z0-9:_-]+/g, '-')
+    .replace(/^-+|-+$/g, '');
+  return normalized || 'none';
+}
+
+function hasOptionalBrowserPromptRef(properties: Record<string, unknown>): boolean {
+  const promptId = properties.browserPromptId;
+  const promptFingerprint = properties.browserPromptFingerprint;
+  const promptTimestamp = properties.browserPromptTimestamp;
+  const promptLength = properties.browserPromptLength;
+  const hasAny = promptId !== undefined
+    || promptFingerprint !== undefined
+    || promptTimestamp !== undefined
+    || promptLength !== undefined;
+  if (!hasAny) return true;
+  return typeof promptId === 'string'
+    && BROWSER_PROMPT_ID_RE.test(promptId)
+    && typeof promptFingerprint === 'string'
+    && CLIPPY_PROMPT_FINGERPRINT_RE.test(promptFingerprint)
+    && typeof promptTimestamp === 'number'
+    && Number.isInteger(promptTimestamp)
+    && promptTimestamp >= 0
+    && typeof promptLength === 'number'
+    && Number.isInteger(promptLength)
+    && promptLength > 0
+    && promptId.endsWith(`:${promptTimestamp}:${promptFingerprint}`);
+}
 
 const roomEventSchema = z.object({
   event: z.enum(['JOINED', 'LEFT', 'STARTED', 'RECORDING_STARTED', 'ENDED']),
@@ -119,7 +248,10 @@ const sessionEventSchema = z.object({
     'window_close',
     'window_update',
     'window_focus',
+    'cursor_presence',
+    'media_control',
     'room_surface_change',
+    'desktop_menu_toggle',
     'workspace_state',
     'participant_join',
     'participant_leave',
@@ -133,13 +265,1028 @@ const sessionEventSchema = z.object({
   text: z.string().min(1).max(8000),
   actor: z.enum(['host', 'guest', 'agent', 'system']).optional(),
   properties: z.record(z.string(), z.unknown()).optional(),
+}).superRefine((event, ctx) => {
+  const properties = event.properties ?? {};
+  const hasString = (value: unknown): value is string => typeof value === 'string' && value.trim().length > 0;
+  const hasFiniteNonNegativeNumber = (value: unknown): boolean => (
+    typeof value === 'number' && Number.isFinite(value) && value >= 0
+  );
+  const hasRoomSurface = (value: unknown): boolean => typeof value === 'string' && ROOM_SURFACES.has(value);
+  const propertyActorMatches = event.actor
+    && (properties.actor === undefined || properties.actor === event.actor);
+  if (event.type === 'chat_message') {
+    const sourceOk = properties.source === 'room_chat_client_submit'
+      && properties.chatEventSource === 'browser_room_chat_window';
+    const actorOk = (event.actor === 'host' || event.actor === 'guest')
+      && propertyActorMatches;
+    const messageOk = hasString(properties.roomMessageId)
+      && hasString(properties.clientId)
+      && hasFiniteNonNegativeNumber(properties.messageCreatedAt)
+      && typeof properties.messageLength === 'number'
+      && properties.messageLength === event.text.length
+      && typeof properties.deliveryStatus === 'string'
+      && CHAT_DELIVERY_STATUSES.has(properties.deliveryStatus);
+    const contextOk = hasRoomSurface(properties.surface)
+      && hasString(properties.roomPhase)
+      && typeof properties.durableObjectReplayExpected === 'boolean';
+    if (sourceOk && actorOk && messageOk && contextOk) return;
+    ctx.addIssue({
+      code: z.ZodIssueCode.custom,
+      message: 'Room chat evidence must come from browser room chat with message identity, delivery status, surface, and room phase.',
+      path: ['properties'],
+    });
+    return;
+  }
+  if (event.type === 'file_change') {
+    if (properties.source === 'win95_shared_file_system') {
+      const operation = properties.operation;
+      const operationOk = operation === 'upsert' || operation === 'delete';
+      const capturedAtMs = properties.capturedAtMs;
+      const capturedAtOk = typeof capturedAtMs === 'number'
+        && Number.isInteger(capturedAtMs)
+        && capturedAtMs >= 0;
+      const actorOk = (event.actor === 'host' || event.actor === 'guest')
+        && propertyActorMatches;
+      const fileChangeIdOk = typeof properties.fileChangeId === 'string'
+        && FILE_CHANGE_ID_RE.test(properties.fileChangeId)
+        && operationOk
+        && capturedAtOk
+        && hasString(properties.fileId)
+        && properties.fileChangeId === `file:${event.actor}:${capturedAtMs}:${operation}:${properties.fileId}`;
+      const sharedOk = properties.fileEventSource === 'browser_client_submit'
+        && hasString(properties.fileId)
+        && hasString(properties.fileName)
+        && hasString(properties.fileKind)
+        && properties.surface === 'win95'
+        && hasString(properties.roomPhase)
+        && typeof properties.durableObjectReplayExpected === 'boolean';
+      const upsertOk = operation === 'upsert'
+        && typeof properties.contentHash === 'string'
+        && LIVING_CONTENT_HASH_RE.test(properties.contentHash)
+        && hasFiniteNonNegativeNumber(properties.contentLength)
+        && hasFiniteNonNegativeNumber(properties.fileUpdatedAt);
+      const deleteOk = operation === 'delete'
+        && typeof properties.deletedContentHash === 'string'
+        && LIVING_CONTENT_HASH_RE.test(properties.deletedContentHash)
+        && hasFiniteNonNegativeNumber(properties.deletedContentLength)
+        && hasFiniteNonNegativeNumber(properties.deletedFileUpdatedAt);
+      if (actorOk && fileChangeIdOk && sharedOk && (upsertOk || deleteOk)) return;
+      ctx.addIssue({
+        code: z.ZodIssueCode.custom,
+        message: 'Win95 file-change evidence must include browser source, actor-bound file-change id, capture timestamp, file identity, operation, content hash, and file timestamps.',
+        path: ['properties'],
+      });
+      return;
+    }
+    if (properties.source === 'code_server_workspace') {
+      const observedBy = properties.observedBy;
+      const observedByOk = observedBy === 'agent_bridge' || observedBy === 'clippy_agent_bridge';
+      const observedAtOk = hasString(properties.observedAt);
+      const bridgeOk = properties.bridgeEventType === 'FILE_CHANGED'
+        && properties.editorSurface === 'code-server';
+      const actionOk = properties.action === 'deleted';
+      const pathOk = hasString(properties.path);
+      const hashOk = typeof properties.contentHash === 'string' && SHA256_HEX_RE.test(properties.contentHash);
+      const sizeOk = hasFiniteNonNegativeNumber(properties.sizeBytes);
+      const directBridgeOk = properties.bridgePersisted === true
+        && observedBy === 'agent_bridge'
+        && hasString(properties.workspaceRoot);
+      const browserFallbackOk = properties.bridgePersisted === false
+        && observedBy === 'clippy_agent_bridge'
+        && hasRoomSurface(properties.surface)
+        && hasString(properties.roomPhase)
+        && hasString(properties.workspaceStatus)
+        && hasString(properties.workspaceSessionId)
+        && (
+          properties.repoUrl === null
+          || properties.repoUrl === undefined
+          || hasString(properties.repoUrl)
+        );
+      if (
+        event.actor === 'system'
+        && observedByOk
+        && observedAtOk
+        && bridgeOk
+        && actionOk
+        && pathOk
+        && hashOk
+        && sizeOk
+        && (directBridgeOk || browserFallbackOk)
+      ) return;
+      ctx.addIssue({
+        code: z.ZodIssueCode.custom,
+        message: 'Code-server delete evidence must come from a FILE_CHANGED workspace bridge event with path, content hash, size, observation time, and direct or browser-fallback provenance.',
+        path: ['properties'],
+      });
+      return;
+    }
+    ctx.addIssue({
+      code: z.ZodIssueCode.custom,
+      message: 'File-change evidence must come from a recognized source-backed file surface.',
+      path: ['properties'],
+    });
+    return;
+  }
+  if (event.type === 'browser_navigation') {
+    const url = properties.url;
+    let parsedUrl: URL | null = null;
+    if (typeof url === 'string') {
+      try {
+        parsedUrl = new URL(url);
+      } catch {
+        parsedUrl = null;
+      }
+    }
+    const protocol = parsedUrl?.protocol.replace(':', '');
+    const sourceOk = properties.source === 'room_browser_window'
+      && properties.navigationSource === 'browser_window_client_submit';
+    const urlOk = typeof url === 'string'
+      && url.trim().length > 0
+      && event.text === url
+      && parsedUrl !== null
+      && (protocol === 'http' || protocol === 'https');
+    const urlPartsOk = parsedUrl !== null
+      && properties.urlHost === parsedUrl.hostname
+      && properties.urlProtocol === protocol;
+    const triggerOk = typeof properties.navigationTrigger === 'string'
+      && BROWSER_NAVIGATION_TRIGGERS.has(properties.navigationTrigger);
+    const actorOk = (event.actor === 'host' || event.actor === 'guest')
+      && properties.actor === event.actor;
+    const capturedAtMs = properties.capturedAtMs;
+    const navigationId = properties.browserNavigationId;
+    const urlFingerprint = properties.urlFingerprint;
+    const idOk = typeof navigationId === 'string'
+      && BROWSER_NAVIGATION_ID_RE.test(navigationId)
+      && typeof capturedAtMs === 'number'
+      && Number.isInteger(capturedAtMs)
+      && capturedAtMs >= 0
+      && typeof urlFingerprint === 'string'
+      && BROWSER_NAVIGATION_FINGERPRINT_RE.test(urlFingerprint)
+      && typeof url === 'string'
+      && urlFingerprint === browserNavigationFingerprint(url)
+      && navigationId === `browser-navigation:${event.actor}:${capturedAtMs}:${properties.windowId}:${properties.navigationTrigger}:${urlFingerprint}`;
+    const contextOk = hasString(properties.windowId)
+      && (properties.surface === 'standard' || properties.surface === 'win95')
+      && hasString(properties.roomPhase);
+    if (sourceOk && urlOk && urlPartsOk && triggerOk && actorOk && idOk && contextOk) return;
+    ctx.addIssue({
+      code: z.ZodIssueCode.custom,
+      message: 'Browser navigation evidence must come from the room browser window with actor, stable navigation id, timestamp, normalized URL, trigger, and room context.',
+      path: ['properties'],
+    });
+    return;
+  }
+  if (event.type === 'window_open' || event.type === 'window_close') {
+    const expectedLifecycleKind = event.type === 'window_open' ? 'open' : 'close';
+    const sourceOk = properties.source === 'window_lifecycle_client_submit'
+      && typeof properties.lifecycleSource === 'string'
+      && WINDOW_LIFECYCLE_SOURCES.has(properties.lifecycleSource);
+    const lifecycleOk = properties.lifecycleKind === expectedLifecycleKind;
+    const actorOk = (event.actor === 'host' || event.actor === 'guest')
+      && properties.actor === event.actor;
+    const windowIdOk = hasString(properties.windowId);
+    const windowTypeOk = hasString(properties.windowType);
+    const windowTitleOk = hasString(properties.windowTitle)
+      && event.text === properties.windowTitle;
+    const capturedAtMs = properties.capturedAtMs;
+    const lifecycleId = properties.windowLifecycleId;
+    const idOk = typeof lifecycleId === 'string'
+      && WINDOW_LIFECYCLE_ID_RE.test(lifecycleId)
+      && typeof capturedAtMs === 'number'
+      && Number.isInteger(capturedAtMs)
+      && capturedAtMs >= 0
+      && lifecycleId === `window-lifecycle:${event.actor}:${capturedAtMs}:${expectedLifecycleKind}:${properties.windowId}`;
+    const contextOk = hasRoomSurface(properties.surface)
+      && hasString(properties.roomPhase)
+      && typeof properties.durableObjectReplayExpected === 'boolean';
+    if (sourceOk && lifecycleOk && actorOk && windowIdOk && windowTypeOk && windowTitleOk && idOk && contextOk) return;
+    ctx.addIssue({
+      code: z.ZodIssueCode.custom,
+      message: 'Window lifecycle evidence must come from the room window client with actor, lifecycle kind, stable event id, timestamp, window identity, surface, and room phase.',
+      path: ['properties'],
+    });
+    return;
+  }
+  if (event.type === 'window_update' || event.type === 'window_focus') {
+    if (properties.source === 'window_data_client_submit') {
+      const dataKeys = Array.isArray(properties.dataKeys)
+        ? properties.dataKeys.filter((key): key is string => typeof key === 'string')
+        : [];
+      const dataValueFingerprints = (
+        typeof properties.dataValueFingerprints === 'object'
+        && properties.dataValueFingerprints !== null
+        && !Array.isArray(properties.dataValueFingerprints)
+      )
+        ? properties.dataValueFingerprints as Record<string, unknown>
+        : null;
+      const sortedDataKeys = [...dataKeys].sort();
+      const dataKeysOk = dataKeys.length > 0
+        && dataKeys.every((key, index) => key === sortedDataKeys[index] && hasString(key));
+      const fingerprintKeys = dataValueFingerprints ? Object.keys(dataValueFingerprints).sort() : [];
+      const fingerprintsOk = dataValueFingerprints !== null
+        && fingerprintKeys.length === dataKeys.length
+        && fingerprintKeys.every((key, index) => (
+          key === dataKeys[index]
+          && typeof dataValueFingerprints[key] === 'string'
+          && WINDOW_DATA_FINGERPRINT_RE.test(dataValueFingerprints[key])
+        ));
+      const sourceOk = event.type === 'window_update'
+        && typeof properties.dataSource === 'string'
+        && WINDOW_DATA_SOURCES.has(properties.dataSource);
+      const actionOk = typeof properties.action === 'string' && WINDOW_DATA_ACTIONS.has(properties.action);
+      const actorOk = (event.actor === 'host' || event.actor === 'guest')
+        && properties.actor === event.actor;
+      const windowOk = hasString(properties.windowId)
+        && event.text === `Window data updated: ${properties.windowId}`;
+      const capturedAtMs = properties.capturedAtMs;
+      const dataUpdateId = properties.windowDataUpdateId;
+      const idOk = typeof dataUpdateId === 'string'
+        && WINDOW_DATA_UPDATE_ID_RE.test(dataUpdateId)
+        && typeof capturedAtMs === 'number'
+        && Number.isInteger(capturedAtMs)
+        && capturedAtMs >= 0
+        && dataUpdateId === `window-data:${event.actor}:${capturedAtMs}:${properties.windowId}:${properties.action}`;
+      const contextOk = hasRoomSurface(properties.surface)
+        && hasString(properties.roomPhase)
+        && typeof properties.durableObjectReplayExpected === 'boolean';
+      if (
+        sourceOk
+        && actionOk
+        && actorOk
+        && windowOk
+        && idOk
+        && dataKeysOk
+        && fingerprintsOk
+        && contextOk
+      ) return;
+      ctx.addIssue({
+        code: z.ZodIssueCode.custom,
+        message: 'Window data evidence must include the client source, actor, stable event id, timestamp, data keys, value fingerprints, surface, and room phase.',
+        path: ['properties'],
+      });
+      return;
+    }
+    const statePatch = properties.statePatch;
+    const statePatchRecord = typeof statePatch === 'object' && statePatch !== null && !Array.isArray(statePatch)
+      ? statePatch as Record<string, unknown>
+      : null;
+    const stateKeys = Array.isArray(properties.stateKeys)
+      ? properties.stateKeys.filter((key): key is string => typeof key === 'string')
+      : [];
+    const patchEntries = statePatchRecord ? Object.entries(statePatchRecord) : [];
+    const patchOk = patchEntries.length > 0
+      && patchEntries.every(([key, value]) =>
+        WINDOW_STATE_KEYS.has(key)
+        && (typeof value === 'number' || typeof value === 'boolean')
+        && (typeof value !== 'number' || Number.isFinite(value)),
+      );
+    const sortedPatchKeys = patchEntries.map(([key]) => key).sort();
+    const stateKeysOk = stateKeys.length === sortedPatchKeys.length
+      && stateKeys.every((key, index) => key === sortedPatchKeys[index]);
+    const sourceOk = properties.source === 'window_state_client_submit'
+      && typeof properties.stateSource === 'string'
+      && WINDOW_STATE_SOURCES.has(properties.stateSource);
+    const actionOk = typeof properties.action === 'string' && WINDOW_STATE_ACTIONS.has(properties.action);
+    const actorOk = (event.actor === 'host' || event.actor === 'guest')
+      && properties.actor === event.actor;
+    const windowOk = hasString(properties.windowId)
+      && event.text === `Window state updated: ${properties.windowId}`;
+    const capturedAtMs = properties.capturedAtMs;
+    const stateChangeId = properties.windowStateChangeId;
+    const idOk = typeof stateChangeId === 'string'
+      && WINDOW_STATE_CHANGE_ID_RE.test(stateChangeId)
+      && typeof capturedAtMs === 'number'
+      && Number.isInteger(capturedAtMs)
+      && capturedAtMs >= 0
+      && stateChangeId === `window-state:${event.actor}:${capturedAtMs}:${properties.windowId}:${properties.action}`;
+    const contextOk = hasRoomSurface(properties.surface)
+      && hasString(properties.roomPhase)
+      && typeof properties.durableObjectReplayExpected === 'boolean';
+    if (sourceOk && actionOk && actorOk && windowOk && idOk && contextOk && patchOk && stateKeysOk) return;
+    ctx.addIssue({
+      code: z.ZodIssueCode.custom,
+      message: 'Window state evidence must include the client source, actor, stable event id, timestamp, action, exact state patch, surface, and room phase.',
+      path: ['properties'],
+    });
+    return;
+  }
+  if (event.type === 'room_surface_change') {
+    const sourceOk = properties.source === 'room_surface_control';
+    const actorOk = (event.actor === 'host' || event.actor === 'guest')
+      && properties.actor === event.actor;
+    const eventSourceOk = properties.surfaceControlEventSource === 'browser_room_surface_toggle';
+    const surfacesOk = hasRoomSurface(properties.surface)
+      && hasRoomSurface(properties.previousSurface)
+      && properties.surface !== properties.previousSurface;
+    const expectedAction = properties.surface === 'win95' ? 'enter_desktop' : 'exit_desktop';
+    const actionOk = properties.action === expectedAction;
+    const roomPhaseOk = hasString(properties.roomPhase);
+    const capturedAtMs = properties.capturedAtMs;
+    const surfaceChangeId = properties.surfaceChangeId;
+    const idOk = typeof surfaceChangeId === 'string'
+      && SURFACE_CHANGE_ID_RE.test(surfaceChangeId)
+      && typeof capturedAtMs === 'number'
+      && Number.isInteger(capturedAtMs)
+      && capturedAtMs >= 0
+      && surfaceChangeId === `surface:${event.actor}:${capturedAtMs}:${properties.previousSurface}:${properties.surface}`;
+    const replayOk = properties.durableObjectReplayExpected === true;
+    if (sourceOk && actorOk && eventSourceOk && surfacesOk && actionOk && roomPhaseOk && idOk && replayOk) return;
+    ctx.addIssue({
+      code: z.ZodIssueCode.custom,
+      message: 'Room surface evidence must come from a browser room surface toggle with actor, previous/next surface, stable event id, timestamp, action, replay expectation, and room phase.',
+      path: ['properties'],
+    });
+    return;
+  }
+  if (event.type === 'desktop_menu_toggle') {
+    const sourceOk = properties.source === 'win95_start_menu_control';
+    const actorOk = (event.actor === 'host' || event.actor === 'guest')
+      && properties.actor === event.actor;
+    const eventSource = properties.menuEventSource;
+    const eventSourceOk = typeof eventSource === 'string' && START_MENU_EVENT_SOURCES.has(eventSource);
+    const open = properties.open;
+    const expectedAction = open === true ? 'open' : open === false ? 'close' : null;
+    const menuOk = properties.menuId === 'start' && typeof open === 'boolean';
+    const actionOk = expectedAction !== null
+      && properties.action === expectedAction
+      && event.text === (open ? 'Start menu opened' : 'Start menu closed');
+    const capturedAtMs = properties.capturedAtMs;
+    const startMenuEventId = properties.startMenuEventId;
+    const idOk = typeof startMenuEventId === 'string'
+      && START_MENU_EVENT_ID_RE.test(startMenuEventId)
+      && typeof capturedAtMs === 'number'
+      && Number.isInteger(capturedAtMs)
+      && capturedAtMs >= 0
+      && startMenuEventId === `start-menu:${event.actor}:${capturedAtMs}:${expectedAction}:${eventSource}`;
+    const contextOk = properties.surface === 'win95'
+      && hasString(properties.roomPhase)
+      && properties.durableObjectReplayExpected === true;
+    if (sourceOk && actorOk && eventSourceOk && menuOk && actionOk && idOk && contextOk) return;
+    ctx.addIssue({
+      code: z.ZodIssueCode.custom,
+      message: 'Start menu evidence must come from a Win95 desktop menu control with actor, source, stable event id, timestamp, action, surface, replay expectation, and room phase.',
+      path: ['properties'],
+    });
+    return;
+  }
+  if (event.type === 'participant_join' || event.type === 'participant_leave') {
+    ctx.addIssue({
+      code: z.ZodIssueCode.custom,
+      message: 'Participant lifecycle evidence must be captured by the meeting-room lifecycle route, not direct session-event submission.',
+      path: ['properties'],
+    });
+    return;
+  }
+  if (event.type === 'workspace_state') {
+    const capturedAtMs = properties.capturedAtMs;
+    const workspaceSessionId = properties.workspaceSessionId;
+    const workspaceStatus = properties.workspaceStatus;
+    const workspaceStateSource = properties.workspaceStateSource;
+    const sourceOk = properties.source === 'workspace_state_client_submit'
+      && properties.workspaceEventSource === 'browser_workspace_state_observer';
+    const actorOk = (event.actor === 'host' || event.actor === 'guest')
+      && propertyActorMatches;
+    const capturedAtOk = typeof capturedAtMs === 'number'
+      && Number.isInteger(capturedAtMs)
+      && capturedAtMs >= 0;
+    const statusOk = hasString(workspaceStatus);
+    const stateSourceOk = typeof workspaceStateSource === 'string'
+      && WORKSPACE_STATE_SOURCES.has(workspaceStateSource);
+    const stateIdSession = hasString(workspaceSessionId) ? workspaceSessionId : 'no-session';
+    const stateIdOk = typeof properties.workspaceStateEventId === 'string'
+      && WORKSPACE_STATE_EVENT_ID_RE.test(properties.workspaceStateEventId)
+      && capturedAtOk
+      && statusOk
+      && stateSourceOk
+      && properties.workspaceStateEventId === `workspace-state:${event.actor}:${capturedAtMs}:${workspaceStateSource}:${stateIdSession}:${workspaceStatus}`;
+    const sessionOk = workspaceStatus === 'ERROR'
+      ? (
+          workspaceSessionId === null
+          || workspaceSessionId === undefined
+          || hasString(workspaceSessionId)
+        )
+      : hasString(workspaceSessionId);
+    const challengeOk = (properties.githubPrNumber === null || properties.githubPrNumber === undefined || hasFiniteNonNegativeNumber(properties.githubPrNumber))
+      && (properties.matchedRepoId === null || properties.matchedRepoId === undefined || hasFiniteNonNegativeNumber(properties.matchedRepoId))
+      && (properties.challengeStatus === null || properties.challengeStatus === undefined || hasString(properties.challengeStatus))
+      && (properties.challengeKind === null || properties.challengeKind === undefined || hasString(properties.challengeKind))
+      && (properties.challengeSource === null || properties.challengeSource === undefined || hasString(properties.challengeSource))
+      && (properties.challengeMessage === null || properties.challengeMessage === undefined || hasString(properties.challengeMessage));
+    const lifecycleOk = properties.workspaceTelemetryPersisted === true
+      && properties.proxyUrlPersisted === false;
+    if (sourceOk && actorOk && capturedAtOk && stateIdOk && statusOk && stateSourceOk && sessionOk && challengeOk && lifecycleOk) return;
+    ctx.addIssue({
+      code: z.ZodIssueCode.custom,
+      message: 'Workspace-state evidence must come from the browser workspace observer with actor-bound state id, capture timestamp, status/session context, challenge diagnostics, and no persisted proxy URL.',
+      path: ['properties'],
+    });
+    return;
+  }
+  if (event.type === 'clippy_prompt') {
+    const promptCreatedAt = properties.promptCreatedAt;
+    const sourceOk = properties.source === 'clippy_prompt_client_submit'
+      && typeof properties.promptEventSource === 'string'
+      && CLIPPY_PROMPT_EVENT_SOURCES.has(properties.promptEventSource);
+    const actorOk = (event.actor === 'host' || event.actor === 'agent')
+      && (properties.actor === undefined || properties.actor === event.actor);
+    const promptOk = hasString(properties.promptId)
+      && hasString(properties.clientId)
+      && typeof promptCreatedAt === 'number'
+      && Number.isFinite(promptCreatedAt)
+      && promptCreatedAt >= 0
+      && typeof properties.promptLength === 'number'
+      && properties.promptLength === event.text.length
+      && hasString(properties.promptTrigger)
+      && hasString(properties.promptSource);
+    const browserPromptOk = properties.promptEventSource === 'browser_proactive_clippy_prompt'
+      && event.actor === 'host'
+      && properties.agentResponseClaimed === false
+      && hasRoomSurface(properties.surface)
+      && hasString(properties.roomPhase);
+    const agentPromptOk = properties.promptEventSource === 'clippy_agent_bridge'
+      && event.actor === 'agent'
+      && properties.bridgeEventType === 'CLIPPY_PROMPT'
+      && hasString(properties.observedAt)
+      && typeof properties.bridgePersisted === 'boolean';
+    if (sourceOk && actorOk && promptOk && (browserPromptOk || agentPromptOk)) return;
+    ctx.addIssue({
+      code: z.ZodIssueCode.custom,
+      message: 'Clippy prompt evidence must come from the browser proactive prompt flow or real agent bridge with prompt identity, trigger, length, source, and room context.',
+      path: ['properties'],
+    });
+    return;
+  }
+  if (event.type === 'clippy_action') {
+    const source = properties.source;
+    const capturedAtMs = properties.capturedAtMs;
+    const actionIdOk = hasString(properties.actionId);
+    const capturedAtOk = typeof capturedAtMs === 'number'
+      && Number.isInteger(capturedAtMs)
+      && capturedAtMs >= 0;
+    const expectedActionEventId = (
+      capturedAtOk
+      && hasString(source)
+      && hasString(properties.origin)
+      && hasString(properties.executionStatus)
+      && hasString(properties.actionId)
+    )
+      ? `clippy-action:${event.actor}:${capturedAtMs}:${source}:${properties.origin}:${properties.executionStatus}:${safeEvidenceIdPart(properties.actionId)}`
+      : null;
+    const actionEventIdOk = typeof properties.clippyActionEventId === 'string'
+      && CLIPPY_ACTION_EVENT_ID_RE.test(properties.clippyActionEventId)
+      && properties.clippyActionEventId === expectedActionEventId;
+    const surfaceContextOk = hasRoomSurface(properties.surface)
+      && hasString(properties.roomPhase);
+    if (typeof source === 'string' && CLIPPY_UI_SOURCES.has(source)) {
+      const originOk = source === 'clippy_tray_ui'
+        ? properties.origin === 'tray' && properties.actionSource === 'win95_taskbar_tray'
+        : source === 'clippy_chat_ui'
+          ? properties.origin === 'chat' && properties.actionSource === 'clippy_chat_window'
+          : properties.origin === 'prompt' && properties.actionSource === 'clippy_prompt_ui';
+      const actorOk = (event.actor === 'host' || event.actor === 'guest')
+        && properties.executedBy === event.actor;
+      const statusOk = typeof properties.executionStatus === 'string'
+        && CLIPPY_UI_EXECUTION_STATUSES.has(properties.executionStatus);
+      const noFakeAgentOk = properties.agentResponseClaimed === false
+        && (properties.agent === undefined || properties.agent === null);
+      if (actionIdOk && capturedAtOk && actionEventIdOk && surfaceContextOk && originOk && actorOk && statusOk && noFakeAgentOk) return;
+      ctx.addIssue({
+        code: z.ZodIssueCode.custom,
+        message: 'Clippy UI action evidence must come from tray, prompt, or chat UI with actor, stable action id, capture timestamp, action source, execution status, surface, and no agent attribution.',
+        path: ['properties'],
+      });
+      return;
+    }
+    if (source === 'clippy_agent_bridge') {
+      const commonOk = actionIdOk
+        && capturedAtOk
+        && actionEventIdOk
+        && properties.origin === 'agent'
+        && hasString(properties.agent)
+        && hasOptionalBrowserPromptRef(properties)
+        && properties.actionProtocol === 'clippy_room_action_tag'
+        && properties.bridgeEventType === 'ROOM_ACTION';
+      const suggestedOk = event.actor === 'agent'
+        && properties.executionStatus === 'suggested'
+        && (properties.actionSource === 'agent_stdout' || properties.actionSource === 'agent_api_response')
+        && hasString(properties.observedAt)
+        && typeof properties.bridgePersisted === 'boolean';
+      const executedOk = (event.actor === 'host' || event.actor === 'guest')
+        && properties.executionStatus === 'executed'
+        && properties.executedBy === event.actor
+        && (properties.actionSource === 'agent_stdout_action' || properties.actionSource === 'agent_api_response_action')
+        && hasString(properties.agentActionObservedAt)
+        && typeof properties.agentActionBridgePersisted === 'boolean'
+        && surfaceContextOk
+        && properties.agentResponseClaimed === false;
+      if (commonOk && (suggestedOk || executedOk)) return;
+      ctx.addIssue({
+        code: z.ZodIssueCode.custom,
+        message: 'Clippy agent action evidence must come from the real bridge with stable action id, capture timestamp, ROOM_ACTION metadata, and either a suggested agent event or a browser execution linked to that bridge event.',
+        path: ['properties'],
+      });
+      return;
+    }
+    ctx.addIssue({
+      code: z.ZodIssueCode.custom,
+      message: 'Clippy action evidence must come from a recognized Clippy UI or agent bridge source.',
+      path: ['properties'],
+    });
+    return;
+  }
+  if (event.type === 'ai_chat_user') {
+    const promptTimestamp = properties.promptTimestamp;
+    const promptFingerprint = properties.promptFingerprint;
+    const workspaceSessionId = properties.workspaceSessionId;
+    const promptId = properties.promptId;
+    const actorOk = (event.actor === 'host' || event.actor === 'guest')
+      && propertyActorMatches;
+    const sourceOk = properties.source === 'clippy_agent_chat_client_submit'
+      && properties.agentChatEventSource === 'browser_clippy_chat_window';
+    const bridgeOk = properties.bridgeMessageType === 'CHAT'
+      && properties.bridgeProtocol === 'clippy_dev_container_ws'
+      && properties.browserQueuedBridgeMessage === true
+      && properties.bridgeDeliveryConfirmed === false
+      && properties.deliveredToAgentBridge !== true
+      && properties.agentResponseClaimed === false;
+    const noAgentAttributionOk = properties.agent === undefined || properties.agent === null;
+    const promptOk = typeof promptTimestamp === 'number'
+      && Number.isFinite(promptTimestamp)
+      && promptTimestamp >= 0
+      && typeof promptFingerprint === 'string'
+      && CLIPPY_PROMPT_FINGERPRINT_RE.test(promptFingerprint)
+      && typeof properties.promptLength === 'number'
+      && properties.promptLength === event.text.length
+      && typeof promptId === 'string'
+      && typeof workspaceSessionId === 'string'
+      && promptId === `${workspaceSessionId}:${event.actor}:prompt:${promptTimestamp}:${promptFingerprint}`;
+    const contextOk = hasRoomSurface(properties.surface)
+      && hasString(properties.roomPhase)
+      && hasString(properties.workspaceStatus)
+      && hasString(workspaceSessionId)
+      && (properties.repoUrl === null || properties.repoUrl === undefined || hasString(properties.repoUrl));
+    if (actorOk && sourceOk && bridgeOk && noAgentAttributionOk && promptOk && contextOk) return;
+    ctx.addIssue({
+      code: z.ZodIssueCode.custom,
+      message: 'Clippy user chat evidence must come from the browser Clippy chat window and include a queued bridge CHAT prompt id, fingerprint, length, workspace context, no confirmed bridge delivery, and no agent attribution.',
+      path: ['properties'],
+    });
+    return;
+  }
+  if (event.type === 'terminal_command') {
+    const commandSequence = properties.terminalCommandSequence;
+    const commandLength = properties.commandLength;
+    const fingerprint = properties.commandFingerprint;
+    const sessionId = properties.terminalSessionId;
+    const commandId = properties.terminalCommandId;
+    const capturedAtMs = properties.capturedAtMs;
+    const sourceOk = properties.source === 'container_terminal'
+      && properties.terminalEventSource === 'browser_terminal_ws';
+    const actorOk = (event.actor === 'host' || event.actor === 'guest')
+      && propertyActorMatches;
+    const capturedAtOk = typeof capturedAtMs === 'number'
+      && Number.isInteger(capturedAtMs)
+      && capturedAtMs >= 0;
+    const sequenceOk = typeof commandSequence === 'number'
+      && Number.isInteger(commandSequence)
+      && commandSequence > 0;
+    const commandLengthOk = typeof commandLength === 'number'
+      && commandLength === event.text.length;
+    const fingerprintOk = typeof fingerprint === 'string'
+      && TERMINAL_FINGERPRINT_RE.test(fingerprint);
+    const idsOk = hasString(sessionId)
+      && typeof commandId === 'string'
+      && typeof commandSequence === 'number'
+      && typeof fingerprint === 'string'
+      && capturedAtOk
+      && commandId === `${sessionId}:command:${event.actor}:${capturedAtMs}:${commandSequence}:${fingerprint}`;
+    const contextOk = hasRoomSurface(properties.surface)
+      && hasString(properties.roomPhase)
+      && hasString(properties.workspaceStatus)
+      && hasString(properties.workspaceSessionId)
+      && (properties.repoUrl === null || properties.repoUrl === undefined || hasString(properties.repoUrl));
+    if (sourceOk && actorOk && capturedAtOk && sequenceOk && commandLengthOk && fingerprintOk && idsOk && contextOk) return;
+    ctx.addIssue({
+      code: z.ZodIssueCode.custom,
+      message: 'Terminal command evidence must come from the browser terminal WebSocket with actor-bound command id, capture timestamp, sequence, fingerprint, length, workspace context, and participant actor.',
+      path: ['properties'],
+    });
+    return;
+  }
+  if (event.type === 'terminal_output') {
+    const outputSequence = properties.terminalOutputSequence;
+    const outputLength = properties.outputLength;
+    const fingerprint = properties.outputFingerprint;
+    const sessionId = properties.terminalSessionId;
+    const outputChunkId = properties.terminalOutputChunkId;
+    const commandId = properties.terminalCommandId;
+    const capturedAtMs = properties.capturedAtMs;
+    const sourceOk = properties.source === 'container_terminal'
+      && properties.terminalEventSource === 'browser_terminal_ws';
+    const actorOk = event.actor === 'system' && propertyActorMatches;
+    const capturedAtOk = typeof capturedAtMs === 'number'
+      && Number.isInteger(capturedAtMs)
+      && capturedAtMs >= 0;
+    const sequenceOk = typeof outputSequence === 'number'
+      && Number.isInteger(outputSequence)
+      && outputSequence > 0;
+    const outputLengthOk = typeof outputLength === 'number'
+      && outputLength === event.text.length;
+    const fingerprintOk = typeof fingerprint === 'string'
+      && TERMINAL_FINGERPRINT_RE.test(fingerprint);
+    const idsOk = hasString(sessionId)
+      && typeof outputChunkId === 'string'
+      && typeof outputSequence === 'number'
+      && typeof fingerprint === 'string'
+      && capturedAtOk
+      && outputChunkId === `${sessionId}:output:system:${capturedAtMs}:${outputSequence}:${fingerprint}`
+      && (
+        commandId === null
+        || (
+          typeof commandId === 'string'
+          && commandId.startsWith(`${sessionId}:command:`)
+          && TERMINAL_COMMAND_ID_RE.test(commandId)
+        )
+      );
+    const contextOk = hasRoomSurface(properties.surface)
+      && hasString(properties.roomPhase)
+      && hasString(properties.workspaceStatus)
+      && hasString(properties.workspaceSessionId)
+      && (properties.repoUrl === null || properties.repoUrl === undefined || hasString(properties.repoUrl));
+    if (sourceOk && actorOk && capturedAtOk && sequenceOk && outputLengthOk && fingerprintOk && idsOk && contextOk) return;
+    ctx.addIssue({
+      code: z.ZodIssueCode.custom,
+      message: 'Terminal output evidence must come from the browser terminal WebSocket with system output id, capture timestamp, sequence, fingerprint, bounded length, workspace context, and system actor.',
+      path: ['properties'],
+    });
+    return;
+  }
+  if (event.type === 'ai_agent_status') {
+    const bridgeMessageSource = properties.bridgeMessageSource;
+    const status = properties.status;
+    const capturedAtMs = properties.capturedAtMs;
+    const diagnosticSource = properties.diagnosticSource;
+    const statusOk = status === null
+      || status === undefined
+      || (typeof status === 'string' && AGENT_STATUSES.has(status));
+    const sourceOk = properties.source === 'clippy_agent_bridge';
+    const actorOk = event.actor === 'agent';
+    const agentOk = hasString(properties.agent);
+    const observedOk = hasString(properties.observedAt);
+    const capturedAtOk = typeof capturedAtMs === 'number'
+      && Number.isInteger(capturedAtMs)
+      && capturedAtMs >= 0;
+    const bridgeMessageOk = typeof bridgeMessageSource === 'string'
+      && AGENT_STATUS_MESSAGE_SOURCES.has(bridgeMessageSource);
+    const expectedStatusEventId = bridgeMessageOk && capturedAtOk && agentOk
+      ? `agent-status:${safeEvidenceIdPart(properties.agent)}:${capturedAtMs}:${bridgeMessageSource}:${safeEvidenceIdPart(typeof status === 'string' ? status : null)}:${safeEvidenceIdPart(typeof diagnosticSource === 'string' ? diagnosticSource : null)}`
+      : null;
+    const statusIdOk = typeof properties.agentStatusEventId === 'string'
+      && AGENT_STATUS_EVENT_ID_RE.test(properties.agentStatusEventId)
+      && properties.agentStatusEventId === expectedStatusEventId;
+    const browserObservationOk = properties.agentStatusEventSource === 'browser_clippy_agent_ws'
+      && hasRoomSurface(properties.surface)
+      && hasString(properties.roomPhase)
+      && hasFiniteNonNegativeNumber(properties.messageTimestamp)
+      && properties.agentResponseClaimed === false
+      && (
+        (bridgeMessageSource === 'agent_status' && typeof status === 'string' && AGENT_STATUSES.has(status))
+        || (bridgeMessageSource !== 'agent_status' && hasString(diagnosticSource))
+      );
+    const persistedDiagnosticOk = bridgeMessageSource === 'bridge_diagnostic'
+      && properties.bridgePersisted === true
+      && hasString(diagnosticSource);
+    if (
+      sourceOk
+      && actorOk
+      && agentOk
+      && statusOk
+      && observedOk
+      && capturedAtOk
+      && statusIdOk
+      && bridgeMessageOk
+      && (browserObservationOk || persistedDiagnosticOk)
+    ) return;
+    ctx.addIssue({
+      code: z.ZodIssueCode.custom,
+      message: 'Agent status evidence must come from the Clippy/Devin bridge with stable status id, capture timestamp, and observed status or persisted diagnostic provenance.',
+      path: ['properties'],
+    });
+    return;
+  }
+  if (event.type === 'ai_chat_agent') {
+    const capturedAtMs = properties.capturedAtMs;
+    const responseFingerprint = properties.responseFingerprint;
+    const sourceOk = properties.source === 'clippy_agent_bridge';
+    const actorOk = event.actor === 'agent';
+    const agentOk = hasString(properties.agent);
+    const chatResponseOk = properties.bridgeEventType === 'CHAT_RESPONSE'
+      && (
+        properties.bridgeMessageSource === 'agent_stdout'
+        || properties.bridgeMessageSource === 'agent_api_response'
+      );
+    const observedAt = properties.observedAt;
+    const hasObservedAt = typeof observedAt === 'string' && observedAt.trim().length > 0;
+    const capturedAtOk = typeof capturedAtMs === 'number'
+      && Number.isInteger(capturedAtMs)
+      && capturedAtMs >= 0;
+    const responseFingerprintOk = typeof responseFingerprint === 'string'
+      && AGENT_CHAT_RESPONSE_FINGERPRINT_RE.test(responseFingerprint);
+    const responseLengthOk = typeof properties.responseLength === 'number'
+      && properties.responseLength === event.text.length;
+    const expectedResponseId = capturedAtOk && agentOk && responseFingerprintOk
+      ? `agent-chat:${safeEvidenceIdPart(properties.agent)}:${capturedAtMs}:CHAT_RESPONSE:${responseFingerprint}`
+      : null;
+    const responseIdOk = typeof properties.agentChatResponseId === 'string'
+      && AGENT_CHAT_RESPONSE_ID_RE.test(properties.agentChatResponseId)
+      && properties.agentChatResponseId === expectedResponseId;
+    const browserPromptRefOk = hasOptionalBrowserPromptRef(properties);
+    const persistedOk = properties.bridgePersisted === true
+      && hasFiniteNonNegativeNumber(properties.actionCount);
+    const browserFallbackOk = properties.bridgePersisted === false
+      && properties.persistenceFallback === 'browser_after_bridge_persist_failed'
+      && hasRoomSurface(properties.surface)
+      && hasString(properties.roomPhase)
+      && hasFiniteNonNegativeNumber(properties.messageTimestamp)
+      && properties.agentResponseClaimed === true;
+    if (
+      sourceOk
+      && actorOk
+      && agentOk
+      && chatResponseOk
+      && hasObservedAt
+      && capturedAtOk
+      && responseFingerprintOk
+      && responseLengthOk
+      && responseIdOk
+      && browserPromptRefOk
+      && (persistedOk || browserFallbackOk)
+    ) return;
+    ctx.addIssue({
+      code: z.ZodIssueCode.custom,
+      message: 'Agent chat evidence must come from a real Clippy/Devin bridge CHAT_RESPONSE with stable response id, capture timestamp, fingerprint, length, and persisted bridge or browser fallback provenance.',
+      path: ['properties'],
+    });
+    return;
+  }
+  if (event.type === 'cursor_presence') {
+    const sourceOk = properties.source === 'win95_cursor_presence_client_sample';
+    const actorOk = (event.actor === 'host' || event.actor === 'guest')
+      && properties.actor === event.actor;
+    const eventSourceOk = properties.cursorEventSource === 'browser_win95_desktop_pointermove';
+    const contextOk = properties.surface === 'win95' && hasString(properties.roomPhase);
+    const x = properties.normalizedX;
+    const y = properties.normalizedY;
+    const previousX = properties.previousNormalizedX;
+    const previousY = properties.previousNormalizedY;
+    const distance = properties.distanceFromPrevious;
+    const xOk = typeof x === 'number' && Number.isFinite(x) && x >= 0 && x <= 1;
+    const yOk = typeof y === 'number' && Number.isFinite(y) && y >= 0 && y <= 1;
+    const previousXOk = previousX === null || (
+      typeof previousX === 'number' && Number.isFinite(previousX) && previousX >= 0 && previousX <= 1
+    );
+    const previousYOk = previousY === null || (
+      typeof previousY === 'number' && Number.isFinite(previousY) && previousY >= 0 && previousY <= 1
+    );
+    const distanceOk = distance === null || hasFiniteNonNegativeNumber(distance);
+    const samplingOk = properties.evidenceSampling === 'presence_sample'
+      && properties.sampleIntervalMs === CURSOR_PRESENCE_SAMPLE_INTERVAL_MS
+      && properties.movementThreshold === CURSOR_PRESENCE_MOVEMENT_THRESHOLD
+      && properties.rawCursorMovesPersisted === false;
+    const sampleId = properties.cursorSampleId;
+    const sampledAtMs = properties.sampledAtMs;
+    const sampleIdOk = typeof sampleId === 'string'
+      && CURSOR_SAMPLE_ID_RE.test(sampleId)
+      && typeof sampledAtMs === 'number'
+      && Number.isInteger(sampledAtMs)
+      && sampleId.startsWith(`cursor:${event.actor}:${sampledAtMs}:`);
+    if (
+      sourceOk
+      && actorOk
+      && eventSourceOk
+      && contextOk
+      && xOk
+      && yOk
+      && previousXOk
+      && previousYOk
+      && distanceOk
+      && samplingOk
+      && sampleIdOk
+    ) return;
+    ctx.addIssue({
+      code: z.ZodIssueCode.custom,
+      message: 'Cursor presence evidence must be an actor-bound sampled Win95 browser cursor event with stable sample provenance.',
+      path: ['properties'],
+    });
+  }
+  if (event.type === 'media_control') {
+    const sourceOk = properties.source === 'video_room_media_controls';
+    const actorOk = (event.actor === 'host' || event.actor === 'guest')
+      && properties.actor === event.actor;
+    const eventSourceOk = properties.mediaControlEventSource === 'browser_video_control_button';
+    const controlOk = properties.control === 'microphone' || properties.control === 'camera';
+    const enabledOk = typeof properties.enabled === 'boolean';
+    const previousEnabledOk = typeof properties.previousEnabled === 'boolean'
+      && typeof properties.enabled === 'boolean'
+      && properties.previousEnabled !== properties.enabled;
+    const expectedAction = properties.enabled === true ? 'enabled' : 'disabled';
+    const actionOk = properties.action === expectedAction && properties.controlAction === 'toggle';
+    const expectedControlSurface = properties.surface === 'win95'
+      ? 'win95_video_window'
+      : 'standard_video_call';
+    const contextOk = hasRoomSurface(properties.surface)
+      && hasString(properties.roomPhase)
+      && properties.controlSurface === expectedControlSurface;
+    const sourceDetailsOk = properties.mediaSource === 'local_media_stream'
+      && properties.rawMediaStreamPersisted === false;
+    const mediaControlId = properties.mediaControlId;
+    const capturedAtMs = properties.capturedAtMs;
+    const idOk = typeof mediaControlId === 'string'
+      && MEDIA_CONTROL_ID_RE.test(mediaControlId)
+      && typeof properties.control === 'string'
+      && typeof capturedAtMs === 'number'
+      && Number.isInteger(capturedAtMs)
+      && capturedAtMs >= 0
+      && mediaControlId === `media:${event.actor}:${properties.control}:${capturedAtMs}:${expectedAction}`;
+    if (
+      sourceOk
+      && actorOk
+      && eventSourceOk
+      && controlOk
+      && enabledOk
+      && previousEnabledOk
+      && actionOk
+      && contextOk
+      && sourceDetailsOk
+      && idOk
+    ) return;
+    ctx.addIssue({
+      code: z.ZodIssueCode.custom,
+      message: 'Media control evidence must be an actor-bound browser control toggle with stable event provenance and previous/next state.',
+      path: ['properties'],
+    });
+  }
+  if (event.type === 'recording_start' || event.type === 'recording_stop') {
+    const expectedLifecycleKind = event.type === 'recording_start' ? 'start' : 'stop';
+    const sourceOk = properties.source === 'video_room_recording'
+      && properties.recordingEventSource === 'browser_media_recorder';
+    const actorOk = event.actor === 'host';
+    const lifecycleOk = properties.recordingLifecycleKind === expectedLifecycleKind;
+    const commonOk = typeof properties.hasTranscriptionAudio === 'boolean'
+      && hasString(properties.iceProvider)
+      && hasFiniteNonNegativeNumber(properties.speakerMetadataVersion)
+      && hasString(properties.speakerChannelLayout)
+      && hasFiniteNonNegativeNumber(properties.speakerChannelCount)
+      && Array.isArray(properties.speakerChannels)
+      && properties.speakerChannels.length === properties.speakerChannelCount;
+    const stopOk = event.type === 'recording_start' || (
+      properties.uploadStatus === 'attempting'
+      && hasFiniteNonNegativeNumber(properties.recordingBytes)
+      && (properties.recordingMimeType === null || hasString(properties.recordingMimeType))
+      && hasFiniteNonNegativeNumber(properties.transcriptionBytes)
+      && (properties.transcriptionMimeType === null || hasString(properties.transcriptionMimeType))
+    );
+    if (sourceOk && actorOk && lifecycleOk && commonOk && stopOk) return;
+    ctx.addIssue({
+      code: z.ZodIssueCode.custom,
+      message: 'Recording lifecycle evidence must come from the host browser MediaRecorder with lifecycle kind, speaker-channel provenance, and upload source facts.',
+      path: ['properties'],
+    });
+    return;
+  }
+  if (event.type === 'code_editor_open') {
+    const capturedAtMs = properties.capturedAtMs;
+    const workspaceSessionId = properties.workspaceSessionId;
+    const sourceOk = properties.source === 'code_server_workspace'
+      && properties.editorEventSource === 'browser_code_server_iframe'
+      && properties.editor === 'code-server'
+      && properties.openStatus === 'loaded';
+    const actorOk = (event.actor === 'host' || event.actor === 'guest')
+      && propertyActorMatches;
+    const capturedAtOk = typeof capturedAtMs === 'number'
+      && Number.isInteger(capturedAtMs)
+      && capturedAtMs >= 0;
+    const openIdOk = typeof properties.codeEditorOpenId === 'string'
+      && CODE_EDITOR_OPEN_ID_RE.test(properties.codeEditorOpenId)
+      && capturedAtOk
+      && hasString(workspaceSessionId)
+      && properties.codeEditorOpenId === `code-editor-open:${event.actor}:${capturedAtMs}:${workspaceSessionId}`;
+    const contextOk = hasRoomSurface(properties.surface)
+      && hasString(properties.roomPhase)
+      && hasString(workspaceSessionId)
+      && hasString(properties.workspaceStatus)
+      && (properties.repoUrl === null || properties.repoUrl === undefined || hasString(properties.repoUrl));
+    const challengeOk = (properties.githubPrNumber === null || properties.githubPrNumber === undefined || hasFiniteNonNegativeNumber(properties.githubPrNumber))
+      && (properties.matchedRepoId === null || properties.matchedRepoId === undefined || hasFiniteNonNegativeNumber(properties.matchedRepoId))
+      && (properties.challengeStatus === null || properties.challengeStatus === undefined || hasString(properties.challengeStatus))
+      && (properties.challengeKind === null || properties.challengeKind === undefined || hasString(properties.challengeKind))
+      && (properties.challengeSource === null || properties.challengeSource === undefined || hasString(properties.challengeSource))
+      && (properties.challengeMessage === null || properties.challengeMessage === undefined || hasString(properties.challengeMessage));
+    const noProxyLeakOk = properties.proxyUrlPersisted === false;
+    if (sourceOk && actorOk && capturedAtOk && openIdOk && contextOk && challengeOk && noProxyLeakOk) return;
+    ctx.addIssue({
+      code: z.ZodIssueCode.custom,
+      message: 'Code editor open evidence must come from the browser code-server iframe with actor-bound open id, capture timestamp, workspace session context, and no persisted proxy URL.',
+      path: ['properties'],
+    });
+    return;
+  }
+  if (event.type === 'code_editor_save') {
+    const sourceOk = properties.source === 'code_server_workspace';
+    const observedBy = properties.observedBy;
+    const observedByOk = observedBy === 'agent_bridge' || observedBy === 'clippy_agent_bridge';
+    const bridgeOk = properties.bridgeEventType === 'FILE_CHANGED'
+      && properties.editorSurface === 'code-server';
+    const actionOk = typeof properties.action === 'string'
+      && CODE_SERVER_SAVE_ACTIONS.has(properties.action);
+    const pathValue = properties.path;
+    const pathOk = typeof pathValue === 'string' && pathValue.trim().length > 0 && event.text === pathValue;
+    const hashValue = properties.contentHash;
+    const hashOk = typeof hashValue === 'string' && SHA256_HEX_RE.test(hashValue);
+    const sizeOk = hasFiniteNonNegativeNumber(properties.sizeBytes);
+    const observedAt = properties.observedAt;
+    const observedAtOk = typeof observedAt === 'string' && observedAt.trim().length > 0;
+    const directBridgeOk = properties.bridgePersisted === true
+      && observedBy === 'agent_bridge'
+      && hasString(properties.workspaceRoot);
+    const browserFallbackOk = properties.bridgePersisted === false
+      && observedBy === 'clippy_agent_bridge'
+      && hasRoomSurface(properties.surface)
+      && hasString(properties.roomPhase)
+      && hasString(properties.workspaceStatus)
+      && hasString(properties.workspaceSessionId)
+      && (
+        properties.repoUrl === null
+        || properties.repoUrl === undefined
+        || hasString(properties.repoUrl)
+      );
+    if (
+      event.actor === 'system'
+      && sourceOk
+      && observedByOk
+      && bridgeOk
+      && actionOk
+      && pathOk
+      && hashOk
+      && sizeOk
+      && observedAtOk
+      && (directBridgeOk || browserFallbackOk)
+    ) return;
+    ctx.addIssue({
+      code: z.ZodIssueCode.custom,
+      message: 'Code editor save evidence must come from a FILE_CHANGED code-server workspace bridge event with path, content hash, size, observation time, and direct or browser-fallback provenance.',
+      path: ['properties'],
+    });
+  }
 });
+
+async function readJsonRequestBody(c: Context<{ Bindings: Env }>): Promise<unknown> {
+  const text = await c.req.text().catch(() => null);
+  if (!text) return null;
+  try {
+    return JSON.parse(text) as unknown;
+  } catch {
+    return null;
+  }
+}
 
 interface RoomWorkspaceInterview {
   interview_type: string | null;
   github_repo_url: string | null;
   github_pr_number: number | null;
   matched_repo_id: number | null;
+}
+
+type RoomWorkspaceChallengeStatus =
+  | 'github_pr_assigned'
+  | 'repo_task_assigned'
+  | 'missing_reviewable_task'
+  | 'not_configured';
+
+type RoomWorkspaceChallengeKind = 'github_pr' | 'repo_only' | null;
+
+type RoomWorkspaceChallengeSource =
+  | 'scheduled_interview.github_pr_number'
+  | 'scheduled_interview.challenge_packet'
+  | 'matched_repo_without_pr'
+  | 'scheduled_repo_without_pr'
+  | 'missing_repo_and_task'
+  | 'workspace_not_enabled';
+
+interface RoomWorkspaceChallengePacketPayload {
+  sourceRefType: string;
+  evidenceRole: string;
+  exactText: string;
+  locator: JsonObject;
+  contentHash: string;
+}
+
+interface RoomWorkspaceChallengePayload {
+  status: RoomWorkspaceChallengeStatus;
+  kind: RoomWorkspaceChallengeKind;
+  source: RoomWorkspaceChallengeSource;
+  message: string | null;
+  packet: RoomWorkspaceChallengePacketPayload | null;
 }
 
 async function syncRoomActivityEvidenceForToken(
@@ -158,6 +1305,7 @@ async function syncRoomActivityEvidenceForToken(
     return await syncRoomActivityToSessionEvents(c.env.DB, c.env, {
       candidateId: resolved.candidateId,
       sessionId: resolved.sessionId,
+      assessmentInterviewId: resolved.scheduledInterviewId,
     });
   } catch (error) {
     console.error('[meetingRooms] Failed to sync room activity evidence:', {
@@ -171,15 +1319,18 @@ async function syncRoomActivityEvidenceForToken(
 function roomLifecycleEvidencePayload(
   room: ResolvedRoom,
   event: z.infer<typeof roomEventSchema>['event'],
-  options: { recordingWasActive: boolean },
+  options: { recordingWasActive: boolean; observedAt: string; timestamp: number },
 ): { type: SessionEventType; text: string; properties: Record<string, unknown> } | null {
   const roleLabel = room.role === 'GUEST' ? 'Guest' : 'Host';
   const sharedProperties = {
     source: 'meeting_room_lifecycle',
+    roomLifecycleEventSource: 'meeting_room_event_route',
     lifecycleEvent: event,
     participantRole: room.role,
     roomId: room.room_id,
     meetingId: room.meeting_id,
+    roomLifecycleObservedAt: options.observedAt,
+    roomLifecycleTimestamp: options.timestamp,
   };
 
   if (event === 'JOINED') {
@@ -226,11 +1377,14 @@ async function captureRoomLifecycleEvidenceForToken(
   room: ResolvedRoom,
   event: z.infer<typeof roomEventSchema>['event'],
   timestamp: number,
-  options: { recordingWasActive: boolean },
+  options: { recordingWasActive: boolean; observedAt: string },
 ): Promise<RoomLifecycleEvidenceCaptureResult | null> {
   if (!c.env.VIDEO_ROOM) return null;
 
-  const payload = roomLifecycleEvidencePayload(room, event, options);
+  const payload = roomLifecycleEvidencePayload(room, event, {
+    ...options,
+    timestamp,
+  });
   if (!payload) return null;
 
   try {
@@ -244,7 +1398,10 @@ async function captureRoomLifecycleEvidenceForToken(
       timestamp,
       actor: room.role === 'GUEST' ? 'guest' : 'host',
       text: payload.text,
-      properties: payload.properties,
+      properties: {
+        ...payload.properties,
+        ...(resolved.scheduledInterviewId ? { scheduledInterviewId: resolved.scheduledInterviewId } : {}),
+      },
     }, c.env);
     return {
       captured: !!node,
@@ -277,6 +1434,7 @@ interface RoomWorkspacePayload {
   repoUrl: string | null;
   githubPrNumber: number | null;
   matchedRepoId: number | null;
+  challenge: RoomWorkspaceChallengePayload;
   session: {
     sessionId: string;
     status: string;
@@ -294,6 +1452,7 @@ interface RecordingProcessingOverrides {
   structuredTranscription?: StructuredTranscription | null;
   analysisJson?: string | null;
   speakerMetadata?: RecordingSpeakerMetadata | null;
+  speakerMetadataOrigin?: 'recording_upload_form' | 'recording_r2_custom_metadata' | null;
 }
 
 const recordingSpeakerChannelSchema = z.object({
@@ -341,20 +1500,6 @@ const recordingSpeakerMetadataSchema = z.object({
 
 type RecordingSpeakerMetadata = z.infer<typeof recordingSpeakerMetadataSchema>;
 type RecordingSpeakerChannel = z.infer<typeof recordingSpeakerChannelSchema>;
-
-function defaultRecordingSpeakerMetadata(): RecordingSpeakerMetadata {
-  return {
-    version: 1,
-    transcriptionAudio: {
-      channelLayout: 'host-local-guest-remote-v1',
-      channelCount: 2,
-      channels: [
-        { channel: 0, role: 'host', source: 'local' },
-        { channel: 1, role: 'guest', source: 'remote' },
-      ],
-    },
-  };
-}
 
 function parseRecordingSpeakerMetadata(
   value: unknown,
@@ -546,6 +1691,29 @@ function parsePositiveIntEnv(value: string | undefined, fallback: number): numbe
   return Number.isFinite(parsed) && parsed > 0 ? parsed : fallback;
 }
 
+function sanitizeWorkspaceInitDiagnostic(value: string): string {
+  const redacted = value
+    .replace(/\b(Bearer\s+)[A-Za-z0-9._~+/=-]+/gi, '$1[redacted]')
+    .replace(/\b(sk-[A-Za-z0-9_-]{8,})\b/g, 'sk-[redacted]')
+    .replace(/\b(cog_[A-Za-z0-9]{16,})\b/g, 'cog_[redacted]')
+    .replace(/\b((?:DEVIN_API_KEY|API_KEY|TOKEN|SECRET|PASSWORD)\s*=\s*)[^\s]+/gi, '$1[redacted]')
+    .replace(/([?&](?:api_key|key|token|secret|password)=)[^&\s]+/gi, '$1[redacted]')
+    .trim();
+  if (redacted.length <= MAX_WORKSPACE_INIT_DIAGNOSTIC_CHARS) return redacted;
+  return `${redacted.slice(0, MAX_WORKSPACE_INIT_DIAGNOSTIC_CHARS)}\n[diagnostic truncated]`;
+}
+
+async function markWorkspaceInitFailedIfStillLaunching(input: {
+  db: D1Database;
+  sessionId: string;
+  meetingRoomId: string;
+  diagnostic: string;
+}): Promise<void> {
+  const session = await getSessionByIdForRoom(input.db, input.sessionId, input.meetingRoomId);
+  if (!session || session.status !== 'LAUNCHING') return;
+  await markError(input.db, input.sessionId, input.diagnostic);
+}
+
 function workspaceProxyPath(token: string, sessionId: string): string {
   return `/api/v1/meeting-rooms/${encodeURIComponent(token)}/workspace/proxy/${encodeURIComponent(sessionId)}/`;
 }
@@ -553,6 +1721,89 @@ function workspaceProxyPath(token: string, sessionId: string): string {
 function githubPrChallengeRef(githubPrNumber: number | null): string | null {
   if (!Number.isInteger(githubPrNumber) || (githubPrNumber ?? 0) <= 0) return null;
   return `refs/pull/${githubPrNumber}/head`;
+}
+
+const GIT_COMMIT_SHA_PATTERN = /^[a-f0-9]{40}$/i;
+
+function locatorString(locator: JsonObject, keys: string[]): string | null {
+  for (const key of keys) {
+    const value: JsonValue | undefined = locator[key];
+    if (typeof value !== 'string') continue;
+    const trimmed = value.trim();
+    if (trimmed) return trimmed;
+  }
+  return null;
+}
+
+function challengePacketBaseCommitSha(packet: RoomWorkspaceChallengePacketPayload | null): string | null {
+  if (!packet) return null;
+  const value = locatorString(packet.locator, [
+    'baseCommitSha',
+    'baseCommit',
+    'base_commit_sha',
+    'base_commit',
+  ]);
+  if (!value || !GIT_COMMIT_SHA_PATTERN.test(value)) return null;
+  return value.toLowerCase();
+}
+
+function buildRoomWorkspaceChallenge(
+  interview: RoomWorkspaceInterview | null,
+  enabled: boolean,
+  packet: RoomWorkspaceChallengePacketPayload | null,
+): RoomWorkspaceChallengePayload {
+  if (!enabled) {
+    return {
+      status: 'not_configured',
+      kind: null,
+      source: 'workspace_not_enabled',
+      message: null,
+      packet: null,
+    };
+  }
+  if (packet && interview?.github_repo_url) {
+    return {
+      status: 'repo_task_assigned',
+      kind: 'repo_only',
+      source: 'scheduled_interview.challenge_packet',
+      message: null,
+      packet,
+    };
+  }
+  if (Number.isInteger(interview?.github_pr_number) && (interview?.github_pr_number ?? 0) > 0) {
+    return {
+      status: 'github_pr_assigned',
+      kind: 'github_pr',
+      source: 'scheduled_interview.github_pr_number',
+      message: null,
+      packet,
+    };
+  }
+  if (interview?.matched_repo_id) {
+    return {
+      status: 'missing_reviewable_task',
+      kind: 'repo_only',
+      source: 'matched_repo_without_pr',
+      message: 'Matched repository is available, but no GitHub PR or task was assigned. Treat this as an assessment setup gap, not candidate evidence.',
+      packet,
+    };
+  }
+  if (interview?.github_repo_url) {
+    return {
+      status: 'missing_reviewable_task',
+      kind: 'repo_only',
+      source: 'scheduled_repo_without_pr',
+      message: 'Repository workspace is available, but no GitHub PR or task was assigned. Treat this as an assessment setup gap, not candidate evidence.',
+      packet,
+    };
+  }
+  return {
+    status: 'missing_reviewable_task',
+    kind: null,
+    source: 'missing_repo_and_task',
+    message: 'This workspace interview has no repository, GitHub PR, or task assigned yet. Treat this as an assessment setup gap, not candidate evidence.',
+    packet,
+  };
 }
 
 function serializeWorkspaceSession(
@@ -599,6 +1850,46 @@ async function loadRoomWorkspaceInterview(
   };
 }
 
+function serializeRoomWorkspaceChallengePacket(
+  progress: AssessmentProgressSnapshot | null,
+): RoomWorkspaceChallengePacketPayload | null {
+  if (!progress?.challenge) return null;
+  return {
+    sourceRefType: progress.challenge.sourceRefType,
+    evidenceRole: progress.challenge.evidenceRole,
+    exactText: progress.challenge.exactText,
+    locator: progress.challenge.locator,
+    contentHash: progress.challenge.contentHash,
+  };
+}
+
+async function loadRoomWorkspaceChallengePacket(
+  db: D1Database,
+  room: ResolvedRoom,
+): Promise<RoomWorkspaceChallengePacketPayload | null> {
+  if (!room.scheduled_interview_id) return null;
+  const row = await db.prepare(
+    `SELECT id
+       FROM assessment_sessions
+      WHERE interview_id = ?1
+        AND state <> 'CANCELLED'
+      ORDER BY updated_at DESC, id DESC
+      LIMIT 1`,
+  ).bind(room.scheduled_interview_id).first<{ id: string }>().catch(() => null);
+  if (!row?.id) return null;
+
+  try {
+    const progress = await new RepoTaskInterviewSessionStore(db).loadProgress(row.id);
+    return serializeRoomWorkspaceChallengePacket(progress);
+  } catch (error) {
+    console.error('[meetingRooms.workspace.challengePacket] failed to load assessment challenge packet:', {
+      interviewId: room.scheduled_interview_id,
+      error: error instanceof Error ? error.message : String(error),
+    });
+    return null;
+  }
+}
+
 async function buildRoomWorkspacePayload(
   db: D1Database,
   token: string,
@@ -609,18 +1900,21 @@ async function buildRoomWorkspacePayload(
     interview?.interview_type && WORKSPACE_INTERVIEW_TYPES.has(interview.interview_type),
   );
   const session = await getLatestSessionForRoom(db, room.room_id).catch(() => null);
+  const challengePacket = enabled ? await loadRoomWorkspaceChallengePacket(db, room) : null;
+  const repoUrl = interview?.github_repo_url ?? session?.repo_git_url ?? null;
   return {
     enabled,
     canLaunch: enabled && room.role === 'HOST',
-    repoUrl: interview?.github_repo_url ?? null,
+    repoUrl,
     githubPrNumber: interview?.github_pr_number ?? null,
     matchedRepoId: interview?.matched_repo_id ?? null,
+    challenge: buildRoomWorkspaceChallenge(interview, enabled, challengePacket),
     session: serializeWorkspaceSession(token, session),
   };
 }
 
-function initialRoomSurfaceForWorkspace(workspace: RoomWorkspacePayload): 'standard' | 'win95' {
-  return workspace.enabled ? 'win95' : 'standard';
+function initialRoomSurfaceForWorkspace(_workspace: RoomWorkspacePayload): 'standard' | 'win95' {
+  return 'standard';
 }
 
 async function resolveRoom(db: D1Database, token: string): Promise<ResolvedRoom | null> {
@@ -790,15 +2084,18 @@ async function processRecording(
     }
     const audioBuffer = await object.arrayBuffer();
     const contentType = object.httpMetadata?.contentType ?? 'video/webm';
-    const speakerMetadata = overrides.speakerMetadata
-      ?? speakerMetadataFromCustomMetadata(object.customMetadata)
-      ?? defaultRecordingSpeakerMetadata();
-    const channelMap = speakerChannelsByChannel(speakerMetadata);
+    const r2SpeakerMetadata = speakerMetadataFromCustomMetadata(object.customMetadata);
+    const speakerMetadata = overrides.speakerMetadata ?? r2SpeakerMetadata;
+    const speakerMetadataOrigin = speakerMetadata
+      ? overrides.speakerMetadataOrigin
+        ?? (overrides.speakerMetadata ? 'recording_upload_form' : 'recording_r2_custom_metadata')
+      : null;
+    const channelMap = speakerMetadata ? speakerChannelsByChannel(speakerMetadata) : new Map<number, RecordingSpeakerChannel>();
     console.log(`${logPrefix} Retrieved audio from R2`, {
       transcriptionSourceKey,
       bytes: audioBuffer.byteLength,
       contentType,
-      speakerChannelLayout: speakerMetadata.transcriptionAudio.channelLayout,
+      speakerChannelLayout: speakerMetadata?.transcriptionAudio.channelLayout ?? null,
     });
     const structured = overrides.structuredTranscription ?? (env.DEEPGRAM_API_KEY
       ? await transcribeAudioDeepgramStructured(
@@ -816,7 +2113,7 @@ async function processRecording(
     let transcript: string;
     if (structured) {
       segments = structured.segments.map((segment) => {
-        const speakerChannel = segment.channel === null
+        const speakerChannel = segment.channel === null || !speakerMetadata
           ? null
           : channelMap.get(segment.channel) ?? null;
         return {
@@ -877,17 +2174,32 @@ async function processRecording(
           'Meeting transcript analysis',
         );
     const personContextMode = hasAttributedGuestAudio ? 'attributed' : 'summary_only';
-    const analysisForStorage = {
-      ...analysis,
-      personContextMode,
-      personContextReason: hasAttributedGuestAudio
-        ? null
-        : structured
-          ? room.guest_contact_id
+    const personContextReason = hasAttributedGuestAudio
+      ? null
+      : structured
+        ? !speakerMetadata
+          ? 'speaker_metadata_missing'
+          : room.guest_contact_id
             ? 'guest_audio_channel_missing'
             : 'guest_contact_id_missing'
-          : 'mixed_audio_without_speaker_attribution',
-      speakerMetadata: speakerMetadataJsonObject(speakerMetadata),
+        : 'mixed_audio_without_speaker_attribution';
+    const semanticAssertionsForStorage = hasAttributedGuestAudio
+      ? analysis.semanticAssertions
+      : [];
+    const semanticAssertionsSuppressed = hasAttributedGuestAudio
+      ? 0
+      : analysis.semanticAssertions.length;
+    const analysisForStorage = {
+      ...analysis,
+      semanticAssertions: semanticAssertionsForStorage,
+      semanticAssertionsSuppressed,
+      semanticAssertionsSuppressedReason: semanticAssertionsSuppressed > 0
+        ? personContextReason
+        : null,
+      personContextMode,
+      personContextReason,
+      speakerMetadata: speakerMetadata ? speakerMetadataJsonObject(speakerMetadata) : null,
+      speakerMetadataOrigin,
     };
     const transcriptJson = JSON.stringify(segments.map((segment) => ({
       stable_segment_id: segment.stableSegmentId,
@@ -927,18 +2239,22 @@ async function processRecording(
       transcript,
       segments,
       summary: analysis.summary,
-      semanticAssertions: hasAttributedGuestAudio ? analysis.semanticAssertions : [],
+      semanticAssertions: semanticAssertionsForStorage,
       extractorVersion: 'meeting-transcript-open-v1',
       startedAt: room.started_at,
       endedAt: room.ended_at,
       recordingKey,
       transcriptionAudioKey: transcriptionSourceKey !== recordingKey ? transcriptionSourceKey : null,
       provider,
-      speakerMetadata: speakerMetadataJsonObject(speakerMetadata),
+      speakerMetadata: speakerMetadata ? speakerMetadataJsonObject(speakerMetadata) : null,
+      speakerMetadataOrigin,
+      personContextMode,
+      personContextReason,
     });
   } catch (error) {
     const message = error instanceof Error ? error.message : String(error);
     const stack = error instanceof Error ? error.stack : undefined;
+    const failedAt = new Date().toISOString();
     console.error(`${logPrefix} Recording processing failed`, {
       message,
       stack,
@@ -949,7 +2265,18 @@ async function processRecording(
       `UPDATE meetings
        SET transcript_status = 'FAILED', transcript_error = ?, updated_at = ?
        WHERE id = ?`,
-    ).bind(message, new Date().toISOString(), room.meeting_id).run();
+    ).bind(message, failedAt, room.meeting_id).run();
+    await ingestMeetingTranscriptProcessingFailure(env.DB, {
+      meetingId: room.meeting_id,
+      ownerId: room.owner_id,
+      scheduledInterviewId: room.scheduled_interview_id,
+      guestContactId: room.guest_contact_id,
+      recordingKey,
+      transcriptionSourceKey,
+      errorMessage: message,
+      errorStack: stack ?? null,
+      observedAt: failedAt,
+    });
   }
 }
 
@@ -998,10 +2325,10 @@ meetingRooms.get('/:token', async (c) => {
       participants: participants.results,
       workspace,
       features: {
-        video: room.video_enabled !== 0,
-        workspace: room.workspace_enabled !== 0,
-        recording: room.recording_enabled !== 0,
-        clippy: room.clippy_enabled !== 0,
+        videoEnabled: room.video_enabled !== 0,
+        workspaceEnabled: room.workspace_enabled !== 0,
+        recordingEnabled: room.recording_enabled !== 0,
+        clippyEnabled: room.clippy_enabled !== 0,
       },
     },
   });
@@ -1026,6 +2353,442 @@ meetingRooms.get('/:token/workspace', async (c) => {
 
 const workspaceLaunchSchema = z.object({
   repoUrl: z.string().url().optional(),
+  agentType: z.enum(['devin']).nullable().optional(),
+});
+
+const assessmentJsonValueSchema: z.ZodType<JsonValue> = z.lazy(() => z.union([
+  z.string(),
+  z.number(),
+  z.boolean(),
+  z.null(),
+  z.array(assessmentJsonValueSchema),
+  z.record(assessmentJsonValueSchema),
+]));
+const assessmentJsonObjectSchema: z.ZodType<JsonObject> = z.record(assessmentJsonValueSchema);
+
+const roomCommitSourceRefSchema = z.object({
+  sourceRefType: z.string().trim().min(1),
+  sourceRefId: z.string().trim().min(1),
+  sourceSpanId: z.string().trim().min(1).nullable().optional(),
+  evidenceRole: z.string().trim().min(1).optional(),
+  locator: assessmentJsonObjectSchema.optional(),
+  exactText: z.string().min(1),
+  contentHash: z.string().trim().min(1),
+  metadata: assessmentJsonObjectSchema.optional(),
+});
+
+const roomCommitChangedFileStatusSchema = z.enum([
+  'added',
+  'modified',
+  'deleted',
+  'renamed',
+  'copied',
+] satisfies [CommitSubmissionChangedFileStatus, ...CommitSubmissionChangedFileStatus[]]);
+
+const roomCommitChangedFileSchema = z.object({
+  path: z.string().trim().min(1),
+  status: roomCommitChangedFileStatusSchema,
+  previousPath: z.string().trim().min(1).nullable().optional(),
+  additions: z.number().int().min(0).nullable().optional(),
+  deletions: z.number().int().min(0).nullable().optional(),
+});
+
+const roomCommitSubmissionSchema = z.object({
+  narrative: z.string().trim().min(1),
+  repositoryUrl: z.string().trim().min(1),
+  forkRepositoryUrl: z.string().trim().min(1).nullable().optional(),
+  branchName: z.string().trim().min(1),
+  baseCommitSha: z.string().trim().min(1),
+  commitSha: z.string().trim().min(1),
+  commitUrl: z.string().trim().min(1).nullable().optional(),
+  upstreamPullRequestUrl: z.string().trim().min(1).nullable().optional(),
+  upstreamPrConsent: z.boolean().optional(),
+  changedFiles: z.array(roomCommitChangedFileSchema).min(1),
+  occurredAt: z.string().trim().min(1).nullable().optional(),
+  sourceRefs: z.array(roomCommitSourceRefSchema).min(2),
+});
+
+interface RoomAssessmentSessionRow {
+  id: string;
+  mode: string;
+  state: string;
+}
+
+interface RoomAssessmentProgressPayload {
+  mode: string;
+  state: string;
+  stage: AssessmentProgressSnapshot['stage'];
+  nextAction: AssessmentProgressSnapshot['nextAction'];
+  nextActionLabel: string;
+  hasChallengePacket: boolean;
+  hasWorkEvidence: boolean;
+  hasMessageEvidence: boolean;
+  hasDevContainerEvidence: boolean;
+  hasToolUsageEvidence: boolean;
+  hasCommitSubmission: boolean;
+  hasFinalSubmission: boolean;
+  hasAiInteraction: boolean;
+  hasTranscriptEvidence: boolean;
+  hasTestEvidence: boolean;
+  hasVerificationGap: boolean;
+  evidenceCounts: AssessmentProgressSnapshot['evidenceCounts'];
+  sourceRefCounts: AssessmentProgressSnapshot['sourceRefCounts'];
+  evidenceSnippets: AssessmentProgressSnapshot['evidenceSnippets'];
+  latestEvent: Omit<NonNullable<AssessmentProgressSnapshot['latestEvent']>, 'id'> | null;
+  commit: Omit<NonNullable<AssessmentProgressSnapshot['commit']>, 'eventId'> | null;
+  evaluation: Omit<NonNullable<AssessmentProgressSnapshot['evaluation']>, 'id'> | null;
+}
+
+interface RoomWorkspaceLaunchEvidenceInput {
+  room: ResolvedRoom;
+  workspace: RoomWorkspacePayload;
+  sessionId: string;
+  repositoryUrl: string;
+  challengeBranch: string | null;
+  baseCommitSha: string | null;
+  ttlSeconds: number;
+  expiresAt: string;
+}
+
+interface RoomWorkspaceStopEvidenceInput {
+  room: ResolvedRoom;
+  session: DevContainerSessionRow;
+  previousStatus: string;
+  stoppedAt: string;
+}
+
+async function loadLatestAssessmentSessionForRoom(
+  db: D1Database,
+  room: ResolvedRoom,
+): Promise<RoomAssessmentSessionRow | null> {
+  return loadLatestAssessmentSessionForInterview(db, room.scheduled_interview_id);
+}
+
+async function loadLatestAssessmentSessionForInterview(
+  db: D1Database,
+  scheduledInterviewId: string | null,
+): Promise<RoomAssessmentSessionRow | null> {
+  if (!scheduledInterviewId) return null;
+  if (!await assessmentSessionsTableExists(db)) return null;
+  return db.prepare(
+    `SELECT id, mode, state
+       FROM assessment_sessions
+      WHERE interview_id = ?1
+        AND state <> 'CANCELLED'
+      ORDER BY created_at DESC
+      LIMIT 1`,
+  ).bind(scheduledInterviewId).first<RoomAssessmentSessionRow>();
+}
+
+async function assessmentSessionsTableExists(db: D1Database): Promise<boolean> {
+  const row = await db.prepare(
+    `SELECT name
+       FROM sqlite_master
+      WHERE type = 'table'
+        AND name = 'assessment_sessions'
+      LIMIT 1`,
+  ).first<{ name: string }>().catch(() => null);
+  return row?.name === 'assessment_sessions';
+}
+
+function serializeRoomAssessmentProgress(
+  progress: AssessmentProgressSnapshot,
+): RoomAssessmentProgressPayload {
+  return {
+    mode: progress.session.mode,
+    state: progress.session.state,
+    stage: progress.stage,
+    nextAction: progress.nextAction,
+    nextActionLabel: progress.nextActionLabel,
+    hasChallengePacket: progress.hasChallengePacket,
+    hasWorkEvidence: progress.hasWorkEvidence,
+    hasMessageEvidence: progress.hasMessageEvidence,
+    hasDevContainerEvidence: progress.hasDevContainerEvidence,
+    hasToolUsageEvidence: progress.hasToolUsageEvidence,
+    hasCommitSubmission: progress.hasCommitSubmission,
+    hasFinalSubmission: progress.hasFinalSubmission,
+    hasAiInteraction: progress.hasAiInteraction,
+    hasTranscriptEvidence: progress.hasTranscriptEvidence,
+    hasTestEvidence: progress.hasTestEvidence,
+    hasVerificationGap: progress.hasVerificationGap,
+    evidenceCounts: progress.evidenceCounts,
+    sourceRefCounts: progress.sourceRefCounts,
+    evidenceSnippets: progress.evidenceSnippets,
+    latestEvent: progress.latestEvent
+      ? {
+          kind: progress.latestEvent.kind,
+          sequence: progress.latestEvent.sequence,
+          occurredAt: progress.latestEvent.occurredAt,
+        }
+      : null,
+    commit: progress.commit
+      ? {
+          repositoryUrl: progress.commit.repositoryUrl,
+          forkRepositoryUrl: progress.commit.forkRepositoryUrl,
+          branchName: progress.commit.branchName,
+          baseCommitSha: progress.commit.baseCommitSha,
+          commitSha: progress.commit.commitSha,
+          commitUrl: progress.commit.commitUrl,
+          changedFiles: progress.commit.changedFiles,
+          occurredAt: progress.commit.occurredAt,
+        }
+      : null,
+	    evaluation: progress.evaluation
+	      ? {
+	          status: progress.evaluation.status,
+	          summary: progress.evaluation.summary,
+	          recommendation: progress.evaluation.recommendation,
+	          createdAt: progress.evaluation.createdAt,
+	          evidenceCoverage: progress.evaluation.evidenceCoverage,
+	          claims: progress.evaluation.claims,
+	          diagnostics: progress.evaluation.diagnostics,
+	        }
+      : null,
+  };
+}
+
+function roomAssessmentActor(room: ResolvedRoom): { actorType: AssessmentActorType; actorId: string | null } {
+  if (room.role === 'GUEST') {
+    return { actorType: 'candidate', actorId: room.guest_contact_id };
+  }
+  return { actorType: 'recruiter', actorId: room.owner_id };
+}
+
+async function sha256Hex(value: string): Promise<string> {
+  const bytes = new TextEncoder().encode(value);
+  const digest = await crypto.subtle.digest('SHA-256', bytes);
+  return Array.from(new Uint8Array(digest), (byte) => byte.toString(16).padStart(2, '0')).join('');
+}
+
+async function recordWorkspaceLaunchAssessmentEvidence(
+  db: D1Database,
+  input: RoomWorkspaceLaunchEvidenceInput,
+): Promise<RoomAssessmentProgressPayload | null> {
+  const assessmentSession = await loadLatestAssessmentSessionForRoom(db, input.room);
+  if (!assessmentSession) return null;
+
+  const observedAt = new Date().toISOString();
+  const store = new RepoTaskInterviewSessionStore(db, () => observedAt);
+  const actor = roomAssessmentActor(input.room);
+  const launchSource: JsonObject = {
+    schemaVersion: 'room-workspace-launch-request-v1',
+    meetingId: input.room.meeting_id,
+    roomId: input.room.room_id,
+    scheduledInterviewId: input.room.scheduled_interview_id,
+    workspaceSessionId: input.sessionId,
+    repositoryUrl: input.repositoryUrl,
+    challengeBranch: input.challengeBranch,
+    baseCommitSha: input.baseCommitSha,
+    ttlSeconds: input.ttlSeconds,
+    expiresAt: input.expiresAt,
+    challengeStatus: input.workspace.challenge.status,
+    challengeKind: input.workspace.challenge.kind,
+    challengeSource: input.workspace.challenge.source,
+    challengePacketContentHash: input.workspace.challenge.packet?.contentHash ?? null,
+    requestedByRole: input.room.role,
+  };
+  const exactText = stableJson(launchSource);
+  const event = await store.recordEvent({
+    sessionId: assessmentSession.id,
+    ingestionKey: `assessment-event:room-workspace-launch:${assessmentSession.id}:${input.sessionId}`,
+    kind: 'dev_container_event',
+    actorType: actor.actorType,
+    actorId: actor.actorId,
+    narrative: `Workspace launch requested for ${input.repositoryUrl}.`,
+    payload: launchSource,
+    occurredAt: observedAt,
+    sourceRefs: [{
+      sourceRefType: 'dev_container_workspace_launch',
+      sourceRefId: input.sessionId,
+      evidenceRole: 'workspace_launch_request',
+      locator: {
+        meetingId: input.room.meeting_id,
+        roomId: input.room.room_id,
+        scheduledInterviewId: input.room.scheduled_interview_id,
+        workspaceSessionId: input.sessionId,
+      },
+      exactText,
+      contentHash: await sha256Hex(exactText),
+      metadata: {
+        sourceKind: 'meeting_room.workspace_launch',
+        repositoryUrl: input.repositoryUrl,
+        baseCommitSha: input.baseCommitSha,
+        challengeBranch: input.challengeBranch,
+        challengePacketContentHash: input.workspace.challenge.packet?.contentHash ?? null,
+      },
+    }],
+  });
+
+  const latestSession = await store.loadSession(assessmentSession.id);
+  if (latestSession.state === 'INTAKE') {
+    await store.transitionState({
+      sessionId: assessmentSession.id,
+      toState: 'IN_PROGRESS',
+      reason: 'Dev container workspace launched from assessment room.',
+      eventId: event.id,
+      createdBy: actor.actorId,
+    });
+  }
+
+  return serializeRoomAssessmentProgress(await store.loadProgress(assessmentSession.id));
+}
+
+async function recordWorkspaceStopAssessmentEvidence(
+  db: D1Database,
+  input: RoomWorkspaceStopEvidenceInput,
+): Promise<RoomAssessmentProgressPayload | null> {
+  const assessmentSession = await loadLatestAssessmentSessionForRoom(db, input.room);
+  if (!assessmentSession) return null;
+
+  const store = new RepoTaskInterviewSessionStore(db, () => input.stoppedAt);
+  const actor = roomAssessmentActor(input.room);
+  const stopSource: JsonObject = {
+    schemaVersion: 'room-workspace-stop-request-v1',
+    meetingId: input.room.meeting_id,
+    roomId: input.room.room_id,
+    scheduledInterviewId: input.room.scheduled_interview_id,
+    workspaceSessionId: input.session.session_id,
+    repositoryUrl: input.session.repo_git_url,
+    challengeBranch: input.session.challenge_branch,
+    baseCommitSha: input.session.base_commit_sha,
+    previousStatus: input.previousStatus,
+    stoppedStatus: input.session.status,
+    stoppedAt: input.session.stopped_at ?? input.stoppedAt,
+    requestedByRole: input.room.role,
+  };
+  const exactText = stableJson(stopSource);
+  await store.recordEvent({
+    sessionId: assessmentSession.id,
+    ingestionKey: `assessment-event:room-workspace-stop:${assessmentSession.id}:${input.session.session_id}:${input.stoppedAt}`,
+    kind: 'dev_container_event',
+    actorType: actor.actorType,
+    actorId: actor.actorId,
+    narrative: `Workspace stop requested for ${input.session.repo_git_url ?? input.session.session_id}.`,
+    payload: stopSource,
+    occurredAt: input.stoppedAt,
+    sourceRefs: [{
+      sourceRefType: 'dev_container_workspace_stop',
+      sourceRefId: input.session.session_id,
+      evidenceRole: 'workspace_stop_request',
+      locator: {
+        meetingId: input.room.meeting_id,
+        roomId: input.room.room_id,
+        scheduledInterviewId: input.room.scheduled_interview_id,
+        workspaceSessionId: input.session.session_id,
+      },
+      exactText,
+      contentHash: await sha256Hex(exactText),
+      metadata: {
+        sourceKind: 'meeting_room.workspace_stop',
+        repositoryUrl: input.session.repo_git_url,
+        baseCommitSha: input.session.base_commit_sha,
+        challengeBranch: input.session.challenge_branch,
+        previousStatus: input.previousStatus,
+        stoppedStatus: input.session.status,
+      },
+    }],
+  });
+
+  return serializeRoomAssessmentProgress(await store.loadProgress(assessmentSession.id));
+}
+
+function roomAssessmentErrorResponse(c: Context<{ Bindings: Env }>, error: unknown): Response {
+  const message = error instanceof Error ? error.message : 'Commit submission failed.';
+  if (message.includes('does not exist')) return apiError(c, 'NOT_FOUND', message);
+  if (
+    message.includes('requires')
+    || message.includes('must')
+    || message.includes('cannot transition')
+  ) {
+    return apiError(c, 'VALIDATION_ERROR', message);
+  }
+  console.error('[meetingRooms.assessment.commitSubmission] failed:', message);
+  return apiError(c, 'INTERNAL_ERROR', 'Commit submission failed.');
+}
+
+meetingRooms.get('/:token/assessment/progress', async (c) => {
+  const token = c.req.param('token');
+  const room = await resolveRoom(c.env.DB, token);
+  if (!room) return apiError(c, 'NOT_FOUND', 'Room link is invalid or expired.');
+
+  const assessmentSession = await loadLatestAssessmentSessionForRoom(c.env.DB, room);
+  if (!assessmentSession) {
+    return c.json({ progress: null });
+  }
+
+  try {
+    const progress = await new RepoTaskInterviewSessionStore(c.env.DB).loadProgress(assessmentSession.id);
+    return c.json({ progress: serializeRoomAssessmentProgress(progress) });
+  } catch (error) {
+    console.error('[meetingRooms.assessment.progress] failed:', {
+      roomId: room.room_id,
+      interviewId: room.scheduled_interview_id,
+      error: error instanceof Error ? error.message : String(error),
+    });
+    return apiError(c, 'INTERNAL_ERROR', 'Assessment progress failed.');
+  }
+});
+
+meetingRooms.post('/:token/assessment/commit-submission', async (c) => {
+  const token = c.req.param('token');
+  const room = await resolveRoom(c.env.DB, token);
+  if (!room) return apiError(c, 'NOT_FOUND', 'Room link is invalid or expired.');
+
+  const workspace = await buildRoomWorkspacePayload(c.env.DB, token, room);
+  if (!workspace.enabled) {
+    return apiError(c, 'CONFLICT', 'Commit assessment submission requires a dev-container assessment room.');
+  }
+
+  const body = roomCommitSubmissionSchema.safeParse(await c.req.json().catch(() => null));
+  if (!body.success) {
+    return apiError(c, 'VALIDATION_ERROR', body.error.issues[0]?.message ?? 'Invalid commit submission body.');
+  }
+
+  const assessmentSession = await loadLatestAssessmentSessionForRoom(c.env.DB, room);
+  if (!assessmentSession) {
+    return apiError(
+      c,
+      'CONFLICT',
+      'This room is not linked to an assessment session. Create the assessment session before accepting commit evidence.',
+    );
+  }
+
+  const actor = roomAssessmentActor(room);
+  const store = new RepoTaskInterviewSessionStore(c.env.DB);
+  const commitSha = body.data.commitSha.trim().toLowerCase();
+  try {
+    await store.submitCommit({
+      sessionId: assessmentSession.id,
+      ingestionKey: `assessment-event:room-commit:${assessmentSession.id}:${commitSha}`,
+      actorType: actor.actorType,
+      actorId: actor.actorId,
+      narrative: body.data.narrative,
+      repositoryUrl: body.data.repositoryUrl,
+      forkRepositoryUrl: body.data.forkRepositoryUrl,
+      branchName: body.data.branchName,
+      baseCommitSha: body.data.baseCommitSha,
+      commitSha: body.data.commitSha,
+      commitUrl: body.data.commitUrl,
+      upstreamPullRequestUrl: body.data.upstreamPullRequestUrl,
+      upstreamPrConsent: body.data.upstreamPrConsent,
+      changedFiles: body.data.changedFiles,
+      occurredAt: body.data.occurredAt,
+      sourceRefs: body.data.sourceRefs,
+    });
+    const progress = await store.loadProgress(assessmentSession.id);
+    return c.json({
+      submission: {
+        accepted: true,
+        repositoryUrl: progress.commit?.repositoryUrl ?? body.data.repositoryUrl,
+        branchName: progress.commit?.branchName ?? body.data.branchName,
+        commitSha: progress.commit?.commitSha ?? commitSha,
+        commitUrl: progress.commit?.commitUrl ?? body.data.commitUrl ?? null,
+      },
+      progress: serializeRoomAssessmentProgress(progress),
+    }, 201);
+  } catch (error) {
+    return roomAssessmentErrorResponse(c, error);
+  }
 });
 
 meetingRooms.post('/:token/workspace/launch', async (c) => {
@@ -1053,14 +2816,25 @@ meetingRooms.post('/:token/workspace/launch', async (c) => {
   if (!effectiveRepoUrl) {
     return apiError(c, 'VALIDATION_ERROR', 'Provide a repository URL to launch the workspace.');
   }
+  const requestedAgentType = body.agentType ?? null;
+  if (requestedAgentType === 'devin' && !c.env.DEVIN_API_KEY) {
+    return apiError(c, 'INTERNAL_ERROR', 'Devin is not configured for this workspace.');
+  }
 
   const existingSession = await getLatestSessionForRoom(c.env.DB, room.room_id);
   if (existingSession && !WORKSPACE_TERMINAL_STATUSES.has(existingSession.status)) {
+    const assessmentSession = await loadLatestAssessmentSessionForRoom(c.env.DB, room);
+    const progress = assessmentSession
+      ? serializeRoomAssessmentProgress(
+          await new RepoTaskInterviewSessionStore(c.env.DB).loadProgress(assessmentSession.id),
+        )
+      : null;
     return c.json({
       workspace: {
         ...workspace,
         session: serializeWorkspaceSession(token, existingSession),
       },
+      progress,
     }, 200);
   }
 
@@ -1094,7 +2868,9 @@ meetingRooms.post('/:token/workspace/launch', async (c) => {
 
   const sessionId = crypto.randomUUID();
   const expiresAt = new Date(Date.now() + effective.ttlSeconds * 1000).toISOString();
-  const challengeBranch = githubPrChallengeRef(workspace.githubPrNumber);
+  const challenge = workspace.challenge;
+  const baseCommitSha = challengePacketBaseCommitSha(challenge.packet);
+  const challengeBranch = baseCommitSha ? null : githubPrChallengeRef(workspace.githubPrNumber);
   await insertRoomSession(c.env.DB, {
     id: crypto.randomUUID(),
     sessionId,
@@ -1107,38 +2883,94 @@ meetingRooms.post('/:token/workspace/launch', async (c) => {
     expiresAt,
     repoGitUrl: effectiveRepoUrl,
     challengeBranch,
+    baseCommitSha,
   });
 
   const doId = c.env.DEV_CONTAINER.idFromName(sessionId);
   const doStub = c.env.DEV_CONTAINER.get(doId);
-  c.executionCtx.waitUntil(
-    doStub.fetch('https://do.internal/__init', {
-      method: 'POST',
-      headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({
-        sessionId,
-        expiresAt,
-        ttlSeconds: effective.ttlSeconds,
-        repoGitUrl: effectiveRepoUrl,
-        challengeBranch,
-        agentType: 'devin',
-        pipeApiUrl: c.env.API_BASE_URL
-          ?? c.env.VIDEO_ROOM_APP_URL
-          ?? c.env.APP_BASE_URL
-          ?? `https://${c.req.header('host') ?? 'api.pipe.os'}`,
-        roomToken: token,
-      }),
-    }).catch((err: unknown) => {
-      console.error('[meetingRooms.workspace.launch] DO init failed:', err);
+  const initRequest = {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({
+      sessionId,
+      expiresAt,
+      ttlSeconds: effective.ttlSeconds,
+      repoGitUrl: effectiveRepoUrl,
+      challengeBranch,
+      baseCommitSha,
+      challengePacketContentHash: challenge.packet?.contentHash ?? null,
+      matchedRepoId: workspace.matchedRepoId,
+      githubPrNumber: workspace.githubPrNumber,
+      challengeStatus: challenge.status,
+      challengeKind: challenge.kind,
+      challengeSource: challenge.source,
+      challengeMessage: challenge.message,
+      agentType: requestedAgentType,
+      agentApiKey: requestedAgentType === 'devin' ? c.env.DEVIN_API_KEY ?? null : null,
+      agentOrgId: c.env.DEVIN_ORG_ID ?? null,
+      pipeApiUrl: c.env.API_BASE_URL
+        ?? c.env.VIDEO_ROOM_APP_URL
+        ?? c.env.APP_BASE_URL
+        ?? `https://${c.req.header('host') ?? 'api.pipe.os'}`,
+      roomToken: token,
     }),
+  } satisfies RequestInit;
+  c.executionCtx.waitUntil(
+    doStub.fetch('https://do.internal/__init', initRequest)
+      .then(async (response) => {
+        if (response.ok) return;
+        const responseText = await response.text().catch(() => '');
+        const diagnostic = sanitizeWorkspaceInitDiagnostic(
+          `Dev-container init returned HTTP ${response.status}${responseText ? `: ${responseText}` : ''}`,
+        );
+        console.error('[meetingRooms.workspace.launch] DO init returned non-OK:', diagnostic);
+        await markWorkspaceInitFailedIfStillLaunching({
+          db: c.env.DB,
+          sessionId,
+          meetingRoomId: room.room_id,
+          diagnostic,
+        });
+      })
+      .catch(async (err: unknown) => {
+        const diagnostic = sanitizeWorkspaceInitDiagnostic(
+          `Dev-container init request failed: ${err instanceof Error ? err.message : String(err)}`,
+        );
+        console.error('[meetingRooms.workspace.launch] DO init failed:', diagnostic);
+        await markWorkspaceInitFailedIfStillLaunching({
+          db: c.env.DB,
+          sessionId,
+          meetingRoomId: room.room_id,
+          diagnostic,
+        });
+      }),
   );
 
   const session = await getSessionByIdForRoom(c.env.DB, sessionId, room.room_id);
+  const progress = await recordWorkspaceLaunchAssessmentEvidence(c.env.DB, {
+    room,
+    workspace,
+    sessionId,
+    repositoryUrl: effectiveRepoUrl,
+    challengeBranch,
+    baseCommitSha,
+    ttlSeconds: effective.ttlSeconds,
+    expiresAt,
+  }).catch((error: unknown) => {
+    console.error('[meetingRooms.workspace.launch] assessment evidence failed:', {
+      roomId: room.room_id,
+      interviewId: room.scheduled_interview_id,
+      sessionId,
+      error: error instanceof Error ? error.message : String(error),
+    });
+    return null;
+  });
   return c.json({
     workspace: {
       ...workspace,
+      repoUrl: workspace.repoUrl ?? effectiveRepoUrl,
       session: serializeWorkspaceSession(token, session),
     },
+    progress,
   }, 201);
 });
 
@@ -1154,8 +2986,27 @@ meetingRooms.post('/:token/workspace/:sessionId/destroy', async (c) => {
   const session = await getSessionByIdForRoom(c.env.DB, sessionId, room.room_id);
   if (!session) return apiError(c, 'NOT_FOUND', 'Workspace session not found.');
 
+  let progress: RoomAssessmentProgressPayload | null = null;
   if (!WORKSPACE_TERMINAL_STATUSES.has(session.status)) {
-    await markStopped(c.env.DB, sessionId, new Date().toISOString());
+    const stoppedAt = new Date().toISOString();
+    await markStopped(c.env.DB, sessionId, stoppedAt);
+    const stoppedSession = await getSessionByIdForRoom(c.env.DB, sessionId, room.room_id);
+    progress = stoppedSession
+      ? await recordWorkspaceStopAssessmentEvidence(c.env.DB, {
+          room,
+          session: stoppedSession,
+          previousStatus: session.status,
+          stoppedAt,
+        }).catch((error: unknown) => {
+          console.error('[meetingRooms.workspace.destroy] assessment evidence failed:', {
+            roomId: room.room_id,
+            interviewId: room.scheduled_interview_id,
+            sessionId,
+            error: error instanceof Error ? error.message : String(error),
+          });
+          return null;
+        })
+      : null;
     const doId = c.env.DEV_CONTAINER.idFromName(sessionId);
     const doStub = c.env.DEV_CONTAINER.get(doId);
     c.executionCtx.waitUntil(
@@ -1165,7 +3016,10 @@ meetingRooms.post('/:token/workspace/:sessionId/destroy', async (c) => {
     );
   }
 
-  return c.json({ workspace: await buildRoomWorkspacePayload(c.env.DB, token, room) });
+  return c.json({
+    workspace: await buildRoomWorkspacePayload(c.env.DB, token, room),
+    progress,
+  });
 });
 
 async function proxyWorkspaceRequest(c: Context<{ Bindings: Env }>): Promise<Response> {
@@ -1299,7 +3153,7 @@ meetingRooms.all('/:token/agent/:sessionId/auth/*', async (c) => {
 // POST /:token/session-events — capture a session event as a candidate_node
 meetingRooms.post('/:token/session-events', async (c) => {
   const token = c.req.param('token');
-  const parsed = sessionEventSchema.safeParse(await c.req.json().catch(() => null));
+  const parsed = sessionEventSchema.safeParse(await readJsonRequestBody(c));
   if (!parsed.success) return apiError(c, 'VALIDATION_ERROR', 'Invalid session event.');
 
   const { resolveCandidateIdForRoom, captureSessionEvent } = await import('../lib/sessionEvents.js');
@@ -1314,11 +3168,37 @@ meetingRooms.post('/:token/session-events', async (c) => {
     timestamp: Math.floor(Date.now() / 1000),
     actor: parsed.data.actor ?? 'system',
     text: parsed.data.text,
-    properties: parsed.data.properties,
+    properties: {
+      ...(parsed.data.properties ?? {}),
+      ...(resolved.scheduledInterviewId ? { scheduledInterviewId: resolved.scheduledInterviewId } : {}),
+    },
   };
 
   const node = await captureSessionEvent(c.env.DB, event, c.env);
-  return c.json({ captured: !!node, nodeId: node?.id ?? null });
+  if (!node) {
+    return apiError(c, 'INTERNAL_ERROR', 'Session event could not be persisted.');
+  }
+
+  let progress: RoomAssessmentProgressPayload | null = null;
+  const assessmentSession = await loadLatestAssessmentSessionForInterview(
+    c.env.DB,
+    resolved.scheduledInterviewId,
+  );
+  if (assessmentSession) {
+    try {
+      progress = serializeRoomAssessmentProgress(
+        await new RepoTaskInterviewSessionStore(c.env.DB).loadProgress(assessmentSession.id),
+      );
+    } catch (error) {
+      console.error('[meetingRooms.sessionEvents] assessment progress refresh failed:', {
+        roomSessionId: resolved.sessionId,
+        scheduledInterviewId: resolved.scheduledInterviewId,
+        error: error instanceof Error ? error.message : String(error),
+      });
+    }
+  }
+
+  return c.json({ captured: true, nodeId: node.id, progress });
 });
 
 // GET /:token/context-graph — retrieve all session events for the candidate
@@ -1336,6 +3216,7 @@ meetingRooms.get('/:token/context-graph', async (c) => {
   await syncRoomActivityToSessionEvents(c.env.DB, c.env, {
     candidateId: resolved.candidateId,
     sessionId: resolved.sessionId,
+    assessmentInterviewId: resolved.scheduledInterviewId,
   });
 
   const graph = await getSessionContextGraph(c.env.DB, resolved.candidateId, resolved.sessionId);
@@ -1361,6 +3242,7 @@ meetingRooms.get('/:token/context-summary', async (c) => {
   await syncRoomActivityToSessionEvents(c.env.DB, c.env, {
     candidateId: resolved.candidateId,
     sessionId: resolved.sessionId,
+    assessmentInterviewId: resolved.scheduledInterviewId,
   });
 
   const summary = await getSessionContextSummary(c.env.DB, resolved.candidateId, resolved.sessionId);
@@ -1512,7 +3394,7 @@ meetingRooms.post('/:token/events', async (c) => {
     room,
     event,
     Math.floor(new Date(now).getTime() / 1000),
-    { recordingWasActive },
+    { recordingWasActive, observedAt: now },
   );
 
   return c.json({ accepted: true, sessionEvidence, lifecycleEvidence });
@@ -1588,7 +3470,7 @@ meetingRooms.post('/:token/recording', async (c) => {
   let contentType: string;
   let transcriptionBytes: ArrayBuffer | null = null;
   let transcriptionContentType: string | null = null;
-  let speakerMetadata = defaultRecordingSpeakerMetadata();
+  let speakerMetadata: RecordingSpeakerMetadata | null = null;
 
   if (requestContentType.toLowerCase().includes('multipart/form-data')) {
     const form = await c.req.formData();
@@ -1617,6 +3499,13 @@ meetingRooms.post('/:token/recording', async (c) => {
       }
       speakerMetadata = parsedSpeakerMetadata.metadata;
     }
+    if (transcriptionBytes && !speakerMetadata) {
+      return apiError(
+        c,
+        'VALIDATION_ERROR',
+        'Speaker metadata is required when uploading separate transcription audio.',
+      );
+    }
   } else {
     bytes = await c.req.arrayBuffer();
     contentType = requestContentType;
@@ -1628,7 +3517,7 @@ meetingRooms.post('/:token/recording', async (c) => {
     hasTranscriptionAudio: transcriptionBytes !== null,
     transcriptionBytes: transcriptionBytes?.byteLength ?? 0,
     contentType,
-    speakerChannelLayout: speakerMetadata.transcriptionAudio.channelLayout,
+    speakerChannelLayout: speakerMetadata?.transcriptionAudio.channelLayout ?? null,
   });
 
   if (bytes.byteLength === 0) {
@@ -1651,7 +3540,7 @@ meetingRooms.post('/:token/recording', async (c) => {
       customMetadata: {
         meetingId: room.meeting_id,
         roomId: room.room_id,
-        ...speakerMetadataCustomMetadata(speakerMetadata),
+        ...(speakerMetadata ? speakerMetadataCustomMetadata(speakerMetadata) : {}),
       },
     });
   } catch (r2Error) {
@@ -1671,7 +3560,7 @@ meetingRooms.post('/:token/recording', async (c) => {
         meetingId: room.meeting_id,
         roomId: room.room_id,
         derivedFrom: recordingKey,
-        ...speakerMetadataCustomMetadata(speakerMetadata),
+        ...(speakerMetadata ? speakerMetadataCustomMetadata(speakerMetadata) : {}),
       },
     });
   }
@@ -1691,6 +3580,7 @@ meetingRooms.post('/:token/recording', async (c) => {
     {
       ...processingOverrides,
       speakerMetadata,
+      speakerMetadataOrigin: speakerMetadata ? 'recording_upload_form' : null,
     },
   ));
   console.log('[meetingRooms] Recording upload complete, processing started', {
@@ -1902,6 +3792,11 @@ export function withDevBasicAuth(
   try {
     const url = new URL(rawUrl);
     if (url.protocol !== 'https:' && url.protocol !== 'http:') return rawUrl;
+    const hostname = url.hostname.toLowerCase();
+    const isPipeDevHost = hostname === 'app-dev.hire-pipe.com'
+      || hostname === 'room-dev.hire-pipe.com'
+      || hostname === 'api-dev.hire-pipe.com';
+    if (!isPipeDevHost) return rawUrl;
     url.username = env.VIDEO_ROOM_DEV_AUTH_USER || env.DEV_BASIC_AUTH_USER;
     url.password = env.VIDEO_ROOM_DEV_AUTH_PASSWORD || env.DEV_BASIC_AUTH_PASSWORD;
     return url.toString();
@@ -1940,6 +3835,8 @@ meetingsAuth.post('/', async (c) => {
     return apiError(c, 'VALIDATION_ERROR', parsed.error.issues[0]?.message ?? 'Validation failed');
   }
   const data = parsed.data;
+  const recipientEmail = data.recipientEmail?.trim().toLowerCase();
+  const recipientName = data.recipientName?.trim();
 
   // Resolve a contact when contactId is provided; otherwise create one from recipient info.
   let contactId: string | null = null;
@@ -1950,27 +3847,41 @@ meetingsAuth.post('/', async (c) => {
       .first<{ id: string }>();
     if (!contact) return apiError(c, 'NOT_FOUND', 'Contact not found.');
     contactId = contact.id;
-  } else if (data.recipientEmail && data.recipientName) {
+  } else if (recipientEmail && recipientName) {
     // Reuse an existing contact with this email if present, else create one.
+    const now = new Date().toISOString();
     const existing = await db
-      .prepare('SELECT id FROM contacts WHERE owner_id = ? AND email = ?')
-      .bind(userId, data.recipientEmail)
+      .prepare(
+        `SELECT id
+           FROM contacts
+          WHERE owner_id = ?
+            AND lower(email) = ?
+          ORDER BY updated_at DESC
+          LIMIT 1`,
+      )
+      .bind(userId, recipientEmail)
       .first<{ id: string }>();
     if (existing) {
       contactId = existing.id;
+      await db.prepare(
+        `UPDATE contacts
+            SET email = ?,
+                name = COALESCE(NULLIF(name, ''), ?),
+                updated_at = ?
+          WHERE id = ?`,
+      ).bind(recipientEmail, recipientName, now, existing.id).run();
     } else {
       contactId = crypto.randomUUID();
-      const now = new Date().toISOString();
       await db.prepare(
         `INSERT INTO contacts (id, owner_id, email, name, type, created_at, updated_at)
          VALUES (?, ?, ?, ?, 'lead', ?, ?)`,
-      ).bind(contactId, userId, data.recipientEmail, data.recipientName, now, now).run();
+      ).bind(contactId, userId, recipientEmail, recipientName, now, now).run();
     }
   }
 
   const meetingId = crypto.randomUUID();
   const now = new Date().toISOString();
-  const title = data.title ?? (data.recipientName ?? 'Meeting');
+  const title = data.title ?? (recipientName ?? 'Meeting');
   const meetingType = data.meetingType ?? 'OTHER';
 
   await db.prepare(

@@ -21,15 +21,6 @@ function authHeaders() {
   return { Authorization: `Basic ${value}` };
 }
 
-function withBasicAuth(rawUrl) {
-  if (!BASIC_USER && !BASIC_PASSWORD) return rawUrl;
-  const url = new URL(rawUrl);
-  if (url.username || url.password) return rawUrl;
-  url.username = BASIC_USER;
-  url.password = BASIC_PASSWORD;
-  return url.toString();
-}
-
 function cleanUrl(rawUrl) {
   const url = new URL(rawUrl);
   url.username = '';
@@ -75,8 +66,8 @@ async function createRoom() {
   const prepared = await postJson(`/api/v1/meetings/${created.meeting.id}/room`);
   return {
     meetingId: created.meeting.id,
-    hostUrl: withBasicAuth(prepared.room.hostUrl),
-    guestUrl: withBasicAuth(prepared.room.guestUrl),
+    hostUrl: cleanUrl(prepared.room.hostUrl),
+    guestUrl: cleanUrl(prepared.room.guestUrl),
   };
 }
 
@@ -128,10 +119,16 @@ async function main() {
   });
 
   const hostContext = await browser.newContext({
+    ...(BASIC_USER || BASIC_PASSWORD
+      ? { httpCredentials: { username: BASIC_USER, password: BASIC_PASSWORD } }
+      : {}),
     permissions: ['camera', 'microphone'],
     viewport: { width: 1280, height: 720 },
   });
   const guestContext = await browser.newContext({
+    ...(BASIC_USER || BASIC_PASSWORD
+      ? { httpCredentials: { username: BASIC_USER, password: BASIC_PASSWORD } }
+      : {}),
     permissions: ['camera', 'microphone'],
     viewport: { width: 1280, height: 720 },
   });

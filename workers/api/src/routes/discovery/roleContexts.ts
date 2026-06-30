@@ -1255,7 +1255,6 @@ roleContexts.post('/simple-job-description', async (c) => {
 
 roleContexts.post('/parse-jd', async (c) => {
   const contentType = c.req.header('Content-Type') ?? '';
-  const mock = c.env.MOCK_AI === 'true';
 
   // Multipart: file upload
   if (contentType.includes('multipart/form-data')) {
@@ -1270,7 +1269,6 @@ roleContexts.post('/parse-jd', async (c) => {
       fileBuffer: buffer,
       contentType: file.type,
       env: c.env,
-      mock,
     });
 
     if (!parsed) {
@@ -1293,7 +1291,7 @@ roleContexts.post('/parse-jd', async (c) => {
     return apiError(c, 'VALIDATION_ERROR', 'text must be at least 20 characters.');
   }
 
-  const parsed = await parseJobDescription({ text, env: c.env, mock });
+  const parsed = await parseJobDescription({ text, env: c.env });
 
   if (!parsed) {
     return apiError(c, 'INTERNAL_ERROR', 'Failed to parse job description.');

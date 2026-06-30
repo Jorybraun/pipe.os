@@ -1,17 +1,21 @@
-import { useCallback, useState, type CSSProperties, type ReactNode } from 'react';
+import { useCallback, useEffect, useState, type CSSProperties, type ReactNode } from 'react';
 import {
   FileText,
   FolderOpen,
   Globe,
   Palette,
+  ClipboardCheck,
   SquareTerminal,
   Video,
   MessageSquare,
 } from 'lucide-react';
 import { Win95Taskbar } from './Win95Taskbar';
+import type { ClippyTrayStatus } from './Win95Taskbar';
 import { Win95Window } from './Win95Window';
 import type { WindowManagerApi, WindowState, WindowType } from '../hooks/useWindowManager';
 import type { RoomCursorPresence } from '../hooks/useRoomConnection';
+import type { WindowStateSource, WindowUiLaunchSource } from '../lib/windowEvidence';
+import type { StartMenuEventSource } from '../lib/startMenuEvidence';
 
 interface DesktopIcon {
   windowType: WindowType;
@@ -22,32 +26,39 @@ interface DesktopIcon {
 const DESKTOP_ICONS: DesktopIcon[] = [
   { windowType: 'video', label: 'Video Call', icon: Video },
   { windowType: 'workspace', label: 'VS Code', icon: SquareTerminal },
-  { windowType: 'chat', label: 'Chat', icon: MessageSquare },
+  { windowType: 'chat', label: 'Room Chat', icon: MessageSquare },
   { windowType: 'tasks', label: 'Files', icon: FolderOpen },
   { windowType: 'notepad', label: 'Notepad', icon: FileText },
   { windowType: 'paint', label: 'Paint', icon: Palette },
   { windowType: 'browser', label: 'Microsoft Edge', icon: Globe },
   { windowType: 'terminal', label: 'Terminal', icon: SquareTerminal },
+  { windowType: 'submission', label: 'Submit Work', icon: ClipboardCheck },
 ];
 
 interface Win95DesktopProps {
   wm: WindowManagerApi;
   children?: ReactNode;
-  onIconDoubleClick?: (windowType: WindowType) => void;
+  onIconDoubleClick?: (windowType: WindowType, source?: WindowUiLaunchSource) => void;
   recordingLabel?: string;
   recordingActive?: boolean;
+  onClippyClick?: () => void;
+  clippyActive?: boolean;
+  clippyStatus?: ClippyTrayStatus;
   renderWindowContent: (win: WindowState) => ReactNode;
   onWindowClose?: (id: string) => void;
-  onWindowFocus?: (id: string) => void;
-  onWindowMinimize?: (id: string) => void;
-  onWindowRestore?: (id: string) => void;
+  onWindowFocus?: (id: string, stateSource?: WindowStateSource) => void;
+  onWindowMinimize?: (id: string, stateSource?: WindowStateSource) => void;
+  onWindowRestore?: (id: string, stateSource?: WindowStateSource) => void;
   onWindowMaximize?: (id: string) => void;
   onWindowMove?: (id: string, x: number, y: number) => void;
   onWindowMoveEnd?: (id: string, x: number, y: number) => void;
   canExitDesktop?: boolean;
   onExitDesktop?: () => void;
+  startMenuState?: { open: boolean; eventId: string } | null;
+  onStartMenuStateChange?: (open: boolean, source: StartMenuEventSource) => void;
   peerCursors?: RoomCursorPresence[];
   onCursorMove?: (position: { x: number; y: number }) => void;
+  assessmentEnabled?: boolean;
 }
 
 export function Win95Desktop({
@@ -55,6 +66,9 @@ export function Win95Desktop({
   onIconDoubleClick,
   recordingLabel,
   recordingActive,
+  onClippyClick,
+  clippyActive,
+  clippyStatus,
   renderWindowContent,
   onWindowClose,
   onWindowFocus,
@@ -65,32 +79,63 @@ export function Win95Desktop({
   onWindowMoveEnd,
   canExitDesktop = false,
   onExitDesktop,
+  startMenuState,
+  onStartMenuStateChange,
   peerCursors = [],
   onCursorMove,
+  assessmentEnabled = false,
 }: Win95DesktopProps): JSX.Element {
   const [startMenuOpen, setStartMenuOpen] = useState(false);
+  const desktopIcons = assessmentEnabled
+    ? DESKTOP_ICONS
+    : DESKTOP_ICONS.filter((icon) => icon.windowType !== 'submission');
+
+  useEffect(() => {
+    if (!startMenuState) return;
+    setStartMenuOpen(startMenuState.open);
+  }, [startMenuState?.eventId, startMenuState?.open]);
+
+  const setStartMenuOpenWithEvidence = useCallback((
+    open: boolean,
+    source: StartMenuEventSource,
+  ): void => {
+    setStartMenuOpen(open);
+    onStartMenuStateChange?.(open, source);
+  }, [onStartMenuStateChange]);
 
   const handleStartClick = useCallback((): void => {
-    setStartMenuOpen((v) => !v);
-  }, []);
+    setStartMenuOpenWithEvidence(!startMenuOpen, 'win95_start_button');
+  }, [setStartMenuOpenWithEvidence, startMenuOpen]);
 
   const handleWindowClick = useCallback(
     (win: WindowState): void => {
       if (win.minimized) {
-        (onWindowRestore ?? wm.restoreWindow)(win.id);
+        if (onWindowRestore) {
+          onWindowRestore(win.id, 'win95_taskbar');
+        } else {
+          wm.restoreWindow(win.id);
+        }
       } else if (win.focused) {
-        (onWindowMinimize ?? wm.minimizeWindow)(win.id);
+        if (onWindowMinimize) {
+          onWindowMinimize(win.id, 'win95_taskbar');
+        } else {
+          wm.minimizeWindow(win.id);
+        }
       } else {
-        (onWindowFocus ?? wm.focusWindow)(win.id);
+        if (onWindowFocus) {
+          onWindowFocus(win.id, 'win95_taskbar');
+        } else {
+          wm.focusWindow(win.id);
+        }
       }
     },
     [onWindowFocus, onWindowMinimize, onWindowRestore, wm],
   );
 
   const handleIconDoubleClick = useCallback(
-    (windowType: WindowType): void => {
+    (windowType: WindowType, source: WindowUiLaunchSource): void => {
       if (onIconDoubleClick) {
-        onIconDoubleClick(windowType);
+        onIconDoubleClick(windowType, source);
       }
     },
     [onIconDoubleClick],
@@ -108,7 +153,9 @@ export function Win95Desktop({
           y: (event.clientY - rect.top) / rect.height,
         });
       }}
-      onClick={() => startMenuOpen && setStartMenuOpen(false)}
+      onClick={() => {
+        if (startMenuOpen) setStartMenuOpenWithEvidence(false, 'win95_desktop_click');
+      }}
     >
       <div className="win95-peer-cursors" aria-hidden="true">
         {peerCursors.map((cursor) => {
@@ -116,9 +163,9 @@ export function Win95Desktop({
           const x = Math.min(0.985, Math.max(0.015, cursor.x));
           const y = Math.min(0.96, Math.max(0.015, cursor.y));
           const cursorStyle = {
-            '--room-cursor-x': `${x * 100}vw`,
-            '--room-cursor-y': `${y * 100}dvh`,
-          } as CSSProperties;
+            '--peer-cursor-x': `${x * 100}vw`,
+            '--peer-cursor-y': `${y * 100}dvh`,
+          } as CSSProperties & Record<'--peer-cursor-x' | '--peer-cursor-y', string>;
           return (
             <div
               key={cursor.role}
@@ -140,14 +187,14 @@ export function Win95Desktop({
         })}
       </div>
       <div className="win95-desktop-icons">
-        {DESKTOP_ICONS.map((icon) => {
+        {desktopIcons.map((icon) => {
           const Icon = icon.icon;
           return (
             <button
               key={icon.windowType}
               className="win95-desktop-icon"
               data-testid={`room-desktop-icon-${icon.windowType}`}
-              onDoubleClick={() => handleIconDoubleClick(icon.windowType)}
+              onDoubleClick={() => handleIconDoubleClick(icon.windowType, 'win95_desktop_ui')}
               onClick={(e) => e.stopPropagation()}
               title={icon.label}
             >
@@ -164,15 +211,15 @@ export function Win95Desktop({
             <span className="win95-start-menu-brand">95<span>∞</span></span>
           </div>
           <div className="win95-start-menu-items">
-            {DESKTOP_ICONS.map((icon) => {
+            {desktopIcons.map((icon) => {
               const Icon = icon.icon;
               return (
                 <button
                   key={icon.windowType}
                   className="win95-start-menu-item"
                   onClick={() => {
-                    handleIconDoubleClick(icon.windowType);
-                    setStartMenuOpen(false);
+                    handleIconDoubleClick(icon.windowType, 'win95_start_menu');
+                    setStartMenuOpenWithEvidence(false, 'win95_start_menu_item');
                   }}
                 >
                   <Icon size={16} />
@@ -185,7 +232,7 @@ export function Win95Desktop({
               className="win95-start-menu-item"
               onClick={() => {
                 if (canExitDesktop) onExitDesktop?.();
-                setStartMenuOpen(false);
+                setStartMenuOpenWithEvidence(false, 'win95_start_menu_item');
               }}
             >
               <SquareTerminal size={16} />
@@ -226,6 +273,9 @@ export function Win95Desktop({
         startMenuOpen={startMenuOpen}
         recordingLabel={recordingLabel}
         recordingActive={recordingActive}
+        onClippyClick={onClippyClick}
+        clippyActive={clippyActive}
+        clippyStatus={clippyStatus}
       />
     </div>
   );

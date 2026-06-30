@@ -23,15 +23,33 @@ import { authMiddleware } from '../../middleware/auth';
 import { apiError } from '../../middleware/errors';
 import { sendTransactionalEmail } from '../../lib/transactionalEmail';
 import { buildPipeEmailLogoImg, resolvePipeEmailLogoUrl } from '../../lib/emailAssets';
+import { ensureUsableCandidateInviteToken, isClaimedInviteToken } from '../../lib/candidateInviteTokens';
 import { ensureMeetingRoomLinks, withDevBasicAuth } from '../meetingRooms';
 import {
+  OPEN_TERM_RESOLVER_VERSION,
   LivingContextStore,
+  openSemanticTerm,
   deterministicEntityId,
   ensureCandidateLivingContext,
   ensureContactLivingContext,
   loadCandidateLivingContext,
   loadContactLivingContext,
+  type ContextRecordConceptInput,
+  type ContextRecordEntityInput,
+  type ContextRecordSourceInput,
+  type JsonObject,
 } from '../../lib/livingContext';
+import { AssessmentLayerStore, type AssessmentEvidenceSourceRefInput } from '../../lib/assessmentLayer/persistence';
+import {
+  RepoTaskInterviewSessionStore,
+  type AssessmentProgressSnapshot,
+  type HumanAssessmentDecisionValue,
+} from '../../lib/repoTaskInterviewSession';
+import { evaluateRepoTaskAssessmentSession } from '../../lib/repoTaskAssessmentEvaluator';
+import * as d1Matcher from '../../lib/challengeMatching/d1Matcher';
+import type { CandidateReviewChallengeOptions } from '../../lib/challengeMatching/d1Matcher';
+import { loadRoleChallengeSemantics } from '../../lib/challengeMatching/roleGuardrails';
+import type { ChallengePacket } from '../../lib/repoSemanticGraph';
 import type { Env, Variables } from '../../types';
 
 // ─── Provider config ────────────────────────────────────────────────────────
@@ -131,6 +149,293 @@ function isWorkspaceAssessmentInterviewType(value: string | null | undefined): v
     || value === 'OPEN_SOURCE_BUG_FIX';
 }
 
+interface ScheduledInterviewRoomFeatures {
+  videoEnabled: boolean;
+  workspaceEnabled: boolean;
+  recordingEnabled: boolean;
+  clippyEnabled: boolean;
+}
+
+export function scheduledInterviewRoomFeatures(
+  interviewType: string | null | undefined,
+): ScheduledInterviewRoomFeatures {
+  const workspaceAssessment = isWorkspaceAssessmentInterviewType(interviewType);
+  return {
+    videoEnabled: true,
+    workspaceEnabled: workspaceAssessment,
+    recordingEnabled: true,
+    clippyEnabled: workspaceAssessment,
+  };
+}
+
+function scheduledInterviewAssessmentLabel(interviewType: string | null | undefined): string | null {
+  switch (interviewType) {
+    case 'OPEN_SOURCE_BUG_FIX':
+      return 'open-source bug-fix assessment';
+    case 'DEV_CONTAINER_CHALLENGE':
+      return 'dev-container assessment';
+    case 'CODE_REVIEW':
+      return 'code-review assessment';
+    default:
+      return null;
+  }
+}
+
+export function scheduledInterviewMeetingCopy(input: {
+  candidateName: string;
+  roleTitle: string;
+  stageTitle: string;
+  interviewType: string | null | undefined;
+}): { title: string; description: string } {
+  const assessmentLabel = scheduledInterviewAssessmentLabel(input.interviewType);
+  if (!assessmentLabel) {
+    return {
+      title: `${input.candidateName} interview`,
+      description: `${input.roleTitle} · ${input.stageTitle}`,
+    };
+  }
+  return {
+    title: `${input.candidateName} ${assessmentLabel}`,
+    description: [
+      input.roleTitle,
+      input.stageTitle,
+      'Controlled workspace with video, recording, chat, terminal, code-server, and real AI-bridge evidence',
+    ].join(' · '),
+  };
+}
+
+type ScheduledAssessmentSetupStatus =
+  | 'not_applicable'
+  | 'reviewable_task_assigned'
+  | 'missing_reviewable_task'
+  | 'waiting_for_candidate_evidence'
+  | 'waiting_for_source_backed_match';
+
+type ScheduledAssessmentSetupKind =
+  | 'not_applicable'
+  | 'github_pr'
+  | 'manual_open_source_task'
+  | 'matched_repo_without_pr'
+  | 'auto_match';
+
+type ScheduledAssessmentSetupSource =
+  | 'not_workspace_assessment'
+  | 'recruiter_manual_override'
+  | 'matched_repo_id'
+  | 'contact_first_invite'
+  | 'candidate_id';
+
+interface ScheduledAssessmentSetupProjection {
+  status: ScheduledAssessmentSetupStatus;
+  kind: ScheduledAssessmentSetupKind;
+  source: ScheduledAssessmentSetupSource;
+  blocksPositiveAssessment: boolean;
+  message: string | null;
+  lastDeliveredUrl?: string | null;
+  lastDeliveredUrlState?: 'active' | 'claimed' | 'stale' | null;
+  lastDeliveredUrlMessage?: string | null;
+}
+
+interface WorkspaceSessionProjection {
+  status: string;
+  errorMessage: string | null;
+  expiresAt: string | null;
+  updatedAt: string | null;
+  repoGitUrl: string | null;
+  baseCommitSha: string | null;
+}
+
+function buildWorkspaceSessionProjection(input: {
+  workspace_status: string | null;
+  workspace_error_message: string | null;
+  workspace_expires_at: string | null;
+  workspace_updated_at: string | null;
+  workspace_repo_git_url: string | null;
+  workspace_base_commit_sha: string | null;
+}): WorkspaceSessionProjection | null {
+  if (!input.workspace_status) return null;
+  return {
+    status: input.workspace_status,
+    errorMessage: input.workspace_error_message,
+    expiresAt: input.workspace_expires_at,
+    updatedAt: input.workspace_updated_at,
+    repoGitUrl: input.workspace_repo_git_url,
+    baseCommitSha: input.workspace_base_commit_sha,
+  };
+}
+
+function buildScheduledAssessmentSetup(input: {
+  interviewType: string | null | undefined;
+  candidateId: string | null | undefined;
+  matchedRepoId: number | null | undefined;
+  githubRepoUrl: string | null | undefined;
+  githubPrNumber: number | null | undefined;
+  manualOpenSourceChallengePacket?: boolean | undefined;
+  lastDeliveredUrl?: string | null | undefined;
+  lastDeliveredUrlState?: 'active' | 'claimed' | 'stale' | null | undefined;
+  lastDeliveredUrlMessage?: string | null | undefined;
+}): ScheduledAssessmentSetupProjection {
+  const lastDeliveredUrl = input.lastDeliveredUrl ?? null;
+  const lastDeliveredUrlState = lastDeliveredUrl
+    ? input.lastDeliveredUrlState ?? 'active'
+    : null;
+  const lastDeliveredUrlMessage = lastDeliveredUrl
+    ? input.lastDeliveredUrlMessage ?? null
+    : null;
+  if (!isWorkspaceAssessmentInterviewType(input.interviewType)) {
+    return {
+      status: 'not_applicable',
+      kind: 'not_applicable',
+      source: 'not_workspace_assessment',
+      blocksPositiveAssessment: false,
+      message: null,
+      lastDeliveredUrl: null,
+      lastDeliveredUrlState: null,
+      lastDeliveredUrlMessage: null,
+    };
+  }
+
+  if (input.githubRepoUrl && input.manualOpenSourceChallengePacket) {
+    return {
+      status: 'reviewable_task_assigned',
+      kind: 'manual_open_source_task',
+      source: 'recruiter_manual_override',
+      blocksPositiveAssessment: false,
+      message: 'A concrete open-source task packet was assigned by the recruiter. PIPE can launch that repo task from the exact base commit without inferring candidate-specific alignment.',
+      lastDeliveredUrl,
+      lastDeliveredUrlState,
+      lastDeliveredUrlMessage,
+    };
+  }
+
+  if (input.matchedRepoId && input.githubRepoUrl && input.githubPrNumber) {
+    return {
+      status: 'reviewable_task_assigned',
+      kind: 'auto_match',
+      source: 'matched_repo_id',
+      blocksPositiveAssessment: false,
+      message: 'PIPE selected a concrete GitHub PR from source-backed candidate evidence and repository demands. Use the assignment as match-fit evidence alongside the candidate review.',
+      lastDeliveredUrl,
+      lastDeliveredUrlState,
+      lastDeliveredUrlMessage,
+    };
+  }
+
+  if (input.githubRepoUrl && input.githubPrNumber) {
+    return {
+      status: 'reviewable_task_assigned',
+      kind: 'github_pr',
+      source: 'recruiter_manual_override',
+      blocksPositiveAssessment: false,
+      message: 'A concrete GitHub PR was assigned by the recruiter. PIPE can launch that task, but candidate-specific alignment is not inferred from this manual override.',
+      lastDeliveredUrl,
+      lastDeliveredUrlState,
+      lastDeliveredUrlMessage,
+    };
+  }
+
+  if (input.matchedRepoId) {
+    return {
+      status: 'missing_reviewable_task',
+      kind: 'matched_repo_without_pr',
+      source: 'matched_repo_id',
+      blocksPositiveAssessment: true,
+      message: 'A matched repository exists, but no GitHub PR or task was assigned. Treat this as an assessment setup gap, not candidate evidence.',
+      lastDeliveredUrl,
+      lastDeliveredUrlState,
+      lastDeliveredUrlMessage,
+    };
+  }
+
+  if (!input.candidateId) {
+    return {
+      status: 'waiting_for_candidate_evidence',
+      kind: 'auto_match',
+      source: 'contact_first_invite',
+      blocksPositiveAssessment: true,
+      message: 'This contact-first assessment invite has no candidate evidence yet. PIPE must ingest source-backed resume, transcript, chat, or interview evidence before selecting a PR task.',
+      lastDeliveredUrl,
+      lastDeliveredUrlState,
+      lastDeliveredUrlMessage,
+    };
+  }
+
+  return {
+    status: 'waiting_for_source_backed_match',
+    kind: 'auto_match',
+    source: 'candidate_id',
+    blocksPositiveAssessment: true,
+    message: 'Candidate evidence is available for matching, but no source-backed PR task has been assigned yet.',
+    lastDeliveredUrl,
+    lastDeliveredUrlState,
+    lastDeliveredUrlMessage,
+  };
+}
+
+const GIT_COMMIT_SHA_PATTERN = /^[0-9a-f]{40}$/i;
+
+function githubRepositoryPathFromUrl(value: string): string | null {
+  let url: URL;
+  try {
+    url = new URL(value);
+  } catch {
+    return null;
+  }
+  if (url.protocol !== 'https:' || url.hostname.toLowerCase() !== 'github.com') {
+    return null;
+  }
+  const segments = url.pathname.split('/').filter(Boolean);
+  if (segments.length !== 2) return null;
+  const [owner, repoWithSuffix] = segments;
+  const repo = repoWithSuffix?.endsWith('.git') ? repoWithSuffix.slice(0, -4) : repoWithSuffix;
+  if (!owner || !repo) return null;
+  return `${owner}/${repo}`;
+}
+
+function isGitHubRepositoryUrl(value: string): boolean {
+  return githubRepositoryPathFromUrl(value) !== null;
+}
+
+type GitHubCommitVerificationResult =
+  | { ok: true }
+  | { ok: false; reason: 'not_found' | 'unavailable'; status?: number };
+
+async function verifyGitHubCommitReachable(input: {
+  repositoryUrl: string;
+  commitSha: string;
+  githubToken?: string;
+}): Promise<GitHubCommitVerificationResult> {
+  const repoPath = githubRepositoryPathFromUrl(input.repositoryUrl);
+  if (!repoPath) return { ok: false, reason: 'not_found' };
+
+  const [owner, repo] = repoPath.split('/');
+  if (!owner || !repo) return { ok: false, reason: 'not_found' };
+  const headers: Record<string, string> = {
+    Accept: 'application/vnd.github+json',
+    'User-Agent': 'PIPE-OS-assessment-validator',
+  };
+  if (input.githubToken) {
+    headers.Authorization = `Bearer ${input.githubToken}`;
+  }
+
+  let response: Response;
+  try {
+    const url = `https://api.github.com/repos/${encodeURIComponent(owner)}/${encodeURIComponent(repo)}/commits/${input.commitSha.toLowerCase()}`;
+    response = await fetch(
+      url,
+      { headers },
+    );
+  } catch {
+    return { ok: false, reason: 'unavailable' };
+  }
+
+  if (response.ok) return { ok: true };
+  if (response.status === 404 || response.status === 422) {
+    return { ok: false, reason: 'not_found', status: response.status };
+  }
+  return { ok: false, reason: 'unavailable', status: response.status };
+}
+
 const createInterviewSchema = z.object({
   candidateId: z.string().min(1).optional(),
   pipelineId: z.string().optional(),
@@ -145,6 +450,12 @@ const createInterviewSchema = z.object({
   matchedRepoId: z.number().int().positive().nullable().optional(),
   githubRepoUrl: z.string().trim().url().nullable().optional(),
   githubPrNumber: z.number().int().positive().nullable().optional(),
+  challengeBaseCommitSha: z.string().trim().regex(GIT_COMMIT_SHA_PATTERN, 'challengeBaseCommitSha must be a 40-character Git commit SHA.').optional(),
+  challengeTitle: z.string().trim().min(1).max(240).optional(),
+  challengeInstructions: z.string().trim().min(1).max(5000).optional(),
+  challengeSuccessCriteria: z.array(z.string().trim().min(1).max(500)).min(1).max(12).optional(),
+  challengeExpectedEvidence: z.array(z.string().trim().min(1).max(500)).min(1).max(12).optional(),
+  recruiterNotes: z.string().trim().max(5000).optional(),
 }).superRefine((value, ctx) => {
   const hasCandidate = Boolean(value.candidateId);
   const hasRecipient = Boolean(value.recipientName && value.recipientEmail);
@@ -167,9 +478,30 @@ const createInterviewSchema = z.object({
   // challenge from candidate evidence at runtime.
   if (isWorkspaceAssessmentInterviewType(value.interviewType)) {
     const hasMatchedRepo = value.matchedRepoId != null && value.matchedRepoId > 0;
-    const hasRepoUrlAndPr = Boolean(value.githubRepoUrl && value.githubPrNumber);
-    const hasPartialManual = Boolean(value.githubRepoUrl) !== Boolean(value.githubPrNumber);
-    if (hasPartialManual) {
+    const hasRepoUrl = Boolean(value.githubRepoUrl);
+    const hasPrNumber = Boolean(value.githubPrNumber);
+    const hasRepoUrlAndPr = hasRepoUrl && hasPrNumber;
+    const challengeFields = [
+      value.challengeBaseCommitSha,
+      value.challengeTitle,
+      value.challengeInstructions,
+      value.challengeSuccessCriteria,
+      value.challengeExpectedEvidence,
+    ];
+    const hasAnyChallengePacketField = challengeFields.some((field) =>
+      Array.isArray(field) ? field.length > 0 : Boolean(field));
+    const hasCompleteChallengePacket = Boolean(
+      value.challengeBaseCommitSha
+      && value.challengeTitle
+      && value.challengeInstructions
+      && value.challengeSuccessCriteria?.length
+      && value.challengeExpectedEvidence?.length,
+    );
+    const hasManualOpenSourceTaskPacket = value.interviewType === 'OPEN_SOURCE_BUG_FIX'
+      && hasRepoUrl
+      && hasCompleteChallengePacket;
+    const hasPartialManual = hasRepoUrl !== hasPrNumber;
+    if (hasPartialManual && !hasManualOpenSourceTaskPacket) {
       ctx.addIssue({
         code: z.ZodIssueCode.custom,
         message:
@@ -177,14 +509,54 @@ const createInterviewSchema = z.object({
         path: ['githubRepoUrl'],
       });
     }
-    if (hasMatchedRepo && hasRepoUrlAndPr) {
+    if (value.githubRepoUrl && !isGitHubRepositoryUrl(value.githubRepoUrl)) {
+      ctx.addIssue({
+        code: z.ZodIssueCode.custom,
+        message: 'githubRepoUrl must be a GitHub HTTPS repository URL.',
+        path: ['githubRepoUrl'],
+      });
+    }
+    if (hasMatchedRepo && (hasRepoUrlAndPr || hasManualOpenSourceTaskPacket)) {
       ctx.addIssue({
         code: z.ZodIssueCode.custom,
         message:
-          'Provide either matchedRepoId or githubRepoUrl + githubPrNumber, not both.',
+          'Provide either matchedRepoId or a manual repo challenge, not both.',
         path: ['matchedRepoId'],
       });
     }
+    if (hasAnyChallengePacketField && value.interviewType !== 'OPEN_SOURCE_BUG_FIX') {
+      ctx.addIssue({
+        code: z.ZodIssueCode.custom,
+        message: 'Manual open-source challenge packets can only be attached to OPEN_SOURCE_BUG_FIX interviews.',
+        path: ['interviewType'],
+      });
+    }
+    if (hasAnyChallengePacketField && !hasCompleteChallengePacket) {
+      ctx.addIssue({
+        code: z.ZodIssueCode.custom,
+        message: 'Manual open-source challenge packets require challengeBaseCommitSha, challengeTitle, challengeInstructions, challengeSuccessCriteria, and challengeExpectedEvidence.',
+        path: ['challengeBaseCommitSha'],
+      });
+    }
+    if (hasAnyChallengePacketField && !hasRepoUrl) {
+      ctx.addIssue({
+        code: z.ZodIssueCode.custom,
+        message: 'Manual open-source challenge packets require githubRepoUrl.',
+        path: ['githubRepoUrl'],
+      });
+    }
+  } else if (
+    value.challengeBaseCommitSha
+    || value.challengeTitle
+    || value.challengeInstructions
+    || value.challengeSuccessCriteria?.length
+    || value.challengeExpectedEvidence?.length
+  ) {
+    ctx.addIssue({
+      code: z.ZodIssueCode.custom,
+      message: 'Challenge packet fields require OPEN_SOURCE_BUG_FIX.',
+      path: ['interviewType'],
+    });
   }
 });
 
@@ -207,11 +579,52 @@ const updateInterviewSchema = z.object({
   githubPrNumber: z.number().int().positive().nullable().optional(),
 });
 
+const humanAssessmentDecisionSchema = z.enum([
+  'advance',
+  'hold',
+  'reject',
+  'needs_more_evidence',
+] satisfies [HumanAssessmentDecisionValue, ...HumanAssessmentDecisionValue[]]);
+
+const recordHumanAssessmentDecisionSchema = z.object({
+  decision: humanAssessmentDecisionSchema,
+  summary: z.string().trim().min(1).max(2000),
+  notes: z.string().trim().min(1).max(5000).nullable().optional(),
+});
+
 const inviteToCallSchema = z.object({
   email: z.string().email(),
   message: z.string().max(1000).optional(),
   sendEmail: z.boolean().optional(),
 });
+
+const SOURCE_BACKED_WORK_EVIDENCE_QUESTION =
+  'Describe one real PR, bug, or code review you personally handled that best represents the work PIPE should assess. Include the codebase context, your role, trade-offs, verification/tests, and outcome.';
+const SOURCE_BACKED_WORK_EVIDENCE_FOLLOW_UP =
+  'What did you inspect, which constraints mattered, and what source evidence would help PIPE map that work to a fair repo challenge?';
+const CANDIDATE_ALIGNMENT_QUESTION =
+  'Describe a project closest to this kind of repo challenge. Include the stack, behavior you owned, debugging or review actions, and why it would be a fair stretch.';
+const ROLE_SAFE_CHALLENGE_QUESTION =
+  'Name a real repo, PR, or codebase area that would fairly test you. What issue style, constraints, and scoring signals would be meaningful, and what would be misleading?';
+const CONTEXT_CALL_QUESTIONS = [
+  SOURCE_BACKED_WORK_EVIDENCE_QUESTION,
+  SOURCE_BACKED_WORK_EVIDENCE_FOLLOW_UP,
+  ROLE_SAFE_CHALLENGE_QUESTION,
+] as const;
+
+interface ScheduledCodeReviewEvidencePlanItem {
+  id: string;
+  missingSignal: string;
+  whyItMatters: string;
+  recommendedAssessment: 'recorded_evidence_question' | 'technical_pr_review' | 'manual_review_selection';
+  expectedEvidence: string;
+  question: string;
+  source: {
+    matchRunId: string | null;
+    matchStatus: string;
+    gap: string;
+  };
+}
 
 // ─── Status transition validation ───────────────────────────────────────────
 
@@ -239,7 +652,86 @@ function emailLogoImgForRequest(c: { req: { url: string }; env: Env }): string {
   );
 }
 
+function sanitizeProviderSchedulingUrl(
+  rawUrl: string | null | undefined,
+  provider: string | null | undefined,
+): string | null {
+  if (!rawUrl) return null;
+  if (provider !== 'CALENDLY' && provider !== 'CAL_COM') return rawUrl;
+
+  try {
+    const url = new URL(rawUrl);
+    url.username = '';
+    url.password = '';
+    return url.toString();
+  } catch {
+    return rawUrl;
+  }
+}
+
+function buildProviderSchedulingInviteUrl(input: {
+  schedulingUrl: string;
+  provider: string | null;
+  env: Env;
+  interviewId: string;
+  recipientName: string | null;
+  recipientEmail: string | null;
+}): string {
+  const authenticatedUrl = sanitizeProviderSchedulingUrl(
+    withDevBasicAuth(input.schedulingUrl, input.env),
+    input.provider,
+  ) ?? input.schedulingUrl;
+  if (input.provider !== 'CALENDLY' && input.provider !== 'CAL_COM') {
+    return authenticatedUrl;
+  }
+
+  try {
+    const url = new URL(authenticatedUrl);
+    if (input.recipientName?.trim()) {
+      url.searchParams.set('name', input.recipientName.trim());
+    }
+    if (input.recipientEmail?.trim()) {
+      url.searchParams.set('email', input.recipientEmail.trim().toLowerCase());
+    }
+    url.searchParams.set('a1', input.interviewId);
+    url.searchParams.set('utm_source', 'pipe');
+    url.searchParams.set('utm_campaign', 'scheduled-interview');
+    url.searchParams.set('utm_content', input.interviewId);
+    return url.toString();
+  } catch {
+    return authenticatedUrl;
+  }
+}
+
 type InterviewLivingContext = Awaited<ReturnType<typeof loadCandidateLivingContext>>;
+
+function redactScheduledInterviewLivingContext(
+  livingContext: InterviewLivingContext,
+): InterviewLivingContext {
+  if (!livingContext) return null;
+  return {
+    ...livingContext,
+    interactions: [],
+    artifacts: [],
+    contextRecords: [],
+    assertions: [],
+    signals: [],
+    relationships: [],
+  };
+}
+
+function assessmentTokenFromUrl(value: string): string | null {
+  try {
+    const url = new URL(value);
+    const parts = url.pathname.split('/').filter(Boolean);
+    const assessIndex = parts.indexOf('assess');
+    if (assessIndex < 0) return null;
+    return parts[assessIndex + 1] ?? null;
+  } catch {
+    const match = value.match(/\/assess\/([^/?#]+)/);
+    return match?.[1] ?? null;
+  }
+}
 
 async function loadScheduledInterviewLivingContext(
   db: D1Database,
@@ -283,6 +775,251 @@ async function loadScheduledInterviewLivingContext(
 
   await ensureContactLivingContext(db, contactId);
   return loadContactLivingContext(db, contactId);
+}
+
+async function loadLatestDeliveredAssessmentUrl(
+  db: D1Database,
+  interviewId: string,
+  candidateId: string | null | undefined,
+): Promise<{
+  url: string;
+  state: 'active' | 'claimed' | 'stale';
+  message: string | null;
+} | null> {
+  try {
+    if (!await tableExists(db, 'interactions')) return null;
+    const row = await db.prepare(
+      `SELECT metadata_json
+         FROM interactions
+        WHERE interaction_type = 'scheduled_interview_invite_delivery'
+          AND external_reference = ?1
+        ORDER BY started_at DESC, created_at DESC
+        LIMIT 1`,
+    ).bind(interviewId).first<{ metadata_json: string | null }>();
+    const metadata = parseJsonObject(row?.metadata_json ?? null);
+    const deliveredUrl = metadata.deliveredUrl;
+    if (typeof deliveredUrl !== 'string') return null;
+    const trimmed = deliveredUrl.trim();
+    if (!trimmed.includes('/assess/')) return null;
+
+    const deliveredToken = assessmentTokenFromUrl(trimmed);
+    if (!candidateId || !deliveredToken) {
+      return { url: trimmed, state: 'active', message: null };
+    }
+
+    const candidate = await db
+      .prepare('SELECT invite_token, status FROM candidates WHERE id = ?1')
+      .bind(candidateId)
+      .first<{ invite_token: string | null; status: string | null }>();
+    const currentToken = candidate?.invite_token?.trim() ?? '';
+    if (currentToken === `CLAIMED::${deliveredToken}`) {
+      if (candidate?.status === 'INVITED') {
+        return { url: trimmed, state: 'active', message: null };
+      }
+
+      return {
+        url: trimmed,
+        state: 'claimed',
+        message: 'The candidate has already started this one-use assessment link. Resend the invite if they need a fresh link.',
+      };
+    }
+    if (currentToken && currentToken !== deliveredToken) {
+      return {
+        url: trimmed,
+        state: 'stale',
+        message: 'This is an older delivered assessment link. Resend the invite to deliver the current candidate token.',
+      };
+    }
+    return { url: trimmed, state: 'active', message: null };
+  } catch (err) {
+    console.error('[scheduling/detail] failed to load delivered assessment url:', err instanceof Error ? err.message : String(err));
+    return null;
+  }
+}
+
+async function loadCandidateAssessmentInviteLinkFromToken(
+  db: D1Database,
+  env: Env,
+  input: {
+    interviewType: string | null | undefined;
+    candidateId: string | null | undefined;
+  },
+): Promise<{
+  url: string;
+  state: 'active';
+  message: string | null;
+} | null> {
+  if (!isWorkspaceAssessmentInterviewType(input.interviewType) || !input.candidateId) return null;
+  const candidate = await db
+    .prepare('SELECT invite_token FROM candidates WHERE id = ?1')
+    .bind(input.candidateId)
+    .first<{ invite_token: string | null }>();
+  const inviteToken = candidate?.invite_token?.trim() ?? '';
+  if (!inviteToken || isClaimedInviteToken(inviteToken)) return null;
+  const baseUrl = env.APP_BASE_URL ?? 'https://pipe.build';
+  return {
+    url: withDevBasicAuth(`${baseUrl}/assess/${inviteToken}`, env),
+    state: 'active',
+    message: null,
+  };
+}
+
+interface ScheduledRelatedEvidenceInterview {
+  id: string;
+  relationship: 'code_review_evidence_follow_up' | 'originating_code_review' | 'same_person_assessment';
+  interviewType: string | null;
+  meetingType: string | null;
+  status: string;
+  scheduledAt: string | null;
+  candidateId: string | null;
+  contactId: string | null;
+  displayName: string | null;
+  primaryEmail: string | null;
+  linkedMeetingId: string | null;
+  transcriptStatus: string | null;
+  assessmentSessionId: string | null;
+  assessmentSessionState: string | null;
+  createdAt: string;
+  updatedAt: string;
+}
+
+async function loadRelatedEvidenceInterviews(
+  db: D1Database,
+  ownerId: string,
+  currentInterviewId: string,
+  livingContext: InterviewLivingContext,
+): Promise<ScheduledRelatedEvidenceInterview[]> {
+  const workspacePersonId = livingContext?.person.workspacePersonId ?? null;
+  if (!workspacePersonId) return [];
+
+  const hasAssessmentSessions = await tableExists(db, 'assessment_sessions');
+  const assessmentSessionSelect = hasAssessmentSessions
+    ? `s.id AS assessment_session_id,
+            s.state AS assessment_session_state,
+            s.metadata_json AS assessment_metadata_json`
+    : `NULL AS assessment_session_id,
+            NULL AS assessment_session_state,
+            NULL AS assessment_metadata_json`;
+  const assessmentSessionJoin = hasAssessmentSessions
+    ? `LEFT JOIN assessment_sessions s ON s.id = (
+         SELECT latest_s.id
+           FROM assessment_sessions latest_s
+          WHERE latest_s.interview_id = si.id
+          ORDER BY latest_s.updated_at DESC, latest_s.id DESC
+          LIMIT 1
+       )`
+    : '';
+  const assessmentSessionOrder = hasAssessmentSessions
+    ? `CASE
+          WHEN s.created_by = 'code-review-evidence-plan'
+           AND json_extract(s.metadata_json, '$.originalInterviewId') = ?2
+          THEN 0
+          WHEN s.created_by = 'code-review-evidence-plan'
+           AND json_extract(s.metadata_json, '$.contextCallInterviewId') = ?2
+          THEN 1
+          ELSE 2
+        END,`
+    : '';
+
+  const rows = await db.prepare(
+    `SELECT si.id,
+            si.interview_type,
+            si.meeting_type,
+            si.status,
+            si.scheduled_at,
+            si.candidate_id,
+            rc.id AS contact_id,
+            COALESCE(c.name, si.recipient_name, rc.name) AS display_name,
+            lower(COALESCE(c.email, si.recipient_email, rc.email)) AS primary_email,
+            si.created_at,
+            si.updated_at,
+            m.id AS linked_meeting_id,
+            m.transcript_status,
+            ${assessmentSessionSelect}
+       FROM scheduled_interviews si
+       LEFT JOIN candidates c ON c.id = si.candidate_id
+       LEFT JOIN applications app ON app.legacy_candidate_id = si.candidate_id
+       LEFT JOIN contacts rc ON rc.id = (
+         SELECT contact.id
+           FROM contacts contact
+          WHERE contact.owner_id = si.owner_id
+            AND si.recipient_email IS NOT NULL
+            AND lower(contact.email) = lower(si.recipient_email)
+          ORDER BY contact.updated_at DESC
+          LIMIT 1
+       )
+       LEFT JOIN workspace_people contact_wp ON contact_wp.workspace_id = si.owner_id
+        AND rc.id IS NOT NULL
+        AND json_extract(contact_wp.context_json, '$.contactId') = rc.id
+       LEFT JOIN meetings m ON m.id = (
+         SELECT lm.id
+           FROM meetings lm
+          WHERE lm.scheduled_interview_id = si.id
+            AND lm.owner_id = si.owner_id
+          ORDER BY lm.created_at DESC
+          LIMIT 1
+       )
+       ${assessmentSessionJoin}
+      WHERE si.owner_id = ?1
+        AND si.id <> ?2
+        AND (
+          app.workspace_person_id = ?3
+          OR contact_wp.id = ?3
+        )
+      ORDER BY
+        ${assessmentSessionOrder}
+        si.created_at DESC,
+        si.id DESC
+      LIMIT 8`,
+  ).bind(ownerId, currentInterviewId, workspacePersonId).all<{
+    id: string;
+    interview_type: string | null;
+    meeting_type: string | null;
+    status: string;
+    scheduled_at: string | null;
+    candidate_id: string | null;
+    contact_id: string | null;
+    display_name: string | null;
+    primary_email: string | null;
+    created_at: string;
+    updated_at: string;
+    linked_meeting_id: string | null;
+    transcript_status: string | null;
+    assessment_session_id: string | null;
+    assessment_session_state: string | null;
+    assessment_metadata_json: string | null;
+  }>();
+
+  return (rows.results ?? []).map((row) => {
+    const metadata = parseJsonObject(row.assessment_metadata_json);
+    const originalInterviewId = optionalString(metadata.originalInterviewId);
+    const contextCallInterviewId = optionalString(metadata.contextCallInterviewId);
+    const relationship: ScheduledRelatedEvidenceInterview['relationship'] =
+      originalInterviewId === currentInterviewId
+        ? 'code_review_evidence_follow_up'
+        : contextCallInterviewId === currentInterviewId
+          ? 'originating_code_review'
+          : 'same_person_assessment';
+
+    return {
+      id: row.id,
+      relationship,
+      interviewType: row.interview_type,
+      meetingType: row.meeting_type,
+      status: row.status,
+      scheduledAt: row.scheduled_at,
+      candidateId: row.candidate_id,
+      contactId: row.contact_id,
+      displayName: row.display_name,
+      primaryEmail: row.primary_email,
+      linkedMeetingId: row.linked_meeting_id,
+      transcriptStatus: row.transcript_status,
+      assessmentSessionId: row.assessment_session_id,
+      assessmentSessionState: row.assessment_session_state,
+      createdAt: row.created_at,
+      updatedAt: row.updated_at,
+    };
+  });
 }
 
 interface ScheduledCodeReviewSourceRef {
@@ -414,6 +1151,62 @@ interface ScheduledCodeReviewMatchDetail {
   evidence: ScheduledCodeReviewAlignment[];
   evidenceHyperedges: ScheduledCodeReviewHyperedge[];
   gaps: string[];
+  evidencePlan: ScheduledCodeReviewEvidencePlanItem[];
+  evidenceFollowUp: ScheduledCodeReviewEvidenceFollowUp | null;
+  evidenceRefresh: ScheduledCodeReviewEvidenceRefresh | null;
+}
+
+interface ScheduledCodeReviewEvidenceFollowUp {
+  assessmentSessionId: string;
+  contextCallInterviewId: string | null;
+  state: string;
+  blockedReason: string | null;
+  matchRunId: string | null;
+  matchStatus: string | null;
+  gaps: string[];
+  questions: string[];
+  createdAt: string;
+  updatedAt: string;
+}
+
+interface ScheduledCodeReviewEvidenceRefresh {
+  status: string;
+  assessmentSessionId: string;
+  contextCallInterviewId: string | null;
+  reportId: string;
+  summary: string;
+  sourceSpanCount: number | null;
+  matcherContextCount: number;
+  evidenceSnippets: ScheduledCodeReviewEvidenceSnippet[];
+  matchRunId: string | null;
+  matchStatus: string | null;
+  consumptionReportId: string | null;
+  consumedByMatchRunId: string | null;
+  consumedByMatchStatus: string | null;
+  consumedAt: string | null;
+  completedAt: string | null;
+  updatedAt: string | null;
+}
+
+interface ScheduledCodeReviewEvidenceSnippet {
+  eventId: string;
+  sourceRefId: string;
+  sourceSpanId: string | null;
+  evidenceRole: string;
+  exactText: string;
+  occurredAt: string | null;
+  locator: Record<string, unknown>;
+}
+
+interface ScheduledCodeReviewScoreSummary {
+  reviewSessionId: string;
+  status: string;
+  score: number | null;
+  band: string | null;
+  narrative: string | null;
+  strengths: string[];
+  growthAreas: string[];
+  updatedAt: string;
 }
 
 function isRecord(value: unknown): value is Record<string, unknown> {
@@ -432,6 +1225,100 @@ function stringArray(value: unknown): string[] {
 
 function numberOrNull(value: unknown): number | null {
   return typeof value === 'number' && Number.isFinite(value) ? value : null;
+}
+
+function parseJsonObject(value: string | null): Record<string, unknown> {
+  if (!value) return {};
+  try {
+    const parsed = JSON.parse(value) as unknown;
+    return isRecord(parsed) ? parsed : {};
+  } catch {
+    return {};
+  }
+}
+
+const CODE_REVIEW_EVIDENCE_REPAIR_STOPWORDS = new Set([
+  'a',
+  'an',
+  'and',
+  'are',
+  'ask',
+  'asked',
+  'before',
+  'for',
+  'from',
+  'had',
+  'have',
+  'i',
+  'in',
+  'it',
+  'me',
+  'my',
+  'of',
+  'on',
+  'or',
+  'our',
+  'the',
+  'this',
+  'to',
+  'we',
+  'with',
+]);
+
+const CODE_REVIEW_EVIDENCE_REPAIR_SIGNAL_PATTERNS = [
+  /\bpr\b/i,
+  /\bpull request\b/i,
+  /\bbug\b/i,
+  /\bcode review\b/i,
+  /\breview(?:ed|ing)?\b/i,
+  /\bdiff\b/i,
+  /\btest(?:ed|s|ing)?\b/i,
+  /\bregression\b/i,
+  /\bdebug(?:ged|ging)?\b/i,
+  /\bfix(?:ed|ing)?\b/i,
+  /\bimplement(?:ed|ing)?\b/i,
+  /\bship(?:ped|ping)?\b/i,
+  /\bdeploy(?:ed|ing)?\b/i,
+  /\bverif(?:y|ied|ication)\b/i,
+  /\btrade-?off\b/i,
+  /\bconstraint\b/i,
+  /\bincident\b/i,
+  /\bproduction\b/i,
+  /\brace condition\b/i,
+  /\bidempotenc(?:y|e)\b/i,
+  /\bmigration\b/i,
+];
+
+function codeReviewEvidenceRepairOpenTerms(
+  text: string,
+  limit = 24,
+): Array<{ surface: string; canonicalKey: string }> {
+  const terms = new Map<string, { surface: string; canonicalKey: string }>();
+  for (const token of text.match(/[A-Za-z][A-Za-z0-9+#.]*/g) ?? []) {
+    const normalized = token.trim().toLowerCase();
+    if (
+      normalized.length < 3
+      || CODE_REVIEW_EVIDENCE_REPAIR_STOPWORDS.has(normalized)
+      || /^\d+$/.test(normalized)
+    ) {
+      continue;
+    }
+    const term = openSemanticTerm(token);
+    if (!term || terms.has(term.canonicalKey)) continue;
+    terms.set(term.canonicalKey, {
+      surface: term.surface,
+      canonicalKey: term.canonicalKey,
+    });
+    if (terms.size >= limit) break;
+  }
+  return [...terms.values()];
+}
+
+function countCodeReviewEvidenceRepairSignals(text: string): number {
+  return CODE_REVIEW_EVIDENCE_REPAIR_SIGNAL_PATTERNS.reduce(
+    (count, pattern) => count + (pattern.test(text) ? 1 : 0),
+    0,
+  );
 }
 
 function parseScheduledCodeReviewSourceRefs(value: unknown): ScheduledCodeReviewSourceRef[] {
@@ -731,9 +1618,15 @@ function scheduledCodeReviewMatchSummary(
         gaps: ['Candidate has not submitted source evidence yet.'],
       };
     }
+    if (status === 'NEEDS_MORE_EVIDENCE') {
+      return {
+        summary: 'PIPE needs more source-backed candidate evidence before assigning a fair code-review challenge.',
+        gaps: ['NO_SCOREABLE_SOURCE_BACKED_CANDIDATE_EVIDENCE'],
+      };
+    }
     return {
       summary: 'No source-backed code review match is available for this interview yet.',
-      gaps: [],
+      gaps: ['NO_SOURCE_BACKED_MATCH_RECORD_AVAILABLE'],
     };
   }
   if (status === 'NO_ROLE_SAFE_CHALLENGE') {
@@ -748,6 +1641,108 @@ function scheduledCodeReviewMatchSummary(
     summary: `Matched ${selected.alignedDemandCount} source-backed demand${selected.alignedDemandCount === 1 ? '' : 's'} (${selected.stretchCount} stretch).`,
     gaps: selected.rejectionReasons,
   };
+}
+
+function codeReviewEvidencePlanForGap(input: {
+  gap: string;
+  matchStatus: string;
+  matchRunId: string | null;
+}): ScheduledCodeReviewEvidencePlanItem {
+  const normalized = input.gap.trim() || 'NO_SOURCE_BACKED_MATCH_RECORD_AVAILABLE';
+  const source = {
+    matchRunId: input.matchRunId,
+    matchStatus: input.matchStatus,
+    gap: normalized,
+  };
+
+  if (
+    normalized === 'NO_SCOREABLE_SOURCE_BACKED_CANDIDATE_EVIDENCE'
+    || normalized === 'CANDIDATE_SIGNALS_EXCLUDED_FOR_MISSING_OR_NULL_EVIDENCE'
+    || normalized === 'NO_SOURCE_BACKED_MATCH_RECORD_AVAILABLE'
+  ) {
+    return {
+      id: `candidate-source-evidence:${normalized}`,
+      missingSignal: 'Source-backed candidate work evidence',
+      whyItMatters: 'PIPE cannot fairly select a real PR challenge until it has evidence of what kinds of engineering work this person has actually done.',
+      recommendedAssessment: 'recorded_evidence_question',
+      expectedEvidence: 'A short recorded or written answer with a concrete project, personal actions, technical constraints, and verification details.',
+      question: SOURCE_BACKED_WORK_EVIDENCE_QUESTION,
+      source,
+    };
+  }
+
+  if (normalized === 'NO_SOURCE_BACKED_ROLE_SAFE_CHALLENGE_RECALLED') {
+    return {
+      id: `role-safe-challenge:${normalized}`,
+      missingSignal: 'Role-safe reviewable PR challenge',
+      whyItMatters: 'The candidate may have usable evidence, but PIPE does not have a source-backed PR that safely tests it yet.',
+      recommendedAssessment: 'manual_review_selection',
+      expectedEvidence: 'A recruiter-selected or generated PR packet with source spans, expected review demands, planted issues, and scoring criteria.',
+      question: ROLE_SAFE_CHALLENGE_QUESTION,
+      source,
+    };
+  }
+
+  if (normalized === 'NO_SOURCE_BACKED_CANDIDATE_ALIGNMENT') {
+    return {
+      id: `candidate-alignment:${normalized}`,
+      missingSignal: 'Candidate evidence aligned to the PR demands',
+      whyItMatters: 'A challenge should test a real stretch from the person graph, not a generic repo that merely looks plausible.',
+      recommendedAssessment: 'recorded_evidence_question',
+      expectedEvidence: 'A specific example that can be mapped to the repo demand: stack, behavior, debugging/review action, and outcome.',
+      question: CANDIDATE_ALIGNMENT_QUESTION,
+      source,
+    };
+  }
+
+  return {
+    id: `match-gap:${normalized.toLowerCase().replace(/[^a-z0-9]+/g, '-').replace(/^-|-$/g, '') || 'unknown'}`,
+    missingSignal: normalized.replace(/_/g, ' ').toLowerCase(),
+    whyItMatters: 'This gap prevented PIPE from confidently assigning or validating the code-review assessment.',
+    recommendedAssessment: input.matchStatus === 'NO_ROLE_SAFE_CHALLENGE'
+      ? 'manual_review_selection'
+      : 'recorded_evidence_question',
+    expectedEvidence: 'Source-backed context that explains the relevant project history, technical constraints, and assessment fit.',
+    question: SOURCE_BACKED_WORK_EVIDENCE_QUESTION,
+    source,
+  };
+}
+
+function buildCodeReviewEvidencePlan(input: {
+  matchStatus: string;
+  matchRunId: string | null;
+  gaps: string[];
+}): ScheduledCodeReviewEvidencePlanItem[] {
+  if (input.matchStatus === 'MATCHED') return [];
+  const gaps = input.gaps.length > 0
+    ? input.gaps
+    : input.matchStatus === 'NEEDS_MORE_EVIDENCE'
+      ? ['NO_SCOREABLE_SOURCE_BACKED_CANDIDATE_EVIDENCE']
+      : ['NO_SOURCE_BACKED_MATCH_RECORD_AVAILABLE'];
+  return Array.from(new Set(gaps))
+    .slice(0, 3)
+    .map((gap) => codeReviewEvidencePlanForGap({
+      gap,
+      matchRunId: input.matchRunId,
+      matchStatus: input.matchStatus,
+    }));
+}
+
+function codeReviewContextCallQuestionsForPlan(
+  plan: ScheduledCodeReviewEvidencePlanItem[],
+): string[] {
+  const questions = plan.length > 0
+    ? plan.map((item) => item.question.trim()).filter((question) => question.length > 0)
+    : [...CONTEXT_CALL_QUESTIONS];
+
+  if (
+    questions.includes(SOURCE_BACKED_WORK_EVIDENCE_QUESTION)
+    && !questions.includes(SOURCE_BACKED_WORK_EVIDENCE_FOLLOW_UP)
+  ) {
+    questions.push(SOURCE_BACKED_WORK_EVIDENCE_FOLLOW_UP);
+  }
+
+  return Array.from(new Set(questions)).slice(0, 3);
 }
 
 function isPassedCodeReviewVerdict(verdict: string | null | undefined): boolean {
@@ -996,12 +1991,770 @@ async function loadManualCodeReviewMatchDetail(
     evidence: [],
     evidenceHyperedges: [],
     gaps: ['Manual override did not run automatic candidate-to-PR contrast ranking.'],
+    evidencePlan: [],
+    evidenceFollowUp: null,
+    evidenceRefresh: null,
+  };
+}
+
+async function loadCodeReviewEvidenceFollowUp(
+  db: D1Database,
+  originalInterviewId: string,
+  candidateId: string | null,
+): Promise<ScheduledCodeReviewEvidenceFollowUp | null> {
+  if (!await tableExists(db, 'assessment_sessions')) {
+    return null;
+  }
+
+  const rows = await db.prepare(
+    `SELECT s.id AS assessment_session_id,
+            s.interview_id AS context_call_interview_id,
+            s.state,
+            s.metadata_json,
+            (
+              SELECT t.reason
+                FROM assessment_state_transitions t
+               WHERE t.session_id = s.id
+                 AND t.to_state = 'BLOCKED'
+               ORDER BY t.sequence DESC
+               LIMIT 1
+            ) AS blocked_reason,
+            s.created_at,
+            s.updated_at
+       FROM assessment_sessions s
+      WHERE s.created_by = 'code-review-evidence-plan'
+        AND (?2 IS NULL OR s.candidate_id = ?2)
+        AND json_extract(s.metadata_json, '$.originalInterviewId') = ?1
+        AND s.state NOT IN ('EVALUATED', 'CANCELLED')
+      ORDER BY
+        CASE s.state
+          WHEN 'IN_PROGRESS' THEN 0
+          WHEN 'INTAKE' THEN 1
+          WHEN 'FINAL_SUBMITTED' THEN 2
+          WHEN 'EVALUATING' THEN 3
+          WHEN 'EVALUATION_PENDING' THEN 4
+          WHEN 'BLOCKED' THEN 5
+          ELSE 6
+        END,
+        s.updated_at DESC,
+        s.id DESC
+      LIMIT 5`,
+  ).bind(originalInterviewId, candidateId).all<{
+    assessment_session_id: string;
+    context_call_interview_id: string | null;
+    state: string;
+    metadata_json: string | null;
+    blocked_reason: string | null;
+    created_at: string;
+    updated_at: string;
+  }>();
+
+  for (const row of rows.results ?? []) {
+    const metadata = parseJsonObject(row.metadata_json);
+    if (optionalString(metadata.originalInterviewId) !== originalInterviewId) continue;
+
+    return {
+      assessmentSessionId: row.assessment_session_id,
+      contextCallInterviewId: optionalString(metadata.contextCallInterviewId)
+        ?? optionalString(row.context_call_interview_id)
+        ?? null,
+      state: row.state,
+      blockedReason: row.state === 'BLOCKED' ? optionalString(row.blocked_reason) ?? null : null,
+      matchRunId: optionalString(metadata.matchRunId) ?? null,
+      matchStatus: optionalString(metadata.matchStatus) ?? null,
+      gaps: stringArray(metadata.gaps),
+      questions: stringArray(metadata.questions),
+      createdAt: row.created_at,
+      updatedAt: row.updated_at,
+    };
+  }
+
+  return null;
+}
+
+async function countCodeReviewEvidenceRefreshMatcherContexts(
+  db: D1Database,
+  assessmentSessionId: string,
+): Promise<number> {
+  if (!await tableExists(db, 'context_records')
+    || !await tableExists(db, 'context_record_entities')) {
+    return 0;
+  }
+  const row = await db.prepare(
+    `SELECT COUNT(DISTINCT cr.id) AS count
+       FROM context_records cr
+       JOIN context_record_entities cre ON cre.context_record_id = cr.id
+      WHERE cr.record_type = 'code_review_evidence_plan_response'
+        AND cre.entity_type = 'assessment_session'
+        AND cre.entity_id = ?1
+        AND cre.relationship = 'source_assessment'`,
+  ).bind(assessmentSessionId).first<{ count: number }>();
+  return row?.count ?? 0;
+}
+
+async function loadCodeReviewEvidenceRefresh(
+  db: D1Database,
+  originalInterviewId: string,
+  candidateId: string | null,
+): Promise<ScheduledCodeReviewEvidenceRefresh | null> {
+  if (!await tableExists(db, 'assessment_sessions')
+    || !await tableExists(db, 'assessment_evaluation_reports')) {
+    return null;
+  }
+
+  const rows = await db.prepare(
+    `SELECT s.id AS assessment_session_id,
+            s.interview_id AS context_call_interview_id,
+            s.metadata_json AS session_metadata_json,
+            s.completed_at AS session_completed_at,
+            s.updated_at AS session_updated_at,
+            r.id AS report_id,
+            r.summary AS report_summary,
+            r.output_json AS report_output_json,
+            r.created_at AS report_created_at,
+            r.updated_at AS report_updated_at
+       FROM assessment_sessions s
+       JOIN assessment_evaluation_reports r ON r.session_id = s.id
+      WHERE s.created_by = 'code-review-evidence-plan'
+        AND (?2 IS NULL OR s.candidate_id = ?2)
+        AND (
+          json_extract(s.metadata_json, '$.originalInterviewId') = ?1
+          OR json_extract(r.output_json, '$.originalInterviewId') = ?1
+        )
+        AND json_extract(r.output_json, '$.status') = 'READY_FOR_REPO_MATCH_REFRESH'
+      ORDER BY r.created_at DESC, r.id DESC
+      LIMIT 5`,
+  ).bind(originalInterviewId, candidateId).all<{
+    assessment_session_id: string;
+    context_call_interview_id: string | null;
+    session_metadata_json: string | null;
+    session_completed_at: string | null;
+    session_updated_at: string | null;
+    report_id: string;
+    report_summary: string;
+    report_output_json: string | null;
+    report_created_at: string | null;
+    report_updated_at: string | null;
+  }>();
+
+  for (const row of rows.results ?? []) {
+    const metadata = parseJsonObject(row.session_metadata_json);
+    const output = parseJsonObject(row.report_output_json);
+    const outputOriginalInterviewId = optionalString(output.originalInterviewId);
+    const metadataOriginalInterviewId = optionalString(metadata.originalInterviewId);
+    if (
+      outputOriginalInterviewId !== originalInterviewId
+      && metadataOriginalInterviewId !== originalInterviewId
+    ) {
+      continue;
+    }
+
+    const status = optionalString(output.status);
+    if (status !== 'READY_FOR_REPO_MATCH_REFRESH') continue;
+
+    const sourceSpanCount = numberOrNull(output.sourceSpanCount);
+    const matcherContextCount = await countCodeReviewEvidenceRefreshMatcherContexts(
+      db,
+      row.assessment_session_id,
+    );
+    const evidenceSnippets = await loadCodeReviewEvidenceSnippets(db, row.assessment_session_id);
+    const consumption = await loadCodeReviewEvidenceRefreshConsumption(db, {
+      assessmentSessionId: row.assessment_session_id,
+      readyReportId: row.report_id,
+    });
+    return {
+      status,
+      assessmentSessionId: row.assessment_session_id,
+      contextCallInterviewId: optionalString(output.contextCallInterviewId)
+        ?? optionalString(metadata.contextCallInterviewId)
+        ?? row.context_call_interview_id,
+      reportId: row.report_id,
+      summary: row.report_summary,
+      sourceSpanCount,
+      matcherContextCount,
+      evidenceSnippets,
+      matchRunId: optionalString(output.matchRunId) ?? optionalString(metadata.matchRunId) ?? null,
+      matchStatus: optionalString(output.matchStatus) ?? optionalString(metadata.matchStatus) ?? null,
+      consumptionReportId: consumption.consumptionReportId,
+      consumedByMatchRunId: consumption.consumedByMatchRunId,
+      consumedByMatchStatus: consumption.consumedByMatchStatus,
+      consumedAt: consumption.consumedAt,
+      completedAt: row.session_completed_at ?? row.report_created_at,
+      updatedAt: row.report_updated_at ?? row.session_updated_at,
+    };
+  }
+
+  return null;
+}
+
+async function loadCodeReviewEvidenceRefreshConsumption(
+  db: D1Database,
+  input: { assessmentSessionId: string; readyReportId: string },
+): Promise<{
+  consumptionReportId: string | null;
+  consumedByMatchRunId: string | null;
+  consumedByMatchStatus: string | null;
+  consumedAt: string | null;
+}> {
+  if (!await tableExists(db, 'assessment_evaluation_reports')) {
+    return {
+      consumptionReportId: null,
+      consumedByMatchRunId: null,
+      consumedByMatchStatus: null,
+      consumedAt: null,
+    };
+  }
+
+  const row = await db.prepare(
+    `SELECT id, output_json, created_at
+       FROM assessment_evaluation_reports
+      WHERE session_id = ?1
+        AND json_extract(output_json, '$.schemaVersion') = 'code-review-evidence-plan-consumption-v1'
+        AND json_extract(output_json, '$.readyReportId') = ?2
+      ORDER BY created_at DESC, id DESC
+      LIMIT 1`,
+  ).bind(input.assessmentSessionId, input.readyReportId).first<{
+    id: string;
+    output_json: string | null;
+    created_at: string;
+  }>();
+  if (!row) {
+    return {
+      consumptionReportId: null,
+      consumedByMatchRunId: null,
+      consumedByMatchStatus: null,
+      consumedAt: null,
+    };
+  }
+
+  const output = parseJsonObject(row.output_json);
+  return {
+    consumptionReportId: row.id,
+    consumedByMatchRunId: optionalString(output.consumedByMatchRunId) ?? null,
+    consumedByMatchStatus: optionalString(output.consumedByMatchStatus) ?? null,
+    consumedAt: optionalString(output.consumedAt) ?? row.created_at,
+  };
+}
+
+async function loadCodeReviewEvidenceSnippets(
+  db: D1Database,
+  assessmentSessionId: string,
+): Promise<ScheduledCodeReviewEvidenceSnippet[]> {
+  if (!await tableExists(db, 'assessment_evidence_events')
+    || !await tableExists(db, 'assessment_event_source_refs')) {
+    return [];
+  }
+
+  const rows = await db.prepare(
+    `SELECT e.id AS event_id,
+            e.occurred_at,
+            r.source_ref_id,
+            r.source_span_id,
+            r.evidence_role,
+            r.locator_json,
+            r.exact_text
+       FROM assessment_evidence_events e
+       JOIN assessment_event_source_refs r ON r.event_id = e.id
+      WHERE e.session_id = ?1
+        AND e.kind = 'evidence_plan_response_span'
+        AND r.exact_text IS NOT NULL
+        AND trim(r.exact_text) <> ''
+      ORDER BY e.sequence ASC, r.id ASC
+      LIMIT 3`,
+  ).bind(assessmentSessionId).all<{
+    event_id: string;
+    occurred_at: string | null;
+    source_ref_id: string;
+    source_span_id: string | null;
+    evidence_role: string;
+    locator_json: string | null;
+    exact_text: string;
+  }>();
+
+  return (rows.results ?? []).map((row) => ({
+    eventId: row.event_id,
+    sourceRefId: row.source_ref_id,
+    sourceSpanId: row.source_span_id,
+    evidenceRole: row.evidence_role,
+    exactText: row.exact_text,
+    occurredAt: row.occurred_at,
+    locator: parseJsonObject(row.locator_json),
+  }));
+}
+
+async function loadLatestCandidateMatchRun(
+  db: D1Database,
+  candidateId: string,
+): Promise<{ id: string; status: string; created_at: string | null } | null> {
+  if (!await tableExists(db, 'match_runs')) return null;
+  return await db.prepare(
+    `SELECT id, status, created_at
+       FROM match_runs
+      WHERE candidate_id = ?1
+      ORDER BY created_at DESC, id DESC
+      LIMIT 1`,
+  ).bind(candidateId).first<{ id: string; status: string; created_at: string | null }>();
+}
+
+function evidenceRefreshAlreadyTried(
+  evidenceRefresh: ScheduledCodeReviewEvidenceRefresh,
+  latestMatchRun: { id: string; created_at: string | null } | null,
+): boolean {
+  if (!latestMatchRun || !evidenceRefresh.matchRunId) return false;
+  if (latestMatchRun.id === evidenceRefresh.matchRunId) return false;
+  if (!latestMatchRun.created_at || !evidenceRefresh.updatedAt) return true;
+  return latestMatchRun.created_at >= evidenceRefresh.updatedAt;
+}
+
+function evidenceRefreshConsumptionReportStatus(
+  matchStatus: string,
+): 'EVALUATED' | 'NEEDS_MORE_EVIDENCE' | 'NO_ROLE_SAFE_CHALLENGE' {
+  if (matchStatus === 'MATCHED') return 'EVALUATED';
+  if (matchStatus === 'NO_ROLE_SAFE_CHALLENGE') return 'NO_ROLE_SAFE_CHALLENGE';
+  return 'NEEDS_MORE_EVIDENCE';
+}
+
+async function loadCodeReviewEvidenceRefreshSourceRefs(
+  db: D1Database,
+  assessmentSessionId: string,
+): Promise<AssessmentEvidenceSourceRefInput[]> {
+  if (!await tableExists(db, 'assessment_evidence_events')
+    || !await tableExists(db, 'assessment_event_source_refs')) {
+    return [];
+  }
+
+  const rows = await db.prepare(
+    `SELECT r.source_ref_type,
+            r.source_ref_id,
+            r.source_span_id,
+            r.evidence_role,
+            r.locator_json,
+            r.exact_text,
+            r.content_hash,
+            r.metadata_json
+       FROM assessment_evidence_events e
+       JOIN assessment_event_source_refs r ON r.event_id = e.id
+      WHERE e.session_id = ?1
+        AND e.kind = 'evidence_plan_response_span'
+        AND r.exact_text IS NOT NULL
+        AND trim(r.exact_text) <> ''
+        AND r.content_hash IS NOT NULL
+        AND trim(r.content_hash) <> ''
+      ORDER BY e.sequence ASC, r.id ASC
+      LIMIT 12`,
+  ).bind(assessmentSessionId).all<{
+    source_ref_type: string;
+    source_ref_id: string;
+    source_span_id: string | null;
+    evidence_role: string;
+    locator_json: string | null;
+    exact_text: string;
+    content_hash: string;
+    metadata_json: string | null;
+  }>();
+
+  return (rows.results ?? []).map((row) => ({
+    sourceRefType: row.source_ref_type,
+    sourceRefId: row.source_ref_id,
+    sourceSpanId: row.source_span_id,
+    evidenceRole: row.evidence_role,
+    locator: parseJsonObject(row.locator_json) as AssessmentEvidenceSourceRefInput['locator'],
+    exactText: row.exact_text,
+    contentHash: row.content_hash,
+    metadata: parseJsonObject(row.metadata_json) as AssessmentEvidenceSourceRefInput['metadata'],
+  }));
+}
+
+async function sourceSpanBelongsToWorkspacePerson(
+  db: D1Database,
+  input: { sourceSpanId: string; workspacePersonId: string },
+): Promise<boolean> {
+  if (!await tableExists(db, 'source_spans')
+    || !await tableExists(db, 'artifact_versions')
+    || !await tableExists(db, 'artifacts')) {
+    return false;
+  }
+
+  const direct = await db.prepare(
+    `SELECT ss.id
+       FROM source_spans ss
+       JOIN artifact_versions av ON av.id = ss.artifact_version_id
+       JOIN artifacts a ON a.id = av.artifact_id
+      WHERE ss.id = ?1
+        AND a.workspace_person_id = ?2`,
+  ).bind(input.sourceSpanId, input.workspacePersonId).first<{ id: string }>();
+  if (direct) return true;
+
+  if (!await tableExists(db, 'artifact_interactions')) return false;
+  const linked = await db.prepare(
+    `SELECT ss.id
+       FROM source_spans ss
+       JOIN artifact_versions av ON av.id = ss.artifact_version_id
+       JOIN artifacts a ON a.id = av.artifact_id
+       JOIN artifact_interactions ai ON ai.artifact_id = a.id
+       JOIN interactions i ON i.id = ai.interaction_id
+      WHERE ss.id = ?1
+        AND i.workspace_person_id = ?2`,
+  ).bind(input.sourceSpanId, input.workspacePersonId).first<{ id: string }>();
+  return Boolean(linked);
+}
+
+async function loadCodeReviewEvidenceRefreshInteractionId(input: {
+  db: D1Database;
+  workspacePersonId: string;
+  meetingId: string;
+}): Promise<string | null> {
+  if (!await tableExists(input.db, 'interactions')) return null;
+  const row = await input.db.prepare(
+    `SELECT id
+       FROM interactions
+      WHERE workspace_person_id = ?1
+        AND external_reference = ?2
+      ORDER BY created_at DESC, id DESC
+      LIMIT 1`,
+  ).bind(input.workspacePersonId, input.meetingId).first<{ id: string }>();
+  return row?.id ?? null;
+}
+
+async function repairCodeReviewEvidenceRefreshMatcherContexts(
+  db: D1Database,
+  input: {
+    evidenceRefresh: ScheduledCodeReviewEvidenceRefresh;
+    originalInterviewId: string;
+    candidateId: string;
+  },
+): Promise<number> {
+  if (!await hasAssessmentLayerSchema(db)
+    || !await tableExists(db, 'context_record_entities')
+    || !await tableExists(db, 'context_record_concepts')
+    || !await tableExists(db, 'concepts')) {
+    return await countCodeReviewEvidenceRefreshMatcherContexts(
+      db,
+      input.evidenceRefresh.assessmentSessionId,
+    );
+  }
+
+  const identity = await ensureCandidateLivingContext(db, input.candidateId);
+  if (!identity) return 0;
+
+  const planSession = await db.prepare(
+    `SELECT id, interview_id, metadata_json
+       FROM assessment_sessions
+      WHERE id = ?1
+        AND created_by = 'code-review-evidence-plan'
+      LIMIT 1`,
+  ).bind(input.evidenceRefresh.assessmentSessionId).first<{
+    id: string;
+    interview_id: string | null;
+    metadata_json: string | null;
+  }>();
+  if (!planSession) {
+    return await countCodeReviewEvidenceRefreshMatcherContexts(
+      db,
+      input.evidenceRefresh.assessmentSessionId,
+    );
+  }
+
+  const sourceRefs = await loadCodeReviewEvidenceRefreshSourceRefs(
+    db,
+    input.evidenceRefresh.assessmentSessionId,
+  );
+  if (sourceRefs.length === 0) {
+    return await countCodeReviewEvidenceRefreshMatcherContexts(
+      db,
+      input.evidenceRefresh.assessmentSessionId,
+    );
+  }
+
+  const metadata = parseJsonObject(planSession.metadata_json);
+  const originalInterviewId = optionalString(metadata.originalInterviewId) ?? input.originalInterviewId;
+  const contextCallInterviewId = input.evidenceRefresh.contextCallInterviewId
+    ?? optionalString(metadata.contextCallInterviewId)
+    ?? optionalString(planSession.interview_id)
+    ?? null;
+  const matchRunId = input.evidenceRefresh.matchRunId
+    ?? optionalString(metadata.matchRunId)
+    ?? null;
+  const matchStatus = input.evidenceRefresh.matchStatus
+    ?? optionalString(metadata.matchStatus)
+    ?? null;
+  const observedAt = input.evidenceRefresh.completedAt
+    ?? input.evidenceRefresh.updatedAt
+    ?? new Date().toISOString();
+  const store = new LivingContextStore(db, () => observedAt);
+
+  for (const sourceRef of sourceRefs) {
+    const exactText = optionalString(sourceRef.exactText);
+    const sourceSpanId = optionalString(sourceRef.sourceSpanId) ?? optionalString(sourceRef.sourceRefId);
+    if (!exactText || !sourceSpanId || sourceRef.sourceRefType !== 'source_span') continue;
+    const terms = codeReviewEvidenceRepairOpenTerms(exactText);
+    if (terms.length === 0) continue;
+    const isOwned = await sourceSpanBelongsToWorkspacePerson(db, {
+      sourceSpanId,
+      workspacePersonId: identity.workspacePersonId,
+    });
+    if (!isOwned) continue;
+
+    const concepts: ContextRecordConceptInput[] = [];
+    for (const term of terms) {
+      const concept = await store.upsertConcept({
+        ingestionKey: `open-term:${term.canonicalKey}`,
+        canonicalKey: term.canonicalKey,
+        namespace: 'term',
+        label: term.surface,
+        metadata: {
+          resolver: OPEN_TERM_RESOLVER_VERSION,
+          source: 'code_review_evidence_plan_repair',
+        },
+      });
+      concepts.push({
+        conceptId: concept.id,
+        relationship: 'about',
+        weight: 1,
+      });
+    }
+
+    const locator = isRecord(sourceRef.locator) ? sourceRef.locator as JsonObject : {};
+    const meetingId = optionalString(locator.meetingId) ?? null;
+    const interactionId = meetingId
+      ? await loadCodeReviewEvidenceRefreshInteractionId({
+          db,
+          workspacePersonId: identity.workspacePersonId,
+          meetingId,
+        })
+      : null;
+    const source: ContextRecordSourceInput = {
+      sourceSpanId,
+      sourceRefType: 'source_span',
+      sourceRefId: optionalString(sourceRef.sourceRefId) ?? sourceSpanId,
+      evidenceRole: sourceRef.evidenceRole ?? 'evidence_plan_response_span',
+      locator,
+      exactText,
+      contentHash: optionalString(sourceRef.contentHash) ?? null,
+      metadata: isRecord(sourceRef.metadata) ? sourceRef.metadata as JsonObject : {},
+    };
+    const entities: ContextRecordEntityInput[] = [
+      {
+        entityType: 'workspace_person',
+        entityId: identity.workspacePersonId,
+        relationship: 'subject',
+      },
+      {
+        entityType: 'assessment_session',
+        entityId: input.evidenceRefresh.assessmentSessionId,
+        relationship: 'source_assessment',
+      },
+    ];
+    if (meetingId) {
+      entities.push({
+        entityType: 'meeting',
+        entityId: meetingId,
+        relationship: 'source_interaction',
+      });
+    }
+    if (contextCallInterviewId) {
+      entities.push({
+        entityType: 'scheduled_interview',
+        entityId: contextCallInterviewId,
+        relationship: 'context_call',
+      });
+    }
+    if (originalInterviewId) {
+      entities.push({
+        entityType: 'scheduled_interview',
+        entityId: originalInterviewId,
+        relationship: 'original_code_review',
+      });
+    }
+    if (matchRunId) {
+      entities.push({
+        entityType: 'match_run',
+        entityId: matchRunId,
+        relationship: 'evidence_gap_source',
+      });
+    }
+
+    try {
+      await store.upsertContextRecord({
+        ingestionKey: `assessment-session:${input.evidenceRefresh.assessmentSessionId}:evidence-plan-response:${sourceSpanId}`,
+        workspacePersonId: identity.workspacePersonId,
+        interactionId,
+        applicationId: identity.applicationId,
+        recordType: 'code_review_evidence_plan_response',
+        predicate: 'provides concrete candidate work evidence for repo matching',
+        narrative: exactText,
+        qualifiers: {
+          evidencePlanSessionId: input.evidenceRefresh.assessmentSessionId,
+          originalInterviewId,
+          contextCallInterviewId,
+          meetingId,
+          matchRunId,
+          matchStatus,
+          concreteEvidenceSignalCount: countCodeReviewEvidenceRepairSignals(exactText),
+          repairedFromAssessmentSourceRef: true,
+          extractedProperties: JSON.stringify({
+            semantic_terms: terms.map((term) => ({
+              surface: term.surface,
+              canonical_key: term.canonicalKey,
+            })),
+          }),
+        },
+        confidence: 0.85,
+        extractionVersion: 'code-review-evidence-plan-response-v1',
+        observedAt,
+        sources: [source],
+        entities,
+        concepts,
+      });
+      await store.enqueueProjection({
+        ingestionKey: `assessment-session:${input.evidenceRefresh.assessmentSessionId}:evidence-plan-response:${sourceSpanId}:neo4j`,
+        projectionType: 'neo4j',
+        aggregateType: 'workspace_person',
+        aggregateId: identity.workspacePersonId,
+        payload: {
+          contextRecordType: 'code_review_evidence_plan_response',
+          assessmentSessionId: input.evidenceRefresh.assessmentSessionId,
+          sourceSpanId,
+          originalInterviewId,
+          contextCallInterviewId,
+          matchRunId,
+          repairedFromAssessmentSourceRef: true,
+        },
+      });
+    } catch (error) {
+      console.error('[repairCodeReviewEvidenceRefreshMatcherContexts] failed to repair source span:', {
+        assessmentSessionId: input.evidenceRefresh.assessmentSessionId,
+        sourceSpanId,
+        error: error instanceof Error ? error.message : String(error),
+      });
+    }
+  }
+
+  return await countCodeReviewEvidenceRefreshMatcherContexts(
+    db,
+    input.evidenceRefresh.assessmentSessionId,
+  );
+}
+
+async function recordCodeReviewEvidenceRefreshConsumption(
+  db: D1Database,
+  input: {
+    evidenceRefresh: ScheduledCodeReviewEvidenceRefresh;
+    originalInterviewId: string;
+    candidateId: string;
+    refreshed: boolean;
+    consumedByMatchRunId: string;
+    consumedByMatchStatus: string;
+    repoId?: number | null;
+    repoUrl?: string | null;
+    prNumber?: number | null;
+    consumedAt: string;
+  },
+): Promise<void> {
+  if (!await hasAssessmentLayerSchema(db)) return;
+
+  const summary = input.refreshed
+    ? `Evidence-plan follow-up ${input.evidenceRefresh.reportId} was consumed by repo-match rerun ${input.consumedByMatchRunId} and selected ${input.repoUrl ?? `repo ${input.repoId ?? 'unknown'}`} PR #${input.prNumber ?? 'unknown'}.`
+    : `Evidence-plan follow-up ${input.evidenceRefresh.reportId} was consumed by repo-match rerun ${input.consumedByMatchRunId}, but the matcher returned ${input.consumedByMatchStatus}.`;
+  const sourceRefs = await loadCodeReviewEvidenceRefreshSourceRefs(db, input.evidenceRefresh.assessmentSessionId);
+  const store = new AssessmentLayerStore(db, () => input.consumedAt);
+  await store.createEvaluationReport({
+    sessionId: input.evidenceRefresh.assessmentSessionId,
+    ingestionKey: `assessment-report:code-review-evidence-plan:${input.evidenceRefresh.assessmentSessionId}:${input.evidenceRefresh.reportId}:${input.consumedByMatchRunId}:consumed`,
+    status: evidenceRefreshConsumptionReportStatus(input.consumedByMatchStatus),
+    summary,
+    output: {
+      schemaVersion: 'code-review-evidence-plan-consumption-v1',
+      status: 'USED_FOR_REPO_MATCH_REFRESH',
+      originalInterviewId: input.originalInterviewId,
+      candidateId: input.candidateId,
+      readyReportId: input.evidenceRefresh.reportId,
+      assessmentSessionId: input.evidenceRefresh.assessmentSessionId,
+      contextCallInterviewId: input.evidenceRefresh.contextCallInterviewId,
+      sourceSpanCount: input.evidenceRefresh.sourceSpanCount,
+      sourceMatchRunId: input.evidenceRefresh.matchRunId,
+      sourceMatchStatus: input.evidenceRefresh.matchStatus,
+      consumedByMatchRunId: input.consumedByMatchRunId,
+      consumedByMatchStatus: input.consumedByMatchStatus,
+      refreshed: input.refreshed,
+      repoId: input.repoId ?? null,
+      repoUrl: input.repoUrl ?? null,
+      prNumber: input.prNumber ?? null,
+      consumedAt: input.consumedAt,
+    },
+    claims: sourceRefs.length > 0
+      ? [{
+          id: `assessment_claim_${input.evidenceRefresh.assessmentSessionId}_${input.consumedByMatchRunId}_repo_match_refresh_consumption`,
+          polarity: 'neutral',
+          dimension: 'repo_match_refresh_consumption',
+          narrative: summary,
+          confidence: 1,
+          sourceRefs,
+        }]
+      : [],
+    diagnostics: [],
+  });
+}
+
+function parseRoleContextVersion(rcdJson: string | null): string | null {
+  if (!rcdJson) return null;
+  try {
+    const parsed = JSON.parse(rcdJson) as { rcd_version?: unknown };
+    return typeof parsed.rcd_version === 'string' ? parsed.rcd_version : null;
+  } catch {
+    return null;
+  }
+}
+
+async function loadScheduledCodeReviewMatchOptions(
+  db: D1Database,
+  pipelineId: string | null,
+): Promise<CandidateReviewChallengeOptions> {
+  if (!pipelineId) return {};
+  if (!await tableExists(db, 'role_contexts')) return {};
+
+  const roleContext = await db.prepare(
+    `SELECT id, rcd_json, job_description_md, non_negotiable_skills_json
+       FROM role_contexts
+      WHERE pipeline_id = ?1
+      ORDER BY updated_at DESC
+      LIMIT 1`,
+  ).bind(pipelineId).first<{
+    id: string;
+    rcd_json: string | null;
+    job_description_md: string | null;
+    non_negotiable_skills_json: string | null;
+  }>();
+  if (!roleContext) return {};
+
+  const roleSemantics = await loadRoleChallengeSemantics(db, {
+    ...roleContext,
+    rcd_version: parseRoleContextVersion(roleContext.rcd_json),
+  });
+
+  return {
+    roleContextId: roleContext.id,
+    roleSnapshotId: roleSemantics.roleSnapshotId,
+    roleConcepts: roleSemantics.relevantConcepts,
+    requiredConcepts: roleSemantics.requiredConcepts,
+    conceptResolverVersion: roleSemantics.resolverVersion,
+    roleSourceReferences: roleSemantics.sources.map((source) => ({
+      entityId: source.roleNodeId,
+      locator: source.sourceSection ?? 'role_context',
+      conceptKeys: source.conceptKeys,
+      sourceRefType: source.sourceRefType,
+      sourceRefId: source.sourceRefId,
+      sourceSpanId: source.sourceSpanId,
+      exactText: source.exactText,
+      contentHash: source.contentHash,
+    })),
   };
 }
 
 async function loadScheduledCodeReviewMatchDetail(
   db: D1Database,
   interview: {
+    id: string;
     candidate_id: string | null;
     interview_type: string | null;
     matched_repo_id: number | null;
@@ -1010,6 +2763,10 @@ async function loadScheduledCodeReviewMatchDetail(
   },
 ): Promise<ScheduledCodeReviewMatchDetail | null> {
   if (interview.interview_type !== 'CODE_REVIEW' || !interview.candidate_id) return null;
+  const evidenceRefresh = await loadCodeReviewEvidenceRefresh(db, interview.id, interview.candidate_id);
+  const evidenceFollowUp = evidenceRefresh
+    ? null
+    : await loadCodeReviewEvidenceFollowUp(db, interview.id, interview.candidate_id);
 
   const run = await db.prepare(
     `SELECT id, status, ranked_results_json, selected_packet_id, query_json
@@ -1041,7 +2798,10 @@ async function loadScheduledCodeReviewMatchDetail(
     query_json: string | null;
   }>();
 
-  if (!run) return loadManualCodeReviewMatchDetail(db, interview);
+  if (!run) {
+    const manual = await loadManualCodeReviewMatchDetail(db, interview);
+    return manual ? { ...manual, evidenceFollowUp, evidenceRefresh } : null;
+  }
 
   const rankedResults = parseScheduledCodeReviewRankedResults(run.ranked_results_json);
   const selected = rankedResults.find((result) => result.challengeId === run.selected_packet_id)
@@ -1060,6 +2820,7 @@ async function loadScheduledCodeReviewMatchDetail(
     ...summary.gaps,
     ...(contrastGap ? [contrastGap] : []),
   ];
+  const uniqueGaps = [...new Set(gaps)];
 
   return {
     status: run.status,
@@ -1073,8 +2834,540 @@ async function loadScheduledCodeReviewMatchDetail(
     roleSources,
     evidence,
     evidenceHyperedges: buildScheduledCodeReviewHyperedges(evidence, roleSources),
-    gaps: [...new Set(gaps)],
+    gaps: uniqueGaps,
+    evidencePlan: buildCodeReviewEvidencePlan({
+      matchStatus: run.status,
+      matchRunId: run.id,
+      gaps: uniqueGaps,
+    }),
+    evidenceFollowUp,
+    evidenceRefresh,
   };
+}
+
+async function loadScheduledCodeReviewScoreSummary(
+  db: D1Database,
+  interview: {
+    interview_type: string | null;
+    candidate_id: string | null;
+    submission_json: string | null;
+  },
+): Promise<ScheduledCodeReviewScoreSummary | null> {
+  if (interview.interview_type !== 'CODE_REVIEW') return null;
+
+  const submission = parseJsonObject(interview.submission_json);
+  const reviewSessionId = optionalString(submission.reviewSessionId);
+  if (!reviewSessionId || !await tableExists(db, 'review_sessions')) return null;
+
+  const candidateClause = interview.candidate_id ? 'AND candidate_id = ?2' : '';
+  const row = await db.prepare(
+    `SELECT id, status, score_report, updated_at
+       FROM review_sessions
+      WHERE id = ?1
+        ${candidateClause}
+      LIMIT 1`,
+  ).bind(
+    reviewSessionId,
+    ...(interview.candidate_id ? [interview.candidate_id] : []),
+  ).first<{
+    id: string;
+    status: string;
+    score_report: string | null;
+    updated_at: string;
+  }>();
+
+  if (!row) return null;
+
+  const report = parseJsonObject(row.score_report);
+  const overall = isRecord(report.overall) ? report.overall : {};
+
+  return {
+    reviewSessionId: row.id,
+    status: row.status,
+    score: numberOrNull(overall.score),
+    band: optionalString(overall.band) ?? null,
+    narrative: optionalString(overall.narrative) ?? null,
+    strengths: stringArray(overall.strengths),
+    growthAreas: stringArray(overall.growth_areas),
+    updatedAt: row.updated_at,
+  };
+}
+
+async function loadScheduledAssessmentProgress(
+  db: D1Database,
+  interviewId: string,
+): Promise<AssessmentProgressSnapshot | null> {
+  const sessionId = await loadScheduledAssessmentSessionId(db, interviewId);
+  if (!sessionId) return null;
+
+  return new RepoTaskInterviewSessionStore(db).loadProgress(sessionId);
+}
+
+async function loadScheduledAssessmentProgressByInterviewIds(
+  db: D1Database,
+  interviewIds: readonly string[],
+): Promise<Map<string, AssessmentProgressSnapshot>> {
+  const maxD1QueryVariables = 90;
+  const uniqueInterviewIds = [...new Set(interviewIds)].filter((id) => id.length > 0);
+  const progressByInterviewId = new Map<string, AssessmentProgressSnapshot>();
+  if (uniqueInterviewIds.length === 0) return progressByInterviewId;
+
+  if (!await hasScheduledAssessmentProgressSchema(db)) {
+    return progressByInterviewId;
+  }
+
+  const store = new RepoTaskInterviewSessionStore(db);
+  for (let offset = 0; offset < uniqueInterviewIds.length; offset += maxD1QueryVariables) {
+    const chunk = uniqueInterviewIds.slice(offset, offset + maxD1QueryVariables);
+    const placeholders = chunk.map((_, index) => `?${index + 1}`).join(', ');
+    const result = await db.prepare(
+      `SELECT id, interview_id
+         FROM (
+           SELECT id,
+                  interview_id,
+                  ROW_NUMBER() OVER (
+                    PARTITION BY interview_id
+                    ORDER BY updated_at DESC, id DESC
+                  ) AS rn
+             FROM assessment_sessions
+            WHERE interview_id IN (${placeholders})
+         )
+        WHERE rn = 1
+          AND interview_id IS NOT NULL`,
+    ).bind(...chunk).all<{ id: string; interview_id: string }>();
+
+    await Promise.all((result.results ?? []).map(async (row) => {
+      try {
+        progressByInterviewId.set(row.interview_id, await store.loadProgress(row.id));
+      } catch (error) {
+        console.error('[scheduling/listAssessmentProgress] failed to load assessment progress:', {
+          interviewId: row.interview_id,
+          assessmentSessionId: row.id,
+          error: error instanceof Error ? error.message : String(error),
+        });
+      }
+    }));
+  }
+  return progressByInterviewId;
+}
+
+async function loadScheduledAssessmentSessionId(
+  db: D1Database,
+  interviewId: string,
+): Promise<string | null> {
+  if (!await hasScheduledAssessmentProgressSchema(db)) return null;
+
+  const row = await db.prepare(
+    `SELECT id
+       FROM assessment_sessions
+      WHERE interview_id = ?1
+      ORDER BY updated_at DESC, id DESC
+      LIMIT 1`,
+  ).bind(interviewId).first<{ id: string }>();
+  return row?.id ?? null;
+}
+
+async function sha256Hex(value: string): Promise<string> {
+  const bytes = new TextEncoder().encode(value);
+  const digest = await crypto.subtle.digest('SHA-256', bytes);
+  return Array.from(new Uint8Array(digest), (byte) => byte.toString(16).padStart(2, '0')).join('');
+}
+
+async function loadLatestAssessmentEvaluationReport(
+  db: D1Database,
+  sessionId: string,
+): Promise<{ id: string; status: string; summary: string } | null> {
+  const row = await db.prepare(
+    `SELECT id, status, summary
+       FROM assessment_evaluation_reports
+      WHERE session_id = ?1
+      ORDER BY created_at DESC, id DESC
+      LIMIT 1`,
+  ).bind(sessionId).first<{ id: string; status: string; summary: string }>();
+  return row ?? null;
+}
+
+interface ManualOpenSourceChallengePacketInput {
+  interviewId: string;
+  userId: string;
+  candidateId: string | null;
+  repositoryUrl: string;
+  githubPrNumber: number | null;
+  baseCommitSha: string;
+  title: string;
+  instructions: string;
+  successCriteria: readonly string[];
+  expectedEvidence: readonly string[];
+  createdAt: string;
+}
+
+interface MatchedOpenSourceChallengePacket {
+  packetId: string;
+  repositoryUrl: string;
+  githubPrNumber: number;
+  pullRequestUrl: string;
+  baseCommitSha: string;
+  headCommitSha: string;
+  title: string;
+  instructions: string;
+  successCriteria: string[];
+  expectedEvidence: string[];
+  sourceHash: string;
+  repoSnapshotId: string;
+  qualityScore: number | null;
+  demandCount: number;
+  demandFamilies: string[];
+}
+
+function hasManualOpenSourceChallengePacket(input: {
+  interviewType: string;
+  githubRepoUrl: string | null | undefined;
+  githubPrNumber: number | null | undefined;
+  challengeBaseCommitSha: string | undefined;
+  challengeTitle: string | undefined;
+  challengeInstructions: string | undefined;
+  challengeSuccessCriteria: readonly string[] | undefined;
+  challengeExpectedEvidence: readonly string[] | undefined;
+}): boolean {
+  return input.interviewType === 'OPEN_SOURCE_BUG_FIX'
+    && Boolean(input.githubRepoUrl)
+    && Boolean(input.challengeBaseCommitSha)
+    && Boolean(input.challengeTitle)
+    && Boolean(input.challengeInstructions)
+    && Boolean(input.challengeSuccessCriteria?.length)
+    && Boolean(input.challengeExpectedEvidence?.length);
+}
+
+function demandFamilyLabel(value: string): string {
+  return value
+    .replace(/[_-]+/g, ' ')
+    .replace(/\s+/g, ' ')
+    .trim()
+    .toLowerCase();
+}
+
+function matchedPacketInstructions(packet: ChallengePacket): string {
+  const demandNarratives = packet.demands
+    .slice(0, 4)
+    .map((demand) => `- ${demand.narrative}`);
+  return [
+    `Work from the exact base commit ${packet.pullRequest.baseSha.toLowerCase()} and create a focused assessment branch.`,
+    `Use the selected upstream pull request context as the source-backed task brief: ${packet.pullRequest.url}.`,
+    'Implement a production-quality change that addresses the same repo demand without copying hidden ground truth.',
+    ...(demandNarratives.length > 0 ? ['Source-backed demands:', ...demandNarratives] : []),
+  ].join('\n');
+}
+
+function matchedPacketSuccessCriteria(packet: ChallengePacket): string[] {
+  const families = packet.demandFamilies.map(demandFamilyLabel).filter(Boolean);
+  return [
+    'The submitted commit is based on the assigned immutable base commit.',
+    'The patch is focused, reviewable, and tied to the selected repo task packet.',
+    'Relevant tests are run or a source-backed diagnostic explains why they could not be run.',
+    ...(families.length > 0
+      ? [`The solution addresses packet demands: ${families.slice(0, 4).join(', ')}.`]
+      : []),
+  ];
+}
+
+function matchedPacketExpectedEvidence(): string[] {
+  return [
+    'git_commit source ref for the submitted assessment commit',
+    'code_diff source ref for the exact baseCommitSha..commitSha candidate patch',
+    'terminal_command/test_run source refs for verification',
+    'chat/transcript/AI source refs for explanation and AI-use behavior when present',
+  ];
+}
+
+function materializeMatchedOpenSourcePacket(
+  row: {
+    id: string;
+    repo_snapshot_id: string | null;
+    pr_number: number | null;
+    source_hash: string | null;
+    packet_json: string;
+    github_url: string | null;
+    quality_score: number | null;
+    context_record_id: string | null;
+    repo_source_ref_count: number | null;
+    concept_link_count: number | null;
+  },
+): MatchedOpenSourceChallengePacket | null {
+  if (!row.github_url || !row.source_hash || !row.context_record_id) return null;
+  if ((row.repo_source_ref_count ?? 0) <= 0 || (row.concept_link_count ?? 0) <= 0) return null;
+
+  let packet: ChallengePacket;
+  try {
+    packet = JSON.parse(row.packet_json) as ChallengePacket;
+  } catch {
+    return null;
+  }
+
+  const baseCommitSha = packet.pullRequest?.baseSha?.toLowerCase();
+  const headCommitSha = packet.pullRequest?.headSha?.toLowerCase();
+  if (
+    packet.id !== row.id
+    || packet.contentHash !== row.source_hash
+    || !baseCommitSha
+    || !GIT_COMMIT_SHA_PATTERN.test(baseCommitSha)
+    || !headCommitSha
+    || !GIT_COMMIT_SHA_PATTERN.test(headCommitSha)
+    || !Number.isInteger(packet.pullRequest?.number)
+    || packet.pullRequest.number <= 0
+    || packet.pullRequest.number !== row.pr_number
+  ) {
+    return null;
+  }
+
+  return {
+    packetId: packet.id,
+    repositoryUrl: row.github_url,
+    githubPrNumber: packet.pullRequest.number,
+    pullRequestUrl: packet.pullRequest.url,
+    baseCommitSha,
+    headCommitSha,
+    title: packet.pullRequest.title,
+    instructions: matchedPacketInstructions(packet),
+    successCriteria: matchedPacketSuccessCriteria(packet),
+    expectedEvidence: matchedPacketExpectedEvidence(),
+    sourceHash: row.source_hash,
+    repoSnapshotId: packet.repoSnapshotId,
+    qualityScore: row.quality_score,
+    demandCount: packet.demands.length,
+    demandFamilies: [...packet.demandFamilies],
+  };
+}
+
+async function loadMatchedOpenSourceChallengePacket(
+  db: D1Database,
+  matchedRepoId: number,
+): Promise<MatchedOpenSourceChallengePacket | null> {
+  const rows = await db.prepare(
+    `SELECT rcp.id,
+            rcp.repo_snapshot_id,
+            rcp.pr_number,
+            rcp.source_hash,
+            rcp.packet_json,
+            rcp.quality_score,
+            qr.github_url,
+            cr.id AS context_record_id,
+            (
+              SELECT COUNT(*)
+                FROM context_record_source_refs crsr
+               WHERE crsr.context_record_id = cr.id
+                 AND crsr.source_ref_type = 'repo_source_span'
+            ) AS repo_source_ref_count,
+            (
+              SELECT COUNT(*)
+                FROM context_record_concepts crc
+               WHERE crc.context_record_id = cr.id
+            ) AS concept_link_count
+       FROM review_challenge_packets rcp
+       JOIN qualified_repos qr ON qr.id = rcp.repo_id
+       LEFT JOIN context_records cr
+         ON cr.ingestion_key = 'repo-challenge-packet-context:' || rcp.id
+        AND cr.scope_type = 'repo_snapshot'
+        AND cr.scope_id = rcp.repo_snapshot_id
+        AND cr.record_type = 'repo_challenge_packet'
+      WHERE rcp.repo_id = ?1
+        AND rcp.production_ready = 1
+        AND rcp.quality_score >= 0.70
+      ORDER BY rcp.quality_score DESC, rcp.pr_number`,
+  ).bind(matchedRepoId).all<{
+    id: string;
+    repo_snapshot_id: string | null;
+    pr_number: number | null;
+    source_hash: string | null;
+    packet_json: string;
+    quality_score: number | null;
+    github_url: string | null;
+    context_record_id: string | null;
+    repo_source_ref_count: number | null;
+    concept_link_count: number | null;
+  }>();
+
+  for (const row of rows.results ?? []) {
+    const packet = materializeMatchedOpenSourcePacket(row);
+    if (packet) return packet;
+  }
+  return null;
+}
+
+function buildManualOpenSourceChallengeExactText(
+  input: ManualOpenSourceChallengePacketInput,
+): string {
+  return [
+    `Repo: ${input.repositoryUrl}`,
+    `Base commit: ${input.baseCommitSha.toLowerCase()}`,
+    ...(input.githubPrNumber ? [`Pull request: #${input.githubPrNumber}`] : []),
+    `Task: ${input.title}`,
+    `Instructions: ${input.instructions}`,
+    'Success criteria:',
+    ...input.successCriteria.map((criterion) => `- ${criterion}`),
+    'Expected evidence:',
+    ...input.expectedEvidence.map((evidence) => `- ${evidence}`),
+  ].join('\n');
+}
+
+function buildMatchedOpenSourceChallengeExactText(
+  input: MatchedOpenSourceChallengePacket,
+): string {
+  return [
+    `Repo: ${input.repositoryUrl}`,
+    `Base commit: ${input.baseCommitSha}`,
+    `Pull request: #${input.githubPrNumber}`,
+    `Pull request URL: ${input.pullRequestUrl}`,
+    `Task: ${input.title}`,
+    `Instructions: ${input.instructions}`,
+    'Success criteria:',
+    ...input.successCriteria.map((criterion) => `- ${criterion}`),
+    'Expected evidence:',
+    ...input.expectedEvidence.map((evidence) => `- ${evidence}`),
+  ].join('\n');
+}
+
+async function createManualOpenSourceChallengeAssessmentSession(
+  db: D1Database,
+  input: ManualOpenSourceChallengePacketInput,
+): Promise<AssessmentProgressSnapshot> {
+  const store = new RepoTaskInterviewSessionStore(db);
+  const session = await store.createSession({
+    ingestionKey: `assessment-session:${input.interviewId}:manual-open-source-challenge`,
+    interviewId: input.interviewId,
+    mode: 'OPEN_SOURCE_BUG_FIX',
+    candidateId: input.candidateId,
+    createdBy: input.userId,
+    metadata: {
+      challengePacketSource: 'recruiter_manual_open_source_task',
+      repositoryUrl: input.repositoryUrl,
+      ...(input.githubPrNumber ? { githubPrNumber: input.githubPrNumber } : {}),
+      baseCommitSha: input.baseCommitSha.toLowerCase(),
+      challengeTitle: input.title,
+    },
+  });
+  const exactText = buildManualOpenSourceChallengeExactText(input);
+  const contentHash = await deterministicEntityId('content', exactText);
+  const sourceRef: AssessmentEvidenceSourceRefInput = {
+    sourceRefType: 'open_source_challenge_packet',
+    sourceRefId: `scheduled-interview:${input.interviewId}:open-source-challenge:${contentHash}`,
+    evidenceRole: 'assigned_challenge',
+    locator: {
+      scheduledInterviewId: input.interviewId,
+      repositoryUrl: input.repositoryUrl,
+      ...(input.githubPrNumber ? { githubPrNumber: input.githubPrNumber } : {}),
+      baseCommitSha: input.baseCommitSha.toLowerCase(),
+    },
+    exactText,
+    contentHash,
+    metadata: {
+      schemaVersion: 'manual-open-source-challenge-packet-v1',
+      source: 'recruiter_manual_open_source_task',
+    },
+  };
+
+  await store.recordEvent({
+    sessionId: session.id,
+    ingestionKey: `assessment-event:${session.id}:manual-open-source-challenge:${contentHash}`,
+    kind: 'recruiter_note',
+    actorType: 'recruiter',
+    actorId: input.userId,
+    narrative: 'Recruiter assigned a concrete open-source implementation challenge packet.',
+    payload: {
+      repositoryUrl: input.repositoryUrl,
+      ...(input.githubPrNumber ? { githubPrNumber: input.githubPrNumber } : {}),
+      baseCommitSha: input.baseCommitSha.toLowerCase(),
+      title: input.title,
+      instructions: input.instructions,
+      successCriteria: [...input.successCriteria],
+      expectedEvidence: [...input.expectedEvidence],
+    },
+    occurredAt: input.createdAt,
+    sourceRefs: [sourceRef],
+  });
+
+  return store.loadProgress(session.id);
+}
+
+async function createMatchedOpenSourceChallengeAssessmentSession(
+  db: D1Database,
+  input: {
+    interviewId: string;
+    userId: string;
+    candidateId: string | null;
+    matchedRepoId: number;
+    packet: MatchedOpenSourceChallengePacket;
+    createdAt: string;
+  },
+): Promise<AssessmentProgressSnapshot> {
+  const store = new RepoTaskInterviewSessionStore(db);
+  const session = await store.createSession({
+    ingestionKey: `assessment-session:${input.interviewId}:matched-open-source-challenge:${input.packet.packetId}`,
+    interviewId: input.interviewId,
+    mode: 'OPEN_SOURCE_BUG_FIX',
+    candidateId: input.candidateId,
+    createdBy: input.userId,
+    metadata: {
+      challengePacketSource: 'matched_review_challenge_packet',
+      matchedRepoId: input.matchedRepoId,
+      repositoryUrl: input.packet.repositoryUrl,
+      githubPrNumber: input.packet.githubPrNumber,
+      baseCommitSha: input.packet.baseCommitSha,
+      challengePacketId: input.packet.packetId,
+      repoSnapshotId: input.packet.repoSnapshotId,
+      challengeTitle: input.packet.title,
+    },
+  });
+  const exactText = buildMatchedOpenSourceChallengeExactText(input.packet);
+  const sourceRef: AssessmentEvidenceSourceRefInput = {
+    sourceRefType: 'review_challenge_packet',
+    sourceRefId: input.packet.packetId,
+    evidenceRole: 'assigned_challenge',
+    locator: {
+      scheduledInterviewId: input.interviewId,
+      matchedRepoId: input.matchedRepoId,
+      repositoryUrl: input.packet.repositoryUrl,
+      githubPrNumber: input.packet.githubPrNumber,
+      pullRequestUrl: input.packet.pullRequestUrl,
+      baseCommitSha: input.packet.baseCommitSha,
+      headCommitSha: input.packet.headCommitSha,
+      repoSnapshotId: input.packet.repoSnapshotId,
+    },
+    exactText,
+    contentHash: input.packet.sourceHash,
+    metadata: {
+      schemaVersion: 'matched-open-source-challenge-packet-v1',
+      source: 'matched_review_challenge_packet',
+      qualityScore: input.packet.qualityScore,
+      demandCount: input.packet.demandCount,
+      demandFamilies: input.packet.demandFamilies,
+    },
+  };
+
+  await store.recordEvent({
+    sessionId: session.id,
+    ingestionKey: `assessment-event:${session.id}:matched-open-source-challenge:${input.packet.packetId}`,
+    kind: 'match_decision',
+    actorType: 'system',
+    actorId: 'pipe-matcher',
+    narrative: 'PIPE assigned a source-backed open-source implementation challenge packet from the matched repository.',
+    payload: {
+      matchedRepoId: input.matchedRepoId,
+      repositoryUrl: input.packet.repositoryUrl,
+      githubPrNumber: input.packet.githubPrNumber,
+      pullRequestUrl: input.packet.pullRequestUrl,
+      baseCommitSha: input.packet.baseCommitSha,
+      title: input.packet.title,
+      successCriteria: input.packet.successCriteria,
+      expectedEvidence: input.packet.expectedEvidence,
+      challengePacketId: input.packet.packetId,
+      repoSnapshotId: input.packet.repoSnapshotId,
+      qualityScore: input.packet.qualityScore,
+    },
+    occurredAt: input.createdAt,
+    sourceRefs: [sourceRef],
+  });
+
+  return store.loadProgress(session.id);
 }
 
 async function ensureRecipientContact(
@@ -1129,20 +3422,9 @@ async function ensureStandaloneCandidateForInterview(
 ): Promise<{ candidateId: string; inviteToken: string }> {
   const email = recipient.email.trim().toLowerCase();
   const name = recipient.name.trim();
-  const existing = await db
-    .prepare('SELECT id, invite_token FROM candidates WHERE owner_id = ? AND email = ? AND pipeline_id IS NULL')
-    .bind(ownerId, email)
-    .first<{ id: string; invite_token: string }>();
-
-  if (existing) {
-    // Link the interview to this candidate if not already linked
-    await db
-      .prepare('UPDATE scheduled_interviews SET candidate_id = ?, updated_at = ? WHERE id = ? AND candidate_id IS NULL')
-      .bind(existing.id, new Date().toISOString(), interviewId)
-      .run();
-    return { candidateId: existing.id, inviteToken: existing.invite_token };
-  }
-
+  // The contact/person graph deduplicates the human by email. A standalone
+  // assessment invite still needs its own candidate/application token so two
+  // active assessment links for the same person do not route to the latest row.
   const candidateId = crypto.randomUUID();
   const inviteToken = crypto.randomUUID();
   const now = new Date().toISOString();
@@ -1159,6 +3441,8 @@ async function ensureStandaloneCandidateForInterview(
     .prepare('UPDATE scheduled_interviews SET candidate_id = ?, updated_at = ? WHERE id = ?')
     .bind(candidateId, now, interviewId)
     .run();
+
+  await ensureCandidateLivingContext(db, candidateId);
 
   return { candidateId, inviteToken };
 }
@@ -1213,36 +3497,69 @@ async function ensureScheduledInterviewRoomLinks(
     const meetingId = crypto.randomUUID();
     const role = interview.pipeline_title ?? 'Talent Pool';
     const stage = interview.stage_title ?? interview.interview_type ?? 'Interview';
+    const copy = scheduledInterviewMeetingCopy({
+      candidateName: name,
+      roleTitle: role,
+      stageTitle: stage,
+      interviewType: interview.interview_type,
+    });
+    const features = scheduledInterviewRoomFeatures(interview.interview_type);
     await db.prepare(
       `INSERT INTO meetings
        (id, owner_id, title, description, status, scheduled_at, meeting_type,
         scheduled_interview_id, scheduling_provider, external_event_id,
+        video_enabled, workspace_enabled, recording_enabled, clippy_enabled,
         created_at, updated_at)
-       VALUES (?1, ?2, ?3, ?4, 'SCHEDULED', ?5, 'INTERVIEW', ?6, ?7, ?8, ?9, ?9)`,
+       VALUES (?1, ?2, ?3, ?4, 'SCHEDULED', ?5, 'INTERVIEW', ?6, ?7, ?8, ?9, ?10, ?11, ?12, ?13, ?13)`,
     ).bind(
       meetingId,
       ownerId,
-      `${name} interview`,
-      `${role} · ${stage}`,
+      copy.title,
+      copy.description,
       interview.scheduled_at,
       interview.id,
       interview.scheduling_provider ?? null,
       interview.external_event_id ?? null,
+      features.videoEnabled ? 1 : 0,
+      features.workspaceEnabled ? 1 : 0,
+      features.recordingEnabled ? 1 : 0,
+      features.clippyEnabled ? 1 : 0,
       now,
     ).run();
     meeting = { id: meetingId };
   } else {
+    const role = interview.pipeline_title ?? 'Talent Pool';
+    const stage = interview.stage_title ?? interview.interview_type ?? 'Interview';
+    const copy = scheduledInterviewMeetingCopy({
+      candidateName: name,
+      roleTitle: role,
+      stageTitle: stage,
+      interviewType: interview.interview_type,
+    });
+    const features = scheduledInterviewRoomFeatures(interview.interview_type);
     await db.prepare(
       `UPDATE meetings
           SET scheduled_at = ?1,
               scheduling_provider = COALESCE(?2, scheduling_provider),
               external_event_id = COALESCE(?3, external_event_id),
-              updated_at = ?4
-        WHERE id = ?5`,
+              title = ?4,
+              description = ?5,
+              video_enabled = ?6,
+              workspace_enabled = ?7,
+              recording_enabled = ?8,
+              clippy_enabled = ?9,
+              updated_at = ?10
+        WHERE id = ?11`,
     ).bind(
       interview.scheduled_at,
       interview.scheduling_provider ?? null,
       interview.external_event_id ?? null,
+      copy.title,
+      copy.description,
+      features.videoEnabled ? 1 : 0,
+      features.workspaceEnabled ? 1 : 0,
+      features.recordingEnabled ? 1 : 0,
+      features.clippyEnabled ? 1 : 0,
       now,
       meeting.id,
     ).run();
@@ -1291,14 +3608,38 @@ function lineCount(value: string): number {
   return Math.max(1, value.split('\n').length);
 }
 
+async function tableExists(db: D1Database, tableName: string): Promise<boolean> {
+  const row = await db.prepare(
+    `SELECT name FROM sqlite_master WHERE type = 'table' AND name = ?1`,
+  ).bind(tableName).first<{ name: string }>();
+  return Boolean(row);
+}
+
+async function hasScheduledAssessmentProgressSchema(db: D1Database): Promise<boolean> {
+  return await tableExists(db, 'assessment_sessions')
+    && await tableExists(db, 'assessment_evidence_events')
+    && await tableExists(db, 'assessment_event_source_refs')
+    && await tableExists(db, 'assessment_evaluation_reports');
+}
+
+async function hasAssessmentLayerSchema(db: D1Database): Promise<boolean> {
+  return await tableExists(db, 'assessment_sessions')
+    && await tableExists(db, 'assessment_evidence_events')
+    && await tableExists(db, 'assessment_event_source_refs')
+    && await tableExists(db, 'context_records')
+    && await tableExists(db, 'context_record_source_refs');
+}
+
 function contactFirstInterviewSourceText(input: {
   recipientName: string;
   recipientEmail: string;
   meetingType: string;
   interviewType: string;
+  assessmentSetup: ScheduledAssessmentSetupProjection;
   scheduledAt: string | null;
   schedulingProvider: string | null;
   schedulingUrl: string | null;
+  recruiterNotes?: string | null;
   createdAt: string;
 }): string {
   return [
@@ -1307,9 +3648,15 @@ function contactFirstInterviewSourceText(input: {
     `Recipient email: ${input.recipientEmail}`,
     `Meeting type: ${input.meetingType}`,
     `Interview type: ${input.interviewType}`,
+    `Assessment setup status: ${input.assessmentSetup.status}`,
+    `Assessment setup kind: ${input.assessmentSetup.kind}`,
+    `Assessment setup source: ${input.assessmentSetup.source}`,
+    `Assessment setup blocks positive assessment: ${input.assessmentSetup.blocksPositiveAssessment ? 'yes' : 'no'}`,
+    `Assessment setup message: ${input.assessmentSetup.message ?? 'none'}`,
     `Scheduled at: ${input.scheduledAt ?? 'unscheduled'}`,
     `Scheduling provider: ${input.schedulingProvider ?? 'none'}`,
     `Scheduling URL: ${input.schedulingUrl ?? 'none'}`,
+    `Recruiter notes: ${input.recruiterNotes?.trim() || 'none'}`,
     `Created at: ${input.createdAt}`,
   ].join('\n');
 }
@@ -1324,9 +3671,11 @@ async function persistContactFirstInterviewInviteContext(
     recipientEmail: string;
     meetingType: string;
     interviewType: string;
+    assessmentSetup: ScheduledAssessmentSetupProjection;
     scheduledAt: string | null;
     schedulingProvider: string | null;
     schedulingUrl: string | null;
+    recruiterNotes?: string | null;
     createdAt: string;
   },
 ): Promise<void> {
@@ -1346,6 +3695,11 @@ async function persistContactFirstInterviewInviteContext(
       scheduledInterviewId: input.interviewId,
       meetingType: input.meetingType,
       interviewType: input.interviewType,
+      assessmentSetupStatus: input.assessmentSetup.status,
+      assessmentSetupKind: input.assessmentSetup.kind,
+      assessmentSetupSource: input.assessmentSetup.source,
+      assessmentSetupBlocksPositiveAssessment: input.assessmentSetup.blocksPositiveAssessment,
+      recruiterNotes: input.recruiterNotes ?? null,
     },
   });
   const artifact = await store.upsertArtifact({
@@ -1373,6 +3727,7 @@ async function persistContactFirstInterviewInviteContext(
     metadata: {
       scheduledInterviewId: input.interviewId,
       source: 'contact_first_interview_create',
+      assessmentSetupStatus: input.assessmentSetup.status,
     },
   });
   const span = await store.createSourceSpan({
@@ -1389,6 +3744,7 @@ async function persistContactFirstInterviewInviteContext(
     metadata: {
       scheduledInterviewId: input.interviewId,
       source: 'contact_first_interview_create',
+      assessmentSetupStatus: input.assessmentSetup.status,
     },
   });
   await store.upsertContextRecord({
@@ -1403,6 +3759,12 @@ async function persistContactFirstInterviewInviteContext(
       contactId: input.contactId,
       meetingType: input.meetingType,
       interviewType: input.interviewType,
+      assessmentSetupStatus: input.assessmentSetup.status,
+      assessmentSetupKind: input.assessmentSetup.kind,
+      assessmentSetupSource: input.assessmentSetup.source,
+      assessmentSetupBlocksPositiveAssessment: input.assessmentSetup.blocksPositiveAssessment,
+      assessmentSetupMessage: input.assessmentSetup.message,
+      recruiterNotes: input.recruiterNotes ?? null,
     },
     confidence: 1,
     extractionVersion: 'scheduled-interview-create-v1',
@@ -1421,6 +3783,254 @@ async function persistContactFirstInterviewInviteContext(
       },
     ],
   });
+}
+
+function codeReviewContextCallSourceText(input: {
+  originalInterviewId: string;
+  contextCallInterviewId: string;
+  personName: string;
+  personEmail: string;
+  matchStatus: string;
+  matchSummary: string;
+  gaps: string[];
+  questions: readonly string[];
+  createdAt: string;
+}): string {
+  return [
+    'Code-review context call recommendation',
+    `Original interview id: ${input.originalInterviewId}`,
+    `Context call interview id: ${input.contextCallInterviewId}`,
+    `Person name: ${input.personName}`,
+    `Person email: ${input.personEmail}`,
+    `Match status: ${input.matchStatus}`,
+    `Match summary: ${input.matchSummary}`,
+    ...(input.gaps.length > 0
+      ? input.gaps.map((gap, index) => `Evidence gap ${index + 1}: ${gap}`)
+      : ['Evidence gap: none recorded']),
+    ...input.questions.map((question, index) => `Question ${index + 1}: ${question}`),
+    `Created at: ${input.createdAt}`,
+  ].join('\n');
+}
+
+async function persistCodeReviewContextCallRecommendation(
+  db: D1Database,
+  input: {
+    ownerId: string;
+    candidateId: string | null;
+    contactId: string | null;
+    originalInterviewId: string;
+    contextCallInterviewId: string;
+    personName: string;
+    personEmail: string;
+    matchRunId: string | null;
+    matchStatus: string;
+    matchSummary: string;
+    gaps: string[];
+    questions: readonly string[];
+    createdAt: string;
+  },
+): Promise<string | null> {
+  const identity = input.candidateId
+    ? await ensureCandidateLivingContext(db, input.candidateId)
+    : input.contactId
+      ? await ensureContactLivingContext(db, input.contactId)
+      : null;
+  if (!identity) return null;
+
+  const applicationId: string | null = 'applicationId' in identity && typeof identity.applicationId === 'string'
+    ? identity.applicationId
+    : null;
+  const store = new LivingContextStore(db, () => input.createdAt);
+  const interaction = await store.upsertInteraction({
+    ingestionKey: `code-review-context-call:${input.originalInterviewId}:${input.contextCallInterviewId}`,
+    workspacePersonId: identity.workspacePersonId,
+    applicationId,
+    interactionType: 'code_review_context_call_recommendation',
+    externalReference: input.originalInterviewId,
+    startedAt: input.createdAt,
+    metadata: {
+      originalInterviewId: input.originalInterviewId,
+      contextCallInterviewId: input.contextCallInterviewId,
+      matchRunId: input.matchRunId,
+      matchStatus: input.matchStatus,
+    },
+  });
+  const artifact = await store.upsertArtifact({
+    ingestionKey: `code-review-context-call:${input.contextCallInterviewId}:artifact`,
+    workspacePersonId: identity.workspacePersonId,
+    interactionId: interaction.id,
+    artifactType: 'code_review_context_call_recommendation',
+    logicalKey: `${input.originalInterviewId}:context-call:${input.contextCallInterviewId}`,
+    metadata: {
+      ownerId: input.ownerId,
+      originalInterviewId: input.originalInterviewId,
+      contextCallInterviewId: input.contextCallInterviewId,
+      matchRunId: input.matchRunId,
+      matchStatus: input.matchStatus,
+    },
+  });
+  const sourceText = codeReviewContextCallSourceText(input);
+  const contentHash = await deterministicEntityId('content', sourceText);
+  const version = await store.createArtifactVersion({
+    ingestionKey: `code-review-context-call:${input.contextCallInterviewId}:${contentHash}`,
+    artifactId: artifact.id,
+    versionNumber: 1,
+    contentHash,
+    mediaType: 'text/plain',
+    contentText: sourceText,
+    byteLength: new TextEncoder().encode(sourceText).byteLength,
+    metadata: {
+      source: 'code_review_context_call_recommendation',
+      originalInterviewId: input.originalInterviewId,
+      contextCallInterviewId: input.contextCallInterviewId,
+      matchRunId: input.matchRunId,
+      matchStatus: input.matchStatus,
+    },
+  });
+  const span = await store.createSourceSpan({
+    ingestionKey: `code-review-context-call:${input.contextCallInterviewId}:${version.id}:full`,
+    artifactVersionId: version.id,
+    stableSegmentId: 'context-call-recommendation-full',
+    byteStart: 0,
+    byteEnd: new TextEncoder().encode(sourceText).byteLength,
+    charStart: 0,
+    charEnd: sourceText.length,
+    lineStart: 1,
+    lineEnd: lineCount(sourceText),
+    exactText: sourceText,
+    metadata: {
+      source: 'code_review_context_call_recommendation',
+      originalInterviewId: input.originalInterviewId,
+      contextCallInterviewId: input.contextCallInterviewId,
+      matchStatus: input.matchStatus,
+    },
+  });
+  await store.upsertContextRecord({
+    ingestionKey: `code-review-context-call:${input.originalInterviewId}:${input.contextCallInterviewId}:context`,
+    workspacePersonId: identity.workspacePersonId,
+    interactionId: interaction.id,
+    applicationId,
+    recordType: 'code_review_context_call_recommendation',
+    predicate: 'recommends context call for repo matching',
+    narrative: `PIPE recommended a context call for ${input.personName} before assigning a code review challenge.`,
+    qualifiers: {
+      originalInterviewId: input.originalInterviewId,
+      contextCallInterviewId: input.contextCallInterviewId,
+      matchRunId: input.matchRunId,
+      matchStatus: input.matchStatus,
+      matchSummary: input.matchSummary,
+      gaps: input.gaps,
+      questions: [...input.questions],
+    },
+    confidence: 1,
+    extractionVersion: 'code-review-context-call-v1',
+    observedAt: input.createdAt,
+    sources: [{ sourceSpanId: span.id, evidenceRole: 'source' }],
+    entities: [
+      {
+        entityType: 'scheduled_interview',
+        entityId: input.originalInterviewId,
+        relationship: 'originating_assessment',
+      },
+      {
+        entityType: 'scheduled_interview',
+        entityId: input.contextCallInterviewId,
+        relationship: 'recommended_follow_up',
+      },
+      ...(input.matchRunId
+        ? [{
+            entityType: 'match_run',
+            entityId: input.matchRunId,
+            relationship: 'blocked_match',
+          }]
+        : []),
+      ...(input.candidateId
+        ? [{
+            entityType: 'candidate',
+            entityId: input.candidateId,
+            relationship: 'participant',
+          }]
+        : []),
+      ...(input.contactId
+        ? [{
+            entityType: 'contact',
+            entityId: input.contactId,
+            relationship: 'participant',
+          }]
+        : []),
+    ],
+  });
+
+  if (!await hasAssessmentLayerSchema(db)) return null;
+
+  const assessmentStore = new AssessmentLayerStore(db, () => input.createdAt);
+  const assessmentSession = await assessmentStore.createAssessmentSession({
+    ingestionKey: `assessment-session:code-review-evidence-plan:${input.originalInterviewId}:${input.contextCallInterviewId}`,
+    interviewId: input.contextCallInterviewId,
+    mode: 'TECHNICAL',
+    candidateId: input.candidateId,
+    workspaceId: input.ownerId,
+    createdBy: 'code-review-evidence-plan',
+    metadata: {
+      source: 'code_review_evidence_plan',
+      originalInterviewId: input.originalInterviewId,
+      contextCallInterviewId: input.contextCallInterviewId,
+      matchRunId: input.matchRunId,
+      matchStatus: input.matchStatus,
+      matchSummary: input.matchSummary,
+      gaps: input.gaps,
+      questions: [...input.questions],
+      workspacePersonId: identity.workspacePersonId,
+      applicationId,
+    },
+  });
+
+  await assessmentStore.recordAssessmentEvent({
+    sessionId: assessmentSession.id,
+    ingestionKey: `assessment-event:code-review-evidence-plan:${input.originalInterviewId}:${input.contextCallInterviewId}:created`,
+    kind: 'evidence_plan_created',
+    actorType: 'system',
+    narrative: `PIPE created a source-backed evidence plan for ${input.personName} before assigning a code-review challenge.`,
+    payload: {
+      originalInterviewId: input.originalInterviewId,
+      contextCallInterviewId: input.contextCallInterviewId,
+      matchRunId: input.matchRunId,
+      matchStatus: input.matchStatus,
+      matchSummary: input.matchSummary,
+      gaps: input.gaps,
+      questions: [...input.questions],
+      workspacePersonId: identity.workspacePersonId,
+      applicationId,
+    },
+    occurredAt: input.createdAt,
+    sourceRefs: [{
+      sourceRefType: 'source_span',
+      sourceRefId: span.id,
+      sourceSpanId: span.id,
+      evidenceRole: 'evidence_plan_source',
+      locator: {
+        originalInterviewId: input.originalInterviewId,
+        contextCallInterviewId: input.contextCallInterviewId,
+        matchRunId: input.matchRunId,
+        stableSegmentId: 'context-call-recommendation-full',
+      },
+      exactText: sourceText,
+      contentHash,
+      metadata: {
+        sourceKind: 'code_review_context_call_recommendation.source_span',
+        matchStatus: input.matchStatus,
+      },
+    }],
+  });
+
+  await assessmentStore.transitionAssessmentState({
+    sessionId: assessmentSession.id,
+    toState: 'IN_PROGRESS',
+    reason: 'Recruiter created a source-backed evidence plan follow-up for blocked code-review matching.',
+    actorType: 'system',
+  });
+
+  return assessmentSession.id;
 }
 
 function inviteDeliverySourceText(input: {
@@ -1577,7 +4187,7 @@ interface BookingConfirmationDetails {
   stageTitle: string | null;
   scheduledAt: string | null;
   meetingUrl: string | null;
-  emailSentAt: string | null;
+  bookingConfirmationSentAt: string | null;
 }
 
 function normalizeEmail(value: string | null | undefined): string | null {
@@ -1659,7 +4269,7 @@ async function loadBookingConfirmationDetails(
             s.title AS stage_title,
             si.scheduled_at,
             si.meeting_url,
-            si.email_sent_at
+            si.booking_confirmation_sent_at
        FROM scheduled_interviews si
        LEFT JOIN candidates c ON c.id = si.candidate_id
        LEFT JOIN pipelines p ON p.id = si.pipeline_id
@@ -1674,7 +4284,7 @@ async function loadBookingConfirmationDetails(
     stage_title: string | null;
     scheduled_at: string | null;
     meeting_url: string | null;
-    email_sent_at: string | null;
+    booking_confirmation_sent_at: string | null;
   }>().then((row) => row ? {
     id: row.id,
     recipientName: row.recipient_name,
@@ -1683,7 +4293,7 @@ async function loadBookingConfirmationDetails(
     stageTitle: row.stage_title,
     scheduledAt: row.scheduled_at,
     meetingUrl: row.meeting_url,
-    emailSentAt: row.email_sent_at,
+    bookingConfirmationSentAt: row.booking_confirmation_sent_at,
   } : null);
 }
 
@@ -1697,7 +4307,7 @@ async function sendScheduledBookingConfirmationEmail(
   const recipientEmail = normalizeEmail(details?.recipientEmail);
   const meetingUrl = details?.meetingUrl ? withDevBasicAuth(details.meetingUrl, env) : null;
 
-  if (!details || !recipientEmail || !meetingUrl || details.emailSentAt) return;
+  if (!details || !recipientEmail || !meetingUrl || details.bookingConfirmationSentAt) return;
 
   const recipientName = details.recipientName?.trim()
     || nameFromEmail(recipientEmail);
@@ -1724,7 +4334,8 @@ async function sendScheduledBookingConfirmationEmail(
     const sentAt = new Date().toISOString();
     await db.prepare(
       `UPDATE scheduled_interviews
-          SET email_sent_at = COALESCE(email_sent_at, ?1),
+          SET booking_confirmation_sent_at = COALESCE(booking_confirmation_sent_at, ?1),
+              email_sent_at = COALESCE(email_sent_at, ?1),
               updated_at = ?1
         WHERE id = ?2
           AND owner_id = ?3`,
@@ -1754,6 +4365,14 @@ interface CalendlyInvitee {
   uri?: string;
   name?: string;
   email?: string;
+  tracking?: {
+    utm_content?: string;
+    utm_term?: string;
+    utm_campaign?: string;
+    utm_source?: string;
+    utm_medium?: string;
+    salesforce_uuid?: string;
+  };
   answers?: Array<{
     position?: number;
     value?: string;
@@ -1766,6 +4385,10 @@ interface CalendlyInvitee {
 }
 
 function calendlyInviteeInterviewId(invitee: CalendlyInvitee): string | null {
+  const trackingInterviewId = invitee.tracking?.utm_content?.trim()
+    || invitee.tracking?.utm_term?.trim();
+  if (trackingInterviewId) return trackingInterviewId;
+
   const answer = invitee.answers?.find((item) => item.position === 1 && item.value?.trim());
   if (answer?.value) return answer.value.trim();
 
@@ -2186,6 +4809,30 @@ schedulingAuth.get('/event-types', async (c) => {
 schedulingAuth.get('/interviews', async (c) => {
   const userId = c.var.userId;
   const db = c.env.DB;
+  const hasWorkspaceSessions = await tableExists(db, 'dev_container_sessions');
+  const workspaceSessionSelect = hasWorkspaceSessions
+    ? `dcs.status AS workspace_status,
+              dcs.error_message AS workspace_error_message,
+              dcs.expires_at AS workspace_expires_at,
+              dcs.updated_at AS workspace_updated_at,
+              dcs.repo_git_url AS workspace_repo_git_url,
+              dcs.base_commit_sha AS workspace_base_commit_sha`
+    : `NULL AS workspace_status,
+              NULL AS workspace_error_message,
+              NULL AS workspace_expires_at,
+              NULL AS workspace_updated_at,
+              NULL AS workspace_repo_git_url,
+              NULL AS workspace_base_commit_sha`;
+  const workspaceSessionJoin = hasWorkspaceSessions
+    ? `LEFT JOIN dev_container_sessions dcs ON dcs.id = (
+         SELECT latest_dcs.id
+           FROM dev_container_sessions latest_dcs
+          WHERE latest_dcs.meeting_id = m.id
+             OR latest_dcs.meeting_room_id = mr.id
+          ORDER BY latest_dcs.updated_at DESC, latest_dcs.created_at DESC
+          LIMIT 1
+       )`
+    : '';
 
   const result = await db
     .prepare(
@@ -2194,7 +4841,8 @@ schedulingAuth.get('/interviews', async (c) => {
               si.scheduled_at, si.meeting_url, si.scheduling_provider,
               si.scheduling_url, si.external_event_id, si.recruiter_notes,
               si.sync_source, si.last_synced_at, si.invite_link_sent_at,
-              si.email_sent_at, si.recipient_name, si.recipient_email,
+              si.email_sent_at, si.booking_confirmation_sent_at,
+              si.recipient_name, si.recipient_email,
               si.matched_repo_id, si.github_repo_url, si.github_pr_number,
               si.completed_at, si.created_at, si.updated_at,
               c.name AS candidate_name, c.email AS candidate_email,
@@ -2204,6 +4852,7 @@ schedulingAuth.get('/interviews', async (c) => {
               m.scheduling_provider AS meeting_scheduling_provider,
               m.external_event_id AS meeting_external_event_id,
               mr.status AS room_status,
+              ${workspaceSessionSelect},
               EXISTS (
                 SELECT 1
                   FROM meeting_participants guest_mp
@@ -2226,6 +4875,7 @@ schedulingAuth.get('/interviews', async (c) => {
           LIMIT 1
        )
        LEFT JOIN meeting_rooms mr ON mr.meeting_id = m.id
+       ${workspaceSessionJoin}
        WHERE si.owner_id = ?
        ORDER BY si.scheduled_at ASC`
     )
@@ -2248,6 +4898,7 @@ schedulingAuth.get('/interviews', async (c) => {
       last_synced_at: string | null;
       invite_link_sent_at: string | null;
       email_sent_at: string | null;
+      booking_confirmation_sent_at: string | null;
       recipient_name: string | null;
       recipient_email: string | null;
       matched_repo_id: number | null;
@@ -2264,10 +4915,23 @@ schedulingAuth.get('/interviews', async (c) => {
       meeting_scheduling_provider: string | null;
       meeting_external_event_id: string | null;
       room_status: string | null;
+      workspace_status: string | null;
+      workspace_error_message: string | null;
+      workspace_expires_at: string | null;
+      workspace_updated_at: string | null;
+      workspace_repo_git_url: string | null;
+      workspace_base_commit_sha: string | null;
       guest_waiting: number | null;
     }>();
 
-  const interviews = (result.results ?? []).map((r) => {
+  const rows = result.results ?? [];
+  const assessmentProgressByInterviewId = await loadScheduledAssessmentProgressByInterviewIds(
+    db,
+    rows.map((row) => row.id),
+  );
+
+  const interviews = rows.map((r) => {
+    const assessmentProgress = assessmentProgressByInterviewId.get(r.id) ?? null;
     return {
       id: r.id,
       candidateId: r.candidate_id,
@@ -2286,11 +4950,21 @@ schedulingAuth.get('/interviews', async (c) => {
       lastSyncedAt: r.last_synced_at,
       inviteLinkSentAt: r.invite_link_sent_at,
       emailSentAt: r.email_sent_at,
+      bookingConfirmationSentAt: r.booking_confirmation_sent_at,
       recipientName: r.recipient_name,
       recipientEmail: r.recipient_email,
       matchedRepoId: r.matched_repo_id,
       githubRepoUrl: r.github_repo_url,
       githubPrNumber: r.github_pr_number,
+      assessmentSetup: buildScheduledAssessmentSetup({
+        interviewType: r.interview_type,
+        candidateId: r.candidate_id,
+        matchedRepoId: r.matched_repo_id,
+        githubRepoUrl: r.github_repo_url,
+        githubPrNumber: r.github_pr_number,
+        manualOpenSourceChallengePacket: assessmentProgress?.hasChallengePacket === true,
+      }),
+      assessmentProgress,
       completedAt: r.completed_at,
       createdAt: r.created_at,
       updatedAt: r.updated_at,
@@ -2303,6 +4977,7 @@ schedulingAuth.get('/interviews', async (c) => {
       meetingExternalEventId: r.meeting_external_event_id,
       roomStatus: r.room_status,
       guestWaiting: Boolean(r.guest_waiting),
+      workspaceSession: buildWorkspaceSessionProjection(r),
     };
   });
 
@@ -2322,7 +4997,8 @@ schedulingAuth.get('/interviews/:id', async (c) => {
               si.scheduled_at, si.meeting_url, si.scheduling_provider,
               si.scheduling_url, si.external_event_id, si.recruiter_notes,
               si.sync_source, si.last_synced_at, si.invite_link_sent_at,
-              si.email_sent_at, si.recipient_name, si.recipient_email,
+              si.email_sent_at, si.booking_confirmation_sent_at,
+              si.recipient_name, si.recipient_email,
               si.matched_repo_id, si.github_repo_url, si.github_pr_number,
               si.submission_json, si.completed_at, si.created_at, si.updated_at,
               (
@@ -2362,6 +5038,7 @@ schedulingAuth.get('/interviews/:id', async (c) => {
       last_synced_at: string | null;
       invite_link_sent_at: string | null;
       email_sent_at: string | null;
+      booking_confirmation_sent_at: string | null;
       recipient_name: string | null;
       recipient_email: string | null;
       matched_repo_id: number | null;
@@ -2400,6 +5077,31 @@ schedulingAuth.get('/interviews/:id', async (c) => {
       updated_at: string;
     }>();
 
+  const hasWorkspaceSessions = await tableExists(db, 'dev_container_sessions');
+  const workspaceSessionSelect = hasWorkspaceSessions
+    ? `dcs.status AS workspace_status,
+              dcs.error_message AS workspace_error_message,
+              dcs.expires_at AS workspace_expires_at,
+              dcs.updated_at AS workspace_updated_at,
+              dcs.repo_git_url AS workspace_repo_git_url,
+              dcs.base_commit_sha AS workspace_base_commit_sha`
+    : `NULL AS workspace_status,
+              NULL AS workspace_error_message,
+              NULL AS workspace_expires_at,
+              NULL AS workspace_updated_at,
+              NULL AS workspace_repo_git_url,
+              NULL AS workspace_base_commit_sha`;
+  const workspaceSessionJoin = hasWorkspaceSessions
+    ? `LEFT JOIN dev_container_sessions dcs ON dcs.id = (
+         SELECT latest_dcs.id
+           FROM dev_container_sessions latest_dcs
+          WHERE latest_dcs.meeting_id = m.id
+             OR latest_dcs.meeting_room_id = mr.id
+          ORDER BY latest_dcs.updated_at DESC, latest_dcs.created_at DESC
+          LIMIT 1
+       )`
+    : '';
+
   const linkedMeeting = await db
     .prepare(
       `SELECT m.id, m.title, m.description, m.status, m.scheduled_at,
@@ -2408,9 +5110,11 @@ schedulingAuth.get('/interviews/:id', async (c) => {
               m.transcript_status, m.transcript_summary,
               m.transcript_json, m.transcript_analysis_json, m.transcript_error,
               m.recording_r2_key, m.created_at, m.updated_at,
-              mr.id AS room_id, mr.session_id, mr.status AS room_status
+              mr.id AS room_id, mr.session_id, mr.status AS room_status,
+              ${workspaceSessionSelect}
        FROM meetings m
        LEFT JOIN meeting_rooms mr ON mr.meeting_id = m.id
+       ${workspaceSessionJoin}
        WHERE m.scheduled_interview_id = ? AND m.owner_id = ?
        ORDER BY m.created_at DESC
        LIMIT 1`
@@ -2440,10 +5144,29 @@ schedulingAuth.get('/interviews/:id', async (c) => {
       room_id: string | null;
       session_id: string | null;
       room_status: string | null;
+      workspace_status: string | null;
+      workspace_error_message: string | null;
+      workspace_expires_at: string | null;
+      workspace_updated_at: string | null;
+      workspace_repo_git_url: string | null;
+      workspace_base_commit_sha: string | null;
     }>();
 
   const livingContext = await loadScheduledInterviewLivingContext(db, userId, interview);
+  const relatedEvidenceInterviews = await loadRelatedEvidenceInterviews(
+    db,
+    userId,
+    interview.id,
+    livingContext,
+  );
   const codeReviewMatch = await loadScheduledCodeReviewMatchDetail(db, interview);
+  const codeReviewScore = await loadScheduledCodeReviewScoreSummary(db, interview);
+  const assessmentProgress = await loadScheduledAssessmentProgress(db, interview.id);
+  const assessmentInviteLink = await loadLatestDeliveredAssessmentUrl(db, interview.id, interview.candidate_id)
+    ?? await loadCandidateAssessmentInviteLinkFromToken(db, c.env, {
+      interviewType: interview.interview_type,
+      candidateId: interview.candidate_id,
+    });
 
   return c.json({
     interview: {
@@ -2465,6 +5188,7 @@ schedulingAuth.get('/interviews/:id', async (c) => {
       lastSyncedAt: interview.last_synced_at,
       inviteLinkSentAt: interview.invite_link_sent_at,
       emailSentAt: interview.email_sent_at,
+      bookingConfirmationSentAt: interview.booking_confirmation_sent_at,
       recipientName: interview.recipient_name,
       recipientEmail: interview.recipient_email,
       candidateName: interview.candidate_name,
@@ -2474,6 +5198,17 @@ schedulingAuth.get('/interviews/:id', async (c) => {
       matchedRepoId: interview.matched_repo_id,
       githubRepoUrl: interview.github_repo_url,
       githubPrNumber: interview.github_pr_number,
+      assessmentSetup: buildScheduledAssessmentSetup({
+        interviewType: interview.interview_type,
+        candidateId: interview.candidate_id,
+        matchedRepoId: interview.matched_repo_id,
+        githubRepoUrl: interview.github_repo_url,
+        githubPrNumber: interview.github_pr_number,
+        manualOpenSourceChallengePacket: assessmentProgress?.hasChallengePacket === true,
+        lastDeliveredUrl: assessmentInviteLink?.url ?? null,
+        lastDeliveredUrlState: assessmentInviteLink?.state ?? null,
+        lastDeliveredUrlMessage: assessmentInviteLink?.message ?? null,
+      }),
       submissionJson: interview.submission_json,
       completedAt: interview.completed_at,
       transcriptArtifact: transcriptArtifact ? {
@@ -2514,12 +5249,208 @@ schedulingAuth.get('/interviews/:id', async (c) => {
         createdAt: linkedMeeting.created_at,
         updatedAt: linkedMeeting.updated_at,
       } : null,
-      livingContext,
+      workspaceSession: linkedMeeting ? buildWorkspaceSessionProjection(linkedMeeting) : null,
+      livingContext: redactScheduledInterviewLivingContext(livingContext),
+      relatedEvidenceInterviews,
       codeReviewMatch,
+      codeReviewScore,
+      assessmentProgress,
       createdAt: interview.created_at,
       updatedAt: interview.updated_at,
     },
   });
+});
+
+// POST /interviews/:id/assessment/start-evaluation — recruiter requests source-backed assessment
+schedulingAuth.post('/interviews/:id/assessment/start-evaluation', async (c) => {
+  const userId = c.var.userId;
+  const { id } = c.req.param();
+  const db = c.env.DB;
+
+  const interview = await db.prepare(
+    `SELECT id
+       FROM scheduled_interviews
+      WHERE id = ?1
+        AND owner_id = ?2
+      LIMIT 1`,
+  ).bind(id, userId).first<{ id: string }>();
+  if (!interview) return apiError(c, 'NOT_FOUND', 'Interview not found.');
+
+  const sessionId = await loadScheduledAssessmentSessionId(db, id);
+  if (!sessionId) {
+    return apiError(
+      c,
+      'CONFLICT',
+      'This interview is not linked to an assessment session yet.',
+    );
+  }
+
+  const store = new RepoTaskInterviewSessionStore(db);
+  try {
+    const currentProgress = await store.loadProgress(sessionId);
+    if (currentProgress.nextAction !== 'START_EVALUATION') {
+      return apiError(
+        c,
+        'CONFLICT',
+        `Assessment is not ready for evaluation; next action is ${currentProgress.nextAction}.`,
+      );
+    }
+
+    const requestedAt = new Date().toISOString();
+    const exactText = [
+      `Recruiter ${userId} requested source-backed evaluation for scheduled interview ${id}.`,
+      `Assessment session: ${sessionId}.`,
+      'Result: PIPE will evaluate only source-backed challenge, commit, diff, test, transcript, chat, terminal, and AI evidence.',
+    ].join('\n');
+    const contentHash = await deterministicEntityId('content', exactText);
+    const requestSourceRef: AssessmentEvidenceSourceRefInput = {
+      sourceRefType: 'assessment_evaluation_request',
+      sourceRefId: `scheduled-interview:${id}:evaluation-request:${contentHash}`,
+      evidenceRole: 'evaluation_request',
+      locator: {
+        scheduledInterviewId: id,
+        assessmentSessionId: sessionId,
+        requestedBy: userId,
+        requestedAt,
+        route: '/api/v1/scheduling/interviews/:id/assessment/start-evaluation',
+      },
+      exactText,
+      contentHash,
+    };
+
+    const requestEvent = await store.recordEvent({
+      sessionId,
+      ingestionKey: `assessment-event:${sessionId}:evaluation-request:${contentHash}`,
+      kind: 'recruiter_note',
+      actorType: 'recruiter',
+      actorId: userId,
+      narrative: 'Recruiter requested source-backed assessment evaluation.',
+      payload: {
+        scheduledInterviewId: id,
+        action: 'start_evaluation',
+        evaluatorStatus: 'source_backed_evaluator_requested',
+      },
+      occurredAt: requestedAt,
+      sourceRefs: [requestSourceRef],
+    });
+
+    await store.transitionState({
+      sessionId,
+      toState: 'EVALUATING',
+      reason: 'Recruiter requested source-backed assessment evaluation.',
+      eventId: requestEvent.id,
+      createdBy: userId,
+    });
+
+    const evaluation = await evaluateRepoTaskAssessmentSession({
+      db,
+      store,
+      env: c.env,
+      sessionId,
+      scheduledInterviewId: id,
+      requestedBy: userId,
+      requestedAt,
+      requestEventId: requestEvent.id,
+      requestSourceRef,
+    });
+
+    const progress = await store.loadProgress(sessionId);
+    return c.json({
+      progress,
+      report: evaluation.kind === 'evaluated' ? evaluation.report : null,
+      diagnostic: evaluation.kind === 'diagnostic' ? evaluation.diagnostic : null,
+    });
+  } catch (error) {
+    console.error('[scheduling/startAssessmentEvaluation] failed:', {
+      interviewId: id,
+      assessmentSessionId: sessionId,
+      error: error instanceof Error ? error.message : String(error),
+    });
+    return apiError(c, 'SERVER_ERROR', 'Unable to start assessment evaluation.');
+  }
+});
+
+// POST /interviews/:id/assessment/human-decision — recruiter records source-backed final decision
+schedulingAuth.post('/interviews/:id/assessment/human-decision', async (c) => {
+  const userId = c.var.userId;
+  const { id } = c.req.param();
+  const db = c.env.DB;
+  const body = recordHumanAssessmentDecisionSchema.safeParse(await c.req.json().catch(() => null));
+  if (!body.success) {
+    return apiError(c, 'BAD_REQUEST', body.error.issues[0]?.message ?? 'Invalid human assessment decision body.');
+  }
+
+  const interview = await db.prepare(
+    `SELECT id
+       FROM scheduled_interviews
+      WHERE id = ?1
+        AND owner_id = ?2
+      LIMIT 1`,
+  ).bind(id, userId).first<{ id: string }>();
+  if (!interview) return apiError(c, 'NOT_FOUND', 'Interview not found.');
+
+  const sessionId = await loadScheduledAssessmentSessionId(db, id);
+  if (!sessionId) {
+    return apiError(c, 'CONFLICT', 'This interview is not linked to an assessment session yet.');
+  }
+
+  const latestReport = await loadLatestAssessmentEvaluationReport(db, sessionId);
+  if (!latestReport) {
+    return apiError(c, 'CONFLICT', 'Run source-backed assessment evaluation before recording a human decision.');
+  }
+
+  const store = new RepoTaskInterviewSessionStore(db);
+  try {
+    const occurredAt = new Date().toISOString();
+    const reportSummaryHash = await sha256Hex(latestReport.summary);
+    const notes = body.data.notes?.trim() || null;
+    const decisionKeyHash = await sha256Hex([
+      sessionId,
+      latestReport.id,
+      userId,
+      body.data.decision,
+      body.data.summary,
+      notes ?? '',
+    ].join('\n'));
+    const reportSourceRef: AssessmentEvidenceSourceRefInput = {
+      sourceRefType: 'assessment_evaluation_report',
+      sourceRefId: latestReport.id,
+      evidenceRole: 'human_decision_basis',
+      locator: {
+        scheduledInterviewId: id,
+        assessmentSessionId: sessionId,
+        reportId: latestReport.id,
+        reportStatus: latestReport.status,
+        route: '/api/v1/scheduling/interviews/:id/assessment/human-decision',
+      },
+      exactText: latestReport.summary,
+      contentHash: reportSummaryHash,
+      metadata: {
+        reportStatus: latestReport.status,
+      },
+    };
+
+    const decision = await store.recordHumanDecision({
+      sessionId,
+      ingestionKey: `assessment-event:${sessionId}:human-decision:${decisionKeyHash}`,
+      decision: body.data.decision,
+      reviewerId: userId,
+      summary: body.data.summary,
+      notes,
+      occurredAt,
+      sourceRefs: [reportSourceRef],
+    });
+    const progress = await store.loadProgress(sessionId);
+
+    return c.json({ decision, progress }, 201);
+  } catch (error) {
+    console.error('[scheduling/recordHumanAssessmentDecision] failed:', {
+      interviewId: id,
+      assessmentSessionId: sessionId,
+      error: error instanceof Error ? error.message : String(error),
+    });
+    return apiError(c, 'SERVER_ERROR', 'Unable to record human assessment decision.');
+  }
 });
 
 // POST /interviews/sync — retained for older clients; Calendly bookings arrive via webhooks.
@@ -2580,6 +5511,12 @@ schedulingAuth.post('/interviews', async (c) => {
     matchedRepoId,
     githubRepoUrl,
     githubPrNumber,
+    challengeBaseCommitSha,
+    challengeTitle,
+    challengeInstructions,
+    challengeSuccessCriteria,
+    challengeExpectedEvidence,
+    recruiterNotes,
   } = parsed.data;
 
   let candidate: { id: string; pipeline_id: string | null } | null = null;
@@ -2622,9 +5559,69 @@ schedulingAuth.post('/interviews', async (c) => {
   const now = new Date().toISOString();
   const effectiveMeetingType = meetingType ?? (candidateId ? 'SCREENING_INTERVIEW' : 'DIRECT_VIDEO_CALL');
   const effectiveInterviewType = interviewType ?? 'VIDEO';
+  const sanitizedSchedulingUrl = sanitizeProviderSchedulingUrl(
+    schedulingUrl ?? null,
+    schedulingProvider ?? null,
+  );
+  const hasManualOpenSourceTaskPacket = hasManualOpenSourceChallengePacket({
+    interviewType: effectiveInterviewType,
+    githubRepoUrl,
+    githubPrNumber,
+    challengeBaseCommitSha,
+    challengeTitle,
+    challengeInstructions,
+    challengeSuccessCriteria,
+    challengeExpectedEvidence,
+  });
+  if (hasManualOpenSourceTaskPacket) {
+    const commitVerification = await verifyGitHubCommitReachable({
+      repositoryUrl: githubRepoUrl!,
+      commitSha: challengeBaseCommitSha!,
+      githubToken: c.env.GITHUB_TOKEN,
+    });
+    if (!commitVerification.ok) {
+      if (commitVerification.reason === 'not_found') {
+        return apiError(
+          c,
+          'VALIDATION_ERROR',
+          'challengeBaseCommitSha must exist in githubRepoUrl and be reachable by PIPE.',
+        );
+      }
+      return apiError(
+        c,
+        'SERVICE_UNAVAILABLE',
+        'Could not verify challengeBaseCommitSha against GitHub. Try again or choose a reachable commit.',
+      );
+    }
+  }
+  let matchedOpenSourceChallengePacket: MatchedOpenSourceChallengePacket | null = null;
+  let effectiveGithubRepoUrl = githubRepoUrl ?? null;
+  let effectiveGithubPrNumber = githubPrNumber ?? null;
+  if (
+    effectiveInterviewType === 'OPEN_SOURCE_BUG_FIX'
+    && matchedRepoId
+    && !hasManualOpenSourceTaskPacket
+    && !effectiveGithubRepoUrl
+    && !effectiveGithubPrNumber
+  ) {
+    matchedOpenSourceChallengePacket = await loadMatchedOpenSourceChallengePacket(db, matchedRepoId);
+    if (matchedOpenSourceChallengePacket) {
+      effectiveGithubRepoUrl = matchedOpenSourceChallengePacket.repositoryUrl;
+      effectiveGithubPrNumber = matchedOpenSourceChallengePacket.githubPrNumber;
+    }
+  }
+  const assessmentSetup = buildScheduledAssessmentSetup({
+    interviewType: effectiveInterviewType,
+    candidateId: candidateId ?? null,
+    matchedRepoId: matchedRepoId ?? null,
+    githubRepoUrl: effectiveGithubRepoUrl,
+    githubPrNumber: effectiveGithubPrNumber,
+    manualOpenSourceChallengePacket: hasManualOpenSourceTaskPacket,
+  });
   const contactId = !candidateId && recipientName && recipientEmail
     ? await ensureRecipientContact(db, userId, { name: recipientName, email: recipientEmail })
     : null;
+  let assessmentProgress: AssessmentProgressSnapshot | null = null;
 
   await db
     .prepare(
@@ -2633,15 +5630,16 @@ schedulingAuth.post('/interviews', async (c) => {
         interview_type, meeting_type, scheduled_at, scheduling_provider,
         scheduling_url, recipient_name, recipient_email, sync_source,
         matched_repo_id, github_repo_url, github_pr_number,
-        created_at, updated_at)
-       VALUES (?, ?, ?, ?, ?, 'INVITED', ?, ?, ?, ?, ?, ?, ?, 'MANUAL', ?, ?, ?, ?, ?)`
+        recruiter_notes, created_at, updated_at)
+       VALUES (?, ?, ?, ?, ?, 'INVITED', ?, ?, ?, ?, ?, ?, ?, 'MANUAL', ?, ?, ?, ?, ?, ?)`
     )
     .bind(
       id, candidateId ?? null, pipelineId ?? null, stageId ?? null, userId,
       effectiveInterviewType, effectiveMeetingType, scheduledAt ?? null,
-      schedulingProvider ?? null, schedulingUrl ?? null,
+      schedulingProvider ?? null, sanitizedSchedulingUrl,
       recipientName ?? null, recipientEmail?.trim().toLowerCase() ?? null,
-      matchedRepoId ?? null, githubRepoUrl ?? null, githubPrNumber ?? null,
+      matchedRepoId ?? null, effectiveGithubRepoUrl, effectiveGithubPrNumber,
+      recruiterNotes ?? null,
       now, now,
     )
     .run();
@@ -2655,9 +5653,36 @@ schedulingAuth.post('/interviews', async (c) => {
       recipientEmail: recipientEmail.trim().toLowerCase(),
       meetingType: effectiveMeetingType,
       interviewType: effectiveInterviewType,
+      assessmentSetup,
       scheduledAt: scheduledAt ?? null,
       schedulingProvider: schedulingProvider ?? null,
-      schedulingUrl: schedulingUrl ?? null,
+      schedulingUrl: sanitizedSchedulingUrl,
+      recruiterNotes: recruiterNotes ?? null,
+      createdAt: now,
+    });
+  }
+
+  if (hasManualOpenSourceTaskPacket) {
+    assessmentProgress = await createManualOpenSourceChallengeAssessmentSession(db, {
+      interviewId: id,
+      userId,
+      candidateId: candidateId ?? null,
+      repositoryUrl: githubRepoUrl!,
+      githubPrNumber: githubPrNumber ?? null,
+      baseCommitSha: challengeBaseCommitSha!,
+      title: challengeTitle!,
+      instructions: challengeInstructions!,
+      successCriteria: challengeSuccessCriteria!,
+      expectedEvidence: challengeExpectedEvidence!,
+      createdAt: now,
+    });
+  } else if (matchedOpenSourceChallengePacket && typeof matchedRepoId === 'number') {
+    assessmentProgress = await createMatchedOpenSourceChallengeAssessmentSession(db, {
+      interviewId: id,
+      userId,
+      candidateId: candidateId ?? null,
+      matchedRepoId,
+      packet: matchedOpenSourceChallengePacket,
       createdAt: now,
     });
   }
@@ -2676,12 +5701,328 @@ schedulingAuth.post('/interviews', async (c) => {
       interviewType: effectiveInterviewType,
       scheduledAt: scheduledAt ?? null,
       schedulingProvider: schedulingProvider ?? null,
-      schedulingUrl: schedulingUrl ?? null,
+      schedulingUrl: sanitizedSchedulingUrl,
       matchedRepoId: matchedRepoId ?? null,
-      githubRepoUrl: githubRepoUrl ?? null,
-      githubPrNumber: githubPrNumber ?? null,
+      githubRepoUrl: effectiveGithubRepoUrl,
+      githubPrNumber: effectiveGithubPrNumber,
+      recruiterNotes: recruiterNotes ?? null,
+      assessmentSetup,
+      assessmentProgress,
     },
   }, 201);
+});
+
+// POST /interviews/:id/context-call — create a follow-up call for blocked CODE_REVIEW matching
+schedulingAuth.post('/interviews/:id/context-call', async (c) => {
+  const userId = c.var.userId;
+  const { id } = c.req.param();
+  const db = c.env.DB;
+
+  const source = await db
+    .prepare(
+      `SELECT si.id, si.candidate_id, si.pipeline_id, si.interview_type,
+              si.matched_repo_id, si.github_repo_url, si.github_pr_number,
+              si.recipient_name, si.recipient_email,
+              c.name AS candidate_name, c.email AS candidate_email
+         FROM scheduled_interviews si
+         LEFT JOIN candidates c ON c.id = si.candidate_id
+        WHERE si.id = ?1 AND si.owner_id = ?2`,
+    )
+    .bind(id, userId)
+    .first<{
+      id: string;
+      candidate_id: string | null;
+      pipeline_id: string | null;
+      interview_type: string | null;
+      matched_repo_id: number | null;
+      github_repo_url: string | null;
+      github_pr_number: number | null;
+      recipient_name: string | null;
+      recipient_email: string | null;
+      candidate_name: string | null;
+      candidate_email: string | null;
+    }>();
+
+  if (!source) return apiError(c, 'NOT_FOUND', 'Interview not found.');
+  if (source.interview_type !== 'CODE_REVIEW') {
+    return apiError(c, 'VALIDATION_ERROR', 'Context calls can only be created from code-review interviews.');
+  }
+
+  const match = await loadScheduledCodeReviewMatchDetail(db, {
+    id: source.id,
+    candidate_id: source.candidate_id,
+    interview_type: source.interview_type,
+    matched_repo_id: source.matched_repo_id,
+    github_repo_url: source.github_repo_url,
+    github_pr_number: source.github_pr_number,
+  });
+  if (match?.status === 'MATCHED') {
+    return apiError(c, 'VALIDATION_ERROR', 'This code review already has a matched PR challenge.');
+  }
+
+  const personName = source.candidate_name ?? source.recipient_name ?? source.candidate_email ?? source.recipient_email;
+  const personEmail = source.candidate_email ?? source.recipient_email;
+  if (!personName || !personEmail) {
+    return apiError(c, 'VALIDATION_ERROR', 'A name and email are required before creating a context call.');
+  }
+
+  const existingFollowUp = await loadCodeReviewEvidenceFollowUp(db, source.id, source.candidate_id);
+  if (existingFollowUp?.contextCallInterviewId) {
+    const existingContextCall = await db.prepare(
+      `SELECT id, candidate_id, recruiter_notes
+         FROM scheduled_interviews
+        WHERE id = ?1 AND owner_id = ?2
+        LIMIT 1`,
+    ).bind(existingFollowUp.contextCallInterviewId, userId).first<{
+      id: string;
+      candidate_id: string | null;
+      recruiter_notes: string | null;
+    }>();
+
+    if (existingContextCall) {
+      return c.json({
+        contextCall: {
+          id: existingContextCall.id,
+          originalInterviewId: source.id,
+          candidateId: existingContextCall.candidate_id ?? source.candidate_id,
+          contactId: null,
+          evidenceAssessmentSessionId: existingFollowUp.assessmentSessionId,
+          questions: existingFollowUp.questions.length > 0
+            ? existingFollowUp.questions
+            : [...CONTEXT_CALL_QUESTIONS],
+          recruiterNotes: existingContextCall.recruiter_notes ?? '',
+          reused: true,
+        },
+      }, 200);
+    }
+  }
+
+  const contextCallId = crypto.randomUUID();
+  const now = new Date().toISOString();
+  const gaps = match?.gaps.filter((gap) => gap.trim().length > 0) ?? [];
+  const matchStatus = match?.status ?? 'NO_MATCH_DATA';
+  const matchSummary = match?.summary ?? 'No source-backed match record was available when the context call was requested.';
+  const evidencePlan = buildCodeReviewEvidencePlan({
+    matchStatus,
+    matchRunId: match?.matchRunId ?? null,
+    gaps,
+  });
+  const questions = codeReviewContextCallQuestionsForPlan(evidencePlan);
+  const recruiterNotes = [
+    'PIPE context call for blocked code-review matching.',
+    `Original CODE_REVIEW interview: ${source.id}`,
+    `Match status: ${matchStatus}`,
+    `Match summary: ${matchSummary}`,
+    ...(gaps.length > 0
+      ? gaps.map((gap, index) => `Evidence gap ${index + 1}: ${gap}`)
+      : ['Evidence gap: none recorded']),
+    'Suggested questions:',
+    ...questions.map((question, index) => `${index + 1}. ${question}`),
+  ].join('\n');
+
+  const contactId = source.candidate_id
+    ? null
+    : await ensureRecipientContact(db, userId, {
+        name: personName,
+        email: personEmail,
+      });
+
+  await db
+    .prepare(
+      `INSERT INTO scheduled_interviews
+       (id, candidate_id, pipeline_id, stage_id, owner_id, status,
+        interview_type, meeting_type, scheduled_at, scheduling_provider,
+        scheduling_url, recipient_name, recipient_email, recruiter_notes,
+        sync_source, matched_repo_id, github_repo_url, github_pr_number,
+        created_at, updated_at)
+       VALUES (?1, ?2, ?3, NULL, ?4, 'INVITED',
+        'VIDEO', 'SCREENING_INTERVIEW', NULL, 'MANUAL',
+        NULL, ?5, ?6, ?7,
+        'MANUAL', NULL, NULL, NULL,
+        ?8, ?8)`,
+    )
+    .bind(
+      contextCallId,
+      source.candidate_id,
+      source.pipeline_id,
+      userId,
+      source.candidate_id ? null : personName,
+      source.candidate_id ? null : personEmail.trim().toLowerCase(),
+      recruiterNotes,
+      now,
+    )
+    .run();
+
+  const evidenceAssessmentSessionId = await persistCodeReviewContextCallRecommendation(db, {
+    ownerId: userId,
+    candidateId: source.candidate_id,
+    contactId,
+    originalInterviewId: source.id,
+    contextCallInterviewId: contextCallId,
+    personName,
+    personEmail: personEmail.trim().toLowerCase(),
+    matchRunId: match?.matchRunId ?? null,
+    matchStatus,
+    matchSummary,
+    gaps,
+    questions,
+    createdAt: now,
+  });
+
+  return c.json({
+    contextCall: {
+      id: contextCallId,
+      originalInterviewId: source.id,
+      candidateId: source.candidate_id,
+      contactId,
+      evidenceAssessmentSessionId,
+      questions,
+      recruiterNotes,
+    },
+  }, 201);
+});
+
+// POST /interviews/:id/code-review-match/refresh — rerun deterministic PR matching after evidence call completion
+schedulingAuth.post('/interviews/:id/code-review-match/refresh', async (c) => {
+  const userId = c.var.userId;
+  const { id } = c.req.param();
+  const db = c.env.DB;
+
+  const source = await db.prepare(
+    `SELECT si.id, si.candidate_id, si.pipeline_id, si.interview_type,
+            si.matched_repo_id, si.github_repo_url, si.github_pr_number
+       FROM scheduled_interviews si
+      WHERE si.id = ?1 AND si.owner_id = ?2`,
+  ).bind(id, userId).first<{
+    id: string;
+    candidate_id: string | null;
+    pipeline_id: string | null;
+    interview_type: string | null;
+    matched_repo_id: number | null;
+    github_repo_url: string | null;
+    github_pr_number: number | null;
+  }>();
+
+  if (!source) return apiError(c, 'NOT_FOUND', 'Interview not found.');
+  if (source.interview_type !== 'CODE_REVIEW') {
+    return apiError(c, 'VALIDATION_ERROR', 'Only code-review interviews can refresh repo matching.');
+  }
+  if (!source.candidate_id) {
+    return apiError(c, 'VALIDATION_ERROR', 'A candidate-backed interview is required before refreshing repo matching.');
+  }
+
+  let evidenceRefresh = await loadCodeReviewEvidenceRefresh(db, source.id, source.candidate_id);
+  if (!evidenceRefresh) {
+    return apiError(c, 'CONFLICT', 'A completed evidence-plan follow-up is required before refreshing repo matching.');
+  }
+  if (evidenceRefresh.matcherContextCount <= 0) {
+    const repairedContextCount = await repairCodeReviewEvidenceRefreshMatcherContexts(db, {
+      evidenceRefresh,
+      originalInterviewId: source.id,
+      candidateId: source.candidate_id,
+    });
+    if (repairedContextCount > 0) {
+      evidenceRefresh = {
+        ...evidenceRefresh,
+        matcherContextCount: repairedContextCount,
+      };
+    }
+  }
+  if (evidenceRefresh.matcherContextCount <= 0) {
+    return apiError(
+      c,
+      'CONFLICT',
+      'Completed evidence-plan follow-up evidence must be projected into matcher context before refreshing repo matching.',
+    );
+  }
+  const latestMatchRun = await loadLatestCandidateMatchRun(db, source.candidate_id);
+  if (evidenceRefreshAlreadyTried(evidenceRefresh, latestMatchRun)) {
+    return apiError(
+      c,
+      'CONFLICT',
+      'This evidence refresh has already been tried. Capture new source-backed evidence before rerunning repo matching.',
+    );
+  }
+
+  const matchOptions = await loadScheduledCodeReviewMatchOptions(db, source.pipeline_id);
+  const match = await d1Matcher.matchCandidateToReviewChallenge(db, source.candidate_id, matchOptions);
+  if (match.status !== 'MATCHED' || !match.repoId || !match.prNumber) {
+    await recordCodeReviewEvidenceRefreshConsumption(db, {
+      evidenceRefresh,
+      originalInterviewId: source.id,
+      candidateId: source.candidate_id,
+      refreshed: false,
+      consumedByMatchRunId: match.matchRunId,
+      consumedByMatchStatus: match.status,
+      consumedAt: new Date().toISOString(),
+    });
+    const codeReviewMatch = await loadScheduledCodeReviewMatchDetail(db, {
+      id: source.id,
+      candidate_id: source.candidate_id,
+      interview_type: source.interview_type,
+      matched_repo_id: source.matched_repo_id,
+      github_repo_url: source.github_repo_url,
+      github_pr_number: source.github_pr_number,
+    });
+
+    return c.json({
+      refreshed: false,
+      status: match.status,
+      matchRunId: match.matchRunId,
+      evidenceRefresh,
+      codeReviewMatch,
+    });
+  }
+
+  const repo = await db.prepare(
+    `SELECT github_url FROM qualified_repos WHERE id = ?1`,
+  ).bind(match.repoId).first<{ github_url: string | null }>();
+  if (!repo?.github_url) {
+    return apiError(c, 'CONFLICT', 'The refreshed match selected a repository that is not available.');
+  }
+
+  const now = new Date().toISOString();
+  await db.prepare(
+    `UPDATE scheduled_interviews
+        SET matched_repo_id = ?1,
+            github_repo_url = ?2,
+            github_pr_number = ?3,
+            updated_at = ?4
+      WHERE id = ?5 AND owner_id = ?6`,
+  ).bind(match.repoId, repo.github_url, match.prNumber, now, source.id, userId).run();
+
+  await recordCodeReviewEvidenceRefreshConsumption(db, {
+    evidenceRefresh,
+    originalInterviewId: source.id,
+    candidateId: source.candidate_id,
+    refreshed: true,
+    consumedByMatchRunId: match.matchRunId,
+    consumedByMatchStatus: match.status,
+    repoId: match.repoId,
+    repoUrl: repo.github_url,
+    prNumber: match.prNumber,
+    consumedAt: now,
+  });
+
+  const codeReviewMatch = await loadScheduledCodeReviewMatchDetail(db, {
+    id: source.id,
+    candidate_id: source.candidate_id,
+    interview_type: source.interview_type,
+    matched_repo_id: match.repoId,
+    github_repo_url: repo.github_url,
+    github_pr_number: match.prNumber,
+  });
+
+  return c.json({
+    refreshed: true,
+    status: match.status,
+    matchRunId: match.matchRunId,
+    repoId: match.repoId,
+    repoUrl: repo.github_url,
+    prNumber: match.prNumber,
+    evidenceRefresh,
+    codeReviewMatch,
+  });
 });
 
 // PATCH /interviews/:id — update interview
@@ -2822,9 +6163,22 @@ schedulingAuth.post('/interviews/:id/invite', async (c) => {
     email,
   );
   const meetingUrl = roomLinks.guestUrl;
+  const recipientNameForScheduling = interview.candidate_name
+    ?? interview.recipient_name
+    ?? null;
+  const recipientEmailForScheduling = normalizeEmail(
+    interview.candidate_email ?? interview.recipient_email ?? email,
+  );
   const schedulingInviteUrl = interview.scheduling_url
     && (interview.scheduling_provider === 'CALENDLY' || interview.scheduling_provider === 'CAL_COM')
-    ? withDevBasicAuth(interview.scheduling_url, c.env)
+    ? buildProviderSchedulingInviteUrl({
+        schedulingUrl: interview.scheduling_url,
+        provider: interview.scheduling_provider,
+        env: c.env,
+        interviewId: id,
+        recipientName: recipientNameForScheduling,
+        recipientEmail: recipientEmailForScheduling,
+      })
     : null;
 
   // For workspace-backed assessments, ensure a standalone
@@ -2852,17 +6206,25 @@ schedulingAuth.post('/interviews/:id/invite', async (c) => {
       .bind(interview.candidate_id)
       .first<{ invite_token: string }>();
     if (candidate?.invite_token) {
+      const inviteToken = await ensureUsableCandidateInviteToken(
+        db,
+        interview.candidate_id,
+        candidate.invite_token,
+      );
       const baseUrl = c.env.APP_BASE_URL ?? 'https://pipe.build';
-      assessUrl = withDevBasicAuth(`${baseUrl}/assess/${candidate.invite_token}`, c.env);
+      assessUrl = withDevBasicAuth(`${baseUrl}/assess/${inviteToken}`, c.env);
     }
   }
 
   // For assessment-type interviews, the candidate should land on the assess URL
   // (which renders the code review / dev container challenge), not the video room.
-  const deliveredUrl = schedulingInviteUrl ?? (assessUrl ?? meetingUrl);
-  const inviteVerb = schedulingInviteUrl ? 'schedule an interview' : needsAssessmentLink ? 'start your assessment' : 'join a video call';
-  const inviteCta = schedulingInviteUrl ? 'SCHEDULE INTERVIEW' : needsAssessmentLink ? 'START ASSESSMENT' : 'JOIN VIDEO CALL';
-  const linkLabel = schedulingInviteUrl ? 'Scheduling link' : 'Link';
+  // Assessment links also take precedence over any stale scheduling URL that may
+  // exist on the row from earlier flows.
+  const effectiveSchedulingInviteUrl = needsAssessmentLink ? null : schedulingInviteUrl;
+  const deliveredUrl = assessUrl ?? effectiveSchedulingInviteUrl ?? meetingUrl;
+  const inviteVerb = needsAssessmentLink ? 'start your assessment' : effectiveSchedulingInviteUrl ? 'schedule an interview' : 'join a video call';
+  const inviteCta = needsAssessmentLink ? 'START ASSESSMENT' : effectiveSchedulingInviteUrl ? 'SCHEDULE INTERVIEW' : 'JOIN VIDEO CALL';
+  const linkLabel = effectiveSchedulingInviteUrl ? 'Scheduling link' : 'Link';
 
   const scheduledTime = interview.scheduled_at
     ? new Date(interview.scheduled_at).toLocaleString('en-US', {
@@ -2882,7 +6244,7 @@ schedulingAuth.post('/interviews/:id/invite', async (c) => {
   );
   const pipelineTitle = escapeHtml(interview.pipeline_title ?? 'Interview');
   const stageTitle = escapeHtml(interview.stage_title ?? '');
-  const safeDeliveredUrl = encodeURI(deliveredUrl);
+  const safeDeliveredUrl = escapeHtml(deliveredUrl);
 
   // Build HTML email
   const customBlock = customMessage
@@ -2915,7 +6277,7 @@ schedulingAuth.post('/interviews/:id/invite', async (c) => {
 </div>`;
 
   const rawPipelineTitle = interview.pipeline_title ?? 'Interview';
-  const subjectPrefix = schedulingInviteUrl
+  const subjectPrefix = effectiveSchedulingInviteUrl
     ? 'Schedule interview'
     : needsAssessmentLink
       ? 'Assessment invitation'
@@ -2952,7 +6314,7 @@ schedulingAuth.post('/interviews/:id/invite', async (c) => {
       success: true,
       emailSent: false,
       meetingUrl,
-      schedulingUrl: schedulingInviteUrl,
+      schedulingUrl: effectiveSchedulingInviteUrl,
       deliveredUrl,
       room: {
         id: roomLinks.roomId,
@@ -3001,7 +6363,7 @@ schedulingAuth.post('/interviews/:id/invite', async (c) => {
       emailSent: false,
       emailError,
       meetingUrl,
-      schedulingUrl: schedulingInviteUrl,
+      schedulingUrl: effectiveSchedulingInviteUrl,
       deliveredUrl,
       room: {
         id: roomLinks.roomId,
@@ -3040,7 +6402,7 @@ schedulingAuth.post('/interviews/:id/invite', async (c) => {
       success: true,
       emailSent: false,
       meetingUrl,
-      schedulingUrl: schedulingInviteUrl,
+      schedulingUrl: effectiveSchedulingInviteUrl,
       deliveredUrl,
       room: {
         id: roomLinks.roomId,
@@ -3083,7 +6445,7 @@ schedulingAuth.post('/interviews/:id/invite', async (c) => {
     success: true,
     emailSent: true,
     meetingUrl,
-    schedulingUrl: schedulingInviteUrl,
+    schedulingUrl: effectiveSchedulingInviteUrl,
     deliveredUrl,
     provider: result.provider,
     room: {
@@ -3203,6 +6565,7 @@ schedulingPublic.post('/webhook', async (c) => {
           resource?: {
             name?: string;
             email?: string;
+            tracking?: CalendlyInvitee['tracking'];
             answers?: Array<{ position: number; value: string }>;
             questions_and_answers?: Array<{ position?: number; question?: string; answer?: string }>;
           };
@@ -3254,21 +6617,43 @@ schedulingPublic.post('/webhook', async (c) => {
   // Fallback: match by candidate email OR recipient_email
   if (!interview && normalized.candidateEmail) {
     const candidateEmail = normalizeEmail(normalized.candidateEmail);
-    interview = await db
-      .prepare(
-        `SELECT si.id, si.status
-         FROM scheduled_interviews si
-         LEFT JOIN candidates c ON c.id = si.candidate_id
-         WHERE si.owner_id = ?
-           AND (
-             lower(COALESCE(c.email, '')) = ?
-             OR lower(COALESCE(si.recipient_email, '')) = ?
-           )
-           AND si.status IN ('INVITED', 'SCHEDULED')
-         ORDER BY si.created_at DESC LIMIT 1`
-      )
-      .bind(connection.owner_id, candidateEmail, candidateEmail)
-      .first<{ id: string; status: string }>();
+    if (candidateEmail) {
+      const emailMatches = await db
+        .prepare(
+          `SELECT si.id, si.status, si.scheduled_at
+             FROM scheduled_interviews si
+             LEFT JOIN candidates c ON c.id = si.candidate_id
+            WHERE si.owner_id = ?
+              AND (
+                lower(COALESCE(c.email, '')) = ?
+                OR lower(COALESCE(si.recipient_email, '')) = ?
+              )
+              AND si.status IN ('INVITED', 'SCHEDULED')
+            ORDER BY si.created_at DESC`
+        )
+        .bind(connection.owner_id, candidateEmail, candidateEmail)
+        .all<{ id: string; status: string; scheduled_at: string | null }>();
+      const pendingMatches = emailMatches.results ?? [];
+      const scheduledAtMatches = normalized.scheduledAt
+        ? pendingMatches.filter((row) => row.scheduled_at === normalized.scheduledAt)
+        : [];
+      const selectedMatch = scheduledAtMatches.length === 1
+        ? scheduledAtMatches[0]
+        : pendingMatches.length === 1
+          ? pendingMatches[0]
+          : null;
+
+      if (selectedMatch) {
+        interview = { id: selectedMatch.id, status: selectedMatch.status };
+      } else if (pendingMatches.length > 1) {
+        console.warn('[scheduling/webhook] Ambiguous email fallback; importing provider event instead of mutating an arbitrary pending interview', {
+          candidateEmail,
+          externalEventId: normalized.externalEventId,
+          scheduledAt: normalized.scheduledAt,
+          pendingInterviewIds: pendingMatches.map((row) => row.id),
+        });
+      }
+    }
   }
 
   const now = new Date().toISOString();
@@ -3328,6 +6713,13 @@ schedulingPublic.post('/webhook', async (c) => {
       recipientEmail: candidateEmail,
       meetingType: 'DIRECT_VIDEO_CALL',
       interviewType: 'VIDEO',
+      assessmentSetup: buildScheduledAssessmentSetup({
+        interviewType: 'VIDEO',
+        candidateId: null,
+        matchedRepoId: null,
+        githubRepoUrl: null,
+        githubPrNumber: null,
+      }),
       scheduledAt: normalized.scheduledAt,
       schedulingProvider: providerId,
       schedulingUrl: null,
@@ -3809,6 +7201,7 @@ function normalizeWebhookPayload(
 
     const scheduledEvent = p['scheduled_event'] as Record<string, unknown> | undefined;
     const location = scheduledEvent?.['location'] as Record<string, unknown> | undefined;
+    const tracking = p['tracking'] as CalendlyInvitee['tracking'] | undefined;
 
     return {
       externalEventId: (scheduledEvent?.['uri'] as string) ?? (p['uri'] as string) ?? '',
@@ -3817,7 +7210,7 @@ function normalizeWebhookPayload(
       meetingUrl: (location?.['join_url'] as string) ?? null,
       candidateName: (p['name'] as string) ?? null,
       candidateEmail: (p['email'] as string) ?? null,
-      interviewId: null,
+      interviewId: calendlyInviteeInterviewId({ tracking }),
       inviteeUri: (p['uri'] as string) ?? null,
     };
   }

@@ -1,7 +1,13 @@
 import { useState, useEffect, useCallback, useRef } from 'react';
 import { useApiClient } from './useApiClient';
 import type { ApiClient } from '../lib/api/client';
-import type { ScheduledInterview, InterviewStatus } from '../lib/scheduling/types';
+import type {
+  AssessmentProgressSnapshot,
+  AssessmentSetupProjection,
+  ScheduledInterview,
+  InterviewStatus,
+  WorkspaceSessionSummary,
+} from '../lib/scheduling/types';
 import { useRoomStatusNotifications } from './useRoomStatusNotifications';
 
 interface UseScheduledInterviewsResult {
@@ -55,11 +61,14 @@ export function useScheduledInterviews(): UseScheduledInterviewsResult {
           lastSyncedAt: string | null;
           inviteLinkSentAt: string | null;
           emailSentAt: string | null;
+          bookingConfirmationSentAt: string | null;
           recipientName: string | null;
           recipientEmail: string | null;
           matchedRepoId: number | null;
           githubRepoUrl: string | null;
           githubPrNumber: number | null;
+          assessmentSetup?: AssessmentSetupProjection | null;
+          assessmentProgress?: AssessmentProgressSnapshot | null;
           completedAt: string | null;
           createdAt: string;
           updatedAt: string;
@@ -72,6 +81,7 @@ export function useScheduledInterviews(): UseScheduledInterviewsResult {
           meetingExternalEventId?: string | null;
           roomStatus?: string | null;
           guestWaiting?: boolean;
+          workspaceSession?: WorkspaceSessionSummary | null;
         }>;
       }>('/api/v1/scheduling/interviews');
 
@@ -96,11 +106,14 @@ export function useScheduledInterviews(): UseScheduledInterviewsResult {
           lastSyncedAt: r.lastSyncedAt,
           inviteLinkSentAt: r.inviteLinkSentAt,
           emailSentAt: r.emailSentAt,
+          bookingConfirmationSentAt: r.bookingConfirmationSentAt,
           recipientName: r.recipientName,
           recipientEmail: r.recipientEmail,
           matchedRepoId: r.matchedRepoId,
           githubRepoUrl: r.githubRepoUrl,
           githubPrNumber: r.githubPrNumber,
+          assessmentSetup: r.assessmentSetup ?? null,
+          assessmentProgress: r.assessmentProgress ?? null,
           completedAt: r.completedAt,
           candidateName: r.candidateName,
           candidateEmail: r.candidateEmail,
@@ -111,6 +124,7 @@ export function useScheduledInterviews(): UseScheduledInterviewsResult {
           meetingExternalEventId: r.meetingExternalEventId ?? null,
           roomStatus: r.roomStatus ?? null,
           guestWaiting: r.guestWaiting ?? false,
+          workspaceSession: r.workspaceSession ?? null,
         })),
       );
     } catch (err) {

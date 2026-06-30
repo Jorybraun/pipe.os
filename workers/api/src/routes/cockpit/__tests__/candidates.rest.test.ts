@@ -11,6 +11,7 @@ import { Hono } from 'hono';
 import { afterEach, describe, it, expect } from 'vitest';
 import { createMockD1, type BetterSqliteDb } from '../../../__tests__/helpers/mockD1';
 import { LivingContextStore } from '../../../lib/livingContext/persistence';
+import { clearGateCache, updateGateStage } from '../../../lib/livingContext/rolloutEnforcement';
 import {
   buildStandaloneReviewDiagnostics,
   buildRolelessTalentPoolContext,
@@ -25,6 +26,22 @@ import type { Env } from '../../../types';
 
 const livingContextMigration = readFileSync(
   new URL('../../../../migrations/0082_living_context_graph.sql', import.meta.url),
+  'utf8',
+);
+const conceptRegistryMigration = readFileSync(
+  new URL('../../../../migrations/0094_concept_registry.sql', import.meta.url),
+  'utf8',
+);
+const contextRecordMigration = readFileSync(
+  new URL('../../../../migrations/0095_context_records.sql', import.meta.url),
+  'utf8',
+);
+const rolloutGatesMigration = readFileSync(
+  new URL('../../../../migrations/0107_rollout_gates.sql', import.meta.url),
+  'utf8',
+);
+const rolloutGateAuditMigration = readFileSync(
+  new URL('../../../../migrations/0108_rollout_gate_audit_log.sql', import.meta.url),
   'utf8',
 );
 
@@ -230,6 +247,163 @@ describe('candidate identity normalization', () => {
       count: 0,
     });
     expect(sqlite.prepare('SELECT COUNT(*) AS count FROM concepts').get()).toEqual({ count: 0 });
+  });
+});
+
+describe('GET /:candidateId/living-context/evidence-conflicts', () => {
+  let sqlite: BetterSqliteDb | null = null;
+
+  afterEach(() => {
+    clearGateCache();
+    sqlite?.close();
+    sqlite = null;
+  });
+
+  it('returns source-backed evidence conflicts for an owned candidate', async () => {
+    sqlite = new Database(':memory:');
+    sqlite.exec('PRAGMA foreign_keys = ON;');
+    sqlite.exec(`
+      CREATE TABLE candidates (
+        id TEXT PRIMARY KEY,
+        name TEXT NOT NULL,
+        email TEXT,
+        owner_id TEXT,
+        pipeline_id TEXT
+      );
+      CREATE TABLE pipelines (
+        id TEXT PRIMARY KEY,
+        owner_id TEXT
+      );
+    `);
+    sqlite.exec(livingContextMigration);
+    sqlite.exec(contextRecordMigration);
+    sqlite.exec(conceptRegistryMigration);
+    sqlite.exec(rolloutGatesMigration);
+    sqlite.exec(rolloutGateAuditMigration);
+    sqlite.prepare(`
+      INSERT INTO candidates (id, name, email, owner_id, pipeline_id)
+      VALUES ('candidate-conflict', 'Ada Candidate', 'ada@example.com', 'test-user', NULL)
+    `).run();
+
+    const db = createMockD1(sqlite);
+    const store = new LivingContextStore(db);
+    const person = await store.upsertPerson({
+      ingestionKey: 'person:ada-conflict',
+      displayName: 'Ada Candidate',
+      primaryEmail: 'ada@example.com',
+    });
+    const workspacePerson = await store.upsertWorkspacePerson({
+      ingestionKey: 'workspace-person:ada-conflict',
+      workspaceId: 'workspace-1',
+      personId: person.id,
+    });
+    const application = await store.upsertApplication({
+      ingestionKey: 'application:ada-conflict',
+      workspacePersonId: workspacePerson.id,
+      legacyCandidateId: 'candidate-conflict',
+    });
+    const concept = await store.upsertConcept({
+      ingestionKey: 'concept:react-conflict',
+      canonicalKey: 'react',
+      namespace: 'skill',
+      label: 'React',
+    });
+
+    for (const evidence of [
+      {
+        suffix: 'resume',
+        interactionType: 'resume_review',
+        predicate: 'knows',
+        narrative: 'Resume claims production React ownership.',
+        polarity: 1,
+        strength: 0.9,
+      },
+      {
+        suffix: 'interview',
+        interactionType: 'technical_interview',
+        predicate: 'lacks',
+        narrative: 'Interview answer struggled with React state ownership.',
+        polarity: -1,
+        strength: 0.7,
+      },
+    ] as const) {
+      const interaction = await store.upsertInteraction({
+        ingestionKey: `interaction:react-conflict:${evidence.suffix}`,
+        workspacePersonId: workspacePerson.id,
+        applicationId: application.id,
+        interactionType: evidence.interactionType,
+      });
+      const episode = await store.upsertEpisode({
+        ingestionKey: `episode:react-conflict:${evidence.suffix}`,
+        workspacePersonId: workspacePerson.id,
+        interactionId: interaction.id,
+      });
+      const assertion = await store.upsertAssertion({
+        ingestionKey: `assertion:react-conflict:${evidence.suffix}`,
+        workspacePersonId: workspacePerson.id,
+        episodeId: episode.id,
+        subjectType: 'person',
+        predicate: evidence.predicate,
+        narrative: evidence.narrative,
+        polarity: evidence.polarity,
+        confidence: 0.8,
+        observedAt: '2026-06-30T13:00:00.000Z',
+      });
+      await store.upsertSignalEvidence({
+        ingestionKey: `signal:react-conflict:${evidence.suffix}`,
+        workspacePersonId: workspacePerson.id,
+        interactionId: interaction.id,
+        assertionId: assertion.id,
+        conceptId: concept.id,
+        signalKey: 'react',
+        evidenceLevel: 'demonstrated',
+        strength: evidence.strength,
+        polarity: evidence.polarity,
+        observedAt: '2026-06-30T13:00:00.000Z',
+      });
+    }
+
+    await updateGateStage(db, 'living_context_read', 'GA', 'test');
+    clearGateCache();
+
+    const app = new Hono<{ Bindings: Env }>();
+    app.use('*', async (c, next) => {
+      // @ts-expect-error route test overrides Worker bindings.
+      c.env = {
+        DB: db,
+        CLERK_SECRET_KEY: 'test',
+        DEV_AUTH_BYPASS: 'true',
+        DEV_BYPASS_USER_ID: 'test-user',
+      };
+      await next();
+    });
+    app.route('/', candidateOps);
+
+    const response = await app.request('/candidate-conflict/living-context/evidence-conflicts');
+    expect(response.status).toBe(200);
+    const body = await response.json() as {
+      totalConflicts: number;
+      mediumSeverity: number;
+      conflicts: Array<{
+        conceptKey: string;
+        conflictType: string;
+        positiveAssertions: Array<{ narrative: string }>;
+        negativeAssertions: Array<{ narrative: string }>;
+      }>;
+    };
+
+    expect(body.totalConflicts).toBe(1);
+    expect(body.mediumSeverity).toBe(1);
+    expect(body.conflicts[0]).toMatchObject({
+      conceptKey: 'react',
+      conflictType: 'polarity',
+    });
+    expect(body.conflicts[0]!.positiveAssertions[0]!.narrative).toBe(
+      'Resume claims production React ownership.',
+    );
+    expect(body.conflicts[0]!.negativeAssertions[0]!.narrative).toBe(
+      'Interview answer struggled with React state ownership.',
+    );
   });
 });
 

@@ -21,7 +21,7 @@ function d1(rows: unknown[], contextRows: unknown[] = []): D1Database {
 }
 
 describe('loadRoleChallengeSemantics', () => {
-  it('loads open terms from persisted role nodes without a code-owned skill map', async () => {
+  it('loads selected open terms from persisted role nodes as source-backed relevance', async () => {
     const semantics = await loadRoleChallengeSemantics(d1([{
       id: 'node-1',
       rcd_version: '2.0.0',
@@ -41,7 +41,7 @@ describe('loadRoleChallengeSemantics', () => {
     });
 
     expect(semantics.relevantConcepts).toEqual(['term:a-technology-never-seen-before']);
-    expect(semantics.requiredConcepts).toEqual(['term:a-technology-never-seen-before']);
+    expect(semantics.requiredConcepts).toEqual([]);
     expect(semantics.sources[0]?.sourceSection).toBe('technical_context.stack');
   });
 
@@ -148,7 +148,7 @@ describe('loadRoleChallengeSemantics', () => {
 
     expect(semantics.roleSnapshotId).toBe('role-context:role-jd:source-backed:simple-jd');
     expect(semantics.relevantConcepts).toEqual(['term:kafka-idempotency']);
-    expect(semantics.requiredConcepts).toEqual(['term:kafka-idempotency']);
+    expect(semantics.requiredConcepts).toEqual([]);
     expect(semantics.sources).toEqual([expect.objectContaining({
       roleNodeId: 'role-context:role-jd:job-description',
       sourceSection: 'job_description_md',
@@ -178,7 +178,7 @@ describe('loadRoleChallengeSemantics', () => {
 
     expect(semantics.roleSnapshotId).toBe('role-context:role-jd-context:source-backed:simple-jd-v1');
     expect(semantics.relevantConcepts).toEqual(['term:temporal-shard-knitting']);
-    expect(semantics.requiredConcepts).toEqual(['term:temporal-shard-knitting']);
+    expect(semantics.requiredConcepts).toEqual([]);
     expect(semantics.sources).toEqual([
       {
         roleNodeId: 'context-record-jd',
@@ -234,10 +234,7 @@ describe('loadRoleChallengeSemantics', () => {
       'term:javascript-test-runner',
       'term:typescript',
     ]);
-    expect(semantics.requiredConcepts).toEqual([
-      'term:javascript-test-runner',
-      'term:typescript',
-    ]);
+    expect(semantics.requiredConcepts).toEqual([]);
     expect(semantics.sources[0]?.conceptKeys).toEqual([
       'term:javascript-test-runner',
       'term:typescript',

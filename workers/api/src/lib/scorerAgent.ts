@@ -29,6 +29,7 @@ import {
   computeOverallScore,
   assignBand,
   countReviewerComments,
+  DIMENSION_IDS,
   type PlantedBug,
   type BarsDimensionScores,
   type EffectivenessScore,
@@ -247,19 +248,96 @@ async function callGoogleAI(
  * Gemma vs Devstral vs Sonnet κ on a 30–50 fixture set, we keep whichever
  * model clears κ ≥ 0.75 cheapest. See ADR-032 scorer calibration.
  */
-// Qwen 2.5 Coder 32B — trying this instead of Gemma 4 26B which is unreliable
-const SCORER_WORKERS_AI_MODEL = '@cf/qwen/qwen2.5-coder-32b-instruct';
-const SCORER_WORKERS_AI_FALLBACK = '@cf/qwen/qwen3-30b-a3b-fp8';
+const SCORER_WORKERS_AI_MODELS = [
+  '@cf/openai/gpt-oss-20b',
+  '@cf/google/gemma-4-26b-a4b-it',
+  '@cf/qwen/qwen3-30b-a3b-fp8',
+  '@cf/meta/llama-3.2-3b-instruct',
+] as const;
+const WORKERS_AI_CALL_TIMEOUT_MS = 45_000;
 
-async function callWorkersAI(ai: Ai, systemPrompt: string, userMessage: string, maxTokens = 2048): Promise<string> {
-  console.log('[callWorkersAI] calling ai.run with model:', SCORER_WORKERS_AI_MODEL, 'prompt lengths:', systemPrompt.length, userMessage.length);
+function isRecord(value: unknown): value is Record<string, unknown> {
+  return Boolean(value) && typeof value === 'object' && !Array.isArray(value);
+}
 
-  let response: unknown;
-  let modelUsed = SCORER_WORKERS_AI_MODEL;
+function textFromContent(value: unknown): string {
+  if (typeof value === 'string') return value.trim();
+  if (!Array.isArray(value)) return '';
+  return value
+    .map((part) => {
+      if (typeof part === 'string') return part;
+      if (isRecord(part) && typeof part.text === 'string') return part.text;
+      if (isRecord(part) && typeof part.content === 'string') return part.content;
+      return '';
+    })
+    .join('')
+    .trim();
+}
 
+async function readStream(stream: ReadableStream): Promise<string> {
+  const reader = stream.getReader();
+  const chunks: string[] = [];
+  let done = false;
+  while (!done) {
+    const result = await reader.read();
+    done = result.done;
+    if (result.value) chunks.push(new TextDecoder().decode(result.value));
+  }
+  return chunks.join('').trim();
+}
+
+async function withTimeout<T>(promise: Promise<T>, timeoutMs: number, label: string): Promise<T> {
+  let timeoutId: ReturnType<typeof setTimeout> | undefined;
   try {
-    response = await ai.run(
-      SCORER_WORKERS_AI_MODEL as Parameters<typeof ai.run>[0],
+    return await Promise.race([
+      promise,
+      new Promise<T>((_, reject) => {
+        timeoutId = setTimeout(() => {
+          reject(new Error(`${label} timed out after ${timeoutMs}ms`));
+        }, timeoutMs);
+      }),
+    ]);
+  } finally {
+    if (timeoutId) clearTimeout(timeoutId);
+  }
+}
+
+async function extractWorkersAIText(response: unknown): Promise<string> {
+  if (typeof response === 'string') return response.trim();
+  if (typeof ReadableStream !== 'undefined' && response instanceof ReadableStream) {
+    return readStream(response);
+  }
+  if (!isRecord(response)) return '';
+
+  const direct = textFromContent(response.response);
+  if (direct) return direct;
+
+  const result = isRecord(response.result) ? response.result : null;
+  const resultText = result ? textFromContent(result.response) || textFromContent(result.content) : '';
+  if (resultText) return resultText;
+
+  const choices = Array.isArray(response.choices) ? response.choices : [];
+  for (const choice of choices) {
+    if (!isRecord(choice)) continue;
+    const message = isRecord(choice.message) ? choice.message : null;
+    const text = textFromContent(message?.content) || textFromContent(choice.text) || textFromContent(choice.content);
+    if (text) return text;
+  }
+
+  return '';
+}
+
+async function callWorkersAIModel(
+  ai: Ai,
+  model: typeof SCORER_WORKERS_AI_MODELS[number],
+  systemPrompt: string,
+  userMessage: string,
+  maxTokens: number,
+): Promise<string> {
+  console.log('[callWorkersAI] calling ai.run with model:', model, 'prompt lengths:', systemPrompt.length, userMessage.length);
+  const response = await withTimeout(
+    ai.run(
+      model as Parameters<typeof ai.run>[0],
       {
         messages: [
           { role: 'system', content: systemPrompt },
@@ -267,67 +345,33 @@ async function callWorkersAI(ai: Ai, systemPrompt: string, userMessage: string, 
         ],
         max_tokens: maxTokens,
       },
-    );
-  } catch (err) {
-    // Fallback to smaller model on 3050 (max retries exhausted) or similar errors
-    const errMsg = err instanceof Error ? err.message : String(err);
-    if (errMsg.includes('3050') || errMsg.includes('Max retries')) {
-      console.warn('[callWorkersAI] Primary model failed, falling back to:', SCORER_WORKERS_AI_FALLBACK);
-      modelUsed = SCORER_WORKERS_AI_FALLBACK;
-      try {
-        response = await ai.run(
-          SCORER_WORKERS_AI_FALLBACK as Parameters<typeof ai.run>[0],
-          {
-            messages: [
-              { role: 'system', content: systemPrompt },
-              { role: 'user', content: userMessage },
-            ],
-            max_tokens: maxTokens,
-          },
-        );
-      } catch (fallbackErr) {
-        console.error('[callWorkersAI] Fallback model also failed:', fallbackErr);
-        throw fallbackErr;
-      }
-    } else {
-      console.error('[callWorkersAI] ai.run threw:', err);
-      console.error('[callWorkersAI] error type:', typeof err);
-      console.error('[callWorkersAI] error constructor:', (err as object)?.constructor?.name);
-      if (err instanceof Error) {
-        console.error('[callWorkersAI] error.message:', err.message);
-        console.error('[callWorkersAI] error.cause:', (err as Error & { cause?: unknown }).cause);
-      }
-      throw err;
+    ),
+    WORKERS_AI_CALL_TIMEOUT_MS,
+    `[callWorkersAI] ${model}`,
+  );
+
+  const text = await extractWorkersAIText(response);
+  if (!text) {
+    throw new Error(`[scorerAgent] Workers AI ${model} returned empty text.`);
+  }
+  return text;
+}
+
+async function callWorkersAI(ai: Ai, systemPrompt: string, userMessage: string, maxTokens = 2048): Promise<string> {
+  let lastError: unknown;
+  for (const model of SCORER_WORKERS_AI_MODELS) {
+    try {
+      const text = await callWorkersAIModel(ai, model, systemPrompt, userMessage, maxTokens);
+      console.log('[callWorkersAI] using model:', model);
+      return text;
+    } catch (err) {
+      lastError = err;
+      const message = err instanceof Error ? err.message : String(err);
+      console.warn('[callWorkersAI] model failed, trying next scorer model:', { model, message });
     }
   }
 
-  console.log('[callWorkersAI] using model:', modelUsed);
-
-  // Debug: log the raw response shape
-  console.log('[callWorkersAI] response type:', typeof response);
-  console.log('[callWorkersAI] response instanceof ReadableStream:', response instanceof ReadableStream);
-  console.log('[callWorkersAI] response keys:', response ? Object.keys(response as object) : 'null/undefined');
-  console.log('[callWorkersAI] response preview:', JSON.stringify(response)?.slice(0, 500));
-
-  if (response instanceof ReadableStream) {
-    const reader = response.getReader();
-    const chunks: string[] = [];
-    let done = false;
-    while (!done) {
-      const result = await reader.read();
-      done = result.done;
-      if (result.value) chunks.push(new TextDecoder().decode(result.value));
-    }
-    return chunks.join('').trim();
-  }
-
-  const raw = (response as { response?: unknown }).response;
-  if (typeof raw === 'string') return raw.trim();
-  if (raw != null) {
-    console.warn('[scorerAgent] Workers AI response.response is not a string:', typeof raw);
-    return String(raw).trim();
-  }
-  return '';
+  throw lastError instanceof Error ? lastError : new Error(String(lastError));
 }
 
 /**
@@ -509,6 +553,257 @@ ${scorerBSummary}
 Write the hiring assessment narrative. Return JSON with: { "narrative": "...", "strengths": ["..."], "growth_areas": ["..."] }`;
 }
 
+const WORKERS_AI_SINGLE_PASS_PROMPT = `You are a production code-review assessment scoring panel.
+
+Score the completed candidate review using the 6 BARS dimensions:
+- issue_identification
+- prioritization
+- revision_evaluation
+- reasoning_quality
+- question_formation
+- ai_direction
+
+Use only the PR context, diff excerpt, ground truth when present, and review transcript. Do not invent bugs, files, source facts, or candidate behavior. If ground truth is empty, judge the candidate's review practice against the diff/context and set bug metrics conservatively.
+
+Return only valid JSON with this exact top-level shape:
+{
+  "dimensions": {
+    "issue_identification": 1-5,
+    "prioritization": 1-5,
+    "revision_evaluation": 1-5,
+    "reasoning_quality": 1-5,
+    "question_formation": 1-5,
+    "ai_direction": 1-5
+  },
+  "evidence": {
+    "issue_identification_evidence": "source-backed reason",
+    "prioritization_evidence": "source-backed reason",
+    "revision_evaluation_evidence": "source-backed reason",
+    "reasoning_quality_evidence": "source-backed reason",
+    "question_formation_evidence": "source-backed reason",
+    "ai_direction_evidence": "source-backed reason"
+  },
+  "metrics": {
+    "bugs_found": [number ids],
+    "bugs_missed": [number ids],
+    "bugs_found_pct": 0-1,
+    "false_positive_count": number,
+    "true_finding_count": number,
+    "approved_with_unfound_critical": boolean,
+    "cave_ratio": number,
+    "fix_verifications": number
+  },
+  "overall": {
+    "narrative": "short hiring-facing summary",
+    "strengths": ["specific strength"],
+    "growth_areas": ["specific growth area"]
+  },
+  "scorer_a_summary": "ground-truth/source-backed scoring summary",
+  "scorer_b_summary": "communication and review-practice scoring summary"
+}`;
+
+function buildWorkersAISinglePassUserMessage(input: {
+  transcript: unknown;
+  groundTruth: PlantedBug[];
+  prContext: string;
+  diff?: string | null;
+}): string {
+  const transcriptJson = JSON.stringify(input.transcript, null, 2).slice(0, 30_000);
+  const groundTruthJson = JSON.stringify(input.groundTruth, null, 2).slice(0, 12_000);
+  const diffSection = input.diff
+    ? `## Source-Backed Diff Excerpt\n${input.diff.slice(0, 35_000)}\n\n`
+    : '';
+
+  return `## PR Context
+${input.prContext || 'No PR title/description supplied.'}
+
+${diffSection}## Ground Truth Bugs
+${groundTruthJson}
+
+## Candidate Review Transcript
+${transcriptJson}
+
+Score this completed review now. Return only the JSON object.`;
+}
+
+function recordOrEmpty(value: unknown): Record<string, unknown> {
+  return isRecord(value) ? value : {};
+}
+
+function stringArrayValue(value: unknown): string[] {
+  return Array.isArray(value)
+    ? value.filter((entry): entry is string => typeof entry === 'string' && entry.trim().length > 0)
+    : [];
+}
+
+function numberArrayValue(value: unknown): number[] {
+  if (!Array.isArray(value)) return [];
+  return value
+    .map((entry) => Number(entry))
+    .filter((entry) => Number.isFinite(entry))
+    .map((entry) => Math.round(entry));
+}
+
+function numberValue(value: unknown, fallback: number): number {
+  const parsed = Number(value);
+  return Number.isFinite(parsed) ? parsed : fallback;
+}
+
+function stringValue(value: unknown, fallback = ''): string {
+  return typeof value === 'string' && value.trim().length > 0 ? value.trim() : fallback;
+}
+
+function requiredDimensionValue(record: Record<string, unknown>, id: DimensionId): number {
+  const parsed = Number(record[id]);
+  if (!Number.isFinite(parsed) || parsed < 1 || parsed > 5) {
+    throw new Error(`[scorerAgent] Missing or invalid required dimension score: ${id}`);
+  }
+  return parsed;
+}
+
+function requiredStringValue(record: Record<string, unknown>, key: string): string {
+  const value = record[key];
+  if (typeof value !== 'string' || value.trim().length === 0) {
+    throw new Error(`[scorerAgent] Missing required source evidence field: ${key}`);
+  }
+  return value.trim();
+}
+
+function assertAllDimensionsPresent(dimensions: BarsDimensionScores): void {
+  for (const id of DIMENSION_IDS) {
+    requiredDimensionValue(dimensions, id);
+  }
+}
+
+function buildScorerEvidence(input: {
+  issueSource: Record<string, unknown>;
+  communicationSource?: Record<string, unknown>;
+}): ScorerEvidence {
+  const communicationSource = input.communicationSource ?? input.issueSource;
+  return {
+    issue_identification_evidence: requiredStringValue(input.issueSource, 'issue_identification_evidence'),
+    prioritization_evidence: requiredStringValue(input.issueSource, 'prioritization_evidence'),
+    revision_evaluation_evidence: requiredStringValue(input.issueSource, 'revision_evaluation_evidence'),
+    reasoning_quality_evidence: requiredStringValue(communicationSource, 'reasoning_quality_evidence'),
+    question_formation_evidence: requiredStringValue(communicationSource, 'question_formation_evidence'),
+    ai_direction_evidence: requiredStringValue(communicationSource, 'ai_direction_evidence'),
+  };
+}
+
+function normalizeSinglePassScoreReport(input: {
+  raw: Record<string, unknown>;
+  transcript: unknown;
+  groundTruth: PlantedBug[];
+  level: 'junior' | 'mid' | 'senior';
+  dispositionalWeights?: Record<string, number>;
+}): ScoreReport {
+  const dimensionSource = recordOrEmpty(input.raw.dimensions ?? input.raw.scores);
+  const dimensions: BarsDimensionScores = {
+    issue_identification: requiredDimensionValue(dimensionSource, 'issue_identification'),
+    prioritization: requiredDimensionValue(dimensionSource, 'prioritization'),
+    revision_evaluation: requiredDimensionValue(dimensionSource, 'revision_evaluation'),
+    reasoning_quality: requiredDimensionValue(dimensionSource, 'reasoning_quality'),
+    question_formation: requiredDimensionValue(dimensionSource, 'question_formation'),
+    ai_direction: requiredDimensionValue(dimensionSource, 'ai_direction'),
+  };
+
+  const evidenceRaw = recordOrEmpty(input.raw.evidence);
+  const evidence = buildScorerEvidence({ issueSource: evidenceRaw });
+
+  const metricsRaw = recordOrEmpty(input.raw.metrics);
+  const bugsFound = [...new Set(numberArrayValue(metricsRaw.bugs_found))];
+  const missedFromModel = [...new Set(numberArrayValue(metricsRaw.bugs_missed))];
+  const bugsMissed = missedFromModel.length > 0
+    ? missedFromModel
+    : input.groundTruth.filter((bug) => !bugsFound.includes(bug.id)).map((bug) => bug.id);
+  const bugsFoundPct = input.groundTruth.length > 0
+    ? bugsFound.filter((id) => input.groundTruth.some((bug) => bug.id === id)).length / input.groundTruth.length
+    : Math.max(0, Math.min(1, numberValue(metricsRaw.bugs_found_pct, 0)));
+
+  const metrics: ScorerAMetrics = {
+    bugs_found: bugsFound,
+    bugs_missed: bugsMissed,
+    bugs_found_pct: Math.round(bugsFoundPct * 100) / 100,
+    false_positive_count: Math.max(0, Math.round(numberValue(metricsRaw.false_positive_count, 0))),
+    true_finding_count: Math.max(0, Math.round(numberValue(metricsRaw.true_finding_count, bugsFound.length))),
+    approved_with_unfound_critical: Boolean(metricsRaw.approved_with_unfound_critical),
+    cave_ratio: Math.max(0, numberValue(metricsRaw.cave_ratio, 0)),
+    fix_verifications: Math.max(0, Math.round(numberValue(metricsRaw.fix_verifications, 0))),
+  };
+
+  const totalComments = countReviewerComments(input.transcript);
+  const effectiveness = computeEffectiveness(
+    metrics.bugs_found,
+    metrics.bugs_missed,
+    input.groundTruth,
+    metrics.false_positive_count,
+    totalComments,
+  );
+  const overallScore = computeOverallScore(
+    dimensions,
+    effectiveness,
+    input.level,
+    input.dispositionalWeights,
+  );
+  const band = assignBand(overallScore);
+  const overallRaw = recordOrEmpty(input.raw.overall);
+  const narrative = requiredStringValue(overallRaw, 'narrative');
+
+  return {
+    dimensions,
+    evidence,
+    metrics,
+    effectiveness,
+    overall: {
+      score: overallScore,
+      band,
+      narrative,
+      strengths: stringArrayValue(overallRaw.strengths),
+      growth_areas: stringArrayValue(overallRaw.growth_areas),
+    },
+    scorer_a_summary: stringValue(input.raw.scorer_a_summary),
+    scorer_b_summary: stringValue(input.raw.scorer_b_summary),
+  };
+}
+
+async function scoreReviewSessionWithWorkersAISinglePass(input: {
+  ai: Ai;
+  transcript: unknown;
+  groundTruth: PlantedBug[];
+  diff?: string | null;
+  prContext: string;
+  level: 'junior' | 'mid' | 'senior';
+  dispositionalWeights?: Record<string, number>;
+}): Promise<ScoreReport> {
+  const userMessage = buildWorkersAISinglePassUserMessage({
+    transcript: input.transcript,
+    groundTruth: input.groundTruth,
+    prContext: input.prContext,
+    diff: input.diff,
+  });
+
+  let lastError: unknown;
+  for (const model of SCORER_WORKERS_AI_MODELS) {
+    try {
+      const raw = await callWorkersAIModel(input.ai, model, WORKERS_AI_SINGLE_PASS_PROMPT, userMessage, 4096);
+      const parsed = extractJson<Record<string, unknown>>(raw);
+      return normalizeSinglePassScoreReport({
+        raw: parsed,
+        transcript: input.transcript,
+        groundTruth: input.groundTruth,
+        level: input.level,
+        dispositionalWeights: input.dispositionalWeights,
+      });
+    } catch (error) {
+      lastError = error;
+      const message = error instanceof Error ? error.message : String(error);
+      console.warn('[scorerAgent] Workers AI single-pass scorer failed, trying next model:', { model, message });
+    }
+  }
+
+  throw lastError instanceof Error ? lastError : new Error(String(lastError));
+}
+
 // ─── Main scoring function ──────────────────────────────────────────────────
 
 /**
@@ -540,6 +835,18 @@ export async function scoreReviewSession(input: ScorerInput): Promise<ScoreRepor
     instructions != null ? `Instructions: ${instructions}` : '',
   ].filter(Boolean).join('\n');
 
+  if (provider === 'workers-ai') {
+    return scoreReviewSessionWithWorkersAISinglePass({
+      ai: ai!,
+      transcript,
+      groundTruth,
+      diff,
+      prContext,
+      level,
+      dispositionalWeights,
+    });
+  }
+
   // Run Scorer A + Scorer B in parallel
   const [scorerARaw, scorerBRaw] = await Promise.all([
     callLLM(apiKey, provider, ai, SCORER_A_PROMPT, buildScorerAUserMessage(transcript, groundTruth, prContext, diff), 3000, { kimiBaseUrl, kimiModel }),
@@ -547,7 +854,7 @@ export async function scoreReviewSession(input: ScorerInput): Promise<ScoreRepor
   ]);
 
   // Debug: log raw LLM output before parsing (helps diagnose truncation)
-  if (provider === 'workers-ai' || provider === 'kimi') {
+  if (provider === 'kimi') {
     console.log('[scorerAgent] Scorer A raw length:', scorerARaw.length, 'last 200 chars:', JSON.stringify(scorerARaw.slice(-200)));
     console.log('[scorerAgent] Scorer B raw length:', scorerBRaw.length, 'last 200 chars:', JSON.stringify(scorerBRaw.slice(-200)));
   }
@@ -556,30 +863,26 @@ export async function scoreReviewSession(input: ScorerInput): Promise<ScoreRepor
   const scorerA = extractJson<Record<string, unknown>>(scorerARaw);
   const scorerB = extractJson<Record<string, unknown>>(scorerBRaw);
 
-  // Extract dimension scores (1-5, default to 3 = midpoint)
+  // Extract required dimension scores (1-5). Missing scores fail closed; they
+  // must not become fabricated midpoint assessments.
   // Handle both flat format and nested format (scores.dimension_name)
-  const scoresA = (scorerA.scores ?? scorerA) as Record<string, unknown>;
-  const scoresB = (scorerB.scores ?? scorerB) as Record<string, unknown>;
+  const scoresA = recordOrEmpty(scorerA.scores ?? scorerA);
+  const scoresB = recordOrEmpty(scorerB.scores ?? scorerB);
   const dimensions: BarsDimensionScores = {
-    issue_identification: clampScore(Number(scoresA.issue_identification) || 3),
-    prioritization: clampScore(Number(scoresA.prioritization) || 3),
-    revision_evaluation: clampScore(Number(scoresA.revision_evaluation) || 3),
-    reasoning_quality: clampScore(Number(scoresB.reasoning_quality) || 3),
-    question_formation: clampScore(Number(scoresB.question_formation) || 3),
-    ai_direction: clampScore(Number(scoresB.ai_direction) || 3),
+    issue_identification: requiredDimensionValue(scoresA, 'issue_identification'),
+    prioritization: requiredDimensionValue(scoresA, 'prioritization'),
+    revision_evaluation: requiredDimensionValue(scoresA, 'revision_evaluation'),
+    reasoning_quality: requiredDimensionValue(scoresB, 'reasoning_quality'),
+    question_formation: requiredDimensionValue(scoresB, 'question_formation'),
+    ai_direction: requiredDimensionValue(scoresB, 'ai_direction'),
   };
+  assertAllDimensionsPresent(dimensions);
 
   // Extract evidence
-  const scorerAEvidence = (scorerA.evidence ?? {}) as Record<string, string>;
-  const scorerBEvidence = (scorerB.evidence ?? {}) as Record<string, string>;
-  const evidence: ScorerEvidence = {
-    issue_identification_evidence: scorerAEvidence.issue_identification_evidence ?? '',
-    prioritization_evidence: scorerAEvidence.prioritization_evidence ?? '',
-    revision_evaluation_evidence: scorerAEvidence.revision_evaluation_evidence ?? '',
-    reasoning_quality_evidence: scorerBEvidence.reasoning_quality_evidence ?? '',
-    question_formation_evidence: scorerBEvidence.question_formation_evidence ?? '',
-    ai_direction_evidence: scorerBEvidence.ai_direction_evidence ?? '',
-  };
+  const evidence = buildScorerEvidence({
+    issueSource: recordOrEmpty(scorerA.evidence),
+    communicationSource: recordOrEmpty(scorerB.evidence),
+  });
 
   // Extract metrics from Scorer A
   const metricsRaw = (scorerA.metrics ?? {}) as Record<string, unknown>;
@@ -620,14 +923,10 @@ export async function scoreReviewSession(input: ScorerInput): Promise<ScoreRepor
   let strengths: string[] = [];
   let growthAreas: string[] = [];
 
-  try {
-    const synthResult = extractJson<Record<string, unknown>>(synthRaw);
-    if (typeof synthResult.narrative === 'string') narrative = synthResult.narrative;
-    if (Array.isArray(synthResult.strengths)) strengths = synthResult.strengths as string[];
-    if (Array.isArray(synthResult.growth_areas)) growthAreas = synthResult.growth_areas as string[];
-  } catch {
-    console.error('[scorerAgent] Failed to parse synthesizer output, using fallback narrative');
-  }
+  const synthResult = extractJson<Record<string, unknown>>(synthRaw);
+  narrative = requiredStringValue(synthResult, 'narrative');
+  if (Array.isArray(synthResult.strengths)) strengths = synthResult.strengths as string[];
+  if (Array.isArray(synthResult.growth_areas)) growthAreas = synthResult.growth_areas as string[];
 
   return {
     dimensions,
@@ -647,8 +946,3 @@ export async function scoreReviewSession(input: ScorerInput): Promise<ScoreRepor
 }
 
 // ─── Helpers ────────────────────────────────────────────────────────────────
-
-/** Clamp a score to the valid 1-5 range. */
-function clampScore(score: number): number {
-  return Math.max(1, Math.min(5, Math.round(score)));
-}

@@ -2,6 +2,7 @@ const DEFAULT_API_ORIGIN = 'https://api-dev.hire-pipe.com';
 const DEV_AUTH_COOKIE = 'pipe_room_dev_auth';
 const DEV_AUTH_COOKIE_MAX_AGE_SECONDS = 60 * 60 * 12;
 const AUTH_MODE_PUBLIC = 'public';
+const DEV_HTML_CACHE_RESET = '"cache"';
 
 function timingSafeEqual(a, b) {
   if (a.length !== b.length) return false;
@@ -142,6 +143,9 @@ async function devAuthEntryPage(request, env) {
       headers: {
         'Content-Type': 'text/html; charset=UTF-8',
         'Cache-Control': 'no-store',
+        'Clear-Site-Data': DEV_HTML_CACHE_RESET,
+        'Pragma': 'no-cache',
+        'Expires': '0',
         'Set-Cookie': `${DEV_AUTH_COOKIE}=${cookie}; Path=/; Max-Age=${DEV_AUTH_COOKIE_MAX_AGE_SECONDS}; HttpOnly; Secure; SameSite=Lax`,
       },
     },
@@ -209,6 +213,7 @@ function proxyApi(request, env) {
 
 async function serveStatic(request, env) {
   const response = await env.ASSETS.fetch(request);
+  if (isStaleAssetFallback(request, response)) return staleAssetResponse(request);
   if (response.status !== 404 || request.method !== 'GET') return withCleanBase(response, request);
 
   const accept = request.headers.get('Accept') ?? '';
@@ -217,6 +222,28 @@ async function serveStatic(request, env) {
   const url = new URL(request.url);
   url.pathname = '/index.html';
   return withCleanBase(await env.ASSETS.fetch(new Request(url.toString(), request)), request);
+}
+
+function isStaleAssetFallback(request, response) {
+  const { pathname } = new URL(request.url);
+  if (!pathname.startsWith('/assets/')) return false;
+  if (response.status === 404) return true;
+
+  const contentType = response.headers.get('Content-Type') ?? '';
+  return contentType.includes('text/html');
+}
+
+function staleAssetResponse(request) {
+  const body = request.method === 'HEAD'
+    ? null
+    : 'Asset not found. Refresh the room to load the current dev bundle.';
+  return new Response(body, {
+    status: 404,
+    headers: {
+      'Content-Type': 'text/plain; charset=UTF-8',
+      'Cache-Control': 'no-store',
+    },
+  });
 }
 
 async function withCleanBase(response, request) {
@@ -234,6 +261,9 @@ async function withCleanBase(response, request) {
     : html.replace(/<head>/i, `<head><base href="${escapeHtml(baseHref)}">`);
   const headers = new Headers(response.headers);
   headers.delete('Content-Length');
+  headers.delete('Clear-Site-Data');
+  headers.delete('Pragma');
+  headers.delete('Expires');
   headers.set('Cache-Control', 'no-store');
   return new Response(withBase, {
     status: response.status,

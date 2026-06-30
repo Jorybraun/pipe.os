@@ -163,6 +163,7 @@ describe('scoreAndPropagate assignment-backed provenance', () => {
       firstResponders: [
         { match: 'FROM challenges ch', value: assignedScoringRow() },
         { match: 'FROM review_challenge_packets', value: { packet_json: JSON.stringify(sourceBackedPacket()) } },
+        { match: 'SELECT id FROM challenge_submissions', value: { id: 'sub_1' } },
       ],
       allResponders: [
         {
@@ -215,6 +216,11 @@ describe('scoreAndPropagate assignment-backed provenance', () => {
         producer: 'automated_scorer',
       }),
     );
+    expect(db.__calls.some((call) =>
+      call.ran &&
+      call.sql.includes('UPDATE challenge_submissions') &&
+      call.sql.includes('score_report_json')
+    )).toBe(true);
     expect(db.__calls.some((call) =>
       call.ran &&
       call.sql.includes('UPDATE code_review_judge_examples') &&

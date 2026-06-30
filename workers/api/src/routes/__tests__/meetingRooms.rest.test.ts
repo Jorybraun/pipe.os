@@ -34,7 +34,9 @@ const meetingRoomsMigration = readMigration('0081_meeting_rooms.sql');
 const livingContextMigration = readMigration('0082_living_context_graph.sql');
 const repoSemanticGraphMigration = readMigration('0083_repo_semantic_graph_and_match_runs.sql');
 const transcriptProjectionMigration = readMigration('0091_transcript_semantic_projections.sql');
+const conceptRegistryMigration = readMigration('0094_concept_registry.sql');
 const contextRecordsMigration = readMigration('0095_context_records.sql');
+const assessmentLayerMigration = readMigration('0102_assessment_layer.sql');
 const OBSERVED_AT = '2026-06-14T08:00:00.000Z';
 
 function readMigration(name: string): string {
@@ -64,6 +66,15 @@ async function toArrayBuffer(value: unknown): Promise<ArrayBuffer> {
   if (typeof value === 'string') return new TextEncoder().encode(value).buffer;
   if (value instanceof Blob) return value.arrayBuffer();
   return new ArrayBuffer(0);
+}
+
+async function sha256ContentHash(value: string): Promise<string> {
+  const bytes = new TextEncoder().encode(value);
+  const digest = await crypto.subtle.digest('SHA-256', bytes);
+  return `sha256:${Array.from(
+    new Uint8Array(digest),
+    (byte) => byte.toString(16).padStart(2, '0'),
+  ).join('')}`;
 }
 
 function createFakeStorage(): R2Bucket {
@@ -360,6 +371,27 @@ function installDeepgramFetchWithReversedChannels(
     status: 200,
     headers: { 'Content-Type': 'application/json' },
   })));
+}
+
+function defaultRecordingSpeakerMetadataForTest(): {
+  version: 1;
+  transcriptionAudio: {
+    channelLayout: string;
+    channelCount: number;
+    channels: Array<{ channel: number; role: 'host' | 'guest'; source: 'local' | 'remote' }>;
+  };
+} {
+  return {
+    version: 1,
+    transcriptionAudio: {
+      channelLayout: 'host-local-guest-remote-v1',
+      channelCount: 2,
+      channels: [
+        { channel: 0, role: 'host', source: 'local' },
+        { channel: 1, role: 'guest', source: 'remote' },
+      ],
+    },
+  };
 }
 
 function byteLength(value: string): number {
@@ -690,7 +722,10 @@ function seedSchema(sqlite: BetterSqliteDb): void {
       completed_at TEXT,
       updated_at TEXT
     );
-    CREATE TABLE qualified_repos (id INTEGER PRIMARY KEY);
+    CREATE TABLE qualified_repos (
+      id INTEGER PRIMARY KEY,
+      github_url TEXT
+    );
     CREATE TABLE dev_container_sessions (
       id TEXT PRIMARY KEY,
       session_id TEXT NOT NULL UNIQUE,
@@ -711,6 +746,7 @@ function seedSchema(sqlite: BetterSqliteDb): void {
       repo_r2_key TEXT,
       repo_git_url TEXT,
       challenge_branch TEXT,
+      base_commit_sha TEXT,
       base_branch TEXT,
       started_at TEXT,
       stopped_at TEXT,
@@ -734,6 +770,7 @@ function seedSchema(sqlite: BetterSqliteDb): void {
   sqlite.exec(livingContextMigration);
   sqlite.exec(repoSemanticGraphMigration);
   sqlite.exec(transcriptProjectionMigration);
+  sqlite.exec(conceptRegistryMigration);
   sqlite.exec(contextRecordsMigration);
 }
 
@@ -809,6 +846,63 @@ describe('meeting room recording living-context route', () => {
     vi.useRealTimers();
     vi.unstubAllGlobals();
     sqlite.close();
+  });
+
+  it('links repeated meetings for the same email to one normalized contact', async () => {
+    const app = mountApp();
+    const { ctx } = buildCtx();
+
+    const firstRes = await app.request('/meetings', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({
+        recipientName: 'Ada Uppercase',
+        recipientEmail: 'Ada.Relationships@Example.com',
+        title: 'First relationship interview',
+        meetingType: 'INTERVIEW',
+      }),
+    }, env, ctx);
+    expect(firstRes.status).toBe(201);
+    const first = await firstRes.json() as { meeting: { id: string; contactId: string } };
+
+    const secondRes = await app.request('/meetings', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({
+        recipientName: 'Ada Lowercase',
+        recipientEmail: 'ada.relationships@example.com',
+        title: 'Second relationship interview',
+        meetingType: 'FOLLOW_UP',
+      }),
+    }, env, ctx);
+    expect(secondRes.status).toBe(201);
+    const second = await secondRes.json() as { meeting: { id: string; contactId: string } };
+
+    expect(second.meeting.id).not.toBe(first.meeting.id);
+    expect(second.meeting.contactId).toBe(first.meeting.contactId);
+    expect(sqlite.prepare(
+      `SELECT COUNT(*) AS count
+         FROM contacts
+        WHERE owner_id = 'owner-1'
+          AND lower(email) = 'ada.relationships@example.com'`,
+    ).get()).toEqual({ count: 1 });
+    expect(sqlite.prepare(
+      `SELECT email, name
+         FROM contacts
+        WHERE id = ?`,
+    ).get(first.meeting.contactId)).toEqual({
+      email: 'ada.relationships@example.com',
+      name: 'Ada Uppercase',
+    });
+    expect(sqlite.prepare(
+      `SELECT COUNT(DISTINCT meeting_id) AS meetingCount,
+              COUNT(DISTINCT contact_id) AS contactCount
+         FROM meeting_participants
+        WHERE contact_id = ?`,
+    ).get(first.meeting.contactId)).toEqual({
+      meetingCount: 2,
+      contactCount: 1,
+    });
   });
 
   it('prepares stable guest and fresh host video room links for a meeting', async () => {
@@ -1022,7 +1116,7 @@ describe('meeting room recording living-context route', () => {
     }, env, ctx);
     expect(lifecycleRes.status).toBe(422);
 
-    const sessionEventRes = await app.request(`/meeting/${created.hostToken}/session-events`, {
+    const fakeWindowOpenRes = await app.request(`/meeting/${created.hostToken}/session-events`, {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify({
@@ -1033,6 +1127,54 @@ describe('meeting room recording living-context route', () => {
           windowId: 'browser',
           windowType: 'browser',
           surface: 'win95',
+        },
+      }),
+    }, env, ctx);
+    expect(fakeWindowOpenRes.status).toBe(422);
+
+    const sourceOnlyWindowOpenRes = await app.request(`/meeting/${created.hostToken}/session-events`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({
+        type: 'window_open',
+        text: 'Microsoft Edge',
+        actor: 'guest',
+        properties: {
+          source: 'window_lifecycle_client_submit',
+          lifecycleSource: 'clippy_action',
+          lifecycleKind: 'open',
+          actor: 'guest',
+          windowId: 'browser',
+          windowType: 'browser',
+          windowTitle: 'Microsoft Edge',
+          surface: 'win95',
+          roomPhase: 'connected',
+          durableObjectReplayExpected: true,
+        },
+      }),
+    }, env, ctx);
+    expect(sourceOnlyWindowOpenRes.status).toBe(422);
+
+    const sessionEventRes = await app.request(`/meeting/${created.hostToken}/session-events`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({
+        type: 'window_open',
+        text: 'Microsoft Edge',
+        actor: 'guest',
+        properties: {
+          source: 'window_lifecycle_client_submit',
+          lifecycleSource: 'clippy_action',
+          lifecycleKind: 'open',
+          windowLifecycleId: 'window-lifecycle:guest:1782601200000:open:browser',
+          capturedAtMs: 1782601200000,
+          actor: 'guest',
+          windowId: 'browser',
+          windowType: 'browser',
+          windowTitle: 'Microsoft Edge',
+          surface: 'win95',
+          roomPhase: 'connected',
+          durableObjectReplayExpected: true,
         },
       }),
     }, env, ctx);
@@ -1086,6 +1228,7 @@ describe('meeting room recording living-context route', () => {
       actor: 'guest',
       sessionId: node?.source_reference,
       windowId: 'browser',
+      lifecycleSource: 'clippy_action',
       surface: 'win95',
     });
 
@@ -1138,7 +1281,6 @@ describe('meeting room recording living-context route', () => {
         source_ref_type: 'meeting_session_event',
         source_ref_id: node?.id,
         evidence_role: 'source_event',
-        exact_text: 'Microsoft Edge',
       }),
       expect.objectContaining({
         source_ref_type: 'source_span',
@@ -1150,6 +1292,20 @@ describe('meeting room recording living-context route', () => {
     const eventSource = contextSources.find(
       (source) => source.source_ref_type === 'meeting_session_event',
     );
+    expect(JSON.parse(eventSource?.exact_text ?? '{}')).toMatchObject({
+      type: 'window_open',
+      sessionId: node?.source_reference,
+      candidateId: linked?.candidate_id,
+      actor: 'guest',
+      text: 'Microsoft Edge',
+      properties: {
+        actor: 'guest',
+        windowId: 'browser',
+        lifecycleSource: 'clippy_action',
+        surface: 'win95',
+      },
+      candidateNodeId: node?.id,
+    });
     expect(eventSource?.content_hash).toEqual(expect.stringMatching(/^content_[a-f0-9]{32}$/));
     expect(JSON.parse(eventSource?.locator_json ?? '{}')).toMatchObject({
       sessionId: node?.source_reference,
@@ -1157,6 +1313,741 @@ describe('meeting room recording living-context route', () => {
       actor: 'guest',
       candidateNodeId: node?.id,
     });
+
+    const fakeBrowserNavigationRes = await app.request(`/meeting/${created.hostToken}/session-events`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({
+        type: 'browser_navigation',
+        text: 'https://example.com/review',
+        actor: 'guest',
+        properties: {
+          source: 'browser_url_claim',
+          windowId: 'browser',
+          url: 'https://example.com/review',
+          surface: 'win95',
+        },
+      }),
+    }, env, ctx);
+    expect(fakeBrowserNavigationRes.status).toBe(422);
+
+    const sourceOnlyBrowserNavigationRes = await app.request(`/meeting/${created.hostToken}/session-events`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({
+        type: 'browser_navigation',
+        text: 'https://example.com/review?step=1',
+        actor: 'guest',
+        properties: {
+          source: 'room_browser_window',
+          navigationSource: 'browser_window_client_submit',
+          actor: 'guest',
+          windowId: 'browser',
+          navigationTrigger: 'go_button',
+          url: 'https://example.com/review?step=1',
+          urlHost: 'example.com',
+          urlProtocol: 'https',
+          urlPath: '/review?step=1',
+          knownEmbedBlocked: false,
+          surface: 'win95',
+          roomPhase: 'connected',
+          durableObjectReplayExpected: true,
+        },
+      }),
+    }, env, ctx);
+    expect(sourceOnlyBrowserNavigationRes.status).toBe(422);
+
+    const browserNavigationRes = await app.request(`/meeting/${created.hostToken}/session-events`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({
+        type: 'browser_navigation',
+        text: 'https://example.com/review?step=1',
+        actor: 'guest',
+        properties: {
+          source: 'room_browser_window',
+          navigationSource: 'browser_window_client_submit',
+          actor: 'guest',
+          windowId: 'browser',
+          navigationTrigger: 'go_button',
+          browserNavigationId: 'browser-navigation:guest:1782601300000:browser:go_button:nav_54d2c495',
+          capturedAtMs: 1782601300000,
+          urlFingerprint: 'nav_54d2c495',
+          url: 'https://example.com/review?step=1',
+          urlHost: 'example.com',
+          urlProtocol: 'https',
+          urlPath: '/review?step=1',
+          knownEmbedBlocked: false,
+          surface: 'win95',
+          roomPhase: 'connected',
+          durableObjectReplayExpected: true,
+        },
+      }),
+    }, env, ctx);
+    expect(browserNavigationRes.status).toBe(200);
+
+    const browserNavigationNode = sqlite.prepare(
+      `SELECT node_type, narrative_text, source_type, extracted_properties_json
+         FROM candidate_nodes
+        WHERE candidate_id = ? AND node_type = 'session_browser_nav'`,
+    ).get(linked?.candidate_id) as {
+      node_type: string;
+      narrative_text: string;
+      source_type: string;
+      extracted_properties_json: string;
+    } | undefined;
+    expect(browserNavigationNode).toMatchObject({
+      node_type: 'session_browser_nav',
+      source_type: 'meeting_session',
+    });
+    expect(browserNavigationNode?.narrative_text).toContain('Browser navigated to: https://example.com/review?step=1');
+    expect(JSON.parse(browserNavigationNode?.extracted_properties_json ?? '{}')).toMatchObject({
+      actor: 'guest',
+      source: 'room_browser_window',
+      navigationSource: 'browser_window_client_submit',
+      windowId: 'browser',
+      navigationTrigger: 'go_button',
+      browserNavigationId: 'browser-navigation:guest:1782601300000:browser:go_button:nav_54d2c495',
+      capturedAtMs: 1782601300000,
+      urlFingerprint: 'nav_54d2c495',
+      urlHost: 'example.com',
+      urlProtocol: 'https',
+      surface: 'win95',
+      roomPhase: 'connected',
+    });
+
+    const reloadBrowserNavigationRes = await app.request(`/meeting/${created.hostToken}/session-events`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({
+        type: 'browser_navigation',
+        text: 'https://example.com/review?step=1',
+        actor: 'guest',
+        properties: {
+          source: 'room_browser_window',
+          navigationSource: 'browser_window_client_submit',
+          actor: 'guest',
+          windowId: 'browser',
+          navigationTrigger: 'reload_button',
+          browserNavigationId: 'browser-navigation:guest:1782601300001:browser:reload_button:nav_54d2c495',
+          capturedAtMs: 1782601300001,
+          urlFingerprint: 'nav_54d2c495',
+          url: 'https://example.com/review?step=1',
+          urlHost: 'example.com',
+          urlProtocol: 'https',
+          urlPath: '/review?step=1',
+          knownEmbedBlocked: false,
+          surface: 'win95',
+          roomPhase: 'connected',
+          durableObjectReplayExpected: true,
+        },
+      }),
+    }, env, ctx);
+    expect(reloadBrowserNavigationRes.status).toBe(200);
+
+    const externalOpenBrowserNavigationRes = await app.request(`/meeting/${created.hostToken}/session-events`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({
+        type: 'browser_navigation',
+        text: 'https://example.com/review?step=1',
+        actor: 'guest',
+        properties: {
+          source: 'room_browser_window',
+          navigationSource: 'browser_window_client_submit',
+          actor: 'guest',
+          windowId: 'browser',
+          navigationTrigger: 'external_open',
+          browserNavigationId: 'browser-navigation:guest:1782601300002:browser:external_open:nav_54d2c495',
+          capturedAtMs: 1782601300002,
+          urlFingerprint: 'nav_54d2c495',
+          url: 'https://example.com/review?step=1',
+          urlHost: 'example.com',
+          urlProtocol: 'https',
+          urlPath: '/review?step=1',
+          knownEmbedBlocked: false,
+          surface: 'win95',
+          roomPhase: 'connected',
+          durableObjectReplayExpected: true,
+        },
+      }),
+    }, env, ctx);
+    expect(externalOpenBrowserNavigationRes.status).toBe(200);
+
+    const fileLinkBrowserNavigationRes = await app.request(`/meeting/${created.hostToken}/session-events`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({
+        type: 'browser_navigation',
+        text: 'https://example.com/review?step=1',
+        actor: 'guest',
+        properties: {
+          source: 'room_browser_window',
+          navigationSource: 'browser_window_client_submit',
+          actor: 'guest',
+          windowId: 'browser',
+          navigationTrigger: 'file_system_link_open',
+          browserNavigationId: 'browser-navigation:guest:1782601300003:browser:file_system_link_open:nav_54d2c495',
+          capturedAtMs: 1782601300003,
+          urlFingerprint: 'nav_54d2c495',
+          url: 'https://example.com/review?step=1',
+          urlHost: 'example.com',
+          urlProtocol: 'https',
+          urlPath: '/review?step=1',
+          knownEmbedBlocked: false,
+          surface: 'win95',
+          roomPhase: 'connected',
+          durableObjectReplayExpected: true,
+        },
+      }),
+    }, env, ctx);
+    expect(fileLinkBrowserNavigationRes.status).toBe(200);
+
+    const fakeChatRes = await app.request(`/meeting/${created.hostToken}/session-events`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({
+        type: 'chat_message',
+        text: 'I think the retry test should fail before the fix.',
+        actor: 'guest',
+        properties: {
+          source: 'room_chat_claim',
+          roomMessageId: 'chat-message-1',
+        },
+      }),
+    }, env, ctx);
+    expect(fakeChatRes.status).toBe(422);
+
+    const chatRes = await app.request(`/meeting/${created.hostToken}/session-events`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({
+        type: 'chat_message',
+        text: 'I think the retry test should fail before the fix.',
+        actor: 'guest',
+        properties: {
+          source: 'room_chat_client_submit',
+          chatEventSource: 'browser_room_chat_window',
+          actor: 'guest',
+          roomMessageId: 'chat-message-1',
+          clientId: 'browser-client-1',
+          messageCreatedAt: 1782602000000,
+          messageLength: 50,
+          deliveryStatus: 'pending',
+          surface: 'win95',
+          roomPhase: 'connected',
+          durableObjectReplayExpected: true,
+        },
+      }),
+    }, env, ctx);
+    expect(chatRes.status).toBe(200);
+
+    const chatNode = sqlite.prepare(
+      `SELECT node_type, narrative_text, source_type, extracted_properties_json
+         FROM candidate_nodes
+        WHERE candidate_id = ? AND node_type = 'session_chat_message'`,
+    ).get(linked?.candidate_id) as {
+      node_type: string;
+      narrative_text: string;
+      source_type: string;
+      extracted_properties_json: string;
+    } | undefined;
+    expect(chatNode).toMatchObject({
+      node_type: 'session_chat_message',
+      source_type: 'meeting_session',
+    });
+    expect(chatNode?.narrative_text).toContain(
+      'Room chat message from guest: "I think the retry test should fail before the fix."',
+    );
+    expect(JSON.parse(chatNode?.extracted_properties_json ?? '{}')).toMatchObject({
+      actor: 'guest',
+      source: 'room_chat_client_submit',
+      chatEventSource: 'browser_room_chat_window',
+      roomMessageId: 'chat-message-1',
+      clientId: 'browser-client-1',
+      deliveryStatus: 'pending',
+      surface: 'win95',
+      roomPhase: 'connected',
+    });
+
+    const fakeTerminalCommandRes = await app.request(`/meeting/${created.hostToken}/session-events`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({
+        type: 'terminal_command',
+        text: 'npm test',
+        actor: 'guest',
+        properties: {
+          source: 'terminal_claim',
+          terminalSessionId: 'terminal-workspace-session-1-guest',
+          terminalCommandSequence: 1,
+          commandLength: 8,
+        },
+      }),
+    }, env, ctx);
+    expect(fakeTerminalCommandRes.status).toBe(422);
+
+    const terminalCommandRes = await app.request(`/meeting/${created.hostToken}/session-events`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({
+        type: 'terminal_command',
+        text: 'npm test',
+        actor: 'guest',
+        properties: {
+          source: 'container_terminal',
+          terminalEventSource: 'browser_terminal_ws',
+          terminalSessionId: 'terminal-workspace-session-1-guest',
+          terminalCommandId: 'terminal-workspace-session-1-guest:command:guest:1700000001000:1:terminal_dc5964d6',
+          terminalCommandSequence: 1,
+          actor: 'guest',
+          capturedAtMs: 1700000001000,
+          commandFingerprint: 'terminal_dc5964d6',
+          commandLength: 8,
+          surface: 'win95',
+          roomPhase: 'connected',
+          workspaceStatus: 'READY',
+          workspaceSessionId: 'workspace-session-1',
+          repoUrl: 'https://github.com/cloudflare/workers-sdk',
+        },
+      }),
+    }, env, ctx);
+    expect(terminalCommandRes.status).toBe(200);
+
+    const terminalOutputRes = await app.request(`/meeting/${created.hostToken}/session-events`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({
+        type: 'terminal_output',
+        text: 'PASS src/app.test.ts\n',
+        actor: 'system',
+        properties: {
+          source: 'container_terminal',
+          terminalEventSource: 'browser_terminal_ws',
+          terminalSessionId: 'terminal-workspace-session-1-guest',
+          terminalCommandId: 'terminal-workspace-session-1-guest:command:guest:1700000001000:1:terminal_dc5964d6',
+          terminalOutputChunkId: 'terminal-workspace-session-1-guest:output:system:1700000002000:1:terminal_4f2d0d8f',
+          terminalOutputSequence: 1,
+          actor: 'system',
+          capturedAtMs: 1700000002000,
+          outputFingerprint: 'terminal_4f2d0d8f',
+          outputLength: 21,
+          surface: 'win95',
+          roomPhase: 'connected',
+          workspaceStatus: 'READY',
+          workspaceSessionId: 'workspace-session-1',
+          repoUrl: 'https://github.com/cloudflare/workers-sdk',
+        },
+      }),
+    }, env, ctx);
+    expect(terminalOutputRes.status).toBe(200);
+
+    const terminalNodes = sqlite.prepare(
+      `SELECT node_type, narrative_text, source_type, extracted_properties_json
+         FROM candidate_nodes
+        WHERE candidate_id = ?
+          AND node_type IN ('session_terminal_command', 'session_terminal_output')
+        ORDER BY node_type`,
+    ).all(linked?.candidate_id) as Array<{
+      node_type: string;
+      narrative_text: string;
+      source_type: string;
+      extracted_properties_json: string;
+    }>;
+    expect(terminalNodes).toHaveLength(2);
+    expect(terminalNodes).toEqual(expect.arrayContaining([
+      expect.objectContaining({
+        node_type: 'session_terminal_command',
+        source_type: 'meeting_session',
+        narrative_text: expect.stringContaining('Terminal command: npm test'),
+      }),
+      expect.objectContaining({
+        node_type: 'session_terminal_output',
+        source_type: 'meeting_session',
+        narrative_text: expect.stringContaining('Terminal output: PASS src/app.test.ts'),
+      }),
+    ]));
+    expect(terminalNodes.map((node) => JSON.parse(node.extracted_properties_json))).toEqual(expect.arrayContaining([
+      expect.objectContaining({
+        source: 'container_terminal',
+        terminalEventSource: 'browser_terminal_ws',
+        terminalSessionId: 'terminal-workspace-session-1-guest',
+        terminalCommandId: 'terminal-workspace-session-1-guest:command:guest:1700000001000:1:terminal_dc5964d6',
+        actor: 'guest',
+        capturedAtMs: 1700000001000,
+        workspaceSessionId: 'workspace-session-1',
+      }),
+      expect.objectContaining({
+        source: 'container_terminal',
+        terminalEventSource: 'browser_terminal_ws',
+        terminalOutputChunkId: 'terminal-workspace-session-1-guest:output:system:1700000002000:1:terminal_4f2d0d8f',
+        terminalCommandId: 'terminal-workspace-session-1-guest:command:guest:1700000001000:1:terminal_dc5964d6',
+        actor: 'system',
+        capturedAtMs: 1700000002000,
+        workspaceSessionId: 'workspace-session-1',
+      }),
+    ]));
+
+    vi.useFakeTimers();
+    vi.setSystemTime(new Date('2026-06-27T23:05:00.000Z'));
+
+    const browserWindowMoveEvent = {
+      type: 'window_update',
+      text: 'Window state updated: browser',
+      actor: 'guest',
+      properties: {
+        source: 'window_state_client_submit',
+        stateSource: 'win95_window_chrome',
+        actor: 'guest',
+        windowId: 'browser',
+        action: 'move',
+        windowStateChangeId: 'window-state:guest:1782601500000:browser:move',
+        capturedAtMs: 1782601500000,
+        statePatch: { x: 120, y: 80 },
+        stateKeys: ['x', 'y'],
+        surface: 'win95',
+        roomPhase: 'connected',
+        durableObjectReplayExpected: true,
+        clientCapturedAtMs: 1782601500000,
+      },
+    };
+    const beaconSessionEventRes = await app.request(`/meeting/${created.hostToken}/session-events`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'text/plain;charset=UTF-8' },
+      body: JSON.stringify({
+        ...browserWindowMoveEvent,
+        properties: {
+          ...browserWindowMoveEvent.properties,
+          clientEventId: 'browser-window-move-1',
+        },
+      }),
+    }, env, ctx);
+    expect(beaconSessionEventRes.status).toBe(200);
+    const firstBeaconBody = await beaconSessionEventRes.json() as { captured: boolean; nodeId: string };
+    expect(firstBeaconBody).toMatchObject({
+      captured: true,
+      nodeId: expect.any(String),
+    });
+
+    const duplicateBeaconSessionEventRes = await app.request(`/meeting/${created.hostToken}/session-events`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'text/plain;charset=UTF-8' },
+      body: JSON.stringify({
+        ...browserWindowMoveEvent,
+        properties: {
+          ...browserWindowMoveEvent.properties,
+          clientEventId: 'browser-window-move-1',
+        },
+      }),
+    }, env, ctx);
+    expect(duplicateBeaconSessionEventRes.status).toBe(200);
+    await expect(duplicateBeaconSessionEventRes.json()).resolves.toMatchObject({
+      captured: true,
+      nodeId: firstBeaconBody.nodeId,
+    });
+
+    const secondBeaconSessionEventRes = await app.request(`/meeting/${created.hostToken}/session-events`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'text/plain;charset=UTF-8' },
+      body: JSON.stringify({
+        ...browserWindowMoveEvent,
+        properties: {
+          ...browserWindowMoveEvent.properties,
+          clientEventId: 'browser-window-move-2',
+        },
+      }),
+    }, env, ctx);
+    expect(secondBeaconSessionEventRes.status).toBe(200);
+    const secondBeaconBody = await secondBeaconSessionEventRes.json() as { captured: boolean; nodeId: string };
+    expect(secondBeaconBody).toMatchObject({
+      captured: true,
+      nodeId: expect.any(String),
+    });
+    expect(secondBeaconBody.nodeId).not.toBe(firstBeaconBody.nodeId);
+
+    const beaconNodes = sqlite.prepare(
+      `SELECT id, node_type, narrative_text, extracted_properties_json
+         FROM candidate_nodes
+        WHERE candidate_id = ?
+          AND node_type = 'session_window_update'
+        ORDER BY id`,
+    ).all(linked?.candidate_id) as Array<{
+      id: string;
+      node_type: string;
+      narrative_text: string;
+      extracted_properties_json: string;
+    }>;
+    expect(beaconNodes).toHaveLength(2);
+    expect(beaconNodes.map((node) => node.id).sort()).toEqual([
+      firstBeaconBody.nodeId,
+      secondBeaconBody.nodeId,
+    ].sort());
+    const beaconProperties = beaconNodes.map((node) =>
+      JSON.parse(node.extracted_properties_json) as { clientEventId: string; clientCapturedAtMs: number },
+    );
+    expect(beaconNodes[0]?.narrative_text).toContain('Window updated: Window state updated: browser');
+    expect(beaconProperties.map((properties) => properties.clientEventId).sort()).toEqual([
+      'browser-window-move-1',
+      'browser-window-move-2',
+    ]);
+    expect(beaconProperties).toEqual(expect.arrayContaining([
+      expect.objectContaining({
+        actor: 'guest',
+        source: 'window_state_client_submit',
+        windowId: 'browser',
+        surface: 'win95',
+        windowStateChangeId: 'window-state:guest:1782601500000:browser:move',
+        capturedAtMs: 1782601500000,
+        clientCapturedAtMs: 1782601500000,
+      }),
+    ]));
+
+    const windowUpdateContextRecords = sqlite.prepare(
+      `SELECT id, qualifiers_json
+         FROM context_records
+        WHERE record_type = 'meeting_session_event'
+          AND predicate = 'session_event:window_update'
+        ORDER BY id`,
+    ).all() as Array<{ id: string; qualifiers_json: string }>;
+    expect(windowUpdateContextRecords).toHaveLength(2);
+    const windowUpdateContextClientIds = windowUpdateContextRecords.map((record) => {
+      const qualifiers = JSON.parse(record.qualifiers_json) as {
+        properties: { clientEventId: string };
+      };
+      return qualifiers.properties.clientEventId;
+    });
+    expect(windowUpdateContextClientIds.sort()).toEqual([
+      'browser-window-move-1',
+      'browser-window-move-2',
+    ]);
+    expect(JSON.parse(beaconNodes[0]?.extracted_properties_json ?? '{}')).toMatchObject({
+      actor: 'guest',
+      source: 'window_state_client_submit',
+      windowId: 'browser',
+      surface: 'win95',
+      windowStateChangeId: 'window-state:guest:1782601500000:browser:move',
+      capturedAtMs: 1782601500000,
+    });
+
+    const sourceOnlyRoomSurfaceRes = await app.request(`/meeting/${created.hostToken}/session-events`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({
+        type: 'room_surface_change',
+        text: 'Room surface changed to 95 Until Infinity desktop',
+        actor: 'guest',
+        properties: {
+          source: 'room_surface_control',
+          actor: 'guest',
+          surface: 'win95',
+          previousSurface: 'standard',
+          action: 'enter_desktop',
+          roomPhase: 'connected',
+        },
+      }),
+    }, env, ctx);
+    expect(sourceOnlyRoomSurfaceRes.status).toBe(422);
+
+    const roomSurfaceRes = await app.request(`/meeting/${created.hostToken}/session-events`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({
+        type: 'room_surface_change',
+        text: 'Room surface changed to 95 Until Infinity desktop',
+        actor: 'guest',
+        properties: {
+          source: 'room_surface_control',
+          surfaceControlEventSource: 'browser_room_surface_toggle',
+          actor: 'guest',
+          surfaceChangeId: 'surface:guest:1782601510000:standard:win95',
+          capturedAtMs: 1782601510000,
+          surface: 'win95',
+          previousSurface: 'standard',
+          action: 'enter_desktop',
+          roomPhase: 'connected',
+          durableObjectReplayExpected: true,
+        },
+      }),
+    }, env, ctx);
+    expect(roomSurfaceRes.status).toBe(200);
+
+    const surfaceNode = sqlite.prepare(
+      `SELECT node_type, extracted_properties_json
+         FROM candidate_nodes
+        WHERE candidate_id = ? AND node_type = 'session_room_surface_change'
+        ORDER BY captured_at DESC
+        LIMIT 1`,
+    ).get(linked?.candidate_id) as {
+      node_type: string;
+      extracted_properties_json: string;
+    } | undefined;
+    expect(JSON.parse(surfaceNode?.extracted_properties_json ?? '{}')).toMatchObject({
+      actor: 'guest',
+      source: 'room_surface_control',
+      surfaceControlEventSource: 'browser_room_surface_toggle',
+      surfaceChangeId: 'surface:guest:1782601510000:standard:win95',
+      surface: 'win95',
+      previousSurface: 'standard',
+      durableObjectReplayExpected: true,
+    });
+
+    const sourceOnlyStartMenuRes = await app.request(`/meeting/${created.hostToken}/session-events`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({
+        type: 'desktop_menu_toggle',
+        text: 'Start menu opened',
+        actor: 'guest',
+        properties: {
+          source: 'win95_start_menu_control',
+          menuEventSource: 'win95_start_button',
+          actor: 'guest',
+          menuId: 'start',
+          action: 'open',
+          open: true,
+          surface: 'win95',
+          roomPhase: 'connected',
+        },
+      }),
+    }, env, ctx);
+    expect(sourceOnlyStartMenuRes.status).toBe(422);
+
+    const startMenuRes = await app.request(`/meeting/${created.hostToken}/session-events`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({
+        type: 'desktop_menu_toggle',
+        text: 'Start menu opened',
+        actor: 'guest',
+        properties: {
+          source: 'win95_start_menu_control',
+          menuEventSource: 'win95_start_button',
+          actor: 'guest',
+          menuId: 'start',
+          action: 'open',
+          open: true,
+          startMenuEventId: 'start-menu:guest:1782601520000:open:win95_start_button',
+          capturedAtMs: 1782601520000,
+          surface: 'win95',
+          roomPhase: 'connected',
+          durableObjectReplayExpected: true,
+        },
+      }),
+    }, env, ctx);
+    expect(startMenuRes.status).toBe(200);
+
+    const startMenuNode = sqlite.prepare(
+      `SELECT node_type, extracted_properties_json
+         FROM candidate_nodes
+        WHERE candidate_id = ? AND node_type = 'session_desktop_menu_toggle'
+        ORDER BY captured_at DESC
+        LIMIT 1`,
+    ).get(linked?.candidate_id) as {
+      node_type: string;
+      extracted_properties_json: string;
+    } | undefined;
+    expect(JSON.parse(startMenuNode?.extracted_properties_json ?? '{}')).toMatchObject({
+      actor: 'guest',
+      source: 'win95_start_menu_control',
+      menuEventSource: 'win95_start_button',
+      startMenuEventId: 'start-menu:guest:1782601520000:open:win95_start_button',
+      menuId: 'start',
+      action: 'open',
+      open: true,
+      surface: 'win95',
+      durableObjectReplayExpected: true,
+    });
+
+    const fakeWorkspaceStateRes = await app.request(`/meeting/${created.hostToken}/session-events`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({
+        type: 'workspace_state',
+        text: 'Workspace state changed to READY',
+        actor: 'host',
+        properties: {
+          workspaceStatus: 'READY',
+          workspaceSessionId: 'workspace-session-1',
+        },
+      }),
+    }, env, ctx);
+    expect(fakeWorkspaceStateRes.status).toBe(422);
+
+    const workspaceStateRes = await app.request(`/meeting/${created.hostToken}/session-events`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({
+        type: 'workspace_state',
+        text: 'Workspace state changed to READY',
+        actor: 'host',
+        properties: {
+          source: 'workspace_state_client_submit',
+          workspaceEventSource: 'browser_workspace_state_observer',
+          workspaceStateSource: 'launch',
+          workspaceStateEventId: 'workspace-state:host:1700000000700:launch:workspace-session-1:READY',
+          capturedAtMs: 1700000000700,
+          actor: 'host',
+          workspaceStatus: 'READY',
+          workspaceSessionId: 'workspace-session-1',
+          repoUrl: 'https://github.com/acme/orders',
+          githubPrNumber: 42,
+          matchedRepoId: 12,
+          challengeStatus: 'github_pr_assigned',
+          challengeKind: 'github_pr',
+          challengeSource: 'scheduled_interview.github_pr_number',
+          challengeMessage: null,
+          workspaceTelemetryPersisted: true,
+          proxyUrlPersisted: false,
+        },
+      }),
+    }, env, ctx);
+    expect(workspaceStateRes.status).toBe(200);
+
+    const workspaceStateNode = sqlite.prepare(
+      `SELECT node_type, narrative_text, source_type, extracted_properties_json
+         FROM candidate_nodes
+        WHERE candidate_id = ? AND node_type = 'session_workspace_state'
+          AND extracted_properties_json LIKE '%workspace_state_client_submit%'`,
+    ).get(linked?.candidate_id) as {
+      node_type: string;
+      narrative_text: string;
+      source_type: string;
+      extracted_properties_json: string;
+    } | undefined;
+    expect(workspaceStateNode).toMatchObject({
+      node_type: 'session_workspace_state',
+      source_type: 'meeting_session',
+    });
+    expect(workspaceStateNode?.narrative_text).toContain('Workspace state changed to READY');
+    const workspaceStateProperties = JSON.parse(workspaceStateNode?.extracted_properties_json ?? '{}') as Record<string, unknown>;
+    expect(workspaceStateProperties).toMatchObject({
+      actor: 'host',
+      source: 'workspace_state_client_submit',
+      workspaceEventSource: 'browser_workspace_state_observer',
+      workspaceStateSource: 'launch',
+      workspaceStateEventId: 'workspace-state:host:1700000000700:launch:workspace-session-1:READY',
+      capturedAtMs: 1700000000700,
+      workspaceStatus: 'READY',
+      workspaceSessionId: 'workspace-session-1',
+      proxyUrlPersisted: false,
+    });
+    expect(JSON.stringify(workspaceStateProperties)).not.toContain('/workspace/proxy/');
+
+    const fakeParticipantJoinRes = await app.request(`/meeting/${created.hostToken}/session-events`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({
+        type: 'participant_join',
+        text: 'Host joined the 95 Until Infinity room',
+        actor: 'host',
+        properties: {
+          source: 'meeting_room_lifecycle',
+          lifecycleEvent: 'JOINED',
+          participantRole: 'HOST',
+        },
+      }),
+    }, env, ctx);
+    expect(fakeParticipantJoinRes.status).toBe(422);
 
     const contextEntities = sqlite.prepare(
       `SELECT entity_type, entity_id, relationship, value_json, metadata_json
@@ -1187,7 +2078,76 @@ describe('meeting room recording living-context route', () => {
       }),
     ]));
 
-    const clippyActionRes = await app.request(`/meeting/${created.hostToken}/session-events`, {
+    const fakeClippyPromptRes = await app.request(`/meeting/${created.hostToken}/session-events`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({
+        type: 'clippy_prompt',
+        text: 'Would you like to start recording?',
+        actor: 'host',
+        properties: {
+          promptId: 'prompt-start-recording',
+          clientId: 'host-client',
+          promptSource: 'system',
+        },
+      }),
+    }, env, ctx);
+    expect(fakeClippyPromptRes.status).toBe(422);
+
+    const clippyPromptRes = await app.request(`/meeting/${created.hostToken}/session-events`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({
+        type: 'clippy_prompt',
+        text: 'Would you like to start recording?',
+        actor: 'host',
+        properties: {
+          source: 'clippy_prompt_client_submit',
+          promptEventSource: 'browser_proactive_clippy_prompt',
+          promptTrigger: 'recording_start_suggestion',
+          actor: 'host',
+          promptId: 'prompt-start-recording',
+          clientId: 'host-client',
+          promptCreatedAt: 1782601501000,
+          promptLength: 'Would you like to start recording?'.length,
+          promptSource: 'system',
+          surface: 'win95',
+          roomPhase: 'connected',
+          workspaceStatus: 'READY',
+          workspaceSessionId: 'workspace-session-1',
+          agentResponseClaimed: false,
+        },
+      }),
+    }, env, ctx);
+    expect(clippyPromptRes.status).toBe(200);
+
+    const clippyPromptNode = sqlite.prepare(
+      `SELECT node_type, narrative_text, source_type, extracted_properties_json
+         FROM candidate_nodes
+        WHERE candidate_id = ? AND node_type = 'session_clippy_prompt'
+          AND extracted_properties_json LIKE '%clippy_prompt_client_submit%'`,
+    ).get(linked?.candidate_id) as {
+      node_type: string;
+      narrative_text: string;
+      source_type: string;
+      extracted_properties_json: string;
+    } | undefined;
+    expect(clippyPromptNode).toMatchObject({
+      node_type: 'session_clippy_prompt',
+      source_type: 'meeting_session',
+    });
+    expect(clippyPromptNode?.narrative_text).toContain('Clippy prompted');
+    expect(JSON.parse(clippyPromptNode?.extracted_properties_json ?? '{}')).toMatchObject({
+      actor: 'host',
+      source: 'clippy_prompt_client_submit',
+      promptEventSource: 'browser_proactive_clippy_prompt',
+      promptTrigger: 'recording_start_suggestion',
+      promptId: 'prompt-start-recording',
+      promptLength: 'Would you like to start recording?'.length,
+      agentResponseClaimed: false,
+    });
+
+    const fakeClippyActionRes = await app.request(`/meeting/${created.hostToken}/session-events`, {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify({
@@ -1200,30 +2160,1046 @@ describe('meeting room recording living-context route', () => {
         },
       }),
     }, env, ctx);
+    expect(fakeClippyActionRes.status).toBe(422);
+
+    const legacyBridgeActionRes = await app.request(`/meeting/${created.hostToken}/session-events`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({
+        type: 'clippy_action',
+        text: 'devin suggested room action: open-terminal',
+        actor: 'agent',
+        properties: {
+          source: 'clippy_agent_bridge',
+          origin: 'agent',
+          executionStatus: 'suggested',
+          actionId: 'open-terminal',
+          actionSource: 'agent_stdout',
+          actionProtocol: 'bridge_actions_field',
+          bridgeEventType: 'ROOM_ACTION',
+          agent: 'devin',
+          observedAt: '2026-06-27T21:10:00.000Z',
+          capturedAtMs: 1782594600000,
+          clippyActionEventId: 'clippy-action:agent:1782594600000:clippy_agent_bridge:agent:suggested:open-terminal',
+          bridgePersisted: true,
+          browserPromptId: 'workspace-session-1:guest:prompt:1782603900000:clippy_0123abcd',
+          browserPromptFingerprint: 'clippy_0123abcd',
+          browserPromptTimestamp: 1782603900000,
+          browserPromptLength: 48,
+        },
+      }),
+    }, env, ctx);
+    expect(legacyBridgeActionRes.status).toBe(422);
+
+    const attributedUiActionRes = await app.request(`/meeting/${created.hostToken}/session-events`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({
+        type: 'clippy_action',
+        text: 'Clippy action: start recording',
+        actor: 'host',
+        properties: {
+          source: 'clippy_prompt_ui',
+          actionId: 'start-recording',
+          origin: 'prompt',
+          executedBy: 'host',
+          actionSource: 'clippy_prompt_ui',
+          executionStatus: 'executed',
+          capturedAtMs: 1782594200000,
+          clippyActionEventId: 'clippy-action:host:1782594200000:clippy_prompt_ui:prompt:executed:start-recording',
+          agent: 'devin',
+          agentResponseClaimed: false,
+          surface: 'win95',
+          roomPhase: 'connected',
+          workspaceStatus: 'READY',
+          workspaceSessionId: 'workspace-session-1',
+        },
+      }),
+    }, env, ctx);
+    expect(attributedUiActionRes.status).toBe(422);
+
+    const clippyActionRes = await app.request(`/meeting/${created.hostToken}/session-events`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({
+        type: 'clippy_action',
+        text: 'Clippy action: start recording',
+        actor: 'host',
+        properties: {
+          source: 'clippy_prompt_ui',
+          actionId: 'start-recording',
+          origin: 'prompt',
+          executedBy: 'host',
+          actionSource: 'clippy_prompt_ui',
+          executionStatus: 'executed',
+          capturedAtMs: 1782594200000,
+          clippyActionEventId: 'clippy-action:host:1782594200000:clippy_prompt_ui:prompt:executed:start-recording',
+          agent: null,
+          agentResponseClaimed: false,
+          surface: 'win95',
+          roomPhase: 'connected',
+          workspaceStatus: 'READY',
+          workspaceSessionId: 'workspace-session-1',
+        },
+      }),
+    }, env, ctx);
     expect(clippyActionRes.status).toBe(200);
 
-    const clippyNode = sqlite.prepare(
+    const clippyChatOpenRes = await app.request(`/meeting/${created.hostToken}/session-events`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({
+        type: 'clippy_action',
+        text: 'Clippy chat opened from the room chat window',
+        actor: 'host',
+        properties: {
+          source: 'clippy_chat_ui',
+          actionId: 'open-clippy-chat',
+          origin: 'chat',
+          executedBy: 'host',
+          actionSource: 'clippy_chat_window',
+          executionStatus: 'opened',
+          capturedAtMs: 1782594250000,
+          clippyActionEventId: 'clippy-action:host:1782594250000:clippy_chat_ui:chat:opened:open-clippy-chat',
+          agent: null,
+          agentResponseClaimed: false,
+          surface: 'win95',
+          roomPhase: 'connected',
+          workspaceStatus: 'READY',
+          workspaceSessionId: 'workspace-session-1',
+        },
+      }),
+    }, env, ctx);
+    expect(clippyChatOpenRes.status).toBe(200);
+
+    const clippyChatCloseRes = await app.request(`/meeting/${created.hostToken}/session-events`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({
+        type: 'clippy_action',
+        text: 'Clippy chat window closed',
+        actor: 'host',
+        properties: {
+          source: 'clippy_chat_ui',
+          actionId: 'close-clippy-chat',
+          origin: 'chat',
+          executedBy: 'host',
+          actionSource: 'clippy_chat_window',
+          executionStatus: 'closed',
+          capturedAtMs: 1782594300000,
+          clippyActionEventId: 'clippy-action:host:1782594300000:clippy_chat_ui:chat:closed:close-clippy-chat',
+          agent: null,
+          agentResponseClaimed: false,
+          surface: 'win95',
+          roomPhase: 'connected',
+          workspaceStatus: 'READY',
+          workspaceSessionId: 'workspace-session-1',
+        },
+      }),
+    }, env, ctx);
+    expect(clippyChatCloseRes.status).toBe(200);
+
+    const clippyAuthBrowserRes = await app.request(`/meeting/${created.hostToken}/session-events`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({
+        type: 'clippy_action',
+        text: 'Clippy opened Devin browser authentication',
+        actor: 'host',
+        properties: {
+          source: 'clippy_prompt_ui',
+          actionId: 'open-devin-auth-browser',
+          origin: 'prompt',
+          executedBy: 'host',
+          actionSource: 'clippy_prompt_ui',
+          executionStatus: 'executed',
+          capturedAtMs: 1782594350000,
+          clippyActionEventId: 'clippy-action:host:1782594350000:clippy_prompt_ui:prompt:executed:open-devin-auth-browser',
+          agent: null,
+          agentResponseClaimed: false,
+          surface: 'win95',
+          roomPhase: 'connected',
+          workspaceStatus: 'READY',
+          workspaceSessionId: 'workspace-session-1',
+        },
+      }),
+    }, env, ctx);
+    expect(clippyAuthBrowserRes.status).toBe(200);
+
+    const clippyAuthTerminalRes = await app.request(`/meeting/${created.hostToken}/session-events`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({
+        type: 'clippy_action',
+        text: 'Clippy action: open terminal for Devin authentication',
+        actor: 'host',
+        properties: {
+          source: 'clippy_prompt_ui',
+          actionId: 'open-devin-auth-terminal',
+          origin: 'prompt',
+          executedBy: 'host',
+          actionSource: 'clippy_prompt_ui',
+          executionStatus: 'executed',
+          capturedAtMs: 1782594400000,
+          clippyActionEventId: 'clippy-action:host:1782594400000:clippy_prompt_ui:prompt:executed:open-devin-auth-terminal',
+          agent: null,
+          agentResponseClaimed: false,
+          surface: 'win95',
+          roomPhase: 'connected',
+          workspaceStatus: 'READY',
+          workspaceSessionId: 'workspace-session-1',
+        },
+      }),
+    }, env, ctx);
+    expect(clippyAuthTerminalRes.status).toBe(200);
+
+    const clippyAgentSuggestionRes = await app.request(`/meeting/${created.hostToken}/session-events`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({
+        type: 'clippy_action',
+        text: 'devin suggested room action: open-terminal',
+        actor: 'agent',
+        properties: {
+          source: 'clippy_agent_bridge',
+          origin: 'agent',
+          executionStatus: 'suggested',
+          actionId: 'open-terminal',
+          actionSource: 'agent_stdout',
+          actionProtocol: 'clippy_room_action_tag',
+          bridgeEventType: 'ROOM_ACTION',
+          agent: 'devin',
+          agentActionLabel: 'Open Terminal',
+          agentActionText: 'Open a terminal so we can inspect the failure.',
+          autoExecute: false,
+          url: null,
+          observedAt: '2026-06-27T21:10:00.000Z',
+          capturedAtMs: 1782594600000,
+          clippyActionEventId: 'clippy-action:agent:1782594600000:clippy_agent_bridge:agent:suggested:open-terminal',
+          bridgePersisted: true,
+          browserPromptId: 'workspace-session-1:guest:prompt:1782603900000:clippy_0123abcd',
+          browserPromptFingerprint: 'clippy_0123abcd',
+          browserPromptTimestamp: 1782603900000,
+          browserPromptLength: 48,
+        },
+      }),
+    }, env, ctx);
+    expect(clippyAgentSuggestionRes.status).toBe(200);
+
+    const clippyNodes = sqlite.prepare(
       `SELECT node_type, narrative_text, source_type, extracted_properties_json
          FROM candidate_nodes
-        WHERE candidate_id = ? AND node_type = 'session_clippy_action'`,
+        WHERE candidate_id = ? AND node_type = 'session_clippy_action'
+        ORDER BY narrative_text`,
+    ).all(linked?.candidate_id) as Array<{
+      node_type: string;
+      narrative_text: string;
+      source_type: string;
+      extracted_properties_json: string;
+    }>;
+    expect(clippyNodes).toHaveLength(6);
+    expect(clippyNodes).toEqual(expect.arrayContaining([
+      expect.objectContaining({
+        node_type: 'session_clippy_action',
+        source_type: 'meeting_session',
+        narrative_text: expect.stringContaining('Clippy action: start recording'),
+      }),
+      expect.objectContaining({
+        node_type: 'session_clippy_action',
+        source_type: 'meeting_session',
+        narrative_text: expect.stringContaining('Clippy chat opened from the room chat window'),
+      }),
+      expect.objectContaining({
+        node_type: 'session_clippy_action',
+        source_type: 'meeting_session',
+        narrative_text: expect.stringContaining('Clippy chat window closed'),
+      }),
+      expect.objectContaining({
+        node_type: 'session_clippy_action',
+        source_type: 'meeting_session',
+        narrative_text: expect.stringContaining('Clippy opened Devin browser authentication'),
+      }),
+      expect.objectContaining({
+        node_type: 'session_clippy_action',
+        source_type: 'meeting_session',
+        narrative_text: expect.stringContaining('Clippy action: open terminal for Devin authentication'),
+      }),
+      expect.objectContaining({
+        node_type: 'session_clippy_action',
+        source_type: 'meeting_session',
+        narrative_text: expect.stringContaining('devin suggested room action: open-terminal'),
+      }),
+    ]));
+    expect(clippyNodes.map((entry) => JSON.parse(entry.extracted_properties_json))).toEqual(expect.arrayContaining([
+      expect.objectContaining({
+        actor: 'host',
+        source: 'clippy_prompt_ui',
+        actionId: 'start-recording',
+        actionSource: 'clippy_prompt_ui',
+        executionStatus: 'executed',
+        capturedAtMs: 1782594200000,
+        clippyActionEventId: 'clippy-action:host:1782594200000:clippy_prompt_ui:prompt:executed:start-recording',
+        surface: 'win95',
+      }),
+      expect.objectContaining({
+        actor: 'host',
+        source: 'clippy_chat_ui',
+        actionId: 'open-clippy-chat',
+        actionSource: 'clippy_chat_window',
+        executionStatus: 'opened',
+        capturedAtMs: 1782594250000,
+        clippyActionEventId: 'clippy-action:host:1782594250000:clippy_chat_ui:chat:opened:open-clippy-chat',
+        surface: 'win95',
+      }),
+      expect.objectContaining({
+        actor: 'host',
+        source: 'clippy_chat_ui',
+        actionId: 'close-clippy-chat',
+        actionSource: 'clippy_chat_window',
+        executionStatus: 'closed',
+        capturedAtMs: 1782594300000,
+        clippyActionEventId: 'clippy-action:host:1782594300000:clippy_chat_ui:chat:closed:close-clippy-chat',
+        surface: 'win95',
+      }),
+      expect.objectContaining({
+        actor: 'host',
+        source: 'clippy_prompt_ui',
+        actionId: 'open-devin-auth-browser',
+        actionSource: 'clippy_prompt_ui',
+        executionStatus: 'executed',
+        capturedAtMs: 1782594350000,
+        clippyActionEventId: 'clippy-action:host:1782594350000:clippy_prompt_ui:prompt:executed:open-devin-auth-browser',
+        surface: 'win95',
+      }),
+      expect.objectContaining({
+        actor: 'host',
+        source: 'clippy_prompt_ui',
+        actionId: 'open-devin-auth-terminal',
+        actionSource: 'clippy_prompt_ui',
+        executionStatus: 'executed',
+        capturedAtMs: 1782594400000,
+        clippyActionEventId: 'clippy-action:host:1782594400000:clippy_prompt_ui:prompt:executed:open-devin-auth-terminal',
+        surface: 'win95',
+      }),
+      expect.objectContaining({
+        actor: 'agent',
+        source: 'clippy_agent_bridge',
+        actionId: 'open-terminal',
+        bridgeEventType: 'ROOM_ACTION',
+        observedAt: '2026-06-27T21:10:00.000Z',
+        capturedAtMs: 1782594600000,
+        clippyActionEventId: 'clippy-action:agent:1782594600000:clippy_agent_bridge:agent:suggested:open-terminal',
+        bridgePersisted: true,
+        browserPromptId: 'workspace-session-1:guest:prompt:1782603900000:clippy_0123abcd',
+      }),
+    ]));
+
+    const agentActionContextRecord = sqlite.prepare(
+      `SELECT qualifiers_json
+         FROM context_records
+        WHERE record_type = 'meeting_session_event'
+          AND predicate = 'session_event:clippy_action'
+          AND narrative LIKE '%devin suggested room action%'`,
+    ).get() as { qualifiers_json: string } | undefined;
+    expect(JSON.parse(agentActionContextRecord?.qualifiers_json ?? '{}')).toMatchObject({
+      eventType: 'clippy_action',
+      actor: 'agent',
+      correlationRefs: {
+        browserPrompt: {
+          promptId: 'workspace-session-1:guest:prompt:1782603900000:clippy_0123abcd',
+          fingerprint: 'clippy_0123abcd',
+          timestamp: 1782603900000,
+          length: 48,
+        },
+        clippyAction: {
+          actionEventId: 'clippy-action:agent:1782594600000:clippy_agent_bridge:agent:suggested:open-terminal',
+        },
+      },
+    });
+
+    const fakeAgentStatusRes = await app.request(`/meeting/${created.hostToken}/session-events`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({
+        type: 'ai_agent_status',
+        text: 'devin is definitely ready.',
+        actor: 'agent',
+        properties: {
+          source: 'clippy_agent_bridge',
+          agent: 'devin',
+          status: 'idle',
+        },
+      }),
+    }, env, ctx);
+    expect(fakeAgentStatusRes.status).toBe(422);
+
+    const browserAgentStatusRes = await app.request(`/meeting/${created.hostToken}/session-events`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({
+        type: 'ai_agent_status',
+        text: 'devin is starting from the real container bridge.',
+        actor: 'agent',
+        properties: {
+          source: 'clippy_agent_bridge',
+          agentStatusEventSource: 'browser_clippy_agent_ws',
+          agent: 'devin',
+          status: 'starting',
+          bridgeMessageSource: 'agent_status',
+          observedAt: '2026-06-27T21:12:00.000Z',
+          capturedAtMs: 1782594720000,
+          agentStatusEventId: 'agent-status:devin:1782594720000:agent_status:starting:none',
+          surface: 'win95',
+          roomPhase: 'connected',
+          workspaceStatus: 'READY',
+          workspaceSessionId: 'workspace-session-1',
+          messageTimestamp: 1782601920000,
+          agentResponseClaimed: false,
+        },
+      }),
+    }, env, ctx);
+    expect(browserAgentStatusRes.status).toBe(200);
+
+    const bridgeDiagnosticStatusRes = await app.request(`/meeting/${created.hostToken}/session-events`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({
+        type: 'ai_agent_status',
+        text: 'devin chat prompt delivered to process stdin.',
+        actor: 'agent',
+        properties: {
+          source: 'clippy_agent_bridge',
+          agent: 'devin',
+          status: 'thinking',
+          diagnosticSource: 'agent_prompt_sent',
+          bridgeMessageSource: 'bridge_diagnostic',
+          observedAt: '2026-06-27T21:13:00.000Z',
+          capturedAtMs: 1782594780000,
+          agentStatusEventId: 'agent-status:devin:1782594780000:bridge_diagnostic:thinking:agent_prompt_sent',
+          promptType: 'chat_prompt',
+          deliveredToAgent: true,
+          promptLength: 120,
+          promptFingerprint: 'sha256:0123456789abcdef0123456789abcdef0123456789abcdef0123456789abcdef',
+          bridgePersisted: true,
+        },
+      }),
+    }, env, ctx);
+    expect(bridgeDiagnosticStatusRes.status).toBe(200);
+
+    const agentStatusNodes = sqlite.prepare(
+      `SELECT node_type, narrative_text, source_type, extracted_properties_json
+         FROM candidate_nodes
+        WHERE candidate_id = ? AND node_type = 'session_agent_status'
+        ORDER BY narrative_text`,
+    ).all(linked?.candidate_id) as Array<{
+      node_type: string;
+      narrative_text: string;
+      source_type: string;
+      extracted_properties_json: string;
+    }>;
+    expect(agentStatusNodes).toHaveLength(2);
+    expect(agentStatusNodes.map((entry) => JSON.parse(entry.extracted_properties_json))).toEqual(expect.arrayContaining([
+      expect.objectContaining({
+        actor: 'agent',
+        source: 'clippy_agent_bridge',
+        agentStatusEventSource: 'browser_clippy_agent_ws',
+        bridgeMessageSource: 'agent_status',
+        observedAt: '2026-06-27T21:12:00.000Z',
+        capturedAtMs: 1782594720000,
+        agentStatusEventId: 'agent-status:devin:1782594720000:agent_status:starting:none',
+        agentResponseClaimed: false,
+      }),
+      expect.objectContaining({
+        actor: 'agent',
+        source: 'clippy_agent_bridge',
+        bridgeMessageSource: 'bridge_diagnostic',
+        diagnosticSource: 'agent_prompt_sent',
+        observedAt: '2026-06-27T21:13:00.000Z',
+        capturedAtMs: 1782594780000,
+        agentStatusEventId: 'agent-status:devin:1782594780000:bridge_diagnostic:thinking:agent_prompt_sent',
+        bridgePersisted: true,
+      }),
+    ]));
+
+    const fakeCursorPresenceRes = await app.request(`/meeting/${created.hostToken}/session-events`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({
+        type: 'cursor_presence',
+        text: 'Guest cursor presence sampled on 95 Until Infinity desktop',
+        actor: 'guest',
+        properties: {
+          source: 'room_cursor_claim',
+          surface: 'standard',
+          normalizedX: 1.2,
+          normalizedY: 0.5,
+        },
+      }),
+    }, env, ctx);
+    expect(fakeCursorPresenceRes.status).toBe(422);
+
+    const sourceOnlyCursorPresenceRes = await app.request(`/meeting/${created.hostToken}/session-events`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({
+        type: 'cursor_presence',
+        text: 'Guest cursor presence sampled on 95 Until Infinity desktop',
+        actor: 'guest',
+        properties: {
+          source: 'win95_cursor_presence_client_sample',
+          surface: 'win95',
+          roomPhase: 'connected',
+          normalizedX: 0.42,
+          normalizedY: 0.61,
+          evidenceSampling: 'presence_sample',
+          rawCursorMovesPersisted: false,
+        },
+      }),
+    }, env, ctx);
+    expect(sourceOnlyCursorPresenceRes.status).toBe(422);
+
+    const cursorPresenceRes = await app.request(`/meeting/${created.hostToken}/session-events`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({
+        type: 'cursor_presence',
+        text: 'Guest cursor presence sampled on 95 Until Infinity desktop',
+        actor: 'guest',
+        properties: {
+          source: 'win95_cursor_presence_client_sample',
+          cursorEventSource: 'browser_win95_desktop_pointermove',
+          actor: 'guest',
+          cursorSampleId: 'cursor:guest:1761592321000:420:610',
+          sampledAtMs: 1761592321000,
+          surface: 'win95',
+          roomPhase: 'connected',
+          normalizedX: 0.42,
+          normalizedY: 0.61,
+          previousNormalizedX: null,
+          previousNormalizedY: null,
+          distanceFromPrevious: null,
+          evidenceSampling: 'presence_sample',
+          sampleIntervalMs: 15000,
+          movementThreshold: 0.03,
+          rawCursorMovesPersisted: false,
+        },
+      }),
+    }, env, ctx);
+    expect(cursorPresenceRes.status).toBe(200);
+
+    const cursorNode = sqlite.prepare(
+      `SELECT node_type, narrative_text, source_type, extracted_properties_json
+         FROM candidate_nodes
+        WHERE candidate_id = ? AND node_type = 'session_cursor_presence'`,
     ).get(linked?.candidate_id) as {
       node_type: string;
       narrative_text: string;
       source_type: string;
       extracted_properties_json: string;
     } | undefined;
-    expect(clippyNode).toMatchObject({
-      node_type: 'session_clippy_action',
+    expect(cursorNode).toMatchObject({
+      node_type: 'session_cursor_presence',
       source_type: 'meeting_session',
     });
-    expect(clippyNode?.narrative_text).toContain('Clippy action: start recording');
-    expect(JSON.parse(clippyNode?.extracted_properties_json ?? '{}')).toMatchObject({
-      actor: 'host',
-      actionId: 'start-recording',
+    expect(cursorNode?.narrative_text).toContain('Guest cursor presence sampled');
+    expect(JSON.parse(cursorNode?.extracted_properties_json ?? '{}')).toMatchObject({
+      actor: 'guest',
+      source: 'win95_cursor_presence_client_sample',
+      cursorEventSource: 'browser_win95_desktop_pointermove',
+      cursorSampleId: 'cursor:guest:1761592321000:420:610',
       surface: 'win95',
+      normalizedX: 0.42,
+      normalizedY: 0.61,
+      sampleIntervalMs: 15000,
+      movementThreshold: 0.03,
+      rawCursorMovesPersisted: false,
     });
 
-    const clippyUserChatRes = await app.request(`/meeting/${created.hostToken}/session-events`, {
+    const fakeMediaControlRes = await app.request(`/meeting/${created.hostToken}/session-events`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({
+        type: 'media_control',
+        text: 'Guest turned microphone off',
+        actor: 'guest',
+        properties: {
+          source: 'browser_media_claim',
+          control: 'microphone',
+          enabled: false,
+          surface: 'win95',
+          roomPhase: 'connected',
+        },
+      }),
+    }, env, ctx);
+    expect(fakeMediaControlRes.status).toBe(422);
+
+    const sourceOnlyMediaControlRes = await app.request(`/meeting/${created.hostToken}/session-events`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({
+        type: 'media_control',
+        text: 'Guest turned microphone off',
+        actor: 'guest',
+        properties: {
+          source: 'video_room_media_controls',
+          control: 'microphone',
+          enabled: false,
+          action: 'disabled',
+          surface: 'win95',
+          roomPhase: 'connected',
+          controlSurface: 'win95_video_window',
+          mediaSource: 'local_media_stream',
+          rawMediaStreamPersisted: false,
+        },
+      }),
+    }, env, ctx);
+    expect(sourceOnlyMediaControlRes.status).toBe(422);
+
+    const mediaControlRes = await app.request(`/meeting/${created.hostToken}/session-events`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({
+        type: 'media_control',
+        text: 'Guest turned microphone off',
+        actor: 'guest',
+        properties: {
+          source: 'video_room_media_controls',
+          mediaControlEventSource: 'browser_video_control_button',
+          actor: 'guest',
+          mediaControlId: 'media:guest:microphone:1761592322000:disabled',
+          capturedAtMs: 1761592322000,
+          control: 'microphone',
+          previousEnabled: true,
+          enabled: false,
+          action: 'disabled',
+          surface: 'win95',
+          roomPhase: 'connected',
+          controlSurface: 'win95_video_window',
+          controlAction: 'toggle',
+          mediaSource: 'local_media_stream',
+          rawMediaStreamPersisted: false,
+        },
+      }),
+    }, env, ctx);
+    expect(mediaControlRes.status).toBe(200);
+
+    const mediaControlNode = sqlite.prepare(
+      `SELECT node_type, narrative_text, source_type, extracted_properties_json
+         FROM candidate_nodes
+        WHERE candidate_id = ? AND node_type = 'session_media_control'`,
+    ).get(linked?.candidate_id) as {
+      node_type: string;
+      narrative_text: string;
+      source_type: string;
+      extracted_properties_json: string;
+    } | undefined;
+    expect(mediaControlNode).toMatchObject({
+      node_type: 'session_media_control',
+      source_type: 'meeting_session',
+    });
+    expect(mediaControlNode?.narrative_text).toContain('Media control changed: Guest turned microphone off');
+    expect(JSON.parse(mediaControlNode?.extracted_properties_json ?? '{}')).toMatchObject({
+      actor: 'guest',
+      source: 'video_room_media_controls',
+      mediaControlEventSource: 'browser_video_control_button',
+      mediaControlId: 'media:guest:microphone:1761592322000:disabled',
+      control: 'microphone',
+      previousEnabled: true,
+      enabled: false,
+      action: 'disabled',
+      surface: 'win95',
+      roomPhase: 'connected',
+      controlSurface: 'win95_video_window',
+      controlAction: 'toggle',
+      rawMediaStreamPersisted: false,
+    });
+
+    const fakeRecordingStartRes = await app.request(`/meeting/${created.hostToken}/session-events`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({
+        type: 'recording_start',
+        text: 'Recording started',
+        actor: 'host',
+        properties: {
+          source: 'video_room_recording',
+          hasTranscriptionAudio: true,
+        },
+      }),
+    }, env, ctx);
+    expect(fakeRecordingStartRes.status).toBe(422);
+
+    const recordingStartRes = await app.request(`/meeting/${created.hostToken}/session-events`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({
+        type: 'recording_start',
+        text: 'Recording started',
+        actor: 'host',
+        properties: {
+          source: 'video_room_recording',
+          recordingEventSource: 'browser_media_recorder',
+          recordingLifecycleKind: 'start',
+          iceProvider: 'cloudflare',
+          hasTranscriptionAudio: true,
+          speakerMetadataVersion: 1,
+          speakerChannelLayout: 'host-local-guest-remote-v1',
+          speakerChannelCount: 2,
+          speakerChannels: [
+            { channel: 0, role: 'host', source: 'local' },
+            { channel: 1, role: 'guest', source: 'remote' },
+          ],
+        },
+      }),
+    }, env, ctx);
+    expect(recordingStartRes.status).toBe(200);
+
+    const recordingStopRes = await app.request(`/meeting/${created.hostToken}/session-events`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({
+        type: 'recording_stop',
+        text: 'Recording stopped',
+        actor: 'host',
+        properties: {
+          source: 'video_room_recording',
+          recordingEventSource: 'browser_media_recorder',
+          recordingLifecycleKind: 'stop',
+          iceProvider: 'cloudflare',
+          hasTranscriptionAudio: true,
+          speakerMetadataVersion: 1,
+          speakerChannelLayout: 'host-local-guest-remote-v1',
+          speakerChannelCount: 2,
+          speakerChannels: [
+            { channel: 0, role: 'host', source: 'local' },
+            { channel: 1, role: 'guest', source: 'remote' },
+          ],
+          uploadStatus: 'attempting',
+          recordingBytes: 12345,
+          recordingMimeType: 'video/webm;codecs=vp9,opus',
+          transcriptionBytes: 2345,
+          transcriptionMimeType: 'audio/webm;codecs=opus',
+        },
+      }),
+    }, env, ctx);
+    expect(recordingStopRes.status).toBe(200);
+
+    const recordingNodes = sqlite.prepare(
+      `SELECT node_type, narrative_text, source_type, extracted_properties_json
+         FROM candidate_nodes
+        WHERE candidate_id = ?
+          AND node_type IN ('session_recording_start', 'session_recording_stop')
+        ORDER BY node_type`,
+    ).all(linked?.candidate_id) as Array<{
+      node_type: string;
+      narrative_text: string;
+      source_type: string;
+      extracted_properties_json: string;
+    }>;
+    expect(recordingNodes.map((node) => node.node_type)).toEqual([
+      'session_recording_start',
+      'session_recording_stop',
+    ]);
+    expect(recordingNodes[0]?.narrative_text).toContain('Recording started');
+    expect(recordingNodes[1]?.narrative_text).toContain('Recording stopped');
+    expect(JSON.parse(recordingNodes[0]?.extracted_properties_json ?? '{}')).toMatchObject({
+      actor: 'host',
+      source: 'video_room_recording',
+      recordingEventSource: 'browser_media_recorder',
+      recordingLifecycleKind: 'start',
+      speakerChannelLayout: 'host-local-guest-remote-v1',
+      speakerChannelCount: 2,
+    });
+    expect(JSON.parse(recordingNodes[1]?.extracted_properties_json ?? '{}')).toMatchObject({
+      actor: 'host',
+      source: 'video_room_recording',
+      recordingEventSource: 'browser_media_recorder',
+      recordingLifecycleKind: 'stop',
+      uploadStatus: 'attempting',
+      recordingBytes: 12345,
+      transcriptionBytes: 2345,
+    });
+
+    const fakeWin95FileChangeRes = await app.request(`/meeting/${created.hostToken}/session-events`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({
+        type: 'file_change',
+        text: 'Guest saved Notes.txt',
+        actor: 'guest',
+        properties: {
+          source: 'win95_shared_file_system',
+          fileEventSource: 'browser_client_submit',
+          operation: 'upsert',
+          fileId: 'desktop-notes',
+          fileName: 'Notes.txt',
+          fileKind: 'text',
+          surface: 'win95',
+          roomPhase: 'connected',
+          contentLength: 31,
+        },
+      }),
+    }, env, ctx);
+    expect(fakeWin95FileChangeRes.status).toBe(422);
+
+    const win95FileChangeRes = await app.request(`/meeting/${created.hostToken}/session-events`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({
+        type: 'file_change',
+        text: 'Guest saved Notes.txt',
+        actor: 'guest',
+        properties: {
+          source: 'win95_shared_file_system',
+          fileEventSource: 'browser_client_submit',
+          actor: 'guest',
+          fileChangeId: 'file:guest:1700000001100:upsert:desktop-notes',
+          operation: 'upsert',
+          fileId: 'desktop-notes',
+          fileName: 'Notes.txt',
+          fileKind: 'text',
+          mimeType: 'text/plain',
+          path: 'Desktop/Notes.txt',
+          surface: 'win95',
+          roomPhase: 'connected',
+          capturedAtMs: 1700000001100,
+          contentLength: 31,
+          contentHash: 'content_0123456789abcdef0123456789abcdef',
+          contentPreview: 'Candidate noted retry evidence.',
+          fileCreatedAt: 1700000000000,
+          fileUpdatedAt: 1700000001000,
+          durableObjectReplayExpected: true,
+        },
+      }),
+    }, env, ctx);
+    expect(win95FileChangeRes.status).toBe(200);
+
+    const win95FileChangeNode = sqlite.prepare(
+      `SELECT node_type, narrative_text, source_type, extracted_properties_json
+         FROM candidate_nodes
+        WHERE candidate_id = ? AND node_type = 'session_file_change'
+          AND extracted_properties_json LIKE '%win95_shared_file_system%'`,
+    ).get(linked?.candidate_id) as {
+      node_type: string;
+      narrative_text: string;
+      source_type: string;
+      extracted_properties_json: string;
+    } | undefined;
+    expect(win95FileChangeNode).toMatchObject({
+      node_type: 'session_file_change',
+      source_type: 'meeting_session',
+    });
+    expect(win95FileChangeNode?.narrative_text).toContain('File upsert: Guest saved Notes.txt');
+    expect(JSON.parse(win95FileChangeNode?.extracted_properties_json ?? '{}')).toMatchObject({
+      actor: 'guest',
+      source: 'win95_shared_file_system',
+      fileEventSource: 'browser_client_submit',
+      fileChangeId: 'file:guest:1700000001100:upsert:desktop-notes',
+      operation: 'upsert',
+      fileId: 'desktop-notes',
+      fileName: 'Notes.txt',
+      contentHash: 'content_0123456789abcdef0123456789abcdef',
+      capturedAtMs: 1700000001100,
+      durableObjectReplayExpected: true,
+    });
+
+    const codeServerDeleteRes = await app.request(`/meeting/${created.hostToken}/session-events`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({
+        type: 'file_change',
+        text: 'src/old-orders.ts',
+        actor: 'system',
+        properties: {
+          source: 'code_server_workspace',
+          observedBy: 'clippy_agent_bridge',
+          bridgeEventType: 'FILE_CHANGED',
+          editorSurface: 'code-server',
+          codeServerFileChangeId: 'code-server-file:workspace-session-1:1782594420000:deleted:path_7f2bf00a:abcdefabcdefabcd',
+          path: 'src/old-orders.ts',
+          action: 'deleted',
+          observedAt: '2026-06-27T21:07:00.000Z',
+          contentHash: 'abcdefabcdefabcdefabcdefabcdefabcdefabcdefabcdefabcdefabcdefabcd',
+          sizeBytes: 64,
+          surface: 'win95',
+          roomPhase: 'connected',
+          workspaceStatus: 'READY',
+          workspaceSessionId: 'workspace-session-1',
+          repoUrl: 'https://github.com/acme/orders',
+          bridgePersisted: false,
+        },
+      }),
+    }, env, ctx);
+    expect(codeServerDeleteRes.status).toBe(200);
+
+    const fakeCodeEditorOpenRes = await app.request(`/meeting/${created.hostToken}/session-events`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({
+        type: 'code_editor_open',
+        text: 'VS Code workspace opened for https://github.com/acme/orders',
+        actor: 'guest',
+        properties: {
+          source: 'code_server_workspace',
+          editor: 'code-server',
+          workspaceSessionId: 'workspace-session-1',
+          workspaceStatus: 'READY',
+        },
+      }),
+    }, env, ctx);
+    expect(fakeCodeEditorOpenRes.status).toBe(422);
+
+    const codeEditorOpenRes = await app.request(`/meeting/${created.hostToken}/session-events`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({
+        type: 'code_editor_open',
+        text: 'VS Code workspace opened for https://github.com/acme/orders',
+        actor: 'guest',
+        properties: {
+          source: 'code_server_workspace',
+          editorEventSource: 'browser_code_server_iframe',
+          codeEditorOpenId: 'code-editor-open:guest:1700000002100:workspace-session-1',
+          editor: 'code-server',
+          openStatus: 'loaded',
+          actor: 'guest',
+          capturedAtMs: 1700000002100,
+          surface: 'win95',
+          roomPhase: 'connected',
+          workspaceSessionId: 'workspace-session-1',
+          workspaceStatus: 'READY',
+          repoUrl: 'https://github.com/acme/orders',
+          githubPrNumber: 42,
+          matchedRepoId: 12,
+          challengeStatus: 'github_pr_assigned',
+          challengeKind: 'github_pr',
+          challengeSource: 'scheduled_interview.github_pr_number',
+          challengeMessage: null,
+          proxyUrlPersisted: false,
+        },
+      }),
+    }, env, ctx);
+    expect(codeEditorOpenRes.status).toBe(200);
+
+    const codeEditorOpenNode = sqlite.prepare(
+      `SELECT node_type, narrative_text, source_type, extracted_properties_json
+         FROM candidate_nodes
+        WHERE candidate_id = ? AND node_type = 'session_code_editor_open'`,
+    ).get(linked?.candidate_id) as {
+      node_type: string;
+      narrative_text: string;
+      source_type: string;
+      extracted_properties_json: string;
+    } | undefined;
+    expect(codeEditorOpenNode).toMatchObject({
+      node_type: 'session_code_editor_open',
+      source_type: 'meeting_session',
+    });
+    expect(codeEditorOpenNode?.narrative_text).toContain('Opened in editor');
+    const codeEditorOpenProperties = JSON.parse(codeEditorOpenNode?.extracted_properties_json ?? '{}') as Record<string, unknown>;
+    expect(codeEditorOpenProperties).toMatchObject({
+      actor: 'guest',
+      source: 'code_server_workspace',
+      editorEventSource: 'browser_code_server_iframe',
+      codeEditorOpenId: 'code-editor-open:guest:1700000002100:workspace-session-1',
+      editor: 'code-server',
+      openStatus: 'loaded',
+      capturedAtMs: 1700000002100,
+      workspaceSessionId: 'workspace-session-1',
+      workspaceStatus: 'READY',
+      proxyUrlPersisted: false,
+    });
+    expect(JSON.stringify(codeEditorOpenProperties)).not.toContain('/workspace/proxy/');
+
+    const fakeCodeEditorSaveRes = await app.request(`/meeting/${created.hostToken}/session-events`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({
+        type: 'code_editor_save',
+        text: 'src/orders.ts',
+        actor: 'system',
+        properties: {
+          source: 'browser_guess',
+          path: 'src/orders.ts',
+          observedAt: '2026-06-27T21:06:00.000Z',
+        },
+      }),
+    }, env, ctx);
+    expect(fakeCodeEditorSaveRes.status).toBe(422);
+
+    const sourceOnlyCodeEditorSaveRes = await app.request(`/meeting/${created.hostToken}/session-events`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({
+        type: 'code_editor_save',
+        text: 'src/orders.ts',
+        actor: 'system',
+        properties: {
+          source: 'code_server_workspace',
+          observedBy: 'agent_bridge',
+          path: 'src/orders.ts',
+          observedAt: '2026-06-27T21:06:00.000Z',
+          contentHash: '0123456789abcdef0123456789abcdef0123456789abcdef0123456789abcdef',
+          sizeBytes: 128,
+        },
+      }),
+    }, env, ctx);
+    expect(sourceOnlyCodeEditorSaveRes.status).toBe(422);
+
+    const codeEditorSaveRes = await app.request(`/meeting/${created.hostToken}/session-events`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({
+        type: 'code_editor_save',
+        text: 'src/orders.ts',
+        actor: 'system',
+        properties: {
+          source: 'code_server_workspace',
+          observedBy: 'agent_bridge',
+          bridgeEventType: 'FILE_CHANGED',
+          editorSurface: 'code-server',
+          path: 'src/orders.ts',
+          action: 'modified',
+          observedAt: '2026-06-27T21:06:00.000Z',
+          contentHash: '0123456789abcdef0123456789abcdef0123456789abcdef0123456789abcdef',
+          sizeBytes: 128,
+          workspaceRoot: '/workspace',
+          bridgePersisted: true,
+        },
+      }),
+    }, env, ctx);
+    expect(codeEditorSaveRes.status).toBe(200);
+
+    const codeEditorSaveNode = sqlite.prepare(
+      `SELECT node_type, narrative_text, source_type, extracted_properties_json
+         FROM candidate_nodes
+        WHERE candidate_id = ? AND node_type = 'session_code_editor_save'`,
+    ).get(linked?.candidate_id) as {
+      node_type: string;
+      narrative_text: string;
+      source_type: string;
+      extracted_properties_json: string;
+    } | undefined;
+    expect(codeEditorSaveNode).toMatchObject({
+      node_type: 'session_code_editor_save',
+      source_type: 'meeting_session',
+    });
+    expect(codeEditorSaveNode?.narrative_text).toContain('Saved in editor: src/orders.ts');
+    expect(JSON.parse(codeEditorSaveNode?.extracted_properties_json ?? '{}')).toMatchObject({
+      actor: 'system',
+      source: 'code_server_workspace',
+      observedBy: 'agent_bridge',
+      bridgeEventType: 'FILE_CHANGED',
+      editorSurface: 'code-server',
+      path: 'src/orders.ts',
+      action: 'modified',
+      contentHash: '0123456789abcdef0123456789abcdef0123456789abcdef0123456789abcdef',
+      sizeBytes: 128,
+      workspaceRoot: '/workspace',
+      bridgePersisted: true,
+    });
+
+    const fakeClippyUserChatRes = await app.request(`/meeting/${created.hostToken}/session-events`, {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify({
@@ -1237,14 +3213,120 @@ describe('meeting room recording living-context route', () => {
         },
       }),
     }, env, ctx);
+    expect(fakeClippyUserChatRes.status).toBe(422);
+    await expect(fakeClippyUserChatRes.json()).resolves.toMatchObject({
+      error: {
+        code: 'VALIDATION_ERROR',
+        message: 'Invalid session event.',
+      },
+    });
+
+    const attributedClippyUserChatRes = await app.request(`/meeting/${created.hostToken}/session-events`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({
+        type: 'ai_chat_user',
+        text: 'Can you explain the failing order recovery test?',
+        actor: 'guest',
+        properties: {
+          source: 'clippy_agent_chat_client_submit',
+          agentChatEventSource: 'browser_clippy_chat_window',
+          bridgeMessageType: 'CHAT',
+          bridgeProtocol: 'clippy_dev_container_ws',
+          promptId: 'workspace-session-1:guest:prompt:1782603900000:clippy_0123abcd',
+          promptFingerprint: 'clippy_0123abcd',
+          promptLength: 48,
+          promptTimestamp: 1782603900000,
+          deliveredToAgentBridge: true,
+          agent: 'devin',
+          agentResponseClaimed: false,
+          surface: 'win95',
+          roomPhase: 'connected',
+          workspaceStatus: 'READY',
+          workspaceSessionId: 'workspace-session-1',
+          repoUrl: 'https://github.com/acme/orders',
+        },
+      }),
+    }, env, ctx);
+    expect(attributedClippyUserChatRes.status).toBe(422);
+    await expect(attributedClippyUserChatRes.json()).resolves.toMatchObject({
+      error: {
+        code: 'VALIDATION_ERROR',
+        message: 'Invalid session event.',
+      },
+    });
+
+    const deliveredClippyUserChatRes = await app.request(`/meeting/${created.hostToken}/session-events`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({
+        type: 'ai_chat_user',
+        text: 'Can you explain the failing order recovery test?',
+        actor: 'guest',
+        properties: {
+          source: 'clippy_agent_chat_client_submit',
+          agentChatEventSource: 'browser_clippy_chat_window',
+          bridgeMessageType: 'CHAT',
+          bridgeProtocol: 'clippy_dev_container_ws',
+          promptId: 'workspace-session-1:guest:prompt:1782603900000:clippy_0123abcd',
+          promptFingerprint: 'clippy_0123abcd',
+          promptLength: 48,
+          promptTimestamp: 1782603900000,
+          deliveredToAgentBridge: true,
+          agent: null,
+          agentResponseClaimed: false,
+          surface: 'win95',
+          roomPhase: 'connected',
+          workspaceStatus: 'READY',
+          workspaceSessionId: 'workspace-session-1',
+          repoUrl: 'https://github.com/acme/orders',
+        },
+      }),
+    }, env, ctx);
+    expect(deliveredClippyUserChatRes.status).toBe(422);
+    await expect(deliveredClippyUserChatRes.json()).resolves.toMatchObject({
+      error: {
+        code: 'VALIDATION_ERROR',
+        message: 'Invalid session event.',
+      },
+    });
+
+    const clippyUserChatRes = await app.request(`/meeting/${created.hostToken}/session-events`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({
+        type: 'ai_chat_user',
+        text: 'Can you explain the failing order recovery test?',
+        actor: 'guest',
+        properties: {
+          source: 'clippy_agent_chat_client_submit',
+          agentChatEventSource: 'browser_clippy_chat_window',
+          bridgeMessageType: 'CHAT',
+          bridgeProtocol: 'clippy_dev_container_ws',
+          promptId: 'workspace-session-1:guest:prompt:1782603900000:clippy_0123abcd',
+          promptFingerprint: 'clippy_0123abcd',
+          promptLength: 48,
+          promptTimestamp: 1782603900000,
+          browserQueuedBridgeMessage: true,
+          bridgeDeliveryConfirmed: false,
+          agent: null,
+          agentResponseClaimed: false,
+          surface: 'win95',
+          roomPhase: 'connected',
+          workspaceStatus: 'READY',
+          workspaceSessionId: 'workspace-session-1',
+          repoUrl: 'https://github.com/acme/orders',
+        },
+      }),
+    }, env, ctx);
     expect(clippyUserChatRes.status).toBe(200);
 
-    const clippyAgentChatRes = await app.request(`/meeting/${created.hostToken}/session-events`, {
+    const fakeClippyAgentChatRes = await app.request(`/meeting/${created.hostToken}/session-events`, {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify({
         type: 'ai_chat_agent',
-        text: 'The failing test is asserting replay idempotency after an inventory timeout.',
+        text: 'The fake agent claims it inspected the code.',
         actor: 'agent',
         properties: {
           source: 'clippy_agent_chat',
@@ -1254,7 +3336,118 @@ describe('meeting room recording living-context route', () => {
         },
       }),
     }, env, ctx);
+    expect(fakeClippyAgentChatRes.status).toBe(422);
+    await expect(fakeClippyAgentChatRes.json()).resolves.toMatchObject({
+      error: {
+        code: 'VALIDATION_ERROR',
+        message: 'Invalid session event.',
+      },
+    });
+
+    const fakeBridgeAgentChatRes = await app.request(`/meeting/${created.hostToken}/session-events`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({
+        type: 'ai_chat_agent',
+        text: 'The fake bridge-shaped agent claims it inspected the code.',
+        actor: 'agent',
+        properties: {
+          source: 'clippy_agent_bridge',
+          agent: 'devin',
+          bridgeEventType: 'CHAT_RESPONSE',
+          observedAt: '2026-06-27T21:05:00.000Z',
+        },
+      }),
+    }, env, ctx);
+    expect(fakeBridgeAgentChatRes.status).toBe(422);
+
+    const clippyAgentChatRes = await app.request(`/meeting/${created.hostToken}/session-events`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({
+        type: 'ai_chat_agent',
+        text: 'The failing test is asserting replay idempotency after an inventory timeout.',
+        actor: 'agent',
+        properties: {
+          source: 'clippy_agent_bridge',
+          agent: 'devin',
+          bridgeEventType: 'CHAT_RESPONSE',
+          bridgeMessageSource: 'agent_stdout',
+          observedAt: '2026-06-27T21:05:00.000Z',
+          capturedAtMs: 1782594300000,
+          agentChatResponseId: 'agent-chat:devin:1782594300000:CHAT_RESPONSE:agent_4c000d1c',
+          responseFingerprint: 'agent_4c000d1c',
+          responseLength: 76,
+          actionCount: 0,
+          bridgePersisted: true,
+          browserPromptId: 'workspace-session-1:guest:prompt:1782603900000:clippy_0123abcd',
+          browserPromptFingerprint: 'clippy_0123abcd',
+          browserPromptTimestamp: 1782603900000,
+          browserPromptLength: 48,
+          surface: 'win95',
+          workspaceSessionId: 'workspace-session-1',
+        },
+      }),
+    }, env, ctx);
     expect(clippyAgentChatRes.status).toBe(200);
+
+    const malformedPromptRefAgentChatRes = await app.request(`/meeting/${created.hostToken}/session-events`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({
+        type: 'ai_chat_agent',
+        text: 'The failing test is asserting replay idempotency after an inventory timeout.',
+        actor: 'agent',
+        properties: {
+          source: 'clippy_agent_bridge',
+          agent: 'devin',
+          bridgeEventType: 'CHAT_RESPONSE',
+          bridgeMessageSource: 'agent_stdout',
+          observedAt: '2026-06-27T21:05:00.000Z',
+          capturedAtMs: 1782594300000,
+          agentChatResponseId: 'agent-chat:devin:1782594300000:CHAT_RESPONSE:agent_4c000d1c',
+          responseFingerprint: 'agent_4c000d1c',
+          responseLength: 76,
+          actionCount: 0,
+          bridgePersisted: true,
+          browserPromptId: 'source-less-prompt-ref',
+          browserPromptFingerprint: 'clippy_0123abcd',
+          browserPromptTimestamp: 1782603900000,
+          browserPromptLength: 48,
+        },
+      }),
+    }, env, ctx);
+    expect(malformedPromptRefAgentChatRes.status).toBe(422);
+
+    const clippyAgentFallbackRes = await app.request(`/meeting/${created.hostToken}/session-events`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({
+        type: 'ai_chat_agent',
+        text: 'I saw the same timeout in the order recovery test output.',
+        actor: 'agent',
+        properties: {
+          source: 'clippy_agent_bridge',
+          agent: 'devin',
+          bridgeEventType: 'CHAT_RESPONSE',
+          bridgeMessageSource: 'agent_stdout',
+          observedAt: '2026-06-27T21:06:00.000Z',
+          capturedAtMs: 1782594360000,
+          agentChatResponseId: 'agent-chat:devin:1782594360000:CHAT_RESPONSE:agent_525b9849',
+          responseFingerprint: 'agent_525b9849',
+          responseLength: 57,
+          bridgePersisted: false,
+          persistenceFallback: 'browser_after_bridge_persist_failed',
+          surface: 'win95',
+          roomPhase: 'connected',
+          workspaceStatus: 'READY',
+          workspaceSessionId: 'workspace-session-1',
+          messageTimestamp: 1782603960000,
+          agentResponseClaimed: true,
+        },
+      }),
+    }, env, ctx);
+    expect(clippyAgentFallbackRes.status).toBe(200);
 
     const chatNodes = sqlite.prepare(
       `SELECT node_type, narrative_text, extracted_properties_json
@@ -1267,25 +3460,445 @@ describe('meeting room recording living-context route', () => {
       narrative_text: string;
       extracted_properties_json: string;
     }>;
-    expect(chatNodes).toHaveLength(2);
+    expect(chatNodes).toHaveLength(3);
     expect(chatNodes.map((node) => node.node_type)).toEqual([
+      'session_chat_agent',
       'session_chat_agent',
       'session_chat_user',
     ]);
     expect(chatNodes[0]?.narrative_text).toContain('Agent responded');
-    expect(chatNodes[0]?.narrative_text).toContain('replay idempotency');
-    expect(JSON.parse(chatNodes[0]?.extracted_properties_json ?? '{}')).toMatchObject({
+    expect(chatNodes.map((node) => node.narrative_text).join('\n')).toContain('replay idempotency');
+    expect(chatNodes.map((node) => node.narrative_text).join('\n')).toContain('order recovery test output');
+    const agentChatProperties = chatNodes
+      .filter((node) => node.node_type === 'session_chat_agent')
+      .map((node) => JSON.parse(node.extracted_properties_json ?? '{}') as Record<string, unknown>);
+    expect(agentChatProperties).toEqual(expect.arrayContaining([
+      expect.objectContaining({
+        actor: 'agent',
+        source: 'clippy_agent_bridge',
+        agent: 'devin',
+        bridgeEventType: 'CHAT_RESPONSE',
+        bridgeMessageSource: 'agent_stdout',
+        observedAt: '2026-06-27T21:05:00.000Z',
+        capturedAtMs: 1782594300000,
+        agentChatResponseId: 'agent-chat:devin:1782594300000:CHAT_RESPONSE:agent_4c000d1c',
+        responseFingerprint: 'agent_4c000d1c',
+        responseLength: 76,
+        actionCount: 0,
+        bridgePersisted: true,
+        workspaceSessionId: 'workspace-session-1',
+      }),
+      expect.objectContaining({
+        actor: 'agent',
+        source: 'clippy_agent_bridge',
+        agent: 'devin',
+        bridgeEventType: 'CHAT_RESPONSE',
+        bridgeMessageSource: 'agent_stdout',
+        observedAt: '2026-06-27T21:06:00.000Z',
+        capturedAtMs: 1782594360000,
+        agentChatResponseId: 'agent-chat:devin:1782594360000:CHAT_RESPONSE:agent_525b9849',
+        responseFingerprint: 'agent_525b9849',
+        responseLength: 57,
+        bridgePersisted: false,
+        persistenceFallback: 'browser_after_bridge_persist_failed',
+        messageTimestamp: 1782603960000,
+        agentResponseClaimed: true,
+      }),
+    ]));
+
+    const agentChatContextRecord = sqlite.prepare(
+      `SELECT qualifiers_json
+         FROM context_records
+        WHERE record_type = 'meeting_session_event'
+          AND predicate = 'session_event:ai_chat_agent'
+          AND narrative LIKE '%replay idempotency%'`,
+    ).get() as { qualifiers_json: string } | undefined;
+    expect(JSON.parse(agentChatContextRecord?.qualifiers_json ?? '{}')).toMatchObject({
+      eventType: 'ai_chat_agent',
       actor: 'agent',
-      source: 'clippy_agent_chat',
-      agent: 'devin',
+      correlationRefs: {
+        browserPrompt: {
+          promptId: 'workspace-session-1:guest:prompt:1782603900000:clippy_0123abcd',
+          fingerprint: 'clippy_0123abcd',
+          timestamp: 1782603900000,
+          length: 48,
+        },
+        agentResponse: {
+          responseId: 'agent-chat:devin:1782594300000:CHAT_RESPONSE:agent_4c000d1c',
+        },
+      },
+    });
+
+    expect(chatNodes[2]?.narrative_text).toContain('User asked');
+    expect(chatNodes[2]?.narrative_text).toContain('order recovery test');
+    expect(JSON.parse(chatNodes[2]?.extracted_properties_json ?? '{}')).toMatchObject({
+      actor: 'guest',
+      source: 'clippy_agent_chat_client_submit',
+      agentChatEventSource: 'browser_clippy_chat_window',
+      bridgeMessageType: 'CHAT',
+      promptId: 'workspace-session-1:guest:prompt:1782603900000:clippy_0123abcd',
+      promptFingerprint: 'clippy_0123abcd',
+      promptLength: 48,
+      browserQueuedBridgeMessage: true,
+      bridgeDeliveryConfirmed: false,
+      agentResponseClaimed: false,
       workspaceSessionId: 'workspace-session-1',
     });
-    expect(chatNodes[1]?.narrative_text).toContain('User asked');
-    expect(chatNodes[1]?.narrative_text).toContain('order recovery test');
-    expect(JSON.parse(chatNodes[1]?.extracted_properties_json ?? '{}')).toMatchObject({
+  });
+
+  it('persists Win95 source-specific window lifecycle evidence with exact source provenance', async () => {
+    const app = mountApp();
+    const { ctx } = buildCtx();
+    const now = new Date().toISOString();
+    sqlite.prepare(
+      `INSERT INTO scheduled_interviews (
+         id, candidate_id, owner_id, recipient_name, recipient_email, interview_type, status, updated_at
+       ) VALUES (?, NULL, ?, ?, ?, 'DEV_CONTAINER_CHALLENGE', 'INVITED', ?)`,
+    ).run(
+      'scheduled-start-menu-window-evidence',
+      'owner-1',
+      'Start Menu Candidate',
+      'start-menu-window@example.com',
+      now,
+    );
+
+    const createMeetingRes = await app.request('/meetings', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({
+        recipientName: 'Start Menu Candidate',
+        recipientEmail: 'start-menu-window@example.com',
+        title: 'Start menu evidence room',
+        meetingType: 'INTERVIEW',
+        scheduledInterviewId: 'scheduled-start-menu-window-evidence',
+      }),
+    }, env, ctx);
+    expect(createMeetingRes.status).toBe(201);
+    const created = await createMeetingRes.json() as { hostToken: string };
+
+    const lifecycleRes = await app.request(`/meeting/${created.hostToken}/session-events`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({
+        type: 'window_open',
+        text: 'notes.txt - Notepad',
+        actor: 'guest',
+        properties: {
+          source: 'window_lifecycle_client_submit',
+          lifecycleSource: 'win95_start_menu',
+          lifecycleKind: 'open',
+          windowLifecycleId: 'window-lifecycle:guest:1782601800000:open:notepad',
+          capturedAtMs: 1782601800000,
+          actor: 'guest',
+          windowId: 'notepad',
+          windowType: 'notepad',
+          windowTitle: 'notes.txt - Notepad',
+          surface: 'win95',
+          roomPhase: 'connected',
+          durableObjectReplayExpected: true,
+        },
+      }),
+    }, env, ctx);
+    expect(lifecycleRes.status).toBe(200);
+
+    const linked = sqlite.prepare(
+      'SELECT candidate_id FROM scheduled_interviews WHERE id = ?',
+    ).get('scheduled-start-menu-window-evidence') as { candidate_id: string } | undefined;
+    const node = sqlite.prepare(
+      `SELECT node_type, narrative_text, extracted_properties_json
+         FROM candidate_nodes
+        WHERE candidate_id = ? AND node_type = 'session_window_open'`,
+    ).get(linked?.candidate_id) as {
+      node_type: string;
+      narrative_text: string;
+      extracted_properties_json: string;
+    } | undefined;
+    expect(node?.narrative_text).toContain('Window opened: notes.txt - Notepad');
+    expect(JSON.parse(node?.extracted_properties_json ?? '{}')).toMatchObject({
+      source: 'window_lifecycle_client_submit',
+      lifecycleSource: 'win95_start_menu',
+      lifecycleKind: 'open',
       actor: 'guest',
-      source: 'clippy_agent_chat',
-      workspaceSessionId: 'workspace-session-1',
+      windowId: 'notepad',
+      windowType: 'notepad',
+      windowTitle: 'notes.txt - Notepad',
+      windowLifecycleId: 'window-lifecycle:guest:1782601800000:open:notepad',
+      capturedAtMs: 1782601800000,
+      surface: 'win95',
+    });
+
+    const fileManagerLifecycleRes = await app.request(`/meeting/${created.hostToken}/session-events`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({
+        type: 'window_open',
+        text: 'notes.txt - Notepad',
+        actor: 'guest',
+        properties: {
+          source: 'window_lifecycle_client_submit',
+          lifecycleSource: 'win95_file_system',
+          lifecycleKind: 'open',
+          windowLifecycleId: 'window-lifecycle:guest:1782601800100:open:notepad',
+          capturedAtMs: 1782601800100,
+          actor: 'guest',
+          windowId: 'notepad',
+          windowType: 'notepad',
+          windowTitle: 'notes.txt - Notepad',
+          surface: 'win95',
+          roomPhase: 'connected',
+          durableObjectReplayExpected: true,
+        },
+      }),
+    }, env, ctx);
+    expect(fileManagerLifecycleRes.status).toBe(200);
+
+    const fileManagerNode = sqlite.prepare(
+      `SELECT node_type, narrative_text, extracted_properties_json
+         FROM candidate_nodes
+        WHERE candidate_id = ?
+          AND node_type = 'session_window_open'
+          AND extracted_properties_json LIKE '%win95_file_system%'`,
+    ).get(linked?.candidate_id) as {
+      node_type: string;
+      narrative_text: string;
+      extracted_properties_json: string;
+    } | undefined;
+    expect(fileManagerNode?.narrative_text).toContain('Window opened: notes.txt - Notepad');
+    expect(JSON.parse(fileManagerNode?.extracted_properties_json ?? '{}')).toMatchObject({
+      source: 'window_lifecycle_client_submit',
+      lifecycleSource: 'win95_file_system',
+      lifecycleKind: 'open',
+      actor: 'guest',
+      windowId: 'notepad',
+      windowType: 'notepad',
+      windowTitle: 'notes.txt - Notepad',
+      windowLifecycleId: 'window-lifecycle:guest:1782601800100:open:notepad',
+      capturedAtMs: 1782601800100,
+      surface: 'win95',
+    });
+  });
+
+  it('requires stable source-backed evidence for synced window data updates', async () => {
+    const app = mountApp();
+    const { ctx } = buildCtx();
+    const now = new Date().toISOString();
+    sqlite.prepare(
+      `INSERT INTO scheduled_interviews (
+         id, candidate_id, owner_id, recipient_name, recipient_email, interview_type, status, updated_at
+       ) VALUES (?, NULL, ?, ?, ?, 'DEV_CONTAINER_CHALLENGE', 'INVITED', ?)`,
+    ).run(
+      'scheduled-window-data-evidence',
+      'owner-1',
+      'Window Data Candidate',
+      'window-data@example.com',
+      now,
+    );
+
+    const createMeetingRes = await app.request('/meetings', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({
+        recipientName: 'Window Data Candidate',
+        recipientEmail: 'window-data@example.com',
+        title: 'Window data evidence room',
+        meetingType: 'INTERVIEW',
+        scheduledInterviewId: 'scheduled-window-data-evidence',
+      }),
+    }, env, ctx);
+    expect(createMeetingRes.status).toBe(201);
+    const created = await createMeetingRes.json() as { hostToken: string };
+
+    const sourceOnlyRes = await app.request(`/meeting/${created.hostToken}/session-events`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({
+        type: 'window_update',
+        text: 'Window data updated: notepad',
+        actor: 'guest',
+        properties: {
+          source: 'window_data_client_submit',
+          dataSource: 'win95_window_data_sync',
+          actor: 'guest',
+          windowId: 'notepad',
+          action: 'edit_text',
+          dataKeys: ['text'],
+          dataValueFingerprints: { text: 'data_81a94acf' },
+          surface: 'win95',
+          roomPhase: 'connected',
+          durableObjectReplayExpected: true,
+        },
+      }),
+    }, env, ctx);
+    expect(sourceOnlyRes.status).toBe(422);
+
+    const validRes = await app.request(`/meeting/${created.hostToken}/session-events`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({
+        type: 'window_update',
+        text: 'Window data updated: notepad',
+        actor: 'guest',
+        properties: {
+          source: 'window_data_client_submit',
+          dataSource: 'win95_window_data_sync',
+          actor: 'guest',
+          windowId: 'notepad',
+          action: 'edit_text',
+          windowDataUpdateId: 'window-data:guest:1782601700000:notepad:edit_text',
+          capturedAtMs: 1782601700000,
+          dataKeys: ['text'],
+          dataValueFingerprints: { text: 'data_81a94acf' },
+          surface: 'win95',
+          roomPhase: 'connected',
+          durableObjectReplayExpected: true,
+        },
+      }),
+    }, env, ctx);
+    expect(validRes.status).toBe(200);
+
+    const deleteClearRes = await app.request(`/meeting/${created.hostToken}/session-events`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({
+        type: 'window_update',
+        text: 'Window data updated: notepad',
+        actor: 'guest',
+        properties: {
+          source: 'window_data_client_submit',
+          dataSource: 'win95_file_delete_sync',
+          actor: 'guest',
+          windowId: 'notepad',
+          action: 'edit_text',
+          windowDataUpdateId: 'window-data:guest:1782601700100:notepad:edit_text',
+          capturedAtMs: 1782601700100,
+          dataKeys: ['text'],
+          dataValueFingerprints: { text: 'data_12345678' },
+          surface: 'win95',
+          roomPhase: 'connected',
+          durableObjectReplayExpected: true,
+        },
+      }),
+    }, env, ctx);
+    expect(deleteClearRes.status).toBe(200);
+
+    const linked = sqlite.prepare(
+      'SELECT candidate_id FROM scheduled_interviews WHERE id = ?',
+    ).get('scheduled-window-data-evidence') as { candidate_id: string } | undefined;
+    const node = sqlite.prepare(
+      `SELECT node_type, narrative_text, extracted_properties_json
+         FROM candidate_nodes
+        WHERE candidate_id = ? AND node_type = 'session_window_update'`,
+    ).get(linked?.candidate_id) as {
+      node_type: string;
+      narrative_text: string;
+      extracted_properties_json: string;
+    } | undefined;
+    expect(node?.narrative_text).toContain('Window updated: Window data updated: notepad');
+    expect(JSON.parse(node?.extracted_properties_json ?? '{}')).toMatchObject({
+      source: 'window_data_client_submit',
+      dataSource: 'win95_window_data_sync',
+      actor: 'guest',
+      windowId: 'notepad',
+      action: 'edit_text',
+      windowDataUpdateId: 'window-data:guest:1782601700000:notepad:edit_text',
+      capturedAtMs: 1782601700000,
+      dataKeys: ['text'],
+      dataValueFingerprints: { text: 'data_81a94acf' },
+    });
+
+    const deleteClearNode = sqlite.prepare(
+      `SELECT node_type, narrative_text, extracted_properties_json
+         FROM candidate_nodes
+        WHERE candidate_id = ?
+          AND node_type = 'session_window_update'
+          AND extracted_properties_json LIKE '%win95_file_delete_sync%'`,
+    ).get(linked?.candidate_id) as {
+      node_type: string;
+      narrative_text: string;
+      extracted_properties_json: string;
+    } | undefined;
+    expect(deleteClearNode?.narrative_text).toContain('Window updated: Window data updated: notepad');
+    expect(JSON.parse(deleteClearNode?.extracted_properties_json ?? '{}')).toMatchObject({
+      source: 'window_data_client_submit',
+      dataSource: 'win95_file_delete_sync',
+      actor: 'guest',
+      windowId: 'notepad',
+      action: 'edit_text',
+      windowDataUpdateId: 'window-data:guest:1782601700100:notepad:edit_text',
+      capturedAtMs: 1782601700100,
+      dataKeys: ['text'],
+      dataValueFingerprints: { text: 'data_12345678' },
+    });
+  });
+
+  it('returns non-OK when a valid session event cannot be persisted', async () => {
+    const app = mountApp();
+    const { ctx } = buildCtx();
+    const now = new Date().toISOString();
+    sqlite.prepare(
+      `INSERT INTO scheduled_interviews (
+         id, candidate_id, owner_id, recipient_name, recipient_email, interview_type, status, updated_at
+       ) VALUES (?, NULL, ?, ?, ?, 'DEV_CONTAINER_CHALLENGE', 'INVITED', ?)`,
+    ).run(
+      'scheduled-session-persist-failure',
+      'owner-1',
+      'Persist Failure Candidate',
+      'persist-failure@example.com',
+      now,
+    );
+
+    const createMeetingRes = await app.request('/meetings', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({
+        recipientName: 'Persist Failure Candidate',
+        recipientEmail: 'persist-failure@example.com',
+        title: 'Session event persistence failure',
+        meetingType: 'INTERVIEW',
+        scheduledInterviewId: 'scheduled-session-persist-failure',
+      }),
+    }, env, ctx);
+    expect(createMeetingRes.status).toBe(201);
+    const created = await createMeetingRes.json() as { hostToken: string };
+    const consoleError = vi.spyOn(console, 'error').mockImplementation(() => undefined);
+
+    sqlite.exec('DROP TABLE candidate_nodes');
+
+    const sessionEventRes = await app.request(`/meeting/${created.hostToken}/session-events`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({
+        type: 'window_update',
+        text: 'Window state updated: browser',
+        actor: 'guest',
+        properties: {
+          source: 'window_state_client_submit',
+          stateSource: 'win95_start_menu',
+          actor: 'guest',
+          windowId: 'browser',
+          action: 'restore_or_focus',
+          windowStateChangeId: 'window-state:guest:1782601600000:browser:restore_or_focus',
+          capturedAtMs: 1782601600000,
+          statePatch: { minimized: false, focused: true },
+          stateKeys: ['focused', 'minimized'],
+          surface: 'win95',
+          roomPhase: 'connected',
+          durableObjectReplayExpected: true,
+        },
+      }),
+    }, env, ctx);
+
+    expect(sessionEventRes.status).toBe(500);
+    expect(consoleError).toHaveBeenCalledWith(
+      '[sessionEvents] Failed to capture event:',
+      expect.any(Error),
+    );
+    consoleError.mockRestore();
+    await expect(sessionEventRes.json()).resolves.toMatchObject({
+      error: {
+        code: 'INTERNAL_ERROR',
+        message: 'Session event could not be persisted.',
+      },
     });
   });
 
@@ -1303,6 +3916,67 @@ describe('meeting room recording living-context route', () => {
             createdAt: 1700000000000,
             kind: 'SET_ROOM_SURFACE',
             surface: 'win95',
+            previousSurface: 'standard',
+            action: 'enter_desktop',
+            source: 'room_surface_control',
+            surfaceControlEventSource: 'browser_room_surface_toggle',
+            actor: 'host',
+            surfaceChangeId: 'surface:host:1700000000000:standard:win95',
+            capturedAtMs: 1700000000000,
+            roomPhase: 'connected',
+            durableObjectReplayExpected: true,
+          },
+        },
+        {
+          role: 'HOST',
+          recordedAt: 1700000000500,
+          event: {
+            id: 'evt-browser-move-1',
+            clientId: 'host-client',
+            createdAt: 1700000000500,
+            kind: 'UPDATE_WINDOW_STATE',
+            windowId: 'browser',
+            x: 120,
+            y: 80,
+            focused: true,
+            evidence: {
+              source: 'window_state_client_submit',
+              stateSource: 'win95_window_chrome',
+              actor: 'host',
+              windowId: 'browser',
+              action: 'move',
+              windowStateChangeId: 'window-state:host:1700000000500:browser:move',
+              capturedAtMs: 1700000000500,
+              surface: 'win95',
+              roomPhase: 'connected',
+              durableObjectReplayExpected: true,
+            },
+          },
+        },
+        {
+          role: 'HOST',
+          recordedAt: 1700000000600,
+          event: {
+            id: 'evt-browser-move-2',
+            clientId: 'host-client',
+            createdAt: 1700000000600,
+            kind: 'UPDATE_WINDOW_STATE',
+            windowId: 'browser',
+            x: 180,
+            y: 120,
+            focused: true,
+            evidence: {
+              source: 'window_state_client_submit',
+              stateSource: 'win95_window_chrome',
+              actor: 'host',
+              windowId: 'browser',
+              action: 'move',
+              windowStateChangeId: 'window-state:host:1700000000600:browser:move',
+              capturedAtMs: 1700000000600,
+              surface: 'win95',
+              roomPhase: 'connected',
+              durableObjectReplayExpected: true,
+            },
           },
         },
         {
@@ -1313,7 +3987,26 @@ describe('meeting room recording living-context route', () => {
             clientId: 'host-client',
             createdAt: 1700000001000,
             kind: 'WORKSPACE_STATE_CHANGED',
+            actor: 'host',
+            workspaceStateEventId: 'workspace-state:host:1700000001000:launch:workspace-session-1:READY',
+            capturedAtMs: 1700000001000,
             status: 'READY',
+            workspaceSessionId: 'workspace-session-1',
+            repoUrl: 'https://github.com/cloudflare/workers-sdk',
+            githubPrNumber: 14435,
+            matchedRepoId: 42,
+            challengeStatus: 'github_pr_assigned',
+            challengeKind: 'github_pr',
+            challengeSource: 'scheduled_interview.github_pr_number',
+            challengeMessage: null,
+            ttlSeconds: 3600,
+            ttlSource: 'default',
+            expiringSoon: false,
+            source: 'browser_workspace_state_observer',
+            workspaceEventSource: 'browser_workspace_state_observer',
+            workspaceStateSource: 'launch',
+            workspaceTelemetryPersisted: true,
+            proxyUrlPersisted: false,
           },
         },
       ],
@@ -1327,6 +4020,113 @@ describe('meeting room recording living-context route', () => {
             createdAt: 1700000002000,
             role: 'GUEST',
             text: 'I found the retry bug in the queue worker.',
+            deliveryStatus: 'accepted',
+            evidence: {
+              source: 'room_chat_client_submit',
+              chatEventSource: 'browser_room_chat_window',
+              actor: 'guest',
+              roomMessageId: 'chat-1',
+              clientId: 'guest-client',
+              messageCreatedAt: 1700000002000,
+              messageLength: 'I found the retry bug in the queue worker.'.length,
+              deliveryStatus: 'accepted',
+              surface: 'win95',
+              roomPhase: 'connected',
+              durableObjectReplayExpected: true,
+            },
+          },
+        },
+      ],
+      codeServerFileActivityLog: [
+        {
+          role: 'GUEST',
+          recordedAt: 1700000002400,
+          event: {
+            id: 'code-server-file:workspace-session-1:1782590500000:modified:path_cb48a478:aaaaaaaaaaaaaaaa',
+            clientId: 'guest-client',
+            createdAt: 1700000002400,
+            eventType: 'code_editor_save',
+            actor: 'system',
+            text: 'src/app.ts',
+            evidence: {
+              source: 'code_server_workspace',
+              observedBy: 'clippy_agent_bridge',
+              bridgeEventType: 'FILE_CHANGED',
+              editorSurface: 'code-server',
+              codeServerFileChangeId: 'code-server-file:workspace-session-1:1782590500000:modified:path_cb48a478:aaaaaaaaaaaaaaaa',
+              action: 'modified',
+              surface: 'win95',
+              roomPhase: 'connected',
+              workspaceStatus: 'READY',
+              workspaceSessionId: 'workspace-session-1',
+              repoUrl: 'https://github.com/cloudflare/workers-sdk',
+              path: 'src/app.ts',
+              observedAt: '2026-06-27T20:01:40.000Z',
+              contentHash: 'a'.repeat(64),
+              sizeBytes: 421,
+              contentPreview: 'export const answer = 42;',
+              bridgePersisted: false,
+              durableObjectReplayExpected: true,
+            },
+          },
+        },
+      ],
+      terminalActivityLog: [
+        {
+          role: 'GUEST',
+          recordedAt: 1700000002500,
+          event: {
+            id: 'terminal-command-sync',
+            clientId: 'guest-client',
+            createdAt: 1700000002500,
+            kind: 'COMMAND',
+            text: 'npm test',
+            evidence: {
+              source: 'container_terminal',
+              terminalEventSource: 'browser_terminal_ws',
+              terminalSessionId: 'terminal-workspace-session-1-guest',
+              terminalCommandId: 'terminal-workspace-session-1-guest:command:guest:1700000002500:1:terminal_dc5964d6',
+              terminalCommandSequence: 1,
+              actor: 'guest',
+              capturedAtMs: 1700000002500,
+              commandFingerprint: 'terminal_dc5964d6',
+              commandLength: 8,
+              surface: 'win95',
+              roomPhase: 'connected',
+              workspaceStatus: 'READY',
+              workspaceSessionId: 'workspace-session-1',
+              repoUrl: 'https://github.com/cloudflare/workers-sdk',
+              durableObjectReplayExpected: true,
+            },
+          },
+        },
+        {
+          role: 'GUEST',
+          recordedAt: 1700000002600,
+          event: {
+            id: 'terminal-output-sync',
+            clientId: 'guest-client',
+            createdAt: 1700000002600,
+            kind: 'OUTPUT',
+            text: 'PASS src/app.test.ts\n',
+            evidence: {
+              source: 'container_terminal',
+              terminalEventSource: 'browser_terminal_ws',
+              terminalSessionId: 'terminal-workspace-session-1-guest',
+              terminalCommandId: 'terminal-workspace-session-1-guest:command:guest:1700000002500:1:terminal_dc5964d6',
+              terminalOutputChunkId: 'terminal-workspace-session-1-guest:output:system:1700000002600:1:terminal_4f2d0d8f',
+              terminalOutputSequence: 1,
+              actor: 'system',
+              capturedAtMs: 1700000002600,
+              outputFingerprint: 'terminal_4f2d0d8f',
+              outputLength: 21,
+              surface: 'win95',
+              roomPhase: 'connected',
+              workspaceStatus: 'READY',
+              workspaceSessionId: 'workspace-session-1',
+              repoUrl: 'https://github.com/cloudflare/workers-sdk',
+              durableObjectReplayExpected: true,
+            },
           },
         },
       ],
@@ -1339,8 +4139,80 @@ describe('meeting room recording living-context route', () => {
             clientId: 'host-client',
             createdAt: 1700000003000,
             source: 'system',
+            promptEventSource: 'browser_proactive_clippy_prompt',
+            promptTrigger: 'host_waiting_prepare_workspace',
+            surface: 'win95',
+            roomPhase: 'connected',
+            workspaceStatus: 'READY',
+            workspaceSessionId: 'workspace-session-1',
+            agentResponseClaimed: false,
             text: 'Would you like to open the workspace?',
             actions: [{ id: 'open-workspace', label: 'Open workspace' }],
+          },
+        },
+      ],
+      clippyInteractionActivityLog: [
+        {
+          role: 'GUEST',
+          recordedAt: 1700000003200,
+          event: {
+            id: 'clippy-user-chat-sync',
+            clientId: 'guest-client',
+            createdAt: 1700000003200,
+            eventType: 'ai_chat_user',
+            actor: 'guest',
+            text: 'Can you inspect the failing test?',
+            evidence: {
+              source: 'clippy_agent_chat_client_submit',
+              agentChatEventSource: 'browser_clippy_chat_window',
+              bridgeMessageType: 'CHAT',
+              bridgeProtocol: 'clippy_dev_container_ws',
+              promptId: 'workspace-session-1:guest:prompt:1700000003200:clippy_0123abcd',
+              promptFingerprint: 'clippy_0123abcd',
+              promptLength: 'Can you inspect the failing test?'.length,
+              promptTimestamp: 1700000003200,
+              browserQueuedBridgeMessage: true,
+              bridgeDeliveryConfirmed: false,
+              agent: null,
+              surface: 'win95',
+              roomPhase: 'connected',
+              workspaceStatus: 'READY',
+              workspaceSessionId: 'workspace-session-1',
+              repoUrl: 'https://github.com/cloudflare/workers-sdk',
+              agentResponseClaimed: false,
+              actor: 'guest',
+              durableObjectReplayExpected: true,
+            },
+          },
+        },
+        {
+          role: 'GUEST',
+          recordedAt: 1700000003300,
+          event: {
+            id: 'clippy-agent-status-sync',
+            clientId: 'guest-client',
+            createdAt: 1700000003300,
+            eventType: 'ai_agent_status',
+            actor: 'agent',
+            text: 'devin is ready.',
+            evidence: {
+              source: 'clippy_agent_bridge',
+              agentStatusEventSource: 'browser_clippy_agent_ws',
+              agent: 'devin',
+              status: 'idle',
+              diagnosticSource: null,
+              bridgeMessageSource: 'agent_status',
+              observedAt: '2026-06-27T20:00:00.000Z',
+              capturedAtMs: 1700000003300,
+              agentStatusEventId: 'agent-status:devin:1700000003300:agent_status:idle:none',
+              surface: 'win95',
+              roomPhase: 'connected',
+              workspaceStatus: 'READY',
+              workspaceSessionId: 'workspace-session-1',
+              messageTimestamp: 1700000003300,
+              agentResponseClaimed: false,
+              durableObjectReplayExpected: true,
+            },
           },
         },
       ],
@@ -1361,6 +4233,20 @@ describe('meeting room recording living-context route', () => {
               mimeType: 'text/plain',
               createdAt: 1700000004000,
               updatedAt: 1700000004000,
+            },
+            evidence: {
+              source: 'win95_shared_file_system',
+              fileEventSource: 'browser_client_submit',
+              fileChangeId: 'file:guest:1700000004000:upsert:notepad',
+              actor: 'guest',
+              operation: 'upsert',
+              fileId: 'notepad',
+              fileName: 'notes.txt',
+              fileKind: 'text',
+              surface: 'win95',
+              roomPhase: 'connected',
+              capturedAtMs: 1700000004000,
+              durableObjectReplayExpected: true,
             },
           },
         },
@@ -1421,14 +4307,127 @@ describe('meeting room recording living-context route', () => {
     };
     expect(graphBody.events.map((event) => event.nodeType)).toEqual([
       'session_room_surface_change',
+      'session_window_update',
+      'session_window_update',
       'session_workspace_state',
       'session_chat_message',
+      'session_code_editor_save',
+      'session_terminal_command',
+      'session_terminal_output',
+      'session_agent_status',
+      'session_chat_user',
       'session_clippy_prompt',
       'session_file_change',
     ]);
     expect(graphBody.events.map((event) => event.narrativeText).join('\n')).toContain(
       'I found the retry bug in the queue worker.',
     );
+    expect(graphBody.events.find((event) => event.nodeType === 'session_workspace_state')?.properties).toMatchObject({
+      roomActivitySource: 'durable_object',
+      source: 'browser_workspace_state_observer',
+      workspaceEventSource: 'browser_workspace_state_observer',
+      workspaceStateSource: 'launch',
+      actor: 'host',
+      workspaceStateEventId: 'workspace-state:host:1700000001000:launch:workspace-session-1:READY',
+      capturedAtMs: 1700000001000,
+      workspaceTelemetryPersisted: true,
+      proxyUrlPersisted: false,
+      workspaceStatus: 'READY',
+      workspaceSessionId: 'workspace-session-1',
+    });
+    expect(graphBody.events.find((event) => event.nodeType === 'session_chat_message')?.properties).toMatchObject({
+      roomActivitySource: 'durable_object',
+      source: 'room_chat_client_submit',
+      chatEventSource: 'browser_room_chat_window',
+      actor: 'guest',
+      roomMessageId: 'chat-1',
+      clientId: 'guest-client',
+      messageCreatedAt: 1700000002000,
+      messageLength: 'I found the retry bug in the queue worker.'.length,
+      deliveryStatus: 'accepted',
+      surface: 'win95',
+      roomPhase: 'connected',
+      durableObjectReplayExpected: true,
+    });
+    expect(graphBody.events.find((event) => event.nodeType === 'session_code_editor_save')?.properties).toMatchObject({
+      roomActivitySource: 'durable_object',
+      roomActivityKind: 'code_server_file',
+      source: 'code_server_workspace',
+      observedBy: 'clippy_agent_bridge',
+      bridgeEventType: 'FILE_CHANGED',
+      editorSurface: 'code-server',
+      action: 'modified',
+      path: 'src/app.ts',
+      contentHash: 'a'.repeat(64),
+      sizeBytes: 421,
+      bridgePersisted: false,
+      codeServerFileChangeId: 'code-server-file:workspace-session-1:1782590500000:modified:path_cb48a478:aaaaaaaaaaaaaaaa',
+      roomEventId: 'code-server-file:workspace-session-1:1782590500000:modified:path_cb48a478:aaaaaaaaaaaaaaaa',
+      workspaceSessionId: 'workspace-session-1',
+    });
+    expect(graphBody.events.find((event) => event.nodeType === 'session_terminal_command')?.properties).toMatchObject({
+      roomActivitySource: 'durable_object',
+      roomActivityKind: 'terminal',
+      source: 'container_terminal',
+      terminalEventSource: 'browser_terminal_ws',
+      terminalSessionId: 'terminal-workspace-session-1-guest',
+      terminalCommandId: 'terminal-workspace-session-1-guest:command:guest:1700000002500:1:terminal_dc5964d6',
+      terminalCommandSequence: 1,
+      actor: 'guest',
+      roomEventId: 'terminal-command-sync',
+      capturedAtMs: 1700000002500,
+      workspaceSessionId: 'workspace-session-1',
+    });
+    expect(graphBody.events.find((event) => event.nodeType === 'session_terminal_output')?.properties).toMatchObject({
+      roomActivitySource: 'durable_object',
+      roomActivityKind: 'terminal',
+      source: 'container_terminal',
+      terminalEventSource: 'browser_terminal_ws',
+      terminalOutputChunkId: 'terminal-workspace-session-1-guest:output:system:1700000002600:1:terminal_4f2d0d8f',
+      terminalCommandId: 'terminal-workspace-session-1-guest:command:guest:1700000002500:1:terminal_dc5964d6',
+      actor: 'system',
+      roomEventId: 'terminal-output-sync',
+      capturedAtMs: 1700000002600,
+      workspaceSessionId: 'workspace-session-1',
+    });
+    expect(graphBody.events.find((event) => event.nodeType === 'session_clippy_prompt')?.properties).toMatchObject({
+      roomActivitySource: 'durable_object',
+      source: 'clippy_prompt_client_submit',
+      promptEventSource: 'browser_proactive_clippy_prompt',
+      promptTrigger: 'host_waiting_prepare_workspace',
+      surface: 'win95',
+      roomPhase: 'connected',
+      workspaceStatus: 'READY',
+      workspaceSessionId: 'workspace-session-1',
+      agentResponseClaimed: false,
+      promptCreatedAt: 1700000003000,
+      promptLength: 'Would you like to open the workspace?'.length,
+    });
+    expect(graphBody.events.find((event) => event.nodeType === 'session_chat_user')?.properties).toMatchObject({
+      roomActivitySource: 'durable_object',
+      roomActivityKind: 'clippy_interaction',
+      source: 'clippy_agent_chat_client_submit',
+      agentChatEventSource: 'browser_clippy_chat_window',
+      promptId: 'workspace-session-1:guest:prompt:1700000003200:clippy_0123abcd',
+      browserQueuedBridgeMessage: true,
+      bridgeDeliveryConfirmed: false,
+      agent: null,
+      actor: 'guest',
+      roomEventId: 'clippy-user-chat-sync',
+      workspaceSessionId: 'workspace-session-1',
+    });
+    expect(graphBody.events.find((event) => event.nodeType === 'session_agent_status')?.properties).toMatchObject({
+      roomActivitySource: 'durable_object',
+      roomActivityKind: 'clippy_interaction',
+      source: 'clippy_agent_bridge',
+      agentStatusEventSource: 'browser_clippy_agent_ws',
+      agent: 'devin',
+      status: 'idle',
+      agentStatusEventId: 'agent-status:devin:1700000003300:agent_status:idle:none',
+      actor: 'agent',
+      roomEventId: 'clippy-agent-status-sync',
+      workspaceSessionId: 'workspace-session-1',
+    });
     expect(graphBody.events.at(-1)?.properties).toMatchObject({
       roomActivitySource: 'durable_object',
       operation: 'upsert',
@@ -1441,7 +4440,20 @@ describe('meeting room recording living-context route', () => {
          FROM candidate_nodes
         WHERE candidate_id = ? AND source_type = 'meeting_session'`,
     ).get(graphBody.candidateId) as { count: number };
-    expect(nodeCountAfterFirstRead.count).toBe(5);
+    expect(nodeCountAfterFirstRead.count).toBe(12);
+    const windowUpdateRows = sqlite.prepare(
+      `SELECT extracted_properties_json
+         FROM candidate_nodes
+        WHERE candidate_id = ?
+          AND source_type = 'meeting_session'
+          AND node_type = 'session_window_update'
+        ORDER BY captured_at ASC, id ASC`,
+    ).all(graphBody.candidateId) as Array<{ extracted_properties_json: string }>;
+    expect(windowUpdateRows).toHaveLength(2);
+    expect(windowUpdateRows.map((row) => JSON.parse(row.extracted_properties_json).roomEventId).sort()).toEqual([
+      'evt-browser-move-1',
+      'evt-browser-move-2',
+    ]);
 
     const secondGraphRes = await app.request(`/meeting/${created.hostToken}/context-graph`, {
       method: 'GET',
@@ -1452,7 +4464,7 @@ describe('meeting room recording living-context route', () => {
          FROM candidate_nodes
         WHERE candidate_id = ? AND source_type = 'meeting_session'`,
     ).get(graphBody.candidateId) as { count: number };
-    expect(nodeCountAfterSecondRead.count).toBe(5);
+    expect(nodeCountAfterSecondRead.count).toBe(12);
     expect(doFetch).toHaveBeenCalledWith(expect.objectContaining({
       url: 'https://do/activity-log',
     }));
@@ -1472,6 +4484,15 @@ describe('meeting room recording living-context route', () => {
             createdAt: 1700000100000,
             kind: 'SET_ROOM_SURFACE',
             surface: 'win95',
+            previousSurface: 'standard',
+            action: 'enter_desktop',
+            source: 'room_surface_control',
+            surfaceControlEventSource: 'browser_room_surface_toggle',
+            actor: 'host',
+            surfaceChangeId: 'surface:host:1700000100000:standard:win95',
+            capturedAtMs: 1700000100000,
+            roomPhase: 'connected',
+            durableObjectReplayExpected: true,
           },
         },
       ],
@@ -1485,6 +4506,20 @@ describe('meeting room recording living-context route', () => {
             createdAt: 1700000101000,
             role: 'GUEST',
             text: 'I would test the retry branch before touching the queue worker.',
+            deliveryStatus: 'accepted',
+            evidence: {
+              source: 'room_chat_client_submit',
+              chatEventSource: 'browser_room_chat_window',
+              actor: 'guest',
+              roomMessageId: 'chat-end-1',
+              clientId: 'guest-client',
+              messageCreatedAt: 1700000101000,
+              messageLength: 'I would test the retry branch before touching the queue worker.'.length,
+              deliveryStatus: 'accepted',
+              surface: 'win95',
+              roomPhase: 'connected',
+              durableObjectReplayExpected: true,
+            },
           },
         },
       ],
@@ -1506,6 +4541,20 @@ describe('meeting room recording living-context route', () => {
               mimeType: 'text/plain',
               createdAt: 1700000102000,
               updatedAt: 1700000102000,
+            },
+            evidence: {
+              source: 'win95_shared_file_system',
+              fileEventSource: 'browser_client_submit',
+              fileChangeId: 'file:guest:1700000102000:upsert:end-notes',
+              actor: 'guest',
+              operation: 'upsert',
+              fileId: 'end-notes',
+              fileName: 'review-notes.txt',
+              fileKind: 'text',
+              surface: 'win95',
+              roomPhase: 'connected',
+              capturedAtMs: 1700000102000,
+              durableObjectReplayExpected: true,
             },
           },
         },
@@ -1725,8 +4774,11 @@ describe('meeting room recording living-context route', () => {
     expect(JSON.parse(guestJoin?.extracted_properties_json ?? '{}')).toMatchObject({
       actor: 'guest',
       source: 'meeting_room_lifecycle',
+      roomLifecycleEventSource: 'meeting_room_event_route',
       lifecycleEvent: 'JOINED',
       participantRole: 'GUEST',
+      roomLifecycleObservedAt: expect.any(String),
+      roomLifecycleTimestamp: expect.any(Number),
     });
 
     const contextRows = sqlite.prepare(
@@ -1750,7 +4802,11 @@ describe('meeting room recording living-context route', () => {
           AND csr.source_ref_type = 'meeting_session_event'
         ORDER BY csr.exact_text`,
     ).all() as Array<{ exact_text: string | null }>;
-    expect(contextSources.map((source) => source.exact_text)).toEqual([
+    const sourceEventTexts = contextSources
+      .map((source) => JSON.parse(source.exact_text ?? '{}') as { text?: string })
+      .map((source) => source.text)
+      .sort();
+    expect(sourceEventTexts).toEqual([
       'Guest joined the 95 Until Infinity room',
       'Guest left the 95 Until Infinity room',
       'Recording started for the 95 Until Infinity room',
@@ -1762,6 +4818,7 @@ describe('meeting room recording living-context route', () => {
     const app = mountApp();
     const { ctx } = buildCtx();
     env.ENV = 'dev';
+    env.VIDEO_ROOM_APP_URL = 'https://room-dev.hire-pipe.com';
     env.DEV_BASIC_AUTH_USER = 'pipe-user';
     env.DEV_BASIC_AUTH_PASSWORD = 'room pass!';
 
@@ -1806,6 +4863,7 @@ describe('meeting room recording living-context route', () => {
     const app = mountApp();
     const { ctx } = buildCtx();
     env.ENV = 'dev';
+    env.VIDEO_ROOM_APP_URL = 'https://room-dev.hire-pipe.com';
     env.DEV_BASIC_AUTH_USER = 'pipe-user';
     env.DEV_BASIC_AUTH_PASSWORD = 'room pass!';
     env.VIDEO_ROOM_DEV_AUTH_USER = 'room-user';
@@ -1858,6 +4916,8 @@ describe('meeting room recording living-context route', () => {
     env.DEV_CONTAINER_DEFAULT_TTL_SECONDS = '3600';
     env.DEV_CONTAINER_MAX_TTL_SECONDS = '7200';
     env.API_BASE_URL = 'http://localhost:8787';
+    env.DEVIN_API_KEY = 'test-devin-api-key';
+    env.DEVIN_ORG_ID = 'test-devin-org-id';
 
     const scheduledInterviewId = 'scheduled-interview-workspace-pr';
     sqlite.prepare(
@@ -1890,6 +4950,8 @@ describe('meeting room recording living-context route', () => {
 
     const launchRes = await app.request(`/meeting/${created.hostToken}/workspace/launch`, {
       method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ agentType: 'devin' }),
     }, env, ctx);
     expect(launchRes.status).toBe(201);
     const body = await launchRes.json() as {
@@ -1921,9 +4983,1389 @@ describe('meeting room recording living-context route', () => {
       repoGitUrl: 'https://github.com/pipe/order-recovery',
       challengeBranch: 'refs/pull/144/head',
       agentType: 'devin',
+      agentApiKey: 'test-devin-api-key',
+      agentOrgId: 'test-devin-org-id',
       pipeApiUrl: 'http://localhost:8787',
       roomToken: created.hostToken,
     }));
+    expect(JSON.stringify(body)).not.toContain('test-devin-api-key');
+  });
+
+  it('launches room workspaces without an agent unless one is explicitly requested', async () => {
+    const app = mountApp();
+    const { ctx, waitUntilAll } = buildCtx();
+    const initBodies: unknown[] = [];
+    const doFetch = vi.fn(async (_url: string, init?: RequestInit) => {
+      initBodies.push(JSON.parse(String(init?.body ?? '{}')));
+      return new Response(null, { status: 204 });
+    });
+    env.DEV_CONTAINER = {
+      idFromName: vi.fn(() => ({}) as DurableObjectId),
+      get: vi.fn(() => ({ fetch: doFetch }) as unknown as DurableObjectStub),
+    } as unknown as DurableObjectNamespace;
+    env.DEV_CONTAINER_DEFAULT_TTL_SECONDS = '3600';
+    env.DEV_CONTAINER_MAX_TTL_SECONDS = '7200';
+    env.API_BASE_URL = 'http://localhost:8787';
+    env.DEVIN_API_KEY = 'test-devin-api-key';
+
+    const scheduledInterviewId = 'scheduled-interview-workspace-no-agent-default';
+    sqlite.prepare(
+      `INSERT INTO scheduled_interviews (
+         id, interview_type, github_repo_url, github_pr_number, status, updated_at
+       ) VALUES (?, 'DEV_CONTAINER_CHALLENGE', ?, ?, 'INVITED', ?)`,
+    ).run(
+      scheduledInterviewId,
+      'https://github.com/pipe/reliable-workspace',
+      21,
+      new Date().toISOString(),
+    );
+
+    const createMeetingRes = await app.request('/meetings', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({
+        recipientName: 'Workspace Guest',
+        recipientEmail: 'workspace-no-agent@example.com',
+        title: 'Workspace PR challenge',
+        meetingType: 'INTERVIEW',
+        scheduledInterviewId,
+      }),
+    }, env, ctx);
+    expect(createMeetingRes.status).toBe(201);
+    const created = await createMeetingRes.json() as {
+      hostToken: string;
+    };
+
+    const launchRes = await app.request(`/meeting/${created.hostToken}/workspace/launch`, {
+      method: 'POST',
+    }, env, ctx);
+    expect(launchRes.status).toBe(201);
+    await waitUntilAll();
+
+    expect(initBodies).toContainEqual(expect.objectContaining({
+      repoGitUrl: 'https://github.com/pipe/reliable-workspace',
+      challengeBranch: 'refs/pull/21/head',
+      agentType: null,
+      agentApiKey: null,
+      roomToken: created.hostToken,
+    }));
+  });
+
+  it('marks room workspace launch as ERROR when dev-container init fails before the DO can report status', async () => {
+    const app = mountApp();
+    const { ctx, waitUntilAll } = buildCtx();
+    const leakedToken = 'cog_testtoken1234567890abcdef';
+    const consoleSpy = vi.spyOn(console, 'error').mockImplementation(() => undefined);
+    const doFetch = vi.fn(async () => {
+      throw new Error(`network refused DEVIN_API_KEY=${leakedToken} https://example.test/?token=raw-token`);
+    });
+    env.DEV_CONTAINER = {
+      idFromName: vi.fn(() => ({}) as DurableObjectId),
+      get: vi.fn(() => ({ fetch: doFetch }) as unknown as DurableObjectStub),
+    } as unknown as DurableObjectNamespace;
+
+    const scheduledInterviewId = 'scheduled-interview-workspace-init-failure';
+    sqlite.prepare(
+      `INSERT INTO scheduled_interviews (
+         id, interview_type, github_repo_url, github_pr_number, status, updated_at
+       ) VALUES (?, 'DEV_CONTAINER_CHALLENGE', ?, ?, 'INVITED', ?)`,
+    ).run(
+      scheduledInterviewId,
+      'https://github.com/pipe/runtime-diagnostics',
+      77,
+      new Date().toISOString(),
+    );
+
+    const createMeetingRes = await app.request('/meetings', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({
+        recipientName: 'Workspace Failure Guest',
+        recipientEmail: 'workspace-failure@example.com',
+        title: 'Workspace init failure',
+        meetingType: 'INTERVIEW',
+        scheduledInterviewId,
+      }),
+    }, env, ctx);
+    expect(createMeetingRes.status).toBe(201);
+    const created = await createMeetingRes.json() as {
+      hostToken: string;
+    };
+
+    const launchRes = await app.request(`/meeting/${created.hostToken}/workspace/launch`, {
+      method: 'POST',
+    }, env, ctx);
+    expect(launchRes.status).toBe(201);
+    const body = await launchRes.json() as {
+      workspace: {
+        session: {
+          sessionId: string;
+          status: string;
+          proxyPath: string | null;
+        };
+      };
+    };
+    expect(body.workspace.session.status).toBe('LAUNCHING');
+    expect(body.workspace.session.proxyPath).toBeNull();
+
+    await waitUntilAll();
+    consoleSpy.mockRestore();
+
+    const row = sqlite.prepare(
+      `SELECT status, error_message
+         FROM dev_container_sessions
+        WHERE session_id = ?`,
+    ).get(body.workspace.session.sessionId) as {
+      status: string;
+      error_message: string | null;
+    };
+
+    expect(row.status).toBe('ERROR');
+    expect(row.error_message).toContain('Dev-container init request failed');
+    expect(row.error_message).toContain('DEVIN_API_KEY=[redacted]');
+    expect(row.error_message).toContain('token=[redacted]');
+    expect(row.error_message).not.toContain(leakedToken);
+
+    const workspaceRes = await app.request(`/meeting/${created.hostToken}/workspace`, {
+      method: 'GET',
+    }, env, ctx);
+    expect(workspaceRes.status).toBe(200);
+    const workspaceBody = await workspaceRes.json() as {
+      workspace: {
+        session: {
+          status: string;
+          proxyPath: string | null;
+          errorMessage: string | null;
+        };
+      };
+    };
+    expect(workspaceBody.workspace.session.status).toBe('ERROR');
+    expect(workspaceBody.workspace.session.proxyPath).toBeNull();
+    expect(workspaceBody.workspace.session.errorMessage).toBe(row.error_message);
+  });
+
+  it('surfaces a matched repo without a PR as a missing reviewable task diagnostic', async () => {
+    const app = mountApp();
+    const { ctx, waitUntilAll } = buildCtx();
+    const initBodies: unknown[] = [];
+    const doFetch = vi.fn(async (_url: string, init?: RequestInit) => {
+      initBodies.push(JSON.parse(String(init?.body ?? '{}')));
+      return new Response(null, { status: 204 });
+    });
+    env.DEV_CONTAINER = {
+      idFromName: vi.fn(() => ({}) as DurableObjectId),
+      get: vi.fn(() => ({ fetch: doFetch }) as unknown as DurableObjectStub),
+    } as unknown as DurableObjectNamespace;
+
+    sqlite.prepare(
+      `INSERT INTO qualified_repos (id, github_url)
+       VALUES (?, ?)`,
+    ).run(987, 'https://github.com/pipe/source-backed-worker');
+    sqlite.prepare(
+      `INSERT INTO scheduled_interviews (
+         id, interview_type, matched_repo_id, status, updated_at
+       ) VALUES (?, 'DEV_CONTAINER_CHALLENGE', ?, 'INVITED', ?)`,
+    ).run('scheduled-interview-matched-repo-gap', 987, new Date().toISOString());
+
+    const createMeetingRes = await app.request('/meetings', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({
+        recipientName: 'Matched Repo Guest',
+        recipientEmail: 'matched-repo-guest@example.com',
+        title: 'Matched repo challenge gap',
+        meetingType: 'INTERVIEW',
+        scheduledInterviewId: 'scheduled-interview-matched-repo-gap',
+      }),
+    }, env, ctx);
+    expect(createMeetingRes.status).toBe(201);
+    const created = await createMeetingRes.json() as {
+      hostToken: string;
+    };
+
+    const launchRes = await app.request(`/meeting/${created.hostToken}/workspace/launch`, {
+      method: 'POST',
+    }, env, ctx);
+    expect(launchRes.status).toBe(201);
+    const body = await launchRes.json() as {
+      workspace: {
+        repoUrl: string;
+        githubPrNumber: number | null;
+        matchedRepoId: number;
+        challenge: {
+          status: string;
+          kind: string | null;
+          source: string;
+          message: string | null;
+        };
+        session: { sessionId: string };
+      };
+    };
+
+    expect(body.workspace.repoUrl).toBe('https://github.com/pipe/source-backed-worker');
+    expect(body.workspace.githubPrNumber).toBeNull();
+    expect(body.workspace.matchedRepoId).toBe(987);
+    expect(body.workspace.challenge).toMatchObject({
+      status: 'missing_reviewable_task',
+      kind: 'repo_only',
+      source: 'matched_repo_without_pr',
+    });
+    expect(body.workspace.challenge.message).toContain('no GitHub PR or task was assigned');
+    await waitUntilAll();
+
+    expect(sqlite.prepare(
+      `SELECT repo_git_url, challenge_branch
+         FROM dev_container_sessions
+        WHERE session_id = ?`,
+    ).get(body.workspace.session.sessionId)).toEqual({
+      repo_git_url: 'https://github.com/pipe/source-backed-worker',
+      challenge_branch: null,
+    });
+    expect(initBodies).toContainEqual(expect.objectContaining({
+      repoGitUrl: 'https://github.com/pipe/source-backed-worker',
+      challengeBranch: null,
+      matchedRepoId: 987,
+      githubPrNumber: null,
+      challengeStatus: 'missing_reviewable_task',
+      challengeKind: 'repo_only',
+      challengeSource: 'matched_repo_without_pr',
+    }));
+  });
+
+  it('returns the source-backed open-source challenge packet in room workspace payloads without internal ids', async () => {
+    const app = mountApp();
+    const { ctx } = buildCtx();
+    sqlite.exec(assessmentLayerMigration);
+    const now = new Date().toISOString();
+    const scheduledInterviewId = 'scheduled-interview-workspace-packet';
+    const assessmentSessionId = 'assessment-session-workspace-packet';
+    const eventId = 'assessment-event-workspace-packet';
+    const sourceRefId = `scheduled-interview:${scheduledInterviewId}:open-source-challenge:source-ref-secret`;
+    const baseCommitSha = 'd'.repeat(40);
+    const packetText = [
+      'Repo: https://github.com/pipe/source-backed-worker',
+      `Base commit: ${baseCommitSha}`,
+      'Task: Fix the source-backed worker retry path.',
+      'Instructions: Repair retry ordering without widening the worker API.',
+      'Success criteria:',
+      '- Retry order remains deterministic',
+      '- Existing worker tests pass',
+      'Expected evidence:',
+      '- Commit SHA on assessment branch',
+      '- Test command output',
+    ].join('\n');
+
+    sqlite.prepare(
+      `INSERT INTO scheduled_interviews (
+         id, owner_id, recipient_name, recipient_email, interview_type,
+         github_repo_url, github_pr_number, status, updated_at
+       ) VALUES (?, ?, ?, ?, 'OPEN_SOURCE_BUG_FIX', ?, NULL, 'INVITED', ?)`,
+    ).run(
+      scheduledInterviewId,
+      'owner-1',
+      'Packet Candidate',
+      'packet-candidate@example.com',
+      'https://github.com/pipe/source-backed-worker',
+      now,
+    );
+
+    const createMeetingRes = await app.request('/meetings', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({
+        recipientName: 'Packet Candidate',
+        recipientEmail: 'packet-candidate@example.com',
+        title: 'Open-source packet room',
+        meetingType: 'INTERVIEW',
+        scheduledInterviewId,
+      }),
+    }, env, ctx);
+    expect(createMeetingRes.status).toBe(201);
+    const created = await createMeetingRes.json() as {
+      hostToken: string;
+    };
+
+    sqlite.prepare(
+      `INSERT INTO assessment_sessions (
+         id, ingestion_key, interview_id, mode, state, candidate_id, workspace_id,
+         created_by, metadata_json, created_at, updated_at
+       ) VALUES (?, ?, ?, 'OPEN_SOURCE_BUG_FIX', 'IN_PROGRESS', NULL, ?, ?, '{}', ?, ?)`,
+    ).run(
+      assessmentSessionId,
+      `assessment-session:open-source:${scheduledInterviewId}`,
+      scheduledInterviewId,
+      'owner-1',
+      'owner-1',
+      now,
+      now,
+    );
+    sqlite.prepare(
+      `INSERT INTO assessment_evidence_events (
+         id, ingestion_key, session_id, sequence, kind, actor_type, actor_id,
+         narrative, payload_json, occurred_at, created_at
+       ) VALUES (?, ?, ?, 1, 'recruiter_note', 'recruiter', ?, ?, ?, ?, ?)`,
+    ).run(
+      eventId,
+      `assessment-event:${assessmentSessionId}:manual-open-source-challenge`,
+      assessmentSessionId,
+      'owner-1',
+      'Recruiter assigned a concrete open-source implementation challenge packet.',
+      JSON.stringify({
+        repositoryUrl: 'https://github.com/pipe/source-backed-worker',
+        baseCommitSha,
+      }),
+      now,
+      now,
+    );
+    sqlite.prepare(
+      `INSERT INTO assessment_event_source_refs (
+         id, event_id, source_ref_type, source_ref_id, evidence_role,
+         locator_json, exact_text, content_hash, metadata_json, created_at
+       ) VALUES (?, ?, 'open_source_challenge_packet', ?, 'assigned_challenge', ?, ?, ?, '{}', ?)`,
+    ).run(
+      'assessment-source-workspace-packet',
+      eventId,
+      sourceRefId,
+      JSON.stringify({
+        repositoryUrl: 'https://github.com/pipe/source-backed-worker',
+        baseCommitSha,
+      }),
+      packetText,
+      'sha256:packet-content-hash',
+      now,
+    );
+
+    const workspaceRes = await app.request(`/meeting/${created.hostToken}/workspace`, {
+      method: 'GET',
+    }, env, ctx);
+    expect(workspaceRes.status).toBe(200);
+    const body = await workspaceRes.json() as {
+      workspace: {
+        repoUrl: string;
+        githubPrNumber: number | null;
+        challenge: {
+          status: string;
+          kind: string | null;
+          source: string;
+          packet: {
+            sourceRefType: string;
+            evidenceRole: string;
+            exactText: string;
+            locator: Record<string, unknown>;
+            contentHash: string;
+          } | null;
+        };
+      };
+    };
+
+    expect(body.workspace.repoUrl).toBe('https://github.com/pipe/source-backed-worker');
+    expect(body.workspace.githubPrNumber).toBeNull();
+    expect(body.workspace.challenge).toMatchObject({
+      status: 'repo_task_assigned',
+      kind: 'repo_only',
+      source: 'scheduled_interview.challenge_packet',
+      packet: {
+        sourceRefType: 'open_source_challenge_packet',
+        evidenceRole: 'assigned_challenge',
+        exactText: packetText,
+        locator: {
+          repositoryUrl: 'https://github.com/pipe/source-backed-worker',
+          baseCommitSha,
+        },
+        contentHash: 'sha256:packet-content-hash',
+      },
+    });
+    const serialized = JSON.stringify(body);
+    expect(serialized).not.toContain(assessmentSessionId);
+    expect(serialized).not.toContain(eventId);
+    expect(serialized).not.toContain(sourceRefId);
+  });
+
+  it('treats matched open-source PR packets as repo-task assignments and launches from the packet base commit', async () => {
+    const app = mountApp();
+    const { ctx, waitUntilAll } = buildCtx();
+    sqlite.exec(assessmentLayerMigration);
+    const initBodies: unknown[] = [];
+    const doFetch = vi.fn(async (_url: string, init?: RequestInit) => {
+      initBodies.push(JSON.parse(String(init?.body ?? '{}')));
+      return new Response(null, { status: 204 });
+    });
+    env.DEV_CONTAINER = {
+      idFromName: vi.fn(() => ({}) as DurableObjectId),
+      get: vi.fn(() => ({ fetch: doFetch }) as unknown as DurableObjectStub),
+    } as unknown as DurableObjectNamespace;
+
+    const now = new Date().toISOString();
+    const scheduledInterviewId = 'scheduled-interview-matched-packet-pr';
+    const assessmentSessionId = 'assessment-session-matched-packet-pr';
+    const eventId = 'assessment-event-matched-packet-pr';
+    const baseCommitSha = 'f'.repeat(40);
+    const headCommitSha = '1'.repeat(40);
+    const packetText = [
+      'Repo: https://github.com/pipe/source-backed-worker',
+      `Base commit: ${baseCommitSha}`,
+      'Pull request: #5110',
+      'Task: Fix the matched retry scheduler packet.',
+      'Success criteria:',
+      '- Launch uses the immutable base commit',
+      'Expected evidence:',
+      '- Commit SHA on assessment branch',
+    ].join('\n');
+
+    sqlite.prepare(
+      `INSERT INTO scheduled_interviews (
+         id, owner_id, recipient_name, recipient_email, interview_type,
+         matched_repo_id, github_repo_url, github_pr_number, status, updated_at
+       ) VALUES (?, ?, ?, ?, 'OPEN_SOURCE_BUG_FIX', ?, ?, ?, 'INVITED', ?)`,
+    ).run(
+      scheduledInterviewId,
+      'owner-1',
+      'Matched Packet Candidate',
+      'matched-packet-candidate@example.com',
+      973,
+      'https://github.com/pipe/source-backed-worker',
+      5110,
+      now,
+    );
+
+    const createMeetingRes = await app.request('/meetings', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({
+        recipientName: 'Matched Packet Candidate',
+        recipientEmail: 'matched-packet-candidate@example.com',
+        title: 'Matched open-source packet room',
+        meetingType: 'INTERVIEW',
+        scheduledInterviewId,
+      }),
+    }, env, ctx);
+    expect(createMeetingRes.status).toBe(201);
+    const created = await createMeetingRes.json() as {
+      hostToken: string;
+    };
+
+    sqlite.prepare(
+      `INSERT INTO assessment_sessions (
+         id, ingestion_key, interview_id, mode, state, candidate_id, workspace_id,
+         created_by, metadata_json, created_at, updated_at
+       ) VALUES (?, ?, ?, 'OPEN_SOURCE_BUG_FIX', 'INTAKE', NULL, ?, ?, ?, ?, ?)`,
+    ).run(
+      assessmentSessionId,
+      `assessment-session:${scheduledInterviewId}:matched-open-source-challenge:challenge-packet-5110`,
+      scheduledInterviewId,
+      'owner-1',
+      'owner-1',
+      JSON.stringify({
+        challengePacketSource: 'matched_review_challenge_packet',
+        matchedRepoId: 973,
+        githubPrNumber: 5110,
+        baseCommitSha,
+      }),
+      now,
+      now,
+    );
+    sqlite.prepare(
+      `INSERT INTO assessment_evidence_events (
+         id, ingestion_key, session_id, sequence, kind, actor_type, actor_id,
+         narrative, payload_json, occurred_at, created_at
+       ) VALUES (?, ?, ?, 1, 'match_decision', 'system', 'pipe-matcher', ?, ?, ?, ?)`,
+    ).run(
+      eventId,
+      `assessment-event:${assessmentSessionId}:matched-open-source-challenge:challenge-packet-5110`,
+      assessmentSessionId,
+      'PIPE assigned a source-backed open-source implementation challenge packet from the matched repository.',
+      JSON.stringify({
+        repositoryUrl: 'https://github.com/pipe/source-backed-worker',
+        githubPrNumber: 5110,
+        baseCommitSha,
+      }),
+      now,
+      now,
+    );
+    sqlite.prepare(
+      `INSERT INTO assessment_event_source_refs (
+         id, event_id, source_ref_type, source_ref_id, evidence_role,
+         locator_json, exact_text, content_hash, metadata_json, created_at
+       ) VALUES (?, ?, 'review_challenge_packet', 'challenge-packet-5110', 'assigned_challenge', ?, ?, ?, '{}', ?)`,
+    ).run(
+      'assessment-source-matched-packet-pr',
+      eventId,
+      JSON.stringify({
+        scheduledInterviewId,
+        matchedRepoId: 973,
+        repositoryUrl: 'https://github.com/pipe/source-backed-worker',
+        githubPrNumber: 5110,
+        pullRequestUrl: 'https://github.com/pipe/source-backed-worker/pull/5110',
+        baseCommitSha,
+        headCommitSha,
+        repoSnapshotId: 'snapshot-matched-packet-pr',
+      }),
+      packetText,
+      'sha256:matched-packet-pr-content-hash',
+      now,
+    );
+
+    const workspaceRes = await app.request(`/meeting/${created.hostToken}/workspace`, {
+      method: 'GET',
+    }, env, ctx);
+    expect(workspaceRes.status).toBe(200);
+    const workspaceBody = await workspaceRes.json() as {
+      workspace: {
+        repoUrl: string;
+        githubPrNumber: number | null;
+        matchedRepoId: number | null;
+        challenge: {
+          status: string;
+          kind: string | null;
+          source: string;
+          packet: {
+            sourceRefType: string;
+            locator: Record<string, unknown>;
+            contentHash: string;
+          } | null;
+        };
+      };
+    };
+    expect(workspaceBody.workspace.repoUrl).toBe('https://github.com/pipe/source-backed-worker');
+    expect(workspaceBody.workspace.githubPrNumber).toBe(5110);
+    expect(workspaceBody.workspace.matchedRepoId).toBe(973);
+    expect(workspaceBody.workspace.challenge).toMatchObject({
+      status: 'repo_task_assigned',
+      kind: 'repo_only',
+      source: 'scheduled_interview.challenge_packet',
+      packet: {
+        sourceRefType: 'review_challenge_packet',
+        locator: {
+          matchedRepoId: 973,
+          githubPrNumber: 5110,
+          baseCommitSha,
+          headCommitSha,
+        },
+        contentHash: 'sha256:matched-packet-pr-content-hash',
+      },
+    });
+
+    const launchRes = await app.request(`/meeting/${created.hostToken}/workspace/launch`, {
+      method: 'POST',
+    }, env, ctx);
+    expect(launchRes.status).toBe(201);
+    const launchBody = await launchRes.json() as {
+      workspace: {
+        challenge: {
+          status: string;
+          source: string;
+        };
+        session: { sessionId: string };
+      };
+    };
+    expect(launchBody.workspace.challenge).toMatchObject({
+      status: 'repo_task_assigned',
+      source: 'scheduled_interview.challenge_packet',
+    });
+    await waitUntilAll();
+
+    expect(sqlite.prepare(
+      `SELECT repo_git_url, challenge_branch, base_commit_sha
+         FROM dev_container_sessions
+        WHERE session_id = ?`,
+    ).get(launchBody.workspace.session.sessionId)).toEqual({
+      repo_git_url: 'https://github.com/pipe/source-backed-worker',
+      challenge_branch: null,
+      base_commit_sha: baseCommitSha,
+    });
+    expect(initBodies).toContainEqual(expect.objectContaining({
+      repoGitUrl: 'https://github.com/pipe/source-backed-worker',
+      challengeBranch: null,
+      baseCommitSha,
+      challengePacketContentHash: 'sha256:matched-packet-pr-content-hash',
+      matchedRepoId: 973,
+      githubPrNumber: 5110,
+      challengeStatus: 'repo_task_assigned',
+      challengeSource: 'scheduled_interview.challenge_packet',
+    }));
+  });
+
+  it('returns refreshed assessment progress after source-backed room events', async () => {
+    const app = mountApp();
+    const { ctx } = buildCtx();
+    sqlite.exec(assessmentLayerMigration);
+
+    const now = new Date().toISOString();
+    const scheduledInterviewId = 'scheduled-interview-room-progress-refresh';
+    const assessmentSessionId = 'assessment-session-room-progress-refresh';
+    sqlite.prepare(
+      `INSERT INTO scheduled_interviews (
+         id, owner_id, recipient_name, recipient_email, interview_type,
+         github_repo_url, status, updated_at
+       ) VALUES (?, ?, ?, ?, 'OPEN_SOURCE_BUG_FIX', ?, 'INVITED', ?)`,
+    ).run(
+      scheduledInterviewId,
+      'owner-1',
+      'Progress Candidate',
+      'progress-candidate@example.com',
+      'https://github.com/pipe/source-backed-worker',
+      now,
+    );
+
+    const createMeetingRes = await app.request('/meetings', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({
+        recipientName: 'Progress Candidate',
+        recipientEmail: 'progress-candidate@example.com',
+        title: 'Open-source progress room',
+        meetingType: 'INTERVIEW',
+        scheduledInterviewId,
+      }),
+    }, env, ctx);
+    expect(createMeetingRes.status).toBe(201);
+    const created = await createMeetingRes.json() as {
+      hostToken: string;
+    };
+
+    sqlite.prepare(
+      `INSERT INTO assessment_sessions (
+         id, ingestion_key, interview_id, mode, state, candidate_id, workspace_id,
+         created_by, metadata_json, created_at, updated_at
+       ) VALUES (?, ?, ?, 'OPEN_SOURCE_BUG_FIX', 'INTAKE', NULL, ?, ?, '{}', ?, ?)`,
+    ).run(
+      assessmentSessionId,
+      `assessment-session:open-source:${scheduledInterviewId}`,
+      scheduledInterviewId,
+      'owner-1',
+      'owner-1',
+      now,
+      now,
+    );
+
+    const text = 'I used AI to inspect the retry path.';
+    const eventRes = await app.request(`/meeting/${created.hostToken}/session-events`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({
+        type: 'chat_message',
+        text,
+        actor: 'guest',
+        properties: {
+          source: 'room_chat_client_submit',
+          chatEventSource: 'browser_room_chat_window',
+          actor: 'guest',
+          roomMessageId: 'chat-message-progress-refresh',
+          clientId: 'browser-client-progress-refresh',
+          messageCreatedAt: 1782603000000,
+          messageLength: text.length,
+          deliveryStatus: 'pending',
+          surface: 'win95',
+          roomPhase: 'connected',
+          durableObjectReplayExpected: true,
+        },
+      }),
+    }, env, ctx);
+    expect(eventRes.status).toBe(200);
+    const body = await eventRes.json() as {
+      captured: boolean;
+      nodeId: string;
+      progress: {
+        state: string;
+        hasWorkEvidence: boolean;
+        hasMessageEvidence: boolean;
+        evidenceCounts: Array<{ kind: string; count: number }>;
+        latestEvent: { kind: string; sequence: number };
+      };
+    };
+
+    expect(body).toMatchObject({
+      captured: true,
+      progress: {
+        state: 'IN_PROGRESS',
+        hasWorkEvidence: true,
+        hasMessageEvidence: true,
+        latestEvent: { kind: 'message', sequence: 1 },
+      },
+    });
+    expect(body.progress.evidenceCounts).toContainEqual({ kind: 'message', count: 1 });
+    expect(sqlite.prepare(
+      `SELECT session_id
+         FROM assessment_evidence_events
+        WHERE kind = 'message'`,
+    ).get()).toEqual({ session_id: assessmentSessionId });
+  });
+
+  it('launches open-source challenge workspaces from the source-backed base commit', async () => {
+    const app = mountApp();
+    const { ctx, waitUntilAll } = buildCtx();
+    sqlite.exec(assessmentLayerMigration);
+    const initBodies: unknown[] = [];
+    const doFetch = vi.fn(async (_url: string, init?: RequestInit) => {
+      initBodies.push(JSON.parse(String(init?.body ?? '{}')));
+      return new Response(null, { status: 204 });
+    });
+    env.DEV_CONTAINER = {
+      idFromName: vi.fn(() => ({}) as DurableObjectId),
+      get: vi.fn(() => ({ fetch: doFetch }) as unknown as DurableObjectStub),
+    } as unknown as DurableObjectNamespace;
+
+    const now = new Date().toISOString();
+    const scheduledInterviewId = 'scheduled-interview-workspace-base-commit';
+    const assessmentSessionId = 'assessment-session-workspace-base-commit';
+    const eventId = 'assessment-event-workspace-base-commit';
+    const baseCommitSha = 'e'.repeat(40);
+    const packetText = [
+      'Repo: https://github.com/pipe/source-backed-worker',
+      `Base commit: ${baseCommitSha}`,
+      'Task: Fix the source-backed worker retry path.',
+      'Success criteria:',
+      '- Existing worker tests pass',
+      'Expected evidence:',
+      '- Commit SHA on assessment branch',
+    ].join('\n');
+
+    sqlite.prepare(
+      `INSERT INTO scheduled_interviews (
+         id, owner_id, recipient_name, recipient_email, interview_type,
+         github_repo_url, status, updated_at
+       ) VALUES (?, ?, ?, ?, 'OPEN_SOURCE_BUG_FIX', ?, 'INVITED', ?)`,
+    ).run(
+      scheduledInterviewId,
+      'owner-1',
+      'Base Commit Candidate',
+      'base-commit-candidate@example.com',
+      'https://github.com/pipe/source-backed-worker',
+      now,
+    );
+
+    const createMeetingRes = await app.request('/meetings', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({
+        recipientName: 'Base Commit Candidate',
+        recipientEmail: 'base-commit-candidate@example.com',
+        title: 'Open-source base commit room',
+        meetingType: 'INTERVIEW',
+        scheduledInterviewId,
+      }),
+    }, env, ctx);
+    expect(createMeetingRes.status).toBe(201);
+    const created = await createMeetingRes.json() as {
+      hostToken: string;
+    };
+
+    sqlite.prepare(
+      `INSERT INTO assessment_sessions (
+         id, ingestion_key, interview_id, mode, state, candidate_id, workspace_id,
+         created_by, metadata_json, created_at, updated_at
+       ) VALUES (?, ?, ?, 'OPEN_SOURCE_BUG_FIX', 'INTAKE', NULL, ?, ?, '{}', ?, ?)`,
+    ).run(
+      assessmentSessionId,
+      `assessment-session:open-source:${scheduledInterviewId}`,
+      scheduledInterviewId,
+      'owner-1',
+      'owner-1',
+      now,
+      now,
+    );
+    sqlite.prepare(
+      `INSERT INTO assessment_evidence_events (
+         id, ingestion_key, session_id, sequence, kind, actor_type, actor_id,
+         narrative, payload_json, occurred_at, created_at
+       ) VALUES (?, ?, ?, 1, 'recruiter_note', 'recruiter', ?, ?, ?, ?, ?)`,
+    ).run(
+      eventId,
+      `assessment-event:${assessmentSessionId}:manual-open-source-challenge`,
+      assessmentSessionId,
+      'owner-1',
+      'Recruiter assigned a concrete open-source implementation challenge packet.',
+      JSON.stringify({
+        repositoryUrl: 'https://github.com/pipe/source-backed-worker',
+        baseCommitSha,
+      }),
+      now,
+      now,
+    );
+    sqlite.prepare(
+      `INSERT INTO assessment_event_source_refs (
+         id, event_id, source_ref_type, source_ref_id, evidence_role,
+         locator_json, exact_text, content_hash, metadata_json, created_at
+       ) VALUES (?, ?, 'open_source_challenge_packet', ?, 'assigned_challenge', ?, ?, ?, '{}', ?)`,
+    ).run(
+      'assessment-source-workspace-base-commit',
+      eventId,
+      `scheduled-interview:${scheduledInterviewId}:open-source-challenge:source-ref-secret`,
+      JSON.stringify({
+        repositoryUrl: 'https://github.com/pipe/source-backed-worker',
+        baseCommitSha,
+      }),
+      packetText,
+      'sha256:base-commit-packet-content-hash',
+      now,
+    );
+
+    const launchRes = await app.request(`/meeting/${created.hostToken}/workspace/launch`, {
+      method: 'POST',
+    }, env, ctx);
+    expect(launchRes.status).toBe(201);
+    const body = await launchRes.json() as {
+      workspace: {
+        session: { sessionId: string };
+      };
+      progress: {
+        state: string;
+        hasChallengePacket: boolean;
+        hasWorkEvidence: boolean;
+        hasDevContainerEvidence: boolean;
+        evidenceCounts: Array<{ kind: string; count: number }>;
+        sourceRefCounts: Array<{ kind: string; count: number }>;
+        evidenceSnippets: Array<{
+          sourceRefType: string;
+          evidenceRole: string;
+          exactText: string;
+        }>;
+        latestEvent: { kind: string; sequence: number } | null;
+      } | null;
+    };
+    await waitUntilAll();
+
+    expect(body.progress).toMatchObject({
+      state: 'IN_PROGRESS',
+      hasChallengePacket: true,
+      hasWorkEvidence: true,
+      hasDevContainerEvidence: true,
+      latestEvent: { kind: 'dev_container_event', sequence: 2 },
+    });
+    expect(body.progress?.evidenceCounts).toContainEqual({ kind: 'dev_container_event', count: 1 });
+    expect(body.progress?.sourceRefCounts).toContainEqual({ kind: 'dev_container_workspace_launch', count: 1 });
+    expect(body.progress?.evidenceSnippets).toEqual(expect.arrayContaining([
+      expect.objectContaining({
+        sourceRefType: 'open_source_challenge_packet',
+        evidenceRole: 'assigned_challenge',
+        exactText: expect.stringContaining('Repo: https://github.com/pipe/source-backed-worker'),
+      }),
+    ]));
+    expect(sqlite.prepare(
+      `SELECT repo_git_url, challenge_branch, base_commit_sha
+         FROM dev_container_sessions
+        WHERE session_id = ?`,
+    ).get(body.workspace.session.sessionId)).toEqual({
+      repo_git_url: 'https://github.com/pipe/source-backed-worker',
+      challenge_branch: null,
+      base_commit_sha: baseCommitSha,
+    });
+    expect(initBodies).toContainEqual(expect.objectContaining({
+      repoGitUrl: 'https://github.com/pipe/source-backed-worker',
+      challengeBranch: null,
+      baseCommitSha,
+      challengePacketContentHash: 'sha256:base-commit-packet-content-hash',
+    }));
+    const launchEvidence = sqlite.prepare(
+      `SELECT e.session_id, e.kind, e.actor_type, e.payload_json,
+              sr.source_ref_type, sr.source_ref_id, sr.evidence_role,
+              sr.exact_text, sr.content_hash
+         FROM assessment_evidence_events e
+         JOIN assessment_event_source_refs sr ON sr.event_id = e.id
+        WHERE e.ingestion_key = ?`,
+    ).get(`assessment-event:room-workspace-launch:${assessmentSessionId}:${body.workspace.session.sessionId}`) as {
+      session_id: string;
+      kind: string;
+      actor_type: string;
+      payload_json: string;
+      source_ref_type: string;
+      source_ref_id: string;
+      evidence_role: string;
+      exact_text: string;
+      content_hash: string;
+    } | undefined;
+    expect(launchEvidence).toMatchObject({
+      session_id: assessmentSessionId,
+      kind: 'dev_container_event',
+      actor_type: 'recruiter',
+      source_ref_type: 'dev_container_workspace_launch',
+      source_ref_id: body.workspace.session.sessionId,
+      evidence_role: 'workspace_launch_request',
+    });
+    expect(launchEvidence?.exact_text).toContain('"baseCommitSha":"eeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeee"');
+    expect(launchEvidence?.exact_text).toContain('"repositoryUrl":"https://github.com/pipe/source-backed-worker"');
+    expect(launchEvidence?.content_hash).toMatch(/^[a-f0-9]{64}$/);
+    expect(JSON.parse(launchEvidence?.payload_json ?? '{}')).toMatchObject({
+      repositoryUrl: 'https://github.com/pipe/source-backed-worker',
+      baseCommitSha,
+      workspaceSessionId: body.workspace.session.sessionId,
+    });
+
+    const stopRes = await app.request(`/meeting/${created.hostToken}/workspace/${body.workspace.session.sessionId}/destroy`, {
+      method: 'POST',
+    }, env, ctx);
+    expect(stopRes.status).toBe(200);
+    const stopBody = await stopRes.json() as {
+      workspace: {
+        session: {
+          sessionId: string;
+          status: string;
+          proxyPath: string | null;
+        } | null;
+      };
+      progress: {
+        hasWorkEvidence: boolean;
+        hasDevContainerEvidence: boolean;
+        evidenceCounts: Array<{ kind: string; count: number }>;
+        sourceRefCounts: Array<{ kind: string; count: number }>;
+        latestEvent: { kind: string; sequence: number } | null;
+      } | null;
+    };
+    await waitUntilAll();
+    expect(stopBody.workspace.session).toMatchObject({
+      sessionId: body.workspace.session.sessionId,
+      status: 'STOPPED',
+      proxyPath: null,
+    });
+    expect(stopBody.progress).toMatchObject({
+      hasWorkEvidence: true,
+      hasDevContainerEvidence: true,
+      latestEvent: { kind: 'dev_container_event', sequence: 3 },
+    });
+    expect(stopBody.progress?.evidenceCounts).toContainEqual({ kind: 'dev_container_event', count: 2 });
+    expect(stopBody.progress?.sourceRefCounts).toContainEqual({ kind: 'dev_container_workspace_stop', count: 1 });
+    const stopEvidence = sqlite.prepare(
+      `SELECT e.session_id, e.kind, e.actor_type, e.payload_json,
+              sr.source_ref_type, sr.source_ref_id, sr.evidence_role,
+              sr.exact_text, sr.content_hash
+         FROM assessment_evidence_events e
+         JOIN assessment_event_source_refs sr ON sr.event_id = e.id
+        WHERE e.ingestion_key LIKE ?`,
+    ).get(`assessment-event:room-workspace-stop:${assessmentSessionId}:${body.workspace.session.sessionId}:%`) as {
+      session_id: string;
+      kind: string;
+      actor_type: string;
+      payload_json: string;
+      source_ref_type: string;
+      source_ref_id: string;
+      evidence_role: string;
+      exact_text: string;
+      content_hash: string;
+    } | undefined;
+    expect(stopEvidence).toMatchObject({
+      session_id: assessmentSessionId,
+      kind: 'dev_container_event',
+      actor_type: 'recruiter',
+      source_ref_type: 'dev_container_workspace_stop',
+      source_ref_id: body.workspace.session.sessionId,
+      evidence_role: 'workspace_stop_request',
+    });
+    expect(stopEvidence?.exact_text).toContain('"previousStatus":"LAUNCHING"');
+    expect(stopEvidence?.exact_text).toContain('"stoppedStatus":"STOPPED"');
+    expect(stopEvidence?.content_hash).toMatch(/^[a-f0-9]{64}$/);
+    expect(JSON.parse(stopEvidence?.payload_json ?? '{}')).toMatchObject({
+      repositoryUrl: 'https://github.com/pipe/source-backed-worker',
+      baseCommitSha,
+      previousStatus: 'LAUNCHING',
+      stoppedStatus: 'STOPPED',
+      workspaceSessionId: body.workspace.session.sessionId,
+    });
+    expect(JSON.stringify(initBodies)).not.toContain('assessment-session-workspace-base-commit');
+    expect(JSON.stringify(initBodies)).not.toContain('assessment-event-workspace-base-commit');
+    expect(JSON.stringify(initBodies)).not.toContain('source-ref-secret');
+  });
+
+  it('accepts a source-backed commit submission from the guest assessment room token', async () => {
+    const app = mountApp();
+    const { ctx } = buildCtx();
+    sqlite.exec(assessmentLayerMigration);
+    const now = new Date().toISOString();
+    const scheduledInterviewId = 'scheduled-interview-room-commit';
+    const assessmentSessionId = 'assessment-session-room-commit';
+    const baseCommitSha = 'a'.repeat(40);
+    const commitSha = 'b'.repeat(40);
+
+    sqlite.prepare(
+      `INSERT INTO scheduled_interviews (
+         id, owner_id, recipient_name, recipient_email, interview_type,
+         github_repo_url, status, updated_at
+       ) VALUES (?, ?, ?, ?, 'OPEN_SOURCE_BUG_FIX', ?, 'INVITED', ?)`,
+    ).run(
+      scheduledInterviewId,
+      'owner-1',
+      'Commit Candidate',
+      'commit-candidate@example.com',
+      'https://github.com/pipe/source-backed-worker',
+      now,
+    );
+
+    const createMeetingRes = await app.request('/meetings', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({
+        recipientName: 'Commit Candidate',
+        recipientEmail: 'commit-candidate@example.com',
+        title: 'Open-source commit assessment',
+        meetingType: 'INTERVIEW',
+        scheduledInterviewId,
+      }),
+    }, env, ctx);
+    expect(createMeetingRes.status).toBe(201);
+    const created = await createMeetingRes.json() as {
+      meeting: { id: string; contactId: string };
+    };
+
+    const roomRes = await app.request(`/meetings/${created.meeting.id}/room`, {
+      method: 'POST',
+    }, env, ctx);
+    expect(roomRes.status).toBe(200);
+    const roomBody = await roomRes.json() as {
+      room: { guestUrl: string };
+    };
+    const guestToken = new URL(roomBody.room.guestUrl).pathname.split('/').filter(Boolean).pop();
+    expect(guestToken).toBeTruthy();
+
+    sqlite.prepare(
+      `INSERT INTO assessment_sessions (
+         id, ingestion_key, interview_id, mode, state, candidate_id, workspace_id,
+         created_by, metadata_json, created_at, updated_at
+       ) VALUES (?, ?, ?, 'OPEN_SOURCE_BUG_FIX', 'IN_PROGRESS', ?, ?, ?, '{}', ?, ?)`,
+    ).run(
+      assessmentSessionId,
+      `assessment-session:open-source:${scheduledInterviewId}`,
+      scheduledInterviewId,
+      created.meeting.contactId,
+      'owner-1',
+      'owner-1',
+      now,
+      now,
+    );
+    sqlite.prepare(
+      `INSERT INTO assessment_evidence_events (
+         id, ingestion_key, session_id, sequence, kind, actor_type, actor_id,
+         narrative, payload_json, occurred_at, created_at
+       ) VALUES (?, ?, ?, 1, 'dev_container_event', 'system', NULL, ?, ?, ?, ?)`,
+    ).run(
+      'assessment-event-room-challenge',
+      `assessment-event:challenge:${scheduledInterviewId}`,
+      assessmentSessionId,
+      'Assigned open-source challenge packet for source-backed-worker.',
+      JSON.stringify({
+        repositoryUrl: 'https://github.com/pipe/source-backed-worker',
+        baseCommitSha,
+        task: 'Fix the source-backed worker retry path.',
+      }),
+      now,
+      now,
+    );
+    sqlite.prepare(
+      `INSERT INTO assessment_event_source_refs (
+         id, event_id, source_ref_type, source_ref_id, evidence_role,
+         locator_json, exact_text, content_hash, metadata_json, created_at
+       ) VALUES (?, ?, 'open_source_challenge_packet', ?, 'assigned_challenge', ?, ?, ?, '{}', ?)`,
+    ).run(
+      'assessment-source-room-challenge',
+      'assessment-event-room-challenge',
+      `challenge:${scheduledInterviewId}`,
+      JSON.stringify({
+        repositoryUrl: 'https://github.com/pipe/source-backed-worker',
+        baseCommitSha,
+      }),
+      `Repo: https://github.com/pipe/source-backed-worker\nBase commit: ${baseCommitSha}\nTask: Fix the source-backed worker retry path.`,
+      'challenge-content-hash',
+      now,
+    );
+
+    const diffText = [
+      'diff --git a/src/retry.ts b/src/retry.ts',
+      'index 1111111..2222222 100644',
+      '--- a/src/retry.ts',
+      '+++ b/src/retry.ts',
+      '@@ -1,3 +1,4 @@',
+      '+export const retryBackoff = "source-backed";',
+    ].join('\n');
+    const commitEvidenceText = `commit ${commitSha}\nAuthor: Commit Candidate\n\nFix retry path`;
+    const commitSourceRef = {
+      sourceRefType: 'git_commit',
+      sourceRefId: commitSha,
+      evidenceRole: 'submitted_commit',
+      locator: {
+        repositoryUrl: 'https://github.com/candidate/source-backed-worker',
+        commitSha,
+      },
+      exactText: commitEvidenceText,
+      contentHash: await sha256ContentHash(commitEvidenceText),
+    };
+    const diffSourceRef = {
+      sourceRefType: 'code_diff',
+      sourceRefId: `${baseCommitSha}..${commitSha}`,
+      evidenceRole: 'submitted_diff',
+      locator: {
+        repositoryUrl: 'https://github.com/candidate/source-backed-worker',
+        baseCommitSha,
+        commitSha,
+      },
+      exactText: diffText,
+      contentHash: await sha256ContentHash(diffText),
+    };
+    const tamperedHashRes = await app.request(`/meeting/${guestToken}/assessment/commit-submission`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({
+        narrative: 'Candidate submitted a focused retry-path fix with tests passing locally.',
+        repositoryUrl: 'https://github.com/pipe/source-backed-worker',
+        forkRepositoryUrl: 'https://github.com/candidate/source-backed-worker',
+        branchName: 'pipe-assessment/retry-path',
+        baseCommitSha,
+        commitSha,
+        commitUrl: `https://github.com/candidate/source-backed-worker/commit/${commitSha}`,
+        upstreamPrConsent: false,
+        changedFiles: [{
+          path: 'src/retry.ts',
+          status: 'modified',
+          additions: 1,
+          deletions: 0,
+        }],
+        occurredAt: now,
+        sourceRefs: [
+          {
+            ...commitSourceRef,
+            contentHash: await sha256ContentHash(`${commitEvidenceText}\nnot the submitted exact text`),
+          },
+          diffSourceRef,
+        ],
+      }),
+    }, env, ctx);
+    expect(tamperedHashRes.status).toBe(422);
+    await expect(tamperedHashRes.json()).resolves.toMatchObject({
+      error: {
+        code: 'VALIDATION_ERROR',
+        message: 'git_commit source ref contentHash must match exactText',
+      },
+    });
+
+    const submitRes = await app.request(`/meeting/${guestToken}/assessment/commit-submission`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({
+        narrative: 'Candidate submitted a focused retry-path fix with tests passing locally.',
+        repositoryUrl: 'https://github.com/pipe/source-backed-worker',
+        forkRepositoryUrl: 'https://github.com/candidate/source-backed-worker',
+        branchName: 'pipe-assessment/retry-path',
+        baseCommitSha,
+        commitSha,
+        commitUrl: `https://github.com/candidate/source-backed-worker/commit/${commitSha}`,
+        upstreamPrConsent: false,
+        changedFiles: [{
+          path: 'src/retry.ts',
+          status: 'modified',
+          additions: 1,
+          deletions: 0,
+        }],
+        occurredAt: now,
+        sourceRefs: [
+          commitSourceRef,
+          diffSourceRef,
+        ],
+      }),
+    }, env, ctx);
+    expect(submitRes.status).toBe(201);
+    const body = await submitRes.json() as {
+      submission: {
+        accepted: boolean;
+        repositoryUrl: string;
+        branchName: string;
+        commitSha: string;
+        commitUrl: string;
+      };
+      progress: {
+        mode: string;
+        state: string;
+        stage: string;
+        nextAction: string;
+        hasChallengePacket: boolean;
+        hasCommitSubmission: boolean;
+        latestEvent: { kind: string; sequence: number };
+        commit: { commitSha: string; branchName: string; changedFiles: unknown[] };
+      };
+    };
+
+    expect(body.submission).toMatchObject({
+      accepted: true,
+      repositoryUrl: 'https://github.com/pipe/source-backed-worker',
+      branchName: 'pipe-assessment/retry-path',
+      commitSha,
+      commitUrl: `https://github.com/candidate/source-backed-worker/commit/${commitSha}`,
+    });
+    expect(body.progress).toMatchObject({
+      mode: 'OPEN_SOURCE_BUG_FIX',
+      state: 'FINAL_SUBMITTED',
+      stage: 'READY_FOR_EVALUATION',
+      nextAction: 'START_EVALUATION',
+      hasChallengePacket: true,
+      hasCommitSubmission: true,
+      latestEvent: { kind: 'commit_submission', sequence: 2 },
+    });
+    expect(body.progress.commit).toMatchObject({
+      commitSha,
+      branchName: 'pipe-assessment/retry-path',
+    });
+    expect(body.progress.commit.changedFiles).toHaveLength(1);
+
+    const progressRes = await app.request(`/meeting/${guestToken}/assessment/progress`, {
+      method: 'GET',
+    }, env, ctx);
+    expect(progressRes.status).toBe(200);
+    const progressBody = await progressRes.json() as {
+      progress: {
+        mode: string;
+        state: string;
+        stage: string;
+        nextAction: string;
+        hasChallengePacket: boolean;
+        hasCommitSubmission: boolean;
+        commit: { commitSha: string; branchName: string; changedFiles: unknown[] };
+      };
+    };
+    expect(progressBody.progress).toMatchObject({
+      mode: 'OPEN_SOURCE_BUG_FIX',
+      state: 'FINAL_SUBMITTED',
+      stage: 'READY_FOR_EVALUATION',
+      nextAction: 'START_EVALUATION',
+      hasChallengePacket: true,
+      hasCommitSubmission: true,
+    });
+    expect(progressBody.progress.commit).toMatchObject({
+      commitSha,
+      branchName: 'pipe-assessment/retry-path',
+    });
+    const serializedResponse = JSON.stringify(body);
+    expect(serializedResponse).not.toContain(assessmentSessionId);
+    expect(serializedResponse).not.toContain(`assessment-session:open-source:${scheduledInterviewId}`);
+    expect(serializedResponse).not.toContain(created.meeting.contactId);
+    const serializedProgressResponse = JSON.stringify(progressBody);
+    expect(serializedProgressResponse).not.toContain(assessmentSessionId);
+    expect(serializedProgressResponse).not.toContain(`assessment-session:open-source:${scheduledInterviewId}`);
+    expect(serializedProgressResponse).not.toContain(created.meeting.contactId);
+
+    const persistedCommit = sqlite.prepare(
+      `SELECT e.kind, e.actor_type, e.actor_id, e.narrative, e.payload_json,
+              COUNT(sr.id) AS source_ref_count
+         FROM assessment_evidence_events e
+         JOIN assessment_event_source_refs sr ON sr.event_id = e.id
+        WHERE e.session_id = ?
+          AND e.kind = 'commit_submission'
+        GROUP BY e.id`,
+    ).get(assessmentSessionId) as {
+      kind: string;
+      actor_type: string;
+      actor_id: string | null;
+      narrative: string;
+      payload_json: string;
+      source_ref_count: number;
+    };
+    expect(persistedCommit).toMatchObject({
+      kind: 'commit_submission',
+      actor_type: 'candidate',
+      actor_id: created.meeting.contactId,
+      narrative: 'Candidate submitted a focused retry-path fix with tests passing locally.',
+      source_ref_count: 2,
+    });
+    expect(JSON.parse(persistedCommit.payload_json)).toMatchObject({
+      repositoryUrl: 'https://github.com/pipe/source-backed-worker',
+      forkRepositoryUrl: 'https://github.com/candidate/source-backed-worker',
+      branchName: 'pipe-assessment/retry-path',
+      baseCommitSha,
+      commitSha,
+      upstreamPrConsent: false,
+    });
+    expect(sqlite.prepare(
+      'SELECT state FROM assessment_sessions WHERE id = ?',
+    ).get(assessmentSessionId)).toEqual({ state: 'FINAL_SUBMITTED' });
+  });
+
+  it('rejects room commit submissions when no assessment session exists for the scheduled interview', async () => {
+    const app = mountApp();
+    const { ctx } = buildCtx();
+    sqlite.exec(assessmentLayerMigration);
+    const now = new Date().toISOString();
+    const scheduledInterviewId = 'scheduled-interview-room-commit-missing-session';
+    const baseCommitSha = 'a'.repeat(40);
+    const commitSha = 'c'.repeat(40);
+
+    sqlite.prepare(
+      `INSERT INTO scheduled_interviews (
+         id, owner_id, recipient_name, recipient_email, interview_type,
+         github_repo_url, status, updated_at
+       ) VALUES (?, ?, ?, ?, 'OPEN_SOURCE_BUG_FIX', ?, 'INVITED', ?)`,
+    ).run(
+      scheduledInterviewId,
+      'owner-1',
+      'Missing Session Candidate',
+      'missing-session@example.com',
+      'https://github.com/pipe/source-backed-worker',
+      now,
+    );
+
+    const createMeetingRes = await app.request('/meetings', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({
+        recipientName: 'Missing Session Candidate',
+        recipientEmail: 'missing-session@example.com',
+        title: 'Open-source commit missing session',
+        meetingType: 'INTERVIEW',
+        scheduledInterviewId,
+      }),
+    }, env, ctx);
+    expect(createMeetingRes.status).toBe(201);
+    const created = await createMeetingRes.json() as { meeting: { id: string } };
+
+    const roomRes = await app.request(`/meetings/${created.meeting.id}/room`, {
+      method: 'POST',
+    }, env, ctx);
+    expect(roomRes.status).toBe(200);
+    const roomBody = await roomRes.json() as {
+      room: { guestUrl: string };
+    };
+    const guestToken = new URL(roomBody.room.guestUrl).pathname.split('/').filter(Boolean).pop();
+    expect(guestToken).toBeTruthy();
+
+    const submitRes = await app.request(`/meeting/${guestToken}/assessment/commit-submission`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({
+        narrative: 'Candidate submitted a commit, but no assessment session exists.',
+        repositoryUrl: 'https://github.com/pipe/source-backed-worker',
+        branchName: 'pipe-assessment/missing-session',
+        baseCommitSha,
+        commitSha,
+        changedFiles: [{
+          path: 'src/retry.ts',
+          status: 'modified',
+        }],
+        sourceRefs: [
+          {
+            sourceRefType: 'git_commit',
+            sourceRefId: commitSha,
+            exactText: `commit ${commitSha}`,
+            contentHash: 'commit-content-hash',
+          },
+          {
+            sourceRefType: 'code_diff',
+            sourceRefId: `${baseCommitSha}..${commitSha}`,
+            exactText: 'diff --git a/src/retry.ts b/src/retry.ts',
+            contentHash: 'diff-content-hash',
+          },
+        ],
+      }),
+    }, env, ctx);
+    expect(submitRes.status).toBe(409);
+    const body = await submitRes.json() as { error: { code: string; message: string } };
+    expect(body.error).toMatchObject({
+      code: 'CONFLICT',
+      message: 'This room is not linked to an assessment session. Create the assessment session before accepting commit evidence.',
+    });
+    const progressRes = await app.request(`/meeting/${guestToken}/assessment/progress`, {
+      method: 'GET',
+    }, env, ctx);
+    expect(progressRes.status).toBe(200);
+    await expect(progressRes.json()).resolves.toEqual({ progress: null });
+    expect(sqlite.prepare(
+      `SELECT COUNT(*) AS count
+         FROM assessment_evidence_events
+        WHERE kind = 'commit_submission'`,
+    ).get()).toEqual({ count: 0 });
   });
 
   it('keeps standard meeting rooms off the workspace desktop path', async () => {
@@ -1986,7 +6428,7 @@ describe('meeting room recording living-context route', () => {
     }));
   });
 
-  it('starts dev-container challenge meeting rooms on the 95 desktop', async () => {
+  it('starts dev-container challenge meeting rooms in the standard assessment layout', async () => {
     const app = mountApp();
     const { ctx } = buildCtx();
     const ensureBodies: unknown[] = [];
@@ -2004,7 +6446,7 @@ describe('meeting room recording living-context route', () => {
       get: vi.fn(() => ({ fetch: doFetch }) as unknown as DurableObjectStub),
     } as unknown as DurableObjectNamespace;
 
-    const scheduledInterviewId = 'scheduled-interview-95-surface';
+    const scheduledInterviewId = 'scheduled-interview-standard-surface';
     sqlite.prepare(
       `INSERT INTO scheduled_interviews (
          id, interview_type, github_repo_url, status, updated_at
@@ -2019,9 +6461,9 @@ describe('meeting room recording living-context route', () => {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify({
-        recipientName: '95 Workspace Guest',
-        recipientEmail: 'workspace-95@example.com',
-        title: '95 workspace challenge',
+        recipientName: 'Assessment Workspace Guest',
+        recipientEmail: 'workspace-standard@example.com',
+        title: 'Assessment workspace challenge',
         meetingType: 'INTERVIEW',
         scheduledInterviewId,
       }),
@@ -2035,7 +6477,7 @@ describe('meeting room recording living-context route', () => {
     expect(wsRes.status).toBe(200);
     expect(ensureBodies).toContainEqual(expect.objectContaining({
       meetingId: expect.any(String),
-      initialSurface: 'win95',
+      initialSurface: 'standard',
     }));
   });
 
@@ -2094,13 +6536,21 @@ describe('meeting room recording living-context route', () => {
       completed_at: null,
     });
 
+    const form = new FormData();
+    form.append(
+      'recording',
+      new Blob([new Uint8Array([1, 2, 3])], { type: 'video/webm' }),
+      'recording.webm',
+    );
+    form.append(
+      'transcriptionAudio',
+      new Blob([new Uint8Array([1, 2, 3])], { type: 'audio/webm' }),
+      'transcription-audio.webm',
+    );
+    form.append('speakerMetadata', JSON.stringify(defaultRecordingSpeakerMetadataForTest()));
     const recordingRes = await app.request(`/meeting/${created.hostToken}/recording`, {
       method: 'POST',
-      headers: {
-        'Content-Type': 'audio/webm',
-        'Content-Length': '3',
-      },
-      body: new Uint8Array([1, 2, 3]),
+      body: form,
     }, env, ctx);
     expect(recordingRes.status).toBe(202);
     await waitUntilAll();
@@ -2382,6 +6832,7 @@ describe('meeting room recording living-context route', () => {
     expect(JSON.parse(meetingRow.transcript_analysis_json)).toMatchObject({
       personContextMode: 'attributed',
       speakerMetadata,
+      speakerMetadataOrigin: 'recording_upload_form',
     });
 
     const transcriptArtifactMetadata = sqlite.prepare(
@@ -2392,6 +6843,7 @@ describe('meeting room recording living-context route', () => {
     ).get(created.meeting.id) as { metadata_json: string } | undefined;
     expect(JSON.parse(transcriptArtifactMetadata?.metadata_json ?? '{}')).toMatchObject({
       speakerMetadata,
+      speakerMetadataOrigin: 'recording_upload_form',
       provider: 'deepgram-multichannel',
     });
 
@@ -2408,6 +6860,7 @@ describe('meeting room recording living-context route', () => {
     expect(JSON.parse(guestSpan?.span_metadata_json ?? '{}')).toMatchObject({
       speakerRole: 'guest',
       channel: 0,
+      speakerMetadataOrigin: 'recording_upload_form',
       providerSegmentId: 'dg-guest-1',
       speakerMetadataRole: 'guest',
       speakerMetadataSource: 'remote',
@@ -2416,6 +6869,7 @@ describe('meeting room recording living-context route', () => {
       contactId: created.meeting.contactId,
       speakerRole: 'guest',
       channel: 0,
+      speakerMetadataOrigin: 'recording_upload_form',
       providerSegmentId: 'dg-guest-1',
       speakerMetadataRole: 'guest',
       speakerMetadataSource: 'remote',
@@ -2436,6 +6890,60 @@ describe('meeting room recording living-context route', () => {
     expect(contactGraph.assertions[0]?.sources.map((source) => source.exactText)).toEqual([
       'I implemented lattice replay buffers for ecommerce order recovery.',
     ]);
+  });
+
+  it('rejects separate transcription audio without explicit speaker metadata', async () => {
+    const app = mountApp();
+    const { ctx } = buildCtx();
+
+    const createMeetingRes = await app.request('/meetings', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({
+        recipientName: 'Missing Metadata Person',
+        recipientEmail: 'missing-speaker-metadata@example.com',
+        title: 'Missing speaker metadata interview',
+        meetingType: 'INTERVIEW',
+      }),
+    }, env, ctx);
+    expect(createMeetingRes.status).toBe(201);
+    const created = await createMeetingRes.json() as {
+      hostToken: string;
+    };
+
+    await app.request(`/meeting/${created.hostToken}/events`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ event: 'STARTED' }),
+    }, env, ctx);
+    await app.request(`/meeting/${created.hostToken}/events`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ event: 'RECORDING_STARTED' }),
+    }, env, ctx);
+
+    const form = new FormData();
+    form.append(
+      'recording',
+      new Blob([new Uint8Array([4, 5, 6])], { type: 'video/webm' }),
+      'recording.webm',
+    );
+    form.append(
+      'transcriptionAudio',
+      new Blob([new Uint8Array([1, 2, 3])], { type: 'audio/webm' }),
+      'transcription-audio.webm',
+    );
+
+    const recordingRes = await app.request(`/meeting/${created.hostToken}/recording`, {
+      method: 'POST',
+      body: form,
+    }, env, ctx);
+    expect(recordingRes.status).toBe(422);
+    await expect(recordingRes.json()).resolves.toMatchObject({
+      error: {
+        message: 'Speaker metadata is required when uploading separate transcription audio.',
+      },
+    });
   });
 
   it('uses recording-route transcript evidence to select a source-backed PR challenge', async () => {
@@ -2492,6 +7000,7 @@ describe('meeting room recording living-context route', () => {
       new Blob([new Uint8Array([1, 2, 3])], { type: 'audio/webm' }),
       'transcription-audio.webm',
     );
+    form.append('speakerMetadata', JSON.stringify(defaultRecordingSpeakerMetadataForTest()));
     const recordingRes = await app.request(`/meeting/${created.hostToken}/recording`, {
       method: 'POST',
       body: form,
@@ -2607,6 +7116,7 @@ describe('meeting room recording living-context route', () => {
   it('retries transcript processing from an existing saved room recording', async () => {
     const app = mountApp();
     const { ctx, waitUntilAll } = buildCtx();
+    sqlite.exec(assessmentLayerMigration);
     const personEmail = 'retry-transcript@example.com';
 
     const createMeetingRes = await app.request('/meetings', {
@@ -2638,6 +7148,11 @@ describe('meeting room recording living-context route', () => {
     });
     await env.STORAGE.put(transcriptionKey, new Uint8Array([1, 2, 3]), {
       httpMetadata: { contentType: 'audio/webm' },
+      customMetadata: {
+        speakerMetadata: JSON.stringify(defaultRecordingSpeakerMetadataForTest()),
+        speakerMetadataVersion: '1',
+        speakerChannelLayout: 'host-local-guest-remote-v1',
+      },
     });
     sqlite.prepare(
       `UPDATE meetings
@@ -2655,7 +7170,8 @@ describe('meeting room recording living-context route', () => {
     await waitUntilAll();
 
     const meetingRow = sqlite.prepare(
-      `SELECT transcript_status, transcript_summary, transcript_error, recording_r2_key
+      `SELECT transcript_status, transcript_summary, transcript_error,
+              recording_r2_key, transcript_analysis_json
          FROM meetings
         WHERE id = ?`,
     ).get(created.meeting.id) as {
@@ -2663,12 +7179,69 @@ describe('meeting room recording living-context route', () => {
       transcript_summary: string | null;
       transcript_error: string | null;
       recording_r2_key: string | null;
+      transcript_analysis_json: string;
     };
-    expect(meetingRow).toEqual({
+    expect(meetingRow).toMatchObject({
       transcript_status: 'READY',
       transcript_summary: 'Guest described lattice replay buffers for ecommerce order recovery.',
       transcript_error: null,
       recording_r2_key: recordingKey,
+    });
+    expect(JSON.parse(meetingRow.transcript_analysis_json)).toMatchObject({
+      personContextMode: 'attributed',
+      speakerMetadataOrigin: 'recording_r2_custom_metadata',
+      speakerMetadata: defaultRecordingSpeakerMetadataForTest(),
+    });
+
+    const transcriptArtifactMetadata = sqlite.prepare(
+      `SELECT metadata_json
+         FROM artifacts
+        WHERE artifact_type = 'meeting_transcript'
+          AND logical_key = ?`,
+    ).get(created.meeting.id) as { metadata_json: string } | undefined;
+    expect(JSON.parse(transcriptArtifactMetadata?.metadata_json ?? '{}')).toMatchObject({
+      provider: 'deepgram-multichannel',
+      speakerMetadataOrigin: 'recording_r2_custom_metadata',
+      speakerMetadata: defaultRecordingSpeakerMetadataForTest(),
+    });
+
+    const assessmentSession = sqlite.prepare(
+      `SELECT metadata_json
+         FROM assessment_sessions
+        WHERE ingestion_key = ?`,
+    ).get(`assessment-session:meeting-transcript:${created.meeting.id}`) as {
+      metadata_json: string;
+    } | undefined;
+    expect(JSON.parse(assessmentSession?.metadata_json ?? '{}')).toMatchObject({
+      source: 'meeting_transcript_living_context',
+      speakerMetadataOrigin: 'recording_r2_custom_metadata',
+      speakerMetadata: defaultRecordingSpeakerMetadataForTest(),
+    });
+
+    const retryGuestSpan = sqlite.prepare(
+      `SELECT ss.metadata_json AS span_metadata_json,
+              ssa.metadata_json AS attribution_metadata_json
+         FROM source_spans ss
+         JOIN source_span_attributions ssa ON ssa.source_span_id = ss.id
+        WHERE ss.stable_segment_id = 'utterance-0002'`,
+    ).get() as {
+      span_metadata_json: string;
+      attribution_metadata_json: string;
+    } | undefined;
+    expect(JSON.parse(retryGuestSpan?.span_metadata_json ?? '{}')).toMatchObject({
+      speakerRole: 'guest',
+      channel: 1,
+      speakerMetadataOrigin: 'recording_r2_custom_metadata',
+      speakerMetadataRole: 'guest',
+      speakerMetadataSource: 'remote',
+    });
+    expect(JSON.parse(retryGuestSpan?.attribution_metadata_json ?? '{}')).toMatchObject({
+      contactId: created.meeting.contactId,
+      speakerRole: 'guest',
+      channel: 1,
+      speakerMetadataOrigin: 'recording_r2_custom_metadata',
+      speakerMetadataRole: 'guest',
+      speakerMetadataSource: 'remote',
     });
 
     expect(sqlite.prepare(
@@ -2728,20 +7301,38 @@ describe('meeting room recording living-context route', () => {
       body: JSON.stringify({ event: 'RECORDING_STARTED' }),
     }, env, ctx);
 
-    const form = new FormData();
-    form.append(
-      'recording',
-      new Blob([new Uint8Array([9, 9, 9])], { type: 'video/webm' }),
-      'recording.webm',
-    );
-    form.append(
-      'transcriptionAudio',
-      new Blob([new Uint8Array([1, 2, 3])], { type: 'audio/webm' }),
-      'transcription-audio.webm',
-    );
     const recordingRes = await app.request(`/meeting/${created.hostToken}/recording`, {
       method: 'POST',
-      body: form,
+      headers: {
+        'Content-Type': 'video/webm',
+        'Content-Length': '3',
+        'X-Pipe-E2E-Meeting-Analysis': JSON.stringify({
+          summary: 'Mixed audio discussed lattice replay buffers.',
+          decisions: [],
+          actionItems: [],
+          topics: ['lattice replay buffers'],
+          followUps: [],
+          semanticAssertions: [{
+            sourceSegmentIds: ['mixed-0001'],
+            subjectSegmentId: 'mixed-0001',
+            predicate: 'implemented a source-described recovery mechanism',
+            narrative: 'Implemented lattice replay buffers for ecommerce order recovery.',
+            objectType: 'source-described mechanism',
+            objectValue: { surface: 'lattice replay buffers' },
+            qualifiers: {},
+            confidence: 0.92,
+            polarity: 1,
+            concepts: [{
+              surface: 'lattice replay buffers',
+              relationship: 'mechanism implemented for ecommerce order recovery',
+              weight: 0.9,
+              evidenceLevel: 'implemented',
+              strength: 0.88,
+            }],
+          }],
+        }),
+      },
+      body: new Uint8Array([9, 9, 9]),
     }, env, ctx);
     expect(recordingRes.status).toBe(202);
     await waitUntilAll();
@@ -2760,6 +7351,19 @@ describe('meeting room recording living-context route', () => {
       `meetings/owner-1/${created.meeting.id}/recording.webm`,
     );
     expect(JSON.parse(meetingRow.transcript_analysis_json)).toMatchObject({
+      semanticAssertions: [],
+      semanticAssertionsSuppressed: 1,
+      semanticAssertionsSuppressedReason: 'mixed_audio_without_speaker_attribution',
+      personContextMode: 'summary_only',
+      personContextReason: 'mixed_audio_without_speaker_attribution',
+    });
+    const transcriptRecord = sqlite.prepare(
+      `SELECT qualifiers_json
+         FROM context_records
+        WHERE record_type = 'meeting_transcript'`,
+    ).get() as { qualifiers_json: string };
+    expect(JSON.parse(transcriptRecord.qualifiers_json)).toMatchObject({
+      provider: 'workers-ai-whisper-summary-only',
       personContextMode: 'summary_only',
       personContextReason: 'mixed_audio_without_speaker_attribution',
     });
@@ -2791,6 +7395,7 @@ describe('meeting room recording living-context route', () => {
   it('marks transcript processing failed when Whisper transcription times out', async () => {
     const app = mountApp();
     const { ctx, waitUntilAll } = buildCtx();
+    sqlite.exec(assessmentLayerMigration);
     delete (env as { DEEPGRAM_API_KEY?: string }).DEEPGRAM_API_KEY;
     env.AI = {
       run: vi.fn(() => new Promise(() => undefined)),
@@ -2852,6 +7457,55 @@ describe('meeting room recording living-context route', () => {
     expect(meetingRow.recording_r2_key).toBe(
       `meetings/owner-1/${created.meeting.id}/recording.webm`,
     );
+
+    const assessmentSession = sqlite.prepare(
+      `SELECT mode, state, interview_id, candidate_id, workspace_id
+         FROM assessment_sessions
+        WHERE ingestion_key = ?`,
+    ).get(`assessment-session:meeting-transcript:${created.meeting.id}`) as {
+      mode: string;
+      state: string;
+      interview_id: string;
+      candidate_id: string;
+      workspace_id: string;
+    };
+    expect(assessmentSession).toMatchObject({
+      mode: 'STANDARD_VIDEO_INTERVIEW',
+      state: 'DIAGNOSTIC',
+      interview_id: created.meeting.id,
+      workspace_id: 'owner-1',
+    });
+
+    const assessmentEvent = sqlite.prepare(
+      `SELECT e.kind, e.narrative, r.source_ref_type, r.evidence_role,
+              r.exact_text, r.content_hash
+         FROM assessment_evidence_events e
+         JOIN assessment_event_source_refs r ON r.event_id = e.id
+        WHERE e.session_id = (
+          SELECT id FROM assessment_sessions WHERE ingestion_key = ?
+        )`,
+    ).get(`assessment-session:meeting-transcript:${created.meeting.id}`) as {
+      kind: string;
+      narrative: string;
+      source_ref_type: string;
+      evidence_role: string;
+      exact_text: string;
+      content_hash: string;
+    };
+    expect(assessmentEvent).toMatchObject({
+      kind: 'system_diagnostic',
+      source_ref_type: 'meeting_transcript_processing',
+      evidence_role: 'processing_failure',
+    });
+    expect(assessmentEvent.narrative).toContain('Workers AI transcription timed out');
+    expect(JSON.parse(assessmentEvent.exact_text)).toMatchObject({
+      sourceKind: 'meeting_transcript_processing.failure',
+      meetingId: created.meeting.id,
+      ownerId: 'owner-1',
+      recordingKey: `meetings/owner-1/${created.meeting.id}/recording.webm`,
+      transcriptionSourceKey: `meetings/owner-1/${created.meeting.id}/recording.webm`,
+      errorMessage: expect.stringContaining('Workers AI transcription timed out'),
+    });
   });
 
   it('exposes source-backed interaction context and transcript search for a recorded meeting', async () => {
@@ -2949,18 +7603,11 @@ describe('meeting room recording living-context route', () => {
       created.meeting.id,
     );
     expect(interactionContext.interactions[0]?.summary).toMatchObject({
-      assertionCount: 1,
-      contextRecordCount: 1,
+      assertionCount: 0,
+      contextRecordCount: 0,
     });
-    expect(interactionContext.interactions[0]?.assertions[0]?.predicate).toBe(
-      'implemented a source-described recovery mechanism',
-    );
-    expect(interactionContext.interactions[0]?.assertions[0]?.sources[0]?.exactText).toBe(
-      'I implemented lattice replay buffers for ecommerce order recovery.',
-    );
-    expect(interactionContext.interactions[0]?.signalEvidence[0]?.signalKey).toBe(
-      'term:lattice-replay-buffers',
-    );
+    expect(interactionContext.interactions[0]?.assertions).toEqual([]);
+    expect(interactionContext.interactions[0]?.signalEvidence).toEqual([]);
     expect(interactionContext.sharedArtifacts).toHaveLength(1);
     expect(interactionContext.sharedArtifacts[0]?.artifactType).toBe('meeting_transcript');
     expect(interactionContext.sharedArtifacts[0]?.sourceSpans.map((span) => span.exactText))
@@ -2974,8 +7621,8 @@ describe('meeting room recording living-context route', () => {
     expect(interactionContext.summary).toMatchObject({
       interactionCount: 1,
       artifactCount: 1,
-      assertionCount: 1,
-      contextRecordCount: 2,
+      assertionCount: 0,
+      contextRecordCount: 1,
     });
 
     // GET /meetings/:id/transcript/search?q= searches original transcript text
@@ -3008,7 +7655,7 @@ describe('meeting room recording living-context route', () => {
     );
     expect(hit.matchLength).toBe('lattice replay buffers'.length);
     expect(hit.stableSegmentId).toBe('utterance-0002');
-    expect(hit.citingAssertionIds).toHaveLength(1);
+    expect(hit.citingAssertionIds).toHaveLength(0);
     expect(hit.citingContextRecordIds.length).toBeGreaterThanOrEqual(1);
 
     // A missing query parameter is rejected.
@@ -3051,9 +7698,11 @@ describe('meeting room recording living-context route', () => {
       meeting: { id: string; contactId: string };
       hostToken: string;
     };
+    const opaqueRoomTokenPattern = /^[A-Za-z0-9_-]{43}$/;
 
-    // The host token is an opaque room token, never a stageId--candidateId fabrication.
-    expect(created.hostToken).not.toContain('--');
+    // The host token is an opaque 32-byte base64url room token, never a
+    // stageId--candidateId fabrication.
+    expect(created.hostToken).toMatch(opaqueRoomTokenPattern);
 
     // Prepare room links — both host and guest URLs must use /room/:token.
     const roomRes = await app.request(`/meetings/${created.meeting.id}/room`, {
@@ -3092,17 +7741,39 @@ describe('meeting room recording living-context route', () => {
     };
     expect(invite.joinUrl).toMatch(/^http:\/\/localhost:5175\/room\/.+/);
     expect(invite.joinUrl).not.toContain('/video/');
-    expect(invite.guestToken).not.toContain('--');
+    expect(invite.guestToken).toMatch(opaqueRoomTokenPattern);
 
     // Resolve the guest token via the public room endpoint.
     const guestToken = new URL(invite.joinUrl).pathname.split('/').pop()!;
     const guestRoomRes = await app.request(`/meeting/${guestToken}`, {}, env, ctx);
     expect(guestRoomRes.status).toBe(200);
     const guestRoom = await guestRoomRes.json() as {
-      room: { id: string; sessionId: string; role: string };
+      room: {
+        id: string;
+        sessionId: string;
+        role: string;
+        features: {
+          videoEnabled: boolean;
+          workspaceEnabled: boolean;
+          recordingEnabled: boolean;
+          clippyEnabled: boolean;
+          video?: boolean;
+          workspace?: boolean;
+          recording?: boolean;
+          clippy?: boolean;
+        };
+      };
     };
     expect(guestRoom.room.role).toBe('GUEST');
     expect(guestRoom.room.sessionId).not.toContain('--');
+    expect(guestRoom.room.features).toMatchObject({
+      videoEnabled: true,
+      workspaceEnabled: true,
+      recordingEnabled: true,
+      clippyEnabled: true,
+    });
+    expect(guestRoom.room.features.video).toBeUndefined();
+    expect(guestRoom.room.features.clippy).toBeUndefined();
 
     // Reopening the room must still produce /room/ links, never /video/ fallbacks.
     const reopenRes = await app.request(`/meetings/${created.meeting.id}/room`, {

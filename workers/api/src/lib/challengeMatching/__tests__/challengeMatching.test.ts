@@ -2,6 +2,7 @@ import { describe, expect, it } from 'vitest';
 import {
   alignCandidateToChallenge,
   compileCandidateMatchQuery,
+  deriveCandidateSignalFacets,
   explainChallengeMatch,
   rankReviewChallenges,
   recallReviewChallenges,
@@ -214,7 +215,7 @@ describe('compileCandidateMatchQuery', () => {
     ]);
 
     // Both should be included as they have valid evidence
-    expect(result.query.validationAtoms.map((atom) => atom.id)).toEqual(['seen-concept', 'unseen-concept']);
+    expect(result.query.validationAtoms.map((atom) => atom.id).sort()).toEqual(['seen-concept', 'unseen-concept']);
     expect(result.excludedSignalIds).toEqual([]);
   });
 
@@ -446,6 +447,125 @@ describe('recallReviewChallenges', () => {
 });
 
 describe('alignCandidateToChallenge', () => {
+  it('derives source-backed candidate facets for repo-specific standalone matching', () => {
+    const facets = deriveCandidateSignalFacets({
+      concepts: [
+        'term:typescript-sdk',
+        'term:runtime',
+        'term:kv',
+        'term:queues',
+        'term:serverless',
+        'term:deployments',
+        'term:cloudflare',
+        'term:workers',
+      ],
+      narrative: 'Candidate supplied review evidence for TypeScript SDK tooling.',
+      exactText: 'Staff Engineer, Edge Platform Team: designed Cloudflare Workers-style runtime APIs, request routing, KV-backed configuration, durable task queues, and TypeScript SDK tooling for serverless deployments.',
+    });
+
+    expect(facets.concepts).toEqual(expect.arrayContaining([
+      'term:typescript-sdk',
+      'term:runtime',
+      'term:kv',
+      'term:queues',
+      'term:serverless',
+      'term:deployments',
+      'term:cloudflare',
+      'term:workers',
+    ]));
+    expect(facets.mechanisms).toEqual(expect.arrayContaining([
+      'term:typescript-sdk',
+      'term:runtime',
+      'term:kv',
+      'term:queues',
+      'term:serverless',
+      'term:deployments',
+    ]));
+    expect(facets.domains).toEqual([]);
+  });
+
+  it('uses decomposed source facets to prefer Workers SDK over generic TypeScript UI packets', () => {
+    const facets = deriveCandidateSignalFacets({
+      concepts: [
+        'term:typescript-sdk',
+        'term:runtime',
+        'term:kv',
+        'term:queues',
+        'term:serverless',
+        'term:deployments',
+        'term:cloudflare',
+        'term:workers',
+      ],
+      narrative: 'Candidate supplied review evidence for TypeScript SDK tooling.',
+      exactText: 'Staff Engineer, Edge Platform Team: designed Cloudflare Workers-style runtime APIs, request routing, KV-backed configuration, durable task queues, and TypeScript SDK tooling for serverless deployments.',
+    });
+    const compiled = compileCandidateMatchQuery({
+      candidateSnapshotId: 'candidate-cloudflare',
+      roleSnapshotId: 'standalone-code-review-v1',
+      signals: [
+        signal('cloudflare-workers', {
+          concepts: facets.concepts,
+          problems: facets.problems,
+          mechanisms: facets.mechanisms,
+          domains: facets.domains,
+          businessObjects: facets.businessObjects,
+          ownershipActions: facets.ownershipActions,
+        }),
+      ],
+      roleGuardrails: {
+        requiredLanguages: ['typescript'],
+        genericConcepts: ['term:typescript'],
+      },
+    });
+    const workersPacket = challenge('workers-sdk', [
+      demand('workers-sdk', 1, {
+        concepts: ['term:typescript', 'term:workers-sdk', 'term:runtime', 'term:serverless'],
+        mechanisms: ['term:deploy', 'term:runtime'],
+        domains: ['term:workers-sdk', 'term:serverless'],
+        businessObjects: ['term:deploy', 'term:runtime'],
+        ownershipActions: ['term:modified'],
+        roleRequirement: false,
+        highWeightRoleRequirement: false,
+      }),
+    ], {
+      repoId: '79',
+      concepts: ['term:typescript', 'term:workers-sdk', 'term:runtime', 'term:serverless'],
+      quality: { deterministic: 0.9, contextualSpecificity: 1 },
+    });
+    const genericUiPacket = challenge('base-ui', [
+      demand('base-ui', 1, {
+        concepts: ['term:typescript', 'term:active-trigger-id'],
+        mechanisms: ['term:active-trigger-id'],
+        domains: ['term:base-ui', 'term:react'],
+        businessObjects: ['term:active-trigger-id'],
+        ownershipActions: ['term:modified'],
+        roleRequirement: false,
+        highWeightRoleRequirement: false,
+      }),
+    ], {
+      repoId: '973',
+      concepts: ['term:typescript', 'term:active-trigger-id'],
+      quality: { deterministic: 0.9, contextualSpecificity: 1 },
+    });
+
+    const workersAlignment = alignCandidateToChallenge({
+      query: compiled.query,
+      challenge: workersPacket,
+    });
+    const genericAlignment = alignCandidateToChallenge({
+      query: compiled.query,
+      challenge: genericUiPacket,
+    });
+    const ranked = rankReviewChallenges(compiled.query, [genericAlignment, workersAlignment]);
+
+    expect(workersAlignment.hasNonGenericAlignment).toBe(true);
+    expect(workersAlignment.eligible).toBe(true);
+    expect(genericAlignment.eligible).toBe(false);
+    expect(genericAlignment.rejectionReasons).toContain('NO_NON_GENERIC_ALIGNMENT');
+    expect(ranked.status).toBe('MATCHED');
+    expect(ranked.matches[0]!.alignment.challenge.repoId).toBe('79');
+  });
+
   it('rejects generic keyword overlap without non-generic correspondence', () => {
     const compiled = compile([
       signal('generic', {
@@ -1186,6 +1306,80 @@ describe('fake semantics and fallback removal (HAS-86)', () => {
     expect(explanation.assessmentQuality.verdict).not.toBe('WEAK');
   });
 
+  it('accepts sparse exact source-backed evidence when a role-backed PR is strongly role-relevant', () => {
+    const compiled = compile([
+      signal('use-popover-root', {
+        concepts: ['term:use-popover-root'],
+        problems: [],
+        mechanisms: [],
+        domains: [],
+        businessObjects: [],
+        ownershipActions: [],
+      }),
+      signal('patient-click-threshold', {
+        concepts: ['term:patient-click-threshold'],
+        problems: [],
+        mechanisms: [],
+        domains: [],
+        businessObjects: [],
+        ownershipActions: [],
+      }),
+    ]);
+    const packet = challenge('role-backed-sparse-exact', [
+      demand('source', 1 / 6, {
+        concepts: ['term:use-popover-root'],
+        roleRequirement: true,
+        highWeightRoleRequirement: true,
+      }),
+      demand('threshold', 1 / 6, {
+        concepts: ['term:patient-click-threshold'],
+        roleRequirement: true,
+        highWeightRoleRequirement: false,
+      }),
+      demand('rendered-trigger', 1 / 6, {
+        concepts: ['term:rendered-trigger-id-ownership'],
+        roleRequirement: true,
+        highWeightRoleRequirement: false,
+      }),
+      demand('javascript-test', 1 / 6, {
+        concepts: ['term:javascript-test-runner-regression-tests'],
+        roleRequirement: true,
+        highWeightRoleRequirement: false,
+      }),
+      demand('calls', 1 / 6, {
+        concepts: ['term:click-enabled-timeout-ref'],
+        roleRequirement: false,
+        highWeightRoleRequirement: false,
+      }),
+      demand('contains', 1 / 6, {
+        concepts: ['term:popover-trigger'],
+        roleRequirement: false,
+        highWeightRoleRequirement: false,
+      }),
+    ], {
+      concepts: [
+        'term:use-popover-root',
+        'term:patient-click-threshold',
+        'term:rendered-trigger-id-ownership',
+        'term:javascript-test-runner-regression-tests',
+        'term:click-enabled-timeout-ref',
+        'term:popover-trigger',
+      ],
+    });
+
+    const alignment = alignCandidateToChallenge({ query: compiled.query, challenge: packet });
+    const ranked = rankReviewChallenges(compiled.query, [alignment]);
+    const explanation = explainChallengeMatch(alignment);
+
+    expect(alignment.candidateEvidenceAlignment).toBeGreaterThanOrEqual(0.10);
+    expect(alignment.candidateEvidenceAlignment).toBeLessThan(0.50);
+    expect(alignment.roleRelevance).toBeGreaterThanOrEqual(0.60);
+    expect(alignment.eligible).toBe(true);
+    expect(alignment.rejectionReasons).toEqual([]);
+    expect(ranked.status).toBe('MATCHED');
+    expect(explanation.assessmentQuality.verdict).toBe('USABLE');
+  });
+
   it('accepts exact source-backed symbol evidence for roleless standalone review when corpus has one strong packet', () => {
     const compiled = compile([
       signal('use-popover-root', {
@@ -1251,7 +1445,7 @@ describe('fake semantics and fallback removal (HAS-86)', () => {
     expect(explanation.assessmentQuality.verdict).toBe('USABLE');
   });
 
-  it('still enforces role relevance when role requirements are present', () => {
+  it('still enforces role relevance when role-backed demand coverage is weak', () => {
     const compiled = compile([
       signal('one', {
         concepts: ['domain:payments'],
@@ -1261,18 +1455,18 @@ describe('fake semantics and fallback removal (HAS-86)', () => {
     ]);
     const packet = challenge('role-required', [
       demand('one', 0.5, {
-        concepts: ['domain:payments'],
-        problems: ['chargeback'],
-        mechanisms: ['idempotency-key'],
+        concepts: ['domain:role-only'],
+        problems: ['role-specific-review'],
+        mechanisms: ['role-specific-mechanism'],
         roleRequirement: true,
-        highWeightRoleRequirement: true,
+        highWeightRoleRequirement: false,
       }),
       demand('two', 0.5, {
         family: 'second-family',
-        concepts: ['domain:fraud'],
-        problems: ['false-positive'],
-        mechanisms: ['rate-limiting'],
-        roleRequirement: true,
+        concepts: ['domain:payments'],
+        problems: ['chargeback'],
+        mechanisms: ['idempotency-key'],
+        roleRequirement: false,
         highWeightRoleRequirement: false,
       }),
     ]);
@@ -1280,6 +1474,7 @@ describe('fake semantics and fallback removal (HAS-86)', () => {
     const result = alignCandidateToChallenge({ query: compiled.query, challenge: packet });
 
     expect(result.eligible).toBe(false);
+    expect(result.roleRelevance).toBeLessThan(0.60);
     expect(result.rejectionReasons).toContain('ROLE_RELEVANCE_BELOW_THRESHOLD');
   });
 

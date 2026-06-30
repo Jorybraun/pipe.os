@@ -124,6 +124,17 @@ describe('applyDispositionalWeights', () => {
 });
 
 describe('computeBarsComposite with dispositional overlay', () => {
+  it('rejects incomplete score maps instead of fabricating midpoint dimensions', () => {
+    const incomplete = {
+      ...FLAT_MID_SCORES,
+      ai_direction: undefined,
+    } as unknown as BarsDimensionScores;
+
+    expect(() => computeBarsComposite(incomplete, 'mid')).toThrow(
+      'Missing or invalid BARS dimension score: ai_direction',
+    );
+  });
+
   it('tilts composite toward prioritization when pragmatism > rigor', () => {
     // Flat scores except prioritization is high, issue_identification is low.
     const scores: BarsDimensionScores = {

@@ -1,7 +1,8 @@
-import { describe, expect, it, vi } from 'vitest';
+import { beforeEach, describe, expect, it, vi } from 'vitest';
 import { fireEvent, render, screen, within } from '@testing-library/react';
 import { LivingContextGraph } from '../LivingContextGraph';
 import type {
+  EvidenceConflictReport,
   LivingContextReadModel,
   LivingContextSourceRef,
   StandaloneReviewMatchRecord,
@@ -9,6 +10,7 @@ import type {
 
 const mocks = vi.hoisted(() => ({
   livingContext: null as LivingContextReadModel | null,
+  evidenceConflictsReport: null as EvidenceConflictReport | null,
   refetch: vi.fn(),
 }));
 
@@ -20,6 +22,93 @@ vi.mock('../../../hooks/useLivingContext', () => ({
     refetch: mocks.refetch,
   }),
 }));
+
+vi.mock('../../../hooks/useEvidenceGaps', () => ({
+  useEvidenceGaps: () => ({
+    report: null,
+    isLoading: false,
+    error: null,
+    refetch: vi.fn(),
+  }),
+}));
+
+vi.mock('../../../hooks/useMatchProvenance', () => ({
+  useMatchProvenance: () => ({
+    provenance: null,
+    isLoading: false,
+    error: null,
+    refetch: vi.fn(),
+  }),
+}));
+
+vi.mock('../../../hooks/useEvidenceLineage', () => ({
+  useEvidenceLineage: () => ({
+    lineage: null,
+    isLoading: false,
+    error: null,
+    refetch: vi.fn(),
+  }),
+}));
+
+vi.mock('../../../hooks/useEvidenceFreshness', () => ({
+  useEvidenceFreshness: () => ({
+    freshness: null,
+    isLoading: false,
+    error: null,
+    refetch: vi.fn(),
+  }),
+}));
+
+vi.mock('../../../hooks/useRematch', () => ({
+  useRematch: () => ({
+    rematch: vi.fn().mockResolvedValue(null),
+    result: null,
+    isRunning: false,
+    error: null,
+  }),
+}));
+
+vi.mock('../../../hooks/useConceptGraph', () => ({
+  useConceptGraph: () => ({
+    graph: null,
+    isLoading: false,
+    error: null,
+    refetch: vi.fn(),
+  }),
+}));
+
+vi.mock('../../../hooks/useEvidenceReadiness', () => ({
+  useEvidenceReadiness: () => ({
+    report: null,
+    isLoading: false,
+    error: null,
+    refetch: vi.fn(),
+  }),
+}));
+
+vi.mock('../../../hooks/useMatchHistory', () => ({
+  useMatchHistory: () => ({
+    history: null,
+    isLoading: false,
+    error: null,
+    refetch: vi.fn(),
+  }),
+}));
+
+vi.mock('../../../hooks/useEvidenceConflicts', () => ({
+  useEvidenceConflicts: () => ({
+    report: mocks.evidenceConflictsReport,
+    isLoading: false,
+    error: null,
+    refetch: vi.fn(),
+  }),
+}));
+
+beforeEach(() => {
+  mocks.livingContext = null;
+  mocks.evidenceConflictsReport = null;
+  mocks.refetch.mockReset();
+});
 
 function makeLivingContext(): LivingContextReadModel {
   return {
@@ -57,6 +146,53 @@ function makeLivingContext(): LivingContextReadModel {
     assertions: [],
     signals: [],
     relationships: [],
+  };
+}
+
+function makeEvidenceConflictReport(): EvidenceConflictReport {
+  return {
+    candidateId: 'candidate-1',
+    workspacePersonId: 'workspace-person-1',
+    totalConflicts: 1,
+    highSeverity: 1,
+    mediumSeverity: 0,
+    lowSeverity: 0,
+    analyzedAt: '2026-06-30T13:45:00.000Z',
+    conflicts: [{
+      conflictId: 'conflict-high-react',
+      conceptKey: 'react',
+      conflictType: 'polarity',
+      severity: 'high',
+      description: '2 source(s) affirm "react" while 1 source(s) contradict it.',
+      impactOnMatch: 'Match score for "react" is unreliable — recruiter review recommended before trusting this signal.',
+      strengthDivergence: 0.42,
+      positiveAssertions: [{
+        assertionId: 'assertion-resume-react',
+        narrative: 'Resume claims production React ownership.',
+        conceptKey: 'react',
+        strength: 0.9,
+        confidence: 0.88,
+        polarity: 1,
+        effectiveStrength: 0.86,
+        observedAt: '2026-06-29T12:00:00.000Z',
+        interactionType: 'resume_review',
+        exactText: 'Owned React checkout flows.',
+        sourceSpanId: 'resume-span-react',
+      }],
+      negativeAssertions: [{
+        assertionId: 'assertion-interview-react',
+        narrative: 'Interview answer struggled with React state ownership.',
+        conceptKey: 'react',
+        strength: 0.72,
+        confidence: 0.81,
+        polarity: -1,
+        effectiveStrength: 0.68,
+        observedAt: '2026-06-30T12:00:00.000Z',
+        interactionType: 'technical_interview',
+        exactText: 'I usually let AI handle React state.',
+        sourceSpanId: 'transcript-span-react',
+      }],
+    }],
   };
 }
 
@@ -100,6 +236,7 @@ function makeStandaloneReviewMatch(): StandaloneReviewMatchRecord {
       purpose: 'validation',
       pairScore: 0.91,
       sharedConcepts: ['term:kafka-order-events'],
+      stretch: null,
       roleSourceRefs: [{
         entityId: 'context-record-jd',
         locator: 'simple_job_description:source_span:jd-span-1',
@@ -134,6 +271,8 @@ function makeStandaloneReviewMatch(): StandaloneReviewMatchRecord {
         exactText: 'Add idempotent retry handling around order event publication.',
       }],
     }],
+    stretchAreas: [],
+    unmatchedDemandIds: [],
     gaps: [
       'Candidate evidence does not yet prove ownership of Kafka partition rebalancing.',
     ],
@@ -177,6 +316,7 @@ function makeStandaloneReviewMatch(): StandaloneReviewMatchRecord {
         stretchCount: 1,
       }],
     },
+    matchNarrative: null,
     submitted: false,
     submission: null,
     completedAt: null,
@@ -209,6 +349,7 @@ function makeBackfilledRepoReviewMatch(): StandaloneReviewMatchRecord {
       demandId: 'demand-crystalline-quorum-ledger',
       purpose: 'source-backed-validation',
       pairScore: 0.93,
+      stretch: null,
       sharedConcepts: ['term:crystalline-quorum-ledger'],
       roleSourceRefs: [{
         entityId: 'context-record-role-backfill',
@@ -258,6 +399,8 @@ function makeBackfilledRepoReviewMatch(): StandaloneReviewMatchRecord {
         exactText: 'export function writeCrystallineQuorumLedger(orderId: string) { const ledgerKey = `crystalline:${orderId}`; return { ledgerKey, committed: true }; }',
       }],
     }],
+    stretchAreas: [],
+    unmatchedDemandIds: [],
     gaps: [],
     diagnostics: {
       recalledPacketIds: ['review-packet-77-42'],
@@ -275,6 +418,7 @@ function makeBackfilledRepoReviewMatch(): StandaloneReviewMatchRecord {
         stretchCount: 0,
       }],
     },
+    matchNarrative: null,
     submitted: false,
     submission: null,
     completedAt: null,
@@ -595,6 +739,13 @@ describe('LivingContextGraph standalone review explanation', () => {
     expect(within(roleSources).getByText('simple_job_description:source_span:jd-span-1')).toBeInTheDocument();
     expect(within(roleSources).getByText('term:kafka-order-events')).toBeInTheDocument();
 
+    const proofDetails = screen.getByTestId('standalone-review-proof-details');
+    expect(proofDetails).not.toHaveAttribute('open');
+    expect(proofDetails).toHaveTextContent(/Source proof and matcher diagnostics/i);
+    expect(proofDetails).toHaveTextContent(/1 aligned pair/i);
+    expect(proofDetails).toHaveTextContent(/2 source links/i);
+    expect(proofDetails).toHaveTextContent(/1 gap/i);
+
     const bridge = screen.getByTestId('match-evidence-bridge');
     expect(screen.getByLabelText('Cross-scope match evidence bridge')).toBe(bridge);
     expect(within(bridge).getByText('role context -> person context -> repo challenge')).toBeInTheDocument();
@@ -764,6 +915,26 @@ describe('LivingContextGraph standalone review explanation', () => {
     )).toBeInTheDocument();
   });
 
+  it('surfaces evidence conflicts with source-backed opposing claims', () => {
+    mocks.livingContext = makeMeetingLivingContext({ includeRolelessMessage: true });
+    mocks.evidenceConflictsReport = makeEvidenceConflictReport();
+
+    render(<LivingContextGraph candidateId="candidate-1" />);
+
+    const panel = screen.getByTestId('evidence-conflicts-panel');
+    expect(within(panel).getByText('Evidence conflicts')).toBeInTheDocument();
+    expect(within(panel).getByText('1 high')).toBeInTheDocument();
+
+    const conflict = within(panel).getByTestId('conflict-conflict-high-react');
+    expect(within(conflict).getByText('react')).toBeInTheDocument();
+    expect(within(conflict).getByText('2 source(s) affirm "react" while 1 source(s) contradict it.')).toBeInTheDocument();
+    expect(within(conflict).getByText(/recruiter review recommended/i)).toBeInTheDocument();
+    expect(within(conflict).getByText('Affirming (1)')).toBeInTheDocument();
+    expect(within(conflict).getByText('Contradicting (1)')).toBeInTheDocument();
+    expect(within(conflict).getByText('Resume claims production React ownership.')).toBeInTheDocument();
+    expect(within(conflict).getByText('Interview answer struggled with React state ownership.')).toBeInTheDocument();
+  });
+
   it('renders the repo packet view with files, spans, symbols, structural facts, episodes, assertions, and concepts', () => {
     mocks.livingContext = makeLivingContext();
 
@@ -931,5 +1102,59 @@ describe('LivingContextGraph empty state quietness', () => {
     expect(screen.queryAllByText('Accumulated context')).toHaveLength(0);
     expect(screen.queryAllByText('Source evidence')).toHaveLength(0);
     expect(screen.queryByLabelText('Search living context')).not.toBeInTheDocument();
+  });
+
+  it('renders the match narrative panel when matchNarrative is present', () => {
+    mocks.livingContext = makeLivingContext();
+
+    const match: StandaloneReviewMatchRecord = {
+      ...makeStandaloneReviewMatch(),
+      matchNarrative: {
+        title: 'Strong Kafka alignment',
+        verdict: 'Candidate demonstrates strong Kafka retry expertise.',
+        sections: [
+          {
+            heading: 'Strong alignments',
+            items: [
+              'Kafka retry publishing (91% — resume line 7 + src/orders/retry.ts:18)',
+            ],
+          },
+          {
+            heading: 'Evidence gaps',
+            items: ['No partition rebalancing experience found.'],
+          },
+        ],
+        plainText: 'Strong Kafka alignment\nCandidate demonstrates strong Kafka retry expertise.',
+      },
+    };
+
+    render(
+      <LivingContextGraph
+        candidateId="candidate-1"
+        standaloneReviewMatch={match}
+      />,
+    );
+
+    const narrativePanel = screen.getByTestId('match-narrative-panel');
+    expect(screen.getByLabelText('Match narrative')).toBe(narrativePanel);
+    expect(within(narrativePanel).getByText('Strong Kafka alignment')).toBeInTheDocument();
+    expect(within(narrativePanel).getByText('Candidate demonstrates strong Kafka retry expertise.')).toBeInTheDocument();
+    expect(within(narrativePanel).getByText('Strong alignments')).toBeInTheDocument();
+    expect(within(narrativePanel).getByText('Kafka retry publishing (91% — resume line 7 + src/orders/retry.ts:18)')).toBeInTheDocument();
+    expect(within(narrativePanel).getByText('Evidence gaps')).toBeInTheDocument();
+    expect(within(narrativePanel).getByText('No partition rebalancing experience found.')).toBeInTheDocument();
+  });
+
+  it('hides the match narrative panel when matchNarrative is null', () => {
+    mocks.livingContext = makeLivingContext();
+
+    render(
+      <LivingContextGraph
+        candidateId="candidate-1"
+        standaloneReviewMatch={makeStandaloneReviewMatch()}
+      />,
+    );
+
+    expect(screen.queryByTestId('match-narrative-panel')).toBeNull();
   });
 });

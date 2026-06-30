@@ -53,6 +53,9 @@ export class Container<Env = unknown> extends DurableObject<Env> {
   async onStart(): Promise<void> {}
   async onStop(_: { exitCode: number; reason: string }): Promise<void> {}
   async onError(_: unknown): Promise<void> {}
+  async onActivityExpired(): Promise<void> {
+    await this.stop();
+  }
 
   async schedule<T = string>(
     when: Date | number,

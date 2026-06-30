@@ -19,6 +19,9 @@ import type { Env } from '../types';
 import { markError, markExpired, markStatus, markWarned } from '../lib/devContainerSessions';
 
 const DEFAULT_WARN_BEFORE_SECONDS = 60;
+const INTENTIONAL_SLEEP_KEY = 'intentional_sleep_stop';
+const MAX_CONTAINER_DIAGNOSTIC_CHARS = 1_000;
+const CODE_SERVER_ENTRYPOINT = '/usr/local/bin/entrypoint.sh';
 
 interface InitPayload {
   sessionId: string;
@@ -26,24 +29,31 @@ interface InitPayload {
   ttlSeconds: number;
   repoGitUrl: string | null;
   challengeBranch: string | null;
+  baseCommitSha?: string | null;
+  challengePacketContentHash?: string | null;
   agentType?: string | null;
   agentApiKey?: string | null;
+  agentOrgId?: string | null;
   pipeApiUrl?: string | null;
   roomToken?: string | null;
 }
 
 function buildEnvVars(payload: InitPayload): Record<string, string> {
+  const agentType = payload.agentType?.trim();
   const env: Record<string, string> = {
     SESSION_ID: payload.sessionId,
     PASSWORD: 'pipe',
     WORKSPACE_DIR: '/workspace',
-    AGENT_TYPE: payload.agentType || 'devin',
     AGENT_BRIDGE_PORT: '8080',
     CODE_SERVER_PORT: '8082',
   };
+  if (agentType) env.AGENT_TYPE = agentType;
   if (payload.repoGitUrl) env.REPO_GIT_URL = payload.repoGitUrl;
   if (payload.challengeBranch) env.CHALLENGE_BRANCH = payload.challengeBranch;
+  if (payload.baseCommitSha) env.CHALLENGE_BASE_COMMIT_SHA = payload.baseCommitSha;
+  if (payload.challengePacketContentHash) env.CHALLENGE_PACKET_CONTENT_HASH = payload.challengePacketContentHash;
   if (payload.agentApiKey) env.DEVIN_API_KEY = payload.agentApiKey;
+  if (payload.agentOrgId) env.DEVIN_ORG_ID = payload.agentOrgId;
   if (payload.pipeApiUrl) env.PIPE_API_URL = payload.pipeApiUrl;
   if (payload.roomToken) env.ROOM_TOKEN = payload.roomToken;
   return env;
@@ -57,6 +67,7 @@ export class DevContainerDO extends Container<Env> {
 
   // Sleep the DO after 10 minutes of inactivity so we don't pay for idle.
   sleepAfter = '10m';
+  private initializing = false;
 
   async fetch(request: Request): Promise<Response> {
     const url = new URL(request.url);
@@ -102,26 +113,31 @@ export class DevContainerDO extends Container<Env> {
       // Use the Docker image entrypoint for repo cloning and code-server startup.
       // Passing the full bridge script through Container.start() exceeded the
       // runtime value limit and caused the VM to exit before port 8080 opened.
+      this.initializing = true;
       await this.startAndWaitForPorts({
         ports: this.requiredPorts,
         startOptions: {
           envVars: this.envVars,
+          entrypoint: [CODE_SERVER_ENTRYPOINT],
+          enableInternet: true,
         },
         cancellationOptions: {
-          instanceGetTimeoutMS: 15_000,
-          portReadyTimeoutMS: 45_000,
-          waitInterval: 500,
+          instanceGetTimeoutMS: 90_000,
+          portReadyTimeoutMS: 180_000,
+          waitInterval: 1_000,
         },
       });
     } catch (err) {
+      this.initializing = false;
       const message = err instanceof Error ? err.message : String(err);
       console.error('[DevContainerDO.handleInit] start failed:', err);
-      await markError(this.env.DB, payload.sessionId, message);
+      await markError(this.env.DB, payload.sessionId, sanitizeContainerDiagnostic(message));
       return new Response(
         JSON.stringify({ error: { code: 'CONTAINER_START_FAILED', message } }),
         { status: 500, headers: { 'Content-Type': 'application/json' } },
       );
     }
+    this.initializing = false;
 
     // Only mark the session READY after the code-server port is actually
     // listening. The iframe proxy depends on this being an honest state.
@@ -157,6 +173,56 @@ export class DevContainerDO extends Container<Env> {
     );
   }
 
+  override async onStart(): Promise<void> {
+    if (this.initializing) return;
+    const config = await this.loadConfig();
+    if (!config) return;
+    await this.ctx.storage.delete(INTENTIONAL_SLEEP_KEY);
+    await markStatus(this.env.DB, config.sessionId, 'READY', {
+      startedAt: new Date().toISOString(),
+    });
+  }
+
+  override async onStop(params: { exitCode: number; reason: string }): Promise<void> {
+    const config = await this.loadConfig();
+    if (!config) return;
+    const wasIntentionalStop = (await this.ctx.storage.get<boolean>(INTENTIONAL_SLEEP_KEY)) === true;
+    if (wasIntentionalStop) {
+      await this.ctx.storage.delete(INTENTIONAL_SLEEP_KEY);
+      return;
+    }
+    const message = sanitizeContainerDiagnostic(
+      `Container stopped unexpectedly (exit code ${params.exitCode}, reason ${params.reason}).`,
+    );
+    await markError(this.env.DB, config.sessionId, message);
+  }
+
+  override async onActivityExpired(): Promise<void> {
+    const config = await this.loadConfig();
+    if (config) {
+      await this.ctx.storage.put(INTENTIONAL_SLEEP_KEY, true);
+      await markStatus(this.env.DB, config.sessionId, 'SLEEPING');
+    }
+    await super.onActivityExpired();
+  }
+
+  override async onError(error: unknown): Promise<void> {
+    if (!this.initializing) {
+      const config = await this.loadConfig();
+      if (config) {
+        const message = sanitizeContainerDiagnostic(
+          error instanceof Error ? error.message : String(error),
+        );
+        await markError(this.env.DB, config.sessionId, message);
+      }
+    }
+    throw error instanceof Error ? error : new Error(String(error));
+  }
+
+  private async loadConfig(): Promise<InitPayload | null> {
+    return (await this.ctx.storage.get<InitPayload>('config')) ?? null;
+  }
+
   /**
    * Manual destroy handler. Called when the candidate clicks "END SESSION".
    * Stops the container and clears storage. D1 status is already marked
@@ -167,6 +233,7 @@ export class DevContainerDO extends Container<Env> {
 
     // Stop the container if it's running. Safe to call when already stopped.
     try {
+      await this.ctx.storage.put(INTENTIONAL_SLEEP_KEY, true);
       await this.destroy();
     } catch (err) {
       console.error('[DevContainerDO.handleDestroy] destroy() failed:', err);
@@ -235,6 +302,7 @@ export class DevContainerDO extends Container<Env> {
 
     // Kill the container if it's still running. Safe to call when stopped.
     try {
+      await this.ctx.storage.put(INTENTIONAL_SLEEP_KEY, true);
       await this.destroy();
     } catch (err) {
       console.error('[DevContainerDO.onExpire] destroy() failed:', err);
@@ -262,4 +330,16 @@ function parseWarnSeconds(raw: string | undefined): number {
     return DEFAULT_WARN_BEFORE_SECONDS;
   }
   return parsed;
+}
+
+function sanitizeContainerDiagnostic(value: string): string {
+  const redacted = value
+    .replace(/\b(Bearer\s+)[A-Za-z0-9._~+/=-]+/gi, '$1[redacted]')
+    .replace(/\b(sk-[A-Za-z0-9_-]{8,})\b/g, 'sk-[redacted]')
+    .replace(/\b(cog_[A-Za-z0-9]{16,})\b/g, 'cog_[redacted]')
+    .replace(/\b((?:DEVIN_API_KEY|API_KEY|TOKEN|SECRET|PASSWORD)\s*=\s*)[^\s]+/gi, '$1[redacted]')
+    .replace(/([?&](?:api_key|key|token|secret|password)=)[^&\s]+/gi, '$1[redacted]')
+    .trim();
+  if (redacted.length <= MAX_CONTAINER_DIAGNOSTIC_CHARS) return redacted;
+  return `${redacted.slice(0, MAX_CONTAINER_DIAGNOSTIC_CHARS)}\n[diagnostic truncated]`;
 }

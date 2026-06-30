@@ -1,6 +1,7 @@
 import type {
   AlignCandidateToChallengeInput,
   CandidateMatchQuery,
+  CandidateSignal,
   ChallengeAlignment,
   ChallengeDemand,
   ChallengePacket,
@@ -103,6 +104,42 @@ function addDerivedTerm(terms: Set<string>, value: string): void {
   terms.add(`term:${COMPACT_TERM_ALIASES.get(normalizedValue) ?? normalizedValue}`);
 }
 
+function singularSegment(segment: string): string | null {
+  if (segment.length <= 3) return null;
+  if (segment.endsWith('ies') && segment.length > 4) {
+    return `${segment.slice(0, -3)}y`;
+  }
+  if (segment.endsWith('ses') || segment.endsWith('xes') || segment.endsWith('ches') || segment.endsWith('shes')) {
+    return segment.slice(0, -2);
+  }
+  if (segment.endsWith('s') && !segment.endsWith('ss')) {
+    return segment.slice(0, -1);
+  }
+  return null;
+}
+
+function actionStemSegment(segment: string): string | null {
+  if (segment.length <= 5) return null;
+  if (segment.endsWith('ments')) return segment.slice(0, -5);
+  if (segment.endsWith('ment')) return segment.slice(0, -4);
+  if (segment.endsWith('ing')) {
+    const stem = segment.slice(0, -3);
+    return stem.length >= 3 ? stem.replace(/([a-z])\1$/, '$1') : null;
+  }
+  return null;
+}
+
+function segmentVariants(segment: string): string[] {
+  const variants = new Set<string>([segment]);
+  const singular = singularSegment(segment);
+  if (singular) variants.add(singular);
+  for (const value of [...variants]) {
+    const stem = actionStemSegment(value);
+    if (stem) variants.add(stem);
+  }
+  return [...variants];
+}
+
 function expandOpenTermConcept(concept: string): string[] {
   const canonical = concept.trim().toLowerCase();
   if (!canonical.startsWith('term:')) return [canonical];
@@ -113,11 +150,14 @@ function expandOpenTermConcept(concept: string): string[] {
   if (aliased) expanded.add(`term:${aliased}`);
 
   const segments = openTermSegments(rawValue);
+  const compactSegments = segments.map((segment) =>
+    COMPACT_TERM_ALIASES.get(segment) ?? segment
+  );
   for (let index = 0; index < segments.length; index += 1) {
     const segment = segments[index]!;
     const next = segments[index + 1];
     const afterNext = segments[index + 2];
-    addDerivedTerm(expanded, segment);
+    for (const variant of segmentVariants(segment)) addDerivedTerm(expanded, variant);
     if (segment === 'use' && next && afterNext) {
       addDerivedTerm(expanded, `${segment}-${next}-${afterNext}`);
     }
@@ -125,6 +165,14 @@ function expandOpenTermConcept(concept: string): string[] {
       const pair = `${segment}-${next}`;
       const pairAlias = COMPACT_TERM_ALIASES.get(pair);
       if (pairAlias) expanded.add(`term:${pairAlias}`);
+    }
+  }
+  for (let size = 2; size <= 3; size += 1) {
+    for (let index = 0; index <= compactSegments.length - size; index += 1) {
+      const phraseSegments = compactSegments.slice(index, index + size);
+      addDerivedTerm(expanded, phraseSegments.join('-'));
+      const variantPhrase = phraseSegments.map((segment) => segmentVariants(segment)[0] ?? segment).join('-');
+      addDerivedTerm(expanded, variantPhrase);
     }
   }
 
@@ -160,13 +208,22 @@ function compareSignals(
   selectionConcepts: Set<string>,
 ): number {
   const selectionScore = (signal: CompileCandidateMatchInput['signals'][number]) => {
-    const concepts = expandedConcepts(signal.concepts);
-    if (concepts.length === 0) return 0;
-    const overlap = concepts.filter((concept) => selectionConcepts.has(concept)).length;
-    return overlap / concepts.length;
+    const originalConcepts = normalized(signal.concepts);
+    if (originalConcepts.length === 0) return 0;
+    const exactOverlap = originalConcepts.filter((concept) => selectionConcepts.has(concept)).length;
+    const expandedOverlap = expandedConcepts(signal.concepts)
+      .filter((concept) => selectionConcepts.has(concept)).length;
+    return Math.min(1, Math.max(exactOverlap, expandedOverlap) / originalConcepts.length);
+  };
+  const specificityScore = (signal: CompileCandidateMatchInput['signals'][number]) => {
+    return normalized(signal.concepts).reduce(
+      (max, concept) => Math.max(max, conceptSpecificity(concept)),
+      0,
+    );
   };
   return (
     selectionScore(b) - selectionScore(a)
+    || specificityScore(b) - specificityScore(a)
     || Number(Boolean(a.contradicted)) - Number(Boolean(b.contradicted))
     || (b.evidenceLevel == null ? -1 : EVIDENCE_RANK[b.evidenceLevel])
       - (a.evidenceLevel == null ? -1 : EVIDENCE_RANK[a.evidenceLevel])
@@ -187,6 +244,12 @@ function withEpisodeMultipliers(atoms: QueryAtom[]): QueryAtom[] {
       episodeMultiplier: count === 0 ? 1 : count === 1 ? 0.35 : 0,
     };
   });
+}
+
+function conceptCapKeys(signal: CandidateSignal): string[] {
+  const concepts = [...new Set(normalized(signal.concepts))];
+  const idConcept = concepts.find((concept) => signal.id.endsWith(`:${concept}`));
+  return idConcept ? [idConcept] : concepts;
 }
 
 export function compileCandidateMatchQuery(input: CompileCandidateMatchInput): CompileCandidateMatchResult {
@@ -237,7 +300,7 @@ export function compileCandidateMatchQuery(input: CompileCandidateMatchInput): C
     }
 
     const episodeCount = episodeCounts.get(atom.episodeId) ?? 0;
-    const concepts = [...new Set(normalized(signal.concepts))];
+    const concepts = conceptCapKeys(signal);
     const exceedsConceptCap = concepts.some(
       (concept) => (conceptCounts.get(concept) ?? 0) >= MAX_ATOMS_PER_CONCEPT,
     );
@@ -372,6 +435,22 @@ function hasDirectSemanticGate(atom: QueryAtom, demand: ChallengeDemand): boolea
   return intersects(atom.concepts, demand.concepts)
     || intersects(atom.problems, demand.problems)
     || intersects(atom.mechanisms, demand.mechanisms);
+}
+
+function conceptSpecificity(concept: string): number {
+  const raw = concept.includes(':') ? concept.slice(concept.indexOf(':') + 1) : concept;
+  return raw
+    .split(/[^a-z0-9+#.]+/i)
+    .map((segment) => segment.trim().toLowerCase())
+    .filter((segment) => segment.length >= 3 && !OPEN_TERM_STOP_SEGMENTS.has(segment))
+    .length;
+}
+
+function sharedConceptSpecificity(atom: QueryAtom, demand: ChallengeDemand): number {
+  const demandConcepts = new Set(normalized(demand.concepts));
+  return normalized(atom.concepts)
+    .filter((concept) => demandConcepts.has(concept))
+    .reduce((max, concept) => Math.max(max, conceptSpecificity(concept)), 0);
 }
 
 function scorePair(
@@ -521,6 +600,7 @@ export function recallReviewChallenges(input: RecallReviewChallengesInput): Reca
 
 interface AssignmentState {
   score: number;
+  specificity: number;
   pairs: Array<{ atomIndex: number; demandIndex: number; pair: NonNullable<ReturnType<typeof scorePair>> }>;
   signature: string;
 }
@@ -528,6 +608,9 @@ interface AssignmentState {
 function betterAssignment(candidate: AssignmentState, current: AssignmentState | undefined): boolean {
   if (!current) return true;
   if (Math.abs(candidate.score - current.score) > 1e-12) return candidate.score > current.score;
+  if (Math.abs(candidate.specificity - current.specificity) > 1e-12) {
+    return candidate.specificity > current.specificity;
+  }
   return candidate.signature < current.signature;
 }
 
@@ -537,7 +620,7 @@ function maximumWeightAssignment(
   adjacency: ConceptAdjacency[],
 ): AssignmentState {
   let states = new Map<number, AssignmentState>([
-    [0, { score: 0, pairs: [], signature: '' }],
+    [0, { score: 0, specificity: 0, pairs: [], signature: '' }],
   ]);
 
   for (let demandIndex = 0; demandIndex < demands.length; demandIndex++) {
@@ -562,6 +645,7 @@ function maximumWeightAssignment(
           .join('|');
         const candidate: AssignmentState = {
           score: state.score + weighted,
+          specificity: state.specificity + sharedConceptSpecificity(atom, demand) * weighted,
           pairs,
           signature,
         };
@@ -572,7 +656,7 @@ function maximumWeightAssignment(
     states = next;
   }
 
-  let best: AssignmentState = { score: 0, pairs: [], signature: '' };
+  let best: AssignmentState = { score: 0, specificity: 0, pairs: [], signature: '' };
   for (const state of states.values()) {
     if (betterAssignment(state, best)) best = state;
   }
@@ -593,19 +677,37 @@ function nonGenericAlignment(
     || intersects(alignment.atom.businessObjects, alignment.demand.businessObjects);
 }
 
-function rolelessExactSourceBackedAlignment(input: {
+function sourceBackedSparseAlignment(input: {
   alignments: DemandAlignment[];
   candidateEvidenceAlignment: number;
   challengeQuality: number;
   contextualSpecificity: number;
   hasRoleRequirements: boolean;
+  roleRelevance: number;
   hasNonGenericAlignment: boolean;
   provenanceComplete: boolean;
   stretchCount: number;
 }): boolean {
-  return !input.hasRoleRequirements
+  const candidateSourceCount = uniqueSourceRefCount(
+    input.alignments.flatMap((entry) => entry.atom.sourceRefs),
+  );
+  const repoSourceCount = uniqueSourceRefCount(
+    input.alignments.flatMap((entry) => entry.demand.sourceRefs),
+  );
+  const directExactFloorPasses = input.candidateEvidenceAlignment >= 0.10;
+  const sparseMultiSpanFloorPasses = input.candidateEvidenceAlignment >= 0.07
+    && input.alignments.length >= 2
+    && candidateSourceCount >= 2
+    && repoSourceCount >= 1;
+  const roleGatePasses = !input.hasRoleRequirements
+    || (
+      input.roleRelevance >= 0.60
+      && input.alignments.length >= 2
+    );
+  return roleGatePasses
     && input.alignments.length > 0
-    && input.candidateEvidenceAlignment >= 0.10
+    && repoSourceCount >= 1
+    && (directExactFloorPasses || sparseMultiSpanFloorPasses)
     && input.challengeQuality >= 0.85
     && input.contextualSpecificity >= 0.75
     && input.hasNonGenericAlignment
@@ -652,14 +754,26 @@ export function alignCandidateToChallenge(input: AlignCandidateToChallengeInput)
   }).sort((a, b) => a.demand.id.localeCompare(b.demand.id) || a.atom.id.localeCompare(b.atom.id));
 
   const totalDemandWeight = demands.reduce((sum, demand) => sum + clamp01(demand.weight), 0);
+  const hasRoleRequirements = demands.some((demand) => demand.roleRequirement);
+  const hasHighWeightRoleRequirements = demands.some((demand) => demand.highWeightRoleRequirement);
   const candidateEvidenceAlignment = totalDemandWeight === 0
     ? 0
     : clamp01(alignments.reduce((sum, entry) => sum + entry.weightedScore, 0) / totalDemandWeight);
-  const roleRelevance = weightedCoverage(
+  const candidateRoleCoverage = weightedCoverage(
     alignments,
     demands,
     (demand) => Boolean(demand.roleRequirement),
   );
+  const roleDemandCoverage = totalDemandWeight === 0
+    ? 0
+    : clamp01(
+        demands
+          .filter((demand) => Boolean(demand.roleRequirement))
+          .reduce((sum, demand) => sum + clamp01(demand.weight), 0) / totalDemandWeight,
+      );
+  const roleRelevance = hasRoleRequirements
+    ? Math.max(candidateRoleCoverage, roleDemandCoverage)
+    : candidateRoleCoverage;
   const contextualSpecificity = clamp01(input.challenge.quality.contextualSpecificity);
   const challengeQuality = clamp01(input.challenge.quality.deterministic);
   const validationWeight = alignments
@@ -692,27 +806,26 @@ export function alignCandidateToChallenge(input: AlignCandidateToChallengeInput)
     + validationDeepeningValue * 0.10,
   );
 
-  const hasRoleRequirements = demands.some((demand) => demand.roleRequirement);
-  const hasHighWeightRoleRequirements = demands.some((demand) => demand.highWeightRoleRequirement);
   const candidateAlignmentThreshold = hasRoleRequirements ? 0.50 : 0.45;
-  const exactSourceBackedRoleless = rolelessExactSourceBackedAlignment({
+  const exactSourceBackedSparse = sourceBackedSparseAlignment({
     alignments,
     candidateEvidenceAlignment,
     challengeQuality,
     contextualSpecificity,
     hasRoleRequirements,
+    roleRelevance,
     hasNonGenericAlignment: hasNonGeneric,
     provenanceComplete,
     stretchCount: stretches.length,
   });
   const rejectionReasons: string[] = [];
   if (!challengePassesGuardrails(input.challenge, input.query.roleGuardrails)) rejectionReasons.push('ROLE_GUARDRAIL_FAILED');
-  if (candidateEvidenceAlignment < candidateAlignmentThreshold && !exactSourceBackedRoleless) {
+  if (candidateEvidenceAlignment < candidateAlignmentThreshold && !exactSourceBackedSparse) {
     rejectionReasons.push('CANDIDATE_ALIGNMENT_BELOW_THRESHOLD');
   }
   if (hasRoleRequirements && roleRelevance < 0.60) rejectionReasons.push('ROLE_RELEVANCE_BELOW_THRESHOLD');
   if (challengeQuality < 0.70) rejectionReasons.push('CHALLENGE_QUALITY_BELOW_THRESHOLD');
-  if (demandFamilies.size < 2 && !exactSourceBackedRoleless) rejectionReasons.push('INSUFFICIENT_DEMAND_FAMILIES');
+  if (demandFamilies.size < 2 && !exactSourceBackedSparse) rejectionReasons.push('INSUFFICIENT_DEMAND_FAMILIES');
   if (!hasNonGeneric) rejectionReasons.push('NO_NON_GENERIC_ALIGNMENT');
   if (hasHighWeightRoleRequirements && !hasHighWeightRoleRequirement) rejectionReasons.push('NO_HIGH_WEIGHT_ROLE_REQUIREMENT');
   if (!provenanceComplete) rejectionReasons.push('INCOMPLETE_PROVENANCE');
@@ -819,12 +932,13 @@ function buildAssessmentQuality(
     : null;
   const candidateStrongThreshold = hasRoleRequirements ? 0.75 : 0.60;
   const candidateUsableThreshold = hasRoleRequirements ? 0.50 : 0.45;
-  const exactSourceBackedRoleless = rolelessExactSourceBackedAlignment({
+  const exactSourceBackedSparse = sourceBackedSparseAlignment({
     alignments: alignment.alignments,
     candidateEvidenceAlignment: alignment.candidateEvidenceAlignment,
     challengeQuality: alignment.challengeQuality,
     contextualSpecificity: alignment.contextualSpecificity,
     hasRoleRequirements,
+    roleRelevance: alignment.roleRelevance,
     hasNonGenericAlignment: alignment.hasNonGenericAlignment,
     provenanceComplete: alignment.provenanceComplete,
     stretchCount: alignment.stretchCount,
@@ -839,9 +953,9 @@ function buildAssessmentQuality(
     {
       id: 'skill_stack_overlap',
       label: 'Skill/stack overlap',
-      score: candidateOverlapScore === 0 && exactSourceBackedRoleless ? 1 : candidateOverlapScore,
+      score: candidateOverlapScore === 0 && exactSourceBackedSparse ? 1 : candidateOverlapScore,
       maxScore: 2,
-      reason: exactSourceBackedRoleless && candidateOverlapScore === 0
+      reason: exactSourceBackedSparse && candidateOverlapScore === 0
         ? `Candidate source evidence covers ${percent(alignment.candidateEvidenceAlignment)} of the selected PR demand weight, with exact source-backed symbol overlap.`
         : `Candidate source evidence covers ${percent(alignment.candidateEvidenceAlignment)} of the selected PR demand weight.`,
     },
@@ -859,7 +973,7 @@ function buildAssessmentQuality(
     {
       id: 'pr_reviewability',
       label: 'PR reviewability',
-      score: alignment.challengeQuality >= 0.85 && (demandFamilies.size >= 2 || exactSourceBackedRoleless)
+      score: alignment.challengeQuality >= 0.85 && (demandFamilies.size >= 2 || exactSourceBackedSparse)
         ? 2
         : alignment.challengeQuality >= 0.70 && demandFamilies.size >= 1
           ? 1

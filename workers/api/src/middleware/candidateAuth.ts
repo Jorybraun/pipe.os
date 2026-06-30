@@ -14,6 +14,7 @@ import type { Env } from '../types';
 export interface CandidateVariables {
   candidateId: string;
   pipelineId: string | null;
+  inviteToken: string | null;
 }
 
 export const candidateAuth = createMiddleware<{
@@ -62,6 +63,7 @@ export const candidateAuth = createMiddleware<{
 
   c.set('candidateId', payload.sub);
   c.set('pipelineId', payload.pid);
+  c.set('inviteToken', payload.itk ?? null);
 
   await next();
 });

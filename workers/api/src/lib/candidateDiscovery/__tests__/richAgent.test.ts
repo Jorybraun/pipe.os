@@ -15,6 +15,7 @@ import type { LLMProvider } from '../../llm/types';
 function makeStubProvider(response: unknown, name = 'stub-gemma'): LLMProvider {
   return {
     name,
+    model: name,
     supportsTools: false,
     async complete() {
       return { content: typeof response === 'string' ? response : JSON.stringify(response) };
@@ -149,7 +150,7 @@ describe('discoverCandidateProfile rich-agent v2', () => {
       situation_signature: null, // malformed
     });
 
-    // Should not throw; rich fields should be defaulted or null.
+    // Should not throw; missing-evidence fields should be unknown or null.
     const result = await discoverCandidateProfile({
       provider,
       parsed: { skills: ['TypeScript'] },
@@ -157,6 +158,7 @@ describe('discoverCandidateProfile rich-agent v2', () => {
 
     expect(result.candidateSearchableProfile).toBe(PROFILE_400);
     expect(result.careerContext.tenure_pattern).toBe('unknown');
+    expect(result.careerContext.greenfield_ratio).toBeNull();
     expect(result.situationSignature.test_culture_exposure).toBe('unknown');
   });
 
@@ -180,6 +182,7 @@ describe('discoverCandidateProfile rich-agent v2', () => {
 
     expect(result.candidateSearchableProfile).toBe(PROFILE_400);
     expect(result.careerContext.tenure_pattern).toBe('unknown');
+    expect(result.careerContext.greenfield_ratio).toBeNull();
     expect(result.situationSignature.test_culture_exposure).toBe('unknown');
   });
 });

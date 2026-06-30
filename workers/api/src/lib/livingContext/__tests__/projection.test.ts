@@ -158,6 +158,7 @@ describe('living-context Neo4j projection outbox', () => {
         }],
       }],
       extractorVersion: 'projection-test-v1',
+      personContextMode: 'attributed',
     });
   });
 

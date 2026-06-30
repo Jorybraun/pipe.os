@@ -89,6 +89,64 @@ function mountReviewApp(candidateId = 'candidate-1'): Hono<{ Bindings: Env }> {
 }
 
 describe('pipeline-backed code review completion', () => {
+  it('exposes candidate-visible review and scoring pipeline status', async () => {
+    const db = fakeD1({
+      firstResponders: [
+        {
+          match: 'FROM review_sessions WHERE id',
+          value: {
+            id: 'review-session-1',
+            candidate_id: 'candidate-1',
+            status: 'scored',
+            current_round: 2,
+            max_rounds: 4,
+            score_report: JSON.stringify({
+              overall: {
+                score: 82,
+                band: 'adequate',
+              },
+              privateRubric: {
+                shouldNotBeExposed: true,
+              },
+            }),
+            updated_at: '2026-06-28T19:30:00.000Z',
+          },
+        },
+      ],
+    });
+    const app = mountReviewApp();
+
+    const response = await app.request('/rpc/review/review-session-1/status', {}, buildEnv(db));
+
+    expect(response.status).toBe(200);
+    const body = await response.json() as {
+      status: string;
+      phase: string;
+      currentRound: number;
+      maxRounds: number;
+      updatedAt: string | null;
+      pipeline: Array<{ id: string; status: string; detail: string; updatedAt: string | null }>;
+      scoreReport: { overall?: number; band?: string; privateRubric?: unknown };
+    };
+    expect(body.status).toBe('scored');
+    expect(body.phase).toBe('scoring');
+    expect(body.currentRound).toBe(2);
+    expect(body.maxRounds).toBe(4);
+    expect(body.updatedAt).toBe('2026-06-28T19:30:00.000Z');
+    expect(body.scoreReport).toEqual({ overall: 82, band: 'adequate' });
+    expect(body.scoreReport.privateRubric).toBeUndefined();
+    expect(body.pipeline.find((step) => step.id === 'review')).toMatchObject({
+      status: 'complete',
+      detail: 'Candidate submitted a review verdict.',
+      updatedAt: '2026-06-28T19:30:00.000Z',
+    });
+    expect(body.pipeline.find((step) => step.id === 'scoring')).toMatchObject({
+      status: 'complete',
+      detail: 'Score report is durable.',
+      updatedAt: '2026-06-28T19:30:00.000Z',
+    });
+  });
+
   it('marks the matching scheduled CODE_REVIEW interview completed with the submitted verdict', async () => {
     const db = fakeD1({
       firstResponders: [

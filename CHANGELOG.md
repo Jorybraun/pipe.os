@@ -7,8 +7,855 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Fixed — Test suite alignment with living context retry and ingestion behavior
+
+- `richAgent.test.ts` — stub LLM provider now includes the required `model` property from the `LLMProvider` interface, fixing 5 TypeError failures in the candidate discovery rich-agent v2 tests.
+- `resumeIngestion.test.ts` — updated short-text test expectation to match the production behavior: `processResumeFromR2` now correctly returns `success: false` when extracted resume text is below the 20-character evidence threshold.
+- `fullPipelineE2E.test.ts` — added `personContextMode: 'attributed'` to meeting transcript ingestion call so assertions are linked to source spans via `assertion_source_spans`, fixing the criterion #2 (preserve original meaning) E2E coverage.
+- `reviewSessionV2.test.ts` — added `retryable_standalone_ingestion` null responder to the stale CODE_REVIEW ingestion test so the retry-detection query does not inadvertently match the `LEFT JOIN candidate_ingestion` responder; added candidate DB responder to the `submit-challenge-response` test to prevent a 404 from `claimCandidateInviteTokenForAssessmentStart`.
+
+### Added — Human assessment decisions
+
+- Repo-task assessment sessions now support append-only `human_assessment_decision` events with exact source refs, SHA-256 content-hash validation, and provenance checks against session evidence, evaluation reports, evaluation claims, or diagnostics.
+- Recruiters can record a source-backed human assessment decision for a scheduled interview after evaluation, and progress snapshots now expose the latest human decision as the terminal assessment readout.
+- Person profiles now derive the hiring-manager cockpit from source-backed workspace assessment evaluation and human-decision records, so open-source/dev-container assessments can produce a person-level recommendation without falling back to “collect more signal.”
+- Interview cards and detail pages now prefer the explicit human decision over the AI evaluator recommendation while still preserving evaluator status, claims, and cautions.
+- Interview detail pages now expose the reviewer decision form after source-backed evaluation, posting the selected advance/hold/reject/needs-more-evidence decision to the real human-decision endpoint and updating the readout immediately.
+- Recruiter detail Playwright smoke coverage now supports both CODE_REVIEW and workspace assessment pages, including optional assertions for submitted work packets, evaluator claims, human-decision forms, and recorded human decisions.
+
+### Added — Evidence conflict detection (criteria #2, #6, #8)
+
+- `GET /api/v1/candidates/:id/living-context/evidence-conflicts` — detects contradictory evidence across sources for a candidate. Identifies polarity conflicts (one source affirms, another contradicts) and strength divergence (same polarity but wide strength range). Returns severity classification (high/medium/low), deterministic conflict IDs, per-side assertion lists with effective strengths, and match impact descriptions. Gated by `living_context_read`.
+- `GET /api/v1/internal/evidence-conflicts?candidateId=xxx` — internal version for backfill/evaluation use.
+- `evidenceConflicts.ts` — core module: `detectEvidenceConflicts()` queries assertions via signal evidence, joins concept registry for canonical keys, groups by concept, detects polarity and strength-divergence conflicts, applies temporal decay, classifies severity, and produces deterministic conflict IDs.
+- `evidenceConflicts.test.ts` — 6 Vitest tests: no workspace identity, no conflicts, polarity detection, high-severity classification, deterministic IDs, severity sorting.
+- Candidate route coverage now proves the recruiter `evidence-conflicts` endpoint returns persisted source-backed opposing claims for an owned candidate behind the living-context rollout gate.
+- `EvidenceConflictsPanel` component in `LivingContextGraph.tsx` — renders conflict cards with severity badges, affirming/contradicting side-by-side views, and match impact descriptions.
+- `useEvidenceConflicts` hook (`src/hooks/useEvidenceConflicts.ts`) — fetches conflict report for a candidate.
+- Frontend types: `ConflictType`, `ConflictSeverity`, `ConflictAssertion`, `EvidenceConflict`, `EvidenceConflictReport`.
+
+### Added — Evidence readiness and candidate comparison
+
+- Living-context candidate profiles now expose evidence-readiness scoring across resume, interview, assessment, code-review, meeting, phone-call, culture, and learned-concept dimensions, with temporal decay, strongest/weakest dimensions, and recruiter-facing recommendations.
+- Recruiter and internal APIs can compare candidate evidence profiles by interaction mix, assertion depth, source diversity, shared concepts, unique concepts, and freshness-ranked coverage.
+- Living-context internal health routes now include evidence-readiness, candidate-comparison, and session-event ingestion coverage so assessment-room activity can be reconciled into the durable person graph.
+- The living context graph UI now includes an evidence-readiness panel and hook for per-dimension readiness bars, recommendation cards, and API-backed loading/error states.
+- The recruiter rematch hook now has focused unit coverage for matched, needs-more-evidence, pending, failure, and missing-candidate states, preserving the useful coverage from the consolidated living-context workstream.
+
+### Fixed — Auth
+
+- Recruiter e2e auth smoke now targets a stable auth-gate sign-in test id and waits long enough for slow Clerk dev-instance boots, so local click testing does not fail while the app is still on the loading splash.
+
+### Fixed — Scheduling
+
+- Source-backed assessment evaluation finalization now tolerates the production sequence where an evaluated report is already persisted while the session still reads as final-submitted, preventing workspace evaluation from returning a false 500 after durable evidence is written.
+- Source-backed assessment sessions can now record a recruiter human decision after evaluation, require that decision to cite persisted assessment evidence or report output, and surface the human decision on interview detail/readout cards.
+- Manual open-source challenge packets now verify the assigned base commit is reachable in the selected GitHub repo before creating the interview, preventing fake immutable task packets from entering the assessment flow.
+- Scheduled open-source, code-review, and dev-container assessment invites now create linked meeting rooms with explicit workspace, recording, and Clippy feature flags plus assessment-specific title/description copy, while standard video invites stay out of the dev-workspace path.
+- Assessment progress now carries evaluator diagnostic previews through recruiter and room APIs and shows evaluator cautions on interview details and cards, making missing-test or human-review risks visible beside source-backed claims.
+- Recruiter interview lists now include assessment filters and counts for action-needed, ready-to-evaluate, needs-attention, and evaluated sessions so source-backed assessment work is not buried in the general invite feed.
+- Recruiter interview cards now expose an `EVALUATE` action for assessment sessions that have captured commit evidence and are ready for source-backed AI/human evaluation, using the same real evaluation endpoint as the detail page and refreshing the list afterward.
+- Interview cards now show a compact assessment decision state for assigned tasks, submitted commits, evaluator readiness, evaluated recommendations, and diagnostics so recruiters can understand the next action without opening every interview.
+- Interview cards now show the assigned open-source assessment task, repo/PR, and base commit from the source-backed challenge packet before candidate work starts, so recruiters can trust what was assigned without opening the full detail page.
+- Calendly invites now include stable Pipe interview tracking, keep provider links free of dev basic-auth credentials, resolve same-email bookings by tracking id, and record booking-confirmation emails separately from original invite delivery.
+- The deployed MVP browser smoke now uses a remote-safe timeout for the People context drawer, so app-dev validation does not fail while the source-backed context panel is still loading.
+- The authenticated MVP browser smoke now follows the current Interview plans and People UI, injects Clerk's testing token in the smoke context, and retries the initial app-shell load so local route validation fails on product regressions instead of stale selectors or auth handoff flake.
+- Interview lists now default to newest-created ordering and include Newest, Timeline, and Oldest controls so recruiters can scan recent invites without losing the existing scheduled-time view.
+
+### Fixed — Video room
+
+- Workspace launch now has an explicit host opt-in for starting the real Devin bridge and sends `agentType: "devin"` only when selected, so Clippy agent chat remains honest instead of implying a fake assistant.
+- Room metadata now returns `videoEnabled`, `workspaceEnabled`, `recordingEnabled`, and `clippyEnabled` feature flags matching the frontend contract, preventing Clippy or recording controls from silently falling back around stale short-form keys.
+- Workspace-assessment rooms now publish an explicit `NOT_LAUNCHED` source-backed workspace state before a container session exists, removing rejected prejoin workspace telemetry noise.
+- Dev-container assessment rooms now ignore stale initial Win95 room-surface snapshots from the Durable Object, keeping old rooms code-first on join while still honoring live explicit legacy-desktop toggles.
+- Code-first dev-container rooms now keep a candidate-safe open-source task brief beside VS Code, showing repo, base commit, task, success criteria, expected evidence, current step, and Submit Work without exposing source hashes or internal provenance.
+- Meeting-room basic-auth route regressions now use the real room-dev host when asserting credential injection, keeping the tests aligned with the dev-host-only auth hardening.
+- Failed, stopped, and expired dev-container workspaces now present an explicit Relaunch workspace recovery action in the room status strip, prejoin panel, and workspace panel instead of leaving hosts with a generic launch prompt.
+- Workspace terminal sessions now decode browser `TERMINAL_INPUT` control frames and normalize xterm carriage returns before writing to bash, so candidate terminal commands execute as commands instead of JSON blobs.
+- Workspace-enabled rooms now start in the standard code-first assessment surface and ignore synced legacy desktop window/file replay unless the room is explicitly switched into Win95 mode.
+- Workspace stops now append source-backed dev-container stop evidence to linked assessment sessions and return refreshed progress, keeping container lifecycle actions in the same durable interview spine as launch and commit evidence.
+- Workspace launches now append source-backed dev-container launch evidence to linked assessment sessions and return refreshed progress immediately, so opening VS Code is part of the durable assessment spine instead of only browser telemetry.
+- Video rooms now refresh the visible assessment progress after source-backed room events are accepted, so chat, terminal, and Clippy/agent evidence can move the status strip without waiting for a reload or commit submission.
+- Room chat, terminal, Clippy/agent, and replayed room activity now append source-backed evidence to the scheduled-interview assessment session when one exists, so assessment progress reflects real room work instead of a sidecar Win95 session.
+- Submit Work now shows the assigned open-source challenge contract and reloaded assessment evidence status before submission, so candidates can see the repo, base commit, task, success criteria, expected evidence, and captured/missing evidence without guessing what “done” means.
+- Video rooms now reload durable assessment progress from the meeting-room API on entry/rejoin, so accepted commit submissions, next actions, and evidence coverage survive refreshes instead of existing only in local Submit Work state.
+- Code-first assessment rooms now keep the source-backed assessment status visible outside the video picture-in-picture and update it with the accepted commit submission progress snapshot, including stage, commit SHA, next action, and captured evidence coverage.
+- Dev-container assessment rooms now open into a code-first room layout by default, with the VS Code workspace as the primary surface, video/chat supporting the session, and Submit Work present as the completion path instead of hiding the real assessment behind retro desktop discovery.
+- Win95 Submit Work now validates GitHub repo/fork/commit/PR URLs, full commit SHAs, assessment branch names, and diff-to-file alignment before sending source-backed commit evidence, and shows the exact Git commands candidates should paste.
+- Video rooms now show a compact assessment status strip with mode, repo/PR/base commit, workspace state, challenge task, and next action so standard calls, code reviews, and dev-container assessments are legible inside the call.
+- Video call controls now include an explicit AI assistant button that opens the real Clippy/Devin bridge status panel and records call-control provenance instead of hiding assistant access behind the taskbar or room chat.
+- Win95 Clippy now uses the authentic `clippyjs` sprite again and no longer renders the fake proactive Win95 title-bar dialog around the mascot; Ask Clippy stays available through the controlled hotspot/taskbar bridge.
+- Closing the Clippy agent bridge now suppresses the current proactive prompt and keeps the paperclip mascot attached beside its speech bubble, so the room no longer leaves an orphaned dialog over chat.
+- Win95 commit submission now makes upstream PR tracking an explicit opt-in, blocks upstream PR URLs without candidate approval, and stores approved PR links as exact source-backed evidence instead of treating them as implicit metadata.
+- Controlled Win95 Clippy now renders with a visible paper-stack mascot anchored to the speech bubble, preventing the room from showing only a detached dialog after removing the old duplicate sprite.
+- Standard-room Clippy tray clicks now restore the visible mascot prompt without opening or closing the dev-container agent bridge, and the prompt is tightened so the paperclip stays visible beside the bubble.
+- Win95 taskbar Clippy clicks now publish tray-origin source-backed evidence instead of leaking the DOM click event into the Clippy action origin.
+- Closing a Clippy speech bubble now dismisses only that prompt instead of hiding the assistant, keeping the paperclip recoverable from the tray and agent bridge chat.
+- Clippy now renders as a single controlled Win95 paperclip character in the proactive prompt and agent bridge chat, preserving the no-duplicate-sprite fix without leaving only a floating dialog behind.
+- Clippy's proactive prompt now hides while the Clippy agent bridge window is open, preventing overlapping Win95 dialogs from blocking chat controls.
+- Video-room no-device joins now keep retry controls styled and disable unavailable mic/camera buttons instead of publishing source-less media-control actions.
+- Video rooms now let participants enter when camera or microphone access is unavailable, while keeping a retry-devices action for restoring media after joining.
+- Code-server file and terminal room evidence now uses deterministic source-backed event ids end to end, preventing replayed workspace evidence from being accepted under unrelated transport ids.
+- Video-room recording state events now require the event id to match the source-backed recording state id before optimistic updates, broadcasts, or Durable Object persistence, preventing stale recording/transcript state evidence from replaying under a different event identity.
+- Video-room media control events now require the event id to match the source-backed media control id before optimistic updates, broadcasts, or Durable Object persistence, preventing stale mic/camera evidence from toggling the wrong shared state.
+- Room chat messages now carry and verify an exact text fingerprint in source-backed evidence, preventing same-length stale or tampered chat payloads from replaying as valid meeting evidence.
+- Win95 shared room-surface toggles now require deterministic integer capture times and known room phases before replaying, preventing malformed surface evidence from moving both participants between the standard call and desktop.
+- Win95 shared window open/close events now reconstruct lifecycle ids and verify open-window metadata before replaying, preventing stale lifecycle evidence from launching or closing the wrong shared window.
+- Win95 shared window-state events now reconstruct state patches, actions, and source ids before replaying, preventing stale move, resize, focus, minimize, or maximize evidence from syncing across participants.
+- Win95 shared window-data and browser-navigation events now reconstruct fingerprints and source ids from the exact shared payload before replaying, preventing stale Notepad/Paint/browser state from being accepted as source-backed desktop evidence.
+- Win95 shared file-system events and snapshots now require exact saved/deleted file content provenance before replaying, preventing Notepad, Paint, JSON, or link files from hydrating as source-backed evidence from hash-only or stale projections.
+- Clippy no longer mounts the unmanaged `clippyjs` paperclip sprite over the Win95 desktop; the controlled tray, proactive card, and chat window remain as the only Clippy surfaces.
+- Win95 Clippy no longer opens the agent bridge diagnostics panel in standard rooms that were not configured with a dev workspace; the visible mascot prompt remains recoverable from the tray.
+- Room-dev now clears stale origin cache only during the basic-auth handoff, while missing old hashed `/assets/*` bundles return 404 instead of the SPA shell so rapid deploys do not leave Safari on a blank stale room bundle.
+- Added a deployed Clippy/Devin chat smoke that launches a real dev-container room, waits for `AGENT_READY`, sends a real Devin API prompt, and fails unless the agent response and bridge diagnostics are source-backed and persisted.
+- Standard video rooms no longer publish no-op workspace desktop events, removing rejected source-backed evidence console noise while preserving real dev-container workspace diagnostics.
+- Win95 peer cursors now render through isolated transform layers instead of top/left repainting, reducing stale cursor trails while preserving shared cursor evidence and sync state.
+
+### Fixed — Candidate repo matching
+
+- Assessment evaluator prompts, reports, and scheduling progress fixtures now cite `code_diff` evidence using the exact submitted `baseCommitSha..commitSha` range, keeping evaluator provenance aligned with commit-submission validation.
+- Commit submissions now require `code_diff` source refs to identify the submitted `baseCommitSha..commitSha` range, preventing unrelated diffs from backing assessment commits.
+- Commit submissions now must match the assigned source-backed challenge packet's repository URL and base commit when those locator fields are present, preventing candidates from submitting unrelated repo or wrong-base work into the assessment spine.
+- Dev-container assessment rooms now poll the real assessment progress endpoint while active, keeping the candidate task brief, status strip, and submit-work path current when backend, host, guest, or container evidence changes after initial room load.
+- Repo-task assessment events, final bundles, and commit submissions now trigger best-effort real-time living-context ingestion, so candidate plans, room evidence, and submitted commits become person-graph evidence before the evaluator report exists.
+- Interview details now show a deterministic candidate work packet for submitted assessment commits, including branch, changed files, test evidence, AI-use evidence, and the human-review next action.
+- Interview cards and detail pages now label assessment task assignment provenance as PIPE-matched, manual, waiting, or blocked, so recruiters can see whether a repo challenge came from source-backed matching or a recruiter override.
+- Recruiter assessment progress now includes a compact source-backed evidence trail with exact challenge, commit, diff, test, terminal, and AI snippets so humans can review the artifact trail behind an open-source assessment report.
+- Repo-task assessment evaluation now salvages complete source-cited claims from truncated Workers AI JSON responses and records an explicit evaluator-output warning instead of downgrading usable evidence to `AI_DEVELOPER_UNAVAILABLE`.
+- Assessment evaluator diagnostics now surface as recruiter-visible cautions on interview detail and interview cards, including severity, code, message, and source-ref counts/types.
+- Repo-task assessment reports now prefix evaluator summaries with the assigned challenge task from exact source-backed challenge-packet evidence, so live open-source bug-fix evaluations remain task-specific even when model prose is generic.
+- Repo-task assessment evaluation now extracts source-cited claims from structured plain-text Workers AI responses when the model ignores the JSON-only instruction, while still dropping source-less positive claims.
+- Meeting transcript living-context ingestion now skips only concept-adjacency persistence when partial schemas lack the adjacency table, preserving source-backed transcript and assessment evidence during staged rollout.
+- Repo-task assessment evaluation now repairs bare-key JSON object responses from Workers AI before validating source-backed claims, preventing matched open-source assessments from becoming diagnostics when the model returns JavaScript-style object syntax.
+- Interview detail assessment progress now renders the source-backed open-source challenge contract, including repo, base commit, task, success criteria, and expected evidence, so recruiters can review the actual assignment instead of a one-line challenge summary.
+- Assessment progress readouts now distinguish chat, workspace telemetry, and room action evidence instead of collapsing every captured interaction into a vague work-evidence bucket.
+- Recruiter assessment reports now separate required proof from confidence signals, making the challenge/commit/diff proof chain visible apart from optional tests, terminal, editor, and AI-use coverage.
+- Source-backed assessment progress now exposes evaluator claim previews, and recruiter reports render those claims with polarity, dimension, confidence, and source-ref counts/types.
+- Open-source workspace interviews now lead with a hiring-manager assessment decision readout for decision, challenge fit, required proof, risk, and next action before exposing raw progress evidence.
+- Roleless CODE_REVIEW matching now has regression coverage for a live-shaped `mui/base-ui` PR packet and recruiter-visible evidence traces, verdict summaries, annotations, and AI developer pushback threads.
+- Commit submissions are now rejected unless the submitted HEAD is on `pipe-assessment` or a `pipe-assessment/*` branch, with the same rule enforced by the browser payload builder, durable assessment session store, and dev-container finalizer.
+- Workspace bridge revision `2026-06-30-assessment-branch-v1` forces dev containers onto the assessment-branch-enforcing finalizer during deployed smoke validation.
+- Deployed workspace smoke can now prove the task-aligned MUI popover challenge through the matched-repo path, asserting the selected review challenge packet's repo id, PR number, base/head commits, and source-backed packet text instead of relying only on manual task assignment.
+- Deployed workspace smoke now loads `.env.local` and `.env` before reading dev Basic Auth credentials, matching the code-review smoke runner and keeping app-dev workspace validation runnable without exporting duplicate shell variables.
+- Repo-task assessment evaluation now tolerates fenced JSON with trailing commas and shortened source-ref ids from Workers AI, preventing valid source-backed submissions from becoming blocking evaluator diagnostics.
+- Repo-task assessment evaluation regression coverage now verifies shortened AI source-ref ids still persist claims against the exact stored source refs.
+- Repo-task assessment evidence coverage now counts source-backed `code_server_file_observation` refs as code editor/file activity, so recruiter reports no longer claim file evidence is missing when code-server observations were captured.
+- Deployed workspace smoke now has a task-aligned MUI Base UI popover profile with a real repo URL, immutable base commit, PR-derived patch, popover-specific challenge packet, and evaluator checks for useful task-specific assessment.
+- Workspace finalization now adds a source-backed `terminal_command` ref for the exact git/test commands the bridge runs, so evaluation coverage can distinguish real finalizer terminal evidence from missing interactive terminal history.
+- Workspace bridge revision `2026-06-30-finalizer-terminal-v1` forces app-dev containers onto the finalizer terminal-evidence bridge during deployed smoke validation.
+- Workspace bridge revision `2026-06-30-finalizer-terminal-v2` forces a fresh Cloudflare container image digest after Wrangler preserved the previous dev container application image for the first finalizer rollout.
+- Assessment progress now exposes and renders the evaluator recommendation beside the summary, and deployed workspace smoke can run a task-aligned `mui/base-ui` popover fix instead of only a placeholder commit.
+- Matched open-source challenge packets now remain the room/workspace assignment source even when they include an upstream PR number, so workspaces launch from the packet's immutable base commit instead of the PR head; the deployed workspace smoke can now verify this matched-repo path.
+- Scheduling list and detail payloads now include the latest linked workspace session status, repository URL, base commit, expiry, and error message so hiring-manager surfaces can distinguish ready, expired, and failed code-review workspaces.
+- Person profiles now keep source signals, learned context, and original source artifacts inside a collapsed evidence audit trail by default, leaving the decision cockpit and relationship timeline as the first-read hiring-manager surface.
+- `OPEN_SOURCE_BUG_FIX` scheduling now promotes a matched repo into an assigned assessment only when a production-ready review challenge packet has exact source provenance, creating the source-backed assessment session from that packet and failing closed otherwise.
+- Scheduled interview detail now redacts accumulated person-level evidence arrays from its `livingContext` payload, keeping meeting pages scoped to summary counts and related-interview previews while the full graph stays on the person profile.
+- CODE_REVIEW recruiter detail smoke now verifies the deployed hiring-manager readout directly, so app-dev validation protects the compact decision, assignment, score validity, risk, and next-action summary.
+- CODE_REVIEW recruiter detail now starts with a compact hiring-manager readout for decision, assignment trust, score validity, risk, and next action before exposing deeper evidence panels.
+- Repo-task assessment evaluation now sends a compact source-ref prompt with explicit claim/diagnostic limits, and the deployed workspace smoke must produce a reviewable source-backed evaluation report after finalizing a real commit.
+- Code-server container images now expose an explicit bridge revision in health checks, forcing dev-container deploys to roll forward when the terminal bridge changes and making stale image rollouts visible in smoke tests.
+- Workspace bridge revision `2026-06-30-terminal-crlf-v3` forces app-dev containers off stale pre-revision images during deployed smoke validation.
+- Code-server containers now restart the workspace bridge or code-server child process if either exits, avoiding a dead workspace when one side of the dev-container router crashes.
+- Deployed workspace smoke now creates a real commit through the live container terminal and finalizes it into source-backed assessment evidence, proving the open-source task path reaches a submitted commit.
+- Standalone `DEV_CONTAINER_CHALLENGE` and `OPEN_SOURCE_BUG_FIX` invites now use the source-backed D1 review-challenge matcher once candidate evidence is ready, caching the matched repo/PR on the scheduled interview instead of leaving candidates stuck without a repository assignment.
+- Contact-first scheduled interview context records now retain recruiter notes in graph qualifiers as well as exact source text.
+- Manual open-source challenge packets can now be repo-only with an exact base commit and task contract; the room treats source-backed repo task packets as assigned even without a PR number.
+- The deployed workspace smoke can now run `OPEN_SOURCE_BUG_FIX` mode without a PR and verify the room exposes the assigned source-backed task packet.
+- The workspace smoke now uses room credentials from generated room links and requires a real base commit SHA for deployed open-source task verification.
+- Deployed workspace smoke now preflights that the requested base commit is reachable from the selected repository before creating any invite or launching a container.
+- Deployed workspace smoke now verifies the bridge finalizer endpoint through the room proxy and fails unless unchanged work is honestly blocked instead of submitted.
+- Dev container workspaces now mark `/workspace` as a safe Git directory, start with explicit internet access, and use production cold-start timeouts so exact-base-commit repo tasks do not crash before VS Code can boot.
+- Submit Work now has a primary Finalize from workspace action that sends the live container's current assessment-branch HEAD, diff, changed files, and optional test command through the real bridge finalizer instead of requiring candidates to paste git evidence manually.
+- Room workspace launches no longer inject Devin by default; code-review rooms start a plain reliable code-server workspace unless the launch explicitly requests a configured agent.
+- Code-server containers now start the workspace bridge even when no AI agent is configured, keeping VS Code proxying, terminal access, bridge health, and commit finalization available without fake Clippy replies.
+- Dev-container launches now explicitly use the baked code-server entrypoint so deployed Cloudflare Containers expose the workspace bridge/router instead of bypassing it and serving code-server directly.
+- Workspace-backed repo tasks now expose a bridge finalizer that turns the candidate's real HEAD commit, diff, and optional test command output into source-backed commit-submission evidence for the linked assessment session.
+- `DEV_CONTAINER_CHALLENGE` assessment sessions now share the commit-required progress path with open-source bug-fix repo tasks, so reproduced work evidence leads to submit-commit instead of a generic capture-evidence state.
+- CODE_REVIEW recruiter decision and assignment panels now label assignment trust explicitly, distinguishing automatic matches from manual repo or PR tasks before managers treat the review as candidate-fit evidence.
+- CODE_REVIEW and dev-container recruiter projections now label matched repo+PR assignments as source-backed automatic matches instead of manual PR overrides, preserving assignment provenance after repo matching caches the selected challenge.
+- WAITING_FOR_MATCH browser coverage now waits for the visible candidate gate state instead of `networkidle`, preventing the auto-refresh smoke from timing out on intentional polling activity.
+- Candidate assessment BDD now guards the one-use invite lifecycle: resolving a link does not mark it used, while explicitly starting the assessment claims it and makes subsequent raw-link resolves fail.
+- Playwright recruiter auth setup now waits for the Clerk session cookie instead of old shell copy or `networkidle`, making authenticated smoke gates less brittle.
+- MVP browser smoke now opens the merged person profile after roleless evidence ingestion, uses the app-dev recruiter API proxy for deployed setup, and verifies the decision cockpit, evidence coverage, and quiet source-id handling in a real browser.
+- Room commit submissions now recompute source-ref SHA-256 hashes server-side before persisting assessment evidence, rejecting mismatched exact-text hashes.
+- CODE_REVIEW recruiter detail smoke now verifies score validity and can assert the assessment invite recipient, so app-dev checks cover the hiring-manager cockpit instead of only page load.
+- Manual open-source challenge invites now require a 40-character hex base commit SHA in the modal, matching server validation before a repo task packet can be created.
+- CODE_REVIEW assessment invite panels now show the invite recipient next to link validity and assessment state, making one-use links easier to distinguish across multiple meetings for the same person or email.
+- Interview dashboard cards now prefer the per-invite recipient name and email over older canonical person labels, so multiple meetings for the same address remain distinguishable.
+- Person profile relationship timelines now lead with a quiet evidence-coverage summary, showing whether the person graph is built from code reviews, calls, resumes, messages, or other evidence before recruiters scan individual interactions.
+- CODE_REVIEW recruiter decision panels now show score validity before the score details, making clear whether the score is usable, pending, incomplete, or unsafe to rely on when repo fit is not proven.
+- CODE_REVIEW related-meeting panels now lead with a quiet decision summary, source-backed next action, and signal counts before showing preview rows, so cross-meeting context supports the current decision instead of reading like noisy extra evidence.
+- Starting a candidate assessment now marks only the delivered or selected linked code-review/dev-container/open-source interview active, so recruiter headers no longer remain stuck at invited without activating unrelated meetings for the same person.
+- Fresh direct code-review and dev-container assessment links now stop at the candidate start gate and only claim the one-use invite after the candidate clicks start.
+- Candidate matching status cards now report failed manual refreshes instead of showing a false "checked" state when the status API fails.
+- Recruiter assessment invite panels now describe claimed one-use links as started rather than opened, keeping link validity aligned with the candidate start boundary.
+- Already-started candidate assessment links no longer show a retry button that cannot recover the one-use invite state.
+- Candidate-facing used assessment links now say the assessment already started instead of implying that merely opening the link consumed it.
+- Candidate assessment links now only show as used after the candidate has actually started the assessment; pre-start claimed-prefix rows are repaired and recruiter link state now says started instead of opened.
+- Person code-review decision basis now labels match provenance as a source-backed match instead of exposing raw source-count totals, keeping the hiring-manager view quieter and less misleading.
+- Living-context code-review match panels now keep raw source proof, hyperedge alignment, repository overlays, and matcher diagnostics collapsed behind an audit drawer by default, preserving traceability without overwhelming the hiring-manager read.
+- Candidate assessment links now claim their one-use token only when the candidate starts the assessment or submits a response, so merely opening the invite page no longer burns the link.
+- Candidate waiting screens now hide unavailable profile actions, show manual status-check feedback, and avoid silent no-op buttons while evidence decomposition or repo matching is pending.
+- CODE_REVIEW interview detail now labels repo-only rows as assignment setup gaps until a concrete PR/source-backed match exists, preventing draft repositories from reading as validated review assignments.
+- CODE_REVIEW person-context previews now say “other interviews for this person,” making cross-meeting context clearly separate from the current interview record.
+- Person next-action interview CTAs now carry the recommendation, uncertainty, and missing-context objective into scheduled interview notes and source-backed invite evidence, preserving why the follow-up exists.
+- CODE_REVIEW assessment invite panels now show the assessment evidence state separately from link validity, making claimed-without-submission invites visibly distinct from completed assessment evidence.
+- Person code-review decision cards now show a quiet decision-basis row for score report, review transcript, repo challenge, and match proof so hiring managers can see why the recommendation is usable without opening raw evidence.
+- CODE_REVIEW person-context panels now label related meetings as capped context previews, show the preview count, and link to the full person graph so interview pages do not read like they own every interaction.
+- Win95 commit submission now requires either real test output or a source-backed missing-test note, so repo-task assessments record verification gaps honestly instead of silently omitting test evidence.
+- CODE_REVIEW interview details now explain claimed assessment links as opened-with-or-without-submission states and show compact score signal-basis chips for scored reports, annotations, pushback, and match proof before recruiters rely on the decision.
+- Person profile decision cockpits now surface missing context as a top-level card, so hiring managers can see blocking evidence gaps or calibration probes without opening raw proof.
+- CODE_REVIEW assessment invite panels now surface link status, shareability, and the next safe action as a compact validity summary, making claimed or stale candidate links obvious before recruiters try to share them.
+- Related evidence rows on CODE_REVIEW interview details now describe same-person items by interview kind, such as related code reviews or conversations, instead of the generic “same person assessment” label.
+- CODE_REVIEW assessment invite panels now distinguish active, claimed, and stale candidate links, hide copy actions for used links, and offer a resend action directly from the interview detail so recruiters can recover without sharing a burned token.
+- Assessment progress snapshots now preserve evaluator evidence-coverage gates and show quiet captured/missing chips for tests, terminal, editor, and AI-use evidence, making repo-task scores easier to trust without exposing raw source refs.
+- CODE_REVIEW interview match panels now collapse assessment-quality rubric details behind a quiet quality gate, keeping the recruiter decision readable while preserving source-backed checks.
+- Repo-task AI evaluation prompts now include a deterministic source-ref coverage contract, making missing test, terminal, editor, or AI-assistance evidence explicit and preserving that coverage in the evaluation report.
+- CODE_REVIEW match proof drawers now use human evidence fallbacks instead of exposing source-span, atom, demand, or gap ids when exact source text is unavailable.
+- Interview related-evidence and follow-up cards now use human labels instead of falling back to raw interview ids in the hiring-manager cockpit.
+- Person profile next-action CTAs now open the new-interview flow with the current person prefilled, turning missing-context and calibration recommendations into an actionable follow-up path.
+- Person profile timelines now expose quiet `Open interaction` actions for evidence tied to scheduled interviews, making related meetings actionable without showing raw interview ids.
+- Recruiter interview details now recover the candidate assessment URL from an existing unclaimed invite token when the delivery artifact is missing, and label assessment links as one-use candidate invites so recruiters do not accidentally consume them.
+- CODE_REVIEW interview decision cards now show compact uncertainty and missing-context summaries at the top of the single-meeting recruiter view, keeping gaps visible without opening the raw proof drawer.
+- Interview assessment-progress cards now tolerate older progress snapshots without source-ref counts instead of crashing the recruiter detail page.
+- Commit submissions can now attach exact test-run output as source-backed evidence, and room/recruiter progress snapshots show whether test evidence was captured.
+- Person CODE_REVIEW decision cards now require source-backed repo-match provenance before labeling a scored assessment usable, and include the match decision sources in the quiet proof trail.
+- Win95 Submit Work now renders the backend assessment progress snapshot after commit submission, including stage, state, commit, evidence counts, AI/transcript flags, latest event, and evaluator status.
+- Win95 challenge packets now render task, success criteria, and expected evidence from exact source-backed packet text while staying quiet when those sections are absent.
+- Uploaded CVs now always create a visible candidate-ingestion state before parsing, failed parsing is recorded instead of swallowed, and candidate assessment routes can restart matching when a resume exists but no ingestion row was ever recorded; recruiter interview details also expose the last delivered assessment link for CODE_REVIEW/dev-container invites.
+- People list pages now use the same recruiter surface shell, header, segmented controls, search panel, and card frame as person profiles and interview details, so moving between people index and profile no longer feels like a different app.
+- Win95 Submit Work now pre-fills repository URL, exact base commit, and the local assessment branch from the source-backed challenge packet while keeping commit SHA, changed files, diff, and test evidence candidate-supplied.
+- Dev-container assessment launches now preserve the challenge packet's exact base commit in the session row, DO init payload, container env, and lifecycle evidence, and the code-server image checks out that commit onto an assessment branch before candidate work begins.
+- Person profile and interview detail pages now share the same recruiter surface tokens for page shells, headers, cards, labels, buttons, links, and evidence chips, reducing visual drift across the hiring-manager cockpit.
+- Contact/profile route coverage now locks the same-email contact-to-roleless-candidate relationship, proving the person graph stays attached after candidate evidence is added.
+- Dev-container assessment rooms now carry the latest source-backed open-source challenge packet into the room workspace payload and render it in the Win95 workspace with repo, PR, base commit, exact task text, and content hash while hiding internal assessment ids.
+- The Win95 challenge packet panel now accepts alternate persisted repo, PR, and base-commit locator keys so source-backed packets from different writers still show the concrete task metadata.
+- Recruiter interview creation now exposes complete manual open-source challenge packet fields for OPEN_SOURCE_BUG_FIX invites, requiring the repo, PR, base commit, task, success criteria, and expected evidence before submitting a manual assessment packet.
+- OPEN_SOURCE_BUG_FIX interview creation now accepts complete manual challenge packet fields, validates manual overrides as real GitHub repository URLs, creates a linked source-backed assessment session, persists the exact open-source task packet as immutable evidence, and returns immediate assessment progress for the recruiter.
+- Person profiles now lead with an interview-detail-style decision cockpit and labeled profile record panel, so recommendation, uncertainty, next action, and source proof use the same hiring-manager hierarchy across surfaces.
+- Person profile timelines, source cards, and CODE_REVIEW proof drawers now use human evidence labels instead of raw session, resume, or candidate-node provenance ids by default.
+- Recruiter interview details now translate repo-task evaluator diagnostics and completed reports into truthful cockpit notices, including evaluator-unavailable and report-ready states.
+- Recruiter interview details now include a source-backed Start Evaluation action for ready repo-task commits that runs a real Workers AI evaluator when configured, accepts only claims cited to persisted challenge/commit/diff evidence, and records an explicit diagnostic instead of inventing a score when AI or provenance is missing.
+- CODE_REVIEW interview scheduling panels now show a human meeting-room linked state instead of raw internal Pipe meeting ids.
+- Person profiles now use the same Clerk-bound API client as interview detail pages and show a visible profile-route error instead of staying on an infinite loading state when person context cannot be addressed.
+- CODE_REVIEW interview related-evidence rows now describe follow-up meetings and same-person assessments as human evidence moments without exposing raw linked-meeting ids in the hiring-manager cockpit.
+- Dev-container assessment rooms now expose a room-token commit submission endpoint that records real candidate commits through the source-backed assessment session spine while hiding internal assessment ids from candidate responses.
+- Win95 dev-container assessment rooms now include a Submit Work window that posts exact commit and diff evidence to the room-token assessment endpoint, making real commit submission available from the candidate room UI.
+- Person CODE_REVIEW decision cards now call out uncertainty and missing context as first-class hiring-manager fields, so the profile explains what remains unproven before the next action.
+- Person profiles now use the same compact cockpit shell, header hierarchy, metric strip, and evidence panels as interview details, making person-level context feel like the same hiring-manager surface.
+- Interview list cards now include a compact assessment snapshot for CODE_REVIEW and repo-task interviews, showing stage, next action, and evidence readiness without exposing raw assessment ids.
+- Interview list assessment-progress loading now chunks D1 lookups and skips only malformed progress snapshots, so recruiters with more than 100 interviews or one corrupted CODE_REVIEW row do not lose the whole interview list.
+- CODE_REVIEW interview details now show the assessment-session progress snapshot as a quiet hiring-manager card with stage, next action, evidence readiness, commit, readable challenge summary, and evaluation status while hiding raw assessment ids by default.
+- Repo-task commit submission validation now handles nullable source-ref text and GitHub repository path parsing explicitly, keeping the progress snapshot endpoint compatible with strict API typechecking.
+- Person CODE_REVIEW decision cards now join separate score, transcript, and candidate-PR match-decision records, so live person profiles can recognize a valid source-backed repo challenge instead of downgrading it to partial signal.
+- Person CODE_REVIEW decision cards now recover repo and PR proof from source locators when convenience challenge projections are absent, keeping assessment-validity labels grounded in provenance.
+- Repo-task assessment sessions now accept first-class source-backed commit submissions with validated GitHub repo/fork URLs, branch names, commit SHAs, changed files, and exact `git_commit` plus `code_diff` evidence before marking a session final.
+- Repo-task assessment sessions now expose a source-backed progress endpoint that shows challenge, work evidence, commit, evaluation status, and the next recruiter/candidate action.
+- Person CODE_REVIEW decision cards now name assessment validity and the next action while keeping the source graph closed by default, making person profiles read as hiring-manager decision cockpits instead of raw evidence dumps.
+- Person profiles now lead source-backed CODE_REVIEW evidence with a hiring-manager decision snapshot, candidate score, selected repo/PR, probe areas, and expandable source proof.
+- CODE_REVIEW interview details now keep accumulated person context as a compact rollup and person-profile CTA instead of rendering the whole cross-meeting evidence timeline inside one meeting.
+- CODE_REVIEW app-dev smoke now opens the authenticated recruiter detail page for matched and blocked outcomes, proving the hiring-manager decision surface renders without errors, fallback loaders, or missing next actions.
+- Blocked CODE_REVIEW evidence-plan cards now label the lower plan details as evidence to collect instead of repeating the top-level recommended-next-step heading.
+- CODE_REVIEW recruiter details no longer show raw matcher confidence beside the hiring decision; the default readout now favors match status, assessment fit, score, pushback, and source-backed proof.
+- CODE_REVIEW recruiter details now hide empty call-record panels unless transcript, recording, error, or live-call evidence exists, keeping code-review decisions focused on assessment signal instead of operational placeholders.
+- CODE_REVIEW recruiter details now derive a recommended next step from match status, review submission, score, and band, so hiring managers see whether to advance, probe, wait, or collect more evidence before reading the audit trail.
+- CODE_REVIEW recruiter details now surface the durable review score, band, narrative, strengths, and probe areas from the scored review session so hiring managers see candidate performance above the evidence audit trail.
+- CODE_REVIEW recruiter details now keep the matched PR readout available when optional assessment-session tables are missing from a deployment, instead of crashing the whole interview detail page while loading related evidence.
+- CODE_REVIEW failed-refresh cards now show the next evidence question plan and expected answer shape before creating another follow-up assessment.
+- CODE_REVIEW recruiter evidence refresh cards now replace stale rerun actions with a next follow-up assessment CTA after consumed evidence still leaves matching blocked.
+- CODE_REVIEW repo-match refresh now repairs missing matcher-visible context from exact candidate-owned follow-up source spans before rerunning, so captured evidence no longer leaves recruiters stuck in a projection-pending state.
+- CODE_REVIEW repo-match refresh now requires completed follow-up evidence to have a matcher-visible living-context projection before rerunning, and the recruiter UI shows projection-pending evidence instead of offering a stale rerun.
+- CODE_REVIEW evidence-plan follow-up transcript answers now materialize as source-backed living-context records with dynamic open-term concepts, so repo-match refreshes consume the new candidate evidence instead of only seeing an assessment-layer ready flag.
+- CODE_REVIEW interview detail now shows related evidence interviews from the same person graph, so follow-up calls and multiple assessment invites for one email remain visible as separate source-backed evidence moments.
+- CODE_REVIEW evidence-plan follow-ups now require concrete candidate-owned PR, bug, review, trade-off, or verification evidence before unlocking repo-match reruns, while preserving generic answers as blocked source evidence.
+- Standalone assessment invites for the same email now immediately attach each distinct candidate/application token to the shared person graph, preserving many assessments and meetings without splitting repo-match evidence.
+- CODE_REVIEW evidence refresh reruns now append an immutable source-backed consumption report linking the ready follow-up evidence report and exact transcript spans to the match run that consumed them.
+- Pending CODE_REVIEW evidence-plan follow-up cards now show the linked follow-up interview and same-person-graph relationship, making one candidate's many evidence interviews legible from the original match gap.
+- CODE_REVIEW interview detail now labels living context as one person graph across multiple evidence moments, making repeated invites, follow-ups, transcripts, and assessments legible as accumulated repo-match evidence.
+- Blocked CODE_REVIEW evidence-plan follow-ups now surface the exact attribution failure reason from assessment state transitions on the original interview detail page.
+- CODE_REVIEW repo matching now has a regression proving completed evidence-plan transcript evidence can move a candidate from `NEEDS_MORE_EVIDENCE` to a source-backed real PR match with the follow-up answer cited in the match run.
+- CODE_REVIEW evidence refresh now refuses to rerun matching with the same already-tried evidence report, preventing stale follow-up evidence from creating repeated matcher attempts without new source-backed context.
+- CODE_REVIEW recruiter evidence refresh cards now distinguish "new evidence ready" from "evidence tried, still insufficient," listing remaining match gaps and changing the rerun CTA to require new evidence after a failed refresh.
+- CODE_REVIEW evidence-plan transcript capture now treats only candidate/guest answer spans as refresh-ready evidence, while the route regression proves the completed follow-up answer grows the same candidate/person graph used for repo matching.
+- Pending CODE_REVIEW evidence-plan follow-ups are now reused and surfaced on the original interview instead of creating duplicate context-call meetings for the same unresolved match gap.
+- CODE_REVIEW interview detail now shows a compact person evidence timeline from living-context interactions, making repeated invites, follow-ups, and evidence captures visible as one accumulating person graph.
+- Matched CODE_REVIEW evidence refresh cards now mark captured follow-up spans as already used for the current PR assignment and hide the stale rerun CTA.
+- Successful CODE_REVIEW evidence refresh notices now name the selected GitHub repo and PR, making the rerun outcome recruiter-legible instead of a generic success toast.
+- Completed CODE_REVIEW evidence-plan refresh cards now include concrete source-backed follow-up answer snippets, so recruiters can see the captured evidence behind a rerun instead of only a span count.
+- Contact-first scheduling now has regression coverage proving repeated interviews for the same email reuse one contact/person identity while preserving distinct scheduled interview, meeting, participant, and source-backed context records.
+- Direct meeting creation now normalizes recipient emails and reuses the same contact for repeated meetings, preserving many-interaction-to-one-person relationships instead of splitting graph context by email casing.
+- Calendly webhook email fallback now refuses to mutate an arbitrary pending interview when the same person/email has multiple open invites; ambiguous provider events are imported as their own scheduled meeting while preserving the shared contact/person identity.
+- Standalone CODE_REVIEW/dev-container assessment invites now create a separate candidate/application token per interview, so multiple active assessment links for the same email do not collapse onto the latest pending assessment.
+- CODE_REVIEW evidence-plan context calls now have integrated regression coverage from follow-up creation through transcript evidence ingestion to original-interview repo-match refresh readiness.
+- CODE_REVIEW recruiter evidence-plan cards now frame missing candidate context as a targeted follow-up assessment with the exact question, expected source evidence, and rerun-repo-match action.
+- CODE_REVIEW follow-up assessment interview pages now surface the source-backed question plan and include the primary question in the invite message so evidence calls have a concrete candidate-facing purpose.
+- Candidate discovery now persists the exact provider model key used for profile generation, including Workers AI remap/fallback model keys, so repo-match evidence can cite the real inference source instead of only `cloudflare-ai`.
+- Workers AI routing now preserves Cloudflare's documented active `@cf/meta/llama-3.1-8b-instruct-fast` variant while still remapping the deprecated non-fast Llama 3.1 models before candidate/repo matching inference.
+- Candidate CODE_REVIEW waiting states now expose a six-step pipeline for CV intake, evidence decomposition, repo matching, challenge assignment, review, and scoring instead of collapsing every delay into generic matching copy.
+- Public candidate `/assess/:token` links now mount without requiring recruiter Clerk configuration, while recruiter routes still show the missing-auth configuration screen.
+- Recruiter CODE_REVIEW details now label blocked repo matching as an assignment/evidence issue and recommend a context call or manual PR selection instead of implying the candidate has not submitted their review.
+- Blocked CODE_REVIEW recruiter details now consume a source-backed evidence plan that names the missing signal, why it matters, expected evidence, and the evidence-producing follow-up question.
+- Blocked CODE_REVIEW follow-up creation now stores concise evidence questions so recruiters can collect the missing background needed for a fair repo match.
+- Blocked CODE_REVIEW evidence-call creation now also creates a source-backed `TECHNICAL` assessment session and immutable evidence-plan event linked to the original match gap and follow-up interview.
+- Completed CODE_REVIEW evidence-call transcripts now append source-backed response spans to the evidence-plan assessment and emit a ready-for-repo-match-refresh report.
+- Original CODE_REVIEW recruiter details now surface completed evidence-plan follow-up calls as a refresh-ready relationship instead of continuing to show the stale missing-evidence prompt.
+- Recruiters can now rerun deterministic CODE_REVIEW repo matching from completed evidence-plan follow-up calls, persisting the refreshed real repo/PR assignment only when the matcher returns a source-backed match and otherwise showing an explicit no-match result.
+- CODE_REVIEW context-call refresh state now passes the scheduled interview id through match-detail loading, restoring Worker type-checks for the evidence-plan refresh route.
+- Blocked CODE_REVIEW recruiter details now include a context-call CTA that creates a linked video follow-up and stores the original match gaps plus suggested questions as source-backed person context.
+- Code-review context-call recommendation persistence now narrows candidate application ids before writing living-context records, restoring Workers type-checks for the scheduling route.
+- Automatic CODE_REVIEW matching now requires positive contrast separation before serving a roleless PR, turning near-tie candidate/repo matches into explicit repo-matching attention states instead of overclaiming a best assessment.
+- Candidate-facing CODE_REVIEW review-session status now exposes a six-step public pipeline through review and scoring, and the app-dev smoke fails unless completed reviews report durable scoring through that status endpoint.
+- Added a CODE_REVIEW app-dev reliability loop that repeats the profile matrix, persists per-run proof artifacts, and fails unless every iteration includes a completed/scored full-submit match plus an explicit blocked repo-matching state with no auto-refresh loop.
+- Added a CODE_REVIEW app-dev profile matrix smoke that creates fresh candidates across realistic frontend profiles, verifies full-submit auto-match/browser/pushback/scoring for matchable profiles, and verifies explicit blocked repo-matching diagnostics for an ambiguous near-tie profile.
+- CODE_REVIEW recruiter detail pages now lead with a compact recruiter decision summary and keep candidate line-comment details collapsed by default, reducing default screen noise while preserving the audit trail.
+- CODE_REVIEW recruiter detail pages now visually prioritize the review assignment, match decision, and submitted review result ahead of scheduling/person-context accounting so the first read answers whether the assessment was useful.
+- Recruiter code-review detail pages now lead with review assignment, match decision, assessment fit, and candidate result while moving validator/source-span graph internals into opt-in proof drawers.
+- Role-backed CODE_REVIEW matching now separates role/PR relevance from candidate evidence coverage, allowing source-backed sparse candidate decompositions to match strongly role-relevant real PRs without hiding behind terminal no-match states.
+- Role-backed CODE_REVIEW matching now treats source-backed selected role-context terms as relevance evidence instead of requiring every selected term to appear in a single PR packet, preventing good partial-overlap review challenges from becoming terminal no-matches.
+- CODE_REVIEW PR-author pushback now falls through current Workers AI author models and retries malformed non-empty provider output through a strict JSON repair pass before surfacing `AI_DEVELOPER_UNAVAILABLE`, reducing app-dev review-round stalls without fabricating author replies.
+- Standalone CODE_REVIEW matching now blocks stale non-progressing evidence ingestion with candidate-safe diagnostics instead of polling forever behind the generic matching screen, and ingestion step heartbeats update `updated_at` for reliable freshness checks.
+- Role-backed CODE_REVIEW matching now converts terminal deterministic no-match outcomes into blocked repo-matching diagnostics instead of repeatedly polling a generic matching screen.
+- The CODE_REVIEW app-dev full-submit smoke now polls D1 for durable review-session score reports, challenge-submission scores/reports, and assessment scores so scoring regressions fail the reliability gate.
+- Role-backed CODE_REVIEW smoke defaults now use selected terms that appear literally in the generated job description, keeping the role-source validation lane executable.
+- Candidate discovery now extracts one balanced JSON object from provider responses that include preamble/trailing text while still rejecting array-shaped or non-JSON output, reducing brittle repo-matching blocks without fabricating evidence.
+- Meeting transcript ingestion now requires explicit `attributed` speaker mode before contact ids can create person attribution, semantic assertions, or candidate signals, preventing diarization-adjacent metadata from becoming person evidence by default.
+- Stale in-progress standalone candidate evidence builds now requeue source-backed ingestion from the original R2 CV/text source and report a stalled-build retry reason instead of blocking repo matching behind a terminal attention state.
+- Scheduled Worker repair now requeues stale/deprecated Workers AI candidate-discovery failures from the original R2 CV/text source in bounded batches and writes append-only retry/failure session events, so old `Challenge needs attention` rows can self-heal without fabricating match evidence.
+- Workers AI model routing now remaps all Cloudflare models listed in the 2026-05-30 deprecation catalog before candidate/repo matching inference, preventing stale environment overrides from blocking source-backed challenge discovery.
+- Code-review scoring now rejects missing BARS dimension scores, source evidence, or narrative output instead of defaulting incomplete scorer JSON to midpoint assessments.
+- Candidate discovery no longer defaults missing or malformed `greenfield_ratio` evidence to `0.5`; repo matching prompts now receive `null` unless the model produced a valid source-backed number.
+- Job-description parsing no longer emits a synthetic Senior Backend Engineer baseline from `MOCK_AI`; unavailable role-agent parsing now falls back to source-text-only fields with uncertain requirements left absent.
+- Culture interview scoring now fails closed when no real provider, provider output, evidence quotes, or valid scorer JSON is available instead of writing neutral mock score reports.
+- Comprehension review scoring no longer emits mock score reports or default midpoint dimensions when scorer providers are unavailable or return incomplete JSON.
+- Resume/CV ingestion no longer returns synthetic `Jane Doe` parsed/decomposition data from `MOCK_AI` or parser mock flags; unavailable candidate LLMs now degrade to deterministic source-text parsing or explicit ingestion diagnostics only.
+- CODE_REVIEW explainer questions now return explicit `AI_DEVELOPER_UNAVAILABLE` diagnostics when the real provider is missing, empty, failed, or unparsable, instead of writing canned mock explanations into candidate transcripts.
+- Standalone dev-container and open-source bug-fix interviews now requeue source-backed candidate ingestion from the original CV/text source after stale Workers AI model failures before claiming repo matching is blocked.
+- Standalone repo-task matching now retries recoverable candidate discovery failures for any deprecated or decommissioned Workers AI model, not only the original Llama 3.1 incident string.
+- Non-matching candidate-to-PR outcomes now persist `REPO_MATCHING` assessment diagnostics and move the assessment session to `DIAGNOSTIC` instead of leaving missing-evidence states as active progress.
+- Candidate-to-PR match runs now append immutable `REPO_MATCHING` assessment evidence with exact `match_runs`, selected packet, role, candidate, and repo source refs instead of existing only as a rebuildable context projection.
+- CODE_REVIEW scoring now uses a resilient single-pass Workers AI scorer with current model fallbacks, retries stale `scoring` sessions from the scheduled Worker backlog, and persists the full score report on both `review_sessions` and `challenge_submissions`.
+- Standalone CODE_REVIEW matching now derives deterministic source-backed match facets from the candidate's exact CV evidence, preserving repo/domain signals such as Workers/runtime/deployments instead of collapsing rich decomposition evidence into generic TypeScript overlap.
+- CODE_REVIEW evidence-plan follow-up calls now persist the same gap-derived, source-backed questions shown in the recruiter UI, asking for codebase context, personal role, trade-offs, verification/tests, and matchable source evidence instead of generic background prompts.
+- CODE_REVIEW evidence-plan refresh now requires attributed transcript evidence before marking a follow-up call ready to rerun repo matching, preventing mixed or summary-only audio from masquerading as candidate-backed evidence.
+- CODE_REVIEW evidence-plan follow-ups now mark summary-only/mixed transcript recordings as blocked and show recruiters the attribution issue instead of leaving the match-recovery loop in a misleading waiting state.
+- CODE_REVIEW evidence-plan follow-ups can now recover from a blocked summary-only recording when a later attributed transcript is captured, moving the same micro-assessment to refresh-ready instead of staying blocked.
+- Standalone CODE_REVIEW matching keeps derived CV source terms in the concept channel instead of flooding sparse mechanism/domain dimensions, preventing valid Workers-style matches from being rejected as weak.
+- Roleless CODE_REVIEW repo matching now accepts exact, multi-span source-backed candidate/repo alignments at the sparse-decomposition threshold and measures contrast against different repositories instead of same-repo PR near-ties.
+- Candidate atom selection now caps only primary decomposed concepts, so exact CV source terms such as cron, schedules, and workflows can support repo matching without excluding other source-backed atoms.
+- Workers AI model routing now retries the live default model when Cloudflare reports a stale configured model as deprecated, preserving repo/challenge discovery instead of blocking on old dashboard overrides.
+- Workers AI model routing now trims and normalizes stale role-agent overrides before repo discovery inference, preventing dashboard whitespace/case drift from calling deprecated Llama 3.1 models.
+- Standalone CODE_REVIEW matching status refresh now requeues real candidate ingestion for stale Workers AI model failures when the original resume source is recoverable, and text-intake CV submissions are stored in R2 under their synthetic source key for future provenance/retry.
+- Repo-task assessment reports now reject diagnostic-only `EVALUATED` outputs, requiring missing evidence to persist under an explicit diagnostic status instead of masquerading as a completed evaluation.
+- Repo-task assessment evaluation now requires every non-diagnostic claim, including negative outcomes, to cite exact evidence already captured in the same assessment session.
+- Repo-task assessment outputs now reject report/output status contradictions, preserving rebuildable evaluation projections from the canonical assessment spine.
+- Repo-task assessment diagnostics now preserve exact source refs through evaluation reports and context-record projections instead of dropping diagnostic provenance at the facade.
+- Repo-task assessment diagnostics now reject forged source refs that were not previously captured as immutable evidence in the same assessment session.
+- Repo-task assessment evaluation claims now preserve caller-supplied confidence through the facade into canonical assessment persistence instead of dropping the qualifier.
+- Repo-task assessment diagnostic routes now return the persisted diagnostic row id and evaluation report id, keeping standalone diagnostics traceable to their canonical report.
+- Repo-task assessment diagnostics now preserve caller-supplied diagnostic ids in persisted report diagnostics JSON for deterministic projection rebuilds.
+### Added — Match run history endpoint + panel (criteria #6, #8)
+
+- `GET /api/v1/candidates/:id/living-context/match-history` — returns chronological match run history with inter-run deltas (status changes, score improvements, new top challenges). Gated by `living_context_read` rollout gate.
+- `MatchHistoryPanel` component in `LivingContextGraph.tsx` — shows match run timeline with status badges, top challenge info, and delta indicators (score changes, new matches, status transitions).
+- `useMatchHistory` hook (`src/hooks/useMatchHistory.ts`) — fetches match run history with configurable limit.
+- Frontend types: `MatchHistoryEntry`, `MatchHistoryDelta`, `MatchHistoryResponse`.
+- `matchHistory.test.ts` — 5 Vitest tests: empty state, ordering, JSON parsing, delta computation, limit.
+- BDD e2e: §18 (match history runs + entry fields) — 2 new Playwright scenarios.
+- Updated `useMatchHistory` mock in all 4 existing LivingContextGraph test files.
+
+### Added — Recruiter re-match button + concept graph visualization (criteria #3, #5, #7)
+
+- `useRematch` hook (`src/hooks/useRematch.ts`) — calls `POST /candidates/:id/living-context/rematch`, returns result/error/loading state. Wired into LivingContextGraph with real-time UI update after successful rematch.
+- Re-match button in `LivingContextGraph.tsx` — recruiter can trigger deterministic re-matching from the CONTEXT_GRAPH tab. Shows matched PR info, needs-more-evidence reason, or error state inline.
+- `useConceptGraph` hook (`src/hooks/useConceptGraph.ts`) — fetches learned concepts and adjacency edges from `GET /internal/concept-graph` with namespace/query/minObs filters.
+- `ConceptGraphPanel` component in `LivingContextGraph.tsx` — renders learned concept cards (label, namespace, observation count, aliases, description), filterable search, and concept edge list with dimension/confidence. Satisfies criterion #3 (dynamic semantics visualization) and #7 (concept graph in the living context view).
+- Frontend types: `RematchResult`, `ConceptGraphConcept`, `ConceptGraphAdjacency`, `ConceptGraphResponse`.
+- `ConceptGraphAndRematch.test.tsx` — 9 Vitest component tests: concept card rendering, edge display, empty state, filter search, re-match button states (idle/running/matched/needs-evidence/error).
+- BDD e2e tests: §16 (rematch endpoint), §17 (concept graph with adjacencies, namespace filter) — 4 new Playwright scenarios.
+- Updated hook mocks in all 3 existing LivingContextGraph test files.
+
+### Added — Recruiter-triggered re-match endpoint (criteria #5, #6)
+
+- `POST /api/v1/candidates/:id/living-context/rematch` — allows recruiters to re-run the deterministic candidate-to-PR matcher after new evidence arrives (resume upload, meeting transcript, assessment completion). Returns match status, matchRunId, selected repo/PR, and top challenge diagnostics. Uses temporal decay (90-day half-life) for evidence freshness weighting. Gated by `living_context_read` rollout gate.
+- `rematch.test.ts` — 5 Vitest tests covering identity resolution, match result shape, rank selection logic, and insufficient evidence handling.
+
+### Added — BDD Playwright tests for living context graph endpoints
+
+- `e2e/living-context-graph.spec.ts` — 16 BDD scenarios covering all living context API endpoints: person graph read model, source search, timeline, evidence depth, match narrative, evidence gap analysis, match provenance chain, evidence lineage, freshness, aggregation, concept graph, health, integrity, stats, and backfill. Tests seed realistic candidate evidence via the e2e fixture endpoint and verify round-trip source fidelity.
+
+### Added — Vitest component tests for EvidenceGapPanel and MatchProvenancePanel
+
+- `EvidenceGapPanel.test.tsx` — 3 tests covering null report, empty demands, full gap analysis rendering (coverage bar segments, demand cards with badges, matched/missing concepts, supporting assertion quotes, recommendations).
+- `MatchProvenancePanel.test.tsx` — 3 tests covering null provenance, empty chain, full provenance chain rendering (decision summary metrics, demand entries with scores, stretch indicators, assertion decay, source span quotes, interaction trace).
+
+### Added — Frontend evidence gap analysis panel (criteria #6, #7)
+
+- `EvidenceGapPanel` component in `LivingContextGraph.tsx` — renders per-demand coverage (strong/partial/weak/none) with a proportional coverage bar, per-demand cards with coverage badge and concept tags (matched in green, missing struck-through), supporting assertion quotes, and actionable recommendations.
+- `useEvidenceGaps` hook — fetches gap report from `/api/v1/internal/evidence-gap-analysis` given `candidateId` + `challengePacketId`.
+- Frontend types: `EvidenceGapReport`, `DemandCoverage`, `GapSummary`, `CoverageLevel`, `GapSupportingAssertion`.
+
+### Added — Frontend match provenance chain panel (criteria #2, #6)
+
+- `MatchProvenancePanel` component in `LivingContextGraph.tsx` — renders the full decision &rarr; demand &rarr; signal &rarr; assertion &rarr; source provenance chain for a match run, with alignment scores, stretch indicators, temporal decay, and original source text quotes.
+- `useMatchProvenance` hook — fetches provenance chain from `/api/v1/internal/match-provenance-chain` given `matchRunId`.
+- Frontend types: `MatchProvenanceChain`, `ProvenanceMatchDecision`, `ProvenanceDemandLink`, `ProvenanceSignalNode`, `ProvenanceAssertionNode`, `ProvenanceArtifactNode`, `ProvenanceInteractionNode`, `ProvenanceChainEntry`.
+
+### Added — Evidence gap analysis (criterion #6)
+
+- `evidenceGapAnalysis.ts` — analyzes a candidate's evidence profile against challenge demands, producing a structured report of coverage levels (strong/partial/weak/none), missing concepts, and actionable recommendations.
+- `analyzeEvidenceGaps(evidence, demands, options?)` — pure function for gap classification with configurable thresholds.
+- `analyzeEvidenceGapsForChallenge(db, candidateId, challengePacketId, options?)` — D1-backed gap analysis loading evidence with temporal decay.
+- `GET /api/v1/internal/evidence-gap-analysis` — API endpoint with `candidateId`, `challengePacketId`, and tunable threshold params.
+- 11 new tests covering coverage classification, concept matching, weighted scoring, and recommendations.
+
+### Added — Match provenance chain (criteria #2, #6)
+
+- `matchProvenanceChain.ts` — traces a match run end-to-end from decision through demand alignments, candidate signals, semantic assertions, source spans, artifacts, and interactions.
+- `loadMatchProvenanceChain(db, matchRunId, options?)` — loads complete provenance chain with temporal decay multipliers at each assertion node.
+- `GET /api/v1/internal/match-provenance-chain` — API endpoint with `matchRunId` param.
+- 9 new tests covering provenance chain types, stretch vs. direct matches, and unmatched states.
+
+### Added — Frontend evidence lineage visualization (criteria #2, #6)
+
+- `EvidenceLineagePanel` component in `LivingContextGraph.tsx` — renders assertion → source span → artifact → interaction trace with temporal decay coloring (fresh/recent/aging/stale border), concept tags, and original source text quotes.
+- `useEvidenceLineage` hook — fetches lineage data from `/api/v1/internal/evidence-lineage` with concept key filtering.
+- Frontend types: `EvidenceLineageResponse`, `EvidenceLineageNode`, `EvidenceLineageSourceSpan`, `EvidenceLineageArtifact`, `EvidenceLineageInteraction`.
+
+### Added — Frontend evidence freshness indicators (criterion #7)
+
+- `EvidenceFreshnessPanel` component in `LivingContextGraph.tsx` — stacked proportional bar (fresh/recent/aging/stale) with color legend, median age, and average decay statistics.
+- `useEvidenceFreshness` hook — fetches freshness summary from `/api/v1/internal/candidate-evidence-freshness`.
+- Frontend types: `EvidenceFreshnessResponse`, `EvidenceFreshnessEntry`, `FreshnessLevel`.
+
+### Added — Temporal concept adjacency in matcher stretch-area (criteria #3, #5)
+
+- `loadStretchAdjacencies()` in `d1Matcher.ts` — loads temporally-weighted concept co-occurrence edges from D1 via `loadTemporalNeighborhood`, converts to `ConceptAdjacency[]` format, and passes them to `recallReviewChallenges` + `alignCandidateToChallenge`. Stretch matching is now active when concept adjacency data exists.
+- Graceful degradation: if the `concept_adjacency` table is unavailable (e.g. older migrations), returns empty adjacency set — no stretch matching, no crash.
+- Effective confidence threshold: adjacency edges with `effectiveConfidence < 0.2` are filtered out to prevent stale co-occurrences from influencing stretch decisions.
+
+### Added — Evidence lineage tracing (criteria #2, #6)
+
+- `evidenceLineage.ts` — traces match decisions back through the full evidence chain: assertion → source span → artifact → interaction. Includes temporal decay multipliers and effective strength at each node.
+- `traceEvidenceLineage(db, candidateId, options?)` — loads the complete lineage with optional concept key filtering and limit.
+- Per-node lineage includes: assertion narrative/concepts, source span with exact text/offsets, artifact metadata, interaction provenance, decay multiplier, and effective strength.
+- Concept summary aggregates lineage nodes by concept with average effective strength and observation date range.
+- `GET /api/v1/internal/evidence-lineage` — API endpoint with `candidateId`, `conceptKeys`, and `limit` query params.
+- 7 new tests covering empty states, full chain traversal, temporal decay application, and missing signal handling.
+
+### Added — Concept adjacency temporal weighting (criterion #3)
+
+- `conceptAdjacencyDecay.ts` — applies time-based decay to concept co-occurrence edges so recently reinforced connections are stronger than historical ones.
+- `loadTemporalAdjacencies(db, conceptId, decayConfig?)` — loads adjacencies with temporal weight, effective confidence, observation count, and date range. Multiple adjacency records for the same concept pair are aggregated with recency-weighted confidence.
+- `loadTemporalNeighborhood(db, conceptIds, decayConfig?)` — batch loads temporally-weighted neighborhoods for multiple concepts.
+- `GET /api/v1/internal/concept-adjacency-temporal` — API endpoint with `conceptId`, `halfLifeDays`, and `gracePeriodDays` query params.
+- 9 new tests covering decay mechanics, pair aggregation, dimension separation, and neighborhood loading.
+
+### Added — Evidence freshness indicators (criterion #7)
+
+- `evidenceFreshness.ts` — computes temporal freshness metadata for evidence visualization. Classifies evidence as `fresh` / `recent` / `aging` / `stale` with per-entry decay multipliers and effective weights.
+- `computeEvidenceFreshness(entries, decayConfig?)` — pure function for freshness classification and summary statistics (counts per level, average decay, median age, date range).
+- `loadCandidateEvidenceFreshness(db, candidateId, decayConfig?)` — loads assertion timestamps from D1 and produces freshness summary.
+- `GET /api/v1/internal/candidate-evidence-freshness` — API endpoint for freshness data with tunable decay parameters.
+- 9 new tests covering classification levels, date tracking, base weight application, and null handling.
+
+### Added — Temporal evidence decay for matcher scoring (criterion #5)
+
+- `temporalDecay.ts` — time-based attenuation of evidence strength with configurable half-life, grace period, and floor multiplier. Evidence within the grace period (default 14 days) retains full weight; older evidence decays logarithmically with a 90-day half-life, never dropping below 25%.
+- Integrated into `loadCandidateSignals` in `d1Matcher.ts` — candidate signal strengths are now modulated by evidence freshness before entering the matching pipeline.
+- `CandidateReviewChallengeOptions.temporalDecay` — optional override for decay parameters per match run.
+- 24 new tests covering decay curve characteristics, boundary conditions, and integration.
+
+### Added — Evidence confidence aggregation (criterion #1, #5)
+
+- `evidenceAggregation.ts` — aggregates multiple observations of the same concept across interactions into composite confidence/strength scores without mutating underlying evidence.
+- Corroboration bonus (multiple sources agreeing), diversity bonus (evidence from different interaction types), contradiction penalty, and recency-weighted averaging.
+- `loadAggregatedCandidateEvidence(db, candidateId, config?)` — loads and aggregates all concept evidence for a candidate from D1.
+- `GET /api/v1/internal/candidate-aggregated-evidence` — API endpoint for aggregated evidence with tunable decay parameters.
+- 12 new tests covering aggregation logic, corroboration, diversity, contradictions, and grouping.
+
+### Added — Session event → living context ingestion (criterion #1)
+
+- `ingestSessionEventsToLivingContext(db, candidateId, sessionId, events)` — ingests interview session events (answer_submitted, scoring_complete, question_asked, stage_advanced, match_assigned) across all session types into the living context graph as source-backed assertions.
+- `loadSessionEventsForCandidate(db, candidateId, cursor?, limit?)` — paginated loader for session events by candidate.
+- Backfill task `session_events_to_living_context` added to `BackfillOrchestrator` — processes un-ingested sessions from the `session_events` table.
+- Each evidence event generates: an episode, artifact version (per-event payload), source span, semantic assertion with extracted concepts, and concept links.
+- Idempotent: skips already-ingested events via ingestion_key deduplication.
+- 10 new tests covering answer ingestion, scoring events, non-evidence filtering, idempotency, multi-event sessions, null payloads, and pagination.
+
+### Added — Real-time assessment → living context ingestion (criterion #2, #5)
+
+- Assessment evidence now flows into the person graph immediately when an evaluation report is created (`POST /sessions/:sessionId/evaluation-reports`), rather than waiting for the scheduled backfill cron.
+- Extracted `loadAssessmentSessionData(db, sessionId)` as a shared helper used by both the real-time hook and the scheduled backfill, eliminating duplicated data-loading logic.
+- `ingestAssessmentSessionRealTime(db, sessionId)` — single-call convenience that loads + ingests in one step.
+- Backfill `backfillAssessmentsBatch` refactored to use the shared loader.
+- 4 new tests covering `loadAssessmentSessionData` and `ingestAssessmentSessionRealTime`.
+
+### Added — Person identity link endpoint (criterion #1)
+
+- `POST /api/v1/internal/person-identity-link` — manually merge a contact and candidate onto the same person node when email-based auto-resolution cannot merge them (different emails, missing email, etc.).
+- Re-points all dependent records (interactions, artifacts, episodes, assertions, signals, person roles, context records) from the source workspace person to the target, then deletes the orphaned source workspace person.
+- Merges display name and email from the source person if the target person is missing them.
+- 4 new tests covering validation, not-found handling, cross-email merge, and same-email already-linked detection.
+
+### Added — Contact living context parity (criterion #1)
+
+- `GET /api/v1/cockpit/contacts/:id/living-context/timeline` — chronological evidence accumulation feed for contacts. Resolves contact → workspace person via `context_json` and delegates to `loadPersonEvidenceTimeline`. Supports `limit`, `before`, `after` pagination. Gated behind `living_context_read`.
+- `GET /api/v1/cockpit/contacts/:id/living-context/evidence-depth` — per-source-type evidence scoring for contacts. Returns source diversity, interaction breakdown, assertion/source-span/context-record counts, and top 20 learned concepts by evidence count. Gated behind `living_context_read`.
+- 6 new tests covering empty state, workspace person resolution, timeline loading, source diversity computation, and top concept extraction.
+
+### Added — Evaluation run endpoint (criterion #8)
+
+- `POST /api/v1/internal/evaluation-run` runs the full matching evaluation pipeline against a stored corpus and returns structured metrics (recall@50, precision@3, nDCG@5, guardrail violations, determinism proof, pair/packet coverage). Optionally persists results for rollout gate readiness checks. Returns human-readable report alongside structured JSON.
+- 3 new tests covering missing corpusId validation, non-existent corpus handling, and successful evaluation with sample corpus fixture.
+
+### Added — Concept graph query endpoint (criterion #3)
+
+- `GET /api/v1/internal/concept-graph` queries the learned concept taxonomy. Returns concepts with canonical keys, namespaces, labels, aliases, observation counts, and timestamps. Supports filtering by `namespace`, substring search via `q`, minimum observation count via `minObs`, and optional adjacency edge inclusion via `withAdj=true`.
+- 7 new tests covering empty state, ordering by observation count, namespace filtering, query string filtering, minObs filtering, adjacency inclusion, and adjacency omission by default.
+
+### Added — Evaluation corpus seeder (criterion #8)
+
+- `POST /api/v1/internal/evaluation-corpus-seed` extracts evaluation corpus data from real match decisions in D1. Loads candidate living context evidence (assertions + source spans), role requirements, challenge packets, and generates draft expert labels from match scores. Draft labels are marked `labeledBy: 'corpus-seeder'` so they fail the production corpus gate until experts upgrade them.
+- `seedCorpusFromMatchRuns(db, options)` in `evaluation/corpusSeeder.ts` — orchestrates the extraction pipeline with configurable `limit`, `statusFilter`, `roleContextId` filters.
+- `persistSeededCorpus(db, corpus)` — persists the generated corpus to `evaluation_corpora` for subsequent evaluation runs.
+- 5 new tests covering empty state, full provenance extraction, persistence, orphan warnings, and status filtering.
+
+### Added — Data integrity validation endpoint (criterion #8)
+
+- `GET /api/v1/internal/living-context-integrity` validates referential integrity across the living context entity chain: persons → workspace_people → interactions → episodes → assertions → source_spans, plus context record source ref coverage and source span non-emptiness. Returns per-check pass/fail with counts of orphaned or dangling entities.
+- 7 integrity checks: workspace_people↔person, interactions↔workspace_person, assertions↔source_spans, context_records↔source_refs, source_span non-empty text, episodes↔workspace_person, projection outbox staleness.
+- Added 3 tests covering healthy graph, orphaned assertions detection, and empty graph.
+
+### Added — Standalone evaluation readiness endpoint (criterion #8)
+
+- `GET /api/v1/internal/evaluation-readiness?corpusId=...&stage=shadow|canary|production` provides a read-only evaluation readiness check without triggering gate progression. Returns the full readiness report including metrics, failures, warnings, and a human-readable report text.
+- Added 3 tests covering missing corpusId, no evaluation result, and invalid stage.
+
+### Added — Rollout gate enforcement on living context API routes (criterion #8)
+
+- All living context read endpoints (`/living-context`, `/living-context/search`, `/living-context/timeline`, `/living-context/match-narrative`, `/living-context/evidence-depth`) on both candidate and contact routes are now gated behind the `living_context_read` rollout gate via `requireGate` middleware. When the gate is `disabled`, these endpoints return 404 — features appear non-existent until promoted through `internal_only → canary → GA`.
+- Refactored `requireGate` to use `createMiddleware` from `hono/factory` for proper Hono type compatibility across all route configurations.
+- Added 5 new tests verifying gate enforcement across all stages and audit trail integrity.
+
+### Added — Concept co-occurrence adjacency tracking (criteria #3)
+
+- During resume and meeting transcript ingestion, when an assertion references 2+ concepts, all concept pairs are now recorded as `co_occurrence` adjacencies in `concept_adjacency`. This builds a learned graph of related skills/topics from evidence — e.g., "React" and "TypeScript" appearing in the same experience assertion creates an adjacency link.
+- Uses deterministic IDs and `ON CONFLICT DO NOTHING` for idempotent replay.
+- Added 1 test verifying 3 concepts produce 3 adjacency pairs with correct dimension and provenance.
+
+### Added — Evidence diversity gate in matcher (criteria #5/#8)
+
+- Added configurable evidence diversity gate to `matchCandidateToReviewChallenge`. When `minEvidenceDiversity` or `minEvidenceInteractions` thresholds are set and the candidate's evidence depth falls below them, the matcher returns `NEEDS_MORE_EVIDENCE` early — preventing unreliable matches from sparse evidence.
+- Defaults are lenient (0/0) to preserve existing behavior; callers opt into stricter gating by passing higher thresholds.
+- Added 3 new tests covering diversity-below-threshold, default-preserving behavior, and interaction-count gating.
+
+### Added — Evidence depth integration in match diagnostics (criteria #5/#7/#8)
+
+- Evidence depth is now computed and included in `ChallengeMatchDiagnostics.candidateEvidenceDepth` during every match run. This gives recruiters and the quality gate visibility into how many distinct source types (resume, meeting, culture interview, code review, phone call, assessment) contributed evidence before a match decision was made.
+- Added `EvidenceDepthPanel` component to `LivingContextGraph.tsx` — renders a 6-segment visual bar showing which source types have evidence and how many interactions each contributed. Displayed between the summary metrics and the meeting evidence panels.
+- Added CSS for evidence depth visualization with responsive grid layout.
+
+### Added — Assessment evidence → living context ingestion (criteria #1/#2/#8)
+
+- Added `assessmentIngestion.ts` module: bridges the assessment layer (assessment_sessions, assessment_evidence_events, assessment_evaluation_claims) into the living context graph. Each assessment session maps to an interaction; evidence events map to episodes + assertions with exact source spans; evaluation claims map to assertions with source provenance and polarity tracking.
+- Added `assessments_to_living_context` backfill task to the scheduled orchestrator (10th task, depends on `candidates_to_living_context`). Cursor-based batch processing of assessment sessions with state NOT IN ('INTAKE', 'CANCELLED'). Loads related evidence events, event source refs, evaluation reports, claims, and claim source refs per session.
+- Wired assessment backfill into `projection_outbox_drain` dependency graph so projection output includes assessment-derived entities.
+- Added 4 tests covering null-candidate guard, event+assertion+context-record ingestion, evaluation claim ingestion with polarity tracking, and idempotency.
+
+### Added — Candidate evidence depth endpoint (criteria #7/#8)
+
+- Added `GET /api/v1/candidates/:id/living-context/evidence-depth` endpoint — returns per-source-type evidence scoring including source diversity (0–1), total counts for interactions/assertions/source spans/context records, per-type breakdown, and top 20 concepts ranked by evidence count.
+- Source diversity metric: ratio of distinct interaction types present vs maximum possible (6: resume, meeting, culture interview, code review, phone call, assessment). Helps recruiters and the quality gate assess whether a candidate has enough independent evidence sources for a reliable match.
+- Added 4 new tests covering zero-state, source diversity computation, top concepts ranking, and full-diversity scenarios.
+
+### Added — Person evidence timeline API (criterion #7)
+
+- Added `GET /api/v1/candidates/:id/living-context/timeline` endpoint — returns a chronological feed of evidence accumulation merging interactions, assertions, and context records into a single time-ordered stream. Supports pagination via `limit`, `before`, and `after` query parameters.
+- Added `loadPersonEvidenceTimeline` function to `readModel.ts` — queries interactions, semantic assertions (joined through episodes), and context records for a workspace person, then merges and sorts them chronologically.
+- Added 3 new tests covering timeline generation, pagination, and empty-person edge case.
+- Directly enables "Show evidence accumulating across interactions" requirement from acceptance criterion #7.
+
+### Added — Rollout gate management API (criterion #8)
+
+- Added `POST /api/v1/internal/rollout-gate` endpoint to transition feature gates between stages (disabled → internal_only → canary → GA) with audit logging. Accepts `{ gateKey, stage, reason? }`.
+- Added `GET /api/v1/internal/rollout-gate/gates` endpoint to list all configured gates with current stages.
+- Added `GET /api/v1/internal/rollout-gate/audit?gateKey=...` endpoint to query the immutable audit trail for gate transitions.
+- Added `POST /api/v1/internal/living-context-backfill-trigger` endpoint to manually trigger backfill runs outside the cron schedule.
+- Fixed rollout gate check bug in `backfillScheduled.ts`: `checkGate()` returns a `GateCheckResult` object (always truthy), but the code compared it as a boolean — gate enforcement was never blocking disabled backfills.
+- Added 6 new endpoint tests covering gate creation, stage transitions, validation, gate listing, and audit trail queries.
+
+### Added — Repository assertions backfill into living context (criterion #4)
+
+- Added `repo_assertions_to_living_context` backfill task to scheduled orchestrator. Iterates all `repo_semantic_assertions` without corresponding context records and creates source-backed context records with full provenance (source spans, line ranges, file paths) and concept linkage via repo facets.
+- Ensures all historical repository decomposition data (structural facts, code episodes, semantic assertions) flows into the searchable living context model — not just challenge packet summaries.
+- Skips assertions without source spans to avoid orphan records.
+- Added 4 tests covering ingestion with source provenance, idempotency, and graceful skip behavior.
+
+### Added — Culture interview session backfill (criterion #1/#8)
+
+- Added `culture_sessions_to_living_context` backfill task to the scheduled cron runner. Existing culture interview sessions (scored/completed/scoring) with transcripts are now replayed through `ingestHistoricalCultureTranscript`, creating per-turn source spans, context records, and enqueuing neo4j projections. The backfill covers the 8th entity type, completing full-graph coverage for all interaction types.
+- Added `backfillCultureSessionsBatch` with cursor-based batch processing, `NOT EXISTS` deduplication against the `interactions` table, and standard error isolation per session.
+- Wired culture backfill into `projection_outbox_drain` dependency chain so projections drain after culture ingestion completes.
+- Added integration test verifying culture transcript backfill creates interactions, artifacts, source spans, context records, and is idempotent on re-run.
+
+### Added — Automated rollout gate progression (criterion #8)
+
+- Added `POST /api/v1/internal/rollout-gate/auto-progress` endpoint — checks evaluation readiness for the next stage and transitions the gate if metrics pass. Enforces single-step progression (disabled → internal_only → canary → GA) with quality gates at each level.
+- Bootstrap progression (disabled → internal_only) proceeds without evaluation; subsequent stages require passing evaluation readiness checks at increasing threshold levels.
+- Supports `dryRun` mode to preview progression decisions without mutating gates.
+- Added 5 new tests covering bootstrap, blocking, terminal state, dry-run, and full progression with evaluation.
+### Added — Real-time living context ingestion on resume upload
+
+- Wired `ingestResumeToLivingContext` into `processResumeFromR2` so resumes enter the living context graph immediately upon upload — no longer deferred to scheduled backfill cron. Both recruiter upload and candidate INTAKE submission paths now trigger real-time ingestion.
+- Added integration test `enrichment/__tests__/resumeIngestion.test.ts` verifying real-time hook behavior (4 tests).
+
+### Added — Production observability endpoints (criterion #8)
+
+- Added `GET /api/v1/internal/living-context-stats` — returns per-entity-type counts (people, workspace_people, interactions, artifacts, source_spans, assertions, context_records, concepts, signal_evidence, signal_snapshots, semantic_relationships) plus interaction type and artifact type breakdowns. Essential for monitoring staged rollout ingestion progress.
+- Added `GET /api/v1/internal/living-context-backfill` — returns per-task backfill checkpoint detail including cursor position, items processed/failed, progress percentage, duration, description, dependency status, and timing. Provides granular visibility into the 7-task backfill orchestrator during production rollout.
+- Added 4 new tests covering both endpoints (entity counts with populated graph, empty graph, per-task checkpoint detail, unavailable table handling).
+
+### Added — Match narrative visualization in LivingContextGraph (criterion #6/#7)
+
+- Added `MatchNarrativePanel` component to `LivingContextGraph.tsx` — renders the recruiter-facing match narrative inline with title, verdict, and structured sections (strong alignments, evidence gaps).
+- Added CSS for `.living-context__match-narrative` and `.living-context__narrative-section` panels.
+- Added 2 tests: narrative panel renders when `matchNarrative` is present; hides when null.
+
+### Added — Match narrative API endpoint (criterion #6)
+
+- Added `GET /api/v1/candidates/:id/living-context/match-narrative` endpoint serving recruiter-facing human-readable match narratives with strength-classified evidence alignments, stretch areas, and evidence gaps linked to original source locators.
+- Wired `matchNarrative` field into the candidate profile response (`standaloneReviewMatch` object) so the frontend can display match narratives inline without a separate API call.
+- Added `buildNarrativeFromResult` bridge function that reconstructs `MatchExplanation` from stored `ranked_results_json` data and generates narratives via the existing `formatMatchNarrative` formatter.
+- Added `StandaloneReviewMatchNarrative` and `MatchNarrativeSection` frontend types.
+- 7 new tests covering narrative generation, strength classification, stretch areas, evidence gaps, and all match statuses (168 files, 1536 tests, 0 failures).
+
+### Added — Complete scheduled backfill for all entity types (criterion #1/#8)
+
+- Extended `runScheduledBackfill()` with 3 new dependency-ordered tasks: `meetings_to_living_context`, `phone_calls_to_living_context`, `code_reviews_to_living_context`. The scheduled cron now covers all 7 entity types that accumulate person context (candidates, contacts, resumes, meetings, phone calls, code reviews). Projection outbox drains after all ingestion tasks complete.
+- Meeting backfill ingests stored `transcript_json` via `parseStoredMeetingTranscript` → `ingestMeetingTranscriptToLivingContext`, creating per-segment source spans with exact positions.
+- Phone call backfill ingests transcriptions, recordings, and recruiter notes via `ingestPhoneCallToLivingContext` + `ingestPhoneRecruiterNote`.
+- Code review backfill ingests completed session transcripts and score reports via `ingestCodeReviewTranscriptToLivingContext` + `ingestCodeReviewScoreReportToLivingContext`.
+
+### Added — Native resume ingestion + scheduled backfill
+
+- Added `ingestResumeToLivingContext()` for native resume-to-living-context ingestion — splits resume text into structural sections, creates per-section source spans with exact char/byte/line positions, dynamically learns concepts, creates signal evidence at appropriate evidence levels, and enqueues neo4j projections. Fully idempotent. Supports pre-extracted LLM semantic assertions. (criteria #1, #2, #3)
+- Added `splitResumeIntoSections()` — detects uppercase heading patterns to split resume text into typed sections (summary, experience, education, skills, etc.), with paragraph-based fallback.
+- Added `runScheduledBackfill()` — scheduled backfill runner with 4 dependency-ordered tasks (candidates → contacts → resumes → projection drain), cursor-based batch processing, gated by `living_context_backfill` rollout gate. Wired to Workers cron `scheduled` event. (criterion #8)
+- Added 14 new tests in `resumeIngestion.test.ts` verifying idempotency, source span creation, concept extraction, signal evidence, context records, and projection job enqueue.
+
+### Added — Orchestrated backfills and rebuildable projections (criterion #8 hardening)
+
+- Wired `BackfillOrchestrator` into `backfillLivingContext.ts` — all 7 entity backfill tasks (candidates, contacts, candidateNodes, meetings, cultureSessions, phoneCalls, codeReviewSessions) now track D1-persisted checkpoint cursors with dependency ordering. Interrupted runs resume from the last committed cursor instead of re-processing from the start.
+- Added `scheduleFullProjectionRebuild()` to the projection module — enqueues rebuild jobs for all workspace persons through the projection outbox. D1 remains the source of truth; Neo4j projections can be deleted and reconstructed at any time.
+- Added `POST /api/v1/internal/living-context-rebuild-projections` endpoint for triggering a full projection rebuild via the outbox cron.
+- Added 2 new tests for projection rebuild endpoint; test suite now at 1515 tests across 166 files, 0 failures.
+### Added — Staged rollout proof (criterion #8 completion)
+
+- Added `stagedRolloutProof.test.ts` (10 tests) — comprehensive integration test proving the full shadow → canary → production promotion flow: expert-labelled corpus validation, evaluation metrics at all stages, D1-backed gate transitions with immutable audit trail, backfill orchestrator completion before promotion, rollback verification, determinism proof through comparison run fingerprints.
+- Expert-labelled evaluation corpus fixture with reviewer provenance (reviewerId, reviewArtifactId, contentHash, rubricVersion) passes both standard and production corpus validation.
+
+### Added — Production infrastructure for living context graph
+
+- Added D1 migrations `0106_backfill_checkpoints`, `0107_rollout_gates`, `0108_rollout_gate_audit_log` for idempotent backfill tracking, feature rollout gates, and immutable gate transition audit trail.
+- Added `BackfillOrchestrator` with dependency-aware multi-task checkpoint tracking — tasks resume from the last committed cursor on restart (criterion #8 deterministic idempotent backfills).
+- Added `rolloutEnforcement` module with `checkGate()`, `requireGate()` middleware, `gatedField()`, `updateGateStage()`, `listGates()`, and `queryAuditLog()` — D1-backed feature rollout gates with 60-second in-memory cache and immutable audit trail (criterion #8 staged rollout).
+- Added `formatMatchNarrative()` for recruiter-facing human-readable match explanations — classifies evidence as strong/moderate/partial, separates stretch areas from gaps, links to source locators (criterion #6 explain every match).
+- Added `GET /api/v1/internal/living-context-health` endpoint for per-subsystem health checks: required tables, rollout gates, backfill orchestrator status, projection outbox health (criterion #8 production quality).
+- Added proof test suites: `backfillOrchestrator.test.ts` (8 tests), `rolloutEnforcement.test.ts` (6 tests), `matchNarrative.test.ts` (6 tests), `livingContextHealth.test.ts` (2 tests) — 22 new tests for production infrastructure.
+
+### Added — Living context graph & match explanation completeness
+
+- Added `searchSourceContent()` to the living context read model for cross-artifact semantic source search (criterion #2). Searches all source spans linked to a workspace person, falls back to assertion narratives when no spans match, and returns hits with citing assertions, context records, and concept keys.
+- Added `GET /api/v1/contacts/:id/living-context/search?q=...` and `GET /api/v1/candidates/:candidateId/living-context/search?q=...` endpoints for recruiter-facing source content search.
+- Surfaced `stretchAreas` and `unmatchedDemandIds` through the standalone review match API and frontend types (criteria #6/#7). Each alignment now includes its `stretch` field (dimension, atomConcept, demandConcept), and the match record exposes derived stretch areas and unmatched demand IDs.
+- Added `StretchAreasPanel` and `UnmatchedDemandsPanel` UI components to the living context graph visualization, rendering stretch dimensions with source refs and unmatched PR demands with concept keys.
+- Added `GET /api/v1/internal/rollout-gate?stage=shadow|canary|production` endpoint for live rollout readiness checks against the staged acceptance thresholds (criterion #8).
+- Added proof test suites: `searchSourceContent.test.ts` (9 tests), `rolloutGate.test.ts` (7 tests), `matchExplanation.test.ts` (4 tests) — validating criteria #2, #5/#6, and #8.
+
+### Fixed — Test suite stabilization
+
+- Migrated `backfillLivingContext.ts` from `node:sqlite` to `better-sqlite3` with D1-style `?N` param rewriting, fixing `No such built-in module` on Node 20.
+- Added missing `packet_json` column to `checkReviewChallengeGraphReadiness` test fixtures, fixing `no such column: rcp.packet_json` schema mismatch.
+- Added `it.skipIf(!hasGo)` guard to Go parser test in `sourceAnalysis.test.ts` so CI skips gracefully when Go toolchain is absent.
+
+### Added — Full-pipeline E2E proof test
+
+- Added `fullPipelineE2E.test.ts` exercising the complete lifecycle across all 8 acceptance criteria in a single coherent test: contact creation → meeting transcript ingestion → identity unification → dynamic concept learning → repo semantic graph → source-backed PR challenge → evidence-based matching → match narrative generation → source content search → read model verification → backfill orchestrator checkpointing with dependency ordering.
+- Added determinism proof test verifying that re-running matching with identical data yields identical results (criterion #8).
+
+### Fixed — CI stabilization
+
+- Fixed `resolveDevContainerApiBase` to return `http://localhost:8787` for localhost when runtimeLocation is provided, fixing failing frontend test.
+- Suppressed pre-existing lint errors: `no-control-regex` in ANSI escape regex (`terminalProtocol.ts`), `no-constant-condition` in SSE reader loop (`useRoomStatusNotifications.ts`).
+
 ### Fixed — 95 Until Infinity desktop tools
 
+- Room entry now opens the default video/chat/workspace windows synchronously before switching surfaces, preventing users from landing on an empty call-stage background after pressing Enter room.
+- Room entry now keeps the prejoin lobby return after all room hooks are registered, preventing React hook-order crashes when pressing Enter room.
+- Shared Win95 file-system snapshots now carry compact source-backed file projection evidence and reject source-thin file hydration, so Notepad/Paint files remain reconstructable without copying exact content into metadata.
+- Recording snapshots now require the stored room state to reconstruct to source-backed browser MediaRecorder evidence before the room client hydrates recording indicators.
+- Media-control snapshots now carry the accepted source-backed browser control evidence into Durable Object state and reject source-thin snapshot hydration in the room client.
+- Clippy prompts and Clippy/Devin interaction events now require source-backed browser or bridge provenance before local optimistic display, peer replay, or prompt snapshot hydration, preventing source-less assistant state from appearing as real evidence.
+- Room Chat messages now require source-backed browser chat evidence with stable room message ids, client ids, timestamps, lengths, delivery status, surface, and room phase before local optimistic display, peer replay, ACK handling, or room snapshot hydration.
+- Meeting transcript evidence now preserves the origin of speaker metadata, distinguishing browser-uploaded channel maps from R2 custom metadata recovered during transcript retry, so speaker attribution remains source-backed across processing passes.
+- Rejected Room Chat sends now preserve the Durable Object rejection reason in browser evidence and exact source-ref metadata, so failed chat delivery is explainable instead of only marked as not sent.
+- Deleting shared Win95 Notepad/Paint files now clears any open editor window through the shared desktop data channel with `win95_file_delete_sync` provenance, keeping both participants in sync instead of leaving stale local window content.
+- Win95 shared file-system mutations now require source-backed browser evidence before local optimistic state or peer replay can change files, preventing source-less Notepad/Paint edits from appearing while disconnected or before Durable Object validation.
+- Win95 terminal command/output events now require source-backed browser terminal evidence before local optimistic state or peer replay can show terminal activity, preventing source-less command/output claims from appearing while disconnected or before Durable Object validation.
+- Code-server file events now require source-backed Clippy bridge workspace evidence before local optimistic state or peer replay can show editor saves/changes, preventing source-less editor activity from appearing while disconnected or before Durable Object validation.
+- Win95 peer cursor presence now requires source-backed browser sample evidence before sending, broadcasting, rendering, or replaying cursor positions, preventing raw pointer packets from leaving unaudited trails across participants.
+- Video media controls and recording state now require source-backed browser/MediaRecorder evidence before local optimistic state or peer replay can change call indicators, preventing source-less mute/camera/recording claims from appearing before Durable Object validation.
+- Win95 desktop/window events now require source-backed surface, menu, lifecycle, data, state, or workspace observer evidence before local optimistic state or peer replay can change shared desktop state.
+- Win95 file-manager opens now preserve `win95_file_system` lifecycle provenance, and `.link` file opens emit source-specific browser navigation evidence instead of being flattened into generic desktop launches.
+- Win95 browser reload and external-open clicks now emit source-backed browser navigation evidence, so repeated or blocked-site browsing remains synced and replayable across shared desktop sessions.
+- Clippy/Devin bridge evidence now carries a hashed Devin API run reference through prompt handoffs, API responses, room actions, browser fallbacks, and source refs so real agent interactions remain joinable without exposing raw provider session ids.
+- Clippy/Devin room-action suggestions now require explicit `agent_stdout` or `agent_api_response` bridge source metadata before rendering as executable desktop actions, preventing source-less action hints from implying real agent provenance.
+- Clippy/Devin chat replies now require bridge-observed timestamps and persistence state before rendering as agent messages, preventing source-thin responses from being shown as real Devin output.
+- Dev-container sessions now clear stale live error messages when the real container recovers to a non-error state, while preserving the original failure as immutable assessment evidence.
+- Win95 peer cursor sharing now rate-limits raw pointer broadcasts while still preserving source-backed cursor evidence samples, reducing remote cursor rendering noise during live interviews.
+- Blocked Clippy chat submits now stay typeable and persist replayable source-backed non-delivery evidence with exact prompt text, prompt fingerprint, and readiness reason instead of silently disabling the input or implying Devin received the message.
+- Failed video-room recording stops now broadcast and persist source-backed browser failure stage/source/message facts, while vague failed recording states are rejected instead of entering the evidence graph.
+- Candidate ingestion status now queues a source-backed retry for stale Workers AI model failures, so the challenge wait screen can recover from deprecated-model errors instead of replaying an old terminal failure.
+- Clippy room-action routing now rejects unsupported bridge action shapes instead of relabeling legacy agent suggestions as human prompt actions, while still allowing file-change observations to offer a user-clicked workspace prompt.
+- Clippy/Devin can now use a real Devin service-user API session from the dev-container bridge, preserving API replies and room-action suggestions as `agent_api_response` source-backed evidence instead of requiring CLI login or relabeling API output as stdout.
+- Candidate dev-container launches now pass the real Devin bridge configuration into the server-side container init payload without returning secrets to the browser, keeping Clippy chat eligible for real-agent operation outside meeting-room launches.
+- Dev-container expiry/manual teardown now marks intentional container stops before destroy, preventing normal `EXPIRED` sessions from retaining false "container stopped unexpectedly" diagnostics in UI and evidence projections.
+- Clippy/Devin bridge diagnostics, auth/status messages, room-action text, and real stdout fallback evidence now redact service tokens, bearer tokens, room tokens, and secret query parameters before browser evidence, Durable Object broadcast/storage, or session-event persistence; secret-bearing agent chat is rejected instead of rewriting fingerprinted evidence.
+- The container Clippy/Devin bridge now redacts real agent stdout and room-action text before WebSocket broadcast and direct `session-events` persistence, so bridge-origin evidence hashes the same redacted text as browser fallback evidence.
+- Clippy/Devin bridge status and diagnostic events now emit direct exact-text `clippy_agent_status` / `clippy_agent_diagnostic` source refs in living-context and assessment evidence instead of only being citeable through the broad meeting-session packet.
+- Workspace-state diagnostics now redact room tokens, Devin/Cognition tokens, API keys, bearer tokens, and secret query parameters in both browser-built evidence and the VideoRoom Durable Object activity log.
+- Standalone dev-container launches now mark candidate sessions `ERROR` with a redacted diagnostic when the background Durable Object init request fails before the container can report status, and the status API returns that diagnostic to the UI.
+- Room workspace launches now mark dev-container sessions `ERROR` with a redacted diagnostic when the background Durable Object init request fails before the container can report status, preventing broken workspaces from polling forever as `LAUNCHING`.
+- The Win95 Clippy tray icon now reflects whether the Clippy chat panel is actually open, while keeping the tray entry available after prompt dismissal or chat close for the next real-agent interaction.
+- Rejected shared Notepad/Paint file events now return the Durable Object's authoritative file snapshot so clients roll back optimistic file changes that were not accepted as source-backed evidence.
+- Authoritative shared desktop snapshots now remove stale locally optimistic Win95 windows that are no longer accepted by the Durable Object while preserving local bootstrap call/chat/workspace windows, preventing rejected or missed close events from leaving one participant's desktop out of sync.
+- Rejected shared desktop events now return the Durable Object's authoritative surface/window snapshot, allowing clients to roll back optimistic local 95/standard-call state when source-backed desktop evidence is refused.
+- Reconnected room clients now re-apply the Durable Object's authoritative shared surface snapshot unless a fresh local surface toggle is still pending, keeping host and guest synced when one returns from 95 Until Infinity to the standard call after the other briefly disconnects.
+- Transcript-derived assertion context records now preserve self-contained exact-text `source_span` refs with content hashes, segment locators, speaker roles, timestamps, provider confidence, and contact attribution so scored/person evidence can cite the spoken moment without reconstructing it from a broader transcript packet.
+- Source-backed 95 room surface changes, Start menu toggles, browser navigation, window lifecycle/data/state updates, cursor samples, media controls, recording state, workspace state, and code-server opens now emit direct source refs and graph entities in living-context and assessment evidence instead of only the broad meeting-session event packet.
+- Clippy UI actions and real bridge room-action suggestions now preserve direct `clippy_ui_action` / `clippy_agent_room_action` exact-text source refs in living-context and assessment evidence, so tray clicks, chat closes, auth intents, and agent suggestions are citeable without unpacking the broader room event packet.
+- Room chat, proactive Clippy prompts, Clippy user prompts, and real agent stdout replies now preserve direct exact-text source refs in living-context and assessment evidence, so chat turns can be cited without unpacking the broader room event packet.
+- Code-server file saves/deletes now preserve direct `code_server_file_observation` source refs in living-context and assessment evidence, keeping observed path/action/hash/size/preview/workspace provenance citeable without pretending the full file body was captured.
+- Container terminal commands and output chunks now preserve direct `terminal_command` / `terminal_output` exact-text source refs in living-context and assessment evidence, so terminal activity can be cited without unpacking the broader room event packet.
+- Win95 Paint saves/deletes now preserve exact canvas JSON as `room_file_content` source refs in both living-context and assessment evidence, without adding raw preview fields, so Paint activity is citeable from immutable source evidence instead of only a content hash.
+- Win95 text-file changes now preserve exact Notepad content as `room_file_content` source refs in both living-context and assessment evidence, so file-change graph records can cite the original note text instead of only a preview/hash.
+- Room chat evidence now fails closed unless Durable Object messages and replayed room activity carry browser chat source, stable message identity, actor, delivery status, surface, room phase, and exact message length, preventing forged chat claims from entering meeting-session evidence.
+- Code-server file-change evidence now fails closed unless bridge metadata includes a real workspace session, observed timestamp, SHA-256 content hash, and size, preventing browser-only events that room replay would reject.
+- Clippy workspace file-change observations now require code-server bridge source, observed timestamp, SHA-256 content hash, file size, and persistence state before rendering a workspace suggestion, preventing source-less agent messages from implying a real edit.
+- Container terminal command/output evidence now fails closed until a real workspace session exists, preventing browser-only terminal events that the room Durable Object would reject from entering the context graph.
+- Clippy chat now shows a live bridge readiness checklist for workspace, WebSocket, agent identity, state, and capabilities with distinct status dots, so disabled Devin chat is diagnosable without enabling fake or source-less messages.
+- Host recording start/stop/upload state now syncs through the room Durable Object to both Win95 and standard layouts, with source-backed MediaRecorder provenance replayable into session evidence instead of remaining host-local UI state.
+- Win95 room file saves now fail closed when source-backed file evidence cannot be built, preventing source-less Notepad/Paint mutations from becoming local room state.
+- Win95 Start menu open/close now syncs between room participants and replays as source-backed `desktop_menu_toggle` evidence instead of staying local-only UI state.
+- Win95 Start menu launches now persist `win95_start_menu` lifecycle/state evidence instead of being misattributed to desktop icon interactions.
+- Win95 window state evidence now preserves whether focus/minimize/restore came from the taskbar, desktop icon, or window chrome instead of collapsing every update to window chrome.
+- Clippy-opened Win95 tool windows now persist `window_open` lifecycle evidence with `lifecycleSource: clippy_action` instead of misattributing those opens to direct desktop UI clicks.
+- Clippy’s Devin login terminal button now records `open-devin-auth-terminal` evidence instead of the generic `open-terminal` action id.
+- Clippy’s browser-based Devin auth button now records `open-devin-auth-browser` evidence instead of collapsing the click into a CLI auth recheck.
+- Room Chat’s paperclip launcher now records `clippy_chat_ui` provenance instead of misattributing the Clippy open action to the Win95 taskbar tray.
+- Closing the Clippy chat window now only closes the chat panel and persists a source-backed `clippy_chat_ui` close action, keeping the Win95 tray Clippy entrypoint mounted for the next real-agent interaction.
+- Clippy chat’s generic “Open Terminal” button now routes through source-backed `open-terminal` Clippy action evidence before opening the shared terminal window.
+- Clippy “Check Devin auth” clicks now emit source-backed human UI action evidence before the bridge re-runs real Devin CLI auth preflight, keeping auth recovery intent separate from bridge diagnostics.
+- Clippy auth-needed chat now includes a real “Check Devin auth” retry after terminal login, reusing the container bridge auth preflight so Devin only becomes ready after the CLI reports a stored login.
+- Summary-only meeting transcript analysis now strips model-produced semantic assertions from stored analysis JSON and records suppression metadata, preventing mixed-audio transcripts from leaving candidate-shaped claims outside the source-backed ingestion gate.
+- Clippy auth-needed chat now opens the real container terminal and queues `devin auth login --force-manual-token-flow` for the user, while terminal evidence redacts auth tokens before commands/output are persisted.
+- Clippy/Devin now preflights real `devin auth status` before starting the CLI, treats service API keys as insufficient for CLI login, surfaces precise auth-needed diagnostics, and shows the live agent state on the Win95 tray icon beside the clock.
+- Clippy/Devin bridge readiness now requires an actual Devin CLI executable in the dev-container image, passes optional `DEVIN_ORG_ID` into room-scoped containers, and emits real missing-CLI/auth-needed diagnostics instead of reporting `AGENT_READY` when Devin is absent or login is canceled.
+- Dev-container Durable Object lifecycle hooks now persist source-backed `SLEEPING`, wake-to-`READY`, and unexpected-stop/error diagnostics, keeping Clippy availability and workspace evidence aligned with the real container state.
+- Sampled Win95 peer-cursor movements now publish source-backed cursor evidence through the room Durable Object, while raw pointer moves stay live-only and are excluded from replay.
+- Room-end Durable Object replay now maps accepted mic/camera control activity into source-backed `media_control` meeting-session evidence, instead of relying only on one browser's direct event capture.
+- Mic/camera toggles now publish source-backed shared media-control events through the room Durable Object, persist replayable activity/state, and render peer media status across both standard and Windows 95 room surfaces.
+- Room chat delivery acknowledgements and rejections now persist as source-backed `chat_message` evidence immediately, so the live context graph records the Durable Object delivery outcome instead of only the optimistic browser send.
+- Dev-container agent startup now requires an explicit supported `AGENT_TYPE` through the meeting launch path and bridge runtime instead of defaulting missing or unsupported agent configuration to Devin.
+- Clippy chat UI now waits for an explicit container bridge agent identity before enabling chat or naming Devin, preventing the room surface from visually implying a fake agent is connected.
+- Browser-side Clippy/Devin evidence builders now fail closed when bridge agent identity is missing, preventing room clients from defaulting source-less fallback/status evidence to `devin`.
+- Clippy/Devin container diagnostics now fail closed when agent identity is missing, preventing the bridge helper from fabricating `devin` on source-less diagnostics, chat responses, or room-action evidence.
+- Clippy/Devin agent replies and room-action suggestions now expose normalized browser prompt correlation refs in meeting-session context records and compact agent context summaries, so rebuildable hypergraph projections can join prompt, response, and action evidence without guessing.
+- Clippy/Devin browser prompt correlation refs are now validated across HTTP session ingestion, Durable Object room sync, and replay projections, rejecting malformed agent-output/action evidence instead of accepting loose prompt-link JSON.
+- Real Clippy/Devin stdout responses and room-action suggestions now preserve the browser prompt id that caused the bridge handoff, letting the hypergraph join user chat, stdin delivery diagnostics, agent output, and executed actions without guessing.
+- Clippy CHAT frames now carry a stable browser prompt id into the real dev-container bridge, and bridge handoff diagnostics preserve the same prompt reference after stdin delivery attempts for source-backed hypergraph correlation.
+- Clippy user prompt evidence now distinguishes browser-queued CHAT frames from confirmed bridge delivery, and HTTP, Durable Object, and replay validators reject stale prompt evidence that claims bridge delivery.
+- Clippy/Devin container bridge diagnostics now redact bare Cognition/Devin service-token strings before they can appear in chat, session events, or hypergraph evidence.
+- Clippy user-prompt evidence now records browser-to-bridge CHAT submission without Devin attribution, and HTTP, Durable Object, and replay validators reject human prompts that stamp an agent identity.
+- 95 room assessment evidence now preserves explicit Clippy/Devin bridge agent identity from `agent`/`agentName` metadata and leaves missing agent ids absent instead of defaulting assessment actors to Devin.
+- Clippy UI action evidence from tray and prompt clicks now rejects any agent attribution server-side, keeping human Clippy interactions separate from real Devin bridge evidence.
+- Clippy/Devin bridge room-action validators now require the exact stdout tag source and `clippy_room_action_tag` protocol across HTTP session events, Durable Object replay, graph replay, and the container bridge helper instead of accepting generic bridge-shaped action strings.
+- Clippy prompt/tray actions no longer stamp Devin as the acting agent, and browser-executed Devin desktop actions now require source-backed `ROOM_ACTION` bridge metadata before executing or persisting.
+- Clippy/Devin browser bridge parsing now ignores `CHAT_RESPONSE` and `ROOM_ACTION` packets without explicit bridge-provided agent identity instead of defaulting them to Devin.
+- Meeting recording uploads now require explicit speaker-channel metadata before separate transcription audio can produce attributed transcript evidence; missing metadata stays summary-only instead of defaulting channel 0/1 to host/guest.
+- Clippy/Devin room context summaries now include compact source refs for each session event, preserving candidate node ids, session refs, captured timestamps, and stable event ids inside the real Devin prompt context.
+- Code-server save/delete observations from the real Clippy/Devin bridge now publish into a source-validated shared room activity log for replayable context-graph sync instead of existing only in one browser's direct session-event queue.
+- Clippy/Devin user prompts, bridge status/replies, and room-action executions now publish into a source-validated shared room activity log for replayable context-graph sync instead of existing only in one browser's direct session-event queue.
+- Container terminal command/output events now publish into the shared room Durable Object, replay into context graph sync, and reject source-less terminal claims instead of relying only on one browser's direct session-event POST.
+- Meeting transcript processing failures now append immutable assessment diagnostics with exact recording/transcription source keys and error provenance instead of living only in the mutable meeting row.
+- 95 Until Infinity room session evidence now stores the full stable browser/bridge event packet as the immutable `meeting_session_event` source text instead of reducing source refs to display text.
+- Dev-container lifecycle rows now append immutable assessment evidence for launch, ready, warning, error, stop, and expiry transitions, preserving the exact D1 session snapshot instead of relying only on browser-observed workspace state.
+- Meeting transcript ingestion now mirrors each canonical transcript source span into immutable assessment evidence, preserving speaker attribution, recording keys, source span ids, exact text, and hashes without creating source-less evaluation claims.
+- Meeting-room session events, including Clippy/Devin interactions, now append exact-source immutable `NINETY_FIVE_UNTIL_INFINITY_ROOM` assessment evidence events alongside candidate/context projections.
+- Clippy/Devin bridge readiness now marks a real container agent ready after it accepts the source-backed room-context primer, so quiet Devin CLI starts do not leave Clippy chat permanently disabled, and raw chat bridge packets now include explicit `agent_stdout` provenance.
+- Clippy/Devin bridge status and browser agent evidence now require explicit bridge-provided agent identity instead of defaulting source-less status/messages to `devin`.
+- Browser-observed Clippy/Devin agent messages now require explicit bridge source metadata before becoming agent chat/status evidence instead of defaulting source-less messages to bridge diagnostics.
+- Browser-observed Devin/code-server file changes now require explicit `code_server_workspace` bridge source metadata before becoming save/delete evidence instead of defaulting missing source fields.
+- Proactive Clippy prompts without browser prompt evidence are now rejected by the room Durable Object and skipped during replay instead of gaining Durable Object fallback provenance.
+- Workspace/dev-container state without browser observer evidence is now rejected by the room Durable Object and skipped during replay instead of gaining Durable Object fallback provenance.
+- Clippy UI and agent room-action evidence now carries stable action ids and capture timestamps across tray, prompt, browser-executed, and persisted bridge suggestion paths.
+- Clippy/Devin agent reply evidence now carries stable CHAT_RESPONSE ids, capture timestamps, response fingerprints, and lengths across browser fallback and persisted bridge paths.
+- Clippy/Devin agent status evidence now carries stable bridge status ids and capture timestamps across browser-observed states and persisted container diagnostics.
+- Workspace-state evidence now carries actor-bound observer ids and capture timestamps through Durable Object replay, normalizes room replay ids, and preserves that source context before becoming meeting-session context.
+- Code-server iframe open evidence now carries actor-bound open ids and capture timestamps before entering meeting-session context.
+- Container terminal command/output evidence now carries actor-bound capture ids and timestamps so repeated same-command interactions remain distinct source events.
+- Synced Win95 Notepad/Paint saves and deletes now carry actor-bound file-change ids, capture timestamps, and browser file evidence through Durable Object replay.
+- Shared Win95 file-system events without browser source evidence are now rejected by the room Durable Object and skipped during replay instead of becoming source-less `file_change` graph nodes.
+- Shared Win95 window open/navigation/data/state events without browser source evidence are now rejected by the room Durable Object and skipped during replay instead of gaining Durable Object fallback provenance.
+- Shared room surface changes without browser-toggle source evidence are now rejected by the room Durable Object and skipped during replay instead of gaining `room_surface_durable_object` fallback provenance.
+- Workers AI model routing now remaps deprecated Llama 3.1 8B variants before inference so repo/challenge discovery does not fail on stale environment overrides.
+- Synced Notepad/Paint window-data updates now carry stable window-data ids, capture timestamps, changed keys, and value fingerprints through shared desktop state, Durable Object replay, and session-event validation.
+- Synced Microsoft Edge navigations now carry stable browser navigation ids, capture timestamps, and URL fingerprints through shared desktop state, Durable Object replay, and session-event validation.
+- Synced Win95 window lifecycle/state events now preserve stable window event ids and capture timestamps through the client connection, Durable Object replay, and session-event validation.
+- Summary-only room transcripts now persist their person-context mode into living-context metadata and cannot create candidate source attributions, assertions, or signals.
+- Clippy/Devin agent reply evidence now requires real `CHAT_RESPONSE` provenance, persisted bridge metadata or explicit browser fallback metadata, and rejects bridge-shaped replies without those source facts.
+- Clippy/Devin agent status evidence now requires bridge provenance, observed timestamps, and either browser WebSocket context or persisted bridge diagnostics before entering the meeting-session graph.
+- Participant join/leave evidence now requires meeting-room lifecycle route provenance with observed timestamps and matching host/guest roles before entering the meeting-session graph.
+- Clippy prompt evidence now preserves browser proactive prompt triggers, room/workspace context, and explicit no-agent-response provenance through Durable Object replay, while rejecting source-less direct prompt claims.
+- Workspace-state evidence now separates browser observer provenance from launch/refresh/error lifecycle source, preserves that metadata through Durable Object replay, and rejects source-less direct workspace-state claims.
+- Code-server editor-open evidence now requires browser iframe load provenance, workspace session context, and an explicit no-proxy-URL persistence marker before entering the meeting-session graph.
+- Recording start/stop evidence now requires host browser MediaRecorder provenance, lifecycle kind, speaker-channel metadata, and upload source facts before entering the meeting-session graph.
+- Clippy/Devin user prompts now require source-backed browser chat evidence with bridge delivery, prompt ids, fingerprints, lengths, and workspace context before entering the meeting-session graph.
+- Clippy action evidence now rejects source-less action claims and requires either source-backed tray/prompt UI metadata or real Devin bridge `ROOM_ACTION` provenance before entering the meeting-session graph.
+- 95 Until Infinity room chat browser submissions now use source-backed chat evidence with shared-room message ids, client ids, delivery status, message timing, surface, and room phase before entering the meeting-session graph.
+- 95 Until Infinity terminal command/output evidence now requires browser terminal WebSocket provenance, deterministic command/output ids, fingerprints, lengths, and workspace context before entering the meeting-session graph.
+- Win95 window open/close and state updates now require source-backed lifecycle/state metadata before entering meeting-session evidence, and already-open desktop icon clicks sync focus/restore actions across both screens.
+- Standalone code-review assessment routing now ignores room lifecycle telemetry when deciding whether candidate decomposition evidence exists, sends telemetry-only candidates back to CV intake, and replaces claimed invite tokens before emailing assessment links again.
+- Clippy/Devin agent replies now require real bridge `CHAT_RESPONSE` source metadata before becoming `ai_chat_agent` evidence; source-less browser claims are rejected as invalid session events.
+- Video-room clients now rely on the source-backed lifecycle route for participant join/leave evidence and stop retrying permanent session-event validation failures forever.
+- Code-server save/delete evidence now requires FILE_CHANGED bridge provenance, content hash, size, observation time, and either direct container persistence or browser-fallback room/workspace context before entering the graph.
+- Shared room surface changes now carry browser-toggle provenance, stable surface-change ids, timestamps, previous/next surfaces, and Durable Object replay markers across live capture and replayed projections.
+- Win95 cursor presence evidence now includes actor-bound sample ids, browser pointermove provenance, timestamps, sampling thresholds, and previous-position deltas before the API accepts it.
+- Video room microphone/camera evidence now includes actor-bound event ids, browser control provenance, capture timestamps, and previous/next state before the API accepts it.
+- Win95 shared cursor presence now records sampled source-backed `cursor_presence` evidence instead of keeping the mouse layer as live-only state.
+- Win95 shared cursor presence now renders peer cursors relative to the desktop overlay instead of viewport units, preventing host/guest pointer trails from drifting across nested room surfaces.
+- Room Chat now exposes a Win95 paperclip launcher for the existing real Clippy/Devin panel without rerouting human chat or fabricating assistant replies.
+- Durable room-chat replay now preserves accepted delivery status and browser-source provenance before projecting chat into meeting-session evidence.
+- Video room microphone/camera toggles now persist as validated source-backed `media_control` evidence with surface and room phase metadata.
+- Win95 Notepad/Paint saves and deletes now submit validated source-backed `file_change` evidence immediately with file identity, content hashes, and delete snapshots.
+- Microsoft Edge navigation now submits validated source-backed `browser_navigation` evidence with normalized URL, trigger, host, surface, and room phase metadata.
+- Code-server workspace creates/modifies now persist as source-backed `code_editor_save` evidence with bridge source metadata and content hashes, while deletes remain `file_change` evidence.
+- Meeting-session event replay now keys evidence on stable event properties, preserving distinct repeated Win95 interactions such as multiple browser/window moves while keeping Durable Object replays idempotent.
+- Session-event route coverage now proves browser-submitted client event ids preserve distinct repeated same-second Win95 interactions while retrying the same client event remains idempotent.
+- Browser-submitted meeting-session evidence now includes stable client event ids and capture times, so repeated same-second Win95 interactions remain distinct while retries keep the same source identity.
+- The VideoRoom Durable Object now lets host and guest participants switch the shared room surface, so returning from 95 Until Infinity to the standard call syncs both screens instead of rejecting guest surface changes.
+- Clippy/Devin chat now opens from a Win95 taskbar tray paperclip beside the clock even before the workspace is ready, clearly distinguishes real Devin availability from Room Chat, and lets users restore Clippy after dismissing the prompt.
+- The video-room package now owns its Clippy/Win95 component test harness, preventing duplicate React renderers from invalidating the real-agent chat and taskbar tray tests.
+- Opening Clippy from the Win95 tray and dismissing the Clippy prompt now emit source-backed `clippy_action` evidence as human UI actions without claiming a Devin response.
+- Video-room session evidence now requeues non-OK API writes and drains queued events with Beacon/keepalive on page unload so short-lived Win95 interactions are less likely to disappear before persistence.
+- The session-events API now accepts Beacon-style `text/plain` JSON and returns non-OK when persistence fails, letting the room client retry instead of dropping uncaptured evidence.
+- Win95 window focus, minimize, restore, maximize, and move interactions now submit immediate `window_update` evidence with the exact state patch while still syncing through the shared desktop Durable Object.
+- Dev-container workspace launches now pass the Worker `DEVIN_API_KEY` secret into the container as server-side init data for the real Clippy/Devin bridge without exposing the key in candidate-facing room responses.
+- The Clippy/Devin bridge now persists an `auth_required` agent diagnostic as soon as it observes missing real Devin credentials, instead of waiting for a candidate chat attempt before creating source-backed evidence.
+- The Clippy/Devin bridge now reports a real `starting` state, waits for observed non-auth Devin output before enabling chat, times out missing readiness as a source-backed diagnostic, and classifies Devin auth/login output as source-backed auth diagnostics instead of fake agent replies.
+- Matched-repo dev workspaces now surface an explicit `missing_reviewable_task` diagnostic when no PR/task is assigned, and room desktop evidence preserves that setup gap instead of treating a repo-only launch as a completed assessment challenge.
+- Scheduling now returns and displays a rebuildable assessment setup projection for workspace-backed invites, distinguishing concrete PR tasks from missing reviewable tasks and contact-first invites waiting for source-backed candidate evidence.
+- Contact-first invite living-context artifacts now preserve assessment setup diagnostics in exact source text and qualifiers, so missing candidate evidence or missing PR tasks remain source-backed instead of UI-only state.
 - Upgraded shared Paint into a canvas-style diagram board with pencil, rectangle, diamond, arrow, pan, zoom, reset-view, and synced durable `.pipe-paint` saves while preserving existing freehand drawings.
 - Microsoft Edge now detects common sites that block iframe embedding, including Google, and shows an external-open fallback instead of a blank white page.
 - Microsoft Edge back/forward navigation now syncs through the shared desktop and emits `browser_navigation` evidence instead of staying local to one participant.
@@ -44,6 +891,8 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - Clippy/Devin room actions now preserve their origin, bridge event type, action protocol, agent name, execution role, and stdout-tag source in `clippy_action` evidence, distinguishing real Devin-driven desktop actions from local prompt-button nudges.
 - Clippy/Devin process diagnostics now broadcast bounded, redacted stderr, context-primer failures, process exits, and startup errors into `ai_agent_status` evidence with diagnostic source, observed time, exit code, and signal metadata.
 - Clippy/Devin prompt handoffs now persist bridge diagnostics for real context-primer and chat-prompt delivery into Devin stdin, including delivery status, context status, and redacted fingerprints/lengths without storing raw prompt text.
+- Clippy/Devin bridge diagnostics, prompt handoffs, and real Devin stdout now post token-scoped `session-events` directly from the dev container before broadcasting to browsers, with browser fallback only when bridge persistence fails.
+- Clippy/Devin room-action suggestions now persist directly from the bridge as source-backed `clippy_action` suggestion events, while browser execution evidence links back to the persisted suggestion metadata.
 - Code-server workspace file create/modify/delete events are now observed by the container bridge and captured as source-backed `file_change` meeting-session evidence with path, hash, size, and bounded text preview when available.
 - Dev containers can now post token-scoped room `session-events` directly in dev without the browser Basic Auth proxy, so code-server workspace evidence persists through the same room-token validation path as room context.
 
@@ -57,6 +906,10 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Fixed — Standalone code review repo matching intake
 
+- Candidate CV decomposition now defaults stale Workers AI config to the current Gemma model instead of deprecated Llama 3.1 8B, preventing repo matching from failing into a candidate-facing needs-attention state.
+- Workspace-backed assessment emails now always deliver fresh `/assess/:token` links for CODE_REVIEW, DEV_CONTAINER_CHALLENGE, and OPEN_SOURCE_BUG_FIX invites, even if stale scheduling URLs exist on the interview row.
+- Resume-derived review evidence now preserves diverse source-backed repo-matching terms and the deterministic matcher now prefers specific source concepts over generic language overlap.
+- Standalone code-review matching now attempts repo selection as soon as source-backed text-intake evidence exists, even if richer enrichment is still pending, and no longer exposes a fake estimated matching timer.
 - Plain-text candidate intake now runs through the same CV parsing/decomposition contract as uploaded resumes before starting ingestion, so standalone code-review invites produce source-backed candidate evidence for deterministic repo matching.
 - Resume decomposition now persists candidate nodes and living-context evidence before optional embedding, preventing Workers AI/embedding outages from leaving candidates stuck on `WAITING_FOR_MATCH` with a resume key but no scoreable graph evidence.
 - Parser-only resume fallback now creates source-backed semantic terms for experience/project evidence, and creates a bounded text-intake fallback node when no structured sections are available.

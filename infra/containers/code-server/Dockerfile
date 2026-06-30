@@ -1,6 +1,8 @@
 FROM codercom/code-server:4.22.1
 
 SHELL ["/bin/bash", "-o", "pipefail", "-c"]
+ENV PIPE_BRIDGE_REVISION="2026-06-30-assessment-branch-v1"
+LABEL pipe.bridge.revision="2026-06-30-assessment-branch-v1"
 
 # Switch to root to install system packages
 USER root
@@ -17,6 +19,7 @@ RUN apt-get update && apt-get install -y --no-install-recommends \
     && rm -rf /var/lib/apt/lists/*
 
 RUN curl -fsSL https://cli.devin.ai/install.sh | bash || test -x /root/.local/bin/devin
+RUN test -x /root/.local/bin/devin && /root/.local/bin/devin --version
 ENV PATH="/root/.local/bin:${PATH}"
 
 COPY entrypoint.sh /usr/local/bin/entrypoint.sh

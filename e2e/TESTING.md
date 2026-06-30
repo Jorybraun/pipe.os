@@ -129,7 +129,7 @@ test('candidate completes code review', async ({ page }) => {
 - `auth.setup.ts` handles Clerk authentication.
 - Use `storageState: "playwright/.auth/user.json"` for recruiter-authenticated tests.
 - Candidate auth is JWT-based. Resolve the token once in `beforeAll`, then inject it into `sessionStorage` before `page.goto()`.
-- **Do not** resolve the invite token twice — it's single-use. Once claimed, subsequent calls fail.
+- Resolving an invite token only issues a candidate session; it must not burn the one-use link. The link is claimed by `/rpc/start-assessment` when the candidate explicitly starts. After that claim, resolving the original invite token should fail.
 
 ## 8. Fast Feedback Loop
 
@@ -154,6 +154,26 @@ npx playwright test e2e/code-review-assess-smoke.unauth.spec.ts --project=unauth
 
 The smoke proves the candidate lands in CODE_REVIEW rather than a video room, the repo/PR links are real GitHub URLs, the readable `MATCH_REASON`, `ASSESSMENT_FIT`, and deeper match proof render, evidence hyperedges render when required, Pierre exposes commentable diff lines, and no Pierre parser errors occur. Treat it as a heartbeat/regression test for the candidate assess surface; contrast quality, AI pushback, final submission storage, and recruiter result rendering are covered by the dedicated CODE_REVIEW E2E/API suites.
 
+## 10. CODE_REVIEW Recruiter Detail Smoke
+
+This smoke verifies the recruiter-side decision cockpit for an existing code-review or workspace assessment interview. It catches fallback loaders, infinite matching screens, missing next actions, missing score-validity state, missing workspace work packets, missing human-review state, and optional invite-recipient drift.
+
+```bash
+APP_BASE=https://app-dev.hire-pipe.com \
+API_BASE=https://api-dev.hire-pipe.com \
+VIDEO_ROOM_BASE=https://room-dev.hire-pipe.com \
+PIPE_DEV_BASIC_AUTH_USER=pipetest \
+PIPE_DEV_BASIC_AUTH_PASSWORD=pipetest123 \
+ASSESSMENT_RECRUITER_INTERVIEW_ID=<scheduled-interview-id> \
+ASSESSMENT_RECRUITER_EXPECT_OUTCOME=blocked \
+ASSESSMENT_RECRUITER_EXPECT_INVITE_RECIPIENT_EMAIL=<candidate-email> \
+npx playwright test e2e/code-review-recruiter-detail-smoke.spec.ts --project=authenticated --reporter=line
+```
+
+For matched code-review outcomes, set `ASSESSMENT_RECRUITER_EXPECT_OUTCOME=matched`, optionally add `ASSESSMENT_RECRUITER_EXPECT_SCORE=1`, `ASSESSMENT_RECRUITER_EXPECT_SUBMISSION=1`, `ASSESSMENT_RECRUITER_EXPECT_REPO_URL=<repo-url>`, and `ASSESSMENT_RECRUITER_EXPECT_PR_NUMBER=<number>`. Leave `ASSESSMENT_RECRUITER_EXPECT_INVITE_RECIPIENT_EMAIL` unset only when the fixture has no assessment invite panel.
+
+For `OPEN_SOURCE_BUG_FIX` or `DEV_CONTAINER_CHALLENGE` recruiter detail pages, reuse the same smoke with `ASSESSMENT_RECRUITER_EXPECT_REPO_URL=<repo-url>`, `ASSESSMENT_RECRUITER_EXPECT_SUBMISSION=1` after a commit has been submitted, `ASSESSMENT_RECRUITER_EXPECT_SCORE=1` after source-backed evaluation claims exist, `ASSESSMENT_RECRUITER_EXPECT_HUMAN_DECISION_FORM=1` when the reviewer decision form should be available, or `ASSESSMENT_RECRUITER_EXPECT_HUMAN_DECISION=1` after the human decision has been recorded. The legacy `CODE_REVIEW_RECRUITER_*` environment names still work for existing scripts.
+
 For the full app-dev flow, create a disposable CODE_REVIEW invite, submit intake evidence, wait for matching, and run the browser smoke in one command:
 
 ```bash
@@ -177,7 +197,45 @@ CODE_REVIEW_SMOKE_SUBMIT=1 CODE_REVIEW_SMOKE_AUTO_MATCH=1 CODE_REVIEW_SMOKE_ROLE
 
 Both should select `https://github.com/mui/base-ui` PR `#973`, return `MATCHED`, pass the source-backed quality gate, render a Pierre diff, and avoid any video-room UI. Manual mode is expected to report `assessmentQuality: "USABLE"` because it validates the recruiter-selected source-backed PR without inferring CV fit. Roleless auto-match mode must also report measured positive contrast separation against a second eligible concept-near packet; the app-dev smoke fails if only one packet is recalled for the default `usePopoverRoot` candidate evidence. Role-backed auto-match uses stricter selected role terms and does not require contrast by default when the validator reports that no second eligible source-backed challenge exists; it still must prove role source evidence, validator approval, and a `candidate_role_repo_alignment` hyperedge.
 
-Set `CODE_REVIEW_SMOKE_SUBMIT=1` for the stronger end-to-end gate. That mode keeps the browser assess smoke, drives the visible candidate UI to add an inline diff comment, submits the first review round in the browser, waits for the author response/thread, then completes with `request_changes`, submits the review-session reference through `/rpc/submit-challenge-response`, verifies both `/api/v1/scheduling/interviews/:id` and `/api/v1/candidates/:id` expose the completed recruiter result, fails if scheduled detail loses transcript rounds, reviewer comments, or AI developer responses, and checks the judge-example replay queue contains the review session with candidate comments, AI pushback, `human_label_queue`, and `cross_model_calibration` metadata. In auto-match mode it also requires recruiter-visible evidence hyperedges.
+Set `CODE_REVIEW_SMOKE_SUBMIT=1` for the stronger end-to-end gate. That mode keeps the browser assess smoke, drives the visible candidate UI to add an inline diff comment, submits the first review round in the browser, waits for the author response/thread, then completes with `request_changes`, submits the review-session reference through `/rpc/submit-challenge-response`, verifies both `/api/v1/scheduling/interviews/:id` and `/api/v1/candidates/:id` expose the completed recruiter result, fails if scheduled detail loses transcript rounds, reviewer comments, or AI developer responses, checks the judge-example replay queue contains the review session with candidate comments, AI pushback, `human_label_queue`, and `cross_model_calibration` metadata, and polls D1 until `review_sessions.score_report`, `challenge_submissions.score_report_json`, `challenge_submissions.score`, and `assessments.score` are durable. In auto-match mode it also requires recruiter-visible evidence hyperedges. The score-persistence check uses local `pipe-db` for localhost and remote `pipe-db-test` for app-dev; override with `CODE_REVIEW_SMOKE_D1_DATABASE` only when deliberately targeting another D1 database.
+
+To run the stronger app-dev gate across multiple realistic candidate profiles, use:
+
+```bash
+npm run smoke:code-review-assess-dev:matrix
+```
+
+The matrix creates fresh CODE_REVIEW invites and covers both happy-path and
+pushback behavior. The matchable profile submits a full browser-visible review,
+waits for AI developer pushback, verifies recruiter/profile projections, and
+checks remote D1 score persistence. Each profile also opens the authenticated
+recruiter interview detail page in a browser: matched runs must render the
+assignment, match decision, and score summary; blocked runs must render the
+needs-more-evidence decision, evidence-to-collect plan, and follow-up assessment
+CTA without an error page or matching loop. The accessibility-state and
+frontend-quality profiles are intentional ambiguous/near-tie lanes: they must
+return explicit blocked `repo_matching` attention states with diagnostics, no
+auto-refresh loop, and no video-room fallback. Use
+`CODE_REVIEW_SMOKE_MATRIX_PROFILES=react-interaction-platform,frontend-quality-infra`
+to run only the full-submit profiles, `CODE_REVIEW_SMOKE_MATRIX_REPEAT=2` for
+repeated runs, and `CODE_REVIEW_SMOKE_MATRIX_STOP_ON_FAILURE=1` when you want
+the first failure to stop the batch.
+
+For a repeatable pilot-reliability gate with stored artifacts, use:
+
+```bash
+npm run smoke:code-review-assess-dev:loop
+```
+
+The loop runs the matrix twice by default and writes per-iteration stdout,
+stderr, and parsed summary JSON under `tmp/code-review-smoke-runs/`. Each
+iteration must include at least one completed/scored full-submit match and at
+least one blocked `repo_matching` state with `autoRefresh: false`; the matched
+profile must also prove the candidate-facing review-session status endpoint
+reports `review` and `scoring` as complete. A green process exit alone is not
+enough. Tune with `CODE_REVIEW_SMOKE_LOOP_RUNS=3`,
+`CODE_REVIEW_SMOKE_LOOP_STOP_ON_FAILURE=0`, and
+`CODE_REVIEW_SMOKE_LOOP_OUT_DIR=<path>`.
 
 To audit the local judge/feedback improvement queue without calling an LLM:
 

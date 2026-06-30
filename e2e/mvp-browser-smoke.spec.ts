@@ -1,5 +1,8 @@
+import { setupClerkTestingToken } from "@clerk/testing/playwright";
 import { test, expect, type APIRequestContext, type Page } from "@playwright/test";
-import { API_BASE, APP_BASE } from "./env";
+import { API_BASE, APP_BASE, IS_REMOTE } from "./env";
+
+const RECRUITER_API_BASE = process.env.RECRUITER_API_BASE || (IS_REMOTE ? APP_BASE : API_BASE);
 
 async function getAuthToken(page: Page): Promise<string> {
   const cookies = await page.context().cookies();
@@ -17,12 +20,32 @@ function authHeaders(token: string): Record<string, string> {
   };
 }
 
+async function expectInterviewsListReady(page: Page): Promise<void> {
+  const heading = page.getByRole("heading", { name: /^interviews$/i });
+  try {
+    await expect(heading).toBeVisible({ timeout: 30000 });
+  } catch {
+    await page.reload({ waitUntil: "domcontentloaded" });
+    await expect(heading).toBeVisible({ timeout: 30000 });
+  }
+}
+
+async function expectInterviewPlansReady(page: Page): Promise<void> {
+  const heading = page.getByRole("heading", { name: /^interview plans$/i });
+  try {
+    await expect(heading).toBeVisible({ timeout: IS_REMOTE ? 45_000 : 15_000 });
+  } catch {
+    await page.reload({ waitUntil: "domcontentloaded" });
+    await expect(heading).toBeVisible({ timeout: IS_REMOTE ? 45_000 : 15_000 });
+  }
+}
+
 async function deletePipeline(
   request: APIRequestContext,
   token: string,
   pipelineId: string,
 ): Promise<void> {
-  const res = await request.delete(`${API_BASE}/api/v1/pipelines/${pipelineId}`, {
+  const res = await request.delete(`${RECRUITER_API_BASE}/api/v1/pipelines/${pipelineId}`, {
     headers: { Authorization: `Bearer ${token}` },
   });
   expect([204, 404]).toContain(res.status());
@@ -33,7 +56,7 @@ async function deleteCandidate(
   token: string,
   candidateId: string,
 ): Promise<void> {
-  const res = await request.delete(`${API_BASE}/api/v1/candidates/${candidateId}`, {
+  const res = await request.delete(`${RECRUITER_API_BASE}/api/v1/candidates/${candidateId}`, {
     headers: { Authorization: `Bearer ${token}` },
   });
   expect([204, 404]).toContain(res.status());
@@ -44,17 +67,10 @@ async function deleteContact(
   token: string,
   contactId: string,
 ): Promise<void> {
-  const res = await request.delete(`${API_BASE}/api/v1/contacts/${contactId}`, {
+  const res = await request.delete(`${RECRUITER_API_BASE}/api/v1/contacts/${contactId}`, {
     headers: { Authorization: `Bearer ${token}` },
   });
   expect([200, 204, 404]).toContain(res.status());
-}
-
-async function waitForClerkLoaded(page: Page): Promise<void> {
-  await page.waitForFunction(() => {
-    const clerk = (window as unknown as { Clerk?: { loaded?: boolean } }).Clerk;
-    return clerk?.loaded === true;
-  });
 }
 
 test.describe("MVP browser smoke - interviews, roles, people, living context", () => {
@@ -89,35 +105,32 @@ test.describe("MVP browser smoke - interviews, roles, people, living context", (
     page,
     request,
   }) => {
+    test.setTimeout(IS_REMOTE ? 120_000 : 60_000);
+
     const unique = Date.now();
     const roleTitle = `E2E Smoke Role ${unique}`;
     const personEmail = `mvp-smoke-${unique}@pipe-test.dev`;
     const rolelessMessage =
       "Roleless intake smoke fixture: candidate has React, D1, and living-context debugging experience.";
 
-    await page.goto(`${APP_BASE}/interviews?new=1`);
-    await waitForClerkLoaded(page);
+    await setupClerkTestingToken({ page });
+    await page.goto(`${APP_BASE}/interviews`);
     await expect(page).toHaveURL(/\/interviews/);
-    const newInterviewHeading = page.getByRole("heading", { name: /^new interview$/i });
-    await expect(newInterviewHeading).toBeVisible();
-    await newInterviewHeading
-      .locator("xpath=ancestor::div[contains(@style, 'max-width: 480px')]")
-      .getByRole("button")
-      .first()
-      .click();
+    await expectInterviewsListReady(page);
+    await expect(page.getByRole("button", { name: /^new interview$/i }).first()).toBeVisible();
 
-    await page.getByRole("button", { name: /^roles$/i }).click();
+    await page.getByRole("button", { name: /^interview plans$/i }).click();
     await expect(page).toHaveURL(/\/roles/);
-    await expect(page.getByRole("heading", { name: /active roles/i })).toBeVisible();
+    await expectInterviewPlansReady(page);
 
-    await page.getByRole("button", { name: /^new role$/i }).click();
+    await page.getByRole("button", { name: /^new plan$/i }).click();
     await expect(page).toHaveURL(/\/roles\/new/);
-    await expect(page.getByRole("heading", { name: /new role/i })).toBeVisible();
+    await expect(page.getByRole("heading", { name: /new (role|plan|interview plan)/i })).toBeVisible();
     await page.getByPlaceholder("Senior Frontend Engineer").fill(roleTitle);
     await page.getByPlaceholder("Acme Corp").fill("PIPE Smoke Co");
     await page.getByPlaceholder("Remote / NYC / Berlin").fill("Remote");
     await page
-      .getByPlaceholder("Paste role expectations, constraints, and technical requirements.")
+      .getByPlaceholder(/Paste role expectations, meeting context, or technical requirements/i)
       .fill(
         [
           "Own a TypeScript React product surface for recruiter workflows.",
@@ -125,7 +138,7 @@ test.describe("MVP browser smoke - interviews, roles, people, living context", (
           "Debug source-backed living context and candidate matching evidence.",
         ].join("\n"),
       );
-    await page.getByRole("button", { name: /create role/i }).click();
+    await page.getByRole("button", { name: /create (role|plan|interview plan)/i }).click();
     await expect(page).toHaveURL(/\/pipeline\/[^/]+/, { timeout: 30000 });
     const matchedPipelineId = page.url().match(/\/pipeline\/([^/?#]+)/)?.[1] ?? null;
     expect(matchedPipelineId).toBeTruthy();
@@ -135,18 +148,16 @@ test.describe("MVP browser smoke - interviews, roles, people, living context", (
     await expect(page).toHaveURL(/\/people/);
     await expect(page.getByRole("button", { name: /add person/i })).toBeVisible();
     await page.getByRole("button", { name: /add person/i }).click();
-    const addContactPanel = page
-      .getByText("ADD_CONTACT")
-      .locator("xpath=ancestor::div[contains(@style, 'height: 100%')]");
-    await addContactPanel.getByPlaceholder("email@example.com").fill(personEmail);
-    await addContactPanel.getByPlaceholder("Full name").fill("MVP Smoke Person");
-    await addContactPanel.getByPlaceholder("Company").fill("PIPE Smoke Co");
-    await addContactPanel.getByPlaceholder("Role / title").fill("Roleless Engineering Lead");
-    await addContactPanel.getByRole("button", { name: /^add$/i }).click();
+    await expect(page.getByPlaceholder("email@example.com")).toBeVisible();
+    await page.getByPlaceholder("email@example.com").fill(personEmail);
+    await page.getByPlaceholder("Full name").fill("MVP Smoke Person");
+    await page.getByPlaceholder("Company", { exact: true }).fill("PIPE Smoke Co");
+    await page.getByPlaceholder("Role / title").fill("Roleless Engineering Lead");
+    await page.getByRole("button", { name: /^add$/i }).click();
     await expect(page.getByText(personEmail)).toBeVisible({ timeout: 15000 });
 
     const token = await getAuthToken(page);
-    const contactsRes = await request.get(`${API_BASE}/api/v1/contacts`, {
+    const contactsRes = await request.get(`${RECRUITER_API_BASE}/api/v1/contacts`, {
       headers: { Authorization: `Bearer ${token}` },
     });
     expect(contactsRes.ok(), `contacts list failed: ${await contactsRes.text()}`).toBeTruthy();
@@ -158,7 +169,7 @@ test.describe("MVP browser smoke - interviews, roles, people, living context", (
     createdContactId = createdContact!.id;
 
     const contactContextRes = await request.get(
-      `${API_BASE}/api/v1/contacts/${createdContactId}/living-context`,
+      `${RECRUITER_API_BASE}/api/v1/contacts/${createdContactId}/living-context`,
       { headers: { Authorization: `Bearer ${token}` } },
     );
     expect(
@@ -180,12 +191,12 @@ test.describe("MVP browser smoke - interviews, roles, people, living context", (
     await page.getByRole("button", { name: /^context$/i }).click();
     await expect(
       page
-        .getByText("NO_CONTEXT_YET")
+        .getByText("No context captured yet.")
         .or(page.getByLabel("Search living context"))
         .first(),
-    ).toBeVisible({ timeout: 15000 });
+    ).toBeVisible({ timeout: IS_REMOTE ? 45_000 : 15_000 });
 
-    const rolelessRes = await request.post(`${API_BASE}/api/v1/candidates`, {
+    const rolelessRes = await request.post(`${RECRUITER_API_BASE}/api/v1/candidates`, {
       headers: authHeaders(token),
       data: {
         name: "MVP Smoke Roleless Candidate",
@@ -207,7 +218,7 @@ test.describe("MVP browser smoke - interviews, roles, people, living context", (
     expect(rolelessBody.candidate.intakeState).toBe("roleless_talent_pool");
 
     const contextRes = await request.get(
-      `${API_BASE}/api/v1/candidates/${rolelessBody.candidate.id}/living-context`,
+      `${RECRUITER_API_BASE}/api/v1/candidates/${rolelessBody.candidate.id}/living-context`,
       { headers: { Authorization: `Bearer ${token}` } },
     );
     expect(
@@ -239,7 +250,7 @@ test.describe("MVP browser smoke - interviews, roles, people, living context", (
     ).toBe(true);
 
     const contactAfterCandidateRes = await request.get(
-      `${API_BASE}/api/v1/contacts/${createdContactId}/living-context`,
+      `${RECRUITER_API_BASE}/api/v1/contacts/${createdContactId}/living-context`,
       { headers: { Authorization: `Bearer ${token}` } },
     );
     expect(
@@ -266,5 +277,22 @@ test.describe("MVP browser smoke - interviews, roles, people, living context", (
         .flatMap((artifact) => artifact.sourceSpans)
         .some((span) => span.exactText === rolelessMessage),
     ).toBe(true);
+
+    await page.goto(`${APP_BASE}/people/${createdContactId}`);
+    const cockpit = page.getByTestId("person-decision-cockpit");
+    await expect(cockpit).toBeVisible({ timeout: IS_REMOTE ? 45_000 : 15_000 });
+    await expect(cockpit).toContainText("Decision cockpit");
+    await expect(cockpit).toContainText("Current recommendation");
+    await expect(cockpit).toContainText("Assessment validity");
+    await expect(cockpit).toContainText("Missing context");
+    await expect(cockpit).toContainText("Next action");
+
+    const coverage = page.getByTestId("person-interaction-coverage");
+    await expect(coverage).toBeVisible();
+    await expect(coverage).toContainText("Evidence coverage");
+    await expect(coverage).toContainText("Person-level rollup from");
+    await expect(coverage).toContainText("single-meeting source record");
+    await expect(page.locator("body")).not.toContainText("candidate_node_");
+    await expect(page.locator("body")).not.toContainText("resume:review-evidence:");
   });
 });

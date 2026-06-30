@@ -16,6 +16,12 @@ describe('jwt', () => {
     expect(payload).toMatchObject({ sub: 'cand-2', pid: null });
   });
 
+  it('round-trips the optional invite token claim marker', async () => {
+    const token = await signJwt({ sub: 'cand-2', pid: null, itk: 'invite-token-1' }, SECRET);
+    const payload = await verifyJwt(token, SECRET);
+    expect(payload).toMatchObject({ sub: 'cand-2', pid: null, itk: 'invite-token-1' });
+  });
+
   it('rejects a token signed with a different secret', async () => {
     const token = await signJwt({ sub: 'cand-3', pid: null }, 'other-secret');
     expect(await verifyJwt(token, SECRET)).toBeNull();
