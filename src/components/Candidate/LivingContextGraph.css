@@ -3594,3 +3594,29 @@ html[data-theme="pipe-blue"] .living-context {
   gap: 3px;
   margin-top: 3px;
 }
+
+/* ── Staleness alerts ─────────────────────────────────────────────────── */
+
+.living-context__staleness-metrics {
+  display: flex;
+  gap: 10px;
+  margin-top: 6px;
+  color: var(--pipe-text-dim);
+  font: 9px "Space Mono", monospace;
+}
+
+.living-context__staleness-age {
+  color: var(--lc-gap-none, #ef4444);
+}
+
+.living-context__staleness-decay {
+  color: var(--lc-gap-weak, #f59e0b);
+}
+
+.living-context__staleness-recommendation {
+  margin-top: 6px;
+  color: var(--pipe-text-dim);
+  font-size: 10px;
+  line-height: 1.45;
+  font-style: italic;
+}

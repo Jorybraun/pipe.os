@@ -151,3 +151,11 @@ export type {
   MatchDecisionHistoryEntry,
   MatchDecisionHistory,
 } from './matchDecisionAudit';
+export { computeStalenessAlerts, loadCandidateStalenessAlerts } from './evidenceStalenessAlerts';
+export type {
+  AlertSeverity,
+  AlertCategory,
+  StalenessAlert,
+  StalenessAlertSummary,
+  StalenessAlertOptions,
+} from './evidenceStalenessAlerts';

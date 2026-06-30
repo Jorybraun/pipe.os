@@ -7,6 +7,16 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Added — Evidence staleness alerting (criteria #7, #8)
+
+- `evidenceStalenessAlerts.ts`: Pure-function staleness engine computing alerts across evidence dimensions. Classifies severity (critical ≥180d, warning ≥90d, info for single-source/low-coverage), maps interaction types to dimensions, integrates temporal decay multipliers, and derives overall health.
+- `GET /:candidateId/living-context/staleness-alerts`: API endpoint returning `StalenessAlertSummary` with severity counts, prioritised alerts, and health classification. Gated by `living_context_read`.
+- `useStalenessAlerts` hook: Frontend data hook for loading staleness alerts per candidate.
+- `StalenessAlertsPanel`: LivingContextGraph panel showing overall evidence health, severity badges, per-alert cards with age/decay metrics, and actionable recommendations.
+- `evidenceStalenessAlerts.test.ts`: 12-test suite (8 pure-function + 4 D1 integration) covering fresh/stale/aging/missing/single-source/low-coverage scenarios, custom thresholds, and health classification.
+- `useStalenessAlerts.test.ts`: 5-test hook suite covering idle state, fetch, error handling, refetch, and cleanup.
+- Frontend types: `StalenessAlert`, `StalenessAlertSummary`, `AlertSeverity`, `AlertCategory`, `StalenessOverallHealth` added to `src/lib/api/types.ts`.
+
 ### Added — Match decision audit trail (criteria #2, #5, #8)
 
 - `matchDecisionAudit.ts`: New living context module recording recruiter accept/reject/defer decisions as source-backed context records. Decisions link to match runs and cited alignments with full provenance.

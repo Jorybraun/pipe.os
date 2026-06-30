@@ -58,6 +58,7 @@ import { useMatchDecisions } from '../../hooks/useMatchDecisions';
 import { useRematch } from '../../hooks/useRematch';
 import { useCandidateComparison } from '../../hooks/useCandidateComparison';
 import { useEvidenceTimeline } from '../../hooks/useEvidenceTimeline';
+import { useStalenessAlerts } from '../../hooks/useStalenessAlerts';
 import { useLivingContext } from '../../hooks/useLivingContext';
 import { buildLivingContextBranches } from '../../lib/livingContextTree';
 import { ContextRecordForest } from './ContextRecordTree';
@@ -2626,6 +2627,119 @@ function EvidenceConflictsPanel({
   );
 }
 
+// ── Staleness alerts ────────────────────────────────────────────────────────
+
+const ALERT_SEVERITY_COLOR: Record<string, string> = {
+  critical: 'var(--lc-gap-none, #ef4444)',
+  warning: 'var(--lc-gap-weak, #f59e0b)',
+  info: 'var(--lc-structural, rgba(255,255,255,0.4))',
+};
+
+function StalenessAlertsPanel({
+  candidateId,
+}: {
+  candidateId: string;
+}): JSX.Element | null {
+  const { alerts: summary, isLoading, error, refetch } = useStalenessAlerts(candidateId);
+
+  if (isLoading && !summary) return null;
+  if (error || !summary || summary.alerts.length === 0) return null;
+
+  const healthColor = summary.overallHealth === 'critical'
+    ? ALERT_SEVERITY_COLOR.critical
+    : summary.overallHealth === 'at_risk'
+      ? ALERT_SEVERITY_COLOR.warning
+      : ALERT_SEVERITY_COLOR.info;
+
+  return (
+    <section
+      className="living-context__panel"
+      data-testid="staleness-alerts-panel"
+    >
+      <div className="living-context__section-head">
+        <div style={{ display: 'flex', gap: 6, alignItems: 'center' }}>
+          <Clock size={13} color={healthColor} />
+          <div className="living-context__section-title">Evidence health</div>
+          <div
+            className="living-context__count"
+            style={{ color: healthColor }}
+          >
+            {titleCase(summary.overallHealth)}
+          </div>
+        </div>
+        <button
+          type="button"
+          className="living-context__refresh"
+          onClick={() => void refetch()}
+          title="Refresh staleness alerts"
+          aria-label="Refresh staleness alerts"
+        >
+          <RefreshCw size={12} />
+        </button>
+      </div>
+
+      <div className="living-context__conflicts-summary" data-testid="staleness-summary">
+        {summary.criticalCount > 0 && (
+          <span className="living-context__conflict-badge" style={{ color: ALERT_SEVERITY_COLOR.critical }}>
+            {summary.criticalCount} critical
+          </span>
+        )}
+        {summary.warningCount > 0 && (
+          <span className="living-context__conflict-badge" style={{ color: ALERT_SEVERITY_COLOR.warning }}>
+            {summary.warningCount} warning
+          </span>
+        )}
+        {summary.infoCount > 0 && (
+          <span className="living-context__conflict-badge" style={{ color: ALERT_SEVERITY_COLOR.info }}>
+            {summary.infoCount} info
+          </span>
+        )}
+      </div>
+
+      <div className="living-context__conflicts-list">
+        {summary.alerts.map((alert) => (
+          <div
+            key={alert.id}
+            className={`living-context__conflict-card living-context__conflict-card--${alert.severity}`}
+            data-testid={`alert-${alert.id}`}
+          >
+            <div className="living-context__conflict-head">
+              <span className="living-context__concept">
+                {alert.dimension ? titleCase(alert.dimension) : 'Overall'}
+              </span>
+              <span
+                className="living-context__conflict-severity"
+                style={{ color: ALERT_SEVERITY_COLOR[alert.severity] }}
+              >
+                {alert.severity}
+              </span>
+            </div>
+            <div className="living-context__conflict-desc">{alert.title}</div>
+            <div className="living-context__conflict-impact">{alert.detail}</div>
+            {(alert.ageDays !== null || alert.decayMultiplier !== null) && (
+              <div className="living-context__staleness-metrics">
+                {alert.ageDays !== null && (
+                  <span className="living-context__staleness-age">
+                    {alert.ageDays}d old
+                  </span>
+                )}
+                {alert.decayMultiplier !== null && (
+                  <span className="living-context__staleness-decay">
+                    {Math.round(alert.decayMultiplier * 100)}% weight
+                  </span>
+                )}
+              </div>
+            )}
+            <div className="living-context__staleness-recommendation">
+              {alert.recommendation}
+            </div>
+          </div>
+        ))}
+      </div>
+    </section>
+  );
+}
+
 // ── Candidate comparison ────────────────────────────────────────────────────
 
 const COVERAGE_COLOR: Record<string, string> = {
@@ -3181,6 +3295,7 @@ export function LivingContextGraph({
       )}
 
       <EvidenceReadinessPanel candidateId={candidateId} />
+      <StalenessAlertsPanel candidateId={candidateId} />
       <EvidenceConflictsPanel candidateId={candidateId} />
       <EvidenceDepthPanel livingContext={livingContext} />
       <EvidenceTimelinePanel candidateId={candidateId} />

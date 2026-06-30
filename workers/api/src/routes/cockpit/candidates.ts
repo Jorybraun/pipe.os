@@ -1860,6 +1860,38 @@ candidateOps.get('/:candidateId/living-context/evidence-conflicts', requireGate(
   return c.json(report);
 });
 
+// GET /:candidateId/living-context/staleness-alerts — evidence freshness alerts
+candidateOps.get('/:candidateId/living-context/staleness-alerts', requireGate('living_context_read'), async (c) => {
+  const userId = c.var.userId;
+  const { candidateId } = c.req.param();
+  const db = c.env.DB;
+
+  const candidate = await db.prepare(
+    `SELECT c.id
+       FROM candidates c
+       LEFT JOIN pipelines p ON p.id = c.pipeline_id
+      WHERE c.id = ?1 AND (c.owner_id = ?2 OR p.owner_id = ?2)`,
+  ).bind(candidateId, userId).first<{ id: string }>();
+  if (!candidate) return apiError(c, 'NOT_FOUND', 'Candidate not found.');
+
+  const { loadCandidateStalenessAlerts } = await import('../../lib/livingContext/evidenceStalenessAlerts');
+  const report = await loadCandidateStalenessAlerts(db, candidateId);
+  if (!report) {
+    return c.json({
+      candidateId,
+      workspacePersonId: null,
+      criticalCount: 0,
+      warningCount: 0,
+      infoCount: 0,
+      overallHealth: 'healthy',
+      alerts: [],
+      computedAt: new Date().toISOString(),
+    });
+  }
+
+  return c.json(report);
+});
+
 // POST /:candidateId/living-context/rematch — recruiter triggers a fresh match run
 candidateOps.post('/:candidateId/living-context/rematch', requireGate('living_context_read'), async (c) => {
   const userId = c.var.userId;

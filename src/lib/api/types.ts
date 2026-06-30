@@ -1987,3 +1987,37 @@ export interface MatchDecisionHistory {
   rejectedCount: number;
   deferredCount: number;
 }
+
+export type AlertSeverity = 'critical' | 'warning' | 'info';
+
+export type AlertCategory =
+  | 'stale_evidence'
+  | 'aging_dimension'
+  | 'missing_dimension'
+  | 'low_coverage'
+  | 'single_source';
+
+export interface StalenessAlert {
+  id: string;
+  severity: AlertSeverity;
+  category: AlertCategory;
+  dimension: string | null;
+  title: string;
+  detail: string;
+  ageDays: number | null;
+  decayMultiplier: number | null;
+  recommendation: string;
+}
+
+export type StalenessOverallHealth = 'healthy' | 'attention_needed' | 'at_risk' | 'critical';
+
+export interface StalenessAlertSummary {
+  candidateId: string;
+  workspacePersonId: string | null;
+  criticalCount: number;
+  warningCount: number;
+  infoCount: number;
+  overallHealth: StalenessOverallHealth;
+  alerts: StalenessAlert[];
+  computedAt: string;
+}
