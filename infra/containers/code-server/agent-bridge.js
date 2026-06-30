@@ -37,6 +37,7 @@ const DEVIN_ORG_ID = String(process.env.DEVIN_ORG_ID || '').trim();
 const DEVIN_API_RESPONSE_TIMEOUT_MS = positiveIntEnv('DEVIN_API_RESPONSE_TIMEOUT_MS', 45000, 1000);
 const DEVIN_API_POLL_INTERVAL_MS = positiveIntEnv('DEVIN_API_POLL_INTERVAL_MS', 2500, 250);
 const DEVIN_AUTH_MESSAGE = 'Devin CLI is not logged in inside this container. Authenticate the real Devin CLI before using Clippy chat.';
+const ASSESSMENT_FINALIZE_TIMEOUT_MS = positiveIntEnv('ASSESSMENT_FINALIZE_TIMEOUT_MS', 120000, 1000);
 
 let agentAuthed = false;
 let agentProcess = null;
@@ -190,6 +191,294 @@ function roomSessionEventsUrl(pipeApiUrl = PIPE_API_URL, roomToken = ROOM_TOKEN)
   } catch {
     return null;
   }
+}
+
+function roomCommitSubmissionUrl(pipeApiUrl = PIPE_API_URL, roomToken = ROOM_TOKEN) {
+  const base = String(pipeApiUrl || '').trim();
+  const token = String(roomToken || '').trim();
+  if (!base || !token) return null;
+
+  try {
+    return new URL(
+      `/api/v1/meeting-rooms/${encodeURIComponent(token)}/assessment/commit-submission`,
+      base,
+    ).toString();
+  } catch {
+    return null;
+  }
+}
+
+function sha256ContentHash(text) {
+  return `sha256:${crypto.createHash('sha256').update(String(text)).digest('hex')}`;
+}
+
+function jsonResponse(res, status, body) {
+  res.writeHead(status, {
+    'Content-Type': 'application/json',
+    'Cache-Control': 'no-store',
+  });
+  res.end(JSON.stringify(body));
+}
+
+function readJsonRequestBody(req, maxBytes = 1024 * 1024) {
+  return new Promise((resolve, reject) => {
+    let body = '';
+    req.setEncoding('utf8');
+    req.on('data', (chunk) => {
+      body += chunk;
+      if (Buffer.byteLength(body, 'utf8') > maxBytes) {
+        reject(new Error('Request body is too large.'));
+        req.destroy();
+      }
+    });
+    req.on('end', () => {
+      if (!body.trim()) {
+        resolve({});
+        return;
+      }
+      try {
+        resolve(JSON.parse(body));
+      } catch {
+        reject(new Error('Request body must be valid JSON.'));
+      }
+    });
+    req.on('error', reject);
+  });
+}
+
+function runCommand(command, args, {
+  cwd = WORKSPACE,
+  timeoutMs = 30000,
+  env = process.env,
+} = {}) {
+  const result = spawnSync(command, args, {
+    cwd,
+    env,
+    encoding: 'utf8',
+    maxBuffer: 10 * 1024 * 1024,
+    timeout: timeoutMs,
+  });
+  const stdout = result.stdout || '';
+  const stderr = result.stderr || '';
+  if (result.error) {
+    throw new Error(`${command} ${args.join(' ')} failed: ${result.error.message}`);
+  }
+  if (result.status !== 0) {
+    const detail = `${stdout}\n${stderr}`.trim().slice(0, 2000);
+    throw new Error(`${command} ${args.join(' ')} exited ${result.status}${detail ? `: ${detail}` : ''}`);
+  }
+  return stdout.trimEnd();
+}
+
+function runGit(args, options = {}) {
+  return runCommand('git', args, options);
+}
+
+function parseChangedFiles(nameStatusText) {
+  return String(nameStatusText || '')
+    .split('\n')
+    .map((line) => line.trim())
+    .filter(Boolean)
+    .map((line) => {
+      const parts = line.split('\t');
+      const rawStatus = parts[0] || '';
+      const code = rawStatus.charAt(0).toUpperCase();
+      if ((code === 'R' || code === 'C') && parts.length >= 3) {
+        return {
+          path: parts[2],
+          status: code === 'R' ? 'renamed' : 'copied',
+          previousPath: parts[1],
+        };
+      }
+      const pathValue = parts.slice(1).join('\t').trim();
+      if (!pathValue) return null;
+      if (code === 'A') return { path: pathValue, status: 'added' };
+      if (code === 'D') return { path: pathValue, status: 'deleted' };
+      return { path: pathValue, status: 'modified' };
+    })
+    .filter(Boolean);
+}
+
+function normalizeOptionalString(value) {
+  return typeof value === 'string' && value.trim() ? value.trim() : null;
+}
+
+function defaultCommitNarrative(commitSha, changedFiles) {
+  const fileSummary = changedFiles.length === 1
+    ? changedFiles[0].path
+    : `${changedFiles.length} files`;
+  return `Candidate submitted commit ${commitSha} with changes to ${fileSummary}.`;
+}
+
+function buildTestEvidenceText(command, result) {
+  return [
+    `$ ${command}`,
+    `exitCode: ${result.status === null ? 'null' : result.status}`,
+    result.signal ? `signal: ${result.signal}` : null,
+    '--- stdout ---',
+    result.stdout || '',
+    '--- stderr ---',
+    result.stderr || '',
+  ].filter((part) => part !== null).join('\n');
+}
+
+async function buildWorkspaceCommitSubmission(body = {}) {
+  runGit(['rev-parse', '--is-inside-work-tree']);
+  const baseCommitSha = normalizeOptionalString(body.baseCommitSha)
+    || normalizeOptionalString(process.env.CHALLENGE_BASE_COMMIT_SHA);
+  if (!baseCommitSha || !/^[a-f0-9]{40}$/i.test(baseCommitSha)) {
+    throw new Error('CHALLENGE_BASE_COMMIT_SHA must be configured with the exact 40-character base commit before finalizing.');
+  }
+
+  runGit(['cat-file', '-e', `${baseCommitSha}^{commit}`]);
+  const commitSha = runGit(['rev-parse', 'HEAD']).trim().toLowerCase();
+  if (!/^[a-f0-9]{40}$/i.test(commitSha)) {
+    throw new Error('Unable to resolve a full HEAD commit SHA.');
+  }
+  if (commitSha === baseCommitSha.toLowerCase()) {
+    throw new Error('Cannot finalize assessment: HEAD is still the challenge base commit.');
+  }
+
+  const branchName = runGit(['rev-parse', '--abbrev-ref', 'HEAD']).trim();
+  const repositoryUrl = normalizeOptionalString(body.repositoryUrl)
+    || normalizeOptionalString(process.env.REPO_GIT_URL)
+    || normalizeOptionalString(runGit(['config', '--get', 'remote.origin.url']));
+  if (!repositoryUrl) {
+    throw new Error('Repository URL is required before finalizing assessment evidence.');
+  }
+
+  const commitEvidenceText = runGit(['show', '--no-patch', '--format=fuller', commitSha]);
+  const diffText = runGit(['diff', '--no-ext-diff', '--find-renames', `${baseCommitSha}..${commitSha}`]);
+  const changedFiles = parseChangedFiles(
+    runGit(['diff', '--name-status', '--find-renames', `${baseCommitSha}..${commitSha}`]),
+  );
+  if (changedFiles.length === 0 || !diffText.trim()) {
+    throw new Error('Cannot finalize assessment: submitted commit has no source-backed diff from the challenge base.');
+  }
+
+  const occurredAt = new Date().toISOString();
+  const sourceRepositoryUrl = normalizeOptionalString(body.forkRepositoryUrl) || repositoryUrl;
+  const testCommand = normalizeOptionalString(body.testCommand)
+    || normalizeOptionalString(process.env.PIPE_TEST_COMMAND);
+  let verificationSourceRef;
+  if (testCommand) {
+    const testResult = spawnSync('bash', ['-lc', testCommand], {
+      cwd: WORKSPACE,
+      env: process.env,
+      encoding: 'utf8',
+      maxBuffer: 10 * 1024 * 1024,
+      timeout: ASSESSMENT_FINALIZE_TIMEOUT_MS,
+    });
+    const testEvidenceText = buildTestEvidenceText(testCommand, testResult);
+    verificationSourceRef = {
+      sourceRefType: 'test_run',
+      sourceRefId: `${commitSha}:test-run`,
+      evidenceRole: 'verification_test_output',
+      locator: {
+        repositoryUrl: sourceRepositoryUrl,
+        commitSha,
+        command: testCommand,
+        exitCode: testResult.status,
+      },
+      exactText: testEvidenceText,
+      contentHash: sha256ContentHash(testEvidenceText),
+      metadata: {
+        source: 'agent_bridge_workspace_finalize',
+        timedOut: Boolean(testResult.error && testResult.error.code === 'ETIMEDOUT'),
+      },
+    };
+  } else {
+    const gapText = 'No test command was provided to the workspace finalizer, so PIPE captured this as a verification gap instead of inventing test evidence.';
+    verificationSourceRef = {
+      sourceRefType: 'verification_gap',
+      sourceRefId: `${commitSha}:test-evidence-missing`,
+      evidenceRole: 'missing_test_evidence_note',
+      locator: {
+        repositoryUrl: sourceRepositoryUrl,
+        commitSha,
+        expectedSourceRefType: 'test_run',
+      },
+      exactText: gapText,
+      contentHash: sha256ContentHash(gapText),
+      metadata: {
+        source: 'agent_bridge_workspace_finalize',
+        missingEvidence: 'test_run',
+      },
+    };
+  }
+
+  return {
+    narrative: normalizeOptionalString(body.narrative) || defaultCommitNarrative(commitSha, changedFiles),
+    repositoryUrl,
+    forkRepositoryUrl: normalizeOptionalString(body.forkRepositoryUrl),
+    branchName,
+    baseCommitSha: baseCommitSha.toLowerCase(),
+    commitSha,
+    commitUrl: normalizeOptionalString(body.commitUrl),
+    upstreamPullRequestUrl: normalizeOptionalString(body.upstreamPullRequestUrl),
+    upstreamPrConsent: body.upstreamPrConsent === true,
+    changedFiles,
+    occurredAt,
+    sourceRefs: [
+      {
+        sourceRefType: 'git_commit',
+        sourceRefId: commitSha,
+        evidenceRole: 'submitted_commit',
+        locator: {
+          repositoryUrl: sourceRepositoryUrl,
+          commitSha,
+        },
+        exactText: commitEvidenceText,
+        contentHash: sha256ContentHash(commitEvidenceText),
+        metadata: {
+          source: 'agent_bridge_workspace_finalize',
+        },
+      },
+      {
+        sourceRefType: 'code_diff',
+        sourceRefId: `${baseCommitSha.toLowerCase()}..${commitSha}`,
+        evidenceRole: 'submitted_diff',
+        locator: {
+          repositoryUrl: sourceRepositoryUrl,
+          baseCommitSha: baseCommitSha.toLowerCase(),
+          commitSha,
+        },
+        exactText: diffText,
+        contentHash: sha256ContentHash(diffText),
+        metadata: {
+          source: 'agent_bridge_workspace_finalize',
+        },
+      },
+      verificationSourceRef,
+    ],
+  };
+}
+
+async function submitWorkspaceCommitSubmission(payload) {
+  const endpoint = roomCommitSubmissionUrl();
+  if (!endpoint) {
+    throw new Error('PIPE_API_URL and ROOM_TOKEN must be configured before submitting assessment evidence.');
+  }
+
+  const response = await fetch(endpoint, {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify(payload),
+  });
+  const text = await response.text();
+  let body = null;
+  if (text) {
+    try {
+      body = JSON.parse(text);
+    } catch {
+      body = text;
+    }
+  }
+  if (!response.ok) {
+    const detail = typeof body === 'string' ? body : JSON.stringify(body);
+    throw new Error(`PIPE commit submission failed (${response.status}): ${detail}`);
+  }
+  return body;
 }
 
 async function captureWorkspaceFileChangeEvidence(change) {
@@ -1619,6 +1908,42 @@ const server = http.createServer(async (req, res) => {
       'Cache-Control': 'no-store',
     });
     res.end(context.text);
+    return;
+  }
+  if (url.pathname === '/assessment/finalize') {
+    if (req.method !== 'POST') {
+      jsonResponse(res, 405, { ok: false, error: { code: 'METHOD_NOT_ALLOWED', message: 'Use POST to finalize assessment evidence.' } });
+      return;
+    }
+    try {
+      const body = await readJsonRequestBody(req);
+      const payload = await buildWorkspaceCommitSubmission(body);
+      const submitted = await submitWorkspaceCommitSubmission(payload);
+      jsonResponse(res, 201, {
+        ok: true,
+        submitted: true,
+        commit: {
+          repositoryUrl: payload.repositoryUrl,
+          branchName: payload.branchName,
+          baseCommitSha: payload.baseCommitSha,
+          commitSha: payload.commitSha,
+          changedFiles: payload.changedFiles,
+          sourceRefTypes: payload.sourceRefs.map((ref) => ref.sourceRefType),
+        },
+        submission: submitted?.submission ?? null,
+        progress: submitted?.progress ?? null,
+      });
+    } catch (error) {
+      const message = error instanceof Error ? error.message : 'Assessment finalize failed.';
+      const status = message.includes('PIPE commit submission failed') ? 502 : 409;
+      jsonResponse(res, status, {
+        ok: false,
+        error: {
+          code: status === 502 ? 'COMMIT_SUBMISSION_FAILED' : 'ASSESSMENT_FINALIZE_BLOCKED',
+          message,
+        },
+      });
+    }
     return;
   }
   proxyToCodeServer(req, res);

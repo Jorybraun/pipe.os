@@ -51,7 +51,7 @@ elif [[ -n "${CHALLENGE_BRANCH:-}" && -d /workspace/.git ]]; then
   cd /
 fi
 
-if [[ -n "${AGENT_TYPE:-}" && "${AGENT_TYPE}" != "none" && -f /usr/local/bin/agent-bridge.js ]]; then
+if [[ -f /usr/local/bin/agent-bridge.js ]]; then
   export AGENT_BRIDGE_PORT="${AGENT_BRIDGE_PORT:-8080}"
   export CODE_SERVER_PORT="${CODE_SERVER_PORT:-8082}"
 
@@ -78,7 +78,7 @@ if [[ -n "${AGENT_TYPE:-}" && "${AGENT_TYPE}" != "none" && -f /usr/local/bin/age
     exit 1
   fi
 
-  echo "[entrypoint] Starting ${AGENT_TYPE} bridge/router on 0.0.0.0:${AGENT_BRIDGE_PORT}"
+  echo "[entrypoint] Starting workspace bridge/router on 0.0.0.0:${AGENT_BRIDGE_PORT}"
   node /usr/local/bin/agent-bridge.js &
   bridge_pid=$!
 

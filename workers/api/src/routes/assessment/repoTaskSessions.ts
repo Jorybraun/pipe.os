@@ -33,6 +33,7 @@ const jsonObjectSchema: z.ZodType<JsonObject> = z.record(jsonValueSchema);
 const modeSchema = z.enum([
   'STANDARD_VIDEO_INTERVIEW',
   'CODE_REVIEW',
+  'DEV_CONTAINER_CHALLENGE',
   'DEV_CONTAINER_REPO_TASK',
   'OPEN_SOURCE_BUG_FIX',
   'NINETY_FIVE_UNTIL_INFINITY_ROOM',
