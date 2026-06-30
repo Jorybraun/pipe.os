@@ -142,6 +142,9 @@ export interface RoomAssessmentProgressSnapshot {
   nextActionLabel: string;
   hasChallengePacket: boolean;
   hasWorkEvidence: boolean;
+  hasMessageEvidence?: boolean;
+  hasDevContainerEvidence?: boolean;
+  hasToolUsageEvidence?: boolean;
   hasCommitSubmission: boolean;
   hasFinalSubmission: boolean;
   hasAiInteraction: boolean;

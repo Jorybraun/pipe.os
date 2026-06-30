@@ -225,6 +225,9 @@ describe('InterviewDetailPage', () => {
           nextActionLabel: 'Start source-backed AI or human evaluation.',
           hasChallengePacket: true,
           hasWorkEvidence: true,
+          hasMessageEvidence: true,
+          hasDevContainerEvidence: true,
+          hasToolUsageEvidence: true,
           hasCommitSubmission: true,
           hasFinalSubmission: false,
           hasAiInteraction: true,
@@ -285,7 +288,7 @@ describe('InterviewDetailPage', () => {
     expect(progress).toHaveTextContent('Assessment progress');
     expect(progress).toHaveTextContent('Ready for evaluation');
     expect(progress).toHaveTextContent('Start source-backed AI or human evaluation.');
-    expect(progress).toHaveTextContent('challenge, work evidence, commit, AI use, transcript, tests');
+    expect(progress).toHaveTextContent('challenge, chat, workspace telemetry, room actions, commit, AI use, transcript, tests');
     expect(progress).toHaveTextContent('Workspace');
     expect(progress).toHaveTextContent('Ready · open-source/widgets · base 1111111111');
     expect(progress).toHaveTextContent('abcdef1234');
@@ -927,6 +930,9 @@ describe('InterviewDetailPage', () => {
           nextActionLabel: 'Review the assessment report and evidence.',
           hasChallengePacket: true,
           hasWorkEvidence: true,
+          hasMessageEvidence: true,
+          hasDevContainerEvidence: true,
+          hasToolUsageEvidence: true,
           hasCommitSubmission: true,
           hasFinalSubmission: true,
           hasAiInteraction: true,
@@ -989,7 +995,7 @@ describe('InterviewDetailPage', () => {
     expect(progress).toHaveTextContent('Assessment progress');
     expect(progress).toHaveTextContent('Evaluated');
     expect(progress).toHaveTextContent('Review the assessment report and evidence.');
-    expect(progress).toHaveTextContent('challenge, work evidence, commit, AI use, transcript, tests');
+    expect(progress).toHaveTextContent('challenge, chat, workspace telemetry, room actions, commit, AI use, transcript, tests');
     expect(progress).toHaveTextContent('1 Test run');
     expect(progress).toHaveTextContent('ffffffffff');
     expect(progress).toHaveTextContent('fix the popover cleanup regression.');

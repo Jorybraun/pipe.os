@@ -2421,6 +2421,9 @@ interface RoomAssessmentProgressPayload {
   nextActionLabel: string;
   hasChallengePacket: boolean;
   hasWorkEvidence: boolean;
+  hasMessageEvidence: boolean;
+  hasDevContainerEvidence: boolean;
+  hasToolUsageEvidence: boolean;
   hasCommitSubmission: boolean;
   hasFinalSubmission: boolean;
   hasAiInteraction: boolean;
@@ -2497,6 +2500,9 @@ function serializeRoomAssessmentProgress(
     nextActionLabel: progress.nextActionLabel,
     hasChallengePacket: progress.hasChallengePacket,
     hasWorkEvidence: progress.hasWorkEvidence,
+    hasMessageEvidence: progress.hasMessageEvidence,
+    hasDevContainerEvidence: progress.hasDevContainerEvidence,
+    hasToolUsageEvidence: progress.hasToolUsageEvidence,
     hasCommitSubmission: progress.hasCommitSubmission,
     hasFinalSubmission: progress.hasFinalSubmission,
     hasAiInteraction: progress.hasAiInteraction,

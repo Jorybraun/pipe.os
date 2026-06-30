@@ -68,6 +68,9 @@ const progress: RoomAssessmentProgressSnapshot = {
   nextActionLabel: 'Start source-backed AI or human evaluation.',
   hasChallengePacket: true,
   hasWorkEvidence: true,
+  hasMessageEvidence: true,
+  hasDevContainerEvidence: true,
+  hasToolUsageEvidence: true,
   hasCommitSubmission: true,
   hasFinalSubmission: false,
   hasAiInteraction: true,
@@ -141,7 +144,7 @@ describe('AssessmentStatusStrip', () => {
     expect(screen.getByTestId('assessment-progress-stage').textContent).toContain('Ready For Evaluation');
     expect(screen.getByTestId('assessment-progress-commit').textContent).toContain('Commit cccccccc');
     expect(screen.getByText('Start source-backed AI or human evaluation.')).not.toBeNull();
-    expect(screen.getByTestId('assessment-progress-coverage').textContent).toContain('challenge, work, commit, AI, tests');
+    expect(screen.getByTestId('assessment-progress-coverage').textContent).toContain('challenge, chat, workspace, room, commit, AI, tests');
   });
 
   it('shows a launch action when the host can start the controlled workspace', () => {

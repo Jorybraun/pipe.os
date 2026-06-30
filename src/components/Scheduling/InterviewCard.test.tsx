@@ -74,6 +74,9 @@ describe('InterviewCard assessment progress', () => {
         nextActionLabel: 'Start source-backed AI or human evaluation.',
         hasChallengePacket: true,
         hasWorkEvidence: true,
+        hasMessageEvidence: true,
+        hasDevContainerEvidence: true,
+        hasToolUsageEvidence: true,
         hasCommitSubmission: true,
         hasFinalSubmission: false,
         hasAiInteraction: true,
@@ -113,7 +116,7 @@ describe('InterviewCard assessment progress', () => {
     expect(progress).toHaveTextContent('ASSESSMENT');
     expect(progress).toHaveTextContent('Ready for evaluation');
     expect(progress).toHaveTextContent('Start source-backed AI or human evaluation.');
-    expect(progress).toHaveTextContent('challenge, work evidence, commit, AI use, transcript, tests');
+    expect(progress).toHaveTextContent('challenge, chat, workspace telemetry, room actions, commit, AI use, transcript, tests');
     expect(progress).toHaveTextContent('WORKSPACE');
     expect(progress).toHaveTextContent('Ready · open-source/widgets · base 111111111111');
     expect(progress).toHaveTextContent('open-source/widgets');

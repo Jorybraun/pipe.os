@@ -5666,6 +5666,7 @@ describe('meeting room recording living-context route', () => {
       progress: {
         state: string;
         hasWorkEvidence: boolean;
+        hasMessageEvidence: boolean;
         evidenceCounts: Array<{ kind: string; count: number }>;
         latestEvent: { kind: string; sequence: number };
       };
@@ -5676,6 +5677,7 @@ describe('meeting room recording living-context route', () => {
       progress: {
         state: 'IN_PROGRESS',
         hasWorkEvidence: true,
+        hasMessageEvidence: true,
         latestEvent: { kind: 'message', sequence: 1 },
       },
     });
@@ -5808,6 +5810,7 @@ describe('meeting room recording living-context route', () => {
         state: string;
         hasChallengePacket: boolean;
         hasWorkEvidence: boolean;
+        hasDevContainerEvidence: boolean;
         evidenceCounts: Array<{ kind: string; count: number }>;
         sourceRefCounts: Array<{ kind: string; count: number }>;
         latestEvent: { kind: string; sequence: number } | null;
@@ -5819,6 +5822,7 @@ describe('meeting room recording living-context route', () => {
       state: 'IN_PROGRESS',
       hasChallengePacket: true,
       hasWorkEvidence: true,
+      hasDevContainerEvidence: true,
       latestEvent: { kind: 'dev_container_event', sequence: 2 },
     });
     expect(body.progress?.evidenceCounts).toContainEqual({ kind: 'dev_container_event', count: 1 });
@@ -5887,6 +5891,7 @@ describe('meeting room recording living-context route', () => {
       };
       progress: {
         hasWorkEvidence: boolean;
+        hasDevContainerEvidence: boolean;
         evidenceCounts: Array<{ kind: string; count: number }>;
         sourceRefCounts: Array<{ kind: string; count: number }>;
         latestEvent: { kind: string; sequence: number } | null;
@@ -5900,6 +5905,7 @@ describe('meeting room recording living-context route', () => {
     });
     expect(stopBody.progress).toMatchObject({
       hasWorkEvidence: true,
+      hasDevContainerEvidence: true,
       latestEvent: { kind: 'dev_container_event', sequence: 3 },
     });
     expect(stopBody.progress?.evidenceCounts).toContainEqual({ kind: 'dev_container_event', count: 2 });

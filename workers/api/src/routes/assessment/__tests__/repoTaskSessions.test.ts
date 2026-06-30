@@ -322,6 +322,14 @@ describe('repo task assessment session routes', () => {
         sourceRefs: [await sourceRef('tool_usage', 'tool-1', 'git diff -- src/popover.ts')],
       },
       {
+        ingestionKey: 'assessment-event:bundle-dev-container',
+        kind: 'dev_container_event',
+        actorType: 'dev_container',
+        narrative: 'Dev container observed the candidate editing the focused source file.',
+        payload: { filePath: 'src/popover.ts', action: 'save' },
+        sourceRefs: [await sourceRef('code_server_file_observation', 'editor-save-1', 'Saved src/popover.ts after cleanup change.')],
+      },
+      {
         ingestionKey: 'assessment-event:bundle-transcript',
         kind: 'transcript_span',
         actorType: 'candidate',
@@ -360,6 +368,7 @@ describe('repo task assessment session routes', () => {
       'ai_interaction',
       'candidate_plan',
       'code_diff',
+      'dev_container_event',
       'diagram',
       'message',
       'terminal_output',
@@ -382,6 +391,7 @@ describe('repo task assessment session routes', () => {
       { kind: 'ai_interaction', count: 1 },
       { kind: 'candidate_plan', count: 1 },
       { kind: 'code_diff', count: 1 },
+      { kind: 'dev_container_event', count: 1 },
       { kind: 'diagram', count: 1 },
       { kind: 'final_submission', count: 1 },
       { kind: 'message', count: 1 },
@@ -395,7 +405,7 @@ describe('repo task assessment session routes', () => {
          FROM context_records
         WHERE scope_type = 'assessment_session'
           AND scope_id = ?`,
-    ).get(session.id)).toEqual({ count: 10 });
+    ).get(session.id)).toEqual({ count: 11 });
     expect(sqlite.prepare(
       `SELECT source_ref_type, exact_text
          FROM assessment_event_source_refs
@@ -403,6 +413,33 @@ describe('repo task assessment session routes', () => {
     ).get(body.bundle.event.id)).toEqual({
       source_ref_type: 'final_submission',
       exact_text: finalSummary,
+    });
+
+    const progressResponse = await app.request(
+      `/api/v1/assessment/repo-task/sessions/${session.id}/progress`,
+      { method: 'GET' },
+      env,
+    );
+    expect(progressResponse.status).toBe(200);
+    const progressBody = await progressResponse.json() as {
+      progress: {
+        hasWorkEvidence: boolean;
+        hasMessageEvidence: boolean;
+        hasDevContainerEvidence: boolean;
+        hasToolUsageEvidence: boolean;
+        hasAiInteraction: boolean;
+        hasTranscriptEvidence: boolean;
+        hasTestEvidence: boolean;
+      };
+    };
+    expect(progressBody.progress).toMatchObject({
+      hasWorkEvidence: true,
+      hasMessageEvidence: true,
+      hasDevContainerEvidence: true,
+      hasToolUsageEvidence: true,
+      hasAiInteraction: true,
+      hasTranscriptEvidence: true,
+      hasTestEvidence: true,
     });
   });
 

@@ -430,15 +430,29 @@ function assessmentProgressStageLabel(stage: string): string {
 function assessmentEvidenceSummary(input: {
   hasChallengePacket: boolean;
   hasWorkEvidence: boolean;
+  hasMessageEvidence?: boolean;
+  hasDevContainerEvidence?: boolean;
+  hasToolUsageEvidence?: boolean;
   hasCommitSubmission: boolean;
   hasAiInteraction: boolean;
   hasTranscriptEvidence: boolean;
   hasTestEvidence: boolean;
   hasVerificationGap?: boolean;
 }): string {
+  const hasGranularWorkEvidence = Boolean(
+    input.hasMessageEvidence
+    || input.hasDevContainerEvidence
+    || input.hasToolUsageEvidence
+    || input.hasAiInteraction
+    || input.hasTranscriptEvidence
+    || input.hasTestEvidence,
+  );
   const ready = [
     input.hasChallengePacket ? 'challenge' : null,
-    input.hasWorkEvidence ? 'work evidence' : null,
+    input.hasMessageEvidence ? 'chat' : null,
+    input.hasDevContainerEvidence ? 'workspace telemetry' : null,
+    input.hasToolUsageEvidence ? 'room actions' : null,
+    input.hasWorkEvidence && !hasGranularWorkEvidence ? 'work evidence' : null,
     input.hasCommitSubmission ? 'commit' : null,
     input.hasAiInteraction ? 'AI use' : null,
     input.hasTranscriptEvidence ? 'transcript' : null,

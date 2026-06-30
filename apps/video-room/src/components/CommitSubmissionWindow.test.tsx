@@ -48,6 +48,9 @@ const loadedProgress: RoomAssessmentProgressSnapshot = {
   nextActionLabel: 'Submit the assessment branch commit.',
   hasChallengePacket: true,
   hasWorkEvidence: true,
+  hasMessageEvidence: true,
+  hasDevContainerEvidence: true,
+  hasToolUsageEvidence: true,
   hasCommitSubmission: false,
   hasFinalSubmission: false,
   hasAiInteraction: true,
@@ -94,6 +97,9 @@ describe('CommitSubmissionWindow', () => {
     const flags = screen.getByTestId('commit-submission-completion-flags');
     expect(flags.textContent).toContain('Challenge packet: Captured');
     expect(flags.textContent).toContain('Work evidence: Captured');
+    expect(flags.textContent).toContain('Chat evidence: Captured');
+    expect(flags.textContent).toContain('Workspace telemetry: Captured');
+    expect(flags.textContent).toContain('Room actions: Captured');
     expect(flags.textContent).toContain('Commit submission: Missing');
     expect(flags.textContent).toContain('Test evidence: Missing');
     expect(flags.textContent).toContain('AI interaction: Captured');

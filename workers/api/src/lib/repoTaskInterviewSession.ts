@@ -320,6 +320,9 @@ export interface AssessmentProgressSnapshot {
   nextActionLabel: string;
   hasChallengePacket: boolean;
   hasWorkEvidence: boolean;
+  hasMessageEvidence: boolean;
+  hasDevContainerEvidence: boolean;
+  hasToolUsageEvidence: boolean;
   hasCommitSubmission: boolean;
   hasFinalSubmission: boolean;
   hasAiInteraction: boolean;
@@ -1133,6 +1136,28 @@ export class RepoTaskInterviewSessionStore {
     const hasCommitSubmission = commit !== null;
     const hasFinalSubmission = hasEventKind(evidenceCounts, ['final_submission']);
     const hasAiInteraction = hasEventKind(evidenceCounts, ['ai_interaction']);
+    const hasMessageEvidence = hasEventKind(evidenceCounts, ['message'])
+      || hasEventKind(sourceRefCounts, ['room_chat_message']);
+    const hasDevContainerEvidence = hasEventKind(evidenceCounts, ['dev_container_event'])
+      || hasEventKind(sourceRefCounts, [
+        'dev_container_workspace_launch',
+        'dev_container_workspace_stop',
+        'dev_container_workspace_state',
+        'code_server_file_observation',
+        'code_server_editor_open',
+        'room_file_content',
+      ]);
+    const hasToolUsageEvidence = hasEventKind(evidenceCounts, ['tool_usage'])
+      || hasEventKind(sourceRefCounts, [
+        'room_surface_change',
+        'win95_start_menu_state',
+        'room_browser_navigation',
+        'room_window_lifecycle',
+        'room_window_data_update',
+        'room_window_state_change',
+        'room_cursor_presence_sample',
+        'room_media_control',
+      ]);
     const hasTranscriptEvidence = hasEventKind(evidenceCounts, ['transcript_span']);
     const hasTestEvidence = hasEventKind(evidenceCounts, ['test_run'])
       || hasEventKind(sourceRefCounts, ['test_run']);
@@ -1154,6 +1179,9 @@ export class RepoTaskInterviewSessionStore {
       nextActionLabel: progressNextActionLabel(nextAction),
       hasChallengePacket,
       hasWorkEvidence,
+      hasMessageEvidence,
+      hasDevContainerEvidence,
+      hasToolUsageEvidence,
       hasCommitSubmission,
       hasFinalSubmission,
       hasAiInteraction,

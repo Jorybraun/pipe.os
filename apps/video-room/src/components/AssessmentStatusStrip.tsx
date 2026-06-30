@@ -110,6 +110,28 @@ function shortSha(value: string | null | undefined): string | null {
   return trimmed ? trimmed.slice(0, 8) : null;
 }
 
+function assessmentProgressEvidenceLabels(progress: RoomAssessmentProgressSnapshot): string {
+  const hasGranularWorkEvidence = Boolean(
+    progress.hasMessageEvidence
+    || progress.hasDevContainerEvidence
+    || progress.hasToolUsageEvidence
+    || progress.hasAiInteraction
+    || progress.hasTranscriptEvidence
+    || progress.hasTestEvidence,
+  );
+  return [
+    progress.hasChallengePacket ? 'challenge' : null,
+    progress.hasMessageEvidence ? 'chat' : null,
+    progress.hasDevContainerEvidence ? 'workspace' : null,
+    progress.hasToolUsageEvidence ? 'room' : null,
+    progress.hasWorkEvidence && !hasGranularWorkEvidence ? 'work' : null,
+    progress.hasCommitSubmission ? 'commit' : null,
+    progress.hasAiInteraction ? 'AI' : null,
+    progress.hasTranscriptEvidence ? 'transcript' : null,
+    progress.hasTestEvidence ? 'tests' : null,
+  ].filter(Boolean).join(', ') || 'no evidence yet';
+}
+
 export function AssessmentStatusStrip({
   meetingType,
   workspace,
@@ -247,14 +269,7 @@ export function AssessmentStatusStrip({
         {assessmentProgress && (
           <span className="assessment-status-evidence" data-testid="assessment-progress-coverage">
             <ClipboardCheck size={13} />
-            {[
-              assessmentProgress.hasChallengePacket ? 'challenge' : null,
-              assessmentProgress.hasWorkEvidence ? 'work' : null,
-              assessmentProgress.hasCommitSubmission ? 'commit' : null,
-              assessmentProgress.hasAiInteraction ? 'AI' : null,
-              assessmentProgress.hasTranscriptEvidence ? 'transcript' : null,
-              assessmentProgress.hasTestEvidence ? 'tests' : null,
-            ].filter(Boolean).join(', ') || 'no evidence yet'}
+            {assessmentProgressEvidenceLabels(assessmentProgress)}
           </span>
         )}
       </div>
