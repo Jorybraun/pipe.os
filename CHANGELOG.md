@@ -32,6 +32,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Fixed — Scheduling
 
+- Source-backed assessment sessions can now record a recruiter human decision after evaluation, require that decision to cite persisted assessment evidence or report output, and surface the human decision on interview detail/readout cards.
 - Manual open-source challenge packets now verify the assigned base commit is reachable in the selected GitHub repo before creating the interview, preventing fake immutable task packets from entering the assessment flow.
 - Scheduled open-source, code-review, and dev-container assessment invites now create linked meeting rooms with explicit workspace, recording, and Clippy feature flags plus assessment-specific title/description copy, while standard video invites stay out of the dev-workspace path.
 - Assessment progress now carries evaluator diagnostic previews through recruiter and room APIs and shows evaluator cautions on interview details and cards, making missing-test or human-review risks visible beside source-backed claims.

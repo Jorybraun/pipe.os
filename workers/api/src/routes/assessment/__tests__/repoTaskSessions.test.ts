@@ -1212,6 +1212,9 @@ Fix stale popover listener cleanup.`;
       env,
     );
     expect(evaluationResponse.status).toBe(201);
+    const evaluationBody = await evaluationResponse.json() as {
+      report: { id: string; status: string };
+    };
 
     const evaluatedProgressResponse = await app.request(
       `/api/v1/assessment/repo-task/sessions/${session.id}/progress`,
@@ -1251,6 +1254,89 @@ Fix stale popover listener cleanup.`;
         }],
       },
     });
+
+    const humanDecisionSourceRef = await sourceRef(
+      'assessment_evaluation_report',
+      evaluationBody.report.id,
+      'Candidate produced a focused source-backed commit.',
+    );
+    const forgedDecisionResponse = await app.request(
+      `/api/v1/assessment/repo-task/sessions/${session.id}/human-decisions`,
+      jsonRequest({
+        ingestionKey: 'human-decision:forged-report',
+        decision: 'advance',
+        reviewerId: 'recruiter-progress',
+        summary: 'Human reviewer advances the candidate.',
+        sourceRefs: [{
+          ...humanDecisionSourceRef,
+          sourceRefId: 'assessment-report-forged',
+        }],
+      }),
+      env,
+    );
+    expect(forgedDecisionResponse.status).toBe(400);
+    expect(await forgedDecisionResponse.json()).toMatchObject({
+      error: {
+        message: 'human assessment decision source ref assessment_evaluation_report:assessment-report-forged is not backed by assessment session evidence or evaluation output',
+      },
+    });
+
+    const humanDecisionResponse = await app.request(
+      `/api/v1/assessment/repo-task/sessions/${session.id}/human-decisions`,
+      jsonRequest({
+        ingestionKey: 'human-decision:advance-focused-commit',
+        decision: 'advance',
+        reviewerId: 'recruiter-progress',
+        summary: 'Human reviewer advances the candidate after checking the source-backed report.',
+        notes: 'Diff and tests support the decision.',
+        sourceRefs: [humanDecisionSourceRef],
+      }),
+      env,
+    );
+    expect(humanDecisionResponse.status).toBe(201);
+    const humanDecisionBody = await humanDecisionResponse.json() as {
+      decision: {
+        decision: string;
+        summary: string;
+        notes: string | null;
+        sourceRefCount: number;
+        sourceRefTypes: string[];
+      };
+      progress: {
+        stage: string;
+        nextAction: string;
+        latestEvent: { kind: string };
+        humanDecision: {
+          decision: string;
+          summary: string;
+          notes: string | null;
+          sourceRefCount: number;
+          sourceRefTypes: string[];
+        };
+        evidenceCounts: Array<{ kind: string; count: number }>;
+      };
+    };
+    expect(humanDecisionBody.decision).toMatchObject({
+      decision: 'advance',
+      summary: 'Human reviewer advances the candidate after checking the source-backed report.',
+      notes: 'Diff and tests support the decision.',
+      sourceRefCount: 1,
+      sourceRefTypes: ['assessment_evaluation_report'],
+    });
+    expect(humanDecisionBody.progress).toMatchObject({
+      stage: 'EVALUATED',
+      nextAction: 'NONE',
+      latestEvent: { kind: 'human_assessment_decision' },
+      humanDecision: {
+        decision: 'advance',
+        summary: 'Human reviewer advances the candidate after checking the source-backed report.',
+        sourceRefCount: 1,
+        sourceRefTypes: ['assessment_evaluation_report'],
+      },
+    });
+    expect(humanDecisionBody.progress.evidenceCounts).toEqual(expect.arrayContaining([
+      { kind: 'human_assessment_decision', count: 1 },
+    ]));
   });
 
   it('surfaces source-backed verification gaps separately from real test evidence', async () => {

@@ -179,6 +179,16 @@ export interface AssessmentProgressSnapshot {
     claims?: AssessmentEvaluationClaimPreview[];
     diagnostics?: AssessmentEvaluationDiagnosticPreview[];
   } | null;
+  humanDecision?: {
+    eventId: string;
+    decision: 'advance' | 'hold' | 'reject' | 'needs_more_evidence';
+    reviewerId: string | null;
+    summary: string;
+    notes: string | null;
+    occurredAt: string;
+    sourceRefCount: number;
+    sourceRefTypes: string[];
+  } | null;
 }
 
 export interface AssessmentEvidenceSnippet {

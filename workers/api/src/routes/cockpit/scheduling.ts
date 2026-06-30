@@ -43,6 +43,7 @@ import { AssessmentLayerStore, type AssessmentEvidenceSourceRefInput } from '../
 import {
   RepoTaskInterviewSessionStore,
   type AssessmentProgressSnapshot,
+  type HumanAssessmentDecisionValue,
 } from '../../lib/repoTaskInterviewSession';
 import { evaluateRepoTaskAssessmentSession } from '../../lib/repoTaskAssessmentEvaluator';
 import * as d1Matcher from '../../lib/challengeMatching/d1Matcher';
@@ -576,6 +577,19 @@ const updateInterviewSchema = z.object({
   matchedRepoId: z.number().int().positive().nullable().optional(),
   githubRepoUrl: z.string().trim().url().nullable().optional(),
   githubPrNumber: z.number().int().positive().nullable().optional(),
+});
+
+const humanAssessmentDecisionSchema = z.enum([
+  'advance',
+  'hold',
+  'reject',
+  'needs_more_evidence',
+] satisfies [HumanAssessmentDecisionValue, ...HumanAssessmentDecisionValue[]]);
+
+const recordHumanAssessmentDecisionSchema = z.object({
+  decision: humanAssessmentDecisionSchema,
+  summary: z.string().trim().min(1).max(2000),
+  notes: z.string().trim().min(1).max(5000).nullable().optional(),
 });
 
 const inviteToCallSchema = z.object({
@@ -2951,6 +2965,26 @@ async function loadScheduledAssessmentSessionId(
       LIMIT 1`,
   ).bind(interviewId).first<{ id: string }>();
   return row?.id ?? null;
+}
+
+async function sha256Hex(value: string): Promise<string> {
+  const bytes = new TextEncoder().encode(value);
+  const digest = await crypto.subtle.digest('SHA-256', bytes);
+  return Array.from(new Uint8Array(digest), (byte) => byte.toString(16).padStart(2, '0')).join('');
+}
+
+async function loadLatestAssessmentEvaluationReport(
+  db: D1Database,
+  sessionId: string,
+): Promise<{ id: string; status: string; summary: string } | null> {
+  const row = await db.prepare(
+    `SELECT id, status, summary
+       FROM assessment_evaluation_reports
+      WHERE session_id = ?1
+      ORDER BY created_at DESC, id DESC
+      LIMIT 1`,
+  ).bind(sessionId).first<{ id: string; status: string; summary: string }>();
+  return row ?? null;
 }
 
 interface ManualOpenSourceChallengePacketInput {
@@ -5333,6 +5367,89 @@ schedulingAuth.post('/interviews/:id/assessment/start-evaluation', async (c) => 
       error: error instanceof Error ? error.message : String(error),
     });
     return apiError(c, 'SERVER_ERROR', 'Unable to start assessment evaluation.');
+  }
+});
+
+// POST /interviews/:id/assessment/human-decision — recruiter records source-backed final decision
+schedulingAuth.post('/interviews/:id/assessment/human-decision', async (c) => {
+  const userId = c.var.userId;
+  const { id } = c.req.param();
+  const db = c.env.DB;
+  const body = recordHumanAssessmentDecisionSchema.safeParse(await c.req.json().catch(() => null));
+  if (!body.success) {
+    return apiError(c, 'BAD_REQUEST', body.error.issues[0]?.message ?? 'Invalid human assessment decision body.');
+  }
+
+  const interview = await db.prepare(
+    `SELECT id
+       FROM scheduled_interviews
+      WHERE id = ?1
+        AND owner_id = ?2
+      LIMIT 1`,
+  ).bind(id, userId).first<{ id: string }>();
+  if (!interview) return apiError(c, 'NOT_FOUND', 'Interview not found.');
+
+  const sessionId = await loadScheduledAssessmentSessionId(db, id);
+  if (!sessionId) {
+    return apiError(c, 'CONFLICT', 'This interview is not linked to an assessment session yet.');
+  }
+
+  const latestReport = await loadLatestAssessmentEvaluationReport(db, sessionId);
+  if (!latestReport) {
+    return apiError(c, 'CONFLICT', 'Run source-backed assessment evaluation before recording a human decision.');
+  }
+
+  const store = new RepoTaskInterviewSessionStore(db);
+  try {
+    const occurredAt = new Date().toISOString();
+    const reportSummaryHash = await sha256Hex(latestReport.summary);
+    const notes = body.data.notes?.trim() || null;
+    const decisionKeyHash = await sha256Hex([
+      sessionId,
+      latestReport.id,
+      userId,
+      body.data.decision,
+      body.data.summary,
+      notes ?? '',
+    ].join('\n'));
+    const reportSourceRef: AssessmentEvidenceSourceRefInput = {
+      sourceRefType: 'assessment_evaluation_report',
+      sourceRefId: latestReport.id,
+      evidenceRole: 'human_decision_basis',
+      locator: {
+        scheduledInterviewId: id,
+        assessmentSessionId: sessionId,
+        reportId: latestReport.id,
+        reportStatus: latestReport.status,
+        route: '/api/v1/scheduling/interviews/:id/assessment/human-decision',
+      },
+      exactText: latestReport.summary,
+      contentHash: reportSummaryHash,
+      metadata: {
+        reportStatus: latestReport.status,
+      },
+    };
+
+    const decision = await store.recordHumanDecision({
+      sessionId,
+      ingestionKey: `assessment-event:${sessionId}:human-decision:${decisionKeyHash}`,
+      decision: body.data.decision,
+      reviewerId: userId,
+      summary: body.data.summary,
+      notes,
+      occurredAt,
+      sourceRefs: [reportSourceRef],
+    });
+    const progress = await store.loadProgress(sessionId);
+
+    return c.json({ decision, progress }, 201);
+  } catch (error) {
+    console.error('[scheduling/recordHumanAssessmentDecision] failed:', {
+      interviewId: id,
+      assessmentSessionId: sessionId,
+      error: error instanceof Error ? error.message : String(error),
+    });
+    return apiError(c, 'SERVER_ERROR', 'Unable to record human assessment decision.');
   }
 });
 

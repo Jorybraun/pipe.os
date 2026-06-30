@@ -76,6 +76,21 @@ function compactText(value: string, maxLength = 150): string {
   return `${trimmed.slice(0, maxLength - 1).trimEnd()}...`;
 }
 
+function assessmentHumanDecisionLabel(decision: string): string {
+  switch (decision) {
+    case 'advance':
+      return 'Human: advance';
+    case 'hold':
+      return 'Human: hold';
+    case 'reject':
+      return 'Human: reject';
+    case 'needs_more_evidence':
+      return 'Human: needs more evidence';
+    default:
+      return `Human: ${sentenceCaseToken(decision)}`;
+  }
+}
+
 function repoLabelFromUrl(value: string | null | undefined): string | null {
   if (!value) return null;
   try {
@@ -172,6 +187,13 @@ function assessmentDecisionSummary(input: {
   progress: ScheduledInterview['assessmentProgress'] | null;
 }): AssessmentDecisionSummary | null {
   const { setup, progress } = input;
+
+  if (progress?.humanDecision) {
+    return {
+      value: assessmentHumanDecisionLabel(progress.humanDecision.decision),
+      detail: compactText(progress.humanDecision.summary, 150),
+    };
+  }
 
   if (progress?.evaluation) {
     const status = progress.evaluation.status.toUpperCase();

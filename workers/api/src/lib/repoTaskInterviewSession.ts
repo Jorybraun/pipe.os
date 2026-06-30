@@ -44,6 +44,7 @@ export type AssessmentEvidenceEventKind =
   | 'final_submission'
   | 'match_decision'
   | 'recruiter_note'
+  | 'human_assessment_decision'
   | 'dev_container_event'
   | 'system_diagnostic';
 
@@ -235,6 +236,34 @@ export interface PersistedCommitAssessmentSubmission {
   transition: PersistedAssessmentStateTransition | null;
 }
 
+export type HumanAssessmentDecisionValue =
+  | 'advance'
+  | 'hold'
+  | 'reject'
+  | 'needs_more_evidence';
+
+export interface RecordHumanAssessmentDecisionInput {
+  sessionId: string;
+  ingestionKey: string;
+  decision: HumanAssessmentDecisionValue;
+  reviewerId?: string | null;
+  summary: string;
+  notes?: string | null;
+  occurredAt?: string | null;
+  sourceRefs: readonly AssessmentEvidenceSourceRefInput[];
+}
+
+export interface PersistedHumanAssessmentDecision {
+  eventId: string;
+  decision: HumanAssessmentDecisionValue;
+  reviewerId: string | null;
+  summary: string;
+  notes: string | null;
+  occurredAt: string;
+  sourceRefCount: number;
+  sourceRefTypes: string[];
+}
+
 export type AssessmentProgressStage =
   | 'WAITING_FOR_CHALLENGE'
   | 'CHALLENGE_READY'
@@ -342,6 +371,8 @@ export interface AssessmentProgressEvaluationDiagnostic {
   sourceRefTypes: string[];
 }
 
+export interface AssessmentProgressHumanDecision extends PersistedHumanAssessmentDecision {}
+
 export interface AssessmentProgressSnapshot {
   session: PersistedRepoTaskInterviewSession;
   stage: AssessmentProgressStage;
@@ -365,6 +396,7 @@ export interface AssessmentProgressSnapshot {
   latestEvent: AssessmentProgressLatestEvent | null;
   commit: AssessmentProgressCommit | null;
   evaluation: AssessmentProgressEvaluation | null;
+  humanDecision: AssessmentProgressHumanDecision | null;
 }
 
 const ALLOWED_TRANSITIONS: Record<RepoTaskInterviewState, readonly RepoTaskInterviewState[]> = {
@@ -393,6 +425,12 @@ const ASSESSMENT_PROGRESS_SNIPPET_TYPES = [
 ] as const;
 const MAX_ASSESSMENT_PROGRESS_SNIPPETS = 6;
 const MAX_ASSESSMENT_PROGRESS_SNIPPET_CHARS = 1_200;
+const HUMAN_ASSESSMENT_DECISIONS = new Set<HumanAssessmentDecisionValue>([
+  'advance',
+  'hold',
+  'reject',
+  'needs_more_evidence',
+]);
 
 function toCanonicalState(state: RepoTaskInterviewState): AssessmentSessionState {
   if (state === 'EVALUATING') return 'EVALUATING';
@@ -729,6 +767,12 @@ async function assertSourceRefContentHashes(
   }
 }
 
+function assertHumanAssessmentDecision(value: HumanAssessmentDecisionValue): void {
+  if (!HUMAN_ASSESSMENT_DECISIONS.has(value)) {
+    throw new Error(`unsupported human assessment decision ${value}`);
+  }
+}
+
 function changedFilesToJson(
   files: readonly CommitSubmissionChangedFileInput[],
 ): JsonValue[] {
@@ -873,9 +917,13 @@ function progressStageAndAction(input: {
   hasCommitSubmission: boolean;
   hasFinalSubmission: boolean;
   evaluation: AssessmentProgressEvaluation | null;
+  humanDecision: AssessmentProgressHumanDecision | null;
 }): { stage: AssessmentProgressStage; nextAction: AssessmentProgressNextAction } {
   if (input.session.state === 'CANCELLED') {
     return { stage: 'CANCELLED', nextAction: 'NONE' };
+  }
+  if (input.humanDecision) {
+    return { stage: 'EVALUATED', nextAction: 'NONE' };
   }
   if (input.session.state === 'DIAGNOSTIC') {
     return { stage: 'NEEDS_ATTENTION', nextAction: 'RESOLVE_DIAGNOSTIC' };
@@ -1146,6 +1194,47 @@ export class RepoTaskInterviewSessionStore {
     return toReport(report);
   }
 
+  async recordHumanDecision(
+    input: RecordHumanAssessmentDecisionInput,
+  ): Promise<PersistedHumanAssessmentDecision> {
+    assertHumanAssessmentDecision(input.decision);
+    const summary = input.summary.trim();
+    if (!summary) {
+      throw new Error('human assessment decision summary is required');
+    }
+    const session = await this.loadSession(input.sessionId);
+    if (session.state === 'CANCELLED') {
+      throw new Error('cannot record a human assessment decision for a cancelled assessment session');
+    }
+    await assertSourceRefContentHashes(input.sourceRefs);
+    await this.assertHumanDecisionSourceRefsBacked(session.id, input.sourceRefs);
+
+    const sourceRefTypes = Array.from(new Set(input.sourceRefs.map((sourceRef) => sourceRef.sourceRefType))).sort();
+    const event = await this.recordEvent({
+      sessionId: session.id,
+      ingestionKey: input.ingestionKey,
+      kind: 'human_assessment_decision',
+      actorType: 'recruiter',
+      actorId: input.reviewerId,
+      narrative: summary,
+      payload: {
+        schemaVersion: 'human-assessment-decision-v1',
+        decision: input.decision,
+        notes: input.notes?.trim() || null,
+        sourceRefCount: input.sourceRefs.length,
+        sourceRefTypes,
+      },
+      occurredAt: input.occurredAt,
+      sourceRefs: input.sourceRefs,
+    });
+
+    const decision = await this.loadHumanDecisionEvent(event.id);
+    if (!decision) {
+      throw new Error(`human assessment decision ${event.id} was not persisted`);
+    }
+    return decision;
+  }
+
   async recordAiProviderUnavailable(input: {
     sessionId: string;
     provider: string;
@@ -1225,6 +1314,7 @@ export class RepoTaskInterviewSessionStore {
     const latestEvent = await this.loadLatestEvent(session.id);
     const commit = await this.loadLatestCommitSubmission(session.id);
     const evaluation = await this.loadLatestEvaluation(session.id);
+    const humanDecision = await this.loadLatestHumanDecision(session.id);
 
     const hasWorkEvidence = hasEventKind(evidenceCounts, [
       'terminal_output',
@@ -1274,6 +1364,7 @@ export class RepoTaskInterviewSessionStore {
       hasCommitSubmission,
       hasFinalSubmission,
       evaluation,
+      humanDecision,
     });
 
     return {
@@ -1299,6 +1390,7 @@ export class RepoTaskInterviewSessionStore {
       latestEvent,
       commit,
       evaluation,
+      humanDecision,
     };
   }
 
@@ -1459,6 +1551,94 @@ export class RepoTaskInterviewSessionStore {
     };
   }
 
+  private async assertHumanDecisionSourceRefsBacked(
+    sessionId: string,
+    sourceRefs: readonly AssessmentEvidenceSourceRefInput[],
+  ): Promise<void> {
+    if (sourceRefs.length === 0) {
+      throw new Error('human assessment decision requires at least one source ref');
+    }
+    for (const sourceRef of sourceRefs) {
+      const isBacked = await this.isHumanDecisionSourceRefBacked(sessionId, sourceRef);
+      if (!isBacked) {
+        throw new Error(
+          `human assessment decision source ref ${sourceRef.sourceRefType}:${sourceRef.sourceRefId} `
+          + 'is not backed by assessment session evidence or evaluation output',
+        );
+      }
+    }
+  }
+
+  private async isHumanDecisionSourceRefBacked(
+    sessionId: string,
+    sourceRef: AssessmentEvidenceSourceRefInput,
+  ): Promise<boolean> {
+    if (await this.isSourceRefBackedBySessionEvent(sessionId, sourceRef)) return true;
+    if (sourceRef.sourceRefType === 'assessment_evaluation_report') {
+      const report = await this.db.prepare(
+        `SELECT id
+           FROM assessment_evaluation_reports
+          WHERE session_id = ?1
+            AND id = ?2
+            AND summary = ?3
+          LIMIT 1`,
+      ).bind(sessionId, sourceRef.sourceRefId, sourceRef.exactText).first<{ id: string }>();
+      return report !== null;
+    }
+    if (sourceRef.sourceRefType === 'assessment_evaluation_claim') {
+      const claim = await this.db.prepare(
+        `SELECT c.id
+           FROM assessment_evaluation_claims c
+           JOIN assessment_evaluation_reports r ON r.id = c.report_id
+          WHERE r.session_id = ?1
+            AND c.id = ?2
+            AND c.narrative = ?3
+          LIMIT 1`,
+      ).bind(sessionId, sourceRef.sourceRefId, sourceRef.exactText).first<{ id: string }>();
+      return claim !== null;
+    }
+    if (sourceRef.sourceRefType === 'assessment_diagnostic') {
+      const diagnostic = await this.db.prepare(
+        `SELECT id
+           FROM assessment_diagnostics
+          WHERE session_id = ?1
+            AND id = ?2
+            AND message = ?3
+          LIMIT 1`,
+      ).bind(sessionId, sourceRef.sourceRefId, sourceRef.exactText).first<{ id: string }>();
+      return diagnostic !== null;
+    }
+    return false;
+  }
+
+  private async isSourceRefBackedBySessionEvent(
+    sessionId: string,
+    sourceRef: AssessmentEvidenceSourceRefInput,
+  ): Promise<boolean> {
+    const row = await this.db.prepare(
+      `SELECT r.event_id
+         FROM assessment_event_source_refs r
+         JOIN assessment_evidence_events e ON e.id = r.event_id
+        WHERE e.session_id = ?1
+          AND r.source_ref_type = ?2
+          AND r.source_ref_id = ?3
+          AND r.evidence_role = ?4
+          AND COALESCE(r.source_span_id, '') = ?5
+          AND r.exact_text = ?6
+          AND r.content_hash = ?7
+        LIMIT 1`,
+    ).bind(
+      sessionId,
+      sourceRef.sourceRefType,
+      sourceRef.sourceRefId,
+      sourceRef.evidenceRole ?? 'support',
+      sourceRef.sourceSpanId ?? '',
+      sourceRef.exactText,
+      sourceRef.contentHash,
+    ).first<{ event_id: string }>();
+    return row !== null;
+  }
+
   private async loadLatestCommitSubmission(sessionId: string): Promise<AssessmentProgressCommit | null> {
     const row = await this.db.prepare(
       `SELECT id, payload_json, occurred_at
@@ -1484,6 +1664,63 @@ export class RepoTaskInterviewSessionStore {
       commitUrl: jsonStringValue(payload.commitUrl),
       changedFiles: jsonArrayValue(payload.changedFiles),
       occurredAt: row.occurred_at,
+    };
+  }
+
+  private async loadLatestHumanDecision(sessionId: string): Promise<AssessmentProgressHumanDecision | null> {
+    const row = await this.db.prepare(
+      `SELECT id
+         FROM assessment_evidence_events
+        WHERE session_id = ?1
+          AND kind = 'human_assessment_decision'
+        ORDER BY sequence DESC
+        LIMIT 1`,
+    ).bind(sessionId).first<{ id: string }>();
+    if (!row) return null;
+    return this.loadHumanDecisionEvent(row.id);
+  }
+
+  private async loadHumanDecisionEvent(eventId: string): Promise<AssessmentProgressHumanDecision | null> {
+    const row = await this.db.prepare(
+      `SELECT e.id,
+              e.actor_id,
+              e.narrative,
+              e.payload_json,
+              e.occurred_at,
+              COUNT(sr.id) AS source_ref_count,
+              GROUP_CONCAT(DISTINCT sr.source_ref_type) AS source_ref_types
+         FROM assessment_evidence_events e
+         LEFT JOIN assessment_event_source_refs sr ON sr.event_id = e.id
+        WHERE e.id = ?1
+          AND e.kind = 'human_assessment_decision'
+        GROUP BY e.id, e.actor_id, e.narrative, e.payload_json, e.occurred_at
+        LIMIT 1`,
+    ).bind(eventId).first<{
+      id: string;
+      actor_id: string | null;
+      narrative: string;
+      payload_json: string;
+      occurred_at: string;
+      source_ref_count: number;
+      source_ref_types: string | null;
+    }>();
+    if (!row) return null;
+    const payload = parseJsonObject(row.payload_json);
+    const decisionValue = jsonStringValue(payload.decision);
+    if (!decisionValue || !HUMAN_ASSESSMENT_DECISIONS.has(decisionValue as HumanAssessmentDecisionValue)) {
+      return null;
+    }
+    return {
+      eventId: row.id,
+      decision: decisionValue as HumanAssessmentDecisionValue,
+      reviewerId: row.actor_id,
+      summary: row.narrative,
+      notes: jsonStringValue(payload.notes),
+      occurredAt: row.occurred_at,
+      sourceRefCount: row.source_ref_count,
+      sourceRefTypes: row.source_ref_types
+        ? row.source_ref_types.split(',').map((value) => value.trim()).filter(Boolean).sort()
+        : [],
     };
   }
 

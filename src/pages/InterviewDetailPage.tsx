@@ -290,6 +290,21 @@ function assessmentEvaluationRecommendationLabel(recommendation: string | null |
   return sentenceCaseToken(recommendation);
 }
 
+function assessmentHumanDecisionLabel(decision: string): string {
+  switch (decision) {
+    case 'advance':
+      return 'Human: advance';
+    case 'hold':
+      return 'Human: hold';
+    case 'reject':
+      return 'Human: reject';
+    case 'needs_more_evidence':
+      return 'Human: needs more evidence';
+    default:
+      return `Human: ${sentenceCaseToken(decision)}`;
+  }
+}
+
 function assessmentClaimPolarityLabel(polarity: string): string {
   switch (polarity) {
     case 'positive':
@@ -650,6 +665,15 @@ function workspaceAssessmentDecisionItem(progress: AssessmentProgressSnapshot | 
     };
   }
 
+  if (progress.humanDecision) {
+    return {
+      label: 'Decision',
+      value: assessmentHumanDecisionLabel(progress.humanDecision.decision),
+      detail: progress.humanDecision.summary,
+      tone: progress.humanDecision.decision === 'advance' ? 'positive' : 'watch',
+    };
+  }
+
   const evaluation = progress.evaluation;
   if (evaluation?.status === 'EVALUATED') {
     return {
@@ -868,7 +892,14 @@ function workspaceAssessmentWorkPacket(progress: AssessmentProgressSnapshot | nu
     changedFileDetail,
   ].filter((item): item is string => Boolean(item)).join(' · ');
 
-  const reviewItem: WorkspaceAssessmentReadoutItem = progress.evaluation?.status === 'EVALUATED'
+  const reviewItem: WorkspaceAssessmentReadoutItem = progress.humanDecision
+    ? {
+        label: 'Human review',
+        value: assessmentHumanDecisionLabel(progress.humanDecision.decision),
+        detail: `${progress.humanDecision.summary} ${progress.humanDecision.sourceRefCount} source ${progress.humanDecision.sourceRefCount === 1 ? 'ref' : 'refs'}.`.trim(),
+        tone: progress.humanDecision.decision === 'advance' ? 'positive' : 'watch',
+      }
+    : progress.evaluation?.status === 'EVALUATED'
     ? {
         label: 'Human review',
         value: assessmentEvaluationRecommendationLabel(progress.evaluation.recommendation) ?? 'Report ready',
@@ -3153,6 +3184,18 @@ export default function InterviewDetailPage(): JSX.Element {
                 <div style={EVIDENCE_ROW}>
                   <span style={FIELD_LABEL}>Branch</span>
                   <span style={FIELD_VALUE}>{assessmentProgress.commit.branchName}</span>
+                </div>
+              )}
+              {assessmentProgress.humanDecision && (
+                <div style={{ ...EVIDENCE_ROW, alignItems: 'flex-start' }}>
+                  <span style={FIELD_LABEL}>Human decision</span>
+                  <span style={{ ...FIELD_VALUE, lineHeight: 1.5 }}>
+                    {[
+                      assessmentHumanDecisionLabel(assessmentProgress.humanDecision.decision),
+                      assessmentProgress.humanDecision.summary,
+                      `${assessmentProgress.humanDecision.sourceRefCount} source ${assessmentProgress.humanDecision.sourceRefCount === 1 ? 'ref' : 'refs'}`,
+                    ].filter(Boolean).join(' · ')}
+                  </span>
                 </div>
               )}
               {assessmentProgress.evaluation && (

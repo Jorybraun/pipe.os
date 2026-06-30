@@ -12,6 +12,7 @@ import {
   type AssessmentEvaluationClaimPolarity,
   type EvaluationReportStatus,
   type FinalSubmissionEvidenceArtifactInput,
+  type HumanAssessmentDecisionValue,
   type RepoTaskInterviewMode,
   type RepoTaskInterviewState,
 } from '../../lib/repoTaskInterviewSession';
@@ -65,6 +66,7 @@ const eventKindSchema = z.enum([
   'final_submission',
   'match_decision',
   'recruiter_note',
+  'human_assessment_decision',
   'dev_container_event',
   'system_diagnostic',
 ] satisfies [AssessmentEvidenceEventKind, ...AssessmentEvidenceEventKind[]]);
@@ -114,6 +116,13 @@ const diagnosticSeveritySchema = z.enum([
   'warning',
   'blocking',
 ] satisfies [AssessmentDiagnosticSeverity, ...AssessmentDiagnosticSeverity[]]);
+
+const humanDecisionSchema = z.enum([
+  'advance',
+  'hold',
+  'reject',
+  'needs_more_evidence',
+] satisfies [HumanAssessmentDecisionValue, ...HumanAssessmentDecisionValue[]]);
 
 const sourceRefSchema = z.object({
   sourceRefType: z.string().trim().min(1),
@@ -190,6 +199,16 @@ const aiProviderUnavailableSchema = z.object({
   reason: z.string().trim().min(1),
   retryable: z.boolean().optional(),
   details: jsonObjectSchema.optional(),
+});
+
+const recordHumanDecisionSchema = z.object({
+  ingestionKey: z.string().trim().min(1),
+  decision: humanDecisionSchema,
+  reviewerId: z.string().trim().min(1).nullable().optional(),
+  summary: z.string().trim().min(1),
+  notes: z.string().trim().min(1).nullable().optional(),
+  occurredAt: z.string().trim().min(1).nullable().optional(),
+  sourceRefs: z.array(sourceRefSchema).min(1),
 });
 
 const finalSubmissionArtifactSchema = z.object({
@@ -393,6 +412,26 @@ repoTaskSessions.post('/sessions/:sessionId/evaluation-reports', async (c) => {
     await ingestAssessmentSessionBestEffort(c.env.DB, sessionId);
 
     return c.json({ report }, 201);
+  } catch (error) {
+    return storeErrorResponse(c, error);
+  }
+});
+
+repoTaskSessions.post('/sessions/:sessionId/human-decisions', async (c) => {
+  const body = recordHumanDecisionSchema.safeParse(await c.req.json().catch(() => null));
+  if (!body.success) {
+    return apiError(c, 'BAD_REQUEST', body.error.issues[0]?.message ?? 'Invalid human decision body.');
+  }
+  try {
+    const sessionId = c.req.param('sessionId');
+    const store = new RepoTaskInterviewSessionStore(c.env.DB);
+    const decision = await store.recordHumanDecision({
+      sessionId,
+      ...body.data,
+    });
+    await ingestAssessmentSessionBestEffort(c.env.DB, sessionId);
+    const progress = await store.loadProgress(sessionId);
+    return c.json({ decision, progress }, 201);
   } catch (error) {
     return storeErrorResponse(c, error);
   }

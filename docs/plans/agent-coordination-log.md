@@ -4,6 +4,21 @@ Inter-agent handoff log for the living context graph goal. Each agent appends a 
 
 ## Log
 
+### 2026-06-30 — Codex worktree consolidation guardrail
+
+**Action:** Re-fetched/pruned `origin`, pruned stale Git worktree metadata, and rechecked the active consolidation branch before continuing product work.
+
+**Current canonical branch:** `codex/consolidate-open-source-assessment-living-context`
+
+**Findings:**
+1. Only one registered PIPE-OS worktree exists: `/Users/hans/Code/PIPE/PIPE-OS`.
+2. The active worktree is clean.
+3. `origin/main` is an ancestor of this branch; this branch is currently 520 commits ahead of `origin/main` and 0 commits behind it.
+4. Recent unmerged remote living-context branches such as `origin/devin/1782824720-living-context-final`, `origin/devin/1782817362-living-context-production`, and `origin/devin/1782788597-living-context-production` are stale alternate branch tips relative to this branch. Two-dot comparisons show using those tips wholesale would remove current assessment/runtime work, including video-room evidence capture, scheduling tests, repo-task assessment files, and current living-context surfaces.
+5. The latest conflict-detection work from `origin/devin/1782824720-living-context-final` is already represented on this branch by the safer Codex commits `de0810fae` and `4afee566f`.
+
+**Decision:** Do not merge stale remote tips by ancestry alone. Treat this branch as the canonical consolidated workspace. Future integration should be a manual lift of specific missing product behavior, backed by focused tests, `npx tsc --noEmit`, commit, push, dev deploy, and live verification.
+
 ### 2026-06-30 — Codex consolidation of Devin readiness branch
 
 **Action:** Merged `origin/devin/1782821002-living-context-consolidated` into `codex/consolidate-open-source-assessment-living-context` after confirming there is only one registered local PIPE-OS worktree and the active branch already contains `origin/main`.

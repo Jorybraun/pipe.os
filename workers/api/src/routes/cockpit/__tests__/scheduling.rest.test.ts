@@ -1657,6 +1657,65 @@ describe('GET /interviews/:id detail', () => {
     expect(diagnosticSource?.exact_text).toContain(
       'PIPE will evaluate only source-backed',
     );
+
+    const humanDecisionResponse = await app.request('/interviews/interview-1/assessment/human-decision', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({
+        decision: 'needs_more_evidence',
+        summary: 'Human reviewer needs a rerun after the evaluator binding is configured.',
+        notes: 'Do not advance from a diagnostic-only report.',
+      }),
+    });
+    expect(humanDecisionResponse.status).toBe(201);
+    const humanDecisionBody = await humanDecisionResponse.json() as {
+      decision: {
+        decision: string;
+        summary: string;
+        notes: string | null;
+        sourceRefCount: number;
+        sourceRefTypes: string[];
+      };
+      progress: {
+        stage: string;
+        nextAction: string;
+        humanDecision: {
+          decision: string;
+          summary: string;
+          sourceRefCount: number;
+          sourceRefTypes: string[];
+        };
+      };
+    };
+    expect(humanDecisionBody.decision).toMatchObject({
+      decision: 'needs_more_evidence',
+      summary: 'Human reviewer needs a rerun after the evaluator binding is configured.',
+      notes: 'Do not advance from a diagnostic-only report.',
+      sourceRefCount: 1,
+      sourceRefTypes: ['assessment_evaluation_report'],
+    });
+    expect(humanDecisionBody.progress).toMatchObject({
+      stage: 'EVALUATED',
+      nextAction: 'NONE',
+      humanDecision: {
+        decision: 'needs_more_evidence',
+        summary: 'Human reviewer needs a rerun after the evaluator binding is configured.',
+        sourceRefCount: 1,
+        sourceRefTypes: ['assessment_evaluation_report'],
+      },
+    });
+    const humanDecisionSource = sqlite!.prepare(
+      `SELECT sr.source_ref_type, sr.exact_text
+         FROM assessment_event_source_refs sr
+         JOIN assessment_evidence_events e ON e.id = sr.event_id
+        WHERE e.session_id = ?
+          AND e.kind = 'human_assessment_decision'
+        LIMIT 1`,
+    ).get('assessment-session-start-evaluation') as { source_ref_type: string; exact_text: string } | undefined;
+    expect(humanDecisionSource).toMatchObject({
+      source_ref_type: 'assessment_evaluation_report',
+      exact_text: 'Workers AI is not configured for source-backed repo-task evaluation.',
+    });
   });
 
   it('starts source-backed AI assessment evaluation from bare-key model JSON and persists only cited claims', async () => {
