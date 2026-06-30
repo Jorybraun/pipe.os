@@ -486,6 +486,12 @@ export function useAssessment(inviteToken: string): UseAssessmentReturn {
       setState((prev) => ({ ...prev, isLoading: true, error: null }));
 
       try {
+        const currentChallenge = stageConfig.challenges[currentOrder];
+        if (currentChallenge?.type === 'WELCOME') {
+          await advance();
+          return;
+        }
+
         const result = await rpcPost<{ success: boolean; next?: boolean; complete?: boolean; challengeSubmissionId?: string; error?: string }>(
           '/rpc/submit-challenge-response',
           { order: currentOrder, submission: JSON.stringify(submission) },

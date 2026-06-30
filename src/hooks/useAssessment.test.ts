@@ -73,4 +73,73 @@ describe('useAssessment', () => {
       expect.anything(),
     );
   });
+
+  it('advances the synthetic welcome step locally before the real code review challenge', async () => {
+    sessionStorage.setItem('pipe_session_token', 'session-token');
+    sessionStorage.setItem('pipe_session_invite_token', 'invite-token');
+    sessionStorage.setItem('pipe_session_candidate', JSON.stringify({
+      id: 'candidate-1',
+      pipelineId: null,
+      status: 'IN_PROGRESS',
+      name: 'Ada Candidate',
+    }));
+
+    const fetchMock = vi.fn()
+      .mockResolvedValueOnce({
+        ok: true,
+        json: async () => ({
+          isComplete: false,
+          stageId: 'standalone-code-review',
+          candidateId: 'candidate-1',
+          stageTitle: 'Code Review',
+          mode: 'ASYNC',
+          challenges: [
+            { type: 'WELCOME', order: 0, title: 'Welcome' },
+            { type: 'CODE_REVIEW', order: 1, title: 'Code Review' },
+          ],
+          currentIndex: 0,
+        }),
+      } as Response)
+      .mockResolvedValueOnce({
+        ok: true,
+        json: async () => ({
+          id: 'welcome',
+          type: 'WELCOME',
+          title: 'Welcome',
+          instructions: 'Start the assessment.',
+        }),
+      } as Response)
+      .mockResolvedValueOnce({
+        ok: true,
+        json: async () => ({
+          id: 'challenge-1',
+          type: 'CODE_REVIEW',
+          title: 'Code Review',
+          instructions: 'Review the source-backed pull request.',
+          cachedDiffJson: { files: [] },
+        }),
+      } as Response);
+    globalThis.fetch = fetchMock;
+
+    const { result } = renderHook(() => useAssessment('invite-token'));
+
+    await waitFor(() => expect(result.current.candidate?.id).toBe('candidate-1'));
+
+    await act(async () => {
+      await result.current.onStart();
+    });
+
+    expect(result.current.challengeContent?.type).toBe('WELCOME');
+
+    await act(async () => {
+      await result.current.submitChallenge({});
+    });
+
+    await waitFor(() => expect(result.current.challengeContent?.type).toBe('CODE_REVIEW'));
+    expect(fetchMock).toHaveBeenCalledTimes(3);
+    expect(fetchMock).not.toHaveBeenCalledWith(
+      expect.stringContaining('/rpc/submit-challenge-response'),
+      expect.anything(),
+    );
+  });
 });
