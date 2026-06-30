@@ -187,6 +187,11 @@ interface WorkspaceAssessmentReadoutItem {
   tone: CodeReviewNextStepTone;
 }
 
+interface AssessmentChangedFileSummary {
+  path: string;
+  status: string | null;
+}
+
 interface CodeReviewAssignmentTrust {
   value: string;
   detail: string;
@@ -511,6 +516,24 @@ function assessmentEvidenceSummary(input: {
   return ready.length > 0 ? ready.join(', ') : 'No evidence yet';
 }
 
+function assessmentChangedFiles(progress: AssessmentProgressSnapshot | null): AssessmentChangedFileSummary[] {
+  const rawFiles = progress?.commit?.changedFiles ?? [];
+  return rawFiles.flatMap((file): AssessmentChangedFileSummary[] => {
+    if (typeof file === 'string' && file.trim().length > 0) {
+      return [{ path: file.trim(), status: null }];
+    }
+    if (!file || typeof file !== 'object') return [];
+
+    const record = file as Record<string, unknown>;
+    const path = typeof record.path === 'string' ? record.path.trim() : '';
+    if (!path) return [];
+    const status = typeof record.status === 'string' && record.status.trim().length > 0
+      ? record.status.trim()
+      : null;
+    return [{ path, status }];
+  });
+}
+
 function assessmentCoverageLabel(label: string): string {
   switch (label) {
     case 'test_run':
@@ -825,6 +848,83 @@ function workspaceAssessmentNextActionItem(progress: AssessmentProgressSnapshot 
     detail: progress?.nextActionLabel ?? 'Create or configure the source-backed assessment before relying on this interview.',
     tone: progress?.nextAction === 'RESOLVE_DIAGNOSTIC' ? 'blocked' : 'neutral',
   };
+}
+
+function workspaceAssessmentWorkPacket(progress: AssessmentProgressSnapshot | null): WorkspaceAssessmentReadoutItem[] {
+  if (!progress?.commit) return [];
+
+  const changedFiles = assessmentChangedFiles(progress);
+  const filePreview = changedFiles
+    .slice(0, 4)
+    .map((file) => file.status ? `${file.path} · ${sentenceCaseToken(file.status)}` : file.path)
+    .join(', ');
+  const hiddenFileCount = Math.max(0, changedFiles.length - 4);
+  const changedFileDetail = changedFiles.length > 0
+    ? `${changedFiles.length} changed ${changedFiles.length === 1 ? 'file' : 'files'}${filePreview ? `: ${filePreview}` : ''}${hiddenFileCount > 0 ? `, +${hiddenFileCount} more` : ''}`
+    : 'Changed file list was not captured in the commit payload.';
+
+  const commitDetail = [
+    progress.commit.branchName ? `Branch ${progress.commit.branchName}` : null,
+    changedFileDetail,
+  ].filter((item): item is string => Boolean(item)).join(' · ');
+
+  const reviewItem: WorkspaceAssessmentReadoutItem = progress.evaluation?.status === 'EVALUATED'
+    ? {
+        label: 'Human review',
+        value: assessmentEvaluationRecommendationLabel(progress.evaluation.recommendation) ?? 'Report ready',
+        detail: 'Review the evaluator claims, exact diff, tests, and cautions before making a hiring decision.',
+        tone: 'positive',
+      }
+    : progress.evaluation
+      ? {
+          label: 'Human review',
+          value: assessmentEvaluationStatusLabel(progress.evaluation.status),
+          detail: progress.evaluation.summary,
+          tone: 'blocked',
+        }
+      : progress.nextAction === 'START_EVALUATION'
+        ? {
+            label: 'Human review',
+            value: 'Run evaluation',
+            detail: 'Commit evidence is in. Start source-backed AI or human evaluation before using the work as hiring signal.',
+            tone: 'neutral',
+          }
+        : {
+            label: 'Human review',
+            value: workspaceAssessmentNextActionTitle(progress),
+            detail: progress.nextActionLabel,
+            tone: progress.nextAction === 'RESOLVE_DIAGNOSTIC' ? 'blocked' : 'neutral',
+          };
+
+  return [
+    {
+      label: 'Commit artifact',
+      value: shortCommitSha(progress.commit.commitSha),
+      detail: commitDetail,
+      tone: changedFiles.length > 0 ? 'positive' : 'watch',
+    },
+    {
+      label: 'Verification',
+      value: progress.hasTestEvidence
+        ? 'Tests captured'
+        : progress.hasVerificationGap
+          ? 'Verification gap declared'
+          : 'Tests not captured',
+      detail: progress.hasTestEvidence
+        ? 'Test output is present as source-backed evidence for the submitted work.'
+        : 'Treat implementation quality as lower-confidence until test output or a source-backed explanation is reviewed.',
+      tone: progress.hasTestEvidence ? 'positive' : 'watch',
+    },
+    {
+      label: 'AI transparency',
+      value: progress.hasAiInteraction ? 'AI use observed' : 'No AI evidence captured',
+      detail: progress.hasAiInteraction
+        ? 'AI prompts or agent traces are part of the source-backed evidence trail.'
+        : 'No candidate AI-assistance evidence is attached to this assessment yet.',
+      tone: progress.hasAiInteraction ? 'neutral' : 'watch',
+    },
+    reviewItem,
+  ];
 }
 
 function workspaceAssessmentHiringReadout(input: {
@@ -2482,6 +2582,7 @@ export default function InterviewDetailPage(): JSX.Element {
   const assessmentEvaluationClaims = assessmentProgress?.evaluation?.claims?.slice(0, 3) ?? [];
   const assessmentEvaluationDiagnostics = assessmentProgress?.evaluation?.diagnostics?.slice(0, 3) ?? [];
   const canStartAssessmentEvaluation = assessmentProgress?.nextAction === 'START_EVALUATION';
+  const assessmentWorkPacket = workspaceAssessmentWorkPacket(assessmentProgress);
   const workspaceAssessmentReadout = workspaceAssessmentHiringReadout({
     progress: assessmentProgress,
     setup: interview.assessmentSetup,
@@ -2958,6 +3059,26 @@ export default function InterviewDetailPage(): JSX.Element {
           )}
           {assessmentProgress ? (
             <div style={ASSESSMENT_PROGRESS_DETAIL}>
+              {assessmentWorkPacket.length > 0 && (
+                <div data-testid="interview-assessment-work-packet" style={DECISION_COCKPIT}>
+                  <div style={FIELD_LABEL}>Candidate work packet</div>
+                  <div style={DECISION_COCKPIT_GRID}>
+                    {assessmentWorkPacket.map((item) => (
+                      <div
+                        key={item.label}
+                        style={{
+                          ...DECISION_COCKPIT_ITEM,
+                          ...DECISION_NEXT_STEP_TONE[item.tone],
+                        }}
+                      >
+                        <div style={FIELD_LABEL}>{item.label}</div>
+                        <div style={DECISION_COCKPIT_VALUE}>{item.value}</div>
+                        <div style={DECISION_COCKPIT_DETAIL}>{item.detail}</div>
+                      </div>
+                    ))}
+                  </div>
+                </div>
+              )}
               {assessmentProgress.challenge && (
                 <div style={EVIDENCE_ROW}>
                   <span style={FIELD_LABEL}>Challenge</span>

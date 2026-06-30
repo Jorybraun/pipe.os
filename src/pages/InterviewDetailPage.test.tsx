@@ -321,6 +321,18 @@ describe('InterviewDetailPage', () => {
     expect(progress).toHaveTextContent('Workspace');
     expect(progress).toHaveTextContent('Ready · open-source/widgets · base 1111111111');
     expect(progress).toHaveTextContent('abcdef1234');
+    const workPacket = screen.getByTestId('interview-assessment-work-packet');
+    expect(workPacket).toHaveTextContent('Candidate work packet');
+    expect(workPacket).toHaveTextContent('Commit artifact');
+    expect(workPacket).toHaveTextContent('abcdef1234');
+    expect(workPacket).toHaveTextContent('Branch pipe-assessment/popover-cleanup');
+    expect(workPacket).toHaveTextContent('1 changed file: src/popover.ts · Modified');
+    expect(workPacket).toHaveTextContent('Verification');
+    expect(workPacket).toHaveTextContent('Tests captured');
+    expect(workPacket).toHaveTextContent('AI transparency');
+    expect(workPacket).toHaveTextContent('AI use observed');
+    expect(workPacket).toHaveTextContent('Human review');
+    expect(workPacket).toHaveTextContent('Run evaluation');
     const contract = screen.getByTestId('interview-assessment-challenge-contract');
     expect(contract).toHaveTextContent('Repo open-source/widgets');
     expect(contract).toHaveTextContent('Base 1111111111');
