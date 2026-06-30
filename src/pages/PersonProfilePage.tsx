@@ -845,12 +845,19 @@ function nextInterviewRecruiterNotes(decision: CodeReviewDecisionProjection | nu
   const missingContext = decision.missingContext
     .filter((item) => item.trim().length > 0)
     .slice(0, 4);
+  const decisionContext = [
+    decision.scoreLabel ? `Candidate signal: ${decision.scoreLabel}` : null,
+    decision.scoreProvenanceLabel ? `Score provenance: ${decision.scoreProvenanceLabel}` : null,
+    decision.challengeLabel ? `Repo challenge: ${decision.challengeLabel}` : null,
+    `Assessment validity: ${decision.assessmentValidity} - ${decision.assessmentValidityDetail}`,
+  ].filter((item): item is string => Boolean(item));
 
   return [
     'PIPE person-profile next action',
     `Recommendation: ${decision.recommendation}`,
     `Next action: ${decision.nextAction}`,
     `Reason: ${decision.nextActionDetail}`,
+    ...decisionContext,
     `Uncertainty: ${decision.uncertainty} - ${decision.uncertaintyDetail}`,
     missingContext.length > 0
       ? `Missing context: ${missingContext.join('; ')}`

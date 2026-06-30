@@ -57,6 +57,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Fixed — Scheduling
 
+- Person profile next-action interview notes now carry the selected CODE_REVIEW score, score provenance, repo challenge, and assessment validity so calibration follow-ups start with the right hiring context.
 - Person profile CODE_REVIEW source-proof drawers now summarize score-report evidence with score and provenance counters instead of exposing raw score JSON.
 - Direct person profile CODE_REVIEW decisions now parse compact score-provenance counters from persisted score reports, so full-context and candidate-context fallbacks do not lose rubric/evidence/metric calibration details.
 - Person profile CODE_REVIEW decisions now preserve compact score-provenance counters when opened from a scored interview, so rubric, evidence, and metric context survives the interview-to-profile handoff.

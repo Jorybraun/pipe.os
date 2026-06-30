@@ -865,6 +865,10 @@ describe('PersonProfilePage', () => {
     const recruiterNotes = params.get('recruiterNotes') ?? '';
     expect(recruiterNotes).toContain('PIPE person-profile next action');
     expect(recruiterNotes).toContain('Recommendation: Advance with focused probe');
+    expect(recruiterNotes).toContain('Candidate signal: 82/100 Strong');
+    expect(recruiterNotes).toContain('Score provenance: 6 rubric dimensions · 2 evidence items · 5 scoring metrics');
+    expect(recruiterNotes).toContain('Repo challenge: pierre/diffs PR #95');
+    expect(recruiterNotes).toContain('Assessment validity: Usable source-backed signal');
     expect(recruiterNotes).toContain('Missing context: Probe: Probe how they balance timing trade-offs under pushback.');
   });
 
