@@ -57,6 +57,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Fixed — Scheduling
 
+- Pipeline CODE_REVIEW `/assess` challenge fetches now mirror stage-config handoff behavior, returning profile-received email follow-up copy when repo matching is blocked instead of exposing `WAITING_FOR_MATCH` to candidates.
 - CODE_REVIEW recruiter assessment-link panels now distinguish active profile handoff links from ready code-review assignments, telling recruiters to assign or refresh a source-backed PR before treating the invite as assessment-ready.
 - Standalone CODE_REVIEW `/assess` runtime now fails closed to the profile-received email handoff until a source-backed repo/PR assignment already exists, instead of running matcher work or showing a candidate-facing waiting loop.
 - Person profile next-action interview notes now carry the selected CODE_REVIEW score, score provenance, repo challenge, and assessment validity so calibration follow-ups start with the right hiring context.

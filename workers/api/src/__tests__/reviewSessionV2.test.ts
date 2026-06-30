@@ -1471,11 +1471,12 @@ describe('POST /rpc/get-challenge', () => {
     );
 
     expect(res.status).toBe(200);
-    const body = await res.json() as { type: string; id: string };
+    const body = await res.json() as { type: string; id: string; instructions?: string };
     expect(body).toMatchObject({
-      id: 'waiting-for-match',
-      type: 'WAITING_FOR_MATCH',
+      id: 'profile-received',
+      type: 'PROFILE_RECEIVED',
     });
+    expect(body.instructions).toContain('email you when your code review is ready');
     expect(matchReposByGroundedEdges).not.toHaveBeenCalled();
     expect(matchReposForCandidateNeo4j).not.toHaveBeenCalled();
   });

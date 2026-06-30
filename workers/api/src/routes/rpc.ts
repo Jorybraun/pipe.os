@@ -3381,6 +3381,9 @@ rpcAuth.post('/get-challenge', async (c) => {
   if (!hasAssignment) {
     const gateResult = await checkMatchingGate(c.env.DB, candidateId, pipelineId as string, candidate.current_stage_id, ch.id as string, ch.type as string, c.env);
     if (gateResult.blocked && gateResult.syntheticChallenge) {
+      if (ch.type === 'CODE_REVIEW') {
+        return c.json(profileReceivedChallengeContent());
+      }
       return c.json(gateResult.syntheticChallenge);
     }
   } else if (
