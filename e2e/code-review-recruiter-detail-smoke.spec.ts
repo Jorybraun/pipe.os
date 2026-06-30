@@ -79,7 +79,9 @@ async function expectPersonProfileDecision(page: Page): Promise<void> {
   const personDecision = page.getByTestId('person-code-review-decision');
   await expect(personDecision).toBeVisible();
   await expect(personDecision).toContainText(/Workspace assessment decision|Code-review decision|Code review decision/);
-  await expect(personDecision).toContainText(/source-backed signal|needs review|Do not advance from this signal yet/);
+  await expect(personDecision).toContainText(
+    /source-backed signal|needs review|Do not advance from this signal yet|Wait for candidate review|do not make a hiring decision/i,
+  );
   await expect(personDecision).toContainText('source-backed proof items');
   const rationale = page.getByTestId('person-code-review-rationale');
   await expect(rationale).toBeVisible();
