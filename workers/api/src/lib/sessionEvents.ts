@@ -51,8 +51,8 @@ export type SessionEventType =
   | 'workspace_state'
   | 'participant_join'
   | 'participant_leave'
-  | 'clippy_prompt'
-  | 'clippy_action'
+  | 'agent_prompt'
+  | 'agent_action'
   | 'recording_start'
   | 'recording_stop'
   | 'code_editor_open'
@@ -71,34 +71,34 @@ export interface SessionEvent {
 type RoomActivityRole = 'RECRUITER' | 'CANDIDATE' | 'HOST' | 'GUEST';
 const WORKSPACE_STATE_SOURCES = new Set(['initial_load', 'launch', 'refresh', 'error']);
 const WINDOW_LIFECYCLE_SOURCES = new Set([
-  'win95_desktop_ui',
-  'win95_file_system',
-  'win95_start_menu',
-  'win95_window_chrome',
-  'win95_taskbar',
+  'assessment_desktop_ui',
+  'assessment_file_system',
+  'assessment_start_menu',
+  'assessment_window_chrome',
+  'assessment_taskbar',
   'standard_assessment_ui',
-  'clippy_action',
+  'agent_action',
   'shared_state_sync',
 ]);
 const WINDOW_STATE_SOURCES = new Set([
-  'win95_desktop_ui',
-  'win95_start_menu',
-  'win95_window_chrome',
-  'win95_taskbar',
+  'assessment_desktop_ui',
+  'assessment_start_menu',
+  'assessment_window_chrome',
+  'assessment_taskbar',
 ]);
-const WINDOW_DATA_SOURCES = new Set(['win95_window_data_sync', 'win95_file_delete_sync']);
+const WINDOW_DATA_SOURCES = new Set(['assessment_window_data_sync', 'assessment_file_delete_sync']);
 const TERMINAL_FINGERPRINT_RE = /^terminal_[a-f0-9]{8}$/;
 const TERMINAL_COMMAND_ID_RE = /^.+:command:(host|guest):\d+:\d+:terminal_[a-f0-9]{8}$/;
-const CLIPPY_PROMPT_FINGERPRINT_RE = /^(?:agent|clippy)_[a-f0-9]{8}$/;
-const BROWSER_PROMPT_ID_RE = /^[a-zA-Z0-9:_-]+:(host|guest):prompt:\d+:(?:agent|clippy)_[a-f0-9]{8}$/;
-const CLIPPY_ACTION_EVENT_ID_RE = /^clippy-action:(host|guest|agent):\d+:[a-z_]+:[a-z_]+:[a-z_]+:[a-zA-Z0-9:_-]+$/;
+const AGENT_PROMPT_FINGERPRINT_RE = /^(?:agent|agent)_[a-f0-9]{8}$/;
+const BROWSER_PROMPT_ID_RE = /^[a-zA-Z0-9:_-]+:(host|guest):prompt:\d+:(?:agent|agent)_[a-f0-9]{8}$/;
+const AGENT_ACTION_EVENT_ID_RE = /^agent-action:(host|guest|agent):\d+:[a-z_]+:[a-z_]+:[a-z_]+:[a-zA-Z0-9:_-]+$/;
 const AGENT_CHAT_RESPONSE_FINGERPRINT_RE = /^agent_[a-f0-9]{8}$/;
 const AGENT_CHAT_RESPONSE_ID_RE = /^agent-chat:[a-zA-Z0-9:_-]+:\d+:CHAT_RESPONSE:agent_[a-f0-9]{8}$/;
 const AGENT_STATUS_EVENT_ID_RE = /^agent-status:[a-zA-Z0-9:_-]+:\d+:[a-z_]+:[a-zA-Z0-9:_-]+:[a-zA-Z0-9:_-]+$/;
 const AGENT_STATUSES = new Set(['starting', 'idle', 'thinking', 'working', 'auth_needed', 'disconnected']);
 const AGENT_STATUS_MESSAGE_SOURCES = new Set(['agent_status', 'agent_stdout', 'agent_api_response', 'bridge_diagnostic', 'bridge_observation']);
 const CHAT_DELIVERY_STATUSES = new Set(['pending', 'accepted', 'rejected']);
-const CLIPPY_PROMPT_BLOCKED_REASONS = new Set([
+const AGENT_PROMPT_BLOCKED_REASONS = new Set([
   'workspace_required',
   'bridge_reconnecting',
   'agent_starting',
@@ -123,9 +123,9 @@ const CURSOR_PRESENCE_SAMPLE_INTERVAL_MS = 15_000;
 const CURSOR_PRESENCE_MOVEMENT_THRESHOLD = 0.03;
 const CURSOR_SAMPLE_ID_RE = /^cursor:(host|guest):\d+:\d+:\d+$/;
 const START_MENU_EVENT_SOURCES = new Set([
-  'win95_start_button',
-  'win95_desktop_click',
-  'win95_start_menu_item',
+  'assessment_start_button',
+  'assessment_desktop_click',
+  'assessment_start_menu_item',
 ]);
 const START_MENU_EVENT_ID_RE = /^start-menu:(host|guest):\d+:(open|close):[a-z0-9_]+$/;
 const CODE_EDITOR_OPEN_ID_RE = /^code-editor-open:(host|guest):\d+:[a-zA-Z0-9:_-]+$/;
@@ -242,7 +242,7 @@ function hasOptionalBrowserPromptRef(evidence: Record<string, unknown>): boolean
   return typeof promptId === 'string'
     && BROWSER_PROMPT_ID_RE.test(promptId)
     && typeof promptFingerprint === 'string'
-    && CLIPPY_PROMPT_FINGERPRINT_RE.test(promptFingerprint)
+    && AGENT_PROMPT_FINGERPRINT_RE.test(promptFingerprint)
     && typeof promptTimestamp === 'number'
     && Number.isInteger(promptTimestamp)
     && promptTimestamp >= 0
@@ -313,7 +313,7 @@ function isSourceBackedRoomFileEvidence(
 ): evidence is Record<string, unknown> {
   return evidence !== null
     && (actor === 'host' || actor === 'guest')
-    && evidence.source === 'win95_shared_file_system'
+    && evidence.source === 'assessment_shared_file_system'
     && evidence.fileEventSource === 'browser_client_submit'
     && evidence.actor === actor
     && evidence.operation === operation
@@ -431,10 +431,10 @@ function hasSourceBackedRoomSurfaceEvidence(
     && source === 'room_surface_control'
     && surfaceControlEventSource === 'browser_room_surface_toggle'
     && event.actor === actor
-    && (surface === 'standard' || surface === 'win95')
-    && (previousSurface === 'standard' || previousSurface === 'win95')
+    && (surface === 'standard' || surface === 'assessment')
+    && (previousSurface === 'standard' || previousSurface === 'assessment')
     && previousSurface !== surface
-    && action === (surface === 'win95' ? 'enter_desktop' : 'exit_desktop')
+    && action === (surface === 'assessment' ? 'enter_desktop' : 'exit_desktop')
     && surfaceChangeId === `surface:${actor}:${capturedAtMs}:${previousSurface}:${surface}`
     && capturedAtMs !== null
     && capturedAtMs >= 0
@@ -453,7 +453,7 @@ function hasSourceBackedStartMenuEvidence(
   const menuEventSource = stringOrNull(evidence.menuEventSource);
   const startMenuEventId = stringOrNull(evidence.startMenuEventId);
   const capturedAtMs = numberOrNull(evidence.capturedAtMs);
-  return evidence.source === 'win95_start_menu_control'
+  return evidence.source === 'assessment_start_menu_control'
     && menuEventSource !== null
     && START_MENU_EVENT_SOURCES.has(menuEventSource)
     && evidence.actor === actor
@@ -466,7 +466,7 @@ function hasSourceBackedStartMenuEvidence(
     && Number.isInteger(capturedAtMs)
     && capturedAtMs >= 0
     && startMenuEventId === `start-menu:${actor}:${capturedAtMs}:${action}:${menuEventSource}`
-    && evidence.surface === 'win95'
+    && evidence.surface === 'assessment'
     && stringOrNull(evidence.roomPhase) !== null
     && evidence.durableObjectReplayExpected === true;
 }
@@ -796,7 +796,7 @@ function isSourceBackedChatEvidence(
     && evidence.messageLength === text.length
     && evidenceDeliveryStatus === messageDeliveryStatus
     && CHAT_DELIVERY_STATUSES.has(evidenceDeliveryStatus)
-    && (evidence.surface === 'standard' || evidence.surface === 'win95')
+    && (evidence.surface === 'standard' || evidence.surface === 'assessment')
     && stringOrNull(evidence.roomPhase) !== null
     && evidence.durableObjectReplayExpected === true;
 }
@@ -823,8 +823,8 @@ function isSourceBackedMediaControlEvidence(
   const action = enabled ? 'enabled' : 'disabled';
   const capturedAtMs = numberOrNull(evidence.capturedAtMs);
   const mediaControlId = stringOrNull(evidence.mediaControlId);
-  const expectedControlSurface = evidence.surface === 'win95'
-    ? 'win95_video_window'
+  const expectedControlSurface = evidence.surface === 'assessment'
+    ? 'assessment_video_window'
     : 'standard_video_call';
   return evidence.source === 'video_room_media_controls'
     && evidence.mediaControlEventSource === 'browser_video_control_button'
@@ -834,7 +834,7 @@ function isSourceBackedMediaControlEvidence(
     && evidence.enabled === enabled
     && evidence.action === action
     && evidence.controlAction === 'toggle'
-    && (evidence.surface === 'standard' || evidence.surface === 'win95')
+    && (evidence.surface === 'standard' || evidence.surface === 'assessment')
     && stringOrNull(evidence.roomPhase) !== null
     && evidence.controlSurface === expectedControlSurface
     && evidence.mediaSource === 'local_media_stream'
@@ -920,7 +920,7 @@ function isSourceBackedRecordingStateEvidence(
     && recordingStateEventId !== null
     && RECORDING_STATE_EVENT_ID_RE.test(recordingStateEventId)
     && recordingStateEventId === `recording:host:${capturedAtMs}:${lifecycleKind}:${status}`
-    && (evidence.surface === 'standard' || evidence.surface === 'win95')
+    && (evidence.surface === 'standard' || evidence.surface === 'assessment')
     && stringOrNull(evidence.roomPhase) !== null
     && evidence.durableObjectReplayExpected === true
     && stringOrNull(evidence.iceProvider) !== null
@@ -1036,10 +1036,10 @@ function isSourceBackedCursorEvidence(
     return false;
   }
   const expectedSampleId = `cursor:${actor}:${sampledAtMs}:${Math.round(normalizedX * 1000)}:${Math.round(normalizedY * 1000)}`;
-  return evidence.source === 'win95_cursor_presence_client_sample'
-    && evidence.cursorEventSource === 'browser_win95_desktop_pointermove'
+  return evidence.source === 'assessment_cursor_presence_client_sample'
+    && evidence.cursorEventSource === 'browser_assessment_desktop_pointermove'
     && evidence.actor === actor
-    && evidence.surface === 'win95'
+    && evidence.surface === 'assessment'
     && stringOrNull(evidence.roomPhase) !== null
     && evidence.evidenceSampling === 'presence_sample'
     && evidence.sampleIntervalMs === CURSOR_PRESENCE_SAMPLE_INTERVAL_MS
@@ -1090,7 +1090,7 @@ function isSourceBackedCodeServerFileEvidence(
 ): evidence is Record<string, unknown> {
   if (evidence === null) return false;
   const commonOk = evidence.source === 'code_server_workspace'
-    && evidence.observedBy === 'clippy_agent_bridge'
+    && evidence.observedBy === 'agent_bridge'
     && evidence.bridgeEventType === 'FILE_CHANGED'
     && evidence.editorSurface === 'code-server'
     && typeof evidence.path === 'string'
@@ -1103,7 +1103,7 @@ function isSourceBackedCodeServerFileEvidence(
     && evidence.sizeBytes >= 0
     && stringOrNull(evidence.observedAt) !== null
     && evidence.bridgePersisted === false
-    && (evidence.surface === 'standard' || evidence.surface === 'win95')
+    && (evidence.surface === 'standard' || evidence.surface === 'assessment')
     && stringOrNull(evidence.roomPhase) !== null
     && stringOrNull(evidence.workspaceStatus) !== null
     && stringOrNull(evidence.workspaceSessionId) !== null
@@ -1158,7 +1158,7 @@ function isSourceBackedTerminalEvidence(
     && capturedAtMs !== null
     && Number.isInteger(capturedAtMs)
     && capturedAtMs >= 0
-    && (evidence.surface === 'standard' || evidence.surface === 'win95')
+    && (evidence.surface === 'standard' || evidence.surface === 'assessment')
     && stringOrNull(evidence.roomPhase) !== null
     && stringOrNull(evidence.workspaceStatus) !== null
     && stringOrNull(evidence.workspaceSessionId) !== null
@@ -1230,7 +1230,7 @@ function terminalActivityToSessionEvent(input: RoomActivitySyncInput, value: unk
   });
 }
 
-function isSourceBackedClippyInteractionEvidence(
+function isSourceBackedAgentInteractionEvidence(
   eventType: unknown,
   actor: SessionEvent['actor'],
   text: string,
@@ -1246,16 +1246,16 @@ function isSourceBackedClippyInteractionEvidence(
     const deliveryStatus = evidence.bridgeDeliveryStatus === 'blocked' ? 'blocked' : 'queued';
     const deliveryOk = deliveryStatus === 'blocked'
       ? evidence.browserQueuedBridgeMessage === false
-        && CLIPPY_PROMPT_BLOCKED_REASONS.has(String(evidence.bridgeBlockedReason))
+        && AGENT_PROMPT_BLOCKED_REASONS.has(String(evidence.bridgeBlockedReason))
       : evidence.browserQueuedBridgeMessage === true
         && workspaceSessionId !== null
         && stringOrNull(evidence.workspaceStatus) !== null;
     return (actor === 'host' || actor === 'guest')
       && evidence.actor === actor
-      && evidence.source === 'clippy_agent_chat_client_submit'
-      && evidence.agentChatEventSource === 'browser_clippy_chat_window'
+      && evidence.source === 'agent_chat_client_submit'
+      && evidence.agentChatEventSource === 'browser_agent_chat_window'
       && evidence.bridgeMessageType === 'CHAT'
-      && evidence.bridgeProtocol === 'clippy_dev_container_ws'
+      && evidence.bridgeProtocol === 'agent_dev_container_ws'
       && (
         evidence.bridgeDeliveryStatus === deliveryStatus
         || (deliveryStatus === 'queued' && evidence.bridgeDeliveryStatus === undefined)
@@ -1268,10 +1268,10 @@ function isSourceBackedClippyInteractionEvidence(
       && promptTimestamp !== null
       && promptTimestamp >= 0
       && promptFingerprint !== null
-      && CLIPPY_PROMPT_FINGERPRINT_RE.test(promptFingerprint)
+      && AGENT_PROMPT_FINGERPRINT_RE.test(promptFingerprint)
       && evidence.promptLength === text.length
       && evidence.promptId === `${workspacePart}:${actor}:prompt:${promptTimestamp}:${promptFingerprint}`
-      && (evidence.surface === 'standard' || evidence.surface === 'win95')
+      && (evidence.surface === 'standard' || evidence.surface === 'assessment')
       && stringOrNull(evidence.roomPhase) !== null
       && (evidence.workspaceStatus === null || evidence.workspaceStatus === undefined || stringOrNull(evidence.workspaceStatus) !== null)
       && (evidence.repoUrl === null || evidence.repoUrl === undefined || typeof evidence.repoUrl === 'string');
@@ -1290,12 +1290,12 @@ function isSourceBackedClippyInteractionEvidence(
       && evidence.actionCount >= 0;
     const fallbackOk = evidence.bridgePersisted === false
       && evidence.persistenceFallback === 'browser_after_bridge_persist_failed'
-      && (evidence.surface === 'standard' || evidence.surface === 'win95')
+      && (evidence.surface === 'standard' || evidence.surface === 'assessment')
       && stringOrNull(evidence.roomPhase) !== null
       && numberOrNull(evidence.messageTimestamp) !== null
       && evidence.agentResponseClaimed === true;
     return actor === 'agent'
-      && evidence.source === 'clippy_agent_bridge'
+      && evidence.source === 'agent_bridge'
       && evidence.bridgeEventType === 'CHAT_RESPONSE'
       && (
         evidence.bridgeMessageSource === 'agent_stdout'
@@ -1326,8 +1326,8 @@ function isSourceBackedClippyInteractionEvidence(
       ? `agent-status:${safeEvidenceIdPart(agent)}:${capturedAtMs}:${bridgeMessageSource}:${safeEvidenceIdPart(status)}:${safeEvidenceIdPart(diagnosticSource)}`
       : null;
     const statusOk = status === null || AGENT_STATUSES.has(status);
-    const browserObservationOk = evidence.agentStatusEventSource === 'browser_clippy_agent_ws'
-      && (evidence.surface === 'standard' || evidence.surface === 'win95')
+    const browserObservationOk = evidence.agentStatusEventSource === 'browser_agent_ws'
+      && (evidence.surface === 'standard' || evidence.surface === 'assessment')
       && stringOrNull(evidence.roomPhase) !== null
       && numberOrNull(evidence.messageTimestamp) !== null
       && evidence.agentResponseClaimed === false
@@ -1339,7 +1339,7 @@ function isSourceBackedClippyInteractionEvidence(
       && evidence.bridgePersisted === true
       && diagnosticSource !== null;
     return actor === 'agent'
-      && evidence.source === 'clippy_agent_bridge'
+      && evidence.source === 'agent_bridge'
       && agent !== null
       && statusOk
       && stringOrNull(evidence.observedAt) !== null
@@ -1354,26 +1354,26 @@ function isSourceBackedClippyInteractionEvidence(
       && (browserObservationOk || persistedDiagnosticOk);
   }
 
-  if (eventType === 'clippy_action') {
+  if (eventType === 'agent_action') {
     const source = stringOrNull(evidence.source);
     const capturedAtMs = numberOrNull(evidence.capturedAtMs);
     const origin = stringOrNull(evidence.origin);
     const executionStatus = stringOrNull(evidence.executionStatus);
     const actionId = stringOrNull(evidence.actionId);
     const expectedId = source && capturedAtMs !== null && origin && executionStatus && actionId
-      ? `clippy-action:${actor}:${capturedAtMs}:${source}:${origin}:${executionStatus}:${safeEvidenceIdPart(actionId)}`
+      ? `agent-action:${actor}:${capturedAtMs}:${source}:${origin}:${executionStatus}:${safeEvidenceIdPart(actionId)}`
       : null;
-    const idOk = typeof evidence.clippyActionEventId === 'string'
-      && CLIPPY_ACTION_EVENT_ID_RE.test(evidence.clippyActionEventId)
-      && evidence.clippyActionEventId === expectedId;
-    const roomContextOk = (evidence.surface === 'standard' || evidence.surface === 'win95')
+    const idOk = typeof evidence.agentActionEventId === 'string'
+      && AGENT_ACTION_EVENT_ID_RE.test(evidence.agentActionEventId)
+      && evidence.agentActionEventId === expectedId;
+    const roomContextOk = (evidence.surface === 'standard' || evidence.surface === 'assessment')
       && stringOrNull(evidence.roomPhase) !== null;
-    if (source === 'clippy_tray_ui' || source === 'clippy_prompt_ui' || source === 'clippy_chat_ui') {
-      const originOk = source === 'clippy_tray_ui'
-        ? origin === 'tray' && evidence.actionSource === 'win95_taskbar_tray'
-        : source === 'clippy_chat_ui'
-          ? origin === 'chat' && evidence.actionSource === 'clippy_chat_window'
-          : origin === 'prompt' && evidence.actionSource === 'clippy_prompt_ui';
+    if (source === 'agent_tray_ui' || source === 'agent_prompt_ui' || source === 'agent_chat_ui') {
+      const originOk = source === 'agent_tray_ui'
+        ? origin === 'tray' && evidence.actionSource === 'assessment_taskbar_tray'
+        : source === 'agent_chat_ui'
+          ? origin === 'chat' && evidence.actionSource === 'agent_chat_window'
+          : origin === 'prompt' && evidence.actionSource === 'agent_prompt_ui';
       const statusOk = executionStatus === 'opened'
         || executionStatus === 'closed'
         || executionStatus === 'dismissed'
@@ -1391,7 +1391,7 @@ function isSourceBackedClippyInteractionEvidence(
         && evidence.agentResponseClaimed === false
         && (evidence.agent === undefined || evidence.agent === null);
     }
-    if (source === 'clippy_agent_bridge') {
+    if (source === 'agent_bridge') {
       const commonOk = actionId !== null
         && capturedAtMs !== null
         && Number.isInteger(capturedAtMs)
@@ -1400,7 +1400,7 @@ function isSourceBackedClippyInteractionEvidence(
         && origin === 'agent'
         && stringOrNull(evidence.agent) !== null
         && hasOptionalBrowserPromptRef(evidence)
-        && evidence.actionProtocol === 'clippy_room_action_tag'
+        && evidence.actionProtocol === 'agent_room_action_tag'
         && evidence.bridgeEventType === 'ROOM_ACTION';
       const suggestedOk = actor === 'agent'
         && executionStatus === 'suggested'
@@ -1422,7 +1422,7 @@ function isSourceBackedClippyInteractionEvidence(
   return false;
 }
 
-function clippyInteractionActivityToSessionEvent(input: RoomActivitySyncInput, value: unknown): SessionEvent | null {
+function agentInteractionActivityToSessionEvent(input: RoomActivitySyncInput, value: unknown): SessionEvent | null {
   if (!isRecord(value) || !isRecord(value.event)) return null;
   const event = value.event;
   const eventType = stringOrNull(event.eventType) as SessionEventType | null;
@@ -1430,7 +1430,7 @@ function clippyInteractionActivityToSessionEvent(input: RoomActivitySyncInput, v
     eventType !== 'ai_chat_user'
     && eventType !== 'ai_chat_agent'
     && eventType !== 'ai_agent_status'
-    && eventType !== 'clippy_action'
+    && eventType !== 'agent_action'
   ) {
     return null;
   }
@@ -1449,9 +1449,9 @@ function clippyInteractionActivityToSessionEvent(input: RoomActivitySyncInput, v
     ? eventActor
     : actorFromRoomRole(role);
   const evidence = isRecord(event.evidence) ? event.evidence : null;
-  if (!isSourceBackedClippyInteractionEvidence(eventType, actor, text, evidence)) return null;
+  if (!isSourceBackedAgentInteractionEvidence(eventType, actor, text, evidence)) return null;
   const properties = {
-    ...roomActivityBaseProperties('clippy_interaction', role, value.recordedAt),
+    ...roomActivityBaseProperties('agent_interaction', role, value.recordedAt),
     ...evidence,
   };
   const eventId = stringOrNull(event.id);
@@ -1467,7 +1467,7 @@ function clippyInteractionActivityToSessionEvent(input: RoomActivitySyncInput, v
   });
 }
 
-function hasSourceBackedClippyPromptEvidence(
+function hasSourceBackedAgentPromptEvidence(
   prompt: Record<string, unknown>,
   actor: SessionEvent['actor'],
   text: string,
@@ -1481,7 +1481,7 @@ function hasSourceBackedClippyPromptEvidence(
   const roomPhase = stringOrNull(prompt.roomPhase);
   const promptCreatedAt = numberOrNull(prompt.createdAt);
   return actor === 'host'
-    && promptEventSource === 'browser_proactive_clippy_prompt'
+    && promptEventSource === 'browser_proactive_agent_prompt'
     && (promptSource === 'system' || promptSource === 'host')
     && promptId !== null
     && clientId !== null
@@ -1489,21 +1489,21 @@ function hasSourceBackedClippyPromptEvidence(
     && Number.isInteger(promptCreatedAt)
     && promptCreatedAt >= 0
     && promptTrigger !== null
-    && (surface === 'standard' || surface === 'win95')
+    && (surface === 'standard' || surface === 'assessment')
     && roomPhase !== null
     && prompt.agentResponseClaimed === false
     && text.length > 0;
 }
 
-function clippyPromptActivityToSessionEvent(input: RoomActivitySyncInput, value: unknown): SessionEvent | null {
+function agentPromptActivityToSessionEvent(input: RoomActivitySyncInput, value: unknown): SessionEvent | null {
   if (!isRecord(value) || !isRecord(value.prompt)) return null;
   const prompt = value.prompt;
   const text = stringOrNull(prompt.text);
   if (!text) return null;
   const role = isRoomActivityRole(value.role) ? value.role : null;
   const actor = actorFromRoomRole(role);
-  if (!hasSourceBackedClippyPromptEvidence(prompt, actor, text)) return null;
-  const properties = roomActivityBaseProperties('clippy_prompt', role, value.recordedAt);
+  if (!hasSourceBackedAgentPromptEvidence(prompt, actor, text)) return null;
+  const properties = roomActivityBaseProperties('agent_prompt', role, value.recordedAt);
   const promptId = stringOrNull(prompt.id);
   const clientId = stringOrNull(prompt.clientId);
   const promptSource = stringOrNull(prompt.source);
@@ -1513,7 +1513,7 @@ function clippyPromptActivityToSessionEvent(input: RoomActivitySyncInput, value:
   const roomPhase = stringOrNull(prompt.roomPhase);
   const workspaceStatus = stringOrNull(prompt.workspaceStatus);
   const workspaceSessionId = stringOrNull(prompt.workspaceSessionId);
-  properties.source = 'clippy_prompt_client_submit';
+  properties.source = 'agent_prompt_client_submit';
   if (promptId) properties.promptId = promptId;
   if (clientId) properties.clientId = clientId;
   if (promptSource) properties.promptSource = promptSource;
@@ -1541,7 +1541,7 @@ function clippyPromptActivityToSessionEvent(input: RoomActivitySyncInput, value:
       .filter((action) => action.id && action.label);
   }
   return createSessionEvent(input, {
-    type: 'clippy_prompt',
+    type: 'agent_prompt',
     timestamp: unixTimestampFromActivity(prompt.createdAt, value.recordedAt),
     actor,
     text,
@@ -1667,11 +1667,11 @@ export async function roomActivitySnapshotToSessionEvents(
     ? snapshot.recordingActivityLog
     : [];
   const cursorActivityLog = Array.isArray(snapshot.cursorActivityLog) ? snapshot.cursorActivityLog : [];
-  const clippyPromptActivityLog = Array.isArray(snapshot.clippyPromptActivityLog)
-    ? snapshot.clippyPromptActivityLog
+  const agentPromptActivityLog = Array.isArray(snapshot.agentPromptActivityLog)
+    ? snapshot.agentPromptActivityLog
     : [];
-  const clippyInteractionActivityLog = Array.isArray(snapshot.clippyInteractionActivityLog)
-    ? snapshot.clippyInteractionActivityLog
+  const agentInteractionActivityLog = Array.isArray(snapshot.agentInteractionActivityLog)
+    ? snapshot.agentInteractionActivityLog
     : [];
   const fileSystemActivityLog = Array.isArray(snapshot.fileSystemActivityLog) ? snapshot.fileSystemActivityLog : [];
 
@@ -1682,8 +1682,8 @@ export async function roomActivitySnapshotToSessionEvents(
   mediaControlActivityLog.forEach((entry) => pushMapped(mediaControlActivityToSessionEvent(input, entry)));
   recordingActivityLog.forEach((entry) => pushMapped(recordingActivityToSessionEvent(input, entry)));
   cursorActivityLog.forEach((entry) => pushMapped(cursorActivityToSessionEvent(input, entry)));
-  clippyPromptActivityLog.forEach((entry) => pushMapped(clippyPromptActivityToSessionEvent(input, entry)));
-  clippyInteractionActivityLog.forEach((entry) => pushMapped(clippyInteractionActivityToSessionEvent(input, entry)));
+  agentPromptActivityLog.forEach((entry) => pushMapped(agentPromptActivityToSessionEvent(input, entry)));
+  agentInteractionActivityLog.forEach((entry) => pushMapped(agentInteractionActivityToSessionEvent(input, entry)));
   for (const entry of fileSystemActivityLog) {
     pushMapped(await fileSystemActivityToSessionEvent(input, entry));
   }
@@ -1756,8 +1756,8 @@ function mapEventTypeToNodeType(type: SessionEventType): string {
     workspace_state: 'session_workspace_state',
     participant_join: 'session_participant_join',
     participant_leave: 'session_participant_leave',
-    clippy_prompt: 'session_clippy_prompt',
-    clippy_action: 'session_clippy_action',
+    agent_prompt: 'session_agent_prompt',
+    agent_action: 'session_agent_action',
     recording_start: 'session_recording_start',
     recording_stop: 'session_recording_stop',
     code_editor_open: 'session_code_editor_open',
@@ -1807,9 +1807,9 @@ function formatEventNarrative(event: SessionEvent): string {
       return `[${time}] Participant joined: ${event.text}`;
     case 'participant_leave':
       return `[${time}] Participant left: ${event.text}`;
-    case 'clippy_prompt':
-      return `[${time}] Clippy prompted: "${event.text}"`;
-    case 'clippy_action':
+    case 'agent_prompt':
+      return `[${time}] Agent prompted: "${event.text}"`;
+    case 'agent_action':
       return `[${time}] ${event.text}`;
     case 'recording_start':
       return `[${time}] Recording started`;
@@ -1905,9 +1905,9 @@ function sessionEventCorrelationRefs(event: SessionEvent, properties: JsonObject
     refs.agentResponse = { responseId: agentChatResponseId };
   }
 
-  const clippyActionEventId = stringProperty(properties, 'clippyActionEventId');
-  if (event.type === 'clippy_action' && clippyActionEventId) {
-    refs.clippyAction = { actionEventId: clippyActionEventId };
+  const agentActionEventId = stringProperty(properties, 'agentActionEventId');
+  if (event.type === 'agent_action' && agentActionEventId) {
+    refs.agentAction = { actionEventId: agentActionEventId };
   }
 
   const startMenuEventId = stringProperty(properties, 'startMenuEventId');
@@ -2190,7 +2190,7 @@ function sessionEventEntities(input: {
   const promptId = stringProperty(properties, 'promptId');
   if (promptId) {
     entities.push({
-      entityType: 'clippy_prompt',
+      entityType: 'agent_prompt',
       entityId: promptId,
       relationship: event.type === 'ai_chat_user' ? 'source_prompt' : 'prompt_event',
       metadata: {
@@ -2206,7 +2206,7 @@ function sessionEventEntities(input: {
   const browserPromptId = stringProperty(properties, 'browserPromptId');
   if (browserPromptId) {
     entities.push({
-      entityType: 'clippy_prompt',
+      entityType: 'agent_prompt',
       entityId: browserPromptId,
       relationship: 'linked_prompt',
       metadata: {
@@ -2230,11 +2230,11 @@ function sessionEventEntities(input: {
     });
   }
 
-  const clippyActionEventId = stringProperty(properties, 'clippyActionEventId');
-  if (clippyActionEventId) {
+  const agentActionEventId = stringProperty(properties, 'agentActionEventId');
+  if (agentActionEventId) {
     entities.push({
-      entityType: 'clippy_action',
-      entityId: clippyActionEventId,
+      entityType: 'agent_action',
+      entityId: agentActionEventId,
       relationship: 'source_action',
       metadata: {
         actor: event.actor,
@@ -2379,7 +2379,7 @@ async function roomFileContentSourceRef(input: {
     exactText,
     contentHash: await sha256Hex(exactText),
     metadata: {
-      sourceKind: `win95_shared_file_system.${fileKind}_content`,
+      sourceKind: `assessment_shared_file_system.${fileKind}_content`,
       fileKind,
       operation,
       exactContentKey: exactTextKey,
@@ -2435,17 +2435,17 @@ async function chatTextSourceRef(input: {
     };
   }
 
-  if (input.event.type === 'clippy_prompt') {
-    if (input.properties.source !== 'clippy_prompt_client_submit') return null;
-    if (input.properties.promptEventSource !== 'browser_proactive_clippy_prompt') return null;
+  if (input.event.type === 'agent_prompt') {
+    if (input.properties.source !== 'agent_prompt_client_submit') return null;
+    if (input.properties.promptEventSource !== 'browser_proactive_agent_prompt') return null;
     const promptId = stringProperty(input.properties, 'promptId');
     const promptLength = numberProperty(input.properties, 'promptLength');
     if (!promptId || promptLength !== input.event.text.length) return null;
     if (input.event.actor !== 'host') return null;
     return {
-      sourceRefType: 'clippy_proactive_prompt',
+      sourceRefType: 'agent_proactive_prompt',
       sourceRefId: promptId,
-      evidenceRole: 'clippy_proactive_prompt',
+      evidenceRole: 'agent_proactive_prompt',
       locator: {
         sessionId: input.event.sessionId,
         candidateId: input.event.candidateId,
@@ -2461,8 +2461,8 @@ async function chatTextSourceRef(input: {
       exactText: input.event.text,
       contentHash: await sha256Hex(input.event.text),
       metadata: {
-        sourceKind: 'clippy.proactive_prompt',
-        promptEventSource: 'browser_proactive_clippy_prompt',
+        sourceKind: 'agent.proactive_prompt',
+        promptEventSource: 'browser_proactive_agent_prompt',
         promptLength,
         agentResponseClaimed: input.properties.agentResponseClaimed === true,
       },
@@ -2470,8 +2470,8 @@ async function chatTextSourceRef(input: {
   }
 
   if (input.event.type === 'ai_chat_user') {
-    if (input.properties.source !== 'clippy_agent_chat_client_submit') return null;
-    if (input.properties.agentChatEventSource !== 'browser_clippy_chat_window') return null;
+    if (input.properties.source !== 'agent_chat_client_submit') return null;
+    if (input.properties.agentChatEventSource !== 'browser_agent_chat_window') return null;
     if (input.event.actor !== 'host' && input.event.actor !== 'guest') return null;
     const promptId = stringProperty(input.properties, 'promptId');
     const promptTimestamp = numberProperty(input.properties, 'promptTimestamp');
@@ -2483,15 +2483,15 @@ async function chatTextSourceRef(input: {
     const blockedReason = stringProperty(input.properties, 'bridgeBlockedReason');
     if (!promptId || promptLength !== input.event.text.length) return null;
     if (promptTimestamp === null || promptTimestamp < 0 || !Number.isInteger(promptTimestamp)) return null;
-    if (!promptFingerprint || !CLIPPY_PROMPT_FINGERPRINT_RE.test(promptFingerprint)) return null;
+    if (!promptFingerprint || !AGENT_PROMPT_FINGERPRINT_RE.test(promptFingerprint)) return null;
     if (promptId !== `${workspacePart}:${input.event.actor}:prompt:${promptTimestamp}:${promptFingerprint}`) return null;
     if (deliveryStatus === 'queued' && !workspaceSessionId) return null;
-    if (deliveryStatus === 'blocked' && (!blockedReason || !CLIPPY_PROMPT_BLOCKED_REASONS.has(blockedReason))) return null;
+    if (deliveryStatus === 'blocked' && (!blockedReason || !AGENT_PROMPT_BLOCKED_REASONS.has(blockedReason))) return null;
     if (input.properties.agentResponseClaimed !== false || input.properties.deliveredToAgentBridge === true) return null;
     return {
-      sourceRefType: deliveryStatus === 'blocked' ? 'clippy_user_prompt_blocked' : 'clippy_user_prompt',
+      sourceRefType: deliveryStatus === 'blocked' ? 'agent_user_prompt_blocked' : 'agent_user_prompt',
       sourceRefId: promptId,
-      evidenceRole: deliveryStatus === 'blocked' ? 'clippy_user_prompt_blocked' : 'clippy_user_prompt',
+      evidenceRole: deliveryStatus === 'blocked' ? 'agent_user_prompt_blocked' : 'agent_user_prompt',
       locator: {
         sessionId: input.event.sessionId,
         candidateId: input.event.candidateId,
@@ -2510,9 +2510,9 @@ async function chatTextSourceRef(input: {
       contentHash: await sha256Hex(input.event.text),
       metadata: {
         sourceKind: deliveryStatus === 'blocked'
-          ? 'clippy.user_prompt_blocked'
-          : 'clippy.user_prompt',
-        agentChatEventSource: 'browser_clippy_chat_window',
+          ? 'agent.user_prompt_blocked'
+          : 'agent.user_prompt',
+        agentChatEventSource: 'browser_agent_chat_window',
         bridgeMessageType: stringProperty(input.properties, 'bridgeMessageType'),
         bridgeProtocol: stringProperty(input.properties, 'bridgeProtocol'),
         bridgeDeliveryStatus: deliveryStatus,
@@ -2524,7 +2524,7 @@ async function chatTextSourceRef(input: {
   }
 
   if (input.event.type === 'ai_chat_agent') {
-    if (input.properties.source !== 'clippy_agent_bridge') return null;
+    if (input.properties.source !== 'agent_bridge') return null;
     if (input.properties.bridgeEventType !== 'CHAT_RESPONSE') return null;
     const bridgeMessageSource = stringProperty(input.properties, 'bridgeMessageSource');
     if (bridgeMessageSource !== 'agent_stdout' && bridgeMessageSource !== 'agent_api_response') return null;
@@ -2540,9 +2540,9 @@ async function chatTextSourceRef(input: {
     if (!AGENT_CHAT_RESPONSE_ID_RE.test(agentChatResponseId)) return null;
     if (agentChatResponseId !== `agent-chat:${safeEvidenceIdPart(agent)}:${capturedAtMs}:CHAT_RESPONSE:${responseFingerprint}`) return null;
     return {
-      sourceRefType: 'clippy_agent_response',
+      sourceRefType: 'agent_response',
       sourceRefId: agentChatResponseId,
-      evidenceRole: 'clippy_agent_response',
+      evidenceRole: 'agent_response',
       locator: {
         sessionId: input.event.sessionId,
         candidateId: input.event.candidateId,
@@ -2560,8 +2560,8 @@ async function chatTextSourceRef(input: {
       contentHash: await sha256Hex(input.event.text),
       metadata: {
         sourceKind: bridgeMessageSource === 'agent_api_response'
-          ? 'clippy.agent_api_response'
-          : 'clippy.agent_stdout_response',
+          ? 'agent.agent_api_response'
+          : 'agent.agent_stdout_response',
         bridgeMessageSource,
         responseFingerprint,
         responseLength,
@@ -2573,7 +2573,7 @@ async function chatTextSourceRef(input: {
   }
 
   if (input.event.type === 'ai_agent_status') {
-    if (input.properties.source !== 'clippy_agent_bridge') return null;
+    if (input.properties.source !== 'agent_bridge') return null;
     if (input.event.actor !== 'agent') return null;
     const agent = stringProperty(input.properties, 'agent');
     const agentStatusEventId = stringProperty(input.properties, 'agentStatusEventId');
@@ -2590,7 +2590,7 @@ async function chatTextSourceRef(input: {
     const expectedId = `agent-status:${safeEvidenceIdPart(agent)}:${capturedAtMs}:${bridgeMessageSource}:${safeEvidenceIdPart(status)}:${safeEvidenceIdPart(diagnosticSource)}`;
     if (agentStatusEventId !== expectedId) return null;
 
-    const browserObservationOk = input.properties.agentStatusEventSource === 'browser_clippy_agent_ws'
+    const browserObservationOk = input.properties.agentStatusEventSource === 'browser_agent_ws'
       && (
         (bridgeMessageSource === 'agent_status' && status !== null && AGENT_STATUSES.has(status))
         || (bridgeMessageSource !== 'agent_status' && diagnosticSource !== null)
@@ -2602,9 +2602,9 @@ async function chatTextSourceRef(input: {
 
     const diagnosticBacked = bridgeMessageSource === 'bridge_diagnostic';
     return {
-      sourceRefType: diagnosticBacked ? 'clippy_agent_diagnostic' : 'clippy_agent_status',
+      sourceRefType: diagnosticBacked ? 'agent_diagnostic' : 'agent_status',
       sourceRefId: agentStatusEventId,
-      evidenceRole: diagnosticBacked ? 'clippy_agent_diagnostic' : 'clippy_agent_status',
+      evidenceRole: diagnosticBacked ? 'agent_diagnostic' : 'agent_status',
       locator: {
         sessionId: input.event.sessionId,
         candidateId: input.event.candidateId,
@@ -2624,7 +2624,7 @@ async function chatTextSourceRef(input: {
       exactText: input.event.text,
       contentHash: await sha256Hex(input.event.text),
       metadata: {
-        sourceKind: diagnosticBacked ? 'clippy.agent_diagnostic' : 'clippy.agent_status',
+        sourceKind: diagnosticBacked ? 'agent.agent_diagnostic' : 'agent.agent_status',
         bridgeMessageSource,
         status,
         diagnosticSource,
@@ -2640,14 +2640,14 @@ async function chatTextSourceRef(input: {
   return null;
 }
 
-async function clippyActionSourceRef(input: {
+async function agentActionSourceRef(input: {
   event: SessionEvent;
   node: CandidateNode;
   properties: JsonObject;
 }): Promise<SessionEventExactSourceRef | null> {
-  if (input.event.type !== 'clippy_action') return null;
+  if (input.event.type !== 'agent_action') return null;
   if (input.event.text.trim().length === 0) return null;
-  if (!isSourceBackedClippyInteractionEvidence('clippy_action', input.event.actor, input.event.text, input.properties)) {
+  if (!isSourceBackedAgentInteractionEvidence('agent_action', input.event.actor, input.event.text, input.properties)) {
     return null;
   }
 
@@ -2655,19 +2655,19 @@ async function clippyActionSourceRef(input: {
   const actionId = stringProperty(input.properties, 'actionId');
   const origin = stringProperty(input.properties, 'origin');
   const executionStatus = stringProperty(input.properties, 'executionStatus');
-  const clippyActionEventId = stringProperty(input.properties, 'clippyActionEventId');
-  if (!source || !actionId || !origin || !executionStatus || !clippyActionEventId) return null;
+  const agentActionEventId = stringProperty(input.properties, 'agentActionEventId');
+  if (!source || !actionId || !origin || !executionStatus || !agentActionEventId) return null;
 
-  const agentBacked = source === 'clippy_agent_bridge';
+  const agentBacked = source === 'agent_bridge';
   const evidenceRole = agentBacked
     ? executionStatus === 'suggested'
-      ? 'clippy_agent_suggested_action'
-      : 'clippy_agent_executed_action'
-    : 'clippy_ui_action';
+      ? 'agent_suggested_action'
+      : 'agent_executed_action'
+    : 'agent_ui_action';
 
   return {
-    sourceRefType: agentBacked ? 'clippy_agent_room_action' : 'clippy_ui_action',
-    sourceRefId: clippyActionEventId,
+    sourceRefType: agentBacked ? 'agent_room_action' : 'agent_ui_action',
+    sourceRefId: agentActionEventId,
     evidenceRole,
     locator: {
       sessionId: input.event.sessionId,
@@ -2678,7 +2678,7 @@ async function clippyActionSourceRef(input: {
       actionId,
       origin,
       executionStatus,
-      clippyActionEventId,
+      agentActionEventId,
       capturedAtMs: numberProperty(input.properties, 'capturedAtMs'),
       executedBy: stringProperty(input.properties, 'executedBy'),
       agent: stringProperty(input.properties, 'agent'),
@@ -2695,7 +2695,7 @@ async function clippyActionSourceRef(input: {
     exactText: input.event.text,
     contentHash: await sha256Hex(input.event.text),
     metadata: {
-      sourceKind: agentBacked ? 'clippy.agent_room_action' : 'clippy.ui_action',
+      sourceKind: agentBacked ? 'agent.agent_room_action' : 'agent.ui_action',
       actionSource: stringProperty(input.properties, 'actionSource'),
       actionProtocol: stringProperty(input.properties, 'actionProtocol'),
       bridgeEventType: stringProperty(input.properties, 'bridgeEventType'),
@@ -2814,10 +2814,10 @@ function codeServerFileObservationIsSourceBacked(
 
   if (properties.bridgePersisted === false) {
     const codeServerFileChangeId = stringProperty(properties, 'codeServerFileChangeId');
-    return properties.observedBy === 'clippy_agent_bridge'
+    return properties.observedBy === 'agent_bridge'
       && codeServerFileChangeId !== null
       && CODE_SERVER_FILE_CHANGE_ID_RE.test(codeServerFileChangeId)
-      && (properties.surface === 'standard' || properties.surface === 'win95')
+      && (properties.surface === 'standard' || properties.surface === 'assessment')
       && Boolean(stringProperty(properties, 'roomPhase'))
       && Boolean(stringProperty(properties, 'workspaceStatus'))
       && Boolean(stringProperty(properties, 'workspaceSessionId'))
@@ -2853,7 +2853,7 @@ function codeEditorOpenIsSourceBacked(
     && workspaceSessionId !== null
     && codeEditorOpenId === `code-editor-open:${event.actor}:${capturedAtMs}:${workspaceSessionId}`
     && workspaceStatus !== null
-    && (surface === 'standard' || surface === 'win95')
+    && (surface === 'standard' || surface === 'assessment')
     && roomPhase !== null
     && properties.proxyUrlPersisted === false
     && event.text === expectedText;
@@ -2990,10 +2990,10 @@ function directRoomActivitySourceSpec(
       return null;
     }
     return {
-      sourceRefType: 'win95_start_menu_state',
+      sourceRefType: 'assessment_start_menu_state',
       sourceRefId: startMenuEventId,
       evidenceRole: open ? 'start_menu_opened' : 'start_menu_closed',
-      sourceKind: 'win95.start_menu_control',
+      sourceKind: 'assessment.start_menu_control',
       locator: {
         ...baseLocator,
         startMenuEventId,
@@ -3015,7 +3015,7 @@ function directRoomActivitySourceSpec(
       sourceRefType: 'room_browser_navigation',
       sourceRefId: browserNavigationId,
       evidenceRole: 'browser_navigation',
-      sourceKind: 'win95.browser_navigation',
+      sourceKind: 'assessment.browser_navigation',
       locator: {
         ...baseLocator,
         browserNavigationId,
@@ -3043,7 +3043,7 @@ function directRoomActivitySourceSpec(
       sourceRefType: 'room_window_lifecycle',
       sourceRefId: windowLifecycleId,
       evidenceRole: event.type,
-      sourceKind: 'win95.window_lifecycle',
+      sourceKind: 'assessment.window_lifecycle',
       locator: {
         ...baseLocator,
         windowLifecycleId,
@@ -3068,7 +3068,7 @@ function directRoomActivitySourceSpec(
         evidenceRole: stringProperty(properties, 'action') === 'edit_text'
           ? 'window_text_update'
           : 'window_data_update',
-        sourceKind: 'win95.window_data_sync',
+        sourceKind: 'assessment.window_data_sync',
         locator: {
           ...baseLocator,
           windowDataUpdateId,
@@ -3089,7 +3089,7 @@ function directRoomActivitySourceSpec(
         sourceRefType: 'room_window_state_change',
         sourceRefId: windowStateChangeId,
         evidenceRole: 'window_state_change',
-        sourceKind: 'win95.window_state_sync',
+        sourceKind: 'assessment.window_state_sync',
         locator: {
           ...baseLocator,
           windowStateChangeId,
@@ -3119,7 +3119,7 @@ function directRoomActivitySourceSpec(
       sourceRefType: 'room_cursor_presence_sample',
       sourceRefId: cursorSampleId,
       evidenceRole: 'cursor_presence_sample',
-      sourceKind: 'win95.cursor_presence_sample',
+      sourceKind: 'assessment.cursor_presence_sample',
       locator: {
         ...baseLocator,
         cursorSampleId,
@@ -3344,7 +3344,7 @@ async function persistSessionEventContextRecord(
   const sourceSpanId = await findCandidateNodeSourceSpanId(db, node.id);
   const roomFileContentSource = await roomFileContentSourceRef({ event, node, properties });
   const chatTextSource = await chatTextSourceRef({ event, node, properties });
-  const clippyActionSource = await clippyActionSourceRef({ event, node, properties });
+  const agentActionSource = await agentActionSourceRef({ event, node, properties });
   const terminalTextSource = await terminalTextSourceRef({ event, node, properties });
   const codeServerFileSource = await codeServerFileObservationSourceRef({ event, node, properties });
   const directRoomActivitySource = await directRoomActivitySourceRef({ event, node, properties });
@@ -3372,7 +3372,7 @@ async function persistSessionEventContextRecord(
   ];
   if (roomFileContentSource) sources.push(roomFileContentSource);
   if (chatTextSource) sources.push(chatTextSource);
-  if (clippyActionSource) sources.push(clippyActionSource);
+  if (agentActionSource) sources.push(agentActionSource);
   if (terminalTextSource) sources.push(terminalTextSource);
   if (codeServerFileSource) sources.push(codeServerFileSource);
   if (directRoomActivitySource) sources.push(directRoomActivitySource);
@@ -3427,8 +3427,8 @@ function assessmentEventKindForSessionEvent(type: SessionEventType): string {
     case 'ai_chat_user':
     case 'ai_chat_agent':
     case 'ai_agent_status':
-    case 'clippy_prompt':
-    case 'clippy_action':
+    case 'agent_prompt':
+    case 'agent_action':
       return 'ai_interaction';
     case 'terminal_command':
     case 'terminal_output':
@@ -3467,14 +3467,14 @@ function assessmentActorForSessionEvent(event: SessionEvent): { actorType: Asses
     return { actorType: agentActorType, actorId: explicitAgentId };
   }
 
-  if (event.type === 'clippy_prompt') {
-    return { actorType: 'clippy', actorId: 'clippy' };
+  if (event.type === 'agent_prompt') {
+    return { actorType: 'agent', actorId: 'agent' };
   }
 
-  if (event.type === 'clippy_action') {
-    return source === 'clippy_agent_bridge'
+  if (event.type === 'agent_action') {
+    return source === 'agent_bridge'
       ? { actorType: agentActorType, actorId: explicitAgentId }
-      : { actorType: 'clippy', actorId: 'clippy' };
+      : { actorType: 'agent', actorId: 'agent' };
   }
 
   if (event.actor === 'guest') return { actorType: 'candidate', actorId: event.candidateId };
@@ -3575,7 +3575,7 @@ async function persistSessionEventAssessmentEvidence(
   const sourceExactText = stableJson(sessionEventSourcePayload(event, node));
   const roomFileContentSource = await roomFileContentSourceRef({ event, node, properties });
   const chatTextSource = await chatTextSourceRef({ event, node, properties });
-  const clippyActionSource = await clippyActionSourceRef({ event, node, properties });
+  const agentActionSource = await agentActionSourceRef({ event, node, properties });
   const terminalTextSource = await terminalTextSourceRef({ event, node, properties });
   const codeServerFileSource = await codeServerFileObservationSourceRef({ event, node, properties });
   const directRoomActivitySource = await directRoomActivitySourceRef({ event, node, properties });
@@ -3602,7 +3602,7 @@ async function persistSessionEventAssessmentEvidence(
     },
     ...(roomFileContentSource ? [roomFileContentSource] : []),
     ...(chatTextSource ? [chatTextSource] : []),
-    ...(clippyActionSource ? [clippyActionSource] : []),
+    ...(agentActionSource ? [agentActionSource] : []),
     ...(terminalTextSource ? [terminalTextSource] : []),
     ...(codeServerFileSource ? [codeServerFileSource] : []),
     ...(directRoomActivitySource ? [directRoomActivitySource] : []),
@@ -3610,7 +3610,7 @@ async function persistSessionEventAssessmentEvidence(
 
   await store.recordAssessmentEvent({
     sessionId: session.id,
-    ingestionKey: `assessment-event:95-room:${node.id}`,
+    ingestionKey: `assessment-event:room:${node.id}`,
     kind: assessmentEventKindForSessionEvent(event.type),
     actorType,
     actorId,
@@ -3841,7 +3841,7 @@ const CONTEXT_SOURCE_REF_KEYS = [
   'promptId',
   'agentChatResponseId',
   'agentStatusEventId',
-  'clippyActionEventId',
+  'agentActionEventId',
   'recordingEventId',
   'recordingStateEventId',
   'mediaControlId',

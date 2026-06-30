@@ -182,7 +182,7 @@ describe('VideoRoom Durable Object signaling lifecycle', () => {
         },
         evidence: {
           source: 'window_lifecycle_client_submit',
-          lifecycleSource: 'win95_file_system',
+          lifecycleSource: 'assessment_file_system',
           lifecycleKind: 'open',
           windowLifecycleId: 'window-lifecycle:host:1:open:browser',
           capturedAtMs: 1,
@@ -190,7 +190,7 @@ describe('VideoRoom Durable Object signaling lifecycle', () => {
           windowId: 'browser',
           windowType: 'browser',
           windowTitle: 'Microsoft Edge',
-          surface: 'win95',
+          surface: 'assessment',
           roomPhase: 'connected',
           durableObjectReplayExpected: true,
         },
@@ -211,7 +211,7 @@ describe('VideoRoom Durable Object signaling lifecycle', () => {
       payload: expect.objectContaining({
         kind: 'OPEN_WINDOW',
         window: expect.objectContaining({ id: 'browser' }),
-        evidence: expect.objectContaining({ lifecycleSource: 'win95_file_system' }),
+        evidence: expect.objectContaining({ lifecycleSource: 'assessment_file_system' }),
       }),
     }));
 
@@ -234,7 +234,7 @@ describe('VideoRoom Durable Object signaling lifecycle', () => {
           capturedAtMs: 1500,
           url: 'https://example.com/review?step=1',
           urlFingerprint: 'nav_54d2c495',
-          surface: 'win95',
+          surface: 'assessment',
           roomPhase: 'connected',
           durableObjectReplayExpected: true,
         },
@@ -271,7 +271,7 @@ describe('VideoRoom Durable Object signaling lifecycle', () => {
         windowId: 'browser',
         evidence: {
           source: 'window_lifecycle_client_submit',
-          lifecycleSource: 'win95_window_chrome',
+          lifecycleSource: 'assessment_window_chrome',
           lifecycleKind: 'close',
           windowLifecycleId: 'window-lifecycle:guest:2:close:browser',
           capturedAtMs: 2,
@@ -279,7 +279,7 @@ describe('VideoRoom Durable Object signaling lifecycle', () => {
           windowId: 'browser',
           windowType: 'browser',
           windowTitle: 'Microsoft Edge',
-          surface: 'win95',
+          surface: 'assessment',
           roomPhase: 'connected',
           durableObjectReplayExpected: true,
         },
@@ -331,13 +331,13 @@ describe('VideoRoom Durable Object signaling lifecycle', () => {
         focused: true,
         evidence: {
           source: 'window_state_client_submit',
-          stateSource: 'win95_taskbar',
+          stateSource: 'assessment_taskbar',
           actor: 'host',
           windowId: 'browser',
           action: 'restore_or_focus',
           windowStateChangeId: 'window-state:host:3:browser:restore_or_focus',
           capturedAtMs: 3,
-          surface: 'win95',
+          surface: 'assessment',
           roomPhase: 'connected',
           durableObjectReplayExpected: true,
         },
@@ -373,7 +373,7 @@ describe('VideoRoom Durable Object signaling lifecycle', () => {
           windowId: 'browser',
           evidence: expect.objectContaining({
             source: 'window_state_client_submit',
-            stateSource: 'win95_taskbar',
+            stateSource: 'assessment_taskbar',
             windowStateChangeId: 'window-state:host:3:browser:restore_or_focus',
           }),
         }),
@@ -409,7 +409,7 @@ describe('VideoRoom Durable Object signaling lifecycle', () => {
         },
         evidence: {
           source: 'window_lifecycle_client_submit',
-          lifecycleSource: 'win95_file_system',
+          lifecycleSource: 'assessment_file_system',
           lifecycleKind: 'open',
           windowLifecycleId: 'window-lifecycle:host:1:open:notepad',
           capturedAtMs: 1,
@@ -417,7 +417,7 @@ describe('VideoRoom Durable Object signaling lifecycle', () => {
           windowId: 'notepad',
           windowType: 'notepad',
           windowTitle: 'notes.txt - Notepad',
-          surface: 'win95',
+          surface: 'assessment',
           roomPhase: 'connected',
           durableObjectReplayExpected: true,
         },
@@ -435,13 +435,13 @@ describe('VideoRoom Durable Object signaling lifecycle', () => {
         data: { text: '' },
         evidence: {
           source: 'window_data_client_submit',
-          dataSource: 'win95_file_delete_sync',
+          dataSource: 'assessment_file_delete_sync',
           actor: 'host',
           windowId: 'notepad',
           action: 'edit_text',
           windowDataUpdateId: 'window-data:host:2:notepad:edit_text',
           capturedAtMs: 2,
-          surface: 'win95',
+          surface: 'assessment',
           roomPhase: 'connected',
           dataKeys: ['text'],
           dataValueFingerprints: { text: 'data_12345678' },
@@ -463,7 +463,7 @@ describe('VideoRoom Durable Object signaling lifecycle', () => {
         kind: 'UPDATE_WINDOW_DATA',
         windowId: 'notepad',
         evidence: expect.objectContaining({
-          dataSource: 'win95_file_delete_sync',
+          dataSource: 'assessment_file_delete_sync',
           windowDataUpdateId: 'window-data:host:2:notepad:edit_text',
         }),
       }),
@@ -525,27 +525,27 @@ describe('VideoRoom Durable Object signaling lifecycle', () => {
         clientId: 'guest-client',
         createdAt: 1,
         kind: 'SET_ROOM_SURFACE',
-        surface: 'win95',
+        surface: 'assessment',
         previousSurface: 'standard',
         action: 'enter_desktop',
         source: 'room_surface_control',
         surfaceControlEventSource: 'browser_room_surface_toggle',
-        surfaceChangeId: 'surface:guest:1:standard:win95',
+        surfaceChangeId: 'surface:guest:1:standard:assessment',
         capturedAtMs: 1,
         roomPhase: 'connected',
         durableObjectReplayExpected: true,
       },
     }));
 
-    expect(storage.get('roomSurface')).toBe('win95');
+    expect(storage.get('roomSurface')).toBe('assessment');
     expect(parseSent(host)).toContainEqual(expect.objectContaining({
       type: 'ROOM_DESKTOP_EVENT',
       role: 'GUEST',
       payload: expect.objectContaining({
         kind: 'SET_ROOM_SURFACE',
-        surface: 'win95',
+        surface: 'assessment',
         source: 'room_surface_control',
-        surfaceChangeId: 'surface:guest:1:standard:win95',
+        surfaceChangeId: 'surface:guest:1:standard:assessment',
       }),
     }));
 
@@ -557,11 +557,11 @@ describe('VideoRoom Durable Object signaling lifecycle', () => {
         createdAt: 2,
         kind: 'SET_ROOM_SURFACE',
         surface: 'standard',
-        previousSurface: 'win95',
+        previousSurface: 'assessment',
         action: 'exit_desktop',
         source: 'room_surface_control',
         surfaceControlEventSource: 'browser_room_surface_toggle',
-        surfaceChangeId: 'surface:host:2:win95:standard',
+        surfaceChangeId: 'surface:host:2:assessment:standard',
         capturedAtMs: 2,
         roomPhase: 'connected',
         durableObjectReplayExpected: true,
@@ -576,7 +576,7 @@ describe('VideoRoom Durable Object signaling lifecycle', () => {
         kind: 'SET_ROOM_SURFACE',
         surface: 'standard',
         source: 'room_surface_control',
-        surfaceChangeId: 'surface:host:2:win95:standard',
+        surfaceChangeId: 'surface:host:2:assessment:standard',
       }),
     }));
     expect(storage.get('desktopActivityLog')).toEqual([
@@ -585,8 +585,8 @@ describe('VideoRoom Durable Object signaling lifecycle', () => {
         event: expect.objectContaining({
           id: 'evt-guest-surface',
           kind: 'SET_ROOM_SURFACE',
-          surface: 'win95',
-          surfaceChangeId: 'surface:guest:1:standard:win95',
+          surface: 'assessment',
+          surfaceChangeId: 'surface:guest:1:standard:assessment',
         }),
       }),
       expect.objectContaining({
@@ -595,7 +595,7 @@ describe('VideoRoom Durable Object signaling lifecycle', () => {
           id: 'evt-host-surface',
           kind: 'SET_ROOM_SURFACE',
           surface: 'standard',
-          surfaceChangeId: 'surface:host:2:win95:standard',
+          surfaceChangeId: 'surface:host:2:assessment:standard',
         }),
       }),
     ]);
@@ -619,15 +619,15 @@ describe('VideoRoom Durable Object signaling lifecycle', () => {
         kind: 'START_MENU_STATE',
         open: true,
         evidence: {
-          source: 'win95_start_menu_control',
-          menuEventSource: 'win95_start_button',
+          source: 'assessment_start_menu_control',
+          menuEventSource: 'assessment_start_button',
           actor: 'guest',
           menuId: 'start',
           action: 'open',
           open: true,
-          startMenuEventId: 'start-menu:guest:3000:open:win95_start_button',
+          startMenuEventId: 'start-menu:guest:3000:open:assessment_start_button',
           capturedAtMs: 3000,
-          surface: 'win95',
+          surface: 'assessment',
           roomPhase: 'connected',
           durableObjectReplayExpected: true,
         },
@@ -642,8 +642,8 @@ describe('VideoRoom Durable Object signaling lifecycle', () => {
         kind: 'START_MENU_STATE',
         open: true,
         evidence: expect.objectContaining({
-          source: 'win95_start_menu_control',
-          startMenuEventId: 'start-menu:guest:3000:open:win95_start_button',
+          source: 'assessment_start_menu_control',
+          startMenuEventId: 'start-menu:guest:3000:open:assessment_start_button',
         }),
       }),
     }));
@@ -655,7 +655,7 @@ describe('VideoRoom Durable Object signaling lifecycle', () => {
           kind: 'START_MENU_STATE',
           open: true,
           evidence: expect.objectContaining({
-            startMenuEventId: 'start-menu:guest:3000:open:win95_start_button',
+            startMenuEventId: 'start-menu:guest:3000:open:assessment_start_button',
           }),
         }),
       }),
@@ -714,7 +714,7 @@ describe('VideoRoom Durable Object signaling lifecycle', () => {
         clientId: 'guest-client',
         createdAt: 2.5,
         kind: 'SET_ROOM_SURFACE',
-        surface: 'win95',
+        surface: 'assessment',
       },
     }));
 
@@ -987,7 +987,7 @@ describe('VideoRoom Durable Object signaling lifecycle', () => {
           source: 'room_chat_client_submit',
           chatEventSource: 'browser_room_chat_window',
           actor: 'host',
-          surface: 'win95',
+          surface: 'assessment',
           roomPhase: 'connected',
           durableObjectReplayExpected: true,
         },
@@ -1004,7 +1004,7 @@ describe('VideoRoom Durable Object signaling lifecycle', () => {
       messageLength: 'Can you see this message?'.length,
       messageFingerprint: roomChatMessageFingerprint('Can you see this message?'),
       deliveryStatus: 'accepted',
-      surface: 'win95',
+      surface: 'assessment',
       roomPhase: 'connected',
       durableObjectReplayExpected: true,
     };
@@ -1077,7 +1077,7 @@ describe('VideoRoom Durable Object signaling lifecycle', () => {
           source: 'room_chat_claim',
           chatEventSource: 'manual_test_payload',
           actor: 'host',
-          surface: 'win95',
+          surface: 'assessment',
           roomPhase: 'connected',
           durableObjectReplayExpected: true,
         },
@@ -1149,9 +1149,9 @@ describe('VideoRoom Durable Object signaling lifecycle', () => {
           previousEnabled: true,
           enabled: false,
           action: 'disabled',
-          surface: 'win95',
+          surface: 'assessment',
           roomPhase: 'connected',
-          controlSurface: 'win95_video_window',
+          controlSurface: 'assessment_video_window',
           controlAction: 'toggle',
           mediaSource: 'local_media_stream',
           rawMediaStreamPersisted: false,
@@ -1259,9 +1259,9 @@ describe('VideoRoom Durable Object signaling lifecycle', () => {
           previousEnabled: true,
           enabled: false,
           action: 'disabled',
-          surface: 'win95',
+          surface: 'assessment',
           roomPhase: 'connected',
-          controlSurface: 'win95_video_window',
+          controlSurface: 'assessment_video_window',
           controlAction: 'toggle',
           mediaSource: 'local_media_stream',
           rawMediaStreamPersisted: false,
@@ -1304,7 +1304,7 @@ describe('VideoRoom Durable Object signaling lifecycle', () => {
           recordingLifecycleKind: 'start',
           recordingStateEventId: 'recording:host:1700000000500:start:recording',
           capturedAtMs: 1700000000500,
-          surface: 'win95',
+          surface: 'assessment',
           roomPhase: 'connected',
           recordingStatus: 'recording',
           recordingActive: true,
@@ -1389,7 +1389,7 @@ describe('VideoRoom Durable Object signaling lifecycle', () => {
           recordingLifecycleKind: 'stop',
           recordingStateEventId: 'recording:host:1700000000900:stop:failed',
           capturedAtMs: 1700000000900,
-          surface: 'win95',
+          surface: 'assessment',
           roomPhase: 'connected',
           recordingStatus: 'failed',
           recordingActive: false,
@@ -1461,7 +1461,7 @@ describe('VideoRoom Durable Object signaling lifecycle', () => {
           recordingLifecycleKind: 'start',
           recordingStateEventId: 'recording:host:1700000000500:start:recording',
           capturedAtMs: 1700000000500,
-          surface: 'win95',
+          surface: 'assessment',
           roomPhase: 'connected',
           recordingStatus: 'recording',
           recordingActive: true,
@@ -1510,7 +1510,7 @@ describe('VideoRoom Durable Object signaling lifecycle', () => {
           recordingLifecycleKind: 'stop',
           recordingStateEventId: 'recording:host:1700000000900:stop:failed',
           capturedAtMs: 1700000000900,
-          surface: 'win95',
+          surface: 'assessment',
           roomPhase: 'connected',
           recordingStatus: 'failed',
           recordingActive: false,
@@ -1610,12 +1610,12 @@ describe('VideoRoom Durable Object signaling lifecycle', () => {
         y: 0.61,
         updatedAt: 1761592321000,
         evidence: {
-          source: 'win95_cursor_presence_client_sample',
-          cursorEventSource: 'browser_win95_desktop_pointermove',
+          source: 'assessment_cursor_presence_client_sample',
+          cursorEventSource: 'browser_assessment_desktop_pointermove',
           actor: 'guest',
           cursorSampleId: 'cursor:guest:1761592321000:420:610',
           sampledAtMs: 1761592321000,
-          surface: 'win95',
+          surface: 'assessment',
           roomPhase: 'connected',
           normalizedX: 0.42,
           normalizedY: 0.61,
@@ -1636,7 +1636,7 @@ describe('VideoRoom Durable Object signaling lifecycle', () => {
       payload: expect.objectContaining({
         clientId: 'guest-client',
         evidence: expect.objectContaining({
-          source: 'win95_cursor_presence_client_sample',
+          source: 'assessment_cursor_presence_client_sample',
           cursorSampleId: 'cursor:guest:1761592321000:420:610',
         }),
       }),
@@ -1647,7 +1647,7 @@ describe('VideoRoom Durable Object signaling lifecycle', () => {
         cursor: expect.objectContaining({
           clientId: 'guest-client',
           evidence: expect.objectContaining({
-            source: 'win95_cursor_presence_client_sample',
+            source: 'assessment_cursor_presence_client_sample',
             cursorSampleId: 'cursor:guest:1761592321000:420:610',
           }),
         }),
@@ -1691,7 +1691,7 @@ describe('VideoRoom Durable Object signaling lifecycle', () => {
     expect(storage.has('cursorActivityLog')).toBe(false);
   });
 
-  it('stores and broadcasts shared Clippy prompts for proactive room guidance', async () => {
+  it('stores and broadcasts shared Agent prompts for proactive room guidance', async () => {
     const host = new FakeSocket();
     const guest = new FakeSocket();
     const { state, storage } = makeState([
@@ -1701,15 +1701,15 @@ describe('VideoRoom Durable Object signaling lifecycle', () => {
     const room = new VideoRoom(state);
 
     await room.webSocketMessage(host as unknown as WebSocket, JSON.stringify({
-      type: 'ROOM_CLIPPY_PROMPT',
+      type: 'ROOM_AGENT_PROMPT',
       payload: {
-        id: 'clippy-recording',
+        id: 'agent-recording',
         clientId: 'host-client',
         createdAt: 3,
         source: 'system',
-        promptEventSource: 'browser_proactive_clippy_prompt',
+        promptEventSource: 'browser_proactive_agent_prompt',
         promptTrigger: 'recording_start_suggestion',
-        surface: 'win95',
+        surface: 'assessment',
         roomPhase: 'connected',
         workspaceStatus: 'READY',
         workspaceSessionId: 'workspace-session-1',
@@ -1723,13 +1723,13 @@ describe('VideoRoom Durable Object signaling lifecycle', () => {
       },
     }));
 
-    expect(storage.get('currentClippyPrompt')).toEqual(expect.objectContaining({
-      id: 'clippy-recording',
+    expect(storage.get('currentAgentPrompt')).toEqual(expect.objectContaining({
+      id: 'agent-recording',
       clientId: 'host-client',
       source: 'system',
-      promptEventSource: 'browser_proactive_clippy_prompt',
+      promptEventSource: 'browser_proactive_agent_prompt',
       promptTrigger: 'recording_start_suggestion',
-      surface: 'win95',
+      surface: 'assessment',
       roomPhase: 'connected',
       workspaceStatus: 'READY',
       workspaceSessionId: 'workspace-session-1',
@@ -1741,21 +1741,21 @@ describe('VideoRoom Durable Object signaling lifecycle', () => {
       ],
     }));
     expect(parseSent(guest)).toContainEqual(expect.objectContaining({
-      type: 'ROOM_CLIPPY_PROMPT',
+      type: 'ROOM_AGENT_PROMPT',
       role: 'HOST',
       payload: expect.objectContaining({
-        id: 'clippy-recording',
-        promptEventSource: 'browser_proactive_clippy_prompt',
+        id: 'agent-recording',
+        promptEventSource: 'browser_proactive_agent_prompt',
         promptTrigger: 'recording_start_suggestion',
         text: "It looks like you're starting an interview. Would you like to begin recording?",
       }),
     }));
-    expect(storage.get('clippyPromptActivityLog')).toEqual([
+    expect(storage.get('agentPromptActivityLog')).toEqual([
       expect.objectContaining({
         role: 'HOST',
         prompt: expect.objectContaining({
-          id: 'clippy-recording',
-          promptEventSource: 'browser_proactive_clippy_prompt',
+          id: 'agent-recording',
+          promptEventSource: 'browser_proactive_agent_prompt',
           promptTrigger: 'recording_start_suggestion',
           agentResponseClaimed: false,
         }),
@@ -1763,7 +1763,7 @@ describe('VideoRoom Durable Object signaling lifecycle', () => {
     ]);
   });
 
-  it('rejects Clippy prompts without browser prompt evidence', async () => {
+  it('rejects Agent prompts without browser prompt evidence', async () => {
     const host = new FakeSocket();
     const guest = new FakeSocket();
     const { state, storage } = makeState([
@@ -1773,14 +1773,14 @@ describe('VideoRoom Durable Object signaling lifecycle', () => {
     const room = new VideoRoom(state);
 
     await room.webSocketMessage(host as unknown as WebSocket, JSON.stringify({
-      type: 'ROOM_CLIPPY_PROMPT',
+      type: 'ROOM_AGENT_PROMPT',
       payload: {
-        id: 'clippy-source-less',
+        id: 'agent-source-less',
         clientId: 'host-client',
         createdAt: 3,
         source: 'system',
         promptTrigger: 'missing_prompt_event_source',
-        surface: 'win95',
+        surface: 'assessment',
         roomPhase: 'connected',
         agentResponseClaimed: false,
         text: 'This should not be saved as prompt evidence.',
@@ -1788,14 +1788,14 @@ describe('VideoRoom Durable Object signaling lifecycle', () => {
     }));
 
     expect(parseSent(host)).toContainEqual(expect.objectContaining({
-      type: 'ROOM_CLIPPY_PROMPT_REJECTED',
+      type: 'ROOM_AGENT_PROMPT_REJECTED',
       reason: 'MISSING_SOURCE_EVIDENCE',
     }));
     expect(parseSent(guest)).not.toContainEqual(expect.objectContaining({
-      type: 'ROOM_CLIPPY_PROMPT',
+      type: 'ROOM_AGENT_PROMPT',
     }));
-    expect(storage.has('currentClippyPrompt')).toBe(false);
-    expect(storage.has('clippyPromptActivityLog')).toBe(false);
+    expect(storage.has('currentAgentPrompt')).toBe(false);
+    expect(storage.has('agentPromptActivityLog')).toBe(false);
   });
 
   it('broadcasts and records source-backed AI assistant/Devin interaction events', async () => {
@@ -1808,28 +1808,28 @@ describe('VideoRoom Durable Object signaling lifecycle', () => {
     const room = new VideoRoom(state);
 
     await room.webSocketMessage(guest as unknown as WebSocket, JSON.stringify({
-      type: 'ROOM_CLIPPY_INTERACTION',
+      type: 'ROOM_AGENT_INTERACTION',
       payload: {
-        id: 'clippy-user-chat-1',
+        id: 'agent-user-chat-1',
         clientId: 'guest-client',
         createdAt: 1782603900000,
         eventType: 'ai_chat_user',
         actor: 'guest',
         text: 'Can you inspect the failing test?',
         evidence: {
-          source: 'clippy_agent_chat_client_submit',
-          agentChatEventSource: 'browser_clippy_chat_window',
+          source: 'agent_chat_client_submit',
+          agentChatEventSource: 'browser_agent_chat_window',
           bridgeMessageType: 'CHAT',
-          bridgeProtocol: 'clippy_dev_container_ws',
-          promptId: 'workspace-session-1:guest:prompt:1782603900000:clippy_0123abcd',
-          promptFingerprint: 'clippy_0123abcd',
+          bridgeProtocol: 'agent_dev_container_ws',
+          promptId: 'workspace-session-1:guest:prompt:1782603900000:agent_0123abcd',
+          promptFingerprint: 'agent_0123abcd',
           promptLength: 'Can you inspect the failing test?'.length,
           promptTimestamp: 1782603900000,
           bridgeDeliveryStatus: 'queued',
           browserQueuedBridgeMessage: true,
           bridgeDeliveryConfirmed: false,
           agent: null,
-          surface: 'win95',
+          surface: 'assessment',
           roomPhase: 'connected',
           workspaceStatus: 'READY',
           workspaceSessionId: 'workspace-session-1',
@@ -1842,17 +1842,17 @@ describe('VideoRoom Durable Object signaling lifecycle', () => {
     }));
 
     await room.webSocketMessage(guest as unknown as WebSocket, JSON.stringify({
-      type: 'ROOM_CLIPPY_INTERACTION',
+      type: 'ROOM_AGENT_INTERACTION',
       payload: {
-        id: 'clippy-agent-status-1',
+        id: 'agent-agent-status-1',
         clientId: 'guest-client',
         createdAt: 1782604000000,
         eventType: 'ai_agent_status',
         actor: 'agent',
         text: 'devin is ready.',
         evidence: {
-          source: 'clippy_agent_bridge',
-          agentStatusEventSource: 'browser_clippy_agent_ws',
+          source: 'agent_bridge',
+          agentStatusEventSource: 'browser_agent_ws',
           agent: 'devin',
           status: 'idle',
           diagnosticSource: null,
@@ -1860,7 +1860,7 @@ describe('VideoRoom Durable Object signaling lifecycle', () => {
           observedAt: '2026-06-27T20:00:00.000Z',
           capturedAtMs: 1782604000000,
           agentStatusEventId: 'agent-status:devin:1782604000000:agent_status:idle:none',
-          surface: 'win95',
+          surface: 'assessment',
           roomPhase: 'connected',
           workspaceStatus: 'READY',
           workspaceSessionId: 'workspace-session-1',
@@ -1873,50 +1873,50 @@ describe('VideoRoom Durable Object signaling lifecycle', () => {
 
     expect(parseSent(host)).toEqual(expect.arrayContaining([
       expect.objectContaining({
-        type: 'ROOM_CLIPPY_INTERACTION',
+        type: 'ROOM_AGENT_INTERACTION',
         role: 'GUEST',
         payload: expect.objectContaining({
           eventType: 'ai_chat_user',
           actor: 'guest',
           text: 'Can you inspect the failing test?',
           evidence: expect.objectContaining({
-            source: 'clippy_agent_chat_client_submit',
-            promptId: 'workspace-session-1:guest:prompt:1782603900000:clippy_0123abcd',
+            source: 'agent_chat_client_submit',
+            promptId: 'workspace-session-1:guest:prompt:1782603900000:agent_0123abcd',
           }),
         }),
       }),
       expect.objectContaining({
-        type: 'ROOM_CLIPPY_INTERACTION',
+        type: 'ROOM_AGENT_INTERACTION',
         role: 'GUEST',
         payload: expect.objectContaining({
           eventType: 'ai_agent_status',
           actor: 'agent',
           evidence: expect.objectContaining({
-            source: 'clippy_agent_bridge',
+            source: 'agent_bridge',
             agentStatusEventId: 'agent-status:devin:1782604000000:agent_status:idle:none',
           }),
         }),
       }),
     ]));
-    expect(storage.get('clippyInteractionActivityLog')).toEqual([
+    expect(storage.get('agentInteractionActivityLog')).toEqual([
       expect.objectContaining({
         role: 'GUEST',
         event: expect.objectContaining({
-          id: 'clippy-user-chat-1',
+          id: 'agent-user-chat-1',
           eventType: 'ai_chat_user',
         }),
       }),
       expect.objectContaining({
         role: 'GUEST',
         event: expect.objectContaining({
-          id: 'clippy-agent-status-1',
+          id: 'agent-agent-status-1',
           eventType: 'ai_agent_status',
         }),
       }),
     ]);
   });
 
-  it('records blocked Clippy prompts without claiming delivery to Devin', async () => {
+  it('records blocked Agent prompts without claiming delivery to Devin', async () => {
     const host = new FakeSocket();
     const guest = new FakeSocket();
     const { state, storage } = makeState([
@@ -1927,29 +1927,29 @@ describe('VideoRoom Durable Object signaling lifecycle', () => {
     const promptText = 'Can you inspect this before the workspace starts?';
 
     await room.webSocketMessage(guest as unknown as WebSocket, JSON.stringify({
-      type: 'ROOM_CLIPPY_INTERACTION',
+      type: 'ROOM_AGENT_INTERACTION',
       payload: {
-        id: 'clippy-user-chat-blocked',
+        id: 'agent-user-chat-blocked',
         clientId: 'guest-client',
         createdAt: 1782603950000,
         eventType: 'ai_chat_user',
         actor: 'guest',
         text: promptText,
         evidence: {
-          source: 'clippy_agent_chat_client_submit',
-          agentChatEventSource: 'browser_clippy_chat_window',
+          source: 'agent_chat_client_submit',
+          agentChatEventSource: 'browser_agent_chat_window',
           bridgeMessageType: 'CHAT',
-          bridgeProtocol: 'clippy_dev_container_ws',
+          bridgeProtocol: 'agent_dev_container_ws',
           bridgeDeliveryStatus: 'blocked',
           bridgeBlockedReason: 'workspace_required',
-          promptId: 'none:guest:prompt:1782603950000:clippy_89abcdef',
-          promptFingerprint: 'clippy_89abcdef',
+          promptId: 'none:guest:prompt:1782603950000:agent_89abcdef',
+          promptFingerprint: 'agent_89abcdef',
           promptLength: promptText.length,
           promptTimestamp: 1782603950000,
           browserQueuedBridgeMessage: false,
           bridgeDeliveryConfirmed: false,
           agent: null,
-          surface: 'win95',
+          surface: 'assessment',
           roomPhase: 'connected',
           workspaceStatus: null,
           workspaceSessionId: null,
@@ -1962,10 +1962,10 @@ describe('VideoRoom Durable Object signaling lifecycle', () => {
     }));
 
     expect(parseSent(host)).toContainEqual(expect.objectContaining({
-      type: 'ROOM_CLIPPY_INTERACTION',
+      type: 'ROOM_AGENT_INTERACTION',
       role: 'GUEST',
       payload: expect.objectContaining({
-        id: 'clippy-user-chat-blocked',
+        id: 'agent-user-chat-blocked',
         eventType: 'ai_chat_user',
         text: promptText,
         evidence: expect.objectContaining({
@@ -1975,11 +1975,11 @@ describe('VideoRoom Durable Object signaling lifecycle', () => {
         }),
       }),
     }));
-    expect(storage.get('clippyInteractionActivityLog')).toEqual([
+    expect(storage.get('agentInteractionActivityLog')).toEqual([
       expect.objectContaining({
         role: 'GUEST',
         event: expect.objectContaining({
-          id: 'clippy-user-chat-blocked',
+          id: 'agent-user-chat-blocked',
           evidence: expect.objectContaining({
             bridgeDeliveryStatus: 'blocked',
             bridgeBlockedReason: 'workspace_required',
@@ -2004,17 +2004,17 @@ describe('VideoRoom Durable Object signaling lifecycle', () => {
     ].join(' ');
 
     await room.webSocketMessage(guest as unknown as WebSocket, JSON.stringify({
-      type: 'ROOM_CLIPPY_INTERACTION',
+      type: 'ROOM_AGENT_INTERACTION',
       payload: {
-        id: 'clippy-agent-status-redacted',
+        id: 'agent-agent-status-redacted',
         clientId: 'guest-client',
         createdAt: 1782604100000,
         eventType: 'ai_agent_status',
         actor: 'agent',
         text: rawText,
         evidence: {
-          source: 'clippy_agent_bridge',
-          agentStatusEventSource: 'browser_clippy_agent_ws',
+          source: 'agent_bridge',
+          agentStatusEventSource: 'browser_agent_ws',
           agent: 'devin',
           status: 'auth_needed',
           diagnosticSource: 'agent_auth_check',
@@ -2022,7 +2022,7 @@ describe('VideoRoom Durable Object signaling lifecycle', () => {
           observedAt: '2026-06-27T20:00:00.000Z',
           capturedAtMs: 1782604100000,
           agentStatusEventId: 'agent-status:devin:1782604100000:bridge_diagnostic:auth_needed:agent_auth_check',
-          surface: 'win95',
+          surface: 'assessment',
           roomPhase: 'connected',
           workspaceStatus: 'READY',
           workspaceSessionId: 'workspace-session-1',
@@ -2034,23 +2034,23 @@ describe('VideoRoom Durable Object signaling lifecycle', () => {
     }));
 
     const broadcast = parseSent(host).find((message) => (
-      message.type === 'ROOM_CLIPPY_INTERACTION'
+      message.type === 'ROOM_AGENT_INTERACTION'
       && typeof message.payload === 'object'
       && message.payload !== null
       && 'id' in message.payload
-      && message.payload.id === 'clippy-agent-status-redacted'
+      && message.payload.id === 'agent-agent-status-redacted'
     ));
     expect(broadcast).toMatchObject({
-      type: 'ROOM_CLIPPY_INTERACTION',
+      type: 'ROOM_AGENT_INTERACTION',
       payload: {
         text: 'Auth failed with DEVIN_API_KEY=[REDACTED_SECRET] Bearer [REDACTED_SECRET] /api/v1/meeting-rooms/[REDACTED_SECRET]',
       },
     });
-    const log = storage.get('clippyInteractionActivityLog');
+    const log = storage.get('agentInteractionActivityLog');
     expect(log).toEqual([
       expect.objectContaining({
         event: expect.objectContaining({
-          id: 'clippy-agent-status-redacted',
+          id: 'agent-agent-status-redacted',
           text: 'Auth failed with DEVIN_API_KEY=[REDACTED_SECRET] Bearer [REDACTED_SECRET] /api/v1/meeting-rooms/[REDACTED_SECRET]',
         }),
       }),
@@ -2070,29 +2070,29 @@ describe('VideoRoom Durable Object signaling lifecycle', () => {
     const room = new VideoRoom(state);
 
     await room.webSocketMessage(guest as unknown as WebSocket, JSON.stringify({
-      type: 'ROOM_CLIPPY_INTERACTION',
+      type: 'ROOM_AGENT_INTERACTION',
       payload: {
-        id: 'clippy-fake-user-chat',
+        id: 'agent-fake-user-chat',
         clientId: 'guest-client',
         createdAt: 1782603900000,
         eventType: 'ai_chat_user',
         actor: 'guest',
         text: 'This should not be saved.',
         evidence: {
-          source: 'clippy_agent_chat',
+          source: 'agent_chat',
           promptLength: 'This should not be saved.'.length,
         },
       },
     }));
 
     expect(parseSent(guest)).toContainEqual(expect.objectContaining({
-      type: 'ROOM_CLIPPY_INTERACTION_REJECTED',
+      type: 'ROOM_AGENT_INTERACTION_REJECTED',
       reason: 'MISSING_SOURCE_EVIDENCE',
     }));
     expect(parseSent(host)).not.toContainEqual(expect.objectContaining({
-      type: 'ROOM_CLIPPY_INTERACTION',
+      type: 'ROOM_AGENT_INTERACTION',
     }));
-    expect(storage.has('clippyInteractionActivityLog')).toBe(false);
+    expect(storage.has('agentInteractionActivityLog')).toBe(false);
   });
 
   it('rejects AI assistant/Devin agent output with malformed browser prompt refs', async () => {
@@ -2105,16 +2105,16 @@ describe('VideoRoom Durable Object signaling lifecycle', () => {
     const room = new VideoRoom(state);
 
     await room.webSocketMessage(guest as unknown as WebSocket, JSON.stringify({
-      type: 'ROOM_CLIPPY_INTERACTION',
+      type: 'ROOM_AGENT_INTERACTION',
       payload: {
-        id: 'clippy-agent-chat-malformed-prompt-ref',
+        id: 'agent-agent-chat-malformed-prompt-ref',
         clientId: 'guest-client',
         createdAt: 1782603900000,
         eventType: 'ai_chat_agent',
         actor: 'agent',
         text: 'I inspected the failing test.',
         evidence: {
-          source: 'clippy_agent_bridge',
+          source: 'agent_bridge',
           agent: 'devin',
           bridgeEventType: 'CHAT_RESPONSE',
           bridgeMessageSource: 'agent_stdout',
@@ -2126,7 +2126,7 @@ describe('VideoRoom Durable Object signaling lifecycle', () => {
           actionCount: 0,
           bridgePersisted: true,
           browserPromptId: 'source-less-prompt-ref',
-          browserPromptFingerprint: 'clippy_0123abcd',
+          browserPromptFingerprint: 'agent_0123abcd',
           browserPromptTimestamp: 1782603900000,
           browserPromptLength: 'Can you inspect the failing test?'.length,
         },
@@ -2134,16 +2134,16 @@ describe('VideoRoom Durable Object signaling lifecycle', () => {
     }));
 
     expect(parseSent(guest)).toContainEqual(expect.objectContaining({
-      type: 'ROOM_CLIPPY_INTERACTION_REJECTED',
+      type: 'ROOM_AGENT_INTERACTION_REJECTED',
       reason: 'MISSING_SOURCE_EVIDENCE',
     }));
     expect(parseSent(host)).not.toContainEqual(expect.objectContaining({
-      type: 'ROOM_CLIPPY_INTERACTION',
+      type: 'ROOM_AGENT_INTERACTION',
     }));
-    expect(storage.has('clippyInteractionActivityLog')).toBe(false);
+    expect(storage.has('agentInteractionActivityLog')).toBe(false);
   });
 
-  it('rejects Clippy user prompts that claim a Devin agent attribution', async () => {
+  it('rejects Agent user prompts that claim a Devin agent attribution', async () => {
     const host = new FakeSocket();
     const guest = new FakeSocket();
     const { state, storage } = makeState([
@@ -2153,26 +2153,26 @@ describe('VideoRoom Durable Object signaling lifecycle', () => {
     const room = new VideoRoom(state);
 
     await room.webSocketMessage(guest as unknown as WebSocket, JSON.stringify({
-      type: 'ROOM_CLIPPY_INTERACTION',
+      type: 'ROOM_AGENT_INTERACTION',
       payload: {
-        id: 'clippy-attributed-user-chat',
+        id: 'agent-attributed-user-chat',
         clientId: 'guest-client',
         createdAt: 1782603900000,
         eventType: 'ai_chat_user',
         actor: 'guest',
         text: 'Can you inspect the failing test?',
         evidence: {
-          source: 'clippy_agent_chat_client_submit',
-          agentChatEventSource: 'browser_clippy_chat_window',
+          source: 'agent_chat_client_submit',
+          agentChatEventSource: 'browser_agent_chat_window',
           bridgeMessageType: 'CHAT',
-          bridgeProtocol: 'clippy_dev_container_ws',
-          promptId: 'workspace-session-1:guest:prompt:1782603900000:clippy_0123abcd',
-          promptFingerprint: 'clippy_0123abcd',
+          bridgeProtocol: 'agent_dev_container_ws',
+          promptId: 'workspace-session-1:guest:prompt:1782603900000:agent_0123abcd',
+          promptFingerprint: 'agent_0123abcd',
           promptLength: 'Can you inspect the failing test?'.length,
           promptTimestamp: 1782603900000,
           deliveredToAgentBridge: true,
           agent: 'devin',
-          surface: 'win95',
+          surface: 'assessment',
           roomPhase: 'connected',
           workspaceStatus: 'READY',
           workspaceSessionId: 'workspace-session-1',
@@ -2185,16 +2185,16 @@ describe('VideoRoom Durable Object signaling lifecycle', () => {
     }));
 
     expect(parseSent(guest)).toContainEqual(expect.objectContaining({
-      type: 'ROOM_CLIPPY_INTERACTION_REJECTED',
+      type: 'ROOM_AGENT_INTERACTION_REJECTED',
       reason: 'MISSING_SOURCE_EVIDENCE',
     }));
     expect(parseSent(host)).not.toContainEqual(expect.objectContaining({
-      type: 'ROOM_CLIPPY_INTERACTION',
+      type: 'ROOM_AGENT_INTERACTION',
     }));
-    expect(storage.has('clippyInteractionActivityLog')).toBe(false);
+    expect(storage.has('agentInteractionActivityLog')).toBe(false);
   });
 
-  it('rejects Clippy user prompts that claim confirmed bridge delivery', async () => {
+  it('rejects Agent user prompts that claim confirmed bridge delivery', async () => {
     const host = new FakeSocket();
     const guest = new FakeSocket();
     const { state, storage } = makeState([
@@ -2204,26 +2204,26 @@ describe('VideoRoom Durable Object signaling lifecycle', () => {
     const room = new VideoRoom(state);
 
     await room.webSocketMessage(guest as unknown as WebSocket, JSON.stringify({
-      type: 'ROOM_CLIPPY_INTERACTION',
+      type: 'ROOM_AGENT_INTERACTION',
       payload: {
-        id: 'clippy-delivered-user-chat',
+        id: 'agent-delivered-user-chat',
         clientId: 'guest-client',
         createdAt: 1782603900000,
         eventType: 'ai_chat_user',
         actor: 'guest',
         text: 'Can you inspect the failing test?',
         evidence: {
-          source: 'clippy_agent_chat_client_submit',
-          agentChatEventSource: 'browser_clippy_chat_window',
+          source: 'agent_chat_client_submit',
+          agentChatEventSource: 'browser_agent_chat_window',
           bridgeMessageType: 'CHAT',
-          bridgeProtocol: 'clippy_dev_container_ws',
-          promptId: 'workspace-session-1:guest:prompt:1782603900000:clippy_0123abcd',
-          promptFingerprint: 'clippy_0123abcd',
+          bridgeProtocol: 'agent_dev_container_ws',
+          promptId: 'workspace-session-1:guest:prompt:1782603900000:agent_0123abcd',
+          promptFingerprint: 'agent_0123abcd',
           promptLength: 'Can you inspect the failing test?'.length,
           promptTimestamp: 1782603900000,
           deliveredToAgentBridge: true,
           agent: null,
-          surface: 'win95',
+          surface: 'assessment',
           roomPhase: 'connected',
           workspaceStatus: 'READY',
           workspaceSessionId: 'workspace-session-1',
@@ -2236,13 +2236,13 @@ describe('VideoRoom Durable Object signaling lifecycle', () => {
     }));
 
     expect(parseSent(guest)).toContainEqual(expect.objectContaining({
-      type: 'ROOM_CLIPPY_INTERACTION_REJECTED',
+      type: 'ROOM_AGENT_INTERACTION_REJECTED',
       reason: 'MISSING_SOURCE_EVIDENCE',
     }));
     expect(parseSent(host)).not.toContainEqual(expect.objectContaining({
-      type: 'ROOM_CLIPPY_INTERACTION',
+      type: 'ROOM_AGENT_INTERACTION',
     }));
-    expect(storage.has('clippyInteractionActivityLog')).toBe(false);
+    expect(storage.has('agentInteractionActivityLog')).toBe(false);
   });
 
   it('rejects AI assistant/Devin room actions without the exact bridge tag protocol', async () => {
@@ -2255,16 +2255,16 @@ describe('VideoRoom Durable Object signaling lifecycle', () => {
     const room = new VideoRoom(state);
 
     await room.webSocketMessage(guest as unknown as WebSocket, JSON.stringify({
-      type: 'ROOM_CLIPPY_INTERACTION',
+      type: 'ROOM_AGENT_INTERACTION',
       payload: {
-        id: 'clippy-legacy-agent-action',
+        id: 'agent-legacy-agent-action',
         clientId: 'guest-client',
         createdAt: 1782594600000,
-        eventType: 'clippy_action',
+        eventType: 'agent_action',
         actor: 'agent',
         text: 'devin suggested room action: open-terminal',
         evidence: {
-          source: 'clippy_agent_bridge',
+          source: 'agent_bridge',
           origin: 'agent',
           executionStatus: 'suggested',
           actionId: 'open-terminal',
@@ -2274,7 +2274,7 @@ describe('VideoRoom Durable Object signaling lifecycle', () => {
           agent: 'devin',
           observedAt: '2026-06-27T21:10:00.000Z',
           capturedAtMs: 1782594600000,
-          clippyActionEventId: 'clippy-action:agent:1782594600000:clippy_agent_bridge:agent:suggested:open-terminal',
+          agentActionEventId: 'agent-action:agent:1782594600000:agent_bridge:agent:suggested:open-terminal',
           bridgePersisted: true,
           durableObjectReplayExpected: true,
         },
@@ -2282,13 +2282,13 @@ describe('VideoRoom Durable Object signaling lifecycle', () => {
     }));
 
     expect(parseSent(guest)).toContainEqual(expect.objectContaining({
-      type: 'ROOM_CLIPPY_INTERACTION_REJECTED',
+      type: 'ROOM_AGENT_INTERACTION_REJECTED',
       reason: 'MISSING_SOURCE_EVIDENCE',
     }));
     expect(parseSent(host)).not.toContainEqual(expect.objectContaining({
-      type: 'ROOM_CLIPPY_INTERACTION',
+      type: 'ROOM_AGENT_INTERACTION',
     }));
-    expect(storage.has('clippyInteractionActivityLog')).toBe(false);
+    expect(storage.has('agentInteractionActivityLog')).toBe(false);
   });
 
   it('rejects human AI assistant UI actions that claim a Devin agent attribution', async () => {
@@ -2301,26 +2301,26 @@ describe('VideoRoom Durable Object signaling lifecycle', () => {
     const room = new VideoRoom(state);
 
     await room.webSocketMessage(host as unknown as WebSocket, JSON.stringify({
-      type: 'ROOM_CLIPPY_INTERACTION',
+      type: 'ROOM_AGENT_INTERACTION',
       payload: {
-        id: 'clippy-attributed-ui-action',
+        id: 'agent-attributed-ui-action',
         clientId: 'host-client',
         createdAt: 1782594200000,
-        eventType: 'clippy_action',
+        eventType: 'agent_action',
         actor: 'host',
-        text: 'Clippy action: start recording',
+        text: 'Agent action: start recording',
         evidence: {
-          source: 'clippy_prompt_ui',
+          source: 'agent_prompt_ui',
           actionId: 'start-recording',
           origin: 'prompt',
           executedBy: 'host',
-          actionSource: 'clippy_prompt_ui',
+          actionSource: 'agent_prompt_ui',
           executionStatus: 'executed',
           capturedAtMs: 1782594200000,
-          clippyActionEventId: 'clippy-action:host:1782594200000:clippy_prompt_ui:prompt:executed:start-recording',
+          agentActionEventId: 'agent-action:host:1782594200000:agent_prompt_ui:prompt:executed:start-recording',
           agent: 'devin',
           agentResponseClaimed: false,
-          surface: 'win95',
+          surface: 'assessment',
           roomPhase: 'connected',
           workspaceStatus: 'READY',
           workspaceSessionId: 'workspace-session-1',
@@ -2330,13 +2330,13 @@ describe('VideoRoom Durable Object signaling lifecycle', () => {
     }));
 
     expect(parseSent(host)).toContainEqual(expect.objectContaining({
-      type: 'ROOM_CLIPPY_INTERACTION_REJECTED',
+      type: 'ROOM_AGENT_INTERACTION_REJECTED',
       reason: 'MISSING_SOURCE_EVIDENCE',
     }));
     expect(parseSent(guest)).not.toContainEqual(expect.objectContaining({
-      type: 'ROOM_CLIPPY_INTERACTION',
+      type: 'ROOM_AGENT_INTERACTION',
     }));
-    expect(storage.has('clippyInteractionActivityLog')).toBe(false);
+    expect(storage.has('agentInteractionActivityLog')).toBe(false);
   });
 
   it('stores, broadcasts, and records shared room filesystem edits', async () => {
@@ -2366,7 +2366,7 @@ describe('VideoRoom Durable Object signaling lifecycle', () => {
           updatedAt: 4,
         },
         evidence: {
-          source: 'win95_shared_file_system',
+          source: 'assessment_shared_file_system',
           fileEventSource: 'browser_client_submit',
           fileChangeId: 'file:host:4:upsert:desktop-notes',
           actor: 'host',
@@ -2376,7 +2376,7 @@ describe('VideoRoom Durable Object signaling lifecycle', () => {
           fileName: 'notes.txt',
           fileKind: 'text',
           mimeType: 'text/plain',
-          surface: 'win95',
+          surface: 'assessment',
           roomPhase: 'connected',
           capturedAtMs: 4,
           durableObjectReplayExpected: true,
@@ -2398,7 +2398,7 @@ describe('VideoRoom Durable Object signaling lifecycle', () => {
         metadata: {
           app: 'notepad',
           roomFileProjectionEvidence: expect.objectContaining({
-            source: 'win95_shared_file_system',
+            source: 'assessment_shared_file_system',
             fileEventSource: 'browser_client_submit',
             fileChangeId: 'file:host:4:upsert:desktop-notes',
             actor: 'host',
@@ -2408,7 +2408,7 @@ describe('VideoRoom Durable Object signaling lifecycle', () => {
             fileName: 'notes.txt',
             fileKind: 'text',
             mimeType: 'text/plain',
-            surface: 'win95',
+            surface: 'assessment',
             roomPhase: 'connected',
             capturedAtMs: 4,
             durableObjectReplayExpected: true,
@@ -2430,7 +2430,7 @@ describe('VideoRoom Durable Object signaling lifecycle', () => {
           name: 'notes.txt',
         }),
         evidence: expect.objectContaining({
-          source: 'win95_shared_file_system',
+          source: 'assessment_shared_file_system',
           fileChangeId: 'file:host:4:upsert:desktop-notes',
         }),
       }),
@@ -2442,7 +2442,7 @@ describe('VideoRoom Durable Object signaling lifecycle', () => {
           id: 'fs-save-notes',
           kind: 'UPSERT_FILE',
           evidence: expect.objectContaining({
-            source: 'win95_shared_file_system',
+            source: 'assessment_shared_file_system',
             fileChangeId: 'file:host:4:upsert:desktop-notes',
           }),
         }),
@@ -2458,7 +2458,7 @@ describe('VideoRoom Durable Object signaling lifecycle', () => {
         kind: 'DELETE_FILE',
         fileId: 'desktop-notes',
         evidence: {
-          source: 'win95_shared_file_system',
+          source: 'assessment_shared_file_system',
           fileEventSource: 'browser_client_submit',
           fileChangeId: 'file:guest:5:delete:desktop-notes',
           actor: 'guest',
@@ -2466,7 +2466,7 @@ describe('VideoRoom Durable Object signaling lifecycle', () => {
           fileId: 'desktop-notes',
           fileName: 'notes.txt',
           fileKind: 'text',
-          surface: 'win95',
+          surface: 'assessment',
           roomPhase: 'connected',
           capturedAtMs: 5,
           durableObjectReplayExpected: true,
@@ -2487,7 +2487,7 @@ describe('VideoRoom Durable Object signaling lifecycle', () => {
           content: 'Candidate asked about testing strategy.',
         }),
         evidence: expect.objectContaining({
-          source: 'win95_shared_file_system',
+          source: 'assessment_shared_file_system',
           fileChangeId: 'file:guest:5:delete:desktop-notes',
         }),
       }),
@@ -2512,7 +2512,7 @@ describe('VideoRoom Durable Object signaling lifecycle', () => {
             content: 'Candidate asked about testing strategy.',
           }),
           evidence: expect.objectContaining({
-            source: 'win95_shared_file_system',
+            source: 'assessment_shared_file_system',
             fileChangeId: 'file:guest:5:delete:desktop-notes',
           }),
         }),
@@ -2610,7 +2610,7 @@ describe('VideoRoom Durable Object signaling lifecycle', () => {
           capturedAtMs: 1700000001000,
           commandFingerprint: 'terminal_dc5964d6',
           commandLength: 8,
-          surface: 'win95',
+          surface: 'assessment',
           roomPhase: 'connected',
           workspaceStatus: 'READY',
           workspaceSessionId: 'workspace-session-1',
@@ -2639,7 +2639,7 @@ describe('VideoRoom Durable Object signaling lifecycle', () => {
           capturedAtMs: 1700000002000,
           outputFingerprint: 'terminal_4f2d0d8f',
           outputLength: 21,
-          surface: 'win95',
+          surface: 'assessment',
           roomPhase: 'connected',
           workspaceStatus: 'READY',
           workspaceSessionId: 'workspace-session-1',
@@ -2756,7 +2756,7 @@ describe('VideoRoom Durable Object signaling lifecycle', () => {
           capturedAtMs: 1700000001000,
           commandFingerprint: 'terminal_dc5964d6',
           commandLength: 8,
-          surface: 'win95',
+          surface: 'assessment',
           roomPhase: 'connected',
           workspaceStatus: 'READY',
           workspaceSessionId: 'workspace-session-1',
@@ -2796,12 +2796,12 @@ describe('VideoRoom Durable Object signaling lifecycle', () => {
         text: 'src/app.ts',
         evidence: {
           source: 'code_server_workspace',
-          observedBy: 'clippy_agent_bridge',
+          observedBy: 'agent_bridge',
           bridgeEventType: 'FILE_CHANGED',
           editorSurface: 'code-server',
           codeServerFileChangeId: 'code-server-file:workspace-session-1:1782590500000:modified:path_cb48a478:aaaaaaaaaaaaaaaa',
           action: 'modified',
-          surface: 'win95',
+          surface: 'assessment',
           roomPhase: 'connected',
           workspaceStatus: 'READY',
           workspaceSessionId: 'workspace-session-1',
@@ -2826,7 +2826,7 @@ describe('VideoRoom Durable Object signaling lifecycle', () => {
         text: 'src/app.ts',
         evidence: expect.objectContaining({
           source: 'code_server_workspace',
-          observedBy: 'clippy_agent_bridge',
+          observedBy: 'agent_bridge',
           contentHash: 'a'.repeat(64),
         }),
       }),
@@ -2863,12 +2863,12 @@ describe('VideoRoom Durable Object signaling lifecycle', () => {
         text: 'src/app.ts',
         evidence: {
           source: 'code_server_workspace',
-          observedBy: 'clippy_agent_bridge',
+          observedBy: 'agent_bridge',
           bridgeEventType: 'FILE_CHANGED',
           editorSurface: 'code-server',
           codeServerFileChangeId: 'code-server-file:workspace-session-1:1782590500000:modified:path_cb48a478:aaaaaaaaaaaaaaaa',
           action: 'modified',
-          surface: 'win95',
+          surface: 'assessment',
           roomPhase: 'connected',
           workspaceStatus: 'READY',
           workspaceSessionId: 'workspace-session-1',
@@ -2941,16 +2941,16 @@ describe('VideoRoom Durable Object signaling lifecycle', () => {
     await room.webSocketMessage(host as unknown as WebSocket, JSON.stringify({
       type: 'ROOM_DESKTOP_EVENT',
       payload: {
-        id: 'evt-enter-95',
+        id: 'evt-enter-assessment',
         clientId: 'host-client',
         createdAt: 1000,
         kind: 'SET_ROOM_SURFACE',
-        surface: 'win95',
+        surface: 'assessment',
         previousSurface: 'standard',
         action: 'enter_desktop',
         source: 'room_surface_control',
         surfaceControlEventSource: 'browser_room_surface_toggle',
-        surfaceChangeId: 'surface:host:1000:standard:win95',
+        surfaceChangeId: 'surface:host:1000:standard:assessment',
         capturedAtMs: 1000,
         roomPhase: 'connected',
         durableObjectReplayExpected: true,
@@ -2969,7 +2969,7 @@ describe('VideoRoom Durable Object signaling lifecycle', () => {
           source: 'room_chat_client_submit',
           chatEventSource: 'browser_room_chat_window',
           actor: 'guest',
-          surface: 'win95',
+          surface: 'assessment',
           roomPhase: 'connected',
           durableObjectReplayExpected: true,
         },
@@ -2995,9 +2995,9 @@ describe('VideoRoom Durable Object signaling lifecycle', () => {
           previousEnabled: true,
           enabled: false,
           action: 'disabled',
-          surface: 'win95',
+          surface: 'assessment',
           roomPhase: 'connected',
-          controlSurface: 'win95_video_window',
+          controlSurface: 'assessment_video_window',
           controlAction: 'toggle',
           mediaSource: 'local_media_stream',
           rawMediaStreamPersisted: false,
@@ -3005,27 +3005,27 @@ describe('VideoRoom Durable Object signaling lifecycle', () => {
       },
     }));
     await room.webSocketMessage(guest as unknown as WebSocket, JSON.stringify({
-      type: 'ROOM_CLIPPY_INTERACTION',
+      type: 'ROOM_AGENT_INTERACTION',
       payload: {
-        id: 'clippy-user-chat-activity',
+        id: 'agent-user-chat-activity',
         clientId: 'guest-client',
         createdAt: 2400,
         eventType: 'ai_chat_user',
         actor: 'guest',
         text: 'Can you inspect the failing test?',
         evidence: {
-          source: 'clippy_agent_chat_client_submit',
-          agentChatEventSource: 'browser_clippy_chat_window',
+          source: 'agent_chat_client_submit',
+          agentChatEventSource: 'browser_agent_chat_window',
           bridgeMessageType: 'CHAT',
-          bridgeProtocol: 'clippy_dev_container_ws',
-          promptId: 'workspace-session-1:guest:prompt:2400:clippy_0123abcd',
-          promptFingerprint: 'clippy_0123abcd',
+          bridgeProtocol: 'agent_dev_container_ws',
+          promptId: 'workspace-session-1:guest:prompt:2400:agent_0123abcd',
+          promptFingerprint: 'agent_0123abcd',
           promptLength: 'Can you inspect the failing test?'.length,
           promptTimestamp: 2400,
           browserQueuedBridgeMessage: true,
           bridgeDeliveryConfirmed: false,
           agent: null,
-          surface: 'win95',
+          surface: 'assessment',
           roomPhase: 'connected',
           workspaceStatus: 'READY',
           workspaceSessionId: 'workspace-session-1',
@@ -3047,12 +3047,12 @@ describe('VideoRoom Durable Object signaling lifecycle', () => {
         text: 'src/app.ts',
         evidence: {
           source: 'code_server_workspace',
-          observedBy: 'clippy_agent_bridge',
+          observedBy: 'agent_bridge',
           bridgeEventType: 'FILE_CHANGED',
           editorSurface: 'code-server',
           codeServerFileChangeId: 'code-server-file:workspace-session-1:1782590500000:modified:path_cb48a478:aaaaaaaaaaaaaaaa',
           action: 'modified',
-          surface: 'win95',
+          surface: 'assessment',
           roomPhase: 'connected',
           workspaceStatus: 'READY',
           workspaceSessionId: 'workspace-session-1',
@@ -3085,7 +3085,7 @@ describe('VideoRoom Durable Object signaling lifecycle', () => {
           capturedAtMs: 2500,
           commandFingerprint: 'terminal_dc5964d6',
           commandLength: 8,
-          surface: 'win95',
+          surface: 'assessment',
           roomPhase: 'connected',
           workspaceStatus: 'READY',
           workspaceSessionId: 'workspace-session-1',
@@ -3111,7 +3111,7 @@ describe('VideoRoom Durable Object signaling lifecycle', () => {
           updatedAt: 3000,
         },
         evidence: {
-          source: 'win95_shared_file_system',
+          source: 'assessment_shared_file_system',
           fileEventSource: 'browser_client_submit',
           fileChangeId: 'file:host:3000:upsert:notepad',
           actor: 'host',
@@ -3119,7 +3119,7 @@ describe('VideoRoom Durable Object signaling lifecycle', () => {
           fileId: 'notepad',
           fileName: 'notes.txt',
           fileKind: 'text',
-          surface: 'win95',
+          surface: 'assessment',
           roomPhase: 'connected',
           capturedAtMs: 3000,
           durableObjectReplayExpected: true,
@@ -3133,7 +3133,7 @@ describe('VideoRoom Durable Object signaling lifecycle', () => {
       desktopActivityLog: unknown[];
       chatActivityLog: unknown[];
       mediaControlActivityLog: unknown[];
-      clippyInteractionActivityLog: unknown[];
+      agentInteractionActivityLog: unknown[];
       codeServerFileActivityLog: unknown[];
       terminalActivityLog: unknown[];
       fileSystemActivityLog: unknown[];
@@ -3143,11 +3143,11 @@ describe('VideoRoom Durable Object signaling lifecycle', () => {
       expect.objectContaining({
         role: 'HOST',
         event: expect.objectContaining({
-          id: 'evt-enter-95',
+          id: 'evt-enter-assessment',
           kind: 'SET_ROOM_SURFACE',
-          surface: 'win95',
+          surface: 'assessment',
           source: 'room_surface_control',
-          surfaceChangeId: 'surface:host:1000:standard:win95',
+          surfaceChangeId: 'surface:host:1000:standard:assessment',
         }),
       }),
     ]);
@@ -3165,7 +3165,7 @@ describe('VideoRoom Durable Object signaling lifecycle', () => {
             roomMessageId: 'chat-guest-question',
             clientId: 'guest-client',
             deliveryStatus: 'accepted',
-            surface: 'win95',
+            surface: 'assessment',
             roomPhase: 'connected',
           }),
         }),
@@ -3185,16 +3185,16 @@ describe('VideoRoom Durable Object signaling lifecycle', () => {
         }),
       }),
     ]);
-    expect(body.clippyInteractionActivityLog).toEqual([
+    expect(body.agentInteractionActivityLog).toEqual([
       expect.objectContaining({
         role: 'GUEST',
         event: expect.objectContaining({
-          id: 'clippy-user-chat-activity',
+          id: 'agent-user-chat-activity',
           eventType: 'ai_chat_user',
           text: 'Can you inspect the failing test?',
           evidence: expect.objectContaining({
-            source: 'clippy_agent_chat_client_submit',
-            agentChatEventSource: 'browser_clippy_chat_window',
+            source: 'agent_chat_client_submit',
+            agentChatEventSource: 'browser_agent_chat_window',
           }),
         }),
       }),
@@ -3208,7 +3208,7 @@ describe('VideoRoom Durable Object signaling lifecycle', () => {
           text: 'src/app.ts',
           evidence: expect.objectContaining({
             source: 'code_server_workspace',
-            observedBy: 'clippy_agent_bridge',
+            observedBy: 'agent_bridge',
           }),
         }),
       }),
@@ -3234,7 +3234,7 @@ describe('VideoRoom Durable Object signaling lifecycle', () => {
           id: 'fs-notes-save',
           kind: 'UPSERT_FILE',
           evidence: expect.objectContaining({
-            source: 'win95_shared_file_system',
+            source: 'assessment_shared_file_system',
             fileChangeId: 'file:host:3000:upsert:notepad',
           }),
         }),

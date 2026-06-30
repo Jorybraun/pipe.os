@@ -4,26 +4,26 @@ import type { RoomPhase } from '../types';
 export type WindowEvidenceActor = 'host' | 'guest';
 export type WindowLifecycleKind = 'open' | 'close';
 export type WindowLifecycleSource =
-  | 'win95_desktop_ui'
-  | 'win95_file_system'
-  | 'win95_start_menu'
-  | 'win95_window_chrome'
-  | 'win95_taskbar'
+  | 'assessment_desktop_ui'
+  | 'assessment_file_system'
+  | 'assessment_start_menu'
+  | 'assessment_window_chrome'
+  | 'assessment_taskbar'
   | 'standard_assessment_ui'
-  | 'clippy_action'
+  | 'agent_action'
   | 'shared_state_sync';
 export type WindowStateSource =
-  | 'win95_desktop_ui'
-  | 'win95_start_menu'
-  | 'win95_window_chrome'
-  | 'win95_taskbar'
+  | 'assessment_desktop_ui'
+  | 'assessment_start_menu'
+  | 'assessment_window_chrome'
+  | 'assessment_taskbar'
   | 'standard_assessment_ui';
 export type WindowUiLaunchSource =
-  | 'win95_desktop_ui'
-  | 'win95_start_menu';
+  | 'assessment_desktop_ui'
+  | 'assessment_start_menu';
 export type WindowDataSource =
-  | 'win95_window_data_sync'
-  | 'win95_file_delete_sync';
+  | 'assessment_window_data_sync'
+  | 'assessment_file_delete_sync';
 
 export interface WindowLifecycleEvidence {
   text: string;
@@ -129,7 +129,7 @@ export function buildWindowLifecycleEvidence(input: {
       windowTitle: input.windowTitle,
       surface: input.surface,
       roomPhase: input.roomPhase,
-      durableObjectReplayExpected: input.surface === 'win95',
+      durableObjectReplayExpected: input.surface === 'assessment',
     },
   };
 }
@@ -162,7 +162,7 @@ export function buildWindowStateUpdateEvidence(input: {
     text: `Window state updated: ${input.windowId}`,
     properties: {
       source: 'window_state_client_submit',
-      stateSource: input.source ?? 'win95_window_chrome',
+      stateSource: input.source ?? 'assessment_window_chrome',
       actor: input.actor,
       windowId: input.windowId,
       action,
@@ -178,7 +178,7 @@ export function buildWindowStateUpdateEvidence(input: {
       roomPhase: input.roomPhase,
       statePatch,
       stateKeys,
-      durableObjectReplayExpected: input.surface === 'win95',
+      durableObjectReplayExpected: input.surface === 'assessment',
     },
   };
 }
@@ -209,7 +209,7 @@ export function buildWindowDataUpdateEvidence(input: {
     text: `Window data updated: ${input.windowId}`,
     properties: {
       source: 'window_data_client_submit',
-      dataSource: input.dataSource ?? 'win95_window_data_sync',
+      dataSource: input.dataSource ?? 'assessment_window_data_sync',
       actor: input.actor,
       windowId: input.windowId,
       action,
@@ -225,7 +225,7 @@ export function buildWindowDataUpdateEvidence(input: {
       roomPhase: input.roomPhase,
       dataKeys,
       dataValueFingerprints,
-      durableObjectReplayExpected: input.surface === 'win95',
+      durableObjectReplayExpected: input.surface === 'assessment',
     },
   };
 }

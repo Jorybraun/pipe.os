@@ -8,7 +8,7 @@ export type AgentRoomActionRoute =
 export function routeAgentRoomAction(action: AgentRoomAction): AgentRoomActionRoute {
   if (
     action.bridgeEventType === 'ROOM_ACTION'
-    && action.protocol === 'clippy_room_action_tag'
+    && action.protocol === 'agent_room_action_tag'
     && (action.source === 'agent_stdout_action' || action.source === 'agent_api_response_action')
   ) {
     return { kind: 'agent', source: 'agent', action };

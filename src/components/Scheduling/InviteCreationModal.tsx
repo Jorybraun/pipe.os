@@ -29,8 +29,7 @@ interface InviteCreationData {
     videoEnabled: boolean;
     workspaceEnabled: boolean;
     recordingEnabled: boolean;
-    // Backend compatibility field for the assessment-room AI assistant.
-    clippyEnabled: boolean;
+    agentEnabled: boolean;
   };
   agentType?: string | null;
 }
@@ -291,7 +290,7 @@ export function InviteCreationModal({
         videoEnabled,
         workspaceEnabled,
         recordingEnabled,
-        clippyEnabled: assistantEnabled,
+        agentEnabled: assistantEnabled,
       };
       if (agentType !== 'none') {
         inviteData.agentType = agentType;

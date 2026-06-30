@@ -19,7 +19,7 @@ type Clock = () => string;
 export type RepoTaskInterviewMode =
   | AssessmentSessionMode
   | 'STANDARD_VIDEO_INTERVIEW'
-  | 'CLIPPY_DEVIN_INTERACTION';
+  | 'AGENT_DEVIN_INTERACTION';
 
 export type RepoTaskInterviewState =
   | 'INTAKE'
@@ -51,7 +51,7 @@ export type AssessmentEvidenceEventKind =
 export type RepoTaskAssessmentActorType =
   | CanonicalAssessmentActorType
   | 'ai_developer'
-  | 'clippy'
+  | 'agent'
   | 'devin';
 
 export type EvaluationReportStatus = AssessmentEvaluationStatus;
@@ -1358,7 +1358,7 @@ export class RepoTaskInterviewSessionStore {
     const hasToolUsageEvidence = hasEventKind(evidenceCounts, ['tool_usage'])
       || hasEventKind(sourceRefCounts, [
         'room_surface_change',
-        'win95_start_menu_state',
+        'assessment_start_menu_state',
         'room_browser_navigation',
         'room_window_lifecycle',
         'room_window_data_update',

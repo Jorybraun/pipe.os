@@ -106,20 +106,20 @@ describe('sessionEvents', () => {
       expect(result).toBeNull();
     });
 
-    it('also appends source-backed 95 room assessment evidence for real agent events', async () => {
+    it('also appends source-backed room assessment evidence for real agent events', async () => {
       const { sqlite, db: realDb } = createSessionEvidenceDb();
       try {
         const event: SessionEvent = {
           type: 'ai_chat_agent',
-          sessionId: 'meeting-session-95',
+          sessionId: 'meeting-session-assessment',
           candidateId: 'cand-assessment',
           timestamp: 1782603900,
           actor: 'agent',
           text: 'I inspected the repository task and found the failing worker route.',
           properties: {
-            source: 'clippy_agent_bridge',
+            source: 'agent_bridge',
             agentName: 'devin',
-            surface: 'win95',
+            surface: 'assessment',
             workspaceSessionId: 'workspace-session-1',
           },
         };
@@ -132,11 +132,11 @@ describe('sessionEvents', () => {
           `SELECT mode, state, candidate_id, interview_id, metadata_json
              FROM assessment_sessions
             WHERE ingestion_key = ?`,
-        ).get('assessment-session:room:cand-assessment:meeting-session-95')).toMatchObject({
+        ).get('assessment-session:room:cand-assessment:meeting-session-assessment')).toMatchObject({
           mode: 'DEV_CONTAINER_REPO_TASK',
           state: 'IN_PROGRESS',
           candidate_id: 'cand-assessment',
-          interview_id: 'meeting-session-95',
+          interview_id: 'meeting-session-assessment',
         });
 
         const eventRows = sqlite.prepare(
@@ -172,9 +172,9 @@ describe('sessionEvents', () => {
           actor: event.actor,
           text: event.text,
           properties: {
-            source: 'clippy_agent_bridge',
+            source: 'agent_bridge',
             agentName: 'devin',
-            surface: 'win95',
+            surface: 'assessment',
             workspaceSessionId: 'workspace-session-1',
           },
           candidateNodeId: node!.id,
@@ -222,7 +222,7 @@ describe('sessionEvents', () => {
           text: 'npm test -- --runInBand',
           properties: {
             source: 'container_terminal',
-            surface: 'win95',
+            surface: 'assessment',
             scheduledInterviewId: 'scheduled-interview-1',
             terminalSessionId: 'workspace-terminal-1',
             terminalCommandId: 'workspace-terminal-1:command:guest:1782604800000:1:terminal_1234abcd',
@@ -290,10 +290,10 @@ describe('sessionEvents', () => {
           actor: 'agent',
           text: 'Auth failed with DEVIN_API_KEY=cog_aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa and /api/v1/meeting-rooms/live-room-token?token=raw-token',
           properties: {
-            source: 'clippy_agent_bridge',
+            source: 'agent_bridge',
             agent: 'devin',
             status: 'auth_needed',
-            surface: 'win95',
+            surface: 'assessment',
           },
         };
 
@@ -332,7 +332,7 @@ describe('sessionEvents', () => {
           actor: 'agent',
           text: 'I used DEVIN_API_KEY=cog_bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb while checking the repo.',
           properties: {
-            source: 'clippy_agent_bridge',
+            source: 'agent_bridge',
             agent: 'devin',
             bridgeEventType: 'CHAT_RESPONSE',
             bridgeMessageSource: 'agent_stdout',
@@ -362,7 +362,7 @@ describe('sessionEvents', () => {
           actor: 'guest',
           text: 'notes.txt',
           properties: {
-            source: 'win95_shared_file_system',
+            source: 'assessment_shared_file_system',
             fileEventSource: 'browser_client_submit',
             fileChangeId: 'file:guest:1782604300000:upsert:notepad',
             actor: 'guest',
@@ -370,7 +370,7 @@ describe('sessionEvents', () => {
             fileId: 'notepad',
             fileName: 'notes.txt',
             fileKind: 'text',
-            surface: 'win95',
+            surface: 'assessment',
             roomPhase: 'connected',
             capturedAtMs: 1782604300000,
             durableObjectReplayExpected: true,
@@ -473,7 +473,7 @@ describe('sessionEvents', () => {
           actor: 'host',
           text: 'Sketch.pipe-paint',
           properties: {
-            source: 'win95_shared_file_system',
+            source: 'assessment_shared_file_system',
             fileEventSource: 'browser_client_submit',
             fileChangeId: 'file:host:1782604310000:upsert:paint',
             actor: 'host',
@@ -481,7 +481,7 @@ describe('sessionEvents', () => {
             fileId: 'paint',
             fileName: 'Sketch.pipe-paint',
             fileKind: 'paint',
-            surface: 'win95',
+            surface: 'assessment',
             roomPhase: 'connected',
             capturedAtMs: 1782604310000,
             durableObjectReplayExpected: true,
@@ -528,7 +528,7 @@ describe('sessionEvents', () => {
           operation: 'upsert',
         });
         expect(JSON.parse(contextSource?.metadata_json ?? '{}')).toMatchObject({
-          sourceKind: 'win95_shared_file_system.paint_content',
+          sourceKind: 'assessment_shared_file_system.paint_content',
           fileKind: 'paint',
           operation: 'upsert',
           exactContentKey: 'contentExactJson',
@@ -554,7 +554,7 @@ describe('sessionEvents', () => {
           content_hash: await sha256Hex(exactJson),
         });
         expect(JSON.parse(assessmentSource?.metadata_json ?? '{}')).toMatchObject({
-          sourceKind: 'win95_shared_file_system.paint_content',
+          sourceKind: 'assessment_shared_file_system.paint_content',
           exactContentKey: 'contentExactJson',
         });
       } finally {
@@ -587,7 +587,7 @@ describe('sessionEvents', () => {
             capturedAtMs: 1782604400000,
             commandFingerprint: 'terminal_dc5964d6',
             commandLength: commandText.length,
-            surface: 'win95',
+            surface: 'assessment',
             roomPhase: 'connected',
             workspaceStatus: 'READY',
             workspaceSessionId: 'workspace-session-1',
@@ -612,7 +612,7 @@ describe('sessionEvents', () => {
             capturedAtMs: 1782604410000,
             outputFingerprint: 'terminal_4f2d0d8f',
             outputLength: outputText.length,
-            surface: 'win95',
+            surface: 'assessment',
             roomPhase: 'connected',
             workspaceStatus: 'READY',
             workspaceSessionId: 'workspace-session-1',
@@ -723,12 +723,12 @@ describe('sessionEvents', () => {
           text: 'src/app.ts',
           properties: {
             source: 'code_server_workspace',
-            observedBy: 'clippy_agent_bridge',
+            observedBy: 'agent_bridge',
             bridgeEventType: 'FILE_CHANGED',
             editorSurface: 'code-server',
             codeServerFileChangeId,
             action: 'modified',
-            surface: 'win95',
+            surface: 'assessment',
             roomPhase: 'connected',
             workspaceStatus: 'READY',
             workspaceSessionId: 'workspace-session-1',
@@ -781,7 +781,7 @@ describe('sessionEvents', () => {
           fileContentHash,
           sizeBytes: 421,
           contentPreview: preview,
-          observedBy: 'clippy_agent_bridge',
+          observedBy: 'agent_bridge',
           codeServerFileChangeId,
           bridgePersisted: false,
           workspaceSessionId: 'workspace-session-1',
@@ -801,7 +801,7 @@ describe('sessionEvents', () => {
         });
         expect(JSON.parse(contextSource?.metadata_json ?? '{}')).toMatchObject({
           sourceKind: 'code_server_workspace.file_observation',
-          observedBy: 'clippy_agent_bridge',
+          observedBy: 'agent_bridge',
           codeServerFileChangeId,
           bridgePersisted: false,
           fileContentHash,
@@ -862,9 +862,9 @@ describe('sessionEvents', () => {
       const { sqlite, db: realDb } = createSessionEvidenceDb();
       try {
         const promptText = 'Can you inspect the failing test?';
-        const promptId = 'workspace-session-1:guest:prompt:1782604600000:clippy_0123abcd';
+        const promptId = 'workspace-session-1:guest:prompt:1782604600000:agent_0123abcd';
         const blockedPromptText = 'Can you inspect this before the workspace starts?';
-        const blockedPromptId = 'none:guest:prompt:1782604620000:clippy_89abcdef';
+        const blockedPromptId = 'none:guest:prompt:1782604620000:agent_89abcdef';
         const agentText = 'I inspected the failing test.';
         const agentResponseId = 'agent-chat:devin:1782604610000:CHAT_RESPONSE:agent_314a13fc';
         const events: SessionEvent[] = [
@@ -884,26 +884,26 @@ describe('sessionEvents', () => {
               messageCreatedAt: 1782604580000,
               messageLength: 'Can we look at the retry bug first?'.length,
               deliveryStatus: 'accepted',
-              surface: 'win95',
+              surface: 'assessment',
               roomPhase: 'connected',
               durableObjectReplayExpected: true,
             },
           },
           {
-            type: 'clippy_prompt',
+            type: 'agent_prompt',
             sessionId: 'meeting-session-chat-sources',
             candidateId: 'cand-assessment',
             timestamp: 1782604590,
             actor: 'host',
             text: 'Would you like to open the workspace?',
             properties: {
-              source: 'clippy_prompt_client_submit',
-              promptId: 'clippy-proactive-host-1',
+              source: 'agent_prompt_client_submit',
+              promptId: 'agent-proactive-host-1',
               clientId: 'host-client',
               promptSource: 'host',
-              promptEventSource: 'browser_proactive_clippy_prompt',
+              promptEventSource: 'browser_proactive_agent_prompt',
               promptTrigger: 'host_waiting_prepare_workspace',
-              surface: 'win95',
+              surface: 'assessment',
               roomPhase: 'connected',
               workspaceStatus: 'READY',
               workspaceSessionId: 'workspace-session-1',
@@ -920,10 +920,10 @@ describe('sessionEvents', () => {
             actor: 'guest',
             text: promptText,
             properties: {
-              source: 'clippy_agent_chat_client_submit',
-              agentChatEventSource: 'browser_clippy_chat_window',
+              source: 'agent_chat_client_submit',
+              agentChatEventSource: 'browser_agent_chat_window',
               bridgeMessageType: 'CHAT',
-              bridgeProtocol: 'clippy_dev_container_ws',
+              bridgeProtocol: 'agent_dev_container_ws',
               bridgeDeliveryStatus: 'queued',
               browserQueuedBridgeMessage: true,
               bridgeDeliveryConfirmed: false,
@@ -933,9 +933,9 @@ describe('sessionEvents', () => {
               actor: 'guest',
               promptId,
               promptTimestamp: 1782604600000,
-              promptFingerprint: 'clippy_0123abcd',
+              promptFingerprint: 'agent_0123abcd',
               promptLength: promptText.length,
-              surface: 'win95',
+              surface: 'assessment',
               roomPhase: 'connected',
               workspaceStatus: 'READY',
               workspaceSessionId: 'workspace-session-1',
@@ -951,10 +951,10 @@ describe('sessionEvents', () => {
             actor: 'guest',
             text: blockedPromptText,
             properties: {
-              source: 'clippy_agent_chat_client_submit',
-              agentChatEventSource: 'browser_clippy_chat_window',
+              source: 'agent_chat_client_submit',
+              agentChatEventSource: 'browser_agent_chat_window',
               bridgeMessageType: 'CHAT',
-              bridgeProtocol: 'clippy_dev_container_ws',
+              bridgeProtocol: 'agent_dev_container_ws',
               bridgeDeliveryStatus: 'blocked',
               bridgeBlockedReason: 'workspace_required',
               browserQueuedBridgeMessage: false,
@@ -965,9 +965,9 @@ describe('sessionEvents', () => {
               actor: 'guest',
               promptId: blockedPromptId,
               promptTimestamp: 1782604620000,
-              promptFingerprint: 'clippy_89abcdef',
+              promptFingerprint: 'agent_89abcdef',
               promptLength: blockedPromptText.length,
-              surface: 'win95',
+              surface: 'assessment',
               roomPhase: 'connected',
               workspaceStatus: null,
               workspaceSessionId: null,
@@ -983,7 +983,7 @@ describe('sessionEvents', () => {
             actor: 'agent',
             text: agentText,
             properties: {
-              source: 'clippy_agent_bridge',
+              source: 'agent_bridge',
               bridgeEventType: 'CHAT_RESPONSE',
               bridgeMessageSource: 'agent_api_response',
               observedAt: '2026-06-27T20:10:10.000Z',
@@ -993,7 +993,7 @@ describe('sessionEvents', () => {
               responseLength: agentText.length,
               agentChatResponseId: agentResponseId,
               browserPromptId: promptId,
-              browserPromptFingerprint: 'clippy_0123abcd',
+              browserPromptFingerprint: 'agent_0123abcd',
               browserPromptTimestamp: 1782604600000,
               browserPromptLength: promptText.length,
               bridgePersisted: true,
@@ -1021,10 +1021,10 @@ describe('sessionEvents', () => {
             WHERE cr.record_type = 'meeting_session_event'
               AND csr.source_ref_type IN (
                 'room_chat_message',
-                'clippy_proactive_prompt',
-                'clippy_user_prompt',
-                'clippy_user_prompt_blocked',
-                'clippy_agent_response'
+                'agent_proactive_prompt',
+                'agent_user_prompt',
+                'agent_user_prompt_blocked',
+                'agent_response'
               )
             ORDER BY csr.source_ref_type`,
         ).all() as Array<{
@@ -1037,30 +1037,30 @@ describe('sessionEvents', () => {
 
         expect(contextSources).toEqual([
           {
-            source_ref_type: 'clippy_agent_response',
-            source_ref_id: agentResponseId,
-            evidence_role: 'clippy_agent_response',
-            exact_text: agentText,
-            content_hash: await sha256Hex(agentText),
-          },
-          {
-            source_ref_type: 'clippy_proactive_prompt',
-            source_ref_id: 'clippy-proactive-host-1',
-            evidence_role: 'clippy_proactive_prompt',
+            source_ref_type: 'agent_proactive_prompt',
+            source_ref_id: 'agent-proactive-host-1',
+            evidence_role: 'agent_proactive_prompt',
             exact_text: 'Would you like to open the workspace?',
             content_hash: await sha256Hex('Would you like to open the workspace?'),
           },
           {
-            source_ref_type: 'clippy_user_prompt',
+            source_ref_type: 'agent_response',
+            source_ref_id: agentResponseId,
+            evidence_role: 'agent_response',
+            exact_text: agentText,
+            content_hash: await sha256Hex(agentText),
+          },
+          {
+            source_ref_type: 'agent_user_prompt',
             source_ref_id: promptId,
-            evidence_role: 'clippy_user_prompt',
+            evidence_role: 'agent_user_prompt',
             exact_text: promptText,
             content_hash: await sha256Hex(promptText),
           },
           {
-            source_ref_type: 'clippy_user_prompt_blocked',
+            source_ref_type: 'agent_user_prompt_blocked',
             source_ref_id: blockedPromptId,
-            evidence_role: 'clippy_user_prompt_blocked',
+            evidence_role: 'agent_user_prompt_blocked',
             exact_text: blockedPromptText,
             content_hash: await sha256Hex(blockedPromptText),
           },
@@ -1076,7 +1076,7 @@ describe('sessionEvents', () => {
         const agentResponseSource = sqlite.prepare(
           `SELECT locator_json, metadata_json
              FROM context_record_source_refs
-            WHERE source_ref_type = 'clippy_agent_response'
+            WHERE source_ref_type = 'agent_response'
               AND source_ref_id = ?`,
         ).get(agentResponseId) as {
           locator_json: string;
@@ -1088,7 +1088,7 @@ describe('sessionEvents', () => {
           agentRunId: 'devin-api:1234abcd',
         });
         expect(JSON.parse(agentResponseSource.metadata_json)).toMatchObject({
-          sourceKind: 'clippy.agent_api_response',
+          sourceKind: 'agent.agent_api_response',
           agentRunExternalSessionHash: 'sha256:1234abcd',
         });
 
@@ -1097,10 +1097,10 @@ describe('sessionEvents', () => {
              FROM assessment_event_source_refs
             WHERE source_ref_type IN (
               'room_chat_message',
-              'clippy_proactive_prompt',
-              'clippy_user_prompt',
-              'clippy_user_prompt_blocked',
-              'clippy_agent_response'
+              'agent_proactive_prompt',
+              'agent_user_prompt',
+              'agent_user_prompt_blocked',
+              'agent_response'
             )
             ORDER BY source_ref_type`,
         ).all() as Array<{
@@ -1115,7 +1115,7 @@ describe('sessionEvents', () => {
         const assessmentAgentResponseSource = sqlite.prepare(
           `SELECT locator_json, metadata_json
              FROM assessment_event_source_refs
-            WHERE source_ref_type = 'clippy_agent_response'
+            WHERE source_ref_type = 'agent_response'
               AND source_ref_id = ?`,
         ).get(agentResponseId) as {
           locator_json: string;
@@ -1127,14 +1127,14 @@ describe('sessionEvents', () => {
           agentRunId: 'devin-api:1234abcd',
         });
         expect(JSON.parse(assessmentAgentResponseSource.metadata_json)).toMatchObject({
-          sourceKind: 'clippy.agent_api_response',
+          sourceKind: 'agent.agent_api_response',
           agentRunExternalSessionHash: 'sha256:1234abcd',
         });
 
         const entities = sqlite.prepare(
           `SELECT entity_type, entity_id, relationship
              FROM context_record_entities
-            WHERE entity_type IN ('room_message', 'clippy_prompt', 'agent_chat_response')
+            WHERE entity_type IN ('room_message', 'agent_prompt', 'agent_chat_response')
             ORDER BY entity_type, relationship, entity_id`,
         ).all() as Array<{
           entity_type: string;
@@ -1148,22 +1148,22 @@ describe('sessionEvents', () => {
             relationship: 'source_message',
           },
           {
-            entity_type: 'clippy_prompt',
-            entity_id: 'clippy-proactive-host-1',
+            entity_type: 'agent_prompt',
+            entity_id: 'agent-proactive-host-1',
             relationship: 'prompt_event',
           },
           {
-            entity_type: 'clippy_prompt',
+            entity_type: 'agent_prompt',
             entity_id: blockedPromptId,
             relationship: 'source_prompt',
           },
           {
-            entity_type: 'clippy_prompt',
+            entity_type: 'agent_prompt',
             entity_id: promptId,
             relationship: 'source_prompt',
           },
           {
-            entity_type: 'clippy_prompt',
+            entity_type: 'agent_prompt',
             entity_id: promptId,
             relationship: 'linked_prompt',
           },
@@ -1199,7 +1199,7 @@ describe('sessionEvents', () => {
             messageLength: text.length,
             deliveryStatus: 'rejected',
             deliveryRejectionReason: 'INVALID_EVIDENCE',
-            surface: 'win95',
+            surface: 'assessment',
             roomPhase: 'connected',
             durableObjectReplayExpected: true,
           },
@@ -1245,8 +1245,8 @@ describe('sessionEvents', () => {
             actor: 'agent',
             text: statusText,
             properties: {
-              source: 'clippy_agent_bridge',
-              agentStatusEventSource: 'browser_clippy_agent_ws',
+              source: 'agent_bridge',
+              agentStatusEventSource: 'browser_agent_ws',
               agent: 'devin',
               status: 'starting',
               diagnosticSource: null,
@@ -1254,7 +1254,7 @@ describe('sessionEvents', () => {
               observedAt: '2026-06-27T21:12:00.000Z',
               capturedAtMs: 1782594720000,
               agentStatusEventId: statusId,
-              surface: 'win95',
+              surface: 'assessment',
               roomPhase: 'connected',
               workspaceStatus: 'READY',
               workspaceSessionId: 'workspace-session-1',
@@ -1270,7 +1270,7 @@ describe('sessionEvents', () => {
             actor: 'agent',
             text: diagnosticText,
             properties: {
-              source: 'clippy_agent_bridge',
+              source: 'agent_bridge',
               agent: 'devin',
               status: 'thinking',
               diagnosticSource: 'agent_prompt_sent',
@@ -1281,8 +1281,8 @@ describe('sessionEvents', () => {
               bridgePersisted: true,
               promptType: 'chat_prompt',
               deliveredToAgent: true,
-              browserPromptId: 'workspace-session-1:guest:prompt:1782603900000:clippy_0123abcd',
-              browserPromptFingerprint: 'clippy_0123abcd',
+              browserPromptId: 'workspace-session-1:guest:prompt:1782603900000:agent_0123abcd',
+              browserPromptFingerprint: 'agent_0123abcd',
               browserPromptTimestamp: 1782603900000,
               browserPromptLength: 24,
             },
@@ -1299,7 +1299,7 @@ describe('sessionEvents', () => {
              FROM context_record_source_refs csr
              JOIN context_records cr ON cr.id = csr.context_record_id
             WHERE cr.record_type = 'meeting_session_event'
-              AND csr.source_ref_type IN ('clippy_agent_status', 'clippy_agent_diagnostic')
+              AND csr.source_ref_type IN ('agent_status', 'agent_diagnostic')
             ORDER BY csr.source_ref_type`,
         ).all() as Array<{
           source_ref_type: string;
@@ -1311,16 +1311,16 @@ describe('sessionEvents', () => {
 
         expect(contextSources).toEqual([
           {
-            source_ref_type: 'clippy_agent_diagnostic',
+            source_ref_type: 'agent_diagnostic',
             source_ref_id: diagnosticId,
-            evidence_role: 'clippy_agent_diagnostic',
+            evidence_role: 'agent_diagnostic',
             exact_text: diagnosticText,
             content_hash: await sha256Hex(diagnosticText),
           },
           {
-            source_ref_type: 'clippy_agent_status',
+            source_ref_type: 'agent_status',
             source_ref_id: statusId,
-            evidence_role: 'clippy_agent_status',
+            evidence_role: 'agent_status',
             exact_text: statusText,
             content_hash: await sha256Hex(statusText),
           },
@@ -1329,7 +1329,7 @@ describe('sessionEvents', () => {
         const assessmentSources = sqlite.prepare(
           `SELECT source_ref_type, source_ref_id, evidence_role, exact_text, content_hash
              FROM assessment_event_source_refs
-            WHERE source_ref_type IN ('clippy_agent_status', 'clippy_agent_diagnostic')
+            WHERE source_ref_type IN ('agent_status', 'agent_diagnostic')
             ORDER BY source_ref_type`,
         ).all() as Array<{
           source_ref_type: string;
@@ -1344,31 +1344,31 @@ describe('sessionEvents', () => {
       }
     });
 
-    it('preserves Clippy UI and bridge room actions as direct source refs', async () => {
+    it('preserves Agent UI and bridge room actions as direct source refs', async () => {
       const { sqlite, db: realDb } = createSessionEvidenceDb();
       try {
         const trayOpenText = 'AI assistant opened from the room controls';
-        const trayOpenId = 'clippy-action:guest:1782604700000:clippy_tray_ui:tray:opened:open-clippy-chat';
+        const trayOpenId = 'agent-action:guest:1782604700000:agent_tray_ui:tray:opened:open-agent-chat';
         const agentSuggestionText = 'devin suggested room action: open-terminal';
-        const agentSuggestionId = 'clippy-action:agent:1782604710000:clippy_agent_bridge:agent:suggested:open-terminal';
+        const agentSuggestionId = 'agent-action:agent:1782604710000:agent_bridge:agent:suggested:open-terminal';
         const events: SessionEvent[] = [
           {
-            type: 'clippy_action',
-            sessionId: 'meeting-session-clippy-actions',
+            type: 'agent_action',
+            sessionId: 'meeting-session-agent-actions',
             candidateId: 'cand-assessment',
             timestamp: 1782604700,
             actor: 'guest',
             text: trayOpenText,
             properties: {
-              source: 'clippy_tray_ui',
-              actionId: 'open-clippy-chat',
+              source: 'agent_tray_ui',
+              actionId: 'open-agent-chat',
               origin: 'tray',
               executedBy: 'guest',
-              actionSource: 'win95_taskbar_tray',
+              actionSource: 'assessment_taskbar_tray',
               executionStatus: 'opened',
               capturedAtMs: 1782604700000,
-              clippyActionEventId: trayOpenId,
-              surface: 'win95',
+              agentActionEventId: trayOpenId,
+              surface: 'assessment',
               roomPhase: 'connected',
               workspaceStatus: 'READY',
               workspaceSessionId: 'workspace-session-1',
@@ -1379,27 +1379,27 @@ describe('sessionEvents', () => {
             },
           },
           {
-            type: 'clippy_action',
-            sessionId: 'meeting-session-clippy-actions',
+            type: 'agent_action',
+            sessionId: 'meeting-session-agent-actions',
             candidateId: 'cand-assessment',
             timestamp: 1782604710,
             actor: 'agent',
             text: agentSuggestionText,
             properties: {
-              source: 'clippy_agent_bridge',
+              source: 'agent_bridge',
               origin: 'agent',
               executionStatus: 'suggested',
               actionId: 'open-terminal',
               actionSource: 'agent_stdout',
-              actionProtocol: 'clippy_room_action_tag',
+              actionProtocol: 'agent_room_action_tag',
               bridgeEventType: 'ROOM_ACTION',
               agent: 'devin',
               observedAt: '2026-06-27T20:18:30.000Z',
               capturedAtMs: 1782604710000,
-              clippyActionEventId: agentSuggestionId,
+              agentActionEventId: agentSuggestionId,
               bridgePersisted: true,
-              browserPromptId: 'workspace-session-1:guest:prompt:1782604705000:clippy_0123abcd',
-              browserPromptFingerprint: 'clippy_0123abcd',
+              browserPromptId: 'workspace-session-1:guest:prompt:1782604705000:agent_0123abcd',
+              browserPromptFingerprint: 'agent_0123abcd',
               browserPromptTimestamp: 1782604705000,
               browserPromptLength: 'Open the terminal'.length,
               durableObjectReplayExpected: true,
@@ -1419,7 +1419,7 @@ describe('sessionEvents', () => {
              FROM context_record_source_refs csr
              JOIN context_records cr ON cr.id = csr.context_record_id
             WHERE cr.record_type = 'meeting_session_event'
-              AND csr.source_ref_type IN ('clippy_ui_action', 'clippy_agent_room_action')
+              AND csr.source_ref_type IN ('agent_ui_action', 'agent_room_action')
             ORDER BY csr.source_ref_type`,
         ).all() as Array<{
           source_ref_type: string;
@@ -1431,16 +1431,16 @@ describe('sessionEvents', () => {
 
         expect(contextSources).toEqual([
           {
-            source_ref_type: 'clippy_agent_room_action',
+            source_ref_type: 'agent_room_action',
             source_ref_id: agentSuggestionId,
-            evidence_role: 'clippy_agent_suggested_action',
+            evidence_role: 'agent_suggested_action',
             exact_text: agentSuggestionText,
             content_hash: await sha256Hex(agentSuggestionText),
           },
           {
-            source_ref_type: 'clippy_ui_action',
+            source_ref_type: 'agent_ui_action',
             source_ref_id: trayOpenId,
-            evidence_role: 'clippy_ui_action',
+            evidence_role: 'agent_ui_action',
             exact_text: trayOpenText,
             content_hash: await sha256Hex(trayOpenText),
           },
@@ -1449,7 +1449,7 @@ describe('sessionEvents', () => {
         const assessmentSources = sqlite.prepare(
           `SELECT source_ref_type, source_ref_id, evidence_role, exact_text, content_hash
              FROM assessment_event_source_refs
-            WHERE source_ref_type IN ('clippy_ui_action', 'clippy_agent_room_action')
+            WHERE source_ref_type IN ('agent_ui_action', 'agent_room_action')
             ORDER BY source_ref_type`,
         ).all() as Array<{
           source_ref_type: string;
@@ -1463,7 +1463,7 @@ describe('sessionEvents', () => {
         const entities = sqlite.prepare(
           `SELECT entity_type, entity_id, relationship
              FROM context_record_entities
-            WHERE entity_type = 'clippy_action'
+            WHERE entity_type = 'agent_action'
             ORDER BY entity_id`,
         ).all() as Array<{
           entity_type: string;
@@ -1472,12 +1472,12 @@ describe('sessionEvents', () => {
         }>;
         expect(entities).toEqual([
           {
-            entity_type: 'clippy_action',
+            entity_type: 'agent_action',
             entity_id: agentSuggestionId,
             relationship: 'source_action',
           },
           {
-            entity_type: 'clippy_action',
+            entity_type: 'agent_action',
             entity_id: trayOpenId,
             relationship: 'source_action',
           },
@@ -1502,10 +1502,10 @@ describe('sessionEvents', () => {
               source: 'room_surface_control',
               surfaceControlEventSource: 'browser_room_surface_toggle',
               actor: 'host',
-              surfaceChangeId: 'surface:host:1782604800000:standard:win95',
+              surfaceChangeId: 'surface:host:1782604800000:standard:assessment',
               capturedAtMs: 1782604800000,
               previousSurface: 'standard',
-              surface: 'win95',
+              surface: 'assessment',
               action: 'enter_desktop',
               roomPhase: 'connected',
               durableObjectReplayExpected: true,
@@ -1519,15 +1519,15 @@ describe('sessionEvents', () => {
             actor: 'guest',
             text: 'Start menu opened',
             properties: {
-              source: 'win95_start_menu_control',
-              menuEventSource: 'win95_start_button',
+              source: 'assessment_start_menu_control',
+              menuEventSource: 'assessment_start_button',
               actor: 'guest',
               menuId: 'start',
               action: 'open',
               open: true,
-              startMenuEventId: 'start-menu:guest:1782604801000:open:win95_start_button',
+              startMenuEventId: 'start-menu:guest:1782604801000:open:assessment_start_button',
               capturedAtMs: 1782604801000,
-              surface: 'win95',
+              surface: 'assessment',
               roomPhase: 'connected',
               durableObjectReplayExpected: true,
             },
@@ -1551,7 +1551,7 @@ describe('sessionEvents', () => {
               urlHost: 'github.com',
               urlProtocol: 'https',
               navigationTrigger: 'go_button',
-              surface: 'win95',
+              surface: 'assessment',
               roomPhase: 'connected',
               durableObjectReplayExpected: true,
             },
@@ -1565,7 +1565,7 @@ describe('sessionEvents', () => {
             text: 'Notepad',
             properties: {
               source: 'window_lifecycle_client_submit',
-              lifecycleSource: 'win95_file_system',
+              lifecycleSource: 'assessment_file_system',
               lifecycleKind: 'open',
               actor: 'guest',
               windowId: 'notepad',
@@ -1573,7 +1573,7 @@ describe('sessionEvents', () => {
               windowTitle: 'Notepad',
               windowLifecycleId: 'window-lifecycle:guest:1782604803000:open:notepad',
               capturedAtMs: 1782604803000,
-              surface: 'win95',
+              surface: 'assessment',
               roomPhase: 'connected',
               durableObjectReplayExpected: true,
             },
@@ -1587,13 +1587,13 @@ describe('sessionEvents', () => {
             text: 'Window state updated: notepad',
             properties: {
               source: 'window_state_client_submit',
-              stateSource: 'win95_window_chrome',
+              stateSource: 'assessment_window_chrome',
               actor: 'guest',
               windowId: 'notepad',
               action: 'move',
               windowStateChangeId: 'window-state:guest:1782604804000:notepad:move',
               capturedAtMs: 1782604804000,
-              surface: 'win95',
+              surface: 'assessment',
               roomPhase: 'connected',
               statePatch: { x: 120, y: 160 },
               stateKeys: ['x', 'y'],
@@ -1609,13 +1609,13 @@ describe('sessionEvents', () => {
             text: 'Window data updated: notepad',
             properties: {
               source: 'window_data_client_submit',
-              dataSource: 'win95_window_data_sync',
+              dataSource: 'assessment_window_data_sync',
               actor: 'guest',
               windowId: 'notepad',
               action: 'edit_text',
               windowDataUpdateId: 'window-data:guest:1782604805000:notepad:edit_text',
               capturedAtMs: 1782604805000,
-              surface: 'win95',
+              surface: 'assessment',
               roomPhase: 'connected',
               dataKeys: ['text'],
               dataValueFingerprints: { text: 'data_81a94acf' },
@@ -1630,12 +1630,12 @@ describe('sessionEvents', () => {
             actor: 'guest',
             text: 'Guest cursor presence sampled in the assessment room',
             properties: {
-              source: 'win95_cursor_presence_client_sample',
-              cursorEventSource: 'browser_win95_desktop_pointermove',
+              source: 'assessment_cursor_presence_client_sample',
+              cursorEventSource: 'browser_assessment_desktop_pointermove',
               actor: 'guest',
               cursorSampleId: 'cursor:guest:1782604806000:420:610',
               sampledAtMs: 1782604806000,
-              surface: 'win95',
+              surface: 'assessment',
               roomPhase: 'connected',
               normalizedX: 0.42,
               normalizedY: 0.61,
@@ -1665,9 +1665,9 @@ describe('sessionEvents', () => {
               previousEnabled: true,
               enabled: false,
               action: 'disabled',
-              surface: 'win95',
+              surface: 'assessment',
               roomPhase: 'connected',
-              controlSurface: 'win95_video_window',
+              controlSurface: 'assessment_video_window',
               controlAction: 'toggle',
               mediaSource: 'local_media_stream',
               rawMediaStreamPersisted: false,
@@ -1688,7 +1688,7 @@ describe('sessionEvents', () => {
               recordingLifecycleKind: 'start',
               recordingStateEventId: 'recording:host:1782604808000:start:recording',
               capturedAtMs: 1782604808000,
-              surface: 'win95',
+              surface: 'assessment',
               roomPhase: 'connected',
               recordingStatus: 'recording',
               recordingActive: true,
@@ -1748,7 +1748,7 @@ describe('sessionEvents', () => {
               openStatus: 'loaded',
               actor: 'guest',
               capturedAtMs: 1782604810000,
-              surface: 'win95',
+              surface: 'assessment',
               roomPhase: 'connected',
               workspaceSessionId: 'workspace-session-1',
               workspaceStatus: 'READY',
@@ -1769,17 +1769,17 @@ describe('sessionEvents', () => {
         }
 
         const expectedRefs = [
+          ['assessment_start_menu_state', 'start-menu:guest:1782604801000:open:assessment_start_button', 'start_menu_opened'],
           ['code_server_editor_open', 'code-editor-open:guest:1782604810000:workspace-session-1', 'code_editor_open'],
           ['dev_container_workspace_state', 'workspace-state:host:1782604809000:launch:workspace-session-1:READY', 'workspace_state'],
           ['room_browser_navigation', 'browser-navigation:guest:1782604802000:browser:go_button:nav_54d2c495', 'browser_navigation'],
           ['room_cursor_presence_sample', 'cursor:guest:1782604806000:420:610', 'cursor_presence_sample'],
           ['room_media_control', 'media:guest:microphone:1782604807000:disabled', 'microphone_disabled'],
           ['room_recording_state', 'recording:host:1782604808000:start:recording', 'recording_start'],
-          ['room_surface_change', 'surface:host:1782604800000:standard:win95', 'room_surface_transition'],
+          ['room_surface_change', 'surface:host:1782604800000:standard:assessment', 'room_surface_transition'],
           ['room_window_data_update', 'window-data:guest:1782604805000:notepad:edit_text', 'window_text_update'],
           ['room_window_lifecycle', 'window-lifecycle:guest:1782604803000:open:notepad', 'window_open'],
           ['room_window_state_change', 'window-state:guest:1782604804000:notepad:move', 'window_state_change'],
-          ['win95_start_menu_state', 'start-menu:guest:1782604801000:open:win95_start_button', 'start_menu_opened'],
         ];
 
         const sourceTypes = expectedRefs.map(([sourceRefType]) => `'${sourceRefType}'`).join(',');
@@ -1817,7 +1817,7 @@ describe('sessionEvents', () => {
         );
         expect(JSON.parse(lifecycleSourcePayload?.exact_text ?? '{}')).toMatchObject({
           properties: {
-            lifecycleSource: 'win95_file_system',
+            lifecycleSource: 'assessment_file_system',
             windowId: 'notepad',
           },
         });
@@ -1880,28 +1880,28 @@ describe('sessionEvents', () => {
       }
     });
 
-    it('preserves explicit agent identity in 95 room assessment evidence without defaulting to Devin', async () => {
+    it('preserves explicit agent identity in room assessment evidence without defaulting to Devin', async () => {
       const { sqlite, db: realDb } = createSessionEvidenceDb();
       try {
         const hermesAction: SessionEvent = {
-          type: 'clippy_action',
+          type: 'agent_action',
           sessionId: 'meeting-session-agent-identity',
           candidateId: 'cand-assessment',
           timestamp: 1782604100,
           actor: 'agent',
           text: 'hermes suggested room action: open-terminal',
           properties: {
-            source: 'clippy_agent_bridge',
+            source: 'agent_bridge',
             origin: 'agent',
             executionStatus: 'suggested',
             actionId: 'open-terminal',
             actionSource: 'agent_stdout',
-            actionProtocol: 'clippy_room_action_tag',
+            actionProtocol: 'agent_room_action_tag',
             bridgeEventType: 'ROOM_ACTION',
             agent: 'hermes',
             observedAt: '2026-06-27T21:10:00.000Z',
             bridgePersisted: true,
-            surface: 'win95',
+            surface: 'assessment',
           },
         };
         const missingIdentityStatus: SessionEvent = {
@@ -1912,9 +1912,9 @@ describe('sessionEvents', () => {
           actor: 'agent',
           text: 'Agent status changed without explicit bridge identity.',
           properties: {
-            source: 'clippy_agent_bridge',
+            source: 'agent_bridge',
             status: 'thinking',
-            surface: 'win95',
+            surface: 'assessment',
           },
         };
 
@@ -1962,13 +1962,13 @@ describe('sessionEvents', () => {
           text: 'Window data updated: notepad',
           properties: {
             source: 'window_data_client_submit',
-            dataSource: 'win95_file_delete_sync',
+            dataSource: 'assessment_file_delete_sync',
             actor: 'guest',
             windowId: 'notepad',
             action: 'edit_text',
             windowDataUpdateId: 'window-data:guest:1782604900000:notepad:edit_text',
             capturedAtMs: 1782604900000,
-            surface: 'win95',
+            surface: 'assessment',
             roomPhase: 'connected',
             dataKeys: ['text'],
             dataValueFingerprints: { text: 'data_12345678' },
@@ -2000,7 +2000,7 @@ describe('sessionEvents', () => {
           sourceRefType: 'room_window_data_update',
           sourceRefId: 'window-data:guest:1782604900000:notepad:edit_text',
           properties: {
-            dataSource: 'win95_file_delete_sync',
+            dataSource: 'assessment_file_delete_sync',
             windowId: 'notepad',
           },
         });
@@ -2094,8 +2094,8 @@ describe('sessionEvents', () => {
           node_type: 'session_chat_user',
           narrative_text: '[2025-01-01T00:00:00.000Z] User asked: "Fix the bug"',
           extracted_properties_json: JSON.stringify({
-            source: 'clippy_agent_chat_client_submit',
-            promptId: 'workspace-session-1:guest:prompt:1735689600000:clippy_0123abcd',
+            source: 'agent_chat_client_submit',
+            promptId: 'workspace-session-1:guest:prompt:1735689600000:agent_0123abcd',
           }),
           captured_at: 1735689600,
           source_reference: 'test-session',
@@ -2134,9 +2134,9 @@ describe('sessionEvents', () => {
           node_type: 'session_chat_agent',
           narrative_text: '[2025-01-01T00:02:00.000Z] Agent responded: "I inspected the failing test."',
           extracted_properties_json: JSON.stringify({
-            source: 'clippy_agent_bridge',
+            source: 'agent_bridge',
             agentChatResponseId: 'agent-chat:devin:1735689720000:CHAT_RESPONSE:agent_314a13fc',
-            browserPromptId: 'workspace-session-1:guest:prompt:1735689600000:clippy_0123abcd',
+            browserPromptId: 'workspace-session-1:guest:prompt:1735689600000:agent_0123abcd',
           }),
           captured_at: 1735689720,
           source_reference: 'test-session',
@@ -2166,8 +2166,8 @@ describe('sessionEvents', () => {
       expect(summary).toContain('User asked');
       expect(summary).toContain('TERMINAL');
       expect(summary).toContain('npm test');
-      expect(summary).toContain('[source_ref: node=node-1; type=session_chat_user; session=test-session; capturedAt=2025-01-01T00:00:00.000Z; source=clippy_agent_chat_client_submit; promptId=workspace-session-1:guest:prompt:1735689600000:clippy_0123abcd]');
-      expect(summary).toContain('[source_ref: node=node-3; type=session_chat_agent; session=test-session; capturedAt=2025-01-01T00:02:00.000Z; source=clippy_agent_bridge; agentChatResponseId=agent-chat:devin:1735689720000:CHAT_RESPONSE:agent_314a13fc; linkedPromptId=workspace-session-1:guest:prompt:1735689600000:clippy_0123abcd]');
+      expect(summary).toContain('[source_ref: node=node-1; type=session_chat_user; session=test-session; capturedAt=2025-01-01T00:00:00.000Z; source=agent_chat_client_submit; promptId=workspace-session-1:guest:prompt:1735689600000:agent_0123abcd]');
+      expect(summary).toContain('[source_ref: node=node-3; type=session_chat_agent; session=test-session; capturedAt=2025-01-01T00:02:00.000Z; source=agent_bridge; agentChatResponseId=agent-chat:devin:1735689720000:CHAT_RESPONSE:agent_314a13fc; linkedPromptId=workspace-session-1:guest:prompt:1735689600000:agent_0123abcd]');
       expect(summary).toContain('[source_ref: node=node-2; type=session_terminal_command; session=test-session; capturedAt=2025-01-01T00:01:00.000Z; source=container_terminal; terminalCommandId=terminal-workspace-1:command:guest:1735689660000:1:term_0123abcd]');
     });
   });
@@ -2180,17 +2180,17 @@ describe('sessionEvents', () => {
             role: 'HOST',
             recordedAt: 1700000000000,
             event: {
-              id: 'evt-enter-95',
+              id: 'evt-enter-assessment',
               clientId: 'host-client',
               createdAt: 1700000000000,
               kind: 'SET_ROOM_SURFACE',
-              surface: 'win95',
+              surface: 'assessment',
               previousSurface: 'standard',
               action: 'enter_desktop',
               source: 'room_surface_control',
               surfaceControlEventSource: 'browser_room_surface_toggle',
               actor: 'host',
-              surfaceChangeId: 'surface:host:1700000000000:standard:win95',
+              surfaceChangeId: 'surface:host:1700000000000:standard:assessment',
               capturedAtMs: 1700000000000,
               roomPhase: 'connected',
               durableObjectReplayExpected: true,
@@ -2206,15 +2206,15 @@ describe('sessionEvents', () => {
               kind: 'START_MENU_STATE',
               open: true,
               evidence: {
-                source: 'win95_start_menu_control',
-                menuEventSource: 'win95_start_button',
+                source: 'assessment_start_menu_control',
+                menuEventSource: 'assessment_start_button',
                 actor: 'guest',
                 menuId: 'start',
                 action: 'open',
                 open: true,
-                startMenuEventId: 'start-menu:guest:1700000001300:open:win95_start_button',
+                startMenuEventId: 'start-menu:guest:1700000001300:open:assessment_start_button',
                 capturedAtMs: 1700000001300,
-                surface: 'win95',
+                surface: 'assessment',
                 roomPhase: 'connected',
                 durableObjectReplayExpected: true,
               },
@@ -2311,7 +2311,7 @@ describe('sessionEvents', () => {
                 urlProtocol: 'https',
                 urlPath: '/review?step=1',
                 knownEmbedBlocked: false,
-                surface: 'win95',
+                surface: 'assessment',
                 roomPhase: 'connected',
                 durableObjectReplayExpected: true,
               },
@@ -2332,13 +2332,13 @@ describe('sessionEvents', () => {
               minimized: false,
               evidence: {
                 source: 'window_state_client_submit',
-                stateSource: 'win95_taskbar',
+                stateSource: 'assessment_taskbar',
                 actor: 'guest',
                 windowId: 'browser',
                 action: 'restore_or_focus',
                 windowStateChangeId: 'window-state:guest:1700000001500:browser:restore_or_focus',
                 capturedAtMs: 1700000001500,
-                surface: 'win95',
+                surface: 'assessment',
                 roomPhase: 'connected',
                 durableObjectReplayExpected: true,
               },
@@ -2358,13 +2358,13 @@ describe('sessionEvents', () => {
               },
               evidence: {
                 source: 'window_data_client_submit',
-                dataSource: 'win95_window_data_sync',
+                dataSource: 'assessment_window_data_sync',
                 actor: 'guest',
                 windowId: 'notepad',
                 action: 'edit_text',
                 windowDataUpdateId: 'window-data:guest:1700000002500:notepad:edit_text',
                 capturedAtMs: 1700000002500,
-                surface: 'win95',
+                surface: 'assessment',
                 roomPhase: 'connected',
                 dataKeys: ['text'],
                 dataValueFingerprints: { text: 'data_81a94acf' },
@@ -2435,7 +2435,7 @@ describe('sessionEvents', () => {
                 messageCreatedAt: 1700000002000,
                 messageLength: 'I found the retry bug in the queue worker.'.length,
                 deliveryStatus: 'accepted',
-                surface: 'win95',
+                surface: 'assessment',
                 roomPhase: 'connected',
                 durableObjectReplayExpected: true,
               },
@@ -2460,7 +2460,7 @@ describe('sessionEvents', () => {
                 messageCreatedAt: 1700000002050,
                 messageLength: 'This source-less chat claim should not become graph evidence.'.length,
                 deliveryStatus: 'accepted',
-                surface: 'win95',
+                surface: 'assessment',
                 roomPhase: 'connected',
                 durableObjectReplayExpected: true,
               },
@@ -2485,7 +2485,7 @@ describe('sessionEvents', () => {
                 messageCreatedAt: 1700000002100,
                 messageLength: 1,
                 deliveryStatus: 'accepted',
-                surface: 'win95',
+                surface: 'assessment',
                 roomPhase: 'connected',
                 durableObjectReplayExpected: true,
               },
@@ -2510,7 +2510,7 @@ describe('sessionEvents', () => {
                 messageCreatedAt: 1700000002150,
                 messageLength: 'This chat has a forged actor.'.length,
                 deliveryStatus: 'accepted',
-                surface: 'win95',
+                surface: 'assessment',
                 roomPhase: 'connected',
                 durableObjectReplayExpected: true,
               },
@@ -2539,9 +2539,9 @@ describe('sessionEvents', () => {
                 previousEnabled: true,
                 enabled: false,
                 action: 'disabled',
-                surface: 'win95',
+                surface: 'assessment',
                 roomPhase: 'connected',
-                controlSurface: 'win95_video_window',
+                controlSurface: 'assessment_video_window',
                 controlAction: 'toggle',
                 mediaSource: 'local_media_stream',
                 rawMediaStreamPersisted: false,
@@ -2573,12 +2573,12 @@ describe('sessionEvents', () => {
               y: 0.61,
               updatedAt: 1700000002400,
               evidence: {
-                source: 'win95_cursor_presence_client_sample',
-                cursorEventSource: 'browser_win95_desktop_pointermove',
+                source: 'assessment_cursor_presence_client_sample',
+                cursorEventSource: 'browser_assessment_desktop_pointermove',
                 actor: 'guest',
                 cursorSampleId: 'cursor:guest:1700000002400:420:610',
                 sampledAtMs: 1700000002400,
-                surface: 'win95',
+                surface: 'assessment',
                 roomPhase: 'connected',
                 normalizedX: 0.42,
                 normalizedY: 0.61,
@@ -2604,7 +2604,7 @@ describe('sessionEvents', () => {
             },
           },
         ],
-        clippyPromptActivityLog: [
+        agentPromptActivityLog: [
           {
             role: 'HOST',
             recordedAt: 1700000003000,
@@ -2613,9 +2613,9 @@ describe('sessionEvents', () => {
               clientId: 'host-client',
               createdAt: 1700000003000,
               source: 'system',
-              promptEventSource: 'browser_proactive_clippy_prompt',
+              promptEventSource: 'browser_proactive_agent_prompt',
               promptTrigger: 'host_waiting_prepare_workspace',
-              surface: 'win95',
+              surface: 'assessment',
               roomPhase: 'connected',
               workspaceStatus: 'READY',
               workspaceSessionId: 'workspace-session-1',
@@ -2633,39 +2633,39 @@ describe('sessionEvents', () => {
               createdAt: 1700000003100,
               source: 'system',
               promptTrigger: 'missing_prompt_event_source',
-              surface: 'win95',
+              surface: 'assessment',
               roomPhase: 'connected',
               agentResponseClaimed: false,
               text: 'This prompt should not become graph evidence.',
             },
           },
         ],
-        clippyInteractionActivityLog: [
+        agentInteractionActivityLog: [
           {
             role: 'GUEST',
             recordedAt: 1700000003200,
             event: {
-              id: 'clippy-agent-action-valid',
+              id: 'agent-action-valid',
               clientId: 'guest-client',
               createdAt: 1700000003200,
-              eventType: 'clippy_action',
+              eventType: 'agent_action',
               actor: 'agent',
               text: 'devin suggested room action: open-terminal',
               evidence: {
-                source: 'clippy_agent_bridge',
+                source: 'agent_bridge',
                 origin: 'agent',
                 executionStatus: 'suggested',
                 actionId: 'open-terminal',
                 actionSource: 'agent_stdout',
-                actionProtocol: 'clippy_room_action_tag',
+                actionProtocol: 'agent_room_action_tag',
                 bridgeEventType: 'ROOM_ACTION',
                 agent: 'devin',
                 observedAt: '2026-06-27T21:10:00.000Z',
                 capturedAtMs: 1700000003200,
-                clippyActionEventId: 'clippy-action:agent:1700000003200:clippy_agent_bridge:agent:suggested:open-terminal',
+                agentActionEventId: 'agent-action:agent:1700000003200:agent_bridge:agent:suggested:open-terminal',
                 bridgePersisted: true,
-                browserPromptId: 'workspace-session-1:guest:prompt:1700000003210:clippy_0123abcd',
-                browserPromptFingerprint: 'clippy_0123abcd',
+                browserPromptId: 'workspace-session-1:guest:prompt:1700000003210:agent_0123abcd',
+                browserPromptFingerprint: 'agent_0123abcd',
                 browserPromptTimestamp: 1700000003210,
                 browserPromptLength: 'Can you inspect the failing test?'.length,
                 durableObjectReplayExpected: true,
@@ -2676,27 +2676,27 @@ describe('sessionEvents', () => {
             role: 'GUEST',
             recordedAt: 1700000003205,
             event: {
-              id: 'clippy-agent-action-malformed-prompt-ref',
+              id: 'agent-action-malformed-prompt-ref',
               clientId: 'guest-client',
               createdAt: 1700000003205,
-              eventType: 'clippy_action',
+              eventType: 'agent_action',
               actor: 'agent',
               text: 'devin suggested room action: open-terminal',
               evidence: {
-                source: 'clippy_agent_bridge',
+                source: 'agent_bridge',
                 origin: 'agent',
                 executionStatus: 'suggested',
                 actionId: 'open-terminal',
                 actionSource: 'agent_stdout',
-                actionProtocol: 'clippy_room_action_tag',
+                actionProtocol: 'agent_room_action_tag',
                 bridgeEventType: 'ROOM_ACTION',
                 agent: 'devin',
                 observedAt: '2026-06-27T21:10:00.000Z',
                 capturedAtMs: 1700000003205,
-                clippyActionEventId: 'clippy-action:agent:1700000003205:clippy_agent_bridge:agent:suggested:open-terminal',
+                agentActionEventId: 'agent-action:agent:1700000003205:agent_bridge:agent:suggested:open-terminal',
                 bridgePersisted: true,
                 browserPromptId: 'malformed-prompt-ref',
-                browserPromptFingerprint: 'clippy_0123abcd',
+                browserPromptFingerprint: 'agent_0123abcd',
                 browserPromptTimestamp: 1700000003210,
                 browserPromptLength: 'Can you inspect the failing test?'.length,
                 durableObjectReplayExpected: true,
@@ -2707,25 +2707,25 @@ describe('sessionEvents', () => {
             role: 'GUEST',
             recordedAt: 1700000003210,
             event: {
-              id: 'clippy-user-chat-valid',
+              id: 'agent-user-chat-valid',
               clientId: 'guest-client',
               createdAt: 1700000003210,
               eventType: 'ai_chat_user',
               actor: 'guest',
               text: 'Can you inspect the failing test?',
               evidence: {
-                source: 'clippy_agent_chat_client_submit',
-                agentChatEventSource: 'browser_clippy_chat_window',
+                source: 'agent_chat_client_submit',
+                agentChatEventSource: 'browser_agent_chat_window',
                 bridgeMessageType: 'CHAT',
-                bridgeProtocol: 'clippy_dev_container_ws',
-                promptId: 'workspace-session-1:guest:prompt:1700000003210:clippy_0123abcd',
-                promptFingerprint: 'clippy_0123abcd',
+                bridgeProtocol: 'agent_dev_container_ws',
+                promptId: 'workspace-session-1:guest:prompt:1700000003210:agent_0123abcd',
+                promptFingerprint: 'agent_0123abcd',
                 promptLength: 'Can you inspect the failing test?'.length,
                 promptTimestamp: 1700000003210,
                 browserQueuedBridgeMessage: true,
                 bridgeDeliveryConfirmed: false,
                 agent: null,
-                surface: 'win95',
+                surface: 'assessment',
                 roomPhase: 'connected',
                 workspaceStatus: 'READY',
                 workspaceSessionId: 'workspace-session-1',
@@ -2740,24 +2740,24 @@ describe('sessionEvents', () => {
             role: 'GUEST',
             recordedAt: 1700000003215,
             event: {
-              id: 'clippy-delivered-user-chat',
+              id: 'agent-delivered-user-chat',
               clientId: 'guest-client',
               createdAt: 1700000003215,
               eventType: 'ai_chat_user',
               actor: 'guest',
               text: 'Can you inspect the failing test?',
               evidence: {
-                source: 'clippy_agent_chat_client_submit',
-                agentChatEventSource: 'browser_clippy_chat_window',
+                source: 'agent_chat_client_submit',
+                agentChatEventSource: 'browser_agent_chat_window',
                 bridgeMessageType: 'CHAT',
-                bridgeProtocol: 'clippy_dev_container_ws',
-                promptId: 'workspace-session-1:guest:prompt:1700000003215:clippy_0123abcd',
-                promptFingerprint: 'clippy_0123abcd',
+                bridgeProtocol: 'agent_dev_container_ws',
+                promptId: 'workspace-session-1:guest:prompt:1700000003215:agent_0123abcd',
+                promptFingerprint: 'agent_0123abcd',
                 promptLength: 'Can you inspect the failing test?'.length,
                 promptTimestamp: 1700000003215,
                 deliveredToAgentBridge: true,
                 agent: null,
-                surface: 'win95',
+                surface: 'assessment',
                 roomPhase: 'connected',
                 workspaceStatus: 'READY',
                 workspaceSessionId: 'workspace-session-1',
@@ -2772,25 +2772,25 @@ describe('sessionEvents', () => {
             role: 'GUEST',
             recordedAt: 1700000003218,
             event: {
-              id: 'clippy-attributed-user-chat',
+              id: 'agent-attributed-user-chat',
               clientId: 'guest-client',
               createdAt: 1700000003218,
               eventType: 'ai_chat_user',
               actor: 'guest',
               text: 'Can you inspect the failing test?',
               evidence: {
-                source: 'clippy_agent_chat_client_submit',
-                agentChatEventSource: 'browser_clippy_chat_window',
+                source: 'agent_chat_client_submit',
+                agentChatEventSource: 'browser_agent_chat_window',
                 bridgeMessageType: 'CHAT',
-                bridgeProtocol: 'clippy_dev_container_ws',
-                promptId: 'workspace-session-1:guest:prompt:1700000003218:clippy_0123abcd',
-                promptFingerprint: 'clippy_0123abcd',
+                bridgeProtocol: 'agent_dev_container_ws',
+                promptId: 'workspace-session-1:guest:prompt:1700000003218:agent_0123abcd',
+                promptFingerprint: 'agent_0123abcd',
                 promptLength: 'Can you inspect the failing test?'.length,
                 promptTimestamp: 1700000003218,
                 browserQueuedBridgeMessage: true,
                 bridgeDeliveryConfirmed: false,
                 agent: 'devin',
-                surface: 'win95',
+                surface: 'assessment',
                 roomPhase: 'connected',
                 workspaceStatus: 'READY',
                 workspaceSessionId: 'workspace-session-1',
@@ -2805,14 +2805,14 @@ describe('sessionEvents', () => {
             role: 'GUEST',
             recordedAt: 1700000003220,
             event: {
-              id: 'clippy-agent-action-legacy-protocol',
+              id: 'agent-action-legacy-protocol',
               clientId: 'guest-client',
               createdAt: 1700000003220,
-              eventType: 'clippy_action',
+              eventType: 'agent_action',
               actor: 'agent',
               text: 'devin suggested room action: open-terminal',
               evidence: {
-                source: 'clippy_agent_bridge',
+                source: 'agent_bridge',
                 origin: 'agent',
                 executionStatus: 'suggested',
                 actionId: 'open-terminal',
@@ -2822,7 +2822,7 @@ describe('sessionEvents', () => {
                 agent: 'devin',
                 observedAt: '2026-06-27T21:10:00.000Z',
                 capturedAtMs: 1700000003220,
-                clippyActionEventId: 'clippy-action:agent:1700000003220:clippy_agent_bridge:agent:suggested:open-terminal',
+                agentActionEventId: 'agent-action:agent:1700000003220:agent_bridge:agent:suggested:open-terminal',
                 bridgePersisted: true,
                 durableObjectReplayExpected: true,
               },
@@ -2832,24 +2832,24 @@ describe('sessionEvents', () => {
             role: 'HOST',
             recordedAt: 1700000003300,
             event: {
-              id: 'clippy-attributed-ui-action',
+              id: 'agent-attributed-ui-action',
               clientId: 'host-client',
               createdAt: 1700000003300,
-              eventType: 'clippy_action',
+              eventType: 'agent_action',
               actor: 'host',
-              text: 'Clippy action: start recording',
+              text: 'Agent action: start recording',
               evidence: {
-                source: 'clippy_prompt_ui',
+                source: 'agent_prompt_ui',
                 actionId: 'start-recording',
                 origin: 'prompt',
                 executedBy: 'host',
-                actionSource: 'clippy_prompt_ui',
+                actionSource: 'agent_prompt_ui',
                 executionStatus: 'executed',
                 capturedAtMs: 1700000003300,
-                clippyActionEventId: 'clippy-action:host:1700000003300:clippy_prompt_ui:prompt:executed:start-recording',
+                agentActionEventId: 'agent-action:host:1700000003300:agent_prompt_ui:prompt:executed:start-recording',
                 agent: 'devin',
                 agentResponseClaimed: false,
-                surface: 'win95',
+                surface: 'assessment',
                 roomPhase: 'connected',
                 workspaceStatus: 'READY',
                 workspaceSessionId: 'workspace-session-1',
@@ -2877,7 +2877,7 @@ describe('sessionEvents', () => {
                 updatedAt: 1700000004000,
               },
               evidence: {
-                source: 'win95_shared_file_system',
+                source: 'assessment_shared_file_system',
                 fileEventSource: 'browser_client_submit',
                 fileChangeId: 'file:guest:1700000004000:upsert:notepad',
                 actor: 'guest',
@@ -2885,7 +2885,7 @@ describe('sessionEvents', () => {
                 fileId: 'notepad',
                 fileName: 'notes.txt',
                 fileKind: 'text',
-                surface: 'win95',
+                surface: 'assessment',
                 roomPhase: 'connected',
                 capturedAtMs: 1700000004000,
                 durableObjectReplayExpected: true,
@@ -2911,7 +2911,7 @@ describe('sessionEvents', () => {
                 updatedAt: 1700000004000,
               },
               evidence: {
-                source: 'win95_shared_file_system',
+                source: 'assessment_shared_file_system',
                 fileEventSource: 'browser_client_submit',
                 fileChangeId: 'file:guest:1700000005000:delete:notepad',
                 actor: 'guest',
@@ -2919,7 +2919,7 @@ describe('sessionEvents', () => {
                 fileId: 'notepad',
                 fileName: 'notes.txt',
                 fileKind: 'text',
-                surface: 'win95',
+                surface: 'assessment',
                 roomPhase: 'connected',
                 capturedAtMs: 1700000005000,
                 durableObjectReplayExpected: true,
@@ -2944,7 +2944,7 @@ describe('sessionEvents', () => {
                 updatedAt: 1700000006000,
               },
               evidence: {
-                source: 'win95_shared_file_system',
+                source: 'assessment_shared_file_system',
                 fileEventSource: 'browser_client_submit',
                 fileChangeId: 'file:guest:1700000006000:upsert:paint',
                 actor: 'guest',
@@ -2952,7 +2952,7 @@ describe('sessionEvents', () => {
                 fileId: 'paint',
                 fileName: 'Sketch.pipe-paint',
                 fileKind: 'paint',
-                surface: 'win95',
+                surface: 'assessment',
                 roomPhase: 'connected',
                 capturedAtMs: 1700000006000,
                 durableObjectReplayExpected: true,
@@ -2978,7 +2978,7 @@ describe('sessionEvents', () => {
                 updatedAt: 1700000006000,
               },
               evidence: {
-                source: 'win95_shared_file_system',
+                source: 'assessment_shared_file_system',
                 fileEventSource: 'browser_client_submit',
                 fileChangeId: 'file:guest:1700000007000:delete:paint',
                 actor: 'guest',
@@ -2986,7 +2986,7 @@ describe('sessionEvents', () => {
                 fileId: 'paint',
                 fileName: 'Sketch.pipe-paint',
                 fileKind: 'paint',
-                surface: 'win95',
+                surface: 'assessment',
                 roomPhase: 'connected',
                 capturedAtMs: 1700000007000,
                 durableObjectReplayExpected: true,
@@ -3018,19 +3018,20 @@ describe('sessionEvents', () => {
         sessionId: 'meeting--room-sync',
       });
 
-      expect(events).toEqual([
+      expect(events).toHaveLength(16);
+      expect(events).toEqual(expect.arrayContaining([
         expect.objectContaining({
           type: 'room_surface_change',
           actor: 'host',
-          text: 'Room surface changed to win95',
+          text: 'Room surface changed to assessment',
           candidateId: 'cand-room',
           sessionId: 'meeting--room-sync',
           timestamp: 1700000000,
           properties: expect.objectContaining({
             source: 'room_surface_control',
             surfaceControlEventSource: 'browser_room_surface_toggle',
-            surfaceChangeId: 'surface:host:1700000000000:standard:win95',
-            surface: 'win95',
+            surfaceChangeId: 'surface:host:1700000000000:standard:assessment',
+            surface: 'assessment',
             previousSurface: 'standard',
             action: 'enter_desktop',
             roomPhase: 'connected',
@@ -3051,7 +3052,7 @@ describe('sessionEvents', () => {
             urlFingerprint: 'nav_54d2c495',
             urlHost: 'example.com',
             urlProtocol: 'https',
-            surface: 'win95',
+            surface: 'assessment',
             roomPhase: 'connected',
           }),
         }),
@@ -3065,15 +3066,15 @@ describe('sessionEvents', () => {
           properties: expect.objectContaining({
             roomActivitySource: 'durable_object',
             roomActivityKind: 'desktop',
-            source: 'win95_start_menu_control',
-            menuEventSource: 'win95_start_button',
+            source: 'assessment_start_menu_control',
+            menuEventSource: 'assessment_start_button',
             actor: 'guest',
             menuId: 'start',
             action: 'open',
             open: true,
-            startMenuEventId: 'start-menu:guest:1700000001300:open:win95_start_button',
+            startMenuEventId: 'start-menu:guest:1700000001300:open:assessment_start_button',
             capturedAtMs: 1700000001300,
-            surface: 'win95',
+            surface: 'assessment',
             roomPhase: 'connected',
             durableObjectReplayExpected: true,
           }),
@@ -3123,7 +3124,7 @@ describe('sessionEvents', () => {
             messageCreatedAt: 1700000002000,
             messageLength: 'I found the retry bug in the queue worker.'.length,
             deliveryStatus: 'accepted',
-            surface: 'win95',
+            surface: 'assessment',
             roomPhase: 'connected',
             durableObjectReplayExpected: true,
           }),
@@ -3135,12 +3136,12 @@ describe('sessionEvents', () => {
           properties: expect.objectContaining({
             roomActivitySource: 'durable_object',
             roomActivityKind: 'cursor_presence',
-            source: 'win95_cursor_presence_client_sample',
-            cursorEventSource: 'browser_win95_desktop_pointermove',
+            source: 'assessment_cursor_presence_client_sample',
+            cursorEventSource: 'browser_assessment_desktop_pointermove',
             actor: 'guest',
             cursorSampleId: 'cursor:guest:1700000002400:420:610',
             sampledAtMs: 1700000002400,
-            surface: 'win95',
+            surface: 'assessment',
             roomPhase: 'connected',
             normalizedX: 0.42,
             normalizedY: 0.61,
@@ -3169,9 +3170,9 @@ describe('sessionEvents', () => {
             previousEnabled: true,
             enabled: false,
             action: 'disabled',
-            surface: 'win95',
+            surface: 'assessment',
             roomPhase: 'connected',
-            controlSurface: 'win95_video_window',
+            controlSurface: 'assessment_video_window',
             controlAction: 'toggle',
             mediaSource: 'local_media_stream',
             rawMediaStreamPersisted: false,
@@ -3186,7 +3187,7 @@ describe('sessionEvents', () => {
           properties: expect.objectContaining({
             roomActivitySource: 'durable_object',
             source: 'window_data_client_submit',
-            dataSource: 'win95_window_data_sync',
+            dataSource: 'assessment_window_data_sync',
             action: 'edit_text',
             windowDataUpdateId: 'window-data:guest:1700000002500:notepad:edit_text',
             capturedAtMs: 1700000002500,
@@ -3200,50 +3201,50 @@ describe('sessionEvents', () => {
           text: 'Can you inspect the failing test?',
           properties: expect.objectContaining({
             roomActivitySource: 'durable_object',
-            roomActivityKind: 'clippy_interaction',
-            source: 'clippy_agent_chat_client_submit',
-            agentChatEventSource: 'browser_clippy_chat_window',
+            roomActivityKind: 'agent_interaction',
+            source: 'agent_chat_client_submit',
+            agentChatEventSource: 'browser_agent_chat_window',
             bridgeMessageType: 'CHAT',
-            bridgeProtocol: 'clippy_dev_container_ws',
-            promptId: 'workspace-session-1:guest:prompt:1700000003210:clippy_0123abcd',
+            bridgeProtocol: 'agent_dev_container_ws',
+            promptId: 'workspace-session-1:guest:prompt:1700000003210:agent_0123abcd',
             browserQueuedBridgeMessage: true,
             bridgeDeliveryConfirmed: false,
             agent: null,
-            roomEventId: 'clippy-user-chat-valid',
+            roomEventId: 'agent-user-chat-valid',
             workspaceSessionId: 'workspace-session-1',
           }),
         }),
         expect.objectContaining({
-          type: 'clippy_action',
+          type: 'agent_action',
           actor: 'agent',
           text: 'devin suggested room action: open-terminal',
           properties: expect.objectContaining({
             roomActivitySource: 'durable_object',
-            source: 'clippy_agent_bridge',
+            source: 'agent_bridge',
             origin: 'agent',
             executionStatus: 'suggested',
             actionId: 'open-terminal',
             actionSource: 'agent_stdout',
-            actionProtocol: 'clippy_room_action_tag',
+            actionProtocol: 'agent_room_action_tag',
             bridgeEventType: 'ROOM_ACTION',
             agent: 'devin',
-            clippyActionEventId: 'clippy-action:agent:1700000003200:clippy_agent_bridge:agent:suggested:open-terminal',
+            agentActionEventId: 'agent-action:agent:1700000003200:agent_bridge:agent:suggested:open-terminal',
             bridgePersisted: true,
-            browserPromptId: 'workspace-session-1:guest:prompt:1700000003210:clippy_0123abcd',
-            browserPromptFingerprint: 'clippy_0123abcd',
+            browserPromptId: 'workspace-session-1:guest:prompt:1700000003210:agent_0123abcd',
+            browserPromptFingerprint: 'agent_0123abcd',
             browserPromptTimestamp: 1700000003210,
             browserPromptLength: 'Can you inspect the failing test?'.length,
           }),
         }),
         expect.objectContaining({
-          type: 'clippy_prompt',
+          type: 'agent_prompt',
           actor: 'host',
           text: 'Would you like to open the workspace?',
           properties: expect.objectContaining({
-            source: 'clippy_prompt_client_submit',
-            promptEventSource: 'browser_proactive_clippy_prompt',
+            source: 'agent_prompt_client_submit',
+            promptEventSource: 'browser_proactive_agent_prompt',
             promptTrigger: 'host_waiting_prepare_workspace',
-            surface: 'win95',
+            surface: 'assessment',
             roomPhase: 'connected',
             workspaceStatus: 'READY',
             workspaceSessionId: 'workspace-session-1',
@@ -3272,7 +3273,7 @@ describe('sessionEvents', () => {
           actor: 'guest',
           text: 'Sketch.pipe-paint',
         }),
-      ]);
+      ]));
       const restoredWindowEvent = events.find((event) => (
         event.type === 'window_update'
         && event.properties?.windowStateChangeId === 'window-state:guest:1700000001500:browser:restore_or_focus'
@@ -3280,13 +3281,13 @@ describe('sessionEvents', () => {
       expect(restoredWindowEvent?.properties).toMatchObject({
         roomActivitySource: 'durable_object',
         source: 'window_state_client_submit',
-        stateSource: 'win95_taskbar',
+        stateSource: 'assessment_taskbar',
         actor: 'guest',
         windowId: 'browser',
         action: 'restore_or_focus',
         windowStateChangeId: 'window-state:guest:1700000001500:browser:restore_or_focus',
         capturedAtMs: 1700000001500,
-        surface: 'win95',
+        surface: 'assessment',
         roomPhase: 'connected',
         durableObjectReplayExpected: true,
         stateKeys: ['focused', 'minimized', 'x', 'y'],
@@ -3304,7 +3305,7 @@ describe('sessionEvents', () => {
       ));
       expect(upsertFileEvent?.properties).toMatchObject({
         roomActivitySource: 'durable_object',
-        source: 'win95_shared_file_system',
+        source: 'assessment_shared_file_system',
         fileEventSource: 'browser_client_submit',
         fileChangeId: 'file:guest:1700000004000:upsert:notepad',
         actor: 'guest',
@@ -3312,7 +3313,7 @@ describe('sessionEvents', () => {
         fileId: 'notepad',
         fileName: 'notes.txt',
         fileKind: 'text',
-        surface: 'win95',
+        surface: 'assessment',
         roomPhase: 'connected',
         capturedAtMs: 1700000004000,
         durableObjectReplayExpected: true,
@@ -3327,7 +3328,7 @@ describe('sessionEvents', () => {
       ));
       expect(deleteFileEvent?.properties).toMatchObject({
         roomActivitySource: 'durable_object',
-        source: 'win95_shared_file_system',
+        source: 'assessment_shared_file_system',
         fileEventSource: 'browser_client_submit',
         fileChangeId: 'file:guest:1700000005000:delete:notepad',
         actor: 'guest',
@@ -3335,7 +3336,7 @@ describe('sessionEvents', () => {
         fileId: 'notepad',
         fileName: 'notes.txt',
         fileKind: 'text',
-        surface: 'win95',
+        surface: 'assessment',
         roomPhase: 'connected',
         capturedAtMs: 1700000005000,
         durableObjectReplayExpected: true,
@@ -3352,7 +3353,7 @@ describe('sessionEvents', () => {
       ));
       expect(upsertPaintEvent?.properties).toMatchObject({
         roomActivitySource: 'durable_object',
-        source: 'win95_shared_file_system',
+        source: 'assessment_shared_file_system',
         fileEventSource: 'browser_client_submit',
         fileChangeId: 'file:guest:1700000006000:upsert:paint',
         actor: 'guest',
@@ -3360,7 +3361,7 @@ describe('sessionEvents', () => {
         fileId: 'paint',
         fileName: 'Sketch.pipe-paint',
         fileKind: 'paint',
-        surface: 'win95',
+        surface: 'assessment',
         roomPhase: 'connected',
         capturedAtMs: 1700000006000,
         durableObjectReplayExpected: true,
@@ -3376,7 +3377,7 @@ describe('sessionEvents', () => {
       ));
       expect(deletePaintEvent?.properties).toMatchObject({
         roomActivitySource: 'durable_object',
-        source: 'win95_shared_file_system',
+        source: 'assessment_shared_file_system',
         fileEventSource: 'browser_client_submit',
         fileChangeId: 'file:guest:1700000007000:delete:paint',
         actor: 'guest',
@@ -3384,7 +3385,7 @@ describe('sessionEvents', () => {
         fileId: 'paint',
         fileName: 'Sketch.pipe-paint',
         fileKind: 'paint',
-        surface: 'win95',
+        surface: 'assessment',
         roomPhase: 'connected',
         capturedAtMs: 1700000007000,
         durableObjectReplayExpected: true,
@@ -3395,11 +3396,11 @@ describe('sessionEvents', () => {
       expect(deletePaintEvent?.properties).not.toHaveProperty('deletedContentPreview');
       expect(events).not.toEqual(expect.arrayContaining([
         expect.objectContaining({
-          type: 'clippy_action',
+          type: 'agent_action',
           actor: 'host',
           properties: expect.objectContaining({
-            roomEventId: 'clippy-attributed-ui-action',
-            source: 'clippy_prompt_ui',
+            roomEventId: 'agent-attributed-ui-action',
+            source: 'agent_prompt_ui',
             agent: 'devin',
           }),
         }),
@@ -3409,8 +3410,8 @@ describe('sessionEvents', () => {
           type: 'ai_chat_user',
           actor: 'guest',
           properties: expect.objectContaining({
-            roomEventId: 'clippy-delivered-user-chat',
-            source: 'clippy_agent_chat_client_submit',
+            roomEventId: 'agent-delivered-user-chat',
+            source: 'agent_chat_client_submit',
             deliveredToAgentBridge: true,
           }),
         }),
@@ -3420,8 +3421,8 @@ describe('sessionEvents', () => {
           type: 'ai_chat_user',
           actor: 'guest',
           properties: expect.objectContaining({
-            roomEventId: 'clippy-attributed-user-chat',
-            source: 'clippy_agent_chat_client_submit',
+            roomEventId: 'agent-attributed-user-chat',
+            source: 'agent_chat_client_submit',
             agent: 'devin',
           }),
         }),
@@ -3475,7 +3476,7 @@ describe('sessionEvents', () => {
                 recordingLifecycleKind: 'start',
                 recordingStateEventId: 'recording:host:1700000000500:start:recording',
                 capturedAtMs: 1700000000500,
-                surface: 'win95',
+                surface: 'assessment',
                 roomPhase: 'connected',
                 recordingStatus: 'recording',
                 recordingActive: true,
@@ -3524,7 +3525,7 @@ describe('sessionEvents', () => {
                 recordingLifecycleKind: 'stop',
                 recordingStateEventId: 'recording:host:1700000000700:stop:failed',
                 capturedAtMs: 1700000000700,
-                surface: 'win95',
+                surface: 'assessment',
                 roomPhase: 'connected',
                 recordingStatus: 'failed',
                 recordingActive: false,
@@ -3568,7 +3569,7 @@ describe('sessionEvents', () => {
                 recordingLifecycleKind: 'stop',
                 recordingStateEventId: 'recording:host:1700000000800:stop:failed',
                 capturedAtMs: 1700000000800,
-                surface: 'win95',
+                surface: 'assessment',
                 roomPhase: 'connected',
                 recordingStatus: 'failed',
                 recordingActive: false,

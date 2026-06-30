@@ -3,22 +3,22 @@
  * Agent Bridge — runs inside the dev container alongside code-server.
  *
  * Responsibilities:
- *   - WebSocket server on port 8081 for Clippy UI to connect to
+ *   - WebSocket server on port 8081 for Agent UI to connect to
  *   - Manages agent process lifecycle (Claude Code, Aider, etc.)
- *   - Relays chat messages between Clippy UI and the agent
+ *   - Relays chat messages between Agent UI and the agent
  *   - Watches workspace filesystem for changes
  *   - Handles agent authentication (OAuth callback server on port 8082)
  *   - Reports agent status (idle/thinking/working/auth-needed)
  *
- * Message protocol (Clippy ↔ Agent Bridge):
- *   Clippy → Bridge:
+ * Message protocol (Agent ↔ Agent Bridge):
+ *   Agent → Bridge:
  *     { type: 'CHAT', text: '...' }
  *     { type: 'AUTH_START', agent: 'claude-code' }
  *     { type: 'AUTH_CALLBACK', code: '...', state: '...' }
  *     { type: 'AGENT_STOP' }
  *     { type: 'GET_STATUS' }
  *
- *   Bridge → Clippy:
+ *   Bridge → Agent:
  *     { type: 'CHAT_RESPONSE', text: '...' }
  *     { type: 'AGENT_STATUS', status: 'idle'|'thinking'|'working'|'auth_needed' }
  *     { type: 'AUTH_NEEDED', authUrl: '...', agent: '...' }

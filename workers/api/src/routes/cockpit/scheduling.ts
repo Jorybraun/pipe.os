@@ -153,7 +153,7 @@ interface ScheduledInterviewRoomFeatures {
   videoEnabled: boolean;
   workspaceEnabled: boolean;
   recordingEnabled: boolean;
-  clippyEnabled: boolean;
+  agentEnabled: boolean;
 }
 
 export function scheduledInterviewRoomFeatures(
@@ -164,7 +164,7 @@ export function scheduledInterviewRoomFeatures(
     videoEnabled: true,
     workspaceEnabled: workspaceAssessment,
     recordingEnabled: true,
-    clippyEnabled: workspaceAssessment,
+    agentEnabled: workspaceAssessment,
   };
 }
 
@@ -3508,7 +3508,7 @@ async function ensureScheduledInterviewRoomLinks(
       `INSERT INTO meetings
        (id, owner_id, title, description, status, scheduled_at, meeting_type,
         scheduled_interview_id, scheduling_provider, external_event_id,
-        video_enabled, workspace_enabled, recording_enabled, clippy_enabled,
+        video_enabled, workspace_enabled, recording_enabled, agent_enabled,
         created_at, updated_at)
        VALUES (?1, ?2, ?3, ?4, 'SCHEDULED', ?5, 'INTERVIEW', ?6, ?7, ?8, ?9, ?10, ?11, ?12, ?13, ?13)`,
     ).bind(
@@ -3523,7 +3523,7 @@ async function ensureScheduledInterviewRoomLinks(
       features.videoEnabled ? 1 : 0,
       features.workspaceEnabled ? 1 : 0,
       features.recordingEnabled ? 1 : 0,
-      features.clippyEnabled ? 1 : 0,
+      features.agentEnabled ? 1 : 0,
       now,
     ).run();
     meeting = { id: meetingId };
@@ -3547,7 +3547,7 @@ async function ensureScheduledInterviewRoomLinks(
               video_enabled = ?6,
               workspace_enabled = ?7,
               recording_enabled = ?8,
-              clippy_enabled = ?9,
+              agent_enabled = ?9,
               updated_at = ?10
         WHERE id = ?11`,
     ).bind(
@@ -3559,7 +3559,7 @@ async function ensureScheduledInterviewRoomLinks(
       features.videoEnabled ? 1 : 0,
       features.workspaceEnabled ? 1 : 0,
       features.recordingEnabled ? 1 : 0,
-      features.clippyEnabled ? 1 : 0,
+      features.agentEnabled ? 1 : 0,
       now,
       meeting.id,
     ).run();

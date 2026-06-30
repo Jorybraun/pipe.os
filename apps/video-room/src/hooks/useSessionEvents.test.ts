@@ -139,7 +139,7 @@ describe('useSessionEvents', () => {
 
     act(() => {
       result.current.capture('ai_chat_agent', 'Agent suggested opening tests.', 'agent', {
-        source: 'clippy_agent_bridge',
+        source: 'agent_bridge',
       });
     });
 
@@ -207,8 +207,8 @@ describe('useSessionEvents', () => {
     }));
 
     act(() => {
-      result.current.capture('clippy_action', 'AI assistant opened', 'host', {
-        source: 'clippy_tray_ui',
+      result.current.capture('agent_action', 'AI assistant opened', 'host', {
+        source: 'agent_tray_ui',
         agentResponseClaimed: false,
       });
     });
@@ -232,11 +232,11 @@ describe('useSessionEvents', () => {
       };
     };
     expect(parsedPayload).toMatchObject({
-      type: 'clippy_action',
+      type: 'agent_action',
       text: 'AI assistant opened',
       actor: 'host',
       properties: {
-        source: 'clippy_tray_ui',
+        source: 'agent_tray_ui',
         agentResponseClaimed: false,
         clientCapturedAtMs: 1782600720000,
       },

@@ -1,7 +1,7 @@
 import type { RoomPhase, RoomWorkspace } from '../types';
 
 export type RoomEvidenceActor = 'host' | 'guest';
-export type RoomEvidenceSurface = 'standard' | 'win95';
+export type RoomEvidenceSurface = 'standard' | 'assessment';
 
 const SHA256_HEX_RE = /^[a-f0-9]{64}$/i;
 const WORKSPACE_DIAGNOSTIC_LIMIT = 500;
@@ -175,7 +175,7 @@ export function buildCodeServerFileChangeEvidence(input: {
     text: filePath,
     properties: {
       source: 'code_server_workspace',
-      observedBy: 'clippy_agent_bridge',
+      observedBy: 'agent_bridge',
       bridgeEventType: 'FILE_CHANGED',
       editorSurface: 'code-server',
       codeServerFileChangeId,

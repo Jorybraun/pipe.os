@@ -1,8 +1,8 @@
 import { useEffect, useRef, useState, useCallback } from 'react';
 import {
-  buildClippyBrowserPromptIdentity,
-  type ClippyPromptActor,
-} from '../lib/clippyPromptIdentity';
+  buildAgentBrowserPromptIdentity,
+  type AgentPromptActor,
+} from '../lib/agentPromptIdentity';
 import { redactAgentDiagnosticText } from '../lib/agentDiagnosticRedaction';
 
 export type AgentStatus = 'starting' | 'idle' | 'thinking' | 'working' | 'auth_needed' | 'disconnected';
@@ -66,7 +66,7 @@ export interface AgentRoomAction {
   source?: 'agent_stdout_action' | 'agent_api_response_action' | 'bridge_observation';
   agentName?: string;
   bridgeEventType?: 'CHAT_RESPONSE' | 'FILE_CHANGED' | 'ROOM_ACTION';
-  protocol?: 'bridge_actions_field' | 'clippy_room_action_tag' | 'workspace_file_observation';
+  protocol?: 'bridge_actions_field' | 'agent_room_action_tag' | 'workspace_file_observation';
   observedAt?: string;
   persisted?: boolean;
   browserPromptId?: string;
@@ -152,7 +152,7 @@ export interface AgentConnectionState {
 export interface UseAgentConnectionOptions {
   wsUrl: string | null;
   enabled: boolean;
-  promptActor?: ClippyPromptActor;
+  promptActor?: AgentPromptActor;
   promptWorkspaceSessionId?: string | null;
 }
 
@@ -428,7 +428,7 @@ export function parseAgentBridgeMessage(value: unknown): ParsedAgentBridgeMessag
     const action = parseRoomAction(value, {
       source,
       bridgeEventType: 'ROOM_ACTION',
-      protocol: 'clippy_room_action_tag',
+      protocol: 'agent_room_action_tag',
       agentName,
     });
     return action ? { kind: 'room_action', action } : { kind: 'ignored' };
@@ -667,7 +667,7 @@ export function useAgentConnection({
     const trimmed = text.trim();
     if (!trimmed || !wsRef.current || wsRef.current.readyState !== WebSocket.OPEN) return null;
     const timestamp = Date.now();
-    const promptIdentity = buildClippyBrowserPromptIdentity({
+    const promptIdentity = buildAgentBrowserPromptIdentity({
       text: trimmed,
       actor: promptActor,
       timestamp,

@@ -29,7 +29,7 @@ export interface RoomMetadata {
     videoEnabled: boolean;
     workspaceEnabled: boolean;
     recordingEnabled: boolean;
-    clippyEnabled: boolean;
+    agentEnabled: boolean;
   };
 }
 

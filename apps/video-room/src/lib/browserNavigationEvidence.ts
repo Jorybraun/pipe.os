@@ -110,7 +110,7 @@ export function buildBrowserNavigationEvidence(
       knownEmbedBlocked: isKnownEmbedBlockedUrl(normalized),
       surface: input.surface,
       roomPhase: input.roomPhase,
-      durableObjectReplayExpected: input.surface === 'win95',
+      durableObjectReplayExpected: input.surface === 'assessment',
     },
   };
 }

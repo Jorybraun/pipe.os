@@ -8,8 +8,8 @@ import {
   type AgentRoomAction,
   type AgentStatus,
 } from '../hooks/useAgentConnection';
-import type { ClippyPromptActor } from '../lib/clippyPromptIdentity';
-import { buildClippyBrowserPromptIdentity } from '../lib/clippyPromptIdentity';
+import type { AgentPromptActor } from '../lib/agentPromptIdentity';
+import { buildAgentBrowserPromptIdentity } from '../lib/agentPromptIdentity';
 
 const BLOCKED_PROMPT_MESSAGES: Record<AgentPromptBlockedReason, string> = {
   workspace_required: 'The assistant could not send that because the dev workspace is not running.',
@@ -43,7 +43,7 @@ export interface AgentAssistantProps {
   agentEnabled?: boolean;
   agentUnavailableMessage?: string;
   canLaunchAgentWorkspace?: boolean;
-  promptActor?: ClippyPromptActor;
+  promptActor?: AgentPromptActor;
   promptWorkspaceSessionId?: string | null;
   openChatRequest?: number;
   onOpenBrowser?: (url: string) => void;
@@ -284,7 +284,7 @@ export function AgentAssistant({
     }
     if (!blockedPromptReason) return;
     const timestamp = Date.now();
-    const promptIdentity = buildClippyBrowserPromptIdentity({
+    const promptIdentity = buildAgentBrowserPromptIdentity({
       text,
       actor: promptActor ?? 'guest',
       timestamp,
@@ -402,7 +402,7 @@ export function AgentAssistant({
       )}
 
       {chatOpen && (
-        <section className="agent-assistant-panel" data-testid="clippy-chat">
+        <section className="agent-assistant-panel" data-testid="agent-chat">
           <header className="agent-assistant-header">
             <div>
               <span>AI assistant</span>
@@ -412,7 +412,7 @@ export function AgentAssistant({
               type="button"
               onClick={closeChat}
               aria-label="Close AI assistant"
-              data-testid="clippy-chat-close"
+              data-testid="agent-chat-close"
             >
               <X size={16} />
             </button>
@@ -445,12 +445,12 @@ export function AgentAssistant({
             {agentEnabled && !agentConn.connected && <span> - reconnecting</span>}
           </div>
 
-          <div className="agent-assistant-checklist" data-testid="clippy-bridge-checklist">
+          <div className="agent-assistant-checklist" data-testid="agent-bridge-checklist">
             {bridgeChecks.map((check) => (
               <div
                 className={`agent-assistant-check is-${check.state}`}
                 key={check.label}
-                data-testid={`clippy-bridge-check-${check.label.toLowerCase()}`}
+                data-testid={`agent-bridge-check-${check.label.toLowerCase()}`}
               >
                 <span>{check.label}</span>
                 <strong>{check.value}</strong>
@@ -462,7 +462,7 @@ export function AgentAssistant({
             <button
               className="agent-assistant-action-btn"
               onClick={handleAuthClick}
-              data-testid="clippy-open-auth-browser"
+              data-testid="agent-open-auth-browser"
             >
               Authenticate {agentDisplayName}
             </button>
@@ -473,14 +473,14 @@ export function AgentAssistant({
               <button
                 className="agent-assistant-action-btn"
                 onClick={handleAuthTerminalClick}
-                data-testid="clippy-open-auth-terminal"
+                data-testid="agent-open-auth-terminal"
               >
                 Open Devin login terminal
               </button>
               <button
                 className="agent-assistant-action-btn"
                 onClick={handleAuthClick}
-                data-testid="clippy-check-auth"
+                data-testid="agent-check-auth"
               >
                 Check Devin auth
               </button>
@@ -491,7 +491,7 @@ export function AgentAssistant({
             <button
               className="agent-assistant-action-btn"
               onClick={() => handleActionClick('launch-workspace')}
-              data-testid="clippy-launch-workspace"
+              data-testid="agent-launch-workspace"
             >
               Launch workspace
             </button>
@@ -501,7 +501,7 @@ export function AgentAssistant({
             <button
               className="agent-assistant-action-btn"
               onClick={handleOpenTerminalClick}
-              data-testid="clippy-open-terminal"
+              data-testid="agent-open-terminal"
             >
               <Terminal size={14} />
               Open terminal
@@ -518,7 +518,7 @@ export function AgentAssistant({
                 if (e.key === 'Enter') handleSendChat();
               }}
               placeholder={agentEnabled ? 'Ask the AI assistant...' : 'Connect a real agent before asking...'}
-              data-testid="clippy-chat-input"
+              data-testid="agent-chat-input"
             />
             <button
               className="agent-assistant-send"

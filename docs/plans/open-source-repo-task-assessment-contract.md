@@ -179,14 +179,14 @@ The controlling product rule remains:
   container-observed facts from being projected as fabricated Devin replies.
 - AI agent bridge/Devin room actions emitted from the real bridge stdout tag protocol
   now persist origin, bridge event type, action protocol, agent name, and
-  browser execution role in `clippy_action` evidence, so prompt-button actions
+  browser execution role in `agent_action` evidence, so prompt-button actions
   and real agent-directed desktop actions remain separate.
 - AI agent bridge/Devin process diagnostics now persist bounded and redacted bridge
   evidence for real stderr, context-primer failures, process exits, and startup
   errors, including diagnostic source, observed time, exit code, and signal
   metadata instead of leaving failures only in container logs.
 - AI assistant/Devin bridge statuses and diagnostics now preserve direct exact-text
-  `clippy_agent_status` / `clippy_agent_diagnostic` source refs in both
+  `agent_status` / `agent_diagnostic` source refs in both
   living-context and assessment evidence, so auth, startup, prompt-handoff, and
   process-failure states can be cited without unpacking the broad session event.
 - AI agent bridge/Devin context-primer and chat-prompt handoffs now persist
@@ -210,8 +210,8 @@ The controlling product rule remains:
   and direct `session-events` writes, so bridge-origin response ids and lengths
   are derived from the stored redacted stdout rather than raw agent output.
 - AI agent bridge/Devin room-action suggestions now persist directly from the bridge as
-  `clippy_action` events with `executionStatus: suggested`. Browser-side action
-  execution remains separate `clippy_action` evidence with
+  `agent_action` events with `executionStatus: suggested`. Browser-side action
+  execution remains separate `agent_action` evidence with
   `executionStatus: executed` and links back to the bridge suggestion metadata.
 - Code-server workspace create/modify/delete events are now observed by the
   container bridge and persisted as source-backed `file_change`

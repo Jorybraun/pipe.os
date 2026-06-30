@@ -48,8 +48,8 @@ describe('AgentAssistant', () => {
 
     expect(screen.getByTestId('assistant-prompt').textContent).toContain('AI assistant');
     expect(screen.getByTestId('assistant-prompt').textContent).toContain('Open the workspace');
-    expect(screen.queryByTestId('clippy-hotspot')).toBeNull();
-    expect(screen.queryByTestId('clippy-character')).toBeNull();
+    expect(screen.queryByTestId('agent-hotspot')).toBeNull();
+    expect(screen.queryByTestId('agent-character')).toBeNull();
   });
 
   it('opens the bridge panel, hides the prompt, and records blocked prompts honestly', () => {
@@ -71,12 +71,12 @@ describe('AgentAssistant', () => {
     fireEvent.click(screen.getByRole('button', { name: 'Open chat' }));
 
     expect(screen.queryByTestId('assistant-prompt')).toBeNull();
-    expect(screen.getByTestId('clippy-chat').textContent).toContain('AI assistant');
-    expect(screen.getByTestId('clippy-bridge-checklist').textContent).toContain('Workspace');
-    expect(screen.getByTestId('clippy-launch-workspace').textContent).toContain('Launch workspace');
+    expect(screen.getByTestId('agent-chat').textContent).toContain('AI assistant');
+    expect(screen.getByTestId('agent-bridge-checklist').textContent).toContain('Workspace');
+    expect(screen.getByTestId('agent-launch-workspace').textContent).toContain('Launch workspace');
     expect(onChatOpen).toHaveBeenCalledTimes(1);
 
-    fireEvent.change(screen.getByTestId('clippy-chat-input'), {
+    fireEvent.change(screen.getByTestId('agent-chat-input'), {
       target: { value: 'can you inspect the repo?' },
     });
     fireEvent.click(screen.getByRole('button', { name: 'Send' }));
@@ -86,7 +86,7 @@ describe('AgentAssistant', () => {
       deliveryStatus: 'blocked',
       blockedReason: 'workspace_required',
     }));
-    expect(screen.getByTestId('clippy-chat').textContent).toContain(
+    expect(screen.getByTestId('agent-chat').textContent).toContain(
       'The assistant could not send that because the dev workspace is not running.',
     );
   });
@@ -120,13 +120,13 @@ describe('AgentAssistant', () => {
       />,
     );
 
-    fireEvent.change(screen.getByTestId('clippy-chat-input'), {
+    fireEvent.change(screen.getByTestId('agent-chat-input'), {
       target: { value: 'summarize the failing tests' },
     });
     fireEvent.click(screen.getByRole('button', { name: 'Send' }));
 
     expect(sendMessage).toHaveBeenCalledWith('summarize the failing tests');
     expect(onUserChatMessage).toHaveBeenCalledWith(sentMessage);
-    expect(screen.getByTestId('clippy-chat').textContent).toContain('Connected to devin');
+    expect(screen.getByTestId('agent-chat').textContent).toContain('Connected to devin');
   });
 });

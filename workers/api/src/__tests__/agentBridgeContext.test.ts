@@ -24,7 +24,7 @@ describe('dev-container agent bridge context endpoint', () => {
     expect(bridgeSource).toContain('agentProcess.stdin.write');
   });
 
-  it('does not expose a local Devin auth bypass or non-agent Clippy responder', () => {
+  it('does not expose a local Devin auth bypass or non-agent Agent responder', () => {
     expect(bridgeSource).not.toContain(forbiddenAuthBypass);
     expect(bridgeSource).not.toContain('AUTH_CALLBACK');
     expect(bridgeSource).not.toContain('roomActionFromText');

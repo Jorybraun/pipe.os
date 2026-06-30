@@ -112,10 +112,10 @@ const EXPECTED_HIGH_CONFIDENCE_REF_GROUPS = [
   {
     label: 'ai_assistance',
     sourceRefTypes: [
-      'clippy_user_prompt',
-      'clippy_user_prompt_blocked',
-      'clippy_agent_response',
-      'clippy_agent_diagnostic',
+      'agent_user_prompt',
+      'agent_user_prompt_blocked',
+      'agent_response',
+      'agent_diagnostic',
       'session_chat_agent',
       'session_chat_user',
       'ai_chat_user',

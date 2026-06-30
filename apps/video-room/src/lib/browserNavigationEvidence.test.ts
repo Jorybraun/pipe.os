@@ -19,7 +19,7 @@ describe('browser navigation evidence', () => {
       windowId: 'browser',
       url: 'example.com/review?step=1',
       trigger: 'go_button',
-      surface: 'win95',
+      surface: 'assessment',
       roomPhase: 'connected',
       capturedAtMs: 1000,
     });
@@ -40,7 +40,7 @@ describe('browser navigation evidence', () => {
         urlProtocol: 'https',
         urlPath: '/review?step=1',
         knownEmbedBlocked: false,
-        surface: 'win95',
+        surface: 'assessment',
         roomPhase: 'connected',
         durableObjectReplayExpected: true,
       },
@@ -59,7 +59,7 @@ describe('browser navigation evidence', () => {
       windowId: 'browser',
       url: 'https://example.com/review',
       trigger: 'reload_button',
-      surface: 'win95',
+      surface: 'assessment',
       roomPhase: 'connected',
       capturedAtMs: 2000,
     });
@@ -68,7 +68,7 @@ describe('browser navigation evidence', () => {
       windowId: 'browser',
       url: 'https://example.com/review',
       trigger: 'external_open',
-      surface: 'win95',
+      surface: 'assessment',
       roomPhase: 'connected',
       capturedAtMs: 2000,
     });
@@ -89,7 +89,7 @@ describe('browser navigation evidence', () => {
       windowId: 'browser',
       url: 'https://example.com/from-file',
       trigger: 'file_system_link_open',
-      surface: 'win95',
+      surface: 'assessment',
       roomPhase: 'connected',
       capturedAtMs: 3000,
     });

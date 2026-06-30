@@ -48,7 +48,7 @@ describe('buildCodeEditorOpenEvidence', () => {
     const evidence = buildCodeEditorOpenEvidence({
       workspace,
       actor: 'guest',
-      surface: 'win95',
+      surface: 'assessment',
       roomPhase: 'connected',
       capturedAtMs: 1700000000000,
     });
@@ -63,7 +63,7 @@ describe('buildCodeEditorOpenEvidence', () => {
         openStatus: 'loaded',
         actor: 'guest',
         capturedAtMs: 1700000000000,
-        surface: 'win95',
+        surface: 'assessment',
         roomPhase: 'connected',
         workspaceSessionId: 'workspace-session-1',
         workspaceStatus: 'READY',
@@ -107,19 +107,19 @@ describe('buildCodeServerFileChangeEvidence', () => {
       contentPreview: 'export const answer = 42;',
       persisted: false,
       workspace,
-      surface: 'win95',
+      surface: 'assessment',
       roomPhase: 'connected',
     })).toEqual({
       eventType: 'code_editor_save',
       text: 'src/app.ts',
       properties: {
         source: 'code_server_workspace',
-        observedBy: 'clippy_agent_bridge',
+        observedBy: 'agent_bridge',
         bridgeEventType: 'FILE_CHANGED',
         editorSurface: 'code-server',
         codeServerFileChangeId: 'code-server-file:workspace-session-1:1782561600000:modified:path_cb48a478:aaaaaaaaaaaaaaaa',
         action: 'modified',
-        surface: 'win95',
+        surface: 'assessment',
         roomPhase: 'connected',
         workspaceStatus: 'READY',
         workspaceSessionId: 'workspace-session-1',
@@ -144,7 +144,7 @@ describe('buildCodeServerFileChangeEvidence', () => {
       contentPreview: 'export const answer = 42;',
       persisted: false,
       workspace,
-      surface: 'win95',
+      surface: 'assessment',
       roomPhase: 'connected',
     })).toBeNull();
   });
@@ -160,7 +160,7 @@ describe('buildCodeServerFileChangeEvidence', () => {
       contentPreview: 'export const answer = 42;',
       persisted: false,
       workspace,
-      surface: 'win95' as const,
+      surface: 'assessment' as const,
       roomPhase: 'connected' as const,
     };
 

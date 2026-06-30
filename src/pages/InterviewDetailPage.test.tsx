@@ -630,10 +630,10 @@ describe('InterviewDetailPage', () => {
             {
               label: 'ai_assistance',
               required: false,
-              sourceRefTypes: ['clippy_user_prompt', 'clippy_agent_response'],
+              sourceRefTypes: ['agent_user_prompt', 'agent_response'],
               satisfied: false,
               sourceRefKeys: [],
-              missingImpact: 'Treat AI usage as unobserved when Clippy/Devin or AI chat evidence is absent.',
+              missingImpact: 'Treat AI usage as unobserved when agent or AI chat evidence is absent.',
             },
           ],
         },

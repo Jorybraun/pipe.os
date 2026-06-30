@@ -8,7 +8,7 @@ export type AssessmentSurfaceMode =
   | 'STANDARD_VIDEO_INTERVIEW'
   | 'CODE_REVIEW'
   | RepoTaskAssessmentMode
-  | 'CLIPPY_DEVIN_INTERACTION';
+  | 'AGENT_DEVIN_INTERACTION';
 
 export type AssessmentMode =
   | AssessmentSurfaceMode
