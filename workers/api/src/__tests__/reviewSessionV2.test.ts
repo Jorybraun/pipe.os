@@ -661,6 +661,10 @@ describe('POST /rpc/get-stage-config', () => {
           },
         },
         {
+          match: 'retryable_standalone_ingestion',
+          value: null,
+        },
+        {
           match: 'LEFT JOIN candidate_ingestion',
           value: {
             resume_s3_key: 'text-intake/cand_1/stale',
@@ -1134,7 +1138,22 @@ describe('POST /rpc/get-stage-config', () => {
 
 describe('POST /rpc/submit-challenge-response', () => {
   it('queues text-intake ingestion from deterministic CV evidence without a pre-ingestion AI parse', async () => {
-    const db = fakeD1();
+    const db = fakeD1({
+      firstResponders: [
+        {
+          match: 'FROM candidates WHERE id',
+          value: {
+            id: 'cand_1',
+            invite_token: null,
+            status: 'IN_PROGRESS',
+            pipeline_id: null,
+            owner_id: 'owner_1',
+            current_stage_id: null,
+            resume_s3_key: null,
+          },
+        },
+      ],
+    });
     const aiRun = vi.fn(async () => ({ response: '{}' }));
     const storage = { put: vi.fn(async () => null) } as unknown as R2Bucket;
     const env = buildEnv({ DB: db, AI: { run: aiRun } as unknown as Ai, STORAGE: storage });
