@@ -802,6 +802,9 @@ describe('InterviewDetailPage', () => {
     expect(decision).toHaveTextContent('Score validity');
     expect(decision).toHaveTextContent('Usable with calibration');
     expect(decision).toHaveTextContent('Score, review comments, developer pushback, and match proof are present');
+    expect(decision).toHaveTextContent('Assignment trust');
+    expect(decision).toHaveTextContent('Matched');
+    expect(decision).toHaveTextContent('PIPE selected this challenge from source-backed candidate evidence');
     expect(decision).toHaveTextContent('Use the annotated lines and developer pushback to judge whether the requested changes are concrete, source-backed, and worth blocking the PR.');
     expect(decision).toHaveTextContent('Strong assessment fit');
     expect(decision).toHaveTextContent('72/100 Adequate');
@@ -828,6 +831,32 @@ describe('InterviewDetailPage', () => {
 
     const sourceProof = screen.getByText('Source proof').closest('details');
     expect(sourceProof).not.toHaveAttribute('open');
+  });
+
+  it('labels manual repo tasks as assignment evidence, not automatic candidate-fit proof', async () => {
+    mocks.api.get.mockResolvedValueOnce({
+      interview: makeInterview({
+        interviewType: 'CODE_REVIEW',
+        status: 'INVITED',
+        githubRepoUrl: 'https://github.com/pipe/manual-task',
+        githubPrNumber: null,
+        assessmentSetup: {
+          status: 'reviewable_task_assigned',
+          kind: 'manual_open_source_task',
+          source: 'recruiter_manual_override',
+          blocksPositiveAssessment: false,
+          message: 'A recruiter supplied a repo-only task packet.',
+        },
+      }),
+    });
+
+    renderDetail();
+
+    await flushAsyncUpdates();
+    const assignmentTrust = screen.getByTestId('interview-review-assignment-trust');
+    expect(assignmentTrust).toHaveTextContent('Manual task');
+    expect(assignmentTrust).toHaveTextContent('not as proof that PIPE automatically matched the candidate');
+    expect(screen.queryByTestId('interview-code-review-decision-summary')).toBeNull();
   });
 
   it('shows assessment progress as a quiet hiring-manager snapshot', async () => {

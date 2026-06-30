@@ -45,7 +45,12 @@ import {
   type CandidateSafeQualityGateVerdict,
   type CandidateSafeMatchStatus,
 } from '../lib/challengeMatching/candidateSafeQualityGate';
-import type { MatchExplanation, RoleSourceReference, SourceRef } from '../lib/challengeMatching';
+import type {
+  CandidateReviewChallengeMatch,
+  MatchExplanation,
+  RoleSourceReference,
+  SourceRef,
+} from '../lib/challengeMatching';
 import {
   STALE_WORKERS_AI_RETRY_REASON,
   maybeQueueRetryableStandaloneIngestion,
@@ -753,6 +758,16 @@ interface StandaloneReviewMatchResult {
   matchExplanation: CandidateSafeMatchExplanation | null;
 }
 
+type StandaloneSourceBackedAssignmentRow = Pick<
+  StandaloneReviewRow | StandaloneDevContainerRow,
+  'id' | 'matched_repo_id' | 'github_repo_url' | 'github_pr_number'
+>;
+
+type StandaloneReviewMatcher = (
+  db: D1Database,
+  candidateId: string,
+) => Promise<CandidateReviewChallengeMatch>;
+
 interface StandaloneReviewEvidenceReadiness {
   ready: boolean;
   terminal: boolean;
@@ -1052,7 +1067,7 @@ export function qualityGateFor(
     validatorVerdict: validatorAgent?.verdict,
     assessmentQualityVerdict: assessmentQuality?.verdict,
     assessmentQualityMetrics: assessmentQuality?.metrics,
-    requireContrastSeparation: true,
+    requireContrastSeparation: roleSourceCount > 0,
   });
 }
 
@@ -1654,15 +1669,20 @@ async function clearStandaloneReviewCachedMatch(
 }
 
 /**
- * Match a standalone code-review interview to a repo + PR from the candidate's
- * graph alone (no role context). The match is cached on the scheduled_interviews
- * row because standalone sessions have no stage/challenge rows to hold an
- * assignment.
+ * Match a standalone assessment to a repo + PR from the candidate's graph
+ * alone (no role context). The match is cached on the scheduled_interviews row
+ * because standalone sessions have no stage/challenge rows to hold an
+ * assignment. The selected PR must pass the same source-backed candidate-safe
+ * quality gate used by standalone code review.
  */
-async function matchStandaloneReview(
+async function matchStandaloneSourceBackedAssignment(
   db: D1Database,
   candidateId: string,
-  interview: StandaloneReviewRow,
+  interview: StandaloneSourceBackedAssignmentRow,
+  options: {
+    logLabel: string;
+    matcher?: StandaloneReviewMatcher;
+  },
 ): Promise<StandaloneReviewMatchResult | null> {
   if (interview.github_repo_url && interview.github_pr_number) {
     const isSourceBacked = await hasSourceBackedReviewPacket(
@@ -1686,7 +1706,7 @@ async function matchStandaloneReview(
           };
         }
         console.warn(
-          `[standaloneReview] refreshing cached automatic PR ${interview.github_pr_number} for ${candidateId} because its quality gate is ${cachedExplanation.qualityGate.verdict} and contrast score is ${contrastSeparationScore(cachedExplanation) ?? 'missing'}`,
+          `[${options.logLabel}] refreshing cached automatic PR ${interview.github_pr_number} for ${candidateId} because its quality gate is ${cachedExplanation.qualityGate.verdict} and contrast score is ${contrastSeparationScore(cachedExplanation) ?? 'missing'}`,
         );
         await clearStandaloneReviewCachedMatch(db, interview.id);
       } else {
@@ -1698,7 +1718,7 @@ async function matchStandaloneReview(
       }
     } else {
       console.warn(
-        `[standaloneReview] ignoring stale cached PR without source-backed graph context for ${candidateId}`,
+        `[${options.logLabel}] ignoring stale cached PR without source-backed graph context for ${candidateId}`,
       );
       await clearStandaloneReviewCachedMatch(db, interview.id);
     }
@@ -1707,20 +1727,21 @@ async function matchStandaloneReview(
   const readiness = await standaloneReviewEvidenceReadiness(db, candidateId);
   if (!readiness.ready) {
     console.log(
-      `[standaloneReview] waiting for candidate evidence before matching ${candidateId}: ${readiness.reason ?? 'not ready'} (status=${readiness.status ?? 'none'}, matchableNodes=${readiness.nodeCount}, rawNodes=${readiness.rawNodeCount})`,
+      `[${options.logLabel}] waiting for candidate evidence before matching ${candidateId}: ${readiness.reason ?? 'not ready'} (status=${readiness.status ?? 'none'}, matchableNodes=${readiness.nodeCount}, rawNodes=${readiness.rawNodeCount})`,
     );
     return null;
   }
 
-  const match = await matchCandidateToReviewChallenge(db, candidateId);
+  const matcher = options.matcher ?? matchCandidateToReviewChallenge;
+  const match = await matcher(db, candidateId);
   if (match.status !== 'MATCHED' || !match.repoId || !match.prNumber) {
-    console.log(`[standaloneReview] deterministic matcher returned ${match.status} for ${candidateId}`);
+    console.log(`[${options.logLabel}] deterministic matcher returned ${match.status} for ${candidateId}`);
     return null;
   }
   const matchExplanation = sanitizeMatchExplanation(match.explanation);
   if (!standaloneAutomaticMatchPasses(matchExplanation)) {
     console.warn(
-      `[standaloneReview] deterministic matcher selected ${match.repoId}#${match.prNumber} for ${candidateId}, but standalone quality gate did not pass (gate=${matchExplanation?.qualityGate.verdict ?? 'missing'}, contrast=${contrastSeparationScore(matchExplanation) ?? 'missing'})`,
+      `[${options.logLabel}] deterministic matcher selected ${match.repoId}#${match.prNumber} for ${candidateId}, but standalone quality gate did not pass (gate=${matchExplanation?.qualityGate.verdict ?? 'missing'}, contrast=${contrastSeparationScore(matchExplanation) ?? 'missing'})`,
     );
     return null;
   }
@@ -1739,6 +1760,28 @@ async function matchStandaloneReview(
     prNumber: match.prNumber,
     matchExplanation,
   };
+}
+
+async function matchStandaloneReview(
+  db: D1Database,
+  candidateId: string,
+  interview: StandaloneReviewRow,
+): Promise<StandaloneReviewMatchResult | null> {
+  return matchStandaloneSourceBackedAssignment(db, candidateId, interview, {
+    logLabel: 'standaloneReview',
+  });
+}
+
+export async function matchStandaloneDevContainerAssessment(
+  db: D1Database,
+  candidateId: string,
+  interview: StandaloneDevContainerRow,
+  matcher?: StandaloneReviewMatcher,
+): Promise<StandaloneReviewMatchResult | null> {
+  return matchStandaloneSourceBackedAssignment(db, candidateId, interview, {
+    logLabel: 'standaloneDevContainer',
+    matcher,
+  });
 }
 
 type SourceBackedReviewDiffResult = NonNullable<Awaited<ReturnType<typeof loadSourceBackedReviewDiff>>>;
@@ -2489,6 +2532,34 @@ rpcAuth.post('/get-stage-config', async (c) => {
             waitingChallenge: standaloneWaitingChallengeForReadiness(readiness),
           });
         }
+        const match = await matchStandaloneDevContainerAssessment(
+          c.env.DB,
+          candidateId,
+          standaloneAssessment,
+        );
+        if (!match) {
+          const reason = 'The deterministic repo matcher did not return a quality-gated, source-backed repo challenge.';
+          return c.json({
+            isComplete: false,
+            stageId: 'standalone-dev-container-matching',
+            candidateId,
+            stageTitle: isOpenSourceBugFix ? 'Open Source Bug Fix' : 'Dev Container Challenge',
+            mode: 'ASYNC',
+            timeLimit: null,
+            challenges: [{ type: 'WAITING_FOR_MATCH', order: 0, title: 'Building your personalized challenge' }],
+            currentIndex: 0,
+            waitingChallenge: standaloneWaitingChallenge({
+              state: 'blocked',
+              autoRefresh: false,
+              reason,
+              diagnostics: diagnosticsForStandaloneReviewReadiness(readiness, {
+                phase: 'repo_matching',
+                repoMatchingStatus: 'blocked',
+                repoMatchingDetail: reason,
+              }),
+            }),
+          });
+        }
       }
       return c.json({
         isComplete: false,
@@ -2806,7 +2877,8 @@ rpcAuth.post('/get-challenge', async (c) => {
 
     const standaloneAssessment = await getPendingStandaloneAssessment(c.env.DB, candidateId);
     if (standaloneAssessment && 'interview_type' in standaloneAssessment) {
-      const repoUrl = standaloneAssessment.github_repo_url;
+      let repoUrl = standaloneAssessment.github_repo_url;
+      let prNumber = standaloneAssessment.github_pr_number;
       if (!repoUrl) {
         const retryQueued = await maybeQueueRetryableStandaloneIngestion(c.env, optionalExecutionContext(c), candidateId);
         if (retryQueued) {
@@ -2816,9 +2888,26 @@ rpcAuth.post('/get-challenge', async (c) => {
         if (!readiness.ready) {
           return c.json(standaloneWaitingChallengeForReadiness(readiness));
         }
-        return c.json(standaloneWaitingChallenge({
-          reason: 'A source-backed repository has not been assigned to this challenge yet.',
-        }));
+        const match = await matchStandaloneDevContainerAssessment(
+          c.env.DB,
+          candidateId,
+          standaloneAssessment,
+        );
+        if (!match) {
+          const reason = 'The deterministic repo matcher did not return a quality-gated, source-backed repo challenge.';
+          return c.json(standaloneWaitingChallenge({
+            state: 'blocked',
+            autoRefresh: false,
+            reason,
+            diagnostics: diagnosticsForStandaloneReviewReadiness(readiness, {
+              phase: 'repo_matching',
+              repoMatchingStatus: 'blocked',
+              repoMatchingDetail: reason,
+            }),
+          }));
+        }
+        repoUrl = match.repoUrl;
+        prNumber = match.prNumber;
       }
       const isOpenSourceBugFix = standaloneAssessment.interview_type === 'OPEN_SOURCE_BUG_FIX';
       return c.json({
@@ -2831,7 +2920,7 @@ rpcAuth.post('/get-challenge', async (c) => {
         config: JSON.stringify({ starterCode: '' }),
         cachedDiffJson: null,
         githubPrTitle: null,
-        githubPrNumber: standaloneAssessment.github_pr_number ?? null,
+        githubPrNumber: prNumber ?? null,
         githubRepoUrl: repoUrl,
         githubPrDescription: null,
         reviewProfile: null,

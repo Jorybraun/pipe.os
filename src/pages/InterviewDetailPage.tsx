@@ -27,6 +27,7 @@ import type {
   CodeReviewMatchHyperedgeNode,
   CodeReviewScoreSummary,
   CodeReviewMatchSourceRef,
+  AssessmentSetupProjection,
   ScheduledInterviewDetail,
   TranscriptArtifact,
   TranscriptEntry,
@@ -176,6 +177,12 @@ interface CodeReviewSignalBasisItem {
   label: string;
   value: string;
   satisfied: boolean;
+}
+
+interface CodeReviewAssignmentTrust {
+  value: string;
+  detail: string;
+  tone: CodeReviewNextStepTone;
 }
 
 interface EvidenceFollowUpPlan {
@@ -718,6 +725,77 @@ function codeReviewAssessmentValiditySummary(input: {
   return {
     value: 'No score signal yet',
     detail: 'The PR assignment is ready, but the candidate still needs to complete the code-review assessment.',
+    tone: 'neutral',
+  };
+}
+
+function codeReviewAssignmentTrustSummary(input: {
+  setup: AssessmentSetupProjection | null | undefined;
+  match: CodeReviewMatchDetail | null;
+}): CodeReviewAssignmentTrust {
+  const status = input.setup?.status ?? null;
+  const kind = input.setup?.kind ?? null;
+  const source = input.setup?.source ?? null;
+
+  if (kind === 'manual_open_source_task') {
+    return {
+      value: 'Manual task',
+      detail: 'A recruiter supplied a source-backed repo task packet. Treat it as a real assignment, but not as proof that PIPE automatically matched the candidate to this repo.',
+      tone: 'watch',
+    };
+  }
+
+  if (source === 'recruiter_manual_override') {
+    return {
+      value: 'Manual PR',
+      detail: 'This PR was selected manually. Use the candidate review as evidence, but do not read the assignment itself as candidate-fit proof.',
+      tone: 'watch',
+    };
+  }
+
+  if (status === 'missing_reviewable_task') {
+    return {
+      value: 'No safe challenge',
+      detail: 'No reviewable, source-backed repo challenge is attached yet. Resolve the assignment before relying on the assessment.',
+      tone: 'blocked',
+    };
+  }
+
+  if (status === 'waiting_for_candidate_evidence' || status === 'waiting_for_source_backed_match') {
+    return {
+      value: 'Needs evidence',
+      detail: 'PIPE needs more source-backed candidate or role evidence before selecting a fair challenge.',
+      tone: 'blocked',
+    };
+  }
+
+  if (input.setup?.blocksPositiveAssessment || (input.match && input.match.status !== 'MATCHED')) {
+    return {
+      value: 'Needs evidence',
+      detail: 'The current repo assignment is not quality-gated enough to support a positive code-review signal.',
+      tone: 'blocked',
+    };
+  }
+
+  if (source === 'matched_repo_id' || kind === 'auto_match' || input.match?.status === 'MATCHED') {
+    return {
+      value: 'Matched',
+      detail: 'PIPE selected this challenge from source-backed candidate evidence, role context, and repo demand. Use it as assignment-fit evidence alongside the candidate review.',
+      tone: 'positive',
+    };
+  }
+
+  if (status === 'reviewable_task_assigned' || kind === 'github_pr') {
+    return {
+      value: 'Reviewable task',
+      detail: 'A reviewable task is attached, but the source of candidate-fit proof is not explicit. Confirm the match proof before relying on it.',
+      tone: 'neutral',
+    };
+  }
+
+  return {
+    value: 'Assignment unknown',
+    detail: 'PIPE has not exposed enough assignment provenance to treat this as a trusted code-review signal.',
     tone: 'neutral',
   };
 }
@@ -1986,6 +2064,10 @@ export default function InterviewDetailPage(): JSX.Element {
     match: codeReviewMatch,
     proofCount: matchHyperedges.length,
   });
+  const codeReviewAssignmentTrust = codeReviewAssignmentTrustSummary({
+    setup: interview.assessmentSetup,
+    match: codeReviewMatch,
+  });
   const codeReviewDecisionSignals = [
     {
       label: 'Assignment',
@@ -2417,6 +2499,17 @@ export default function InterviewDetailPage(): JSX.Element {
                 )}
               </div>
               <div style={DECISION_ACTION}>{codeReviewAction}</div>
+              <div
+                data-testid="interview-code-review-assignment-trust"
+                style={{
+                  ...DECISION_NEXT_STEP,
+                  ...DECISION_NEXT_STEP_TONE[codeReviewAssignmentTrust.tone],
+                }}
+              >
+                <div style={FIELD_LABEL}>Assignment trust</div>
+                <div style={DECISION_NEXT_STEP_VALUE}>{codeReviewAssignmentTrust.value}</div>
+                <div style={CONTEXT_RECORD_NARRATIVE}>{codeReviewAssignmentTrust.detail}</div>
+              </div>
               <div
                 data-testid="interview-code-review-next-step"
                 style={{
@@ -2973,6 +3066,17 @@ export default function InterviewDetailPage(): JSX.Element {
                   <span style={{ ...FIELD_VALUE, lineHeight: 1.6 }}>{codeReviewMatch.summary}</span>
                 </div>
               )}
+              <div
+                data-testid="interview-review-assignment-trust"
+                style={{ ...EVIDENCE_ROW, alignItems: 'flex-start' }}
+              >
+                <span style={FIELD_LABEL}>Assignment trust</span>
+                <span style={{ ...FIELD_VALUE, lineHeight: 1.6 }}>
+                  {codeReviewAssignmentTrust.value}
+                  {' — '}
+                  {codeReviewAssignmentTrust.detail}
+                </span>
+              </div>
               {hasReviewSetupGap && (
                 <div style={{ ...EVIDENCE_ROW, alignItems: 'flex-start' }}>
                   <span style={FIELD_LABEL}>Why it is not ready</span>
