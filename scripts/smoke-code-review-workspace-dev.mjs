@@ -240,6 +240,30 @@ async function main() {
   if (bridgeHealth?.ok !== true) {
     throw new Error(`Workspace bridge health check failed: ${JSON.stringify(bridgeHealth)}`);
   }
+  const finalizeResponse = await fetch(`${ROOM_BASE}${proxyBasePath}/assessment/finalize`, {
+    method: 'POST',
+    headers: {
+      ...authHeadersFor(ROOM_BASE),
+      ...roomAuthHeaders,
+      'Content-Type': 'application/json',
+    },
+    body: '{}',
+  });
+  const finalizeText = await finalizeResponse.text();
+  let finalizeBody = null;
+  if (finalizeText) {
+    try {
+      finalizeBody = JSON.parse(finalizeText);
+    } catch {
+      finalizeBody = finalizeText;
+    }
+  }
+  if (
+    finalizeResponse.status !== 409
+    || finalizeBody?.error?.code !== 'ASSESSMENT_FINALIZE_BLOCKED'
+  ) {
+    throw new Error(`Workspace finalizer did not honestly block unchanged work: ${JSON.stringify(finalizeBody)}`);
+  }
 
   console.log(JSON.stringify({
     ok: true,
@@ -255,6 +279,7 @@ async function main() {
     proxyPathReady: Boolean(readySession.proxyPath),
     bridgeHealthReady: true,
     bridgeAgent: bridgeHealth.agent || null,
+    finalizerEndpointBlocked: true,
   }, null, 2));
 }
 
