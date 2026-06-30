@@ -585,6 +585,103 @@ function parsePlainTextAssessmentOutput(content: string): AiAssessmentOutput | n
   };
 }
 
+function extractJsonStringProperty(value: string, property: string): string | null {
+  const match = new RegExp(`"${property}"\\s*:\\s*("(?:\\\\.|[^"\\\\])*")`, 'i').exec(value);
+  if (!match?.[1]) return null;
+  try {
+    return stringValue(JSON.parse(match[1]));
+  } catch {
+    return null;
+  }
+}
+
+function extractJsonArraySegment(value: string, property: string): string | null {
+  const propertyMatch = new RegExp(`"${property}"\\s*:\\s*\\[`, 'i').exec(value);
+  if (!propertyMatch) return null;
+  const arrayStart = value.indexOf('[', propertyMatch.index);
+  if (arrayStart < 0) return null;
+
+  let depth = 0;
+  let inString: '"' | null = null;
+  let escaped = false;
+  for (let index = arrayStart; index < value.length; index += 1) {
+    const char = value[index]!;
+    if (inString) {
+      if (escaped) {
+        escaped = false;
+      } else if (char === '\\') {
+        escaped = true;
+      } else if (char === inString) {
+        inString = null;
+      }
+      continue;
+    }
+
+    if (char === '"') {
+      inString = char;
+      continue;
+    }
+
+    if (char === '[') {
+      depth += 1;
+      continue;
+    }
+
+    if (char === ']' && depth > 0) {
+      depth -= 1;
+      if (depth === 0) return value.slice(arrayStart + 1, index);
+    }
+  }
+
+  return value.slice(arrayStart + 1);
+}
+
+function parseJsonObjectCandidates<T extends object>(segment: string | null): T[] {
+  if (!segment) return [];
+  return extractBalancedJsonObjects(segment)
+    .reverse()
+    .flatMap((candidate): T[] => {
+      try {
+        const parsed = JSON.parse(candidate) as unknown;
+        return parsed !== null && typeof parsed === 'object' && !Array.isArray(parsed)
+          ? [parsed as T]
+          : [];
+      } catch {
+        return [];
+      }
+    });
+}
+
+function parseTruncatedJsonAssessmentOutput(content: string): AiAssessmentOutput | null {
+  const trimmed = content.trim();
+  if (!trimmed.startsWith('{') || trimmed.endsWith('}')) return null;
+
+  const claims = parseJsonObjectCandidates<AiAssessmentClaim>(
+    extractJsonArraySegment(trimmed, 'claims'),
+  );
+  const diagnostics = parseJsonObjectCandidates<AiAssessmentDiagnostic>(
+    extractJsonArraySegment(trimmed, 'diagnostics'),
+  );
+  const summary = extractJsonStringProperty(trimmed, 'summary');
+  const recommendation = extractJsonStringProperty(trimmed, 'recommendation');
+  if (!summary && !recommendation && claims.length === 0 && diagnostics.length === 0) return null;
+
+  return {
+    ...(summary ? { summary } : {}),
+    ...(recommendation ? { recommendation } : {}),
+    claims: claims.slice(0, 4),
+    diagnostics: [
+      ...diagnostics.slice(0, 3),
+      {
+        code: 'EVALUATOR_OUTPUT_TRUNCATED',
+        severity: 'warning',
+        message: 'The evaluator response ended before a complete JSON object; PIPE used only complete source-cited claims and ignored the partial tail.',
+        sourceRefKeys: [],
+      },
+    ],
+  };
+}
+
 export function parseAiJson(content: string | null): AiAssessmentOutput {
   if (!content) throw new Error('assessment evaluator returned empty content');
   const trimmed = content.trim();
@@ -677,6 +774,8 @@ export function parseAiJson(content: string | null): AiAssessmentOutput {
         // Try the next balanced object candidate before falling back to plain text.
       }
     }
+    const truncatedJson = parseTruncatedJsonAssessmentOutput(trimmed);
+    if (truncatedJson) return truncatedJson;
     const fallback = parsePlainTextAssessmentOutput(trimmed);
     if (fallback) return fallback;
     throw new Error('assessment evaluator did not return parseable JSON or structured assessment text');
