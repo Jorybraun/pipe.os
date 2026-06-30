@@ -295,6 +295,14 @@ function repoLabelFromUrl(value: string | null | undefined): string | null {
   return compactEvidenceText(value, 56);
 }
 
+function firstLocatorString(locator: Record<string, unknown>, keys: string[]): string | null {
+  for (const key of keys) {
+    const value = locator[key];
+    if (typeof value === 'string' && value.trim().length > 0) return value.trim();
+  }
+  return null;
+}
+
 function workspaceSessionSummary(interview: ScheduledInterviewDetail): string | null {
   const workspace = interview.workspaceSession ?? null;
   if (!workspace) return null;
@@ -311,6 +319,91 @@ function compactEvidenceText(value: string, maxLength = 160): string | null {
   if (!trimmed) return null;
   if (trimmed.length <= maxLength) return trimmed;
   return `${trimmed.slice(0, maxLength - 1).trimEnd()}...`;
+}
+
+interface AssessmentChallengeContract {
+  repositoryUrl: string | null;
+  baseCommitSha: string | null;
+  task: string | null;
+  successCriteria: string[];
+  expectedEvidence: string[];
+}
+
+function normalizePacketListItem(line: string): string {
+  return line
+    .trim()
+    .replace(/^[-*]\s+/, '')
+    .replace(/^\d+[.)]\s+/, '')
+    .trim();
+}
+
+function parseAssessmentChallengeContract(challenge: {
+  exactText: string;
+  locator: Record<string, unknown>;
+} | null | undefined): AssessmentChallengeContract | null {
+  if (!challenge) return null;
+  const lines = challenge.exactText
+    .split(/\r?\n/)
+    .map((line) => line.trim())
+    .filter(Boolean);
+  let section: 'successCriteria' | 'expectedEvidence' | null = null;
+  const contract: AssessmentChallengeContract = {
+    repositoryUrl: firstLocatorString(challenge.locator, ['repositoryUrl', 'githubRepoUrl', 'repoUrl']),
+    baseCommitSha: firstLocatorString(challenge.locator, ['baseCommitSha', 'baseCommit']),
+    task: null,
+    successCriteria: [],
+    expectedEvidence: [],
+  };
+
+  for (const line of lines) {
+    const repoMatch = line.match(/^repo(?:sitory)?\s*:\s*(.+)$/i);
+    if (repoMatch?.[1] && !contract.repositoryUrl) {
+      contract.repositoryUrl = repoMatch[1].trim();
+      section = null;
+      continue;
+    }
+    const baseCommitMatch = line.match(/^base commit\s*:\s*([a-f0-9]{7,40})$/i);
+    if (baseCommitMatch?.[1] && !contract.baseCommitSha) {
+      contract.baseCommitSha = baseCommitMatch[1].trim();
+      section = null;
+      continue;
+    }
+    const taskMatch = line.match(/^task\s*:\s*(.+)$/i);
+    if (taskMatch?.[1]) {
+      contract.task = taskMatch[1].trim();
+      section = null;
+      continue;
+    }
+    const successLineMatch = line.match(/^success\s*:\s*(.+)$/i);
+    if (successLineMatch?.[1]) {
+      contract.successCriteria.push(successLineMatch[1].trim());
+      section = null;
+      continue;
+    }
+    if (/^success criteria\s*:?\s*$/i.test(line)) {
+      section = 'successCriteria';
+      continue;
+    }
+    if (/^expected evidence\s*:?\s*$/i.test(line)) {
+      section = 'expectedEvidence';
+      continue;
+    }
+    if (/^[A-Za-z][A-Za-z\s-]{2,}:\s*$/.test(line)) {
+      section = null;
+      continue;
+    }
+    if (!section) continue;
+    const item = normalizePacketListItem(line);
+    if (item.length > 0) contract[section].push(item);
+  }
+
+  return contract.repositoryUrl
+    || contract.baseCommitSha
+    || contract.task
+    || contract.successCriteria.length > 0
+    || contract.expectedEvidence.length > 0
+    ? contract
+    : null;
 }
 
 function assessmentChallengeSummary(challenge: {
@@ -2016,6 +2109,9 @@ export default function InterviewDetailPage(): JSX.Element {
   const assessmentChallengeText = assessmentProgress
     ? assessmentChallengeSummary(assessmentProgress.challenge)
     : null;
+  const assessmentChallengeContract = assessmentProgress
+    ? parseAssessmentChallengeContract(assessmentProgress.challenge)
+    : null;
   const assessmentWorkspaceSummary = workspaceSessionSummary(interview);
   const assessmentProgressSourceRefCounts = assessmentProgress?.sourceRefCounts ?? [];
   const assessmentCoverage = assessmentCoverageItems(assessmentProgress);
@@ -2443,6 +2539,60 @@ export default function InterviewDetailPage(): JSX.Element {
                   <span style={FIELD_VALUE}>
                     {assessmentChallengeText ?? 'Challenge packet captured'}
                   </span>
+                </div>
+              )}
+              {assessmentChallengeContract && (
+                <div style={{ ...EVIDENCE_ROW, alignItems: 'flex-start' }}>
+                  <span style={FIELD_LABEL}>Task contract</span>
+                  <div
+                    data-testid="interview-assessment-challenge-contract"
+                    style={ASSESSMENT_CHALLENGE_CONTRACT}
+                  >
+                    {(assessmentChallengeContract.repositoryUrl || assessmentChallengeContract.baseCommitSha) && (
+                      <div style={ASSESSMENT_CHALLENGE_META}>
+                        {assessmentChallengeContract.repositoryUrl && (
+                          <span>
+                            Repo{' '}
+                            <strong>
+                              {repoLabelFromUrl(assessmentChallengeContract.repositoryUrl)
+                                ?? assessmentChallengeContract.repositoryUrl}
+                            </strong>
+                          </span>
+                        )}
+                        {assessmentChallengeContract.baseCommitSha && (
+                          <span>
+                            Base <strong>{shortCommitSha(assessmentChallengeContract.baseCommitSha)}</strong>
+                          </span>
+                        )}
+                      </div>
+                    )}
+                    {assessmentChallengeContract.task && (
+                      <div style={ASSESSMENT_CHALLENGE_SECTION}>
+                        <span style={FIELD_LABEL}>Task</span>
+                        <p style={ASSESSMENT_CHALLENGE_TEXT}>{assessmentChallengeContract.task}</p>
+                      </div>
+                    )}
+                    {assessmentChallengeContract.successCriteria.length > 0 && (
+                      <div style={ASSESSMENT_CHALLENGE_SECTION}>
+                        <span style={FIELD_LABEL}>Success criteria</span>
+                        <ul style={ASSESSMENT_CHALLENGE_LIST}>
+                          {assessmentChallengeContract.successCriteria.map((item) => (
+                            <li key={item}>{item}</li>
+                          ))}
+                        </ul>
+                      </div>
+                    )}
+                    {assessmentChallengeContract.expectedEvidence.length > 0 && (
+                      <div style={ASSESSMENT_CHALLENGE_SECTION}>
+                        <span style={FIELD_LABEL}>Expected evidence</span>
+                        <ul style={ASSESSMENT_CHALLENGE_LIST}>
+                          {assessmentChallengeContract.expectedEvidence.map((item) => (
+                            <li key={item}>{item}</li>
+                          ))}
+                        </ul>
+                      </div>
+                    )}
+                  </div>
                 </div>
               )}
               {assessmentProgress.commit?.repositoryUrl && (
@@ -3576,6 +3726,46 @@ const ASSESSMENT_PROGRESS_DETAIL: CSSProperties = {
   gap: 8,
   borderTop: '1px solid var(--pipe-border)',
   paddingTop: 12,
+};
+
+const ASSESSMENT_CHALLENGE_CONTRACT: CSSProperties = {
+  display: 'grid',
+  gap: 10,
+  minWidth: 0,
+};
+
+const ASSESSMENT_CHALLENGE_META: CSSProperties = {
+  display: 'flex',
+  flexWrap: 'wrap',
+  gap: 8,
+  color: 'var(--pipe-text-dim)',
+  fontFamily: FONT,
+  fontSize: 11,
+  lineHeight: 1.5,
+};
+
+const ASSESSMENT_CHALLENGE_SECTION: CSSProperties = {
+  display: 'grid',
+  gap: 5,
+  minWidth: 0,
+};
+
+const ASSESSMENT_CHALLENGE_TEXT: CSSProperties = {
+  margin: 0,
+  color: 'var(--pipe-text)',
+  fontFamily: FONT,
+  fontSize: 12,
+  lineHeight: 1.55,
+  overflowWrap: 'anywhere',
+};
+
+const ASSESSMENT_CHALLENGE_LIST: CSSProperties = {
+  margin: 0,
+  paddingLeft: 18,
+  color: 'var(--pipe-text)',
+  fontFamily: FONT,
+  fontSize: 12,
+  lineHeight: 1.55,
 };
 
 const ASSESSMENT_COVERAGE_CHIPS: CSSProperties = {

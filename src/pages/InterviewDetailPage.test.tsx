@@ -240,8 +240,21 @@ describe('InterviewDetailPage', () => {
             sourceRefType: 'review_challenge_packet',
             sourceRefId: 'challenge-packet-popover',
             evidenceRole: 'assigned_challenge',
-            exactText: 'Fix the popover cleanup regression.',
-            locator: { repositoryUrl: 'https://github.com/open-source/widgets' },
+            exactText: [
+              'Repo: https://github.com/open-source/widgets',
+              'Base commit: 1111111111111111111111111111111111111111',
+              'Task: Fix the popover cleanup regression.',
+              'Success criteria:',
+              '- Keep hover-open behavior intact.',
+              '- Add a regression test for impatient trigger clicks.',
+              'Expected evidence:',
+              '- Commit on pipe-assessment/* with a focused diff.',
+              '- Test output showing the regression suite passed.',
+            ].join('\n'),
+            locator: {
+              repositoryUrl: 'https://github.com/open-source/widgets',
+              baseCommitSha: '1111111111111111111111111111111111111111',
+            },
           },
           latestEvent: {
             id: 'assessment-event-commit',
@@ -276,7 +289,17 @@ describe('InterviewDetailPage', () => {
     expect(progress).toHaveTextContent('Workspace');
     expect(progress).toHaveTextContent('Ready · open-source/widgets · base 1111111111');
     expect(progress).toHaveTextContent('abcdef1234');
-    expect(progress).toHaveTextContent('Fix the popover cleanup regression.');
+    const contract = screen.getByTestId('interview-assessment-challenge-contract');
+    expect(contract).toHaveTextContent('Repo open-source/widgets');
+    expect(contract).toHaveTextContent('Base 1111111111');
+    expect(contract).toHaveTextContent('Task');
+    expect(contract).toHaveTextContent('Fix the popover cleanup regression.');
+    expect(contract).toHaveTextContent('Success criteria');
+    expect(contract).toHaveTextContent('Keep hover-open behavior intact.');
+    expect(contract).toHaveTextContent('Add a regression test for impatient trigger clicks.');
+    expect(contract).toHaveTextContent('Expected evidence');
+    expect(contract).toHaveTextContent('Commit on pipe-assessment/* with a focused diff.');
+    expect(contract).toHaveTextContent('Test output showing the regression suite passed.');
     expect(progress).toHaveTextContent('pipe-assessment/popover-cleanup');
     expect(progress).not.toHaveTextContent('challenge-packet-popover');
   });
