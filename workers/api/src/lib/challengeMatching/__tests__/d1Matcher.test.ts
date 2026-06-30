@@ -2698,6 +2698,88 @@ describe('matchCandidateToReviewChallenge', () => {
     expect(rankedResult.alignments.every((alignment) => alignment.roleSourceRefs.length === 0)).toBe(true);
   });
 
+  it('auto-matches roleless resume evidence to a live-shaped mui/base-ui PR packet', async () => {
+    const { resumeText } = await seedMuiBaseUiResumeCandidateEvidence(sqlite);
+    sqlite.prepare('INSERT INTO qualified_repos (id) VALUES (?)').run(973);
+    const data = await buildMuiBaseUiPopoverChallengeFixture();
+
+    await persistReviewChallengeGraph(
+      createNodeSqliteD1(sqlite),
+      973,
+      data.input,
+      data.packet,
+      data.graph,
+    );
+
+    const result = await matchCandidateToReviewChallenge(createNodeSqliteD1(sqlite), 'candidate-1');
+
+    expect(result.status).toBe('MATCHED');
+    expect(result.repoId).toBe(973);
+    expect(result.prNumber).toBe(973);
+    expect(result.explanation?.selectedPr).toEqual({
+      challengeId: data.packet.id,
+      repoId: '973',
+      prNumber: 973,
+      sourceVersion: data.input.repoSnapshot.id,
+    });
+    expect(result.explanation?.roleSources).toEqual([]);
+    expect(result.explanation?.validatorAgent).toEqual(expect.objectContaining({
+      agentName: 'source_backed_match_validator',
+      verdict: 'PASSED',
+      sourceBridge: expect.objectContaining({
+        candidateSourceCount: expect.any(Number),
+        repoSourceCount: expect.any(Number),
+        roleSourceCount: 0,
+        provenanceComplete: true,
+      }),
+    }));
+    expect(result.explanation?.validatorAgent?.checks).toEqual(expect.arrayContaining([
+      expect.objectContaining({
+        id: 'role_context_alignment',
+        passed: true,
+        reason: 'No role source was supplied for this standalone match.',
+      }),
+    ]));
+    expect(result.explanation?.assessmentQuality?.verdict).toMatch(/^(STRONG|USABLE)$/);
+    expect(result.explanation?.missingEvidence).toEqual([]);
+    expect(result.explanation?.rejectedPackets).toEqual([]);
+    expect(result.explanation?.evidence.every((entry) => entry.roleSourceRefs.length === 0)).toBe(true);
+    expect(result.explanation?.candidateSpans.flatMap((span) =>
+      span.sourceRefs.map((source) => source.exactText),
+    )).toContain(resumeText);
+    expect(result.explanation?.evidence.length ?? 0).toBeGreaterThanOrEqual(4);
+
+    const matchRun = sqlite.prepare(
+      `SELECT role_context_id, role_snapshot_id, selected_packet_id, ranked_results_json
+         FROM match_runs
+        WHERE id = ?`,
+    ).get(result.matchRunId) as {
+      role_context_id: string | null;
+      role_snapshot_id: string;
+      selected_packet_id: string;
+      ranked_results_json: string;
+    };
+    expect(matchRun.role_context_id).toBeNull();
+    expect(matchRun.role_snapshot_id).toBe('standalone-code-review-v1');
+    expect(matchRun.selected_packet_id).toBe(data.packet.id);
+    const [rankedResult] = JSON.parse(matchRun.ranked_results_json) as Array<{
+      validatorAgent: { verdict: string; sourceBridge: { roleSourceCount: number } };
+      alignments: Array<{
+        sharedConcepts: string[];
+        roleSourceRefs: unknown[];
+      }>;
+    }>;
+    expect(rankedResult.validatorAgent).toEqual(expect.objectContaining({
+      verdict: 'PASSED',
+      sourceBridge: expect.objectContaining({ roleSourceCount: 0 }),
+    }));
+    const sharedConcepts = new Set(rankedResult.alignments.flatMap((alignment) => alignment.sharedConcepts));
+    expect(sharedConcepts.has('term:patient-click-threshold')).toBe(true);
+    expect(sharedConcepts.has('term:popover')).toBe(true);
+    expect(sharedConcepts.has('term:javascript-test-runner')).toBe(true);
+    expect(rankedResult.alignments.every((alignment) => alignment.roleSourceRefs.length === 0)).toBe(true);
+  });
+
   it('returns NO_ROLE_SAFE_CHALLENGE instead of falling back to a persisted ineligible smallest PR', async () => {
     sqlite.exec(assessmentLayerMigration);
     seedCandidateEvidence(sqlite);
