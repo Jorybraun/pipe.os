@@ -65,6 +65,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 ### Fixed — Candidate repo matching
 
 - Commit submissions are now rejected unless the submitted HEAD is on `pipe-assessment` or a `pipe-assessment/*` branch, with the same rule enforced by the browser payload builder, durable assessment session store, and dev-container finalizer.
+- Workspace bridge revision `2026-06-30-assessment-branch-v1` forces dev containers onto the assessment-branch-enforcing finalizer during deployed smoke validation.
 - Deployed workspace smoke can now prove the task-aligned MUI popover challenge through the matched-repo path, asserting the selected review challenge packet's repo id, PR number, base/head commits, and source-backed packet text instead of relying only on manual task assignment.
 - Repo-task assessment evaluation now tolerates fenced JSON with trailing commas and shortened source-ref ids from Workers AI, preventing valid source-backed submissions from becoming blocking evaluator diagnostics.
 - Repo-task assessment evaluation regression coverage now verifies shortened AI source-ref ids still persist claims against the exact stored source refs.

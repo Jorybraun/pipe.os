@@ -75,7 +75,7 @@ const RAW_MATCHED_REPO_ID = process.env.WORKSPACE_SMOKE_MATCHED_REPO_ID || '';
 const MATCHED_REPO_ID = RAW_MATCHED_REPO_ID ? Number(RAW_MATCHED_REPO_ID) : null;
 const BASE_COMMIT_SHA = process.env.WORKSPACE_SMOKE_BASE_COMMIT_SHA || CHANGE_PROFILE?.baseCommitSha || '';
 const EXPECTED_BRIDGE_REVISION = process.env.WORKSPACE_SMOKE_EXPECTED_BRIDGE_REVISION
-  || '2026-06-30-finalizer-terminal-v2';
+  || '2026-06-30-assessment-branch-v1';
 const REMOTE = !APP_BASE.includes('localhost') && !APP_BASE.includes('127.0.0.1');
 
 function assertEnv() {
