@@ -4,6 +4,32 @@ Inter-agent handoff log for the living context graph goal. Each agent appends a 
 
 ## Log
 
+### 2026-06-30 — Session 35575ef1 (Devin Automation)
+
+**Action:** Frontend visualization panels for evidence gap analysis and match provenance chain.
+
+**Context:** PRs #135-#142 remain open as drafts. PR #142 is the consolidation superset. This session creates a new PR building on #142's branch with frontend integration for the two newest backend modules (evidenceGapAnalysis, matchProvenanceChain).
+
+**New code added (this session):**
+1. `EvidenceGapPanel` component — renders per-demand coverage bar (strong/partial/weak/none), demand cards with coverage badges, matched/missing concept tags, supporting assertion quotes, actionable recommendations
+2. `MatchProvenancePanel` component — renders decision → demand → signal → assertion → source provenance chain with alignment scores, stretch indicators, temporal decay, source text quotes
+3. `useEvidenceGaps` hook — fetches gap report from `/evidence-gap-analysis` endpoint
+4. `useMatchProvenance` hook — fetches provenance chain from `/match-provenance-chain` endpoint
+5. Frontend types: `EvidenceGapReport`, `MatchProvenanceChain` + subtypes in `src/lib/api/types.ts`
+6. CSS styles for both panels following existing living context design system
+
+**Tests:** 184 files, 1708 pass, 0 fail. TypeScript clean. Lint: 0 errors (94 pre-existing warnings).
+
+**Superseded PRs (owner needs to close):** #135, #136, #137, #138, #139, #140, #141
+
+**Next priorities:**
+- Merge this PR and close superseded PRs
+- Add Vitest component tests for EvidenceGapPanel and MatchProvenancePanel
+- BDD Playwright tests for gap/provenance API endpoints
+- Wire provenance panel into recruiter cockpit match review flow
+
+---
+
 ### 2026-06-30 — Session 7a9df29e (Devin Automation)
 
 **Action:** Consolidate all open living context PRs (#135-#141), add evidence gap analysis and match provenance chain.
