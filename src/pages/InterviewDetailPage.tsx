@@ -1121,7 +1121,7 @@ function assessmentInviteStatusLabel(state: AssessmentInviteLinkState, hasUrl: b
     case 'active':
       return 'Active';
     case 'claimed':
-      return 'Claimed';
+      return 'Started';
     case 'stale':
       return 'Stale';
     default:
@@ -1148,7 +1148,7 @@ function assessmentInviteEvidenceLabel(
 ): string {
   if (input.hasSubmittedEvidence) return 'Assessment evidence attached';
   if (!input.hasUrl) return 'No assessment link sent';
-  if (state === 'claimed') return 'Opened, no submission';
+  if (state === 'claimed') return 'Started, no submission';
   if (state === 'stale') return 'No current assessment evidence';
   return 'Awaiting candidate submission';
 }
@@ -1729,8 +1729,8 @@ export default function InterviewDetailPage(): JSX.Element {
   const assessmentInviteDescription =
     assessmentInviteState === 'claimed'
       ? hasSubmittedAssessmentEvidence
-        ? 'The candidate opened this one-use assessment link and assessment evidence is attached below. Resend only if they need a fresh attempt.'
-        : 'The candidate opened this one-use assessment link, but this interview has no submitted assessment evidence yet. Resend the invite to issue a fresh link.'
+        ? 'The candidate started this one-use assessment link and assessment evidence is attached below. Resend only if they need a fresh attempt.'
+        : 'The candidate started this one-use assessment link, but this interview has no submitted assessment evidence yet. Resend the invite to issue a fresh link.'
       : assessmentInviteState === 'stale'
         ? 'This saved assessment link is older than the current candidate token. Resend the invite before sharing it.'
         : assessmentInviteUrl

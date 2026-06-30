@@ -1470,11 +1470,11 @@ describe('InterviewDetailPage', () => {
 
     await flushAsyncUpdates();
     const linkPanel = screen.getByTestId('interview-assessment-link');
-    expect(linkPanel).toHaveTextContent('The candidate opened this one-use assessment link, but this interview has no submitted assessment evidence yet.');
-    expect(screen.getByTestId('interview-assessment-link-state')).toHaveTextContent('Claimed');
+    expect(linkPanel).toHaveTextContent('The candidate started this one-use assessment link, but this interview has no submitted assessment evidence yet.');
+    expect(screen.getByTestId('interview-assessment-link-state')).toHaveTextContent('Started');
     expect(screen.getByTestId('interview-assessment-link-state')).toHaveTextContent('Historical link only');
     expect(screen.getByTestId('interview-assessment-link-state')).toHaveTextContent('ASSESSMENT');
-    expect(screen.getByTestId('interview-assessment-link-state')).toHaveTextContent('Opened, no submission');
+    expect(screen.getByTestId('interview-assessment-link-state')).toHaveTextContent('Started, no submission');
     expect(screen.getByTestId('interview-assessment-link-state')).toHaveTextContent('Resend the invite to issue a fresh one-use assessment link.');
     expect(linkPanel).toHaveTextContent('LAST CANDIDATE ASSESSMENT URL');
     expect(screen.queryByText('COPY CANDIDATE LINK')).toBeNull();
