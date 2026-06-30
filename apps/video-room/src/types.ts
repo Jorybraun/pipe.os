@@ -179,6 +179,26 @@ export interface RoomCommitSubmissionResponse {
   progress: RoomAssessmentProgressSnapshot;
 }
 
+export interface RoomWorkspaceFinalizeRequest {
+  narrative?: string;
+  testCommand?: string;
+}
+
+export interface RoomWorkspaceFinalizeResponse {
+  ok: boolean;
+  submitted: boolean;
+  commit: {
+    repositoryUrl: string;
+    branchName: string;
+    baseCommitSha: string;
+    commitSha: string;
+    changedFiles: RoomCommitChangedFile[];
+    sourceRefTypes: string[];
+  };
+  submission: RoomCommitSubmissionResponse['submission'] | null;
+  progress: RoomAssessmentProgressSnapshot | null;
+}
+
 export interface RecordingSpeakerChannel {
   channel: number;
   role: RecordingSpeakerRole;

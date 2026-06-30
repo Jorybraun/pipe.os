@@ -3,6 +3,8 @@ import type {
   RoomCommitSubmissionRequest,
   RoomCommitSubmissionResponse,
   RoomAssessmentProgressSnapshot,
+  RoomWorkspaceFinalizeRequest,
+  RoomWorkspaceFinalizeResponse,
   RecordingSpeakerMetadata,
   RoomMetadata,
   RoomWorkspace,
@@ -183,6 +185,24 @@ export function roomWorkspaceProxyUrl(token: string, sessionId: string): string 
   return apiUrl(
     `/api/v1/meeting-rooms/${encodeURIComponent(token)}/workspace/proxy/${encodeURIComponent(sessionId)}/`,
   );
+}
+
+export async function finalizeRoomWorkspaceAssessment(
+  token: string,
+  sessionId: string,
+  payload: RoomWorkspaceFinalizeRequest = {},
+): Promise<RoomWorkspaceFinalizeResponse> {
+  const response = await fetch(
+    apiUrl(`/api/v1/meeting-rooms/${encodeURIComponent(token)}/workspace/proxy/${encodeURIComponent(sessionId)}/assessment/finalize`),
+    {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify(payload),
+      cache: 'no-store',
+      credentials: 'same-origin',
+    },
+  );
+  return parseResponse<RoomWorkspaceFinalizeResponse>(response);
 }
 
 export function roomAgentWsUrl(token: string, sessionId: string): string {

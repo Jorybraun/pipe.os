@@ -68,6 +68,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - Deployed workspace smoke now preflights that the requested base commit is reachable from the selected repository before creating any invite or launching a container.
 - Deployed workspace smoke now verifies the bridge finalizer endpoint through the room proxy and fails unless unchanged work is honestly blocked instead of submitted.
 - Dev container workspaces now mark `/workspace` as a safe Git directory, start with explicit internet access, and use production cold-start timeouts so exact-base-commit repo tasks do not crash before VS Code can boot.
+- Submit Work now has a primary Finalize from workspace action that sends the live container's current assessment-branch HEAD, diff, changed files, and optional test command through the real bridge finalizer instead of requiring candidates to paste git evidence manually.
 - Room workspace launches no longer inject Devin by default; code-review rooms start a plain reliable code-server workspace unless the launch explicitly requests a configured agent.
 - Code-server containers now start the workspace bridge even when no AI agent is configured, keeping VS Code proxying, terminal access, bridge health, and commit finalization available without fake Clippy replies.
 - Dev-container launches now explicitly use the baked code-server entrypoint so deployed Cloudflare Containers expose the workspace bridge/router instead of bypassing it and serving code-server directly.

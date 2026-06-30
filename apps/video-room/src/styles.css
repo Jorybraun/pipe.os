@@ -4251,6 +4251,41 @@ button:focus-visible {
   background: #fff7cc;
 }
 
+.commit-submission-workspace-finalize {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) minmax(180px, 0.5fr) auto;
+  gap: 8px;
+  align-items: end;
+  padding: 8px;
+  border: 2px solid;
+  border-color: #808080 #dfdfdf #dfdfdf #808080;
+  background: #eef7ff;
+  color: #111;
+  font-size: 11px;
+}
+
+.commit-submission-workspace-finalize-header {
+  grid-column: 1 / -1;
+  display: flex;
+  justify-content: space-between;
+  gap: 10px;
+  align-items: flex-start;
+}
+
+.commit-submission-workspace-finalize-header strong {
+  color: #000080;
+  text-transform: uppercase;
+}
+
+.commit-submission-workspace-finalize-header span {
+  color: #222;
+  text-align: right;
+}
+
+.commit-submission-workspace-finalize .commit-submission-status {
+  grid-column: 1 / -1;
+}
+
 .commit-submission-checklist {
   padding: 7px 8px;
   border: 2px solid;
@@ -4465,8 +4500,17 @@ button:focus-visible {
     grid-template-columns: 1fr;
   }
 
+  .commit-submission-workspace-finalize,
   .commit-submission-grid {
     grid-template-columns: 1fr;
+  }
+
+  .commit-submission-workspace-finalize-header {
+    flex-direction: column;
+  }
+
+  .commit-submission-workspace-finalize-header span {
+    text-align: left;
   }
 
   .win95-desktop-icon {

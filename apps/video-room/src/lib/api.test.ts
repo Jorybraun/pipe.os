@@ -1,6 +1,7 @@
 import { describe, expect, it, vi } from 'vitest';
 
 import {
+  finalizeRoomWorkspaceAssessment,
   getRoomAssessmentProgress,
   launchRoomWorkspace,
   submitRoomAssessmentCommit,
@@ -124,6 +125,76 @@ describe('submitRoomAssessmentCommit', () => {
       credentials: 'same-origin',
     });
     expect(JSON.parse(String(fetchSpy.mock.calls[0]?.[1]?.body))).toEqual(payload);
+    fetchSpy.mockRestore();
+  });
+});
+
+describe('finalizeRoomWorkspaceAssessment', () => {
+  it('posts workspace finalization to the live bridge through the room proxy', async () => {
+    const fetchSpy = vi.spyOn(globalThis, 'fetch').mockResolvedValue(new Response(
+      JSON.stringify({
+        ok: true,
+        submitted: true,
+        commit: {
+          repositoryUrl: 'https://github.com/pipe/source-backed-worker',
+          branchName: 'pipe-assessment/retry-fix',
+          baseCommitSha: 'a'.repeat(40),
+          commitSha: 'b'.repeat(40),
+          changedFiles: [{ path: 'src/retry.ts', status: 'modified' }],
+          sourceRefTypes: ['git_commit', 'code_diff', 'test_run'],
+        },
+        submission: {
+          accepted: true,
+          repositoryUrl: 'https://github.com/pipe/source-backed-worker',
+          branchName: 'pipe-assessment/retry-fix',
+          commitSha: 'b'.repeat(40),
+          commitUrl: null,
+        },
+        progress: {
+          mode: 'OPEN_SOURCE_BUG_FIX',
+          state: 'FINAL_SUBMITTED',
+          stage: 'READY_FOR_EVALUATION',
+          nextAction: 'START_EVALUATION',
+          nextActionLabel: 'Start source-backed evaluation.',
+          hasChallengePacket: true,
+          hasWorkEvidence: true,
+          hasCommitSubmission: true,
+          hasFinalSubmission: false,
+          hasAiInteraction: false,
+          hasTranscriptEvidence: false,
+          hasTestEvidence: true,
+          evidenceCounts: [{ kind: 'commit_submission', count: 1 }],
+          sourceRefCounts: [{ kind: 'test_run', count: 1 }],
+          latestEvent: { kind: 'commit_submission', sequence: 2, occurredAt: '2026-06-29T00:00:00.000Z' },
+          commit: null,
+          evaluation: null,
+        },
+      }),
+      { status: 201, headers: { 'Content-Type': 'application/json' } },
+    ));
+
+    await expect(finalizeRoomWorkspaceAssessment('room-token', 'workspace-session-1', {
+      narrative: 'Submitted retry fix.',
+      testCommand: 'npm test -- retry',
+    })).resolves.toMatchObject({
+      submitted: true,
+      commit: { commitSha: 'b'.repeat(40) },
+      progress: { stage: 'READY_FOR_EVALUATION' },
+    });
+
+    expect(fetchSpy).toHaveBeenCalledOnce();
+    expect(fetchSpy.mock.calls[0]?.[0]).toContain(
+      '/api/v1/meeting-rooms/room-token/workspace/proxy/workspace-session-1/assessment/finalize',
+    );
+    expect(fetchSpy.mock.calls[0]?.[1]).toMatchObject({
+      method: 'POST',
+      cache: 'no-store',
+      credentials: 'same-origin',
+    });
+    expect(JSON.parse(String(fetchSpy.mock.calls[0]?.[1]?.body))).toEqual({
+      narrative: 'Submitted retry fix.',
+      testCommand: 'npm test -- retry',
+    });
     fetchSpy.mockRestore();
   });
 });

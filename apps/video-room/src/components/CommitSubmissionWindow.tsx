@@ -10,6 +10,8 @@ import type {
   RoomCommitSubmissionRequest,
   RoomCommitSubmissionResponse,
   RoomAssessmentProgressSnapshot,
+  RoomWorkspaceFinalizeRequest,
+  RoomWorkspaceFinalizeResponse,
   RoomWorkspaceChallengePacket,
 } from '../types';
 
@@ -20,6 +22,9 @@ interface CommitSubmissionWindowProps {
   disabledReason?: string | null;
   onSubmit: (payload: RoomCommitSubmissionRequest) => Promise<RoomCommitSubmissionResponse>;
   onProgressChange?: (progress: RoomAssessmentProgressSnapshot) => void;
+  workspaceFinalizeAvailable?: boolean;
+  workspaceFinalizeDisabledReason?: string | null;
+  onFinalizeWorkspace?: (payload: RoomWorkspaceFinalizeRequest) => Promise<RoomWorkspaceFinalizeResponse>;
 }
 
 const EMPTY_FIELDS: CommitSubmissionFormFields = {
@@ -275,6 +280,9 @@ export function CommitSubmissionWindow({
   disabledReason,
   onSubmit,
   onProgressChange,
+  workspaceFinalizeAvailable = false,
+  workspaceFinalizeDisabledReason = null,
+  onFinalizeWorkspace,
 }: CommitSubmissionWindowProps): JSX.Element {
   const submissionDefaults = buildCommitSubmissionDefaults({
     repositoryUrl: defaultRepositoryUrl,
@@ -285,9 +293,18 @@ export function CommitSubmissionWindow({
     ...submissionDefaults,
   });
   const [submitting, setSubmitting] = useState(false);
+  const [finalizing, setFinalizing] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [result, setResult] = useState<RoomCommitSubmissionResponse | null>(null);
-  const displayedProgress = result?.progress ?? assessmentProgress;
+  const [workspaceFinalizeResult, setWorkspaceFinalizeResult] = useState<RoomWorkspaceFinalizeResponse | null>(null);
+  const [workspaceFinalizeFields, setWorkspaceFinalizeFields] = useState<Required<RoomWorkspaceFinalizeRequest>>({
+    narrative: '',
+    testCommand: '',
+  });
+  const displayedProgress = workspaceFinalizeResult?.progress ?? result?.progress ?? assessmentProgress;
+  const workspaceFinalizeBlockedReason = disabledReason
+    ?? workspaceFinalizeDisabledReason
+    ?? (!workspaceFinalizeAvailable ? 'Launch the workspace before finalizing the assessment commit.' : null);
 
   useEffect(() => {
     setFields((current) => (
@@ -315,6 +332,40 @@ export function CommitSubmissionWindow({
     setError(null);
   };
 
+  const setWorkspaceFinalizeField = (key: keyof RoomWorkspaceFinalizeRequest, value: string): void => {
+    setWorkspaceFinalizeFields((current) => ({ ...current, [key]: value }));
+    setError(null);
+  };
+
+  const handleWorkspaceFinalize = async (): Promise<void> => {
+    if (workspaceFinalizeBlockedReason) {
+      setError(workspaceFinalizeBlockedReason);
+      return;
+    }
+    if (!onFinalizeWorkspace) {
+      setError('Workspace finalizer is not connected for this room.');
+      return;
+    }
+    setFinalizing(true);
+    setError(null);
+    setResult(null);
+    setWorkspaceFinalizeResult(null);
+    try {
+      const payload: RoomWorkspaceFinalizeRequest = {};
+      const narrative = workspaceFinalizeFields.narrative.trim();
+      const testCommand = workspaceFinalizeFields.testCommand.trim();
+      if (narrative) payload.narrative = narrative;
+      if (testCommand) payload.testCommand = testCommand;
+      const response = await onFinalizeWorkspace(payload);
+      setWorkspaceFinalizeResult(response);
+      if (response.progress) onProgressChange?.(response.progress);
+    } catch (err) {
+      setError(err instanceof Error ? err.message : 'Workspace finalization failed.');
+    } finally {
+      setFinalizing(false);
+    }
+  };
+
   const handleSubmit = async (event: FormEvent<HTMLFormElement>): Promise<void> => {
     event.preventDefault();
     if (disabledReason) {
@@ -328,6 +379,7 @@ export function CommitSubmissionWindow({
       const payload = await buildCommitSubmissionPayload(fields);
       const response = await onSubmit(payload);
       setResult(response);
+      setWorkspaceFinalizeResult(null);
       onProgressChange?.(response.progress);
     } catch (err) {
       setError(err instanceof Error ? err.message : 'Commit submission failed.');
@@ -346,6 +398,58 @@ export function CommitSubmissionWindow({
       </section>
 
       <ChallengeCompletionPanel packet={challengePacket} progress={displayedProgress} />
+
+      <section className="commit-submission-workspace-finalize" data-testid="commit-submission-workspace-finalize">
+        <div className="commit-submission-workspace-finalize-header">
+          <strong>Workspace commit</strong>
+          <span>Submit the current assessment branch HEAD from the live container.</span>
+        </div>
+        <label>
+          <span>Submission note</span>
+          <textarea
+            value={workspaceFinalizeFields.narrative}
+            onChange={(event) => setWorkspaceFinalizeField('narrative', event.target.value)}
+            placeholder="Focused retry fix; targeted tests pass."
+            disabled={Boolean(workspaceFinalizeBlockedReason) || finalizing || submitting}
+            rows={2}
+            data-testid="workspace-finalize-narrative"
+          />
+        </label>
+        <label>
+          <span>Test command</span>
+          <input
+            value={workspaceFinalizeFields.testCommand}
+            onChange={(event) => setWorkspaceFinalizeField('testCommand', event.target.value)}
+            placeholder="npm test -- retry"
+            disabled={Boolean(workspaceFinalizeBlockedReason) || finalizing || submitting}
+            data-testid="workspace-finalize-test-command"
+          />
+        </label>
+        <button
+          type="button"
+          className="win95-workspace-launch-btn"
+          onClick={() => void handleWorkspaceFinalize()}
+          disabled={Boolean(workspaceFinalizeBlockedReason) || finalizing || submitting}
+          data-testid="workspace-finalize-submit"
+        >
+          {finalizing ? <Loader2 size={14} className="spin" /> : <CheckCircle2 size={14} />}
+          Finalize from workspace
+        </button>
+        {workspaceFinalizeBlockedReason && (
+          <div className="commit-submission-status is-blocked" data-testid="workspace-finalize-disabled">
+            <TriangleAlert size={16} />
+            <span>{workspaceFinalizeBlockedReason}</span>
+          </div>
+        )}
+        {workspaceFinalizeResult?.submission && (
+          <div className="commit-submission-status is-success" data-testid="workspace-finalize-success">
+            <CheckCircle2 size={16} />
+            <span>
+              Submitted {shortSha(workspaceFinalizeResult.submission.commitSha)} from {workspaceFinalizeResult.submission.branchName}.
+            </span>
+          </div>
+        )}
+      </section>
 
       <section className="commit-submission-checklist" data-testid="commit-submission-checklist">
         <strong>Paste evidence from the workspace</strong>

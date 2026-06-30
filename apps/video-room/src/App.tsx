@@ -16,6 +16,7 @@ import {
   Video,
 } from 'lucide-react';
 import {
+  finalizeRoomWorkspaceAssessment,
   getRoomAssessmentProgress,
   getRoomWorkspace,
   launchRoomWorkspace,
@@ -139,6 +140,8 @@ import type {
   RoomAssessmentProgressSnapshot,
   RoomCommitSubmissionRequest,
   RoomCommitSubmissionResponse,
+  RoomWorkspaceFinalizeRequest,
+  RoomWorkspaceFinalizeResponse,
 } from './types';
 
 type RecordingState = 'idle' | 'starting' | 'recording' | 'uploading' | 'saved' | 'failed';
@@ -2185,6 +2188,19 @@ function Room({ token, metadata }: { token: string; metadata: RoomMetadata }): J
       return response;
     });
 
+  const finalizeCommitFromWorkspace = (
+    payload: RoomWorkspaceFinalizeRequest,
+  ): Promise<RoomWorkspaceFinalizeResponse> => {
+    if (!workspaceSession || !hasActiveWorkspace) {
+      return Promise.reject(new Error('Launch the workspace before finalizing the assessment commit.'));
+    }
+    return finalizeRoomWorkspaceAssessment(token, workspaceSession.sessionId, payload)
+      .then((response) => {
+        if (response.progress) setAssessmentProgress(response.progress);
+        return response;
+      });
+  };
+
   const handleClippyAction = (actionId: string): void => {
     executeRoomAction(actionId);
   };
@@ -2703,6 +2719,11 @@ function Room({ token, metadata }: { token: string; metadata: RoomMetadata }): J
               : 'Commit submission is only available for dev-container assessment rooms.'}
             onSubmit={submitCommitFromRoom}
             onProgressChange={setAssessmentProgress}
+            workspaceFinalizeAvailable={Boolean(workspace?.enabled && hasActiveWorkspace)}
+            workspaceFinalizeDisabledReason={workspace?.enabled && !hasActiveWorkspace
+              ? 'Launch the workspace before finalizing the assessment commit.'
+              : null}
+            onFinalizeWorkspace={finalizeCommitFromWorkspace}
           />
         );
 

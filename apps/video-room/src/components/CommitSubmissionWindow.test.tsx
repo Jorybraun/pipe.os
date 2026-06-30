@@ -126,6 +126,105 @@ describe('CommitSubmissionWindow', () => {
     expect(screen.getByTestId('commit-submission-diff')).toHaveProperty('value', '');
   });
 
+  it('submits the current live workspace HEAD through the real finalizer path', async () => {
+    const commitSha = 'b'.repeat(40);
+    const onSubmit = vi.fn();
+    const onProgressChange = vi.fn();
+    const onFinalizeWorkspace = vi.fn(async () => ({
+      ok: true,
+      submitted: true,
+      commit: {
+        repositoryUrl: 'https://github.com/pipe/source-backed-worker',
+        branchName: 'pipe-assessment',
+        baseCommitSha: 'd'.repeat(40),
+        commitSha,
+        changedFiles: [{ path: 'src/retry.ts', status: 'modified' as const }],
+        sourceRefTypes: ['git_commit', 'code_diff', 'test_run'],
+      },
+      submission: {
+        accepted: true,
+        repositoryUrl: 'https://github.com/pipe/source-backed-worker',
+        branchName: 'pipe-assessment',
+        commitSha,
+        commitUrl: null,
+      },
+      progress: {
+        ...loadedProgress,
+        stage: 'READY_FOR_EVALUATION',
+        nextAction: 'START_EVALUATION',
+        nextActionLabel: 'Start source-backed evaluation.',
+        hasCommitSubmission: true,
+        hasTestEvidence: true,
+        latestEvent: {
+          kind: 'commit_submission',
+          sequence: 8,
+          occurredAt: '2026-06-29T20:02:00.000Z',
+        },
+        commit: {
+          repositoryUrl: 'https://github.com/pipe/source-backed-worker',
+          forkRepositoryUrl: null,
+          branchName: 'pipe-assessment',
+          baseCommitSha: 'd'.repeat(40),
+          commitSha,
+          commitUrl: null,
+          changedFiles: [{ path: 'src/retry.ts', status: 'modified' }],
+          occurredAt: '2026-06-29T20:02:00.000Z',
+        },
+      },
+    }));
+
+    render(
+      <CommitSubmissionWindow
+        defaultRepositoryUrl="https://github.com/fallback/repo"
+        challengePacket={packet}
+        assessmentProgress={loadedProgress}
+        onSubmit={onSubmit}
+        onProgressChange={onProgressChange}
+        workspaceFinalizeAvailable
+        onFinalizeWorkspace={onFinalizeWorkspace}
+      />,
+    );
+
+    fireEvent.change(screen.getByTestId('workspace-finalize-narrative'), {
+      target: { value: 'Submitted retry fix from the assessment branch.' },
+    });
+    fireEvent.change(screen.getByTestId('workspace-finalize-test-command'), {
+      target: { value: 'npm test -- retry' },
+    });
+    fireEvent.click(screen.getByTestId('workspace-finalize-submit'));
+
+    await waitFor(() => expect(onFinalizeWorkspace).toHaveBeenCalledTimes(1));
+    expect(onFinalizeWorkspace).toHaveBeenCalledWith({
+      narrative: 'Submitted retry fix from the assessment branch.',
+      testCommand: 'npm test -- retry',
+    });
+    expect(onSubmit).not.toHaveBeenCalled();
+    expect(onProgressChange).toHaveBeenCalledWith(expect.objectContaining({
+      stage: 'READY_FOR_EVALUATION',
+      hasCommitSubmission: true,
+      commit: expect.objectContaining({ commitSha }),
+    }));
+    expect(screen.getByTestId('workspace-finalize-success').textContent).toContain(commitSha.slice(0, 12));
+    expect(screen.getByTestId('commit-submission-progress').textContent).toContain('Ready For Evaluation');
+  });
+
+  it('keeps workspace finalization blocked until the live workspace is ready', () => {
+    render(
+      <CommitSubmissionWindow
+        defaultRepositoryUrl="https://github.com/fallback/repo"
+        challengePacket={packet}
+        onSubmit={vi.fn()}
+        workspaceFinalizeDisabledReason="Launch the workspace before finalizing the assessment commit."
+        onFinalizeWorkspace={vi.fn()}
+      />,
+    );
+
+    expect(screen.getByTestId('workspace-finalize-disabled').textContent).toContain(
+      'Launch the workspace before finalizing the assessment commit.',
+    );
+    expect(screen.getByTestId('workspace-finalize-submit')).toHaveProperty('disabled', true);
+  });
+
   it('makes upstream PR tracking an explicit opt-in before submitting', async () => {
     const commitSha = 'c'.repeat(40);
     const onSubmit = vi.fn(async (_payload: RoomCommitSubmissionRequest): Promise<RoomCommitSubmissionResponse> => {
