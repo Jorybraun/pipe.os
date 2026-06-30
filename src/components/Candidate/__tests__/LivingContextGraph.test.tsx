@@ -93,6 +93,15 @@ vi.mock('../../../hooks/useEvidenceConflicts', () => ({
   }),
 }));
 
+vi.mock('../../../hooks/useEvidenceReadiness', () => ({
+  useEvidenceReadiness: () => ({
+    report: null,
+    isLoading: false,
+    error: null,
+    refetch: vi.fn(),
+  }),
+}));
+
 function makeLivingContext(): LivingContextReadModel {
   return {
     person: {
