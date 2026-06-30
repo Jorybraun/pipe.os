@@ -73,11 +73,12 @@ test.describe('Feature: assessment recruiter detail smoke', () => {
 
     const decision = page.getByTestId('interview-code-review-decision-summary');
     const workspaceDecision = page.getByTestId('interview-workspace-assessment-decision-summary');
-    await expect(decision.or(workspaceDecision).first()).toBeVisible({ timeout: 45_000 });
+    const visibleDecision = decision.or(workspaceDecision).first();
+    await expect(visibleDecision).toBeVisible({ timeout: 45_000 });
     await expect(page.locator('body')).not.toContainText('An unexpected error occurred');
     await expect(page.locator('body')).not.toContainText('MATCHING IN PROGRESS');
     await expect(page.locator('body')).not.toContainText('Building your personalized challenge');
-    await expect(page.locator('body')).not.toContainText('Not recorded yet');
+    await expect(visibleDecision).not.toContainText('Not recorded yet');
     await expectHumanDecisionState(page);
 
     const repoLabel = expectedRepoLabel(EXPECTED_REPO_URL);

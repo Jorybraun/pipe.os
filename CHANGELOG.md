@@ -15,6 +15,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - Interview cards and detail pages now prefer the explicit human decision over the AI evaluator recommendation while still preserving evaluator status, claims, and cautions.
 - Interview detail pages now expose the reviewer decision form after source-backed evaluation, posting the selected advance/hold/reject/needs-more-evidence decision to the real human-decision endpoint and updating the readout immediately.
 - Recruiter detail Playwright smoke coverage now supports both CODE_REVIEW and workspace assessment pages, including optional assertions for submitted work packets, evaluator claims, human-decision forms, and recorded human decisions.
+- Recruiter detail smoke now scopes fallback-copy assertions to the assessment decision readout, so legitimate “call not recorded yet” scheduling state does not mask a successful open-source assessment report.
 
 ### Added — Evidence conflict detection (criteria #2, #6, #8)
 
