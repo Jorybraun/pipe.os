@@ -694,6 +694,11 @@ Fix stale popover listener cleanup.`;
         hasChallengePacket: boolean;
         hasWorkEvidence: boolean;
         hasCommitSubmission: boolean;
+        evidenceSnippets: Array<{
+          sourceRefType: string;
+          evidenceRole: string;
+          exactText: string;
+        }>;
       };
     };
     expect(progressBody.progress).toMatchObject({
@@ -706,6 +711,18 @@ Fix stale popover listener cleanup.`;
       hasWorkEvidence: true,
       hasCommitSubmission: false,
     });
+    expect(progressBody.progress.evidenceSnippets).toEqual([
+      expect.objectContaining({
+        sourceRefType: 'review_challenge_packet',
+        evidenceRole: 'assigned_challenge',
+        exactText: expect.stringContaining('Task: fix stale popover listener cleanup and add a regression test.'),
+      }),
+      expect.objectContaining({
+        sourceRefType: 'terminal_output',
+        evidenceRole: 'support',
+        exactText: expect.stringContaining('FAIL stale handler remains attached'),
+      }),
+    ]);
   });
 
   it('summarizes source-backed repo-task progress from challenge assignment through evaluation', async () => {

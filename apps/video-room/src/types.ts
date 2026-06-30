@@ -153,6 +153,13 @@ export interface RoomAssessmentProgressSnapshot {
   hasVerificationGap?: boolean;
   evidenceCounts: Array<{ kind: string; count: number }>;
   sourceRefCounts: Array<{ kind: string; count: number }>;
+  evidenceSnippets?: Array<{
+    eventKind: string;
+    sourceRefType: string;
+    evidenceRole: string;
+    exactText: string;
+    occurredAt: string;
+  }>;
   latestEvent: {
     kind: string;
     sequence: number;

@@ -1428,6 +1428,11 @@ describe('GET /interviews/:id detail', () => {
           hasCommitSubmission: boolean;
           challenge: { sourceRefId: string } | null;
           commit: { commitSha: string | null; repositoryUrl: string | null } | null;
+          evidenceSnippets: Array<{
+            sourceRefType: string;
+            evidenceRole: string;
+            exactText: string;
+          }>;
         } | null;
       };
     };
@@ -1443,6 +1448,21 @@ describe('GET /interviews/:id detail', () => {
         repositoryUrl: 'https://github.com/open-source/widgets',
       },
     });
+    expect(body.interview.assessmentProgress?.evidenceSnippets).toEqual(expect.arrayContaining([
+      expect.objectContaining({
+        sourceRefType: 'review_challenge_packet',
+        evidenceRole: 'assigned_challenge',
+        exactText: expect.stringContaining('Task: fix the popover cleanup regression.'),
+      }),
+      expect.objectContaining({
+        sourceRefType: 'git_commit',
+        exactText: expect.stringContaining(`commit ${commitSha}`),
+      }),
+      expect.objectContaining({
+        sourceRefType: 'code_diff',
+        exactText: expect.stringContaining('+cleanupStaleHandler();'),
+      }),
+    ]));
   });
 
   it('starts assessment evaluation through the interview route and records a source-backed AI-unavailable diagnostic when no AI binding exists', async () => {

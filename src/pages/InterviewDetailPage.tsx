@@ -514,6 +514,33 @@ function assessmentCoverageLabel(label: string): string {
   }
 }
 
+function assessmentEvidenceSnippetLabel(sourceRefType: string): string {
+  switch (sourceRefType) {
+    case 'review_challenge_packet':
+    case 'open_source_challenge_packet':
+    case 'repo_task_challenge_packet':
+    case 'challenge_packet':
+      return 'Challenge evidence';
+    case 'git_commit':
+      return 'Commit evidence';
+    case 'code_diff':
+      return 'Diff evidence';
+    case 'test_run':
+      return 'Test evidence';
+    case 'terminal_command':
+    case 'terminal_output':
+      return 'Terminal evidence';
+    case 'ai_usage_event':
+      return 'AI evaluator trace';
+    case 'room_chat_message':
+      return 'Chat evidence';
+    case 'meeting_transcript_segment':
+      return 'Transcript evidence';
+    default:
+      return sentenceCaseToken(sourceRefType);
+  }
+}
+
 function assessmentRequiredProofItems(progress: AssessmentProgressSnapshot | null): AssessmentEvidenceCoverageItem[] {
   const coverage = progress?.evaluation?.evidenceCoverage ?? null;
   if (!coverage) return [];
@@ -2430,6 +2457,7 @@ export default function InterviewDetailPage(): JSX.Element {
     : null;
   const assessmentWorkspaceSummary = workspaceSessionSummary(interview);
   const assessmentProgressSourceRefCounts = assessmentProgress?.sourceRefCounts ?? [];
+  const assessmentEvidenceSnippets = assessmentProgress?.evidenceSnippets?.slice(0, 6) ?? [];
   const assessmentRequiredProof = assessmentRequiredProofItems(assessmentProgress);
   const assessmentConfidenceSignals = assessmentConfidenceSignalItems(assessmentProgress);
   const assessmentEvaluationClaims = assessmentProgress?.evaluation?.claims?.slice(0, 3) ?? [];
@@ -3031,6 +3059,30 @@ export default function InterviewDetailPage(): JSX.Element {
                   <span style={FIELD_LABEL}>Verification gap</span>
                   <span style={{ ...FIELD_VALUE, lineHeight: 1.5 }}>
                     Test evidence is missing; the candidate submitted a source-backed explanation instead of silent verification.
+                  </span>
+                </div>
+              )}
+              {assessmentEvidenceSnippets.length > 0 && (
+                <div
+                  data-testid="interview-assessment-evidence-snippets"
+                  style={{ ...EVIDENCE_ROW, alignItems: 'flex-start' }}
+                >
+                  <span style={FIELD_LABEL}>Evidence trail</span>
+                  <span style={{ ...FIELD_VALUE, ...ASSESSMENT_CLAIM_LIST }}>
+                    {assessmentEvidenceSnippets.map((snippet, index) => (
+                      <span
+                        key={`${snippet.sourceRefType}:${snippet.evidenceRole}:${snippet.occurredAt}:${index}`}
+                        style={ASSESSMENT_CLAIM_ROW}
+                      >
+                        <span style={ASSESSMENT_CLAIM_HEAD}>
+                          <span>{assessmentEvidenceSnippetLabel(snippet.sourceRefType)}</span>
+                          <span>{sentenceCaseToken(snippet.evidenceRole)}</span>
+                        </span>
+                        <span style={ASSESSMENT_CLAIM_NARRATIVE}>
+                          {compactEvidenceText(snippet.exactText, 360)}
+                        </span>
+                      </span>
+                    ))}
                   </span>
                 </div>
               )}

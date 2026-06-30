@@ -287,6 +287,14 @@ export interface AssessmentProgressCommit {
   occurredAt: string;
 }
 
+export interface AssessmentProgressEvidenceSnippet {
+  eventKind: string;
+  sourceRefType: string;
+  evidenceRole: string;
+  exactText: string;
+  occurredAt: string;
+}
+
 export interface AssessmentEvidenceCoverageItem {
   label: string;
   required: boolean;
@@ -352,6 +360,7 @@ export interface AssessmentProgressSnapshot {
   hasVerificationGap: boolean;
   evidenceCounts: AssessmentEvidenceKindCount[];
   sourceRefCounts: AssessmentEvidenceKindCount[];
+  evidenceSnippets: AssessmentProgressEvidenceSnippet[];
   challenge: AssessmentProgressSourceRef | null;
   latestEvent: AssessmentProgressLatestEvent | null;
   commit: AssessmentProgressCommit | null;
@@ -368,6 +377,22 @@ const ALLOWED_TRANSITIONS: Record<RepoTaskInterviewState, readonly RepoTaskInter
   CANCELLED: [],
 };
 const SHA256_HEX_PATTERN = /^[a-f0-9]{64}$/i;
+const ASSESSMENT_PROGRESS_SNIPPET_TYPES = [
+  'review_challenge_packet',
+  'open_source_challenge_packet',
+  'repo_task_challenge_packet',
+  'challenge_packet',
+  'git_commit',
+  'code_diff',
+  'test_run',
+  'terminal_command',
+  'terminal_output',
+  'ai_usage_event',
+  'room_chat_message',
+  'meeting_transcript_segment',
+] as const;
+const MAX_ASSESSMENT_PROGRESS_SNIPPETS = 6;
+const MAX_ASSESSMENT_PROGRESS_SNIPPET_CHARS = 1_200;
 
 function toCanonicalState(state: RepoTaskInterviewState): AssessmentSessionState {
   if (state === 'EVALUATING') return 'EVALUATING';
@@ -675,6 +700,12 @@ function parseJsonObject(value: string | null): JsonObject {
   const parsed = JSON.parse(value) as JsonValue;
   if (parsed === null || Array.isArray(parsed) || typeof parsed !== 'object') return {};
   return parsed;
+}
+
+function compactAssessmentSnippetText(value: string): string {
+  const normalized = value.replace(/\s+/g, ' ').trim();
+  if (normalized.length <= MAX_ASSESSMENT_PROGRESS_SNIPPET_CHARS) return normalized;
+  return `${normalized.slice(0, MAX_ASSESSMENT_PROGRESS_SNIPPET_CHARS - 15).trimEnd()} [truncated]`;
 }
 
 function jsonStringValue(value: JsonValue | undefined): string | null {
@@ -1138,6 +1169,7 @@ export class RepoTaskInterviewSessionStore {
     const session = await this.loadSession(sessionId);
     const evidenceCounts = await this.loadEvidenceCounts(session.id);
     const sourceRefCounts = await this.loadSourceRefCounts(session.id);
+    const evidenceSnippets = await this.loadEvidenceSnippets(session.id);
     const challenge = await this.loadChallengeSourceRef(session.id);
     const latestEvent = await this.loadLatestEvent(session.id);
     const commit = await this.loadLatestCommitSubmission(session.id);
@@ -1211,6 +1243,7 @@ export class RepoTaskInterviewSessionStore {
       hasVerificationGap,
       evidenceCounts,
       sourceRefCounts,
+      evidenceSnippets,
       challenge,
       latestEvent,
       commit,
@@ -1245,6 +1278,71 @@ export class RepoTaskInterviewSessionStore {
       kind: row.kind,
       count: row.count,
     }));
+  }
+
+  private async loadEvidenceSnippets(sessionId: string): Promise<AssessmentProgressEvidenceSnippet[]> {
+    const result = await this.db.prepare(
+      `SELECT e.kind AS event_kind,
+              e.occurred_at,
+              sr.source_ref_type,
+              sr.evidence_role,
+              sr.exact_text
+         FROM assessment_event_source_refs sr
+         JOIN assessment_evidence_events e ON e.id = sr.event_id
+        WHERE e.session_id = ?1
+          AND sr.source_ref_type IN (
+            'review_challenge_packet',
+            'open_source_challenge_packet',
+            'repo_task_challenge_packet',
+            'challenge_packet',
+            'git_commit',
+            'code_diff',
+            'test_run',
+            'terminal_command',
+            'terminal_output',
+            'ai_usage_event',
+            'room_chat_message',
+            'meeting_transcript_segment'
+          )
+          AND sr.exact_text IS NOT NULL
+          AND trim(sr.exact_text) <> ''
+        ORDER BY
+          CASE sr.source_ref_type
+            WHEN 'review_challenge_packet' THEN 0
+            WHEN 'open_source_challenge_packet' THEN 0
+            WHEN 'repo_task_challenge_packet' THEN 0
+            WHEN 'challenge_packet' THEN 0
+            WHEN 'git_commit' THEN 1
+            WHEN 'code_diff' THEN 2
+            WHEN 'test_run' THEN 3
+            WHEN 'terminal_command' THEN 4
+            WHEN 'terminal_output' THEN 4
+            WHEN 'ai_usage_event' THEN 5
+            WHEN 'room_chat_message' THEN 6
+            WHEN 'meeting_transcript_segment' THEN 7
+            ELSE 8
+          END,
+          e.sequence DESC,
+          sr.created_at DESC
+        LIMIT ${MAX_ASSESSMENT_PROGRESS_SNIPPETS}`,
+    ).bind(sessionId).all<{
+      event_kind: string;
+      occurred_at: string;
+      source_ref_type: string;
+      evidence_role: string;
+      exact_text: string;
+    }>();
+
+    const allowedTypes = new Set<string>(ASSESSMENT_PROGRESS_SNIPPET_TYPES);
+    return (result.results ?? [])
+      .filter((row) => allowedTypes.has(row.source_ref_type))
+      .map((row) => ({
+        eventKind: row.event_kind,
+        sourceRefType: row.source_ref_type,
+        evidenceRole: row.evidence_role,
+        exactText: compactAssessmentSnippetText(row.exact_text),
+        occurredAt: row.occurred_at,
+      }));
   }
 
   private async loadChallengeSourceRef(sessionId: string): Promise<AssessmentProgressSourceRef | null> {

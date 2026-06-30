@@ -2433,6 +2433,7 @@ interface RoomAssessmentProgressPayload {
   hasVerificationGap: boolean;
   evidenceCounts: AssessmentProgressSnapshot['evidenceCounts'];
   sourceRefCounts: AssessmentProgressSnapshot['sourceRefCounts'];
+  evidenceSnippets: AssessmentProgressSnapshot['evidenceSnippets'];
   latestEvent: Omit<NonNullable<AssessmentProgressSnapshot['latestEvent']>, 'id'> | null;
   commit: Omit<NonNullable<AssessmentProgressSnapshot['commit']>, 'eventId'> | null;
   evaluation: Omit<NonNullable<AssessmentProgressSnapshot['evaluation']>, 'id'> | null;
@@ -2512,6 +2513,7 @@ function serializeRoomAssessmentProgress(
     hasVerificationGap: progress.hasVerificationGap,
     evidenceCounts: progress.evidenceCounts,
     sourceRefCounts: progress.sourceRefCounts,
+    evidenceSnippets: progress.evidenceSnippets,
     latestEvent: progress.latestEvent
       ? {
           kind: progress.latestEvent.kind,

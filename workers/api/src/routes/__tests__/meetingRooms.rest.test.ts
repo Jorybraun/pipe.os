@@ -5815,6 +5815,11 @@ describe('meeting room recording living-context route', () => {
         hasDevContainerEvidence: boolean;
         evidenceCounts: Array<{ kind: string; count: number }>;
         sourceRefCounts: Array<{ kind: string; count: number }>;
+        evidenceSnippets: Array<{
+          sourceRefType: string;
+          evidenceRole: string;
+          exactText: string;
+        }>;
         latestEvent: { kind: string; sequence: number } | null;
       } | null;
     };
@@ -5829,6 +5834,13 @@ describe('meeting room recording living-context route', () => {
     });
     expect(body.progress?.evidenceCounts).toContainEqual({ kind: 'dev_container_event', count: 1 });
     expect(body.progress?.sourceRefCounts).toContainEqual({ kind: 'dev_container_workspace_launch', count: 1 });
+    expect(body.progress?.evidenceSnippets).toEqual(expect.arrayContaining([
+      expect.objectContaining({
+        sourceRefType: 'open_source_challenge_packet',
+        evidenceRole: 'assigned_challenge',
+        exactText: expect.stringContaining('Repo: https://github.com/pipe/source-backed-worker'),
+      }),
+    ]));
     expect(sqlite.prepare(
       `SELECT repo_git_url, challenge_branch, base_commit_sha
          FROM dev_container_sessions

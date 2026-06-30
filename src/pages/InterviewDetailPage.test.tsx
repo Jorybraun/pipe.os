@@ -239,6 +239,29 @@ describe('InterviewDetailPage', () => {
             { kind: 'code_diff', count: 1 },
             { kind: 'test_run', count: 1 },
           ],
+          evidenceSnippets: [
+            {
+              eventKind: 'recruiter_note',
+              sourceRefType: 'review_challenge_packet',
+              evidenceRole: 'assigned_challenge',
+              exactText: 'Task: Fix the popover cleanup regression.',
+              occurredAt: '2026-06-23T00:00:00.000Z',
+            },
+            {
+              eventKind: 'commit_submission',
+              sourceRefType: 'code_diff',
+              evidenceRole: 'submitted_diff',
+              exactText: 'diff --git a/src/popover.ts b/src/popover.ts +cleanupStaleHandler();',
+              occurredAt: '2026-06-23T00:18:00.000Z',
+            },
+            {
+              eventKind: 'commit_submission',
+              sourceRefType: 'test_run',
+              evidenceRole: 'verification_test_output',
+              exactText: 'pnpm test popover -- --runInBand passed the impatient click regression.',
+              occurredAt: '2026-06-23T00:19:00.000Z',
+            },
+          ],
           challenge: {
             sourceRefType: 'review_challenge_packet',
             sourceRefId: 'challenge-packet-popover',
@@ -303,6 +326,14 @@ describe('InterviewDetailPage', () => {
     expect(contract).toHaveTextContent('Expected evidence');
     expect(contract).toHaveTextContent('Commit on pipe-assessment/* with a focused diff.');
     expect(contract).toHaveTextContent('Test output showing the regression suite passed.');
+    const snippets = screen.getByTestId('interview-assessment-evidence-snippets');
+    expect(snippets).toHaveTextContent('Evidence trail');
+    expect(snippets).toHaveTextContent('Challenge evidence');
+    expect(snippets).toHaveTextContent('Diff evidence');
+    expect(snippets).toHaveTextContent('Test evidence');
+    expect(snippets).toHaveTextContent('Fix the popover cleanup regression.');
+    expect(snippets).toHaveTextContent('cleanupStaleHandler');
+    expect(snippets).toHaveTextContent('passed the impatient click regression');
     expect(progress).toHaveTextContent('pipe-assessment/popover-cleanup');
     expect(progress).not.toHaveTextContent('challenge-packet-popover');
   });

@@ -70,6 +70,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Fixed — Candidate repo matching
 
+- Recruiter assessment progress now includes a compact source-backed evidence trail with exact challenge, commit, diff, test, terminal, and AI snippets so humans can review the artifact trail behind an open-source assessment report.
 - Repo-task assessment evaluation now salvages complete source-cited claims from truncated Workers AI JSON responses and records an explicit evaluator-output warning instead of downgrading usable evidence to `AI_DEVELOPER_UNAVAILABLE`.
 - Assessment evaluator diagnostics now surface as recruiter-visible cautions on interview detail and interview cards, including severity, code, message, and source-ref counts/types.
 - Repo-task assessment reports now prefix evaluator summaries with the assigned challenge task from exact source-backed challenge-packet evidence, so live open-source bug-fix evaluations remain task-specific even when model prose is generic.

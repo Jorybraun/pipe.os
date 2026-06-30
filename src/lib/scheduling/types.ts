@@ -144,6 +144,7 @@ export interface AssessmentProgressSnapshot {
   hasVerificationGap?: boolean;
   evidenceCounts: Array<{ kind: string; count: number }>;
   sourceRefCounts: Array<{ kind: string; count: number }>;
+  evidenceSnippets?: AssessmentEvidenceSnippet[];
   challenge: {
     sourceRefType: string;
     sourceRefId: string;
@@ -178,6 +179,14 @@ export interface AssessmentProgressSnapshot {
     claims?: AssessmentEvaluationClaimPreview[];
     diagnostics?: AssessmentEvaluationDiagnosticPreview[];
   } | null;
+}
+
+export interface AssessmentEvidenceSnippet {
+  eventKind: string;
+  sourceRefType: string;
+  evidenceRole: string;
+  exactText: string;
+  occurredAt: string;
 }
 
 export interface AssessmentEvaluationClaimPreview {
