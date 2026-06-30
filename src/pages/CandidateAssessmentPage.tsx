@@ -315,14 +315,14 @@ export default function CandidateAssessmentPage({ hideHeader = false }: Candidat
             {isInvalid ? 'Invalid Invite Link'
               : isCompleted ? 'Assessment Completed'
               : isSessionExpired ? 'Session Expired'
-              : isTokenClaimed ? 'Link Already Used'
+              : isTokenClaimed ? 'Assessment Already Started'
               : 'Connection Error'}
           </h2>
           <p style={{ fontSize: 14, color: 'var(--pipe-text-dim)', lineHeight: 1.6, marginBottom: 32, fontFamily: '"Space Mono", monospace' }}>
             {isInvalid ? 'This invitation link is invalid or has expired. Please contact your recruiter for a new link.'
               : isCompleted ? 'You have already submitted this assessment. Thank you for your time!'
               : isSessionExpired ? 'Your session has expired. Please contact your recruiter for a new invite link.'
-              : isTokenClaimed ? 'This invite link has already been used. Please contact your recruiter for a new link.'
+              : isTokenClaimed ? 'This one-use assessment link has already started. Please contact your recruiter if you need a fresh link.'
               : 'There was an error connecting to our secure servers. Please try refreshing the page or clicking the button below.'}
           </p>
           <button onClick={() => reset()} style={{
