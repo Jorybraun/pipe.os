@@ -64,6 +64,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Fixed — Candidate repo matching
 
+- Roleless CODE_REVIEW matching now has regression coverage for a live-shaped `mui/base-ui` PR packet and recruiter-visible evidence traces, verdict summaries, annotations, and AI developer pushback threads.
 - Commit submissions are now rejected unless the submitted HEAD is on `pipe-assessment` or a `pipe-assessment/*` branch, with the same rule enforced by the browser payload builder, durable assessment session store, and dev-container finalizer.
 - Workspace bridge revision `2026-06-30-assessment-branch-v1` forces dev containers onto the assessment-branch-enforcing finalizer during deployed smoke validation.
 - Deployed workspace smoke can now prove the task-aligned MUI popover challenge through the matched-repo path, asserting the selected review challenge packet's repo id, PR number, base/head commits, and source-backed packet text instead of relying only on manual task assignment.
