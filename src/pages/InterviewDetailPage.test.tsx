@@ -1160,6 +1160,16 @@ describe('InterviewDetailPage', () => {
     const related = screen.getByTestId('interview-related-evidence-interviews');
     expect(related).toHaveTextContent('Other interviews for this person');
     expect(related).toHaveTextContent('These are separate interviews on the same person graph. Open the person profile for the full cross-meeting view.');
+    const relatedSummary = screen.getByTestId('interview-related-evidence-summary');
+    expect(relatedSummary).toHaveTextContent('Evidence follow-up is already linked');
+    expect(relatedSummary).toHaveTextContent('Use it to capture the missing person context, then rerun repo matching from source-backed evidence.');
+    expect(relatedSummary).toHaveTextContent('Open the linked follow-up before creating another interview.');
+    expect(relatedSummary).toHaveTextContent('1');
+    expect(relatedSummary).toHaveTextContent('follow-ups');
+    expect(relatedSummary).toHaveTextContent('2');
+    expect(relatedSummary).toHaveTextContent('technical assessments');
+    expect(relatedSummary).toHaveTextContent('1');
+    expect(relatedSummary).toHaveTextContent('ready transcripts');
     expect(related).toHaveTextContent('Showing 4 of 5 related context previews.');
     expect(related).toHaveTextContent('Open full person graph');
     expect(related).toHaveTextContent('Evidence follow-up');

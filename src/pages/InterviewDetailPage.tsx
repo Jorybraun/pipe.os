@@ -180,6 +180,15 @@ interface EvidenceFollowUpPlan {
   questions: string[];
 }
 
+type RelatedEvidenceInterview = NonNullable<ScheduledInterviewDetail['relatedEvidenceInterviews']>[number];
+
+interface RelatedEvidenceDecisionSummary {
+  headline: string;
+  detail: string;
+  nextAction: string;
+  metrics: Array<{ label: string; value: number }>;
+}
+
 type CopyTextResult = 'copied' | 'selected' | 'failed';
 
 function formatDate(value: string | null | undefined, fallback = 'Not scheduled'): string {
@@ -1113,6 +1122,80 @@ function relatedEvidenceDisplayName(related: NonNullable<ScheduledInterviewDetai
     ?? relatedEvidenceRelationshipLabel(related);
 }
 
+function summarizeRelatedEvidenceInterviews(
+  relatedInterviews: RelatedEvidenceInterview[],
+  totalCount: number,
+): RelatedEvidenceDecisionSummary {
+  const followUpCount = relatedInterviews.filter((related) =>
+    related.relationship === 'code_review_evidence_follow_up'
+  ).length;
+  const technicalAssessmentCount = relatedInterviews.filter((related) =>
+    ['CODE_REVIEW', 'DEV_CONTAINER_CHALLENGE', 'OPEN_SOURCE_BUG_FIX'].includes(related.interviewType ?? '')
+  ).length;
+  const conversationCount = relatedInterviews.filter((related) =>
+    ['VIDEO', 'SCREENING'].includes(related.interviewType ?? '')
+  ).length;
+  const readyTranscriptCount = relatedInterviews.filter((related) =>
+    related.transcriptStatus === 'READY' || related.transcriptStatus === 'COMPLETED'
+  ).length;
+  const activeFollowUp = relatedInterviews.find((related) =>
+    related.relationship === 'code_review_evidence_follow_up'
+    && ['INVITED', 'SCHEDULED', 'ACTIVE', 'IN_PROGRESS'].includes(related.status)
+  );
+
+  if (activeFollowUp) {
+    return {
+      headline: 'Evidence follow-up is already linked',
+      detail: 'Use it to capture the missing person context, then rerun repo matching from source-backed evidence.',
+      nextAction: 'Open the linked follow-up before creating another interview.',
+      metrics: [
+        { label: 'follow-ups', value: followUpCount },
+        { label: 'technical assessments', value: technicalAssessmentCount },
+        { label: 'ready transcripts', value: readyTranscriptCount },
+      ],
+    };
+  }
+
+  if (followUpCount > 0) {
+    return {
+      headline: 'Follow-up evidence exists',
+      detail: 'Review the follow-up result before deciding whether the current code-review assignment is fair.',
+      nextAction: 'Open the person profile for the complete evidence trail.',
+      metrics: [
+        { label: 'follow-ups', value: followUpCount },
+        { label: 'technical assessments', value: technicalAssessmentCount },
+        { label: 'ready transcripts', value: readyTranscriptCount },
+      ],
+    };
+  }
+
+  if (readyTranscriptCount > 0) {
+    return {
+      headline: 'Background conversation evidence is available',
+      detail: 'This meeting stays scoped, but the person profile has transcript-backed context you can use for calibration.',
+      nextAction: 'Open the person profile before changing the recommendation.',
+      metrics: [
+        { label: 'conversations', value: conversationCount },
+        { label: 'technical assessments', value: technicalAssessmentCount },
+        { label: 'ready transcripts', value: readyTranscriptCount },
+      ],
+    };
+  }
+
+  return {
+    headline: 'Separate interview history exists',
+    detail: 'Treat these as related context, not evidence from this meeting. Use the person profile for the full rollup.',
+    nextAction: totalCount > relatedInterviews.length
+      ? 'Open the person profile to review the full history.'
+      : 'Compare related context only after this meeting evidence is clear.',
+    metrics: [
+      { label: 'related previews', value: relatedInterviews.length },
+      { label: 'technical assessments', value: technicalAssessmentCount },
+      { label: 'conversations', value: conversationCount },
+    ],
+  };
+}
+
 type AssessmentInviteLinkState = 'active' | 'claimed' | 'stale' | null;
 
 function assessmentInviteStatusLabel(state: AssessmentInviteLinkState, hasUrl: boolean): string {
@@ -1657,6 +1740,10 @@ export default function InterviewDetailPage(): JSX.Element {
   const relatedEvidenceTotal = interview.relatedEvidenceInterviews?.length ?? 0;
   const relatedEvidenceInterviews = interview.relatedEvidenceInterviews?.slice(0, 4) ?? [];
   const relatedEvidenceHiddenCount = Math.max(relatedEvidenceTotal - relatedEvidenceInterviews.length, 0);
+  const relatedEvidenceDecision = summarizeRelatedEvidenceInterviews(
+    relatedEvidenceInterviews,
+    relatedEvidenceTotal,
+  );
   const hasLivingContextEvidence = Boolean(
     contextSummary && (
       contextSummary.interactionCount > 0
@@ -2682,6 +2769,21 @@ export default function InterviewDetailPage(): JSX.Element {
                   <div style={CONTEXT_RECORD_NARRATIVE}>
                     These are separate interviews on the same person graph. Open the person profile for the full cross-meeting view.
                   </div>
+                  <div data-testid="interview-related-evidence-summary" style={RELATED_EVIDENCE_SUMMARY}>
+                    <div style={{ minWidth: 0 }}>
+                      <div style={DECISION_PLAN_SIGNAL}>{relatedEvidenceDecision.headline}</div>
+                      <div style={CONTEXT_RECORD_NARRATIVE}>{relatedEvidenceDecision.detail}</div>
+                      <div style={RELATED_EVIDENCE_NEXT_ACTION}>{relatedEvidenceDecision.nextAction}</div>
+                    </div>
+                    <div style={RELATED_EVIDENCE_METRICS}>
+                      {relatedEvidenceDecision.metrics.map((metric) => (
+                        <div key={metric.label} style={RELATED_EVIDENCE_METRIC}>
+                          <span style={CONTEXT_METRIC_VALUE}>{metric.value}</span>
+                          <span style={CONTEXT_METRIC_LABEL}>{metric.label}</span>
+                        </div>
+                      ))}
+                    </div>
+                  </div>
                   <div style={RELATED_EVIDENCE_SCOPE}>
                     <span style={CONTEXT_RECORD_NARRATIVE}>
                       {relatedEvidenceHiddenCount > 0
@@ -3574,6 +3676,48 @@ const RELATED_EVIDENCE_SCOPE: CSSProperties = {
   border: '1px solid var(--pipe-border)',
   borderRadius: 5,
   background: 'rgba(96,165,250,0.06)',
+};
+
+const RELATED_EVIDENCE_SUMMARY: CSSProperties = {
+  display: 'grid',
+  gridTemplateColumns: 'repeat(auto-fit, minmax(220px, 1fr))',
+  gap: 12,
+  alignItems: 'stretch',
+  minWidth: 0,
+  padding: 12,
+  border: '1px solid rgba(96,165,250,0.26)',
+  borderRadius: 6,
+  background: 'rgba(96,165,250,0.08)',
+};
+
+const RELATED_EVIDENCE_NEXT_ACTION: CSSProperties = {
+  marginTop: 8,
+  color: 'var(--pipe-text)',
+  fontFamily: FONT,
+  fontSize: 11,
+  fontWeight: 700,
+  lineHeight: 1.45,
+};
+
+const RELATED_EVIDENCE_METRICS: CSSProperties = {
+  display: 'grid',
+  gridAutoFlow: 'column',
+  gridAutoColumns: 'minmax(72px, 1fr)',
+  gap: 1,
+  overflow: 'hidden',
+  minWidth: 0,
+  border: '1px solid var(--pipe-border)',
+  borderRadius: 6,
+  background: 'var(--pipe-border)',
+};
+
+const RELATED_EVIDENCE_METRIC: CSSProperties = {
+  display: 'grid',
+  gap: 6,
+  alignContent: 'center',
+  minWidth: 0,
+  padding: 10,
+  background: 'rgba(12,20,34,0.76)',
 };
 
 const RELATED_EVIDENCE_PROFILE_BUTTON: CSSProperties = {
