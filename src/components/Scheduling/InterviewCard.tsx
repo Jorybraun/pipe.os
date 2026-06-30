@@ -84,6 +84,17 @@ function shortCommitSha(value: string | null | undefined): string | null {
   return trimmed.length > 12 ? trimmed.slice(0, 12) : trimmed;
 }
 
+function workspaceSessionSummary(interview: ScheduledInterview): string | null {
+  const workspace = interview.workspaceSession ?? null;
+  if (!workspace) return null;
+  const status = sentenceCaseToken(workspace.status);
+  if (workspace.errorMessage) return `${status}: ${compactText(workspace.errorMessage, 96)}`;
+  const repo = repoLabelFromUrl(workspace.repoGitUrl);
+  const base = shortCommitSha(workspace.baseCommitSha);
+  const details = [repo, base ? `base ${base}` : null].filter((value): value is string => Boolean(value));
+  return details.length > 0 ? `${status} · ${details.join(' · ')}` : status;
+}
+
 function isAssessmentInterviewType(value: ScheduledInterview['interviewType']): boolean {
   return typeof value === 'string' && ASSESSMENT_INTERVIEW_TYPES.has(value);
 }
@@ -206,6 +217,7 @@ export function InterviewCard({
   const assessmentEvaluationLabel = assessmentProgress?.evaluation?.status
     ? sentenceCaseToken(assessmentProgress.evaluation.status)
     : null;
+  const workspaceSummary = workspaceSessionSummary(interview);
 
   return (
     <>
@@ -322,6 +334,16 @@ export function InterviewCard({
               <div style={{ minWidth: 0, fontSize: 10, color: 'var(--pipe-text-dim)', overflowWrap: 'anywhere' }}>
                 {assessmentEvidence}
               </div>
+              {workspaceSummary && (
+                <>
+                  <div style={{ fontSize: 9, color: 'var(--pipe-text-muted)', letterSpacing: '0.12em', fontWeight: 700 }}>
+                    WORKSPACE
+                  </div>
+                  <div style={{ minWidth: 0, fontSize: 10, color: 'var(--pipe-text-dim)', overflowWrap: 'anywhere' }}>
+                    {workspaceSummary}
+                  </div>
+                </>
+              )}
               {assessmentRepoLabel && (
                 <>
                   <div style={{ fontSize: 9, color: 'var(--pipe-text-muted)', letterSpacing: '0.12em', fontWeight: 700 }}>

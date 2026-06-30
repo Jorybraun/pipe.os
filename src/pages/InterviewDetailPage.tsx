@@ -275,6 +275,32 @@ function shortCommitSha(value: string | null | undefined): string {
   return value.length > 10 ? value.slice(0, 10) : value;
 }
 
+function repoLabelFromUrl(value: string | null | undefined): string | null {
+  if (!value) return null;
+  try {
+    const url = new URL(value);
+    const parts = url.pathname
+      .replace(/\.git$/i, '')
+      .split('/')
+      .filter(Boolean);
+    if (parts.length >= 2) return `${parts[parts.length - 2]}/${parts[parts.length - 1]}`;
+  } catch {
+    // Fall through to compact raw text for non-URL repository labels.
+  }
+  return compactEvidenceText(value, 56);
+}
+
+function workspaceSessionSummary(interview: ScheduledInterviewDetail): string | null {
+  const workspace = interview.workspaceSession ?? null;
+  if (!workspace) return null;
+  const status = sentenceCaseToken(workspace.status);
+  if (workspace.errorMessage) return `${status}: ${compactEvidenceText(workspace.errorMessage, 140) ?? workspace.errorMessage}`;
+  const repo = repoLabelFromUrl(workspace.repoGitUrl);
+  const base = workspace.baseCommitSha ? `base ${shortCommitSha(workspace.baseCommitSha)}` : null;
+  const details = [repo, base].filter((value): value is string => Boolean(value));
+  return details.length > 0 ? `${status} · ${details.join(' · ')}` : status;
+}
+
 function compactEvidenceText(value: string, maxLength = 160): string | null {
   const trimmed = value.replace(/\s+/g, ' ').trim();
   if (!trimmed) return null;
@@ -1985,6 +2011,7 @@ export default function InterviewDetailPage(): JSX.Element {
   const assessmentChallengeText = assessmentProgress
     ? assessmentChallengeSummary(assessmentProgress.challenge)
     : null;
+  const assessmentWorkspaceSummary = workspaceSessionSummary(interview);
   const assessmentProgressSourceRefCounts = assessmentProgress?.sourceRefCounts ?? [];
   const assessmentCoverage = assessmentCoverageItems(assessmentProgress);
   const canStartAssessmentEvaluation = assessmentProgress?.nextAction === 'START_EVALUATION';
@@ -2387,6 +2414,10 @@ export default function InterviewDetailPage(): JSX.Element {
             <div style={ASSESSMENT_PROGRESS_CARD}>
               <div style={FIELD_LABEL}>Evidence</div>
               <div style={ASSESSMENT_PROGRESS_VALUE}>{assessmentProgressEvidence}</div>
+            </div>
+            <div style={ASSESSMENT_PROGRESS_CARD}>
+              <div style={FIELD_LABEL}>Workspace</div>
+              <div style={ASSESSMENT_PROGRESS_VALUE}>{assessmentWorkspaceSummary ?? 'Not launched'}</div>
             </div>
             <div style={ASSESSMENT_PROGRESS_CARD}>
               <div style={FIELD_LABEL}>Commit</div>

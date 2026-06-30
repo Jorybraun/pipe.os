@@ -491,6 +491,34 @@ describe('GET /interviews/:id detail', () => {
         created_at TEXT,
         updated_at TEXT
       );
+      CREATE TABLE dev_container_sessions (
+        id TEXT PRIMARY KEY,
+        session_id TEXT NOT NULL,
+        candidate_id TEXT,
+        challenge_id TEXT,
+        pipeline_id TEXT,
+        meeting_id TEXT,
+        meeting_room_id TEXT,
+        owner_id TEXT,
+        access_scope TEXT,
+        status TEXT NOT NULL,
+        instance_type TEXT,
+        ttl_seconds INTEGER,
+        ttl_source TEXT,
+        expires_at TEXT,
+        warned_at TEXT,
+        url TEXT,
+        repo_r2_key TEXT,
+        repo_git_url TEXT,
+        challenge_branch TEXT,
+        base_branch TEXT,
+        base_commit_sha TEXT,
+        started_at TEXT,
+        stopped_at TEXT,
+        error_message TEXT,
+        created_at TEXT NOT NULL,
+        updated_at TEXT NOT NULL
+      );
       CREATE TABLE meeting_participants (
         id TEXT PRIMARY KEY,
         meeting_id TEXT NOT NULL,
@@ -908,6 +936,83 @@ describe('GET /interviews/:id detail', () => {
       sourceSpanCount: 1,
     });
     expect(body.interview.livingContext?.contextRecords).toEqual([]);
+  });
+
+  it('returns latest workspace session status on interview list and detail without raw session ids', async () => {
+    seedInterviewDetailFixture();
+    sqlite!.prepare(`
+      INSERT INTO dev_container_sessions (
+        id, session_id, candidate_id, challenge_id, pipeline_id, meeting_id,
+        meeting_room_id, owner_id, access_scope, status, instance_type,
+        ttl_seconds, ttl_source, expires_at, warned_at, url, repo_r2_key,
+        repo_git_url, challenge_branch, base_branch, base_commit_sha,
+        started_at, stopped_at, error_message, created_at, updated_at
+      ) VALUES (
+        'workspace-session-old', 'workspace-raw-old', 'candidate-1', NULL,
+        'pipeline-1', 'meeting-1', 'room-1', 'owner-1', 'meeting_room',
+        'LAUNCHING', 'standard', 3600, 'default',
+        '2026-06-22T19:00:00.000Z', NULL, 'https://old.example.dev',
+        NULL, 'https://github.com/open-source/widgets',
+        'pipe-assessment/old', 'main',
+        '0000000000000000000000000000000000000000',
+        '2026-06-22T18:00:00.000Z', NULL, NULL,
+        '2026-06-22T18:00:00.000Z', '2026-06-22T18:01:00.000Z'
+      ),
+      (
+        'workspace-session-ready', 'workspace-raw-ready', 'candidate-1', NULL,
+        'pipeline-1', 'meeting-1', 'room-1', 'owner-1', 'meeting_room',
+        'READY', 'standard', 3600, 'default',
+        '2026-06-22T19:30:00.000Z', NULL, 'https://ready.example.dev',
+        NULL, 'https://github.com/open-source/widgets',
+        'pipe-assessment/current', 'main',
+        '1111111111111111111111111111111111111111',
+        '2026-06-22T18:05:00.000Z', NULL, NULL,
+        '2026-06-22T18:05:00.000Z', '2026-06-22T18:06:00.000Z'
+      )
+    `).run();
+    const app = mountSchedulingApp();
+
+    const listResponse = await app.request('/interviews');
+    expect(listResponse.status).toBe(200);
+    const listBody = await listResponse.json() as {
+      interviews: Array<{
+        id: string;
+        workspaceSession: {
+          status: string;
+          repoGitUrl: string | null;
+          baseCommitSha: string | null;
+          expiresAt: string | null;
+        } | null;
+      }>;
+    };
+    const listedInterview = listBody.interviews.find((item) => item.id === 'interview-1');
+    expect(listedInterview?.workspaceSession).toMatchObject({
+      status: 'READY',
+      repoGitUrl: 'https://github.com/open-source/widgets',
+      baseCommitSha: '1111111111111111111111111111111111111111',
+      expiresAt: '2026-06-22T19:30:00.000Z',
+    });
+    expect(listedInterview?.workspaceSession).not.toHaveProperty('sessionId');
+
+    const detailResponse = await app.request('/interviews/interview-1');
+    expect(detailResponse.status).toBe(200);
+    const detailBody = await detailResponse.json() as {
+      interview: {
+        workspaceSession: {
+          status: string;
+          repoGitUrl: string | null;
+          baseCommitSha: string | null;
+          updatedAt: string | null;
+        } | null;
+      };
+    };
+    expect(detailBody.interview.workspaceSession).toMatchObject({
+      status: 'READY',
+      repoGitUrl: 'https://github.com/open-source/widgets',
+      baseCommitSha: '1111111111111111111111111111111111111111',
+      updatedAt: '2026-06-22T18:06:00.000Z',
+    });
+    expect(detailBody.interview.workspaceSession).not.toHaveProperty('sessionId');
   });
 
   it('returns the latest delivered assessment URL on assessment interview details', async () => {
@@ -6304,6 +6409,34 @@ describe('POST /interviews dev-container challenge (HAS-80)', () => {
         status TEXT,
         created_at TEXT,
         updated_at TEXT
+      );
+      CREATE TABLE dev_container_sessions (
+        id TEXT PRIMARY KEY,
+        session_id TEXT NOT NULL,
+        candidate_id TEXT,
+        challenge_id TEXT,
+        pipeline_id TEXT,
+        meeting_id TEXT,
+        meeting_room_id TEXT,
+        owner_id TEXT,
+        access_scope TEXT,
+        status TEXT NOT NULL,
+        instance_type TEXT,
+        ttl_seconds INTEGER,
+        ttl_source TEXT,
+        expires_at TEXT,
+        warned_at TEXT,
+        url TEXT,
+        repo_r2_key TEXT,
+        repo_git_url TEXT,
+        challenge_branch TEXT,
+        base_branch TEXT,
+        base_commit_sha TEXT,
+        started_at TEXT,
+        stopped_at TEXT,
+        error_message TEXT,
+        created_at TEXT NOT NULL,
+        updated_at TEXT NOT NULL
       );
       CREATE TABLE meeting_participants (
         id TEXT PRIMARY KEY,

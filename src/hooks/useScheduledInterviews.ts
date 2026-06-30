@@ -6,6 +6,7 @@ import type {
   AssessmentSetupProjection,
   ScheduledInterview,
   InterviewStatus,
+  WorkspaceSessionSummary,
 } from '../lib/scheduling/types';
 import { useRoomStatusNotifications } from './useRoomStatusNotifications';
 
@@ -79,6 +80,7 @@ export function useScheduledInterviews(): UseScheduledInterviewsResult {
           meetingExternalEventId?: string | null;
           roomStatus?: string | null;
           guestWaiting?: boolean;
+          workspaceSession?: WorkspaceSessionSummary | null;
         }>;
       }>('/api/v1/scheduling/interviews');
 
@@ -120,6 +122,7 @@ export function useScheduledInterviews(): UseScheduledInterviewsResult {
           meetingExternalEventId: r.meetingExternalEventId ?? null,
           roomStatus: r.roomStatus ?? null,
           guestWaiting: r.guestWaiting ?? false,
+          workspaceSession: r.workspaceSession ?? null,
         })),
       );
     } catch (err) {

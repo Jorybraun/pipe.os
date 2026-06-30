@@ -174,6 +174,15 @@ export interface AssessmentProgressSnapshot {
   } | null;
 }
 
+export interface WorkspaceSessionSummary {
+  status: string;
+  errorMessage: string | null;
+  expiresAt: string | null;
+  updatedAt: string | null;
+  repoGitUrl: string | null;
+  baseCommitSha: string | null;
+}
+
 export interface ScheduledInterview {
   readonly id: string;
   readonly createdAt: string;
@@ -217,6 +226,7 @@ export interface ScheduledInterview {
   meetingExternalEventId?: string | null;
   roomStatus?: string | null;
   guestWaiting?: boolean;
+  workspaceSession?: WorkspaceSessionSummary | null;
   // Transcript artifact
   transcriptArtifact?: TranscriptArtifact | null;
 }

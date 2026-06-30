@@ -180,6 +180,34 @@ interface ScheduledAssessmentSetupProjection {
   lastDeliveredUrlMessage?: string | null;
 }
 
+interface WorkspaceSessionProjection {
+  status: string;
+  errorMessage: string | null;
+  expiresAt: string | null;
+  updatedAt: string | null;
+  repoGitUrl: string | null;
+  baseCommitSha: string | null;
+}
+
+function buildWorkspaceSessionProjection(input: {
+  workspace_status: string | null;
+  workspace_error_message: string | null;
+  workspace_expires_at: string | null;
+  workspace_updated_at: string | null;
+  workspace_repo_git_url: string | null;
+  workspace_base_commit_sha: string | null;
+}): WorkspaceSessionProjection | null {
+  if (!input.workspace_status) return null;
+  return {
+    status: input.workspace_status,
+    errorMessage: input.workspace_error_message,
+    expiresAt: input.workspace_expires_at,
+    updatedAt: input.workspace_updated_at,
+    repoGitUrl: input.workspace_repo_git_url,
+    baseCommitSha: input.workspace_base_commit_sha,
+  };
+}
+
 function buildScheduledAssessmentSetup(input: {
   interviewType: string | null | undefined;
   candidateId: string | null | undefined;
@@ -4550,6 +4578,30 @@ schedulingAuth.get('/event-types', async (c) => {
 schedulingAuth.get('/interviews', async (c) => {
   const userId = c.var.userId;
   const db = c.env.DB;
+  const hasWorkspaceSessions = await tableExists(db, 'dev_container_sessions');
+  const workspaceSessionSelect = hasWorkspaceSessions
+    ? `dcs.status AS workspace_status,
+              dcs.error_message AS workspace_error_message,
+              dcs.expires_at AS workspace_expires_at,
+              dcs.updated_at AS workspace_updated_at,
+              dcs.repo_git_url AS workspace_repo_git_url,
+              dcs.base_commit_sha AS workspace_base_commit_sha`
+    : `NULL AS workspace_status,
+              NULL AS workspace_error_message,
+              NULL AS workspace_expires_at,
+              NULL AS workspace_updated_at,
+              NULL AS workspace_repo_git_url,
+              NULL AS workspace_base_commit_sha`;
+  const workspaceSessionJoin = hasWorkspaceSessions
+    ? `LEFT JOIN dev_container_sessions dcs ON dcs.id = (
+         SELECT latest_dcs.id
+           FROM dev_container_sessions latest_dcs
+          WHERE latest_dcs.meeting_id = m.id
+             OR latest_dcs.meeting_room_id = mr.id
+          ORDER BY latest_dcs.updated_at DESC, latest_dcs.created_at DESC
+          LIMIT 1
+       )`
+    : '';
 
   const result = await db
     .prepare(
@@ -4568,6 +4620,7 @@ schedulingAuth.get('/interviews', async (c) => {
               m.scheduling_provider AS meeting_scheduling_provider,
               m.external_event_id AS meeting_external_event_id,
               mr.status AS room_status,
+              ${workspaceSessionSelect},
               EXISTS (
                 SELECT 1
                   FROM meeting_participants guest_mp
@@ -4590,6 +4643,7 @@ schedulingAuth.get('/interviews', async (c) => {
           LIMIT 1
        )
        LEFT JOIN meeting_rooms mr ON mr.meeting_id = m.id
+       ${workspaceSessionJoin}
        WHERE si.owner_id = ?
        ORDER BY si.scheduled_at ASC`
     )
@@ -4628,6 +4682,12 @@ schedulingAuth.get('/interviews', async (c) => {
       meeting_scheduling_provider: string | null;
       meeting_external_event_id: string | null;
       room_status: string | null;
+      workspace_status: string | null;
+      workspace_error_message: string | null;
+      workspace_expires_at: string | null;
+      workspace_updated_at: string | null;
+      workspace_repo_git_url: string | null;
+      workspace_base_commit_sha: string | null;
       guest_waiting: number | null;
     }>();
 
@@ -4683,6 +4743,7 @@ schedulingAuth.get('/interviews', async (c) => {
       meetingExternalEventId: r.meeting_external_event_id,
       roomStatus: r.room_status,
       guestWaiting: Boolean(r.guest_waiting),
+      workspaceSession: buildWorkspaceSessionProjection(r),
     };
   });
 
@@ -4780,6 +4841,31 @@ schedulingAuth.get('/interviews/:id', async (c) => {
       updated_at: string;
     }>();
 
+  const hasWorkspaceSessions = await tableExists(db, 'dev_container_sessions');
+  const workspaceSessionSelect = hasWorkspaceSessions
+    ? `dcs.status AS workspace_status,
+              dcs.error_message AS workspace_error_message,
+              dcs.expires_at AS workspace_expires_at,
+              dcs.updated_at AS workspace_updated_at,
+              dcs.repo_git_url AS workspace_repo_git_url,
+              dcs.base_commit_sha AS workspace_base_commit_sha`
+    : `NULL AS workspace_status,
+              NULL AS workspace_error_message,
+              NULL AS workspace_expires_at,
+              NULL AS workspace_updated_at,
+              NULL AS workspace_repo_git_url,
+              NULL AS workspace_base_commit_sha`;
+  const workspaceSessionJoin = hasWorkspaceSessions
+    ? `LEFT JOIN dev_container_sessions dcs ON dcs.id = (
+         SELECT latest_dcs.id
+           FROM dev_container_sessions latest_dcs
+          WHERE latest_dcs.meeting_id = m.id
+             OR latest_dcs.meeting_room_id = mr.id
+          ORDER BY latest_dcs.updated_at DESC, latest_dcs.created_at DESC
+          LIMIT 1
+       )`
+    : '';
+
   const linkedMeeting = await db
     .prepare(
       `SELECT m.id, m.title, m.description, m.status, m.scheduled_at,
@@ -4788,9 +4874,11 @@ schedulingAuth.get('/interviews/:id', async (c) => {
               m.transcript_status, m.transcript_summary,
               m.transcript_json, m.transcript_analysis_json, m.transcript_error,
               m.recording_r2_key, m.created_at, m.updated_at,
-              mr.id AS room_id, mr.session_id, mr.status AS room_status
+              mr.id AS room_id, mr.session_id, mr.status AS room_status,
+              ${workspaceSessionSelect}
        FROM meetings m
        LEFT JOIN meeting_rooms mr ON mr.meeting_id = m.id
+       ${workspaceSessionJoin}
        WHERE m.scheduled_interview_id = ? AND m.owner_id = ?
        ORDER BY m.created_at DESC
        LIMIT 1`
@@ -4820,6 +4908,12 @@ schedulingAuth.get('/interviews/:id', async (c) => {
       room_id: string | null;
       session_id: string | null;
       room_status: string | null;
+      workspace_status: string | null;
+      workspace_error_message: string | null;
+      workspace_expires_at: string | null;
+      workspace_updated_at: string | null;
+      workspace_repo_git_url: string | null;
+      workspace_base_commit_sha: string | null;
     }>();
 
   const livingContext = await loadScheduledInterviewLivingContext(db, userId, interview);
@@ -4918,6 +5012,7 @@ schedulingAuth.get('/interviews/:id', async (c) => {
         createdAt: linkedMeeting.created_at,
         updatedAt: linkedMeeting.updated_at,
       } : null,
+      workspaceSession: linkedMeeting ? buildWorkspaceSessionProjection(linkedMeeting) : null,
       livingContext: redactScheduledInterviewLivingContext(livingContext),
       relatedEvidenceInterviews,
       codeReviewMatch,
