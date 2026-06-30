@@ -373,21 +373,66 @@ function buildScheduledAssessmentSetup(input: {
 
 const GIT_COMMIT_SHA_PATTERN = /^[0-9a-f]{40}$/i;
 
-function isGitHubRepositoryUrl(value: string): boolean {
+function githubRepositoryPathFromUrl(value: string): string | null {
   let url: URL;
   try {
     url = new URL(value);
   } catch {
-    return false;
+    return null;
   }
   if (url.protocol !== 'https:' || url.hostname.toLowerCase() !== 'github.com') {
-    return false;
+    return null;
   }
   const segments = url.pathname.split('/').filter(Boolean);
-  if (segments.length !== 2) return false;
+  if (segments.length !== 2) return null;
   const [owner, repoWithSuffix] = segments;
   const repo = repoWithSuffix?.endsWith('.git') ? repoWithSuffix.slice(0, -4) : repoWithSuffix;
-  return Boolean(owner && repo);
+  if (!owner || !repo) return null;
+  return `${owner}/${repo}`;
+}
+
+function isGitHubRepositoryUrl(value: string): boolean {
+  return githubRepositoryPathFromUrl(value) !== null;
+}
+
+type GitHubCommitVerificationResult =
+  | { ok: true }
+  | { ok: false; reason: 'not_found' | 'unavailable'; status?: number };
+
+async function verifyGitHubCommitReachable(input: {
+  repositoryUrl: string;
+  commitSha: string;
+  githubToken?: string;
+}): Promise<GitHubCommitVerificationResult> {
+  const repoPath = githubRepositoryPathFromUrl(input.repositoryUrl);
+  if (!repoPath) return { ok: false, reason: 'not_found' };
+
+  const [owner, repo] = repoPath.split('/');
+  if (!owner || !repo) return { ok: false, reason: 'not_found' };
+  const headers: Record<string, string> = {
+    Accept: 'application/vnd.github+json',
+    'User-Agent': 'PIPE-OS-assessment-validator',
+  };
+  if (input.githubToken) {
+    headers.Authorization = `Bearer ${input.githubToken}`;
+  }
+
+  let response: Response;
+  try {
+    const url = `https://api.github.com/repos/${encodeURIComponent(owner)}/${encodeURIComponent(repo)}/commits/${input.commitSha.toLowerCase()}`;
+    response = await fetch(
+      url,
+      { headers },
+    );
+  } catch {
+    return { ok: false, reason: 'unavailable' };
+  }
+
+  if (response.ok) return { ok: true };
+  if (response.status === 404 || response.status === 422) {
+    return { ok: false, reason: 'not_found', status: response.status };
+  }
+  return { ok: false, reason: 'unavailable', status: response.status };
 }
 
 const createInterviewSchema = z.object({
@@ -5411,6 +5456,27 @@ schedulingAuth.post('/interviews', async (c) => {
     challengeSuccessCriteria,
     challengeExpectedEvidence,
   });
+  if (hasManualOpenSourceTaskPacket) {
+    const commitVerification = await verifyGitHubCommitReachable({
+      repositoryUrl: githubRepoUrl!,
+      commitSha: challengeBaseCommitSha!,
+      githubToken: c.env.GITHUB_TOKEN,
+    });
+    if (!commitVerification.ok) {
+      if (commitVerification.reason === 'not_found') {
+        return apiError(
+          c,
+          'VALIDATION_ERROR',
+          'challengeBaseCommitSha must exist in githubRepoUrl and be reachable by PIPE.',
+        );
+      }
+      return apiError(
+        c,
+        'SERVICE_UNAVAILABLE',
+        'Could not verify challengeBaseCommitSha against GitHub. Try again or choose a reachable commit.',
+      );
+    }
+  }
   let matchedOpenSourceChallengePacket: MatchedOpenSourceChallengePacket | null = null;
   let effectiveGithubRepoUrl = githubRepoUrl ?? null;
   let effectiveGithubPrNumber = githubPrNumber ?? null;

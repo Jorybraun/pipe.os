@@ -7154,6 +7154,11 @@ describe('POST /interviews dev-container challenge (HAS-80)', () => {
     seedDevContainerFixture();
     const app = mountSchedulingApp();
     const baseCommitSha = '1234567890abcdef1234567890abcdef12345678';
+    const fetchMock = vi.fn(async () => new Response(JSON.stringify({ sha: baseCommitSha }), {
+      status: 200,
+      headers: { 'Content-Type': 'application/json' },
+    }));
+    vi.stubGlobal('fetch', fetchMock);
 
     const response = await app.request('/interviews', {
       method: 'POST',
@@ -7179,6 +7184,15 @@ describe('POST /interviews dev-container challenge (HAS-80)', () => {
       }),
     });
     expect(response.status).toBe(201);
+    expect(fetchMock).toHaveBeenCalledWith(
+      `https://api.github.com/repos/hash-pipe/open-source-task/commits/${baseCommitSha}`,
+      expect.objectContaining({
+        headers: expect.objectContaining({
+          Accept: 'application/vnd.github+json',
+          'User-Agent': 'PIPE-OS-assessment-validator',
+        }),
+      }),
+    );
     const body = await response.json() as {
       interview: {
         id: string;
@@ -7289,6 +7303,52 @@ describe('POST /interviews dev-container challenge (HAS-80)', () => {
     expect(sourceRef?.source_ref_id).toContain(body.interview.id);
     expect(sourceRef?.content_hash).toMatch(/^content_/);
     expect(sourceRef?.exact_text).toContain('Expected evidence:');
+  });
+
+  it('rejects manual open-source challenge packets when the base commit is not reachable in the repo', async () => {
+    seedDevContainerFixture();
+    const app = mountSchedulingApp();
+    const baseCommitSha = 'aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa';
+    const fetchMock = vi.fn(async () => new Response(JSON.stringify({ message: 'Not Found' }), {
+      status: 404,
+      headers: { 'Content-Type': 'application/json' },
+    }));
+    vi.stubGlobal('fetch', fetchMock);
+
+    const response = await app.request('/interviews', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({
+        recipientName: 'Grace Hopper',
+        recipientEmail: 'grace@example.com',
+        meetingType: 'DIRECT_VIDEO_CALL',
+        interviewType: 'OPEN_SOURCE_BUG_FIX',
+        githubRepoUrl: 'https://github.com/hash-pipe/open-source-task',
+        challengeBaseCommitSha: baseCommitSha,
+        challengeTitle: 'Fix the failing assessment evaluator start state',
+        challengeInstructions: 'Reproduce the failing start-evaluation path, make the smallest production-ready fix, and preserve source-backed assessment evidence.',
+        challengeSuccessCriteria: [
+          'A focused commit changes only the evaluator start-state path.',
+        ],
+        challengeExpectedEvidence: [
+          'git_commit source ref for the submitted commit',
+        ],
+      }),
+    });
+
+    expect(response.status).toBe(422);
+    expect(fetchMock).toHaveBeenCalledWith(
+      `https://api.github.com/repos/hash-pipe/open-source-task/commits/${baseCommitSha}`,
+      expect.any(Object),
+    );
+    const body = await response.json() as { error: { message: string } };
+    expect(body.error.message).toContain('challengeBaseCommitSha must exist in githubRepoUrl');
+    const interviewCount = sqlite!.prepare('SELECT COUNT(*) AS count FROM scheduled_interviews')
+      .get() as { count: number };
+    const sessionCount = sqlite!.prepare('SELECT COUNT(*) AS count FROM assessment_sessions')
+      .get() as { count: number };
+    expect(interviewCount.count).toBe(0);
+    expect(sessionCount.count).toBe(0);
   });
 
   it('promotes matched OPEN_SOURCE_BUG_FIX repo into a source-backed challenge packet session', async () => {
