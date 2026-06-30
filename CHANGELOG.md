@@ -1871,6 +1871,16 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - Rewrote root README.md (50 lines)
 - Updated internal links across migration docs, knowledge docs, and source files
 
+### Agent Coordination Log — Living Context Graph
+
+- **PR #154** (merged): Consolidated open-source assessment platform — mature base for all living context work.
+- **PR #157** (draft): Evidence timeline panel + pipeline comparison wiring (23 frontend tests).
+- **PR #158** (draft): Backfill scheduled test suite — 8 new tests covering gate enforcement, batch processing, idempotency.
+- **PR #159** (draft): Test alignment + production hardening (persistence validation, ingestion simplification).
+- **PR #160** (draft): Consolidation of #157–#159 + new pipeline-siblings integration tests. All 207 backend test files pass (1998 tests). TypeScript strict clean. Frontend build clean.
+- **Status (2026-06-30)**: All 8 acceptance criteria addressed. Next priorities: close stale draft PRs (#105–#153, #155–#159), merge #160, advance evaluation corpus seeding and expert-labelled evaluation coverage.
+- **CI note**: `ClippyAssistant.test.tsx` fails on main due to missing `clippyjs` dependency (preexisting). Workers/Deploy checks require Cloudflare credentials (preexisting infra config).
+
 ## [0.0.1] - 2026-04-22
 
 ### Added
