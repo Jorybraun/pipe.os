@@ -1481,6 +1481,76 @@ describe('POST /rpc/get-challenge', () => {
     expect(matchReposForCandidateNeo4j).not.toHaveBeenCalled();
   });
 
+  it('returns profile-received when a pipeline CODE_REVIEW assignment lacks a source-backed PR packet', async () => {
+    const db = fakeD1({
+      firstResponders: [
+        { match: 'FROM candidates WHERE id', value: { current_stage_id: 'stage_code' } },
+        { match: 'FROM stages WHERE id', value: { mode: 'ASYNC', screening_input_mode: null } },
+        { match: 'FROM pipeline_match_config', value: { match_philosophy: 'tailored' } },
+        {
+          match: 'FROM candidate_challenge_assignment',
+          value: {
+            id: 'assign_without_packet',
+            repo_id: 973,
+            github_repo_url: 'https://github.com/mui/base-ui',
+            github_pr_number: 973,
+            issue_number: null,
+          },
+        },
+        { match: 'FROM review_challenge_packets', value: null },
+        { match: 'FROM role_contexts', value: null },
+      ],
+      allResponders: [
+        {
+          match: 'FROM challenges ch',
+          value: [{
+            id: 'ch_review',
+            type: 'CODE_REVIEW',
+            title: 'Code Review',
+            instructions: 'Review a source-backed PR',
+            config: JSON.stringify({ isMultiTurn: true }),
+            cached_diff_json: null,
+            github_pr_title: null,
+            github_pr_number: null,
+            github_repo_url: null,
+            github_pr_description: null,
+            dev_container_repo_url: null,
+            assignment_id: 'assign_without_packet',
+            assignment_repo_url: 'https://github.com/mui/base-ui',
+            assignment_pr_number: 973,
+            effective_repo_url: 'https://github.com/mui/base-ui',
+            effective_pr_number: 973,
+            effective_issue_number: null,
+          }],
+        },
+      ],
+    });
+    const env = buildEnv({ DB: db });
+
+    const res = await rpcAuth.request(
+      '/get-challenge',
+      {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json',
+          Authorization: await authHeader(),
+        },
+        body: JSON.stringify({ order: 1 }),
+      },
+      env,
+    );
+
+    expect(res.status).toBe(200);
+    const body = await res.json() as { type: string; id: string; instructions?: string };
+    expect(body).toMatchObject({
+      id: 'profile-received',
+      type: 'PROFILE_RECEIVED',
+    });
+    expect(body.instructions).toContain('email you when your code review is ready');
+    expect(matchReposByGroundedEdges).not.toHaveBeenCalled();
+    expect(matchReposForCandidateNeo4j).not.toHaveBeenCalled();
+  });
+
   it('uses source-backed issue context for CODE_IMPLEMENTATION without Neo4j recall', async () => {
     const db = fakeD1({
       firstResponders: [

@@ -3406,7 +3406,7 @@ rpcAuth.post('/get-challenge', async (c) => {
       c.env,
     );
     if (gateResult.blocked && gateResult.syntheticChallenge) {
-      return c.json(gateResult.syntheticChallenge);
+      return c.json(profileReceivedChallengeContent());
     }
     const refreshed = await c.env.DB.prepare(
       `SELECT github_repo_url, github_pr_number, issue_number
@@ -3418,6 +3418,9 @@ rpcAuth.post('/get-challenge', async (c) => {
       issue_number: number | null;
     }>();
     if (!refreshed?.github_repo_url || typeof refreshed.github_pr_number !== 'number') {
+      if ((ch.type as string) === 'CODE_REVIEW') {
+        return c.json(profileReceivedChallengeContent());
+      }
       return c.json(waitingForMatch('Source-backed review assignment is not ready').syntheticChallenge);
     }
     ch.effective_repo_url = refreshed.github_repo_url;
@@ -3524,6 +3527,9 @@ rpcAuth.post('/get-challenge', async (c) => {
       ch.github_pr_description = sourceBackedDiff.metadata.description ?? null;
       reviewProfile = sourceBackedDiff.metadata.reviewProfile ?? null;
     } else {
+      if ((ch.type as string) === 'CODE_REVIEW') {
+        return c.json(profileReceivedChallengeContent());
+      }
       return c.json(waitingForMatch('Source-backed review assignment is not ready').syntheticChallenge);
     }
   } else if (!cachedDiffJson && effectiveRepoUrl && effectivePrNumber) {

@@ -506,12 +506,16 @@ async function getChallenge(sessionToken, order = 0) {
   }, { basicAuth: false });
 }
 
-async function bootstrapStageConfig(sessionToken) {
-  const stageConfig = await requestJson('/rpc/get-stage-config', {
+async function getStageConfig(sessionToken) {
+  return requestJson('/rpc/get-stage-config', {
     method: 'POST',
     headers: candidateHeaders(sessionToken),
     body: JSON.stringify({}),
   }, { basicAuth: false });
+}
+
+async function bootstrapStageConfig(sessionToken) {
+  const stageConfig = await getStageConfig(sessionToken);
 
   assert(stageConfig?.isComplete !== true, `Stage config unexpectedly complete before CODE_REVIEW: ${JSON.stringify(stageConfig)}`);
   assert(stageConfig?.stageId, `Stage config missing stage id: ${JSON.stringify(stageConfig)}`);
@@ -534,8 +538,9 @@ async function pollCodeReviewChallenge(sessionToken, order = 0, options = {}) {
       }
       return last;
     }
+    if (options.expectBlocked && last?.type === 'PROFILE_RECEIVED') return last;
     if (last?.type !== 'WAITING_FOR_MATCH') {
-      throw new Error(`Expected CODE_REVIEW or WAITING_FOR_MATCH, got: ${JSON.stringify(last).slice(0, 800)}`);
+      throw new Error(`Expected CODE_REVIEW${options.expectBlocked ? ', PROFILE_RECEIVED,' : ''} or WAITING_FOR_MATCH, got: ${JSON.stringify(last).slice(0, 800)}`);
     }
     if (options.expectBlocked && last?.config?.state === 'blocked') return last;
     await sleep(5_000);
@@ -1165,25 +1170,25 @@ async function main() {
     assert(session?.sessionToken, `resolve-token response missing session token: ${JSON.stringify(session)}`);
 
     await submitIntake(session.sessionToken);
-    const initialStageConfig = await bootstrapStageConfig(session.sessionToken);
+    const initialStageConfig = EXPECT_BLOCKED_MATCH
+      ? await getStageConfig(session.sessionToken)
+      : await bootstrapStageConfig(session.sessionToken);
     const challengeOrder = ROLE_BACKED ? 1 : 0;
     const challenge = await pollCodeReviewChallenge(session.sessionToken, challengeOrder, {
       expectBlocked: EXPECT_BLOCKED_MATCH,
     });
     if (EXPECT_BLOCKED_MATCH) {
-      assert(challenge?.type === 'WAITING_FOR_MATCH', `Expected WAITING_FOR_MATCH, got: ${JSON.stringify(challenge)}`);
-      assert(challenge?.config?.state === 'blocked', `Expected blocked repo matching state, got: ${JSON.stringify(challenge)}`);
-      assert(challenge?.config?.autoRefresh === false, `Blocked repo matching should not auto-refresh: ${JSON.stringify(challenge)}`);
+      assert(challenge?.type === 'PROFILE_RECEIVED', `Expected PROFILE_RECEIVED handoff, got: ${JSON.stringify(challenge)}`);
+      assert(challenge?.id === 'profile-received', `Expected profile-received challenge id, got: ${JSON.stringify(challenge)}`);
       assert(
-        challenge?.config?.diagnostics?.phase === 'repo_matching',
-        `Expected repo_matching diagnostics, got: ${JSON.stringify(challenge?.config?.diagnostics)}`,
+        typeof challenge?.instructions === 'string'
+          && challenge.instructions.includes('email you when your code review is ready'),
+        `Expected candidate-safe email handoff instructions, got: ${JSON.stringify(challenge)}`,
       );
       assert(
-        Array.isArray(challenge?.config?.diagnostics?.pipeline)
-          && challenge.config.diagnostics.pipeline.some((step) =>
-            step?.id === 'repo_matching' && step?.status === 'blocked'
-          ),
-        `Expected repo_matching pipeline step to be blocked: ${JSON.stringify(challenge?.config?.diagnostics?.pipeline)}`,
+        initialStageConfig?.isComplete === true
+          && initialStageConfig?.stageId === 'candidate-intake-queued',
+        `Expected candidate-intake-queued complete stage config, got: ${JSON.stringify(initialStageConfig)}`,
       );
 
       const recruiterBrowserSmoke = runRecruiterDetailBrowserSmoke({
@@ -1202,18 +1207,18 @@ async function main() {
         expectedOutcome: 'blocked',
         deliveredUrl: cleanUrl(invite.deliveredUrl),
         roomGuestUrl: cleanUrl(invite.invited?.room?.guestUrl),
-        blockedMatch: {
+        candidateHandoff: {
+          type: challenge.type,
+          id: challenge.id,
           title: challenge.title ?? null,
-          state: challenge.config.state,
-          reason: challenge.config.reason ?? null,
-          phase: challenge.config.diagnostics.phase ?? null,
-          matchableNodeCount: challenge.config.diagnostics.matchableNodeCount ?? null,
-          rawNodeCount: challenge.config.diagnostics.rawNodeCount ?? null,
-          autoRefresh: challenge.config.autoRefresh ?? null,
+          instructions: challenge.instructions ?? null,
+          stageId: initialStageConfig.stageId,
+          isComplete: initialStageConfig.isComplete,
         },
         recruiterBrowserSmoke,
         stageConfig: {
           initialStageId: initialStageConfig.stageId,
+          initialIsComplete: initialStageConfig.isComplete ?? null,
           initialCurrentIndex: initialStageConfig.currentIndex ?? null,
           initialChallengeTypes: Array.isArray(initialStageConfig.challenges)
             ? initialStageConfig.challenges.map((candidateChallenge) => candidateChallenge?.type ?? null)
