@@ -61,6 +61,25 @@ function sourceSpan(overrides: Partial<LivingContextSourceRef> = {}): LivingCont
         strengths: ['Found the source-backed regression risk.'],
         growth_areas: ['Probe how they balance timing trade-offs under pushback.'],
       },
+      dimensions: {
+        source_accuracy: { score: 2 },
+        bug_detection: { score: 2 },
+        test_reasoning: { score: 2 },
+        risk_calibration: { score: 1 },
+        communication: { score: 2 },
+        ai_usage_judgment: { score: 1 },
+      },
+      evidence: [
+        { id: 'comment-1', text: 'Add a regression test around impatient hover click timing.' },
+        { id: 'pushback-1', text: 'The timeout cleanup needs to be defended before merge.' },
+      ],
+      metrics: {
+        annotations: 1,
+        pushback_threads: 1,
+        source_refs: 4,
+        rubric_dimensions: 6,
+        score_confidence: 0.82,
+      },
     }),
     byteStart: 0,
     byteEnd: null,
@@ -750,6 +769,8 @@ describe('PersonProfilePage', () => {
     expect(decision).toHaveTextContent('Code-review decision');
     expect(decision).toHaveTextContent('Advance with focused probe');
     expect(decision).toHaveTextContent('82/100 Strong');
+    expect(decision).toHaveTextContent('Score provenance');
+    expect(decision).toHaveTextContent('6 rubric dimensions · 2 evidence items · 5 scoring metrics');
     expect(decision).toHaveTextContent('pierre/diffs PR #95');
     expect(decision).toHaveTextContent('Candidate found the missing retry test and defended the review.');
     expect(decision).toHaveTextContent('Probe how they balance timing trade-offs under pushback.');

@@ -85,6 +85,9 @@ async function expectPersonProfileDecision(page: Page): Promise<void> {
   await expect(personDecision).toContainText('source-backed proof items');
   if (EXPECT_SCORE) {
     await expect(personDecision).toContainText('Score provenance');
+    await expect(personDecision).toContainText(/rubric dimensions?/);
+    await expect(personDecision).toContainText(/evidence items?/);
+    await expect(personDecision).toContainText(/scoring metrics?/);
   }
   const rationale = page.getByTestId('person-code-review-rationale');
   await expect(rationale).toBeVisible();

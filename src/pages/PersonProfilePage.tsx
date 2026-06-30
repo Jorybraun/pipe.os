@@ -67,6 +67,13 @@ interface CodeReviewScoreProjection {
   narrative: string | null;
   strengths: string[];
   growthAreas: string[];
+  provenance: CodeReviewScoreProvenance | null;
+}
+
+interface CodeReviewScoreProvenance {
+  rubricDimensionCount: number;
+  evidenceItemCount: number;
+  metricCount: number;
 }
 
 interface CodeReviewChallengeProjection {
@@ -521,6 +528,47 @@ function sessionIdFromRecord(record: LivingContextRecord | null): string | null 
     ?? null;
 }
 
+function collectionEntryCount(value: unknown): number {
+  if (Array.isArray(value)) return value.length;
+  if (isRecord(value)) return Object.keys(value).length;
+  return 0;
+}
+
+function wholeCount(value: unknown): number | null {
+  const numberValue = optionalNumber(value);
+  if (numberValue === null) return null;
+  return Math.max(0, Math.trunc(numberValue));
+}
+
+function scoreProvenanceFromReport(report: Record<string, unknown>): CodeReviewScoreProvenance | null {
+  const explicit = isRecord(report.provenance) ? report.provenance : null;
+  const rubricDimensionCount = wholeCount(explicit?.rubricDimensionCount)
+    ?? collectionEntryCount(report.dimensions);
+  const evidenceItemCount = wholeCount(explicit?.evidenceItemCount)
+    ?? collectionEntryCount(report.evidence);
+  const metricCount = wholeCount(explicit?.metricCount)
+    ?? collectionEntryCount(report.metrics);
+  if (rubricDimensionCount === 0 && evidenceItemCount === 0 && metricCount === 0) return null;
+  return {
+    rubricDimensionCount,
+    evidenceItemCount,
+    metricCount,
+  };
+}
+
+function pluralCount(count: number, singular: string, plural = `${singular}s`): string {
+  return `${count} ${count === 1 ? singular : plural}`;
+}
+
+function scoreProvenanceLabel(provenance: CodeReviewScoreProvenance | null): string | null {
+  if (!provenance) return null;
+  return [
+    pluralCount(provenance.rubricDimensionCount, 'rubric dimension'),
+    pluralCount(provenance.evidenceItemCount, 'evidence item'),
+    pluralCount(provenance.metricCount, 'scoring metric'),
+  ].join(' · ');
+}
+
 function parseScoreProjection(record: LivingContextRecord | null): CodeReviewScoreProjection | null {
   if (!record) return null;
   const scoreSource = record.sources.find((source) =>
@@ -540,6 +588,7 @@ function parseScoreProjection(record: LivingContextRecord | null): CodeReviewSco
       narrative: optionalString(overall.narrative),
       strengths: stringArray(overall.strengths),
       growthAreas: stringArray(overall.growth_areas ?? overall.growthAreas),
+      provenance: scoreProvenanceFromReport(parsed),
     };
   } catch {
     return null;
@@ -1047,6 +1096,7 @@ function deriveCodeReviewDecision(
     nextAction: nextAction.value,
     nextActionDetail: nextAction.detail,
     scoreLabel,
+    scoreProvenanceLabel: scoreProvenanceLabel(score?.provenance ?? null),
     challengeLabel,
     challengeUrl: challengeUrlForProjection(challenge),
     narrative: score?.narrative ?? transcriptRecord?.narrative ?? scoreRecord?.narrative ?? null,
