@@ -64,7 +64,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Fixed — Candidate repo matching
 
-- Repo-task assessment evaluation now tolerates fenced JSON with trailing commas from Workers AI, preventing valid source-backed submissions from becoming blocking evaluator-unavailable diagnostics.
+- Repo-task assessment evaluation now tolerates fenced JSON with trailing commas and shortened source-ref ids from Workers AI, preventing valid source-backed submissions from becoming blocking evaluator diagnostics.
 - Repo-task assessment evidence coverage now counts source-backed `code_server_file_observation` refs as code editor/file activity, so recruiter reports no longer claim file evidence is missing when code-server observations were captured.
 - Workspace finalization now adds a source-backed `terminal_command` ref for the exact git/test commands the bridge runs, so evaluation coverage can distinguish real finalizer terminal evidence from missing interactive terminal history.
 - Workspace bridge revision `2026-06-30-finalizer-terminal-v1` forces app-dev containers onto the finalizer terminal-evidence bridge during deployed smoke validation.

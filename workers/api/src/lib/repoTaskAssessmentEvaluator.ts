@@ -417,6 +417,29 @@ function parseAiJson(content: string | null): AiAssessmentOutput {
   }
 }
 
+function resolveAiSourceRefs(
+  rawKeys: unknown,
+  sourceRefByKey: ReadonlyMap<string, SessionSourceRef>,
+): SessionSourceRef[] {
+  const refs: SessionSourceRef[] = [];
+  const seen = new Set<string>();
+  const allRefs = Array.from(sourceRefByKey.values());
+  for (const rawKey of stringArrayValue(rawKeys)) {
+    const key = rawKey.trim();
+    const exactRef = sourceRefByKey.get(key);
+    const ref = exactRef ?? allRefs.find((candidate) => (
+      candidate.sourceRefId === key
+      || `${candidate.sourceRefType}:${candidate.sourceRefId}` === key
+      || candidate.key.startsWith(`${key}:`)
+      || candidate.key.startsWith(`${candidate.sourceRefType}:${key}:`)
+    ));
+    if (!ref || seen.has(ref.key)) continue;
+    refs.push(ref);
+    seen.add(ref.key);
+  }
+  return refs;
+}
+
 function normalizeAiClaims(
   rawClaims: unknown,
   sourceRefByKey: ReadonlyMap<string, SessionSourceRef>,
@@ -433,9 +456,7 @@ function normalizeAiClaims(
     const narrative = stringValue(claim.narrative);
     const dimension = stringValue(claim.dimension);
     if (!narrative || !dimension) return;
-    const citedRefs = stringArrayValue(claim.sourceRefKeys)
-      .map((key) => sourceRefByKey.get(key))
-      .filter((ref): ref is SessionSourceRef => Boolean(ref));
+    const citedRefs = resolveAiSourceRefs(claim.sourceRefKeys, sourceRefByKey);
     if (polarity !== 'diagnostic' && citedRefs.length === 0) return;
     const confidence = numberValue(claim.confidence);
     const rawId = stringValue(claim.id) ?? `${dimension}-${index + 1}`;
@@ -468,9 +489,7 @@ function normalizeAiDiagnostics(
     const severity: EvaluatorDiagnosticSeverity = ALLOWED_DIAGNOSTIC_SEVERITIES.has(rawSeverity)
       ? rawSeverity as EvaluatorDiagnosticSeverity
       : 'warning';
-    const sourceRefs = stringArrayValue(diagnostic.sourceRefKeys)
-      .map((key) => sourceRefByKey.get(key))
-      .filter((ref): ref is SessionSourceRef => Boolean(ref));
+    const sourceRefs = resolveAiSourceRefs(diagnostic.sourceRefKeys, sourceRefByKey);
     return [diagnosticInput({
       code,
       severity,
