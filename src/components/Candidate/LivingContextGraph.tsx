@@ -1,16 +1,27 @@
-import { useEffect, useMemo, useState } from 'react';
+import { useCallback, useEffect, useMemo, useState } from 'react';
 import {
   Activity,
+  AlertTriangle,
   ExternalLink,
   FileText,
   GitPullRequest,
+  Link2,
   Network,
   Quote,
   RefreshCw,
   Search,
+  ShieldCheck,
+  Shuffle,
   UserRound,
+  Zap,
 } from 'lucide-react';
 import type {
+  ConceptGraphAdjacency,
+  ConceptGraphConcept,
+  CoverageLevel,
+  EvidenceFreshnessResponse,
+  EvidenceGapReport,
+  EvidenceLineageResponse,
   LivingContextArtifact,
   LivingContextAssertion,
   LivingContextInteraction,
@@ -18,6 +29,8 @@ import type {
   LivingContextRecord,
   LivingContextSignal,
   LivingContextSourceRef,
+  MatchProvenanceChain,
+  RematchResult,
   StandaloneReviewExcludedPacket,
   StandaloneReviewEvaluatedChallenge,
   StandaloneReviewMatchRecord,
@@ -26,7 +39,16 @@ import type {
   StandaloneReviewPacketQualityGate,
   StandaloneReviewRoleSource,
   StandaloneReviewSourceRef,
+  StandaloneReviewMatchNarrative,
+  StandaloneReviewStretchArea,
 } from '../../lib/api/types';
+import { useConceptGraph } from '../../hooks/useConceptGraph';
+import { useEvidenceFreshness } from '../../hooks/useEvidenceFreshness';
+import { useEvidenceGaps } from '../../hooks/useEvidenceGaps';
+import { useEvidenceLineage } from '../../hooks/useEvidenceLineage';
+import { useMatchProvenance } from '../../hooks/useMatchProvenance';
+import { useMatchHistory } from '../../hooks/useMatchHistory';
+import { useRematch } from '../../hooks/useRematch';
 import { useLivingContext } from '../../hooks/useLivingContext';
 import { buildLivingContextBranches } from '../../lib/livingContextTree';
 import { ContextRecordForest } from './ContextRecordTree';
@@ -823,6 +845,143 @@ function RepoPacketPanel({
   );
 }
 
+function StretchAreasPanel({
+  stretchAreas,
+}: {
+  stretchAreas: StandaloneReviewStretchArea[];
+}): JSX.Element | null {
+  if (stretchAreas.length === 0) return null;
+  return (
+    <section
+      className="living-context__stretch-areas"
+      aria-label="Stretch areas"
+      data-testid="stretch-areas-panel"
+    >
+      <div className="living-context__section-head">
+        <div>
+          <div className="living-context__section-title">Stretch areas</div>
+          <div className="living-context__eyebrow">
+            {stretchAreas.length} demand{stretchAreas.length === 1 ? '' : 's'} matched via adjacent experience
+          </div>
+        </div>
+      </div>
+      <div className="living-context__diagnostic-list">
+        {stretchAreas.map((area) => (
+          <article
+            key={`${area.atomId}:${area.demandId}`}
+            className="living-context__stretch-row"
+            data-testid="stretch-area-row"
+          >
+            <div className="living-context__stretch-head">
+              <span className="living-context__stretch-dimension">{titleCase(area.dimension)}</span>
+              <span className="living-context__stretch-concepts">
+                {area.atomConcept} → {area.demandConcept}
+              </span>
+            </div>
+            <div className="living-context__repo-source-grid">
+              <ReviewSourceList label="Candidate source" sources={area.candidateSourceRefs} />
+              <ReviewSourceList label="PR demand source" sources={area.challengeSourceRefs} />
+            </div>
+          </article>
+        ))}
+      </div>
+    </section>
+  );
+}
+
+function UnmatchedDemandsPanel({
+  unmatchedDemandIds,
+  packet,
+}: {
+  unmatchedDemandIds: string[];
+  packet: StandaloneReviewPacketDetail | null;
+}): JSX.Element | null {
+  if (unmatchedDemandIds.length === 0) return null;
+  const demandDetails = packet?.demands.filter((demand) =>
+    unmatchedDemandIds.includes(demand.id)
+  ) ?? [];
+  return (
+    <section
+      className="living-context__unmatched-demands"
+      aria-label="Unmatched demands"
+      data-testid="unmatched-demands-panel"
+    >
+      <div className="living-context__section-head">
+        <div>
+          <div className="living-context__section-title">Unmatched demands</div>
+          <div className="living-context__eyebrow">
+            {unmatchedDemandIds.length} PR demand{unmatchedDemandIds.length === 1 ? '' : 's'} without candidate evidence
+          </div>
+        </div>
+      </div>
+      <div className="living-context__diagnostic-list">
+        {demandDetails.length > 0 ? (
+          demandDetails.map((demand) => (
+            <div
+              key={demand.id}
+              className="living-context__diagnostic-row"
+              data-testid="unmatched-demand-row"
+            >
+              <strong>{demand.id}</strong>
+              <span className="living-context__concept">{demand.family}</span>
+              {demand.narrative && <p>{demand.narrative}</p>}
+              {demand.conceptKeys.length > 0 && (
+                <div className="living-context__concepts">
+                  {demand.conceptKeys.slice(0, 5).map((concept) => (
+                    <span key={`${demand.id}:${concept}`} className="living-context__concept">
+                      {concept}
+                    </span>
+                  ))}
+                </div>
+              )}
+            </div>
+          ))
+        ) : (
+          unmatchedDemandIds.map((demandId) => (
+            <div key={demandId} className="living-context__diagnostic-row">
+              <strong>{demandId}</strong>
+              <span className="living-context__missing-evidence">No candidate alignment</span>
+            </div>
+          ))
+        )}
+      </div>
+    </section>
+  );
+}
+
+function MatchNarrativePanel({
+  narrative,
+}: {
+  narrative: StandaloneReviewMatchNarrative | null;
+}): JSX.Element | null {
+  if (!narrative) return null;
+  return (
+    <section
+      className="living-context__match-narrative"
+      aria-label="Match narrative"
+      data-testid="match-narrative-panel"
+    >
+      <div className="living-context__section-head">
+        <div>
+          <div className="living-context__section-title">{narrative.title}</div>
+          <div className="living-context__eyebrow">{narrative.verdict}</div>
+        </div>
+        <Quote size={14} color="var(--lc-source)" />
+      </div>
+      {narrative.sections.map((section) => (
+        <div key={section.heading} className="living-context__narrative-section">
+          <div className="living-context__eyebrow">{section.heading}</div>
+          <ul>
+            {section.items.map((item, index) => (
+              <li key={`${section.heading}:${index}`}>{item}</li>
+            ))}
+          </ul>
+        </div>
+      ))}
+    </section>
+  );
+}
+
 function StandaloneReviewMatchPanel({
   match,
 }: {
@@ -1005,6 +1164,15 @@ function StandaloneReviewMatchPanel({
           <RepositoryOverlayPanel match={match} />
 
           <RepoPacketPanel match={match} />
+
+          <StretchAreasPanel stretchAreas={match.stretchAreas} />
+
+          <UnmatchedDemandsPanel
+            unmatchedDemandIds={match.unmatchedDemandIds}
+            packet={match.packet}
+          />
+
+          <MatchNarrativePanel narrative={match.matchNarrative} />
 
           {match.gaps.length > 0 && (
             <div className="living-context__review-gaps">
@@ -1371,6 +1539,730 @@ function MeetingEvidencePanel({
   );
 }
 
+const COVERAGE_COLORS: Record<CoverageLevel, string> = {
+  strong: 'var(--lc-signal)',
+  partial: 'var(--lc-structural)',
+  weak: 'var(--lc-assertion)',
+  none: 'var(--lc-record-dim)',
+};
+
+function EvidenceGapPanel({
+  report,
+}: {
+  report: EvidenceGapReport | null;
+}): JSX.Element | null {
+  if (!report || report.demands.length === 0) return null;
+  const { summary, demands, recommendations } = report;
+  const segments = [
+    { level: 'strong' as CoverageLevel, count: summary.strongCount },
+    { level: 'partial' as CoverageLevel, count: summary.partialCount },
+    { level: 'weak' as CoverageLevel, count: summary.weakCount },
+    { level: 'none' as CoverageLevel, count: summary.noneCount },
+  ];
+  return (
+    <section className="living-context__gap-analysis" data-testid="evidence-gap-panel">
+      <div className="living-context__section-head">
+        <div>
+          <div className="living-context__section-title">Evidence gap analysis</div>
+          <div className="living-context__eyebrow">
+            {Math.round(summary.weightedCoverageScore * 100)}% weighted coverage across {summary.totalDemands} demands
+          </div>
+        </div>
+        <ShieldCheck size={14} color="var(--lc-signal)" />
+      </div>
+
+      <div className="living-context__gap-bar" data-testid="gap-coverage-bar">
+        {segments.map(({ level, count }) => (
+          count > 0 ? (
+            <div
+              key={level}
+              className={`living-context__gap-segment living-context__gap-segment--${level}`}
+              style={{ flex: count / summary.totalDemands, backgroundColor: COVERAGE_COLORS[level] }}
+              title={`${titleCase(level)}: ${count} demand${count === 1 ? '' : 's'}`}
+              data-testid={`gap-segment-${level}`}
+            />
+          ) : null
+        ))}
+      </div>
+      <div className="living-context__gap-legend">
+        {segments.filter((s) => s.count > 0).map(({ level, count }) => (
+          <span key={level} className="living-context__gap-label">
+            <span
+              className="living-context__gap-dot"
+              style={{ backgroundColor: COVERAGE_COLORS[level] }}
+            />
+            {titleCase(level)} ({count})
+          </span>
+        ))}
+      </div>
+
+      <div className="living-context__gap-demands">
+        {demands.map((demand) => (
+          <article
+            key={demand.demandId}
+            className={`living-context__gap-demand living-context__gap-demand--${demand.coverageLevel}`}
+            data-testid="gap-demand"
+          >
+            <div className="living-context__gap-demand-head">
+              <div className="living-context__gap-demand-narrative">
+                {demand.demandNarrative}
+              </div>
+              <span
+                className={`living-context__gap-badge living-context__gap-badge--${demand.coverageLevel}`}
+                data-testid={`gap-badge-${demand.coverageLevel}`}
+              >
+                {titleCase(demand.coverageLevel)}
+              </span>
+            </div>
+            <div className="living-context__gap-demand-meta">
+              <span>{Math.round(demand.effectiveStrength * 100)}% effective strength</span>
+              <span>weight: {demand.demandWeight.toFixed(1)}</span>
+              {demand.evidenceCount > 0 && (
+                <span>{demand.evidenceCount} evidence source{demand.evidenceCount === 1 ? '' : 's'}</span>
+              )}
+            </div>
+            {demand.matchedConcepts.length > 0 && (
+              <div className="living-context__concepts">
+                {demand.matchedConcepts.map((concept) => (
+                  <span key={`${demand.demandId}:match:${concept}`} className="living-context__concept living-context__concept--matched">
+                    {concept}
+                  </span>
+                ))}
+              </div>
+            )}
+            {demand.missingConcepts.length > 0 && (
+              <div className="living-context__concepts">
+                {demand.missingConcepts.map((concept) => (
+                  <span key={`${demand.demandId}:miss:${concept}`} className="living-context__concept living-context__concept--missing">
+                    {concept}
+                  </span>
+                ))}
+              </div>
+            )}
+            {demand.supportingAssertions.length > 0 && demand.supportingAssertions[0] && (
+              <blockquote className="living-context__gap-source">
+                {demand.supportingAssertions[0].exactText
+                  ? demand.supportingAssertions[0].exactText.slice(0, 180) + (demand.supportingAssertions[0].exactText.length > 180 ? '...' : '')
+                  : demand.supportingAssertions[0].narrative}
+              </blockquote>
+            )}
+          </article>
+        ))}
+      </div>
+
+      {recommendations.length > 0 && (
+        <div className="living-context__gap-recommendations" data-testid="gap-recommendations">
+          <div className="living-context__section-head" style={{ marginTop: 8 }}>
+            <div className="living-context__section-title" style={{ fontSize: '0.75rem' }}>Recommendations</div>
+            <AlertTriangle size={12} color="var(--lc-assertion)" />
+          </div>
+          <ul className="living-context__gap-rec-list">
+            {recommendations.map((rec, index) => (
+              <li key={`rec-${index}`}>{rec}</li>
+            ))}
+          </ul>
+        </div>
+      )}
+    </section>
+  );
+}
+
+function MatchProvenancePanel({
+  provenance,
+}: {
+  provenance: MatchProvenanceChain | null;
+}): JSX.Element | null {
+  if (!provenance || provenance.chain.length === 0) return null;
+  const { decision, chain, totalDemands, alignedDemands, unmatchedDemands, stretchCount } = provenance;
+  return (
+    <section className="living-context__provenance" data-testid="match-provenance-panel">
+      <div className="living-context__section-head">
+        <div>
+          <div className="living-context__section-title">Match provenance chain</div>
+          <div className="living-context__eyebrow">
+            decision &rarr; demand &rarr; signal &rarr; assertion &rarr; source
+          </div>
+        </div>
+        <Link2 size={14} color="var(--lc-structural)" />
+      </div>
+
+      <div className="living-context__provenance-summary" data-testid="provenance-summary">
+        <div className="living-context__metric">
+          <div className="living-context__metric-value">{decision.status}</div>
+          <div className="living-context__metric-label">Decision</div>
+        </div>
+        <div className="living-context__metric">
+          <div className="living-context__metric-value">{alignedDemands}/{totalDemands}</div>
+          <div className="living-context__metric-label">Aligned</div>
+        </div>
+        <div className="living-context__metric">
+          <div className="living-context__metric-value">{unmatchedDemands}</div>
+          <div className="living-context__metric-label">Unmatched</div>
+        </div>
+        <div className="living-context__metric">
+          <div className="living-context__metric-value">{stretchCount}</div>
+          <div className="living-context__metric-label">Stretch</div>
+        </div>
+      </div>
+
+      <div className="living-context__provenance-chain">
+        {chain.map((entry) => (
+          <article
+            key={entry.demandLink.demandId}
+            className={`living-context__provenance-entry ${entry.demandLink.stretch ? 'living-context__provenance-entry--stretch' : ''}`}
+            data-testid="provenance-entry"
+          >
+            <div className="living-context__provenance-demand">
+              <div className="living-context__provenance-demand-text">
+                {entry.demandLink.demandNarrative}
+              </div>
+              <div className="living-context__provenance-demand-meta">
+                <span>score: {Math.round(entry.demandLink.pairScore * 100)}%</span>
+                <span>weight: {entry.demandLink.demandWeight.toFixed(1)}</span>
+                {entry.demandLink.stretch && (
+                  <span className="living-context__provenance-stretch-tag">
+                    stretch: {entry.demandLink.stretch.atomConcept} &harr; {entry.demandLink.stretch.demandConcept}
+                  </span>
+                )}
+              </div>
+            </div>
+
+            {entry.demandLink.demandConcepts.length > 0 && (
+              <div className="living-context__concepts">
+                {entry.demandLink.demandConcepts.map((concept) => (
+                  <span key={`${entry.demandLink.demandId}:concept:${concept}`} className="living-context__concept">
+                    {concept}
+                  </span>
+                ))}
+              </div>
+            )}
+
+            {entry.assertions.length > 0 && (
+              <div className="living-context__provenance-assertions">
+                {entry.assertions.slice(0, 3).map((assertion) => (
+                  <div key={assertion.assertionId} className="living-context__provenance-assertion">
+                    <div className="living-context__provenance-assertion-text">
+                      {assertion.narrative}
+                    </div>
+                    <div className="living-context__provenance-assertion-meta">
+                      <span>decay: {Math.round(assertion.decayMultiplier * 100)}%</span>
+                      {assertion.observedAt && (
+                        <span>{formatDate(assertion.observedAt)}</span>
+                      )}
+                    </div>
+                    {assertion.sourceSpans.length > 0 && assertion.sourceSpans[0] && (
+                      <blockquote className="living-context__provenance-source">
+                        {assertion.sourceSpans[0].exactText.slice(0, 150)}
+                        {assertion.sourceSpans[0].exactText.length > 150 ? '...' : ''}
+                      </blockquote>
+                    )}
+                  </div>
+                ))}
+                {entry.assertions.length > 3 && (
+                  <div className="living-context__eyebrow">
+                    +{entry.assertions.length - 3} more assertion{entry.assertions.length - 3 === 1 ? '' : 's'}
+                  </div>
+                )}
+              </div>
+            )}
+
+            {entry.interactions.length > 0 && (
+              <div className="living-context__provenance-trace">
+                {entry.interactions.map((interaction) => (
+                  <span key={interaction.interactionId}>
+                    {titleCase(interaction.interactionType)}
+                    {interaction.startedAt ? ` (${formatDate(interaction.startedAt)})` : ''}
+                  </span>
+                ))}
+              </div>
+            )}
+          </article>
+        ))}
+      </div>
+    </section>
+  );
+}
+
+const ALL_SOURCE_TYPES = ['resume', 'meeting', 'culture_interview', 'code_review', 'phone_call', 'assessment'] as const;
+
+const FRESHNESS_COLORS: Record<string, string> = {
+  fresh: 'var(--lc-source)',
+  recent: 'var(--lc-structural)',
+  aging: 'var(--pipe-text-dim)',
+  stale: 'var(--pipe-border)',
+};
+
+function EvidenceFreshnessPanel({
+  freshness,
+}: {
+  freshness: EvidenceFreshnessResponse | null;
+}): JSX.Element | null {
+  if (!freshness || freshness.totalEntries === 0) return null;
+  const segments = [
+    { level: 'fresh' as const, count: freshness.freshCount },
+    { level: 'recent' as const, count: freshness.recentCount },
+    { level: 'aging' as const, count: freshness.agingCount },
+    { level: 'stale' as const, count: freshness.staleCount },
+  ];
+  const total = freshness.totalEntries;
+  return (
+    <div className="living-context__freshness" data-testid="evidence-freshness-panel">
+      <div className="living-context__section-head">
+        <div className="living-context__section-title">Evidence freshness</div>
+        <div className="living-context__count">
+          {Math.round(freshness.averageDecay * 100)}% avg decay
+        </div>
+      </div>
+      <div className="living-context__freshness-bar" data-testid="freshness-bar">
+        {segments.map(({ level, count }) => (
+          count > 0 ? (
+            <div
+              key={level}
+              className={`living-context__freshness-segment living-context__freshness-segment--${level}`}
+              style={{ flex: count / total, backgroundColor: FRESHNESS_COLORS[level] }}
+              title={`${titleCase(level)}: ${count} entries (${Math.round((count / total) * 100)}%)`}
+              data-testid={`freshness-segment-${level}`}
+            />
+          ) : null
+        ))}
+      </div>
+      <div className="living-context__freshness-legend">
+        {segments.filter((s) => s.count > 0).map(({ level, count }) => (
+          <span key={level} className="living-context__freshness-label">
+            <span
+              className="living-context__freshness-dot"
+              style={{ backgroundColor: FRESHNESS_COLORS[level] }}
+            />
+            {titleCase(level)} ({count})
+          </span>
+        ))}
+      </div>
+      <div className="living-context__freshness-stats">
+        <span>Median age: {freshness.medianAgeDays.toFixed(1)}d</span>
+        <span>Total: {freshness.totalEntries} entries</span>
+      </div>
+    </div>
+  );
+}
+
+function EvidenceLineagePanel({
+  lineage,
+}: {
+  lineage: EvidenceLineageResponse | null;
+}): JSX.Element | null {
+  if (!lineage || lineage.nodes.length === 0) return null;
+  return (
+    <section className="living-context__lineage" data-testid="evidence-lineage-panel">
+      <div className="living-context__section-head">
+        <div>
+          <div className="living-context__section-title">Evidence lineage</div>
+          <div className="living-context__eyebrow">
+            assertion → source span → artifact → interaction
+          </div>
+        </div>
+        <Network size={14} color="var(--lc-source)" />
+      </div>
+
+      {lineage.conceptSummary.length > 0 && (
+        <div className="living-context__lineage-concepts" data-testid="lineage-concept-summary">
+          {lineage.conceptSummary.slice(0, 8).map((concept) => (
+            <div
+              key={concept.canonicalKey}
+              className="living-context__lineage-concept"
+              data-testid="lineage-concept"
+            >
+              <strong>{concept.canonicalKey}</strong>
+              <span>{Math.round(concept.avgEffectiveStrength * 100)}% effective</span>
+              <span>{concept.nodeCount} source{concept.nodeCount === 1 ? '' : 's'}</span>
+            </div>
+          ))}
+        </div>
+      )}
+
+      <div className="living-context__lineage-nodes">
+        {lineage.nodes.slice(0, 10).map((node) => (
+          <article
+            key={node.assertion.assertionId}
+            className={`living-context__lineage-node living-context__lineage-node--${node.decayMultiplier >= 0.9 ? 'fresh' : node.decayMultiplier >= 0.6 ? 'recent' : node.decayMultiplier >= 0.35 ? 'aging' : 'stale'}`}
+            data-testid="lineage-node"
+            data-decay={node.decayMultiplier.toFixed(2)}
+          >
+            <div className="living-context__lineage-head">
+              <div className="living-context__lineage-narrative">
+                {node.assertion.narrative}
+              </div>
+              <div className="living-context__lineage-meta">
+                <span>{Math.round(node.effectiveStrength * 100)}% strength</span>
+                <span>{titleCase(node.interaction.interactionType)}</span>
+                {node.assertion.observedAt && (
+                  <span>{formatDate(node.assertion.observedAt)}</span>
+                )}
+              </div>
+            </div>
+            {node.assertion.concepts.length > 0 && (
+              <div className="living-context__concepts">
+                {node.assertion.concepts.slice(0, 4).map((concept) => (
+                  <span key={`${node.assertion.assertionId}:${concept.canonicalKey}`} className="living-context__concept">
+                    {concept.canonicalKey}
+                  </span>
+                ))}
+              </div>
+            )}
+            {node.assertion.sources.length > 0 && node.assertion.sources[0] && (
+              <blockquote className="living-context__lineage-source">
+                {node.assertion.sources[0].exactText.slice(0, 200)}
+                {node.assertion.sources[0].exactText.length > 200 ? '…' : ''}
+              </blockquote>
+            )}
+            <div className="living-context__lineage-trace">
+              <span>{titleCase(node.artifact.artifactType)}</span>
+              <span>v{node.artifact.versionNumber}</span>
+              <span>decay: {Math.round(node.decayMultiplier * 100)}%</span>
+            </div>
+          </article>
+        ))}
+      </div>
+      {lineage.nodes.length > 10 && (
+        <div className="living-context__eyebrow" style={{ marginTop: 8 }}>
+          {lineage.nodes.length - 10} more lineage nodes
+        </div>
+      )}
+    </section>
+  );
+}
+
+function EvidenceDepthPanel({
+  livingContext,
+}: {
+  livingContext: LivingContextReadModel;
+}): JSX.Element | null {
+  const sourceTypeCounts = useMemo(() => {
+    const counts: Record<string, number> = {};
+    for (const interaction of livingContext.interactions) {
+      const type = interaction.interactionType;
+      counts[type] = (counts[type] ?? 0) + 1;
+    }
+    return counts;
+  }, [livingContext.interactions]);
+  const presentTypes = Object.keys(sourceTypeCounts).length;
+  const diversity = Math.min(presentTypes / ALL_SOURCE_TYPES.length, 1);
+  if (livingContext.interactions.length === 0) return null;
+  return (
+    <div className="living-context__evidence-depth" data-testid="evidence-depth-panel">
+      <div className="living-context__section-head">
+        <div className="living-context__section-title">Evidence depth</div>
+        <div className="living-context__count">
+          {Math.round(diversity * 100)}% diversity
+        </div>
+      </div>
+      <div className="living-context__evidence-bar">
+        {ALL_SOURCE_TYPES.map((type) => {
+          const count = sourceTypeCounts[type] ?? 0;
+          return (
+            <div
+              key={type}
+              className={`living-context__evidence-segment ${count > 0 ? 'living-context__evidence-segment--active' : ''}`}
+              title={`${titleCase(type)}: ${count} interaction${count === 1 ? '' : 's'}`}
+            >
+              <span className="living-context__evidence-type">{titleCase(type)}</span>
+              <span className="living-context__evidence-count">{count}</span>
+            </div>
+          );
+        })}
+      </div>
+    </div>
+  );
+}
+
+function ConceptGraphPanel({
+  concepts,
+  adjacencies,
+  isLoading,
+  onRefresh,
+}: {
+  concepts: ConceptGraphConcept[];
+  adjacencies: ConceptGraphAdjacency[];
+  isLoading: boolean;
+  onRefresh: () => void;
+}): JSX.Element | null {
+  const [filter, setFilter] = useState('');
+  const normalizedFilter = filter.trim().toLowerCase();
+
+  const visibleConcepts = useMemo(() => {
+    if (!normalizedFilter) return concepts;
+    return concepts.filter(
+      (c) =>
+        c.canonicalKey.toLowerCase().includes(normalizedFilter)
+        || c.label.toLowerCase().includes(normalizedFilter)
+        || c.namespace.toLowerCase().includes(normalizedFilter)
+        || c.aliases.some((a) => a.toLowerCase().includes(normalizedFilter)),
+    );
+  }, [concepts, normalizedFilter]);
+
+  const visibleConceptKeys = useMemo(
+    () => new Set(visibleConcepts.map((c) => c.canonicalKey)),
+    [visibleConcepts],
+  );
+
+  const visibleAdjacencies = useMemo(
+    () =>
+      adjacencies.filter(
+        (a) => visibleConceptKeys.has(a.fromConceptKey) && visibleConceptKeys.has(a.toConceptKey),
+      ),
+    [adjacencies, visibleConceptKeys],
+  );
+
+  if (concepts.length === 0 && !isLoading) return null;
+
+  return (
+    <section
+      className="living-context__concept-graph"
+      aria-label="Learned concept graph"
+      data-testid="concept-graph-panel"
+    >
+      <div className="living-context__section-head">
+        <div>
+          <div className="living-context__section-title">Learned concepts</div>
+          <div className="living-context__eyebrow">
+            {concepts.length} concept{concepts.length === 1 ? '' : 's'}
+            {adjacencies.length > 0 && ` · ${adjacencies.length} edge${adjacencies.length === 1 ? '' : 's'}`}
+          </div>
+        </div>
+        <button
+          type="button"
+          className="living-context__refresh"
+          onClick={onRefresh}
+          disabled={isLoading}
+          title="Refresh concept graph"
+          aria-label="Refresh concept graph"
+        >
+          <Network size={14} color="var(--lc-concept)" />
+        </button>
+      </div>
+
+      <div className="living-context__concept-filter">
+        <Search size={12} />
+        <input
+          value={filter}
+          onChange={(e) => setFilter(e.target.value)}
+          placeholder="Filter concepts..."
+          aria-label="Filter concepts"
+        />
+      </div>
+
+      <div className="living-context__concept-grid" data-testid="concept-grid">
+        {visibleConcepts.slice(0, 60).map((concept) => (
+          <article
+            key={concept.id}
+            className="living-context__concept-card"
+            data-testid="concept-card"
+          >
+            <div className="living-context__concept-head">
+              <span className="living-context__concept-label">{concept.label}</span>
+              <span className="living-context__concept-ns">{concept.namespace}</span>
+            </div>
+            <div className="living-context__concept-meta">
+              <span>{concept.observationCount} obs</span>
+              {concept.aliases.length > 0 && (
+                <span title={concept.aliases.join(', ')}>
+                  {concept.aliases.length} alias{concept.aliases.length === 1 ? '' : 'es'}
+                </span>
+              )}
+            </div>
+            {concept.description && (
+              <div className="living-context__concept-desc">{concept.description}</div>
+            )}
+          </article>
+        ))}
+        {visibleConcepts.length > 60 && (
+          <div className="living-context__eyebrow">
+            +{visibleConcepts.length - 60} more concepts
+          </div>
+        )}
+      </div>
+
+      {visibleAdjacencies.length > 0 && (
+        <div className="living-context__concept-edges" data-testid="concept-edges">
+          <div className="living-context__section-head">
+            <div className="living-context__section-title">Concept edges</div>
+            <div className="living-context__count">{visibleAdjacencies.length}</div>
+          </div>
+          <div className="living-context__concept-edge-list">
+            {visibleAdjacencies.slice(0, 40).map((edge, i) => (
+              <div
+                key={`${edge.fromConceptKey}:${edge.toConceptKey}:${edge.dimension}:${i}`}
+                className="living-context__concept-edge"
+              >
+                <span className="living-context__concept-edge-from">{edge.fromConceptKey}</span>
+                <span className="living-context__concept-edge-dim">
+                  {edge.dimension}
+                  {edge.stretchAllowed && ' (stretch)'}
+                </span>
+                <span className="living-context__concept-edge-to">{edge.toConceptKey}</span>
+                {edge.confidence !== null && (
+                  <span className="living-context__concept-edge-conf">
+                    {Math.round(edge.confidence * 100)}%
+                  </span>
+                )}
+              </div>
+            ))}
+          </div>
+        </div>
+      )}
+    </section>
+  );
+}
+
+function MatchHistoryPanel({
+  candidateId,
+}: {
+  candidateId: string;
+}): JSX.Element | null {
+  const { history, isLoading, error, refetch } = useMatchHistory(candidateId);
+
+  if (isLoading && !history) return null;
+  if (error || !history || history.runs.length === 0) return null;
+
+  return (
+    <section
+      className="living-context__panel"
+      data-testid="match-history-panel"
+    >
+      <div className="living-context__section-head">
+        <div style={{ display: 'flex', gap: 6, alignItems: 'center' }}>
+          <div className="living-context__section-title">Match history</div>
+          <div className="living-context__count">{history.totalRuns}</div>
+        </div>
+        <button
+          type="button"
+          className="living-context__refresh"
+          onClick={() => void refetch()}
+          title="Refresh match history"
+          aria-label="Refresh match history"
+        >
+          <RefreshCw size={12} />
+        </button>
+      </div>
+
+      <div className="living-context__match-history-list">
+        {history.runs.map((run, index) => {
+          const delta = history.deltas[index] ?? null;
+          return (
+            <div
+              key={run.matchRunId}
+              className="living-context__match-history-entry"
+              data-testid="match-history-entry"
+            >
+              <div className="living-context__match-history-header">
+                <span className={`living-context__match-history-status living-context__match-history-status--${run.status.toLowerCase().replace(/_/g, '-')}`}>
+                  {run.status.replace(/_/g, ' ')}
+                </span>
+                <span className="living-context__match-history-date">
+                  {formatDate(run.createdAt)}
+                </span>
+              </div>
+
+              {run.topChallenge && (
+                <div className="living-context__match-history-challenge">
+                  <GitPullRequest size={11} />
+                  <span>PR #{run.topChallenge.prNumber}</span>
+                  <span className="living-context__eyebrow">
+                    {run.topChallenge.alignedDemandCount} aligned
+                    {run.topChallenge.stretchCount > 0 && ` · ${run.topChallenge.stretchCount} stretch`}
+                    {run.topChallenge.score != null && ` · ${Math.round(run.topChallenge.score * 100)}%`}
+                  </span>
+                </div>
+              )}
+
+              <div className="living-context__match-history-meta">
+                <span>{run.evaluatedCount} evaluated</span>
+                {run.excludedCount > 0 && <span>{run.excludedCount} excluded</span>}
+              </div>
+
+              {delta && (
+                <div className="living-context__match-history-delta" data-testid="match-history-delta">
+                  {delta.statusChanged && (
+                    <span className="living-context__match-history-delta-badge living-context__match-history-delta-badge--status">
+                      status changed
+                    </span>
+                  )}
+                  {delta.newTopChallenge && (
+                    <span className="living-context__match-history-delta-badge living-context__match-history-delta-badge--challenge">
+                      new top match
+                    </span>
+                  )}
+                  {delta.topScoreDelta !== null && delta.topScoreDelta !== 0 && (
+                    <span className={`living-context__match-history-delta-badge ${delta.topScoreDelta > 0 ? 'living-context__match-history-delta-badge--positive' : 'living-context__match-history-delta-badge--negative'}`}>
+                      {delta.topScoreDelta > 0 ? '+' : ''}{Math.round(delta.topScoreDelta * 100)}% score
+                    </span>
+                  )}
+                  {delta.evaluatedCountDelta !== 0 && (
+                    <span className="living-context__match-history-delta-badge">
+                      {delta.evaluatedCountDelta > 0 ? '+' : ''}{delta.evaluatedCountDelta} challenges
+                    </span>
+                  )}
+                </div>
+              )}
+            </div>
+          );
+        })}
+      </div>
+    </section>
+  );
+}
+
+function RematchButton({
+  candidateId,
+  onRematchComplete,
+}: {
+  candidateId: string;
+  onRematchComplete: (result: RematchResult) => void;
+}): JSX.Element {
+  const { rematch, isRunning, result, error } = useRematch(candidateId);
+
+  const handleRematch = useCallback(async (): Promise<void> => {
+    const res = await rematch();
+    if (res) onRematchComplete(res);
+  }, [rematch, onRematchComplete]);
+
+  return (
+    <div className="living-context__rematch" data-testid="rematch-section">
+      <button
+        type="button"
+        className="living-context__rematch-btn"
+        onClick={() => void handleRematch()}
+        disabled={isRunning}
+        title="Re-run deterministic matching with latest evidence"
+        aria-label="Re-match candidate"
+        data-testid="rematch-button"
+      >
+        <Shuffle size={13} className={isRunning ? 'spin' : undefined} />
+        {isRunning ? 'Matching...' : 'Re-match'}
+      </button>
+
+      {error && (
+        <div className="living-context__rematch-error" data-testid="rematch-error">
+          <AlertTriangle size={12} />
+          {error.message}
+        </div>
+      )}
+
+      {result && !error && (
+        <div className="living-context__rematch-result" data-testid="rematch-result">
+          <Zap size={12} color="var(--lc-concept)" />
+          <span>
+            {result.status === 'MATCHED' && result.topChallenge
+              ? `Matched → PR #${result.topChallenge.prNumber} (${result.topChallenge.alignedDemandCount} aligned, ${result.topChallenge.stretchCount} stretch)`
+              : result.status === 'NEEDS_MORE_EVIDENCE'
+                ? result.reason ?? 'More evidence needed before matching'
+                : `Status: ${result.status} · ${result.evaluatedCount} challenge${result.evaluatedCount === 1 ? '' : 's'} evaluated`}
+          </span>
+        </div>
+      )}
+    </div>
+  );
+}
+
 export function LivingContextGraph({
   candidateId,
   livingContextEndpoint,
@@ -1388,10 +2280,27 @@ export function LivingContextGraph({
       : { endpoint: livingContextEndpoint, initialLivingContext }
     : candidateId;
   const { livingContext, isLoading, error, refetch } = useLivingContext(livingContextSource);
+  const { lineage } = useEvidenceLineage(candidateId);
+  const { freshness } = useEvidenceFreshness(candidateId);
+  const matchRunId = standaloneReviewMatch?.matchRunId ?? null;
+  const challengePacketId = standaloneReviewMatch?.packetId ?? null;
+  const { report: gapReport } = useEvidenceGaps(candidateId, challengePacketId);
+  const { provenance } = useMatchProvenance(matchRunId);
+  const {
+    graph: conceptGraph,
+    isLoading: conceptsLoading,
+    refetch: refetchConcepts,
+  } = useConceptGraph({ limit: 100, withAdjacencies: true, minObs: 1 });
+  const [, setLastRematch] = useState<RematchResult | null>(null);
   const [selectedInteractionId, setSelectedInteractionId] = useState<string | null>(null);
   const [selectedSource, setSelectedSource] = useState<LivingContextSourceRef | null>(null);
   const [search, setSearch] = useState('');
   const normalizedSearch = search.trim().toLowerCase();
+
+  const handleRematchComplete = useCallback((result: RematchResult): void => {
+    setLastRematch(result);
+    void refetch();
+  }, [refetch]);
 
   useEffect(() => {
     if (!livingContext || selectedInteractionId !== null) return;
@@ -1600,6 +2509,11 @@ export function LivingContextGraph({
 
       <StandaloneReviewMatchPanel match={reviewMatch} />
 
+      <RematchButton
+        candidateId={candidateId}
+        onRematchComplete={handleRematchComplete}
+      />
+
       {hasSummaryContent && (
         <div className="living-context__summary" data-testid="living-context-summary">
           {summaryMetrics.map(([label, value]) => (
@@ -1610,6 +2524,20 @@ export function LivingContextGraph({
           ))}
         </div>
       )}
+
+      <EvidenceDepthPanel livingContext={livingContext} />
+      <EvidenceFreshnessPanel freshness={freshness} />
+      <EvidenceLineagePanel lineage={lineage} />
+      <EvidenceGapPanel report={gapReport} />
+      <MatchProvenancePanel provenance={provenance} />
+      <MatchHistoryPanel candidateId={candidateId} />
+
+      <ConceptGraphPanel
+        concepts={conceptGraph?.concepts ?? []}
+        adjacencies={conceptGraph?.adjacencies ?? []}
+        isLoading={conceptsLoading}
+        onRefresh={() => void refetchConcepts()}
+      />
 
       <MeetingEvidencePanel
         livingContext={livingContext}

@@ -16,6 +16,8 @@ import {
   ensureContactLivingContext,
   loadContactLivingContext,
   loadWorkspacePersonLivingContext,
+  searchSourceContent,
+  requireGate,
 } from '../../lib/livingContext';
 import type { Env, Variables } from '../../types';
 
@@ -239,7 +241,7 @@ contacts.get('/:id', async (c) => {
 });
 
 // GET /:id/living-context — contact living context graph
-contacts.get('/:id/living-context', async (c) => {
+contacts.get('/:id/living-context', requireGate('living_context_read'), async (c) => {
   const userId = c.var.userId;
   const { id } = c.req.param();
   const db = c.env.DB;
@@ -279,6 +281,153 @@ contacts.get('/:id/living-context', async (c) => {
   }
 
   return c.json(livingContext);
+});
+
+// GET /:id/living-context/search?q=... — search contact source content
+contacts.get('/:id/living-context/search', requireGate('living_context_read'), async (c) => {
+  const userId = c.var.userId;
+  const { id } = c.req.param();
+  const db = c.env.DB;
+  const query = c.req.query('q') ?? '';
+
+  const contact = await db
+    .prepare('SELECT id FROM contacts WHERE id = ? AND owner_id = ?')
+    .bind(id, userId)
+    .first<{ id: string }>();
+  if (!contact) return apiError(c, 'NOT_FOUND', 'Contact not found.');
+
+  const wp = await db.prepare(
+    `SELECT wp.id
+       FROM workspace_people wp
+      WHERE json_extract(wp.context_json, '$.contactId') = ?1
+      LIMIT 1`,
+  ).bind(id).first<{ id: string }>();
+  if (!wp) return c.json({ personId: id, query, hits: [] });
+
+  const result = await searchSourceContent(db, wp.id, query);
+  return c.json(result);
+});
+
+// GET /:id/living-context/timeline — chronological evidence accumulation feed
+contacts.get('/:id/living-context/timeline', requireGate('living_context_read'), async (c) => {
+  const userId = c.var.userId;
+  const { id } = c.req.param();
+  const db = c.env.DB;
+  const limitParam = c.req.query('limit');
+  const before = c.req.query('before') ?? undefined;
+  const after = c.req.query('after') ?? undefined;
+
+  const contact = await db
+    .prepare('SELECT id FROM contacts WHERE id = ? AND owner_id = ?')
+    .bind(id, userId)
+    .first<{ id: string }>();
+  if (!contact) return apiError(c, 'NOT_FOUND', 'Contact not found.');
+
+  const wp = await db.prepare(
+    `SELECT wp.id
+       FROM workspace_people wp
+      WHERE json_extract(wp.context_json, '$.contactId') = ?1
+      LIMIT 1`,
+  ).bind(id).first<{ id: string }>();
+  if (!wp) return c.json({ workspacePersonId: null, totalEntries: 0, entries: [] });
+
+  const { loadPersonEvidenceTimeline } = await import('../../lib/livingContext');
+  const limit = limitParam ? Math.min(parseInt(limitParam, 10) || 100, 500) : 100;
+  const timeline = await loadPersonEvidenceTimeline(db, wp.id, { limit, before, after });
+  return c.json(timeline);
+});
+
+// GET /:id/living-context/evidence-depth — per-source-type evidence scoring
+contacts.get('/:id/living-context/evidence-depth', requireGate('living_context_read'), async (c) => {
+  const userId = c.var.userId;
+  const { id } = c.req.param();
+  const db = c.env.DB;
+
+  const contact = await db
+    .prepare('SELECT id FROM contacts WHERE id = ? AND owner_id = ?')
+    .bind(id, userId)
+    .first<{ id: string }>();
+  if (!contact) return apiError(c, 'NOT_FOUND', 'Contact not found.');
+
+  const wp = await db.prepare(
+    `SELECT wp.id
+       FROM workspace_people wp
+      WHERE json_extract(wp.context_json, '$.contactId') = ?1
+      LIMIT 1`,
+  ).bind(id).first<{ id: string }>();
+  if (!wp) {
+    return c.json({
+      contactId: id,
+      workspacePersonId: null,
+      sourceDiversity: 0,
+      totalInteractions: 0,
+      totalAssertions: 0,
+      totalSourceSpans: 0,
+      totalContextRecords: 0,
+      sources: {},
+      topConcepts: [],
+    });
+  }
+
+  const [interactionBreakdown, assertionCount, sourceSpanCount, contextRecordCount, topConcepts] = await Promise.all([
+    db.prepare(
+      `SELECT interaction_type, COUNT(*) AS cnt
+         FROM interactions
+        WHERE workspace_person_id = ?1
+        GROUP BY interaction_type
+        ORDER BY cnt DESC`,
+    ).bind(wp.id).all<{ interaction_type: string; cnt: number }>(),
+    db.prepare(
+      `SELECT COUNT(*) AS cnt FROM semantic_assertions WHERE workspace_person_id = ?1`,
+    ).bind(wp.id).first<{ cnt: number }>(),
+    db.prepare(
+      `SELECT COUNT(*) AS cnt
+         FROM source_spans ss
+         JOIN artifact_versions av ON av.id = ss.artifact_version_id
+         JOIN artifacts a ON a.id = av.artifact_id
+        WHERE a.workspace_person_id = ?1`,
+    ).bind(wp.id).first<{ cnt: number }>(),
+    db.prepare(
+      `SELECT COUNT(*) AS cnt FROM context_records WHERE workspace_person_id = ?1`,
+    ).bind(wp.id).first<{ cnt: number }>(),
+    db.prepare(
+      `SELECT c.canonical_key, c.label, COUNT(DISTINCT ac.assertion_id) AS evidence_count
+         FROM concepts c
+         JOIN assertion_concepts ac ON ac.concept_id = c.id
+         JOIN semantic_assertions sa ON sa.id = ac.assertion_id
+        WHERE sa.workspace_person_id = ?1
+        GROUP BY c.id, c.canonical_key, c.label
+        ORDER BY evidence_count DESC
+        LIMIT 20`,
+    ).bind(wp.id).all<{ canonical_key: string; label: string; evidence_count: number }>(),
+  ]);
+
+  const sources: Record<string, number> = {};
+  let totalInteractions = 0;
+  for (const row of interactionBreakdown.results ?? []) {
+    sources[row.interaction_type] = row.cnt;
+    totalInteractions += row.cnt;
+  }
+
+  const distinctSourceTypes = Object.keys(sources).length;
+  const maxSourceTypes = 6;
+  const sourceDiversity = Math.min(distinctSourceTypes / maxSourceTypes, 1);
+
+  return c.json({
+    contactId: id,
+    workspacePersonId: wp.id,
+    sourceDiversity,
+    totalInteractions,
+    totalAssertions: assertionCount?.cnt ?? 0,
+    totalSourceSpans: sourceSpanCount?.cnt ?? 0,
+    totalContextRecords: contextRecordCount?.cnt ?? 0,
+    sources,
+    topConcepts: (topConcepts.results ?? []).map((row) => ({
+      key: row.canonical_key,
+      label: row.label,
+      evidenceCount: row.evidence_count,
+    })),
+  });
 });
 
 // PATCH /:id — update contact

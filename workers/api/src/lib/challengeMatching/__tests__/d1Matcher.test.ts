@@ -46,6 +46,10 @@ const matchingMigration = readFileSync(
   new URL('../../../../migrations/0083_repo_semantic_graph_and_match_runs.sql', import.meta.url),
   'utf8',
 );
+const conceptRegistryMigration = readFileSync(
+  new URL('../../../../migrations/0094_concept_registry.sql', import.meta.url),
+  'utf8',
+);
 const contextRecordMigration = readFileSync(
   new URL('../../../../migrations/0095_context_records.sql', import.meta.url),
   'utf8',
@@ -1677,6 +1681,7 @@ describe('matchCandidateToReviewChallenge', () => {
     sqlite.exec(candidateNodeIdempotencyMigration);
     sqlite.exec(livingMigration);
     sqlite.exec(matchingMigration);
+    sqlite.exec(conceptRegistryMigration);
     sqlite.exec(contextRecordMigration);
     sqlite.exec(transcriptProjectionMigration);
   });
@@ -1703,10 +1708,17 @@ describe('matchCandidateToReviewChallenge', () => {
       rejectionReasons: ['NO_SCOREABLE_SOURCE_BACKED_CANDIDATE_EVIDENCE'],
     }));
     expect(result.explanation?.selectedPr).toBeUndefined();
-    expect(result.diagnostics).toEqual({
+    expect(result.diagnostics).toEqual(expect.objectContaining({
       excludedPackets: [],
       recalledPacketIds: [],
       evaluatedChallenges: [],
+    }));
+    expect(result.diagnostics?.candidateEvidenceDepth).toEqual({
+      sourceDiversity: 0,
+      totalInteractions: 0,
+      totalAssertions: 0,
+      totalSourceSpans: 0,
+      sourceTypes: {},
     });
     expect(sqlite.prepare(
       'SELECT status, selected_packet_id FROM match_runs WHERE id = ?',
@@ -3316,6 +3328,60 @@ describe('matchCandidateToReviewChallenge', () => {
     );
     expect(selectedRepoContextRefs.length).toBeGreaterThanOrEqual(2);
     expect(new Set(selectedRepoContextRefs.map((ref) => ref.source_ref_id))).toEqual(explanationRepoRefIds);
+  });
+
+  it('returns NEEDS_MORE_EVIDENCE when evidence diversity is below threshold', async () => {
+    const db = createNodeSqliteD1(sqlite);
+    await ensureCandidateLivingContext(db, 'candidate-1');
+
+    await ingestMeetingTranscriptToLivingContext(db, {
+      meetingId: 'meeting-1',
+      ownerId: 'workspace-1',
+      transcript: 'Discussed distributed systems architecture',
+      segments: [{ speaker: 'host', text: 'Discussed distributed systems architecture', timestampMs: 0 }],
+      startedAt: OBSERVED_AT,
+      endedAt: OBSERVED_AT,
+      provider: 'test',
+    });
+
+    const result = await matchCandidateToReviewChallenge(db, 'candidate-1', {
+      minEvidenceDiversity: 0.5,
+    });
+
+    expect(result.status).toBe('NEEDS_MORE_EVIDENCE');
+    expect(result.diagnostics?.candidateEvidenceDepth).toBeDefined();
+    expect(result.diagnostics!.candidateEvidenceDepth!.sourceDiversity).toBeLessThan(0.5);
+    expect(result.diagnostics!.evaluatedChallenges).toEqual([]);
+  });
+
+  it('does not gate when defaults are zero (preserves existing behavior)', async () => {
+    const db = createNodeSqliteD1(sqlite);
+    await ensureCandidateLivingContext(db, 'candidate-1');
+
+    const result = await matchCandidateToReviewChallenge(db, 'candidate-1', {
+      minEvidenceDiversity: 0,
+      minEvidenceInteractions: 0,
+    });
+
+    // Defaults are 0/0, so the evidence depth gate never fires.
+    // The engine proceeds and returns NEEDS_MORE_EVIDENCE because no signals exist.
+    expect(result.status).toBe('NEEDS_MORE_EVIDENCE');
+    expect(result.diagnostics?.candidateEvidenceDepth).toBeDefined();
+    // The explanation is populated by the engine (not short-circuited by our gate).
+    expect(result.explanation).toBeDefined();
+  });
+
+  it('returns NEEDS_MORE_EVIDENCE when interaction count is below threshold', async () => {
+    const db = createNodeSqliteD1(sqlite);
+    await ensureCandidateLivingContext(db, 'candidate-1');
+
+    const result = await matchCandidateToReviewChallenge(db, 'candidate-1', {
+      minEvidenceInteractions: 5,
+    });
+
+    expect(result.status).toBe('NEEDS_MORE_EVIDENCE');
+    expect(result.diagnostics?.candidateEvidenceDepth).toBeDefined();
+    expect(result.diagnostics!.candidateEvidenceDepth!.totalInteractions).toBeLessThan(5);
   });
 });
 

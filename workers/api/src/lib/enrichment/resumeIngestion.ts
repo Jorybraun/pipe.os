@@ -15,6 +15,7 @@ import type { Env } from '../../types';
 import { parseResume, persistParsedCV, extractTextFromPDF } from '../cvParser';
 import { runCandidateIngestion } from '../candidateDiscovery/orchestrate';
 import { markIngestionFailed } from '../candidateDiscovery/persist';
+import { ingestResumeToLivingContext } from '../livingContext/resumeIngestion';
 
 export interface ProcessResumeInput {
   env: Env;
@@ -136,9 +137,10 @@ export async function processResumeFromR2(
     await persistParsedCV(db, candidateId, parsed);
 
     // 4. Run full ingestion pipeline (PDF only — DOCX ingestion can be added later)
+    let resumeText = '';
     if (contentType === 'application/pdf') {
       try {
-        const resumeText = await extractTextFromPDF(arrayBuffer);
+        resumeText = await extractTextFromPDF(arrayBuffer);
         if (resumeText.trim().length < 20) {
           return await failResumeIngestion(
             db,
@@ -169,6 +171,25 @@ export async function processResumeFromR2(
         candidateId,
         `Resume ingestion does not support content type ${contentType} for ${r2Key}.`,
       );
+    }
+
+    // 5. Ingest into living context graph — real-time, not deferred to scheduled backfill.
+    // Creates source-backed person graph entries (interaction, artifact, source spans,
+    // assertions, concepts) immediately upon upload.
+    if (resumeText.length >= 20) {
+      try {
+        await ingestResumeToLivingContext(db, {
+          candidateId,
+          storageKey: r2Key,
+          mediaType: contentType,
+          resumeText,
+          uploadedAt: new Date().toISOString(),
+        });
+      } catch (err) {
+        const msg = err instanceof Error ? err.message : String(err);
+        console.error('[resumeIngestion] living context ingestion error:', msg);
+        // Non-fatal: legacy ingestion already succeeded
+      }
     }
 
     return { success: true, parsed: parseResult };
