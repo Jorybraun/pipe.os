@@ -18,6 +18,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - `assessmentIngestion.ts`: Simplify candidate resolution — use `session.candidate_id` directly instead of `resolveAssessmentCandidateId` fallback query through `scheduled_interviews`.
 - `backfillScheduled.ts`: Simplify assessment backfill queries — require `candidate_id IS NOT NULL` directly, removing redundant `scheduled_interviews` join fallback.
 - `backfillScheduled.test.ts`: Add 8-test suite covering rollout gate enforcement, candidate/contact/resume/meeting batch backfill, idempotency, task dependency ordering, and task definition completeness.
+- `pipelineSiblingsComparison.test.ts`: Add 6-test integration suite verifying pipeline-siblings query filtering, ownership-based comparison access control, and end-to-end siblings→comparison evidence divergence flow.
 
 ### Added — Evidence timeline & comparison wiring
 
