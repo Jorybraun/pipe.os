@@ -27,14 +27,50 @@ const ROOM_BASIC_PASSWORD = process.env.PIPE_ROOM_DEV_BASIC_AUTH_PASSWORD
   || process.env.ROOM_DEV_BASIC_AUTH_PASSWORD
   || process.env.VIDEO_ROOM_DEV_AUTH_PASSWORD
   || '';
-const REPO_URL = process.env.WORKSPACE_SMOKE_REPO_URL || 'https://github.com/octocat/Hello-World';
 const INTERVIEW_TYPE = process.env.WORKSPACE_SMOKE_INTERVIEW_TYPE || 'DEV_CONTAINER_CHALLENGE';
+const CHANGE_MODE = process.env.WORKSPACE_SMOKE_CHANGE_MODE || 'placeholder';
+const TASK_ALIGNED_PROFILES = {
+  'mui-popover-fix': {
+    repositoryUrl: 'https://github.com/mui/base-ui',
+    baseCommitSha: '58dff8444fa56e4444a3a1dd991c76b49cf4ab7e',
+    upstreamPullRequestRef: 'pull/973/head',
+    upstreamPullRequestBranch: 'pipe-smoke-pr-973',
+    changedPaths: [
+      'packages/react/src/popover/root/usePopoverRoot.ts',
+      'packages/react/src/popover/trigger/PopoverTrigger.test.tsx',
+      'packages/react/src/popover/utils/constants.ts',
+    ],
+    challengeTitle: 'Fix Base UI popover impatient click handling',
+    challengeInstructions: [
+      'Investigate the hover-open popover trigger behavior from Base UI PR #973.',
+      'Make a focused implementation change so a trigger click within 500ms of hover-open is ignored instead of immediately closing the popover.',
+      'Add or preserve regression coverage for impatient clicks versus patient clicks.',
+    ].join(' '),
+    challengeSuccessCriteria: [
+      'The submitted diff changes the popover root/trigger behavior instead of unrelated files.',
+      'The patch includes regression coverage for fast impatient clicks and patient clicks.',
+      'The verification command records the changed files and diff hygiene in source-backed evidence.',
+    ],
+    challengeExpectedEvidence: [
+      'git_commit source ref for the candidate assessment commit',
+      'code_diff source ref touching usePopoverRoot, PopoverTrigger tests, and popover constants',
+      'test_run source ref showing diff hygiene and changed file verification',
+      'terminal_command source ref for the finalizer git/test transcript',
+    ],
+    narrative: 'Implemented the source-backed Base UI popover impatient-click fix, including the 500ms guard and regression tests for fast versus patient clicks.',
+    testCommand: 'git diff --check HEAD~1 HEAD && git diff --name-only HEAD~1 HEAD',
+    summaryTerms: ['popover', 'click'],
+    challengeTextTerms: ['Base UI', 'popover', '500ms', 'usePopoverRoot'],
+    acceptedRecommendations: ['strong_evidence_to_advance', 'mixed_evidence_human_review'],
+  },
+};
+const CHANGE_PROFILE = TASK_ALIGNED_PROFILES[CHANGE_MODE] ?? null;
+const REPO_URL = process.env.WORKSPACE_SMOKE_REPO_URL || CHANGE_PROFILE?.repositoryUrl || 'https://github.com/octocat/Hello-World';
 const RAW_PR_NUMBER = process.env.WORKSPACE_SMOKE_PR_NUMBER || (INTERVIEW_TYPE === 'OPEN_SOURCE_BUG_FIX' ? '' : '1');
 const PR_NUMBER = RAW_PR_NUMBER ? Number(RAW_PR_NUMBER) : null;
 const RAW_MATCHED_REPO_ID = process.env.WORKSPACE_SMOKE_MATCHED_REPO_ID || '';
 const MATCHED_REPO_ID = RAW_MATCHED_REPO_ID ? Number(RAW_MATCHED_REPO_ID) : null;
-const BASE_COMMIT_SHA = process.env.WORKSPACE_SMOKE_BASE_COMMIT_SHA || '';
-const CHANGE_MODE = process.env.WORKSPACE_SMOKE_CHANGE_MODE || 'placeholder';
+const BASE_COMMIT_SHA = process.env.WORKSPACE_SMOKE_BASE_COMMIT_SHA || CHANGE_PROFILE?.baseCommitSha || '';
 const EXPECTED_BRIDGE_REVISION = process.env.WORKSPACE_SMOKE_EXPECTED_BRIDGE_REVISION
   || '2026-06-30-finalizer-terminal-v2';
 const REMOTE = !APP_BASE.includes('localhost') && !APP_BASE.includes('127.0.0.1');
@@ -48,6 +84,12 @@ function assertEnv() {
   }
   if (!['placeholder', 'mui-popover-fix'].includes(CHANGE_MODE)) {
     throw new Error('WORKSPACE_SMOKE_CHANGE_MODE must be placeholder or mui-popover-fix.');
+  }
+  if (CHANGE_PROFILE && INTERVIEW_TYPE !== 'OPEN_SOURCE_BUG_FIX') {
+    throw new Error(`${CHANGE_MODE} is a task-aligned OPEN_SOURCE_BUG_FIX smoke profile; set WORKSPACE_SMOKE_INTERVIEW_TYPE=OPEN_SOURCE_BUG_FIX.`);
+  }
+  if (CHANGE_PROFILE && MATCHED_REPO_ID !== null) {
+    throw new Error(`${CHANGE_MODE} uses a manual source-backed challenge packet; unset WORKSPACE_SMOKE_MATCHED_REPO_ID.`);
   }
   if (!REMOTE) return;
   if (!APP_BASIC_USER || !APP_BASIC_PASSWORD) {
@@ -184,10 +226,10 @@ async function commitWorkspaceSmokeChange(proxyBasePath, headers, unique) {
   ];
   const modeSpecific = CHANGE_MODE === 'mui-popover-fix'
     ? [
-        'git fetch --quiet origin pull/973/head:pipe-smoke-pr-973',
-        'git checkout pipe-smoke-pr-973 -- packages/react/src/popover/root/usePopoverRoot.ts packages/react/src/popover/trigger/PopoverTrigger.test.tsx packages/react/src/popover/utils/constants.ts',
+        `git fetch --quiet origin ${CHANGE_PROFILE.upstreamPullRequestRef}:${CHANGE_PROFILE.upstreamPullRequestBranch}`,
+        `git checkout ${CHANGE_PROFILE.upstreamPullRequestBranch} -- ${CHANGE_PROFILE.changedPaths.join(' ')}`,
         'git diff --check',
-        'git add packages/react/src/popover/root/usePopoverRoot.ts packages/react/src/popover/trigger/PopoverTrigger.test.tsx packages/react/src/popover/utils/constants.ts',
+        `git add ${CHANGE_PROFILE.changedPaths.join(' ')}`,
         `git commit -m ${shellQuote('fix popover impatient click handling')}`,
       ]
     : [
@@ -208,12 +250,8 @@ async function commitWorkspaceSmokeChange(proxyBasePath, headers, unique) {
   return {
     commitSha: match[1],
     mode: CHANGE_MODE,
-    narrative: CHANGE_MODE === 'mui-popover-fix'
-      ? 'Implemented the source-backed popover impatient-click fix, including the 500ms guard and regression tests for fast versus patient clicks.'
-      : `Workspace smoke submitted real commit ${match[1]}.`,
-    testCommand: CHANGE_MODE === 'mui-popover-fix'
-      ? 'git diff --check HEAD~1 HEAD && git diff --name-only HEAD~1 HEAD'
-      : 'git status --short',
+    narrative: CHANGE_PROFILE?.narrative ?? `Workspace smoke submitted real commit ${match[1]}.`,
+    testCommand: CHANGE_PROFILE?.testCommand ?? 'git status --short',
     output,
   };
 }
@@ -282,21 +320,29 @@ async function main() {
   const recipientEmail = `workspace-smoke-${unique}@pipe-test.dev`;
   const useMatchedRepo = MATCHED_REPO_ID !== null;
   const openSourceTaskFields = INTERVIEW_TYPE === 'OPEN_SOURCE_BUG_FIX' && !useMatchedRepo
-    ? {
-        challengeBaseCommitSha: BASE_COMMIT_SHA,
-        challengeTitle: 'Fix deterministic smoke ordering',
-        challengeInstructions: 'Make the smallest production-ready change that preserves source-backed evidence and deterministic execution.',
-        challengeSuccessCriteria: [
-          'Reproduce the ordering failure before changing code.',
-          'Keep the fix scoped to the affected behavior.',
-          'Leave a clear verification trail for the reviewer.',
-        ],
-        challengeExpectedEvidence: [
-          'Changed files and commit SHA',
-          'Test or command output',
-          'Candidate explanation of trade-offs',
-        ],
-      }
+    ? CHANGE_PROFILE
+      ? {
+          challengeBaseCommitSha: BASE_COMMIT_SHA,
+          challengeTitle: CHANGE_PROFILE.challengeTitle,
+          challengeInstructions: CHANGE_PROFILE.challengeInstructions,
+          challengeSuccessCriteria: CHANGE_PROFILE.challengeSuccessCriteria,
+          challengeExpectedEvidence: CHANGE_PROFILE.challengeExpectedEvidence,
+        }
+      : {
+          challengeBaseCommitSha: BASE_COMMIT_SHA,
+          challengeTitle: 'Fix deterministic smoke ordering',
+          challengeInstructions: 'Make the smallest production-ready change that preserves source-backed evidence and deterministic execution.',
+          challengeSuccessCriteria: [
+            'Reproduce the ordering failure before changing code.',
+            'Keep the fix scoped to the affected behavior.',
+            'Leave a clear verification trail for the reviewer.',
+          ],
+          challengeExpectedEvidence: [
+            'Changed files and commit SHA',
+            'Test or command output',
+            'Candidate explanation of trade-offs',
+          ],
+        }
     : {};
   const challengeAssignmentFields = useMatchedRepo
     ? { matchedRepoId: MATCHED_REPO_ID }
@@ -337,6 +383,13 @@ async function main() {
     }
     if (created?.interview?.assessmentProgress?.challenge?.sourceRefType !== (useMatchedRepo ? 'review_challenge_packet' : 'open_source_challenge_packet')) {
       throw new Error(`Open-source task did not expose the expected challenge source ref: ${JSON.stringify(created?.interview?.assessmentProgress)}`);
+    }
+    if (CHANGE_PROFILE) {
+      const challengeText = String(created?.interview?.assessmentProgress?.challenge?.exactText ?? '');
+      const missingTerms = CHANGE_PROFILE.challengeTextTerms.filter((term) => !challengeText.includes(term));
+      if (missingTerms.length > 0) {
+        throw new Error(`Task-aligned challenge packet missed expected terms ${missingTerms.join(', ')}: ${challengeText}`);
+      }
     }
     await assertReachableBaseCommit(expectedRepoUrl, expectedBaseCommitSha);
   }
@@ -468,14 +521,15 @@ async function main() {
   const recommendation = evaluationProgress?.evaluation?.recommendation
     ?? evaluationBody?.report?.output?.recommendation
     ?? null;
-  if (CHANGE_MODE === 'mui-popover-fix') {
-    const acceptedRecommendations = new Set(['strong_evidence_to_advance', 'mixed_evidence_human_review']);
+  if (CHANGE_PROFILE) {
+    const acceptedRecommendations = new Set(CHANGE_PROFILE.acceptedRecommendations);
     const summary = `${evaluationProgress?.evaluation?.summary ?? ''} ${evaluationBody?.report?.summary ?? ''}`.toLowerCase();
     if (!acceptedRecommendations.has(recommendation)) {
       throw new Error(`Task-aligned workspace smoke did not receive a useful evaluator recommendation: ${JSON.stringify(evaluationBody?.report?.output)}`);
     }
-    if (!summary.includes('popover') && !summary.includes('click')) {
-      throw new Error(`Task-aligned workspace smoke evaluation summary did not mention the challenged behavior: ${summary}`);
+    const missingTerms = CHANGE_PROFILE.summaryTerms.filter((term) => !summary.includes(term));
+    if (missingTerms.length > 0) {
+      throw new Error(`Task-aligned workspace smoke evaluation summary missed challenged behavior terms ${missingTerms.join(', ')}: ${summary}`);
     }
   }
 
@@ -488,6 +542,10 @@ async function main() {
     githubPrNumber: expectedGithubPrNumber,
     matchedRepoId: MATCHED_REPO_ID,
     interviewType: INTERVIEW_TYPE,
+    challengeTitle: CHANGE_PROFILE?.challengeTitle
+      ?? workspace.challenge?.packet?.title
+      ?? created?.interview?.assessmentProgress?.challenge?.locator?.title
+      ?? null,
     challengeStatus: workspace.challenge?.status ?? null,
     challengeSource: workspace.challenge?.source ?? null,
     workspaceStatus: readySession.status,
