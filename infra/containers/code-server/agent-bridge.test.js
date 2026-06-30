@@ -399,7 +399,7 @@ describe('agent bridge readiness', () => {
     });
 
     const { ws, chunks } = await connectTerminal(port);
-    ws.send(JSON.stringify({ type: 'TERMINAL_INPUT', data: 'printf "__PIPE_TERMINAL_OK__\\n"\n' }));
+    ws.send(JSON.stringify({ type: 'TERMINAL_INPUT', data: 'printf "__PIPE_TERMINAL_OK__\\n"\r' }));
     const output = await waitForTerminalOutput(chunks, '__PIPE_TERMINAL_OK__');
 
     expect(output).toContain('__PIPE_TERMINAL_OK__');

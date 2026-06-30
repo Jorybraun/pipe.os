@@ -1820,12 +1820,12 @@ function terminalInputPayload(opcode, payload) {
     const message = JSON.parse(text);
     if (!message || typeof message !== 'object') return text;
     if (message.type === 'TERMINAL_INPUT' && typeof message.data === 'string') {
-      return message.data;
+      return message.data.replace(/\r\n/g, '\n').replace(/\r/g, '\n');
     }
     if (message.type === 'TERMINAL_RESIZE') return null;
-    return text;
+    return text.replace(/\r\n/g, '\n').replace(/\r/g, '\n');
   } catch {
-    return text;
+    return text.replace(/\r\n/g, '\n').replace(/\r/g, '\n');
   }
 }
 
