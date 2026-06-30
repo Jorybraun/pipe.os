@@ -15,6 +15,7 @@ import type { LLMProvider } from '../../llm/types';
 function makeStubProvider(response: unknown, name = 'stub-gemma'): LLMProvider {
   return {
     name,
+    model: name,
     supportsTools: false,
     async complete() {
       return { content: typeof response === 'string' ? response : JSON.stringify(response) };
