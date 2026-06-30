@@ -8,7 +8,7 @@ Inter-agent handoff log for the living context graph goal. Each agent appends a 
 
 **Action:** Audited local worktrees and remote `devin/*` branches before continuing the open-source assessment product slice.
 
-**Current integration branch:** `codex/video-room-paint-recording-fixes`
+**Current integration branch:** `codex/consolidate-open-source-assessment-living-context`
 
 **Findings:**
 1. Only one local worktree exists: `/Users/hans/Code/PIPE/PIPE-OS`.
@@ -17,7 +17,7 @@ Inter-agent handoff log for the living context graph goal. Each agent appends a 
 4. A dry merge of that branch conflicts in `CHANGELOG.md`, `src/components/Candidate/LivingContextGraph.tsx`, `workers/api/src/index.ts`, `workers/api/src/lib/challengeMatching/d1Matcher.ts`, `workers/api/src/lib/enrichment/resumeIngestion.ts`, and `workers/api/src/lib/livingContext/meetingTranscript.ts`.
 5. The branch also touches `workers/api/src/routes/assessment/repoTaskSessions.ts`, which is part of the assessment substrate currently owned by the parallel assessment agent.
 
-**Decision:** Do not silently merge the large living-context branch into the deploy branch. Treat it as a queued integration branch for a deliberate merge pass after backend assessment ownership is clear. Continue today on recruiter-visible open-source assessment product readiness from `codex/video-room-paint-recording-fixes`.
+**Decision:** Do not silently merge the large living-context branch into the deploy branch. Treat it as a queued integration branch for a deliberate merge pass after backend assessment ownership is clear. Continue today on recruiter-visible open-source assessment product readiness from `codex/consolidate-open-source-assessment-living-context`.
 
 **Next consolidation step:** When the assessment substrate is stable, merge or cherry-pick `origin/devin/1782806592-living-context-production` in a dedicated integration pass with conflict resolution, full `npx tsc --noEmit`, focused Workers tests, frontend tests, and a dev deploy.
 
@@ -27,12 +27,30 @@ Inter-agent handoff log for the living context graph goal. Each agent appends a 
 
 **Findings:**
 1. Only one local worktree exists: `/Users/hans/Code/PIPE/PIPE-OS`; no hidden local worktree has uncommitted files.
-2. `origin/main` is an ancestor of `codex/video-room-paint-recording-fixes`; this branch is 476 commits ahead of main and clean before the evaluator parser fix.
+2. `origin/main` is an ancestor of `codex/consolidate-open-source-assessment-living-context`; this branch is 476 commits ahead of main and clean before the evaluator parser fix.
 3. The newest remote living-context consolidation branch is `origin/devin/1782810262-living-context-consolidated`.
 4. That branch has 17 commits not in this branch and touches 87 files, including living-context APIs/UI, rollout gates, match history, e2e tests, migrations, and `workers/api/src/routes/assessment/repoTaskSessions.ts`.
 5. A dry merge reports conflicts beginning with `CHANGELOG.md` and includes core living-context/recruiter surfaces. This is integration work, not a safe opportunistic fast-forward.
 
 **Decision:** Keep the deploy branch focused on the open-source assessment E2E path first. Queue the latest `devin/*` branch for a dedicated consolidation branch after the matched assessment smoke is green, with conflict resolution and full test/deploy verification.
+
+### 2026-06-30 — Codex worktree consolidation checkpoint
+
+**Action:** Re-ran the worktree, branch, and app-dev deployment audit after the open-source assessment candidate work-packet slice.
+
+**Current integration branch:** `codex/consolidate-open-source-assessment-living-context`
+
+**Findings:**
+1. Only one registered PIPE-OS worktree exists: `/Users/hans/Code/PIPE/PIPE-OS`.
+2. The worktree is clean. `origin/main` is an ancestor of this branch, and this branch is 503 commits ahead of `origin/main`.
+3. The latest assessment slice is committed and pushed as `2e45a9f4b` and deployed to app-dev as Worker version `f3fd8e7f-cd67-499f-9660-d5676306d478`.
+4. Live app-dev asset verification confirmed the deployed `InterviewDetailPage` bundle contains the candidate work packet labels: `Candidate work packet`, `Commit artifact`, `AI transparency`, and `Run evaluation`.
+5. `origin/devin/1782817362-living-context-production` is a large alternate living-context production superset from `origin/main` with 82 files and roughly 21k insertions. A dry merge conflicts immediately in `CHANGELOG.md`, `docs/plans/agent-coordination-log.md`, living-context UI, migration numbering, and internal health routes. Do not wholesale merge it into this deploy branch.
+6. `origin/devin/1782813771-living-context-production-merge` is a smaller queued candidate for cross-candidate evidence comparison and an internal session-event ingestion route. The current branch already contains the session-event ingestion library/backfill layer, but not the candidate-comparison endpoint. Treat this as a bounded follow-up, not a critical-path open-source assessment merge.
+7. Legacy non-ancestor branches such as `origin/codex/calendly-confirmation-email` and the `origin/braunjory/has-*` series should not be deleted or blindly merged; their behavior should be checked semantically against the current branch before any cherry-pick. Calendly tracking behavior is already present in the current scheduling route/tests.
+
+**Decision:** Preserve all remote branches, keep the deploy branch focused on the paid-product open-source assessment E2E path, and only integrate queued remote work through bounded manual lifts with tests, `npx tsc --noEmit`, commit, push, deploy, and live verification.
+
 ### 2026-06-30 — Session 37893f56 (Devin Automation)
 
 **Action:** Analyze open PRs, consolidate, add match run history endpoint + panel.
