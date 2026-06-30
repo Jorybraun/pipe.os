@@ -7,6 +7,31 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Added — Evidence lineage tracing (criteria #2, #6)
+
+- `evidenceLineage.ts` — traces match decisions back through the full evidence chain: assertion → source span → artifact → interaction. Includes temporal decay multipliers and effective strength at each node.
+- `traceEvidenceLineage(db, candidateId, options?)` — loads the complete lineage with optional concept key filtering and limit.
+- Per-node lineage includes: assertion narrative/concepts, source span with exact text/offsets, artifact metadata, interaction provenance, decay multiplier, and effective strength.
+- Concept summary aggregates lineage nodes by concept with average effective strength and observation date range.
+- `GET /api/v1/internal/evidence-lineage` — API endpoint with `candidateId`, `conceptKeys`, and `limit` query params.
+- 7 new tests covering empty states, full chain traversal, temporal decay application, and missing signal handling.
+
+### Added — Concept adjacency temporal weighting (criterion #3)
+
+- `conceptAdjacencyDecay.ts` — applies time-based decay to concept co-occurrence edges so recently reinforced connections are stronger than historical ones.
+- `loadTemporalAdjacencies(db, conceptId, decayConfig?)` — loads adjacencies with temporal weight, effective confidence, observation count, and date range. Multiple adjacency records for the same concept pair are aggregated with recency-weighted confidence.
+- `loadTemporalNeighborhood(db, conceptIds, decayConfig?)` — batch loads temporally-weighted neighborhoods for multiple concepts.
+- `GET /api/v1/internal/concept-adjacency-temporal` — API endpoint with `conceptId`, `halfLifeDays`, and `gracePeriodDays` query params.
+- 9 new tests covering decay mechanics, pair aggregation, dimension separation, and neighborhood loading.
+
+### Added — Evidence freshness indicators (criterion #7)
+
+- `evidenceFreshness.ts` — computes temporal freshness metadata for evidence visualization. Classifies evidence as `fresh` / `recent` / `aging` / `stale` with per-entry decay multipliers and effective weights.
+- `computeEvidenceFreshness(entries, decayConfig?)` — pure function for freshness classification and summary statistics (counts per level, average decay, median age, date range).
+- `loadCandidateEvidenceFreshness(db, candidateId, decayConfig?)` — loads assertion timestamps from D1 and produces freshness summary.
+- `GET /api/v1/internal/candidate-evidence-freshness` — API endpoint for freshness data with tunable decay parameters.
+- 9 new tests covering classification levels, date tracking, base weight application, and null handling.
+
 ### Added — Temporal evidence decay for matcher scoring (criterion #5)
 
 - `temporalDecay.ts` — time-based attenuation of evidence strength with configurable half-life, grace period, and floor multiplier. Evidence within the grace period (default 14 days) retains full weight; older evidence decays logarithmically with a 90-day half-life, never dropping below 25%.

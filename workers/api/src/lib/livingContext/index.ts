@@ -73,3 +73,25 @@ export {
   clearGateCache,
 } from './rolloutEnforcement';
 export type { GateStage, GateCheckResult } from './rolloutEnforcement';
+export { traceEvidenceLineage } from './evidenceLineage';
+export type {
+  EvidenceLineage,
+  LineageNode,
+  LineageAssertion,
+  LineageSourceSpan,
+  LineageArtifact,
+  LineageInteraction,
+  LineageSignalEvidence,
+} from './evidenceLineage';
+export { loadTemporalAdjacencies, loadTemporalNeighborhood } from './conceptAdjacencyDecay';
+export type { WeightedAdjacency } from './conceptAdjacencyDecay';
+export {
+  computeEvidenceFreshness,
+  loadCandidateEvidenceFreshness,
+} from './evidenceFreshness';
+export type {
+  EvidenceFreshnessSummary,
+  EvidenceFreshnessEntry,
+  FreshnessLevel,
+  EvidenceRow as EvidenceFreshnessRow,
+} from './evidenceFreshness';

@@ -23,6 +23,9 @@ import {
   ensureContactLivingContext,
 } from '../../lib/livingContext/compatibility';
 import { loadAggregatedCandidateEvidence, type LoadAggregatedEvidenceConfig } from '../../lib/livingContext/evidenceAggregation';
+import { traceEvidenceLineage } from '../../lib/livingContext/evidenceLineage';
+import { loadTemporalAdjacencies } from '../../lib/livingContext/conceptAdjacencyDecay';
+import { loadCandidateEvidenceFreshness } from '../../lib/livingContext/evidenceFreshness';
 import type { Env } from '../../types';
 
 interface SubsystemHealth {
@@ -983,6 +986,103 @@ app.get('/candidate-aggregated-evidence', async (c) => {
     candidateId,
     totalConcepts: aggregated.length,
     concepts: aggregated,
+  });
+});
+
+/**
+ * GET /api/v1/internal/evidence-lineage
+ * Traces the full evidence chain for a candidate: assertion → source span → artifact → interaction.
+ * Query params: candidateId (required), conceptKeys (comma-separated, optional), limit (optional)
+ */
+app.get('/evidence-lineage', async (c) => {
+  const db = c.env.DB;
+  const candidateId = c.req.query('candidateId');
+  if (!candidateId) {
+    return c.json({ error: 'candidateId query parameter required' }, 400);
+  }
+
+  const conceptKeysParam = c.req.query('conceptKeys');
+  const conceptKeys = conceptKeysParam
+    ? conceptKeysParam.split(',').map((k) => k.trim()).filter(Boolean)
+    : undefined;
+
+  const limitParam = c.req.query('limit');
+  const limit = limitParam ? Number(limitParam) : undefined;
+
+  const lineage = await traceEvidenceLineage(db, candidateId, {
+    conceptKeys,
+    limit,
+  });
+
+  return c.json(lineage);
+});
+
+/**
+ * GET /api/v1/internal/concept-adjacency-temporal
+ * Returns temporally-weighted concept adjacencies for a concept.
+ * Query params: conceptId (required), halfLifeDays (optional), gracePeriodDays (optional)
+ */
+app.get('/concept-adjacency-temporal', async (c) => {
+  const db = c.env.DB;
+  const conceptId = c.req.query('conceptId');
+  if (!conceptId) {
+    return c.json({ error: 'conceptId query parameter required' }, 400);
+  }
+
+  const halfLifeDaysParam = c.req.query('halfLifeDays');
+  const gracePeriodDaysParam = c.req.query('gracePeriodDays');
+
+  const decayOverrides: {
+    halfLifeDays?: number;
+    gracePeriodDays?: number;
+  } = {};
+  if (halfLifeDaysParam) decayOverrides.halfLifeDays = Number(halfLifeDaysParam);
+  if (gracePeriodDaysParam) decayOverrides.gracePeriodDays = Number(gracePeriodDaysParam);
+
+  const adjacencies = await loadTemporalAdjacencies(
+    db,
+    conceptId,
+    Object.keys(decayOverrides).length > 0 ? decayOverrides : undefined,
+  );
+
+  return c.json({
+    conceptId,
+    totalAdjacencies: adjacencies.length,
+    adjacencies,
+  });
+});
+
+/**
+ * GET /api/v1/internal/candidate-evidence-freshness
+ * Returns evidence freshness summary with per-entry decay multipliers and freshness levels.
+ * Query params: candidateId (required), halfLifeDays (optional), gracePeriodDays (optional)
+ */
+app.get('/candidate-evidence-freshness', async (c) => {
+  const db = c.env.DB;
+  const candidateId = c.req.query('candidateId');
+  if (!candidateId) {
+    return c.json({ error: 'candidateId query parameter required' }, 400);
+  }
+
+  const halfLifeDaysParam = c.req.query('halfLifeDays');
+  const gracePeriodDaysParam = c.req.query('gracePeriodDays');
+
+  const decayOverrides: {
+    halfLifeDays?: number;
+    gracePeriodDays?: number;
+  } = {};
+  if (halfLifeDaysParam) decayOverrides.halfLifeDays = Number(halfLifeDaysParam);
+  if (gracePeriodDaysParam) decayOverrides.gracePeriodDays = Number(gracePeriodDaysParam);
+
+  const freshness = await loadCandidateEvidenceFreshness(
+    db,
+    candidateId,
+    Object.keys(decayOverrides).length > 0 ? decayOverrides : undefined,
+  );
+
+  return c.json({
+    candidateId,
+    ...freshness,
   });
 });
 

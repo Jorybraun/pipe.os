@@ -4,6 +4,36 @@ Inter-agent handoff log for the living context graph goal. Each agent appends a 
 
 ## Log
 
+### 2026-06-30 — Session 5656fd5c (Devin Automation)
+
+**Action:** Analyze open PRs, advance evidence lineage + temporal concept graph + freshness indicators.
+
+**Open PRs analyzed:**
+- PR #139 (temporal decay + evidence aggregation, consolidation of #135-#138) — latest, aligned
+- PR #135-#138 (superseded by #139) — need manual closure
+- Codex branch (video-room-paint-recording-fixes, 399 commits) — separate concern, not merged
+
+**New code added (this session):**
+1. `evidenceLineage.ts` — traces match decisions back through assertion → source span → artifact → interaction chain with temporal decay multipliers and effective strength at each node (criteria #2, #6)
+2. `conceptAdjacencyDecay.ts` — time-weighted concept co-occurrence edges with decay; aggregates multiple observations per concept pair with recency-weighted confidence (criterion #3)
+3. `evidenceFreshness.ts` — freshness classification (fresh/recent/aging/stale) with per-entry decay multipliers and effective weights for visualization (criterion #7)
+4. 3 new API endpoints: `GET /evidence-lineage`, `GET /concept-adjacency-temporal`, `GET /candidate-evidence-freshness`
+5. Updated exports in `livingContext/index.ts`
+6. 25 new tests (7 lineage + 9 adjacency decay + 9 freshness)
+
+**Test results:** 182 files, 1686 tests passed, 15 skipped. TypeScript clean, lint clean.
+
+**Next priorities:**
+- Merge PR to main
+- Close superseded PRs #135-#139
+- Integrate freshness indicators into LivingContextGraph.tsx
+- Add evidence lineage panel to recruiter cockpit
+- Wire concept adjacency decay into matcher stretch-area calculation
+
+**Acceptance criteria advanced:** 2 (evidence lineage), 3 (temporal concept adjacency), 6 (lineage-backed explanation), 7 (freshness indicators)
+
+---
+
 ### 2026-06-29 — Session 135b717f (Devin Automation)
 
 **Action:** Analyze open PRs, close superseded ones, add temporal evidence decay + evidence aggregation.
