@@ -1682,7 +1682,7 @@ describe('InterviewDetailPage', () => {
     expect(screen.queryByTestId('interview-code-review-evidence-plan')).toBeNull();
   });
 
-  it('shows a copyable assessment link for code-review interviews after invite delivery', async () => {
+  it('labels active assessment links without a source-backed PR as profile handoff links', async () => {
     const deliveredUrl = 'https://app-dev.hire-pipe.com/assess/recruiter-visible-token';
     const writeText = vi.fn().mockResolvedValue(undefined);
     Object.defineProperty(navigator, 'clipboard', {
@@ -1710,14 +1710,15 @@ describe('InterviewDetailPage', () => {
     const linkPanel = screen.getByTestId('interview-assessment-link');
     expect(linkPanel).toHaveTextContent('Assessment invite');
     expect(linkPanel).toHaveTextContent('Candidate assessment link');
-    expect(linkPanel).toHaveTextContent('One-use candidate invite');
+    expect(linkPanel).toHaveTextContent('Candidate evidence is available for matching, but no source-backed PR task has been assigned yet.');
     expect(screen.getByTestId('interview-assessment-link-state')).toHaveTextContent('Active');
     expect(screen.getByTestId('interview-assessment-link-state')).toHaveTextContent('Copyable one-use link');
     expect(screen.getByTestId('interview-assessment-link-state')).toHaveTextContent('ASSESSMENT');
-    expect(screen.getByTestId('interview-assessment-link-state')).toHaveTextContent('Awaiting candidate submission');
+    expect(screen.getByTestId('interview-assessment-link-state')).toHaveTextContent('Profile handoff, no PR challenge');
     expect(screen.getByTestId('interview-assessment-link-state')).toHaveTextContent('RECIPIENT');
     expect(screen.getByTestId('interview-assessment-link-state')).toHaveTextContent('Ada Candidate · ada@example.com');
-    expect(screen.getByTestId('interview-assessment-link-state')).toHaveTextContent('Copy the candidate link, or resend if the candidate needs a new email.');
+    expect(screen.getByTestId('interview-assessment-link-state')).toHaveTextContent('Assign or refresh a source-backed PR before treating this as a code-review assessment.');
+    expect(linkPanel).toHaveTextContent('The candidate can use this link for profile intake only; PIPE will show a profile-received handoff until a source-backed PR is assigned.');
     expect(linkPanel).toHaveTextContent('CANDIDATE ASSESSMENT URL');
     expect(screen.getByDisplayValue(deliveredUrl)).toBeTruthy();
 

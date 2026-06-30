@@ -2206,10 +2206,11 @@ function assessmentInviteValidityLabel(state: AssessmentInviteLinkState, hasUrl:
 
 function assessmentInviteEvidenceLabel(
   state: AssessmentInviteLinkState,
-  input: { hasUrl: boolean; hasSubmittedEvidence: boolean },
+  input: { hasUrl: boolean; hasSubmittedEvidence: boolean; reviewAssignmentBlocked?: boolean },
 ): string {
   if (input.hasSubmittedEvidence) return 'Assessment evidence attached';
   if (!input.hasUrl) return 'No assessment link sent';
+  if (input.reviewAssignmentBlocked) return 'Profile handoff, no PR challenge';
   if (state === 'claimed') return 'Started, no submission';
   if (state === 'stale') return 'No current assessment evidence';
   return 'Awaiting candidate submission';
@@ -2217,10 +2218,13 @@ function assessmentInviteEvidenceLabel(
 
 function assessmentInviteNextActionLabel(
   state: AssessmentInviteLinkState,
-  input: { hasUrl: boolean; hasEmail: boolean },
+  input: { hasUrl: boolean; hasEmail: boolean; reviewAssignmentBlocked?: boolean },
 ): string {
   if (!input.hasEmail) return 'Add a candidate email before sending an assessment invite.';
   if (!input.hasUrl) return 'Send the assessment invite to create a one-use candidate link.';
+  if (input.reviewAssignmentBlocked) {
+    return 'Assign or refresh a source-backed PR before treating this as a code-review assessment.';
+  }
   switch (state) {
     case 'claimed':
       return 'Resend the invite to issue a fresh one-use assessment link.';
@@ -2825,12 +2829,23 @@ export default function InterviewDetailPage(): JSX.Element {
     || assessmentProgress?.hasFinalSubmission
     || assessmentProgress?.evaluation,
   );
+  const assessmentLinkIsProfileHandoff = Boolean(
+    isCodeReviewInterview
+      && interview.assessmentSetup?.blocksPositiveAssessment
+      && !hasSubmittedAssessmentEvidence
+      && (
+        interview.assessmentSetup.status === 'waiting_for_candidate_evidence'
+        || interview.assessmentSetup.status === 'waiting_for_source_backed_match'
+        || interview.assessmentSetup.status === 'missing_reviewable_task'
+      ),
+  );
   const canCopyAssessmentInvite = Boolean(assessmentInviteUrl && assessmentInviteState === 'active');
   const assessmentInviteStatus = assessmentInviteStatusLabel(assessmentInviteState, hasAssessmentInviteUrl);
   const assessmentInviteValidity = assessmentInviteValidityLabel(assessmentInviteState, hasAssessmentInviteUrl);
   const assessmentInviteEvidenceState = assessmentInviteEvidenceLabel(assessmentInviteState, {
     hasUrl: hasAssessmentInviteUrl,
     hasSubmittedEvidence: hasSubmittedAssessmentEvidence,
+    reviewAssignmentBlocked: assessmentLinkIsProfileHandoff && assessmentInviteState === 'active',
   });
   const assessmentInviteRecipient = personEmail
     ? `${personName} · ${personEmail}`
@@ -2838,6 +2853,7 @@ export default function InterviewDetailPage(): JSX.Element {
   const assessmentInviteNextAction = assessmentInviteNextActionLabel(assessmentInviteState, {
     hasUrl: hasAssessmentInviteUrl,
     hasEmail: Boolean(personEmail),
+    reviewAssignmentBlocked: assessmentLinkIsProfileHandoff && assessmentInviteState === 'active',
   });
   const showsAssessmentInvitePanel = Boolean(
     interview.assessmentSetup
@@ -2845,7 +2861,9 @@ export default function InterviewDetailPage(): JSX.Element {
       && (isCodeReviewInterview || assessmentInviteUrl),
   );
   const assessmentInviteDescription =
-    assessmentInviteState === 'claimed'
+    assessmentLinkIsProfileHandoff && assessmentInviteState === 'active'
+      ? `${interview.assessmentSetup?.message ?? 'No source-backed PR task has been assigned yet.'} The candidate can use this link for profile intake only; PIPE will show a profile-received handoff until a source-backed PR is assigned.`
+      : assessmentInviteState === 'claimed'
       ? hasSubmittedAssessmentEvidence
         ? 'The candidate started this one-use assessment link and assessment evidence is attached below. Resend only if they need a fresh attempt.'
         : 'The candidate started this one-use assessment link, but this interview has no submitted assessment evidence yet. Resend the invite to issue a fresh link.'
