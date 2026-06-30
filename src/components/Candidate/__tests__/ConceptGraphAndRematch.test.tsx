@@ -109,6 +109,14 @@ vi.mock('../../../hooks/useEvidenceConflicts', () => ({
   }),
 }));
 
+vi.mock('../../../hooks/useCandidateComparison', () => ({
+  useCandidateComparison: () => ({ report: null, isLoading: false, error: null, compare: vi.fn() }),
+}));
+
+vi.mock('../../../hooks/useEvidenceTimeline', () => ({
+  useEvidenceTimeline: () => ({ timeline: null, isLoading: false, error: null, refetch: vi.fn() }),
+}));
+
 function makeLivingContext(): LivingContextReadModel {
   return {
     person: {

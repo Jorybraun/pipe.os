@@ -18,6 +18,25 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - `assessmentIngestion.ts`: Simplify candidate resolution — use `session.candidate_id` directly instead of `resolveAssessmentCandidateId` fallback query through `scheduled_interviews`.
 - `backfillScheduled.ts`: Simplify assessment backfill queries — require `candidate_id IS NOT NULL` directly, removing redundant `scheduled_interviews` join fallback.
 - `backfillScheduled.test.ts`: Add 8-test suite covering rollout gate enforcement, candidate/contact/resume/meeting batch backfill, idempotency, task dependency ordering, and task definition completeness.
+
+### Added — Evidence timeline & comparison wiring
+
+- `EvidenceTimelinePanel` — chronological evidence accumulation feed in `LivingContextGraph` showing interactions, assertions, and context records grouped by date with color-coded entry types, concept tags, source counts, and confidence scores (acceptance criterion #7).
+- `useEvidenceTimeline` hook — fetches `GET /api/v1/candidates/:id/living-context/timeline` and exposes `timeline`, `isLoading`, `error`, and `refetch`.
+- `usePipelineSiblings` hook — fetches sibling candidate IDs from `GET /api/v1/candidates/:id/pipeline-siblings` for auto-populating comparison panels.
+- `GET /:candidateId/pipeline-siblings` endpoint — returns other non-archived candidates in the same pipeline (max 20).
+- Frontend types for `TimelineEntry` and `PersonEvidenceTimeline` in `src/lib/api/types.ts`.
+- `CandidateProfilePage` now auto-wires pipeline sibling IDs into `LivingContextGraph`'s `comparisonCandidateIds` prop.
+- Timeline CSS with vertical connector lines, date grouping, entry type dots, and concept badge rendering.
+- Unit tests for timeline hook, pipeline siblings hook, and timeline panel (23 tests).
+
+### Added — Cross-candidate evidence comparison UI
+
+- `CandidateComparisonPanel` — new visualization panel in `LivingContextGraph` that renders side-by-side candidate evidence profiles, concept coverage grids with coverage-level coloring, and source-diversity/evidence-depth rankings when `comparisonCandidateIds` are provided.
+- `useCandidateComparison` hook — fetches `POST /api/v1/candidates/compare` and exposes `report`, `isLoading`, `error`, and a manual `compare()` trigger.
+- Frontend types for `CandidateComparisonReport`, `CandidateEvidenceProfile`, `ConceptComparison`, and `ComparisonSummary` in `src/lib/api/types.ts`.
+- Unit tests for the comparison hook and component panel (10 tests).
+
 ### Added — Human assessment decisions
 
 - Repo-task assessment sessions now support append-only `human_assessment_decision` events with exact source refs, SHA-256 content-hash validation, and provenance checks against session evidence, evaluation reports, evaluation claims, or diagnostics.
