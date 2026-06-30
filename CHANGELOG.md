@@ -12,6 +12,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - Repo-task assessment sessions now support append-only `human_assessment_decision` events with exact source refs, SHA-256 content-hash validation, and provenance checks against session evidence, evaluation reports, evaluation claims, or diagnostics.
 - Recruiters can record a source-backed human assessment decision for a scheduled interview after evaluation, and progress snapshots now expose the latest human decision as the terminal assessment readout.
 - Interview cards and detail pages now prefer the explicit human decision over the AI evaluator recommendation while still preserving evaluator status, claims, and cautions.
+- Interview detail pages now expose the reviewer decision form after source-backed evaluation, posting the selected advance/hold/reject/needs-more-evidence decision to the real human-decision endpoint and updating the readout immediately.
 
 ### Added — Evidence conflict detection (criteria #2, #6, #8)
 
