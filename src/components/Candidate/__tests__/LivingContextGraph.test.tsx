@@ -21,6 +21,87 @@ vi.mock('../../../hooks/useLivingContext', () => ({
   }),
 }));
 
+vi.mock('../../../hooks/useEvidenceGaps', () => ({
+  useEvidenceGaps: () => ({
+    report: null,
+    isLoading: false,
+    error: null,
+    refetch: vi.fn(),
+  }),
+}));
+
+vi.mock('../../../hooks/useMatchProvenance', () => ({
+  useMatchProvenance: () => ({
+    provenance: null,
+    isLoading: false,
+    error: null,
+    refetch: vi.fn(),
+  }),
+}));
+
+vi.mock('../../../hooks/useEvidenceLineage', () => ({
+  useEvidenceLineage: () => ({
+    lineage: null,
+    isLoading: false,
+    error: null,
+    refetch: vi.fn(),
+  }),
+}));
+
+vi.mock('../../../hooks/useEvidenceFreshness', () => ({
+  useEvidenceFreshness: () => ({
+    freshness: null,
+    isLoading: false,
+    error: null,
+    refetch: vi.fn(),
+  }),
+}));
+
+vi.mock('../../../hooks/useRematch', () => ({
+  useRematch: () => ({
+    rematch: vi.fn().mockResolvedValue(null),
+    result: null,
+    isRunning: false,
+    error: null,
+  }),
+}));
+
+vi.mock('../../../hooks/useConceptGraph', () => ({
+  useConceptGraph: () => ({
+    graph: null,
+    isLoading: false,
+    error: null,
+    refetch: vi.fn(),
+  }),
+}));
+
+vi.mock('../../../hooks/useMatchHistory', () => ({
+  useMatchHistory: () => ({
+    history: null,
+    isLoading: false,
+    error: null,
+    refetch: vi.fn(),
+  }),
+}));
+
+vi.mock('../../../hooks/useEvidenceConflicts', () => ({
+  useEvidenceConflicts: () => ({
+    report: null,
+    isLoading: false,
+    error: null,
+    refetch: vi.fn(),
+  }),
+}));
+
+vi.mock('../../../hooks/useEvidenceReadiness', () => ({
+  useEvidenceReadiness: () => ({
+    report: null,
+    isLoading: false,
+    error: null,
+    refetch: vi.fn(),
+  }),
+}));
+
 function makeLivingContext(): LivingContextReadModel {
   return {
     person: {
@@ -100,6 +181,7 @@ function makeStandaloneReviewMatch(): StandaloneReviewMatchRecord {
       purpose: 'validation',
       pairScore: 0.91,
       sharedConcepts: ['term:kafka-order-events'],
+      stretch: null,
       roleSourceRefs: [{
         entityId: 'context-record-jd',
         locator: 'simple_job_description:source_span:jd-span-1',
@@ -134,6 +216,8 @@ function makeStandaloneReviewMatch(): StandaloneReviewMatchRecord {
         exactText: 'Add idempotent retry handling around order event publication.',
       }],
     }],
+    stretchAreas: [],
+    unmatchedDemandIds: [],
     gaps: [
       'Candidate evidence does not yet prove ownership of Kafka partition rebalancing.',
     ],
@@ -177,6 +261,7 @@ function makeStandaloneReviewMatch(): StandaloneReviewMatchRecord {
         stretchCount: 1,
       }],
     },
+    matchNarrative: null,
     submitted: false,
     submission: null,
     completedAt: null,
@@ -209,6 +294,7 @@ function makeBackfilledRepoReviewMatch(): StandaloneReviewMatchRecord {
       demandId: 'demand-crystalline-quorum-ledger',
       purpose: 'source-backed-validation',
       pairScore: 0.93,
+      stretch: null,
       sharedConcepts: ['term:crystalline-quorum-ledger'],
       roleSourceRefs: [{
         entityId: 'context-record-role-backfill',
@@ -258,6 +344,8 @@ function makeBackfilledRepoReviewMatch(): StandaloneReviewMatchRecord {
         exactText: 'export function writeCrystallineQuorumLedger(orderId: string) { const ledgerKey = `crystalline:${orderId}`; return { ledgerKey, committed: true }; }',
       }],
     }],
+    stretchAreas: [],
+    unmatchedDemandIds: [],
     gaps: [],
     diagnostics: {
       recalledPacketIds: ['review-packet-77-42'],
@@ -275,6 +363,7 @@ function makeBackfilledRepoReviewMatch(): StandaloneReviewMatchRecord {
         stretchCount: 0,
       }],
     },
+    matchNarrative: null,
     submitted: false,
     submission: null,
     completedAt: null,
@@ -931,5 +1020,59 @@ describe('LivingContextGraph empty state quietness', () => {
     expect(screen.queryAllByText('Accumulated context')).toHaveLength(0);
     expect(screen.queryAllByText('Source evidence')).toHaveLength(0);
     expect(screen.queryByLabelText('Search living context')).not.toBeInTheDocument();
+  });
+
+  it('renders the match narrative panel when matchNarrative is present', () => {
+    mocks.livingContext = makeLivingContext();
+
+    const match: StandaloneReviewMatchRecord = {
+      ...makeStandaloneReviewMatch(),
+      matchNarrative: {
+        title: 'Strong Kafka alignment',
+        verdict: 'Candidate demonstrates strong Kafka retry expertise.',
+        sections: [
+          {
+            heading: 'Strong alignments',
+            items: [
+              'Kafka retry publishing (91% — resume line 7 + src/orders/retry.ts:18)',
+            ],
+          },
+          {
+            heading: 'Evidence gaps',
+            items: ['No partition rebalancing experience found.'],
+          },
+        ],
+        plainText: 'Strong Kafka alignment\nCandidate demonstrates strong Kafka retry expertise.',
+      },
+    };
+
+    render(
+      <LivingContextGraph
+        candidateId="candidate-1"
+        standaloneReviewMatch={match}
+      />,
+    );
+
+    const narrativePanel = screen.getByTestId('match-narrative-panel');
+    expect(screen.getByLabelText('Match narrative')).toBe(narrativePanel);
+    expect(within(narrativePanel).getByText('Strong Kafka alignment')).toBeInTheDocument();
+    expect(within(narrativePanel).getByText('Candidate demonstrates strong Kafka retry expertise.')).toBeInTheDocument();
+    expect(within(narrativePanel).getByText('Strong alignments')).toBeInTheDocument();
+    expect(within(narrativePanel).getByText('Kafka retry publishing (91% — resume line 7 + src/orders/retry.ts:18)')).toBeInTheDocument();
+    expect(within(narrativePanel).getByText('Evidence gaps')).toBeInTheDocument();
+    expect(within(narrativePanel).getByText('No partition rebalancing experience found.')).toBeInTheDocument();
+  });
+
+  it('hides the match narrative panel when matchNarrative is null', () => {
+    mocks.livingContext = makeLivingContext();
+
+    render(
+      <LivingContextGraph
+        candidateId="candidate-1"
+        standaloneReviewMatch={makeStandaloneReviewMatch()}
+      />,
+    );
+
+    expect(screen.queryByTestId('match-narrative-panel')).toBeNull();
   });
 });
