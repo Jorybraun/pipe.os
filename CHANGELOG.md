@@ -19,6 +19,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Fixed — Video room
 
+- Submit Work now shows the assigned open-source challenge contract and reloaded assessment evidence status before submission, so candidates can see the repo, base commit, task, success criteria, expected evidence, and captured/missing evidence without guessing what “done” means.
 - Video rooms now reload durable assessment progress from the meeting-room API on entry/rejoin, so accepted commit submissions, next actions, and evidence coverage survive refreshes instead of existing only in local Submit Work state.
 - Code-first assessment rooms now keep the source-backed assessment status visible outside the video picture-in-picture and update it with the accepted commit submission progress snapshot, including stage, commit SHA, next action, and captured evidence coverage.
 - Dev-container assessment rooms now open into a code-first room layout by default, with the VS Code workspace as the primary surface, video/chat supporting the session, and Submit Work present as the completion path instead of hiding the real assessment behind retro desktop discovery.

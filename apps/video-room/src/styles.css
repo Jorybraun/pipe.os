@@ -4162,6 +4162,95 @@ button:focus-visible {
   text-transform: uppercase;
 }
 
+.commit-submission-completion {
+  display: grid;
+  grid-template-columns: 1fr;
+  gap: 7px;
+  padding: 8px;
+  border: 2px solid;
+  border-color: #808080 #dfdfdf #dfdfdf #808080;
+  background: #ffffe1;
+  color: #111;
+  font-size: 11px;
+  line-height: 1.35;
+}
+
+.commit-submission-completion-header {
+  display: flex;
+  justify-content: space-between;
+  gap: 10px;
+  align-items: flex-start;
+}
+
+.commit-submission-completion-header strong,
+.commit-submission-completion-contract strong {
+  color: #000080;
+  text-transform: uppercase;
+}
+
+.commit-submission-completion-header span {
+  color: #222;
+  text-align: right;
+}
+
+.commit-submission-completion-locator {
+  display: grid;
+  grid-template-columns: max-content minmax(0, 1fr);
+  gap: 3px 8px;
+  margin: 0;
+  padding: 6px;
+  border: 1px solid #c7c7a0;
+  background: rgba(255, 255, 255, 0.55);
+}
+
+.commit-submission-completion-locator dt {
+  color: #404040;
+  font-weight: 700;
+}
+
+.commit-submission-completion-locator dd {
+  margin: 0;
+  min-width: 0;
+  overflow-wrap: anywhere;
+}
+
+.commit-submission-completion-contract {
+  display: grid;
+  grid-template-columns: repeat(3, minmax(0, 1fr));
+  gap: 6px;
+}
+
+.commit-submission-completion-contract p,
+.commit-submission-completion-contract ul {
+  margin: 3px 0 0;
+}
+
+.commit-submission-completion-contract ul {
+  padding-left: 15px;
+}
+
+.commit-submission-completion-flags {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 4px;
+}
+
+.commit-submission-completion-flags span {
+  border: 1px solid #808080;
+  background: #dfdfdf;
+  padding: 2px 5px;
+}
+
+.commit-submission-completion-flags span.is-captured {
+  border-color: #008000;
+  background: #e5ffe5;
+}
+
+.commit-submission-completion-flags span.is-missing {
+  border-color: #a47c00;
+  background: #fff7cc;
+}
+
 .commit-submission-checklist {
   padding: 7px 8px;
   border: 2px solid;
@@ -4361,6 +4450,18 @@ button:focus-visible {
 
 @media (max-width: 640px) {
   .commit-submission-boundary {
+    grid-template-columns: 1fr;
+  }
+
+  .commit-submission-completion-header {
+    flex-direction: column;
+  }
+
+  .commit-submission-completion-header span {
+    text-align: left;
+  }
+
+  .commit-submission-completion-contract {
     grid-template-columns: 1fr;
   }
 

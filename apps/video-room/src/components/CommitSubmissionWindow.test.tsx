@@ -3,6 +3,7 @@ import { describe, expect, it, vi } from 'vitest';
 
 import { CommitSubmissionWindow } from './CommitSubmissionWindow';
 import type {
+  RoomAssessmentProgressSnapshot,
   RoomCommitSubmissionRequest,
   RoomCommitSubmissionResponse,
   RoomWorkspaceChallengePacket,
@@ -19,7 +20,89 @@ const packet: RoomWorkspaceChallengePacket = {
   },
 };
 
+const richPacket: RoomWorkspaceChallengePacket = {
+  ...packet,
+  exactText: [
+    'Repo: https://github.com/pipe/source-backed-worker',
+    `Base commit: ${'d'.repeat(40)}`,
+    'Task: Fix the source-backed worker retry path.',
+    'Success criteria:',
+    '- Retry order remains deterministic',
+    '- Existing worker tests pass',
+    'Expected evidence:',
+    '- Commit SHA on assessment branch',
+    '- Test command output',
+  ].join('\n'),
+  locator: {
+    repositoryUrl: 'https://github.com/pipe/source-backed-worker',
+    githubPrNumber: 144,
+    baseCommitSha: 'd'.repeat(40),
+  },
+};
+
+const loadedProgress: RoomAssessmentProgressSnapshot = {
+  mode: 'OPEN_SOURCE_BUG_FIX',
+  state: 'IN_PROGRESS',
+  stage: 'WORK_IN_PROGRESS',
+  nextAction: 'SUBMIT_COMMIT',
+  nextActionLabel: 'Submit the assessment branch commit.',
+  hasChallengePacket: true,
+  hasWorkEvidence: true,
+  hasCommitSubmission: false,
+  hasFinalSubmission: false,
+  hasAiInteraction: true,
+  hasTranscriptEvidence: false,
+  hasTestEvidence: false,
+  evidenceCounts: [
+    { kind: 'challenge_packet', count: 1 },
+    { kind: 'terminal_command', count: 3 },
+    { kind: 'ai_interaction', count: 2 },
+  ],
+  sourceRefCounts: [
+    { kind: 'open_source_challenge_packet', count: 1 },
+  ],
+  latestEvent: {
+    kind: 'terminal_command',
+    sequence: 7,
+    occurredAt: '2026-06-29T20:00:00.000Z',
+  },
+  commit: null,
+  evaluation: null,
+};
+
 describe('CommitSubmissionWindow', () => {
+  it('shows the assigned challenge contract and reloaded evidence status before submission', () => {
+    render(
+      <CommitSubmissionWindow
+        defaultRepositoryUrl="https://github.com/fallback/repo"
+        challengePacket={richPacket}
+        assessmentProgress={loadedProgress}
+        onSubmit={vi.fn()}
+      />,
+    );
+
+    const completion = screen.getByTestId('commit-submission-completion');
+    expect(completion.textContent).toContain('Assigned open-source challenge');
+    expect(completion.textContent).toContain('Submit the assessment branch commit.');
+    expect(completion.textContent).toContain('https://github.com/pipe/source-backed-worker');
+    expect(completion.textContent).toContain('PR');
+    expect(completion.textContent).toContain('#144');
+    expect(completion.textContent).toContain('Fix the source-backed worker retry path.');
+    expect(completion.textContent).toContain('Retry order remains deterministic');
+    expect(completion.textContent).toContain('Commit SHA on assessment branch');
+
+    const flags = screen.getByTestId('commit-submission-completion-flags');
+    expect(flags.textContent).toContain('Challenge packet: Captured');
+    expect(flags.textContent).toContain('Work evidence: Captured');
+    expect(flags.textContent).toContain('Commit submission: Missing');
+    expect(flags.textContent).toContain('Test evidence: Missing');
+    expect(flags.textContent).toContain('AI interaction: Captured');
+
+    const progress = screen.getByTestId('commit-submission-progress');
+    expect(progress.textContent).toContain('Submit the assessment branch commit.');
+    expect(progress.textContent).toContain('Terminal Command #7');
+  });
+
   it('prefills source-backed repo, base commit, and assessment branch without inventing commit evidence', () => {
     render(
       <CommitSubmissionWindow

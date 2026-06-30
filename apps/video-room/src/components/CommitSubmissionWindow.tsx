@@ -5,6 +5,7 @@ import {
   buildCommitSubmissionDefaults,
   type CommitSubmissionFormFields,
 } from '../lib/commitSubmission';
+import { summarizeChallengePacket } from '../lib/challengePacketSummary';
 import type {
   RoomCommitSubmissionRequest,
   RoomCommitSubmissionResponse,
@@ -15,6 +16,7 @@ import type {
 interface CommitSubmissionWindowProps {
   defaultRepositoryUrl: string | null;
   challengePacket?: RoomWorkspaceChallengePacket | null;
+  assessmentProgress?: RoomAssessmentProgressSnapshot | null;
   disabledReason?: string | null;
   onSubmit: (payload: RoomCommitSubmissionRequest) => Promise<RoomCommitSubmissionResponse>;
   onProgressChange?: (progress: RoomAssessmentProgressSnapshot) => void;
@@ -57,6 +59,110 @@ function shortSha(value: string | null | undefined): string | null {
 
 function evidenceFlagLabel(value: boolean): string {
   return value ? 'Captured' : 'Missing';
+}
+
+function EvidenceStatusChip({
+  label,
+  captured,
+}: {
+  label: string;
+  captured: boolean;
+}): JSX.Element {
+  return (
+    <span className={captured ? 'is-captured' : 'is-missing'}>
+      {label}: {evidenceFlagLabel(captured)}
+    </span>
+  );
+}
+
+function ChallengeCompletionPanel({
+  packet,
+  progress,
+}: {
+  packet: RoomWorkspaceChallengePacket | null | undefined;
+  progress: RoomAssessmentProgressSnapshot | null;
+}): JSX.Element {
+  const summary = summarizeChallengePacket(packet);
+  const hasLocator = Boolean(summary.repositoryUrl || summary.githubPrNumber || summary.baseCommitSha);
+  const hasContract = Boolean(
+    summary.task
+    || summary.successCriteria.length > 0
+    || summary.expectedEvidence.length > 0,
+  );
+
+  return (
+    <section
+      className="commit-submission-completion"
+      data-testid="commit-submission-completion"
+      aria-label="Open-source assessment completion"
+    >
+      <div className="commit-submission-completion-header">
+        <strong>{packet ? 'Assigned open-source challenge' : 'Challenge packet missing'}</strong>
+        <span>{progress?.nextActionLabel ?? 'Submit the assessment branch commit with exact source evidence.'}</span>
+      </div>
+
+      {hasLocator && (
+        <dl className="commit-submission-completion-locator">
+          {summary.repositoryUrl && (
+            <>
+              <dt>Repo</dt>
+              <dd>{summary.repositoryUrl}</dd>
+            </>
+          )}
+          {summary.githubPrNumber && (
+            <>
+              <dt>PR</dt>
+              <dd>#{summary.githubPrNumber}</dd>
+            </>
+          )}
+          {summary.baseCommitSha && (
+            <>
+              <dt>Base</dt>
+              <dd>{summary.baseCommitSha}</dd>
+            </>
+          )}
+        </dl>
+      )}
+
+      {hasContract && (
+        <div className="commit-submission-completion-contract">
+          {summary.task && (
+            <div>
+              <strong>Task</strong>
+              <p>{summary.task}</p>
+            </div>
+          )}
+          {summary.successCriteria.length > 0 && (
+            <div>
+              <strong>Success criteria</strong>
+              <ul>
+                {summary.successCriteria.map((item) => <li key={item}>{item}</li>)}
+              </ul>
+            </div>
+          )}
+          {summary.expectedEvidence.length > 0 && (
+            <div>
+              <strong>Expected evidence</strong>
+              <ul>
+                {summary.expectedEvidence.map((item) => <li key={item}>{item}</li>)}
+              </ul>
+            </div>
+          )}
+        </div>
+      )}
+
+      {progress && (
+        <div className="commit-submission-completion-flags" data-testid="commit-submission-completion-flags">
+          <EvidenceStatusChip label="Challenge packet" captured={progress.hasChallengePacket} />
+          <EvidenceStatusChip label="Work evidence" captured={progress.hasWorkEvidence} />
+          <EvidenceStatusChip label="Commit submission" captured={progress.hasCommitSubmission} />
+          <EvidenceStatusChip label="Test evidence" captured={progress.hasTestEvidence} />
+          <EvidenceStatusChip label="AI interaction" captured={progress.hasAiInteraction} />
+          <EvidenceStatusChip label="Transcript evidence" captured={progress.hasTranscriptEvidence} />
+        </div>
+      )}
+    </section>
+  );
 }
 
 function AssessmentProgressPanel({
@@ -165,6 +271,7 @@ function AssessmentProgressPanel({
 export function CommitSubmissionWindow({
   defaultRepositoryUrl,
   challengePacket,
+  assessmentProgress = null,
   disabledReason,
   onSubmit,
   onProgressChange,
@@ -180,6 +287,7 @@ export function CommitSubmissionWindow({
   const [submitting, setSubmitting] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [result, setResult] = useState<RoomCommitSubmissionResponse | null>(null);
+  const displayedProgress = result?.progress ?? assessmentProgress;
 
   useEffect(() => {
     setFields((current) => (
@@ -236,6 +344,8 @@ export function CommitSubmissionWindow({
           Submit the real commit from the assessment branch or fork. Upstream PR tracking is optional and requires explicit approval.
         </span>
       </section>
+
+      <ChallengeCompletionPanel packet={challengePacket} progress={displayedProgress} />
 
       <section className="commit-submission-checklist" data-testid="commit-submission-checklist">
         <strong>Paste evidence from the workspace</strong>
@@ -418,8 +528,8 @@ export function CommitSubmissionWindow({
           <span>{result.progress.nextActionLabel}</span>
         </div>
       )}
-      {result && (
-        <AssessmentProgressPanel progress={result.progress} />
+      {displayedProgress && (
+        <AssessmentProgressPanel progress={displayedProgress} />
       )}
 
       <div className="commit-submission-actions">

@@ -2690,6 +2690,7 @@ function Room({ token, metadata }: { token: string; metadata: RoomMetadata }): J
           <CommitSubmissionWindow
             defaultRepositoryUrl={workspace?.repoUrl ?? null}
             challengePacket={workspace?.challenge?.packet ?? null}
+            assessmentProgress={assessmentProgress}
             disabledReason={workspace?.enabled
               ? null
               : 'Commit submission is only available for dev-container assessment rooms.'}
