@@ -83,6 +83,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Fixed — Candidate repo matching
 
+- Commit submissions now must match the assigned source-backed challenge packet's repository URL and base commit when those locator fields are present, preventing candidates from submitting unrelated repo or wrong-base work into the assessment spine.
 - Dev-container assessment rooms now poll the real assessment progress endpoint while active, keeping the candidate task brief, status strip, and submit-work path current when backend, host, guest, or container evidence changes after initial room load.
 - Repo-task assessment events, final bundles, and commit submissions now trigger best-effort real-time living-context ingestion, so candidate plans, room evidence, and submitted commits become person-graph evidence before the evaluator report exists.
 - Interview details now show a deterministic candidate work packet for submitted assessment commits, including branch, changed files, test evidence, AI-use evidence, and the human-review next action.

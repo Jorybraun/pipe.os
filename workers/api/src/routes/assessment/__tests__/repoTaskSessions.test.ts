@@ -711,6 +711,128 @@ index 5c7b20a..7f9a12e 100644
     ).get(session.id)).toEqual({ count: 0 });
   });
 
+  it('rejects commit submissions that do not match the assigned challenge repo and base commit', async () => {
+    async function createAssignedChallengeSession(idSuffix: string): Promise<{
+      sessionId: string;
+      assignedBaseCommitSha: string;
+      commitSha: string;
+      commitText: string;
+      diffText: string;
+    }> {
+      const session = await createSession(app, env, {
+        ingestionKey: `assessment-session:assigned-challenge-${idSuffix}`,
+        mode: 'OPEN_SOURCE_BUG_FIX',
+      });
+      const assignedBaseCommitSha = '1111111111111111111111111111111111111111';
+      const challengeText = [
+        'Repo: https://github.com/open-source/widgets',
+        `Base commit: ${assignedBaseCommitSha}`,
+        'Task: Fix stale popover listener cleanup.',
+      ].join('\n');
+      const challengeRef = await sourceRef(
+        'open_source_challenge_packet',
+        `challenge-packet-${idSuffix}`,
+        challengeText,
+      );
+      const challengeResponse = await app.request(
+        `/api/v1/assessment/repo-task/sessions/${session.id}/events`,
+        jsonRequest({
+          ingestionKey: `assessment-event:assigned-challenge-${idSuffix}`,
+          kind: 'recruiter_note',
+          actorType: 'recruiter',
+          narrative: 'Recruiter assigned a concrete source-backed open-source challenge packet.',
+          payload: {
+            repositoryUrl: 'https://github.com/open-source/widgets',
+            baseCommitSha: assignedBaseCommitSha,
+          },
+          sourceRefs: [{
+            ...challengeRef,
+            evidenceRole: 'assigned_challenge',
+            locator: {
+              repositoryUrl: 'https://github.com/open-source/widgets',
+              baseCommitSha: assignedBaseCommitSha,
+            },
+          }],
+        }),
+        env,
+      );
+      expect(challengeResponse.status).toBe(201);
+
+      const commitSha = idSuffix === 'repo'
+        ? 'bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb'
+        : 'cccccccccccccccccccccccccccccccccccccccc';
+      const commitText = `commit ${commitSha}
+Author: Candidate <candidate@example.com>
+
+Fix stale popover listener cleanup.`;
+      const diffText = `diff --git a/src/popover.ts b/src/popover.ts
+--- a/src/popover.ts
++++ b/src/popover.ts
+@@ -1,2 +1,3 @@
++cleanupStaleHandler();`;
+      return { sessionId: session.id, assignedBaseCommitSha, commitSha, commitText, diffText };
+    }
+
+    const repoCase = await createAssignedChallengeSession('repo');
+    const repoMismatchResponse = await app.request(
+      `/api/v1/assessment/repo-task/sessions/${repoCase.sessionId}/commit-submissions`,
+      jsonRequest({
+        ingestionKey: 'assessment-event:repo-mismatch',
+        actorType: 'candidate',
+        narrative: 'Candidate submitted work from the wrong repository.',
+        repositoryUrl: 'https://github.com/other/widgets',
+        branchName: 'pipe-assessment/popover-cleanup',
+        baseCommitSha: repoCase.assignedBaseCommitSha,
+        commitSha: repoCase.commitSha,
+        changedFiles: [{ path: 'src/popover.ts', status: 'modified' }],
+        sourceRefs: [
+          await sourceRef('git_commit', repoCase.commitSha, repoCase.commitText),
+          await sourceRef('code_diff', `${repoCase.commitSha}:diff`, repoCase.diffText),
+        ],
+      }),
+      env,
+    );
+    expect(repoMismatchResponse.status).toBe(400);
+    const repoBody = await repoMismatchResponse.json() as { error: { message: string } };
+    expect(repoBody.error.message).toContain('repositoryUrl must be the assigned challenge repositoryUrl');
+    expect(sqlite.prepare(
+      `SELECT COUNT(*) AS count
+         FROM assessment_evidence_events
+        WHERE session_id = ?
+          AND kind = 'commit_submission'`,
+    ).get(repoCase.sessionId)).toEqual({ count: 0 });
+
+    const baseCase = await createAssignedChallengeSession('base');
+    const wrongBaseCommitSha = '2222222222222222222222222222222222222222';
+    const baseMismatchResponse = await app.request(
+      `/api/v1/assessment/repo-task/sessions/${baseCase.sessionId}/commit-submissions`,
+      jsonRequest({
+        ingestionKey: 'assessment-event:base-mismatch',
+        actorType: 'candidate',
+        narrative: 'Candidate submitted work from the wrong base commit.',
+        repositoryUrl: 'https://github.com/open-source/widgets',
+        branchName: 'pipe-assessment/popover-cleanup',
+        baseCommitSha: wrongBaseCommitSha,
+        commitSha: baseCase.commitSha,
+        changedFiles: [{ path: 'src/popover.ts', status: 'modified' }],
+        sourceRefs: [
+          await sourceRef('git_commit', baseCase.commitSha, baseCase.commitText),
+          await sourceRef('code_diff', `${baseCase.commitSha}:diff`, baseCase.diffText),
+        ],
+      }),
+      env,
+    );
+    expect(baseMismatchResponse.status).toBe(400);
+    const baseBody = await baseMismatchResponse.json() as { error: { message: string } };
+    expect(baseBody.error.message).toContain('baseCommitSha must be the assigned challenge baseCommitSha');
+    expect(sqlite.prepare(
+      `SELECT COUNT(*) AS count
+         FROM assessment_evidence_events
+        WHERE session_id = ?
+          AND kind = 'commit_submission'`,
+    ).get(baseCase.sessionId)).toEqual({ count: 0 });
+  });
+
   it('rejects direct commit submissions from non-assessment branches', async () => {
     const session = await createSession(app, env, {
       ingestionKey: 'assessment-session:commit-submission-default-branch',

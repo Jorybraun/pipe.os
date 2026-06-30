@@ -647,6 +647,38 @@ function assertCommitSubmissionSourceRefs(input: SubmitCommitAssessmentInput): v
   }
 }
 
+function stringLocatorValue(locator: JsonObject, key: string): string | null {
+  const value = locator[key];
+  return typeof value === 'string' && value.trim().length > 0 ? value.trim() : null;
+}
+
+function assertCommitSubmissionMatchesChallenge(
+  input: SubmitCommitAssessmentInput,
+  normalizedRepositoryUrl: string,
+  challengeRef: AssessmentProgressSourceRef | null,
+): void {
+  if (!challengeRef) return;
+
+  const assignedRepositoryUrl = stringLocatorValue(challengeRef.locator, 'repositoryUrl');
+  if (assignedRepositoryUrl) {
+    const normalizedAssignedRepositoryUrl = normalizeGitHubRepositoryUrl(
+      assignedRepositoryUrl,
+      'assigned challenge repositoryUrl',
+    );
+    if (normalizedAssignedRepositoryUrl !== normalizedRepositoryUrl) {
+      throw new Error('repositoryUrl must be the assigned challenge repositoryUrl');
+    }
+  }
+
+  const assignedBaseCommitSha = stringLocatorValue(challengeRef.locator, 'baseCommitSha');
+  if (assignedBaseCommitSha) {
+    assertCommitSha(assignedBaseCommitSha, 'assigned challenge baseCommitSha');
+    if (assignedBaseCommitSha.toLowerCase() !== input.baseCommitSha.toLowerCase()) {
+      throw new Error('baseCommitSha must be the assigned challenge baseCommitSha');
+    }
+  }
+}
+
 async function sha256Hex(value: string): Promise<string> {
   const bytes = new TextEncoder().encode(value);
   const digest = await crypto.subtle.digest('SHA-256', bytes);
@@ -1021,6 +1053,8 @@ export class RepoTaskInterviewSessionStore {
       input.upstreamPullRequestUrl,
       input.upstreamPrConsent,
     );
+    const challengeRef = await this.loadChallengeSourceRef(input.sessionId);
+    assertCommitSubmissionMatchesChallenge(input, repositoryUrl, challengeRef);
 
     const initialSession = await this.loadSession(input.sessionId);
     if (!['INTAKE', 'IN_PROGRESS', 'FINAL_SUBMITTED'].includes(initialSession.state)) {
