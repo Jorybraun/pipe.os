@@ -186,7 +186,9 @@ export function WaitingForMatch({
   useEffect(() => {
     if (!config.autoRefresh) return;
     const t = setInterval(() => {
-      onRefresh();
+      Promise.resolve(onRefresh()).catch(() => {
+        // Manual refresh owns user-visible failure messaging.
+      });
     }, intervalSeconds * 1000);
     return () => clearInterval(t);
   }, [config.autoRefresh, intervalSeconds, onRefresh]);

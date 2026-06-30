@@ -56,6 +56,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Fixed — Candidate repo matching
 
+- Candidate matching status cards now report failed manual refreshes instead of showing a false "checked" state when the status API fails.
 - Recruiter assessment invite panels now describe claimed one-use links as started rather than opened, keeping link validity aligned with the candidate start boundary.
 - Already-started candidate assessment links no longer show a retry button that cannot recover the one-use invite state.
 - Candidate-facing used assessment links now say the assessment already started instead of implying that merely opening the link consumed it.

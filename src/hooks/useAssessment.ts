@@ -564,6 +564,7 @@ export function useAssessment(inviteToken: string): UseAssessmentReturn {
       const error = err instanceof Error ? err : new Error('Refresh failed');
       console.error('[useAssessment] refresh error:', error);
       setState((prev) => ({ ...prev, isLoading: false, error }));
+      throw error;
     }
   }, [loadStageConfig, loadChallenge]);
 

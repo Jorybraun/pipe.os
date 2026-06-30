@@ -108,6 +108,37 @@ describe('WaitingForMatch', () => {
     });
   });
 
+  it('shows a failed manual status check when refresh rejects', async () => {
+    const onRefresh = vi.fn().mockRejectedValue(new Error('refresh failed'));
+    render(
+      <WaitingForMatch
+        title="Building your personalized challenge"
+        instructions="We are preparing your code review."
+        config={{
+          autoRefresh: false,
+          refreshIntervalSeconds: 30,
+          state: 'pending',
+          diagnostics: {
+            phase: 'candidate_evidence',
+            ingestionStatus: 'pending',
+            currentStep: 'parse_resume',
+            matchableNodeCount: 0,
+            rawNodeCount: 0,
+          },
+        }}
+        onRefresh={onRefresh}
+      />,
+    );
+
+    fireEvent.click(screen.getByRole('button', { name: 'CHECK STATUS NOW' }));
+
+    await waitFor(() => expect(onRefresh).toHaveBeenCalledTimes(1));
+    await waitFor(() => {
+      expect(screen.getByText('Status check failed. Refresh the page or contact the recruiter for a fresh invite.')).toBeInTheDocument();
+    });
+    expect(screen.queryByText(/Status checked/)).toBeNull();
+  });
+
   it('reports when profile data is not ready instead of doing nothing', async () => {
     const originalFetch = globalThis.fetch;
     globalThis.fetch = vi.fn().mockResolvedValue({
