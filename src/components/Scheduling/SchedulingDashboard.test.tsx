@@ -28,11 +28,13 @@ vi.mock('./InterviewCard', () => ({
   InterviewCard: (props: {
     interview: Pick<ScheduledInterview, 'id' | 'createdAt'>;
     candidateName: string;
+    candidateEmail?: string | null;
   }) => (
     <div
       data-testid="interview-card"
       data-interview-id={props.interview.id}
       data-created-at={props.interview.createdAt}
+      data-candidate-email={props.candidateEmail ?? ''}
     >
       {props.candidateName}
     </div>
@@ -153,6 +155,24 @@ describe('SchedulingDashboard interview ordering', () => {
 
     expect(screen.getByText('OLDEST CREATED')).toBeInTheDocument();
     expect(cardNames()).toEqual(['Oldest invite', 'Middle invite', 'Newest invite']);
+  });
+
+  it('uses the per-interview recipient label before the canonical person name', () => {
+    renderDashboard([
+      makeInterview({
+        id: 'same-email-followup',
+        createdAt: '2026-06-28T10:00:00.000Z',
+        recipientName: 'Hannah follow-up',
+        recipientEmail: 'shared@example.com',
+        candidateName: 'First saved name',
+        candidateEmail: 'canonical@example.com',
+      }),
+    ]);
+
+    const card = screen.getByTestId('interview-card');
+    expect(card).toHaveTextContent('Hannah follow-up');
+    expect(card).not.toHaveTextContent('First saved name');
+    expect(card).toHaveAttribute('data-candidate-email', 'shared@example.com');
   });
 
   it('opens the invite modal from a person next-action URL with prefilled context', () => {

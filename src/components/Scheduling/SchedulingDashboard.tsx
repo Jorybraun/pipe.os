@@ -118,6 +118,14 @@ function compareByCreatedOldest(a: ScheduledInterview, b: ScheduledInterview): n
   return createdDiff === 0 ? a.id.localeCompare(b.id) : createdDiff;
 }
 
+function firstNonBlank(...values: Array<string | null | undefined>): string | null {
+  for (const value of values) {
+    const trimmed = value?.trim();
+    if (trimmed) return trimmed;
+  }
+  return null;
+}
+
 // ---------------------------------------------------------------------------
 // SchedulingDashboard
 // ---------------------------------------------------------------------------
@@ -470,8 +478,14 @@ export function SchedulingDashboard(): JSX.Element {
               </div>
               <div style={{ display: 'flex', flexDirection: 'column', gap: 8 }}>
                 {ivs.map((iv) => {
-                  const candidateName = iv.candidateName ?? iv.candidateEmail ?? iv.recipientName ?? iv.candidateId?.slice(0, 8) ?? 'Unknown person';
-                  const candidateEmail = iv.candidateEmail ?? iv.recipientEmail ?? null;
+                  const candidateName = firstNonBlank(
+                    iv.recipientName,
+                    iv.candidateName,
+                    iv.recipientEmail,
+                    iv.candidateEmail,
+                    iv.candidateId?.slice(0, 8),
+                  ) ?? 'Unknown person';
+                  const candidateEmail = firstNonBlank(iv.recipientEmail, iv.candidateEmail);
                   const pipelineTitle = iv.pipelineTitle ?? 'Talent Pool';
                   const stageTitle = iv.stageTitle ?? iv.interviewType ?? 'Interview';
 

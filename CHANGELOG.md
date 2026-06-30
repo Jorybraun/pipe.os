@@ -59,6 +59,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Fixed — Candidate repo matching
 
+- Interview dashboard cards now prefer the per-invite recipient name and email over older canonical person labels, so multiple meetings for the same address remain distinguishable.
 - Person profile relationship timelines now lead with a quiet evidence-coverage summary, showing whether the person graph is built from code reviews, calls, resumes, messages, or other evidence before recruiters scan individual interactions.
 - CODE_REVIEW recruiter decision panels now show score validity before the score details, making clear whether the score is usable, pending, incomplete, or unsafe to rely on when repo fit is not proven.
 - CODE_REVIEW related-meeting panels now lead with a quiet decision summary, source-backed next action, and signal counts before showing preview rows, so cross-meeting context supports the current decision instead of reading like noisy extra evidence.
