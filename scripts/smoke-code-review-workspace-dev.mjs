@@ -36,7 +36,7 @@ const MATCHED_REPO_ID = RAW_MATCHED_REPO_ID ? Number(RAW_MATCHED_REPO_ID) : null
 const BASE_COMMIT_SHA = process.env.WORKSPACE_SMOKE_BASE_COMMIT_SHA || '';
 const CHANGE_MODE = process.env.WORKSPACE_SMOKE_CHANGE_MODE || 'placeholder';
 const EXPECTED_BRIDGE_REVISION = process.env.WORKSPACE_SMOKE_EXPECTED_BRIDGE_REVISION
-  || '2026-06-30-terminal-crlf-v3';
+  || '2026-06-30-finalizer-terminal-v1';
 const REMOTE = !APP_BASE.includes('localhost') && !APP_BASE.includes('127.0.0.1');
 
 function assertEnv() {
