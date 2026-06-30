@@ -270,6 +270,15 @@ function storeErrorResponse(c: Parameters<typeof apiError>[0], error: unknown): 
   return apiError(c, 'SERVER_ERROR', message);
 }
 
+async function ingestAssessmentSessionBestEffort(db: D1Database, sessionId: string): Promise<void> {
+  try {
+    await ingestAssessmentSessionRealTime(db, sessionId);
+  } catch (err) {
+    const msg = err instanceof Error ? err.message : String(err);
+    console.error('[repoTaskSessions] living context ingestion error:', msg);
+  }
+}
+
 repoTaskSessions.post('/sessions', async (c) => {
   const body = createSessionSchema.safeParse(await c.req.json().catch(() => null));
   if (!body.success) {
@@ -290,11 +299,13 @@ repoTaskSessions.post('/sessions/:sessionId/events', async (c) => {
     return apiError(c, 'BAD_REQUEST', body.error.issues[0]?.message ?? 'Invalid assessment event body.');
   }
   try {
+    const sessionId = c.req.param('sessionId');
     const store = new RepoTaskInterviewSessionStore(c.env.DB);
     const event = await store.recordEvent({
-      sessionId: c.req.param('sessionId'),
+      sessionId,
       ...body.data,
     });
+    await ingestAssessmentSessionBestEffort(c.env.DB, sessionId);
     return c.json({ event }, 201);
   } catch (error) {
     return storeErrorResponse(c, error);
@@ -334,11 +345,13 @@ repoTaskSessions.post('/sessions/:sessionId/final-submission-bundles', async (c)
     return apiError(c, 'BAD_REQUEST', body.error.issues[0]?.message ?? 'Invalid final submission bundle body.');
   }
   try {
+    const sessionId = c.req.param('sessionId');
     const store = new RepoTaskInterviewSessionStore(c.env.DB);
     const bundle = await store.submitFinalBundle({
-      sessionId: c.req.param('sessionId'),
+      sessionId,
       ...body.data,
     });
+    await ingestAssessmentSessionBestEffort(c.env.DB, sessionId);
     return c.json({ bundle }, 201);
   } catch (error) {
     return storeErrorResponse(c, error);
@@ -351,11 +364,13 @@ repoTaskSessions.post('/sessions/:sessionId/commit-submissions', async (c) => {
     return apiError(c, 'BAD_REQUEST', body.error.issues[0]?.message ?? 'Invalid commit submission body.');
   }
   try {
+    const sessionId = c.req.param('sessionId');
     const store = new RepoTaskInterviewSessionStore(c.env.DB);
     const submission = await store.submitCommit({
-      sessionId: c.req.param('sessionId'),
+      sessionId,
       ...body.data,
     });
+    await ingestAssessmentSessionBestEffort(c.env.DB, sessionId);
     return c.json({ submission }, 201);
   } catch (error) {
     return storeErrorResponse(c, error);
@@ -375,14 +390,7 @@ repoTaskSessions.post('/sessions/:sessionId/evaluation-reports', async (c) => {
       ...body.data,
     });
 
-    // Real-time living context ingestion — flows assessment evidence into the
-    // person graph immediately instead of waiting for the scheduled backfill.
-    try {
-      await ingestAssessmentSessionRealTime(c.env.DB, sessionId);
-    } catch (err) {
-      const msg = err instanceof Error ? err.message : String(err);
-      console.error('[repoTaskSessions] living context ingestion error:', msg);
-    }
+    await ingestAssessmentSessionBestEffort(c.env.DB, sessionId);
 
     return c.json({ report }, 201);
   } catch (error) {

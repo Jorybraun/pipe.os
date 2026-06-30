@@ -97,7 +97,17 @@ describe('repo task assessment session routes', () => {
 
   beforeEach(() => {
     sqlite = new Database(':memory:');
-    sqlite.exec('PRAGMA foreign_keys = ON; CREATE TABLE candidates (id TEXT PRIMARY KEY);');
+    sqlite.exec(`
+      PRAGMA foreign_keys = ON;
+      CREATE TABLE candidates (
+        id TEXT PRIMARY KEY,
+        owner_id TEXT NOT NULL DEFAULT 'owner-test',
+        pipeline_id TEXT,
+        name TEXT,
+        email TEXT,
+        status TEXT NOT NULL DEFAULT 'active'
+      );
+    `);
     sqlite.exec(livingContextMigrationSql);
     sqlite.exec(contextRecordsMigrationSql);
     sqlite.exec(repoTaskSessionsMigrationSql);
@@ -182,6 +192,119 @@ describe('repo task assessment session routes', () => {
       record_type: 'assessment_candidate_plan',
       predicate: 'records assessment evidence event',
     });
+  });
+
+  it('flows assessment event and commit evidence into the living context before evaluation', async () => {
+    sqlite.prepare(
+      `INSERT INTO candidates (id, owner_id, pipeline_id, name, email, status)
+       VALUES (?, ?, ?, ?, ?, ?)`,
+    ).run(
+      'candidate-graph',
+      'owner-graph',
+      'pipeline-graph',
+      'Graph Candidate',
+      'graph-candidate@example.com',
+      'active',
+    );
+
+    const session = await createSession(app, env, {
+      ingestionKey: 'assessment-session:graph-realtime',
+      mode: 'OPEN_SOURCE_BUG_FIX',
+      candidateId: 'candidate-graph',
+    });
+
+    const planText = 'I will reproduce the reconnect ordering bug before editing and keep the patch scoped to the stream buffer.';
+    const eventResponse = await app.request(
+      `/api/v1/assessment/repo-task/sessions/${session.id}/events`,
+      jsonRequest({
+        ingestionKey: 'assessment-event:graph-plan',
+        kind: 'candidate_plan',
+        actorType: 'candidate',
+        actorId: 'candidate-graph',
+        narrative: 'Candidate wrote a source-backed implementation plan before editing code.',
+        payload: { planText },
+        sourceRefs: [await sourceRef('candidate_plan', 'plan-note-graph', planText)],
+      }),
+      env,
+    );
+    expect(eventResponse.status).toBe(201);
+
+    const interaction = sqlite.prepare(
+      `SELECT interaction_type, external_reference
+         FROM interactions
+        WHERE external_reference = ?`,
+    ).get(session.id);
+    expect(interaction).toEqual({
+      interaction_type: 'assessment:OPEN_SOURCE_BUG_FIX',
+      external_reference: session.id,
+    });
+
+    const planRecord = sqlite.prepare(
+      `SELECT cr.scope_type, cr.record_type, cr.narrative,
+              sr.source_ref_type, sr.source_ref_id, sr.exact_text
+         FROM context_records cr
+         JOIN context_record_source_refs sr ON sr.context_record_id = cr.id
+        WHERE cr.record_type = 'assessment:candidate_plan'
+          AND sr.source_ref_id = 'plan-note-graph'`,
+    ).get();
+    expect(planRecord).toEqual({
+      scope_type: 'workspace_person',
+      record_type: 'assessment:candidate_plan',
+      narrative: 'Candidate wrote a source-backed implementation plan before editing code.',
+      source_ref_type: 'candidate_plan',
+      source_ref_id: 'plan-note-graph',
+      exact_text: planText,
+    });
+
+    const baseCommitSha = '3333333333333333333333333333333333333333';
+    const commitSha = '4444444444444444444444444444444444444444';
+    const commitText = `commit ${commitSha}\n\nFix reconnect ordering.`;
+    const diffText = 'diff --git a/src/stream.ts b/src/stream.ts\n+sortBufferedSegmentsByTimestamp();';
+    const commitResponse = await app.request(
+      `/api/v1/assessment/repo-task/sessions/${session.id}/commit-submissions`,
+      jsonRequest({
+        ingestionKey: 'assessment-event:graph-commit',
+        actorType: 'candidate',
+        actorId: 'candidate-graph',
+        narrative: 'Candidate submitted a focused source-backed assessment commit.',
+        repositoryUrl: 'https://github.com/open-source/streaming',
+        forkRepositoryUrl: 'https://github.com/candidate/streaming',
+        branchName: 'pipe-assessment/reconnect-ordering',
+        baseCommitSha,
+        commitSha,
+        commitUrl: `https://github.com/candidate/streaming/commit/${commitSha}`,
+        changedFiles: [{ path: 'src/stream.ts', status: 'modified', additions: 1, deletions: 0 }],
+        sourceRefs: [
+          await sourceRef('git_commit', commitSha, commitText),
+          await sourceRef('code_diff', `${commitSha}:diff`, diffText),
+        ],
+      }),
+      env,
+    );
+    expect(commitResponse.status).toBe(201);
+
+    const commitRecord = sqlite.prepare(
+      `SELECT cr.record_type, cr.narrative,
+              sr.source_ref_type, sr.source_ref_id, sr.exact_text
+         FROM context_records cr
+         JOIN context_record_source_refs sr ON sr.context_record_id = cr.id
+        WHERE cr.record_type = 'assessment:commit_submission'
+          AND sr.source_ref_type = 'git_commit'
+          AND sr.source_ref_id = ?`,
+    ).get(commitSha);
+    expect(commitRecord).toEqual({
+      record_type: 'assessment:commit_submission',
+      narrative: 'Candidate submitted a focused source-backed assessment commit.',
+      source_ref_type: 'git_commit',
+      source_ref_id: commitSha,
+      exact_text: commitText,
+    });
+
+    expect(sqlite.prepare(
+      `SELECT COUNT(*) AS count
+         FROM assessment_evaluation_reports
+        WHERE session_id = ?`,
+    ).get(session.id)).toEqual({ count: 0 });
   });
 
   it('tracks assessment state from intake through final submission and keeps event evidence immutable', async () => {

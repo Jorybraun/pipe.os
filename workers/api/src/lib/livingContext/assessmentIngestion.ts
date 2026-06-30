@@ -178,15 +178,30 @@ export async function ingestAssessmentToLivingContext(
       metadata: { mode: session.mode, eventCount: events.length },
     });
     const contentHash = await sha256(fullNarrative);
-    artifactVersion = await store.createArtifactVersion({
-      ingestionKey: `${artifactIngestionKey}:v1`,
-      artifactId: artifact.id,
-      versionNumber: 1,
-      contentHash,
-      mediaType: 'text/plain',
-      contentText: fullNarrative,
-      byteLength: byteLength(fullNarrative),
-    });
+    const existingVersion = await db.prepare(
+      `SELECT id
+         FROM artifact_versions
+        WHERE artifact_id = ?1
+          AND content_hash = ?2`,
+    ).bind(artifact.id, contentHash).first<{ id: string }>();
+    if (existingVersion) {
+      artifactVersion = { id: existingVersion.id, ingestionKey: `${artifactIngestionKey}:${contentHash}` };
+    } else {
+      const latestVersion = await db.prepare(
+        `SELECT COALESCE(MAX(version_number), 0) AS version_number
+           FROM artifact_versions
+          WHERE artifact_id = ?1`,
+      ).bind(artifact.id).first<{ version_number: number }>();
+      artifactVersion = await store.createArtifactVersion({
+        ingestionKey: `${artifactIngestionKey}:${contentHash}`,
+        artifactId: artifact.id,
+        versionNumber: Number(latestVersion?.version_number ?? 0) + 1,
+        contentHash,
+        mediaType: 'text/plain',
+        contentText: fullNarrative,
+        byteLength: byteLength(fullNarrative),
+      });
+    }
   }
 
   let episodeCount = 0;
@@ -219,7 +234,7 @@ export async function ingestAssessmentToLivingContext(
     let sourceSpanId: string | null = null;
     if (artifactVersion) {
       const span = await store.createSourceSpan({
-        ingestionKey: `assessment_event_span:${event.id}`,
+        ingestionKey: `assessment_event_span:${event.id}:${artifactVersion.id}`,
         artifactVersionId: artifactVersion.id,
         stableSegmentId: `event:${event.sequence}`,
         charStart: blockCharStart,
