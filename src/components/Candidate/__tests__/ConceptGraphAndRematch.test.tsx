@@ -82,9 +82,27 @@ vi.mock('../../../hooks/useConceptGraph', () => ({
   }),
 }));
 
+vi.mock('../../../hooks/useEvidenceReadiness', () => ({
+  useEvidenceReadiness: () => ({
+    report: null,
+    isLoading: false,
+    error: null,
+    refetch: vi.fn(),
+  }),
+}));
+
 vi.mock('../../../hooks/useMatchHistory', () => ({
   useMatchHistory: () => ({
     history: null,
+    isLoading: false,
+    error: null,
+    refetch: vi.fn(),
+  }),
+}));
+
+vi.mock('../../../hooks/useEvidenceReadiness', () => ({
+  useEvidenceReadiness: () => ({
+    report: null,
     isLoading: false,
     error: null,
     refetch: vi.fn(),

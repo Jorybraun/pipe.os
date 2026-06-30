@@ -107,6 +107,21 @@ export type {
   EvidenceGapReport,
   GapAnalysisOptions,
 } from './evidenceGapAnalysis';
+export { compareCandidateEvidence } from './candidateComparison';
+export type {
+  CandidateEvidenceProfile,
+  ConceptEvidence,
+  ConceptComparison,
+  ComparisonSummary,
+  CandidateComparisonReport,
+} from './candidateComparison';
+export { computeEvidenceReadiness } from './evidenceReadiness';
+export type {
+  ReadinessDimension,
+  DimensionScore,
+  EvidenceReadinessReport,
+  EvidenceReadinessOptions,
+} from './evidenceReadiness';
 export { loadMatchProvenanceChain } from './matchProvenanceChain';
 export type {
   ProvenanceMatchDecision,

@@ -4,6 +4,20 @@ Inter-agent handoff log for the living context graph goal. Each agent appends a 
 
 ## Log
 
+### 2026-06-30 — Codex consolidation of Devin readiness branch
+
+**Action:** Merged `origin/devin/1782821002-living-context-consolidated` into `codex/consolidate-open-source-assessment-living-context` after confirming there is only one registered local PIPE-OS worktree and the active branch already contains `origin/main`.
+
+**Integrated work:**
+1. Evidence-readiness scoring for living-context candidate profiles, including temporal decay, weakest/strongest dimensions, and recommendations.
+2. Recruiter and internal cross-candidate evidence comparison APIs.
+3. Internal session-event ingestion endpoint coverage.
+4. Evidence readiness UI panel, hook, API types, and focused tests.
+
+**Conflict resolution:** Code merged automatically. `CHANGELOG.md` and this coordination log were resolved by keeping the current product-focused branch history and adding the new readiness/comparison entries explicitly.
+
+**Validation required before deploy:** Run focused living-context tests, root `npx tsc --noEmit`, then commit, push, deploy dev, and smoke the relevant API/UI surfaces.
+
 ### 2026-06-30 — Codex consolidation audit
 
 **Action:** Audited local worktrees and remote `devin/*` branches before continuing the open-source assessment product slice.

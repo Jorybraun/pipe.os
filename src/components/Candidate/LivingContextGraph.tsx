@@ -43,6 +43,7 @@ import type {
   StandaloneReviewStretchArea,
 } from '../../lib/api/types';
 import { useConceptGraph } from '../../hooks/useConceptGraph';
+import { useEvidenceReadiness } from '../../hooks/useEvidenceReadiness';
 import { useEvidenceFreshness } from '../../hooks/useEvidenceFreshness';
 import { useEvidenceGaps } from '../../hooks/useEvidenceGaps';
 import { useEvidenceLineage } from '../../hooks/useEvidenceLineage';
@@ -2211,6 +2212,91 @@ function MatchHistoryPanel({
   );
 }
 
+function EvidenceReadinessPanel({
+  candidateId,
+}: {
+  candidateId: string;
+}): JSX.Element | null {
+  const { report, isLoading, error, refetch } = useEvidenceReadiness(candidateId);
+
+  if (isLoading && !report) return null;
+  if (error || !report) return null;
+
+  const levelColor: Record<string, string> = {
+    not_ready: 'var(--lc-gap-none, #ef4444)',
+    minimal: 'var(--lc-gap-weak, #f59e0b)',
+    ready: 'var(--lc-concept, #3b82f6)',
+    strong: 'var(--lc-signal, #10b981)',
+    comprehensive: 'var(--lc-signal, #10b981)',
+  };
+
+  return (
+    <section
+      className="living-context__panel"
+      data-testid="evidence-readiness-panel"
+    >
+      <div className="living-context__section-head">
+        <div style={{ display: 'flex', gap: 6, alignItems: 'center' }}>
+          <ShieldCheck size={13} color={levelColor[report.overallLevel] ?? 'var(--lc-structural)'} />
+          <div className="living-context__section-title">Evidence readiness</div>
+          <div className="living-context__count">
+            {Math.round(report.overallScore * 100)}%
+          </div>
+        </div>
+        <button
+          type="button"
+          className="living-context__refresh"
+          onClick={() => void refetch()}
+          title="Refresh readiness"
+          aria-label="Refresh readiness"
+        >
+          <RefreshCw size={12} />
+        </button>
+      </div>
+
+      <div className="living-context__readiness-level" style={{ color: levelColor[report.overallLevel] }}>
+        {titleCase(report.overallLevel)}
+      </div>
+
+      <div className="living-context__readiness-grid">
+        {report.dimensions.map((dim) => (
+          <div
+            key={dim.dimension}
+            className={`living-context__readiness-dim living-context__readiness-dim--${dim.level}`}
+            data-testid={`readiness-dim-${dim.dimension}`}
+            title={dim.recommendation ?? `${dim.label}: ${dim.level}`}
+          >
+            <div className="living-context__readiness-dim-bar">
+              <div
+                className="living-context__readiness-dim-fill"
+                style={{ width: `${Math.round(dim.score * 100)}%` }}
+              />
+            </div>
+            <div className="living-context__readiness-dim-label">
+              {dim.label}
+            </div>
+            <div className="living-context__readiness-dim-meta">
+              {dim.evidenceCount} evidence · {Math.round(dim.decayMultiplier * 100)}% fresh
+            </div>
+          </div>
+        ))}
+      </div>
+
+      {report.recommendations.length > 0 && (
+        <div className="living-context__readiness-recs" data-testid="readiness-recommendations">
+          <div className="living-context__eyebrow">Recommendations</div>
+          {report.recommendations.map((rec) => (
+            <div key={rec} className="living-context__readiness-rec">
+              <AlertTriangle size={10} color="var(--lc-gap-weak, #f59e0b)" />
+              <span>{rec}</span>
+            </div>
+          ))}
+        </div>
+      )}
+    </section>
+  );
+}
+
 function RematchButton({
   candidateId,
   onRematchComplete,
@@ -2525,6 +2611,7 @@ export function LivingContextGraph({
         </div>
       )}
 
+      <EvidenceReadinessPanel candidateId={candidateId} />
       <EvidenceDepthPanel livingContext={livingContext} />
       <EvidenceFreshnessPanel freshness={freshness} />
       <EvidenceLineagePanel lineage={lineage} />

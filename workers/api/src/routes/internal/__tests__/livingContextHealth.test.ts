@@ -642,3 +642,190 @@ describe('POST /person-identity-link', () => {
     expect(body.alreadyLinked).toBe(true);
   });
 });
+
+describe('POST /candidate-comparison', () => {
+  let sqlite: BetterSqliteDb;
+
+  beforeEach(() => {
+    sqlite = new Database(':memory:');
+    sqlite.exec('PRAGMA foreign_keys = ON;');
+    sqlite.exec(livingContextMigration);
+    sqlite.exec(contextRecordsMigration);
+    sqlite.exec(`
+      CREATE TABLE IF NOT EXISTS pipelines (id TEXT PRIMARY KEY, owner_id TEXT NOT NULL);
+      CREATE TABLE IF NOT EXISTS candidates (
+        id TEXT PRIMARY KEY, name TEXT NOT NULL,
+        pipeline_id TEXT, owner_id TEXT
+      );
+    `);
+  });
+
+  afterEach(() => {
+    sqlite.close();
+  });
+
+  it('rejects with fewer than 2 candidate IDs', async () => {
+    const db = createMockD1(sqlite);
+    const app = new Hono();
+    app.route('/', livingContextHealth);
+
+    const res = await app.request('/candidate-comparison', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ candidateIds: ['c1'] }),
+    }, { DB: db });
+    expect(res.status).toBe(400);
+  });
+
+  it('returns comparison report for valid candidate pair', async () => {
+    sqlite.exec(`
+      INSERT INTO candidates (id, name, owner_id) VALUES ('c1', 'Alice', 'internal');
+      INSERT INTO candidates (id, name, owner_id) VALUES ('c2', 'Bob', 'internal');
+    `);
+    const db = createMockD1(sqlite);
+    const app = new Hono();
+    app.route('/', livingContextHealth);
+
+    const res = await app.request('/candidate-comparison', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ candidateIds: ['c1', 'c2'] }),
+    }, { DB: db });
+    expect(res.status).toBe(200);
+
+    const body = await res.json() as {
+      candidateProfiles: Array<{ candidateId: string; candidateName: string }>;
+      summary: { totalCandidates: number };
+    };
+    expect(body.candidateProfiles).toHaveLength(2);
+    expect(body.summary.totalCandidates).toBe(2);
+  });
+
+  it('rejects more than 20 candidates', async () => {
+    const db = createMockD1(sqlite);
+    const app = new Hono();
+    app.route('/', livingContextHealth);
+
+    const ids = Array.from({ length: 21 }, (_, i) => `c${i}`);
+    const res = await app.request('/candidate-comparison', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ candidateIds: ids }),
+    }, { DB: db });
+    expect(res.status).toBe(400);
+  });
+});
+
+describe('POST /session-event-ingest', () => {
+  let sqlite: BetterSqliteDb;
+
+  beforeEach(() => {
+    sqlite = new Database(':memory:');
+    sqlite.exec('PRAGMA foreign_keys = ON;');
+    sqlite.exec(livingContextMigration);
+    sqlite.exec(contextRecordsMigration);
+    sqlite.exec(`
+      CREATE TABLE IF NOT EXISTS pipelines (id TEXT PRIMARY KEY, owner_id TEXT NOT NULL);
+      CREATE TABLE IF NOT EXISTS candidates (
+        id TEXT PRIMARY KEY, name TEXT NOT NULL, email TEXT,
+        pipeline_id TEXT, owner_id TEXT, status TEXT
+      );
+      CREATE TABLE IF NOT EXISTS contacts (
+        id TEXT PRIMARY KEY, owner_id TEXT, name TEXT, email TEXT, type TEXT
+      );
+      CREATE TABLE IF NOT EXISTS session_events (
+        id TEXT PRIMARY KEY,
+        session_id TEXT NOT NULL,
+        session_type TEXT NOT NULL,
+        candidate_id TEXT NOT NULL,
+        event_type TEXT NOT NULL,
+        payload_json TEXT,
+        created_at TEXT NOT NULL
+      );
+    `);
+  });
+
+  afterEach(() => {
+    sqlite.close();
+  });
+
+  it('rejects when candidateId is missing', async () => {
+    const db = createMockD1(sqlite);
+    const app = new Hono();
+    app.route('/', livingContextHealth);
+
+    const res = await app.request('/session-event-ingest', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({}),
+    }, { DB: db });
+    expect(res.status).toBe(400);
+  });
+
+  it('returns zero counts when no events exist', async () => {
+    sqlite.exec(`INSERT INTO candidates (id, name, owner_id) VALUES ('c1', 'Alice', 'test-user')`);
+
+    const db = createMockD1(sqlite);
+    const app = new Hono();
+    app.route('/', livingContextHealth);
+
+    const res = await app.request('/session-event-ingest', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ candidateId: 'c1' }),
+    }, { DB: db });
+    expect(res.status).toBe(200);
+
+    const body = await res.json() as { eventsProcessed: number; message: string };
+    expect(body.eventsProcessed).toBe(0);
+    expect(body.message).toContain('No session events found');
+  });
+});
+
+describe('GET /evidence-readiness', () => {
+  let sqlite: BetterSqliteDb;
+
+  beforeEach(() => {
+    sqlite = new Database(':memory:');
+  });
+
+  afterEach(() => {
+    sqlite.close();
+  });
+
+  it('returns 400 when candidateId is missing', async () => {
+    sqlite.exec(`CREATE TABLE IF NOT EXISTS candidates (id TEXT PRIMARY KEY, name TEXT)`);
+    sqlite.exec(livingContextMigration);
+    sqlite.exec(contextRecordsMigration);
+    const db = createMockD1(sqlite);
+    const app = new Hono();
+    app.route('/', livingContextHealth);
+
+    const res = await app.request('/evidence-readiness', {
+      method: 'GET',
+    }, { DB: db });
+    expect(res.status).toBe(400);
+
+    const body = await res.json() as { error: string };
+    expect(body.error).toContain('candidateId');
+  });
+
+  it('returns empty readiness report when candidate has no workspace identity', async () => {
+    sqlite.exec(`CREATE TABLE IF NOT EXISTS candidates (id TEXT PRIMARY KEY, name TEXT)`);
+    sqlite.exec(livingContextMigration);
+    sqlite.exec(contextRecordsMigration);
+    const db = createMockD1(sqlite);
+    const app = new Hono();
+    app.route('/', livingContextHealth);
+
+    const res = await app.request('/evidence-readiness?candidateId=c1', {
+      method: 'GET',
+    }, { DB: db });
+    expect(res.status).toBe(200);
+
+    const body = await res.json() as { candidateId: string; overallScore: number; overallLevel: string };
+    expect(body.candidateId).toBe('c1');
+    expect(body.overallScore).toBe(0);
+    expect(body.overallLevel).toBe('not_ready');
+  });
+});

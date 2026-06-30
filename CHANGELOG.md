@@ -7,6 +7,13 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Added — Evidence readiness and candidate comparison
+
+- Living-context candidate profiles now expose evidence-readiness scoring across resume, interview, assessment, code-review, meeting, phone-call, culture, and learned-concept dimensions, with temporal decay, strongest/weakest dimensions, and recruiter-facing recommendations.
+- Recruiter and internal APIs can compare candidate evidence profiles by interaction mix, assertion depth, source diversity, shared concepts, unique concepts, and freshness-ranked coverage.
+- Living-context internal health routes now include evidence-readiness, candidate-comparison, and session-event ingestion coverage so assessment-room activity can be reconciled into the durable person graph.
+- The living context graph UI now includes an evidence-readiness panel and hook for per-dimension readiness bars, recommendation cards, and API-backed loading/error states.
+
 ### Fixed — Auth
 
 - Recruiter e2e auth smoke now targets a stable auth-gate sign-in test id and waits long enough for slow Clerk dev-instance boots, so local click testing does not fail while the app is still on the loading splash.
