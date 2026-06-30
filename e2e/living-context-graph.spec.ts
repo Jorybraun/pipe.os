@@ -562,4 +562,72 @@ test.describe('Living Context Graph — BDD', () => {
     expect(body.tasks).toBeDefined();
     expect(Array.isArray(body.tasks)).toBe(true);
   });
+
+  // ─── §16 Criterion #5 — Recruiter-triggered rematch ────────────────────
+
+  test('§16.1 — POST rematch triggers re-matching and returns result', async ({ request }) => {
+    const res = await request.post(
+      `${API_BASE}/api/v1/candidates/${candidate.id}/living-context/rematch`,
+      { headers: recruiterHeaders(authToken), data: {} },
+    );
+    expect(res.ok()).toBe(true);
+
+    const body = await res.json();
+    expect(body.candidateId).toBe(candidate.id);
+    expect(body.status).toBeDefined();
+    expect(typeof body.evaluatedCount).toBe('number');
+    if (body.status === 'MATCHED' && body.topChallenge) {
+      expect(body.topChallenge.challengeId).toBeTruthy();
+      expect(typeof body.topChallenge.alignedDemandCount).toBe('number');
+      expect(typeof body.topChallenge.stretchCount).toBe('number');
+    }
+  });
+
+  // ─── §17 Criterion #3 — Concept graph with adjacencies ─────────────────
+
+  test('§17.1 — concept-graph returns learned concepts', async ({ request }) => {
+    const res = await request.get(
+      `${API_BASE}/api/v1/internal/concept-graph?limit=20&minObs=1`,
+    );
+    expect(res.ok()).toBe(true);
+
+    const body = await res.json();
+    expect(typeof body.totalConcepts).toBe('number');
+    expect(Array.isArray(body.concepts)).toBe(true);
+    for (const concept of body.concepts) {
+      expect(concept.canonicalKey).toBeTruthy();
+      expect(concept.namespace).toBeTruthy();
+      expect(concept.label).toBeTruthy();
+      expect(typeof concept.observationCount).toBe('number');
+    }
+  });
+
+  test('§17.2 — concept-graph with adjacencies returns edges', async ({ request }) => {
+    const res = await request.get(
+      `${API_BASE}/api/v1/internal/concept-graph?limit=20&withAdj=true`,
+    );
+    expect(res.ok()).toBe(true);
+
+    const body = await res.json();
+    expect(body.adjacencies).toBeDefined();
+    expect(Array.isArray(body.adjacencies)).toBe(true);
+    for (const edge of body.adjacencies) {
+      expect(edge.fromConceptKey).toBeTruthy();
+      expect(edge.toConceptKey).toBeTruthy();
+      expect(edge.dimension).toBeTruthy();
+      expect(typeof edge.stretchAllowed).toBe('boolean');
+    }
+  });
+
+  test('§17.3 — concept-graph supports namespace filter', async ({ request }) => {
+    const res = await request.get(
+      `${API_BASE}/api/v1/internal/concept-graph?namespace=lang&limit=50`,
+    );
+    expect(res.ok()).toBe(true);
+
+    const body = await res.json();
+    for (const concept of body.concepts) {
+      expect(concept.namespace).toBe('lang');
+    }
+  });
 });

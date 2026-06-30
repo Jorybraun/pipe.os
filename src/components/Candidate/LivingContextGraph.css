@@ -3,6 +3,7 @@
   --lc-assertion: #b45309;
   --lc-signal: #059669;
   --lc-structural: #7c3aed;
+  --lc-concept: #6366f1;
   --lc-panel: var(--pipe-surface-solid);
   --lc-panel-soft: var(--pipe-surface);
   --lc-panel-hover: var(--pipe-surface-hover);
@@ -2719,4 +2720,169 @@ html[data-theme="pipe-blue"] .living-context {
   font-size: 0.68rem;
   color: var(--lc-record-dim);
   margin-top: 6px;
+}
+
+/* --- Rematch --- */
+.living-context__rematch {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  padding: 8px 0;
+  flex-wrap: wrap;
+}
+
+.living-context__rematch-btn {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  padding: 6px 14px;
+  border: 1px solid var(--lc-card-border);
+  border-radius: 4px;
+  background: var(--lc-panel-soft);
+  color: var(--pipe-text);
+  font-size: 0.72rem;
+  font-family: 'Space Mono', monospace;
+  letter-spacing: 0.04em;
+  cursor: pointer;
+  transition: background 0.15s, border-color 0.15s;
+}
+
+.living-context__rematch-btn:hover:not(:disabled) {
+  background: var(--lc-panel-hover);
+  border-color: var(--lc-source);
+}
+
+.living-context__rematch-btn:disabled {
+  opacity: 0.55;
+  cursor: default;
+}
+
+.living-context__rematch-error {
+  display: flex;
+  align-items: center;
+  gap: 5px;
+  font-size: 0.7rem;
+  color: #ef4444;
+}
+
+.living-context__rematch-result {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  font-size: 0.7rem;
+  color: var(--lc-record-muted);
+}
+
+/* --- Concept Graph --- */
+.living-context__concept-graph {
+  padding: 14px 0;
+}
+
+.living-context__concept-filter {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  padding: 5px 10px;
+  border: 1px solid var(--lc-card-border);
+  border-radius: 4px;
+  background: var(--lc-panel-soft);
+  margin-bottom: 10px;
+}
+
+.living-context__concept-filter input {
+  flex: 1;
+  border: none;
+  outline: none;
+  background: transparent;
+  color: var(--pipe-text);
+  font-size: 0.72rem;
+  font-family: 'Space Mono', monospace;
+}
+
+.living-context__concept-grid {
+  display: grid;
+  grid-template-columns: repeat(auto-fill, minmax(180px, 1fr));
+  gap: 8px;
+}
+
+.living-context__concept-card {
+  padding: 8px 10px;
+  border: 1px solid var(--lc-card-border);
+  border-radius: 4px;
+  background: var(--lc-card);
+  transition: border-color 0.15s;
+}
+
+.living-context__concept-card:hover {
+  border-color: var(--lc-structural);
+}
+
+.living-context__concept-head {
+  display: flex;
+  justify-content: space-between;
+  align-items: baseline;
+  gap: 6px;
+}
+
+.living-context__concept-label {
+  font-size: 0.74rem;
+  font-weight: 500;
+  color: var(--lc-record-text);
+  word-break: break-word;
+}
+
+.living-context__concept-ns {
+  font-size: 0.62rem;
+  color: var(--lc-record-dim);
+  white-space: nowrap;
+}
+
+.living-context__concept-meta {
+  display: flex;
+  gap: 10px;
+  font-size: 0.65rem;
+  color: var(--lc-record-dim);
+  margin-top: 2px;
+}
+
+.living-context__concept-desc {
+  font-size: 0.66rem;
+  color: var(--lc-record-muted);
+  margin-top: 4px;
+  line-height: 1.35;
+}
+
+.living-context__concept-edges {
+  margin-top: 12px;
+}
+
+.living-context__concept-edge-list {
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+}
+
+.living-context__concept-edge {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  font-size: 0.66rem;
+  padding: 3px 8px;
+  border-left: 2px solid var(--lc-structural);
+}
+
+.living-context__concept-edge-from,
+.living-context__concept-edge-to {
+  color: var(--lc-record-text);
+  font-weight: 500;
+}
+
+.living-context__concept-edge-dim {
+  color: var(--lc-record-dim);
+  font-style: italic;
+}
+
+.living-context__concept-edge-conf {
+  color: var(--lc-signal);
+  margin-left: auto;
 }

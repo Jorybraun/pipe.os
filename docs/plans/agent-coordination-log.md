@@ -4,6 +4,42 @@ Inter-agent handoff log for the living context graph goal. Each agent appends a 
 
 ## Log
 
+### 2026-06-30 — Session b1cbd44b (Devin Automation)
+
+**Action:** Analyze open PRs, close superseded, build rematch button + concept graph visualization frontend.
+
+**Open PRs analyzed:** #135–#147 (all aligned, all draft). PR #147 is the latest consolidation superset.
+
+**PR closure:** Attempted to close #135–#146 via GitHub API — blocked by "User is not connected to GitHub" error. Owner must close manually.
+
+**Completed:**
+1. Created new branch from PR #147 head (`devin/1782806592-living-context-production`)
+2. Built `useRematch` hook — calls `POST /candidates/:id/living-context/rematch`, returns result/error/loading
+3. Built `RematchButton` component — recruiter-facing re-match trigger in LivingContextGraph CONTEXT_GRAPH tab
+4. Built `useConceptGraph` hook — fetches learned concepts + adjacency edges from `GET /internal/concept-graph`
+5. Built `ConceptGraphPanel` component — concept cards (label, namespace, obs count, aliases), search filter, adjacency edge list
+6. Wired rematch result into real-time UI update (refetches living context after successful rematch)
+7. Added CSS for rematch button, concept graph panel, concept cards, concept edges
+8. Added frontend types: `RematchResult`, `ConceptGraphConcept`, `ConceptGraphAdjacency`, `ConceptGraphResponse`
+9. Added `ConceptGraphAndRematch.test.tsx` — 9 Vitest component tests
+10. Added BDD e2e tests: §16 (rematch endpoint), §17 (concept graph with adjacencies, namespace filter) — 4 new Playwright scenarios
+11. Updated hook mocks in all 3 existing LivingContextGraph test files
+12. Final state: 186 test files, 1722 tests pass (9 new), TypeScript clean, lint 0 errors
+
+**Criteria advanced:**
+- #3 — Dynamic semantics now visualized in ConceptGraphPanel (learned concepts, co-occurrence edges, filterable)
+- #5 — Rematch button enables recruiter to re-run matching from the UI
+- #7 — Concept graph panel added to LivingContextGraph alongside existing panels
+
+**Next priorities:**
+- Merge PR #147 (or new PR) to main
+- Close superseded PRs #135–#146
+- Wire concept graph into person profile page (criterion #1 — shared graph)
+- Add repo structure overlay detail panel (criterion #4 — deeper repo decomposition view)
+- Run BDD Playwright tests against local dev server end-to-end
+
+---
+
 ### 2026-06-30 — Session 8919695b (Devin Automation)
 
 **Action:** Analyze open PRs, consolidate + continue development, add recruiter-facing rematch endpoint.

@@ -57,6 +57,24 @@ vi.mock('../../../hooks/useEvidenceFreshness', () => ({
   }),
 }));
 
+vi.mock('../../../hooks/useRematch', () => ({
+  useRematch: () => ({
+    rematch: vi.fn().mockResolvedValue(null),
+    result: null,
+    isRunning: false,
+    error: null,
+  }),
+}));
+
+vi.mock('../../../hooks/useConceptGraph', () => ({
+  useConceptGraph: () => ({
+    graph: null,
+    isLoading: false,
+    error: null,
+    refetch: vi.fn(),
+  }),
+}));
+
 function makeLivingContext(): LivingContextReadModel {
   return {
     person: {

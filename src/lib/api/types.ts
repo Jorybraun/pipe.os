@@ -1713,6 +1713,54 @@ export interface PostRespondResponse {
   rcd?: RoleContextDocument | null;
 }
 
+export interface RematchResult {
+  candidateId: string;
+  status: string;
+  matchRunId: string | null;
+  repoId: number | null;
+  prNumber: number | null;
+  evaluatedCount: number;
+  topChallenge: {
+    challengeId: string;
+    repoId: number;
+    prNumber: number;
+    rank: number | null;
+    alignedDemandCount: number;
+    stretchCount: number;
+    eligible: boolean;
+  } | null;
+  reason?: string;
+}
+
+export interface ConceptGraphConcept {
+  id: string;
+  canonicalKey: string;
+  namespace: string;
+  label: string;
+  description: string | null;
+  aliases: string[];
+  metadata: Record<string, unknown>;
+  observationCount: number;
+  firstObservedAt: number | null;
+  lastObservedAt: number | null;
+  createdAt: string;
+  updatedAt: string;
+}
+
+export interface ConceptGraphAdjacency {
+  fromConceptKey: string;
+  toConceptKey: string;
+  dimension: string;
+  stretchAllowed: boolean;
+  confidence: number | null;
+}
+
+export interface ConceptGraphResponse {
+  totalConcepts: number;
+  concepts: ConceptGraphConcept[];
+  adjacencies?: ConceptGraphAdjacency[];
+}
+
 export interface PostSynthesizeRequest {
   state: InterviewState;
 }

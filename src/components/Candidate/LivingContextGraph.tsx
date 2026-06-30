@@ -1,4 +1,4 @@
-import { useEffect, useMemo, useState } from 'react';
+import { useCallback, useEffect, useMemo, useState } from 'react';
 import {
   Activity,
   AlertTriangle,
@@ -11,9 +11,13 @@ import {
   RefreshCw,
   Search,
   ShieldCheck,
+  Shuffle,
   UserRound,
+  Zap,
 } from 'lucide-react';
 import type {
+  ConceptGraphAdjacency,
+  ConceptGraphConcept,
   CoverageLevel,
   EvidenceFreshnessResponse,
   EvidenceGapReport,
@@ -26,6 +30,7 @@ import type {
   LivingContextSignal,
   LivingContextSourceRef,
   MatchProvenanceChain,
+  RematchResult,
   StandaloneReviewExcludedPacket,
   StandaloneReviewEvaluatedChallenge,
   StandaloneReviewMatchRecord,
@@ -37,10 +42,12 @@ import type {
   StandaloneReviewMatchNarrative,
   StandaloneReviewStretchArea,
 } from '../../lib/api/types';
+import { useConceptGraph } from '../../hooks/useConceptGraph';
 import { useEvidenceFreshness } from '../../hooks/useEvidenceFreshness';
 import { useEvidenceGaps } from '../../hooks/useEvidenceGaps';
 import { useEvidenceLineage } from '../../hooks/useEvidenceLineage';
 import { useMatchProvenance } from '../../hooks/useMatchProvenance';
+import { useRematch } from '../../hooks/useRematch';
 import { useLivingContext } from '../../hooks/useLivingContext';
 import { buildLivingContextBranches } from '../../lib/livingContextTree';
 import { ContextRecordForest } from './ContextRecordTree';
@@ -1938,6 +1945,197 @@ function EvidenceDepthPanel({
   );
 }
 
+function ConceptGraphPanel({
+  concepts,
+  adjacencies,
+  isLoading,
+  onRefresh,
+}: {
+  concepts: ConceptGraphConcept[];
+  adjacencies: ConceptGraphAdjacency[];
+  isLoading: boolean;
+  onRefresh: () => void;
+}): JSX.Element | null {
+  const [filter, setFilter] = useState('');
+  const normalizedFilter = filter.trim().toLowerCase();
+
+  const visibleConcepts = useMemo(() => {
+    if (!normalizedFilter) return concepts;
+    return concepts.filter(
+      (c) =>
+        c.canonicalKey.toLowerCase().includes(normalizedFilter)
+        || c.label.toLowerCase().includes(normalizedFilter)
+        || c.namespace.toLowerCase().includes(normalizedFilter)
+        || c.aliases.some((a) => a.toLowerCase().includes(normalizedFilter)),
+    );
+  }, [concepts, normalizedFilter]);
+
+  const visibleConceptKeys = useMemo(
+    () => new Set(visibleConcepts.map((c) => c.canonicalKey)),
+    [visibleConcepts],
+  );
+
+  const visibleAdjacencies = useMemo(
+    () =>
+      adjacencies.filter(
+        (a) => visibleConceptKeys.has(a.fromConceptKey) && visibleConceptKeys.has(a.toConceptKey),
+      ),
+    [adjacencies, visibleConceptKeys],
+  );
+
+  if (concepts.length === 0 && !isLoading) return null;
+
+  return (
+    <section
+      className="living-context__concept-graph"
+      aria-label="Learned concept graph"
+      data-testid="concept-graph-panel"
+    >
+      <div className="living-context__section-head">
+        <div>
+          <div className="living-context__section-title">Learned concepts</div>
+          <div className="living-context__eyebrow">
+            {concepts.length} concept{concepts.length === 1 ? '' : 's'}
+            {adjacencies.length > 0 && ` · ${adjacencies.length} edge${adjacencies.length === 1 ? '' : 's'}`}
+          </div>
+        </div>
+        <button
+          type="button"
+          className="living-context__refresh"
+          onClick={onRefresh}
+          disabled={isLoading}
+          title="Refresh concept graph"
+          aria-label="Refresh concept graph"
+        >
+          <Network size={14} color="var(--lc-concept)" />
+        </button>
+      </div>
+
+      <div className="living-context__concept-filter">
+        <Search size={12} />
+        <input
+          value={filter}
+          onChange={(e) => setFilter(e.target.value)}
+          placeholder="Filter concepts..."
+          aria-label="Filter concepts"
+        />
+      </div>
+
+      <div className="living-context__concept-grid" data-testid="concept-grid">
+        {visibleConcepts.slice(0, 60).map((concept) => (
+          <article
+            key={concept.id}
+            className="living-context__concept-card"
+            data-testid="concept-card"
+          >
+            <div className="living-context__concept-head">
+              <span className="living-context__concept-label">{concept.label}</span>
+              <span className="living-context__concept-ns">{concept.namespace}</span>
+            </div>
+            <div className="living-context__concept-meta">
+              <span>{concept.observationCount} obs</span>
+              {concept.aliases.length > 0 && (
+                <span title={concept.aliases.join(', ')}>
+                  {concept.aliases.length} alias{concept.aliases.length === 1 ? '' : 'es'}
+                </span>
+              )}
+            </div>
+            {concept.description && (
+              <div className="living-context__concept-desc">{concept.description}</div>
+            )}
+          </article>
+        ))}
+        {visibleConcepts.length > 60 && (
+          <div className="living-context__eyebrow">
+            +{visibleConcepts.length - 60} more concepts
+          </div>
+        )}
+      </div>
+
+      {visibleAdjacencies.length > 0 && (
+        <div className="living-context__concept-edges" data-testid="concept-edges">
+          <div className="living-context__section-head">
+            <div className="living-context__section-title">Concept edges</div>
+            <div className="living-context__count">{visibleAdjacencies.length}</div>
+          </div>
+          <div className="living-context__concept-edge-list">
+            {visibleAdjacencies.slice(0, 40).map((edge, i) => (
+              <div
+                key={`${edge.fromConceptKey}:${edge.toConceptKey}:${edge.dimension}:${i}`}
+                className="living-context__concept-edge"
+              >
+                <span className="living-context__concept-edge-from">{edge.fromConceptKey}</span>
+                <span className="living-context__concept-edge-dim">
+                  {edge.dimension}
+                  {edge.stretchAllowed && ' (stretch)'}
+                </span>
+                <span className="living-context__concept-edge-to">{edge.toConceptKey}</span>
+                {edge.confidence !== null && (
+                  <span className="living-context__concept-edge-conf">
+                    {Math.round(edge.confidence * 100)}%
+                  </span>
+                )}
+              </div>
+            ))}
+          </div>
+        </div>
+      )}
+    </section>
+  );
+}
+
+function RematchButton({
+  candidateId,
+  onRematchComplete,
+}: {
+  candidateId: string;
+  onRematchComplete: (result: RematchResult) => void;
+}): JSX.Element {
+  const { rematch, isRunning, result, error } = useRematch(candidateId);
+
+  const handleRematch = useCallback(async (): Promise<void> => {
+    const res = await rematch();
+    if (res) onRematchComplete(res);
+  }, [rematch, onRematchComplete]);
+
+  return (
+    <div className="living-context__rematch" data-testid="rematch-section">
+      <button
+        type="button"
+        className="living-context__rematch-btn"
+        onClick={() => void handleRematch()}
+        disabled={isRunning}
+        title="Re-run deterministic matching with latest evidence"
+        aria-label="Re-match candidate"
+        data-testid="rematch-button"
+      >
+        <Shuffle size={13} className={isRunning ? 'spin' : undefined} />
+        {isRunning ? 'Matching...' : 'Re-match'}
+      </button>
+
+      {error && (
+        <div className="living-context__rematch-error" data-testid="rematch-error">
+          <AlertTriangle size={12} />
+          {error.message}
+        </div>
+      )}
+
+      {result && !error && (
+        <div className="living-context__rematch-result" data-testid="rematch-result">
+          <Zap size={12} color="var(--lc-concept)" />
+          <span>
+            {result.status === 'MATCHED' && result.topChallenge
+              ? `Matched → PR #${result.topChallenge.prNumber} (${result.topChallenge.alignedDemandCount} aligned, ${result.topChallenge.stretchCount} stretch)`
+              : result.status === 'NEEDS_MORE_EVIDENCE'
+                ? result.reason ?? 'More evidence needed before matching'
+                : `Status: ${result.status} · ${result.evaluatedCount} challenge${result.evaluatedCount === 1 ? '' : 's'} evaluated`}
+          </span>
+        </div>
+      )}
+    </div>
+  );
+}
+
 export function LivingContextGraph({
   candidateId,
   livingContextEndpoint,
@@ -1961,10 +2159,21 @@ export function LivingContextGraph({
   const challengePacketId = standaloneReviewMatch?.packetId ?? null;
   const { report: gapReport } = useEvidenceGaps(candidateId, challengePacketId);
   const { provenance } = useMatchProvenance(matchRunId);
+  const {
+    graph: conceptGraph,
+    isLoading: conceptsLoading,
+    refetch: refetchConcepts,
+  } = useConceptGraph({ limit: 100, withAdjacencies: true, minObs: 1 });
+  const [, setLastRematch] = useState<RematchResult | null>(null);
   const [selectedInteractionId, setSelectedInteractionId] = useState<string | null>(null);
   const [selectedSource, setSelectedSource] = useState<LivingContextSourceRef | null>(null);
   const [search, setSearch] = useState('');
   const normalizedSearch = search.trim().toLowerCase();
+
+  const handleRematchComplete = useCallback((result: RematchResult): void => {
+    setLastRematch(result);
+    void refetch();
+  }, [refetch]);
 
   useEffect(() => {
     if (!livingContext || selectedInteractionId !== null) return;
@@ -2173,6 +2382,11 @@ export function LivingContextGraph({
 
       <StandaloneReviewMatchPanel match={reviewMatch} />
 
+      <RematchButton
+        candidateId={candidateId}
+        onRematchComplete={handleRematchComplete}
+      />
+
       {hasSummaryContent && (
         <div className="living-context__summary" data-testid="living-context-summary">
           {summaryMetrics.map(([label, value]) => (
@@ -2189,6 +2403,13 @@ export function LivingContextGraph({
       <EvidenceLineagePanel lineage={lineage} />
       <EvidenceGapPanel report={gapReport} />
       <MatchProvenancePanel provenance={provenance} />
+
+      <ConceptGraphPanel
+        concepts={conceptGraph?.concepts ?? []}
+        adjacencies={conceptGraph?.adjacencies ?? []}
+        isLoading={conceptsLoading}
+        onRefresh={() => void refetchConcepts()}
+      />
 
       <MeetingEvidencePanel
         livingContext={livingContext}

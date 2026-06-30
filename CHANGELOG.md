@@ -7,6 +7,17 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Added — Recruiter re-match button + concept graph visualization (criteria #3, #5, #7)
+
+- `useRematch` hook (`src/hooks/useRematch.ts`) — calls `POST /candidates/:id/living-context/rematch`, returns result/error/loading state. Wired into LivingContextGraph with real-time UI update after successful rematch.
+- Re-match button in `LivingContextGraph.tsx` — recruiter can trigger deterministic re-matching from the CONTEXT_GRAPH tab. Shows matched PR info, needs-more-evidence reason, or error state inline.
+- `useConceptGraph` hook (`src/hooks/useConceptGraph.ts`) — fetches learned concepts and adjacency edges from `GET /internal/concept-graph` with namespace/query/minObs filters.
+- `ConceptGraphPanel` component in `LivingContextGraph.tsx` — renders learned concept cards (label, namespace, observation count, aliases, description), filterable search, and concept edge list with dimension/confidence. Satisfies criterion #3 (dynamic semantics visualization) and #7 (concept graph in the living context view).
+- Frontend types: `RematchResult`, `ConceptGraphConcept`, `ConceptGraphAdjacency`, `ConceptGraphResponse`.
+- `ConceptGraphAndRematch.test.tsx` — 9 Vitest component tests: concept card rendering, edge display, empty state, filter search, re-match button states (idle/running/matched/needs-evidence/error).
+- BDD e2e tests: §16 (rematch endpoint), §17 (concept graph with adjacencies, namespace filter) — 4 new Playwright scenarios.
+- Updated hook mocks in all 3 existing LivingContextGraph test files.
+
 ### Added — Recruiter-triggered re-match endpoint (criteria #5, #6)
 
 - `POST /api/v1/candidates/:id/living-context/rematch` — allows recruiters to re-run the deterministic candidate-to-PR matcher after new evidence arrives (resume upload, meeting transcript, assessment completion). Returns match status, matchRunId, selected repo/PR, and top challenge diagnostics. Uses temporal decay (90-day half-life) for evidence freshness weighting. Gated by `living_context_read` rollout gate.
