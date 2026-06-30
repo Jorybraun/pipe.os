@@ -109,6 +109,10 @@ function splitTextLines(value: string): string[] {
     .filter((line) => line.length > 0);
 }
 
+function isGitCommitSha(value: string): boolean {
+  return /^[0-9a-f]{40}$/i.test(value.trim());
+}
+
 export function InviteCreationModal({
   isOpen,
   onClose,
@@ -224,7 +228,7 @@ export function InviteCreationModal({
   const challengeExpectedEvidenceItems = splitTextLines(challengeExpectedEvidence);
   const requiresManualChallengePacket = interviewType === 'OPEN_SOURCE_BUG_FIX' && manualRepoOverride;
   const manualChallengePacketComplete = !requiresManualChallengePacket || (
-    challengeBaseCommitSha.trim().length === 40
+    isGitCommitSha(challengeBaseCommitSha)
     && challengeTitle.trim().length > 0
     && challengeInstructions.trim().length > 0
     && challengeSuccessCriteriaItems.length > 0

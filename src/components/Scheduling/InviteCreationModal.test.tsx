@@ -118,4 +118,52 @@ describe('InviteCreationModal open-source challenge packets', () => {
       ],
     }));
   });
+
+  it('keeps manual open-source packets blocked until the base commit is a 40-character hex SHA', () => {
+    mocks.useSchedulingConnection.mockReturnValue({
+      connection: null,
+    });
+    const onCreateInvite = vi.fn();
+
+    render(
+      <InviteCreationModal
+        isOpen
+        onClose={vi.fn()}
+        onCreateInvite={onCreateInvite}
+      />,
+    );
+
+    fireEvent.click(screen.getByRole('button', { name: /Open-source bug fix/i }));
+    fireEvent.change(screen.getByPlaceholderText('Jane Doe'), {
+      target: { value: 'Ada Lovelace' },
+    });
+    fireEvent.change(screen.getByPlaceholderText('jane@example.com'), {
+      target: { value: 'ada@example.com' },
+    });
+    fireEvent.click(screen.getByRole('button', { name: 'Specify repo manually' }));
+    fireEvent.change(screen.getByPlaceholderText('https://github.com/owner/repo'), {
+      target: { value: 'https://github.com/sourcegraph/sourcegraph' },
+    });
+    fireEvent.change(screen.getByPlaceholderText('PR number'), {
+      target: { value: '42' },
+    });
+    fireEvent.change(screen.getByPlaceholderText('40-character base commit SHA'), {
+      target: { value: 'zzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzz' },
+    });
+    fireEvent.change(screen.getByPlaceholderText('Fix streaming transcript ordering'), {
+      target: { value: 'Fix event ordering in the transcript stream' },
+    });
+    fireEvent.change(screen.getByPlaceholderText('Describe the exact bug, task, and boundaries.'), {
+      target: { value: 'Investigate and fix transcript segments arriving out of order after reconnect.' },
+    });
+    fireEvent.change(screen.getByPlaceholderText('One success criterion per line'), {
+      target: { value: 'Segments remain ordered by timestamp' },
+    });
+    fireEvent.change(screen.getByPlaceholderText('One required evidence item per line'), {
+      target: { value: 'Commit SHA on assessment branch' },
+    });
+
+    expect(screen.getByRole('button', { name: 'CREATE ASSESSMENT INVITE' })).toBeDisabled();
+    expect(onCreateInvite).not.toHaveBeenCalled();
+  });
 });
