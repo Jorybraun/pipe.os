@@ -1,6 +1,8 @@
 FROM codercom/code-server:4.22.1
 
 SHELL ["/bin/bash", "-o", "pipefail", "-c"]
+ENV PIPE_BRIDGE_REVISION="2026-06-30-terminal-crlf-v2"
+LABEL pipe.bridge.revision="2026-06-30-terminal-crlf-v2"
 
 # Switch to root to install system packages
 USER root

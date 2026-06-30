@@ -55,43 +55,72 @@ if [[ -f /usr/local/bin/agent-bridge.js ]]; then
   export AGENT_BRIDGE_PORT="${AGENT_BRIDGE_PORT:-8080}"
   export CODE_SERVER_PORT="${CODE_SERVER_PORT:-8082}"
 
-  echo "[entrypoint] Starting code-server on 127.0.0.1:${CODE_SERVER_PORT}"
-  code-server --auth none --bind-addr "127.0.0.1:${CODE_SERVER_PORT}" /workspace &
-  code_server_pid=$!
+  code_server_pid=""
+  bridge_pid=""
 
-  code_server_ready="false"
-  for _ in {1..60}; do
-    if timeout 1 bash -c "</dev/tcp/127.0.0.1/${CODE_SERVER_PORT}" 2>/dev/null; then
-      code_server_ready="true"
-      break
-    fi
-    if ! kill -0 "${code_server_pid}" >/dev/null 2>&1; then
-      wait "${code_server_pid}"
-      exit $?
-    fi
-    sleep 0.5
-  done
+  start_code_server() {
+    echo "[entrypoint] Starting code-server on 127.0.0.1:${CODE_SERVER_PORT}"
+    code-server --auth none --bind-addr "127.0.0.1:${CODE_SERVER_PORT}" /workspace &
+    code_server_pid=$!
+  }
 
-  if [[ "${code_server_ready}" != "true" ]]; then
+  wait_for_code_server_ready() {
+    for _ in {1..60}; do
+      if timeout 1 bash -c "</dev/tcp/127.0.0.1/${CODE_SERVER_PORT}" 2>/dev/null; then
+        return 0
+      fi
+      if ! kill -0 "${code_server_pid}" >/dev/null 2>&1; then
+        wait "${code_server_pid}" || true
+        return 1
+      fi
+      sleep 0.5
+    done
+    return 1
+  }
+
+  start_bridge() {
+    echo "[entrypoint] Starting workspace bridge/router on 0.0.0.0:${AGENT_BRIDGE_PORT}"
+    node /usr/local/bin/agent-bridge.js &
+    bridge_pid=$!
+  }
+
+  start_code_server
+  if ! wait_for_code_server_ready; then
     echo "[entrypoint] code-server did not become ready on 127.0.0.1:${CODE_SERVER_PORT}"
     kill "${code_server_pid}" >/dev/null 2>&1 || true
     exit 1
   fi
 
-  echo "[entrypoint] Starting workspace bridge/router on 0.0.0.0:${AGENT_BRIDGE_PORT}"
-  node /usr/local/bin/agent-bridge.js &
-  bridge_pid=$!
+  start_bridge
 
   shutdown() {
     kill "${bridge_pid}" "${code_server_pid}" >/dev/null 2>&1 || true
     wait >/dev/null 2>&1 || true
+    exit 0
   }
   trap shutdown TERM INT
 
-  wait -n "${bridge_pid}" "${code_server_pid}"
-  exit_code=$?
-  shutdown
-  exit "${exit_code}"
+  while true; do
+    set +e
+    wait -n "${bridge_pid}" "${code_server_pid}"
+    child_exit=$?
+    set -e
+
+    if ! kill -0 "${code_server_pid}" >/dev/null 2>&1; then
+      echo "[entrypoint] code-server exited with ${child_exit}; restarting"
+      start_code_server
+      if ! wait_for_code_server_ready; then
+        echo "[entrypoint] restarted code-server did not become ready on 127.0.0.1:${CODE_SERVER_PORT}"
+        kill "${bridge_pid}" "${code_server_pid}" >/dev/null 2>&1 || true
+        exit 1
+      fi
+    fi
+
+    if ! kill -0 "${bridge_pid}" >/dev/null 2>&1; then
+      echo "[entrypoint] workspace bridge exited with ${child_exit}; restarting"
+      start_bridge
+    fi
+  done
 fi
 
 # ── Start code-server ──────────────────────────────────────────────────────────

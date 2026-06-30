@@ -61,6 +61,8 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Fixed — Candidate repo matching
 
+- Code-server container images now expose an explicit bridge revision in health checks, forcing dev-container deploys to roll forward when the terminal bridge changes and making stale image rollouts visible in smoke tests.
+- Code-server containers now restart the workspace bridge or code-server child process if either exits, avoiding a dead workspace when one side of the dev-container router crashes.
 - Deployed workspace smoke now creates a real commit through the live container terminal and finalizes it into source-backed assessment evidence, proving the open-source task path reaches a submitted commit.
 - Standalone `DEV_CONTAINER_CHALLENGE` and `OPEN_SOURCE_BUG_FIX` invites now use the source-backed D1 review-challenge matcher once candidate evidence is ready, caching the matched repo/PR on the scheduled interview instead of leaving candidates stuck without a repository assignment.
 - Contact-first scheduled interview context records now retain recruiter notes in graph qualifiers as well as exact source text.

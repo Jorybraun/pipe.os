@@ -32,6 +32,8 @@ const INTERVIEW_TYPE = process.env.WORKSPACE_SMOKE_INTERVIEW_TYPE || 'DEV_CONTAI
 const RAW_PR_NUMBER = process.env.WORKSPACE_SMOKE_PR_NUMBER || (INTERVIEW_TYPE === 'OPEN_SOURCE_BUG_FIX' ? '' : '1');
 const PR_NUMBER = RAW_PR_NUMBER ? Number(RAW_PR_NUMBER) : null;
 const BASE_COMMIT_SHA = process.env.WORKSPACE_SMOKE_BASE_COMMIT_SHA || '';
+const EXPECTED_BRIDGE_REVISION = process.env.WORKSPACE_SMOKE_EXPECTED_BRIDGE_REVISION
+  || '2026-06-30-terminal-crlf-v2';
 const REMOTE = !APP_BASE.includes('localhost') && !APP_BASE.includes('127.0.0.1');
 
 function assertEnv() {
@@ -328,6 +330,11 @@ async function main() {
   if (bridgeHealth?.ok !== true) {
     throw new Error(`Workspace bridge health check failed: ${JSON.stringify(bridgeHealth)}`);
   }
+  if (REMOTE && bridgeHealth.bridgeRevision !== EXPECTED_BRIDGE_REVISION) {
+    throw new Error(
+      `Workspace bridge image revision mismatch: expected ${EXPECTED_BRIDGE_REVISION}, got ${JSON.stringify(bridgeHealth)}`,
+    );
+  }
   const finalizeResponse = await fetch(`${ROOM_BASE}${proxyBasePath}/assessment/finalize`, {
     method: 'POST',
     headers: {
@@ -403,6 +410,7 @@ async function main() {
     proxyPathReady: Boolean(readySession.proxyPath),
     bridgeHealthReady: true,
     bridgeAgent: bridgeHealth.agent || null,
+    bridgeRevision: bridgeHealth.bridgeRevision || null,
     finalizerEndpointBlocked: true,
     terminalCommitCreated: true,
     workspaceCommitSha: workspaceCommit.commitSha,

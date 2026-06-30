@@ -16,6 +16,7 @@ const {
 const BRIDGE_PORT = Number(process.env.AGENT_BRIDGE_PORT || 8081);
 const CODE_SERVER_PORT = Number(process.env.CODE_SERVER_PORT || 8080);
 const WORKSPACE = process.env.WORKSPACE_DIR || '/workspace';
+const BRIDGE_REVISION = process.env.PIPE_BRIDGE_REVISION || 'local-dev';
 const REQUESTED_AGENT_NAME = String(process.env.AGENT_TYPE || '').trim();
 const SUPPORTED_AGENT_TYPES = new Set(['devin']);
 const AGENT_NAME = SUPPORTED_AGENT_TYPES.has(REQUESTED_AGENT_NAME) ? REQUESTED_AGENT_NAME : '';
@@ -1907,7 +1908,7 @@ const server = http.createServer(async (req, res) => {
   const url = new URL(req.url, 'http://localhost');
   if (url.pathname === '/health') {
     res.writeHead(200, { 'Content-Type': 'application/json' });
-    res.end(JSON.stringify({ ok: true, agent: AGENT_NAME, status: agentStatus, ready: agentReady }));
+    res.end(JSON.stringify({ ok: true, agent: AGENT_NAME, status: agentStatus, ready: agentReady, bridgeRevision: BRIDGE_REVISION }));
     return;
   }
   if (url.pathname === '/start') {

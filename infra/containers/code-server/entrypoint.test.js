@@ -41,4 +41,17 @@ describe('code-server container entrypoint', () => {
     expect(script).toContain('Starting workspace bridge/router on 0.0.0.0:${AGENT_BRIDGE_PORT}');
     expect(script).not.toContain('[[ -n "${AGENT_TYPE:-}" && "${AGENT_TYPE}" != "none"');
   });
+
+  it('supervises bridge and code-server children instead of exiting the workspace on a child stop', () => {
+    const script = readFileSync(
+      path.join(process.cwd(), 'infra/containers/code-server/entrypoint.sh'),
+      'utf8',
+    );
+
+    expect(script).toContain('while true; do');
+    expect(script).toContain('wait -n "${bridge_pid}" "${code_server_pid}"');
+    expect(script).toContain('code-server exited with ${child_exit}; restarting');
+    expect(script).toContain('workspace bridge exited with ${child_exit}; restarting');
+    expect(script).not.toContain('exit "${exit_code}"');
+  });
 });
