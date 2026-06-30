@@ -13,6 +13,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Fixed — Scheduling
 
+- Interview cards now show the assigned open-source assessment task, repo/PR, and base commit from the source-backed challenge packet before candidate work starts, so recruiters can trust what was assigned without opening the full detail page.
 - Calendly invites now include stable Pipe interview tracking, keep provider links free of dev basic-auth credentials, resolve same-email bookings by tracking id, and record booking-confirmation emails separately from original invite delivery.
 - The deployed MVP browser smoke now uses a remote-safe timeout for the People context drawer, so app-dev validation does not fail while the source-backed context panel is still loading.
 - The authenticated MVP browser smoke now follows the current Interview plans and People UI, injects Clerk's testing token in the smoke context, and retries the initial app-shell load so local route validation fails on product regressions instead of stale selectors or auth handoff flake.

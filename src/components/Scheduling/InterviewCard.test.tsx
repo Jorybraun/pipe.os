@@ -88,8 +88,18 @@ describe('InterviewCard assessment progress', () => {
           sourceRefType: 'review_challenge_packet',
           sourceRefId: 'challenge-packet-card',
           evidenceRole: 'assigned_challenge',
-          exactText: 'Fix the assessment card progress regression.',
-          locator: { repositoryUrl: 'https://github.com/open-source/widgets' },
+          exactText: [
+            'Repo: https://github.com/open-source/widgets',
+            'Base commit: 1111111111111111111111111111111111111111',
+            'Task: Fix the assessment card progress regression.',
+            'Success criteria:',
+            '- Card shows stage and next action',
+          ].join('\n'),
+          locator: {
+            repositoryUrl: 'https://github.com/open-source/widgets',
+            githubPrNumber: 72,
+            baseCommitSha: '1111111111111111111111111111111111111111',
+          },
         },
         latestEvent: {
           id: 'assessment-event-card',
@@ -120,10 +130,104 @@ describe('InterviewCard assessment progress', () => {
     expect(progress).toHaveTextContent('WORKSPACE');
     expect(progress).toHaveTextContent('Ready · open-source/widgets · base 111111111111');
     expect(progress).toHaveTextContent('open-source/widgets');
+    expect(progress).toHaveTextContent('PR #72');
+    expect(progress).toHaveTextContent('BASE');
+    expect(progress).toHaveTextContent('111111111111');
+    expect(progress).toHaveTextContent('TASK');
+    expect(progress).toHaveTextContent('Fix the assessment card progress regression.');
     expect(progress).toHaveTextContent('abcdef123456');
     expect(progress).not.toHaveTextContent('assessment-session-card');
     expect(progress).not.toHaveTextContent('challenge-packet-card');
     expect(progress).not.toHaveTextContent('abcdef1234567890abcdef1234567890abcdef12');
+  });
+
+  it('shows the assigned open-source task before candidate work starts', () => {
+    renderCard({
+      id: 'interview-setup-task',
+      createdAt: '2026-06-23T00:00:00.000Z',
+      updatedAt: '2026-06-23T00:20:00.000Z',
+      status: 'INVITED',
+      interviewType: 'OPEN_SOURCE_BUG_FIX',
+      meetingType: 'DIRECT_VIDEO_CALL',
+      scheduledAt: null,
+      githubRepoUrl: 'https://github.com/open-source/streaming',
+      assessmentSetup: {
+        status: 'reviewable_task_assigned',
+        kind: 'manual_open_source_task',
+        source: 'recruiter_manual_override',
+        blocksPositiveAssessment: false,
+        message: 'A concrete open-source task packet was assigned by the recruiter.',
+      },
+      assessmentProgress: {
+        session: {
+          id: 'assessment-session-setup',
+          ingestionKey: 'assessment-session:setup',
+          interviewId: 'interview-setup-task',
+          candidateId: null,
+          workspaceId: null,
+          workspacePersonId: null,
+          applicationId: null,
+          mode: 'OPEN_SOURCE_BUG_FIX',
+          state: 'CHALLENGE_ASSIGNED',
+          createdAt: '2026-06-23T00:00:00.000Z',
+          updatedAt: '2026-06-23T00:20:00.000Z',
+        },
+        stage: 'CHALLENGE_READY',
+        nextAction: 'OPEN_ROOM_OR_WORKSPACE',
+        nextActionLabel: 'Open the room and launch the controlled workspace.',
+        hasChallengePacket: true,
+        hasWorkEvidence: false,
+        hasMessageEvidence: false,
+        hasDevContainerEvidence: false,
+        hasToolUsageEvidence: false,
+        hasCommitSubmission: false,
+        hasFinalSubmission: false,
+        hasAiInteraction: false,
+        hasTranscriptEvidence: false,
+        hasTestEvidence: false,
+        evidenceCounts: [{ kind: 'recruiter_note', count: 1 }],
+        sourceRefCounts: [{ kind: 'open_source_challenge_packet', count: 1 }],
+        challenge: {
+          sourceRefType: 'open_source_challenge_packet',
+          sourceRefId: 'challenge-packet-setup',
+          evidenceRole: 'assigned_challenge',
+          exactText: [
+            'Repo: https://github.com/open-source/streaming',
+            'Base commit: 2222222222222222222222222222222222222222',
+            'Task: Fix reconnect ordering in the event stream.',
+            'Success criteria:',
+            '- Reconnect keeps event order deterministic',
+            'Expected evidence:',
+            '- Commit SHA on assessment branch',
+          ].join('\n'),
+          locator: {
+            repositoryUrl: 'https://github.com/open-source/streaming',
+            baseCommitSha: '2222222222222222222222222222222222222222',
+          },
+        },
+        latestEvent: {
+          id: 'assessment-event-setup',
+          kind: 'recruiter_note',
+          sequence: 1,
+          occurredAt: '2026-06-23T00:20:00.000Z',
+        },
+        commit: null,
+        evaluation: null,
+      },
+    });
+
+    const progress = screen.getByTestId('interview-card-assessment-progress');
+    expect(progress).toHaveTextContent('Challenge ready');
+    expect(progress).toHaveTextContent('Open the room and launch the controlled workspace.');
+    expect(progress).toHaveTextContent('challenge');
+    expect(progress).toHaveTextContent('REPO');
+    expect(progress).toHaveTextContent('open-source/streaming');
+    expect(progress).toHaveTextContent('BASE');
+    expect(progress).toHaveTextContent('222222222222');
+    expect(progress).toHaveTextContent('TASK');
+    expect(progress).toHaveTextContent('Fix reconnect ordering in the event stream.');
+    expect(progress).not.toHaveTextContent('challenge-packet-setup');
+    expect(progress).not.toHaveTextContent('assessment-session-setup');
   });
 
   it('shows setup gaps for assessment interviews before a session exists', () => {

@@ -7,6 +7,7 @@ import { StatusOverrideModal } from './StatusOverrideModal';
 import { InviteToCallModal } from './InviteToCallModal';
 import { useApiClient } from '../../hooks/useApiClient';
 import type { InterviewStatus } from '../../lib/scheduling/types';
+import { summarizeAssessmentChallenge } from '../../lib/scheduling/assessmentChallenge';
 
 // TODO: Wire candidateName and pipelineTitle via enriched data once we join
 // across models. For MVP these are passed as props by SchedulingDashboard which
@@ -223,10 +224,19 @@ export function InterviewCard({
     : assessmentSetup?.status === 'reviewable_task_assigned'
       ? 'challenge assigned'
       : 'no assessment session yet';
+  const assessmentChallenge = summarizeAssessmentChallenge(assessmentProgress?.challenge ?? null);
   const assessmentRepoLabel = repoLabelFromUrl(
-    assessmentProgress?.commit?.repositoryUrl ?? interview.githubRepoUrl,
+    assessmentProgress?.commit?.repositoryUrl
+      ?? assessmentChallenge?.repositoryUrl
+      ?? interview.githubRepoUrl,
   );
-  const assessmentPrLabel = interview.githubPrNumber ? `PR #${interview.githubPrNumber}` : null;
+  const assessmentPrNumber = assessmentChallenge?.githubPrNumber ?? interview.githubPrNumber ?? null;
+  const assessmentPrLabel = assessmentPrNumber ? `PR #${assessmentPrNumber}` : null;
+  const assessmentBaseLabel = shortCommitSha(
+    assessmentProgress?.commit?.baseCommitSha
+      ?? assessmentChallenge?.baseCommitSha
+      ?? null,
+  );
   const assessmentCommitLabel = shortCommitSha(assessmentProgress?.commit?.commitSha);
   const assessmentEvaluationLabel = assessmentProgress?.evaluation?.status
     ? sentenceCaseToken(assessmentProgress.evaluation.status)
@@ -365,6 +375,26 @@ export function InterviewCard({
                   </div>
                   <div style={{ minWidth: 0, fontSize: 10, color: 'var(--pipe-text-dim)', overflowWrap: 'anywhere' }}>
                     {assessmentPrLabel ? `${assessmentRepoLabel} · ${assessmentPrLabel}` : assessmentRepoLabel}
+                  </div>
+                </>
+              )}
+              {assessmentBaseLabel && (
+                <>
+                  <div style={{ fontSize: 9, color: 'var(--pipe-text-muted)', letterSpacing: '0.12em', fontWeight: 700 }}>
+                    BASE
+                  </div>
+                  <div style={{ minWidth: 0, fontSize: 10, color: 'var(--pipe-text-dim)', overflowWrap: 'anywhere' }}>
+                    {assessmentBaseLabel}
+                  </div>
+                </>
+              )}
+              {assessmentChallenge?.task && (
+                <>
+                  <div style={{ fontSize: 9, color: 'var(--pipe-text-muted)', letterSpacing: '0.12em', fontWeight: 700 }}>
+                    TASK
+                  </div>
+                  <div style={{ minWidth: 0, fontSize: 10, color: 'var(--pipe-text-dim)', overflowWrap: 'anywhere' }}>
+                    {compactText(assessmentChallenge.task, 120)}
                   </div>
                 </>
               )}
