@@ -21,6 +21,42 @@ vi.mock('../../../hooks/useLivingContext', () => ({
   }),
 }));
 
+vi.mock('../../../hooks/useEvidenceGaps', () => ({
+  useEvidenceGaps: () => ({
+    report: null,
+    isLoading: false,
+    error: null,
+    refetch: vi.fn(),
+  }),
+}));
+
+vi.mock('../../../hooks/useMatchProvenance', () => ({
+  useMatchProvenance: () => ({
+    provenance: null,
+    isLoading: false,
+    error: null,
+    refetch: vi.fn(),
+  }),
+}));
+
+vi.mock('../../../hooks/useEvidenceLineage', () => ({
+  useEvidenceLineage: () => ({
+    lineage: null,
+    isLoading: false,
+    error: null,
+    refetch: vi.fn(),
+  }),
+}));
+
+vi.mock('../../../hooks/useEvidenceFreshness', () => ({
+  useEvidenceFreshness: () => ({
+    freshness: null,
+    isLoading: false,
+    error: null,
+    refetch: vi.fn(),
+  }),
+}));
+
 function makeLivingContext(): LivingContextReadModel {
   return {
     person: {

@@ -7,6 +7,11 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Added — Vitest component tests for EvidenceGapPanel and MatchProvenancePanel
+
+- `EvidenceGapPanel.test.tsx` — 3 tests covering null report, empty demands, full gap analysis rendering (coverage bar segments, demand cards with badges, matched/missing concepts, supporting assertion quotes, recommendations).
+- `MatchProvenancePanel.test.tsx` — 3 tests covering null provenance, empty chain, full provenance chain rendering (decision summary metrics, demand entries with scores, stretch indicators, assertion decay, source span quotes, interaction trace).
+
 ### Added — Frontend evidence gap analysis panel (criteria #6, #7)
 
 - `EvidenceGapPanel` component in `LivingContextGraph.tsx` — renders per-demand coverage (strong/partial/weak/none) with a proportional coverage bar, per-demand cards with coverage badge and concept tags (matched in green, missing struck-through), supporting assertion quotes, and actionable recommendations.
