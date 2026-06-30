@@ -14,6 +14,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - `fullPipelineE2E.test.ts`: pass `personContextMode: 'attributed'` for assertion source-span linkage
 - `reviewSessionV2.test.ts`: isolate `retryable_standalone_ingestion` responder; add candidate DB mock for `submit-challenge-response`
 - `persistence.ts`: validate `review_challenge_packet` exactText against stored packet JSON when exactText is JSON
+- `backfillScheduled.test.ts`: add 8-test suite covering rollout gate enforcement, candidate/contact/resume/meeting batch backfill, idempotency, task dependency ordering, and task definition completeness
 
 ### Added — Human assessment decisions
 
