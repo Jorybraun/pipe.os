@@ -1532,8 +1532,11 @@ function codeReviewNextStepRecommendation(
   score: CodeReviewScoreSummary | null,
   submission: CodeReviewSubmissionDetail | null,
   match: CodeReviewMatchDetail | null,
+  evidencePlan: CodeReviewEvidencePlanItem[],
 ): CodeReviewNextStep {
   if (match && match.status !== 'MATCHED') {
+    const plannedStep = codeReviewBlockedMatchNextStep(evidencePlan);
+    if (plannedStep) return plannedStep;
     return {
       value: 'Collect missing evidence',
       detail: 'Create the targeted follow-up assessment before sending or trusting a PR challenge.',
@@ -1588,6 +1591,52 @@ function codeReviewNextStepRecommendation(
     value: 'Collect code-review signal',
     detail: 'Send or wait for the candidate review before making a hiring decision.',
     tone: 'neutral',
+  };
+}
+
+function codeReviewBlockedMatchNextStep(evidencePlan: CodeReviewEvidencePlanItem[]): CodeReviewNextStep | null {
+  const item = evidencePlan[0];
+  if (!item) return null;
+
+  const signal = item.missingSignal.toLowerCase();
+  const gap = item.source.gap.toLowerCase();
+  const question = item.question.trim();
+  const askDetail = question
+    ? `Ask: ${question}`
+    : `Collect evidence for ${item.missingSignal.toLowerCase()} before rerunning repo matching.`;
+
+  if (item.recommendedAssessment === 'manual_review_selection' || signal.includes('repo') || signal.includes('challenge') || gap.includes('repo') || gap.includes('challenge')) {
+    return {
+      value: item.recommendedAssessment === 'manual_review_selection'
+        ? 'Select source-backed PR'
+        : 'Ingest repo challenge',
+      detail: item.recommendedAssessment === 'manual_review_selection'
+        ? `${item.whyItMatters} Pick a real PR/task packet with source spans before sending the candidate link.`
+        : `${item.whyItMatters} Add another labelled, source-backed repo packet before rerunning matching.`,
+      tone: 'blocked',
+    };
+  }
+
+  if (signal.includes('role') || gap.includes('role')) {
+    return {
+      value: 'Add role requirements',
+      detail: `${item.whyItMatters} Add source-backed role requirements, then rerun repo matching.`,
+      tone: 'blocked',
+    };
+  }
+
+  if (item.recommendedAssessment === 'technical_pr_review') {
+    return {
+      value: 'Create technical follow-up',
+      detail: `${item.whyItMatters} ${askDetail}`,
+      tone: 'blocked',
+    };
+  }
+
+  return {
+    value: 'Schedule evidence call',
+    detail: `${item.whyItMatters} ${askDetail}`,
+    tone: 'blocked',
   };
 }
 
@@ -2809,17 +2858,18 @@ export default function InterviewDetailPage(): JSX.Element {
   const codeReviewScore = interview.codeReviewScore ?? null;
   const codeReviewScoreValue = codeReviewScoreHeadline(codeReviewScore);
   const codeReviewScoreDetail = codeReviewScoreNarrative(codeReviewScore);
+  const codeReviewEvidencePlan = codeReviewEvidencePlanItems(codeReviewMatch, codeReviewSubmission);
   const codeReviewNextStep = codeReviewNextStepRecommendation(
     codeReviewScore,
     codeReviewSubmission,
     codeReviewMatch,
+    codeReviewEvidencePlan,
   );
   const codeReviewDecisionRisk = codeReviewDecisionRiskSummary(
     codeReviewScore,
     codeReviewSubmission,
     codeReviewMatch,
   );
-  const codeReviewEvidencePlan = codeReviewEvidencePlanItems(codeReviewMatch, codeReviewSubmission);
   const codeReviewEvidenceRefresh = codeReviewMatch?.evidenceRefresh ?? null;
   const codeReviewEvidenceFollowUp = codeReviewMatch?.evidenceFollowUp ?? null;
   const codeReviewEvidenceFollowUpBlocked = codeReviewEvidenceFollowUp?.state === 'BLOCKED';

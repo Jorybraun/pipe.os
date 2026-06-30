@@ -771,7 +771,15 @@ async function backfillAssessmentsBatch(
             ass.application_id, ass.metadata_json,
             ass.started_at, ass.submitted_at, ass.completed_at, ass.created_at
        FROM assessment_sessions ass
-      WHERE ass.candidate_id IS NOT NULL
+      WHERE (
+          ass.candidate_id IS NOT NULL
+          OR EXISTS (
+            SELECT 1
+              FROM scheduled_interviews si
+             WHERE si.id = ass.interview_id
+               AND si.candidate_id IS NOT NULL
+          )
+        )
         AND ass.state NOT IN ('INTAKE', 'CANCELLED')
         AND (
           NOT EXISTS (
@@ -843,7 +851,15 @@ async function backfillAssessmentEvaluationsBatch(
             ass.application_id, ass.metadata_json,
             ass.started_at, ass.submitted_at, ass.completed_at, ass.created_at
        FROM assessment_sessions ass
-      WHERE ass.candidate_id IS NOT NULL
+      WHERE (
+          ass.candidate_id IS NOT NULL
+          OR EXISTS (
+            SELECT 1
+              FROM scheduled_interviews si
+             WHERE si.id = ass.interview_id
+               AND si.candidate_id IS NOT NULL
+          )
+        )
         AND ass.state NOT IN ('INTAKE', 'CANCELLED')
         AND EXISTS (
           SELECT 1
@@ -1045,6 +1061,8 @@ export async function runScheduledBackfill(env: Env): Promise<BackfillScheduledR
 
       if (result.done) {
         await orchestrator.markCompleted(taskKey);
+      } else {
+        await orchestrator.markPending(taskKey);
       }
     } catch (err) {
       const msg = err instanceof Error ? err.message : String(err);

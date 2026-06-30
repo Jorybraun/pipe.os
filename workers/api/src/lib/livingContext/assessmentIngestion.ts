@@ -105,6 +105,26 @@ export interface AssessmentIngestionResult {
   contextRecordCount: number;
 }
 
+async function resolveAssessmentCandidateId(
+  db: D1Database,
+  session: AssessmentSessionRow,
+): Promise<string | null> {
+  if (session.candidate_id) return session.candidate_id;
+  if (!session.interview_id) return null;
+
+  try {
+    const row = await db.prepare(
+      `SELECT candidate_id
+         FROM scheduled_interviews
+        WHERE id = ?1
+        LIMIT 1`,
+    ).bind(session.interview_id).first<{ candidate_id: string | null }>();
+    return row?.candidate_id ?? null;
+  } catch {
+    return null;
+  }
+}
+
 function safeParseJson(raw: string): JsonObject {
   try {
     const parsed = JSON.parse(raw) as unknown;
@@ -134,9 +154,10 @@ export async function ingestAssessmentToLivingContext(
   claims: AssessmentEvaluationClaimRow[],
   claimSourceRefs: Map<string, AssessmentClaimSourceRefRow[]>,
 ): Promise<AssessmentIngestionResult | null> {
-  if (!session.candidate_id) return null;
+  const candidateId = await resolveAssessmentCandidateId(db, session);
+  if (!candidateId) return null;
 
-  const identity = await ensureCandidateLivingContext(db, session.candidate_id);
+  const identity = await ensureCandidateLivingContext(db, candidateId);
   if (!identity) return null;
 
   const store = new LivingContextStore(db);
@@ -252,7 +273,7 @@ export async function ingestAssessmentToLivingContext(
       workspacePersonId,
       episodeId: episode.id,
       subjectType: 'candidate',
-      subjectId: session.candidate_id,
+      subjectId: candidateId,
       predicate: `assessment:${event.kind}`,
       narrative: event.narrative,
       qualifiers: {
@@ -361,7 +382,7 @@ export async function ingestAssessmentToLivingContext(
         workspacePersonId,
         episodeId: claimEpisode.id,
         subjectType: 'candidate',
-        subjectId: session.candidate_id,
+        subjectId: candidateId,
         predicate: `evaluation:${claim.dimension}`,
         narrative: claim.narrative,
         qualifiers: {

@@ -1295,12 +1295,15 @@ describe('InterviewDetailPage', () => {
     expect(hiringReadout).toHaveTextContent('Needs evidence');
     expect(hiringReadout).toHaveTextContent('Do not rely on score yet');
     expect(hiringReadout).toHaveTextContent('Repo fit not proven');
-    expect(hiringReadout).toHaveTextContent('Collect missing evidence');
+    expect(hiringReadout).toHaveTextContent('Schedule evidence call');
+    expect(hiringReadout).toHaveTextContent(SOURCE_BACKED_WORK_EVIDENCE_QUESTION);
     expect(decision).toHaveTextContent('Resolve the missing source-backed evidence before relying on this code-review assignment.');
     expect(decision).toHaveTextContent('NEEDS MORE EVIDENCE');
     expect(decision).toHaveTextContent('resolve missing evidence');
     expect(decision).toHaveTextContent('Recommended next step');
-    expect(decision).toHaveTextContent('Collect missing evidence');
+    expect(decision).toHaveTextContent('Schedule evidence call');
+    expect(decision).toHaveTextContent('Ask:');
+    expect(decision).toHaveTextContent(SOURCE_BACKED_WORK_EVIDENCE_QUESTION);
     expect(decision).toHaveTextContent('Uncertainty');
     expect(decision).toHaveTextContent('Repo fit not proven');
     expect(decision).toHaveTextContent('Missing context');

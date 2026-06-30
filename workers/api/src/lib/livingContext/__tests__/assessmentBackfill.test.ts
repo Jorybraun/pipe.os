@@ -114,6 +114,17 @@ describe('assessments_to_living_context backfill', () => {
         created_at TEXT DEFAULT (datetime('now')),
         updated_at TEXT DEFAULT (datetime('now'))
       );
+      CREATE TABLE scheduled_interviews (
+        id TEXT PRIMARY KEY,
+        candidate_id TEXT,
+        owner_id TEXT NOT NULL,
+        status TEXT NOT NULL,
+        interview_type TEXT,
+        recipient_name TEXT,
+        recipient_email TEXT,
+        created_at TEXT NOT NULL,
+        updated_at TEXT NOT NULL
+      );
       CREATE TABLE culture_interview_sessions (
         id TEXT PRIMARY KEY,
         candidate_id TEXT,
@@ -138,6 +149,10 @@ describe('assessments_to_living_context backfill', () => {
 
       INSERT INTO candidates (id, owner_id, pipeline_id, name, email, status, resume_s3_key, skills)
       VALUES ('cand-assess-1', 'owner-1', 'pipe-1', 'Casey Candidate', 'casey@test.dev', 'active', NULL, NULL);
+
+      INSERT INTO scheduled_interviews
+        (id, candidate_id, owner_id, status, interview_type, recipient_name, recipient_email, created_at, updated_at)
+      VALUES ('interview-assess-1', 'cand-assess-1', 'owner-1', 'INVITED', 'OPEN_SOURCE_BUG_FIX', 'Casey Candidate', 'casey@test.dev', datetime('now'), datetime('now'));
     `);
     db = createMockD1(sqlite);
   });
@@ -151,8 +166,8 @@ describe('assessments_to_living_context backfill', () => {
     const now = '2026-06-30T12:00:00Z';
     sqlite.exec(`
       INSERT INTO assessment_sessions
-        (id, ingestion_key, mode, state, candidate_id, workspace_id, metadata_json, started_at, created_at, updated_at)
-      VALUES ('sess-partial-1', 'assessment:sess-partial-1', 'OPEN_SOURCE_BUG_FIX', 'IN_PROGRESS', 'cand-assess-1', 'owner-1', '{}', '${now}', '${now}', '${now}');
+        (id, ingestion_key, interview_id, mode, state, candidate_id, workspace_id, metadata_json, started_at, created_at, updated_at)
+      VALUES ('sess-partial-1', 'assessment:sess-partial-1', 'interview-assess-1', 'OPEN_SOURCE_BUG_FIX', 'IN_PROGRESS', NULL, 'owner-1', '{}', '${now}', '${now}', '${now}');
 
       INSERT INTO assessment_evidence_events
         (id, ingestion_key, session_id, sequence, kind, actor_type, actor_id, narrative, payload_json, occurred_at, created_at)

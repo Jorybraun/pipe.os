@@ -173,6 +173,14 @@ export class BackfillOrchestrator {
     ).bind(taskKey).run();
   }
 
+  async markPending(taskKey: string): Promise<void> {
+    await this.db.prepare(
+      `UPDATE backfill_checkpoints
+          SET status = 'pending', updated_at = datetime('now')
+        WHERE task_key = ?1 AND status = 'running'`,
+    ).bind(taskKey).run();
+  }
+
   async markFailed(taskKey: string, error: string): Promise<void> {
     await this.db.prepare(
       `UPDATE backfill_checkpoints

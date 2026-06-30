@@ -89,6 +89,22 @@ describe('BackfillOrchestrator', () => {
     expect(identityTask?.lastError).toBe('Database connection timeout');
   });
 
+  it('returns partial batches to pending while preserving cursor and progress', async () => {
+    const orchestrator = new BackfillOrchestrator(db, TASKS);
+    await orchestrator.ensureCheckpoints();
+
+    await orchestrator.markRunning('identity', 100);
+    await orchestrator.updateProgress('identity', 'cursor-50', 50, 0);
+    await orchestrator.markPending('identity');
+
+    const status = await orchestrator.getStatus();
+    const identityTask = status.tasks.find((t) => t.taskKey === 'identity');
+    expect(identityTask?.status).toBe('pending');
+    expect(identityTask?.processed).toBe(50);
+    expect(identityTask?.cursor).toBe('cursor-50');
+    expect(await orchestrator.getReadyTasks()).toEqual(['identity']);
+  });
+
   it('resets all tasks back to pending', async () => {
     const orchestrator = new BackfillOrchestrator(db, TASKS);
     await orchestrator.ensureCheckpoints();
