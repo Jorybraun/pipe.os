@@ -59,6 +59,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Fixed — Candidate repo matching
 
+- CODE_REVIEW recruiter detail smoke now verifies score validity and can assert the assessment invite recipient, so app-dev checks cover the hiring-manager cockpit instead of only page load.
 - Manual open-source challenge invites now require a 40-character hex base commit SHA in the modal, matching server validation before a repo task packet can be created.
 - CODE_REVIEW assessment invite panels now show the invite recipient next to link validity and assessment state, making one-use links easier to distinguish across multiple meetings for the same person or email.
 - Interview dashboard cards now prefer the per-invite recipient name and email over older canonical person labels, so multiple meetings for the same address remain distinguishable.

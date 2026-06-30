@@ -9,6 +9,9 @@ const EXPECTED_PR_NUMBER = (process.env.CODE_REVIEW_RECRUITER_EXPECT_PR_NUMBER ?
 const EXPECT_SCORE = process.env.CODE_REVIEW_RECRUITER_EXPECT_SCORE === '1';
 const EXPECT_SUBMISSION = process.env.CODE_REVIEW_RECRUITER_EXPECT_SUBMISSION === '1';
 const REQUIRE_HYPEREDGES = process.env.CODE_REVIEW_RECRUITER_REQUIRE_HYPEREDGES !== '0';
+const EXPECT_INVITE_RECIPIENT_EMAIL = (
+  process.env.CODE_REVIEW_RECRUITER_EXPECT_INVITE_RECIPIENT_EMAIL ?? ''
+).trim();
 
 function expectedRepoLabel(repoUrl: string): string | null {
   if (!repoUrl) return null;
@@ -38,11 +41,23 @@ test.describe('Feature: CODE_REVIEW recruiter detail smoke', () => {
     await expect(page.locator('body')).not.toContainText('Not recorded yet');
     await expect(page.getByText('Recruiter decision')).toBeVisible();
     await expect(page.getByTestId('interview-code-review-next-step')).toBeVisible();
+    const scoreValidity = page.getByTestId('interview-code-review-score-validity');
+    await expect(scoreValidity).toBeVisible();
+    await expect(scoreValidity).toContainText('Score validity');
+
+    if (EXPECT_INVITE_RECIPIENT_EMAIL) {
+      const inviteState = page.getByTestId('interview-assessment-link-state');
+      await expect(inviteState).toBeVisible();
+      await expect(inviteState).toContainText('RECIPIENT');
+      await expect(inviteState).toContainText(EXPECT_INVITE_RECIPIENT_EMAIL);
+    }
 
     if (EXPECTED_OUTCOME === 'blocked') {
       await expect(decision).toContainText('No confident repo match yet');
       await expect(decision).toContainText('NEEDS MORE EVIDENCE');
       await expect(page.getByTestId('interview-code-review-next-step')).toContainText('Collect missing evidence');
+      await expect(scoreValidity).toContainText('Do not rely on score yet');
+      await expect(scoreValidity).toContainText('Repo fit is not source-backed');
 
       const evidencePlan = page.getByTestId('interview-code-review-evidence-plan');
       await expect(evidencePlan).toBeVisible();
@@ -75,6 +90,7 @@ test.describe('Feature: CODE_REVIEW recruiter detail smoke', () => {
       await expect(score).toBeVisible({ timeout: 45_000 });
       await expect(score).toContainText('Candidate signal');
       await expect(score).toContainText(/\d+\/100/);
+      await expect(scoreValidity).toContainText(/Usable|Score needs human calibration|Submitted, scoring pending/);
     }
 
     if (REQUIRE_HYPEREDGES) {

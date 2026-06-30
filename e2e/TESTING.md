@@ -154,6 +154,22 @@ npx playwright test e2e/code-review-assess-smoke.unauth.spec.ts --project=unauth
 
 The smoke proves the candidate lands in CODE_REVIEW rather than a video room, the repo/PR links are real GitHub URLs, the readable `MATCH_REASON`, `ASSESSMENT_FIT`, and deeper match proof render, evidence hyperedges render when required, Pierre exposes commentable diff lines, and no Pierre parser errors occur. Treat it as a heartbeat/regression test for the candidate assess surface; contrast quality, AI pushback, final submission storage, and recruiter result rendering are covered by the dedicated CODE_REVIEW E2E/API suites.
 
+## 10. CODE_REVIEW Recruiter Detail Smoke
+
+This smoke verifies the recruiter-side decision cockpit for an existing interview. It catches fallback loaders, infinite matching screens, missing next actions, missing score-validity state, and optional invite-recipient drift.
+
+```bash
+APP_BASE=https://pipetest:pipetest123@app-dev.hire-pipe.com \
+API_BASE=https://api-dev.hire-pipe.com \
+VIDEO_ROOM_BASE=https://room-dev.hire-pipe.com \
+CODE_REVIEW_RECRUITER_INTERVIEW_ID=<scheduled-interview-id> \
+CODE_REVIEW_RECRUITER_EXPECT_OUTCOME=blocked \
+CODE_REVIEW_RECRUITER_EXPECT_INVITE_RECIPIENT_EMAIL=<candidate-email> \
+npx playwright test e2e/code-review-recruiter-detail-smoke.spec.ts --project=authenticated --reporter=line
+```
+
+For matched outcomes, set `CODE_REVIEW_RECRUITER_EXPECT_OUTCOME=matched`, optionally add `CODE_REVIEW_RECRUITER_EXPECT_SCORE=1`, `CODE_REVIEW_RECRUITER_EXPECT_SUBMISSION=1`, `CODE_REVIEW_RECRUITER_EXPECT_REPO_URL=<repo-url>`, and `CODE_REVIEW_RECRUITER_EXPECT_PR_NUMBER=<number>`. Leave `CODE_REVIEW_RECRUITER_EXPECT_INVITE_RECIPIENT_EMAIL` unset only when the fixture has no assessment invite panel.
+
 For the full app-dev flow, create a disposable CODE_REVIEW invite, submit intake evidence, wait for matching, and run the browser smoke in one command:
 
 ```bash
