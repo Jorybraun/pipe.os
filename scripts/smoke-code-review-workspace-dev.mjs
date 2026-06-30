@@ -3,7 +3,10 @@ const ROOM_BASE = (process.env.ROOM_BASE || 'https://room-dev.hire-pipe.com').re
 const BASIC_USER = process.env.PIPE_DEV_BASIC_AUTH_USER || process.env.DEV_BASIC_AUTH_USER || '';
 const BASIC_PASSWORD = process.env.PIPE_DEV_BASIC_AUTH_PASSWORD || process.env.DEV_BASIC_AUTH_PASSWORD || '';
 const REPO_URL = process.env.WORKSPACE_SMOKE_REPO_URL || 'https://github.com/octocat/Hello-World';
-const PR_NUMBER = Number(process.env.WORKSPACE_SMOKE_PR_NUMBER || '1');
+const INTERVIEW_TYPE = process.env.WORKSPACE_SMOKE_INTERVIEW_TYPE || 'DEV_CONTAINER_CHALLENGE';
+const RAW_PR_NUMBER = process.env.WORKSPACE_SMOKE_PR_NUMBER || (INTERVIEW_TYPE === 'OPEN_SOURCE_BUG_FIX' ? '' : '1');
+const PR_NUMBER = RAW_PR_NUMBER ? Number(RAW_PR_NUMBER) : null;
+const BASE_COMMIT_SHA = process.env.WORKSPACE_SMOKE_BASE_COMMIT_SHA || '1111111111111111111111111111111111111111';
 const REMOTE = !APP_BASE.includes('localhost') && !APP_BASE.includes('127.0.0.1');
 
 function assertEnv() {
@@ -81,19 +84,43 @@ async function main() {
 
   const unique = Date.now();
   const recipientEmail = `workspace-smoke-${unique}@pipe-test.dev`;
+  const openSourceTaskFields = INTERVIEW_TYPE === 'OPEN_SOURCE_BUG_FIX'
+    ? {
+        challengeBaseCommitSha: BASE_COMMIT_SHA,
+        challengeTitle: 'Fix deterministic smoke ordering',
+        challengeInstructions: 'Make the smallest production-ready change that preserves source-backed evidence and deterministic execution.',
+        challengeSuccessCriteria: [
+          'Reproduce the ordering failure before changing code.',
+          'Keep the fix scoped to the affected behavior.',
+          'Leave a clear verification trail for the reviewer.',
+        ],
+        challengeExpectedEvidence: [
+          'Changed files and commit SHA',
+          'Test or command output',
+          'Candidate explanation of trade-offs',
+        ],
+      }
+    : {};
   const created = await requestJson(APP_BASE, '/api/v1/scheduling/interviews', {
     method: 'POST',
     body: JSON.stringify({
       recipientName: 'Workspace Smoke',
       recipientEmail,
       meetingType: 'DIRECT_VIDEO_CALL',
-      interviewType: 'DEV_CONTAINER_CHALLENGE',
+      interviewType: INTERVIEW_TYPE,
       githubRepoUrl: REPO_URL,
-      githubPrNumber: PR_NUMBER,
+      ...(PR_NUMBER ? { githubPrNumber: PR_NUMBER } : {}),
+      ...openSourceTaskFields,
     }),
   });
   const interviewId = created?.interview?.id;
   if (!interviewId) throw new Error(`Create response missing interview id: ${JSON.stringify(created)}`);
+  if (INTERVIEW_TYPE === 'OPEN_SOURCE_BUG_FIX') {
+    const setup = created?.interview?.assessmentSetup;
+    if (setup?.kind !== 'manual_open_source_task' || setup?.status !== 'reviewable_task_assigned') {
+      throw new Error(`Open-source task setup was not ready: ${JSON.stringify(setup)}`);
+    }
+  }
 
   const invited = await requestJson(APP_BASE, `/api/v1/scheduling/interviews/${interviewId}/invite`, {
     method: 'POST',
@@ -108,6 +135,15 @@ async function main() {
   if (!workspace?.enabled) throw new Error(`Workspace was not enabled: ${JSON.stringify(workspace)}`);
   if (workspace.repoUrl !== REPO_URL) {
     throw new Error(`Workspace repo mismatch: ${JSON.stringify(workspace)}`);
+  }
+  if (INTERVIEW_TYPE === 'OPEN_SOURCE_BUG_FIX') {
+    const challenge = workspace.challenge;
+    if (challenge?.status !== 'repo_task_assigned' || challenge?.source !== 'scheduled_interview.challenge_packet') {
+      throw new Error(`Workspace challenge did not expose the repo task packet: ${JSON.stringify(challenge)}`);
+    }
+    if (challenge?.packet?.locator?.baseCommitSha !== BASE_COMMIT_SHA) {
+      throw new Error(`Workspace packet base commit mismatch: ${JSON.stringify(challenge?.packet)}`);
+    }
   }
 
   const launched = await requestJson(ROOM_BASE, `/api/v1/meeting-rooms/${hostToken}/workspace/launch`, {
@@ -129,6 +165,9 @@ async function main() {
     guestUrl: cleanRoomUrl(invited.room.guestUrl),
     repoUrl: workspace.repoUrl,
     githubPrNumber: PR_NUMBER,
+    interviewType: INTERVIEW_TYPE,
+    challengeStatus: workspace.challenge?.status ?? null,
+    challengeSource: workspace.challenge?.source ?? null,
     workspaceStatus: readySession.status,
     proxyPathReady: Boolean(readySession.proxyPath),
   }, null, 2));

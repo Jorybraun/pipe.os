@@ -47,6 +47,7 @@ export interface RoomWorkspaceSession {
 
 export type RoomWorkspaceChallengeStatus =
   | 'github_pr_assigned'
+  | 'repo_task_assigned'
   | 'missing_reviewable_task'
   | 'not_configured';
 
@@ -54,6 +55,7 @@ export type RoomWorkspaceChallengeKind = 'github_pr' | 'repo_only' | null;
 
 export type RoomWorkspaceChallengeSource =
   | 'scheduled_interview.github_pr_number'
+  | 'scheduled_interview.challenge_packet'
   | 'matched_repo_without_pr'
   | 'scheduled_repo_without_pr'
   | 'missing_repo_and_task'

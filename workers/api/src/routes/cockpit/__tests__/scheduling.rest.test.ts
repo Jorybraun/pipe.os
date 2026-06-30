@@ -6477,7 +6477,7 @@ describe('POST /interviews dev-container challenge (HAS-80)', () => {
     expect(row.recipient_email).toBe('margaret@example.com');
   });
 
-  it('creates a source-backed open-source challenge packet when task details are provided', async () => {
+  it('creates a source-backed open-source challenge packet without requiring a PR number', async () => {
     seedDevContainerFixture();
     const app = mountSchedulingApp();
     const baseCommitSha = '1234567890abcdef1234567890abcdef12345678';
@@ -6491,7 +6491,6 @@ describe('POST /interviews dev-container challenge (HAS-80)', () => {
         meetingType: 'DIRECT_VIDEO_CALL',
         interviewType: 'OPEN_SOURCE_BUG_FIX',
         githubRepoUrl: 'https://github.com/hash-pipe/open-source-task',
-        githubPrNumber: 101,
         challengeBaseCommitSha: baseCommitSha,
         challengeTitle: 'Fix the failing assessment evaluator start state',
         challengeInstructions: 'Reproduce the failing start-evaluation path, make the smallest production-ready fix, and preserve source-backed assessment evidence.',
@@ -6527,9 +6526,23 @@ describe('POST /interviews dev-container challenge (HAS-80)', () => {
             };
           } | null;
         } | null;
+        assessmentSetup: {
+          status: string;
+          kind: string;
+          source: string;
+          blocksPositiveAssessment: boolean;
+        };
+        githubPrNumber: number | null;
       };
     };
 
+    expect(body.interview.githubPrNumber).toBeNull();
+    expect(body.interview.assessmentSetup).toMatchObject({
+      status: 'reviewable_task_assigned',
+      kind: 'manual_open_source_task',
+      source: 'recruiter_manual_override',
+      blocksPositiveAssessment: false,
+    });
     expect(body.interview.assessmentProgress).toMatchObject({
       stage: 'CHALLENGE_READY',
       nextAction: 'OPEN_ROOM_OR_WORKSPACE',
@@ -6541,7 +6554,6 @@ describe('POST /interviews dev-container challenge (HAS-80)', () => {
         locator: {
           repositoryUrl: 'https://github.com/hash-pipe/open-source-task',
           baseCommitSha,
-          githubPrNumber: 101,
         },
       },
     });
@@ -6579,8 +6591,8 @@ describe('POST /interviews dev-container challenge (HAS-80)', () => {
       challengePacketSource: 'recruiter_manual_open_source_task',
       repositoryUrl: 'https://github.com/hash-pipe/open-source-task',
       baseCommitSha,
-      githubPrNumber: 101,
     });
+    expect(JSON.parse(session?.metadata_json ?? '{}')).not.toHaveProperty('githubPrNumber');
 
     const sourceRef = sqlite!.prepare(
       `SELECT sr.source_ref_type, sr.source_ref_id, sr.evidence_role,

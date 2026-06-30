@@ -157,6 +157,7 @@ type ScheduledAssessmentSetupStatus =
 type ScheduledAssessmentSetupKind =
   | 'not_applicable'
   | 'github_pr'
+  | 'manual_open_source_task'
   | 'matched_repo_without_pr'
   | 'auto_match';
 
@@ -184,6 +185,7 @@ function buildScheduledAssessmentSetup(input: {
   matchedRepoId: number | null | undefined;
   githubRepoUrl: string | null | undefined;
   githubPrNumber: number | null | undefined;
+  manualOpenSourceChallengePacket?: boolean | undefined;
   lastDeliveredUrl?: string | null | undefined;
   lastDeliveredUrlState?: 'active' | 'claimed' | 'stale' | null | undefined;
   lastDeliveredUrlMessage?: string | null | undefined;
@@ -205,6 +207,19 @@ function buildScheduledAssessmentSetup(input: {
       lastDeliveredUrl: null,
       lastDeliveredUrlState: null,
       lastDeliveredUrlMessage: null,
+    };
+  }
+
+  if (input.githubRepoUrl && input.manualOpenSourceChallengePacket) {
+    return {
+      status: 'reviewable_task_assigned',
+      kind: 'manual_open_source_task',
+      source: 'recruiter_manual_override',
+      blocksPositiveAssessment: false,
+      message: 'A concrete open-source task packet was assigned by the recruiter. PIPE can launch that repo task from the exact base commit without inferring candidate-specific alignment.',
+      lastDeliveredUrl,
+      lastDeliveredUrlState,
+      lastDeliveredUrlMessage,
     };
   }
 
@@ -320,8 +335,9 @@ const createInterviewSchema = z.object({
   // challenge from candidate evidence at runtime.
   if (isWorkspaceAssessmentInterviewType(value.interviewType)) {
     const hasMatchedRepo = value.matchedRepoId != null && value.matchedRepoId > 0;
-    const hasRepoUrlAndPr = Boolean(value.githubRepoUrl && value.githubPrNumber);
-    const hasPartialManual = Boolean(value.githubRepoUrl) !== Boolean(value.githubPrNumber);
+    const hasRepoUrl = Boolean(value.githubRepoUrl);
+    const hasPrNumber = Boolean(value.githubPrNumber);
+    const hasRepoUrlAndPr = hasRepoUrl && hasPrNumber;
     const challengeFields = [
       value.challengeBaseCommitSha,
       value.challengeTitle,
@@ -338,7 +354,11 @@ const createInterviewSchema = z.object({
       && value.challengeSuccessCriteria?.length
       && value.challengeExpectedEvidence?.length,
     );
-    if (hasPartialManual) {
+    const hasManualOpenSourceTaskPacket = value.interviewType === 'OPEN_SOURCE_BUG_FIX'
+      && hasRepoUrl
+      && hasCompleteChallengePacket;
+    const hasPartialManual = hasRepoUrl !== hasPrNumber;
+    if (hasPartialManual && !hasManualOpenSourceTaskPacket) {
       ctx.addIssue({
         code: z.ZodIssueCode.custom,
         message:
@@ -353,11 +373,11 @@ const createInterviewSchema = z.object({
         path: ['githubRepoUrl'],
       });
     }
-    if (hasMatchedRepo && hasRepoUrlAndPr) {
+    if (hasMatchedRepo && (hasRepoUrlAndPr || hasManualOpenSourceTaskPacket)) {
       ctx.addIssue({
         code: z.ZodIssueCode.custom,
         message:
-          'Provide either matchedRepoId or githubRepoUrl + githubPrNumber, not both.',
+          'Provide either matchedRepoId or a manual repo challenge, not both.',
         path: ['matchedRepoId'],
       });
     }
@@ -375,10 +395,10 @@ const createInterviewSchema = z.object({
         path: ['challengeBaseCommitSha'],
       });
     }
-    if (hasAnyChallengePacketField && !hasRepoUrlAndPr) {
+    if (hasAnyChallengePacketField && !hasRepoUrl) {
       ctx.addIssue({
         code: z.ZodIssueCode.custom,
-        message: 'Manual open-source challenge packets require githubRepoUrl and githubPrNumber.',
+        message: 'Manual open-source challenge packets require githubRepoUrl.',
         path: ['githubRepoUrl'],
       });
     }
@@ -2730,7 +2750,7 @@ interface ManualOpenSourceChallengePacketInput {
   userId: string;
   candidateId: string | null;
   repositoryUrl: string;
-  githubPrNumber: number;
+  githubPrNumber: number | null;
   baseCommitSha: string;
   title: string;
   instructions: string;
@@ -2751,7 +2771,6 @@ function hasManualOpenSourceChallengePacket(input: {
 }): boolean {
   return input.interviewType === 'OPEN_SOURCE_BUG_FIX'
     && Boolean(input.githubRepoUrl)
-    && typeof input.githubPrNumber === 'number'
     && Boolean(input.challengeBaseCommitSha)
     && Boolean(input.challengeTitle)
     && Boolean(input.challengeInstructions)
@@ -2765,7 +2784,7 @@ function buildManualOpenSourceChallengeExactText(
   return [
     `Repo: ${input.repositoryUrl}`,
     `Base commit: ${input.baseCommitSha.toLowerCase()}`,
-    `Pull request: #${input.githubPrNumber}`,
+    ...(input.githubPrNumber ? [`Pull request: #${input.githubPrNumber}`] : []),
     `Task: ${input.title}`,
     `Instructions: ${input.instructions}`,
     'Success criteria:',
@@ -2789,7 +2808,7 @@ async function createManualOpenSourceChallengeAssessmentSession(
     metadata: {
       challengePacketSource: 'recruiter_manual_open_source_task',
       repositoryUrl: input.repositoryUrl,
-      githubPrNumber: input.githubPrNumber,
+      ...(input.githubPrNumber ? { githubPrNumber: input.githubPrNumber } : {}),
       baseCommitSha: input.baseCommitSha.toLowerCase(),
       challengeTitle: input.title,
     },
@@ -2803,7 +2822,7 @@ async function createManualOpenSourceChallengeAssessmentSession(
     locator: {
       scheduledInterviewId: input.interviewId,
       repositoryUrl: input.repositoryUrl,
-      githubPrNumber: input.githubPrNumber,
+      ...(input.githubPrNumber ? { githubPrNumber: input.githubPrNumber } : {}),
       baseCommitSha: input.baseCommitSha.toLowerCase(),
     },
     exactText,
@@ -2823,7 +2842,7 @@ async function createManualOpenSourceChallengeAssessmentSession(
     narrative: 'Recruiter assigned a concrete open-source implementation challenge packet.',
     payload: {
       repositoryUrl: input.repositoryUrl,
-      githubPrNumber: input.githubPrNumber,
+      ...(input.githubPrNumber ? { githubPrNumber: input.githubPrNumber } : {}),
       baseCommitSha: input.baseCommitSha.toLowerCase(),
       title: input.title,
       instructions: input.instructions,
@@ -3198,6 +3217,7 @@ async function persistContactFirstInterviewInviteContext(
       assessmentSetupSource: input.assessmentSetup.source,
       assessmentSetupBlocksPositiveAssessment: input.assessmentSetup.blocksPositiveAssessment,
       assessmentSetupMessage: input.assessmentSetup.message,
+      recruiterNotes: input.recruiterNotes ?? null,
     },
     confidence: 1,
     extractionVersion: 'scheduled-interview-create-v1',
@@ -4317,6 +4337,7 @@ schedulingAuth.get('/interviews', async (c) => {
   );
 
   const interviews = rows.map((r) => {
+    const assessmentProgress = assessmentProgressByInterviewId.get(r.id) ?? null;
     return {
       id: r.id,
       candidateId: r.candidate_id,
@@ -4346,8 +4367,9 @@ schedulingAuth.get('/interviews', async (c) => {
         matchedRepoId: r.matched_repo_id,
         githubRepoUrl: r.github_repo_url,
         githubPrNumber: r.github_pr_number,
+        manualOpenSourceChallengePacket: assessmentProgress?.hasChallengePacket === true,
       }),
-      assessmentProgress: assessmentProgressByInterviewId.get(r.id) ?? null,
+      assessmentProgress,
       completedAt: r.completed_at,
       createdAt: r.created_at,
       updatedAt: r.updated_at,
@@ -4550,6 +4572,7 @@ schedulingAuth.get('/interviews/:id', async (c) => {
         matchedRepoId: interview.matched_repo_id,
         githubRepoUrl: interview.github_repo_url,
         githubPrNumber: interview.github_pr_number,
+        manualOpenSourceChallengePacket: assessmentProgress?.hasChallengePacket === true,
         lastDeliveredUrl: assessmentInviteLink?.url ?? null,
         lastDeliveredUrlState: assessmentInviteLink?.state ?? null,
         lastDeliveredUrlMessage: assessmentInviteLink?.message ?? null,
@@ -4820,12 +4843,23 @@ schedulingAuth.post('/interviews', async (c) => {
   const now = new Date().toISOString();
   const effectiveMeetingType = meetingType ?? (candidateId ? 'SCREENING_INTERVIEW' : 'DIRECT_VIDEO_CALL');
   const effectiveInterviewType = interviewType ?? 'VIDEO';
+  const hasManualOpenSourceTaskPacket = hasManualOpenSourceChallengePacket({
+    interviewType: effectiveInterviewType,
+    githubRepoUrl,
+    githubPrNumber,
+    challengeBaseCommitSha,
+    challengeTitle,
+    challengeInstructions,
+    challengeSuccessCriteria,
+    challengeExpectedEvidence,
+  });
   const assessmentSetup = buildScheduledAssessmentSetup({
     interviewType: effectiveInterviewType,
     candidateId: candidateId ?? null,
     matchedRepoId: matchedRepoId ?? null,
     githubRepoUrl: githubRepoUrl ?? null,
     githubPrNumber: githubPrNumber ?? null,
+    manualOpenSourceChallengePacket: hasManualOpenSourceTaskPacket,
   });
   const contactId = !candidateId && recipientName && recipientEmail
     ? await ensureRecipientContact(db, userId, { name: recipientName, email: recipientEmail })
@@ -4871,22 +4905,13 @@ schedulingAuth.post('/interviews', async (c) => {
     });
   }
 
-  if (hasManualOpenSourceChallengePacket({
-    interviewType: effectiveInterviewType,
-    githubRepoUrl,
-    githubPrNumber,
-    challengeBaseCommitSha,
-    challengeTitle,
-    challengeInstructions,
-    challengeSuccessCriteria,
-    challengeExpectedEvidence,
-  })) {
+  if (hasManualOpenSourceTaskPacket) {
     assessmentProgress = await createManualOpenSourceChallengeAssessmentSession(db, {
       interviewId: id,
       userId,
       candidateId: candidateId ?? null,
       repositoryUrl: githubRepoUrl!,
-      githubPrNumber: githubPrNumber!,
+      githubPrNumber: githubPrNumber ?? null,
       baseCommitSha: challengeBaseCommitSha!,
       title: challengeTitle!,
       instructions: challengeInstructions!,

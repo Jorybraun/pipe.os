@@ -5179,7 +5179,6 @@ describe('meeting room recording living-context route', () => {
     const packetText = [
       'Repo: https://github.com/pipe/source-backed-worker',
       `Base commit: ${baseCommitSha}`,
-      'Pull request: #144',
       'Task: Fix the source-backed worker retry path.',
       'Instructions: Repair retry ordering without widening the worker API.',
       'Success criteria:',
@@ -5194,14 +5193,13 @@ describe('meeting room recording living-context route', () => {
       `INSERT INTO scheduled_interviews (
          id, owner_id, recipient_name, recipient_email, interview_type,
          github_repo_url, github_pr_number, status, updated_at
-       ) VALUES (?, ?, ?, ?, 'OPEN_SOURCE_BUG_FIX', ?, ?, 'INVITED', ?)`,
+       ) VALUES (?, ?, ?, ?, 'OPEN_SOURCE_BUG_FIX', ?, NULL, 'INVITED', ?)`,
     ).run(
       scheduledInterviewId,
       'owner-1',
       'Packet Candidate',
       'packet-candidate@example.com',
       'https://github.com/pipe/source-backed-worker',
-      144,
       now,
     );
 
@@ -5248,7 +5246,6 @@ describe('meeting room recording living-context route', () => {
       'Recruiter assigned a concrete open-source implementation challenge packet.',
       JSON.stringify({
         repositoryUrl: 'https://github.com/pipe/source-backed-worker',
-        githubPrNumber: 144,
         baseCommitSha,
       }),
       now,
@@ -5265,7 +5262,6 @@ describe('meeting room recording living-context route', () => {
       sourceRefId,
       JSON.stringify({
         repositoryUrl: 'https://github.com/pipe/source-backed-worker',
-        githubPrNumber: 144,
         baseCommitSha,
       }),
       packetText,
@@ -5280,10 +5276,11 @@ describe('meeting room recording living-context route', () => {
     const body = await workspaceRes.json() as {
       workspace: {
         repoUrl: string;
-        githubPrNumber: number;
+        githubPrNumber: number | null;
         challenge: {
           status: string;
           kind: string | null;
+          source: string;
           packet: {
             sourceRefType: string;
             evidenceRole: string;
@@ -5296,17 +5293,17 @@ describe('meeting room recording living-context route', () => {
     };
 
     expect(body.workspace.repoUrl).toBe('https://github.com/pipe/source-backed-worker');
-    expect(body.workspace.githubPrNumber).toBe(144);
+    expect(body.workspace.githubPrNumber).toBeNull();
     expect(body.workspace.challenge).toMatchObject({
-      status: 'github_pr_assigned',
-      kind: 'github_pr',
+      status: 'repo_task_assigned',
+      kind: 'repo_only',
+      source: 'scheduled_interview.challenge_packet',
       packet: {
         sourceRefType: 'open_source_challenge_packet',
         evidenceRole: 'assigned_challenge',
         exactText: packetText,
         locator: {
           repositoryUrl: 'https://github.com/pipe/source-backed-worker',
-          githubPrNumber: 144,
           baseCommitSha,
         },
         contentHash: 'sha256:packet-content-hash',

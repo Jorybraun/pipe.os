@@ -70,9 +70,7 @@ describe('InviteCreationModal open-source challenge packets', () => {
     fireEvent.change(screen.getByPlaceholderText('https://github.com/owner/repo'), {
       target: { value: 'https://github.com/sourcegraph/sourcegraph' },
     });
-    fireEvent.change(screen.getByPlaceholderText('PR number'), {
-      target: { value: '42' },
-    });
+    expect(screen.getByPlaceholderText('PR number (optional)')).toBeInTheDocument();
     fireEvent.change(screen.getByPlaceholderText('40-character base commit SHA'), {
       target: { value: '1111111111111111111111111111111111111111' },
     });
@@ -103,7 +101,6 @@ describe('InviteCreationModal open-source challenge packets', () => {
       interviewType: 'OPEN_SOURCE_BUG_FIX',
       recruiterNotes: 'Confirm the manual challenge is fair before treating the result as signal.',
       githubRepoUrl: 'https://github.com/sourcegraph/sourcegraph',
-      githubPrNumber: 42,
       challengeBaseCommitSha: '1111111111111111111111111111111111111111',
       challengeTitle: 'Fix event ordering in the transcript stream',
       challengeInstructions: 'Investigate and fix transcript segments arriving out of order after reconnect.',
@@ -117,6 +114,7 @@ describe('InviteCreationModal open-source challenge packets', () => {
         'Candidate explanation',
       ],
     }));
+    expect(onCreateInvite.mock.calls[0]?.[0]).not.toHaveProperty('githubPrNumber');
   });
 
   it('keeps manual open-source packets blocked until the base commit is a 40-character hex SHA', () => {
@@ -144,9 +142,7 @@ describe('InviteCreationModal open-source challenge packets', () => {
     fireEvent.change(screen.getByPlaceholderText('https://github.com/owner/repo'), {
       target: { value: 'https://github.com/sourcegraph/sourcegraph' },
     });
-    fireEvent.change(screen.getByPlaceholderText('PR number'), {
-      target: { value: '42' },
-    });
+    expect(screen.getByPlaceholderText('PR number (optional)')).toBeInTheDocument();
     fireEvent.change(screen.getByPlaceholderText('40-character base commit SHA'), {
       target: { value: 'zzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzz' },
     });

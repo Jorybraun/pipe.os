@@ -223,7 +223,8 @@ export function InviteCreationModal({
     : null;
   const hasManualRepoUrl = githubRepoUrl.trim().length > 0;
   const hasManualPrNumber = parsedPrNumber !== null && Number.isFinite(parsedPrNumber) && parsedPrNumber > 0;
-  const manualRepoOverrideComplete = !manualRepoOverride || (hasManualRepoUrl && hasManualPrNumber);
+  const manualRepoOverrideComplete = !manualRepoOverride
+    || (hasManualRepoUrl && (interviewType === 'OPEN_SOURCE_BUG_FIX' || hasManualPrNumber));
   const challengeSuccessCriteriaItems = splitTextLines(challengeSuccessCriteria);
   const challengeExpectedEvidenceItems = splitTextLines(challengeExpectedEvidence);
   const requiresManualChallengePacket = interviewType === 'OPEN_SOURCE_BUG_FIX' && manualRepoOverride;
@@ -698,7 +699,7 @@ export function InviteCreationModal({
                         min={1}
                         value={githubPrNumber}
                         onChange={(e) => setGithubPrNumber(e.target.value)}
-                        placeholder="PR number"
+                        placeholder={interviewType === 'OPEN_SOURCE_BUG_FIX' ? 'PR number (optional)' : 'PR number'}
                         style={inputStyle}
                       />
                     </div>
@@ -744,7 +745,7 @@ export function InviteCreationModal({
                     )}
                     <div style={{ fontSize: 10, color: 'var(--pipe-text-dim)', fontFamily: '"Space Mono", monospace', marginTop: 4, lineHeight: 1.5 }}>
                       {interviewType === 'OPEN_SOURCE_BUG_FIX'
-                        ? 'Manual task packet — this assessment will use the exact repo, reference PR, base commit, task, criteria, and evidence plan.'
+                        ? 'Manual task packet — this assessment will use the exact repo, optional reference PR, base commit, task, criteria, and evidence plan.'
                         : 'Manual override — this assessment will use the specified repo/PR.'}
                     </div>
                   </>

@@ -1258,6 +1258,7 @@ interface RoomWorkspaceInterview {
 
 type RoomWorkspaceChallengeStatus =
   | 'github_pr_assigned'
+  | 'repo_task_assigned'
   | 'missing_reviewable_task'
   | 'not_configured';
 
@@ -1265,6 +1266,7 @@ type RoomWorkspaceChallengeKind = 'github_pr' | 'repo_only' | null;
 
 type RoomWorkspaceChallengeSource =
   | 'scheduled_interview.github_pr_number'
+  | 'scheduled_interview.challenge_packet'
   | 'matched_repo_without_pr'
   | 'scheduled_repo_without_pr'
   | 'missing_repo_and_task'
@@ -1763,6 +1765,15 @@ function buildRoomWorkspaceChallenge(
       status: 'github_pr_assigned',
       kind: 'github_pr',
       source: 'scheduled_interview.github_pr_number',
+      message: null,
+      packet,
+    };
+  }
+  if (packet && interview?.github_repo_url) {
+    return {
+      status: 'repo_task_assigned',
+      kind: 'repo_only',
+      source: 'scheduled_interview.challenge_packet',
       message: null,
       packet,
     };

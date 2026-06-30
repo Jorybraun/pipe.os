@@ -56,6 +56,7 @@ export type AssessmentSetupStatus =
 export type AssessmentSetupKind =
   | 'not_applicable'
   | 'github_pr'
+  | 'manual_open_source_task'
   | 'matched_repo_without_pr'
   | 'auto_match';
 
