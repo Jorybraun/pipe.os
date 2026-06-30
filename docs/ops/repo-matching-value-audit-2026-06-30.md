@@ -67,7 +67,7 @@ npm run smoke:code-review-assess-dev:matrix
 
 Result: `3 / 3` profiles passed.
 
-- `react-interaction-platform`: matched `https://github.com/mui/base-ui` PR `973`, quality gate `PASSED`, assessment quality `USABLE`, recruiter smoke passed, score persisted as `53 / adequate`, review status `scored`, evidence hyperedge count `4`.
+- `react-interaction-platform`: matched `https://github.com/mui/base-ui` PR `973`, quality gate `PASSED`, assessment quality `USABLE`, recruiter smoke passed, score persisted as `49 / adequate`, review status `scored`, evidence hyperedge count `4`.
 - `accessibility-state-systems`: correctly blocked at `repo_matching`, reason `The deterministic repo matcher did not return a quality-gated, source-backed PR challenge.`, auto-refresh `false`, recruiter smoke passed.
 - `frontend-quality-infra`: correctly blocked at `repo_matching`, same no-safe-match behavior, auto-refresh `false`, recruiter smoke passed.
 
@@ -87,14 +87,17 @@ Run parameters:
 
 Result:
 
-- Interview `87abcf3f-6ff5-412f-a0fd-36701b796532`
+- Interview `6ff86b75-a312-4646-a10c-3746c9e8c2ff`
 - Challenge status `repo_task_assigned`
 - Workspace status `READY`
-- Bridge revision `2026-06-30-terminal-crlf-v2`
-- Real terminal commit `426121a724c5b61a75a82bdc99ea8029a58f7741`
+- Bridge revision `2026-06-30-terminal-crlf-v3`
+- Real terminal commit `e371c0dbead9bc7d2a027886b4f73e062c3adb94`
 - Finalizer submitted `true`
 - Progress stage `READY_FOR_EVALUATION`
 - Next action `START_EVALUATION`
+- Evaluation started `true`
+- Evaluation stage `EVALUATED`
+- Evaluation report `assessment_evaluation_report_23c4be552a7d3a58df52cc7216788937`
 
 ## What Works
 

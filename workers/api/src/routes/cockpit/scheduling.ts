@@ -511,6 +511,21 @@ function emailLogoImgForRequest(c: { req: { url: string }; env: Env }): string {
 
 type InterviewLivingContext = Awaited<ReturnType<typeof loadCandidateLivingContext>>;
 
+function redactScheduledInterviewLivingContext(
+  livingContext: InterviewLivingContext,
+): InterviewLivingContext {
+  if (!livingContext) return null;
+  return {
+    ...livingContext,
+    interactions: [],
+    artifacts: [],
+    contextRecords: [],
+    assertions: [],
+    signals: [],
+    relationships: [],
+  };
+}
+
 function assessmentTokenFromUrl(value: string): string | null {
   try {
     const url = new URL(value);
@@ -4630,7 +4645,7 @@ schedulingAuth.get('/interviews/:id', async (c) => {
         createdAt: linkedMeeting.created_at,
         updatedAt: linkedMeeting.updated_at,
       } : null,
-      livingContext,
+      livingContext: redactScheduledInterviewLivingContext(livingContext),
       relatedEvidenceInterviews,
       codeReviewMatch,
       codeReviewScore,

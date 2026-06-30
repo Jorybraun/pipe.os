@@ -40,6 +40,14 @@ test.describe('Feature: CODE_REVIEW recruiter detail smoke', () => {
     await expect(page.locator('body')).not.toContainText('Building your personalized challenge');
     await expect(page.locator('body')).not.toContainText('Not recorded yet');
     await expect(page.getByText('Recruiter decision')).toBeVisible();
+    const hiringReadout = page.getByTestId('interview-code-review-hiring-readout');
+    await expect(hiringReadout).toBeVisible();
+    await expect(hiringReadout).toContainText('Hiring manager readout');
+    await expect(hiringReadout).toContainText('Decision');
+    await expect(hiringReadout).toContainText('Assignment');
+    await expect(hiringReadout).toContainText('Score validity');
+    await expect(hiringReadout).toContainText('Risk');
+    await expect(hiringReadout).toContainText('Next action');
     await expect(page.getByTestId('interview-code-review-next-step')).toBeVisible();
     const scoreValidity = page.getByTestId('interview-code-review-score-validity');
     await expect(scoreValidity).toBeVisible();

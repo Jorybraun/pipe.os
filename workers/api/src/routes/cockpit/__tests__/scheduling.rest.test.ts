@@ -838,12 +838,7 @@ describe('GET /interviews/:id detail', () => {
         } | null;
         livingContext: {
           summary: { contextRecordCount: number; sourceSpanCount: number };
-          contextRecords: Array<{
-            recordType: string;
-            narrative: string;
-            concepts: Array<{ canonicalKey: string; label: string }>;
-            sources: Array<{ exactText: string }>;
-          }>;
+          contextRecords: unknown[];
         } | null;
         codeReviewScore: {
           reviewSessionId: string;
@@ -911,17 +906,7 @@ describe('GET /interviews/:id detail', () => {
       contextRecordCount: 1,
       sourceSpanCount: 1,
     });
-    expect(body.interview.livingContext?.contextRecords[0]).toMatchObject({
-      recordType: 'interview_transcript_assertion',
-      narrative: 'Ada described building idempotent Kafka consumers.',
-      concepts: [{
-        canonicalKey: 'term:kafka-idempotency',
-        label: 'Kafka idempotency',
-      }],
-      sources: [{
-        exactText: 'I built idempotent Kafka consumers.',
-      }],
-    });
+    expect(body.interview.livingContext?.contextRecords).toEqual([]);
   });
 
   it('returns the latest delivered assessment URL on assessment interview details', async () => {
@@ -4291,12 +4276,7 @@ describe('GET /interviews/:id detail', () => {
             roles: Array<{ roleType: string }>;
           };
           summary: { contextRecordCount: number; sourceSpanCount: number };
-          contextRecords: Array<{
-            recordType: string;
-            narrative: string;
-            concepts: Array<{ canonicalKey: string; label: string }>;
-            sources: Array<{ exactText: string }>;
-          }>;
+          contextRecords: unknown[];
         } | null;
       };
     };
@@ -4318,17 +4298,7 @@ describe('GET /interviews/:id detail', () => {
       contextRecordCount: 1,
       sourceSpanCount: 1,
     });
-    expect(body.interview.livingContext?.contextRecords[0]).toMatchObject({
-      recordType: 'direct_call_context',
-      narrative: 'Grace wants to discuss event-sourced billing architecture.',
-      concepts: [{
-        canonicalKey: 'term:event-sourced-billing',
-        label: 'event-sourced billing',
-      }],
-      sources: [{
-        exactText: 'Grace wants to discuss event-sourced billing architecture.',
-      }],
-    });
+    expect(body.interview.livingContext?.contextRecords).toEqual([]);
   });
 
   it('never fabricates /video fallback links when meeting_url is null', async () => {
@@ -4538,11 +4508,7 @@ describe('GET /interviews/:id detail', () => {
       interview: {
         livingContext: {
           summary: { contextRecordCount: number; sourceSpanCount: number };
-          contextRecords: Array<{
-            recordType: string;
-            narrative: string;
-            sources: Array<{ exactText: string }>;
-          }>;
+          contextRecords: unknown[];
         } | null;
       };
     };
@@ -4550,12 +4516,7 @@ describe('GET /interviews/:id detail', () => {
       contextRecordCount: 1,
       sourceSpanCount: 1,
     });
-    expect(detailBody.interview.livingContext?.contextRecords[0]).toMatchObject({
-      recordType: 'scheduled_interview_invite',
-      narrative: 'Contact-first interview invite for Edsger Dijkstra.',
-    });
-    expect(detailBody.interview.livingContext?.contextRecords[0]?.sources[0]?.exactText)
-      .toContain('Recipient email: edsger@example.com');
+    expect(detailBody.interview.livingContext?.contextRecords).toEqual([]);
   });
 
   it('keeps repeated same-email interviews as distinct meetings under one person context', async () => {
