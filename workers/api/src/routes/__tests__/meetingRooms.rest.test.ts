@@ -4816,6 +4816,7 @@ describe('meeting room recording living-context route', () => {
     const app = mountApp();
     const { ctx } = buildCtx();
     env.ENV = 'dev';
+    env.VIDEO_ROOM_APP_URL = 'https://room-dev.hire-pipe.com';
     env.DEV_BASIC_AUTH_USER = 'pipe-user';
     env.DEV_BASIC_AUTH_PASSWORD = 'room pass!';
 
@@ -4860,6 +4861,7 @@ describe('meeting room recording living-context route', () => {
     const app = mountApp();
     const { ctx } = buildCtx();
     env.ENV = 'dev';
+    env.VIDEO_ROOM_APP_URL = 'https://room-dev.hire-pipe.com';
     env.DEV_BASIC_AUTH_USER = 'pipe-user';
     env.DEV_BASIC_AUTH_PASSWORD = 'room pass!';
     env.VIDEO_ROOM_DEV_AUTH_USER = 'room-user';
