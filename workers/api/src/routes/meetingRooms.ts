@@ -1302,6 +1302,7 @@ async function syncRoomActivityEvidenceForToken(
     return await syncRoomActivityToSessionEvents(c.env.DB, c.env, {
       candidateId: resolved.candidateId,
       sessionId: resolved.sessionId,
+      assessmentInterviewId: resolved.scheduledInterviewId,
     });
   } catch (error) {
     console.error('[meetingRooms] Failed to sync room activity evidence:', {
@@ -1394,7 +1395,10 @@ async function captureRoomLifecycleEvidenceForToken(
       timestamp,
       actor: room.role === 'GUEST' ? 'guest' : 'host',
       text: payload.text,
-      properties: payload.properties,
+      properties: {
+        ...payload.properties,
+        ...(resolved.scheduledInterviewId ? { scheduledInterviewId: resolved.scheduledInterviewId } : {}),
+      },
     }, c.env);
     return {
       captured: !!node,
@@ -2913,7 +2917,10 @@ meetingRooms.post('/:token/session-events', async (c) => {
     timestamp: Math.floor(Date.now() / 1000),
     actor: parsed.data.actor ?? 'system',
     text: parsed.data.text,
-    properties: parsed.data.properties,
+    properties: {
+      ...(parsed.data.properties ?? {}),
+      ...(resolved.scheduledInterviewId ? { scheduledInterviewId: resolved.scheduledInterviewId } : {}),
+    },
   };
 
   const node = await captureSessionEvent(c.env.DB, event, c.env);
@@ -2939,6 +2946,7 @@ meetingRooms.get('/:token/context-graph', async (c) => {
   await syncRoomActivityToSessionEvents(c.env.DB, c.env, {
     candidateId: resolved.candidateId,
     sessionId: resolved.sessionId,
+    assessmentInterviewId: resolved.scheduledInterviewId,
   });
 
   const graph = await getSessionContextGraph(c.env.DB, resolved.candidateId, resolved.sessionId);
@@ -2964,6 +2972,7 @@ meetingRooms.get('/:token/context-summary', async (c) => {
   await syncRoomActivityToSessionEvents(c.env.DB, c.env, {
     candidateId: resolved.candidateId,
     sessionId: resolved.sessionId,
+    assessmentInterviewId: resolved.scheduledInterviewId,
   });
 
   const summary = await getSessionContextSummary(c.env.DB, resolved.candidateId, resolved.sessionId);

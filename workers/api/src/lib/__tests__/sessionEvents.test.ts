@@ -191,6 +191,94 @@ describe('sessionEvents', () => {
       }
     });
 
+    it('appends room evidence to the existing scheduled-interview assessment session', async () => {
+      const { sqlite, db: realDb } = createSessionEvidenceDb();
+      try {
+        sqlite.prepare(
+          `INSERT INTO assessment_sessions (
+             id, ingestion_key, interview_id, mode, state, candidate_id, workspace_id,
+             created_by, metadata_json, created_at, updated_at
+           ) VALUES (
+             'assessment-session-existing',
+             'assessment-session:open-source:scheduled-interview-1',
+             'scheduled-interview-1',
+             'OPEN_SOURCE_BUG_FIX',
+             'INTAKE',
+             'cand-assessment',
+             NULL,
+             'test',
+             '{}',
+             '2026-06-29T12:00:00.000Z',
+             '2026-06-29T12:00:00.000Z'
+           )`,
+        ).run();
+
+        const event: SessionEvent = {
+          type: 'terminal_command',
+          sessionId: 'meeting-room-session-1',
+          candidateId: 'cand-assessment',
+          timestamp: 1782604800,
+          actor: 'guest',
+          text: 'npm test -- --runInBand',
+          properties: {
+            source: 'container_terminal',
+            surface: 'win95',
+            scheduledInterviewId: 'scheduled-interview-1',
+            terminalSessionId: 'workspace-terminal-1',
+            terminalCommandId: 'workspace-terminal-1:command:guest:1782604800000:1:terminal_1234abcd',
+            commandSequence: 1,
+            commandFingerprint: 'terminal_1234abcd',
+            capturedAtMs: 1782604800000,
+          },
+        };
+
+        const node = await captureSessionEvent(realDb, event);
+        expect(node).not.toBeNull();
+
+        const sessions = sqlite.prepare(
+          `SELECT id, interview_id, mode, state
+             FROM assessment_sessions
+            ORDER BY created_at`,
+        ).all() as Array<{
+          id: string;
+          interview_id: string;
+          mode: string;
+          state: string;
+        }>;
+        expect(sessions).toEqual([{
+          id: 'assessment-session-existing',
+          interview_id: 'scheduled-interview-1',
+          mode: 'OPEN_SOURCE_BUG_FIX',
+          state: 'IN_PROGRESS',
+        }]);
+
+        const evidence = sqlite.prepare(
+          `SELECT session_id, kind, actor_type, payload_json
+             FROM assessment_evidence_events
+            ORDER BY sequence`,
+        ).all() as Array<{
+          session_id: string;
+          kind: string;
+          actor_type: string;
+          payload_json: string;
+        }>;
+        expect(evidence).toHaveLength(1);
+        expect(evidence[0]).toMatchObject({
+          session_id: 'assessment-session-existing',
+          kind: 'terminal_output',
+          actor_type: 'candidate',
+        });
+        expect(JSON.parse(evidence[0]!.payload_json)).toMatchObject({
+          sessionEventType: 'terminal_command',
+          meetingSessionId: 'meeting-room-session-1',
+          scheduledInterviewId: 'scheduled-interview-1',
+          candidateNodeId: node!.id,
+        });
+      } finally {
+        sqlite.close();
+      }
+    });
+
     it('redacts agent status diagnostics before they are persisted as evidence', async () => {
       const { sqlite, db: realDb } = createSessionEvidenceDb();
       try {
@@ -3580,6 +3668,7 @@ describe('sessionEvents', () => {
       expect(result!.candidateId).toBe('cand-456');
       expect(result!.sessionId).toBe('meeting--123');
       expect(result!.meetingId).toBe('meeting-123');
+      expect(result!.scheduledInterviewId).toBe('interview-123');
     });
   });
 });

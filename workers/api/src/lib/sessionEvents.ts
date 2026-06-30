@@ -147,6 +147,7 @@ interface RoomActivitySyncEnv {
 interface RoomActivitySyncInput {
   candidateId: string;
   sessionId: string;
+  assessmentInterviewId?: string | null;
 }
 
 interface RoomActivitySyncResult {
@@ -288,6 +289,10 @@ function createSessionEvent(
     properties?: Record<string, unknown>;
   },
 ): SessionEvent {
+  const properties = {
+    ...(event.properties ?? {}),
+    ...(input.assessmentInterviewId ? { scheduledInterviewId: input.assessmentInterviewId } : {}),
+  };
   return {
     type: event.type,
     sessionId: input.sessionId,
@@ -295,7 +300,7 @@ function createSessionEvent(
     timestamp: event.timestamp,
     actor: event.actor,
     text: event.text,
-    properties: event.properties,
+    properties,
   };
 }
 
@@ -3514,6 +3519,29 @@ async function markAssessmentSessionInProgress(input: {
   });
 }
 
+function assessmentInterviewIdForSessionEvent(event: SessionEvent): string | null {
+  const properties = jsonObject(event.properties);
+  return stringProperty(properties, 'assessmentInterviewId')
+    ?? stringProperty(properties, 'scheduledInterviewId');
+}
+
+async function loadExistingAssessmentSessionForSessionEvent(
+  db: D1Database,
+  event: SessionEvent,
+): Promise<{ id: string; mode: string } | null> {
+  const assessmentInterviewId = assessmentInterviewIdForSessionEvent(event);
+  if (!assessmentInterviewId) return null;
+  return db.prepare(
+    `SELECT id, mode
+       FROM assessment_sessions
+     WHERE interview_id = ?1
+       AND state <> 'CANCELLED'
+       AND (candidate_id IS NULL OR candidate_id = ?2)
+      ORDER BY updated_at DESC, created_at DESC, id DESC
+      LIMIT 1`,
+  ).bind(assessmentInterviewId, event.candidateId).first<{ id: string; mode: string }>();
+}
+
 async function persistSessionEventAssessmentEvidence(
   db: D1Database,
   event: SessionEvent,
@@ -3523,7 +3551,10 @@ async function persistSessionEventAssessmentEvidence(
 
   const observedAt = observedAtFromTimestamp(event.timestamp);
   const store = new AssessmentLayerStore(db, () => observedAt);
-  const session = await store.createAssessmentSession({
+  const properties = jsonObject(event.properties);
+  const assessmentInterviewId = assessmentInterviewIdForSessionEvent(event);
+  const existingSession = await loadExistingAssessmentSessionForSessionEvent(db, event);
+  const session = existingSession ?? await store.createAssessmentSession({
     ingestionKey: `assessment-session:95-room:${event.candidateId}:${event.sessionId}`,
     interviewId: event.sessionId,
     mode: 'NINETY_FIVE_UNTIL_INFINITY_ROOM',
@@ -3532,14 +3563,14 @@ async function persistSessionEventAssessmentEvidence(
     createdBy: 'meeting-room-session-events',
     metadata: {
       meetingSessionId: event.sessionId,
-      surface: stringProperty(jsonObject(event.properties), 'surface'),
+      ...(assessmentInterviewId ? { scheduledInterviewId: assessmentInterviewId } : {}),
+      surface: stringProperty(properties, 'surface'),
       source: 'meeting_room_session_events',
       assessmentSurface: '95_until_infinity',
     },
   });
   const { actorType, actorId } = assessmentActorForSessionEvent(event);
   const narrative = formatEventNarrative(event);
-  const properties = jsonObject(event.properties);
   const sourceExactText = stableJson(sessionEventSourcePayload(event, node));
   const roomFileContentSource = await roomFileContentSourceRef({ event, node, properties });
   const chatTextSource = await chatTextSourceRef({ event, node, properties });
@@ -3586,6 +3617,7 @@ async function persistSessionEventAssessmentEvidence(
     payload: {
       sessionEventType: event.type,
       meetingSessionId: event.sessionId,
+      ...(assessmentInterviewId ? { scheduledInterviewId: assessmentInterviewId } : {}),
       candidateNodeId: node.id,
       actor: event.actor,
       properties,
@@ -3973,7 +4005,12 @@ async function ensureRolelessCandidateForSession(
 export async function resolveCandidateIdForRoom(
   db: D1Database,
   token: string,
-): Promise<{ candidateId: string | null; sessionId: string; meetingId: string } | null> {
+): Promise<{
+  candidateId: string | null;
+  sessionId: string;
+  meetingId: string;
+  scheduledInterviewId: string | null;
+} | null> {
   const { hashRoomToken } = await import('./roomTokens.js');
   const tokenHash = await hashRoomToken(token);
   const now = new Date().toISOString();
@@ -4036,5 +4073,6 @@ export async function resolveCandidateIdForRoom(
     candidateId,
     sessionId: room.session_id,
     meetingId: room.meeting_id,
+    scheduledInterviewId: room.scheduled_interview_id,
   };
 }
