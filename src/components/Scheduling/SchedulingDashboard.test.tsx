@@ -1,7 +1,7 @@
 import { fireEvent, render, screen } from '@testing-library/react';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import { MemoryRouter } from 'react-router-dom';
-import { SchedulingDashboard } from './SchedulingDashboard';
+import { resolveInviteCreationGuestLink, SchedulingDashboard } from './SchedulingDashboard';
 import type { ScheduledInterview } from '../../lib/scheduling/types';
 
 const mocks = vi.hoisted(() => ({
@@ -186,5 +186,15 @@ describe('SchedulingDashboard interview ordering', () => {
     expect(modal).toHaveAttribute('data-recipient-email', 'ada@example.com');
     expect(modal).toHaveAttribute('data-interview-type', 'VIDEO');
     expect(modal).toHaveAttribute('data-recruiter-notes', 'Probe repo matching confidence');
+  });
+});
+
+describe('resolveInviteCreationGuestLink', () => {
+  it('returns the Pipe room URL instead of a provider scheduling URL', () => {
+    expect(resolveInviteCreationGuestLink({
+      meetingUrl: 'https://room-dev.hire-pipe.com/room/guest-token',
+      schedulingUrl: 'https://calendly.com/pipe/interview?a1=abc',
+      deliveredUrl: 'https://calendly.com/pipe/interview?a1=abc',
+    })).toBe('https://room-dev.hire-pipe.com/room/guest-token');
   });
 });

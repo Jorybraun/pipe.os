@@ -37,6 +37,14 @@ interface InviteResponse {
   emailError?: string;
 }
 
+export function resolveInviteCreationGuestLink(
+  inviteResult: Pick<InviteResponse, 'meetingUrl' | 'schedulingUrl' | 'deliveredUrl'> | null,
+): string | null {
+  // `deliveredUrl` can be a provider scheduling page. The modal should show
+  // the Pipe room link that host/recruiter can open immediately.
+  return inviteResult?.meetingUrl ?? null;
+}
+
 function isInterviewType(value: string | null): value is InterviewType {
   return value === 'VIDEO'
     || value === 'SCREENING'
@@ -557,7 +565,7 @@ export function SchedulingDashboard(): JSX.Element {
           await refetch();
           return {
             id: result.interview.id,
-            meetingUrl: inviteResult?.deliveredUrl ?? inviteResult?.schedulingUrl ?? inviteResult?.meetingUrl ?? data.schedulingUrl ?? null,
+            meetingUrl: resolveInviteCreationGuestLink(inviteResult),
             emailSent: inviteResult?.emailSent ?? false,
             provider: inviteResult?.provider,
             emailError: inviteResult?.emailError ?? inviteError,

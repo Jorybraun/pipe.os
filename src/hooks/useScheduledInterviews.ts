@@ -61,6 +61,7 @@ export function useScheduledInterviews(): UseScheduledInterviewsResult {
           lastSyncedAt: string | null;
           inviteLinkSentAt: string | null;
           emailSentAt: string | null;
+          bookingConfirmationSentAt: string | null;
           recipientName: string | null;
           recipientEmail: string | null;
           matchedRepoId: number | null;
@@ -105,6 +106,7 @@ export function useScheduledInterviews(): UseScheduledInterviewsResult {
           lastSyncedAt: r.lastSyncedAt,
           inviteLinkSentAt: r.inviteLinkSentAt,
           emailSentAt: r.emailSentAt,
+          bookingConfirmationSentAt: r.bookingConfirmationSentAt,
           recipientName: r.recipientName,
           recipientEmail: r.recipientEmail,
           matchedRepoId: r.matchedRepoId,
