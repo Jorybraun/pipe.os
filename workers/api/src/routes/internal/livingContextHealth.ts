@@ -28,6 +28,8 @@ import { loadTemporalAdjacencies } from '../../lib/livingContext/conceptAdjacenc
 import { loadCandidateEvidenceFreshness } from '../../lib/livingContext/evidenceFreshness';
 import { analyzeEvidenceGapsForChallenge } from '../../lib/livingContext/evidenceGapAnalysis';
 import { loadMatchProvenanceChain } from '../../lib/livingContext/matchProvenanceChain';
+import { compareCandidateEvidence } from '../../lib/livingContext/candidateComparison';
+import { ingestSessionEventsToLivingContext, type SessionEventRow } from '../../lib/livingContext/sessionEventIngestion';
 import type { Env } from '../../types';
 
 interface SubsystemHealth {
@@ -1140,6 +1142,137 @@ app.get('/match-provenance-chain', async (c) => {
   } catch (err) {
     const message = err instanceof Error ? err.message : 'Unknown error';
     return c.json({ error: message }, 404);
+  }
+});
+
+// POST /candidate-comparison — cross-candidate evidence comparison
+app.post('/candidate-comparison', async (c) => {
+  const db = c.env.DB;
+  const body = await c.req.json<{
+    candidateIds: string[];
+    pipelineId?: string;
+    userId?: string;
+    conceptLimit?: number;
+  }>();
+
+  if (!body.candidateIds || !Array.isArray(body.candidateIds) || body.candidateIds.length < 2) {
+    return c.json({ error: 'candidateIds array with at least 2 entries required' }, 400);
+  }
+
+  if (body.candidateIds.length > 20) {
+    return c.json({ error: 'Maximum 20 candidates per comparison' }, 400);
+  }
+
+  const userId = body.userId ?? 'internal';
+
+  try {
+    const report = await compareCandidateEvidence(db, body.candidateIds, userId, {
+      pipelineId: body.pipelineId,
+      conceptLimit: body.conceptLimit,
+    });
+    return c.json(report);
+  } catch (err) {
+    const message = err instanceof Error ? err.message : 'Unknown error';
+    return c.json({ error: message }, 500);
+  }
+});
+
+// POST /session-event-ingest — ingest session events into living context
+app.post('/session-event-ingest', async (c) => {
+  const db = c.env.DB;
+  const body = await c.req.json<{
+    candidateId: string;
+    sessionId?: string;
+    limit?: number;
+  }>();
+
+  if (!body.candidateId) {
+    return c.json({ error: 'candidateId required' }, 400);
+  }
+
+  try {
+    const limit = Math.min(body.limit ?? 200, 500);
+    const { loadSessionEventsForCandidate } = await import('../../lib/livingContext/sessionEventIngestion');
+    const loaded = await loadSessionEventsForCandidate(db, body.candidateId, null, limit);
+
+    // Optionally filter to a single session
+    const filtered = body.sessionId
+      ? loaded.events.filter((e) => e.session_id === body.sessionId)
+      : loaded.events;
+
+    if (filtered.length === 0) {
+      return c.json({
+        candidateId: body.candidateId,
+        sessionId: body.sessionId ?? null,
+        eventsProcessed: 0,
+        episodesCreated: 0,
+        assertionsCreated: 0,
+        conceptsRegistered: 0,
+        skippedDuplicates: 0,
+        message: 'No session events found.',
+      });
+    }
+
+    // Group events by session and ingest each session
+    const bySession = new Map<string, typeof filtered>();
+    for (const event of filtered) {
+      const existing = bySession.get(event.session_id);
+      if (existing) {
+        existing.push(event);
+      } else {
+        bySession.set(event.session_id, [event]);
+      }
+    }
+
+    const results: Array<{
+      sessionId: string;
+      eventsProcessed: number;
+      episodesCreated: number;
+      assertionsCreated: number;
+      conceptsRegistered: number;
+      skippedDuplicates: number;
+    }> = [];
+    let totalEvents = 0;
+    let totalEpisodes = 0;
+    let totalAssertions = 0;
+    let totalConcepts = 0;
+    let totalSkipped = 0;
+
+    for (const [sessionId, events] of bySession) {
+      const result = await ingestSessionEventsToLivingContext(
+        db,
+        body.candidateId,
+        sessionId,
+        events,
+      );
+      results.push({
+        sessionId,
+        eventsProcessed: result.eventsProcessed,
+        episodesCreated: result.episodesCreated,
+        assertionsCreated: result.assertionsCreated,
+        conceptsRegistered: result.conceptsRegistered,
+        skippedDuplicates: result.skippedDuplicates,
+      });
+      totalEvents += result.eventsProcessed;
+      totalEpisodes += result.episodesCreated;
+      totalAssertions += result.assertionsCreated;
+      totalConcepts += result.conceptsRegistered;
+      totalSkipped += result.skippedDuplicates;
+    }
+
+    return c.json({
+      candidateId: body.candidateId,
+      sessionsProcessed: results.length,
+      totalEventsProcessed: totalEvents,
+      totalEpisodesCreated: totalEpisodes,
+      totalAssertionsCreated: totalAssertions,
+      totalConceptsRegistered: totalConcepts,
+      totalSkippedDuplicates: totalSkipped,
+      sessions: results,
+    });
+  } catch (err) {
+    const message = err instanceof Error ? err.message : 'Unknown error';
+    return c.json({ error: message }, 500);
   }
 });
 

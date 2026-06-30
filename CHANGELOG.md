@@ -7,6 +7,19 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Added — Cross-candidate evidence comparison (criteria #5, #6)
+
+- `POST /api/v1/candidates/compare` — recruiter-facing endpoint that compares evidence profiles across candidates. Returns per-candidate profiles (interaction breakdown, assertion counts, source diversity, top concepts with temporal decay), concept-level comparisons (shared vs unique concepts, coverage levels), and summary rankings (diversity, depth, freshness). Gated by `living_context_read`.
+- `POST /api/v1/internal/candidate-comparison` — internal version with userId override for backfill/evaluation use.
+- `candidateComparison.ts` — core module: `compareCandidateEvidence()` loads workspace identities, queries interactions/assertions/concepts in parallel, computes temporal decay on concept strengths, and builds structured comparison report.
+- `candidateComparison.test.ts` — 5 Vitest tests: empty results, no workspace identity, full evidence comparison, shared/unique concept identification, pipeline ownership authorization.
+- Route tests: 3 tests for the internal comparison endpoint (validation, success, max limit).
+
+### Added — Session event ingestion endpoint (criterion #1)
+
+- `POST /api/v1/internal/session-event-ingest` — loads session events for a candidate, groups by session, and ingests each session's events into the living context graph. Supports optional `sessionId` filter and configurable `limit`.
+- Route test: 2 tests (validation, empty events).
+
 ### Added — Match run history endpoint + panel (criteria #6, #8)
 
 - `GET /api/v1/candidates/:id/living-context/match-history` — returns chronological match run history with inter-run deltas (status changes, score improvements, new top challenges). Gated by `living_context_read` rollout gate.

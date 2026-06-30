@@ -1998,6 +1998,34 @@ candidateOps.get('/:candidateId/living-context/match-history', requireGate('livi
   return c.json({ runs, deltas, totalRuns: runs.length });
 });
 
+// POST /compare — cross-candidate evidence comparison for a shared pipeline
+candidateOps.post('/compare', requireGate('living_context_read'), async (c) => {
+  const userId = c.var.userId;
+  const db = c.env.DB;
+
+  const body = await c.req.json<{
+    candidateIds: string[];
+    pipelineId?: string;
+    conceptLimit?: number;
+  }>();
+
+  if (!body.candidateIds || !Array.isArray(body.candidateIds) || body.candidateIds.length < 2) {
+    return apiError(c, 'VALIDATION_ERROR', 'candidateIds array with at least 2 entries required.');
+  }
+
+  if (body.candidateIds.length > 20) {
+    return apiError(c, 'VALIDATION_ERROR', 'Maximum 20 candidates per comparison.');
+  }
+
+  const { compareCandidateEvidence } = await import('../../lib/livingContext/candidateComparison');
+  const report = await compareCandidateEvidence(db, body.candidateIds, userId, {
+    pipelineId: body.pipelineId,
+    conceptLimit: body.conceptLimit,
+  });
+
+  return c.json(report);
+});
+
 // GET /:candidateId — full profile with stages + challenge submissions
 candidateOps.get('/:candidateId', async (c) => {
   const userId = c.var.userId;
