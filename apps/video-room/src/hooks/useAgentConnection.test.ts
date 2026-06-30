@@ -201,7 +201,7 @@ describe('parseAgentBridgeMessage', () => {
     });
   });
 
-  it('redacts bridge diagnostics before they become Clippy messages', () => {
+  it('redacts bridge diagnostics before they become agent messages', () => {
     const raw = [
       'DEVIN_API_KEY=cog_aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa',
       'Bearer ghp_bbbbbbbbbbbbbbbbbbbbbbbbbbbb',

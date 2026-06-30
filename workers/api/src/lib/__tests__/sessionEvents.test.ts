@@ -132,8 +132,8 @@ describe('sessionEvents', () => {
           `SELECT mode, state, candidate_id, interview_id, metadata_json
              FROM assessment_sessions
             WHERE ingestion_key = ?`,
-        ).get('assessment-session:95-room:cand-assessment:meeting-session-95')).toMatchObject({
-          mode: 'NINETY_FIVE_UNTIL_INFINITY_ROOM',
+        ).get('assessment-session:room:cand-assessment:meeting-session-95')).toMatchObject({
+          mode: 'DEV_CONTAINER_REPO_TASK',
           state: 'IN_PROGRESS',
           candidate_id: 'cand-assessment',
           interview_id: 'meeting-session-95',
@@ -350,7 +350,7 @@ describe('sessionEvents', () => {
       }
     });
 
-    it('preserves exact Win95 text file content as source refs', async () => {
+    it('preserves exact legacy desktop text file content as source refs', async () => {
       const { sqlite, db: realDb } = createSessionEvidenceDb();
       try {
         const exactText = 'Candidate identified retry bug evidence.\nAdd a failing replay test first.';
@@ -461,7 +461,7 @@ describe('sessionEvents', () => {
       }
     });
 
-    it('preserves exact Win95 Paint JSON as source refs without requiring previews', async () => {
+    it('preserves exact legacy desktop drawing JSON as source refs without requiring previews', async () => {
       const { sqlite, db: realDb } = createSessionEvidenceDb();
       try {
         const exactJson = '[{"kind":"rectangle","start":{"x":1,"y":2},"end":{"x":3,"y":4}}]';
@@ -858,7 +858,7 @@ describe('sessionEvents', () => {
       }
     });
 
-    it('preserves exact room chat and Clippy chat turns as source refs', async () => {
+    it('preserves exact room chat and agent chat turns as source refs', async () => {
       const { sqlite, db: realDb } = createSessionEvidenceDb();
       try {
         const promptText = 'Can you inspect the failing test?';

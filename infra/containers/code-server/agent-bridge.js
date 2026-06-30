@@ -21,8 +21,8 @@ const REQUESTED_AGENT_NAME = String(process.env.AGENT_TYPE || '').trim();
 const SUPPORTED_AGENT_TYPES = new Set(['devin']);
 const AGENT_NAME = SUPPORTED_AGENT_TYPES.has(REQUESTED_AGENT_NAME) ? REQUESTED_AGENT_NAME : '';
 const AGENT_UNCONFIGURED_MESSAGE = REQUESTED_AGENT_NAME
-  ? `Agent type "${REQUESTED_AGENT_NAME}" is not supported by this bridge. Configure a real bridge for that agent before enabling Clippy chat.`
-  : 'No real agent is configured in this container. Set AGENT_TYPE to a supported bridge agent before enabling Clippy chat.';
+  ? `Agent type "${REQUESTED_AGENT_NAME}" is not supported by this bridge. Configure a real bridge for that agent before enabling agent chat.`
+  : 'No real agent is configured in this container. Set AGENT_TYPE to a supported bridge agent before enabling agent chat.';
 const PIPE_API_URL = process.env.PIPE_API_URL || '';
 const ROOM_TOKEN = process.env.ROOM_TOKEN || '';
 const AGENT_CONTEXT_MAX_LENGTH = Number(process.env.AGENT_CONTEXT_MAX_LENGTH || 6000);
@@ -37,7 +37,7 @@ const DEVIN_API_KEY = String(process.env.DEVIN_API_KEY || '').trim();
 const DEVIN_ORG_ID = String(process.env.DEVIN_ORG_ID || '').trim();
 const DEVIN_API_RESPONSE_TIMEOUT_MS = positiveIntEnv('DEVIN_API_RESPONSE_TIMEOUT_MS', 45000, 1000);
 const DEVIN_API_POLL_INTERVAL_MS = positiveIntEnv('DEVIN_API_POLL_INTERVAL_MS', 2500, 250);
-const DEVIN_AUTH_MESSAGE = 'Devin CLI is not logged in inside this container. Authenticate the real Devin CLI before using Clippy chat.';
+const DEVIN_AUTH_MESSAGE = 'Devin CLI is not logged in inside this container. Authenticate the real Devin CLI before using agent chat.';
 const ASSESSMENT_FINALIZE_TIMEOUT_MS = positiveIntEnv('ASSESSMENT_FINALIZE_TIMEOUT_MS', 120000, 1000);
 const ASSESSMENT_BRANCH_NAME = 'pipe-assessment';
 
@@ -1053,18 +1053,18 @@ function roomActionProtocolGuide() {
 function buildAgentContextPrompt(roomContext, userMessage = '') {
   const parts = [
     'PIPE room context',
-    'You are Devin running as Clippy inside a PIPE-OS "95 Until Infinity" technical interview dev container.',
+    'You are Devin running inside a PIPE-OS open-source assessment dev container.',
     'Use the source-backed room context below to help the candidate without inventing facts.',
-    'When you want the shared interview desktop to do something, include one allow-listed tag in your response.',
+    'When you want the shared assessment room to do something, include one allow-listed tag in your response.',
     'Example: [[room_action:open-workspace|Open VS Code]]',
-    'Allowed shared desktop actions:',
+    'Allowed shared room actions:',
     roomActionProtocolGuide(),
     'Current source-backed room context:',
     compactAgentContext(roomContext),
   ];
   const message = String(userMessage || '').trim();
   if (message) {
-    parts.push('Current Clippy chat message:', message);
+    parts.push('Current candidate message:', message);
   }
   return `${parts.join('\n')}\n`;
 }
@@ -1242,7 +1242,7 @@ function shouldAcceptDevinApiMessage(message, sentPrompt) {
   if (!text) return false;
   const trimmedPrompt = String(sentPrompt || '').trim();
   if (trimmedPrompt && text.trim() === trimmedPrompt) return false;
-  if (text.includes('PIPE room context') || text.includes('Current Clippy chat message:')) return false;
+  if (text.includes('PIPE room context') || text.includes('Current candidate message:')) return false;
   if (isUserAuthoredDevinApiMessage(message)) return false;
   return isAgentAuthoredDevinApiMessage(message) || !devinApiMessageAuthor(message);
 }
@@ -1290,7 +1290,7 @@ async function pollDevinApiForResponse(sentPrompt, browserPromptRef) {
   broadcastAgentDiagnostic(agentDiagnosticMessage({
     agent: AGENT_NAME,
     status: 'idle',
-    message: `Devin API accepted the Clippy message but did not return a new assistant message within ${DEVIN_API_RESPONSE_TIMEOUT_MS}ms.`,
+    message: `Devin API accepted the candidate message but did not return a new assistant message within ${DEVIN_API_RESPONSE_TIMEOUT_MS}ms.`,
     diagnosticSource: 'devin_api_response_timeout',
     ...devinApiAgentRunReference(),
   }));
@@ -1308,14 +1308,14 @@ async function startDevinApiAgent() {
   try {
     const orgId = await resolveDevinOrgId();
     const context = await fetchRoomContextSummary();
-    const prompt = `${buildAgentContextPrompt(context.text)}Do not begin work yet. Wait for explicit Clippy chat messages before taking action.\n`;
+    const prompt = `${buildAgentContextPrompt(context.text)}Do not begin work yet. Wait for explicit candidate chat messages before taking action.\n`;
     const response = await devinApiRequest(
       `/organizations/${encodeURIComponent(orgId)}/sessions`,
       {
         method: 'POST',
         body: {
           prompt,
-          tags: ['pipe-os', '95-until-infinity', 'clippy'],
+          tags: ['pipe-os', 'open-source-assessment', 'agent-bridge'],
         },
         timeoutMs: 30000,
       },
@@ -1342,7 +1342,7 @@ async function startDevinApiAgent() {
     broadcastAgentDiagnostic(agentDiagnosticMessage({
       agent: AGENT_NAME,
       status: 'idle',
-      message: 'Devin API session created and ready for Clippy chat.',
+      message: 'Devin API session created and ready for agent chat.',
       diagnosticSource: 'devin_api_session_ready',
       ...agentRunRef,
     }));
@@ -1569,7 +1569,7 @@ function checkDevinCliAuth(command) {
   if (!command) {
     return {
       ok: false,
-      message: 'Devin CLI executable was not found in the container image. Install the real Devin CLI before enabling Clippy chat.',
+      message: 'Devin CLI executable was not found in the container image. Install the real Devin CLI before enabling agent chat.',
       diagnosticSource: 'agent_cli_missing',
     };
   }
@@ -1637,7 +1637,7 @@ async function startAgent() {
     }
     if (!command) {
       markAgentDisconnected(
-        'Devin CLI executable was not found in the container image. Install the real Devin CLI before enabling Clippy chat.',
+        'Devin CLI executable was not found in the container image. Install the real Devin CLI before enabling agent chat.',
         'agent_cli_missing',
         null,
       );

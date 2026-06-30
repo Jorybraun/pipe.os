@@ -2,11 +2,11 @@ const ROOM_BASE = (process.env.ROOM_BASE || 'https://room-dev.hire-pipe.com').re
 const APP_BASE = (process.env.APP_BASE || ROOM_BASE).replace(/\/$/, '');
 const BASIC_USER = process.env.PIPE_DEV_BASIC_AUTH_USER || process.env.DEV_BASIC_AUTH_USER || '';
 const BASIC_PASSWORD = process.env.PIPE_DEV_BASIC_AUTH_PASSWORD || process.env.DEV_BASIC_AUTH_PASSWORD || '';
-const REPO_URL = process.env.CLIPPY_SMOKE_REPO_URL || 'https://github.com/octocat/Hello-World';
-const PR_NUMBER = Number(process.env.CLIPPY_SMOKE_PR_NUMBER || '1');
-const EXPECTED_RESPONSE = process.env.CLIPPY_SMOKE_EXPECTED_RESPONSE || 'PIPE_CLIPPY_SMOKE_OK';
+const REPO_URL = process.env.AGENT_SMOKE_REPO_URL || 'https://github.com/octocat/Hello-World';
+const PR_NUMBER = Number(process.env.AGENT_SMOKE_PR_NUMBER || '1');
+const EXPECTED_RESPONSE = process.env.AGENT_SMOKE_EXPECTED_RESPONSE || 'PIPE_AGENT_SMOKE_OK';
 const PROMPT_TEXT =
-  process.env.CLIPPY_SMOKE_PROMPT
+  process.env.AGENT_SMOKE_PROMPT
   || `Say exactly ${EXPECTED_RESPONSE} and no other words.`;
 const REMOTE = !ROOM_BASE.includes('localhost') && !ROOM_BASE.includes('127.0.0.1');
 
@@ -119,8 +119,8 @@ function connectAgent(wsUrl) {
         ws.send(JSON.stringify({
           type: 'CHAT',
           text: PROMPT_TEXT,
-          browserPromptId: `smoke-workspace:host:prompt:${promptTimestamp}:clippy_1234abcd`,
-          browserPromptFingerprint: 'clippy_1234abcd',
+          browserPromptId: `smoke-workspace:host:prompt:${promptTimestamp}:agent_1234abcd`,
+          browserPromptFingerprint: 'agent_1234abcd',
           browserPromptTimestamp: promptTimestamp,
           browserPromptLength: PROMPT_TEXT.length,
         }));
@@ -144,11 +144,11 @@ async function main() {
   assertEnv();
 
   const unique = Date.now();
-  const recipientEmail = `clippy-devin-smoke-${unique}@pipe-test.dev`;
+  const recipientEmail = `agent-devin-smoke-${unique}@pipe-test.dev`;
   const created = await requestJson(APP_BASE, '/api/v1/scheduling/interviews', {
     method: 'POST',
     body: JSON.stringify({
-      recipientName: 'Clippy Devin Smoke',
+      recipientName: 'Agent Devin Smoke',
       recipientEmail,
       meetingType: 'DIRECT_VIDEO_CALL',
       interviewType: 'DEV_CONTAINER_CHALLENGE',
@@ -163,7 +163,7 @@ async function main() {
     method: 'POST',
     body: JSON.stringify({
       email: recipientEmail,
-      message: 'Automated dev smoke for real Clippy/Devin chat.',
+      message: 'Automated dev smoke for real Devin agent chat.',
     }),
   });
   const hostToken = tokenFromRoomUrl(invited?.room?.hostUrl ?? '');
@@ -184,22 +184,22 @@ async function main() {
   );
 
   if (!messages.some((message) => message.type === 'AGENT_READY')) {
-    throw new Error(`Clippy/Devin bridge never became ready: ${JSON.stringify(messages.map(boundedMessage))}`);
+    throw new Error(`Devin agent bridge never became ready: ${JSON.stringify(messages.map(boundedMessage))}`);
   }
   if (!chatResponse) {
-    throw new Error(`Clippy/Devin chat did not return a response: ${JSON.stringify(messages.map(boundedMessage))}`);
+    throw new Error(`Devin agent chat did not return a response: ${JSON.stringify(messages.map(boundedMessage))}`);
   }
   if (chatResponse.source !== 'agent_api_response') {
     throw new Error(`Expected real Devin API response, got ${chatResponse.source ?? 'unknown source'}.`);
   }
   if (chatResponse.persisted !== true) {
-    throw new Error(`Clippy/Devin chat response was not persisted as source-backed evidence.`);
+    throw new Error(`Devin agent chat response was not persisted as source-backed evidence.`);
   }
   if (!String(chatResponse.text || '').includes(EXPECTED_RESPONSE)) {
-    throw new Error(`Unexpected Clippy/Devin response: ${String(chatResponse.text || '').slice(0, 500)}`);
+    throw new Error(`Unexpected Devin agent response: ${String(chatResponse.text || '').slice(0, 500)}`);
   }
   if (persistedDiagnostics.length === 0) {
-    throw new Error('No persisted Clippy/Devin bridge diagnostics were observed.');
+    throw new Error('No persisted Devin agent bridge diagnostics were observed.');
   }
 
   console.log(JSON.stringify({

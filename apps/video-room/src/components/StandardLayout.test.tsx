@@ -108,6 +108,6 @@ describe('StandardLayout', () => {
       />,
     );
 
-    expect(screen.queryByTestId('enter-win95-desktop')).toBeNull();
+    expect(screen.queryByRole('button', { name: /legacy desktop/i })).toBeNull();
   });
 });

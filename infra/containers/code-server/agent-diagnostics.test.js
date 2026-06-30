@@ -120,7 +120,7 @@ describe('agent diagnostics', () => {
       deliveredToAgent: true,
       roomContextStatus: 200,
       roomContextText: 'Candidate opened VS Code with token=room-secret',
-      promptText: 'PIPE room context\nCurrent Clippy chat message: please run the tests TOKEN=hidden',
+      promptText: 'PIPE room context\nCurrent candidate message: please run the tests TOKEN=hidden',
       userMessage: 'please run the tests TOKEN=hidden',
       browserPromptId: 'workspace-123:guest:prompt:1782603900000:clippy_0123abcd',
       browserPromptFingerprint: 'clippy_0123abcd',

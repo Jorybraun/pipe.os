@@ -2920,7 +2920,7 @@ describe('meeting room recording living-context route', () => {
       transcriptionBytes: 2345,
     });
 
-    const fakeWin95FileChangeRes = await app.request(`/meeting/${created.hostToken}/session-events`, {
+    const fakeLegacyDesktopFileChangeRes = await app.request(`/meeting/${created.hostToken}/session-events`, {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify({
@@ -2940,9 +2940,9 @@ describe('meeting room recording living-context route', () => {
         },
       }),
     }, env, ctx);
-    expect(fakeWin95FileChangeRes.status).toBe(422);
+    expect(fakeLegacyDesktopFileChangeRes.status).toBe(422);
 
-    const win95FileChangeRes = await app.request(`/meeting/${created.hostToken}/session-events`, {
+    const legacyDesktopFileChangeRes = await app.request(`/meeting/${created.hostToken}/session-events`, {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify({
@@ -2972,7 +2972,7 @@ describe('meeting room recording living-context route', () => {
         },
       }),
     }, env, ctx);
-    expect(win95FileChangeRes.status).toBe(200);
+    expect(legacyDesktopFileChangeRes.status).toBe(200);
 
     const win95FileChangeNode = sqlite.prepare(
       `SELECT node_type, narrative_text, source_type, extracted_properties_json
@@ -3546,7 +3546,7 @@ describe('meeting room recording living-context route', () => {
     });
   });
 
-  it('persists Win95 source-specific window lifecycle evidence with exact source provenance', async () => {
+  it('persists legacy desktop source-specific window lifecycle evidence with exact source provenance', async () => {
     const app = mountApp();
     const { ctx } = buildCtx();
     const now = new Date().toISOString();

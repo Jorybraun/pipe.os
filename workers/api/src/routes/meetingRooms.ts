@@ -114,8 +114,8 @@ const LIVING_CONTENT_HASH_RE = /^content_[a-f0-9]{32}$/;
 const SHA256_HEX_RE = /^[a-f0-9]{64}$/;
 const TERMINAL_FINGERPRINT_RE = /^terminal_[a-f0-9]{8}$/;
 const TERMINAL_COMMAND_ID_RE = /^.+:command:(host|guest):\d+:\d+:terminal_[a-f0-9]{8}$/;
-const CLIPPY_PROMPT_FINGERPRINT_RE = /^clippy_[a-f0-9]{8}$/;
-const BROWSER_PROMPT_ID_RE = /^[a-zA-Z0-9:_-]+:(host|guest):prompt:\d+:clippy_[a-f0-9]{8}$/;
+const CLIPPY_PROMPT_FINGERPRINT_RE = /^(?:agent|clippy)_[a-f0-9]{8}$/;
+const BROWSER_PROMPT_ID_RE = /^[a-zA-Z0-9:_-]+:(host|guest):prompt:\d+:(?:agent|clippy)_[a-f0-9]{8}$/;
 const ROOM_SURFACES = new Set(['standard', 'win95']);
 const WINDOW_LIFECYCLE_SOURCES = new Set([
   'win95_desktop_ui',
@@ -333,7 +333,7 @@ const sessionEventSchema = z.object({
       if (actorOk && fileChangeIdOk && sharedOk && (upsertOk || deleteOk)) return;
       ctx.addIssue({
         code: z.ZodIssueCode.custom,
-        message: 'Win95 file-change evidence must include browser source, actor-bound file-change id, capture timestamp, file identity, operation, content hash, and file timestamps.',
+        message: 'legacy desktop file-change evidence must include browser source, actor-bound file-change id, capture timestamp, file identity, operation, content hash, and file timestamps.',
         path: ['properties'],
       });
       return;
@@ -624,7 +624,7 @@ const sessionEventSchema = z.object({
     if (sourceOk && actorOk && eventSourceOk && menuOk && actionOk && idOk && contextOk) return;
     ctx.addIssue({
       code: z.ZodIssueCode.custom,
-      message: 'Start menu evidence must come from a Win95 desktop menu control with actor, source, stable event id, timestamp, action, surface, replay expectation, and room phase.',
+      message: 'Start menu evidence must come from a legacy desktop desktop menu control with actor, source, stable event id, timestamp, action, surface, replay expectation, and room phase.',
       path: ['properties'],
     });
     return;
@@ -1075,7 +1075,7 @@ const sessionEventSchema = z.object({
     ) return;
     ctx.addIssue({
       code: z.ZodIssueCode.custom,
-      message: 'Cursor presence evidence must be an actor-bound sampled Win95 browser cursor event with stable sample provenance.',
+      message: 'Cursor presence evidence must be an actor-bound sampled legacy desktop browser cursor event with stable sample provenance.',
       path: ['properties'],
     });
   }

@@ -536,7 +536,7 @@ describe('hasSourceBackedDesktopEventEvidence', () => {
     }, 'HOST')).toBe(false);
   });
 
-  it('accepts Start menu changes with source-backed Win95 menu evidence', () => {
+  it('accepts Start menu changes with source-backed legacy desktop menu evidence', () => {
     expect(hasSourceBackedDesktopEventEvidence(startMenuEvent, 'GUEST')).toBe(true);
   });
 
@@ -759,7 +759,7 @@ describe('hasSourceBackedCursorEvidence', () => {
     },
   };
 
-  it('accepts cursor presence only when the Win95 browser sample evidence matches the payload', () => {
+  it('accepts cursor presence only when the legacy desktop browser sample evidence matches the payload', () => {
     expect(hasSourceBackedCursorEvidence(sourceBackedCursor, 'GUEST')).toBe(true);
   });
 
@@ -1285,7 +1285,7 @@ describe('hasSourceBackedRoomFileSystemEvidence', () => {
     },
   };
 
-  it('accepts Win95 file mutations only when browser evidence matches the event and actor', () => {
+  it('accepts legacy desktop file mutations only when browser evidence matches the event and actor', () => {
     expect(hasSourceBackedRoomFileSystemEvidence(sourceBackedUpsert, 'HOST')).toBe(true);
   });
 

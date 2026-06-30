@@ -28,7 +28,7 @@ export function clippyTextFingerprint(text: string): string {
     hash ^= text.charCodeAt(index);
     hash = Math.imul(hash, FNV_32_PRIME);
   }
-  return `clippy_${(hash >>> 0).toString(16).padStart(8, '0')}`;
+  return `agent_${(hash >>> 0).toString(16).padStart(8, '0')}`;
 }
 
 export function buildClippyPromptId(input: {

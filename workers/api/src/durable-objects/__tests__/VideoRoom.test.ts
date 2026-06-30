@@ -601,7 +601,7 @@ describe('VideoRoom Durable Object signaling lifecycle', () => {
     ]);
   });
 
-  it('persists and broadcasts source-backed Win95 Start menu state', async () => {
+  it('persists and broadcasts source-backed legacy desktop menu state', async () => {
     const host = new FakeSocket();
     const guest = new FakeSocket();
     const { state, storage } = makeState([
@@ -662,7 +662,7 @@ describe('VideoRoom Durable Object signaling lifecycle', () => {
     ]);
   });
 
-  it('rejects Win95 Start menu state without source evidence', async () => {
+  it('rejects legacy desktop menu state without source evidence', async () => {
     const host = new FakeSocket();
     const guest = new FakeSocket();
     const { state, storage } = makeState([

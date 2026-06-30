@@ -61,13 +61,13 @@ describe('AssessmentLayerStore', () => {
 
   it('creates an assessment session for any supported interview surface', async () => {
     const session = await store.createAssessmentSession({
-      ingestionKey: 'assessment-session:interview-95',
-      interviewId: 'interview-95',
-      mode: 'NINETY_FIVE_UNTIL_INFINITY_ROOM',
+      ingestionKey: 'assessment-session:interview-room',
+      interviewId: 'interview-room',
+      mode: 'DEV_CONTAINER_REPO_TASK',
       candidateId: 'candidate-1',
       workspaceId: 'workspace-1',
       createdBy: 'recruiter-1',
-      metadata: { runtime: '95-room' },
+      metadata: { runtime: 'assessment-room' },
     });
 
     expect(session.state).toBe('INTAKE');
@@ -75,13 +75,13 @@ describe('AssessmentLayerStore', () => {
       `SELECT interview_id, mode, state, candidate_id, workspace_id, created_by, metadata_json
          FROM assessment_sessions WHERE id = ?`,
     ).get(session.id)).toEqual({
-      interview_id: 'interview-95',
-      mode: 'NINETY_FIVE_UNTIL_INFINITY_ROOM',
+      interview_id: 'interview-room',
+      mode: 'DEV_CONTAINER_REPO_TASK',
       state: 'INTAKE',
       candidate_id: 'candidate-1',
       workspace_id: 'workspace-1',
       created_by: 'recruiter-1',
-      metadata_json: JSON.stringify({ runtime: '95-room' }),
+      metadata_json: JSON.stringify({ runtime: 'assessment-room' }),
     });
   });
 

@@ -89,8 +89,8 @@ const WINDOW_STATE_SOURCES = new Set([
 const WINDOW_DATA_SOURCES = new Set(['win95_window_data_sync', 'win95_file_delete_sync']);
 const TERMINAL_FINGERPRINT_RE = /^terminal_[a-f0-9]{8}$/;
 const TERMINAL_COMMAND_ID_RE = /^.+:command:(host|guest):\d+:\d+:terminal_[a-f0-9]{8}$/;
-const CLIPPY_PROMPT_FINGERPRINT_RE = /^clippy_[a-f0-9]{8}$/;
-const BROWSER_PROMPT_ID_RE = /^[a-zA-Z0-9:_-]+:(host|guest):prompt:\d+:clippy_[a-f0-9]{8}$/;
+const CLIPPY_PROMPT_FINGERPRINT_RE = /^(?:agent|clippy)_[a-f0-9]{8}$/;
+const BROWSER_PROMPT_ID_RE = /^[a-zA-Z0-9:_-]+:(host|guest):prompt:\d+:(?:agent|clippy)_[a-f0-9]{8}$/;
 const CLIPPY_ACTION_EVENT_ID_RE = /^clippy-action:(host|guest|agent):\d+:[a-z_]+:[a-z_]+:[a-z_]+:[a-zA-Z0-9:_-]+$/;
 const AGENT_CHAT_RESPONSE_FINGERPRINT_RE = /^agent_[a-f0-9]{8}$/;
 const AGENT_CHAT_RESPONSE_ID_RE = /^agent-chat:[a-zA-Z0-9:_-]+:\d+:CHAT_RESPONSE:agent_[a-f0-9]{8}$/;
@@ -3556,9 +3556,9 @@ async function persistSessionEventAssessmentEvidence(
   const assessmentInterviewId = assessmentInterviewIdForSessionEvent(event);
   const existingSession = await loadExistingAssessmentSessionForSessionEvent(db, event);
   const session = existingSession ?? await store.createAssessmentSession({
-    ingestionKey: `assessment-session:95-room:${event.candidateId}:${event.sessionId}`,
+    ingestionKey: `assessment-session:room:${event.candidateId}:${event.sessionId}`,
     interviewId: event.sessionId,
-    mode: 'NINETY_FIVE_UNTIL_INFINITY_ROOM',
+    mode: 'DEV_CONTAINER_REPO_TASK',
     candidateId: event.candidateId,
     workspaceId: null,
     createdBy: 'meeting-room-session-events',
@@ -3567,7 +3567,7 @@ async function persistSessionEventAssessmentEvidence(
       ...(assessmentInterviewId ? { scheduledInterviewId: assessmentInterviewId } : {}),
       surface: stringProperty(properties, 'surface'),
       source: 'meeting_room_session_events',
-      assessmentSurface: '95_until_infinity',
+      assessmentSurface: 'assessment_room',
     },
   });
   const { actorType, actorId } = assessmentActorForSessionEvent(event);

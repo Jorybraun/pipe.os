@@ -83,7 +83,7 @@ describe('browser navigation evidence', () => {
     });
   });
 
-  it('builds source-specific ids for links opened from the Win95 file manager', () => {
+  it('builds source-specific ids for links opened from the legacy desktop file manager', () => {
     const evidence = buildBrowserNavigationEvidence({
       actor: 'guest',
       windowId: 'browser',

@@ -6,7 +6,7 @@ import {
 } from './windowEvidence';
 
 describe('window evidence', () => {
-  it('builds direct source-backed evidence for opening a shared Win95 window', () => {
+  it('builds direct source-backed evidence for opening a shared legacy desktop window', () => {
     expect(buildWindowLifecycleEvidence({
       kind: 'open',
       actor: 'guest',
@@ -36,7 +36,7 @@ describe('window evidence', () => {
     });
   });
 
-  it('builds direct source-backed evidence for closing a shared Win95 window', () => {
+  it('builds direct source-backed evidence for closing a shared legacy desktop window', () => {
     expect(buildWindowLifecycleEvidence({
       kind: 'close',
       actor: 'host',
@@ -62,7 +62,7 @@ describe('window evidence', () => {
     });
   });
 
-  it('preserves Clippy as the initiator when an action opens a shared Win95 window', () => {
+  it('preserves Clippy as the initiator when an action opens a shared legacy desktop window', () => {
     expect(buildWindowLifecycleEvidence({
       kind: 'open',
       actor: 'host',
@@ -88,7 +88,7 @@ describe('window evidence', () => {
     });
   });
 
-  it('preserves the Win95 Start menu as the initiator when it opens a shared window', () => {
+  it('preserves the legacy desktop Start menu as the initiator when it opens a shared window', () => {
     expect(buildWindowLifecycleEvidence({
       kind: 'open',
       actor: 'guest',
@@ -114,7 +114,7 @@ describe('window evidence', () => {
     });
   });
 
-  it('preserves the Win95 file manager as the initiator when it opens a shared file', () => {
+  it('preserves the legacy desktop file manager as the initiator when it opens a shared file', () => {
     expect(buildWindowLifecycleEvidence({
       kind: 'open',
       actor: 'guest',
@@ -167,7 +167,7 @@ describe('window evidence', () => {
     });
   });
 
-  it('builds direct source-backed evidence for Win95 window movement', () => {
+  it('builds direct source-backed evidence for legacy desktop window movement', () => {
     expect(buildWindowStateUpdateEvidence({
       actor: 'guest',
       windowId: 'workspace',

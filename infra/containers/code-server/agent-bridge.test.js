@@ -599,7 +599,7 @@ setInterval(() => {}, 1000);
     const error = await waitForMessage(messages, (message) => message.type === 'ERROR');
     expect(error).toEqual({
       type: 'ERROR',
-      message: 'No real agent is configured in this container. Set AGENT_TYPE to a supported bridge agent before enabling Clippy chat.',
+      message: 'No real agent is configured in this container. Set AGENT_TYPE to a supported bridge agent before enabling agent chat.',
     });
     expect(messages.some((message) => message.agent === 'devin')).toBe(false);
     ws.close();
@@ -879,7 +879,7 @@ process.stdin.setEncoding('utf8');
 let buffer = '';
 process.stdin.on('data', (chunk) => {
   buffer += chunk;
-  if (buffer.includes('Current Clippy chat message:')) {
+  if (buffer.includes('Current candidate message:')) {
     process.stdout.write('Real Devin received the candidate request.\\n');
   }
 });
@@ -937,7 +937,7 @@ process.stdin.setEncoding('utf8');
 let buffer = '';
 process.stdin.on('data', (chunk) => {
   buffer += chunk;
-  if (buffer.includes('Current Clippy chat message:')) {
+  if (buffer.includes('Current candidate message:')) {
     process.stdout.write('Auth check used DEVIN_API_KEY=${rawToken}.\\n');
   }
 });

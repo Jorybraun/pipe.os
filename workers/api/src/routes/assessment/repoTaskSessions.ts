@@ -38,7 +38,6 @@ const modeSchema = z.enum([
   'DEV_CONTAINER_CHALLENGE',
   'DEV_CONTAINER_REPO_TASK',
   'OPEN_SOURCE_BUG_FIX',
-  'NINETY_FIVE_UNTIL_INFINITY_ROOM',
   'CLIPPY_DEVIN_INTERACTION',
 ] satisfies [RepoTaskInterviewMode, ...RepoTaskInterviewMode[]]);
 
