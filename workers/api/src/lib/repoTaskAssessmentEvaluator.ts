@@ -83,8 +83,8 @@ const CHALLENGE_REF_TYPES = new Set([
 const ALLOWED_CLAIM_POLARITIES = new Set(['positive', 'negative', 'diagnostic']);
 const ALLOWED_DIAGNOSTIC_SEVERITIES = new Set(['info', 'warning', 'blocking']);
 type EvaluatorDiagnosticSeverity = 'info' | 'warning' | 'blocking';
-const MAX_SOURCE_REF_EXACT_TEXT_CHARS = 1800;
-const MAX_AI_PROMPT_SOURCE_REFS = 30;
+const MAX_SOURCE_REF_EXACT_TEXT_CHARS = 800;
+const MAX_AI_PROMPT_SOURCE_REFS = 16;
 
 const EXPECTED_HIGH_CONFIDENCE_REF_GROUPS = [
   {
@@ -342,6 +342,7 @@ function buildSystemPrompt(): string {
     'Use EVIDENCE_COVERAGE before scoring. Missing expected evidence must become diagnostics or uncertainty, never positive claims.',
     'Do not make positive test_strategy, verification, AI-usage, or process claims when the matching coverage item is unsatisfied.',
     'If evidence is missing, uncertain, ungrounded, or insufficient, return diagnostics instead of positive claims.',
+    'Keep the response compact: at most 4 claims and 4 diagnostics; summary and narratives must be one short sentence each.',
     'Return only JSON with keys: summary, recommendation, claims, diagnostics.',
     'Allowed claim polarities: positive, negative, diagnostic.',
     'Useful dimensions include source_comprehension, implementation_correctness, debugging_reasoning, test_strategy, security_and_reliability, ai_output_verification, communication.',
@@ -362,22 +363,28 @@ function buildUserPrompt(input: {
     evidenceCoverage: input.evidenceCoverage,
     sourceRefs,
     outputContract: {
-      summary: 'short source-grounded assessment summary',
+      summary: 'one short source-grounded assessment summary',
       recommendation: 'strong_evidence_to_advance | mixed_evidence_human_review | insufficient_evidence | not_demonstrated',
       claims: [{
         id: 'stable-short-id',
         polarity: 'positive | negative | diagnostic',
         dimension: 'assessment dimension',
-        narrative: 'claim grounded only in cited source refs',
+        narrative: 'one short claim grounded only in cited source refs',
         confidence: 0.0,
         sourceRefKeys: ['one-or-more keys from SOURCE_REFS'],
       }],
       diagnostics: [{
         code: 'MISSING_TEST_EVIDENCE | PROVENANCE_INCOMPLETE | EVALUATION_NEEDS_HUMAN_REVIEW',
         severity: 'info | warning | blocking',
-        message: 'what cannot be concluded and why',
+        message: 'one short sentence explaining what cannot be concluded and why',
         sourceRefKeys: ['optional keys from SOURCE_REFS'],
       }],
+      limits: {
+        maxClaims: 4,
+        maxDiagnostics: 4,
+        maxSummaryCharacters: 320,
+        maxNarrativeCharacters: 240,
+      },
     },
   });
 }
@@ -589,7 +596,7 @@ export async function evaluateRepoTaskAssessmentSession(
     const completion = await provider.complete([
       { role: 'system', content: systemPrompt },
       { role: 'user', content: userPrompt },
-    ], { forceJson: true, maxTokens: 2048 });
+    ], { forceJson: true, maxTokens: 4096 });
     rawResponse = completion.content ?? '';
     await recordAiInteraction({
       store: input.store,

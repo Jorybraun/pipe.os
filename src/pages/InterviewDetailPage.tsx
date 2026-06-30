@@ -2092,6 +2092,38 @@ export default function InterviewDetailPage(): JSX.Element {
       detail: codeReviewMatch?.summary ?? 'source trail appears after a match is selected',
     },
   ];
+  const codeReviewHiringReadout = [
+    {
+      label: 'Decision',
+      value: codeReviewOutcome,
+      detail: codeReviewAction,
+      tone: 'neutral' as CodeReviewNextStepTone,
+    },
+    {
+      label: 'Assignment',
+      value: codeReviewAssignmentTrust.value,
+      detail: codeReviewAssignmentTrust.detail,
+      tone: codeReviewAssignmentTrust.tone,
+    },
+    {
+      label: 'Score validity',
+      value: codeReviewAssessmentValidity.value,
+      detail: codeReviewAssessmentValidity.detail,
+      tone: codeReviewAssessmentValidity.tone,
+    },
+    {
+      label: 'Risk',
+      value: codeReviewDecisionRisk.uncertainty.value,
+      detail: codeReviewDecisionRisk.uncertainty.detail,
+      tone: codeReviewNextStep.tone,
+    },
+    {
+      label: 'Next action',
+      value: codeReviewNextStep.value,
+      detail: codeReviewNextStep.detail,
+      tone: codeReviewNextStep.tone,
+    },
+  ];
 
   return (
     <div style={PAGE}>
@@ -2499,6 +2531,24 @@ export default function InterviewDetailPage(): JSX.Element {
                 )}
               </div>
               <div style={DECISION_ACTION}>{codeReviewAction}</div>
+              <div data-testid="interview-code-review-hiring-readout" style={DECISION_COCKPIT}>
+                <div style={FIELD_LABEL}>Hiring manager readout</div>
+                <div style={DECISION_COCKPIT_GRID}>
+                  {codeReviewHiringReadout.map((item) => (
+                    <div
+                      key={item.label}
+                      style={{
+                        ...DECISION_COCKPIT_ITEM,
+                        ...DECISION_NEXT_STEP_TONE[item.tone],
+                      }}
+                    >
+                      <div style={FIELD_LABEL}>{item.label}</div>
+                      <div style={DECISION_COCKPIT_VALUE}>{item.value}</div>
+                      <div style={DECISION_COCKPIT_DETAIL}>{item.detail}</div>
+                    </div>
+                  ))}
+                </div>
+              </div>
               <div
                 data-testid="interview-code-review-assignment-trust"
                 style={{
@@ -3993,6 +4043,49 @@ const DECISION_ACTION: CSSProperties = {
   color: 'var(--pipe-text)',
   fontSize: 14,
   lineHeight: 1.65,
+};
+
+const DECISION_COCKPIT: CSSProperties = {
+  display: 'grid',
+  gap: 9,
+  minWidth: 0,
+  padding: 12,
+  border: '1px solid rgba(96,165,250,0.28)',
+  borderRadius: 6,
+  background: 'rgba(96,165,250,0.06)',
+};
+
+const DECISION_COCKPIT_GRID: CSSProperties = {
+  display: 'grid',
+  gridTemplateColumns: 'repeat(auto-fit, minmax(180px, 1fr))',
+  gap: 8,
+  minWidth: 0,
+};
+
+const DECISION_COCKPIT_ITEM: CSSProperties = {
+  display: 'grid',
+  gap: 6,
+  alignContent: 'start',
+  minWidth: 0,
+  minHeight: 126,
+  padding: 11,
+  border: '1px solid var(--pipe-border)',
+  borderRadius: 6,
+  background: 'var(--pipe-surface)',
+};
+
+const DECISION_COCKPIT_VALUE: CSSProperties = {
+  color: 'var(--pipe-text)',
+  fontSize: 13,
+  fontWeight: 800,
+  lineHeight: 1.3,
+  overflowWrap: 'anywhere',
+};
+
+const DECISION_COCKPIT_DETAIL: CSSProperties = {
+  color: 'var(--pipe-text-dim)',
+  fontSize: 11,
+  lineHeight: 1.45,
 };
 
 const DECISION_NEXT_STEP: CSSProperties = {

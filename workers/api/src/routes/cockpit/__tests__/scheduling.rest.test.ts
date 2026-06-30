@@ -1365,7 +1365,11 @@ describe('GET /interviews/:id detail', () => {
       'Success: commit a focused patch with tests.',
     ].join('\n');
     const commitText = `commit ${commitSha}\nAuthor: Candidate <candidate@example.com>\n\nFix start evaluation.`;
-    const diffText = 'diff --git a/src/evaluation.ts b/src/evaluation.ts\n+startEvaluation();';
+    const diffText = [
+      'diff --git a/src/evaluation.ts b/src/evaluation.ts',
+      '+startEvaluation();',
+      `+${'long evaluator prompt fixture '.repeat(90)}`,
+    ].join('\n');
 
     sqlite!.prepare(`
       UPDATE scheduled_interviews
@@ -1551,7 +1555,11 @@ describe('GET /interviews/:id detail', () => {
       'Success: commit a focused patch with tests.',
     ].join('\n');
     const commitText = `commit ${commitSha}\nAuthor: Candidate <candidate@example.com>\n\nFix start evaluation.`;
-    const diffText = 'diff --git a/src/evaluation.ts b/src/evaluation.ts\n+startEvaluation();';
+    const diffText = [
+      'diff --git a/src/evaluation.ts b/src/evaluation.ts',
+      '+startEvaluation();',
+      `+${'long evaluator prompt fixture '.repeat(90)}`,
+    ].join('\n');
     const diffSourceRefKey = `code_diff:${commitSha}:diff:support:`;
 
     sqlite!.prepare(`
@@ -1733,6 +1741,15 @@ describe('GET /interviews/:id detail', () => {
     const userPrompt = aiInput?.messages?.find((message) => message.role === 'user')?.content ?? null;
     expect(typeof userPrompt).toBe('string');
     const userPromptPayload = JSON.parse(userPrompt ?? '{}') as {
+      sourceRefs?: Array<{ key?: string; exactText?: string }>;
+      outputContract?: {
+        limits?: {
+          maxClaims?: number;
+          maxDiagnostics?: number;
+          maxSummaryCharacters?: number;
+          maxNarrativeCharacters?: number;
+        };
+      };
       evidenceCoverage?: {
         schemaVersion?: string;
         sourceRefTypeCounts?: Record<string, number>;
@@ -1763,6 +1780,15 @@ describe('GET /interviews/:id detail', () => {
         missingImpact: 'Do not make positive test_strategy or verification claims without test_run evidence.',
       }),
     ]));
+    expect(userPromptPayload.outputContract?.limits).toMatchObject({
+      maxClaims: 4,
+      maxDiagnostics: 4,
+      maxSummaryCharacters: 320,
+      maxNarrativeCharacters: 240,
+    });
+    const promptedDiffRef = userPromptPayload.sourceRefs?.find((sourceRef) => sourceRef.key === diffSourceRefKey);
+    expect(promptedDiffRef?.exactText?.length).toBeLessThanOrEqual(800);
+    expect(promptedDiffRef?.exactText).toContain('[truncated]');
     expect(body.diagnostic).toBeNull();
     expect(body.report).toMatchObject({
       sessionId: 'assessment-session-ai-evaluation',
@@ -3746,7 +3772,7 @@ describe('GET /interviews/:id detail', () => {
       method: 'POST',
     });
 
-    expect(response.status).toBe(200);
+    expect(response.status).toBe(201);
     const body = await response.json() as {
       contextCall: {
         id: string;

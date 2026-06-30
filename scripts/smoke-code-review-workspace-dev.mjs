@@ -395,6 +395,19 @@ async function main() {
   if (submittedBody?.progress?.hasCommitSubmission !== true) {
     throw new Error(`Workspace progress did not reflect the committed submission: ${JSON.stringify(submittedBody?.progress)}`);
   }
+  const evaluationBody = await requestJson(APP_BASE, `/api/v1/scheduling/interviews/${interviewId}/assessment/start-evaluation`, {
+    method: 'POST',
+  });
+  const evaluationProgress = evaluationBody?.progress ?? null;
+  if (evaluationProgress?.stage !== 'EVALUATED' || evaluationProgress?.nextAction !== 'REVIEW_EVALUATION') {
+    throw new Error(`Workspace assessment evaluation did not produce a reviewable report: ${JSON.stringify(evaluationBody)}`);
+  }
+  if (evaluationBody?.report?.status !== 'EVALUATED' || evaluationBody?.diagnostic !== null) {
+    throw new Error(`Workspace assessment evaluation was not a clean source-backed report: ${JSON.stringify(evaluationBody)}`);
+  }
+  if (evaluationProgress?.evaluation?.status !== 'EVALUATED') {
+    throw new Error(`Workspace assessment progress did not expose evaluated status: ${JSON.stringify(evaluationProgress?.evaluation)}`);
+  }
 
   console.log(JSON.stringify({
     ok: true,
@@ -417,6 +430,12 @@ async function main() {
     finalizerSubmitted: true,
     finalizerProgressStage: submittedBody.progress?.stage ?? null,
     finalizerNextAction: submittedBody.progress?.nextAction ?? null,
+    evaluationStarted: true,
+    evaluationStage: evaluationProgress.stage,
+    evaluationNextAction: evaluationProgress.nextAction,
+    evaluationStatus: evaluationProgress.evaluation?.status ?? null,
+    evaluationSummary: evaluationProgress.evaluation?.summary ?? null,
+    evaluationReportId: evaluationBody.report?.id ?? null,
   }, null, 2));
 }
 
