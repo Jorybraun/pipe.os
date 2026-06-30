@@ -260,8 +260,12 @@ async function requireContextSourceRef(
     if (source.contentHash !== row.source_hash) {
       throw new Error(`review challenge packet ${source.sourceRefId} contentHash does not match`);
     }
-    if (source.exactText !== null && source.exactText !== row.packet_json) {
-      throw new Error(`review challenge packet ${source.sourceRefId} exactText does not match`);
+    if (source.exactText !== undefined && source.exactText !== null) {
+      let isJsonPayload = false;
+      try { JSON.parse(source.exactText); isJsonPayload = true; } catch { /* human-readable text */ }
+      if (isJsonPayload && source.exactText !== row.packet_json) {
+        throw new Error(`review challenge packet ${source.sourceRefId} exactText does not match`);
+      }
     }
     return;
   }

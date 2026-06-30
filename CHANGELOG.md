@@ -14,10 +14,10 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - `fullPipelineE2E.test.ts`: Add `personContextMode: 'attributed'` to transcript ingestion, enabling `assertion_source_spans` linkage.
 - `reviewSessionV2.test.ts`: Add `retryable_standalone_ingestion` responder to prevent stale ingestion query collisions; add candidate row responder for `submit-challenge-response` to prevent 404 from `claimCandidateInviteTokenForAssessmentStart`.
 - `assessmentBackfill.test.ts`: Align source ref `exact_text` with `packet_json` in `review_challenge_packets` for exactText validation.
-- `persistence.ts`: Add exactText validation for review challenge packet source refs — verifies `exactText` matches stored `packet_json` when provided.
+- `persistence.ts`: Validate `review_challenge_packet` exactText against stored packet JSON when exactText is JSON.
 - `assessmentIngestion.ts`: Simplify candidate resolution — use `session.candidate_id` directly instead of `resolveAssessmentCandidateId` fallback query through `scheduled_interviews`.
 - `backfillScheduled.ts`: Simplify assessment backfill queries — require `candidate_id IS NOT NULL` directly, removing redundant `scheduled_interviews` join fallback.
-
+- `backfillScheduled.test.ts`: Add 8-test suite covering rollout gate enforcement, candidate/contact/resume/meeting batch backfill, idempotency, task dependency ordering, and task definition completeness.
 ### Added — Human assessment decisions
 
 - Repo-task assessment sessions now support append-only `human_assessment_decision` events with exact source refs, SHA-256 content-hash validation, and provenance checks against session evidence, evaluation reports, evaluation claims, or diagnostics.
