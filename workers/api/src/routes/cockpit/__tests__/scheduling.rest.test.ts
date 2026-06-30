@@ -3746,7 +3746,7 @@ describe('GET /interviews/:id detail', () => {
       method: 'POST',
     });
 
-    expect(response.status).toBe(201);
+    expect(response.status).toBe(200);
     const body = await response.json() as {
       contextCall: {
         id: string;
@@ -7023,6 +7023,68 @@ describe('POST /interviews dev-container challenge (HAS-80)', () => {
     ).get(body.interview.id) as { interview_type: string; matched_repo_id: number | null };
     expect(row.interview_type).toBe('DEV_CONTAINER_CHALLENGE');
     expect(row.matched_repo_id).toBe(7);
+  });
+
+  it('labels a matched repo plus PR as an automatic source-backed assignment', async () => {
+    seedDevContainerFixture();
+    const app = mountSchedulingApp();
+
+    const createResponse = await app.request('/interviews', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({
+        recipientName: 'Grace Hopper',
+        recipientEmail: 'grace@example.com',
+        meetingType: 'DIRECT_VIDEO_CALL',
+        interviewType: 'CODE_REVIEW',
+        matchedRepoId: 7,
+      }),
+    });
+    expect(createResponse.status).toBe(201);
+    const created = await createResponse.json() as { interview: { id: string } };
+
+    sqlite!.prepare(
+      `UPDATE scheduled_interviews
+          SET github_repo_url = ?,
+              github_pr_number = ?,
+              updated_at = ?
+        WHERE id = ?`,
+    ).run(
+      'https://github.com/hash-pipe/source-backed-match',
+      42,
+      '2026-06-22T20:00:00.000Z',
+      created.interview.id,
+    );
+
+    const response = await app.request('/interviews');
+    expect(response.status).toBe(200);
+    const body = await response.json() as {
+      interviews: Array<{
+        id: string;
+        matchedRepoId: number | null;
+        githubRepoUrl: string | null;
+        githubPrNumber: number | null;
+        assessmentSetup: {
+          status: string;
+          kind: string;
+          source: string;
+          blocksPositiveAssessment: boolean;
+          message: string | null;
+        };
+      }>;
+    };
+    const interview = body.interviews.find((item) => item.id === created.interview.id);
+
+    expect(interview?.matchedRepoId).toBe(7);
+    expect(interview?.githubRepoUrl).toBe('https://github.com/hash-pipe/source-backed-match');
+    expect(interview?.githubPrNumber).toBe(42);
+    expect(interview?.assessmentSetup).toMatchObject({
+      status: 'reviewable_task_assigned',
+      kind: 'auto_match',
+      source: 'matched_repo_id',
+      blocksPositiveAssessment: false,
+    });
+    expect(interview?.assessmentSetup.message).toContain('PIPE selected a concrete GitHub PR');
   });
 });
 

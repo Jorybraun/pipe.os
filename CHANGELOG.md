@@ -69,6 +69,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - Dev container workspaces now mark `/workspace` as a safe Git directory, start with explicit internet access, and use production cold-start timeouts so exact-base-commit repo tasks do not crash before VS Code can boot.
 - Room workspace launches no longer inject Devin by default; code-review rooms start a plain reliable code-server workspace unless the launch explicitly requests a configured agent.
 - CODE_REVIEW recruiter decision and assignment panels now label assignment trust explicitly, distinguishing automatic matches from manual repo or PR tasks before managers treat the review as candidate-fit evidence.
+- CODE_REVIEW and dev-container recruiter projections now label matched repo+PR assignments as source-backed automatic matches instead of manual PR overrides, preserving assignment provenance after repo matching caches the selected challenge.
 - Candidate assessment BDD now guards the one-use invite lifecycle: resolving a link does not mark it used, while explicitly starting the assessment claims it and makes subsequent raw-link resolves fail.
 - Playwright recruiter auth setup now waits for the Clerk session cookie instead of old shell copy or `networkidle`, making authenticated smoke gates less brittle.
 - MVP browser smoke now opens the merged person profile after roleless evidence ingestion, uses the app-dev recruiter API proxy for deployed setup, and verifies the decision cockpit, evidence coverage, and quiet source-id handling in a real browser.

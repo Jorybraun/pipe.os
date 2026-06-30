@@ -223,6 +223,19 @@ function buildScheduledAssessmentSetup(input: {
     };
   }
 
+  if (input.matchedRepoId && input.githubRepoUrl && input.githubPrNumber) {
+    return {
+      status: 'reviewable_task_assigned',
+      kind: 'auto_match',
+      source: 'matched_repo_id',
+      blocksPositiveAssessment: false,
+      message: 'PIPE selected a concrete GitHub PR from source-backed candidate evidence and repository demands. Use the assignment as match-fit evidence alongside the candidate review.',
+      lastDeliveredUrl,
+      lastDeliveredUrlState,
+      lastDeliveredUrlMessage,
+    };
+  }
+
   if (input.githubRepoUrl && input.githubPrNumber) {
     return {
       status: 'reviewable_task_assigned',
