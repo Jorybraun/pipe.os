@@ -13,6 +13,7 @@
  */
 
 import { Hono } from 'hono';
+import { z } from 'zod';
 import { signJwt, verifyJwt } from '../lib/jwt';
 import { candidateAuth, type CandidateVariables } from '../middleware/candidateAuth';
 import { review } from './assessment/review';
@@ -55,6 +56,12 @@ import {
   STALE_WORKERS_AI_RETRY_REASON,
   maybeQueueRetryableStandaloneIngestion,
 } from '../lib/candidateDiscovery/staleWorkersAiRetry';
+import {
+  RepoTaskInterviewSessionStore,
+  type AssessmentProgressSnapshot,
+  type CommitSubmissionChangedFileStatus,
+} from '../lib/repoTaskInterviewSession';
+import type { JsonObject, JsonValue } from '../lib/livingContext';
 
 // ─── Blocking gate for post-screener enrichment ─────────────────────────────
 
@@ -653,6 +660,96 @@ interface StandaloneDevContainerRow {
   github_pr_number: number | null;
   submission_json: string | null;
 }
+
+interface CandidateAssessmentSessionRow {
+  id: string;
+  mode: string;
+  state: string;
+}
+
+interface CandidateAssessmentProgressPayload {
+  mode: string;
+  state: string;
+  stage: AssessmentProgressSnapshot['stage'];
+  nextAction: AssessmentProgressSnapshot['nextAction'];
+  nextActionLabel: string;
+  hasChallengePacket: boolean;
+  hasWorkEvidence: boolean;
+  hasMessageEvidence: boolean;
+  hasDevContainerEvidence: boolean;
+  hasToolUsageEvidence: boolean;
+  hasCommitSubmission: boolean;
+  hasFinalSubmission: boolean;
+  hasAiInteraction: boolean;
+  hasTranscriptEvidence: boolean;
+  hasTestEvidence: boolean;
+  hasVerificationGap: boolean;
+  evidenceCounts: AssessmentProgressSnapshot['evidenceCounts'];
+  sourceRefCounts: AssessmentProgressSnapshot['sourceRefCounts'];
+  evidenceSnippets: AssessmentProgressSnapshot['evidenceSnippets'];
+  challenge: {
+    sourceRefType: string;
+    evidenceRole: string;
+    exactText: string;
+    contentHash: string;
+    locator: JsonObject;
+  } | null;
+  latestEvent: Omit<NonNullable<AssessmentProgressSnapshot['latestEvent']>, 'id'> | null;
+  commit: Omit<NonNullable<AssessmentProgressSnapshot['commit']>, 'eventId'> | null;
+  evaluation: Omit<NonNullable<AssessmentProgressSnapshot['evaluation']>, 'id'> | null;
+}
+
+const candidateAssessmentJsonValueSchema: z.ZodType<JsonValue> = z.lazy(() => z.union([
+  z.string(),
+  z.number(),
+  z.boolean(),
+  z.null(),
+  z.array(candidateAssessmentJsonValueSchema),
+  z.record(candidateAssessmentJsonValueSchema),
+]));
+const candidateAssessmentJsonObjectSchema: z.ZodType<JsonObject> = z.record(candidateAssessmentJsonValueSchema);
+
+const candidateAssessmentSourceRefSchema = z.object({
+  sourceRefType: z.string().trim().min(1),
+  sourceRefId: z.string().trim().min(1),
+  sourceSpanId: z.string().trim().min(1).nullable().optional(),
+  evidenceRole: z.string().trim().min(1).optional(),
+  locator: candidateAssessmentJsonObjectSchema.optional(),
+  exactText: z.string().min(1),
+  contentHash: z.string().trim().min(1),
+  metadata: candidateAssessmentJsonObjectSchema.optional(),
+});
+
+const candidateCommitChangedFileStatusSchema = z.enum([
+  'added',
+  'modified',
+  'deleted',
+  'renamed',
+  'copied',
+] satisfies [CommitSubmissionChangedFileStatus, ...CommitSubmissionChangedFileStatus[]]);
+
+const candidateCommitChangedFileSchema = z.object({
+  path: z.string().trim().min(1),
+  status: candidateCommitChangedFileStatusSchema,
+  previousPath: z.string().trim().min(1).nullable().optional(),
+  additions: z.number().int().min(0).nullable().optional(),
+  deletions: z.number().int().min(0).nullable().optional(),
+});
+
+const candidateCommitSubmissionSchema = z.object({
+  narrative: z.string().trim().min(1),
+  repositoryUrl: z.string().trim().min(1),
+  forkRepositoryUrl: z.string().trim().min(1).nullable().optional(),
+  branchName: z.string().trim().min(1),
+  baseCommitSha: z.string().trim().min(1),
+  commitSha: z.string().trim().min(1),
+  commitUrl: z.string().trim().min(1).nullable().optional(),
+  upstreamPullRequestUrl: z.string().trim().min(1).nullable().optional(),
+  upstreamPrConsent: z.boolean().optional(),
+  changedFiles: z.array(candidateCommitChangedFileSchema).min(1),
+  occurredAt: z.string().trim().min(1).nullable().optional(),
+  sourceRefs: z.array(candidateAssessmentSourceRefSchema).min(2),
+});
 
 type CandidateSafeValidatorVerdict = CandidateSafeQualityGateVerdict | 'REJECTED';
 
@@ -1462,6 +1559,139 @@ async function getPendingStandaloneAssessment(
     getPendingDevContainerChallenge(db, candidateId),
   ]);
   return chooseLatestStandaloneAssessment(review, devContainer);
+}
+
+async function assessmentSessionsTableExists(db: D1Database): Promise<boolean> {
+  const row = await db.prepare(
+    `SELECT name
+       FROM sqlite_master
+      WHERE type = 'table'
+        AND name = 'assessment_sessions'
+      LIMIT 1`,
+  ).first<{ name: string }>().catch(() => null);
+  return row?.name === 'assessment_sessions';
+}
+
+async function loadLatestAssessmentSessionForCandidate(
+  db: D1Database,
+  candidateId: string,
+): Promise<CandidateAssessmentSessionRow | null> {
+  if (!await assessmentSessionsTableExists(db)) return null;
+  return db.prepare(
+    `SELECT s.id, s.mode, s.state
+       FROM assessment_sessions s
+       LEFT JOIN scheduled_interviews si ON si.id = s.interview_id
+      WHERE s.state <> 'CANCELLED'
+        AND s.mode IN ('OPEN_SOURCE_BUG_FIX', 'DEV_CONTAINER_REPO_TASK', 'DEV_CONTAINER_CHALLENGE')
+        AND (s.candidate_id = ?1 OR si.candidate_id = ?1)
+      ORDER BY s.created_at DESC
+      LIMIT 1`,
+  ).bind(candidateId).first<CandidateAssessmentSessionRow>();
+}
+
+function candidateSafeAssessmentLocator(locator: JsonObject): JsonObject {
+  const safe: JsonObject = {};
+  for (const key of [
+    'repositoryUrl',
+    'githubPrNumber',
+    'pullRequestUrl',
+    'baseCommitSha',
+    'headCommitSha',
+  ]) {
+    const value = locator[key];
+    if (
+      typeof value === 'string'
+      || typeof value === 'number'
+      || typeof value === 'boolean'
+      || value === null
+    ) {
+      safe[key] = value;
+    }
+  }
+  return safe;
+}
+
+function serializeCandidateAssessmentProgress(
+  progress: AssessmentProgressSnapshot,
+): CandidateAssessmentProgressPayload {
+  return {
+    mode: progress.session.mode,
+    state: progress.session.state,
+    stage: progress.stage,
+    nextAction: progress.nextAction,
+    nextActionLabel: progress.nextActionLabel,
+    hasChallengePacket: progress.hasChallengePacket,
+    hasWorkEvidence: progress.hasWorkEvidence,
+    hasMessageEvidence: progress.hasMessageEvidence,
+    hasDevContainerEvidence: progress.hasDevContainerEvidence,
+    hasToolUsageEvidence: progress.hasToolUsageEvidence,
+    hasCommitSubmission: progress.hasCommitSubmission,
+    hasFinalSubmission: progress.hasFinalSubmission,
+    hasAiInteraction: progress.hasAiInteraction,
+    hasTranscriptEvidence: progress.hasTranscriptEvidence,
+    hasTestEvidence: progress.hasTestEvidence,
+    hasVerificationGap: progress.hasVerificationGap,
+    evidenceCounts: progress.evidenceCounts,
+    sourceRefCounts: progress.sourceRefCounts,
+    evidenceSnippets: progress.evidenceSnippets,
+    challenge: progress.challenge
+      ? {
+          sourceRefType: progress.challenge.sourceRefType,
+          evidenceRole: progress.challenge.evidenceRole,
+          exactText: progress.challenge.exactText,
+          contentHash: progress.challenge.contentHash,
+          locator: candidateSafeAssessmentLocator(progress.challenge.locator),
+        }
+      : null,
+    latestEvent: progress.latestEvent
+      ? {
+          kind: progress.latestEvent.kind,
+          sequence: progress.latestEvent.sequence,
+          occurredAt: progress.latestEvent.occurredAt,
+        }
+      : null,
+    commit: progress.commit
+      ? {
+          repositoryUrl: progress.commit.repositoryUrl,
+          forkRepositoryUrl: progress.commit.forkRepositoryUrl,
+          branchName: progress.commit.branchName,
+          baseCommitSha: progress.commit.baseCommitSha,
+          commitSha: progress.commit.commitSha,
+          commitUrl: progress.commit.commitUrl,
+          changedFiles: progress.commit.changedFiles,
+          occurredAt: progress.commit.occurredAt,
+        }
+      : null,
+    evaluation: progress.evaluation
+      ? {
+          status: progress.evaluation.status,
+          summary: progress.evaluation.summary,
+          recommendation: progress.evaluation.recommendation,
+          createdAt: progress.evaluation.createdAt,
+          evidenceCoverage: progress.evaluation.evidenceCoverage,
+          claims: progress.evaluation.claims,
+          diagnostics: progress.evaluation.diagnostics,
+        }
+      : null,
+  };
+}
+
+function candidateAssessmentErrorResponse(message: string, status = 422): Response {
+  return new Response(JSON.stringify({
+    error: {
+      code: status === 404
+        ? 'NOT_FOUND'
+        : status === 409
+          ? 'CONFLICT'
+          : status >= 500
+            ? 'INTERNAL_ERROR'
+            : 'VALIDATION_ERROR',
+      message,
+    },
+  }), {
+    status,
+    headers: { 'Content-Type': 'application/json' },
+  });
 }
 
 /** True when the candidate has neither a stored resume nor matchable graph evidence yet. */
@@ -3356,6 +3586,97 @@ rpcAuth.post('/get-challenge', async (c) => {
   }
 
   return c.json(response);
+});
+
+// ── Candidate repo-task assessment progress/submission ─────────────────────
+
+rpcAuth.get('/assessment/progress', async (c) => {
+  const candidateId = c.get('candidateId');
+  const assessmentSession = await loadLatestAssessmentSessionForCandidate(c.env.DB, candidateId);
+  if (!assessmentSession) {
+    return c.json({ progress: null });
+  }
+
+  try {
+    const progress = await new RepoTaskInterviewSessionStore(c.env.DB).loadProgress(assessmentSession.id);
+    return c.json({ progress: serializeCandidateAssessmentProgress(progress) });
+  } catch (error) {
+    console.error('[rpc/assessment/progress] failed:', {
+      candidateId,
+      error: error instanceof Error ? error.message : String(error),
+    });
+    return candidateAssessmentErrorResponse('Assessment progress failed.', 500);
+  }
+});
+
+rpcAuth.post('/assessment/commit-submission', async (c) => {
+  const candidateId = c.get('candidateId');
+  const body = candidateCommitSubmissionSchema.safeParse(await c.req.json().catch(() => null));
+  if (!body.success) {
+    return candidateAssessmentErrorResponse(
+      body.error.issues[0]?.message ?? 'Invalid commit submission body.',
+      422,
+    );
+  }
+
+  const assessmentSession = await loadLatestAssessmentSessionForCandidate(c.env.DB, candidateId);
+  if (!assessmentSession) {
+    return candidateAssessmentErrorResponse(
+      'No open-source assessment session is available for this candidate.',
+      409,
+    );
+  }
+
+  const store = new RepoTaskInterviewSessionStore(c.env.DB);
+  const commitSha = body.data.commitSha.trim().toLowerCase();
+  try {
+    await store.submitCommit({
+      sessionId: assessmentSession.id,
+      ingestionKey: `assessment-event:candidate-commit:${assessmentSession.id}:${commitSha}`,
+      actorType: 'candidate',
+      actorId: candidateId,
+      narrative: body.data.narrative,
+      repositoryUrl: body.data.repositoryUrl,
+      forkRepositoryUrl: body.data.forkRepositoryUrl,
+      branchName: body.data.branchName,
+      baseCommitSha: body.data.baseCommitSha,
+      commitSha: body.data.commitSha,
+      commitUrl: body.data.commitUrl,
+      upstreamPullRequestUrl: body.data.upstreamPullRequestUrl,
+      upstreamPrConsent: body.data.upstreamPrConsent,
+      changedFiles: body.data.changedFiles,
+      occurredAt: body.data.occurredAt,
+      sourceRefs: body.data.sourceRefs,
+    });
+    const progress = await store.loadProgress(assessmentSession.id);
+    return c.json({
+      submission: {
+        accepted: true,
+        repositoryUrl: progress.commit?.repositoryUrl ?? body.data.repositoryUrl,
+        branchName: progress.commit?.branchName ?? body.data.branchName,
+        commitSha: progress.commit?.commitSha ?? commitSha,
+        commitUrl: progress.commit?.commitUrl ?? body.data.commitUrl ?? null,
+      },
+      progress: serializeCandidateAssessmentProgress(progress),
+    }, 201);
+  } catch (error) {
+    const message = error instanceof Error ? error.message : 'Commit submission failed.';
+    if (message.includes('does not exist')) {
+      return candidateAssessmentErrorResponse(message, 404);
+    }
+    if (
+      message.includes('requires')
+      || message.includes('must')
+      || message.includes('cannot transition')
+    ) {
+      return candidateAssessmentErrorResponse(message, 422);
+    }
+    console.error('[rpc/assessment/commit-submission] failed:', {
+      candidateId,
+      error: message,
+    });
+    return candidateAssessmentErrorResponse('Commit submission failed.', 500);
+  }
 });
 
 // ── POST /rpc/submit-challenge-response ─────────────────────────────────────
