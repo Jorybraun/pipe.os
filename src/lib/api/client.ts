@@ -16,6 +16,7 @@
  */
 
 import { ApiError, type ApiErrorBody } from './types';
+import { takeDevProxyApiJsonPrefetch } from './devProxyPrefetch';
 
 // ─── Configuration ────────────────────────────────────────────────────────────
 
@@ -125,6 +126,15 @@ export function createApiClient(config: ApiClientConfig): ApiClient {
   // ─── Public methods ─────────────────────────────────────────────────────────
 
   async function get<T>(path: string): Promise<T> {
+    const prefetched = takeDevProxyApiJsonPrefetch<T>(path);
+    if (prefetched) {
+      try {
+        return await prefetched;
+      } catch {
+        // Fall through to a normal fetch if the speculative request failed.
+      }
+    }
+
     const headers = await authHeader();
     const response = await fetch(resolveApiUrl(baseUrl, path), {
       method: 'GET',
