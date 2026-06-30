@@ -595,6 +595,11 @@ describe('InterviewDetailPage', () => {
     expect(progress).toHaveTextContent('Evaluated');
     expect(progress).toHaveTextContent('Review the assessment report and evidence.');
     expect(progress).toHaveTextContent('Evaluated · Strong evidence to advance · Candidate made a focused source-backed change and cited the submitted diff evidence.');
+    expect(progress).toHaveTextContent('Required proof');
+    expect(progress).toHaveTextContent('Challenge captured');
+    expect(progress).toHaveTextContent('Commit captured');
+    expect(progress).toHaveTextContent('Diff captured');
+    expect(progress).toHaveTextContent('Confidence signals');
     expect(progress).toHaveTextContent('Tests missing');
     expect(progress).toHaveTextContent('Terminal captured');
     expect(progress).toHaveTextContent('Editor missing');

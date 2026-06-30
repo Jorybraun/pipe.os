@@ -483,7 +483,17 @@ function assessmentCoverageLabel(label: string): string {
   }
 }
 
-function assessmentCoverageItems(progress: AssessmentProgressSnapshot | null): AssessmentEvidenceCoverageItem[] {
+function assessmentRequiredProofItems(progress: AssessmentProgressSnapshot | null): AssessmentEvidenceCoverageItem[] {
+  const coverage = progress?.evaluation?.evidenceCoverage ?? null;
+  if (!coverage) return [];
+  return coverage.requiredForEvaluation.filter((item) => [
+    'challenge_packet',
+    'git_commit',
+    'code_diff',
+  ].includes(item.label));
+}
+
+function assessmentConfidenceSignalItems(progress: AssessmentProgressSnapshot | null): AssessmentEvidenceCoverageItem[] {
   const coverage = progress?.evaluation?.evidenceCoverage ?? null;
   if (!coverage) return [];
   return coverage.expectedForHighConfidence.filter((item) => [
@@ -2128,7 +2138,8 @@ export default function InterviewDetailPage(): JSX.Element {
     : null;
   const assessmentWorkspaceSummary = workspaceSessionSummary(interview);
   const assessmentProgressSourceRefCounts = assessmentProgress?.sourceRefCounts ?? [];
-  const assessmentCoverage = assessmentCoverageItems(assessmentProgress);
+  const assessmentRequiredProof = assessmentRequiredProofItems(assessmentProgress);
+  const assessmentConfidenceSignals = assessmentConfidenceSignalItems(assessmentProgress);
   const canStartAssessmentEvaluation = assessmentProgress?.nextAction === 'START_EVALUATION';
   const showsRoomPanel = !isCodeReviewInterview;
   const hasCallRecordEvidence = Boolean(
@@ -2643,11 +2654,27 @@ export default function InterviewDetailPage(): JSX.Element {
                   </span>
                 </div>
               )}
-              {assessmentCoverage.length > 0 && (
+              {assessmentRequiredProof.length > 0 && (
                 <div style={{ ...EVIDENCE_ROW, alignItems: 'flex-start' }}>
-                  <span style={FIELD_LABEL}>Coverage</span>
+                  <span style={FIELD_LABEL}>Required proof</span>
                   <span style={{ ...FIELD_VALUE, ...ASSESSMENT_COVERAGE_CHIPS }}>
-                    {assessmentCoverage.map((item) => (
+                    {assessmentRequiredProof.map((item) => (
+                      <span
+                        key={item.label}
+                        style={item.satisfied ? ASSESSMENT_COVERAGE_OK : ASSESSMENT_COVERAGE_MISSING}
+                        title={item.satisfied ? undefined : item.missingImpact}
+                      >
+                        {assessmentCoverageLabel(item.label)} {item.satisfied ? 'captured' : 'missing'}
+                      </span>
+                    ))}
+                  </span>
+                </div>
+              )}
+              {assessmentConfidenceSignals.length > 0 && (
+                <div style={{ ...EVIDENCE_ROW, alignItems: 'flex-start' }}>
+                  <span style={FIELD_LABEL}>Confidence signals</span>
+                  <span style={{ ...FIELD_VALUE, ...ASSESSMENT_COVERAGE_CHIPS }}>
+                    {assessmentConfidenceSignals.map((item) => (
                       <span
                         key={item.label}
                         style={item.satisfied ? ASSESSMENT_COVERAGE_OK : ASSESSMENT_COVERAGE_MISSING}
