@@ -1805,6 +1805,39 @@ candidateOps.get('/:candidateId/living-context/evidence-depth', requireGate('liv
   });
 });
 
+// GET /:candidateId/living-context/evidence-readiness — multi-dimensional readiness scoring
+candidateOps.get('/:candidateId/living-context/evidence-readiness', requireGate('living_context_read'), async (c) => {
+  const userId = c.var.userId;
+  const { candidateId } = c.req.param();
+  const db = c.env.DB;
+
+  const candidate = await db.prepare(
+    `SELECT c.id
+       FROM candidates c
+       LEFT JOIN pipelines p ON p.id = c.pipeline_id
+      WHERE c.id = ?1 AND (c.owner_id = ?2 OR p.owner_id = ?2)`,
+  ).bind(candidateId, userId).first<{ id: string }>();
+  if (!candidate) return apiError(c, 'NOT_FOUND', 'Candidate not found.');
+
+  const { computeEvidenceReadiness } = await import('../../lib/livingContext/evidenceReadiness');
+  const report = await computeEvidenceReadiness(db, candidateId);
+  if (!report) {
+    return c.json({
+      candidateId,
+      workspacePersonId: null,
+      overallScore: 0,
+      overallLevel: 'not_ready',
+      dimensions: [],
+      weakest: [],
+      strongest: [],
+      recommendations: [],
+      computedAt: new Date().toISOString(),
+    });
+  }
+
+  return c.json(report);
+});
+
 // POST /:candidateId/living-context/rematch — recruiter triggers a fresh match run
 candidateOps.post('/:candidateId/living-context/rematch', requireGate('living_context_read'), async (c) => {
   const userId = c.var.userId;

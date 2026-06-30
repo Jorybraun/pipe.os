@@ -2993,3 +2993,91 @@ html[data-theme="pipe-blue"] .living-context {
   color: var(--lc-source, #f87171);
   background: rgba(248, 113, 113, 0.06);
 }
+
+/* Evidence Readiness Panel */
+.living-context__readiness-level {
+  font-family: 'Space Mono', monospace;
+  font-size: 11px;
+  font-weight: 700;
+  text-transform: uppercase;
+  letter-spacing: 0.05em;
+  margin-bottom: 8px;
+}
+
+.living-context__readiness-grid {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+}
+
+.living-context__readiness-dim {
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+}
+
+.living-context__readiness-dim-bar {
+  height: 4px;
+  background: rgba(255, 255, 255, 0.06);
+  border-radius: 2px;
+  overflow: hidden;
+}
+
+.living-context__readiness-dim-fill {
+  height: 100%;
+  border-radius: 2px;
+  transition: width 0.3s ease;
+}
+
+.living-context__readiness-dim--none .living-context__readiness-dim-fill {
+  background: var(--lc-source, #f87171);
+}
+
+.living-context__readiness-dim--minimal .living-context__readiness-dim-fill {
+  background: #f59e0b;
+}
+
+.living-context__readiness-dim--partial .living-context__readiness-dim-fill {
+  background: #3b82f6;
+}
+
+.living-context__readiness-dim--strong .living-context__readiness-dim-fill {
+  background: #10b981;
+}
+
+.living-context__readiness-dim--comprehensive .living-context__readiness-dim-fill {
+  background: #10b981;
+}
+
+.living-context__readiness-dim-label {
+  font-size: 10px;
+  color: rgba(255, 255, 255, 0.7);
+  font-family: 'Space Mono', monospace;
+}
+
+.living-context__readiness-dim-meta {
+  font-size: 9px;
+  color: rgba(255, 255, 255, 0.35);
+  font-family: 'Space Mono', monospace;
+}
+
+.living-context__readiness-recs {
+  margin-top: 10px;
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+}
+
+.living-context__readiness-rec {
+  display: flex;
+  align-items: flex-start;
+  gap: 5px;
+  font-size: 10px;
+  color: rgba(255, 255, 255, 0.6);
+  line-height: 1.4;
+}
+
+.living-context__readiness-rec svg {
+  flex-shrink: 0;
+  margin-top: 2px;
+}

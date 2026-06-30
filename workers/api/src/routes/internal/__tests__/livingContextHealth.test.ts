@@ -781,3 +781,51 @@ describe('POST /session-event-ingest', () => {
     expect(body.message).toContain('No session events found');
   });
 });
+
+describe('GET /evidence-readiness', () => {
+  let sqlite: BetterSqliteDb;
+
+  beforeEach(() => {
+    sqlite = new Database(':memory:');
+  });
+
+  afterEach(() => {
+    sqlite.close();
+  });
+
+  it('returns 400 when candidateId is missing', async () => {
+    sqlite.exec(`CREATE TABLE IF NOT EXISTS candidates (id TEXT PRIMARY KEY, name TEXT)`);
+    sqlite.exec(livingContextMigration);
+    sqlite.exec(contextRecordsMigration);
+    const db = createMockD1(sqlite);
+    const app = new Hono();
+    app.route('/', livingContextHealth);
+
+    const res = await app.request('/evidence-readiness', {
+      method: 'GET',
+    }, { DB: db });
+    expect(res.status).toBe(400);
+
+    const body = await res.json() as { error: string };
+    expect(body.error).toContain('candidateId');
+  });
+
+  it('returns empty readiness report when candidate has no workspace identity', async () => {
+    sqlite.exec(`CREATE TABLE IF NOT EXISTS candidates (id TEXT PRIMARY KEY, name TEXT)`);
+    sqlite.exec(livingContextMigration);
+    sqlite.exec(contextRecordsMigration);
+    const db = createMockD1(sqlite);
+    const app = new Hono();
+    app.route('/', livingContextHealth);
+
+    const res = await app.request('/evidence-readiness?candidateId=c1', {
+      method: 'GET',
+    }, { DB: db });
+    expect(res.status).toBe(200);
+
+    const body = await res.json() as { candidateId: string; overallScore: number; overallLevel: string };
+    expect(body.candidateId).toBe('c1');
+    expect(body.overallScore).toBe(0);
+    expect(body.overallLevel).toBe('not_ready');
+  });
+});

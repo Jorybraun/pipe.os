@@ -1276,4 +1276,30 @@ app.post('/session-event-ingest', async (c) => {
   }
 });
 
+// GET /api/v1/internal/evidence-readiness?candidateId=xxx — internal evidence readiness report
+app.get('/evidence-readiness', async (c) => {
+  const candidateId = c.req.query('candidateId');
+  if (!candidateId) {
+    return c.json({ error: 'candidateId query param required' }, 400);
+  }
+
+  const { computeEvidenceReadiness } = await import('../../lib/livingContext/evidenceReadiness');
+  const report = await computeEvidenceReadiness(c.env.DB, candidateId);
+  if (!report) {
+    return c.json({
+      candidateId,
+      workspacePersonId: null,
+      overallScore: 0,
+      overallLevel: 'not_ready',
+      dimensions: [],
+      weakest: [],
+      strongest: [],
+      recommendations: [],
+      computedAt: new Date().toISOString(),
+    });
+  }
+
+  return c.json(report);
+});
+
 export default app;

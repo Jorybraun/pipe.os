@@ -1800,6 +1800,41 @@ export interface PostSynthesizeRequest {
   state: InterviewState;
 }
 
+export type ReadinessDimension =
+  | 'resume'
+  | 'interview'
+  | 'assessment'
+  | 'code_review'
+  | 'meeting'
+  | 'phone_call'
+  | 'culture'
+  | 'concepts';
+
+export interface DimensionScore {
+  dimension: ReadinessDimension;
+  label: string;
+  score: number;
+  maxScore: number;
+  level: 'none' | 'minimal' | 'partial' | 'strong' | 'comprehensive';
+  evidenceCount: number;
+  sourceSpanCount: number;
+  freshestAt: string | null;
+  decayMultiplier: number;
+  recommendation: string | null;
+}
+
+export interface EvidenceReadinessReport {
+  candidateId: string;
+  workspacePersonId: string | null;
+  overallScore: number;
+  overallLevel: 'not_ready' | 'minimal' | 'ready' | 'strong' | 'comprehensive';
+  dimensions: DimensionScore[];
+  weakest: ReadinessDimension[];
+  strongest: ReadinessDimension[];
+  recommendations: string[];
+  computedAt: string;
+}
+
 export interface PostSynthesizeResponse {
   reasoning: string;
   persona: CandidatePersona;

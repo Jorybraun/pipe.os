@@ -7,6 +7,17 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Added — Evidence readiness scoring (criteria #6, #8)
+
+- `GET /api/v1/candidates/:id/living-context/evidence-readiness` — multi-dimensional readiness scoring across 8 evidence dimensions (resume, interview, assessment, code review, meeting, phone call, culture, concepts). Returns per-dimension scores with temporal decay, overall readiness level, weakest/strongest dimensions, and actionable recommendations. Gated by `living_context_read`.
+- `GET /api/v1/internal/evidence-readiness?candidateId=xxx` — internal version for backfill/evaluation use.
+- `evidenceReadiness.ts` — core module: `computeEvidenceReadiness()` queries interactions by type and learned concepts, applies temporal decay via `computeDecayMultiplier`, classifies each dimension (none/minimal/partial/strong/comprehensive), and generates recruiter-facing recommendations.
+- `evidenceReadiness.test.ts` — 7 Vitest tests: null workspace identity, all-zero scores, resume scoring, temporal decay, weakest/strongest identification, recommendations, timestamp.
+- Route tests: 2 tests for the internal endpoint (validation, empty report).
+- `EvidenceReadinessPanel` component in `LivingContextGraph.tsx` — visualizes per-dimension readiness bars with color-coded levels, overall score, and recommendation cards.
+- `useEvidenceReadiness` hook (`src/hooks/useEvidenceReadiness.ts`) — fetches readiness report for a candidate.
+- Frontend types: `ReadinessDimension`, `DimensionScore`, `EvidenceReadinessReport`.
+
 ### Added — Cross-candidate evidence comparison (criteria #5, #6)
 
 - `POST /api/v1/candidates/compare` — recruiter-facing endpoint that compares evidence profiles across candidates. Returns per-candidate profiles (interaction breakdown, assertion counts, source diversity, top concepts with temporal decay), concept-level comparisons (shared vs unique concepts, coverage levels), and summary rankings (diversity, depth, freshness). Gated by `living_context_read`.

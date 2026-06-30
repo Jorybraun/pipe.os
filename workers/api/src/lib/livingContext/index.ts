@@ -115,6 +115,13 @@ export type {
   ComparisonSummary,
   CandidateComparisonReport,
 } from './candidateComparison';
+export { computeEvidenceReadiness } from './evidenceReadiness';
+export type {
+  ReadinessDimension,
+  DimensionScore,
+  EvidenceReadinessReport,
+  EvidenceReadinessOptions,
+} from './evidenceReadiness';
 export { loadMatchProvenanceChain } from './matchProvenanceChain';
 export type {
   ProvenanceMatchDecision,
