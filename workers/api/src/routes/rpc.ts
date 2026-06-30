@@ -2109,25 +2109,107 @@ async function claimCandidateInviteTokenForAssessmentStart(
   };
 }
 
-async function markLinkedAssessmentInterviewsActive(
+function assessmentInviteTokenFromUrl(url: string): string | null {
+  const trimmed = url.trim();
+  if (!trimmed) return null;
+  try {
+    const parsed = new URL(trimmed);
+    const segments = parsed.pathname.split('/').filter(Boolean);
+    const assessIndex = segments.indexOf('assess');
+    const token = assessIndex >= 0 ? segments[assessIndex + 1] : null;
+    return token ? decodeURIComponent(token) : null;
+  } catch {
+    const match = /\/assess\/([^/?#]+)/.exec(trimmed);
+    return match?.[1] ? decodeURIComponent(match[1]) : null;
+  }
+}
+
+function parseInviteDeliveryMetadata(raw: string | null): {
+  scheduledInterviewId: string | null;
+  deliveredUrl: string | null;
+} {
+  if (!raw) return { scheduledInterviewId: null, deliveredUrl: null };
+  try {
+    const parsed = JSON.parse(raw) as unknown;
+    if (!isRecord(parsed)) return { scheduledInterviewId: null, deliveredUrl: null };
+    return {
+      scheduledInterviewId: typeof parsed.scheduledInterviewId === 'string' ? parsed.scheduledInterviewId : null,
+      deliveredUrl: typeof parsed.deliveredUrl === 'string' ? parsed.deliveredUrl : null,
+    };
+  } catch {
+    return { scheduledInterviewId: null, deliveredUrl: null };
+  }
+}
+
+async function loadDeliveredAssessmentInterviewIdForInviteToken(
+  db: Env['DB'],
+  inviteToken: string | null,
+): Promise<string | null> {
+  if (!inviteToken) return null;
+  try {
+    const rows = await db.prepare(
+      `SELECT external_reference, metadata_json
+         FROM interactions
+        WHERE interaction_type = 'scheduled_interview_invite_delivery'
+          AND metadata_json LIKE ?1
+        ORDER BY started_at DESC, created_at DESC
+        LIMIT 10`,
+    ).bind(`%/assess/${inviteToken}%`).all<{
+      external_reference: string | null;
+      metadata_json: string | null;
+    }>();
+
+    for (const row of rows.results ?? []) {
+      const metadata = parseInviteDeliveryMetadata(row.metadata_json);
+      if (metadata.deliveredUrl && assessmentInviteTokenFromUrl(metadata.deliveredUrl) === inviteToken) {
+        return metadata.scheduledInterviewId ?? row.external_reference ?? null;
+      }
+    }
+  } catch (err) {
+    console.error(
+      '[start-assessment] failed to resolve delivered assessment invite:',
+      err instanceof Error ? err.message : String(err),
+    );
+  }
+  return null;
+}
+
+async function loadPendingAssessmentInterviewIdForStart(
   db: Env['DB'],
   candidateId: string,
+  inviteToken: string | null,
+): Promise<string | null> {
+  const deliveredInterviewId = await loadDeliveredAssessmentInterviewIdForInviteToken(db, inviteToken);
+  if (deliveredInterviewId) return deliveredInterviewId;
+
+  const pending = await getPendingStandaloneAssessment(db, candidateId);
+  return pending?.id ?? null;
+}
+
+async function markStartedAssessmentInterviewActive(
+  db: Env['DB'],
+  candidateId: string,
+  inviteToken: string | null,
 ): Promise<void> {
   try {
+    const interviewId = await loadPendingAssessmentInterviewIdForStart(db, candidateId, inviteToken);
+    if (!interviewId) return;
+
     await db
       .prepare(
         `UPDATE scheduled_interviews
             SET status = 'ACTIVE',
                 updated_at = ?1
-          WHERE candidate_id = ?2
+          WHERE id = ?2
+            AND candidate_id = ?3
             AND status IN ('INVITED', 'SCHEDULED')
             AND interview_type IN ('CODE_REVIEW', 'DEV_CONTAINER_CHALLENGE', 'OPEN_SOURCE_BUG_FIX')`,
       )
-      .bind(new Date().toISOString(), candidateId)
+      .bind(new Date().toISOString(), interviewId, candidateId)
       .run();
   } catch (err) {
     console.error(
-      '[start-assessment] failed to mark linked assessment interviews active:',
+      '[start-assessment] failed to mark linked assessment interview active:',
       err instanceof Error ? err.message : String(err),
     );
   }
@@ -2321,7 +2403,7 @@ rpcAuth.post('/start-assessment', async (c) => {
     return c.json({ error: result.error }, result.status);
   }
 
-  await markLinkedAssessmentInterviewsActive(c.env.DB, c.get('candidateId'));
+  await markStartedAssessmentInterviewActive(c.env.DB, c.get('candidateId'), c.get('inviteToken'));
 
   return c.json({
     success: true,
