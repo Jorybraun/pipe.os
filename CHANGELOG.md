@@ -7,6 +7,13 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Fixed — Test suite alignment with living context retry and ingestion behavior
+
+- `richAgent.test.ts` — stub LLM provider now includes the required `model` property from the `LLMProvider` interface, fixing 5 TypeError failures in the candidate discovery rich-agent v2 tests.
+- `resumeIngestion.test.ts` — updated short-text test expectation to match the production behavior: `processResumeFromR2` now correctly returns `success: false` when extracted resume text is below the 20-character evidence threshold.
+- `fullPipelineE2E.test.ts` — added `personContextMode: 'attributed'` to meeting transcript ingestion call so assertions are linked to source spans via `assertion_source_spans`, fixing the criterion #2 (preserve original meaning) E2E coverage.
+- `reviewSessionV2.test.ts` — added `retryable_standalone_ingestion` null responder to the stale CODE_REVIEW ingestion test so the retry-detection query does not inadvertently match the `LEFT JOIN candidate_ingestion` responder; added candidate DB responder to the `submit-challenge-response` test to prevent a 404 from `claimCandidateInviteTokenForAssessmentStart`.
+
 ### Added — Human assessment decisions
 
 - Repo-task assessment sessions now support append-only `human_assessment_decision` events with exact source refs, SHA-256 content-hash validation, and provenance checks against session evidence, evaluation reports, evaluation claims, or diagnostics.
