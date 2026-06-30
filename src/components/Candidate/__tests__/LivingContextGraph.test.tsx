@@ -75,6 +75,15 @@ vi.mock('../../../hooks/useConceptGraph', () => ({
   }),
 }));
 
+vi.mock('../../../hooks/useMatchHistory', () => ({
+  useMatchHistory: () => ({
+    history: null,
+    isLoading: false,
+    error: null,
+    refetch: vi.fn(),
+  }),
+}));
+
 function makeLivingContext(): LivingContextReadModel {
   return {
     person: {

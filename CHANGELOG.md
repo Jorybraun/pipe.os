@@ -7,6 +7,16 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Added — Match run history endpoint + panel (criteria #6, #8)
+
+- `GET /api/v1/candidates/:id/living-context/match-history` — returns chronological match run history with inter-run deltas (status changes, score improvements, new top challenges). Gated by `living_context_read` rollout gate.
+- `MatchHistoryPanel` component in `LivingContextGraph.tsx` — shows match run timeline with status badges, top challenge info, and delta indicators (score changes, new matches, status transitions).
+- `useMatchHistory` hook (`src/hooks/useMatchHistory.ts`) — fetches match run history with configurable limit.
+- Frontend types: `MatchHistoryEntry`, `MatchHistoryDelta`, `MatchHistoryResponse`.
+- `matchHistory.test.ts` — 5 Vitest tests: empty state, ordering, JSON parsing, delta computation, limit.
+- BDD e2e: §18 (match history runs + entry fields) — 2 new Playwright scenarios.
+- Updated `useMatchHistory` mock in all 4 existing LivingContextGraph test files.
+
 ### Added — Recruiter re-match button + concept graph visualization (criteria #3, #5, #7)
 
 - `useRematch` hook (`src/hooks/useRematch.ts`) — calls `POST /candidates/:id/living-context/rematch`, returns result/error/loading state. Wired into LivingContextGraph with real-time UI update after successful rematch.

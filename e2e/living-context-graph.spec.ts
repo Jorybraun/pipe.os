@@ -631,3 +631,59 @@ test.describe('Living Context Graph — BDD', () => {
     }
   });
 });
+
+// §18 — Match history endpoint
+test.describe('§18 — Match run history', () => {
+  test('§18.1 — match-history returns runs array with deltas', async ({ request }) => {
+    const candidates = await request.get(`${API_BASE}/api/v1/candidates?limit=1`);
+    if (!candidates.ok()) {
+      test.skip();
+      return;
+    }
+    const candidateBody = await candidates.json();
+    const candidateId = candidateBody?.candidates?.[0]?.id;
+    if (!candidateId) {
+      test.skip();
+      return;
+    }
+
+    const res = await request.get(
+      `${API_BASE}/api/v1/candidates/${candidateId}/living-context/match-history?limit=10`,
+    );
+    expect(res.ok()).toBe(true);
+
+    const body = await res.json();
+    expect(body).toHaveProperty('runs');
+    expect(body).toHaveProperty('deltas');
+    expect(body).toHaveProperty('totalRuns');
+    expect(Array.isArray(body.runs)).toBe(true);
+    expect(Array.isArray(body.deltas)).toBe(true);
+  });
+
+  test('§18.2 — match-history entries have required fields', async ({ request }) => {
+    const candidates = await request.get(`${API_BASE}/api/v1/candidates?limit=1`);
+    if (!candidates.ok()) {
+      test.skip();
+      return;
+    }
+    const candidateBody = await candidates.json();
+    const candidateId = candidateBody?.candidates?.[0]?.id;
+    if (!candidateId) {
+      test.skip();
+      return;
+    }
+
+    const res = await request.get(
+      `${API_BASE}/api/v1/candidates/${candidateId}/living-context/match-history?limit=5`,
+    );
+    expect(res.ok()).toBe(true);
+
+    const body = await res.json();
+    for (const run of body.runs) {
+      expect(run).toHaveProperty('matchRunId');
+      expect(run).toHaveProperty('status');
+      expect(run).toHaveProperty('evaluatedCount');
+      expect(run).toHaveProperty('createdAt');
+    }
+  });
+});

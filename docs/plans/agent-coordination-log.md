@@ -4,6 +4,40 @@ Inter-agent handoff log for the living context graph goal. Each agent appends a 
 
 ## Log
 
+### 2026-06-30 — Session 37893f56 (Devin Automation)
+
+**Action:** Analyze open PRs, consolidate, add match run history endpoint + panel.
+
+**Open PRs analyzed:** #105–#148 (all aligned with living context goal). PR #148 is the latest consolidation superset (83 files, +22,122 lines).
+
+**PR closure:** Attempted to close #105–#147 via `git_close_pr` — blocked by "User is not connected to GitHub" error. Attempted GitHub API directly — blocked by network policy (SSL error). Owner must close manually.
+
+**Completed:**
+1. Created new branch from PR #148 head for continued work
+2. Built `GET /api/v1/candidates/:id/living-context/match-history` — returns chronological match runs with inter-run deltas (status changes, score improvements, new top challenges). Gated by `living_context_read`.
+3. Built `MatchHistoryPanel` component — timeline of match runs showing status badges, top challenge info (PR number, aligned/stretch counts, score %), and delta indicators between consecutive runs
+4. Built `useMatchHistory` hook — fetches match history with configurable limit
+5. Added frontend types: `MatchHistoryEntry`, `MatchHistoryDelta`, `MatchHistoryResponse`
+6. Added `matchHistory.test.ts` — 5 Vitest tests
+7. Added BDD e2e: §18 (match history) — 2 Playwright scenarios
+8. Updated `useMatchHistory` mock in all 4 existing LivingContextGraph test files
+9. CSS styles for match history panel (status badges, delta badges, challenge info)
+10. Updated CHANGELOG.md
+
+**Tests:** 186+ test files pass, TypeScript clean, lint 0 errors
+
+**All 8 acceptance criteria maintained + extended:**
+1. Living person graph: COMPLETE
+2. Preserve original meaning: COMPLETE
+3. Learn semantics dynamically: COMPLETE
+4. Understand repositories: COMPLETE
+5. Evidence-based matching: COMPLETE
+6. Explain every match: EXTENDED — match run history shows how matching evolved
+7. Visualize the living graph: EXTENDED — 14+ panels including match history
+8. Production quality: EXTENDED — match run comparison and history
+
+**Superseded PRs (owner must close):** #105–#148
+
 ### 2026-06-30 — Session b1cbd44b (Devin Automation)
 
 **Action:** Analyze open PRs, close superseded, build rematch button + concept graph visualization frontend.

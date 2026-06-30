@@ -47,6 +47,7 @@ import { useEvidenceFreshness } from '../../hooks/useEvidenceFreshness';
 import { useEvidenceGaps } from '../../hooks/useEvidenceGaps';
 import { useEvidenceLineage } from '../../hooks/useEvidenceLineage';
 import { useMatchProvenance } from '../../hooks/useMatchProvenance';
+import { useMatchHistory } from '../../hooks/useMatchHistory';
 import { useRematch } from '../../hooks/useRematch';
 import { useLivingContext } from '../../hooks/useLivingContext';
 import { buildLivingContextBranches } from '../../lib/livingContextTree';
@@ -2084,6 +2085,104 @@ function ConceptGraphPanel({
   );
 }
 
+function MatchHistoryPanel({
+  candidateId,
+}: {
+  candidateId: string;
+}): JSX.Element | null {
+  const { history, isLoading, error, refetch } = useMatchHistory(candidateId);
+
+  if (isLoading && !history) return null;
+  if (error || !history || history.runs.length === 0) return null;
+
+  return (
+    <section
+      className="living-context__panel"
+      data-testid="match-history-panel"
+    >
+      <div className="living-context__section-head">
+        <div style={{ display: 'flex', gap: 6, alignItems: 'center' }}>
+          <div className="living-context__section-title">Match history</div>
+          <div className="living-context__count">{history.totalRuns}</div>
+        </div>
+        <button
+          type="button"
+          className="living-context__refresh"
+          onClick={() => void refetch()}
+          title="Refresh match history"
+          aria-label="Refresh match history"
+        >
+          <RefreshCw size={12} />
+        </button>
+      </div>
+
+      <div className="living-context__match-history-list">
+        {history.runs.map((run, index) => {
+          const delta = history.deltas[index] ?? null;
+          return (
+            <div
+              key={run.matchRunId}
+              className="living-context__match-history-entry"
+              data-testid="match-history-entry"
+            >
+              <div className="living-context__match-history-header">
+                <span className={`living-context__match-history-status living-context__match-history-status--${run.status.toLowerCase().replace(/_/g, '-')}`}>
+                  {run.status.replace(/_/g, ' ')}
+                </span>
+                <span className="living-context__match-history-date">
+                  {formatDate(run.createdAt)}
+                </span>
+              </div>
+
+              {run.topChallenge && (
+                <div className="living-context__match-history-challenge">
+                  <GitPullRequest size={11} />
+                  <span>PR #{run.topChallenge.prNumber}</span>
+                  <span className="living-context__eyebrow">
+                    {run.topChallenge.alignedDemandCount} aligned
+                    {run.topChallenge.stretchCount > 0 && ` · ${run.topChallenge.stretchCount} stretch`}
+                    {run.topChallenge.score != null && ` · ${Math.round(run.topChallenge.score * 100)}%`}
+                  </span>
+                </div>
+              )}
+
+              <div className="living-context__match-history-meta">
+                <span>{run.evaluatedCount} evaluated</span>
+                {run.excludedCount > 0 && <span>{run.excludedCount} excluded</span>}
+              </div>
+
+              {delta && (
+                <div className="living-context__match-history-delta" data-testid="match-history-delta">
+                  {delta.statusChanged && (
+                    <span className="living-context__match-history-delta-badge living-context__match-history-delta-badge--status">
+                      status changed
+                    </span>
+                  )}
+                  {delta.newTopChallenge && (
+                    <span className="living-context__match-history-delta-badge living-context__match-history-delta-badge--challenge">
+                      new top match
+                    </span>
+                  )}
+                  {delta.topScoreDelta !== null && delta.topScoreDelta !== 0 && (
+                    <span className={`living-context__match-history-delta-badge ${delta.topScoreDelta > 0 ? 'living-context__match-history-delta-badge--positive' : 'living-context__match-history-delta-badge--negative'}`}>
+                      {delta.topScoreDelta > 0 ? '+' : ''}{Math.round(delta.topScoreDelta * 100)}% score
+                    </span>
+                  )}
+                  {delta.evaluatedCountDelta !== 0 && (
+                    <span className="living-context__match-history-delta-badge">
+                      {delta.evaluatedCountDelta > 0 ? '+' : ''}{delta.evaluatedCountDelta} challenges
+                    </span>
+                  )}
+                </div>
+              )}
+            </div>
+          );
+        })}
+      </div>
+    </section>
+  );
+}
+
 function RematchButton({
   candidateId,
   onRematchComplete,
@@ -2403,6 +2502,7 @@ export function LivingContextGraph({
       <EvidenceLineagePanel lineage={lineage} />
       <EvidenceGapPanel report={gapReport} />
       <MatchProvenancePanel provenance={provenance} />
+      <MatchHistoryPanel candidateId={candidateId} />
 
       <ConceptGraphPanel
         concepts={conceptGraph?.concepts ?? []}

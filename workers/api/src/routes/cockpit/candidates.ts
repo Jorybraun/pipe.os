@@ -1868,6 +1868,136 @@ candidateOps.post('/:candidateId/living-context/rematch', requireGate('living_co
   });
 });
 
+// GET /:candidateId/living-context/match-history — past match runs with deltas
+candidateOps.get('/:candidateId/living-context/match-history', requireGate('living_context_read'), async (c) => {
+  const userId = c.var.userId;
+  const { candidateId } = c.req.param();
+  const db = c.env.DB;
+
+  const candidate = await db.prepare(
+    `SELECT c.id
+       FROM candidates c
+       LEFT JOIN pipelines p ON p.id = c.pipeline_id
+      WHERE c.id = ?1 AND (c.owner_id = ?2 OR p.owner_id = ?2)`,
+  ).bind(candidateId, userId).first<{ id: string }>();
+  if (!candidate) return apiError(c, 'NOT_FOUND', 'Candidate not found.');
+
+  const limit = Math.min(Number(c.req.query('limit') ?? 20), 100);
+  const rows = await db.prepare(
+    `SELECT id, status, candidate_snapshot_id, role_snapshot_id,
+            policy_version, model_version, selected_packet_id,
+            ranked_results_json, excluded_packets_json, created_at
+       FROM match_runs
+      WHERE candidate_id = ?1
+      ORDER BY created_at DESC
+      LIMIT ?2`,
+  ).bind(candidateId, limit).all<{
+    id: string;
+    status: string;
+    candidate_snapshot_id: string;
+    role_snapshot_id: string;
+    policy_version: string | null;
+    model_version: string | null;
+    selected_packet_id: string | null;
+    ranked_results_json: string;
+    excluded_packets_json: string;
+    created_at: number;
+  }>();
+
+  interface MatchHistoryEntry {
+    matchRunId: string;
+    status: string;
+    selectedPacketId: string | null;
+    policyVersion: string | null;
+    evaluatedCount: number;
+    excludedCount: number;
+    topChallenge: {
+      challengeId: string;
+      repoId: string;
+      prNumber: number;
+      rank: number | null;
+      score: number;
+      alignedDemandCount: number;
+      stretchCount: number;
+    } | null;
+    createdAt: string;
+  }
+
+  const runs: MatchHistoryEntry[] = (rows.results ?? []).map((row) => {
+    type RankedResult = {
+      challengeId: string;
+      repoId: string;
+      prNumber: number;
+      rank: number | null;
+      score: number;
+      alignedDemandCount: number;
+      stretchCount: number;
+    };
+    const ranked: RankedResult[] = (() => {
+      try { return JSON.parse(row.ranked_results_json) as RankedResult[]; }
+      catch { return []; }
+    })();
+    const excluded: unknown[] = (() => {
+      try { return JSON.parse(row.excluded_packets_json) as unknown[]; }
+      catch { return []; }
+    })();
+    const top = ranked.length > 0
+      ? ranked.reduce<RankedResult>((best, cur) =>
+          (cur.rank !== null && (best.rank === null || cur.rank < best.rank)) ? cur : best,
+        ranked[0]!)
+      : null;
+    return {
+      matchRunId: row.id,
+      status: row.status,
+      selectedPacketId: row.selected_packet_id,
+      policyVersion: row.policy_version,
+      evaluatedCount: ranked.length,
+      excludedCount: excluded.length,
+      topChallenge: top ? {
+        challengeId: top.challengeId,
+        repoId: top.repoId,
+        prNumber: top.prNumber,
+        rank: top.rank,
+        score: top.score,
+        alignedDemandCount: top.alignedDemandCount,
+        stretchCount: top.stretchCount,
+      } : null,
+      createdAt: new Date(row.created_at * 1000).toISOString(),
+    };
+  });
+
+  // Compute deltas between consecutive runs
+  interface MatchHistoryDelta {
+    fromRunId: string;
+    toRunId: string;
+    statusChanged: boolean;
+    selectedPacketChanged: boolean;
+    evaluatedCountDelta: number;
+    topScoreDelta: number | null;
+    newTopChallenge: boolean;
+  }
+  const deltas: MatchHistoryDelta[] = [];
+  for (let i = 0; i < runs.length - 1; i++) {
+    const newer = runs[i]!;
+    const older = runs[i + 1]!;
+    const newerScore = newer.topChallenge?.score ?? null;
+    const olderScore = older.topChallenge?.score ?? null;
+    deltas.push({
+      fromRunId: older.matchRunId,
+      toRunId: newer.matchRunId,
+      statusChanged: newer.status !== older.status,
+      selectedPacketChanged: newer.selectedPacketId !== older.selectedPacketId,
+      evaluatedCountDelta: newer.evaluatedCount - older.evaluatedCount,
+      topScoreDelta: newerScore !== null && olderScore !== null
+        ? newerScore - olderScore
+        : null,
+      newTopChallenge: newer.topChallenge?.challengeId !== older.topChallenge?.challengeId,
+    });
+  }
+
+  return c.json({ runs, deltas, totalRuns: runs.length });
+});
+
 // GET /:candidateId — full profile with stages + challenge submissions
 candidateOps.get('/:candidateId', async (c) => {
   const userId = c.var.userId;

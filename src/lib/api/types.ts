@@ -1761,6 +1761,41 @@ export interface ConceptGraphResponse {
   adjacencies?: ConceptGraphAdjacency[];
 }
 
+export interface MatchHistoryEntry {
+  matchRunId: string;
+  status: string;
+  selectedPacketId: string | null;
+  policyVersion: string | null;
+  evaluatedCount: number;
+  excludedCount: number;
+  topChallenge: {
+    challengeId: string;
+    repoId: string;
+    prNumber: number;
+    rank: number | null;
+    score: number;
+    alignedDemandCount: number;
+    stretchCount: number;
+  } | null;
+  createdAt: string;
+}
+
+export interface MatchHistoryDelta {
+  fromRunId: string;
+  toRunId: string;
+  statusChanged: boolean;
+  selectedPacketChanged: boolean;
+  evaluatedCountDelta: number;
+  topScoreDelta: number | null;
+  newTopChallenge: boolean;
+}
+
+export interface MatchHistoryResponse {
+  runs: MatchHistoryEntry[];
+  deltas: MatchHistoryDelta[];
+  totalRuns: number;
+}
+
 export interface PostSynthesizeRequest {
   state: InterviewState;
 }
