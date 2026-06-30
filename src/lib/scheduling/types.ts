@@ -176,6 +176,7 @@ export interface AssessmentProgressSnapshot {
     createdAt: string;
     evidenceCoverage?: AssessmentEvidenceCoverageSnapshot | null;
     claims?: AssessmentEvaluationClaimPreview[];
+    diagnostics?: AssessmentEvaluationDiagnosticPreview[];
   } | null;
 }
 
@@ -185,6 +186,15 @@ export interface AssessmentEvaluationClaimPreview {
   dimension: string;
   narrative: string;
   confidence: number | null;
+  sourceRefCount: number;
+  sourceRefTypes: string[];
+}
+
+export interface AssessmentEvaluationDiagnosticPreview {
+  id: string;
+  code: string;
+  severity: string;
+  message: string;
   sourceRefCount: number;
   sourceRefTypes: string[];
 }

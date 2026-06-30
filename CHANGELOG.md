@@ -13,6 +13,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Fixed — Scheduling
 
+- Recruiter assessment progress now carries evaluator diagnostic previews through the API and shows evaluator cautions on interview details and cards, making missing-test or human-review risks visible beside source-backed claims.
 - Recruiter interview lists now include assessment filters and counts for action-needed, ready-to-evaluate, needs-attention, and evaluated sessions so source-backed assessment work is not buried in the general invite feed.
 - Recruiter interview cards now expose an `EVALUATE` action for assessment sessions that have captured commit evidence and are ready for source-backed AI/human evaluation, using the same real evaluation endpoint as the detail page and refreshing the list afterward.
 - Interview cards now show a compact assessment decision state for assigned tasks, submitted commits, evaluator readiness, evaluated recommendations, and diagnostics so recruiters can understand the next action without opening every interview.
@@ -69,6 +70,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Fixed — Candidate repo matching
 
+- Assessment evaluator diagnostics now surface as recruiter-visible cautions on interview detail and interview cards, including severity, code, message, and source-ref counts/types.
 - Repo-task assessment reports now prefix evaluator summaries with the assigned challenge task from exact source-backed challenge-packet evidence, so live open-source bug-fix evaluations remain task-specific even when model prose is generic.
 - Repo-task assessment evaluation now extracts source-cited claims from structured plain-text Workers AI responses when the model ignores the JSON-only instruction, while still dropping source-less positive claims.
 - Meeting transcript living-context ingestion now skips only concept-adjacency persistence when partial schemas lack the adjacency table, preserving source-backed transcript and assessment evidence during staged rollout.

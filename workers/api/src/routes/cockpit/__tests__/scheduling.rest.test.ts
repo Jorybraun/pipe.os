@@ -1851,6 +1851,13 @@ describe('GET /interviews/:id detail', () => {
             schemaVersion?: string;
             expectedForHighConfidence?: Array<{ label?: string; satisfied?: boolean }>;
           } | null;
+          diagnostics?: Array<{
+            code: string;
+            severity: string;
+            message: string;
+            sourceRefCount: number;
+            sourceRefTypes: string[];
+          }>;
         } | null;
         evidenceCounts: Array<{ kind: string; count: number }>;
       };
@@ -1939,6 +1946,15 @@ describe('GET /interviews/:id detail', () => {
             expect.objectContaining({ label: 'code_editor_activity', satisfied: true }),
           ]),
         },
+        diagnostics: [
+          expect.objectContaining({
+            code: 'MISSING_TEST_EVIDENCE',
+            severity: 'warning',
+            message: 'No test_run source ref was attached to the session.',
+            sourceRefCount: 1,
+            sourceRefTypes: ['code_diff'],
+          }),
+        ],
       },
     });
     expect(body.progress.evidenceCounts).toEqual(expect.arrayContaining([

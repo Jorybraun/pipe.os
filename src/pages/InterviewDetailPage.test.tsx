@@ -505,6 +505,14 @@ describe('InterviewDetailPage', () => {
           sourceRefCount: 2,
           sourceRefTypes: ['code_diff', 'git_commit'],
         }],
+        diagnostics: [{
+          id: 'diagnostic-missing-runner',
+          code: 'VERIFICATION_UNOBSERVED',
+          severity: 'info',
+          message: 'The test evidence shows changed files but no test runner output.',
+          sourceRefCount: 1,
+          sourceRefTypes: ['test_run'],
+        }],
         evidenceCoverage: {
           schemaVersion: 'assessment-evidence-coverage-v1',
           sourceRefCount: 3,
@@ -627,6 +635,12 @@ describe('InterviewDetailPage', () => {
     expect(claims).toHaveTextContent('82% confidence');
     expect(claims).toHaveTextContent('The candidate produced a focused patch backed by the submitted diff.');
     expect(claims).toHaveTextContent('2 source refs: Code diff, Git commit');
+    const diagnostics = screen.getByTestId('interview-assessment-evaluation-diagnostics');
+    expect(diagnostics).toHaveTextContent('Evaluator cautions');
+    expect(diagnostics).toHaveTextContent('Info');
+    expect(diagnostics).toHaveTextContent('Verification unobserved');
+    expect(diagnostics).toHaveTextContent('The test evidence shows changed files but no test runner output.');
+    expect(diagnostics).toHaveTextContent('1 source ref: Test run');
     expect(progress).toHaveTextContent('Required proof');
     expect(progress).toHaveTextContent('Challenge captured');
     expect(progress).toHaveTextContent('Commit captured');

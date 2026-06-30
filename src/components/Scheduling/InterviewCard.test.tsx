@@ -423,6 +423,14 @@ describe('InterviewCard assessment progress', () => {
           createdAt: '2026-06-23T00:22:00.000Z',
           evidenceCoverage: null,
           claims: [],
+          diagnostics: [{
+            id: 'diagnostic-card-secret',
+            code: 'VERIFICATION_UNOBSERVED',
+            severity: 'info',
+            message: 'Test runner output was not captured.',
+            sourceRefCount: 1,
+            sourceRefTypes: ['test_run'],
+          }],
         },
       },
     });
@@ -433,7 +441,10 @@ describe('InterviewCard assessment progress', () => {
     expect(progress).toHaveTextContent('Strong evidence to advance');
     expect(progress).toHaveTextContent('Candidate produced a focused source-backed fix with commit and test evidence.');
     expect(progress).toHaveTextContent('EVAL');
+    expect(progress).toHaveTextContent('CAUTION');
+    expect(progress).toHaveTextContent('1 evaluator caution');
     expect(progress).not.toHaveTextContent('assessment-evaluation-secret');
     expect(progress).not.toHaveTextContent('assessment-session-evaluated');
+    expect(progress).not.toHaveTextContent('diagnostic-card-secret');
   });
 });

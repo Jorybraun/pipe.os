@@ -312,6 +312,7 @@ export interface AssessmentProgressEvaluation {
   createdAt: string;
   evidenceCoverage: AssessmentEvidenceCoverageSnapshot | null;
   claims: AssessmentProgressEvaluationClaim[];
+  diagnostics: AssessmentProgressEvaluationDiagnostic[];
 }
 
 export interface AssessmentProgressEvaluationClaim {
@@ -320,6 +321,15 @@ export interface AssessmentProgressEvaluationClaim {
   dimension: string;
   narrative: string;
   confidence: number | null;
+  sourceRefCount: number;
+  sourceRefTypes: string[];
+}
+
+export interface AssessmentProgressEvaluationDiagnostic {
+  id: string;
+  code: string;
+  severity: string;
+  message: string;
   sourceRefCount: number;
   sourceRefTypes: string[];
 }
@@ -1345,6 +1355,7 @@ export class RepoTaskInterviewSessionStore {
     if (!row) return null;
     const output = parseJsonObject(row.output_json);
     const claims = await this.loadEvaluationClaimPreviews(row.id);
+    const diagnostics = await this.loadEvaluationDiagnosticPreviews(row.id);
     return {
       id: row.id,
       status: row.status,
@@ -1353,6 +1364,7 @@ export class RepoTaskInterviewSessionStore {
       createdAt: row.created_at,
       evidenceCoverage: parseEvidenceCoverage(output),
       claims,
+      diagnostics,
     };
   }
 
@@ -1394,6 +1406,49 @@ export class RepoTaskInterviewSessionStore {
       dimension: row.dimension,
       narrative: row.narrative,
       confidence: row.confidence,
+      sourceRefCount: row.source_ref_count,
+      sourceRefTypes: row.source_ref_types
+        ? row.source_ref_types.split(',').map((value) => value.trim()).filter(Boolean)
+        : [],
+    }));
+  }
+
+  private async loadEvaluationDiagnosticPreviews(reportId: string): Promise<AssessmentProgressEvaluationDiagnostic[]> {
+    const rows = await this.db.prepare(
+      `SELECT d.id,
+              d.code,
+              d.severity,
+              d.message,
+              COUNT(sr.id) AS source_ref_count,
+              GROUP_CONCAT(DISTINCT sr.source_ref_type) AS source_ref_types
+         FROM assessment_diagnostics d
+         LEFT JOIN assessment_diagnostic_source_refs sr ON sr.diagnostic_id = d.id
+        WHERE d.report_id = ?1
+        GROUP BY d.id, d.code, d.severity, d.message
+        ORDER BY
+          CASE d.severity
+            WHEN 'blocking' THEN 0
+            WHEN 'error' THEN 1
+            WHEN 'warning' THEN 2
+            WHEN 'info' THEN 3
+            ELSE 4
+          END,
+          d.created_at,
+          d.id
+        LIMIT 4`,
+    ).bind(reportId).all<{
+      id: string;
+      code: string;
+      severity: string;
+      message: string;
+      source_ref_count: number;
+      source_ref_types: string | null;
+    }>();
+    return rows.results.map((row) => ({
+      id: row.id,
+      code: row.code,
+      severity: row.severity,
+      message: row.message,
       sourceRefCount: row.source_ref_count,
       sourceRefTypes: row.source_ref_types
         ? row.source_ref_types.split(',').map((value) => value.trim()).filter(Boolean)

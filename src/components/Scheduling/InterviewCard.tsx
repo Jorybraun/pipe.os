@@ -357,6 +357,7 @@ export function InterviewCard({
   const assessmentEvaluationLabel = assessmentProgress?.evaluation?.status
     ? sentenceCaseToken(assessmentProgress.evaluation.status)
     : null;
+  const assessmentDiagnosticCount = assessmentProgress?.evaluation?.diagnostics?.length ?? 0;
   const assessmentDecision = assessmentDecisionSummary({
     setup: assessmentSetup,
     progress: assessmentProgress,
@@ -554,6 +555,16 @@ export function InterviewCard({
                   </div>
                   <div style={{ minWidth: 0, fontSize: 10, color: 'var(--pipe-text-dim)', overflowWrap: 'anywhere' }}>
                     {assessmentEvaluationLabel}
+                  </div>
+                </>
+              )}
+              {assessmentDiagnosticCount > 0 && (
+                <>
+                  <div style={{ fontSize: 9, color: '#fbbf24', letterSpacing: '0.12em', fontWeight: 700 }}>
+                    CAUTION
+                  </div>
+                  <div style={{ minWidth: 0, fontSize: 10, color: '#fde68a', overflowWrap: 'anywhere' }}>
+                    {assessmentDiagnosticCount} evaluator caution{assessmentDiagnosticCount === 1 ? '' : 's'}
                   </div>
                 </>
               )}

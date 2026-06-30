@@ -2433,6 +2433,7 @@ export default function InterviewDetailPage(): JSX.Element {
   const assessmentRequiredProof = assessmentRequiredProofItems(assessmentProgress);
   const assessmentConfidenceSignals = assessmentConfidenceSignalItems(assessmentProgress);
   const assessmentEvaluationClaims = assessmentProgress?.evaluation?.claims?.slice(0, 3) ?? [];
+  const assessmentEvaluationDiagnostics = assessmentProgress?.evaluation?.diagnostics?.slice(0, 3) ?? [];
   const canStartAssessmentEvaluation = assessmentProgress?.nextAction === 'START_EVALUATION';
   const workspaceAssessmentReadout = workspaceAssessmentHiringReadout({
     progress: assessmentProgress,
@@ -3000,6 +3001,26 @@ export default function InterviewDetailPage(): JSX.Element {
                         </span>
                         <span style={ASSESSMENT_CLAIM_NARRATIVE}>{claim.narrative}</span>
                         <span style={ASSESSMENT_CLAIM_SOURCES}>{assessmentClaimSourceSummary(claim)}</span>
+                      </span>
+                    ))}
+                  </span>
+                </div>
+              )}
+              {assessmentEvaluationDiagnostics.length > 0 && (
+                <div
+                  data-testid="interview-assessment-evaluation-diagnostics"
+                  style={{ ...EVIDENCE_ROW, alignItems: 'flex-start' }}
+                >
+                  <span style={FIELD_LABEL}>Evaluator cautions</span>
+                  <span style={{ ...FIELD_VALUE, ...ASSESSMENT_CLAIM_LIST }}>
+                    {assessmentEvaluationDiagnostics.map((diagnostic) => (
+                      <span key={diagnostic.id} style={ASSESSMENT_DIAGNOSTIC_ROW}>
+                        <span style={ASSESSMENT_CLAIM_HEAD}>
+                          <span>{sentenceCaseToken(diagnostic.severity)}</span>
+                          <span>{sentenceCaseToken(diagnostic.code)}</span>
+                        </span>
+                        <span style={ASSESSMENT_CLAIM_NARRATIVE}>{diagnostic.message}</span>
+                        <span style={ASSESSMENT_CLAIM_SOURCES}>{assessmentClaimSourceSummary(diagnostic)}</span>
                       </span>
                     ))}
                   </span>
@@ -4211,6 +4232,12 @@ const ASSESSMENT_CLAIM_ROW: CSSProperties = {
   border: '1px solid var(--pipe-border)',
   borderRadius: 6,
   background: 'rgba(255,255,255,0.03)',
+};
+
+const ASSESSMENT_DIAGNOSTIC_ROW: CSSProperties = {
+  ...ASSESSMENT_CLAIM_ROW,
+  borderColor: 'rgba(251,191,36,0.35)',
+  background: 'rgba(251,191,36,0.07)',
 };
 
 const ASSESSMENT_CLAIM_HEAD: CSSProperties = {
