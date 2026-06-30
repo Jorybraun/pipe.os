@@ -48,6 +48,7 @@ import { evaluateRepoTaskAssessmentSession } from '../../lib/repoTaskAssessmentE
 import * as d1Matcher from '../../lib/challengeMatching/d1Matcher';
 import type { CandidateReviewChallengeOptions } from '../../lib/challengeMatching/d1Matcher';
 import { loadRoleChallengeSemantics } from '../../lib/challengeMatching/roleGuardrails';
+import type { ChallengePacket } from '../../lib/repoSemanticGraph';
 import type { Env, Variables } from '../../types';
 
 // ─── Provider config ────────────────────────────────────────────────────────
@@ -2787,6 +2788,24 @@ interface ManualOpenSourceChallengePacketInput {
   createdAt: string;
 }
 
+interface MatchedOpenSourceChallengePacket {
+  packetId: string;
+  repositoryUrl: string;
+  githubPrNumber: number;
+  pullRequestUrl: string;
+  baseCommitSha: string;
+  headCommitSha: string;
+  title: string;
+  instructions: string;
+  successCriteria: string[];
+  expectedEvidence: string[];
+  sourceHash: string;
+  repoSnapshotId: string;
+  qualityScore: number | null;
+  demandCount: number;
+  demandFamilies: string[];
+}
+
 function hasManualOpenSourceChallengePacket(input: {
   interviewType: string;
   githubRepoUrl: string | null | undefined;
@@ -2806,6 +2825,161 @@ function hasManualOpenSourceChallengePacket(input: {
     && Boolean(input.challengeExpectedEvidence?.length);
 }
 
+function demandFamilyLabel(value: string): string {
+  return value
+    .replace(/[_-]+/g, ' ')
+    .replace(/\s+/g, ' ')
+    .trim()
+    .toLowerCase();
+}
+
+function matchedPacketInstructions(packet: ChallengePacket): string {
+  const demandNarratives = packet.demands
+    .slice(0, 4)
+    .map((demand) => `- ${demand.narrative}`);
+  return [
+    `Work from the exact base commit ${packet.pullRequest.baseSha.toLowerCase()} and create a focused assessment branch.`,
+    `Use the selected upstream pull request context as the source-backed task brief: ${packet.pullRequest.url}.`,
+    'Implement a production-quality change that addresses the same repo demand without copying hidden ground truth.',
+    ...(demandNarratives.length > 0 ? ['Source-backed demands:', ...demandNarratives] : []),
+  ].join('\n');
+}
+
+function matchedPacketSuccessCriteria(packet: ChallengePacket): string[] {
+  const families = packet.demandFamilies.map(demandFamilyLabel).filter(Boolean);
+  return [
+    'The submitted commit is based on the assigned immutable base commit.',
+    'The patch is focused, reviewable, and tied to the selected repo task packet.',
+    'Relevant tests are run or a source-backed diagnostic explains why they could not be run.',
+    ...(families.length > 0
+      ? [`The solution addresses packet demands: ${families.slice(0, 4).join(', ')}.`]
+      : []),
+  ];
+}
+
+function matchedPacketExpectedEvidence(): string[] {
+  return [
+    'git_commit source ref for the submitted assessment commit',
+    'code_diff source ref for the candidate patch',
+    'terminal_command/test_run source refs for verification',
+    'chat/transcript/AI source refs for explanation and AI-use behavior when present',
+  ];
+}
+
+function materializeMatchedOpenSourcePacket(
+  row: {
+    id: string;
+    repo_snapshot_id: string | null;
+    pr_number: number | null;
+    source_hash: string | null;
+    packet_json: string;
+    github_url: string | null;
+    quality_score: number | null;
+    context_record_id: string | null;
+    repo_source_ref_count: number | null;
+    concept_link_count: number | null;
+  },
+): MatchedOpenSourceChallengePacket | null {
+  if (!row.github_url || !row.source_hash || !row.context_record_id) return null;
+  if ((row.repo_source_ref_count ?? 0) <= 0 || (row.concept_link_count ?? 0) <= 0) return null;
+
+  let packet: ChallengePacket;
+  try {
+    packet = JSON.parse(row.packet_json) as ChallengePacket;
+  } catch {
+    return null;
+  }
+
+  const baseCommitSha = packet.pullRequest?.baseSha?.toLowerCase();
+  const headCommitSha = packet.pullRequest?.headSha?.toLowerCase();
+  if (
+    packet.id !== row.id
+    || packet.contentHash !== row.source_hash
+    || !baseCommitSha
+    || !GIT_COMMIT_SHA_PATTERN.test(baseCommitSha)
+    || !headCommitSha
+    || !GIT_COMMIT_SHA_PATTERN.test(headCommitSha)
+    || !Number.isInteger(packet.pullRequest?.number)
+    || packet.pullRequest.number <= 0
+    || packet.pullRequest.number !== row.pr_number
+  ) {
+    return null;
+  }
+
+  return {
+    packetId: packet.id,
+    repositoryUrl: row.github_url,
+    githubPrNumber: packet.pullRequest.number,
+    pullRequestUrl: packet.pullRequest.url,
+    baseCommitSha,
+    headCommitSha,
+    title: packet.pullRequest.title,
+    instructions: matchedPacketInstructions(packet),
+    successCriteria: matchedPacketSuccessCriteria(packet),
+    expectedEvidence: matchedPacketExpectedEvidence(),
+    sourceHash: row.source_hash,
+    repoSnapshotId: packet.repoSnapshotId,
+    qualityScore: row.quality_score,
+    demandCount: packet.demands.length,
+    demandFamilies: [...packet.demandFamilies],
+  };
+}
+
+async function loadMatchedOpenSourceChallengePacket(
+  db: D1Database,
+  matchedRepoId: number,
+): Promise<MatchedOpenSourceChallengePacket | null> {
+  const rows = await db.prepare(
+    `SELECT rcp.id,
+            rcp.repo_snapshot_id,
+            rcp.pr_number,
+            rcp.source_hash,
+            rcp.packet_json,
+            rcp.quality_score,
+            qr.github_url,
+            cr.id AS context_record_id,
+            (
+              SELECT COUNT(*)
+                FROM context_record_source_refs crsr
+               WHERE crsr.context_record_id = cr.id
+                 AND crsr.source_ref_type = 'repo_source_span'
+            ) AS repo_source_ref_count,
+            (
+              SELECT COUNT(*)
+                FROM context_record_concepts crc
+               WHERE crc.context_record_id = cr.id
+            ) AS concept_link_count
+       FROM review_challenge_packets rcp
+       JOIN qualified_repos qr ON qr.id = rcp.repo_id
+       LEFT JOIN context_records cr
+         ON cr.ingestion_key = 'repo-challenge-packet-context:' || rcp.id
+        AND cr.scope_type = 'repo_snapshot'
+        AND cr.scope_id = rcp.repo_snapshot_id
+        AND cr.record_type = 'repo_challenge_packet'
+      WHERE rcp.repo_id = ?1
+        AND rcp.production_ready = 1
+        AND rcp.quality_score >= 0.70
+      ORDER BY rcp.quality_score DESC, rcp.pr_number`,
+  ).bind(matchedRepoId).all<{
+    id: string;
+    repo_snapshot_id: string | null;
+    pr_number: number | null;
+    source_hash: string | null;
+    packet_json: string;
+    quality_score: number | null;
+    github_url: string | null;
+    context_record_id: string | null;
+    repo_source_ref_count: number | null;
+    concept_link_count: number | null;
+  }>();
+
+  for (const row of rows.results ?? []) {
+    const packet = materializeMatchedOpenSourcePacket(row);
+    if (packet) return packet;
+  }
+  return null;
+}
+
 function buildManualOpenSourceChallengeExactText(
   input: ManualOpenSourceChallengePacketInput,
 ): string {
@@ -2813,6 +2987,23 @@ function buildManualOpenSourceChallengeExactText(
     `Repo: ${input.repositoryUrl}`,
     `Base commit: ${input.baseCommitSha.toLowerCase()}`,
     ...(input.githubPrNumber ? [`Pull request: #${input.githubPrNumber}`] : []),
+    `Task: ${input.title}`,
+    `Instructions: ${input.instructions}`,
+    'Success criteria:',
+    ...input.successCriteria.map((criterion) => `- ${criterion}`),
+    'Expected evidence:',
+    ...input.expectedEvidence.map((evidence) => `- ${evidence}`),
+  ].join('\n');
+}
+
+function buildMatchedOpenSourceChallengeExactText(
+  input: MatchedOpenSourceChallengePacket,
+): string {
+  return [
+    `Repo: ${input.repositoryUrl}`,
+    `Base commit: ${input.baseCommitSha}`,
+    `Pull request: #${input.githubPrNumber}`,
+    `Pull request URL: ${input.pullRequestUrl}`,
     `Task: ${input.title}`,
     `Instructions: ${input.instructions}`,
     'Success criteria:',
@@ -2876,6 +3067,88 @@ async function createManualOpenSourceChallengeAssessmentSession(
       instructions: input.instructions,
       successCriteria: [...input.successCriteria],
       expectedEvidence: [...input.expectedEvidence],
+    },
+    occurredAt: input.createdAt,
+    sourceRefs: [sourceRef],
+  });
+
+  return store.loadProgress(session.id);
+}
+
+async function createMatchedOpenSourceChallengeAssessmentSession(
+  db: D1Database,
+  input: {
+    interviewId: string;
+    userId: string;
+    candidateId: string | null;
+    matchedRepoId: number;
+    packet: MatchedOpenSourceChallengePacket;
+    createdAt: string;
+  },
+): Promise<AssessmentProgressSnapshot> {
+  const store = new RepoTaskInterviewSessionStore(db);
+  const session = await store.createSession({
+    ingestionKey: `assessment-session:${input.interviewId}:matched-open-source-challenge:${input.packet.packetId}`,
+    interviewId: input.interviewId,
+    mode: 'OPEN_SOURCE_BUG_FIX',
+    candidateId: input.candidateId,
+    createdBy: input.userId,
+    metadata: {
+      challengePacketSource: 'matched_review_challenge_packet',
+      matchedRepoId: input.matchedRepoId,
+      repositoryUrl: input.packet.repositoryUrl,
+      githubPrNumber: input.packet.githubPrNumber,
+      baseCommitSha: input.packet.baseCommitSha,
+      challengePacketId: input.packet.packetId,
+      repoSnapshotId: input.packet.repoSnapshotId,
+      challengeTitle: input.packet.title,
+    },
+  });
+  const exactText = buildMatchedOpenSourceChallengeExactText(input.packet);
+  const sourceRef: AssessmentEvidenceSourceRefInput = {
+    sourceRefType: 'review_challenge_packet',
+    sourceRefId: input.packet.packetId,
+    evidenceRole: 'assigned_challenge',
+    locator: {
+      scheduledInterviewId: input.interviewId,
+      matchedRepoId: input.matchedRepoId,
+      repositoryUrl: input.packet.repositoryUrl,
+      githubPrNumber: input.packet.githubPrNumber,
+      pullRequestUrl: input.packet.pullRequestUrl,
+      baseCommitSha: input.packet.baseCommitSha,
+      headCommitSha: input.packet.headCommitSha,
+      repoSnapshotId: input.packet.repoSnapshotId,
+    },
+    exactText,
+    contentHash: input.packet.sourceHash,
+    metadata: {
+      schemaVersion: 'matched-open-source-challenge-packet-v1',
+      source: 'matched_review_challenge_packet',
+      qualityScore: input.packet.qualityScore,
+      demandCount: input.packet.demandCount,
+      demandFamilies: input.packet.demandFamilies,
+    },
+  };
+
+  await store.recordEvent({
+    sessionId: session.id,
+    ingestionKey: `assessment-event:${session.id}:matched-open-source-challenge:${input.packet.packetId}`,
+    kind: 'match_decision',
+    actorType: 'system',
+    actorId: 'pipe-matcher',
+    narrative: 'PIPE assigned a source-backed open-source implementation challenge packet from the matched repository.',
+    payload: {
+      matchedRepoId: input.matchedRepoId,
+      repositoryUrl: input.packet.repositoryUrl,
+      githubPrNumber: input.packet.githubPrNumber,
+      pullRequestUrl: input.packet.pullRequestUrl,
+      baseCommitSha: input.packet.baseCommitSha,
+      title: input.packet.title,
+      successCriteria: input.packet.successCriteria,
+      expectedEvidence: input.packet.expectedEvidence,
+      challengePacketId: input.packet.packetId,
+      repoSnapshotId: input.packet.repoSnapshotId,
+      qualityScore: input.packet.qualityScore,
     },
     occurredAt: input.createdAt,
     sourceRefs: [sourceRef],
@@ -4881,12 +5154,28 @@ schedulingAuth.post('/interviews', async (c) => {
     challengeSuccessCriteria,
     challengeExpectedEvidence,
   });
+  let matchedOpenSourceChallengePacket: MatchedOpenSourceChallengePacket | null = null;
+  let effectiveGithubRepoUrl = githubRepoUrl ?? null;
+  let effectiveGithubPrNumber = githubPrNumber ?? null;
+  if (
+    effectiveInterviewType === 'OPEN_SOURCE_BUG_FIX'
+    && matchedRepoId
+    && !hasManualOpenSourceTaskPacket
+    && !effectiveGithubRepoUrl
+    && !effectiveGithubPrNumber
+  ) {
+    matchedOpenSourceChallengePacket = await loadMatchedOpenSourceChallengePacket(db, matchedRepoId);
+    if (matchedOpenSourceChallengePacket) {
+      effectiveGithubRepoUrl = matchedOpenSourceChallengePacket.repositoryUrl;
+      effectiveGithubPrNumber = matchedOpenSourceChallengePacket.githubPrNumber;
+    }
+  }
   const assessmentSetup = buildScheduledAssessmentSetup({
     interviewType: effectiveInterviewType,
     candidateId: candidateId ?? null,
     matchedRepoId: matchedRepoId ?? null,
-    githubRepoUrl: githubRepoUrl ?? null,
-    githubPrNumber: githubPrNumber ?? null,
+    githubRepoUrl: effectiveGithubRepoUrl,
+    githubPrNumber: effectiveGithubPrNumber,
     manualOpenSourceChallengePacket: hasManualOpenSourceTaskPacket,
   });
   const contactId = !candidateId && recipientName && recipientEmail
@@ -4909,7 +5198,7 @@ schedulingAuth.post('/interviews', async (c) => {
       effectiveInterviewType, effectiveMeetingType, scheduledAt ?? null,
       schedulingProvider ?? null, schedulingUrl ?? null,
       recipientName ?? null, recipientEmail?.trim().toLowerCase() ?? null,
-      matchedRepoId ?? null, githubRepoUrl ?? null, githubPrNumber ?? null,
+      matchedRepoId ?? null, effectiveGithubRepoUrl, effectiveGithubPrNumber,
       recruiterNotes ?? null,
       now, now,
     )
@@ -4947,6 +5236,15 @@ schedulingAuth.post('/interviews', async (c) => {
       expectedEvidence: challengeExpectedEvidence!,
       createdAt: now,
     });
+  } else if (matchedOpenSourceChallengePacket) {
+    assessmentProgress = await createMatchedOpenSourceChallengeAssessmentSession(db, {
+      interviewId: id,
+      userId,
+      candidateId: candidateId ?? null,
+      matchedRepoId,
+      packet: matchedOpenSourceChallengePacket,
+      createdAt: now,
+    });
   }
 
   return c.json({
@@ -4965,8 +5263,8 @@ schedulingAuth.post('/interviews', async (c) => {
       schedulingProvider: schedulingProvider ?? null,
       schedulingUrl: schedulingUrl ?? null,
       matchedRepoId: matchedRepoId ?? null,
-      githubRepoUrl: githubRepoUrl ?? null,
-      githubPrNumber: githubPrNumber ?? null,
+      githubRepoUrl: effectiveGithubRepoUrl,
+      githubPrNumber: effectiveGithubPrNumber,
       recruiterNotes: recruiterNotes ?? null,
       assessmentSetup,
       assessmentProgress,

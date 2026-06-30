@@ -519,6 +519,7 @@ describe('GET /interviews/:id detail', () => {
         pr_number INTEGER,
         production_ready INTEGER,
         quality_score REAL,
+        source_hash TEXT,
         packet_json TEXT,
         updated_at INTEGER
       );
@@ -6325,11 +6326,183 @@ describe('POST /interviews dev-container challenge (HAS-80)', () => {
         revoked_at TEXT,
         created_at TEXT NOT NULL
       );
+      CREATE TABLE qualified_repos (
+        id INTEGER PRIMARY KEY,
+        github_url TEXT NOT NULL
+      );
+      CREATE TABLE review_challenge_packets (
+        id TEXT PRIMARY KEY,
+        repo_snapshot_id TEXT,
+        repo_id INTEGER,
+        pr_number INTEGER,
+        production_ready INTEGER,
+        quality_score REAL,
+        source_hash TEXT,
+        packet_json TEXT,
+        updated_at INTEGER
+      );
     `);
     sqlite.exec(livingContextMigration);
     sqlite.exec(transcriptProjectionMigration);
     sqlite.exec(contextRecordsMigration);
     sqlite.exec(assessmentLayerMigration);
+  }
+
+  function seedMatchedOpenSourceChallengePacket(input: {
+    repoId?: number;
+    productionReady?: boolean;
+    qualityScore?: number;
+    includeContext?: boolean;
+  } = {}): {
+    repoId: number;
+    repositoryUrl: string;
+    packetId: string;
+    sourceHash: string;
+    baseCommitSha: string;
+    headCommitSha: string;
+    githubPrNumber: number;
+  } {
+    if (!sqlite) throw new Error('sqlite fixture not initialized');
+    const repoId = input.repoId ?? 7;
+    const repositoryUrl = 'https://github.com/hash-pipe/worker-tools';
+    const packetId = `challenge-packet-${repoId}-42`;
+    const repoSnapshotId = `repo-snapshot-${repoId}`;
+    const sourceHash = 'sha256:packet-open-source';
+    const baseCommitSha = 'aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa';
+    const headCommitSha = 'bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb';
+    const githubPrNumber = 42;
+    const now = '2026-06-29T18:30:00.000Z';
+    const packet = {
+      id: packetId,
+      repoSnapshotId,
+      policyVersion: 'repo-challenge-v1',
+      repository: {
+        provider: 'github',
+        owner: 'hash-pipe',
+        name: 'worker-tools',
+        canonicalUrl: repositoryUrl,
+      },
+      pullRequest: {
+        number: githubPrNumber,
+        url: `${repositoryUrl}/pull/${githubPrNumber}`,
+        title: 'Fix deterministic worker retry handling',
+        baseSha: baseCommitSha,
+        headSha: headCommitSha,
+      },
+      demands: [
+        {
+          id: 'demand-retry-logic',
+          family: 'retry_logic',
+          narrative: 'Repair retry scheduling so terminal events are emitted exactly once.',
+          conceptKeys: ['retry_logic'],
+          sourceSpanIds: ['repo-source-span-retry'],
+          changedSymbolIds: [],
+          weight: 1,
+          contentHash: 'sha256:demand-retry-logic',
+        },
+      ],
+      demandFamilies: ['retry_logic'],
+      quality: {
+        eligible: true,
+        score: input.qualityScore ?? 0.92,
+        metrics: { demandDiversity: 1 },
+        gates: [],
+      },
+      contentHash: sourceHash,
+    };
+
+    sqlite.prepare(
+      `INSERT INTO qualified_repos (id, github_url)
+       VALUES (?, ?)`,
+    ).run(repoId, repositoryUrl);
+    sqlite.prepare(
+      `INSERT INTO review_challenge_packets (
+         id, repo_snapshot_id, repo_id, pr_number, production_ready,
+         quality_score, source_hash, packet_json, updated_at
+       ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)`,
+    ).run(
+      packetId,
+      repoSnapshotId,
+      repoId,
+      githubPrNumber,
+      input.productionReady === false ? 0 : 1,
+      input.qualityScore ?? 0.92,
+      sourceHash,
+      JSON.stringify(packet),
+      1782767400,
+    );
+
+    if (input.includeContext !== false) {
+      sqlite.prepare(
+        `INSERT INTO concepts (
+           id, ingestion_key, canonical_key, namespace, label,
+           aliases_json, metadata_json, created_at, updated_at
+         ) VALUES (?, ?, ?, 'repo_demand', 'retry logic', '[]', '{}', ?, ?)`,
+      ).run(
+        'concept-retry-logic',
+        'concept:repo-demand:retry-logic',
+        'repo_demand:retry_logic',
+        now,
+        now,
+      );
+      sqlite.prepare(
+        `INSERT INTO context_records (
+           id, ingestion_key, scope_type, scope_id, workspace_person_id,
+           interaction_id, application_id, episode_id, assertion_id,
+           record_type, predicate, narrative, qualifiers_json, confidence,
+           polarity, extraction_version, observed_at, created_at, updated_at
+         ) VALUES (?, ?, 'repo_snapshot', ?, NULL,
+           NULL, NULL, NULL, NULL,
+           'repo_challenge_packet',
+           'defines source-backed open-source assessment task',
+           ?, ?, 0.96,
+           1, 'repo-challenge-packet-context-v1', ?, ?, ?)`,
+      ).run(
+        `context-${packetId}`,
+        `repo-challenge-packet-context:${packetId}`,
+        repoSnapshotId,
+        'Packet links the retry scheduling demand to an exact repository source span.',
+        JSON.stringify({ packetId, repoId, githubPrNumber }),
+        now,
+        now,
+        now,
+      );
+      sqlite.prepare(
+        `INSERT INTO context_record_source_refs (
+           context_record_id, source_ref_type, source_ref_id, source_span_id,
+           evidence_role, locator_json, exact_text, content_hash,
+           metadata_json, created_at
+         ) VALUES (?, 'repo_source_span', ?, NULL,
+           'support', ?, ?, ?, '{}', ?)`,
+      ).run(
+        `context-${packetId}`,
+        'repo-source-span-retry',
+        JSON.stringify({
+          repositoryUrl,
+          repoSnapshotId,
+          filePath: 'src/retry.ts',
+          baseCommitSha,
+        }),
+        'retry scheduler emits duplicate terminal events when a retry races completion',
+        'sha256:repo-source-span-retry',
+        now,
+      );
+      sqlite.prepare(
+        `INSERT INTO context_record_concepts (
+           context_record_id, concept_id, relationship, weight, created_at
+         ) VALUES (?, 'concept-retry-logic', 'requires', 0.95, ?)`,
+      ).run(`context-${packetId}`, now);
+    }
+
+    return {
+      repoId,
+      repositoryUrl,
+      packetId,
+      sourceHash,
+      baseCommitSha,
+      headCommitSha,
+      githubPrNumber,
+    };
   }
 
   it('creates a DEV_CONTAINER_CHALLENGE without a manual repo (auto-match default)', async () => {
@@ -6462,6 +6635,117 @@ describe('POST /interviews dev-container challenge (HAS-80)', () => {
     expect(row.candidate_id).toBeNull();
     expect(row.recipient_name).toBe('Margaret Hamilton');
     expect(row.recipient_email).toBe('margaret@example.com');
+  });
+
+  it('materializes a matched repo into a source-backed OPEN_SOURCE_BUG_FIX packet', async () => {
+    seedDevContainerFixture();
+    const packet = seedMatchedOpenSourceChallengePacket();
+    const app = mountSchedulingApp();
+
+    const response = await app.request('/interviews', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({
+        recipientName: 'Katherine Johnson',
+        recipientEmail: 'katherine.open-source@example.com',
+        meetingType: 'DIRECT_VIDEO_CALL',
+        interviewType: 'OPEN_SOURCE_BUG_FIX',
+        matchedRepoId: packet.repoId,
+      }),
+    });
+    expect(response.status).toBe(201);
+    const body = await response.json() as {
+      interview: {
+        id: string;
+        matchedRepoId: number | null;
+        githubRepoUrl: string | null;
+        githubPrNumber: number | null;
+        assessmentSetup: {
+          status: string;
+          kind: string;
+          source: string;
+          blocksPositiveAssessment: boolean;
+        };
+        assessmentProgress: {
+          stage: string;
+          hasChallengePacket: boolean;
+          challenge: {
+            sourceRefType: string;
+            sourceRefId: string;
+            exactText: string;
+            locator: {
+              repositoryUrl?: string;
+              githubPrNumber?: number;
+              baseCommitSha?: string;
+            };
+          } | null;
+        } | null;
+      };
+    };
+
+    expect(body.interview.matchedRepoId).toBe(packet.repoId);
+    expect(body.interview.githubRepoUrl).toBe(packet.repositoryUrl);
+    expect(body.interview.githubPrNumber).toBe(packet.githubPrNumber);
+    expect(body.interview.assessmentSetup).toMatchObject({
+      status: 'reviewable_task_assigned',
+      kind: 'auto_match',
+      source: 'matched_repo_id',
+      blocksPositiveAssessment: false,
+    });
+    expect(body.interview.assessmentProgress).toMatchObject({
+      stage: 'CHALLENGE_READY',
+      hasChallengePacket: true,
+      challenge: {
+        sourceRefType: 'review_challenge_packet',
+        sourceRefId: packet.packetId,
+        locator: {
+          repositoryUrl: packet.repositoryUrl,
+          githubPrNumber: packet.githubPrNumber,
+          baseCommitSha: packet.baseCommitSha,
+        },
+      },
+    });
+    expect(body.interview.assessmentProgress?.challenge?.exactText).toContain(`Pull request: #${packet.githubPrNumber}`);
+    expect(body.interview.assessmentProgress?.challenge?.exactText).toContain('Repair retry scheduling so terminal events are emitted exactly once.');
+
+    const row = sqlite!.prepare(
+      `SELECT matched_repo_id, github_repo_url, github_pr_number
+         FROM scheduled_interviews
+        WHERE id = ?`,
+    ).get(body.interview.id) as {
+      matched_repo_id: number | null;
+      github_repo_url: string | null;
+      github_pr_number: number | null;
+    };
+    expect(row).toEqual({
+      matched_repo_id: packet.repoId,
+      github_repo_url: packet.repositoryUrl,
+      github_pr_number: packet.githubPrNumber,
+    });
+
+    const sourceRef = sqlite!.prepare(
+      `SELECT sr.source_ref_type, sr.source_ref_id, sr.evidence_role,
+              sr.content_hash, sr.exact_text
+         FROM assessment_event_source_refs sr
+         JOIN assessment_evidence_events e ON e.id = sr.event_id
+         JOIN assessment_sessions s ON s.id = e.session_id
+        WHERE s.interview_id = ?
+          AND sr.source_ref_type = 'review_challenge_packet'
+        LIMIT 1`,
+    ).get(body.interview.id) as {
+      source_ref_type: string;
+      source_ref_id: string;
+      evidence_role: string;
+      content_hash: string;
+      exact_text: string;
+    } | undefined;
+    expect(sourceRef).toMatchObject({
+      source_ref_type: 'review_challenge_packet',
+      source_ref_id: packet.packetId,
+      evidence_role: 'assigned_challenge',
+      content_hash: packet.sourceHash,
+    });
+    expect(sourceRef?.exact_text).toContain(packet.repositoryUrl);
   });
 
   it('creates a source-backed open-source challenge packet without requiring a PR number', async () => {
@@ -6603,6 +6887,219 @@ describe('POST /interviews dev-container challenge (HAS-80)', () => {
     expect(sourceRef?.source_ref_id).toContain(body.interview.id);
     expect(sourceRef?.content_hash).toMatch(/^content_/);
     expect(sourceRef?.exact_text).toContain('Expected evidence:');
+  });
+
+  it('promotes matched OPEN_SOURCE_BUG_FIX repo into a source-backed challenge packet session', async () => {
+    seedDevContainerFixture();
+    const seeded = seedMatchedOpenSourceChallengePacket();
+    const app = mountSchedulingApp();
+
+    const response = await app.request('/interviews', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({
+        recipientName: 'Ada Lovelace',
+        recipientEmail: 'ada.open-source@example.com',
+        meetingType: 'DIRECT_VIDEO_CALL',
+        interviewType: 'OPEN_SOURCE_BUG_FIX',
+        matchedRepoId: seeded.repoId,
+      }),
+    });
+    expect(response.status).toBe(201);
+    const body = await response.json() as {
+      interview: {
+        id: string;
+        matchedRepoId: number | null;
+        githubRepoUrl: string | null;
+        githubPrNumber: number | null;
+        assessmentSetup: {
+          status: string;
+          kind: string;
+          source: string;
+          blocksPositiveAssessment: boolean;
+        };
+        assessmentProgress: {
+          stage: string;
+          nextAction: string;
+          hasChallengePacket: boolean;
+          hasCommitSubmission: boolean;
+          challenge: {
+            sourceRefType: string;
+            sourceRefId: string;
+            evidenceRole: string;
+            exactText: string;
+            contentHash: string;
+            locator: {
+              matchedRepoId?: number;
+              repositoryUrl?: string;
+              githubPrNumber?: number;
+              pullRequestUrl?: string;
+              baseCommitSha?: string;
+              headCommitSha?: string;
+              repoSnapshotId?: string;
+            };
+          } | null;
+        } | null;
+      };
+    };
+
+    expect(body.interview.matchedRepoId).toBe(seeded.repoId);
+    expect(body.interview.githubRepoUrl).toBe(seeded.repositoryUrl);
+    expect(body.interview.githubPrNumber).toBe(seeded.githubPrNumber);
+    expect(body.interview.assessmentSetup).toMatchObject({
+      status: 'reviewable_task_assigned',
+      kind: 'auto_match',
+      source: 'matched_repo_id',
+      blocksPositiveAssessment: false,
+    });
+    expect(body.interview.assessmentProgress).toMatchObject({
+      stage: 'CHALLENGE_READY',
+      nextAction: 'OPEN_ROOM_OR_WORKSPACE',
+      hasChallengePacket: true,
+      hasCommitSubmission: false,
+      challenge: {
+        sourceRefType: 'review_challenge_packet',
+        sourceRefId: seeded.packetId,
+        evidenceRole: 'assigned_challenge',
+        contentHash: seeded.sourceHash,
+        locator: {
+          matchedRepoId: seeded.repoId,
+          repositoryUrl: seeded.repositoryUrl,
+          githubPrNumber: seeded.githubPrNumber,
+          pullRequestUrl: `${seeded.repositoryUrl}/pull/${seeded.githubPrNumber}`,
+          baseCommitSha: seeded.baseCommitSha,
+          headCommitSha: seeded.headCommitSha,
+        },
+      },
+    });
+    expect(body.interview.assessmentProgress?.challenge?.exactText.split('\n')).toEqual(expect.arrayContaining([
+      `Repo: ${seeded.repositoryUrl}`,
+      `Base commit: ${seeded.baseCommitSha}`,
+      `Pull request: #${seeded.githubPrNumber}`,
+      `Pull request URL: ${seeded.repositoryUrl}/pull/${seeded.githubPrNumber}`,
+      'Task: Fix deterministic worker retry handling',
+      'Source-backed demands:',
+      '- Repair retry scheduling so terminal events are emitted exactly once.',
+      'Expected evidence:',
+      '- git_commit source ref for the submitted assessment commit',
+      '- code_diff source ref for the candidate patch',
+    ]));
+
+    const row = sqlite!.prepare(
+      `SELECT matched_repo_id, github_repo_url, github_pr_number
+         FROM scheduled_interviews
+        WHERE id = ?`,
+    ).get(body.interview.id) as {
+      matched_repo_id: number | null;
+      github_repo_url: string | null;
+      github_pr_number: number | null;
+    };
+    expect(row).toEqual({
+      matched_repo_id: seeded.repoId,
+      github_repo_url: seeded.repositoryUrl,
+      github_pr_number: seeded.githubPrNumber,
+    });
+
+    const session = sqlite!.prepare(
+      `SELECT id, mode, state, interview_id, metadata_json
+         FROM assessment_sessions
+        WHERE interview_id = ?`,
+    ).get(body.interview.id) as {
+      id: string;
+      mode: string;
+      state: string;
+      interview_id: string;
+      metadata_json: string;
+    } | undefined;
+    expect(session).toMatchObject({
+      mode: 'OPEN_SOURCE_BUG_FIX',
+      state: 'INTAKE',
+      interview_id: body.interview.id,
+    });
+    expect(JSON.parse(session?.metadata_json ?? '{}')).toMatchObject({
+      challengePacketSource: 'matched_review_challenge_packet',
+      matchedRepoId: seeded.repoId,
+      repositoryUrl: seeded.repositoryUrl,
+      githubPrNumber: seeded.githubPrNumber,
+      baseCommitSha: seeded.baseCommitSha,
+      challengePacketId: seeded.packetId,
+    });
+
+    const sourceRef = sqlite!.prepare(
+      `SELECT sr.source_ref_type, sr.source_ref_id, sr.evidence_role,
+              sr.content_hash, sr.exact_text
+         FROM assessment_event_source_refs sr
+         JOIN assessment_evidence_events e ON e.id = sr.event_id
+        WHERE e.session_id = ?
+          AND sr.source_ref_type = 'review_challenge_packet'
+        LIMIT 1`,
+    ).get(session?.id) as {
+      source_ref_type: string;
+      source_ref_id: string;
+      evidence_role: string;
+      content_hash: string;
+      exact_text: string;
+    } | undefined;
+    expect(sourceRef).toMatchObject({
+      source_ref_type: 'review_challenge_packet',
+      source_ref_id: seeded.packetId,
+      evidence_role: 'assigned_challenge',
+      content_hash: seeded.sourceHash,
+    });
+    expect(sourceRef?.exact_text).toContain('Expected evidence:');
+  });
+
+  it('keeps matched OPEN_SOURCE_BUG_FIX blocked when no production-ready packet exists', async () => {
+    seedDevContainerFixture();
+    const seeded = seedMatchedOpenSourceChallengePacket({ productionReady: false });
+    const app = mountSchedulingApp();
+
+    const response = await app.request('/interviews', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({
+        recipientName: 'Ada Lovelace',
+        recipientEmail: 'ada.blocked@example.com',
+        meetingType: 'DIRECT_VIDEO_CALL',
+        interviewType: 'OPEN_SOURCE_BUG_FIX',
+        matchedRepoId: seeded.repoId,
+      }),
+    });
+    expect(response.status).toBe(201);
+    const body = await response.json() as {
+      interview: {
+        id: string;
+        matchedRepoId: number | null;
+        githubRepoUrl: string | null;
+        githubPrNumber: number | null;
+        assessmentSetup: {
+          status: string;
+          kind: string;
+          source: string;
+          blocksPositiveAssessment: boolean;
+          message: string | null;
+        };
+        assessmentProgress: unknown;
+      };
+    };
+
+    expect(body.interview.matchedRepoId).toBe(seeded.repoId);
+    expect(body.interview.githubRepoUrl).toBeNull();
+    expect(body.interview.githubPrNumber).toBeNull();
+    expect(body.interview.assessmentProgress).toBeNull();
+    expect(body.interview.assessmentSetup).toMatchObject({
+      status: 'missing_reviewable_task',
+      kind: 'matched_repo_without_pr',
+      source: 'matched_repo_id',
+      blocksPositiveAssessment: true,
+    });
+    expect(body.interview.assessmentSetup.message).toContain('no GitHub PR or task was assigned');
+
+    expect(sqlite!.prepare(
+      `SELECT COUNT(*) AS count
+         FROM assessment_sessions
+        WHERE interview_id = ?`,
+    ).get(body.interview.id)).toEqual({ count: 0 });
   });
 
   it('delivers OPEN_SOURCE_BUG_FIX invites to the assessment surface when a repo task is assigned', async () => {

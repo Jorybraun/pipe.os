@@ -61,6 +61,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Fixed — Candidate repo matching
 
+- `OPEN_SOURCE_BUG_FIX` scheduling now promotes a matched repo into an assigned assessment only when a production-ready review challenge packet has exact source provenance, creating the source-backed assessment session from that packet and failing closed otherwise.
 - Scheduled interview detail now redacts accumulated person-level evidence arrays from its `livingContext` payload, keeping meeting pages scoped to summary counts and related-interview previews while the full graph stays on the person profile.
 - CODE_REVIEW recruiter detail smoke now verifies the deployed hiring-manager readout directly, so app-dev validation protects the compact decision, assignment, score validity, risk, and next-action summary.
 - CODE_REVIEW recruiter detail now starts with a compact hiring-manager readout for decision, assignment trust, score validity, risk, and next action before exposing deeper evidence panels.
