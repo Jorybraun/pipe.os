@@ -1,6 +1,6 @@
 import { act, fireEvent, render, screen } from '@testing-library/react';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
-import { MemoryRouter, Route, Routes } from 'react-router-dom';
+import { MemoryRouter, Route, Routes, useParams } from 'react-router-dom';
 import InterviewDetailPage from './InterviewDetailPage';
 import type { ScheduledInterviewDetail } from '../lib/scheduling/types';
 
@@ -63,11 +63,17 @@ function makeInterview(
   };
 }
 
+function PersonRouteEcho(): JSX.Element {
+  const { personId } = useParams<{ personId: string }>();
+  return <div data-testid="person-route-echo">{personId}</div>;
+}
+
 function renderDetail(): void {
   render(
     <MemoryRouter initialEntries={['/interviews/interview-1']}>
       <Routes>
         <Route path="/interviews/:interviewId" element={<InterviewDetailPage />} />
+        <Route path="/people/:personId" element={<PersonRouteEcho />} />
       </Routes>
     </MemoryRouter>,
   );
@@ -1323,6 +1329,7 @@ describe('InterviewDetailPage', () => {
       interview: makeInterview({
         interviewType: 'CODE_REVIEW',
         status: 'INVITED',
+        contactId: 'stale-contact-id',
         livingContext: {
           person: {
             personId: 'person-graph-1',
@@ -1515,6 +1522,8 @@ describe('InterviewDetailPage', () => {
     expect(related).toHaveTextContent('Dev challenge');
     expect(related).not.toHaveTextContent('Hidden extra context');
     expect(related).not.toHaveTextContent('interview-second-code-review');
+    fireEvent.click(screen.getAllByTestId('interview-open-person-profile')[0]!);
+    expect(screen.getByTestId('person-route-echo')).toHaveTextContent('person-graph-1');
     expect(screen.queryByTestId('interview-person-context-timeline')).toBeNull();
     expect(screen.queryByText('Code Review Context Call Recommendation')).toBeNull();
     expect(screen.queryByText('Scheduled Interview Invite Delivery')).toBeNull();
@@ -2288,6 +2297,51 @@ describe('InterviewDetailPage', () => {
     expect(plan).toHaveTextContent(SOURCE_BACKED_WORK_EVIDENCE_QUESTION);
     expect(plan).toHaveTextContent('Candidate answer becomes source-backed context for repo matching.');
     expect(plan).toHaveTextContent('The invite includes this question so the call has a concrete purpose.');
+  });
+
+  it('opens the living-context person profile when an interview has no contact id', async () => {
+    mocks.api.get.mockResolvedValueOnce({
+      interview: makeInterview({
+        interviewType: 'OPEN_SOURCE_BUG_FIX',
+        candidateId: 'candidate-with-graph',
+        contactId: null,
+        livingContext: {
+          person: {
+            personId: 'person-graph-1',
+            workspacePersonId: 'workspace-person-1',
+            applicationId: 'application-1',
+            displayName: 'Ada Candidate',
+            primaryEmail: 'ada@example.com',
+            primaryPhone: null,
+            relationshipSummary: null,
+            applicationStatus: null,
+            pipelineId: null,
+            roles: [],
+          },
+          summary: {
+            interactionCount: 1,
+            artifactCount: 1,
+            contextRecordCount: 1,
+            assertionCount: 0,
+            signalCount: 0,
+            sourceSpanCount: 1,
+          },
+          interactions: [],
+          artifacts: [],
+          contextRecords: [],
+          assertions: [],
+          signals: [],
+          relationships: [],
+        },
+      }),
+    });
+
+    renderDetail();
+    await flushAsyncUpdates();
+
+    fireEvent.click(screen.getAllByTestId('interview-open-person-profile')[0]!);
+
+    expect(screen.getByTestId('person-route-echo')).toHaveTextContent('person-graph-1');
   });
 
   it('includes the evidence-plan question when inviting a follow-up assessment candidate', async () => {

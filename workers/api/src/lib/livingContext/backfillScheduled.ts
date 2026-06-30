@@ -767,10 +767,23 @@ async function backfillAssessmentsBatch(
        FROM assessment_sessions ass
       WHERE ass.candidate_id IS NOT NULL
         AND ass.state NOT IN ('INTAKE', 'CANCELLED')
-        AND NOT EXISTS (
-          SELECT 1 FROM interactions i
-           WHERE i.interaction_type LIKE 'assessment:%'
-             AND i.external_reference = ass.id
+        AND (
+          NOT EXISTS (
+            SELECT 1 FROM interactions i
+             WHERE i.interaction_type LIKE 'assessment:%'
+               AND i.external_reference = ass.id
+          )
+          OR EXISTS (
+            SELECT 1
+              FROM assessment_evaluation_reports aer
+             WHERE aer.session_id = ass.id
+               AND NOT EXISTS (
+                 SELECT 1
+                   FROM context_record_entities cre
+                  WHERE cre.entity_type = 'assessment_evaluation_report'
+                    AND cre.entity_id = aer.id
+               )
+          )
         )
         AND (?1 IS NULL OR ass.id > ?1)
       ORDER BY ass.id

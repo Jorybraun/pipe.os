@@ -2547,16 +2547,18 @@ export default function InterviewDetailPage(): JSX.Element {
   const providerName = interview.linkedMeeting?.schedulingProvider ?? interview.schedulingProvider ?? null;
   const providerEventId = interview.linkedMeeting?.externalEventId ?? interview.externalEventId ?? null;
   const providerEventDisplay = providerEventLabel(providerEventId);
-  const personProfilePath = interview.contactId
-    ? `/people/${interview.contactId}`
-    : interview.candidateId
-      ? `/candidates/${interview.candidateId}`
-      : null;
   const hasInviteDelivery = Boolean(interview.inviteLinkSentAt ?? interview.emailSentAt);
   const displayStatus = interview.status === 'INVITED' && !hasInviteDelivery
     ? 'READY'
     : interview.status;
   const contextSummary = interview.livingContext?.summary ?? null;
+  const personProfilePath = interview.livingContext?.person?.personId
+    ? `/people/${interview.livingContext.person.personId}`
+    : interview.contactId
+      ? `/people/${interview.contactId}`
+      : interview.candidateId
+        ? `/candidates/${interview.candidateId}`
+        : null;
   const relatedEvidenceTotal = interview.relatedEvidenceInterviews?.length ?? 0;
   const relatedEvidenceInterviews = interview.relatedEvidenceInterviews?.slice(0, 4) ?? [];
   const relatedEvidenceHiddenCount = Math.max(relatedEvidenceTotal - relatedEvidenceInterviews.length, 0);
@@ -2817,6 +2819,19 @@ export default function InterviewDetailPage(): JSX.Element {
       tone: codeReviewNextStep.tone,
     },
   ];
+  const openPersonProfile = (): void => {
+    if (!personProfilePath) return;
+    const state = interview.livingContext || interview.candidateId
+      ? {
+          livingContext: interview.livingContext ?? undefined,
+          candidateId: interview.candidateId ?? undefined,
+          selectedAssessment: assessmentProgress ?? undefined,
+        }
+      : undefined;
+    navigate(personProfilePath, {
+      state,
+    });
+  };
 
   return (
     <div style={PAGE}>
@@ -2838,7 +2853,12 @@ export default function InterviewDetailPage(): JSX.Element {
 
         <div style={ACTION_ROW}>
           {personProfilePath && (
-            <button onClick={() => navigate(personProfilePath)} style={PRIMARY_BUTTON}>
+            <button
+              type="button"
+              data-testid="interview-open-person-profile"
+              onClick={openPersonProfile}
+              style={PRIMARY_BUTTON}
+            >
               <User size={14} />
               PERSON
             </button>
@@ -4022,7 +4042,8 @@ export default function InterviewDetailPage(): JSX.Element {
                     {personProfilePath && (
                       <button
                         type="button"
-                        onClick={() => navigate(personProfilePath)}
+                        data-testid="interview-open-person-profile"
+                        onClick={openPersonProfile}
                         style={RELATED_EVIDENCE_PROFILE_BUTTON}
                       >
                         Open full person graph
@@ -4069,7 +4090,8 @@ export default function InterviewDetailPage(): JSX.Element {
               {personProfilePath && (
                 <button
                   type="button"
-                  onClick={() => navigate(personProfilePath)}
+                  data-testid="interview-open-person-profile"
+                  onClick={openPersonProfile}
                   style={{ ...PRIMARY_BUTTON, ...CONTEXT_CALL_BUTTON }}
                 >
                   <User size={14} />

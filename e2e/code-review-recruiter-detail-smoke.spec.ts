@@ -35,6 +35,10 @@ const EXPECT_HUMAN_DECISION = envFlag(
   'ASSESSMENT_RECRUITER_EXPECT_HUMAN_DECISION',
   'CODE_REVIEW_RECRUITER_EXPECT_HUMAN_DECISION',
 );
+const EXPECT_PERSON_PROFILE_DECISION = envFlag(
+  'ASSESSMENT_RECRUITER_EXPECT_PERSON_PROFILE_DECISION',
+  'CODE_REVIEW_RECRUITER_EXPECT_PERSON_PROFILE_DECISION',
+);
 
 function expectedRepoLabel(repoUrl: string): string | null {
   if (!repoUrl) return null;
@@ -58,6 +62,25 @@ async function expectHumanDecisionState(page: Page): Promise<void> {
     await expect(progress).toContainText(/Human: (advance|hold|reject|needs more evidence)/);
     await expect(page.getByTestId('interview-human-decision-form')).toHaveCount(0);
   }
+}
+
+async function expectPersonProfileWorkspaceDecision(page: Page): Promise<void> {
+  if (!EXPECT_PERSON_PROFILE_DECISION) return;
+
+  const profileButton = page.getByTestId('interview-open-person-profile').first();
+  await expect(profileButton).toBeVisible();
+  await profileButton.click();
+
+  const cockpit = page.getByTestId('person-decision-cockpit');
+  await expect(cockpit).toBeVisible({ timeout: 45_000 });
+  await expect(cockpit).toContainText('Decision cockpit');
+  await expect(cockpit).not.toContainText('Collect first source-backed evidence');
+
+  const personDecision = page.getByTestId('person-code-review-decision');
+  await expect(personDecision).toBeVisible();
+  await expect(personDecision).toContainText('Workspace assessment decision');
+  await expect(personDecision).toContainText(/workspace assessment signal|Workspace assessment needs review/);
+  await expect(personDecision).toContainText('source-backed proof items');
 }
 
 test.describe('Feature: assessment recruiter detail smoke', () => {
@@ -105,6 +128,7 @@ test.describe('Feature: assessment recruiter detail smoke', () => {
         await expect(page.getByTestId('interview-assessment-evaluation-claims')).toBeVisible();
         await expect(page.locator('body')).toContainText(/Evaluation|Evaluated/);
       }
+      await expectPersonProfileWorkspaceDecision(page);
       return;
     }
 

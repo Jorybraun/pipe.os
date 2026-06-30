@@ -1,5 +1,5 @@
 import { useCallback, useEffect, useState, type CSSProperties, type ReactNode } from 'react';
-import { useNavigate, useParams } from 'react-router-dom';
+import { useLocation, useNavigate, useParams } from 'react-router-dom';
 import {
   ArrowLeft,
   Briefcase,
@@ -22,6 +22,7 @@ import type {
   LivingContextRecord,
   LivingContextRecordSourceRef,
 } from '../lib/api/types';
+import type { AssessmentProgressSnapshot } from '../lib/scheduling/types';
 import {
   contextRecordTitle,
   contextRecordTypeLabel,
@@ -122,6 +123,58 @@ function formatDate(value: string | null | undefined): string {
     hour: 'numeric',
     minute: '2-digit',
   });
+}
+
+function contactFromLivingContext(
+  livingContext: LivingContextReadModel | null,
+  fallbackId: string | undefined,
+): PersonContact | null {
+  if (!livingContext?.person) return null;
+  const person = livingContext.person;
+  return {
+    id: fallbackId ?? person.personId,
+    email: person.primaryEmail ?? '',
+    name: person.displayName,
+    company: null,
+    role: person.roles[0]?.label ?? null,
+    phone: person.primaryPhone,
+    linkedin: null,
+    notes: person.relationshipSummary,
+    type: 'candidate',
+    created_at: '',
+    updated_at: '',
+  };
+}
+
+function livingContextFromNavigationState(state: unknown): LivingContextReadModel | null {
+  if (!isRecord(state) || !isRecord(state.livingContext) || !isRecord(state.livingContext.person)) {
+    return null;
+  }
+  return state.livingContext as unknown as LivingContextReadModel;
+}
+
+function candidateIdFromNavigationState(state: unknown): string | null {
+  if (!isRecord(state) || typeof state.candidateId !== 'string' || state.candidateId.trim().length === 0) {
+    return null;
+  }
+  return state.candidateId.trim();
+}
+
+function selectedAssessmentFromNavigationState(state: unknown): AssessmentProgressSnapshot | null {
+  if (!isRecord(state) || !isRecord(state.selectedAssessment) || !isRecord(state.selectedAssessment.session)) {
+    return null;
+  }
+  return state.selectedAssessment as unknown as AssessmentProgressSnapshot;
+}
+
+function livingContextFromCandidateResponse(response: unknown): LivingContextReadModel | null {
+  if (isRecord(response) && isRecord(response.livingContext) && isRecord(response.livingContext.person)) {
+    return response.livingContext as unknown as LivingContextReadModel;
+  }
+  if (isRecord(response) && isRecord(response.person)) {
+    return response as unknown as LivingContextReadModel;
+  }
+  return null;
 }
 
 function isRecord(value: unknown): value is Record<string, unknown> {
@@ -1074,6 +1127,149 @@ function deriveWorkspaceAssessmentDecision(
   };
 }
 
+function humanAssessmentDecisionLabel(decision: string): string {
+  switch (decision) {
+    case 'advance':
+      return 'Advance';
+    case 'hold':
+      return 'Hold';
+    case 'reject':
+      return 'Reject';
+    case 'needs_more_evidence':
+      return 'Needs more evidence';
+    default:
+      return titleCaseToken(decision);
+  }
+}
+
+function assessmentEvaluationRecommendationLabel(value: string | null | undefined): string | null {
+  if (!value) return null;
+  switch (value) {
+    case 'advance':
+      return 'Advance';
+    case 'hold':
+      return 'Hold';
+    case 'reject':
+      return 'Reject';
+    case 'needs_more_evidence':
+      return 'Needs more evidence';
+    default:
+      return titleCaseToken(value);
+  }
+}
+
+function deriveSelectedWorkspaceAssessmentDecision(
+  progress: AssessmentProgressSnapshot | null,
+): CodeReviewDecisionProjection | null {
+  if (!progress?.humanDecision && !progress?.evaluation) return null;
+
+  const sourceRefCount = progress.humanDecision?.sourceRefCount
+    ?? progress.evaluation?.evidenceCoverage?.sourceRefCount
+    ?? progress.sourceRefCounts.reduce((total, item) => total + item.count, 0)
+    ?? 0;
+  const proofItems = progress.evidenceSnippets?.slice(0, 6).map((snippet, index) => ({
+    id: `${progress.session.id}:${index}:${snippet.sourceRefType}:${snippet.occurredAt}`,
+    label: snippet.sourceRefType.replace(/[_-]+/g, ' ').toLowerCase(),
+    text: snippet.exactText.length > 180 ? `${snippet.exactText.slice(0, 180)}...` : snippet.exactText,
+  })) ?? [];
+  const positiveClaims = progress.evaluation?.claims?.filter((claim) => claim.polarity === 'positive') ?? [];
+  const negativeClaims = progress.evaluation?.claims?.filter((claim) => claim.polarity === 'negative') ?? [];
+  const humanDecision = progress.humanDecision?.decision ?? null;
+  const recommendation = progress.humanDecision
+    ? humanAssessmentDecisionLabel(progress.humanDecision.decision)
+    : assessmentEvaluationRecommendationLabel(progress.evaluation?.recommendation) ?? 'Review selected assessment';
+  const recommendationDetail = progress.humanDecision?.summary
+    ?? progress.evaluation?.summary
+    ?? 'The selected interview has source-backed assessment evidence, but the accumulated person graph has not absorbed it yet.';
+  const hasCompleteProof = sourceRefCount >= 3 && Boolean(progress.evaluation);
+  const assessmentValidity = hasCompleteProof
+    ? {
+        value: 'Usable workspace assessment signal',
+        detail: 'The selected interview includes evaluator evidence and source references. Treat this as selected-interaction signal until the person graph rollup catches up.',
+      }
+    : {
+        value: 'Partial workspace assessment signal',
+        detail: 'The selected interview has assessment evidence, but the source chain is not complete enough for high confidence.',
+      };
+  const uncertainty = negativeClaims.length > 0
+    ? {
+        value: 'Assessment has cautions',
+        detail: negativeClaims[0]?.narrative ?? 'The evaluator raised a caution that needs hiring-team calibration.',
+      }
+    : progress.humanDecision && hasCompleteProof
+      ? {
+          value: 'Low remaining uncertainty',
+          detail: 'The selected assessment has a human decision and source-backed evaluator evidence.',
+        }
+      : {
+          value: 'Graph rollup pending',
+          detail: 'The assessment is visible from the selected interview, but the person-level graph still needs to ingest the full decision evidence.',
+        };
+  const missingContext = negativeClaims.length > 0
+    ? ['Review evaluator cautions before using this as final hiring signal']
+    : progress.humanDecision
+      ? ['Persist this selected assessment into the person graph rollup']
+      : ['Record a human assessment decision after reviewing the selected interview evidence'];
+  const nextAction = progress.humanDecision
+    ? {
+        value: 'Review with hiring team',
+        detail: 'Use this selected-interview assessment with the profile evidence while the graph rollup catches up.',
+      }
+    : {
+        value: 'Record human assessment decision',
+        detail: 'Have a reviewer inspect the selected assessment evidence and record advance, hold, reject, or needs-more-evidence.',
+      };
+
+  return {
+    decisionLabel: 'Workspace assessment decision',
+    sessionId: progress.session.id,
+    outcome: humanDecision ? `Human: ${humanAssessmentDecisionLabel(humanDecision)}` : null,
+    recommendation,
+    recommendationDetail,
+    uncertainty: uncertainty.value,
+    uncertaintyDetail: uncertainty.detail,
+    missingContext,
+    assessmentValidity: assessmentValidity.value,
+    assessmentValidityDetail: assessmentValidity.detail,
+    nextAction: nextAction.value,
+    nextActionDetail: nextAction.detail,
+    scoreLabel: null,
+    challengeLabel: progress.challenge?.locator.repositoryUrl
+      ? String(progress.challenge.locator.repositoryUrl).replace(/^https:\/\/github\.com\//, '')
+      : null,
+    challengeUrl: typeof progress.challenge?.locator.repositoryUrl === 'string'
+      ? progress.challenge.locator.repositoryUrl
+      : null,
+    narrative: progress.evaluation?.summary ?? progress.humanDecision?.summary ?? null,
+    strengths: positiveClaims.map((claim) => claim.narrative).slice(0, 3),
+    probes: negativeClaims.map((claim) => claim.narrative).slice(0, 2),
+    proofCount: Math.max(sourceRefCount, proofItems.length),
+    proofItems,
+    basisItems: [
+      {
+        label: 'Selected interview',
+        value: 'Assessment evidence',
+        satisfied: true,
+      },
+      {
+        label: 'Evaluation claims',
+        value: positiveClaims.length > 0 ? `${positiveClaims.length} positive` : progress.evaluation ? 'Recorded' : 'Missing',
+        satisfied: Boolean(progress.evaluation),
+      },
+      {
+        label: 'Human decision',
+        value: humanDecision ? humanAssessmentDecisionLabel(humanDecision) : 'Missing',
+        satisfied: humanDecision !== null,
+      },
+      {
+        label: 'Source proof',
+        value: sourceRefCount > 0 ? `${sourceRefCount} refs` : 'Missing',
+        satisfied: sourceRefCount > 0,
+      },
+    ],
+  };
+}
+
 function Metric({ label, value }: { label: string; value: number }): JSX.Element {
   return (
     <div style={METRIC_CARD}>
@@ -1361,16 +1557,23 @@ function CodeReviewDecisionCard({ decision }: { decision: CodeReviewDecisionProj
 
 export default function PersonProfilePage(): JSX.Element {
   const { personId } = useParams<{ personId: string }>();
+  const location = useLocation();
   const navigate = useNavigate();
   const api = useApiClient();
+  const navigationLivingContext = livingContextFromNavigationState(location.state);
+  const navigationCandidateId = candidateIdFromNavigationState(location.state);
+  const selectedAssessment = selectedAssessmentFromNavigationState(location.state);
 
   const [contact, setContact] = useState<PersonContact | null>(null);
-  const [livingContext, setLivingContext] = useState<LivingContextReadModel | null>(null);
+  const [livingContext, setLivingContext] = useState<LivingContextReadModel | null>(navigationLivingContext);
   const [isLoading, setIsLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
   const [showSourceGraph, setShowSourceGraph] = useState(false);
 
   const contextEndpoint = personId ? `/api/v1/contacts/${personId}/living-context` : null;
+  const candidateContextEndpoint = navigationCandidateId
+    ? `/api/v1/candidates/${navigationCandidateId}/living-context`
+    : null;
 
   const load = useCallback(async (): Promise<void> => {
     if (!personId || !contextEndpoint) {
@@ -1383,12 +1586,29 @@ export default function PersonProfilePage(): JSX.Element {
     setIsLoading(true);
     setError(null);
     try {
-      const [contactResponse, contextResponse] = await Promise.all([
+      const [contactResult, contextResult] = await Promise.allSettled([
         api.get<{ contact: PersonContact }>(`/api/v1/contacts/${personId}`),
         api.get<LivingContextReadModel>(contextEndpoint),
       ]);
-      setContact(contactResponse.contact);
-      setLivingContext(contextResponse);
+      const loadedContact = contactResult.status === 'fulfilled' ? contactResult.value.contact : null;
+      let loadedContext = contextResult.status === 'fulfilled' ? contextResult.value : navigationLivingContext;
+      let candidateContextError: unknown = null;
+      if (!loadedContext && candidateContextEndpoint) {
+        try {
+          const candidateContext = await api.get<unknown>(candidateContextEndpoint);
+          loadedContext = livingContextFromCandidateResponse(candidateContext);
+        } catch (err) {
+          candidateContextError = err;
+        }
+      }
+      if (!loadedContact && !loadedContext) {
+        const reason = candidateContextError
+          ?? (contextResult.status === 'rejected' ? contextResult.reason : null)
+          ?? (contactResult.status === 'rejected' ? contactResult.reason : null);
+        throw reason instanceof Error ? reason : new Error('Unable to load person profile.');
+      }
+      setContact(loadedContact);
+      setLivingContext(loadedContext);
     } catch (err) {
       setError(err instanceof Error ? err.message : 'Unable to load person profile.');
       setContact(null);
@@ -1396,20 +1616,21 @@ export default function PersonProfilePage(): JSX.Element {
     } finally {
       setIsLoading(false);
     }
-  }, [api, contextEndpoint, personId]);
+  }, [api, candidateContextEndpoint, contextEndpoint, navigationLivingContext, personId]);
 
   useEffect(() => {
     void load();
   }, [load]);
 
-  const displayName = contact?.name
+  const profileContact = contact ?? contactFromLivingContext(livingContext, personId);
+  const displayName = profileContact?.name
     ?? livingContext?.person?.displayName
-    ?? contact?.email
+    ?? profileContact?.email
     ?? 'Person';
-  const relationshipLabel = typeLabel(contact?.type);
-  const roleContext = contact?.role ?? livingContext?.person?.roles[0]?.label ?? 'Relationship graph';
+  const relationshipLabel = typeLabel(profileContact?.type);
+  const roleContext = profileContact?.role ?? livingContext?.person?.roles[0]?.label ?? 'Relationship graph';
   const relationshipSummary = livingContext?.person?.relationshipSummary
-    ?? contact?.notes
+    ?? profileContact?.notes
     ?? 'No relationship summary has been earned from evidence yet.';
 
   const recentInteractions = livingContext?.interactions.slice(0, 5) ?? [];
@@ -1420,7 +1641,9 @@ export default function PersonProfilePage(): JSX.Element {
     .slice(0, 5) ?? [];
   const evidenceArtifacts = livingContext?.artifacts.slice(0, 5) ?? [];
   const codeReviewDecision = deriveCodeReviewDecision(livingContext);
-  const decision = codeReviewDecision ?? deriveWorkspaceAssessmentDecision(livingContext);
+  const decision = codeReviewDecision
+    ?? deriveWorkspaceAssessmentDecision(livingContext)
+    ?? deriveSelectedWorkspaceAssessmentDecision(selectedAssessment);
 
   if (isLoading) {
     return (
@@ -1430,7 +1653,7 @@ export default function PersonProfilePage(): JSX.Element {
     );
   }
 
-  if (error || !contact) {
+  if (error || !profileContact) {
     return (
       <div style={{ padding: 32 }}>
         <button onClick={() => navigate('/people')} style={backButtonStyle}>
@@ -1470,10 +1693,10 @@ export default function PersonProfilePage(): JSX.Element {
               Profile record
             </div>
           </div>
-          <InfoRow icon={<Mail size={14} />} label="Email" value={contact.email} />
-          <InfoRow icon={<Phone size={14} />} label="Phone" value={contact.phone ?? livingContext?.person?.primaryPhone} />
+          <InfoRow icon={<Mail size={14} />} label="Email" value={profileContact.email} />
+          <InfoRow icon={<Phone size={14} />} label="Phone" value={profileContact.phone ?? livingContext?.person?.primaryPhone} />
           <InfoRow icon={<Briefcase size={14} />} label="Role / context" value={roleContext} />
-          <InfoRow icon={<Calendar size={14} />} label="Known since" value={formatDate(contact.created_at)} />
+          <InfoRow icon={<Calendar size={14} />} label="Known since" value={formatDate(profileContact.created_at)} />
         </div>
       </header>
 
@@ -1496,7 +1719,7 @@ export default function PersonProfilePage(): JSX.Element {
       <ProfileDecisionCockpit
         decision={decision}
         livingContext={livingContext}
-        onCreateNextInterview={() => navigate(nextInterviewPath(contact, decision))}
+        onCreateNextInterview={() => navigate(nextInterviewPath(profileContact, decision))}
       />
 
       {decision && (
@@ -1663,7 +1886,7 @@ export default function PersonProfilePage(): JSX.Element {
         </div>
         {showSourceGraph && contextEndpoint ? (
           <LivingContextGraph
-            candidateId={personId ?? contact.id}
+            candidateId={personId ?? profileContact.id}
             livingContextEndpoint={contextEndpoint}
             initialLivingContext={livingContext}
           />

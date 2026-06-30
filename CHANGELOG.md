@@ -12,10 +12,12 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - Repo-task assessment sessions now support append-only `human_assessment_decision` events with exact source refs, SHA-256 content-hash validation, and provenance checks against session evidence, evaluation reports, evaluation claims, or diagnostics.
 - Recruiters can record a source-backed human assessment decision for a scheduled interview after evaluation, and progress snapshots now expose the latest human decision as the terminal assessment readout.
 - Person profiles now derive the hiring-manager cockpit from source-backed workspace assessment evaluation and human-decision records, so open-source/dev-container assessments can produce a person-level recommendation without falling back to “collect more signal.”
+- Recruiter assessment detail smokes can now click through from an interview to the person profile and verify the person-level decision cockpit, making cross-surface assessment rollups a deployed regression gate.
 - Interview cards and detail pages now prefer the explicit human decision over the AI evaluator recommendation while still preserving evaluator status, claims, and cautions.
 - Interview detail pages now expose the reviewer decision form after source-backed evaluation, posting the selected advance/hold/reject/needs-more-evidence decision to the real human-decision endpoint and updating the readout immediately.
 - Recruiter detail Playwright smoke coverage now supports both CODE_REVIEW and workspace assessment pages, including optional assertions for submitted work packets, evaluator claims, human-decision forms, and recorded human decisions.
 - Recruiter detail smoke now scopes fallback-copy assertions to the assessment decision readout, so legitimate “call not recorded yet” scheduling state does not mask a successful open-source assessment report.
+- Recruiter detail smoke can now click through to the person profile and verify source-backed workspace assessments roll up into a person-level decision cockpit instead of staying trapped on the meeting page.
 
 ### Added — Evidence conflict detection (criteria #2, #6, #8)
 
@@ -44,6 +46,8 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 - Source-backed assessment evaluation finalization now tolerates the production sequence where an evaluated report is already persisted while the session still reads as final-submitted, preventing workspace evaluation from returning a false 500 after durable evidence is written.
 - Source-backed assessment sessions can now record a recruiter human decision after evaluation, require that decision to cite persisted assessment evidence or report output, and surface the human decision on interview detail/readout cards.
+- Interview detail person-profile links now prefer the living-context person id over contact-row ids, preventing assessment-only meetings from opening a 404 instead of the accumulated person evidence page.
+- Assessment living-context backfill now reprocesses partially ingested sessions when evaluation report context entities are missing, so older open-source assessment runs can roll evaluator claims into the person profile instead of staying as meeting-only evidence.
 - Manual open-source challenge packets now verify the assigned base commit is reachable in the selected GitHub repo before creating the interview, preventing fake immutable task packets from entering the assessment flow.
 - Scheduled open-source, code-review, and dev-container assessment invites now create linked meeting rooms with explicit workspace, recording, and Clippy feature flags plus assessment-specific title/description copy, while standard video invites stay out of the dev-workspace path.
 - Assessment progress now carries evaluator diagnostic previews through recruiter and room APIs and shows evaluator cautions on interview details and cards, making missing-test or human-review risks visible beside source-backed claims.

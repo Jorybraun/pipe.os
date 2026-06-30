@@ -9,6 +9,7 @@ import type {
   LivingContextRecord,
   LivingContextSourceRef,
 } from '../lib/api/types';
+import type { AssessmentProgressSnapshot } from '../lib/scheduling/types';
 
 const mocks = vi.hoisted(() => ({
   api: {
@@ -443,6 +444,104 @@ function makeWorkspaceAssessmentContext(): LivingContextReadModel {
   return context;
 }
 
+function makeSelectedAssessmentProgress(): AssessmentProgressSnapshot {
+  return {
+    session: {
+      id: 'assessment-session-selected',
+      ingestionKey: 'assessment-session-selected',
+      interviewId: 'interview-workspace-1',
+      candidateId: 'candidate-1',
+      workspaceId: 'workspace-1',
+      workspacePersonId: 'workspace-person-1',
+      applicationId: 'application-1',
+      mode: 'OPEN_SOURCE_BUG_FIX',
+      state: 'EVALUATED',
+      createdAt: '2026-06-30T14:00:00.000Z',
+      updatedAt: '2026-06-30T14:30:00.000Z',
+    },
+    stage: 'EVALUATED',
+    nextAction: 'REVIEW_EVALUATION',
+    nextActionLabel: 'Review evaluation',
+    hasChallengePacket: true,
+    hasWorkEvidence: true,
+    hasMessageEvidence: true,
+    hasDevContainerEvidence: true,
+    hasToolUsageEvidence: true,
+    hasCommitSubmission: true,
+    hasFinalSubmission: true,
+    hasAiInteraction: true,
+    hasTranscriptEvidence: false,
+    hasTestEvidence: true,
+    hasVerificationGap: false,
+    evidenceCounts: [{ kind: 'code_diff', count: 1 }],
+    sourceRefCounts: [
+      { kind: 'challenge_packet', count: 1 },
+      { kind: 'git_commit', count: 1 },
+      { kind: 'code_diff', count: 2 },
+    ],
+    evidenceSnippets: [
+      {
+        eventKind: 'assessment_evaluation',
+        sourceRefType: 'code_diff',
+        evidenceRole: 'evaluation_support',
+        exactText: 'Candidate fixed the impatient popover click path and added regression coverage.',
+        occurredAt: '2026-06-30T14:25:00.000Z',
+      },
+    ],
+    challenge: {
+      sourceRefType: 'challenge_packet',
+      sourceRefId: 'challenge-1',
+      evidenceRole: 'assessment_challenge',
+      exactText: 'Fix the impatient popover click bug.',
+      locator: { repositoryUrl: 'https://github.com/mui/base-ui' },
+    },
+    latestEvent: {
+      id: 'event-1',
+      kind: 'assessment_evaluation',
+      sequence: 8,
+      occurredAt: '2026-06-30T14:25:00.000Z',
+    },
+    commit: {
+      eventId: 'commit-event-1',
+      repositoryUrl: 'https://github.com/mui/base-ui',
+      forkRepositoryUrl: null,
+      branchName: 'fix-popover-click',
+      baseCommitSha: 'base123',
+      commitSha: 'abc1234',
+      commitUrl: 'https://github.com/mui/base-ui/commit/abc1234',
+      changedFiles: ['packages/react/src/popover/root/usePopoverRoot.ts'],
+      occurredAt: '2026-06-30T14:20:00.000Z',
+    },
+    evaluation: {
+      id: 'evaluation-1',
+      status: 'EVALUATED',
+      summary: 'Candidate addressed the impatient click issue with a focused patch and regression tests.',
+      recommendation: 'advance',
+      createdAt: '2026-06-30T14:25:00.000Z',
+      evidenceCoverage: {
+        schemaVersion: '1',
+        sourceRefCount: 4,
+        sourceRefTypeCounts: { code_diff: 2, git_commit: 1, challenge_packet: 1 },
+        requiredForEvaluation: [],
+        expectedForHighConfidence: [],
+      },
+      claims: [
+        {
+          id: 'claim-1',
+          polarity: 'positive',
+          dimension: 'implementation_correctness',
+          narrative: 'The fix is focused and source-backed.',
+          confidence: 0.9,
+          sourceRefCount: 2,
+          sourceRefTypes: ['code_diff'],
+        },
+      ],
+      diagnostics: [],
+    },
+    humanDecision: null,
+  };
+}
+
 function makeContact(): PersonContact {
   return {
     id: 'person-1',
@@ -466,9 +565,9 @@ async function flushAsyncUpdates(): Promise<void> {
   });
 }
 
-function renderPage(): void {
+function renderPage(state?: unknown): void {
   render(
-    <MemoryRouter initialEntries={['/people/person-1']}>
+    <MemoryRouter initialEntries={[state ? { pathname: '/people/person-1', state } : '/people/person-1']}>
       <Routes>
         <Route path="/people/:personId" element={<PersonProfilePage />} />
         <Route path="/interviews" element={<LocationEcho />} />
@@ -679,6 +778,62 @@ describe('PersonProfilePage', () => {
     expect(decision).toHaveTextContent('The submitted test evidence covers the popover trigger regression.');
     expect(decision).toHaveTextContent('3 source-backed proof items');
     expect(decision).not.toHaveTextContent('Collect first source-backed evidence');
+  });
+
+  it('renders a person cockpit from living context when the legacy contact record is unavailable', async () => {
+    mocks.api.get
+      .mockRejectedValueOnce(new Error('HTTP 404: not_found'))
+      .mockResolvedValueOnce(makeWorkspaceAssessmentContext());
+
+    renderPage();
+    await flushAsyncUpdates();
+
+    expect(screen.queryByText('HTTP 404: not_found')).not.toBeInTheDocument();
+    expect(screen.getByRole('heading', { name: 'Ada Reviewer' })).toBeInTheDocument();
+    const cockpit = screen.getByTestId('person-decision-cockpit');
+    expect(cockpit).toHaveTextContent('Advance from human-reviewed assessment');
+    expect(cockpit).toHaveTextContent('Usable workspace assessment signal');
+    expect(screen.getByTestId('person-code-review-decision')).toHaveTextContent('Workspace assessment decision');
+  });
+
+  it('falls back to candidate living context when the routed person id is not a legacy contact', async () => {
+    mocks.api.get
+      .mockRejectedValueOnce(new Error('HTTP 404: contact_not_found'))
+      .mockRejectedValueOnce(new Error('HTTP 404: person_context_not_found'))
+      .mockResolvedValueOnce({ livingContext: makeWorkspaceAssessmentContext() });
+
+    renderPage({ candidateId: 'candidate-1' });
+    await flushAsyncUpdates();
+
+    expect(mocks.api.get).toHaveBeenCalledWith('/api/v1/candidates/candidate-1/living-context');
+    expect(screen.queryByText('HTTP 404: person_context_not_found')).not.toBeInTheDocument();
+    expect(screen.getByRole('heading', { name: 'Ada Reviewer' })).toBeInTheDocument();
+    expect(screen.getByTestId('person-decision-cockpit')).toHaveTextContent('Advance from human-reviewed assessment');
+  });
+
+  it('uses selected interview assessment evidence when the person graph rollup has not ingested the assessment yet', async () => {
+    const graphOnlyContext = makeLivingContext();
+    graphOnlyContext.contextRecords = [];
+    graphOnlyContext.summary = {
+      ...graphOnlyContext.summary,
+      contextRecordCount: 0,
+      sourceSpanCount: 2,
+    };
+    mocks.api.get
+      .mockResolvedValueOnce({ contact: makeContact() })
+      .mockResolvedValueOnce(graphOnlyContext);
+
+    renderPage({ selectedAssessment: makeSelectedAssessmentProgress() });
+    await flushAsyncUpdates();
+
+    const cockpit = screen.getByTestId('person-decision-cockpit');
+    expect(cockpit).toHaveTextContent('Advance');
+    expect(cockpit).toHaveTextContent('Usable workspace assessment signal');
+    expect(cockpit).toHaveTextContent('Graph rollup pending');
+    const decision = screen.getByTestId('person-code-review-decision');
+    expect(decision).toHaveTextContent('Workspace assessment decision');
+    expect(decision).toHaveTextContent('Candidate addressed the impatient click issue');
+    expect(decision).toHaveTextContent('source-backed proof items');
   });
 
   it('shows a visible profile error instead of spinning forever when the person id is missing', async () => {
