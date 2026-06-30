@@ -159,9 +159,11 @@ The smoke proves the candidate lands in CODE_REVIEW rather than a video room, th
 This smoke verifies the recruiter-side decision cockpit for an existing code-review or workspace assessment interview. It catches fallback loaders, infinite matching screens, missing next actions, missing score-validity state, missing workspace work packets, missing human-review state, and optional invite-recipient drift.
 
 ```bash
-APP_BASE=https://pipetest:pipetest123@app-dev.hire-pipe.com \
+APP_BASE=https://app-dev.hire-pipe.com \
 API_BASE=https://api-dev.hire-pipe.com \
 VIDEO_ROOM_BASE=https://room-dev.hire-pipe.com \
+PIPE_DEV_BASIC_AUTH_USER=pipetest \
+PIPE_DEV_BASIC_AUTH_PASSWORD=pipetest123 \
 ASSESSMENT_RECRUITER_INTERVIEW_ID=<scheduled-interview-id> \
 ASSESSMENT_RECRUITER_EXPECT_OUTCOME=blocked \
 ASSESSMENT_RECRUITER_EXPECT_INVITE_RECIPIENT_EMAIL=<candidate-email> \
