@@ -296,6 +296,153 @@ function makeLivingContext(): LivingContextReadModel {
   };
 }
 
+function makeWorkspaceAssessmentContext(): LivingContextReadModel {
+  const context = makeLivingContext();
+  context.summary = {
+    ...context.summary,
+    interactionCount: 2,
+    contextRecordCount: 3,
+    sourceSpanCount: 5,
+  };
+  context.interactions = [
+    {
+      id: 'interaction-workspace-assessment',
+      interactionType: 'assessment_session',
+      externalReference: 'assessment-session-1',
+      startedAt: '2026-06-30T14:00:00.000Z',
+      endedAt: '2026-06-30T14:30:00.000Z',
+      createdAt: '2026-06-30T14:00:00.000Z',
+      updatedAt: '2026-06-30T14:30:00.000Z',
+      metadata: {
+        sessionId: 'assessment-session-1',
+        scheduledInterviewId: 'interview-workspace-1',
+        mode: 'OPEN_SOURCE_BUG_FIX',
+        state: 'EVALUATED',
+      },
+      artifactIds: ['artifact-workspace-evaluation'],
+      contextRecordIds: ['record-assessment-claim-1', 'record-assessment-claim-2', 'record-assessment-human-decision'],
+      assertionIds: [],
+      signalKeys: [],
+    },
+    context.interactions[1]!,
+  ];
+  context.contextRecords = [
+    contextRecord({
+      id: 'record-assessment-claim-1',
+      interactionId: 'interaction-workspace-assessment',
+      recordType: 'evaluation:implementation_correctness',
+      predicate: 'positive',
+      narrative: 'The candidate fixed the impatient popover click path with a focused source-backed diff.',
+      qualifiers: {
+        mode: 'OPEN_SOURCE_BUG_FIX',
+        dimension: 'implementation_correctness',
+        reportStatus: 'EVALUATED',
+        reportSummary: 'Candidate addressed the impatient click issue with a focused patch and regression tests.',
+      },
+      confidence: 0.91,
+      observedAt: '2026-06-30T14:25:00.000Z',
+      entities: [
+        {
+          entityType: 'assessment_session',
+          entityId: 'assessment-session-1',
+          relationship: 'source_session',
+          value: null,
+          confidence: null,
+          metadata: {},
+        },
+        {
+          entityType: 'assessment_evaluation_report',
+          entityId: 'assessment-report-1',
+          relationship: 'evaluation_report',
+          value: null,
+          confidence: null,
+          metadata: {},
+        },
+      ],
+      sources: [
+        genericSource({
+          sourceRefType: 'code_diff',
+          sourceRefId: 'base..candidate',
+          evidenceRole: 'submitted_diff',
+          exactText: 'diff --git a/packages/react/src/popover/root/usePopoverRoot.ts b/packages/react/src/popover/root/usePopoverRoot.ts',
+        }),
+      ],
+    }),
+    contextRecord({
+      id: 'record-assessment-claim-2',
+      interactionId: 'interaction-workspace-assessment',
+      recordType: 'evaluation:test_strategy',
+      predicate: 'positive',
+      narrative: 'The submitted test evidence covers the popover trigger regression.',
+      qualifiers: {
+        mode: 'OPEN_SOURCE_BUG_FIX',
+        dimension: 'test_strategy',
+        reportStatus: 'EVALUATED',
+        reportSummary: 'Candidate addressed the impatient click issue with a focused patch and regression tests.',
+      },
+      confidence: 0.84,
+      observedAt: '2026-06-30T14:26:00.000Z',
+      entities: [
+        {
+          entityType: 'assessment_session',
+          entityId: 'assessment-session-1',
+          relationship: 'source_session',
+          value: null,
+          confidence: null,
+          metadata: {},
+        },
+      ],
+      sources: [
+        genericSource({
+          sourceRefType: 'test_run',
+          sourceRefId: 'candidate-sha:test-run',
+          evidenceRole: 'verification_test_output',
+          exactText: '$ git diff --check HEAD~1 HEAD && git diff --name-only HEAD~1 HEAD\nexitCode: 0',
+        }),
+      ],
+    }),
+    contextRecord({
+      id: 'record-assessment-human-decision',
+      interactionId: 'interaction-workspace-assessment',
+      recordType: 'assessment:human_assessment_decision',
+      predicate: 'advance',
+      narrative: 'Human reviewer advances after checking the source-backed evaluation report.',
+      qualifiers: {
+        mode: 'OPEN_SOURCE_BUG_FIX',
+        decision: 'advance',
+      },
+      observedAt: '2026-06-30T14:30:00.000Z',
+      sources: [
+        genericSource({
+          sourceRefType: 'assessment_evaluation_report',
+          sourceRefId: 'assessment-report-1',
+          evidenceRole: 'human_decision_basis',
+          exactText: 'Candidate addressed the impatient click issue with a focused patch and regression tests.',
+        }),
+      ],
+    }),
+    context.contextRecords.find((record) => record.id === 'record-score')!,
+  ].filter((record) => record.id !== 'record-score');
+  context.artifacts = [
+    {
+      id: 'artifact-workspace-evaluation',
+      interactionId: 'interaction-workspace-assessment',
+      artifactType: 'assessment_evaluation_report',
+      logicalKey: 'assessment-report-1',
+      metadata: { source: 'assessment_layer' },
+      latestVersionId: 'artifact-workspace-evaluation-version',
+      latestVersionNumber: 1,
+      versionCount: 1,
+      mediaType: 'application/json',
+      storageKey: null,
+      createdAt: '2026-06-30T14:25:00.000Z',
+      updatedAt: '2026-06-30T14:25:00.000Z',
+      sourceSpans: [],
+    },
+  ];
+  return context;
+}
+
 function makeContact(): PersonContact {
   return {
     id: 'person-1',
@@ -501,6 +648,37 @@ describe('PersonProfilePage', () => {
     expect(basis).toHaveTextContent('Missing');
     expect(basis).toHaveTextContent('Match proof');
     expect(basis).toHaveTextContent('Missing');
+  });
+
+  it('derives a person-level hiring decision from source-backed workspace assessment claims', async () => {
+    mocks.api.get
+      .mockResolvedValueOnce({ contact: makeContact() })
+      .mockResolvedValueOnce(makeWorkspaceAssessmentContext());
+
+    renderPage();
+    await flushAsyncUpdates();
+
+    const cockpit = screen.getByTestId('person-decision-cockpit');
+    expect(cockpit).toHaveTextContent('Current recommendation');
+    expect(cockpit).toHaveTextContent('Advance from human-reviewed assessment');
+    expect(cockpit).toHaveTextContent('Assessment validity');
+    expect(cockpit).toHaveTextContent('Usable workspace assessment signal');
+    expect(cockpit).toHaveTextContent('Uncertainty');
+    expect(cockpit).toHaveTextContent('Low remaining uncertainty');
+    expect(cockpit).toHaveTextContent('Missing context');
+    expect(cockpit).toHaveTextContent('No blocking evidence gap');
+    expect(cockpit).toHaveTextContent('Next action');
+    expect(cockpit).toHaveTextContent('Review with hiring team');
+
+    const decision = await screen.findByTestId('person-code-review-decision');
+    expect(decision).toHaveTextContent('Workspace assessment decision');
+    expect(decision).toHaveTextContent('Advance from human-reviewed assessment');
+    expect(decision).toHaveTextContent('Human reviewer advances after checking the source-backed evaluation report.');
+    expect(decision).toHaveTextContent('Candidate addressed the impatient click issue with a focused patch and regression tests.');
+    expect(decision).toHaveTextContent('The candidate fixed the impatient popover click path with a focused source-backed diff.');
+    expect(decision).toHaveTextContent('The submitted test evidence covers the popover trigger regression.');
+    expect(decision).toHaveTextContent('3 source-backed proof items');
+    expect(decision).not.toHaveTextContent('Collect first source-backed evidence');
   });
 
   it('shows a visible profile error instead of spinning forever when the person id is missing', async () => {

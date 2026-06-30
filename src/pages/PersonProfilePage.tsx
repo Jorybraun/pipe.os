@@ -88,6 +88,7 @@ interface InteractionCoverageItem {
 }
 
 interface CodeReviewDecisionProjection {
+  decisionLabel: string;
   sessionId: string | null;
   outcome: string | null;
   recommendation: string;
@@ -369,7 +370,11 @@ function sessionIdFromRecord(record: LivingContextRecord | null): string | null 
   if (!record) return null;
   return optionalString(record.qualifiers.sessionId)
     ?? record.entities
-      .map((entity) => entity.entityType === 'code_review_session' ? entity.entityId : null)
+      .map((entity) =>
+        entity.entityType === 'code_review_session' || entity.entityType === 'assessment_session'
+          ? entity.entityId
+          : null
+      )
       .find((value): value is string => typeof value === 'string' && value.length > 0)
     ?? null;
 }
@@ -887,6 +892,7 @@ function deriveCodeReviewDecision(
   ];
 
   return {
+    decisionLabel: 'Code-review decision',
     sessionId,
     outcome: verdictLabel(optionalString(transcriptRecord?.qualifiers.finalVerdictDecision)),
     recommendation: recommendation.value,
@@ -904,6 +910,164 @@ function deriveCodeReviewDecision(
     narrative: score?.narrative ?? transcriptRecord?.narrative ?? scoreRecord?.narrative ?? null,
     strengths: score?.strengths ?? [],
     probes,
+    proofCount: proofItems.length,
+    proofItems,
+    basisItems,
+  };
+}
+
+function isAssessmentEvaluationRecord(record: LivingContextRecord): boolean {
+  return record.recordType.startsWith('evaluation:');
+}
+
+function isAssessmentScopedRecord(record: LivingContextRecord): boolean {
+  return record.recordType.startsWith('assessment:')
+    || record.entities.some((entity) => entity.entityType.startsWith('assessment_'))
+    || record.sources.some((source) => optionalString(source.sourceRefType)?.startsWith('assessment_') === true);
+}
+
+function isHumanAssessmentDecisionRecord(record: LivingContextRecord): boolean {
+  return record.recordType === 'assessment:human_assessment_decision'
+    || record.predicate === 'human_assessment_decision'
+    || (optionalString(record.qualifiers.decision) !== null && isAssessmentScopedRecord(record));
+}
+
+function deriveWorkspaceAssessmentDecision(
+  livingContext: LivingContextReadModel | null,
+): CodeReviewDecisionProjection | null {
+  if (!livingContext) return null;
+  const assessmentRecords = livingContext.contextRecords
+    .filter((record) => isAssessmentEvaluationRecord(record) || isHumanAssessmentDecisionRecord(record))
+    .sort((a, b) => recordTimestamp(b) - recordTimestamp(a));
+  if (assessmentRecords.length === 0) return null;
+
+  const humanDecisionRecord = assessmentRecords.find(isHumanAssessmentDecisionRecord) ?? null;
+  const sessionId = sessionIdFromRecord(humanDecisionRecord)
+    ?? assessmentRecords.map(sessionIdFromRecord).find((value): value is string => Boolean(value))
+    ?? null;
+  const evaluationRecords = assessmentRecords.filter((record) =>
+    isAssessmentEvaluationRecord(record)
+      && (!sessionId || sessionIdFromRecord(record) === sessionId)
+  );
+  if (evaluationRecords.length === 0 && !humanDecisionRecord) return null;
+
+  const proofSources = [humanDecisionRecord, ...evaluationRecords]
+    .filter((record): record is LivingContextRecord => record !== null)
+    .flatMap((record) => record.sources.map((source) => ({ record, source })));
+  const proofItems = proofSources.slice(0, 6).map(({ record, source }, index) => ({
+    id: `${record.id}:${index}:${source.sourceRefId ?? source.sourceSpanId ?? 'source'}`,
+    label: sourceProofLabel(source),
+    text: sourceProofText(source),
+  }));
+  const positiveClaims = evaluationRecords.filter((record) => record.polarity > 0 || record.predicate === 'positive');
+  const negativeClaims = evaluationRecords.filter((record) => record.polarity < 0 || record.predicate === 'negative');
+  const reportSummary = evaluationRecords
+    .map((record) => optionalString(record.qualifiers.reportSummary))
+    .find((value): value is string => Boolean(value))
+    ?? humanDecisionRecord?.narrative
+    ?? evaluationRecords[0]?.narrative
+    ?? null;
+  const humanDecision = optionalString(humanDecisionRecord?.qualifiers.decision)
+    ?? optionalString(humanDecisionRecord?.predicate);
+  const hasHumanAdvance = humanDecision?.toLowerCase() === 'advance';
+  const hasHumanDecision = humanDecisionRecord !== null;
+
+  const recommendation = hasHumanAdvance
+    ? {
+        value: 'Advance from human-reviewed assessment',
+        detail: humanDecisionRecord?.narrative
+          ?? 'A human reviewer advanced this person from source-backed assessment evidence.',
+      }
+    : hasHumanDecision
+      ? {
+          value: 'Use human assessment decision',
+          detail: humanDecisionRecord?.narrative
+            ?? 'A human reviewer recorded a source-backed assessment decision.',
+        }
+      : {
+          value: 'Review workspace assessment',
+          detail: reportSummary
+            ?? 'Source-backed workspace assessment claims exist and need hiring-team review.',
+        };
+  const assessmentValidity = proofItems.length >= 3 && evaluationRecords.length > 0
+    ? {
+        value: 'Usable workspace assessment signal',
+        detail: 'Evaluation claims, source refs, and assessment evidence are present. Use this as person-level signal, not an automatic decision.',
+      }
+    : {
+        value: 'Partial workspace assessment signal',
+        detail: 'Assessment evidence exists, but the source chain is incomplete. Review the underlying interaction before relying on it.',
+      };
+  const uncertainty = negativeClaims.length > 0
+    ? {
+        value: 'Assessment has cautions',
+        detail: 'The workspace assessment includes negative or cautionary claims that need calibration before a hiring decision.',
+      }
+    : hasHumanDecision && proofItems.length >= 3
+      ? {
+          value: 'Low remaining uncertainty',
+          detail: 'A human reviewer and source-backed evaluator evidence both support this assessment signal.',
+        }
+      : {
+          value: 'Human calibration needed',
+          detail: 'Use a recruiter or hiring-manager review to decide whether the assessment signal generalizes.',
+        };
+  const missingContext = negativeClaims.length > 0
+    ? ['Review evaluator cautions before using this as final hiring signal']
+    : ['No blocking evidence gap; confirm the signal transfers beyond this task.'];
+  const nextAction = hasHumanDecision
+    ? {
+        value: 'Review with hiring team',
+        detail: 'Use the human decision, evaluator claims, and source proof to calibrate the hiring recommendation.',
+      }
+    : {
+        value: 'Record human assessment decision',
+        detail: 'Have a reviewer inspect the source-backed evidence and record advance, hold, reject, or needs-more-evidence.',
+      };
+  const basisItems: CodeReviewBasisItem[] = [
+    {
+      label: 'Evaluation claims',
+      value: positiveClaims.length > 0 ? `${positiveClaims.length} positive` : 'Missing',
+      satisfied: positiveClaims.length > 0,
+    },
+    {
+      label: 'Human decision',
+      value: humanDecisionRecord ? titleCaseToken(humanDecision ?? 'recorded') : 'Missing',
+      satisfied: humanDecisionRecord !== null,
+    },
+    {
+      label: 'Source proof',
+      value: proofItems.length > 0 ? `${proofItems.length} refs` : 'Missing',
+      satisfied: proofItems.length > 0,
+    },
+    {
+      label: 'Assessment mode',
+      value: optionalString(evaluationRecords[0]?.qualifiers.mode)
+        ?? optionalString(humanDecisionRecord?.qualifiers.mode)
+        ?? 'Workspace assessment',
+      satisfied: true,
+    },
+  ];
+
+  return {
+    decisionLabel: 'Workspace assessment decision',
+    sessionId,
+    outcome: hasHumanDecision ? `Human: ${titleCaseToken(humanDecision ?? 'recorded')}` : null,
+    recommendation: recommendation.value,
+    recommendationDetail: recommendation.detail,
+    uncertainty: uncertainty.value,
+    uncertaintyDetail: uncertainty.detail,
+    missingContext,
+    assessmentValidity: assessmentValidity.value,
+    assessmentValidityDetail: assessmentValidity.detail,
+    nextAction: nextAction.value,
+    nextActionDetail: nextAction.detail,
+    scoreLabel: null,
+    challengeLabel: null,
+    challengeUrl: null,
+    narrative: reportSummary,
+    strengths: positiveClaims.map((record) => record.narrative).slice(0, 3),
+    probes: negativeClaims.map((record) => record.narrative).slice(0, 2),
     proofCount: proofItems.length,
     proofItems,
     basisItems,
@@ -1075,7 +1239,7 @@ function CodeReviewDecisionCard({ decision }: { decision: CodeReviewDecisionProj
     <section data-testid="person-code-review-decision" style={CODE_REVIEW_DECISION}>
       <div style={CODE_REVIEW_DECISION_HEADER}>
         <div style={{ minWidth: 0 }}>
-          <div style={DECISION_EYEBROW}>Code-review decision</div>
+          <div style={DECISION_EYEBROW}>{decision.decisionLabel}</div>
           <h2 style={DECISION_TITLE}>{decision.recommendation}</h2>
           <p style={DECISION_COPY}>{decision.recommendationDetail}</p>
         </div>
@@ -1256,6 +1420,7 @@ export default function PersonProfilePage(): JSX.Element {
     .slice(0, 5) ?? [];
   const evidenceArtifacts = livingContext?.artifacts.slice(0, 5) ?? [];
   const codeReviewDecision = deriveCodeReviewDecision(livingContext);
+  const decision = codeReviewDecision ?? deriveWorkspaceAssessmentDecision(livingContext);
 
   if (isLoading) {
     return (
@@ -1329,13 +1494,13 @@ export default function PersonProfilePage(): JSX.Element {
       </section>
 
       <ProfileDecisionCockpit
-        decision={codeReviewDecision}
+        decision={decision}
         livingContext={livingContext}
-        onCreateNextInterview={() => navigate(nextInterviewPath(contact, codeReviewDecision))}
+        onCreateNextInterview={() => navigate(nextInterviewPath(contact, decision))}
       />
 
-      {codeReviewDecision && (
-        <CodeReviewDecisionCard decision={codeReviewDecision} />
+      {decision && (
+        <CodeReviewDecisionCard decision={decision} />
       )}
 
       <section style={EVIDENCE_GRID}>
