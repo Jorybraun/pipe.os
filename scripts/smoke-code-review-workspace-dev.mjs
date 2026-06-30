@@ -1,7 +1,23 @@
 const APP_BASE = (process.env.APP_BASE || 'https://app-dev.hire-pipe.com').replace(/\/$/, '');
 const ROOM_BASE = (process.env.ROOM_BASE || 'https://room-dev.hire-pipe.com').replace(/\/$/, '');
-const BASIC_USER = process.env.PIPE_DEV_BASIC_AUTH_USER || process.env.DEV_BASIC_AUTH_USER || '';
-const BASIC_PASSWORD = process.env.PIPE_DEV_BASIC_AUTH_PASSWORD || process.env.DEV_BASIC_AUTH_PASSWORD || '';
+const APP_BASIC_USER = process.env.PIPE_APP_DEV_BASIC_AUTH_USER
+  || process.env.APP_DEV_BASIC_AUTH_USER
+  || process.env.PIPE_DEV_BASIC_AUTH_USER
+  || process.env.DEV_BASIC_AUTH_USER
+  || '';
+const APP_BASIC_PASSWORD = process.env.PIPE_APP_DEV_BASIC_AUTH_PASSWORD
+  || process.env.APP_DEV_BASIC_AUTH_PASSWORD
+  || process.env.PIPE_DEV_BASIC_AUTH_PASSWORD
+  || process.env.DEV_BASIC_AUTH_PASSWORD
+  || '';
+const ROOM_BASIC_USER = process.env.PIPE_ROOM_DEV_BASIC_AUTH_USER
+  || process.env.ROOM_DEV_BASIC_AUTH_USER
+  || process.env.VIDEO_ROOM_DEV_AUTH_USER
+  || APP_BASIC_USER;
+const ROOM_BASIC_PASSWORD = process.env.PIPE_ROOM_DEV_BASIC_AUTH_PASSWORD
+  || process.env.ROOM_DEV_BASIC_AUTH_PASSWORD
+  || process.env.VIDEO_ROOM_DEV_AUTH_PASSWORD
+  || APP_BASIC_PASSWORD;
 const REPO_URL = process.env.WORKSPACE_SMOKE_REPO_URL || 'https://github.com/octocat/Hello-World';
 const INTERVIEW_TYPE = process.env.WORKSPACE_SMOKE_INTERVIEW_TYPE || 'DEV_CONTAINER_CHALLENGE';
 const RAW_PR_NUMBER = process.env.WORKSPACE_SMOKE_PR_NUMBER || (INTERVIEW_TYPE === 'OPEN_SOURCE_BUG_FIX' ? '' : '1');
@@ -11,24 +27,30 @@ const REMOTE = !APP_BASE.includes('localhost') && !APP_BASE.includes('127.0.0.1'
 
 function assertEnv() {
   if (!REMOTE) return;
-  if (!BASIC_USER || !BASIC_PASSWORD) {
+  if (!APP_BASIC_USER || !APP_BASIC_PASSWORD || !ROOM_BASIC_USER || !ROOM_BASIC_PASSWORD) {
     throw new Error(
-      'Set PIPE_DEV_BASIC_AUTH_USER and PIPE_DEV_BASIC_AUTH_PASSWORD to smoke deployed app-dev/room-dev.',
+      'Set app-dev and room-dev basic auth env: PIPE_APP_DEV_BASIC_AUTH_USER/PASSWORD and PIPE_ROOM_DEV_BASIC_AUTH_USER/PASSWORD.',
     );
   }
 }
 
-function authHeaders() {
-  if (!BASIC_USER && !BASIC_PASSWORD) return {};
-  const value = Buffer.from(`${BASIC_USER}:${BASIC_PASSWORD}`).toString('base64');
+function basicAuthHeaders(user, password) {
+  if (!user && !password) return {};
+  const value = Buffer.from(`${user}:${password}`).toString('base64');
   return { Authorization: `Basic ${value}` };
+}
+
+function authHeadersFor(base) {
+  return base === ROOM_BASE
+    ? basicAuthHeaders(ROOM_BASIC_USER, ROOM_BASIC_PASSWORD)
+    : basicAuthHeaders(APP_BASIC_USER, APP_BASIC_PASSWORD);
 }
 
 async function requestJson(base, path, init = {}) {
   const response = await fetch(`${base}${path}`, {
     ...init,
     headers: {
-      ...authHeaders(),
+      ...authHeadersFor(base),
       ...(init.body ? { 'Content-Type': 'application/json' } : {}),
       ...(init.headers ?? {}),
     },
