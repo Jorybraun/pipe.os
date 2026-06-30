@@ -1912,8 +1912,8 @@ async function buildRoomWorkspacePayload(
   };
 }
 
-function initialRoomSurfaceForWorkspace(workspace: RoomWorkspacePayload): 'standard' | 'win95' {
-  return workspace.enabled ? 'win95' : 'standard';
+function initialRoomSurfaceForWorkspace(_workspace: RoomWorkspacePayload): 'standard' | 'win95' {
+  return 'standard';
 }
 
 async function resolveRoom(db: D1Database, token: string): Promise<ResolvedRoom | null> {

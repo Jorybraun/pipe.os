@@ -382,7 +382,7 @@ function assistantStatusLabel(status: ClippyTrayStatus, hasWorkspaceFeature: boo
 
 function Room({ token, metadata }: { token: string; metadata: RoomMetadata }): JSX.Element {
   const [enteredRoom, setEnteredRoom] = useState(false);
-  const initialRoomSurface = metadata.workspace?.enabled ? 'win95' : 'standard';
+  const initialRoomSurface = 'standard';
   const roomActor = metadata.role === 'HOST' ? 'host' : 'guest';
   const [assessmentProgress, setAssessmentProgress] = useState<RoomAssessmentProgressSnapshot | null>(null);
   const { capture: captureSessionEvent } = useSessionEvents({
@@ -675,7 +675,7 @@ function Room({ token, metadata }: { token: string; metadata: RoomMetadata }): J
   }, [enteredRoom, openDefaultRoomWindows]);
 
   useEffect(() => {
-    if (!enteredRoom || !room.desktopSnapshot) return;
+    if (!enteredRoom || !usesWin95Desktop || !room.desktopSnapshot) return;
     const staleSharedWindowIds = sharedWindowIdsMissingFromSnapshot({
       windows: wm.windows,
       snapshot: room.desktopSnapshot,
@@ -699,15 +699,15 @@ function Room({ token, metadata }: { token: string; metadata: RoomMetadata }): J
       });
     }
   // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [enteredRoom, room.desktopSnapshot]);
+  }, [enteredRoom, room.desktopSnapshot, usesWin95Desktop]);
 
   useEffect(() => {
-    if (!enteredRoom || room.desktopStartMenuOpen === null) return;
+    if (!enteredRoom || !usesWin95Desktop || room.desktopStartMenuOpen === null) return;
     setStartMenuState({
       open: room.desktopStartMenuOpen,
       eventId: `snapshot:${room.desktopStartMenuOpen ? 'open' : 'closed'}`,
     });
-  }, [enteredRoom, room.desktopStartMenuOpen]);
+  }, [enteredRoom, room.desktopStartMenuOpen, usesWin95Desktop]);
 
   useEffect(() => {
     if (!enteredRoom) return;
@@ -718,6 +718,8 @@ function Room({ token, metadata }: { token: string; metadata: RoomMetadata }): J
         continue;
       } else if (event.kind === 'WORKSPACE_STATE_CHANGED') {
         void refreshWorkspace();
+      } else if (!usesWin95Desktop) {
+        continue;
       } else if (event.kind === 'START_MENU_STATE') {
         setStartMenuState({ open: event.open, eventId: event.id });
       } else if (event.kind === 'OPEN_WINDOW') {
@@ -741,20 +743,20 @@ function Room({ token, metadata }: { token: string; metadata: RoomMetadata }): J
       }
     }
   // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [enteredRoom, refreshWorkspace, room.desktopEvents]);
+  }, [enteredRoom, refreshWorkspace, room.desktopEvents, usesWin95Desktop]);
 
   useEffect(() => {
-    if (!enteredRoom) return;
+    if (!enteredRoom || !usesWin95Desktop) return;
     const file = findRoomFile(room.fileSystem, NOTEPAD_FILE_ID);
     const win = wm.windows.find((entry) => entry.id === 'notepad');
     if (!file || !win) return;
     if (stringWindowData(win, 'text') !== file.content) {
       wm.updateWindowData('notepad', { text: file.content });
     }
-  }, [enteredRoom, room.fileSystem, wm.updateWindowData, wm.windows]);
+  }, [enteredRoom, room.fileSystem, usesWin95Desktop, wm.updateWindowData, wm.windows]);
 
   useEffect(() => {
-    if (!enteredRoom) return;
+    if (!enteredRoom || !usesWin95Desktop) return;
     const file = findRoomFile(room.fileSystem, PAINT_FILE_ID);
     const win = wm.windows.find((entry) => entry.id === 'paint');
     if (!file || !win) return;
@@ -762,7 +764,7 @@ function Room({ token, metadata }: { token: string; metadata: RoomMetadata }): J
     if (!paintItemsEqual(paintItemsWindowData(win), nextStrokes)) {
       wm.updateWindowData('paint', { strokes: nextStrokes });
     }
-  }, [enteredRoom, room.fileSystem, wm.updateWindowData, wm.windows]);
+  }, [enteredRoom, room.fileSystem, usesWin95Desktop, wm.updateWindowData, wm.windows]);
 
   const openSharedWindow = useCallback((
     config: OpenWindowConfig & { id: string },

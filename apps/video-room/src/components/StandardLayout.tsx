@@ -84,8 +84,8 @@ export function StandardLayout({
           <button
             className="standard-control-btn"
             onClick={onEnterDesktop}
-            title="Launch 95 desktop"
-            aria-label="Launch 95 desktop"
+            title="Open legacy desktop"
+            aria-label="Open legacy desktop"
             data-testid="enter-win95-desktop"
           >
             <Monitor size={18} />

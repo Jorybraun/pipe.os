@@ -63,6 +63,27 @@ function compactText(value: string, maxLength = 150): string {
   return `${trimmed.slice(0, maxLength - 1).trimEnd()}...`;
 }
 
+function repoLabelFromUrl(value: string | null | undefined): string | null {
+  if (!value) return null;
+  try {
+    const url = new URL(value);
+    const parts = url.pathname
+      .replace(/\.git$/i, '')
+      .split('/')
+      .filter(Boolean);
+    if (parts.length >= 2) return `${parts[parts.length - 2]}/${parts[parts.length - 1]}`;
+  } catch {
+    // Fall through to compact raw text for non-URL repository labels.
+  }
+  return compactText(value, 56);
+}
+
+function shortCommitSha(value: string | null | undefined): string | null {
+  if (!value) return null;
+  const trimmed = value.trim();
+  return trimmed.length > 12 ? trimmed.slice(0, 12) : trimmed;
+}
+
 function isAssessmentInterviewType(value: ScheduledInterview['interviewType']): boolean {
   return typeof value === 'string' && ASSESSMENT_INTERVIEW_TYPES.has(value);
 }
@@ -177,6 +198,14 @@ export function InterviewCard({
     : assessmentSetup?.status === 'reviewable_task_assigned'
       ? 'challenge assigned'
       : 'no assessment session yet';
+  const assessmentRepoLabel = repoLabelFromUrl(
+    assessmentProgress?.commit?.repositoryUrl ?? interview.githubRepoUrl,
+  );
+  const assessmentPrLabel = interview.githubPrNumber ? `PR #${interview.githubPrNumber}` : null;
+  const assessmentCommitLabel = shortCommitSha(assessmentProgress?.commit?.commitSha);
+  const assessmentEvaluationLabel = assessmentProgress?.evaluation?.status
+    ? sentenceCaseToken(assessmentProgress.evaluation.status)
+    : null;
 
   return (
     <>
@@ -293,6 +322,36 @@ export function InterviewCard({
               <div style={{ minWidth: 0, fontSize: 10, color: 'var(--pipe-text-dim)', overflowWrap: 'anywhere' }}>
                 {assessmentEvidence}
               </div>
+              {assessmentRepoLabel && (
+                <>
+                  <div style={{ fontSize: 9, color: 'var(--pipe-text-muted)', letterSpacing: '0.12em', fontWeight: 700 }}>
+                    REPO
+                  </div>
+                  <div style={{ minWidth: 0, fontSize: 10, color: 'var(--pipe-text-dim)', overflowWrap: 'anywhere' }}>
+                    {assessmentPrLabel ? `${assessmentRepoLabel} · ${assessmentPrLabel}` : assessmentRepoLabel}
+                  </div>
+                </>
+              )}
+              {assessmentCommitLabel && (
+                <>
+                  <div style={{ fontSize: 9, color: 'var(--pipe-text-muted)', letterSpacing: '0.12em', fontWeight: 700 }}>
+                    COMMIT
+                  </div>
+                  <div style={{ minWidth: 0, fontSize: 10, color: 'var(--pipe-text-dim)', overflowWrap: 'anywhere' }}>
+                    {assessmentCommitLabel}
+                  </div>
+                </>
+              )}
+              {assessmentEvaluationLabel && (
+                <>
+                  <div style={{ fontSize: 9, color: 'var(--pipe-text-muted)', letterSpacing: '0.12em', fontWeight: 700 }}>
+                    EVAL
+                  </div>
+                  <div style={{ minWidth: 0, fontSize: 10, color: 'var(--pipe-text-dim)', overflowWrap: 'anywhere' }}>
+                    {assessmentEvaluationLabel}
+                  </div>
+                </>
+              )}
             </div>
           )}
         </div>

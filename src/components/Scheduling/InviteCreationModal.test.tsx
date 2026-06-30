@@ -56,6 +56,7 @@ describe('InviteCreationModal open-source challenge packets', () => {
       />,
     );
 
+    expect(screen.getByText('Matched repo task in a secure assessment workspace')).toBeInTheDocument();
     fireEvent.click(screen.getByRole('button', { name: /Open-source bug fix/i }));
     fireEvent.change(screen.getByPlaceholderText('Jane Doe'), {
       target: { value: 'Ada Lovelace' },

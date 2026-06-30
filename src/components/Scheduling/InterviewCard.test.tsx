@@ -106,8 +106,11 @@ describe('InterviewCard assessment progress', () => {
     expect(progress).toHaveTextContent('Ready for evaluation');
     expect(progress).toHaveTextContent('Start source-backed AI or human evaluation.');
     expect(progress).toHaveTextContent('challenge, work evidence, commit, AI use, transcript, tests');
+    expect(progress).toHaveTextContent('open-source/widgets');
+    expect(progress).toHaveTextContent('abcdef123456');
     expect(progress).not.toHaveTextContent('assessment-session-card');
     expect(progress).not.toHaveTextContent('challenge-packet-card');
+    expect(progress).not.toHaveTextContent('abcdef1234567890abcdef1234567890abcdef12');
   });
 
   it('shows setup gaps for assessment interviews before a session exists', () => {

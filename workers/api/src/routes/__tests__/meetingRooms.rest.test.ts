@@ -6202,7 +6202,7 @@ describe('meeting room recording living-context route', () => {
     }));
   });
 
-  it('starts dev-container challenge meeting rooms on the 95 desktop', async () => {
+  it('starts dev-container challenge meeting rooms in the standard assessment layout', async () => {
     const app = mountApp();
     const { ctx } = buildCtx();
     const ensureBodies: unknown[] = [];
@@ -6220,7 +6220,7 @@ describe('meeting room recording living-context route', () => {
       get: vi.fn(() => ({ fetch: doFetch }) as unknown as DurableObjectStub),
     } as unknown as DurableObjectNamespace;
 
-    const scheduledInterviewId = 'scheduled-interview-95-surface';
+    const scheduledInterviewId = 'scheduled-interview-standard-surface';
     sqlite.prepare(
       `INSERT INTO scheduled_interviews (
          id, interview_type, github_repo_url, status, updated_at
@@ -6235,9 +6235,9 @@ describe('meeting room recording living-context route', () => {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify({
-        recipientName: '95 Workspace Guest',
-        recipientEmail: 'workspace-95@example.com',
-        title: '95 workspace challenge',
+        recipientName: 'Assessment Workspace Guest',
+        recipientEmail: 'workspace-standard@example.com',
+        title: 'Assessment workspace challenge',
         meetingType: 'INTERVIEW',
         scheduledInterviewId,
       }),
@@ -6251,7 +6251,7 @@ describe('meeting room recording living-context route', () => {
     expect(wsRes.status).toBe(200);
     expect(ensureBodies).toContainEqual(expect.objectContaining({
       meetingId: expect.any(String),
-      initialSurface: 'win95',
+      initialSurface: 'standard',
     }));
   });
 

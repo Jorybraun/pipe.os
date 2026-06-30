@@ -79,4 +79,18 @@ describe('StandardLayout', () => {
     expect(screen.getByTestId('standard-assessment-header').textContent).toContain('assessment status header');
     expect(screen.queryByTitle('Toggle workspace')).toBeNull();
   });
+
+  it('keeps the legacy desktop as an optional control', () => {
+    render(
+      <StandardLayout
+        wm={makeWindowManager()}
+        renderWindowContent={() => <div>video</div>}
+        canEnterDesktop
+        onEnterDesktop={vi.fn()}
+      />,
+    );
+
+    expect(screen.getByTestId('enter-win95-desktop').getAttribute('aria-label')).toBe('Open legacy desktop');
+    expect(screen.queryByLabelText('Launch 95 desktop')).toBeNull();
+  });
 });

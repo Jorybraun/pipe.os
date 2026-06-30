@@ -87,7 +87,7 @@ const INTERVIEW_MODES: Array<{
   {
     value: 'OPEN_SOURCE_BUG_FIX',
     label: INTERVIEW_TYPE_LABELS.OPEN_SOURCE_BUG_FIX,
-    description: 'Matched repo task in the 95 workspace',
+    description: 'Matched repo task in a secure assessment workspace',
     icon: <Bug size={16} />,
   },
 ];
