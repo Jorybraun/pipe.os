@@ -129,7 +129,7 @@ test('candidate completes code review', async ({ page }) => {
 - `auth.setup.ts` handles Clerk authentication.
 - Use `storageState: "playwright/.auth/user.json"` for recruiter-authenticated tests.
 - Candidate auth is JWT-based. Resolve the token once in `beforeAll`, then inject it into `sessionStorage` before `page.goto()`.
-- **Do not** resolve the invite token twice — it's single-use. Once claimed, subsequent calls fail.
+- Resolving an invite token only issues a candidate session; it must not burn the one-use link. The link is claimed by `/rpc/start-assessment` when the candidate explicitly starts. After that claim, resolving the original invite token should fail.
 
 ## 8. Fast Feedback Loop
 

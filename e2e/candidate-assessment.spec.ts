@@ -86,9 +86,12 @@ interface ChallengeResponse {
 // ─── Helpers ────────────────────────────────────────────────────────────────
 
 async function getAuthToken(page: Page): Promise<string> {
-  await page.waitForLoadState('networkidle');
-  const cookies = await page.context().cookies();
-  const sessionCookie = cookies.find((c) => c.name === '__session');
+  let sessionCookie = (await page.context().cookies()).find((c) => c.name === '__session');
+  const deadline = Date.now() + 10_000;
+  while (!sessionCookie && Date.now() < deadline) {
+    await page.waitForTimeout(250);
+    sessionCookie = (await page.context().cookies()).find((c) => c.name === '__session');
+  }
   if (!sessionCookie) {
     throw new Error('[candidate-assessment.spec] No __session cookie. Run auth setup first.');
   }
@@ -194,6 +197,7 @@ test.describe('§3.1 — Token resolution (invite token → JWT session)', () =>
   let authToken: string;
   let pipeline: SeededPipeline;
   let candidate: SeededCandidate;
+  const pipelineIdsToCleanup: string[] = [];
 
   test.beforeAll(async ({ browser, request }) => {
     const context = await browser.newContext({ storageState: 'playwright/.auth/user.json' });
@@ -205,10 +209,13 @@ test.describe('§3.1 — Token resolution (invite token → JWT session)', () =>
     const seed = await seedAssessmentPipeline(request, authToken);
     pipeline = seed.pipeline;
     candidate = seed.candidate;
+    pipelineIdsToCleanup.push(seed.pipeline.id);
   });
 
   test.afterAll(async ({ request }) => {
-    await teardownPipeline(request, authToken, pipeline.id);
+    await Promise.all(
+      pipelineIdsToCleanup.map((pipelineId) => teardownPipeline(request, authToken, pipelineId)),
+    );
   });
 
   test('Scenario: valid invite token resolves to session with JWT', async ({ request }) => {
@@ -222,23 +229,53 @@ test.describe('§3.1 — Token resolution (invite token → JWT session)', () =>
     expect(body.sessionToken).toBeTruthy();
     expect(body.pipelineId).toBe(pipeline.id);
     expect(body.name).toBe('Test Candidate');
-    expect(body.status).toBe('IN_PROGRESS');
+    expect(body.status).toBe('INVITED');
   });
 
-  test('Scenario: already-claimed token is rejected', async ({ request }) => {
-    // First call claims the token
+  test('Scenario: invite token remains usable until the candidate starts the assessment', async ({
+    request,
+  }) => {
+    const seed = await seedAssessmentPipeline(request, authToken, {
+      candidateName: 'Start Gate Candidate',
+      candidateEmail: `start-gate-${Date.now()}@pipe-test.dev`,
+    });
+    pipelineIdsToCleanup.push(seed.pipeline.id);
+
     const first = await request.post(`${API_BASE}/rpc/resolve-token`, {
-      data: { inviteToken: candidate.inviteToken },
+      data: { inviteToken: seed.candidate.inviteToken },
       headers: { 'Content-Type': 'application/json' },
     });
-    // Token was claimed in the previous test (or this one if running alone)
-    // Either way, a second resolve should fail
+    expect(first.status()).toBe(200);
+    const firstBody = (await first.json()) as ResolveTokenResponse;
+    expect(firstBody.status).toBe('INVITED');
+
     const second = await request.post(`${API_BASE}/rpc/resolve-token`, {
-      data: { inviteToken: candidate.inviteToken },
+      data: { inviteToken: seed.candidate.inviteToken },
       headers: { 'Content-Type': 'application/json' },
     });
-    // Should be 404 (token now starts with CLAIMED::) or 409 (concurrent claim)
-    expect([404, 409]).toContain(second.status());
+    expect(second.status()).toBe(200);
+    const secondBody = (await second.json()) as ResolveTokenResponse;
+    expect(secondBody.id).toBe(firstBody.id);
+    expect(secondBody.status).toBe('INVITED');
+
+    const start = await request.post(`${API_BASE}/rpc/start-assessment`, {
+      data: {},
+      headers: {
+        'Content-Type': 'application/json',
+        Authorization: `Bearer ${firstBody.sessionToken}`,
+      },
+    });
+    expect(start.status()).toBe(200);
+    await expect(start.json()).resolves.toMatchObject({
+      success: true,
+      status: 'IN_PROGRESS',
+    });
+
+    const afterStart = await request.post(`${API_BASE}/rpc/resolve-token`, {
+      data: { inviteToken: seed.candidate.inviteToken },
+      headers: { 'Content-Type': 'application/json' },
+    });
+    expect(afterStart.status()).toBe(409);
   });
 
   test('Scenario: nonexistent token returns 404', async ({ request }) => {

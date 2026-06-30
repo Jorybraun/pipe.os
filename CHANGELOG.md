@@ -59,6 +59,8 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Fixed — Candidate repo matching
 
+- Candidate assessment BDD now guards the one-use invite lifecycle: resolving a link does not mark it used, while explicitly starting the assessment claims it and makes subsequent raw-link resolves fail.
+- Playwright recruiter auth setup now waits for the Clerk session cookie instead of old shell copy or `networkidle`, making authenticated smoke gates less brittle.
 - MVP browser smoke now opens the merged person profile after roleless evidence ingestion, uses the app-dev recruiter API proxy for deployed setup, and verifies the decision cockpit, evidence coverage, and quiet source-id handling in a real browser.
 - Room commit submissions now recompute source-ref SHA-256 hashes server-side before persisting assessment evidence, rejecting mismatched exact-text hashes.
 - CODE_REVIEW recruiter detail smoke now verifies score validity and can assert the assessment invite recipient, so app-dev checks cover the hiring-manager cockpit instead of only page load.
