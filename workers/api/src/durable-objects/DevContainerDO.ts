@@ -117,11 +117,12 @@ export class DevContainerDO extends Container<Env> {
         ports: this.requiredPorts,
         startOptions: {
           envVars: this.envVars,
+          enableInternet: true,
         },
         cancellationOptions: {
-          instanceGetTimeoutMS: 15_000,
-          portReadyTimeoutMS: 45_000,
-          waitInterval: 500,
+          instanceGetTimeoutMS: 90_000,
+          portReadyTimeoutMS: 180_000,
+          waitInterval: 1_000,
         },
       });
     } catch (err) {

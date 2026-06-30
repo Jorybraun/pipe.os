@@ -4946,6 +4946,8 @@ describe('meeting room recording living-context route', () => {
 
     const launchRes = await app.request(`/meeting/${created.hostToken}/workspace/launch`, {
       method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ agentType: 'devin' }),
     }, env, ctx);
     expect(launchRes.status).toBe(201);
     const body = await launchRes.json() as {
@@ -4983,6 +4985,66 @@ describe('meeting room recording living-context route', () => {
       roomToken: created.hostToken,
     }));
     expect(JSON.stringify(body)).not.toContain('test-devin-api-key');
+  });
+
+  it('launches room workspaces without an agent unless one is explicitly requested', async () => {
+    const app = mountApp();
+    const { ctx, waitUntilAll } = buildCtx();
+    const initBodies: unknown[] = [];
+    const doFetch = vi.fn(async (_url: string, init?: RequestInit) => {
+      initBodies.push(JSON.parse(String(init?.body ?? '{}')));
+      return new Response(null, { status: 204 });
+    });
+    env.DEV_CONTAINER = {
+      idFromName: vi.fn(() => ({}) as DurableObjectId),
+      get: vi.fn(() => ({ fetch: doFetch }) as unknown as DurableObjectStub),
+    } as unknown as DurableObjectNamespace;
+    env.DEV_CONTAINER_DEFAULT_TTL_SECONDS = '3600';
+    env.DEV_CONTAINER_MAX_TTL_SECONDS = '7200';
+    env.API_BASE_URL = 'http://localhost:8787';
+    env.DEVIN_API_KEY = 'test-devin-api-key';
+
+    const scheduledInterviewId = 'scheduled-interview-workspace-no-agent-default';
+    sqlite.prepare(
+      `INSERT INTO scheduled_interviews (
+         id, interview_type, github_repo_url, github_pr_number, status, updated_at
+       ) VALUES (?, 'DEV_CONTAINER_CHALLENGE', ?, ?, 'INVITED', ?)`,
+    ).run(
+      scheduledInterviewId,
+      'https://github.com/pipe/reliable-workspace',
+      21,
+      new Date().toISOString(),
+    );
+
+    const createMeetingRes = await app.request('/meetings', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({
+        recipientName: 'Workspace Guest',
+        recipientEmail: 'workspace-no-agent@example.com',
+        title: 'Workspace PR challenge',
+        meetingType: 'INTERVIEW',
+        scheduledInterviewId,
+      }),
+    }, env, ctx);
+    expect(createMeetingRes.status).toBe(201);
+    const created = await createMeetingRes.json() as {
+      hostToken: string;
+    };
+
+    const launchRes = await app.request(`/meeting/${created.hostToken}/workspace/launch`, {
+      method: 'POST',
+    }, env, ctx);
+    expect(launchRes.status).toBe(201);
+    await waitUntilAll();
+
+    expect(initBodies).toContainEqual(expect.objectContaining({
+      repoGitUrl: 'https://github.com/pipe/reliable-workspace',
+      challengeBranch: 'refs/pull/21/head',
+      agentType: null,
+      agentApiKey: null,
+      roomToken: created.hostToken,
+    }));
   });
 
   it('marks room workspace launch as ERROR when dev-container init fails before the DO can report status', async () => {

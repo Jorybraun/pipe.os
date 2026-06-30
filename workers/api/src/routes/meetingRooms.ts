@@ -2352,6 +2352,7 @@ meetingRooms.get('/:token/workspace', async (c) => {
 
 const workspaceLaunchSchema = z.object({
   repoUrl: z.string().url().optional(),
+  agentType: z.enum(['devin']).nullable().optional(),
 });
 
 const assessmentJsonValueSchema: z.ZodType<JsonValue> = z.lazy(() => z.union([
@@ -2803,6 +2804,10 @@ meetingRooms.post('/:token/workspace/launch', async (c) => {
   if (!effectiveRepoUrl) {
     return apiError(c, 'VALIDATION_ERROR', 'Provide a repository URL to launch the workspace.');
   }
+  const requestedAgentType = body.agentType ?? null;
+  if (requestedAgentType === 'devin' && !c.env.DEVIN_API_KEY) {
+    return apiError(c, 'INTERNAL_ERROR', 'Devin is not configured for this workspace.');
+  }
 
   const existingSession = await getLatestSessionForRoom(c.env.DB, room.room_id);
   if (existingSession && !WORKSPACE_TERMINAL_STATUSES.has(existingSession.status)) {
@@ -2888,8 +2893,8 @@ meetingRooms.post('/:token/workspace/launch', async (c) => {
       challengeKind: challenge.kind,
       challengeSource: challenge.source,
       challengeMessage: challenge.message,
-      agentType: 'devin',
-      agentApiKey: c.env.DEVIN_API_KEY ?? null,
+      agentType: requestedAgentType,
+      agentApiKey: requestedAgentType === 'devin' ? c.env.DEVIN_API_KEY ?? null : null,
       agentOrgId: c.env.DEVIN_ORG_ID ?? null,
       pipeApiUrl: c.env.API_BASE_URL
         ?? c.env.VIDEO_ROOM_APP_URL

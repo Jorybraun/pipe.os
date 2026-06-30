@@ -1,3 +1,11 @@
+import { mkdtemp, rm } from 'node:fs/promises';
+import { tmpdir } from 'node:os';
+import { join } from 'node:path';
+import { execFile } from 'node:child_process';
+import { promisify } from 'node:util';
+
+const execFileAsync = promisify(execFile);
+
 const APP_BASE = (process.env.APP_BASE || 'https://app-dev.hire-pipe.com').replace(/\/$/, '');
 const ROOM_BASE = (process.env.ROOM_BASE || 'https://room-dev.hire-pipe.com').replace(/\/$/, '');
 const APP_BASIC_USER = process.env.PIPE_APP_DEV_BASIC_AUTH_USER
@@ -13,24 +21,55 @@ const APP_BASIC_PASSWORD = process.env.PIPE_APP_DEV_BASIC_AUTH_PASSWORD
 const ROOM_BASIC_USER = process.env.PIPE_ROOM_DEV_BASIC_AUTH_USER
   || process.env.ROOM_DEV_BASIC_AUTH_USER
   || process.env.VIDEO_ROOM_DEV_AUTH_USER
-  || APP_BASIC_USER;
+  || '';
 const ROOM_BASIC_PASSWORD = process.env.PIPE_ROOM_DEV_BASIC_AUTH_PASSWORD
   || process.env.ROOM_DEV_BASIC_AUTH_PASSWORD
   || process.env.VIDEO_ROOM_DEV_AUTH_PASSWORD
-  || APP_BASIC_PASSWORD;
+  || '';
 const REPO_URL = process.env.WORKSPACE_SMOKE_REPO_URL || 'https://github.com/octocat/Hello-World';
 const INTERVIEW_TYPE = process.env.WORKSPACE_SMOKE_INTERVIEW_TYPE || 'DEV_CONTAINER_CHALLENGE';
 const RAW_PR_NUMBER = process.env.WORKSPACE_SMOKE_PR_NUMBER || (INTERVIEW_TYPE === 'OPEN_SOURCE_BUG_FIX' ? '' : '1');
 const PR_NUMBER = RAW_PR_NUMBER ? Number(RAW_PR_NUMBER) : null;
-const BASE_COMMIT_SHA = process.env.WORKSPACE_SMOKE_BASE_COMMIT_SHA || '1111111111111111111111111111111111111111';
+const BASE_COMMIT_SHA = process.env.WORKSPACE_SMOKE_BASE_COMMIT_SHA || '';
 const REMOTE = !APP_BASE.includes('localhost') && !APP_BASE.includes('127.0.0.1');
 
 function assertEnv() {
   if (!REMOTE) return;
-  if (!APP_BASIC_USER || !APP_BASIC_PASSWORD || !ROOM_BASIC_USER || !ROOM_BASIC_PASSWORD) {
+  if (!APP_BASIC_USER || !APP_BASIC_PASSWORD) {
     throw new Error(
-      'Set app-dev and room-dev basic auth env: PIPE_APP_DEV_BASIC_AUTH_USER/PASSWORD and PIPE_ROOM_DEV_BASIC_AUTH_USER/PASSWORD.',
+      'Set PIPE_APP_DEV_BASIC_AUTH_USER/PASSWORD or PIPE_DEV_BASIC_AUTH_USER/PASSWORD to smoke deployed app-dev.',
     );
+  }
+  if (INTERVIEW_TYPE === 'OPEN_SOURCE_BUG_FIX' && !/^[a-f0-9]{40}$/i.test(BASE_COMMIT_SHA)) {
+    throw new Error(
+      'Set WORKSPACE_SMOKE_BASE_COMMIT_SHA to the real 40-character base commit SHA for OPEN_SOURCE_BUG_FIX smoke runs.',
+    );
+  }
+}
+
+async function git(args, cwd) {
+  return execFileAsync('git', args, {
+    cwd,
+    timeout: 30_000,
+    maxBuffer: 1024 * 1024,
+  });
+}
+
+async function assertReachableBaseCommit() {
+  if (INTERVIEW_TYPE !== 'OPEN_SOURCE_BUG_FIX') return;
+  const dir = await mkdtemp(join(tmpdir(), 'pipe-workspace-smoke-'));
+  try {
+    await git(['init', '--quiet'], dir);
+    await git(['remote', 'add', 'origin', REPO_URL], dir);
+    await git(['fetch', '--quiet', '--depth=1', 'origin', BASE_COMMIT_SHA], dir);
+    await git(['cat-file', '-e', `${BASE_COMMIT_SHA}^{commit}`], dir);
+  } catch (error) {
+    const message = error instanceof Error ? error.message : String(error);
+    throw new Error(
+      `Base commit ${BASE_COMMIT_SHA} is not reachable from ${REPO_URL}; use a real source-backed commit before launching deployed workspace smoke. ${message}`,
+    );
+  } finally {
+    await rm(dir, { recursive: true, force: true });
   }
 }
 
@@ -44,6 +83,14 @@ function authHeadersFor(base) {
   return base === ROOM_BASE
     ? basicAuthHeaders(ROOM_BASIC_USER, ROOM_BASIC_PASSWORD)
     : basicAuthHeaders(APP_BASIC_USER, APP_BASIC_PASSWORD);
+}
+
+function authHeadersFromUrl(rawUrl) {
+  const url = new URL(rawUrl);
+  if (!url.username && !url.password) return {};
+  const user = decodeURIComponent(url.username);
+  const password = decodeURIComponent(url.password);
+  return basicAuthHeaders(user, password);
 }
 
 async function requestJson(base, path, init = {}) {
@@ -88,11 +135,13 @@ function sleep(ms) {
   return new Promise((resolve) => setTimeout(resolve, ms));
 }
 
-async function pollWorkspaceReady(token) {
-  const deadline = Date.now() + 120_000;
+async function pollWorkspaceReady(token, headers = {}) {
+  const deadline = Date.now() + 240_000;
   let last = null;
   while (Date.now() < deadline) {
-    const body = await requestJson(ROOM_BASE, `/api/v1/meeting-rooms/${token}/workspace`);
+    const body = await requestJson(ROOM_BASE, `/api/v1/meeting-rooms/${token}/workspace`, {
+      headers,
+    });
     last = body.workspace?.session ?? null;
     if (last?.status === 'READY' || last?.status === 'SLEEPING') return last;
     if (last?.status === 'ERROR') break;
@@ -103,6 +152,7 @@ async function pollWorkspaceReady(token) {
 
 async function main() {
   assertEnv();
+  await assertReachableBaseCommit();
 
   const unique = Date.now();
   const recipientEmail = `workspace-smoke-${unique}@pipe-test.dev`;
@@ -152,7 +202,10 @@ async function main() {
     }),
   });
   const hostToken = tokenFromRoomUrl(invited?.room?.hostUrl ?? '');
-  const room = await requestJson(ROOM_BASE, `/api/v1/meeting-rooms/${hostToken}`);
+  const roomAuthHeaders = authHeadersFromUrl(invited?.room?.hostUrl ?? '');
+  const room = await requestJson(ROOM_BASE, `/api/v1/meeting-rooms/${hostToken}`, {
+    headers: roomAuthHeaders,
+  });
   const workspace = room?.room?.workspace;
   if (!workspace?.enabled) throw new Error(`Workspace was not enabled: ${JSON.stringify(workspace)}`);
   if (workspace.repoUrl !== REPO_URL) {
@@ -170,12 +223,13 @@ async function main() {
 
   const launched = await requestJson(ROOM_BASE, `/api/v1/meeting-rooms/${hostToken}/workspace/launch`, {
     method: 'POST',
+    headers: roomAuthHeaders,
   });
   if (!launched?.workspace?.session?.sessionId) {
     throw new Error(`Launch response missing session: ${JSON.stringify(launched)}`);
   }
 
-  const readySession = await pollWorkspaceReady(hostToken);
+  const readySession = await pollWorkspaceReady(hostToken, roomAuthHeaders);
   if (!readySession.proxyPath) {
     throw new Error(`Ready workspace did not expose a proxy path: ${JSON.stringify(readySession)}`);
   }

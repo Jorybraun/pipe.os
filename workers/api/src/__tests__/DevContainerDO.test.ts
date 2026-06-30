@@ -240,6 +240,45 @@ describe('DevContainerDO /__init — Step 11 warn-then-expire scheduling', () =>
     expect(startArg.startOptions.envVars.AGENT_TYPE).toBe('devin');
   });
 
+  it('starts the workspace container with internet access for real repo cloning', async () => {
+    const db = fakeD1();
+    const env = buildEnv(db);
+    const instance = new DevContainerDO(buildState(), env) as SpyableDO;
+
+    const res = await init(instance, {
+      sessionId: 'sess_repo_clone',
+      expiresAt: new Date(Date.now() + 3600_000).toISOString(),
+      ttlSeconds: 3600,
+      repoGitUrl: 'https://github.com/octocat/Hello-World',
+      baseCommitSha: '7fd1a60b01f91b314f59955a4e4d4e80d8edf11d',
+    });
+
+    expect(res.status).toBe(200);
+    const [startArg] = instance.__startCalls[0] as [
+      {
+        cancellationOptions: {
+          instanceGetTimeoutMS?: number;
+          portReadyTimeoutMS?: number;
+          waitInterval?: number;
+        };
+        startOptions: {
+          enableInternet?: boolean;
+          envVars: Record<string, string>;
+        };
+      },
+    ];
+    expect(startArg.cancellationOptions).toMatchObject({
+      instanceGetTimeoutMS: 90_000,
+      portReadyTimeoutMS: 180_000,
+      waitInterval: 1_000,
+    });
+    expect(startArg.startOptions.enableInternet).toBe(true);
+    expect(startArg.startOptions.envVars.REPO_GIT_URL).toBe('https://github.com/octocat/Hello-World');
+    expect(startArg.startOptions.envVars.CHALLENGE_BASE_COMMIT_SHA).toBe(
+      '7fd1a60b01f91b314f59955a4e4d4e80d8edf11d',
+    );
+  });
+
   it('marks the session ERROR when the container cannot start', async () => {
     const db = fakeD1();
     const env = buildEnv(db);

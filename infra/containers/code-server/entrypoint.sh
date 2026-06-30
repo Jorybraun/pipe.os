@@ -11,6 +11,9 @@ set -euo pipefail
 #   ASSESSMENT_BRANCH  — local branch name created from CHALLENGE_BASE_COMMIT_SHA
 
 mkdir -p /workspace
+# The image runs as root in Cloudflare Containers, while /workspace is owned by
+# coder so code-server can edit it. Mark it safe before exact-commit git checks.
+git config --global --add safe.directory /workspace
 
 if [[ -n "${REPO_GIT_URL:-}" ]]; then
   echo "[entrypoint] Cloning repo: ${REPO_GIT_URL}"
@@ -35,7 +38,7 @@ if [[ -n "${CHALLENGE_BASE_COMMIT_SHA:-}" && -d /workspace/.git ]]; then
     git fetch origin "${CHALLENGE_BASE_COMMIT_SHA}" || true
   fi
   if ! git cat-file -e "${CHALLENGE_BASE_COMMIT_SHA}^{commit}" 2>/dev/null; then
-    echo "[entrypoint] base commit not found: ${CHALLENGE_BASE_COMMIT_SHA}" >&2
+    echo "[entrypoint] base commit not found for repo ${REPO_GIT_URL:-unknown}: ${CHALLENGE_BASE_COMMIT_SHA}" >&2
     exit 1
   fi
   git checkout -B "${ASSESSMENT_BRANCH:-pipe-assessment}" "${CHALLENGE_BASE_COMMIT_SHA}"

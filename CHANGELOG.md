@@ -62,7 +62,10 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - Contact-first scheduled interview context records now retain recruiter notes in graph qualifiers as well as exact source text.
 - Manual open-source challenge packets can now be repo-only with an exact base commit and task contract; the room treats source-backed repo task packets as assigned even without a PR number.
 - The deployed workspace smoke can now run `OPEN_SOURCE_BUG_FIX` mode without a PR and verify the room exposes the assigned source-backed task packet.
-- The workspace smoke now supports separate app-dev and room-dev basic-auth credentials so deployed verification can cross both hosts.
+- The workspace smoke now uses room credentials from generated room links and requires a real base commit SHA for deployed open-source task verification.
+- Deployed workspace smoke now preflights that the requested base commit is reachable from the selected repository before creating any invite or launching a container.
+- Dev container workspaces now mark `/workspace` as a safe Git directory, start with explicit internet access, and use production cold-start timeouts so exact-base-commit repo tasks do not crash before VS Code can boot.
+- Room workspace launches no longer inject Devin by default; code-review rooms start a plain reliable code-server workspace unless the launch explicitly requests a configured agent.
 - Candidate assessment BDD now guards the one-use invite lifecycle: resolving a link does not mark it used, while explicitly starting the assessment claims it and makes subsequent raw-link resolves fail.
 - Playwright recruiter auth setup now waits for the Clerk session cookie instead of old shell copy or `networkidle`, making authenticated smoke gates less brittle.
 - MVP browser smoke now opens the merged person profile after roleless evidence ingestion, uses the app-dev recruiter API proxy for deployed setup, and verifies the decision cockpit, evidence coverage, and quiet source-id handling in a real browser.
