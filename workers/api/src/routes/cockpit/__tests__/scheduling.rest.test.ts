@@ -1653,6 +1653,15 @@ describe('GET /interviews/:id detail', () => {
       `+${'long evaluator prompt fixture '.repeat(90)}`,
     ].join('\n');
     const diffSourceRefKey = `code_diff:${commitSha}:diff:support:`;
+    const fileObservationText = JSON.stringify({
+      sourceKind: 'code_server_workspace.file_observation',
+      path: 'src/evaluation.ts',
+      action: 'modified',
+      observedAt: now,
+      fileContentHash: 'content_file_observation_hash',
+      observedBy: 'clippy_agent_bridge',
+      editorSurface: 'code-server',
+    });
 
     sqlite!.prepare(`
       UPDATE scheduled_interviews
@@ -1769,33 +1778,57 @@ describe('GET /interviews/:id detail', () => {
       sha256Hex(diffText),
       now,
     );
+    sqlite!.prepare(`
+      INSERT INTO assessment_event_source_refs (
+        id, event_id, source_ref_type, source_ref_id, source_span_id, evidence_role,
+        locator_json, exact_text, content_hash, metadata_json, created_at
+      ) VALUES (?, ?, ?, ?, NULL, ?, ?, ?, ?, ?, ?)
+    `).run(
+      'assessment-source-ai-evaluation-file-observation',
+      'assessment-event-ai-evaluation-commit',
+      'code_server_file_observation',
+      `${commitSha}:file-observation:src/evaluation.ts`,
+      'workspace_file_save',
+      JSON.stringify({ path: 'src/evaluation.ts', action: 'modified', observedAt: now }),
+      fileObservationText,
+      sha256Hex(fileObservationText),
+      JSON.stringify({ sourceKind: 'code_server_workspace.file_observation' }),
+      now,
+    );
 
     const aiRun = vi.fn(async () => ({
-      response: JSON.stringify({
-        summary: 'Candidate made a focused source-backed change and cited the submitted diff evidence.',
-        recommendation: 'mixed_evidence_human_review',
-        claims: [{
-          id: 'focused-diff',
-          polarity: 'positive',
-          dimension: 'implementation_correctness',
-          narrative: 'The submitted diff adds startEvaluation in src/evaluation.ts.',
-          confidence: 0.74,
-          sourceRefKeys: [diffSourceRefKey],
-        }, {
-          id: 'uncited-claim',
-          polarity: 'positive',
-          dimension: 'test_strategy',
-          narrative: 'This claim has no persisted source citation and must be dropped.',
-          confidence: 0.2,
-          sourceRefKeys: ['missing:source:ref'],
-        }],
-        diagnostics: [{
-          code: 'MISSING_TEST_EVIDENCE',
-          severity: 'warning',
-          message: 'No test_run source ref was attached to the session.',
-          sourceRefKeys: [diffSourceRefKey],
-        }],
-      }),
+      response: `\`\`\`json
+{
+  "summary": "Candidate made a focused source-backed change and cited the submitted diff evidence.",
+  "recommendation": "mixed_evidence_human_review",
+  "claims": [
+    {
+      "id": "focused-diff",
+      "polarity": "positive",
+      "dimension": "implementation_correctness",
+      "narrative": "The submitted diff adds startEvaluation in src/evaluation.ts.",
+      "confidence": 0.74,
+      "sourceRefKeys": ["${diffSourceRefKey}"]
+    },
+    {
+      "id": "uncited-claim",
+      "polarity": "positive",
+      "dimension": "test_strategy",
+      "narrative": "This claim has no persisted source citation and must be dropped.",
+      "confidence": 0.2,
+      "sourceRefKeys": ["missing:source:ref"],
+    },
+  ],
+  "diagnostics": [
+    {
+      "code": "MISSING_TEST_EVIDENCE",
+      "severity": "warning",
+      "message": "No test_run source ref was attached to the session.",
+      "sourceRefKeys": ["${diffSourceRefKey}"],
+    },
+  ],
+}
+\`\`\``,
     }));
 
     const app = mountSchedulingApp({
@@ -1853,6 +1886,7 @@ describe('GET /interviews/:id detail', () => {
       schemaVersion: 'assessment-evidence-coverage-v1',
       sourceRefTypeCounts: {
         code_diff: 1,
+        code_server_file_observation: 1,
         git_commit: 1,
         review_challenge_packet: 1,
       },
@@ -1864,14 +1898,19 @@ describe('GET /interviews/:id detail', () => {
         sourceRefKeys: [diffSourceRefKey],
       }),
     ]));
-    expect(userPromptPayload.evidenceCoverage?.expectedForHighConfidence).toEqual(expect.arrayContaining([
-      expect.objectContaining({
-        label: 'test_run',
-        satisfied: false,
-        sourceRefKeys: [],
-        missingImpact: 'Do not make positive test_strategy or verification claims without test_run evidence.',
-      }),
-    ]));
+    const testRunCoverage = userPromptPayload.evidenceCoverage?.expectedForHighConfidence
+      ?.find((item) => item.label === 'test_run');
+    expect(testRunCoverage).toMatchObject({
+      satisfied: false,
+      sourceRefKeys: [],
+      missingImpact: 'Do not make positive test_strategy or verification claims without test_run evidence.',
+    });
+    const editorCoverage = userPromptPayload.evidenceCoverage?.expectedForHighConfidence
+      ?.find((item) => item.label === 'code_editor_activity');
+    expect(editorCoverage).toMatchObject({
+      satisfied: true,
+      sourceRefKeys: [`code_server_file_observation:${commitSha}:file-observation:src/evaluation.ts:workspace_file_save:`],
+    });
     expect(userPromptPayload.outputContract?.limits).toMatchObject({
       maxClaims: 4,
       maxDiagnostics: 4,
@@ -1897,6 +1936,7 @@ describe('GET /interviews/:id detail', () => {
           schemaVersion: 'assessment-evidence-coverage-v1',
           expectedForHighConfidence: expect.arrayContaining([
             expect.objectContaining({ label: 'test_run', satisfied: false }),
+            expect.objectContaining({ label: 'code_editor_activity', satisfied: true }),
           ]),
         },
       },
@@ -1937,6 +1977,7 @@ describe('GET /interviews/:id detail', () => {
     });
     expect(reportOutput.evidenceCoverage?.expectedForHighConfidence).toEqual(expect.arrayContaining([
       expect.objectContaining({ label: 'test_run', satisfied: false }),
+      expect.objectContaining({ label: 'code_editor_activity', satisfied: true }),
     ]));
     const citedClaim = sqlite!.prepare(
       `SELECT c.dimension, c.polarity, csr.source_ref_type, csr.source_ref_id, csr.exact_text

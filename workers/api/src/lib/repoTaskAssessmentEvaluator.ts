@@ -99,7 +99,7 @@ const EXPECTED_HIGH_CONFIDENCE_REF_GROUPS = [
   },
   {
     label: 'code_editor_activity',
-    sourceRefTypes: ['code_editor_save', 'code_file_change', 'file_change'],
+    sourceRefTypes: ['code_editor_save', 'code_file_change', 'file_change', 'code_server_file_observation'],
     missingImpact: 'Treat edit process and intermediate code-server activity as unobserved when editor/file evidence is absent.',
   },
   {
@@ -392,15 +392,26 @@ function buildUserPrompt(input: {
 function parseAiJson(content: string | null): AiAssessmentOutput {
   if (!content) throw new Error('assessment evaluator returned empty content');
   const trimmed = content.trim();
+  const parseJsonObject = (value: string): AiAssessmentOutput => {
+    try {
+      return JSON.parse(value) as AiAssessmentOutput;
+    } catch (error) {
+      const withoutTrailingCommas = value.replace(/,\s*([}\]])/g, '$1');
+      if (withoutTrailingCommas !== value) {
+        return JSON.parse(withoutTrailingCommas) as AiAssessmentOutput;
+      }
+      throw error;
+    }
+  };
   try {
-    return JSON.parse(trimmed) as AiAssessmentOutput;
+    return parseJsonObject(trimmed);
   } catch {
     const fenced = trimmed.match(/```(?:json)?\s*([\s\S]*?)```/i)?.[1]?.trim();
-    if (fenced) return JSON.parse(fenced) as AiAssessmentOutput;
+    if (fenced) return parseJsonObject(fenced);
     const objectStart = trimmed.indexOf('{');
     const objectEnd = trimmed.lastIndexOf('}');
     if (objectStart >= 0 && objectEnd > objectStart) {
-      return JSON.parse(trimmed.slice(objectStart, objectEnd + 1)) as AiAssessmentOutput;
+      return parseJsonObject(trimmed.slice(objectStart, objectEnd + 1));
     }
     throw new Error('assessment evaluator did not return parseable JSON');
   }
