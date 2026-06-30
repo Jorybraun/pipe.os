@@ -2081,6 +2081,75 @@ candidateOps.post('/compare', requireGate('living_context_read'), async (c) => {
   return c.json(report);
 });
 
+// POST /:candidateId/living-context/match-decision — record recruiter accept/reject/defer
+candidateOps.post('/:candidateId/living-context/match-decision', requireGate('living_context_read'), async (c) => {
+  const userId = c.var.userId;
+  const { candidateId } = c.req.param();
+  const db = c.env.DB;
+
+  const candidate = await db.prepare(
+    `SELECT c.id
+       FROM candidates c
+       LEFT JOIN pipelines p ON p.id = c.pipeline_id
+      WHERE c.id = ?1 AND (c.owner_id = ?2 OR p.owner_id = ?2)`,
+  ).bind(candidateId, userId).first<{ id: string }>();
+  if (!candidate) return apiError(c, 'NOT_FOUND', 'Candidate not found.');
+
+  const body = await c.req.json<{
+    matchRunId: string;
+    challengeId: string;
+    repoId: string;
+    prNumber: number;
+    verdict: string;
+    reason?: string;
+    citedAlignmentIds?: string[];
+    notes?: string;
+  }>();
+
+  if (!body.matchRunId || !body.challengeId || !body.repoId || !body.prNumber || !body.verdict) {
+    return apiError(c, 'VALIDATION_ERROR', 'matchRunId, challengeId, repoId, prNumber, and verdict are required.');
+  }
+  if (!['accepted', 'rejected', 'deferred'].includes(body.verdict)) {
+    return apiError(c, 'VALIDATION_ERROR', 'verdict must be accepted, rejected, or deferred.');
+  }
+
+  const { recordMatchDecision } = await import('../../lib/livingContext/matchDecisionAudit');
+  const result = await recordMatchDecision(db, {
+    candidateId,
+    matchRunId: body.matchRunId,
+    challengeId: body.challengeId,
+    repoId: body.repoId,
+    prNumber: body.prNumber,
+    verdict: body.verdict as 'accepted' | 'rejected' | 'deferred',
+    reason: body.reason,
+    citedAlignmentIds: body.citedAlignmentIds,
+    notes: body.notes,
+    recruiterId: userId,
+  });
+
+  return c.json(result, 201);
+});
+
+// GET /:candidateId/living-context/match-decisions — match decision audit trail
+candidateOps.get('/:candidateId/living-context/match-decisions', requireGate('living_context_read'), async (c) => {
+  const userId = c.var.userId;
+  const { candidateId } = c.req.param();
+  const db = c.env.DB;
+
+  const candidate = await db.prepare(
+    `SELECT c.id
+       FROM candidates c
+       LEFT JOIN pipelines p ON p.id = c.pipeline_id
+      WHERE c.id = ?1 AND (c.owner_id = ?2 OR p.owner_id = ?2)`,
+  ).bind(candidateId, userId).first<{ id: string }>();
+  if (!candidate) return apiError(c, 'NOT_FOUND', 'Candidate not found.');
+
+  const limit = Math.min(Number(c.req.query('limit') ?? 50), 200);
+  const { loadMatchDecisionHistory } = await import('../../lib/livingContext/matchDecisionAudit');
+  const history = await loadMatchDecisionHistory(db, candidateId, limit);
+  return c.json(history);
+});
+
 // GET /:candidateId/pipeline-siblings — other candidates in the same pipeline
 candidateOps.get('/:candidateId/pipeline-siblings', async (c) => {
   const userId = c.var.userId;

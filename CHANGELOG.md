@@ -7,6 +7,15 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Added — Match decision audit trail (criteria #2, #5, #8)
+
+- `matchDecisionAudit.ts`: New living context module recording recruiter accept/reject/defer decisions as source-backed context records. Decisions link to match runs and cited alignments with full provenance.
+- `POST /:candidateId/living-context/match-decision`: API endpoint for recording match decisions with validation, ownership checks, and rollout gate enforcement.
+- `GET /:candidateId/living-context/match-decisions`: API endpoint returning the decision audit trail with verdict counts.
+- `useMatchDecisions` hook: Frontend hook for loading decision history and recording new decisions.
+- `MatchDecisionPanel`: LivingContextGraph panel showing decision summary (accepted/rejected/deferred counts) and recent decisions with verdict, challenge, and reasoning.
+- `matchDecisionAudit.test.ts`: 6-test suite covering accepted/rejected/deferred recording, cited alignments, idempotency, and history loading.
+
 ### Fixed — Test suite alignment with living context production code
 
 - `richAgent.test.ts`: Add missing `model` property to `makeStubProvider` stub, matching `LLMProvider` interface requirement.

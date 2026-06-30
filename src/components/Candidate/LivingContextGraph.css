@@ -3063,6 +3063,89 @@ html[data-theme="pipe-blue"] .living-context {
   background: rgba(248, 113, 113, 0.06);
 }
 
+/* Match Decision Panel */
+.living-context__match-decision-summary {
+  display: flex;
+  gap: 6px;
+  flex-wrap: wrap;
+  margin-bottom: 8px;
+}
+
+.living-context__match-decision-badge {
+  font-size: 10px;
+  font-family: 'Space Mono', monospace;
+  padding: 2px 6px;
+  border-radius: 3px;
+  font-weight: 600;
+}
+
+.living-context__match-decision-badge--accepted {
+  color: #10b981;
+  background: rgba(16, 185, 129, 0.08);
+}
+
+.living-context__match-decision-badge--rejected {
+  color: #f87171;
+  background: rgba(248, 113, 113, 0.08);
+}
+
+.living-context__match-decision-badge--deferred {
+  color: #fbbf24;
+  background: rgba(251, 191, 36, 0.08);
+}
+
+.living-context__match-decision-list {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+}
+
+.living-context__match-decision-entry {
+  background: var(--lc-card);
+  border: 1px solid var(--lc-card-border);
+  border-radius: 4px;
+  padding: 6px 8px;
+}
+
+.living-context__match-decision-header {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  margin-bottom: 3px;
+}
+
+.living-context__match-decision-verdict {
+  font-size: 10px;
+  font-family: 'Space Mono', monospace;
+  font-weight: 700;
+  text-transform: uppercase;
+  letter-spacing: 0.04em;
+}
+
+.living-context__match-decision-verdict--accepted { color: #10b981; }
+.living-context__match-decision-verdict--rejected { color: #f87171; }
+.living-context__match-decision-verdict--deferred { color: #fbbf24; }
+
+.living-context__match-decision-date {
+  font-size: 10px;
+  color: var(--lc-record-dim);
+}
+
+.living-context__match-decision-challenge {
+  display: flex;
+  align-items: center;
+  gap: 4px;
+  font-size: 11px;
+  color: var(--lc-record-muted);
+}
+
+.living-context__match-decision-reason {
+  font-size: 11px;
+  color: var(--lc-record-muted);
+  margin-top: 3px;
+  font-style: italic;
+}
+
 /* Evidence Readiness Panel */
 .living-context__readiness-level {
   font-family: 'Space Mono', monospace;

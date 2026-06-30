@@ -54,6 +54,7 @@ import { useEvidenceGaps } from '../../hooks/useEvidenceGaps';
 import { useEvidenceLineage } from '../../hooks/useEvidenceLineage';
 import { useMatchProvenance } from '../../hooks/useMatchProvenance';
 import { useMatchHistory } from '../../hooks/useMatchHistory';
+import { useMatchDecisions } from '../../hooks/useMatchDecisions';
 import { useRematch } from '../../hooks/useRematch';
 import { useCandidateComparison } from '../../hooks/useCandidateComparison';
 import { useEvidenceTimeline } from '../../hooks/useEvidenceTimeline';
@@ -2351,6 +2352,86 @@ function MatchHistoryPanel({
   );
 }
 
+function MatchDecisionPanel({
+  candidateId,
+}: {
+  candidateId: string;
+}): JSX.Element | null {
+  const { history, isLoading, error, refetch } = useMatchDecisions(candidateId);
+
+  if (isLoading && !history) return null;
+  if (error || !history || history.totalDecisions === 0) return null;
+
+  return (
+    <section
+      className="living-context__panel"
+      data-testid="match-decision-panel"
+    >
+      <div className="living-context__section-head">
+        <div style={{ display: 'flex', gap: 6, alignItems: 'center' }}>
+          <div className="living-context__section-title">Match decisions</div>
+          <div className="living-context__count">{history.totalDecisions}</div>
+        </div>
+        <button
+          type="button"
+          className="living-context__refresh"
+          onClick={() => void refetch()}
+          title="Refresh decisions"
+          aria-label="Refresh decisions"
+        >
+          <RefreshCw size={12} />
+        </button>
+      </div>
+
+      <div className="living-context__match-decision-summary">
+        {history.acceptedCount > 0 && (
+          <span className="living-context__match-decision-badge living-context__match-decision-badge--accepted">
+            {history.acceptedCount} accepted
+          </span>
+        )}
+        {history.rejectedCount > 0 && (
+          <span className="living-context__match-decision-badge living-context__match-decision-badge--rejected">
+            {history.rejectedCount} rejected
+          </span>
+        )}
+        {history.deferredCount > 0 && (
+          <span className="living-context__match-decision-badge living-context__match-decision-badge--deferred">
+            {history.deferredCount} deferred
+          </span>
+        )}
+      </div>
+
+      <div className="living-context__match-decision-list">
+        {history.decisions.slice(0, 10).map((decision) => (
+          <div
+            key={decision.decisionId}
+            className="living-context__match-decision-entry"
+            data-testid="match-decision-entry"
+          >
+            <div className="living-context__match-decision-header">
+              <span className={`living-context__match-decision-verdict living-context__match-decision-verdict--${decision.verdict}`}>
+                {decision.verdict}
+              </span>
+              <span className="living-context__match-decision-date">
+                {formatDate(decision.recordedAt)}
+              </span>
+            </div>
+            <div className="living-context__match-decision-challenge">
+              <GitPullRequest size={11} />
+              <span>{decision.repoId}#{decision.prNumber}</span>
+            </div>
+            {decision.reason && (
+              <div className="living-context__match-decision-reason">
+                {decision.reason}
+              </div>
+            )}
+          </div>
+        ))}
+      </div>
+    </section>
+  );
+}
+
 function EvidenceReadinessPanel({
   candidateId,
 }: {
@@ -3108,6 +3189,7 @@ export function LivingContextGraph({
       <EvidenceGapPanel report={gapReport} />
       <MatchProvenancePanel provenance={provenance} />
       <MatchHistoryPanel candidateId={candidateId} />
+      <MatchDecisionPanel candidateId={candidateId} />
       <CandidateComparisonPanel
         candidateId={candidateId}
         comparisonCandidateIds={comparisonCandidateIds ?? null}

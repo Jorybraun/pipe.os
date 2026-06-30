@@ -4,6 +4,35 @@ Inter-agent handoff log for the living context graph goal. Each agent appends a 
 
 ## Log
 
+### 2026-06-30T22:01Z — Devin: match decision audit trail + PR consolidation (PR #161 → new PR)
+
+**Agent:** Devin session `01c3e802130446c09d331e616d9de4b8`
+**Branch:** `devin/1751320877-living-context-advances` (from PR #160 consolidation)
+**PR:** new (extends #161 consolidation)
+
+**Work completed:**
+1. Analyzed open PRs #155-#160, selected PR #160 as most comprehensive consolidation.
+2. Created non-draft PR #161 merging all prior living context advances to main.
+3. Built **match decision audit trail** — closes recruiter feedback loop into living context graph:
+   - `matchDecisionAudit.ts`: Records accept/reject/defer decisions as source-backed context records
+   - `POST /:candidateId/living-context/match-decision`: API endpoint with ownership + gate checks
+   - `GET /:candidateId/living-context/match-decisions`: Decision history with verdict counts
+   - `useMatchDecisions` hook: Frontend hook for loading/recording decisions
+   - `MatchDecisionPanel`: LivingContextGraph visualization showing decision history
+   - 6-test integration suite using better-sqlite3 + migrations
+4. All 208 test files pass (2004 tests), TypeScript strict clean.
+
+**Criteria advanced:**
+- #2 (preserve meaning): Recruiter decisions become immutable source evidence with provenance
+- #5 (evidence-based matching): Future match runs can reference prior decision history
+- #8 (production quality): Full audit trail, idempotent recording, integration tests
+
+**Next priorities:**
+- Evidence staleness alerting (when key evidence is too old for reliable matching)
+- Recruiter decision integration into rematch weighting
+- Repository structure overlay enhancements (criterion #7)
+- Close stale draft PRs #155-#159 (auth blocked for automation sessions)
+
 ### 2026-06-30T18:20Z — Devin: evidence timeline panel + comparison wiring (PR #157)
 
 **Agent:** Devin session `9667cc913f6d4dd9ac70501d768f4979`

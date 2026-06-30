@@ -143,3 +143,11 @@ export type {
   EvidenceConflictReport,
   EvidenceConflictOptions,
 } from './evidenceConflicts';
+export { recordMatchDecision, loadMatchDecisionHistory } from './matchDecisionAudit';
+export type {
+  MatchDecisionVerdict,
+  MatchDecisionInput,
+  MatchDecisionResult,
+  MatchDecisionHistoryEntry,
+  MatchDecisionHistory,
+} from './matchDecisionAudit';

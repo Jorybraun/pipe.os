@@ -1961,3 +1961,29 @@ export interface PostSynthesizeResponse {
   /** Full Role Context Document — present when backend has cut over to RCD synthesis. */
   rcd?: RoleContextDocument | null;
 }
+
+// ─── Match Decision Audit Trail ─────────────────────────────────────────────
+
+export type MatchDecisionVerdict = 'accepted' | 'rejected' | 'deferred';
+
+export interface MatchDecisionHistoryEntry {
+  decisionId: string;
+  matchRunId: string;
+  challengeId: string;
+  repoId: string;
+  prNumber: number;
+  verdict: MatchDecisionVerdict;
+  reason: string | null;
+  notes: string | null;
+  recruiterId: string;
+  recordedAt: string;
+}
+
+export interface MatchDecisionHistory {
+  candidateId: string;
+  decisions: MatchDecisionHistoryEntry[];
+  totalDecisions: number;
+  acceptedCount: number;
+  rejectedCount: number;
+  deferredCount: number;
+}
