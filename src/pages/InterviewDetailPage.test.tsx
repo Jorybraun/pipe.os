@@ -1030,8 +1030,8 @@ describe('InterviewDetailPage', () => {
             updatedAt: '2026-06-23T00:10:00.000Z',
           },
           stage: 'EVALUATED',
-          nextAction: 'REVIEW_EVALUATION',
-          nextActionLabel: 'Review the assessment report and evidence.',
+          nextAction: 'NONE',
+          nextActionLabel: 'No further assessment action is required.',
           hasChallengePacket: true,
           hasWorkEvidence: true,
           hasMessageEvidence: true,
@@ -1088,6 +1088,16 @@ describe('InterviewDetailPage', () => {
             summary: 'Candidate fixed the regression and added focused tests.',
             createdAt: '2026-06-23T00:09:00.000Z',
           },
+          humanDecision: {
+            eventId: 'assessment-human-decision-progress',
+            decision: 'advance',
+            reviewerId: 'recruiter-progress',
+            summary: 'Human reviewer advances after checking the source-backed report.',
+            notes: 'Diff and tests support the final decision.',
+            occurredAt: '2026-06-23T00:12:00.000Z',
+            sourceRefCount: 1,
+            sourceRefTypes: ['assessment_evaluation_report'],
+          },
         },
       }),
     });
@@ -1098,13 +1108,18 @@ describe('InterviewDetailPage', () => {
     const progress = screen.getByTestId('interview-assessment-progress');
     expect(progress).toHaveTextContent('Assessment progress');
     expect(progress).toHaveTextContent('Evaluated');
-    expect(progress).toHaveTextContent('Review the assessment report and evidence.');
+    expect(progress).toHaveTextContent('No further assessment action is required.');
     expect(progress).toHaveTextContent('challenge, chat, workspace telemetry, room actions, commit, AI use, transcript, tests');
     expect(progress).toHaveTextContent('1 Test run');
     expect(progress).toHaveTextContent('ffffffffff');
     expect(progress).toHaveTextContent('fix the popover cleanup regression.');
     expect(progress).toHaveTextContent('Candidate fixed the regression and added focused tests.');
+    expect(progress).toHaveTextContent('Human: advance');
+    expect(progress).toHaveTextContent('Human reviewer advances after checking the source-backed report.');
+    expect(progress).toHaveTextContent('1 source ref');
     expect(progress).not.toHaveTextContent('assessment-session-progress-detail');
+    expect(progress).not.toHaveTextContent('assessment-human-decision-progress');
+    expect(progress).not.toHaveTextContent('recruiter-progress');
     expect(progress).not.toHaveTextContent('challenge-packet-progress-detail');
   });
 

@@ -361,7 +361,7 @@ describe('InterviewCard assessment progress', () => {
     );
   });
 
-  it('shows evaluated recommendation without exposing evaluator ids', () => {
+  it('shows human assessment decision before evaluator recommendation without exposing ids', () => {
     renderCard({
       id: 'interview-evaluated',
       createdAt: '2026-06-23T00:00:00.000Z',
@@ -441,18 +441,31 @@ describe('InterviewCard assessment progress', () => {
             sourceRefTypes: ['test_run'],
           }],
         },
+        humanDecision: {
+          eventId: 'assessment-human-decision-secret',
+          decision: 'advance',
+          reviewerId: 'recruiter-secret',
+          summary: 'Human reviewer advances after checking the source-backed report.',
+          notes: 'Diff and tests support the final decision.',
+          occurredAt: '2026-06-23T00:25:00.000Z',
+          sourceRefCount: 1,
+          sourceRefTypes: ['assessment_evaluation_report'],
+        },
       },
     });
 
     const progress = screen.getByTestId('interview-card-assessment-progress');
     expect(progress).toHaveTextContent('Evaluated');
     expect(progress).toHaveTextContent('DECISION');
-    expect(progress).toHaveTextContent('Strong evidence to advance');
-    expect(progress).toHaveTextContent('Candidate produced a focused source-backed fix with commit and test evidence.');
+    expect(progress).toHaveTextContent('Human: advance');
+    expect(progress).toHaveTextContent('Human reviewer advances after checking the source-backed report.');
+    expect(progress).not.toHaveTextContent('Strong evidence to advance');
     expect(progress).toHaveTextContent('EVAL');
     expect(progress).toHaveTextContent('CAUTION');
     expect(progress).toHaveTextContent('1 evaluator caution');
     expect(progress).not.toHaveTextContent('assessment-evaluation-secret');
+    expect(progress).not.toHaveTextContent('assessment-human-decision-secret');
+    expect(progress).not.toHaveTextContent('recruiter-secret');
     expect(progress).not.toHaveTextContent('assessment-session-evaluated');
     expect(progress).not.toHaveTextContent('diagnostic-card-secret');
   });

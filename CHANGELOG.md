@@ -7,6 +7,12 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Added — Human assessment decisions
+
+- Repo-task assessment sessions now support append-only `human_assessment_decision` events with exact source refs, SHA-256 content-hash validation, and provenance checks against session evidence, evaluation reports, evaluation claims, or diagnostics.
+- Recruiters can record a source-backed human assessment decision for a scheduled interview after evaluation, and progress snapshots now expose the latest human decision as the terminal assessment readout.
+- Interview cards and detail pages now prefer the explicit human decision over the AI evaluator recommendation while still preserving evaluator status, claims, and cautions.
+
 ### Added — Evidence conflict detection (criteria #2, #6, #8)
 
 - `GET /api/v1/candidates/:id/living-context/evidence-conflicts` — detects contradictory evidence across sources for a candidate. Identifies polarity conflicts (one source affirms, another contradicts) and strength divergence (same polarity but wide strength range). Returns severity classification (high/medium/low), deterministic conflict IDs, per-side assertion lists with effective strengths, and match impact descriptions. Gated by `living_context_read`.
