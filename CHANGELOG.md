@@ -15,6 +15,8 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - `reviewSessionV2.test.ts`: Add `retryable_standalone_ingestion` responder to prevent stale ingestion query collisions; add candidate row responder for `submit-challenge-response` to prevent 404 from `claimCandidateInviteTokenForAssessmentStart`.
 - `assessmentBackfill.test.ts`: Align source ref `exact_text` with `packet_json` in `review_challenge_packets` for exactText validation.
 - `persistence.ts`: Add exactText validation for review challenge packet source refs — verifies `exactText` matches stored `packet_json` when provided.
+- `assessmentIngestion.ts`: Simplify candidate resolution — use `session.candidate_id` directly instead of `resolveAssessmentCandidateId` fallback query through `scheduled_interviews`.
+- `backfillScheduled.ts`: Simplify assessment backfill queries — require `candidate_id IS NOT NULL` directly, removing redundant `scheduled_interviews` join fallback.
 
 ### Added — Human assessment decisions
 

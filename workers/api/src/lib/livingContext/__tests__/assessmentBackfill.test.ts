@@ -175,7 +175,7 @@ describe('assessments_to_living_context backfill', () => {
     sqlite.exec(`
       INSERT INTO assessment_sessions
         (id, ingestion_key, interview_id, mode, state, candidate_id, workspace_id, metadata_json, started_at, created_at, updated_at)
-      VALUES ('sess-partial-1', 'assessment:sess-partial-1', 'interview-assess-1', 'OPEN_SOURCE_BUG_FIX', 'IN_PROGRESS', NULL, 'owner-1', '{}', '${now}', '${now}', '${now}');
+      VALUES ('sess-partial-1', 'assessment:sess-partial-1', 'interview-assess-1', 'OPEN_SOURCE_BUG_FIX', 'IN_PROGRESS', 'cand-assess-1', 'owner-1', '{}', '${now}', '${now}', '${now}');
 
       INSERT INTO assessment_evidence_events
         (id, ingestion_key, session_id, sequence, kind, actor_type, actor_id, narrative, payload_json, occurred_at, created_at)
