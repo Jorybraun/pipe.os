@@ -382,14 +382,19 @@ export default function CandidateAssessmentPage({ hideHeader = false }: Candidat
   // ---------------------------------------------------------------------------
 
   if (isSubmitted || currentType === 'PROFILE_RECEIVED') {
+    const isProfileReceived = currentType === 'PROFILE_RECEIVED';
     return (
       <div data-testid="assessment-submitted" style={{ minHeight: '100vh', display: 'flex', alignItems: 'center', justifyContent: 'center', background: '#0c0c0e', padding: 24 }}>
         <ChromeMeshGrid />
         <LiquidMetalCard variant="chrome" style={{ maxWidth: 480, padding: 60, textAlign: 'center', zIndex: 1 }}>
           <CheckCircle size={64} color="#10b981" style={{ marginBottom: 32 }} />
-          <h2 style={{ fontSize: 32, fontWeight: 800, color: 'var(--pipe-text, #fff)', marginBottom: 16, letterSpacing: '-0.02em' }}>Submitted.</h2>
+          <h2 style={{ fontSize: 32, fontWeight: 800, color: 'var(--pipe-text, #fff)', marginBottom: 16, letterSpacing: '-0.02em' }}>
+            {isProfileReceived ? 'Profile received.' : 'Submitted.'}
+          </h2>
           <p style={{ fontSize: 14, color: 'var(--pipe-text-muted)', lineHeight: 1.6, fontFamily: '"Space Mono", monospace' }}>
-            Your profile has been received. PIPE will email you when your code review is ready.
+            {isProfileReceived
+              ? "You're done here for now. PIPE will email you when a source-backed code review is ready."
+              : 'Your assessment has been submitted. Thank you for your time.'}
           </p>
         </LiquidMetalCard>
       </div>

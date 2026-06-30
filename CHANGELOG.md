@@ -64,6 +64,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - CODE_REVIEW recruiter detail smoke now treats blocked no-assignment interviews as a valid assessment-progress handoff instead of requiring a completed decision summary.
 - CODE_REVIEW smoke matrix profiles now validate the standalone `/assess` boundary for CV-only candidates instead of expecting internal auto-match assignment.
 - Standalone CODE_REVIEW `/assess` runtime now fails closed to the profile-received email handoff until a source-backed repo/PR assignment already exists, instead of running matcher work or showing a candidate-facing waiting loop.
+- Candidate `/assess` profile-received handoffs now render as a finished intake state with email follow-up copy, not as a submitted code-review or personalized-challenge waiting screen.
 - Person profile next-action interview notes now carry the selected CODE_REVIEW score, score provenance, repo challenge, and assessment validity so calibration follow-ups start with the right hiring context.
 - Person profile CODE_REVIEW source-proof drawers now summarize score-report evidence with score and provenance counters instead of exposing raw score JSON.
 - Direct person profile CODE_REVIEW decisions now parse compact score-provenance counters from persisted score reports, so full-context and candidate-context fallbacks do not lose rubric/evidence/metric calibration details.

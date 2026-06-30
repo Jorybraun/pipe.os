@@ -284,8 +284,12 @@ describe('CandidateAssessmentPage', () => {
       </MemoryRouter>,
     );
 
-    expect(screen.getByTestId('assessment-submitted')).toHaveTextContent('Submitted.');
-    expect(screen.getByTestId('assessment-submitted')).toHaveTextContent('PIPE will email you when your code review is ready.');
+    expect(screen.getByTestId('assessment-submitted')).toHaveTextContent('Profile received.');
+    expect(screen.getByTestId('assessment-submitted')).toHaveTextContent("You're done here for now.");
+    expect(screen.getByTestId('assessment-submitted')).toHaveTextContent('PIPE will email you when a source-backed code review is ready.');
+    expect(screen.getByTestId('assessment-submitted')).not.toHaveTextContent('Submitted.');
+    expect(screen.getByTestId('assessment-submitted')).not.toHaveTextContent('Building your personalized challenge');
+    expect(screen.getByTestId('assessment-submitted')).not.toHaveTextContent('MATCHING IN PROGRESS');
     expect(screen.queryByTestId('waiting-for-match')).not.toBeInTheDocument();
     expect(screen.queryByTestId('code-review-challenge')).not.toBeInTheDocument();
   });
