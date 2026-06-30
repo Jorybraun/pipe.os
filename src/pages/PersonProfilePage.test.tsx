@@ -402,7 +402,8 @@ describe('PersonProfilePage', () => {
     expect(basis).toHaveTextContent('Repo challenge');
     expect(basis).toHaveTextContent('pierre/diffs PR #95');
     expect(basis).toHaveTextContent('Match proof');
-    expect(basis).toHaveTextContent('2 sources');
+    expect(basis).toHaveTextContent('Source-backed match');
+    expect(basis).not.toHaveTextContent('2 sources');
 
     const proof = screen.getByTestId('person-code-review-source-proof');
     const proofSummary = proof.querySelector('summary');

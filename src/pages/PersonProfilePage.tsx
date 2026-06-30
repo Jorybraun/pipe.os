@@ -105,10 +105,6 @@ interface CodeReviewDecisionProjection {
   basisItems: CodeReviewBasisItem[];
 }
 
-function compactCountLabel(count: number, singular: string, plural = `${singular}s`): string {
-  return `${count} ${count === 1 ? singular : plural}`;
-}
-
 function formatDate(value: string | null | undefined): string {
   if (!value) return 'Not recorded';
   const date = new Date(value);
@@ -828,7 +824,7 @@ function deriveCodeReviewDecision(
     {
       label: 'Match proof',
       value: hasMatchProvenance && matchRecord
-        ? compactCountLabel(matchRecord.sources.length, 'source')
+        ? 'Source-backed match'
         : 'Missing',
       satisfied: hasMatchProvenance,
     },

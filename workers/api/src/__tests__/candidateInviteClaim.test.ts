@@ -51,11 +51,19 @@ function fakeD1(candidate: CandidateRow): FakeD1 {
           return { results: [], success: true, meta: {} };
         },
         async run() {
-          if (sql.includes('UPDATE candidates') && sql.includes('AND invite_token = ?4')) {
+          if (sql.includes('UPDATE candidates') && sql.includes('status = CASE') && sql.includes('AND invite_token = ?4')) {
             const [claimedToken, , candidateId, inviteToken] = this.params;
             if (db.candidate.id === candidateId && db.candidate.invite_token === inviteToken) {
               db.candidate.invite_token = String(claimedToken);
               if (db.candidate.status === 'INVITED') db.candidate.status = 'IN_PROGRESS';
+              return { success: true, meta: { changes: 1 } };
+            }
+            return { success: true, meta: { changes: 0 } };
+          }
+          if (sql.includes('UPDATE candidates') && sql.includes('AND invite_token = ?4')) {
+            const [inviteToken, , candidateId, claimedToken] = this.params;
+            if (db.candidate.id === candidateId && db.candidate.invite_token === claimedToken) {
+              db.candidate.invite_token = String(inviteToken);
               return { success: true, meta: { changes: 1 } };
             }
             return { success: true, meta: { changes: 0 } };
@@ -136,5 +144,51 @@ describe('candidate invite claiming', () => {
     });
     expect(env.DB.candidate.invite_token).toBe('CLAIMED::invite-token-1');
     expect(env.DB.candidate.status).toBe('IN_PROGRESS');
+  });
+
+  it('repairs a pre-start claimed prefix instead of rejecting an invited candidate', async () => {
+    const env = buildEnv({
+      id: 'candidate-1',
+      pipeline_id: null,
+      invite_token: 'CLAIMED::invite-token-1',
+      status: 'INVITED',
+      name: 'Ada',
+    });
+
+    const response = await rpcPublic.request('/resolve-token', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ inviteToken: 'invite-token-1' }),
+    }, env);
+
+    expect(response.status).toBe(200);
+    const body = await response.json() as { sessionToken: string; status: string };
+    expect(body.sessionToken).toEqual(expect.any(String));
+    expect(body.status).toBe('INVITED');
+    expect(env.DB.candidate.invite_token).toBe('invite-token-1');
+    expect(env.DB.candidate.status).toBe('INVITED');
+  });
+
+  it('rejects the invite after the candidate has started the assessment', async () => {
+    const env = buildEnv({
+      id: 'candidate-1',
+      pipeline_id: null,
+      invite_token: 'CLAIMED::invite-token-1',
+      status: 'IN_PROGRESS',
+      name: 'Ada',
+    });
+
+    const response = await rpcPublic.request('/resolve-token', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ inviteToken: 'invite-token-1' }),
+    }, env);
+
+    expect(response.status).toBe(409);
+    await expect(response.json()).resolves.toMatchObject({
+      error: { code: 'CONFLICT' },
+      status: 'IN_PROGRESS',
+    });
+    expect(env.DB.candidate.invite_token).toBe('CLAIMED::invite-token-1');
   });
 });

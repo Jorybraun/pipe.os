@@ -566,15 +566,19 @@ async function loadLatestDeliveredAssessmentUrl(
     }
 
     const candidate = await db
-      .prepare('SELECT invite_token FROM candidates WHERE id = ?1')
+      .prepare('SELECT invite_token, status FROM candidates WHERE id = ?1')
       .bind(candidateId)
-      .first<{ invite_token: string | null }>();
+      .first<{ invite_token: string | null; status: string | null }>();
     const currentToken = candidate?.invite_token?.trim() ?? '';
     if (currentToken === `CLAIMED::${deliveredToken}`) {
+      if (candidate?.status === 'INVITED') {
+        return { url: trimmed, state: 'active', message: null };
+      }
+
       return {
         url: trimmed,
         state: 'claimed',
-        message: 'The candidate has already opened this one-use assessment link. Resend the invite if they need a fresh link.',
+        message: 'The candidate has already started this one-use assessment link. Resend the invite if they need a fresh link.',
       };
     }
     if (currentToken && currentToken !== deliveredToken) {

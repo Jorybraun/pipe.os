@@ -1439,7 +1439,7 @@ describe('InterviewDetailPage', () => {
             message: 'Candidate evidence is available for matching, but no source-backed PR task has been assigned yet.',
             lastDeliveredUrl: deliveredUrl,
             lastDeliveredUrlState: 'claimed',
-            lastDeliveredUrlMessage: 'The candidate has already opened this one-use assessment link. Resend the invite if they need a fresh link.',
+            lastDeliveredUrlMessage: 'The candidate has already started this one-use assessment link. Resend the invite if they need a fresh link.',
           },
         }),
       })

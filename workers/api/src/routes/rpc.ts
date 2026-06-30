@@ -2133,7 +2133,7 @@ rpcPublic.post('/resolve-token', async (c) => {
   }
 
   // Look up candidate by invite token
-  const candidate = await c.env.DB.prepare(
+  let candidate = await c.env.DB.prepare(
     `SELECT id, pipeline_id, status, name
      FROM candidates
      WHERE invite_token = ?1
@@ -2148,9 +2148,12 @@ rpcPublic.post('/resolve-token', async (c) => {
     }>();
 
   if (!candidate) {
-    // Check if the token was already claimed (handles sessionStorage loss scenario)
+    // Check if the token was already claimed (handles sessionStorage loss scenario).
+    // A claimed prefix is only terminal after the candidate has actually started.
+    // Legacy/pre-fix rows may have the prefix while still INVITED; repair those
+    // rows so opening a delivered link does not burn the invite.
     const claimedCandidate = await c.env.DB.prepare(
-      `SELECT id, status, name
+      `SELECT id, pipeline_id, status, name
        FROM candidates
        WHERE invite_token = ?1
        LIMIT 1`,
@@ -2158,18 +2161,41 @@ rpcPublic.post('/resolve-token', async (c) => {
       .bind(`CLAIMED::${trimmed}`)
       .first<{
         id: string;
+        pipeline_id: string | null;
         status: string;
         name: string | null;
       }>();
 
     if (claimedCandidate) {
-      return c.json({
-        error: { code: 'CONFLICT', message: 'This invite link has already been used. Please contact your recruiter for a new link.' },
-        status: claimedCandidate.status,
-      }, 409);
+      if (claimedCandidate.status === 'INVITED') {
+        const repair = await c.env.DB.prepare(
+          `UPDATE candidates
+              SET invite_token = ?1,
+                  updated_at = ?2
+            WHERE id = ?3
+              AND invite_token = ?4`,
+        )
+          .bind(trimmed, new Date().toISOString(), claimedCandidate.id, `CLAIMED::${trimmed}`)
+          .run();
+
+        if (repair.meta.changes === 1) {
+          candidate = claimedCandidate;
+        } else {
+          return c.json({
+            error: { code: 'CONFLICT', message: 'This invite link changed while being opened. Please retry the link.' },
+          }, 409);
+        }
+      } else {
+        return c.json({
+          error: { code: 'CONFLICT', message: 'This invite link has already been used. Please contact your recruiter for a new link.' },
+          status: claimedCandidate.status,
+        }, 409);
+      }
     }
 
-    return c.json({ error: { code: 'NOT_FOUND', message: 'Invalid invite token.' } }, 404);
+    if (!candidate) {
+      return c.json({ error: { code: 'NOT_FOUND', message: 'Invalid invite token.' } }, 404);
+    }
   }
 
   // Block completed candidates

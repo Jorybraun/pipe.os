@@ -975,7 +975,66 @@ describe('GET /interviews/:id detail', () => {
     });
   });
 
-  it('marks delivered assessment links as claimed when the one-use candidate token was already opened', async () => {
+  it('keeps a delivered assessment link active when a claimed prefix exists before the candidate starts', async () => {
+    seedInterviewDetailFixture();
+    const db = createMockD1(sqlite!);
+    const identity = await ensureCandidateLivingContext(db, 'candidate-1');
+    if (!identity) throw new Error('candidate living context was not created');
+    const deliveredUrl = 'http://localhost:5173/assess/pre-start-visible-token';
+
+    sqlite!.prepare(`
+      UPDATE candidates
+         SET invite_token = 'CLAIMED::pre-start-visible-token',
+             status = 'INVITED'
+       WHERE id = 'candidate-1'
+    `).run();
+    sqlite!.prepare(`
+      UPDATE scheduled_interviews
+         SET interview_type = 'CODE_REVIEW',
+             stage_id = NULL,
+             invite_link_sent_at = '2026-06-22T18:40:00.000Z',
+             email_sent_at = '2026-06-22T18:40:00.000Z'
+       WHERE id = 'interview-1'
+    `).run();
+
+    const store = new LivingContextStore(db, () => '2026-06-22T18:40:01.000Z');
+    await store.upsertInteraction({
+      ingestionKey: 'scheduled-interview:interview-1:invite-delivery:pre-start-claimed',
+      workspacePersonId: identity.workspacePersonId,
+      applicationId: identity.applicationId,
+      interactionType: 'scheduled_interview_invite_delivery',
+      externalReference: 'interview-1',
+      startedAt: '2026-06-22T18:40:00.000Z',
+      metadata: {
+        scheduledInterviewId: 'interview-1',
+        emailSent: true,
+        deliveredUrl,
+      },
+    });
+
+    const app = mountSchedulingApp();
+    const response = await app.request('/interviews/interview-1');
+    expect(response.status).toBe(200);
+    const body = await response.json() as {
+      interview: {
+        assessmentSetup: {
+          status: string;
+          lastDeliveredUrl: string | null;
+          lastDeliveredUrlState?: string | null;
+          lastDeliveredUrlMessage?: string | null;
+        };
+      };
+    };
+
+    expect(body.interview.assessmentSetup).toMatchObject({
+      status: 'waiting_for_source_backed_match',
+      lastDeliveredUrl: deliveredUrl,
+      lastDeliveredUrlState: 'active',
+      lastDeliveredUrlMessage: null,
+    });
+  });
+
+  it('marks delivered assessment links as claimed when the candidate has started the assessment', async () => {
     seedInterviewDetailFixture();
     const db = createMockD1(sqlite!);
     const identity = await ensureCandidateLivingContext(db, 'candidate-1');
@@ -984,7 +1043,8 @@ describe('GET /interviews/:id detail', () => {
 
     sqlite!.prepare(`
       UPDATE candidates
-         SET invite_token = 'CLAIMED::claimed-visible-token'
+         SET invite_token = 'CLAIMED::claimed-visible-token',
+             status = 'IN_PROGRESS'
        WHERE id = 'candidate-1'
     `).run();
     sqlite!.prepare(`
@@ -1030,7 +1090,7 @@ describe('GET /interviews/:id detail', () => {
       lastDeliveredUrl: deliveredUrl,
       lastDeliveredUrlState: 'claimed',
     });
-    expect(body.interview.assessmentSetup.lastDeliveredUrlMessage).toContain('already opened');
+    expect(body.interview.assessmentSetup.lastDeliveredUrlMessage).toContain('already started');
   });
 
   it('marks delivered assessment links as stale when they no longer match the current candidate token', async () => {

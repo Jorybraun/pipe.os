@@ -54,6 +54,8 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Fixed — Candidate repo matching
 
+- Candidate assessment links now only show as used after the candidate has actually started the assessment; pre-start claimed-prefix rows are repaired and recruiter link state now says started instead of opened.
+- Person code-review decision basis now labels match provenance as a source-backed match instead of exposing raw source-count totals, keeping the hiring-manager view quieter and less misleading.
 - Living-context code-review match panels now keep raw source proof, hyperedge alignment, repository overlays, and matcher diagnostics collapsed behind an audit drawer by default, preserving traceability without overwhelming the hiring-manager read.
 - Candidate assessment links now claim their one-use token only when the candidate starts the assessment or submits a response, so merely opening the invite page no longer burns the link.
 - Candidate waiting screens now hide unavailable profile actions, show manual status-check feedback, and avoid silent no-op buttons while evidence decomposition or repo matching is pending.
