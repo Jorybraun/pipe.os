@@ -15,7 +15,9 @@ import { apiError } from '../../middleware/errors';
 import {
   ensureContactLivingContext,
   loadContactLivingContext,
+  loadContactLivingContextSummary,
   loadWorkspacePersonLivingContext,
+  loadWorkspacePersonLivingContextSummary,
   searchSourceContent,
   requireGate,
 } from '../../lib/livingContext';
@@ -238,6 +240,47 @@ contacts.get('/:id', async (c) => {
   const personContact = await loadWorkspacePersonAsContact(db, userId, id);
   if (!personContact) return apiError(c, 'NOT_FOUND', 'Person not found.');
   return c.json({ contact: personContact });
+});
+
+// GET /:id/living-context/summary — first-paint contact living context projection
+contacts.get('/:id/living-context/summary', requireGate('living_context_read'), async (c) => {
+  const userId = c.var.userId;
+  const { id } = c.req.param();
+  const db = c.env.DB;
+
+  const contact = await db
+    .prepare('SELECT id FROM contacts WHERE id = ? AND owner_id = ?')
+    .bind(id, userId)
+    .first<{ id: string }>();
+  if (!contact) {
+    const livingContext = await loadWorkspacePersonLivingContextSummary(db, userId, id);
+    if (!livingContext) return apiError(c, 'NOT_FOUND', 'Person not found.');
+    return c.json(livingContext);
+  }
+
+  await ensureContactLivingContext(db, id);
+  const livingContext = await loadContactLivingContextSummary(db, id);
+  if (!livingContext) {
+    return c.json({
+      person: null,
+      summary: {
+        interactionCount: 0,
+        artifactCount: 0,
+        contextRecordCount: 0,
+        assertionCount: 0,
+        signalCount: 0,
+        sourceSpanCount: 0,
+      },
+      interactions: [],
+      artifacts: [],
+      contextRecords: [],
+      assertions: [],
+      signals: [],
+      relationships: [],
+    });
+  }
+
+  return c.json(livingContext);
 });
 
 // GET /:id/living-context — contact living context graph

@@ -1,4 +1,4 @@
-import { useCallback, useEffect, useState, type CSSProperties, type ReactNode } from 'react';
+import { Suspense, lazy, useCallback, useEffect, useState, type CSSProperties, type ReactNode, type SyntheticEvent } from 'react';
 import { useLocation, useNavigate, useParams } from 'react-router-dom';
 import {
   ArrowLeft,
@@ -13,7 +13,6 @@ import {
   Signal,
   UserRound,
 } from 'lucide-react';
-import { LivingContextGraph } from '../components/Candidate/LivingContextGraph';
 import { useApiClient } from '../hooks/useApiClient';
 import type {
   LivingContextArtifact,
@@ -23,6 +22,12 @@ import type {
   LivingContextRecordSourceRef,
 } from '../lib/api/types';
 import type { AssessmentProgressSnapshot } from '../lib/scheduling/types';
+
+const LivingContextGraph = lazy(() =>
+  import('../components/Candidate/LivingContextGraph').then((module) => ({
+    default: module.LivingContextGraph,
+  }))
+);
 import {
   contextRecordTitle,
   contextRecordTypeLabel,
@@ -179,6 +184,25 @@ function selectedAssessmentFromNavigationState(state: unknown): AssessmentProgre
     return null;
   }
   return state.selectedAssessment as unknown as AssessmentProgressSnapshot;
+}
+
+function codeReviewDecisionFromNavigationState(state: unknown): CodeReviewDecisionProjection | null {
+  if (!isRecord(state) || !isRecord(state.selectedCodeReviewDecision)) return null;
+  const decision = state.selectedCodeReviewDecision;
+  if (
+    typeof decision.decisionLabel !== 'string'
+    || typeof decision.recommendation !== 'string'
+    || typeof decision.recommendationDetail !== 'string'
+    || typeof decision.uncertainty !== 'string'
+    || typeof decision.uncertaintyDetail !== 'string'
+    || typeof decision.assessmentValidity !== 'string'
+    || typeof decision.assessmentValidityDetail !== 'string'
+    || typeof decision.nextAction !== 'string'
+    || typeof decision.nextActionDetail !== 'string'
+  ) {
+    return null;
+  }
+  return decision as unknown as CodeReviewDecisionProjection;
 }
 
 function livingContextFromCandidateResponse(response: unknown): LivingContextReadModel | null {
@@ -1659,35 +1683,90 @@ export default function PersonProfilePage(): JSX.Element {
   const navigationLivingContext = livingContextFromNavigationState(location.state);
   const navigationCandidateId = candidateIdFromNavigationState(location.state);
   const selectedAssessment = selectedAssessmentFromNavigationState(location.state);
+  const selectedCodeReviewDecision = codeReviewDecisionFromNavigationState(location.state);
+  const hasInitialLivingContext = navigationLivingContext !== null;
 
   const [contact, setContact] = useState<PersonContact | null>(null);
   const [livingContext, setLivingContext] = useState<LivingContextReadModel | null>(navigationLivingContext);
-  const [isLoading, setIsLoading] = useState(true);
+  const [isLoading, setIsLoading] = useState(!hasInitialLivingContext);
   const [error, setError] = useState<string | null>(null);
   const [showSourceGraph, setShowSourceGraph] = useState(false);
+  const [hasRequestedFullContext, setHasRequestedFullContext] = useState(false);
 
   const contextEndpoint = personId ? `/api/v1/contacts/${personId}/living-context` : null;
+  const summaryEndpoint = contextEndpoint ? `${contextEndpoint}/summary` : null;
   const candidateContextEndpoint = navigationCandidateId
     ? `/api/v1/candidates/${navigationCandidateId}/living-context`
     : null;
 
+  const hydrateFullContext = useCallback(async (): Promise<void> => {
+    if (!contextEndpoint || hasRequestedFullContext) return;
+    setHasRequestedFullContext(true);
+    try {
+      const fullContext = await api.get<LivingContextReadModel>(contextEndpoint);
+      if (fullContext) setLivingContext(fullContext);
+    } catch (err) {
+      if (candidateContextEndpoint) {
+        try {
+          const candidateContext = await api.get<unknown>(candidateContextEndpoint);
+          const parsedCandidateContext = livingContextFromCandidateResponse(candidateContext);
+          if (parsedCandidateContext) setLivingContext(parsedCandidateContext);
+          return;
+        } catch (candidateErr) {
+          console.error('[PersonProfilePage] Background candidate profile hydration failed:', candidateErr);
+        }
+      }
+      console.error('[PersonProfilePage] Background profile hydration failed:', err);
+      setHasRequestedFullContext(false);
+    }
+  }, [api, candidateContextEndpoint, contextEndpoint, hasRequestedFullContext]);
+
+  const handleSourceAuditToggle = useCallback((event: SyntheticEvent<HTMLDetailsElement>): void => {
+    if (event.currentTarget.open) {
+      void hydrateFullContext();
+    }
+  }, [hydrateFullContext]);
+
+  const handleSourceGraphToggle = useCallback((): void => {
+    setShowSourceGraph((value) => {
+      const nextValue = !value;
+      if (nextValue) {
+        void hydrateFullContext();
+      }
+      return nextValue;
+    });
+  }, [hydrateFullContext]);
+
   const load = useCallback(async (): Promise<void> => {
-    if (!personId || !contextEndpoint) {
+    if (!personId || !contextEndpoint || !summaryEndpoint) {
       setError('Missing person id for this profile.');
       setContact(null);
       setLivingContext(null);
       setIsLoading(false);
       return;
     }
-    setIsLoading(true);
     setError(null);
+
+    if (hasInitialLivingContext) {
+      try {
+        const contactResult = await api.get<{ contact: PersonContact }>(`/api/v1/contacts/${personId}`);
+        setContact(contactResult.contact);
+      } catch (err) {
+        console.error('[PersonProfilePage] Profile contact refresh failed:', err);
+      } finally {
+        setIsLoading(false);
+      }
+      return;
+    }
+
+    setIsLoading(true);
     try {
-      const [contactResult, contextResult] = await Promise.allSettled([
+      const [contactResult, summaryResult] = await Promise.allSettled([
         api.get<{ contact: PersonContact }>(`/api/v1/contacts/${personId}`),
-        api.get<LivingContextReadModel>(contextEndpoint),
+        api.get<LivingContextReadModel>(summaryEndpoint),
       ]);
       const loadedContact = contactResult.status === 'fulfilled' ? contactResult.value.contact : null;
-      let loadedContext = contextResult.status === 'fulfilled' ? contextResult.value : navigationLivingContext;
+      let loadedContext = summaryResult.status === 'fulfilled' ? summaryResult.value : navigationLivingContext;
       let candidateContextError: unknown = null;
       if (!loadedContext && candidateContextEndpoint) {
         try {
@@ -1699,12 +1778,12 @@ export default function PersonProfilePage(): JSX.Element {
       }
       if (!loadedContact && !loadedContext) {
         const reason = candidateContextError
-          ?? (contextResult.status === 'rejected' ? contextResult.reason : null)
+          ?? (summaryResult.status === 'rejected' ? summaryResult.reason : null)
           ?? (contactResult.status === 'rejected' ? contactResult.reason : null);
         throw reason instanceof Error ? reason : new Error('Unable to load person profile.');
       }
       setContact(loadedContact);
-      setLivingContext(loadedContext);
+      setLivingContext(loadedContext ?? navigationLivingContext);
     } catch (err) {
       setError(err instanceof Error ? err.message : 'Unable to load person profile.');
       setContact(null);
@@ -1712,7 +1791,15 @@ export default function PersonProfilePage(): JSX.Element {
     } finally {
       setIsLoading(false);
     }
-  }, [api, candidateContextEndpoint, contextEndpoint, navigationLivingContext, personId]);
+  }, [
+    api,
+    candidateContextEndpoint,
+    contextEndpoint,
+    hasInitialLivingContext,
+    navigationLivingContext,
+    personId,
+    summaryEndpoint,
+  ]);
 
   useEffect(() => {
     void load();
@@ -1738,6 +1825,7 @@ export default function PersonProfilePage(): JSX.Element {
   const evidenceArtifacts = livingContext?.artifacts.slice(0, 5) ?? [];
   const codeReviewDecision = deriveCodeReviewDecision(livingContext);
   const decision = codeReviewDecision
+    ?? selectedCodeReviewDecision
     ?? deriveWorkspaceAssessmentDecision(livingContext)
     ?? deriveSelectedWorkspaceAssessmentDecision(selectedAssessment);
   const evidenceMix = evidenceMixReadout(livingContext?.interactions ?? [], decision);
@@ -1895,7 +1983,7 @@ export default function PersonProfilePage(): JSX.Element {
         </Panel>
       </section>
 
-      <details data-testid="person-source-audit" style={SOURCE_AUDIT}>
+      <details data-testid="person-source-audit" style={SOURCE_AUDIT} onToggle={handleSourceAuditToggle}>
         <summary style={SOURCE_AUDIT_SUMMARY}>
           <span style={SOURCE_AUDIT_TITLE}>
             <FileText size={15} />
@@ -1984,18 +2072,20 @@ export default function PersonProfilePage(): JSX.Element {
           </div>
           <button
             type="button"
-            onClick={() => setShowSourceGraph((value) => !value)}
+            onClick={handleSourceGraphToggle}
             style={GRAPH_TOGGLE}
           >
             {showSourceGraph ? 'Hide graph' : 'Open graph'}
           </button>
         </div>
         {showSourceGraph && contextEndpoint ? (
-          <LivingContextGraph
-            candidateId={personId ?? profileContact.id}
-            livingContextEndpoint={contextEndpoint}
-            initialLivingContext={livingContext}
-          />
+          <Suspense fallback={<div style={SOURCE_GRAPH_PLACEHOLDER}>Loading graph...</div>}>
+            <LivingContextGraph
+              candidateId={personId ?? profileContact.id}
+              livingContextEndpoint={contextEndpoint}
+              initialLivingContext={livingContext}
+            />
+          </Suspense>
         ) : (
           <div style={SOURCE_GRAPH_PLACEHOLDER}>
             This profile is summarized from source-backed context. Open the graph when you need provenance, exact source text, or accumulated relationship evidence.

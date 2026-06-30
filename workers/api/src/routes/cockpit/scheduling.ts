@@ -33,7 +33,8 @@ import {
   ensureCandidateLivingContext,
   ensureContactLivingContext,
   loadCandidateLivingContext,
-  loadContactLivingContext,
+  loadCandidateLivingContextSummary,
+  loadContactLivingContextSummary,
   type ContextRecordConceptInput,
   type ContextRecordEntityInput,
   type ContextRecordSourceInput,
@@ -744,7 +745,7 @@ async function loadScheduledInterviewLivingContext(
 ): Promise<InterviewLivingContext> {
   if (interview.candidate_id) {
     await ensureCandidateLivingContext(db, interview.candidate_id);
-    return loadCandidateLivingContext(db, interview.candidate_id);
+    return loadCandidateLivingContextSummary(db, interview.candidate_id);
   }
 
   const recipientEmail = interview.recipient_email?.trim().toLowerCase();
@@ -774,7 +775,7 @@ async function loadScheduledInterviewLivingContext(
   if (!contactId) return null;
 
   await ensureContactLivingContext(db, contactId);
-  return loadContactLivingContext(db, contactId);
+  return loadContactLivingContextSummary(db, contactId);
 }
 
 async function loadLatestDeliveredAssessmentUrl(
@@ -1217,6 +1218,16 @@ function optionalString(value: unknown): string | undefined {
   return typeof value === 'string' && value.trim().length > 0 ? value.trim() : undefined;
 }
 
+const SCHEDULED_CODE_REVIEW_SOURCE_TEXT_MAX_LENGTH = 240;
+
+function compactScheduledCodeReviewSourceText(value: string | undefined): string | undefined {
+  if (!value) return undefined;
+  const compacted = value.replace(/\s+/g, ' ').trim();
+  if (!compacted) return undefined;
+  if (compacted.length <= SCHEDULED_CODE_REVIEW_SOURCE_TEXT_MAX_LENGTH) return compacted;
+  return `${compacted.slice(0, SCHEDULED_CODE_REVIEW_SOURCE_TEXT_MAX_LENGTH - 1).trimEnd()}...`;
+}
+
 function stringArray(value: unknown): string[] {
   return Array.isArray(value)
     ? value.filter((item): item is string => typeof item === 'string' && item.trim().length > 0)
@@ -1329,8 +1340,8 @@ function parseScheduledCodeReviewSourceRefs(value: unknown): ScheduledCodeReview
     const sourceRefType = optionalString(item.sourceRefType);
     const sourceRefId = optionalString(item.sourceRefId);
     const sourceSpanId = optionalString(item.sourceSpanId);
-    const locator = optionalString(item.locator);
-    const exactText = optionalString(item.exactText);
+    const locator = compactScheduledCodeReviewSourceText(optionalString(item.locator));
+    const exactText = compactScheduledCodeReviewSourceText(optionalString(item.exactText));
     const contentHash = optionalString(item.contentHash);
     if (sourceRefType) sourceRef.sourceRefType = sourceRefType;
     if (sourceRefId) sourceRef.sourceRefId = sourceRefId;
@@ -1356,8 +1367,8 @@ function parseScheduledCodeReviewRoleSources(value: unknown): ScheduledCodeRevie
     const sourceRefType = optionalString(item.sourceRefType);
     const sourceRefId = optionalString(item.sourceRefId);
     const sourceSpanId = optionalString(item.sourceSpanId);
-    const locator = optionalString(item.locator);
-    const exactText = optionalString(item.exactText);
+    const locator = compactScheduledCodeReviewSourceText(optionalString(item.locator));
+    const exactText = compactScheduledCodeReviewSourceText(optionalString(item.exactText));
     const contentHash = optionalString(item.contentHash);
     if (sourceRefType) roleSource.sourceRefType = sourceRefType;
     if (sourceRefId) roleSource.sourceRefId = sourceRefId;
@@ -3608,11 +3619,27 @@ function lineCount(value: string): number {
   return Math.max(1, value.split('\n').length);
 }
 
+const tableExistsCache = new WeakMap<D1Database, Map<string, Promise<boolean>>>();
+
 async function tableExists(db: D1Database, tableName: string): Promise<boolean> {
-  const row = await db.prepare(
+  let dbCache = tableExistsCache.get(db);
+  if (!dbCache) {
+    dbCache = new Map<string, Promise<boolean>>();
+    tableExistsCache.set(db, dbCache);
+  }
+  const cached = dbCache.get(tableName);
+  if (cached) return cached;
+
+  const exists = db.prepare(
     `SELECT name FROM sqlite_master WHERE type = 'table' AND name = ?1`,
-  ).bind(tableName).first<{ name: string }>();
-  return Boolean(row);
+  ).bind(tableName).first<{ name: string }>()
+    .then((row) => Boolean(row))
+    .catch((error: unknown) => {
+      dbCache?.delete(tableName);
+      throw error;
+    });
+  dbCache.set(tableName, exists);
+  return exists;
 }
 
 async function hasScheduledAssessmentProgressSchema(db: D1Database): Promise<boolean> {
@@ -5057,7 +5084,7 @@ schedulingAuth.get('/interviews/:id', async (c) => {
 
   if (!interview) return apiError(c, 'NOT_FOUND', 'Interview not found.');
 
-  const transcriptArtifact = await db
+  const transcriptArtifactPromise = db
     .prepare(
       `SELECT id, scheduled_interview_id, status, transcript_json, error_message,
               created_at, updated_at
@@ -5077,96 +5104,121 @@ schedulingAuth.get('/interviews/:id', async (c) => {
       updated_at: string;
     }>();
 
-  const hasWorkspaceSessions = await tableExists(db, 'dev_container_sessions');
-  const workspaceSessionSelect = hasWorkspaceSessions
-    ? `dcs.status AS workspace_status,
-              dcs.error_message AS workspace_error_message,
-              dcs.expires_at AS workspace_expires_at,
-              dcs.updated_at AS workspace_updated_at,
-              dcs.repo_git_url AS workspace_repo_git_url,
-              dcs.base_commit_sha AS workspace_base_commit_sha`
-    : `NULL AS workspace_status,
-              NULL AS workspace_error_message,
-              NULL AS workspace_expires_at,
-              NULL AS workspace_updated_at,
-              NULL AS workspace_repo_git_url,
-              NULL AS workspace_base_commit_sha`;
-  const workspaceSessionJoin = hasWorkspaceSessions
-    ? `LEFT JOIN dev_container_sessions dcs ON dcs.id = (
-         SELECT latest_dcs.id
-           FROM dev_container_sessions latest_dcs
-          WHERE latest_dcs.meeting_id = m.id
-             OR latest_dcs.meeting_room_id = mr.id
-          ORDER BY latest_dcs.updated_at DESC, latest_dcs.created_at DESC
-          LIMIT 1
-       )`
-    : '';
+  const linkedMeetingPromise = (async () => {
+    const hasWorkspaceSessions = await tableExists(db, 'dev_container_sessions');
+    const workspaceSessionSelect = hasWorkspaceSessions
+      ? `dcs.status AS workspace_status,
+                dcs.error_message AS workspace_error_message,
+                dcs.expires_at AS workspace_expires_at,
+                dcs.updated_at AS workspace_updated_at,
+                dcs.repo_git_url AS workspace_repo_git_url,
+                dcs.base_commit_sha AS workspace_base_commit_sha`
+      : `NULL AS workspace_status,
+                NULL AS workspace_error_message,
+                NULL AS workspace_expires_at,
+                NULL AS workspace_updated_at,
+                NULL AS workspace_repo_git_url,
+                NULL AS workspace_base_commit_sha`;
+    const workspaceSessionJoin = hasWorkspaceSessions
+      ? `LEFT JOIN dev_container_sessions dcs ON dcs.id = (
+           SELECT latest_dcs.id
+             FROM dev_container_sessions latest_dcs
+            WHERE latest_dcs.meeting_id = m.id
+               OR latest_dcs.meeting_room_id = mr.id
+            ORDER BY latest_dcs.updated_at DESC, latest_dcs.created_at DESC
+            LIMIT 1
+         )`
+      : '';
 
-  const linkedMeeting = await db
-    .prepare(
-      `SELECT m.id, m.title, m.description, m.status, m.scheduled_at,
-              m.started_at, m.ended_at, m.duration_secs, m.meeting_url,
-              m.meeting_type, m.scheduling_provider, m.external_event_id,
-              m.transcript_status, m.transcript_summary,
-              m.transcript_json, m.transcript_analysis_json, m.transcript_error,
-              m.recording_r2_key, m.created_at, m.updated_at,
-              mr.id AS room_id, mr.session_id, mr.status AS room_status,
-              ${workspaceSessionSelect}
-       FROM meetings m
-       LEFT JOIN meeting_rooms mr ON mr.meeting_id = m.id
-       ${workspaceSessionJoin}
-       WHERE m.scheduled_interview_id = ? AND m.owner_id = ?
-       ORDER BY m.created_at DESC
-       LIMIT 1`
+    return db
+      .prepare(
+        `SELECT m.id, m.title, m.description, m.status, m.scheduled_at,
+                m.started_at, m.ended_at, m.duration_secs, m.meeting_url,
+                m.meeting_type, m.scheduling_provider, m.external_event_id,
+                m.transcript_status, m.transcript_summary,
+                m.transcript_json, m.transcript_analysis_json, m.transcript_error,
+                m.recording_r2_key, m.created_at, m.updated_at,
+                mr.id AS room_id, mr.session_id, mr.status AS room_status,
+                ${workspaceSessionSelect}
+         FROM meetings m
+         LEFT JOIN meeting_rooms mr ON mr.meeting_id = m.id
+         ${workspaceSessionJoin}
+         WHERE m.scheduled_interview_id = ? AND m.owner_id = ?
+         ORDER BY m.created_at DESC
+         LIMIT 1`
+      )
+      .bind(id, userId)
+      .first<{
+        id: string;
+        title: string;
+        description: string | null;
+        status: string;
+        scheduled_at: string | null;
+        started_at: string | null;
+        ended_at: string | null;
+        duration_secs: number | null;
+        meeting_url: string | null;
+        meeting_type: string;
+        scheduling_provider: string | null;
+        external_event_id: string | null;
+        transcript_status: string;
+        transcript_summary: string | null;
+        transcript_json: string | null;
+        transcript_analysis_json: string | null;
+        transcript_error: string | null;
+        recording_r2_key: string | null;
+        created_at: string;
+        updated_at: string;
+        room_id: string | null;
+        session_id: string | null;
+        room_status: string | null;
+        workspace_status: string | null;
+        workspace_error_message: string | null;
+        workspace_expires_at: string | null;
+        workspace_updated_at: string | null;
+        workspace_repo_git_url: string | null;
+        workspace_base_commit_sha: string | null;
+      }>();
+  })();
+
+  const livingContextPromise = loadScheduledInterviewLivingContext(db, userId, interview);
+  const relatedEvidenceInterviewsPromise = livingContextPromise.then((livingContext) =>
+    loadRelatedEvidenceInterviews(
+      db,
+      userId,
+      interview.id,
+      livingContext,
     )
-    .bind(id, userId)
-    .first<{
-      id: string;
-      title: string;
-      description: string | null;
-      status: string;
-      scheduled_at: string | null;
-      started_at: string | null;
-      ended_at: string | null;
-      duration_secs: number | null;
-      meeting_url: string | null;
-      meeting_type: string;
-      scheduling_provider: string | null;
-      external_event_id: string | null;
-      transcript_status: string;
-      transcript_summary: string | null;
-      transcript_json: string | null;
-      transcript_analysis_json: string | null;
-      transcript_error: string | null;
-      recording_r2_key: string | null;
-      created_at: string;
-      updated_at: string;
-      room_id: string | null;
-      session_id: string | null;
-      room_status: string | null;
-      workspace_status: string | null;
-      workspace_error_message: string | null;
-      workspace_expires_at: string | null;
-      workspace_updated_at: string | null;
-      workspace_repo_git_url: string | null;
-      workspace_base_commit_sha: string | null;
-    }>();
-
-  const livingContext = await loadScheduledInterviewLivingContext(db, userId, interview);
-  const relatedEvidenceInterviews = await loadRelatedEvidenceInterviews(
-    db,
-    userId,
-    interview.id,
-    livingContext,
   );
-  const codeReviewMatch = await loadScheduledCodeReviewMatchDetail(db, interview);
-  const codeReviewScore = await loadScheduledCodeReviewScoreSummary(db, interview);
-  const assessmentProgress = await loadScheduledAssessmentProgress(db, interview.id);
-  const assessmentInviteLink = await loadLatestDeliveredAssessmentUrl(db, interview.id, interview.candidate_id)
-    ?? await loadCandidateAssessmentInviteLinkFromToken(db, c.env, {
-      interviewType: interview.interview_type,
-      candidateId: interview.candidate_id,
-    });
+  const codeReviewMatchPromise = loadScheduledCodeReviewMatchDetail(db, interview);
+  const codeReviewScorePromise = loadScheduledCodeReviewScoreSummary(db, interview);
+  const assessmentProgressPromise = loadScheduledAssessmentProgress(db, interview.id);
+  const assessmentInviteLinkPromise = (async () =>
+    await loadLatestDeliveredAssessmentUrl(db, interview.id, interview.candidate_id)
+      ?? await loadCandidateAssessmentInviteLinkFromToken(db, c.env, {
+        interviewType: interview.interview_type,
+        candidateId: interview.candidate_id,
+      }))();
+
+  const [
+    transcriptArtifact,
+    linkedMeeting,
+    livingContext,
+    relatedEvidenceInterviews,
+    codeReviewMatch,
+    codeReviewScore,
+    assessmentProgress,
+    assessmentInviteLink,
+  ] = await Promise.all([
+    transcriptArtifactPromise,
+    linkedMeetingPromise,
+    livingContextPromise,
+    relatedEvidenceInterviewsPromise,
+    codeReviewMatchPromise,
+    codeReviewScorePromise,
+    assessmentProgressPromise,
+    assessmentInviteLinkPromise,
+  ]);
 
   return c.json({
     interview: {

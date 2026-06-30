@@ -165,6 +165,61 @@ describe('GET /:id/living-context', () => {
     });
   });
 
+  it('returns a lightweight person summary without loading the full graph arrays', async () => {
+    const app = createApp();
+
+    const response = await app.request('/contact-1/living-context/summary');
+
+    expect(response.status).toBe(200);
+    const body = await response.json() as {
+      person: {
+        personId: string;
+        workspacePersonId: string;
+        displayName: string | null;
+        primaryEmail: string | null;
+        roles: Array<{ roleType: string; label: string | null }>;
+      } | null;
+      summary: {
+        interactionCount: number;
+        artifactCount: number;
+        contextRecordCount: number;
+        assertionCount: number;
+        signalCount: number;
+        sourceSpanCount: number;
+      };
+      interactions: unknown[];
+      artifacts: unknown[];
+      contextRecords: unknown[];
+      assertions: unknown[];
+      signals: unknown[];
+      relationships: unknown[];
+    };
+
+    expect(body.person).toMatchObject({
+      displayName: 'Ada Contact',
+      primaryEmail: 'ada@example.com',
+      roles: [expect.objectContaining({
+        roleType: 'candidate',
+        label: 'Systems Lead',
+      })],
+    });
+    expect(body.summary).toEqual({
+      interactionCount: 0,
+      artifactCount: 0,
+      contextRecordCount: 0,
+      assertionCount: 0,
+      signalCount: 0,
+      sourceSpanCount: 0,
+    });
+    expect(body.interactions).toEqual([]);
+    expect(body.artifacts).toEqual([]);
+    expect(body.contextRecords).toEqual([]);
+    expect(body.assertions).toEqual([]);
+    expect(body.signals).toEqual([]);
+    expect(body.relationships).toEqual([]);
+    expect(sqlite.prepare('SELECT COUNT(*) AS count FROM people').get()).toEqual({ count: 1 });
+  });
+
   it('keeps a contact living-context read attached after a same-email roleless candidate is created', async () => {
     sqlite.exec(`
       CREATE TABLE pipelines (

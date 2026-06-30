@@ -558,6 +558,38 @@ function makeContact(): PersonContact {
   };
 }
 
+function makeSelectedCodeReviewDecision(): unknown {
+  return {
+    decisionLabel: 'Code-review decision',
+    sessionId: 'review-session-1',
+    outcome: 'Candidate requested changes',
+    recommendation: 'Advance with focused probe',
+    recommendationDetail: 'Use the source-backed review as a positive signal, then calibrate the remaining uncertainty.',
+    uncertainty: 'Focused calibration needed',
+    uncertaintyDetail: 'Probe timing trade-offs before treating the score as final hiring signal.',
+    missingContext: ['Probe timing trade-offs.'],
+    assessmentValidity: 'Usable source-backed signal',
+    assessmentValidityDetail: 'Score, selected PR, and match proof are present.',
+    nextAction: 'Schedule focused technical calibration',
+    nextActionDetail: 'Use the next conversation to pressure-test the weakest review dimension.',
+    scoreLabel: '82/100 Strong',
+    challengeLabel: 'acme/widgets PR #42',
+    challengeUrl: 'https://github.com/acme/widgets/pull/42',
+    narrative: 'Candidate found the missing retry test and defended the review.',
+    strengths: ['Found the release-blocking risk.'],
+    probes: ['Probe timing trade-offs.'],
+    proofCount: 4,
+    proofItems: [
+      { id: 'assignment', label: 'assignment', text: 'acme/widgets PR #42' },
+      { id: 'score', label: 'score report', text: '82/100 Strong' },
+    ],
+    basisItems: [
+      { label: 'Score report', value: 'Scored', satisfied: true },
+      { label: 'Match proof', value: 'Source-backed match', satisfied: true },
+    ],
+  };
+}
+
 async function flushAsyncUpdates(): Promise<void> {
   await act(async () => {
     await Promise.resolve();
@@ -594,6 +626,94 @@ function renderPageWithoutPersonId(): void {
 describe('PersonProfilePage', () => {
   beforeEach(() => {
     mocks.api.get.mockReset();
+  });
+
+  it('renders navigation living context immediately without automatic full graph hydration', async () => {
+    const initialContext = makeLivingContext();
+
+    mocks.api.get
+      .mockResolvedValueOnce({ contact: makeContact() });
+
+    renderPage({ livingContext: initialContext, selectedAssessment: makeSelectedAssessmentProgress() });
+    await flushAsyncUpdates();
+
+    expect(screen.queryByText('Loading person context...')).not.toBeInTheDocument();
+    expect(screen.getByRole('heading', { name: 'Ada Reviewer' })).toBeInTheDocument();
+    const cockpit = screen.getByTestId('person-decision-cockpit');
+    expect(cockpit).toHaveTextContent('Decision cockpit');
+    expect(cockpit).toHaveTextContent('Advance with focused probe');
+    expect(screen.getByTestId('person-code-review-decision')).toHaveTextContent('Code-review decision');
+    expect(mocks.api.get).toHaveBeenCalledWith('/api/v1/contacts/person-1');
+    expect(mocks.api.get).not.toHaveBeenCalledWith('/api/v1/contacts/person-1/living-context');
+  });
+
+  it('renders a selected code-review decision from navigation without full graph hydration', async () => {
+    const summaryContext = makeLivingContext();
+    summaryContext.interactions = [];
+    summaryContext.artifacts = [];
+    summaryContext.contextRecords = [];
+    summaryContext.assertions = [];
+    summaryContext.signals = [];
+    summaryContext.relationships = [];
+
+    mocks.api.get
+      .mockResolvedValueOnce({ contact: makeContact() });
+
+    renderPage({
+      livingContext: summaryContext,
+      selectedCodeReviewDecision: makeSelectedCodeReviewDecision(),
+    });
+    await flushAsyncUpdates();
+
+    expect(screen.queryByText('Loading person context...')).not.toBeInTheDocument();
+    const cockpit = screen.getByTestId('person-decision-cockpit');
+    expect(cockpit).toHaveTextContent('Advance with focused probe');
+    expect(cockpit).toHaveTextContent('Usable source-backed signal');
+    const decision = screen.getByTestId('person-code-review-decision');
+    expect(decision).toHaveTextContent('82/100 Strong');
+    expect(decision).toHaveTextContent('acme/widgets PR #42');
+    expect(mocks.api.get).not.toHaveBeenCalledWith('/api/v1/contacts/person-1/living-context');
+  });
+
+  it('renders direct profile loads from a lightweight summary and hydrates full graph on audit open', async () => {
+    const summaryContext = makeLivingContext();
+    summaryContext.interactions = [];
+    summaryContext.artifacts = [];
+    summaryContext.contextRecords = [];
+    summaryContext.assertions = [];
+    summaryContext.signals = [];
+    summaryContext.relationships = [];
+    let resolveContext: (value: LivingContextReadModel) => void = () => undefined;
+    const pendingContext = new Promise<LivingContextReadModel>((resolve) => {
+      resolveContext = resolve;
+    });
+
+    mocks.api.get
+      .mockResolvedValueOnce({ contact: makeContact() })
+      .mockResolvedValueOnce(summaryContext)
+      .mockReturnValueOnce(pendingContext);
+
+    renderPage();
+    await flushAsyncUpdates();
+
+    expect(screen.queryByText('Loading person context...')).not.toBeInTheDocument();
+    expect(screen.getByRole('heading', { name: 'Ada Reviewer' })).toBeInTheDocument();
+    expect(screen.getByText('Source-backed profile')).toBeInTheDocument();
+    expect(mocks.api.get).toHaveBeenCalledWith('/api/v1/contacts/person-1');
+    expect(mocks.api.get).toHaveBeenCalledWith('/api/v1/contacts/person-1/living-context/summary');
+    expect(mocks.api.get).not.toHaveBeenCalledWith('/api/v1/contacts/person-1/living-context');
+
+    const audit = screen.getByTestId('person-source-audit') as HTMLDetailsElement;
+    await act(async () => {
+      audit.open = true;
+      fireEvent(audit, new Event('toggle'));
+    });
+    expect(mocks.api.get).toHaveBeenCalledWith('/api/v1/contacts/person-1/living-context');
+
+    await act(async () => {
+      resolveContext(makeLivingContext());
+      await pendingContext;
+    });
   });
 
   it('leads source-backed code-review profiles with a concise hiring decision snapshot', async () => {

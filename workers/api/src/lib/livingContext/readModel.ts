@@ -160,7 +160,7 @@ export interface LivingContextReadModel {
   person: {
     personId: string;
     workspacePersonId: string;
-    applicationId: string;
+    applicationId: string | null;
     displayName: string | null;
     primaryEmail: string | null;
     primaryPhone: string | null;
@@ -361,13 +361,43 @@ export interface SourceContentSearchResult {
 interface IdentityRow {
   person_id: string;
   workspace_person_id: string;
-  application_id: string;
+  application_id: string | null;
   display_name: string | null;
   primary_email: string | null;
   primary_phone: string | null;
   relationship_summary: string | null;
   application_status: string | null;
   pipeline_id: string | null;
+}
+
+interface SummaryIdentityRow extends IdentityRow {
+  legacy_candidate_id: string | null;
+}
+
+interface SummaryRoleRow {
+  id: string;
+  application_id: string | null;
+  role_type: string;
+  label: string | null;
+  attributes_json: string;
+  active_from: string | null;
+  active_to: string | null;
+}
+
+interface SummaryCountsRow {
+  interaction_count: number;
+  artifact_count: number;
+  context_record_count: number;
+  assertion_count: number;
+  signal_count: number;
+  source_span_count: number;
+}
+
+interface SummaryApplicationRow {
+  application_id: string;
+  application_status: string | null;
+  pipeline_id: string | null;
+  legacy_candidate_id: string | null;
 }
 
 interface InteractionRow {
@@ -566,6 +596,50 @@ function parseRecord(raw: string | null): Record<string, unknown> {
   }
 }
 
+function isMissingTableError(error: unknown, tableName: string): boolean {
+  return String(error instanceof Error ? error.message : error).includes(`no such table: ${tableName}`);
+}
+
+async function loadLatestSummaryApplication(
+  db: D1Database,
+  workspacePersonId: string,
+): Promise<SummaryApplicationRow | null> {
+  try {
+    return await db.prepare(
+      `SELECT id AS application_id,
+              status AS application_status,
+              pipeline_id,
+              legacy_candidate_id
+         FROM applications
+        WHERE workspace_person_id = ?1
+        ORDER BY updated_at DESC, id DESC
+        LIMIT 1`,
+    ).bind(workspacePersonId).first<SummaryApplicationRow>();
+  } catch (error) {
+    if (isMissingTableError(error, 'applications')) return null;
+    throw error;
+  }
+}
+
+async function countCandidateMatchContextRecords(
+  db: D1Database,
+  candidateId: string,
+): Promise<number> {
+  try {
+    const row = await db.prepare(
+      `SELECT COUNT(*) AS count
+         FROM context_records cr
+         JOIN match_runs mr ON mr.id = cr.scope_id
+        WHERE cr.scope_type = 'match_run'
+          AND mr.candidate_id = ?1`,
+    ).bind(candidateId).first<{ count: number }>();
+    return row?.count ?? 0;
+  } catch (error) {
+    if (isMissingTableError(error, 'match_runs')) return 0;
+    throw error;
+  }
+}
+
 function parseUnknown(raw: string | null): unknown {
   if (!raw) return null;
   try {
@@ -667,6 +741,32 @@ export async function loadCandidateLivingContext(
   return loadLivingContextByWorkspacePerson(db, identity);
 }
 
+export async function loadCandidateLivingContextSummary(
+  db: D1Database,
+  candidateId: string,
+): Promise<LivingContextReadModel | null> {
+  const identity = await db.prepare(
+    `SELECT p.id AS person_id,
+            wp.id AS workspace_person_id,
+            app.id AS application_id,
+            p.display_name,
+            p.primary_email,
+            p.primary_phone,
+            wp.relationship_summary,
+            app.status AS application_status,
+            app.pipeline_id,
+            app.legacy_candidate_id
+       FROM applications app
+       JOIN workspace_people wp ON wp.id = app.workspace_person_id
+       JOIN people p ON p.id = wp.person_id
+      WHERE app.legacy_candidate_id = ?1
+      LIMIT 1`,
+  ).bind(candidateId).first<SummaryIdentityRow>();
+  if (!identity) return null;
+
+  return loadLivingContextSummaryByWorkspacePerson(db, identity);
+}
+
 export async function loadContactLivingContext(
   db: D1Database,
   contactId: string,
@@ -690,6 +790,39 @@ export async function loadContactLivingContext(
   if (!identity) return null;
 
   return loadLivingContextByWorkspacePerson(db, identity);
+}
+
+export async function loadContactLivingContextSummary(
+  db: D1Database,
+  contactId: string,
+): Promise<LivingContextReadModel | null> {
+  const identity = await db.prepare(
+    `SELECT p.id AS person_id,
+            wp.id AS workspace_person_id,
+            NULL AS application_id,
+            p.display_name,
+            p.primary_email,
+            p.primary_phone,
+            wp.relationship_summary,
+            NULL AS application_status,
+            NULL AS pipeline_id,
+            NULL AS legacy_candidate_id
+       FROM workspace_people wp
+       JOIN people p ON p.id = wp.person_id
+       JOIN contacts c ON c.id = ?1
+      WHERE json_extract(wp.context_json, '$.contactId') = ?1
+      LIMIT 1`,
+  ).bind(contactId).first<SummaryIdentityRow>();
+  if (!identity) return null;
+
+  const application = await loadLatestSummaryApplication(db, identity.workspace_person_id);
+  return loadLivingContextSummaryByWorkspacePerson(db, {
+    ...identity,
+    application_id: application?.application_id ?? null,
+    application_status: application?.application_status ?? null,
+    pipeline_id: application?.pipeline_id ?? null,
+    legacy_candidate_id: application?.legacy_candidate_id ?? null,
+  });
 }
 
 export async function loadWorkspacePersonLivingContext(
@@ -716,6 +849,114 @@ export async function loadWorkspacePersonLivingContext(
   if (!identity) return null;
 
   return loadLivingContextByWorkspacePerson(db, identity);
+}
+
+export async function loadWorkspacePersonLivingContextSummary(
+  db: D1Database,
+  workspaceId: string,
+  personId: string,
+): Promise<LivingContextReadModel | null> {
+  const identity = await db.prepare(
+    `SELECT p.id AS person_id,
+            wp.id AS workspace_person_id,
+            NULL AS application_id,
+            p.display_name,
+            p.primary_email,
+            p.primary_phone,
+            wp.relationship_summary,
+            NULL AS application_status,
+            NULL AS pipeline_id,
+            NULL AS legacy_candidate_id
+       FROM workspace_people wp
+       JOIN people p ON p.id = wp.person_id
+      WHERE wp.workspace_id = ?1
+        AND p.id = ?2
+      LIMIT 1`,
+  ).bind(workspaceId, personId).first<SummaryIdentityRow>();
+  if (!identity) return null;
+
+  const application = await loadLatestSummaryApplication(db, identity.workspace_person_id);
+  return loadLivingContextSummaryByWorkspacePerson(db, {
+    ...identity,
+    application_id: application?.application_id ?? null,
+    application_status: application?.application_status ?? null,
+    pipeline_id: application?.pipeline_id ?? null,
+    legacy_candidate_id: application?.legacy_candidate_id ?? null,
+  });
+}
+
+async function loadLivingContextSummaryByWorkspacePerson(
+  db: D1Database,
+  identity: SummaryIdentityRow,
+): Promise<LivingContextReadModel> {
+  const [rolesResult, counts, matchContextRecordCount] = await Promise.all([
+    db.prepare(
+      `SELECT id, application_id, role_type, label, attributes_json, active_from, active_to
+         FROM person_roles
+        WHERE workspace_person_id = ?1
+        ORDER BY created_at, id`,
+    ).bind(identity.workspace_person_id).all<SummaryRoleRow>(),
+    db.prepare(
+      `SELECT
+          (SELECT COUNT(*) FROM interactions WHERE workspace_person_id = ?1) AS interaction_count,
+          (SELECT COUNT(*) FROM artifacts WHERE workspace_person_id = ?1) AS artifact_count,
+          (SELECT COUNT(*) FROM context_records WHERE workspace_person_id = ?1) AS context_record_count,
+          (SELECT COUNT(*) FROM semantic_assertions WHERE workspace_person_id = ?1) AS assertion_count,
+          (SELECT COUNT(*) FROM signal_snapshots WHERE workspace_person_id = ?1) AS signal_count,
+          (
+            SELECT COUNT(*)
+              FROM source_spans ss
+              JOIN artifact_versions av ON av.id = ss.artifact_version_id
+              JOIN artifacts a ON a.id = av.artifact_id
+             WHERE a.workspace_person_id = ?1
+               AND av.version_number = (
+                 SELECT MAX(latest.version_number)
+                   FROM artifact_versions latest
+                  WHERE latest.artifact_id = a.id
+               )
+          ) AS source_span_count`,
+    ).bind(identity.workspace_person_id).first<SummaryCountsRow>(),
+    identity.legacy_candidate_id
+      ? countCandidateMatchContextRecords(db, identity.legacy_candidate_id)
+      : Promise.resolve(0),
+  ]);
+
+  return {
+    person: {
+      personId: identity.person_id,
+      workspacePersonId: identity.workspace_person_id,
+      applicationId: identity.application_id,
+      displayName: identity.display_name,
+      primaryEmail: identity.primary_email,
+      primaryPhone: identity.primary_phone,
+      relationshipSummary: identity.relationship_summary,
+      applicationStatus: identity.application_status,
+      pipelineId: identity.pipeline_id,
+      roles: (rolesResult.results ?? []).map((row) => ({
+        id: row.id,
+        roleType: row.role_type,
+        label: row.label,
+        applicationId: row.application_id,
+        attributes: parseRecord(row.attributes_json),
+        activeFrom: row.active_from,
+        activeTo: row.active_to,
+      })),
+    },
+    summary: {
+      interactionCount: counts?.interaction_count ?? 0,
+      artifactCount: counts?.artifact_count ?? 0,
+      contextRecordCount: (counts?.context_record_count ?? 0) + matchContextRecordCount,
+      assertionCount: counts?.assertion_count ?? 0,
+      signalCount: counts?.signal_count ?? 0,
+      sourceSpanCount: counts?.source_span_count ?? 0,
+    },
+    interactions: [],
+    artifacts: [],
+    contextRecords: [],
+    assertions: [],
+    signals: [],
+    relationships: [],
+  };
 }
 
 export async function loadRoleContextLivingContext(

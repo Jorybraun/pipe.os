@@ -3004,6 +3004,63 @@ export default function InterviewDetailPage(): JSX.Element {
       detail: codeReviewMatch?.summary ?? 'source trail appears after a match is selected',
     },
   ];
+  const selectedCodeReviewProofItems = [
+    {
+      id: 'assignment',
+      label: 'assignment',
+      text: codeReviewExplanation.selectedChallenge,
+    },
+    {
+      id: 'score',
+      label: 'score report',
+      text: codeReviewScoreValue ?? codeReviewScoreDetail ?? null,
+    },
+    {
+      id: 'match-proof',
+      label: 'match proof',
+      text: codeReviewExplanation.proofSummary,
+    },
+    {
+      id: 'calibration',
+      label: 'calibration',
+      text: codeReviewDecisionRisk.uncertainty.detail,
+    },
+  ].filter((item): item is { id: string; label: string; text: string } => Boolean(item.text));
+  const selectedCodeReviewDecision = isCodeReviewInterview && (codeReviewMatch || codeReviewScore || codeReviewSubmission)
+    ? {
+        decisionLabel: 'Code-review decision',
+        sessionId: codeReviewScore?.reviewSessionId ?? null,
+        outcome: codeReviewOutcome,
+        recommendation: codeReviewNextStep.value,
+        recommendationDetail: codeReviewNextStep.detail,
+        uncertainty: codeReviewDecisionRisk.uncertainty.value,
+        uncertaintyDetail: codeReviewDecisionRisk.uncertainty.detail,
+        missingContext: codeReviewDecisionRisk.missingContext,
+        assessmentValidity: codeReviewAssessmentValidity.value,
+        assessmentValidityDetail: codeReviewAssessmentValidity.detail,
+        nextAction: codeReviewNextStep.value,
+        nextActionDetail: codeReviewNextStep.detail,
+        scoreLabel: codeReviewScoreValue,
+        challengeLabel: codeReviewExplanation.selectedChallenge,
+        challengeUrl: interview.githubRepoUrl && typeof interview.githubPrNumber === 'number'
+          ? `${interview.githubRepoUrl.replace(/\/$/, '')}/pull/${interview.githubPrNumber}`
+          : interview.githubRepoUrl,
+        narrative: codeReviewScoreDetail ?? codeReviewExplanation.whyThisChallenge,
+        strengths: codeReviewScore?.strengths.slice(0, 2) ?? [],
+        probes: codeReviewScore?.growthAreas.slice(0, 2) ?? codeReviewDecisionRisk.missingContext.slice(0, 2),
+        proofCount: Math.max(
+          selectedCodeReviewProofItems.length,
+          matchHyperedges.length,
+          codeReviewMatch?.roleSources.length ?? 0,
+        ),
+        proofItems: selectedCodeReviewProofItems,
+        basisItems: codeReviewSignalBasis.map((item) => ({
+          label: item.label,
+          value: item.value,
+          satisfied: item.satisfied,
+        })),
+      }
+    : null;
   const codeReviewHiringReadout = [
     {
       label: 'Decision',
@@ -3043,6 +3100,7 @@ export default function InterviewDetailPage(): JSX.Element {
           livingContext: interview.livingContext ?? undefined,
           candidateId: interview.candidateId ?? undefined,
           selectedAssessment: assessmentProgress ?? undefined,
+          selectedCodeReviewDecision: selectedCodeReviewDecision ?? undefined,
         }
       : undefined;
     navigate(personProfilePath, {

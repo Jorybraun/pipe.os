@@ -1,6 +1,6 @@
 import { act, fireEvent, render, screen } from '@testing-library/react';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
-import { MemoryRouter, Route, Routes, useParams } from 'react-router-dom';
+import { MemoryRouter, Route, Routes, useLocation, useParams } from 'react-router-dom';
 import InterviewDetailPage from './InterviewDetailPage';
 import type { ScheduledInterviewDetail } from '../lib/scheduling/types';
 
@@ -65,7 +65,13 @@ function makeInterview(
 
 function PersonRouteEcho(): JSX.Element {
   const { personId } = useParams<{ personId: string }>();
-  return <div data-testid="person-route-echo">{personId}</div>;
+  const location = useLocation();
+  return (
+    <div>
+      <div data-testid="person-route-echo">{personId}</div>
+      <pre data-testid="person-route-state">{JSON.stringify(location.state)}</pre>
+    </div>
+  );
 }
 
 function renderDetail(): void {
@@ -2369,6 +2375,86 @@ describe('InterviewDetailPage', () => {
     fireEvent.click(screen.getAllByTestId('interview-open-person-profile')[0]!);
 
     expect(screen.getByTestId('person-route-echo')).toHaveTextContent('person-graph-1');
+  });
+
+  it('passes a compact code-review decision when opening the person profile', async () => {
+    mocks.api.get.mockResolvedValueOnce({
+      interview: makeInterview({
+        interviewType: 'CODE_REVIEW',
+        candidateId: 'candidate-1',
+        contactId: null,
+        githubRepoUrl: 'https://github.com/acme/widgets',
+        githubPrNumber: 42,
+        livingContext: {
+          person: {
+            personId: 'person-code-review-1',
+            workspacePersonId: 'workspace-person-1',
+            applicationId: 'application-1',
+            displayName: 'Ada Candidate',
+            primaryEmail: 'ada@example.com',
+            primaryPhone: null,
+            relationshipSummary: null,
+            applicationStatus: null,
+            pipelineId: null,
+            roles: [],
+          },
+          summary: {
+            interactionCount: 18,
+            artifactCount: 19,
+            contextRecordCount: 24,
+            assertionCount: 18,
+            signalCount: 0,
+            sourceSpanCount: 25,
+          },
+          interactions: [],
+          artifacts: [],
+          contextRecords: [],
+          assertions: [],
+          signals: [],
+          relationships: [],
+        },
+        codeReviewMatch: {
+          status: 'MATCHED',
+          matchRunId: 'match-run-1',
+          packetId: 'packet-1',
+          summary: 'Matched to a source-backed review challenge.',
+          score: 0.87,
+          assessmentQuality: null,
+          reviewProfile: null,
+          validatorAgent: null,
+          roleSources: [],
+          evidence: [],
+          evidenceHyperedges: [],
+          gaps: [],
+          evidencePlan: [],
+          evidenceFollowUp: null,
+          evidenceRefresh: null,
+        },
+        codeReviewScore: {
+          reviewSessionId: 'review-session-1',
+          status: 'scored',
+          score: 82,
+          band: 'strong',
+          narrative: 'Candidate found the missing retry test and defended the review.',
+          strengths: ['Found the release-blocking risk.'],
+          growthAreas: ['Probe timing trade-offs.'],
+          updatedAt: '2026-06-23T00:00:00.000Z',
+        },
+      }),
+    });
+
+    renderDetail();
+    await flushAsyncUpdates();
+
+    fireEvent.click(screen.getAllByTestId('interview-open-person-profile')[0]!);
+
+    expect(screen.getByTestId('person-route-echo')).toHaveTextContent('person-code-review-1');
+    const state = screen.getByTestId('person-route-state').textContent ?? '';
+    expect(state).toContain('selectedCodeReviewDecision');
+    expect(state).toContain('Code-review decision');
+    expect(state).toContain('82/100 Strong');
+    expect(state).toContain('acme/widgets PR #42');
+    expect(state).not.toContain('contextRecords":[{');
   });
 
   it('includes the evidence-plan question when inviting a follow-up assessment candidate', async () => {

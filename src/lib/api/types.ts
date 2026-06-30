@@ -1268,7 +1268,7 @@ export interface LivingContextReadModel {
   person: {
     personId: string;
     workspacePersonId: string;
-    applicationId: string;
+    applicationId: string | null;
     displayName: string | null;
     primaryEmail: string | null;
     primaryPhone: string | null;
