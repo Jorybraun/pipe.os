@@ -47,6 +47,14 @@ describe('InterviewCard assessment progress', () => {
         blocksPositiveAssessment: false,
         message: 'A reviewable open-source task is assigned.',
       },
+      workspaceSession: {
+        status: 'READY',
+        errorMessage: null,
+        expiresAt: '2026-06-23T01:00:00.000Z',
+        updatedAt: '2026-06-23T00:10:00.000Z',
+        repoGitUrl: 'https://github.com/open-source/widgets',
+        baseCommitSha: '1111111111111111111111111111111111111111',
+      },
       assessmentProgress: {
         session: {
           id: 'assessment-session-card',
@@ -106,6 +114,8 @@ describe('InterviewCard assessment progress', () => {
     expect(progress).toHaveTextContent('Ready for evaluation');
     expect(progress).toHaveTextContent('Start source-backed AI or human evaluation.');
     expect(progress).toHaveTextContent('challenge, work evidence, commit, AI use, transcript, tests');
+    expect(progress).toHaveTextContent('WORKSPACE');
+    expect(progress).toHaveTextContent('Ready · open-source/widgets · base 111111111111');
     expect(progress).toHaveTextContent('open-source/widgets');
     expect(progress).toHaveTextContent('abcdef123456');
     expect(progress).not.toHaveTextContent('assessment-session-card');
