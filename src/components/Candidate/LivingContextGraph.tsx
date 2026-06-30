@@ -16,6 +16,8 @@ import {
   Zap,
 } from 'lucide-react';
 import type {
+  CandidateEvidenceProfile,
+  ConceptComparison,
   ConceptGraphAdjacency,
   ConceptGraphConcept,
   CoverageLevel,
@@ -51,6 +53,7 @@ import { useEvidenceLineage } from '../../hooks/useEvidenceLineage';
 import { useMatchProvenance } from '../../hooks/useMatchProvenance';
 import { useMatchHistory } from '../../hooks/useMatchHistory';
 import { useRematch } from '../../hooks/useRematch';
+import { useCandidateComparison } from '../../hooks/useCandidateComparison';
 import { useLivingContext } from '../../hooks/useLivingContext';
 import { buildLivingContextBranches } from '../../lib/livingContextTree';
 import { ContextRecordForest } from './ContextRecordTree';
@@ -2407,6 +2410,244 @@ function EvidenceConflictsPanel({
   );
 }
 
+// ── Candidate comparison ────────────────────────────────────────────────────
+
+const COVERAGE_COLOR: Record<string, string> = {
+  strong: 'var(--lc-concept, #60a5fa)',
+  partial: 'var(--lc-structural, rgba(255,255,255,0.6))',
+  weak: 'var(--lc-gap-weak, #f59e0b)',
+  none: 'var(--lc-gap-none, #ef4444)',
+};
+
+function CandidateComparisonPanel({
+  candidateId,
+  comparisonCandidateIds,
+}: {
+  candidateId: string;
+  comparisonCandidateIds: string[] | null;
+}): JSX.Element | null {
+  const ids = useMemo(() => {
+    if (!comparisonCandidateIds || comparisonCandidateIds.length === 0) return null;
+    const all = [candidateId, ...comparisonCandidateIds.filter((id) => id !== candidateId)];
+    return all.length >= 2 ? all : null;
+  }, [candidateId, comparisonCandidateIds]);
+
+  const { report, isLoading, error } = useCandidateComparison(ids);
+
+  if (!ids || ids.length < 2) return null;
+  if (isLoading && !report) {
+    return (
+      <section className="living-context__panel" data-testid="comparison-panel-loading">
+        <div className="living-context__section-head">
+          <div className="living-context__section-title">Comparing candidates...</div>
+        </div>
+      </section>
+    );
+  }
+  if (error || !report) return null;
+
+  const currentProfile = report.candidateProfiles.find((p) => p.candidateId === candidateId);
+  const otherProfiles = report.candidateProfiles.filter((p) => p.candidateId !== candidateId);
+
+  return (
+    <section
+      className="living-context__panel"
+      data-testid="candidate-comparison-panel"
+    >
+      <div className="living-context__section-head">
+        <div style={{ display: 'flex', gap: 6, alignItems: 'center' }}>
+          <Shuffle size={13} color="var(--lc-concept)" />
+          <div className="living-context__section-title">Candidate comparison</div>
+          <div className="living-context__count">{report.summary.totalCandidates}</div>
+        </div>
+      </div>
+
+      <div className="living-context__comparison-summary" data-testid="comparison-summary">
+        <span className="living-context__comparison-stat">
+          {report.summary.comparedConceptCount} concepts compared
+        </span>
+        <span className="living-context__comparison-stat">
+          {report.summary.sharedConceptCount} shared
+        </span>
+      </div>
+
+      <ComparisonProfileCards
+        currentProfile={currentProfile}
+        otherProfiles={otherProfiles}
+        uniqueConcepts={report.summary.uniqueConceptsPerCandidate}
+      />
+
+      {report.conceptComparisons.length > 0 && (
+        <ComparisonConceptGrid
+          comparisons={report.conceptComparisons}
+          candidateId={candidateId}
+          profiles={report.candidateProfiles}
+        />
+      )}
+
+      <ComparisonRankings
+        diversityRanking={report.summary.evidenceDiversityRanking}
+        depthRanking={report.summary.evidenceDepthRanking}
+        profiles={report.candidateProfiles}
+        candidateId={candidateId}
+      />
+    </section>
+  );
+}
+
+function ComparisonProfileCards({
+  currentProfile,
+  otherProfiles,
+  uniqueConcepts,
+}: {
+  currentProfile: CandidateEvidenceProfile | undefined;
+  otherProfiles: CandidateEvidenceProfile[];
+  uniqueConcepts: Record<string, number>;
+}): JSX.Element {
+  const allProfiles = currentProfile ? [currentProfile, ...otherProfiles] : otherProfiles;
+  return (
+    <div className="living-context__comparison-profiles" data-testid="comparison-profiles">
+      {allProfiles.map((profile) => (
+        <div
+          key={profile.candidateId}
+          className={`living-context__comparison-card${
+            profile === currentProfile ? ' living-context__comparison-card--current' : ''
+          }`}
+          data-testid={`comparison-profile-${profile.candidateId}`}
+        >
+          <div className="living-context__comparison-card-name">
+            {profile.candidateName}
+            {profile === currentProfile && (
+              <span className="living-context__comparison-badge">current</span>
+            )}
+          </div>
+          <div className="living-context__comparison-card-stats">
+            <span>{profile.totalAssertions} assertions</span>
+            <span>{profile.totalInteractions} interactions</span>
+            <span>diversity {(profile.sourceDiversity * 100).toFixed(0)}%</span>
+            <span>{uniqueConcepts[profile.candidateId] ?? 0} unique concepts</span>
+          </div>
+          {profile.topConcepts.length > 0 && (
+            <div className="living-context__comparison-concepts">
+              {profile.topConcepts.slice(0, 5).map((concept) => (
+                <span
+                  key={concept.conceptKey}
+                  className="living-context__concept"
+                  title={`${concept.evidenceCount} evidence, strength ${(concept.effectiveStrength * 100).toFixed(0)}%`}
+                >
+                  {concept.label}
+                </span>
+              ))}
+            </div>
+          )}
+        </div>
+      ))}
+    </div>
+  );
+}
+
+function ComparisonConceptGrid({
+  comparisons,
+  candidateId,
+  profiles,
+}: {
+  comparisons: ConceptComparison[];
+  candidateId: string;
+  profiles: CandidateEvidenceProfile[];
+}): JSX.Element {
+  const topComparisons = comparisons.slice(0, 10);
+  return (
+    <div className="living-context__comparison-grid" data-testid="comparison-concept-grid">
+      <div className="living-context__section-head">
+        <div className="living-context__section-title">Concept coverage</div>
+      </div>
+      <table className="living-context__comparison-table">
+        <thead>
+          <tr>
+            <th>Concept</th>
+            {profiles.map((p) => (
+              <th key={p.candidateId}>
+                {p.candidateId === candidateId ? 'Current' : p.candidateName}
+              </th>
+            ))}
+          </tr>
+        </thead>
+        <tbody>
+          {topComparisons.map((comparison) => (
+            <tr key={comparison.conceptKey}>
+              <td className="living-context__concept">{comparison.label}</td>
+              {profiles.map((profile) => {
+                const entry = comparison.candidates.find((c) => c.candidateId === profile.candidateId);
+                const level = entry?.coverageLevel ?? 'none';
+                return (
+                  <td
+                    key={profile.candidateId}
+                    style={{ color: COVERAGE_COLOR[level] }}
+                    title={entry ? `${entry.evidenceCount} evidence, strength ${(entry.effectiveStrength * 100).toFixed(0)}%` : 'No evidence'}
+                  >
+                    {level}
+                  </td>
+                );
+              })}
+            </tr>
+          ))}
+        </tbody>
+      </table>
+    </div>
+  );
+}
+
+function ComparisonRankings({
+  diversityRanking,
+  depthRanking,
+  profiles,
+  candidateId,
+}: {
+  diversityRanking: Array<{ candidateId: string; score: number }>;
+  depthRanking: Array<{ candidateId: string; totalAssertions: number }>;
+  profiles: CandidateEvidenceProfile[];
+  candidateId: string;
+}): JSX.Element {
+  const nameOf = (id: string): string => {
+    const profile = profiles.find((p) => p.candidateId === id);
+    return id === candidateId ? 'You (current)' : profile?.candidateName ?? id;
+  };
+  return (
+    <div className="living-context__comparison-rankings" data-testid="comparison-rankings">
+      <div className="living-context__ranking-col">
+        <div className="living-context__eyebrow">Source diversity</div>
+        {diversityRanking.map((entry, index) => (
+          <div
+            key={entry.candidateId}
+            className={`living-context__ranking-row${
+              entry.candidateId === candidateId ? ' living-context__ranking-row--current' : ''
+            }`}
+          >
+            <span className="living-context__ranking-pos">#{index + 1}</span>
+            <span>{nameOf(entry.candidateId)}</span>
+            <span className="living-context__ranking-score">{(entry.score * 100).toFixed(0)}%</span>
+          </div>
+        ))}
+      </div>
+      <div className="living-context__ranking-col">
+        <div className="living-context__eyebrow">Evidence depth</div>
+        {depthRanking.map((entry, index) => (
+          <div
+            key={entry.candidateId}
+            className={`living-context__ranking-row${
+              entry.candidateId === candidateId ? ' living-context__ranking-row--current' : ''
+            }`}
+          >
+            <span className="living-context__ranking-pos">#{index + 1}</span>
+            <span>{nameOf(entry.candidateId)}</span>
+            <span className="living-context__ranking-score">{entry.totalAssertions} assertions</span>
+          </div>
+        ))}
+      </div>
+    </div>
+  );
+}
+
 function RematchButton({
   candidateId,
   onRematchComplete,
@@ -2464,11 +2705,13 @@ export function LivingContextGraph({
   livingContextEndpoint,
   initialLivingContext,
   standaloneReviewMatch,
+  comparisonCandidateIds,
 }: {
   candidateId: string;
   livingContextEndpoint?: string;
   initialLivingContext?: LivingContextReadModel | null;
   standaloneReviewMatch?: StandaloneReviewMatchRecord | null;
+  comparisonCandidateIds?: string[] | null;
 }): JSX.Element {
   const livingContextSource = livingContextEndpoint
     ? initialLivingContext === undefined
@@ -2729,6 +2972,10 @@ export function LivingContextGraph({
       <EvidenceGapPanel report={gapReport} />
       <MatchProvenancePanel provenance={provenance} />
       <MatchHistoryPanel candidateId={candidateId} />
+      <CandidateComparisonPanel
+        candidateId={candidateId}
+        comparisonCandidateIds={comparisonCandidateIds ?? null}
+      />
 
       <ConceptGraphPanel
         concepts={conceptGraph?.concepts ?? []}
