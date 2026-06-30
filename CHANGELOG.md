@@ -13,6 +13,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Fixed — Scheduling
 
+- Recruiter interview lists now include assessment filters and counts for action-needed, ready-to-evaluate, needs-attention, and evaluated sessions so source-backed assessment work is not buried in the general invite feed.
 - Recruiter interview cards now expose an `EVALUATE` action for assessment sessions that have captured commit evidence and are ready for source-backed AI/human evaluation, using the same real evaluation endpoint as the detail page and refreshing the list afterward.
 - Interview cards now show a compact assessment decision state for assigned tasks, submitted commits, evaluator readiness, evaluated recommendations, and diagnostics so recruiters can understand the next action without opening every interview.
 - Interview cards now show the assigned open-source assessment task, repo/PR, and base commit from the source-backed challenge packet before candidate work starts, so recruiters can trust what was assigned without opening the full detail page.

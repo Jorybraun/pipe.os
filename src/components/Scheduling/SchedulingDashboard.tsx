@@ -20,6 +20,7 @@ import type {
 type TimelineGroup = 'TODAY' | 'TOMORROW' | 'THIS_WEEK' | 'LATER' | 'PAST' | 'UNSCHEDULED';
 type InterviewSortMode = 'CREATED_DESC' | 'TIMELINE' | 'CREATED_ASC';
 type InterviewListGroup = TimelineGroup | 'CREATED_DESC' | 'CREATED_ASC';
+type AssessmentFilterMode = 'ALL' | 'ACTION_NEEDED' | 'READY_TO_EVALUATE' | 'NEEDS_ATTENTION' | 'EVALUATED';
 
 interface InvitePrefill {
   recipientName: string;
@@ -123,6 +124,14 @@ const SORT_OPTIONS: ReadonlyArray<{ label: string; value: InterviewSortMode }> =
   { label: 'Oldest', value: 'CREATED_ASC' },
 ];
 
+const ASSESSMENT_FILTER_OPTIONS: ReadonlyArray<{ label: string; value: AssessmentFilterMode }> = [
+  { label: 'All', value: 'ALL' },
+  { label: 'Action needed', value: 'ACTION_NEEDED' },
+  { label: 'Ready to evaluate', value: 'READY_TO_EVALUATE' },
+  { label: 'Needs attention', value: 'NEEDS_ATTENTION' },
+  { label: 'Evaluated', value: 'EVALUATED' },
+];
+
 function getGroupLabel(group: InterviewListGroup): string {
   return group in TIMELINE_LABELS
     ? TIMELINE_LABELS[group as TimelineGroup]
@@ -150,6 +159,32 @@ function firstNonBlank(...values: Array<string | null | undefined>): string | nu
     if (trimmed) return trimmed;
   }
   return null;
+}
+
+function assessmentFilterBucket(interview: ScheduledInterview): Exclude<AssessmentFilterMode, 'ALL' | 'ACTION_NEEDED'> | null {
+  const progress = interview.assessmentProgress ?? null;
+  if (progress?.evaluation?.status === 'EVALUATED') return 'EVALUATED';
+  if (
+    progress?.stage === 'NEEDS_ATTENTION'
+    || progress?.nextAction === 'RESOLVE_DIAGNOSTIC'
+    || (progress?.evaluation && progress.evaluation.status !== 'EVALUATED')
+    || interview.assessmentSetup?.blocksPositiveAssessment
+  ) {
+    return 'NEEDS_ATTENTION';
+  }
+  if (progress?.nextAction === 'START_EVALUATION' || progress?.stage === 'READY_FOR_EVALUATION') {
+    return 'READY_TO_EVALUATE';
+  }
+  return null;
+}
+
+function matchesAssessmentFilter(interview: ScheduledInterview, filter: AssessmentFilterMode): boolean {
+  if (filter === 'ALL') return true;
+  const bucket = assessmentFilterBucket(interview);
+  if (filter === 'ACTION_NEEDED') {
+    return bucket === 'READY_TO_EVALUATE' || bucket === 'NEEDS_ATTENTION';
+  }
+  return bucket === filter;
 }
 
 // ---------------------------------------------------------------------------
@@ -208,6 +243,7 @@ export function SchedulingDashboard(): JSX.Element {
     recruiterNotes: '',
   });
   const [sortMode, setSortMode] = useState<InterviewSortMode>('CREATED_DESC');
+  const [assessmentFilter, setAssessmentFilter] = useState<AssessmentFilterMode>('ALL');
   const [searchParams, setSearchParams] = useSearchParams();
   const [toasts, setToasts] = useState<ToastItem[]>([]);
   const seenNotificationIds = useRef<Set<string>>(new Set());
@@ -265,23 +301,47 @@ export function SchedulingDashboard(): JSX.Element {
     return result;
   }, [api, refetch]);
 
+  const assessmentFilterCounts = useMemo(() => {
+    const counts: Record<AssessmentFilterMode, number> = {
+      ALL: interviews.length,
+      ACTION_NEEDED: 0,
+      READY_TO_EVALUATE: 0,
+      NEEDS_ATTENTION: 0,
+      EVALUATED: 0,
+    };
+    for (const interview of interviews) {
+      const bucket = assessmentFilterBucket(interview);
+      if (!bucket) continue;
+      counts[bucket] += 1;
+      if (bucket === 'READY_TO_EVALUATE' || bucket === 'NEEDS_ATTENTION') {
+        counts.ACTION_NEEDED += 1;
+      }
+    }
+    return counts;
+  }, [interviews]);
+
+  const visibleInterviews = useMemo(
+    () => interviews.filter((interview) => matchesAssessmentFilter(interview, assessmentFilter)),
+    [assessmentFilter, interviews],
+  );
+
   // Group interviews by the selected recruiter view.
   const groupedInterviews = useMemo(() => {
     if (sortMode === 'CREATED_DESC') {
       return [
-        ['CREATED_DESC', [...interviews].sort(compareByCreatedNewest)],
+        ['CREATED_DESC', [...visibleInterviews].sort(compareByCreatedNewest)],
       ] as Array<[InterviewListGroup, ScheduledInterview[]]>;
     }
 
     if (sortMode === 'CREATED_ASC') {
       return [
-        ['CREATED_ASC', [...interviews].sort(compareByCreatedOldest)],
+        ['CREATED_ASC', [...visibleInterviews].sort(compareByCreatedOldest)],
       ] as Array<[InterviewListGroup, ScheduledInterview[]]>;
     }
 
     const groups = new Map<TimelineGroup, ScheduledInterview[]>();
 
-    interviews.forEach((iv) => {
+    visibleInterviews.forEach((iv) => {
       const group = getTimelineGroup(iv.scheduledAt ?? null);
       if (!groups.has(group)) {
         groups.set(group, []);
@@ -303,7 +363,7 @@ export function SchedulingDashboard(): JSX.Element {
       ] as [InterviewListGroup, ScheduledInterview[]]);
 
     return sorted;
-  }, [interviews, sortMode]);
+  }, [sortMode, visibleInterviews]);
 
   // ---------------------------------------------------------------------------
   // Render
@@ -435,7 +495,9 @@ export function SchedulingDashboard(): JSX.Element {
             NEW INTERVIEW
           </button>
           <span style={{ fontSize: 13, color: 'var(--pipe-text-dim)', fontFamily: '"Space Mono", monospace' }}>
-            {interviews.length} total
+            {assessmentFilter === 'ALL'
+              ? `${interviews.length} total`
+              : `${visibleInterviews.length} shown · ${interviews.length} total`}
           </span>
           <div
             role="group"
@@ -476,11 +538,55 @@ export function SchedulingDashboard(): JSX.Element {
               );
             })}
           </div>
+          <div
+            role="group"
+            aria-label="Assessment filter"
+            style={{
+              display: 'flex',
+              flexWrap: 'wrap',
+              justifyContent: 'flex-end',
+              gap: 6,
+              maxWidth: 560,
+            }}
+          >
+            {ASSESSMENT_FILTER_OPTIONS.map((option) => {
+              const active = assessmentFilter === option.value;
+              const count = assessmentFilterCounts[option.value];
+              return (
+                <button
+                  key={option.value}
+                  type="button"
+                  aria-pressed={active}
+                  onClick={() => setAssessmentFilter(option.value)}
+                  style={{
+                    display: 'inline-flex',
+                    alignItems: 'center',
+                    gap: 6,
+                    minHeight: 30,
+                    padding: '0 10px',
+                    border: `1px solid ${active ? '#93c5fd' : 'var(--pipe-border)'}`,
+                    borderRadius: 6,
+                    background: active ? 'rgba(147,197,253,0.14)' : 'transparent',
+                    color: active ? '#bfdbfe' : 'var(--pipe-text-dim)',
+                    fontFamily: '"Space Mono", monospace',
+                    fontSize: 10,
+                    fontWeight: 700,
+                    letterSpacing: '0.04em',
+                    cursor: 'pointer',
+                    whiteSpace: 'nowrap',
+                  }}
+                >
+                  <span>{option.label}</span>
+                  <span style={{ color: active ? '#dbeafe' : 'var(--pipe-text-muted)' }}>{count}</span>
+                </button>
+              );
+            })}
+          </div>
         </div>
       </div>
 
       {/* Timeline groups */}
-      {interviews.length === 0 ? (
+      {visibleInterviews.length === 0 ? (
         <div
           style={{
             padding: 64,
@@ -491,7 +597,9 @@ export function SchedulingDashboard(): JSX.Element {
         >
           <Calendar size={40} color="var(--pipe-text-dim)" style={{ marginBottom: 16 }} />
           <p style={{ color: 'var(--pipe-text-dim)', fontFamily: '"Space Mono", monospace', fontSize: 13, lineHeight: 1.7 }}>
-            No interviews yet. Create one for any person; role context can be added later.
+            {interviews.length === 0
+              ? 'No interviews yet. Create one for any person; role context can be added later.'
+              : 'No interviews match this assessment view.'}
           </p>
         </div>
       ) : (

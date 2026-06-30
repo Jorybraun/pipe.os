@@ -80,6 +80,46 @@ function makeInterview(overrides: Partial<ScheduledInterview> & {
   };
 }
 
+function makeAssessmentProgress(
+  overrides: Partial<NonNullable<ScheduledInterview['assessmentProgress']>>,
+): NonNullable<ScheduledInterview['assessmentProgress']> {
+  return {
+    session: {
+      id: 'assessment-session',
+      ingestionKey: 'assessment-session:key',
+      interviewId: 'interview',
+      candidateId: null,
+      workspaceId: null,
+      workspacePersonId: null,
+      applicationId: null,
+      mode: 'OPEN_SOURCE_BUG_FIX',
+      state: 'CHALLENGE_ASSIGNED',
+      createdAt: '2026-06-28T10:00:00.000Z',
+      updatedAt: '2026-06-28T10:00:00.000Z',
+    },
+    stage: 'CHALLENGE_READY',
+    nextAction: 'OPEN_ROOM_OR_WORKSPACE',
+    nextActionLabel: 'Open the room and launch the controlled workspace.',
+    hasChallengePacket: true,
+    hasWorkEvidence: false,
+    hasMessageEvidence: false,
+    hasDevContainerEvidence: false,
+    hasToolUsageEvidence: false,
+    hasCommitSubmission: false,
+    hasFinalSubmission: false,
+    hasAiInteraction: false,
+    hasTranscriptEvidence: false,
+    hasTestEvidence: false,
+    evidenceCounts: [],
+    sourceRefCounts: [],
+    challenge: null,
+    latestEvent: null,
+    commit: null,
+    evaluation: null,
+    ...overrides,
+  };
+}
+
 function cardNames(): string[] {
   return screen.getAllByTestId('interview-card').map((card) => card.textContent ?? '');
 }
@@ -218,6 +258,74 @@ describe('SchedulingDashboard interview ordering', () => {
     await Promise.resolve();
     await Promise.resolve();
     expect(refetch).toHaveBeenCalled();
+  });
+
+  it('filters assessment interviews by recruiter action state', () => {
+    renderDashboard([
+      makeInterview({
+        id: 'ready-to-evaluate',
+        createdAt: '2026-06-28T10:00:00.000Z',
+        recipientName: 'Ready to evaluate',
+        interviewType: 'OPEN_SOURCE_BUG_FIX',
+        assessmentProgress: makeAssessmentProgress({
+          stage: 'READY_FOR_EVALUATION',
+          nextAction: 'START_EVALUATION',
+          nextActionLabel: 'Start source-backed AI or human evaluation.',
+        }),
+      }),
+      makeInterview({
+        id: 'needs-attention',
+        createdAt: '2026-06-27T10:00:00.000Z',
+        recipientName: 'Needs attention',
+        interviewType: 'OPEN_SOURCE_BUG_FIX',
+        assessmentProgress: makeAssessmentProgress({
+          stage: 'NEEDS_ATTENTION',
+          nextAction: 'RESOLVE_DIAGNOSTIC',
+          nextActionLabel: 'Resolve evaluator diagnostic.',
+        }),
+      }),
+      makeInterview({
+        id: 'evaluated',
+        createdAt: '2026-06-26T10:00:00.000Z',
+        recipientName: 'Evaluated',
+        interviewType: 'OPEN_SOURCE_BUG_FIX',
+        assessmentProgress: makeAssessmentProgress({
+          stage: 'EVALUATED',
+          nextAction: 'REVIEW_EVALUATION',
+          nextActionLabel: 'Review evaluation.',
+          evaluation: {
+            id: 'evaluation-1',
+            status: 'EVALUATED',
+            summary: 'Source-backed report ready.',
+            recommendation: 'advance',
+            createdAt: '2026-06-28T10:30:00.000Z',
+            evidenceCoverage: null,
+            claims: [],
+          },
+        }),
+      }),
+      makeInterview({
+        id: 'standard-call',
+        createdAt: '2026-06-25T10:00:00.000Z',
+        recipientName: 'Standard call',
+        interviewType: 'VIDEO',
+      }),
+    ]);
+
+    expect(screen.getByRole('button', { name: /Action needed\s*2/i })).toBeInTheDocument();
+    expect(screen.getByRole('button', { name: /Ready to evaluate\s*1/i })).toBeInTheDocument();
+    expect(screen.getByRole('button', { name: /Needs attention\s*1/i })).toBeInTheDocument();
+    expect(screen.getByRole('button', { name: /Evaluated\s*1/i })).toBeInTheDocument();
+
+    fireEvent.click(screen.getByRole('button', { name: /Ready to evaluate\s*1/i }));
+    expect(cardNames()).toEqual(['Ready to evaluate']);
+    expect(screen.getByText('1 shown · 4 total')).toBeInTheDocument();
+
+    fireEvent.click(screen.getByRole('button', { name: /Action needed\s*2/i }));
+    expect(cardNames()).toEqual(['Ready to evaluate', 'Needs attention']);
+
+    fireEvent.click(screen.getByRole('button', { name: /Evaluated\s*1/i }));
+    expect(cardNames()).toEqual(['Evaluated']);
   });
 
   it('opens the invite modal from a person next-action URL with prefilled context', () => {
