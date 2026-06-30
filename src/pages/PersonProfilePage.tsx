@@ -88,6 +88,20 @@ interface InteractionCoverageItem {
   count: number;
 }
 
+interface InteractionCoverageCounts {
+  codeReviews: number;
+  calls: number;
+  resumes: number;
+  messages: number;
+  other: number;
+}
+
+interface EvidenceMixReadout {
+  headline: string;
+  detail: string;
+  nextSource: string;
+}
+
 interface CodeReviewDecisionProjection {
   decisionLabel: string;
   sessionId: string | null;
@@ -277,7 +291,7 @@ function evidenceSummaryText(livingContext: LivingContextReadModel | null): stri
   return `PIPE currently knows this relationship from ${parts.join(', ')}.`;
 }
 
-function interactionCoverageItems(interactions: LivingContextInteraction[]): InteractionCoverageItem[] {
+function interactionCoverageCounts(interactions: LivingContextInteraction[]): InteractionCoverageCounts {
   const counts = {
     codeReviews: 0,
     calls: 0,
@@ -308,6 +322,12 @@ function interactionCoverageItems(interactions: LivingContextInteraction[]): Int
     }
   }
 
+  return counts;
+}
+
+function interactionCoverageItems(interactions: LivingContextInteraction[]): InteractionCoverageItem[] {
+  const counts = interactionCoverageCounts(interactions);
+
   return [
     { label: countWithLabel(counts.codeReviews, 'code review'), count: counts.codeReviews },
     { label: countWithLabel(counts.calls, 'call or meeting', 'calls or meetings'), count: counts.calls },
@@ -315,6 +335,50 @@ function interactionCoverageItems(interactions: LivingContextInteraction[]): Int
     { label: countWithLabel(counts.messages, 'message or invite', 'messages or invites'), count: counts.messages },
     { label: countWithLabel(counts.other, 'other evidence record'), count: counts.other },
   ].filter((item) => item.count > 0);
+}
+
+function evidenceMixReadout(
+  interactions: LivingContextInteraction[],
+  decision: CodeReviewDecisionProjection | null,
+): EvidenceMixReadout {
+  const counts = interactionCoverageCounts(interactions);
+  if (interactions.length === 0) {
+    return {
+      headline: 'No source mix yet',
+      detail: 'Start with one durable source: resume, invite, call transcript, or assessment evidence.',
+      nextSource: 'Collect first source-backed evidence',
+    };
+  }
+
+  if (decision && counts.codeReviews > 0 && counts.resumes > 0 && counts.calls === 0) {
+    return {
+      headline: 'Technical signal exists; conversation context is missing',
+      detail: 'Use the code review and resume as source-backed signal, then add a focused call only for the calibration gaps.',
+      nextSource: decision.nextAction,
+    };
+  }
+
+  if (decision && counts.codeReviews > 0 && counts.calls > 0) {
+    return {
+      headline: 'Cross-interaction signal is forming',
+      detail: 'The person profile has both technical assessment and conversation evidence. Keep the meeting page scoped and use this view for the rollup.',
+      nextSource: decision.nextAction,
+    };
+  }
+
+  if (counts.calls > 0 && counts.codeReviews === 0) {
+    return {
+      headline: 'Conversation context exists; technical assessment is missing',
+      detail: 'Use the call evidence to pick a specific code-review or workspace challenge, but do not present technical fit yet.',
+      nextSource: 'Assign a source-backed technical assessment',
+    };
+  }
+
+  return {
+    headline: 'Evidence mix is still narrow',
+    detail: 'The profile has source-backed records, but it needs another evidence type before the recommendation becomes robust.',
+    nextSource: decision?.nextAction ?? 'Schedule targeted context gathering',
+  };
 }
 
 function interactionCoverageSummary(interactions: LivingContextInteraction[]): string {
@@ -1676,6 +1740,7 @@ export default function PersonProfilePage(): JSX.Element {
   const decision = codeReviewDecision
     ?? deriveWorkspaceAssessmentDecision(livingContext)
     ?? deriveSelectedWorkspaceAssessmentDecision(selectedAssessment);
+  const evidenceMix = evidenceMixReadout(livingContext?.interactions ?? [], decision);
 
   if (isLoading) {
     return (
@@ -1778,6 +1843,15 @@ export default function PersonProfilePage(): JSX.Element {
                 ))}
               </div>
             )}
+            <div data-testid="person-evidence-mix" style={EVIDENCE_MIX}>
+              <div style={FIELD_LABEL}>Evidence mix</div>
+              <div style={EVIDENCE_MIX_HEADLINE}>{evidenceMix.headline}</div>
+              <p style={INTERACTION_COVERAGE_COPY}>{evidenceMix.detail}</p>
+              <div style={EVIDENCE_MIX_NEXT}>
+                <span style={FIELD_LABEL}>Next best source</span>
+                <span>{evidenceMix.nextSource}</span>
+              </div>
+            </div>
           </div>
           {recentInteractions.length === 0 ? (
             <EmptyPanel>No interactions have been captured yet.</EmptyPanel>
@@ -2297,6 +2371,35 @@ const INTERACTION_COVERAGE_CHIP: CSSProperties = {
   fontWeight: 800,
   lineHeight: 1,
   padding: '7px 9px',
+};
+
+const EVIDENCE_MIX: CSSProperties = {
+  display: 'grid',
+  gap: 6,
+  border: '1px solid rgba(96,165,250,0.22)',
+  borderRadius: 6,
+  background: 'rgba(96,165,250,0.06)',
+  padding: 10,
+};
+
+const EVIDENCE_MIX_HEADLINE: CSSProperties = {
+  color: 'var(--pipe-text)',
+  fontSize: 13,
+  fontWeight: 800,
+  lineHeight: 1.35,
+  overflowWrap: 'anywhere',
+};
+
+const EVIDENCE_MIX_NEXT: CSSProperties = {
+  display: 'flex',
+  alignItems: 'center',
+  justifyContent: 'space-between',
+  gap: 10,
+  color: 'var(--pipe-text)',
+  fontSize: 11,
+  fontWeight: 800,
+  lineHeight: 1.35,
+  flexWrap: 'wrap',
 };
 
 const CODE_REVIEW_DECISION: CSSProperties = {

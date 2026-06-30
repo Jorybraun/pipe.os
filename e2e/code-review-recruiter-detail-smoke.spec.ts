@@ -87,6 +87,10 @@ async function expectPersonProfileDecision(page: Page): Promise<void> {
   await expect(rationale).toContainText('Signal');
   await expect(rationale).toContainText('Trust');
   await expect(rationale).toContainText('Calibrate');
+  const evidenceMix = page.getByTestId('person-evidence-mix');
+  await expect(evidenceMix).toBeVisible();
+  await expect(evidenceMix).toContainText('Evidence mix');
+  await expect(evidenceMix).toContainText('Next best source');
 }
 
 test.describe('Feature: assessment recruiter detail smoke', () => {

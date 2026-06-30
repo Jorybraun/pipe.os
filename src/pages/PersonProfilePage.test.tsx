@@ -679,6 +679,12 @@ describe('PersonProfilePage', () => {
     expect(coverage).toHaveTextContent('Open a row only when you need the single-meeting source record.');
     expect(coverage).toHaveTextContent('1 code review');
     expect(coverage).toHaveTextContent('1 resume');
+    const mix = screen.getByTestId('person-evidence-mix');
+    expect(mix).toHaveTextContent('Evidence mix');
+    expect(mix).toHaveTextContent('Technical signal exists; conversation context is missing');
+    expect(mix).toHaveTextContent('Use the code review and resume as source-backed signal, then add a focused call only for the calibration gaps.');
+    expect(mix).toHaveTextContent('Next best source');
+    expect(mix).toHaveTextContent('Schedule focused technical calibration');
     expect(coverage).not.toHaveTextContent('review-session-1');
     expect(coverage).not.toHaveTextContent('resume:review-evidence:63');
     const sourceAudit = screen.getByTestId('person-source-audit');
