@@ -13,6 +13,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - `GET /api/v1/internal/evidence-conflicts?candidateId=xxx` — internal version for backfill/evaluation use.
 - `evidenceConflicts.ts` — core module: `detectEvidenceConflicts()` queries assertions via signal evidence, joins concept registry for canonical keys, groups by concept, detects polarity and strength-divergence conflicts, applies temporal decay, classifies severity, and produces deterministic conflict IDs.
 - `evidenceConflicts.test.ts` — 6 Vitest tests: no workspace identity, no conflicts, polarity detection, high-severity classification, deterministic IDs, severity sorting.
+- Candidate route coverage now proves the recruiter `evidence-conflicts` endpoint returns persisted source-backed opposing claims for an owned candidate behind the living-context rollout gate.
 - `EvidenceConflictsPanel` component in `LivingContextGraph.tsx` — renders conflict cards with severity badges, affirming/contradicting side-by-side views, and match impact descriptions.
 - `useEvidenceConflicts` hook (`src/hooks/useEvidenceConflicts.ts`) — fetches conflict report for a candidate.
 - Frontend types: `ConflictType`, `ConflictSeverity`, `ConflictAssertion`, `EvidenceConflict`, `EvidenceConflictReport`.
