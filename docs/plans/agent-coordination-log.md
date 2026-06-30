@@ -21,6 +21,19 @@ Inter-agent handoff log for the living context graph goal. Each agent appends a 
 
 **Next consolidation step:** When the assessment substrate is stable, merge or cherry-pick `origin/devin/1782806592-living-context-production` in a dedicated integration pass with conflict resolution, full `npx tsc --noEmit`, focused Workers tests, frontend tests, and a dev deploy.
 
+### 2026-06-30 — Codex latest branch consolidation checkpoint
+
+**Action:** Re-ran the worktree and remote-branch audit after `origin/devin/1782810262-living-context-consolidated` appeared.
+
+**Findings:**
+1. Only one local worktree exists: `/Users/hans/Code/PIPE/PIPE-OS`; no hidden local worktree has uncommitted files.
+2. `origin/main` is an ancestor of `codex/video-room-paint-recording-fixes`; this branch is 476 commits ahead of main and clean before the evaluator parser fix.
+3. The newest remote living-context consolidation branch is `origin/devin/1782810262-living-context-consolidated`.
+4. That branch has 17 commits not in this branch and touches 87 files, including living-context APIs/UI, rollout gates, match history, e2e tests, migrations, and `workers/api/src/routes/assessment/repoTaskSessions.ts`.
+5. A dry merge reports conflicts beginning with `CHANGELOG.md` and includes core living-context/recruiter surfaces. This is integration work, not a safe opportunistic fast-forward.
+
+**Decision:** Keep the deploy branch focused on the open-source assessment E2E path first. Queue the latest `devin/*` branch for a dedicated consolidation branch after the matched assessment smoke is green, with conflict resolution and full test/deploy verification.
+
 ### 2026-06-14 — Session a62c370e (Devin)
 
 **Action:** Consolidate open PRs and stabilize mainline tests.

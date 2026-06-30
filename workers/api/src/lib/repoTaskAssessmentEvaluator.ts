@@ -392,26 +392,91 @@ function buildUserPrompt(input: {
 function parseAiJson(content: string | null): AiAssessmentOutput {
   if (!content) throw new Error('assessment evaluator returned empty content');
   const trimmed = content.trim();
-  const parseJsonObject = (value: string): AiAssessmentOutput => {
-    try {
-      return JSON.parse(value) as AiAssessmentOutput;
-    } catch (error) {
-      const withoutTrailingCommas = value.replace(/,\s*([}\]])/g, '$1');
-      if (withoutTrailingCommas !== value) {
-        return JSON.parse(withoutTrailingCommas) as AiAssessmentOutput;
+  const stripTrailingCommas = (value: string): string => value.replace(/,\s*([}\]])/g, '$1');
+  const quoteBareObjectKeys = (value: string): string => {
+    let output = '';
+    let index = 0;
+    let inString: '"' | '\'' | null = null;
+    let escaped = false;
+    let expectingKey = false;
+    while (index < value.length) {
+      const char = value[index]!;
+      if (inString) {
+        output += char;
+        if (escaped) {
+          escaped = false;
+        } else if (char === '\\') {
+          escaped = true;
+        } else if (char === inString) {
+          inString = null;
+        }
+        index += 1;
+        continue;
       }
-      throw error;
+      if (char === '"' || char === '\'') {
+        output += char;
+        inString = char;
+        index += 1;
+        continue;
+      }
+      if (char === '{' || char === ',') {
+        output += char;
+        expectingKey = true;
+        index += 1;
+        continue;
+      }
+      if (expectingKey && /\s/.test(char)) {
+        output += char;
+        index += 1;
+        continue;
+      }
+      if (expectingKey && /[A-Za-z_$]/.test(char)) {
+        const keyStart = index;
+        index += 1;
+        while (index < value.length && /[A-Za-z0-9_$]/.test(value[index]!)) index += 1;
+        let lookahead = index;
+        while (lookahead < value.length && /\s/.test(value[lookahead]!)) lookahead += 1;
+        if (value[lookahead] === ':') {
+          output += `"${value.slice(keyStart, index)}"`;
+          expectingKey = false;
+          continue;
+        }
+        output += value.slice(keyStart, index);
+        expectingKey = false;
+        continue;
+      }
+      output += char;
+      if (!/\s/.test(char)) expectingKey = false;
+      index += 1;
     }
+    return output;
+  };
+  const parseStrictOrRepairedJsonObject = (value: string): AiAssessmentOutput => {
+    const candidates = [
+      value,
+      stripTrailingCommas(value),
+      quoteBareObjectKeys(value),
+      stripTrailingCommas(quoteBareObjectKeys(value)),
+    ];
+    let lastError: unknown;
+    for (const candidate of candidates) {
+      try {
+        return JSON.parse(candidate) as AiAssessmentOutput;
+      } catch (error) {
+        lastError = error;
+      }
+    }
+    throw lastError instanceof Error ? lastError : new Error('assessment evaluator did not return parseable JSON');
   };
   try {
-    return parseJsonObject(trimmed);
+    return parseStrictOrRepairedJsonObject(trimmed);
   } catch {
     const fenced = trimmed.match(/```(?:json)?\s*([\s\S]*?)```/i)?.[1]?.trim();
-    if (fenced) return parseJsonObject(fenced);
+    if (fenced) return parseStrictOrRepairedJsonObject(fenced);
     const objectStart = trimmed.indexOf('{');
     const objectEnd = trimmed.lastIndexOf('}');
     if (objectStart >= 0 && objectEnd > objectStart) {
-      return parseJsonObject(trimmed.slice(objectStart, objectEnd + 1));
+      return parseStrictOrRepairedJsonObject(trimmed.slice(objectStart, objectEnd + 1));
     }
     throw new Error('assessment evaluator did not return parseable JSON');
   }

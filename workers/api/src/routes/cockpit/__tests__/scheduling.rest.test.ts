@@ -1635,7 +1635,7 @@ describe('GET /interviews/:id detail', () => {
     );
   });
 
-  it('starts source-backed AI assessment evaluation and persists only cited claims', async () => {
+  it('starts source-backed AI assessment evaluation from bare-key model JSON and persists only cited claims', async () => {
     seedInterviewDetailFixture();
     const now = '2026-06-22T18:46:00.000Z';
     const baseCommitSha = '7777777777777777777777777777777777777777';
@@ -1799,32 +1799,32 @@ describe('GET /interviews/:id detail', () => {
     const aiRun = vi.fn(async () => ({
       response: `\`\`\`json
 {
-  "summary": "Candidate made a focused source-backed change and cited the submitted diff evidence.",
-  "recommendation": "mixed_evidence_human_review",
-  "claims": [
+  summary: "Candidate made a focused source-backed change and cited the submitted diff evidence.",
+  recommendation: "mixed_evidence_human_review",
+  claims: [
     {
-      "id": "focused-diff",
-      "polarity": "positive",
-      "dimension": "implementation_correctness",
-      "narrative": "The submitted diff adds startEvaluation in src/evaluation.ts.",
-      "confidence": 0.74,
-      "sourceRefKeys": ["${commitSha}:diff"]
+      id: "focused-diff",
+      polarity: "positive",
+      dimension: "implementation_correctness",
+      narrative: "The submitted diff adds startEvaluation in src/evaluation.ts.",
+      confidence: 0.74,
+      sourceRefKeys: ["${commitSha}:diff"]
     },
     {
-      "id": "uncited-claim",
-      "polarity": "positive",
-      "dimension": "test_strategy",
-      "narrative": "This claim has no persisted source citation and must be dropped.",
-      "confidence": 0.2,
-      "sourceRefKeys": ["missing:source:ref"],
+      id: "uncited-claim",
+      polarity: "positive",
+      dimension: "test_strategy",
+      narrative: "This claim has no persisted source citation and must be dropped.",
+      confidence: 0.2,
+      sourceRefKeys: ["missing:source:ref"],
     },
   ],
-  "diagnostics": [
+  diagnostics: [
     {
-      "code": "MISSING_TEST_EVIDENCE",
-      "severity": "warning",
-      "message": "No test_run source ref was attached to the session.",
-      "sourceRefKeys": ["${commitSha}:diff"],
+      code: "MISSING_TEST_EVIDENCE",
+      severity: "warning",
+      message: "No test_run source ref was attached to the session.",
+      sourceRefKeys: ["${commitSha}:diff"],
     },
   ],
 }

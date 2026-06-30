@@ -69,6 +69,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Fixed — Candidate repo matching
 
+- Repo-task assessment evaluation now repairs bare-key JSON object responses from Workers AI before validating source-backed claims, preventing matched open-source assessments from becoming diagnostics when the model returns JavaScript-style object syntax.
 - Interview detail assessment progress now renders the source-backed open-source challenge contract, including repo, base commit, task, success criteria, and expected evidence, so recruiters can review the actual assignment instead of a one-line challenge summary.
 - Assessment progress readouts now distinguish chat, workspace telemetry, and room action evidence instead of collapsing every captured interaction into a vague work-evidence bucket.
 - Recruiter assessment reports now separate required proof from confidence signals, making the challenge/commit/diff proof chain visible apart from optional tests, terminal, editor, and AI-use coverage.
