@@ -64,6 +64,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Fixed — Candidate repo matching
 
+- Deployed workspace smoke can now prove the task-aligned MUI popover challenge through the matched-repo path, asserting the selected review challenge packet's repo id, PR number, base/head commits, and source-backed packet text instead of relying only on manual task assignment.
 - Repo-task assessment evaluation now tolerates fenced JSON with trailing commas and shortened source-ref ids from Workers AI, preventing valid source-backed submissions from becoming blocking evaluator diagnostics.
 - Repo-task assessment evaluation regression coverage now verifies shortened AI source-ref ids still persist claims against the exact stored source refs.
 - Repo-task assessment evidence coverage now counts source-backed `code_server_file_observation` refs as code editor/file activity, so recruiter reports no longer claim file evidence is missing when code-server observations were captured.

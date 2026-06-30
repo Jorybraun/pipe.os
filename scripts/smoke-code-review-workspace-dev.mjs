@@ -32,7 +32,10 @@ const CHANGE_MODE = process.env.WORKSPACE_SMOKE_CHANGE_MODE || 'placeholder';
 const TASK_ALIGNED_PROFILES = {
   'mui-popover-fix': {
     repositoryUrl: 'https://github.com/mui/base-ui',
+    matchedRepoId: 973,
+    expectedGithubPrNumber: 973,
     baseCommitSha: '58dff8444fa56e4444a3a1dd991c76b49cf4ab7e',
+    expectedHeadCommitSha: '33e161fd46dfc287dfcde05427594db9a7225335',
     upstreamPullRequestRef: 'pull/973/head',
     upstreamPullRequestBranch: 'pipe-smoke-pr-973',
     changedPaths: [
@@ -60,7 +63,7 @@ const TASK_ALIGNED_PROFILES = {
     narrative: 'Implemented the source-backed Base UI popover impatient-click fix, including the 500ms guard and regression tests for fast versus patient clicks.',
     testCommand: 'git diff --check HEAD~1 HEAD && git diff --name-only HEAD~1 HEAD',
     summaryTerms: ['popover', 'click'],
-    challengeTextTerms: ['Base UI', 'popover', '500ms', 'usePopoverRoot'],
+    challengeTextTerms: ['github.com/mui/base-ui', 'popover', '500', 'usePopoverRoot'],
     acceptedRecommendations: ['strong_evidence_to_advance', 'mixed_evidence_human_review'],
   },
 };
@@ -88,8 +91,13 @@ function assertEnv() {
   if (CHANGE_PROFILE && INTERVIEW_TYPE !== 'OPEN_SOURCE_BUG_FIX') {
     throw new Error(`${CHANGE_MODE} is a task-aligned OPEN_SOURCE_BUG_FIX smoke profile; set WORKSPACE_SMOKE_INTERVIEW_TYPE=OPEN_SOURCE_BUG_FIX.`);
   }
-  if (CHANGE_PROFILE && MATCHED_REPO_ID !== null) {
-    throw new Error(`${CHANGE_MODE} uses a manual source-backed challenge packet; unset WORKSPACE_SMOKE_MATCHED_REPO_ID.`);
+  if (
+    CHANGE_PROFILE
+    && MATCHED_REPO_ID !== null
+    && CHANGE_PROFILE.matchedRepoId
+    && MATCHED_REPO_ID !== CHANGE_PROFILE.matchedRepoId
+  ) {
+    throw new Error(`${CHANGE_MODE} expects WORKSPACE_SMOKE_MATCHED_REPO_ID=${CHANGE_PROFILE.matchedRepoId}; got ${MATCHED_REPO_ID}.`);
   }
   if (!REMOTE) return;
   if (!APP_BASIC_USER || !APP_BASIC_PASSWORD) {
@@ -385,10 +393,35 @@ async function main() {
       throw new Error(`Open-source task did not expose the expected challenge source ref: ${JSON.stringify(created?.interview?.assessmentProgress)}`);
     }
     if (CHANGE_PROFILE) {
-      const challengeText = String(created?.interview?.assessmentProgress?.challenge?.exactText ?? '');
+      const challenge = created?.interview?.assessmentProgress?.challenge ?? null;
+      const challengeText = String(challenge?.exactText ?? '');
       const missingTerms = CHANGE_PROFILE.challengeTextTerms.filter((term) => !challengeText.includes(term));
       if (missingTerms.length > 0) {
         throw new Error(`Task-aligned challenge packet missed expected terms ${missingTerms.join(', ')}: ${challengeText}`);
+      }
+      const locator = challenge?.locator ?? {};
+      const locatorBaseCommitSha = typeof locator.baseCommitSha === 'string'
+        ? locator.baseCommitSha.toLowerCase()
+        : '';
+      if (locatorBaseCommitSha !== CHANGE_PROFILE.baseCommitSha) {
+        throw new Error(`Task-aligned challenge packet used the wrong base commit: ${JSON.stringify(locator)}`);
+      }
+      if (useMatchedRepo) {
+        if (created?.interview?.matchedRepoId !== CHANGE_PROFILE.matchedRepoId) {
+          throw new Error(`Task-aligned matched smoke used the wrong repo id: ${JSON.stringify(created?.interview)}`);
+        }
+        if (expectedGithubPrNumber !== CHANGE_PROFILE.expectedGithubPrNumber) {
+          throw new Error(`Task-aligned matched smoke used the wrong PR: ${JSON.stringify(created?.interview)}`);
+        }
+        const locatorHeadCommitSha = typeof locator.headCommitSha === 'string'
+          ? locator.headCommitSha.toLowerCase()
+          : '';
+        if (locatorHeadCommitSha !== CHANGE_PROFILE.expectedHeadCommitSha) {
+          throw new Error(`Task-aligned matched smoke used the wrong PR head commit: ${JSON.stringify(locator)}`);
+        }
+        if (challenge?.sourceRefType !== 'review_challenge_packet') {
+          throw new Error(`Task-aligned matched smoke did not use a review challenge packet: ${JSON.stringify(challenge)}`);
+        }
       }
     }
     await assertReachableBaseCommit(expectedRepoUrl, expectedBaseCommitSha);
