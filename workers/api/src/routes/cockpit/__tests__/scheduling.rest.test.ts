@@ -1808,7 +1808,7 @@ describe('GET /interviews/:id detail', () => {
       "dimension": "implementation_correctness",
       "narrative": "The submitted diff adds startEvaluation in src/evaluation.ts.",
       "confidence": 0.74,
-      "sourceRefKeys": ["${diffSourceRefKey}"]
+      "sourceRefKeys": ["${commitSha}:diff"]
     },
     {
       "id": "uncited-claim",
@@ -1824,7 +1824,7 @@ describe('GET /interviews/:id detail', () => {
       "code": "MISSING_TEST_EVIDENCE",
       "severity": "warning",
       "message": "No test_run source ref was attached to the session.",
-      "sourceRefKeys": ["${diffSourceRefKey}"],
+      "sourceRefKeys": ["${commitSha}:diff"],
     },
   ],
 }
