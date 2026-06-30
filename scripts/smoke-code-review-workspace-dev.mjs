@@ -444,7 +444,7 @@ async function main() {
     throw new Error(`Workspace finalizer submitted the wrong commit: ${JSON.stringify(submittedBody?.commit)}`);
   }
   const sourceRefTypes = submittedBody?.commit?.sourceRefTypes ?? [];
-  for (const requiredSourceRefType of ['git_commit', 'code_diff', 'test_run']) {
+  for (const requiredSourceRefType of ['git_commit', 'code_diff', 'terminal_command', 'test_run']) {
     if (!sourceRefTypes.includes(requiredSourceRefType)) {
       throw new Error(`Workspace finalizer missed ${requiredSourceRefType} evidence: ${JSON.stringify(sourceRefTypes)}`);
     }

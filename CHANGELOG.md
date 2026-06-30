@@ -64,6 +64,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Fixed — Candidate repo matching
 
+- Workspace finalization now adds a source-backed `terminal_command` ref for the exact git/test commands the bridge runs, so evaluation coverage can distinguish real finalizer terminal evidence from missing interactive terminal history.
 - Assessment progress now exposes and renders the evaluator recommendation beside the summary, and deployed workspace smoke can run a task-aligned `mui/base-ui` popover fix instead of only a placeholder commit.
 - Matched open-source challenge packets now remain the room/workspace assignment source even when they include an upstream PR number, so workspaces launch from the packet's immutable base commit instead of the PR head; the deployed workspace smoke can now verify this matched-repo path.
 - Scheduling list and detail payloads now include the latest linked workspace session status, repository URL, base commit, expiry, and error message so hiring-manager surfaces can distinguish ready, expired, and failed code-review workspaces.

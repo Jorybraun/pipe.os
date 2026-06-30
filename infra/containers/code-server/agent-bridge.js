@@ -323,6 +323,25 @@ function buildTestEvidenceText(command, result) {
   ].filter((part) => part !== null).join('\n');
 }
 
+function buildFinalizerCommandEvidenceText({ baseCommitSha, commitSha, testCommand }) {
+  const commands = [
+    'git rev-parse --is-inside-work-tree',
+    `git cat-file -e ${baseCommitSha}^{commit}`,
+    'git rev-parse HEAD',
+    'git rev-parse --abbrev-ref HEAD',
+    'git config --get remote.origin.url',
+    `git show --no-patch --format=fuller ${commitSha}`,
+    `git diff --no-ext-diff --find-renames ${baseCommitSha}..${commitSha}`,
+    `git diff --name-status --find-renames ${baseCommitSha}..${commitSha}`,
+    testCommand ? `bash -lc ${testCommand}` : null,
+  ].filter(Boolean);
+
+  return [
+    'Workspace finalizer command transcript',
+    ...commands.map((command) => `$ ${redactDiagnosticText(command)}`),
+  ].join('\n');
+}
+
 async function buildWorkspaceCommitSubmission(body = {}) {
   runGit(['rev-parse', '--is-inside-work-tree']);
   const baseCommitSha = normalizeOptionalString(body.baseCommitSha)
@@ -361,6 +380,11 @@ async function buildWorkspaceCommitSubmission(body = {}) {
   const sourceRepositoryUrl = normalizeOptionalString(body.forkRepositoryUrl) || repositoryUrl;
   const testCommand = normalizeOptionalString(body.testCommand)
     || normalizeOptionalString(process.env.PIPE_TEST_COMMAND);
+  const finalizerCommandEvidenceText = buildFinalizerCommandEvidenceText({
+    baseCommitSha: baseCommitSha.toLowerCase(),
+    commitSha,
+    testCommand,
+  });
   let verificationSourceRef;
   if (testCommand) {
     const testResult = spawnSync('bash', ['-lc', testCommand], {
@@ -448,6 +472,23 @@ async function buildWorkspaceCommitSubmission(body = {}) {
         contentHash: sha256ContentHash(diffText),
         metadata: {
           source: 'agent_bridge_workspace_finalize',
+        },
+      },
+      {
+        sourceRefType: 'terminal_command',
+        sourceRefId: `${commitSha}:workspace-finalizer-commands`,
+        evidenceRole: 'workspace_finalizer_command_transcript',
+        locator: {
+          repositoryUrl: sourceRepositoryUrl,
+          baseCommitSha: baseCommitSha.toLowerCase(),
+          commitSha,
+          commandSource: 'agent_bridge_workspace_finalize',
+        },
+        exactText: finalizerCommandEvidenceText,
+        contentHash: sha256ContentHash(finalizerCommandEvidenceText),
+        metadata: {
+          source: 'agent_bridge_workspace_finalize',
+          scope: 'finalizer_commands_only',
         },
       },
       verificationSourceRef,

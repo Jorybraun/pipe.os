@@ -440,7 +440,7 @@ describe('agent bridge readiness', () => {
           branchName: 'pipe-assessment',
           baseCommitSha,
           commitSha,
-          sourceRefTypes: ['git_commit', 'code_diff', 'test_run'],
+          sourceRefTypes: ['git_commit', 'code_diff', 'terminal_command', 'test_run'],
         },
       });
 
@@ -459,6 +459,7 @@ describe('agent bridge readiness', () => {
       expect(submission.sourceRefs.map((ref) => ref.sourceRefType)).toEqual([
         'git_commit',
         'code_diff',
+        'terminal_command',
         'test_run',
       ]);
       expect(submission.sourceRefs.every((ref) => /^sha256:[a-f0-9]{64}$/.test(ref.contentHash))).toBe(true);
@@ -476,6 +477,18 @@ describe('agent bridge readiness', () => {
       expect(submission.sourceRefs[1].exactText).toContain('diff --git');
       expect(submission.sourceRefs[1].exactText).toContain('README.md');
       expect(submission.sourceRefs[2]).toMatchObject({
+        sourceRefType: 'terminal_command',
+        sourceRefId: `${commitSha}:workspace-finalizer-commands`,
+        evidenceRole: 'workspace_finalizer_command_transcript',
+        metadata: {
+          source: 'agent_bridge_workspace_finalize',
+          scope: 'finalizer_commands_only',
+        },
+      });
+      expect(submission.sourceRefs[2].exactText).toContain('Workspace finalizer command transcript');
+      expect(submission.sourceRefs[2].exactText).toContain(`$ git diff --no-ext-diff --find-renames ${baseCommitSha}..${commitSha}`);
+      expect(submission.sourceRefs[2].exactText).toContain('$ bash -lc node -e "console.log(42)"');
+      expect(submission.sourceRefs[3]).toMatchObject({
         sourceRefType: 'test_run',
         sourceRefId: `${commitSha}:test-run`,
         evidenceRole: 'verification_test_output',
@@ -484,9 +497,9 @@ describe('agent bridge readiness', () => {
           exitCode: 0,
         },
       });
-      expect(submission.sourceRefs[2].exactText).toContain('$ node -e "console.log(42)"');
-      expect(submission.sourceRefs[2].exactText).toContain('exitCode: 0');
-      expect(submission.sourceRefs[2].exactText).toContain('42');
+      expect(submission.sourceRefs[3].exactText).toContain('$ node -e "console.log(42)"');
+      expect(submission.sourceRefs[3].exactText).toContain('exitCode: 0');
+      expect(submission.sourceRefs[3].exactText).toContain('42');
     } finally {
       await captureServer.close();
     }
