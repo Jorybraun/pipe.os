@@ -17,7 +17,6 @@ import {
 } from 'lucide-react';
 import {
   finalizeRoomWorkspaceAssessment,
-  getRoomAssessmentProgress,
   getRoomWorkspace,
   launchRoomWorkspace,
   loadRoom,
@@ -97,6 +96,7 @@ import {
   type RoomMediaControlState,
   type RoomSurface,
 } from './hooks/useRoomConnection';
+import { useAssessmentProgressPolling } from './hooks/useAssessmentProgressPolling';
 import { useWindowManager } from './hooks/useWindowManager';
 import { StandardLayout } from './components/StandardLayout';
 import { Win95Desktop } from './components/Win95Desktop';
@@ -560,16 +560,17 @@ function Room({ token, metadata }: { token: string; metadata: RoomMetadata }): J
     });
   }, [metadata.workspace, publishWorkspaceStateEvent, token]);
 
-  useEffect(() => {
-    void getRoomAssessmentProgress(token).then((progress) => {
-      setAssessmentProgress(progress);
-    }).catch((error) => {
+  useAssessmentProgressPolling({
+    token,
+    enabled: Boolean(workspace?.enabled),
+    onProgressChange: setAssessmentProgress,
+    onError: (error) => {
       console.error('[Room] Failed to load assessment progress:', {
         token,
         error: error instanceof Error ? error.message : String(error),
       });
-    });
-  }, [token]);
+    },
+  });
 
   const refreshWorkspace = useCallback(async (): Promise<void> => {
     try {
