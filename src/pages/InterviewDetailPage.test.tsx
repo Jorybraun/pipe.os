@@ -2447,6 +2447,11 @@ describe('InterviewDetailPage', () => {
           narrative: 'Candidate found the missing retry test and defended the review.',
           strengths: ['Found the release-blocking risk.'],
           growthAreas: ['Probe timing trade-offs.'],
+          provenance: {
+            rubricDimensionCount: 6,
+            evidenceItemCount: 2,
+            metricCount: 5,
+          },
           updatedAt: '2026-06-23T00:00:00.000Z',
         },
       }),
@@ -2462,6 +2467,9 @@ describe('InterviewDetailPage', () => {
     expect(state).toContain('selectedCodeReviewDecision');
     expect(state).toContain('Code-review decision');
     expect(state).toContain('82/100 Strong');
+    expect(state).toContain('6 rubric dimensions');
+    expect(state).toContain('2 evidence items');
+    expect(state).toContain('5 scoring metrics');
     expect(state).toContain('acme/widgets PR #42');
     expect(state).not.toContain('contextRecords":[{');
   });

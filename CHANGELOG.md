@@ -57,6 +57,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Fixed — Scheduling
 
+- Person profile CODE_REVIEW decisions now preserve compact score-provenance counters when opened from a scored interview, so rubric, evidence, and metric context survives the interview-to-profile handoff.
 - CODE_REVIEW recruiter readouts now expose compact score provenance counters for rubric dimensions, scoring metrics, and evidence items, making scored assessments easier to calibrate without dumping raw scorer output.
 - CODE_REVIEW recruiter smoke coverage now asserts score-provenance visibility on scored hiring-manager readouts.
 - Interview detail and person profile first paint now use lightweight living-context summaries, parallelized interview-detail reads, and compact code-review source refs; profile click-throughs no longer auto-fetch the full person graph until the recruiter opens the audit trail or graph.

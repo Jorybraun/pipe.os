@@ -3051,6 +3051,7 @@ export default function InterviewDetailPage(): JSX.Element {
         nextAction: codeReviewNextStep.value,
         nextActionDetail: codeReviewNextStep.detail,
         scoreLabel: codeReviewScoreValue,
+        scoreProvenanceLabel: codeReviewScoreTrust?.provenance ?? null,
         challengeLabel: codeReviewExplanation.selectedChallenge,
         challengeUrl: interview.githubRepoUrl && typeof interview.githubPrNumber === 'number'
           ? `${interview.githubRepoUrl.replace(/\/$/, '')}/pull/${interview.githubPrNumber}`

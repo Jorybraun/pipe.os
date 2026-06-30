@@ -121,6 +121,7 @@ interface CodeReviewDecisionProjection {
   nextAction: string;
   nextActionDetail: string;
   scoreLabel: string | null;
+  scoreProvenanceLabel?: string | null;
   challengeLabel: string | null;
   challengeUrl: string | null;
   narrative: string | null;
@@ -1582,6 +1583,12 @@ function CodeReviewDecisionCard({ decision }: { decision: CodeReviewDecisionProj
           <div style={DECISION_FACT}>
             <div style={DECISION_FACT_LABEL}>Candidate signal</div>
             <div style={DECISION_FACT_VALUE}>{decision.scoreLabel}</div>
+          </div>
+        )}
+        {decision.scoreProvenanceLabel && (
+          <div style={DECISION_FACT}>
+            <div style={DECISION_FACT_LABEL}>Score provenance</div>
+            <div style={DECISION_FACT_VALUE}>{decision.scoreProvenanceLabel}</div>
           </div>
         )}
         {decision.challengeLabel && (

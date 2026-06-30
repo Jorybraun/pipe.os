@@ -83,6 +83,9 @@ async function expectPersonProfileDecision(page: Page): Promise<void> {
     /source-backed signal|needs review|Do not advance from this signal yet|Wait for candidate review|do not make a hiring decision/i,
   );
   await expect(personDecision).toContainText('source-backed proof items');
+  if (EXPECT_SCORE) {
+    await expect(personDecision).toContainText('Score provenance');
+  }
   const rationale = page.getByTestId('person-code-review-rationale');
   await expect(rationale).toBeVisible();
   await expect(rationale).toContainText('Why this recommendation');

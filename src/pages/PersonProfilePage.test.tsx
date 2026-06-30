@@ -573,6 +573,7 @@ function makeSelectedCodeReviewDecision(): unknown {
     nextAction: 'Schedule focused technical calibration',
     nextActionDetail: 'Use the next conversation to pressure-test the weakest review dimension.',
     scoreLabel: '82/100 Strong',
+    scoreProvenanceLabel: '6 rubric dimensions · 2 evidence items · 5 scoring metrics',
     challengeLabel: 'acme/widgets PR #42',
     challengeUrl: 'https://github.com/acme/widgets/pull/42',
     narrative: 'Candidate found the missing retry test and defended the review.',
@@ -671,6 +672,8 @@ describe('PersonProfilePage', () => {
     expect(cockpit).toHaveTextContent('Usable source-backed signal');
     const decision = screen.getByTestId('person-code-review-decision');
     expect(decision).toHaveTextContent('82/100 Strong');
+    expect(decision).toHaveTextContent('Score provenance');
+    expect(decision).toHaveTextContent('6 rubric dimensions · 2 evidence items · 5 scoring metrics');
     expect(decision).toHaveTextContent('acme/widgets PR #42');
     expect(mocks.api.get).not.toHaveBeenCalledWith('/api/v1/contacts/person-1/living-context');
   });
