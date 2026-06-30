@@ -4,6 +4,35 @@ Inter-agent handoff log for the living context graph goal. Each agent appends a 
 
 ## Log
 
+### 2026-06-30 — Session 4a50f5c0 (Devin Automation)
+
+**Action:** Close superseded PRs, add frontend panels for evidence gap analysis and match provenance chain.
+
+**PRs closed:** #135, #136, #137, #138, #139, #140, #141 (all superseded by consolidated branch).
+
+**New code added (this session):**
+1. `EvidenceGapPanel` component — visualizes coverage per demand with strong/partial/weak/none indicators, matched/missing concepts, supporting assertion excerpts, and actionable recommendations
+2. `MatchProvenancePanel` component — renders full provenance chain: decision → demand → signal → assertion → source span → artifact → interaction with pair scores, stretch indicators, and decay freshness
+3. `useEvidenceGaps` hook — fetches gap analysis from evidence-gap-analysis endpoint
+4. `useMatchProvenance` hook — fetches provenance chain from match-provenance-chain endpoint
+5. Frontend types for both APIs (EvidenceGapResponse, MatchProvenanceResponse, etc.)
+6. CSS for both panels (gap-analysis section + provenance section)
+7. 7 new frontend tests (gap panel rendering, badge display, demands, recommendations, provenance chain, stretch, null handling)
+
+**Test results:** 184 backend test files (1708 pass), 15 frontend component tests pass. TypeScript clean, lint clean.
+
+**Criteria advanced:**
+- #6 (explain every match): recruiters can now SEE evidence gaps and full provenance chains in the UI
+- #7 (visualize the living graph): two new panels show evidence coverage and match decision traceability
+- #2 (preserve original meaning): provenance panel traces all the way back to exact source text
+
+**Next priorities:**
+- Merge consolidated PR to main
+- BDD (Playwright) tests for new panels
+- Candidate comparison view (side-by-side gap analysis)
+
+---
+
 ### 2026-06-30 — Session 7a9df29e (Devin Automation)
 
 **Action:** Consolidate all open living context PRs (#135-#141), add evidence gap analysis and match provenance chain.

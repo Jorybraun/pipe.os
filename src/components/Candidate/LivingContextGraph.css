@@ -2449,3 +2449,270 @@ html[data-theme="pipe-blue"] .living-context {
   color: var(--lc-record-dim);
   margin-top: 6px;
 }
+
+/* ─── Evidence Gap Analysis Panel ──────────────────────────────────────────── */
+
+.living-context__gap-analysis {
+  margin-top: 20px;
+  padding: 14px 16px;
+  border: 1px solid var(--lc-card-border);
+  border-radius: 6px;
+  background: var(--lc-card-bg);
+}
+
+.living-context__gap-summary {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px;
+  margin-top: 10px;
+}
+
+.living-context__gap-badge {
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+  padding: 3px 8px;
+  border: 1px solid;
+  border-radius: 4px;
+  font-size: 0.7rem;
+  color: var(--pipe-text-dim);
+}
+
+.living-context__gap-demands {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+  margin-top: 12px;
+}
+
+.living-context__gap-demand {
+  padding: 8px 10px;
+  border-left: 3px solid var(--pipe-border);
+  border-radius: 2px;
+  background: rgba(255, 255, 255, 0.02);
+}
+
+.living-context__gap-demand--strong {
+  border-left-color: var(--lc-source);
+}
+
+.living-context__gap-demand--partial {
+  border-left-color: var(--lc-structural);
+}
+
+.living-context__gap-demand--weak {
+  border-left-color: var(--pipe-text-dim);
+}
+
+.living-context__gap-demand--none {
+  border-left-color: var(--pipe-border);
+}
+
+.living-context__gap-demand-head {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+}
+
+.living-context__gap-indicator {
+  font-size: 0.8rem;
+  flex-shrink: 0;
+}
+
+.living-context__gap-demand-narrative {
+  flex: 1;
+  font-size: 0.75rem;
+  color: var(--pipe-text);
+  line-height: 1.4;
+}
+
+.living-context__gap-demand-score {
+  font-size: 0.7rem;
+  color: var(--pipe-text-dim);
+  font-weight: 600;
+}
+
+.living-context__gap-concepts {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 4px;
+  margin-top: 6px;
+}
+
+.living-context__gap-concept {
+  padding: 1px 6px;
+  border-radius: 3px;
+  font-size: 0.65rem;
+  background: rgba(120, 255, 200, 0.08);
+  color: var(--lc-source);
+}
+
+.living-context__gap-concept--missing {
+  background: rgba(255, 100, 100, 0.08);
+  color: var(--pipe-text-dim);
+  text-decoration: line-through;
+}
+
+.living-context__gap-assertions {
+  margin-top: 6px;
+  display: flex;
+  flex-direction: column;
+  gap: 3px;
+}
+
+.living-context__gap-assertion {
+  display: flex;
+  align-items: baseline;
+  gap: 6px;
+  font-size: 0.68rem;
+  color: var(--lc-record-muted);
+}
+
+.living-context__gap-assertion-text {
+  flex: 1;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.living-context__gap-assertion-strength {
+  flex-shrink: 0;
+  font-weight: 600;
+  color: var(--lc-source);
+}
+
+.living-context__gap-recommendations {
+  margin-top: 12px;
+  padding: 8px 10px;
+  border-radius: 4px;
+  background: rgba(255, 180, 60, 0.06);
+  border: 1px solid rgba(255, 180, 60, 0.15);
+}
+
+.living-context__gap-recommendation {
+  font-size: 0.72rem;
+  color: var(--pipe-text-dim);
+  line-height: 1.5;
+}
+
+/* ─── Match Provenance Chain Panel ─────────────────────────────────────────── */
+
+.living-context__provenance {
+  margin-top: 20px;
+  padding: 14px 16px;
+  border: 1px solid var(--lc-card-border);
+  border-radius: 6px;
+  background: var(--lc-card-bg);
+}
+
+.living-context__provenance-chain {
+  display: flex;
+  flex-direction: column;
+  gap: 12px;
+  margin-top: 12px;
+}
+
+.living-context__provenance-entry {
+  padding: 10px 12px;
+  border-left: 3px solid var(--lc-source);
+  border-radius: 2px;
+  background: rgba(255, 255, 255, 0.02);
+}
+
+.living-context__provenance-demand {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  flex-wrap: wrap;
+}
+
+.living-context__provenance-score {
+  font-size: 0.8rem;
+  font-weight: 700;
+  color: var(--lc-source);
+}
+
+.living-context__provenance-narrative {
+  flex: 1;
+  font-size: 0.75rem;
+  color: var(--pipe-text);
+  line-height: 1.4;
+}
+
+.living-context__provenance-stretch {
+  font-size: 0.65rem;
+  padding: 2px 6px;
+  border-radius: 3px;
+  background: rgba(120, 200, 255, 0.08);
+  color: var(--lc-structural);
+}
+
+.living-context__provenance-signals {
+  margin-top: 8px;
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+}
+
+.living-context__provenance-signal {
+  font-size: 0.7rem;
+  color: var(--lc-record-muted);
+  line-height: 1.4;
+}
+
+.living-context__provenance-signal-narrative {
+  color: var(--pipe-text-dim);
+}
+
+.living-context__provenance-signal-level {
+  margin-left: 6px;
+  font-size: 0.65rem;
+  padding: 1px 4px;
+  border-radius: 2px;
+  background: rgba(120, 255, 200, 0.08);
+  color: var(--lc-source);
+}
+
+.living-context__provenance-quote {
+  margin: 4px 0;
+  padding: 4px 8px;
+  border-left: 2px solid var(--lc-card-border);
+  font-size: 0.68rem;
+  color: var(--lc-record-dim);
+  font-style: italic;
+  line-height: 1.4;
+}
+
+.living-context__provenance-assertions {
+  margin-top: 6px;
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+}
+
+.living-context__provenance-assertion {
+  font-size: 0.7rem;
+  color: var(--lc-record-muted);
+  line-height: 1.4;
+}
+
+.living-context__provenance-decay {
+  margin-left: 6px;
+  font-size: 0.65rem;
+  color: var(--pipe-text-dim);
+}
+
+.living-context__provenance-interactions {
+  margin-top: 6px;
+  display: flex;
+  flex-wrap: wrap;
+  gap: 6px;
+}
+
+.living-context__provenance-interaction {
+  font-size: 0.65rem;
+  padding: 2px 6px;
+  border-radius: 3px;
+  background: rgba(255, 255, 255, 0.04);
+  color: var(--lc-record-dim);
+}

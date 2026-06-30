@@ -1432,6 +1432,143 @@ export interface EvidenceFreshnessResponse {
   entries: EvidenceFreshnessEntry[];
 }
 
+// ─── Evidence Gap Analysis ────────────────────────────────────────────────────
+
+export type CoverageLevel = 'strong' | 'partial' | 'weak' | 'none';
+
+export interface EvidenceGapSupportingAssertion {
+  assertionId: string;
+  narrative: string;
+  conceptKey: string;
+  strength: number;
+  decayMultiplier: number;
+  effectiveStrength: number;
+  observedAt: string | null;
+  exactText: string | null;
+}
+
+export interface EvidenceGapDemandCoverage {
+  demandId: string;
+  demandNarrative: string;
+  demandWeight: number;
+  demandConcepts: string[];
+  coverageLevel: CoverageLevel;
+  matchedConcepts: string[];
+  missingConcepts: string[];
+  evidenceCount: number;
+  bestEvidenceLevel: string | null;
+  bestStrength: number;
+  effectiveStrength: number;
+  supportingAssertions: EvidenceGapSupportingAssertion[];
+}
+
+export interface EvidenceGapSummary {
+  strongCount: number;
+  partialCount: number;
+  weakCount: number;
+  noneCount: number;
+  totalDemands: number;
+  coverageScore: number;
+  weightedCoverageScore: number;
+}
+
+export interface EvidenceGapResponse {
+  candidateId: string;
+  workspacePersonId: string | null;
+  challengeId: string;
+  demands: EvidenceGapDemandCoverage[];
+  summary: EvidenceGapSummary;
+  recommendations: string[];
+}
+
+// ─── Match Provenance Chain ───────────────────────────────────────────────────
+
+export interface ProvenanceMatchDecision {
+  matchRunId: string;
+  candidateId: string;
+  status: string;
+  selectedPacketId: string | null;
+  policyVersion: string;
+  createdAt: number;
+}
+
+export interface ProvenanceDemandLink {
+  demandId: string;
+  demandNarrative: string;
+  demandWeight: number;
+  demandConcepts: string[];
+  atomId: string;
+  pairScore: number;
+  stretch: {
+    atomConcept: string;
+    demandConcept: string;
+    dimension: string;
+  } | null;
+}
+
+export interface ProvenanceSignalNode {
+  atomId: string;
+  episodeId: string;
+  narrative: string;
+  purpose: string;
+  evidenceLevel: string | null;
+  evidenceStrength: number | null;
+  concepts: string[];
+  sourceRefs: Array<{
+    artifactId: string;
+    contentHash: string;
+    exactText: string | null;
+    startOffset: number;
+    endOffset: number;
+  }>;
+}
+
+export interface ProvenanceAssertionNode {
+  assertionId: string;
+  narrative: string;
+  predicate: string;
+  confidence: number | null;
+  polarity: number;
+  observedAt: string | null;
+  decayMultiplier: number;
+  concepts: string[];
+  sourceSpans: Array<{
+    sourceSpanId: string;
+    exactText: string;
+    lineStart: number | null;
+    lineEnd: number | null;
+    charStart: number | null;
+    charEnd: number | null;
+  }>;
+}
+
+export interface ProvenanceArtifactNode {
+  artifactId: string;
+  artifactType: string;
+  logicalKey: string | null;
+  mediaType: string | null;
+  contentHash: string | null;
+}
+
+export interface ProvenanceInteractionNode {
+  interactionId: string;
+  interactionType: string;
+  startedAt: string | null;
+}
+
+export interface ProvenanceChainEntry {
+  demandLink: ProvenanceDemandLink;
+  signals: ProvenanceSignalNode[];
+  assertions: ProvenanceAssertionNode[];
+  artifacts: ProvenanceArtifactNode[];
+  interactions: ProvenanceInteractionNode[];
+}
+
+export interface MatchProvenanceResponse {
+  decision: ProvenanceMatchDecision;
+  chain: ProvenanceChainEntry[];
+}
+
 // ─── Interview State Machine (mirrors workers/api/src/lib/agents/interview/types.ts)
 
 export type InterviewPhase = 'CONTEXT' | 'DISCOVERY' | 'PRIORITIZE' | 'EVP_FRICTION' | 'WRAP_UP';

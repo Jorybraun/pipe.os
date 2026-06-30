@@ -7,6 +7,19 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Added — Evidence gap analysis frontend panel (criterion #6, #7)
+
+- `EvidenceGapPanel` component in `LivingContextGraph.tsx` — visualizes coverage per demand (strong/partial/weak/none indicators), matched/missing concepts, supporting assertion excerpts, and actionable recommendations.
+- `useEvidenceGaps` hook — fetches gap analysis from `/api/v1/internal/evidence-gap-analysis` with candidate + challenge packet filtering.
+- Frontend types: `EvidenceGapResponse`, `EvidenceGapDemandCoverage`, `EvidenceGapSummary`, `CoverageLevel`, `EvidenceGapSupportingAssertion`.
+
+### Added — Match provenance chain frontend panel (criteria #2, #6, #7)
+
+- `MatchProvenancePanel` component in `LivingContextGraph.tsx` — renders full decision → demand → signal → assertion → source span → artifact → interaction provenance chain with pair scores, stretch indicators, decay freshness, and original text quotes.
+- `useMatchProvenance` hook — fetches provenance chain from `/api/v1/internal/match-provenance-chain` by match run ID.
+- Frontend types: `MatchProvenanceResponse`, `ProvenanceMatchDecision`, `ProvenanceDemandLink`, `ProvenanceSignalNode`, `ProvenanceAssertionNode`, `ProvenanceArtifactNode`, `ProvenanceInteractionNode`, `ProvenanceChainEntry`.
+- 7 new tests covering gap panel rendering, badge display, demand coverage, recommendations, provenance chain rendering, stretch display.
+
 ### Added — Evidence gap analysis (criterion #6)
 
 - `evidenceGapAnalysis.ts` — analyzes a candidate's evidence profile against challenge demands, producing a structured report of coverage levels (strong/partial/weak/none), missing concepts, and actionable recommendations.

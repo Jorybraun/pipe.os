@@ -13,6 +13,11 @@ import {
 import type {
   EvidenceFreshnessResponse,
   EvidenceLineageResponse,
+  EvidenceGapResponse,
+  EvidenceGapDemandCoverage,
+  CoverageLevel,
+  MatchProvenanceResponse,
+  ProvenanceChainEntry,
   LivingContextArtifact,
   LivingContextAssertion,
   LivingContextInteraction,
@@ -32,7 +37,9 @@ import type {
   StandaloneReviewStretchArea,
 } from '../../lib/api/types';
 import { useEvidenceFreshness } from '../../hooks/useEvidenceFreshness';
+import { useEvidenceGaps } from '../../hooks/useEvidenceGaps';
 import { useEvidenceLineage } from '../../hooks/useEvidenceLineage';
+import { useMatchProvenance } from '../../hooks/useMatchProvenance';
 import { useLivingContext } from '../../hooks/useLivingContext';
 import { buildLivingContextBranches } from '../../lib/livingContextTree';
 import { ContextRecordForest } from './ContextRecordTree';
@@ -1643,6 +1650,219 @@ function EvidenceLineagePanel({
   );
 }
 
+const COVERAGE_COLORS: Record<CoverageLevel, string> = {
+  strong: 'var(--lc-source)',
+  partial: 'var(--lc-structural)',
+  weak: 'var(--pipe-text-dim)',
+  none: 'var(--pipe-border)',
+};
+
+function coverageIcon(level: CoverageLevel): string {
+  switch (level) {
+    case 'strong': return '●';
+    case 'partial': return '◐';
+    case 'weak': return '○';
+    case 'none': return '✕';
+  }
+}
+
+function EvidenceGapPanel({
+  gaps,
+}: {
+  gaps: EvidenceGapResponse | null;
+}): JSX.Element | null {
+  if (!gaps || gaps.demands.length === 0) return null;
+  const { summary } = gaps;
+  return (
+    <section className="living-context__gap-analysis" data-testid="evidence-gap-panel">
+      <div className="living-context__section-head">
+        <div>
+          <div className="living-context__section-title">Evidence gap analysis</div>
+          <div className="living-context__eyebrow">
+            {summary.totalDemands} demands · {Math.round(summary.weightedCoverageScore * 100)}% weighted coverage
+          </div>
+        </div>
+        <Search size={14} color="var(--lc-source)" />
+      </div>
+
+      <div className="living-context__gap-summary" data-testid="gap-summary">
+        {(['strong', 'partial', 'weak', 'none'] as const).map((level) => {
+          const count = summary[`${level}Count` as keyof typeof summary] as number;
+          return count > 0 ? (
+            <span
+              key={level}
+              className="living-context__gap-badge"
+              style={{ borderColor: COVERAGE_COLORS[level] }}
+              data-testid={`gap-badge-${level}`}
+            >
+              {coverageIcon(level)} {titleCase(level)} ({count})
+            </span>
+          ) : null;
+        })}
+      </div>
+
+      <div className="living-context__gap-demands">
+        {gaps.demands.map((demand: EvidenceGapDemandCoverage) => (
+          <div
+            key={demand.demandId}
+            className={`living-context__gap-demand living-context__gap-demand--${demand.coverageLevel}`}
+            data-testid="gap-demand"
+            data-coverage={demand.coverageLevel}
+          >
+            <div className="living-context__gap-demand-head">
+              <span
+                className="living-context__gap-indicator"
+                style={{ color: COVERAGE_COLORS[demand.coverageLevel] }}
+              >
+                {coverageIcon(demand.coverageLevel)}
+              </span>
+              <span className="living-context__gap-demand-narrative">
+                {demand.demandNarrative}
+              </span>
+              <span className="living-context__gap-demand-score">
+                {Math.round(demand.effectiveStrength * 100)}%
+              </span>
+            </div>
+            {demand.matchedConcepts.length > 0 && (
+              <div className="living-context__gap-concepts living-context__gap-concepts--matched">
+                {demand.matchedConcepts.map((concept) => (
+                  <span key={concept} className="living-context__gap-concept">{concept}</span>
+                ))}
+              </div>
+            )}
+            {demand.missingConcepts.length > 0 && (
+              <div className="living-context__gap-concepts living-context__gap-concepts--missing">
+                {demand.missingConcepts.map((concept) => (
+                  <span key={concept} className="living-context__gap-concept living-context__gap-concept--missing">{concept}</span>
+                ))}
+              </div>
+            )}
+            {demand.supportingAssertions.length > 0 && (
+              <div className="living-context__gap-assertions">
+                {demand.supportingAssertions.slice(0, 3).map((assertion) => (
+                  <div key={assertion.assertionId} className="living-context__gap-assertion">
+                    <span className="living-context__gap-assertion-text">
+                      {assertion.exactText ?? assertion.narrative}
+                    </span>
+                    <span className="living-context__gap-assertion-strength">
+                      {Math.round(assertion.effectiveStrength * 100)}%
+                    </span>
+                  </div>
+                ))}
+              </div>
+            )}
+          </div>
+        ))}
+      </div>
+
+      {gaps.recommendations.length > 0 && (
+        <div className="living-context__gap-recommendations" data-testid="gap-recommendations">
+          {gaps.recommendations.map((rec, i) => (
+            <div key={i} className="living-context__gap-recommendation">{rec}</div>
+          ))}
+        </div>
+      )}
+    </section>
+  );
+}
+
+function MatchProvenancePanel({
+  provenance,
+}: {
+  provenance: MatchProvenanceResponse | null;
+}): JSX.Element | null {
+  if (!provenance || provenance.chain.length === 0) return null;
+  const { decision, chain } = provenance;
+  return (
+    <section className="living-context__provenance" data-testid="match-provenance-panel">
+      <div className="living-context__section-head">
+        <div>
+          <div className="living-context__section-title">Match provenance chain</div>
+          <div className="living-context__eyebrow">
+            {decision.status} · policy {decision.policyVersion} · {chain.length} demand links
+          </div>
+        </div>
+        <GitPullRequest size={14} color="var(--lc-source)" />
+      </div>
+
+      <div className="living-context__provenance-chain">
+        {chain.map((entry: ProvenanceChainEntry) => (
+          <article
+            key={entry.demandLink.demandId}
+            className="living-context__provenance-entry"
+            data-testid="provenance-entry"
+          >
+            <div className="living-context__provenance-demand">
+              <span className="living-context__provenance-score">
+                {Math.round(entry.demandLink.pairScore * 100)}%
+              </span>
+              <span className="living-context__provenance-narrative">
+                {entry.demandLink.demandNarrative}
+              </span>
+              {entry.demandLink.stretch && (
+                <span className="living-context__provenance-stretch">
+                  stretch: {entry.demandLink.stretch.atomConcept} → {entry.demandLink.stretch.demandConcept}
+                </span>
+              )}
+            </div>
+
+            {entry.signals.length > 0 && (
+              <div className="living-context__provenance-signals">
+                {entry.signals.slice(0, 4).map((signal) => (
+                  <div key={signal.atomId} className="living-context__provenance-signal">
+                    <span className="living-context__provenance-signal-narrative">
+                      {signal.narrative}
+                    </span>
+                    {signal.evidenceLevel && (
+                      <span className="living-context__provenance-signal-level">
+                        {signal.evidenceLevel}
+                      </span>
+                    )}
+                    {signal.sourceRefs.length > 0 && signal.sourceRefs[0]?.exactText && (
+                      <blockquote className="living-context__provenance-quote">
+                        {signal.sourceRefs[0]?.exactText}
+                      </blockquote>
+                    )}
+                  </div>
+                ))}
+              </div>
+            )}
+
+            {entry.assertions.length > 0 && (
+              <div className="living-context__provenance-assertions">
+                {entry.assertions.slice(0, 3).map((assertion) => (
+                  <div key={assertion.assertionId} className="living-context__provenance-assertion">
+                    <span>{assertion.narrative}</span>
+                    <span className="living-context__provenance-decay">
+                      {Math.round(assertion.decayMultiplier * 100)}% fresh
+                    </span>
+                    {assertion.sourceSpans.length > 0 && assertion.sourceSpans[0]?.exactText && (
+                      <blockquote className="living-context__provenance-quote">
+                        {assertion.sourceSpans[0]?.exactText}
+                      </blockquote>
+                    )}
+                  </div>
+                ))}
+              </div>
+            )}
+
+            {entry.interactions.length > 0 && (
+              <div className="living-context__provenance-interactions">
+                {entry.interactions.map((interaction) => (
+                  <span key={interaction.interactionId} className="living-context__provenance-interaction">
+                    {titleCase(interaction.interactionType)}
+                    {interaction.startedAt ? ` · ${formatDate(interaction.startedAt)}` : ''}
+                  </span>
+                ))}
+              </div>
+            )}
+          </article>
+        ))}
+      </div>
+    </section>
+  );
+}
+
 function EvidenceDepthPanel({
   livingContext,
 }: {
@@ -1705,6 +1925,10 @@ export function LivingContextGraph({
   const { livingContext, isLoading, error, refetch } = useLivingContext(livingContextSource);
   const { lineage } = useEvidenceLineage(candidateId);
   const { freshness } = useEvidenceFreshness(candidateId);
+  const matchRunId = standaloneReviewMatch?.matchRunId ?? null;
+  const challengePacketId = standaloneReviewMatch?.packetId ?? null;
+  const { gaps } = useEvidenceGaps(candidateId, challengePacketId);
+  const { provenance } = useMatchProvenance(matchRunId);
   const [selectedInteractionId, setSelectedInteractionId] = useState<string | null>(null);
   const [selectedSource, setSelectedSource] = useState<LivingContextSourceRef | null>(null);
   const [search, setSearch] = useState('');
@@ -1931,6 +2155,8 @@ export function LivingContextGraph({
       <EvidenceDepthPanel livingContext={livingContext} />
       <EvidenceFreshnessPanel freshness={freshness} />
       <EvidenceLineagePanel lineage={lineage} />
+      <EvidenceGapPanel gaps={gaps} />
+      <MatchProvenancePanel provenance={provenance} />
 
       <MeetingEvidencePanel
         livingContext={livingContext}
