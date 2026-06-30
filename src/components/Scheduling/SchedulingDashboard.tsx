@@ -1,4 +1,4 @@
-import { useEffect, useMemo, useRef, useState } from 'react';
+import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { useSearchParams } from 'react-router-dom';
 import { Calendar, UserPlus, X, CheckCircle2, XCircle } from 'lucide-react';
 import { useScheduledInterviews } from '../../hooks/useScheduledInterviews';
@@ -7,10 +7,27 @@ import { useApiClient } from '../../hooks/useApiClient';
 import { InterviewCard } from './InterviewCard';
 import { InviteCreationModal } from './InviteCreationModal';
 import { Skeleton } from '../ui/Skeleton';
-import type { InterviewType, MeetingType, ScheduledInterview, SchedulingProvider } from '../../lib/scheduling/types';
+import type {
+  AssessmentProgressSnapshot,
+  AssessmentSetupProjection,
+  InterviewType,
+  MeetingType,
+  ScheduledInterview,
+  SchedulingProvider,
+} from '../../lib/scheduling/types';
 
 // Timeline grouping
 type TimelineGroup = 'TODAY' | 'TOMORROW' | 'THIS_WEEK' | 'LATER' | 'PAST' | 'UNSCHEDULED';
+type InterviewSortMode = 'CREATED_DESC' | 'TIMELINE' | 'CREATED_ASC';
+type InterviewListGroup = TimelineGroup | 'CREATED_DESC' | 'CREATED_ASC';
+type AssessmentFilterMode = 'ALL' | 'ACTION_NEEDED' | 'READY_TO_EVALUATE' | 'NEEDS_ATTENTION' | 'EVALUATED';
+
+interface InvitePrefill {
+  recipientName: string;
+  recipientEmail: string;
+  interviewType: InterviewType;
+  recruiterNotes: string;
+}
 
 interface InviteResponse {
   success: boolean;
@@ -20,6 +37,40 @@ interface InviteResponse {
   deliveredUrl?: string | null;
   provider?: string;
   emailError?: string;
+}
+
+interface StartAssessmentEvaluationResponse {
+  progress: AssessmentProgressSnapshot;
+  report?: {
+    id: string;
+    sessionId: string;
+    status: string;
+    contextRecordId: string | null;
+  } | null;
+  diagnostic?: {
+    id: string;
+    sessionId: string;
+    reportId: string | null;
+    code: string;
+    severity: string;
+  } | null;
+}
+
+export function resolveInviteCreationGuestLink(
+  inviteResult: Pick<InviteResponse, 'meetingUrl' | 'schedulingUrl' | 'deliveredUrl'> | null,
+): string | null {
+  // `deliveredUrl` can be a provider scheduling page. The modal should show
+  // the Pipe room link that host/recruiter can open immediately.
+  return inviteResult?.meetingUrl ?? null;
+}
+
+function isInterviewType(value: string | null): value is InterviewType {
+  return value === 'VIDEO'
+    || value === 'SCREENING'
+    || value === 'CULTURE'
+    || value === 'CODE_REVIEW'
+    || value === 'DEV_CONTAINER_CHALLENGE'
+    || value === 'OPEN_SOURCE_BUG_FIX';
 }
 
 function getTimelineGroup(scheduledAt: string | null): TimelineGroup {
@@ -61,6 +112,80 @@ const TIMELINE_LABELS: Record<TimelineGroup, string> = {
   PAST: 'PAST',
   UNSCHEDULED: 'UNSCHEDULED',
 };
+
+const CREATED_LABELS: Record<Exclude<InterviewListGroup, TimelineGroup>, string> = {
+  CREATED_DESC: 'NEWEST CREATED',
+  CREATED_ASC: 'OLDEST CREATED',
+};
+
+const SORT_OPTIONS: ReadonlyArray<{ label: string; value: InterviewSortMode }> = [
+  { label: 'Newest', value: 'CREATED_DESC' },
+  { label: 'Timeline', value: 'TIMELINE' },
+  { label: 'Oldest', value: 'CREATED_ASC' },
+];
+
+const ASSESSMENT_FILTER_OPTIONS: ReadonlyArray<{ label: string; value: AssessmentFilterMode }> = [
+  { label: 'All', value: 'ALL' },
+  { label: 'Action needed', value: 'ACTION_NEEDED' },
+  { label: 'Ready to evaluate', value: 'READY_TO_EVALUATE' },
+  { label: 'Needs attention', value: 'NEEDS_ATTENTION' },
+  { label: 'Evaluated', value: 'EVALUATED' },
+];
+
+function getGroupLabel(group: InterviewListGroup): string {
+  return group in TIMELINE_LABELS
+    ? TIMELINE_LABELS[group as TimelineGroup]
+    : CREATED_LABELS[group as Exclude<InterviewListGroup, TimelineGroup>];
+}
+
+function getCreatedTime(interview: ScheduledInterview): number {
+  const time = new Date(interview.createdAt).getTime();
+  return Number.isFinite(time) ? time : 0;
+}
+
+function compareByCreatedNewest(a: ScheduledInterview, b: ScheduledInterview): number {
+  const createdDiff = getCreatedTime(b) - getCreatedTime(a);
+  return createdDiff === 0 ? a.id.localeCompare(b.id) : createdDiff;
+}
+
+function compareByCreatedOldest(a: ScheduledInterview, b: ScheduledInterview): number {
+  const createdDiff = getCreatedTime(a) - getCreatedTime(b);
+  return createdDiff === 0 ? a.id.localeCompare(b.id) : createdDiff;
+}
+
+function firstNonBlank(...values: Array<string | null | undefined>): string | null {
+  for (const value of values) {
+    const trimmed = value?.trim();
+    if (trimmed) return trimmed;
+  }
+  return null;
+}
+
+function assessmentFilterBucket(interview: ScheduledInterview): Exclude<AssessmentFilterMode, 'ALL' | 'ACTION_NEEDED'> | null {
+  const progress = interview.assessmentProgress ?? null;
+  if (progress?.evaluation?.status === 'EVALUATED') return 'EVALUATED';
+  if (
+    progress?.stage === 'NEEDS_ATTENTION'
+    || progress?.nextAction === 'RESOLVE_DIAGNOSTIC'
+    || (progress?.evaluation && progress.evaluation.status !== 'EVALUATED')
+    || interview.assessmentSetup?.blocksPositiveAssessment
+  ) {
+    return 'NEEDS_ATTENTION';
+  }
+  if (progress?.nextAction === 'START_EVALUATION' || progress?.stage === 'READY_FOR_EVALUATION') {
+    return 'READY_TO_EVALUATE';
+  }
+  return null;
+}
+
+function matchesAssessmentFilter(interview: ScheduledInterview, filter: AssessmentFilterMode): boolean {
+  if (filter === 'ALL') return true;
+  const bucket = assessmentFilterBucket(interview);
+  if (filter === 'ACTION_NEEDED') {
+    return bucket === 'READY_TO_EVALUATE' || bucket === 'NEEDS_ATTENTION';
+  }
+  return bucket === filter;
+}
 
 // ---------------------------------------------------------------------------
 // SchedulingDashboard
@@ -111,15 +236,34 @@ export function SchedulingDashboard(): JSX.Element {
   const { notifications, isConnected } = useBookingNotifications();
   const api = useApiClient();
   const [showInviteModal, setShowInviteModal] = useState(false);
+  const [invitePrefill, setInvitePrefill] = useState<InvitePrefill>({
+    recipientName: '',
+    recipientEmail: '',
+    interviewType: 'VIDEO',
+    recruiterNotes: '',
+  });
+  const [sortMode, setSortMode] = useState<InterviewSortMode>('CREATED_DESC');
+  const [assessmentFilter, setAssessmentFilter] = useState<AssessmentFilterMode>('ALL');
   const [searchParams, setSearchParams] = useSearchParams();
   const [toasts, setToasts] = useState<ToastItem[]>([]);
   const seenNotificationIds = useRef<Set<string>>(new Set());
 
   useEffect(() => {
     if (searchParams.get('new') !== '1') return;
+    const requestedInterviewType = searchParams.get('interviewType');
+    setInvitePrefill({
+      recipientName: searchParams.get('recipientName') ?? '',
+      recipientEmail: searchParams.get('recipientEmail') ?? '',
+      interviewType: isInterviewType(requestedInterviewType) ? requestedInterviewType : 'VIDEO',
+      recruiterNotes: searchParams.get('recruiterNotes') ?? '',
+    });
     setShowInviteModal(true);
     const next = new URLSearchParams(searchParams);
     next.delete('new');
+    next.delete('recipientName');
+    next.delete('recipientEmail');
+    next.delete('interviewType');
+    next.delete('recruiterNotes');
     setSearchParams(next, { replace: true });
   }, [searchParams, setSearchParams]);
 
@@ -148,11 +292,56 @@ export function SchedulingDashboard(): JSX.Element {
     }
   }, [notifications, refetch]);
 
-  // Group interviews by timeline, then sort within each group by time
+  const startAssessmentEvaluation = useCallback(async (interviewId: string): Promise<StartAssessmentEvaluationResponse> => {
+    const result = await api.post<StartAssessmentEvaluationResponse>(
+      `/api/v1/scheduling/interviews/${interviewId}/assessment/start-evaluation`,
+      {},
+    );
+    await refetch();
+    return result;
+  }, [api, refetch]);
+
+  const assessmentFilterCounts = useMemo(() => {
+    const counts: Record<AssessmentFilterMode, number> = {
+      ALL: interviews.length,
+      ACTION_NEEDED: 0,
+      READY_TO_EVALUATE: 0,
+      NEEDS_ATTENTION: 0,
+      EVALUATED: 0,
+    };
+    for (const interview of interviews) {
+      const bucket = assessmentFilterBucket(interview);
+      if (!bucket) continue;
+      counts[bucket] += 1;
+      if (bucket === 'READY_TO_EVALUATE' || bucket === 'NEEDS_ATTENTION') {
+        counts.ACTION_NEEDED += 1;
+      }
+    }
+    return counts;
+  }, [interviews]);
+
+  const visibleInterviews = useMemo(
+    () => interviews.filter((interview) => matchesAssessmentFilter(interview, assessmentFilter)),
+    [assessmentFilter, interviews],
+  );
+
+  // Group interviews by the selected recruiter view.
   const groupedInterviews = useMemo(() => {
+    if (sortMode === 'CREATED_DESC') {
+      return [
+        ['CREATED_DESC', [...visibleInterviews].sort(compareByCreatedNewest)],
+      ] as Array<[InterviewListGroup, ScheduledInterview[]]>;
+    }
+
+    if (sortMode === 'CREATED_ASC') {
+      return [
+        ['CREATED_ASC', [...visibleInterviews].sort(compareByCreatedOldest)],
+      ] as Array<[InterviewListGroup, ScheduledInterview[]]>;
+    }
+
     const groups = new Map<TimelineGroup, ScheduledInterview[]>();
 
-    interviews.forEach((iv) => {
+    visibleInterviews.forEach((iv) => {
       const group = getTimelineGroup(iv.scheduledAt ?? null);
       if (!groups.has(group)) {
         groups.set(group, []);
@@ -165,15 +354,16 @@ export function SchedulingDashboard(): JSX.Element {
       .sort((a, b) => TIMELINE_ORDER[a[0]] - TIMELINE_ORDER[b[0]])
       .map(([group, ivs]) => [
         group,
-        ivs.sort((a, b) => {
+        [...ivs].sort((a, b) => {
           if (!a.scheduledAt) return 1;
           if (!b.scheduledAt) return -1;
-          return new Date(a.scheduledAt).getTime() - new Date(b.scheduledAt).getTime();
+          const scheduleDiff = new Date(a.scheduledAt).getTime() - new Date(b.scheduledAt).getTime();
+          return scheduleDiff === 0 ? compareByCreatedNewest(a, b) : scheduleDiff;
         }),
-      ] as [TimelineGroup, ScheduledInterview[]]);
+      ] as [InterviewListGroup, ScheduledInterview[]]);
 
     return sorted;
-  }, [interviews]);
+  }, [sortMode, visibleInterviews]);
 
   // ---------------------------------------------------------------------------
   // Render
@@ -278,7 +468,7 @@ export function SchedulingDashboard(): JSX.Element {
               <span style={{ marginLeft: 8, color: '#4ade80', fontSize: 8 }}>● LIVE</span>
             )}
           </div>
-          <h1 style={{ fontSize: 28, fontWeight: 800, color: 'var(--pipe-text)', letterSpacing: '-0.02em' }}>
+          <h1 style={{ fontSize: 28, fontWeight: 800, color: 'var(--pipe-text)', letterSpacing: 0 }}>
             Interviews
           </h1>
         </div>
@@ -305,13 +495,98 @@ export function SchedulingDashboard(): JSX.Element {
             NEW INTERVIEW
           </button>
           <span style={{ fontSize: 13, color: 'var(--pipe-text-dim)', fontFamily: '"Space Mono", monospace' }}>
-            {interviews.length} total
+            {assessmentFilter === 'ALL'
+              ? `${interviews.length} total`
+              : `${visibleInterviews.length} shown · ${interviews.length} total`}
           </span>
+          <div
+            role="group"
+            aria-label="Interview sort"
+            style={{
+              display: 'inline-grid',
+              gridTemplateColumns: 'repeat(3, minmax(72px, 1fr))',
+              border: '1px solid var(--pipe-border)',
+              borderRadius: 6,
+              overflow: 'hidden',
+              background: 'var(--pipe-surface-solid)',
+              minHeight: 32,
+            }}
+          >
+            {SORT_OPTIONS.map((option) => {
+              const active = sortMode === option.value;
+              return (
+                <button
+                  key={option.value}
+                  type="button"
+                  aria-pressed={active}
+                  onClick={() => setSortMode(option.value)}
+                  style={{
+                    border: 'none',
+                    borderLeft: option.value === 'CREATED_DESC' ? 'none' : '1px solid var(--pipe-border)',
+                    background: active ? 'var(--pipe-text)' : 'transparent',
+                    color: active ? 'var(--pipe-bg)' : 'var(--pipe-text-dim)',
+                    fontFamily: '"Space Mono", monospace',
+                    fontSize: 10,
+                    fontWeight: 700,
+                    minHeight: 32,
+                    padding: '0 10px',
+                    cursor: 'pointer',
+                  }}
+                >
+                  {option.label}
+                </button>
+              );
+            })}
+          </div>
+          <div
+            role="group"
+            aria-label="Assessment filter"
+            style={{
+              display: 'flex',
+              flexWrap: 'wrap',
+              justifyContent: 'flex-end',
+              gap: 6,
+              maxWidth: 560,
+            }}
+          >
+            {ASSESSMENT_FILTER_OPTIONS.map((option) => {
+              const active = assessmentFilter === option.value;
+              const count = assessmentFilterCounts[option.value];
+              return (
+                <button
+                  key={option.value}
+                  type="button"
+                  aria-pressed={active}
+                  onClick={() => setAssessmentFilter(option.value)}
+                  style={{
+                    display: 'inline-flex',
+                    alignItems: 'center',
+                    gap: 6,
+                    minHeight: 30,
+                    padding: '0 10px',
+                    border: `1px solid ${active ? '#93c5fd' : 'var(--pipe-border)'}`,
+                    borderRadius: 6,
+                    background: active ? 'rgba(147,197,253,0.14)' : 'transparent',
+                    color: active ? '#bfdbfe' : 'var(--pipe-text-dim)',
+                    fontFamily: '"Space Mono", monospace',
+                    fontSize: 10,
+                    fontWeight: 700,
+                    letterSpacing: '0.04em',
+                    cursor: 'pointer',
+                    whiteSpace: 'nowrap',
+                  }}
+                >
+                  <span>{option.label}</span>
+                  <span style={{ color: active ? '#dbeafe' : 'var(--pipe-text-muted)' }}>{count}</span>
+                </button>
+              );
+            })}
+          </div>
         </div>
       </div>
 
       {/* Timeline groups */}
-      {interviews.length === 0 ? (
+      {visibleInterviews.length === 0 ? (
         <div
           style={{
             padding: 64,
@@ -322,7 +597,9 @@ export function SchedulingDashboard(): JSX.Element {
         >
           <Calendar size={40} color="var(--pipe-text-dim)" style={{ marginBottom: 16 }} />
           <p style={{ color: 'var(--pipe-text-dim)', fontFamily: '"Space Mono", monospace', fontSize: 13, lineHeight: 1.7 }}>
-            No interviews yet. Create one for any person; role context can be added later.
+            {interviews.length === 0
+              ? 'No interviews yet. Create one for any person; role context can be added later.'
+              : 'No interviews match this assessment view.'}
           </p>
         </div>
       ) : (
@@ -340,12 +617,18 @@ export function SchedulingDashboard(): JSX.Element {
                   textTransform: 'uppercase',
                 }}
               >
-                {TIMELINE_LABELS[group]}
+                {getGroupLabel(group)}
               </div>
               <div style={{ display: 'flex', flexDirection: 'column', gap: 8 }}>
                 {ivs.map((iv) => {
-                  const candidateName = iv.candidateName ?? iv.candidateEmail ?? iv.recipientName ?? iv.candidateId?.slice(0, 8) ?? 'Unknown person';
-                  const candidateEmail = iv.candidateEmail ?? iv.recipientEmail ?? null;
+                  const candidateName = firstNonBlank(
+                    iv.recipientName,
+                    iv.candidateName,
+                    iv.recipientEmail,
+                    iv.candidateEmail,
+                    iv.candidateId?.slice(0, 8),
+                  ) ?? 'Unknown person';
+                  const candidateEmail = firstNonBlank(iv.recipientEmail, iv.candidateEmail);
                   const pipelineTitle = iv.pipelineTitle ?? 'Talent Pool';
                   const stageTitle = iv.stageTitle ?? iv.interviewType ?? 'Interview';
 
@@ -359,6 +642,7 @@ export function SchedulingDashboard(): JSX.Element {
                       stageTitle={stageTitle}
                       updateStatus={updateStatus}
                       sendInvite={sendInvite}
+                      startAssessmentEvaluation={startAssessmentEvaluation}
                     />
                   );
                 })}
@@ -372,11 +656,16 @@ export function SchedulingDashboard(): JSX.Element {
       <InviteCreationModal
         isOpen={showInviteModal}
         onClose={() => setShowInviteModal(false)}
+        initialRecipientName={invitePrefill.recipientName}
+        initialRecipientEmail={invitePrefill.recipientEmail}
+        initialInterviewType={invitePrefill.interviewType}
+        initialRecruiterNotes={invitePrefill.recruiterNotes}
         onCreateInvite={async (data: {
           recipientName: string;
           recipientEmail: string;
           meetingType: MeetingType;
           interviewType: InterviewType;
+          recruiterNotes?: string;
           scheduledAt?: string;
           schedulingProvider?: SchedulingProvider;
           schedulingUrl?: string;
@@ -390,7 +679,12 @@ export function SchedulingDashboard(): JSX.Element {
           };
           agentType?: string | null;
         }) => {
-          const result = await api.post<{ interview: { id: string } }>(
+          const result = await api.post<{
+            interview: {
+              id: string;
+              assessmentSetup?: AssessmentSetupProjection | null;
+            };
+          }>(
             '/api/v1/scheduling/interviews',
             data,
           );
@@ -407,10 +701,11 @@ export function SchedulingDashboard(): JSX.Element {
           await refetch();
           return {
             id: result.interview.id,
-            meetingUrl: inviteResult?.deliveredUrl ?? inviteResult?.schedulingUrl ?? inviteResult?.meetingUrl ?? data.schedulingUrl ?? null,
+            meetingUrl: resolveInviteCreationGuestLink(inviteResult),
             emailSent: inviteResult?.emailSent ?? false,
             provider: inviteResult?.provider,
             emailError: inviteResult?.emailError ?? inviteError,
+            assessmentSetup: result.interview.assessmentSetup ?? null,
           };
         }}
       />

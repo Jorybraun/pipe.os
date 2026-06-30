@@ -95,8 +95,14 @@ export interface CallImplementerAgentInput {
 }
 
 const VALID_MOVES: ImplementerMove[] = ['comment', 'change', 'pushback'];
-const IMPLEMENTER_WORKERS_AI_MODEL = '@cf/qwen/qwen2.5-coder-32b-instruct';
-const IMPLEMENTER_WORKERS_AI_FALLBACK_MODEL = '@cf/qwen/qwen3-30b-a3b-fp8';
+const IMPLEMENTER_WORKERS_AI_MODELS = [
+  '@cf/openai/gpt-oss-20b',
+  '@cf/google/gemma-4-26b-a4b-it',
+  '@cf/qwen/qwen3-30b-a3b-fp8',
+  '@cf/qwen/qwen2.5-coder-32b-instruct',
+] as const;
+const IMPLEMENTER_WORKERS_AI_MODEL = IMPLEMENTER_WORKERS_AI_MODELS[0];
+const IMPLEMENTER_WORKERS_AI_REPAIR_MODEL = IMPLEMENTER_WORKERS_AI_MODELS[1];
 
 // ─── Kimi (Moonshot AI) ────────────────────────────────────────────────────
 
@@ -142,7 +148,7 @@ async function callWorkersAI(
   ai: Ai,
   systemPrompt: string,
   userMessage: string,
-  model = IMPLEMENTER_WORKERS_AI_MODEL,
+  model: string = IMPLEMENTER_WORKERS_AI_MODEL,
 ): Promise<string> {
   const response = await ai.run(
     model as Parameters<Ai['run']>[0],
@@ -322,6 +328,167 @@ function parseImplementerResponseJson(raw: string): unknown {
   throw lastError instanceof Error ? lastError : new Error('No JSON payload found');
 }
 
+function normaliseImplementerResponses(parsed: unknown): ImplementerResponse[] {
+  if (!Array.isArray(parsed)) return [];
+
+  const results: ImplementerResponse[] = [];
+  for (const item of parsed) {
+    if (
+      item &&
+      typeof item === 'object' &&
+      typeof (item as Record<string, unknown>).to_comment_id === 'number' &&
+      typeof (item as Record<string, unknown>).content === 'string'
+    ) {
+      const rec = item as Record<string, unknown>;
+      const rawMove = typeof rec.move === 'string' ? rec.move.toLowerCase() : 'comment';
+      const move: ImplementerMove = VALID_MOVES.includes(rawMove as ImplementerMove)
+        ? (rawMove as ImplementerMove)
+        : 'comment';
+
+      const updatedCode = typeof rec.updated_code === 'string' && rec.updated_code.trim() !== ''
+        ? rec.updated_code
+        : undefined;
+
+      // Soft validation: warn if move=change but no updated_code
+      if (move === 'change' && updatedCode === undefined) {
+        console.warn(`[implementerAgent] move=change for comment #${rec.to_comment_id} but no updated_code provided`);
+      }
+
+      results.push({
+        to_comment_id: rec.to_comment_id as number,
+        move,
+        content: rec.content as string,
+        ...(updatedCode !== undefined ? { updated_code: updatedCode } : {}),
+      });
+    }
+  }
+
+  return results;
+}
+
+function buildJsonRepairUserMessage(raw: string, newComments: ReviewComment[]): string {
+  const commentIds = newComments.map((comment) => comment.id).join(', ');
+  return [
+    'Convert the raw PR author response into strict JSON.',
+    'Return ONLY this shape: {"responses":[{"to_comment_id":number,"move":"comment|change|pushback","content":"string","updated_code":"optional string"}]}',
+    `Allowed to_comment_id values: ${commentIds}.`,
+    'Preserve the PR author intent from the raw response. Do not add markdown fences, prose, or extra keys.',
+    '',
+    'RAW_RESPONSE:',
+    raw || '(empty response)',
+  ].join('\n');
+}
+
+async function callJsonRepairProvider(input: {
+  provider: LLMProvider;
+  apiKey: string;
+  kimiBaseUrl?: string;
+  kimiModel?: string;
+  ai?: Ai;
+  raw: string;
+  newComments: ReviewComment[];
+}): Promise<string> {
+  const systemPrompt = [
+    'You repair malformed model output for a code-review PR author agent.',
+    'You do not invent review content. You only convert the supplied raw answer into the required JSON object.',
+    'If the raw answer contains multiple comments, map each one to the closest allowed comment id.',
+  ].join('\n');
+  const userMessage = buildJsonRepairUserMessage(input.raw, input.newComments);
+
+  if (input.provider === 'workers-ai') {
+    if (!input.ai) {
+      throw new Error('Workers AI binding is not available for JSON repair.');
+    }
+    return callWorkersAI(input.ai, systemPrompt, userMessage, IMPLEMENTER_WORKERS_AI_REPAIR_MODEL);
+  }
+  if (input.provider === 'kimi') {
+    return callKimi(input.apiKey, systemPrompt, userMessage, input.kimiBaseUrl, input.kimiModel);
+  }
+  throw new Error(`[implementerAgent] Provider '${input.provider}' is not supported for JSON repair.`);
+}
+
+async function repairAndParseImplementerResponse(input: {
+  provider: LLMProvider;
+  apiKey: string;
+  kimiBaseUrl?: string;
+  kimiModel?: string;
+  ai?: Ai;
+  raw: string;
+  newComments: ReviewComment[];
+}): Promise<unknown> {
+  if (input.raw.trim() === '') {
+    throw new Error('Cannot repair an empty provider response.');
+  }
+  const repairedRaw = await callJsonRepairProvider(input);
+  return parseImplementerResponseJson(repairedRaw);
+}
+
+async function callWorkersAIImplementerAgent(input: {
+  ai: Ai;
+  systemPrompt: string;
+  userMessage: string;
+  newComments: ReviewComment[];
+}): Promise<ImplementerResponse[]> {
+  let lastReason = 'Review author agent provider returned an empty response.';
+
+  for (const model of IMPLEMENTER_WORKERS_AI_MODELS) {
+    let raw = '';
+    try {
+      raw = await callWorkersAI(input.ai, input.systemPrompt, input.userMessage, model);
+    } catch (error) {
+      const message = error instanceof Error ? error.message : String(error);
+      lastReason = `Review author agent model ${model} failed: ${message}`;
+      console.error('[implementerAgent] Workers AI author model failed:', { model, message });
+      continue;
+    }
+
+    if (raw.trim() === '') {
+      lastReason = `Review author agent model ${model} returned an empty response.`;
+      console.warn('[implementerAgent] Workers AI author model returned empty response:', model);
+      continue;
+    }
+
+    try {
+      const parsed = parseImplementerResponseJson(raw);
+      const results = normaliseImplementerResponses(parsed);
+      if (results.length > 0) return results;
+      lastReason = `Review author agent model ${model} returned no valid responses.`;
+    } catch (parseError) {
+      lastReason = `Review author agent model ${model} returned invalid JSON.`;
+      console.warn(
+        '[implementerAgent] Workers AI author model returned unparsable response:',
+        { model, message: parseError instanceof Error ? parseError.message : String(parseError) },
+      );
+    }
+
+    try {
+      const repaired = await repairAndParseImplementerResponse({
+        provider: 'workers-ai',
+        apiKey: '',
+        ai: input.ai,
+        raw,
+        newComments: input.newComments,
+      });
+      const repairedResults = normaliseImplementerResponses(repaired);
+      if (repairedResults.length > 0) return repairedResults;
+      lastReason = `Review author agent model ${model} repair returned no valid responses.`;
+    } catch (repairError) {
+      lastReason = `Review author agent model ${model} repair failed.`;
+      console.warn(
+        '[implementerAgent] Workers AI author JSON repair failed:',
+        { model, message: repairError instanceof Error ? repairError.message : String(repairError) },
+      );
+    }
+  }
+
+  throw new AiDeveloperUnavailableError({
+    provider: 'workers-ai',
+    reason: lastReason,
+    retryable: true,
+    details: { modelsTried: IMPLEMENTER_WORKERS_AI_MODELS.length },
+  });
+}
+
 // ─── Prompt builder for user message ────────────────────────────────────────
 
 /**
@@ -401,16 +568,26 @@ export async function callImplementerAgent(
   const systemPrompt = buildImplementerSystemPrompt(persona, prBrief, prDiff, dispositionalWeights);
   const userMessage = buildUserMessage(previousRounds, newComments);
 
+  if (provider === 'workers-ai') {
+    return callWorkersAIImplementerAgent({
+      ai: ai!,
+      systemPrompt,
+      userMessage,
+      newComments,
+    });
+  }
+
+  if (provider !== 'kimi') {
+    throw new AiDeveloperUnavailableError({
+      provider,
+      reason: `Review author agent provider '${provider}' is not supported.`,
+      retryable: false,
+    });
+  }
+
   let raw: string;
-  let usedWorkersAiFallback = false;
   try {
-    if (provider === 'workers-ai') {
-      raw = await callWorkersAI(ai!, systemPrompt, userMessage);
-    } else if (provider === 'kimi') {
-      raw = await callKimi(apiKey, systemPrompt, userMessage, kimiBaseUrl, kimiModel);
-    } else {
-      throw new Error(`[implementerAgent] Provider '${provider}' is not supported.`);
-    }
+    raw = await callKimi(apiKey, systemPrompt, userMessage, kimiBaseUrl, kimiModel);
   } catch (err) {
     const message = err instanceof Error ? err.message : String(err);
     console.error(`[implementerAgent] ${provider} call failed:`, message);
@@ -421,23 +598,6 @@ export async function callImplementerAgent(
     });
   }
 
-  if (!raw && provider === 'workers-ai') {
-    console.warn('[implementerAgent] Workers AI primary author model returned empty response; retrying fallback model.');
-    usedWorkersAiFallback = true;
-    try {
-      raw = await callWorkersAI(ai!, systemPrompt, userMessage, IMPLEMENTER_WORKERS_AI_FALLBACK_MODEL);
-    } catch (err) {
-      const message = err instanceof Error ? err.message : String(err);
-      console.error('[implementerAgent] workers-ai fallback call failed:', message);
-      throw new AiDeveloperUnavailableError({
-        provider,
-        reason: `Review author agent fallback provider failed: ${message}`,
-        retryable: true,
-      });
-    }
-  }
-
-  // Parse JSON array from response — handle fenced code blocks
   let parsed: unknown;
   try {
     if (!raw) {
@@ -445,28 +605,24 @@ export async function callImplementerAgent(
     }
     parsed = parseImplementerResponseJson(raw);
   } catch (parseError) {
-    if (provider === 'workers-ai' && !usedWorkersAiFallback) {
-      console.warn(
-        '[implementerAgent] Workers AI primary author model returned unparsable response; retrying fallback model:',
-        parseError instanceof Error ? parseError.message : String(parseError),
+    try {
+      parsed = await repairAndParseImplementerResponse({
+        provider,
+        apiKey,
+        ...(kimiBaseUrl ? { kimiBaseUrl } : {}),
+        ...(kimiModel ? { kimiModel } : {}),
+        ai,
+        raw,
+        newComments,
+      });
+    } catch (repairError) {
+      console.error(
+        '[implementerAgent] JSON repair failed after parse error:',
+        {
+          parseError: parseError instanceof Error ? parseError.message : String(parseError),
+          repairError: repairError instanceof Error ? repairError.message : String(repairError),
+        },
       );
-      usedWorkersAiFallback = true;
-      try {
-        raw = await callWorkersAI(ai!, systemPrompt, userMessage, IMPLEMENTER_WORKERS_AI_FALLBACK_MODEL);
-        parsed = parseImplementerResponseJson(raw);
-      } catch (fallbackError) {
-        console.error(
-          '[implementerAgent] Workers AI fallback failed to produce valid JSON:',
-          fallbackError instanceof Error ? fallbackError.message : String(fallbackError),
-        );
-        throw new AiDeveloperUnavailableError({
-          provider,
-          reason: 'Review author agent provider returned invalid JSON.',
-          retryable: true,
-        });
-      }
-    } else {
-      console.error('[implementerAgent] Failed to parse JSON response:', raw.slice(0, 200));
       throw new AiDeveloperUnavailableError({
         provider,
         reason: raw
@@ -477,70 +633,34 @@ export async function callImplementerAgent(
     }
   }
 
-  if (!Array.isArray(parsed)) {
-    if (provider === 'workers-ai' && !usedWorkersAiFallback) {
-      console.warn('[implementerAgent] Workers AI primary author model returned non-array JSON; retrying fallback model.');
-      try {
-        raw = await callWorkersAI(ai!, systemPrompt, userMessage, IMPLEMENTER_WORKERS_AI_FALLBACK_MODEL);
-        parsed = parseImplementerResponseJson(raw);
-      } catch (fallbackError) {
-        console.error(
-          '[implementerAgent] Workers AI fallback failed after non-array response:',
-          fallbackError instanceof Error ? fallbackError.message : String(fallbackError),
-        );
-      }
+  let results = normaliseImplementerResponses(parsed);
+  if (results.length === 0) {
+    try {
+      parsed = await repairAndParseImplementerResponse({
+        provider,
+        apiKey,
+        ...(kimiBaseUrl ? { kimiBaseUrl } : {}),
+        ...(kimiModel ? { kimiModel } : {}),
+        ai,
+        raw,
+        newComments,
+      });
+      results = normaliseImplementerResponses(parsed);
+    } catch (repairError) {
+      console.error(
+        '[implementerAgent] JSON repair failed after empty normalized responses:',
+        repairError instanceof Error ? repairError.message : String(repairError),
+      );
     }
-  }
 
-  if (!Array.isArray(parsed)) {
-    console.error('[implementerAgent] Failed to parse JSON response:', raw.slice(0, 200));
-    throw new AiDeveloperUnavailableError({
-      provider,
-      reason: 'Review author agent provider response was not an array.',
-      retryable: true,
-    });
-  }
-
-  // Validate and normalise each item
-  const results: ImplementerResponse[] = [];
-  for (const item of parsed) {
-    if (
-      item &&
-      typeof item === 'object' &&
-      typeof (item as Record<string, unknown>).to_comment_id === 'number' &&
-      typeof (item as Record<string, unknown>).content === 'string'
-    ) {
-      const rec = item as Record<string, unknown>;
-      const rawMove = typeof rec.move === 'string' ? rec.move.toLowerCase() : 'comment';
-      const move: ImplementerMove = VALID_MOVES.includes(rawMove as ImplementerMove)
-        ? (rawMove as ImplementerMove)
-        : 'comment';
-
-      const updatedCode = typeof rec.updated_code === 'string' && rec.updated_code.trim() !== ''
-        ? rec.updated_code
-        : undefined;
-
-      // Soft validation: warn if move=change but no updated_code
-      if (move === 'change' && updatedCode === undefined) {
-        console.warn(`[implementerAgent] move=change for comment #${rec.to_comment_id} but no updated_code provided`);
-      }
-
-      results.push({
-        to_comment_id: rec.to_comment_id as number,
-        move,
-        content: rec.content as string,
-        ...(updatedCode !== undefined ? { updated_code: updatedCode } : {}),
+    if (results.length === 0) {
+      console.error('[implementerAgent] Parsed array had no valid items');
+      throw new AiDeveloperUnavailableError({
+        provider,
+        reason: 'Review author agent provider returned no valid responses.',
+        retryable: true,
       });
     }
-  }
-
-  if (results.length === 0) {
-    console.error('[implementerAgent] Parsed array had no valid items');
-    throw new AiDeveloperUnavailableError({
-      provider,
-      reason: 'Review author agent provider returned no valid responses.',
-      retryable: true,
-    });
   }
 
   return results;

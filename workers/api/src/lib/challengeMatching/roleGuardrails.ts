@@ -108,10 +108,6 @@ export async function loadRoleChallengeSemantics(
 
   const sources: RoleChallengeSemantics['sources'] = [];
   const terms = new Map<string, string>();
-  const selectedSurfaces = new Set(
-    parseStringArray(roleContext.non_negotiable_skills_json).map(normalizeOpenTermSurface),
-  );
-
   const contextResult = await db.prepare(
     `SELECT cr.id AS context_record_id,
             cr.record_type,
@@ -225,17 +221,13 @@ export async function loadRoleChallengeSemantics(
     });
   }
 
-  const requiredConcepts = [...terms.entries()]
-    .filter(([, surface]) => selectedSurfaces.has(normalizeOpenTermSurface(surface)))
-    .map(([canonicalKey]) => canonicalKey)
-    .sort();
   const rcdVersion = sources[0]?.rcdVersion ?? roleContext.rcd_version ?? 'unversioned';
 
   return {
     roleSnapshotId: `role-context:${roleContext.id}:source-backed:${rcdVersion}`,
     resolverVersion: OPEN_TERM_RESOLVER_VERSION,
     relevantConcepts: [...terms.keys()].sort(),
-    requiredConcepts,
+    requiredConcepts: [],
     sources,
   };
 }

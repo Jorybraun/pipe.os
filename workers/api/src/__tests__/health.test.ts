@@ -55,10 +55,43 @@ describe('worker health routes', () => {
           properties: {
             source: 'code_server_workspace',
             observedBy: 'agent_bridge',
-            action: 'modified',
-            contentHash: 'sha256-source-hash',
+            observedAt: '2026-06-29T12:00:00.000Z',
+            bridgeEventType: 'FILE_CHANGED',
+            editorSurface: 'code-server',
+            action: 'deleted',
+            path: 'src/app.ts',
+            contentHash: '0123456789abcdef0123456789abcdef0123456789abcdef0123456789abcdef',
+            sizeBytes: 0,
+            bridgePersisted: true,
+            workspaceRoot: '/workspace',
           },
         }),
+      }),
+      {
+        ENV: 'dev',
+        DEV_PROXY_SECRET: 'dev-secret',
+        DB: { prepare },
+      } as never,
+      {} as never,
+    );
+
+    expect(res.status).toBe(404);
+    expect(prepare).toHaveBeenCalled();
+    const body = await res.json() as { error?: { code?: string; message?: string } };
+    expect(body.error?.code).toBe('NOT_FOUND');
+    expect(body.error?.message).toBe('Room link is invalid or expired.');
+  });
+
+  it('lets the dev-container bridge submit token-scoped commit evidence without the dev proxy secret', async () => {
+    const first = vi.fn(async () => null);
+    const bind = vi.fn(() => ({ first }));
+    const prepare = vi.fn(() => ({ bind }));
+
+    const res = await worker.fetch(
+      new Request('http://pipe.test/api/v1/meeting-rooms/not-a-real-token/assessment/commit-submission', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: '{}',
       }),
       {
         ENV: 'dev',

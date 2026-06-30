@@ -6,9 +6,8 @@
  * ## What this tests
  *
  * These tests exercise the culture agent and scorer pipeline directly at the
- * module level, using the null-provider mock path (MOCK_AI equivalent). They
- * cover the same invariants as the HTTP endpoints would, without requiring a
- * running Wrangler dev server.
+ * module level. Null-provider question generation stays deterministic; scoring
+ * must fail closed when no real provider is configured.
  *
  * ## HTTP harness gap
  *
@@ -24,8 +23,8 @@
  * 3. advanceCultureInterview — probe budget exhausted: advances on 3rd short answer
  * 4. advanceCultureInterview — termination: coverage_complete fires at min=5
  * 5. advanceCultureInterview — hard cap: terminates at maxQuestions
- * 6. mockScoreReport — returns sanitized shape (5 competency + 5 profile scores)
- * 7. scoreCultureInterview (null provider) — returns mock report
+ * 6. local score-report fixture — returns sanitized shape (5 competency + 5 profile scores)
+ * 7. scoreCultureInterview (null provider) — rejects without writing fake scores
  * 8. Candidate report sanitization: no BARS reasoning or internal traces in
  *    the shape returned by the candidate-facing endpoint (tested via shape check)
  */
@@ -39,9 +38,10 @@ import {
   type CultureTranscript,
 } from '../../../lib/cultureAgent';
 import {
-  mockScoreReport,
+  CultureScorerUnavailableError,
   scoreCultureInterview,
   CULTURE_PROFILE_DIMENSIONS,
+  type CultureScoreReport,
   type OrgCultureBenchmark,
 } from '../../../lib/cultureScorer';
 
@@ -63,15 +63,48 @@ const MOCK_ORG_BENCHMARK: OrgCultureBenchmark = {
   feedbackOrientation: 4,
 };
 
-/** A long answer (≥200 chars) that causes the null-provider mock to advance. */
+/** A long answer (>=200 chars) that causes deterministic null-provider questioning to advance. */
 const LONG_ANSWER =
   'In my previous role I owned the end-to-end migration of our monolith to ' +
   'microservices. I identified the bottlenecks, created the plan, coordinated ' +
   'with three teams, and delivered on time despite scope creep. The result was ' +
   'a 40% reduction in deployment time and zero production incidents during cutover.';
 
-/** A short answer (<200 chars) that causes the null-provider mock to probe. */
+/** A short answer (<200 chars) that causes deterministic null-provider questioning to probe. */
 const SHORT_ANSWER = 'I just took ownership of the project and made sure it was done.';
+
+function buildTestCultureScoreReport(orgBenchmark: OrgCultureBenchmark): CultureScoreReport {
+  return {
+    competencyScores: COMPETENCY_DIMENSIONS.map((dimension) => ({
+      dimension,
+      score: 3,
+      rawScore: 3,
+      dispositionalWeight: 0,
+      barsOverrideApplied: false,
+      evidenceQuotes: ['I owned the end-to-end migration and coordinated with three teams.'],
+      confidence: 0.7,
+      reasoning: 'Fixture report for candidate-facing sanitization shape tests.',
+      repromptCount: 0,
+    })),
+    profileScores: CULTURE_PROFILE_DIMENSIONS.map((dimension) => ({
+      dimension,
+      candidatePosition: 3,
+      evidenceQuotes: ['I owned the end-to-end migration and coordinated with three teams.'],
+      confidence: 0.7,
+      reasoning: 'Fixture report for candidate-facing sanitization shape tests.',
+      repromptCount: 0,
+    })),
+    dealbreakerFlags: [],
+    hitlReviewRequired: false,
+    synthesis: {
+      headline: 'Fixture score report',
+      narrative: 'Fixture narrative.',
+      recommendation: 'FLAG_FOR_REVIEW',
+    },
+    orgBenchmark,
+    scoredAt: new Date().toISOString(),
+  };
+}
 
 // ─── 1. startCultureInterview ────────────────────────────────────────────────
 
@@ -105,7 +138,7 @@ describe('startCultureInterview', () => {
 
 // ─── 2. advanceCultureInterview — probe on short answer ──────────────────────
 
-describe('advanceCultureInterview — null provider (mock path)', () => {
+describe('advanceCultureInterview — null provider deterministic questioning', () => {
   it('probes on a short answer (<200 chars)', async () => {
     const { transcript } = startCultureInterview();
     const result = await advanceCultureInterview({
@@ -291,70 +324,61 @@ describe('advanceCultureInterview — termination', () => {
   });
 });
 
-// ─── 6. mockScoreReport shape ─────────────────────────────────────────────────
+// ─── 6. local score-report fixture shape ─────────────────────────────────────
 
-describe('mockScoreReport', () => {
+describe('test culture score report fixture', () => {
   it('returns exactly 5 competency scores', () => {
-    const transcript = defaultCultureTranscript();
-    const report = mockScoreReport(transcript, MOCK_ORG_BENCHMARK);
+    const report = buildTestCultureScoreReport(MOCK_ORG_BENCHMARK);
     expect(report.competencyScores).toHaveLength(5);
   });
 
   it('returns exactly 5 profile scores', () => {
-    const transcript = defaultCultureTranscript();
-    const report = mockScoreReport(transcript, MOCK_ORG_BENCHMARK);
+    const report = buildTestCultureScoreReport(MOCK_ORG_BENCHMARK);
     expect(report.profileScores).toHaveLength(5);
   });
 
   it('all competency scores are valid 1–5 integers', () => {
-    const transcript = defaultCultureTranscript();
-    const report = mockScoreReport(transcript, MOCK_ORG_BENCHMARK);
+    const report = buildTestCultureScoreReport(MOCK_ORG_BENCHMARK);
     for (const cs of report.competencyScores) {
       expect([1, 2, 3, 4, 5]).toContain(cs.score);
     }
   });
 
   it('all profile scores have valid 1–5 candidatePosition', () => {
-    const transcript = defaultCultureTranscript();
-    const report = mockScoreReport(transcript, MOCK_ORG_BENCHMARK);
+    const report = buildTestCultureScoreReport(MOCK_ORG_BENCHMARK);
     for (const ps of report.profileScores) {
       expect([1, 2, 3, 4, 5]).toContain(ps.candidatePosition);
     }
   });
 
   it('competency dimensions match the canonical COMPETENCY_DIMENSIONS list', () => {
-    const transcript = defaultCultureTranscript();
-    const report = mockScoreReport(transcript, MOCK_ORG_BENCHMARK);
+    const report = buildTestCultureScoreReport(MOCK_ORG_BENCHMARK);
     const reportDims = report.competencyScores.map((cs) => cs.dimension).sort();
     const canonicalDims = [...COMPETENCY_DIMENSIONS].sort();
     expect(reportDims).toEqual(canonicalDims);
   });
 
   it('profile dimensions match the canonical CULTURE_PROFILE_DIMENSIONS list', () => {
-    const transcript = defaultCultureTranscript();
-    const report = mockScoreReport(transcript, MOCK_ORG_BENCHMARK);
+    const report = buildTestCultureScoreReport(MOCK_ORG_BENCHMARK);
     const reportDims = report.profileScores.map((ps) => ps.dimension).sort();
     const canonicalDims = [...CULTURE_PROFILE_DIMENSIONS].sort();
     expect(reportDims).toEqual(canonicalDims);
   });
 
   it('synthesis recommendation is one of the three valid values', () => {
-    const transcript = defaultCultureTranscript();
-    const report = mockScoreReport(transcript, MOCK_ORG_BENCHMARK);
+    const report = buildTestCultureScoreReport(MOCK_ORG_BENCHMARK);
     expect(['HIRE', 'FLAG_FOR_REVIEW', 'PASS']).toContain(
       report.synthesis.recommendation,
     );
   });
 
   it('orgBenchmark is echoed into the report', () => {
-    const transcript = defaultCultureTranscript();
-    const report = mockScoreReport(transcript, MOCK_ORG_BENCHMARK);
+    const report = buildTestCultureScoreReport(MOCK_ORG_BENCHMARK);
     expect(report.orgBenchmark).toEqual(MOCK_ORG_BENCHMARK);
   });
 
   it('scoredAt is a valid ISO timestamp', () => {
-    const transcript = defaultCultureTranscript();
-    const report = mockScoreReport(transcript, MOCK_ORG_BENCHMARK);
+    const report = buildTestCultureScoreReport(MOCK_ORG_BENCHMARK);
     expect(() => new Date(report.scoredAt)).not.toThrow();
     expect(new Date(report.scoredAt).getFullYear()).toBeGreaterThan(2024);
   });
@@ -363,20 +387,19 @@ describe('mockScoreReport', () => {
 // ─── 7. scoreCultureInterview — null provider path ───────────────────────────
 
 describe('scoreCultureInterview with null provider', () => {
-  it('returns a CultureScoreReport without calling the LLM', async () => {
+  it('rejects instead of returning a fake CultureScoreReport', async () => {
     const transcript = defaultCultureTranscript();
-    const report = await scoreCultureInterview({
+    await expect(scoreCultureInterview({
       provider: null,
       transcript,
       orgBenchmark: MOCK_ORG_BENCHMARK,
-    });
-    // Null provider falls back to mockScoreReport — same shape assertions
-    expect(report.competencyScores).toHaveLength(5);
-    expect(report.profileScores).toHaveLength(5);
-    expect(typeof report.synthesis.headline).toBe('string');
+    })).rejects.toMatchObject({
+      name: 'CultureScorerUnavailableError',
+      provider: null,
+    } satisfies Partial<CultureScorerUnavailableError>);
   });
 
-  it('does not throw when transcript has no turns', async () => {
+  it('rejects when transcript has no turns and no scorer provider exists', async () => {
     const transcript = defaultCultureTranscript();
     await expect(
       scoreCultureInterview({
@@ -384,22 +407,25 @@ describe('scoreCultureInterview with null provider', () => {
         transcript,
         orgBenchmark: MOCK_ORG_BENCHMARK,
       }),
-    ).resolves.not.toThrow();
+    ).rejects.toMatchObject({
+      name: 'CultureScorerUnavailableError',
+    } satisfies Partial<CultureScorerUnavailableError>);
   });
 
-  it('works with a populated transcript', async () => {
+  it('rejects with a populated transcript when no scorer provider exists', async () => {
     const { transcript: t0 } = startCultureInterview();
     const r1 = await advanceCultureInterview({
       provider: null,
       transcript: t0,
       candidateAnswer: LONG_ANSWER,
     });
-    const report = await scoreCultureInterview({
+    await expect(scoreCultureInterview({
       provider: null,
       transcript: r1.transcript,
       orgBenchmark: MOCK_ORG_BENCHMARK,
-    });
-    expect(report.competencyScores).toHaveLength(5);
+    })).rejects.toMatchObject({
+      name: 'CultureScorerUnavailableError',
+    } satisfies Partial<CultureScorerUnavailableError>);
   });
 });
 
@@ -407,13 +433,12 @@ describe('scoreCultureInterview with null provider', () => {
 //
 // The candidate-facing GET /rpc/culture/session/:token/report strips
 // BARS reasoning, evidenceQuotes, and internal traces before responding.
-// We verify the expected sanitized shape by calling mockScoreReport and
+// We verify the expected sanitized shape with a local score-report fixture and
 // applying the same sanitization logic that the route uses.
 
 describe('candidate report sanitization', () => {
   it('sanitized shape omits BARS reasoning and evidence quotes', () => {
-    const transcript = defaultCultureTranscript();
-    const fullReport = mockScoreReport(transcript, MOCK_ORG_BENCHMARK);
+    const fullReport = buildTestCultureScoreReport(MOCK_ORG_BENCHMARK);
 
     // Mirror the sanitization in culture.ts cultureCandidate GET /report
     const sanitized = {

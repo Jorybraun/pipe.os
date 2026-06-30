@@ -1,0 +1,149 @@
+import type { AssessmentSetupProjection } from './types';
+
+export interface AssessmentChallengeSource {
+  exactText: string;
+  locator: Record<string, unknown>;
+}
+
+export interface AssessmentChallengeSummary {
+  repositoryUrl: string | null;
+  githubPrNumber: number | null;
+  baseCommitSha: string | null;
+  task: string | null;
+}
+
+export interface AssessmentAssignmentSummary {
+  label: string;
+  detail: string;
+  tone: 'matched' | 'manual' | 'waiting' | 'blocked' | 'neutral';
+}
+
+function locatorString(locator: Record<string, unknown>, keys: string[]): string | null {
+  for (const key of keys) {
+    const value = locator[key];
+    if (typeof value === 'string' && value.trim().length > 0) return value.trim();
+  }
+  return null;
+}
+
+function locatorNumber(locator: Record<string, unknown>, keys: string[]): number | null {
+  for (const key of keys) {
+    const value = locator[key];
+    if (typeof value === 'number' && Number.isInteger(value) && value > 0) return value;
+    if (typeof value === 'string') {
+      const parsed = Number.parseInt(value.trim(), 10);
+      if (Number.isInteger(parsed) && parsed > 0) return parsed;
+    }
+  }
+  return null;
+}
+
+export function summarizeAssessmentChallenge(
+  challenge: AssessmentChallengeSource | null | undefined,
+): AssessmentChallengeSummary | null {
+  if (!challenge) return null;
+  const lines = challenge.exactText
+    .split(/\r?\n/)
+    .map((line) => line.trim())
+    .filter(Boolean);
+  const summary: AssessmentChallengeSummary = {
+    repositoryUrl: locatorString(challenge.locator, ['repositoryUrl', 'githubRepoUrl', 'repoUrl']),
+    githubPrNumber: locatorNumber(challenge.locator, ['githubPrNumber', 'prNumber']),
+    baseCommitSha: locatorString(challenge.locator, ['baseCommitSha', 'baseCommit']),
+    task: null,
+  };
+
+  for (const line of lines) {
+    const repoMatch = line.match(/^repo(?:sitory)?\s*:\s*(.+)$/i);
+    if (repoMatch?.[1] && !summary.repositoryUrl) {
+      summary.repositoryUrl = repoMatch[1].trim();
+      continue;
+    }
+    const prMatch = line.match(/^(?:pull request|pr)\s*:\s*#?(\d+)$/i);
+    if (prMatch?.[1] && !summary.githubPrNumber) {
+      summary.githubPrNumber = Number.parseInt(prMatch[1], 10);
+      continue;
+    }
+    const baseCommitMatch = line.match(/^base commit\s*:\s*([a-f0-9]{7,40})$/i);
+    if (baseCommitMatch?.[1] && !summary.baseCommitSha) {
+      summary.baseCommitSha = baseCommitMatch[1].trim();
+      continue;
+    }
+    const taskMatch = line.match(/^task\s*:\s*(.+)$/i);
+    if (taskMatch?.[1] && !summary.task) {
+      summary.task = taskMatch[1].trim();
+    }
+  }
+
+  return summary.repositoryUrl || summary.githubPrNumber || summary.baseCommitSha || summary.task
+    ? summary
+    : null;
+}
+
+export function summarizeAssessmentAssignment(
+  setup: AssessmentSetupProjection | null | undefined,
+): AssessmentAssignmentSummary | null {
+  if (!setup || setup.status === 'not_applicable') return null;
+
+  if (setup.source === 'matched_repo_id' || setup.kind === 'auto_match') {
+    if (setup.status === 'reviewable_task_assigned') {
+      return {
+        label: 'PIPE-matched challenge',
+        detail: 'Repo task was selected from source-backed candidate evidence and an approved challenge packet.',
+        tone: 'matched',
+      };
+    }
+
+    return {
+      label: 'Waiting for PIPE match',
+      detail: setup.message ?? 'PIPE needs source-backed candidate evidence before selecting a fair repo task.',
+      tone: setup.blocksPositiveAssessment ? 'blocked' : 'waiting',
+    };
+  }
+
+  if (setup.source === 'recruiter_manual_override' || setup.kind === 'manual_open_source_task') {
+    return {
+      label: 'Manual task assignment',
+      detail: setup.message ?? 'Recruiter supplied the task; evaluate the work product separately from repo-fit proof.',
+      tone: 'manual',
+    };
+  }
+
+  if (setup.status === 'waiting_for_candidate_evidence') {
+    return {
+      label: 'Evidence needed for matching',
+      detail: setup.message ?? 'Capture source-backed candidate evidence, then rerun repo matching.',
+      tone: setup.blocksPositiveAssessment ? 'blocked' : 'waiting',
+    };
+  }
+
+  if (setup.status === 'waiting_for_source_backed_match') {
+    return {
+      label: 'Waiting for source-backed match',
+      detail: setup.message ?? 'PIPE has evidence, but no quality-gated repo task has been selected yet.',
+      tone: setup.blocksPositiveAssessment ? 'blocked' : 'waiting',
+    };
+  }
+
+  if (setup.status === 'missing_reviewable_task') {
+    return {
+      label: 'No reviewable task yet',
+      detail: setup.message ?? 'Assign a concrete repo task before this can become an assessment.',
+      tone: 'blocked',
+    };
+  }
+
+  if (setup.status === 'reviewable_task_assigned') {
+    return {
+      label: 'Reviewable task assigned',
+      detail: setup.message ?? 'A concrete source-backed assessment task is ready.',
+      tone: 'neutral',
+    };
+  }
+
+  return {
+    label: 'Assessment setup',
+    detail: setup.message ?? 'Assessment setup state is available.',
+    tone: setup.blocksPositiveAssessment ? 'blocked' : 'neutral',
+  };
+}

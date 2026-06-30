@@ -1,5 +1,5 @@
 import { setupClerkTestingToken } from "@clerk/testing/playwright";
-import { test as setup, expect } from "@playwright/test";
+import { test as setup, expect, type Page } from "@playwright/test";
 import path from "path";
 import { fileURLToPath } from "url";
 
@@ -7,6 +7,19 @@ const __filename = fileURLToPath(import.meta.url);
 const __dirname = path.dirname(__filename);
 
 const authFile = path.join(__dirname, "../playwright/.auth/user.json");
+const AUTH_GATE_TIMEOUT_MS = 45_000;
+
+async function waitForSessionCookie(page: Page, timeoutMs: number): Promise<void> {
+  const deadline = Date.now() + timeoutMs;
+  while (Date.now() < deadline) {
+    const cookies = await page.context().cookies();
+    if (cookies.some((cookie) => cookie.name === "__session" && cookie.value.length > 0)) {
+      return;
+    }
+    await page.waitForTimeout(250);
+  }
+  throw new Error("[auth.setup] Clerk session cookie was not issued after sign-in.");
+}
 
 /**
  * Authenticate via Clerk sign-in using testing tokens.
@@ -21,8 +34,8 @@ setup("authenticate via Clerk", async ({ page }) => {
   await page.goto("/");
 
   // Step 1: Click the SIGN IN button on the custom gate
-  const signInButton = page.locator('button:has-text("SIGN IN")');
-  await expect(signInButton).toBeVisible({ timeout: 15000 });
+  const signInButton = page.getByTestId("auth-gate-sign-in");
+  await expect(signInButton).toBeVisible({ timeout: AUTH_GATE_TIMEOUT_MS });
   await signInButton.click();
 
   // Step 2: Clerk modal opens — fill email
@@ -43,18 +56,8 @@ setup("authenticate via Clerk", async ({ page }) => {
   // Step 5: Submit
   await page.locator('button:has-text("Continue")').click();
 
-  // Step 6: Wait for app shell
-  await expect(
-    page
-      .locator('text=CREATE NEW PIPE')
-      .or(page.locator('text=SIGN OUT'))
-      .first()
-  ).toBeVisible({ timeout: 30000 });
-
-  // Wait for network to settle so Clerk has completed its async token refresh.
-  // The __session JWT is short-lived (60s in dev mode); saving state only after
-  // networkidle ensures the stored cookie is a freshly-issued token.
-  await page.waitForLoadState('networkidle');
+  // Step 6: Wait for the auth artifact every authenticated test actually uses.
+  await waitForSessionCookie(page, 30_000);
 
   // Save storage state
   await page.context().storageState({ path: authFile });

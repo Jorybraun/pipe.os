@@ -1,8 +1,14 @@
 import type {
   IceServerProvider,
+  RoomCommitSubmissionRequest,
+  RoomCommitSubmissionResponse,
+  RoomAssessmentProgressSnapshot,
+  RoomWorkspaceFinalizeRequest,
+  RoomWorkspaceFinalizeResponse,
   RecordingSpeakerMetadata,
   RoomMetadata,
   RoomWorkspace,
+  RoomWorkspaceLaunchResponse,
 } from '../types';
 
 const localApiBase = window.location.hostname === 'localhost' || window.location.hostname === '127.0.0.1'
@@ -55,12 +61,13 @@ export async function uploadRecording(
   speakerMetadata?: RecordingSpeakerMetadata,
 ): Promise<{ accepted: boolean; transcriptStatus?: string }> {
   if (transcriptionAudio && transcriptionAudio.size > 0) {
+    if (!speakerMetadata) {
+      throw new Error('Speaker metadata is required when uploading transcription audio.');
+    }
     const body = new FormData();
     body.append('recording', recording, 'recording.webm');
     body.append('transcriptionAudio', transcriptionAudio, 'transcription-audio.webm');
-    if (speakerMetadata) {
-      body.append('speakerMetadata', JSON.stringify(speakerMetadata));
-    }
+    body.append('speakerMetadata', JSON.stringify(speakerMetadata));
     const response = await fetch(apiUrl(`/api/v1/meeting-rooms/${token}/recording`), {
       method: 'POST',
       body,
@@ -140,22 +147,69 @@ export async function getRoomWorkspace(token: string): Promise<RoomWorkspace> {
   return body.workspace;
 }
 
-export async function launchRoomWorkspace(token: string, repoUrl?: string): Promise<RoomWorkspace> {
+export async function launchRoomWorkspace(
+  token: string,
+  repoUrl?: string,
+  agentType?: 'devin' | null,
+): Promise<RoomWorkspaceLaunchResponse> {
+  const body: { repoUrl?: string; agentType?: 'devin' } = {};
+  if (repoUrl) body.repoUrl = repoUrl;
+  if (agentType === 'devin') body.agentType = agentType;
   const response = await fetch(apiUrl(`/api/v1/meeting-rooms/${token}/workspace/launch`), {
     method: 'POST',
     headers: { 'Content-Type': 'application/json' },
-    body: JSON.stringify(repoUrl ? { repoUrl } : {}),
+    body: JSON.stringify(body),
     cache: 'no-store',
     credentials: 'same-origin',
   });
-  const body = await parseResponse<{ workspace: RoomWorkspace }>(response);
-  return body.workspace;
+  return parseResponse<RoomWorkspaceLaunchResponse>(response);
+}
+
+export async function getRoomAssessmentProgress(token: string): Promise<RoomAssessmentProgressSnapshot | null> {
+  const response = await fetch(apiUrl(`/api/v1/meeting-rooms/${token}/assessment/progress`), {
+    cache: 'no-store',
+    credentials: 'same-origin',
+  });
+  const body = await parseResponse<{ progress: RoomAssessmentProgressSnapshot | null }>(response);
+  return body.progress;
+}
+
+export async function submitRoomAssessmentCommit(
+  token: string,
+  payload: RoomCommitSubmissionRequest,
+): Promise<RoomCommitSubmissionResponse> {
+  const response = await fetch(apiUrl(`/api/v1/meeting-rooms/${token}/assessment/commit-submission`), {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify(payload),
+    cache: 'no-store',
+    credentials: 'same-origin',
+  });
+  return parseResponse<RoomCommitSubmissionResponse>(response);
 }
 
 export function roomWorkspaceProxyUrl(token: string, sessionId: string): string {
   return apiUrl(
     `/api/v1/meeting-rooms/${encodeURIComponent(token)}/workspace/proxy/${encodeURIComponent(sessionId)}/`,
   );
+}
+
+export async function finalizeRoomWorkspaceAssessment(
+  token: string,
+  sessionId: string,
+  payload: RoomWorkspaceFinalizeRequest = {},
+): Promise<RoomWorkspaceFinalizeResponse> {
+  const response = await fetch(
+    apiUrl(`/api/v1/meeting-rooms/${encodeURIComponent(token)}/workspace/proxy/${encodeURIComponent(sessionId)}/assessment/finalize`),
+    {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify(payload),
+      cache: 'no-store',
+      credentials: 'same-origin',
+    },
+  );
+  return parseResponse<RoomWorkspaceFinalizeResponse>(response);
 }
 
 export function roomAgentWsUrl(token: string, sessionId: string): string {

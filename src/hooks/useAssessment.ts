@@ -30,6 +30,31 @@ export type StageSubmission = CodeReviewSubmission | QuizSubmission | ShortAnswe
 export interface WaitingChallengeConfig {
   autoRefresh: boolean;
   refreshIntervalSeconds: number;
+  state?: 'pending' | 'blocked';
+  reason?: string;
+  diagnostics?: WaitingChallengeDiagnostics;
+}
+
+export interface WaitingChallengeDiagnostics {
+  phase?: 'candidate_evidence' | 'repo_matching';
+  ingestionStatus?: string | null;
+  currentStep?: string | null;
+  matchableNodeCount?: number;
+  rawNodeCount?: number;
+  updatedAt?: string | null;
+  estimatedCompletionAt?: string | null;
+  staleAfterSeconds?: number;
+  pipeline?: WaitingPipelineStep[];
+}
+
+export type WaitingPipelineStepStatus = 'pending' | 'active' | 'complete' | 'blocked';
+
+export interface WaitingPipelineStep {
+  id: 'intake' | 'decomposition' | 'repo_matching' | 'challenge' | 'review' | 'scoring';
+  label: string;
+  status: WaitingPipelineStepStatus;
+  detail?: string | null;
+  updatedAt?: string | null;
 }
 
 export interface WaitingChallengeDTO {
@@ -104,6 +129,7 @@ interface AssessmentState {
 interface UseAssessmentReturn extends AssessmentState {
   submitChallenge: (submission: StageSubmission) => Promise<void>;
   onStart: () => Promise<void>;
+  claimAssessmentStart: () => Promise<void>;
   reset: () => void;
   refresh: () => Promise<void>;
   sessionToken: string | null;
@@ -188,6 +214,16 @@ export function useAssessment(inviteToken: string): UseAssessmentReturn {
     const cachedToken = sessionStorage.getItem('pipe_session_token');
     const cachedCandidateJson = sessionStorage.getItem('pipe_session_candidate');
     const cachedInviteToken = sessionStorage.getItem('pipe_session_invite_token');
+
+    if (inviteToken?.startsWith('CLAIMED::')) {
+      sessionStorage.removeItem('pipe_session_token');
+      sessionStorage.removeItem('pipe_session_candidate');
+      sessionStorage.removeItem('pipe_session_invite_token');
+      sessionTokenRef.current = null;
+      setState((prev) => ({ ...prev, isLoading: false, error: new Error('TOKEN_ALREADY_CLAIMED') }));
+      return;
+    }
+
     const cachedSessionMatchesInvite = Boolean(
       cachedToken
       && cachedCandidateJson
@@ -332,6 +368,34 @@ export function useAssessment(inviteToken: string): UseAssessmentReturn {
       setState((prev) => ({ ...prev, isLoading: false, error }));
     }
   }, [loadStageConfig, loadChallenge]);
+
+  const claimAssessmentStart = useCallback(async (): Promise<void> => {
+    try {
+      const result = await rpcPost<{ success: boolean; status?: string }>(
+        '/rpc/start-assessment',
+        {},
+        sessionTokenRef.current,
+      );
+      if (!result.success) {
+        throw new Error('Failed to start assessment');
+      }
+
+      setState((prev) => {
+        if (!prev.candidate) return prev;
+        const candidate = {
+          ...prev.candidate,
+          status: result.status ?? prev.candidate.status,
+        };
+        sessionStorage.setItem('pipe_session_candidate', JSON.stringify(candidate));
+        return { ...prev, candidate, error: null };
+      });
+    } catch (err) {
+      const error = err instanceof Error ? err : new Error('Failed to start assessment');
+      console.error('[useAssessment] start-assessment failed:', error);
+      setState((prev) => ({ ...prev, error }));
+      throw error;
+    }
+  }, []);
 
   // ── Advance to next challenge (or next stage, or complete) ─────────────
   const advance = useCallback(async () => {
@@ -500,6 +564,7 @@ export function useAssessment(inviteToken: string): UseAssessmentReturn {
       const error = err instanceof Error ? err : new Error('Refresh failed');
       console.error('[useAssessment] refresh error:', error);
       setState((prev) => ({ ...prev, isLoading: false, error }));
+      throw error;
     }
   }, [loadStageConfig, loadChallenge]);
 
@@ -507,6 +572,7 @@ export function useAssessment(inviteToken: string): UseAssessmentReturn {
     ...state,
     submitChallenge,
     onStart,
+    claimAssessmentStart,
     reset,
     refresh,
     sessionToken: sessionTokenRef.current,

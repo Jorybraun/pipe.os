@@ -36,6 +36,8 @@ export interface Env {
   STORAGE: R2Bucket;
   /** Workers AI binding — Qwen, Nemotron, etc. No API key needed. */
   AI: Ai;
+  /** Optional Workers AI text-generation model override. */
+  CLOUDFLARE_AI_MODEL?: string;
   /**
    * Vectorize index binding for repo_searchable_profile embeddings.
    * Used in discover.ts hybrid recall (STRATEGY Decision Log 2026-04-14).
@@ -158,6 +160,10 @@ export interface Env {
   VIDEO_ROOM_APP_URL?: string;
   /** Shared secret accepted only from the authenticated dev room proxy. */
   DEV_PROXY_SECRET?: string;
+  /** Devin API key injected server-side into dev containers for the real Clippy/Devin bridge. */
+  DEVIN_API_KEY?: string;
+  /** Devin organization id paired with DEVIN_API_KEY for real Clippy/Devin bridge auth. */
+  DEVIN_ORG_ID?: string;
   /** Dev-only Basic Auth username embedded into generated room links. */
   DEV_BASIC_AUTH_USER?: string;
   /** Dev-only Basic Auth password embedded into generated room links. */

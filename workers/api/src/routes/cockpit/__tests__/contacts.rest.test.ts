@@ -3,6 +3,7 @@ import Database from 'better-sqlite3';
 import { Hono } from 'hono';
 import { afterEach, beforeEach, describe, expect, it } from 'vitest';
 import { createMockD1, type BetterSqliteDb } from '../../../__tests__/helpers/mockD1';
+import { candidateOps } from '../candidates';
 import { contacts } from '../contacts';
 import type { Env, Variables } from '../../../types';
 
@@ -162,5 +163,109 @@ describe('GET /:id/living-context', () => {
       personId,
       primaryEmail: 'ada@example.com',
     });
+  });
+
+  it('keeps a contact living-context read attached after a same-email roleless candidate is created', async () => {
+    sqlite.exec(`
+      CREATE TABLE pipelines (
+        id TEXT PRIMARY KEY,
+        owner_id TEXT NOT NULL
+      );
+      CREATE TABLE candidates (
+        id TEXT PRIMARY KEY,
+        pipeline_id TEXT,
+        owner_id TEXT NOT NULL,
+        name TEXT,
+        email TEXT NOT NULL,
+        invite_token TEXT NOT NULL,
+        status TEXT NOT NULL,
+        current_stage_id TEXT,
+        created_at TEXT,
+        updated_at TEXT
+      );
+      CREATE TABLE candidate_ingestion (
+        candidate_id TEXT PRIMARY KEY,
+        status TEXT,
+        created_at TEXT,
+        updated_at TEXT
+      );
+      CREATE TABLE scheduled_interviews (
+        id TEXT PRIMARY KEY,
+        candidate_id TEXT,
+        pipeline_id TEXT,
+        stage_id TEXT,
+        owner_id TEXT,
+        interview_type TEXT,
+        status TEXT,
+        scheduled_at TEXT,
+        scheduling_provider TEXT,
+        scheduling_url TEXT,
+        sync_source TEXT,
+        github_repo_url TEXT,
+        github_pr_number INTEGER,
+        created_at TEXT,
+        updated_at TEXT
+      );
+    `);
+
+    const app = createApp();
+    app.route('/candidates', candidateOps);
+
+    const firstContactRead = await app.request('/contact-1/living-context');
+    expect(firstContactRead.status).toBe(200);
+    const firstContactGraph = await firstContactRead.json() as {
+      person: { personId: string; workspacePersonId: string; primaryEmail: string | null } | null;
+    };
+    expect(firstContactGraph.person).toMatchObject({
+      primaryEmail: 'ada@example.com',
+    });
+
+    const createdCandidate = await app.request('/candidates', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({
+        name: 'Ada Candidate',
+        email: 'ada@example.com',
+        interviewType: 'SCREENING',
+        message: 'Roleless smoke evidence: React, D1, and source-backed context debugging.',
+        skipEmail: true,
+      }),
+    });
+    expect(createdCandidate.status).toBe(201);
+    const createdCandidateBody = await createdCandidate.json() as {
+      candidate: { id: string };
+    };
+
+    const candidateGraphRead = await app.request(
+      `/candidates/${createdCandidateBody.candidate.id}/living-context`,
+    );
+    expect(candidateGraphRead.status).toBe(200);
+    const candidateGraph = await candidateGraphRead.json() as {
+      livingContext: {
+        person: { personId: string; workspacePersonId: string; primaryEmail: string | null };
+      };
+    };
+    expect(candidateGraph.livingContext.person).toMatchObject({
+      personId: firstContactGraph.person?.personId,
+      workspacePersonId: firstContactGraph.person?.workspacePersonId,
+      primaryEmail: 'ada@example.com',
+    });
+
+    const secondContactRead = await app.request('/contact-1/living-context');
+    expect(secondContactRead.status).toBe(200);
+    const secondContactGraph = await secondContactRead.json() as {
+      person: { personId: string; workspacePersonId: string; primaryEmail: string | null } | null;
+      artifacts: Array<{ sourceSpans: Array<{ exactText: string }> }>;
+    };
+    expect(secondContactGraph.person).toMatchObject({
+      personId: firstContactGraph.person?.personId,
+      workspacePersonId: firstContactGraph.person?.workspacePersonId,
+      primaryEmail: 'ada@example.com',
+    });
+    expect(
+      secondContactGraph.artifacts
+        .flatMap((artifact) => artifact.sourceSpans)
+        .some((span) => span.exactText.includes('Roleless smoke evidence')),
+    ).toBe(true);
   });
 });

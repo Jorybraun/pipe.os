@@ -40,7 +40,7 @@ export interface CareerContext {
   progression_velocity: 'fast' | 'normal' | 'slow' | 'unknown';
   ownership_depth: 'feature' | 'service' | 'platform' | 'org' | 'unknown';
   system_scale_exposure: string[];
-  greenfield_ratio: number;
+  greenfield_ratio: number | null;
 }
 
 export interface SituationSignature {
@@ -83,6 +83,54 @@ function stripCodeFences(raw: string): string {
     .trim();
 }
 
+function extractFirstJsonObject(raw: string): string | null {
+  const start = raw.indexOf('{');
+  if (start === -1) return null;
+
+  let depth = 0;
+  let inString = false;
+  let escaped = false;
+
+  for (let i = start; i < raw.length; i++) {
+    const ch = raw[i]!;
+
+    if (inString) {
+      if (escaped) {
+        escaped = false;
+      } else if (ch === '\\') {
+        escaped = true;
+      } else if (ch === '"') {
+        inString = false;
+      }
+      continue;
+    }
+
+    if (ch === '"') {
+      inString = true;
+      continue;
+    }
+
+    if (ch === '{') {
+      depth += 1;
+    } else if (ch === '}') {
+      depth -= 1;
+      if (depth === 0) {
+        return raw.slice(start, i + 1);
+      }
+    }
+  }
+
+  return null;
+}
+
+function parseJsonObject(candidate: string): Record<string, unknown> | null {
+  const parsed = JSON.parse(candidate) as unknown;
+  if (parsed && typeof parsed === 'object' && !Array.isArray(parsed)) {
+    return parsed as Record<string, unknown>;
+  }
+  return null;
+}
+
 function coerceStringArray(value: unknown, max: number): string[] {
   if (!Array.isArray(value)) return [];
   const out: string[] = [];
@@ -102,8 +150,8 @@ function coerceEnum<T extends string>(value: unknown, valid: Set<T>, fallback: T
   return valid.has(v) ? v : fallback;
 }
 
-function coerceNumberInRange(value: unknown, min: number, max: number, fallback: number): number {
-  if (typeof value !== 'number' || !Number.isFinite(value)) return fallback;
+function coerceOptionalNumberInRange(value: unknown, min: number, max: number): number | null {
+  if (typeof value !== 'number' || !Number.isFinite(value)) return null;
   return Math.max(min, Math.min(max, value));
 }
 
@@ -115,15 +163,44 @@ function coerceSeniority(value: unknown): SeniorityBand | null {
 
 function parseJsonResponse(raw: string): Record<string, unknown> {
   const cleaned = stripCodeFences(raw);
+  const firstNonWhitespace = cleaned.trimStart()[0];
+
   try {
-    const parsed = JSON.parse(cleaned);
-    if (parsed && typeof parsed === 'object' && !Array.isArray(parsed)) {
-      return parsed as Record<string, unknown>;
-    }
+    const parsed = parseJsonObject(cleaned);
+    if (parsed) return parsed;
   } catch {
-    // fall through
+    // Try a balanced-object extraction below. Some edge LLM responses include
+    // a short preamble or trailing note even when forceJson is set.
   }
+
+  if (firstNonWhitespace !== '[') {
+    const extracted = extractFirstJsonObject(cleaned);
+    if (extracted && extracted !== cleaned) {
+      try {
+        const parsed = parseJsonObject(extracted);
+        if (parsed) return parsed;
+      } catch {
+        // fall through
+      }
+    }
+  }
+
   throw new Error('Candidate Discovery response was not a JSON object');
+}
+
+function modelKeyForProvider(provider: LLMProvider): string {
+  const maybeKeyedProvider = provider as unknown as { getModelKey?: () => string };
+  if (typeof maybeKeyedProvider.getModelKey === 'function') {
+    try {
+      const modelKey = maybeKeyedProvider.getModelKey().trim();
+      if (modelKey.length > 0) return modelKey;
+    } catch {
+      // Fall through to the stable provider model below.
+    }
+  }
+
+  const model = provider.model.trim();
+  return model.length > 0 ? model : provider.name;
 }
 
 export async function discoverCandidateProfile(
@@ -188,7 +265,7 @@ export async function discoverCandidateProfile(
     progression_velocity: coerceEnum(ccRaw.progression_velocity, VALID_PROGRESSION_VELOCITIES, 'unknown'),
     ownership_depth: coerceEnum(ccRaw.ownership_depth, VALID_OWNERSHIP_DEPTHS, 'unknown'),
     system_scale_exposure: coerceStringArray(ccRaw.system_scale_exposure, MAX_ARRAY_LEN),
-    greenfield_ratio: coerceNumberInRange(ccRaw.greenfield_ratio, 0, 1, 0.5),
+    greenfield_ratio: coerceOptionalNumberInRange(ccRaw.greenfield_ratio, 0, 1),
   };
 
   const ssRaw = (parsedResponse.situation_signature ?? {}) as Record<string, unknown>;
@@ -206,7 +283,7 @@ export async function discoverCandidateProfile(
     careerContext,
     situationSignature,
     profileVersion: CANDIDATE_DISCOVERY_PROMPT_VERSION,
-    modelUsed: provider.name,
+    modelUsed: modelKeyForProvider(provider),
     rawText,
   };
 }

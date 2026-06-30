@@ -1,7 +1,7 @@
 /**
  * Cloudflare Workers AI provider — wraps env.AI.run() for text generation.
  *
- * Default model: @cf/meta/llama-3.1-8b-instruct
+ * Default model: @cf/google/gemma-4-26b-a4b-it
  * Override via CLOUDFLARE_AI_MODEL env var.
  *
  * The binding is already live in wrangler.toml — transcribe.ts uses the same
@@ -11,12 +11,56 @@
  * uses a deterministic FSM rather than ReAct-with-tools, so supportsTools =
  * false is correct.
  *
- * Forced-JSON mode uses response_format: { type: "json_object" } for models
- * that support it (Llama 3.1/3.2, Mistral, etc.) and falls back to prompt-
- * level JSON enforcement for models that don't (e.g. Gemma 4).
+ * Forced-JSON mode uses prompt-level JSON enforcement because Workers AI
+ * models have inconsistent response_format support across families.
  */
 
-import type { LLMProvider, LLMMessage, LLMCompletion, CompleteOptions } from './types';
+import type { LLMProvider, LLMMessage, LLMCompletion, CompleteOptions, LLMUsage } from './types';
+
+export const DEFAULT_CLOUDFLARE_MODEL = '@cf/google/gemma-4-26b-a4b-it';
+
+// Cloudflare Workers AI changelog, 2026-05-08:
+// these models were deprecated on 2026-05-30. Normalize stale env overrides
+// before inference so matching/candidate ingestion can use a live model while
+// keeping source-evidence validators responsible for accepting the result.
+const DEPRECATED_CLOUDFLARE_MODEL_REPLACEMENTS: Record<string, string> = {
+  '@cf/moonshotai/kimi-k2.5': DEFAULT_CLOUDFLARE_MODEL,
+  '@hf/meta-llama/meta-llama-3-8b-instruct': DEFAULT_CLOUDFLARE_MODEL,
+  '@cf/meta/llama-3-8b-instruct': DEFAULT_CLOUDFLARE_MODEL,
+  '@cf/meta/llama-3-8b-instruct-awq': DEFAULT_CLOUDFLARE_MODEL,
+  '@cf/meta/llama-3.1-8b-instruct': DEFAULT_CLOUDFLARE_MODEL,
+  '@cf/meta/llama-3.1-8b-instruct-awq': DEFAULT_CLOUDFLARE_MODEL,
+  '@cf/meta/llama-3.1-8b-instruct-fp8': DEFAULT_CLOUDFLARE_MODEL,
+  '@cf/meta/llama-3.1-70b-instruct': DEFAULT_CLOUDFLARE_MODEL,
+  '@cf/meta/llama-2-7b-chat-int8': DEFAULT_CLOUDFLARE_MODEL,
+  '@cf/meta/llama-2-7b-chat-fp16': DEFAULT_CLOUDFLARE_MODEL,
+  '@cf/mistral/mistral-7b-instruct-v0.1': DEFAULT_CLOUDFLARE_MODEL,
+  '@hf/mistral/mistral-7b-instruct-v0.2': DEFAULT_CLOUDFLARE_MODEL,
+  '@hf/google/gemma-7b-it': DEFAULT_CLOUDFLARE_MODEL,
+  '@cf/google/gemma-3-12b-it': DEFAULT_CLOUDFLARE_MODEL,
+  '@hf/nousresearch/hermes-2-pro-mistral-7b': DEFAULT_CLOUDFLARE_MODEL,
+  '@cf/microsoft/phi-2': DEFAULT_CLOUDFLARE_MODEL,
+  '@cf/defog/sqlcoder-7b-2': DEFAULT_CLOUDFLARE_MODEL,
+  '@cf/unum/uform-gen2-qwen-500m': DEFAULT_CLOUDFLARE_MODEL,
+  '@cf/facebook/bart-large-cnn': DEFAULT_CLOUDFLARE_MODEL,
+};
+
+export function normalizeCloudflareAIModel(model: string): string {
+  const trimmed = model.trim();
+  if (trimmed.length === 0) return DEFAULT_CLOUDFLARE_MODEL;
+  const replacement = DEPRECATED_CLOUDFLARE_MODEL_REPLACEMENTS[trimmed.toLowerCase()];
+  if (!replacement) return trimmed;
+  console.warn(`[cloudflareAIProvider] Workers AI model ${trimmed} is deprecated; using ${replacement} instead.`);
+  return replacement;
+}
+
+function isWorkersAIModelDeprecatedError(error: unknown): boolean {
+  const message = error instanceof Error ? error.message : String(error);
+  const normalized = message.toLowerCase();
+  return normalized.includes('deprecated')
+    || normalized.includes('decommissioned')
+    || normalized.includes('5028');
+}
 
 // Workers AI chat messages use OpenAI-compatible roles.
 interface CFChatMessage {
@@ -102,13 +146,60 @@ function stripJsonFences(text: string): string {
 export class CloudflareAIProvider implements LLMProvider {
   readonly name = 'cloudflare-ai';
   readonly supportsTools = false;
+  readonly model: string;
+  private lastUsage: LLMUsage | null = null;
+  private lastModel: string;
 
   constructor(
     private readonly ai: Ai,
-    readonly model: string = '@cf/meta/llama-3.1-8b-instruct',
-  ) {}
+    model: string = DEFAULT_CLOUDFLARE_MODEL,
+  ) {
+    this.model = normalizeCloudflareAIModel(model);
+    this.lastModel = this.model;
+  }
+
+  getLastUsage(): LLMUsage | null {
+    return this.lastUsage;
+  }
+
+  getModelKey(): string {
+    return `workers-ai/${this.lastModel}`;
+  }
+
+  private async runModel(input: Record<string, unknown>): Promise<CFChatResponse | ReadableStream<Uint8Array>> {
+    this.lastModel = this.model;
+    try {
+      return (await this.ai.run(
+        this.model as Parameters<typeof this.ai.run>[0],
+        input as unknown as Parameters<typeof this.ai.run>[1],
+      )) as CFChatResponse | ReadableStream<Uint8Array>;
+    } catch (err) {
+      if (this.model !== DEFAULT_CLOUDFLARE_MODEL && isWorkersAIModelDeprecatedError(err)) {
+        console.warn(
+          `[cloudflareAIProvider] Workers AI model ${this.model} failed as deprecated; retrying ${DEFAULT_CLOUDFLARE_MODEL}.`,
+        );
+        this.lastModel = DEFAULT_CLOUDFLARE_MODEL;
+        try {
+          return (await this.ai.run(
+            DEFAULT_CLOUDFLARE_MODEL as Parameters<typeof this.ai.run>[0],
+            input as unknown as Parameters<typeof this.ai.run>[1],
+          )) as CFChatResponse | ReadableStream<Uint8Array>;
+        } catch (fallbackErr) {
+          console.error('[cloudflareAIProvider] ai.run fallback failed:', fallbackErr);
+          throw new Error(
+            `Cloudflare Workers AI call failed for fallback model ${DEFAULT_CLOUDFLARE_MODEL} after deprecated model ${this.model}: ${fallbackErr instanceof Error ? fallbackErr.message : String(fallbackErr)}`,
+          );
+        }
+      }
+      console.error('[cloudflareAIProvider] ai.run failed:', err);
+      throw new Error(
+        `Cloudflare Workers AI call failed for model ${this.model}: ${err instanceof Error ? err.message : String(err)}`,
+      );
+    }
+  }
 
   async complete(messages: LLMMessage[], options: CompleteOptions = {}): Promise<LLMCompletion> {
+    this.lastUsage = null;
     const forceJson = options.forceJson === true;
     const cfMessages = toCFMessages(messages, forceJson);
 
@@ -128,17 +219,7 @@ export class CloudflareAIProvider implements LLMProvider {
     // `stripJsonFences` post-processing is more portable.
 
     let result: CFChatResponse;
-    try {
-      result = (await this.ai.run(
-        this.model as Parameters<typeof this.ai.run>[0],
-        input as unknown as Parameters<typeof this.ai.run>[1],
-      )) as CFChatResponse;
-    } catch (err) {
-      console.error('[cloudflareAIProvider] ai.run failed:', err);
-      throw new Error(
-        `Cloudflare Workers AI call failed for model ${this.model}: ${err instanceof Error ? err.message : String(err)}`,
-      );
-    }
+    result = (await this.runModel(input)) as CFChatResponse;
 
     // Workers AI may return { response: "..." } or newer chat format with
     // { result: { response: "..." } } or { choices: [{ message: { content } }] }.
@@ -176,13 +257,14 @@ export class CloudflareAIProvider implements LLMProvider {
     // Populate usage when the Workers AI response includes token counts.
     // Must not include usage: undefined — exactOptionalPropertyTypes requires omission.
     if (result.usage) {
-      const usage: import('./types').LLMUsage = {};
+      const usage: LLMUsage = {};
       if (result.usage.prompt_tokens !== undefined) {
         usage.inputTokens = result.usage.prompt_tokens;
       }
       if (result.usage.completion_tokens !== undefined) {
         usage.outputTokens = result.usage.completion_tokens;
       }
+      this.lastUsage = usage;
       return { content, usage };
     }
 
@@ -209,14 +291,11 @@ export class CloudflareAIProvider implements LLMProvider {
 
     let result: unknown;
     try {
-      result = await this.ai.run(
-        this.model as Parameters<typeof this.ai.run>[0],
-        input as unknown as Parameters<typeof this.ai.run>[1],
-      );
+      result = await this.runModel(input);
     } catch (err) {
       console.error('[cloudflareAIProvider] completeStream ai.run failed:', err);
       throw new Error(
-        `Cloudflare Workers AI streaming call failed: ${err instanceof Error ? err.message : String(err)}`,
+        `Cloudflare Workers AI streaming call failed for model ${this.lastModel}: ${err instanceof Error ? err.message : String(err)}`,
       );
     }
 

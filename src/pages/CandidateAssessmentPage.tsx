@@ -16,7 +16,7 @@ import type { CodeReviewMatchExplanation } from '../components/Panels/ProblemPan
 import { FollowUpQuestionsPanel } from '../components/Assessment/FollowUpQuestionsPanel';
 import { IntakeChallenge } from '../components/Assessment/IntakeChallenge';
 import { WelcomeScreen } from '../components/Assessment/WelcomeScreen';
-import { WaitingForMatch } from '../components/Assessment/WaitingForMatch';
+import { WaitingForMatch, type WaitingForMatchDiagnostics } from '../components/Assessment/WaitingForMatch';
 import { resolveStageConfig } from '../lib/challenge/resolveStageConfig';
 import { normalizeDiffJson } from '../lib/challenge/componentMap';
 import type { RawStage, RawChallenge } from '../lib/challenge/resolveStageConfig';
@@ -175,13 +175,16 @@ export default function CandidateAssessmentPage({ hideHeader = false }: Candidat
     followUpLoading,
     submitChallenge,
     onStart,
+    claimAssessmentStart,
     reset,
     refresh,
     sessionToken,
   } = useAssessment(token || '');
 
   const [currentSubmission, setCurrentSubmission] = useState<unknown>(null);
-  const [intakeWelcomeDismissed, setIntakeWelcomeDismissed] = useState(false);
+  const [assessmentWelcomeDismissed, setAssessmentWelcomeDismissed] = useState(false);
+  const [assessmentStartLoading, setAssessmentStartLoading] = useState(false);
+  const [assessmentStartError, setAssessmentStartError] = useState<string | null>(null);
 
   // Auto-skip empty follow-ups
   useEffect(() => {
@@ -268,6 +271,23 @@ export default function CandidateAssessmentPage({ hideHeader = false }: Candidat
     setCurrentSubmission(null);
   };
 
+  const handleAssessmentStart = async (): Promise<void> => {
+    if (assessmentStartLoading) return;
+    setAssessmentStartLoading(true);
+    setAssessmentStartError(null);
+    try {
+      await claimAssessmentStart();
+      setAssessmentWelcomeDismissed(true);
+    } catch (err) {
+      const message = err instanceof Error && err.message
+        ? err.message
+        : 'Unable to start the assessment. Please retry, or contact your recruiter for a fresh link.';
+      setAssessmentStartError(message);
+    } finally {
+      setAssessmentStartLoading(false);
+    }
+  };
+
   // ---------------------------------------------------------------------------
   // Loading state (initial)
   // ---------------------------------------------------------------------------
@@ -314,21 +334,23 @@ export default function CandidateAssessmentPage({ hideHeader = false }: Candidat
             {isInvalid ? 'Invalid Invite Link'
               : isCompleted ? 'Assessment Completed'
               : isSessionExpired ? 'Session Expired'
-              : isTokenClaimed ? 'Link Already Used'
+              : isTokenClaimed ? 'Assessment Already Started'
               : 'Connection Error'}
           </h2>
           <p style={{ fontSize: 14, color: 'var(--pipe-text-dim)', lineHeight: 1.6, marginBottom: 32, fontFamily: '"Space Mono", monospace' }}>
             {isInvalid ? 'This invitation link is invalid or has expired. Please contact your recruiter for a new link.'
               : isCompleted ? 'You have already submitted this assessment. Thank you for your time!'
               : isSessionExpired ? 'Your session has expired. Please contact your recruiter for a new invite link.'
-              : isTokenClaimed ? 'This invite link has already been used. Please contact your recruiter for a new link.'
+              : isTokenClaimed ? 'This one-use assessment link has already started. Please contact your recruiter if you need a fresh link.'
               : 'There was an error connecting to our secure servers. Please try refreshing the page or clicking the button below.'}
           </p>
-          <button onClick={() => reset()} style={{
-            padding: '12px 24px', background: 'var(--pipe-surface-hover)',
-            border: '1px solid var(--pipe-border)', color: 'var(--pipe-text, #fff)',
-            fontSize: 10, letterSpacing: '0.1em', fontFamily: '"Space Mono", monospace', cursor: 'pointer'
-          }}>RETRY_CONNECTION</button>
+          {!isCompleted && !isTokenClaimed && (
+            <button onClick={() => reset()} style={{
+              padding: '12px 24px', background: 'var(--pipe-surface-hover)',
+              border: '1px solid var(--pipe-border)', color: 'var(--pipe-text, #fff)',
+              fontSize: 10, letterSpacing: '0.1em', fontFamily: '"Space Mono", monospace', cursor: 'pointer'
+            }}>RETRY_CONNECTION</button>
+          )}
         </LiquidMetalCard>
       </div>
     );
@@ -394,43 +416,15 @@ export default function CandidateAssessmentPage({ hideHeader = false }: Candidat
   }
 
   // ---------------------------------------------------------------------------
-  // WAITING_FOR_MATCH — full-page waiting state, bypasses StageShell
-  // ---------------------------------------------------------------------------
-
-  if (currentType === 'WAITING_FOR_MATCH' && challengeContent) {
-    const waitConfig = typeof challengeContent.config === 'object' && challengeContent.config !== null
-      ? (challengeContent.config as Record<string, unknown>)
-      : {};
-    return (
-      <div style={{ height: '100vh', overflow: 'hidden', background: '#0c0c0e' }}>
-        <ChromeMeshGrid />
-        <WaitingForMatch
-          title={challengeContent.title ?? 'Building your personalized challenge'}
-          instructions={challengeContent.instructions ?? 'We are analyzing your profile to find the best open-source project match. This takes a few moments.'}
-          config={{
-            autoRefresh: waitConfig.autoRefresh === true,
-            refreshIntervalSeconds: typeof waitConfig.refreshIntervalSeconds === 'number' ? waitConfig.refreshIntervalSeconds : 30,
-          }}
-          onRefresh={() => void refresh()}
-          sessionToken={sessionToken}
-        />
-      </div>
-    );
-  }
-
-  // ---------------------------------------------------------------------------
-  // Challenge workspace
-  // ---------------------------------------------------------------------------
-
   const isFollowUp = currentType === 'FOLLOW_UP';
   const followUpReady = isFollowUp && followUpQuestions && followUpQuestions.length > 0;
   const followUpWaiting = isFollowUp && (followUpLoading || !followUpQuestions || followUpQuestions.length === 0);
   const isIntake = currentType === 'INTAKE';
+  const shouldShowStartWelcome = candidate?.status === 'INVITED' && !assessmentWelcomeDismissed && !isPreview;
 
-  // Welcome screen before CV intake — shows the full list of parts
-  // (Profile & Resume, plus any upcoming challenges like the code review)
-  // so the candidate knows what to expect, matching the screener flow.
-  if (isIntake && !intakeWelcomeDismissed && !isPreview) {
+  // The one-use invite is claimed only when the candidate explicitly starts.
+  // This covers CV intake, direct code review, dev-container, and waiting gates.
+  if (shouldShowStartWelcome) {
     const welcomeChallenges = [
       ...(stageConfig.challenges ?? []).map((ch) => ({
         title: ch.title ?? 'Profile & Resume',
@@ -448,10 +442,51 @@ export default function CandidateAssessmentPage({ hideHeader = false }: Candidat
         pipelineName={stageConfig.stageTitle ?? 'Assessment'}
         stageName="Getting Started"
         challenges={welcomeChallenges}
-        onStart={() => setIntakeWelcomeDismissed(true)}
+        onStart={() => void handleAssessmentStart()}
+        isStarting={assessmentStartLoading}
+        startError={assessmentStartError}
       />
     );
   }
+
+  // ---------------------------------------------------------------------------
+  // WAITING_FOR_MATCH — full-page waiting state, bypasses StageShell
+  // ---------------------------------------------------------------------------
+
+  if (currentType === 'WAITING_FOR_MATCH' && challengeContent) {
+    const waitConfig = typeof challengeContent.config === 'object' && challengeContent.config !== null
+      ? (challengeContent.config as Record<string, unknown>)
+      : {};
+    const waitState = waitConfig.state === 'blocked' || waitConfig.state === 'pending'
+      ? waitConfig.state
+      : undefined;
+    const waitReason = typeof waitConfig.reason === 'string' ? waitConfig.reason : undefined;
+    const waitDiagnostics = typeof waitConfig.diagnostics === 'object' && waitConfig.diagnostics !== null && !Array.isArray(waitConfig.diagnostics)
+      ? (waitConfig.diagnostics as WaitingForMatchDiagnostics)
+      : undefined;
+    return (
+      <div style={{ height: '100vh', overflow: 'hidden', background: '#0c0c0e' }}>
+        <ChromeMeshGrid />
+        <WaitingForMatch
+          title={challengeContent.title ?? 'Building your personalized challenge'}
+          instructions={challengeContent.instructions ?? 'We are analyzing your profile to find the best open-source project match. This takes a few moments.'}
+          config={{
+            autoRefresh: waitConfig.autoRefresh === true,
+            refreshIntervalSeconds: typeof waitConfig.refreshIntervalSeconds === 'number' ? waitConfig.refreshIntervalSeconds : 30,
+            ...(waitState ? { state: waitState } : {}),
+            ...(waitReason ? { reason: waitReason } : {}),
+            ...(waitDiagnostics ? { diagnostics: waitDiagnostics } : {}),
+          }}
+          onRefresh={refresh}
+          sessionToken={sessionToken}
+        />
+      </div>
+    );
+  }
+
+  // ---------------------------------------------------------------------------
+  // Challenge workspace
+  // ---------------------------------------------------------------------------
   const totalChallenges = stageConfig.challenges?.length ?? 1;
   const isLastChallenge = currentOrder === totalChallenges - 1;
   const shouldWrapLiveVideo =

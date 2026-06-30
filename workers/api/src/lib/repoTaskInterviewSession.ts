@@ -40,8 +40,11 @@ export type AssessmentEvidenceEventKind =
   | 'ai_interaction'
   | 'tool_usage'
   | 'transcript_span'
+  | 'commit_submission'
   | 'final_submission'
+  | 'match_decision'
   | 'recruiter_note'
+  | 'human_assessment_decision'
   | 'dev_container_event'
   | 'system_diagnostic';
 
@@ -194,6 +197,208 @@ export interface PersistedFinalAssessmentBundle {
   transition: PersistedAssessmentStateTransition | null;
 }
 
+export type CommitSubmissionChangedFileStatus =
+  | 'added'
+  | 'modified'
+  | 'deleted'
+  | 'renamed'
+  | 'copied';
+
+export interface CommitSubmissionChangedFileInput {
+  path: string;
+  status: CommitSubmissionChangedFileStatus;
+  previousPath?: string | null;
+  additions?: number | null;
+  deletions?: number | null;
+}
+
+export interface SubmitCommitAssessmentInput {
+  sessionId: string;
+  ingestionKey: string;
+  actorType: RepoTaskAssessmentActorType;
+  actorId?: string | null;
+  narrative: string;
+  repositoryUrl: string;
+  forkRepositoryUrl?: string | null;
+  branchName: string;
+  baseCommitSha: string;
+  commitSha: string;
+  commitUrl?: string | null;
+  upstreamPullRequestUrl?: string | null;
+  upstreamPrConsent?: boolean;
+  changedFiles: readonly CommitSubmissionChangedFileInput[];
+  occurredAt?: string | null;
+  sourceRefs: readonly AssessmentEvidenceSourceRefInput[];
+}
+
+export interface PersistedCommitAssessmentSubmission {
+  event: PersistedAssessmentEvent;
+  transition: PersistedAssessmentStateTransition | null;
+}
+
+export type HumanAssessmentDecisionValue =
+  | 'advance'
+  | 'hold'
+  | 'reject'
+  | 'needs_more_evidence';
+
+export interface RecordHumanAssessmentDecisionInput {
+  sessionId: string;
+  ingestionKey: string;
+  decision: HumanAssessmentDecisionValue;
+  reviewerId?: string | null;
+  summary: string;
+  notes?: string | null;
+  occurredAt?: string | null;
+  sourceRefs: readonly AssessmentEvidenceSourceRefInput[];
+}
+
+export interface PersistedHumanAssessmentDecision {
+  eventId: string;
+  decision: HumanAssessmentDecisionValue;
+  reviewerId: string | null;
+  summary: string;
+  notes: string | null;
+  occurredAt: string;
+  sourceRefCount: number;
+  sourceRefTypes: string[];
+}
+
+export type AssessmentProgressStage =
+  | 'WAITING_FOR_CHALLENGE'
+  | 'CHALLENGE_READY'
+  | 'WORK_IN_PROGRESS'
+  | 'READY_FOR_EVALUATION'
+  | 'EVALUATED'
+  | 'NEEDS_ATTENTION'
+  | 'CANCELLED';
+
+export type AssessmentProgressNextAction =
+  | 'ASSIGN_CHALLENGE'
+  | 'OPEN_ROOM_OR_WORKSPACE'
+  | 'CAPTURE_WORK_EVIDENCE'
+  | 'SUBMIT_COMMIT'
+  | 'START_EVALUATION'
+  | 'REVIEW_EVALUATION'
+  | 'RESOLVE_DIAGNOSTIC'
+  | 'NONE';
+
+export interface AssessmentEvidenceKindCount {
+  kind: string;
+  count: number;
+}
+
+export interface AssessmentProgressSourceRef {
+  sourceRefType: string;
+  sourceRefId: string;
+  evidenceRole: string;
+  exactText: string;
+  contentHash: string;
+  locator: JsonObject;
+}
+
+export interface AssessmentProgressLatestEvent {
+  id: string;
+  kind: string;
+  sequence: number;
+  occurredAt: string;
+}
+
+export interface AssessmentProgressCommit {
+  eventId: string;
+  repositoryUrl: string | null;
+  forkRepositoryUrl: string | null;
+  branchName: string | null;
+  baseCommitSha: string | null;
+  commitSha: string | null;
+  commitUrl: string | null;
+  changedFiles: JsonValue[];
+  occurredAt: string;
+}
+
+export interface AssessmentProgressEvidenceSnippet {
+  eventKind: string;
+  sourceRefType: string;
+  evidenceRole: string;
+  exactText: string;
+  occurredAt: string;
+}
+
+export interface AssessmentEvidenceCoverageItem {
+  label: string;
+  required: boolean;
+  sourceRefTypes: string[];
+  satisfied: boolean;
+  sourceRefKeys: string[];
+  missingImpact: string;
+}
+
+export interface AssessmentEvidenceCoverageSnapshot {
+  schemaVersion: string;
+  sourceRefCount: number;
+  sourceRefTypeCounts: Record<string, number>;
+  requiredForEvaluation: AssessmentEvidenceCoverageItem[];
+  expectedForHighConfidence: AssessmentEvidenceCoverageItem[];
+}
+
+export interface AssessmentProgressEvaluation {
+  id: string;
+  status: EvaluationReportStatus;
+  summary: string;
+  recommendation: string | null;
+  createdAt: string;
+  evidenceCoverage: AssessmentEvidenceCoverageSnapshot | null;
+  claims: AssessmentProgressEvaluationClaim[];
+  diagnostics: AssessmentProgressEvaluationDiagnostic[];
+}
+
+export interface AssessmentProgressEvaluationClaim {
+  id: string;
+  polarity: AssessmentEvaluationClaimPolarity;
+  dimension: string;
+  narrative: string;
+  confidence: number | null;
+  sourceRefCount: number;
+  sourceRefTypes: string[];
+}
+
+export interface AssessmentProgressEvaluationDiagnostic {
+  id: string;
+  code: string;
+  severity: string;
+  message: string;
+  sourceRefCount: number;
+  sourceRefTypes: string[];
+}
+
+export interface AssessmentProgressHumanDecision extends PersistedHumanAssessmentDecision {}
+
+export interface AssessmentProgressSnapshot {
+  session: PersistedRepoTaskInterviewSession;
+  stage: AssessmentProgressStage;
+  nextAction: AssessmentProgressNextAction;
+  nextActionLabel: string;
+  hasChallengePacket: boolean;
+  hasWorkEvidence: boolean;
+  hasMessageEvidence: boolean;
+  hasDevContainerEvidence: boolean;
+  hasToolUsageEvidence: boolean;
+  hasCommitSubmission: boolean;
+  hasFinalSubmission: boolean;
+  hasAiInteraction: boolean;
+  hasTranscriptEvidence: boolean;
+  hasTestEvidence: boolean;
+  hasVerificationGap: boolean;
+  evidenceCounts: AssessmentEvidenceKindCount[];
+  sourceRefCounts: AssessmentEvidenceKindCount[];
+  evidenceSnippets: AssessmentProgressEvidenceSnippet[];
+  challenge: AssessmentProgressSourceRef | null;
+  latestEvent: AssessmentProgressLatestEvent | null;
+  commit: AssessmentProgressCommit | null;
+  evaluation: AssessmentProgressEvaluation | null;
+  humanDecision: AssessmentProgressHumanDecision | null;
+}
+
 const ALLOWED_TRANSITIONS: Record<RepoTaskInterviewState, readonly RepoTaskInterviewState[]> = {
   INTAKE: ['IN_PROGRESS', 'DIAGNOSTIC', 'CANCELLED'],
   IN_PROGRESS: ['FINAL_SUBMITTED', 'DIAGNOSTIC', 'CANCELLED'],
@@ -203,6 +408,29 @@ const ALLOWED_TRANSITIONS: Record<RepoTaskInterviewState, readonly RepoTaskInter
   EVALUATED: [],
   CANCELLED: [],
 };
+const SHA256_HEX_PATTERN = /^[a-f0-9]{64}$/i;
+const ASSESSMENT_PROGRESS_SNIPPET_TYPES = [
+  'review_challenge_packet',
+  'open_source_challenge_packet',
+  'repo_task_challenge_packet',
+  'challenge_packet',
+  'git_commit',
+  'code_diff',
+  'test_run',
+  'terminal_command',
+  'terminal_output',
+  'ai_usage_event',
+  'room_chat_message',
+  'meeting_transcript_segment',
+] as const;
+const MAX_ASSESSMENT_PROGRESS_SNIPPETS = 6;
+const MAX_ASSESSMENT_PROGRESS_SNIPPET_CHARS = 1_200;
+const HUMAN_ASSESSMENT_DECISIONS = new Set<HumanAssessmentDecisionValue>([
+  'advance',
+  'hold',
+  'reject',
+  'needs_more_evidence',
+]);
 
 function toCanonicalState(state: RepoTaskInterviewState): AssessmentSessionState {
   if (state === 'EVALUATING') return 'EVALUATING';
@@ -254,6 +482,7 @@ function normalizeClaims(
     polarity: claim.polarity,
     dimension: claim.dimension,
     narrative: claim.narrative,
+    confidence: claim.confidence,
     sourceRefs: claim.sourceRefs ?? [],
   }));
 }
@@ -262,15 +491,33 @@ function normalizeDiagnostics(
   diagnostics: readonly AssessmentDiagnosticInput[],
 ): AssessmentEvaluationDiagnosticInput[] {
   return diagnostics.map((diagnostic) => ({
+    ...(diagnostic.id ? { id: diagnostic.id } : {}),
     code: diagnostic.code,
     severity: diagnostic.severity,
     message: diagnostic.message,
+    sourceRefs: diagnostic.sourceRefs ?? [],
     metadata: {
       ...(diagnostic.provider ? { provider: diagnostic.provider } : {}),
       ...(diagnostic.retryable !== undefined ? { retryable: diagnostic.retryable } : {}),
       ...(diagnostic.details ?? {}),
     },
   }));
+}
+
+function hasNonDiagnosticEvaluationClaim(
+  claims: readonly AssessmentEvaluationClaimInputCompat[],
+): boolean {
+  return claims.some((claim) => claim.polarity !== 'diagnostic');
+}
+
+function assertEvaluationReportStatusMatchesEvidence(input: CreateEvaluationReportInput): void {
+  if (input.status !== 'EVALUATED') return;
+  if (hasNonDiagnosticEvaluationClaim(input.claims)) return;
+
+  throw new Error(
+    'EVALUATED assessment report requires at least one non-diagnostic evaluation claim; '
+    + 'diagnostic-only reports must use a diagnostic status.',
+  );
 }
 
 function outputToJsonValue(
@@ -296,6 +543,413 @@ function primitiveDiagnosticDetails(
     }
   }
   return Object.keys(primitives).length > 0 ? primitives : undefined;
+}
+
+const COMMIT_SHA_PATTERN = /^[0-9a-f]{40}$/i;
+const SAFE_BRANCH_PATTERN = /^[A-Za-z0-9._/-]+$/;
+const ASSESSMENT_BRANCH_NAME = 'pipe-assessment';
+
+function normalizeGitHubRepositoryUrl(value: string, fieldName: string): string {
+  let url: URL;
+  try {
+    url = new URL(value);
+  } catch {
+    throw new Error(`${fieldName} must be a valid GitHub HTTPS repository URL`);
+  }
+  if (url.protocol !== 'https:' || url.hostname.toLowerCase() !== 'github.com') {
+    throw new Error(`${fieldName} must be a GitHub HTTPS repository URL`);
+  }
+  const segments = url.pathname.split('/').filter(Boolean);
+  if (segments.length !== 2) {
+    throw new Error(`${fieldName} must identify a GitHub owner and repository`);
+  }
+  const [owner, repoWithSuffix] = segments;
+  if (!owner || !repoWithSuffix) {
+    throw new Error(`${fieldName} must identify a GitHub owner and repository`);
+  }
+  const repo = repoWithSuffix.endsWith('.git') ? repoWithSuffix.slice(0, -4) : repoWithSuffix;
+  if (!repo) {
+    throw new Error(`${fieldName} must identify a GitHub owner and repository`);
+  }
+  return `https://github.com/${owner}/${repo}`;
+}
+
+function assertCommitSha(value: string, fieldName: string): void {
+  if (!COMMIT_SHA_PATTERN.test(value)) {
+    throw new Error(`${fieldName} must be a 40-character Git commit SHA`);
+  }
+}
+
+function assertSafeBranchName(branchName: string): void {
+  if (
+    branchName.length === 0
+    || branchName.length > 255
+    || !SAFE_BRANCH_PATTERN.test(branchName)
+    || branchName.startsWith('/')
+    || branchName.endsWith('/')
+    || branchName.includes('..')
+    || branchName.includes('//')
+    || branchName.includes('@{')
+    || branchName.endsWith('.')
+    || branchName.endsWith('.lock')
+    || branchName.split('/').some((segment) => segment.startsWith('.'))
+  ) {
+    throw new Error('branchName must be a safe Git branch name');
+  }
+}
+
+function assertAssessmentBranchName(branchName: string): void {
+  if (
+    branchName !== ASSESSMENT_BRANCH_NAME
+    && !branchName.startsWith(`${ASSESSMENT_BRANCH_NAME}/`)
+  ) {
+    throw new Error('branchName must be pipe-assessment or a pipe-assessment/* branch');
+  }
+}
+
+function normalizeCommitUrl(value: string | null | undefined, commitSha: string): string | null {
+  if (!value) return null;
+  let url: URL;
+  try {
+    url = new URL(value);
+  } catch {
+    throw new Error('commitUrl must be a valid GitHub commit URL');
+  }
+  if (
+    url.protocol !== 'https:'
+    || url.hostname.toLowerCase() !== 'github.com'
+    || !url.pathname.includes('/commit/')
+    || !url.pathname.toLowerCase().endsWith(commitSha.toLowerCase())
+  ) {
+    throw new Error('commitUrl must be a GitHub HTTPS commit URL for commitSha');
+  }
+  return url.toString();
+}
+
+function normalizePullRequestUrl(
+  value: string | null | undefined,
+  consent: boolean | undefined,
+): string | null {
+  if (!value) return null;
+  if (consent !== true) {
+    throw new Error('upstreamPrConsent is required before storing an upstreamPullRequestUrl');
+  }
+  let url: URL;
+  try {
+    url = new URL(value);
+  } catch {
+    throw new Error('upstreamPullRequestUrl must be a valid GitHub pull request URL');
+  }
+  if (
+    url.protocol !== 'https:'
+    || url.hostname.toLowerCase() !== 'github.com'
+    || !/\/pull\/\d+$/.test(url.pathname)
+  ) {
+    throw new Error('upstreamPullRequestUrl must be a GitHub HTTPS pull request URL');
+  }
+  return url.toString();
+}
+
+function assertChangedFiles(files: readonly CommitSubmissionChangedFileInput[]): void {
+  if (files.length === 0) {
+    throw new Error('commit submission requires at least one changed file');
+  }
+  for (const file of files) {
+    if (file.path.trim().length === 0 || file.path.startsWith('/') || file.path.includes('..')) {
+      throw new Error('commit submission changed file path must be repository-relative');
+    }
+    if (file.previousPath && (file.previousPath.startsWith('/') || file.previousPath.includes('..'))) {
+      throw new Error('commit submission previous file path must be repository-relative');
+    }
+  }
+}
+
+function assertCommitSubmissionSourceRefs(input: SubmitCommitAssessmentInput): void {
+  const commitRef = input.sourceRefs.find((ref) =>
+    ref.sourceRefType === 'git_commit'
+    && ref.sourceRefId.toLowerCase() === input.commitSha.toLowerCase()
+    && typeof ref.exactText === 'string'
+    && ref.exactText.toLowerCase().includes(input.commitSha.toLowerCase()));
+  if (!commitRef) {
+    throw new Error('commit submission requires a git_commit source ref whose exact text contains commitSha');
+  }
+
+  const changedPaths = input.changedFiles.map((file) => file.path);
+  const diffRef = input.sourceRefs.find((ref) => {
+    if (ref.sourceRefType !== 'code_diff' || typeof ref.exactText !== 'string') return false;
+    const exactText = ref.exactText;
+    return diffSourceRefMatchesSubmittedRange(ref, input)
+      && (exactText.includes('diff --git') || changedPaths.some((path) => exactText.includes(path)));
+  });
+  if (!diffRef) {
+    throw new Error('commit submission requires a code_diff source ref for the submitted baseCommitSha..commitSha changes');
+  }
+}
+
+function diffSourceRefMatchesSubmittedRange(
+  ref: AssessmentEvidenceSourceRefInput,
+  input: SubmitCommitAssessmentInput,
+): boolean {
+  const expectedRange = `${input.baseCommitSha.toLowerCase()}..${input.commitSha.toLowerCase()}`;
+  if (ref.sourceRefId.toLowerCase() === expectedRange) {
+    return true;
+  }
+
+  const locator = ref.locator ?? {};
+  const locatorBaseCommitSha = stringLocatorValue(locator, 'baseCommitSha')?.toLowerCase();
+  const locatorCommitSha = stringLocatorValue(locator, 'commitSha')?.toLowerCase();
+  return locatorBaseCommitSha === input.baseCommitSha.toLowerCase()
+    && locatorCommitSha === input.commitSha.toLowerCase();
+}
+
+function stringLocatorValue(locator: JsonObject, key: string): string | null {
+  const value = locator[key];
+  return typeof value === 'string' && value.trim().length > 0 ? value.trim() : null;
+}
+
+function assertCommitSubmissionMatchesChallenge(
+  input: SubmitCommitAssessmentInput,
+  normalizedRepositoryUrl: string,
+  challengeRef: AssessmentProgressSourceRef | null,
+): void {
+  if (!challengeRef) return;
+
+  const assignedRepositoryUrl = stringLocatorValue(challengeRef.locator, 'repositoryUrl');
+  if (assignedRepositoryUrl) {
+    const normalizedAssignedRepositoryUrl = normalizeGitHubRepositoryUrl(
+      assignedRepositoryUrl,
+      'assigned challenge repositoryUrl',
+    );
+    if (normalizedAssignedRepositoryUrl !== normalizedRepositoryUrl) {
+      throw new Error('repositoryUrl must be the assigned challenge repositoryUrl');
+    }
+  }
+
+  const assignedBaseCommitSha = stringLocatorValue(challengeRef.locator, 'baseCommitSha');
+  if (assignedBaseCommitSha) {
+    assertCommitSha(assignedBaseCommitSha, 'assigned challenge baseCommitSha');
+    if (assignedBaseCommitSha.toLowerCase() !== input.baseCommitSha.toLowerCase()) {
+      throw new Error('baseCommitSha must be the assigned challenge baseCommitSha');
+    }
+  }
+}
+
+async function sha256Hex(value: string): Promise<string> {
+  const bytes = new TextEncoder().encode(value);
+  const digest = await crypto.subtle.digest('SHA-256', bytes);
+  return Array.from(new Uint8Array(digest), (byte) => byte.toString(16).padStart(2, '0')).join('');
+}
+
+function normalizedSha256ContentHash(value: string): string | null {
+  const trimmed = value.trim().toLowerCase();
+  const maybeHex = trimmed.startsWith('sha256:') ? trimmed.slice('sha256:'.length) : trimmed;
+  return SHA256_HEX_PATTERN.test(maybeHex) ? maybeHex : null;
+}
+
+async function assertSourceRefContentHashes(
+  sourceRefs: readonly AssessmentEvidenceSourceRefInput[],
+): Promise<void> {
+  for (const ref of sourceRefs) {
+    if (typeof ref.exactText !== 'string' || ref.exactText.length === 0) {
+      throw new Error('source ref exactText is required before hashing');
+    }
+    if (typeof ref.contentHash !== 'string' || ref.contentHash.length === 0) {
+      throw new Error('source ref contentHash must be a SHA-256 hash of exactText');
+    }
+    const expectedHash = normalizedSha256ContentHash(ref.contentHash);
+    if (!expectedHash) {
+      throw new Error('source ref contentHash must be a SHA-256 hash of exactText');
+    }
+    const actualHash = await sha256Hex(ref.exactText);
+    if (actualHash !== expectedHash) {
+      throw new Error(`${ref.sourceRefType} source ref contentHash must match exactText`);
+    }
+  }
+}
+
+function assertHumanAssessmentDecision(value: HumanAssessmentDecisionValue): void {
+  if (!HUMAN_ASSESSMENT_DECISIONS.has(value)) {
+    throw new Error(`unsupported human assessment decision ${value}`);
+  }
+}
+
+function changedFilesToJson(
+  files: readonly CommitSubmissionChangedFileInput[],
+): JsonValue[] {
+  return files.map((file) => {
+    const changedFile: JsonObject = {
+      path: file.path,
+      status: file.status,
+    };
+    if (file.previousPath) changedFile.previousPath = file.previousPath;
+    if (file.additions !== undefined && file.additions !== null) changedFile.additions = file.additions;
+    if (file.deletions !== undefined && file.deletions !== null) changedFile.deletions = file.deletions;
+    return changedFile;
+  });
+}
+
+function parseJsonObject(value: string | null): JsonObject {
+  if (!value) return {};
+  const parsed = JSON.parse(value) as JsonValue;
+  if (parsed === null || Array.isArray(parsed) || typeof parsed !== 'object') return {};
+  return parsed;
+}
+
+function compactAssessmentSnippetText(value: string): string {
+  const normalized = value.replace(/\s+/g, ' ').trim();
+  if (normalized.length <= MAX_ASSESSMENT_PROGRESS_SNIPPET_CHARS) return normalized;
+  return `${normalized.slice(0, MAX_ASSESSMENT_PROGRESS_SNIPPET_CHARS - 15).trimEnd()} [truncated]`;
+}
+
+function jsonStringValue(value: JsonValue | undefined): string | null {
+  return typeof value === 'string' && value.trim().length > 0 ? value : null;
+}
+
+function jsonArrayValue(value: JsonValue | undefined): JsonValue[] {
+  return Array.isArray(value) ? value : [];
+}
+
+function jsonStringArrayValue(value: JsonValue | undefined): string[] {
+  return jsonArrayValue(value)
+    .filter((item): item is string => typeof item === 'string' && item.trim().length > 0);
+}
+
+function jsonNumberValue(value: JsonValue | undefined): number | null {
+  return typeof value === 'number' && Number.isFinite(value) ? value : null;
+}
+
+function jsonBooleanValue(value: JsonValue | undefined): boolean | null {
+  return typeof value === 'boolean' ? value : null;
+}
+
+function jsonObjectValue(value: JsonValue | undefined): JsonObject | null {
+  if (value === null || value === undefined || Array.isArray(value) || typeof value !== 'object') return null;
+  return value;
+}
+
+function parseCoverageTypeCounts(value: JsonValue | undefined): Record<string, number> {
+  const object = jsonObjectValue(value);
+  if (!object) return {};
+  const counts: Record<string, number> = {};
+  for (const [key, rawCount] of Object.entries(object)) {
+    const count = jsonNumberValue(rawCount);
+    if (count !== null && count >= 0) counts[key] = count;
+  }
+  return counts;
+}
+
+function parseCoverageItem(value: JsonValue): AssessmentEvidenceCoverageItem | null {
+  const object = jsonObjectValue(value);
+  if (!object) return null;
+  const label = jsonStringValue(object.label);
+  const required = jsonBooleanValue(object.required);
+  const satisfied = jsonBooleanValue(object.satisfied);
+  if (!label || required === null || satisfied === null) return null;
+  return {
+    label,
+    required,
+    sourceRefTypes: jsonStringArrayValue(object.sourceRefTypes),
+    satisfied,
+    sourceRefKeys: jsonStringArrayValue(object.sourceRefKeys),
+    missingImpact: jsonStringValue(object.missingImpact) ?? '',
+  };
+}
+
+function parseCoverageItems(value: JsonValue | undefined): AssessmentEvidenceCoverageItem[] {
+  return jsonArrayValue(value)
+    .map(parseCoverageItem)
+    .filter((item): item is AssessmentEvidenceCoverageItem => Boolean(item));
+}
+
+function parseEvidenceCoverage(output: JsonObject): AssessmentEvidenceCoverageSnapshot | null {
+  const coverage = jsonObjectValue(output.evidenceCoverage);
+  if (!coverage) return null;
+  const schemaVersion = jsonStringValue(coverage.schemaVersion);
+  if (schemaVersion !== 'assessment-evidence-coverage-v1') return null;
+
+  return {
+    schemaVersion,
+    sourceRefCount: jsonNumberValue(coverage.sourceRefCount) ?? 0,
+    sourceRefTypeCounts: parseCoverageTypeCounts(coverage.sourceRefTypeCounts),
+    requiredForEvaluation: parseCoverageItems(coverage.requiredForEvaluation),
+    expectedForHighConfidence: parseCoverageItems(coverage.expectedForHighConfidence),
+  };
+}
+
+function hasEventKind(
+  counts: readonly AssessmentEvidenceKindCount[],
+  kinds: readonly string[],
+): boolean {
+  return counts.some((count) => kinds.includes(count.kind) && count.count > 0);
+}
+
+function modeRequiresCommit(mode: RepoTaskInterviewMode): boolean {
+  return mode === 'OPEN_SOURCE_BUG_FIX'
+    || mode === 'DEV_CONTAINER_REPO_TASK'
+    || mode === 'DEV_CONTAINER_CHALLENGE';
+}
+
+function progressNextActionLabel(action: AssessmentProgressNextAction): string {
+  switch (action) {
+    case 'ASSIGN_CHALLENGE':
+      return 'Assign a concrete repo challenge packet.';
+    case 'OPEN_ROOM_OR_WORKSPACE':
+      return 'Open the assessment room and start the workspace.';
+    case 'CAPTURE_WORK_EVIDENCE':
+      return 'Capture terminal, code, transcript, chat, and AI-use evidence.';
+    case 'SUBMIT_COMMIT':
+      return 'Submit a source-backed assessment commit.';
+    case 'START_EVALUATION':
+      return 'Start source-backed AI or human evaluation.';
+    case 'REVIEW_EVALUATION':
+      return 'Review the assessment report and evidence.';
+    case 'RESOLVE_DIAGNOSTIC':
+      return 'Resolve the blocking diagnostic before continuing.';
+    case 'NONE':
+      return 'No further assessment action is required.';
+  }
+}
+
+function progressStageAndAction(input: {
+  session: PersistedRepoTaskInterviewSession;
+  hasChallengePacket: boolean;
+  hasWorkEvidence: boolean;
+  hasCommitSubmission: boolean;
+  hasFinalSubmission: boolean;
+  evaluation: AssessmentProgressEvaluation | null;
+  humanDecision: AssessmentProgressHumanDecision | null;
+}): { stage: AssessmentProgressStage; nextAction: AssessmentProgressNextAction } {
+  if (input.session.state === 'CANCELLED') {
+    return { stage: 'CANCELLED', nextAction: 'NONE' };
+  }
+  if (input.humanDecision) {
+    return { stage: 'EVALUATED', nextAction: 'NONE' };
+  }
+  if (input.session.state === 'DIAGNOSTIC') {
+    return { stage: 'NEEDS_ATTENTION', nextAction: 'RESOLVE_DIAGNOSTIC' };
+  }
+  if (input.evaluation) {
+    if (input.evaluation.status === 'EVALUATED') {
+      return { stage: 'EVALUATED', nextAction: 'REVIEW_EVALUATION' };
+    }
+    return { stage: 'NEEDS_ATTENTION', nextAction: 'RESOLVE_DIAGNOSTIC' };
+  }
+  if (!input.hasChallengePacket) {
+    return { stage: 'WAITING_FOR_CHALLENGE', nextAction: 'ASSIGN_CHALLENGE' };
+  }
+  if (modeRequiresCommit(input.session.mode) && !input.hasCommitSubmission) {
+    if (input.hasWorkEvidence || input.hasFinalSubmission) {
+      return { stage: 'WORK_IN_PROGRESS', nextAction: 'SUBMIT_COMMIT' };
+    }
+    return { stage: 'CHALLENGE_READY', nextAction: 'OPEN_ROOM_OR_WORKSPACE' };
+  }
+  if (input.hasCommitSubmission || input.hasFinalSubmission || input.session.state === 'FINAL_SUBMITTED') {
+    return { stage: 'READY_FOR_EVALUATION', nextAction: 'START_EVALUATION' };
+  }
+  if (input.hasWorkEvidence) {
+    return { stage: 'WORK_IN_PROGRESS', nextAction: 'CAPTURE_WORK_EVIDENCE' };
+  }
+  return { stage: 'CHALLENGE_READY', nextAction: 'OPEN_ROOM_OR_WORKSPACE' };
 }
 
 export class RepoTaskInterviewSessionStore {
@@ -361,7 +1015,10 @@ export class RepoTaskInterviewSessionStore {
         reason: input.reason,
       };
     }
-    if (!ALLOWED_TRANSITIONS[session.state].includes(input.toState)) {
+    const isEvaluationFinalization = session.state === 'FINAL_SUBMITTED'
+      && input.toState === 'EVALUATED'
+      && await this.hasPersistedEvaluatedReport(session.id);
+    if (!isEvaluationFinalization && !ALLOWED_TRANSITIONS[session.state].includes(input.toState)) {
       throw new Error(`cannot transition assessment session from ${session.state} to ${input.toState}`);
     }
     const transition = await this.#store.transitionAssessmentState({
@@ -377,6 +1034,17 @@ export class RepoTaskInterviewSessionStore {
       toState: fromCanonicalState(transition.toState),
       reason: transition.reason,
     };
+  }
+
+  private async hasPersistedEvaluatedReport(sessionId: string): Promise<boolean> {
+    const row = await this.db.prepare(
+      `SELECT id
+         FROM assessment_evaluation_reports
+        WHERE session_id = ?1
+          AND status = 'EVALUATED'
+        LIMIT 1`,
+    ).bind(sessionId).first<{ id: string }>();
+    return row !== null;
   }
 
   async submitFinalBundle(
@@ -441,9 +1109,93 @@ export class RepoTaskInterviewSessionStore {
     };
   }
 
+  async submitCommit(
+    input: SubmitCommitAssessmentInput,
+  ): Promise<PersistedCommitAssessmentSubmission> {
+    assertCommitSha(input.baseCommitSha, 'baseCommitSha');
+    assertCommitSha(input.commitSha, 'commitSha');
+    if (input.baseCommitSha.toLowerCase() === input.commitSha.toLowerCase()) {
+      throw new Error('commitSha must differ from baseCommitSha');
+    }
+    assertSafeBranchName(input.branchName);
+    assertAssessmentBranchName(input.branchName);
+    assertChangedFiles(input.changedFiles);
+    assertCommitSubmissionSourceRefs(input);
+    await assertSourceRefContentHashes(input.sourceRefs);
+
+    const repositoryUrl = normalizeGitHubRepositoryUrl(input.repositoryUrl, 'repositoryUrl');
+    const forkRepositoryUrl = input.forkRepositoryUrl
+      ? normalizeGitHubRepositoryUrl(input.forkRepositoryUrl, 'forkRepositoryUrl')
+      : null;
+    const commitUrl = normalizeCommitUrl(input.commitUrl, input.commitSha);
+    const upstreamPullRequestUrl = normalizePullRequestUrl(
+      input.upstreamPullRequestUrl,
+      input.upstreamPrConsent,
+    );
+    const challengeRef = await this.loadChallengeSourceRef(input.sessionId);
+    assertCommitSubmissionMatchesChallenge(input, repositoryUrl, challengeRef);
+
+    const initialSession = await this.loadSession(input.sessionId);
+    if (!['INTAKE', 'IN_PROGRESS', 'FINAL_SUBMITTED'].includes(initialSession.state)) {
+      throw new Error(
+        `assessment session must be INTAKE, IN_PROGRESS, or FINAL_SUBMITTED before commit submission; `
+        + `current state is ${initialSession.state}`,
+      );
+    }
+    if (initialSession.state === 'INTAKE') {
+      await this.transitionState({
+        sessionId: input.sessionId,
+        toState: 'IN_PROGRESS',
+        reason: 'Commit submission received.',
+        createdBy: input.actorId,
+      });
+    }
+
+    const payload: JsonObject = {
+      repositoryUrl,
+      branchName: input.branchName,
+      baseCommitSha: input.baseCommitSha.toLowerCase(),
+      commitSha: input.commitSha.toLowerCase(),
+      changedFiles: changedFilesToJson(input.changedFiles),
+      upstreamPrConsent: input.upstreamPrConsent === true,
+    };
+    if (forkRepositoryUrl) payload.forkRepositoryUrl = forkRepositoryUrl;
+    if (commitUrl) payload.commitUrl = commitUrl;
+    if (upstreamPullRequestUrl) payload.upstreamPullRequestUrl = upstreamPullRequestUrl;
+
+    const event = await this.recordEvent({
+      sessionId: input.sessionId,
+      ingestionKey: input.ingestionKey,
+      kind: 'commit_submission',
+      actorType: input.actorType,
+      actorId: input.actorId,
+      narrative: input.narrative,
+      payload,
+      occurredAt: input.occurredAt,
+      sourceRefs: input.sourceRefs,
+    });
+
+    const latestSession = await this.loadSession(input.sessionId);
+    const transition = latestSession.state === 'FINAL_SUBMITTED'
+      ? null
+      : await this.transitionState({
+        sessionId: input.sessionId,
+        toState: 'FINAL_SUBMITTED',
+        reason: input.narrative,
+        eventId: event.id,
+        createdBy: input.actorId,
+      });
+
+    return {
+      event,
+      transition,
+    };
+  }
+
   async createEvaluationReport(
     input: CreateEvaluationReportInput,
   ): Promise<PersistedEvaluationReport> {
+    assertEvaluationReportStatusMatchesEvidence(input);
     const report = await this.#store.createEvaluationReport({
       sessionId: input.sessionId,
       ingestionKey: input.ingestionKey,
@@ -454,6 +1206,47 @@ export class RepoTaskInterviewSessionStore {
       diagnostics: normalizeDiagnostics(input.diagnostics),
     });
     return toReport(report);
+  }
+
+  async recordHumanDecision(
+    input: RecordHumanAssessmentDecisionInput,
+  ): Promise<PersistedHumanAssessmentDecision> {
+    assertHumanAssessmentDecision(input.decision);
+    const summary = input.summary.trim();
+    if (!summary) {
+      throw new Error('human assessment decision summary is required');
+    }
+    const session = await this.loadSession(input.sessionId);
+    if (session.state === 'CANCELLED') {
+      throw new Error('cannot record a human assessment decision for a cancelled assessment session');
+    }
+    await assertSourceRefContentHashes(input.sourceRefs);
+    await this.assertHumanDecisionSourceRefsBacked(session.id, input.sourceRefs);
+
+    const sourceRefTypes = Array.from(new Set(input.sourceRefs.map((sourceRef) => sourceRef.sourceRefType))).sort();
+    const event = await this.recordEvent({
+      sessionId: session.id,
+      ingestionKey: input.ingestionKey,
+      kind: 'human_assessment_decision',
+      actorType: 'recruiter',
+      actorId: input.reviewerId,
+      narrative: summary,
+      payload: {
+        schemaVersion: 'human-assessment-decision-v1',
+        decision: input.decision,
+        notes: input.notes?.trim() || null,
+        sourceRefCount: input.sourceRefs.length,
+        sourceRefTypes,
+      },
+      occurredAt: input.occurredAt,
+      sourceRefs: input.sourceRefs,
+    });
+
+    const decision = await this.loadHumanDecisionEvent(event.id);
+    if (!decision) {
+      throw new Error(`human assessment decision ${event.id} was not persisted`);
+    }
+    return decision;
   }
 
   async recordAiProviderUnavailable(input: {
@@ -501,13 +1294,566 @@ export class RepoTaskInterviewSessionStore {
       toState: 'DIAGNOSTIC',
       reason: diagnostic.message,
     });
+    const row = await this.db.prepare(
+      `SELECT id, session_id, report_id, code, severity
+         FROM assessment_diagnostics
+        WHERE report_id = ?1
+          AND code = ?2
+          AND severity = ?3
+          AND message = ?4
+        LIMIT 1`,
+    ).bind(report.id, diagnostic.code, diagnostic.severity, diagnostic.message).first<{
+      id: string;
+      session_id: string;
+      report_id: string | null;
+      code: string;
+      severity: AssessmentDiagnosticSeverity;
+    }>();
+    if (!row) throw new Error(`assessment diagnostic ${diagnostic.code} was not persisted`);
     return {
-      id: report.id,
-      sessionId: context.sessionId,
-      reportId: context.reportId,
-      code: diagnostic.code,
-      severity: diagnostic.severity,
+      id: row.id,
+      sessionId: row.session_id,
+      reportId: row.report_id,
+      code: row.code,
+      severity: row.severity,
     };
+  }
+
+  async loadProgress(sessionId: string): Promise<AssessmentProgressSnapshot> {
+    const session = await this.loadSession(sessionId);
+    const evidenceCounts = await this.loadEvidenceCounts(session.id);
+    const sourceRefCounts = await this.loadSourceRefCounts(session.id);
+    const evidenceSnippets = await this.loadEvidenceSnippets(session.id);
+    const challenge = await this.loadChallengeSourceRef(session.id);
+    const latestEvent = await this.loadLatestEvent(session.id);
+    const commit = await this.loadLatestCommitSubmission(session.id);
+    const evaluation = await this.loadLatestEvaluation(session.id);
+    const humanDecision = await this.loadLatestHumanDecision(session.id);
+
+    const hasWorkEvidence = hasEventKind(evidenceCounts, [
+      'terminal_output',
+      'test_run',
+      'code_diff',
+      'ai_interaction',
+      'tool_usage',
+      'transcript_span',
+      'dev_container_event',
+      'message',
+      'commit_submission',
+    ]);
+    const hasCommitSubmission = commit !== null;
+    const hasFinalSubmission = hasEventKind(evidenceCounts, ['final_submission']);
+    const hasAiInteraction = hasEventKind(evidenceCounts, ['ai_interaction']);
+    const hasMessageEvidence = hasEventKind(evidenceCounts, ['message'])
+      || hasEventKind(sourceRefCounts, ['room_chat_message']);
+    const hasDevContainerEvidence = hasEventKind(evidenceCounts, ['dev_container_event'])
+      || hasEventKind(sourceRefCounts, [
+        'dev_container_workspace_launch',
+        'dev_container_workspace_stop',
+        'dev_container_workspace_state',
+        'code_server_file_observation',
+        'code_server_editor_open',
+        'room_file_content',
+      ]);
+    const hasToolUsageEvidence = hasEventKind(evidenceCounts, ['tool_usage'])
+      || hasEventKind(sourceRefCounts, [
+        'room_surface_change',
+        'win95_start_menu_state',
+        'room_browser_navigation',
+        'room_window_lifecycle',
+        'room_window_data_update',
+        'room_window_state_change',
+        'room_cursor_presence_sample',
+        'room_media_control',
+      ]);
+    const hasTranscriptEvidence = hasEventKind(evidenceCounts, ['transcript_span']);
+    const hasTestEvidence = hasEventKind(evidenceCounts, ['test_run'])
+      || hasEventKind(sourceRefCounts, ['test_run']);
+    const hasVerificationGap = hasEventKind(sourceRefCounts, ['verification_gap']);
+    const hasChallengePacket = challenge !== null;
+    const { stage, nextAction } = progressStageAndAction({
+      session,
+      hasChallengePacket,
+      hasWorkEvidence,
+      hasCommitSubmission,
+      hasFinalSubmission,
+      evaluation,
+      humanDecision,
+    });
+
+    return {
+      session,
+      stage,
+      nextAction,
+      nextActionLabel: progressNextActionLabel(nextAction),
+      hasChallengePacket,
+      hasWorkEvidence,
+      hasMessageEvidence,
+      hasDevContainerEvidence,
+      hasToolUsageEvidence,
+      hasCommitSubmission,
+      hasFinalSubmission,
+      hasAiInteraction,
+      hasTranscriptEvidence,
+      hasTestEvidence,
+      hasVerificationGap,
+      evidenceCounts,
+      sourceRefCounts,
+      evidenceSnippets,
+      challenge,
+      latestEvent,
+      commit,
+      evaluation,
+      humanDecision,
+    };
+  }
+
+  private async loadEvidenceCounts(sessionId: string): Promise<AssessmentEvidenceKindCount[]> {
+    const result = await this.db.prepare(
+      `SELECT kind, COUNT(*) AS count
+         FROM assessment_evidence_events
+        WHERE session_id = ?1
+        GROUP BY kind
+        ORDER BY kind`,
+    ).bind(sessionId).all<{ kind: string; count: number }>();
+    return (result.results ?? []).map((row) => ({
+      kind: row.kind,
+      count: row.count,
+    }));
+  }
+
+  private async loadSourceRefCounts(sessionId: string): Promise<AssessmentEvidenceKindCount[]> {
+    const result = await this.db.prepare(
+      `SELECT sr.source_ref_type AS kind, COUNT(*) AS count
+         FROM assessment_event_source_refs sr
+         JOIN assessment_evidence_events e ON e.id = sr.event_id
+        WHERE e.session_id = ?1
+        GROUP BY sr.source_ref_type
+        ORDER BY sr.source_ref_type`,
+    ).bind(sessionId).all<{ kind: string; count: number }>();
+    return (result.results ?? []).map((row) => ({
+      kind: row.kind,
+      count: row.count,
+    }));
+  }
+
+  private async loadEvidenceSnippets(sessionId: string): Promise<AssessmentProgressEvidenceSnippet[]> {
+    const result = await this.db.prepare(
+      `SELECT e.kind AS event_kind,
+              e.occurred_at,
+              sr.source_ref_type,
+              sr.evidence_role,
+              sr.exact_text
+         FROM assessment_event_source_refs sr
+         JOIN assessment_evidence_events e ON e.id = sr.event_id
+        WHERE e.session_id = ?1
+          AND sr.source_ref_type IN (
+            'review_challenge_packet',
+            'open_source_challenge_packet',
+            'repo_task_challenge_packet',
+            'challenge_packet',
+            'git_commit',
+            'code_diff',
+            'test_run',
+            'terminal_command',
+            'terminal_output',
+            'ai_usage_event',
+            'room_chat_message',
+            'meeting_transcript_segment'
+          )
+          AND sr.exact_text IS NOT NULL
+          AND trim(sr.exact_text) <> ''
+        ORDER BY
+          CASE sr.source_ref_type
+            WHEN 'review_challenge_packet' THEN 0
+            WHEN 'open_source_challenge_packet' THEN 0
+            WHEN 'repo_task_challenge_packet' THEN 0
+            WHEN 'challenge_packet' THEN 0
+            WHEN 'git_commit' THEN 1
+            WHEN 'code_diff' THEN 2
+            WHEN 'test_run' THEN 3
+            WHEN 'terminal_command' THEN 4
+            WHEN 'terminal_output' THEN 4
+            WHEN 'ai_usage_event' THEN 5
+            WHEN 'room_chat_message' THEN 6
+            WHEN 'meeting_transcript_segment' THEN 7
+            ELSE 8
+          END,
+          e.sequence DESC,
+          sr.created_at DESC
+        LIMIT ${MAX_ASSESSMENT_PROGRESS_SNIPPETS}`,
+    ).bind(sessionId).all<{
+      event_kind: string;
+      occurred_at: string;
+      source_ref_type: string;
+      evidence_role: string;
+      exact_text: string;
+    }>();
+
+    const allowedTypes = new Set<string>(ASSESSMENT_PROGRESS_SNIPPET_TYPES);
+    return (result.results ?? [])
+      .filter((row) => allowedTypes.has(row.source_ref_type))
+      .map((row) => ({
+        eventKind: row.event_kind,
+        sourceRefType: row.source_ref_type,
+        evidenceRole: row.evidence_role,
+        exactText: compactAssessmentSnippetText(row.exact_text),
+        occurredAt: row.occurred_at,
+      }));
+  }
+
+  private async loadChallengeSourceRef(sessionId: string): Promise<AssessmentProgressSourceRef | null> {
+    const row = await this.db.prepare(
+      `SELECT sr.source_ref_type, sr.source_ref_id, sr.evidence_role, sr.exact_text, sr.content_hash, sr.locator_json
+         FROM assessment_event_source_refs sr
+         JOIN assessment_evidence_events e ON e.id = sr.event_id
+        WHERE e.session_id = ?1
+          AND (
+            sr.source_ref_type IN (
+              'review_challenge_packet',
+              'repo_challenge_packet',
+              'repo_task_challenge_packet',
+              'open_source_challenge_packet',
+              'challenge_packet'
+            )
+            OR sr.evidence_role IN (
+              'selected_review_challenge',
+              'assigned_challenge',
+              'challenge_packet'
+            )
+          )
+        ORDER BY e.sequence DESC, sr.created_at DESC
+        LIMIT 1`,
+    ).bind(sessionId).first<{
+      source_ref_type: string;
+      source_ref_id: string;
+      evidence_role: string;
+      exact_text: string;
+      content_hash: string;
+      locator_json: string | null;
+    }>();
+    if (!row) return null;
+    return {
+      sourceRefType: row.source_ref_type,
+      sourceRefId: row.source_ref_id,
+      evidenceRole: row.evidence_role,
+      exactText: row.exact_text,
+      contentHash: row.content_hash,
+      locator: parseJsonObject(row.locator_json),
+    };
+  }
+
+  private async loadLatestEvent(sessionId: string): Promise<AssessmentProgressLatestEvent | null> {
+    const row = await this.db.prepare(
+      `SELECT id, kind, sequence, occurred_at
+         FROM assessment_evidence_events
+        WHERE session_id = ?1
+        ORDER BY sequence DESC
+        LIMIT 1`,
+    ).bind(sessionId).first<{
+      id: string;
+      kind: string;
+      sequence: number;
+      occurred_at: string;
+    }>();
+    if (!row) return null;
+    return {
+      id: row.id,
+      kind: row.kind,
+      sequence: row.sequence,
+      occurredAt: row.occurred_at,
+    };
+  }
+
+  private async assertHumanDecisionSourceRefsBacked(
+    sessionId: string,
+    sourceRefs: readonly AssessmentEvidenceSourceRefInput[],
+  ): Promise<void> {
+    if (sourceRefs.length === 0) {
+      throw new Error('human assessment decision requires at least one source ref');
+    }
+    for (const sourceRef of sourceRefs) {
+      const isBacked = await this.isHumanDecisionSourceRefBacked(sessionId, sourceRef);
+      if (!isBacked) {
+        throw new Error(
+          `human assessment decision source ref ${sourceRef.sourceRefType}:${sourceRef.sourceRefId} `
+          + 'is not backed by assessment session evidence or evaluation output',
+        );
+      }
+    }
+  }
+
+  private async isHumanDecisionSourceRefBacked(
+    sessionId: string,
+    sourceRef: AssessmentEvidenceSourceRefInput,
+  ): Promise<boolean> {
+    if (await this.isSourceRefBackedBySessionEvent(sessionId, sourceRef)) return true;
+    if (sourceRef.sourceRefType === 'assessment_evaluation_report') {
+      const report = await this.db.prepare(
+        `SELECT id
+           FROM assessment_evaluation_reports
+          WHERE session_id = ?1
+            AND id = ?2
+            AND summary = ?3
+          LIMIT 1`,
+      ).bind(sessionId, sourceRef.sourceRefId, sourceRef.exactText).first<{ id: string }>();
+      return report !== null;
+    }
+    if (sourceRef.sourceRefType === 'assessment_evaluation_claim') {
+      const claim = await this.db.prepare(
+        `SELECT c.id
+           FROM assessment_evaluation_claims c
+           JOIN assessment_evaluation_reports r ON r.id = c.report_id
+          WHERE r.session_id = ?1
+            AND c.id = ?2
+            AND c.narrative = ?3
+          LIMIT 1`,
+      ).bind(sessionId, sourceRef.sourceRefId, sourceRef.exactText).first<{ id: string }>();
+      return claim !== null;
+    }
+    if (sourceRef.sourceRefType === 'assessment_diagnostic') {
+      const diagnostic = await this.db.prepare(
+        `SELECT id
+           FROM assessment_diagnostics
+          WHERE session_id = ?1
+            AND id = ?2
+            AND message = ?3
+          LIMIT 1`,
+      ).bind(sessionId, sourceRef.sourceRefId, sourceRef.exactText).first<{ id: string }>();
+      return diagnostic !== null;
+    }
+    return false;
+  }
+
+  private async isSourceRefBackedBySessionEvent(
+    sessionId: string,
+    sourceRef: AssessmentEvidenceSourceRefInput,
+  ): Promise<boolean> {
+    const row = await this.db.prepare(
+      `SELECT r.event_id
+         FROM assessment_event_source_refs r
+         JOIN assessment_evidence_events e ON e.id = r.event_id
+        WHERE e.session_id = ?1
+          AND r.source_ref_type = ?2
+          AND r.source_ref_id = ?3
+          AND r.evidence_role = ?4
+          AND COALESCE(r.source_span_id, '') = ?5
+          AND r.exact_text = ?6
+          AND r.content_hash = ?7
+        LIMIT 1`,
+    ).bind(
+      sessionId,
+      sourceRef.sourceRefType,
+      sourceRef.sourceRefId,
+      sourceRef.evidenceRole ?? 'support',
+      sourceRef.sourceSpanId ?? '',
+      sourceRef.exactText,
+      sourceRef.contentHash,
+    ).first<{ event_id: string }>();
+    return row !== null;
+  }
+
+  private async loadLatestCommitSubmission(sessionId: string): Promise<AssessmentProgressCommit | null> {
+    const row = await this.db.prepare(
+      `SELECT id, payload_json, occurred_at
+         FROM assessment_evidence_events
+        WHERE session_id = ?1
+          AND kind = 'commit_submission'
+        ORDER BY sequence DESC
+        LIMIT 1`,
+    ).bind(sessionId).first<{
+      id: string;
+      payload_json: string;
+      occurred_at: string;
+    }>();
+    if (!row) return null;
+    const payload = parseJsonObject(row.payload_json);
+    return {
+      eventId: row.id,
+      repositoryUrl: jsonStringValue(payload.repositoryUrl),
+      forkRepositoryUrl: jsonStringValue(payload.forkRepositoryUrl),
+      branchName: jsonStringValue(payload.branchName),
+      baseCommitSha: jsonStringValue(payload.baseCommitSha),
+      commitSha: jsonStringValue(payload.commitSha),
+      commitUrl: jsonStringValue(payload.commitUrl),
+      changedFiles: jsonArrayValue(payload.changedFiles),
+      occurredAt: row.occurred_at,
+    };
+  }
+
+  private async loadLatestHumanDecision(sessionId: string): Promise<AssessmentProgressHumanDecision | null> {
+    const row = await this.db.prepare(
+      `SELECT id
+         FROM assessment_evidence_events
+        WHERE session_id = ?1
+          AND kind = 'human_assessment_decision'
+        ORDER BY sequence DESC
+        LIMIT 1`,
+    ).bind(sessionId).first<{ id: string }>();
+    if (!row) return null;
+    return this.loadHumanDecisionEvent(row.id);
+  }
+
+  private async loadHumanDecisionEvent(eventId: string): Promise<AssessmentProgressHumanDecision | null> {
+    const row = await this.db.prepare(
+      `SELECT e.id,
+              e.actor_id,
+              e.narrative,
+              e.payload_json,
+              e.occurred_at,
+              COUNT(sr.id) AS source_ref_count,
+              GROUP_CONCAT(DISTINCT sr.source_ref_type) AS source_ref_types
+         FROM assessment_evidence_events e
+         LEFT JOIN assessment_event_source_refs sr ON sr.event_id = e.id
+        WHERE e.id = ?1
+          AND e.kind = 'human_assessment_decision'
+        GROUP BY e.id, e.actor_id, e.narrative, e.payload_json, e.occurred_at
+        LIMIT 1`,
+    ).bind(eventId).first<{
+      id: string;
+      actor_id: string | null;
+      narrative: string;
+      payload_json: string;
+      occurred_at: string;
+      source_ref_count: number;
+      source_ref_types: string | null;
+    }>();
+    if (!row) return null;
+    const payload = parseJsonObject(row.payload_json);
+    const decisionValue = jsonStringValue(payload.decision);
+    if (!decisionValue || !HUMAN_ASSESSMENT_DECISIONS.has(decisionValue as HumanAssessmentDecisionValue)) {
+      return null;
+    }
+    return {
+      eventId: row.id,
+      decision: decisionValue as HumanAssessmentDecisionValue,
+      reviewerId: row.actor_id,
+      summary: row.narrative,
+      notes: jsonStringValue(payload.notes),
+      occurredAt: row.occurred_at,
+      sourceRefCount: row.source_ref_count,
+      sourceRefTypes: row.source_ref_types
+        ? row.source_ref_types.split(',').map((value) => value.trim()).filter(Boolean).sort()
+        : [],
+    };
+  }
+
+  private async loadLatestEvaluation(sessionId: string): Promise<AssessmentProgressEvaluation | null> {
+    const row = await this.db.prepare(
+      `SELECT id, status, summary, output_json, created_at
+         FROM assessment_evaluation_reports
+        WHERE session_id = ?1
+        ORDER BY created_at DESC, id DESC
+        LIMIT 1`,
+    ).bind(sessionId).first<{
+      id: string;
+      status: EvaluationReportStatus;
+      summary: string;
+      output_json: string | null;
+      created_at: string;
+    }>();
+    if (!row) return null;
+    const output = parseJsonObject(row.output_json);
+    const claims = await this.loadEvaluationClaimPreviews(row.id);
+    const diagnostics = await this.loadEvaluationDiagnosticPreviews(row.id);
+    return {
+      id: row.id,
+      status: row.status,
+      summary: row.summary,
+      recommendation: typeof output.recommendation === 'string' ? output.recommendation : null,
+      createdAt: row.created_at,
+      evidenceCoverage: parseEvidenceCoverage(output),
+      claims,
+      diagnostics,
+    };
+  }
+
+  private async loadEvaluationClaimPreviews(reportId: string): Promise<AssessmentProgressEvaluationClaim[]> {
+    const rows = await this.db.prepare(
+      `SELECT c.id,
+              c.polarity,
+              c.dimension,
+              c.narrative,
+              c.confidence,
+              COUNT(sr.id) AS source_ref_count,
+              GROUP_CONCAT(DISTINCT sr.source_ref_type) AS source_ref_types
+         FROM assessment_evaluation_claims c
+         LEFT JOIN assessment_claim_source_refs sr ON sr.claim_id = c.id
+        WHERE c.report_id = ?1
+        GROUP BY c.id, c.polarity, c.dimension, c.narrative, c.confidence
+        ORDER BY
+          CASE c.polarity
+            WHEN 'positive' THEN 0
+            WHEN 'negative' THEN 1
+            WHEN 'neutral' THEN 2
+            ELSE 3
+          END,
+          c.created_at,
+          c.id
+        LIMIT 3`,
+    ).bind(reportId).all<{
+      id: string;
+      polarity: AssessmentEvaluationClaimPolarity;
+      dimension: string;
+      narrative: string;
+      confidence: number | null;
+      source_ref_count: number;
+      source_ref_types: string | null;
+    }>();
+    return rows.results.map((row) => ({
+      id: row.id,
+      polarity: row.polarity,
+      dimension: row.dimension,
+      narrative: row.narrative,
+      confidence: row.confidence,
+      sourceRefCount: row.source_ref_count,
+      sourceRefTypes: row.source_ref_types
+        ? row.source_ref_types.split(',').map((value) => value.trim()).filter(Boolean)
+        : [],
+    }));
+  }
+
+  private async loadEvaluationDiagnosticPreviews(reportId: string): Promise<AssessmentProgressEvaluationDiagnostic[]> {
+    const rows = await this.db.prepare(
+      `SELECT d.id,
+              d.code,
+              d.severity,
+              d.message,
+              COUNT(sr.id) AS source_ref_count,
+              GROUP_CONCAT(DISTINCT sr.source_ref_type) AS source_ref_types
+         FROM assessment_diagnostics d
+         LEFT JOIN assessment_diagnostic_source_refs sr ON sr.diagnostic_id = d.id
+        WHERE d.report_id = ?1
+        GROUP BY d.id, d.code, d.severity, d.message
+        ORDER BY
+          CASE d.severity
+            WHEN 'blocking' THEN 0
+            WHEN 'error' THEN 1
+            WHEN 'warning' THEN 2
+            WHEN 'info' THEN 3
+            ELSE 4
+          END,
+          d.created_at,
+          d.id
+        LIMIT 4`,
+    ).bind(reportId).all<{
+      id: string;
+      code: string;
+      severity: string;
+      message: string;
+      source_ref_count: number;
+      source_ref_types: string | null;
+    }>();
+    return rows.results.map((row) => ({
+      id: row.id,
+      code: row.code,
+      severity: row.severity,
+      message: row.message,
+      sourceRefCount: row.source_ref_count,
+      sourceRefTypes: row.source_ref_types
+        ? row.source_ref_types.split(',').map((value) => value.trim()).filter(Boolean)
+        : [],
+    }));
   }
 
   async loadSession(sessionId: string): Promise<PersistedRepoTaskInterviewSession> {

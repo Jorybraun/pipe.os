@@ -29,11 +29,21 @@ const transcriptProjectionMigration = readFileSync(
   new URL('../../../../migrations/0091_transcript_semantic_projections.sql', import.meta.url),
   'utf8',
 );
+const assessmentLayerMigration = readFileSync(
+  new URL('../../../../migrations/0102_assessment_layer.sql', import.meta.url),
+  'utf8',
+);
 
 
 
 function count(sqlite: BetterSqliteDb, table: string): number {
   return (sqlite.prepare(`SELECT COUNT(*) AS count FROM ${table}`).get() as { count: number }).count;
+}
+
+async function sha256Hex(value: string): Promise<string> {
+  const bytes = new TextEncoder().encode(value);
+  const digest = await crypto.subtle.digest('SHA-256', bytes);
+  return Array.from(new Uint8Array(digest), (byte) => byte.toString(16).padStart(2, '0')).join('');
 }
 
 describe('meeting transcript living-context ingestion', () => {
@@ -307,6 +317,7 @@ describe('meeting transcript living-context ingestion', () => {
       }],
       extractorVersion: 'open-meeting-test-v1',
       provider: 'deepgram-multichannel',
+      personContextMode: 'attributed' as const,
     };
     const first = await ingestMeetingTranscriptToLivingContext(db, input);
     const replay = await ingestMeetingTranscriptToLivingContext(db, input);
@@ -366,6 +377,631 @@ describe('meeting transcript living-context ingestion', () => {
     });
   });
 
+  it('mirrors transcript source spans into assessment evidence without inventing evaluation claims', async () => {
+    sqlite.exec(assessmentLayerMigration);
+
+    const input = {
+      meetingId: 'meeting-1',
+      ownerId: 'workspace-1',
+      scheduledInterviewId: 'scheduled-interview-1',
+      recordingKey: 'meetings/workspace-1/meeting-1/recording.webm',
+      transcriptionAudioKey: 'meetings/workspace-1/meeting-1/transcription-audio.webm',
+      provider: 'deepgram-multichannel',
+      segments: [
+        {
+          stableSegmentId: 'host-1',
+          text: 'Which bug would you start with?',
+          speakerRole: 'host',
+          speakerLabel: 'Host',
+          channel: 0,
+          timestampStartMs: 1_000,
+          timestampEndMs: 2_000,
+        },
+        {
+          stableSegmentId: 'guest-1',
+          text: 'I would reproduce the stale listener bug before changing the patch.',
+          speakerRole: 'guest',
+          speakerLabel: 'Guest',
+          contactId: 'contact-1',
+          channel: 1,
+          timestampStartMs: 2_100,
+          timestampEndMs: 5_800,
+          confidence: 0.94,
+          metadata: {
+            providerSegmentId: 'dg-guest-1',
+          },
+        },
+      ],
+      semanticAssertions: [],
+      personContextMode: 'attributed' as const,
+    };
+
+    const first = await ingestMeetingTranscriptToLivingContext(db, input);
+    const replay = await ingestMeetingTranscriptToLivingContext(db, input);
+
+    expect(replay).toEqual(first);
+    expect(count(sqlite, 'assessment_sessions')).toBe(1);
+    expect(count(sqlite, 'assessment_evidence_events')).toBe(2);
+    expect(count(sqlite, 'assessment_event_source_refs')).toBe(2);
+    expect(count(sqlite, 'assessment_evaluation_reports')).toBe(0);
+    expect(count(sqlite, 'assessment_evaluation_claims')).toBe(0);
+
+    const session = sqlite.prepare(
+      `SELECT interview_id, mode, state, candidate_id, workspace_id, created_by, metadata_json
+         FROM assessment_sessions`,
+    ).get() as {
+      interview_id: string;
+      mode: string;
+      state: string;
+      candidate_id: string | null;
+      workspace_id: string;
+      created_by: string;
+      metadata_json: string;
+    };
+    expect(session).toMatchObject({
+      interview_id: 'scheduled-interview-1',
+      mode: 'STANDARD_VIDEO_INTERVIEW',
+      state: 'IN_PROGRESS',
+      candidate_id: 'contact-1',
+      workspace_id: 'workspace-1',
+      created_by: 'meeting-transcript-ingestion',
+    });
+    expect(JSON.parse(session.metadata_json)).toMatchObject({
+      meetingId: 'meeting-1',
+      scheduledInterviewId: 'scheduled-interview-1',
+      provider: 'deepgram-multichannel',
+      recordingKey: 'meetings/workspace-1/meeting-1/recording.webm',
+      transcriptionAudioKey: 'meetings/workspace-1/meeting-1/transcription-audio.webm',
+      source: 'meeting_transcript_living_context',
+    });
+
+    const evidenceRows = sqlite.prepare(
+      `SELECT e.sequence, e.kind, e.actor_type, e.actor_id, e.narrative,
+              r.source_ref_type, r.source_ref_id, r.source_span_id, r.evidence_role,
+              r.exact_text, r.content_hash, r.locator_json, r.metadata_json
+         FROM assessment_evidence_events e
+         JOIN assessment_event_source_refs r ON r.event_id = e.id
+        ORDER BY e.sequence`,
+    ).all() as Array<{
+      sequence: number;
+      kind: string;
+      actor_type: string;
+      actor_id: string | null;
+      narrative: string;
+      source_ref_type: string;
+      source_ref_id: string;
+      source_span_id: string;
+      evidence_role: string;
+      exact_text: string;
+      content_hash: string;
+      locator_json: string;
+      metadata_json: string;
+    }>;
+    expect(evidenceRows).toHaveLength(2);
+    expect(evidenceRows[0]).toMatchObject({
+      sequence: 1,
+      kind: 'transcript_span',
+      actor_type: 'recruiter',
+      actor_id: 'host',
+      source_ref_type: 'source_span',
+      evidence_role: 'transcript_segment',
+      exact_text: 'Which bug would you start with?',
+      content_hash: await sha256Hex('Which bug would you start with?'),
+    });
+    expect(JSON.parse(evidenceRows[0].locator_json)).toMatchObject({
+      meetingId: 'meeting-1',
+      stableSegmentId: 'host-1',
+      speakerRole: 'host',
+      channel: 0,
+    });
+    expect(evidenceRows[1]).toMatchObject({
+      sequence: 2,
+      kind: 'transcript_span',
+      actor_type: 'candidate',
+      actor_id: 'contact-1',
+      source_ref_type: 'source_span',
+      evidence_role: 'transcript_segment',
+      exact_text: 'I would reproduce the stale listener bug before changing the patch.',
+      content_hash: await sha256Hex('I would reproduce the stale listener bug before changing the patch.'),
+    });
+    expect(evidenceRows[1].source_ref_id).toBe(evidenceRows[1].source_span_id);
+    expect(JSON.parse(evidenceRows[1].metadata_json)).toMatchObject({
+      sourceKind: 'meeting_transcript.source_span',
+      provider: 'deepgram-multichannel',
+      confidence: 0.94,
+      contactId: 'contact-1',
+      segmentMetadata: {
+        providerSegmentId: 'dg-guest-1',
+      },
+    });
+    expect(JSON.parse(evidenceRows[1].locator_json)).toMatchObject({
+      meetingId: 'meeting-1',
+      scheduledInterviewId: 'scheduled-interview-1',
+      stableSegmentId: 'guest-1',
+      speakerRole: 'guest',
+      speakerLabel: 'Guest',
+      timestampStartMs: 2100,
+      timestampEndMs: 5800,
+    });
+  });
+
+  it('marks evidence-plan follow-up transcripts ready for repo-match refresh', async () => {
+    sqlite.exec(assessmentLayerMigration);
+    sqlite.prepare(
+      `INSERT INTO candidates (id, owner_id, pipeline_id, name, email, status)
+       VALUES (?, ?, ?, ?, ?, ?)`,
+    ).run(
+      'candidate-1',
+      'workspace-1',
+      'pipeline-1',
+      'Ada Example',
+      'ada@example.com',
+      'active',
+    );
+    sqlite.prepare(
+      `INSERT INTO assessment_sessions (
+         id, ingestion_key, interview_id, mode, state, candidate_id, workspace_id,
+         created_by, metadata_json, created_at, updated_at
+       ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
+    ).run(
+      'assessment-plan-1',
+      'assessment-session:code-review-evidence-plan:code-review-1:scheduled-interview-1',
+      'scheduled-interview-1',
+      'TECHNICAL',
+      'IN_PROGRESS',
+      'candidate-1',
+      'workspace-1',
+      'code-review-evidence-plan',
+      JSON.stringify({
+        source: 'code_review_evidence_plan',
+        originalInterviewId: 'code-review-1',
+        contextCallInterviewId: 'scheduled-interview-1',
+        matchRunId: 'match-run-1',
+        matchStatus: 'NEEDS_MORE_EVIDENCE',
+      }),
+      '2026-06-13T09:30:00.000Z',
+      '2026-06-13T09:30:00.000Z',
+    );
+
+    const input = {
+      meetingId: 'meeting-1',
+      ownerId: 'workspace-1',
+      scheduledInterviewId: 'scheduled-interview-1',
+      recordingKey: 'meetings/workspace-1/meeting-1/recording.webm',
+      provider: 'deepgram-multichannel',
+      segments: [
+        {
+          stableSegmentId: 'host-1',
+          text: 'Which review work best matches this challenge?',
+          speakerRole: 'host',
+          speakerLabel: 'Host',
+          channel: 0,
+          timestampStartMs: 1_000,
+          timestampEndMs: 2_000,
+        },
+        {
+          stableSegmentId: 'guest-1',
+          text: 'I reviewed a React popover timing bug and asked for an impatient-click regression before approval.',
+          speakerRole: 'guest',
+          speakerLabel: 'Guest',
+          contactId: 'contact-1',
+          channel: 1,
+          timestampStartMs: 2_100,
+          timestampEndMs: 6_000,
+          confidence: 0.95,
+        },
+      ],
+      semanticAssertions: [],
+      personContextMode: 'attributed' as const,
+    };
+
+    await ingestMeetingTranscriptToLivingContext(db, input);
+    await ingestMeetingTranscriptToLivingContext(db, input);
+
+    expect(count(sqlite, 'assessment_sessions')).toBe(2);
+    const planSession = sqlite.prepare(
+      `SELECT state, metadata_json
+         FROM assessment_sessions
+        WHERE id = 'assessment-plan-1'`,
+    ).get() as { state: string; metadata_json: string };
+    expect(planSession.state).toBe('EVALUATED');
+    expect(JSON.parse(planSession.metadata_json)).toMatchObject({
+      source: 'code_review_evidence_plan',
+      originalInterviewId: 'code-review-1',
+      contextCallInterviewId: 'scheduled-interview-1',
+      matchRunId: 'match-run-1',
+    });
+
+    const planEvents = sqlite.prepare(
+      `SELECT e.sequence,
+              e.kind,
+              e.actor_type,
+              e.actor_id,
+              r.evidence_role,
+              r.exact_text,
+              r.locator_json
+         FROM assessment_evidence_events e
+         JOIN assessment_event_source_refs r ON r.event_id = e.id
+        WHERE e.session_id = 'assessment-plan-1'
+        ORDER BY e.sequence`,
+    ).all() as Array<{
+      sequence: number;
+      kind: string;
+      actor_type: string;
+      actor_id: string | null;
+      evidence_role: string;
+      exact_text: string;
+      locator_json: string;
+    }>;
+    expect(planEvents).toHaveLength(1);
+    expect(planEvents[0]).toMatchObject({
+      sequence: 1,
+      kind: 'evidence_plan_response_span',
+      actor_type: 'candidate',
+      actor_id: 'contact-1',
+      evidence_role: 'evidence_plan_response_span',
+      exact_text: 'I reviewed a React popover timing bug and asked for an impatient-click regression before approval.',
+    });
+    expect(JSON.parse(planEvents[0].locator_json)).toMatchObject({
+      meetingId: 'meeting-1',
+      scheduledInterviewId: 'scheduled-interview-1',
+      stableSegmentId: 'guest-1',
+    });
+
+    const matcherContext = sqlite.prepare(
+      `SELECT cr.id,
+              cr.workspace_person_id,
+              cr.application_id,
+              cr.record_type,
+              cr.predicate,
+              cr.narrative,
+              cr.qualifiers_json,
+              crsr.evidence_role,
+              crsr.source_span_id,
+              crsr.exact_text
+         FROM context_records cr
+         JOIN context_record_source_refs crsr ON crsr.context_record_id = cr.id
+        WHERE cr.record_type = 'code_review_evidence_plan_response'`,
+    ).get() as {
+      id: string;
+      workspace_person_id: string;
+      application_id: string;
+      record_type: string;
+      predicate: string;
+      narrative: string;
+      qualifiers_json: string;
+      evidence_role: string;
+      source_span_id: string;
+      exact_text: string;
+    };
+    expect(matcherContext).toMatchObject({
+      workspace_person_id: expect.stringMatching(/^workspace_person_/),
+      application_id: expect.stringMatching(/^application_/),
+      record_type: 'code_review_evidence_plan_response',
+      predicate: 'provides concrete candidate work evidence for repo matching',
+      narrative: 'I reviewed a React popover timing bug and asked for an impatient-click regression before approval.',
+      evidence_role: 'evidence_plan_response_span',
+      exact_text: 'I reviewed a React popover timing bug and asked for an impatient-click regression before approval.',
+    });
+    expect(JSON.parse(matcherContext.qualifiers_json)).toMatchObject({
+      evidencePlanSessionId: 'assessment-plan-1',
+      originalInterviewId: 'code-review-1',
+      contextCallInterviewId: 'scheduled-interview-1',
+      matchRunId: 'match-run-1',
+      extractedProperties: expect.any(String),
+    });
+    const matcherConcepts = sqlite.prepare(
+      `SELECT c.canonical_key
+         FROM context_record_concepts crc
+         JOIN concepts c ON c.id = crc.concept_id
+        WHERE crc.context_record_id = ?
+        ORDER BY c.canonical_key`,
+    ).all(matcherContext.id) as Array<{ canonical_key: string }>;
+    expect(matcherConcepts.map((row) => row.canonical_key)).toEqual(expect.arrayContaining([
+      'term:react',
+      'term:popover',
+      'term:regression',
+    ]));
+
+    const report = sqlite.prepare(
+      `SELECT status, summary, output_json
+         FROM assessment_evaluation_reports
+        WHERE session_id = 'assessment-plan-1'`,
+    ).get() as { status: string; summary: string; output_json: string };
+    expect(report.status).toBe('NEEDS_HUMAN_REVIEW');
+    expect(report.summary).toBe('Evidence call captured 1 concrete source-backed transcript span for repo-match refresh.');
+    expect(JSON.parse(report.output_json)).toMatchObject({
+      schemaVersion: 'code-review-evidence-plan-result-v1',
+      status: 'READY_FOR_REPO_MATCH_REFRESH',
+      meetingId: 'meeting-1',
+      scheduledInterviewId: 'scheduled-interview-1',
+      sourceSpanCount: 1,
+      capturedSpanCount: 1,
+      evidenceQualityGate: 'concrete_candidate_work_evidence_v1',
+      originalInterviewId: 'code-review-1',
+      contextCallInterviewId: 'scheduled-interview-1',
+      matchRunId: 'match-run-1',
+      matchStatus: 'NEEDS_MORE_EVIDENCE',
+    });
+
+    const claim = sqlite.prepare(
+      `SELECT c.polarity,
+              c.dimension,
+              c.narrative,
+              r.evidence_role,
+              r.exact_text
+         FROM assessment_evaluation_claims c
+         JOIN assessment_claim_source_refs r ON r.claim_id = c.id
+        WHERE c.report_id = (
+          SELECT id FROM assessment_evaluation_reports WHERE session_id = 'assessment-plan-1'
+        )
+        ORDER BY r.exact_text`,
+    ).all() as Array<{
+      polarity: string;
+      dimension: string;
+      narrative: string;
+      evidence_role: string;
+      exact_text: string;
+    }>;
+    expect(claim).toHaveLength(1);
+    expect(claim[0]).toMatchObject({
+      polarity: 'neutral',
+      dimension: 'repo_match_refresh_readiness',
+      evidence_role: 'evidence_plan_response_span',
+      exact_text: 'I reviewed a React popover timing bug and asked for an impatient-click regression before approval.',
+    });
+
+    const transitions = sqlite.prepare(
+      `SELECT to_state, reason
+         FROM assessment_state_transitions
+        WHERE session_id = 'assessment-plan-1'
+        ORDER BY sequence`,
+    ).all() as Array<{ to_state: string; reason: string }>;
+    expect(transitions.map((transition) => transition.to_state)).toEqual(['FINAL_SUBMITTED', 'EVALUATED']);
+  });
+
+  it('does not mark summary-only evidence-plan transcripts ready for repo-match refresh', async () => {
+    sqlite.exec(assessmentLayerMigration);
+    sqlite.prepare(
+      `INSERT INTO assessment_sessions (
+         id, ingestion_key, interview_id, mode, state, candidate_id, workspace_id,
+         created_by, metadata_json, created_at, updated_at
+       ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
+    ).run(
+      'assessment-plan-summary-only',
+      'assessment-session:code-review-evidence-plan:code-review-1:scheduled-interview-1',
+      'scheduled-interview-1',
+      'TECHNICAL',
+      'IN_PROGRESS',
+      'candidate-1',
+      'workspace-1',
+      'code-review-evidence-plan',
+      JSON.stringify({
+        source: 'code_review_evidence_plan',
+        originalInterviewId: 'code-review-1',
+        contextCallInterviewId: 'scheduled-interview-1',
+        matchRunId: 'match-run-1',
+        matchStatus: 'NEEDS_MORE_EVIDENCE',
+      }),
+      '2026-06-13T09:30:00.000Z',
+      '2026-06-13T09:30:00.000Z',
+    );
+
+    await ingestMeetingTranscriptToLivingContext(db, {
+      meetingId: 'meeting-1',
+      ownerId: 'workspace-1',
+      scheduledInterviewId: 'scheduled-interview-1',
+      recordingKey: 'meetings/workspace-1/meeting-1/recording.webm',
+      provider: 'workers-ai-whisper-summary-only',
+      segments: [{
+        stableSegmentId: 'mixed-1',
+        text: 'I reviewed a checkout retry bug, but this audio is mixed and cannot prove who said it.',
+        speakerRole: 'guest',
+        speakerLabel: 'mixed',
+        contactId: 'contact-1',
+        channel: 0,
+        confidence: 0.42,
+      }],
+      semanticAssertions: [],
+      personContextMode: 'summary_only',
+      personContextReason: 'mixed_audio_without_speaker_attribution',
+    });
+
+    const planSession = sqlite.prepare(
+      `SELECT state
+         FROM assessment_sessions
+        WHERE id = 'assessment-plan-summary-only'`,
+    ).get() as { state: string };
+    expect(planSession.state).toBe('BLOCKED');
+    expect(sqlite.prepare(
+      `SELECT COUNT(*) AS count
+         FROM assessment_evidence_events
+        WHERE session_id = 'assessment-plan-summary-only'
+          AND kind = 'evidence_plan_response_span'`,
+    ).get()).toEqual({ count: 0 });
+    expect(sqlite.prepare(
+      `SELECT COUNT(*) AS count
+         FROM assessment_evaluation_reports
+        WHERE session_id = 'assessment-plan-summary-only'`,
+    ).get()).toEqual({ count: 0 });
+    const transition = sqlite.prepare(
+      `SELECT to_state, reason
+         FROM assessment_state_transitions
+        WHERE session_id = 'assessment-plan-summary-only'
+        ORDER BY sequence DESC
+        LIMIT 1`,
+    ).get() as { to_state: string; reason: string };
+    expect(transition).toEqual({
+      to_state: 'BLOCKED',
+      reason: 'Evidence-plan follow-up transcript was summary-only and cannot be attributed to the candidate.',
+    });
+  });
+
+  it('blocks generic evidence-plan answers without unlocking repo-match refresh', async () => {
+    sqlite.exec(assessmentLayerMigration);
+    sqlite.prepare(
+      `INSERT INTO assessment_sessions (
+         id, ingestion_key, interview_id, mode, state, candidate_id, workspace_id,
+         created_by, metadata_json, created_at, updated_at
+       ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
+    ).run(
+      'assessment-plan-generic-answer',
+      'assessment-session:code-review-evidence-plan:code-review-1:scheduled-interview-1',
+      'scheduled-interview-1',
+      'TECHNICAL',
+      'IN_PROGRESS',
+      'candidate-1',
+      'workspace-1',
+      'code-review-evidence-plan',
+      JSON.stringify({
+        source: 'code_review_evidence_plan',
+        originalInterviewId: 'code-review-1',
+        contextCallInterviewId: 'scheduled-interview-1',
+        matchRunId: 'match-run-1',
+        matchStatus: 'NEEDS_MORE_EVIDENCE',
+      }),
+      '2026-06-13T09:30:00.000Z',
+      '2026-06-13T09:30:00.000Z',
+    );
+
+    await ingestMeetingTranscriptToLivingContext(db, {
+      meetingId: 'meeting-1',
+      ownerId: 'workspace-1',
+      scheduledInterviewId: 'scheduled-interview-1',
+      provider: 'deepgram-multichannel',
+      segments: [{
+        stableSegmentId: 'guest-generic-1',
+        text: 'Yes, I can do React code reviews.',
+        speakerRole: 'guest',
+        speakerLabel: 'Guest',
+        contactId: 'contact-1',
+        channel: 1,
+        confidence: 0.97,
+      }],
+      semanticAssertions: [],
+      personContextMode: 'attributed',
+    });
+
+    expect(sqlite.prepare(
+      `SELECT state
+         FROM assessment_sessions
+        WHERE id = 'assessment-plan-generic-answer'`,
+    ).get()).toEqual({ state: 'BLOCKED' });
+    expect(sqlite.prepare(
+      `SELECT COUNT(*) AS count
+         FROM assessment_evidence_events
+        WHERE session_id = 'assessment-plan-generic-answer'
+          AND kind = 'evidence_plan_response_span'`,
+    ).get()).toEqual({ count: 1 });
+    expect(sqlite.prepare(
+      `SELECT COUNT(*) AS count
+         FROM assessment_evaluation_reports
+        WHERE session_id = 'assessment-plan-generic-answer'
+          AND json_extract(output_json, '$.status') = 'READY_FOR_REPO_MATCH_REFRESH'`,
+    ).get()).toEqual({ count: 0 });
+    expect(sqlite.prepare(
+      `SELECT to_state, reason
+         FROM assessment_state_transitions
+        WHERE session_id = 'assessment-plan-generic-answer'
+        ORDER BY sequence DESC
+        LIMIT 1`,
+    ).get()).toEqual({
+      to_state: 'BLOCKED',
+      reason: 'Evidence-plan follow-up transcript did not include concrete candidate-owned PR, bug, code review, trade-off, or verification evidence.',
+    });
+  });
+
+  it('recovers a blocked evidence-plan follow-up when a later transcript is attributable', async () => {
+    sqlite.exec(assessmentLayerMigration);
+    sqlite.prepare(
+      `INSERT INTO assessment_sessions (
+         id, ingestion_key, interview_id, mode, state, candidate_id, workspace_id,
+         created_by, metadata_json, created_at, updated_at
+       ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
+    ).run(
+      'assessment-plan-retry-attributed',
+      'assessment-session:code-review-evidence-plan:code-review-1:scheduled-interview-1',
+      'scheduled-interview-1',
+      'TECHNICAL',
+      'IN_PROGRESS',
+      'candidate-1',
+      'workspace-1',
+      'code-review-evidence-plan',
+      JSON.stringify({
+        source: 'code_review_evidence_plan',
+        originalInterviewId: 'code-review-1',
+        contextCallInterviewId: 'scheduled-interview-1',
+        matchRunId: 'match-run-1',
+        matchStatus: 'NEEDS_MORE_EVIDENCE',
+      }),
+      '2026-06-13T09:30:00.000Z',
+      '2026-06-13T09:30:00.000Z',
+    );
+
+    await ingestMeetingTranscriptToLivingContext(db, {
+      meetingId: 'meeting-1',
+      ownerId: 'workspace-1',
+      scheduledInterviewId: 'scheduled-interview-1',
+      provider: 'workers-ai-whisper-summary-only',
+      segments: [{
+        stableSegmentId: 'mixed-1',
+        text: 'I reviewed checkout retry behavior, but this audio is mixed.',
+        speakerRole: 'guest',
+        speakerLabel: 'mixed',
+        contactId: 'contact-1',
+      }],
+      semanticAssertions: [],
+      personContextMode: 'summary_only',
+      personContextReason: 'mixed_audio_without_speaker_attribution',
+    });
+    expect(sqlite.prepare(
+      `SELECT state
+         FROM assessment_sessions
+        WHERE id = 'assessment-plan-retry-attributed'`,
+    ).get()).toEqual({ state: 'BLOCKED' });
+
+    const retryText = 'I personally reviewed checkout retry idempotency and added regression coverage before approval.';
+    await ingestMeetingTranscriptToLivingContext(db, {
+      meetingId: 'meeting-1',
+      ownerId: 'workspace-1',
+      scheduledInterviewId: 'scheduled-interview-1',
+      provider: 'deepgram-multichannel',
+      segments: [{
+        stableSegmentId: 'guest-retry-1',
+        text: retryText,
+        speakerRole: 'guest',
+        speakerLabel: 'Guest',
+        contactId: 'contact-1',
+        channel: 1,
+        confidence: 0.97,
+      }],
+      semanticAssertions: [],
+      personContextMode: 'attributed',
+    });
+
+    expect(sqlite.prepare(
+      `SELECT state
+         FROM assessment_sessions
+        WHERE id = 'assessment-plan-retry-attributed'`,
+    ).get()).toEqual({ state: 'EVALUATED' });
+    expect(sqlite.prepare(
+      `SELECT json_extract(output_json, '$.status') AS status,
+              json_extract(output_json, '$.sourceSpanCount') AS source_span_count
+         FROM assessment_evaluation_reports
+        WHERE session_id = 'assessment-plan-retry-attributed'`,
+    ).get()).toEqual({
+      status: 'READY_FOR_REPO_MATCH_REFRESH',
+      source_span_count: 1,
+    });
+    expect(sqlite.prepare(
+      `SELECT r.exact_text
+         FROM assessment_evidence_events e
+         JOIN assessment_event_source_refs r ON r.event_id = e.id
+        WHERE e.session_id = 'assessment-plan-retry-attributed'
+          AND e.kind = 'evidence_plan_response_span'`,
+    ).get()).toEqual({ exact_text: retryText });
+  });
+
   it('grows a person-centered living context graph from a meeting transcript', async () => {
     const input = {
       meetingId: 'meeting-1',
@@ -410,6 +1046,7 @@ describe('meeting transcript living-context ingestion', () => {
       provider: 'deepgram-multichannel',
       startedAt: '2026-06-13T10:00:00.000Z',
       endedAt: '2026-06-13T10:30:00.000Z',
+      personContextMode: 'attributed' as const,
     };
 
     const result = await ingestMeetingTranscriptToLivingContext(db, input);
@@ -615,6 +1252,7 @@ describe('meeting transcript living-context ingestion', () => {
       provider: 'deepgram-multichannel',
       startedAt: '2026-06-13T10:00:00.000Z',
       endedAt: '2026-06-13T10:30:00.000Z',
+      personContextMode: 'attributed' as const,
     };
 
     await ingestMeetingTranscriptToLivingContext(db, input);
@@ -728,6 +1366,7 @@ describe('meeting transcript living-context ingestion', () => {
         timestampEndMs: 2_000,
       }],
       provider: 'source-test',
+      personContextMode: 'attributed' as const,
     };
     await ingestMeetingTranscriptToLivingContext(db, {
       ...base,
@@ -769,9 +1408,11 @@ describe('meeting transcript living-context ingestion', () => {
       segments: [{
         stableSegmentId: 'guest-1',
         text: 'I implemented source-preserving replay.',
+        speakerRole: 'guest',
         contactId: 'contact-1',
       }],
       provider: 'source-test',
+      personContextMode: 'attributed' as const,
     };
     await ingestMeetingTranscriptToLivingContext(db, {
       ...base,
@@ -830,6 +1471,109 @@ describe('meeting transcript living-context ingestion', () => {
     expect(count(sqlite, 'semantic_assertions')).toBe(0);
   });
 
+  it('keeps summary-only transcripts out of person attribution and semantic projections', async () => {
+    const result = await ingestMeetingTranscriptToLivingContext(db, {
+      meetingId: 'meeting-1',
+      ownerId: 'workspace-1',
+      segments: [{
+        stableSegmentId: 'mixed-1',
+        text: 'I implemented aurora queue recovery, but this audio is mixed.',
+        speakerLabel: 'mixed',
+        speakerRole: 'guest',
+        contactId: 'contact-1',
+      }],
+      provider: 'workers-ai-whisper-summary-only',
+      personContextMode: 'summary_only',
+      personContextReason: 'mixed_audio_without_speaker_attribution',
+      semanticAssertions: [{
+        sourceSegmentIds: ['mixed-1'],
+        subjectSegmentId: 'mixed-1',
+        predicate: 'implemented',
+        narrative: 'Implemented aurora queue recovery.',
+        concepts: [{
+          surface: 'aurora queue recovery',
+          relationship: 'mechanism named in source',
+          weight: 0.9,
+          evidenceLevel: 'implemented',
+          strength: 0.8,
+        }],
+      }],
+    });
+
+    expect(result.assertionCount).toBe(0);
+    expect(result.sourceSpanCount).toBe(1);
+    expect(count(sqlite, 'source_span_attributions')).toBe(0);
+    expect(count(sqlite, 'semantic_assertions')).toBe(0);
+    expect(count(sqlite, 'signal_evidence')).toBe(0);
+    expect(count(sqlite, 'context_records')).toBe(1);
+
+    const artifact = sqlite.prepare(
+      `SELECT metadata_json
+         FROM artifacts
+        WHERE artifact_type = 'meeting_transcript'`,
+    ).get() as { metadata_json: string };
+    expect(JSON.parse(artifact.metadata_json)).toMatchObject({
+      provider: 'workers-ai-whisper-summary-only',
+      personContextMode: 'summary_only',
+      personContextReason: 'mixed_audio_without_speaker_attribution',
+    });
+
+    const transcriptRecord = sqlite.prepare(
+      `SELECT qualifiers_json
+         FROM context_records
+        WHERE record_type = 'meeting_transcript'`,
+    ).get() as { qualifiers_json: string };
+    expect(JSON.parse(transcriptRecord.qualifiers_json)).toMatchObject({
+      provider: 'workers-ai-whisper-summary-only',
+      personContextMode: 'summary_only',
+      personContextReason: 'mixed_audio_without_speaker_attribution',
+    });
+  });
+
+  it('requires explicit attributed mode before contact ids can create person evidence', async () => {
+    const result = await ingestMeetingTranscriptToLivingContext(db, {
+      meetingId: 'meeting-1',
+      ownerId: 'workspace-1',
+      segments: [{
+        stableSegmentId: 'guest-1',
+        text: 'I implemented aurora queue recovery, and this segment has an unverified contact id.',
+        speakerLabel: 'Guest',
+        speakerRole: 'guest',
+        contactId: 'contact-1',
+        channel: 1,
+      }],
+      provider: 'deepgram-multichannel',
+      semanticAssertions: [{
+        sourceSegmentIds: ['guest-1'],
+        subjectSegmentId: 'guest-1',
+        predicate: 'implemented',
+        narrative: 'Implemented aurora queue recovery.',
+        concepts: [{
+          surface: 'aurora queue recovery',
+          relationship: 'mechanism named in source',
+          weight: 0.9,
+          evidenceLevel: 'implemented',
+          strength: 0.8,
+        }],
+      }],
+    });
+
+    expect(result.assertionCount).toBe(0);
+    expect(result.sourceSpanCount).toBe(1);
+    expect(count(sqlite, 'source_span_attributions')).toBe(0);
+    expect(count(sqlite, 'semantic_assertions')).toBe(0);
+    expect(count(sqlite, 'signal_evidence')).toBe(0);
+    expect(count(sqlite, 'context_records')).toBe(1);
+
+    const sourceSpan = sqlite.prepare(
+      `SELECT metadata_json FROM source_spans WHERE stable_segment_id = 'guest-1'`,
+    ).get() as { metadata_json: string };
+    expect(JSON.parse(sourceSpan.metadata_json)).toMatchObject({
+      speakerRole: 'guest',
+      channel: 1,
+    });
+  });
+
   it('regression: a previously unseen concept survives as an open concept with source-backed spans', async () => {
     // "phosphor lattice accumulator" is a deliberately unseen surface — no
     // hard-coded skill/domain alias should map or reject it. It must survive as
@@ -878,6 +1622,7 @@ describe('meeting transcript living-context ingestion', () => {
       provider: 'deepgram-multichannel',
       startedAt: '2026-06-13T10:00:00.000Z',
       endedAt: '2026-06-13T10:30:00.000Z',
+      personContextMode: 'attributed' as const,
     };
 
     const result = await ingestMeetingTranscriptToLivingContext(db, input);
@@ -915,6 +1660,42 @@ describe('meeting transcript living-context ingestion', () => {
     expect(contextRecordSpanText.map((row) => row.exact_text)).toEqual([
       'I designed a phosphor lattice accumulator for low-light signal recovery.',
     ]);
+    const directContextRef = sqlite.prepare(
+      `SELECT crsr.source_ref_type, crsr.source_ref_id, crsr.evidence_role,
+              crsr.exact_text, crsr.content_hash, crsr.locator_json, crsr.metadata_json
+         FROM context_record_source_refs crsr
+         JOIN context_records cr ON cr.id = crsr.context_record_id
+        WHERE cr.record_type = 'meeting_transcript_assertion'`,
+    ).get() as {
+      source_ref_type: string;
+      source_ref_id: string;
+      evidence_role: string;
+      exact_text: string;
+      content_hash: string;
+      locator_json: string;
+      metadata_json: string;
+    };
+    expect(directContextRef).toMatchObject({
+      source_ref_type: 'source_span',
+      evidence_role: 'transcript_assertion_source',
+      exact_text: 'I designed a phosphor lattice accumulator for low-light signal recovery.',
+      content_hash: expect.any(String),
+    });
+    expect(directContextRef.content_hash).toMatch(/^content_[a-f0-9]{32}$/);
+    expect(JSON.parse(directContextRef.locator_json)).toMatchObject({
+      meetingId: 'meeting-1',
+      stableSegmentId: 'guest-1',
+      speakerRole: 'guest',
+      channel: 1,
+      timestampStartMs: 2100,
+      timestampEndMs: 6500,
+    });
+    expect(JSON.parse(directContextRef.metadata_json)).toMatchObject({
+      sourceKind: 'meeting_transcript.assertion_source_span',
+      provider: 'deepgram-multichannel',
+      confidence: 0.97,
+      contactId: 'contact-1',
+    });
 
     // Signal snapshot reflects the open concept.
     expect(sqlite.prepare(
@@ -971,6 +1752,7 @@ describe('meeting transcript living-context ingestion', () => {
       provider: 'deepgram-multichannel',
       startedAt: '2026-06-13T10:00:00.000Z',
       endedAt: '2026-06-13T10:30:00.000Z',
+      personContextMode: 'attributed' as const,
     };
 
     await ingestMeetingTranscriptToLivingContext(db, input);
@@ -1056,6 +1838,7 @@ describe('meeting transcript living-context ingestion', () => {
       provider: 'deepgram-multichannel',
       startedAt: '2026-06-13T10:00:00.000Z',
       endedAt: '2026-06-13T10:30:00.000Z',
+      personContextMode: 'attributed' as const,
     };
 
     await ingestMeetingTranscriptToLivingContext(db, input);
@@ -1171,6 +1954,7 @@ describe('meeting transcript living-context ingestion', () => {
       provider: 'deepgram-multichannel',
       startedAt: '2026-06-13T10:00:00.000Z',
       endedAt: '2026-06-13T10:30:00.000Z',
+      personContextMode: 'attributed' as const,
     };
 
     await ingestMeetingTranscriptToLivingContext(db, input);

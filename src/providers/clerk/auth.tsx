@@ -127,6 +127,7 @@ function ClerkSignInScreen(): JSX.Element {
 
       <SignInButton mode="modal">
         <button
+          data-testid="auth-gate-sign-in"
           style={{
             padding: '16px 40px',
             background:

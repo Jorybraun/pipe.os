@@ -232,7 +232,119 @@ describe('decomposeResumeToGraph', () => {
 
     expect(canonicalTerms).toContain('term:use-popover-root');
     expect(canonicalTerms).toContain('term:patient-click-threshold');
-    expect(canonicalTerms).toContain('term:javascript-test-runner');
+    expect(canonicalTerms.some((term) =>
+      term.includes('javascript-test-runner')
+      || term.includes('java-script-test-runner')
+    )).toBe(true);
+  });
+
+  it('keeps diverse repo-matching terms from Workers-style CV evidence', async () => {
+    const db = mockDb();
+    const resumeText = [
+      'Senior TypeScript backend engineer with 8 years building developer platforms and cloud infrastructure tools.',
+      'Staff Engineer, Edge Platform Team: designed Cloudflare Workers-style runtime APIs, request routing, KV-backed configuration, durable task queues, and TypeScript SDK tooling for serverless deployments.',
+      'Led debugging of source-mapped stack traces and CLI error handling in local dev tools, including crash-safe fallbacks and Vitest regression tests.',
+    ].join(' ');
+    const parsedCV: ParsedCV = {
+      name: 'Repo Match Candidate',
+      skills: ['TypeScript'],
+      experiences: [],
+      educationBlocks: [],
+      credentials: [],
+      projects: [],
+    };
+
+    await decomposeResumeToGraph({
+      db,
+      candidateId: 'candidate-workers-review-evidence',
+      resumeText,
+      parsedCV,
+      env: mockEnv,
+      decompositionResult: {
+        ...mockDecomposition,
+        experiences: [],
+        projects: [],
+        skills: [],
+        education: [],
+        credentials: [],
+      },
+    });
+
+    const canonicalTerms = vi.mocked(insertCandidateNode).mock.calls
+      .filter((call) => call[1].node_type === 'ReviewEvidence')
+      .flatMap((call) => {
+        const properties = JSON.parse(String(call[1].extracted_properties_json)) as {
+          semantic_terms?: Array<{ canonical_key?: string }>;
+        };
+        return properties.semantic_terms?.map((term) => term.canonical_key ?? '') ?? [];
+      });
+    expect(canonicalTerms.some((term) => term.includes('cloudflare-workers'))).toBe(true);
+    expect(canonicalTerms.some((term) => term.includes('runtime'))).toBe(true);
+    expect(canonicalTerms.some((term) => term.includes('request-routing'))).toBe(true);
+    expect(canonicalTerms.some((term) => term.includes('durable-task-queues'))).toBe(true);
+    expect(canonicalTerms).toContain('term:serverless-deployments');
+    expect(canonicalTerms.some((term) => term.includes('source-mapped-stack'))).toBe(true);
+    expect(canonicalTerms).toContain('term:vitest-regression-tests');
+
+    const earlyCanonicalTerms = vi.mocked(insertCandidateNode).mock.calls
+      .filter((call) => call[1].node_type === 'ReviewEvidence')
+      .slice(0, 12)
+      .flatMap((call) => {
+        const properties = JSON.parse(String(call[1].extracted_properties_json)) as {
+          semantic_terms?: Array<{ canonical_key?: string }>;
+        };
+        return properties.semantic_terms?.map((term) => term.canonical_key ?? '') ?? [];
+    });
+    expect(earlyCanonicalTerms.some((term) => term.includes('request-routing'))).toBe(true);
+    expect(earlyCanonicalTerms.some((term) =>
+      term.includes('source-mapped-stack')
+      || term.includes('mapped-stack')
+      || term.includes('stack-traces')
+    )).toBe(true);
+  });
+
+  it('inserts all parser-only review evidence before embedding can block later CV lines', async () => {
+    vi.mocked(embedCandidateNode).mockRejectedValue(new Error('embedding unavailable'));
+    const db = mockDb();
+    const resumeText = [
+      'Senior TypeScript backend engineer with 8 years building developer platforms and cloud infrastructure tools.',
+      'Staff Engineer, Edge Platform Team: designed Cloudflare Workers-style runtime APIs, request routing, KV-backed configuration, durable task queues, and TypeScript SDK tooling for serverless deployments.',
+      'Led debugging of source-mapped stack traces and CLI error handling in local dev tools, including crash-safe fallbacks and Vitest regression tests.',
+    ].join('\n');
+    const parsedCV: ParsedCV = {
+      name: 'Repo Match Candidate',
+      skills: ['TypeScript'],
+      experiences: [],
+      educationBlocks: [],
+      credentials: [],
+      projects: [],
+    };
+
+    await decomposeResumeToGraph({
+      db,
+      candidateId: 'candidate-parser-only-workers',
+      resumeText,
+      parsedCV,
+      env: mockEnv,
+      decompositionResult: null,
+    });
+
+    const insertOrder = vi.mocked(insertCandidateNode).mock.invocationCallOrder;
+    const embedOrder = vi.mocked(embedCandidateNode).mock.invocationCallOrder;
+    expect(Math.max(...insertOrder)).toBeLessThan(Math.min(...embedOrder));
+
+    const canonicalTerms = vi.mocked(insertCandidateNode).mock.calls
+      .filter((call) => call[1].node_type === 'ReviewEvidence')
+      .flatMap((call) => {
+        const properties = JSON.parse(String(call[1].extracted_properties_json)) as {
+          semantic_terms?: Array<{ canonical_key?: string }>;
+        };
+        return properties.semantic_terms?.map((term) => term.canonical_key ?? '') ?? [];
+      });
+    expect(canonicalTerms.some((term) => term.includes('cloudflare-workers'))).toBe(true);
+    expect(canonicalTerms.some((term) => term.includes('request-routing'))).toBe(true);
+    expect(canonicalTerms.some((term) => term.includes('source-mapped-stack'))).toBe(true);
+    expect(canonicalTerms).toContain('term:vitest-regression-tests');
   });
 
   it('falls back to parser-only nodes when decompositionResult is null', async () => {

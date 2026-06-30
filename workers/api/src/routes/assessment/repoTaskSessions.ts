@@ -6,15 +6,18 @@ import type { Env, Variables } from '../../types';
 import {
   RepoTaskInterviewSessionStore,
   type AssessmentActorType,
+  type CommitSubmissionChangedFileStatus,
   type AssessmentDiagnosticSeverity,
   type AssessmentEvidenceEventKind,
   type AssessmentEvaluationClaimPolarity,
   type EvaluationReportStatus,
   type FinalSubmissionEvidenceArtifactInput,
+  type HumanAssessmentDecisionValue,
   type RepoTaskInterviewMode,
   type RepoTaskInterviewState,
 } from '../../lib/repoTaskInterviewSession';
 import type { JsonObject, JsonValue } from '../../lib/livingContext/types';
+import { ingestAssessmentSessionRealTime } from '../../lib/livingContext/assessmentIngestion';
 
 const repoTaskSessions = new Hono<{ Bindings: Env; Variables: Variables }>();
 repoTaskSessions.use('*', authMiddleware);
@@ -32,6 +35,7 @@ const jsonObjectSchema: z.ZodType<JsonObject> = z.record(jsonValueSchema);
 const modeSchema = z.enum([
   'STANDARD_VIDEO_INTERVIEW',
   'CODE_REVIEW',
+  'DEV_CONTAINER_CHALLENGE',
   'DEV_CONTAINER_REPO_TASK',
   'OPEN_SOURCE_BUG_FIX',
   'NINETY_FIVE_UNTIL_INFINITY_ROOM',
@@ -58,8 +62,11 @@ const eventKindSchema = z.enum([
   'ai_interaction',
   'tool_usage',
   'transcript_span',
+  'commit_submission',
   'final_submission',
+  'match_decision',
   'recruiter_note',
+  'human_assessment_decision',
   'dev_container_event',
   'system_diagnostic',
 ] satisfies [AssessmentEvidenceEventKind, ...AssessmentEvidenceEventKind[]]);
@@ -74,6 +81,7 @@ const finalSubmissionArtifactKindSchema = z.enum([
   'ai_interaction',
   'tool_usage',
   'transcript_span',
+  'commit_submission',
   'recruiter_note',
   'dev_container_event',
 ] satisfies [FinalSubmissionEvidenceArtifactInput['kind'], ...FinalSubmissionEvidenceArtifactInput['kind'][]]);
@@ -108,6 +116,13 @@ const diagnosticSeveritySchema = z.enum([
   'warning',
   'blocking',
 ] satisfies [AssessmentDiagnosticSeverity, ...AssessmentDiagnosticSeverity[]]);
+
+const humanDecisionSchema = z.enum([
+  'advance',
+  'hold',
+  'reject',
+  'needs_more_evidence',
+] satisfies [HumanAssessmentDecisionValue, ...HumanAssessmentDecisionValue[]]);
 
 const sourceRefSchema = z.object({
   sourceRefType: z.string().trim().min(1),
@@ -186,6 +201,16 @@ const aiProviderUnavailableSchema = z.object({
   details: jsonObjectSchema.optional(),
 });
 
+const recordHumanDecisionSchema = z.object({
+  ingestionKey: z.string().trim().min(1),
+  decision: humanDecisionSchema,
+  reviewerId: z.string().trim().min(1).nullable().optional(),
+  summary: z.string().trim().min(1),
+  notes: z.string().trim().min(1).nullable().optional(),
+  occurredAt: z.string().trim().min(1).nullable().optional(),
+  sourceRefs: z.array(sourceRefSchema).min(1),
+});
+
 const finalSubmissionArtifactSchema = z.object({
   ingestionKey: z.string().trim().min(1),
   kind: finalSubmissionArtifactKindSchema,
@@ -208,6 +233,40 @@ const finalSubmissionBundleSchema = z.object({
   artifacts: z.array(finalSubmissionArtifactSchema).min(1),
 });
 
+const changedFileStatusSchema = z.enum([
+  'added',
+  'modified',
+  'deleted',
+  'renamed',
+  'copied',
+] satisfies [CommitSubmissionChangedFileStatus, ...CommitSubmissionChangedFileStatus[]]);
+
+const commitSubmissionChangedFileSchema = z.object({
+  path: z.string().trim().min(1),
+  status: changedFileStatusSchema,
+  previousPath: z.string().trim().min(1).nullable().optional(),
+  additions: z.number().int().min(0).nullable().optional(),
+  deletions: z.number().int().min(0).nullable().optional(),
+});
+
+const commitSubmissionSchema = z.object({
+  ingestionKey: z.string().trim().min(1),
+  actorType: actorTypeSchema,
+  actorId: z.string().trim().min(1).nullable().optional(),
+  narrative: z.string().trim().min(1),
+  repositoryUrl: z.string().trim().min(1),
+  forkRepositoryUrl: z.string().trim().min(1).nullable().optional(),
+  branchName: z.string().trim().min(1),
+  baseCommitSha: z.string().trim().min(1),
+  commitSha: z.string().trim().min(1),
+  commitUrl: z.string().trim().min(1).nullable().optional(),
+  upstreamPullRequestUrl: z.string().trim().min(1).nullable().optional(),
+  upstreamPrConsent: z.boolean().optional(),
+  changedFiles: z.array(commitSubmissionChangedFileSchema).min(1),
+  occurredAt: z.string().trim().min(1).nullable().optional(),
+  sourceRefs: z.array(sourceRefSchema).min(2),
+});
+
 function errorMessage(error: unknown): string {
   return error instanceof Error ? error.message : 'Request failed.';
 }
@@ -218,7 +277,9 @@ function storeErrorResponse(c: Parameters<typeof apiError>[0], error: unknown): 
   if (
     message.includes('requires')
     || message.includes('cannot transition')
-    || message.includes('positive evaluation claim')
+    || message.includes('evaluation claim')
+    || message.includes('evaluation report status')
+    || message.includes('is not backed by assessment session evidence')
     || message.includes('must be')
     || message.includes('is required')
   ) {
@@ -226,6 +287,15 @@ function storeErrorResponse(c: Parameters<typeof apiError>[0], error: unknown): 
   }
   console.error('[repoTaskSessions] request failed:', message);
   return apiError(c, 'SERVER_ERROR', message);
+}
+
+async function ingestAssessmentSessionBestEffort(db: D1Database, sessionId: string): Promise<void> {
+  try {
+    await ingestAssessmentSessionRealTime(db, sessionId);
+  } catch (err) {
+    const msg = err instanceof Error ? err.message : String(err);
+    console.error('[repoTaskSessions] living context ingestion error:', msg);
+  }
 }
 
 repoTaskSessions.post('/sessions', async (c) => {
@@ -248,12 +318,24 @@ repoTaskSessions.post('/sessions/:sessionId/events', async (c) => {
     return apiError(c, 'BAD_REQUEST', body.error.issues[0]?.message ?? 'Invalid assessment event body.');
   }
   try {
+    const sessionId = c.req.param('sessionId');
     const store = new RepoTaskInterviewSessionStore(c.env.DB);
     const event = await store.recordEvent({
-      sessionId: c.req.param('sessionId'),
+      sessionId,
       ...body.data,
     });
+    await ingestAssessmentSessionBestEffort(c.env.DB, sessionId);
     return c.json({ event }, 201);
+  } catch (error) {
+    return storeErrorResponse(c, error);
+  }
+});
+
+repoTaskSessions.get('/sessions/:sessionId/progress', async (c) => {
+  try {
+    const store = new RepoTaskInterviewSessionStore(c.env.DB);
+    const progress = await store.loadProgress(c.req.param('sessionId'));
+    return c.json({ progress });
   } catch (error) {
     return storeErrorResponse(c, error);
   }
@@ -282,12 +364,33 @@ repoTaskSessions.post('/sessions/:sessionId/final-submission-bundles', async (c)
     return apiError(c, 'BAD_REQUEST', body.error.issues[0]?.message ?? 'Invalid final submission bundle body.');
   }
   try {
+    const sessionId = c.req.param('sessionId');
     const store = new RepoTaskInterviewSessionStore(c.env.DB);
     const bundle = await store.submitFinalBundle({
-      sessionId: c.req.param('sessionId'),
+      sessionId,
       ...body.data,
     });
+    await ingestAssessmentSessionBestEffort(c.env.DB, sessionId);
     return c.json({ bundle }, 201);
+  } catch (error) {
+    return storeErrorResponse(c, error);
+  }
+});
+
+repoTaskSessions.post('/sessions/:sessionId/commit-submissions', async (c) => {
+  const body = commitSubmissionSchema.safeParse(await c.req.json().catch(() => null));
+  if (!body.success) {
+    return apiError(c, 'BAD_REQUEST', body.error.issues[0]?.message ?? 'Invalid commit submission body.');
+  }
+  try {
+    const sessionId = c.req.param('sessionId');
+    const store = new RepoTaskInterviewSessionStore(c.env.DB);
+    const submission = await store.submitCommit({
+      sessionId,
+      ...body.data,
+    });
+    await ingestAssessmentSessionBestEffort(c.env.DB, sessionId);
+    return c.json({ submission }, 201);
   } catch (error) {
     return storeErrorResponse(c, error);
   }
@@ -299,12 +402,36 @@ repoTaskSessions.post('/sessions/:sessionId/evaluation-reports', async (c) => {
     return apiError(c, 'BAD_REQUEST', body.error.issues[0]?.message ?? 'Invalid evaluation report body.');
   }
   try {
+    const sessionId = c.req.param('sessionId');
     const store = new RepoTaskInterviewSessionStore(c.env.DB);
     const report = await store.createEvaluationReport({
-      sessionId: c.req.param('sessionId'),
+      sessionId,
       ...body.data,
     });
+
+    await ingestAssessmentSessionBestEffort(c.env.DB, sessionId);
+
     return c.json({ report }, 201);
+  } catch (error) {
+    return storeErrorResponse(c, error);
+  }
+});
+
+repoTaskSessions.post('/sessions/:sessionId/human-decisions', async (c) => {
+  const body = recordHumanDecisionSchema.safeParse(await c.req.json().catch(() => null));
+  if (!body.success) {
+    return apiError(c, 'BAD_REQUEST', body.error.issues[0]?.message ?? 'Invalid human decision body.');
+  }
+  try {
+    const sessionId = c.req.param('sessionId');
+    const store = new RepoTaskInterviewSessionStore(c.env.DB);
+    const decision = await store.recordHumanDecision({
+      sessionId,
+      ...body.data,
+    });
+    await ingestAssessmentSessionBestEffort(c.env.DB, sessionId);
+    const progress = await store.loadProgress(sessionId);
+    return c.json({ decision, progress }, 201);
   } catch (error) {
     return storeErrorResponse(c, error);
   }

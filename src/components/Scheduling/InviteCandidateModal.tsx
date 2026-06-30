@@ -28,13 +28,18 @@ export function InviteCandidateModal({
 
   const isValid = name.trim().length > 0 && /^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(email);
   const hasCalendly = connection?.status === 'ACTIVE' && connection.providerId === 'CALENDLY';
+  const workspaceAssessment = interviewType === 'CODE_REVIEW'
+    || interviewType === 'DEV_CONTAINER_CHALLENGE'
+    || interviewType === 'OPEN_SOURCE_BUG_FIX';
 
   // Auto-select Calendly mode if Calendly is connected
   useEffect(() => {
-    if (hasCalendly) {
+    if (hasCalendly && !workspaceAssessment) {
       setSchedulingMode('calendly');
+    } else if (workspaceAssessment) {
+      setSchedulingMode('manual');
     }
-  }, [hasCalendly]);
+  }, [hasCalendly, workspaceAssessment]);
 
   const handleSubmit = async (): Promise<void> => {
     if (!isValid || isSending) return;
@@ -50,7 +55,7 @@ export function InviteCandidateModal({
         ...(message.trim() ? { message: message.trim() } : {}),
       };
 
-      if (schedulingMode === 'calendly' && hasCalendly) {
+      if (!workspaceAssessment && schedulingMode === 'calendly' && hasCalendly) {
         payload.schedulingProvider = 'CALENDLY' as SchedulingProvider;
         // Use the first available event type from Calendly
         const eventTypes = connection.eventTypes || [];
@@ -206,8 +211,8 @@ export function InviteCandidateModal({
               </div>
             </div>
 
-            {/* Scheduling mode selector - only show if Calendly is connected */}
-            {hasCalendly && (
+            {/* Scheduling mode selector - only show if Calendly is connected for live interviews */}
+            {hasCalendly && !workspaceAssessment && (
               <div style={{ marginBottom: 16 }}>
                 <label style={{ display: 'block', fontSize: 10, letterSpacing: '0.15em', color: 'var(--pipe-text-dim)', fontFamily: '"Space Mono", monospace', marginBottom: 6 }}>
                   SCHEDULING MODE

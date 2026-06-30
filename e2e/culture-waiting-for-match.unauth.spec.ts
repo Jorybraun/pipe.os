@@ -1,5 +1,5 @@
 import { test, expect } from "@playwright/test";
-import { API_BASE, APP_BASE } from './env';
+import { APP_BASE } from './env';
 
 /**
  * BDD: WAITING_FOR_MATCH gate flow
@@ -17,7 +17,7 @@ test.describe("WAITING_FOR_MATCH gate flow", () => {
     let refreshCount = 0;
 
     // ── Mock: POST /rpc/resolve-token ────────────────────────────────────────
-    await page.route(`${API_BASE}/rpc/resolve-token`, async (route) => {
+    await page.route("**/rpc/resolve-token", async (route) => {
       await route.fulfill({
         status: 200,
         contentType: "application/json",
@@ -32,7 +32,7 @@ test.describe("WAITING_FOR_MATCH gate flow", () => {
     });
 
     // ── Mock: POST /rpc/get-stage-config ─────────────────────────────────────
-    await page.route(`${API_BASE}/rpc/get-stage-config`, async (route) => {
+    await page.route("**/rpc/get-stage-config", async (route) => {
       refreshCount++;
       if (refreshCount === 1) {
         // First call: gate is blocked
@@ -84,7 +84,7 @@ test.describe("WAITING_FOR_MATCH gate flow", () => {
     });
 
     // ── Mock: POST /rpc/get-challenge (for WELCOME at index 1) ───────────────
-    await page.route(`${API_BASE}/rpc/get-challenge`, async (route) => {
+    await page.route("**/rpc/get-challenge", async (route) => {
       await route.fulfill({
         status: 200,
         contentType: "application/json",
@@ -99,8 +99,7 @@ test.describe("WAITING_FOR_MATCH gate flow", () => {
     });
 
     // ── Drive the flow ───────────────────────────────────────────────────────
-    await page.goto(`${APP_BASE}/assess/${MOCK_TOKEN}`);
-    await page.waitForLoadState("networkidle");
+    await page.goto(`${APP_BASE}/assess/${MOCK_TOKEN}`, { waitUntil: "domcontentloaded" });
 
     // Waiting screen appears
     await expect(page.getByText(/Building your personalized challenge/i)).toBeVisible({
@@ -124,7 +123,7 @@ test.describe("WAITING_FOR_MATCH gate flow", () => {
   test("waiting screen manual refresh button works", async ({ page }) => {
     let refreshCount = 0;
 
-    await page.route(`${API_BASE}/rpc/resolve-token`, async (route) => {
+    await page.route("**/rpc/resolve-token", async (route) => {
       await route.fulfill({
         status: 200,
         contentType: "application/json",
@@ -138,7 +137,7 @@ test.describe("WAITING_FOR_MATCH gate flow", () => {
       });
     });
 
-    await page.route(`${API_BASE}/rpc/get-stage-config`, async (route) => {
+    await page.route("**/rpc/get-stage-config", async (route) => {
       refreshCount++;
       if (refreshCount === 1) {
         await route.fulfill({
@@ -187,7 +186,7 @@ test.describe("WAITING_FOR_MATCH gate flow", () => {
       }
     });
 
-    await page.route(`${API_BASE}/rpc/get-challenge`, async (route) => {
+    await page.route("**/rpc/get-challenge", async (route) => {
       await route.fulfill({
         status: 200,
         contentType: "application/json",
@@ -201,8 +200,7 @@ test.describe("WAITING_FOR_MATCH gate flow", () => {
       });
     });
 
-    await page.goto(`${APP_BASE}/assess/${MOCK_TOKEN}`);
-    await page.waitForLoadState("networkidle");
+    await page.goto(`${APP_BASE}/assess/${MOCK_TOKEN}`, { waitUntil: "domcontentloaded" });
 
     // Waiting screen appears
     await expect(page.getByText(/Building your personalized challenge/i)).toBeVisible({

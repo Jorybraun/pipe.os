@@ -9,7 +9,7 @@
  *   - Click a person to open their living profile
  */
 
-import { useState, useCallback, useEffect } from 'react';
+import { useState, useCallback, useEffect, type CSSProperties, type ReactNode } from 'react';
 import { useAuth } from '@clerk/react';
 import { useNavigate } from 'react-router-dom';
 import {
@@ -19,6 +19,17 @@ import {
 import { createApiClient } from '../lib/api/client';
 import type { LivingContextReadModel } from '../lib/api/types';
 import { LivingContextGraph } from '../components/Candidate/LivingContextGraph';
+import {
+  RECRUITER_FONT as FONT,
+  recruiterEyebrowStyle,
+  recruiterHeaderStyle,
+  recruiterPageStyle,
+  recruiterPrimaryButtonStyle,
+  recruiterSectionStyle,
+  recruiterSubtitleStyle,
+  recruiterTagStyle,
+  recruiterTitleStyle,
+} from '../styles/recruiterSurface';
 
 // ─── Types ───────────────────────────────────────────────────────────────────
 
@@ -134,179 +145,143 @@ export default function ContactsPage(): JSX.Element {
   });
 
   return (
-    <div style={{
-      display: 'grid',
-      gridTemplateColumns: selected ? '1fr 380px' : '1fr',
-      height: 'calc(100vh - 100px)',
-      margin: '-24px 0 -24px 0',
-      overflow: 'hidden',
-      transition: 'grid-template-columns 0.25s cubic-bezier(0.4,0,0.2,1)',
-    }}>
-      {/* ── List ─────────────────────────────────────────────────────────── */}
-      <div style={{ display: 'flex', flexDirection: 'column', overflow: 'hidden' }}>
-        {/* Toolbar */}
-        <div style={{
-          padding: '20px 24px 16px',
-          borderBottom: '1px solid var(--pipe-border)',
-          display: 'flex',
-          alignItems: 'center',
-          gap: 12,
-          flexShrink: 0,
-        }}>
-          <div style={{ flex: 1 }}>
-            <div style={{ fontSize: 9, letterSpacing: '0.15em', color: 'var(--pipe-text-dim)', marginBottom: 4 }}>
-              {activeTab === 'contacts' ? 'PEOPLE' : 'FIND'}
-            </div>
-            <div style={{ fontSize: 18, fontWeight: 700 }}>
-              {activeTab === 'contacts'
-                ? `${contacts.length} ${contacts.length === 1 ? 'person' : 'people'}`
-                : 'Find people'}
-            </div>
-          </div>
+    <section data-testid="people-surface" style={PAGE}>
+      <header style={HEADER}>
+        <div style={HEADER_COPY}>
+          <div style={EYEBROW}>People</div>
+          <h1 style={TITLE}>{activeTab === 'contacts' ? 'People' : 'Find people'}</h1>
+          <p style={SUBTITLE}>
+            {activeTab === 'contacts'
+              ? `${contacts.length} ${contacts.length === 1 ? 'person' : 'people'} in the relationship graph. Open any profile to inspect evidence, interviews, and next actions.`
+              : 'Search source data, add promising people, and keep relationship context attached to the same profile surface.'}
+          </p>
+        </div>
 
-          {/* Tabs */}
-          <div style={{ display: 'flex', gap: 6 }}>
+        <div style={HEADER_ACTIONS}>
+          <div role="tablist" aria-label="People view" style={SEGMENTED_CONTROL}>
             {(['contacts', 'source'] as const).map((t) => (
               <button
                 key={t}
+                type="button"
+                role="tab"
+                aria-selected={activeTab === t}
                 onClick={() => { setActiveTab(t); setSelected(null); setShowAdd(false); }}
-                style={{
-                  padding: '4px 10px',
-                  fontSize: 9,
-                  fontWeight: 700,
-                  letterSpacing: '0.1em',
-                  fontFamily: '"Space Mono", monospace',
-                  border: '1px solid',
-                  borderRadius: 3,
-                  cursor: 'pointer',
-                  borderColor: activeTab === t ? 'var(--pipe-accent-border)' : 'var(--pipe-border)',
-                  background: activeTab === t ? 'var(--pipe-accent-surface)' : 'transparent',
-                  color: activeTab === t ? 'var(--pipe-text)' : 'var(--pipe-text-dim)',
-                }}
+                style={segmentedButtonStyle(activeTab === t)}
               >
-                {t === 'contacts' ? 'PEOPLE' : 'FIND'}
+                {t === 'contacts' ? 'People' : 'Find'}
               </button>
             ))}
           </div>
 
           {activeTab === 'contacts' && (
             <button
+              type="button"
               onClick={() => { setShowAdd(true); setSelected(null); }}
-              style={{
-                display: 'flex', alignItems: 'center', gap: 6,
-                padding: '8px 14px', fontSize: 9, fontWeight: 700,
-                letterSpacing: '0.1em', fontFamily: '"Space Mono", monospace',
-                background: 'rgba(74,222,128,0.1)', border: '1px solid rgba(74,222,128,0.3)',
-                borderRadius: 4, color: '#4ade80', cursor: 'pointer',
-              }}
+              style={PRIMARY_BUTTON}
             >
-              <UserPlus size={13} /> ADD PERSON
+              <UserPlus size={14} /> Add person
             </button>
           )}
         </div>
+      </header>
 
-        {activeTab === 'contacts' ? (
-          <>
-            {/* Search */}
-            <div style={{ padding: '12px 24px', borderBottom: '1px solid var(--pipe-border)', flexShrink: 0 }}>
-              <div style={{ position: 'relative' }}>
-                <Search size={12} style={{
-                  position: 'absolute', left: 10, top: '50%', transform: 'translateY(-50%)',
-                  color: 'var(--pipe-text-dim)',
-                }} />
-                <input
-                  value={search}
-                  onChange={(e) => setSearch(e.target.value)}
-                  placeholder="SEARCH BY NAME, EMAIL, COMPANY..."
-                  style={{
-                    width: '100%', padding: '8px 8px 8px 30px',
-                    fontSize: 9, fontFamily: '"Space Mono", monospace',
-                    letterSpacing: '0.08em',
-                    background: 'var(--pipe-surface)',
-                    border: '1px solid var(--pipe-border)',
-                    borderRadius: 4, color: 'var(--pipe-text)', outline: 'none',
-                  }}
-                />
-                {search && (
-                  <button onClick={() => setSearch('')} style={{
-                    position: 'absolute', right: 8, top: '50%', transform: 'translateY(-50%)',
-                    background: 'none', border: 'none', color: 'var(--pipe-text-dim)', cursor: 'pointer', padding: 0,
-                  }}>
-                    <X size={11} />
-                  </button>
-                )}
-              </div>
-            </div>
-
-            {/* People list */}
-            <div style={{ flex: 1, overflowY: 'auto' }}>
-              {isLoading && (
-                <div style={{ padding: 40, display: 'flex', justifyContent: 'center', color: 'var(--pipe-text-dim)' }}>
-                  <Loader size={18} style={{ animation: 'spin 1s linear infinite' }} />
-                </div>
-              )}
-              {!isLoading && filtered.length === 0 && (
-                <div style={{ padding: '40px 24px', textAlign: 'center', color: 'var(--pipe-text-dim)' }}>
-                  <div style={{ fontSize: 11, marginBottom: 8 }}>
-                    {search ? 'No matches found' : 'No people yet'}
-                  </div>
-                  {!search && (
-                    <div style={{ fontSize: 9, opacity: 0.6 }}>
-                      Add a person or invite someone to an interview.
-                    </div>
+      <div
+        data-testid="people-list-shell"
+        style={{
+          ...PEOPLE_SHELL,
+          gridTemplateColumns: selected || showAdd ? 'minmax(0, 1fr) minmax(320px, 380px)' : 'minmax(0, 1fr)',
+        }}
+      >
+        <div style={PEOPLE_LIST_PANEL}>
+          {activeTab === 'contacts' ? (
+            <>
+              {/* Search */}
+              <div style={SEARCH_BAR}>
+                <div style={{ position: 'relative' }}>
+                  <Search size={12} style={{
+                    position: 'absolute', left: 10, top: '50%', transform: 'translateY(-50%)',
+                    color: 'var(--pipe-text-dim)',
+                  }} />
+                  <input
+                    value={search}
+                    onChange={(e) => setSearch(e.target.value)}
+                    placeholder="SEARCH BY NAME, EMAIL, COMPANY..."
+                    style={SEARCH_INPUT}
+                  />
+                  {search && (
+                    <button onClick={() => setSearch('')} style={{
+                      position: 'absolute', right: 8, top: '50%', transform: 'translateY(-50%)',
+                      background: 'none', border: 'none', color: 'var(--pipe-text-dim)', cursor: 'pointer', padding: 0,
+                    }}>
+                      <X size={11} />
+                    </button>
                   )}
                 </div>
-              )}
-              {filtered.map((contact) => (
-                <ContactRow
-                  key={contact.id}
-                  contact={contact}
-                  isSelected={selected?.id === contact.id}
-                  onClick={() => { navigate(`/people/${contact.id}`); }}
-                />
-              ))}
-            </div>
-          </>
-        ) : (
-          <SourceSearchPanel
-            api={api}
-            onContact={() => { setActiveTab('contacts'); void load(); }}
-          />
+              </div>
+
+              {/* People list */}
+              <div style={SCROLL_AREA}>
+                {isLoading && (
+                  <div style={{ padding: 40, display: 'flex', justifyContent: 'center', color: 'var(--pipe-text-dim)' }}>
+                    <Loader size={18} style={{ animation: 'spin 1s linear infinite' }} />
+                  </div>
+                )}
+                {!isLoading && filtered.length === 0 && (
+                  <div style={EMPTY_STATE}>
+                    <div style={{ fontSize: 13, marginBottom: 8, color: 'var(--pipe-text)' }}>
+                      {search ? 'No matches found' : 'No people yet'}
+                    </div>
+                    <div style={{ fontSize: 11, lineHeight: 1.6 }}>
+                      {search ? 'Try a different name, email, or company.' : 'Add a person or invite someone to an interview.'}
+                    </div>
+                  </div>
+                )}
+                {filtered.map((contact) => (
+                  <ContactRow
+                    key={contact.id}
+                    contact={contact}
+                    isSelected={selected?.id === contact.id}
+                    onClick={() => { navigate(`/people/${contact.id}`); }}
+                  />
+                ))}
+              </div>
+            </>
+          ) : (
+            <SourceSearchPanel
+              api={api}
+              onContact={() => { setActiveTab('contacts'); void load(); }}
+            />
+          )}
+        </div>
+
+        {/* ── Detail / Add panel ────────────────────────────────────────────── */}
+        {(selected || showAdd) && (
+          <aside style={SIDE_PANEL}>
+            {showAdd && !selected ? (
+              <AddContactPanel
+                onSaved={(c) => { setContacts((prev) => [c, ...prev]); setSelected(c); setShowAdd(false); }}
+                onClose={() => setShowAdd(false)}
+                api={api}
+              />
+            ) : selected ? (
+              <ContactDetailPanel
+                contact={selected}
+                onUpdated={(c) => {
+                  setContacts((prev) => prev.map((x) => x.id === c.id ? c : x));
+                  setSelected(c);
+                }}
+                onDeleted={() => {
+                  setContacts((prev) => prev.filter((x) => x.id !== selected.id));
+                  setSelected(null);
+                }}
+                onClose={() => setSelected(null)}
+                api={api}
+              />
+            ) : null}
+          </aside>
         )}
       </div>
-
-      {/* ── Detail / Add panel ────────────────────────────────────────────── */}
-      {(selected || showAdd) && (
-        <div style={{
-          borderLeft: '1px solid var(--pipe-border)',
-          overflow: 'hidden',
-          display: 'flex',
-          flexDirection: 'column',
-        }}>
-          {showAdd && !selected ? (
-            <AddContactPanel
-              onSaved={(c) => { setContacts((prev) => [c, ...prev]); setSelected(c); setShowAdd(false); }}
-              onClose={() => setShowAdd(false)}
-              api={api}
-            />
-          ) : selected ? (
-            <ContactDetailPanel
-              contact={selected}
-              onUpdated={(c) => {
-                setContacts((prev) => prev.map((x) => x.id === c.id ? c : x));
-                setSelected(c);
-              }}
-              onDeleted={() => {
-                setContacts((prev) => prev.filter((x) => x.id !== selected.id));
-                setSelected(null);
-              }}
-              onClose={() => setSelected(null)}
-              api={api}
-            />
-          ) : null}
-        </div>
-      )}
-    </div>
+    </section>
   );
 }
 
@@ -327,10 +302,10 @@ function ContactRow({ contact, isSelected, onClick }: {
     <div
       onClick={onClick}
       style={{
-        padding: '12px 24px',
-        borderBottom: '1px solid var(--pipe-border)',
+        padding: '14px 18px',
+        borderBottom: '1px solid var(--pipe-border-light)',
         cursor: 'pointer',
-        background: isSelected ? 'var(--pipe-surface-hover)' : 'transparent',
+        background: isSelected ? 'var(--pipe-surface)' : 'transparent',
         display: 'flex', alignItems: 'center', gap: 12,
         transition: 'background 0.15s',
       }}
@@ -353,13 +328,7 @@ function ContactRow({ contact, isSelected, onClick }: {
           <span style={{ fontSize: 12, fontWeight: 700, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>
             {contact.name ?? contact.email}
           </span>
-          <span style={{
-            fontSize: 8, fontWeight: 700, letterSpacing: '0.1em',
-            padding: '2px 5px', borderRadius: 2,
-            background: `${relationshipColor}18`,
-            color: relationshipColor,
-            flexShrink: 0,
-          }}>
+          <span style={{ ...TAG, borderColor: `${relationshipColor}40`, background: `${relationshipColor}18`, color: relationshipColor }}>
             {relationshipLabel}
           </span>
         </div>
@@ -569,7 +538,7 @@ function ContactForm({ title, form, onChange, onSave, onClose, onDelete, isSavin
   error: string | null;
   saveLabel: string;
 }): JSX.Element {
-  const field = (icon: React.ReactNode, key: string, placeholder: string, multiline = false): JSX.Element => (
+  const field = (icon: ReactNode, key: string, placeholder: string, multiline = false): JSX.Element => (
     <div style={{ display: 'flex', gap: 10, alignItems: multiline ? 'flex-start' : 'center' }}>
       <div style={{ color: 'var(--pipe-text-dim)', flexShrink: 0, paddingTop: multiline ? 2 : 0 }}>
         {icon}
@@ -988,3 +957,127 @@ function ContactLivingContext({ contactId, api }: { contactId: string; api: Retu
     />
   );
 }
+
+const PAGE: CSSProperties = recruiterPageStyle;
+
+const HEADER: CSSProperties = recruiterHeaderStyle;
+
+const HEADER_COPY: CSSProperties = {
+  display: 'grid',
+  gap: 8,
+  minWidth: 260,
+  flex: '1 1 480px',
+};
+
+const HEADER_ACTIONS: CSSProperties = {
+  display: 'flex',
+  alignItems: 'center',
+  justifyContent: 'flex-end',
+  gap: 10,
+  flexWrap: 'wrap',
+};
+
+const EYEBROW: CSSProperties = recruiterEyebrowStyle;
+
+const TITLE: CSSProperties = recruiterTitleStyle;
+
+const SUBTITLE: CSSProperties = {
+  ...recruiterSubtitleStyle,
+  maxWidth: 720,
+};
+
+const PRIMARY_BUTTON: CSSProperties = recruiterPrimaryButtonStyle;
+
+const SEGMENTED_CONTROL: CSSProperties = {
+  display: 'inline-grid',
+  gridTemplateColumns: 'repeat(2, minmax(74px, 1fr))',
+  minHeight: 34,
+  overflow: 'hidden',
+  border: '1px solid var(--pipe-border)',
+  borderRadius: 6,
+  background: 'var(--pipe-surface-solid)',
+};
+
+function segmentedButtonStyle(active: boolean): CSSProperties {
+  return {
+    border: 'none',
+    borderLeft: '1px solid var(--pipe-border)',
+    background: active ? 'var(--pipe-accent-surface)' : 'transparent',
+    color: active ? 'var(--pipe-text)' : 'var(--pipe-text-dim)',
+    cursor: 'pointer',
+    fontFamily: FONT,
+    fontSize: 10,
+    fontWeight: 700,
+    letterSpacing: '0.08em',
+    minHeight: 34,
+    padding: '0 12px',
+  };
+}
+
+const PEOPLE_SHELL: CSSProperties = {
+  ...recruiterSectionStyle,
+  display: 'grid',
+  minHeight: 'min(760px, calc(100vh - 220px))',
+  overflow: 'hidden',
+  padding: 0,
+  transition: 'grid-template-columns 0.2s ease',
+};
+
+const PEOPLE_LIST_PANEL: CSSProperties = {
+  display: 'flex',
+  flexDirection: 'column',
+  minWidth: 0,
+  overflow: 'hidden',
+};
+
+const SEARCH_BAR: CSSProperties = {
+  padding: '14px 18px',
+  borderBottom: '1px solid var(--pipe-border-light)',
+  flexShrink: 0,
+};
+
+const SEARCH_INPUT: CSSProperties = {
+  width: '100%',
+  minWidth: 0,
+  padding: '10px 10px 10px 32px',
+  border: '1px solid var(--pipe-border)',
+  borderRadius: 6,
+  background: 'var(--pipe-surface)',
+  color: 'var(--pipe-text)',
+  fontFamily: FONT,
+  fontSize: 10,
+  letterSpacing: '0.08em',
+  outline: 'none',
+};
+
+const SCROLL_AREA: CSSProperties = {
+  flex: 1,
+  minHeight: 0,
+  overflowY: 'auto',
+};
+
+const EMPTY_STATE: CSSProperties = {
+  padding: 40,
+  textAlign: 'center',
+  color: 'var(--pipe-text-dim)',
+  fontFamily: FONT,
+};
+
+const SIDE_PANEL: CSSProperties = {
+  minWidth: 0,
+  overflow: 'hidden',
+  borderLeft: '1px solid var(--pipe-border)',
+  background: 'rgba(255,255,255,0.02)',
+  display: 'flex',
+  flexDirection: 'column',
+};
+
+const TAG: CSSProperties = {
+  ...recruiterTagStyle,
+  flexShrink: 0,
+  padding: '2px 6px',
+  borderRadius: 5,
+  fontSize: 8,
+  fontWeight: 800,
+  letterSpacing: '0.1em',
+};

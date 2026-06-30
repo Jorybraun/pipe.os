@@ -18,11 +18,20 @@ import {
   DECISION_QUALITY_SCORER_PROMPT,
   COMPREHENSION_SYNTHESIZER_PROMPT,
 } from './comprehensionScorerPrompts';
-import { getMockComprehensionScoreReport } from './mockResponses';
 
 // ─── Types ──────────────────────────────────────────────────────────────────
 
 export type LLMProvider = 'workers-ai' | 'google-ai';
+
+export class ComprehensionScorerUnavailableError extends Error {
+  readonly provider: LLMProvider;
+
+  constructor(provider: LLMProvider, reason: string) {
+    super(reason);
+    this.name = 'ComprehensionScorerUnavailableError';
+    this.provider = provider;
+  }
+}
 
 export interface KeyInsight {
   id: number;
@@ -139,11 +148,35 @@ function weightedAvg(dimensions: Record<string, number>, weights: Record<string,
   let sum = 0;
   let totalWeight = 0;
   for (const [key, weight] of Object.entries(weights)) {
-    const val = Number(dimensions[key]) || 5;
+    const val = dimensions[key];
+    if (val === undefined) {
+      throw new Error(`Missing weighted score dimension: ${key}`);
+    }
     sum += val * weight;
     totalWeight += weight;
   }
   return Math.round((sum / totalWeight) * 10);
+}
+
+function requireDimensionScores(
+  provider: LLMProvider,
+  scorerName: string,
+  result: Record<string, unknown>,
+  weights: Record<string, number>,
+): Record<string, number> {
+  const dimensions: Record<string, number> = {};
+  for (const key of Object.keys(weights)) {
+    const raw = result[key];
+    const value = typeof raw === 'number' ? raw : Number(raw);
+    if (!Number.isFinite(value) || value < 0 || value > 10) {
+      throw new ComprehensionScorerUnavailableError(
+        provider,
+        `Comprehension scorer ${scorerName} did not return a valid score for ${key}.`,
+      );
+    }
+    dimensions[key] = value;
+  }
+  return dimensions;
 }
 
 function assignBand(score: number): 'strong' | 'adequate' | 'weak' {
@@ -216,14 +249,18 @@ export async function scoreComprehensionSession(input: ComprehensionScorerInput)
 
   _ai = ai;
 
-  // Mock fallback
   if (!apiKey && provider === 'google-ai') {
-    console.log('[comprehensionScorer] No API key configured. Returning mock score report.');
-    return getMockComprehensionScoreReport() as unknown as ComprehensionScoreReport;
+    throw new ComprehensionScorerUnavailableError(
+      provider,
+      'Google AI API key is not configured for comprehension scoring.',
+    );
   }
 
   if (provider === 'workers-ai' && !ai) {
-    throw new Error('[comprehensionScorer] Workers AI binding not available.');
+    throw new ComprehensionScorerUnavailableError(
+      provider,
+      'Workers AI binding is not available for comprehension scoring.',
+    );
   }
 
   const prContext = [
@@ -240,25 +277,25 @@ export async function scoreComprehensionSession(input: ComprehensionScorerInput)
   ]);
 
   // Parse scorer outputs
-  const qqResult = extractJson<Record<string, unknown>>(qqRaw);
-  const compResult = extractJson<Record<string, unknown>>(compRaw);
-  const dqResult = extractJson<Record<string, unknown>>(dqRaw);
+  let qqResult: Record<string, unknown>;
+  let compResult: Record<string, unknown>;
+  let dqResult: Record<string, unknown>;
+  try {
+    qqResult = extractJson<Record<string, unknown>>(qqRaw);
+    compResult = extractJson<Record<string, unknown>>(compRaw);
+    dqResult = extractJson<Record<string, unknown>>(dqRaw);
+  } catch (error) {
+    const message = error instanceof Error ? error.message : String(error);
+    throw new ComprehensionScorerUnavailableError(
+      provider,
+      `Comprehension scorer provider returned invalid JSON: ${message}`,
+    );
+  }
 
   // Extract dimensions
-  const qqDimensions: Record<string, number> = {};
-  for (const key of Object.keys(QQ_WEIGHTS)) {
-    qqDimensions[key] = Number(qqResult[key]) || 5;
-  }
-
-  const compDimensions: Record<string, number> = {};
-  for (const key of Object.keys(COMP_WEIGHTS)) {
-    compDimensions[key] = Number(compResult[key]) || 5;
-  }
-
-  const dqDimensions: Record<string, number> = {};
-  for (const key of Object.keys(DQ_WEIGHTS)) {
-    dqDimensions[key] = Number(dqResult[key]) || 5;
-  }
+  const qqDimensions = requireDimensionScores(provider, 'question_quality', qqResult, QQ_WEIGHTS);
+  const compDimensions = requireDimensionScores(provider, 'comprehension', compResult, COMP_WEIGHTS);
+  const dqDimensions = requireDimensionScores(provider, 'decision_quality', dqResult, DQ_WEIGHTS);
 
   // Weighted averages (scaled 0-100)
   const qqScore = weightedAvg(qqDimensions, QQ_WEIGHTS);

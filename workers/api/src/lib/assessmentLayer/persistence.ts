@@ -11,6 +11,7 @@ export type AssessmentSessionMode =
   | 'DEV_CONTAINER_CHALLENGE'
   | 'DEV_CONTAINER_REPO_TASK'
   | 'OPEN_SOURCE_BUG_FIX'
+  | 'REPO_MATCHING'
   | 'NINETY_FIVE_UNTIL_INFINITY_ROOM'
   | 'STANDARD_VIDEO_INTERVIEW'
   | 'CLIPPY_DEVIN_INTERACTION'
@@ -302,16 +303,43 @@ function assertSourceRef(sourceRef: AssessmentEvidenceSourceRefInput): void {
   }
 }
 
-function assertExactSourceRef(sourceRef: AssessmentEvidenceSourceRefInput, claimId: string): void {
+function assertExactEvaluationClaimSourceRef(
+  sourceRef: AssessmentEvidenceSourceRefInput,
+  claim: AssessmentEvaluationClaimInput,
+): void {
   assertSourceRef(sourceRef);
-  requireNonEmpty(sourceRef.exactText ?? '', `positive evaluation claim ${claimId} exactText`);
-  requireNonEmpty(sourceRef.contentHash ?? '', `positive evaluation claim ${claimId} contentHash`);
+  requireNonEmpty(sourceRef.exactText ?? '', `${claim.polarity} evaluation claim ${claim.id} exactText`);
+  requireNonEmpty(sourceRef.contentHash ?? '', `${claim.polarity} evaluation claim ${claim.id} contentHash`);
 }
 
 function assertExactEventSourceRef(sourceRef: AssessmentEvidenceSourceRefInput, owner: string): void {
   assertSourceRef(sourceRef);
   requireNonEmpty(sourceRef.exactText ?? '', `${owner} exactText`);
   requireNonEmpty(sourceRef.contentHash ?? '', `${owner} contentHash`);
+}
+
+function claimRequiresSessionBackedSourceRef(claim: AssessmentEvaluationClaimInput): boolean {
+  return claim.polarity !== 'diagnostic';
+}
+
+function isJsonObject(value: JsonValue | undefined): value is JsonObject {
+  return value !== undefined && value !== null && typeof value === 'object' && !Array.isArray(value);
+}
+
+function assertRepoTaskAssessmentOutputStatusMatchesReport(
+  input: AssessmentEvaluationReportInput,
+): void {
+  if (!isJsonObject(input.output)) return;
+  if (input.output.schemaVersion !== 'repo-task-assessment-output-v1') return;
+  if (input.output.status === undefined) return;
+  if (typeof input.output.status !== 'string') {
+    throw new Error('repo-task assessment output status must be a string when provided');
+  }
+  if (input.output.status !== input.status) {
+    throw new Error(
+      `repo-task assessment output status ${input.output.status} must match evaluation report status ${input.status}`,
+    );
+  }
 }
 
 function diagnosticMetadata(input: AssessmentEvaluationDiagnosticInput): DiagnosticMetadata {
@@ -394,10 +422,10 @@ async function nextEventSequence(db: D1Database, sessionId: string): Promise<num
   return (row?.max_sequence ?? 0) + 1;
 }
 
-async function requireClaimSourceBackedBySessionEvent(input: {
+async function requireSourceRefBackedBySessionEvent(input: {
   db: D1Database;
   sessionId: string;
-  claimId: string;
+  owner: string;
   sourceRef: AssessmentEvidenceSourceRefInput;
 }): Promise<void> {
   const evidenceRole = input.sourceRef.evidenceRole ?? 'support';
@@ -425,7 +453,7 @@ async function requireClaimSourceBackedBySessionEvent(input: {
   ).first<{ event_id: string }>();
   if (!row) {
     throw new Error(
-      `positive evaluation claim ${input.claimId} source ref ${input.sourceRef.sourceRefType}:${input.sourceRef.sourceRefId} is not backed by assessment session evidence`,
+      `${input.owner} source ref ${input.sourceRef.sourceRefType}:${input.sourceRef.sourceRefId} is not backed by assessment session evidence`,
     );
   }
 }
@@ -629,20 +657,22 @@ export class AssessmentLayerStore {
     const session = await fetchSession(this.#db, requireNonEmpty(input.sessionId, 'sessionId'));
     const ingestionKey = requireNonEmpty(input.ingestionKey, 'ingestionKey');
     const summary = requireNonEmpty(input.summary, 'summary');
+    assertRepoTaskAssessmentOutputStatusMatchesReport(input);
     for (const claim of input.claims) {
       requireNonEmpty(claim.id, 'claim.id');
       requireNonEmpty(claim.dimension, `claim ${claim.id} dimension`);
       requireNonEmpty(claim.narrative, `claim ${claim.id} narrative`);
-      if (claim.polarity === 'positive' && claim.sourceRefs.length === 0) {
-        throw new Error(`positive evaluation claim ${claim.id} requires at least one exact source ref`);
+      const requiresSessionBackedSourceRef = claimRequiresSessionBackedSourceRef(claim);
+      if (requiresSessionBackedSourceRef && claim.sourceRefs.length === 0) {
+        throw new Error(`${claim.polarity} evaluation claim ${claim.id} requires at least one exact source ref`);
       }
       for (const sourceRef of claim.sourceRefs) {
-        if (claim.polarity === 'positive') {
-          assertExactSourceRef(sourceRef, claim.id);
-          await requireClaimSourceBackedBySessionEvent({
+        if (requiresSessionBackedSourceRef) {
+          assertExactEvaluationClaimSourceRef(sourceRef, claim);
+          await requireSourceRefBackedBySessionEvent({
             db: this.#db,
             sessionId: session.id,
-            claimId: claim.id,
+            owner: `${claim.polarity} evaluation claim ${claim.id}`,
             sourceRef,
           });
         } else {
@@ -654,6 +684,15 @@ export class AssessmentLayerStore {
       requireNonEmpty(diagnostic.code, 'diagnostic code');
       requireNonEmpty(diagnostic.severity, 'diagnostic severity');
       requireNonEmpty(diagnostic.message, 'diagnostic message');
+      for (const sourceRef of diagnostic.sourceRefs ?? []) {
+        assertExactEventSourceRef(sourceRef, `assessment diagnostic ${diagnostic.code}`);
+        await requireSourceRefBackedBySessionEvent({
+          db: this.#db,
+          sessionId: session.id,
+          owner: `assessment diagnostic ${diagnostic.code}`,
+          sourceRef,
+        });
+      }
     }
 
     const now = this.#clock();
@@ -785,7 +824,6 @@ export class AssessmentLayerStore {
       ).run();
 
       for (const sourceRef of uniqueSourceRefs(diagnostic.sourceRefs ?? [])) {
-        assertExactEventSourceRef(sourceRef, `assessment diagnostic ${diagnosticId}`);
         const diagnosticSourceRefId = await deterministicEntityId(
           'assessment_diagnostic_source_ref',
           `${diagnosticId}:${sourceRefKey(sourceRef)}`,

@@ -686,9 +686,10 @@ async function setCurrentStep(
   candidateId: string,
   stepName: string,
 ): Promise<void> {
+  const now = new Date().toISOString();
   await db
-    .prepare(`UPDATE candidate_ingestion SET current_step = ?1 WHERE candidate_id = ?2`)
-    .bind(stepName, candidateId)
+    .prepare(`UPDATE candidate_ingestion SET current_step = ?1, updated_at = ?2 WHERE candidate_id = ?3`)
+    .bind(stepName, now, candidateId)
     .run();
 }
 
@@ -790,7 +791,7 @@ export async function loadDiscoveryResultFromDb(
       progression_velocity: 'unknown' as const,
       ownership_depth: 'unknown' as const,
       system_scale_exposure: [],
-      greenfield_ratio: 0,
+      greenfield_ratio: null,
     }),
     situationSignature: safeJson(row.situation_signature_json, {
       primary_challenge_types: [],

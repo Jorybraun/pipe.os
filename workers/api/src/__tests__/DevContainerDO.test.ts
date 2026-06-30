@@ -127,6 +127,8 @@ async function init(
     ttlSeconds: number;
     repoGitUrl?: string | null;
     challengeBranch?: string | null;
+    baseCommitSha?: string | null;
+    agentType?: string | null;
   },
 ): Promise<Response> {
   return instance.fetch(
@@ -136,6 +138,7 @@ async function init(
       body: JSON.stringify({
         repoGitUrl: null,
         challengeBranch: null,
+        baseCommitSha: null,
         ...payload,
       }),
     }),
@@ -176,7 +179,8 @@ describe('DevContainerDO /__init — Step 11 warn-then-expire scheduling', () =>
       REPO_GIT_URL: 'https://github.com/example/repo.git',
       CHALLENGE_BRANCH: 'challenge/fix',
     });
-    expect(startArg.startOptions).not.toHaveProperty('entrypoint');
+    expect(startArg.startOptions.envVars).not.toHaveProperty('AGENT_TYPE');
+    expect(startArg.startOptions.entrypoint).toEqual(['/usr/local/bin/entrypoint.sh']);
 
     const updates = db.__calls.filter(
       (c) => c.sql.includes('UPDATE dev_container_sessions') && c.ran,
@@ -184,6 +188,95 @@ describe('DevContainerDO /__init — Step 11 warn-then-expire scheduling', () =>
     const ready = updates.find((c) => c.params[0] === 'READY');
     expect(ready?.params[2]).toEqual(expect.any(String));
     expect(ready?.params[5]).toBe('sess_start');
+  });
+
+  it('passes the exact challenge base commit to the container entrypoint', async () => {
+    const db = fakeD1();
+    const env = buildEnv(db);
+    const instance = new DevContainerDO(buildState(), env) as SpyableDO;
+    const baseCommitSha = 'f'.repeat(40);
+
+    const res = await init(instance, {
+      sessionId: 'sess_base_commit',
+      expiresAt: new Date(Date.now() + 3600_000).toISOString(),
+      ttlSeconds: 3600,
+      repoGitUrl: 'https://github.com/example/repo.git',
+      baseCommitSha,
+    });
+
+    expect(res.status).toBe(200);
+    const [startArg] = instance.__startCalls[0] as [
+      {
+        ports: number[];
+        startOptions: { envVars: Record<string, string>; entrypoint?: string[] };
+      },
+    ];
+    expect(startArg.startOptions.envVars).toMatchObject({
+      REPO_GIT_URL: 'https://github.com/example/repo.git',
+      CHALLENGE_BASE_COMMIT_SHA: baseCommitSha,
+    });
+    expect(startArg.startOptions.envVars).not.toHaveProperty('CHALLENGE_BRANCH');
+  });
+
+  it('passes through an explicit real agent type without inventing a default', async () => {
+    const db = fakeD1();
+    const env = buildEnv(db);
+    const instance = new DevContainerDO(buildState(), env) as SpyableDO;
+
+    const res = await init(instance, {
+      sessionId: 'sess_agent',
+      expiresAt: new Date(Date.now() + 3600_000).toISOString(),
+      ttlSeconds: 3600,
+      agentType: 'devin',
+    });
+
+    expect(res.status).toBe(200);
+    const [startArg] = instance.__startCalls[0] as [
+      {
+        ports: number[];
+        startOptions: { envVars: Record<string, string>; entrypoint?: string[] };
+      },
+    ];
+    expect(startArg.startOptions.envVars.AGENT_TYPE).toBe('devin');
+  });
+
+  it('starts the workspace container with internet access for real repo cloning', async () => {
+    const db = fakeD1();
+    const env = buildEnv(db);
+    const instance = new DevContainerDO(buildState(), env) as SpyableDO;
+
+    const res = await init(instance, {
+      sessionId: 'sess_repo_clone',
+      expiresAt: new Date(Date.now() + 3600_000).toISOString(),
+      ttlSeconds: 3600,
+      repoGitUrl: 'https://github.com/octocat/Hello-World',
+      baseCommitSha: '7fd1a60b01f91b314f59955a4e4d4e80d8edf11d',
+    });
+
+    expect(res.status).toBe(200);
+    const [startArg] = instance.__startCalls[0] as [
+      {
+        cancellationOptions: {
+          instanceGetTimeoutMS?: number;
+          portReadyTimeoutMS?: number;
+          waitInterval?: number;
+        };
+        startOptions: {
+          enableInternet?: boolean;
+          envVars: Record<string, string>;
+        };
+      },
+    ];
+    expect(startArg.cancellationOptions).toMatchObject({
+      instanceGetTimeoutMS: 90_000,
+      portReadyTimeoutMS: 180_000,
+      waitInterval: 1_000,
+    });
+    expect(startArg.startOptions.enableInternet).toBe(true);
+    expect(startArg.startOptions.envVars.REPO_GIT_URL).toBe('https://github.com/octocat/Hello-World');
+    expect(startArg.startOptions.envVars.CHALLENGE_BASE_COMMIT_SHA).toBe(
+      '7fd1a60b01f91b314f59955a4e4d4e80d8edf11d',
+    );
   });
 
   it('marks the session ERROR when the container cannot start', async () => {
@@ -321,6 +414,132 @@ describe('DevContainerDO /__init — Step 11 warn-then-expire scheduling', () =>
   });
 });
 
+// ─── Container lifecycle evidence ────────────────────────────────────────────
+
+describe('DevContainerDO container lifecycle evidence', () => {
+  it('marks an idle container as SLEEPING before stopping it', async () => {
+    const db = fakeD1();
+    const state = buildState();
+    const env = buildEnv(db);
+    const instance = new DevContainerDO(state, env) as SpyableDO;
+
+    await init(instance, {
+      sessionId: 'sess_sleep',
+      expiresAt: new Date(Date.now() + 3600_000).toISOString(),
+      ttlSeconds: 3600,
+    });
+    instance.__stopCalls.length = 0;
+
+    await instance.onActivityExpired();
+
+    expect(instance.__stopCalls).toEqual([15]);
+    expect(await state.storage.get('intentional_sleep_stop')).toBe(true);
+    const updates = db.__calls.filter(
+      (c) => c.sql.includes('UPDATE dev_container_sessions') && c.ran,
+    );
+    const last = updates[updates.length - 1]!;
+    expect(last.params[0]).toBe('SLEEPING');
+    expect(last.params[5]).toBe('sess_sleep');
+  });
+
+  it('does not convert an intentional sleep stop into an ERROR', async () => {
+    const db = fakeD1();
+    const state = buildState();
+    const env = buildEnv(db);
+    const instance = new DevContainerDO(state, env);
+
+    await init(instance, {
+      sessionId: 'sess_sleep_stop',
+      expiresAt: new Date(Date.now() + 3600_000).toISOString(),
+      ttlSeconds: 3600,
+    });
+    await state.storage.put('intentional_sleep_stop', true);
+
+    await instance.onStop({ exitCode: 0, reason: 'exit' });
+
+    expect(await state.storage.get('intentional_sleep_stop')).toBeUndefined();
+    const updates = db.__calls.filter(
+      (c) => c.sql.includes('UPDATE dev_container_sessions') && c.ran,
+    );
+    expect(updates.every((call) => call.params[0] !== 'ERROR')).toBe(true);
+  });
+
+  it('marks a real wake as READY after an idle sleep', async () => {
+    const db = fakeD1();
+    const state = buildState();
+    const env = buildEnv(db);
+    const instance = new DevContainerDO(state, env);
+
+    await init(instance, {
+      sessionId: 'sess_wake',
+      expiresAt: new Date(Date.now() + 3600_000).toISOString(),
+      ttlSeconds: 3600,
+    });
+    await state.storage.put('intentional_sleep_stop', true);
+
+    await instance.onStart();
+
+    expect(await state.storage.get('intentional_sleep_stop')).toBeUndefined();
+    const updates = db.__calls.filter(
+      (c) => c.sql.includes('UPDATE dev_container_sessions') && c.ran,
+    );
+    const last = updates[updates.length - 1]!;
+    expect(last.params[0]).toBe('READY');
+    expect(last.params[2]).toEqual(expect.any(String));
+    expect(last.params[5]).toBe('sess_wake');
+  });
+
+  it('persists unexpected container stops as redacted ERROR diagnostics', async () => {
+    const db = fakeD1();
+    const env = buildEnv(db);
+    const instance = new DevContainerDO(buildState(), env);
+
+    await init(instance, {
+      sessionId: 'sess_crash',
+      expiresAt: new Date(Date.now() + 3600_000).toISOString(),
+      ttlSeconds: 3600,
+    });
+
+    await instance.onStop({ exitCode: 137, reason: 'oom' });
+
+    const updates = db.__calls.filter(
+      (c) => c.sql.includes('UPDATE dev_container_sessions') && c.ran,
+    );
+    const last = updates[updates.length - 1]!;
+    expect(last.params[0]).toBe('ERROR');
+    expect(last.params[4]).toBe('Container stopped unexpectedly (exit code 137, reason oom).');
+    expect(last.params[5]).toBe('sess_crash');
+  });
+
+  it('redacts likely secrets before persisting container errors', async () => {
+    const db = fakeD1();
+    const env = buildEnv(db);
+    const instance = new DevContainerDO(buildState(), env);
+    const devinLikeSecret = 'cog_fakeServiceUserToken0123456789abcdef';
+
+    await init(instance, {
+      sessionId: 'sess_error_redact',
+      expiresAt: new Date(Date.now() + 3600_000).toISOString(),
+      ttlSeconds: 3600,
+    });
+
+    await expect(instance.onError(new Error(
+      `DEVIN_API_KEY=${devinLikeSecret} token=room-secret`,
+    ))).rejects.toThrow(/DEVIN_API_KEY=/);
+
+    const updates = db.__calls.filter(
+      (c) => c.sql.includes('UPDATE dev_container_sessions') && c.ran,
+    );
+    const last = updates[updates.length - 1]!;
+    expect(last.params[0]).toBe('ERROR');
+    expect(last.params[4]).toContain('DEVIN_API_KEY=[redacted]');
+    expect(last.params[4]).toContain('token=[redacted]');
+    expect(last.params[4]).not.toContain('room-secret');
+    expect(last.params[4]).not.toContain(devinLikeSecret);
+    expect(last.params[5]).toBe('sess_error_redact');
+  });
+});
+
 // ─── onWarn ─────────────────────────────────────────────────────────────────
 
 describe('DevContainerDO.onWarn — Step 11', () => {
@@ -410,6 +629,32 @@ describe('DevContainerDO.onExpire — Step 10', () => {
     expect(last.params[0]).toBe('EXPIRED');
     expect(typeof last.params[3]).toBe('string'); // stoppedAt
     expect(last.params[5]).toBe('sess_expire');
+  });
+
+  it('does not record the expiry destroy stop as an unexpected container error', async () => {
+    const db = fakeD1();
+    const env = buildEnv(db);
+    const instance = new DevContainerDO(buildState(), env);
+
+    await init(instance, {
+      sessionId: 'sess_expire_cleanly',
+      expiresAt: new Date(Date.now() + 60_000).toISOString(),
+      ttlSeconds: 60,
+    });
+
+    instance.destroy = async () => {
+      await instance.onStop({ exitCode: 0, reason: 'exit' });
+    };
+
+    await instance.onExpire();
+
+    const updates = db.__calls.filter(
+      (c) => c.sql.includes('UPDATE dev_container_sessions') && c.ran,
+    );
+    expect(updates.some((call) => call.params[0] === 'ERROR')).toBe(false);
+    const last = updates[updates.length - 1]!;
+    expect(last.params[0]).toBe('EXPIRED');
+    expect(last.params[5]).toBe('sess_expire_cleanly');
   });
 
   it('no-ops when the config payload is missing from storage', async () => {

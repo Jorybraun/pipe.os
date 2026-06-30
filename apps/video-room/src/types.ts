@@ -45,13 +45,179 @@ export interface RoomWorkspaceSession {
   errorMessage: string | null;
 }
 
+export type RoomWorkspaceChallengeStatus =
+  | 'github_pr_assigned'
+  | 'repo_task_assigned'
+  | 'missing_reviewable_task'
+  | 'not_configured';
+
+export type RoomWorkspaceChallengeKind = 'github_pr' | 'repo_only' | null;
+
+export type RoomWorkspaceChallengeSource =
+  | 'scheduled_interview.github_pr_number'
+  | 'scheduled_interview.challenge_packet'
+  | 'matched_repo_without_pr'
+  | 'scheduled_repo_without_pr'
+  | 'missing_repo_and_task'
+  | 'workspace_not_enabled';
+
+export interface RoomWorkspaceChallenge {
+  status: RoomWorkspaceChallengeStatus;
+  kind: RoomWorkspaceChallengeKind;
+  source: RoomWorkspaceChallengeSource;
+  message: string | null;
+  packet: RoomWorkspaceChallengePacket | null;
+}
+
+export interface RoomWorkspaceChallengePacket {
+  sourceRefType: string;
+  evidenceRole: string;
+  exactText: string;
+  locator: Record<string, unknown>;
+  contentHash: string;
+}
+
 export interface RoomWorkspace {
   enabled: boolean;
   canLaunch: boolean;
   repoUrl: string | null;
   githubPrNumber: number | null;
   matchedRepoId: number | null;
+  challenge: RoomWorkspaceChallenge;
   session: RoomWorkspaceSession | null;
+}
+
+export type RoomCommitChangedFileStatus = 'added' | 'modified' | 'deleted' | 'renamed' | 'copied';
+
+export interface RoomCommitChangedFile {
+  path: string;
+  status: RoomCommitChangedFileStatus;
+  previousPath?: string | null;
+  additions?: number | null;
+  deletions?: number | null;
+}
+
+export interface RoomCommitSourceRef {
+  sourceRefType: string;
+  sourceRefId: string;
+  sourceSpanId?: string | null;
+  evidenceRole?: string;
+  locator?: Record<string, unknown>;
+  exactText: string;
+  contentHash: string;
+  metadata?: Record<string, unknown>;
+}
+
+export interface RoomCommitSubmissionRequest {
+  narrative: string;
+  repositoryUrl: string;
+  forkRepositoryUrl?: string | null;
+  branchName: string;
+  baseCommitSha: string;
+  commitSha: string;
+  commitUrl?: string | null;
+  upstreamPullRequestUrl?: string | null;
+  upstreamPrConsent?: boolean;
+  changedFiles: RoomCommitChangedFile[];
+  occurredAt?: string | null;
+  sourceRefs: RoomCommitSourceRef[];
+}
+
+export interface RoomAssessmentProgressCommit {
+  repositoryUrl: string | null;
+  forkRepositoryUrl: string | null;
+  branchName: string | null;
+  baseCommitSha: string | null;
+  commitSha: string | null;
+  commitUrl: string | null;
+  changedFiles: unknown[];
+  occurredAt: string;
+}
+
+export interface RoomAssessmentProgressSnapshot {
+  mode: string;
+  state: string;
+  stage: string;
+  nextAction: string;
+  nextActionLabel: string;
+  hasChallengePacket: boolean;
+  hasWorkEvidence: boolean;
+  hasMessageEvidence?: boolean;
+  hasDevContainerEvidence?: boolean;
+  hasToolUsageEvidence?: boolean;
+  hasCommitSubmission: boolean;
+  hasFinalSubmission: boolean;
+  hasAiInteraction: boolean;
+  hasTranscriptEvidence: boolean;
+  hasTestEvidence: boolean;
+  hasVerificationGap?: boolean;
+  evidenceCounts: Array<{ kind: string; count: number }>;
+  sourceRefCounts: Array<{ kind: string; count: number }>;
+  evidenceSnippets?: Array<{
+    eventKind: string;
+    sourceRefType: string;
+    evidenceRole: string;
+    exactText: string;
+    occurredAt: string;
+  }>;
+  latestEvent: {
+    kind: string;
+    sequence: number;
+    occurredAt: string;
+  } | null;
+  commit: RoomAssessmentProgressCommit | null;
+  evaluation: {
+    status: string;
+    summary: string;
+    recommendation?: string | null;
+    createdAt: string;
+    evidenceCoverage?: unknown;
+    claims?: Array<{
+      id: string;
+      polarity: string;
+      dimension: string;
+      narrative: string;
+      confidence: number | null;
+      sourceRefCount: number;
+      sourceRefTypes: string[];
+    }>;
+  } | null;
+}
+
+export interface RoomWorkspaceLaunchResponse {
+  workspace: RoomWorkspace;
+  progress: RoomAssessmentProgressSnapshot | null;
+}
+
+export interface RoomCommitSubmissionResponse {
+  submission: {
+    accepted: boolean;
+    repositoryUrl: string;
+    branchName: string;
+    commitSha: string;
+    commitUrl: string | null;
+  };
+  progress: RoomAssessmentProgressSnapshot;
+}
+
+export interface RoomWorkspaceFinalizeRequest {
+  narrative?: string;
+  testCommand?: string;
+}
+
+export interface RoomWorkspaceFinalizeResponse {
+  ok: boolean;
+  submitted: boolean;
+  commit: {
+    repositoryUrl: string;
+    branchName: string;
+    baseCommitSha: string;
+    commitSha: string;
+    changedFiles: RoomCommitChangedFile[];
+    sourceRefTypes: string[];
+  };
+  submission: RoomCommitSubmissionResponse['submission'] | null;
+  progress: RoomAssessmentProgressSnapshot | null;
 }
 
 export interface RecordingSpeakerChannel {

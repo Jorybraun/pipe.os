@@ -1,0 +1,864 @@
+import { act, fireEvent, render, screen } from '@testing-library/react';
+import { MemoryRouter, Route, Routes, useLocation } from 'react-router-dom';
+import { beforeEach, describe, expect, it, vi } from 'vitest';
+import PersonProfilePage from './PersonProfilePage';
+import type {
+  LivingContextArtifact,
+  LivingContextGenericSourceRef,
+  LivingContextReadModel,
+  LivingContextRecord,
+  LivingContextSourceRef,
+} from '../lib/api/types';
+import type { AssessmentProgressSnapshot } from '../lib/scheduling/types';
+
+const mocks = vi.hoisted(() => ({
+  api: {
+    get: vi.fn(),
+  },
+}));
+
+vi.mock('../hooks/useApiClient', () => ({
+  useApiClient: () => mocks.api,
+}));
+
+vi.mock('../components/Candidate/LivingContextGraph', () => ({
+  LivingContextGraph: () => <div data-testid="mock-living-context-graph" />,
+}));
+
+interface PersonContact {
+  id: string;
+  email: string;
+  name: string | null;
+  company: string | null;
+  role: string | null;
+  phone: string | null;
+  linkedin: string | null;
+  notes: string | null;
+  type: string;
+  created_at: string;
+  updated_at: string;
+}
+
+function sourceSpan(overrides: Partial<LivingContextSourceRef> = {}): LivingContextSourceRef {
+  return {
+    sourceRefType: 'source_span',
+    sourceRefId: 'source-ref-1',
+    sourceSpanId: 'source-span-1',
+    evidenceRole: 'score_report',
+    artifactId: 'artifact-1',
+    artifactType: 'code_review_score_report',
+    artifactLogicalKey: 'review-session-1',
+    artifactVersionId: 'artifact-version-1',
+    artifactVersionNumber: 1,
+    mediaType: 'application/json',
+    storageKey: null,
+    stableSegmentId: 'score-report-full',
+    exactText: JSON.stringify({
+      overall: {
+        score: 82,
+        band: 'strong',
+        narrative: 'Candidate found the missing retry test and defended the review.',
+        strengths: ['Found the source-backed regression risk.'],
+        growth_areas: ['Probe how they balance timing trade-offs under pushback.'],
+      },
+    }),
+    byteStart: 0,
+    byteEnd: null,
+    charStart: 0,
+    charEnd: null,
+    lineStart: 1,
+    lineEnd: 1,
+    timestampStartMs: null,
+    timestampEndMs: null,
+    metadata: { sourceKind: 'score_report' },
+    ...overrides,
+  };
+}
+
+function genericSource(overrides: Partial<LivingContextGenericSourceRef> = {}): LivingContextGenericSourceRef {
+  return {
+    sourceRefType: 'match_run',
+    sourceRefId: 'match-run-1',
+    sourceSpanId: null,
+    evidenceRole: 'repo_match_decision',
+    locator: {
+      repoFullName: 'pierre/diffs',
+      repoUrl: 'https://github.com/pierre/diffs',
+      prNumber: 95,
+      matchStatus: 'MATCHED',
+    },
+    exactText: null,
+    contentHash: null,
+    metadata: { sourceKind: 'match_run', status: 'MATCHED' },
+    ...overrides,
+  };
+}
+
+function contextRecord(overrides: Partial<LivingContextRecord> = {}): LivingContextRecord {
+  return {
+    id: 'record-1',
+    scopeType: 'workspace_person',
+    scopeId: 'workspace-person-1',
+    interactionId: 'interaction-code-review',
+    applicationId: 'candidate-1',
+    episodeId: null,
+    assertionId: null,
+    recordType: 'code_review_score_report',
+    predicate: 'preserves code review score report',
+    narrative: 'Code review score report evidence for session review-session-1.',
+    qualifiers: {
+      sessionId: 'review-session-1',
+    },
+    confidence: null,
+    polarity: 1,
+    extractionVersion: 'code-review-ingestion-v1',
+    observedAt: '2026-06-28T16:00:00.000Z',
+    entities: [],
+    concepts: [],
+    sources: [sourceSpan()],
+    ...overrides,
+  };
+}
+
+function matchDecisionRecord(): LivingContextRecord {
+  return contextRecord({
+    id: 'record-match',
+    recordType: 'candidate_pr_match_decision',
+    predicate: 'selects review challenge',
+    narrative: 'Matched candidate candidate-1 to PR #95 from repo repo-1.',
+    qualifiers: {
+      status: 'MATCHED',
+      selectedPacketId: 'challenge-packet-1',
+      evaluatedChallenges: [{
+        challengeId: 'challenge-packet-1',
+        eligible: true,
+        prNumber: 95,
+        repoId: 'repo-1',
+        rank: 1,
+      }],
+      validatorAgent: {
+        sourceBridge: {
+          challengeId: 'challenge-packet-1',
+          prNumber: 95,
+          repoId: 'repo-1',
+          provenanceComplete: true,
+        },
+      },
+    },
+    entities: [{
+      entityType: 'pull_request',
+      entityId: 'repo-1#95',
+      relationship: 'selected_pull_request',
+      value: null,
+      confidence: null,
+      metadata: {
+        prNumber: 95,
+        repoId: 'repo-1',
+      },
+    }],
+    sources: [
+      genericSource({
+        evidenceRole: 'decision_record',
+        locator: { status: 'MATCHED' },
+      }),
+      genericSource({
+        evidenceRole: 'selected_repo_evidence',
+        locator: { locator: 'src/diff.ts:1-20' },
+        exactText: 'Regression test from https://github.com/pierre/diffs/issues/12 covers the risky diff path.',
+      }),
+    ],
+  });
+}
+
+function makeLivingContext(): LivingContextReadModel {
+  return {
+    person: {
+      personId: 'person-1',
+      workspacePersonId: 'workspace-person-1',
+      applicationId: 'candidate-1',
+      displayName: 'Ada Reviewer',
+      primaryEmail: 'ada@example.com',
+      primaryPhone: null,
+      relationshipSummary: 'Senior frontend engineer with source-backed React review evidence.',
+      applicationStatus: null,
+      pipelineId: null,
+      roles: [],
+    },
+    summary: {
+      interactionCount: 1,
+      artifactCount: 2,
+      contextRecordCount: 2,
+      assertionCount: 0,
+      signalCount: 0,
+      sourceSpanCount: 4,
+    },
+    interactions: [
+      {
+        id: 'interaction-code-review',
+        interactionType: 'code_review_assessment',
+        externalReference: 'review-session-1',
+        startedAt: '2026-06-28T15:00:00.000Z',
+        endedAt: '2026-06-28T16:00:00.000Z',
+        createdAt: '2026-06-28T15:00:00.000Z',
+        updatedAt: '2026-06-28T16:00:00.000Z',
+        metadata: {
+          sessionId: 'review-session-1',
+          challengeId: 'challenge-1',
+          assessmentId: 'assessment-1',
+          scheduledInterviewId: 'interview-code-review-1',
+          status: 'scored',
+        },
+        artifactIds: ['artifact-1', 'artifact-2'],
+        contextRecordIds: ['record-score', 'record-transcript'],
+        assertionIds: [],
+        signalKeys: [],
+      },
+      {
+        id: 'interaction-resume',
+        interactionType: 'resume',
+        externalReference: 'resume:review-evidence:63',
+        startedAt: '2026-06-28T14:45:00.000Z',
+        endedAt: '2026-06-28T14:45:00.000Z',
+        createdAt: '2026-06-28T14:45:00.000Z',
+        updatedAt: '2026-06-28T14:45:00.000Z',
+        metadata: {},
+        artifactIds: ['artifact-legacy-candidate-node'],
+        contextRecordIds: [],
+        assertionIds: [],
+        signalKeys: [],
+      },
+    ],
+    artifacts: [
+      {
+        id: 'artifact-legacy-candidate-node',
+        interactionId: 'interaction-resume',
+        artifactType: 'legacy_candidate_node',
+        logicalKey: 'candidate_node_625b5cd373443f0aef79af73749894fb',
+        metadata: { source: 'legacy_candidate_node' },
+        latestVersionId: 'artifact-version-legacy',
+        latestVersionNumber: 1,
+        versionCount: 1,
+        mediaType: 'application/json',
+        storageKey: null,
+        createdAt: '2026-06-28T14:45:00.000Z',
+        updatedAt: '2026-06-28T14:45:00.000Z',
+        sourceSpans: [sourceSpan({
+          sourceSpanId: 'source-span-resume-1',
+          artifactType: 'legacy_candidate_node',
+          artifactLogicalKey: 'resume:review-evidence:63',
+          evidenceRole: 'candidate_profile_evidence',
+          exactText: 'Senior frontend engineer with source-backed React review evidence.',
+        })],
+      } satisfies LivingContextArtifact,
+    ],
+    contextRecords: [
+      contextRecord({ id: 'record-score' }),
+      contextRecord({
+        id: 'record-transcript',
+        recordType: 'code_review_transcript',
+        predicate: 'preserves code review transcript',
+        narrative: 'Candidate requested changes and defended the source-backed regression concern.',
+        qualifiers: {
+          sessionId: 'review-session-1',
+          finalVerdictDecision: 'request_changes',
+        },
+        sources: [
+          sourceSpan({
+            sourceSpanId: 'source-span-transcript-1',
+            evidenceRole: 'transcript_segment',
+            artifactType: 'code_review_transcript',
+            mediaType: 'text/plain',
+            exactText: 'Add a regression test around impatient hover click timing.',
+            metadata: { sourceKind: 'review_comment' },
+          }),
+          sourceSpan({
+            sourceSpanId: 'source-span-transcript-2',
+            evidenceRole: 'transcript_segment',
+            artifactType: 'code_review_transcript',
+            mediaType: 'text/plain',
+            exactText: 'The timeout cleanup needs to be defended before merge.',
+            metadata: { sourceKind: 'review_comment' },
+          }),
+          sourceSpan({
+            sourceSpanId: 'source-span-transcript-3',
+            evidenceRole: 'transcript_segment',
+            artifactType: 'code_review_transcript',
+            mediaType: 'text/plain',
+            exactText: 'Candidate requested changes with a concrete regression plan.',
+            metadata: { sourceKind: 'review_comment' },
+          }),
+        ],
+      }),
+      matchDecisionRecord(),
+    ],
+    assertions: [],
+    signals: [],
+    relationships: [],
+  };
+}
+
+function makeWorkspaceAssessmentContext(): LivingContextReadModel {
+  const context = makeLivingContext();
+  context.summary = {
+    ...context.summary,
+    interactionCount: 2,
+    contextRecordCount: 3,
+    sourceSpanCount: 5,
+  };
+  context.interactions = [
+    {
+      id: 'interaction-workspace-assessment',
+      interactionType: 'assessment_session',
+      externalReference: 'assessment-session-1',
+      startedAt: '2026-06-30T14:00:00.000Z',
+      endedAt: '2026-06-30T14:30:00.000Z',
+      createdAt: '2026-06-30T14:00:00.000Z',
+      updatedAt: '2026-06-30T14:30:00.000Z',
+      metadata: {
+        sessionId: 'assessment-session-1',
+        scheduledInterviewId: 'interview-workspace-1',
+        mode: 'OPEN_SOURCE_BUG_FIX',
+        state: 'EVALUATED',
+      },
+      artifactIds: ['artifact-workspace-evaluation'],
+      contextRecordIds: ['record-assessment-claim-1', 'record-assessment-claim-2', 'record-assessment-human-decision'],
+      assertionIds: [],
+      signalKeys: [],
+    },
+    context.interactions[1]!,
+  ];
+  context.contextRecords = [
+    contextRecord({
+      id: 'record-assessment-claim-1',
+      interactionId: 'interaction-workspace-assessment',
+      recordType: 'evaluation:implementation_correctness',
+      predicate: 'positive',
+      narrative: 'The candidate fixed the impatient popover click path with a focused source-backed diff.',
+      qualifiers: {
+        mode: 'OPEN_SOURCE_BUG_FIX',
+        dimension: 'implementation_correctness',
+        reportStatus: 'EVALUATED',
+        reportSummary: 'Candidate addressed the impatient click issue with a focused patch and regression tests.',
+      },
+      confidence: 0.91,
+      observedAt: '2026-06-30T14:25:00.000Z',
+      entities: [
+        {
+          entityType: 'assessment_session',
+          entityId: 'assessment-session-1',
+          relationship: 'source_session',
+          value: null,
+          confidence: null,
+          metadata: {},
+        },
+        {
+          entityType: 'assessment_evaluation_report',
+          entityId: 'assessment-report-1',
+          relationship: 'evaluation_report',
+          value: null,
+          confidence: null,
+          metadata: {},
+        },
+      ],
+      sources: [
+        genericSource({
+          sourceRefType: 'code_diff',
+          sourceRefId: 'base..candidate',
+          evidenceRole: 'submitted_diff',
+          exactText: 'diff --git a/packages/react/src/popover/root/usePopoverRoot.ts b/packages/react/src/popover/root/usePopoverRoot.ts',
+        }),
+      ],
+    }),
+    contextRecord({
+      id: 'record-assessment-claim-2',
+      interactionId: 'interaction-workspace-assessment',
+      recordType: 'evaluation:test_strategy',
+      predicate: 'positive',
+      narrative: 'The submitted test evidence covers the popover trigger regression.',
+      qualifiers: {
+        mode: 'OPEN_SOURCE_BUG_FIX',
+        dimension: 'test_strategy',
+        reportStatus: 'EVALUATED',
+        reportSummary: 'Candidate addressed the impatient click issue with a focused patch and regression tests.',
+      },
+      confidence: 0.84,
+      observedAt: '2026-06-30T14:26:00.000Z',
+      entities: [
+        {
+          entityType: 'assessment_session',
+          entityId: 'assessment-session-1',
+          relationship: 'source_session',
+          value: null,
+          confidence: null,
+          metadata: {},
+        },
+      ],
+      sources: [
+        genericSource({
+          sourceRefType: 'test_run',
+          sourceRefId: 'candidate-sha:test-run',
+          evidenceRole: 'verification_test_output',
+          exactText: '$ git diff --check HEAD~1 HEAD && git diff --name-only HEAD~1 HEAD\nexitCode: 0',
+        }),
+      ],
+    }),
+    contextRecord({
+      id: 'record-assessment-human-decision',
+      interactionId: 'interaction-workspace-assessment',
+      recordType: 'assessment:human_assessment_decision',
+      predicate: 'advance',
+      narrative: 'Human reviewer advances after checking the source-backed evaluation report.',
+      qualifiers: {
+        mode: 'OPEN_SOURCE_BUG_FIX',
+        decision: 'advance',
+      },
+      observedAt: '2026-06-30T14:30:00.000Z',
+      sources: [
+        genericSource({
+          sourceRefType: 'assessment_evaluation_report',
+          sourceRefId: 'assessment-report-1',
+          evidenceRole: 'human_decision_basis',
+          exactText: 'Candidate addressed the impatient click issue with a focused patch and regression tests.',
+        }),
+      ],
+    }),
+    context.contextRecords.find((record) => record.id === 'record-score')!,
+  ].filter((record) => record.id !== 'record-score');
+  context.artifacts = [
+    {
+      id: 'artifact-workspace-evaluation',
+      interactionId: 'interaction-workspace-assessment',
+      artifactType: 'assessment_evaluation_report',
+      logicalKey: 'assessment-report-1',
+      metadata: { source: 'assessment_layer' },
+      latestVersionId: 'artifact-workspace-evaluation-version',
+      latestVersionNumber: 1,
+      versionCount: 1,
+      mediaType: 'application/json',
+      storageKey: null,
+      createdAt: '2026-06-30T14:25:00.000Z',
+      updatedAt: '2026-06-30T14:25:00.000Z',
+      sourceSpans: [],
+    },
+  ];
+  return context;
+}
+
+function makeSelectedAssessmentProgress(): AssessmentProgressSnapshot {
+  return {
+    session: {
+      id: 'assessment-session-selected',
+      ingestionKey: 'assessment-session-selected',
+      interviewId: 'interview-workspace-1',
+      candidateId: 'candidate-1',
+      workspaceId: 'workspace-1',
+      workspacePersonId: 'workspace-person-1',
+      applicationId: 'application-1',
+      mode: 'OPEN_SOURCE_BUG_FIX',
+      state: 'EVALUATED',
+      createdAt: '2026-06-30T14:00:00.000Z',
+      updatedAt: '2026-06-30T14:30:00.000Z',
+    },
+    stage: 'EVALUATED',
+    nextAction: 'REVIEW_EVALUATION',
+    nextActionLabel: 'Review evaluation',
+    hasChallengePacket: true,
+    hasWorkEvidence: true,
+    hasMessageEvidence: true,
+    hasDevContainerEvidence: true,
+    hasToolUsageEvidence: true,
+    hasCommitSubmission: true,
+    hasFinalSubmission: true,
+    hasAiInteraction: true,
+    hasTranscriptEvidence: false,
+    hasTestEvidence: true,
+    hasVerificationGap: false,
+    evidenceCounts: [{ kind: 'code_diff', count: 1 }],
+    sourceRefCounts: [
+      { kind: 'challenge_packet', count: 1 },
+      { kind: 'git_commit', count: 1 },
+      { kind: 'code_diff', count: 2 },
+    ],
+    evidenceSnippets: [
+      {
+        eventKind: 'assessment_evaluation',
+        sourceRefType: 'code_diff',
+        evidenceRole: 'evaluation_support',
+        exactText: 'Candidate fixed the impatient popover click path and added regression coverage.',
+        occurredAt: '2026-06-30T14:25:00.000Z',
+      },
+    ],
+    challenge: {
+      sourceRefType: 'challenge_packet',
+      sourceRefId: 'challenge-1',
+      evidenceRole: 'assessment_challenge',
+      exactText: 'Fix the impatient popover click bug.',
+      locator: { repositoryUrl: 'https://github.com/mui/base-ui' },
+    },
+    latestEvent: {
+      id: 'event-1',
+      kind: 'assessment_evaluation',
+      sequence: 8,
+      occurredAt: '2026-06-30T14:25:00.000Z',
+    },
+    commit: {
+      eventId: 'commit-event-1',
+      repositoryUrl: 'https://github.com/mui/base-ui',
+      forkRepositoryUrl: null,
+      branchName: 'fix-popover-click',
+      baseCommitSha: 'base123',
+      commitSha: 'abc1234',
+      commitUrl: 'https://github.com/mui/base-ui/commit/abc1234',
+      changedFiles: ['packages/react/src/popover/root/usePopoverRoot.ts'],
+      occurredAt: '2026-06-30T14:20:00.000Z',
+    },
+    evaluation: {
+      id: 'evaluation-1',
+      status: 'EVALUATED',
+      summary: 'Candidate addressed the impatient click issue with a focused patch and regression tests.',
+      recommendation: 'advance',
+      createdAt: '2026-06-30T14:25:00.000Z',
+      evidenceCoverage: {
+        schemaVersion: '1',
+        sourceRefCount: 4,
+        sourceRefTypeCounts: { code_diff: 2, git_commit: 1, challenge_packet: 1 },
+        requiredForEvaluation: [],
+        expectedForHighConfidence: [],
+      },
+      claims: [
+        {
+          id: 'claim-1',
+          polarity: 'positive',
+          dimension: 'implementation_correctness',
+          narrative: 'The fix is focused and source-backed.',
+          confidence: 0.9,
+          sourceRefCount: 2,
+          sourceRefTypes: ['code_diff'],
+        },
+      ],
+      diagnostics: [],
+    },
+    humanDecision: null,
+  };
+}
+
+function makeContact(): PersonContact {
+  return {
+    id: 'person-1',
+    email: 'ada@example.com',
+    name: 'Ada Reviewer',
+    company: null,
+    role: 'Senior frontend engineer',
+    phone: null,
+    linkedin: null,
+    notes: null,
+    type: 'candidate',
+    created_at: '2026-06-28T15:00:00.000Z',
+    updated_at: '2026-06-28T16:00:00.000Z',
+  };
+}
+
+async function flushAsyncUpdates(): Promise<void> {
+  await act(async () => {
+    await Promise.resolve();
+    await Promise.resolve();
+  });
+}
+
+function renderPage(state?: unknown): void {
+  render(
+    <MemoryRouter initialEntries={[state ? { pathname: '/people/person-1', state } : '/people/person-1']}>
+      <Routes>
+        <Route path="/people/:personId" element={<PersonProfilePage />} />
+        <Route path="/interviews" element={<LocationEcho />} />
+      </Routes>
+    </MemoryRouter>,
+  );
+}
+
+function LocationEcho(): JSX.Element {
+  const location = useLocation();
+  return <div data-testid="location-echo">{location.pathname}{location.search}</div>;
+}
+
+function renderPageWithoutPersonId(): void {
+  render(
+    <MemoryRouter initialEntries={['/people']}>
+      <Routes>
+        <Route path="/people" element={<PersonProfilePage />} />
+      </Routes>
+    </MemoryRouter>,
+  );
+}
+
+describe('PersonProfilePage', () => {
+  beforeEach(() => {
+    mocks.api.get.mockReset();
+  });
+
+  it('leads source-backed code-review profiles with a concise hiring decision snapshot', async () => {
+    mocks.api.get
+      .mockResolvedValueOnce({ contact: makeContact() })
+      .mockResolvedValueOnce(makeLivingContext());
+
+    renderPage();
+    await flushAsyncUpdates();
+
+    expect(screen.getByText('PERSON CONTEXT')).toBeInTheDocument();
+    expect(screen.getByText('Source-backed profile')).toBeInTheDocument();
+    expect(screen.getByText('Interactions')).toBeInTheDocument();
+    expect(screen.getByText('Profile record')).toBeInTheDocument();
+
+    const cockpit = screen.getByTestId('person-decision-cockpit');
+    expect(cockpit).toHaveTextContent('Decision cockpit');
+    expect(cockpit).toHaveTextContent('6 source proof items');
+    expect(cockpit).toHaveTextContent('Current recommendation');
+    expect(cockpit).toHaveTextContent('Advance with focused probe');
+    expect(cockpit).toHaveTextContent('Assessment validity');
+    expect(cockpit).toHaveTextContent('Usable source-backed signal');
+    expect(cockpit).toHaveTextContent('Uncertainty');
+    expect(cockpit).toHaveTextContent('Focused calibration needed');
+    expect(cockpit).toHaveTextContent('Missing context');
+    expect(cockpit).toHaveTextContent('Calibration probe recommended');
+    expect(cockpit).toHaveTextContent('Next action');
+    expect(cockpit).toHaveTextContent('Schedule focused technical calibration');
+
+    const decision = await screen.findByTestId('person-code-review-decision');
+    expect(decision).toHaveTextContent('Code-review decision');
+    expect(decision).toHaveTextContent('Advance with focused probe');
+    expect(decision).toHaveTextContent('82/100 Strong');
+    expect(decision).toHaveTextContent('pierre/diffs PR #95');
+    expect(decision).toHaveTextContent('Candidate found the missing retry test and defended the review.');
+    expect(decision).toHaveTextContent('Probe how they balance timing trade-offs under pushback.');
+    expect(decision).toHaveTextContent('6 source-backed proof items');
+    expect(decision).toHaveTextContent('Assessment validity');
+    expect(decision).toHaveTextContent('Usable source-backed signal');
+    expect(decision).toHaveTextContent('Uncertainty');
+    expect(decision).toHaveTextContent('Focused calibration needed');
+    expect(decision).toHaveTextContent('Missing context');
+    expect(decision).toHaveTextContent('Probe: Probe how they balance timing trade-offs under pushback.');
+    expect(decision).toHaveTextContent('Next action');
+    expect(decision).toHaveTextContent('Schedule focused technical calibration');
+    const rationale = screen.getByTestId('person-code-review-rationale');
+    expect(rationale).toHaveTextContent('Why this recommendation');
+    expect(rationale).toHaveTextContent('Signal');
+    expect(rationale).toHaveTextContent('82/100 Strong');
+    expect(rationale).toHaveTextContent('pierre/diffs PR #95');
+    expect(rationale).toHaveTextContent('Trust');
+    expect(rationale).toHaveTextContent('Usable source-backed signal');
+    expect(rationale).toHaveTextContent('6 source-backed proof items');
+    expect(rationale).toHaveTextContent('Calibrate');
+    expect(rationale).toHaveTextContent('Focused calibration needed');
+    expect(rationale).toHaveTextContent('Schedule focused technical calibration');
+    const basis = screen.getByTestId('person-code-review-decision-basis');
+    expect(basis).toHaveTextContent('Decision basis');
+    expect(basis).toHaveTextContent('Score report');
+    expect(basis).toHaveTextContent('82/100 Strong');
+    expect(basis).toHaveTextContent('Review transcript');
+    expect(basis).toHaveTextContent('Captured');
+    expect(basis).toHaveTextContent('Repo challenge');
+    expect(basis).toHaveTextContent('pierre/diffs PR #95');
+    expect(basis).toHaveTextContent('Match proof');
+    expect(basis).toHaveTextContent('Source-backed match');
+    expect(basis).not.toHaveTextContent('2 sources');
+
+    const proof = screen.getByTestId('person-code-review-source-proof');
+    const proofSummary = proof.querySelector('summary');
+    expect(proofSummary).toHaveTextContent('Source proof');
+    expect(proofSummary).toHaveTextContent('candidate, repo, and scoring provenance');
+    expect(proofSummary).not.toHaveTextContent('review-session-1');
+    expect(proof).toHaveTextContent('Source proof');
+    expect(proof).toHaveTextContent('score report');
+    expect(proof).toHaveTextContent('transcript segment');
+    expect(screen.getByText('Code-review assessment evidence')).toBeInTheDocument();
+    expect(screen.getByRole('button', { name: 'Open interaction' })).toBeInTheDocument();
+    expect(screen.getByText('Resume evidence attached')).toBeInTheDocument();
+    const coverage = screen.getByTestId('person-interaction-coverage');
+    expect(coverage).toHaveTextContent('Evidence coverage');
+    expect(coverage).toHaveTextContent('Person-level rollup from 2 evidence-producing interactions.');
+    expect(coverage).toHaveTextContent('Open a row only when you need the single-meeting source record.');
+    expect(coverage).toHaveTextContent('1 code review');
+    expect(coverage).toHaveTextContent('1 resume');
+    const mix = screen.getByTestId('person-evidence-mix');
+    expect(mix).toHaveTextContent('Evidence mix');
+    expect(mix).toHaveTextContent('Technical signal exists; conversation context is missing');
+    expect(mix).toHaveTextContent('Use the code review and resume as source-backed signal, then add a focused call only for the calibration gaps.');
+    expect(mix).toHaveTextContent('Next best source');
+    expect(mix).toHaveTextContent('Schedule focused technical calibration');
+    expect(coverage).not.toHaveTextContent('review-session-1');
+    expect(coverage).not.toHaveTextContent('resume:review-evidence:63');
+    const sourceAudit = screen.getByTestId('person-source-audit');
+    expect(sourceAudit).not.toHaveAttribute('open');
+    expect(screen.getByText('Evidence audit trail')).toBeVisible();
+    expect(screen.getByText('2 records · 2 artifacts')).toBeVisible();
+    expect(screen.getByText('Learned Context')).not.toBeVisible();
+    expect(screen.getByText('Original Sources')).not.toBeVisible();
+    fireEvent.click(screen.getByText('Evidence audit trail'));
+    expect(sourceAudit).toHaveAttribute('open');
+    expect(screen.getByText('Performance Signals')).toBeVisible();
+    expect(screen.getByText('Learned Context')).toBeVisible();
+    expect(screen.getByText('Original Sources')).toBeVisible();
+    expect(screen.getByText('Candidate evidence')).toBeInTheDocument();
+    expect(screen.getByText('Imported from resume decomposition')).toBeInTheDocument();
+    expect(document.body).not.toHaveTextContent('review-session-1');
+    expect(document.body).not.toHaveTextContent('interview-code-review-1');
+    expect(screen.queryByText('resume:review-evidence:63')).not.toBeInTheDocument();
+    expect(screen.queryByText('candidate_node_625b5cd373443f0aef79af73749894fb')).not.toBeInTheDocument();
+    expect(screen.queryByTestId('mock-living-context-graph')).not.toBeInTheDocument();
+    expect(screen.getByRole('button', { name: 'Open graph' })).toBeInTheDocument();
+
+    fireEvent.click(screen.getByRole('button', { name: 'Create calibration interview' }));
+    const location = screen.getByTestId('location-echo');
+    expect(location).toHaveTextContent('/interviews?');
+    expect(location).toHaveTextContent('new=1');
+    expect(location).toHaveTextContent('interviewType=VIDEO');
+    expect(location).toHaveTextContent('recipientName=Ada+Reviewer');
+    expect(location).toHaveTextContent('recipientEmail=ada%40example.com');
+    const params = new URLSearchParams((location.textContent ?? '').split('?')[1] ?? '');
+    const recruiterNotes = params.get('recruiterNotes') ?? '';
+    expect(recruiterNotes).toContain('PIPE person-profile next action');
+    expect(recruiterNotes).toContain('Recommendation: Advance with focused probe');
+    expect(recruiterNotes).toContain('Missing context: Probe: Probe how they balance timing trade-offs under pushback.');
+  });
+
+  it('does not trust a scored code review when repo-match provenance is missing', async () => {
+    const context = makeLivingContext();
+    context.contextRecords = context.contextRecords.filter((record) =>
+      record.recordType !== 'candidate_pr_match_decision'
+    );
+
+    mocks.api.get
+      .mockResolvedValueOnce({ contact: makeContact() })
+      .mockResolvedValueOnce(context);
+
+    renderPage();
+    await flushAsyncUpdates();
+
+    const cockpit = screen.getByTestId('person-decision-cockpit');
+    expect(cockpit).toHaveTextContent('Current recommendation');
+    expect(cockpit).toHaveTextContent('Collect missing evidence');
+    expect(cockpit).toHaveTextContent('Assessment validity');
+    expect(cockpit).toHaveTextContent('Partial source-backed signal');
+    expect(cockpit).toHaveTextContent('Uncertainty');
+    expect(cockpit).toHaveTextContent('Repo fit unknown');
+    expect(cockpit).toHaveTextContent('Missing context');
+    expect(cockpit).toHaveTextContent('Source-backed repo challenge selection');
+    expect(cockpit).toHaveTextContent('1 more blocking gap');
+    expect(cockpit).toHaveTextContent('Next action');
+    expect(cockpit).toHaveTextContent('Schedule evidence-gathering call');
+
+    const decision = await screen.findByTestId('person-code-review-decision');
+    expect(decision).toHaveTextContent('Collect missing evidence');
+    expect(decision).toHaveTextContent('Partial source-backed signal');
+    expect(decision).toHaveTextContent('Repo fit unknown');
+    expect(decision).toHaveTextContent('Source-backed repo challenge selection');
+    expect(decision).toHaveTextContent('Source-backed repo match decision provenance');
+    expect(decision).not.toHaveTextContent('Usable source-backed signal');
+    expect(decision).not.toHaveTextContent('Advance with focused probe');
+    const basis = screen.getByTestId('person-code-review-decision-basis');
+    expect(basis).toHaveTextContent('Score report');
+    expect(basis).toHaveTextContent('82/100 Strong');
+    expect(basis).toHaveTextContent('Review transcript');
+    expect(basis).toHaveTextContent('Captured');
+    expect(basis).toHaveTextContent('Repo challenge');
+    expect(basis).toHaveTextContent('Missing');
+    expect(basis).toHaveTextContent('Match proof');
+    expect(basis).toHaveTextContent('Missing');
+  });
+
+  it('derives a person-level hiring decision from source-backed workspace assessment claims', async () => {
+    mocks.api.get
+      .mockResolvedValueOnce({ contact: makeContact() })
+      .mockResolvedValueOnce(makeWorkspaceAssessmentContext());
+
+    renderPage();
+    await flushAsyncUpdates();
+
+    const cockpit = screen.getByTestId('person-decision-cockpit');
+    expect(cockpit).toHaveTextContent('Current recommendation');
+    expect(cockpit).toHaveTextContent('Advance from human-reviewed assessment');
+    expect(cockpit).toHaveTextContent('Assessment validity');
+    expect(cockpit).toHaveTextContent('Usable workspace assessment signal');
+    expect(cockpit).toHaveTextContent('Uncertainty');
+    expect(cockpit).toHaveTextContent('Low remaining uncertainty');
+    expect(cockpit).toHaveTextContent('Missing context');
+    expect(cockpit).toHaveTextContent('No blocking evidence gap');
+    expect(cockpit).toHaveTextContent('Next action');
+    expect(cockpit).toHaveTextContent('Review with hiring team');
+
+    const decision = await screen.findByTestId('person-code-review-decision');
+    expect(decision).toHaveTextContent('Workspace assessment decision');
+    expect(decision).toHaveTextContent('Advance from human-reviewed assessment');
+    expect(decision).toHaveTextContent('Human reviewer advances after checking the source-backed evaluation report.');
+    expect(decision).toHaveTextContent('Candidate addressed the impatient click issue with a focused patch and regression tests.');
+    expect(decision).toHaveTextContent('The candidate fixed the impatient popover click path with a focused source-backed diff.');
+    expect(decision).toHaveTextContent('The submitted test evidence covers the popover trigger regression.');
+    expect(decision).toHaveTextContent('3 source-backed proof items');
+    expect(decision).not.toHaveTextContent('Collect first source-backed evidence');
+  });
+
+  it('renders a person cockpit from living context when the legacy contact record is unavailable', async () => {
+    mocks.api.get
+      .mockRejectedValueOnce(new Error('HTTP 404: not_found'))
+      .mockResolvedValueOnce(makeWorkspaceAssessmentContext());
+
+    renderPage();
+    await flushAsyncUpdates();
+
+    expect(screen.queryByText('HTTP 404: not_found')).not.toBeInTheDocument();
+    expect(screen.getByRole('heading', { name: 'Ada Reviewer' })).toBeInTheDocument();
+    const cockpit = screen.getByTestId('person-decision-cockpit');
+    expect(cockpit).toHaveTextContent('Advance from human-reviewed assessment');
+    expect(cockpit).toHaveTextContent('Usable workspace assessment signal');
+    expect(screen.getByTestId('person-code-review-decision')).toHaveTextContent('Workspace assessment decision');
+  });
+
+  it('falls back to candidate living context when the routed person id is not a legacy contact', async () => {
+    mocks.api.get
+      .mockRejectedValueOnce(new Error('HTTP 404: contact_not_found'))
+      .mockRejectedValueOnce(new Error('HTTP 404: person_context_not_found'))
+      .mockResolvedValueOnce({ livingContext: makeWorkspaceAssessmentContext() });
+
+    renderPage({ candidateId: 'candidate-1' });
+    await flushAsyncUpdates();
+
+    expect(mocks.api.get).toHaveBeenCalledWith('/api/v1/candidates/candidate-1/living-context');
+    expect(screen.queryByText('HTTP 404: person_context_not_found')).not.toBeInTheDocument();
+    expect(screen.getByRole('heading', { name: 'Ada Reviewer' })).toBeInTheDocument();
+    expect(screen.getByTestId('person-decision-cockpit')).toHaveTextContent('Advance from human-reviewed assessment');
+  });
+
+  it('uses selected interview assessment evidence when the person graph rollup has not ingested the assessment yet', async () => {
+    const graphOnlyContext = makeLivingContext();
+    graphOnlyContext.contextRecords = [];
+    graphOnlyContext.summary = {
+      ...graphOnlyContext.summary,
+      contextRecordCount: 0,
+      sourceSpanCount: 2,
+    };
+    mocks.api.get
+      .mockResolvedValueOnce({ contact: makeContact() })
+      .mockResolvedValueOnce(graphOnlyContext);
+
+    renderPage({ selectedAssessment: makeSelectedAssessmentProgress() });
+    await flushAsyncUpdates();
+
+    const cockpit = screen.getByTestId('person-decision-cockpit');
+    expect(cockpit).toHaveTextContent('Advance');
+    expect(cockpit).toHaveTextContent('Usable workspace assessment signal');
+    expect(cockpit).toHaveTextContent('Graph rollup pending');
+    const decision = screen.getByTestId('person-code-review-decision');
+    expect(decision).toHaveTextContent('Workspace assessment decision');
+    expect(decision).toHaveTextContent('Candidate addressed the impatient click issue');
+    expect(decision).toHaveTextContent('source-backed proof items');
+  });
+
+  it('shows a visible profile error instead of spinning forever when the person id is missing', async () => {
+    renderPageWithoutPersonId();
+    await flushAsyncUpdates();
+
+    expect(screen.queryByText('Loading person context...')).not.toBeInTheDocument();
+    expect(screen.getByText('Missing person id for this profile.')).toBeInTheDocument();
+    expect(mocks.api.get).not.toHaveBeenCalled();
+  });
+});

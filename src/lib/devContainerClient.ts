@@ -44,6 +44,7 @@ export interface StatusResponse {
   warnedAt: string | null;
   url: string | null;
   expiringSoon: boolean;
+  errorMessage: string | null;
 }
 
 export interface DestroyResponse {
@@ -92,7 +93,7 @@ export function resolveDevContainerApiBase(
     return runtimeLocation.origin;
   }
 
-  return '';
+  return runtimeLocation ? 'http://localhost:8787' : '';
 }
 
 function apiBase(): string {

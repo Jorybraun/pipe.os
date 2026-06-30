@@ -72,6 +72,14 @@ interface ReviewSessionRow {
   updated_at?: string;
 }
 
+interface PublicReviewPipelineStep {
+  id: 'intake' | 'decomposition' | 'repo_matching' | 'challenge' | 'review' | 'scoring';
+  label: string;
+  status: 'pending' | 'active' | 'complete' | 'blocked';
+  detail: string;
+  updatedAt: string | null;
+}
+
 interface ChallengeConfigRow {
   id: string;
   config: string | null;
@@ -103,6 +111,46 @@ function isAiDeveloperUnavailableError(error: unknown): error is AiDeveloperUnav
   return record.mode === 'AI_DEVELOPER_UNAVAILABLE'
     && record.verdict === 'AI_DEVELOPER_UNAVAILABLE'
     && typeof record.reason === 'string';
+}
+
+function publicReviewPipeline(status: string, updatedAt: string | null): PublicReviewPipelineStep[] {
+  const reviewCompleteStatuses = new Set(['verdict_submitted', 'scoring', 'scored', 'scoring_failed']);
+  const reviewStatus: PublicReviewPipelineStep['status'] = reviewCompleteStatuses.has(status)
+    ? 'complete'
+    : 'active';
+  const scoringStatus: PublicReviewPipelineStep['status'] =
+    status === 'scored'
+      ? 'complete'
+      : status === 'scoring_failed'
+        ? 'blocked'
+        : status === 'verdict_submitted' || status === 'scoring'
+          ? 'active'
+          : 'pending';
+  const scoringDetail =
+    status === 'scored'
+      ? 'Score report is durable.'
+      : status === 'scoring_failed'
+        ? 'Scoring failed and needs retry.'
+        : status === 'verdict_submitted' || status === 'scoring'
+          ? 'Review submitted; score report is being generated.'
+          : 'Waiting for candidate review verdict.';
+
+  return [
+    { id: 'intake', label: 'CV intake', status: 'complete', detail: 'Candidate evidence accepted.', updatedAt },
+    { id: 'decomposition', label: 'Evidence decomposition', status: 'complete', detail: 'Candidate evidence is available for matching.', updatedAt },
+    { id: 'repo_matching', label: 'Repo matching', status: 'complete', detail: 'A source-backed PR challenge is assigned.', updatedAt },
+    { id: 'challenge', label: 'Challenge assignment', status: 'complete', detail: 'The code review challenge is open.', updatedAt },
+    {
+      id: 'review',
+      label: 'Candidate review',
+      status: reviewStatus,
+      detail: reviewStatus === 'complete'
+        ? 'Candidate submitted a review verdict.'
+        : 'Candidate is reviewing the assigned PR.',
+      updatedAt,
+    },
+    { id: 'scoring', label: 'Scoring', status: scoringStatus, detail: scoringDetail, updatedAt },
+  ];
 }
 
 function aiDeveloperUnavailableResponse(error: AiDeveloperUnavailableLike): {
@@ -1802,6 +1850,9 @@ review.post('/ask', async (c) => {
         newQuestion: question,
       });
     } catch (err) {
+      if (isAiDeveloperUnavailableError(err)) {
+        return c.json(aiDeveloperUnavailableResponse(err), 503);
+      }
       const msg = err instanceof Error ? err.message : String(err);
       console.error('[review/ask] explainer agent failed:', msg);
       return c.json({ error: { code: 'AGENT_ERROR', message: msg } }, 502);
@@ -1842,6 +1893,9 @@ review.post('/ask', async (c) => {
       newQuestion: question,
     });
   } catch (err) {
+    if (isAiDeveloperUnavailableError(err)) {
+      return c.json(aiDeveloperUnavailableResponse(err), 503);
+    }
     const msg = err instanceof Error ? err.message : String(err);
     console.error('[review/ask] explainer agent failed:', msg);
     return c.json({ error: { code: 'AGENT_ERROR', message: msg } }, 502);
@@ -1984,6 +2038,9 @@ review.post('/:sessionId/ask', async (c) => {
       newQuestion: question,
     });
   } catch (err) {
+    if (isAiDeveloperUnavailableError(err)) {
+      return c.json(aiDeveloperUnavailableResponse(err), 503);
+    }
     const msg = err instanceof Error ? err.message : String(err);
     console.error('[review/ask] explainer agent failed:', msg);
     return c.json({ error: { code: 'AGENT_ERROR', message: msg } }, 502);
@@ -2092,11 +2149,19 @@ review.get('/:sessionId/status', async (c) => {
   const sessionId = c.req.param('sessionId');
 
   const session = await c.env.DB.prepare(
-    `SELECT id, candidate_id, status, score_report
+    `SELECT id, candidate_id, status, current_round, max_rounds, score_report, updated_at
      FROM review_sessions WHERE id = ?1`,
   )
     .bind(sessionId)
-    .first<{ id: string; candidate_id: string; status: string; score_report: string | null }>();
+    .first<{
+      id: string;
+      candidate_id: string;
+      status: string;
+      current_round: number;
+      max_rounds: number;
+      score_report: string | null;
+      updated_at: string | null;
+    }>();
 
   if (!session) {
     return c.json({ error: { code: 'NOT_FOUND', message: 'Review session not found.' } }, 404);
@@ -2121,6 +2186,11 @@ review.get('/:sessionId/status', async (c) => {
 
   return c.json({
     status: session.status,
+    phase: session.status === 'pending' || session.status === 'in_progress' ? 'review' : 'scoring',
+    currentRound: session.current_round,
+    maxRounds: session.max_rounds,
+    updatedAt: session.updated_at,
+    pipeline: publicReviewPipeline(session.status, session.updated_at),
     ...(publicScoreReport !== undefined ? { scoreReport: publicScoreReport } : {}),
   });
 });

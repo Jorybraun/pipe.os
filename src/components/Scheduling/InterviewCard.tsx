@@ -1,12 +1,16 @@
 import { useState } from 'react';
 import { useNavigate } from 'react-router-dom';
-import { Mail, Video, Loader2, Radio } from 'lucide-react';
+import { CheckCircle, Mail, Video, Loader2, Radio } from 'lucide-react';
 import { INTERVIEW_TYPE_LABELS, type ScheduledInterview } from '../../lib/scheduling/types';
 import { InterviewStatusBadge } from './InterviewStatusBadge';
 import { StatusOverrideModal } from './StatusOverrideModal';
 import { InviteToCallModal } from './InviteToCallModal';
 import { useApiClient } from '../../hooks/useApiClient';
 import type { InterviewStatus } from '../../lib/scheduling/types';
+import {
+  summarizeAssessmentAssignment,
+  summarizeAssessmentChallenge,
+} from '../../lib/scheduling/assessmentChallenge';
 
 // TODO: Wire candidateName and pipelineTitle via enriched data once we join
 // across models. For MVP these are passed as props by SchedulingDashboard which
@@ -27,9 +31,19 @@ interface InterviewCardProps {
     }
   ) => Promise<void>;
   sendInvite: (id: string, email: string, message?: string) => Promise<void>;
+  startAssessmentEvaluation?: (id: string) => Promise<AssessmentEvaluationStartResult | void>;
+}
+
+interface AssessmentEvaluationStartResult {
+  report?: unknown | null;
+  diagnostic?: {
+    code?: string;
+    severity?: string;
+  } | null;
 }
 
 const FIFTEEN_MINUTES_MS = 15 * 60 * 1000;
+const ASSESSMENT_INTERVIEW_TYPES = new Set(['CODE_REVIEW', 'DEV_CONTAINER_CHALLENGE', 'OPEN_SOURCE_BUG_FIX']);
 
 function providerEventLabel(value: string | null | undefined): string | null {
   if (!value) return null;
@@ -50,6 +64,211 @@ function isJoinable(interview: ScheduledInterview): boolean {
   return diff <= FIFTEEN_MINUTES_MS;
 }
 
+function sentenceCaseToken(value: string): string {
+  const normalized = value.toLowerCase().replace(/_/g, ' ').trim();
+  if (!normalized) return value;
+  return `${normalized.charAt(0).toUpperCase()}${normalized.slice(1)}`;
+}
+
+function compactText(value: string, maxLength = 150): string {
+  const trimmed = value.replace(/\s+/g, ' ').trim();
+  if (trimmed.length <= maxLength) return trimmed;
+  return `${trimmed.slice(0, maxLength - 1).trimEnd()}...`;
+}
+
+function assessmentHumanDecisionLabel(decision: string): string {
+  switch (decision) {
+    case 'advance':
+      return 'Human: advance';
+    case 'hold':
+      return 'Human: hold';
+    case 'reject':
+      return 'Human: reject';
+    case 'needs_more_evidence':
+      return 'Human: needs more evidence';
+    default:
+      return `Human: ${sentenceCaseToken(decision)}`;
+  }
+}
+
+function repoLabelFromUrl(value: string | null | undefined): string | null {
+  if (!value) return null;
+  try {
+    const url = new URL(value);
+    const parts = url.pathname
+      .replace(/\.git$/i, '')
+      .split('/')
+      .filter(Boolean);
+    if (parts.length >= 2) return `${parts[parts.length - 2]}/${parts[parts.length - 1]}`;
+  } catch {
+    // Fall through to compact raw text for non-URL repository labels.
+  }
+  return compactText(value, 56);
+}
+
+function shortCommitSha(value: string | null | undefined): string | null {
+  if (!value) return null;
+  const trimmed = value.trim();
+  return trimmed.length > 12 ? trimmed.slice(0, 12) : trimmed;
+}
+
+function workspaceSessionSummary(interview: ScheduledInterview): string | null {
+  const workspace = interview.workspaceSession ?? null;
+  if (!workspace) return null;
+  const status = sentenceCaseToken(workspace.status);
+  if (workspace.errorMessage) return `${status}: ${compactText(workspace.errorMessage, 96)}`;
+  const repo = repoLabelFromUrl(workspace.repoGitUrl);
+  const base = shortCommitSha(workspace.baseCommitSha);
+  const details = [repo, base ? `base ${base}` : null].filter((value): value is string => Boolean(value));
+  return details.length > 0 ? `${status} · ${details.join(' · ')}` : status;
+}
+
+function isAssessmentInterviewType(value: ScheduledInterview['interviewType']): boolean {
+  return typeof value === 'string' && ASSESSMENT_INTERVIEW_TYPES.has(value);
+}
+
+function assessmentEvidenceSummary(input: {
+  hasChallengePacket: boolean;
+  hasWorkEvidence: boolean;
+  hasMessageEvidence?: boolean;
+  hasDevContainerEvidence?: boolean;
+  hasToolUsageEvidence?: boolean;
+  hasCommitSubmission: boolean;
+  hasAiInteraction: boolean;
+  hasTranscriptEvidence: boolean;
+  hasTestEvidence: boolean;
+}): string {
+  const hasGranularWorkEvidence = Boolean(
+    input.hasMessageEvidence
+    || input.hasDevContainerEvidence
+    || input.hasToolUsageEvidence
+    || input.hasAiInteraction
+    || input.hasTranscriptEvidence
+    || input.hasTestEvidence,
+  );
+  const ready = [
+    input.hasChallengePacket ? 'challenge' : null,
+    input.hasMessageEvidence ? 'chat' : null,
+    input.hasDevContainerEvidence ? 'workspace telemetry' : null,
+    input.hasToolUsageEvidence ? 'room actions' : null,
+    input.hasWorkEvidence && !hasGranularWorkEvidence ? 'work evidence' : null,
+    input.hasCommitSubmission ? 'commit' : null,
+    input.hasAiInteraction ? 'AI use' : null,
+    input.hasTranscriptEvidence ? 'transcript' : null,
+    input.hasTestEvidence ? 'tests' : null,
+  ].filter((value): value is string => Boolean(value));
+  return ready.length > 0 ? ready.join(', ') : 'no evidence yet';
+}
+
+function assessmentAssignmentColor(
+  tone: NonNullable<ReturnType<typeof summarizeAssessmentAssignment>>['tone'],
+): string {
+  switch (tone) {
+    case 'matched':
+      return '#4ade80';
+    case 'manual':
+      return '#fbbf24';
+    case 'blocked':
+      return '#f87171';
+    case 'waiting':
+      return '#93c5fd';
+    default:
+      return 'var(--pipe-text)';
+  }
+}
+
+interface AssessmentDecisionSummary {
+  value: string;
+  detail: string;
+}
+
+function assessmentDecisionSummary(input: {
+  setup: ScheduledInterview['assessmentSetup'] | null;
+  progress: ScheduledInterview['assessmentProgress'] | null;
+}): AssessmentDecisionSummary | null {
+  const { setup, progress } = input;
+
+  if (progress?.humanDecision) {
+    return {
+      value: assessmentHumanDecisionLabel(progress.humanDecision.decision),
+      detail: compactText(progress.humanDecision.summary, 150),
+    };
+  }
+
+  if (progress?.evaluation) {
+    const status = progress.evaluation.status.toUpperCase();
+    if (status === 'EVALUATED') {
+      return {
+        value: progress.evaluation.recommendation?.trim() || 'Evaluated',
+        detail: compactText(
+          progress.evaluation.summary
+          || 'Review the source-backed evaluation report before advancing the candidate.',
+          150,
+        ),
+      };
+    }
+
+    return {
+      value: 'Evaluation needs attention',
+      detail: compactText(
+        progress.evaluation.summary
+        || `Evaluation is ${sentenceCaseToken(progress.evaluation.status)}; resolve diagnostics before using it as a hiring signal.`,
+        150,
+      ),
+    };
+  }
+
+  if (progress?.nextAction === 'RESOLVE_DIAGNOSTIC' || progress?.stage === 'NEEDS_ATTENTION') {
+    return {
+      value: 'Needs attention',
+      detail: compactText(progress.nextActionLabel || 'Resolve the assessment diagnostic before evaluation.', 150),
+    };
+  }
+
+  if (progress?.nextAction === 'START_EVALUATION' || progress?.stage === 'READY_FOR_EVALUATION') {
+    return {
+      value: 'Ready for evaluation',
+      detail: 'Challenge and commit evidence are captured; run source-backed AI or human evaluation.',
+    };
+  }
+
+  if (progress?.hasCommitSubmission) {
+    return {
+      value: 'Commit submitted',
+      detail: 'Run source-backed evaluation before using this as a hiring signal.',
+    };
+  }
+
+  if (progress?.hasChallengePacket || setup?.status === 'reviewable_task_assigned') {
+    return {
+      value: 'Task assigned',
+      detail: 'Waiting for candidate workspace evidence and assessment-branch commit.',
+    };
+  }
+
+  if (setup?.blocksPositiveAssessment) {
+    return {
+      value: 'Setup gap',
+      detail: compactText(setup.message || 'PIPE needs source-backed evidence before this can become an assessment.', 150),
+    };
+  }
+
+  return null;
+}
+
+function assessmentEvaluationStartNotice(result: AssessmentEvaluationStartResult | void): string {
+  if (result?.report) return 'Source-backed assessment report is ready.';
+  if (result?.diagnostic) {
+    const diagnosticLabel = sentenceCaseToken(result.diagnostic.code ?? 'diagnostic')
+      .replace(/\bai\b/g, 'AI')
+      .replace(/\bAi\b/g, 'AI')
+      .replace(/\bapi\b/g, 'API')
+      .replace(/\bApi\b/g, 'API');
+    return `Evaluation needs attention: ${diagnosticLabel}.`;
+  }
+  return 'Source-backed assessment evaluation requested.';
+}
+
 export function InterviewCard({
   interview,
   candidateName,
@@ -58,12 +277,16 @@ export function InterviewCard({
   stageTitle,
   updateStatus,
   sendInvite,
+  startAssessmentEvaluation,
 }: InterviewCardProps): JSX.Element {
   const navigate = useNavigate();
   const api = useApiClient();
   const [isModalOpen, setIsModalOpen] = useState(false);
   const [isInviteOpen, setIsInviteOpen] = useState(false);
   const [isJoining, setIsJoining] = useState(false);
+  const [isStartingAssessmentEvaluation, setIsStartingAssessmentEvaluation] = useState(false);
+  const [assessmentEvaluationNotice, setAssessmentEvaluationNotice] = useState<string | null>(null);
+  const [assessmentEvaluationError, setAssessmentEvaluationError] = useState<string | null>(null);
 
   const joinable = isJoinable(interview);
   const guestWaiting = interview.guestWaiting ?? false;
@@ -104,6 +327,24 @@ export function InterviewCard({
     }
   };
 
+  const handleStartAssessmentEvaluation = async (event: React.MouseEvent): Promise<void> => {
+    event.stopPropagation();
+    if (!startAssessmentEvaluation) return;
+    setAssessmentEvaluationNotice(null);
+    setAssessmentEvaluationError(null);
+    setIsStartingAssessmentEvaluation(true);
+    try {
+      const result = await startAssessmentEvaluation(interview.id);
+      setAssessmentEvaluationNotice(assessmentEvaluationStartNotice(result));
+    } catch (err) {
+      setAssessmentEvaluationError(
+        err instanceof Error ? err.message : 'Unable to start assessment evaluation',
+      );
+    } finally {
+      setIsStartingAssessmentEvaluation(false);
+    }
+  };
+
   const timeStr = interview.scheduledAt
     ? new Date(interview.scheduledAt).toLocaleString(undefined, {
         timeStyle: 'short',
@@ -124,11 +365,56 @@ export function InterviewCard({
   );
   const displayStatusLabel =
     interview.status === 'INVITED' && !hasInviteDelivery ? 'Ready' : undefined;
+  const assessmentProgress = interview.assessmentProgress ?? null;
+  const assessmentSetup = interview.assessmentSetup ?? null;
+  const assessmentAssignment = summarizeAssessmentAssignment(assessmentSetup);
+  const showsAssessmentSnapshot = isAssessmentInterviewType(interview.interviewType)
+    || Boolean(assessmentProgress);
+  const assessmentStageLabel = assessmentProgress
+    ? sentenceCaseToken(assessmentProgress.stage)
+    : assessmentSetup?.blocksPositiveAssessment
+      ? 'Setup gap'
+      : 'Assessment ready';
+  const assessmentNextAction = assessmentProgress?.nextActionLabel
+    ?? assessmentSetup?.message
+    ?? 'Assessment evidence will appear after the session starts.';
+  const assessmentEvidence = assessmentProgress
+    ? assessmentEvidenceSummary(assessmentProgress)
+    : assessmentSetup?.status === 'reviewable_task_assigned'
+      ? 'challenge assigned'
+      : 'no assessment session yet';
+  const assessmentChallenge = summarizeAssessmentChallenge(assessmentProgress?.challenge ?? null);
+  const assessmentRepoLabel = repoLabelFromUrl(
+    assessmentProgress?.commit?.repositoryUrl
+      ?? assessmentChallenge?.repositoryUrl
+      ?? interview.githubRepoUrl,
+  );
+  const assessmentPrNumber = assessmentChallenge?.githubPrNumber ?? interview.githubPrNumber ?? null;
+  const assessmentPrLabel = assessmentPrNumber ? `PR #${assessmentPrNumber}` : null;
+  const assessmentBaseLabel = shortCommitSha(
+    assessmentProgress?.commit?.baseCommitSha
+      ?? assessmentChallenge?.baseCommitSha
+      ?? null,
+  );
+  const assessmentCommitLabel = shortCommitSha(assessmentProgress?.commit?.commitSha);
+  const assessmentEvaluationLabel = assessmentProgress?.evaluation?.status
+    ? sentenceCaseToken(assessmentProgress.evaluation.status)
+    : null;
+  const assessmentDiagnosticCount = assessmentProgress?.evaluation?.diagnostics?.length ?? 0;
+  const assessmentDecision = assessmentDecisionSummary({
+    setup: assessmentSetup,
+    progress: assessmentProgress,
+  });
+  const canStartAssessmentEvaluation = Boolean(
+    startAssessmentEvaluation && assessmentProgress?.nextAction === 'START_EVALUATION',
+  );
+  const workspaceSummary = workspaceSessionSummary(interview);
 
   return (
     <>
       <div
         role="button"
+        aria-label={`Open ${candidateName} interview details`}
         tabIndex={0}
         onClick={() => navigate(`/interviews/${interview.id}`)}
         onKeyDown={(event) => {
@@ -206,6 +492,152 @@ export function InterviewCard({
               {provider} ACCEPTED · {providerEventId}
             </div>
           )}
+          {showsAssessmentSnapshot && (
+            <div
+              data-testid="interview-card-assessment-progress"
+              style={{
+                display: 'grid',
+                gridTemplateColumns: 'minmax(120px, max-content) minmax(0, 1fr)',
+                gap: '4px 10px',
+                marginTop: 10,
+                padding: '9px 10px',
+                border: '1px solid var(--pipe-border)',
+                borderRadius: 6,
+                background: 'rgba(255,255,255,0.03)',
+                fontFamily: '"Space Mono", monospace',
+                lineHeight: 1.45,
+              }}
+            >
+              <div style={{ fontSize: 9, color: '#93c5fd', letterSpacing: '0.12em', fontWeight: 700 }}>
+                ASSESSMENT
+              </div>
+              <div style={{ minWidth: 0, fontSize: 10, color: 'var(--pipe-text)', fontWeight: 700, overflowWrap: 'anywhere' }}>
+                {assessmentStageLabel}
+              </div>
+              {assessmentAssignment && (
+                <>
+                  <div style={{ fontSize: 9, color: '#93c5fd', letterSpacing: '0.12em', fontWeight: 700 }}>
+                    ASSIGNMENT
+                  </div>
+                  <div style={{ minWidth: 0, overflowWrap: 'anywhere' }}>
+                    <div style={{ fontSize: 10, color: assessmentAssignmentColor(assessmentAssignment.tone), fontWeight: 700 }}>
+                      {assessmentAssignment.label}
+                    </div>
+                    <div style={{ fontSize: 10, color: 'var(--pipe-text-dim)' }}>
+                      {assessmentAssignment.detail}
+                    </div>
+                  </div>
+                </>
+              )}
+              {assessmentDecision && (
+                <>
+                  <div style={{ fontSize: 9, color: '#93c5fd', letterSpacing: '0.12em', fontWeight: 700 }}>
+                    DECISION
+                  </div>
+                  <div style={{ minWidth: 0, overflowWrap: 'anywhere' }}>
+                    <div style={{ fontSize: 10, color: 'var(--pipe-text)', fontWeight: 700 }}>
+                      {assessmentDecision.value}
+                    </div>
+                    <div style={{ fontSize: 10, color: 'var(--pipe-text-dim)' }}>
+                      {assessmentDecision.detail}
+                    </div>
+                  </div>
+                </>
+              )}
+              <div style={{ fontSize: 9, color: 'var(--pipe-text-muted)', letterSpacing: '0.12em', fontWeight: 700 }}>
+                NEXT
+              </div>
+              <div style={{ minWidth: 0, fontSize: 10, color: 'var(--pipe-text-dim)', overflowWrap: 'anywhere' }}>
+                {compactText(assessmentNextAction)}
+              </div>
+              <div style={{ fontSize: 9, color: 'var(--pipe-text-muted)', letterSpacing: '0.12em', fontWeight: 700 }}>
+                EVIDENCE
+              </div>
+              <div style={{ minWidth: 0, fontSize: 10, color: 'var(--pipe-text-dim)', overflowWrap: 'anywhere' }}>
+                {assessmentEvidence}
+              </div>
+              {workspaceSummary && (
+                <>
+                  <div style={{ fontSize: 9, color: 'var(--pipe-text-muted)', letterSpacing: '0.12em', fontWeight: 700 }}>
+                    WORKSPACE
+                  </div>
+                  <div style={{ minWidth: 0, fontSize: 10, color: 'var(--pipe-text-dim)', overflowWrap: 'anywhere' }}>
+                    {workspaceSummary}
+                  </div>
+                </>
+              )}
+              {assessmentRepoLabel && (
+                <>
+                  <div style={{ fontSize: 9, color: 'var(--pipe-text-muted)', letterSpacing: '0.12em', fontWeight: 700 }}>
+                    REPO
+                  </div>
+                  <div style={{ minWidth: 0, fontSize: 10, color: 'var(--pipe-text-dim)', overflowWrap: 'anywhere' }}>
+                    {assessmentPrLabel ? `${assessmentRepoLabel} · ${assessmentPrLabel}` : assessmentRepoLabel}
+                  </div>
+                </>
+              )}
+              {assessmentBaseLabel && (
+                <>
+                  <div style={{ fontSize: 9, color: 'var(--pipe-text-muted)', letterSpacing: '0.12em', fontWeight: 700 }}>
+                    BASE
+                  </div>
+                  <div style={{ minWidth: 0, fontSize: 10, color: 'var(--pipe-text-dim)', overflowWrap: 'anywhere' }}>
+                    {assessmentBaseLabel}
+                  </div>
+                </>
+              )}
+              {assessmentChallenge?.task && (
+                <>
+                  <div style={{ fontSize: 9, color: 'var(--pipe-text-muted)', letterSpacing: '0.12em', fontWeight: 700 }}>
+                    TASK
+                  </div>
+                  <div style={{ minWidth: 0, fontSize: 10, color: 'var(--pipe-text-dim)', overflowWrap: 'anywhere' }}>
+                    {compactText(assessmentChallenge.task, 120)}
+                  </div>
+                </>
+              )}
+              {assessmentCommitLabel && (
+                <>
+                  <div style={{ fontSize: 9, color: 'var(--pipe-text-muted)', letterSpacing: '0.12em', fontWeight: 700 }}>
+                    COMMIT
+                  </div>
+                  <div style={{ minWidth: 0, fontSize: 10, color: 'var(--pipe-text-dim)', overflowWrap: 'anywhere' }}>
+                    {assessmentCommitLabel}
+                  </div>
+                </>
+              )}
+              {assessmentEvaluationLabel && (
+                <>
+                  <div style={{ fontSize: 9, color: 'var(--pipe-text-muted)', letterSpacing: '0.12em', fontWeight: 700 }}>
+                    EVAL
+                  </div>
+                  <div style={{ minWidth: 0, fontSize: 10, color: 'var(--pipe-text-dim)', overflowWrap: 'anywhere' }}>
+                    {assessmentEvaluationLabel}
+                  </div>
+                </>
+              )}
+              {assessmentDiagnosticCount > 0 && (
+                <>
+                  <div style={{ fontSize: 9, color: '#fbbf24', letterSpacing: '0.12em', fontWeight: 700 }}>
+                    CAUTION
+                  </div>
+                  <div style={{ minWidth: 0, fontSize: 10, color: '#fde68a', overflowWrap: 'anywhere' }}>
+                    {assessmentDiagnosticCount} evaluator caution{assessmentDiagnosticCount === 1 ? '' : 's'}
+                  </div>
+                </>
+              )}
+              {(assessmentEvaluationNotice || assessmentEvaluationError) && (
+                <>
+                  <div style={{ fontSize: 9, color: assessmentEvaluationError ? '#f87171' : '#93c5fd', letterSpacing: '0.12em', fontWeight: 700 }}>
+                    EVALUATION
+                  </div>
+                  <div style={{ minWidth: 0, fontSize: 10, color: assessmentEvaluationError ? '#fca5a5' : 'var(--pipe-text-dim)', overflowWrap: 'anywhere' }}>
+                    {assessmentEvaluationError ?? assessmentEvaluationNotice}
+                  </div>
+                </>
+              )}
+            </div>
+          )}
         </div>
 
         {/* Status badge */}
@@ -215,6 +647,32 @@ export function InterviewCard({
 
         {/* Right: INVITE + JOIN button + overflow menu */}
         <div style={{ display: 'flex', alignItems: 'center', gap: 8, flexShrink: 0 }}>
+          {canStartAssessmentEvaluation && (
+            <button
+              disabled={isStartingAssessmentEvaluation}
+              onClick={(event) => void handleStartAssessmentEvaluation(event)}
+              title="Start source-backed assessment evaluation"
+              style={{
+                display: 'flex',
+                alignItems: 'center',
+                gap: 6,
+                padding: '8px 16px',
+                background: 'rgba(96,165,250,0.15)',
+                border: '1px solid rgba(96,165,250,0.35)',
+                color: '#93c5fd',
+                fontSize: 10,
+                letterSpacing: '0.1em',
+                fontFamily: '"Space Mono", monospace',
+                cursor: isStartingAssessmentEvaluation ? 'default' : 'pointer',
+                borderRadius: 4,
+                transition: 'all 0.2s',
+                whiteSpace: 'nowrap',
+              }}
+            >
+              {isStartingAssessmentEvaluation ? <Loader2 size={12} className="spin" /> : <CheckCircle size={12} />}
+              EVALUATE
+            </button>
+          )}
           <button
             onClick={(event) => {
               event.stopPropagation();

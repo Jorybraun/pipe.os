@@ -10,6 +10,7 @@ export type WindowType =
   | 'notepad'
   | 'paint'
   | 'terminal'
+  | 'submission'
   | 'custom';
 
 export interface WindowState {
@@ -89,6 +90,7 @@ const DEFAULT_SIZES: Record<WindowType, { width: number; height: number }> = {
   notepad: { width: 520, height: 420 },
   paint: { width: 640, height: 480 },
   terminal: { width: 640, height: 400 },
+  submission: { width: 680, height: 560 },
   custom: { width: 400, height: 300 },
 };
 

@@ -33,7 +33,9 @@ export type EventType =
   | 'stage_advanced'
   | 'match_assigned'
   | 'decomposition_started'
-  | 'decomposition_complete';
+  | 'decomposition_complete'
+  | 'ingestion_retry_queued'
+  | 'ingestion_retry_failed';
 
 export interface SessionEventInput {
   sessionId: string;

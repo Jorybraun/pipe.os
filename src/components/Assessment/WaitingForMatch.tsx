@@ -1,8 +1,30 @@
 import { useEffect, useState } from 'react';
-import { Loader2, Sparkles, User } from 'lucide-react';
+import { AlertTriangle, Loader2, Sparkles, User } from 'lucide-react';
 import { LiquidMetalCard } from '../ui/LiquidMetalCard';
 import type { CandidateProfile } from './CandidateProfileReview';
 import { CandidateProfileReview } from './CandidateProfileReview';
+
+export interface WaitingForMatchDiagnostics {
+  phase?: 'candidate_evidence' | 'repo_matching';
+  ingestionStatus?: string | null;
+  currentStep?: string | null;
+  matchableNodeCount?: number;
+  rawNodeCount?: number;
+  updatedAt?: string | null;
+  estimatedCompletionAt?: string | null;
+  staleAfterSeconds?: number;
+  pipeline?: WaitingPipelineStep[];
+}
+
+export type WaitingPipelineStepStatus = 'pending' | 'active' | 'complete' | 'blocked';
+
+export interface WaitingPipelineStep {
+  id: 'intake' | 'decomposition' | 'repo_matching' | 'challenge' | 'review' | 'scoring';
+  label: string;
+  status: WaitingPipelineStepStatus;
+  detail?: string | null;
+  updatedAt?: string | null;
+}
 
 interface WaitingForMatchProps {
   title: string;
@@ -10,8 +32,11 @@ interface WaitingForMatchProps {
   config: {
     autoRefresh?: boolean;
     refreshIntervalSeconds?: number;
+    state?: 'pending' | 'blocked';
+    reason?: string;
+    diagnostics?: WaitingForMatchDiagnostics;
   };
-  onRefresh: () => void;
+  onRefresh: () => void | Promise<void>;
   sessionToken?: string | null;
 }
 
@@ -30,6 +55,96 @@ async function fetchProfile(sessionToken: string): Promise<CandidateProfile | nu
   }
 }
 
+function formatDiagnosticLabel(value: string): string {
+  return value.replace(/_/g, ' ').toUpperCase();
+}
+
+function formatStatusLabel(value: WaitingPipelineStepStatus): string {
+  if (value === 'blocked') return 'NEEDS ATTENTION';
+  return value.toUpperCase();
+}
+
+function statusColor(value: WaitingPipelineStepStatus): string {
+  if (value === 'complete') return '#4ade80';
+  if (value === 'active') return '#60a5fa';
+  if (value === 'blocked') return '#fbbf24';
+  return 'var(--pipe-text-dim)';
+}
+
+function formatUpdatedAt(value: string | null | undefined): string | null {
+  if (!value) return null;
+  const date = new Date(value);
+  if (Number.isNaN(date.getTime())) return value;
+  return date.toLocaleString(undefined, {
+    month: 'short',
+    day: 'numeric',
+    hour: '2-digit',
+    minute: '2-digit',
+  });
+}
+
+function diagnosticRows(diagnostics: WaitingForMatchDiagnostics | undefined): Array<{ label: string; value: string }> {
+  if (!diagnostics) return [];
+  const rows: Array<{ label: string; value: string }> = [];
+  if (diagnostics.phase) {
+    rows.push({ label: 'PHASE', value: formatDiagnosticLabel(diagnostics.phase) });
+  }
+  if (diagnostics.ingestionStatus) {
+    rows.push({ label: 'STATUS', value: formatDiagnosticLabel(diagnostics.ingestionStatus) });
+  }
+  if (diagnostics.currentStep) {
+    rows.push({ label: 'STEP', value: formatDiagnosticLabel(diagnostics.currentStep) });
+  }
+  if (typeof diagnostics.matchableNodeCount === 'number' || typeof diagnostics.rawNodeCount === 'number') {
+    const matchable = diagnostics.matchableNodeCount ?? 0;
+    const raw = diagnostics.rawNodeCount ?? matchable;
+    rows.push({ label: 'EVIDENCE', value: `${matchable} MATCHABLE / ${raw} RAW` });
+  }
+  const updatedAt = formatUpdatedAt(diagnostics.updatedAt);
+  if (updatedAt) {
+    rows.push({ label: 'UPDATED', value: updatedAt.toUpperCase() });
+  }
+  return rows;
+}
+
+function currentPipelineStep(
+  diagnostics: WaitingForMatchDiagnostics | undefined,
+  isBlocked: boolean,
+): WaitingPipelineStep | null {
+  const pipeline = diagnostics?.pipeline ?? [];
+  if (pipeline.length === 0) return null;
+  if (isBlocked) {
+    return pipeline.find((step) => step.status === 'blocked') ?? pipeline.find((step) => step.status === 'active') ?? null;
+  }
+  return pipeline.find((step) => step.status === 'active') ?? pipeline.find((step) => step.status === 'blocked') ?? null;
+}
+
+function fallbackPipelineStatus(
+  diagnostics: WaitingForMatchDiagnostics | undefined,
+  isBlocked: boolean,
+  dots: string,
+): string {
+  if (diagnostics?.phase === 'candidate_evidence') {
+    return isBlocked ? 'CANDIDATE EVIDENCE NEEDS ATTENTION' : `CANDIDATE EVIDENCE IN PROGRESS${dots}`;
+  }
+  if (diagnostics?.phase === 'repo_matching') {
+    return isBlocked ? 'REPO MATCHING NEEDS ATTENTION' : `REPO MATCHING IN PROGRESS${dots}`;
+  }
+  return isBlocked ? 'MATCHING NEEDS ATTENTION' : `MATCHING IN PROGRESS${dots}`;
+}
+
+function pipelineStatusText(
+  step: WaitingPipelineStep | null,
+  diagnostics: WaitingForMatchDiagnostics | undefined,
+  isBlocked: boolean,
+  dots: string,
+): string {
+  if (!step) return fallbackPipelineStatus(diagnostics, isBlocked, dots);
+  if (step.status === 'blocked') return `${step.label} needs attention`.toUpperCase();
+  if (step.status === 'active') return `${step.label} active`.toUpperCase();
+  return fallbackPipelineStatus(diagnostics, isBlocked, dots);
+}
+
 export function WaitingForMatch({
   title,
   instructions,
@@ -38,11 +153,26 @@ export function WaitingForMatch({
   sessionToken,
 }: WaitingForMatchProps): JSX.Element {
   const intervalSeconds = config.refreshIntervalSeconds ?? 30;
+  const isBlocked = config.state === 'blocked';
+  const rows = diagnosticRows(config.diagnostics);
+  const pipeline = config.diagnostics?.pipeline ?? [];
+  const profileReadyStatuses = new Set(['profile_generated', 'embedded', 'matched', 'enriched']);
+  const canViewProfile = Boolean(
+    sessionToken
+      && !isBlocked
+      && config.diagnostics?.ingestionStatus
+      && profileReadyStatuses.has(config.diagnostics.ingestionStatus),
+  );
+  const profileUnavailableMessage = isBlocked
+    ? 'Profile is unavailable while matching needs recruiter attention.'
+    : 'Profile appears after evidence decomposition.';
 
   const [dots, setDots] = useState('');
   const [showProfile, setShowProfile] = useState(false);
   const [profile, setProfile] = useState<CandidateProfile | null>(null);
   const [profileLoading, setProfileLoading] = useState(false);
+  const [profileError, setProfileError] = useState<string | null>(null);
+  const [refreshState, setRefreshState] = useState<'idle' | 'checking' | 'checked' | 'failed'>('idle');
 
   // Animated ellipsis
   useEffect(() => {
@@ -56,19 +186,39 @@ export function WaitingForMatch({
   useEffect(() => {
     if (!config.autoRefresh) return;
     const t = setInterval(() => {
-      onRefresh();
+      Promise.resolve(onRefresh()).catch(() => {
+        // Manual refresh owns user-visible failure messaging.
+      });
     }, intervalSeconds * 1000);
     return () => clearInterval(t);
   }, [config.autoRefresh, intervalSeconds, onRefresh]);
 
+  const handleRefresh = async () => {
+    if (refreshState === 'checking') return;
+    setRefreshState('checking');
+    try {
+      await onRefresh();
+      setRefreshState('checked');
+    } catch {
+      setRefreshState('failed');
+    }
+  };
+
   const handleViewProfile = async () => {
     if (!sessionToken) return;
+    setProfileError(null);
     setProfileLoading(true);
     const p = await fetchProfile(sessionToken);
     setProfile(p);
     setProfileLoading(false);
+    if (!p) {
+      setProfileError('Profile is not ready yet. Evidence decomposition has not produced a candidate profile.');
+      return;
+    }
     setShowProfile(true);
   };
+  const activePipelineStep = currentPipelineStep(config.diagnostics, isBlocked);
+  const statusText = pipelineStatusText(activePipelineStep, config.diagnostics, isBlocked, dots);
 
   if (showProfile && profile) {
     return (
@@ -120,14 +270,14 @@ export function WaitingForMatch({
             height: 56,
             borderRadius: '50%',
             background: 'rgba(96, 165, 250, 0.08)',
-            border: '1px solid rgba(96, 165, 250, 0.2)',
+            border: isBlocked ? '1px solid rgba(251, 191, 36, 0.28)' : '1px solid rgba(96, 165, 250, 0.2)',
             display: 'flex',
             alignItems: 'center',
             justifyContent: 'center',
             margin: '0 auto 28px',
           }}
         >
-          <Sparkles size={24} color="#60a5fa" />
+          {isBlocked ? <AlertTriangle size={24} color="#fbbf24" /> : <Sparkles size={24} color="#60a5fa" />}
         </div>
 
         <h2
@@ -154,6 +304,136 @@ export function WaitingForMatch({
           {instructions}
         </p>
 
+        {config.reason && (
+          <p
+            style={{
+              fontSize: 11,
+              color: 'var(--pipe-text-dim)',
+              lineHeight: 1.6,
+              margin: '0 0 24px',
+              fontFamily: '"Space Mono", monospace',
+            }}
+          >
+            {config.reason}
+          </p>
+        )}
+
+        {rows.length > 0 && (
+          <div
+            style={{
+              margin: '0 0 24px',
+              border: '1px solid rgba(255,255,255,0.12)',
+              background: 'rgba(12,12,14,0.28)',
+              textAlign: 'left',
+            }}
+          >
+            {rows.map((row) => (
+              <div
+                key={row.label}
+                style={{
+                  display: 'grid',
+                  gridTemplateColumns: '112px minmax(0, 1fr)',
+                  gap: 12,
+                  padding: '10px 12px',
+                  borderBottom: row.label === rows[rows.length - 1]?.label ? 'none' : '1px solid rgba(255,255,255,0.08)',
+                  fontFamily: '"Space Mono", monospace',
+                }}
+              >
+                <span
+                  style={{
+                    fontSize: 9,
+                    color: 'var(--pipe-text-dim)',
+                    lineHeight: 1.4,
+                  }}
+                >
+                  {row.label}
+                </span>
+                <span
+                  style={{
+                    fontSize: 10,
+                    color: 'var(--pipe-text, #fff)',
+                    lineHeight: 1.4,
+                    overflowWrap: 'anywhere',
+                  }}
+                >
+                  {row.value}
+                </span>
+              </div>
+            ))}
+          </div>
+        )}
+
+        {pipeline.length > 0 && (
+          <div
+            data-testid="code-review-pipeline"
+            style={{
+              display: 'grid',
+              gap: 6,
+              margin: '0 0 24px',
+              textAlign: 'left',
+            }}
+          >
+            {pipeline.map((step) => (
+              <div
+                key={step.id}
+                style={{
+                  display: 'grid',
+                  gridTemplateColumns: '12px minmax(0, 1fr) auto',
+                  alignItems: 'center',
+                  gap: 10,
+                  padding: '9px 10px',
+                  border: '1px solid rgba(255,255,255,0.1)',
+                  background: step.status === 'active'
+                    ? 'rgba(96,165,250,0.08)'
+                    : step.status === 'blocked'
+                      ? 'rgba(251,191,36,0.08)'
+                      : 'rgba(12,12,14,0.24)',
+                }}
+              >
+                <span
+                  aria-hidden="true"
+                  style={{
+                    width: 8,
+                    height: 8,
+                    borderRadius: '50%',
+                    background: statusColor(step.status),
+                  }}
+                />
+                <span
+                  style={{
+                    display: 'grid',
+                    gap: 3,
+                    minWidth: 0,
+                    fontFamily: '"Space Mono", monospace',
+                  }}
+                >
+                  <span style={{ color: 'var(--pipe-text, #fff)', fontSize: 10, lineHeight: 1.3 }}>
+                    {step.label}
+                  </span>
+                  {step.detail && (
+                    <span style={{ color: 'var(--pipe-text-dim)', fontSize: 9, lineHeight: 1.35, overflowWrap: 'anywhere' }}>
+                      {step.detail}
+                    </span>
+                  )}
+                </span>
+                <span
+                  style={{
+                    color: statusColor(step.status),
+                    fontFamily: '"Space Mono", monospace',
+                    fontSize: 8,
+                    fontWeight: 800,
+                    letterSpacing: '0.08em',
+                    textTransform: 'uppercase',
+                    whiteSpace: 'nowrap',
+                  }}
+                >
+                  {formatStatusLabel(step.status)}
+                </span>
+              </div>
+            ))}
+          </div>
+        )}
+
         <div
           style={{
             display: 'flex',
@@ -163,26 +443,30 @@ export function WaitingForMatch({
             marginBottom: 24,
           }}
         >
-          <Loader2
-            size={14}
-            color="var(--pipe-text-dim)"
-            className="animate-spin"
-          />
+          {!isBlocked && (
+            <Loader2
+              size={14}
+              color="var(--pipe-text-dim)"
+              className="animate-spin"
+            />
+          )}
           <span
+            data-testid="code-review-pipeline-status"
             style={{
               fontSize: 11,
-              color: 'var(--pipe-text-dim)',
+              color: isBlocked ? '#fbbf24' : 'var(--pipe-text-dim)',
               fontFamily: '"Space Mono", monospace',
               letterSpacing: '0.05em',
             }}
           >
-            {`MATCHING IN PROGRESS${dots}`}
+            {statusText}
           </span>
         </div>
 
         <div style={{ display: 'flex', gap: 10, justifyContent: 'center', flexWrap: 'wrap' }}>
           <button
-            onClick={onRefresh}
+            onClick={handleRefresh}
+            disabled={refreshState === 'checking'}
             style={{
               padding: '10px 24px',
               background: 'var(--pipe-surface-hover)',
@@ -191,21 +475,22 @@ export function WaitingForMatch({
               fontSize: 10,
               letterSpacing: '0.1em',
               fontFamily: '"Space Mono", monospace',
-              cursor: 'pointer',
+              cursor: refreshState === 'checking' ? 'wait' : 'pointer',
               borderRadius: 4,
               transition: 'all 0.2s',
+              opacity: refreshState === 'checking' ? 0.65 : 1,
             }}
             onMouseEnter={(e) => {
-              e.currentTarget.style.background = 'rgba(255,255,255,0.08)';
+              if (refreshState !== 'checking') e.currentTarget.style.background = 'rgba(255,255,255,0.08)';
             }}
             onMouseLeave={(e) => {
               e.currentTarget.style.background = 'var(--pipe-surface-hover)';
             }}
           >
-            CHECK STATUS NOW
+            {refreshState === 'checking' ? 'CHECKING...' : 'CHECK STATUS NOW'}
           </button>
 
-          {sessionToken && (
+          {canViewProfile ? (
             <button
               onClick={handleViewProfile}
               disabled={profileLoading}
@@ -235,8 +520,35 @@ export function WaitingForMatch({
               <User size={12} />
               {profileLoading ? 'LOADING...' : 'VIEW PROFILE'}
             </button>
+          ) : (
+            <span
+              style={{
+                alignSelf: 'center',
+                color: 'var(--pipe-text-dim)',
+                fontSize: 10,
+                lineHeight: 1.5,
+                fontFamily: '"Space Mono", monospace',
+              }}
+            >
+              {profileUnavailableMessage}
+            </span>
           )}
         </div>
+        {refreshState === 'checked' && (
+          <div style={{ marginTop: 12, color: '#4ade80', fontSize: 10, fontFamily: '"Space Mono", monospace' }}>
+            Status checked. If this state does not change, PIPE is still waiting on the evidence gate shown above.
+          </div>
+        )}
+        {refreshState === 'failed' && (
+          <div style={{ marginTop: 12, color: '#f87171', fontSize: 10, fontFamily: '"Space Mono", monospace' }}>
+            Status check failed. Refresh the page or contact the recruiter for a fresh invite.
+          </div>
+        )}
+        {profileError && (
+          <div style={{ marginTop: 12, color: '#fbbf24', fontSize: 10, lineHeight: 1.5, fontFamily: '"Space Mono", monospace' }}>
+            {profileError}
+          </div>
+        )}
       </LiquidMetalCard>
 
       <style>{`

@@ -266,7 +266,7 @@ function useDevContainerSessionCloudflare(): UseDevContainerSessionReturn {
           setError('Session expired.');
         } else if (res.status === 'ERROR') {
           setState('ERROR');
-          setError('Container entered an error state.');
+          setError(res.errorMessage ?? 'Container entered an error state.');
         }
       } catch (err) {
         if (cancelled) return;

@@ -16,6 +16,8 @@ export interface JwtPayload {
   sub: string;
   /** Pipeline ID (null for talent-pool / standalone candidates) */
   pid: string | null;
+  /** Original one-use invite token this session may claim when the assessment starts. */
+  itk?: string | null;
   /** Issued at (unix seconds) */
   iat: number;
   /** Expires at (unix seconds) */
@@ -76,7 +78,7 @@ const HEADER = base64urlEncodeString(JSON.stringify({ alg: 'HS256', typ: 'JWT' }
  * @param ttlSeconds - Token lifetime in seconds (default: 7200 = 2 hours).
  */
 export async function signJwt(
-  payload: Pick<JwtPayload, 'sub' | 'pid'>,
+  payload: Pick<JwtPayload, 'sub' | 'pid'> & Pick<Partial<JwtPayload>, 'itk'>,
   secret: string,
   ttlSeconds: number = 7200,
 ): Promise<string> {
@@ -85,6 +87,7 @@ export async function signJwt(
   const fullPayload: JwtPayload = {
     sub: payload.sub,
     pid: payload.pid,
+    itk: payload.itk ?? null,
     iat: now,
     exp: now + ttlSeconds,
   };
@@ -156,6 +159,7 @@ export async function verifyJwt(
   if (
     typeof decoded.sub !== 'string' ||
     (typeof decoded.pid !== 'string' && decoded.pid !== null) ||
+    (typeof decoded.itk !== 'string' && decoded.itk !== null && decoded.itk !== undefined) ||
     typeof decoded.iat !== 'number' ||
     typeof decoded.exp !== 'number'
   ) {

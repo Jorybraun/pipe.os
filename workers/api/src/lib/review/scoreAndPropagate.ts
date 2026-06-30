@@ -396,10 +396,10 @@ export async function scoreAndPropagate(
     if (sub) {
       await env.DB.prepare(
         `UPDATE challenge_submissions
-         SET score = ?1, feedback = ?2, scored_at = ?3, updated_at = ?3
-         WHERE id = ?4`,
+         SET score = ?1, feedback = ?2, score_report_json = ?3, scored_at = ?4, updated_at = ?4
+         WHERE id = ?5`,
       )
-        .bind(Math.round(scoreReport.overall.score), scoreReport.overall.narrative, scoredAt, sub.id)
+        .bind(Math.round(scoreReport.overall.score), scoreReport.overall.narrative, fullReportJson, scoredAt, sub.id)
         .run();
 
       await env.DB.prepare(

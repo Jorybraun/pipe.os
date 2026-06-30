@@ -1,0 +1,196 @@
+# Candidate Assessment Cockpit Backlog
+
+**Status:** Product/design backlog proposed  
+**Date:** 2026-06-29  
+**Related:** [`ux-plan.md`](./ux-plan.md), [`code-review-product-readiness.md`](./code-review-product-readiness.md), [`95-until-infinity-repo-task-assessment-contract.md`](./95-until-infinity-repo-task-assessment-contract.md), [`95-until-infinity-repo-task-interview-session.md`](./95-until-infinity-repo-task-interview-session.md)
+
+## Purpose
+
+Demote the Win95 desktop from the default candidate assessment flow.
+
+PIPE-OS should read as a real open-source coding assessment product first. The
+default candidate experience is an assessment cockpit: VS Code/dev workspace as
+the primary surface, task packet visible, video/chat/AI available, and Submit
+Work obvious. Win95 remains an optional skin or fun mode, not the architectural
+spine of the assessment.
+
+## Target Outcomes
+
+- Candidates land in a code-first cockpit for workspace-backed assessments.
+- The first viewport makes the real task legible: repo, base commit, branch,
+  task text, success criteria, expected evidence, and submit requirements.
+- VS Code/code-server is the primary work area, not a window inside a desktop
+  metaphor.
+- Video, chat, recording, presence, and Clippy-Devin are available as support
+  surfaces without competing with the workspace.
+- Submit Work is always visible or one click away, validates source-backed
+  commit/test evidence, and makes the final state unambiguous.
+- Win95 can be launched as an optional skin after the assessment is usable in
+  the default cockpit.
+- Recruiter results continue to rely on the canonical assessment event spine,
+  not on replaying a shared desktop.
+
+## Core Sync Boundary
+
+Keep only evidence-critical sync in the default assessment flow:
+
+- room phase and participant presence,
+- video and recording lifecycle,
+- chat and transcript evidence,
+- assigned challenge packet and assessment session state,
+- workspace lifecycle, status, and diagnostics,
+- Clippy-Devin status, diagnostics, prompt handoff, and real agent replies,
+- terminal command/output evidence,
+- code-server file create/update/delete observations,
+- git branch, commit, diff, PR URL, and submission evidence,
+- test command/output evidence,
+- final Submit Work bundle and evaluation diagnostics.
+
+Defer or remove from the critical path:
+
+- synced Win95 window position, size, focus, minimize, and maximize state,
+- shared Paint and Notepad state,
+- shared browser navigation/state unless a future assessment explicitly tests
+  browser behavior,
+- "everyone controls the full desktop" collaboration semantics,
+- raw pointer trails and cursor replay beyond lightweight live presence,
+- any candidate-required action that only exists inside the Win95 desktop.
+
+Optional skins may still emit explicit source-backed evidence when a candidate
+uses a real tool action, but the skin must not own canonical assessment state.
+
+## Non-Goals
+
+- Do not delete Win95 or block it as a delight/fun mode.
+- Do not rewrite the assessment event spine.
+- Do not expose internal assessment ids, D1 row ids, R2 keys, planted bugs, or
+  server-only rubrics to candidate clients.
+- Do not make shared desktop replay a prerequisite for scoring.
+- Do not replace CODE_REVIEW's standalone diff assessment flow.
+- Do not add fake Clippy, fake Devin, simulated agent replies, or optimistic
+  score claims.
+
+## Migration Sequence
+
+### Slice 0: Default-route proof
+
+Write a failing Playwright scenario before runtime changes: an
+`OPEN_SOURCE_BUG_FIX` or dev-container invite opens a code-first cockpit by
+default and does not require entering Win95 to see the task, workspace, AI,
+chat, or Submit Work.
+
+Acceptance:
+
+- The URL and product copy describe an assessment, not a desktop toy.
+- No internal ids appear in the candidate DOM.
+- The test fails against any default route that lands in Win95 first.
+
+### Slice 1: Cockpit shell
+
+Create the default assessment cockpit layout:
+
+- primary workspace region,
+- persistent task packet panel,
+- compact video/chat/AI rail,
+- assessment status strip,
+- Submit Work affordance.
+
+Acceptance:
+
+- Workspace is visually dominant on desktop and usable on mobile/tablet.
+- Task packet remains available while coding.
+- Chat/video/AI can be opened without covering Submit Work.
+
+### Slice 2: Task packet and status contract
+
+Move candidate-safe task data into a cockpit-owned packet model backed by the
+existing source-backed challenge packet.
+
+Acceptance:
+
+- Shows repo URL, base commit, working branch, task, success criteria, expected
+  evidence, and constraints.
+- Hides server-only ground truth and internal ids.
+- Shows diagnostics when packet evidence is incomplete instead of falling back
+  to a generic challenge.
+
+### Slice 3: Workspace-first evidence
+
+Make workspace lifecycle, file observations, terminal output, git state, tests,
+and Clippy-Devin status the visible assessment progress model.
+
+Acceptance:
+
+- Status strip reflects real workspace state and evidence counts.
+- Terminal/file/test evidence is source-backed before it affects assessment
+  progress.
+- Clippy-Devin unavailable states appear as diagnostics, not simulated help.
+
+### Slice 4: Submit Work path
+
+Promote Submit Work from a Win95 window to a cockpit-level completion flow.
+
+Acceptance:
+
+- Candidate can submit commit SHA, branch, diff summary, PR URL when allowed,
+  test command/output, and missing-test notes.
+- Server validates exact source-backed evidence before final submission.
+- Final state is visible to candidate and recruiter.
+
+### Slice 5: Sync reduction
+
+Split the room event model into core assessment sync and optional skin sync.
+
+Acceptance:
+
+- Core flow persists only evidence-critical events listed in this backlog.
+- Win95 window/Paint/Notepad/browser sync is disabled, ignored, or marked
+  skin-only for default assessments.
+- Existing replay/evaluation paths do not depend on desktop window state.
+
+### Slice 6: Optional Win95 skin
+
+Reintroduce Win95 behind an explicit "Fun mode" or "Win95 skin" entrypoint once
+the cockpit is already usable.
+
+Acceptance:
+
+- Entering or leaving the skin does not reset workspace, task packet, chat,
+  AI status, or submission progress.
+- Skin UI consumes the same core assessment state as the cockpit.
+- Skin-only tools cannot create unsupported scoring evidence.
+
+### Slice 7: Product cleanup and docs
+
+Remove default-flow language that treats 95 Until Infinity as the assessment
+runtime.
+
+Acceptance:
+
+- Candidate docs/screenshots show the cockpit as the default.
+- Win95 docs label it as optional.
+- Smoke tests and plan docs use "assessment cockpit" for default
+  workspace-backed assessments.
+
+## Backlog Items
+
+| ID | Item | Outcome | First test |
+| --- | --- | --- | --- |
+| CAC-01 | Default candidate route audit | Inventory routes that still enter Win95 first | Playwright route smoke fails when Win95 is default |
+| CAC-02 | Cockpit information architecture | Workspace, packet, status, video/chat/AI, Submit Work hierarchy | Component or Playwright layout assertion |
+| CAC-03 | Candidate-safe packet panel | Source-backed task packet visible without ids/ground truth | Packet render test with missing-evidence diagnostic |
+| CAC-04 | Workspace evidence status strip | File/terminal/test/git/AI state shown from accepted evidence | Durable Object/API evidence replay test |
+| CAC-05 | Cockpit Submit Work | Final bundle available outside Win95 | End-to-end submit test from cockpit |
+| CAC-06 | Sync boundary hardening | Desktop window/tool sync removed from critical path | Replay test proves scoring ignores window state |
+| CAC-07 | Optional Win95 skin | Skin toggles on/off without owning core state | Browser test toggles skin and submits from cockpit |
+| CAC-08 | Recruiter result continuity | Results read assessment events, not desktop replay | Recruiter result test with no Win95 events |
+
+## Design Notes
+
+- Treat the cockpit as an operational tool, not a landing page.
+- Keep controls dense and predictable: tabs for packet/status/chat, icon
+  buttons for call controls, and a clear submit button.
+- Avoid decorative nostalgia in the default flow. The candidate should know
+  they are doing real work in a real repo.
+- Preserve the brutalist glassmorphic dark system language, but let code,
+  evidence, and task clarity carry the experience.

@@ -55,11 +55,20 @@ vi.mock('../lib/challengeMatching', async (importOriginal) => {
   };
 });
 
+vi.mock('../lib/candidateDiscovery/orchestrate', async (importOriginal) => {
+  const actual = await importOriginal<typeof import('../lib/candidateDiscovery/orchestrate')>();
+  return {
+    ...actual,
+    runCandidateIngestion: vi.fn(async () => undefined),
+  };
+});
+
 import { AiDeveloperUnavailableError, callImplementerAgent } from '../lib/implementerAgent';
-import { callExplainerAgent } from '../lib/explainerAgent';
+import { ExplainerAgentUnavailableError, callExplainerAgent } from '../lib/explainerAgent';
 import { matchReposForCandidateNeo4j } from '../lib/neo4j/matchingQueries';
 import { matchReposByGroundedEdges } from '../lib/neo4j/contextualGraph';
 import { matchCandidateToReviewChallenge } from '../lib/challengeMatching';
+import { runCandidateIngestion } from '../lib/candidateDiscovery/orchestrate';
 
 // ─── Fake D1 ─────────────────────────────────────────────────────────────────
 
@@ -142,6 +151,21 @@ function buildEnv(overrides: Partial<Env & { DB: FakeD1 }> = {}): Env & { DB: Fa
     DB: fakeD1(),
     ...overrides,
   } as Env & { DB: FakeD1 };
+}
+
+function buildCtx(): { ctx: ExecutionContext; waitUntilAll: () => Promise<void> } {
+  const promises: Promise<unknown>[] = [];
+  return {
+    ctx: {
+      waitUntil: (promise: Promise<unknown>) => {
+        promises.push(promise);
+      },
+      passThroughOnException: () => {},
+    } as unknown as ExecutionContext,
+    waitUntilAll: async () => {
+      await Promise.all(promises);
+    },
+  };
 }
 
 // ─── Fixtures ────────────────────────────────────────────────────────────────
@@ -397,11 +421,153 @@ beforeEach(() => {
     prNumber: null,
     explanation: undefined,
   } as Awaited<ReturnType<typeof matchCandidateToReviewChallenge>>);
+  vi.mocked(runCandidateIngestion).mockClear();
 });
 
 // ─── POST /rpc/get-stage-config ──────────────────────────────────────────────
 
 describe('POST /rpc/get-stage-config', () => {
+  it('routes telemetry-only standalone CODE_REVIEW candidates to CV intake instead of matching', async () => {
+    const db = fakeD1({
+      firstResponders: [
+        {
+          match: 'FROM candidates WHERE id',
+          value: {
+            id: 'cand_1',
+            pipeline_id: null,
+            owner_id: 'owner_1',
+            current_stage_id: null,
+            resume_s3_key: null,
+          },
+        },
+        {
+          match: 'cn.superseded_at IS NULL',
+          value: {
+            resume_s3_key: null,
+            raw_node_count: 111,
+            node_count: 0,
+          },
+        },
+        {
+          match: 'FROM candidates c WHERE c.id',
+          value: {
+            resume_s3_key: null,
+            node_count: 111,
+          },
+        },
+        {
+          match: "interview_type = 'CODE_REVIEW'",
+          value: {
+            id: 'standalone_telemetry_only',
+            status: 'INVITED',
+            matched_repo_id: null,
+            github_repo_url: null,
+            github_pr_number: null,
+            submission_json: null,
+          },
+        },
+      ],
+    });
+    const env = buildEnv({ DB: db });
+
+    const res = await rpcAuth.request(
+      '/get-stage-config',
+      {
+        method: 'POST',
+        headers: { Authorization: await authHeaderWithoutPipeline() },
+      },
+      env,
+    );
+
+    expect(res.status).toBe(200);
+    const body = await res.json() as {
+      stageId?: string;
+      mode?: string;
+      challenges?: Array<{ type: string; title: string }>;
+      upcoming?: Array<{ type: string; title?: string }>;
+    };
+    expect(body.stageId).toBe('talent-pool-intake');
+    expect(body.mode).toBe('INTAKE');
+    expect(body.challenges?.[0]).toMatchObject({
+      type: 'INTAKE',
+      title: 'Profile & Resume',
+    });
+    expect(body.upcoming?.[0]).toMatchObject({ type: 'CODE_REVIEW' });
+  });
+
+  it('uses the newest standalone interview type while waiting for CV intake', async () => {
+    const db = fakeD1({
+      firstResponders: [
+        {
+          match: 'FROM candidates WHERE id',
+          value: {
+            id: 'cand_1',
+            pipeline_id: null,
+            owner_id: 'owner_1',
+            current_stage_id: null,
+            resume_s3_key: null,
+          },
+        },
+        {
+          match: 'FROM candidates c WHERE c.id',
+          value: {
+            resume_s3_key: null,
+            raw_node_count: 12,
+            node_count: 0,
+          },
+        },
+        {
+          match: "interview_type = 'CODE_REVIEW'",
+          value: {
+            id: 'new_code_review',
+            status: 'INVITED',
+            created_at: '2026-06-27T22:00:00.000Z',
+            matched_repo_id: null,
+            github_repo_url: null,
+            github_pr_number: null,
+            submission_json: null,
+          },
+        },
+        {
+          match: "interview_type IN ('DEV_CONTAINER_CHALLENGE', 'OPEN_SOURCE_BUG_FIX')",
+          value: {
+            id: 'old_dev_container',
+            status: 'INVITED',
+            created_at: '2026-06-27T21:00:00.000Z',
+            interview_type: 'DEV_CONTAINER_CHALLENGE',
+            matched_repo_id: null,
+            github_repo_url: null,
+            github_pr_number: null,
+            submission_json: null,
+          },
+        },
+      ],
+    });
+    const env = buildEnv({ DB: db });
+
+    const res = await rpcAuth.request(
+      '/get-stage-config',
+      {
+        method: 'POST',
+        headers: { Authorization: await authHeaderWithoutPipeline() },
+      },
+      env,
+    );
+
+    expect(res.status).toBe(200);
+    const body = await res.json() as {
+      stageTitle?: string;
+      challenges?: Array<{ type: string; title: string }>;
+      upcoming?: Array<{ type: string; title?: string }>;
+    };
+    expect(body.stageTitle).toBe('Upload Your CV');
+    expect(body.challenges?.[0]).toMatchObject({ type: 'INTAKE' });
+    expect(body.upcoming?.[0]).toMatchObject({
+      type: 'CODE_REVIEW',
+      title: 'Code Review',
+    });
+  });
+
   it('keeps standalone CODE_REVIEW in the matching state until source-backed candidate evidence is ready', async () => {
     const db = fakeD1({
       firstResponders: [
@@ -460,6 +626,564 @@ describe('POST /rpc/get-stage-config', () => {
       type: 'WAITING_FOR_MATCH',
       title: 'Building your personalized challenge',
     });
+  });
+
+  it('blocks stale standalone CODE_REVIEW ingestion with candidate-safe diagnostics instead of polling forever', async () => {
+    const db = fakeD1({
+      firstResponders: [
+        {
+          match: 'FROM candidates WHERE id',
+          value: {
+            id: 'cand_1',
+            pipeline_id: null,
+            owner_id: 'owner_1',
+            current_stage_id: null,
+            resume_s3_key: 'text-intake/cand_1/stale',
+          },
+        },
+        {
+          match: 'FROM candidates c WHERE c.id',
+          value: {
+            resume_s3_key: 'text-intake/cand_1/stale',
+            raw_node_count: 0,
+            node_count: 0,
+          },
+        },
+        {
+          match: "interview_type = 'CODE_REVIEW'",
+          value: {
+            id: 'standalone_stale',
+            status: 'INVITED',
+            matched_repo_id: null,
+            github_repo_url: null,
+            github_pr_number: null,
+            submission_json: null,
+          },
+        },
+        {
+          match: 'LEFT JOIN candidate_ingestion',
+          value: {
+            resume_s3_key: 'text-intake/cand_1/stale',
+            status: 'pending',
+            current_step: 'decompose_resume',
+            error_text: null,
+            estimated_completion_at: '2000-01-01T00:05:00.000Z',
+            updated_at: '2000-01-01T00:00:00.000Z',
+            raw_node_count: 0,
+            node_count: 0,
+          },
+        },
+      ],
+    });
+    const env = buildEnv({ DB: db });
+
+    const res = await rpcAuth.request(
+      '/get-stage-config',
+      {
+        method: 'POST',
+        headers: { Authorization: await authHeaderWithoutPipeline() },
+      },
+      env,
+    );
+
+    expect(res.status).toBe(200);
+    const body = await res.json() as {
+      stageId?: string;
+      waitingChallenge?: {
+        config?: {
+          state?: string;
+          autoRefresh?: boolean;
+          reason?: string;
+          diagnostics?: {
+            phase?: string;
+            ingestionStatus?: string | null;
+            currentStep?: string | null;
+            matchableNodeCount?: number;
+            rawNodeCount?: number;
+            updatedAt?: string | null;
+            pipeline?: Array<{ id: string; status: string }>;
+          };
+        };
+      };
+    };
+    expect(body.stageId).toBe('standalone-code-review-matching');
+    expect(body.waitingChallenge?.config).toMatchObject({
+      state: 'blocked',
+      autoRefresh: false,
+      reason: expect.stringContaining('stalled'),
+      diagnostics: {
+        phase: 'candidate_evidence',
+        ingestionStatus: 'pending',
+        currentStep: 'decompose_resume',
+        matchableNodeCount: 0,
+        rawNodeCount: 0,
+        updatedAt: '2000-01-01T00:00:00.000Z',
+        pipeline: expect.arrayContaining([
+          expect.objectContaining({ id: 'intake', status: 'complete' }),
+          expect.objectContaining({ id: 'decomposition', status: 'blocked' }),
+          expect.objectContaining({ id: 'repo_matching', status: 'pending' }),
+          expect.objectContaining({ id: 'challenge', status: 'pending' }),
+          expect.objectContaining({ id: 'review', status: 'pending' }),
+          expect.objectContaining({ id: 'scoring', status: 'pending' }),
+        ]),
+      },
+    });
+  });
+
+  it('blocks role-backed CODE_REVIEW no-match outcomes with repo-matching diagnostics', async () => {
+    const db = fakeD1({
+      firstResponders: [
+        {
+          match: 'FROM candidates WHERE id',
+          value: {
+            id: 'cand_1',
+            pipeline_id: 'pipe_1',
+            owner_id: 'owner_1',
+            current_stage_id: null,
+            resume_s3_key: 'text-intake/cand_1/role-backed',
+          },
+        },
+        {
+          match: 'FROM candidates c WHERE c.id',
+          value: {
+            resume_s3_key: 'text-intake/cand_1/role-backed',
+            raw_node_count: 16,
+            node_count: 16,
+          },
+        },
+        {
+          match: 'SELECT match_philosophy FROM pipeline_match_config',
+          value: { match_philosophy: 'tailored' },
+        },
+        {
+          match: 'FROM role_contexts',
+          value: {
+            id: 'role_ctx_1',
+            persona_json: null,
+            rcd_json: JSON.stringify({ rcd_version: 'simple-jd-v1' }),
+            job_description_md: 'React TypeScript usePopoverRoot rendered trigger id ownership.',
+            non_negotiable_skills_json: JSON.stringify(['React', 'TypeScript', 'usePopoverRoot']),
+          },
+        },
+        {
+          match: 'LEFT JOIN candidate_ingestion',
+          value: {
+            resume_s3_key: 'text-intake/cand_1/role-backed',
+            status: 'pending',
+            current_step: 'decompose_resume',
+            error_text: null,
+            estimated_completion_at: '2026-06-28T16:59:40.000Z',
+            updated_at: '2026-06-28T16:59:23.000Z',
+            raw_node_count: 16,
+            node_count: 16,
+          },
+        },
+      ],
+      allResponders: [
+        {
+          match: 'FROM stages s',
+          value: [{
+            stage_id: 'stage_code_review',
+            stage_title: 'Code Review',
+            stage_order: 0,
+            stage_mode: 'ASYNC',
+            time_limit: null,
+            screening_input_mode: null,
+            video_config: null,
+            challenge_id: 'challenge_code_review',
+            challenge_type: 'CODE_REVIEW',
+            challenge_title: 'Code Review',
+            challenge_order: 0,
+            challenge_config: '{}',
+            challenge_instructions: 'Review the matched PR.',
+          }],
+        },
+      ],
+    });
+    const env = buildEnv({ DB: db });
+
+    const res = await rpcAuth.request(
+      '/get-stage-config',
+      {
+        method: 'POST',
+        headers: { Authorization: await authHeader('cand_1', 'pipe_1') },
+      },
+      env,
+    );
+
+    expect(res.status).toBe(200);
+    const body = await res.json() as {
+      stageId?: string;
+      challenges?: Array<{ type: string }>;
+      waitingChallenge?: {
+        config?: {
+          state?: string;
+          autoRefresh?: boolean;
+          reason?: string;
+          diagnostics?: {
+            phase?: string;
+            ingestionStatus?: string | null;
+            currentStep?: string | null;
+            matchableNodeCount?: number;
+            pipeline?: Array<{ id: string; status: string }>;
+          };
+        };
+      };
+    };
+    expect(body.stageId).toBe('stage_code_review');
+    expect(body.challenges?.[0]?.type).toBe('WAITING_FOR_MATCH');
+    expect(body.waitingChallenge?.config).toMatchObject({
+      state: 'blocked',
+      autoRefresh: false,
+      reason: 'Deterministic challenge matcher returned NO_ROLE_SAFE_CHALLENGE',
+      diagnostics: {
+        phase: 'repo_matching',
+        ingestionStatus: 'pending',
+        currentStep: 'decompose_resume',
+        matchableNodeCount: 16,
+        pipeline: expect.arrayContaining([
+          expect.objectContaining({ id: 'intake', status: 'complete' }),
+          expect.objectContaining({ id: 'decomposition', status: 'complete' }),
+          expect.objectContaining({ id: 'repo_matching', status: 'blocked' }),
+          expect.objectContaining({ id: 'challenge', status: 'pending' }),
+          expect.objectContaining({ id: 'review', status: 'pending' }),
+          expect.objectContaining({ id: 'scoring', status: 'pending' }),
+        ]),
+      },
+    });
+    expect(matchCandidateToReviewChallenge).toHaveBeenCalledOnce();
+  });
+
+  it('retries stale Workers AI model failures from stored text-intake source on status refresh', async () => {
+    const resumeText = 'Senior TypeScript engineer building Cloudflare Workers runtime tooling, request routing, source-mapped stack traces, and Vitest regression tests.';
+    const storage = {
+      get: vi.fn(async () => ({
+        text: async () => resumeText,
+      })),
+    } as unknown as R2Bucket;
+    const db = fakeD1({
+      firstResponders: [
+        {
+          match: 'FROM candidates WHERE id',
+          value: {
+            id: 'cand_1',
+            pipeline_id: null,
+            owner_id: 'owner_1',
+            current_stage_id: null,
+            resume_s3_key: 'text-intake/cand_1/old',
+          },
+        },
+        {
+          match: 'FROM candidates c WHERE c.id',
+          value: {
+            resume_s3_key: 'text-intake/cand_1/old',
+            raw_node_count: 0,
+            node_count: 0,
+          },
+        },
+        {
+          match: "interview_type = 'CODE_REVIEW'",
+          value: {
+            id: 'standalone_retry',
+            status: 'INVITED',
+            matched_repo_id: null,
+            github_repo_url: null,
+            github_pr_number: null,
+            submission_json: null,
+          },
+        },
+        {
+          match: "interview_type IN ('DEV_CONTAINER_CHALLENGE', 'OPEN_SOURCE_BUG_FIX')",
+          value: null,
+        },
+        {
+          match: 'retryable_standalone_ingestion',
+          value: {
+            resume_s3_key: 'text-intake/cand_1/old',
+            status: 'failed',
+            current_step: 'discover_profile',
+            error_text: 'Discovery failed: Cloudflare Workers AI call failed for model @cf/meta/llama-3.1-8b-instruct: 5028: This model was deprecated on 2026-05-30.',
+          },
+        },
+      ],
+    });
+    const env = buildEnv({ DB: db, STORAGE: storage });
+    const { ctx, waitUntilAll } = buildCtx();
+
+    const res = await rpcAuth.request(
+      '/get-stage-config',
+      {
+        method: 'POST',
+        headers: { Authorization: await authHeaderWithoutPipeline() },
+      },
+      env,
+      ctx,
+    );
+
+    expect(res.status).toBe(200);
+    const body = await res.json() as {
+      waitingChallenge?: { config?: { state?: string; reason?: string } };
+    };
+    expect(body.waitingChallenge?.config).toMatchObject({
+      state: 'pending',
+      reason: 'Retrying candidate evidence ingestion after a stale Workers AI model failure.',
+    });
+    expect(db.__calls.some((call) =>
+      call.ran
+      && call.sql.includes("status = 'pending'")
+      && call.sql.includes("current_step = 'retry_queued'")
+    )).toBe(true);
+
+    await waitUntilAll();
+    expect(storage.get).toHaveBeenCalledWith('text-intake/cand_1/old');
+    expect(runCandidateIngestion).toHaveBeenCalledWith(expect.objectContaining({
+      candidateId: 'cand_1',
+      resumeText,
+      decompositionResult: null,
+      parsed: expect.objectContaining({
+        skills: expect.any(Array),
+        experiences: expect.any(Array),
+        projects: expect.any(Array),
+      }),
+    }));
+  });
+
+  it('retries generic deprecated Workers AI discovery failures without matching one stale model id', async () => {
+    const resumeText = 'Staff frontend systems engineer building collaborative editors, Cloudflare deployments, state synchronization, and Playwright regression suites.';
+    const storage = {
+      get: vi.fn(async () => ({
+        text: async () => resumeText,
+      })),
+    } as unknown as R2Bucket;
+    const db = fakeD1({
+      firstResponders: [
+        {
+          match: 'FROM candidates WHERE id',
+          value: {
+            id: 'cand_1',
+            pipeline_id: null,
+            owner_id: 'owner_1',
+            current_stage_id: null,
+            resume_s3_key: 'text-intake/cand_1/future',
+          },
+        },
+        {
+          match: 'FROM candidates c WHERE c.id',
+          value: {
+            resume_s3_key: 'text-intake/cand_1/future',
+            raw_node_count: 0,
+            node_count: 0,
+          },
+        },
+        {
+          match: "interview_type = 'CODE_REVIEW'",
+          value: null,
+        },
+        {
+          match: "interview_type IN ('DEV_CONTAINER_CHALLENGE', 'OPEN_SOURCE_BUG_FIX')",
+          value: {
+            id: 'future_model_retry',
+            status: 'INVITED',
+            created_at: '2026-06-28T08:00:00.000Z',
+            interview_type: 'OPEN_SOURCE_BUG_FIX',
+            matched_repo_id: null,
+            github_repo_url: null,
+            github_pr_number: null,
+            submission_json: null,
+          },
+        },
+        {
+          match: 'retryable_standalone_ingestion',
+          value: {
+            resume_s3_key: 'text-intake/cand_1/future',
+            status: 'failed',
+            current_step: 'discover_profile',
+            error_text: 'Discovery failed: Cloudflare Workers AI call failed for model @cf/example/future-retired-model: This model was decommissioned. Please use an alternative model.',
+          },
+        },
+      ],
+    });
+    const env = buildEnv({ DB: db, STORAGE: storage });
+    const { ctx, waitUntilAll } = buildCtx();
+
+    const res = await rpcAuth.request(
+      '/get-stage-config',
+      {
+        method: 'POST',
+        headers: { Authorization: await authHeaderWithoutPipeline() },
+      },
+      env,
+      ctx,
+    );
+
+    expect(res.status).toBe(200);
+    const body = await res.json() as {
+      stageId?: string;
+      waitingChallenge?: { config?: { state?: string; reason?: string } };
+    };
+    expect(body.stageId).toBe('standalone-dev-container-matching');
+    expect(body.waitingChallenge?.config).toMatchObject({
+      state: 'pending',
+      reason: 'Retrying candidate evidence ingestion after a stale Workers AI model failure.',
+    });
+
+    await waitUntilAll();
+    expect(storage.get).toHaveBeenCalledWith('text-intake/cand_1/future');
+    expect(runCandidateIngestion).toHaveBeenCalledWith(expect.objectContaining({
+      candidateId: 'cand_1',
+      resumeText,
+      decompositionResult: null,
+    }));
+  });
+
+  it('retries stale Workers AI model failures before standalone dev-container matching', async () => {
+    const resumeText = 'Senior TypeScript engineer building Cloudflare Workers runtime tooling, request routing, source-mapped stack traces, and Vitest regression tests.';
+    const storage = {
+      get: vi.fn(async () => ({
+        text: async () => resumeText,
+      })),
+    } as unknown as R2Bucket;
+    const db = fakeD1({
+      firstResponders: [
+        {
+          match: 'FROM candidates WHERE id',
+          value: {
+            id: 'cand_1',
+            pipeline_id: null,
+            owner_id: 'owner_1',
+            current_stage_id: null,
+            resume_s3_key: 'text-intake/cand_1/old',
+          },
+        },
+        {
+          match: 'FROM candidates c WHERE c.id',
+          value: {
+            resume_s3_key: 'text-intake/cand_1/old',
+            raw_node_count: 0,
+            node_count: 0,
+          },
+        },
+        {
+          match: "interview_type = 'CODE_REVIEW'",
+          value: null,
+        },
+        {
+          match: "interview_type IN ('DEV_CONTAINER_CHALLENGE', 'OPEN_SOURCE_BUG_FIX')",
+          value: {
+            id: 'dev_retry',
+            status: 'INVITED',
+            created_at: '2026-06-27T22:00:00.000Z',
+            interview_type: 'OPEN_SOURCE_BUG_FIX',
+            matched_repo_id: null,
+            github_repo_url: null,
+            github_pr_number: null,
+            submission_json: null,
+          },
+        },
+        {
+          match: 'retryable_standalone_ingestion',
+          value: {
+            resume_s3_key: 'text-intake/cand_1/old',
+            status: 'failed',
+            current_step: 'discover_profile',
+            error_text: 'Discovery failed: Cloudflare Workers AI call failed for model @cf/meta/llama-3.1-8b-instruct: 5028: This model was deprecated on 2026-05-30.',
+          },
+        },
+      ],
+    });
+    const env = buildEnv({ DB: db, STORAGE: storage });
+    const { ctx, waitUntilAll } = buildCtx();
+
+    const res = await rpcAuth.request(
+      '/get-stage-config',
+      {
+        method: 'POST',
+        headers: { Authorization: await authHeaderWithoutPipeline() },
+      },
+      env,
+      ctx,
+    );
+
+    expect(res.status).toBe(200);
+    const body = await res.json() as {
+      stageId?: string;
+      waitingChallenge?: { config?: { state?: string; reason?: string } };
+    };
+    expect(body.stageId).toBe('standalone-dev-container-matching');
+    expect(body.waitingChallenge?.config).toMatchObject({
+      state: 'pending',
+      reason: 'Retrying candidate evidence ingestion after a stale Workers AI model failure.',
+    });
+    expect(db.__calls.some((call) =>
+      call.ran
+      && call.sql.includes("status = 'pending'")
+      && call.sql.includes("current_step = 'retry_queued'")
+    )).toBe(true);
+
+    await waitUntilAll();
+    expect(storage.get).toHaveBeenCalledWith('text-intake/cand_1/old');
+    expect(runCandidateIngestion).toHaveBeenCalledWith(expect.objectContaining({
+      candidateId: 'cand_1',
+      resumeText,
+      decompositionResult: null,
+    }));
+  });
+});
+
+// ─── POST /rpc/submit-challenge-response ─────────────────────────────────────
+
+describe('POST /rpc/submit-challenge-response', () => {
+  it('queues text-intake ingestion from deterministic CV evidence without a pre-ingestion AI parse', async () => {
+    const db = fakeD1();
+    const aiRun = vi.fn(async () => ({ response: '{}' }));
+    const storage = { put: vi.fn(async () => null) } as unknown as R2Bucket;
+    const env = buildEnv({ DB: db, AI: { run: aiRun } as unknown as Ai, STORAGE: storage });
+    const { ctx, waitUntilAll } = buildCtx();
+    const resumeText = 'Senior TypeScript engineer building Cloudflare Workers runtime tooling, request routing, source-mapped stack traces, and Vitest regression tests.';
+
+    const res = await rpcAuth.request(
+      '/submit-challenge-response',
+      {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json',
+          Authorization: await authHeaderWithoutPipeline(),
+        },
+        body: JSON.stringify({
+          order: 0,
+          submission: JSON.stringify({
+            resumeText,
+          }),
+        }),
+      },
+      env,
+      ctx,
+    );
+
+    expect(res.status).toBe(200);
+    await waitUntilAll();
+    expect(storage.put).toHaveBeenCalledWith(
+      expect.stringMatching(/^text-intake\/cand_1\//),
+      resumeText,
+      expect.objectContaining({
+        httpMetadata: { contentType: 'text/plain;charset=utf-8' },
+        customMetadata: expect.objectContaining({
+          source: 'candidate_text_intake',
+          candidateId: 'cand_1',
+        }),
+      }),
+    );
+    expect(aiRun).not.toHaveBeenCalled();
+    expect(runCandidateIngestion).toHaveBeenCalledWith(expect.objectContaining({
+      candidateId: 'cand_1',
+      resumeText: expect.stringContaining('Cloudflare Workers runtime tooling'),
+      decompositionResult: null,
+      parsed: expect.objectContaining({
+        skills: expect.any(Array),
+        experiences: expect.any(Array),
+        projects: expect.any(Array),
+      }),
+    }));
   });
 });
 
@@ -770,6 +1494,62 @@ describe('POST /rpc/get-challenge', () => {
     expect(matchCandidateToReviewChallenge).not.toHaveBeenCalled();
   });
 
+  it('attempts standalone CODE_REVIEW matching once text intake has source-backed review evidence', async () => {
+    const db = fakeD1({
+      firstResponders: [
+        { match: 'FROM candidates c WHERE c.id', value: { resume_s3_key: 'text-intake/cand_1', node_count: 16 } },
+        {
+          match: "interview_type IN ('DEV_CONTAINER_CHALLENGE', 'OPEN_SOURCE_BUG_FIX')",
+          value: null,
+        },
+        {
+          match: "interview_type = 'CODE_REVIEW'",
+          value: {
+            id: 'standalone_pending_with_evidence',
+            status: 'INVITED',
+            matched_repo_id: null,
+            github_repo_url: null,
+            github_pr_number: null,
+            submission_json: null,
+          },
+        },
+        {
+          match: 'LEFT JOIN candidate_ingestion',
+          value: {
+            resume_s3_key: 'text-intake/cand_1',
+            status: 'pending',
+            current_step: 'decompose_resume',
+            error_text: null,
+            node_count: 16,
+            raw_node_count: 16,
+          },
+        },
+      ],
+    });
+    const env = buildEnv({ DB: db });
+
+    const res = await rpcAuth.request(
+      '/get-challenge',
+      {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json',
+          Authorization: await authHeaderWithoutPipeline(),
+        },
+        body: JSON.stringify({ order: 0 }),
+      },
+      env,
+    );
+
+    expect(res.status).toBe(200);
+    const body = await res.json() as { type: string; id: string };
+    expect(body).toMatchObject({
+      id: 'waiting-for-match',
+      type: 'WAITING_FOR_MATCH',
+    });
+    expect(matchCandidateToReviewChallenge).toHaveBeenCalledOnce();
+  });
+
   it('refreshes weak cached automatic standalone CODE_REVIEW matches before serving a challenge', async () => {
     vi.mocked(matchCandidateToReviewChallenge).mockResolvedValueOnce({
       status: 'MATCHED',
@@ -778,6 +1558,12 @@ describe('POST /rpc/get-challenge', () => {
       explanation: automaticMatchExplanation(973, 2),
     } as Awaited<ReturnType<typeof matchCandidateToReviewChallenge>>);
     const packet = sourceBackedPacket('repo-span-auto');
+    const weakCachedMatch = persistedRankedResult(5110, 0);
+    weakCachedMatch.assessmentQuality = {
+      ...assessmentQuality(0),
+      verdict: 'WEAK',
+      score: 6,
+    };
     const db = fakeD1({
       firstResponders: [
         { match: 'FROM candidates c WHERE c.id', value: { resume_s3_key: 'resume.pdf', node_count: 38 } },
@@ -815,7 +1601,7 @@ describe('POST /rpc/get-challenge', () => {
           match: 'FROM match_runs',
           value: [{
             status: 'MATCHED',
-            ranked_results_json: JSON.stringify([persistedRankedResult(5110, 0)]),
+            ranked_results_json: JSON.stringify([weakCachedMatch]),
           }],
         },
         {
@@ -870,6 +1656,112 @@ describe('POST /rpc/get-challenge', () => {
     )).toBe(true);
   });
 
+  it('blocks roleless automatic standalone CODE_REVIEW near-ties with repo-matching diagnostics', async () => {
+    vi.mocked(matchCandidateToReviewChallenge).mockResolvedValueOnce({
+      status: 'MATCHED',
+      repoId: 973,
+      prNumber: 973,
+      explanation: automaticMatchExplanation(973, 0),
+    } as Awaited<ReturnType<typeof matchCandidateToReviewChallenge>>);
+    const packet = sourceBackedPacket('repo-span-auto');
+    const db = fakeD1({
+      firstResponders: [
+        { match: 'FROM candidates c WHERE c.id', value: { resume_s3_key: 'resume.pdf', node_count: 38 } },
+        {
+          match: "interview_type IN ('DEV_CONTAINER_CHALLENGE', 'OPEN_SOURCE_BUG_FIX')",
+          value: null,
+        },
+        {
+          match: "interview_type = 'CODE_REVIEW'",
+          value: {
+            id: 'standalone_auto_roleless',
+            status: 'INVITED',
+            matched_repo_id: null,
+            github_repo_url: null,
+            github_pr_number: null,
+            submission_json: null,
+          },
+        },
+        {
+          match: 'LEFT JOIN candidate_ingestion',
+          value: {
+            resume_s3_key: 'resume.pdf',
+            status: 'embedded',
+            current_step: 'embed_profile',
+            error_text: null,
+            node_count: 38,
+          },
+        },
+        { match: 'SELECT github_url FROM qualified_repos', value: { github_url: 'https://github.com/mui/base-ui' } },
+        { match: 'SELECT owner_id FROM candidates', value: { owner_id: 'owner_1' } },
+        { match: 'FROM review_challenge_packets', value: { packet_json: JSON.stringify(packet) } },
+      ],
+      allResponders: [
+        {
+          match: 'FROM repo_source_spans',
+          value: [{
+            id: 'repo-span-auto',
+            path: 'src/component.tsx',
+            exact_text: 'React state update code under review.',
+            line_start: 12,
+            line_end: 12,
+          }],
+        },
+      ],
+    });
+    const env = buildEnv({ DB: db });
+
+    const res = await rpcAuth.request(
+      '/get-challenge',
+      {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json',
+          Authorization: await authHeaderWithoutPipeline(),
+        },
+        body: JSON.stringify({ order: 0 }),
+      },
+      env,
+    );
+
+    expect(res.status).toBe(200);
+    const body = await res.json() as {
+      type: string;
+      config?: {
+        state?: string;
+        autoRefresh?: boolean;
+        reason?: string;
+        diagnostics?: {
+          phase?: string;
+          pipeline?: Array<{ id: string; status: string }>;
+        };
+      };
+    };
+    expect(body).toMatchObject({
+      type: 'WAITING_FOR_MATCH',
+      config: {
+        state: 'blocked',
+        autoRefresh: false,
+        reason: 'The deterministic repo matcher did not return a quality-gated, source-backed PR challenge.',
+        diagnostics: {
+          phase: 'repo_matching',
+          pipeline: expect.arrayContaining([
+            expect.objectContaining({ id: 'intake', status: 'complete' }),
+            expect.objectContaining({ id: 'decomposition', status: 'complete' }),
+            expect.objectContaining({ id: 'repo_matching', status: 'blocked' }),
+            expect.objectContaining({ id: 'challenge', status: 'pending' }),
+            expect.objectContaining({ id: 'review', status: 'pending' }),
+            expect.objectContaining({ id: 'scoring', status: 'pending' }),
+          ]),
+        },
+      },
+    });
+    expect(matchCandidateToReviewChallenge).toHaveBeenCalledOnce();
+    expect(db.__calls.some((call) =>
+      call.ran && call.sql.includes('SET matched_repo_id = ?1')
+    )).toBe(false);
+  });
+
   it('routes standalone OPEN_SOURCE_BUG_FIX invites into a repo-backed implementation challenge', async () => {
     const db = fakeD1({
       firstResponders: [
@@ -918,6 +1810,85 @@ describe('POST /rpc/get-challenge', () => {
     expect(body.githubRepoUrl).toBe('https://github.com/hash-pipe/open-source-task');
     expect(body.githubPrNumber).toBe(101);
     expect(body.devContainerRepoUrl).toBe('https://github.com/hash-pipe/open-source-task');
+  });
+
+  it('retries stale Workers AI model failures before serving unassigned standalone implementation challenges', async () => {
+    const resumeText = 'Senior TypeScript engineer building Cloudflare Workers runtime tooling, request routing, source-mapped stack traces, and Vitest regression tests.';
+    const storage = {
+      get: vi.fn(async () => ({
+        text: async () => resumeText,
+      })),
+    } as unknown as R2Bucket;
+    const db = fakeD1({
+      firstResponders: [
+        { match: 'FROM candidates c WHERE c.id', value: { resume_s3_key: 'text-intake/cand_1/old', node_count: 0 } },
+        {
+          match: "interview_type = 'CODE_REVIEW'",
+          value: null,
+        },
+        {
+          match: "interview_type IN ('DEV_CONTAINER_CHALLENGE', 'OPEN_SOURCE_BUG_FIX')",
+          value: {
+            id: 'open_source_retry',
+            status: 'INVITED',
+            interview_type: 'OPEN_SOURCE_BUG_FIX',
+            matched_repo_id: null,
+            github_repo_url: null,
+            github_pr_number: null,
+            submission_json: null,
+          },
+        },
+        {
+          match: 'retryable_standalone_ingestion',
+          value: {
+            resume_s3_key: 'text-intake/cand_1/old',
+            status: 'failed',
+            current_step: 'discover_profile',
+            error_text: 'Discovery failed: Cloudflare Workers AI call failed for model @cf/meta/llama-3.1-8b-instruct: 5028: This model was deprecated on 2026-05-30.',
+          },
+        },
+      ],
+    });
+    const env = buildEnv({ DB: db, STORAGE: storage });
+    const { ctx, waitUntilAll } = buildCtx();
+
+    const res = await rpcAuth.request(
+      '/get-challenge',
+      {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json',
+          Authorization: await authHeaderWithoutPipeline(),
+        },
+        body: JSON.stringify({ order: 0 }),
+      },
+      env,
+      ctx,
+    );
+
+    expect(res.status).toBe(200);
+    const body = await res.json() as {
+      type: string;
+      config?: { state?: string; reason?: string };
+    };
+    expect(body.type).toBe('WAITING_FOR_MATCH');
+    expect(body.config).toMatchObject({
+      state: 'pending',
+      reason: 'Retrying candidate evidence ingestion after a stale Workers AI model failure.',
+    });
+    expect(db.__calls.some((call) =>
+      call.ran
+      && call.sql.includes("status = 'pending'")
+      && call.sql.includes("current_step = 'retry_queued'")
+    )).toBe(true);
+
+    await waitUntilAll();
+    expect(storage.get).toHaveBeenCalledWith('text-intake/cand_1/old');
+    expect(runCandidateIngestion).toHaveBeenCalledWith(expect.objectContaining({
+      candidateId: 'cand_1',
+      resumeText,
+      decompositionResult: null,
+    }));
   });
 
   it('returns match proof for a manual standalone CODE_REVIEW source-backed PR', async () => {
@@ -1243,6 +2214,65 @@ describe('POST /rpc/review/ask', () => {
     expect(body.error.code).toBe('WAITING_FOR_MATCH');
     expect(vi.mocked(callExplainerAgent)).not.toHaveBeenCalled();
     expect(db.__calls.some((call) => call.sql.includes('FROM review_challenge_packets'))).toBe(true);
+  });
+
+  it('returns AI_DEVELOPER_UNAVAILABLE without creating a fake explainer exchange', async () => {
+    vi.mocked(callExplainerAgent).mockRejectedValueOnce(new ExplainerAgentUnavailableError({
+      provider: 'workers-ai',
+      reason: 'Workers AI binding is not available for the review explainer agent.',
+      retryable: true,
+    }));
+    const assignedExplainerChallenge = {
+      ...ASSIGNED_CHALLENGE_WITHOUT_SOURCE_PACKET,
+      config: JSON.stringify({ enableExplainer: true, maxExplainerQuestions: 4 }),
+    };
+    const packet = sourceBackedPacket('repo-span-explainer');
+    const db = fakeD1({
+      firstResponders: [
+        { match: 'FROM candidates', value: CANDIDATE },
+        { match: 'FROM assessments', value: ASSESSMENT_ROW },
+        { match: 'FROM review_sessions', value: null },
+        { match: 'FROM challenges ch', value: assignedExplainerChallenge },
+        { match: 'FROM review_challenge_packets', value: { packet_json: JSON.stringify(packet) } },
+      ],
+      allResponders: [
+        {
+          match: 'FROM challenges',
+          value: [assignedExplainerChallenge],
+        },
+        {
+          match: 'FROM repo_source_spans',
+          value: [{
+            id: 'repo-span-explainer',
+            path: 'src/auth.ts',
+            exact_text: 'retryTokenRefresh();',
+            line_start: 12,
+            line_end: 12,
+          }],
+        },
+      ],
+    });
+    const env = buildEnv({ DB: db });
+
+    const res = await rpcAuth.request(
+      '/review/ask',
+      {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json',
+          Authorization: await authHeader(),
+        },
+        body: JSON.stringify({ challengeOrder: 0, question: 'What is this PR doing?' }),
+      },
+      env,
+    );
+
+    expect(res.status).toBe(503);
+    const body = await res.json() as { error: { code: string; diagnostic: { code: string } } };
+    expect(body.error.code).toBe('AI_DEVELOPER_UNAVAILABLE');
+    expect(body.error.diagnostic.code).toBe('AI_DEVELOPER_UNAVAILABLE');
+    expect(vi.mocked(callExplainerAgent)).toHaveBeenCalledTimes(1);
+    expect(db.__calls.some((call) => call.sql.includes('INSERT INTO review_sessions') && call.ran)).toBe(false);
   });
 });
 

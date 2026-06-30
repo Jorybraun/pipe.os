@@ -1,6 +1,20 @@
 import { useEffect, useRef, useState, useCallback } from 'react';
+import {
+  buildClippyBrowserPromptIdentity,
+  type ClippyPromptActor,
+} from '../lib/clippyPromptIdentity';
+import { redactAgentDiagnosticText } from '../lib/agentDiagnosticRedaction';
 
-export type AgentStatus = 'idle' | 'thinking' | 'working' | 'auth_needed' | 'disconnected';
+export type AgentStatus = 'starting' | 'idle' | 'thinking' | 'working' | 'auth_needed' | 'disconnected';
+export type AgentPromptDeliveryStatus = 'queued' | 'blocked';
+export type AgentPromptBlockedReason =
+  | 'workspace_required'
+  | 'bridge_reconnecting'
+  | 'agent_starting'
+  | 'agent_auth_needed'
+  | 'agent_disconnected'
+  | 'agent_identity_missing'
+  | 'agent_capabilities_missing';
 export type AgentRoomActionId =
   | 'open-browser'
   | 'open-terminal'
@@ -15,7 +29,7 @@ export interface AgentChatMessage {
   role: 'user' | 'agent';
   text: string;
   timestamp: number;
-  source?: 'user_submit' | 'agent_stdout' | 'bridge_diagnostic' | 'bridge_observation';
+  source?: 'user_submit' | 'agent_stdout' | 'agent_api_response' | 'bridge_diagnostic' | 'bridge_observation';
   agentName?: string;
   agentStatus?: AgentStatus;
   diagnosticSource?: string;
@@ -23,6 +37,7 @@ export interface AgentChatMessage {
   exitCode?: number | null;
   signal?: string | null;
   truncated?: boolean;
+  persisted?: boolean;
   promptType?: string;
   deliveredToAgent?: boolean;
   promptLength?: number;
@@ -33,6 +48,16 @@ export interface AgentChatMessage {
   userMessageLength?: number;
   userMessageFingerprint?: string;
   contextTruncated?: boolean;
+  browserPromptId?: string;
+  browserPromptFingerprint?: string;
+  browserPromptTimestamp?: number;
+  browserPromptLength?: number;
+  agentRuntime?: string;
+  agentRunProvider?: string;
+  agentRunId?: string;
+  agentRunExternalSessionHash?: string;
+  deliveryStatus?: AgentPromptDeliveryStatus;
+  blockedReason?: AgentPromptBlockedReason;
 }
 
 export interface AgentRoomAction {
@@ -41,10 +66,20 @@ export interface AgentRoomAction {
   text?: string;
   url?: string;
   autoExecute?: boolean;
-  source?: 'agent_stdout_action' | 'bridge_observation';
+  source?: 'agent_stdout_action' | 'agent_api_response_action' | 'bridge_observation';
   agentName?: string;
   bridgeEventType?: 'CHAT_RESPONSE' | 'FILE_CHANGED' | 'ROOM_ACTION';
   protocol?: 'bridge_actions_field' | 'clippy_room_action_tag' | 'workspace_file_observation';
+  observedAt?: string;
+  persisted?: boolean;
+  browserPromptId?: string;
+  browserPromptFingerprint?: string;
+  browserPromptTimestamp?: number;
+  browserPromptLength?: number;
+  agentRuntime?: string;
+  agentRunProvider?: string;
+  agentRunId?: string;
+  agentRunExternalSessionHash?: string;
 }
 
 export interface AgentFileChangeEvent {
@@ -63,6 +98,7 @@ export type ParsedAgentBridgeMessage =
   | {
       kind: 'status';
       status: AgentStatus;
+      agentName: string;
     }
   | {
       kind: 'chat';
@@ -119,6 +155,8 @@ export interface AgentConnectionState {
 export interface UseAgentConnectionOptions {
   wsUrl: string | null;
   enabled: boolean;
+  promptActor?: ClippyPromptActor;
+  promptWorkspaceSessionId?: string | null;
 }
 
 const ROOM_ACTIONS: Record<AgentRoomActionId, { label: string; aliases: string[] }> = {
@@ -156,12 +194,15 @@ const ROOM_ACTIONS: Record<AgentRoomActionId, { label: string; aliases: string[]
   },
 };
 
+const SHA256_HEX_RE = /^[a-f0-9]{64}$/i;
+
 function isRecord(value: unknown): value is Record<string, unknown> {
   return Boolean(value) && typeof value === 'object' && !Array.isArray(value);
 }
 
 function isAgentStatus(value: unknown): value is AgentStatus {
-  return value === 'idle'
+  return value === 'starting'
+    || value === 'idle'
     || value === 'thinking'
     || value === 'working'
     || value === 'auth_needed'
@@ -217,8 +258,16 @@ function parseRoomAction(value: unknown, context: RoomActionParseContext): Agent
   if (!isRecord(value)) return null;
   const id = findRoomActionId(value.action ?? value.id ?? value.name);
   if (!id) return null;
-  const text = stringOrNull(value.text ?? value.reason ?? value.message) ?? undefined;
+  const text = redactAgentDiagnosticText(value.text ?? value.reason ?? value.message) ?? undefined;
   const label = stringOrNull(value.label) ?? ROOM_ACTIONS[id].label;
+  const browserPromptId = stringOrNull(value.browserPromptId);
+  const browserPromptFingerprint = stringOrNull(value.browserPromptFingerprint);
+  const browserPromptTimestamp = numberOrUndefined(value.browserPromptTimestamp);
+  const browserPromptLength = numberOrUndefined(value.browserPromptLength);
+  const agentRuntime = stringOrNull(value.agentRuntime);
+  const agentRunProvider = stringOrNull(value.agentRunProvider);
+  const agentRunId = stringOrNull(value.agentRunId);
+  const agentRunExternalSessionHash = stringOrNull(value.agentRunExternalSessionHash);
   return {
     id,
     label,
@@ -229,19 +278,25 @@ function parseRoomAction(value: unknown, context: RoomActionParseContext): Agent
     agentName: stringOrNull(value.agent) ?? context.agentName,
     bridgeEventType: context.bridgeEventType,
     protocol: context.protocol,
+    observedAt: stringOrNull(value.observedAt) ?? undefined,
+    persisted: typeof value.persisted === 'boolean' ? value.persisted : undefined,
+    ...(browserPromptId ? { browserPromptId } : {}),
+    ...(browserPromptFingerprint ? { browserPromptFingerprint } : {}),
+    ...(browserPromptTimestamp !== undefined ? { browserPromptTimestamp } : {}),
+    ...(browserPromptLength !== undefined ? { browserPromptLength } : {}),
+    ...(agentRuntime ? { agentRuntime } : {}),
+    ...(agentRunProvider ? { agentRunProvider } : {}),
+    ...(agentRunId ? { agentRunId } : {}),
+    ...(agentRunExternalSessionHash ? { agentRunExternalSessionHash } : {}),
   };
 }
 
-function parseRoomActions(value: unknown, context: RoomActionParseContext): AgentRoomAction[] {
-  if (!Array.isArray(value)) return [];
-  return value
-    .map((entry) => parseRoomAction(entry, context))
-    .filter((entry): entry is AgentRoomAction => entry !== null);
-}
-
-export function agentStatusEvidenceText(status: AgentStatus, agentName = 'devin'): string {
-  const name = agentName.trim() || 'devin';
+export function agentStatusEvidenceText(status: AgentStatus, agentName: string): string | null {
+  const name = agentName.trim();
+  if (!name) return null;
   switch (status) {
+    case 'starting':
+      return `${name} is starting from the real container bridge.`;
     case 'auth_needed':
       return `${name} requires real authentication before it can assist.`;
     case 'thinking':
@@ -260,43 +315,95 @@ export function agentStatusEvidenceText(status: AgentStatus, agentName = 'devin'
 export function parseAgentBridgeMessage(value: unknown): ParsedAgentBridgeMessage {
   if (!isRecord(value)) return { kind: 'ignored' };
   if (value.type === 'AGENT_STATUS') {
-    return { kind: 'status', status: isAgentStatus(value.status) ? value.status : 'idle' };
+    const agentName = stringOrNull(value.agent);
+    if (!agentName || !isAgentStatus(value.status)) return { kind: 'ignored' };
+    return { kind: 'status', status: value.status, agentName };
   }
   if (value.type === 'CHAT_RESPONSE') {
-    const text = stringOrNull(value.text);
+    const text = redactAgentDiagnosticText(value.text);
     if (!text) return { kind: 'ignored' };
-    const actions = parseRoomActions(value.actions, {
-      source: 'agent_stdout_action',
-      bridgeEventType: 'CHAT_RESPONSE',
-      protocol: 'bridge_actions_field',
-      agentName: stringOrNull(value.agent) ?? 'devin',
-    });
+    const source = value.source === 'agent_api_response'
+      ? 'agent_api_response'
+      : value.source === 'agent_stdout'
+        ? 'agent_stdout'
+        : null;
+    if (!source) return { kind: 'ignored' };
+    const agentName = stringOrNull(value.agent);
+    if (!agentName) return { kind: 'ignored' };
+    const observedAt = stringOrNull(value.observedAt);
+    const persisted = typeof value.persisted === 'boolean' ? value.persisted : null;
+    if (!observedAt || persisted === null) return { kind: 'ignored' };
+    const browserPromptId = stringOrNull(value.browserPromptId);
+    const browserPromptFingerprint = stringOrNull(value.browserPromptFingerprint);
+    const browserPromptTimestamp = numberOrUndefined(value.browserPromptTimestamp);
+    const browserPromptLength = numberOrUndefined(value.browserPromptLength);
+    const agentRuntime = stringOrNull(value.agentRuntime);
+    const agentRunProvider = stringOrNull(value.agentRunProvider);
+    const agentRunId = stringOrNull(value.agentRunId);
+    const agentRunExternalSessionHash = stringOrNull(value.agentRunExternalSessionHash);
     return {
       kind: 'chat',
-      message: { role: 'agent', text, source: 'agent_stdout' },
-      actions: actions.length > 0 ? actions : undefined,
+      message: {
+        role: 'agent',
+        text,
+        source,
+        agentName,
+        observedAt,
+        persisted,
+        ...(browserPromptId ? { browserPromptId } : {}),
+        ...(browserPromptFingerprint ? { browserPromptFingerprint } : {}),
+        ...(browserPromptTimestamp !== undefined ? { browserPromptTimestamp } : {}),
+        ...(browserPromptLength !== undefined ? { browserPromptLength } : {}),
+        ...(agentRuntime ? { agentRuntime } : {}),
+        ...(agentRunProvider ? { agentRunProvider } : {}),
+        ...(agentRunId ? { agentRunId } : {}),
+        ...(agentRunExternalSessionHash ? { agentRunExternalSessionHash } : {}),
+      },
+      actions: undefined,
     };
   }
   if (value.type === 'AUTH_NEEDED') {
+    const agentName = stringOrNull(value.agent);
+    if (!agentName) return { kind: 'ignored' };
     return {
       kind: 'auth_needed',
       authUrl: stringOrNull(value.authUrl),
-      agentName: stringOrNull(value.agent) ?? 'devin',
-      message: stringOrNull(value.message),
+      agentName,
+      message: redactAgentDiagnosticText(value.message),
     };
   }
   if (value.type === 'AGENT_READY') {
+    const agentName = stringOrNull(value.agent);
+    if (!agentName) return { kind: 'ignored' };
     return {
       kind: 'ready',
-      agentName: stringOrNull(value.agent) ?? 'devin',
+      agentName,
       capabilities: Array.isArray(value.capabilities)
         ? value.capabilities.filter((entry): entry is string => typeof entry === 'string')
         : [],
     };
   }
   if (value.type === 'FILE_CHANGED') {
-    const filePath = stringOrNull(value.path ?? value.filePath) ?? 'a workspace file';
-    const actionName = stringOrNull(value.action ?? value.operation) ?? 'changed';
+    const filePath = stringOrNull(value.path ?? value.filePath);
+    const actionName = stringOrNull(value.action ?? value.operation);
+    const source = stringOrNull(value.source);
+    const observedAt = stringOrNull(value.observedAt);
+    const sizeBytes = numberOrUndefined(value.sizeBytes);
+    const contentHash = stringOrNull(value.contentHash);
+    const persisted = typeof value.persisted === 'boolean' ? value.persisted : null;
+    if (
+      !filePath
+      || !actionName
+      || source !== 'code_server_workspace'
+      || !observedAt
+      || typeof sizeBytes !== 'number'
+      || sizeBytes < 0
+      || !contentHash
+      || !SHA256_HEX_RE.test(contentHash)
+      || persisted === null
+    ) {
+      return { kind: 'ignored' };
+    }
     const text = `I noticed ${filePath} was ${actionName} in the workspace.`;
     const contentPreview = stringOrNull(value.contentPreview);
     return {
@@ -313,28 +420,36 @@ export function parseAgentBridgeMessage(value: unknown): ParsedAgentBridgeMessag
       fileChange: {
         filePath,
         actionName,
-        observedAt: stringOrNull(value.observedAt) ?? undefined,
-        source: stringOrNull(value.source) ?? undefined,
-        sizeBytes: numberOrUndefined(value.sizeBytes),
-        contentHash: stringOrNull(value.contentHash) ?? undefined,
+        observedAt,
+        source,
+        sizeBytes,
+        contentHash,
         contentPreview: contentPreview && contentPreview.length <= 4000
           ? contentPreview
           : contentPreview?.slice(0, 4000),
-        persisted: typeof value.persisted === 'boolean' ? value.persisted : undefined,
+        persisted,
       },
     };
   }
   if (value.type === 'ROOM_ACTION') {
+    const agentName = stringOrNull(value.agent);
+    if (!agentName) return { kind: 'ignored' };
+    const source = value.source === 'agent_api_response'
+      ? 'agent_api_response_action'
+      : value.source === 'agent_stdout'
+        ? 'agent_stdout_action'
+        : null;
+    if (!source) return { kind: 'ignored' };
     const action = parseRoomAction(value, {
-      source: 'agent_stdout_action',
+      source,
       bridgeEventType: 'ROOM_ACTION',
       protocol: 'clippy_room_action_tag',
-      agentName: stringOrNull(value.agent) ?? 'devin',
+      agentName,
     });
     return action ? { kind: 'room_action', action } : { kind: 'ignored' };
   }
   if (value.type === 'ERROR') {
-    const text = stringOrNull(value.message) ?? 'Unknown agent error';
+    const text = redactAgentDiagnosticText(value.message) ?? 'Unknown agent error';
     return {
       kind: 'error',
       message: {
@@ -345,9 +460,10 @@ export function parseAgentBridgeMessage(value: unknown): ParsedAgentBridgeMessag
     };
   }
   if (value.type === 'AGENT_DIAGNOSTIC') {
-    const text = stringOrNull(value.message) ?? 'Agent bridge diagnostic.';
+    const text = redactAgentDiagnosticText(value.message) ?? 'Agent bridge diagnostic.';
     const status = isAgentStatus(value.status) ? value.status : 'disconnected';
-    const agentName = stringOrNull(value.agent) ?? 'devin';
+    const agentName = stringOrNull(value.agent);
+    if (!agentName) return { kind: 'ignored' };
     const message: Omit<AgentChatMessage, 'timestamp'> = {
       role: 'agent',
       text,
@@ -363,10 +479,17 @@ export function parseAgentBridgeMessage(value: unknown): ParsedAgentBridgeMessag
     if ('exitCode' in value) message.exitCode = numberOrNullValue(value.exitCode);
     if ('signal' in value) message.signal = signal;
     if (typeof value.truncated === 'boolean') message.truncated = value.truncated;
+    if (typeof value.persisted === 'boolean') message.persisted = value.persisted;
     const promptType = stringOrNull(value.promptType);
     const promptFingerprint = stringOrNull(value.promptFingerprint);
     const roomContextFingerprint = stringOrNull(value.roomContextFingerprint);
     const userMessageFingerprint = stringOrNull(value.userMessageFingerprint);
+    const browserPromptId = stringOrNull(value.browserPromptId);
+    const browserPromptFingerprint = stringOrNull(value.browserPromptFingerprint);
+    const agentRuntime = stringOrNull(value.agentRuntime);
+    const agentRunProvider = stringOrNull(value.agentRunProvider);
+    const agentRunId = stringOrNull(value.agentRunId);
+    const agentRunExternalSessionHash = stringOrNull(value.agentRunExternalSessionHash);
     if (promptType) message.promptType = promptType;
     if (typeof value.deliveredToAgent === 'boolean') message.deliveredToAgent = value.deliveredToAgent;
     if ('promptLength' in value) {
@@ -386,6 +509,20 @@ export function parseAgentBridgeMessage(value: unknown): ParsedAgentBridgeMessag
     }
     if (userMessageFingerprint) message.userMessageFingerprint = userMessageFingerprint;
     if (typeof value.contextTruncated === 'boolean') message.contextTruncated = value.contextTruncated;
+    if (browserPromptId) message.browserPromptId = browserPromptId;
+    if (browserPromptFingerprint) message.browserPromptFingerprint = browserPromptFingerprint;
+    if (agentRuntime) message.agentRuntime = agentRuntime;
+    if (agentRunProvider) message.agentRunProvider = agentRunProvider;
+    if (agentRunId) message.agentRunId = agentRunId;
+    if (agentRunExternalSessionHash) message.agentRunExternalSessionHash = agentRunExternalSessionHash;
+    if ('browserPromptTimestamp' in value) {
+      const browserPromptTimestamp = numberOrUndefined(value.browserPromptTimestamp);
+      if (browserPromptTimestamp !== undefined) message.browserPromptTimestamp = browserPromptTimestamp;
+    }
+    if ('browserPromptLength' in value) {
+      const browserPromptLength = numberOrUndefined(value.browserPromptLength);
+      if (browserPromptLength !== undefined) message.browserPromptLength = browserPromptLength;
+    }
     return {
       kind: 'diagnostic',
       status,
@@ -396,14 +533,19 @@ export function parseAgentBridgeMessage(value: unknown): ParsedAgentBridgeMessag
   return { kind: 'ignored' };
 }
 
-export function useAgentConnection({ wsUrl, enabled }: UseAgentConnectionOptions) {
+export function useAgentConnection({
+  wsUrl,
+  enabled,
+  promptActor = 'guest',
+  promptWorkspaceSessionId = null,
+}: UseAgentConnectionOptions) {
   const wsRef = useRef<WebSocket | null>(null);
   const [connected, setConnected] = useState(false);
   const [status, setStatus] = useState<AgentStatus>('disconnected');
   const [messages, setMessages] = useState<AgentChatMessage[]>([]);
   const [authUrl, setAuthUrl] = useState<string | null>(null);
   const [authMessage, setAuthMessage] = useState<string | null>(null);
-  const [agentName, setAgentName] = useState('devin');
+  const [agentName, setAgentName] = useState('');
   const [capabilities, setCapabilities] = useState<string[]>([]);
   const [roomActions, setRoomActions] = useState<AgentRoomAction[]>([]);
   const [fileChanges, setFileChanges] = useState<AgentFileChangeEvent[]>([]);
@@ -421,7 +563,7 @@ export function useAgentConnection({ wsUrl, enabled }: UseAgentConnectionOptions
 
         ws.onopen = () => {
           setConnected(true);
-          setStatus('idle');
+          setStatus('disconnected');
         };
 
         ws.onmessage = (event) => {
@@ -436,6 +578,7 @@ export function useAgentConnection({ wsUrl, enabled }: UseAgentConnectionOptions
           switch (parsed.kind) {
             case 'status':
               setStatus(parsed.status);
+              setAgentName(parsed.agentName);
               if (parsed.status !== 'auth_needed') {
                 setAuthUrl(null);
                 setAuthMessage(null);
@@ -538,16 +681,28 @@ export function useAgentConnection({ wsUrl, enabled }: UseAgentConnectionOptions
   const sendMessage = useCallback((text: string): AgentChatMessage | null => {
     const trimmed = text.trim();
     if (!trimmed || !wsRef.current || wsRef.current.readyState !== WebSocket.OPEN) return null;
+    const timestamp = Date.now();
+    const promptIdentity = buildClippyBrowserPromptIdentity({
+      text: trimmed,
+      actor: promptActor,
+      timestamp,
+      workspaceSessionId: promptWorkspaceSessionId,
+    });
     const message: AgentChatMessage = {
       role: 'user',
       text: trimmed,
-      timestamp: Date.now(),
+      timestamp,
       source: 'user_submit',
+      ...promptIdentity,
     };
     setMessages((prev) => [...prev, message]);
-    wsRef.current.send(JSON.stringify({ type: 'CHAT', text: trimmed }));
+    wsRef.current.send(JSON.stringify({
+      type: 'CHAT',
+      text: trimmed,
+      ...promptIdentity,
+    }));
     return message;
-  }, []);
+  }, [promptActor, promptWorkspaceSessionId]);
 
   const startAuth = useCallback(() => {
     if (!wsRef.current || wsRef.current.readyState !== WebSocket.OPEN) return;
