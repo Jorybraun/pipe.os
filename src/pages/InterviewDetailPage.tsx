@@ -179,6 +179,13 @@ interface CodeReviewSignalBasisItem {
   satisfied: boolean;
 }
 
+interface WorkspaceAssessmentReadoutItem {
+  label: string;
+  value: string;
+  detail: string;
+  tone: CodeReviewNextStepTone;
+}
+
 interface CodeReviewAssignmentTrust {
   value: string;
   detail: string;
@@ -526,6 +533,267 @@ function assessmentConfidenceSignalItems(progress: AssessmentProgressSnapshot | 
     'code_editor_activity',
     'ai_assistance',
   ].includes(item.label));
+}
+
+function assessmentSourceRefCount(progress: AssessmentProgressSnapshot | null, kind: string): number {
+  return progress?.sourceRefCounts.find((item) => item.kind === kind)?.count ?? 0;
+}
+
+function assessmentHasSatisfiedCoverage(
+  progress: AssessmentProgressSnapshot | null,
+  label: string,
+  fallback: boolean,
+): boolean {
+  const coverageItem = progress?.evaluation?.evidenceCoverage?.requiredForEvaluation
+    .find((item) => item.label === label);
+  return coverageItem ? coverageItem.satisfied : fallback;
+}
+
+function workspaceAssessmentNextActionTitle(progress: AssessmentProgressSnapshot | null): string {
+  switch (progress?.nextAction) {
+    case 'ASSIGN_CHALLENGE':
+      return 'Assign challenge';
+    case 'OPEN_ROOM_OR_WORKSPACE':
+      return 'Open workspace';
+    case 'CAPTURE_WORK_EVIDENCE':
+      return 'Capture work evidence';
+    case 'SUBMIT_COMMIT':
+      return 'Submit commit';
+    case 'START_EVALUATION':
+      return 'Start evaluation';
+    case 'REVIEW_EVALUATION':
+      return 'Review evaluation';
+    case 'RESOLVE_DIAGNOSTIC':
+      return 'Resolve diagnostic';
+    case 'NONE':
+      return 'No action';
+    default:
+      return 'Create assessment evidence';
+  }
+}
+
+function workspaceAssessmentDecisionItem(progress: AssessmentProgressSnapshot | null): WorkspaceAssessmentReadoutItem {
+  if (!progress) {
+    return {
+      label: 'Decision',
+      value: 'Not started',
+      detail: 'No source-backed assessment session is attached yet.',
+      tone: 'blocked',
+    };
+  }
+
+  const evaluation = progress.evaluation;
+  if (evaluation?.status === 'EVALUATED') {
+    return {
+      label: 'Decision',
+      value: assessmentEvaluationRecommendationLabel(evaluation.recommendation) ?? 'Assessment report ready',
+      detail: evaluation.summary,
+      tone: 'positive',
+    };
+  }
+
+  if (evaluation && evaluation.status !== 'EVALUATED') {
+    return {
+      label: 'Decision',
+      value: assessmentEvaluationStatusLabel(evaluation.status),
+      detail: evaluation.summary,
+      tone: evaluation.status === 'NEEDS_HUMAN_REVIEW' ? 'watch' : 'blocked',
+    };
+  }
+
+  if (progress.nextAction === 'START_EVALUATION') {
+    return {
+      label: 'Decision',
+      value: 'Ready for evaluation',
+      detail: 'Challenge and commit evidence are captured; run source-backed AI or human evaluation before making a hiring decision.',
+      tone: 'neutral',
+    };
+  }
+
+  if (progress.hasCommitSubmission) {
+    return {
+      label: 'Decision',
+      value: 'Commit submitted',
+      detail: 'Candidate work exists, but the assessment report has not been produced yet.',
+      tone: 'neutral',
+    };
+  }
+
+  if (progress.hasChallengePacket) {
+    return {
+      label: 'Decision',
+      value: 'Challenge assigned',
+      detail: 'A source-backed task is ready. Wait for candidate work before using this assessment as signal.',
+      tone: 'neutral',
+    };
+  }
+
+  return {
+    label: 'Decision',
+    value: 'Waiting for challenge',
+    detail: 'No concrete source-backed repo task is assigned yet.',
+    tone: 'blocked',
+  };
+}
+
+function workspaceAssessmentFitItem(input: {
+  progress: AssessmentProgressSnapshot | null;
+  setup: AssessmentSetupProjection | null | undefined;
+  challengeText: string | null;
+}): WorkspaceAssessmentReadoutItem {
+  if (input.setup?.blocksPositiveAssessment) {
+    return {
+      label: 'Challenge fit',
+      value: 'Do not rely yet',
+      detail: input.setup.message ?? 'The current assignment is not safe for positive assessment.',
+      tone: 'blocked',
+    };
+  }
+
+  if (input.setup?.source === 'matched_repo_id' || input.setup?.kind === 'auto_match') {
+    return {
+      label: 'Challenge fit',
+      value: 'Matched task',
+      detail: input.setup.message ?? 'PIPE selected this repo task from source-backed candidate and repository evidence.',
+      tone: 'positive',
+    };
+  }
+
+  if (input.setup?.kind === 'manual_open_source_task' || input.setup?.source === 'recruiter_manual_override') {
+    return {
+      label: 'Challenge fit',
+      value: 'Manual task',
+      detail: 'A recruiter supplied the task packet. Treat candidate work as real evidence, but do not read the assignment itself as automatic match proof.',
+      tone: 'watch',
+    };
+  }
+
+  if (input.progress?.hasChallengePacket) {
+    return {
+      label: 'Challenge fit',
+      value: 'Source-backed task',
+      detail: input.challengeText ?? 'The assigned task packet is captured as immutable source evidence.',
+      tone: 'positive',
+    };
+  }
+
+  return {
+    label: 'Challenge fit',
+    value: 'No task packet',
+    detail: input.setup?.message ?? 'Assign a concrete repo URL, base commit, task, success criteria, and expected evidence.',
+    tone: 'blocked',
+  };
+}
+
+function workspaceAssessmentProofItem(progress: AssessmentProgressSnapshot | null): WorkspaceAssessmentReadoutItem {
+  const challengeCaptured = assessmentHasSatisfiedCoverage(
+    progress,
+    'challenge_packet',
+    Boolean(progress?.hasChallengePacket || assessmentSourceRefCount(progress, 'review_challenge_packet') > 0),
+  );
+  const commitCaptured = assessmentHasSatisfiedCoverage(
+    progress,
+    'git_commit',
+    Boolean(progress?.hasCommitSubmission || assessmentSourceRefCount(progress, 'git_commit') > 0),
+  );
+  const diffCaptured = assessmentHasSatisfiedCoverage(
+    progress,
+    'code_diff',
+    assessmentSourceRefCount(progress, 'code_diff') > 0,
+  );
+  const missing = [
+    challengeCaptured ? null : 'challenge',
+    commitCaptured ? null : 'commit',
+    diffCaptured ? null : 'diff',
+  ].filter((item): item is string => Boolean(item));
+
+  if (missing.length === 0) {
+    return {
+      label: 'Required proof',
+      value: 'Required proof captured',
+      detail: 'Challenge, commit, and diff are source-backed. Tests and process evidence still affect confidence.',
+      tone: 'positive',
+    };
+  }
+
+  return {
+    label: 'Required proof',
+    value: `${titleCaseToken(missing.join(', '))} missing`,
+    detail: 'PIPE cannot produce a trustworthy positive assessment until the required source refs exist.',
+    tone: progress?.hasChallengePacket ? 'watch' : 'blocked',
+  };
+}
+
+function workspaceAssessmentRiskItem(progress: AssessmentProgressSnapshot | null): WorkspaceAssessmentReadoutItem {
+  const negativeClaim = progress?.evaluation?.claims?.find((claim) => claim.polarity === 'negative') ?? null;
+  const testCoverageItem = progress?.evaluation?.evidenceCoverage?.expectedForHighConfidence
+    .find((item) => item.label === 'test_run');
+  const hasTestEvidence = testCoverageItem ? testCoverageItem.satisfied : Boolean(progress?.hasTestEvidence);
+  if (negativeClaim) {
+    return {
+      label: 'Risk',
+      value: 'Evaluator risk raised',
+      detail: negativeClaim.narrative,
+      tone: 'watch',
+    };
+  }
+
+  if (progress?.evaluation && progress.evaluation.status !== 'EVALUATED') {
+    return {
+      label: 'Risk',
+      value: assessmentEvaluationStatusLabel(progress.evaluation.status),
+      detail: progress.evaluation.summary,
+      tone: 'blocked',
+    };
+  }
+
+  if (progress?.hasVerificationGap || (progress && !hasTestEvidence)) {
+    return {
+      label: 'Risk',
+      value: 'Verification gap',
+      detail: 'Test evidence is missing. Treat implementation quality as lower-confidence until tests or a source-backed missing-test explanation are reviewed.',
+      tone: 'watch',
+    };
+  }
+
+  if (!progress?.hasCommitSubmission) {
+    return {
+      label: 'Risk',
+      value: 'No candidate commit',
+      detail: 'The task is not assessable until the candidate submits a real commit or final evidence bundle.',
+      tone: progress?.hasChallengePacket ? 'neutral' : 'blocked',
+    };
+  }
+
+  return {
+    label: 'Risk',
+    value: 'No blocking evidence gap',
+    detail: 'Required source evidence is present. Use evaluator claims and human review before making a final decision.',
+    tone: 'positive',
+  };
+}
+
+function workspaceAssessmentNextActionItem(progress: AssessmentProgressSnapshot | null): WorkspaceAssessmentReadoutItem {
+  return {
+    label: 'Next action',
+    value: workspaceAssessmentNextActionTitle(progress),
+    detail: progress?.nextActionLabel ?? 'Create or configure the source-backed assessment before relying on this interview.',
+    tone: progress?.nextAction === 'RESOLVE_DIAGNOSTIC' ? 'blocked' : 'neutral',
+  };
+}
+
+function workspaceAssessmentHiringReadout(input: {
+  progress: AssessmentProgressSnapshot | null;
+  setup: AssessmentSetupProjection | null | undefined;
+  challengeText: string | null;
+}): WorkspaceAssessmentReadoutItem[] {
+  return [
+    workspaceAssessmentDecisionItem(input.progress),
+    workspaceAssessmentFitItem(input),
+    workspaceAssessmentProofItem(input.progress),
+    workspaceAssessmentRiskItem(input.progress),
+    workspaceAssessmentNextActionItem(input.progress),
+  ];
 }
 
 function sourceRefText(ref: CodeReviewMatchSourceRef | null | undefined): string | null {
@@ -2166,6 +2434,11 @@ export default function InterviewDetailPage(): JSX.Element {
   const assessmentConfidenceSignals = assessmentConfidenceSignalItems(assessmentProgress);
   const assessmentEvaluationClaims = assessmentProgress?.evaluation?.claims?.slice(0, 3) ?? [];
   const canStartAssessmentEvaluation = assessmentProgress?.nextAction === 'START_EVALUATION';
+  const workspaceAssessmentReadout = workspaceAssessmentHiringReadout({
+    progress: assessmentProgress,
+    setup: interview.assessmentSetup,
+    challengeText: assessmentChallengeText,
+  });
   const showsRoomPanel = !isCodeReviewInterview;
   const hasCallRecordEvidence = Boolean(
     interview.transcriptArtifact
@@ -2521,6 +2794,44 @@ export default function InterviewDetailPage(): JSX.Element {
               ))}
             </div>
           )}
+        </section>
+      )}
+
+      {usesWorkspaceInterview && (
+        <section
+          data-testid="interview-workspace-assessment-decision-summary"
+          style={WORKSPACE_ASSESSMENT_DECISION_SECTION}
+        >
+          <div style={DECISION_HEADER}>
+            <div style={{ minWidth: 0 }}>
+              <div style={{ ...SECTION_TITLE, marginBottom: 8 }}>
+                <CheckCircle size={15} />
+                Assessment decision
+              </div>
+              <div style={ROOM_LINK_TEXT}>
+                A hiring-manager readout from the source-backed task, commit, diff, tests, and evaluator report.
+              </div>
+            </div>
+            <span style={MATCH_BADGE}>{assessmentProgressStage}</span>
+          </div>
+          <div style={DECISION_COCKPIT}>
+            <div style={FIELD_LABEL}>Hiring manager readout</div>
+            <div style={DECISION_COCKPIT_GRID}>
+              {workspaceAssessmentReadout.map((item) => (
+                <div
+                  key={item.label}
+                  style={{
+                    ...DECISION_COCKPIT_ITEM,
+                    ...DECISION_NEXT_STEP_TONE[item.tone],
+                  }}
+                >
+                  <div style={FIELD_LABEL}>{item.label}</div>
+                  <div style={DECISION_COCKPIT_VALUE}>{item.value}</div>
+                  <div style={DECISION_COCKPIT_DETAIL}>{item.detail}</div>
+                </div>
+              ))}
+            </div>
+          </div>
         </section>
       )}
 
@@ -3782,6 +4093,16 @@ const ASSESSMENT_PROGRESS_PANEL: CSSProperties = {
   borderRadius: 8,
   background: 'var(--pipe-surface-solid)',
   padding: 18,
+};
+
+const WORKSPACE_ASSESSMENT_DECISION_SECTION: CSSProperties = {
+  display: 'grid',
+  gap: 14,
+  border: '1px solid rgba(96,165,250,0.32)',
+  borderRadius: 8,
+  background: 'var(--pipe-surface-solid)',
+  padding: 18,
+  boxShadow: '0 18px 42px var(--pipe-shadow)',
 };
 
 const ASSESSMENT_PROGRESS_GRID: CSSProperties = {
