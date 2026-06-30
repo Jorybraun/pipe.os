@@ -175,7 +175,7 @@ describe('assessments_to_living_context backfill', () => {
     sqlite.exec(`
       INSERT INTO assessment_sessions
         (id, ingestion_key, interview_id, mode, state, candidate_id, workspace_id, metadata_json, started_at, created_at, updated_at)
-      VALUES ('sess-partial-1', 'assessment:sess-partial-1', 'interview-assess-1', 'OPEN_SOURCE_BUG_FIX', 'IN_PROGRESS', NULL, 'owner-1', '{}', '${now}', '${now}', '${now}');
+      VALUES ('sess-partial-1', 'assessment:sess-partial-1', 'interview-assess-1', 'OPEN_SOURCE_BUG_FIX', 'IN_PROGRESS', 'cand-assess-1', 'owner-1', '{}', '${now}', '${now}', '${now}');
 
       INSERT INTO assessment_evidence_events
         (id, ingestion_key, session_id, sequence, kind, actor_type, actor_id, narrative, payload_json, occurred_at, created_at)
@@ -183,7 +183,7 @@ describe('assessments_to_living_context backfill', () => {
 
       INSERT INTO assessment_event_source_refs
         (id, event_id, source_ref_type, source_ref_id, evidence_role, locator_json, exact_text, content_hash, metadata_json, created_at)
-      VALUES ('event-ref-packet-1', 'event-partial-1', 'review_challenge_packet', 'packet-assess-1', 'assigned_challenge', '{}', 'Repo: example/repo\\nTask: fix the popover race.', 'sha256:packet-json-hash', '{}', '${now}');
+      VALUES ('event-ref-packet-1', 'event-partial-1', 'review_challenge_packet', 'packet-assess-1', 'assigned_challenge', '{}', '{"id":"packet-assess-1","repo":"example/repo"}', 'sha256:packet-json-hash', '{}', '${now}');
     `);
 
     const partial = await ingestAssessmentSessionRealTime(db, 'sess-partial-1');
