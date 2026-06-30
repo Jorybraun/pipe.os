@@ -568,7 +568,7 @@ describe('POST /rpc/get-stage-config', () => {
     });
   });
 
-  it('keeps standalone CODE_REVIEW in the matching state until source-backed candidate evidence is ready', async () => {
+  it('ends standalone CODE_REVIEW candidate intake while source-backed evidence builds in the background', async () => {
     const db = fakeD1({
       firstResponders: [
         {
@@ -618,17 +618,22 @@ describe('POST /rpc/get-stage-config', () => {
 
     expect(res.status).toBe(200);
     const body = await res.json() as {
+      isComplete?: boolean;
       stageId?: string;
+      stageTitle?: string;
+      message?: string;
       challenges?: Array<{ type: string; title: string }>;
     };
-    expect(body.stageId).toBe('standalone-code-review-matching');
-    expect(body.challenges?.[0]).toMatchObject({
-      type: 'WAITING_FOR_MATCH',
-      title: 'Building your personalized challenge',
+    expect(body).toMatchObject({
+      isComplete: true,
+      stageId: 'candidate-intake-queued',
+      stageTitle: 'Profile received',
+      message: expect.stringContaining('email you when your code review is ready'),
+      challenges: [],
     });
   });
 
-  it('blocks stale standalone CODE_REVIEW ingestion with candidate-safe diagnostics instead of polling forever', async () => {
+  it('keeps stale standalone CODE_REVIEW ingestion out of the candidate-facing waiting room', async () => {
     const db = fakeD1({
       firstResponders: [
         {
@@ -688,49 +693,20 @@ describe('POST /rpc/get-stage-config', () => {
 
     expect(res.status).toBe(200);
     const body = await res.json() as {
+      isComplete?: boolean;
       stageId?: string;
-      waitingChallenge?: {
-        config?: {
-          state?: string;
-          autoRefresh?: boolean;
-          reason?: string;
-          diagnostics?: {
-            phase?: string;
-            ingestionStatus?: string | null;
-            currentStep?: string | null;
-            matchableNodeCount?: number;
-            rawNodeCount?: number;
-            updatedAt?: string | null;
-            pipeline?: Array<{ id: string; status: string }>;
-          };
-        };
-      };
+      message?: string;
+      waitingChallenge?: unknown;
     };
-    expect(body.stageId).toBe('standalone-code-review-matching');
-    expect(body.waitingChallenge?.config).toMatchObject({
-      state: 'blocked',
-      autoRefresh: false,
-      reason: expect.stringContaining('stalled'),
-      diagnostics: {
-        phase: 'candidate_evidence',
-        ingestionStatus: 'pending',
-        currentStep: 'decompose_resume',
-        matchableNodeCount: 0,
-        rawNodeCount: 0,
-        updatedAt: '2000-01-01T00:00:00.000Z',
-        pipeline: expect.arrayContaining([
-          expect.objectContaining({ id: 'intake', status: 'complete' }),
-          expect.objectContaining({ id: 'decomposition', status: 'blocked' }),
-          expect.objectContaining({ id: 'repo_matching', status: 'pending' }),
-          expect.objectContaining({ id: 'challenge', status: 'pending' }),
-          expect.objectContaining({ id: 'review', status: 'pending' }),
-          expect.objectContaining({ id: 'scoring', status: 'pending' }),
-        ]),
-      },
+    expect(body).toMatchObject({
+      isComplete: true,
+      stageId: 'candidate-intake-queued',
+      message: expect.stringContaining('email you when your code review is ready'),
     });
+    expect(body.waitingChallenge).toBeUndefined();
   });
 
-  it('blocks role-backed CODE_REVIEW no-match outcomes with repo-matching diagnostics', async () => {
+  it('hides role-backed CODE_REVIEW no-match diagnostics from the candidate-facing intake response', async () => {
     const db = fakeD1({
       firstResponders: [
         {
@@ -813,44 +789,19 @@ describe('POST /rpc/get-stage-config', () => {
 
     expect(res.status).toBe(200);
     const body = await res.json() as {
+      isComplete?: boolean;
       stageId?: string;
-      challenges?: Array<{ type: string }>;
-      waitingChallenge?: {
-        config?: {
-          state?: string;
-          autoRefresh?: boolean;
-          reason?: string;
-          diagnostics?: {
-            phase?: string;
-            ingestionStatus?: string | null;
-            currentStep?: string | null;
-            matchableNodeCount?: number;
-            pipeline?: Array<{ id: string; status: string }>;
-          };
-        };
-      };
+      message?: string;
+      challenges?: Array<{ type: string; title?: string }>;
+      waitingChallenge?: unknown;
     };
-    expect(body.stageId).toBe('stage_code_review');
-    expect(body.challenges?.[0]?.type).toBe('WAITING_FOR_MATCH');
-    expect(body.waitingChallenge?.config).toMatchObject({
-      state: 'blocked',
-      autoRefresh: false,
-      reason: 'Deterministic challenge matcher returned NO_ROLE_SAFE_CHALLENGE',
-      diagnostics: {
-        phase: 'repo_matching',
-        ingestionStatus: 'pending',
-        currentStep: 'decompose_resume',
-        matchableNodeCount: 16,
-        pipeline: expect.arrayContaining([
-          expect.objectContaining({ id: 'intake', status: 'complete' }),
-          expect.objectContaining({ id: 'decomposition', status: 'complete' }),
-          expect.objectContaining({ id: 'repo_matching', status: 'blocked' }),
-          expect.objectContaining({ id: 'challenge', status: 'pending' }),
-          expect.objectContaining({ id: 'review', status: 'pending' }),
-          expect.objectContaining({ id: 'scoring', status: 'pending' }),
-        ]),
-      },
+    expect(body).toMatchObject({
+      isComplete: true,
+      stageId: 'candidate-intake-queued',
+      message: expect.stringContaining('email you when your code review is ready'),
+      challenges: [],
     });
+    expect(body.waitingChallenge).toBeUndefined();
     expect(matchCandidateToReviewChallenge).toHaveBeenCalledOnce();
   });
 
@@ -922,12 +873,17 @@ describe('POST /rpc/get-stage-config', () => {
 
     expect(res.status).toBe(200);
     const body = await res.json() as {
-      waitingChallenge?: { config?: { state?: string; reason?: string } };
+      isComplete?: boolean;
+      stageId?: string;
+      message?: string;
+      waitingChallenge?: unknown;
     };
-    expect(body.waitingChallenge?.config).toMatchObject({
-      state: 'pending',
-      reason: 'Retrying candidate evidence ingestion after a stale Workers AI model failure.',
+    expect(body).toMatchObject({
+      isComplete: true,
+      stageId: 'candidate-intake-queued',
+      message: expect.stringContaining('email you when your code review is ready'),
     });
+    expect(body.waitingChallenge).toBeUndefined();
     expect(db.__calls.some((call) =>
       call.ran
       && call.sql.includes("status = 'pending'")
@@ -1018,14 +974,17 @@ describe('POST /rpc/get-stage-config', () => {
 
     expect(res.status).toBe(200);
     const body = await res.json() as {
+      isComplete?: boolean;
       stageId?: string;
-      waitingChallenge?: { config?: { state?: string; reason?: string } };
+      message?: string;
+      waitingChallenge?: unknown;
     };
-    expect(body.stageId).toBe('standalone-dev-container-matching');
-    expect(body.waitingChallenge?.config).toMatchObject({
-      state: 'pending',
-      reason: 'Retrying candidate evidence ingestion after a stale Workers AI model failure.',
+    expect(body).toMatchObject({
+      isComplete: true,
+      stageId: 'candidate-intake-queued',
+      message: expect.stringContaining('email you when your code review is ready'),
     });
+    expect(body.waitingChallenge).toBeUndefined();
 
     await waitUntilAll();
     expect(storage.get).toHaveBeenCalledWith('text-intake/cand_1/future');
@@ -1106,14 +1065,17 @@ describe('POST /rpc/get-stage-config', () => {
 
     expect(res.status).toBe(200);
     const body = await res.json() as {
+      isComplete?: boolean;
       stageId?: string;
-      waitingChallenge?: { config?: { state?: string; reason?: string } };
+      message?: string;
+      waitingChallenge?: unknown;
     };
-    expect(body.stageId).toBe('standalone-dev-container-matching');
-    expect(body.waitingChallenge?.config).toMatchObject({
-      state: 'pending',
-      reason: 'Retrying candidate evidence ingestion after a stale Workers AI model failure.',
+    expect(body).toMatchObject({
+      isComplete: true,
+      stageId: 'candidate-intake-queued',
+      message: expect.stringContaining('email you when your code review is ready'),
     });
+    expect(body.waitingChallenge).toBeUndefined();
     expect(db.__calls.some((call) =>
       call.ran
       && call.sql.includes("status = 'pending'")
@@ -1134,7 +1096,14 @@ describe('POST /rpc/get-stage-config', () => {
 
 describe('POST /rpc/submit-challenge-response', () => {
   it('queues text-intake ingestion from deterministic CV evidence without a pre-ingestion AI parse', async () => {
-    const db = fakeD1();
+    const db = fakeD1({
+      firstResponders: [
+        {
+          match: 'SELECT invite_token, status FROM candidates WHERE id',
+          value: { invite_token: 'CLAIMED::invite-token', status: 'IN_PROGRESS' },
+        },
+      ],
+    });
     const aiRun = vi.fn(async () => ({ response: '{}' }));
     const storage = { put: vi.fn(async () => null) } as unknown as R2Bucket;
     const env = buildEnv({ DB: db, AI: { run: aiRun } as unknown as Ai, STORAGE: storage });
@@ -1161,6 +1130,12 @@ describe('POST /rpc/submit-challenge-response', () => {
     );
 
     expect(res.status).toBe(200);
+    const body = await res.json() as { success?: boolean; complete?: boolean; queued?: boolean };
+    expect(body).toMatchObject({
+      success: true,
+      complete: true,
+      queued: true,
+    });
     await waitUntilAll();
     expect(storage.put).toHaveBeenCalledWith(
       expect.stringMatching(/^text-intake\/cand_1\//),

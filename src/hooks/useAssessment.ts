@@ -486,11 +486,16 @@ export function useAssessment(inviteToken: string): UseAssessmentReturn {
       setState((prev) => ({ ...prev, isLoading: true, error: null }));
 
       try {
-        const result = await rpcPost<{ success: boolean; next?: boolean; challengeSubmissionId?: string; error?: string }>(
+        const result = await rpcPost<{ success: boolean; next?: boolean; complete?: boolean; challengeSubmissionId?: string; error?: string }>(
           '/rpc/submit-challenge-response',
           { order: currentOrder, submission: JSON.stringify(submission) },
           sessionTokenRef.current,
         );
+
+        if (result.success && result.complete) {
+          setState((prev) => ({ ...prev, isLoading: false, isSubmitted: true }));
+          return;
+        }
 
         if (result.success && result.next) {
           // Synthetic challenge (WELCOME, LIVE_VIDEO) — just advance, no scoring

@@ -389,7 +389,7 @@ export default function CandidateAssessmentPage({ hideHeader = false }: Candidat
           <CheckCircle size={64} color="#10b981" style={{ marginBottom: 32 }} />
           <h2 style={{ fontSize: 32, fontWeight: 800, color: 'var(--pipe-text, #fff)', marginBottom: 16, letterSpacing: '-0.02em' }}>Submitted.</h2>
           <p style={{ fontSize: 14, color: 'var(--pipe-text-muted)', lineHeight: 1.6, fontFamily: '"Space Mono", monospace' }}>
-            Your assessment has been securely delivered. The team will review your submission and get back to you soon.
+            Your profile has been received. PIPE will email you when your code review is ready.
           </p>
         </LiquidMetalCard>
       </div>
