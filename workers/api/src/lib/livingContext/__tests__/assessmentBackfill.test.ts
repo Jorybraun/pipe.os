@@ -75,6 +75,7 @@ describe('assessments_to_living_context backfill', () => {
         role TEXT,
         type TEXT NOT NULL
       );
+      CREATE TABLE qualified_repos (id INTEGER PRIMARY KEY);
       CREATE TABLE meetings (
         id TEXT PRIMARY KEY,
         owner_id TEXT,
@@ -153,6 +154,13 @@ describe('assessments_to_living_context backfill', () => {
       INSERT INTO scheduled_interviews
         (id, candidate_id, owner_id, status, interview_type, recipient_name, recipient_email, created_at, updated_at)
       VALUES ('interview-assess-1', 'cand-assess-1', 'owner-1', 'INVITED', 'OPEN_SOURCE_BUG_FIX', 'Casey Candidate', 'casey@test.dev', datetime('now'), datetime('now'));
+
+      INSERT INTO qualified_repos (id) VALUES (42);
+      INSERT INTO repo_snapshots (id, repo_id, commit_sha, tree_hash, extractor_version, created_at)
+      VALUES ('snapshot-assess-1', 42, 'base-sha', 'tree-hash', 'test', unixepoch());
+      INSERT INTO review_challenge_packets
+        (id, repo_snapshot_id, repo_id, pr_number, packet_version, source_hash, language, production_ready, quality_score, demand_families_json, packet_json, created_at, updated_at)
+      VALUES ('packet-assess-1', 'snapshot-assess-1', 42, 123, 'v1', 'sha256:packet-json-hash', 'TypeScript', 1, 0.9, '[]', '{"id":"packet-assess-1","repo":"example/repo"}', unixepoch(), unixepoch());
     `);
     db = createMockD1(sqlite);
   });
@@ -172,6 +180,10 @@ describe('assessments_to_living_context backfill', () => {
       INSERT INTO assessment_evidence_events
         (id, ingestion_key, session_id, sequence, kind, actor_type, actor_id, narrative, payload_json, occurred_at, created_at)
       VALUES ('event-partial-1', 'assessment:event-partial-1', 'sess-partial-1', 1, 'commit_created', 'candidate', 'cand-assess-1', 'Candidate created an assessment commit.', '{}', '${now}', '${now}');
+
+      INSERT INTO assessment_event_source_refs
+        (id, event_id, source_ref_type, source_ref_id, evidence_role, locator_json, exact_text, content_hash, metadata_json, created_at)
+      VALUES ('event-ref-packet-1', 'event-partial-1', 'review_challenge_packet', 'packet-assess-1', 'assigned_challenge', '{}', 'Repo: example/repo\\nTask: fix the popover race.', 'sha256:packet-json-hash', '{}', '${now}');
     `);
 
     const partial = await ingestAssessmentSessionRealTime(db, 'sess-partial-1');

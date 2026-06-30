@@ -199,6 +199,12 @@ test.describe('Feature: assessment recruiter detail smoke', () => {
       await expect(score).toBeVisible({ timeout: 45_000 });
       await expect(score).toContainText('Candidate signal');
       await expect(score).toContainText(/\d+\/100/);
+      const scoreTrust = page.getByTestId('interview-code-review-score-trust');
+      await expect(scoreTrust).toBeVisible();
+      await expect(scoreTrust).toContainText('Score trust');
+      await expect(scoreTrust).toContainText('Valid because');
+      await expect(scoreTrust).toContainText('Calibrate because');
+      await expect(scoreTrust).toContainText('Use as');
       await expect(scoreValidity).toContainText(/Usable|Score needs human calibration|Submitted, scoring pending/);
     }
 

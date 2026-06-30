@@ -187,6 +187,13 @@ interface CodeReviewSignalBasisItem {
   satisfied: boolean;
 }
 
+interface CodeReviewScoreTrust {
+  validBecause: string;
+  calibrateBecause: string;
+  useAs: string;
+  tone: CodeReviewNextStepTone;
+}
+
 interface WorkspaceAssessmentReadoutItem {
   label: string;
   value: string;
@@ -1307,6 +1314,48 @@ function codeReviewSignalBasisItems(input: {
       satisfied: input.proofCount > 0 || Boolean(input.match?.assessmentQuality),
     },
   ];
+}
+
+function codeReviewScoreTrustSummary(input: {
+  score: CodeReviewScoreSummary;
+  submission: CodeReviewSubmissionDetail | null;
+  match: CodeReviewMatchDetail | null;
+  proofCount: number;
+  validity: CodeReviewAssessmentValidity;
+}): CodeReviewScoreTrust {
+  const annotationCount = input.submission?.annotations.length ?? 0;
+  const pushbackCount = input.submission?.defenseThreads.length ?? 0;
+  const qualityGate = input.match?.assessmentQuality
+    ? `${input.match.assessmentQuality.verdict.toLowerCase()} match gate`
+    : input.match?.status === 'MATCHED'
+      ? 'matched challenge'
+      : 'unproven match';
+  const validParts = [
+    input.score.status === 'scored' ? 'Scored review' : `Score ${titleCaseToken(input.score.status)}`,
+    countLabel(annotationCount, 'annotation'),
+    countLabel(pushbackCount, 'pushback thread'),
+    input.proofCount > 0 ? countLabel(input.proofCount, 'evidence bridge') : qualityGate,
+    qualityGate,
+  ];
+
+  const calibrators = [
+    input.score.band ? `${input.score.band.toLowerCase()} band` : null,
+    input.score.growthAreas[0] ?? null,
+    annotationCount === 0 ? 'no review annotations' : null,
+    pushbackCount === 0 ? 'no developer pushback thread' : null,
+    input.proofCount === 0 ? 'no rendered source bridge' : null,
+  ].filter((item): item is string => Boolean(item));
+
+  return {
+    validBecause: validParts.join(' · '),
+    calibrateBecause: calibrators.length > 0
+      ? calibrators.slice(0, 3).join(' · ')
+      : 'No blocking calibration gap in this score packet.',
+    useAs: input.validity.tone === 'positive'
+      ? 'Use as source-backed signal, not an automatic decision.'
+      : `${input.validity.value}: ${input.validity.detail}`,
+    tone: input.validity.tone,
+  };
 }
 
 function codeReviewAssessmentValiditySummary(input: {
@@ -2911,6 +2960,15 @@ export default function InterviewDetailPage(): JSX.Element {
     setup: interview.assessmentSetup,
     match: codeReviewMatch,
   });
+  const codeReviewScoreTrust = codeReviewScore
+    ? codeReviewScoreTrustSummary({
+        score: codeReviewScore,
+        submission: codeReviewSubmission,
+        match: codeReviewMatch,
+        proofCount: matchHyperedges.length,
+        validity: codeReviewAssessmentValidity,
+      })
+    : null;
   const codeReviewExplanation = codeReviewMatchExplanation({
     repoUrl: interview.githubRepoUrl,
     prNumber: interview.githubPrNumber,
@@ -3827,6 +3885,31 @@ export default function InterviewDetailPage(): JSX.Element {
                       </div>
                     ))}
                   </div>
+                  {codeReviewScoreTrust && (
+                    <div
+                      data-testid="interview-code-review-score-trust"
+                      style={{
+                        ...DECISION_SCORE_TRUST,
+                        ...DECISION_NEXT_STEP_TONE[codeReviewScoreTrust.tone],
+                      }}
+                    >
+                      <div style={FIELD_LABEL}>Score trust</div>
+                      <div style={DECISION_SCORE_TRUST_GRID}>
+                        <div style={DECISION_SCORE_TRUST_ITEM}>
+                          <div style={FIELD_LABEL}>Valid because</div>
+                          <div style={CONTEXT_RECORD_NARRATIVE}>{codeReviewScoreTrust.validBecause}</div>
+                        </div>
+                        <div style={DECISION_SCORE_TRUST_ITEM}>
+                          <div style={FIELD_LABEL}>Calibrate because</div>
+                          <div style={CONTEXT_RECORD_NARRATIVE}>{codeReviewScoreTrust.calibrateBecause}</div>
+                        </div>
+                        <div style={DECISION_SCORE_TRUST_ITEM}>
+                          <div style={FIELD_LABEL}>Use as</div>
+                          <div style={CONTEXT_RECORD_NARRATIVE}>{codeReviewScoreTrust.useAs}</div>
+                        </div>
+                      </div>
+                    </div>
+                  )}
                   {(codeReviewScore.strengths.length > 0 || codeReviewScore.growthAreas.length > 0) && (
                     <div style={DECISION_SCORE_COLUMNS}>
                       {codeReviewScore.strengths.length > 0 && (
@@ -5581,6 +5664,28 @@ const DECISION_SCORE_BASIS_VALUE: CSSProperties = {
   fontWeight: 800,
   lineHeight: 1.35,
   overflowWrap: 'anywhere',
+};
+
+const DECISION_SCORE_TRUST: CSSProperties = {
+  display: 'grid',
+  gap: 8,
+  padding: 12,
+  border: '1px solid rgba(255,255,255,0.09)',
+  borderRadius: 6,
+  background: 'rgba(5,10,20,0.26)',
+};
+
+const DECISION_SCORE_TRUST_GRID: CSSProperties = {
+  display: 'grid',
+  gridTemplateColumns: 'repeat(auto-fit, minmax(180px, 1fr))',
+  gap: 8,
+  minWidth: 0,
+};
+
+const DECISION_SCORE_TRUST_ITEM: CSSProperties = {
+  display: 'grid',
+  gap: 5,
+  minWidth: 0,
 };
 
 const DECISION_SCORE_COLUMNS: CSSProperties = {
