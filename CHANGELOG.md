@@ -20,6 +20,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Fixed — Video room
 
+- Code-first dev-container rooms now keep a candidate-safe open-source task brief beside VS Code, showing repo, base commit, task, success criteria, expected evidence, current step, and Submit Work without exposing source hashes or internal provenance.
 - Meeting-room basic-auth route regressions now use the real room-dev host when asserting credential injection, keeping the tests aligned with the dev-host-only auth hardening.
 - Failed, stopped, and expired dev-container workspaces now present an explicit Relaunch workspace recovery action in the room status strip, prejoin panel, and workspace panel instead of leaving hosts with a generic launch prompt.
 - Workspace terminal sessions now decode browser `TERMINAL_INPUT` control frames and normalize xterm carriage returns before writing to bash, so candidate terminal commands execute as commands instead of JSON blobs.

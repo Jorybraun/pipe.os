@@ -123,6 +123,7 @@ const WINDOW_LIFECYCLE_SOURCES = new Set([
   'win95_start_menu',
   'win95_window_chrome',
   'win95_taskbar',
+  'standard_assessment_ui',
   'clippy_action',
   'shared_state_sync',
 ]);

@@ -9,6 +9,7 @@ export type WindowLifecycleSource =
   | 'win95_start_menu'
   | 'win95_window_chrome'
   | 'win95_taskbar'
+  | 'standard_assessment_ui'
   | 'clippy_action'
   | 'shared_state_sync';
 export type WindowStateSource =

@@ -6,6 +6,7 @@ interface StandardLayoutProps {
   wm: WindowManagerApi;
   renderWindowContent: (win: WindowState) => ReactNode;
   assessmentHeader?: ReactNode;
+  assessmentAside?: ReactNode;
   recordingLabel?: string;
   recordingActive?: boolean;
   canEnterDesktop?: boolean;
@@ -18,6 +19,7 @@ export function StandardLayout({
   wm,
   renderWindowContent,
   assessmentHeader,
+  assessmentAside,
   recordingLabel,
   recordingActive,
   canEnterDesktop = false,
@@ -41,19 +43,26 @@ export function StandardLayout({
       className={`standard-layout${workspaceIsPrimary ? ' is-workspace-primary' : ''}`}
       data-testid="standard-layout"
     >
-      {/* Main video area */}
-      <div className="standard-video-area" data-testid={workspaceIsPrimary ? 'standard-primary-workspace' : 'standard-primary-video'}>
-        {primaryWin ? (
-          renderWindowContent(primaryWin)
-        ) : (
-          <div className="standard-video-placeholder">
-            <Monitor size={48} />
-            <p>Connecting...</p>
-          </div>
-        )}
-        {workspaceIsPrimary && videoWin && (
-          <div className="standard-video-pip" data-testid="standard-video-pip">
-            {renderWindowContent(videoWin)}
+      {/* Main video/workspace area */}
+      <div className={workspaceIsPrimary && assessmentAside ? 'standard-assessment-shell' : 'standard-video-area'}>
+        <div className="standard-video-area" data-testid={workspaceIsPrimary ? 'standard-primary-workspace' : 'standard-primary-video'}>
+          {primaryWin ? (
+            renderWindowContent(primaryWin)
+          ) : (
+            <div className="standard-video-placeholder">
+              <Monitor size={48} />
+              <p>Connecting...</p>
+            </div>
+          )}
+          {workspaceIsPrimary && videoWin && (
+            <div className="standard-video-pip" data-testid="standard-video-pip">
+              {renderWindowContent(videoWin)}
+            </div>
+          )}
+        </div>
+        {workspaceIsPrimary && assessmentAside && (
+          <div className="standard-assessment-aside" data-testid="standard-assessment-aside">
+            {assessmentAside}
           </div>
         )}
       </div>

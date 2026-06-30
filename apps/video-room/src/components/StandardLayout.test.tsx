@@ -80,6 +80,26 @@ describe('StandardLayout', () => {
     expect(screen.queryByTitle('Toggle workspace')).toBeNull();
   });
 
+  it('keeps the assessment brief persistently beside the primary workspace', () => {
+    const wm = makeWindowManager([
+      roomWindow({ id: 'video', windowType: 'video', title: 'Video Call' }),
+      roomWindow({ id: 'workspace', windowType: 'workspace', title: 'VS Code', focused: true }),
+    ]);
+
+    render(
+      <StandardLayout
+        wm={wm}
+        assessmentAside={<div>source-backed task brief</div>}
+        renderWindowContent={(win) => <div>{win.windowType === 'workspace' ? 'code workspace' : 'video call'}</div>}
+        modeLabel="Dev-container assessment"
+        primarySurface="workspace"
+      />,
+    );
+
+    expect(screen.getByTestId('standard-primary-workspace').textContent).toContain('code workspace');
+    expect(screen.getByTestId('standard-assessment-aside').textContent).toContain('source-backed task brief');
+  });
+
   it('keeps the legacy desktop as an optional control', () => {
     render(
       <StandardLayout

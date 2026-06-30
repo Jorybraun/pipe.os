@@ -4557,6 +4557,14 @@ button:focus-visible {
   background: #01050b;
 }
 
+.standard-assessment-shell {
+  flex: 1;
+  min-height: 0;
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) minmax(280px, 360px);
+  background: #01050b;
+}
+
 .standard-video-area > * {
   width: 100%;
   height: 100%;
@@ -4570,6 +4578,13 @@ button:focus-visible {
 .standard-layout.is-workspace-primary .win95-workspace-content {
   border: 0;
   box-shadow: none;
+}
+
+.standard-assessment-aside {
+  min-height: 0;
+  overflow: auto;
+  border-left: 1px solid rgba(255, 255, 255, 0.10);
+  background: rgba(6, 22, 37, 0.96);
 }
 
 .standard-video-area > .standard-video-pip {
@@ -4717,6 +4732,147 @@ button:focus-visible {
   border-color: rgba(96, 165, 250, 0.40);
 }
 
+.assessment-task-brief {
+  display: grid;
+  align-content: start;
+  gap: 14px;
+  min-height: 100%;
+  padding: 16px;
+  color: #f4f8ff;
+  font-family: Inter, system-ui, sans-serif;
+}
+
+.assessment-task-brief-header {
+  display: flex;
+  gap: 10px;
+  align-items: flex-start;
+  padding-bottom: 12px;
+  border-bottom: 1px solid rgba(255, 255, 255, 0.10);
+}
+
+.assessment-task-brief-header h2 {
+  margin: 0;
+  font-size: 15px;
+  line-height: 1.2;
+}
+
+.assessment-task-brief-header span {
+  display: block;
+  margin-top: 3px;
+  color: rgba(244, 248, 255, 0.62);
+  font-family: 'Space Mono', monospace;
+  font-size: 10px;
+  letter-spacing: 0.08em;
+  text-transform: uppercase;
+}
+
+.assessment-task-brief-meta {
+  display: grid;
+  grid-template-columns: max-content minmax(0, 1fr);
+  gap: 6px 10px;
+  margin: 0;
+  padding: 12px;
+  border: 1px solid rgba(255, 255, 255, 0.12);
+  border-radius: 6px;
+  background: rgba(255, 255, 255, 0.06);
+}
+
+.assessment-task-brief-meta dt {
+  color: rgba(191, 219, 254, 0.86);
+  font-family: 'Space Mono', monospace;
+  font-size: 10px;
+  font-weight: 700;
+  text-transform: uppercase;
+}
+
+.assessment-task-brief-meta dd {
+  margin: 0;
+  min-width: 0;
+  color: #f4f8ff;
+  font-size: 12px;
+  font-weight: 700;
+  overflow-wrap: anywhere;
+}
+
+.assessment-task-brief-step,
+.assessment-task-brief-contract,
+.assessment-task-brief-empty {
+  padding: 12px;
+  border: 1px solid rgba(96, 165, 250, 0.24);
+  border-radius: 6px;
+  background: rgba(96, 165, 250, 0.08);
+}
+
+.assessment-task-brief-step strong,
+.assessment-task-brief-contract strong {
+  display: block;
+  margin-bottom: 5px;
+  color: #bfdbfe;
+  font-family: 'Space Mono', monospace;
+  font-size: 10px;
+  letter-spacing: 0.08em;
+  text-transform: uppercase;
+}
+
+.assessment-task-brief-step p,
+.assessment-task-brief-contract p,
+.assessment-task-brief-empty {
+  margin: 0;
+  color: rgba(244, 248, 255, 0.82);
+  font-size: 12px;
+  line-height: 1.5;
+}
+
+.assessment-task-brief-contract {
+  display: grid;
+  gap: 12px;
+  background: rgba(255, 255, 255, 0.05);
+}
+
+.assessment-task-brief-contract ul {
+  margin: 0;
+  padding-left: 18px;
+  color: rgba(244, 248, 255, 0.82);
+  font-size: 12px;
+  line-height: 1.5;
+}
+
+.assessment-task-brief-contract li + li {
+  margin-top: 4px;
+}
+
+.assessment-task-brief-actions {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px;
+  align-items: center;
+}
+
+.assessment-task-brief-actions button,
+.assessment-task-brief-commit {
+  display: inline-flex;
+  align-items: center;
+  gap: 7px;
+  min-height: 34px;
+  padding: 8px 10px;
+  border: 1px solid rgba(255, 255, 255, 0.14);
+  border-radius: 6px;
+  background: rgba(255, 255, 255, 0.10);
+  color: #f4f8ff;
+  font-family: 'Space Mono', monospace;
+  font-size: 10px;
+  font-weight: 700;
+}
+
+.assessment-task-brief-actions button {
+  cursor: pointer;
+}
+
+.assessment-task-brief-actions button:active {
+  transform: scale(0.98);
+  border-color: rgba(96, 165, 250, 0.40);
+}
+
 .standard-layout .win95-video-controls {
   gap: 10px;
   padding: 12px;
@@ -4752,6 +4908,18 @@ button:focus-visible {
   align-items: center;
   gap: 12px;
   color: rgba(244, 248, 255, 0.4);
+}
+
+@media (max-width: 980px) {
+  .standard-assessment-shell {
+    grid-template-columns: 1fr;
+  }
+
+  .standard-assessment-aside {
+    max-height: 38vh;
+    border-left: 0;
+    border-top: 1px solid rgba(255, 255, 255, 0.10);
+  }
 }
 
 .standard-controls-bar {

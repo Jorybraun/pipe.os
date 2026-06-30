@@ -122,6 +122,7 @@ import { PaintWindow, type PaintCanvasItem, type PaintShape, type PaintStroke } 
 import { RoomFileSystemWindow } from './components/RoomFileSystemWindow';
 import { CommitSubmissionWindow } from './components/CommitSubmissionWindow';
 import { ChallengePacketPanel } from './components/ChallengePacketPanel';
+import { AssessmentTaskBrief } from './components/AssessmentTaskBrief';
 import {
   AssessmentStatusStrip,
   assessmentModeForRoom,
@@ -2439,8 +2440,19 @@ function Room({ token, metadata }: { token: string; metadata: RoomMetadata }): J
       canLaunchWorkspace={canLaunchWorkspace}
       assessmentProgress={assessmentProgress}
       onLaunchWorkspace={() => void launchWorkspace()}
-      onOpenWorkspace={() => openWorkspaceWindow('win95_desktop_ui')}
-      onOpenSubmission={() => openSubmissionWindow('win95_desktop_ui')}
+      onOpenWorkspace={() => openWorkspaceWindow('standard_assessment_ui')}
+      onOpenSubmission={() => openSubmissionWindow('standard_assessment_ui')}
+    />
+  );
+
+  const renderAssessmentTaskBrief = (): JSX.Element => (
+    <AssessmentTaskBrief
+      packet={workspaceChallengePacket}
+      workspace={workspace}
+      progress={assessmentProgress}
+      workspaceReady={hasActiveWorkspace}
+      onOpenWorkspace={() => openWorkspaceWindow('standard_assessment_ui')}
+      onOpenSubmission={() => openSubmissionWindow('standard_assessment_ui')}
     />
   );
 
@@ -2582,7 +2594,7 @@ function Room({ token, metadata }: { token: string; metadata: RoomMetadata }): J
       case 'workspace':
         return (
           <div className="win95-workspace-content" style={{ position: 'relative' }}>
-            {workspaceChallengePacket && (
+            {workspaceChallengePacket && usesWin95Desktop && (
               <ChallengePacketPanel packet={workspaceChallengePacket} compact={Boolean(workspaceUrl)} />
             )}
             {workspaceUrl ? (
@@ -2781,6 +2793,9 @@ function Room({ token, metadata }: { token: string; metadata: RoomMetadata }): J
       renderWindowContent={renderWindowContent}
       assessmentHeader={roomAssessmentMode === 'dev_container_assessment'
         ? renderAssessmentStatusStrip()
+        : undefined}
+      assessmentAside={roomAssessmentMode === 'dev_container_assessment'
+        ? renderAssessmentTaskBrief()
         : undefined}
       recordingLabel={visibleRecordingLabel}
       recordingActive={visibleRecordingActive}

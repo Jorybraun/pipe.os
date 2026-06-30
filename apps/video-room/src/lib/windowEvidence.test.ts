@@ -140,6 +140,33 @@ describe('window evidence', () => {
     });
   });
 
+  it('preserves the standard assessment UI as the initiator for code-first rooms', () => {
+    expect(buildWindowLifecycleEvidence({
+      kind: 'open',
+      actor: 'guest',
+      windowId: 'submission',
+      windowType: 'submission',
+      windowTitle: 'Submit Work',
+      source: 'standard_assessment_ui',
+      surface: 'standard',
+      roomPhase: 'connected',
+      capturedAtMs: 2900,
+    })).toMatchObject({
+      text: 'Submit Work',
+      properties: {
+        source: 'window_lifecycle_client_submit',
+        lifecycleKind: 'open',
+        lifecycleSource: 'standard_assessment_ui',
+        windowLifecycleId: 'window-lifecycle:guest:2900:open:submission',
+        actor: 'guest',
+        windowId: 'submission',
+        windowType: 'submission',
+        windowTitle: 'Submit Work',
+        durableObjectReplayExpected: false,
+      },
+    });
+  });
+
   it('builds direct source-backed evidence for Win95 window movement', () => {
     expect(buildWindowStateUpdateEvidence({
       actor: 'guest',
