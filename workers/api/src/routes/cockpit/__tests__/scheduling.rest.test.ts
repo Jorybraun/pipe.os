@@ -1931,7 +1931,7 @@ describe('GET /interviews/:id detail', () => {
       hasAiInteraction: true,
       evaluation: {
         status: 'EVALUATED',
-        summary: 'Candidate made a focused source-backed change and cited the submitted diff evidence.',
+        summary: 'Fix the start-evaluation regression with a real patch: Candidate made a focused source-backed change and cited the submitted diff evidence.',
         evidenceCoverage: {
           schemaVersion: 'assessment-evidence-coverage-v1',
           expectedForHighConfidence: expect.arrayContaining([
@@ -1962,16 +1962,21 @@ describe('GET /interviews/:id detail', () => {
         WHERE dimension = 'test_strategy'`,
     ).get()).toEqual({ count: 0 });
     const evaluationReport = sqlite!.prepare(
-      `SELECT output_json
+      `SELECT summary, output_json
          FROM assessment_evaluation_reports
         WHERE session_id = ?`,
-    ).get('assessment-session-ai-evaluation') as { output_json: string } | undefined;
+    ).get('assessment-session-ai-evaluation') as { summary: string; output_json: string } | undefined;
+    expect(evaluationReport?.summary).toBe(
+      'Fix the start-evaluation regression with a real patch: Candidate made a focused source-backed change and cited the submitted diff evidence.',
+    );
     const reportOutput = JSON.parse(evaluationReport?.output_json ?? '{}') as {
+      challengeFocus?: string | null;
       evidenceCoverage?: {
         schemaVersion?: string;
         expectedForHighConfidence?: Array<{ label?: string; satisfied?: boolean }>;
       };
     };
+    expect(reportOutput.challengeFocus).toBe('Fix the start-evaluation regression with a real patch');
     expect(reportOutput.evidenceCoverage).toMatchObject({
       schemaVersion: 'assessment-evidence-coverage-v1',
     });

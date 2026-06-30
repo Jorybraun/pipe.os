@@ -85,6 +85,7 @@ const ALLOWED_DIAGNOSTIC_SEVERITIES = new Set(['info', 'warning', 'blocking']);
 type EvaluatorDiagnosticSeverity = 'info' | 'warning' | 'blocking';
 const MAX_SOURCE_REF_EXACT_TEXT_CHARS = 800;
 const MAX_AI_PROMPT_SOURCE_REFS = 16;
+const MAX_EVALUATION_SUMMARY_CHARS = 320;
 
 const EXPECTED_HIGH_CONFIDENCE_REF_GROUPS = [
   {
@@ -186,6 +187,72 @@ function sourceRefKeysForChallenge(sourceRefs: readonly SessionSourceRef[]): str
   return sourceRefs
     .filter((ref) => CHALLENGE_REF_TYPES.has(ref.sourceRefType) || ref.evidenceRole === 'assigned_challenge')
     .map((ref) => ref.key);
+}
+
+function normalizeChallengeFocus(value: string): string {
+  const normalized = value.replace(/\s+/g, ' ').trim().replace(/[.]+$/, '');
+  if (normalized.length === 0) return normalized;
+  return `${normalized[0]?.toUpperCase() ?? ''}${normalized.slice(1)}`;
+}
+
+function challengeFocusFromExactText(exactText: string | null | undefined): string | null {
+  if (!exactText) return null;
+  const taskLine = exactText.match(/^\s*Task:\s*(.+)$/im)?.[1];
+  if (taskLine) {
+    const normalized = normalizeChallengeFocus(taskLine);
+    return normalized.length > 0 ? normalized : null;
+  }
+
+  const titleLine = exactText.match(/^\s*Title:\s*(.+)$/im)?.[1];
+  if (titleLine) {
+    const normalized = normalizeChallengeFocus(titleLine);
+    return normalized.length > 0 ? normalized : null;
+  }
+
+  return null;
+}
+
+function challengeFocusSummary(sourceRefs: readonly SessionSourceRef[]): string | null {
+  const challengeRef = sourceRefs.find((ref) =>
+    CHALLENGE_REF_TYPES.has(ref.sourceRefType) || ref.evidenceRole === 'assigned_challenge');
+  if (!challengeRef) return null;
+
+  const locator = challengeRef.locator ?? {};
+  const metadata = challengeRef.metadata ?? {};
+  const locatorTitle = stringValue(locator.challengeTitle)
+    ?? stringValue(locator.title)
+    ?? stringValue(locator.taskTitle);
+  if (locatorTitle) return normalizeChallengeFocus(locatorTitle);
+
+  const metadataTitle = stringValue(metadata.challengeTitle)
+    ?? stringValue(metadata.title)
+    ?? stringValue(metadata.taskTitle);
+  if (metadataTitle) return normalizeChallengeFocus(metadataTitle);
+
+  return challengeFocusFromExactText(challengeRef.exactText);
+}
+
+function truncateEvaluationSummary(value: string): string {
+  const normalized = value.replace(/\s+/g, ' ').trim();
+  if (normalized.length <= MAX_EVALUATION_SUMMARY_CHARS) return normalized;
+  return `${normalized.slice(0, MAX_EVALUATION_SUMMARY_CHARS - 3).trimEnd()}...`;
+}
+
+function sourceBackedEvaluationSummary(
+  aiSummary: unknown,
+  sourceRefs: readonly SessionSourceRef[],
+): string {
+  const summary = stringValue(aiSummary)
+    ?? 'AI evaluator produced source-backed repo-task assessment claims.';
+  const focus = challengeFocusSummary(sourceRefs);
+  if (!focus) return truncateEvaluationSummary(summary);
+
+  const normalizedSummary = summary.toLocaleLowerCase();
+  if (normalizedSummary.includes(focus.toLocaleLowerCase())) {
+    return truncateEvaluationSummary(summary);
+  }
+
+  return truncateEvaluationSummary(`${focus}: ${summary}`);
 }
 
 function coverageItem(input: {
@@ -742,8 +809,8 @@ export async function evaluateRepoTaskAssessmentSession(
     });
   }
 
-  const summary = stringValue(aiOutput.summary)
-    ?? 'AI evaluator produced source-backed repo-task assessment claims.';
+  const summary = sourceBackedEvaluationSummary(aiOutput.summary, sourceRefs);
+  const challengeFocus = challengeFocusSummary(sourceRefs);
   const recommendation = stringValue(aiOutput.recommendation) ?? 'mixed_evidence_human_review';
   const status: EvaluationReportStatus = 'EVALUATED';
   const report = await input.store.createEvaluationReport({
@@ -760,6 +827,7 @@ export async function evaluateRepoTaskAssessmentSession(
       model: provider.model,
       scheduledInterviewId: input.scheduledInterviewId,
       requestEventId: input.requestEventId,
+      challengeFocus,
       evidenceCoverage,
       claimIds: claims.map((claim) => claim.id),
       diagnosticCodes: diagnostics.map((diagnostic) => diagnostic.code),
