@@ -19,6 +19,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Fixed — Video room
 
+- Workspace stops now append source-backed dev-container stop evidence to linked assessment sessions and return refreshed progress, keeping container lifecycle actions in the same durable interview spine as launch and commit evidence.
 - Workspace launches now append source-backed dev-container launch evidence to linked assessment sessions and return refreshed progress immediately, so opening VS Code is part of the durable assessment spine instead of only browser telemetry.
 - Video rooms now refresh the visible assessment progress after source-backed room events are accepted, so chat, terminal, and Clippy/agent evidence can move the status strip without waiting for a reload or commit submission.
 - Room chat, terminal, Clippy/agent, and replayed room activity now append source-backed evidence to the scheduled-interview assessment session when one exists, so assessment progress reflects real room work instead of a sidecar Win95 session.

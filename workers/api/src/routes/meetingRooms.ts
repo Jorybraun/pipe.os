@@ -2433,6 +2433,13 @@ interface RoomWorkspaceLaunchEvidenceInput {
   expiresAt: string;
 }
 
+interface RoomWorkspaceStopEvidenceInput {
+  room: ResolvedRoom;
+  session: DevContainerSessionRow;
+  previousStatus: string;
+  stoppedAt: string;
+}
+
 async function loadLatestAssessmentSessionForRoom(
   db: D1Database,
   room: ResolvedRoom,
@@ -2598,6 +2605,65 @@ async function recordWorkspaceLaunchAssessmentEvidence(
       createdBy: actor.actorId,
     });
   }
+
+  return serializeRoomAssessmentProgress(await store.loadProgress(assessmentSession.id));
+}
+
+async function recordWorkspaceStopAssessmentEvidence(
+  db: D1Database,
+  input: RoomWorkspaceStopEvidenceInput,
+): Promise<RoomAssessmentProgressPayload | null> {
+  const assessmentSession = await loadLatestAssessmentSessionForRoom(db, input.room);
+  if (!assessmentSession) return null;
+
+  const store = new RepoTaskInterviewSessionStore(db, () => input.stoppedAt);
+  const actor = roomAssessmentActor(input.room);
+  const stopSource: JsonObject = {
+    schemaVersion: 'room-workspace-stop-request-v1',
+    meetingId: input.room.meeting_id,
+    roomId: input.room.room_id,
+    scheduledInterviewId: input.room.scheduled_interview_id,
+    workspaceSessionId: input.session.session_id,
+    repositoryUrl: input.session.repo_git_url,
+    challengeBranch: input.session.challenge_branch,
+    baseCommitSha: input.session.base_commit_sha,
+    previousStatus: input.previousStatus,
+    stoppedStatus: input.session.status,
+    stoppedAt: input.session.stopped_at ?? input.stoppedAt,
+    requestedByRole: input.room.role,
+  };
+  const exactText = stableJson(stopSource);
+  await store.recordEvent({
+    sessionId: assessmentSession.id,
+    ingestionKey: `assessment-event:room-workspace-stop:${assessmentSession.id}:${input.session.session_id}:${input.stoppedAt}`,
+    kind: 'dev_container_event',
+    actorType: actor.actorType,
+    actorId: actor.actorId,
+    narrative: `Workspace stop requested for ${input.session.repo_git_url ?? input.session.session_id}.`,
+    payload: stopSource,
+    occurredAt: input.stoppedAt,
+    sourceRefs: [{
+      sourceRefType: 'dev_container_workspace_stop',
+      sourceRefId: input.session.session_id,
+      evidenceRole: 'workspace_stop_request',
+      locator: {
+        meetingId: input.room.meeting_id,
+        roomId: input.room.room_id,
+        scheduledInterviewId: input.room.scheduled_interview_id,
+        workspaceSessionId: input.session.session_id,
+      },
+      exactText,
+      contentHash: await sha256Hex(exactText),
+      metadata: {
+        sourceKind: 'meeting_room.workspace_stop',
+        repositoryUrl: input.session.repo_git_url,
+        baseCommitSha: input.session.base_commit_sha,
+        challengeBranch: input.session.challenge_branch,
+        previousStatus: input.previousStatus,
+        stoppedStatus: input.session.status,
+      },
+    }],
+  });
 
   return serializeRoomAssessmentProgress(await store.loadProgress(assessmentSession.id));
 }
@@ -2892,8 +2958,27 @@ meetingRooms.post('/:token/workspace/:sessionId/destroy', async (c) => {
   const session = await getSessionByIdForRoom(c.env.DB, sessionId, room.room_id);
   if (!session) return apiError(c, 'NOT_FOUND', 'Workspace session not found.');
 
+  let progress: RoomAssessmentProgressPayload | null = null;
   if (!WORKSPACE_TERMINAL_STATUSES.has(session.status)) {
-    await markStopped(c.env.DB, sessionId, new Date().toISOString());
+    const stoppedAt = new Date().toISOString();
+    await markStopped(c.env.DB, sessionId, stoppedAt);
+    const stoppedSession = await getSessionByIdForRoom(c.env.DB, sessionId, room.room_id);
+    progress = stoppedSession
+      ? await recordWorkspaceStopAssessmentEvidence(c.env.DB, {
+          room,
+          session: stoppedSession,
+          previousStatus: session.status,
+          stoppedAt,
+        }).catch((error: unknown) => {
+          console.error('[meetingRooms.workspace.destroy] assessment evidence failed:', {
+            roomId: room.room_id,
+            interviewId: room.scheduled_interview_id,
+            sessionId,
+            error: error instanceof Error ? error.message : String(error),
+          });
+          return null;
+        })
+      : null;
     const doId = c.env.DEV_CONTAINER.idFromName(sessionId);
     const doStub = c.env.DEV_CONTAINER.get(doId);
     c.executionCtx.waitUntil(
@@ -2903,7 +2988,10 @@ meetingRooms.post('/:token/workspace/:sessionId/destroy', async (c) => {
     );
   }
 
-  return c.json({ workspace: await buildRoomWorkspacePayload(c.env.DB, token, room) });
+  return c.json({
+    workspace: await buildRoomWorkspacePayload(c.env.DB, token, room),
+    progress,
+  });
 });
 
 async function proxyWorkspaceRequest(c: Context<{ Bindings: Env }>): Promise<Response> {

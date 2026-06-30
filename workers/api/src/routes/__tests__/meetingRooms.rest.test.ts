@@ -5598,6 +5598,74 @@ describe('meeting room recording living-context route', () => {
       baseCommitSha,
       workspaceSessionId: body.workspace.session.sessionId,
     });
+
+    const stopRes = await app.request(`/meeting/${created.hostToken}/workspace/${body.workspace.session.sessionId}/destroy`, {
+      method: 'POST',
+    }, env, ctx);
+    expect(stopRes.status).toBe(200);
+    const stopBody = await stopRes.json() as {
+      workspace: {
+        session: {
+          sessionId: string;
+          status: string;
+          proxyPath: string | null;
+        } | null;
+      };
+      progress: {
+        hasWorkEvidence: boolean;
+        evidenceCounts: Array<{ kind: string; count: number }>;
+        sourceRefCounts: Array<{ kind: string; count: number }>;
+        latestEvent: { kind: string; sequence: number } | null;
+      } | null;
+    };
+    await waitUntilAll();
+    expect(stopBody.workspace.session).toMatchObject({
+      sessionId: body.workspace.session.sessionId,
+      status: 'STOPPED',
+      proxyPath: null,
+    });
+    expect(stopBody.progress).toMatchObject({
+      hasWorkEvidence: true,
+      latestEvent: { kind: 'dev_container_event', sequence: 3 },
+    });
+    expect(stopBody.progress?.evidenceCounts).toContainEqual({ kind: 'dev_container_event', count: 2 });
+    expect(stopBody.progress?.sourceRefCounts).toContainEqual({ kind: 'dev_container_workspace_stop', count: 1 });
+    const stopEvidence = sqlite.prepare(
+      `SELECT e.session_id, e.kind, e.actor_type, e.payload_json,
+              sr.source_ref_type, sr.source_ref_id, sr.evidence_role,
+              sr.exact_text, sr.content_hash
+         FROM assessment_evidence_events e
+         JOIN assessment_event_source_refs sr ON sr.event_id = e.id
+        WHERE e.ingestion_key LIKE ?`,
+    ).get(`assessment-event:room-workspace-stop:${assessmentSessionId}:${body.workspace.session.sessionId}:%`) as {
+      session_id: string;
+      kind: string;
+      actor_type: string;
+      payload_json: string;
+      source_ref_type: string;
+      source_ref_id: string;
+      evidence_role: string;
+      exact_text: string;
+      content_hash: string;
+    } | undefined;
+    expect(stopEvidence).toMatchObject({
+      session_id: assessmentSessionId,
+      kind: 'dev_container_event',
+      actor_type: 'recruiter',
+      source_ref_type: 'dev_container_workspace_stop',
+      source_ref_id: body.workspace.session.sessionId,
+      evidence_role: 'workspace_stop_request',
+    });
+    expect(stopEvidence?.exact_text).toContain('"previousStatus":"LAUNCHING"');
+    expect(stopEvidence?.exact_text).toContain('"stoppedStatus":"STOPPED"');
+    expect(stopEvidence?.content_hash).toMatch(/^[a-f0-9]{64}$/);
+    expect(JSON.parse(stopEvidence?.payload_json ?? '{}')).toMatchObject({
+      repositoryUrl: 'https://github.com/pipe/source-backed-worker',
+      baseCommitSha,
+      previousStatus: 'LAUNCHING',
+      stoppedStatus: 'STOPPED',
+      workspaceSessionId: body.workspace.session.sessionId,
+    });
     expect(JSON.stringify(initBodies)).not.toContain('assessment-session-workspace-base-commit');
     expect(JSON.stringify(initBodies)).not.toContain('assessment-event-workspace-base-commit');
     expect(JSON.stringify(initBodies)).not.toContain('source-ref-secret');
