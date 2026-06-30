@@ -600,6 +600,7 @@ interface RoomConnection {
 
 interface UseRoomConnectionOptions {
   onChatDeliveryEvidence?: (message: RoomChatMessage) => void;
+  ignoreInitialRoomSurfaceSnapshot?: boolean;
 }
 
 const FALLBACK_ICE: RTCIceServer[] = [
@@ -696,6 +697,7 @@ export function decideRoomSurfaceSnapshot(input: {
   pendingLocalSurfaceEvent: PendingLocalSurfaceEvent | null;
   nowMs: number;
   guardMs?: number;
+  ignoreInitialSnapshot?: boolean;
 }): SurfaceSnapshotDecision {
   const guardMs = input.guardMs ?? SURFACE_SNAPSHOT_LOCAL_EVENT_GUARD_MS;
   const pending = input.pendingLocalSurfaceEvent;
@@ -708,6 +710,9 @@ export function decideRoomSurfaceSnapshot(input: {
     return { applySnapshot: true, clearPendingLocalSurface: true };
   }
   if (input.surfaceEventSeenOnSocket) {
+    return { applySnapshot: false, clearPendingLocalSurface: false };
+  }
+  if (input.ignoreInitialSnapshot) {
     return { applySnapshot: false, clearPendingLocalSurface: false };
   }
   return { applySnapshot: true, clearPendingLocalSurface: false };
@@ -2980,6 +2985,7 @@ export function useRoomConnection(
               surfaceEventSeenOnSocket: surfaceEventSeenRef.current,
               pendingLocalSurfaceEvent: pendingLocalSurfaceEventRef.current,
               nowMs: Date.now(),
+              ignoreInitialSnapshot: options.ignoreInitialRoomSurfaceSnapshot,
             });
             if (decision.clearPendingLocalSurface) {
               pendingLocalSurfaceEventRef.current = null;

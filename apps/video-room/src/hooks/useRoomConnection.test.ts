@@ -130,6 +130,19 @@ describe('decideRoomSurfaceSnapshot', () => {
     });
   });
 
+  it('can ignore the initial Durable Object surface for code-first assessment rooms', () => {
+    expect(decideRoomSurfaceSnapshot({
+      snapshotSurface: 'win95',
+      surfaceEventSeenOnSocket: false,
+      pendingLocalSurfaceEvent: null,
+      nowMs: 10_000,
+      ignoreInitialSnapshot: true,
+    })).toEqual({
+      applySnapshot: false,
+      clearPendingLocalSurface: false,
+    });
+  });
+
   it('clears a pending local marker when the authoritative snapshot catches up', () => {
     expect(decideRoomSurfaceSnapshot({
       snapshotSurface: 'win95',

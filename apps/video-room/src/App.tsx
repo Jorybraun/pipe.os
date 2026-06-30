@@ -387,6 +387,10 @@ function assistantStatusLabel(status: ClippyTrayStatus, hasWorkspaceFeature: boo
 function Room({ token, metadata }: { token: string; metadata: RoomMetadata }): JSX.Element {
   const [enteredRoom, setEnteredRoom] = useState(false);
   const initialRoomSurface = 'standard';
+  const initialAssessmentMode = assessmentModeForRoom({
+    meetingType: metadata.meetingType,
+    workspaceEnabled: Boolean(metadata.workspace?.enabled || metadata.features?.workspaceEnabled),
+  });
   const roomActor = metadata.role === 'HOST' ? 'host' : 'guest';
   const [assessmentProgress, setAssessmentProgress] = useState<RoomAssessmentProgressSnapshot | null>(null);
   const { capture: captureSessionEvent } = useSessionEvents({
@@ -418,6 +422,7 @@ function Room({ token, metadata }: { token: string; metadata: RoomMetadata }): J
   }, [captureSessionEvent, initialRoomSurface, roomActor]);
   const room = useRoomConnection(token, metadata.role, enteredRoom, initialRoomSurface, {
     onChatDeliveryEvidence: captureChatDeliveryEvidence,
+    ignoreInitialRoomSurfaceSnapshot: initialAssessmentMode === 'dev_container_assessment',
   });
   const publishTerminalEvent = room.publishTerminalEvent;
   const publishClippyInteractionEvent = room.publishClippyInteractionEvent;
