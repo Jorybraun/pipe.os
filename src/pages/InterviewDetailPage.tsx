@@ -121,6 +121,13 @@ interface StartAssessmentEvaluationResponse {
   } | null;
 }
 
+type HumanAssessmentDecisionValue = NonNullable<NonNullable<AssessmentProgressSnapshot['humanDecision']>>['decision'];
+
+interface RecordHumanAssessmentDecisionResponse {
+  decision: NonNullable<NonNullable<AssessmentProgressSnapshot['humanDecision']>>;
+  progress: AssessmentProgressSnapshot;
+}
+
 interface CodeReviewAnnotationDetail {
   file: string;
   line: number | null;
@@ -304,6 +311,13 @@ function assessmentHumanDecisionLabel(decision: string): string {
       return `Human: ${sentenceCaseToken(decision)}`;
   }
 }
+
+const HUMAN_ASSESSMENT_DECISION_OPTIONS = [
+  { value: 'advance', label: 'Advance' },
+  { value: 'hold', label: 'Hold' },
+  { value: 'reject', label: 'Reject' },
+  { value: 'needs_more_evidence', label: 'Needs more evidence' },
+] as const satisfies ReadonlyArray<{ value: HumanAssessmentDecisionValue; label: string }>;
 
 function assessmentClaimPolarityLabel(polarity: string): string {
   switch (polarity) {
@@ -2083,6 +2097,12 @@ export default function InterviewDetailPage(): JSX.Element {
   const [assessmentLinkError, setAssessmentLinkError] = useState<string | null>(null);
   const [assessmentLinkNotice, setAssessmentLinkNotice] = useState<string | null>(null);
   const [isStartingAssessmentEvaluation, setIsStartingAssessmentEvaluation] = useState(false);
+  const [humanDecisionValue, setHumanDecisionValue] = useState<HumanAssessmentDecisionValue>('advance');
+  const [humanDecisionSummary, setHumanDecisionSummary] = useState('');
+  const [humanDecisionNotes, setHumanDecisionNotes] = useState('');
+  const [humanDecisionError, setHumanDecisionError] = useState<string | null>(null);
+  const [humanDecisionNotice, setHumanDecisionNotice] = useState<string | null>(null);
+  const [isRecordingHumanDecision, setIsRecordingHumanDecision] = useState(false);
   const [workspaceRepoUrl, setWorkspaceRepoUrl] = useState('');
   const [workspacePrNumber, setWorkspacePrNumber] = useState('');
   const [isSavingWorkspace, setIsSavingWorkspace] = useState(false);
@@ -2119,6 +2139,14 @@ export default function InterviewDetailPage(): JSX.Element {
     setWorkspaceRepoUrl(interview.githubRepoUrl ?? '');
     setWorkspacePrNumber(interview.githubPrNumber ? String(interview.githubPrNumber) : '');
   }, [interview]);
+
+  useEffect(() => {
+    setHumanDecisionSummary('');
+    setHumanDecisionNotes('');
+    setHumanDecisionError(null);
+    setHumanDecisionNotice(null);
+    setHumanDecisionValue('advance');
+  }, [interviewId]);
 
   const transcriptEntries = useMemo(() => {
     const meetingEntries = parseTranscriptJson(interview?.linkedMeeting?.transcriptJson);
@@ -2383,6 +2411,39 @@ export default function InterviewDetailPage(): JSX.Element {
     }
   }, [api, interview]);
 
+  const recordHumanAssessmentDecision = useCallback(async () => {
+    if (!interview) return;
+    const summary = humanDecisionSummary.trim();
+    const notes = humanDecisionNotes.trim();
+    setHumanDecisionError(null);
+    setHumanDecisionNotice(null);
+    if (!summary) {
+      setHumanDecisionError('Add a decision summary before recording the human assessment decision.');
+      return;
+    }
+    setIsRecordingHumanDecision(true);
+    try {
+      const result = await api.post<RecordHumanAssessmentDecisionResponse>(
+        `/api/v1/scheduling/interviews/${interview.id}/assessment/human-decision`,
+        {
+          decision: humanDecisionValue,
+          summary,
+          notes: notes.length > 0 ? notes : null,
+        },
+      );
+      setInterview((current) => current
+        ? { ...current, assessmentProgress: result.progress }
+        : current);
+      setHumanDecisionSummary('');
+      setHumanDecisionNotes('');
+      setHumanDecisionNotice('Human decision recorded against the latest source-backed evaluation report.');
+    } catch (err) {
+      setHumanDecisionError(err instanceof Error ? err.message : 'Unable to record human assessment decision');
+    } finally {
+      setIsRecordingHumanDecision(false);
+    }
+  }, [api, humanDecisionNotes, humanDecisionSummary, humanDecisionValue, interview]);
+
   const saveWorkspaceConfig = useCallback(async () => {
     if (!interview) return;
     const repoUrl = workspaceRepoUrl.trim();
@@ -2613,6 +2674,7 @@ export default function InterviewDetailPage(): JSX.Element {
   const assessmentEvaluationClaims = assessmentProgress?.evaluation?.claims?.slice(0, 3) ?? [];
   const assessmentEvaluationDiagnostics = assessmentProgress?.evaluation?.diagnostics?.slice(0, 3) ?? [];
   const canStartAssessmentEvaluation = assessmentProgress?.nextAction === 'START_EVALUATION';
+  const canRecordHumanAssessmentDecision = Boolean(assessmentProgress?.evaluation && !assessmentProgress.humanDecision);
   const assessmentWorkPacket = workspaceAssessmentWorkPacket(assessmentProgress);
   const workspaceAssessmentReadout = workspaceAssessmentHiringReadout({
     progress: assessmentProgress,
@@ -3210,6 +3272,77 @@ export default function InterviewDetailPage(): JSX.Element {
                   </span>
                 </div>
               )}
+              {canRecordHumanAssessmentDecision && (
+                <form
+                  data-testid="interview-human-decision-form"
+                  style={HUMAN_DECISION_FORM}
+                  onSubmit={(event) => {
+                    event.preventDefault();
+                    void recordHumanAssessmentDecision();
+                  }}
+                >
+                  <div style={FIELD_LABEL}>Human review</div>
+                  <div style={ROOM_LINK_TEXT}>
+                    Record the final reviewer decision after checking the source-backed report, commit, diff, and evidence trail.
+                  </div>
+                  <div style={HUMAN_DECISION_FORM_GRID}>
+                    <label style={HUMAN_DECISION_FIELD}>
+                      <span style={FIELD_LABEL}>Decision</span>
+                      <select
+                        value={humanDecisionValue}
+                        onChange={(event) => {
+                          setHumanDecisionValue(event.currentTarget.value as HumanAssessmentDecisionValue);
+                          setHumanDecisionError(null);
+                          setHumanDecisionNotice(null);
+                        }}
+                        style={WORKSPACE_INPUT}
+                      >
+                        {HUMAN_ASSESSMENT_DECISION_OPTIONS.map((option) => (
+                          <option key={option.value} value={option.value}>{option.label}</option>
+                        ))}
+                      </select>
+                    </label>
+                    <label style={HUMAN_DECISION_FIELD}>
+                      <span style={FIELD_LABEL}>Decision summary</span>
+                      <input
+                        value={humanDecisionSummary}
+                        onChange={(event) => {
+                          setHumanDecisionSummary(event.currentTarget.value);
+                          setHumanDecisionError(null);
+                          setHumanDecisionNotice(null);
+                        }}
+                        placeholder="Why this is the right hiring decision from the evidence"
+                        style={WORKSPACE_INPUT}
+                      />
+                    </label>
+                  </div>
+                  <label style={HUMAN_DECISION_FIELD}>
+                    <span style={FIELD_LABEL}>Review notes</span>
+                    <textarea
+                      value={humanDecisionNotes}
+                      onChange={(event) => {
+                        setHumanDecisionNotes(event.currentTarget.value);
+                        setHumanDecisionError(null);
+                        setHumanDecisionNotice(null);
+                      }}
+                      placeholder="Optional calibration notes for the hiring team"
+                      style={HUMAN_DECISION_TEXTAREA}
+                    />
+                  </label>
+                  <div style={HUMAN_DECISION_ACTION_ROW}>
+                    <button
+                      type="submit"
+                      disabled={isRecordingHumanDecision || humanDecisionSummary.trim().length === 0}
+                      style={PRIMARY_BUTTON}
+                    >
+                      {isRecordingHumanDecision
+                        ? <Loader2 size={14} style={{ animation: 'spin 1s linear infinite' }} />
+                        : <CheckCircle size={14} />}
+                      RECORD HUMAN DECISION
+                    </button>
+                  </div>
+                </form>
+              )}
               {assessmentEvaluationClaims.length > 0 && (
                 <div
                   data-testid="interview-assessment-evaluation-claims"
@@ -3335,6 +3468,8 @@ export default function InterviewDetailPage(): JSX.Element {
           )}
           {assessmentEvaluationNotice && <div style={SUCCESS_NOTE}>{assessmentEvaluationNotice}</div>}
           {assessmentEvaluationError && <div style={ERROR_NOTE}>{assessmentEvaluationError}</div>}
+          {humanDecisionNotice && <div style={SUCCESS_NOTE}>{humanDecisionNotice}</div>}
+          {humanDecisionError && <div style={ERROR_NOTE}>{humanDecisionError}</div>}
         </section>
       )}
 
@@ -4573,6 +4708,43 @@ const WORKSPACE_INPUT: CSSProperties = {
   padding: '10px 12px',
   fontFamily: FONT,
   fontSize: 11,
+};
+
+const HUMAN_DECISION_FORM: CSSProperties = {
+  display: 'grid',
+  gap: 10,
+  minWidth: 0,
+  padding: 12,
+  border: '1px solid rgba(74,222,128,0.26)',
+  borderRadius: 6,
+  background: 'rgba(74,222,128,0.06)',
+};
+
+const HUMAN_DECISION_FORM_GRID: CSSProperties = {
+  display: 'grid',
+  gridTemplateColumns: '160px minmax(0, 1fr)',
+  gap: 10,
+  minWidth: 0,
+};
+
+const HUMAN_DECISION_FIELD: CSSProperties = {
+  display: 'grid',
+  gap: 6,
+  minWidth: 0,
+};
+
+const HUMAN_DECISION_TEXTAREA: CSSProperties = {
+  ...WORKSPACE_INPUT,
+  minHeight: 84,
+  resize: 'vertical',
+  lineHeight: 1.5,
+};
+
+const HUMAN_DECISION_ACTION_ROW: CSSProperties = {
+  display: 'flex',
+  justifyContent: 'flex-end',
+  gap: 10,
+  flexWrap: 'wrap',
 };
 
 const ROOM_TITLE: CSSProperties = {

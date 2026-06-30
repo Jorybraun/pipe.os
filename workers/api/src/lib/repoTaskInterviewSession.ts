@@ -1015,7 +1015,10 @@ export class RepoTaskInterviewSessionStore {
         reason: input.reason,
       };
     }
-    if (!ALLOWED_TRANSITIONS[session.state].includes(input.toState)) {
+    const isEvaluationFinalization = session.state === 'FINAL_SUBMITTED'
+      && input.toState === 'EVALUATED'
+      && await this.hasPersistedEvaluatedReport(session.id);
+    if (!isEvaluationFinalization && !ALLOWED_TRANSITIONS[session.state].includes(input.toState)) {
       throw new Error(`cannot transition assessment session from ${session.state} to ${input.toState}`);
     }
     const transition = await this.#store.transitionAssessmentState({
@@ -1031,6 +1034,17 @@ export class RepoTaskInterviewSessionStore {
       toState: fromCanonicalState(transition.toState),
       reason: transition.reason,
     };
+  }
+
+  private async hasPersistedEvaluatedReport(sessionId: string): Promise<boolean> {
+    const row = await this.db.prepare(
+      `SELECT id
+         FROM assessment_evaluation_reports
+        WHERE session_id = ?1
+          AND status = 'EVALUATED'
+        LIMIT 1`,
+    ).bind(sessionId).first<{ id: string }>();
+    return row !== null;
   }
 
   async submitFinalBundle(

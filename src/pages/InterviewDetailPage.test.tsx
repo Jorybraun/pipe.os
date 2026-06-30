@@ -703,6 +703,127 @@ describe('InterviewDetailPage', () => {
     expect(screen.queryByRole('button', { name: /start evaluation/i })).toBeNull();
   });
 
+  it('records a source-backed recruiter human decision from an evaluated workspace assessment', async () => {
+    const evaluatedProgress: NonNullable<ScheduledInterviewDetail['assessmentProgress']> = {
+      session: {
+        id: 'assessment-session-decision',
+        ingestionKey: 'assessment-session:decision',
+        interviewId: 'interview-1',
+        candidateId: 'candidate-1',
+        workspaceId: 'workspace-1',
+        workspacePersonId: null,
+        applicationId: null,
+        mode: 'OPEN_SOURCE_BUG_FIX',
+        state: 'EVALUATED',
+        createdAt: '2026-06-23T00:00:00.000Z',
+        updatedAt: '2026-06-23T00:20:00.000Z',
+      },
+      stage: 'EVALUATED',
+      nextAction: 'REVIEW_EVALUATION',
+      nextActionLabel: 'Review the assessment report and evidence.',
+      hasChallengePacket: true,
+      hasWorkEvidence: true,
+      hasMessageEvidence: true,
+      hasDevContainerEvidence: true,
+      hasToolUsageEvidence: true,
+      hasCommitSubmission: true,
+      hasFinalSubmission: true,
+      hasAiInteraction: true,
+      hasTranscriptEvidence: true,
+      hasTestEvidence: true,
+      evidenceCounts: [{ kind: 'commit_submission', count: 1 }],
+      sourceRefCounts: [{ kind: 'code_diff', count: 1 }],
+      challenge: {
+        sourceRefType: 'review_challenge_packet',
+        sourceRefId: 'challenge-packet-decision',
+        evidenceRole: 'assigned_challenge',
+        exactText: 'Task: fix the popover cleanup regression.',
+        locator: { repositoryUrl: 'https://github.com/open-source/widgets' },
+      },
+      latestEvent: {
+        id: 'assessment-event-decision-commit',
+        kind: 'commit_submission',
+        sequence: 2,
+        occurredAt: '2026-06-23T00:18:00.000Z',
+      },
+      commit: {
+        eventId: 'assessment-event-decision-commit',
+        repositoryUrl: 'https://github.com/open-source/widgets',
+        forkRepositoryUrl: 'https://github.com/candidate/widgets',
+        branchName: 'pipe-assessment/popover-cleanup',
+        baseCommitSha: '1111111111111111111111111111111111111111',
+        commitSha: 'abcdef1234567890abcdef1234567890abcdef12',
+        commitUrl: 'https://github.com/candidate/widgets/commit/abcdef1234567890abcdef1234567890abcdef12',
+        changedFiles: [{ path: 'src/popover.ts', status: 'modified' }],
+        occurredAt: '2026-06-23T00:18:00.000Z',
+      },
+      evaluation: {
+        id: 'assessment-report-decision',
+        status: 'EVALUATED',
+        summary: 'Candidate made a focused source-backed change and cited the submitted diff evidence.',
+        recommendation: 'strong_evidence_to_advance',
+        createdAt: '2026-06-23T00:22:00.000Z',
+      },
+    };
+    const decidedProgress: NonNullable<ScheduledInterviewDetail['assessmentProgress']> = {
+      ...evaluatedProgress,
+      nextAction: 'NONE',
+      nextActionLabel: 'No further assessment action is required.',
+      humanDecision: {
+        eventId: 'assessment-human-decision-1',
+        decision: 'advance',
+        reviewerId: 'recruiter-1',
+        summary: 'Advance after reviewing the source-backed diff, tests, and evaluator report.',
+        notes: 'Candidate explained the tradeoff clearly.',
+        occurredAt: '2026-06-23T00:30:00.000Z',
+        sourceRefCount: 1,
+        sourceRefTypes: ['assessment_evaluation_report'],
+      },
+    };
+    mocks.api.get.mockResolvedValueOnce({
+      interview: makeInterview({
+        interviewType: 'OPEN_SOURCE_BUG_FIX',
+        status: 'COMPLETED',
+        assessmentProgress: evaluatedProgress,
+      }),
+    });
+    mocks.api.post.mockResolvedValueOnce({
+      decision: decidedProgress.humanDecision,
+      progress: decidedProgress,
+    });
+
+    renderDetail();
+    await flushAsyncUpdates();
+
+    fireEvent.change(screen.getByLabelText(/^decision$/i), {
+      target: { value: 'advance' },
+    });
+    fireEvent.change(screen.getByLabelText(/decision summary/i), {
+      target: { value: 'Advance after reviewing the source-backed diff, tests, and evaluator report.' },
+    });
+    fireEvent.change(screen.getByLabelText(/review notes/i), {
+      target: { value: 'Candidate explained the tradeoff clearly.' },
+    });
+    fireEvent.click(screen.getByRole('button', { name: /record human decision/i }));
+    await flushAsyncUpdates();
+
+    expect(mocks.api.post).toHaveBeenCalledWith(
+      '/api/v1/scheduling/interviews/interview-1/assessment/human-decision',
+      {
+        decision: 'advance',
+        summary: 'Advance after reviewing the source-backed diff, tests, and evaluator report.',
+        notes: 'Candidate explained the tradeoff clearly.',
+      },
+    );
+    const progress = screen.getByTestId('interview-assessment-progress');
+    expect(progress).toHaveTextContent('No further assessment action is required.');
+    expect(progress).toHaveTextContent('Human: advance');
+    expect(progress).toHaveTextContent('Advance after reviewing the source-backed diff, tests, and evaluator report.');
+    expect(progress).toHaveTextContent('Human decision recorded against the latest source-backed evaluation report.');
+    expect(screen.queryByRole('button', { name: /record human decision/i })).toBeNull();
+    expect(progress).not.toHaveTextContent('assessment-human-decision-1');
+  });
+
   it('does not poll forever for pending local transcript artifacts', async () => {
     mocks.api.get.mockResolvedValueOnce({
       interview: makeInterview({

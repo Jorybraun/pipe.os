@@ -366,6 +366,84 @@ describe('repo task assessment session routes', () => {
     ).run(eventBody.event.id)).toThrow('assessment_evidence_events are immutable');
   });
 
+  it('allows a finalized source-backed assessment to be marked evaluated after its report is persisted', async () => {
+    const session = await createSession(app, env, {
+      ingestionKey: 'assessment-session:evaluation-finalize',
+      mode: 'OPEN_SOURCE_BUG_FIX',
+    });
+    const codeDiffSourceRef = await sourceRef(
+      'code_diff',
+      'base-sha..candidate-sha',
+      'diff --git a/src/popover.ts b/src/popover.ts\n+cleanupStaleHandler();',
+    );
+
+    const started = await app.request(
+      `/api/v1/assessment/repo-task/sessions/${session.id}/state`,
+      jsonRequest({
+        toState: 'IN_PROGRESS',
+        reason: 'Candidate opened the workspace.',
+      }),
+      env,
+    );
+    expect(started.status).toBe(200);
+    const evidenceEventResponse = await app.request(
+      `/api/v1/assessment/repo-task/sessions/${session.id}/events`,
+      jsonRequest({
+        ingestionKey: 'assessment-event:evaluation-finalize-diff',
+        kind: 'commit_submission',
+        actorType: 'candidate',
+        actorId: 'candidate-1',
+        narrative: 'Candidate submitted the source-backed assessment diff.',
+        payload: { commitSha: 'candidate-sha' },
+        sourceRefs: [codeDiffSourceRef],
+      }),
+      env,
+    );
+    expect(evidenceEventResponse.status).toBe(201);
+    const submitted = await app.request(
+      `/api/v1/assessment/repo-task/sessions/${session.id}/state`,
+      jsonRequest({
+        toState: 'FINAL_SUBMITTED',
+        reason: 'Candidate submitted the final evidence bundle.',
+      }),
+      env,
+    );
+    expect(submitted.status).toBe(200);
+
+    const reportResponse = await app.request(
+      `/api/v1/assessment/repo-task/sessions/${session.id}/evaluation-reports`,
+      jsonRequest({
+        ingestionKey: 'evaluation:evaluation-finalize',
+        status: 'EVALUATED',
+        summary: 'Candidate produced a focused source-backed commit.',
+        claims: [{
+          id: 'claim-focused-commit',
+          polarity: 'positive',
+          dimension: 'implementation_correctness',
+          narrative: 'The submitted diff fixes the stale popover listener cleanup.',
+          sourceRefs: [codeDiffSourceRef],
+        }],
+        diagnostics: [],
+      }),
+      env,
+    );
+    expect(reportResponse.status).toBe(201);
+
+    const evaluatedResponse = await app.request(
+      `/api/v1/assessment/repo-task/sessions/${session.id}/state`,
+      jsonRequest({
+        toState: 'EVALUATED',
+        reason: 'Source-backed assessment report is persisted.',
+      }),
+      env,
+    );
+
+    expect(evaluatedResponse.status).toBe(200);
+    expect(sqlite.prepare(
+      'SELECT state FROM assessment_sessions WHERE id = ?',
+    ).get(session.id)).toEqual({ state: 'EVALUATED' });
+  });
+
   it('submits a final assessment bundle that stores every required artifact kind as source-backed evidence', async () => {
     const session = await createSession(app, env, {
       ingestionKey: 'assessment-session:final-bundle',
