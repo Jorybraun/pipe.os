@@ -57,6 +57,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Fixed — Candidate repo matching
 
+- Fresh direct code-review and dev-container assessment links now stop at the candidate start gate and only claim the one-use invite after the candidate clicks start.
 - Candidate matching status cards now report failed manual refreshes instead of showing a false "checked" state when the status API fails.
 - Recruiter assessment invite panels now describe claimed one-use links as started rather than opened, keeping link validity aligned with the candidate start boundary.
 - Already-started candidate assessment links no longer show a retry button that cannot recover the one-use invite state.

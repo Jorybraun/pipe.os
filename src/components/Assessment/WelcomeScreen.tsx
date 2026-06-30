@@ -30,7 +30,9 @@ export interface WelcomeScreenProps {
   pipelineName: string;
   stageName: string;
   challenges: WelcomeScreenChallenge[];
-  onStart: () => void;
+  onStart: () => void | Promise<void>;
+  isStarting?: boolean;
+  startError?: string | null;
 }
 
 // ============================================================================
@@ -156,6 +158,8 @@ export function WelcomeScreen({
   stageName,
   challenges,
   onStart,
+  isStarting = false,
+  startError = null,
 }: WelcomeScreenProps): JSX.Element {
   const realChallenges = challenges.filter(
     (c) => c.type !== 'WELCOME' && c.type !== 'LIVE_VIDEO',
@@ -435,10 +439,41 @@ export function WelcomeScreen({
           }}
         />
 
+        {startError && (
+          <div
+            style={{
+              display: 'flex',
+              alignItems: 'flex-start',
+              gap: 10,
+              padding: '12px 14px',
+              background: 'rgba(239, 68, 68, 0.08)',
+              border: '1px solid rgba(239, 68, 68, 0.2)',
+              borderRadius: 6,
+              marginBottom: 16,
+            }}
+          >
+            <AlertCircle
+              size={14}
+              style={{ color: '#f87171', flexShrink: 0, marginTop: 2 }}
+            />
+            <div
+              style={{
+                fontSize: 11,
+                color: '#fca5a5',
+                lineHeight: 1.6,
+                fontFamily: '"Space Mono", monospace',
+              }}
+            >
+              {startError}
+            </div>
+          </div>
+        )}
+
         {/* Start button */}
         <button
           data-testid="start-interview-btn"
           onClick={onStart}
+          disabled={isStarting}
           style={{
             width: '100%',
             display: 'flex',
@@ -454,17 +489,18 @@ export function WelcomeScreen({
             fontWeight: 800,
             letterSpacing: '0.12em',
             fontFamily: '"Space Mono", monospace',
-            cursor: 'pointer',
+            cursor: isStarting ? 'wait' : 'pointer',
             transition: 'opacity 0.15s',
+            opacity: isStarting ? 0.72 : 1,
           }}
           onMouseEnter={(e) => {
-            (e.currentTarget as HTMLButtonElement).style.opacity = '0.88';
+            if (!isStarting) (e.currentTarget as HTMLButtonElement).style.opacity = '0.88';
           }}
           onMouseLeave={(e) => {
-            (e.currentTarget as HTMLButtonElement).style.opacity = '1';
+            (e.currentTarget as HTMLButtonElement).style.opacity = isStarting ? '0.72' : '1';
           }}
         >
-          START_INTERVIEW
+          {isStarting ? 'STARTING...' : 'START_INTERVIEW'}
           <ArrowRight size={16} />
         </button>
       </LiquidMetalCard>

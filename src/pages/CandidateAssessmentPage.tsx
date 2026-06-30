@@ -182,7 +182,9 @@ export default function CandidateAssessmentPage({ hideHeader = false }: Candidat
   } = useAssessment(token || '');
 
   const [currentSubmission, setCurrentSubmission] = useState<unknown>(null);
-  const [intakeWelcomeDismissed, setIntakeWelcomeDismissed] = useState(false);
+  const [assessmentWelcomeDismissed, setAssessmentWelcomeDismissed] = useState(false);
+  const [assessmentStartLoading, setAssessmentStartLoading] = useState(false);
+  const [assessmentStartError, setAssessmentStartError] = useState<string | null>(null);
 
   // Auto-skip empty follow-ups
   useEffect(() => {
@@ -267,6 +269,23 @@ export default function CandidateAssessmentPage({ hideHeader = false }: Candidat
       : (currentSubmission as Record<string, unknown>) ?? {};
     await submitChallenge(toSubmit);
     setCurrentSubmission(null);
+  };
+
+  const handleAssessmentStart = async (): Promise<void> => {
+    if (assessmentStartLoading) return;
+    setAssessmentStartLoading(true);
+    setAssessmentStartError(null);
+    try {
+      await claimAssessmentStart();
+      setAssessmentWelcomeDismissed(true);
+    } catch (err) {
+      const message = err instanceof Error && err.message
+        ? err.message
+        : 'Unable to start the assessment. Please retry, or contact your recruiter for a fresh link.';
+      setAssessmentStartError(message);
+    } finally {
+      setAssessmentStartLoading(false);
+    }
   };
 
   // ---------------------------------------------------------------------------
@@ -397,6 +416,40 @@ export default function CandidateAssessmentPage({ hideHeader = false }: Candidat
   }
 
   // ---------------------------------------------------------------------------
+  const isFollowUp = currentType === 'FOLLOW_UP';
+  const followUpReady = isFollowUp && followUpQuestions && followUpQuestions.length > 0;
+  const followUpWaiting = isFollowUp && (followUpLoading || !followUpQuestions || followUpQuestions.length === 0);
+  const isIntake = currentType === 'INTAKE';
+  const shouldShowStartWelcome = candidate?.status === 'INVITED' && !assessmentWelcomeDismissed && !isPreview;
+
+  // The one-use invite is claimed only when the candidate explicitly starts.
+  // This covers CV intake, direct code review, dev-container, and waiting gates.
+  if (shouldShowStartWelcome) {
+    const welcomeChallenges = [
+      ...(stageConfig.challenges ?? []).map((ch) => ({
+        title: ch.title ?? 'Profile & Resume',
+        type: ch.type,
+        timeLimit: null,
+      })),
+      ...(stageConfig.upcoming ?? []).map((u) => ({
+        title: u.title ?? 'Code Review',
+        type: u.type,
+        timeLimit: null,
+      })),
+    ];
+    return (
+      <WelcomeScreen
+        pipelineName={stageConfig.stageTitle ?? 'Assessment'}
+        stageName="Getting Started"
+        challenges={welcomeChallenges}
+        onStart={() => void handleAssessmentStart()}
+        isStarting={assessmentStartLoading}
+        startError={assessmentStartError}
+      />
+    );
+  }
+
+  // ---------------------------------------------------------------------------
   // WAITING_FOR_MATCH — full-page waiting state, bypasses StageShell
   // ---------------------------------------------------------------------------
 
@@ -434,41 +487,6 @@ export default function CandidateAssessmentPage({ hideHeader = false }: Candidat
   // ---------------------------------------------------------------------------
   // Challenge workspace
   // ---------------------------------------------------------------------------
-
-  const isFollowUp = currentType === 'FOLLOW_UP';
-  const followUpReady = isFollowUp && followUpQuestions && followUpQuestions.length > 0;
-  const followUpWaiting = isFollowUp && (followUpLoading || !followUpQuestions || followUpQuestions.length === 0);
-  const isIntake = currentType === 'INTAKE';
-
-  // Welcome screen before CV intake — shows the full list of parts
-  // (Profile & Resume, plus any upcoming challenges like the code review)
-  // so the candidate knows what to expect, matching the screener flow.
-  if (isIntake && !intakeWelcomeDismissed && !isPreview) {
-    const welcomeChallenges = [
-      ...(stageConfig.challenges ?? []).map((ch) => ({
-        title: ch.title ?? 'Profile & Resume',
-        type: ch.type,
-        timeLimit: null,
-      })),
-      ...(stageConfig.upcoming ?? []).map((u) => ({
-        title: u.title ?? 'Code Review',
-        type: u.type,
-        timeLimit: null,
-      })),
-    ];
-    return (
-      <WelcomeScreen
-        pipelineName={stageConfig.stageTitle ?? 'Assessment'}
-        stageName="Getting Started"
-        challenges={welcomeChallenges}
-        onStart={() => {
-          void claimAssessmentStart().then(() => {
-            setIntakeWelcomeDismissed(true);
-          });
-        }}
-      />
-    );
-  }
   const totalChallenges = stageConfig.challenges?.length ?? 1;
   const isLastChallenge = currentOrder === totalChallenges - 1;
   const shouldWrapLiveVideo =

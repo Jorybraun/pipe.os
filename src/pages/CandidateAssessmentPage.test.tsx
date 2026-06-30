@@ -1,4 +1,4 @@
-import { render, screen } from '@testing-library/react';
+import { fireEvent, render, screen, waitFor } from '@testing-library/react';
 import type { ReactNode } from 'react';
 import { MemoryRouter, Route, Routes } from 'react-router-dom';
 import { beforeEach, describe, expect, it, vi } from 'vitest';
@@ -42,6 +42,32 @@ vi.mock('../components/Assessment/IntakeChallenge', () => ({
 
 vi.mock('../components/Assessment/WaitingForMatch', () => ({
   WaitingForMatch: () => <div data-testid="waiting-for-match" />,
+}));
+
+vi.mock('../components/Assessment/WelcomeScreen', () => ({
+  WelcomeScreen: ({
+    pipelineName,
+    challenges,
+    isStarting,
+    startError,
+    onStart,
+  }: {
+    pipelineName: string;
+    challenges: Array<{ title: string }>;
+    isStarting?: boolean;
+    startError?: string | null;
+    onStart: () => void;
+  }) => (
+    <div data-testid="welcome-screen">
+      <h1>Ready to begin?</h1>
+      <div>{pipelineName}</div>
+      {challenges.map((challenge) => <div key={challenge.title}>{challenge.title}</div>)}
+      {startError && <div role="alert">{startError}</div>}
+      <button data-testid="start-interview-btn" disabled={isStarting} onClick={onStart}>
+        {isStarting ? 'STARTING...' : 'START_INTERVIEW'}
+      </button>
+    </div>
+  ),
 }));
 
 vi.mock('../components/Shells/VideoShell', () => ({
@@ -90,5 +116,180 @@ describe('CandidateAssessmentPage', () => {
     expect(screen.getByText('This one-use assessment link has already started. Please contact your recruiter if you need a fresh link.')).toBeInTheDocument();
     expect(screen.queryByText('Link Already Used')).not.toBeInTheDocument();
     expect(screen.queryByRole('button', { name: 'RETRY_CONNECTION' })).not.toBeInTheDocument();
+  });
+
+  it('requires an explicit start before claiming a fresh direct code-review assessment', async () => {
+    const claimAssessmentStart = vi.fn().mockResolvedValue(undefined);
+    useAssessmentMock.mockReturnValue({
+      candidate: {
+        id: 'candidate-1',
+        pipelineId: null,
+        status: 'INVITED',
+        name: 'Ada Candidate',
+        email: 'ada@example.com',
+      },
+      stageConfig: {
+        isComplete: false,
+        stageId: 'standalone-code-review',
+        candidateId: 'candidate-1',
+        stageTitle: 'Code Review',
+        mode: 'ASYNC',
+        timeLimit: null,
+        challenges: [{ type: 'CODE_REVIEW', order: 0, title: 'Code Review' }],
+        currentIndex: 0,
+      },
+      challengeContent: {
+        id: 'challenge-1',
+        type: 'CODE_REVIEW',
+        title: 'Code Review',
+        instructions: 'Review the pull request.',
+        config: {},
+        cachedDiffJson: { files: [] },
+      },
+      currentOrder: 0,
+      isLoading: false,
+      error: null,
+      isSubmitted: false,
+      hasStarted: true,
+      followUpQuestions: null,
+      followUpLoading: false,
+      lastChallengeSubmissionId: null,
+      submitChallenge: vi.fn(),
+      onStart: vi.fn(),
+      claimAssessmentStart,
+      reset: vi.fn(),
+      refresh: vi.fn(),
+      sessionToken: 'session-token',
+    });
+
+    render(
+      <MemoryRouter initialEntries={['/assess/fresh-code-review-token']}>
+        <Routes>
+          <Route path="/assess/:token" element={<CandidateAssessmentPage />} />
+        </Routes>
+      </MemoryRouter>,
+    );
+
+    expect(screen.getByRole('heading', { name: 'Ready to begin?' })).toBeInTheDocument();
+    expect(screen.getAllByText('Code Review').length).toBeGreaterThan(0);
+    expect(screen.queryByTestId('code-review-challenge')).not.toBeInTheDocument();
+
+    fireEvent.click(screen.getByTestId('start-interview-btn'));
+
+    await waitFor(() => expect(claimAssessmentStart).toHaveBeenCalledTimes(1));
+  });
+
+  it('skips the start gate when a direct code-review assessment is already in progress', () => {
+    useAssessmentMock.mockReturnValue({
+      candidate: {
+        id: 'candidate-1',
+        pipelineId: null,
+        status: 'IN_PROGRESS',
+        name: 'Ada Candidate',
+        email: 'ada@example.com',
+      },
+      stageConfig: {
+        isComplete: false,
+        stageId: 'standalone-code-review',
+        candidateId: 'candidate-1',
+        stageTitle: 'Code Review',
+        mode: 'ASYNC',
+        timeLimit: null,
+        challenges: [{ type: 'CODE_REVIEW', order: 0, title: 'Code Review' }],
+        currentIndex: 0,
+      },
+      challengeContent: {
+        id: 'challenge-1',
+        type: 'CODE_REVIEW',
+        title: 'Code Review',
+        instructions: 'Review the pull request.',
+        config: {},
+        cachedDiffJson: { files: [] },
+      },
+      currentOrder: 0,
+      isLoading: false,
+      error: null,
+      isSubmitted: false,
+      hasStarted: true,
+      followUpQuestions: null,
+      followUpLoading: false,
+      lastChallengeSubmissionId: null,
+      submitChallenge: vi.fn(),
+      onStart: vi.fn(),
+      claimAssessmentStart: vi.fn(),
+      reset: vi.fn(),
+      refresh: vi.fn(),
+      sessionToken: 'session-token',
+    });
+
+    render(
+      <MemoryRouter initialEntries={['/assess/started-code-review-token']}>
+        <Routes>
+          <Route path="/assess/:token" element={<CandidateAssessmentPage />} />
+        </Routes>
+      </MemoryRouter>,
+    );
+
+    expect(screen.queryByRole('heading', { name: 'Ready to begin?' })).not.toBeInTheDocument();
+    expect(screen.getByTestId('code-review-challenge')).toBeInTheDocument();
+  });
+
+  it('shows a start error when a fresh direct code-review assessment cannot be claimed', async () => {
+    const claimAssessmentStart = vi.fn().mockRejectedValue(new Error('This invite link is no longer current.'));
+    useAssessmentMock.mockReturnValue({
+      candidate: {
+        id: 'candidate-1',
+        pipelineId: null,
+        status: 'INVITED',
+        name: 'Ada Candidate',
+        email: 'ada@example.com',
+      },
+      stageConfig: {
+        isComplete: false,
+        stageId: 'standalone-code-review',
+        candidateId: 'candidate-1',
+        stageTitle: 'Code Review',
+        mode: 'ASYNC',
+        timeLimit: null,
+        challenges: [{ type: 'CODE_REVIEW', order: 0, title: 'Code Review' }],
+        currentIndex: 0,
+      },
+      challengeContent: {
+        id: 'challenge-1',
+        type: 'CODE_REVIEW',
+        title: 'Code Review',
+        instructions: 'Review the pull request.',
+        config: {},
+        cachedDiffJson: { files: [] },
+      },
+      currentOrder: 0,
+      isLoading: false,
+      error: null,
+      isSubmitted: false,
+      hasStarted: true,
+      followUpQuestions: null,
+      followUpLoading: false,
+      lastChallengeSubmissionId: null,
+      submitChallenge: vi.fn(),
+      onStart: vi.fn(),
+      claimAssessmentStart,
+      reset: vi.fn(),
+      refresh: vi.fn(),
+      sessionToken: 'session-token',
+    });
+
+    render(
+      <MemoryRouter initialEntries={['/assess/stale-code-review-token']}>
+        <Routes>
+          <Route path="/assess/:token" element={<CandidateAssessmentPage />} />
+        </Routes>
+      </MemoryRouter>,
+    );
+
+    fireEvent.click(screen.getByTestId('start-interview-btn'));
+
+    await waitFor(() => expect(claimAssessmentStart).toHaveBeenCalledTimes(1));
+    expect(await screen.findByRole('alert')).toHaveTextContent('This invite link is no longer current.');
+    expect(screen.queryByTestId('code-review-challenge')).not.toBeInTheDocument();
   });
 });
