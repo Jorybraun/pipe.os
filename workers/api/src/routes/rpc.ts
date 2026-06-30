@@ -2811,20 +2811,8 @@ rpcAuth.post('/get-stage-config', async (c) => {
         standaloneAssessment,
       );
       if (!hasReadyAssignment) {
-        const retryQueued = await maybeQueueRetryableStandaloneIngestion(c.env, optionalExecutionContext(c), candidateId);
-        const readiness = retryQueued
-          ? retryingStandaloneReviewReadiness(retryQueued.reason)
-          : await standaloneReviewEvidenceReadiness(c.env.DB, candidateId);
-        if (!readiness.ready) {
-          return c.json(waitingStageConfigForGate({
-            candidateId,
-            stageId: 'standalone-code-review',
-            stageTitle: 'Code Review',
-            stageMode: 'ASYNC',
-            timeLimit: null,
-            waitingChallenge: standaloneWaitingChallengeForReadiness(readiness),
-          }));
-        }
+        await maybeQueueRetryableStandaloneIngestion(c.env, optionalExecutionContext(c), candidateId);
+        return c.json(candidateIntakeQueuedComplete('Profile received'));
       }
       return c.json({
         isComplete: false,
@@ -3072,14 +3060,7 @@ rpcAuth.post('/get-stage-config', async (c) => {
 
       const gateResult = await checkMatchingGate(c.env.DB, candidateId, effectivePipelineId, stage.id, nextChallenge.id, nextChallenge.type, c.env);
       if (gateResult.blocked && gateResult.syntheticChallenge) {
-        return c.json(waitingStageConfigForGate({
-          candidateId,
-          stageId: stage.id,
-          stageTitle: stage.title,
-          stageMode: stage.mode,
-          timeLimit: stage.timeLimit,
-          waitingChallenge: gateResult.syntheticChallenge,
-        }));
+        return c.json(candidateIntakeQueuedComplete('Profile received'));
       }
 
       const assessmentId = crypto.randomUUID();

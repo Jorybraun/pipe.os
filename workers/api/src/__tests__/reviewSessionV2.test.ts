@@ -1274,6 +1274,78 @@ describe('POST /rpc/submit-challenge-response', () => {
     expect(body.queued).toBeUndefined();
     await waitUntilAll();
   });
+
+  it('queues pipeline CODE_REVIEW intake without exposing internal matching as an active assessment', async () => {
+    const db = fakeD1({
+      firstResponders: [
+        {
+          match: 'SELECT invite_token, status FROM candidates WHERE id',
+          value: { invite_token: 'CLAIMED::invite-token', status: 'IN_PROGRESS' },
+        },
+        {
+          match: 'SELECT current_stage_id FROM candidates WHERE id',
+          value: { current_stage_id: 'stage_code' },
+        },
+        {
+          match: 'SELECT mode FROM stages WHERE id',
+          value: { mode: 'ASYNC' },
+        },
+        {
+          match: "type IN ('CODE_REVIEW', 'CODE_IMPLEMENTATION')",
+          value: { id: 'ch_review' },
+        },
+        {
+          match: "type = 'INTAKE'",
+          value: null,
+        },
+      ],
+    });
+    const storage = { put: vi.fn(async () => null) } as unknown as R2Bucket;
+    const env = buildEnv({ DB: db, STORAGE: storage });
+    const { ctx, waitUntilAll } = buildCtx();
+
+    const res = await rpcAuth.request(
+      '/submit-challenge-response',
+      {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json',
+          Authorization: await authHeader('cand_1', 'pipe_1'),
+        },
+        body: JSON.stringify({
+          order: 0,
+          submission: {
+            resumeText: 'Senior frontend engineer with React, TypeScript, source-backed code review, accessibility, and regression testing experience.',
+          },
+        }),
+      },
+      env,
+      ctx,
+    );
+
+    expect(res.status).toBe(200);
+    const body = await res.json() as { success?: boolean; next?: boolean; complete?: boolean; queued?: boolean };
+    expect(body).toMatchObject({
+      success: true,
+      complete: true,
+      queued: true,
+    });
+    expect(body.next).toBeUndefined();
+    await waitUntilAll();
+    expect(storage.put).toHaveBeenCalledWith(
+      expect.stringMatching(/^text-intake\/cand_1\//),
+      expect.stringContaining('source-backed code review'),
+      expect.objectContaining({
+        customMetadata: expect.objectContaining({
+          candidateId: 'cand_1',
+        }),
+      }),
+    );
+    expect(db.__calls.some((call) =>
+      call.ran
+      && call.sql.includes('INSERT INTO candidate_ingestion')
+    )).toBe(true);
+  });
 });
 
 // ─── POST /rpc/get-challenge ─────────────────────────────────────────────────

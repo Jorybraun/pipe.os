@@ -129,6 +129,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Fixed — Candidate repo matching
 
+- Pipeline CODE_REVIEW CV intake now finishes with the candidate-safe profile-received state while background ingestion/matching continues, keeping unfinished repo matching out of `/assess/`.
 - Candidate CODE_REVIEW assessment links now open directly into the assigned PR review after start instead of depending on a synthetic welcome submission, preventing ready assessment links from trapping candidates on the intro card.
 - Candidate CV intake now records a queued ingestion state and ends the code-review candidate flow with a profile-received message instead of advancing into the internal repo-matching/decomposition waiting room; matching and retry work continues in the background.
 - Assessment evaluator prompts, reports, and scheduling progress fixtures now cite `code_diff` evidence using the exact submitted `baseCommitSha..commitSha` range, keeping evaluator provenance aligned with commit-submission validation.
