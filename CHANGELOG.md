@@ -7,6 +7,13 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Added — Cross-candidate evidence comparison UI
+
+- `CandidateComparisonPanel` — new visualization panel in `LivingContextGraph` that renders side-by-side candidate evidence profiles, concept coverage grids with coverage-level coloring, and source-diversity/evidence-depth rankings when `comparisonCandidateIds` are provided.
+- `useCandidateComparison` hook — fetches `POST /api/v1/candidates/compare` and exposes `report`, `isLoading`, `error`, and a manual `compare()` trigger.
+- Frontend types for `CandidateComparisonReport`, `CandidateEvidenceProfile`, `ConceptComparison`, and `ComparisonSummary` in `src/lib/api/types.ts`.
+- Unit tests for the comparison hook and component panel (10 tests).
+
 ### Fixed — Review challenge packet source ref validation
 
 - `persistence.test.ts` — removed incorrect assertion expecting `exactText` validation against `packet_json` for `review_challenge_packet` source refs; content integrity is verified via `contentHash`/`source_hash`, while `exactText` is a human-readable evidence summary.
