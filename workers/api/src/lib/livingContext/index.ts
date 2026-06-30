@@ -95,3 +95,27 @@ export type {
   FreshnessLevel,
   EvidenceRow as EvidenceFreshnessRow,
 } from './evidenceFreshness';
+export {
+  analyzeEvidenceGaps,
+  analyzeEvidenceGapsForChallenge,
+  loadCandidateEvidenceForGapAnalysis,
+} from './evidenceGapAnalysis';
+export type {
+  CoverageLevel,
+  DemandCoverage,
+  GapSummary,
+  EvidenceGapReport,
+  GapAnalysisOptions,
+} from './evidenceGapAnalysis';
+export { loadMatchProvenanceChain } from './matchProvenanceChain';
+export type {
+  ProvenanceMatchDecision,
+  ProvenanceDemandLink,
+  ProvenanceSignalNode,
+  ProvenanceAssertionNode,
+  ProvenanceArtifactNode,
+  ProvenanceInteractionNode,
+  ProvenanceChainEntry,
+  MatchProvenanceChain,
+  ProvenanceChainOptions,
+} from './matchProvenanceChain';

@@ -26,6 +26,8 @@ import { loadAggregatedCandidateEvidence, type LoadAggregatedEvidenceConfig } fr
 import { traceEvidenceLineage } from '../../lib/livingContext/evidenceLineage';
 import { loadTemporalAdjacencies } from '../../lib/livingContext/conceptAdjacencyDecay';
 import { loadCandidateEvidenceFreshness } from '../../lib/livingContext/evidenceFreshness';
+import { analyzeEvidenceGapsForChallenge } from '../../lib/livingContext/evidenceGapAnalysis';
+import { loadMatchProvenanceChain } from '../../lib/livingContext/matchProvenanceChain';
 import type { Env } from '../../types';
 
 interface SubsystemHealth {
@@ -1084,6 +1086,61 @@ app.get('/candidate-evidence-freshness', async (c) => {
     candidateId,
     ...freshness,
   });
+});
+
+app.get('/evidence-gap-analysis', async (c) => {
+  const db = c.env.DB;
+  const candidateId = c.req.query('candidateId');
+  const challengePacketId = c.req.query('challengePacketId');
+
+  if (!candidateId || !challengePacketId) {
+    return c.json({ error: 'candidateId and challengePacketId query parameters required' }, 400);
+  }
+
+  const halfLifeDaysParam = c.req.query('halfLifeDays');
+  const strongThresholdParam = c.req.query('strongThreshold');
+  const partialThresholdParam = c.req.query('partialThreshold');
+
+  const options: {
+    decay?: { halfLifeDays?: number };
+    strongThreshold?: number;
+    partialThreshold?: number;
+  } = {};
+
+  if (halfLifeDaysParam) options.decay = { halfLifeDays: Number(halfLifeDaysParam) };
+  if (strongThresholdParam) options.strongThreshold = Number(strongThresholdParam);
+  if (partialThresholdParam) options.partialThreshold = Number(partialThresholdParam);
+
+  try {
+    const report = await analyzeEvidenceGapsForChallenge(
+      db, candidateId, challengePacketId, options,
+    );
+    return c.json(report);
+  } catch (err) {
+    const message = err instanceof Error ? err.message : 'Unknown error';
+    return c.json({ error: message }, 404);
+  }
+});
+
+app.get('/match-provenance-chain', async (c) => {
+  const db = c.env.DB;
+  const matchRunId = c.req.query('matchRunId');
+
+  if (!matchRunId) {
+    return c.json({ error: 'matchRunId query parameter required' }, 400);
+  }
+
+  const halfLifeDaysParam = c.req.query('halfLifeDays');
+  const options: { decay?: { halfLifeDays?: number } } = {};
+  if (halfLifeDaysParam) options.decay = { halfLifeDays: Number(halfLifeDaysParam) };
+
+  try {
+    const chain = await loadMatchProvenanceChain(db, matchRunId, options);
+    return c.json(chain);
+  } catch (err) {
+    const message = err instanceof Error ? err.message : 'Unknown error';
+    return c.json({ error: message }, 404);
+  }
 });
 
 export default app;

@@ -7,6 +7,21 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Added — Evidence gap analysis (criterion #6)
+
+- `evidenceGapAnalysis.ts` — analyzes a candidate's evidence profile against challenge demands, producing a structured report of coverage levels (strong/partial/weak/none), missing concepts, and actionable recommendations.
+- `analyzeEvidenceGaps(evidence, demands, options?)` — pure function for gap classification with configurable thresholds.
+- `analyzeEvidenceGapsForChallenge(db, candidateId, challengePacketId, options?)` — D1-backed gap analysis loading evidence with temporal decay.
+- `GET /api/v1/internal/evidence-gap-analysis` — API endpoint with `candidateId`, `challengePacketId`, and tunable threshold params.
+- 11 new tests covering coverage classification, concept matching, weighted scoring, and recommendations.
+
+### Added — Match provenance chain (criteria #2, #6)
+
+- `matchProvenanceChain.ts` — traces a match run end-to-end from decision through demand alignments, candidate signals, semantic assertions, source spans, artifacts, and interactions.
+- `loadMatchProvenanceChain(db, matchRunId, options?)` — loads complete provenance chain with temporal decay multipliers at each assertion node.
+- `GET /api/v1/internal/match-provenance-chain` — API endpoint with `matchRunId` param.
+- 9 new tests covering provenance chain types, stretch vs. direct matches, and unmatched states.
+
 ### Added — Frontend evidence lineage visualization (criteria #2, #6)
 
 - `EvidenceLineagePanel` component in `LivingContextGraph.tsx` — renders assertion → source span → artifact → interaction trace with temporal decay coloring (fresh/recent/aging/stale border), concept tags, and original source text quotes.

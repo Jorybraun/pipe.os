@@ -4,6 +4,40 @@ Inter-agent handoff log for the living context graph goal. Each agent appends a 
 
 ## Log
 
+### 2026-06-30 — Session 7a9df29e (Devin Automation)
+
+**Action:** Consolidate all open living context PRs (#135-#141), add evidence gap analysis and match provenance chain.
+
+**Open PRs analyzed:**
+- PRs #135-#141 (all draft, all aligned with living context goal)
+- PR #141 is the most comprehensive (superset of #135-#140)
+- Branch `devin/1782781635-living-context-merge-to-main` has all 10 commits on top of main
+
+**New code added (this session):**
+1. `evidenceGapAnalysis.ts` — structured gap report: coverage levels (strong/partial/weak/none), missing concepts, weighted scoring, actionable recommendations (criterion #6)
+2. `matchProvenanceChain.ts` — end-to-end match provenance: decision → demand alignments → signals → assertions → source spans → artifacts → interactions (criteria #2, #6)
+3. 2 new API endpoints: `GET /evidence-gap-analysis`, `GET /match-provenance-chain`
+4. Updated exports in `livingContext/index.ts`
+5. 20 new tests (11 gap analysis + 9 provenance chain)
+
+**Test results:** 184 files, 1708 tests passed, 15 skipped. TypeScript clean (both root + workers/api), lint clean (0 errors, 94 pre-existing warnings).
+
+**Criteria advanced:**
+- #2 (preserve original meaning): match provenance traces decisions back to exact source spans
+- #6 (explain every match): gap analysis reports missing evidence per demand; provenance chain shows full decision trace
+- #8 (production quality): both modules include D1 integration with temporal decay
+
+**PRs to close (superseded):** #135, #136, #137, #138, #139, #140, #141
+
+**Next priorities:**
+- Merge consolidation PR to main
+- Close superseded PRs
+- BDD tests for gap analysis and provenance endpoints (Playwright)
+- Frontend panels for evidence gaps and match provenance
+- Expert evaluation set expansion using gap analysis data
+
+---
+
 ### 2026-06-30 — Session 61f63576 (Devin Automation)
 
 **Action:** Integrate evidence lineage, freshness, and concept adjacency decay into frontend visualization and matcher pipeline.
