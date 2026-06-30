@@ -1431,6 +1431,20 @@ function ProfileDecisionCockpit({
 }
 
 function CodeReviewDecisionCard({ decision }: { decision: CodeReviewDecisionProjection }): JSX.Element {
+  const signalSummary = [
+    decision.scoreLabel,
+    decision.challengeLabel,
+    decision.outcome,
+  ].filter((item): item is string => Boolean(item)).join(' · ') || decision.recommendationDetail;
+  const trustSummary = [
+    decision.assessmentValidity,
+    `${decision.proofCount} source-backed proof ${decision.proofCount === 1 ? 'item' : 'items'}`,
+  ].join(' · ');
+  const calibrationSummary = [
+    decision.uncertainty,
+    decision.nextAction,
+  ].join(' · ');
+
   return (
     <section data-testid="person-code-review-decision" style={CODE_REVIEW_DECISION}>
       <div style={CODE_REVIEW_DECISION_HEADER}>
@@ -1454,6 +1468,24 @@ function CodeReviewDecisionCard({ decision }: { decision: CodeReviewDecisionProj
               <div style={DECISION_BASIS_VALUE}>{item.value}</div>
             </div>
           ))}
+        </div>
+      </div>
+
+      <div data-testid="person-code-review-rationale" style={DECISION_RATIONALE}>
+        <div style={DECISION_BASIS_TITLE}>Why this recommendation</div>
+        <div style={DECISION_RATIONALE_GRID}>
+          <div style={DECISION_RATIONALE_ITEM}>
+            <div style={DECISION_FACT_LABEL}>Signal</div>
+            <div style={DECISION_COPY}>{signalSummary}</div>
+          </div>
+          <div style={DECISION_RATIONALE_ITEM}>
+            <div style={DECISION_FACT_LABEL}>Trust</div>
+            <div style={DECISION_COPY}>{trustSummary}</div>
+          </div>
+          <div style={DECISION_RATIONALE_ITEM}>
+            <div style={DECISION_FACT_LABEL}>Calibrate</div>
+            <div style={DECISION_COPY}>{calibrationSummary}</div>
+          </div>
         </div>
       </div>
 
@@ -2360,6 +2392,28 @@ const DECISION_BASIS_VALUE: CSSProperties = {
   fontWeight: 800,
   lineHeight: 1.35,
   overflowWrap: 'anywhere',
+};
+
+const DECISION_RATIONALE: CSSProperties = {
+  display: 'grid',
+  gap: 8,
+  padding: 12,
+  border: '1px solid rgba(96,165,250,0.24)',
+  borderRadius: 6,
+  background: 'rgba(96,165,250,0.07)',
+};
+
+const DECISION_RATIONALE_GRID: CSSProperties = {
+  display: 'grid',
+  gridTemplateColumns: 'repeat(auto-fit, minmax(190px, 1fr))',
+  gap: 8,
+  minWidth: 0,
+};
+
+const DECISION_RATIONALE_ITEM: CSSProperties = {
+  display: 'grid',
+  gap: 4,
+  minWidth: 0,
 };
 
 const DECISION_FACT: CSSProperties = {

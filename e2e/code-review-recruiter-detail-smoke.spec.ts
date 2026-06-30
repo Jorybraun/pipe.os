@@ -64,7 +64,7 @@ async function expectHumanDecisionState(page: Page): Promise<void> {
   }
 }
 
-async function expectPersonProfileWorkspaceDecision(page: Page): Promise<void> {
+async function expectPersonProfileDecision(page: Page): Promise<void> {
   if (!EXPECT_PERSON_PROFILE_DECISION) return;
 
   const profileButton = page.getByTestId('interview-open-person-profile').first();
@@ -78,9 +78,15 @@ async function expectPersonProfileWorkspaceDecision(page: Page): Promise<void> {
 
   const personDecision = page.getByTestId('person-code-review-decision');
   await expect(personDecision).toBeVisible();
-  await expect(personDecision).toContainText('Workspace assessment decision');
-  await expect(personDecision).toContainText(/workspace assessment signal|Workspace assessment needs review/);
+  await expect(personDecision).toContainText(/Workspace assessment decision|Code review decision/);
+  await expect(personDecision).toContainText(/workspace assessment signal|Workspace assessment needs review|code review signal|Code review needs review/);
   await expect(personDecision).toContainText('source-backed proof items');
+  const rationale = page.getByTestId('person-code-review-rationale');
+  await expect(rationale).toBeVisible();
+  await expect(rationale).toContainText('Why this recommendation');
+  await expect(rationale).toContainText('Signal');
+  await expect(rationale).toContainText('Trust');
+  await expect(rationale).toContainText('Calibrate');
 }
 
 test.describe('Feature: assessment recruiter detail smoke', () => {
@@ -128,7 +134,7 @@ test.describe('Feature: assessment recruiter detail smoke', () => {
         await expect(page.getByTestId('interview-assessment-evaluation-claims')).toBeVisible();
         await expect(page.locator('body')).toContainText(/Evaluation|Evaluated/);
       }
-      await expectPersonProfileWorkspaceDecision(page);
+      await expectPersonProfileDecision(page);
       return;
     }
 
@@ -211,5 +217,6 @@ test.describe('Feature: assessment recruiter detail smoke', () => {
     if (REQUIRE_HYPEREDGES) {
       await expect(page.getByTestId('interview-code-review-match-hyperedges')).toHaveCount(1);
     }
+    await expectPersonProfileDecision(page);
   });
 });

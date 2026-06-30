@@ -639,6 +639,17 @@ describe('PersonProfilePage', () => {
     expect(decision).toHaveTextContent('Probe: Probe how they balance timing trade-offs under pushback.');
     expect(decision).toHaveTextContent('Next action');
     expect(decision).toHaveTextContent('Schedule focused technical calibration');
+    const rationale = screen.getByTestId('person-code-review-rationale');
+    expect(rationale).toHaveTextContent('Why this recommendation');
+    expect(rationale).toHaveTextContent('Signal');
+    expect(rationale).toHaveTextContent('82/100 Strong');
+    expect(rationale).toHaveTextContent('pierre/diffs PR #95');
+    expect(rationale).toHaveTextContent('Trust');
+    expect(rationale).toHaveTextContent('Usable source-backed signal');
+    expect(rationale).toHaveTextContent('6 source-backed proof items');
+    expect(rationale).toHaveTextContent('Calibrate');
+    expect(rationale).toHaveTextContent('Focused calibration needed');
+    expect(rationale).toHaveTextContent('Schedule focused technical calibration');
     const basis = screen.getByTestId('person-code-review-decision-basis');
     expect(basis).toHaveTextContent('Decision basis');
     expect(basis).toHaveTextContent('Score report');
