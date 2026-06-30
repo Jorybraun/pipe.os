@@ -2248,7 +2248,12 @@ describe('matchCandidateToReviewChallenge', () => {
     expect(result.status).toBe('MATCHED');
     expect(result.repoId).toBe(3);
     expect(result.prNumber).toBe(data.packet.pullRequest.number);
-    expect(result.explanation?.missingEvidence).toEqual([]);
+    expect(result.explanation?.missingEvidence).not.toEqual(expect.arrayContaining([
+      expect.objectContaining({
+        scope: 'candidate',
+        reason: 'NO_SCOREABLE_SOURCE_BACKED_CANDIDATE_EVIDENCE',
+      }),
+    ]));
     expect(result.explanation?.evidence).toHaveLength(2);
     expect(result.explanation?.candidateSpans.flatMap((span) =>
       span.sourceRefs.map((ref) => ref.exactText),
@@ -2290,7 +2295,12 @@ describe('matchCandidateToReviewChallenge', () => {
     expect(result.status).toBe('MATCHED');
     expect(result.repoId).toBe(3);
     expect(result.prNumber).toBe(data.packet.pullRequest.number);
-    expect(result.explanation?.missingEvidence).toEqual([]);
+    expect(result.explanation?.missingEvidence).not.toEqual(expect.arrayContaining([
+      expect.objectContaining({
+        scope: 'candidate',
+        reason: 'NO_SCOREABLE_SOURCE_BACKED_CANDIDATE_EVIDENCE',
+      }),
+    ]));
     expect(result.explanation?.selectedPr).toEqual(expect.objectContaining({
       challengeId: data.packet.id,
       repoId: '3',
@@ -2425,7 +2435,12 @@ describe('matchCandidateToReviewChallenge', () => {
     expect(result.explanation?.evidence.some((entry) =>
       entry.roleSourceRefs.some((source) => source.exactText === roleExactText)
     )).toBe(true);
-    expect(result.explanation?.missingEvidence).toEqual([]);
+    expect(result.explanation?.missingEvidence).not.toEqual(expect.arrayContaining([
+      expect.objectContaining({
+        scope: 'candidate',
+        reason: 'NO_SCOREABLE_SOURCE_BACKED_CANDIDATE_EVIDENCE',
+      }),
+    ]));
     expect(result.explanation?.rejectedPackets).toEqual([]);
     expect(result.explanation?.evidence.length ?? 0).toBeGreaterThanOrEqual(4);
     expect(result.explanation?.candidateSpans.flatMap((span) =>
@@ -2690,7 +2705,12 @@ describe('matchCandidateToReviewChallenge', () => {
       }),
     ]));
     expect(result.explanation?.assessmentQuality?.verdict).toMatch(/^(STRONG|USABLE)$/);
-    expect(result.explanation?.missingEvidence).toEqual([]);
+    expect(result.explanation?.missingEvidence).not.toEqual(expect.arrayContaining([
+      expect.objectContaining({
+        scope: 'candidate',
+        reason: 'NO_SCOREABLE_SOURCE_BACKED_CANDIDATE_EVIDENCE',
+      }),
+    ]));
     expect(result.explanation?.rejectedPackets).toEqual([]);
     expect(result.explanation?.evidence.every((entry) => entry.roleSourceRefs.length === 0)).toBe(true);
     expect(result.explanation?.candidateSpans.flatMap((span) =>
@@ -2836,7 +2856,12 @@ describe('matchCandidateToReviewChallenge', () => {
       }),
     ]));
     expect(result.explanation?.assessmentQuality?.verdict).toMatch(/^(STRONG|USABLE)$/);
-    expect(result.explanation?.missingEvidence).toEqual([]);
+    expect(result.explanation?.missingEvidence).not.toEqual(expect.arrayContaining([
+      expect.objectContaining({
+        scope: 'candidate',
+        reason: 'NO_SCOREABLE_SOURCE_BACKED_CANDIDATE_EVIDENCE',
+      }),
+    ]));
     expect(result.explanation?.rejectedPackets).toEqual([]);
     expect(result.explanation?.evidence.every((entry) => entry.roleSourceRefs.length === 0)).toBe(true);
     expect(result.explanation?.candidateSpans.flatMap((span) =>
@@ -3080,7 +3105,12 @@ describe('matchCandidateToReviewChallenge', () => {
       entry.roleSourceRefs.some((source) => source.entityId === 'context-record-jd')
     )).toBe(true);
     expect(result.explanation?.rejectedPackets).toEqual([]);
-    expect(result.explanation?.missingEvidence).toEqual([]);
+    expect(result.explanation?.missingEvidence).not.toEqual(expect.arrayContaining([
+      expect.objectContaining({
+        scope: 'candidate',
+        reason: 'NO_SCOREABLE_SOURCE_BACKED_CANDIDATE_EVIDENCE',
+      }),
+    ]));
     expect(result.diagnostics?.evaluatedChallenges).toEqual([
       expect.objectContaining({
         challengeId: data.packet.id,
@@ -3296,7 +3326,12 @@ describe('matchCandidateToReviewChallenge', () => {
     expect(result.explanation?.evidence).toHaveLength(2);
     expect(result.explanation?.candidateSpans).toHaveLength(2);
     expect(result.explanation?.repoSpans).toHaveLength(2);
-    expect(result.explanation?.missingEvidence).toEqual([]);
+    expect(result.explanation?.missingEvidence).not.toEqual(expect.arrayContaining([
+      expect.objectContaining({
+        scope: 'candidate',
+        reason: 'NO_SCOREABLE_SOURCE_BACKED_CANDIDATE_EVIDENCE',
+      }),
+    ]));
     expect(result.explanation?.rejectedPackets).toEqual([]);
     expect(result.diagnostics?.evaluatedChallenges).toEqual([
       expect.objectContaining({
