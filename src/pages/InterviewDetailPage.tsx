@@ -17,6 +17,7 @@ import {
 } from 'lucide-react';
 import { useApiClient } from '../hooks/useApiClient';
 import { asCodeReviewReviewProfile, ReviewProfileCard } from '../components/Assessment/CodeReviewChallenge';
+import { summarizeAssessmentAssignment } from '../lib/scheduling/assessmentChallenge';
 import type {
   AssessmentEvidenceCoverageItem,
   AssessmentProgressSnapshot,
@@ -259,6 +260,23 @@ function assessmentEvaluationStatusLabel(status: string): string {
       return 'Evaluated';
     default:
       return sentenceCaseToken(status);
+  }
+}
+
+function assessmentAssignmentToneStyle(
+  tone: NonNullable<ReturnType<typeof summarizeAssessmentAssignment>>['tone'],
+): CSSProperties {
+  switch (tone) {
+    case 'matched':
+      return { color: '#4ade80' };
+    case 'manual':
+      return { color: '#fbbf24' };
+    case 'blocked':
+      return { color: '#f87171' };
+    case 'waiting':
+      return { color: '#93c5fd' };
+    default:
+      return { color: 'var(--pipe-text)' };
   }
 }
 
@@ -2439,7 +2457,8 @@ export default function InterviewDetailPage(): JSX.Element {
   const assessmentInviteMessage = assessmentInviteState === 'claimed'
     ? assessmentInviteDescription
     : interview.assessmentSetup?.lastDeliveredUrlMessage ?? assessmentInviteDescription;
-  const showsAssessmentProgress = usesWorkspaceInterview || Boolean(assessmentProgress);
+  const assessmentAssignment = summarizeAssessmentAssignment(interview.assessmentSetup);
+  const showsAssessmentProgress = usesWorkspaceInterview || Boolean(assessmentProgress) || Boolean(assessmentAssignment);
   const assessmentProgressStage = assessmentProgress
     ? assessmentProgressStageLabel(assessmentProgress.stage)
     : 'Not started';
@@ -2921,6 +2940,22 @@ export default function InterviewDetailPage(): JSX.Element {
               )}
             </div>
           </div>
+          {assessmentAssignment && (
+            <div
+              data-testid="interview-assessment-assignment"
+              style={ASSESSMENT_PROGRESS_DETAIL}
+            >
+              <div style={{ ...EVIDENCE_ROW, alignItems: 'flex-start' }}>
+                <span style={FIELD_LABEL}>Assignment</span>
+                <span style={{ ...FIELD_VALUE, lineHeight: 1.5 }}>
+                  <strong style={{ display: 'block', marginBottom: 4, ...assessmentAssignmentToneStyle(assessmentAssignment.tone) }}>
+                    {assessmentAssignment.label}
+                  </strong>
+                  {assessmentAssignment.detail}
+                </span>
+              </div>
+            </div>
+          )}
           {assessmentProgress ? (
             <div style={ASSESSMENT_PROGRESS_DETAIL}>
               {assessmentProgress.challenge && (

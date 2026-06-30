@@ -194,9 +194,9 @@ describe('InterviewDetailPage', () => {
         assessmentSetup: {
           status: 'reviewable_task_assigned',
           kind: 'github_pr',
-          source: 'recruiter_manual_override',
+          source: 'matched_repo_id',
           blocksPositiveAssessment: false,
-          message: 'A reviewable open-source task is assigned.',
+          message: 'PIPE matched a reviewable open-source task.',
         },
         workspaceSession: {
           status: 'READY',
@@ -310,6 +310,12 @@ describe('InterviewDetailPage', () => {
     const progress = screen.getByTestId('interview-assessment-progress');
     expect(progress).toHaveTextContent('Assessment progress');
     expect(progress).toHaveTextContent('Ready for evaluation');
+    const assignment = screen.getByTestId('interview-assessment-assignment');
+    expect(assignment).toHaveTextContent('Assignment');
+    expect(assignment).toHaveTextContent('PIPE-matched challenge');
+    expect(assignment).toHaveTextContent(
+      'Repo task was selected from source-backed candidate evidence and an approved challenge packet.',
+    );
     expect(progress).toHaveTextContent('Start source-backed AI or human evaluation.');
     expect(progress).toHaveTextContent('challenge, chat, workspace telemetry, room actions, commit, AI use, transcript, tests');
     expect(progress).toHaveTextContent('Workspace');
@@ -985,6 +991,10 @@ describe('InterviewDetailPage', () => {
     const assignmentTrust = screen.getByTestId('interview-review-assignment-trust');
     expect(assignmentTrust).toHaveTextContent('Manual task');
     expect(assignmentTrust).toHaveTextContent('not as proof that PIPE automatically matched the candidate');
+    const assessmentAssignment = screen.getByTestId('interview-assessment-assignment');
+    expect(assessmentAssignment).toHaveTextContent('Manual task assignment');
+    expect(assessmentAssignment).toHaveTextContent('A recruiter supplied a repo-only task packet.');
+    expect(assessmentAssignment).not.toHaveTextContent('PIPE-matched challenge');
     expect(screen.queryByTestId('interview-code-review-decision-summary')).toBeNull();
   });
 

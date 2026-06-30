@@ -7,7 +7,10 @@ import { StatusOverrideModal } from './StatusOverrideModal';
 import { InviteToCallModal } from './InviteToCallModal';
 import { useApiClient } from '../../hooks/useApiClient';
 import type { InterviewStatus } from '../../lib/scheduling/types';
-import { summarizeAssessmentChallenge } from '../../lib/scheduling/assessmentChallenge';
+import {
+  summarizeAssessmentAssignment,
+  summarizeAssessmentChallenge,
+} from '../../lib/scheduling/assessmentChallenge';
 
 // TODO: Wire candidateName and pipelineTitle via enriched data once we join
 // across models. For MVP these are passed as props by SchedulingDashboard which
@@ -140,6 +143,23 @@ function assessmentEvidenceSummary(input: {
     input.hasTestEvidence ? 'tests' : null,
   ].filter((value): value is string => Boolean(value));
   return ready.length > 0 ? ready.join(', ') : 'no evidence yet';
+}
+
+function assessmentAssignmentColor(
+  tone: NonNullable<ReturnType<typeof summarizeAssessmentAssignment>>['tone'],
+): string {
+  switch (tone) {
+    case 'matched':
+      return '#4ade80';
+    case 'manual':
+      return '#fbbf24';
+    case 'blocked':
+      return '#f87171';
+    case 'waiting':
+      return '#93c5fd';
+    default:
+      return 'var(--pipe-text)';
+  }
 }
 
 interface AssessmentDecisionSummary {
@@ -325,6 +345,7 @@ export function InterviewCard({
     interview.status === 'INVITED' && !hasInviteDelivery ? 'Ready' : undefined;
   const assessmentProgress = interview.assessmentProgress ?? null;
   const assessmentSetup = interview.assessmentSetup ?? null;
+  const assessmentAssignment = summarizeAssessmentAssignment(assessmentSetup);
   const showsAssessmentSnapshot = isAssessmentInterviewType(interview.interviewType)
     || Boolean(assessmentProgress);
   const assessmentStageLabel = assessmentProgress
@@ -471,6 +492,21 @@ export function InterviewCard({
               <div style={{ minWidth: 0, fontSize: 10, color: 'var(--pipe-text)', fontWeight: 700, overflowWrap: 'anywhere' }}>
                 {assessmentStageLabel}
               </div>
+              {assessmentAssignment && (
+                <>
+                  <div style={{ fontSize: 9, color: '#93c5fd', letterSpacing: '0.12em', fontWeight: 700 }}>
+                    ASSIGNMENT
+                  </div>
+                  <div style={{ minWidth: 0, overflowWrap: 'anywhere' }}>
+                    <div style={{ fontSize: 10, color: assessmentAssignmentColor(assessmentAssignment.tone), fontWeight: 700 }}>
+                      {assessmentAssignment.label}
+                    </div>
+                    <div style={{ fontSize: 10, color: 'var(--pipe-text-dim)' }}>
+                      {assessmentAssignment.detail}
+                    </div>
+                  </div>
+                </>
+              )}
               {assessmentDecision && (
                 <>
                   <div style={{ fontSize: 9, color: '#93c5fd', letterSpacing: '0.12em', fontWeight: 700 }}>

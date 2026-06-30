@@ -53,9 +53,9 @@ describe('InterviewCard assessment progress', () => {
       assessmentSetup: {
         status: 'reviewable_task_assigned',
         kind: 'github_pr',
-        source: 'recruiter_manual_override',
+        source: 'matched_repo_id',
         blocksPositiveAssessment: false,
-        message: 'A reviewable open-source task is assigned.',
+        message: 'PIPE matched a reviewable open-source task.',
       },
       workspaceSession: {
         status: 'READY',
@@ -135,6 +135,11 @@ describe('InterviewCard assessment progress', () => {
     const progress = screen.getByTestId('interview-card-assessment-progress');
     expect(progress).toHaveTextContent('ASSESSMENT');
     expect(progress).toHaveTextContent('Ready for evaluation');
+    expect(progress).toHaveTextContent('ASSIGNMENT');
+    expect(progress).toHaveTextContent('PIPE-matched challenge');
+    expect(progress).toHaveTextContent(
+      'Repo task was selected from source-backed candidate evidence and an approved challenge packet.',
+    );
     expect(progress).toHaveTextContent('DECISION');
     expect(progress).toHaveTextContent('Challenge and commit evidence are captured; run source-backed AI or human evaluation.');
     expect(progress).toHaveTextContent('Start source-backed AI or human evaluation.');
@@ -230,6 +235,9 @@ describe('InterviewCard assessment progress', () => {
 
     const progress = screen.getByTestId('interview-card-assessment-progress');
     expect(progress).toHaveTextContent('Challenge ready');
+    expect(progress).toHaveTextContent('ASSIGNMENT');
+    expect(progress).toHaveTextContent('Manual task assignment');
+    expect(progress).toHaveTextContent('A concrete open-source task packet was assigned by the recruiter.');
     expect(progress).toHaveTextContent('Task assigned');
     expect(progress).toHaveTextContent('Waiting for candidate workspace evidence and assessment-branch commit.');
     expect(progress).toHaveTextContent('Open the room and launch the controlled workspace.');
@@ -265,6 +273,7 @@ describe('InterviewCard assessment progress', () => {
 
     const progress = screen.getByTestId('interview-card-assessment-progress');
     expect(progress).toHaveTextContent('Setup gap');
+    expect(progress).toHaveTextContent('Waiting for PIPE match');
     expect(progress).toHaveTextContent('PIPE must ingest source-backed evidence before selecting a PR task.');
     expect(progress).toHaveTextContent('no assessment session yet');
   });

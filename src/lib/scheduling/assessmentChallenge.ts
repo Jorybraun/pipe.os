@@ -1,3 +1,5 @@
+import type { AssessmentSetupProjection } from './types';
+
 export interface AssessmentChallengeSource {
   exactText: string;
   locator: Record<string, unknown>;
@@ -8,6 +10,12 @@ export interface AssessmentChallengeSummary {
   githubPrNumber: number | null;
   baseCommitSha: string | null;
   task: string | null;
+}
+
+export interface AssessmentAssignmentSummary {
+  label: string;
+  detail: string;
+  tone: 'matched' | 'manual' | 'waiting' | 'blocked' | 'neutral';
 }
 
 function locatorString(locator: Record<string, unknown>, keys: string[]): string | null {
@@ -70,4 +78,72 @@ export function summarizeAssessmentChallenge(
   return summary.repositoryUrl || summary.githubPrNumber || summary.baseCommitSha || summary.task
     ? summary
     : null;
+}
+
+export function summarizeAssessmentAssignment(
+  setup: AssessmentSetupProjection | null | undefined,
+): AssessmentAssignmentSummary | null {
+  if (!setup || setup.status === 'not_applicable') return null;
+
+  if (setup.source === 'matched_repo_id' || setup.kind === 'auto_match') {
+    if (setup.status === 'reviewable_task_assigned') {
+      return {
+        label: 'PIPE-matched challenge',
+        detail: 'Repo task was selected from source-backed candidate evidence and an approved challenge packet.',
+        tone: 'matched',
+      };
+    }
+
+    return {
+      label: 'Waiting for PIPE match',
+      detail: setup.message ?? 'PIPE needs source-backed candidate evidence before selecting a fair repo task.',
+      tone: setup.blocksPositiveAssessment ? 'blocked' : 'waiting',
+    };
+  }
+
+  if (setup.source === 'recruiter_manual_override' || setup.kind === 'manual_open_source_task') {
+    return {
+      label: 'Manual task assignment',
+      detail: setup.message ?? 'Recruiter supplied the task; evaluate the work product separately from repo-fit proof.',
+      tone: 'manual',
+    };
+  }
+
+  if (setup.status === 'waiting_for_candidate_evidence') {
+    return {
+      label: 'Evidence needed for matching',
+      detail: setup.message ?? 'Capture source-backed candidate evidence, then rerun repo matching.',
+      tone: setup.blocksPositiveAssessment ? 'blocked' : 'waiting',
+    };
+  }
+
+  if (setup.status === 'waiting_for_source_backed_match') {
+    return {
+      label: 'Waiting for source-backed match',
+      detail: setup.message ?? 'PIPE has evidence, but no quality-gated repo task has been selected yet.',
+      tone: setup.blocksPositiveAssessment ? 'blocked' : 'waiting',
+    };
+  }
+
+  if (setup.status === 'missing_reviewable_task') {
+    return {
+      label: 'No reviewable task yet',
+      detail: setup.message ?? 'Assign a concrete repo task before this can become an assessment.',
+      tone: 'blocked',
+    };
+  }
+
+  if (setup.status === 'reviewable_task_assigned') {
+    return {
+      label: 'Reviewable task assigned',
+      detail: setup.message ?? 'A concrete source-backed assessment task is ready.',
+      tone: 'neutral',
+    };
+  }
+
+  return {
+    label: 'Assessment setup',
+    detail: setup.message ?? 'Assessment setup state is available.',
+    tone: setup.blocksPositiveAssessment ? 'blocked' : 'neutral',
+  };
 }
