@@ -50,6 +50,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Fixed — Scheduling
 
+- Standalone CODE_REVIEW intake now advances directly into an explicitly assigned source-backed PR review instead of incorrectly queuing the candidate behind background matching.
 - Source-backed assessment evaluation finalization now tolerates the production sequence where an evaluated report is already persisted while the session still reads as final-submitted, preventing workspace evaluation from returning a false 500 after durable evidence is written.
 - Source-backed assessment sessions can now record a recruiter human decision after evaluation, require that decision to cite persisted assessment evidence or report output, and surface the human decision on interview detail/readout cards.
 - Interview detail person-profile links now prefer the living-context person id over contact-row ids, preventing assessment-only meetings from opening a 404 instead of the accumulated person evidence page.

@@ -633,6 +633,64 @@ describe('POST /rpc/get-stage-config', () => {
     });
   });
 
+  it('serves standalone CODE_REVIEW when an explicit source-backed PR is already assigned', async () => {
+    const packet = sourceBackedPacket('repo-span-manual');
+    const db = fakeD1({
+      firstResponders: [
+        {
+          match: 'FROM candidates WHERE id',
+          value: {
+            id: 'cand_1',
+            pipeline_id: null,
+            owner_id: 'owner_1',
+            current_stage_id: null,
+            resume_s3_key: 'text-intake/cand_1',
+          },
+        },
+        { match: 'FROM candidates c WHERE c.id', value: { resume_s3_key: 'text-intake/cand_1', node_count: 0 } },
+        {
+          match: "interview_type = 'CODE_REVIEW'",
+          value: {
+            id: 'standalone_manual',
+            status: 'INVITED',
+            matched_repo_id: 973,
+            github_repo_url: 'https://github.com/mui/base-ui',
+            github_pr_number: 973,
+            submission_json: null,
+          },
+        },
+        { match: 'FROM review_challenge_packets', value: { packet_json: JSON.stringify(packet) } },
+      ],
+    });
+    const env = buildEnv({ DB: db });
+
+    const res = await rpcAuth.request(
+      '/get-stage-config',
+      {
+        method: 'POST',
+        headers: { Authorization: await authHeaderWithoutPipeline() },
+      },
+      env,
+    );
+
+    expect(res.status).toBe(200);
+    const body = await res.json() as {
+      isComplete?: boolean;
+      stageId?: string;
+      stageTitle?: string;
+      mode?: string;
+      challenges?: Array<{ type: string; title: string }>;
+    };
+    expect(body).toMatchObject({
+      isComplete: false,
+      stageId: 'standalone-code-review',
+      stageTitle: 'Code Review',
+      mode: 'ASYNC',
+      challenges: [{ type: 'CODE_REVIEW', order: 0, title: 'Code Review' }],
+    });
+    expect(db.__calls.some((call) => call.sql.includes('LEFT JOIN candidate_ingestion'))).toBe(false);
+  });
+
   it('keeps stale standalone CODE_REVIEW ingestion out of the candidate-facing waiting room', async () => {
     const db = fakeD1({
       firstResponders: [
@@ -1159,6 +1217,62 @@ describe('POST /rpc/submit-challenge-response', () => {
         projects: expect.any(Array),
       }),
     }));
+  });
+
+  it('advances after intake when standalone CODE_REVIEW has an explicit source-backed PR', async () => {
+    const packet = sourceBackedPacket('repo-span-manual');
+    const db = fakeD1({
+      firstResponders: [
+        {
+          match: 'SELECT invite_token, status FROM candidates WHERE id',
+          value: { invite_token: 'CLAIMED::invite-token', status: 'IN_PROGRESS' },
+        },
+        {
+          match: "interview_type = 'CODE_REVIEW'",
+          value: {
+            id: 'standalone_manual',
+            status: 'INVITED',
+            matched_repo_id: 973,
+            github_repo_url: 'https://github.com/mui/base-ui',
+            github_pr_number: 973,
+            submission_json: null,
+          },
+        },
+        { match: 'FROM review_challenge_packets', value: { packet_json: JSON.stringify(packet) } },
+      ],
+    });
+    const storage = { put: vi.fn(async () => null) } as unknown as R2Bucket;
+    const env = buildEnv({ DB: db, STORAGE: storage });
+    const { ctx, waitUntilAll } = buildCtx();
+
+    const res = await rpcAuth.request(
+      '/submit-challenge-response',
+      {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json',
+          Authorization: await authHeaderWithoutPipeline(),
+        },
+        body: JSON.stringify({
+          order: 0,
+          submission: {
+            resumeText: 'Senior frontend engineer with React, TypeScript, popover interaction timing, and source-backed review experience.',
+          },
+        }),
+      },
+      env,
+      ctx,
+    );
+
+    expect(res.status).toBe(200);
+    const body = await res.json() as { success?: boolean; next?: boolean; complete?: boolean; queued?: boolean };
+    expect(body).toMatchObject({
+      success: true,
+      next: true,
+    });
+    expect(body.complete).toBeUndefined();
+    expect(body.queued).toBeUndefined();
+    await waitUntilAll();
   });
 });
 

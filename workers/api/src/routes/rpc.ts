@@ -1583,6 +1583,21 @@ async function getPendingStandaloneAssessment(
   return chooseLatestStandaloneAssessment(review, devContainer);
 }
 
+async function hasReadyStandaloneCodeReviewAssignment(
+  db: D1Database,
+  assessment: StandaloneReviewRow | StandaloneDevContainerRow | null,
+): Promise<boolean> {
+  if (!assessment || 'interview_type' in assessment) return false;
+  if (!assessment.github_repo_url || typeof assessment.github_pr_number !== 'number') {
+    return false;
+  }
+  return hasSourceBackedReviewPacket(
+    db,
+    assessment.github_repo_url,
+    assessment.github_pr_number,
+  );
+}
+
 async function assessmentSessionsTableExists(db: D1Database): Promise<boolean> {
   const row = await db.prepare(
     `SELECT name
@@ -2750,12 +2765,18 @@ rpcAuth.post('/get-stage-config', async (c) => {
 
     // Standalone code-review interview: once source-backed CV evidence is ready, serve the review stage.
     if (!needsResume && standaloneAssessment && !('interview_type' in standaloneAssessment)) {
-      const retryQueued = await maybeQueueRetryableStandaloneIngestion(c.env, optionalExecutionContext(c), candidateId);
-      const readiness = retryQueued
-        ? retryingStandaloneReviewReadiness(retryQueued.reason)
-        : await standaloneReviewEvidenceReadiness(c.env.DB, candidateId);
-      if (!readiness.ready) {
-        return c.json(candidateIntakeQueuedComplete('Profile received'));
+      const hasReadyAssignment = await hasReadyStandaloneCodeReviewAssignment(
+        c.env.DB,
+        standaloneAssessment,
+      );
+      if (!hasReadyAssignment) {
+        const retryQueued = await maybeQueueRetryableStandaloneIngestion(c.env, optionalExecutionContext(c), candidateId);
+        const readiness = retryQueued
+          ? retryingStandaloneReviewReadiness(retryQueued.reason)
+          : await standaloneReviewEvidenceReadiness(c.env.DB, candidateId);
+        if (!readiness.ready) {
+          return c.json(candidateIntakeQueuedComplete('Profile received'));
+        }
       }
       return c.json({
         isComplete: false,
@@ -3711,6 +3732,14 @@ rpcAuth.post('/submit-challenge-response', async (c) => {
   if (!pipelineId) {
     if (parseIntakePayload(submission)) {
       await handleIntakePayload(c.env, c.executionCtx, candidateId, submission, new Date().toISOString());
+      const standaloneReview = await getPendingStandaloneReview(c.env.DB, candidateId);
+      if (await hasReadyStandaloneCodeReviewAssignment(c.env.DB, standaloneReview)) {
+        return c.json({
+          success: true,
+          next: true,
+          message: 'INTAKE submission received',
+        });
+      }
       return c.json({
         success: true,
         complete: true,
