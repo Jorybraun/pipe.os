@@ -1877,6 +1877,26 @@ export interface EvidenceConflictReport {
   analyzedAt: string;
 }
 
+// ── Evidence timeline ────────────────────────────────────────────────────────
+
+export interface TimelineEntry {
+  id: string;
+  timestamp: string;
+  entryType: 'interaction' | 'assertion' | 'context_record' | 'artifact';
+  interactionId: string | null;
+  interactionType: string | null;
+  narrative: string;
+  concepts: string[];
+  sourceCount: number;
+  confidence: number | null;
+}
+
+export interface PersonEvidenceTimeline {
+  workspacePersonId: string;
+  totalEntries: number;
+  entries: TimelineEntry[];
+}
+
 // ── Cross-candidate comparison ──────────────────────────────────────────────
 
 export interface ComparisonConceptEvidence {

@@ -3388,3 +3388,126 @@ html[data-theme="pipe-blue"] .living-context {
   font-family: 'Space Mono', monospace;
   color: var(--lc-record-muted);
 }
+
+/* ── Evidence timeline ───────────────────────────────────────────── */
+
+.living-context__timeline {
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+  padding: 6px 0;
+}
+
+.living-context__timeline-group {
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+}
+
+.living-context__timeline-date {
+  font-size: 9px;
+  font-weight: 600;
+  color: var(--lc-record-muted);
+  font-family: 'Space Mono', monospace;
+  text-transform: uppercase;
+  letter-spacing: 0.05em;
+  padding: 6px 0 3px 22px;
+}
+
+.living-context__timeline-entry {
+  display: flex;
+  gap: 8px;
+  align-items: flex-start;
+  padding: 4px 0;
+  position: relative;
+}
+
+.living-context__timeline-entry::before {
+  content: '';
+  position: absolute;
+  left: 4px;
+  top: 14px;
+  bottom: -6px;
+  width: 1px;
+  background: var(--lc-card-border, rgba(255, 255, 255, 0.08));
+}
+
+.living-context__timeline-group:last-child .living-context__timeline-entry:last-child::before {
+  display: none;
+}
+
+.living-context__timeline-dot {
+  width: 9px;
+  height: 9px;
+  min-width: 9px;
+  border-radius: 50%;
+  margin-top: 3px;
+  z-index: 1;
+}
+
+.living-context__timeline-content {
+  flex: 1;
+  min-width: 0;
+}
+
+.living-context__timeline-header {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  gap: 8px;
+}
+
+.living-context__timeline-type {
+  font-size: 10px;
+  font-weight: 600;
+  color: var(--lc-record-text);
+}
+
+.living-context__timeline-time {
+  font-size: 9px;
+  font-family: 'Space Mono', monospace;
+  color: var(--lc-record-muted);
+  white-space: nowrap;
+}
+
+.living-context__timeline-narrative {
+  font-size: 10px;
+  color: rgba(255, 255, 255, 0.7);
+  line-height: 1.4;
+  margin-top: 1px;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  display: -webkit-box;
+  -webkit-line-clamp: 2;
+  -webkit-box-orient: vertical;
+}
+
+.living-context__timeline-meta {
+  display: flex;
+  gap: 6px;
+  align-items: center;
+  margin-top: 3px;
+  flex-wrap: wrap;
+}
+
+.living-context__timeline-badge {
+  font-size: 9px;
+  font-weight: 500;
+  color: var(--lc-concept);
+  background: rgba(99, 102, 241, 0.12);
+  padding: 1px 5px;
+  border-radius: 3px;
+}
+
+.living-context__timeline-stat {
+  font-size: 9px;
+  font-family: 'Space Mono', monospace;
+  color: var(--lc-record-muted);
+}
+
+.living-context__timeline-concepts {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 3px;
+  margin-top: 3px;
+}

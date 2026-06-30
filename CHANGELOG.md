@@ -7,6 +7,17 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Added — Evidence timeline & comparison wiring
+
+- `EvidenceTimelinePanel` — chronological evidence accumulation feed in `LivingContextGraph` showing interactions, assertions, and context records grouped by date with color-coded entry types, concept tags, source counts, and confidence scores (acceptance criterion #7).
+- `useEvidenceTimeline` hook — fetches `GET /api/v1/candidates/:id/living-context/timeline` and exposes `timeline`, `isLoading`, `error`, and `refetch`.
+- `usePipelineSiblings` hook — fetches sibling candidate IDs from `GET /api/v1/candidates/:id/pipeline-siblings` for auto-populating comparison panels.
+- `GET /:candidateId/pipeline-siblings` endpoint — returns other non-archived candidates in the same pipeline (max 20).
+- Frontend types for `TimelineEntry` and `PersonEvidenceTimeline` in `src/lib/api/types.ts`.
+- `CandidateProfilePage` now auto-wires pipeline sibling IDs into `LivingContextGraph`'s `comparisonCandidateIds` prop.
+- Timeline CSS with vertical connector lines, date grouping, entry type dots, and concept badge rendering.
+- Unit tests for timeline hook, pipeline siblings hook, and timeline panel (23 tests).
+
 ### Added — Cross-candidate evidence comparison UI
 
 - `CandidateComparisonPanel` — new visualization panel in `LivingContextGraph` that renders side-by-side candidate evidence profiles, concept coverage grids with coverage-level coloring, and source-diversity/evidence-depth rankings when `comparisonCandidateIds` are provided.

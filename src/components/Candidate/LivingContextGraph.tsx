@@ -2,6 +2,7 @@ import { useCallback, useEffect, useMemo, useState } from 'react';
 import {
   Activity,
   AlertTriangle,
+  Clock,
   ExternalLink,
   FileText,
   GitPullRequest,
@@ -19,6 +20,7 @@ import type {
   CandidateEvidenceProfile,
   ConceptComparison,
   ConceptGraphAdjacency,
+  PersonEvidenceTimeline,
   ConceptGraphConcept,
   CoverageLevel,
   EvidenceFreshnessResponse,
@@ -54,6 +56,7 @@ import { useMatchProvenance } from '../../hooks/useMatchProvenance';
 import { useMatchHistory } from '../../hooks/useMatchHistory';
 import { useRematch } from '../../hooks/useRematch';
 import { useCandidateComparison } from '../../hooks/useCandidateComparison';
+import { useEvidenceTimeline } from '../../hooks/useEvidenceTimeline';
 import { useLivingContext } from '../../hooks/useLivingContext';
 import { buildLivingContextBranches } from '../../lib/livingContextTree';
 import { ContextRecordForest } from './ContextRecordTree';
@@ -1979,6 +1982,138 @@ function EvidenceDepthPanel({
   );
 }
 
+// ── Evidence timeline ────────────────────────────────────────────────────────
+
+const ENTRY_TYPE_ICON_COLOR: Record<string, string> = {
+  interaction: 'var(--lc-concept, #60a5fa)',
+  assertion: 'var(--lc-structural, rgba(255,255,255,0.6))',
+  context_record: 'var(--lc-gap-weak, #f59e0b)',
+  artifact: 'var(--lc-concept, #60a5fa)',
+};
+
+function EvidenceTimelinePanel({
+  candidateId,
+}: {
+  candidateId: string;
+}): JSX.Element | null {
+  const { timeline, isLoading, error, refetch } = useEvidenceTimeline(candidateId);
+
+  if (isLoading && !timeline) return null;
+  if (error || !timeline || timeline.entries.length === 0) return null;
+
+  const grouped = groupTimelineByDate(timeline.entries);
+
+  return (
+    <section
+      className="living-context__panel"
+      data-testid="evidence-timeline-panel"
+    >
+      <div className="living-context__section-head">
+        <div style={{ display: 'flex', gap: 6, alignItems: 'center' }}>
+          <Clock size={13} color="var(--lc-concept)" />
+          <div className="living-context__section-title">Evidence timeline</div>
+          <div className="living-context__count">{timeline.totalEntries}</div>
+        </div>
+        <button
+          type="button"
+          className="living-context__refresh"
+          onClick={() => void refetch()}
+          title="Refresh timeline"
+          aria-label="Refresh timeline"
+        >
+          <RefreshCw size={12} />
+        </button>
+      </div>
+
+      <div className="living-context__timeline" data-testid="timeline-entries">
+        {grouped.map(([dateLabel, entries]) => (
+          <div key={dateLabel} className="living-context__timeline-group">
+            <div className="living-context__timeline-date">{dateLabel}</div>
+            {entries.map((entry) => (
+              <div
+                key={entry.id}
+                className="living-context__timeline-entry"
+                data-testid="timeline-entry"
+              >
+                <div className="living-context__timeline-dot" style={{ background: ENTRY_TYPE_ICON_COLOR[entry.entryType] ?? 'var(--lc-structural)' }} />
+                <div className="living-context__timeline-content">
+                  <div className="living-context__timeline-header">
+                    <span className="living-context__timeline-type">
+                      {titleCase(entry.entryType)}
+                    </span>
+                    <span className="living-context__timeline-time">
+                      {formatTimeOnly(entry.timestamp)}
+                    </span>
+                  </div>
+                  <div className="living-context__timeline-narrative">
+                    {entry.narrative}
+                  </div>
+                  <div className="living-context__timeline-meta">
+                    {entry.interactionType && (
+                      <span className="living-context__timeline-badge">
+                        {titleCase(entry.interactionType)}
+                      </span>
+                    )}
+                    {entry.sourceCount > 0 && (
+                      <span className="living-context__timeline-stat">
+                        {entry.sourceCount} source{entry.sourceCount === 1 ? '' : 's'}
+                      </span>
+                    )}
+                    {entry.confidence !== null && (
+                      <span className="living-context__timeline-stat">
+                        {Math.round(entry.confidence * 100)}% confidence
+                      </span>
+                    )}
+                  </div>
+                  {entry.concepts.length > 0 && (
+                    <div className="living-context__timeline-concepts">
+                      {entry.concepts.slice(0, 5).map((concept) => (
+                        <span key={concept} className="living-context__concept">
+                          {concept}
+                        </span>
+                      ))}
+                      {entry.concepts.length > 5 && (
+                        <span className="living-context__timeline-stat">
+                          +{entry.concepts.length - 5} more
+                        </span>
+                      )}
+                    </div>
+                  )}
+                </div>
+              </div>
+            ))}
+          </div>
+        ))}
+      </div>
+    </section>
+  );
+}
+
+function formatTimeOnly(timestamp: string): string {
+  const date = new Date(timestamp);
+  if (Number.isNaN(date.getTime())) return timestamp;
+  return date.toLocaleTimeString([], { hour: 'numeric', minute: '2-digit' });
+}
+
+function groupTimelineByDate(
+  entries: PersonEvidenceTimeline['entries'],
+): Array<[string, PersonEvidenceTimeline['entries']]> {
+  const groups = new Map<string, PersonEvidenceTimeline['entries']>();
+  for (const entry of entries) {
+    const date = new Date(entry.timestamp);
+    const key = Number.isNaN(date.getTime())
+      ? 'Unknown'
+      : date.toLocaleDateString([], { month: 'short', day: 'numeric', year: 'numeric' });
+    const existing = groups.get(key);
+    if (existing) {
+      existing.push(entry);
+    } else {
+      groups.set(key, [entry]);
+    }
+  }
+  return Array.from(groups.entries());
+}
+
 function ConceptGraphPanel({
   concepts,
   adjacencies,
@@ -2967,6 +3102,7 @@ export function LivingContextGraph({
       <EvidenceReadinessPanel candidateId={candidateId} />
       <EvidenceConflictsPanel candidateId={candidateId} />
       <EvidenceDepthPanel livingContext={livingContext} />
+      <EvidenceTimelinePanel candidateId={candidateId} />
       <EvidenceFreshnessPanel freshness={freshness} />
       <EvidenceLineagePanel lineage={lineage} />
       <EvidenceGapPanel report={gapReport} />
