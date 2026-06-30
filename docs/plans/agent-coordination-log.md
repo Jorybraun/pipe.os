@@ -4,6 +4,33 @@ Inter-agent handoff log for the living context graph goal. Each agent appends a 
 
 ## Log
 
+### 2026-06-30T23:01Z — Devin: evidence staleness alerting + consolidated PR #162
+
+**Agent:** Devin session `54fb112c427648b6a4e5e2fc0db34b60`
+**Branch:** `devin/1782860757-living-context-consolidated-merge`
+**PR:** #162 (consolidates #161 work + new staleness alerting)
+
+**Work completed:**
+1. Squash-merged PR #161's consolidated living context work onto fresh branch from main.
+2. Built **evidence staleness alerting** — full-stack recruiter-facing evidence health system:
+   - `evidenceStalenessAlerts.ts`: Pure-function engine computing alerts across evidence dimensions. Severity: critical (≥180d stale), warning (≥90d aging / missing core dimensions), info (single-source / low coverage). Integrates `computeTemporalDecayMultiplier` for weight decay.
+   - `GET /:candidateId/living-context/staleness-alerts`: API endpoint returning `StalenessAlertSummary` with health classification (`healthy` / `attention_needed` / `at_risk` / `critical`).
+   - `useStalenessAlerts` hook: Frontend data hook for loading alerts per candidate.
+   - `StalenessAlertsPanel`: LivingContextGraph panel with severity badges, per-alert cards (age/decay metrics), and actionable recommendations.
+   - Frontend types: `StalenessAlert`, `StalenessAlertSummary`, `AlertSeverity`, `AlertCategory`, `StalenessOverallHealth`.
+3. All 209 test files pass, TypeScript strict clean, lint 0 errors.
+4. CI infrastructure failures are pre-existing (BlobNotFound — same as main/PR #154).
+
+**Criteria advanced:**
+- #7 (visualization): Evidence health panel shows temporal decay and aging across dimensions
+- #8 (production quality): 12 backend tests (8 pure + 4 D1), 5 hook tests, 1 route integration test
+
+**Next priorities:**
+- Evidence staleness panel integration into recruiter workflows
+- Recruiter decision integration into rematch weighting
+- Repository structure overlay enhancements (criterion #4, #7)
+- Close stale draft PRs #155-#160 (auth blocked for automation sessions)
+
 ### 2026-06-30T22:01Z — Devin: match decision audit trail + PR consolidation (PR #161 → new PR)
 
 **Agent:** Devin session `01c3e802130446c09d331e616d9de4b8`
