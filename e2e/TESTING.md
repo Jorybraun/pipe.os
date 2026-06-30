@@ -156,19 +156,21 @@ The smoke proves the candidate lands in CODE_REVIEW rather than a video room, th
 
 ## 10. CODE_REVIEW Recruiter Detail Smoke
 
-This smoke verifies the recruiter-side decision cockpit for an existing interview. It catches fallback loaders, infinite matching screens, missing next actions, missing score-validity state, and optional invite-recipient drift.
+This smoke verifies the recruiter-side decision cockpit for an existing code-review or workspace assessment interview. It catches fallback loaders, infinite matching screens, missing next actions, missing score-validity state, missing workspace work packets, missing human-review state, and optional invite-recipient drift.
 
 ```bash
 APP_BASE=https://pipetest:pipetest123@app-dev.hire-pipe.com \
 API_BASE=https://api-dev.hire-pipe.com \
 VIDEO_ROOM_BASE=https://room-dev.hire-pipe.com \
-CODE_REVIEW_RECRUITER_INTERVIEW_ID=<scheduled-interview-id> \
-CODE_REVIEW_RECRUITER_EXPECT_OUTCOME=blocked \
-CODE_REVIEW_RECRUITER_EXPECT_INVITE_RECIPIENT_EMAIL=<candidate-email> \
+ASSESSMENT_RECRUITER_INTERVIEW_ID=<scheduled-interview-id> \
+ASSESSMENT_RECRUITER_EXPECT_OUTCOME=blocked \
+ASSESSMENT_RECRUITER_EXPECT_INVITE_RECIPIENT_EMAIL=<candidate-email> \
 npx playwright test e2e/code-review-recruiter-detail-smoke.spec.ts --project=authenticated --reporter=line
 ```
 
-For matched outcomes, set `CODE_REVIEW_RECRUITER_EXPECT_OUTCOME=matched`, optionally add `CODE_REVIEW_RECRUITER_EXPECT_SCORE=1`, `CODE_REVIEW_RECRUITER_EXPECT_SUBMISSION=1`, `CODE_REVIEW_RECRUITER_EXPECT_REPO_URL=<repo-url>`, and `CODE_REVIEW_RECRUITER_EXPECT_PR_NUMBER=<number>`. Leave `CODE_REVIEW_RECRUITER_EXPECT_INVITE_RECIPIENT_EMAIL` unset only when the fixture has no assessment invite panel.
+For matched code-review outcomes, set `ASSESSMENT_RECRUITER_EXPECT_OUTCOME=matched`, optionally add `ASSESSMENT_RECRUITER_EXPECT_SCORE=1`, `ASSESSMENT_RECRUITER_EXPECT_SUBMISSION=1`, `ASSESSMENT_RECRUITER_EXPECT_REPO_URL=<repo-url>`, and `ASSESSMENT_RECRUITER_EXPECT_PR_NUMBER=<number>`. Leave `ASSESSMENT_RECRUITER_EXPECT_INVITE_RECIPIENT_EMAIL` unset only when the fixture has no assessment invite panel.
+
+For `OPEN_SOURCE_BUG_FIX` or `DEV_CONTAINER_CHALLENGE` recruiter detail pages, reuse the same smoke with `ASSESSMENT_RECRUITER_EXPECT_REPO_URL=<repo-url>`, `ASSESSMENT_RECRUITER_EXPECT_SUBMISSION=1` after a commit has been submitted, `ASSESSMENT_RECRUITER_EXPECT_SCORE=1` after source-backed evaluation claims exist, `ASSESSMENT_RECRUITER_EXPECT_HUMAN_DECISION_FORM=1` when the reviewer decision form should be available, or `ASSESSMENT_RECRUITER_EXPECT_HUMAN_DECISION=1` after the human decision has been recorded. The legacy `CODE_REVIEW_RECRUITER_*` environment names still work for existing scripts.
 
 For the full app-dev flow, create a disposable CODE_REVIEW invite, submit intake evidence, wait for matching, and run the browser smoke in one command:
 
