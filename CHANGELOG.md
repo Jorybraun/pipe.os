@@ -19,6 +19,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Fixed — Video room
 
+- Video rooms now refresh the visible assessment progress after source-backed room events are accepted, so chat, terminal, and Clippy/agent evidence can move the status strip without waiting for a reload or commit submission.
 - Room chat, terminal, Clippy/agent, and replayed room activity now append source-backed evidence to the scheduled-interview assessment session when one exists, so assessment progress reflects real room work instead of a sidecar Win95 session.
 - Submit Work now shows the assigned open-source challenge contract and reloaded assessment evidence status before submission, so candidates can see the repo, base commit, task, success criteria, expected evidence, and captured/missing evidence without guessing what “done” means.
 - Video rooms now reload durable assessment progress from the meeting-room API on entry/rejoin, so accepted commit submissions, next actions, and evidence coverage survive refreshes instead of existing only in local Submit Work state.

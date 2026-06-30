@@ -2426,7 +2426,15 @@ async function loadLatestAssessmentSessionForRoom(
   db: D1Database,
   room: ResolvedRoom,
 ): Promise<RoomAssessmentSessionRow | null> {
-  if (!room.scheduled_interview_id) return null;
+  return loadLatestAssessmentSessionForInterview(db, room.scheduled_interview_id);
+}
+
+async function loadLatestAssessmentSessionForInterview(
+  db: D1Database,
+  scheduledInterviewId: string | null,
+): Promise<RoomAssessmentSessionRow | null> {
+  if (!scheduledInterviewId) return null;
+  if (!await assessmentSessionsTableExists(db)) return null;
   return db.prepare(
     `SELECT id, mode, state
        FROM assessment_sessions
@@ -2434,7 +2442,18 @@ async function loadLatestAssessmentSessionForRoom(
         AND state <> 'CANCELLED'
       ORDER BY created_at DESC
       LIMIT 1`,
-  ).bind(room.scheduled_interview_id).first<RoomAssessmentSessionRow>();
+  ).bind(scheduledInterviewId).first<RoomAssessmentSessionRow>();
+}
+
+async function assessmentSessionsTableExists(db: D1Database): Promise<boolean> {
+  const row = await db.prepare(
+    `SELECT name
+       FROM sqlite_master
+      WHERE type = 'table'
+        AND name = 'assessment_sessions'
+      LIMIT 1`,
+  ).first<{ name: string }>().catch(() => null);
+  return row?.name === 'assessment_sessions';
 }
 
 function serializeRoomAssessmentProgress(
@@ -2928,7 +2947,26 @@ meetingRooms.post('/:token/session-events', async (c) => {
     return apiError(c, 'INTERNAL_ERROR', 'Session event could not be persisted.');
   }
 
-  return c.json({ captured: true, nodeId: node.id });
+  let progress: RoomAssessmentProgressPayload | null = null;
+  const assessmentSession = await loadLatestAssessmentSessionForInterview(
+    c.env.DB,
+    resolved.scheduledInterviewId,
+  );
+  if (assessmentSession) {
+    try {
+      progress = serializeRoomAssessmentProgress(
+        await new RepoTaskInterviewSessionStore(c.env.DB).loadProgress(assessmentSession.id),
+      );
+    } catch (error) {
+      console.error('[meetingRooms.sessionEvents] assessment progress refresh failed:', {
+        roomSessionId: resolved.sessionId,
+        scheduledInterviewId: resolved.scheduledInterviewId,
+        error: error instanceof Error ? error.message : String(error),
+      });
+    }
+  }
+
+  return c.json({ captured: true, nodeId: node.id, progress });
 });
 
 // GET /:token/context-graph — retrieve all session events for the candidate

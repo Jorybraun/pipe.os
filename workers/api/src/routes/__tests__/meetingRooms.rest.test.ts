@@ -5309,6 +5309,110 @@ describe('meeting room recording living-context route', () => {
     expect(serialized).not.toContain(sourceRefId);
   });
 
+  it('returns refreshed assessment progress after source-backed room events', async () => {
+    const app = mountApp();
+    const { ctx } = buildCtx();
+    sqlite.exec(assessmentLayerMigration);
+
+    const now = new Date().toISOString();
+    const scheduledInterviewId = 'scheduled-interview-room-progress-refresh';
+    const assessmentSessionId = 'assessment-session-room-progress-refresh';
+    sqlite.prepare(
+      `INSERT INTO scheduled_interviews (
+         id, owner_id, recipient_name, recipient_email, interview_type,
+         github_repo_url, status, updated_at
+       ) VALUES (?, ?, ?, ?, 'OPEN_SOURCE_BUG_FIX', ?, 'INVITED', ?)`,
+    ).run(
+      scheduledInterviewId,
+      'owner-1',
+      'Progress Candidate',
+      'progress-candidate@example.com',
+      'https://github.com/pipe/source-backed-worker',
+      now,
+    );
+
+    const createMeetingRes = await app.request('/meetings', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({
+        recipientName: 'Progress Candidate',
+        recipientEmail: 'progress-candidate@example.com',
+        title: 'Open-source progress room',
+        meetingType: 'INTERVIEW',
+        scheduledInterviewId,
+      }),
+    }, env, ctx);
+    expect(createMeetingRes.status).toBe(201);
+    const created = await createMeetingRes.json() as {
+      hostToken: string;
+    };
+
+    sqlite.prepare(
+      `INSERT INTO assessment_sessions (
+         id, ingestion_key, interview_id, mode, state, candidate_id, workspace_id,
+         created_by, metadata_json, created_at, updated_at
+       ) VALUES (?, ?, ?, 'OPEN_SOURCE_BUG_FIX', 'INTAKE', NULL, ?, ?, '{}', ?, ?)`,
+    ).run(
+      assessmentSessionId,
+      `assessment-session:open-source:${scheduledInterviewId}`,
+      scheduledInterviewId,
+      'owner-1',
+      'owner-1',
+      now,
+      now,
+    );
+
+    const text = 'I used AI to inspect the retry path.';
+    const eventRes = await app.request(`/meeting/${created.hostToken}/session-events`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({
+        type: 'chat_message',
+        text,
+        actor: 'guest',
+        properties: {
+          source: 'room_chat_client_submit',
+          chatEventSource: 'browser_room_chat_window',
+          actor: 'guest',
+          roomMessageId: 'chat-message-progress-refresh',
+          clientId: 'browser-client-progress-refresh',
+          messageCreatedAt: 1782603000000,
+          messageLength: text.length,
+          deliveryStatus: 'pending',
+          surface: 'win95',
+          roomPhase: 'connected',
+          durableObjectReplayExpected: true,
+        },
+      }),
+    }, env, ctx);
+    expect(eventRes.status).toBe(200);
+    const body = await eventRes.json() as {
+      captured: boolean;
+      nodeId: string;
+      progress: {
+        state: string;
+        hasWorkEvidence: boolean;
+        evidenceCounts: Array<{ kind: string; count: number }>;
+        latestEvent: { kind: string; sequence: number };
+      };
+    };
+
+    expect(body).toMatchObject({
+      captured: true,
+      progress: {
+        state: 'IN_PROGRESS',
+        hasWorkEvidence: true,
+        latestEvent: { kind: 'message', sequence: 1 },
+      },
+    });
+    expect(body.progress.evidenceCounts).toContainEqual({ kind: 'message', count: 1 });
+    expect(sqlite.prepare(
+      `SELECT session_id
+         FROM assessment_evidence_events
+        WHERE kind = 'message'`,
+    ).get()).toEqual({ session_id: assessmentSessionId });
+  });
+
   it('launches open-source challenge workspaces from the source-backed base commit', async () => {
     const app = mountApp();
     const { ctx, waitUntilAll } = buildCtx();

@@ -1,4 +1,5 @@
 import { useCallback, useEffect, useRef } from 'react';
+import type { RoomAssessmentProgressSnapshot } from '../types';
 
 export type SessionEventType =
   | 'chat_message'
@@ -28,6 +29,7 @@ export type SessionEventType =
 interface CaptureOptions {
   token: string;
   apiBase: string;
+  onProgressChange?: (progress: RoomAssessmentProgressSnapshot) => void;
 }
 
 interface QueuedSessionEvent {
@@ -35,6 +37,12 @@ interface QueuedSessionEvent {
   text: string;
   actor?: string;
   properties?: Record<string, unknown>;
+}
+
+interface SessionEventCaptureResponse {
+  captured: boolean;
+  nodeId?: string;
+  progress?: RoomAssessmentProgressSnapshot | null;
 }
 
 const SESSION_EVENT_FLUSH_DELAY_MS = 500;
@@ -56,14 +64,16 @@ function shouldRetrySessionEventResponse(response: Response): boolean {
  * Hook to capture session events and send them to the API
  * where they become candidate_nodes in the knowledge graph.
  */
-export function useSessionEvents({ token, apiBase }: CaptureOptions) {
+export function useSessionEvents({ token, apiBase, onProgressChange }: CaptureOptions) {
   const queueRef = useRef<QueuedSessionEvent[]>([]);
   const flushTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
   const eventSequenceRef = useRef(0);
   const tokenRef = useRef(token);
   const apiBaseRef = useRef(apiBase);
+  const onProgressChangeRef = useRef(onProgressChange);
   tokenRef.current = token;
   apiBaseRef.current = apiBase;
+  onProgressChangeRef.current = onProgressChange;
 
   const clearFlushTimer = useCallback((): void => {
     if (!flushTimerRef.current) return;
@@ -87,6 +97,11 @@ export function useSessionEvents({ token, apiBase }: CaptureOptions) {
           if (shouldRetrySessionEventResponse(response)) {
             failed.push(event);
           }
+          continue;
+        }
+        const body = await response.json().catch(() => null) as SessionEventCaptureResponse | null;
+        if (body?.progress) {
+          onProgressChangeRef.current?.(body.progress);
         }
       } catch {
         failed.push(event);

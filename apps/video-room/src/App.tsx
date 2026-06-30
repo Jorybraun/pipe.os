@@ -384,7 +384,12 @@ function Room({ token, metadata }: { token: string; metadata: RoomMetadata }): J
   const [enteredRoom, setEnteredRoom] = useState(false);
   const initialRoomSurface = metadata.workspace?.enabled ? 'win95' : 'standard';
   const roomActor = metadata.role === 'HOST' ? 'host' : 'guest';
-  const { capture: captureSessionEvent } = useSessionEvents({ token, apiBase: API_BASE });
+  const [assessmentProgress, setAssessmentProgress] = useState<RoomAssessmentProgressSnapshot | null>(null);
+  const { capture: captureSessionEvent } = useSessionEvents({
+    token,
+    apiBase: API_BASE,
+    onProgressChange: setAssessmentProgress,
+  });
   const chatDeliveryEvidenceKeysRef = useRef<Set<string>>(new Set());
   const captureChatDeliveryEvidence = useCallback((message: RoomChatMessage): void => {
     const deliveryStatus = message.deliveryStatus ?? 'unknown';
@@ -414,7 +419,6 @@ function Room({ token, metadata }: { token: string; metadata: RoomMetadata }): J
   const publishClippyInteractionEvent = room.publishClippyInteractionEvent;
   const publishCodeServerFileEvent = room.publishCodeServerFileEvent;
   const [workspace, setWorkspace] = useState<RoomWorkspace | null>(metadata.workspace ?? null);
-  const [assessmentProgress, setAssessmentProgress] = useState<RoomAssessmentProgressSnapshot | null>(null);
   const [workspaceLoading, setWorkspaceLoading] = useState(false);
   const [workspaceError, setWorkspaceError] = useState<string | null>(null);
   const [workspaceRepoInput, setWorkspaceRepoInput] = useState('');

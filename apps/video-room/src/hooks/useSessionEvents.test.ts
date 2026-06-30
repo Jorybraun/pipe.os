@@ -99,6 +99,62 @@ describe('useSessionEvents', () => {
     expect(fetchMock).toHaveBeenCalledTimes(1);
   });
 
+  it('reports updated assessment progress returned by captured session events', async () => {
+    const onProgressChange = vi.fn();
+    const fetchMock = vi.fn().mockResolvedValue(new Response(JSON.stringify({
+      captured: true,
+      nodeId: 'candidate-node-1',
+      progress: {
+        mode: 'OPEN_SOURCE_BUG_FIX',
+        state: 'IN_PROGRESS',
+        stage: 'WORK_IN_PROGRESS',
+        nextAction: 'SUBMIT_COMMIT',
+        nextActionLabel: 'Submit a source-backed assessment commit.',
+        hasChallengePacket: true,
+        hasWorkEvidence: true,
+        hasCommitSubmission: false,
+        hasFinalSubmission: false,
+        hasAiInteraction: true,
+        hasTranscriptEvidence: false,
+        hasTestEvidence: false,
+        hasVerificationGap: false,
+        evidenceCounts: [{ kind: 'ai_interaction', count: 1 }],
+        sourceRefCounts: [{ kind: 'meeting_session_event', count: 1 }],
+        latestEvent: {
+          kind: 'ai_interaction',
+          sequence: 2,
+          occurredAt: '2026-06-29T22:00:00.000Z',
+        },
+        commit: null,
+        evaluation: null,
+      },
+    }), { status: 200, headers: { 'Content-Type': 'application/json' } }));
+    vi.stubGlobal('fetch', fetchMock);
+
+    const { result } = renderHook(() => useSessionEvents({
+      token: 'room-token',
+      apiBase: 'https://api.test',
+      onProgressChange,
+    }));
+
+    act(() => {
+      result.current.capture('ai_chat_agent', 'Agent suggested opening tests.', 'agent', {
+        source: 'clippy_agent_bridge',
+      });
+    });
+
+    await act(async () => {
+      await result.current.flush();
+    });
+
+    expect(onProgressChange).toHaveBeenCalledOnce();
+    expect(onProgressChange).toHaveBeenCalledWith(expect.objectContaining({
+      stage: 'WORK_IN_PROGRESS',
+      nextAction: 'SUBMIT_COMMIT',
+      hasAiInteraction: true,
+    }));
+  });
+
   it('stamps repeated browser interactions with distinct source event ids', async () => {
     vi.setSystemTime(new Date('2026-06-27T22:51:00.000Z'));
     const fetchMock = vi.fn().mockResolvedValue(new Response(null, { status: 200 }));
