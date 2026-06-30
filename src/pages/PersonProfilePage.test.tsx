@@ -416,6 +416,14 @@ describe('PersonProfilePage', () => {
     expect(screen.getByText('Code-review assessment evidence')).toBeInTheDocument();
     expect(screen.getByRole('button', { name: 'Open interaction' })).toBeInTheDocument();
     expect(screen.getByText('Resume evidence attached')).toBeInTheDocument();
+    const coverage = screen.getByTestId('person-interaction-coverage');
+    expect(coverage).toHaveTextContent('Evidence coverage');
+    expect(coverage).toHaveTextContent('Person-level rollup from 2 evidence-producing interactions.');
+    expect(coverage).toHaveTextContent('Open a row only when you need the single-meeting source record.');
+    expect(coverage).toHaveTextContent('1 code review');
+    expect(coverage).toHaveTextContent('1 resume');
+    expect(coverage).not.toHaveTextContent('review-session-1');
+    expect(coverage).not.toHaveTextContent('resume:review-evidence:63');
     expect(screen.getByText('Candidate evidence')).toBeInTheDocument();
     expect(screen.getByText('Imported from resume decomposition')).toBeInTheDocument();
     expect(document.body).not.toHaveTextContent('review-session-1');

@@ -82,6 +82,11 @@ interface CodeReviewBasisItem {
   satisfied: boolean;
 }
 
+interface InteractionCoverageItem {
+  label: string;
+  count: number;
+}
+
 interface CodeReviewDecisionProjection {
   sessionId: string | null;
   outcome: string | null;
@@ -176,6 +181,10 @@ function typeLabel(value: string | null | undefined): string {
   return value.replace(/[_-]+/g, ' ').toLowerCase();
 }
 
+function countWithLabel(count: number, singular: string, plural = `${singular}s`): string {
+  return `${count} ${count === 1 ? singular : plural}`;
+}
+
 function metadataSummary(metadata: Record<string, unknown>): string | null {
   const summary = metadata.summary ?? metadata.title ?? metadata.description ?? metadata.event;
   if (typeof summary === 'string' && summary.trim()) return summary;
@@ -212,6 +221,53 @@ function evidenceSummaryText(livingContext: LivingContextReadModel | null): stri
     `${summary.sourceSpanCount} exact source ${summary.sourceSpanCount === 1 ? 'span' : 'spans'}`,
   ];
   return `PIPE currently knows this relationship from ${parts.join(', ')}.`;
+}
+
+function interactionCoverageItems(interactions: LivingContextInteraction[]): InteractionCoverageItem[] {
+  const counts = {
+    codeReviews: 0,
+    calls: 0,
+    resumes: 0,
+    messages: 0,
+    other: 0,
+  };
+
+  for (const interaction of interactions) {
+    const interactionType = interaction.interactionType.toLowerCase();
+    const reference = optionalString(interaction.externalReference)?.toLowerCase() ?? '';
+    if (interactionType.includes('code_review') || reference.startsWith('review-session')) {
+      counts.codeReviews += 1;
+    } else if (
+      interactionType.includes('meeting')
+      || interactionType.includes('interview')
+      || interactionType.includes('phone')
+      || interactionType.includes('call')
+      || reference.includes('meeting')
+    ) {
+      counts.calls += 1;
+    } else if (interactionType.includes('resume') || reference.startsWith('resume:')) {
+      counts.resumes += 1;
+    } else if (interactionType.includes('invite') || interactionType.includes('message') || reference.includes('invite')) {
+      counts.messages += 1;
+    } else {
+      counts.other += 1;
+    }
+  }
+
+  return [
+    { label: countWithLabel(counts.codeReviews, 'code review'), count: counts.codeReviews },
+    { label: countWithLabel(counts.calls, 'call or meeting', 'calls or meetings'), count: counts.calls },
+    { label: countWithLabel(counts.resumes, 'resume'), count: counts.resumes },
+    { label: countWithLabel(counts.messages, 'message or invite', 'messages or invites'), count: counts.messages },
+    { label: countWithLabel(counts.other, 'other evidence record'), count: counts.other },
+  ].filter((item) => item.count > 0);
+}
+
+function interactionCoverageSummary(interactions: LivingContextInteraction[]): string {
+  if (interactions.length === 0) {
+    return 'No evidence-producing interactions are attached to this person yet.';
+  }
+  return `Person-level rollup from ${countWithLabel(interactions.length, 'evidence-producing interaction')}. Open a row only when you need the single-meeting source record.`;
 }
 
 function quietEvidenceText(value: string): string {
@@ -1193,6 +1249,7 @@ export default function PersonProfilePage(): JSX.Element {
     ?? 'No relationship summary has been earned from evidence yet.';
 
   const recentInteractions = livingContext?.interactions.slice(0, 5) ?? [];
+  const interactionCoverage = interactionCoverageItems(livingContext?.interactions ?? []);
   const recentRecords = livingContext?.contextRecords.slice(0, 5) ?? [];
   const sourceBackedSignals = livingContext?.signals
     .filter((signal) => signal.evidence.some((evidence) => evidence.sources.length > 0))
@@ -1283,6 +1340,25 @@ export default function PersonProfilePage(): JSX.Element {
 
       <section style={EVIDENCE_GRID}>
         <Panel title="Relationship Timeline" icon={<Calendar size={15} />}>
+          <div data-testid="person-interaction-coverage" style={INTERACTION_COVERAGE}>
+            <div style={INTERACTION_COVERAGE_HEADER}>
+              <div>
+                <div style={FIELD_LABEL}>Evidence coverage</div>
+                <p style={INTERACTION_COVERAGE_COPY}>
+                  {interactionCoverageSummary(livingContext?.interactions ?? [])}
+                </p>
+              </div>
+            </div>
+            {interactionCoverage.length > 0 && (
+              <div style={INTERACTION_COVERAGE_CHIPS}>
+                {interactionCoverage.map((item) => (
+                  <span key={item.label} style={INTERACTION_COVERAGE_CHIP}>
+                    {item.label}
+                  </span>
+                ))}
+              </div>
+            )}
+          </div>
           {recentInteractions.length === 0 ? (
             <EmptyPanel>No interactions have been captured yet.</EmptyPanel>
           ) : recentInteractions.map((interaction) => {
@@ -1697,6 +1773,47 @@ const INTERACTION_LINK_BUTTON: CSSProperties = {
   lineHeight: 1,
   padding: '8px 10px',
   cursor: 'pointer',
+};
+
+const INTERACTION_COVERAGE: CSSProperties = {
+  display: 'grid',
+  gap: 10,
+  border: '1px solid var(--pipe-border-light)',
+  borderRadius: 6,
+  background: 'rgba(108,195,255,0.06)',
+  padding: 12,
+  marginBottom: 12,
+};
+
+const INTERACTION_COVERAGE_HEADER: CSSProperties = {
+  display: 'flex',
+  alignItems: 'flex-start',
+  justifyContent: 'space-between',
+  gap: 12,
+};
+
+const INTERACTION_COVERAGE_COPY: CSSProperties = {
+  margin: '6px 0 0',
+  color: 'var(--pipe-text-muted)',
+  fontSize: 11,
+  lineHeight: 1.5,
+};
+
+const INTERACTION_COVERAGE_CHIPS: CSSProperties = {
+  display: 'flex',
+  flexWrap: 'wrap',
+  gap: 8,
+};
+
+const INTERACTION_COVERAGE_CHIP: CSSProperties = {
+  border: '1px solid var(--pipe-border-light)',
+  borderRadius: 999,
+  background: 'rgba(255,255,255,0.04)',
+  color: 'var(--pipe-text)',
+  fontSize: 10,
+  fontWeight: 800,
+  lineHeight: 1,
+  padding: '7px 9px',
 };
 
 const CODE_REVIEW_DECISION: CSSProperties = {
