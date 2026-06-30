@@ -1,5 +1,5 @@
 import { useCallback, useRef, useState, useEffect } from 'react';
-import { Send, User, Bot, Cpu, Paperclip } from 'lucide-react';
+import { Send, User, Bot, Cpu, Sparkles } from 'lucide-react';
 
 export type ChatRole = 'host' | 'candidate' | 'ai';
 
@@ -16,7 +16,7 @@ interface ChatWindowProps {
   messages: ChatMessage[];
   onSend: (text: string) => void;
   currentUserRole: 'HOST' | 'GUEST';
-  onAskClippy?: () => void;
+  onAskAssistant?: () => void;
 }
 
 let msgCounter = 0;
@@ -48,7 +48,7 @@ export function ChatWindow({
   messages,
   onSend,
   currentUserRole,
-  onAskClippy,
+  onAskAssistant,
 }: ChatWindowProps): JSX.Element {
   const [input, setInput] = useState('');
   const scrollRef = useRef<HTMLDivElement>(null);
@@ -128,16 +128,16 @@ export function ChatWindow({
           onKeyDown={handleKeyDown}
           data-testid="chat-input"
         />
-        {onAskClippy && (
+        {onAskAssistant && (
           <button
             type="button"
-            className="chat-clippy-btn"
-            onClick={onAskClippy}
-            title="Ask Clippy"
-            aria-label="Ask Clippy"
-            data-testid="chat-ask-clippy"
+            className="chat-assistant-btn"
+            onClick={onAskAssistant}
+            title="Ask AI assistant"
+            aria-label="Ask AI assistant"
+            data-testid="chat-ask-assistant"
           >
-            <Paperclip size={14} />
+            <Sparkles size={14} />
           </button>
         )}
         <button

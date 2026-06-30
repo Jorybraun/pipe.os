@@ -7,6 +7,12 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Removed — Retro room shell
+
+- Removed the retro-themed room shell from the video-room app, including the taskbar/start-menu desktop, synced retro window chrome, embedded Paint/Notepad/browser/file-manager tools, cursor-trail sync, and mascot/retro UI dependencies.
+- Replaced the Clippy-branded room assistant UI with a plain source-backed AI assistant bridge panel and kept candidate/recruiter room flows on the standard assessment layout.
+- Updated active assessment planning docs to describe the open-source repo-task interview product instead of the retro desktop prototype.
+
 ### Added — Human assessment decisions
 
 - Repo-task assessment sessions now support append-only `human_assessment_decision` events with exact source refs, SHA-256 content-hash validation, and provenance checks against session evidence, evaluation reports, evaluation claims, or diagnostics.

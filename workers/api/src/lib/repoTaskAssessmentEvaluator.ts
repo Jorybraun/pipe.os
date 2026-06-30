@@ -121,7 +121,7 @@ const EXPECTED_HIGH_CONFIDENCE_REF_GROUPS = [
       'ai_chat_user',
       'ai_chat_agent',
     ],
-    missingImpact: 'Treat AI usage as unobserved when Clippy/Devin or AI chat evidence is absent.',
+    missingImpact: 'Treat AI usage as unobserved when AI assistant/Devin chat evidence is absent.',
   },
 ] as const;
 

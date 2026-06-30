@@ -72,19 +72,19 @@ const FNV_32_PRIME = 0x01000193;
 function clippyUiActionText(actionId: ClippyUiActionId, origin: ClippyUiActionOrigin): string {
   switch (actionId) {
     case 'open-clippy-chat':
-      if (origin === 'chat') return 'Clippy chat opened from the room chat window';
+      if (origin === 'chat') return 'AI assistant opened from the room chat window';
       if (origin === 'call') return 'AI assistant opened from the video call controls';
-      return 'Clippy chat opened from the Win95 taskbar tray';
+      return 'AI assistant opened from the room controls';
     case 'close-clippy-chat':
-      return 'Clippy chat window closed';
+      return 'AI assistant chat window closed';
     case 'dismiss-clippy':
-      return 'Clippy prompt dismissed';
+      return 'AI assistant prompt dismissed';
     case 'open-devin-auth-browser':
-      return 'Clippy opened Devin browser authentication';
+      return 'AI assistant opened Devin browser authentication';
     case 'check-devin-auth':
-      return 'Clippy requested a real Devin CLI auth recheck';
+      return 'AI assistant requested a real Devin CLI auth recheck';
     default:
-      return 'Clippy UI action';
+      return 'AI assistant UI action';
   }
 }
 
@@ -612,7 +612,7 @@ export function buildClippyAgentMessageSessionEvidence(input: {
     : input.diagnosticSource ?? input.source;
   const evidence = buildClippyAgentStatusEvidence({
     text: isAgentResponse
-      ? 'Clippy/Devin response was not recorded as agent evidence because bridge source metadata was missing.'
+      ? 'AI assistant/Devin response was not recorded as agent evidence because bridge source metadata was missing.'
       : text,
     agentName,
     status: input.agentStatus ?? null,

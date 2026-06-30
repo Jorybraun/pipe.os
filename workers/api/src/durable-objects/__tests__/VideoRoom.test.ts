@@ -1798,7 +1798,7 @@ describe('VideoRoom Durable Object signaling lifecycle', () => {
     expect(storage.has('clippyPromptActivityLog')).toBe(false);
   });
 
-  it('broadcasts and records source-backed Clippy/Devin interaction events', async () => {
+  it('broadcasts and records source-backed AI assistant/Devin interaction events', async () => {
     const host = new FakeSocket();
     const guest = new FakeSocket();
     const { state, storage } = makeState([
@@ -1989,7 +1989,7 @@ describe('VideoRoom Durable Object signaling lifecycle', () => {
     ]);
   });
 
-  it('redacts Clippy/Devin status diagnostics before broadcast and storage', async () => {
+  it('redacts AI assistant/Devin status diagnostics before broadcast and storage', async () => {
     const host = new FakeSocket();
     const guest = new FakeSocket();
     const { state, storage } = makeState([
@@ -2060,7 +2060,7 @@ describe('VideoRoom Durable Object signaling lifecycle', () => {
     expect(JSON.stringify(log)).not.toContain('ghp_bbbbbbbb');
   });
 
-  it('rejects Clippy/Devin interaction events without source evidence', async () => {
+  it('rejects AI assistant/Devin interaction events without source evidence', async () => {
     const host = new FakeSocket();
     const guest = new FakeSocket();
     const { state, storage } = makeState([
@@ -2095,7 +2095,7 @@ describe('VideoRoom Durable Object signaling lifecycle', () => {
     expect(storage.has('clippyInteractionActivityLog')).toBe(false);
   });
 
-  it('rejects Clippy/Devin agent output with malformed browser prompt refs', async () => {
+  it('rejects AI assistant/Devin agent output with malformed browser prompt refs', async () => {
     const host = new FakeSocket();
     const guest = new FakeSocket();
     const { state, storage } = makeState([
@@ -2245,7 +2245,7 @@ describe('VideoRoom Durable Object signaling lifecycle', () => {
     expect(storage.has('clippyInteractionActivityLog')).toBe(false);
   });
 
-  it('rejects Clippy/Devin room actions without the exact bridge tag protocol', async () => {
+  it('rejects AI assistant/Devin room actions without the exact bridge tag protocol', async () => {
     const host = new FakeSocket();
     const guest = new FakeSocket();
     const { state, storage } = makeState([
@@ -2291,7 +2291,7 @@ describe('VideoRoom Durable Object signaling lifecycle', () => {
     expect(storage.has('clippyInteractionActivityLog')).toBe(false);
   });
 
-  it('rejects human Clippy UI actions that claim a Devin agent attribution', async () => {
+  it('rejects human AI assistant UI actions that claim a Devin agent attribution', async () => {
     const host = new FakeSocket();
     const guest = new FakeSocket();
     const { state, storage } = makeState([

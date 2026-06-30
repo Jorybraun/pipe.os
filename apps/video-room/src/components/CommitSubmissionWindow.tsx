@@ -433,7 +433,7 @@ export function CommitSubmissionWindow({
         </label>
         <button
           type="button"
-          className="win95-workspace-launch-btn"
+          className="room-workspace-launch-btn"
           onClick={() => void handleWorkspaceFinalize()}
           disabled={Boolean(workspaceFinalizeBlockedReason) || finalizing || submitting}
           data-testid="workspace-finalize-submit"
@@ -645,7 +645,7 @@ export function CommitSubmissionWindow({
       <div className="commit-submission-actions">
         <button
           type="submit"
-          className="win95-workspace-launch-btn"
+          className="room-workspace-launch-btn"
           disabled={Boolean(disabledReason) || submitting}
           data-testid="commit-submission-submit"
         >

@@ -1834,7 +1834,7 @@ describe('meeting room recording living-context route', () => {
       headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify({
         type: 'room_surface_change',
-        text: 'Room surface changed to 95 Until Infinity desktop',
+        text: 'Room surface changed to assessment room',
         actor: 'guest',
         properties: {
           source: 'room_surface_control',
@@ -1853,7 +1853,7 @@ describe('meeting room recording living-context route', () => {
       headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify({
         type: 'room_surface_change',
-        text: 'Room surface changed to 95 Until Infinity desktop',
+        text: 'Room surface changed to assessment room',
         actor: 'guest',
         properties: {
           source: 'room_surface_control',
@@ -2038,7 +2038,7 @@ describe('meeting room recording living-context route', () => {
       headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify({
         type: 'participant_join',
-        text: 'Host joined the 95 Until Infinity room',
+        text: 'Host joined the assessment room',
         actor: 'host',
         properties: {
           source: 'meeting_room_lifecycle',
@@ -2250,7 +2250,7 @@ describe('meeting room recording living-context route', () => {
       headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify({
         type: 'clippy_action',
-        text: 'Clippy chat opened from the room chat window',
+        text: 'AI assistant opened from the room chat window',
         actor: 'host',
         properties: {
           source: 'clippy_chat_ui',
@@ -2277,7 +2277,7 @@ describe('meeting room recording living-context route', () => {
       headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify({
         type: 'clippy_action',
-        text: 'Clippy chat window closed',
+        text: 'AI assistant chat window closed',
         actor: 'host',
         properties: {
           source: 'clippy_chat_ui',
@@ -2407,12 +2407,12 @@ describe('meeting room recording living-context route', () => {
       expect.objectContaining({
         node_type: 'session_clippy_action',
         source_type: 'meeting_session',
-        narrative_text: expect.stringContaining('Clippy chat opened from the room chat window'),
+        narrative_text: expect.stringContaining('AI assistant opened from the room chat window'),
       }),
       expect.objectContaining({
         node_type: 'session_clippy_action',
         source_type: 'meeting_session',
-        narrative_text: expect.stringContaining('Clippy chat window closed'),
+        narrative_text: expect.stringContaining('AI assistant chat window closed'),
       }),
       expect.objectContaining({
         node_type: 'session_clippy_action',
@@ -2626,7 +2626,7 @@ describe('meeting room recording living-context route', () => {
       headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify({
         type: 'cursor_presence',
-        text: 'Guest cursor presence sampled on 95 Until Infinity desktop',
+        text: 'Guest cursor presence sampled in the assessment room',
         actor: 'guest',
         properties: {
           source: 'room_cursor_claim',
@@ -2643,7 +2643,7 @@ describe('meeting room recording living-context route', () => {
       headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify({
         type: 'cursor_presence',
-        text: 'Guest cursor presence sampled on 95 Until Infinity desktop',
+        text: 'Guest cursor presence sampled in the assessment room',
         actor: 'guest',
         properties: {
           source: 'win95_cursor_presence_client_sample',
@@ -2663,7 +2663,7 @@ describe('meeting room recording living-context route', () => {
       headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify({
         type: 'cursor_presence',
-        text: 'Guest cursor presence sampled on 95 Until Infinity desktop',
+        text: 'Guest cursor presence sampled in the assessment room',
         actor: 'guest',
         properties: {
           source: 'win95_cursor_presence_client_sample',
@@ -4765,7 +4765,7 @@ describe('meeting room recording living-context route', () => {
       'session_recording_stop',
     ]);
     expect(evidenceRows.map((row) => row.narrative_text).join('\n')).toContain(
-      'Participant joined: Guest joined the 95 Until Infinity room',
+      'Participant joined: Guest joined the assessment room',
     );
     expect(evidenceRows.map((row) => row.narrative_text).join('\n')).toContain(
       'Recording started',
@@ -4807,10 +4807,10 @@ describe('meeting room recording living-context route', () => {
       .map((source) => source.text)
       .sort();
     expect(sourceEventTexts).toEqual([
-      'Guest joined the 95 Until Infinity room',
-      'Guest left the 95 Until Infinity room',
-      'Recording started for the 95 Until Infinity room',
-      'Recording stopped for the 95 Until Infinity room',
+      'Guest joined the assessment room',
+      'Guest left the assessment room',
+      'Recording started for the assessment room',
+      'Recording stopped for the assessment room',
     ]);
   });
 

@@ -1,6 +1,5 @@
-import { useEffect, useMemo, useRef, useState, useCallback } from 'react';
-import { initAgent } from 'clippyjs';
-import ClippyLoaders from 'clippyjs/agents/clippy';
+import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
+import { Bot, Terminal, X } from 'lucide-react';
 import {
   useAgentConnection,
   type AgentChatMessage,
@@ -12,32 +11,30 @@ import {
 import type { ClippyPromptActor } from '../lib/clippyPromptIdentity';
 import { buildClippyBrowserPromptIdentity } from '../lib/clippyPromptIdentity';
 
-type ClippyJsAgent = Awaited<ReturnType<typeof initAgent>>;
-
 const BLOCKED_PROMPT_MESSAGES: Record<AgentPromptBlockedReason, string> = {
-  workspace_required: 'Clippy could not send that because the dev workspace is not running.',
-  bridge_reconnecting: 'Clippy could not send that because the container bridge is reconnecting.',
-  agent_starting: 'Clippy could not send that because the real agent is still starting.',
-  agent_auth_needed: 'Clippy could not send that because the real agent needs authentication.',
-  agent_disconnected: 'Clippy could not send that because no real agent bridge is ready.',
-  agent_identity_missing: 'Clippy could not send that because the bridge has not reported a real agent identity.',
-  agent_capabilities_missing: 'Clippy could not send that because the real agent has not reported chat capability yet.',
+  workspace_required: 'The assistant could not send that because the dev workspace is not running.',
+  bridge_reconnecting: 'The assistant could not send that because the container bridge is reconnecting.',
+  agent_starting: 'The assistant could not send that because the real agent is still starting.',
+  agent_auth_needed: 'The assistant could not send that because the real agent needs authentication.',
+  agent_disconnected: 'The assistant could not send that because no real agent bridge is ready.',
+  agent_identity_missing: 'The assistant could not send that because the bridge has not reported a real agent identity.',
+  agent_capabilities_missing: 'The assistant could not send that because the real agent has not reported chat capability yet.',
 };
 
-export interface ClippyMessage {
+export interface AgentAssistantMessage {
   text: string;
   hold?: boolean;
-  actions?: ClippyAction[];
+  actions?: AgentAssistantAction[];
 }
 
-export interface ClippyAction {
+export interface AgentAssistantAction {
   id: string;
   label: string;
   disabled?: boolean;
 }
 
-export interface ClippyAssistantProps {
-  messages: ClippyMessage[];
+export interface AgentAssistantProps {
+  messages: AgentAssistantMessage[];
   onDismiss: () => void;
   chatOpen?: boolean;
   onChatOpen?: () => void;
@@ -62,7 +59,7 @@ export interface ClippyAssistantProps {
   onAgentFileChange?: (event: AgentFileChangeEvent) => void;
 }
 
-export function ClippyAssistant({
+export function AgentAssistant({
   messages,
   onDismiss,
   chatOpen: controlledChatOpen,
@@ -86,11 +83,7 @@ export function ClippyAssistant({
   onAgentChatMessage,
   onAgentStatus,
   onAgentFileChange,
-}: ClippyAssistantProps) {
-  const clippyAgentRef = useRef<ClippyJsAgent | null>(null);
-  const clippyReadyRef = useRef(false);
-  const spokenPromptSignaturesRef = useRef<Set<string>>(new Set());
-  const [clippyReady, setClippyReady] = useState(false);
+}: AgentAssistantProps): JSX.Element {
   const [localChatOpen, setLocalChatOpen] = useState(false);
   const [chatInput, setChatInput] = useState('');
   const [localChatMessages, setLocalChatMessages] = useState<AgentChatMessage[]>([]);
@@ -101,32 +94,6 @@ export function ClippyAssistant({
   const capturedAgentStatusRef = useRef<string | null>(null);
   const capturedAgentFileChangesRef = useRef<Set<string>>(new Set());
   const lastOpenChatRequestRef = useRef<number | undefined>(undefined);
-  const typingTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
-
-  const moveClippyHome = useCallback((agent: ClippyJsAgent): void => {
-    agent.moveTo(
-      Math.max(12, window.innerWidth - 158),
-      Math.max(12, window.innerHeight - 150),
-      0,
-    );
-  }, []);
-
-  const animateClippy = useCallback((animation?: string): void => {
-    const agent = clippyAgentRef.current;
-    if (!agent) return;
-    if (animation) {
-      agent.play(animation);
-      return;
-    }
-    agent.animate();
-  }, []);
-
-  const showClippy = useCallback((): void => {
-    const agent = clippyAgentRef.current;
-    if (!agent) return;
-    moveClippyHome(agent);
-    agent.show(true);
-  }, [moveClippyHome]);
 
   const agentConn = useAgentConnection({
     wsUrl: agentWsUrl ?? null,
@@ -134,52 +101,6 @@ export function ClippyAssistant({
     promptActor,
     promptWorkspaceSessionId,
   });
-
-  useEffect(() => {
-    let disposed = false;
-    initAgent({
-      agent: ClippyLoaders.agent,
-      map: ClippyLoaders.map,
-      sound: ClippyLoaders.sound,
-    }).then((agent) => {
-      if (disposed) {
-        agent.dispose();
-        return;
-      }
-      clippyAgentRef.current = agent;
-      clippyReadyRef.current = true;
-      setClippyReady(true);
-      moveClippyHome(agent);
-      agent.show(true);
-      agent.play('Show');
-    }).catch((err: unknown) => {
-      console.error('[ClippyAssistant] Failed to init authentic Clippy:', err);
-    });
-
-    const handleResize = (): void => {
-      const agent = clippyAgentRef.current;
-      if (!agent) return;
-      moveClippyHome(agent);
-    };
-    window.addEventListener('resize', handleResize);
-
-    return () => {
-      disposed = true;
-      window.removeEventListener('resize', handleResize);
-      if (typingTimerRef.current) clearTimeout(typingTimerRef.current);
-      const agent = clippyAgentRef.current;
-      if (!agent) return;
-      try {
-        agent.hide(true, undefined);
-        agent.dispose();
-      } catch {
-        // The old sprite library can throw if cleanup races an animation frame.
-      }
-      clippyAgentRef.current = null;
-      clippyReadyRef.current = false;
-      setClippyReady(false);
-    };
-  }, [moveClippyHome]);
 
   useEffect(() => {
     messagesEndRef.current?.scrollIntoView?.({ behavior: 'smooth' });
@@ -228,16 +149,12 @@ export function ClippyAssistant({
     if (executedAgentActionsRef.current.has(latestAgentRoomActionSignature)) return;
     executedAgentActionsRef.current.add(latestAgentRoomActionSignature);
     onAgentRoomAction?.(latestAgentRoomAction);
-  }, [
-    latestAgentRoomAction,
-    latestAgentRoomActionSignature,
-    onAgentRoomAction,
-  ]);
+  }, [latestAgentRoomAction, latestAgentRoomActionSignature, onAgentRoomAction]);
 
   const reportedAgentName = agentConn.agentName.trim();
   const agentDisplayName = reportedAgentName || 'the real agent';
 
-  const agentRoomActionPrompt: ClippyMessage | null = latestAgentRoomAction
+  const agentRoomActionPrompt: AgentAssistantMessage | null = latestAgentRoomAction
     ? {
         text: latestAgentRoomAction.text
           ?? `${reportedAgentName || 'The connected agent'} suggests: ${latestAgentRoomAction.label}.`,
@@ -265,15 +182,11 @@ export function ClippyAssistant({
     if (!canOpenAgentBridgeChat) {
       setDismissedPromptSignature(null);
       setLocalChatOpen(false);
-      showClippy();
-      animateClippy();
       return;
     }
-    showClippy();
-    animateClippy();
     setLocalChatOpen(true);
     onChatOpen?.();
-  }, [animateClippy, canOpenAgentBridgeChat, onChatOpen, showClippy]);
+  }, [canOpenAgentBridgeChat, onChatOpen]);
 
   const closeChat = useCallback(() => {
     setDismissedPromptSignature((current) => currentPromptSignature ?? current);
@@ -288,15 +201,6 @@ export function ClippyAssistant({
     openChat();
   }, [openChat, openChatRequest]);
 
-  const handleChatInputChange = useCallback((e: React.ChangeEvent<HTMLInputElement>) => {
-    setChatInput(e.target.value);
-    animateClippy('Writing');
-    if (typingTimerRef.current) clearTimeout(typingTimerRef.current);
-    typingTimerRef.current = setTimeout(() => {
-      animateClippy('IdleFingerTap');
-    }, 800);
-  }, [animateClippy]);
-
   const handleAuthClick = useCallback(() => {
     if (agentConn.authUrl && onOpenBrowser) {
       onOpenAuthBrowser?.();
@@ -308,68 +212,42 @@ export function ClippyAssistant({
   }, [agentConn, onCheckAuth, onOpenAuthBrowser, onOpenBrowser]);
 
   const handleAuthTerminalClick = useCallback(() => {
-    animateClippy();
     onOpenAuthTerminal?.();
-  }, [animateClippy, onOpenAuthTerminal]);
+  }, [onOpenAuthTerminal]);
 
   const handleOpenTerminalClick = useCallback(() => {
-    animateClippy();
     if (onAction) {
       onAction('open-terminal');
       return;
     }
     onOpenTerminal?.();
-  }, [animateClippy, onAction, onOpenTerminal]);
+  }, [onAction, onOpenTerminal]);
 
   const handleActionClick = useCallback((actionId: string) => {
-    animateClippy();
     if (actionId === 'agent-room-action' && latestAgentRoomAction) {
       onAgentRoomAction?.(latestAgentRoomAction);
       return;
     }
     onAction?.(actionId);
-  }, [animateClippy, latestAgentRoomAction, onAction, onAgentRoomAction]);
+  }, [latestAgentRoomAction, onAction, onAgentRoomAction]);
 
   const showPrompt = Boolean(currentPrompt && !chatOpen && currentPromptSignature !== dismissedPromptSignature);
 
   const handleDismiss = useCallback(() => {
     setDismissedPromptSignature((current) => currentPromptSignature ?? current);
-    const agent = clippyAgentRef.current;
-    if (agent) agent.hide(true, undefined);
     onDismiss();
   }, [currentPromptSignature, onDismiss]);
 
-  useEffect(() => {
-    if (!showPrompt || !currentPrompt || !currentPromptSignature) return;
-    const agent = clippyAgentRef.current;
-    if (!agent || !clippyReadyRef.current) return;
-    if (spokenPromptSignaturesRef.current.has(currentPromptSignature)) return;
-    spokenPromptSignaturesRef.current.add(currentPromptSignature);
-    showClippy();
-    agent.speak(currentPrompt.text, false);
-  }, [clippyReady, currentPrompt, currentPromptSignature, showClippy, showPrompt]);
-
-  useEffect(() => {
-    const latestAgentMessage = [...agentConn.messages].reverse().find((message) => message.role === 'agent');
-    const agent = clippyAgentRef.current;
-    if (!agent || !latestAgentMessage) return;
-    const signature = `agent:${latestAgentMessage.timestamp}:${latestAgentMessage.text}`;
-    if (spokenPromptSignaturesRef.current.has(signature)) return;
-    spokenPromptSignaturesRef.current.add(signature);
-    showClippy();
-    agent.speak(latestAgentMessage.text, false);
-  }, [agentConn.messages, showClippy]);
-
   const statusLabel: Record<string, string> = {
-    starting: 'Starting...',
+    starting: 'Starting',
     idle: 'Ready',
-    thinking: 'Thinking...',
-    working: 'Working...',
+    thinking: 'Thinking',
+    working: 'Working',
     auth_needed: 'Authentication required',
     disconnected: 'Disconnected',
   };
   const unavailableMessage = agentUnavailableMessage
-    ?? 'Launch the VS Code workspace to connect a real agent. Clippy chat stays disabled until the container bridge reports an agent identity.';
+    ?? 'Launch the VS Code workspace to connect a real agent. Assistant chat stays disabled until the container bridge reports an agent identity.';
   const canSendToAgent = agentEnabled
     && agentConn.connected
     && agentConn.status !== 'auth_needed'
@@ -442,18 +320,18 @@ export function ClippyAssistant({
   const emptyChatMessage = !agentEnabled
     ? unavailableMessage
     : !agentConn.connected
-      ? 'Clippy bridge is reconnecting to the dev container.'
+      ? 'Assistant bridge is reconnecting to the dev container.'
       : agentConn.status === 'starting'
-        ? `Clippy is starting ${agentDisplayName} inside the dev container.`
+        ? `Starting ${agentDisplayName} inside the dev container.`
         : agentConn.status === 'auth_needed'
-          ? agentConn.authMessage ?? `${agentDisplayName} is not authenticated in this container. Real credentials are required before Clippy can chat.`
+          ? agentConn.authMessage ?? `${agentDisplayName} is not authenticated in this container. Real credentials are required before chat is enabled.`
           : agentConn.status === 'disconnected'
-            ? 'Clippy bridge is connected, but no real agent has reported ready yet.'
+            ? 'The bridge is connected, but no real agent has reported ready yet.'
             : reportedAgentName.length === 0
               ? 'Waiting for the container bridge to report a real agent identity before chat is enabled.'
               : agentConn.capabilities.length === 0
                 ? `Waiting for ${agentDisplayName} to report ready before chat is enabled.`
-                : `Connected to ${agentDisplayName}. Ask Clippy about the code or the interview workspace.`;
+                : `Connected to ${agentDisplayName}. Ask about the code or the assessment workspace.`;
   const chatAgentName = agentEnabled ? agentDisplayName : 'agent bridge';
   const agentStateCheckState = !agentEnabled || agentConn.status === 'auth_needed'
     ? 'blocked'
@@ -495,41 +373,61 @@ export function ClippyAssistant({
 
   return (
     <>
-      <button
-        type="button"
-        className="win95-clippy-hotspot"
-        onClick={openChat}
-        onDoubleClick={handleDismiss}
-        aria-label="Ask Clippy"
-        data-testid="clippy-hotspot"
-      />
+      {showPrompt && currentPrompt && (
+        <aside className="agent-assistant-prompt" data-testid="assistant-prompt">
+          <div className="agent-assistant-prompt-icon">
+            <Bot size={18} />
+          </div>
+          <div className="agent-assistant-prompt-copy">
+            <strong>AI assistant</strong>
+            <span>{currentPrompt.text}</span>
+          </div>
+          <div className="agent-assistant-prompt-actions">
+            {currentPrompt.actions?.map((action) => (
+              <button
+                key={action.id}
+                type="button"
+                onClick={() => handleActionClick(action.id)}
+                disabled={action.disabled}
+              >
+                {action.label}
+              </button>
+            ))}
+            <button type="button" onClick={openChat}>Open chat</button>
+            <button type="button" onClick={handleDismiss} aria-label="Dismiss assistant prompt">
+              <X size={14} />
+            </button>
+          </div>
+        </aside>
+      )}
 
       {chatOpen && (
-        <div className="win95-clippy-chat" data-testid="clippy-chat">
-          <div className="win95-clippy-chat-header">
-            <span className="win95-clippy-chat-title">
-              <span>Clippy — {chatAgentName}</span>
-            </span>
+        <section className="agent-assistant-panel" data-testid="clippy-chat">
+          <header className="agent-assistant-header">
+            <div>
+              <span>AI assistant</span>
+              <strong>{chatAgentName}</strong>
+            </div>
             <button
               type="button"
               onClick={closeChat}
-              aria-label="Close Clippy chat"
+              aria-label="Close AI assistant"
               data-testid="clippy-chat-close"
             >
-              ×
+              <X size={16} />
             </button>
-          </div>
+          </header>
 
-          <div className="win95-clippy-chat-messages">
+          <div className="agent-assistant-messages">
             {chatMessages.length === 0 && (
-              <div className="win95-clippy-chat-msg agent">
+              <div className="agent-assistant-message agent">
                 {emptyChatMessage}
               </div>
             )}
             {chatMessages.map((msg, i) => (
               <div
-                key={i}
-                className={`win95-clippy-chat-msg ${msg.role}`}
+                key={`${msg.timestamp}-${i}`}
+                className={`agent-assistant-message ${msg.role}`}
               >
                 {msg.text}
               </div>
@@ -537,20 +435,20 @@ export function ClippyAssistant({
             <div ref={messagesEndRef} />
           </div>
 
-          <div className="win95-clippy-chat-status">
-            <span className={`win95-clippy-chat-status-dot ${agentEnabled ? agentConn.status : 'unavailable'}`} />
+          <div className="agent-assistant-status">
+            <span className={`agent-assistant-status-dot ${agentEnabled ? agentConn.status : 'unavailable'}`} />
             <span>
               {agentEnabled
                 ? statusLabel[agentConn.status] || agentConn.status
                 : 'Workspace required'}
             </span>
-            {agentEnabled && !agentConn.connected && <span> — reconnecting...</span>}
+            {agentEnabled && !agentConn.connected && <span> - reconnecting</span>}
           </div>
 
-          <div className="win95-clippy-bridge-checklist" data-testid="clippy-bridge-checklist">
+          <div className="agent-assistant-checklist" data-testid="clippy-bridge-checklist">
             {bridgeChecks.map((check) => (
               <div
-                className={`win95-clippy-bridge-check is-${check.state}`}
+                className={`agent-assistant-check is-${check.state}`}
                 key={check.label}
                 data-testid={`clippy-bridge-check-${check.label.toLowerCase()}`}
               >
@@ -562,7 +460,7 @@ export function ClippyAssistant({
 
           {agentEnabled && agentConn.status === 'auth_needed' && agentConn.authUrl && (
             <button
-              className="win95-clippy-chat-auth-btn"
+              className="agent-assistant-action-btn"
               onClick={handleAuthClick}
               data-testid="clippy-open-auth-browser"
             >
@@ -573,14 +471,14 @@ export function ClippyAssistant({
           {agentEnabled && agentConn.status === 'auth_needed' && !agentConn.authUrl && onOpenAuthTerminal && (
             <>
               <button
-                className="win95-clippy-chat-auth-btn"
+                className="agent-assistant-action-btn"
                 onClick={handleAuthTerminalClick}
                 data-testid="clippy-open-auth-terminal"
               >
                 Open Devin login terminal
               </button>
               <button
-                className="win95-clippy-chat-auth-btn"
+                className="agent-assistant-action-btn"
                 onClick={handleAuthClick}
                 data-testid="clippy-check-auth"
               >
@@ -591,7 +489,7 @@ export function ClippyAssistant({
 
           {!agentEnabled && canLaunchAgentWorkspace && (
             <button
-              className="win95-clippy-chat-auth-btn"
+              className="agent-assistant-action-btn"
               onClick={() => handleActionClick('launch-workspace')}
               data-testid="clippy-launch-workspace"
             >
@@ -601,35 +499,36 @@ export function ClippyAssistant({
 
           {(onAction || onOpenTerminal) && agentEnabled && (
             <button
-              className="win95-clippy-chat-auth-btn"
+              className="agent-assistant-action-btn"
               onClick={handleOpenTerminalClick}
               data-testid="clippy-open-terminal"
             >
-              Open Terminal
+              <Terminal size={14} />
+              Open terminal
             </button>
           )}
 
-          <div className="win95-clippy-chat-input-row">
+          <div className="agent-assistant-input-row">
             <input
               type="text"
-              className="win95-clippy-chat-input"
+              className="agent-assistant-input"
               value={chatInput}
-              onChange={handleChatInputChange}
+              onChange={(e) => setChatInput(e.target.value)}
               onKeyDown={(e) => {
                 if (e.key === 'Enter') handleSendChat();
               }}
-              placeholder={agentEnabled ? 'Ask Clippy...' : 'Ask Clippy when a real agent is connected...'}
+              placeholder={agentEnabled ? 'Ask the AI assistant...' : 'Connect a real agent before asking...'}
               data-testid="clippy-chat-input"
             />
             <button
-              className="win95-clippy-chat-send"
+              className="agent-assistant-send"
               onClick={handleSendChat}
               disabled={!chatInput.trim()}
             >
               Send
             </button>
           </div>
-        </div>
+        </section>
       )}
     </>
   );

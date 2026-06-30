@@ -20,9 +20,6 @@ export type AgentRoomActionId =
   | 'open-terminal'
   | 'open-workspace'
   | 'launch-workspace'
-  | 'open-files'
-  | 'open-notepad'
-  | 'open-paint'
   | 'start-recording';
 
 export interface AgentChatMessage {
@@ -175,18 +172,6 @@ const ROOM_ACTIONS: Record<AgentRoomActionId, { label: string; aliases: string[]
   'launch-workspace': {
     label: 'Launch Workspace',
     aliases: ['launch-workspace', 'start-workspace', 'start-container', 'launch-container'],
-  },
-  'open-files': {
-    label: 'Open Files',
-    aliases: ['open-files', 'files', 'file-manager', 'explorer'],
-  },
-  'open-notepad': {
-    label: 'Open Notepad',
-    aliases: ['open-notepad', 'notepad', 'notes'],
-  },
-  'open-paint': {
-    label: 'Open Paint',
-    aliases: ['open-paint', 'paint', 'mspaint', 'ms-paint'],
   },
   'start-recording': {
     label: 'Start Recording',

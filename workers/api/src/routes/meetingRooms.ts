@@ -711,7 +711,7 @@ const sessionEventSchema = z.object({
     if (sourceOk && actorOk && promptOk && (browserPromptOk || agentPromptOk)) return;
     ctx.addIssue({
       code: z.ZodIssueCode.custom,
-      message: 'Clippy prompt evidence must come from the browser proactive prompt flow or real agent bridge with prompt identity, trigger, length, source, and room context.',
+      message: 'AI assistant prompt evidence must come from the browser proactive prompt flow or real agent bridge with prompt identity, trigger, length, source, and room context.',
       path: ['properties'],
     });
     return;
@@ -752,7 +752,7 @@ const sessionEventSchema = z.object({
       if (actionIdOk && capturedAtOk && actionEventIdOk && surfaceContextOk && originOk && actorOk && statusOk && noFakeAgentOk) return;
       ctx.addIssue({
         code: z.ZodIssueCode.custom,
-        message: 'Clippy UI action evidence must come from tray, prompt, or chat UI with actor, stable action id, capture timestamp, action source, execution status, surface, and no agent attribution.',
+        message: 'AI assistant UI action evidence must come from prompt or chat UI with actor, stable action id, capture timestamp, action source, execution status, surface, and no agent attribution.',
         path: ['properties'],
       });
       return;
@@ -782,14 +782,14 @@ const sessionEventSchema = z.object({
       if (commonOk && (suggestedOk || executedOk)) return;
       ctx.addIssue({
         code: z.ZodIssueCode.custom,
-        message: 'Clippy agent action evidence must come from the real bridge with stable action id, capture timestamp, ROOM_ACTION metadata, and either a suggested agent event or a browser execution linked to that bridge event.',
+        message: 'AI assistant agent action evidence must come from the real bridge with stable action id, capture timestamp, ROOM_ACTION metadata, and either a suggested agent event or a browser execution linked to that bridge event.',
         path: ['properties'],
       });
       return;
     }
     ctx.addIssue({
       code: z.ZodIssueCode.custom,
-      message: 'Clippy action evidence must come from a recognized Clippy UI or agent bridge source.',
+      message: 'AI assistant action evidence must come from a recognized assistant UI or agent bridge source.',
       path: ['properties'],
     });
     return;
@@ -828,7 +828,7 @@ const sessionEventSchema = z.object({
     if (actorOk && sourceOk && bridgeOk && noAgentAttributionOk && promptOk && contextOk) return;
     ctx.addIssue({
       code: z.ZodIssueCode.custom,
-      message: 'Clippy user chat evidence must come from the browser Clippy chat window and include a queued bridge CHAT prompt id, fingerprint, length, workspace context, no confirmed bridge delivery, and no agent attribution.',
+      message: 'AI assistant user chat evidence must come from the browser assistant chat window and include a queued bridge CHAT prompt id, fingerprint, length, workspace context, no confirmed bridge delivery, and no agent attribution.',
       path: ['properties'],
     });
     return;
@@ -969,7 +969,7 @@ const sessionEventSchema = z.object({
     ) return;
     ctx.addIssue({
       code: z.ZodIssueCode.custom,
-      message: 'Agent status evidence must come from the Clippy/Devin bridge with stable status id, capture timestamp, and observed status or persisted diagnostic provenance.',
+      message: 'Agent status evidence must come from the AI assistant/Devin bridge with stable status id, capture timestamp, and observed status or persisted diagnostic provenance.',
       path: ['properties'],
     });
     return;
@@ -1024,7 +1024,7 @@ const sessionEventSchema = z.object({
     ) return;
     ctx.addIssue({
       code: z.ZodIssueCode.custom,
-      message: 'Agent chat evidence must come from a real Clippy/Devin bridge CHAT_RESPONSE with stable response id, capture timestamp, fingerprint, length, and persisted bridge or browser fallback provenance.',
+      message: 'Agent chat evidence must come from a real AI assistant/Devin bridge CHAT_RESPONSE with stable response id, capture timestamp, fingerprint, length, and persisted bridge or browser fallback provenance.',
       path: ['properties'],
     });
     return;
@@ -1336,21 +1336,21 @@ function roomLifecycleEvidencePayload(
   if (event === 'JOINED') {
     return {
       type: 'participant_join',
-      text: `${roleLabel} joined the 95 Until Infinity room`,
+      text: `${roleLabel} joined the assessment room`,
       properties: sharedProperties,
     };
   }
   if (event === 'LEFT') {
     return {
       type: 'participant_leave',
-      text: `${roleLabel} left the 95 Until Infinity room`,
+      text: `${roleLabel} left the assessment room`,
       properties: sharedProperties,
     };
   }
   if (event === 'RECORDING_STARTED' && room.role === 'HOST') {
     return {
       type: 'recording_start',
-      text: 'Recording started for the 95 Until Infinity room',
+      text: 'Recording started for the assessment room',
       properties: {
         ...sharedProperties,
         recordingStatus: 'started',
@@ -1360,7 +1360,7 @@ function roomLifecycleEvidencePayload(
   if (event === 'ENDED' && room.role === 'HOST' && options.recordingWasActive) {
     return {
       type: 'recording_stop',
-      text: 'Recording stopped for the 95 Until Infinity room',
+      text: 'Recording stopped for the assessment room',
       properties: {
         ...sharedProperties,
         recordingStatus: 'stopped',
@@ -3071,7 +3071,7 @@ async function proxyWorkspaceRequest(c: Context<{ Bindings: Env }>): Promise<Res
 meetingRooms.all('/:token/workspace/proxy/:sessionId', proxyWorkspaceRequest);
 meetingRooms.all('/:token/workspace/proxy/:sessionId/*', proxyWorkspaceRequest);
 
-// Agent bridge WebSocket proxy — connects Clippy UI to the baked bridge/router inside the container.
+// Agent bridge WebSocket proxy — connects the assistant UI to the baked bridge/router inside the container.
 // Path: /:token/agent/:sessionId/ws
 meetingRooms.all('/:token/agent/:sessionId/ws', async (c) => {
   const token = c.req.param('token');

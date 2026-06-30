@@ -100,17 +100,14 @@ describe('StandardLayout', () => {
     expect(screen.getByTestId('standard-assessment-aside').textContent).toContain('source-backed task brief');
   });
 
-  it('keeps the legacy desktop as an optional control', () => {
+  it('does not expose a legacy desktop control', () => {
     render(
       <StandardLayout
         wm={makeWindowManager()}
         renderWindowContent={() => <div>video</div>}
-        canEnterDesktop
-        onEnterDesktop={vi.fn()}
       />,
     );
 
-    expect(screen.getByTestId('enter-win95-desktop').getAttribute('aria-label')).toBe('Open legacy desktop');
-    expect(screen.queryByLabelText('Launch 95 desktop')).toBeNull();
+    expect(screen.queryByTestId('enter-win95-desktop')).toBeNull();
   });
 });

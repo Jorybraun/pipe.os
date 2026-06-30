@@ -183,6 +183,6 @@ export function TerminalWindow({
   }, [onOutput, wsUrl]);
 
   return (
-    <div className="win95-terminal-container" ref={containerRef} />
+    <div className="terminal-container" ref={containerRef} />
   );
 }

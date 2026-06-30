@@ -1008,7 +1008,7 @@ function recordingActivityToSessionEvent(input: RoomActivitySyncInput, value: un
 
 function cursorPresenceText(actor: SessionEvent['actor']): string {
   const actorLabel = actor === 'host' ? 'Host' : 'Guest';
-  return `${actorLabel} cursor presence sampled on 95 Until Infinity desktop`;
+  return `${actorLabel} cursor presence sampled in the assessment room`;
 }
 
 function isSourceBackedCursorEvidence(
@@ -3515,7 +3515,7 @@ async function markAssessmentSessionInProgress(input: {
   await input.store.transitionAssessmentState({
     sessionId: input.sessionId,
     toState: 'IN_PROGRESS',
-    reason: '95 Until Infinity room session event captured as assessment evidence.',
+    reason: 'Assessment room session event captured as assessment evidence.',
     actorType: 'system',
   });
 }

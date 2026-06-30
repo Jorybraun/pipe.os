@@ -190,7 +190,7 @@ describe('hasSourceBackedClippyPromptEvidence', () => {
 });
 
 describe('hasSourceBackedClippyInteractionEvidence', () => {
-  it('accepts source-backed user chat submitted to the real Clippy/Devin bridge', () => {
+  it('accepts source-backed user chat submitted to the real AI assistant/Devin bridge', () => {
     const text = 'Can you inspect the task?';
     const event: RoomClippyInteractionEvent = {
       id: 'clippy-interaction-1',
@@ -262,14 +262,14 @@ describe('hasSourceBackedClippyInteractionEvidence', () => {
     expect(hasSourceBackedClippyInteractionEvidence(event, 'HOST')).toBe(true);
   });
 
-  it('accepts source-backed Clippy UI actions and rejects source-less events', () => {
+  it('accepts source-backed AI assistant UI actions and rejects source-less events', () => {
     const action: RoomClippyInteractionEvent = {
       id: 'clippy-interaction-3',
       clientId: 'host-client',
       createdAt: 1700000004000,
       eventType: 'clippy_action',
       actor: 'host',
-      text: 'Clippy chat opened from the Win95 taskbar tray',
+      text: 'AI assistant opened from the room controls',
       evidence: {
         source: 'clippy_tray_ui',
         actionId: 'open-clippy-chat',

@@ -207,7 +207,7 @@ describe('useSessionEvents', () => {
     }));
 
     act(() => {
-      result.current.capture('clippy_action', 'Clippy chat opened', 'host', {
+      result.current.capture('clippy_action', 'AI assistant opened', 'host', {
         source: 'clippy_tray_ui',
         agentResponseClaimed: false,
       });
@@ -233,7 +233,7 @@ describe('useSessionEvents', () => {
     };
     expect(parsedPayload).toMatchObject({
       type: 'clippy_action',
-      text: 'Clippy chat opened',
+      text: 'AI assistant opened',
       actor: 'host',
       properties: {
         source: 'clippy_tray_ui',

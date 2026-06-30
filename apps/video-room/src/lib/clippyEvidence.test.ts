@@ -25,7 +25,7 @@ describe('clippy evidence', () => {
       workspaceSessionId: 'workspace-123',
       agentWorkspaceReady: true,
     })).toEqual({
-      text: 'Clippy chat opened from the Win95 taskbar tray',
+      text: 'AI assistant opened from the room controls',
       properties: {
         source: 'clippy_tray_ui',
         actionId: 'open-clippy-chat',
@@ -58,7 +58,7 @@ describe('clippy evidence', () => {
       workspaceSessionId: 'workspace-123',
       agentWorkspaceReady: true,
     })).toEqual({
-      text: 'Clippy chat opened from the room chat window',
+      text: 'AI assistant opened from the room chat window',
       properties: {
         source: 'clippy_chat_ui',
         actionId: 'open-clippy-chat',
@@ -124,7 +124,7 @@ describe('clippy evidence', () => {
       workspaceSessionId: 'workspace-123',
       agentWorkspaceReady: true,
     })).toEqual({
-      text: 'Clippy chat window closed',
+      text: 'AI assistant chat window closed',
       properties: {
         source: 'clippy_chat_ui',
         actionId: 'close-clippy-chat',
@@ -157,7 +157,7 @@ describe('clippy evidence', () => {
       workspaceSessionId: null,
       agentWorkspaceReady: false,
     })).toMatchObject({
-      text: 'Clippy prompt dismissed',
+      text: 'AI assistant prompt dismissed',
       properties: {
         source: 'clippy_prompt_ui',
         actionId: 'dismiss-clippy',
@@ -183,7 +183,7 @@ describe('clippy evidence', () => {
       workspaceSessionId: 'workspace-123',
       agentWorkspaceReady: true,
     })).toMatchObject({
-      text: 'Clippy requested a real Devin CLI auth recheck',
+      text: 'AI assistant requested a real Devin CLI auth recheck',
       properties: {
         source: 'clippy_prompt_ui',
         actionId: 'check-devin-auth',
@@ -211,7 +211,7 @@ describe('clippy evidence', () => {
       workspaceSessionId: 'workspace-123',
       agentWorkspaceReady: true,
     })).toMatchObject({
-      text: 'Clippy opened Devin browser authentication',
+      text: 'AI assistant opened Devin browser authentication',
       properties: {
         source: 'clippy_prompt_ui',
         actionId: 'open-devin-auth-browser',
@@ -637,7 +637,7 @@ describe('clippy evidence', () => {
       messageTimestamp: 1700000000000,
     })).toEqual({
       eventType: 'ai_agent_status',
-      text: 'Clippy/Devin response was not recorded as agent evidence because bridge source metadata was missing.',
+      text: 'AI assistant/Devin response was not recorded as agent evidence because bridge source metadata was missing.',
       properties: {
         source: 'clippy_agent_bridge',
         agentStatusEventSource: 'browser_clippy_agent_ws',

@@ -16,7 +16,8 @@ export type WindowStateSource =
   | 'win95_desktop_ui'
   | 'win95_start_menu'
   | 'win95_window_chrome'
-  | 'win95_taskbar';
+  | 'win95_taskbar'
+  | 'standard_assessment_ui';
 export type WindowUiLaunchSource =
   | 'win95_desktop_ui'
   | 'win95_start_menu';

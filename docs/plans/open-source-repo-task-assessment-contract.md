@@ -1,4 +1,4 @@
-# 95 Until Infinity Repo Task Assessment Contract
+# Open-Source Repo Task Assessment Contract
 
 **Status:** Contract proposed; `OPEN_SOURCE_BUG_FIX` mode seam and assessment event spine implemented
 **Date:** 2026-06-27  
@@ -116,23 +116,23 @@ The controlling product rule remains:
 - Meeting-room workspace provisioning treats it as a workspace-backed interview.
 - Host room end now replays the authoritative Durable Object desktop, chat,
   and file activity logs into source-backed `meeting_session_event` evidence,
-  so Win95 room interactions are captured as part of the interview lifecycle
+  so assessment-room interactions are captured as part of the interview lifecycle
   instead of only when a graph read is requested later.
 - Shared host/guest room chat is recorded as human `chat_message` evidence,
-  while Clippy/Devin chat remains separately classified as `ai_chat_user` and
+  while AI agent bridge/Devin chat remains separately classified as `ai_chat_user` and
   `ai_chat_agent` evidence.
 - Accepted mic/camera control toggles now replay from the Durable Object
   activity log as source-backed `media_control` evidence, preserving actor,
   surface, room phase, previous state, next state, and browser-control
-  provenance across both standard and Win95 room surfaces.
-- Sampled Win95 peer-cursor movements now replay from the Durable Object
+  provenance across both standard and assessment-room surfaces.
+- Sampled assessment-room peer-cursor movements now replay from the Durable Object
   activity log as source-backed `cursor_presence` evidence. Raw cursor moves
   remain live-only and are explicitly marked as not persisted.
 - Browser chat sends are optimistic client submissions until the Durable Object
   acknowledges or rejects the exact message id. Client-side evidence marks
   those submissions as pending; the synced Durable Object chat activity log is
   the authoritative accepted-chat replay source.
-- Shared Notepad/Paint file replay now computes deterministic content hashes
+- Shared text/sketch file replay now computes deterministic content hashes
   server-side for `file_change` evidence, preserving immutable provenance even
   when the candidate-created file content is summarized or preview-suppressed.
 - Shared file delete replay now preserves the deleted file snapshot when the
@@ -141,8 +141,8 @@ The controlling product rule remains:
   provenance.
 - Durable Object replay now includes synced window state changes as
   source-backed `window_update` evidence, preserving focus, minimize, maximize,
-  and move patches from the shared Win95 desktop activity log.
-- Microsoft Edge direct, back, and forward navigation now publish shared desktop
+  and move patches from the shared assessment-room desktop activity log.
+- Browser direct, back, and forward navigation now publish shared workspace
   URL state and persist as `browser_navigation` evidence.
 - Accepted guest join/leave and recording start/stop room lifecycle events now
   persist as source-backed `meeting_session_event` evidence, with recording
@@ -155,7 +155,7 @@ The controlling product rule remains:
   map, ICE provider, MIME types, and captured byte counts, with host-end
   auto-stop and manual stop using the same source-backed event path.
 - Both host and guest can switch the shared room between the standard call and
-  95 Until Infinity surfaces. Each browser action emits `room_surface_change`
+  assessment room surfaces. Each browser action emits `room_surface_change`
   evidence with actor, previous surface, next surface, and room phase, while the
   Durable Object desktop log remains the authoritative shared-state replay.
 - Terminal windows now capture completed dev-container commands and bounded
@@ -171,46 +171,45 @@ The controlling product rule remains:
 - Workspace state events now persist dev-container diagnostics with workspace
   session id, status, repo context, TTL details, and error messages, while
   excluding room-token proxy paths from the evidence payload.
-- Clippy/Devin bridge status transitions now persist as source-backed
+- AI assistant/Devin bridge status transitions now persist as source-backed
   `meeting_session_event` evidence, including real auth-required or
   disconnected states instead of simulated agent availability.
-- Clippy/Devin chat evidence distinguishes real Devin stdout from bridge
+- AI agent bridge/Devin chat evidence distinguishes real Devin stdout from bridge
   diagnostics and file-watcher observations, preventing auth-required or
   container-observed facts from being projected as fabricated Devin replies.
-- Clippy/Devin room actions emitted from the real bridge stdout tag protocol
+- AI agent bridge/Devin room actions emitted from the real bridge stdout tag protocol
   now persist origin, bridge event type, action protocol, agent name, and
   browser execution role in `clippy_action` evidence, so prompt-button actions
   and real agent-directed desktop actions remain separate.
-- Clippy/Devin process diagnostics now persist bounded and redacted bridge
+- AI agent bridge/Devin process diagnostics now persist bounded and redacted bridge
   evidence for real stderr, context-primer failures, process exits, and startup
   errors, including diagnostic source, observed time, exit code, and signal
   metadata instead of leaving failures only in container logs.
-- Clippy/Devin bridge statuses and diagnostics now preserve direct exact-text
+- AI assistant/Devin bridge statuses and diagnostics now preserve direct exact-text
   `clippy_agent_status` / `clippy_agent_diagnostic` source refs in both
   living-context and assessment evidence, so auth, startup, prompt-handoff, and
   process-failure states can be cited without unpacking the broad session event.
-- Clippy/Devin context-primer and chat-prompt handoffs now persist
+- AI agent bridge/Devin context-primer and chat-prompt handoffs now persist
   `ai_agent_status` diagnostics when the bridge writes to real Devin stdin,
   including delivery state, room-context fetch status, and redacted
   fingerprints/lengths for prompt, room context, and candidate message without
   storing the private prompt body.
-- The Win95 Clippy tray remains the persistent "Ask Clippy" entrypoint after a
-  prompt dismissal or chat close, while its active state reflects the actual
-  chat panel open/closed state rather than merely whether the assistant
-  component is mounted.
-- Clippy/Devin bridge diagnostics, prompt handoffs, and real Devin stdout now
+- The assessment-room AI assistant entrypoint remains recoverable after prompt
+  dismissal or chat close, while its active state reflects the actual chat panel
+  open/closed state rather than merely whether the assistant component is mounted.
+- AI assistant/Devin bridge diagnostics, prompt handoffs, and real Devin stdout now
   post token-scoped `session-events` directly from the dev container before
   broadcasting to browsers. Browser evidence capture remains a fallback only
   when the bridge cannot persist, preventing duplicate graph events while
   preserving the visible chat/diagnostic stream.
-- Clippy/Devin bridge diagnostic, auth/status, room-action, and stdout fallback
+- AI assistant/Devin bridge diagnostic, auth/status, room-action, and stdout fallback
   text is redacted before browser evidence, Durable Object broadcast/storage,
   or session-event persistence. Secret-bearing agent chat is rejected rather
   than rewriting fingerprinted source evidence.
 - The container bridge applies the same redaction before WebSocket broadcasts
   and direct `session-events` writes, so bridge-origin response ids and lengths
   are derived from the stored redacted stdout rather than raw agent output.
-- Clippy/Devin room-action suggestions now persist directly from the bridge as
+- AI agent bridge/Devin room-action suggestions now persist directly from the bridge as
   `clippy_action` events with `executionStatus: suggested`. Browser-side action
   execution remains separate `clippy_action` evidence with
   `executionStatus: executed` and links back to the bridge suggestion metadata.
@@ -223,12 +222,12 @@ The controlling product rule remains:
   prove the same source-backed workspace evidence path used by production room
   token validation.
 - Dev-container idle sleep, wake, and unexpected stop/error lifecycle hooks now
-  update the canonical D1 session row before projection, so Clippy availability,
+  update the canonical D1 session row before projection, so AI assistant availability,
   room workspace state, and assessment evidence reflect the real container
   lifecycle instead of a stale `READY` session.
 - Standalone candidate dev-container launches now pass the same real Devin
   bridge configuration into the server-side container init payload without
-  returning secrets to the browser, so Clippy chat can only become available
+  returning secrets to the browser, so AI assistant chat can only become available
   through the actual container bridge instead of a UI-only placeholder.
 - Dev-container expiry/manual teardown now marks intentional container stops
   before destroy, so normal `EXPIRED` / `STOPPED` sessions do not retain false

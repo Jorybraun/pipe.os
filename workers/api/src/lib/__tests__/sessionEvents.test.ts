@@ -1229,7 +1229,7 @@ describe('sessionEvents', () => {
       }
     });
 
-    it('preserves Clippy/Devin bridge statuses and diagnostics as direct source refs', async () => {
+    it('preserves AI assistant/Devin bridge statuses and diagnostics as direct source refs', async () => {
       const { sqlite, db: realDb } = createSessionEvidenceDb();
       try {
         const statusText = 'devin is starting from the real container bridge.';
@@ -1347,7 +1347,7 @@ describe('sessionEvents', () => {
     it('preserves Clippy UI and bridge room actions as direct source refs', async () => {
       const { sqlite, db: realDb } = createSessionEvidenceDb();
       try {
-        const trayOpenText = 'Clippy chat opened from the Win95 taskbar tray';
+        const trayOpenText = 'AI assistant opened from the room controls';
         const trayOpenId = 'clippy-action:guest:1782604700000:clippy_tray_ui:tray:opened:open-clippy-chat';
         const agentSuggestionText = 'devin suggested room action: open-terminal';
         const agentSuggestionId = 'clippy-action:agent:1782604710000:clippy_agent_bridge:agent:suggested:open-terminal';
@@ -1497,7 +1497,7 @@ describe('sessionEvents', () => {
             candidateId: 'cand-assessment',
             timestamp: 1782604800,
             actor: 'host',
-            text: 'Room surface changed to 95 Until Infinity desktop',
+            text: 'Room surface changed to assessment room',
             properties: {
               source: 'room_surface_control',
               surfaceControlEventSource: 'browser_room_surface_toggle',
@@ -1628,7 +1628,7 @@ describe('sessionEvents', () => {
             candidateId: 'cand-assessment',
             timestamp: 1782604806,
             actor: 'guest',
-            text: 'Guest cursor presence sampled on 95 Until Infinity desktop',
+            text: 'Guest cursor presence sampled in the assessment room',
             properties: {
               source: 'win95_cursor_presence_client_sample',
               cursorEventSource: 'browser_win95_desktop_pointermove',
@@ -3131,7 +3131,7 @@ describe('sessionEvents', () => {
         expect.objectContaining({
           type: 'cursor_presence',
           actor: 'guest',
-          text: 'Guest cursor presence sampled on 95 Until Infinity desktop',
+          text: 'Guest cursor presence sampled in the assessment room',
           properties: expect.objectContaining({
             roomActivitySource: 'durable_object',
             roomActivityKind: 'cursor_presence',

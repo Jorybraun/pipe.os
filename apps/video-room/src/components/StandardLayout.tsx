@@ -1,5 +1,5 @@
 import { useState, type ReactNode } from 'react';
-import { Circle, MessageSquare, Monitor, SquareTerminal, X } from 'lucide-react';
+import { Circle, MessageSquare, Minus, Monitor, SquareTerminal, X } from 'lucide-react';
 import type { WindowManagerApi, WindowState } from '../hooks/useWindowManager';
 
 interface StandardLayoutProps {
@@ -9,8 +9,6 @@ interface StandardLayoutProps {
   assessmentAside?: ReactNode;
   recordingLabel?: string;
   recordingActive?: boolean;
-  canEnterDesktop?: boolean;
-  onEnterDesktop?: () => void;
   modeLabel?: string;
   primarySurface?: 'video' | 'workspace';
 }
@@ -22,8 +20,6 @@ export function StandardLayout({
   assessmentAside,
   recordingLabel,
   recordingActive,
-  canEnterDesktop = false,
-  onEnterDesktop,
   modeLabel = 'Standard call',
   primarySurface = 'video',
 }: StandardLayoutProps): JSX.Element {
@@ -37,6 +33,13 @@ export function StandardLayout({
   const hasWorkspace = Boolean(workspaceWin);
   const workspaceIsPrimary = primarySurface === 'workspace' && Boolean(workspaceWin);
   const primaryWin = workspaceIsPrimary ? workspaceWin : videoWin;
+  const utilityWindows = wm.windows.filter((win) => (
+    win.windowType !== 'video'
+    && win.windowType !== 'chat'
+    && win.windowType !== 'workspace'
+  ));
+  const visibleUtilityWindows = utilityWindows.filter((win) => !win.minimized);
+  const minimizedUtilityWindows = utilityWindows.filter((win) => win.minimized);
 
   return (
     <div
@@ -89,17 +92,6 @@ export function StandardLayout({
             <SquareTerminal size={18} />
           </button>
         )}
-        {canEnterDesktop && (
-          <button
-            className="standard-control-btn"
-            onClick={onEnterDesktop}
-            title="Open legacy desktop"
-            aria-label="Open legacy desktop"
-            data-testid="enter-win95-desktop"
-          >
-            <Monitor size={18} />
-          </button>
-        )}
         <button
           className={`standard-control-btn${chatOpen ? ' is-active' : ''}`}
           onClick={() => setChatOpen((v) => !v)}
@@ -115,6 +107,62 @@ export function StandardLayout({
           </span>
         )}
       </div>
+
+      {visibleUtilityWindows.length > 0 && (
+        <div className="standard-floating-windows" data-testid="standard-floating-windows">
+          {visibleUtilityWindows.map((win) => (
+            <section
+              key={win.id}
+              className={`standard-floating-window is-${win.windowType}`}
+              data-testid={`standard-window-${win.windowType}`}
+              style={{
+                width: Math.min(win.width, Math.max(320, window.innerWidth - 48)),
+                maxHeight: Math.max(280, window.innerHeight - 96),
+                zIndex: win.zIndex,
+              }}
+              onMouseDown={() => wm.focusWindow(win.id)}
+            >
+              <header className="standard-floating-window-header">
+                <span>{win.title}</span>
+                <div className="standard-floating-window-actions">
+                  <button
+                    type="button"
+                    onClick={() => wm.minimizeWindow(win.id)}
+                    aria-label={`Minimize ${win.title}`}
+                  >
+                    <Minus size={14} />
+                  </button>
+                  <button
+                    type="button"
+                    onClick={() => wm.closeWindow(win.id)}
+                    aria-label={`Close ${win.title}`}
+                  >
+                    <X size={14} />
+                  </button>
+                </div>
+              </header>
+              <div className="standard-floating-window-body">
+                {renderWindowContent(win)}
+              </div>
+            </section>
+          ))}
+        </div>
+      )}
+
+      {minimizedUtilityWindows.length > 0 && (
+        <div className="standard-utility-dock" data-testid="standard-utility-dock">
+          {minimizedUtilityWindows.map((win) => (
+            <button
+              key={win.id}
+              type="button"
+              className="standard-utility-dock-btn"
+              onClick={() => wm.restoreWindow(win.id)}
+            >
+              {win.title}
+            </button>
+          ))}
+        </div>
+      )}
 
       {/* Slide-in chat panel */}
       {chatOpen && chatWin && (
