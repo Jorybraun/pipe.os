@@ -7,6 +7,12 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Added — Recruiter Re-match button in living context graph UI (criterion #5)
+
+- `useRematch` hook — triggers `POST /api/v1/candidates/:id/living-context/rematch` from the frontend, returns match status, evaluated challenge count, and top match.
+- Re-match button in `LivingContextGraph.tsx` toolbar — recruiter clicks to re-run deterministic matching with latest evidence. Displays result inline (matched PR, status, evaluation count).
+- CSS styles for `.living-context__rematch` button and `.living-context__rematch-result` status bar.
+
 ### Added — Recruiter-triggered re-match endpoint (criteria #5, #6)
 
 - `POST /api/v1/candidates/:id/living-context/rematch` — allows recruiters to re-run the deterministic candidate-to-PR matcher after new evidence arrives (resume upload, meeting transcript, assessment completion). Returns match status, matchRunId, selected repo/PR, and top challenge diagnostics. Uses temporal decay (90-day half-life) for evidence freshness weighting. Gated by `living_context_read` rollout gate.

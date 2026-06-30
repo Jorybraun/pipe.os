@@ -4,6 +4,34 @@ Inter-agent handoff log for the living context graph goal. Each agent appends a 
 
 ## Log
 
+### 2026-06-30 — Session a5971b99 (Devin Automation)
+
+**Action:** Consolidate open PRs into non-draft PR #151, add frontend Re-match button, wire living context graph into candidate page.
+
+**Open PRs analyzed:** #135–#147 (all aligned with living context goal, all draft/superseded). PR #147 is latest superset.
+
+**Completed:**
+1. Created PR #151 as fresh non-draft consolidation of all living context work (82 files, +21,110 lines)
+2. Verified: 185 test files, 1713 tests pass, TypeScript clean (root + workers/api), lint 0 errors
+3. CI: 4 failures are pre-existing Azure BlobNotFound (confirmed same on PR #104/main — logs unretrievable)
+4. Added `useRematch` hook — triggers `POST /candidates/:id/living-context/rematch` from frontend
+5. Added "Re-match" button to `LivingContextGraph.tsx` toolbar — shows inline result after run
+6. CSS for `.living-context__rematch` button + `.living-context__rematch-result` status bar
+7. Confirmed LivingContextGraph already wired into CandidateProfilePage CONTEXT_GRAPH tab
+8. Confirmed D1 migrations exist: 0082 (core LC), 0094 (concepts), 0095 (context records), 0104 (backfill), 0105/0106 (rollout gates)
+9. Updated CHANGELOG.md
+
+**PRs to close (superseded by #151):** #135–#147
+
+**Next priorities:**
+- Merge PR #151 to main
+- Close superseded PRs #135–#147 manually
+- Add Vitest tests for useRematch hook
+- Run BDD Playwright tests against local dev server
+- Deploy + run D1 migrations to production
+
+---
+
 ### 2026-06-30 — Session 8919695b (Devin Automation)
 
 **Action:** Analyze open PRs, consolidate + continue development, add recruiter-facing rematch endpoint.

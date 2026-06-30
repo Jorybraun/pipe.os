@@ -7,6 +7,7 @@ import {
   GitPullRequest,
   Link2,
   Network,
+  Play,
   Quote,
   RefreshCw,
   Search,
@@ -42,6 +43,7 @@ import { useEvidenceGaps } from '../../hooks/useEvidenceGaps';
 import { useEvidenceLineage } from '../../hooks/useEvidenceLineage';
 import { useMatchProvenance } from '../../hooks/useMatchProvenance';
 import { useLivingContext } from '../../hooks/useLivingContext';
+import { useRematch } from '../../hooks/useRematch';
 import { buildLivingContextBranches } from '../../lib/livingContextTree';
 import { ContextRecordForest } from './ContextRecordTree';
 import './LivingContextGraph.css';
@@ -1957,7 +1959,8 @@ export function LivingContextGraph({
   const { livingContext, isLoading, error, refetch } = useLivingContext(livingContextSource);
   const { lineage } = useEvidenceLineage(candidateId);
   const { freshness } = useEvidenceFreshness(candidateId);
-  const matchRunId = standaloneReviewMatch?.matchRunId ?? null;
+  const { triggerRematch, result: rematchResult, isLoading: isRematching } = useRematch(candidateId);
+  const matchRunId = rematchResult?.matchRunId ?? standaloneReviewMatch?.matchRunId ?? null;
   const challengePacketId = standaloneReviewMatch?.packetId ?? null;
   const { report: gapReport } = useEvidenceGaps(candidateId, challengePacketId);
   const { provenance } = useMatchProvenance(matchRunId);
@@ -2169,7 +2172,37 @@ export function LivingContextGraph({
         >
           <RefreshCw size={14} className={isLoading ? 'spin' : undefined} />
         </button>
+        <button
+          type="button"
+          className="living-context__rematch"
+          onClick={() => void triggerRematch().then(() => refetch())}
+          disabled={isRematching}
+          title="Re-run candidate-to-PR matching with latest evidence"
+          aria-label="Re-match candidate"
+          data-testid="rematch-button"
+        >
+          <Play size={12} />
+          <span>{isRematching ? 'Matching...' : 'Re-match'}</span>
+        </button>
       </div>
+
+      {rematchResult && (
+        <div className="living-context__rematch-result" data-testid="rematch-result">
+          <span className="living-context__rematch-status">
+            {rematchResult.status === 'MATCHED'
+              ? `Matched → PR #${rematchResult.prNumber ?? '?'}`
+              : rematchResult.status === 'NEEDS_MORE_EVIDENCE'
+                ? rematchResult.reason ?? 'Needs more evidence'
+                : `Status: ${rematchResult.status}`
+            }
+          </span>
+          {rematchResult.evaluatedCount > 0 && (
+            <span className="living-context__rematch-meta">
+              {rematchResult.evaluatedCount} challenge{rematchResult.evaluatedCount === 1 ? '' : 's'} evaluated
+            </span>
+          )}
+        </div>
+      )}
 
       <StandaloneReviewMatchPanel match={reviewMatch} />
 

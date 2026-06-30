@@ -107,6 +107,54 @@ html[data-theme="pipe-blue"] .living-context {
   opacity: 0.45;
 }
 
+.living-context__rematch {
+  display: flex;
+  align-items: center;
+  gap: 5px;
+  height: 36px;
+  padding: 0 12px;
+  border: 1px solid var(--lc-signal);
+  border-radius: 5px;
+  background: transparent;
+  color: var(--lc-signal);
+  font-size: 11px;
+  font-family: 'Space Mono', monospace;
+  letter-spacing: 0.04em;
+  cursor: pointer;
+  transition: background 0.15s, opacity 0.15s;
+}
+
+.living-context__rematch:hover:not(:disabled) {
+  background: rgba(5, 150, 105, 0.08);
+}
+
+.living-context__rematch:disabled {
+  cursor: default;
+  opacity: 0.5;
+}
+
+.living-context__rematch-result {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  padding: 8px 12px;
+  margin-bottom: 12px;
+  border: 1px solid var(--lc-signal);
+  border-radius: 5px;
+  background: rgba(5, 150, 105, 0.06);
+  font-size: 11px;
+  font-family: 'Space Mono', monospace;
+}
+
+.living-context__rematch-status {
+  color: var(--lc-signal);
+  font-weight: 500;
+}
+
+.living-context__rematch-meta {
+  color: var(--lc-record-dim);
+}
+
 .living-context__summary {
   display: grid;
   grid-template-columns: repeat(4, minmax(86px, 1fr));
