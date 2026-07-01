@@ -31,7 +31,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 - CODE_REVIEW recruiter readouts now treat failed scoring as `Score unavailable` with retry/manual-review guidance instead of saying the assessment is still scoring.
 - Standalone roleless CODE_REVIEW auto-matches now accept the explicit `contrast_separation_not_required_roleless` quality check, allowing source-backed roleless matches to advance without a fake role contrast requirement.
-- Standalone `/assess` text-intake submissions now run the real CODE_REVIEW evidence ingestion inline and immediately attempt the source-backed auto-match before returning, so app-dev auto-match invites can advance into a ready review instead of getting stuck at `PROFILE_RECEIVED` with no assigned PR.
+- Standalone `/assess` text-intake submissions now run the real CODE_REVIEW evidence ingestion inline and immediately attempt the source-backed auto-match before returning, so app-dev auto-match invites can advance into a ready review only when the source-backed match gate passes instead of inventing an assignment.
 - Candidate commit-submission clients now reject optional commit URLs outside the assigned repository or declared fork before submission, matching the server-side assessment proof invariant.
 - App render errors from stale post-deploy dynamic chunks now auto-reload once per chunk URL before showing the manual recovery screen, reducing candidate/recruiter dead ends during CODE_REVIEW deploy rollovers.
 - Legacy review submission panels now require a connected submit service before showing success, removing the fake delayed success path from assessment UI code.

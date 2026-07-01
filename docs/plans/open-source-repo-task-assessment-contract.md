@@ -119,8 +119,10 @@ The controlling product rule remains:
   candidate context projection exists.
 - Standalone CODE_REVIEW text-intake submissions run the real candidate
   evidence ingestion inline before returning, then immediately attempt the
-  source-backed PR match so auto-match invites can advance to a ready review
-  instead of stopping at `PROFILE_RECEIVED` with no assigned challenge.
+  source-backed PR match. If the deterministic match passes the standalone
+  quality gate, the invite advances to a ready review; if the match is weak or
+  needs recruiter review, the candidate still receives the safe
+  `PROFILE_RECEIVED` handoff instead of a fabricated assignment.
 - CODE_REVIEW interview detail now returns and renders related evidence
   interviews from the same person graph, so context calls and multiple
   same-email assessment invites stay visible as separate evidence-producing
