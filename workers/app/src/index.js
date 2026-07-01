@@ -152,7 +152,7 @@ async function devAuthEntryPage(request, env) {
   );
 }
 
-function proxyApi(request, env, authState) {
+async function proxyApi(request, env, authState) {
   const secret = env.DEV_PROXY_SECRET;
   if (!secret) return new Response('Missing dev proxy secret', { status: 503 });
 
@@ -176,7 +176,7 @@ function proxyApi(request, env, authState) {
   headers.set('X-Forwarded-Host', url.host);
   headers.set('X-Forwarded-Proto', url.protocol.replace(':', ''));
 
-  return fetch(
+  const response = await fetch(
     new Request(target.toString(), {
       method: request.method,
       headers,
@@ -184,6 +184,7 @@ function proxyApi(request, env, authState) {
       redirect: request.redirect,
     }),
   );
+  return new Response(response.body, response);
 }
 
 async function serveStatic(request, env) {
