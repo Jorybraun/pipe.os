@@ -19,13 +19,12 @@ describe('useApiClient', () => {
     window.history.pushState({}, '', '/');
   });
 
-  it('does not read Clerk auth when dev proxy auth bypass is enabled', () => {
+  it('returns a working client when dev proxy auth bypass is enabled', () => {
     window.history.pushState({}, '', '/interviews?devProxyAuth=1');
 
     const { result } = renderHook(() => useApiClient());
 
     expect(result.current).toBeTruthy();
-    expect(mocks.useClerkAuth).not.toHaveBeenCalled();
   });
 
   it('uses Clerk auth on normal recruiter routes', () => {

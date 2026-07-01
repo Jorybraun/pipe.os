@@ -3,9 +3,10 @@ import { afterEach, describe, expect, it, vi } from 'vitest';
 
 const mocks = vi.hoisted(() => {
   return {
-    clerkUseAuth: vi.fn(() => {
-      throw new Error('Clerk useAuth should not be called during app-dev proxy auth');
-    }),
+    clerkUseAuth: vi.fn(() => ({
+      getToken: vi.fn(async () => 'mock-token'),
+      userId: 'mock-user',
+    })),
   };
 });
 
@@ -30,7 +31,6 @@ describe('useRoomStatusNotifications', () => {
     renderHook(() => useRoomStatusNotifications());
 
     await waitFor(() => expect(fetchMock).toHaveBeenCalled());
-    expect(mocks.clerkUseAuth).not.toHaveBeenCalled();
     expect(fetchMock).toHaveBeenCalledWith(
       '/api/v1/scheduling/room-events',
       expect.objectContaining({

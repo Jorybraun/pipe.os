@@ -52,6 +52,8 @@ import { useMatchProvenance } from '../../hooks/useMatchProvenance';
 import { useMatchHistory } from '../../hooks/useMatchHistory';
 import { useRematch } from '../../hooks/useRematch';
 import { useLivingContext } from '../../hooks/useLivingContext';
+import { useCandidateComparison } from '../../hooks/useCandidateComparison';
+import { useEvidenceTimeline } from '../../hooks/useEvidenceTimeline';
 import { buildLivingContextBranches } from '../../lib/livingContextTree';
 import { ContextRecordForest } from './ContextRecordTree';
 import './LivingContextGraph.css';
@@ -2464,7 +2466,7 @@ export function LivingContextGraph({
   livingContextEndpoint,
   initialLivingContext,
   standaloneReviewMatch,
-  comparisonCandidateIds: _comparisonCandidateIds,
+  comparisonCandidateIds,
 }: {
   candidateId: string;
   livingContextEndpoint?: string;
@@ -2489,6 +2491,12 @@ export function LivingContextGraph({
     isLoading: conceptsLoading,
     refetch: refetchConcepts,
   } = useConceptGraph({ limit: 100, withAdjacencies: true, minObs: 1 });
+  const comparisonIds = useMemo(() => {
+    if (!comparisonCandidateIds || comparisonCandidateIds.length === 0) return null;
+    return [candidateId, ...comparisonCandidateIds];
+  }, [candidateId, comparisonCandidateIds]);
+  const { report: comparisonReport } = useCandidateComparison(comparisonIds);
+  const { timeline } = useEvidenceTimeline(candidateId);
   const [, setLastRematch] = useState<RematchResult | null>(null);
   const [selectedInteractionId, setSelectedInteractionId] = useState<string | null>(null);
   const [selectedSource, setSelectedSource] = useState<LivingContextSourceRef | null>(null);
@@ -2869,6 +2877,91 @@ export function LivingContextGraph({
                   onSelectSource={setSelectedSource}
                 />
               ))}
+            </div>
+          )}
+          {comparisonReport && (
+            <div data-testid="candidate-comparison-panel" className="living-context__comparison-panel" style={{ marginTop: 20 }}>
+              <div className="living-context__section-head">
+                <div className="living-context__section-title">Candidate comparison</div>
+              </div>
+              <div data-testid="comparison-summary" className="living-context__comparison-summary">
+                <span>{comparisonReport.summary.comparedConceptCount} concepts compared</span>
+                <span>{comparisonReport.summary.sharedConceptCount} shared</span>
+              </div>
+              <div data-testid="comparison-profiles" className="living-context__comparison-profiles">
+                {comparisonReport.candidateProfiles.map((profile) => (
+                  <div
+                    key={profile.candidateId}
+                    data-testid={`comparison-profile-${profile.candidateId}`}
+                    className="living-context__comparison-profile"
+                  >
+                    <div className="living-context__comparison-name">
+                      {profile.candidateName}
+                      {profile.candidateId === candidateId && <span className="living-context__badge">current</span>}
+                    </div>
+                    <dl className="living-context__meta-grid">
+                      <dt>Interactions</dt><dd>{profile.totalInteractions}</dd>
+                      <dt>Assertions</dt><dd>{profile.totalAssertions}</dd>
+                      <dt>Source spans</dt><dd>{profile.totalSourceSpans}</dd>
+                    </dl>
+                  </div>
+                ))}
+              </div>
+              <div data-testid="comparison-concept-grid" className="living-context__comparison-concepts">
+                {comparisonReport.conceptComparisons.map((concept) => (
+                  <div key={concept.conceptKey} className="living-context__comparison-concept-row">
+                    <span className="living-context__concept-label">{concept.label}</span>
+                    {concept.candidates.map((c) => (
+                      <span key={c.candidateId} className="living-context__coverage-badge">
+                        {c.coverageLevel}
+                      </span>
+                    ))}
+                  </div>
+                ))}
+              </div>
+              <div data-testid="comparison-rankings" className="living-context__comparison-rankings">
+                <div>Source diversity</div>
+                {comparisonReport.summary.evidenceDiversityRanking.map((r) => (
+                  <span key={r.candidateId}>{r.score.toFixed(2)}</span>
+                ))}
+                <div>Evidence depth</div>
+                {comparisonReport.summary.evidenceDepthRanking.map((r) => (
+                  <span key={r.candidateId}>{r.totalAssertions}</span>
+                ))}
+              </div>
+            </div>
+          )}
+
+          {timeline && timeline.entries.length > 0 && (
+            <div data-testid="evidence-timeline-panel" className="living-context__timeline-panel" style={{ marginTop: 20 }}>
+              <div className="living-context__section-head">
+                <div className="living-context__section-title">Evidence timeline</div>
+                <div className="living-context__count">{timeline.totalEntries}</div>
+              </div>
+              <div className="living-context__timeline-entries">
+                {timeline.entries.map((entry) => (
+                  <div key={entry.id} data-testid="timeline-entry" className="living-context__timeline-entry">
+                    <div className="living-context__timeline-entry-header">
+                      {entry.interactionType && (
+                        <span className="living-context__badge">{titleCase(entry.interactionType)}</span>
+                      )}
+                      <span className="living-context__timeline-date">{formatDate(entry.timestamp)}</span>
+                    </div>
+                    <div className="living-context__timeline-narrative">{entry.narrative}</div>
+                    {entry.concepts.length > 0 && (
+                      <div className="living-context__timeline-concepts">
+                        {entry.concepts.map((concept) => (
+                          <span key={concept} className="living-context__concept-tag">{concept}</span>
+                        ))}
+                      </div>
+                    )}
+                    <div className="living-context__timeline-meta">
+                      {entry.sourceCount > 0 && <span>{entry.sourceCount} sources</span>}
+                      {entry.confidence !== null && <span>{Math.round(entry.confidence * 100)}% confidence</span>}
+                    </div>
+                  </div>
+                ))}
+              </div>
             </div>
           )}
         </main>
