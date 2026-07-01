@@ -1,4 +1,4 @@
-import { renderHook, waitFor, act } from '@testing-library/react';
+import { renderHook, waitFor } from '@testing-library/react';
 import { beforeEach, describe, expect, it, vi } from 'vitest';
 import type { ApiClient } from '../../lib/api/client';
 import { useGraphTraversal } from '../useGraphTraversal';
@@ -26,13 +26,13 @@ describe('useGraphTraversal', () => {
   });
 
   it('returns null graph when candidateId is null', () => {
-    const { result } = renderHook(() => useGraphTraversal(null));
+    const { result } = renderHook(() => useGraphTraversal(null, null));
     expect(result.current.graph).toBeNull();
     expect(result.current.isLoading).toBe(false);
     expect(apiMocks.mockGet).not.toHaveBeenCalled();
   });
 
-  it('fetches graph when initial entity params provided', async () => {
+  it('fetches graph when startId provided', async () => {
     const mockGraph = {
       root: { id: 'wp-1', entityType: 'workspace_person', label: 'Test', metadata: {}, depth: 0 },
       nodes: [
@@ -47,7 +47,7 @@ describe('useGraphTraversal', () => {
     apiMocks.mockGet.mockResolvedValue(mockGraph);
 
     const { result } = renderHook(() =>
-      useGraphTraversal('cand-1', 'workspace_person', 'wp-1'),
+      useGraphTraversal('cand-1', 'wp-1', 'person'),
     );
 
     await waitFor(() => {
@@ -56,30 +56,7 @@ describe('useGraphTraversal', () => {
 
     expect(result.current.graph?.nodes).toHaveLength(2);
     expect(apiMocks.mockGet).toHaveBeenCalledWith(
-      '/api/v1/candidates/cand-1/living-context/graph-traversal?entityType=workspace_person&entityId=wp-1',
-    );
-  });
-
-  it('supports manual traverse with options', async () => {
-    apiMocks.mockGet.mockResolvedValue({
-      root: { id: 'a-1', entityType: 'assertion', label: 'test', metadata: {}, depth: 0 },
-      nodes: [],
-      edges: [],
-      truncated: false,
-    });
-
-    const { result } = renderHook(() => useGraphTraversal('cand-1'));
-
-    await act(async () => {
-      await result.current.traverse('assertion', 'a-1', {
-        maxDepth: 3,
-        maxNodes: 100,
-        entityTypeFilter: ['assertion', 'concept'],
-      });
-    });
-
-    expect(apiMocks.mockGet).toHaveBeenCalledWith(
-      '/api/v1/candidates/cand-1/living-context/graph-traversal?entityType=assertion&entityId=a-1&maxDepth=3&maxNodes=100&entityTypeFilter=assertion,concept',
+      expect.stringContaining('/api/v1/candidates/cand-1/living-context/graph?'),
     );
   });
 
@@ -87,7 +64,7 @@ describe('useGraphTraversal', () => {
     apiMocks.mockGet.mockRejectedValue(new Error('Network error'));
 
     const { result } = renderHook(() =>
-      useGraphTraversal('cand-1', 'workspace_person', 'wp-1'),
+      useGraphTraversal('cand-1', 'wp-1', 'person'),
     );
 
     await waitFor(() => {
@@ -100,7 +77,7 @@ describe('useGraphTraversal', () => {
 
   it('clears graph when candidateId becomes null', () => {
     const { result, rerender } = renderHook(
-      ({ candidateId }) => useGraphTraversal(candidateId, 'workspace_person', 'wp-1'),
+      ({ candidateId }) => useGraphTraversal(candidateId, 'wp-1', 'person'),
       { initialProps: { candidateId: null as string | null } },
     );
 

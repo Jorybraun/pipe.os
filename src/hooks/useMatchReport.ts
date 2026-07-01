@@ -11,8 +11,7 @@ export interface UseMatchReportResult {
 
 export function useMatchReport(
   candidateId: string | null,
-  packetId: string | null,
-  matchRunId?: string | null,
+  challengePacketId: string | null,
 ): UseMatchReportResult {
   const api = useApiClient();
   const [report, setReport] = useState<UnifiedMatchReport | null>(null);
@@ -20,31 +19,29 @@ export function useMatchReport(
   const [error, setError] = useState<Error | null>(null);
 
   const refetch = useCallback(async (): Promise<void> => {
-    if (!candidateId || !packetId) return;
+    if (!candidateId || !challengePacketId) return;
     setIsLoading(true);
     setError(null);
     try {
-      let url = `/api/v1/candidates/${encodeURIComponent(candidateId)}/living-context/match-report?packetId=${encodeURIComponent(packetId)}`;
-      if (matchRunId) {
-        url += `&matchRunId=${encodeURIComponent(matchRunId)}`;
-      }
-      const response = await api.get<UnifiedMatchReport>(url);
+      const response = await api.get<UnifiedMatchReport>(
+        `/api/v1/candidates/${encodeURIComponent(candidateId)}/living-context/match-report?challengePacketId=${encodeURIComponent(challengePacketId)}`,
+      );
       setReport(response);
     } catch (cause) {
-      console.error('[useMatchReport] fetch failed:', { candidateId, packetId, cause });
+      console.error('[useMatchReport] fetch failed:', { candidateId, challengePacketId, cause });
       setError(cause instanceof Error ? cause : new Error('Failed to load match report'));
     } finally {
       setIsLoading(false);
     }
-  }, [api, candidateId, packetId, matchRunId]);
+  }, [api, candidateId, challengePacketId]);
 
   useEffect(() => {
-    if (candidateId && packetId) {
+    if (candidateId && challengePacketId) {
       void refetch();
     } else {
       setReport(null);
     }
-  }, [refetch, candidateId, packetId]);
+  }, [refetch, candidateId, challengePacketId]);
 
   return { report, isLoading, error, refetch };
 }

@@ -1,5 +1,9 @@
-import { useState, useEffect, useCallback } from 'react';
-import type { MatchDecisionHistory, MatchDecisionVerdict } from '../lib/api/types';
+import { useCallback, useEffect, useState } from 'react';
+import type {
+  MatchDecisionHistory,
+  MatchDecisionResult,
+  MatchDecisionVerdict,
+} from '../lib/api/types';
 import { useApiClient } from './useApiClient';
 
 export interface UseMatchDecisionsResult {
@@ -7,11 +11,10 @@ export interface UseMatchDecisionsResult {
   isLoading: boolean;
   error: Error | null;
   refetch: () => Promise<void>;
-  recordDecision: (params: RecordDecisionParams) => Promise<void>;
-  isRecording: boolean;
+  recordDecision: (input: RecordDecisionInput) => Promise<MatchDecisionResult>;
 }
 
-export interface RecordDecisionParams {
+export interface RecordDecisionInput {
   matchRunId: string;
   challengeId: string;
   repoId: string;
@@ -29,7 +32,6 @@ export function useMatchDecisions(
   const [history, setHistory] = useState<MatchDecisionHistory | null>(null);
   const [isLoading, setIsLoading] = useState(false);
   const [error, setError] = useState<Error | null>(null);
-  const [isRecording, setIsRecording] = useState(false);
 
   const refetch = useCallback(async (): Promise<void> => {
     if (!candidateId) return;
@@ -48,6 +50,16 @@ export function useMatchDecisions(
     }
   }, [api, candidateId]);
 
+  const recordDecision = useCallback(async (input: RecordDecisionInput): Promise<MatchDecisionResult> => {
+    if (!candidateId) throw new Error('candidateId required');
+    const result = await api.post<MatchDecisionResult>(
+      `/api/v1/candidates/${encodeURIComponent(candidateId)}/living-context/match-decisions`,
+      input,
+    );
+    void refetch();
+    return result;
+  }, [api, candidateId, refetch]);
+
   useEffect(() => {
     if (candidateId) {
       void refetch();
@@ -56,22 +68,5 @@ export function useMatchDecisions(
     }
   }, [refetch, candidateId]);
 
-  const recordDecision = useCallback(async (params: RecordDecisionParams): Promise<void> => {
-    if (!candidateId) return;
-    setIsRecording(true);
-    try {
-      await api.post(
-        `/api/v1/candidates/${encodeURIComponent(candidateId)}/living-context/match-decision`,
-        params,
-      );
-      await refetch();
-    } catch (cause) {
-      console.error('[useMatchDecisions] record failed:', { candidateId, cause });
-      throw cause instanceof Error ? cause : new Error('Failed to record decision');
-    } finally {
-      setIsRecording(false);
-    }
-  }, [api, candidateId, refetch]);
-
-  return { history, isLoading, error, refetch, recordDecision, isRecording };
+  return { history, isLoading, error, refetch, recordDecision };
 }

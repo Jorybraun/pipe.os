@@ -7,6 +7,14 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Added — Living Context Graph API
+
+- Added 10 new API endpoints under `/api/v1/candidates/:candidateId/living-context/` for full living context graph operations: concept merge/split/evolution, evidence semantic search, BFS graph traversal, unified match report, staleness alerts, match decision audit (record + history), and repo decomposition overlay.
+- Extended `livingContext/index.ts` barrel exports to surface concept evolution, semantic search, graph traversal, match report pipeline, staleness alerts, match decision audit, repo decomposition overlay, and match confidence scoring modules.
+- Added frontend types for concept evolution (timeline, merge/split results), evidence semantic search (hits + provenance), and search strategy.
+- Added frontend hooks: `useConceptEvolution`, `useEvidenceSearch`, `useGraphTraversal`, `useMatchReport`, `useStalenessAlerts`, `useMatchDecisions`.
+- Added `MatchDecisionResult` interface to frontend API types for match decision audit responses.
+
 ### Fixed — Route performance
 
 - Contacts list responses are now paginated by default and the People page loads additional pages on demand, preventing large relationship graphs from shipping unbounded multi-megabyte `/api/v1/contacts` payloads.

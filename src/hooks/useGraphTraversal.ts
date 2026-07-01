@@ -1,60 +1,54 @@
 import { useCallback, useEffect, useState } from 'react';
-import type { GraphEntityType, GraphTraversalResult, GraphTraversalOptions } from '../lib/api/types';
+import type { GraphTraversalResult, GraphEntityType } from '../lib/api/types';
 import { useApiClient } from './useApiClient';
 
 export interface UseGraphTraversalResult {
   graph: GraphTraversalResult | null;
   isLoading: boolean;
   error: Error | null;
-  traverse: (entityType: GraphEntityType, entityId: string, options?: GraphTraversalOptions) => Promise<void>;
+  refetch: () => Promise<void>;
 }
 
 export function useGraphTraversal(
   candidateId: string | null,
-  initialEntityType?: GraphEntityType | null,
-  initialEntityId?: string | null,
+  startId: string | null,
+  startType: GraphEntityType = 'person',
+  depth: number = 3,
 ): UseGraphTraversalResult {
   const api = useApiClient();
   const [graph, setGraph] = useState<GraphTraversalResult | null>(null);
   const [isLoading, setIsLoading] = useState(false);
   const [error, setError] = useState<Error | null>(null);
 
-  const traverse = useCallback(async (
-    entityType: GraphEntityType,
-    entityId: string,
-    options?: GraphTraversalOptions,
-  ): Promise<void> => {
-    if (!candidateId) return;
+  const refetch = useCallback(async (): Promise<void> => {
+    if (!candidateId || !startId) return;
     setIsLoading(true);
     setError(null);
     try {
-      let url = `/api/v1/candidates/${encodeURIComponent(candidateId)}/living-context/graph-traversal?entityType=${encodeURIComponent(entityType)}&entityId=${encodeURIComponent(entityId)}`;
-      if (options?.maxDepth !== undefined) {
-        url += `&maxDepth=${options.maxDepth}`;
-      }
-      if (options?.maxNodes !== undefined) {
-        url += `&maxNodes=${options.maxNodes}`;
-      }
-      if (options?.entityTypeFilter?.length) {
-        url += `&entityTypeFilter=${options.entityTypeFilter.join(',')}`;
-      }
-      const response = await api.get<GraphTraversalResult>(url);
+      const params = new URLSearchParams({
+        startId,
+        startType,
+        depth: String(depth),
+      });
+      const response = await api.get<GraphTraversalResult>(
+        `/api/v1/candidates/${encodeURIComponent(candidateId)}/living-context/graph?${params}`,
+      );
       setGraph(response);
     } catch (cause) {
-      console.error('[useGraphTraversal] fetch failed:', { candidateId, entityType, entityId, cause });
-      setError(cause instanceof Error ? cause : new Error('Failed to load graph traversal'));
+      console.error('[useGraphTraversal] fetch failed:', { candidateId, startId, cause });
+      setError(cause instanceof Error ? cause : new Error('Failed to load graph'));
     } finally {
       setIsLoading(false);
     }
-  }, [api, candidateId]);
+  }, [api, candidateId, startId, startType, depth]);
 
   useEffect(() => {
-    if (candidateId && initialEntityType && initialEntityId) {
-      void traverse(initialEntityType, initialEntityId);
+    if (candidateId && startId) {
+      void refetch();
     } else {
       setGraph(null);
     }
-  }, [candidateId, initialEntityType, initialEntityId, traverse]);
+  }, [refetch, candidateId, startId]);
 
-  return { graph, isLoading, error, traverse };
+  return { graph, isLoading, error, refetch };
 }

@@ -32,7 +32,7 @@ describe('useMatchReport', () => {
     expect(apiMocks.mockGet).not.toHaveBeenCalled();
   });
 
-  it('returns null report when packetId is null', () => {
+  it('returns null report when challengePacketId is null', () => {
     const { result } = renderHook(() => useMatchReport('cand-1', null));
     expect(result.current.report).toBeNull();
     expect(result.current.isLoading).toBe(false);
@@ -63,20 +63,8 @@ describe('useMatchReport', () => {
 
     expect(result.current.report?.verdict.verdict).toBe('likely_match');
     expect(apiMocks.mockGet).toHaveBeenCalledWith(
-      '/api/v1/candidates/cand-1/living-context/match-report?packetId=pkt-1',
+      '/api/v1/candidates/cand-1/living-context/match-report?challengePacketId=pkt-1',
     );
-  });
-
-  it('includes matchRunId in URL when provided', async () => {
-    apiMocks.mockGet.mockResolvedValue({ verdict: { verdict: 'strong_match' } });
-
-    renderHook(() => useMatchReport('cand-1', 'pkt-1', 'run-42'));
-
-    await waitFor(() => {
-      expect(apiMocks.mockGet).toHaveBeenCalledWith(
-        '/api/v1/candidates/cand-1/living-context/match-report?packetId=pkt-1&matchRunId=run-42',
-      );
-    });
   });
 
   it('sets error on fetch failure', async () => {

@@ -1905,6 +1905,13 @@ export interface MatchDecisionHistoryEntry {
   recordedAt: string;
 }
 
+export interface MatchDecisionResult {
+  success: boolean;
+  decisionId: string;
+  contextRecordId: string;
+  candidateId: string;
+}
+
 export interface MatchDecisionHistory {
   candidateId: string;
   decisions: MatchDecisionHistoryEntry[];
@@ -2277,3 +2284,81 @@ export interface CandidateComparisonReport {
   conceptComparisons: ConceptComparison[];
   summary: ComparisonSummary;
 }
+
+// ── Concept Evolution ─────────────────────────────────────────────────────────
+
+export type EvolutionEventType = 'merge' | 'split' | 'alias_added' | 'superseded';
+
+export interface ConceptEvolutionEvent {
+  id: string;
+  eventType: EvolutionEventType;
+  conceptId: string;
+  relatedConceptId: string | null;
+  reason: string;
+  metadata: Record<string, unknown>;
+  occurredAt: string;
+}
+
+export interface ConceptEvolutionTimeline {
+  conceptId: string;
+  canonicalKey: string;
+  label: string;
+  events: ConceptEvolutionEvent[];
+  supersessionChain: SupersessionLink[];
+}
+
+export interface SupersessionLink {
+  fromConceptId: string;
+  toConceptId: string;
+  eventType: EvolutionEventType;
+  occurredAt: string;
+}
+
+export interface MergeConceptsResult {
+  survivorConceptId: string;
+  survivorCanonicalKey: string;
+  mergedCount: number;
+  surfacesRepointed: number;
+  adjacenciesRepointed: number;
+  evolutionEventIds: string[];
+}
+
+export interface SplitConceptResult {
+  newConceptId: string;
+  newCanonicalKey: string;
+  surfacesMoved: number;
+  evolutionEventId: string;
+}
+
+// ── Evidence Semantic Search ──────────────────────────────────────────────────
+
+export type SearchStrategy = 'text' | 'concept' | 'hybrid';
+export type EvidenceHitType = 'source_span' | 'assertion' | 'signal_evidence';
+
+export interface EvidenceHitProvenance {
+  interactionId: string | null;
+  interactionType: string | null;
+  interactionOccurredAt: string | null;
+}
+
+export interface EvidenceSearchHit {
+  id: string;
+  hitType: EvidenceHitType;
+  content: string;
+  score: number;
+  conceptKeys: string[];
+  confidence: number | null;
+  provenance: EvidenceHitProvenance;
+  sourceSpanId: string | null;
+  charStart: number | null;
+  charEnd: number | null;
+}
+
+export interface EvidenceSearchResult {
+  query: string;
+  strategy: SearchStrategy;
+  totalHits: number;
+  hits: EvidenceSearchHit[];
+}
+
+
