@@ -158,7 +158,15 @@ export function AssessmentStatusStrip({
   const workspaceReady = statusInfo.state === 'ready';
   const workspaceRecoverable = canRecoverWorkspace(workspace);
   const challengeNeedsAttention = workspace?.challenge.status === 'missing_reviewable_task';
-  const nextAction = assessmentProgress?.nextActionLabel ?? (workspace?.enabled
+  const packetMissingFields = assessmentProgress?.challengePacketContract?.isComplete === false
+    ? assessmentProgress.challengePacketContract.missingFields
+    : [];
+  const challengeSetupAction = packetMissingFields.length > 0
+    ? `Complete challenge packet: missing ${packetMissingFields.join(', ')}`
+    : challengeNeedsAttention
+      ? 'Assign a GitHub PR or complete source-backed task packet before launching'
+      : null;
+  const nextAction = challengeSetupAction ?? assessmentProgress?.nextActionLabel ?? (workspace?.enabled
     ? workspaceReady
       ? 'Commit changes, then submit work'
       : canLaunchWorkspace

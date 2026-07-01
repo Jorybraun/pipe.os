@@ -295,5 +295,63 @@ describe('AssessmentStatusStrip', () => {
     expect(screen.getByTestId('assessment-next-action').textContent).toContain(
       'Repo matched, but no reviewable PR or task is configured.',
     );
+    expect(screen.getByText('Assign a GitHub PR or complete source-backed task packet before launching')).not.toBeNull();
+    expect(screen.queryByTestId('assessment-launch-workspace')).toBeNull();
+  });
+
+  it('prioritizes incomplete packet fields over a generic progress action', () => {
+    render(
+      <AssessmentStatusStrip
+        meetingType="DEV_CONTAINER_CHALLENGE"
+        workspace={workspace({
+          canLaunch: false,
+          challenge: {
+            status: 'repo_task_assigned',
+            kind: 'repo_only',
+            source: 'scheduled_interview.challenge_packet',
+            message: null,
+            packet: {
+              ...challengePacket,
+              exactText: [
+                'Repo: https://github.com/pipe/source-backed-worker',
+                'Base commit: dddddddddddddddddddddddddddddddddddddddd',
+                'Task: Fix the source-backed worker retry path.',
+                'Success criteria:',
+                '- Retry order remains deterministic',
+              ].join('\n'),
+            },
+          },
+          session: null,
+        })}
+        assessmentProgress={{
+          ...progress,
+          stage: 'WAITING_FOR_CHALLENGE',
+          nextAction: 'ASSIGN_CHALLENGE',
+          nextActionLabel: 'Assign a concrete repo challenge packet.',
+          challengePacketContract: {
+            schemaVersion: 'challenge-packet-contract-v1',
+            isComplete: false,
+            missingFields: ['expected evidence'],
+            hasRepositoryUrl: true,
+            hasBaseCommitSha: true,
+            hasTask: true,
+            hasSuccessCriteria: true,
+            hasExpectedEvidence: false,
+          },
+          readiness: {
+            ...progress.readiness!,
+            status: 'WAITING_FOR_CHALLENGE',
+            label: 'Waiting for challenge',
+            detail: 'Assign expected evidence before candidate work starts.',
+            isReadyForEvaluation: false,
+            missingRequiredCount: 1,
+          },
+        }}
+      />,
+    );
+
+    expect(screen.getByText('Complete challenge packet: missing expected evidence')).not.toBeNull();
+    expect(screen.queryByText('Assign a concrete repo challenge packet.')).toBeNull();
+    expect(screen.queryByTestId('assessment-launch-workspace')).toBeNull();
   });
 });

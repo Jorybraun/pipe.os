@@ -308,6 +308,11 @@ export interface AssessmentProgressChallengePacketContract {
   hasExpectedEvidence: boolean;
 }
 
+export type AssessmentProgressChallengePacketContractInput = Pick<
+  AssessmentProgressSourceRef,
+  'exactText' | 'locator'
+>;
+
 export interface AssessmentProgressLatestEvent {
   id: string;
   kind: string;
@@ -1145,8 +1150,8 @@ function hasValidGitHubRepositoryUrl(value: string | null): boolean {
   }
 }
 
-function challengePacketContract(
-  challenge: AssessmentProgressSourceRef | null,
+export function challengePacketContract(
+  challenge: AssessmentProgressChallengePacketContractInput | null,
 ): AssessmentProgressChallengePacketContract {
   if (!challenge) {
     return {
@@ -1191,14 +1196,14 @@ function challengePacketContract(
   return contract;
 }
 
-function challengeRepositoryUrl(challenge: AssessmentProgressSourceRef): string | null {
+function challengeRepositoryUrl(challenge: AssessmentProgressChallengePacketContractInput): string | null {
   return stringLocatorValue(challenge.locator, 'repositoryUrl')
     ?? stringLocatorValue(challenge.locator, 'githubRepoUrl')
     ?? stringLocatorValue(challenge.locator, 'repoUrl')
     ?? challengePacketLineValue(challenge.exactText, ['Repo', 'Repository']);
 }
 
-function challengeBaseCommitSha(challenge: AssessmentProgressSourceRef): string | null {
+function challengeBaseCommitSha(challenge: AssessmentProgressChallengePacketContractInput): string | null {
   return stringLocatorValue(challenge.locator, 'baseCommitSha')
     ?? stringLocatorValue(challenge.locator, 'baseCommit')
     ?? challengePacketLineValue(challenge.exactText, ['Base commit', 'Base commit SHA', 'Base']);

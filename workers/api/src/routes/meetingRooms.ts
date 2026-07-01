@@ -23,6 +23,7 @@ import {
 } from '../lib/devContainerTtl';
 import {
   RepoTaskInterviewSessionStore,
+  challengePacketContract,
   type AssessmentActorType,
   type AssessmentProgressSnapshot,
   type CommitSubmissionChangedFileStatus,
@@ -1279,6 +1280,22 @@ function buildRoomWorkspaceChallenge(
   };
 }
 
+function roomWorkspaceLaunchBlocker(input: {
+  enabled: boolean;
+  challenge: RoomWorkspaceChallengePayload;
+}): string | null {
+  if (!input.enabled) return 'Workspace is only available for dev-container interviews.';
+  if (input.challenge.status === 'missing_reviewable_task') {
+    return input.challenge.message
+      ?? 'Assign a GitHub PR or complete source-backed task packet before launching the workspace.';
+  }
+  if (input.challenge.status !== 'repo_task_assigned') return null;
+
+  const contract = challengePacketContract(input.challenge.packet);
+  if (contract.isComplete) return null;
+  return `Complete the source-backed challenge packet before launching the workspace. Missing ${contract.missingFields.join(', ')}.`;
+}
+
 function serializeWorkspaceSession(
   token: string,
   session: DevContainerSessionRow | null,
@@ -1375,13 +1392,14 @@ async function buildRoomWorkspacePayload(
   const session = await getLatestSessionForRoom(db, room.room_id).catch(() => null);
   const challengePacket = enabled ? await loadRoomWorkspaceChallengePacket(db, room) : null;
   const repoUrl = interview?.github_repo_url ?? session?.repo_git_url ?? null;
+  const challenge = buildRoomWorkspaceChallenge(interview, enabled, challengePacket);
   return {
     enabled,
-    canLaunch: enabled && room.role === 'HOST',
+    canLaunch: enabled && room.role === 'HOST' && !roomWorkspaceLaunchBlocker({ enabled, challenge }),
     repoUrl,
     githubPrNumber: interview?.github_pr_number ?? null,
     matchedRepoId: interview?.matched_repo_id ?? null,
-    challenge: buildRoomWorkspaceChallenge(interview, enabled, challengePacket),
+    challenge,
     session: serializeWorkspaceSession(token, session),
   };
 }
@@ -2281,6 +2299,13 @@ meetingRooms.post('/:token/workspace/launch', async (c) => {
   const workspace = await buildRoomWorkspacePayload(c.env.DB, token, room);
   if (!workspace.enabled) {
     return apiError(c, 'FORBIDDEN', 'Workspace is only available for dev-container interviews.');
+  }
+  const launchBlocker = roomWorkspaceLaunchBlocker({
+    enabled: workspace.enabled,
+    challenge: workspace.challenge,
+  });
+  if (launchBlocker) {
+    return apiError(c, 'CONFLICT', launchBlocker);
   }
   let body: z.infer<typeof workspaceLaunchSchema> = {};
   try {

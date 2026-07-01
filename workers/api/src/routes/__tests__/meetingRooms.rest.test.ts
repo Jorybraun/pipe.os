@@ -3464,12 +3464,8 @@ describe('meeting room recording living-context route', () => {
 
   it('surfaces a matched repo without a PR as a missing reviewable task diagnostic', async () => {
     const app = mountApp();
-    const { ctx, waitUntilAll } = buildCtx();
-    const initBodies: unknown[] = [];
-    const doFetch = vi.fn(async (_url: string, init?: RequestInit) => {
-      initBodies.push(JSON.parse(String(init?.body ?? '{}')));
-      return new Response(null, { status: 204 });
-    });
+    const { ctx } = buildCtx();
+    const doFetch = vi.fn(async () => new Response(null, { status: 204 }));
     env.DEV_CONTAINER = {
       idFromName: vi.fn(() => ({}) as DurableObjectId),
       get: vi.fn(() => ({ fetch: doFetch }) as unknown as DurableObjectStub),
@@ -3501,12 +3497,13 @@ describe('meeting room recording living-context route', () => {
       hostToken: string;
     };
 
-    const launchRes = await app.request(`/meeting/${created.hostToken}/workspace/launch`, {
-      method: 'POST',
+    const workspaceRes = await app.request(`/meeting/${created.hostToken}/workspace`, {
+      method: 'GET',
     }, env, ctx);
-    expect(launchRes.status).toBe(201);
-    const body = await launchRes.json() as {
+    expect(workspaceRes.status).toBe(200);
+    const workspaceBody = await workspaceRes.json() as {
       workspace: {
+        canLaunch: boolean;
         repoUrl: string;
         githubPrNumber: number | null;
         matchedRepoId: number;
@@ -3516,38 +3513,35 @@ describe('meeting room recording living-context route', () => {
           source: string;
           message: string | null;
         };
-        session: { sessionId: string };
+        session: null;
       };
     };
-
-    expect(body.workspace.repoUrl).toBe('https://github.com/pipe/source-backed-worker');
-    expect(body.workspace.githubPrNumber).toBeNull();
-    expect(body.workspace.matchedRepoId).toBe(987);
-    expect(body.workspace.challenge).toMatchObject({
+    expect(workspaceBody.workspace.canLaunch).toBe(false);
+    expect(workspaceBody.workspace.repoUrl).toBe('https://github.com/pipe/source-backed-worker');
+    expect(workspaceBody.workspace.githubPrNumber).toBeNull();
+    expect(workspaceBody.workspace.matchedRepoId).toBe(987);
+    expect(workspaceBody.workspace.challenge).toMatchObject({
       status: 'missing_reviewable_task',
       kind: 'repo_only',
       source: 'matched_repo_without_pr',
     });
-    expect(body.workspace.challenge.message).toContain('no GitHub PR or task was assigned');
-    await waitUntilAll();
+    expect(workspaceBody.workspace.challenge.message).toContain('no GitHub PR or task was assigned');
 
+    const launchRes = await app.request(`/meeting/${created.hostToken}/workspace/launch`, {
+      method: 'POST',
+    }, env, ctx);
+    expect(launchRes.status).toBe(409);
+    const body = await launchRes.json() as {
+      error: { code: string; message: string };
+    };
+
+    expect(body.error.code).toBe('CONFLICT');
+    expect(body.error.message).toContain('no GitHub PR or task was assigned');
     expect(sqlite.prepare(
-      `SELECT repo_git_url, challenge_branch
-         FROM dev_container_sessions
-        WHERE session_id = ?`,
-    ).get(body.workspace.session.sessionId)).toEqual({
-      repo_git_url: 'https://github.com/pipe/source-backed-worker',
-      challenge_branch: null,
-    });
-    expect(initBodies).toContainEqual(expect.objectContaining({
-      repoGitUrl: 'https://github.com/pipe/source-backed-worker',
-      challengeBranch: null,
-      matchedRepoId: 987,
-      githubPrNumber: null,
-      challengeStatus: 'missing_reviewable_task',
-      challengeKind: 'repo_only',
-      challengeSource: 'matched_repo_without_pr',
-    }));
+      `SELECT COUNT(*) AS count
+         FROM dev_container_sessions`,
+    ).get()).toEqual({ count: 0 });
+    expect(doFetch).not.toHaveBeenCalled();
   });
 
   it('returns the source-backed open-source challenge packet in room workspace payloads without internal ids', async () => {
@@ -3697,6 +3691,144 @@ describe('meeting room recording living-context route', () => {
     expect(serialized).not.toContain(assessmentSessionId);
     expect(serialized).not.toContain(eventId);
     expect(serialized).not.toContain(sourceRefId);
+  });
+
+  it('blocks workspace launch when the open-source challenge packet is incomplete', async () => {
+    const app = mountApp();
+    const { ctx } = buildCtx();
+    sqlite.exec(assessmentLayerMigration);
+    const doFetch = vi.fn(async () => new Response(null, { status: 204 }));
+    env.DEV_CONTAINER = {
+      idFromName: vi.fn(() => ({}) as DurableObjectId),
+      get: vi.fn(() => ({ fetch: doFetch }) as unknown as DurableObjectStub),
+    } as unknown as DurableObjectNamespace;
+
+    const now = new Date().toISOString();
+    const scheduledInterviewId = 'scheduled-interview-incomplete-workspace-packet';
+    const assessmentSessionId = 'assessment-session-incomplete-workspace-packet';
+    const eventId = 'assessment-event-incomplete-workspace-packet';
+    const baseCommitSha = 'e'.repeat(40);
+    const packetText = [
+      'Repo: https://github.com/pipe/source-backed-worker',
+      `Base commit: ${baseCommitSha}`,
+      'Task: Fix the source-backed worker retry path.',
+      'Success criteria:',
+      '- Retry order remains deterministic',
+    ].join('\n');
+
+    sqlite.prepare(
+      `INSERT INTO scheduled_interviews (
+         id, owner_id, recipient_name, recipient_email, interview_type,
+         github_repo_url, github_pr_number, status, updated_at
+       ) VALUES (?, ?, ?, ?, 'OPEN_SOURCE_BUG_FIX', ?, NULL, 'INVITED', ?)`,
+    ).run(
+      scheduledInterviewId,
+      'owner-1',
+      'Incomplete Packet Candidate',
+      'incomplete-packet-candidate@example.com',
+      'https://github.com/pipe/source-backed-worker',
+      now,
+    );
+
+    const createMeetingRes = await app.request('/meetings', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({
+        recipientName: 'Incomplete Packet Candidate',
+        recipientEmail: 'incomplete-packet-candidate@example.com',
+        title: 'Incomplete open-source packet room',
+        meetingType: 'INTERVIEW',
+        scheduledInterviewId,
+      }),
+    }, env, ctx);
+    expect(createMeetingRes.status).toBe(201);
+    const created = await createMeetingRes.json() as {
+      hostToken: string;
+    };
+
+    sqlite.prepare(
+      `INSERT INTO assessment_sessions (
+         id, ingestion_key, interview_id, mode, state, candidate_id, workspace_id,
+         created_by, metadata_json, created_at, updated_at
+       ) VALUES (?, ?, ?, 'OPEN_SOURCE_BUG_FIX', 'IN_PROGRESS', NULL, ?, ?, '{}', ?, ?)`,
+    ).run(
+      assessmentSessionId,
+      `assessment-session:open-source:${scheduledInterviewId}`,
+      scheduledInterviewId,
+      'owner-1',
+      'owner-1',
+      now,
+      now,
+    );
+    sqlite.prepare(
+      `INSERT INTO assessment_evidence_events (
+         id, ingestion_key, session_id, sequence, kind, actor_type, actor_id,
+         narrative, payload_json, occurred_at, created_at
+       ) VALUES (?, ?, ?, 1, 'recruiter_note', 'recruiter', ?, ?, ?, ?, ?)`,
+    ).run(
+      eventId,
+      `assessment-event:${assessmentSessionId}:manual-open-source-challenge`,
+      assessmentSessionId,
+      'owner-1',
+      'Recruiter assigned an incomplete open-source implementation challenge packet.',
+      JSON.stringify({
+        repositoryUrl: 'https://github.com/pipe/source-backed-worker',
+        baseCommitSha,
+      }),
+      now,
+      now,
+    );
+    sqlite.prepare(
+      `INSERT INTO assessment_event_source_refs (
+         id, event_id, source_ref_type, source_ref_id, evidence_role,
+         locator_json, exact_text, content_hash, metadata_json, created_at
+       ) VALUES (?, ?, 'open_source_challenge_packet', ?, 'assigned_challenge', ?, ?, ?, '{}', ?)`,
+    ).run(
+      'assessment-source-incomplete-workspace-packet',
+      eventId,
+      `scheduled-interview:${scheduledInterviewId}:open-source-challenge:source-ref-secret`,
+      JSON.stringify({
+        repositoryUrl: 'https://github.com/pipe/source-backed-worker',
+        baseCommitSha,
+      }),
+      packetText,
+      'sha256:incomplete-packet-content-hash',
+      now,
+    );
+
+    const workspaceRes = await app.request(`/meeting/${created.hostToken}/workspace`, {
+      method: 'GET',
+    }, env, ctx);
+    expect(workspaceRes.status).toBe(200);
+    const workspaceBody = await workspaceRes.json() as {
+      workspace: {
+        canLaunch: boolean;
+        challenge: {
+          status: string;
+          packet: {
+            exactText: string;
+          } | null;
+        };
+      };
+    };
+    expect(workspaceBody.workspace.canLaunch).toBe(false);
+    expect(workspaceBody.workspace.challenge.status).toBe('repo_task_assigned');
+    expect(workspaceBody.workspace.challenge.packet?.exactText).toBe(packetText);
+
+    const launchRes = await app.request(`/meeting/${created.hostToken}/workspace/launch`, {
+      method: 'POST',
+    }, env, ctx);
+    expect(launchRes.status).toBe(409);
+    const launchBody = await launchRes.json() as {
+      error: { code: string; message: string };
+    };
+    expect(launchBody.error.code).toBe('CONFLICT');
+    expect(launchBody.error.message).toContain('Missing expected evidence');
+    expect(sqlite.prepare(
+      `SELECT COUNT(*) AS count
+         FROM dev_container_sessions`,
+    ).get()).toEqual({ count: 0 });
+    expect(doFetch).not.toHaveBeenCalled();
   });
 
   it('treats matched open-source PR packets as repo-task assignments and launches from the packet base commit', async () => {

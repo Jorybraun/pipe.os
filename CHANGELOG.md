@@ -13,6 +13,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Fixed — Open-source assessment progress
 
+- Dev-container workspace launch now fails closed unless the room has a GitHub PR or a complete source-backed open-source challenge packet, preventing repo-only matches from becoming unreviewable candidate work.
 - Person-profile route-state proof summaries now require parsed source proof items before they appear in the decision card.
 - Person-profile next-action CTAs now suppress duplicate code-review assessment creation when the selected decision is still waiting on candidate review evidence.
 - Workspace assessment work packets now quantify captured AI prompt and agent-response evidence, so hiring managers can distinguish observed AI assistance from unobserved AI use.
