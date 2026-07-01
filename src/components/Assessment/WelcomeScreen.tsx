@@ -469,7 +469,7 @@ export function WelcomeScreen({
           </div>
         )}
 
-        {/* Start button */}
+        {/* Primary assessment action */}
         <button
           data-testid="start-interview-btn"
           onClick={onStart}
