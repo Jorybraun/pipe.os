@@ -15,6 +15,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 ### Added — Route performance
 
 - Added an API route benchmark harness for local Worker routes, including optional local D1 seeding, expected-status checks, latency thresholds, and a `bench:routes` package script.
+- Expanded the API route benchmark harness with source-route coverage reporting and additional read-safe route families across ingestion, scheduling, repo discovery, living context, and admin diagnostics.
 
 ### Fixed — CODE_REVIEW assessment runtime
 

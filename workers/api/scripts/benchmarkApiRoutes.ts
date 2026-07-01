@@ -12,15 +12,18 @@ interface CliOptions {
   seedLocal: boolean;
   includeExternal: boolean;
   includeMutations: boolean;
+  coverageReport: boolean;
   contacts: number;
   pipelines: number;
   repos: number;
   meetings: number;
 }
 
+type HttpMethod = 'GET' | 'POST' | 'PUT' | 'PATCH' | 'DELETE';
+
 interface RouteSpec {
   name: string;
-  method: 'GET' | 'POST';
+  method: HttpMethod;
   path: string;
   body?: () => Record<string, unknown>;
   expectedStatuses: number[];
@@ -48,6 +51,12 @@ interface RouteSummary {
   slow: boolean;
 }
 
+interface SourceRoute {
+  method: HttpMethod;
+  path: string;
+  source: string;
+}
+
 const DEFAULT_OPTIONS: CliOptions = {
   baseUrl: 'http://localhost:8787',
   samples: 7,
@@ -56,6 +65,7 @@ const DEFAULT_OPTIONS: CliOptions = {
   seedLocal: false,
   includeExternal: false,
   includeMutations: false,
+  coverageReport: true,
   contacts: 200_000,
   pipelines: 1_200,
   repos: 5_000,
@@ -66,16 +76,40 @@ let roleCreateCounter = 0;
 
 const ROUTES: RouteSpec[] = [
   { name: 'health', method: 'GET', path: '/health', expectedStatuses: [200] },
+  { name: 'api health alias', method: 'GET', path: '/api/health', expectedStatuses: [200] },
   { name: 'pipelines list default', method: 'GET', path: '/api/v1/pipelines', expectedStatuses: [200] },
   { name: 'pipelines list limit 100', method: 'GET', path: '/api/v1/pipelines?limit=100', expectedStatuses: [200] },
   { name: 'pipelines active search', method: 'GET', path: '/api/v1/pipelines?status=ACTIVE&q=Benchmark&limit=100', expectedStatuses: [200] },
+  { name: 'pipeline overview', method: 'GET', path: '/api/v1/pipelines/bench-pipeline-1/overview', expectedStatuses: [200] },
+  { name: 'pipeline ingestion list', method: 'GET', path: '/api/v1/pipelines/bench-pipeline-1/ingestion', expectedStatuses: [200] },
+  { name: 'pipeline ingestion feedback list', method: 'GET', path: '/api/v1/pipelines/bench-pipeline-1/ingestion/bench-candidate-8/feedback', expectedStatuses: [200] },
   { name: 'contacts list default', method: 'GET', path: '/api/v1/contacts', expectedStatuses: [200] },
   { name: 'contacts list page 2', method: 'GET', path: '/api/v1/contacts?page=2&limit=100', expectedStatuses: [200] },
   { name: 'meetings list', method: 'GET', path: '/api/v1/meetings', expectedStatuses: [200] },
+  { name: 'meeting room context summary missing', method: 'GET', path: '/api/v1/meeting-rooms/missing-token/context-summary', expectedStatuses: [404] },
+  { name: 'meeting room context graph missing', method: 'GET', path: '/api/v1/meeting-rooms/missing-token/context-graph', expectedStatuses: [404] },
   { name: 'admin repos pending', method: 'GET', path: '/api/v1/admin/repos?status=pending&limit=50', expectedStatuses: [200] },
   { name: 'admin repos all 500', method: 'GET', path: '/api/v1/admin/repos?status=all&limit=500', expectedStatuses: [200] },
+  { name: 'admin repos lookup existing', method: 'GET', path: '/api/v1/admin/repos/lookup?repoUrl=https%3A%2F%2Fgithub.com%2Fbench%2Frepo-0&suitability=any&minPass=1', expectedStatuses: [200] },
+  { name: 'admin ai usage summary', method: 'GET', path: '/api/v1/admin/ai-usage', expectedStatuses: [200] },
+  { name: 'admin ai usage sessions', method: 'GET', path: '/api/v1/admin/ai-usage/sessions?limit=20', expectedStatuses: [200] },
+  { name: 'repo discovery missing pipeline query', method: 'GET', path: '/api/v1/repos', expectedStatuses: [400] },
+  { name: 'repo discovery list empty', method: 'GET', path: '/api/v1/repos?pipelineId=bench-pipeline-1', expectedStatuses: [200] },
+  { name: 'repo discovery job missing', method: 'GET', path: '/api/v1/repos/jobs/missing-job', expectedStatuses: [404] },
+  { name: 'repo discovery detail missing', method: 'GET', path: '/api/v1/repos/missing-repo', expectedStatuses: [404] },
+  { name: 'repo discovery by skills disabled', method: 'POST', path: '/api/v1/repos/discover-by-skills', expectedStatuses: [410] },
+  { name: 'agent session empty', method: 'GET', path: '/api/v1/agent/session?pipelineId=bench-pipeline-1', expectedStatuses: [200] },
+  { name: 'email connection', method: 'GET', path: '/api/v1/email/connection', expectedStatuses: [200] },
+  { name: 'scheduling connection', method: 'GET', path: '/api/v1/scheduling/connection', expectedStatuses: [200] },
+  { name: 'scheduling event types missing connection', method: 'GET', path: '/api/v1/scheduling/event-types', expectedStatuses: [404] },
+  { name: 'scheduling interviews list', method: 'GET', path: '/api/v1/scheduling/interviews', expectedStatuses: [200] },
+  { name: 'scheduling interview detail missing', method: 'GET', path: '/api/v1/scheduling/interviews/missing-interview', expectedStatuses: [404] },
+  { name: 'scheduling room events snapshot', method: 'GET', path: '/api/v1/scheduling/room-events', expectedStatuses: [200] },
+  { name: 'scheduling events snapshot', method: 'GET', path: '/api/v1/scheduling/events', expectedStatuses: [200] },
   { name: 'phone connection', method: 'GET', path: '/api/v1/phone/connection', expectedStatuses: [200] },
+  { name: 'phone calls list', method: 'GET', path: '/api/v1/phone/calls?candidateId=bench-candidate-1', expectedStatuses: [200] },
   { name: 'culture cost dashboard', method: 'GET', path: '/api/v1/screening/culture/cost-dashboard', expectedStatuses: [200] },
+  { name: 'culture report missing', method: 'GET', path: '/api/v1/screening/culture/sessions/missing-session/report', expectedStatuses: [404] },
   { name: 'review judge examples', method: 'GET', path: '/api/v1/review-sessions/judge-examples', expectedStatuses: [200] },
   {
     name: 'talent resolve present',
@@ -98,17 +132,32 @@ const ROUTES: RouteSpec[] = [
     body: () => ({ inviteToken: 'bench-token-1' }),
     expectedStatuses: [200],
   },
+  { name: 'candidate ingestion status', method: 'GET', path: '/api/v1/candidates/bench-candidate-1/ingestion-status', expectedStatuses: [200] },
   { name: 'meeting room missing', method: 'GET', path: '/api/v1/meeting-rooms/missing-token', expectedStatuses: [404] },
   { name: 'rollout gate', method: 'GET', path: '/api/v1/internal/rollout-gate', expectedStatuses: [200] },
   { name: 'rollout gate gates', method: 'GET', path: '/api/v1/internal/rollout-gate/gates', expectedStatuses: [200] },
+  { name: 'rollout gate audit', method: 'GET', path: '/api/v1/internal/rollout-gate/audit?gateKey=living_context_read&limit=20', expectedStatuses: [200] },
   { name: 'living context health', method: 'GET', path: '/api/v1/internal/living-context-health', expectedStatuses: [200] },
+  { name: 'living context integrity', method: 'GET', path: '/api/v1/internal/living-context-integrity', expectedStatuses: [200] },
+  { name: 'evaluation readiness validation', method: 'GET', path: '/api/v1/internal/evaluation-readiness', expectedStatuses: [400] },
   { name: 'living context stats', method: 'GET', path: '/api/v1/internal/living-context-stats', expectedStatuses: [200] },
+  { name: 'living context backfill status', method: 'GET', path: '/api/v1/internal/living-context-backfill', expectedStatuses: [200] },
+  { name: 'concept graph overview', method: 'GET', path: '/api/v1/internal/concept-graph?limit=20', expectedStatuses: [200] },
+  { name: 'internal evidence readiness', method: 'GET', path: '/api/v1/internal/evidence-readiness?candidateId=bench-candidate-1', expectedStatuses: [200] },
+  { name: 'internal evidence conflicts', method: 'GET', path: '/api/v1/internal/evidence-conflicts?candidateId=bench-candidate-1', expectedStatuses: [200] },
   {
     name: 'search repos query',
     method: 'POST',
     path: '/api/v1/search/repos',
     body: () => ({ query: 'typescript react api performance', limit: 5 }),
     expectedStatuses: [200],
+  },
+  {
+    name: 'search candidates validation',
+    method: 'POST',
+    path: '/api/v1/search/candidates',
+    body: () => ({ query: 'typescript react api performance', limit: 5 }),
+    expectedStatuses: [422],
   },
   {
     name: 'search roles query',
@@ -121,9 +170,26 @@ const ROUTES: RouteSpec[] = [
   { name: 'challenge detail', method: 'GET', path: '/api/v1/challenges/bench-challenge-1', expectedStatuses: [200] },
   { name: 'candidate detail nested', method: 'GET', path: '/api/v1/candidates/bench-candidate-1', expectedStatuses: [200] },
   { name: 'candidate assignments empty', method: 'GET', path: '/api/v1/candidates/bench-candidate-1/assignments', expectedStatuses: [200] },
+  { name: 'candidate living search', method: 'GET', path: '/api/v1/candidates/bench-candidate-1/living-context/search?q=typescript', expectedStatuses: [200] },
+  { name: 'candidate living timeline', method: 'GET', path: '/api/v1/candidates/bench-candidate-1/living-context/timeline?limit=20', expectedStatuses: [200] },
+  { name: 'candidate living match narrative', method: 'GET', path: '/api/v1/candidates/bench-candidate-1/living-context/match-narrative', expectedStatuses: [200] },
+  { name: 'candidate living evidence depth', method: 'GET', path: '/api/v1/candidates/bench-candidate-1/living-context/evidence-depth', expectedStatuses: [200] },
+  { name: 'candidate living evidence readiness', method: 'GET', path: '/api/v1/candidates/bench-candidate-1/living-context/evidence-readiness', expectedStatuses: [200] },
+  { name: 'candidate living evidence conflicts', method: 'GET', path: '/api/v1/candidates/bench-candidate-1/living-context/evidence-conflicts', expectedStatuses: [200] },
+  { name: 'candidate living match history', method: 'GET', path: '/api/v1/candidates/bench-candidate-1/living-context/match-history?limit=20', expectedStatuses: [200] },
+  {
+    name: 'candidate compare same pipeline',
+    method: 'POST',
+    path: '/api/v1/candidates/compare',
+    body: () => ({ candidateIds: ['bench-candidate-1', 'bench-candidate-2'], pipelineId: 'bench-pipeline-0', conceptLimit: 5 }),
+    expectedStatuses: [200],
+  },
   { name: 'contact detail', method: 'GET', path: '/api/v1/contacts/bench-contact-1', expectedStatuses: [200] },
   { name: 'contact living summary', method: 'GET', path: '/api/v1/contacts/bench-contact-1/living-context/summary', expectedStatuses: [200] },
   { name: 'contact living full', method: 'GET', path: '/api/v1/contacts/bench-contact-1/living-context', expectedStatuses: [200] },
+  { name: 'contact living search', method: 'GET', path: '/api/v1/contacts/bench-contact-1/living-context/search?q=benchmark', expectedStatuses: [200] },
+  { name: 'contact living timeline', method: 'GET', path: '/api/v1/contacts/bench-contact-1/living-context/timeline?limit=20', expectedStatuses: [200] },
+  { name: 'contact living evidence depth', method: 'GET', path: '/api/v1/contacts/bench-contact-1/living-context/evidence-depth', expectedStatuses: [200] },
   { name: 'meeting detail', method: 'GET', path: '/api/v1/meetings/bench-meeting-1', expectedStatuses: [200] },
   { name: 'meeting interaction context', method: 'GET', path: '/api/v1/meetings/bench-meeting-1/interaction-context', expectedStatuses: [200] },
   {
@@ -135,6 +201,8 @@ const ROUTES: RouteSpec[] = [
   { name: 'admin repo detail', method: 'GET', path: '/api/v1/admin/repos/900000', expectedStatuses: [200] },
   { name: 'admin repo prs empty', method: 'GET', path: '/api/v1/admin/repos/900000/prs', expectedStatuses: [200] },
   { name: 'admin bulk ingest preview', method: 'GET', path: '/api/v1/admin/repos/bulk-ingest/preview', expectedStatuses: [200] },
+  { name: 'dev container sessions by pipeline', method: 'GET', path: '/api/v1/pipelines/bench-pipeline-1/dev-container-sessions', expectedStatuses: [200] },
+  { name: 'dev container session missing', method: 'GET', path: '/api/v1/dev-container-sessions/missing-session', expectedStatuses: [404] },
   { name: 'review report missing', method: 'GET', path: '/api/v1/review-sessions/missing-session/report', expectedStatuses: [404] },
   { name: 'review transcript missing', method: 'GET', path: '/api/v1/review-sessions/missing-session/transcript', expectedStatuses: [404] },
   {
@@ -156,6 +224,7 @@ const ROUTES: RouteSpec[] = [
     mutation: true,
   },
   { name: 'role context missing', method: 'GET', path: '/api/v1/role-contexts/missing-role-context', expectedStatuses: [404] },
+  { name: 'role context living missing', method: 'GET', path: '/api/v1/role-contexts/missing-role-context/living-context', expectedStatuses: [404] },
   { name: 'neo4j health', method: 'GET', path: '/api/v1/internal/neo4j-health', expectedStatuses: [200, 503], external: true },
   {
     name: 'dev test ai',
@@ -224,6 +293,9 @@ function parseArgs(argv: string[]): CliOptions {
       case '--include-mutations':
         options.includeMutations = true;
         break;
+      case '--no-coverage-report':
+        options.coverageReport = false;
+        break;
       case '--help':
         printHelp();
         process.exit(0);
@@ -247,6 +319,7 @@ Options:
   --seed-local           Seed the local Miniflare D1 database with benchmark rows
   --include-external     Include routes that call external providers / remote bindings
   --include-mutations    Include valid mutation routes such as simple JD creation
+  --no-coverage-report   Skip source route inventory coverage output
   --samples <n>          Timed samples per route after one warmup (default: 7)
   --threshold-ms <n>     Fail when any route sample reaches this latency (default: 5000)
   --timeout-ms <n>       Per-request timeout (default: 20000)
@@ -258,6 +331,196 @@ Options:
 
 function workerDir(): string {
   return path.resolve(path.dirname(fileURLToPath(import.meta.url)), '..');
+}
+
+function stripQuery(rawPath: string): string {
+  return rawPath.split('?')[0] ?? rawPath;
+}
+
+function parseStringLiteral(raw: string): string | null {
+  const trimmed = raw.trim();
+  const quote = trimmed[0];
+  if ((quote !== "'" && quote !== '"') || trimmed[trimmed.length - 1] !== quote) {
+    return null;
+  }
+  return trimmed.slice(1, -1);
+}
+
+function normalizeRoutePath(routePath: string): string {
+  if (routePath.length === 0) return '/';
+  const withoutTrailing = routePath.length > 1 ? routePath.replace(/\/+$/, '') : routePath;
+  return withoutTrailing.startsWith('/') ? withoutTrailing : `/${withoutTrailing}`;
+}
+
+function joinRoutePath(prefix: string, routePath: string): string {
+  const normalizedPrefix = prefix === '/' ? '' : prefix.replace(/\/+$/, '');
+  if (routePath === '/' || routePath.length === 0) return normalizeRoutePath(normalizedPrefix || '/');
+  const normalizedRoute = routePath.startsWith('/') ? routePath : `/${routePath}`;
+  return normalizeRoutePath(`${normalizedPrefix}${normalizedRoute}`);
+}
+
+function escapeRegExp(value: string): string {
+  return value.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
+}
+
+function sourcePatternToRegExp(pattern: string): RegExp {
+  const parts = normalizeRoutePath(pattern).split('/').map((part) => {
+    if (part.startsWith(':')) return '[^/]+';
+    return escapeRegExp(part);
+  });
+  return new RegExp(`^${parts.join('/')}$`);
+}
+
+function sourcePatternScore(pattern: string): number {
+  return pattern
+    .split('/')
+    .filter((part) => part.length > 0 && !part.startsWith(':'))
+    .join('/')
+    .length;
+}
+
+function parseImports(source: string, sourcePath: string): Map<string, string> {
+  const imported = new Map<string, string>();
+  const importRegex = /import\s+(?:([A-Za-z0-9_]+)|\{\s*([^}]+?)\s*\})\s+from\s+['"](.+?)['"]/gs;
+  let match: RegExpExecArray | null;
+  while ((match = importRegex.exec(source)) !== null) {
+    const defaultName = match[1];
+    const namedImports = match[2];
+    const importPath = match[3];
+    if (!importPath?.startsWith('.')) continue;
+    const resolved = path.resolve(path.dirname(sourcePath), importPath);
+    const tsPath = resolved.endsWith('.ts') ? resolved : `${resolved}.ts`;
+
+    if (defaultName) imported.set(defaultName, tsPath);
+    if (!namedImports) continue;
+
+    for (const rawPart of namedImports.split(',')) {
+      const part = rawPart.trim();
+      if (!part) continue;
+      const aliasMatch = /^([A-Za-z0-9_]+)\s+as\s+([A-Za-z0-9_]+)$/.exec(part);
+      imported.set(aliasMatch?.[2] ?? part, tsPath);
+    }
+  }
+  return imported;
+}
+
+function discoverHonoRouterNames(source: string): string[] {
+  const routers = new Set<string>();
+  const routerRegex = /const\s+([A-Za-z0-9_]+)\s*=\s*new\s+Hono\b/g;
+  let match: RegExpExecArray | null;
+  while ((match = routerRegex.exec(source)) !== null) {
+    if (match[1]) routers.add(match[1]);
+  }
+  return [...routers];
+}
+
+function collectSourceRoutes(
+  routerName: string,
+  filePath: string,
+  prefix: string,
+  seen: Set<string>,
+): SourceRoute[] {
+  const key = `${filePath}:${routerName}:${prefix}`;
+  if (seen.has(key)) return [];
+  seen.add(key);
+
+  let source: string;
+  try {
+    source = readFileSync(filePath, 'utf8');
+  } catch {
+    return [];
+  }
+
+  const routes: SourceRoute[] = [];
+  const imports = parseImports(source, filePath);
+  const routerNames = source.includes(`${routerName}.`)
+    ? [routerName]
+    : discoverHonoRouterNames(source);
+
+  for (const name of routerNames) {
+    const methodRegex = new RegExp(`${name}\\.(get|post|put|patch|delete)\\(\\s*([^,]+)`, 'g');
+    let match: RegExpExecArray | null;
+    while ((match = methodRegex.exec(source)) !== null) {
+      const method = match[1]?.toUpperCase() as HttpMethod | undefined;
+      const routePath = match[2] ? parseStringLiteral(match[2]) : null;
+      if (!method || !routePath) continue;
+      routes.push({
+        method,
+        path: joinRoutePath(prefix, routePath),
+        source: path.relative(workerDir(), filePath),
+      });
+    }
+
+    const nestedRouteRegex = new RegExp(`${name}\\.route\\(\\s*(['"][^'"]+['"])\\s*,\\s*([A-Za-z0-9_]+)\\s*\\)`, 'g');
+    while ((match = nestedRouteRegex.exec(source)) !== null) {
+      const routePath = parseStringLiteral(match[1] ?? '');
+      const nestedRouter = match[2];
+      const nestedFile = nestedRouter ? imports.get(nestedRouter) : undefined;
+      if (!routePath || !nestedRouter || !nestedFile) continue;
+      routes.push(...collectSourceRoutes(nestedRouter, nestedFile, joinRoutePath(prefix, routePath), seen));
+    }
+  }
+
+  return routes;
+}
+
+function discoverSourceRoutes(baseDir: string): SourceRoute[] {
+  const indexPath = path.join(baseDir, 'src', 'index.ts');
+  const indexSource = readFileSync(indexPath, 'utf8');
+  const imports = parseImports(indexSource, indexPath);
+  const routes: SourceRoute[] = [];
+
+  const directRouteRegex = /app\.(get|post|put|patch|delete)\(\s*([^,]+)/g;
+  let match: RegExpExecArray | null;
+  while ((match = directRouteRegex.exec(indexSource)) !== null) {
+    const method = match[1]?.toUpperCase() as HttpMethod | undefined;
+    const routePath = match[2] ? parseStringLiteral(match[2]) : null;
+    if (!method || !routePath) continue;
+    routes.push({ method, path: normalizeRoutePath(routePath), source: path.relative(baseDir, indexPath) });
+  }
+
+  const mountedRouteRegex = /app\.route\(\s*(['"][^'"]*['"])\s*,\s*([A-Za-z0-9_]+)\s*\)/g;
+  const seen = new Set<string>();
+  while ((match = mountedRouteRegex.exec(indexSource)) !== null) {
+    const prefix = parseStringLiteral(match[1] ?? '');
+    const routerName = match[2];
+    const routerFile = routerName ? imports.get(routerName) : undefined;
+    if (prefix === null || !routerName || !routerFile) continue;
+    routes.push(...collectSourceRoutes(routerName, routerFile, prefix, seen));
+  }
+
+  const unique = new Map<string, SourceRoute>();
+  for (const route of routes) {
+    unique.set(`${route.method} ${route.path} ${route.source}`, route);
+  }
+  return [...unique.values()].sort((a, b) => `${a.method} ${a.path}`.localeCompare(`${b.method} ${b.path}`));
+}
+
+function matchSourceRoute(spec: RouteSpec, sourceRoutes: SourceRoute[]): SourceRoute | null {
+  const requestPath = normalizeRoutePath(stripQuery(spec.path));
+  const candidates = sourceRoutes
+    .filter((route) => route.method === spec.method && sourcePatternToRegExp(route.path).test(requestPath))
+    .sort((a, b) => sourcePatternScore(b.path) - sourcePatternScore(a.path));
+  return candidates[0] ?? null;
+}
+
+function printCoverageReport(baseDir: string, routes: RouteSpec[]): void {
+  const sourceRoutes = discoverSourceRoutes(baseDir);
+  const covered = new Set<string>();
+
+  for (const route of routes) {
+    const sourceRoute = matchSourceRoute(route, sourceRoutes);
+    if (!sourceRoute) continue;
+    covered.add(`${sourceRoute.method} ${sourceRoute.path} ${sourceRoute.source}`);
+  }
+
+  const uncovered = sourceRoutes.filter((route) => !covered.has(`${route.method} ${route.path} ${route.source}`));
+  console.log(`[bench:routes] source route coverage: ${covered.size}/${sourceRoutes.length} discovered handlers matched by ${routes.length} benchmark specs.`);
+  if (uncovered.length === 0) return;
+  console.log('[bench:routes] uncovered source routes (first 25):');
+  for (const route of uncovered.slice(0, 25)) {
+    console.log(`  - ${route.method} ${route.path} (${route.source})`);
+  }
 }
 
 function readDevBypassUserId(baseDir: string): string {
@@ -604,6 +867,7 @@ async function main(): Promise<void> {
     if (route.mutation && !options.includeMutations) return false;
     return true;
   });
+  if (options.coverageReport) printCoverageReport(workerDir(), routes);
 
   const summaries: RouteSummary[] = [];
   for (const route of routes) {
