@@ -1269,8 +1269,13 @@ describe('POST /rpc/submit-challenge-response', () => {
     const storage = { put: vi.fn(async () => null) } as unknown as R2Bucket;
     const env = buildEnv({ DB: db, STORAGE: storage });
     const { ctx, waitUntilAll } = buildCtx();
+    let resolveIngestion: (() => void) | null = null;
+    const ingestionPromise = new Promise<void>((resolve) => {
+      resolveIngestion = resolve;
+    });
+    vi.mocked(runCandidateIngestion).mockImplementationOnce(async () => ingestionPromise);
 
-    const res = await rpcAuth.request(
+    const requestPromise = rpcAuth.request(
       '/submit-challenge-response',
       {
         method: 'POST',
@@ -1288,7 +1293,15 @@ describe('POST /rpc/submit-challenge-response', () => {
       env,
       ctx,
     );
+    const res = await Promise.race([
+      requestPromise,
+      new Promise<'timed-out'>((resolve) => {
+        setTimeout(() => resolve('timed-out'), 50);
+      }),
+    ]);
 
+    expect(res).not.toBe('timed-out');
+    if (res === 'timed-out') return;
     expect(res.status).toBe(200);
     const body = await res.json() as { success?: boolean; next?: boolean; complete?: boolean; queued?: boolean };
     expect(body).toMatchObject({
@@ -1297,10 +1310,15 @@ describe('POST /rpc/submit-challenge-response', () => {
     });
     expect(body.complete).toBeUndefined();
     expect(body.queued).toBeUndefined();
+    expect(runCandidateIngestion).toHaveBeenCalledWith(expect.objectContaining({
+      candidateId: 'cand_1',
+      resumeText: expect.stringContaining('source-backed review experience'),
+    }));
+    resolveIngestion?.();
     await waitUntilAll();
   });
 
-  it('advances after intake when standalone CODE_REVIEW auto-match is roleless but source-backed', async () => {
+  it('queues after intake when standalone CODE_REVIEW has no precomputed PR assignment', async () => {
     vi.mocked(matchCandidateToReviewChallenge).mockResolvedValueOnce({
       status: 'MATCHED',
       repoId: 973,
@@ -1342,8 +1360,13 @@ describe('POST /rpc/submit-challenge-response', () => {
     const storage = { put: vi.fn(async () => null) } as unknown as R2Bucket;
     const env = buildEnv({ DB: db, STORAGE: storage });
     const { ctx, waitUntilAll } = buildCtx();
+    let resolveIngestion: (() => void) | null = null;
+    const ingestionPromise = new Promise<void>((resolve) => {
+      resolveIngestion = resolve;
+    });
+    vi.mocked(runCandidateIngestion).mockImplementationOnce(async () => ingestionPromise);
 
-    const res = await rpcAuth.request(
+    const requestPromise = rpcAuth.request(
       '/submit-challenge-response',
       {
         method: 'POST',
@@ -1361,26 +1384,35 @@ describe('POST /rpc/submit-challenge-response', () => {
       env,
       ctx,
     );
+    const res = await Promise.race([
+      requestPromise,
+      new Promise<'timed-out'>((resolve) => {
+        setTimeout(() => resolve('timed-out'), 50);
+      }),
+    ]);
 
+    expect(res).not.toBe('timed-out');
+    if (res === 'timed-out') return;
     expect(res.status).toBe(200);
     const body = await res.json() as { success?: boolean; next?: boolean; complete?: boolean; queued?: boolean };
     expect(body).toMatchObject({
       success: true,
-      next: true,
+      complete: true,
+      queued: true,
     });
-    expect(body.complete).toBeUndefined();
-    expect(body.queued).toBeUndefined();
-    expect(runCandidateIngestion).toHaveBeenCalledWith(expect.objectContaining({
-      candidateId: 'cand_1',
-      resumeText: expect.stringContaining('source-backed code review experience'),
-    }));
-    expect(matchCandidateToReviewChallenge).toHaveBeenCalledOnce();
+    expect(body.next).toBeUndefined();
+    expect(matchCandidateToReviewChallenge).not.toHaveBeenCalled();
     expect(db.__calls.some((call) =>
       call.ran
       && call.sql.includes('UPDATE scheduled_interviews')
       && call.params.includes(973)
       && call.params.includes('https://github.com/mui/base-ui')
-    )).toBe(true);
+    )).toBe(false);
+    expect(runCandidateIngestion).toHaveBeenCalledWith(expect.objectContaining({
+      candidateId: 'cand_1',
+      resumeText: expect.stringContaining('source-backed code review experience'),
+    }));
+    resolveIngestion?.();
     await waitUntilAll();
   });
 

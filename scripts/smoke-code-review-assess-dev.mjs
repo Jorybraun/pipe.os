@@ -11,6 +11,10 @@ const RPC_BASE = (process.env.RPC_BASE || API_BASE).replace(/\/$/, '');
 const VIDEO_ROOM_BASE = (process.env.VIDEO_ROOM_BASE || process.env.ROOM_BASE || 'https://room-dev.hire-pipe.com').replace(/\/$/, '');
 const BASIC_USER = process.env.PIPE_DEV_BASIC_AUTH_USER || process.env.DEV_BASIC_AUTH_USER || '';
 const BASIC_PASSWORD = process.env.PIPE_DEV_BASIC_AUTH_PASSWORD || process.env.DEV_BASIC_AUTH_PASSWORD || '';
+const REQUEST_TIMEOUT_MS = Math.max(
+  1,
+  Number.parseInt(process.env.CODE_REVIEW_SMOKE_REQUEST_TIMEOUT_MS || '20000', 10) || 20_000,
+);
 const SEND_EMAIL = process.env.CODE_REVIEW_SMOKE_SEND_EMAIL === '1';
 const SKIP_BROWSER = process.env.CODE_REVIEW_SMOKE_SKIP_BROWSER === '1';
 const SKIP_RECRUITER_BROWSER = process.env.CODE_REVIEW_SMOKE_SKIP_RECRUITER_BROWSER === '1';
@@ -127,7 +131,7 @@ function requestBaseFor(path, options) {
 }
 
 async function requestJsonWithTimeout(path, init = {}, options = {}) {
-  const timeoutMs = options.timeoutMs ?? 15_000;
+  const timeoutMs = options.timeoutMs ?? REQUEST_TIMEOUT_MS;
   const useBasicAuth = options.basicAuth !== false;
   const url = `${requestBaseFor(path, options)}${path}`;
   const controller = new AbortController();
@@ -164,13 +168,21 @@ async function requestJson(path, init = {}, options = {}) {
   const useBasicAuth = options.basicAuth !== false;
   const url = `${requestBaseFor(path, options)}${path}`;
   const maxAttempts = options.retryTransient === false ? 1 : 3;
+  const timeoutMs = options.timeoutMs ?? REQUEST_TIMEOUT_MS;
+  const method = init.method ?? 'GET';
   let response;
   let lastError;
 
   for (let attempt = 1; attempt <= maxAttempts; attempt += 1) {
+    const controller = new AbortController();
+    const timeout = setTimeout(
+      () => controller.abort(new Error(`${method} ${path} timed out after ${timeoutMs}ms`)),
+      timeoutMs,
+    );
     try {
       response = await fetch(url, {
         ...init,
+        signal: controller.signal,
         headers: {
           ...(useBasicAuth ? authHeaders() : {}),
           ...(init.body ? { 'Content-Type': 'application/json' } : {}),
@@ -184,7 +196,11 @@ async function requestJson(path, init = {}, options = {}) {
       const causeCode = error instanceof Error && error.cause && typeof error.cause === 'object'
         ? error.cause.code
         : null;
+      const errorName = error instanceof Error ? error.name : '';
       const transient = message.includes('fetch failed')
+        || message.includes('timed out')
+        || message.includes('timeout')
+        || errorName === 'AbortError'
         || causeCode === 'ECONNRESET'
         || causeCode === 'EPIPE'
         || causeCode === 'ECONNREFUSED';
@@ -192,11 +208,13 @@ async function requestJson(path, init = {}, options = {}) {
         throw error;
       }
       await sleep(500 * attempt);
+    } finally {
+      clearTimeout(timeout);
     }
   }
 
   if (!response) {
-    throw lastError ?? new Error(`${init.method ?? 'GET'} ${path} did not return a response`);
+    throw lastError ?? new Error(`${method} ${path} did not return a response`);
   }
 
   const text = await response.text();
@@ -209,7 +227,7 @@ async function requestJson(path, init = {}, options = {}) {
     }
   }
   if (!response.ok) {
-    throw new Error(`${init.method ?? 'GET'} ${path} failed (${response.status}): ${text}`);
+    throw new Error(`${method} ${path} failed (${response.status}): ${text}`);
   }
   return body;
 }

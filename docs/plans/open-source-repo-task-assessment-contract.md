@@ -117,12 +117,12 @@ The controlling product rule remains:
   `code_review_evidence_plan_response` records, not only the assessment report
   status, so a captured follow-up answer cannot trigger a stale rerun until the
   candidate context projection exists.
-- Standalone CODE_REVIEW text-intake submissions run the real candidate
-  evidence ingestion inline before returning, then immediately attempt the
-  source-backed PR match. If the deterministic match passes the standalone
-  quality gate, the invite advances to a ready review; if the match is weak or
-  needs recruiter review, the candidate still receives the safe
-  `PROFILE_RECEIVED` handoff instead of a fabricated assignment.
+- Standalone CODE_REVIEW text-intake submissions queue real candidate evidence
+  ingestion outside the candidate request and return quickly. If a source-backed
+  PR assignment was already ready, the invite advances to the review; otherwise
+  the candidate receives the safe `PROFILE_RECEIVED` handoff while matching and
+  recruiter review continue through the assignment pipeline instead of a
+  fabricated challenge.
 - CODE_REVIEW interview detail now returns and renders related evidence
   interviews from the same person graph, so context calls and multiple
   same-email assessment invites stay visible as separate evidence-producing

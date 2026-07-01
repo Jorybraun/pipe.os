@@ -2137,28 +2137,6 @@ async function matchStandaloneSourceBackedAssignment(
   };
 }
 
-async function matchStandaloneReview(
-  db: D1Database,
-  candidateId: string,
-  interview: StandaloneReviewRow,
-): Promise<StandaloneReviewMatchResult | null> {
-  return matchStandaloneSourceBackedAssignment(db, candidateId, interview, {
-    logLabel: 'standaloneReview',
-  });
-}
-
-async function advanceStandaloneReviewAfterIntake(
-  db: D1Database,
-  candidateId: string,
-  interview: StandaloneReviewRow | null,
-): Promise<boolean> {
-  if (!interview) return false;
-  if (await hasReadyStandaloneCodeReviewAssignment(db, candidateId, interview)) {
-    return true;
-  }
-  return (await matchStandaloneReview(db, candidateId, interview)) !== null;
-}
-
 export async function matchStandaloneDevContainerAssessment(
   db: D1Database,
   candidateId: string,
@@ -2318,9 +2296,6 @@ async function handleIntakePayload(
   candidateId: string,
   submission: unknown,
   now: string,
-  options: {
-    inlineTextIngestion?: boolean;
-  } = {},
 ): Promise<void> {
   let intakePayload: Record<string, unknown> = {};
   try {
@@ -2417,11 +2392,7 @@ async function handleIntakePayload(
       }
     };
 
-    if (options.inlineTextIngestion) {
-      await runTextIngestion();
-    } else {
-      executionCtx.waitUntil(runTextIngestion());
-    }
+    executionCtx.waitUntil(runTextIngestion());
   }
 
   // 2. Queue GitHub enrichment
@@ -3841,12 +3812,9 @@ rpcAuth.post('/submit-challenge-response', async (c) => {
   // Pipeline-free candidate (talent pool / standalone code review)
   if (!pipelineId) {
     if (parseIntakePayload(submission)) {
-      const standaloneAssessment = await getPendingStandaloneAssessment(c.env.DB, candidateId);
-      await handleIntakePayload(c.env, c.executionCtx, candidateId, submission, new Date().toISOString(), {
-        inlineTextIngestion: standaloneAssessment !== null,
-      });
+      await handleIntakePayload(c.env, c.executionCtx, candidateId, submission, new Date().toISOString());
       const standaloneReview = await getPendingStandaloneReview(c.env.DB, candidateId);
-      if (await advanceStandaloneReviewAfterIntake(c.env.DB, candidateId, standaloneReview)) {
+      if (await hasReadyStandaloneCodeReviewAssignment(c.env.DB, candidateId, standaloneReview)) {
         return c.json({
           success: true,
           next: true,
