@@ -7,6 +7,25 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Added — Repository decomposition overlay (criteria #4, #7)
+
+- `repoDecompositionOverlay.ts`: Loads a challenge packet's structural graph (files, symbols, demands, structural facts) and maps candidate evidence onto specific code regions. Computes per-file and per-demand alignment scores via concept overlap, with coverage summary (covered/partial/gap).
+- `GET /:candidateId/living-context/repo-decomposition?packetId=...`: API endpoint returning `RepoDecompositionOverlay` with file tree, symbol hierarchy, demands with coverage levels, structural facts, and candidate evidence overlay. Gated by `living_context_read`.
+- `useRepoDecomposition` hook: Frontend data hook for loading decomposition overlay per candidate + packet.
+- `RepoDecompositionPanel`: LivingContextGraph panel showing coverage metrics, changed files with alignment bars, and code demands with covered/partial/gap classification and concept tags.
+- `repoDecompositionOverlay.test.ts`: 5-test D1 integration suite covering null packet, full overlay with evidence mapping, coverage summary computation, zero-evidence overlay, and structural fact file paths.
+- `useRepoDecomposition.test.ts`: 4-test hook suite covering null IDs, successful fetch, and error handling.
+- Frontend types: `RepoFileNode`, `RepoSymbolNode`, `RepoDemandNode`, `RepoStructuralFactNode`, `CandidateEvidenceOverlayEntry`, `RepoDecompositionOverlay` added to `src/lib/api/types.ts`.
+
+### Added — Batch rematch across candidates (criterion #5)
+
+- `batchRematch.ts`: Runs decision-weighted rematch across multiple candidates in a single API call. Each candidate gets independent exclusion lists from prior decisions. Results returned per-candidate for pipeline-wide comparison.
+- `POST /batch-rematch`: API endpoint accepting `{ candidateIds: string[] }` (max 50), returning `BatchRematchResult` with per-candidate status, top challenge, prior decisions, and error details. Gated by `living_context_read`.
+- `useBatchRematch` hook: Frontend data hook for triggering batch rematch from the recruiter UI.
+- `batchRematch.test.ts`: 5-test D1 integration suite covering empty list, ownership filtering, needs-more-evidence, multi-candidate processing, and workspace identity handling.
+- `useBatchRematch.test.ts`: 4-test hook suite covering initial state, successful batch, error handling, and empty list.
+- Frontend types: `BatchRematchResultEntry`, `BatchRematchResult` added to `src/lib/api/types.ts`.
+
 ### Added — Decision-weighted rematch (criteria #2, #5)
 
 - `decisionWeightedRematch.ts`: Loads prior recruiter accept/reject/defer decisions and computes challenge exclusion lists for rematch. Rejected and accepted challenges are excluded; deferred challenges remain eligible. Later decisions override earlier ones (e.g., reject then defer = eligible).

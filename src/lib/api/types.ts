@@ -2034,3 +2034,110 @@ export interface StalenessAlertSummary {
   alerts: StalenessAlert[];
   computedAt: string;
 }
+
+// ─── Repo decomposition overlay ───────────────────────────────────────────────
+
+export interface RepoFileNode {
+  path: string;
+  language: string | null;
+  artifactType: string;
+  lineCount: number | null;
+  symbolCount: number;
+  demandCount: number;
+  candidateAlignmentScore: number | null;
+}
+
+export interface RepoSymbolNode {
+  id: string;
+  qualifiedName: string;
+  kind: string;
+  language: string;
+  signature: string | null;
+  filePath: string | null;
+  lineStart: number | null;
+  lineEnd: number | null;
+  containingSymbolId: string | null;
+  demandIds: string[];
+  candidateAlignmentScore: number | null;
+}
+
+export interface RepoDemandNode {
+  id: string;
+  family: string;
+  narrative: string;
+  conceptKeys: string[];
+  weight: number;
+  sourceFilePaths: string[];
+  symbolIds: string[];
+  candidateAlignmentScore: number | null;
+  candidateEvidenceCount: number;
+}
+
+export interface RepoStructuralFactNode {
+  id: string;
+  factType: string;
+  subjectSymbolId: string | null;
+  objectSymbolId: string | null;
+  sourceFilePath: string | null;
+}
+
+export interface CandidateEvidenceOverlayEntry {
+  conceptKey: string;
+  evidenceCount: number;
+  totalStrength: number;
+  sourceTypes: string[];
+}
+
+export interface RepoDecompositionOverlay {
+  packetId: string;
+  repoSnapshotId: string;
+  repoName: string;
+  prNumber: number;
+  prTitle: string;
+  primaryLanguage: string;
+  files: RepoFileNode[];
+  symbols: RepoSymbolNode[];
+  demands: RepoDemandNode[];
+  structuralFacts: RepoStructuralFactNode[];
+  candidateEvidenceOverlay: CandidateEvidenceOverlayEntry[];
+  coverageSummary: {
+    totalDemands: number;
+    coveredDemands: number;
+    partialDemands: number;
+    uncoveredDemands: number;
+    overallScore: number;
+  };
+}
+
+// ─── Batch rematch ────────────────────────────────────────────────────────────
+
+export interface BatchRematchResultEntry {
+  candidateId: string;
+  status: string;
+  matchRunId: string | null;
+  repoId: number | null;
+  prNumber: number | null;
+  evaluatedCount: number;
+  topChallenge: {
+    challengeId: string;
+    repoId: string;
+    prNumber: number;
+    rank: number | null;
+    alignedDemandCount: number;
+    stretchCount: number;
+    eligible: boolean;
+  } | null;
+  priorDecisions: {
+    excludedCount: number;
+    deferredCount: number;
+    totalDecisions: number;
+  } | null;
+  error: string | null;
+}
+
+export interface BatchRematchResult {
+  totalCandidates: number;
+  processedCount: number;
+  results: BatchRematchResultEntry[];
+  skippedCandidateIds: string[];
+}

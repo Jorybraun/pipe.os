@@ -165,3 +165,18 @@ export type {
   StalenessAlertSummary,
   StalenessAlertOptions,
 } from './evidenceStalenessAlerts';
+export { loadRepoDecompositionOverlay } from './repoDecompositionOverlay';
+export type {
+  RepoFileNode,
+  RepoSymbolNode,
+  RepoDemandNode,
+  RepoStructuralFactNode,
+  CandidateEvidenceOverlay,
+  RepoDecompositionOverlay,
+} from './repoDecompositionOverlay';
+export { runBatchRematch } from './batchRematch';
+export type {
+  BatchRematchCandidate,
+  BatchRematchResultEntry,
+  BatchRematchResult,
+} from './batchRematch';

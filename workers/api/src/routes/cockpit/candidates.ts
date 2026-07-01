@@ -2205,6 +2205,52 @@ candidateOps.get('/:candidateId/living-context/match-decisions', requireGate('li
   return c.json(history);
 });
 
+// GET /:candidateId/living-context/repo-decomposition — repository structural graph with candidate evidence overlay
+candidateOps.get('/:candidateId/living-context/repo-decomposition', requireGate('living_context_read'), async (c) => {
+  const userId = c.var.userId;
+  const { candidateId } = c.req.param();
+  const packetId = c.req.query('packetId');
+  const db = c.env.DB;
+
+  if (!packetId) {
+    return apiError(c, 'VALIDATION_ERROR', 'packetId query parameter is required.');
+  }
+
+  const candidate = await db.prepare(
+    `SELECT c.id
+       FROM candidates c
+       LEFT JOIN pipelines p ON p.id = c.pipeline_id
+      WHERE c.id = ?1 AND (c.owner_id = ?2 OR p.owner_id = ?2)`,
+  ).bind(candidateId, userId).first<{ id: string }>();
+  if (!candidate) return apiError(c, 'NOT_FOUND', 'Candidate not found.');
+
+  const { loadRepoDecompositionOverlay } = await import('../../lib/livingContext/repoDecompositionOverlay');
+  const overlay = await loadRepoDecompositionOverlay(db, packetId, candidateId);
+  if (!overlay) {
+    return apiError(c, 'NOT_FOUND', 'Challenge packet not found.');
+  }
+  return c.json(overlay);
+});
+
+// POST /batch-rematch — run decision-weighted rematch across multiple candidates
+candidateOps.post('/batch-rematch', requireGate('living_context_read'), async (c) => {
+  const userId = c.var.userId;
+  const db = c.env.DB;
+
+  const body = await c.req.json<{ candidateIds?: string[] }>().catch(() => ({ candidateIds: undefined }));
+  const candidateIds = body.candidateIds;
+  if (!candidateIds || !Array.isArray(candidateIds) || candidateIds.length === 0) {
+    return apiError(c, 'VALIDATION_ERROR', 'candidateIds array is required.');
+  }
+  if (candidateIds.length > 50) {
+    return apiError(c, 'VALIDATION_ERROR', 'Maximum 50 candidates per batch rematch.');
+  }
+
+  const { runBatchRematch } = await import('../../lib/livingContext/batchRematch');
+  const result = await runBatchRematch(db, candidateIds, userId);
+  return c.json(result);
+});
+
 // GET /:candidateId/pipeline-siblings — other candidates in the same pipeline
 candidateOps.get('/:candidateId/pipeline-siblings', async (c) => {
   const userId = c.var.userId;
