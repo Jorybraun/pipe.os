@@ -261,7 +261,7 @@ function agentPromptHandoffDiagnosticMessage({
     message: `agent ${promptLabel} ${delivered ? 'delivered' : 'was not delivered'} to ${targetLabel}.`,
     diagnosticSource: safePromptType === 'context_primer'
       ? 'agent_context_primer_sent'
-      : 'agent_prompt_sent',
+      : 'user_prompt_sent',
     observedAt,
     agentRuntime,
     agentRunProvider,

@@ -117,10 +117,7 @@ const AGENT_PROMPT_FINGERPRINT_RE = /^agent_[a-f0-9]{8}$/;
 const BROWSER_PROMPT_ID_RE = /^[a-zA-Z0-9:_-]+:(host|guest):prompt:\d+:agent_[a-f0-9]{8}$/;
 const ROOM_SURFACES = new Set(['standard']);
 const CHAT_DELIVERY_STATUSES = new Set(['pending', 'accepted', 'rejected']);
-const AGENT_UI_SOURCES = new Set(['agent_tray_ui', 'agent_prompt_ui', 'agent_chat_ui']);
-const AGENT_UI_EXECUTION_STATUSES = new Set(['opened', 'closed', 'dismissed', 'executed']);
-const AGENT_PROMPT_EVENT_SOURCES = new Set(['browser_proactive_agent_prompt', 'agent_bridge']);
-const AGENT_ACTION_EVENT_ID_RE = /^agent-action:(host|guest|agent):\d+:(agent_tray_ui|agent_prompt_ui|agent_chat_ui|agent_bridge):(tray|prompt|chat|agent):(opened|closed|dismissed|executed|suggested):[a-zA-Z0-9:_-]+$/;
+const AGENT_ACTION_EVENT_ID_RE = /^agent-action:(host|guest|agent):\d+:agent_bridge:agent:(executed|suggested):[a-zA-Z0-9:_-]+$/;
 const AGENT_STATUSES = new Set(['starting', 'idle', 'thinking', 'working', 'auth_needed', 'disconnected']);
 const AGENT_STATUS_MESSAGE_SOURCES = new Set(['agent_status', 'bridge_diagnostic', 'bridge_observation', 'agent_stdout', 'agent_api_response']);
 const AGENT_STATUS_EVENT_ID_RE = /^agent-status:[a-zA-Z0-9:_-]+:\d+:(agent_status|bridge_diagnostic|bridge_observation|agent_stdout|agent_api_response):[a-zA-Z0-9:_-]+:[a-zA-Z0-9:_-]+$/;
@@ -180,7 +177,6 @@ const sessionEventSchema = z.object({
     'workspace_state',
     'participant_join',
     'participant_leave',
-    'agent_prompt',
     'agent_action',
     'recording_start',
     'recording_stop',
@@ -325,40 +321,6 @@ const sessionEventSchema = z.object({
     });
     return;
   }
-  if (event.type === 'agent_prompt') {
-    const promptCreatedAt = properties.promptCreatedAt;
-    const sourceOk = properties.source === 'agent_prompt_client_submit'
-      && typeof properties.promptEventSource === 'string'
-      && AGENT_PROMPT_EVENT_SOURCES.has(properties.promptEventSource);
-    const actorOk = (event.actor === 'host' || event.actor === 'agent')
-      && (properties.actor === undefined || properties.actor === event.actor);
-    const promptOk = hasString(properties.promptId)
-      && hasString(properties.clientId)
-      && typeof promptCreatedAt === 'number'
-      && Number.isFinite(promptCreatedAt)
-      && promptCreatedAt >= 0
-      && typeof properties.promptLength === 'number'
-      && properties.promptLength === event.text.length
-      && hasString(properties.promptTrigger)
-      && hasString(properties.promptSource);
-    const browserPromptOk = properties.promptEventSource === 'browser_proactive_agent_prompt'
-      && event.actor === 'host'
-      && properties.agentResponseClaimed === false
-      && hasRoomSurface(properties.surface)
-      && hasString(properties.roomPhase);
-    const agentPromptOk = properties.promptEventSource === 'agent_bridge'
-      && event.actor === 'agent'
-      && properties.bridgeEventType === 'AGENT_PROMPT'
-      && hasString(properties.observedAt)
-      && typeof properties.bridgePersisted === 'boolean';
-    if (sourceOk && actorOk && promptOk && (browserPromptOk || agentPromptOk)) return;
-    ctx.addIssue({
-      code: z.ZodIssueCode.custom,
-      message: 'Agent prompt evidence must come from the browser proactive prompt flow or real agent bridge with prompt identity, trigger, length, source, and room context.',
-      path: ['properties'],
-    });
-    return;
-  }
   if (event.type === 'agent_action') {
     const source = properties.source;
     const capturedAtMs = properties.capturedAtMs;
@@ -380,26 +342,6 @@ const sessionEventSchema = z.object({
       && properties.agentActionEventId === expectedActionEventId;
     const surfaceContextOk = hasRoomSurface(properties.surface)
       && hasString(properties.roomPhase);
-    if (typeof source === 'string' && AGENT_UI_SOURCES.has(source)) {
-      const originOk = source === 'agent_tray_ui'
-        ? properties.origin === 'tray' && properties.actionSource === 'assessment_agent_tray'
-        : source === 'agent_chat_ui'
-          ? properties.origin === 'chat' && properties.actionSource === 'agent_chat_panel'
-          : properties.origin === 'prompt' && properties.actionSource === 'agent_prompt_ui';
-      const actorOk = (event.actor === 'host' || event.actor === 'guest')
-        && properties.executedBy === event.actor;
-      const statusOk = typeof properties.executionStatus === 'string'
-        && AGENT_UI_EXECUTION_STATUSES.has(properties.executionStatus);
-      const noFakeAgentOk = properties.agentResponseClaimed === false
-        && (properties.agent === undefined || properties.agent === null);
-      if (actionIdOk && capturedAtOk && actionEventIdOk && surfaceContextOk && originOk && actorOk && statusOk && noFakeAgentOk) return;
-      ctx.addIssue({
-        code: z.ZodIssueCode.custom,
-        message: 'AI assistant UI action evidence must come from prompt or chat UI with actor, stable action id, capture timestamp, action source, execution status, surface, and no agent attribution.',
-        path: ['properties'],
-      });
-      return;
-    }
     if (source === 'agent_bridge') {
       const commonOk = actionIdOk
         && capturedAtOk
@@ -432,7 +374,7 @@ const sessionEventSchema = z.object({
     }
     ctx.addIssue({
       code: z.ZodIssueCode.custom,
-      message: 'AI assistant action evidence must come from a recognized assistant UI or agent bridge source.',
+      message: 'AI assistant action evidence must come from the real agent bridge.',
       path: ['properties'],
     });
     return;

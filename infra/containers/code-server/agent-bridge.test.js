@@ -1118,7 +1118,7 @@ setInterval(() => {}, 1000);
     }));
     const diagnostic = await waitForMessage(messages, (message) => (
       message.type === 'AGENT_DIAGNOSTIC'
-      && message.diagnosticSource === 'agent_prompt_sent'
+      && message.diagnosticSource === 'user_prompt_sent'
     ));
     expect(diagnostic).toMatchObject({
       agent: 'devin',

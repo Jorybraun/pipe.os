@@ -751,113 +751,6 @@ describe('VideoRoom Durable Object signaling lifecycle', () => {
     expect(storage.has('recordingActivityLog')).toBe(false);
   });
 
-  it('stores and broadcasts shared Agent prompts for proactive room guidance', async () => {
-    const host = new FakeSocket();
-    const guest = new FakeSocket();
-    const { state, storage } = makeState([
-      [host, 'HOST'],
-      [guest, 'GUEST'],
-    ]);
-    const room = new VideoRoom(state);
-
-    await room.webSocketMessage(host as unknown as WebSocket, JSON.stringify({
-      type: 'ROOM_AGENT_PROMPT',
-      payload: {
-        id: 'agent-recording',
-        clientId: 'host-client',
-        createdAt: 3,
-        source: 'system',
-        promptEventSource: 'browser_proactive_agent_prompt',
-        promptTrigger: 'recording_start_suggestion',
-        surface: 'standard',
-        roomPhase: 'connected',
-        workspaceStatus: 'READY',
-        workspaceSessionId: 'workspace-session-1',
-        agentResponseClaimed: false,
-        targetRoles: ['HOST'],
-        text: "It looks like you're starting an interview. Would you like to begin recording?",
-        hold: true,
-        actions: [
-          { id: 'start-recording', label: 'Start recording' },
-        ],
-      },
-    }));
-
-    expect(storage.get('currentAgentPrompt')).toEqual(expect.objectContaining({
-      id: 'agent-recording',
-      clientId: 'host-client',
-      source: 'system',
-      promptEventSource: 'browser_proactive_agent_prompt',
-      promptTrigger: 'recording_start_suggestion',
-      surface: 'standard',
-      roomPhase: 'connected',
-      workspaceStatus: 'READY',
-      workspaceSessionId: 'workspace-session-1',
-      agentResponseClaimed: false,
-      targetRoles: ['HOST'],
-      text: "It looks like you're starting an interview. Would you like to begin recording?",
-      actions: [
-        { id: 'start-recording', label: 'Start recording' },
-      ],
-    }));
-    expect(parseSent(guest)).toContainEqual(expect.objectContaining({
-      type: 'ROOM_AGENT_PROMPT',
-      role: 'HOST',
-      payload: expect.objectContaining({
-        id: 'agent-recording',
-        promptEventSource: 'browser_proactive_agent_prompt',
-        promptTrigger: 'recording_start_suggestion',
-        text: "It looks like you're starting an interview. Would you like to begin recording?",
-      }),
-    }));
-    expect(storage.get('agentPromptActivityLog')).toEqual([
-      expect.objectContaining({
-        role: 'HOST',
-        prompt: expect.objectContaining({
-          id: 'agent-recording',
-          promptEventSource: 'browser_proactive_agent_prompt',
-          promptTrigger: 'recording_start_suggestion',
-          agentResponseClaimed: false,
-        }),
-      }),
-    ]);
-  });
-
-  it('rejects Agent prompts without browser prompt evidence', async () => {
-    const host = new FakeSocket();
-    const guest = new FakeSocket();
-    const { state, storage } = makeState([
-      [host, 'HOST'],
-      [guest, 'GUEST'],
-    ]);
-    const room = new VideoRoom(state);
-
-    await room.webSocketMessage(host as unknown as WebSocket, JSON.stringify({
-      type: 'ROOM_AGENT_PROMPT',
-      payload: {
-        id: 'agent-source-less',
-        clientId: 'host-client',
-        createdAt: 3,
-        source: 'system',
-        promptTrigger: 'missing_prompt_event_source',
-        surface: 'standard',
-        roomPhase: 'connected',
-        agentResponseClaimed: false,
-        text: 'This should not be saved as prompt evidence.',
-      },
-    }));
-
-    expect(parseSent(host)).toContainEqual(expect.objectContaining({
-      type: 'ROOM_AGENT_PROMPT_REJECTED',
-      reason: 'MISSING_SOURCE_EVIDENCE',
-    }));
-    expect(parseSent(guest)).not.toContainEqual(expect.objectContaining({
-      type: 'ROOM_AGENT_PROMPT',
-    }));
-    expect(storage.has('currentAgentPrompt')).toBe(false);
-    expect(storage.has('agentPromptActivityLog')).toBe(false);
-  });
-
   it('broadcasts and records source-backed real agent interaction events', async () => {
     const host = new FakeSocket();
     const guest = new FakeSocket();
@@ -1351,7 +1244,7 @@ describe('VideoRoom Durable Object signaling lifecycle', () => {
     expect(storage.has('agentInteractionActivityLog')).toBe(false);
   });
 
-  it('rejects human AI assistant UI actions that claim a Devin agent attribution', async () => {
+  it('rejects browser UI actions that claim a Devin agent attribution', async () => {
     const host = new FakeSocket();
     const guest = new FakeSocket();
     const { state, storage } = makeState([
@@ -1370,14 +1263,14 @@ describe('VideoRoom Durable Object signaling lifecycle', () => {
         actor: 'host',
         text: 'Agent action: start recording',
         evidence: {
-          source: 'agent_prompt_ui',
+          source: 'browser_assistant_ui',
           actionId: 'start-recording',
-          origin: 'prompt',
+          origin: 'panel',
           executedBy: 'host',
-          actionSource: 'agent_prompt_ui',
+          actionSource: 'assistant_panel',
           executionStatus: 'executed',
           capturedAtMs: 1782594200000,
-          agentActionEventId: 'agent-action:host:1782594200000:agent_prompt_ui:prompt:executed:start-recording',
+          agentActionEventId: 'agent-action:host:1782594200000:browser_assistant_ui:panel:executed:start-recording',
           agent: 'devin',
           agentResponseClaimed: false,
           surface: 'standard',

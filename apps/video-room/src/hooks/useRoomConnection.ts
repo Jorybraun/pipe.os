@@ -494,29 +494,6 @@ export function hasSourceBackedAgentInteractionEvidence(
     const roomContextOk = isRoomSurface(evidence.surface)
       && typeof evidence.roomPhase === 'string';
 
-    if (source === 'agent_tray_ui' || source === 'agent_chat_ui' || source === 'agent_call_controls_ui') {
-      const originOk = source === 'agent_tray_ui'
-        ? origin === 'tray' && evidence.actionSource === 'assessment_agent_tray'
-        : source === 'agent_chat_ui'
-          ? origin === 'chat' && evidence.actionSource === 'agent_chat_panel'
-          : origin === 'call' && evidence.actionSource === 'video_call_controls';
-      const statusOk = executionStatus === 'opened'
-        || executionStatus === 'closed'
-        || executionStatus === 'executed';
-      return (event.actor === 'host' || event.actor === 'guest')
-        && event.actor === senderActor
-        && evidence.executedBy === event.actor
-        && actionId !== null
-        && capturedAtMs !== null
-        && capturedAtMs >= 0
-        && idOk
-        && roomContextOk
-        && originOk
-        && statusOk
-        && evidence.agentResponseClaimed === false
-        && (evidence.agent === undefined || evidence.agent === null);
-    }
-
     if (source === 'agent_bridge') {
       const commonOk = actionId !== null
         && capturedAtMs !== null

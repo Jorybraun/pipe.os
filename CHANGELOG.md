@@ -27,6 +27,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Fixed — CODE_REVIEW assessment runtime
 
+- Removed the obsolete proactive assistant prompt/tray protocol from the assessment room runtime, Durable Object replay, session-event ingestion, and graph projections so only real workspace bridge evidence is accepted for agent actions.
 - Person-profile CODE_REVIEW decisions now require rendered candidate and repo source-bridge evidence before labeling a PR assignment as a source-backed candidate-repo match, otherwise the readout calls it assignment evidence and surfaces the missing bridge.
 - Workspace finalization now runs only the container-configured verification command for `test_run` evidence and records a verification gap when none is configured, preventing candidate-selected commands from satisfying assessment proof.
 - Candidate and recruiter CODE_REVIEW surfaces now consistently describe implementation-author replies instead of exposing AI-developer or generic pushback wording in default instructions and trust signals.
@@ -879,8 +880,8 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - Historical agent-opened assessment tools persisted lifecycle evidence with `lifecycleSource: agent_action` instead of misattributing those opens to direct layout UI clicks.
 - Agent’s Devin login terminal button now records `open-devin-auth-terminal` evidence instead of the generic `open-terminal` action id.
 - Agent’s browser-based Devin auth button now records `open-devin-auth-browser` evidence instead of collapsing the click into a CLI auth recheck.
-- Room Chat’s assistant launcher now records `agent_chat_ui` provenance instead of misattributing the Agent open action to the assessment layout.
-- Closing the Agent chat panel now only closes the chat panel and persists a source-backed `agent_chat_ui` close action, keeping the assessment assistant entrypoint mounted for the next real-agent interaction.
+- Room Chat’s assistant launcher records browser assistant-panel provenance instead of misattributing the Agent open action to the assessment layout.
+- Closing the Agent chat panel closes only the chat panel and persists a browser assistant-panel close action, keeping the assessment assistant entrypoint mounted for the next real-agent interaction.
 - Agent chat’s generic “Open Terminal” button now routes through source-backed `open-terminal` Agent action evidence before opening the shared terminal panel.
 - Agent “Check Devin auth” clicks now emit source-backed human UI action evidence before the bridge re-runs real Devin CLI auth preflight, keeping auth recovery intent separate from bridge diagnostics.
 - Agent auth-needed chat now includes a real “Check Devin auth” retry after terminal login, reusing the container bridge auth preflight so Devin only becomes ready after the CLI reports a stored login.

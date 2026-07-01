@@ -148,29 +148,27 @@ describe('hasSourceBackedAgentInteractionEvidence', () => {
     expect(hasSourceBackedAgentInteractionEvidence(event, 'HOST')).toBe(true);
   });
 
-  it('accepts source-backed agent bridge UI actions and rejects source-less events', () => {
+  it('accepts source-backed real bridge actions and rejects browser UI action evidence', () => {
     const action: RoomAgentInteractionEvent = {
       id: 'agent-interaction-3',
       clientId: 'host-client',
       createdAt: 1700000004000,
       eventType: 'agent_action',
-      actor: 'host',
-      text: 'Agent bridge opened from the room controls',
+      actor: 'agent',
+      text: 'Agent suggested running tests',
       evidence: {
-        source: 'agent_tray_ui',
-        actionId: 'open-agent-chat',
-        origin: 'tray',
-        executedBy: 'host',
-        actionSource: 'assessment_agent_tray',
-        executionStatus: 'opened',
+        source: 'agent_bridge',
+        actionId: 'run-tests',
+        origin: 'agent',
+        actionSource: 'agent_stdout',
+        actionProtocol: 'agent_room_action_tag',
+        bridgeEventType: 'ROOM_ACTION',
+        executionStatus: 'suggested',
         capturedAtMs: 1700000004000,
-        agentActionEventId: 'agent-action:host:1700000004000:agent_tray_ui:tray:opened:open-agent-chat',
-        surface: 'standard',
-        roomPhase: 'connected',
-        workspaceStatus: 'running',
-        workspaceSessionId: 'workspace-1',
-        agent: null,
-        agentResponseClaimed: false,
+        agentActionEventId: 'agent-action:agent:1700000004000:agent_bridge:agent:suggested:run-tests',
+        observedAt: '2026-06-28T00:00:04.000Z',
+        bridgePersisted: true,
+        agent: 'devin',
         durableObjectReplayExpected: true,
       },
     };
@@ -178,39 +176,16 @@ describe('hasSourceBackedAgentInteractionEvidence', () => {
     expect(hasSourceBackedAgentInteractionEvidence(action, 'HOST')).toBe(true);
     expect(hasSourceBackedAgentInteractionEvidence({
       ...action,
-      text: 'Agent bridge opened from the video call controls',
       actor: 'guest',
       evidence: {
-        source: 'agent_call_controls_ui',
+        source: 'browser_assistant_ui',
         actionId: 'open-agent-chat',
-        origin: 'call',
+        origin: 'panel',
         executedBy: 'guest',
-        actionSource: 'video_call_controls',
+        actionSource: 'assistant_panel',
         executionStatus: 'opened',
         capturedAtMs: 1700000005000,
-        agentActionEventId: 'agent-action:guest:1700000005000:agent_call_controls_ui:call:opened:open-agent-chat',
-        surface: 'standard',
-        roomPhase: 'connected',
-        workspaceStatus: null,
-        workspaceSessionId: null,
-        agent: null,
-        agentResponseClaimed: false,
-        durableObjectReplayExpected: true,
-      },
-    }, 'GUEST')).toBe(true);
-    expect(hasSourceBackedAgentInteractionEvidence({
-      ...action,
-      text: 'Agent bridge opened from the video call controls',
-      actor: 'guest',
-      evidence: {
-        source: 'agent_call_controls_ui',
-        actionId: 'open-agent-chat',
-        origin: 'tray',
-        executedBy: 'guest',
-        actionSource: 'assessment_agent_tray',
-        executionStatus: 'opened',
-        capturedAtMs: 1700000005000,
-        agentActionEventId: 'agent-action:guest:1700000005000:agent_call_controls_ui:tray:opened:open-agent-chat',
+        agentActionEventId: 'agent-action:guest:1700000005000:browser_assistant_ui:panel:opened:open-agent-chat',
         surface: 'standard',
         roomPhase: 'connected',
         workspaceStatus: null,
@@ -223,7 +198,7 @@ describe('hasSourceBackedAgentInteractionEvidence', () => {
     expect(hasSourceBackedAgentInteractionEvidence({
       ...action,
       evidence: {
-        source: 'agent_tray_ui',
+        source: 'agent_bridge',
       },
     }, 'HOST')).toBe(false);
   });

@@ -208,7 +208,7 @@ describe('useSessionEvents', () => {
 
     act(() => {
       result.current.capture('agent_action', 'Agent bridge opened', 'host', {
-        source: 'agent_tray_ui',
+        source: 'agent_bridge',
         agentResponseClaimed: false,
       });
     });
@@ -236,7 +236,7 @@ describe('useSessionEvents', () => {
       text: 'Agent bridge opened',
       actor: 'host',
       properties: {
-        source: 'agent_tray_ui',
+        source: 'agent_bridge',
         agentResponseClaimed: false,
         clientCapturedAtMs: 1782600720000,
       },

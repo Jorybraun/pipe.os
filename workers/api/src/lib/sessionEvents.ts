@@ -43,7 +43,6 @@ export type SessionEventType =
   | 'workspace_state'
   | 'participant_join'
   | 'participant_leave'
-  | 'agent_prompt'
   | 'agent_action'
   | 'recording_start'
   | 'recording_stop'
@@ -850,29 +849,6 @@ function isSourceBackedAgentInteractionEvidence(
       && evidence.agentActionEventId === expectedId;
     const roomContextOk = evidence.surface === 'standard'
       && stringOrNull(evidence.roomPhase) !== null;
-    if (source === 'agent_tray_ui' || source === 'agent_prompt_ui' || source === 'agent_chat_ui') {
-      const originOk = source === 'agent_tray_ui'
-        ? origin === 'tray' && evidence.actionSource === 'assessment_agent_tray'
-        : source === 'agent_chat_ui'
-          ? origin === 'chat' && evidence.actionSource === 'agent_chat_panel'
-          : origin === 'prompt' && evidence.actionSource === 'agent_prompt_ui';
-      const statusOk = executionStatus === 'opened'
-        || executionStatus === 'closed'
-        || executionStatus === 'dismissed'
-        || executionStatus === 'executed';
-      return (actor === 'host' || actor === 'guest')
-        && evidence.executedBy === actor
-        && actionId !== null
-        && capturedAtMs !== null
-        && Number.isInteger(capturedAtMs)
-        && capturedAtMs >= 0
-        && idOk
-        && roomContextOk
-        && originOk
-        && statusOk
-        && evidence.agentResponseClaimed === false
-        && (evidence.agent === undefined || evidence.agent === null);
-    }
     if (source === 'agent_bridge') {
       const commonOk = actionId !== null
         && capturedAtMs !== null
@@ -949,88 +925,6 @@ function agentInteractionActivityToSessionEvent(input: RoomActivitySyncInput, va
   });
 }
 
-function hasSourceBackedAgentPromptEvidence(
-  prompt: Record<string, unknown>,
-  actor: SessionEvent['actor'],
-  text: string,
-): boolean {
-  const promptId = stringOrNull(prompt.id);
-  const clientId = stringOrNull(prompt.clientId);
-  const promptSource = stringOrNull(prompt.source);
-  const promptEventSource = stringOrNull(prompt.promptEventSource);
-  const promptTrigger = stringOrNull(prompt.promptTrigger);
-  const surface = stringOrNull(prompt.surface);
-  const roomPhase = stringOrNull(prompt.roomPhase);
-  const promptCreatedAt = numberOrNull(prompt.createdAt);
-  return actor === 'host'
-    && promptEventSource === 'browser_proactive_agent_prompt'
-    && (promptSource === 'system' || promptSource === 'host')
-    && promptId !== null
-    && clientId !== null
-    && promptCreatedAt !== null
-    && Number.isInteger(promptCreatedAt)
-    && promptCreatedAt >= 0
-    && promptTrigger !== null
-    && surface === 'standard'
-    && roomPhase !== null
-    && prompt.agentResponseClaimed === false
-    && text.length > 0;
-}
-
-function agentPromptActivityToSessionEvent(input: RoomActivitySyncInput, value: unknown): SessionEvent | null {
-  if (!isRecord(value) || !isRecord(value.prompt)) return null;
-  const prompt = value.prompt;
-  const text = stringOrNull(prompt.text);
-  if (!text) return null;
-  const role = isRoomActivityRole(value.role) ? value.role : null;
-  const actor = actorFromRoomRole(role);
-  if (!hasSourceBackedAgentPromptEvidence(prompt, actor, text)) return null;
-  const properties = roomActivityBaseProperties('agent_prompt', role, value.recordedAt);
-  const promptId = stringOrNull(prompt.id);
-  const clientId = stringOrNull(prompt.clientId);
-  const promptSource = stringOrNull(prompt.source);
-  const promptEventSource = stringOrNull(prompt.promptEventSource);
-  const promptTrigger = stringOrNull(prompt.promptTrigger);
-  const surface = stringOrNull(prompt.surface);
-  const roomPhase = stringOrNull(prompt.roomPhase);
-  const workspaceStatus = stringOrNull(prompt.workspaceStatus);
-  const workspaceSessionId = stringOrNull(prompt.workspaceSessionId);
-  properties.source = 'agent_prompt_client_submit';
-  if (promptId) properties.promptId = promptId;
-  if (clientId) properties.clientId = clientId;
-  if (promptSource) properties.promptSource = promptSource;
-  if (promptEventSource) properties.promptEventSource = promptEventSource;
-  if (promptTrigger) properties.promptTrigger = promptTrigger;
-  if (surface) properties.surface = surface;
-  if (roomPhase) properties.roomPhase = roomPhase;
-  if (workspaceStatus) properties.workspaceStatus = workspaceStatus;
-  if (workspaceSessionId) properties.workspaceSessionId = workspaceSessionId;
-  if (typeof prompt.agentResponseClaimed === 'boolean') {
-    properties.agentResponseClaimed = prompt.agentResponseClaimed;
-  }
-  properties.promptCreatedAt = numberOrNull(prompt.createdAt);
-  properties.promptLength = text.length;
-  if (typeof prompt.hold === 'boolean') properties.hold = prompt.hold;
-  if (Array.isArray(prompt.targetRoles)) properties.targetRoles = prompt.targetRoles.filter(isRoomActivityRole);
-  if (Array.isArray(prompt.actions)) {
-    properties.actions = prompt.actions
-      .filter(isRecord)
-      .map((action) => ({
-        id: stringOrNull(action.id),
-        label: stringOrNull(action.label),
-        disabled: typeof action.disabled === 'boolean' ? action.disabled : undefined,
-      }))
-      .filter((action) => action.id && action.label);
-  }
-  return createSessionEvent(input, {
-    type: 'agent_prompt',
-    timestamp: unixTimestampFromActivity(prompt.createdAt, value.recordedAt),
-    actor,
-    text,
-    properties,
-  });
-}
-
 export async function roomActivitySnapshotToSessionEvents(
   snapshot: unknown,
   input: RoomActivitySyncInput,
@@ -1052,9 +946,6 @@ export async function roomActivitySnapshotToSessionEvents(
   const recordingActivityLog = Array.isArray(snapshot.recordingActivityLog)
     ? snapshot.recordingActivityLog
     : [];
-  const agentPromptActivityLog = Array.isArray(snapshot.agentPromptActivityLog)
-    ? snapshot.agentPromptActivityLog
-    : [];
   const agentInteractionActivityLog = Array.isArray(snapshot.agentInteractionActivityLog)
     ? snapshot.agentInteractionActivityLog
     : [];
@@ -1064,7 +955,6 @@ export async function roomActivitySnapshotToSessionEvents(
   terminalActivityLog.forEach((entry) => pushMapped(terminalActivityToSessionEvent(input, entry)));
   mediaControlActivityLog.forEach((entry) => pushMapped(mediaControlActivityToSessionEvent(input, entry)));
   recordingActivityLog.forEach((entry) => pushMapped(recordingActivityToSessionEvent(input, entry)));
-  agentPromptActivityLog.forEach((entry) => pushMapped(agentPromptActivityToSessionEvent(input, entry)));
   agentInteractionActivityLog.forEach((entry) => pushMapped(agentInteractionActivityToSessionEvent(input, entry)));
 
   return events.sort((a, b) => (
@@ -1127,7 +1017,6 @@ function mapEventTypeToNodeType(type: SessionEventType): string {
     workspace_state: 'session_workspace_state',
     participant_join: 'session_participant_join',
     participant_leave: 'session_participant_leave',
-    agent_prompt: 'session_agent_prompt',
     agent_action: 'session_agent_action',
     recording_start: 'session_recording_start',
     recording_stop: 'session_recording_stop',
@@ -1162,8 +1051,6 @@ function formatEventNarrative(event: SessionEvent): string {
       return `[${time}] Participant joined: ${event.text}`;
     case 'participant_leave':
       return `[${time}] Participant left: ${event.text}`;
-    case 'agent_prompt':
-      return `[${time}] Agent prompted: "${event.text}"`;
     case 'agent_action':
       return `[${time}] ${event.text}`;
     case 'recording_start':
@@ -1422,7 +1309,7 @@ function sessionEventEntities(input: {
   const promptId = stringProperty(properties, 'promptId');
   if (promptId) {
     entities.push({
-      entityType: 'agent_prompt',
+      entityType: 'ai_user_prompt',
       entityId: promptId,
       relationship: event.type === 'ai_chat_user' ? 'source_prompt' : 'prompt_event',
       metadata: {
@@ -1438,7 +1325,7 @@ function sessionEventEntities(input: {
   const browserPromptId = stringProperty(properties, 'browserPromptId');
   if (browserPromptId) {
     entities.push({
-      entityType: 'agent_prompt',
+      entityType: 'ai_user_prompt',
       entityId: browserPromptId,
       relationship: 'linked_prompt',
       metadata: {
@@ -1604,40 +1491,6 @@ async function chatTextSourceRef(input: {
         deliveryStatus,
         messageLength,
         ...(deliveryStatus === 'rejected' && deliveryRejectionReason ? { deliveryRejectionReason } : {}),
-      },
-    };
-  }
-
-  if (input.event.type === 'agent_prompt') {
-    if (input.properties.source !== 'agent_prompt_client_submit') return null;
-    if (input.properties.promptEventSource !== 'browser_proactive_agent_prompt') return null;
-    const promptId = stringProperty(input.properties, 'promptId');
-    const promptLength = numberProperty(input.properties, 'promptLength');
-    if (!promptId || promptLength !== input.event.text.length) return null;
-    if (input.event.actor !== 'host') return null;
-    return {
-      sourceRefType: 'agent_proactive_prompt',
-      sourceRefId: promptId,
-      evidenceRole: 'agent_proactive_prompt',
-      locator: {
-        sessionId: input.event.sessionId,
-        candidateId: input.event.candidateId,
-        candidateNodeId: input.node.id,
-        promptId,
-        clientId: stringProperty(input.properties, 'clientId'),
-        promptTrigger: stringProperty(input.properties, 'promptTrigger'),
-        promptCreatedAt: numberProperty(input.properties, 'promptCreatedAt'),
-        surface: stringProperty(input.properties, 'surface'),
-        roomPhase: stringProperty(input.properties, 'roomPhase'),
-        workspaceSessionId: stringProperty(input.properties, 'workspaceSessionId'),
-      },
-      exactText: input.event.text,
-      contentHash: await sha256Hex(input.event.text),
-      metadata: {
-        sourceKind: 'agent.proactive_prompt',
-        promptEventSource: 'browser_proactive_agent_prompt',
-        promptLength,
-        agentResponseClaimed: input.properties.agentResponseClaimed === true,
       },
     };
   }
@@ -2425,7 +2278,6 @@ function assessmentEventKindForSessionEvent(type: SessionEventType): string {
     case 'ai_chat_user':
     case 'ai_chat_agent':
     case 'ai_agent_status':
-    case 'agent_prompt':
     case 'agent_action':
       return 'ai_interaction';
     case 'terminal_command':
@@ -2455,10 +2307,6 @@ function assessmentActorForSessionEvent(event: SessionEvent): { actorType: Asses
 
   if (event.type === 'ai_chat_agent' || event.type === 'ai_agent_status') {
     return { actorType: agentActorType, actorId: explicitAgentId };
-  }
-
-  if (event.type === 'agent_prompt') {
-    return { actorType: 'agent', actorId: 'agent' };
   }
 
   if (event.type === 'agent_action') {

@@ -678,29 +678,6 @@ describe('sessionEvents', () => {
             },
           },
           {
-            type: 'agent_prompt',
-            sessionId: 'meeting-session-chat-sources',
-            candidateId: 'cand-assessment',
-            timestamp: 1782604590,
-            actor: 'host',
-            text: 'Would you like to open the workspace?',
-            properties: {
-              source: 'agent_prompt_client_submit',
-              promptId: 'agent-proactive-host-1',
-              clientId: 'host-client',
-              promptSource: 'host',
-              promptEventSource: 'browser_proactive_agent_prompt',
-              promptTrigger: 'host_waiting_prepare_workspace',
-              surface: 'standard',
-              roomPhase: 'connected',
-              workspaceStatus: 'READY',
-              workspaceSessionId: 'workspace-session-1',
-              agentResponseClaimed: false,
-              promptCreatedAt: 1782604590000,
-              promptLength: 'Would you like to open the workspace?'.length,
-            },
-          },
-          {
             type: 'ai_chat_user',
             sessionId: 'meeting-session-chat-sources',
             candidateId: 'cand-assessment',
@@ -809,7 +786,6 @@ describe('sessionEvents', () => {
             WHERE cr.record_type = 'meeting_session_event'
               AND csr.source_ref_type IN (
                 'room_chat_message',
-                'agent_proactive_prompt',
                 'ai_user_prompt',
                 'ai_user_prompt_blocked',
                 'agent_response'
@@ -824,13 +800,6 @@ describe('sessionEvents', () => {
         }>;
 
         expect(contextSources).toEqual([
-          {
-            source_ref_type: 'agent_proactive_prompt',
-            source_ref_id: 'agent-proactive-host-1',
-            evidence_role: 'agent_proactive_prompt',
-            exact_text: 'Would you like to open the workspace?',
-            content_hash: await sha256Hex('Would you like to open the workspace?'),
-          },
           {
             source_ref_type: 'agent_response',
             source_ref_id: agentResponseId,
@@ -922,7 +891,7 @@ describe('sessionEvents', () => {
         const entities = sqlite.prepare(
           `SELECT entity_type, entity_id, relationship
              FROM context_record_entities
-            WHERE entity_type IN ('room_message', 'agent_prompt', 'agent_chat_response')
+            WHERE entity_type IN ('room_message', 'ai_user_prompt', 'agent_chat_response')
             ORDER BY entity_type, relationship, entity_id`,
         ).all() as Array<{
           entity_type: string;
@@ -936,22 +905,17 @@ describe('sessionEvents', () => {
             relationship: 'source_message',
           },
           {
-            entity_type: 'agent_prompt',
-            entity_id: 'agent-proactive-host-1',
-            relationship: 'prompt_event',
-          },
-          {
-            entity_type: 'agent_prompt',
+            entity_type: 'ai_user_prompt',
             entity_id: blockedPromptId,
             relationship: 'source_prompt',
           },
           {
-            entity_type: 'agent_prompt',
+            entity_type: 'ai_user_prompt',
             entity_id: promptId,
             relationship: 'source_prompt',
           },
           {
-            entity_type: 'agent_prompt',
+            entity_type: 'ai_user_prompt',
             entity_id: promptId,
             relationship: 'linked_prompt',
           },
@@ -1023,7 +987,7 @@ describe('sessionEvents', () => {
         const statusText = 'devin is starting from the real container bridge.';
         const statusId = 'agent-status:devin:1782594720000:agent_status:starting:none';
         const diagnosticText = 'agent chat prompt delivered to process stdin.';
-        const diagnosticId = 'agent-status:devin:1782594000000:bridge_diagnostic:thinking:agent_prompt_sent';
+        const diagnosticId = 'agent-status:devin:1782594000000:bridge_diagnostic:thinking:user_prompt_sent';
         const events: SessionEvent[] = [
           {
             type: 'ai_agent_status',
@@ -1061,7 +1025,7 @@ describe('sessionEvents', () => {
               source: 'agent_bridge',
               agent: 'devin',
               status: 'thinking',
-              diagnosticSource: 'agent_prompt_sent',
+              diagnosticSource: 'user_prompt_sent',
               bridgeMessageSource: 'bridge_diagnostic',
               observedAt: '2026-06-27T20:00:00.000Z',
               capturedAtMs: 1782594000000,
@@ -1132,40 +1096,12 @@ describe('sessionEvents', () => {
       }
     });
 
-    it('preserves Agent UI and bridge room actions as direct source refs', async () => {
+    it('preserves real agent bridge room actions as direct source refs', async () => {
       const { sqlite, db: realDb } = createSessionEvidenceDb();
       try {
-        const trayOpenText = 'AI assistant opened from the room controls';
-        const trayOpenId = 'agent-action:guest:1782604700000:agent_tray_ui:tray:opened:open-agent-chat';
         const agentSuggestionText = 'devin suggested room action: open-terminal';
         const agentSuggestionId = 'agent-action:agent:1782604710000:agent_bridge:agent:suggested:open-terminal';
         const events: SessionEvent[] = [
-          {
-            type: 'agent_action',
-            sessionId: 'meeting-session-agent-actions',
-            candidateId: 'cand-assessment',
-            timestamp: 1782604700,
-            actor: 'guest',
-            text: trayOpenText,
-            properties: {
-              source: 'agent_tray_ui',
-              actionId: 'open-agent-chat',
-              origin: 'tray',
-              executedBy: 'guest',
-              actionSource: 'assessment_agent_tray',
-              executionStatus: 'opened',
-              capturedAtMs: 1782604700000,
-              agentActionEventId: trayOpenId,
-              surface: 'standard',
-              roomPhase: 'connected',
-              workspaceStatus: 'READY',
-              workspaceSessionId: 'workspace-session-1',
-              agent: null,
-              agentWorkspaceReady: true,
-              agentResponseClaimed: false,
-              durableObjectReplayExpected: true,
-            },
-          },
           {
             type: 'agent_action',
             sessionId: 'meeting-session-agent-actions',
@@ -1204,10 +1140,10 @@ describe('sessionEvents', () => {
         const contextSources = sqlite.prepare(
           `SELECT csr.source_ref_type, csr.source_ref_id, csr.evidence_role,
                   csr.exact_text, csr.content_hash
-             FROM context_record_source_refs csr
+              FROM context_record_source_refs csr
              JOIN context_records cr ON cr.id = csr.context_record_id
             WHERE cr.record_type = 'meeting_session_event'
-              AND csr.source_ref_type IN ('agent_ui_action', 'agent_room_action')
+              AND csr.source_ref_type = 'agent_room_action'
             ORDER BY csr.source_ref_type`,
         ).all() as Array<{
           source_ref_type: string;
@@ -1225,19 +1161,12 @@ describe('sessionEvents', () => {
             exact_text: agentSuggestionText,
             content_hash: await sha256Hex(agentSuggestionText),
           },
-          {
-            source_ref_type: 'agent_ui_action',
-            source_ref_id: trayOpenId,
-            evidence_role: 'agent_ui_action',
-            exact_text: trayOpenText,
-            content_hash: await sha256Hex(trayOpenText),
-          },
         ]);
 
         const assessmentSources = sqlite.prepare(
           `SELECT source_ref_type, source_ref_id, evidence_role, exact_text, content_hash
              FROM assessment_event_source_refs
-            WHERE source_ref_type IN ('agent_ui_action', 'agent_room_action')
+            WHERE source_ref_type = 'agent_room_action'
             ORDER BY source_ref_type`,
         ).all() as Array<{
           source_ref_type: string;
@@ -1262,11 +1191,6 @@ describe('sessionEvents', () => {
           {
             entity_type: 'agent_action',
             entity_id: agentSuggestionId,
-            relationship: 'source_action',
-          },
-          {
-            entity_type: 'agent_action',
-            entity_id: trayOpenId,
             relationship: 'source_action',
           },
         ]);
@@ -1857,41 +1781,6 @@ describe('sessionEvents', () => {
               enabled: false,
             },
           },
-        ],        agentPromptActivityLog: [
-          {
-            role: 'HOST',
-            recordedAt: 1700000003000,
-            prompt: {
-              id: 'prompt-open-workspace',
-              clientId: 'host-client',
-              createdAt: 1700000003000,
-              source: 'system',
-              promptEventSource: 'browser_proactive_agent_prompt',
-              promptTrigger: 'host_waiting_prepare_workspace',
-              surface: 'standard',
-              roomPhase: 'connected',
-              workspaceStatus: 'READY',
-              workspaceSessionId: 'workspace-session-1',
-              agentResponseClaimed: false,
-              text: 'Would you like to open the workspace?',
-              actions: [{ id: 'open-workspace', label: 'Open workspace' }],
-            },
-          },
-          {
-            role: 'HOST',
-            recordedAt: 1700000003100,
-            prompt: {
-              id: 'prompt-source-less',
-              clientId: 'host-client',
-              createdAt: 1700000003100,
-              source: 'system',
-              promptTrigger: 'missing_prompt_event_source',
-              surface: 'standard',
-              roomPhase: 'connected',
-              agentResponseClaimed: false,
-              text: 'This prompt should not become graph evidence.',
-            },
-          },
         ],
         agentInteractionActivityLog: [
           {
@@ -2092,14 +1981,14 @@ describe('sessionEvents', () => {
               actor: 'host',
               text: 'Agent action: start recording',
               evidence: {
-                source: 'agent_prompt_ui',
+                source: 'browser_assistant_ui',
                 actionId: 'start-recording',
-                origin: 'prompt',
+                origin: 'panel',
                 executedBy: 'host',
-                actionSource: 'agent_prompt_ui',
+                actionSource: 'assistant_panel',
                 executionStatus: 'executed',
                 capturedAtMs: 1700000003300,
-                agentActionEventId: 'agent-action:host:1700000003300:agent_prompt_ui:prompt:executed:start-recording',
+                agentActionEventId: 'agent-action:host:1700000003300:browser_assistant_ui:panel:executed:start-recording',
                 agent: 'devin',
                 agentResponseClaimed: false,
                 surface: 'standard',
@@ -2116,7 +2005,7 @@ describe('sessionEvents', () => {
         sessionId: 'meeting--room-sync',
       });
 
-      expect(events).toHaveLength(5);
+      expect(events).toHaveLength(4);
       expect(events).toEqual(expect.arrayContaining([
         expect.objectContaining({
           type: 'chat_message',
@@ -2203,23 +2092,6 @@ describe('sessionEvents', () => {
             browserPromptLength: 'Can you inspect the failing test?'.length,
           }),
         }),
-        expect.objectContaining({
-          type: 'agent_prompt',
-          actor: 'host',
-          text: 'Would you like to open the workspace?',
-          properties: expect.objectContaining({
-            source: 'agent_prompt_client_submit',
-            promptEventSource: 'browser_proactive_agent_prompt',
-            promptTrigger: 'host_waiting_prepare_workspace',
-            surface: 'standard',
-            roomPhase: 'connected',
-            workspaceStatus: 'READY',
-            workspaceSessionId: 'workspace-session-1',
-            agentResponseClaimed: false,
-            promptCreatedAt: 1700000003000,
-            promptLength: 'Would you like to open the workspace?'.length,
-          }),
-        }),
       ]));
       expect(events).not.toEqual(expect.arrayContaining([
         expect.objectContaining({
@@ -2227,7 +2099,7 @@ describe('sessionEvents', () => {
           actor: 'host',
           properties: expect.objectContaining({
             roomEventId: 'agent-attributed-ui-action',
-            source: 'agent_prompt_ui',
+            source: 'browser_assistant_ui',
             agent: 'devin',
           }),
         }),

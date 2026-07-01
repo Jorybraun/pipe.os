@@ -74,7 +74,6 @@ interface SignalMessage {
     | 'ICE_CANDIDATE'
     | 'HANGUP'
     | 'STATUS_UPDATE'
-    | 'ROOM_AGENT_PROMPT'
     | 'ROOM_AGENT_INTERACTION'
     | 'ROOM_CHAT_MESSAGE'
     | 'ROOM_MEDIA_CONTROL'
@@ -178,38 +177,6 @@ interface RoomRecordingState {
 
 interface RoomRecordingActivityEntry {
   event: RoomRecordingStateEvent;
-  role: VideoRole;
-  recordedAt: number;
-}
-
-type RoomAgentPromptSource = 'system' | 'agent' | 'host' | 'guest';
-
-interface RoomAgentAction {
-  id: string;
-  label: string;
-  disabled?: boolean;
-}
-
-interface RoomAgentPrompt {
-  id: string;
-  clientId: string;
-  createdAt: number;
-  source: RoomAgentPromptSource;
-  text: string;
-  promptEventSource?: 'browser_proactive_agent_prompt' | 'agent_bridge';
-  promptTrigger?: string;
-  surface?: RoomSurface;
-  roomPhase?: string;
-  workspaceStatus?: string | null;
-  workspaceSessionId?: string | null;
-  agentResponseClaimed?: boolean;
-  hold?: boolean;
-  targetRoles?: VideoRole[];
-  actions?: RoomAgentAction[];
-}
-
-interface RoomAgentPromptActivityEntry {
-  prompt: RoomAgentPrompt;
   role: VideoRole;
   recordedAt: number;
 }
@@ -363,118 +330,11 @@ export class VideoRoom {
     return value === 'standard';
   }
 
-  private isRoomAgentPromptSource(value: unknown): value is RoomAgentPromptSource {
-    return value === 'system' || value === 'agent' || value === 'host' || value === 'guest';
-  }
-
   private isVideoRole(value: unknown): value is VideoRole {
     return value === 'RECRUITER'
       || value === 'CANDIDATE'
       || value === 'HOST'
       || value === 'GUEST';
-  }
-
-  private parseAgentAction(value: unknown): RoomAgentAction | null {
-    if (!this.isRecord(value)) return null;
-    if (
-      typeof value.id !== 'string'
-      || value.id.length === 0
-      || value.id.length > 80
-      || typeof value.label !== 'string'
-      || value.label.length === 0
-      || value.label.length > 80
-    ) {
-      return null;
-    }
-    return {
-      id: value.id,
-      label: value.label,
-      disabled: typeof value.disabled === 'boolean' ? value.disabled : undefined,
-    };
-  }
-
-  private parseAgentPrompt(value: unknown): RoomAgentPrompt | null {
-    if (!this.isRecord(value)) return null;
-    if (
-      typeof value.id !== 'string'
-      || value.id.length === 0
-      || typeof value.clientId !== 'string'
-      || value.clientId.length === 0
-      || typeof value.createdAt !== 'number'
-      || typeof value.text !== 'string'
-      || value.text.trim().length === 0
-      || value.text.length > 800
-    ) {
-      return null;
-    }
-    const actions = Array.isArray(value.actions)
-      ? value.actions
-          .slice(0, 4)
-          .map((entry) => this.parseAgentAction(entry))
-          .filter((entry): entry is RoomAgentAction => entry !== null)
-      : undefined;
-    const targetRoles = Array.isArray(value.targetRoles)
-      ? value.targetRoles.filter((entry): entry is VideoRole => this.isVideoRole(entry))
-      : undefined;
-    return {
-      id: value.id,
-      clientId: value.clientId,
-      createdAt: value.createdAt,
-      source: this.isRoomAgentPromptSource(value.source) ? value.source : 'system',
-      text: value.text,
-      promptEventSource: value.promptEventSource === 'browser_proactive_agent_prompt' || value.promptEventSource === 'agent_bridge'
-        ? value.promptEventSource
-        : undefined,
-      promptTrigger: this.safeTextOrNull(value.promptTrigger, 120) ?? undefined,
-      surface: this.isRoomSurface(value.surface) ? value.surface : undefined,
-      roomPhase: this.safeTextOrNull(value.roomPhase, 80) ?? undefined,
-      workspaceStatus: this.safeTextOrNull(value.workspaceStatus, 80),
-      workspaceSessionId: this.safeTextOrNull(value.workspaceSessionId, 160),
-      agentResponseClaimed: this.safeBoolean(value.agentResponseClaimed),
-      hold: typeof value.hold === 'boolean' ? value.hold : undefined,
-      targetRoles: targetRoles && targetRoles.length > 0 ? [...new Set(targetRoles)] : undefined,
-      actions: actions && actions.length > 0 ? actions : undefined,
-    };
-  }
-
-  private hasSourceBackedAgentPromptEvidence(prompt: RoomAgentPrompt, role: VideoRole): boolean {
-    const actor = this.isHostRole(role) ? 'host' : 'guest';
-    return actor === 'host'
-      && prompt.promptEventSource === 'browser_proactive_agent_prompt'
-      && (prompt.source === 'system' || prompt.source === 'host')
-      && Number.isInteger(prompt.createdAt)
-      && prompt.createdAt >= 0
-      && typeof prompt.promptTrigger === 'string'
-      && prompt.promptTrigger.length > 0
-      && prompt.surface === 'standard'
-      && typeof prompt.roomPhase === 'string'
-      && prompt.roomPhase.length > 0
-      && prompt.agentResponseClaimed === false;
-  }
-
-  private async getCurrentAgentPrompt(): Promise<RoomAgentPrompt | null> {
-    return this.parseAgentPrompt(await this.state.storage.get<unknown>('currentAgentPrompt'));
-  }
-
-  private parseAgentPromptActivityEntry(value: unknown): RoomAgentPromptActivityEntry | null {
-    if (!this.isRecord(value)) return null;
-    const prompt = this.parseAgentPrompt(value.prompt);
-    if (
-      prompt === null
-      || !this.isVideoRole(value.role)
-      || typeof value.recordedAt !== 'number'
-      || !Number.isFinite(value.recordedAt)
-    ) {
-      return null;
-    }
-    return { prompt, role: value.role, recordedAt: value.recordedAt };
-  }
-
-  private parseAgentPromptActivityLog(value: unknown): RoomAgentPromptActivityEntry[] {
-    if (!Array.isArray(value)) return [];
-    return value
-      .map((entry) => this.parseAgentPromptActivityEntry(entry))
-      .filter((entry): entry is RoomAgentPromptActivityEntry => entry !== null);
   }
 
   private isRoomAgentInteractionEventType(value: unknown): value is RoomAgentInteractionEventType {
@@ -675,29 +535,6 @@ export class VideoRoom {
         && evidence.agentActionEventId === expectedId;
       const surfaceOk = evidence.surface === 'standard';
       const roomContextOk = surfaceOk && typeof evidence.roomPhase === 'string';
-      if (source === 'agent_tray_ui' || source === 'agent_prompt_ui' || source === 'agent_chat_ui') {
-        const originOk = source === 'agent_tray_ui'
-          ? origin === 'tray' && evidence.actionSource === 'assessment_agent_tray'
-          : source === 'agent_chat_ui'
-            ? origin === 'chat' && evidence.actionSource === 'agent_chat_panel'
-            : (origin === 'prompt' && evidence.actionSource === 'agent_prompt_ui');
-        const statusOk = executionStatus === 'opened'
-          || executionStatus === 'closed'
-          || executionStatus === 'dismissed'
-          || executionStatus === 'executed';
-        return (event.actor === 'host' || event.actor === 'guest')
-          && event.actor === senderActor
-          && evidence.executedBy === event.actor
-          && actionId !== null
-          && capturedAtMs !== null
-          && capturedAtMs >= 0
-          && idOk
-          && roomContextOk
-          && originOk
-          && statusOk
-          && evidence.agentResponseClaimed === false
-          && (evidence.agent === undefined || evidence.agent === null);
-      }
       if (source === 'agent_bridge') {
         const commonOk = actionId !== null
           && capturedAtMs !== null
@@ -1536,21 +1373,6 @@ export class VideoRoom {
     return typeof value === 'boolean' ? value : undefined;
   }
 
-  private async persistAgentPrompt(prompt: RoomAgentPrompt): Promise<void> {
-    await this.state.storage.put('currentAgentPrompt', prompt);
-  }
-
-  private async recordAgentPromptActivity(prompt: RoomAgentPrompt, role: VideoRole): Promise<void> {
-    const previous = this.parseAgentPromptActivityLog(
-      await this.state.storage.get<unknown>('agentPromptActivityLog'),
-    );
-    const next = [
-      ...previous.slice(-99),
-      { prompt, role, recordedAt: Date.now() },
-    ];
-    await this.state.storage.put('agentPromptActivityLog', next);
-  }
-
   private async recordAgentInteractionActivity(
     event: RoomAgentInteractionEvent,
     role: VideoRole,
@@ -1746,9 +1568,6 @@ export class VideoRoom {
         terminalActivityLog: this.parseTerminalActivityLog(
           await this.state.storage.get<unknown>('terminalActivityLog'),
         ),
-        agentPromptActivityLog: this.parseAgentPromptActivityLog(
-          await this.state.storage.get<unknown>('agentPromptActivityLog'),
-        ),
         agentInteractionActivityLog: this.parseAgentInteractionActivityLog(
           await this.state.storage.get<unknown>('agentInteractionActivityLog'),
         ),
@@ -1794,12 +1613,6 @@ export class VideoRoom {
         status: this.sessionStatus,
         metadata: this.metadata,
         peers: peerCount,
-      }));
-
-      const currentAgentPrompt = await this.getCurrentAgentPrompt();
-      server.send(JSON.stringify({
-        type: 'ROOM_AGENT_STATE',
-        payload: { prompt: currentAgentPrompt },
       }));
 
       const chatMessages = await this.getChatMessages();
@@ -1930,46 +1743,6 @@ export class VideoRoom {
         type: 'SIGNAL_REJECTED',
         signalType: message.type,
         reason: 'ONLY_HOST_CAN_END_ROOM',
-      }));
-      return;
-    }
-
-    if (message.type === 'ROOM_AGENT_PROMPT') {
-      if (this.sessionStatus === 'ENDED') {
-        ws.send(JSON.stringify({
-          type: 'ROOM_AGENT_PROMPT_REJECTED',
-          reason: 'ROOM_ENDED',
-        }));
-        return;
-      }
-      if (!this.isHostRole(senderRole)) {
-        ws.send(JSON.stringify({
-          type: 'ROOM_AGENT_PROMPT_REJECTED',
-          reason: 'ONLY_HOST_CAN_PROMPT',
-        }));
-        return;
-      }
-      const prompt = this.parseAgentPrompt(message.payload);
-      if (!prompt) {
-        ws.send(JSON.stringify({
-          type: 'ROOM_AGENT_PROMPT_REJECTED',
-          reason: 'INVALID_PROMPT',
-        }));
-        return;
-      }
-      if (!this.hasSourceBackedAgentPromptEvidence(prompt, senderRole)) {
-        ws.send(JSON.stringify({
-          type: 'ROOM_AGENT_PROMPT_REJECTED',
-          reason: 'MISSING_SOURCE_EVIDENCE',
-        }));
-        return;
-      }
-      await this.persistAgentPrompt(prompt);
-      await this.recordAgentPromptActivity(prompt, senderRole);
-      this.broadcastExcept(ws, JSON.stringify({
-        type: 'ROOM_AGENT_PROMPT',
-        role: senderRole,
-        payload: prompt,
       }));
       return;
     }

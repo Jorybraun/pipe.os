@@ -1575,75 +1575,6 @@ describe('meeting room recording living-context route', () => {
       }),
     ]));
 
-    const fakeAgentPromptRes = await app.request(`/meeting/${created.hostToken}/session-events`, {
-      method: 'POST',
-      headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({
-        type: 'agent_prompt',
-        text: 'Would you like to start recording?',
-        actor: 'host',
-        properties: {
-          promptId: 'prompt-start-recording',
-          clientId: 'host-client',
-          promptSource: 'system',
-        },
-      }),
-    }, env, ctx);
-    expect(fakeAgentPromptRes.status).toBe(422);
-
-    const agentPromptRes = await app.request(`/meeting/${created.hostToken}/session-events`, {
-      method: 'POST',
-      headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({
-        type: 'agent_prompt',
-        text: 'Would you like to start recording?',
-        actor: 'host',
-        properties: {
-          source: 'agent_prompt_client_submit',
-          promptEventSource: 'browser_proactive_agent_prompt',
-          promptTrigger: 'recording_start_suggestion',
-          actor: 'host',
-          promptId: 'prompt-start-recording',
-          clientId: 'host-client',
-          promptCreatedAt: 1782601501000,
-          promptLength: 'Would you like to start recording?'.length,
-          promptSource: 'system',
-          surface: 'standard',
-          roomPhase: 'connected',
-          workspaceStatus: 'READY',
-          workspaceSessionId: 'workspace-session-1',
-          agentResponseClaimed: false,
-        },
-      }),
-    }, env, ctx);
-    expect(agentPromptRes.status).toBe(200);
-
-    const agentPromptNode = sqlite.prepare(
-      `SELECT node_type, narrative_text, source_type, extracted_properties_json
-         FROM candidate_nodes
-        WHERE candidate_id = ? AND node_type = 'session_agent_prompt'
-          AND extracted_properties_json LIKE '%agent_prompt_client_submit%'`,
-    ).get(linked?.candidate_id) as {
-      node_type: string;
-      narrative_text: string;
-      source_type: string;
-      extracted_properties_json: string;
-    } | undefined;
-    expect(agentPromptNode).toMatchObject({
-      node_type: 'session_agent_prompt',
-      source_type: 'meeting_session',
-    });
-    expect(agentPromptNode?.narrative_text).toContain('Agent prompted');
-    expect(JSON.parse(agentPromptNode?.extracted_properties_json ?? '{}')).toMatchObject({
-      actor: 'host',
-      source: 'agent_prompt_client_submit',
-      promptEventSource: 'browser_proactive_agent_prompt',
-      promptTrigger: 'recording_start_suggestion',
-      promptId: 'prompt-start-recording',
-      promptLength: 'Would you like to start recording?'.length,
-      agentResponseClaimed: false,
-    });
-
     const fakeAgentActionRes = await app.request(`/meeting/${created.hostToken}/session-events`, {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
@@ -1696,14 +1627,14 @@ describe('meeting room recording living-context route', () => {
         text: 'Agent action: start recording',
         actor: 'host',
         properties: {
-          source: 'agent_prompt_ui',
+          source: 'browser_assistant_ui',
           actionId: 'start-recording',
-          origin: 'prompt',
+          origin: 'panel',
           executedBy: 'host',
-          actionSource: 'agent_prompt_ui',
+          actionSource: 'assistant_panel',
           executionStatus: 'executed',
           capturedAtMs: 1782594200000,
-          agentActionEventId: 'agent-action:host:1782594200000:agent_prompt_ui:prompt:executed:start-recording',
+          agentActionEventId: 'agent-action:host:1782594200000:browser_assistant_ui:panel:executed:start-recording',
           agent: 'devin',
           agentResponseClaimed: false,
           surface: 'standard',
@@ -1714,141 +1645,6 @@ describe('meeting room recording living-context route', () => {
       }),
     }, env, ctx);
     expect(attributedUiActionRes.status).toBe(422);
-
-    const agentActionRes = await app.request(`/meeting/${created.hostToken}/session-events`, {
-      method: 'POST',
-      headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({
-        type: 'agent_action',
-        text: 'Agent action: start recording',
-        actor: 'host',
-        properties: {
-          source: 'agent_prompt_ui',
-          actionId: 'start-recording',
-          origin: 'prompt',
-          executedBy: 'host',
-          actionSource: 'agent_prompt_ui',
-          executionStatus: 'executed',
-          capturedAtMs: 1782594200000,
-          agentActionEventId: 'agent-action:host:1782594200000:agent_prompt_ui:prompt:executed:start-recording',
-          agent: null,
-          agentResponseClaimed: false,
-          surface: 'standard',
-          roomPhase: 'connected',
-          workspaceStatus: 'READY',
-          workspaceSessionId: 'workspace-session-1',
-        },
-      }),
-    }, env, ctx);
-    expect(agentActionRes.status).toBe(200);
-
-    const agentChatOpenRes = await app.request(`/meeting/${created.hostToken}/session-events`, {
-      method: 'POST',
-      headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({
-        type: 'agent_action',
-        text: 'AI assistant opened from the room chat panel',
-        actor: 'host',
-        properties: {
-          source: 'agent_chat_ui',
-          actionId: 'open-agent-chat',
-          origin: 'chat',
-          executedBy: 'host',
-          actionSource: 'agent_chat_panel',
-          executionStatus: 'opened',
-          capturedAtMs: 1782594250000,
-          agentActionEventId: 'agent-action:host:1782594250000:agent_chat_ui:chat:opened:open-agent-chat',
-          agent: null,
-          agentResponseClaimed: false,
-          surface: 'standard',
-          roomPhase: 'connected',
-          workspaceStatus: 'READY',
-          workspaceSessionId: 'workspace-session-1',
-        },
-      }),
-    }, env, ctx);
-    expect(agentChatOpenRes.status).toBe(200);
-
-    const agentChatCloseRes = await app.request(`/meeting/${created.hostToken}/session-events`, {
-      method: 'POST',
-      headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({
-        type: 'agent_action',
-        text: 'AI assistant chat panel closed',
-        actor: 'host',
-        properties: {
-          source: 'agent_chat_ui',
-          actionId: 'close-agent-chat',
-          origin: 'chat',
-          executedBy: 'host',
-          actionSource: 'agent_chat_panel',
-          executionStatus: 'closed',
-          capturedAtMs: 1782594300000,
-          agentActionEventId: 'agent-action:host:1782594300000:agent_chat_ui:chat:closed:close-agent-chat',
-          agent: null,
-          agentResponseClaimed: false,
-          surface: 'standard',
-          roomPhase: 'connected',
-          workspaceStatus: 'READY',
-          workspaceSessionId: 'workspace-session-1',
-        },
-      }),
-    }, env, ctx);
-    expect(agentChatCloseRes.status).toBe(200);
-
-    const agentAuthBrowserRes = await app.request(`/meeting/${created.hostToken}/session-events`, {
-      method: 'POST',
-      headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({
-        type: 'agent_action',
-        text: 'Agent opened Devin browser authentication',
-        actor: 'host',
-        properties: {
-          source: 'agent_prompt_ui',
-          actionId: 'open-devin-auth-browser',
-          origin: 'prompt',
-          executedBy: 'host',
-          actionSource: 'agent_prompt_ui',
-          executionStatus: 'executed',
-          capturedAtMs: 1782594350000,
-          agentActionEventId: 'agent-action:host:1782594350000:agent_prompt_ui:prompt:executed:open-devin-auth-browser',
-          agent: null,
-          agentResponseClaimed: false,
-          surface: 'standard',
-          roomPhase: 'connected',
-          workspaceStatus: 'READY',
-          workspaceSessionId: 'workspace-session-1',
-        },
-      }),
-    }, env, ctx);
-    expect(agentAuthBrowserRes.status).toBe(200);
-
-    const agentAuthTerminalRes = await app.request(`/meeting/${created.hostToken}/session-events`, {
-      method: 'POST',
-      headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({
-        type: 'agent_action',
-        text: 'Agent action: open terminal for Devin authentication',
-        actor: 'host',
-        properties: {
-          source: 'agent_prompt_ui',
-          actionId: 'open-devin-auth-terminal',
-          origin: 'prompt',
-          executedBy: 'host',
-          actionSource: 'agent_prompt_ui',
-          executionStatus: 'executed',
-          capturedAtMs: 1782594400000,
-          agentActionEventId: 'agent-action:host:1782594400000:agent_prompt_ui:prompt:executed:open-devin-auth-terminal',
-          agent: null,
-          agentResponseClaimed: false,
-          surface: 'standard',
-          roomPhase: 'connected',
-          workspaceStatus: 'READY',
-          workspaceSessionId: 'workspace-session-1',
-        },
-      }),
-    }, env, ctx);
-    expect(agentAuthTerminalRes.status).toBe(200);
 
     const agentSuggestionRes = await app.request(`/meeting/${created.hostToken}/session-events`, {
       method: 'POST',
@@ -1894,33 +1690,8 @@ describe('meeting room recording living-context route', () => {
       source_type: string;
       extracted_properties_json: string;
     }>;
-    expect(agentNodes).toHaveLength(6);
+    expect(agentNodes).toHaveLength(1);
     expect(agentNodes).toEqual(expect.arrayContaining([
-      expect.objectContaining({
-        node_type: 'session_agent_action',
-        source_type: 'meeting_session',
-        narrative_text: expect.stringContaining('Agent action: start recording'),
-      }),
-      expect.objectContaining({
-        node_type: 'session_agent_action',
-        source_type: 'meeting_session',
-        narrative_text: expect.stringContaining('AI assistant opened from the room chat panel'),
-      }),
-      expect.objectContaining({
-        node_type: 'session_agent_action',
-        source_type: 'meeting_session',
-        narrative_text: expect.stringContaining('AI assistant chat panel closed'),
-      }),
-      expect.objectContaining({
-        node_type: 'session_agent_action',
-        source_type: 'meeting_session',
-        narrative_text: expect.stringContaining('Agent opened Devin browser authentication'),
-      }),
-      expect.objectContaining({
-        node_type: 'session_agent_action',
-        source_type: 'meeting_session',
-        narrative_text: expect.stringContaining('Agent action: open terminal for Devin authentication'),
-      }),
       expect.objectContaining({
         node_type: 'session_agent_action',
         source_type: 'meeting_session',
@@ -1928,56 +1699,6 @@ describe('meeting room recording living-context route', () => {
       }),
     ]));
     expect(agentNodes.map((entry) => JSON.parse(entry.extracted_properties_json))).toEqual(expect.arrayContaining([
-      expect.objectContaining({
-        actor: 'host',
-        source: 'agent_prompt_ui',
-        actionId: 'start-recording',
-        actionSource: 'agent_prompt_ui',
-        executionStatus: 'executed',
-        capturedAtMs: 1782594200000,
-        agentActionEventId: 'agent-action:host:1782594200000:agent_prompt_ui:prompt:executed:start-recording',
-        surface: 'standard',
-      }),
-      expect.objectContaining({
-        actor: 'host',
-        source: 'agent_chat_ui',
-        actionId: 'open-agent-chat',
-        actionSource: 'agent_chat_panel',
-        executionStatus: 'opened',
-        capturedAtMs: 1782594250000,
-        agentActionEventId: 'agent-action:host:1782594250000:agent_chat_ui:chat:opened:open-agent-chat',
-        surface: 'standard',
-      }),
-      expect.objectContaining({
-        actor: 'host',
-        source: 'agent_chat_ui',
-        actionId: 'close-agent-chat',
-        actionSource: 'agent_chat_panel',
-        executionStatus: 'closed',
-        capturedAtMs: 1782594300000,
-        agentActionEventId: 'agent-action:host:1782594300000:agent_chat_ui:chat:closed:close-agent-chat',
-        surface: 'standard',
-      }),
-      expect.objectContaining({
-        actor: 'host',
-        source: 'agent_prompt_ui',
-        actionId: 'open-devin-auth-browser',
-        actionSource: 'agent_prompt_ui',
-        executionStatus: 'executed',
-        capturedAtMs: 1782594350000,
-        agentActionEventId: 'agent-action:host:1782594350000:agent_prompt_ui:prompt:executed:open-devin-auth-browser',
-        surface: 'standard',
-      }),
-      expect.objectContaining({
-        actor: 'host',
-        source: 'agent_prompt_ui',
-        actionId: 'open-devin-auth-terminal',
-        actionSource: 'agent_prompt_ui',
-        executionStatus: 'executed',
-        capturedAtMs: 1782594400000,
-        agentActionEventId: 'agent-action:host:1782594400000:agent_prompt_ui:prompt:executed:open-devin-auth-terminal',
-        surface: 'standard',
-      }),
       expect.objectContaining({
         actor: 'agent',
         source: 'agent_bridge',
@@ -2068,11 +1789,11 @@ describe('meeting room recording living-context route', () => {
           source: 'agent_bridge',
           agent: 'devin',
           status: 'thinking',
-          diagnosticSource: 'agent_prompt_sent',
+          diagnosticSource: 'user_prompt_sent',
           bridgeMessageSource: 'bridge_diagnostic',
           observedAt: '2026-06-27T21:13:00.000Z',
           capturedAtMs: 1782594780000,
-          agentStatusEventId: 'agent-status:devin:1782594780000:bridge_diagnostic:thinking:agent_prompt_sent',
+          agentStatusEventId: 'agent-status:devin:1782594780000:bridge_diagnostic:thinking:user_prompt_sent',
           promptType: 'chat_prompt',
           deliveredToAgent: true,
           promptLength: 120,
@@ -2110,10 +1831,10 @@ describe('meeting room recording living-context route', () => {
         actor: 'agent',
         source: 'agent_bridge',
         bridgeMessageSource: 'bridge_diagnostic',
-        diagnosticSource: 'agent_prompt_sent',
+        diagnosticSource: 'user_prompt_sent',
         observedAt: '2026-06-27T21:13:00.000Z',
         capturedAtMs: 1782594780000,
-        agentStatusEventId: 'agent-status:devin:1782594780000:bridge_diagnostic:thinking:agent_prompt_sent',
+        agentStatusEventId: 'agent-status:devin:1782594780000:bridge_diagnostic:thinking:user_prompt_sent',
         bridgePersisted: true,
       }),
     ]));
@@ -3068,27 +2789,6 @@ describe('meeting room recording living-context route', () => {
           },
         },
       ],
-      agentPromptActivityLog: [
-        {
-          role: 'HOST',
-          recordedAt: 1700000003000,
-          prompt: {
-            id: 'prompt-open-workspace',
-            clientId: 'host-client',
-            createdAt: 1700000003000,
-            source: 'system',
-            promptEventSource: 'browser_proactive_agent_prompt',
-            promptTrigger: 'host_waiting_prepare_workspace',
-            surface: 'standard',
-            roomPhase: 'connected',
-            workspaceStatus: 'READY',
-            workspaceSessionId: 'workspace-session-1',
-            agentResponseClaimed: false,
-            text: 'Would you like to open the workspace?',
-            actions: [{ id: 'open-workspace', label: 'Open workspace' }],
-          },
-        },
-      ],
       agentInteractionActivityLog: [
         {
           role: 'GUEST',
@@ -3213,7 +2913,6 @@ describe('meeting room recording living-context route', () => {
       'session_code_editor_save',
       'session_terminal_command',
       'session_terminal_output',
-      'session_agent_prompt',
       'session_agent_status',
       'session_chat_user',
     ]);
@@ -3275,19 +2974,6 @@ describe('meeting room recording living-context route', () => {
       capturedAtMs: 1700000002600,
       workspaceSessionId: 'workspace-session-1',
     });
-    expect(graphBody.events.find((event) => event.nodeType === 'session_agent_prompt')?.properties).toMatchObject({
-      roomActivitySource: 'durable_object',
-      source: 'agent_prompt_client_submit',
-      promptEventSource: 'browser_proactive_agent_prompt',
-      promptTrigger: 'host_waiting_prepare_workspace',
-      surface: 'standard',
-      roomPhase: 'connected',
-      workspaceStatus: 'READY',
-      workspaceSessionId: 'workspace-session-1',
-      agentResponseClaimed: false,
-      promptCreatedAt: 1700000003000,
-      promptLength: 'Would you like to open the workspace?'.length,
-    });
     expect(graphBody.events.find((event) => event.nodeType === 'session_chat_user')?.properties).toMatchObject({
       roomActivitySource: 'durable_object',
       roomActivityKind: 'agent_interaction',
@@ -3318,7 +3004,7 @@ describe('meeting room recording living-context route', () => {
          FROM candidate_nodes
         WHERE candidate_id = ? AND source_type = 'meeting_session'`,
     ).get(graphBody.candidateId) as { count: number };
-    expect(nodeCountAfterFirstRead.count).toBe(7);
+    expect(nodeCountAfterFirstRead.count).toBe(6);
 
     const secondGraphRes = await app.request(`/meeting/${created.hostToken}/context-graph`, {
       method: 'GET',
@@ -3329,7 +3015,7 @@ describe('meeting room recording living-context route', () => {
          FROM candidate_nodes
         WHERE candidate_id = ? AND source_type = 'meeting_session'`,
     ).get(graphBody.candidateId) as { count: number };
-    expect(nodeCountAfterSecondRead.count).toBe(7);
+    expect(nodeCountAfterSecondRead.count).toBe(6);
     expect(doFetch).toHaveBeenCalledWith(expect.objectContaining({
       url: 'https://do/activity-log',
     }));
@@ -3365,7 +3051,6 @@ describe('meeting room recording living-context route', () => {
           },
         },
       ],
-      agentPromptActivityLog: [],
     };
     const doFetch = vi.fn(async (request: Request) => {
       const url = new URL(request.url);
@@ -3459,7 +3144,6 @@ describe('meeting room recording living-context route', () => {
       if (url.pathname === '/activity-log') {
         return new Response(JSON.stringify({
           chatActivityLog: [],
-          agentPromptActivityLog: [],
         }), {
           headers: { 'Content-Type': 'application/json' },
         });
