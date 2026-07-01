@@ -162,7 +162,7 @@ Acceptance:
 | CAC-03 | Candidate-safe packet panel | Source-backed task packet visible without ids/ground truth | Packet render test with missing-evidence diagnostic |
 | CAC-04 | Workspace evidence status strip | File/terminal/test/git/AI state shown from accepted evidence | Durable Object/API evidence replay test |
 | CAC-05 | Cockpit Submit Work | Final bundle available in the cockpit | End-to-end submit test from cockpit |
-| CAC-06 | Sync boundary hardening | Layout/tool sync removed from critical path | Replay test proves scoring ignores layout state |
+| CAC-06 | Runtime boundary hardening | Room UI state removed from critical scoring path | Replay test proves scoring ignores room UI state |
 | CAC-07 | Recruiter result continuity | Results read assessment events, not layout replay | Recruiter result test with no layout replay events |
 
 ## Design Notes

@@ -140,8 +140,8 @@ The controlling product rule remains:
   `ai_chat_agent` evidence.
 - Accepted mic/camera control toggles now replay from the Durable Object
   activity log as source-backed `media_control` evidence, preserving actor,
-  surface, room phase, previous state, next state, and browser-control
-  provenance across both standard and assessment-room surfaces.
+  room phase, previous state, next state, and browser-control provenance for
+  the assessment room.
 - Browser chat sends are optimistic client submissions until the Durable Object
   acknowledges or rejects the exact message id. Client-side evidence marks
   those submissions as pending; the synced Durable Object chat activity log is

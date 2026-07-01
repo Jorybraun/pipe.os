@@ -849,7 +849,7 @@ test.describe('two-user video room', () => {
     }
   });
 
-  test('syncs standard assessment room chat across host and guest', async ({
+  test('shares assessment room chat between host and guest', async ({
     browser,
     page,
     request,
@@ -897,10 +897,10 @@ test.describe('two-user video room', () => {
       await expect(host.getByTestId('standard-chat')).toBeVisible();
       await expect(guest.getByTestId('standard-chat')).toBeVisible();
 
-      await host.getByTestId('chat-input').fill('Host can send messages inside the shared room.');
+      await host.getByTestId('chat-input').fill('Host can send messages inside the assessment room.');
       await host.getByTestId('chat-send').click();
       await expect(guest.getByTestId('chat-window')).toContainText(
-        'Host can send messages inside the shared room.',
+        'Host can send messages inside the assessment room.',
         { timeout: 10_000 },
       );
 
@@ -916,14 +916,14 @@ test.describe('two-user video room', () => {
     }
   });
 
-  test('syncs a host-launched dev workspace iframe to the guest assessment room', async ({
+  test('opens the controlled dev workspace in the assessment room', async ({
     browser,
     page,
     request,
   }) => {
     const token = await getAuthToken(page);
     const { hostUrl, guestUrl } = await createMeetingRoom(request, token, {
-      title: 'E2E Shared Dev Workspace Assessment',
+      title: 'E2E Dev Workspace Assessment',
     });
 
     const hostContext = await browser.newContext({
