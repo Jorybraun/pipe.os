@@ -1890,9 +1890,13 @@ function CodeReviewDecisionCard({ decision }: { decision: CodeReviewDecisionProj
         <div style={DECISION_FACT}>
           <div style={DECISION_FACT_LABEL}>Missing context</div>
           <ul style={DECISION_LIST}>
-            {decision.missingContext.map((item) => (
-              <li key={item}>{item}</li>
-            ))}
+            {decision.missingContext.length > 0 ? (
+              decision.missingContext.map((item) => (
+                <li key={item}>{item}</li>
+              ))
+            ) : (
+              <li>No blocking evidence gap recorded; confirm the signal transfers beyond this task.</li>
+            )}
           </ul>
         </div>
         <div style={DECISION_FACT}>

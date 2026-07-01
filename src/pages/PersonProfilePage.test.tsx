@@ -749,6 +749,33 @@ describe('PersonProfilePage', () => {
     expect(mocks.api.get).toHaveBeenCalledWith('/api/v1/contacts/person-1/living-context');
   });
 
+  it('makes empty selected code-review missing context explicit', async () => {
+    const summaryContext = makeLivingContext();
+    summaryContext.interactions = [];
+    summaryContext.artifacts = [];
+    summaryContext.contextRecords = [];
+    summaryContext.assertions = [];
+    summaryContext.signals = [];
+    summaryContext.relationships = [];
+    const decision = makeSelectedCodeReviewDecision() as Record<string, unknown>;
+    decision.missingContext = [];
+
+    mocks.api.get
+      .mockResolvedValueOnce({ contact: makeContact() })
+      .mockResolvedValueOnce(summaryContext);
+
+    renderPage({
+      livingContext: summaryContext,
+      selectedCodeReviewDecision: decision,
+    });
+    await flushAsyncUpdates();
+
+    const decisionCard = screen.getByTestId('person-code-review-decision');
+    expect(decisionCard).toHaveTextContent('Missing context');
+    expect(decisionCard).toHaveTextContent('No blocking evidence gap recorded; confirm the signal transfers beyond this task.');
+    expect(screen.getByTestId('person-decision-cockpit')).toHaveTextContent('No blocking evidence gap');
+  });
+
   it('hydrates real interaction coverage after opening from a compact code-review navigation decision', async () => {
     const summaryContext = makeLivingContext();
     summaryContext.interactions = [];
