@@ -210,3 +210,24 @@ export type {
   GraphTraversalResult,
   GraphTraversalOptions,
 } from './graphTraversal';
+export { mergeConcepts, splitConcept, queryConceptEvolution } from './conceptEvolution';
+export type {
+  EvolutionEventType,
+  ConceptEvolutionEvent,
+  ConceptEvolutionTimeline,
+  SupersessionLink,
+  MergeConceptsInput,
+  MergeConceptsResult,
+  SplitConceptInput,
+  SplitConceptResult,
+  ConceptEvolutionOptions,
+} from './conceptEvolution';
+export { searchEvidence } from './evidenceSemanticSearch';
+export type {
+  SearchStrategy,
+  EvidenceHitType,
+  EvidenceSearchOptions,
+  EvidenceHitProvenance,
+  EvidenceSearchHit,
+  EvidenceSearchResult,
+} from './evidenceSemanticSearch';

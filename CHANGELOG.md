@@ -7,6 +7,17 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Added — Concept evolution tracking (criterion #3)
+
+- `conceptEvolution.ts`: Tracks concept merges, splits, and evolution over time. `mergeConcepts` consolidates multiple concepts into a survivor (repoints surfaces, adjacencies, assertion_concepts links, marks absorbed as superseded, records event). `splitConcept` moves a subset of surfaces to a new concept. `queryConceptEvolution` returns full evolution timeline, current aliases, and supersession chain with time filtering.
+- Migration `0109_concept_evolution_events.sql`: Adds `concept_evolution_events` table with indexes on survivor_concept_id and event_type.
+- `conceptEvolution.test.ts`: 12-test suite covering merge (repoints FK links, aggregates observation counts, handles multiple absorbed), split (moves surfaces, validates ownership), and query (timeline, supersession chain, alias resolution, since filter).
+
+### Added — Evidence semantic search (criterion #2)
+
+- `evidenceSemanticSearch.ts`: Unified cross-evidence search combining text LIKE matching on source spans/assertion narratives with concept-based lookup via assertion_concepts. Three strategies (text, concept, hybrid) with deduplication, relevance scoring, and full provenance on each hit. Supports filters: minConfidence, interactionTypes, since/until, limit.
+- `evidenceSemanticSearch.test.ts`: 14-test suite covering text search (span + assertion hits, empty results), concept search (canonical key + surface alias matching), hybrid (deduplication, enrichment, ranking), filters (confidence, interaction type, limit), and provenance chain verification.
+
 ### Added — Graph traversal engine (criterion #7)
 
 - `graphTraversal.ts`: BFS-based graph traversal engine for the living context entity graph. Starts from any entity type (person, workspace_person, interaction, artifact, assertion, concept, signal_evidence, source_span, match_run) and walks connected entities up to configurable depth/maxNodes. Every edge carries source evidence (sourceSpanId, exactText, confidence) for full explainability. Deduplicates nodes and edges, supports entity type filtering, and sets a truncated flag when maxNodes is exceeded.
