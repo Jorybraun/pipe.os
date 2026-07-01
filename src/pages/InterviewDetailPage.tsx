@@ -1321,7 +1321,7 @@ function codeReviewActionText(
 ): string {
   const verdict = submission?.verdict?.toLowerCase() ?? null;
   if (verdict === 'request_changes' || verdict === 'changes_requested') {
-    return 'Use the annotated lines and developer pushback to judge whether the requested changes are concrete, source-backed, and worth blocking the PR.';
+    return 'Use the annotated lines and implementation-author replies to judge whether the requested changes are concrete, source-backed, and worth blocking the PR.';
   }
   if (verdict === 'approve' || verdict === 'approved') {
     return 'Check whether the candidate found enough risk before treating the approval as a positive signal.';
@@ -1434,7 +1434,7 @@ function codeReviewScoreTrustSummary(input: {
   const validParts = uniqueTextParts([
     input.score.status === 'scored' ? 'Scored review' : `Score ${titleCaseToken(input.score.status)}`,
     countLabel(annotationCount, 'annotation'),
-    countLabel(pushbackCount, 'pushback thread'),
+    countLabel(pushbackCount, 'implementation-author reply thread'),
     input.proofCount > 0 ? countLabel(input.proofCount, 'evidence bridge') : null,
     qualityGate,
   ]);
@@ -1443,7 +1443,7 @@ function codeReviewScoreTrustSummary(input: {
     input.score.band ? `${input.score.band.toLowerCase()} band` : null,
     input.proofCount === 0 ? 'no rendered source bridge' : null,
     annotationCount === 0 ? 'no review annotations' : null,
-    pushbackCount === 0 ? 'no developer pushback thread' : null,
+    pushbackCount === 0 ? 'no implementation-author reply thread' : null,
     input.score.growthAreas[0] ?? null,
   ].filter((item): item is string => Boolean(item));
   const scoreProvenance = input.score.provenance;
@@ -1528,7 +1528,7 @@ function codeReviewAssessmentValiditySummary(input: {
         ? 'Usable with assignment calibration'
         : 'Score needs assignment calibration',
       detail: pushbackCount > 0
-        ? 'Score, review comments, and developer pushback are present, but manual PR selection does not prove candidate-fit. Calibrate assignment fairness before making a hiring decision.'
+        ? 'Score, review comments, and implementation-author replies are present, but manual PR selection does not prove candidate-fit. Calibrate assignment fairness before making a hiring decision.'
         : 'A score exists, but manual PR selection does not prove candidate-fit. Review source evidence and assignment fairness before relying on it.',
       tone: 'watch',
     };
@@ -1537,7 +1537,7 @@ function codeReviewAssessmentValiditySummary(input: {
   if (scoreReady && annotationCount > 0 && pushbackCount > 0 && hasMatchProof) {
     return {
       value: 'Usable with calibration',
-      detail: 'Score, review comments, developer pushback, and match proof are present; use this as a source-backed signal, not an automatic hiring decision.',
+      detail: 'Score, review comments, implementation-author replies, and match proof are present; use this as a source-backed signal, not an automatic hiring decision.',
       tone: 'positive',
     };
   }
@@ -1545,7 +1545,7 @@ function codeReviewAssessmentValiditySummary(input: {
   if (scoreReady && annotationCount > 0 && hasMatchProof) {
     return {
       value: 'Usable but incomplete',
-      detail: 'Score and review evidence are present, but developer pushback is missing, so validate the judgment in the next conversation.',
+      detail: 'Score and review evidence are present, but implementation-author replies are missing, so validate the judgment in the next conversation.',
       tone: 'neutral',
     };
   }
@@ -1725,14 +1725,18 @@ function codeReviewMatchExplanation(input: {
     hyperedgeCount > 0 ? countLabel(hyperedgeCount, 'evidence bridge') : null,
     quality ? `quality ${quality}` : null,
   ].filter((part): part is string => Boolean(part));
+  const renderedSourceBridgeCount = personSources + roleSources + repoSources + hyperedgeCount;
+  const proofSummary = renderedSourceBridgeCount > 0
+    ? proofParts.join(' · ')
+    : quality
+      ? `Quality gate ${quality}, but no rendered source bridge is available; treat this as assignment evidence until exact candidate, role, and repo spans are visible.`
+      : 'No rendered source bridge is available; treat this as assignment evidence until exact candidate, role, and repo spans are visible.';
 
   return {
     selectedChallenge,
     whyThisChallenge: input.match.summary
       || `PIPE aligned ${input.matchPathLabel} for this reviewable PR challenge.`,
-    proofSummary: proofParts.length > 0
-      ? proofParts.join(' · ')
-      : 'Source proof exists in the match packet; open source proof for exact spans.',
+    proofSummary,
     riskSummary: `${input.assignmentTrust.value}: ${input.assignmentTrust.detail}`,
     remainingQuestion: `${input.validity.value}: ${input.validity.detail} ${scoreText}.`,
     tone: input.validity.tone,
@@ -3296,8 +3300,8 @@ export default function InterviewDetailPage(): JSX.Element {
       label: 'Pushback',
       value: countLabel(codeReviewSubmission?.defenseThreads.length ?? 0, 'pushback thread'),
       detail: (codeReviewSubmission?.defenseThreads.length ?? 0) > 0
-        ? 'developer replies are available for judgment calibration'
-        : 'no developer pushback captured yet',
+        ? 'implementation-author replies are available for judgment calibration'
+        : 'no implementation-author replies captured yet',
     },
     {
       label: 'Proof',

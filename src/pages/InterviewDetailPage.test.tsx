@@ -1294,11 +1294,11 @@ describe('InterviewDetailPage', () => {
     expect(decision).toHaveTextContent('Probe how they would validate timing cleanup.');
     expect(decision).toHaveTextContent('Score validity');
     expect(decision).toHaveTextContent('Usable with calibration');
-    expect(decision).toHaveTextContent('Score, review comments, developer pushback, and match proof are present');
+    expect(decision).toHaveTextContent('Score, review comments, implementation-author replies, and match proof are present');
     expect(decision).toHaveTextContent('Assignment trust');
     expect(decision).toHaveTextContent('Matched');
     expect(decision).toHaveTextContent('PIPE selected this challenge from source-backed candidate evidence');
-    expect(decision).toHaveTextContent('Use the annotated lines and developer pushback to judge whether the requested changes are concrete, source-backed, and worth blocking the PR.');
+    expect(decision).toHaveTextContent('Use the annotated lines and implementation-author replies to judge whether the requested changes are concrete, source-backed, and worth blocking the PR.');
     expect(decision).toHaveTextContent('Strong assessment fit');
     expect(decision).toHaveTextContent('72/100 Adequate');
     expect(decision).toHaveTextContent('1 pushback thread');
@@ -1317,7 +1317,7 @@ describe('InterviewDetailPage', () => {
     expect(scoreTrust).toHaveTextContent('Valid because');
     expect(scoreTrust).toHaveTextContent('Scored review');
     expect(scoreTrust).toHaveTextContent('1 annotation');
-    expect(scoreTrust).toHaveTextContent('1 pushback thread');
+    expect(scoreTrust).toHaveTextContent('1 implementation-author reply thread');
     expect(scoreTrust).toHaveTextContent('1 evidence bridge');
     expect(scoreTrust).toHaveTextContent('strong match gate');
     expect(scoreTrust).toHaveTextContent('Calibrate because');
@@ -1475,6 +1475,10 @@ describe('InterviewDetailPage', () => {
     const gateMentions = scoreTrust.textContent?.match(/usable match gate/g) ?? [];
     expect(gateMentions).toHaveLength(1);
     expect(scoreTrust).toHaveTextContent('no rendered source bridge');
+    const explanation = screen.getByTestId('interview-code-review-match-explanation');
+    expect(explanation).toHaveTextContent('Quality gate 8/12 Usable');
+    expect(explanation).toHaveTextContent('no rendered source bridge is available');
+    expect(explanation).toHaveTextContent('treat this as assignment evidence until exact candidate, role, and repo spans are visible');
 
     const sourceProof = screen.getByText('Source proof').closest('details');
     expect(sourceProof).not.toHaveAttribute('open');
