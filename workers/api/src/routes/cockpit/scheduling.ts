@@ -250,6 +250,7 @@ type ScheduledAssessmentSetupSource =
   | 'not_workspace_assessment'
   | 'recruiter_manual_override'
   | 'matched_repo_id'
+  | 'candidate_challenge_assignment'
   | 'contact_first_invite'
   | 'candidate_id';
 
@@ -307,6 +308,7 @@ function buildScheduledAssessmentSetup(input: {
   matchedRepoId: number | null | undefined;
   githubRepoUrl: string | null | undefined;
   githubPrNumber: number | null | undefined;
+  matchedRepoSource?: Extract<ScheduledAssessmentSetupSource, 'matched_repo_id' | 'candidate_challenge_assignment'> | undefined;
   manualOpenSourceChallengePacket?: boolean | undefined;
   lastDeliveredUrl?: string | null | undefined;
   lastDeliveredUrlState?: 'active' | 'claimed' | 'stale' | null | undefined;
@@ -353,7 +355,7 @@ function buildScheduledAssessmentSetup(input: {
     return {
       status: 'reviewable_task_assigned',
       kind: 'auto_match',
-      source: 'matched_repo_id',
+      source: input.matchedRepoSource ?? 'matched_repo_id',
       blocksPositiveAssessment: false,
       message: 'PIPE selected a concrete GitHub PR from source-backed candidate evidence and repository demands. Use the assignment as match-fit evidence alongside the candidate review.',
       nextAction: 'OPEN_ROOM_OR_WORKSPACE',
@@ -383,7 +385,7 @@ function buildScheduledAssessmentSetup(input: {
     return {
       status: 'missing_reviewable_task',
       kind: 'matched_repo_without_pr',
-      source: 'matched_repo_id',
+      source: input.matchedRepoSource ?? 'matched_repo_id',
       blocksPositiveAssessment: true,
       message: 'A matched repository exists, but no GitHub PR or task was assigned. Treat this as an assessment setup gap, not candidate evidence.',
       nextAction: 'ATTACH_CHALLENGE_PACKET',
@@ -5002,6 +5004,26 @@ schedulingAuth.get('/interviews', async (c) => {
           LIMIT 1
        )`
     : '';
+  const hasCandidateChallengeAssignments = await tableExists(db, 'candidate_challenge_assignment');
+  const assignmentSelect = hasCandidateChallengeAssignments
+    ? `cca.repo_id AS assignment_repo_id,
+              cca.github_repo_url AS assignment_github_repo_url,
+              cca.github_pr_number AS assignment_github_pr_number`
+    : `NULL AS assignment_repo_id,
+              NULL AS assignment_github_repo_url,
+              NULL AS assignment_github_pr_number`;
+  const assignmentJoin = hasCandidateChallengeAssignments
+    ? `LEFT JOIN candidate_challenge_assignment cca ON cca.id = (
+         SELECT latest_cca.id
+           FROM candidate_challenge_assignment latest_cca
+          WHERE latest_cca.candidate_id = si.candidate_id
+            AND latest_cca.stage_id = si.stage_id
+            AND latest_cca.github_repo_url IS NOT NULL
+            AND latest_cca.github_pr_number IS NOT NULL
+          ORDER BY latest_cca.assigned_at DESC, latest_cca.id DESC
+          LIMIT 1
+       )`
+    : '';
 
   const countRow = await db
     .prepare('SELECT COUNT(*) AS total FROM scheduled_interviews WHERE owner_id = ?')
@@ -5019,6 +5041,7 @@ schedulingAuth.get('/interviews', async (c) => {
               si.email_sent_at, si.booking_confirmation_sent_at,
               si.recipient_name, si.recipient_email,
               si.matched_repo_id, si.github_repo_url, si.github_pr_number,
+              ${assignmentSelect},
               si.completed_at, si.created_at, si.updated_at,
               c.name AS candidate_name, c.email AS candidate_email,
               p.title AS pipeline_title,
@@ -5041,6 +5064,7 @@ schedulingAuth.get('/interviews', async (c) => {
        LEFT JOIN candidates c ON c.id = si.candidate_id
        LEFT JOIN pipelines p ON p.id = si.pipeline_id
        LEFT JOIN stages s ON s.id = si.stage_id
+       ${assignmentJoin}
        LEFT JOIN meetings m ON m.id = (
          SELECT lm.id
            FROM meetings lm
@@ -5080,6 +5104,9 @@ schedulingAuth.get('/interviews', async (c) => {
       matched_repo_id: number | null;
       github_repo_url: string | null;
       github_pr_number: number | null;
+      assignment_repo_id: number | null;
+      assignment_github_repo_url: string | null;
+      assignment_github_pr_number: number | null;
       completed_at: string | null;
       created_at: string;
       updated_at: string;
@@ -5108,6 +5135,14 @@ schedulingAuth.get('/interviews', async (c) => {
 
   const interviews = rows.map((r) => {
     const assessmentProgress = assessmentProgressByInterviewId.get(r.id) ?? null;
+    const matchedRepoId = r.matched_repo_id ?? r.assignment_repo_id;
+    const githubRepoUrl = r.github_repo_url ?? r.assignment_github_repo_url;
+    const githubPrNumber = r.github_pr_number ?? r.assignment_github_pr_number;
+    const matchedRepoSource = r.matched_repo_id != null
+      ? 'matched_repo_id'
+      : r.assignment_repo_id != null
+        ? 'candidate_challenge_assignment'
+        : undefined;
     return {
       id: r.id,
       candidateId: r.candidate_id,
@@ -5129,15 +5164,16 @@ schedulingAuth.get('/interviews', async (c) => {
       bookingConfirmationSentAt: r.booking_confirmation_sent_at,
       recipientName: r.recipient_name,
       recipientEmail: r.recipient_email,
-      matchedRepoId: r.matched_repo_id,
-      githubRepoUrl: r.github_repo_url,
-      githubPrNumber: r.github_pr_number,
+      matchedRepoId,
+      githubRepoUrl,
+      githubPrNumber,
       assessmentSetup: buildScheduledAssessmentSetup({
         interviewType: r.interview_type,
         candidateId: r.candidate_id,
-        matchedRepoId: r.matched_repo_id,
-        githubRepoUrl: r.github_repo_url,
-        githubPrNumber: r.github_pr_number,
+        matchedRepoId,
+        githubRepoUrl,
+        githubPrNumber,
+        matchedRepoSource,
         manualOpenSourceChallengePacket: assessmentProgress?.hasChallengePacket === true,
       }),
       assessmentProgress,
@@ -5176,6 +5212,26 @@ schedulingAuth.get('/interviews/:id', async (c) => {
   const userId = c.var.userId;
   const { id } = c.req.param();
   const db = c.env.DB;
+  const hasCandidateChallengeAssignments = await tableExists(db, 'candidate_challenge_assignment');
+  const assignmentSelect = hasCandidateChallengeAssignments
+    ? `cca.repo_id AS assignment_repo_id,
+              cca.github_repo_url AS assignment_github_repo_url,
+              cca.github_pr_number AS assignment_github_pr_number`
+    : `NULL AS assignment_repo_id,
+              NULL AS assignment_github_repo_url,
+              NULL AS assignment_github_pr_number`;
+  const assignmentJoin = hasCandidateChallengeAssignments
+    ? `LEFT JOIN candidate_challenge_assignment cca ON cca.id = (
+         SELECT latest_cca.id
+           FROM candidate_challenge_assignment latest_cca
+          WHERE latest_cca.candidate_id = si.candidate_id
+            AND latest_cca.stage_id = si.stage_id
+            AND latest_cca.github_repo_url IS NOT NULL
+            AND latest_cca.github_pr_number IS NOT NULL
+          ORDER BY latest_cca.assigned_at DESC, latest_cca.id DESC
+          LIMIT 1
+       )`
+    : '';
 
   const interview = await db
     .prepare(
@@ -5187,6 +5243,7 @@ schedulingAuth.get('/interviews/:id', async (c) => {
               si.email_sent_at, si.booking_confirmation_sent_at,
               si.recipient_name, si.recipient_email,
               si.matched_repo_id, si.github_repo_url, si.github_pr_number,
+              ${assignmentSelect},
               si.submission_json, si.completed_at, si.created_at, si.updated_at,
               (
                 SELECT rc.id
@@ -5204,6 +5261,7 @@ schedulingAuth.get('/interviews/:id', async (c) => {
        LEFT JOIN candidates c ON c.id = si.candidate_id
        LEFT JOIN pipelines p ON p.id = si.pipeline_id
        LEFT JOIN stages s ON s.id = si.stage_id
+       ${assignmentJoin}
        WHERE si.id = ? AND si.owner_id = ?`
     )
     .bind(id, userId)
@@ -5231,6 +5289,9 @@ schedulingAuth.get('/interviews/:id', async (c) => {
       matched_repo_id: number | null;
       github_repo_url: string | null;
       github_pr_number: number | null;
+      assignment_repo_id: number | null;
+      assignment_github_repo_url: string | null;
+      assignment_github_pr_number: number | null;
       submission_json: string | null;
       completed_at: string | null;
       created_at: string;
@@ -5243,6 +5304,21 @@ schedulingAuth.get('/interviews/:id', async (c) => {
     }>();
 
   if (!interview) return apiError(c, 'NOT_FOUND', 'Interview not found.');
+
+  const effectiveMatchedRepoId = interview.matched_repo_id ?? interview.assignment_repo_id;
+  const effectiveGithubRepoUrl = interview.github_repo_url ?? interview.assignment_github_repo_url;
+  const effectiveGithubPrNumber = interview.github_pr_number ?? interview.assignment_github_pr_number;
+  const effectiveMatchedRepoSource = interview.matched_repo_id != null
+    ? 'matched_repo_id'
+    : interview.assignment_repo_id != null
+      ? 'candidate_challenge_assignment'
+      : undefined;
+  const effectiveCodeReviewInterview = {
+    ...interview,
+    matched_repo_id: effectiveMatchedRepoId,
+    github_repo_url: effectiveGithubRepoUrl,
+    github_pr_number: effectiveGithubPrNumber,
+  };
 
   const transcriptArtifactPromise = optionalScheduledDetailProjection(
     'transcriptArtifact',
@@ -5364,7 +5440,7 @@ schedulingAuth.get('/interviews/:id', async (c) => {
   );
   const codeReviewMatchPromise = optionalScheduledDetailProjection(
     'codeReviewMatch',
-    loadScheduledCodeReviewMatchDetail(db, interview),
+    loadScheduledCodeReviewMatchDetail(db, effectiveCodeReviewInterview),
     null,
     6_000,
   );
@@ -5438,15 +5514,16 @@ schedulingAuth.get('/interviews/:id', async (c) => {
       candidateEmail: interview.candidate_email,
       pipelineTitle: interview.pipeline_title,
       stageTitle: interview.stage_title,
-      matchedRepoId: interview.matched_repo_id,
-      githubRepoUrl: interview.github_repo_url,
-      githubPrNumber: interview.github_pr_number,
+      matchedRepoId: effectiveMatchedRepoId,
+      githubRepoUrl: effectiveGithubRepoUrl,
+      githubPrNumber: effectiveGithubPrNumber,
       assessmentSetup: buildScheduledAssessmentSetup({
         interviewType: interview.interview_type,
         candidateId: interview.candidate_id,
-        matchedRepoId: interview.matched_repo_id,
-        githubRepoUrl: interview.github_repo_url,
-        githubPrNumber: interview.github_pr_number,
+        matchedRepoId: effectiveMatchedRepoId,
+        githubRepoUrl: effectiveGithubRepoUrl,
+        githubPrNumber: effectiveGithubPrNumber,
+        matchedRepoSource: effectiveMatchedRepoSource,
         manualOpenSourceChallengePacket: assessmentProgress?.hasChallengePacket === true,
         lastDeliveredUrl: assessmentInviteLink?.url ?? null,
         lastDeliveredUrlState: assessmentInviteLink?.state ?? null,

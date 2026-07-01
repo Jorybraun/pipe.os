@@ -2750,6 +2750,173 @@ describe('GET /interviews/:id detail', () => {
     });
   });
 
+  it('projects role-backed CODE_REVIEW assignment repo fields on recruiter list and detail', async () => {
+    seedInterviewDetailFixture();
+    sqlite!.prepare(`
+      INSERT INTO scheduled_interviews (
+        id, candidate_id, pipeline_id, stage_id, owner_id, interview_type,
+        meeting_type, status, scheduled_at, meeting_url, scheduling_provider,
+        scheduling_url, external_event_id, recruiter_notes, sync_source,
+        last_synced_at, invite_link_sent_at, email_sent_at, recipient_name,
+        recipient_email, matched_repo_id, github_repo_url, github_pr_number,
+        submission_json, completed_at, created_at, updated_at
+      ) VALUES (
+        'interview-code-review-assignment-projection', 'candidate-1', 'pipeline-1', 'stage-1', 'owner-1',
+        'CODE_REVIEW', NULL, 'ACTIVE', NULL,
+        NULL, 'MANUAL', NULL, NULL, 'Assess PR review judgment.',
+        'MANUAL', NULL, '2026-06-22T17:40:00.000Z', '2026-06-22T17:40:00.000Z',
+        NULL, NULL, NULL, NULL, NULL,
+        NULL, NULL, '2026-06-22T17:30:00.000Z', '2026-06-22T17:45:00.000Z'
+      )
+    `).run();
+    sqlite!.exec(`
+      CREATE TABLE candidate_challenge_assignment (
+        id TEXT PRIMARY KEY,
+        candidate_id TEXT NOT NULL,
+        stage_id TEXT NOT NULL,
+        challenge_id TEXT NOT NULL,
+        repo_id INTEGER,
+        github_repo_url TEXT,
+        github_pr_number INTEGER,
+        issue_number INTEGER,
+        assigned_at TEXT NOT NULL
+      )
+    `);
+    sqlite!.prepare(`
+      INSERT INTO candidate_challenge_assignment (
+        id, candidate_id, stage_id, challenge_id, repo_id,
+        github_repo_url, github_pr_number, issue_number, assigned_at
+      ) VALUES (
+        'assignment-code-review-314', 'candidate-1', 'stage-1', 'challenge-code-review',
+        77, 'https://github.com/pipe-labs/orders', 314, NULL,
+        '2026-06-22T17:46:00.000Z'
+      )
+    `).run();
+    sqlite!.prepare(`
+      INSERT INTO review_challenge_packets (
+        id, repo_snapshot_id, repo_id, pr_number, production_ready,
+        quality_score, packet_json, updated_at
+      ) VALUES (
+        'packet-code-review-assignment', 'snapshot-orders', 77, 314, 1,
+        0.91, '{}', 1
+      )
+    `).run();
+    sqlite!.prepare(`
+      INSERT INTO match_runs (
+        id, candidate_id, role_snapshot_id, status, ranked_results_json,
+        selected_packet_id, query_json, created_at
+      ) VALUES (
+        'match-run-code-review-assignment', 'candidate-1', 'role-context:role-1:source-backed:simple-jd-v1',
+        'MATCHED', ?, 'packet-code-review-assignment', '{}', '2026-06-22T17:46:01.000Z'
+      )
+    `).run(JSON.stringify([{
+      rank: 1,
+      challengeId: 'packet-code-review-assignment',
+      repoId: '77',
+      prNumber: 314,
+      score: 0.88,
+      alignedDemandCount: 2,
+      stretchCount: 0,
+      provenanceComplete: true,
+      eligible: true,
+      assessmentQuality: {
+        verdict: 'USABLE',
+        score: 9,
+        maxScore: 12,
+        metrics: [{
+          id: 'contrast_separation',
+          label: 'Contrast separation',
+          score: 1,
+          maxScore: 2,
+          reason: 'The selected PR separated from the nearest eligible comparator.',
+        }],
+      },
+      validatorAgent: {
+        agentName: 'deterministic-code-review-match-gate',
+        agentVersion: 'test-v1',
+        mode: 'deterministic',
+        verdict: 'PASSED',
+        rationale: 'Selected PR #314 from source-backed candidate, role, and repo evidence.',
+        checks: [],
+        sourceBridge: {
+          prNumber: 314,
+          candidateSourceCount: 1,
+          repoSourceCount: 1,
+          roleSourceCount: 1,
+          alignedDemandCount: 2,
+          stretchCount: 0,
+          provenanceComplete: true,
+        },
+      },
+      alignments: [],
+      rejectionReasons: [],
+    }]));
+
+    const app = mountSchedulingApp();
+    const detailResponse = await app.request('/interviews/interview-code-review-assignment-projection');
+    expect(detailResponse.status).toBe(200);
+    const detail = await detailResponse.json() as {
+      interview: {
+        matchedRepoId: number | null;
+        githubRepoUrl: string | null;
+        githubPrNumber: number | null;
+        assessmentSetup: {
+          status: string;
+          kind: string;
+          source: string;
+          blocksPositiveAssessment: boolean;
+        };
+        codeReviewMatch: {
+          status: string;
+          matchRunId: string | null;
+          packetId: string | null;
+        } | null;
+      };
+    };
+
+    expect(detail.interview.matchedRepoId).toBe(77);
+    expect(detail.interview.githubRepoUrl).toBe('https://github.com/pipe-labs/orders');
+    expect(detail.interview.githubPrNumber).toBe(314);
+    expect(detail.interview.assessmentSetup).toMatchObject({
+      status: 'reviewable_task_assigned',
+      kind: 'auto_match',
+      source: 'candidate_challenge_assignment',
+      blocksPositiveAssessment: false,
+    });
+    expect(detail.interview.codeReviewMatch).toMatchObject({
+      status: 'MATCHED',
+      matchRunId: 'match-run-code-review-assignment',
+      packetId: 'packet-code-review-assignment',
+    });
+
+    const listResponse = await app.request('/interviews');
+    expect(listResponse.status).toBe(200);
+    const list = await listResponse.json() as {
+      interviews: Array<{
+        id: string;
+        matchedRepoId: number | null;
+        githubRepoUrl: string | null;
+        githubPrNumber: number | null;
+        assessmentSetup: {
+          status: string;
+          kind: string;
+          source: string;
+        };
+      }>;
+    };
+    const listed = list.interviews.find((item) => item.id === 'interview-code-review-assignment-projection');
+    expect(listed).toMatchObject({
+      matchedRepoId: 77,
+      githubRepoUrl: 'https://github.com/pipe-labs/orders',
+      githubPrNumber: 314,
+      assessmentSetup: {
+        status: 'reviewable_task_assigned',
+        kind: 'auto_match',
+        source: 'candidate_challenge_assignment',
+      },
+    });
+  });
+
   it('keeps CODE_REVIEW recruiter detail available when optional assessment session tables are absent', async () => {
     seedInterviewDetailFixture();
     sqlite!.exec('DROP TABLE assessment_sessions');

@@ -64,6 +64,7 @@ export type AssessmentSetupSource =
   | 'not_workspace_assessment'
   | 'recruiter_manual_override'
   | 'matched_repo_id'
+  | 'candidate_challenge_assignment'
   | 'contact_first_invite'
   | 'candidate_id';
 
