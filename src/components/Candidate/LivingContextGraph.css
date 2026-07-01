@@ -3763,3 +3763,86 @@ html[data-theme="pipe-blue"] .living-context {
   letter-spacing: 0.5px;
   margin-bottom: 6px;
 }
+
+/* ── Match confidence panel ──────────────────────────────────────────────── */
+
+.living-context__confidence-dimensions {
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+  margin-top: 10px;
+}
+
+.living-context__confidence-dimension {
+  display: flex;
+  flex-direction: column;
+  gap: 3px;
+}
+
+.living-context__confidence-dimension-head {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+}
+
+.living-context__confidence-dimension-label {
+  font: 11px "Space Mono", monospace;
+  color: var(--pipe-text-muted);
+}
+
+.living-context__confidence-dimension-score {
+  font: 11px "Space Mono", monospace;
+  color: var(--pipe-text);
+}
+
+.living-context__confidence-dimension-detail {
+  font: 10px "Space Mono", monospace;
+  color: var(--pipe-text-dim);
+}
+
+.living-context__confidence-stretch {
+  margin-top: 12px;
+}
+
+.living-context__confidence-stretch-item {
+  padding: 6px 8px;
+  border: 1px solid var(--lc-card-border);
+  border-radius: 6px;
+  background: var(--lc-card);
+  margin-bottom: 6px;
+}
+
+.living-context__confidence-stretch-narrative {
+  font-size: 11px;
+  line-height: 1.45;
+  color: var(--pipe-text-muted);
+}
+
+.living-context__confidence-stretch-reason {
+  margin-top: 3px;
+  font: 10px "Space Mono", monospace;
+  color: var(--lc-gap-weak, #f59e0b);
+}
+
+.living-context__recommendations {
+  margin-top: 12px;
+}
+
+.living-context__recommendation-list {
+  list-style: none;
+  padding: 0;
+  margin: 0;
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+}
+
+.living-context__recommendation-item {
+  padding: 6px 8px;
+  border-left: 2px solid var(--lc-concept, #3b82f6);
+  background: var(--lc-card);
+  border-radius: 0 6px 6px 0;
+  font-size: 11px;
+  line-height: 1.45;
+  color: var(--pipe-text-dim);
+}
