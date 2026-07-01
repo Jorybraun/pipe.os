@@ -1989,6 +1989,25 @@ async function standaloneReviewEvidenceReadiness(
     };
   }
 
+  if (
+    nodeCount > 0
+    && isInProgressStandaloneIngestionStatus(status)
+    && currentStep === 'decompose_resume'
+    && !standaloneEvidenceIsStale(status, updatedAt)
+  ) {
+    return {
+      ready: false,
+      terminal: false,
+      reason: 'candidate evidence decomposition is still finalizing source-backed context',
+      status,
+      currentStep,
+      nodeCount,
+      rawNodeCount,
+      updatedAt,
+      estimatedCompletionAt,
+    };
+  }
+
   if (nodeCount > 0) {
     return {
       ready: true,
