@@ -306,10 +306,12 @@ function codeReviewDecisionFromNavigationState(state: unknown): CodeReviewDecisi
   const proofItems = codeReviewProofItemsFromUnknown(decision.proofItems);
   const rawSourceProofSummary = optionalString(decision.sourceProofSummary);
   const hasRouteSourceProof = hasCandidateRepoRouteProof(proofItems);
-  const sourceProofSummary = rawSourceProofSummary
-    && (/candidate[-/\s]+repo|source bridge|evidence bridge/i.test(rawSourceProofSummary) && !hasRouteSourceProof)
-      ? null
-      : rawSourceProofSummary;
+  const sourceProofSummary = proofItems.length === 0
+    ? null
+    : rawSourceProofSummary
+      && (/candidate[-/\s]+repo|source bridge|evidence bridge/i.test(rawSourceProofSummary) && !hasRouteSourceProof)
+        ? null
+        : rawSourceProofSummary;
   const routeProofCount = optionalNumber(decision.proofCount);
   const proofCount = hasRouteSourceProof
     ? Math.max(proofItems.length, routeProofCount ?? 0)

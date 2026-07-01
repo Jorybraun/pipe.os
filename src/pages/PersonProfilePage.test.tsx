@@ -1070,6 +1070,42 @@ describe('PersonProfilePage', () => {
     expect(proof).toHaveTextContent('No source proof items were preserved for this selected decision.');
   });
 
+  it('does not trust route-state source proof summary without parsed proof items', async () => {
+    const summaryContext = makeLivingContext();
+    summaryContext.interactions = [];
+    summaryContext.artifacts = [];
+    summaryContext.contextRecords = [];
+    summaryContext.assertions = [];
+    summaryContext.signals = [];
+    summaryContext.relationships = [];
+
+    mocks.api.get
+      .mockResolvedValueOnce({ contact: makeContact() })
+      .mockResolvedValueOnce(summaryContext);
+
+    renderPage({
+      livingContext: summaryContext,
+      selectedCodeReviewDecision: {
+        ...(makeSelectedManualCodeReviewDecision() as Record<string, unknown>),
+        proofItems: null,
+        proofCount: 3,
+        sourceProofSummary: 'repo evidence and scoring provenance',
+        basisItems: [
+          { label: 'Score report', value: 'Scored', satisfied: true },
+          { label: 'Match proof', value: 'Assignment evidence only', satisfied: false },
+        ],
+      },
+    });
+    await flushAsyncUpdates();
+
+    const decision = screen.getByTestId('person-code-review-decision');
+    expect(decision).toHaveTextContent('0 source-backed proof items');
+    const proof = screen.getByTestId('person-code-review-source-proof');
+    const proofSummary = proof.querySelector('summary');
+    expect(proofSummary).not.toHaveTextContent('repo evidence and scoring provenance');
+    expect(proof).toHaveTextContent('No source proof items were preserved for this selected decision.');
+  });
+
   it('renders direct profile loads from a lightweight summary and hydrates full graph on audit open', async () => {
     const summaryContext = makeLivingContext();
     summaryContext.interactions = [];
