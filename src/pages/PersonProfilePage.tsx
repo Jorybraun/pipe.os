@@ -810,8 +810,8 @@ function recommendationForScore(
       };
     }
     return {
-      value: 'Do not advance from this signal yet',
-      detail: 'The review did not produce enough positive technical evidence. Confirm whether the assignment was fair before rejecting.',
+      value: 'Review assignment fairness before rejecting',
+      detail: 'The review did not produce enough positive technical evidence. Confirm whether the PR challenge was well matched before treating this as rejection signal.',
     };
   }
   return {

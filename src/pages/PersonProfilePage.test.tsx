@@ -985,6 +985,66 @@ describe('PersonProfilePage', () => {
     expect(basis).toHaveTextContent('Missing');
   });
 
+  it('treats weak graph-derived code-review scores as assignment-fairness decisions', async () => {
+    const context = makeLivingContext();
+    context.contextRecords = context.contextRecords.map((record) =>
+      record.id === 'record-score'
+        ? contextRecord({
+            ...record,
+            sources: [sourceSpan({
+              exactText: JSON.stringify({
+                overall: {
+                  score: 42,
+                  band: 'weak',
+                  narrative: 'Candidate missed the core regression risk in the review.',
+                  strengths: [],
+                  growth_areas: ['Confirm whether the selected PR was fair for their React experience.'],
+                },
+                dimensions: {
+                  source_accuracy: { score: 1 },
+                  bug_detection: { score: 1 },
+                  test_reasoning: { score: 1 },
+                  risk_calibration: { score: 0 },
+                  communication: { score: 1 },
+                  ai_usage_judgment: { score: 1 },
+                },
+                evidence: [
+                  { id: 'comment-1', text: 'Candidate missed the timing regression.' },
+                  { id: 'pushback-1', text: 'Candidate did not defend the requested change.' },
+                ],
+                metrics: {
+                  annotations: 1,
+                  pushback_threads: 1,
+                  source_refs: 4,
+                  rubric_dimensions: 6,
+                  score_confidence: 0.64,
+                },
+              }),
+            })],
+          })
+        : record
+    );
+
+    mocks.api.get
+      .mockResolvedValueOnce({ contact: makeContact() })
+      .mockResolvedValueOnce(context);
+
+    renderPage();
+    await flushAsyncUpdates();
+
+    const cockpit = screen.getByTestId('person-decision-cockpit');
+    expect(cockpit).toHaveTextContent('Current recommendation');
+    expect(cockpit).toHaveTextContent('Review assignment fairness before rejecting');
+    expect(cockpit).toHaveTextContent('Assignment fairness risk');
+    expect(cockpit).toHaveTextContent('Create fairness review');
+
+    const decision = await screen.findByTestId('person-code-review-decision');
+    expect(decision).toHaveTextContent('42/100 Weak');
+    expect(decision).toHaveTextContent('Review assignment fairness before rejecting');
+    expect(decision).toHaveTextContent('Check whether the repo challenge was well matched before treating the weak score as candidate signal.');
+    expect(decision).not.toHaveTextContent('Do not advance from this signal yet');
+  });
+
   it('routes conversation-only profiles toward a code-review assessment next action', async () => {
     const context = makeLivingContext();
     context.summary = {
