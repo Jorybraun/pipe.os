@@ -68,7 +68,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Fixed — CODE_REVIEW assessment runtime
 
-- Role-backed CODE_REVIEW matching now proceeds when active ingestion has already produced matchable source-backed candidate nodes, preventing ready evidence from staying stuck at `Profile received`.
+- Role-backed CODE_REVIEW matching now stays deferred while candidate ingestion is still active, even if partial source-backed nodes already exist, preventing early partial evidence from creating a false ready challenge.
 - The deployed CODE_REVIEW auto-match smoke now waits through the candidate-safe `Profile received` handoff before failing with a clear timeout when no upstream challenge finalizer assigns a ready CODE_REVIEW, matching the deferred-matching product boundary without reviving the candidate waiting screen.
 - Active CODE_REVIEW evidence ingestion now stays a pending auto-refresh diagnostic while repo matching is deferred, instead of being marked as a blocked/terminal challenge state.
 - Pipeline CODE_REVIEW gates now defer deterministic repo matching while candidate evidence ingestion is still active, preventing partial resume spans from producing false `NO_ROLE_SAFE_CHALLENGE` match runs before decomposition finishes.
