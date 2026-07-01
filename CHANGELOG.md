@@ -26,6 +26,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Fixed — CODE_REVIEW assessment runtime
 
+- Person-profile CODE_REVIEW browser smoke now asserts the deployed hiring cockpit renders recommendation, assessment validity, uncertainty, missing context, and next action before accepting a person-rollup proof.
 - Recruiter CODE_REVIEW detail smoke now browser-asserts the hiring-manager trust model, including assignment trust, score validity, risk, and next action, so matched pages cannot silently fall back to unknown assignment provenance.
 - Hardened the deployed same-person CODE_REVIEW boundary smoke to wait for the hydrated person rollup and verify completed code-review evidence separately from related meeting context.
 - Removed tracked root `.wrangler` local D1 state and ignored the repo-root Wrangler cache so stale room experiment data cannot remain in the source tree.

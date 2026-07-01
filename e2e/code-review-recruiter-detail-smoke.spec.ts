@@ -90,6 +90,11 @@ async function expectPersonProfileDecision(page: Page): Promise<void> {
   const cockpit = page.getByTestId('person-decision-cockpit');
   await expect(cockpit).toBeVisible({ timeout: 45_000 });
   await expect(cockpit).toContainText('Decision cockpit');
+  await expect(cockpit).toContainText('Current recommendation');
+  await expect(cockpit).toContainText('Assessment validity');
+  await expect(cockpit).toContainText('Uncertainty');
+  await expect(cockpit).toContainText('Missing context');
+  await expect(cockpit).toContainText('Next action');
   await expect(cockpit).not.toContainText('Collect first source-backed evidence');
 
   const personDecision = page.getByTestId('person-code-review-decision');
@@ -100,6 +105,10 @@ async function expectPersonProfileDecision(page: Page): Promise<void> {
   );
   await expect(personDecision).not.toContainText('Do not advance from this signal yet');
   await expect(personDecision).toContainText('source-backed proof items');
+  await expect(personDecision).toContainText('Assessment validity');
+  await expect(personDecision).toContainText('Uncertainty');
+  await expect(personDecision).toContainText('Missing context');
+  await expect(personDecision).toContainText('Next action');
   if (EXPECT_SCORE) {
     await expect(personDecision).toContainText('Score provenance');
     await expect(personDecision).toContainText(/rubric dimensions?/);
