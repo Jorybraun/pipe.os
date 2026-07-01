@@ -303,6 +303,14 @@ test.describe('Feature: assessment recruiter detail smoke', () => {
     }
 
     await expect(page.getByText('Recruiter decision')).toBeVisible();
+    const priorityCockpit = page.getByTestId('interview-code-review-priority-cockpit');
+    await expect(priorityCockpit).toBeVisible();
+    await expect(priorityCockpit).toContainText('Decision cockpit');
+    await expect(priorityCockpit).toContainText('Hiring manager readout');
+    await expect(priorityCockpit).toContainText('Decision');
+    await expect(priorityCockpit).toContainText('Score validity');
+    await expect(priorityCockpit).toContainText('Risk');
+    await expect(priorityCockpit).toContainText('Next action');
     const hiringReadout = page.getByTestId('interview-code-review-hiring-readout');
     await expect(hiringReadout).toBeVisible();
     await expect(hiringReadout).toContainText('Hiring manager readout');

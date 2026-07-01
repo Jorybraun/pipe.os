@@ -1116,6 +1116,7 @@ describe('InterviewDetailPage', () => {
   });
 
   it('leads completed code-review interviews with recruiter decision value', async () => {
+    const deliveredUrl = 'https://app-dev.hire-pipe.com/assess/recruiter-visible-token';
     mocks.api.get.mockResolvedValueOnce({
       interview: makeInterview({
         interviewType: 'CODE_REVIEW',
@@ -1123,6 +1124,16 @@ describe('InterviewDetailPage', () => {
         githubRepoUrl: 'https://github.com/mui/base-ui',
         githubPrNumber: 973,
         matchedRepoId: 973,
+        assessmentSetup: {
+          status: 'reviewable_task_assigned',
+          kind: 'github_pr',
+          source: 'matched_repo_id',
+          blocksPositiveAssessment: false,
+          message: 'PIPE matched a reviewable source-backed PR task.',
+          lastDeliveredUrl: deliveredUrl,
+          lastDeliveredUrlState: 'active',
+          lastDeliveredUrlMessage: 'Candidate assessment link delivered.',
+        },
         linkedMeeting: {
           id: 'meeting-code-review-empty-call',
           title: 'Code review assessment',
@@ -1268,6 +1279,16 @@ describe('InterviewDetailPage', () => {
     renderDetail();
 
     await flushAsyncUpdates();
+    const priority = screen.getByTestId('interview-code-review-priority-cockpit');
+    expect(priority).toHaveTextContent('Decision cockpit');
+    expect(priority).toHaveTextContent('Candidate requested changes');
+    expect(priority).toHaveTextContent('Usable with calibration');
+    expect(priority).toHaveTextContent('Advance with focused probe');
+    const linkPanel = screen.getByTestId('interview-assessment-link');
+    expect(linkPanel).toHaveTextContent('Assessment invite');
+    expect(
+      priority.compareDocumentPosition(linkPanel) & Node.DOCUMENT_POSITION_FOLLOWING,
+    ).toBeTruthy();
     const decision = screen.getByTestId('interview-code-review-decision-summary');
     expect(decision).toHaveTextContent('Candidate requested changes');
     const hiringReadout = screen.getByTestId('interview-code-review-hiring-readout');

@@ -3582,6 +3582,45 @@ export default function InterviewDetailPage(): JSX.Element {
         </section>
       )}
 
+      {isCodeReviewInterview && (codeReviewMatch || codeReviewSubmission) && (
+        <section
+          data-testid="interview-code-review-priority-cockpit"
+          style={CODE_REVIEW_PRIORITY_COCKPIT_SECTION}
+        >
+          <div style={DECISION_HEADER}>
+            <div style={{ minWidth: 0 }}>
+              <div style={{ ...SECTION_TITLE, marginBottom: 8 }}>
+                <CheckCircle size={15} />
+                Decision cockpit
+              </div>
+              <div style={DECISION_TITLE}>{codeReviewOutcome}</div>
+            </div>
+            {codeReviewMatch?.status && (
+              <span style={MATCH_BADGE}>{titleCaseToken(codeReviewMatch.status)}</span>
+            )}
+          </div>
+          <div style={DECISION_ACTION}>{codeReviewAction}</div>
+          <div data-testid="interview-code-review-priority-readout" style={DECISION_COCKPIT}>
+            <div style={FIELD_LABEL}>Hiring manager readout</div>
+            <div style={DECISION_COCKPIT_GRID}>
+              {codeReviewHiringReadout.map((item) => (
+                <div
+                  key={item.label}
+                  style={{
+                    ...DECISION_COCKPIT_ITEM,
+                    ...DECISION_NEXT_STEP_TONE[item.tone],
+                  }}
+                >
+                  <div style={FIELD_LABEL}>{item.label}</div>
+                  <div style={DECISION_COCKPIT_VALUE}>{item.value}</div>
+                  <div style={DECISION_COCKPIT_DETAIL}>{item.detail}</div>
+                </div>
+              ))}
+            </div>
+          </div>
+        </section>
+      )}
+
       {showsAssessmentInvitePanel && (
         <section data-testid="interview-assessment-link" style={ROOM_PANEL}>
           <div style={{ minWidth: 0 }}>
@@ -5299,6 +5338,12 @@ const WORKSPACE_ASSESSMENT_DECISION_SECTION: CSSProperties = {
   background: 'var(--pipe-surface-solid)',
   padding: 18,
   boxShadow: '0 18px 42px var(--pipe-shadow)',
+};
+
+const CODE_REVIEW_PRIORITY_COCKPIT_SECTION: CSSProperties = {
+  ...WORKSPACE_ASSESSMENT_DECISION_SECTION,
+  borderColor: 'rgba(74,222,128,0.30)',
+  background: 'linear-gradient(135deg, rgba(74,222,128,0.08), var(--pipe-surface-solid) 46%)',
 };
 
 const ASSESSMENT_PROGRESS_GRID: CSSProperties = {

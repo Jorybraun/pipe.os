@@ -41,6 +41,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Fixed — CODE_REVIEW assessment runtime
 
+- CODE_REVIEW interview detail pages now render a compact decision cockpit above invite/progress mechanics, so hiring managers see outcome, validity, risk, and next action before operational link state.
 - Blocked CODE_REVIEW app-dev smokes now open the candidate `/assess` page and assert the `Profile received` handoff directly, including negative checks against the old matching dashboard copy.
 - Deployed CODE_REVIEW smoke API calls now enforce configurable per-attempt abort timeouts (`CODE_REVIEW_SMOKE_REQUEST_TIMEOUT_MS`), so blocked-path proofs fail with a useful route timeout instead of sitting silently during app-dev/API stalls.
 - CODE_REVIEW recruiter readouts now treat failed scoring as `Score unavailable` with retry/manual-review guidance instead of saying the assessment is still scoring.
