@@ -30,6 +30,7 @@ import {
   markStopped,
   mintExchangeToken,
   consumeExchangeToken,
+  type DevContainerSessionRow,
 } from '../../lib/devContainerSessions';
 import { signJwt, verifyJwt } from '../../lib/jwt';
 import {
@@ -164,9 +165,10 @@ async function assessmentSessionsTableExists(db: D1Database): Promise<boolean> {
   return row?.name === 'assessment_sessions';
 }
 
-async function loadLatestAssessmentSessionForCandidate(
+async function loadAssessmentSessionForDevContainer(
   db: D1Database,
   candidateId: string,
+  devContainerSession: DevContainerSessionRow,
 ): Promise<CandidateAssessmentSessionRow | null> {
   if (!await assessmentSessionsTableExists(db)) return null;
   return db.prepare(
@@ -176,9 +178,24 @@ async function loadLatestAssessmentSessionForCandidate(
       WHERE s.state <> 'CANCELLED'
         AND s.mode IN ('OPEN_SOURCE_BUG_FIX', 'DEV_CONTAINER_REPO_TASK', 'DEV_CONTAINER_CHALLENGE')
         AND (s.candidate_id = ?1 OR si.candidate_id = ?1)
-      ORDER BY s.created_at DESC
+        AND (
+          s.workspace_id = ?2
+          OR (?3 IS NOT NULL AND s.interview_id = ?3)
+          OR (s.workspace_id IS NULL AND (?3 IS NULL OR s.interview_id IS NULL OR s.interview_id = ?3))
+        )
+      ORDER BY
+        CASE
+          WHEN s.workspace_id = ?2 THEN 0
+          WHEN ?3 IS NOT NULL AND s.interview_id = ?3 THEN 1
+          ELSE 2
+        END,
+        s.created_at DESC
       LIMIT 1`,
-  ).bind(candidateId).first<CandidateAssessmentSessionRow>();
+  ).bind(
+    candidateId,
+    devContainerSession.session_id,
+    devContainerSession.meeting_id,
+  ).first<CandidateAssessmentSessionRow>();
 }
 
 function candidateSafeAssessmentLocator(locator: JsonObject): JsonObject {
@@ -203,10 +220,14 @@ function candidateSafeAssessmentLocator(locator: JsonObject): JsonObject {
   return safe;
 }
 
+function toJsonObject(value: Record<string, unknown>): JsonObject {
+  return JSON.parse(JSON.stringify(value)) as JsonObject;
+}
+
 function serializeCandidateAssessmentProgress(
   progress: AssessmentProgressSnapshot,
 ): JsonObject {
-  return {
+  return toJsonObject({
     mode: progress.session.mode,
     state: progress.session.state,
     stage: progress.stage,
@@ -271,7 +292,7 @@ function serializeCandidateAssessmentProgress(
           diagnostics: progress.evaluation.diagnostics,
         }
       : null,
-  };
+  });
 }
 
 function stringLocatorValue(locator: JsonObject | undefined, key: string): string | null {
@@ -668,7 +689,7 @@ devContainer.post('/:sessionId/assessment/finalize', async (c) => {
     return devContainerErrorResponse(`Session is ${row.status}.`, status);
   }
 
-  const assessmentSession = await loadLatestAssessmentSessionForCandidate(c.env.DB, candidateId);
+  const assessmentSession = await loadAssessmentSessionForDevContainer(c.env.DB, candidateId, row);
   if (!assessmentSession) {
     return devContainerErrorResponse(
       'No open-source assessment session is available for this candidate.',

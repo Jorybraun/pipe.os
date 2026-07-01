@@ -222,6 +222,21 @@ describe('POST /rpc/dev-container/:sessionId/assessment/finalize', () => {
       now,
     );
     sqlite.prepare(
+      `INSERT INTO assessment_sessions (
+         id, ingestion_key, interview_id, mode, state, candidate_id, workspace_id,
+         created_by, metadata_json, created_at, updated_at
+       ) VALUES (?, ?, ?, 'DEV_CONTAINER_REPO_TASK', 'IN_PROGRESS', ?, ?, ?, '{}', ?, ?)`,
+    ).run(
+      'assessment-session-newer-unrelated',
+      `assessment-session:finalize:newer-unrelated:${interviewId}`,
+      'interview-newer-unrelated',
+      candidateId,
+      'other-dev-container-session',
+      'workspace-router',
+      '2026-06-30T16:30:00.000Z',
+      '2026-06-30T16:30:00.000Z',
+    );
+    sqlite.prepare(
       `INSERT INTO assessment_evidence_events (
          id, ingestion_key, session_id, sequence, kind, actor_type, actor_id,
          narrative, payload_json, occurred_at, created_at

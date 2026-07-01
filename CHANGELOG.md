@@ -54,6 +54,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - Person profiles opened from a selected CODE_REVIEW decision now treat that assessment as present technical evidence in the evidence-mix readout instead of incorrectly saying no source mix exists while the full graph stays unloaded.
 - Person CODE_REVIEW source-proof summaries now reuse or derive evidence-specific proof wording, so manual PR decisions shown on a person profile do not claim candidate/role provenance that the match did not earn.
 - CODE_REVIEW work-packet readouts now show whether submitted commit evidence came from the live workspace finalizer or a manual fallback, keeping hiring-manager trust labels source-backed across the room, interview, and dashboard surfaces.
+- Candidate workspace finalization now resolves the assessment by dev-container workspace or linked interview before falling back to an unbound session, preventing a newer unrelated assessment for the same candidate from receiving the submitted commit.
 
 ### Added — Assessment readiness
 
