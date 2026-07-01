@@ -1988,6 +1988,24 @@ const server = http.createServer(async (req, res) => {
     try {
       const body = await readJsonRequestBody(req);
       const payload = await buildWorkspaceCommitSubmission(body);
+      if (body && body.submitToPipe === false) {
+        jsonResponse(res, 200, {
+          ok: true,
+          submitted: false,
+          commit: {
+            repositoryUrl: payload.repositoryUrl,
+            branchName: payload.branchName,
+            baseCommitSha: payload.baseCommitSha,
+            commitSha: payload.commitSha,
+            changedFiles: payload.changedFiles,
+            sourceRefTypes: payload.sourceRefs.map((ref) => ref.sourceRefType),
+          },
+          submissionPayload: payload,
+          submission: null,
+          progress: null,
+        });
+        return;
+      }
       const submitted = await submitWorkspaceCommitSubmission(payload);
       jsonResponse(res, 201, {
         ok: true,

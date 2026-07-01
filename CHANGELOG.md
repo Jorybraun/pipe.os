@@ -57,6 +57,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Added — Assessment readiness
 
+- Workspace finalization can now return a source-backed commit submission payload without posting it to PIPE, giving smoke tests and bridge clients a safe dry-run path for validating captured commit, diff, command, and test evidence.
 - Candidate dev-container panels now expose the source-backed assessment commit drawer, letting candidates submit repository, branch, commit, diff, test or verification-gap evidence through the durable `/rpc/assessment/commit-submission` spine without leaving the workspace.
 - Repo-task progress now builds and serializes a canonical readiness snapshot server-side, separating evaluation readiness from usable hiring-signal trust and exposing the same required-proof/confidence checklist to recruiter and candidate surfaces.
 - Repo-task assessment progress now includes a durable assignment-trust summary (`matched`, `manual`, `source-backed`, or waiting) so recruiter lists, detail pages, room payloads, and candidate-safe progress can share the same non-overclaiming challenge-fit language.

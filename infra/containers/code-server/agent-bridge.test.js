@@ -505,6 +505,64 @@ describe('agent bridge readiness', () => {
     }
   });
 
+  it('can return workspace commit evidence without posting to a room endpoint', async () => {
+    const { workspaceDir, baseCommitSha, commitSha } = createCommittedWorkspace();
+    const { port } = await startBridge('', {
+      AGENT_TYPE: '',
+      PATH: process.env.PATH ?? '',
+      REPO_GIT_URL: 'https://github.com/example/repo',
+      CHALLENGE_BASE_COMMIT_SHA: baseCommitSha,
+      PIPE_TEST_COMMAND: 'node -e "console.log(42)"',
+    }, {
+      installFakeDevin: false,
+      workspaceDir,
+    });
+
+    const response = await fetch(`http://127.0.0.1:${port}/assessment/finalize`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({
+        submitToPipe: false,
+        narrative: 'Candidate fixed the assessment repo behavior.',
+      }),
+    });
+
+    expect(response.status).toBe(200);
+    const body = await response.json();
+    expect(body).toMatchObject({
+      ok: true,
+      submitted: false,
+      commit: {
+        repositoryUrl: 'https://github.com/example/repo',
+        branchName: 'pipe-assessment',
+        baseCommitSha,
+        commitSha,
+        sourceRefTypes: ['git_commit', 'code_diff', 'terminal_command', 'test_run'],
+      },
+      submission: null,
+      progress: null,
+    });
+    expect(body.submissionPayload).toMatchObject({
+      narrative: 'Candidate fixed the assessment repo behavior.',
+      repositoryUrl: 'https://github.com/example/repo',
+      forkRepositoryUrl: null,
+      branchName: 'pipe-assessment',
+      baseCommitSha,
+      commitSha,
+      upstreamPrConsent: false,
+      changedFiles: [{ path: 'README.md', status: 'modified' }],
+    });
+    expect(body.submissionPayload.sourceRefs.map((ref) => ref.sourceRefType)).toEqual([
+      'git_commit',
+      'code_diff',
+      'terminal_command',
+      'test_run',
+    ]);
+    expect(body.submissionPayload.sourceRefs.every((ref) =>
+      ref.metadata?.source === 'agent_bridge_workspace_finalize'
+    )).toBe(true);
+  });
+
   it('records a verification gap instead of inventing test output when no test command is configured', async () => {
     const captureServer = await startCommitSubmissionCaptureServer();
     const { workspaceDir, baseCommitSha, commitSha } = createCommittedWorkspace();
