@@ -13,6 +13,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Fixed — Open-source assessment progress
 
+- Recruiter interview cards now show commit trust separately from the short SHA, including workspace-capture integrity and whether the commit is bound to the assigned open-source challenge packet.
 - Dev-container assessment room progress coverage now labels captured agent evidence as `AI use`, matching recruiter summaries and making transparent AI assistance visible in-room.
 - Dev-container assessment room progress coverage now labels captured tooling as `tool activity`, matching recruiter summaries and avoiding vague room-activity proof.
 - Assessment welcome-screen source comments now use neutral assessment wording, keeping the codebase aligned to the core candidate-test product.

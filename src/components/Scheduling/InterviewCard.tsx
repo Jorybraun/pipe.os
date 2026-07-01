@@ -213,6 +213,12 @@ interface AssessmentDecisionSummary {
   detail: string;
 }
 
+interface AssessmentCommitTrustSummary {
+  label: string;
+  detail: string;
+  tone: 'verified' | 'warning' | 'neutral';
+}
+
 function assessmentDecisionSummary(input: {
   setup: ScheduledInterview['assessmentSetup'] | null;
   progress: ScheduledInterview['assessmentProgress'] | null;
@@ -306,6 +312,40 @@ function assessmentDecisionSummary(input: {
   }
 
   return null;
+}
+
+function assessmentCommitTrustSummary(
+  commit: NonNullable<ScheduledInterview['assessmentProgress']>['commit'] | null | undefined,
+): AssessmentCommitTrustSummary | null {
+  if (!commit) return null;
+  const labels = [
+    commit.integrity?.label,
+    commit.challengeBinding?.label,
+  ].filter((value): value is string => Boolean(value?.trim()));
+  const details = [
+    commit.integrity?.detail,
+    commit.challengeBinding?.detail,
+  ].filter((value): value is string => Boolean(value?.trim()));
+  if (labels.length === 0 && details.length === 0) return null;
+
+  const hasWarning = commit.integrity?.tone === 'warning' || commit.challengeBinding?.tone === 'warning';
+  const hasVerified = commit.integrity?.tone === 'verified' || commit.challengeBinding?.tone === 'verified';
+  return {
+    label: labels.length > 0 ? labels.join(' · ') : 'Commit provenance captured',
+    detail: compactText(details.join(' '), 180),
+    tone: hasWarning ? 'warning' : hasVerified ? 'verified' : 'neutral',
+  };
+}
+
+function assessmentCommitTrustColor(tone: AssessmentCommitTrustSummary['tone']): string {
+  switch (tone) {
+    case 'verified':
+      return '#4ade80';
+    case 'warning':
+      return '#fbbf24';
+    default:
+      return 'var(--pipe-text-dim)';
+  }
 }
 
 function assessmentEvaluationStartNotice(result: AssessmentEvaluationStartResult | void): string {
@@ -456,6 +496,7 @@ export function InterviewCard({
     ?? assessmentProgress?.commit?.submissionSourceLabel
     ?? null;
   const assessmentChallengeBindingLabel = assessmentProgress?.commit?.challengeBinding?.label ?? null;
+  const assessmentCommitTrust = assessmentCommitTrustSummary(assessmentProgress?.commit);
   const assessmentCriteriaLabel = assessmentChallenge?.successCriteria.length
     ? compactText(assessmentChallenge.successCriteria.join(' · '), 150)
     : null;
@@ -688,6 +729,23 @@ export function InterviewCard({
                   </div>
                   <div style={{ minWidth: 0, fontSize: 10, color: 'var(--pipe-text-dim)', overflowWrap: 'anywhere' }}>
                     {[assessmentCommitLabel, assessmentCommitIntegrityLabel, assessmentChallengeBindingLabel].filter(Boolean).join(' · ')}
+                  </div>
+                </>
+              )}
+              {assessmentCommitTrust && (
+                <>
+                  <div style={{ fontSize: 9, color: assessmentCommitTrustColor(assessmentCommitTrust.tone), letterSpacing: '0.12em', fontWeight: 700 }}>
+                    COMMIT TRUST
+                  </div>
+                  <div style={{ minWidth: 0, overflowWrap: 'anywhere' }}>
+                    <div style={{ fontSize: 10, color: assessmentCommitTrustColor(assessmentCommitTrust.tone), fontWeight: 700 }}>
+                      {assessmentCommitTrust.label}
+                    </div>
+                    {assessmentCommitTrust.detail && (
+                      <div style={{ fontSize: 10, color: 'var(--pipe-text-dim)' }}>
+                        {assessmentCommitTrust.detail}
+                      </div>
+                    )}
                   </div>
                 </>
               )}
