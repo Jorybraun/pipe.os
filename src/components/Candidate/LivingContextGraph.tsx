@@ -59,6 +59,7 @@ import { useRematch } from '../../hooks/useRematch';
 import { useCandidateComparison } from '../../hooks/useCandidateComparison';
 import { useEvidenceTimeline } from '../../hooks/useEvidenceTimeline';
 import { useStalenessAlerts } from '../../hooks/useStalenessAlerts';
+import { useRepoDecomposition } from '../../hooks/useRepoDecomposition';
 import { useLivingContext } from '../../hooks/useLivingContext';
 import { buildLivingContextBranches } from '../../lib/livingContextTree';
 import { ContextRecordForest } from './ContextRecordTree';
@@ -2433,6 +2434,139 @@ function MatchDecisionPanel({
   );
 }
 
+function RepoDecompositionPanel({
+  candidateId,
+  packetId,
+}: {
+  candidateId: string;
+  packetId: string | null;
+}): JSX.Element | null {
+  const { overlay, isLoading, error, refetch } = useRepoDecomposition(candidateId, packetId);
+
+  if (!packetId) return null;
+  if (isLoading && !overlay) return null;
+  if (error || !overlay) return null;
+
+  const coveragePercent = Math.round(overlay.coverageSummary.overallScore * 100);
+  const filesByDemand = overlay.files.filter((f) => f.demandCount > 0);
+
+  return (
+    <section
+      className="living-context__panel"
+      data-testid="repo-decomposition-panel"
+    >
+      <div className="living-context__section-head">
+        <div>
+          <div className="living-context__section-title">Repository decomposition</div>
+          <div className="living-context__eyebrow">
+            {overlay.repoName} &middot; PR #{overlay.prNumber} &middot; {overlay.primaryLanguage}
+          </div>
+        </div>
+        <button
+          type="button"
+          className="living-context__refresh"
+          onClick={() => void refetch()}
+          title="Refresh decomposition"
+          aria-label="Refresh decomposition"
+        >
+          <RefreshCw size={12} />
+        </button>
+      </div>
+
+      <div className="living-context__repo-decomposition-summary">
+        <div className="living-context__metric">
+          <div className="living-context__metric-value">{coveragePercent}%</div>
+          <div className="living-context__metric-label">coverage</div>
+        </div>
+        <div className="living-context__metric">
+          <div className="living-context__metric-value">{overlay.coverageSummary.coveredDemands}</div>
+          <div className="living-context__metric-label">covered</div>
+        </div>
+        <div className="living-context__metric">
+          <div className="living-context__metric-value">{overlay.coverageSummary.partialDemands}</div>
+          <div className="living-context__metric-label">partial</div>
+        </div>
+        <div className="living-context__metric">
+          <div className="living-context__metric-value">{overlay.coverageSummary.uncoveredDemands}</div>
+          <div className="living-context__metric-label">gaps</div>
+        </div>
+      </div>
+
+      {filesByDemand.length > 0 && (
+        <div className="living-context__repo-decomposition-files">
+          <div className="living-context__subsection-title">Changed files</div>
+          {filesByDemand.slice(0, 15).map((file) => {
+            const score = file.candidateAlignmentScore;
+            const barWidth = score !== null ? Math.round(score * 100) : 0;
+            return (
+              <div
+                key={file.path}
+                className="living-context__repo-decomposition-file"
+                data-testid="repo-decomposition-file"
+              >
+                <div className="living-context__repo-decomposition-file-info">
+                  <span className="living-context__repo-decomposition-path">{file.path}</span>
+                  <span className="living-context__repo-decomposition-meta">
+                    {file.language ?? ''} &middot; {file.symbolCount} symbols &middot; {file.demandCount} demands
+                  </span>
+                </div>
+                <div className="living-context__repo-decomposition-bar">
+                  <div
+                    className="living-context__repo-decomposition-bar-fill"
+                    style={{ width: `${barWidth}%` }}
+                    data-score={score}
+                  />
+                </div>
+              </div>
+            );
+          })}
+        </div>
+      )}
+
+      {overlay.demands.length > 0 && (
+        <div className="living-context__repo-decomposition-demands">
+          <div className="living-context__subsection-title">Code demands</div>
+          {overlay.demands.slice(0, 10).map((demand) => {
+            const score = demand.candidateAlignmentScore;
+            const level = score === null || score === 0 ? 'gap'
+              : score >= 0.6 ? 'covered'
+              : 'partial';
+            return (
+              <div
+                key={demand.id}
+                className={`living-context__repo-decomposition-demand living-context__repo-decomposition-demand--${level}`}
+                data-testid="repo-decomposition-demand"
+              >
+                <div className="living-context__repo-decomposition-demand-head">
+                  <span className="living-context__repo-decomposition-demand-family">{demand.family}</span>
+                  <span className={`living-context__repo-decomposition-demand-level living-context__repo-decomposition-demand-level--${level}`}>
+                    {level}
+                  </span>
+                </div>
+                <div className="living-context__repo-decomposition-demand-narrative">
+                  {demand.narrative}
+                </div>
+                {demand.conceptKeys.length > 0 && (
+                  <div className="living-context__concepts">
+                    {demand.conceptKeys.slice(0, 5).map((key) => (
+                      <span key={key} className="living-context__concept">{key}</span>
+                    ))}
+                  </div>
+                )}
+                {demand.candidateEvidenceCount > 0 && (
+                  <div className="living-context__repo-decomposition-demand-evidence">
+                    {demand.candidateEvidenceCount} evidence items
+                  </div>
+                )}
+              </div>
+            );
+          })}
+        </div>
+      )}
+    </section>
+  );
+}
+
 function EvidenceReadinessPanel({
   candidateId,
 }: {
@@ -3310,6 +3444,7 @@ export function LivingContextGraph({
       <MatchProvenancePanel provenance={provenance} />
       <MatchHistoryPanel candidateId={candidateId} />
       <MatchDecisionPanel candidateId={candidateId} />
+      <RepoDecompositionPanel candidateId={candidateId} packetId={challengePacketId} />
       <CandidateComparisonPanel
         candidateId={candidateId}
         comparisonCandidateIds={comparisonCandidateIds ?? null}
