@@ -253,6 +253,11 @@ describe('DevContainerPanel assessment submission', () => {
     await waitFor(() => {
       expect(screen.getByTestId('assessment-workspace-finalize-submit')).not.toBeDisabled();
     });
+    const trustContract = screen.getByTestId('assessment-workspace-finalize-trust-contract');
+    expect(trustContract).toHaveTextContent('TRUSTED FINALIZER PATH');
+    expect(trustContract).toHaveTextContent('Reads the current git HEAD inside the controlled workspace.');
+    expect(trustContract).toHaveTextContent('Verifies repository and base commit against the assigned challenge packet.');
+    expect(trustContract).toHaveTextContent('Stores source refs for the commit, diff, tests, and workspace state before evaluation.');
 
     fireEvent.change(screen.getByTestId('assessment-workspace-finalize-narrative'), {
       target: { value: 'Fixed retry handling and committed the focused patch.' },
@@ -274,6 +279,50 @@ describe('DevContainerPanel assessment submission', () => {
     expect(JSON.parse(String(finalizeCall?.[1]?.body))).toEqual({
       narrative: 'Fixed retry handling and committed the focused patch.',
     });
+  });
+
+  it('shows recovery commands when workspace finalization finds uncommitted changes', async () => {
+    const fetchMock = vi.fn(async (input: RequestInfo | URL, _init?: RequestInit) => {
+      const url = input.toString();
+      if (url.endsWith('/rpc/assessment/progress')) {
+        return new Response(JSON.stringify(progressResponse()), {
+          status: 200,
+          headers: { 'Content-Type': 'application/json' },
+        });
+      }
+      if (url.endsWith('/rpc/dev-container/workspace-session-1/assessment/finalize')) {
+        return new Response(JSON.stringify({
+          error: {
+            code: 'DIRTY_WORKSPACE',
+            message: 'Cannot finalize assessment: commit or discard uncommitted workspace changes before submitting HEAD.',
+          },
+        }), {
+          status: 409,
+          headers: { 'Content-Type': 'application/json' },
+        });
+      }
+      throw new Error(`Unexpected fetch ${url}`);
+    });
+    vi.stubGlobal('fetch', fetchMock);
+
+    render(<DevContainerPanel challengeId="challenge-1" />);
+
+    await screen.findByText('SUBMIT COMMIT');
+    fireEvent.click(screen.getByTestId('assessment-submit-toggle'));
+    await waitFor(() => {
+      expect(screen.getByTestId('assessment-workspace-finalize-submit')).not.toBeDisabled();
+    });
+
+    fireEvent.click(screen.getByTestId('assessment-workspace-finalize-submit'));
+
+    const result = await screen.findByTestId('assessment-commit-result');
+    expect(result).toHaveTextContent('commit or discard uncommitted workspace changes');
+
+    const recovery = screen.getByTestId('assessment-workspace-finalize-recovery');
+    expect(recovery).toHaveTextContent('COMMIT WORKSPACE CHANGES FIRST');
+    expect(recovery).toHaveTextContent('git status --short');
+    expect(recovery).toHaveTextContent('git add <files>');
+    expect(recovery).toHaveTextContent('git commit -m "pipe assessment submission"');
   });
 
   it('blocks commit submission and workspace finalization until the challenge packet is complete', async () => {

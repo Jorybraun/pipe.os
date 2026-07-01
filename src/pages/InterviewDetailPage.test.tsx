@@ -847,15 +847,26 @@ describe('InterviewDetailPage', () => {
         summary: 'Candidate made a focused source-backed change and cited the submitted diff evidence.',
         recommendation: 'hire_now',
         createdAt: '2026-06-23T00:22:00.000Z',
-        claims: [{
-          id: 'claim-focused-diff',
-          polarity: 'positive',
-          dimension: 'commit_quality',
-          narrative: 'The candidate produced a focused patch backed by the submitted diff.',
-          confidence: 0.82,
-          sourceRefCount: 2,
-          sourceRefTypes: ['code_diff', 'git_commit'],
-        }],
+        claims: [
+          {
+            id: 'claim-focused-diff',
+            polarity: 'positive',
+            dimension: 'commit_quality',
+            narrative: 'The candidate produced a focused patch backed by the submitted diff.',
+            confidence: 0.82,
+            sourceRefCount: 2,
+            sourceRefTypes: ['code_diff', 'git_commit'],
+          },
+          {
+            id: 'claim-source-less-praise',
+            polarity: 'positive',
+            dimension: 'seniority',
+            narrative: 'This source-less evaluator praise must not appear in the hiring-manager readout.',
+            confidence: 0.95,
+            sourceRefCount: 0,
+            sourceRefTypes: [],
+          },
+        ],
         diagnostics: [{
           id: 'diagnostic-missing-runner',
           code: 'VERIFICATION_UNOBSERVED',
@@ -988,6 +999,8 @@ describe('InterviewDetailPage', () => {
     expect(claims).toHaveTextContent('82% confidence');
     expect(claims).toHaveTextContent('The candidate produced a focused patch backed by the submitted diff.');
     expect(claims).toHaveTextContent('2 source refs: Code diff, Git commit');
+    expect(claims).not.toHaveTextContent('source-less evaluator praise');
+    expect(claims).not.toHaveTextContent('Seniority');
     const diagnostics = screen.getByTestId('interview-assessment-evaluation-diagnostics');
     expect(diagnostics).toHaveTextContent('Evaluator cautions');
     expect(diagnostics).toHaveTextContent('Info');
