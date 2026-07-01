@@ -1020,6 +1020,119 @@ describe('InterviewDetailPage', () => {
     expect(screen.queryByRole('button', { name: /start evaluation/i })).toBeNull();
   });
 
+  it('shows human review required for conservative source-backed fallback evaluations', async () => {
+    mocks.api.get.mockResolvedValueOnce({
+      interview: makeInterview({
+        interviewType: 'OPEN_SOURCE_BUG_FIX',
+        status: 'COMPLETED',
+        assessmentProgress: {
+          session: {
+            id: 'assessment-session-fallback',
+            ingestionKey: 'assessment-session:fallback',
+            interviewId: 'interview-1',
+            candidateId: 'candidate-1',
+            workspaceId: 'workspace-1',
+            workspacePersonId: null,
+            applicationId: null,
+            mode: 'OPEN_SOURCE_BUG_FIX',
+            state: 'EVALUATED',
+            createdAt: '2026-06-23T00:00:00.000Z',
+            updatedAt: '2026-06-23T00:22:00.000Z',
+          },
+          stage: 'EVALUATED',
+          nextAction: 'REVIEW_EVALUATION',
+          nextActionLabel: 'Review the assessment report and evidence.',
+          hasChallengePacket: true,
+          hasWorkEvidence: true,
+          hasCommitSubmission: true,
+          hasFinalSubmission: true,
+          hasAiInteraction: true,
+          hasTranscriptEvidence: false,
+          hasTestEvidence: true,
+          evidenceCounts: [{ kind: 'commit_submission', count: 1 }],
+          sourceRefCounts: [
+            { kind: 'review_challenge_packet', count: 1 },
+            { kind: 'git_commit', count: 1 },
+            { kind: 'code_diff', count: 1 },
+            { kind: 'test_run', count: 1 },
+          ],
+          challenge: {
+            sourceRefType: 'review_challenge_packet',
+            sourceRefId: 'challenge-packet-fallback',
+            evidenceRole: 'assigned_challenge',
+            exactText: 'Task: fix the fallback evaluation honesty copy.',
+            locator: { repositoryUrl: 'https://github.com/open-source/widgets' },
+          },
+          latestEvent: {
+            id: 'assessment-event-fallback',
+            kind: 'commit_submission',
+            sequence: 2,
+            occurredAt: '2026-06-23T00:18:00.000Z',
+          },
+          commit: {
+            eventId: 'assessment-event-fallback',
+            repositoryUrl: 'https://github.com/open-source/widgets',
+            forkRepositoryUrl: 'https://github.com/candidate/widgets',
+            branchName: 'pipe-assessment/fallback-honesty',
+            baseCommitSha: '3333333333333333333333333333333333333333',
+            commitSha: 'cccccccccccccccccccccccccccccccccccccccc',
+            commitUrl: 'https://github.com/candidate/widgets/commit/cccccccccccccccccccccccccccccccccccccccc',
+            changedFiles: [{ path: 'src/fallback.ts', status: 'modified' }],
+            occurredAt: '2026-06-23T00:18:00.000Z',
+          },
+          evaluation: {
+            id: 'assessment-report-fallback',
+            status: 'EVALUATED',
+            summary: 'PIPE produced a conservative source-backed assessment report from captured challenge, commit, diff, verification, and workspace evidence.',
+            recommendation: 'mixed_evidence_human_review',
+            createdAt: '2026-06-23T00:22:00.000Z',
+            claims: [{
+              id: 'claim-source-contract',
+              polarity: 'positive',
+              dimension: 'source_provenance',
+              narrative: 'The assessment has a source-backed challenge packet, submitted commit, and exact code diff for review.',
+              confidence: 0.82,
+              sourceRefCount: 3,
+              sourceRefTypes: ['review_challenge_packet', 'git_commit', 'code_diff'],
+            }],
+            diagnostics: [
+              {
+                id: 'diagnostic-model-unusable',
+                code: 'MODEL_CLAIMS_UNUSABLE',
+                severity: 'warning',
+                message: 'The AI evaluator did not return usable non-diagnostic claims, so PIPE generated conservative claims only from captured source evidence.',
+                sourceRefCount: 1,
+                sourceRefTypes: ['assessment_evaluation_request'],
+              },
+              {
+                id: 'diagnostic-human-review',
+                code: 'HUMAN_CORRECTNESS_REVIEW_REQUIRED',
+                severity: 'warning',
+                message: 'A human reviewer should inspect the diff before treating the commit as proven upstream-correct.',
+                sourceRefCount: 1,
+                sourceRefTypes: ['code_diff'],
+              },
+            ],
+          },
+        },
+      }),
+    });
+
+    renderDetail();
+    await flushAsyncUpdates();
+
+    const decision = screen.getByTestId('interview-workspace-assessment-decision-summary');
+    expect(decision).toHaveTextContent('Decision');
+    expect(decision).toHaveTextContent('Human review required');
+    expect(decision).toHaveTextContent('PIPE generated conservative source-backed claims because model claims were unusable; inspect the diff before deciding.');
+    expect(decision).toHaveTextContent('Risk');
+    expect(decision).toHaveTextContent('The report is source-backed and reviewable, but PIPE has not proven the commit is upstream-correct without reviewer inspection.');
+    const workPacket = screen.getByTestId('interview-assessment-work-packet');
+    expect(workPacket).toHaveTextContent('Human review');
+    expect(workPacket).toHaveTextContent('Required before decision');
+    expect(workPacket).toHaveTextContent('Review the exact diff, tests, and conservative evaluator cautions before advancing or rejecting.');
+  });
+
   it('records a source-backed recruiter human decision from an evaluated workspace assessment', async () => {
     const evaluatedProgress: NonNullable<ScheduledInterviewDetail['assessmentProgress']> = {
       session: {

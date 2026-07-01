@@ -319,6 +319,123 @@ describe('InterviewCard assessment progress', () => {
     expect(progress).not.toHaveTextContent('assessment-session-setup');
   });
 
+  it('shows fallback evaluation as human-review-required instead of a pass signal', () => {
+    renderCard({
+      id: 'interview-fallback-evaluation',
+      createdAt: '2026-06-23T00:00:00.000Z',
+      updatedAt: '2026-06-23T00:22:00.000Z',
+      status: 'COMPLETED',
+      interviewType: 'OPEN_SOURCE_BUG_FIX',
+      meetingType: 'DIRECT_VIDEO_CALL',
+      scheduledAt: null,
+      assessmentProgress: {
+        session: {
+          id: 'assessment-session-fallback-card',
+          ingestionKey: 'assessment-session:fallback-card',
+          interviewId: 'interview-fallback-evaluation',
+          candidateId: 'candidate-1',
+          workspaceId: 'workspace-1',
+          workspacePersonId: null,
+          applicationId: null,
+          mode: 'OPEN_SOURCE_BUG_FIX',
+          state: 'EVALUATED',
+          createdAt: '2026-06-23T00:00:00.000Z',
+          updatedAt: '2026-06-23T00:22:00.000Z',
+        },
+        stage: 'EVALUATED',
+        nextAction: 'REVIEW_EVALUATION',
+        nextActionLabel: 'Review the assessment report and evidence.',
+        hasChallengePacket: true,
+        hasWorkEvidence: true,
+        hasMessageEvidence: false,
+        hasDevContainerEvidence: true,
+        hasToolUsageEvidence: true,
+        hasCommitSubmission: true,
+        hasFinalSubmission: true,
+        hasAiInteraction: true,
+        hasTranscriptEvidence: false,
+        hasTestEvidence: true,
+        evidenceCounts: [
+          { kind: 'ai_interaction', count: 1 },
+          { kind: 'commit_submission', count: 1 },
+        ],
+        sourceRefCounts: [
+          { kind: 'open_source_challenge_packet', count: 1 },
+          { kind: 'git_commit', count: 1 },
+          { kind: 'code_diff', count: 1 },
+        ],
+        challenge: {
+          sourceRefType: 'open_source_challenge_packet',
+          sourceRefId: 'challenge-packet-fallback-card',
+          evidenceRole: 'assigned_challenge',
+          exactText: 'Task: Fix Base UI popover impatient click handling.',
+          locator: { repositoryUrl: 'https://github.com/mui/base-ui' },
+        },
+        latestEvent: {
+          id: 'assessment-event-fallback-card',
+          kind: 'commit_submission',
+          sequence: 2,
+          occurredAt: '2026-06-23T00:18:00.000Z',
+        },
+        commit: {
+          eventId: 'assessment-event-fallback-card',
+          repositoryUrl: 'https://github.com/mui/base-ui',
+          forkRepositoryUrl: 'https://github.com/candidate/base-ui',
+          branchName: 'pipe-assessment',
+          baseCommitSha: '1111111111111111111111111111111111111111',
+          commitSha: 'abcdef1234567890abcdef1234567890abcdef12',
+          commitUrl: 'https://github.com/candidate/base-ui/commit/abcdef1234567890abcdef1234567890abcdef12',
+          changedFiles: [{ path: 'packages/react/src/popover/root/usePopoverRoot.ts', status: 'modified' }],
+          occurredAt: '2026-06-23T00:18:00.000Z',
+        },
+        evaluation: {
+          id: 'assessment-report-fallback-card',
+          status: 'EVALUATED',
+          summary: 'PIPE produced a conservative source-backed assessment report from captured evidence.',
+          recommendation: 'mixed_evidence_human_review',
+          createdAt: '2026-06-23T00:22:00.000Z',
+          evidenceCoverage: null,
+          claims: [{
+            id: 'claim-source-contract',
+            polarity: 'positive',
+            dimension: 'source_provenance',
+            narrative: 'The assessment has a complete source-backed challenge packet, submitted commit, and exact code diff for review.',
+            confidence: 0.82,
+            sourceRefCount: 3,
+            sourceRefTypes: ['open_source_challenge_packet', 'git_commit', 'code_diff'],
+          }],
+          diagnostics: [
+            {
+              id: 'diagnostic-model-unusable',
+              code: 'MODEL_CLAIMS_UNUSABLE',
+              severity: 'warning',
+              message: 'The AI evaluator did not return usable non-diagnostic claims, so PIPE generated conservative claims only from captured source evidence.',
+              sourceRefCount: 1,
+              sourceRefTypes: ['assessment_evaluation_request'],
+            },
+            {
+              id: 'diagnostic-human-review',
+              code: 'HUMAN_CORRECTNESS_REVIEW_REQUIRED',
+              severity: 'warning',
+              message: 'A human reviewer should inspect the diff before treating the commit as proven upstream-correct.',
+              sourceRefCount: 1,
+              sourceRefTypes: ['code_diff'],
+            },
+          ],
+        },
+      },
+    });
+
+    const progress = screen.getByTestId('interview-card-assessment-progress');
+    expect(progress).toHaveTextContent('Human review required');
+    expect(progress).toHaveTextContent('Inspect the diff before deciding.');
+    expect(progress).toHaveTextContent('CAUTION');
+    expect(progress).toHaveTextContent('2 evaluator cautions');
+    expect(progress).toHaveTextContent('Model claims unusable');
+    expect(progress).toHaveTextContent('Human correctness review required');
+    expect(progress).not.toHaveTextContent('Strong evidence to advance');
+  });
+
   it('warns recruiters when an assigned challenge packet is incomplete', () => {
     renderCard({
       id: 'interview-incomplete-packet',
@@ -862,7 +979,8 @@ describe('InterviewCard assessment progress', () => {
     });
 
     const progress = screen.getByTestId('interview-card-assessment-progress');
-    expect(progress).toHaveTextContent('Human review needed');
+    expect(progress).toHaveTextContent('Human review required');
+    expect(progress).toHaveTextContent('Inspect the diff before deciding.');
     expect(progress).not.toHaveTextContent('mixed_evidence_human_review');
     expect(progress).toHaveTextContent('CLAIMS');
     expect(progress).toHaveTextContent('Repo understanding · Positive · 82%');

@@ -304,6 +304,21 @@ function assessmentEvaluationDiagnostics(
   return (evaluation?.diagnostics ?? []).slice(0, 4);
 }
 
+function assessmentEvaluationDiagnosticCodes(
+  evaluation: AssessmentEvaluation | null | undefined,
+): Set<string> {
+  return new Set((evaluation?.diagnostics ?? []).map((diagnostic) => diagnostic.code));
+}
+
+function assessmentEvaluationNeedsHumanCorrectnessReview(
+  evaluation: AssessmentEvaluation | null | undefined,
+): boolean {
+  const codes = assessmentEvaluationDiagnosticCodes(evaluation);
+  return evaluation?.recommendation === 'mixed_evidence_human_review'
+    || codes.has('MODEL_CLAIMS_UNUSABLE')
+    || codes.has('HUMAN_CORRECTNESS_REVIEW_REQUIRED');
+}
+
 function assessmentCoverageGaps(
   coverage: AssessmentEvidenceCoverage | null | undefined,
 ): AssessmentEvidenceCoverageItem[] {
@@ -330,11 +345,16 @@ function assessmentDecisionSummary(input: {
   if (progress?.evaluation) {
     const status = progress.evaluation.status.toUpperCase();
     if (status === 'EVALUATED') {
+      const needsHumanReview = assessmentEvaluationNeedsHumanCorrectnessReview(progress.evaluation);
       return {
-        value: assessmentEvaluationRecommendationLabel(progress.evaluation.recommendation) ?? 'Evaluated',
+        value: needsHumanReview
+          ? 'Human review required'
+          : assessmentEvaluationRecommendationLabel(progress.evaluation.recommendation) ?? 'Evaluated',
         detail: compactText(
-          progress.evaluation.summary
-          || 'Review the source-backed evaluation report before advancing the candidate.',
+          needsHumanReview
+            ? `${progress.evaluation.summary || 'Source-backed report is reviewable.'} Inspect the diff before deciding.`
+            : progress.evaluation.summary
+              || 'Review the source-backed evaluation report before advancing the candidate.',
           150,
         ),
       };

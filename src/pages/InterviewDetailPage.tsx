@@ -344,6 +344,34 @@ function assessmentEvaluationRecommendationLabel(recommendation: string | null |
   }
 }
 
+function assessmentEvaluationDiagnosticCodes(
+  evaluation: AssessmentProgressSnapshot['evaluation'] | null | undefined,
+): Set<string> {
+  return new Set((evaluation?.diagnostics ?? []).map((diagnostic) => diagnostic.code));
+}
+
+function assessmentEvaluationNeedsHumanCorrectnessReview(
+  evaluation: AssessmentProgressSnapshot['evaluation'] | null | undefined,
+): boolean {
+  const codes = assessmentEvaluationDiagnosticCodes(evaluation);
+  return evaluation?.recommendation === 'mixed_evidence_human_review'
+    || codes.has('MODEL_CLAIMS_UNUSABLE')
+    || codes.has('HUMAN_CORRECTNESS_REVIEW_REQUIRED');
+}
+
+function assessmentEvaluationHumanReviewDetail(
+  evaluation: NonNullable<AssessmentProgressSnapshot['evaluation']>,
+): string {
+  const codes = assessmentEvaluationDiagnosticCodes(evaluation);
+  if (codes.has('MODEL_CLAIMS_UNUSABLE')) {
+    return `${evaluation.summary} PIPE generated conservative source-backed claims because model claims were unusable; inspect the diff before deciding.`;
+  }
+  if (codes.has('HUMAN_CORRECTNESS_REVIEW_REQUIRED')) {
+    return `${evaluation.summary} Human review is required before treating this commit as upstream-correct.`;
+  }
+  return evaluation.summary;
+}
+
 function assessmentHumanDecisionLabel(decision: string): string {
   switch (decision) {
     case 'advance':
@@ -788,11 +816,16 @@ function workspaceAssessmentDecisionItem(progress: AssessmentProgressSnapshot | 
 
   const evaluation = progress.evaluation;
   if (evaluation?.status === 'EVALUATED') {
+    const needsHumanReview = assessmentEvaluationNeedsHumanCorrectnessReview(evaluation);
     return {
       label: 'Decision',
-      value: assessmentEvaluationRecommendationLabel(evaluation.recommendation) ?? 'Assessment report ready',
-      detail: evaluation.summary,
-      tone: 'positive',
+      value: needsHumanReview
+        ? 'Human review required'
+        : assessmentEvaluationRecommendationLabel(evaluation.recommendation) ?? 'Assessment report ready',
+      detail: needsHumanReview
+        ? assessmentEvaluationHumanReviewDetail(evaluation)
+        : evaluation.summary,
+      tone: needsHumanReview ? 'watch' : 'positive',
     };
   }
 
@@ -972,6 +1005,16 @@ function workspaceAssessmentRiskItem(progress: AssessmentProgressSnapshot | null
     };
   }
 
+  if (progress?.evaluation?.status === 'EVALUATED'
+    && assessmentEvaluationNeedsHumanCorrectnessReview(progress.evaluation)) {
+    return {
+      label: 'Risk',
+      value: 'Human review required',
+      detail: 'The report is source-backed and reviewable, but PIPE has not proven the commit is upstream-correct without reviewer inspection.',
+      tone: 'watch',
+    };
+  }
+
   if (progress?.hasVerificationGap || (progress && !hasTestEvidence)) {
     return {
       label: 'Risk',
@@ -1046,12 +1089,19 @@ function workspaceAssessmentWorkPacket(progress: AssessmentProgressSnapshot | nu
         tone: progress.humanDecision.decision === 'advance' ? 'positive' : 'watch',
       }
     : progress.evaluation?.status === 'EVALUATED'
-    ? {
-        label: 'Human review',
-        value: assessmentEvaluationRecommendationLabel(progress.evaluation.recommendation) ?? 'Report ready',
-        detail: 'Review the evaluator claims, exact diff, tests, and cautions before making a hiring decision.',
-        tone: 'positive',
-      }
+    ? assessmentEvaluationNeedsHumanCorrectnessReview(progress.evaluation)
+      ? {
+          label: 'Human review',
+          value: 'Required before decision',
+          detail: 'Review the exact diff, tests, and conservative evaluator cautions before advancing or rejecting.',
+          tone: 'watch',
+        }
+      : {
+          label: 'Human review',
+          value: assessmentEvaluationRecommendationLabel(progress.evaluation.recommendation) ?? 'Report ready',
+          detail: 'Review the evaluator claims, exact diff, tests, and cautions before making a hiring decision.',
+          tone: 'positive',
+        }
     : progress.evaluation
       ? {
           label: 'Human review',
