@@ -1,6 +1,7 @@
 import { Suspense, lazy, useCallback, useEffect, useState, type CSSProperties, type ReactNode, type SyntheticEvent } from 'react';
 import { useLocation, useNavigate, useParams } from 'react-router-dom';
 import {
+  AlertTriangle,
   ArrowLeft,
   Briefcase,
   Calendar,
@@ -1539,6 +1540,57 @@ function codeReviewScoreValidityReadout(decision: CodeReviewDecisionProjection):
   };
 }
 
+type CodeReviewDecisionStateTone = 'positive' | 'watch' | 'blocked';
+
+function codeReviewDecisionState(decision: CodeReviewDecisionProjection): {
+  label: string;
+  ariaLabel: string;
+  tone: CodeReviewDecisionStateTone;
+} {
+  const joinedBasis = decision.basisItems
+    .map((item) => `${item.label} ${item.value}`)
+    .join(' ')
+    .toLowerCase();
+  const joinedDecisionText = [
+    decision.recommendation,
+    decision.recommendationDetail,
+    decision.assessmentValidity,
+    decision.assessmentValidityDetail,
+    decision.uncertainty,
+    decision.uncertaintyDetail,
+    decision.nextAction,
+    decision.nextActionDetail,
+  ].join(' ').toLowerCase();
+  const allBasisSatisfied = decision.basisItems.length > 0
+    && decision.basisItems.every((item) => item.satisfied);
+  const hasExplicitNotReadySignal = /do not rely|not assessment signal|no score|missing|partial|incomplete|unavailable|failed|wait for candidate|wait for review|collect/.test(joinedDecisionText);
+  const hasCalibrationSignal = /calibration|calibrate|assignment fairness|manual|weak|probe|focused/.test(joinedDecisionText)
+    || /assignment evidence only/.test(joinedBasis);
+  const hasUsableSignal = /usable|valid because|source-backed signal|advance/.test(joinedDecisionText);
+
+  if (allBasisSatisfied && hasUsableSignal && !hasExplicitNotReadySignal && !/manual|assignment evidence only/.test(joinedBasis)) {
+    return {
+      label: 'Usable signal',
+      ariaLabel: 'Code-review decision state: usable signal',
+      tone: 'positive',
+    };
+  }
+
+  if (hasExplicitNotReadySignal && !hasCalibrationSignal) {
+    return {
+      label: 'Not ready',
+      ariaLabel: 'Code-review decision state: not ready',
+      tone: 'blocked',
+    };
+  }
+
+  return {
+    label: 'Calibration needed',
+    ariaLabel: 'Code-review decision state: calibration needed',
+    tone: 'watch',
+  };
+}
+
 function derivePendingCodeReviewAssignmentDecision(
   livingContext: LivingContextReadModel | null,
 ): CodeReviewDecisionProjection | null {
@@ -2242,6 +2294,7 @@ function ProfileDecisionCockpit({
 function CodeReviewDecisionCard({ decision }: { decision: CodeReviewDecisionProjection }): JSX.Element {
   const sourceProofSummary = codeReviewDecisionSourceProofSummary(decision);
   const scoreValidity = codeReviewScoreValidityReadout(decision);
+  const decisionState = codeReviewDecisionState(decision);
   const signalSummary = [
     decision.scoreLabel,
     decision.challengeLabel,
@@ -2264,7 +2317,18 @@ function CodeReviewDecisionCard({ decision }: { decision: CodeReviewDecisionProj
           <h2 style={DECISION_TITLE}>{decision.recommendation}</h2>
           <p style={DECISION_COPY}>{decision.recommendationDetail}</p>
         </div>
-        <CheckCircle size={24} color="var(--pipe-accent)" />
+        <div
+          data-testid="person-code-review-decision-state"
+          aria-label={decisionState.ariaLabel}
+          style={decisionStateBadgeStyle(decisionState.tone)}
+        >
+          {decisionState.tone === 'positive' ? (
+            <CheckCircle size={15} aria-hidden="true" />
+          ) : (
+            <AlertTriangle size={15} aria-hidden="true" />
+          )}
+          {decisionState.label}
+        </div>
       </div>
 
       <div data-testid="person-code-review-decision-basis" style={DECISION_BASIS}>
@@ -3288,6 +3352,44 @@ const CODE_REVIEW_DECISION_HEADER: CSSProperties = {
   justifyContent: 'space-between',
   gap: 16,
 };
+
+function decisionStateBadgeStyle(tone: CodeReviewDecisionStateTone): CSSProperties {
+  const palette = tone === 'positive'
+    ? {
+        color: 'var(--pipe-success, #4ade80)',
+        border: 'rgba(74, 222, 128, 0.32)',
+        background: 'rgba(74, 222, 128, 0.08)',
+      }
+    : tone === 'blocked'
+      ? {
+          color: '#f87171',
+          border: 'rgba(248, 113, 113, 0.34)',
+          background: 'rgba(248, 113, 113, 0.08)',
+        }
+      : {
+          color: '#fbbf24',
+          border: 'rgba(251, 191, 36, 0.34)',
+          background: 'rgba(251, 191, 36, 0.08)',
+        };
+
+  return {
+    alignItems: 'center',
+    background: palette.background,
+    border: `1px solid ${palette.border}`,
+    borderRadius: 6,
+    color: palette.color,
+    display: 'inline-flex',
+    flex: '0 0 auto',
+    fontSize: 10,
+    fontWeight: 800,
+    gap: 6,
+    letterSpacing: '0.08em',
+    lineHeight: 1,
+    padding: '8px 9px',
+    textTransform: 'uppercase',
+    whiteSpace: 'nowrap',
+  };
+}
 
 const DECISION_EYEBROW: CSSProperties = {
   color: 'var(--pipe-accent)',

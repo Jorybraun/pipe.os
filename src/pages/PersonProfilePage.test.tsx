@@ -743,6 +743,8 @@ describe('PersonProfilePage', () => {
     expect(cockpit).toHaveTextContent('Usable source-backed signal');
     const decision = screen.getByTestId('person-code-review-decision');
     expect(decision).toHaveTextContent('82/100 Strong');
+    expect(screen.getByTestId('person-code-review-decision-state')).toHaveTextContent('Usable signal');
+    expect(screen.getByTestId('person-code-review-decision-state')).toHaveAttribute('aria-label', 'Code-review decision state: usable signal');
     expect(decision).toHaveTextContent('Score provenance');
     expect(decision).toHaveTextContent('6 rubric dimensions · 2 evidence items · 5 scoring metrics');
     expect(decision).toHaveTextContent('acme/widgets PR #42');
@@ -842,6 +844,8 @@ describe('PersonProfilePage', () => {
 
     const decision = screen.getByTestId('person-code-review-decision');
     expect(decision).toHaveTextContent('Review assignment fairness before rejecting');
+    expect(screen.getByTestId('person-code-review-decision-state')).toHaveTextContent('Calibration needed');
+    expect(screen.getByTestId('person-code-review-decision-state')).toHaveAttribute('aria-label', 'Code-review decision state: calibration needed');
     expect(decision).toHaveTextContent('38/100 Weak');
     expect(decision).toHaveTextContent('mui/base-ui PR #973');
     expect(screen.getByTestId('person-decision-cockpit')).toHaveTextContent('Create fairness review');
