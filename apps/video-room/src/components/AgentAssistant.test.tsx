@@ -36,47 +36,38 @@ describe('AgentAssistant', () => {
     mockAgentConnection();
   });
 
-  it('renders a plain AI assistant prompt without the removed mascot hotspot', () => {
+  it('stays hidden until explicitly opened', () => {
     render(
       <AgentAssistant
-        messages={[{ text: 'Open the workspace when you are ready.', hold: true }]}
-        onDismiss={vi.fn()}
         agentEnabled={false}
         agentWsUrl={null}
       />,
     );
 
-    expect(screen.getByTestId('assistant-prompt').textContent).toContain('AI assistant');
-    expect(screen.getByTestId('assistant-prompt').textContent).toContain('Open the workspace');
-    expect(screen.queryByTestId('clippy-hotspot')).toBeNull();
-    expect(screen.queryByTestId('clippy-character')).toBeNull();
+    expect(screen.queryByTestId('agent-chat')).toBeNull();
   });
 
-  it('opens the bridge panel, hides the prompt, and records blocked prompts honestly', () => {
+  it('opens the bridge panel on request and records blocked prompts honestly', () => {
     const onChatOpen = vi.fn();
     const onUserChatMessage = vi.fn();
 
     render(
       <AgentAssistant
-        messages={[{ text: 'I can help once the workspace is connected.', hold: true }]}
-        onDismiss={vi.fn()}
         onChatOpen={onChatOpen}
         onUserChatMessage={onUserChatMessage}
         agentEnabled={false}
         agentWsUrl={null}
         canLaunchAgentWorkspace
+        openChatRequest={1}
       />,
     );
 
-    fireEvent.click(screen.getByRole('button', { name: 'Open chat' }));
-
-    expect(screen.queryByTestId('assistant-prompt')).toBeNull();
-    expect(screen.getByTestId('clippy-chat').textContent).toContain('AI assistant');
-    expect(screen.getByTestId('clippy-bridge-checklist').textContent).toContain('Workspace');
-    expect(screen.getByTestId('clippy-launch-workspace').textContent).toContain('Launch workspace');
+    expect(screen.getByTestId('agent-chat').textContent).toContain('AI assistant');
+    expect(screen.getByTestId('agent-bridge-checklist').textContent).toContain('Workspace');
+    expect(screen.getByTestId('agent-launch-workspace').textContent).toContain('Launch workspace');
     expect(onChatOpen).toHaveBeenCalledTimes(1);
 
-    fireEvent.change(screen.getByTestId('clippy-chat-input'), {
+    fireEvent.change(screen.getByTestId('agent-chat-input'), {
       target: { value: 'can you inspect the repo?' },
     });
     fireEvent.click(screen.getByRole('button', { name: 'Send' }));
@@ -86,7 +77,7 @@ describe('AgentAssistant', () => {
       deliveryStatus: 'blocked',
       blockedReason: 'workspace_required',
     }));
-    expect(screen.getByTestId('clippy-chat').textContent).toContain(
+    expect(screen.getByTestId('agent-chat').textContent).toContain(
       'The assistant could not send that because the dev workspace is not running.',
     );
   });
@@ -111,8 +102,6 @@ describe('AgentAssistant', () => {
 
     render(
       <AgentAssistant
-        messages={[]}
-        onDismiss={vi.fn()}
         onUserChatMessage={onUserChatMessage}
         agentEnabled
         agentWsUrl="wss://agent.example/ws"
@@ -120,13 +109,13 @@ describe('AgentAssistant', () => {
       />,
     );
 
-    fireEvent.change(screen.getByTestId('clippy-chat-input'), {
+    fireEvent.change(screen.getByTestId('agent-chat-input'), {
       target: { value: 'summarize the failing tests' },
     });
     fireEvent.click(screen.getByRole('button', { name: 'Send' }));
 
     expect(sendMessage).toHaveBeenCalledWith('summarize the failing tests');
     expect(onUserChatMessage).toHaveBeenCalledWith(sentMessage);
-    expect(screen.getByTestId('clippy-chat').textContent).toContain('Connected to devin');
+    expect(screen.getByTestId('agent-chat').textContent).toContain('Connected to devin');
   });
 });

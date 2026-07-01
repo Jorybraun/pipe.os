@@ -38,7 +38,7 @@ const modeSchema = z.enum([
   'DEV_CONTAINER_CHALLENGE',
   'DEV_CONTAINER_REPO_TASK',
   'OPEN_SOURCE_BUG_FIX',
-  'CLIPPY_DEVIN_INTERACTION',
+  'AI_DEVIN_INTERACTION',
 ] satisfies [RepoTaskInterviewMode, ...RepoTaskInterviewMode[]]);
 
 const stateSchema = z.enum([
@@ -89,7 +89,7 @@ const actorTypeSchema = z.enum([
   'candidate',
   'recruiter',
   'ai_developer',
-  'clippy',
+  'agent',
   'devin',
   'dev_container',
   'system',

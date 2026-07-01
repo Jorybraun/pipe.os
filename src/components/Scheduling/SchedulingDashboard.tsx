@@ -675,7 +675,7 @@ export function SchedulingDashboard(): JSX.Element {
             videoEnabled: boolean;
             workspaceEnabled: boolean;
             recordingEnabled: boolean;
-            clippyEnabled: boolean;
+            aiAssistantEnabled: boolean;
           };
           agentType?: string | null;
         }) => {

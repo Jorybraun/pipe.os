@@ -161,17 +161,17 @@ function agentChatResponseId({
   ].join(':');
 }
 
-function clippyActionEventId({
+function agentActionEventId({
   actor = 'agent',
   capturedAtMs = 0,
-  source = 'clippy_agent_bridge',
+  source = 'agent_bridge',
   origin = 'agent',
   executionStatus = 'suggested',
   actionId = 'unknown-action',
 }) {
   const captured = Number.isFinite(capturedAtMs) ? Math.max(0, Math.round(capturedAtMs)) : 0;
   return [
-    'clippy-action',
+    'agent-action',
     safeEvidenceIdPart(actor),
     String(captured),
     safeEvidenceIdPart(source),
@@ -316,7 +316,7 @@ function agentDiagnosticSessionEvent(message) {
     text: String(eventMessage.message || 'Agent bridge diagnostic.'),
     actor: 'agent',
     properties: {
-      source: 'clippy_agent_bridge',
+      source: 'agent_bridge',
       agent,
       status,
       diagnosticSource,
@@ -397,7 +397,7 @@ function agentChatSessionEvent({
     text: responseText,
     actor: 'agent',
     properties: {
-      source: 'clippy_agent_bridge',
+      source: 'agent_bridge',
       agent: safeAgent,
       bridgeEventType: 'CHAT_RESPONSE',
       bridgeMessageSource,
@@ -452,7 +452,7 @@ function agentRoomActionSessionEvent({
   if (
     !actionId
     || (actionSource !== 'agent_stdout' && actionSource !== 'agent_api_response')
-    || actionProtocol !== 'clippy_room_action_tag'
+    || actionProtocol !== 'agent_room_action_tag'
   ) {
     return null;
   }
@@ -465,11 +465,11 @@ function agentRoomActionSessionEvent({
   const parsedObservedAt = typeof observedAt === 'string' ? Date.parse(observedAt) : Number.NaN;
   const capturedAtMs = Number.isFinite(parsedObservedAt) ? parsedObservedAt : Date.now();
   return {
-    type: 'clippy_action',
+    type: 'agent_action',
     text: `${safeAgent} suggested room action: ${actionId}`,
     actor: 'agent',
     properties: {
-      source: 'clippy_agent_bridge',
+      source: 'agent_bridge',
       origin: 'agent',
       executionStatus: 'suggested',
       actionId,
@@ -499,10 +499,10 @@ function agentRoomActionSessionEvent({
         : {}),
       observedAt,
       capturedAtMs,
-      clippyActionEventId: clippyActionEventId({
+      agentActionEventId: agentActionEventId({
         actor: 'agent',
         capturedAtMs,
-        source: 'clippy_agent_bridge',
+        source: 'agent_bridge',
         origin: 'agent',
         executionStatus: 'suggested',
         actionId,

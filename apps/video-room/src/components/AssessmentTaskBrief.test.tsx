@@ -87,6 +87,50 @@ const progress: RoomAssessmentProgressSnapshot = {
     occurredAt: '2026-06-29T22:00:00.000Z',
   },
   evaluation: null,
+  readiness: {
+    status: 'READY_FOR_EVALUATION',
+    label: 'Ready for evaluation',
+    detail: 'Required challenge, work, commit, and source evidence are captured.',
+    isReadyForEvaluation: true,
+    isUsableHiringSignal: false,
+    missingRequiredCount: 0,
+    required: [
+      {
+        id: 'challenge_packet',
+        label: 'Concrete challenge packet',
+        required: true,
+        satisfied: true,
+        sourceRefTypes: ['open_source_challenge_packet'],
+        missingImpact: 'Assign a source-backed challenge packet.',
+      },
+      {
+        id: 'commit_submission',
+        label: 'Assessment branch commit',
+        required: true,
+        satisfied: true,
+        sourceRefTypes: ['git_commit', 'code_diff'],
+        missingImpact: 'Submit a real commit.',
+      },
+    ],
+    confidence: [
+      {
+        id: 'test_or_verification',
+        label: 'Tests or verification note',
+        required: false,
+        satisfied: true,
+        sourceRefTypes: ['test_run'],
+        missingImpact: 'Capture test output.',
+      },
+      {
+        id: 'candidate_explanation',
+        label: 'Candidate explanation',
+        required: false,
+        satisfied: true,
+        sourceRefTypes: ['room_chat_message'],
+        missingImpact: 'Capture transcript or chat evidence.',
+      },
+    ],
+  },
 };
 
 describe('AssessmentTaskBrief', () => {
@@ -113,12 +157,19 @@ describe('AssessmentTaskBrief', () => {
     expect(briefText).toContain('#144');
     expect(briefText).toContain('dddddddddd');
     expect(briefText).toContain('pipe-assessment/retry-path');
-    expect(briefText).toContain('Start source-backed AI or human evaluation.');
+    expect(briefText).toContain('Required challenge, work, commit, and source evidence are captured.');
     expect(briefText).toContain('Fix the source-backed worker retry path.');
     expect(briefText).toContain('Retry order remains deterministic');
     expect(briefText).toContain('Existing worker tests pass');
     expect(briefText).toContain('Commit SHA on assessment branch');
     expect(briefText).toContain('Test command output');
+    expect(screen.getByTestId('assessment-task-brief-readiness').textContent).toContain('Ready for evaluation');
+    expect(briefText).toContain('Proof checklist');
+    expect(briefText).toContain('Ready for source-backed review');
+    expect(briefText).toContain('Concrete challenge packet: Captured');
+    expect(briefText).toContain('Assessment branch commit: Captured');
+    expect(briefText).toContain('Tests or verification note: Captured');
+    expect(briefText).toContain('Candidate explanation: Captured');
     expect(briefText).toContain('Commit cccccccccc');
     expect(briefText).not.toContain('sha256:packet-content-hash');
 
@@ -139,5 +190,95 @@ describe('AssessmentTaskBrief', () => {
 
     expect(screen.getByText('The host still needs to attach a source-backed task packet before this assessment can be trusted.')).not.toBeNull();
     expect(screen.queryByTestId('assessment-brief-open-submission')).toBeNull();
+    expect(screen.queryByTestId('assessment-task-brief-proof')).toBeNull();
+  });
+
+  it('shows missing required proof before the candidate submits a real commit', () => {
+    render(
+      <AssessmentTaskBrief
+        packet={packet}
+        workspace={workspace}
+        progress={{
+          ...progress,
+          state: 'IN_PROGRESS',
+          stage: 'WORK_IN_PROGRESS',
+          nextAction: 'SUBMIT_COMMIT',
+          nextActionLabel: 'Submit the assessment branch commit.',
+          hasWorkEvidence: true,
+          hasMessageEvidence: false,
+          hasDevContainerEvidence: true,
+          hasToolUsageEvidence: false,
+          hasCommitSubmission: false,
+          hasAiInteraction: false,
+          hasTranscriptEvidence: false,
+          hasTestEvidence: false,
+          evidenceCounts: [],
+          sourceRefCounts: [],
+          latestEvent: null,
+          commit: null,
+          readiness: {
+            status: 'WORK_IN_PROGRESS',
+            label: 'Work evidence in progress',
+            detail: 'Submit a real commit from a pipe-assessment branch or fork before evaluation.',
+            isReadyForEvaluation: false,
+            isUsableHiringSignal: false,
+            missingRequiredCount: 2,
+            required: [
+              {
+                id: 'challenge_packet',
+                label: 'Concrete challenge packet',
+                required: true,
+                satisfied: true,
+                sourceRefTypes: ['open_source_challenge_packet'],
+                missingImpact: 'Assign a source-backed challenge packet.',
+              },
+              {
+                id: 'commit_submission',
+                label: 'Assessment branch commit',
+                required: true,
+                satisfied: false,
+                sourceRefTypes: ['git_commit', 'code_diff'],
+                missingImpact: 'Submit a real commit from a pipe-assessment branch or fork before evaluation.',
+              },
+              {
+                id: 'code_diff_source',
+                label: 'Exact diff source',
+                required: true,
+                satisfied: false,
+                sourceRefTypes: ['code_diff'],
+                missingImpact: 'Capture the exact base..commit diff before scoring the solution.',
+              },
+            ],
+            confidence: [
+              {
+                id: 'test_or_verification',
+                label: 'Tests or verification note',
+                required: false,
+                satisfied: false,
+                sourceRefTypes: ['test_run', 'verification_gap'],
+                missingImpact: 'Capture test output or a source-backed missing-test note.',
+              },
+              {
+                id: 'candidate_explanation',
+                label: 'Candidate explanation',
+                required: false,
+                satisfied: false,
+                sourceRefTypes: ['meeting_transcript_segment', 'room_chat_message'],
+                missingImpact: 'Capture transcript or chat evidence.',
+              },
+            ],
+          },
+        }}
+        workspaceReady
+      />,
+    );
+
+    const proof = screen.getByTestId('assessment-task-brief-proof');
+    const proofText = proof.textContent ?? '';
+    expect(proofText).toContain('2 required items missing');
+    expect(proofText).toContain('Assessment branch commit: Missing');
+    expect(proofText).toContain('Exact diff source: Missing');
+    expect(proofText).toContain('Tests or verification note: Not captured');
+    expect(proofText).toContain('Candidate explanation: Not captured');
   });
 });

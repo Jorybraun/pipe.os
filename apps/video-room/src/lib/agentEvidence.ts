@@ -7,56 +7,56 @@ import type {
 } from '../hooks/useAgentConnection';
 import type { RoomPhase } from '../types';
 import {
-  buildClippyPromptId,
-  clippyTextFingerprint,
-  normalizedClippyPromptTimestamp,
-  safeClippyEvidenceIdPart as safeEvidenceIdPart,
-} from './clippyPromptIdentity';
+  buildAgentPromptId,
+  agentTextFingerprint,
+  normalizedAgentPromptTimestamp,
+  safeAgentEvidenceIdPart as safeEvidenceIdPart,
+} from './agentPromptIdentity';
 import { redactAgentDiagnosticText } from './agentDiagnosticRedaction';
 
-export { clippyTextFingerprint } from './clippyPromptIdentity';
+export { agentTextFingerprint } from './agentPromptIdentity';
 
-export type ClippyUiActionId = 'open-clippy-chat' | 'close-clippy-chat' | 'dismiss-clippy' | 'open-devin-auth-browser' | 'check-devin-auth';
-export type ClippyUiActionOrigin = 'tray' | 'prompt' | 'chat' | 'call';
-export type ClippyRoomActionOrigin = 'prompt' | 'agent';
-export type ClippyEvidenceActor = 'host' | 'guest';
-type ClippyUiActionSource = 'clippy_tray_ui' | 'clippy_prompt_ui' | 'clippy_chat_ui' | 'clippy_call_controls_ui';
-type ClippyActionExecutionStatus = 'opened' | 'closed' | 'dismissed' | 'executed' | 'suggested';
+export type AgentUiActionId = 'open-agent-chat' | 'close-agent-chat' | 'open-devin-auth-browser' | 'check-devin-auth';
+export type AgentUiActionOrigin = 'tray' | 'chat' | 'call';
+export type AgentRoomActionOrigin = 'chat' | 'agent';
+export type AgentEvidenceActor = 'host' | 'guest';
+type AgentUiActionSource = 'agent_tray_ui' | 'agent_chat_ui' | 'agent_call_controls_ui';
+type AgentActionExecutionStatus = 'opened' | 'closed' | 'dismissed' | 'executed' | 'suggested';
 
-export interface ClippyUiActionEvidence {
+export interface AgentUiActionEvidence {
   text: string;
   properties: Record<string, unknown>;
 }
 
-export interface ClippyRoomActionExecutionEvidence {
+export interface AgentRoomActionExecutionEvidence {
   text: string;
   properties: Record<string, unknown>;
 }
 
-export interface ClippyUserChatEvidence {
+export interface AgentUserChatEvidence {
   text: string;
   properties: Record<string, unknown>;
 }
 
-export interface ClippyAgentChatFallbackEvidence {
+export interface AgentChatFallbackEvidence {
   text: string;
   properties: Record<string, unknown>;
 }
 
-export interface ClippyAgentStatusEvidence {
+export interface AgentStatusEvidence {
   text: string;
   properties: Record<string, unknown>;
 }
 
-export interface ClippyAgentMessageSessionEvidence {
+export interface AgentMessageSessionEvidence {
   eventType: 'ai_chat_agent' | 'ai_agent_status';
   text: string;
   properties: Record<string, unknown>;
 }
 
-type ClippyAgentBridgeMessageSource = Exclude<NonNullable<AgentChatMessage['source']>, 'user_submit'>;
-type ClippyAgentStatusBridgeMessageSource = 'agent_status' | ClippyAgentBridgeMessageSource;
-const CLIPPY_PROMPT_BLOCKED_REASONS = new Set<AgentPromptBlockedReason>([
+type AgentBridgeMessageSource = Exclude<NonNullable<AgentChatMessage['source']>, 'user_submit'>;
+type AgentStatusBridgeMessageSource = 'agent_status' | AgentBridgeMessageSource;
+const AGENT_PROMPT_BLOCKED_REASONS = new Set<AgentPromptBlockedReason>([
   'workspace_required',
   'bridge_reconnecting',
   'agent_starting',
@@ -69,16 +69,14 @@ const CLIPPY_PROMPT_BLOCKED_REASONS = new Set<AgentPromptBlockedReason>([
 const FNV_32_OFFSET = 0x811c9dc5;
 const FNV_32_PRIME = 0x01000193;
 
-function clippyUiActionText(actionId: ClippyUiActionId, origin: ClippyUiActionOrigin): string {
+function agentUiActionText(actionId: AgentUiActionId, origin: AgentUiActionOrigin): string {
   switch (actionId) {
-    case 'open-clippy-chat':
-      if (origin === 'chat') return 'AI assistant opened from the room chat window';
+    case 'open-agent-chat':
+      if (origin === 'chat') return 'AI assistant opened from the room chat panel';
       if (origin === 'call') return 'AI assistant opened from the video call controls';
       return 'AI assistant opened from the room controls';
-    case 'close-clippy-chat':
-      return 'AI assistant chat window closed';
-    case 'dismiss-clippy':
-      return 'AI assistant prompt dismissed';
+    case 'close-agent-chat':
+      return 'AI assistant chat panel closed';
     case 'open-devin-auth-browser':
       return 'AI assistant opened Devin browser authentication';
     case 'check-devin-auth':
@@ -88,26 +86,25 @@ function clippyUiActionText(actionId: ClippyUiActionId, origin: ClippyUiActionOr
   }
 }
 
-function clippyUiActionStatus(actionId: ClippyUiActionId): string {
-  if (actionId === 'open-clippy-chat') return 'opened';
-  if (actionId === 'close-clippy-chat') return 'closed';
-  if (actionId === 'dismiss-clippy') return 'dismissed';
+function agentUiActionStatus(actionId: AgentUiActionId): string {
+  if (actionId === 'open-agent-chat') return 'opened';
+  if (actionId === 'close-agent-chat') return 'closed';
   return 'executed';
 }
 
-export function buildClippyActionEventId(input: {
-  actor: ClippyEvidenceActor | 'agent';
+export function buildAgentActionEventId(input: {
+  actor: AgentEvidenceActor | 'agent';
   capturedAtMs: number;
-  source: ClippyUiActionSource | 'clippy_agent_bridge';
-  origin: ClippyUiActionOrigin | ClippyRoomActionOrigin;
-  executionStatus: ClippyActionExecutionStatus;
+  source: AgentUiActionSource | 'agent_bridge';
+  origin: AgentUiActionOrigin | AgentRoomActionOrigin;
+  executionStatus: AgentActionExecutionStatus;
   actionId: string;
 }): string {
   const capturedAtMs = Number.isFinite(input.capturedAtMs)
     ? Math.max(0, Math.round(input.capturedAtMs))
     : 0;
   return [
-    'clippy-action',
+    'agent-action',
     input.actor,
     String(capturedAtMs),
     input.source,
@@ -117,7 +114,7 @@ export function buildClippyActionEventId(input: {
   ].join(':');
 }
 
-export function buildClippyAgentStatusEventId(input: {
+export function buildAgentStatusEventId(input: {
   agentName: string | null;
   capturedAtMs: number;
   bridgeMessageSource: string | null;
@@ -134,7 +131,7 @@ export function buildClippyAgentStatusEventId(input: {
   return `agent-status:${agent}:${capturedAtMs}:${bridgeMessageSource}:${status}:${diagnosticSource}`;
 }
 
-export function clippyAgentResponseFingerprint(text: string): string {
+export function agentResponseFingerprint(text: string): string {
   let hash = FNV_32_OFFSET;
   for (let index = 0; index < text.length; index += 1) {
     hash ^= text.charCodeAt(index);
@@ -143,7 +140,7 @@ export function clippyAgentResponseFingerprint(text: string): string {
   return `agent_${(hash >>> 0).toString(16).padStart(8, '0')}`;
 }
 
-export function buildClippyAgentChatResponseId(input: {
+export function buildAgentChatResponseId(input: {
   agentName: string | null;
   capturedAtMs: number;
   responseFingerprint: string;
@@ -155,7 +152,7 @@ export function buildClippyAgentChatResponseId(input: {
   return `agent-chat:${agent}:${capturedAtMs}:CHAT_RESPONSE:${input.responseFingerprint}`;
 }
 
-function isClippyAgentBridgeMessageSource(value: unknown): value is ClippyAgentBridgeMessageSource {
+function isAgentBridgeMessageSource(value: unknown): value is AgentBridgeMessageSource {
   return value === 'agent_stdout'
     || value === 'agent_api_response'
     || value === 'bridge_diagnostic'
@@ -177,7 +174,7 @@ function isSourceBackedAgentRoomAction(
   source: 'agent_stdout_action' | 'agent_api_response_action';
   agentName: string;
   bridgeEventType: 'ROOM_ACTION';
-  protocol: 'clippy_room_action_tag';
+  protocol: 'agent_room_action_tag';
   observedAt: string;
   persisted: boolean;
 } {
@@ -187,41 +184,37 @@ function isSourceBackedAgentRoomAction(
     && typeof action.agentName === 'string'
     && action.agentName.trim().length > 0
     && action.bridgeEventType === 'ROOM_ACTION'
-    && action.protocol === 'clippy_room_action_tag'
+    && action.protocol === 'agent_room_action_tag'
     && typeof action.observedAt === 'string'
     && action.observedAt.trim().length > 0
     && typeof action.persisted === 'boolean';
 }
 
-export function buildClippyUiActionEvidence(input: {
-  actionId: ClippyUiActionId;
-  origin: ClippyUiActionOrigin;
-  actor: ClippyEvidenceActor;
+export function buildAgentUiActionEvidence(input: {
+  actionId: AgentUiActionId;
+  origin: AgentUiActionOrigin;
+  actor: AgentEvidenceActor;
   capturedAtMs: number;
   surface: RoomSurface;
   roomPhase: RoomPhase;
   workspaceStatus: string | null;
   workspaceSessionId: string | null;
   agentWorkspaceReady: boolean;
-}): ClippyUiActionEvidence {
-  const source: ClippyUiActionSource = input.origin === 'tray'
-    ? 'clippy_tray_ui'
+}): AgentUiActionEvidence {
+  const source: AgentUiActionSource = input.origin === 'tray'
+    ? 'agent_tray_ui'
     : input.origin === 'chat'
-      ? 'clippy_chat_ui'
-      : input.origin === 'call'
-        ? 'clippy_call_controls_ui'
-        : 'clippy_prompt_ui';
+      ? 'agent_chat_ui'
+      : 'agent_call_controls_ui';
   const actionSource = input.origin === 'tray'
-    ? 'win95_taskbar_tray'
+    ? 'assessment_agent_tray'
     : input.origin === 'chat'
-      ? 'clippy_chat_window'
-      : input.origin === 'call'
-        ? 'video_call_controls'
-        : 'clippy_prompt_ui';
-  const executionStatus = clippyUiActionStatus(input.actionId) as ClippyActionExecutionStatus;
+      ? 'agent_chat_panel'
+      : 'video_call_controls';
+  const executionStatus = agentUiActionStatus(input.actionId) as AgentActionExecutionStatus;
   const capturedAtMs = Number.isFinite(input.capturedAtMs) ? Math.max(0, Math.round(input.capturedAtMs)) : 0;
   return {
-    text: clippyUiActionText(input.actionId, input.origin),
+    text: agentUiActionText(input.actionId, input.origin),
     properties: {
       source,
       actionId: input.actionId,
@@ -230,7 +223,7 @@ export function buildClippyUiActionEvidence(input: {
       actionSource,
       executionStatus,
       capturedAtMs,
-      clippyActionEventId: buildClippyActionEventId({
+      agentActionEventId: buildAgentActionEventId({
         actor: input.actor,
         capturedAtMs,
         source,
@@ -249,23 +242,23 @@ export function buildClippyUiActionEvidence(input: {
   };
 }
 
-export function buildClippyRoomActionExecutionEvidence(input: {
+export function buildAgentRoomActionExecutionEvidence(input: {
   actionId: string;
   text: string;
-  origin: ClippyRoomActionOrigin;
-  actor: ClippyEvidenceActor;
+  origin: AgentRoomActionOrigin;
+  actor: AgentEvidenceActor;
   capturedAtMs: number;
   agentAction?: AgentRoomAction;
   surface: RoomSurface;
   roomPhase: RoomPhase;
   workspaceStatus: string | null;
   workspaceSessionId: string | null;
-}): ClippyRoomActionExecutionEvidence | null {
+}): AgentRoomActionExecutionEvidence | null {
   if (input.origin === 'agent' && !isSourceBackedAgentRoomAction(input.agentAction, input.actionId)) {
     return null;
   }
   const agent = input.origin === 'agent' ? input.agentAction?.agentName ?? null : null;
-  const source = input.origin === 'agent' ? 'clippy_agent_bridge' : 'clippy_prompt_ui';
+  const source = input.origin === 'agent' ? 'agent_bridge' : 'agent_chat_ui';
   const capturedAtMs = Number.isFinite(input.capturedAtMs) ? Math.max(0, Math.round(input.capturedAtMs)) : 0;
   return {
     text: input.text,
@@ -276,7 +269,7 @@ export function buildClippyRoomActionExecutionEvidence(input: {
       executedBy: input.actor,
       actionSource: input.origin === 'agent'
         ? input.agentAction?.source ?? 'agent_stdout_action'
-        : 'clippy_prompt_ui',
+        : 'agent_chat_panel',
       agent,
       agentActionLabel: input.agentAction?.label ?? null,
       agentActionText: input.agentAction?.text ?? null,
@@ -296,7 +289,7 @@ export function buildClippyRoomActionExecutionEvidence(input: {
         : {}),
       executionStatus: 'executed',
       capturedAtMs,
-      clippyActionEventId: buildClippyActionEventId({
+      agentActionEventId: buildAgentActionEventId({
         actor: input.actor,
         capturedAtMs,
         source,
@@ -315,19 +308,19 @@ export function buildClippyRoomActionExecutionEvidence(input: {
   };
 }
 
-export function buildClippyUserChatEvidence(input: {
+export function buildAgentUserChatEvidence(input: {
   message: AgentChatMessage;
-  actor: ClippyEvidenceActor;
+  actor: AgentEvidenceActor;
   surface: RoomSurface;
   roomPhase: RoomPhase;
   workspaceStatus: string | null;
   workspaceSessionId: string | null;
   repoUrl: string | null;
-}): ClippyUserChatEvidence {
-  const promptFingerprint = input.message.browserPromptFingerprint ?? clippyTextFingerprint(input.message.text);
+}): AgentUserChatEvidence {
+  const promptFingerprint = input.message.browserPromptFingerprint ?? agentTextFingerprint(input.message.text);
   const promptTimestamp = input.message.browserPromptTimestamp
-    ?? normalizedClippyPromptTimestamp(input.message.timestamp);
-  const promptId = input.message.browserPromptId ?? buildClippyPromptId({
+    ?? normalizedAgentPromptTimestamp(input.message.timestamp);
+  const promptId = input.message.browserPromptId ?? buildAgentPromptId({
     workspaceSessionId: input.workspaceSessionId,
     actor: input.actor,
     timestamp: promptTimestamp,
@@ -336,17 +329,17 @@ export function buildClippyUserChatEvidence(input: {
   const promptLength = input.message.browserPromptLength ?? input.message.text.length;
   const blockedReason = input.message.deliveryStatus === 'blocked'
     && input.message.blockedReason
-    && CLIPPY_PROMPT_BLOCKED_REASONS.has(input.message.blockedReason)
+    && AGENT_PROMPT_BLOCKED_REASONS.has(input.message.blockedReason)
     ? input.message.blockedReason
     : null;
   const deliveryStatus = blockedReason ? 'blocked' : 'queued';
   return {
     text: input.message.text,
     properties: {
-      source: 'clippy_agent_chat_client_submit',
-      agentChatEventSource: 'browser_clippy_chat_window',
+      source: 'agent_chat_client_submit',
+      agentChatEventSource: 'browser_agent_chat_panel',
       bridgeMessageType: 'CHAT',
-      bridgeProtocol: 'clippy_dev_container_ws',
+      bridgeProtocol: 'agent_dev_container_ws',
       bridgeDeliveryStatus: deliveryStatus,
       promptId,
       promptFingerprint,
@@ -366,11 +359,11 @@ export function buildClippyUserChatEvidence(input: {
   };
 }
 
-export function buildClippyAgentStatusEvidence(input: {
+export function buildAgentStatusEvidence(input: {
   text: string;
   agentName: string | null;
   status: AgentStatus | null;
-  bridgeMessageSource: ClippyAgentStatusBridgeMessageSource;
+  bridgeMessageSource: AgentStatusBridgeMessageSource;
   observedAt: string;
   capturedAtMs: number;
   surface: RoomSurface;
@@ -401,7 +394,7 @@ export function buildClippyAgentStatusEvidence(input: {
   agentRunId?: string | null;
   agentRunExternalSessionHash?: string | null;
   messageTimestamp?: number | null;
-}): ClippyAgentStatusEvidence | null {
+}): AgentStatusEvidence | null {
   const capturedAtMs = Number.isFinite(input.capturedAtMs)
     ? Math.max(0, Math.round(input.capturedAtMs))
     : 0;
@@ -412,15 +405,15 @@ export function buildClippyAgentStatusEvidence(input: {
   return {
     text,
     properties: {
-      source: 'clippy_agent_bridge',
-      agentStatusEventSource: 'browser_clippy_agent_ws',
+      source: 'agent_bridge',
+      agentStatusEventSource: 'browser_agent_ws',
       agent,
       status: input.status,
       diagnosticSource: input.diagnosticSource ?? null,
       bridgeMessageSource: input.bridgeMessageSource,
       observedAt: input.observedAt,
       capturedAtMs,
-      agentStatusEventId: buildClippyAgentStatusEventId({
+      agentStatusEventId: buildAgentStatusEventId({
         agentName: agent,
         capturedAtMs,
         bridgeMessageSource: input.bridgeMessageSource,
@@ -465,7 +458,7 @@ export function buildClippyAgentStatusEvidence(input: {
   };
 }
 
-export function buildClippyAgentChatFallbackEvidence(input: {
+export function buildAgentChatFallbackEvidence(input: {
   text: string;
   agentName: string | null;
   bridgeMessageSource?: 'agent_stdout' | 'agent_api_response';
@@ -483,24 +476,24 @@ export function buildClippyAgentChatFallbackEvidence(input: {
   workspaceStatus: string | null;
   workspaceSessionId: string | null;
   messageTimestamp: number;
-}): ClippyAgentChatFallbackEvidence | null {
+}): AgentChatFallbackEvidence | null {
   const agent = input.agentName?.trim();
   if (!agent) return null;
   const text = redactAgentDiagnosticText(input.text);
   if (!text) return null;
   const observedAtMs = Date.parse(input.observedAt);
   const capturedAtMs = Number.isFinite(observedAtMs) ? observedAtMs : input.messageTimestamp;
-  const responseFingerprint = clippyAgentResponseFingerprint(text);
+  const responseFingerprint = agentResponseFingerprint(text);
   return {
     text,
     properties: {
-      source: 'clippy_agent_bridge',
+      source: 'agent_bridge',
       agent,
       bridgeEventType: 'CHAT_RESPONSE',
       bridgeMessageSource: input.bridgeMessageSource ?? 'agent_stdout',
       observedAt: input.observedAt,
       capturedAtMs,
-      agentChatResponseId: buildClippyAgentChatResponseId({
+      agentChatResponseId: buildAgentChatResponseId({
         agentName: agent,
         capturedAtMs,
         responseFingerprint,
@@ -533,7 +526,7 @@ export function buildClippyAgentChatFallbackEvidence(input: {
   };
 }
 
-export function buildClippyAgentMessageSessionEvidence(input: {
+export function buildAgentMessageSessionEvidence(input: {
   text: string;
   source?: AgentChatMessage['source'];
   agentName?: string | null;
@@ -567,7 +560,7 @@ export function buildClippyAgentMessageSessionEvidence(input: {
   workspaceStatus: string | null;
   workspaceSessionId: string | null;
   messageTimestamp: number;
-}): ClippyAgentMessageSessionEvidence | null {
+}): AgentMessageSessionEvidence | null {
   if (input.persisted) return null;
   const text = redactAgentDiagnosticText(input.text);
   if (!text) return null;
@@ -575,7 +568,7 @@ export function buildClippyAgentMessageSessionEvidence(input: {
   if (!agentName) return null;
   const isAgentResponse = input.source === 'agent_stdout' || input.source === 'agent_api_response';
   if (isAgentResponse && input.observedAt) {
-    const evidence = buildClippyAgentChatFallbackEvidence({
+    const evidence = buildAgentChatFallbackEvidence({
       text,
       agentName,
       bridgeMessageSource: input.source === 'agent_api_response' ? 'agent_api_response' : 'agent_stdout',
@@ -601,7 +594,7 @@ export function buildClippyAgentMessageSessionEvidence(input: {
       properties: evidence.properties,
     };
   }
-  if (!isClippyAgentBridgeMessageSource(input.source)) return null;
+  if (!isAgentBridgeMessageSource(input.source)) return null;
   const observedAt = input.observedAt ?? observedAtFromMessageTimestamp(input.messageTimestamp);
   const observedAtMs = Date.parse(observedAt);
   const capturedAtMs = Number.isFinite(observedAtMs)
@@ -610,7 +603,7 @@ export function buildClippyAgentMessageSessionEvidence(input: {
   const diagnosticSource = isAgentResponse
     ? 'agent_response_missing_source_metadata'
     : input.diagnosticSource ?? input.source;
-  const evidence = buildClippyAgentStatusEvidence({
+  const evidence = buildAgentStatusEvidence({
     text: isAgentResponse
       ? 'AI assistant/Devin response was not recorded as agent evidence because bridge source metadata was missing.'
       : text,

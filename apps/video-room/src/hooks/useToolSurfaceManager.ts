@@ -1,21 +1,16 @@
 import { useCallback, useRef, useState } from 'react';
 
-export type WindowType =
+export type ToolSurfaceType =
   | 'video'
   | 'workspace'
   | 'chat'
-  | 'tasks'
-  | 'snippet'
-  | 'browser'
-  | 'notepad'
-  | 'paint'
   | 'terminal'
   | 'submission'
   | 'custom';
 
-export interface WindowState {
+export interface ToolSurfaceState {
   id: string;
-  windowType: WindowType;
+  surfaceType: ToolSurfaceType;
   title: string;
   icon?: string;
   x: number;
@@ -33,7 +28,7 @@ export interface WindowState {
   data?: Record<string, unknown>;
 }
 
-export interface WindowStatePatch {
+export interface ToolSurfaceStatePatch {
   x?: number;
   y?: number;
   width?: number;
@@ -43,9 +38,9 @@ export interface WindowStatePatch {
   focused?: boolean;
 }
 
-export interface OpenWindowConfig {
+export interface OpenToolSurfaceConfig {
   id?: string;
-  windowType: WindowType;
+  surfaceType: ToolSurfaceType;
   title: string;
   icon?: string;
   x?: number;
@@ -58,20 +53,20 @@ export interface OpenWindowConfig {
   data?: Record<string, unknown>;
 }
 
-export interface WindowManagerApi {
-  windows: WindowState[];
-  openWindow: (config: OpenWindowConfig) => string;
-  closeWindow: (id: string) => void;
-  focusWindow: (id: string) => void;
-  minimizeWindow: (id: string) => void;
-  toggleMaximize: (id: string) => void;
-  moveWindow: (id: string, x: number, y: number) => void;
-  resizeWindow: (id: string, width: number, height: number) => void;
-  updateWindowData: (id: string, data: Partial<Record<string, unknown>>) => void;
-  applyWindowState: (id: string, patch: WindowStatePatch) => void;
-  restoreWindow: (id: string) => void;
-  isWindowOpen: (windowType: WindowType) => boolean;
-  getWindowByType: (windowType: WindowType) => WindowState | undefined;
+export interface ToolSurfaceManagerApi {
+  surfaces: ToolSurfaceState[];
+  openSurface: (config: OpenToolSurfaceConfig) => string;
+  closeSurface: (id: string) => void;
+  focusSurface: (id: string) => void;
+  minimizeSurface: (id: string) => void;
+  toggleMaximizeSurface: (id: string) => void;
+  moveSurface: (id: string, x: number, y: number) => void;
+  resizeSurface: (id: string, width: number, height: number) => void;
+  updateSurfaceData: (id: string, data: Partial<Record<string, unknown>>) => void;
+  applySurfaceState: (id: string, patch: ToolSurfaceStatePatch) => void;
+  restoreSurface: (id: string) => void;
+  isSurfaceOpen: (surfaceType: ToolSurfaceType) => boolean;
+  getSurfaceByType: (surfaceType: ToolSurfaceType) => ToolSurfaceState | undefined;
 }
 
 let idCounter = 0;
@@ -80,28 +75,23 @@ function nextId(prefix: string): string {
   return `${prefix}-${idCounter}`;
 }
 
-const DEFAULT_SIZES: Record<WindowType, { width: number; height: number }> = {
+const DEFAULT_SIZES: Record<ToolSurfaceType, { width: number; height: number }> = {
   video: { width: 480, height: 360 },
   workspace: { width: 800, height: 560 },
   chat: { width: 360, height: 440 },
-  tasks: { width: 420, height: 480 },
-  snippet: { width: 480, height: 320 },
-  browser: { width: 800, height: 560 },
-  notepad: { width: 520, height: 420 },
-  paint: { width: 640, height: 480 },
   terminal: { width: 640, height: 400 },
   submission: { width: 680, height: 560 },
   custom: { width: 400, height: 300 },
 };
 
-export function useWindowManager(): WindowManagerApi {
-  const [windows, setWindows] = useState<WindowState[]>([]);
+export function useToolSurfaceManager(): ToolSurfaceManagerApi {
+  const [surfaces, setSurfaces] = useState<ToolSurfaceState[]>([]);
   const zCounter = useRef(10);
 
-  const focusWindow = useCallback((id: string): void => {
+  const focusSurface = useCallback((id: string): void => {
     zCounter.current += 1;
     const nextZ = zCounter.current;
-    setWindows((prev) =>
+    setSurfaces((prev) =>
       prev.map((w) =>
         w.id === id
           ? { ...w, focused: true, minimized: false, zIndex: nextZ }
@@ -110,13 +100,13 @@ export function useWindowManager(): WindowManagerApi {
     );
   }, []);
 
-  const openWindow = useCallback((config: OpenWindowConfig): string => {
-    const id = config.id ?? nextId(config.windowType);
-    const defaults = DEFAULT_SIZES[config.windowType] ?? DEFAULT_SIZES.custom;
+  const openSurface = useCallback((config: OpenToolSurfaceConfig): string => {
+    const id = config.id ?? nextId(config.surfaceType);
+    const defaults = DEFAULT_SIZES[config.surfaceType] ?? DEFAULT_SIZES.custom;
     zCounter.current += 1;
     const nextZ = zCounter.current;
 
-    setWindows((prev) => {
+    setSurfaces((prev) => {
       const existing = prev.find((w) => w.id === id);
       if (existing) {
         return prev.map((w) =>
@@ -125,9 +115,9 @@ export function useWindowManager(): WindowManagerApi {
             : { ...w, focused: false },
         );
       }
-      const newWindow: WindowState = {
+      const newSurface: ToolSurfaceState = {
         id,
-        windowType: config.windowType,
+        surfaceType: config.surfaceType,
         title: config.title,
         icon: config.icon,
         x: config.x ?? 40 + (prev.length * 24) % 200,
@@ -140,28 +130,28 @@ export function useWindowManager(): WindowManagerApi {
         focused: config.focused ?? true,
         data: config.data,
       };
-      return [...prev.map((w) => ({ ...w, focused: false })), newWindow];
+      return [...prev.map((w) => ({ ...w, focused: false })), newSurface];
     });
 
     return id;
   }, []);
 
-  const closeWindow = useCallback((id: string): void => {
-    setWindows((prev) => prev.filter((w) => w.id !== id));
+  const closeSurface = useCallback((id: string): void => {
+    setSurfaces((prev) => prev.filter((w) => w.id !== id));
   }, []);
 
-  const minimizeWindow = useCallback((id: string): void => {
-    setWindows((prev) =>
+  const minimizeSurface = useCallback((id: string): void => {
+    setSurfaces((prev) =>
       prev.map((w) =>
         w.id === id ? { ...w, minimized: true, focused: false } : w,
       ),
     );
   }, []);
 
-  const restoreWindow = useCallback((id: string): void => {
+  const restoreSurface = useCallback((id: string): void => {
     zCounter.current += 1;
     const nextZ = zCounter.current;
-    setWindows((prev) =>
+    setSurfaces((prev) =>
       prev.map((w) =>
         w.id === id
           ? { ...w, minimized: false, focused: true, zIndex: nextZ }
@@ -170,8 +160,8 @@ export function useWindowManager(): WindowManagerApi {
     );
   }, []);
 
-  const toggleMaximize = useCallback((id: string): void => {
-    setWindows((prev) =>
+  const toggleMaximizeSurface = useCallback((id: string): void => {
+    setSurfaces((prev) =>
       prev.map((w) => {
         if (w.id !== id) return w;
         if (w.maximized) {
@@ -196,21 +186,21 @@ export function useWindowManager(): WindowManagerApi {
     );
   }, []);
 
-  const moveWindow = useCallback((id: string, x: number, y: number): void => {
-    setWindows((prev) =>
+  const moveSurface = useCallback((id: string, x: number, y: number): void => {
+    setSurfaces((prev) =>
       prev.map((w) => (w.id === id ? { ...w, x, y } : w)),
     );
   }, []);
 
-  const resizeWindow = useCallback((id: string, width: number, height: number): void => {
-    setWindows((prev) =>
+  const resizeSurface = useCallback((id: string, width: number, height: number): void => {
+    setSurfaces((prev) =>
       prev.map((w) => (w.id === id ? { ...w, width, height } : w)),
     );
   }, []);
 
-  const updateWindowData = useCallback(
+  const updateSurfaceData = useCallback(
     (id: string, data: Partial<Record<string, unknown>>): void => {
-      setWindows((prev) =>
+      setSurfaces((prev) =>
         prev.map((w) =>
           w.id === id ? { ...w, data: { ...w.data, ...data } } : w,
         ),
@@ -219,13 +209,13 @@ export function useWindowManager(): WindowManagerApi {
     [],
   );
 
-  const applyWindowState = useCallback((id: string, patch: WindowStatePatch): void => {
+  const applySurfaceState = useCallback((id: string, patch: ToolSurfaceStatePatch): void => {
     const focusTarget = patch.focused === true;
     if (focusTarget) {
       zCounter.current += 1;
     }
     const nextZ = zCounter.current;
-    setWindows((prev) =>
+    setSurfaces((prev) =>
       prev.map((w) => {
         if (w.id !== id) {
           return focusTarget ? { ...w, focused: false } : w;
@@ -245,31 +235,31 @@ export function useWindowManager(): WindowManagerApi {
     );
   }, []);
 
-  const isWindowOpen = useCallback(
-    (windowType: WindowType): boolean =>
-      windows.some((w) => w.windowType === windowType),
-    [windows],
+  const isSurfaceOpen = useCallback(
+    (surfaceType: ToolSurfaceType): boolean =>
+      surfaces.some((w) => w.surfaceType === surfaceType),
+    [surfaces],
   );
 
-  const getWindowByType = useCallback(
-    (windowType: WindowType): WindowState | undefined =>
-      windows.find((w) => w.windowType === windowType),
-    [windows],
+  const getSurfaceByType = useCallback(
+    (surfaceType: ToolSurfaceType): ToolSurfaceState | undefined =>
+      surfaces.find((w) => w.surfaceType === surfaceType),
+    [surfaces],
   );
 
   return {
-    windows,
-    openWindow,
-    closeWindow,
-    focusWindow,
-    minimizeWindow,
-    toggleMaximize,
-    moveWindow,
-    resizeWindow,
-    updateWindowData,
-    applyWindowState,
-    restoreWindow,
-    isWindowOpen,
-    getWindowByType,
+    surfaces,
+    openSurface,
+    closeSurface,
+    focusSurface,
+    minimizeSurface,
+    toggleMaximizeSurface,
+    moveSurface,
+    resizeSurface,
+    updateSurfaceData,
+    applySurfaceState,
+    restoreSurface,
+    isSurfaceOpen,
+    getSurfaceByType,
   };
 }

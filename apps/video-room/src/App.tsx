@@ -38,52 +38,34 @@ import {
   type RecordingFailureStage,
 } from './lib/recordingEvidence';
 import {
-  buildClippyAgentMessageSessionEvidence,
-  buildClippyAgentStatusEvidence,
-  buildClippyRoomActionExecutionEvidence,
-  buildClippyUiActionEvidence,
-  buildClippyUserChatEvidence,
-} from './lib/clippyEvidence';
+  buildAgentMessageSessionEvidence,
+  buildAgentStatusEvidence,
+  buildAgentRoomActionExecutionEvidence,
+  buildAgentUiActionEvidence,
+  buildAgentUserChatEvidence,
+} from './lib/agentEvidence';
 import {
   buildCodeEditorOpenEvidence,
   buildCodeServerFileChangeEvidence,
-  buildWorkspaceStateDesktopEvent,
+  buildWorkspaceStateEvidence,
 } from './lib/workspaceEvidence';
-import {
-  buildWindowDataUpdateEvidence,
-  buildWindowLifecycleEvidence,
-  buildWindowStateUpdateEvidence,
-  type WindowDataSource,
-  type WindowLifecycleSource,
-  type WindowStateSource,
-} from './lib/windowEvidence';
 import {
   buildMediaControlEvidence,
   type MediaControlKind,
 } from './lib/mediaControlEvidence';
 import { buildRoomChatEvidence } from './lib/chatEvidence';
-import {
-  buildBrowserNavigationEvidence,
-  normalizeBrowserNavigationUrl,
-  type BrowserNavigationTrigger,
-} from './lib/browserNavigationEvidence';
 import { routeAgentRoomAction } from './lib/agentRoomActionRouting';
 import {
   useRoomConnection,
   type RoomChatMessage,
-  type RoomClippyPromptDraft,
   type RoomMediaControlState,
   type RoomSurface,
 } from './hooks/useRoomConnection';
 import { useAssessmentProgressPolling } from './hooks/useAssessmentProgressPolling';
-import { useWindowManager } from './hooks/useWindowManager';
+import { useToolSurfaceManager } from './hooks/useToolSurfaceManager';
 import { StandardLayout } from './components/StandardLayout';
-import { ChatWindow, type ChatMessage } from './components/ChatWindow';
-import {
-  AgentAssistant,
-  type AgentAssistantAction,
-  type AgentAssistantMessage,
-} from './components/AgentAssistant';
+import { ChatPanel, type ChatMessage } from './components/ChatPanel';
+import { AgentAssistant } from './components/AgentAssistant';
 import {
   agentStatusEvidenceText,
   type AgentChatMessage,
@@ -91,23 +73,23 @@ import {
   type AgentRoomAction,
   type AgentStatus,
 } from './hooks/useAgentConnection';
-import { TerminalWindow } from './components/TerminalWindow';
+import { TerminalPanel } from './components/TerminalPanel';
 import {
   buildTerminalCommandEvidence,
   buildTerminalOutputEvidence,
   type TerminalEvidenceContext,
 } from './lib/terminalProtocol';
-import { CommitSubmissionWindow } from './components/CommitSubmissionWindow';
+import { CommitSubmissionPanel } from './components/CommitSubmissionPanel';
 import { AssessmentTaskBrief } from './components/AssessmentTaskBrief';
 import {
   AssessmentStatusStrip,
   assessmentModeForRoom,
   assessmentModeLabel,
 } from './components/AssessmentStatusStrip';
-import { defaultRoomWindowConfigs } from './lib/defaultRoomWindows';
+import { defaultRoomSurfaceConfigs } from './lib/defaultRoomSurfaces';
 import { useSessionEvents } from './hooks/useSessionEvents';
 import { API_BASE } from './lib/api';
-import type { OpenWindowConfig, WindowState, WindowStatePatch } from './hooks/useWindowManager';
+import type { OpenToolSurfaceConfig, ToolSurfaceState } from './hooks/useToolSurfaceManager';
 import type {
   IceServerProvider,
   RecordingSpeakerMetadata,
@@ -260,11 +242,6 @@ function isSyntheticMedia(stream: MediaStream | null): boolean {
   return stream.getTracks().some((track) => /fake|synthetic|virtual/i.test(track.label));
 }
 
-function stringWindowData(win: WindowState, key: string): string {
-  const value = win.data?.[key];
-  return typeof value === 'string' ? value : '';
-}
-
 function mediaStatusLabel(state: Pick<RoomMediaControlState, 'microphoneEnabled' | 'cameraEnabled'>): string {
   const parts: string[] = [];
   if (state.microphoneEnabled === false) parts.push('mic off');
@@ -328,10 +305,9 @@ function Room({ token, metadata }: { token: string; metadata: RoomMetadata }): J
   }, [captureSessionEvent, initialRoomSurface, roomActor]);
   const room = useRoomConnection(token, metadata.role, enteredRoom, initialRoomSurface, {
     onChatDeliveryEvidence: captureChatDeliveryEvidence,
-    ignoreInitialRoomSurfaceSnapshot: true,
   });
   const publishTerminalEvent = room.publishTerminalEvent;
-  const publishClippyInteractionEvent = room.publishClippyInteractionEvent;
+  const publishAgentInteractionEvent = room.publishAgentInteractionEvent;
   const publishCodeServerFileEvent = room.publishCodeServerFileEvent;
   const [workspace, setWorkspace] = useState<RoomWorkspace | null>(metadata.workspace ?? null);
   const [workspaceLoading, setWorkspaceLoading] = useState(false);
@@ -339,16 +315,15 @@ function Room({ token, metadata }: { token: string; metadata: RoomMetadata }): J
   const [workspaceRepoInput, setWorkspaceRepoInput] = useState('');
   const [workspaceAgentEnabled, setWorkspaceAgentEnabled] = useState(false);
   const [iframeLoaded, setIframeLoaded] = useState(false);
-  const wm = useWindowManager();
+  const toolSurfaces = useToolSurfaceManager();
   const [deviceState, setDeviceState] = useState<DeviceState>('checking');
   const [preview, setPreview] = useState<MediaStream | null>(null);
   const [recordingState, setRecordingState] = useState<RecordingState>('idle');
   const [recordingNotice, setRecordingNotice] = useState<string | null>(null);
   const [recordingError, setRecordingError] = useState<string | null>(null);
-  const [clippyVisible, setClippyVisible] = useState(true);
-  const [clippyChatOpen, setClippyChatOpen] = useState(false);
-  const [clippyChatRequest, setClippyChatRequest] = useState(0);
-  const [clippyAgentStatus, setClippyAgentStatus] = useState<AgentStatus>('disconnected');
+  const [agentChatOpen, setAgentChatOpen] = useState(false);
+  const [agentChatRequest, setAgentChatRequest] = useState(0);
+  const [agentStatus, setAgentStatus] = useState<AgentStatus>('disconnected');
   const [queuedTerminalCommand, setQueuedTerminalCommand] = useState<string | null>(null);
   const [queuedTerminalCommandRequest, setQueuedTerminalCommandRequest] = useState(0);
   const recorderRef = useRef<MediaRecorder | null>(null);
@@ -358,12 +333,10 @@ function Room({ token, metadata }: { token: string; metadata: RoomMetadata }): J
   const recordingDisposeRef = useRef<(() => Promise<void>) | null>(null);
   const recordingSpeakerMetadataRef = useRef<RecordingSpeakerMetadata | null>(null);
   const autoAcceptingRef = useRef(false);
-  const processedWorkspaceEventsRef = useRef<Set<string>>(new Set());
   const endingRef = useRef(false);
   const deviceRequestRef = useRef(0);
   const callStartedRef = useRef(false);
   const recordingStartedRef = useRef(false);
-  const publishedClippyPromptSignatureRef = useRef<string | null>(null);
   const workspaceEditorOpenEvidenceKeysRef = useRef<Set<string>>(new Set());
   const publishedWorkspaceStateSignatureRef = useRef<string | null>(null);
   const terminalCommandSequenceRef = useRef(0);
@@ -437,7 +410,7 @@ function Room({ token, metadata }: { token: string; metadata: RoomMetadata }): J
       && !nextWorkspace.session
       && !options.errorMessage
     ) return;
-    const event = buildWorkspaceStateDesktopEvent({
+    const evidence = buildWorkspaceStateEvidence({
       workspace: nextWorkspace,
       actor: roomActor,
       source,
@@ -445,14 +418,14 @@ function Room({ token, metadata }: { token: string; metadata: RoomMetadata }): J
       fallbackRepoUrl: options.fallbackRepoUrl,
       errorMessage: options.errorMessage,
     });
-    const signatureEvent: Record<string, unknown> = { ...event };
-    delete signatureEvent.workspaceStateEventId;
-    delete signatureEvent.capturedAtMs;
-    const signature = JSON.stringify(signatureEvent);
+    const signatureProperties: Record<string, unknown> = { ...evidence.properties };
+    delete signatureProperties.workspaceStateEventId;
+    delete signatureProperties.capturedAtMs;
+    const signature = JSON.stringify(signatureProperties);
     if (publishedWorkspaceStateSignatureRef.current === signature) return;
     publishedWorkspaceStateSignatureRef.current = signature;
-    room.publishDesktopEvent(event);
-  }, [metadata.role, room.publishDesktopEvent, roomActor]);
+    captureSessionEvent('workspace_state', evidence.text, roomActor, evidence.properties);
+  }, [captureSessionEvent, metadata.role, roomActor]);
 
   useEffect(() => {
     const initialWorkspace = metadata.workspace ?? null;
@@ -550,8 +523,8 @@ function Room({ token, metadata }: { token: string; metadata: RoomMetadata }): J
     captureSessionEvent('chat_message', evidence.text, roomActor, evidence.properties);
   };
 
-  const openDefaultRoomWindows = useCallback((): void => {
-    const defaultWindows = defaultRoomWindowConfigs({
+  const openDefaultRoomSurfaces = useCallback((): void => {
+    const defaultSurfaces = defaultRoomSurfaceConfigs({
       mode: assessmentModeForRoom({
         meetingType: metadata.meetingType,
         workspaceEnabled: Boolean(workspace?.enabled),
@@ -559,12 +532,12 @@ function Room({ token, metadata }: { token: string; metadata: RoomMetadata }): J
       workspaceEnabled: Boolean(workspace?.enabled),
       workspaceTitle: workspace?.repoUrl ?? 'VS Code',
     });
-    for (const windowConfig of defaultWindows) {
-      if (!wm.windows.some((entry) => entry.id === windowConfig.id)) {
-        wm.openWindow(windowConfig);
+    for (const surfaceConfig of defaultSurfaces) {
+      if (!toolSurfaces.surfaces.some((entry) => entry.id === surfaceConfig.id)) {
+        toolSurfaces.openSurface(surfaceConfig);
       }
     }
-  }, [metadata.meetingType, wm, workspace?.enabled, workspace?.repoUrl]);
+  }, [metadata.meetingType, toolSurfaces, workspace?.enabled, workspace?.repoUrl]);
 
   useEffect(() => {
     if (metadata.role !== 'GUEST' || room.phase !== 'offer_received' || autoAcceptingRef.current) {
@@ -578,7 +551,7 @@ function Room({ token, metadata }: { token: string; metadata: RoomMetadata }): J
 
   const joinLobby = (): void => {
     const localRoomStream = createLocalRoomStream(preview);
-    openDefaultRoomWindows();
+    openDefaultRoomSurfaces();
     room.setLocalStream(localRoomStream);
     setPreview(null);
     setEnteredRoom(true);
@@ -587,169 +560,14 @@ function Room({ token, metadata }: { token: string; metadata: RoomMetadata }): J
 
   useEffect(() => {
     if (!enteredRoom) return;
-    openDefaultRoomWindows();
-  }, [enteredRoom, openDefaultRoomWindows]);
+    openDefaultRoomSurfaces();
+  }, [enteredRoom, openDefaultRoomSurfaces]);
 
-  useEffect(() => {
-    if (!enteredRoom) return;
-    for (const event of room.desktopEvents.filter((entry) => entry.kind === 'WORKSPACE_STATE_CHANGED')) {
-      if (processedWorkspaceEventsRef.current.has(event.id)) continue;
-      processedWorkspaceEventsRef.current.add(event.id);
-      if (event.kind === 'WORKSPACE_STATE_CHANGED') {
-        void refreshWorkspace();
-      }
-    }
-  }, [enteredRoom, refreshWorkspace, room.desktopEvents]);
-
-  const openSharedWindow = useCallback((
-    config: OpenWindowConfig & { id: string },
-    lifecycleSource: WindowLifecycleSource = 'standard_assessment_ui',
+  const openLocalPanel = useCallback((
+    config: OpenToolSurfaceConfig & { id: string },
   ): void => {
-    wm.openWindow(config);
-    const capturedAtMs = Date.now();
-    const evidence = buildWindowLifecycleEvidence({
-      kind: 'open',
-      actor: roomActor,
-      windowId: config.id,
-      windowType: config.windowType,
-      windowTitle: config.title,
-      source: lifecycleSource,
-      surface: room.roomSurface,
-      roomPhase: room.phase,
-      capturedAtMs,
-    });
-    captureSessionEvent('window_open', evidence.text, roomActor, evidence.properties);
-  }, [captureSessionEvent, room.phase, room.roomSurface, roomActor, wm]);
-
-  const closeSharedWindow = useCallback((id: string): void => {
-    const win = wm.windows.find((entry) => entry.id === id);
-    wm.closeWindow(id);
-    const capturedAtMs = Date.now();
-    const evidence = buildWindowLifecycleEvidence({
-      kind: 'close',
-      actor: roomActor,
-      windowId: id,
-      windowType: win?.windowType ?? 'custom',
-      windowTitle: win?.title ?? id,
-      source: 'standard_assessment_ui',
-      surface: room.roomSurface,
-      roomPhase: room.phase,
-      capturedAtMs,
-    });
-    captureSessionEvent('window_close', evidence.text, roomActor, evidence.properties);
-  }, [captureSessionEvent, room.phase, room.roomSurface, roomActor, wm]);
-
-  const updateSharedWindowData = useCallback((
-    id: string,
-    data: Partial<Record<string, unknown>>,
-    options?: {
-      browserNavigationTrigger?: BrowserNavigationTrigger;
-      windowDataSource?: WindowDataSource;
-    },
-  ): void => {
-    wm.updateWindowData(id, data);
-    const currentUrl = data.currentUrl;
-    const capturedAtMs = Date.now();
-    const navigationEvidence = typeof currentUrl === 'string'
-      ? buildBrowserNavigationEvidence({
-          actor: roomActor,
-          windowId: id,
-          url: currentUrl,
-          trigger: options?.browserNavigationTrigger ?? 'shared_state_sync',
-          surface: room.roomSurface,
-          roomPhase: room.phase,
-          capturedAtMs,
-        })
-      : null;
-    const dataEvidence = navigationEvidence
-      ? null
-      : buildWindowDataUpdateEvidence({
-          actor: roomActor,
-          windowId: id,
-          data,
-          dataSource: options?.windowDataSource,
-          surface: room.roomSurface,
-          roomPhase: room.phase,
-          capturedAtMs,
-        });
-    if (navigationEvidence) {
-      captureSessionEvent('browser_navigation', navigationEvidence.text, roomActor, navigationEvidence.properties);
-    }
-  }, [captureSessionEvent, room, roomActor, wm]);
-
-  const publishSharedWindowState = useCallback((
-    id: string,
-    patch: WindowStatePatch,
-    stateSource: WindowStateSource = 'standard_assessment_ui',
-  ): void => {
-    const capturedAtMs = Date.now();
-    const evidence = buildWindowStateUpdateEvidence({
-      actor: roomActor,
-      windowId: id,
-      patch: { ...patch },
-      source: stateSource,
-      surface: room.roomSurface,
-      roomPhase: room.phase,
-      capturedAtMs,
-    });
-    if (evidence) {
-      captureSessionEvent('window_update', evidence.text, roomActor, evidence.properties);
-    }
-  }, [captureSessionEvent, room.phase, room.roomSurface, roomActor]);
-
-  const focusSharedWindow = useCallback((
-    id: string,
-    stateSource: WindowStateSource = 'standard_assessment_ui',
-  ): void => {
-    wm.focusWindow(id);
-    publishSharedWindowState(id, { focused: true, minimized: false }, stateSource);
-  }, [publishSharedWindowState, wm]);
-
-  const minimizeSharedWindow = useCallback((
-    id: string,
-    stateSource: WindowStateSource = 'standard_assessment_ui',
-  ): void => {
-    wm.minimizeWindow(id);
-    publishSharedWindowState(id, { minimized: true, focused: false }, stateSource);
-  }, [publishSharedWindowState, wm]);
-
-  const restoreSharedWindow = useCallback((
-    id: string,
-    stateSource: WindowStateSource = 'standard_assessment_ui',
-  ): void => {
-    wm.restoreWindow(id);
-    publishSharedWindowState(id, { minimized: false, focused: true }, stateSource);
-  }, [publishSharedWindowState, wm]);
-
-  const maximizeSharedWindow = useCallback((id: string): void => {
-    const win = wm.windows.find((entry) => entry.id === id);
-    if (!win) return;
-    const patch: WindowStatePatch = win.maximized
-      ? {
-          maximized: false,
-          x: win.prevX ?? win.x,
-          y: win.prevY ?? win.y,
-          width: win.prevWidth ?? win.width,
-          height: win.prevHeight ?? win.height,
-          focused: true,
-          minimized: false,
-        }
-      : {
-          maximized: true,
-          focused: true,
-          minimized: false,
-        };
-    wm.toggleMaximize(id);
-    publishSharedWindowState(id, patch);
-  }, [publishSharedWindowState, wm]);
-
-  const moveSharedWindow = useCallback((id: string, x: number, y: number): void => {
-    wm.moveWindow(id, x, y);
-  }, [wm]);
-
-  const publishSharedWindowMove = useCallback((id: string, x: number, y: number): void => {
-    publishSharedWindowState(id, { x, y });
-  }, [publishSharedWindowState]);
+    toolSurfaces.openSurface(config);
+  }, [toolSurfaces]);
 
   const startRecording = useCallback(async (): Promise<void> => {
     if (
@@ -1086,18 +904,18 @@ function Room({ token, metadata }: { token: string; metadata: RoomMetadata }): J
   const showWorkspacePanel = hasWorkspaceFeature;
   const needsRepoUrl = canLaunchWorkspace && !workspace?.repoUrl;
   const hasActiveWorkspace = workspaceSession?.status === 'READY' || workspaceSession?.status === 'SLEEPING';
-  const clippyTrayStatus: AssistantTrayStatus = !hasWorkspaceFeature
+  const agentTrayStatus: AssistantTrayStatus = !hasWorkspaceFeature
     ? 'unavailable'
     : !hasActiveWorkspace
       ? workspaceSession?.status === 'LAUNCHING'
         ? 'starting'
         : 'unavailable'
-      : clippyAgentStatus;
+      : agentStatus;
   const workspaceChallengeMessage = workspace?.challenge?.status === 'missing_reviewable_task'
     ? workspace.challenge.message
     : null;
   const workspaceChallengePacket = workspace?.challenge?.packet ?? null;
-  const clippyAgentUnavailableMessage = !hasWorkspaceFeature
+  const agentUnavailableMessage = !hasWorkspaceFeature
     ? 'This room was not configured with a dev workspace. Room chat still goes to people; AI assistant chat requires a real container workspace.'
     : workspaceSession?.status === 'LAUNCHING'
       ? 'The VS Code workspace is starting. The AI assistant will connect when the container bridge reports a real agent identity.'
@@ -1106,28 +924,28 @@ function Room({ token, metadata }: { token: string; metadata: RoomMetadata }): J
         : metadata.role === 'HOST' && canLaunchWorkspace
         ? 'Launch the VS Code workspace to connect a real agent. AI assistant chat stays disabled until the container bridge is connected.'
         : 'The host needs to launch the VS Code workspace before the AI assistant can connect to a real agent.';
-  const canOpenClippyBridgePanel = metadata.features?.clippyEnabled ?? true;
-  const assistantCallStatus = assistantStatusLabel(clippyTrayStatus, hasWorkspaceFeature);
+  const canOpenAgentBridgePanel = metadata.features?.agentEnabled ?? true;
+  const assistantCallStatus = assistantStatusLabel(agentTrayStatus, hasWorkspaceFeature);
   const roomAssessmentMode = assessmentModeForRoom({
     meetingType: metadata.meetingType,
     workspaceEnabled: hasWorkspaceFeature,
   });
   const roomAssessmentModeLabel = assessmentModeLabel(roomAssessmentMode);
   useEffect(() => {
-    if (!canOpenClippyBridgePanel && clippyChatOpen) {
-      setClippyChatOpen(false);
+    if (!canOpenAgentBridgePanel && agentChatOpen) {
+      setAgentChatOpen(false);
     }
-  }, [canOpenClippyBridgePanel, clippyChatOpen]);
+  }, [canOpenAgentBridgePanel, agentChatOpen]);
   useEffect(() => {
     if (!hasActiveWorkspace) {
-      setClippyAgentStatus('disconnected');
+      setAgentStatus('disconnected');
     }
   }, [hasActiveWorkspace, workspaceSession?.sessionId]);
-  const captureClippyUiAction = (
-    actionId: 'open-clippy-chat' | 'close-clippy-chat' | 'dismiss-clippy' | 'open-devin-auth-browser' | 'check-devin-auth',
-    origin: 'tray' | 'prompt' | 'chat' | 'call',
+  const captureAgentUiAction = (
+    actionId: 'open-agent-chat' | 'close-agent-chat' | 'open-devin-auth-browser' | 'check-devin-auth',
+    origin: 'tray' | 'chat' | 'call',
   ): void => {
-    const evidence = buildClippyUiActionEvidence({
+    const evidence = buildAgentUiActionEvidence({
       actionId,
       origin,
       actor: roomActor,
@@ -1142,33 +960,28 @@ function Room({ token, metadata }: { token: string; metadata: RoomMetadata }): J
       ...evidence.properties,
       durableObjectReplayExpected: true,
     };
-    captureSessionEvent('clippy_action', evidence.text, roomActor, properties);
-    publishClippyInteractionEvent({
-      eventType: 'clippy_action',
+    captureSessionEvent('agent_action', evidence.text, roomActor, properties);
+    publishAgentInteractionEvent({
+      eventType: 'agent_action',
       actor: roomActor,
       text: evidence.text,
       evidence: properties,
     });
   };
-  const openClippyChat = (origin: 'tray' | 'chat' | 'call' = 'tray'): void => {
-    captureClippyUiAction('open-clippy-chat', origin);
-    setClippyVisible(true);
-    setClippyChatOpen(canOpenClippyBridgePanel);
-    setClippyChatRequest((request) => request + 1);
+  const openAgentChat = (origin: 'tray' | 'chat' | 'call' = 'tray'): void => {
+    captureAgentUiAction('open-agent-chat', origin);
+    setAgentChatOpen(canOpenAgentBridgePanel);
+    setAgentChatRequest((request) => request + 1);
   };
-  const closeClippyChat = (): void => {
-    captureClippyUiAction('close-clippy-chat', 'chat');
-    setClippyChatOpen(false);
-  };
-  const dismissClippy = (): void => {
-    captureClippyUiAction('dismiss-clippy', 'prompt');
-    setClippyChatOpen(false);
+  const closeAgentChat = (): void => {
+    captureAgentUiAction('close-agent-chat', 'chat');
+    setAgentChatOpen(false);
   };
   const checkDevinAuth = (): void => {
-    captureClippyUiAction('check-devin-auth', 'prompt');
+    captureAgentUiAction('check-devin-auth', 'chat');
   };
   const openDevinAuthBrowser = (): void => {
-    captureClippyUiAction('open-devin-auth-browser', 'prompt');
+    captureAgentUiAction('open-devin-auth-browser', 'chat');
   };
   const terminalSessionId = `terminal-${workspaceSession?.sessionId ?? 'no-workspace'}-${metadata.role.toLowerCase()}`;
   const terminalEvidenceContext: TerminalEvidenceContext = useMemo(() => ({
@@ -1323,137 +1136,6 @@ function Room({ token, metadata }: { token: string; metadata: RoomMetadata }): J
     failed: 'Retry recording',
   }[recordingState];
 
-  let proactiveClippyPrompt: RoomClippyPromptDraft | null = null;
-  if (enteredRoom) {
-    const workspaceActions: AgentAssistantAction[] = [];
-    if (showWorkspacePanel) {
-      if (hasActiveWorkspace) {
-        workspaceActions.push({ id: 'open-workspace', label: 'Open workspace' });
-      } else if (canLaunchWorkspace) {
-        workspaceActions.push({ id: 'launch-workspace', label: workspaceLaunchActionLabel });
-      }
-    }
-
-    if (!room.remoteStream && metadata.role === 'HOST' && workspaceActions.length > 0) {
-      proactiveClippyPrompt = {
-        source: 'system',
-        promptTrigger: 'host_waiting_prepare_workspace',
-        targetRoles: ['HOST'],
-        text: "It looks like you're waiting for your guest. Would you like to prepare the dev workspace while you wait?",
-        hold: true,
-        actions: workspaceActions,
-      };
-    } else if (!room.remoteStream && metadata.role === 'HOST') {
-      proactiveClippyPrompt = {
-        source: 'system',
-        promptTrigger: 'host_waiting_guest',
-        targetRoles: ['HOST'],
-        text: "It looks like you're waiting for your guest. I'll keep the assessment room ready while they join.",
-        hold: true,
-      };
-    } else if (room.remoteStream && recordingState === 'idle' && metadata.role === 'HOST') {
-      proactiveClippyPrompt = {
-        source: 'system',
-        promptTrigger: 'recording_start_suggestion',
-        targetRoles: ['HOST'],
-        text: "It looks like you're starting an interview. Would you like to begin recording?",
-        hold: true,
-        actions: [{ id: 'start-recording', label: 'Start recording', disabled: !canStartRecording }],
-      };
-    } else if (recordingState === 'recording') {
-      const actions = hasActiveWorkspace
-        ? [
-            { id: 'open-workspace', label: 'Open workspace' },
-            { id: 'open-terminal', label: 'Open terminal' },
-          ]
-        : undefined;
-      proactiveClippyPrompt = {
-        source: 'system',
-        promptTrigger: 'recording_active_guidance',
-        targetRoles: ['HOST'],
-        text: "It looks like you're recording the session. You can stop recording when you're done.",
-        hold: true,
-        actions: [
-          { id: 'stop-recording', label: 'Stop recording', disabled: !canStopRecording },
-          ...(actions ?? []),
-        ],
-      };
-    } else if (room.phase === 'ended') {
-      proactiveClippyPrompt = {
-        source: 'system',
-        promptTrigger: 'room_ended_notice',
-        targetRoles: ['HOST', 'GUEST'],
-        text: "It looks like the call has ended. You can close this window now.",
-        hold: true,
-      };
-    }
-  }
-  if (proactiveClippyPrompt) {
-    proactiveClippyPrompt = {
-      ...proactiveClippyPrompt,
-      promptEventSource: 'browser_proactive_clippy_prompt',
-      surface: room.roomSurface,
-      roomPhase: room.phase,
-      workspaceStatus: workspace?.session?.status ?? null,
-      workspaceSessionId: workspace?.session?.sessionId ?? null,
-      agentResponseClaimed: false,
-    };
-  }
-
-  const proactiveClippyPromptSignature = proactiveClippyPrompt
-    ? JSON.stringify({
-        source: proactiveClippyPrompt.source,
-        promptEventSource: proactiveClippyPrompt.promptEventSource,
-        promptTrigger: proactiveClippyPrompt.promptTrigger,
-        surface: proactiveClippyPrompt.surface,
-        roomPhase: proactiveClippyPrompt.roomPhase,
-        workspaceStatus: proactiveClippyPrompt.workspaceStatus,
-        workspaceSessionId: proactiveClippyPrompt.workspaceSessionId,
-        agentResponseClaimed: proactiveClippyPrompt.agentResponseClaimed,
-        targetRoles: proactiveClippyPrompt.targetRoles,
-        text: proactiveClippyPrompt.text,
-        hold: proactiveClippyPrompt.hold ?? false,
-        actions: proactiveClippyPrompt.actions?.map((action) => ({
-          id: action.id,
-          label: action.label,
-          disabled: action.disabled ?? false,
-        })) ?? [],
-      })
-    : null;
-
-  useEffect(() => {
-    if (
-      metadata.role !== 'HOST'
-      || !enteredRoom
-      || !proactiveClippyPrompt
-      || !proactiveClippyPromptSignature
-    ) {
-      return;
-    }
-    if (publishedClippyPromptSignatureRef.current === proactiveClippyPromptSignature) return;
-    publishedClippyPromptSignatureRef.current = proactiveClippyPromptSignature;
-    room.publishClippyPrompt(proactiveClippyPrompt);
-  }, [
-    enteredRoom,
-    metadata.role,
-    proactiveClippyPrompt,
-    proactiveClippyPromptSignature,
-    room,
-  ]);
-
-  const sharedClippyPrompt = room.clippyPrompt;
-  const canShowSharedClippyPrompt = Boolean(
-    sharedClippyPrompt
-    && (!sharedClippyPrompt.targetRoles || sharedClippyPrompt.targetRoles.includes(metadata.role)),
-  );
-  const clippyMessages: AgentAssistantMessage[] = canShowSharedClippyPrompt && sharedClippyPrompt
-    ? [{
-        text: sharedClippyPrompt.text,
-        hold: sharedClippyPrompt.hold,
-        actions: sharedClippyPrompt.actions,
-      }]
-    : [];
-
   const inLobby = room.localStream === null;
   const previewIsSynthetic = isSyntheticMedia(preview);
   const localIsSynthetic = isSyntheticMedia(room.localStream);
@@ -1465,7 +1147,7 @@ function Room({ token, metadata }: { token: string; metadata: RoomMetadata }): J
       ? 'Preparing devices'
       : 'Enter room';
   const joinButtonHint = hasDeviceError
-    ? 'Camera and microphone are unavailable here. You can still enter, chat, share desktop state, and retry devices later.'
+    ? 'Camera and microphone are unavailable here. You can still enter, chat, use the workspace, and retry devices later.'
     : isDeviceChecking
       ? 'Preparing your camera and microphone preview.'
       : 'You will enter the private room with camera and microphone ready.';
@@ -1553,7 +1235,7 @@ function Room({ token, metadata }: { token: string; metadata: RoomMetadata }): J
                     data-testid="prejoin-repo-input"
                   />
                 )}
-                {canOpenClippyBridgePanel && (
+                {canOpenAgentBridgePanel && (
                   <label className="workspace-agent-toggle">
                     <input
                       type="checkbox"
@@ -1634,70 +1316,67 @@ function Room({ token, metadata }: { token: string; metadata: RoomMetadata }): J
     });
   };
 
-  const openWorkspaceWindow = (lifecycleSource: WindowLifecycleSource = 'standard_assessment_ui'): void => {
+  const openWorkspacePanel = (): void => {
     if (!showWorkspacePanel) return;
-    openSharedWindow({
+    openLocalPanel({
       id: 'workspace',
-      windowType: 'workspace',
+      surfaceType: 'workspace',
       title: workspace?.repoUrl ?? 'VS Code',
       x: 80,
       y: 80,
       width: 800,
       height: 500,
-    }, lifecycleSource);
+    });
   };
 
-  const openBrowserWindow = (url = ''): void => {
-    const currentUrl = normalizeBrowserNavigationUrl(url);
+  const openBrowserTab = (url = ''): void => {
+    const trimmed = url.trim();
+    let currentUrl: string | null = null;
+    try {
+      const parsed = new URL(trimmed.includes('://') ? trimmed : `https://${trimmed}`);
+      if (parsed.protocol === 'http:' || parsed.protocol === 'https:') {
+        currentUrl = parsed.toString();
+      }
+    } catch {
+      currentUrl = null;
+    }
     if (!currentUrl) return;
     window.open(currentUrl, '_blank', 'noopener,noreferrer');
-    const evidence = buildBrowserNavigationEvidence({
-      actor: roomActor,
-      windowId: 'external-browser',
-      url: currentUrl,
-      trigger: 'external_open',
-      surface: room.roomSurface,
-      roomPhase: room.phase,
-      capturedAtMs: Date.now(),
-    });
-    if (evidence) {
-      captureSessionEvent('browser_navigation', evidence.text, roomActor, evidence.properties);
-    }
   };
 
-  const openTerminalWindow = (lifecycleSource: WindowLifecycleSource = 'standard_assessment_ui'): void => {
-    openSharedWindow({
+  const openTerminalPanel = (): void => {
+    openLocalPanel({
       id: 'terminal',
-      windowType: 'terminal',
+      surfaceType: 'terminal',
       title: 'Container terminal',
       x: 120,
       y: 80,
       width: 640,
       height: 400,
-    }, lifecycleSource);
+    });
   };
 
-  const openSubmissionWindow = (lifecycleSource: WindowLifecycleSource = 'standard_assessment_ui'): void => {
-    openSharedWindow({
+  const openSubmissionPanel = (): void => {
+    openLocalPanel({
       id: 'submission',
-      windowType: 'submission',
+      surfaceType: 'submission',
       title: 'Submit Work',
       x: 150,
       y: 70,
       width: 680,
       height: 560,
-    }, lifecycleSource);
+    });
   };
 
-  const captureClippyAction = (
+  const captureAgentAction = (
     actionId: string,
     text: string,
     options: {
-      origin: 'prompt' | 'agent';
+      origin: 'chat' | 'agent';
       agentAction?: AgentRoomAction;
     },
   ): boolean => {
-    const evidence = buildClippyRoomActionExecutionEvidence({
+    const evidence = buildAgentRoomActionExecutionEvidence({
       actionId,
       text,
       origin: options.origin,
@@ -1710,7 +1389,7 @@ function Room({ token, metadata }: { token: string; metadata: RoomMetadata }): J
       workspaceSessionId: workspaceSession?.sessionId ?? null,
     });
     if (!evidence) {
-      console.error('[captureClippyAction] rejected agent room action without source-backed bridge metadata:', {
+      console.error('[captureAgentAction] rejected agent room action without source-backed bridge metadata:', {
         actionId,
         bridgeEventType: options.agentAction?.bridgeEventType ?? null,
         protocol: options.agentAction?.protocol ?? null,
@@ -1722,9 +1401,9 @@ function Room({ token, metadata }: { token: string; metadata: RoomMetadata }): J
       ...evidence.properties,
       durableObjectReplayExpected: true,
     };
-    captureSessionEvent('clippy_action', evidence.text, roomActor, properties);
-    publishClippyInteractionEvent({
-      eventType: 'clippy_action',
+    captureSessionEvent('agent_action', evidence.text, roomActor, properties);
+    publishAgentInteractionEvent({
+      eventType: 'agent_action',
       actor: roomActor,
       text: evidence.text,
       evidence: properties,
@@ -1732,39 +1411,39 @@ function Room({ token, metadata }: { token: string; metadata: RoomMetadata }): J
     return true;
   };
 
-  const executeRoomAction = (actionId: string, options: { url?: string; source?: 'prompt' | 'agent'; agentAction?: AgentRoomAction } = {}): void => {
-    const source = options.source ?? 'prompt';
+  const executeRoomAction = (actionId: string, options: { url?: string; source?: 'chat' | 'agent'; agentAction?: AgentRoomAction } = {}): void => {
+    const source = options.source ?? 'chat';
     const actionEvidence = { origin: source, agentAction: options.agentAction } as const;
     const actorLabel = source === 'agent' ? 'Agent' : 'Assistant';
     switch (actionId) {
       case 'start-recording':
-        if (!captureClippyAction(actionId, `${actorLabel} action: start recording`, actionEvidence)) return;
+        if (!captureAgentAction(actionId, `${actorLabel} action: start recording`, actionEvidence)) return;
         void startRecording();
         break;
       case 'stop-recording':
-        if (!captureClippyAction(actionId, `${actorLabel} action: stop recording`, actionEvidence)) return;
+        if (!captureAgentAction(actionId, `${actorLabel} action: stop recording`, actionEvidence)) return;
         void stopRecording();
         break;
       case 'launch-workspace':
-        if (!captureClippyAction(actionId, `${actorLabel} action: launch workspace`, actionEvidence)) return;
-        openWorkspaceWindow('clippy_action');
+        if (!captureAgentAction(actionId, `${actorLabel} action: launch workspace`, actionEvidence)) return;
+        openWorkspacePanel();
         void launchWorkspace();
         break;
       case 'open-workspace':
-        if (!captureClippyAction(actionId, `${actorLabel} action: open workspace`, actionEvidence)) return;
-        openWorkspaceWindow('clippy_action');
+        if (!captureAgentAction(actionId, `${actorLabel} action: open workspace`, actionEvidence)) return;
+        openWorkspacePanel();
         break;
       case 'open-terminal':
-        if (!captureClippyAction(actionId, `${actorLabel} action: open terminal`, actionEvidence)) return;
-        openTerminalWindow('clippy_action');
+        if (!captureAgentAction(actionId, `${actorLabel} action: open terminal`, actionEvidence)) return;
+        openTerminalPanel();
         break;
       case 'open-submission':
-        if (!captureClippyAction(actionId, `${actorLabel} action: open submission`, actionEvidence)) return;
-        openSubmissionWindow('clippy_action');
+        if (!captureAgentAction(actionId, `${actorLabel} action: open submission`, actionEvidence)) return;
+        openSubmissionPanel();
         break;
       case 'open-browser':
-        if (!captureClippyAction(actionId, `${actorLabel} action: open browser`, actionEvidence)) return;
-        openBrowserWindow(options.url ?? '');
+        if (!captureAgentAction(actionId, `${actorLabel} action: open browser`, actionEvidence)) return;
+        openBrowserTab(options.url ?? '');
         break;
       default:
         break;
@@ -1772,12 +1451,12 @@ function Room({ token, metadata }: { token: string; metadata: RoomMetadata }): J
   };
 
   const openDevinAuthTerminal = (): void => {
-    if (!captureClippyAction(
+    if (!captureAgentAction(
       'open-devin-auth-terminal',
       'Assistant action: open terminal for Devin authentication',
-      { origin: 'prompt' },
+      { origin: 'chat' },
     )) return;
-    openTerminalWindow('clippy_action');
+    openTerminalPanel();
     queuedTerminalCommandRequestRef.current += 1;
     setQueuedTerminalCommand(DEVIN_AUTH_TERMINAL_COMMAND);
     setQueuedTerminalCommandRequest(queuedTerminalCommandRequestRef.current);
@@ -1804,7 +1483,7 @@ function Room({ token, metadata }: { token: string; metadata: RoomMetadata }): J
       });
   };
 
-  const handleClippyAction = (actionId: string): void => {
+  const handleAgentAction = (actionId: string): void => {
     executeRoomAction(actionId);
   };
 
@@ -1827,8 +1506,8 @@ function Room({ token, metadata }: { token: string; metadata: RoomMetadata }): J
     });
   };
 
-  const captureClippyUserChatMessage = (message: AgentChatMessage): void => {
-    const evidence = buildClippyUserChatEvidence({
+  const captureAgentUserChatMessage = (message: AgentChatMessage): void => {
+    const evidence = buildAgentUserChatEvidence({
       message,
       actor: roomActor,
       surface: room.roomSurface,
@@ -1842,7 +1521,7 @@ function Room({ token, metadata }: { token: string; metadata: RoomMetadata }): J
       durableObjectReplayExpected: true,
     };
     captureSessionEvent('ai_chat_user', evidence.text, roomActor, properties);
-    publishClippyInteractionEvent({
+    publishAgentInteractionEvent({
       eventType: 'ai_chat_user',
       actor: roomActor,
       text: evidence.text,
@@ -1850,8 +1529,8 @@ function Room({ token, metadata }: { token: string; metadata: RoomMetadata }): J
     });
   };
 
-  const captureClippyAgentChatMessage = (message: AgentChatMessage): void => {
-    const evidence = buildClippyAgentMessageSessionEvidence({
+  const captureAgentChatMessage = (message: AgentChatMessage): void => {
+    const evidence = buildAgentMessageSessionEvidence({
       text: message.text,
       source: message.source,
       agentName: message.agentName ?? null,
@@ -1888,7 +1567,7 @@ function Room({ token, metadata }: { token: string; metadata: RoomMetadata }): J
       durableObjectReplayExpected: true,
     };
     captureSessionEvent(evidence.eventType, evidence.text, 'agent', properties);
-    publishClippyInteractionEvent({
+    publishAgentInteractionEvent({
       eventType: evidence.eventType,
       actor: 'agent',
       text: evidence.text,
@@ -1896,14 +1575,14 @@ function Room({ token, metadata }: { token: string; metadata: RoomMetadata }): J
     });
   };
 
-  const captureClippyAgentStatus = (status: AgentStatus, agentName: string): void => {
-    setClippyAgentStatus(status);
+  const captureAgentStatus = (status: AgentStatus, agentName: string): void => {
+    setAgentStatus(status);
     if (!agentName.trim()) return;
     const capturedAtMs = Date.now();
     const observedAt = new Date(capturedAtMs).toISOString();
     const text = agentStatusEvidenceText(status, agentName);
     if (!text) return;
-    const evidence = buildClippyAgentStatusEvidence({
+    const evidence = buildAgentStatusEvidence({
       text,
       agentName,
       status,
@@ -1922,7 +1601,7 @@ function Room({ token, metadata }: { token: string; metadata: RoomMetadata }): J
       durableObjectReplayExpected: true,
     };
     captureSessionEvent('ai_agent_status', evidence.text, 'agent', properties);
-    publishClippyInteractionEvent({
+    publishAgentInteractionEvent({
       eventType: 'ai_agent_status',
       actor: 'agent',
       text: evidence.text,
@@ -1930,7 +1609,7 @@ function Room({ token, metadata }: { token: string; metadata: RoomMetadata }): J
     });
   };
 
-  const captureClippyFileChange = (event: AgentFileChangeEvent): void => {
+  const captureAgentFileChange = (event: AgentFileChangeEvent): void => {
     const evidence = buildCodeServerFileChangeEvidence({
       filePath: event.filePath,
       actionName: event.actionName,
@@ -1976,8 +1655,8 @@ function Room({ token, metadata }: { token: string; metadata: RoomMetadata }): J
       canLaunchWorkspace={canLaunchWorkspace}
       assessmentProgress={assessmentProgress}
       onLaunchWorkspace={() => void launchWorkspace()}
-      onOpenWorkspace={() => openWorkspaceWindow('standard_assessment_ui')}
-      onOpenSubmission={() => openSubmissionWindow('standard_assessment_ui')}
+      onOpenWorkspace={() => openWorkspacePanel()}
+      onOpenSubmission={() => openSubmissionPanel()}
     />
   );
 
@@ -1987,13 +1666,13 @@ function Room({ token, metadata }: { token: string; metadata: RoomMetadata }): J
       workspace={workspace}
       progress={assessmentProgress}
       workspaceReady={hasActiveWorkspace}
-      onOpenWorkspace={() => openWorkspaceWindow('standard_assessment_ui')}
-      onOpenSubmission={() => openSubmissionWindow('standard_assessment_ui')}
+      onOpenWorkspace={() => openWorkspacePanel()}
+      onOpenSubmission={() => openSubmissionPanel()}
     />
   );
 
-  const renderWindowContent = (win: WindowState): JSX.Element => {
-    switch (win.windowType) {
+  const renderSurfaceContent = (win: ToolSurfaceState): JSX.Element => {
+    switch (win.surfaceType) {
       case 'video':
         return (
           <div className="room-video-content">
@@ -2072,16 +1751,16 @@ function Room({ token, metadata }: { token: string; metadata: RoomMetadata }): J
               >
                 {room.cameraEnabled ? <Camera size={16} /> : <CameraOff size={16} />}
               </button>
-              {(metadata.features?.clippyEnabled ?? true) && (
+              {(metadata.features?.agentEnabled ?? true) && (
                 <button
-                  className={`room-video-btn is-assistant${clippyChatOpen ? ' is-active' : ''}`}
-                  onClick={() => openClippyChat('call')}
+                  className={`room-video-btn is-assistant${agentChatOpen ? ' is-active' : ''}`}
+                  onClick={() => openAgentChat('call')}
                   aria-label={`Open AI assistant - ${assistantCallStatus}`}
                   title={`AI assistant - ${assistantCallStatus}`}
                   data-testid="open-ai-assistant"
                 >
                   <Bot size={16} />
-                  <span className={`room-video-btn-status ${clippyTrayStatus}`} aria-hidden="true" />
+                  <span className={`room-video-btn-status ${agentTrayStatus}`} aria-hidden="true" />
                 </button>
               )}
               {metadata.role === 'HOST' && (metadata.features?.recordingEnabled ?? true) && (
@@ -2186,7 +1865,7 @@ function Room({ token, metadata }: { token: string; metadata: RoomMetadata }): J
                 )}
                 {canLaunchWorkspace && (
                   <>
-                    {canOpenClippyBridgePanel && (
+                    {canOpenAgentBridgePanel && (
                       <label className="workspace-agent-toggle">
                         <input
                           type="checkbox"
@@ -2219,19 +1898,19 @@ function Room({ token, metadata }: { token: string; metadata: RoomMetadata }): J
 
       case 'chat':
         return (
-          <ChatWindow
+          <ChatPanel
             messages={chatMessages}
             onSend={(text) => sendChatMessage(text)}
             currentUserRole={metadata.role}
-            onAskAssistant={(metadata.features?.clippyEnabled ?? true)
-              ? () => openClippyChat('chat')
+            onAskAssistant={(metadata.features?.agentEnabled ?? true)
+              ? () => openAgentChat('chat')
               : undefined}
           />
         );
 
       case 'terminal':
         return (
-          <TerminalWindow
+          <TerminalPanel
             wsUrl={workspaceSession && hasActiveWorkspace
               ? roomTerminalWsUrl(token, workspaceSession.sessionId)
               : ''}
@@ -2245,7 +1924,7 @@ function Room({ token, metadata }: { token: string; metadata: RoomMetadata }): J
 
       case 'submission':
         return (
-          <CommitSubmissionWindow
+          <CommitSubmissionPanel
             defaultRepositoryUrl={workspace?.repoUrl ?? null}
             challengePacket={workspace?.challenge?.packet ?? null}
             assessmentProgress={assessmentProgress}
@@ -2263,14 +1942,14 @@ function Room({ token, metadata }: { token: string; metadata: RoomMetadata }): J
         );
 
       default:
-        return <div style={{ padding: '8px', color: '#000' }}>Window content</div>;
+        return <div style={{ padding: '8px', color: '#000' }}>Surface content</div>;
     }
   };
 
   const roomSurface = (
     <StandardLayout
-      wm={wm}
-      renderWindowContent={renderWindowContent}
+      toolSurfaces={toolSurfaces}
+      renderSurfaceContent={renderSurfaceContent}
       assessmentHeader={roomAssessmentMode === 'dev_container_assessment'
         ? renderAssessmentStatusStrip()
         : undefined}
@@ -2298,33 +1977,31 @@ function Room({ token, metadata }: { token: string; metadata: RoomMetadata }): J
       >
         {roomSurface}
       </div>
-      {clippyVisible && enteredRoom && (metadata.features?.clippyEnabled ?? true) && (
+      {enteredRoom && (metadata.features?.agentEnabled ?? true) && (
         <AgentAssistant
-          messages={clippyMessages}
-          onDismiss={dismissClippy}
-          chatOpen={clippyChatOpen}
-          onChatOpen={() => setClippyChatOpen(true)}
-          onChatClose={closeClippyChat}
+          chatOpen={agentChatOpen}
+          onChatOpen={() => setAgentChatOpen(true)}
+          onChatClose={closeAgentChat}
           agentWsUrl={workspaceSession && hasActiveWorkspace
             ? roomAgentWsUrl(token, workspaceSession.sessionId)
             : null}
           agentEnabled={hasActiveWorkspace}
-          agentUnavailableMessage={clippyAgentUnavailableMessage}
+          agentUnavailableMessage={agentUnavailableMessage}
           canLaunchAgentWorkspace={canLaunchWorkspace}
           promptActor={roomActor}
           promptWorkspaceSessionId={workspaceSession?.sessionId ?? null}
-          openChatRequest={clippyChatRequest}
-          onOpenBrowser={openBrowserWindow}
+          openChatRequest={agentChatRequest}
+          onOpenBrowser={openBrowserTab}
           onOpenAuthBrowser={openDevinAuthBrowser}
-          onOpenTerminal={openTerminalWindow}
+          onOpenTerminal={openTerminalPanel}
           onOpenAuthTerminal={openDevinAuthTerminal}
           onCheckAuth={checkDevinAuth}
-          onAction={handleClippyAction}
+          onAction={handleAgentAction}
           onAgentRoomAction={handleAgentRoomAction}
-          onUserChatMessage={captureClippyUserChatMessage}
-          onAgentChatMessage={captureClippyAgentChatMessage}
-          onAgentStatus={captureClippyAgentStatus}
-          onAgentFileChange={captureClippyFileChange}
+          onUserChatMessage={captureAgentUserChatMessage}
+          onAgentChatMessage={captureAgentChatMessage}
+          onAgentStatus={captureAgentStatus}
+          onAgentFileChange={captureAgentFileChange}
         />
       )}
       {room.phase === 'ended' && (

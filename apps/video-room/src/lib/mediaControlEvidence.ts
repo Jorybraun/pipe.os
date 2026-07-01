@@ -28,7 +28,7 @@ function controlLabel(control: MediaControlKind): string {
 }
 
 function controlSurface(surface: RoomSurface): string {
-  return surface === 'win95' ? 'win95_video_window' : 'standard_video_call';
+  return surface === 'assessment' ? 'assessment_video_panel' : 'standard_video_call';
 }
 
 function mediaControlId(input: MediaControlEvidenceInput, capturedAtMs: number): string {

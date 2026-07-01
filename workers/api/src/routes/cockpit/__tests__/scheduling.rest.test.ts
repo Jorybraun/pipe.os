@@ -478,7 +478,7 @@ describe('GET /interviews/:id detail', () => {
         video_enabled INTEGER NOT NULL DEFAULT 1,
         workspace_enabled INTEGER NOT NULL DEFAULT 1,
         recording_enabled INTEGER NOT NULL DEFAULT 1,
-        clippy_enabled INTEGER NOT NULL DEFAULT 1,
+        agent_enabled INTEGER NOT NULL DEFAULT 1,
         transcript_status TEXT DEFAULT 'NONE',
         transcript_summary TEXT,
         transcript_json TEXT,
@@ -1743,7 +1743,7 @@ describe('GET /interviews/:id detail', () => {
       action: 'modified',
       observedAt: now,
       fileContentHash: 'content_file_observation_hash',
-      observedBy: 'clippy_agent_bridge',
+      observedBy: 'agent_bridge',
       editorSurface: 'code-server',
     });
 
@@ -6762,7 +6762,7 @@ describe('POST /interviews dev-container challenge (HAS-80)', () => {
         video_enabled INTEGER NOT NULL DEFAULT 1,
         workspace_enabled INTEGER NOT NULL DEFAULT 1,
         recording_enabled INTEGER NOT NULL DEFAULT 1,
-        clippy_enabled INTEGER NOT NULL DEFAULT 1,
+        agent_enabled INTEGER NOT NULL DEFAULT 1,
         transcript_status TEXT DEFAULT 'NONE',
         transcript_summary TEXT,
         transcript_json TEXT,

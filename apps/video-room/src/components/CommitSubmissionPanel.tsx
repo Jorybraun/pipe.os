@@ -15,7 +15,7 @@ import type {
   RoomWorkspaceChallengePacket,
 } from '../types';
 
-interface CommitSubmissionWindowProps {
+interface CommitSubmissionPanelProps {
   defaultRepositoryUrl: string | null;
   challengePacket?: RoomWorkspaceChallengePacket | null;
   assessmentProgress?: RoomAssessmentProgressSnapshot | null;
@@ -66,6 +66,34 @@ function evidenceFlagLabel(value: boolean): string {
   return value ? 'Captured' : 'Missing';
 }
 
+function isDirtyWorkspaceFinalizeError(message: string | null): boolean {
+  return message?.toLowerCase().includes('commit or discard uncommitted workspace changes') ?? false;
+}
+
+function WorkspaceFinalizeRecovery({
+  error,
+}: {
+  error: string | null;
+}): JSX.Element | null {
+  if (!isDirtyWorkspaceFinalizeError(error)) return null;
+
+  return (
+    <section
+      className="workspace-finalize-recovery"
+      data-testid="workspace-finalize-recovery"
+      aria-label="Workspace finalization recovery"
+    >
+      <strong>Commit workspace changes first</strong>
+      <span>Run these in the workspace terminal, then click Finalize from workspace again.</span>
+      <ol>
+        <li><code>git status --short</code></li>
+        <li><code>git add &lt;files&gt;</code></li>
+        <li><code>git commit -m "pipe assessment submission"</code></li>
+      </ol>
+    </section>
+  );
+}
+
 function EvidenceStatusChip({
   label,
   captured,
@@ -77,6 +105,42 @@ function EvidenceStatusChip({
     <span className={captured ? 'is-captured' : 'is-missing'}>
       {label}: {evidenceFlagLabel(captured)}
     </span>
+  );
+}
+
+function AssessmentReadinessPanel({
+  progress,
+}: {
+  progress: RoomAssessmentProgressSnapshot;
+}): JSX.Element | null {
+  const readiness = progress.readiness;
+  if (!readiness) return null;
+  const requiredPreview = readiness.required.slice(0, 5);
+
+  return (
+    <section
+      className="commit-submission-readiness"
+      data-testid="commit-submission-readiness"
+      aria-label="Assessment readiness"
+    >
+      <div className="commit-submission-readiness-header">
+        <strong>{readiness.label}</strong>
+        <span>
+          {readiness.isReadyForEvaluation
+            ? 'Ready'
+            : `${readiness.missingRequiredCount} missing`}
+        </span>
+      </div>
+      <p>{readiness.detail}</p>
+      <ul className="commit-submission-readiness-list">
+        {requiredPreview.map((item) => (
+          <li key={item.id} className={item.satisfied ? 'is-captured' : 'is-missing'}>
+            <span>{item.label}</span>
+            <span>{item.satisfied ? 'Captured' : 'Missing'}</span>
+          </li>
+        ))}
+      </ul>
+    </section>
   );
 }
 
@@ -202,6 +266,8 @@ function AssessmentProgressPanel({
         </div>
       </div>
 
+      <AssessmentReadinessPanel progress={progress} />
+
       <dl className="commit-submission-progress-grid">
         <dt>Mode</dt>
         <dd>{formatProgressLabel(progress.mode)}</dd>
@@ -279,7 +345,7 @@ function AssessmentProgressPanel({
   );
 }
 
-export function CommitSubmissionWindow({
+export function CommitSubmissionPanel({
   defaultRepositoryUrl,
   challengePacket,
   assessmentProgress = null,
@@ -289,7 +355,7 @@ export function CommitSubmissionWindow({
   workspaceFinalizeAvailable = false,
   workspaceFinalizeDisabledReason = null,
   onFinalizeWorkspace,
-}: CommitSubmissionWindowProps): JSX.Element {
+}: CommitSubmissionPanelProps): JSX.Element {
   const submissionDefaults = buildCommitSubmissionDefaults({
     repositoryUrl: defaultRepositoryUrl,
     challengePacket,
@@ -395,7 +461,7 @@ export function CommitSubmissionWindow({
   };
 
   return (
-    <form className="commit-submission-window" onSubmit={(event) => void handleSubmit(event)}>
+    <form className="commit-submission-panel" onSubmit={(event) => void handleSubmit(event)}>
       <section className="commit-submission-boundary" data-testid="commit-submission-boundary">
         <strong>Assessment branch first</strong>
         <span>
@@ -632,6 +698,7 @@ export function CommitSubmissionWindow({
           <span>{error}</span>
         </div>
       )}
+      <WorkspaceFinalizeRecovery error={error} />
       {result && (
         <div className="commit-submission-status is-success" data-testid="commit-submission-success">
           <CheckCircle2 size={16} />

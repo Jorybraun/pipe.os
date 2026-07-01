@@ -94,6 +94,25 @@ const progress: RoomAssessmentProgressSnapshot = {
     occurredAt: '2026-06-29T22:00:00.000Z',
   },
   evaluation: null,
+  readiness: {
+    status: 'READY_FOR_EVALUATION',
+    label: 'Ready for evaluation',
+    detail: 'Required challenge, work, commit, and source evidence are captured.',
+    isReadyForEvaluation: true,
+    isUsableHiringSignal: false,
+    missingRequiredCount: 0,
+    required: [
+      {
+        id: 'challenge_packet',
+        label: 'Concrete challenge packet',
+        required: true,
+        satisfied: true,
+        sourceRefTypes: ['open_source_challenge_packet'],
+        missingImpact: 'Assign a source-backed challenge packet.',
+      },
+    ],
+    confidence: [],
+  },
 };
 
 describe('AssessmentStatusStrip', () => {
@@ -142,6 +161,7 @@ describe('AssessmentStatusStrip', () => {
     );
 
     expect(screen.getByTestId('assessment-progress-stage').textContent).toContain('Ready For Evaluation');
+    expect(screen.getByTestId('assessment-readiness').textContent).toContain('Ready to evaluate');
     expect(screen.getByTestId('assessment-progress-commit').textContent).toContain('Commit cccccccc');
     expect(screen.getByText('Start source-backed AI or human evaluation.')).not.toBeNull();
     expect(screen.getByTestId('assessment-progress-coverage').textContent).toContain('challenge, chat, workspace, room, commit, AI, tests');

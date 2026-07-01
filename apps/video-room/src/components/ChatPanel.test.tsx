@@ -2,15 +2,15 @@
 
 import { fireEvent, render, screen } from '@testing-library/react';
 import { describe, expect, it, vi } from 'vitest';
-import { ChatWindow } from './ChatWindow';
+import { ChatPanel } from './ChatPanel';
 
-describe('ChatWindow', () => {
+describe('ChatPanel', () => {
   it('keeps room chat human-only while exposing the real AI assistant launcher', () => {
     const onSend = vi.fn();
     const onAskAssistant = vi.fn();
 
     render(
-      <ChatWindow
+      <ChatPanel
         messages={[]}
         onSend={onSend}
         currentUserRole="HOST"
@@ -32,7 +32,7 @@ describe('ChatWindow', () => {
 
   it('keeps the real server rejection reason on failed sends', () => {
     render(
-      <ChatWindow
+      <ChatPanel
         messages={[{
           id: 'chat-rejected-1',
           role: 'host',

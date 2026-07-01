@@ -24,19 +24,19 @@ import type { DurableObjectState } from '@cloudflare/workers-types';
 type VideoRole = 'RECRUITER' | 'CANDIDATE' | 'HOST' | 'GUEST';
 type SessionStatus = 'WAITING' | 'CALLING' | 'ACTIVE' | 'ENDED';
 type SignalStatus = SessionStatus | 'LEFT';
-type RoomSurface = 'standard' | 'win95';
+type RoomSurface = 'standard' | 'assessment';
 const TERMINAL_FINGERPRINT_RE = /^terminal_[0-9a-f]{8}$/;
 const TERMINAL_COMMAND_ID_RE = /^.+:command:(host|guest):\d+:\d+:terminal_[0-9a-f]{8}$/;
 const ROOM_CHAT_MESSAGE_FINGERPRINT_RE = /^chat_[0-9a-f]{8}$/;
-const CLIPPY_PROMPT_FINGERPRINT_RE = /^(?:agent|clippy)_[0-9a-f]{8}$/;
-const BROWSER_PROMPT_ID_RE = /^[a-zA-Z0-9:_-]+:(host|guest):prompt:\d+:(?:agent|clippy)_[0-9a-f]{8}$/;
-const CLIPPY_ACTION_EVENT_ID_RE = /^clippy-action:(host|guest|agent):\d+:[a-z_]+:[a-z_]+:[a-z_]+:[a-zA-Z0-9:_-]+$/;
+const AGENT_PROMPT_FINGERPRINT_RE = /^agent_[0-9a-f]{8}$/;
+const BROWSER_PROMPT_ID_RE = /^[a-zA-Z0-9:_-]+:(host|guest):prompt:\d+:agent_[0-9a-f]{8}$/;
+const AGENT_ACTION_EVENT_ID_RE = /^agent-action:(host|guest|agent):\d+:[a-z_]+:[a-z_]+:[a-z_]+:[a-zA-Z0-9:_-]+$/;
 const AGENT_CHAT_RESPONSE_FINGERPRINT_RE = /^agent_[0-9a-f]{8}$/;
 const AGENT_CHAT_RESPONSE_ID_RE = /^agent-chat:[a-zA-Z0-9:_-]+:\d+:CHAT_RESPONSE:agent_[0-9a-f]{8}$/;
 const AGENT_STATUS_EVENT_ID_RE = /^agent-status:[a-zA-Z0-9:_-]+:\d+:[a-z_]+:[a-zA-Z0-9:_-]+:[a-zA-Z0-9:_-]+$/;
 const AGENT_STATUSES = new Set(['starting', 'idle', 'thinking', 'working', 'auth_needed', 'disconnected']);
 const AGENT_STATUS_MESSAGE_SOURCES = new Set(['agent_status', 'agent_stdout', 'agent_api_response', 'bridge_diagnostic', 'bridge_observation']);
-const CLIPPY_PROMPT_BLOCKED_REASONS = new Set([
+const AGENT_PROMPT_BLOCKED_REASONS = new Set([
   'workspace_required',
   'bridge_reconnecting',
   'agent_starting',
@@ -84,28 +84,20 @@ const ROOM_FILE_PROJECTION_EVIDENCE_KEYS = [
   'fileUpdatedAt',
 ] as const;
 const WINDOW_LIFECYCLE_SOURCES = new Set([
-  'win95_desktop_ui',
-  'win95_file_system',
-  'win95_start_menu',
-  'win95_window_chrome',
-  'win95_taskbar',
+  'assessment_layout_ui',
+  'assessment_file_system',
+  'assessment_window_chrome',
+  'assessment_agent_tray',
   'standard_assessment_ui',
-  'clippy_action',
+  'agent_action',
   'shared_state_sync',
 ]);
 const WINDOW_STATE_SOURCES = new Set([
-  'win95_desktop_ui',
-  'win95_start_menu',
-  'win95_window_chrome',
-  'win95_taskbar',
+  'assessment_layout_ui',
+  'assessment_window_chrome',
+  'assessment_agent_tray',
 ]);
-const WINDOW_DATA_SOURCES = new Set(['win95_window_data_sync', 'win95_file_delete_sync']);
-const START_MENU_EVENT_SOURCES = new Set([
-  'win95_start_button',
-  'win95_desktop_click',
-  'win95_start_menu_item',
-]);
-const START_MENU_EVENT_ID_RE = /^start-menu:(host|guest):\d+:(open|close):[a-z0-9_]+$/;
+const WINDOW_DATA_SOURCES = new Set(['assessment_window_data_sync', 'assessment_file_delete_sync']);
 const WORKSPACE_REDACTED_SECRET = '[REDACTED_SECRET]';
 const WORKSPACE_BARE_SECRET_RE = /\b(?:cog|ghp|gho|ghu|ghs|ghr|devin)_[A-Za-z0-9_-]{20,}\b/g;
 const WORKSPACE_GITHUB_PAT_RE = /\bgithub_pat_[A-Za-z0-9_]{20,}\b/g;
@@ -122,9 +114,9 @@ interface SignalMessage {
     | 'ICE_CANDIDATE'
     | 'HANGUP'
     | 'STATUS_UPDATE'
-    | 'ROOM_DESKTOP_EVENT'
-    | 'ROOM_CLIPPY_PROMPT'
-    | 'ROOM_CLIPPY_INTERACTION'
+    | 'ROOM_LAYOUT_EVENT'
+    | 'ROOM_AGENT_PROMPT'
+    | 'ROOM_AGENT_INTERACTION'
     | 'ROOM_CHAT_MESSAGE'
     | 'ROOM_CURSOR'
     | 'ROOM_MEDIA_CONTROL'
@@ -168,7 +160,7 @@ function hasOptionalBrowserPromptRef(evidence: Record<string, unknown>): boolean
   return typeof promptId === 'string'
     && BROWSER_PROMPT_ID_RE.test(promptId)
     && typeof promptFingerprint === 'string'
-    && CLIPPY_PROMPT_FINGERPRINT_RE.test(promptFingerprint)
+    && AGENT_PROMPT_FINGERPRINT_RE.test(promptFingerprint)
     && typeof promptTimestamp === 'number'
     && Number.isInteger(promptTimestamp)
     && promptTimestamp >= 0
@@ -178,21 +170,21 @@ function hasOptionalBrowserPromptRef(evidence: Record<string, unknown>): boolean
     && promptId.endsWith(`:${promptTimestamp}:${promptFingerprint}`);
 }
 
-type RoomDesktopWindowType =
+type RoomLayoutWindowType =
   | 'video'
   | 'workspace'
   | 'chat'
   | 'tasks'
   | 'snippet'
   | 'browser'
-  | 'notepad'
-  | 'paint'
+  | 'notes'
+  | 'diagram'
   | 'terminal'
   | 'custom';
 
-interface RoomDesktopWindow {
+interface RoomLayoutWindow {
   id: string;
-  windowType: RoomDesktopWindowType;
+  windowType: RoomLayoutWindowType;
   title: string;
   icon?: string;
   x?: number;
@@ -205,7 +197,7 @@ interface RoomDesktopWindow {
   data?: Record<string, unknown>;
 }
 
-type RoomDesktopEvent =
+type RoomLayoutEvent =
   | {
       id: string;
       clientId: string;
@@ -226,15 +218,7 @@ type RoomDesktopEvent =
       clientId: string;
       createdAt: number;
       kind: 'OPEN_WINDOW';
-      window: RoomDesktopWindow;
-      evidence?: Record<string, unknown>;
-    }
-  | {
-      id: string;
-      clientId: string;
-      createdAt: number;
-      kind: 'START_MENU_STATE';
-      open: boolean;
+      window: RoomLayoutWindow;
       evidence?: Record<string, unknown>;
     }
   | {
@@ -299,8 +283,8 @@ type RoomDesktopEvent =
       proxyUrlPersisted?: boolean;
     };
 
-interface RoomDesktopActivityEntry {
-  event: RoomDesktopEvent;
+interface RoomLayoutActivityEntry {
+  event: RoomLayoutEvent;
   role: VideoRole;
   recordedAt: number;
 }
@@ -375,21 +359,21 @@ interface RoomCursorActivityEntry {
   recordedAt: number;
 }
 
-type RoomClippyPromptSource = 'system' | 'agent' | 'host' | 'guest';
+type RoomAgentPromptSource = 'system' | 'agent' | 'host' | 'guest';
 
-interface RoomClippyAction {
+interface RoomAgentAction {
   id: string;
   label: string;
   disabled?: boolean;
 }
 
-interface RoomClippyPrompt {
+interface RoomAgentPrompt {
   id: string;
   clientId: string;
   createdAt: number;
-  source: RoomClippyPromptSource;
+  source: RoomAgentPromptSource;
   text: string;
-  promptEventSource?: 'browser_proactive_clippy_prompt' | 'clippy_agent_bridge';
+  promptEventSource?: 'browser_proactive_agent_prompt' | 'agent_bridge';
   promptTrigger?: string;
   surface?: RoomSurface;
   roomPhase?: string;
@@ -398,29 +382,29 @@ interface RoomClippyPrompt {
   agentResponseClaimed?: boolean;
   hold?: boolean;
   targetRoles?: VideoRole[];
-  actions?: RoomClippyAction[];
+  actions?: RoomAgentAction[];
 }
 
-interface RoomClippyPromptActivityEntry {
-  prompt: RoomClippyPrompt;
+interface RoomAgentPromptActivityEntry {
+  prompt: RoomAgentPrompt;
   role: VideoRole;
   recordedAt: number;
 }
 
-type RoomClippyInteractionEventType = 'ai_chat_user' | 'ai_chat_agent' | 'ai_agent_status' | 'clippy_action';
+type RoomAgentInteractionEventType = 'ai_chat_user' | 'ai_chat_agent' | 'ai_agent_status' | 'agent_action';
 
-interface RoomClippyInteractionEvent {
+interface RoomAgentInteractionEvent {
   id: string;
   clientId: string;
   createdAt: number;
-  eventType: RoomClippyInteractionEventType;
+  eventType: RoomAgentInteractionEventType;
   actor: 'host' | 'guest' | 'agent' | 'system';
   text: string;
   evidence?: Record<string, unknown>;
 }
 
-interface RoomClippyInteractionActivityEntry {
-  event: RoomClippyInteractionEvent;
+interface RoomAgentInteractionActivityEntry {
+  event: RoomAgentInteractionEvent;
   role: VideoRole;
   recordedAt: number;
 }
@@ -483,7 +467,7 @@ interface RoomTerminalActivityEntry {
   recordedAt: number;
 }
 
-type RoomFileKind = 'text' | 'paint' | 'json' | 'link';
+type RoomFileKind = 'text' | 'diagram' | 'json' | 'link';
 
 interface RoomFile {
   id: string;
@@ -594,7 +578,7 @@ export class VideoRoom {
     return Boolean(value) && typeof value === 'object' && !Array.isArray(value);
   }
 
-  private isRoomDesktopWindowType(value: unknown): value is RoomDesktopWindowType {
+  private isRoomLayoutWindowType(value: unknown): value is RoomLayoutWindowType {
     return typeof value === 'string'
       && [
         'video',
@@ -603,15 +587,15 @@ export class VideoRoom {
         'tasks',
         'snippet',
         'browser',
-        'notepad',
-        'paint',
+        'notes',
+        'diagram',
         'terminal',
         'custom',
       ].includes(value);
   }
 
   private isRoomSurface(value: unknown): value is RoomSurface {
-    return value === 'standard' || value === 'win95';
+    return value === 'standard' || value === 'assessment';
   }
 
   private optionalNumber(value: unknown): number | undefined {
@@ -622,11 +606,11 @@ export class VideoRoom {
     return typeof value === 'number' && Number.isFinite(value) && value >= 0 && value <= 1;
   }
 
-  private parseDesktopWindow(value: unknown): RoomDesktopWindow | null {
+  private parseLayoutWindow(value: unknown): RoomLayoutWindow | null {
     if (!this.isRecord(value)) return null;
     if (
       typeof value.id !== 'string'
-      || !this.isRoomDesktopWindowType(value.windowType)
+      || !this.isRoomLayoutWindowType(value.windowType)
       || typeof value.title !== 'string'
     ) {
       return null;
@@ -647,7 +631,7 @@ export class VideoRoom {
     };
   }
 
-  private parseDesktopEvent(value: unknown): RoomDesktopEvent | null {
+  private parseLayoutEvent(value: unknown): RoomLayoutEvent | null {
     if (!this.isRecord(value)) return null;
     if (
       typeof value.id !== 'string'
@@ -657,7 +641,7 @@ export class VideoRoom {
       return null;
     }
     if (value.kind === 'OPEN_WINDOW') {
-      const windowConfig = this.parseDesktopWindow(value.window);
+      const windowConfig = this.parseLayoutWindow(value.window);
       if (!windowConfig) return null;
       return {
         id: value.id,
@@ -689,16 +673,6 @@ export class VideoRoom {
           : undefined,
       };
     }
-    if (value.kind === 'START_MENU_STATE' && typeof value.open === 'boolean') {
-      return {
-        id: value.id,
-        clientId: value.clientId,
-        createdAt: value.createdAt,
-        kind: 'START_MENU_STATE',
-        open: value.open,
-        evidence: this.isRecord(value.evidence) ? value.evidence : undefined,
-      };
-    }
     if (value.kind === 'CLOSE_WINDOW' && typeof value.windowId === 'string') {
       return {
         id: value.id,
@@ -721,7 +695,7 @@ export class VideoRoom {
       };
     }
     if (value.kind === 'UPDATE_WINDOW_STATE' && typeof value.windowId === 'string') {
-      const event: RoomDesktopEvent = {
+      const event: RoomLayoutEvent = {
         id: value.id,
         clientId: value.clientId,
         createdAt: value.createdAt,
@@ -787,7 +761,7 @@ export class VideoRoom {
   }
 
   private hasSourceBackedWorkspaceStateEvidence(
-    event: Extract<RoomDesktopEvent, { kind: 'WORKSPACE_STATE_CHANGED' }>,
+    event: Extract<RoomLayoutEvent, { kind: 'WORKSPACE_STATE_CHANGED' }>,
     actor: 'host' | 'guest',
   ): boolean {
     const status = typeof event.status === 'string' && event.status.length > 0 ? event.status : null;
@@ -817,10 +791,10 @@ export class VideoRoom {
       && event.proxyUrlPersisted === false;
   }
 
-  private hasSourceBackedDesktopEventEvidence(event: RoomDesktopEvent, role: VideoRole): boolean {
+  private hasSourceBackedLayoutEventEvidence(event: RoomLayoutEvent, role: VideoRole): boolean {
     const actor = this.isHostRole(role) ? 'host' : 'guest';
     if (event.kind === 'SET_ROOM_SURFACE') {
-      const expectedAction = event.surface === 'win95' ? 'enter_desktop' : 'exit_desktop';
+      const expectedAction = event.surface === 'assessment' ? 'enter_assessment' : 'exit_assessment';
       return event.source === 'room_surface_control'
         && event.surfaceControlEventSource === 'browser_room_surface_toggle'
         && event.action === expectedAction
@@ -838,28 +812,6 @@ export class VideoRoom {
     }
     const evidence = event.evidence;
     if (!this.isRecord(evidence)) return false;
-    if (event.kind === 'START_MENU_STATE') {
-      const action = event.open ? 'open' : 'close';
-      const capturedAtMs = evidence.capturedAtMs;
-      const menuEventSource = evidence.menuEventSource;
-      const startMenuEventId = evidence.startMenuEventId;
-      return evidence.source === 'win95_start_menu_control'
-        && typeof menuEventSource === 'string'
-        && START_MENU_EVENT_SOURCES.has(menuEventSource)
-        && evidence.actor === actor
-        && evidence.menuId === 'start'
-        && evidence.action === action
-        && evidence.open === event.open
-        && typeof startMenuEventId === 'string'
-        && START_MENU_EVENT_ID_RE.test(startMenuEventId)
-        && typeof capturedAtMs === 'number'
-        && Number.isInteger(capturedAtMs)
-        && capturedAtMs >= 0
-        && startMenuEventId === `start-menu:${actor}:${capturedAtMs}:${action}:${menuEventSource}`
-        && evidence.surface === 'win95'
-        && typeof evidence.roomPhase === 'string'
-        && evidence.durableObjectReplayExpected === true;
-    }
     if (event.kind === 'OPEN_WINDOW' || event.kind === 'CLOSE_WINDOW') {
       const kind = event.kind === 'OPEN_WINDOW' ? 'open' : 'close';
       const windowId = event.kind === 'OPEN_WINDOW' ? event.window.id : event.windowId;
@@ -874,15 +826,15 @@ export class VideoRoom {
         && typeof evidence.windowLifecycleId === 'string'
         && typeof evidence.capturedAtMs === 'number'
         && Number.isFinite(evidence.capturedAtMs)
-        && evidence.surface === 'win95'
+        && evidence.surface === 'assessment'
         && typeof evidence.roomPhase === 'string'
         && evidence.durableObjectReplayExpected === true;
     }
     if (event.kind === 'UPDATE_WINDOW_DATA') {
       const isBrowserNavigation = this.isRecord(event.data) && typeof event.data.currentUrl === 'string';
       if (isBrowserNavigation) {
-        return evidence.source === 'room_browser_window'
-          && evidence.navigationSource === 'browser_window_client_submit'
+        return evidence.source === 'room_browser_panel'
+          && evidence.navigationSource === 'browser_panel_client_submit'
           && evidence.actor === actor
           && evidence.windowId === event.windowId
           && typeof evidence.browserNavigationId === 'string'
@@ -891,7 +843,7 @@ export class VideoRoom {
           && typeof evidence.navigationTrigger === 'string'
           && typeof evidence.url === 'string'
           && typeof evidence.urlFingerprint === 'string'
-          && evidence.surface === 'win95'
+          && evidence.surface === 'assessment'
           && typeof evidence.roomPhase === 'string'
           && evidence.durableObjectReplayExpected === true;
       }
@@ -906,7 +858,7 @@ export class VideoRoom {
         && Array.isArray(evidence.dataKeys)
         && evidence.dataKeys.length > 0
         && this.isRecord(evidence.dataValueFingerprints)
-        && evidence.surface === 'win95'
+        && evidence.surface === 'assessment'
         && typeof evidence.roomPhase === 'string'
         && evidence.durableObjectReplayExpected === true;
     }
@@ -920,21 +872,21 @@ export class VideoRoom {
         && typeof evidence.capturedAtMs === 'number'
         && Number.isFinite(evidence.capturedAtMs)
         && typeof evidence.action === 'string'
-        && evidence.surface === 'win95'
+        && evidence.surface === 'assessment'
         && typeof evidence.roomPhase === 'string'
         && evidence.durableObjectReplayExpected === true;
     }
     return false;
   }
 
-  private parseDesktopWindows(value: unknown): RoomDesktopWindow[] {
+  private parseLayoutWindows(value: unknown): RoomLayoutWindow[] {
     if (!Array.isArray(value)) return [];
     return value
-      .map((entry) => this.parseDesktopWindow(entry))
-      .filter((entry): entry is RoomDesktopWindow => entry !== null);
+      .map((entry) => this.parseLayoutWindow(entry))
+      .filter((entry): entry is RoomLayoutWindow => entry !== null);
   }
 
-  private isRoomClippyPromptSource(value: unknown): value is RoomClippyPromptSource {
+  private isRoomAgentPromptSource(value: unknown): value is RoomAgentPromptSource {
     return value === 'system' || value === 'agent' || value === 'host' || value === 'guest';
   }
 
@@ -945,7 +897,7 @@ export class VideoRoom {
       || value === 'GUEST';
   }
 
-  private parseClippyAction(value: unknown): RoomClippyAction | null {
+  private parseAgentAction(value: unknown): RoomAgentAction | null {
     if (!this.isRecord(value)) return null;
     if (
       typeof value.id !== 'string'
@@ -964,7 +916,7 @@ export class VideoRoom {
     };
   }
 
-  private parseClippyPrompt(value: unknown): RoomClippyPrompt | null {
+  private parseAgentPrompt(value: unknown): RoomAgentPrompt | null {
     if (!this.isRecord(value)) return null;
     if (
       typeof value.id !== 'string'
@@ -981,8 +933,8 @@ export class VideoRoom {
     const actions = Array.isArray(value.actions)
       ? value.actions
           .slice(0, 4)
-          .map((entry) => this.parseClippyAction(entry))
-          .filter((entry): entry is RoomClippyAction => entry !== null)
+          .map((entry) => this.parseAgentAction(entry))
+          .filter((entry): entry is RoomAgentAction => entry !== null)
       : undefined;
     const targetRoles = Array.isArray(value.targetRoles)
       ? value.targetRoles.filter((entry): entry is VideoRole => this.isVideoRole(entry))
@@ -991,9 +943,9 @@ export class VideoRoom {
       id: value.id,
       clientId: value.clientId,
       createdAt: value.createdAt,
-      source: this.isRoomClippyPromptSource(value.source) ? value.source : 'system',
+      source: this.isRoomAgentPromptSource(value.source) ? value.source : 'system',
       text: value.text,
-      promptEventSource: value.promptEventSource === 'browser_proactive_clippy_prompt' || value.promptEventSource === 'clippy_agent_bridge'
+      promptEventSource: value.promptEventSource === 'browser_proactive_agent_prompt' || value.promptEventSource === 'agent_bridge'
         ? value.promptEventSource
         : undefined,
       promptTrigger: this.safeTextOrNull(value.promptTrigger, 120) ?? undefined,
@@ -1008,28 +960,28 @@ export class VideoRoom {
     };
   }
 
-  private hasSourceBackedClippyPromptEvidence(prompt: RoomClippyPrompt, role: VideoRole): boolean {
+  private hasSourceBackedAgentPromptEvidence(prompt: RoomAgentPrompt, role: VideoRole): boolean {
     const actor = this.isHostRole(role) ? 'host' : 'guest';
     return actor === 'host'
-      && prompt.promptEventSource === 'browser_proactive_clippy_prompt'
+      && prompt.promptEventSource === 'browser_proactive_agent_prompt'
       && (prompt.source === 'system' || prompt.source === 'host')
       && Number.isInteger(prompt.createdAt)
       && prompt.createdAt >= 0
       && typeof prompt.promptTrigger === 'string'
       && prompt.promptTrigger.length > 0
-      && (prompt.surface === 'standard' || prompt.surface === 'win95')
+      && (prompt.surface === 'standard' || prompt.surface === 'assessment')
       && typeof prompt.roomPhase === 'string'
       && prompt.roomPhase.length > 0
       && prompt.agentResponseClaimed === false;
   }
 
-  private async getDesktopWindows(): Promise<RoomDesktopWindow[]> {
-    return this.parseDesktopWindows(await this.state.storage.get<unknown>('desktopWindows'));
+  private async getLayoutWindows(): Promise<RoomLayoutWindow[]> {
+    return this.parseLayoutWindows(await this.state.storage.get<unknown>('roomPanels'));
   }
 
-  private parseDesktopActivityEntry(value: unknown): RoomDesktopActivityEntry | null {
+  private parseLayoutActivityEntry(value: unknown): RoomLayoutActivityEntry | null {
     if (!this.isRecord(value)) return null;
-    const event = this.parseDesktopEvent(value.event);
+    const event = this.parseLayoutEvent(value.event);
     if (
       event === null
       || !this.isVideoRole(value.role)
@@ -1041,20 +993,20 @@ export class VideoRoom {
     return { event, role: value.role, recordedAt: value.recordedAt };
   }
 
-  private parseDesktopActivityLog(value: unknown): RoomDesktopActivityEntry[] {
+  private parseLayoutActivityLog(value: unknown): RoomLayoutActivityEntry[] {
     if (!Array.isArray(value)) return [];
     return value
-      .map((entry) => this.parseDesktopActivityEntry(entry))
-      .filter((entry): entry is RoomDesktopActivityEntry => entry !== null);
+      .map((entry) => this.parseLayoutActivityEntry(entry))
+      .filter((entry): entry is RoomLayoutActivityEntry => entry !== null);
   }
 
-  private async getCurrentClippyPrompt(): Promise<RoomClippyPrompt | null> {
-    return this.parseClippyPrompt(await this.state.storage.get<unknown>('currentClippyPrompt'));
+  private async getCurrentAgentPrompt(): Promise<RoomAgentPrompt | null> {
+    return this.parseAgentPrompt(await this.state.storage.get<unknown>('currentAgentPrompt'));
   }
 
-  private parseClippyPromptActivityEntry(value: unknown): RoomClippyPromptActivityEntry | null {
+  private parseAgentPromptActivityEntry(value: unknown): RoomAgentPromptActivityEntry | null {
     if (!this.isRecord(value)) return null;
-    const prompt = this.parseClippyPrompt(value.prompt);
+    const prompt = this.parseAgentPrompt(value.prompt);
     if (
       prompt === null
       || !this.isVideoRole(value.role)
@@ -1066,21 +1018,21 @@ export class VideoRoom {
     return { prompt, role: value.role, recordedAt: value.recordedAt };
   }
 
-  private parseClippyPromptActivityLog(value: unknown): RoomClippyPromptActivityEntry[] {
+  private parseAgentPromptActivityLog(value: unknown): RoomAgentPromptActivityEntry[] {
     if (!Array.isArray(value)) return [];
     return value
-      .map((entry) => this.parseClippyPromptActivityEntry(entry))
-      .filter((entry): entry is RoomClippyPromptActivityEntry => entry !== null);
+      .map((entry) => this.parseAgentPromptActivityEntry(entry))
+      .filter((entry): entry is RoomAgentPromptActivityEntry => entry !== null);
   }
 
-  private isRoomClippyInteractionEventType(value: unknown): value is RoomClippyInteractionEventType {
+  private isRoomAgentInteractionEventType(value: unknown): value is RoomAgentInteractionEventType {
     return value === 'ai_chat_user'
       || value === 'ai_chat_agent'
       || value === 'ai_agent_status'
-      || value === 'clippy_action';
+      || value === 'agent_action';
   }
 
-  private safeClippyInteractionTextOrNull(eventType: RoomClippyInteractionEventType, value: unknown): string | undefined {
+  private safeAgentInteractionTextOrNull(eventType: RoomAgentInteractionEventType, value: unknown): string | undefined {
     if (eventType === 'ai_chat_agent' || eventType === 'ai_agent_status') {
       return this.safeWorkspaceDiagnosticOrNull(value, 8000) ?? undefined;
     }
@@ -1088,14 +1040,14 @@ export class VideoRoom {
     return value;
   }
 
-  private parseClippyInteractionEvent(value: unknown): RoomClippyInteractionEvent | null {
+  private parseAgentInteractionEvent(value: unknown): RoomAgentInteractionEvent | null {
     if (!this.isRecord(value)) return null;
     if (
       !this.isSafeFileText(value.id, 160)
       || !this.isSafeFileText(value.clientId, 160)
       || typeof value.createdAt !== 'number'
       || !Number.isFinite(value.createdAt)
-      || !this.isRoomClippyInteractionEventType(value.eventType)
+      || !this.isRoomAgentInteractionEventType(value.eventType)
       || (
         value.actor !== 'host'
         && value.actor !== 'guest'
@@ -1105,7 +1057,7 @@ export class VideoRoom {
     ) {
       return null;
     }
-    const text = this.safeClippyInteractionTextOrNull(value.eventType, value.text);
+    const text = this.safeAgentInteractionTextOrNull(value.eventType, value.text);
     if (!text) return null;
     return {
       id: value.id,
@@ -1118,8 +1070,8 @@ export class VideoRoom {
     };
   }
 
-  private hasSourceBackedClippyInteractionEvidence(
-    event: RoomClippyInteractionEvent,
+  private hasSourceBackedAgentInteractionEvidence(
+    event: RoomAgentInteractionEvent,
     senderRole: VideoRole,
   ): boolean {
     const evidence = event.evidence;
@@ -1138,17 +1090,17 @@ export class VideoRoom {
       const deliveryStatus = evidence.bridgeDeliveryStatus === 'blocked' ? 'blocked' : 'queued';
       const deliveryOk = deliveryStatus === 'blocked'
         ? evidence.browserQueuedBridgeMessage === false
-          && CLIPPY_PROMPT_BLOCKED_REASONS.has(String(evidence.bridgeBlockedReason))
+          && AGENT_PROMPT_BLOCKED_REASONS.has(String(evidence.bridgeBlockedReason))
         : evidence.browserQueuedBridgeMessage === true
           && workspaceSessionId !== null
           && typeof evidence.workspaceStatus === 'string';
       return (event.actor === 'host' || event.actor === 'guest')
         && event.actor === senderActor
         && evidence.actor === event.actor
-        && evidence.source === 'clippy_agent_chat_client_submit'
-        && evidence.agentChatEventSource === 'browser_clippy_chat_window'
+        && evidence.source === 'agent_chat_client_submit'
+        && evidence.agentChatEventSource === 'browser_agent_chat_panel'
         && evidence.bridgeMessageType === 'CHAT'
-        && evidence.bridgeProtocol === 'clippy_dev_container_ws'
+        && evidence.bridgeProtocol === 'agent_dev_container_ws'
         && (
           evidence.bridgeDeliveryStatus === deliveryStatus
           || (deliveryStatus === 'queued' && evidence.bridgeDeliveryStatus === undefined)
@@ -1161,10 +1113,10 @@ export class VideoRoom {
         && promptTimestamp !== null
         && promptTimestamp >= 0
         && promptFingerprint !== null
-        && CLIPPY_PROMPT_FINGERPRINT_RE.test(promptFingerprint)
+        && AGENT_PROMPT_FINGERPRINT_RE.test(promptFingerprint)
         && evidence.promptLength === event.text.length
         && evidence.promptId === `${workspacePart}:${event.actor}:prompt:${promptTimestamp}:${promptFingerprint}`
-        && (evidence.surface === 'standard' || evidence.surface === 'win95')
+        && (evidence.surface === 'standard' || evidence.surface === 'assessment')
         && typeof evidence.roomPhase === 'string'
         && (evidence.workspaceStatus === null || typeof evidence.workspaceStatus === 'string')
         && (evidence.repoUrl === null || typeof evidence.repoUrl === 'string');
@@ -1185,14 +1137,14 @@ export class VideoRoom {
         && evidence.actionCount >= 0;
       const fallbackOk = evidence.bridgePersisted === false
         && evidence.persistenceFallback === 'browser_after_bridge_persist_failed'
-        && (evidence.surface === 'standard' || evidence.surface === 'win95')
+        && (evidence.surface === 'standard' || evidence.surface === 'assessment')
         && typeof evidence.roomPhase === 'string'
         && typeof evidence.messageTimestamp === 'number'
         && Number.isFinite(evidence.messageTimestamp)
         && evidence.messageTimestamp >= 0
         && evidence.agentResponseClaimed === true;
       return event.actor === 'agent'
-        && evidence.source === 'clippy_agent_bridge'
+        && evidence.source === 'agent_bridge'
         && evidence.bridgeEventType === 'CHAT_RESPONSE'
         && (
           evidence.bridgeMessageSource === 'agent_stdout'
@@ -1226,8 +1178,8 @@ export class VideoRoom {
         ? `agent-status:${safeEvidenceIdPart(agent)}:${capturedAtMs}:${bridgeMessageSource}:${safeEvidenceIdPart(status)}:${safeEvidenceIdPart(diagnosticSource)}`
         : null;
       const statusOk = status === null || AGENT_STATUSES.has(status);
-      const browserObservationOk = evidence.agentStatusEventSource === 'browser_clippy_agent_ws'
-        && (evidence.surface === 'standard' || evidence.surface === 'win95')
+      const browserObservationOk = evidence.agentStatusEventSource === 'browser_agent_ws'
+        && (evidence.surface === 'standard' || evidence.surface === 'assessment')
         && typeof evidence.roomPhase === 'string'
         && typeof evidence.messageTimestamp === 'number'
         && Number.isFinite(evidence.messageTimestamp)
@@ -1241,7 +1193,7 @@ export class VideoRoom {
         && evidence.bridgePersisted === true
         && diagnosticSource !== null;
       return event.actor === 'agent'
-        && evidence.source === 'clippy_agent_bridge'
+        && evidence.source === 'agent_bridge'
         && agent !== null
         && statusOk
         && typeof evidence.observedAt === 'string'
@@ -1255,7 +1207,7 @@ export class VideoRoom {
         && (browserObservationOk || persistedDiagnosticOk);
     }
 
-    if (event.eventType === 'clippy_action') {
+    if (event.eventType === 'agent_action') {
       const source = typeof evidence.source === 'string' ? evidence.source : null;
       const capturedAtMs = typeof evidence.capturedAtMs === 'number' && Number.isInteger(evidence.capturedAtMs)
         ? evidence.capturedAtMs
@@ -1264,19 +1216,19 @@ export class VideoRoom {
       const executionStatus = typeof evidence.executionStatus === 'string' ? evidence.executionStatus : null;
       const actionId = typeof evidence.actionId === 'string' ? evidence.actionId : null;
       const expectedId = source && capturedAtMs !== null && origin && executionStatus && actionId
-        ? `clippy-action:${event.actor}:${capturedAtMs}:${source}:${origin}:${executionStatus}:${safeEvidenceIdPart(actionId)}`
+        ? `agent-action:${event.actor}:${capturedAtMs}:${source}:${origin}:${executionStatus}:${safeEvidenceIdPart(actionId)}`
         : null;
-      const idOk = typeof evidence.clippyActionEventId === 'string'
-        && CLIPPY_ACTION_EVENT_ID_RE.test(evidence.clippyActionEventId)
-        && evidence.clippyActionEventId === expectedId;
-      const surfaceOk = evidence.surface === 'standard' || evidence.surface === 'win95';
+      const idOk = typeof evidence.agentActionEventId === 'string'
+        && AGENT_ACTION_EVENT_ID_RE.test(evidence.agentActionEventId)
+        && evidence.agentActionEventId === expectedId;
+      const surfaceOk = evidence.surface === 'standard' || evidence.surface === 'assessment';
       const roomContextOk = surfaceOk && typeof evidence.roomPhase === 'string';
-      if (source === 'clippy_tray_ui' || source === 'clippy_prompt_ui' || source === 'clippy_chat_ui') {
-        const originOk = source === 'clippy_tray_ui'
-          ? origin === 'tray' && evidence.actionSource === 'win95_taskbar_tray'
-          : source === 'clippy_chat_ui'
-            ? origin === 'chat' && evidence.actionSource === 'clippy_chat_window'
-            : (origin === 'prompt' && evidence.actionSource === 'clippy_prompt_ui');
+      if (source === 'agent_tray_ui' || source === 'agent_prompt_ui' || source === 'agent_chat_ui') {
+        const originOk = source === 'agent_tray_ui'
+          ? origin === 'tray' && evidence.actionSource === 'assessment_agent_tray'
+          : source === 'agent_chat_ui'
+            ? origin === 'chat' && evidence.actionSource === 'agent_chat_panel'
+            : (origin === 'prompt' && evidence.actionSource === 'agent_prompt_ui');
         const statusOk = executionStatus === 'opened'
           || executionStatus === 'closed'
           || executionStatus === 'dismissed'
@@ -1294,7 +1246,7 @@ export class VideoRoom {
           && evidence.agentResponseClaimed === false
           && (evidence.agent === undefined || evidence.agent === null);
       }
-      if (source === 'clippy_agent_bridge') {
+      if (source === 'agent_bridge') {
         const commonOk = actionId !== null
           && capturedAtMs !== null
           && capturedAtMs >= 0
@@ -1303,7 +1255,7 @@ export class VideoRoom {
           && typeof evidence.agent === 'string'
           && evidence.agent.trim().length > 0
           && hasOptionalBrowserPromptRef(evidence)
-          && evidence.actionProtocol === 'clippy_room_action_tag'
+          && evidence.actionProtocol === 'agent_room_action_tag'
           && evidence.bridgeEventType === 'ROOM_ACTION';
         const suggestedOk = event.actor === 'agent'
           && executionStatus === 'suggested'
@@ -1326,9 +1278,9 @@ export class VideoRoom {
     return false;
   }
 
-  private parseClippyInteractionActivityEntry(value: unknown): RoomClippyInteractionActivityEntry | null {
+  private parseAgentInteractionActivityEntry(value: unknown): RoomAgentInteractionActivityEntry | null {
     if (!this.isRecord(value)) return null;
-    const event = this.parseClippyInteractionEvent(value.event);
+    const event = this.parseAgentInteractionEvent(value.event);
     if (
       event === null
       || !this.isVideoRole(value.role)
@@ -1340,11 +1292,11 @@ export class VideoRoom {
     return { event, role: value.role, recordedAt: value.recordedAt };
   }
 
-  private parseClippyInteractionActivityLog(value: unknown): RoomClippyInteractionActivityEntry[] {
+  private parseAgentInteractionActivityLog(value: unknown): RoomAgentInteractionActivityEntry[] {
     if (!Array.isArray(value)) return [];
     return value
-      .map((entry) => this.parseClippyInteractionActivityEntry(entry))
-      .filter((entry): entry is RoomClippyInteractionActivityEntry => entry !== null);
+      .map((entry) => this.parseAgentInteractionActivityEntry(entry))
+      .filter((entry): entry is RoomAgentInteractionActivityEntry => entry !== null);
   }
 
   private parseChatMessage(value: unknown): RoomChatMessage | null {
@@ -1385,7 +1337,7 @@ export class VideoRoom {
     const source = this.safeTextOrNull(value.source, 80);
     const chatEventSource = this.safeTextOrNull(value.chatEventSource, 120);
     const actor = value.actor === 'host' || value.actor === 'guest' ? value.actor : undefined;
-    const surface = value.surface === 'standard' || value.surface === 'win95' ? value.surface : undefined;
+    const surface = value.surface === 'standard' || value.surface === 'assessment' ? value.surface : undefined;
     const roomPhase = this.safeTextOrNull(value.roomPhase, 80);
     const deliveryStatus = this.parseChatDeliveryStatus(value.deliveryStatus);
     const roomMessageId = this.safeTextOrNull(value.roomMessageId, 120);
@@ -1435,7 +1387,7 @@ export class VideoRoom {
     const messageLength = evidence.messageLength;
     const messageFingerprint = evidence.messageFingerprint;
     return evidence.source === 'room_chat_client_submit'
-      && evidence.chatEventSource === 'browser_room_chat_window'
+      && evidence.chatEventSource === 'browser_room_chat_panel'
       && evidence.actor === actor
       && evidence.roomMessageId === message.id
       && evidence.clientId === message.clientId
@@ -1508,8 +1460,8 @@ export class VideoRoom {
     if (!this.isRecord(evidence)) return false;
     const actor = this.isHostRole(role) ? 'host' : 'guest';
     const action = event.enabled ? 'enabled' : 'disabled';
-    const controlSurface = evidence.surface === 'win95'
-      ? 'win95_video_window'
+    const controlSurface = evidence.surface === 'assessment'
+      ? 'assessment_video_panel'
       : 'standard_video_call';
     return event.role === role
       && evidence.source === 'video_room_media_controls'
@@ -1520,7 +1472,7 @@ export class VideoRoom {
       && evidence.enabled === event.enabled
       && evidence.action === action
       && evidence.controlAction === 'toggle'
-      && (evidence.surface === 'standard' || evidence.surface === 'win95')
+      && (evidence.surface === 'standard' || evidence.surface === 'assessment')
       && typeof evidence.roomPhase === 'string'
       && evidence.roomPhase.length > 0
       && evidence.controlSurface === controlSurface
@@ -1687,7 +1639,7 @@ export class VideoRoom {
       && RECORDING_STATE_EVENT_ID_RE.test(recordingStateEventId)
       && event.id === recordingStateEventId
       && recordingStateEventId === `recording:host:${capturedAtMs}:${event.lifecycleKind}:${event.status}`
-      && (evidence.surface === 'standard' || evidence.surface === 'win95')
+      && (evidence.surface === 'standard' || evidence.surface === 'assessment')
       && typeof evidence.roomPhase === 'string'
       && evidence.roomPhase.length > 0
       && evidence.durableObjectReplayExpected === true
@@ -1864,10 +1816,10 @@ export class VideoRoom {
     }
     const expectedSampleId = `cursor:${actor}:${sampledAtMs}:${Math.round(normalizedX * 1000)}:${Math.round(normalizedY * 1000)}`;
     return cursor.role === role
-      && evidence.source === 'win95_cursor_presence_client_sample'
-      && evidence.cursorEventSource === 'browser_win95_desktop_pointermove'
+      && evidence.source === 'assessment_cursor_presence_client_sample'
+      && evidence.cursorEventSource === 'browser_assessment_room_pointermove'
       && evidence.actor === actor
-      && evidence.surface === 'win95'
+      && evidence.surface === 'assessment'
       && typeof evidence.roomPhase === 'string'
       && evidence.roomPhase.length > 0
       && evidence.evidenceSampling === 'presence_sample'
@@ -1971,7 +1923,7 @@ export class VideoRoom {
       && CODE_SERVER_FILE_CHANGE_ID_RE.test(codeServerFileChangeId)
       && event.id === codeServerFileChangeId
       && evidence.source === 'code_server_workspace'
-      && evidence.observedBy === 'clippy_agent_bridge'
+      && evidence.observedBy === 'agent_bridge'
       && evidence.bridgeEventType === 'FILE_CHANGED'
       && evidence.editorSurface === 'code-server'
       && typeof evidence.path === 'string'
@@ -1985,7 +1937,7 @@ export class VideoRoom {
       && typeof evidence.observedAt === 'string'
       && evidence.observedAt.trim().length > 0
       && evidence.bridgePersisted === false
-      && (evidence.surface === 'standard' || evidence.surface === 'win95')
+      && (evidence.surface === 'standard' || evidence.surface === 'assessment')
       && typeof evidence.roomPhase === 'string'
       && typeof evidence.workspaceStatus === 'string'
       && typeof evidence.workspaceSessionId === 'string'
@@ -2127,7 +2079,7 @@ export class VideoRoom {
       && terminalSessionId !== null
       && capturedAtMs !== null
       && capturedAtMs >= 0
-      && (evidence.surface === 'standard' || evidence.surface === 'win95')
+      && (evidence.surface === 'standard' || evidence.surface === 'assessment')
       && typeof evidence.roomPhase === 'string'
       && typeof evidence.workspaceStatus === 'string'
       && typeof evidence.workspaceSessionId === 'string'
@@ -2194,7 +2146,7 @@ export class VideoRoom {
   }
 
   private isRoomFileKind(value: unknown): value is RoomFileKind {
-    return value === 'text' || value === 'paint' || value === 'json' || value === 'link';
+    return value === 'text' || value === 'diagram' || value === 'json' || value === 'link';
   }
 
   private isSafeFileText(value: unknown, maxLength: number): value is string {
@@ -2334,7 +2286,7 @@ export class VideoRoom {
     const actor = this.isHostRole(role) ? 'host' : 'guest';
     const operation = event.kind === 'DELETE_FILE' ? 'delete' : 'upsert';
     const fileId = event.kind === 'DELETE_FILE' ? event.fileId : event.file.id;
-    return evidence.source === 'win95_shared_file_system'
+    return evidence.source === 'assessment_shared_file_system'
       && evidence.fileEventSource === 'browser_client_submit'
       && evidence.actor === actor
       && evidence.operation === operation
@@ -2342,7 +2294,7 @@ export class VideoRoom {
       && typeof evidence.fileChangeId === 'string'
       && typeof evidence.capturedAtMs === 'number'
       && Number.isFinite(evidence.capturedAtMs)
-      && evidence.surface === 'win95'
+      && evidence.surface === 'assessment'
       && typeof evidence.roomPhase === 'string'
       && evidence.durableObjectReplayExpected === true;
   }
@@ -2373,25 +2325,21 @@ export class VideoRoom {
     await this.state.storage.put('roomSurface', surface);
   }
 
-  private async persistDesktopEvent(event: RoomDesktopEvent): Promise<RoomDesktopWindow[]> {
+  private async persistLayoutEvent(event: RoomLayoutEvent): Promise<RoomLayoutWindow[]> {
     if (event.kind === 'SET_ROOM_SURFACE') {
       await this.persistRoomSurface(event.surface);
-      return this.getDesktopWindows();
+      return this.getLayoutWindows();
     }
-    if (event.kind === 'START_MENU_STATE') {
-      await this.state.storage.put('desktopStartMenuOpen', event.open);
-      return this.getDesktopWindows();
-    }
-    const windows = await this.getDesktopWindows();
+    const windows = await this.getLayoutWindows();
     if (event.kind === 'OPEN_WINDOW') {
       const withoutExisting = windows.filter((windowConfig) => windowConfig.id !== event.window.id);
       const nextWindows = [...withoutExisting, event.window];
-      await this.state.storage.put('desktopWindows', nextWindows);
+      await this.state.storage.put('roomPanels', nextWindows);
       return nextWindows;
     }
     if (event.kind === 'CLOSE_WINDOW') {
       const nextWindows = windows.filter((windowConfig) => windowConfig.id !== event.windowId);
-      await this.state.storage.put('desktopWindows', nextWindows);
+      await this.state.storage.put('roomPanels', nextWindows);
       return nextWindows;
     }
     if (event.kind === 'WORKSPACE_STATE_CHANGED') {
@@ -2413,7 +2361,7 @@ export class VideoRoom {
           focused: event.focused ?? windowConfig.focused,
         };
       });
-      await this.state.storage.put('desktopWindows', nextWindows);
+      await this.state.storage.put('roomPanels', nextWindows);
       return nextWindows;
     }
     const nextWindows = windows.map((windowConfig) => (
@@ -2421,59 +2369,57 @@ export class VideoRoom {
         ? { ...windowConfig, data: { ...windowConfig.data, ...event.data } }
         : windowConfig
     ));
-    await this.state.storage.put('desktopWindows', nextWindows);
+    await this.state.storage.put('roomPanels', nextWindows);
     return nextWindows;
   }
 
-  private async sendDesktopEventRejected(ws: WebSocket, reason: string): Promise<void> {
-    const desktopStartMenuOpen = await this.state.storage.get<unknown>('desktopStartMenuOpen');
+  private async sendLayoutEventRejected(ws: WebSocket, reason: string): Promise<void> {
     ws.send(JSON.stringify({
-      type: 'ROOM_DESKTOP_EVENT_REJECTED',
+      type: 'ROOM_LAYOUT_EVENT_REJECTED',
       reason,
       payload: {
-        windows: await this.getDesktopWindows(),
+        windows: await this.getLayoutWindows(),
         surface: this.roomSurface,
-        startMenuOpen: typeof desktopStartMenuOpen === 'boolean' ? desktopStartMenuOpen : false,
       },
     }));
   }
 
-  private async recordDesktopActivity(event: RoomDesktopEvent, role: VideoRole): Promise<void> {
-    const previous = this.parseDesktopActivityLog(await this.state.storage.get<unknown>('desktopActivityLog'));
+  private async recordLayoutActivity(event: RoomLayoutEvent, role: VideoRole): Promise<void> {
+    const previous = this.parseLayoutActivityLog(await this.state.storage.get<unknown>('roomActivityLog'));
     const next = [
       ...previous.slice(-249),
       { event, role, recordedAt: Date.now() },
     ];
-    await this.state.storage.put('desktopActivityLog', next);
+    await this.state.storage.put('roomActivityLog', next);
   }
 
-  private async persistClippyPrompt(prompt: RoomClippyPrompt): Promise<void> {
-    await this.state.storage.put('currentClippyPrompt', prompt);
+  private async persistAgentPrompt(prompt: RoomAgentPrompt): Promise<void> {
+    await this.state.storage.put('currentAgentPrompt', prompt);
   }
 
-  private async recordClippyPromptActivity(prompt: RoomClippyPrompt, role: VideoRole): Promise<void> {
-    const previous = this.parseClippyPromptActivityLog(
-      await this.state.storage.get<unknown>('clippyPromptActivityLog'),
+  private async recordAgentPromptActivity(prompt: RoomAgentPrompt, role: VideoRole): Promise<void> {
+    const previous = this.parseAgentPromptActivityLog(
+      await this.state.storage.get<unknown>('agentPromptActivityLog'),
     );
     const next = [
       ...previous.slice(-99),
       { prompt, role, recordedAt: Date.now() },
     ];
-    await this.state.storage.put('clippyPromptActivityLog', next);
+    await this.state.storage.put('agentPromptActivityLog', next);
   }
 
-  private async recordClippyInteractionActivity(
-    event: RoomClippyInteractionEvent,
+  private async recordAgentInteractionActivity(
+    event: RoomAgentInteractionEvent,
     role: VideoRole,
   ): Promise<void> {
-    const previous = this.parseClippyInteractionActivityLog(
-      await this.state.storage.get<unknown>('clippyInteractionActivityLog'),
+    const previous = this.parseAgentInteractionActivityLog(
+      await this.state.storage.get<unknown>('agentInteractionActivityLog'),
     );
     const next = [
       ...previous.slice(-249),
       { event, role, recordedAt: Date.now() },
     ];
-    await this.state.storage.put('clippyInteractionActivityLog', next);
+    await this.state.storage.put('agentInteractionActivityLog', next);
   }
 
   private async persistChatMessage(message: RoomChatMessage, role: VideoRole): Promise<RoomChatMessage[]> {
@@ -2720,8 +2666,8 @@ export class VideoRoom {
 
     if (request.method === 'GET' && url.pathname === '/activity-log') {
       return new Response(JSON.stringify({
-        desktopActivityLog: this.parseDesktopActivityLog(
-          await this.state.storage.get<unknown>('desktopActivityLog'),
+        roomActivityLog: this.parseLayoutActivityLog(
+          await this.state.storage.get<unknown>('roomActivityLog'),
         ),
         chatActivityLog: this.parseChatActivityLog(
           await this.state.storage.get<unknown>('chatActivityLog'),
@@ -2732,11 +2678,11 @@ export class VideoRoom {
         terminalActivityLog: this.parseTerminalActivityLog(
           await this.state.storage.get<unknown>('terminalActivityLog'),
         ),
-        clippyPromptActivityLog: this.parseClippyPromptActivityLog(
-          await this.state.storage.get<unknown>('clippyPromptActivityLog'),
+        agentPromptActivityLog: this.parseAgentPromptActivityLog(
+          await this.state.storage.get<unknown>('agentPromptActivityLog'),
         ),
-        clippyInteractionActivityLog: this.parseClippyInteractionActivityLog(
-          await this.state.storage.get<unknown>('clippyInteractionActivityLog'),
+        agentInteractionActivityLog: this.parseAgentInteractionActivityLog(
+          await this.state.storage.get<unknown>('agentInteractionActivityLog'),
         ),
         mediaControlActivityLog: this.parseMediaControlActivityLog(
           await this.state.storage.get<unknown>('mediaControlActivityLog'),
@@ -2788,21 +2734,18 @@ export class VideoRoom {
         peers: peerCount,
       }));
 
-      const desktopWindows = await this.getDesktopWindows();
-      const desktopStartMenuOpen = await this.state.storage.get<unknown>('desktopStartMenuOpen');
       server.send(JSON.stringify({
-        type: 'ROOM_DESKTOP_STATE',
+        type: 'ROOM_LAYOUT_STATE',
         payload: {
-          windows: desktopWindows,
+          windows: await this.getLayoutWindows(),
           surface: this.roomSurface,
-          startMenuOpen: typeof desktopStartMenuOpen === 'boolean' ? desktopStartMenuOpen : false,
         },
       }));
 
-      const currentClippyPrompt = await this.getCurrentClippyPrompt();
+      const currentAgentPrompt = await this.getCurrentAgentPrompt();
       server.send(JSON.stringify({
-        type: 'ROOM_CLIPPY_STATE',
-        payload: { prompt: currentClippyPrompt },
+        type: 'ROOM_AGENT_STATE',
+        payload: { prompt: currentAgentPrompt },
       }));
 
       const chatMessages = await this.getChatMessages();
@@ -2943,96 +2886,96 @@ export class VideoRoom {
       return;
     }
 
-    if (message.type === 'ROOM_DESKTOP_EVENT') {
+    if (message.type === 'ROOM_LAYOUT_EVENT') {
       if (this.sessionStatus === 'ENDED') {
-        await this.sendDesktopEventRejected(ws, 'ROOM_ENDED');
+        await this.sendLayoutEventRejected(ws, 'ROOM_ENDED');
         return;
       }
-      const event = this.parseDesktopEvent(message.payload);
+      const event = this.parseLayoutEvent(message.payload);
       if (!event) {
-        await this.sendDesktopEventRejected(ws, 'INVALID_EVENT');
+        await this.sendLayoutEventRejected(ws, 'INVALID_EVENT');
         return;
       }
-      if (!this.hasSourceBackedDesktopEventEvidence(event, senderRole)) {
-        await this.sendDesktopEventRejected(ws, 'MISSING_SOURCE_EVIDENCE');
+      if (!this.hasSourceBackedLayoutEventEvidence(event, senderRole)) {
+        await this.sendLayoutEventRejected(ws, 'MISSING_SOURCE_EVIDENCE');
         return;
       }
-      await this.persistDesktopEvent(event);
-      await this.recordDesktopActivity(event, senderRole);
+      await this.persistLayoutEvent(event);
+      await this.recordLayoutActivity(event, senderRole);
       this.broadcastExcept(ws, JSON.stringify({
-        type: 'ROOM_DESKTOP_EVENT',
+        type: 'ROOM_LAYOUT_EVENT',
         role: senderRole,
         payload: event,
       }));
       return;
     }
 
-    if (message.type === 'ROOM_CLIPPY_PROMPT') {
+    if (message.type === 'ROOM_AGENT_PROMPT') {
       if (this.sessionStatus === 'ENDED') {
         ws.send(JSON.stringify({
-          type: 'ROOM_CLIPPY_PROMPT_REJECTED',
+          type: 'ROOM_AGENT_PROMPT_REJECTED',
           reason: 'ROOM_ENDED',
         }));
         return;
       }
       if (!this.isHostRole(senderRole)) {
         ws.send(JSON.stringify({
-          type: 'ROOM_CLIPPY_PROMPT_REJECTED',
+          type: 'ROOM_AGENT_PROMPT_REJECTED',
           reason: 'ONLY_HOST_CAN_PROMPT',
         }));
         return;
       }
-      const prompt = this.parseClippyPrompt(message.payload);
+      const prompt = this.parseAgentPrompt(message.payload);
       if (!prompt) {
         ws.send(JSON.stringify({
-          type: 'ROOM_CLIPPY_PROMPT_REJECTED',
+          type: 'ROOM_AGENT_PROMPT_REJECTED',
           reason: 'INVALID_PROMPT',
         }));
         return;
       }
-      if (!this.hasSourceBackedClippyPromptEvidence(prompt, senderRole)) {
+      if (!this.hasSourceBackedAgentPromptEvidence(prompt, senderRole)) {
         ws.send(JSON.stringify({
-          type: 'ROOM_CLIPPY_PROMPT_REJECTED',
+          type: 'ROOM_AGENT_PROMPT_REJECTED',
           reason: 'MISSING_SOURCE_EVIDENCE',
         }));
         return;
       }
-      await this.persistClippyPrompt(prompt);
-      await this.recordClippyPromptActivity(prompt, senderRole);
+      await this.persistAgentPrompt(prompt);
+      await this.recordAgentPromptActivity(prompt, senderRole);
       this.broadcastExcept(ws, JSON.stringify({
-        type: 'ROOM_CLIPPY_PROMPT',
+        type: 'ROOM_AGENT_PROMPT',
         role: senderRole,
         payload: prompt,
       }));
       return;
     }
 
-    if (message.type === 'ROOM_CLIPPY_INTERACTION') {
+    if (message.type === 'ROOM_AGENT_INTERACTION') {
       if (this.sessionStatus === 'ENDED') {
         ws.send(JSON.stringify({
-          type: 'ROOM_CLIPPY_INTERACTION_REJECTED',
+          type: 'ROOM_AGENT_INTERACTION_REJECTED',
           reason: 'ROOM_ENDED',
         }));
         return;
       }
-      const event = this.parseClippyInteractionEvent(message.payload);
+      const event = this.parseAgentInteractionEvent(message.payload);
       if (!event) {
         ws.send(JSON.stringify({
-          type: 'ROOM_CLIPPY_INTERACTION_REJECTED',
+          type: 'ROOM_AGENT_INTERACTION_REJECTED',
           reason: 'INVALID_EVENT',
         }));
         return;
       }
-      if (!this.hasSourceBackedClippyInteractionEvidence(event, senderRole)) {
+      if (!this.hasSourceBackedAgentInteractionEvidence(event, senderRole)) {
         ws.send(JSON.stringify({
-          type: 'ROOM_CLIPPY_INTERACTION_REJECTED',
+          type: 'ROOM_AGENT_INTERACTION_REJECTED',
           reason: 'MISSING_SOURCE_EVIDENCE',
         }));
         return;
       }
-      await this.recordClippyInteractionActivity(event, senderRole);
+      await this.recordAgentInteractionActivity(event, senderRole);
       this.broadcastExcept(ws, JSON.stringify({
-        type: 'ROOM_CLIPPY_INTERACTION',
+        type: 'ROOM_AGENT_INTERACTION',
         role: senderRole,
         payload: event,
       }));

@@ -1,20 +1,20 @@
 import { describe, expect, it } from 'vitest';
-import { defaultRoomWindowConfigs } from './defaultRoomWindows';
+import { defaultRoomSurfaceConfigs } from './defaultRoomSurfaces';
 
-describe('defaultRoomWindowConfigs', () => {
+describe('defaultRoomSurfaceConfigs', () => {
   it('keeps standard calls focused on video and chat', () => {
-    const configs = defaultRoomWindowConfigs({
+    const configs = defaultRoomSurfaceConfigs({
       mode: 'standard_call',
       workspaceEnabled: false,
       workspaceTitle: null,
     });
 
     expect(configs.map((config) => config.id)).toEqual(['video', 'chat']);
-    expect(configs.some((config) => config.windowType === 'submission')).toBe(false);
+    expect(configs.some((config) => config.surfaceType === 'submission')).toBe(false);
   });
 
   it('makes dev-container assessments code-first with a visible submission path', () => {
-    const configs = defaultRoomWindowConfigs({
+    const configs = defaultRoomSurfaceConfigs({
       mode: 'dev_container_assessment',
       workspaceEnabled: true,
       workspaceTitle: 'https://github.com/cloudflare/workers-sdk',
@@ -22,13 +22,13 @@ describe('defaultRoomWindowConfigs', () => {
 
     expect(configs.map((config) => config.id)).toEqual(['video', 'chat', 'submission', 'workspace']);
     expect(configs[configs.length - 1]).toMatchObject({
-      windowType: 'workspace',
+      surfaceType: 'workspace',
       title: 'https://github.com/cloudflare/workers-sdk',
       width: 860,
       height: 610,
     });
     expect(configs.find((config) => config.id === 'submission')).toMatchObject({
-      windowType: 'submission',
+      surfaceType: 'submission',
       minimized: true,
     });
   });

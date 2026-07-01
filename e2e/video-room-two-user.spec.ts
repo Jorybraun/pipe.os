@@ -168,7 +168,7 @@ async function installDevWorkspaceMocks(
       body.room.features = {
         ...(body.room.features ?? {}),
         workspaceEnabled: true,
-        clippyEnabled: true,
+        agentEnabled: true,
       };
       await route.fulfill({
         status: upstream.status(),
@@ -1021,9 +1021,7 @@ test.describe('two-user video room', () => {
       );
       expect(beforeRecordingDetail.recordingR2Key).toBeNull();
 
-      await expect(host.getByTestId('clippy-proactive-card')).toContainText('begin recording', { timeout: 10_000 });
-      await expect(host.getByTestId('clippy-action-start-recording')).toBeVisible();
-      await host.getByTestId('clippy-action-start-recording').click();
+      await host.getByTestId('start-recording').click();
       await expect(host.getByTestId('recording-state')).toContainText('Recording', { timeout: 10_000 });
       await expect(host.getByTestId('stop-recording')).toBeEnabled();
       const recordingDetail = await waitForMeetingDetail(

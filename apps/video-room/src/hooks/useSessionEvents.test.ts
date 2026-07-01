@@ -139,7 +139,7 @@ describe('useSessionEvents', () => {
 
     act(() => {
       result.current.capture('ai_chat_agent', 'Agent suggested opening tests.', 'agent', {
-        source: 'clippy_agent_bridge',
+        source: 'agent_bridge',
       });
     });
 
@@ -155,7 +155,7 @@ describe('useSessionEvents', () => {
     }));
   });
 
-  it('stamps repeated browser interactions with distinct source event ids', async () => {
+  it('stamps repeated room interactions with distinct source event ids', async () => {
     vi.setSystemTime(new Date('2026-06-27T22:51:00.000Z'));
     const fetchMock = vi.fn().mockResolvedValue(new Response(null, { status: 200 }));
     vi.stubGlobal('fetch', fetchMock);
@@ -166,13 +166,13 @@ describe('useSessionEvents', () => {
     }));
 
     act(() => {
-      result.current.capture('window_update', 'Window state updated: browser', 'host', {
-        source: 'window_state_client_submit',
-        windowId: 'browser',
+      result.current.capture('chat_message', 'Host sent room chat message', 'host', {
+        source: 'room_chat_client_submit',
+        roomMessageId: 'message-1',
       });
-      result.current.capture('window_update', 'Window state updated: browser', 'host', {
-        source: 'window_state_client_submit',
-        windowId: 'browser',
+      result.current.capture('chat_message', 'Host sent room chat message', 'host', {
+        source: 'room_chat_client_submit',
+        roomMessageId: 'message-2',
       });
     });
 
@@ -207,8 +207,8 @@ describe('useSessionEvents', () => {
     }));
 
     act(() => {
-      result.current.capture('clippy_action', 'AI assistant opened', 'host', {
-        source: 'clippy_tray_ui',
+      result.current.capture('agent_action', 'AI assistant opened', 'host', {
+        source: 'agent_tray_ui',
         agentResponseClaimed: false,
       });
     });
@@ -232,11 +232,11 @@ describe('useSessionEvents', () => {
       };
     };
     expect(parsedPayload).toMatchObject({
-      type: 'clippy_action',
+      type: 'agent_action',
       text: 'AI assistant opened',
       actor: 'host',
       properties: {
-        source: 'clippy_tray_ui',
+        source: 'agent_tray_ui',
         agentResponseClaimed: false,
         clientCapturedAtMs: 1782600720000,
       },

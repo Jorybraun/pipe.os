@@ -12,7 +12,7 @@ export interface ChatMessage {
   deliveryRejectionReason?: string;
 }
 
-interface ChatWindowProps {
+interface ChatPanelProps {
   messages: ChatMessage[];
   onSend: (text: string) => void;
   currentUserRole: 'HOST' | 'GUEST';
@@ -44,12 +44,12 @@ function formatTime(ts: number): string {
   return `${h.toString().padStart(2, '0')}:${m.toString().padStart(2, '0')}`;
 }
 
-export function ChatWindow({
+export function ChatPanel({
   messages,
   onSend,
   currentUserRole,
   onAskAssistant,
-}: ChatWindowProps): JSX.Element {
+}: ChatPanelProps): JSX.Element {
   const [input, setInput] = useState('');
   const scrollRef = useRef<HTMLDivElement>(null);
 
@@ -77,7 +77,7 @@ export function ChatWindow({
   );
 
   return (
-    <div className="chat-window" data-testid="chat-window">
+    <div className="chat-panel" data-testid="chat-panel">
       <div className="chat-messages" ref={scrollRef}>
         {messages.length === 0 && (
           <div className="chat-empty">

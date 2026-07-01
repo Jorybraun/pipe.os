@@ -1,7 +1,7 @@
 import { fireEvent, render, screen, waitFor } from '@testing-library/react';
 import { describe, expect, it, vi } from 'vitest';
 
-import { CommitSubmissionWindow } from './CommitSubmissionWindow';
+import { CommitSubmissionPanel } from './CommitSubmissionPanel';
 import type {
   RoomAssessmentProgressSnapshot,
   RoomCommitSubmissionRequest,
@@ -71,12 +71,39 @@ const loadedProgress: RoomAssessmentProgressSnapshot = {
   },
   commit: null,
   evaluation: null,
+  readiness: {
+    status: 'WORK_IN_PROGRESS',
+    label: 'Work evidence in progress',
+    detail: 'Submit a real commit from a pipe-assessment branch or fork before evaluation.',
+    isReadyForEvaluation: false,
+    isUsableHiringSignal: false,
+    missingRequiredCount: 1,
+    required: [
+      {
+        id: 'challenge_packet',
+        label: 'Concrete challenge packet',
+        required: true,
+        satisfied: true,
+        sourceRefTypes: ['open_source_challenge_packet'],
+        missingImpact: 'Assign a source-backed challenge packet.',
+      },
+      {
+        id: 'commit_submission',
+        label: 'Assessment branch commit',
+        required: true,
+        satisfied: false,
+        sourceRefTypes: ['git_commit', 'code_diff'],
+        missingImpact: 'Submit a real commit from a pipe-assessment branch or fork before evaluation.',
+      },
+    ],
+    confidence: [],
+  },
 };
 
-describe('CommitSubmissionWindow', () => {
+describe('CommitSubmissionPanel', () => {
   it('shows the assigned challenge contract and reloaded evidence status before submission', () => {
     render(
-      <CommitSubmissionWindow
+      <CommitSubmissionPanel
         defaultRepositoryUrl="https://github.com/fallback/repo"
         challengePacket={richPacket}
         assessmentProgress={loadedProgress}
@@ -107,11 +134,14 @@ describe('CommitSubmissionWindow', () => {
     const progress = screen.getByTestId('commit-submission-progress');
     expect(progress.textContent).toContain('Submit the assessment branch commit.');
     expect(progress.textContent).toContain('Terminal Command #7');
+    const readiness = screen.getByTestId('commit-submission-readiness');
+    expect(readiness.textContent).toContain('Work evidence in progress');
+    expect(readiness.textContent).toContain('Assessment branch commit');
   });
 
   it('prefills source-backed repo, base commit, and assessment branch without inventing commit evidence', () => {
     render(
-      <CommitSubmissionWindow
+      <CommitSubmissionPanel
         defaultRepositoryUrl="https://github.com/fallback/repo"
         challengePacket={packet}
         onSubmit={vi.fn()}
@@ -180,7 +210,7 @@ describe('CommitSubmissionWindow', () => {
     }));
 
     render(
-      <CommitSubmissionWindow
+      <CommitSubmissionPanel
         defaultRepositoryUrl="https://github.com/fallback/repo"
         challengePacket={packet}
         assessmentProgress={loadedProgress}
@@ -216,7 +246,7 @@ describe('CommitSubmissionWindow', () => {
 
   it('keeps workspace finalization blocked until the live workspace is ready', () => {
     render(
-      <CommitSubmissionWindow
+      <CommitSubmissionPanel
         defaultRepositoryUrl="https://github.com/fallback/repo"
         challengePacket={packet}
         onSubmit={vi.fn()}
@@ -231,6 +261,37 @@ describe('CommitSubmissionWindow', () => {
     expect(screen.getByTestId('workspace-finalize-submit')).toHaveProperty('disabled', true);
   });
 
+  it('shows dirty-worktree recovery commands when live workspace finalization is blocked', async () => {
+    const onSubmit = vi.fn();
+    const onFinalizeWorkspace = vi.fn(async () => {
+      throw new Error('Cannot finalize assessment: commit or discard uncommitted workspace changes before submitting HEAD.');
+    });
+
+    render(
+      <CommitSubmissionPanel
+        defaultRepositoryUrl="https://github.com/fallback/repo"
+        challengePacket={packet}
+        onSubmit={onSubmit}
+        workspaceFinalizeAvailable
+        onFinalizeWorkspace={onFinalizeWorkspace}
+      />,
+    );
+
+    fireEvent.click(screen.getByTestId('workspace-finalize-submit'));
+
+    await waitFor(() => expect(onFinalizeWorkspace).toHaveBeenCalledTimes(1));
+    expect(onSubmit).not.toHaveBeenCalled();
+    expect(screen.getByTestId('commit-submission-error').textContent).toContain(
+      'commit or discard uncommitted workspace changes',
+    );
+    const recovery = screen.getByTestId('workspace-finalize-recovery');
+    expect(recovery.textContent).toContain('Commit workspace changes first');
+    expect(recovery.textContent).toContain('git status --short');
+    expect(recovery.textContent).toContain('git add <files>');
+    expect(recovery.textContent).toContain('git commit -m "pipe assessment submission"');
+    expect(recovery.textContent).toContain('Finalize from workspace');
+  });
+
   it('makes upstream PR tracking an explicit opt-in before submitting', async () => {
     const commitSha = 'c'.repeat(40);
     const onSubmit = vi.fn(async (_payload: RoomCommitSubmissionRequest): Promise<RoomCommitSubmissionResponse> => {
@@ -238,7 +299,7 @@ describe('CommitSubmissionWindow', () => {
     });
 
     render(
-      <CommitSubmissionWindow
+      <CommitSubmissionPanel
         defaultRepositoryUrl="https://github.com/fallback/repo"
         challengePacket={packet}
         onSubmit={onSubmit}
@@ -291,7 +352,7 @@ describe('CommitSubmissionWindow', () => {
     });
 
     render(
-      <CommitSubmissionWindow
+      <CommitSubmissionPanel
         defaultRepositoryUrl="https://github.com/fallback/repo"
         challengePacket={packet}
         onSubmit={onSubmit}
@@ -382,7 +443,7 @@ describe('CommitSubmissionWindow', () => {
     });
 
     render(
-      <CommitSubmissionWindow
+      <CommitSubmissionPanel
         defaultRepositoryUrl="https://github.com/fallback/repo"
         challengePacket={packet}
         onSubmit={onSubmit}
@@ -442,7 +503,7 @@ describe('CommitSubmissionWindow', () => {
 
   it('keeps candidate-entered values when packet defaults refresh', () => {
     const { rerender } = render(
-      <CommitSubmissionWindow
+      <CommitSubmissionPanel
         defaultRepositoryUrl="https://github.com/fallback/repo"
         challengePacket={null}
         onSubmit={vi.fn()}
@@ -457,7 +518,7 @@ describe('CommitSubmissionWindow', () => {
     });
 
     rerender(
-      <CommitSubmissionWindow
+      <CommitSubmissionPanel
         defaultRepositoryUrl="https://github.com/fallback/repo"
         challengePacket={packet}
         onSubmit={vi.fn()}
@@ -532,7 +593,7 @@ describe('CommitSubmissionWindow', () => {
     const onSubmit = vi.fn(async (_payload: RoomCommitSubmissionRequest): Promise<RoomCommitSubmissionResponse> => response);
 
     render(
-      <CommitSubmissionWindow
+      <CommitSubmissionPanel
         defaultRepositoryUrl="https://github.com/fallback/repo"
         challengePacket={packet}
         onSubmit={onSubmit}

@@ -1,24 +1,24 @@
-import type { OpenWindowConfig } from '../hooks/useWindowManager';
+import type { OpenToolSurfaceConfig } from '../hooks/useToolSurfaceManager';
 
-export type DefaultRoomWindowConfig = OpenWindowConfig & { id: string };
-export type DefaultRoomWindowMode = 'standard_call' | 'code_review' | 'dev_container_assessment';
+export type DefaultRoomSurfaceConfig = OpenToolSurfaceConfig & { id: string };
+export type DefaultRoomSurfaceMode = 'standard_call' | 'code_review' | 'dev_container_assessment';
 
-interface DefaultRoomWindowInput {
-  mode: DefaultRoomWindowMode;
+interface DefaultRoomSurfaceInput {
+  mode: DefaultRoomSurfaceMode;
   workspaceEnabled: boolean;
   workspaceTitle?: string | null;
 }
 
-export function defaultRoomWindowConfigs({
+export function defaultRoomSurfaceConfigs({
   mode,
   workspaceEnabled,
   workspaceTitle,
-}: DefaultRoomWindowInput): DefaultRoomWindowConfig[] {
+}: DefaultRoomSurfaceInput): DefaultRoomSurfaceConfig[] {
   if (mode === 'dev_container_assessment' && workspaceEnabled) {
     return [
       {
         id: 'video',
-        windowType: 'video',
+        surfaceType: 'video',
         title: 'Video Call',
         x: 908,
         y: 28,
@@ -27,7 +27,7 @@ export function defaultRoomWindowConfigs({
       },
       {
         id: 'chat',
-        windowType: 'chat',
+        surfaceType: 'chat',
         title: 'Room Chat',
         x: 908,
         y: 334,
@@ -36,7 +36,7 @@ export function defaultRoomWindowConfigs({
       },
       {
         id: 'submission',
-        windowType: 'submission',
+        surfaceType: 'submission',
         title: 'Submit Work',
         x: 528,
         y: 420,
@@ -47,7 +47,7 @@ export function defaultRoomWindowConfigs({
       },
       {
         id: 'workspace',
-        windowType: 'workspace',
+        surfaceType: 'workspace',
         title: workspaceTitle ?? 'VS Code',
         x: 24,
         y: 28,
@@ -60,7 +60,7 @@ export function defaultRoomWindowConfigs({
   return [
     {
       id: 'video',
-      windowType: 'video',
+      surfaceType: 'video',
       title: 'Video Call',
       x: 60,
       y: 30,
@@ -69,7 +69,7 @@ export function defaultRoomWindowConfigs({
     },
     {
       id: 'chat',
-      windowType: 'chat',
+      surfaceType: 'chat',
       title: 'Room Chat',
       x: 560,
       y: 30,

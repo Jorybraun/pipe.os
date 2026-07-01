@@ -655,8 +655,8 @@ setInterval(() => {}, 1000);
       ws.send(JSON.stringify({
         type: 'CHAT',
         text: 'Please inspect the repo.',
-        browserPromptId: 'workspace-123:guest:prompt:1782603900000:clippy_0123abcd',
-        browserPromptFingerprint: 'clippy_0123abcd',
+        browserPromptId: 'workspace-123:guest:prompt:1782603900000:agent_0123abcd',
+        browserPromptFingerprint: 'agent_0123abcd',
         browserPromptTimestamp: 1782603900000,
         browserPromptLength: 24,
       }));
@@ -668,8 +668,8 @@ setInterval(() => {}, 1000);
       expect(response).toMatchObject({
         agent: 'devin',
         text: 'I can help from the real Devin API session.',
-        browserPromptId: 'workspace-123:guest:prompt:1782603900000:clippy_0123abcd',
-        browserPromptFingerprint: 'clippy_0123abcd',
+        browserPromptId: 'workspace-123:guest:prompt:1782603900000:agent_0123abcd',
+        browserPromptFingerprint: 'agent_0123abcd',
         browserPromptTimestamp: 1782603900000,
         browserPromptLength: 24,
       });
@@ -681,8 +681,8 @@ setInterval(() => {}, 1000);
       expect(roomAction).toMatchObject({
         agent: 'devin',
         action: 'open-workspace',
-        protocol: 'clippy_room_action_tag',
-        browserPromptId: 'workspace-123:guest:prompt:1782603900000:clippy_0123abcd',
+        protocol: 'agent_room_action_tag',
+        browserPromptId: 'workspace-123:guest:prompt:1782603900000:agent_0123abcd',
       });
 
       const chatEvent = captureServer.events.find((event) => event.type === 'ai_chat_agent');
@@ -691,20 +691,20 @@ setInterval(() => {}, 1000);
         text: 'I can help from the real Devin API session.',
         actor: 'agent',
         properties: {
-          source: 'clippy_agent_bridge',
+          source: 'agent_bridge',
           bridgeEventType: 'CHAT_RESPONSE',
           bridgeMessageSource: 'agent_api_response',
           bridgePersisted: true,
         },
       });
-      const actionEvent = captureServer.events.find((event) => event.type === 'clippy_action');
+      const actionEvent = captureServer.events.find((event) => event.type === 'agent_action');
       expect(actionEvent).toMatchObject({
-        type: 'clippy_action',
+        type: 'agent_action',
         actor: 'agent',
         properties: {
-          source: 'clippy_agent_bridge',
+          source: 'agent_bridge',
           actionSource: 'agent_api_response',
-          actionProtocol: 'clippy_room_action_tag',
+          actionProtocol: 'agent_room_action_tag',
           bridgeEventType: 'ROOM_ACTION',
         },
       });
@@ -813,12 +813,10 @@ setInterval(() => {}, 1000);
     const { ws, messages } = await connectAgent(port);
     const authStatus = await waitForMessage(messages, (message) => message.type === 'AGENT_STATUS' && message.status === 'auth_needed');
     expect(authStatus).toMatchObject({ agent: 'devin' });
+    const authNeeded = await waitForMessage(messages, (message) => message.type === 'AUTH_NEEDED');
+    expect(authNeeded).toMatchObject({ agent: 'devin' });
 
     expect(messages.some((message) => message.type === 'AGENT_READY')).toBe(false);
-    expect(messages).toContainEqual(expect.objectContaining({
-      type: 'AUTH_NEEDED',
-      agent: 'devin',
-    }));
     ws.close();
   });
 
@@ -894,8 +892,8 @@ setInterval(() => {}, 1000);
     ws.send(JSON.stringify({
       type: 'CHAT',
       text: 'Please inspect the task.',
-      browserPromptId: 'workspace-123:guest:prompt:1782603900000:clippy_0123abcd',
-      browserPromptFingerprint: 'clippy_0123abcd',
+      browserPromptId: 'workspace-123:guest:prompt:1782603900000:agent_0123abcd',
+      browserPromptFingerprint: 'agent_0123abcd',
       browserPromptTimestamp: 1782603900000,
       browserPromptLength: 24,
     }));
@@ -907,8 +905,8 @@ setInterval(() => {}, 1000);
       agent: 'devin',
       promptType: 'chat_prompt',
       deliveredToAgent: true,
-      browserPromptId: 'workspace-123:guest:prompt:1782603900000:clippy_0123abcd',
-      browserPromptFingerprint: 'clippy_0123abcd',
+      browserPromptId: 'workspace-123:guest:prompt:1782603900000:agent_0123abcd',
+      browserPromptFingerprint: 'agent_0123abcd',
       browserPromptTimestamp: 1782603900000,
       browserPromptLength: 24,
     });
@@ -920,8 +918,8 @@ setInterval(() => {}, 1000);
     expect(response).toMatchObject({
       agent: 'devin',
       source: 'agent_stdout',
-      browserPromptId: 'workspace-123:guest:prompt:1782603900000:clippy_0123abcd',
-      browserPromptFingerprint: 'clippy_0123abcd',
+      browserPromptId: 'workspace-123:guest:prompt:1782603900000:agent_0123abcd',
+      browserPromptFingerprint: 'agent_0123abcd',
       browserPromptTimestamp: 1782603900000,
       browserPromptLength: 24,
     });
@@ -954,8 +952,8 @@ setInterval(() => {}, 1000);
       ws.send(JSON.stringify({
         type: 'CHAT',
         text: 'Please inspect auth.',
-        browserPromptId: 'workspace-123:guest:prompt:1782603900000:clippy_0123abcd',
-        browserPromptFingerprint: 'clippy_0123abcd',
+        browserPromptId: 'workspace-123:guest:prompt:1782603900000:agent_0123abcd',
+        browserPromptFingerprint: 'agent_0123abcd',
         browserPromptTimestamp: 1782603900000,
         browserPromptLength: 20,
       }));
@@ -973,7 +971,7 @@ setInterval(() => {}, 1000);
         text: 'Auth check used DEVIN_API_KEY=[REDACTED_SECRET]',
         actor: 'agent',
         properties: {
-          source: 'clippy_agent_bridge',
+          source: 'agent_bridge',
           bridgeEventType: 'CHAT_RESPONSE',
           bridgeMessageSource: 'agent_stdout',
           responseLength: 'Auth check used DEVIN_API_KEY=[REDACTED_SECRET]'.length,

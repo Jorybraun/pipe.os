@@ -271,7 +271,7 @@ export async function buildCommitSubmissionPayload(
         exactText: commitEvidenceText,
         contentHash: await sha256ContentHash(commitEvidenceText),
         metadata: {
-          source: 'assessment_commit_submission_window',
+          source: 'assessment_commit_submission_panel',
         },
       },
       {
@@ -286,7 +286,7 @@ export async function buildCommitSubmissionPayload(
         exactText: diffText,
         contentHash: await sha256ContentHash(diffText),
         metadata: {
-          source: 'assessment_commit_submission_window',
+          source: 'assessment_commit_submission_panel',
         },
       },
       ...(testEvidenceText
@@ -301,7 +301,7 @@ export async function buildCommitSubmissionPayload(
             exactText: testEvidenceText,
             contentHash: await sha256ContentHash(testEvidenceText),
             metadata: {
-              source: 'assessment_commit_submission_window',
+              source: 'assessment_commit_submission_panel',
             },
           }]
         : [{
@@ -316,7 +316,7 @@ export async function buildCommitSubmissionPayload(
             exactText: verificationNotesText,
             contentHash: await sha256ContentHash(verificationNotesText),
             metadata: {
-              source: 'assessment_commit_submission_window',
+              source: 'assessment_commit_submission_panel',
               missingEvidence: 'test_run',
             },
           }]),
@@ -334,7 +334,7 @@ export async function buildCommitSubmissionPayload(
             exactText: validatedUpstreamPullRequestUrl,
             contentHash: await sha256ContentHash(validatedUpstreamPullRequestUrl),
             metadata: {
-              source: 'assessment_commit_submission_window',
+              source: 'assessment_commit_submission_panel',
               upstreamPrConsent: true,
             },
           }]

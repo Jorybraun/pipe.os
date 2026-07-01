@@ -3,9 +3,9 @@
 import { render, screen } from '@testing-library/react';
 import { describe, expect, it, vi } from 'vitest';
 import { StandardLayout } from './StandardLayout';
-import type { WindowManagerApi, WindowState, WindowType } from '../hooks/useWindowManager';
+import type { ToolSurfaceManagerApi, ToolSurfaceState, ToolSurfaceType } from '../hooks/useToolSurfaceManager';
 
-function roomWindow(input: Partial<WindowState> & Pick<WindowState, 'id' | 'windowType' | 'title'>): WindowState {
+function roomSurface(input: Partial<ToolSurfaceState> & Pick<ToolSurfaceState, 'id' | 'surfaceType' | 'title'>): ToolSurfaceState {
   return {
     x: 0,
     y: 0,
@@ -19,28 +19,28 @@ function roomWindow(input: Partial<WindowState> & Pick<WindowState, 'id' | 'wind
   };
 }
 
-function makeWindowManager(windows: WindowState[] = [
-  roomWindow({
+function makeSurfaceManager(surfaces: ToolSurfaceState[] = [
+  roomSurface({
     id: 'video',
-    windowType: 'video',
+    surfaceType: 'video',
     title: 'Video Call',
     focused: true,
   }),
-]): WindowManagerApi {
+]): ToolSurfaceManagerApi {
   return {
-    windows,
-    openWindow: vi.fn(() => 'window-id'),
-    closeWindow: vi.fn(),
-    focusWindow: vi.fn(),
-    minimizeWindow: vi.fn(),
-    toggleMaximize: vi.fn(),
-    moveWindow: vi.fn(),
-    resizeWindow: vi.fn(),
-    updateWindowData: vi.fn(),
-    applyWindowState: vi.fn(),
-    restoreWindow: vi.fn(),
-    isWindowOpen: vi.fn((_windowType: WindowType) => false),
-    getWindowByType: vi.fn((_windowType: WindowType) => undefined),
+    surfaces,
+    openSurface: vi.fn(() => 'surface-id'),
+    closeSurface: vi.fn(),
+    focusSurface: vi.fn(),
+    minimizeSurface: vi.fn(),
+    toggleMaximizeSurface: vi.fn(),
+    moveSurface: vi.fn(),
+    resizeSurface: vi.fn(),
+    updateSurfaceData: vi.fn(),
+    applySurfaceState: vi.fn(),
+    restoreSurface: vi.fn(),
+    isSurfaceOpen: vi.fn((_surfaceType: ToolSurfaceType) => false),
+    getSurfaceByType: vi.fn((_surfaceType: ToolSurfaceType) => undefined),
   };
 }
 
@@ -48,8 +48,8 @@ describe('StandardLayout', () => {
   it('renders the room mode label instead of always saying standard call', () => {
     render(
       <StandardLayout
-        wm={makeWindowManager()}
-        renderWindowContent={() => <div>video</div>}
+        toolSurfaces={makeSurfaceManager()}
+        renderSurfaceContent={() => <div>video</div>}
         modeLabel="Dev-container assessment"
       />,
     );
@@ -59,16 +59,16 @@ describe('StandardLayout', () => {
   });
 
   it('uses the workspace as the primary pane for dev-container assessments', () => {
-    const wm = makeWindowManager([
-      roomWindow({ id: 'video', windowType: 'video', title: 'Video Call' }),
-      roomWindow({ id: 'workspace', windowType: 'workspace', title: 'VS Code', focused: true }),
+    const toolSurfaces = makeSurfaceManager([
+      roomSurface({ id: 'video', surfaceType: 'video', title: 'Video Call' }),
+      roomSurface({ id: 'workspace', surfaceType: 'workspace', title: 'VS Code', focused: true }),
     ]);
 
     render(
       <StandardLayout
-        wm={wm}
+        toolSurfaces={toolSurfaces}
         assessmentHeader={<div>assessment status header</div>}
-        renderWindowContent={(win) => <div>{win.windowType === 'workspace' ? 'code workspace' : 'video call'}</div>}
+        renderSurfaceContent={(win) => <div>{win.surfaceType === 'workspace' ? 'code workspace' : 'video call'}</div>}
         modeLabel="Dev-container assessment"
         primarySurface="workspace"
       />,
@@ -81,16 +81,16 @@ describe('StandardLayout', () => {
   });
 
   it('keeps the assessment brief persistently beside the primary workspace', () => {
-    const wm = makeWindowManager([
-      roomWindow({ id: 'video', windowType: 'video', title: 'Video Call' }),
-      roomWindow({ id: 'workspace', windowType: 'workspace', title: 'VS Code', focused: true }),
+    const toolSurfaces = makeSurfaceManager([
+      roomSurface({ id: 'video', surfaceType: 'video', title: 'Video Call' }),
+      roomSurface({ id: 'workspace', surfaceType: 'workspace', title: 'VS Code', focused: true }),
     ]);
 
     render(
       <StandardLayout
-        wm={wm}
+        toolSurfaces={toolSurfaces}
         assessmentAside={<div>source-backed task brief</div>}
-        renderWindowContent={(win) => <div>{win.windowType === 'workspace' ? 'code workspace' : 'video call'}</div>}
+        renderSurfaceContent={(win) => <div>{win.surfaceType === 'workspace' ? 'code workspace' : 'video call'}</div>}
         modeLabel="Dev-container assessment"
         primarySurface="workspace"
       />,
@@ -100,14 +100,32 @@ describe('StandardLayout', () => {
     expect(screen.getByTestId('standard-assessment-aside').textContent).toContain('source-backed task brief');
   });
 
-  it('does not expose a legacy desktop control', () => {
+  it('does not expose legacy layout controls', () => {
     render(
       <StandardLayout
-        wm={makeWindowManager()}
-        renderWindowContent={() => <div>video</div>}
+        toolSurfaces={makeSurfaceManager()}
+        renderSurfaceContent={() => <div>video</div>}
       />,
     );
 
-    expect(screen.queryByRole('button', { name: /legacy desktop/i })).toBeNull();
+    expect(screen.queryByRole('button', { name: /legacy layout/i })).toBeNull();
+  });
+
+  it('renders utility tools as an assessment panel', () => {
+    const toolSurfaces = makeSurfaceManager([
+      roomSurface({ id: 'video', surfaceType: 'video', title: 'Video Call' }),
+      roomSurface({ id: 'terminal', surfaceType: 'terminal', title: 'Container terminal', zIndex: 9 }),
+      roomSurface({ id: 'submission', surfaceType: 'submission', title: 'Submit Work', zIndex: 4 }),
+    ]);
+
+    render(
+      <StandardLayout
+        toolSurfaces={toolSurfaces}
+        renderSurfaceContent={(win) => <div>{win.surfaceType} surface</div>}
+      />,
+    );
+
+    expect(screen.getByTestId('standard-tools-panel').textContent).toContain('terminal surface');
+    expect(screen.queryByRole('button', { name: /minimize/i })).toBeNull();
   });
 });

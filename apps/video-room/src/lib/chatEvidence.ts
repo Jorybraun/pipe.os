@@ -32,7 +32,7 @@ export function buildRoomChatEvidence(input: {
     properties: {
       ...sourceEvidence,
       source: 'room_chat_client_submit',
-      chatEventSource: 'browser_room_chat_window',
+      chatEventSource: 'browser_room_chat_panel',
       actor: input.actor,
       roomMessageId: input.message.id,
       clientId: input.message.clientId,

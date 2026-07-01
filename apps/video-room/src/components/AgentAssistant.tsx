@@ -1,5 +1,5 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
-import { Bot, Terminal, X } from 'lucide-react';
+import { Terminal, X } from 'lucide-react';
 import {
   useAgentConnection,
   type AgentChatMessage,
@@ -8,8 +8,8 @@ import {
   type AgentRoomAction,
   type AgentStatus,
 } from '../hooks/useAgentConnection';
-import type { ClippyPromptActor } from '../lib/clippyPromptIdentity';
-import { buildClippyBrowserPromptIdentity } from '../lib/clippyPromptIdentity';
+import type { AgentPromptActor } from '../lib/agentPromptIdentity';
+import { buildAgentBrowserPromptIdentity } from '../lib/agentPromptIdentity';
 
 const BLOCKED_PROMPT_MESSAGES: Record<AgentPromptBlockedReason, string> = {
   workspace_required: 'The assistant could not send that because the dev workspace is not running.',
@@ -21,21 +21,7 @@ const BLOCKED_PROMPT_MESSAGES: Record<AgentPromptBlockedReason, string> = {
   agent_capabilities_missing: 'The assistant could not send that because the real agent has not reported chat capability yet.',
 };
 
-export interface AgentAssistantMessage {
-  text: string;
-  hold?: boolean;
-  actions?: AgentAssistantAction[];
-}
-
-export interface AgentAssistantAction {
-  id: string;
-  label: string;
-  disabled?: boolean;
-}
-
 export interface AgentAssistantProps {
-  messages: AgentAssistantMessage[];
-  onDismiss: () => void;
   chatOpen?: boolean;
   onChatOpen?: () => void;
   onChatClose?: () => void;
@@ -43,7 +29,7 @@ export interface AgentAssistantProps {
   agentEnabled?: boolean;
   agentUnavailableMessage?: string;
   canLaunchAgentWorkspace?: boolean;
-  promptActor?: ClippyPromptActor;
+  promptActor?: AgentPromptActor;
   promptWorkspaceSessionId?: string | null;
   openChatRequest?: number;
   onOpenBrowser?: (url: string) => void;
@@ -60,8 +46,6 @@ export interface AgentAssistantProps {
 }
 
 export function AgentAssistant({
-  messages,
-  onDismiss,
   chatOpen: controlledChatOpen,
   onChatOpen,
   onChatClose,
@@ -87,7 +71,6 @@ export function AgentAssistant({
   const [localChatOpen, setLocalChatOpen] = useState(false);
   const [chatInput, setChatInput] = useState('');
   const [localChatMessages, setLocalChatMessages] = useState<AgentChatMessage[]>([]);
-  const [dismissedPromptSignature, setDismissedPromptSignature] = useState<string | null>(null);
   const messagesEndRef = useRef<HTMLDivElement>(null);
   const executedAgentActionsRef = useRef<Set<string>>(new Set());
   const capturedAgentMessagesRef = useRef<Set<string>>(new Set());
@@ -154,33 +137,11 @@ export function AgentAssistant({
   const reportedAgentName = agentConn.agentName.trim();
   const agentDisplayName = reportedAgentName || 'the real agent';
 
-  const agentRoomActionPrompt: AgentAssistantMessage | null = latestAgentRoomAction
-    ? {
-        text: latestAgentRoomAction.text
-          ?? `${reportedAgentName || 'The connected agent'} suggests: ${latestAgentRoomAction.label}.`,
-        hold: true,
-        actions: [{
-          id: 'agent-room-action',
-          label: latestAgentRoomAction.label,
-        }],
-      }
-    : null;
-
-  const currentPrompt = agentRoomActionPrompt ?? (messages.length > 0 ? messages[messages.length - 1] : null);
-  const currentPromptSignature = currentPrompt
-    ? [
-        currentPrompt.text,
-        currentPrompt.hold ? 'hold' : 'release',
-        currentPrompt.actions?.map((action) => `${action.id}:${action.label}:${action.disabled ? 'disabled' : 'enabled'}`).join('|') ?? '',
-      ].join('::')
-    : null;
-
   const canOpenAgentBridgeChat = agentEnabled || canLaunchAgentWorkspace || Boolean(agentUnavailableMessage);
   const chatOpen = (controlledChatOpen ?? localChatOpen) && canOpenAgentBridgeChat;
 
   const openChat = useCallback(() => {
     if (!canOpenAgentBridgeChat) {
-      setDismissedPromptSignature(null);
       setLocalChatOpen(false);
       return;
     }
@@ -189,10 +150,9 @@ export function AgentAssistant({
   }, [canOpenAgentBridgeChat, onChatOpen]);
 
   const closeChat = useCallback(() => {
-    setDismissedPromptSignature((current) => currentPromptSignature ?? current);
     setLocalChatOpen(false);
     onChatClose?.();
-  }, [currentPromptSignature, onChatClose]);
+  }, [onChatClose]);
 
   useEffect(() => {
     if (openChatRequest === undefined || openChatRequest <= 0) return;
@@ -224,19 +184,13 @@ export function AgentAssistant({
   }, [onAction, onOpenTerminal]);
 
   const handleActionClick = useCallback((actionId: string) => {
-    if (actionId === 'agent-room-action' && latestAgentRoomAction) {
-      onAgentRoomAction?.(latestAgentRoomAction);
-      return;
-    }
     onAction?.(actionId);
-  }, [latestAgentRoomAction, onAction, onAgentRoomAction]);
+  }, [onAction]);
 
-  const showPrompt = Boolean(currentPrompt && !chatOpen && currentPromptSignature !== dismissedPromptSignature);
-
-  const handleDismiss = useCallback(() => {
-    setDismissedPromptSignature((current) => currentPromptSignature ?? current);
-    onDismiss();
-  }, [currentPromptSignature, onDismiss]);
+  const handleLatestAgentRoomAction = useCallback(() => {
+    if (!latestAgentRoomAction) return;
+    onAgentRoomAction?.(latestAgentRoomAction);
+  }, [latestAgentRoomAction, onAgentRoomAction]);
 
   const statusLabel: Record<string, string> = {
     starting: 'Starting',
@@ -284,7 +238,7 @@ export function AgentAssistant({
     }
     if (!blockedPromptReason) return;
     const timestamp = Date.now();
-    const promptIdentity = buildClippyBrowserPromptIdentity({
+    const promptIdentity = buildAgentBrowserPromptIdentity({
       text,
       actor: promptActor ?? 'guest',
       timestamp,
@@ -373,36 +327,8 @@ export function AgentAssistant({
 
   return (
     <>
-      {showPrompt && currentPrompt && (
-        <aside className="agent-assistant-prompt" data-testid="assistant-prompt">
-          <div className="agent-assistant-prompt-icon">
-            <Bot size={18} />
-          </div>
-          <div className="agent-assistant-prompt-copy">
-            <strong>AI assistant</strong>
-            <span>{currentPrompt.text}</span>
-          </div>
-          <div className="agent-assistant-prompt-actions">
-            {currentPrompt.actions?.map((action) => (
-              <button
-                key={action.id}
-                type="button"
-                onClick={() => handleActionClick(action.id)}
-                disabled={action.disabled}
-              >
-                {action.label}
-              </button>
-            ))}
-            <button type="button" onClick={openChat}>Open chat</button>
-            <button type="button" onClick={handleDismiss} aria-label="Dismiss assistant prompt">
-              <X size={14} />
-            </button>
-          </div>
-        </aside>
-      )}
-
       {chatOpen && (
-        <section className="agent-assistant-panel" data-testid="clippy-chat">
+        <section className="agent-assistant-panel" data-testid="agent-chat">
           <header className="agent-assistant-header">
             <div>
               <span>AI assistant</span>
@@ -412,7 +338,7 @@ export function AgentAssistant({
               type="button"
               onClick={closeChat}
               aria-label="Close AI assistant"
-              data-testid="clippy-chat-close"
+              data-testid="agent-chat-close"
             >
               <X size={16} />
             </button>
@@ -445,12 +371,12 @@ export function AgentAssistant({
             {agentEnabled && !agentConn.connected && <span> - reconnecting</span>}
           </div>
 
-          <div className="agent-assistant-checklist" data-testid="clippy-bridge-checklist">
+          <div className="agent-assistant-checklist" data-testid="agent-bridge-checklist">
             {bridgeChecks.map((check) => (
               <div
                 className={`agent-assistant-check is-${check.state}`}
                 key={check.label}
-                data-testid={`clippy-bridge-check-${check.label.toLowerCase()}`}
+                data-testid={`agent-bridge-check-${check.label.toLowerCase()}`}
               >
                 <span>{check.label}</span>
                 <strong>{check.value}</strong>
@@ -462,7 +388,7 @@ export function AgentAssistant({
             <button
               className="agent-assistant-action-btn"
               onClick={handleAuthClick}
-              data-testid="clippy-open-auth-browser"
+              data-testid="agent-open-auth-browser"
             >
               Authenticate {agentDisplayName}
             </button>
@@ -473,14 +399,14 @@ export function AgentAssistant({
               <button
                 className="agent-assistant-action-btn"
                 onClick={handleAuthTerminalClick}
-                data-testid="clippy-open-auth-terminal"
+                data-testid="agent-open-auth-terminal"
               >
                 Open Devin login terminal
               </button>
               <button
                 className="agent-assistant-action-btn"
                 onClick={handleAuthClick}
-                data-testid="clippy-check-auth"
+                data-testid="agent-check-auth"
               >
                 Check Devin auth
               </button>
@@ -491,9 +417,19 @@ export function AgentAssistant({
             <button
               className="agent-assistant-action-btn"
               onClick={() => handleActionClick('launch-workspace')}
-              data-testid="clippy-launch-workspace"
+              data-testid="agent-launch-workspace"
             >
               Launch workspace
+            </button>
+          )}
+
+          {latestAgentRoomAction && (
+            <button
+              className="agent-assistant-action-btn"
+              onClick={handleLatestAgentRoomAction}
+              data-testid="agent-room-action"
+            >
+              {latestAgentRoomAction.label}
             </button>
           )}
 
@@ -501,7 +437,7 @@ export function AgentAssistant({
             <button
               className="agent-assistant-action-btn"
               onClick={handleOpenTerminalClick}
-              data-testid="clippy-open-terminal"
+              data-testid="agent-open-terminal"
             >
               <Terminal size={14} />
               Open terminal
@@ -518,7 +454,7 @@ export function AgentAssistant({
                 if (e.key === 'Enter') handleSendChat();
               }}
               placeholder={agentEnabled ? 'Ask the AI assistant...' : 'Connect a real agent before asking...'}
-              data-testid="clippy-chat-input"
+              data-testid="agent-chat-input"
             />
             <button
               className="agent-assistant-send"

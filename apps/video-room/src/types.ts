@@ -29,7 +29,7 @@ export interface RoomMetadata {
     videoEnabled: boolean;
     workspaceEnabled: boolean;
     recordingEnabled: boolean;
-    clippyEnabled: boolean;
+    agentEnabled: boolean;
   };
 }
 
@@ -134,6 +134,35 @@ export interface RoomAssessmentProgressCommit {
   occurredAt: string;
 }
 
+export type RoomAssessmentReadinessStatus =
+  | 'WAITING_FOR_CHALLENGE'
+  | 'READY_TO_START'
+  | 'WORK_IN_PROGRESS'
+  | 'READY_FOR_EVALUATION'
+  | 'EVALUATED'
+  | 'NEEDS_ATTENTION'
+  | 'CANCELLED';
+
+export interface RoomAssessmentReadinessItem {
+  id: string;
+  label: string;
+  required: boolean;
+  satisfied: boolean;
+  sourceRefTypes: string[];
+  missingImpact: string;
+}
+
+export interface RoomAssessmentReadinessSnapshot {
+  status: RoomAssessmentReadinessStatus;
+  label: string;
+  detail: string;
+  isReadyForEvaluation: boolean;
+  isUsableHiringSignal: boolean;
+  missingRequiredCount: number;
+  required: RoomAssessmentReadinessItem[];
+  confidence: RoomAssessmentReadinessItem[];
+}
+
 export interface RoomAssessmentProgressSnapshot {
   mode: string;
   state: string;
@@ -182,6 +211,7 @@ export interface RoomAssessmentProgressSnapshot {
       sourceRefTypes: string[];
     }>;
   } | null;
+  readiness?: RoomAssessmentReadinessSnapshot;
 }
 
 export interface RoomWorkspaceLaunchResponse {

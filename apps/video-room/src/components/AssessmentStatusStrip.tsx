@@ -208,6 +208,13 @@ export function AssessmentStatusStrip({
             {formatProgressToken(assessmentProgress.stage)}
           </span>
         )}
+        {assessmentProgress?.readiness && (
+          <span className="assessment-status-pill is-progress" data-testid="assessment-readiness">
+            {assessmentProgress.readiness.isReadyForEvaluation
+              ? 'Ready to evaluate'
+              : assessmentProgress.readiness.label}
+          </span>
+        )}
         {progressCommitSha && (
           <span className="assessment-status-pill is-progress" data-testid="assessment-progress-commit">
             Commit {progressCommitSha}
