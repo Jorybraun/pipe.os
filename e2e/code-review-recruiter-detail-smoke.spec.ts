@@ -138,12 +138,24 @@ async function expectPersonProfileDecision(page: Page): Promise<void> {
   await expect(personDecision).toContainText('Next action');
   const decisionBasis = page.getByTestId('person-code-review-decision-basis');
   await expect(decisionBasis).toBeVisible();
-  await expect(decisionBasis).toContainText('Match proof');
-  if (EXPECTED_MATCH_MODE === 'manual_override') {
-    await expect(decisionBasis).toContainText('Assignment evidence only');
-    await expect(decisionBasis).not.toContainText('Source-backed match');
-  } else if (REQUIRE_HYPEREDGES) {
-    await expect(decisionBasis).toContainText('Source-backed match');
+  const isWorkspaceAssessmentBasis = await decisionBasis
+    .getByText('Selected interview')
+    .first()
+    .isVisible()
+    .catch(() => false);
+  if (isWorkspaceAssessmentBasis) {
+    await expect(decisionBasis).toContainText('Assessment evidence');
+    await expect(decisionBasis).toContainText('Human decision');
+    await expect(decisionBasis).toContainText('Source proof');
+    await expect(decisionBasis).not.toContainText('Match proof');
+  } else {
+    await expect(decisionBasis).toContainText('Match proof');
+    if (EXPECTED_MATCH_MODE === 'manual_override') {
+      await expect(decisionBasis).toContainText('Assignment evidence only');
+      await expect(decisionBasis).not.toContainText('Source-backed match');
+    } else if (REQUIRE_HYPEREDGES) {
+      await expect(decisionBasis).toContainText('Source-backed match');
+    }
   }
   const personSourceProof = page.getByTestId('person-code-review-source-proof');
   await expect(personSourceProof).toContainText('Source proof');
@@ -157,7 +169,14 @@ async function expectPersonProfileDecision(page: Page): Promise<void> {
     await expect(scoreValidity).toBeVisible();
     await expect(scoreValidity).toContainText('Score validity');
     await expect(scoreValidity).toContainText(/Valid because|Do not rely yet/);
-    await expect(scoreValidity).toContainText(/score report is captured|score report is missing/);
+    if (isWorkspaceAssessmentBasis) {
+      await expect(scoreValidity).toContainText('selected interview is captured');
+      await expect(scoreValidity).toContainText('evaluation claims is captured');
+      await expect(scoreValidity).toContainText('human decision is captured');
+      await expect(scoreValidity).toContainText('source proof is captured');
+    } else {
+      await expect(scoreValidity).toContainText(/score report is captured|score report is missing/);
+    }
     await expect(scoreValidity).toContainText(/rubric dimensions?/);
     await expect(scoreValidity).toContainText(/evidence items?/);
   }
