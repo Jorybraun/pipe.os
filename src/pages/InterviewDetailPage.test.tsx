@@ -1301,15 +1301,15 @@ describe('InterviewDetailPage', () => {
     expect(decision).toHaveTextContent('Use the annotated lines and implementation-author replies to judge whether the requested changes are concrete, source-backed, and worth blocking the PR.');
     expect(decision).toHaveTextContent('Strong assessment fit');
     expect(decision).toHaveTextContent('72/100 Adequate');
-    expect(decision).toHaveTextContent('1 pushback thread');
+    expect(decision).toHaveTextContent('1 implementation-author reply thread');
     const scoreSummary = screen.getByTestId('interview-code-review-score-summary');
     expect(scoreSummary).toHaveTextContent('Signal basis');
     expect(scoreSummary).toHaveTextContent('Score report');
     expect(scoreSummary).toHaveTextContent('Scored');
     expect(scoreSummary).toHaveTextContent('Review evidence');
     expect(scoreSummary).toHaveTextContent('1 annotation');
-    expect(scoreSummary).toHaveTextContent('Pushback');
-    expect(scoreSummary).toHaveTextContent('1 thread');
+    expect(scoreSummary).toHaveTextContent('Author replies');
+    expect(scoreSummary).toHaveTextContent('1 implementation-author reply thread');
     expect(scoreSummary).toHaveTextContent('Match proof');
     expect(scoreSummary).toHaveTextContent('1 bridge');
     const scoreTrust = screen.getByTestId('interview-code-review-score-trust');
@@ -3381,7 +3381,7 @@ describe('InterviewDetailPage', () => {
     expect(result).toHaveTextContent('This threshold changes click semantics and needs a focused impatient-click regression.');
   });
 
-  it('shows implementation-author pushback threads from submitted code-review transcripts', async () => {
+  it('shows implementation-author reply threads from submitted code-review transcripts', async () => {
     mocks.api.get.mockResolvedValueOnce({
       interview: makeInterview({
         interviewType: 'CODE_REVIEW',
@@ -3452,11 +3452,11 @@ describe('InterviewDetailPage', () => {
     expect(defenseThreads).toHaveTextContent('Review interaction');
     expect(defenseThreads).toHaveTextContent('candidate comments and implementation author replies');
     expect(defenseThreads).toHaveTextContent('Candidate comment');
-    expect(defenseThreads).toHaveTextContent('Implementation author · pushback · round 1');
+    expect(defenseThreads).toHaveTextContent('Implementation author · author reply · round 1');
     expect(defenseThreads).toHaveTextContent('Can you point to a user-visible failure?');
     expect(defenseThreads).toHaveTextContent('Candidate defense · round 2');
     expect(defenseThreads).toHaveTextContent('keyboard and pointer users can issue the click');
-    expect(defenseThreads).toHaveTextContent('Implementation author · comment · round 2');
+    expect(defenseThreads).toHaveTextContent('Implementation author · author comment · round 2');
     expect(defenseThreads).toHaveTextContent('I will add coverage around the impatient click path.');
   });
 
@@ -3668,7 +3668,7 @@ describe('InterviewDetailPage', () => {
     expect(result).toHaveTextContent('This threshold changes click semantics and needs a focused impatient-click regression.');
   });
 
-  it('shows implementation-author pushback threads from submitted code-review transcripts', async () => {
+  it('shows implementation-author reply threads from submitted code-review transcripts', async () => {
     mocks.api.get.mockResolvedValueOnce({
       interview: makeInterview({
         interviewType: 'CODE_REVIEW',
@@ -3739,11 +3739,11 @@ describe('InterviewDetailPage', () => {
     expect(defenseThreads).toHaveTextContent('Review interaction');
     expect(defenseThreads).toHaveTextContent('candidate comments and implementation author replies');
     expect(defenseThreads).toHaveTextContent('Candidate comment');
-    expect(defenseThreads).toHaveTextContent('Implementation author · pushback · round 1');
+    expect(defenseThreads).toHaveTextContent('Implementation author · author reply · round 1');
     expect(defenseThreads).toHaveTextContent('Can you point to a user-visible failure?');
     expect(defenseThreads).toHaveTextContent('Candidate defense · round 2');
     expect(defenseThreads).toHaveTextContent('keyboard and pointer users can issue the click');
-    expect(defenseThreads).toHaveTextContent('Implementation author · comment · round 2');
+    expect(defenseThreads).toHaveTextContent('Implementation author · author comment · round 2');
     expect(defenseThreads).toHaveTextContent('I will add coverage around the impatient click path.');
   });
 

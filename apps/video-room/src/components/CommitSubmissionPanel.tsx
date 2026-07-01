@@ -393,7 +393,6 @@ export function CommitSubmissionPanel({
   const [workspaceFinalizeResult, setWorkspaceFinalizeResult] = useState<RoomWorkspaceFinalizeResponse | null>(null);
   const [workspaceFinalizeFields, setWorkspaceFinalizeFields] = useState<Required<RoomWorkspaceFinalizeRequest>>({
     narrative: '',
-    testCommand: '',
   });
   const displayedProgress = workspaceFinalizeResult?.progress ?? result?.progress ?? assessmentProgress;
   const workspaceFinalizeBlockedReason = disabledReason
@@ -447,9 +446,7 @@ export function CommitSubmissionPanel({
     try {
       const payload: RoomWorkspaceFinalizeRequest = {};
       const narrative = workspaceFinalizeFields.narrative.trim();
-      const testCommand = workspaceFinalizeFields.testCommand.trim();
       if (narrative) payload.narrative = narrative;
-      if (testCommand) payload.testCommand = testCommand;
       const response = await onFinalizeWorkspace(payload);
       setWorkspaceFinalizeResult(response);
       if (response.progress) onProgressChange?.(response.progress);
@@ -496,7 +493,7 @@ export function CommitSubmissionPanel({
       <section className="commit-submission-workspace-finalize" data-testid="commit-submission-workspace-finalize">
         <div className="commit-submission-workspace-finalize-header">
           <strong>Workspace commit</strong>
-          <span>Submit the current assessment branch HEAD from the live container.</span>
+          <span>Submit the current assessment branch HEAD with configured verification or an explicit gap.</span>
         </div>
         <label>
           <span>Submission note</span>
@@ -507,16 +504,6 @@ export function CommitSubmissionPanel({
             disabled={Boolean(workspaceFinalizeBlockedReason) || finalizing || submitting}
             rows={2}
             data-testid="workspace-finalize-narrative"
-          />
-        </label>
-        <label>
-          <span>Test command</span>
-          <input
-            value={workspaceFinalizeFields.testCommand}
-            onChange={(event) => setWorkspaceFinalizeField('testCommand', event.target.value)}
-            placeholder="npm test -- retry"
-            disabled={Boolean(workspaceFinalizeBlockedReason) || finalizing || submitting}
-            data-testid="workspace-finalize-test-command"
           />
         </label>
         <button

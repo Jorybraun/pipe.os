@@ -86,7 +86,6 @@ export function DevContainerPanel({ challengeId }: DevContainerPanelProps): JSX.
   const [commitError, setCommitError] = useState<string | null>(null);
   const [commitSuccess, setCommitSuccess] = useState<string | null>(null);
   const [workspaceNarrative, setWorkspaceNarrative] = useState('');
-  const [workspaceTestCommand, setWorkspaceTestCommand] = useState('');
   const [workspaceFinalizing, setWorkspaceFinalizing] = useState(false);
 
   // Auto-launch exactly once when the panel mounts and there is no live
@@ -193,7 +192,6 @@ export function DevContainerPanel({ challengeId }: DevContainerPanelProps): JSX.
     try {
       const response = await finalizeDevContainerAssessment(taskArn, {
         ...(workspaceNarrative.trim() ? { narrative: workspaceNarrative.trim() } : {}),
-        ...(workspaceTestCommand.trim() ? { testCommand: workspaceTestCommand.trim() } : {}),
       }, sessionToken);
       setAssessmentProgress(response.progress);
       setCommitSuccess(response.progress.commit?.commitSha
@@ -373,7 +371,7 @@ export function DevContainerPanel({ challengeId }: DevContainerPanelProps): JSX.
               style={{
                 gridColumn: '1 / -1',
                 display: 'grid',
-                gridTemplateColumns: 'minmax(0, 1.2fr) minmax(0, 1fr) auto',
+                gridTemplateColumns: 'minmax(0, 1fr) auto',
                 gap: 10,
                 alignItems: 'end',
                 border: '1px solid rgba(74,222,128,0.24)',
@@ -393,21 +391,6 @@ export function DevContainerPanel({ challengeId }: DevContainerPanelProps): JSX.
                   disabled={workspaceFinalizing}
                   data-testid="assessment-workspace-finalize-narrative"
                   placeholder="What did you change?"
-                  style={fieldStyle()}
-                />
-              </label>
-              <label style={{ display: 'grid', gap: 4 }}>
-                <span>Test command</span>
-                <input
-                  value={workspaceTestCommand}
-                  onChange={(event) => {
-                    setWorkspaceTestCommand(event.target.value);
-                    setCommitError(null);
-                    setCommitSuccess(null);
-                  }}
-                  disabled={workspaceFinalizing}
-                  data-testid="assessment-workspace-finalize-test-command"
-                  placeholder="npm test -- --runInBand"
                   style={fieldStyle()}
                 />
               </label>

@@ -264,7 +264,6 @@ export interface RoomCommitSubmissionResponse {
 
 export interface RoomWorkspaceFinalizeRequest {
   narrative?: string;
-  testCommand?: string;
 }
 
 export interface RoomWorkspaceFinalizeResponse {

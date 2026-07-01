@@ -285,7 +285,7 @@ export function ReviewSessionPage({
             Code Review
           </h3>
           <p style={{ fontSize: 11, color: BRAND_MUTED, lineHeight: 1.7, margin: 0, whiteSpace: 'pre-wrap', wordBreak: 'break-word' }}>
-            {pr.instructions ?? 'Review this pull request as if a teammate opened it: leave inline comments, respond to the AI developer, choose a verdict, and explain your reasoning.'}
+            {pr.instructions ?? 'Review this pull request as if a teammate opened it: leave inline comments, respond to the implementation author, choose a verdict, and explain your reasoning.'}
           </p>
         </div>
 

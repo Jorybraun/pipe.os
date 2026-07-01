@@ -285,6 +285,15 @@ function sentenceCaseToken(value: string): string {
     .join(' ');
 }
 
+function codeReviewExchangeMoveLabel(move: string | null): string | null {
+  if (!move) return null;
+  const normalized = move.toLowerCase();
+  if (normalized === 'pushback') return 'author reply';
+  if (normalized === 'comment') return 'author comment';
+  if (normalized === 'change') return 'proposed change';
+  return sentenceCaseToken(move);
+}
+
 function assessmentEvaluationStatusLabel(status: string): string {
   switch (status) {
     case 'AI_DEVELOPER_UNAVAILABLE':
@@ -1403,8 +1412,8 @@ function codeReviewSignalBasisItems(input: {
       satisfied: annotationCount > 0,
     },
     {
-      label: 'Pushback',
-      value: countLabel(pushbackCount, 'thread'),
+      label: 'Author replies',
+      value: countLabel(pushbackCount, 'implementation-author reply thread'),
       satisfied: pushbackCount > 0,
     },
     {
@@ -1804,7 +1813,7 @@ function codeReviewNextStepRecommendation(
     }
     return {
       value: 'Advance to next stage',
-      detail: 'Use the source-backed review, annotations, and pushback as evidence to move the candidate forward.',
+      detail: 'Use the source-backed review, annotations, and implementation-author replies as evidence to move the candidate forward.',
       tone: 'positive',
     };
   }
@@ -1818,7 +1827,7 @@ function codeReviewNextStepRecommendation(
   if (submission) {
     return {
       value: 'Review manually',
-      detail: 'Candidate review exists, but scoring is unavailable. Read annotations and pushback before deciding.',
+      detail: 'Candidate review exists, but scoring is unavailable. Read annotations and implementation-author replies before deciding.',
       tone: 'neutral',
     };
   }
@@ -1928,7 +1937,7 @@ function codeReviewDecisionRiskSummary(
     missingContext.push('Completed score report');
   }
   if (submission && submission.defenseThreads.length === 0) {
-    missingContext.push('Developer pushback calibration');
+    missingContext.push('Implementation-author reply calibration');
   }
   if (match.gaps.length > 0) {
     missingContext.push(...match.gaps.slice(0, 2).map(readableGapLabel));
@@ -3297,8 +3306,8 @@ export default function InterviewDetailPage(): JSX.Element {
       detail: codeReviewScoreDetail ?? codeReviewSubmission?.summary ?? 'no submitted review yet',
     },
     {
-      label: 'Pushback',
-      value: countLabel(codeReviewSubmission?.defenseThreads.length ?? 0, 'pushback thread'),
+      label: 'Author replies',
+      value: countLabel(codeReviewSubmission?.defenseThreads.length ?? 0, 'implementation-author reply thread'),
       detail: (codeReviewSubmission?.defenseThreads.length ?? 0) > 0
         ? 'implementation-author replies are available for judgment calibration'
         : 'no implementation-author replies captured yet',
@@ -5161,7 +5170,7 @@ export default function InterviewDetailPage(): JSX.Element {
                             >
                               <div style={TRANSCRIPT_ROLE}>
                                 {exchange.actor === 'ai_developer' ? 'Implementation author' : 'Candidate defense'}
-                                {exchange.move ? ` · ${exchange.move}` : ''}
+                                {exchange.move ? ` · ${codeReviewExchangeMoveLabel(exchange.move)}` : ''}
                                 {exchange.round !== null ? ` · round ${exchange.round}` : ''}
                               </div>
                               <div style={TRANSCRIPT_TEXT}>{exchange.content}</div>

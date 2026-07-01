@@ -626,6 +626,45 @@ describe('agent bridge readiness', () => {
     expect(new Set(locatorRepositoryUrls)).toEqual(new Set(['https://github.com/open-source/widgets']));
   });
 
+  it('uses only the configured verification command for workspace finalization test evidence', async () => {
+    const { workspaceDir, baseCommitSha, commitSha } = createCommittedWorkspace();
+    const { port } = await startBridge('', {
+      AGENT_TYPE: '',
+      PATH: process.env.PATH ?? '',
+      REPO_GIT_URL: 'https://github.com/example/repo',
+      CHALLENGE_BASE_COMMIT_SHA: baseCommitSha,
+      PIPE_TEST_COMMAND: 'node -e "console.log(42)"',
+    }, {
+      installFakeDevin: false,
+      workspaceDir,
+    });
+
+    const response = await fetch(`http://127.0.0.1:${port}/assessment/finalize`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({
+        submitToPipe: false,
+        testCommand: 'node -e "console.log(999)"',
+      }),
+    });
+
+    expect(response.status).toBe(200);
+    const body = await response.json();
+    const testRun = body.submissionPayload.sourceRefs.find((ref) => ref.sourceRefType === 'test_run');
+    expect(testRun).toMatchObject({
+      sourceRefType: 'test_run',
+      sourceRefId: `${commitSha}:test-run`,
+      evidenceRole: 'verification_test_output',
+      locator: {
+        command: 'node -e "console.log(42)"',
+        exitCode: 0,
+      },
+    });
+    expect(testRun.exactText).toContain('$ node -e "console.log(42)"');
+    expect(testRun.exactText).toContain('42');
+    expect(testRun.exactText).not.toContain('999');
+  });
+
   it('blocks workspace finalization when the request repository does not match the configured challenge repo', async () => {
     const { workspaceDir, baseCommitSha } = createCommittedWorkspace();
     git(['remote', 'add', 'origin', 'https://github.com/open-source/widgets.git'], workspaceDir);

@@ -27,6 +27,8 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Fixed — CODE_REVIEW assessment runtime
 
+- Workspace finalization now runs only the container-configured verification command for `test_run` evidence and records a verification gap when none is configured, preventing candidate-selected commands from satisfying assessment proof.
+- Candidate and recruiter CODE_REVIEW surfaces now consistently describe implementation-author replies instead of exposing AI-developer or generic pushback wording in default instructions and trust signals.
 - Workspace finalization now canonicalizes and verifies the checked-out git remote or configured challenge repo before emitting commit evidence, blocking browser-supplied repository spoofing.
 - CODE_REVIEW hiring readouts now avoid implying source proof exists when no rendered evidence bridge is available, and describe review pushback as implementation-author replies instead of internal developer-agent wording.
 - Commit submission now rejects optional upstream PR links unless they belong to the assigned repository and include exact upstream pull-request source evidence, preventing unrelated PRs from being stored as assessment proof.

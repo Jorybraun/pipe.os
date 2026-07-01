@@ -39,6 +39,12 @@ interface PipeDiffAnnotationMetadata {
 
 type PipeDiffLineAnnotation = DiffLineAnnotation<PipeDiffAnnotationMetadata>;
 
+function inlineMoveLabel(move: InlineThread['exchanges'][number]['move']): string {
+  if (!move) return '';
+  if (move === 'pushback') return 'AUTHOR REPLY';
+  return move.toUpperCase();
+}
+
 const PierrePatchDiff = lazy(async () => {
   const module = await import('@pierre/diffs/react');
   return {
@@ -183,7 +189,7 @@ function renderThread(thread: InlineThread): JSX.Element {
                     borderRadius: 3,
                   }}
                 >
-                  {exchange.move.toUpperCase()}
+                  {inlineMoveLabel(exchange.move)}
                 </span>
               )}
               <span

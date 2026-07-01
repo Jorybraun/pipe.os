@@ -250,15 +250,12 @@ describe('CommitSubmissionPanel', () => {
     fireEvent.change(screen.getByTestId('workspace-finalize-narrative'), {
       target: { value: 'Submitted retry fix from the assessment branch.' },
     });
-    fireEvent.change(screen.getByTestId('workspace-finalize-test-command'), {
-      target: { value: 'npm test -- retry' },
-    });
+    expect(screen.queryByTestId('workspace-finalize-test-command')).toBeNull();
     fireEvent.click(screen.getByTestId('workspace-finalize-submit'));
 
     await waitFor(() => expect(onFinalizeWorkspace).toHaveBeenCalledTimes(1));
     expect(onFinalizeWorkspace).toHaveBeenCalledWith({
       narrative: 'Submitted retry fix from the assessment branch.',
-      testCommand: 'npm test -- retry',
     });
     expect(onSubmit).not.toHaveBeenCalled();
     expect(onProgressChange).toHaveBeenCalledWith(expect.objectContaining({

@@ -247,9 +247,7 @@ describe('DevContainerPanel assessment submission', () => {
     fireEvent.change(screen.getByTestId('assessment-workspace-finalize-narrative'), {
       target: { value: 'Fixed retry handling and committed the focused patch.' },
     });
-    fireEvent.change(screen.getByTestId('assessment-workspace-finalize-test-command'), {
-      target: { value: 'npm test -- retry' },
-    });
+    expect(screen.queryByTestId('assessment-workspace-finalize-test-command')).toBeNull();
     fireEvent.click(screen.getByTestId('assessment-workspace-finalize-submit'));
 
     await waitFor(() => {
@@ -265,7 +263,6 @@ describe('DevContainerPanel assessment submission', () => {
     });
     expect(JSON.parse(String(finalizeCall?.[1]?.body))).toEqual({
       narrative: 'Fixed retry handling and committed the focused patch.',
-      testCommand: 'npm test -- retry',
     });
   });
 });

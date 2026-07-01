@@ -60,7 +60,6 @@ export interface DestroyResponse {
 
 export interface FinalizeDevContainerAssessmentRequest {
   narrative?: string;
-  testCommand?: string;
   forkRepositoryUrl?: string | null;
   commitUrl?: string | null;
   upstreamPullRequestUrl?: string | null;

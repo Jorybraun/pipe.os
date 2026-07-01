@@ -620,8 +620,7 @@ async function buildWorkspaceCommitSubmission(body = {}) {
 
   const occurredAt = new Date().toISOString();
   const sourceRepositoryUrl = workspaceRepositoryUrl || repositoryUrl;
-  const testCommand = normalizeOptionalString(body.testCommand)
-    || normalizeOptionalString(process.env.PIPE_TEST_COMMAND);
+  const testCommand = normalizeOptionalString(process.env.PIPE_TEST_COMMAND);
   const finalizerCommandEvidenceText = buildFinalizerCommandEvidenceText({
     baseCommitSha: baseCommitSha.toLowerCase(),
     commitSha,

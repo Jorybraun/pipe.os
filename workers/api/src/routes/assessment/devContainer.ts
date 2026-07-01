@@ -95,7 +95,6 @@ const changedFileSchema = z.object({
 
 const workspaceFinalizeRequestSchema = z.object({
   narrative: z.string().trim().min(1).optional(),
-  testCommand: z.string().trim().min(1).optional(),
   forkRepositoryUrl: z.string().trim().min(1).nullable().optional(),
   commitUrl: z.string().trim().min(1).nullable().optional(),
   upstreamPullRequestUrl: z.string().trim().min(1).nullable().optional(),
