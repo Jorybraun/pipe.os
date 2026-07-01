@@ -168,6 +168,38 @@ function buildCtx(): { ctx: ExecutionContext; waitUntilAll: () => Promise<void> 
   };
 }
 
+interface ProfileReceivedHandoffBody {
+  error?: { code?: string; message?: string };
+  challenge?: { id?: string; type?: string; instructions?: string };
+  isComplete?: boolean;
+  stageId?: string;
+  stageTitle?: string;
+  mode?: string;
+  timeLimit?: unknown;
+  challenges?: unknown[];
+  currentIndex?: number;
+  message?: string;
+}
+
+function expectProfileReceivedHandoff(body: ProfileReceivedHandoffBody): void {
+  expect(body.error?.code).toBe('PROFILE_RECEIVED');
+  expect(body.error?.message).toContain('email you when your code review is ready');
+  expect(body.challenge).toMatchObject({
+    id: 'profile-received',
+    type: 'PROFILE_RECEIVED',
+  });
+  expect(body.challenge?.instructions).toContain('email you when your code review is ready');
+  expect(body.isComplete).toBe(true);
+  expect(body.stageId).toBe('candidate-intake-queued');
+  expect(body.stageTitle).toBe('Profile received');
+  expect(body.mode).toBe('INTAKE');
+  expect(body.timeLimit).toBeNull();
+  expect(body.challenges).toEqual([]);
+  expect(body.currentIndex).toBe(0);
+  expect(body.message).toContain('email you when your code review is ready');
+  expect(JSON.stringify(body)).not.toContain('WAITING_FOR_MATCH');
+}
+
 // ─── Fixtures ────────────────────────────────────────────────────────────────
 
 const CANDIDATE = { current_stage_id: 'stage_1' };
@@ -1423,7 +1455,7 @@ describe('POST /rpc/submit-challenge-response', () => {
     )).toBe(true);
   });
 
-  it('queues standalone CODE_REVIEW submission attempts when no PR assignment is ready', async () => {
+  it('returns profile received for standalone CODE_REVIEW submission attempts when no PR assignment is ready', async () => {
     const db = fakeD1({
       firstResponders: [
         {
@@ -1479,14 +1511,9 @@ describe('POST /rpc/submit-challenge-response', () => {
       env,
     );
 
-    expect(res.status).toBe(200);
-    const body = await res.json() as { success?: boolean; complete?: boolean; queued?: boolean; next?: boolean };
-    expect(body).toMatchObject({
-      success: true,
-      complete: true,
-      queued: true,
-    });
-    expect(body.next).toBeUndefined();
+    expect(res.status).toBe(409);
+    const body = await res.json() as ProfileReceivedHandoffBody;
+    expectProfileReceivedHandoff(body);
     expect(matchCandidateToReviewChallenge).not.toHaveBeenCalled();
     expect(db.__calls.some((call) =>
       call.ran && call.sql.includes("SET submission_json")
@@ -2724,8 +2751,8 @@ describe('POST /rpc/review/ask', () => {
     );
 
     expect(res.status).toBe(409);
-    const body = await res.json() as { error: { code: string } };
-    expect(body.error.code).toBe('WAITING_FOR_MATCH');
+    const body = await res.json() as ProfileReceivedHandoffBody;
+    expectProfileReceivedHandoff(body);
     expect(vi.mocked(callExplainerAgent)).not.toHaveBeenCalled();
     expect(db.__calls.some((call) => call.sql.includes('FROM review_challenge_packets'))).toBe(true);
   });
@@ -3007,7 +3034,7 @@ describe('POST /rpc/review/session/init', () => {
     expect(body.pr.diff).toContain('const x = 1;');
   });
 
-  it('returns waiting without creating a session when an assigned PR lacks source-backed packet context even with stale cached diff', async () => {
+  it('returns profile received without creating a session when an assigned PR lacks source-backed packet context even with stale cached diff', async () => {
     const db = fakeD1({
       firstResponders: [
         { match: 'FROM candidates', value: CANDIDATE },
@@ -3032,9 +3059,8 @@ describe('POST /rpc/review/session/init', () => {
     );
 
     expect(res.status).toBe(409);
-    const body = (await res.json()) as { error: { code: string; message: string } };
-    expect(body.error.code).toBe('WAITING_FOR_MATCH');
-    expect(body.error.message).toContain('source-backed review challenge');
+    const body = (await res.json()) as ProfileReceivedHandoffBody;
+    expectProfileReceivedHandoff(body);
     expect(db.__calls.some((call) => call.sql.includes('FROM review_challenge_packets'))).toBe(true);
     expect(db.__calls.find((call) => call.sql.includes('INSERT INTO review_sessions'))).toBeUndefined();
   });
@@ -3272,8 +3298,8 @@ describe('POST /rpc/review/session/:id/message', () => {
     );
 
     expect(res.status).toBe(409);
-    const body = await res.json() as { error: { code: string } };
-    expect(body.error.code).toBe('WAITING_FOR_MATCH');
+    const body = await res.json() as ProfileReceivedHandoffBody;
+    expectProfileReceivedHandoff(body);
     expect(vi.mocked(callImplementerAgent)).not.toHaveBeenCalled();
     expect(db.__calls.some((call) => call.sql.includes('FROM review_challenge_packets'))).toBe(true);
   });

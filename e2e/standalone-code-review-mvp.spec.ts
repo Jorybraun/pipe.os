@@ -329,16 +329,23 @@ async function seedStandaloneReviewMatchFixture(
   candidate: StandaloneCandidate,
 ): Promise<SeedStandaloneReviewFixture> {
   const suffix = candidate.id.replace(/[^a-zA-Z0-9]/g, '').slice(0, 10).toLowerCase();
-  const conceptKey = 'term:workflow-conflict-warning';
+  const conceptKey = `term:workflow-conflict-warning-${suffix}`;
   const conceptLabel = 'workflow conflict warning';
-  const uniquenessConceptKey = 'term:workflow-name-uniqueness';
-  const configRenameConceptKey = 'term:wrangler-config-rename';
-  const deployWarningConceptKey = 'term:deploy-warning';
-  const changesetConceptKey = 'term:changeset-release-note';
-  const vitestConceptKey = 'term:vitest';
-  const repoFullName = 'cloudflare/workers-sdk';
-  const repoUrl = 'https://github.com/cloudflare/workers-sdk';
-  const prNumber = 14435;
+  const uniquenessConceptKey = `term:workflow-name-uniqueness-${suffix}`;
+  const releaseNoteConceptKey = `term:release-note-wording-${suffix}`;
+  const dashboardPolishConceptKey = `term:dashboard-polish-${suffix}`;
+  const copyEditingConceptKey = `term:copy-editing-${suffix}`;
+  const readmeDocsConceptKey = `term:readme-docs-${suffix}`;
+  const configRenameConceptKey = `term:wrangler-config-rename-${suffix}`;
+  const deployWarningConceptKey = `term:deploy-warning-${suffix}`;
+  const changesetConceptKey = `term:changeset-release-note-${suffix}`;
+  const vitestConceptKey = `term:vitest-${suffix}`;
+  const repoFullName = `cloudflare/workers-sdk-assessment-${suffix}`;
+  const comparatorRepoFullName = `cloudflare/workers-sdk-comparator-${suffix}`;
+  const repoUrl = `https://github.com/cloudflare/workers-sdk-assessment-${suffix}`;
+  const comparatorRepoUrl = `https://github.com/cloudflare/workers-sdk-comparator-${suffix}`;
+  const prNumber = 14000 + (Number.parseInt(suffix.slice(0, 5), 16) % 50000);
+  const comparatorPrNumber = prNumber + 1;
   const recordingKey = `meetings/e2e-owner/${suffix}/recording.webm`;
   const transcriptionAudioKey = `meetings/e2e-owner/${suffix}/transcription-audio.webm`;
   const transcriptStatus = 'READY';
@@ -353,19 +360,19 @@ async function seedStandaloneReviewMatchFixture(
       concepts: [
         { canonicalKey: conceptKey, namespace: 'term', label: conceptLabel },
         { canonicalKey: uniquenessConceptKey, namespace: 'term', label: 'workflow name uniqueness' },
-        { canonicalKey: 'term:release-note-wording', namespace: 'term', label: 'release note wording' },
-        { canonicalKey: 'term:dashboard-polish', namespace: 'term', label: 'dashboard polish' },
-        { canonicalKey: 'term:copy-editing', namespace: 'term', label: 'copy editing' },
-        { canonicalKey: 'term:readme-docs', namespace: 'term', label: 'readme docs' },
+        { canonicalKey: releaseNoteConceptKey, namespace: 'term', label: 'release note wording' },
+        { canonicalKey: dashboardPolishConceptKey, namespace: 'term', label: 'dashboard polish' },
+        { canonicalKey: copyEditingConceptKey, namespace: 'term', label: 'copy editing' },
+        { canonicalKey: readmeDocsConceptKey, namespace: 'term', label: 'readme docs' },
       ],
       repo: {
-        githubUrl: 'https://github.com/cloudflare/workers-sdk',
-        fullName: repoFullName,
+        githubUrl: comparatorRepoUrl,
+        fullName: comparatorRepoFullName,
         primaryLanguage: 'TypeScript',
-        description: 'Cloudflare Workers SDK and Wrangler source repository.',
+        description: 'Comparator repository used to prove automatic match score separation.',
       },
       pullRequest: {
-        number: 14436,
+        number: comparatorPrNumber,
         title: '[Wrangler] Tidy copy for workflow dashboard notes',
         author: 'pipe-e2e',
         baseSha: 'bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb',
@@ -432,9 +439,9 @@ async function seedStandaloneReviewMatchFixture(
           conceptKeys: [
             conceptKey,
             uniquenessConceptKey,
-            'term:release-note-wording',
-            'term:dashboard-polish',
-            'term:copy-editing',
+            releaseNoteConceptKey,
+            dashboardPolishConceptKey,
+            copyEditingConceptKey,
           ],
           sourceSpanKeys: ['dashboard-copy'],
           weight: 0.4,
@@ -446,9 +453,9 @@ async function seedStandaloneReviewMatchFixture(
           conceptKeys: [
             conceptKey,
             uniquenessConceptKey,
-            'term:dashboard-polish',
-            'term:copy-editing',
-            'term:readme-docs',
+            dashboardPolishConceptKey,
+            copyEditingConceptKey,
+            readmeDocsConceptKey,
           ],
           sourceSpanKeys: ['dashboard-test'],
           weight: 0.3,
@@ -460,9 +467,9 @@ async function seedStandaloneReviewMatchFixture(
           conceptKeys: [
             conceptKey,
             uniquenessConceptKey,
-            'term:readme-docs',
-            'term:copy-editing',
-            'term:dashboard-polish',
+            readmeDocsConceptKey,
+            copyEditingConceptKey,
+            dashboardPolishConceptKey,
           ],
           sourceSpanKeys: ['readme-note'],
           weight: 0.3,
@@ -474,7 +481,7 @@ async function seedStandaloneReviewMatchFixture(
   expect(comparatorRes.status(), comparatorText).toBe(200);
   const comparatorBody = JSON.parse(comparatorText) as SeedStandaloneReviewFixtureResponse;
   expect(comparatorBody.ok).toBe(true);
-  expect(comparatorBody.prNumber).toBe(14436);
+  expect(comparatorBody.prNumber).toBe(comparatorPrNumber);
 
   const res = await request.post(`${API_BASE}/api/v1/internal/e2e/standalone-review-match-fixture`, {
     headers: recruiterHeaders(authToken),
