@@ -3133,6 +3133,7 @@ interface MatchedOpenSourceChallengePacket {
   pullRequestUrl: string;
   baseCommitSha: string;
   headCommitSha: string;
+  verificationCommand: string;
   title: string;
   instructions: string;
   successCriteria: string[];
@@ -3205,6 +3206,10 @@ function matchedPacketExpectedEvidence(): string[] {
   ];
 }
 
+function matchedPacketVerificationCommand(): string {
+  return 'git diff --check HEAD~1 HEAD && git diff --name-only HEAD~1 HEAD';
+}
+
 function materializeMatchedOpenSourcePacket(
   row: {
     id: string;
@@ -3252,6 +3257,7 @@ function materializeMatchedOpenSourcePacket(
     pullRequestUrl: packet.pullRequest.url,
     baseCommitSha,
     headCommitSha,
+    verificationCommand: matchedPacketVerificationCommand(),
     title: packet.pullRequest.title,
     instructions: matchedPacketInstructions(packet),
     successCriteria: matchedPacketSuccessCriteria(packet),
@@ -3346,6 +3352,7 @@ function buildMatchedOpenSourceChallengeExactText(
     `Pull request URL: ${input.pullRequestUrl}`,
     `Task: ${input.title}`,
     `Instructions: ${input.instructions}`,
+    `Verification command: ${input.verificationCommand}`,
     'Success criteria:',
     ...input.successCriteria.map((criterion) => `- ${criterion}`),
     'Expected evidence:',
@@ -3442,6 +3449,7 @@ async function createMatchedOpenSourceChallengeAssessmentSession(
       repositoryUrl: input.packet.repositoryUrl,
       githubPrNumber: input.packet.githubPrNumber,
       baseCommitSha: input.packet.baseCommitSha,
+      verificationCommand: input.packet.verificationCommand,
       challengePacketId: input.packet.packetId,
       repoSnapshotId: input.packet.repoSnapshotId,
       challengeTitle: input.packet.title,
@@ -3460,6 +3468,7 @@ async function createMatchedOpenSourceChallengeAssessmentSession(
       pullRequestUrl: input.packet.pullRequestUrl,
       baseCommitSha: input.packet.baseCommitSha,
       headCommitSha: input.packet.headCommitSha,
+      verificationCommand: input.packet.verificationCommand,
       repoSnapshotId: input.packet.repoSnapshotId,
     },
     exactText,
@@ -3486,6 +3495,7 @@ async function createMatchedOpenSourceChallengeAssessmentSession(
       githubPrNumber: input.packet.githubPrNumber,
       pullRequestUrl: input.packet.pullRequestUrl,
       baseCommitSha: input.packet.baseCommitSha,
+      verificationCommand: input.packet.verificationCommand,
       title: input.packet.title,
       successCriteria: input.packet.successCriteria,
       expectedEvidence: input.packet.expectedEvidence,

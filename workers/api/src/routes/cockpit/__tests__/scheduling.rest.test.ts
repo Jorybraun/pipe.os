@@ -7510,10 +7510,12 @@ describe('POST /interviews dev-container challenge (HAS-80)', () => {
           repositoryUrl: packet.repositoryUrl,
           githubPrNumber: packet.githubPrNumber,
           baseCommitSha: packet.baseCommitSha,
+          verificationCommand: 'git diff --check HEAD~1 HEAD && git diff --name-only HEAD~1 HEAD',
         },
       },
     });
     expect(body.interview.assessmentProgress?.challenge?.exactText).toContain(`Pull request: #${packet.githubPrNumber}`);
+    expect(body.interview.assessmentProgress?.challenge?.exactText).toContain('Verification command: git diff --check HEAD~1 HEAD && git diff --name-only HEAD~1 HEAD');
     expect(body.interview.assessmentProgress?.challenge?.exactText).toContain('Repair retry scheduling so terminal events are emitted exactly once.');
 
     const row = sqlite!.prepare(
@@ -7837,6 +7839,7 @@ describe('POST /interviews dev-container challenge (HAS-80)', () => {
           pullRequestUrl: `${seeded.repositoryUrl}/pull/${seeded.githubPrNumber}`,
           baseCommitSha: seeded.baseCommitSha,
           headCommitSha: seeded.headCommitSha,
+          verificationCommand: 'git diff --check HEAD~1 HEAD && git diff --name-only HEAD~1 HEAD',
         },
       },
     });
@@ -7846,6 +7849,7 @@ describe('POST /interviews dev-container challenge (HAS-80)', () => {
       `Pull request: #${seeded.githubPrNumber}`,
       `Pull request URL: ${seeded.repositoryUrl}/pull/${seeded.githubPrNumber}`,
       'Task: Fix deterministic worker retry handling',
+      'Verification command: git diff --check HEAD~1 HEAD && git diff --name-only HEAD~1 HEAD',
       'Source-backed demands:',
       '- Repair retry scheduling so terminal events are emitted exactly once.',
       'Expected evidence:',
@@ -7890,6 +7894,7 @@ describe('POST /interviews dev-container challenge (HAS-80)', () => {
       repositoryUrl: seeded.repositoryUrl,
       githubPrNumber: seeded.githubPrNumber,
       baseCommitSha: seeded.baseCommitSha,
+      verificationCommand: 'git diff --check HEAD~1 HEAD && git diff --name-only HEAD~1 HEAD',
       challengePacketId: seeded.packetId,
     });
 
