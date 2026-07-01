@@ -2275,6 +2275,35 @@ candidateOps.get('/:candidateId/living-context/match-confidence', requireGate('l
   return c.json(report);
 });
 
+// GET /:candidateId/living-context/match-report — unified match report combining confidence, gaps, staleness, provenance
+candidateOps.get('/:candidateId/living-context/match-report', requireGate('living_context_read'), async (c) => {
+  const userId = c.var.userId;
+  const { candidateId } = c.req.param();
+  const packetId = c.req.query('packetId');
+  const matchRunId = c.req.query('matchRunId') ?? undefined;
+  const includeProvenance = c.req.query('includeProvenance') !== 'false';
+  const db = c.env.DB;
+
+  if (!packetId) {
+    return apiError(c, 'VALIDATION_ERROR', 'packetId query parameter is required.');
+  }
+
+  const candidate = await db.prepare(
+    `SELECT c.id
+       FROM candidates c
+       LEFT JOIN pipelines p ON p.id = c.pipeline_id
+      WHERE c.id = ?1 AND (c.owner_id = ?2 OR p.owner_id = ?2)`,
+  ).bind(candidateId, userId).first<{ id: string }>();
+  if (!candidate) return apiError(c, 'NOT_FOUND', 'Candidate not found.');
+
+  const { generateUnifiedMatchReport } = await import('../../lib/livingContext/matchReportPipeline');
+  const report = await generateUnifiedMatchReport(db, candidateId, packetId, {
+    matchRunId,
+    includeProvenance,
+  });
+  return c.json(report);
+});
+
 // GET /:candidateId/pipeline-siblings — other candidates in the same pipeline
 candidateOps.get('/:candidateId/pipeline-siblings', async (c) => {
   const userId = c.var.userId;

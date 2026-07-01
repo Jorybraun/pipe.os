@@ -7,6 +7,20 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Added — Unified match report pipeline (criteria #5, #6, #7, #8)
+
+- `matchReportPipeline.ts`: Single orchestrator that chains confidence scoring, gap analysis, staleness alerts, provenance chains, and decision history into one comprehensive `UnifiedMatchReport`. Computes a `MatchVerdict` (strong_match/likely_match/needs_review/weak_match/insufficient_evidence) with score adjustments for staleness and gap penalties.
+- `GET /:candidateId/living-context/match-report?packetId=...&matchRunId=...`: API endpoint producing the unified report. Gated by `living_context_read`.
+- `useMatchReport` hook: Frontend data hook for loading the unified match report.
+- `MatchReportPanel`: LivingContextGraph panel showing verdict with color-coded badge, score, primary reasons, risk factors, and section health badges (confidence %, coverage %, staleness health, prior decisions).
+- `matchReportPipeline.test.ts`: 8-test suite covering all verdict classifications, error handling, provenance inclusion/exclusion, gap penalty application, and structure validation.
+- `useMatchReport.test.ts`: 5-test hook suite covering null IDs, successful fetch, matchRunId URL inclusion, and error handling.
+- Frontend types: `MatchVerdict`, `VerdictRationale`, `UnifiedMatchReport`, `MatchReportSection`, `MatchReportConfidence`, `MatchReportGaps`, `MatchReportStaleness`, `MatchReportProvenance`, `MatchReportDecisionHistory`.
+
+### Fixed — CI test isolation
+
+- Exclude `apps/**` from root vitest config — `apps/video-room` has its own test context with separate dependencies (`clippyjs`). Running its tests from root caused unresolvable import errors.
+
 ### Added — Match confidence scoring (criteria #5, #6, #8)
 
 - `matchConfidenceScoring.ts`: Multi-dimensional confidence scoring for candidate-to-challenge matches. Combines coverage (demand concept overlap), recency (temporal decay), depth (corroborating source count), and consistency (strength variance) into a weighted composite score. Identifies stretch areas and produces actionable recommendations.

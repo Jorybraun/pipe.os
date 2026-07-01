@@ -126,7 +126,10 @@ vi.mock('../../../hooks/useRepoDecomposition', () => ({
 
 vi.mock('../../../hooks/useMatchConfidence', () => ({
   useMatchConfidence: () => ({ report: null, isLoading: false, error: null, refetch: vi.fn() }),
+}));
 
+vi.mock('../../../hooks/useMatchReport', () => ({
+  useMatchReport: () => ({ report: null, isLoading: false, error: null, refetch: vi.fn() }),
 }));
 
 beforeEach(() => {
