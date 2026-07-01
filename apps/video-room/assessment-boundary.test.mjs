@@ -1,16 +1,29 @@
 import { describe, expect, it } from 'vitest';
 import { readdirSync, readFileSync, statSync } from 'node:fs';
-import { join } from 'node:path';
+import { join, relative } from 'node:path';
 
-const root = process.cwd();
+const appRoot = process.cwd();
+const repoRoot = join(appRoot, '..', '..');
 
-const scannedEntries = [
+const scannedRoomEntries = [
   'index.html',
   'public',
   'src',
 ];
 
-const encodedRetiredExperiencePhrases = [
+const scannedProductEntries = [
+  'CHANGELOG.md',
+  'docs',
+  'e2e',
+  'src',
+  'workers/api/src',
+  'workers/app/src',
+  'apps/intake/src',
+  'apps/meetings/src',
+  'scripts',
+];
+
+const encodedRetiredProductPhrases = [
   [57, 53, 32, 117, 110, 116, 105, 108, 32, 105, 110, 102, 105, 110, 105, 116, 121],
   [57, 53, 32, 116, 111, 32, 105, 110, 102, 105, 110, 105, 116, 121],
   [57, 53, 32, 116, 105, 108, 32, 105, 110, 102, 105, 110, 105, 116, 121],
@@ -33,6 +46,9 @@ const encodedRetiredExperiencePhrases = [
   [115, 104, 97, 114, 101, 100, 32, 100, 101, 115, 107, 116, 111, 112],
   [115, 104, 97, 114, 101, 100, 32, 99, 117, 114, 115, 111, 114],
   [99, 117, 114, 115, 111, 114, 32, 116, 114, 97, 105, 108],
+];
+
+const encodedRetiredRoomPhrases = [
   [115, 116, 97, 114, 116, 32, 100, 101, 118, 105, 110, 32, 98, 114, 105, 100, 103, 101],
   [100, 101, 118, 105, 110, 32, 98, 114, 105, 100, 103, 101],
   [100, 101, 118, 105, 110, 32, 99, 104, 97, 116],
@@ -47,28 +63,50 @@ function regexFromPhrase(encodedPhrase) {
   return new RegExp(escapedPhrase.replace(/\s+/g, '[\\s_-]+'), 'i');
 }
 
-const forbiddenPatterns = encodedRetiredExperiencePhrases.map(regexFromPhrase);
+const forbiddenProductPatterns = encodedRetiredProductPhrases.map(regexFromPhrase);
+const forbiddenRoomPatterns = encodedRetiredRoomPhrases.map(regexFromPhrase);
 
-function collectFiles(entry) {
+function collectFiles(root, entry) {
   const absolutePath = join(root, entry);
   const stats = statSync(absolutePath);
   if (stats.isFile()) return [absolutePath];
-  return readdirSync(absolutePath).flatMap((child) => collectFiles(join(entry, child)));
+  return readdirSync(absolutePath).flatMap((child) => collectFiles(root, join(entry, child)));
+}
+
+function collectExistingFiles(root, entries) {
+  return entries.flatMap((entry) => {
+    try {
+      return collectFiles(root, entry);
+    } catch (error) {
+      if (error && typeof error === 'object' && 'code' in error && error.code === 'ENOENT') {
+        return [];
+      }
+      throw error;
+    }
+  });
+}
+
+function scanFiles(files, patterns, root) {
+  const violations = [];
+  for (const file of files) {
+    const text = readFileSync(file, 'utf8');
+    for (const pattern of patterns) {
+      if (pattern.test(text)) {
+        violations.push(`${relative(root, file)}: ${pattern}`);
+      }
+    }
+  }
+  return violations;
 }
 
 describe('assessment room product boundary', () => {
   it('ships only the core assessment room experience', () => {
-    const violations = [];
-    for (const entry of scannedEntries) {
-      for (const file of collectFiles(entry)) {
-        const text = readFileSync(file, 'utf8');
-        for (const pattern of forbiddenPatterns) {
-          if (pattern.test(text)) {
-            violations.push(`${file.replace(`${root}/`, '')}: ${pattern}`);
-          }
-        }
-      }
-    }
+    const roomFiles = collectExistingFiles(appRoot, scannedRoomEntries);
+    const productFiles = collectExistingFiles(repoRoot, scannedProductEntries);
+    const violations = [
+      ...scanFiles(productFiles, forbiddenProductPatterns, repoRoot),
+      ...scanFiles(roomFiles, forbiddenRoomPatterns, appRoot),
+    ];
 
     expect(violations).toEqual([]);
   });
