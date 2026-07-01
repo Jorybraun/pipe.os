@@ -821,7 +821,7 @@ describe('POST /rpc/get-stage-config', () => {
     expect(body.waitingChallenge).toBeUndefined();
   });
 
-  it('defers role-backed CODE_REVIEW matching while candidate evidence ingestion is still active', async () => {
+  it('defers role-backed CODE_REVIEW matching while candidate evidence ingestion has no matchable evidence', async () => {
     const db = fakeD1({
       firstResponders: [
         {
@@ -839,7 +839,7 @@ describe('POST /rpc/get-stage-config', () => {
           value: {
             resume_s3_key: 'text-intake/cand_1/role-backed',
             raw_node_count: 16,
-            node_count: 16,
+            node_count: 0,
           },
         },
         {
@@ -866,7 +866,7 @@ describe('POST /rpc/get-stage-config', () => {
             estimated_completion_at: '2026-06-28T16:59:40.000Z',
             updated_at: '2026-06-28T16:59:23.000Z',
             raw_node_count: 16,
-            node_count: 16,
+            node_count: 0,
           },
         },
       ],
@@ -920,7 +920,7 @@ describe('POST /rpc/get-stage-config', () => {
     expect(matchCandidateToReviewChallenge).not.toHaveBeenCalled();
   });
 
-  it('does not run role-backed CODE_REVIEW matching when active ingestion already produced partial evidence', async () => {
+  it('runs role-backed CODE_REVIEW matching when active ingestion already produced matchable evidence', async () => {
     vi.mocked(matchCandidateToReviewChallenge).mockResolvedValueOnce({
       status: 'MATCHED',
       repoId: 973,
@@ -1015,16 +1015,21 @@ describe('POST /rpc/get-stage-config', () => {
       challenges?: Array<{ type: string; title: string }>;
     };
     expect(body).toMatchObject({
-      isComplete: true,
-      stageId: 'candidate-intake-queued',
-      challenges: [],
-      message: 'Your profile has been received. PIPE will email you when your code review is ready.',
+      isComplete: false,
+      stageId: 'stage_code_review',
+      challenges: expect.arrayContaining([{ type: 'CODE_REVIEW', title: 'Code Review', order: 1 }]),
     });
-    expect(matchCandidateToReviewChallenge).not.toHaveBeenCalled();
+    expect(matchCandidateToReviewChallenge).toHaveBeenCalledWith(
+      db,
+      'cand_1',
+      expect.objectContaining({
+        roleContextId: 'role_ctx_1',
+      }),
+    );
     expect(db.__calls.some((call) =>
       call.ran
       && call.sql.includes('INSERT INTO candidate_challenge_assignment')
-    )).toBe(false);
+    )).toBe(true);
   });
 
   it('retries stale Workers AI model failures from stored text-intake source on status refresh', async () => {

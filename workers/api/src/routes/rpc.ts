@@ -748,7 +748,8 @@ function standaloneEvidenceIsStale(status: string | null, updatedAt: string | nu
 function activeIngestionBlocksCodeReviewMatching(
   readiness: StandaloneReviewEvidenceReadiness,
 ): boolean {
-  return isInProgressStandaloneIngestionStatus(readiness.status);
+  return readiness.nodeCount <= 0
+    && isInProgressStandaloneIngestionStatus(readiness.status);
 }
 
 const STANDALONE_REVIEW_CHALLENGE_CONFIG = {
