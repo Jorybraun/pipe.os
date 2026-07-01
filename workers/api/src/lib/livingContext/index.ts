@@ -151,6 +151,12 @@ export type {
   MatchDecisionHistoryEntry,
   MatchDecisionHistory,
 } from './matchDecisionAudit';
+export { loadPriorDecisionExclusions, buildDecisionExclusionDiagnostics } from './decisionWeightedRematch';
+export type {
+  DecisionExclusion,
+  DecisionExclusionResult,
+  DecisionExclusionDiagnostic,
+} from './decisionWeightedRematch';
 export { computeStalenessAlerts, loadCandidateStalenessAlerts } from './evidenceStalenessAlerts';
 export type {
   AlertSeverity,

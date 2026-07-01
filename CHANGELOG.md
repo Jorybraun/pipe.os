@@ -7,6 +7,15 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Added — Decision-weighted rematch (criteria #2, #5)
+
+- `decisionWeightedRematch.ts`: Loads prior recruiter accept/reject/defer decisions and computes challenge exclusion lists for rematch. Rejected and accepted challenges are excluded; deferred challenges remain eligible. Later decisions override earlier ones (e.g., reject then defer = eligible).
+- `excludePacketIds` option on `CandidateReviewChallengeOptions`: Allows the matcher to skip specified challenge packets during scoring.
+- Rematch endpoint now auto-loads prior decision history and excludes previously rejected/accepted challenges, surfacing decision context in the response.
+- `RematchPriorDecisions` frontend type: Shows excluded/deferred counts and excluded challenge details.
+- `LivingContextGraph` rematch result now displays prior decision exclusion count.
+- `decisionWeightedRematch.test.ts`: 7-test suite covering empty state, rejected/accepted exclusion, deferred passthrough, override semantics (reject→defer), per-candidate isolation, deduplication, and diagnostic mapping.
+
 ### Added — Evidence staleness alerting (criteria #7, #8)
 
 - `evidenceStalenessAlerts.ts`: Pure-function staleness engine computing alerts across evidence dimensions. Classifies severity (critical ≥180d, warning ≥90d, info for single-source/low-coverage), maps interaction types to dimensions, integrates temporal decay multipliers, and derives overall health.

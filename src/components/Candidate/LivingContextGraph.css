@@ -2842,6 +2842,11 @@ html[data-theme="pipe-blue"] .living-context {
   color: var(--lc-record-muted);
 }
 
+.living-context__rematch-decisions {
+  color: #f59e0b;
+  font-size: 0.65rem;
+}
+
 /* --- Concept Graph --- */
 .living-context__concept-graph {
   padding: 14px 0;

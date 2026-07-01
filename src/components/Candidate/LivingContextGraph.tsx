@@ -3024,6 +3024,11 @@ function RematchButton({
                 ? result.reason ?? 'More evidence needed before matching'
                 : `Status: ${result.status} · ${result.evaluatedCount} challenge${result.evaluatedCount === 1 ? '' : 's'} evaluated`}
           </span>
+          {result.priorDecisions && result.priorDecisions.excludedCount > 0 && (
+            <span className="living-context__rematch-decisions" data-testid="rematch-prior-decisions">
+              · {result.priorDecisions.excludedCount} challenge{result.priorDecisions.excludedCount === 1 ? '' : 's'} excluded by prior decisions
+            </span>
+          )}
         </div>
       )}
     </div>

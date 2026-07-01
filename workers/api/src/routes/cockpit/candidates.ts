@@ -1893,6 +1893,7 @@ candidateOps.get('/:candidateId/living-context/staleness-alerts', requireGate('l
 });
 
 // POST /:candidateId/living-context/rematch — recruiter triggers a fresh match run
+// Automatically excludes challenges that were previously rejected or accepted.
 candidateOps.post('/:candidateId/living-context/rematch', requireGate('living_context_read'), async (c) => {
   const userId = c.var.userId;
   const { candidateId } = c.req.param();
@@ -1921,12 +1922,21 @@ candidateOps.post('/:candidateId/living-context/rematch', requireGate('living_co
       reason: 'Candidate has no living context workspace identity yet.',
       evaluatedCount: 0,
       topChallenge: null,
+      priorDecisions: null,
     }, 200);
   }
 
-  const { matchCandidateToReviewChallenge } = await import('../../lib/challengeMatching/d1Matcher');
+  const [{ matchCandidateToReviewChallenge }, { loadPriorDecisionExclusions: loadExclusions }] = await Promise.all([
+    import('../../lib/challengeMatching/d1Matcher'),
+    import('../../lib/livingContext/decisionWeightedRematch'),
+  ]);
+
+  const decisionExclusions = await loadExclusions(db, candidateId);
   const match = await matchCandidateToReviewChallenge(db, candidateId, {
     temporalDecay: { halfLifeDays: 90 },
+    excludePacketIds: decisionExclusions.excludedPacketIds.length > 0
+      ? decisionExclusions.excludedPacketIds
+      : undefined,
   });
 
   const evaluated = match.diagnostics?.evaluatedChallenges ?? [];
@@ -1952,6 +1962,19 @@ candidateOps.post('/:candidateId/living-context/rematch', requireGate('living_co
       stretchCount: top.stretchCount,
       eligible: top.eligible,
     } : null,
+    priorDecisions: decisionExclusions.totalDecisions > 0
+      ? {
+          excludedCount: decisionExclusions.excludedPacketIds.length,
+          deferredCount: decisionExclusions.deferredCount,
+          totalDecisions: decisionExclusions.totalDecisions,
+          excludedChallenges: decisionExclusions.exclusions.map((ex) => ({
+            challengeId: ex.challengeId,
+            repoId: ex.repoId,
+            prNumber: ex.prNumber,
+            verdict: ex.verdict,
+          })),
+        }
+      : null,
   });
 });
 

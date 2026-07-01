@@ -1713,6 +1713,18 @@ export interface PostRespondResponse {
   rcd?: RoleContextDocument | null;
 }
 
+export interface RematchPriorDecisions {
+  excludedCount: number;
+  deferredCount: number;
+  totalDecisions: number;
+  excludedChallenges: Array<{
+    challengeId: string;
+    repoId: string;
+    prNumber: number;
+    verdict: 'accepted' | 'rejected';
+  }>;
+}
+
 export interface RematchResult {
   candidateId: string;
   status: string;
@@ -1730,6 +1742,7 @@ export interface RematchResult {
     eligible: boolean;
   } | null;
   reason?: string;
+  priorDecisions?: RematchPriorDecisions | null;
 }
 
 export interface ConceptGraphConcept {
