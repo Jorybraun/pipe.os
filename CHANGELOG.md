@@ -19,6 +19,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - Added coverage-only route inventory mode and benchmark specs for safe missing-ID, candidate artifact validation, meeting-room, phone, GitHub, and internal evidence diagnostic paths.
 - Expanded the route benchmark inventory with opt-in mutation probes and unauthorized candidate/runtime endpoints so assessment-room regressions are visible without mutating data by default.
 - Added bounded dry-run contracts for heavy living-context maintenance and culture calibration routes, bringing the opt-in route benchmark inventory to full discovered-handler coverage without launching backfills or AI calibration calls.
+- Heavy living-context maintenance triggers and culture scorer calibration now queue by default with explicit `waitForResult` synchronous mode, keeping operator routes below the route benchmark latency budget.
 - The app-dev CODE_REVIEW reliability loop now runs a timeout-bounded real ready-submit smoke separately from the blocked matching matrix, proving both viable assessment submission and honest blocked-state behavior without hanging indefinitely.
 
 ### Fixed — CODE_REVIEW assessment runtime

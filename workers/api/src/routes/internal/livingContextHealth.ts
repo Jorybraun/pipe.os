@@ -63,6 +63,30 @@ async function readOptionalJsonBody(req: { json<T = unknown>(): Promise<T> }): P
   return isRecord(body) ? body : {};
 }
 
+function queueBackgroundTask(
+  c: { executionCtx: ExecutionContext },
+  label: string,
+  task: () => Promise<unknown>,
+): boolean {
+  let executionCtx: ExecutionContext;
+  try {
+    executionCtx = c.executionCtx;
+  } catch {
+    return false;
+  }
+
+  if (typeof executionCtx.waitUntil !== 'function') return false;
+
+  executionCtx.waitUntil(
+    Promise.resolve()
+      .then(task)
+      .catch((err) => {
+        console.error(`[livingContextHealth/${label}] background task failed:`, err);
+      }),
+  );
+  return true;
+}
+
 app.get('/living-context-health', async (c) => {
   const db = c.env.DB;
   const subsystems: SubsystemHealth[] = [];
@@ -362,10 +386,13 @@ app.get('/evaluation-readiness', async (c) => {
  *
  * Enqueue rebuild operations for all workspace persons. The projection outbox
  * cron will pick these up and re-project each person from D1 into Neo4j.
+ * Defaults to an async 202 response so large workspaces do not hold the HTTP
+ * request open; pass { waitForResult: true } for the legacy synchronous result.
  */
 app.post('/living-context-rebuild-projections', async (c) => {
   const db = c.env.DB;
   const body = await readOptionalJsonBody(c.req);
+  const waitForResult = body.waitForResult === true;
 
   if (body.dryRun === true) {
     const row = await db.prepare(
@@ -377,6 +404,30 @@ app.post('/living-context-rebuild-projections', async (c) => {
       enqueued: 0,
       wouldEnqueue: row?.cnt ?? 0,
     });
+  }
+
+  if (!waitForResult) {
+    const queued = queueBackgroundTask(c, 'rebuildProjections', () => scheduleFullProjectionRebuild(db));
+    if (!queued) {
+      return c.json(
+        {
+          error: {
+            code: 'BACKGROUND_EXECUTION_UNAVAILABLE',
+            message: 'Unable to queue projection rebuild in this runtime.',
+          },
+        },
+        503,
+      );
+    }
+
+    return c.json(
+      {
+        status: 'queued',
+        mode: 'async',
+        operation: 'living_context_rebuild_projections',
+      },
+      202,
+    );
   }
 
   const result = await scheduleFullProjectionRebuild(db);
@@ -583,9 +634,12 @@ app.get('/living-context-backfill', async (c) => {
  *
  * Manually trigger a backfill run outside the cron schedule. Runs the same
  * logic as the scheduled handler. Returns per-task results.
+ * Defaults to an async 202 response; pass { waitForResult: true } to block for
+ * the per-task batch result.
  */
 app.post('/living-context-backfill-trigger', async (c) => {
   const body = await readOptionalJsonBody(c.req);
+  const waitForResult = body.waitForResult === true;
 
   if (body.dryRun === true) {
     const gateResult = await checkGate(c.env.DB, 'living_context_backfill');
@@ -605,6 +659,35 @@ app.post('/living-context-backfill-trigger', async (c) => {
         dependsOn: t.dependsOn,
       })),
     });
+  }
+
+  if (!waitForResult) {
+    const queued = queueBackgroundTask(c, 'backfillTrigger', () => runScheduledBackfill(c.env));
+    if (!queued) {
+      return c.json(
+        {
+          error: {
+            code: 'BACKGROUND_EXECUTION_UNAVAILABLE',
+            message: 'Unable to queue living-context backfill in this runtime.',
+          },
+        },
+        503,
+      );
+    }
+
+    return c.json(
+      {
+        status: 'queued',
+        mode: 'async',
+        operation: 'living_context_backfill_trigger',
+        registeredTasks: BACKFILL_TASKS.map((t) => ({
+          taskKey: t.taskKey,
+          description: t.description,
+          dependsOn: t.dependsOn,
+        })),
+      },
+      202,
+    );
   }
 
   const result = await runScheduledBackfill(c.env);

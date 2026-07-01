@@ -103,6 +103,30 @@ async function readOptionalJsonBody(req: { json<T = unknown>(): Promise<T> }): P
   return isRecord(body) ? body : {};
 }
 
+function queueBackgroundTask(
+  c: { executionCtx: ExecutionContext },
+  label: string,
+  task: () => Promise<unknown>,
+): boolean {
+  let executionCtx: ExecutionContext;
+  try {
+    executionCtx = c.executionCtx;
+  } catch {
+    return false;
+  }
+
+  if (typeof executionCtx.waitUntil !== 'function') return false;
+
+  executionCtx.waitUntil(
+    Promise.resolve()
+      .then(task)
+      .catch((err) => {
+        console.error(`[culture/${label}] background task failed:`, err);
+      }),
+  );
+  return true;
+}
+
 /**
  * ADR-031 §5.4 — Required disclosures for AI-conducted interviews.
  * Shown once before any turn is written to the transcript.
@@ -653,23 +677,28 @@ cultureRecruiter.get('/cost-dashboard', async (c) => {
 // 11-call scoring pipeline against ~10 fixtures, so it burns Workers AI
 // quota. Intended for use after any prompt change in cultureScorerPrompts.ts.
 //
-// Returns the full CalibrationReport JSON. The caller (recruiter UI or curl)
-// can inspect QWK metrics and per-dimension confusion.
+// Defaults to a queued 202 response so the expensive provider run does not hold
+// the HTTP request open. Pass { waitForResult: true } to return the full
+// CalibrationReport JSON synchronously.
 cultureRecruiter.post('/calibration/run', async (c) => {
   const body = await readOptionalJsonBody(c.req);
   const rawFixtureLimit = body.fixtureLimit;
   const fixtureLimit = typeof rawFixtureLimit === 'number' && Number.isInteger(rawFixtureLimit) && rawFixtureLimit > 0
     ? rawFixtureLimit
     : undefined;
+  const waitForResult = body.waitForResult === true;
 
   if (rawFixtureLimit !== undefined && fixtureLimit === undefined) {
     return apiError(c, 'VALIDATION_ERROR', 'fixtureLimit must be a positive integer.');
   }
 
-  if (body.dryRun === true) {
-    const { CALIBRATION_FIXTURES } = await import('../../lib/__tests__/cultureScorerCalibration.fixtures');
-    const plannedFixtureCount = Math.min(fixtureLimit ?? CALIBRATION_FIXTURES.length, CALIBRATION_FIXTURES.length);
+  const { CALIBRATION_FIXTURES } = await import('../../lib/__tests__/cultureScorerCalibration.fixtures');
+  const fixtures = fixtureLimit !== undefined
+    ? CALIBRATION_FIXTURES.slice(0, fixtureLimit)
+    : CALIBRATION_FIXTURES;
+  const plannedFixtureCount = fixtures.length;
 
+  if (body.dryRun === true) {
     return c.json({
       dryRun: true,
       plannedFixtureCount,
@@ -690,35 +719,69 @@ cultureRecruiter.post('/calibration/run', async (c) => {
     );
   }
 
-  // Lazy imports to keep the cold-start surface small for non-calibration
-  // requests. The fixtures alone are ~440 lines of static JSON-ish data.
-  const [{ runCalibration }, { CALIBRATION_FIXTURES }, { CloudflareAIProvider }] = await Promise.all([
-    import('../../lib/cultureScorerCalibration'),
-    import('../../lib/__tests__/cultureScorerCalibration.fixtures'),
-    import('../../lib/llm/cloudflareAIProvider'),
-  ]);
-  const fixtures = fixtureLimit !== undefined
-    ? CALIBRATION_FIXTURES.slice(0, fixtureLimit)
-    : CALIBRATION_FIXTURES;
+  const runCalibrationTask = async (): Promise<{
+    passed: boolean;
+    competencyQwk: number;
+    profileQwk: number;
+    overallQwk: number;
+    competencyResults: unknown;
+    profileResults: unknown;
+  }> => {
+    // Lazy imports to keep the cold-start surface small for non-calibration
+    // requests. The fixtures alone are ~440 lines of static JSON-ish data.
+    const [{ runCalibration }, { CloudflareAIProvider }] = await Promise.all([
+      import('../../lib/cultureScorerCalibration'),
+      import('../../lib/llm/cloudflareAIProvider'),
+    ]);
 
-  const provider = new CloudflareAIProvider(c.env.AI);
+    const provider = new CloudflareAIProvider(c.env.AI);
 
-  // Neutral mid-point benchmark so the scorer's profile match logic doesn't
-  // bias the calibration output (matches the previous script's defaults).
-  const orgBenchmark = {
-    autonomy: 3,
-    riskTolerance: 3,
-    workPace: 3,
-    collaborationStyle: 3,
-    feedbackOrientation: 3,
-  } as const;
+    // Neutral mid-point benchmark so the scorer's profile match logic doesn't
+    // bias the calibration output (matches the previous script's defaults).
+    const orgBenchmark = {
+      autonomy: 3,
+      riskTolerance: 3,
+      workPace: 3,
+      collaborationStyle: 3,
+      feedbackOrientation: 3,
+    } as const;
 
-  try {
-    const report = await runCalibration({
+    return runCalibration({
       provider,
       fixtures,
       orgBenchmark,
     });
+  };
+
+  if (!waitForResult) {
+    const queued = queueBackgroundTask(c, 'calibrationRun', runCalibrationTask);
+    if (!queued) {
+      return c.json(
+        {
+          error: {
+            code: 'BACKGROUND_EXECUTION_UNAVAILABLE',
+            message: 'Unable to queue culture calibration in this runtime.',
+          },
+        },
+        503,
+      );
+    }
+
+    return c.json(
+      {
+        status: 'queued',
+        mode: 'async',
+        operation: 'culture_calibration_run',
+        plannedFixtureCount,
+        totalFixtureCount: CALIBRATION_FIXTURES.length,
+        estimatedScoringCalls: plannedFixtureCount * 11,
+      },
+      202,
+    );
+  }
+
+  try {
+    const report = await runCalibrationTask();
 
     return c.json({
       passed: report.passed,

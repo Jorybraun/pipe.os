@@ -22,6 +22,21 @@ const gatesMigration = readFileSync(
   'utf8',
 );
 
+function buildExecutionContext(): { ctx: ExecutionContext; waitUntilAll: () => Promise<void> } {
+  const promises: Promise<unknown>[] = [];
+  return {
+    ctx: {
+      waitUntil: (promise: Promise<unknown>) => {
+        promises.push(promise);
+      },
+      passThroughOnException: () => {},
+    } as unknown as ExecutionContext,
+    waitUntilAll: async () => {
+      await Promise.all(promises);
+    },
+  };
+}
+
 describe('GET /living-context-health', () => {
   let sqlite: BetterSqliteDb;
 
@@ -84,7 +99,7 @@ describe('POST /living-context-rebuild-projections', () => {
     sqlite.close();
   });
 
-  it('enqueues rebuild jobs for all workspace persons', async () => {
+  it('queues rebuild jobs asynchronously by default', async () => {
     sqlite.exec(`
       INSERT INTO people (id, ingestion_key, created_at, updated_at)
       VALUES ('person-1', 'person:p1', datetime('now'), datetime('now'));
@@ -105,15 +120,18 @@ describe('POST /living-context-rebuild-projections', () => {
     const db = createMockD1(sqlite);
     const app = new Hono();
     app.route('/', livingContextHealth);
+    const { ctx, waitUntilAll } = buildExecutionContext();
 
     const res = await app.request('/living-context-rebuild-projections', {
       method: 'POST',
-    }, { DB: db });
-    expect(res.status).toBe(200);
+    }, { DB: db }, ctx);
+    expect(res.status).toBe(202);
 
-    const body = await res.json() as { status: string; enqueued: number };
-    expect(body.status).toBe('scheduled');
-    expect(body.enqueued).toBe(2);
+    const body = await res.json() as { status: string; mode: string };
+    expect(body.status).toBe('queued');
+    expect(body.mode).toBe('async');
+
+    await waitUntilAll();
 
     const rows = sqlite.prepare(
       `SELECT aggregate_id, operation, status FROM projection_outbox WHERE operation = 'rebuild'`,
@@ -123,17 +141,20 @@ describe('POST /living-context-rebuild-projections', () => {
     expect(rows.every((r) => r.status === 'pending')).toBe(true);
   });
 
-  it('returns zero when no workspace persons exist', async () => {
+  it('runs rebuild synchronously when waitForResult is requested', async () => {
     const db = createMockD1(sqlite);
     const app = new Hono();
     app.route('/', livingContextHealth);
 
     const res = await app.request('/living-context-rebuild-projections', {
       method: 'POST',
+      body: JSON.stringify({ waitForResult: true }),
+      headers: { 'Content-Type': 'application/json' },
     }, { DB: db });
     expect(res.status).toBe(200);
 
     const body = await res.json() as { status: string; enqueued: number };
+    expect(body.status).toBe('scheduled');
     expect(body.enqueued).toBe(0);
   });
 
@@ -356,6 +377,29 @@ describe('POST /living-context-backfill-trigger', () => {
 
   afterEach(() => {
     sqlite.close();
+  });
+
+  it('queues a backfill run asynchronously by default', async () => {
+    const db = createMockD1(sqlite);
+    const app = new Hono();
+    app.route('/', livingContextHealth);
+    const { ctx, waitUntilAll } = buildExecutionContext();
+
+    const res = await app.request('/living-context-backfill-trigger', {
+      method: 'POST',
+    }, { DB: db }, ctx);
+    expect(res.status).toBe(202);
+
+    const body = await res.json() as {
+      status: string;
+      mode: string;
+      registeredTasks: Array<{ taskKey: string }>;
+    };
+    expect(body.status).toBe('queued');
+    expect(body.mode).toBe('async');
+    expect(body.registeredTasks.length).toBeGreaterThan(0);
+
+    await waitUntilAll();
   });
 
   it('returns a dry-run plan without creating checkpoints or running tasks', async () => {
