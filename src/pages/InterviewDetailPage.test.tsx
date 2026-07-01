@@ -1259,6 +1259,7 @@ describe('InterviewDetailPage', () => {
     expect(scoreTrust).toHaveTextContent('usable match gate');
     const gateMentions = scoreTrust.textContent?.match(/usable match gate/g) ?? [];
     expect(gateMentions).toHaveLength(1);
+    expect(scoreTrust).toHaveTextContent('no rendered source bridge');
 
     const sourceProof = screen.getByText('Source proof').closest('details');
     expect(sourceProof).not.toHaveAttribute('open');
