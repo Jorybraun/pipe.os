@@ -18,7 +18,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Fixed — Open-source assessment progress
 
-- Role-backed CODE_REVIEW matching now proceeds once active candidate ingestion has advanced past resume decomposition and produced matchable source-backed evidence, while still deferring candidates with no usable evidence.
+- Role-backed CODE_REVIEW matching now proceeds once candidate ingestion has produced matchable source-backed evidence, while still deferring candidates with no usable evidence.
 - Person-profile code-review decision cards now label proven match bridges as source-backed matches instead of vague bridge counts.
 - CODE_REVIEW readiness diagnostics now distinguish active resume decomposition from terminal evidence gaps without blocking matching once usable evidence exists.
 - Assessment progress APIs now filter legacy evaluator claims without exact source refs at the shared backend projection, so candidate, room, and recruiter clients receive the same source-backed claim previews.
@@ -71,7 +71,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Fixed — CODE_REVIEW assessment runtime
 
-- Role-backed CODE_REVIEW matching now stays deferred while resume decomposition is still active, even if partial source-backed nodes already exist, preventing early partial evidence from creating a false ready challenge without blocking later enrichment from using usable evidence.
+- Role-backed CODE_REVIEW matching now stays deferred while candidate ingestion is still active, even if partial source-backed nodes already exist, preventing early partial evidence from creating a false ready challenge.
 - The deployed CODE_REVIEW auto-match smoke now waits through the candidate-safe `Profile received` handoff before failing with a clear timeout when no upstream challenge finalizer assigns a ready CODE_REVIEW, matching the deferred-matching product boundary without reviving the candidate waiting screen.
 - Active CODE_REVIEW evidence ingestion now stays a pending auto-refresh diagnostic while repo matching is deferred, instead of being marked as a blocked/terminal challenge state.
 - Pipeline CODE_REVIEW gates now defer deterministic repo matching while candidate evidence ingestion is still active, preventing partial resume spans from producing false `NO_ROLE_SAFE_CHALLENGE` match runs before decomposition finishes.
