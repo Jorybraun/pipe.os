@@ -40,13 +40,28 @@ async function startWelcomeScreenIfPresent(page: Page): Promise<void> {
   const startButtons = page.getByRole('button', { name: 'START_INTERVIEW' });
   await startButtons.first().waitFor({ state: 'visible', timeout: 10_000 }).catch(() => undefined);
 
-  const startButtonCount = await startButtons.count();
-  for (let index = 0; index < startButtonCount; index += 1) {
-    const startButton = startButtons.nth(index);
-    if (!(await startButton.isVisible())) continue;
-    await startButton.click();
-    await startButton.waitFor({ state: 'hidden', timeout: 10_000 }).catch(() => undefined);
-    return;
+  for (let attempt = 0; attempt < 3; attempt += 1) {
+    const startButtonCount = await startButtons.count();
+    let clicked = false;
+    for (let index = 0; index < startButtonCount; index += 1) {
+      const startButton = startButtons.nth(index);
+      if (!(await startButton.isVisible())) continue;
+      await startButton.click();
+      clicked = true;
+      break;
+    }
+    if (!clicked) return;
+
+    const advanced = await Promise.race([
+      page.getByTestId('code-review-challenge').waitFor({ state: 'visible', timeout: 6_000 })
+        .then(() => true)
+        .catch(() => false),
+      page.getByTestId('assessment-submitted').waitFor({ state: 'visible', timeout: 6_000 })
+        .then(() => true)
+        .catch(() => false),
+    ]);
+    if (advanced) return;
+    await page.waitForTimeout(500);
   }
 }
 

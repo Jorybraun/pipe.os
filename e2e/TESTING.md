@@ -157,6 +157,7 @@ The smoke proves the candidate lands in CODE_REVIEW rather than a video room, th
 ## 10. CODE_REVIEW Recruiter Detail Smoke
 
 This smoke verifies the recruiter-side decision cockpit for an existing code-review or workspace assessment interview. It catches fallback loaders, infinite matching screens, missing next actions, missing score-validity state, missing workspace work packets, missing human-review state, and optional invite-recipient drift.
+When `ASSESSMENT_RECRUITER_EXPECT_PERSON_PROFILE_DECISION=1` and score proof is expected, it also clicks through to the person profile and verifies the CODE_REVIEW score-validity readout explains why the score is usable or why it must be withheld.
 
 ```bash
 APP_BASE=https://app-dev.hire-pipe.com \

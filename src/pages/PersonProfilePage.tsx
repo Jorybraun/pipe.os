@@ -10,6 +10,7 @@ import {
   Mail,
   Network,
   Phone,
+  ShieldCheck,
   Signal,
   UserRound,
 } from 'lucide-react';
@@ -1485,6 +1486,46 @@ function codeReviewDecisionSourceProofSummary(decision: CodeReviewDecisionProjec
   return `${parts.slice(0, -1).join(', ')}, and ${parts[parts.length - 1]}`;
 }
 
+function codeReviewScoreValidityReadout(decision: CodeReviewDecisionProjection): {
+  headline: string;
+  detail: string;
+  reasons: string[];
+} {
+  const basisReasons = decision.basisItems.map((item) => {
+    const label = item.label.toLowerCase();
+    if (label.includes('score')) {
+      return item.satisfied ? 'score report is captured' : 'score report is missing';
+    }
+    if (label.includes('transcript') || label.includes('review evidence')) {
+      return item.satisfied ? 'review transcript is captured' : 'review transcript is missing';
+    }
+    if (label.includes('repo') || label.includes('challenge')) {
+      return item.satisfied ? 'repo challenge is source-backed' : 'repo challenge is missing';
+    }
+    if (label.includes('match')) {
+      return item.satisfied
+        ? 'candidate/repo match proof is source-backed'
+        : 'candidate/repo match proof is missing';
+    }
+    return item.satisfied
+      ? `${item.label.toLowerCase()} is captured`
+      : `${item.label.toLowerCase()} is missing`;
+  });
+  const reasons = uniqueTextParts([
+    ...basisReasons,
+    decision.scoreProvenanceLabel,
+  ]);
+  const hasMissingReason = reasons.some((reason) => /missing|incomplete|only/i.test(reason))
+    || /partial|incomplete|missing|needs more|no score/i.test(decision.assessmentValidity);
+  return {
+    headline: hasMissingReason ? 'Do not rely yet' : 'Valid because',
+    detail: hasMissingReason
+      ? decision.assessmentValidityDetail
+      : 'This is evidence, not an automatic decision.',
+    reasons,
+  };
+}
+
 function derivePendingCodeReviewAssignmentDecision(
   livingContext: LivingContextReadModel | null,
 ): CodeReviewDecisionProjection | null {
@@ -2187,6 +2228,7 @@ function ProfileDecisionCockpit({
 
 function CodeReviewDecisionCard({ decision }: { decision: CodeReviewDecisionProjection }): JSX.Element {
   const sourceProofSummary = codeReviewDecisionSourceProofSummary(decision);
+  const scoreValidity = codeReviewScoreValidityReadout(decision);
   const signalSummary = [
     decision.scoreLabel,
     decision.challengeLabel,
@@ -2243,6 +2285,22 @@ function CodeReviewDecisionCard({ decision }: { decision: CodeReviewDecisionProj
             <div style={DECISION_COPY}>{calibrationSummary}</div>
           </div>
         </div>
+      </div>
+
+      <div data-testid="person-code-review-score-validity" style={SCORE_VALIDITY_PANEL}>
+        <div style={SCORE_VALIDITY_HEADER}>
+          <div>
+            <div style={DECISION_BASIS_TITLE}>Score validity</div>
+            <div style={SCORE_VALIDITY_HEADLINE}>{scoreValidity.headline}</div>
+          </div>
+          <ShieldCheck size={20} color="var(--pipe-accent)" />
+        </div>
+        <ul style={SCORE_VALIDITY_LIST}>
+          {scoreValidity.reasons.map((reason) => (
+            <li key={reason}>{reason}</li>
+          ))}
+        </ul>
+        <p style={DECISION_FACT_DETAIL}>{scoreValidity.detail}</p>
       </div>
 
       <div style={DECISION_FACT_GRID}>
@@ -3317,6 +3375,40 @@ const DECISION_RATIONALE_ITEM: CSSProperties = {
   display: 'grid',
   gap: 4,
   minWidth: 0,
+};
+
+const SCORE_VALIDITY_PANEL: CSSProperties = {
+  display: 'grid',
+  gap: 10,
+  padding: 12,
+  border: '1px solid rgba(74,222,128,0.26)',
+  borderRadius: 6,
+  background: 'rgba(74,222,128,0.07)',
+};
+
+const SCORE_VALIDITY_HEADER: CSSProperties = {
+  display: 'flex',
+  alignItems: 'flex-start',
+  justifyContent: 'space-between',
+  gap: 12,
+};
+
+const SCORE_VALIDITY_HEADLINE: CSSProperties = {
+  marginTop: 5,
+  color: 'var(--pipe-text)',
+  fontSize: 14,
+  fontWeight: 800,
+  lineHeight: 1.3,
+};
+
+const SCORE_VALIDITY_LIST: CSSProperties = {
+  display: 'grid',
+  gap: 6,
+  margin: 0,
+  paddingLeft: 18,
+  color: 'var(--pipe-text)',
+  fontSize: 12,
+  lineHeight: 1.45,
 };
 
 const DECISION_FACT: CSSProperties = {

@@ -1128,6 +1128,15 @@ describe('PersonProfilePage', () => {
     expect(rationale).toHaveTextContent('Calibrate');
     expect(rationale).toHaveTextContent('Focused calibration needed');
     expect(rationale).toHaveTextContent('Schedule focused technical calibration');
+    const scoreValidity = screen.getByTestId('person-code-review-score-validity');
+    expect(scoreValidity).toHaveTextContent('Score validity');
+    expect(scoreValidity).toHaveTextContent('Valid because');
+    expect(scoreValidity).toHaveTextContent('score report is captured');
+    expect(scoreValidity).toHaveTextContent('review transcript is captured');
+    expect(scoreValidity).toHaveTextContent('repo challenge is source-backed');
+    expect(scoreValidity).toHaveTextContent('candidate/repo match proof is source-backed');
+    expect(scoreValidity).toHaveTextContent('6 rubric dimensions · 2 evidence items · 5 scoring metrics');
+    expect(scoreValidity).toHaveTextContent('This is evidence, not an automatic decision.');
     const basis = screen.getByTestId('person-code-review-decision-basis');
     expect(basis).toHaveTextContent('Decision basis');
     expect(basis).toHaveTextContent('Score report');
@@ -1242,6 +1251,11 @@ describe('PersonProfilePage', () => {
     expect(decision).toHaveTextContent('Source-backed repo match decision provenance');
     expect(decision).not.toHaveTextContent('Usable source-backed signal');
     expect(decision).not.toHaveTextContent('Advance with focused probe');
+    const scoreValidity = screen.getByTestId('person-code-review-score-validity');
+    expect(scoreValidity).toHaveTextContent('Score validity');
+    expect(scoreValidity).toHaveTextContent('Do not rely yet');
+    expect(scoreValidity).toHaveTextContent('candidate/repo match proof is missing');
+    expect(scoreValidity).toHaveTextContent('A score exists, but the supporting transcript, selected PR, or match provenance is incomplete.');
     const basis = screen.getByTestId('person-code-review-decision-basis');
     expect(basis).toHaveTextContent('Score report');
     expect(basis).toHaveTextContent('82/100 Strong');

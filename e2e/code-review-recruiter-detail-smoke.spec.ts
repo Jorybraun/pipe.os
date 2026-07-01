@@ -135,6 +135,13 @@ async function expectPersonProfileDecision(page: Page): Promise<void> {
     await expect(personDecision).toContainText(/rubric dimensions?/);
     await expect(personDecision).toContainText(/evidence items?/);
     await expect(personDecision).toContainText(/scoring metrics?/);
+    const scoreValidity = page.getByTestId('person-code-review-score-validity');
+    await expect(scoreValidity).toBeVisible();
+    await expect(scoreValidity).toContainText('Score validity');
+    await expect(scoreValidity).toContainText(/Valid because|Do not rely yet/);
+    await expect(scoreValidity).toContainText(/score report is captured|score report is missing/);
+    await expect(scoreValidity).toContainText(/rubric dimensions?/);
+    await expect(scoreValidity).toContainText(/evidence items?/);
   }
   if (EXPECT_PERSON_PROFILE_RELATED_BOUNDARY) {
     const relatedRepoLabel = expectedRepoLabel(RELATED_BOUNDARY_REPO_URL);
