@@ -1331,20 +1331,20 @@ function codeReviewScoreTrustSummary(input: {
     : input.match?.status === 'MATCHED'
       ? 'matched challenge'
       : 'unproven match';
-  const validParts = [
+  const validParts = uniqueTextParts([
     input.score.status === 'scored' ? 'Scored review' : `Score ${titleCaseToken(input.score.status)}`,
     countLabel(annotationCount, 'annotation'),
     countLabel(pushbackCount, 'pushback thread'),
-    input.proofCount > 0 ? countLabel(input.proofCount, 'evidence bridge') : qualityGate,
+    input.proofCount > 0 ? countLabel(input.proofCount, 'evidence bridge') : null,
     qualityGate,
-  ];
+  ]);
 
   const calibrators = [
     input.score.band ? `${input.score.band.toLowerCase()} band` : null,
-    input.score.growthAreas[0] ?? null,
+    input.proofCount === 0 ? 'no rendered source bridge' : null,
     annotationCount === 0 ? 'no review annotations' : null,
     pushbackCount === 0 ? 'no developer pushback thread' : null,
-    input.proofCount === 0 ? 'no rendered source bridge' : null,
+    input.score.growthAreas[0] ?? null,
   ].filter((item): item is string => Boolean(item));
   const scoreProvenance = input.score.provenance;
   const provenanceParts = scoreProvenance
@@ -1366,6 +1366,36 @@ function codeReviewScoreTrustSummary(input: {
       : `${input.validity.value}: ${input.validity.detail}`,
     tone: input.validity.tone,
   };
+}
+
+function uniqueTextParts(parts: Array<string | null | undefined>): string[] {
+  return [...new Set(parts.filter((part): part is string => Boolean(part)))];
+}
+
+function codeReviewSourceProofHint(input: {
+  match: CodeReviewMatchDetail;
+  hyperedgeCount: number;
+  hasPrimaryEvidence: boolean;
+  hasScore: boolean;
+}): string {
+  const bridge = input.match.validatorAgent?.sourceBridge ?? null;
+  const parts = uniqueTextParts([
+    input.hyperedgeCount > 0 ? 'candidate-repo evidence bridges' : null,
+    bridge && bridge.candidateSourceCount > 0 ? 'candidate evidence' : null,
+    bridge && bridge.roleSourceCount > 0 ? 'role evidence' : null,
+    bridge && bridge.repoSourceCount > 0 ? 'repo evidence' : null,
+    !bridge && input.hasPrimaryEvidence ? 'source-aligned evidence' : null,
+    !bridge && input.match.assessmentQuality ? 'repo challenge proof' : null,
+    input.hasScore ? 'scoring provenance' : null,
+    input.match.gaps.length > 0 ? 'open gaps' : null,
+    !bridge && input.hyperedgeCount === 0 && !input.hasPrimaryEvidence && !input.match.assessmentQuality && !input.hasScore
+      ? 'match packet provenance'
+      : null,
+  ]);
+
+  if (parts.length === 1) return parts[0]!;
+  if (parts.length === 2) return `${parts[0]} and ${parts[1]}`;
+  return `${parts.slice(0, -1).join(', ')}, and ${parts[parts.length - 1]}`;
 }
 
 function codeReviewAssessmentValiditySummary(input: {
@@ -3004,6 +3034,14 @@ export default function InterviewDetailPage(): JSX.Element {
         validity: codeReviewAssessmentValidity,
       })
     : null;
+  const codeReviewSourceProofSummary = codeReviewMatch
+    ? codeReviewSourceProofHint({
+        match: codeReviewMatch,
+        hyperedgeCount: matchHyperedges.length,
+        hasPrimaryEvidence: Boolean(primaryMatchEvidence),
+        hasScore: Boolean(codeReviewScore),
+      })
+    : null;
   const codeReviewExplanation = codeReviewMatchExplanation({
     repoUrl: interview.githubRepoUrl,
     prNumber: interview.githubPrNumber,
@@ -4591,7 +4629,7 @@ export default function InterviewDetailPage(): JSX.Element {
                 <details style={DETAILS_CARD}>
                   <summary style={DETAILS_SUMMARY}>
                     Source proof
-                    <span style={DETAILS_HINT}>candidate, role, repo, and scoring provenance</span>
+                    <span style={DETAILS_HINT}>{codeReviewSourceProofSummary}</span>
                   </summary>
 
                   {codeReviewMatch.validatorAgent && (

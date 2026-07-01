@@ -1136,6 +1136,9 @@ describe('InterviewDetailPage', () => {
 
     const sourceProof = screen.getByText('Source proof').closest('details');
     expect(sourceProof).not.toHaveAttribute('open');
+    expect(sourceProof?.querySelector('summary')).toHaveTextContent(
+      'candidate-repo evidence bridges, candidate evidence, role evidence, repo evidence, and scoring provenance',
+    );
   });
 
   it('labels manual repo tasks as assignment evidence, not automatic candidate-fit proof', async () => {
@@ -1166,6 +1169,101 @@ describe('InterviewDetailPage', () => {
     expect(assessmentAssignment).toHaveTextContent('A recruiter supplied a repo-only task packet.');
     expect(assessmentAssignment).not.toHaveTextContent('PIPE-matched challenge');
     expect(screen.queryByTestId('interview-code-review-decision-summary')).toBeNull();
+  });
+
+  it('keeps manual scored PR proof wording honest and deduped', async () => {
+    mocks.api.get.mockResolvedValueOnce({
+      interview: makeInterview({
+        interviewType: 'CODE_REVIEW',
+        status: 'COMPLETED',
+        githubRepoUrl: 'https://github.com/mui/base-ui',
+        githubPrNumber: 973,
+        submissionJson: JSON.stringify({
+          type: 'CODE_REVIEW',
+          verdict: 'request_changes',
+          summary: 'Candidate requested changes with one concrete blocker.',
+          annotations: [
+            { file: 'packages/react/src/popover/root/usePopoverRoot.ts', line: 60, comment: 'Add a regression test.' },
+          ],
+          transcript: {
+            rounds: [
+              {
+                round: 1,
+                reviewer_comments: [
+                  { id: 1, file: 'packages/react/src/popover/root/usePopoverRoot.ts', line: 60, comment: 'Add a regression test.' },
+                ],
+                implementer_responses: [
+                  { to_comment_id: 1, move: 'comment', content: 'Good catch. I will add coverage.' },
+                ],
+              },
+            ],
+          },
+        }),
+        codeReviewMatch: {
+          status: 'MATCHED',
+          matchRunId: 'manual-match-run',
+          packetId: 'manual-packet',
+          summary: 'Manual override: recruiter-selected source-backed review challenge.',
+          score: null,
+          assessmentQuality: {
+            verdict: 'USABLE',
+            score: 8,
+            maxScore: 12,
+            metrics: [
+              {
+                id: 'pr_reviewability',
+                label: 'PR reviewability',
+                score: 2,
+                maxScore: 2,
+                reason: 'The selected PR has a concrete behavior diff.',
+              },
+            ],
+          },
+          reviewProfile: null,
+          validatorAgent: {
+            agentName: 'quality-gate',
+            agentVersion: '1',
+            mode: 'manual_override',
+            verdict: 'PASSED',
+            rationale: 'The PR is source-backed and reviewable, but no candidate-fit inference was made.',
+            checks: [],
+            sourceBridge: null,
+          },
+          roleSources: [],
+          evidence: [],
+          evidenceHyperedges: [],
+          gaps: [],
+        },
+        codeReviewScore: {
+          reviewSessionId: 'manual-review-session',
+          status: 'scored',
+          score: 38,
+          band: 'weak',
+          narrative: 'Candidate found one issue but missed implementation risks.',
+          strengths: ['Concrete blocker.'],
+          growthAreas: ['Probe implementation trade-offs.'],
+          provenance: {
+            rubricDimensionCount: 6,
+            evidenceItemCount: 6,
+            metricCount: 8,
+          },
+          updatedAt: '2026-06-23T01:00:00.000Z',
+        },
+      }),
+    });
+
+    renderDetail();
+
+    await flushAsyncUpdates();
+    const scoreTrust = screen.getByTestId('interview-code-review-score-trust');
+    expect(scoreTrust).toHaveTextContent('usable match gate');
+    const gateMentions = scoreTrust.textContent?.match(/usable match gate/g) ?? [];
+    expect(gateMentions).toHaveLength(1);
+
+    const sourceProof = screen.getByText('Source proof').closest('details');
+    expect(sourceProof).not.toHaveAttribute('open');
+    expect(sourceProof?.querySelector('summary')).toHaveTextContent('repo challenge proof and scoring provenance');
+    expect(sourceProof?.querySelector('summary')).not.toHaveTextContent('candidate, role, repo');
   });
 
   it('shows assessment progress as a quiet hiring-manager snapshot', async () => {
