@@ -453,6 +453,12 @@ export function InterviewCard({
     ?? assessmentProgress?.commit?.submissionSourceLabel
     ?? null;
   const assessmentChallengeBindingLabel = assessmentProgress?.commit?.challengeBinding?.label ?? null;
+  const assessmentCriteriaLabel = assessmentChallenge?.successCriteria.length
+    ? compactText(assessmentChallenge.successCriteria.join(' · '), 150)
+    : null;
+  const assessmentExpectedEvidenceLabel = assessmentChallenge?.expectedEvidence.length
+    ? compactText(assessmentChallenge.expectedEvidence.join(' · '), 150)
+    : null;
   const assessmentEvaluationLabel = assessmentProgress?.evaluation?.status
     ? sentenceCaseToken(assessmentProgress.evaluation.status)
     : null;
@@ -649,6 +655,26 @@ export function InterviewCard({
                   </div>
                   <div style={{ minWidth: 0, fontSize: 10, color: 'var(--pipe-text-dim)', overflowWrap: 'anywhere' }}>
                     {compactText(assessmentChallenge.task, 120)}
+                  </div>
+                </>
+              )}
+              {assessmentCriteriaLabel && (
+                <>
+                  <div style={{ fontSize: 9, color: 'var(--pipe-text-muted)', letterSpacing: '0.12em', fontWeight: 700 }}>
+                    CRITERIA
+                  </div>
+                  <div style={{ minWidth: 0, fontSize: 10, color: 'var(--pipe-text-dim)', overflowWrap: 'anywhere' }}>
+                    {assessmentCriteriaLabel}
+                  </div>
+                </>
+              )}
+              {assessmentExpectedEvidenceLabel && (
+                <>
+                  <div style={{ fontSize: 9, color: 'var(--pipe-text-muted)', letterSpacing: '0.12em', fontWeight: 700 }}>
+                    EXPECTED
+                  </div>
+                  <div style={{ minWidth: 0, fontSize: 10, color: 'var(--pipe-text-dim)', overflowWrap: 'anywhere' }}>
+                    {assessmentExpectedEvidenceLabel}
                   </div>
                 </>
               )}

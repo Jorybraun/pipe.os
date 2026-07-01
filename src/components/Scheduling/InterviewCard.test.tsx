@@ -140,6 +140,8 @@ describe('InterviewCard assessment progress', () => {
             'Task: Fix the assessment card progress regression.',
             'Success criteria:',
             '- Card shows stage and next action',
+            'Expected evidence:',
+            '- Commit SHA on assessment branch',
           ].join('\n'),
           locator: {
             repositoryUrl: 'https://github.com/open-source/widgets',
@@ -195,6 +197,10 @@ describe('InterviewCard assessment progress', () => {
     expect(progress).toHaveTextContent('111111111111');
     expect(progress).toHaveTextContent('TASK');
     expect(progress).toHaveTextContent('Fix the assessment card progress regression.');
+    expect(progress).toHaveTextContent('CRITERIA');
+    expect(progress).toHaveTextContent('Card shows stage and next action');
+    expect(progress).toHaveTextContent('EXPECTED');
+    expect(progress).toHaveTextContent('Commit SHA on assessment branch');
     expect(progress).toHaveTextContent('abcdef123456');
     expect(progress).toHaveTextContent('Workspace-captured commit');
     expect(progress).not.toHaveTextContent('assessment-session-card');
@@ -292,6 +298,10 @@ describe('InterviewCard assessment progress', () => {
     expect(progress).toHaveTextContent('222222222222');
     expect(progress).toHaveTextContent('TASK');
     expect(progress).toHaveTextContent('Fix reconnect ordering in the event stream.');
+    expect(progress).toHaveTextContent('CRITERIA');
+    expect(progress).toHaveTextContent('Reconnect keeps event order deterministic');
+    expect(progress).toHaveTextContent('EXPECTED');
+    expect(progress).toHaveTextContent('Commit SHA on assessment branch');
     expect(progress).not.toHaveTextContent('challenge-packet-setup');
     expect(progress).not.toHaveTextContent('assessment-session-setup');
   });

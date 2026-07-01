@@ -27,6 +27,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Fixed — CODE_REVIEW assessment runtime
 
+- Recruiter interview cards now surface challenge-packet success criteria and expected evidence alongside repo, base commit, and task so open-source assessments read as concrete work packets before the candidate starts.
 - Commit-submission proof checklists now label captured tooling as `Tool activity` instead of carrying stale interaction language from the retired experiment.
 - Person-profile CODE_REVIEW route-state source proof summaries can no longer prove candidate/repo match alignment by themselves; candidate/repo proof must come from parsed proof items or the summary is recomputed.
 - Person-profile selected-assessment route-state handoffs now sanitize source-ref counts, evidence snippets, evaluator claims, and challenge URLs before deriving workspace-assessment proof, preventing stale route state from crashing or inventing assessment evidence.
