@@ -18,6 +18,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Fixed — Open-source assessment progress
 
+- Recruiter interview cards now show source-backed evaluator claim previews, diagnostic evidence types, and missing evidence-coverage gaps while filtering source-less positive claims from the card.
 - Challenge-packet summaries now avoid inventing structured locator fields from raw exact text when persisted locator metadata is missing, preserving the distinction between source evidence and normalized packet fields.
 - Matched open-source challenge packets now carry a deterministic workspace verification command, so matched-repo dev-container finalization captures `test_run` evidence instead of falling back to a verification gap.
 - The app-dev recruiter assessment smoke can now submit a real human decision from the evaluated workspace page, proving the assessment loop reaches reviewer closure instead of stopping at AI evaluation.
@@ -64,6 +65,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Fixed — CODE_REVIEW assessment runtime
 
+- CI now treats a configured production matching-evaluation readiness failure as a blocking CODE_REVIEW gate while still emitting a non-blocking `not_configured` artifact when the required Cloudflare secrets or corpus id are absent.
 - Match-quality bridge repairs now tolerate legacy/local fixtures without newer candidate-node projections while preserving strict source-backed challenge packet hash and exact-text validation.
 - Assessment-to-living-context backfills now normalize legacy review-challenge packet refs to the stored immutable packet JSON before writing context records, keeping old event rows source-backed under stricter provenance validation.
 - Candidate-discovery model-key attribution now falls back to the provider name when a local/test provider omits a model string, preventing discovery fixtures from crashing before evidence decomposition.

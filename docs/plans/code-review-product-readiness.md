@@ -137,6 +137,12 @@ stored row contains the older `evaluation_corpora` schema, the CLI adapts
 candidate-role-challenge relevance labels into candidate-to-packet quality cases
 instead of creating a second unrelated corpus format.
 
+CI also runs the production matching-evaluation readiness report after worker
+unit tests. Missing Cloudflare credentials or `MATCHING_EVALUATION_CORPUS_ID`
+produce a `not_configured` artifact and do not block local development, but once
+the production corpus is configured, a failed readiness result is a blocking
+CODE_REVIEW gate rather than advisory output.
+
 The manual override full-submit app-dev lane passed after updating the smoke to
 assert the candidate-facing product language ("a recruiter selected this PR")
 instead of the internal phrase "manual override." The passing run created

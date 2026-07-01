@@ -231,6 +231,73 @@ interface AssessmentProofChecklistSummary {
   missingRequiredCount: number;
 }
 
+type AssessmentEvaluation = NonNullable<NonNullable<ScheduledInterview['assessmentProgress']>['evaluation']>;
+type AssessmentEvaluationClaim = NonNullable<AssessmentEvaluation['claims']>[number];
+type AssessmentEvaluationDiagnostic = NonNullable<AssessmentEvaluation['diagnostics']>[number];
+type AssessmentEvidenceCoverage = NonNullable<AssessmentEvaluation['evidenceCoverage']>;
+type AssessmentEvidenceCoverageItem = AssessmentEvidenceCoverage['requiredForEvaluation'][number];
+
+function sourceRefSummary(count: number, types: string[]): string {
+  const refLabel = `${count} source ref${count === 1 ? '' : 's'}`;
+  const visibleTypes = types
+    .map((type) => sentenceCaseToken(type))
+    .slice(0, 3);
+  if (visibleTypes.length === 0) return refLabel;
+  const suffix = types.length > visibleTypes.length ? ' +' : '';
+  return `${refLabel}: ${visibleTypes.join(', ')}${suffix}`;
+}
+
+function assessmentClaimToneColor(polarity: string): string {
+  switch (polarity) {
+    case 'positive':
+      return '#4ade80';
+    case 'negative':
+      return '#f87171';
+    case 'neutral':
+      return '#93c5fd';
+    case 'diagnostic':
+      return '#fbbf24';
+    default:
+      return 'var(--pipe-text-dim)';
+  }
+}
+
+function assessmentDiagnosticToneColor(severity: string): string {
+  switch (severity) {
+    case 'blocking':
+    case 'error':
+      return '#f87171';
+    case 'warning':
+      return '#fbbf24';
+    default:
+      return '#93c5fd';
+  }
+}
+
+function assessmentEvaluationClaims(
+  evaluation: AssessmentEvaluation | null | undefined,
+): AssessmentEvaluationClaim[] {
+  return (evaluation?.claims ?? [])
+    .filter((claim) => claim.sourceRefCount > 0)
+    .slice(0, 3);
+}
+
+function assessmentEvaluationDiagnostics(
+  evaluation: AssessmentEvaluation | null | undefined,
+): AssessmentEvaluationDiagnostic[] {
+  return (evaluation?.diagnostics ?? []).slice(0, 4);
+}
+
+function assessmentCoverageGaps(
+  coverage: AssessmentEvidenceCoverage | null | undefined,
+): AssessmentEvidenceCoverageItem[] {
+  if (!coverage) return [];
+  return [
+    ...coverage.requiredForEvaluation,
+    ...coverage.expectedForHighConfidence,
+  ].filter((item) => !item.satisfied).slice(0, 4);
+}
+
 function assessmentDecisionSummary(input: {
   setup: ScheduledInterview['assessmentSetup'] | null;
   progress: ScheduledInterview['assessmentProgress'] | null;
@@ -577,6 +644,9 @@ export function InterviewCard({
     ? sentenceCaseToken(assessmentProgress.evaluation.status)
     : null;
   const assessmentDiagnosticCount = assessmentProgress?.evaluation?.diagnostics?.length ?? 0;
+  const visibleAssessmentEvaluationClaims = assessmentEvaluationClaims(assessmentProgress?.evaluation);
+  const visibleAssessmentEvaluationDiagnostics = assessmentEvaluationDiagnostics(assessmentProgress?.evaluation);
+  const visibleAssessmentEvaluationGaps = assessmentCoverageGaps(assessmentProgress?.evaluation?.evidenceCoverage);
   const assessmentDecision = assessmentDecisionSummary({
     setup: assessmentSetup,
     progress: assessmentProgress,
@@ -872,6 +942,48 @@ export function InterviewCard({
                   </div>
                 </>
               )}
+              {visibleAssessmentEvaluationClaims.length > 0 && (
+                <>
+                  <div style={{ fontSize: 9, color: '#4ade80', letterSpacing: '0.12em', fontWeight: 700 }}>
+                    CLAIMS
+                  </div>
+                  <div style={{ minWidth: 0, overflowWrap: 'anywhere' }}>
+                    {visibleAssessmentEvaluationClaims.map((claim) => (
+                      <div key={claim.id} style={{ marginBottom: 4 }}>
+                        <div style={{ fontSize: 10, color: assessmentClaimToneColor(claim.polarity), fontWeight: 700 }}>
+                          {sentenceCaseToken(claim.dimension)} · {sentenceCaseToken(claim.polarity)}
+                          {typeof claim.confidence === 'number' ? ` · ${Math.round(claim.confidence * 100)}%` : ''}
+                        </div>
+                        <div style={{ fontSize: 10, color: 'var(--pipe-text-dim)' }}>
+                          {compactText(claim.narrative, 150)}
+                        </div>
+                        <div style={{ fontSize: 9, color: 'var(--pipe-text-muted)' }}>
+                          {sourceRefSummary(claim.sourceRefCount, claim.sourceRefTypes)}
+                        </div>
+                      </div>
+                    ))}
+                  </div>
+                </>
+              )}
+              {visibleAssessmentEvaluationGaps.length > 0 && (
+                <>
+                  <div style={{ fontSize: 9, color: '#fbbf24', letterSpacing: '0.12em', fontWeight: 700 }}>
+                    GAPS
+                  </div>
+                  <div style={{ minWidth: 0, overflowWrap: 'anywhere' }}>
+                    {visibleAssessmentEvaluationGaps.map((gap) => (
+                      <div key={`${gap.label}:${gap.sourceRefTypes.join(',')}`} style={{ marginBottom: 4 }}>
+                        <div style={{ fontSize: 10, color: gap.required ? '#fde68a' : 'var(--pipe-text-dim)', fontWeight: 700 }}>
+                          Missing: {gap.label}
+                        </div>
+                        <div style={{ fontSize: 10, color: 'var(--pipe-text-dim)' }}>
+                          {compactText(gap.missingImpact, 150)}
+                        </div>
+                      </div>
+                    ))}
+                  </div>
+                </>
+              )}
               {assessmentDiagnosticCount > 0 && (
                 <>
                   <div style={{ fontSize: 9, color: '#fbbf24', letterSpacing: '0.12em', fontWeight: 700 }}>
@@ -879,6 +991,28 @@ export function InterviewCard({
                   </div>
                   <div style={{ minWidth: 0, fontSize: 10, color: '#fde68a', overflowWrap: 'anywhere' }}>
                     {assessmentDiagnosticCount} evaluator caution{assessmentDiagnosticCount === 1 ? '' : 's'}
+                  </div>
+                </>
+              )}
+              {visibleAssessmentEvaluationDiagnostics.length > 0 && (
+                <>
+                  <div style={{ fontSize: 9, color: '#fbbf24', letterSpacing: '0.12em', fontWeight: 700 }}>
+                    DIAGNOSTICS
+                  </div>
+                  <div style={{ minWidth: 0, overflowWrap: 'anywhere' }}>
+                    {visibleAssessmentEvaluationDiagnostics.map((diagnostic) => (
+                      <div key={diagnostic.id} style={{ marginBottom: 4 }}>
+                        <div style={{ fontSize: 10, color: assessmentDiagnosticToneColor(diagnostic.severity), fontWeight: 700 }}>
+                          {sentenceCaseToken(diagnostic.code)} · {sentenceCaseToken(diagnostic.severity)}
+                        </div>
+                        <div style={{ fontSize: 10, color: 'var(--pipe-text-dim)' }}>
+                          {compactText(diagnostic.message, 150)}
+                        </div>
+                        <div style={{ fontSize: 9, color: 'var(--pipe-text-muted)' }}>
+                          {sourceRefSummary(diagnostic.sourceRefCount, diagnostic.sourceRefTypes)}
+                        </div>
+                      </div>
+                    ))}
                   </div>
                 </>
               )}
