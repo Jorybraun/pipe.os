@@ -113,6 +113,40 @@ function requestBaseFor(path, options) {
   return RECRUITER_API_BASE;
 }
 
+async function requestJsonWithTimeout(path, init = {}, options = {}) {
+  const timeoutMs = options.timeoutMs ?? 15_000;
+  const useBasicAuth = options.basicAuth !== false;
+  const url = `${requestBaseFor(path, options)}${path}`;
+  const controller = new AbortController();
+  const timeout = setTimeout(() => controller.abort(new Error('timeout')), timeoutMs);
+  try {
+    const response = await fetch(url, {
+      ...init,
+      signal: controller.signal,
+      headers: {
+        ...(useBasicAuth ? authHeaders() : {}),
+        ...(init.body ? { 'Content-Type': 'application/json' } : {}),
+        ...(init.headers ?? {}),
+      },
+    });
+    const text = await response.text();
+    let body = null;
+    if (text) {
+      try {
+        body = JSON.parse(text);
+      } catch {
+        body = text;
+      }
+    }
+    if (!response.ok) {
+      throw new Error(`${init.method ?? 'GET'} ${path} failed (${response.status}): ${text}`);
+    }
+    return body;
+  } finally {
+    clearTimeout(timeout);
+  }
+}
+
 async function requestJson(path, init = {}, options = {}) {
   const useBasicAuth = options.basicAuth !== false;
   const url = `${requestBaseFor(path, options)}${path}`;
@@ -595,7 +629,90 @@ function runBrowserSmoke({ deliveredUrl, inviteToken, session, expectedMatchProo
   return { skipped: false };
 }
 
-function runRecruiterDetailBrowserSmoke({
+function recruiterDetailReady(interview, {
+  expectedOutcome,
+  expectedRepoUrl = '',
+  expectedPrNumber = '',
+  expectSubmission = false,
+  expectScore = false,
+}) {
+  if (!interview || typeof interview !== 'object') {
+    return { ready: false, reason: 'detail missing interview object' };
+  }
+  if (expectedOutcome === 'blocked') {
+    const setupStatus = interview.assessmentSetup?.status ?? null;
+    const progressStage = interview.assessmentProgress?.stage ?? null;
+    const progressNextAction = interview.assessmentProgress?.nextAction ?? null;
+    const blocked = [
+      'missing_reviewable_task',
+      'waiting_for_candidate_evidence',
+      'waiting_for_source_backed_match',
+    ].includes(setupStatus)
+      || progressStage === 'NEEDS_ATTENTION'
+      || progressNextAction === 'ASSIGN_CHALLENGE'
+      || progressNextAction === 'RESOLVE_DIAGNOSTIC'
+      || interview.assessmentSetup?.lastDeliveredUrlState === 'claimed';
+    return blocked || interview.assessmentSetup
+      ? { ready: true, reason: 'blocked projection ready' }
+      : { ready: false, reason: 'blocked projection missing setup/progress' };
+  }
+
+  if (interview.status !== 'COMPLETED') {
+    return { ready: false, reason: `interview status is ${interview.status ?? 'missing'}` };
+  }
+  if (expectedRepoUrl && interview.githubRepoUrl !== expectedRepoUrl) {
+    return { ready: false, reason: `repo is ${interview.githubRepoUrl ?? 'missing'}` };
+  }
+  if (expectedPrNumber && String(interview.githubPrNumber ?? '') !== String(expectedPrNumber)) {
+    return { ready: false, reason: `PR is ${interview.githubPrNumber ?? 'missing'}` };
+  }
+  if (interview.codeReviewMatch?.status !== 'MATCHED') {
+    return { ready: false, reason: 'codeReviewMatch is not MATCHED' };
+  }
+  if (expectSubmission && !interview.submissionJson) {
+    return { ready: false, reason: 'submissionJson missing' };
+  }
+  if (expectScore) {
+    const score = interview.codeReviewScore;
+    if (!score || score.status !== 'scored' || !Number.isFinite(Number(score.score))) {
+      return { ready: false, reason: 'scored codeReviewScore missing' };
+    }
+  }
+  return { ready: true, reason: 'matched recruiter projection ready' };
+}
+
+async function waitForRecruiterDetailProjection(input) {
+  const deadlineMs = Date.now() + (input.timeoutMs ?? 90_000);
+  let attempt = 0;
+  let lastReason = 'not checked';
+  while (Date.now() < deadlineMs) {
+    attempt += 1;
+    try {
+      const detail = await requestJsonWithTimeout(
+        `/api/v1/scheduling/interviews/${input.interviewId}`,
+        {},
+        { timeoutMs: 12_000 },
+      );
+      const readiness = recruiterDetailReady(detail?.interview, input);
+      lastReason = readiness.reason;
+      if (readiness.ready) {
+        return {
+          ready: true,
+          attempts: attempt,
+          reason: readiness.reason,
+        };
+      }
+    } catch (error) {
+      lastReason = error instanceof Error ? error.message : String(error);
+    }
+    await sleep(Math.min(2_000 + attempt * 250, 5_000));
+  }
+  throw new Error(
+    `Recruiter detail projection was not ready for ${input.interviewId}: ${lastReason}`,
+  );
+}
+
+function runRecruiterDetailPlaywright({
   interviewId,
   expectedOutcome,
   expectedRepoUrl = '',
@@ -647,6 +764,43 @@ function runRecruiterDetailBrowserSmoke({
     throw new Error(`Playwright recruiter detail smoke failed with exit code ${result.status}`);
   }
   return { skipped: false };
+}
+
+async function runRecruiterDetailBrowserSmoke(input) {
+  if (SKIP_BROWSER || SKIP_RECRUITER_BROWSER) {
+    return {
+      skipped: true,
+      reason: SKIP_BROWSER
+        ? 'CODE_REVIEW_SMOKE_SKIP_BROWSER=1'
+        : 'CODE_REVIEW_SMOKE_SKIP_RECRUITER_BROWSER=1',
+    };
+  }
+
+  const readiness = await waitForRecruiterDetailProjection(input);
+  try {
+    return {
+      ...runRecruiterDetailPlaywright(input),
+      readiness,
+      attempts: 1,
+    };
+  } catch (error) {
+    const firstError = error instanceof Error ? error.message : String(error);
+    const retryReadiness = await waitForRecruiterDetailProjection({
+      ...input,
+      timeoutMs: 45_000,
+    });
+    try {
+      return {
+        ...runRecruiterDetailPlaywright(input),
+        readiness: retryReadiness,
+        attempts: 2,
+        firstError,
+      };
+    } catch (retryError) {
+      const message = retryError instanceof Error ? retryError.message : String(retryError);
+      throw new Error(`${message}; first recruiter smoke failure: ${firstError}`);
+    }
+  }
 }
 
 async function initReviewSession(sessionToken, challenge) {
@@ -1195,7 +1349,7 @@ async function main() {
         `Expected candidate-intake-queued complete stage config, got: ${JSON.stringify(initialStageConfig)}`,
       );
 
-      const recruiterBrowserSmoke = runRecruiterDetailBrowserSmoke({
+      const recruiterBrowserSmoke = await runRecruiterDetailBrowserSmoke({
         interviewId: invite.interviewId,
         expectedOutcome: 'blocked',
       });
@@ -1288,7 +1442,7 @@ async function main() {
       challenge,
       interviewId: invite.interviewId,
     });
-    const recruiterBrowserSmoke = runRecruiterDetailBrowserSmoke({
+    const recruiterBrowserSmoke = await runRecruiterDetailBrowserSmoke({
       interviewId: invite.interviewId,
       expectedOutcome: 'matched',
       expectedRepoUrl: challenge.githubRepoUrl,

@@ -757,6 +757,34 @@ function assessmentTokenFromUrl(value: string): string | null {
   }
 }
 
+async function optionalScheduledDetailProjection<T>(
+  name: string,
+  promise: Promise<T>,
+  fallback: T,
+  timeoutMs = 4_000,
+): Promise<T> {
+  let timeoutId: ReturnType<typeof setTimeout> | null = null;
+  const guarded = promise.catch((error: unknown) => {
+    console.error('[scheduling/detail] optional projection failed:', {
+      projection: name,
+      error: error instanceof Error ? error.message : String(error),
+    });
+    return fallback;
+  });
+  const timeout = new Promise<T>((resolve) => {
+    timeoutId = setTimeout(() => {
+      console.error('[scheduling/detail] optional projection timed out:', {
+        projection: name,
+        timeoutMs,
+      });
+      resolve(fallback);
+    }, timeoutMs);
+  });
+  const value = await Promise.race([guarded, timeout]);
+  if (timeoutId) clearTimeout(timeoutId);
+  return value;
+}
+
 async function loadScheduledInterviewLivingContext(
   db: D1Database,
   ownerId: string,
@@ -5144,7 +5172,9 @@ schedulingAuth.get('/interviews/:id', async (c) => {
 
   if (!interview) return apiError(c, 'NOT_FOUND', 'Interview not found.');
 
-  const transcriptArtifactPromise = db
+  const transcriptArtifactPromise = optionalScheduledDetailProjection(
+    'transcriptArtifact',
+    db
     .prepare(
       `SELECT id, scheduled_interview_id, status, transcript_json, error_message,
               created_at, updated_at
@@ -5162,9 +5192,11 @@ schedulingAuth.get('/interviews/:id', async (c) => {
       error_message: string | null;
       created_at: string;
       updated_at: string;
-    }>();
+    }>(),
+    null,
+  );
 
-  const linkedMeetingPromise = (async () => {
+  const linkedMeetingPromise = optionalScheduledDetailProjection('linkedMeeting', (async () => {
     const hasWorkspaceSessions = await tableExists(db, 'dev_container_sessions');
     const workspaceSessionSelect = hasWorkspaceSessions
       ? `dcs.status AS workspace_status,
@@ -5239,26 +5271,53 @@ schedulingAuth.get('/interviews/:id', async (c) => {
         workspace_repo_git_url: string | null;
         workspace_base_commit_sha: string | null;
       }>();
-  })();
+  })(), null);
 
-  const livingContextPromise = loadScheduledInterviewLivingContext(db, userId, interview);
+  const livingContextPromise = optionalScheduledDetailProjection(
+    'livingContext',
+    loadScheduledInterviewLivingContext(db, userId, interview),
+    null,
+  );
   const relatedEvidenceInterviewsPromise = livingContextPromise.then((livingContext) =>
-    loadRelatedEvidenceInterviews(
-      db,
-      userId,
-      interview.id,
-      livingContext,
+    optionalScheduledDetailProjection(
+      'relatedEvidenceInterviews',
+      loadRelatedEvidenceInterviews(
+        db,
+        userId,
+        interview.id,
+        livingContext,
+      ),
+      [],
     )
   );
-  const codeReviewMatchPromise = loadScheduledCodeReviewMatchDetail(db, interview);
-  const codeReviewScorePromise = loadScheduledCodeReviewScoreSummary(db, interview);
-  const assessmentProgressPromise = loadScheduledAssessmentProgress(db, interview.id);
+  const codeReviewMatchPromise = optionalScheduledDetailProjection(
+    'codeReviewMatch',
+    loadScheduledCodeReviewMatchDetail(db, interview),
+    null,
+    6_000,
+  );
+  const codeReviewScorePromise = optionalScheduledDetailProjection(
+    'codeReviewScore',
+    loadScheduledCodeReviewScoreSummary(db, interview),
+    null,
+    6_000,
+  );
+  const assessmentProgressPromise = optionalScheduledDetailProjection(
+    'assessmentProgress',
+    loadScheduledAssessmentProgress(db, interview.id),
+    null,
+  );
   const assessmentInviteLinkPromise = (async () =>
     await loadLatestDeliveredAssessmentUrl(db, interview.id, interview.candidate_id)
       ?? await loadCandidateAssessmentInviteLinkFromToken(db, c.env, {
         interviewType: interview.interview_type,
         candidateId: interview.candidate_id,
       }))();
+  const safeAssessmentInviteLinkPromise = optionalScheduledDetailProjection(
+    'assessmentInviteLink',
+    assessmentInviteLinkPromise,
+    null,
+  );
 
   const [
     transcriptArtifact,
@@ -5277,7 +5336,7 @@ schedulingAuth.get('/interviews/:id', async (c) => {
     codeReviewMatchPromise,
     codeReviewScorePromise,
     assessmentProgressPromise,
-    assessmentInviteLinkPromise,
+    safeAssessmentInviteLinkPromise,
   ]);
 
   return c.json({

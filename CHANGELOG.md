@@ -21,9 +21,12 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - Added bounded dry-run contracts for heavy living-context maintenance and culture calibration routes, bringing the opt-in route benchmark inventory to full discovered-handler coverage without launching backfills or AI calibration calls.
 - Heavy living-context maintenance triggers and culture scorer calibration now queue by default with explicit `waitForResult` synchronous mode, keeping operator routes below the route benchmark latency budget.
 - The app-dev CODE_REVIEW reliability loop now runs a timeout-bounded real ready-submit smoke separately from the blocked matching matrix, proving both viable assessment submission and honest blocked-state behavior without hanging indefinitely.
+- The deployed CODE_REVIEW smoke now waits for recruiter-detail projections with bounded API requests before launching Playwright, then retries once after projection readiness so app-dev verification fails with a useful reason instead of hanging on stale recruiter state.
+- The app-dev CODE_REVIEW reliability loop now parses the blocked-profile matrix summary from its explicit marker instead of accidentally treating a nested profile proof as the matrix result.
 
 ### Fixed — CODE_REVIEW assessment runtime
 
+- Recruiter interview detail now fails soft on optional living-context, related-evidence, linked-meeting, invite-link, progress, and score/match projections, so the core CODE_REVIEW decision surface does not sit on an indefinite spinner when an auxiliary app-dev read stalls.
 - CODE_REVIEW and workspace-backed assessment invites now deliver `/assess` links without provisioning video rooms first, keeping assessment runtime separate from meeting surfaces and preventing room setup failures from blocking candidate handoff.
 - CODE_REVIEW progress and scoring now require a complete challenge packet contract — repo URL, base commit SHA, task, success criteria, and expected evidence — before treating a task as ready or scoreable.
 - Source-backed assessment evaluation now normalizes missing or unsupported AI recommendation strings to a safe human-review recommendation, records a diagnostic, and prevents recruiter pages from rendering arbitrary model text as hiring advice.

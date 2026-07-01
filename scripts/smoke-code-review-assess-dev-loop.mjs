@@ -83,8 +83,10 @@ function extractMatrixProof(stdout) {
   const marker = '===== CODE_REVIEW app-dev profile matrix summary =====';
   const clean = stripAnsi(stdout);
   const markerIndex = clean.lastIndexOf(marker);
-  const source = markerIndex >= 0 ? clean.slice(markerIndex + marker.length) : clean;
-  return extractJsonObject(source);
+  if (markerIndex < 0) return extractJsonObject(clean);
+  const source = clean.slice(markerIndex + marker.length);
+  const start = source.indexOf('{');
+  return start >= 0 ? parseJsonObjectAt(source, start) : null;
 }
 
 function summarizeMatrix(proof) {
