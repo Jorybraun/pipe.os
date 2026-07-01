@@ -316,6 +316,117 @@ describe('InterviewCard assessment progress', () => {
     expect(progress).not.toHaveTextContent('assessment-session-setup');
   });
 
+  it('warns recruiters when an assigned challenge packet is incomplete', () => {
+    renderCard({
+      id: 'interview-incomplete-packet',
+      createdAt: '2026-06-23T00:00:00.000Z',
+      updatedAt: '2026-06-23T00:20:00.000Z',
+      status: 'INVITED',
+      interviewType: 'OPEN_SOURCE_BUG_FIX',
+      meetingType: 'DIRECT_VIDEO_CALL',
+      scheduledAt: null,
+      githubRepoUrl: 'https://github.com/open-source/streaming',
+      assessmentSetup: {
+        status: 'reviewable_task_assigned',
+        kind: 'manual_open_source_task',
+        source: 'recruiter_manual_override',
+        blocksPositiveAssessment: false,
+        message: 'A concrete open-source task packet was started by the recruiter.',
+      },
+      assessmentProgress: {
+        session: {
+          id: 'assessment-session-incomplete-packet',
+          ingestionKey: 'assessment-session:incomplete-packet',
+          interviewId: 'interview-incomplete-packet',
+          candidateId: null,
+          workspaceId: null,
+          workspacePersonId: null,
+          applicationId: null,
+          mode: 'OPEN_SOURCE_BUG_FIX',
+          state: 'CHALLENGE_ASSIGNED',
+          createdAt: '2026-06-23T00:00:00.000Z',
+          updatedAt: '2026-06-23T00:20:00.000Z',
+        },
+        stage: 'WAITING_FOR_CHALLENGE',
+        nextAction: 'ASSIGN_CHALLENGE',
+        nextActionLabel: 'Add success criteria and expected evidence before the candidate starts.',
+        readiness: {
+          status: 'WAITING_FOR_CHALLENGE',
+          label: 'Waiting for complete challenge packet',
+          detail: 'The assigned open-source task is missing required packet fields.',
+          isReadyForEvaluation: false,
+          isUsableHiringSignal: false,
+          missingRequiredCount: 1,
+          required: [
+            {
+              id: 'challenge_packet',
+              label: 'Complete challenge packet',
+              required: true,
+              satisfied: false,
+              sourceRefTypes: ['open_source_challenge_packet'],
+              missingImpact: 'Challenge packet is missing success criteria and expected evidence.',
+            },
+          ],
+          confidence: [],
+        },
+        challengePacketContract: {
+          schemaVersion: 'challenge-packet-contract-v1',
+          isComplete: false,
+          missingFields: ['success criteria', 'expected evidence'],
+          hasRepositoryUrl: true,
+          hasBaseCommitSha: true,
+          hasTask: true,
+          hasSuccessCriteria: false,
+          hasExpectedEvidence: false,
+        },
+        hasChallengePacket: true,
+        hasWorkEvidence: false,
+        hasMessageEvidence: false,
+        hasDevContainerEvidence: false,
+        hasToolUsageEvidence: false,
+        hasCommitSubmission: false,
+        hasFinalSubmission: false,
+        hasAiInteraction: false,
+        hasTranscriptEvidence: false,
+        hasTestEvidence: false,
+        evidenceCounts: [{ kind: 'recruiter_note', count: 1 }],
+        sourceRefCounts: [{ kind: 'open_source_challenge_packet', count: 1 }],
+        challenge: {
+          sourceRefType: 'open_source_challenge_packet',
+          sourceRefId: 'challenge-packet-incomplete',
+          evidenceRole: 'assigned_challenge',
+          exactText: [
+            'Repo: https://github.com/open-source/streaming',
+            'Base commit: 2222222222222222222222222222222222222222',
+            'Task: Fix reconnect ordering in the event stream.',
+          ].join('\n'),
+          locator: {
+            repositoryUrl: 'https://github.com/open-source/streaming',
+            baseCommitSha: '2222222222222222222222222222222222222222',
+          },
+        },
+        latestEvent: {
+          id: 'assessment-event-incomplete-packet',
+          kind: 'recruiter_note',
+          sequence: 1,
+          occurredAt: '2026-06-23T00:20:00.000Z',
+        },
+        commit: null,
+        evaluation: null,
+      },
+    });
+
+    const progress = screen.getByTestId('interview-card-assessment-progress');
+    expect(progress).toHaveTextContent('Waiting for complete challenge packet');
+    expect(progress).toHaveTextContent('PACKET');
+    expect(progress).toHaveTextContent('Incomplete challenge packet');
+    expect(progress).toHaveTextContent('Missing Success criteria, Expected evidence.');
+    expect(progress).toHaveTextContent('Complete the packet before candidate work starts.');
+    expect(progress).toHaveTextContent('Add success criteria and expected evidence before the candidate starts.');
+    expect(progress).not.toHaveTextContent('challenge-packet-incomplete');
+    expect(progress).not.toHaveTextContent('assessment-session-incomplete-packet');
+  });
+
   it('falls back to durable progress trust when setup projection is missing', () => {
     renderCard({
       id: 'interview-progress-trust',

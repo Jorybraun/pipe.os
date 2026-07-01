@@ -13,6 +13,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Fixed — Open-source assessment progress
 
+- Recruiter interview cards now flag incomplete open-source challenge packets, including the missing packet fields, so a partially assigned repo task cannot look ready for candidate work.
 - Assessment room tests now reject retired novelty branding and desktop-shell affordances, keeping the candidate room anchored to the core open-source assessment product.
 - Candidate assessment rooms now show the workspace finalizer trust contract before submission, making it clear the trusted path reads git HEAD inside the container, verifies challenge anchors, and stores source refs for commit, diff, tests, and workspace state.
 - Recruiter interview cards now show commit trust separately from the short SHA, including workspace-capture integrity and whether the commit is bound to the assigned open-source challenge packet.
@@ -44,6 +45,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Fixed — CODE_REVIEW assessment runtime
 
+- Standalone CODE_REVIEW `/assess` now fails closed to the candidate-safe `Profile received` handoff if a regressed stage config tries to render `WAITING_FOR_MATCH`, preventing the old matching dashboard from reappearing in the assessment runtime.
 - Person-profile CODE_REVIEW decisions now show a concise score-validity readout that explains whether a score is usable because rubric coverage, review transcript, repo challenge, and candidate/repo match proof are present, or withheld because a required proof link is missing.
 - CODE_REVIEW interview detail pages now render a compact decision cockpit above invite/progress mechanics, so hiring managers see outcome, validity, risk, and next action before operational link state.
 - Blocked CODE_REVIEW app-dev smokes now open the candidate `/assess` page and assert the `Profile received` handoff directly, including negative checks against the old matching dashboard copy.

@@ -219,6 +219,12 @@ interface AssessmentCommitTrustSummary {
   tone: 'verified' | 'warning' | 'neutral';
 }
 
+interface AssessmentPacketContractSummary {
+  label: string;
+  detail: string;
+  tone: 'verified' | 'warning' | 'neutral';
+}
+
 function assessmentDecisionSummary(input: {
   setup: ScheduledInterview['assessmentSetup'] | null;
   progress: ScheduledInterview['assessmentProgress'] | null;
@@ -338,6 +344,40 @@ function assessmentCommitTrustSummary(
 }
 
 function assessmentCommitTrustColor(tone: AssessmentCommitTrustSummary['tone']): string {
+  switch (tone) {
+    case 'verified':
+      return '#4ade80';
+    case 'warning':
+      return '#fbbf24';
+    default:
+      return 'var(--pipe-text-dim)';
+  }
+}
+
+function assessmentPacketContractSummary(
+  contract: NonNullable<ScheduledInterview['assessmentProgress']>['challengePacketContract'] | null | undefined,
+): AssessmentPacketContractSummary | null {
+  if (!contract) return null;
+  if (contract.isComplete) {
+    return {
+      label: 'Complete challenge packet',
+      detail: 'Repo, base commit, task, success criteria, and expected evidence are captured.',
+      tone: 'verified',
+    };
+  }
+  const missingFields = contract.missingFields
+    .map((field) => sentenceCaseToken(field))
+    .join(', ');
+  return {
+    label: 'Incomplete challenge packet',
+    detail: missingFields
+      ? `Missing ${missingFields}. Complete the packet before candidate work starts.`
+      : 'Complete the repo URL, base commit, task, success criteria, and expected evidence before candidate work starts.',
+    tone: 'warning',
+  };
+}
+
+function assessmentPacketContractColor(tone: AssessmentPacketContractSummary['tone']): string {
   switch (tone) {
     case 'verified':
       return '#4ade80';
@@ -468,8 +508,8 @@ export function InterviewCard({
     : assessmentSetup?.blocksPositiveAssessment
       ? 'Setup gap'
       : 'Assessment ready';
-  const assessmentNextAction = assessmentProgress?.readiness?.detail
-    ?? assessmentProgress?.nextActionLabel
+  const assessmentNextAction = assessmentProgress?.nextActionLabel
+    ?? assessmentProgress?.readiness?.detail
     ?? assessmentSetup?.nextActionLabel
     ?? assessmentSetup?.message
     ?? 'Assessment evidence will appear after the session starts.';
@@ -497,6 +537,7 @@ export function InterviewCard({
     ?? null;
   const assessmentChallengeBindingLabel = assessmentProgress?.commit?.challengeBinding?.label ?? null;
   const assessmentCommitTrust = assessmentCommitTrustSummary(assessmentProgress?.commit);
+  const assessmentPacketContract = assessmentPacketContractSummary(assessmentProgress?.challengePacketContract);
   const assessmentCriteriaLabel = assessmentChallenge?.successCriteria.length
     ? compactText(assessmentChallenge.successCriteria.join(' · '), 150)
     : null;
@@ -662,6 +703,21 @@ export function InterviewCard({
               <div style={{ minWidth: 0, fontSize: 10, color: 'var(--pipe-text-dim)', overflowWrap: 'anywhere' }}>
                 {assessmentEvidence}
               </div>
+              {assessmentPacketContract && (
+                <>
+                  <div style={{ fontSize: 9, color: assessmentPacketContractColor(assessmentPacketContract.tone), letterSpacing: '0.12em', fontWeight: 700 }}>
+                    PACKET
+                  </div>
+                  <div style={{ minWidth: 0, overflowWrap: 'anywhere' }}>
+                    <div style={{ fontSize: 10, color: assessmentPacketContractColor(assessmentPacketContract.tone), fontWeight: 700 }}>
+                      {assessmentPacketContract.label}
+                    </div>
+                    <div style={{ fontSize: 10, color: 'var(--pipe-text-dim)' }}>
+                      {assessmentPacketContract.detail}
+                    </div>
+                  </div>
+                </>
+              )}
               {workspaceSummary && (
                 <>
                   <div style={{ fontSize: 9, color: 'var(--pipe-text-muted)', letterSpacing: '0.12em', fontWeight: 700 }}>
