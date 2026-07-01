@@ -12,6 +12,10 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - Contacts list responses are now paginated by default and the People page loads additional pages on demand, preventing large relationship graphs from shipping unbounded multi-megabyte `/api/v1/contacts` payloads.
 - The People page now uses the shared cached recruiter API client hook, avoiding a one-off Clerk client path while keeping paginated contact loads on the same auth/cache behavior as other recruiter surfaces.
 
+### Added — Route performance
+
+- Added an API route benchmark harness for local Worker routes, including optional local D1 seeding, expected-status checks, latency thresholds, and a `bench:routes` package script.
+
 ### Fixed — CODE_REVIEW assessment runtime
 
 - CODE_REVIEW progress and scoring now require a complete challenge packet contract — repo URL, base commit SHA, task, success criteria, and expected evidence — before treating a task as ready or scoreable.
@@ -54,6 +58,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 ### Removed — Assessment room simplification
 
 - Simplified layout tests and render callback naming so the room code stays focused on assessment work instead of alternate room modes.
+- Added a video-room residue regression test that blocks removed novelty-room language from returning to shipped room files.
 - Removed obsolete assessment-panel coordinate and ordering state from the video-room app.
 - Collapsed video-room evidence capture to the standard assessment room path, removing the stale alternate replay path.
 - Current room evidence is limited to the core assessment sources: video, chat, workspace, terminal, code-server/file events, recording, transcription, commit submissions, and the real AI assistant bridge.
@@ -66,6 +71,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - The video-room assessment shell now opens terminal and submission inside a focused assessment tools panel.
 - Removed abandoned action aliases from the real agent bridge.
 - The room now keeps focus on video, chat, workspace, terminal, Submit Work, recording, transcription, and the real AI assistant bridge.
+- Added a video-room regression guard that fails if removed novelty-room vocabulary returns to the shipped room source or public worker assets.
 
 ### Added — Human assessment decisions
 
