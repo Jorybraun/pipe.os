@@ -61,6 +61,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 - Simplified layout tests and render callback naming so the room code stays focused on assessment work instead of alternate room modes.
 - Added a video-room residue regression test that blocks removed novelty-room language from returning to shipped room files.
+- Expanded the room residue regression guard to block alternate 95/infinity and mode spellings, including hyphenated variants.
 - Removed obsolete assessment-panel coordinate and ordering state from the video-room app.
 - Collapsed video-room evidence capture to the standard assessment room path, removing the stale alternate replay path.
 - Current room evidence is limited to the core assessment sources: video, chat, workspace, terminal, code-server/file events, recording, transcription, commit submissions, and the real AI assistant bridge.

@@ -12,9 +12,14 @@ const scannedEntries = [
 
 const encodedForbiddenPhrases = [
   [57, 53, 32, 117, 110, 116, 105, 108, 32, 105, 110, 102, 105, 110, 105, 116, 121],
+  [57, 53, 32, 116, 111, 32, 105, 110, 102, 105, 110, 105, 116, 121],
+  [57, 53, 32, 116, 105, 108, 32, 105, 110, 102, 105, 110, 105, 116, 121],
+  [57, 53, 32, 116, 105, 108, 108, 32, 105, 110, 102, 105, 110, 105, 116, 121],
   [117, 110, 116, 105, 108, 32, 105, 110, 102, 105, 110, 105, 116, 121],
   [119, 105, 110, 100, 111, 119, 115, 32, 57, 53],
+  [119, 105, 110, 100, 111, 119, 115, 32, 57, 53, 32, 109, 111, 100, 101],
   [119, 105, 110, 57, 53],
+  [119, 105, 110, 57, 53, 32, 109, 111, 100, 101],
   [119, 105, 110, 100, 111, 119, 115, 57, 53],
   [99, 108, 105, 112, 112, 121],
   [112, 97, 112, 101, 114, 99, 108, 105, 112],
@@ -32,7 +37,8 @@ const encodedForbiddenPhrases = [
 
 function regexFromPhrase(encodedPhrase) {
   const phrase = String.fromCharCode(...encodedPhrase);
-  return new RegExp(phrase.replace(/\s+/g, '\\s+'), 'i');
+  const escapedPhrase = phrase.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
+  return new RegExp(escapedPhrase.replace(/\s+/g, '[\\s_-]+'), 'i');
 }
 
 const forbiddenPatterns = encodedForbiddenPhrases.map(regexFromPhrase);
