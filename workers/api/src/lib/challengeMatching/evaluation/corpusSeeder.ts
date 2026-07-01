@@ -20,9 +20,10 @@ import type {
   RoleRequirements,
 } from './types';
 import { EVALUATION_CORPUS_VERSION } from './types';
-import { validateCorpus } from './corpus';
+import { evaluationCorpusLabelCounts, validateCorpus } from './corpus';
 import { loadPersistedMatchRun } from './cli';
 import type { PersistedMatchRun, PersistedRankedChallenge } from './types';
+import { sha256 } from '../../repoSemanticGraph/hash';
 
 export interface CorpusSeederOptions {
   /** Maximum number of match runs to include. Default 50. */
@@ -424,12 +425,37 @@ function gradeFromScore(score: number): RelevanceGrade {
 export async function persistSeededCorpus(
   db: D1Database,
   corpus: EvaluationCorpus,
-): Promise<{ corpusId: string; persisted: boolean }> {
+): Promise<{ corpusId: string; corpusHash: string; persisted: boolean }> {
   const json = JSON.stringify(corpus);
+  const corpusHash = (await sha256(json)).slice('sha256:'.length);
+  const existing = await db.prepare(
+    'SELECT corpus_hash FROM evaluation_corpora WHERE corpus_id = ?1',
+  ).bind(corpus.corpusId).first<{ corpus_hash: string }>();
+  if (existing) {
+    if (existing.corpus_hash !== corpusHash) {
+      throw new Error(`Frozen corpus "${corpus.corpusId}" already exists with different content`);
+    }
+    return { corpusId: corpus.corpusId, corpusHash, persisted: false };
+  }
+
+  const frozenAt = Math.floor(Date.parse(corpus.createdAt) / 1000);
+  if (!Number.isInteger(frozenAt)) {
+    throw new Error(`Corpus "${corpus.corpusId}" has an invalid createdAt timestamp`);
+  }
+  const { expertLabelCount, syntheticFixtureCount } = evaluationCorpusLabelCounts(corpus);
   await db.prepare(
-    `INSERT INTO evaluation_corpora (corpus_id, corpus_json, created_at)
-     VALUES (?1, ?2, ?3)
-     ON CONFLICT (corpus_id) DO UPDATE SET corpus_json = excluded.corpus_json`,
-  ).bind(corpus.corpusId, json, corpus.createdAt).run();
-  return { corpusId: corpus.corpusId, persisted: true };
+    `INSERT INTO evaluation_corpora (
+       corpus_id, schema_version, corpus_hash, corpus_json,
+       expert_label_count, synthetic_fixture_count, frozen_at, created_at
+     ) VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7, unixepoch())`,
+  ).bind(
+    corpus.corpusId,
+    corpus.version,
+    corpusHash,
+    json,
+    expertLabelCount,
+    syntheticFixtureCount,
+    frozenAt,
+  ).run();
+  return { corpusId: corpus.corpusId, corpusHash, persisted: true };
 }

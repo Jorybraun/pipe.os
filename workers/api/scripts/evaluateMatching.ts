@@ -8,6 +8,7 @@ import Database from 'better-sqlite3';
 
 import {
   checkLatestProductionEvaluation,
+  evaluationCorpusLabelCounts,
   generateEvaluationReadinessReport,
   generateHumanReadableReport,
   loadCorpus,
@@ -280,9 +281,7 @@ async function freezeCorpus(
     }
     return;
   }
-  const syntheticFixtureCount = corpus.expertLabels.filter(
-    (label) => label.labeledBy === 'synthetic-fixture',
-  ).length;
+  const { expertLabelCount, syntheticFixtureCount } = evaluationCorpusLabelCounts(corpus);
   await db.prepare(
     `INSERT INTO evaluation_corpora (
        corpus_id, schema_version, corpus_hash, corpus_json,
@@ -293,7 +292,7 @@ async function freezeCorpus(
     corpus.version,
     corpusHash,
     corpusJson,
-    corpus.expertLabels.length - syntheticFixtureCount,
+    expertLabelCount,
     syntheticFixtureCount,
     Math.floor(Date.parse(corpus.createdAt) / 1000),
   ).run();

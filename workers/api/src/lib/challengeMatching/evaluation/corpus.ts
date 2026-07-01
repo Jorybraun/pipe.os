@@ -301,6 +301,32 @@ export function productionCorpusFailures(corpus: EvaluationCorpus): string[] {
   return failures;
 }
 
+export function hasExpertLabelProvenance(label: ExpertLabel): boolean {
+  const provenance = label.labelProvenance;
+  if (!provenance) return false;
+  return label.labeledBy !== 'synthetic-fixture'
+    && label.labeledBy !== 'corpus-seeder'
+    && Boolean(provenance.reviewerId)
+    && Boolean(provenance.reviewArtifactId)
+    && Boolean(provenance.reviewArtifactVersion)
+    && Boolean(provenance.contentHash)
+    && provenance.contentHash.startsWith('sha256:')
+    && Boolean(provenance.locator)
+    && Boolean(provenance.rubricVersion);
+}
+
+export function evaluationCorpusLabelCounts(
+  corpus: EvaluationCorpus,
+): { expertLabelCount: number; syntheticFixtureCount: number } {
+  const syntheticFixtureCount = corpus.expertLabels.filter(
+    (label) => label.labeledBy === 'synthetic-fixture',
+  ).length;
+  return {
+    expertLabelCount: corpus.expertLabels.filter(hasExpertLabelProvenance).length,
+    syntheticFixtureCount,
+  };
+}
+
 export function validateProductionCorpus(corpus: EvaluationCorpus): void {
   const failures = productionCorpusFailures(corpus);
   if (failures.length > 0) throw new ProductionCorpusValidationError(failures);

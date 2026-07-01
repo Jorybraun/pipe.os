@@ -1,4 +1,4 @@
-import { getExpectedPackets } from './corpus';
+import { evaluationCorpusLabelCounts, getExpectedPackets } from './corpus';
 import type {
   AcceptanceThresholds,
   DeterminismComparison,
@@ -353,9 +353,7 @@ export function evaluateMatchRuns(
     if (!verification.identical) byteIdenticalRerun = false;
   }
 
-  const syntheticFixtureCount = corpus.expertLabels.filter(
-    (label) => label.labeledBy === 'synthetic-fixture',
-  ).length;
+  const { expertLabelCount, syntheticFixtureCount } = evaluationCorpusLabelCounts(corpus);
 
   const totalLabelledPairs = labelsByPair.size;
   const pairsComparisonCovered = Array.from(labelsByPair.keys()).filter(
@@ -476,7 +474,7 @@ export function evaluateMatchRuns(
     irrelevantInTop3,
     forbiddenInResults,
     syntheticFixtureCount,
-    expertLabelCount: corpus.expertLabels.length - syntheticFixtureCount,
+    expertLabelCount,
     labelResults,
     expectedPacketCount: expectedPackets.length,
     packetCoverage,

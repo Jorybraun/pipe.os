@@ -150,10 +150,17 @@ function insertEvaluationCorpus(
     corpusId: string;
     version: string;
     createdAt: string;
-    expertLabels: Array<{ labeledBy: string }>;
+    expertLabels: Array<{
+      labeledBy: string;
+      labelProvenance?: { contentHash?: string };
+    }>;
   };
   const syntheticFixtureCount = corpus.expertLabels.filter(
     (label) => label.labeledBy === 'synthetic-fixture',
+  ).length;
+  const expertLabelCount = corpus.expertLabels.filter((label) =>
+    label.labeledBy !== 'synthetic-fixture'
+    && label.labelProvenance?.contentHash?.startsWith('sha256:') === true
   ).length;
   db.prepare(
     `INSERT INTO evaluation_corpora (
@@ -165,7 +172,7 @@ function insertEvaluationCorpus(
     corpus.version,
     createHash('sha256').update(corpusJson).digest('hex'),
     corpusJson,
-    corpus.expertLabels.length - syntheticFixtureCount,
+    expertLabelCount,
     syntheticFixtureCount,
     Math.floor(Date.parse(corpus.createdAt) / 1000),
   );
@@ -528,7 +535,7 @@ describe('matching evaluation CLI', () => {
       matchRunIds: ['run-primary'],
       comparisonMatchRunIds: ['run-comparison'],
       persistResult: true,
-    })).rejects.toThrow('Production corpus validation failed');
+    })).rejects.toThrow('Persisted evaluations require a fully expert-labelled corpus');
     expect(sqlite.prepare('SELECT COUNT(*) AS count FROM evaluation_results').get())
       .toEqual({ count: 0 });
     sqlite.close();

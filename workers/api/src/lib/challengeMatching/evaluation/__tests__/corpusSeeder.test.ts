@@ -1,5 +1,5 @@
 import { createRequire } from 'node:module';
-import { readFileSync } from 'node:fs';
+import { createHash } from 'node:crypto';
 import { afterEach, beforeEach, describe, expect, it } from 'vitest';
 import { seedCorpusFromMatchRuns, persistSeededCorpus } from '../corpusSeeder';
 import { validateCorpus } from '../corpus';
@@ -262,9 +262,20 @@ function setupSchema(sqlite: NodeSqliteDatabase): void {
 
     CREATE TABLE IF NOT EXISTS evaluation_corpora (
       corpus_id TEXT PRIMARY KEY,
+      schema_version TEXT NOT NULL,
+      corpus_hash TEXT NOT NULL UNIQUE,
       corpus_json TEXT NOT NULL,
-      created_at TEXT NOT NULL DEFAULT (datetime('now'))
+      expert_label_count INTEGER NOT NULL CHECK(expert_label_count >= 0),
+      synthetic_fixture_count INTEGER NOT NULL CHECK(synthetic_fixture_count >= 0),
+      frozen_at INTEGER NOT NULL,
+      created_at INTEGER NOT NULL DEFAULT (unixepoch())
     );
+
+    CREATE TRIGGER IF NOT EXISTS evaluation_corpora_no_update
+    BEFORE UPDATE ON evaluation_corpora
+    BEGIN
+      SELECT RAISE(ABORT, 'evaluation corpora are frozen');
+    END;
   `);
 }
 
@@ -423,7 +434,7 @@ describe('corpusSeeder', () => {
     expect(corpus.metadata.totalRoles).toBe(1);
   });
 
-  it('persists corpus to evaluation_corpora table', async () => {
+  it('persists draft corpus to the frozen evaluation_corpora schema without counting seeded labels as expert', async () => {
     seedMatchData(sqlite);
 
     const result = await seedCorpusFromMatchRuns(db);
@@ -432,11 +443,34 @@ describe('corpusSeeder', () => {
     expect(persistResult.persisted).toBe(true);
 
     const row = sqlite.prepare(
-      'SELECT corpus_json FROM evaluation_corpora WHERE corpus_id = ?',
-    ).get(result.corpus.corpusId) as { corpus_json: string } | undefined;
+      `SELECT schema_version, corpus_hash, corpus_json, expert_label_count,
+              synthetic_fixture_count, frozen_at
+         FROM evaluation_corpora
+        WHERE corpus_id = ?`,
+    ).get(result.corpus.corpusId) as {
+      schema_version: string;
+      corpus_hash: string;
+      corpus_json: string;
+      expert_label_count: number;
+      synthetic_fixture_count: number;
+      frozen_at: number;
+    } | undefined;
     expect(row).toBeDefined();
     const loaded = JSON.parse(row!.corpus_json);
     expect(loaded.corpusId).toBe(result.corpus.corpusId);
+    expect(row!.schema_version).toBe('1.0.0');
+    expect(row!.corpus_hash).toBe(createHash('sha256').update(row!.corpus_json).digest('hex'));
+    expect(row!.expert_label_count).toBe(0);
+    expect(row!.synthetic_fixture_count).toBe(0);
+    expect(row!.frozen_at).toBe(Math.floor(Date.parse(result.corpus.createdAt) / 1000));
+
+    const repeat = await persistSeededCorpus(db, result.corpus);
+    expect(repeat.persisted).toBe(false);
+
+    expect(() => sqlite.prepare(
+      `UPDATE evaluation_corpora SET corpus_json = '{}'
+        WHERE corpus_id = ?`,
+    ).run(result.corpus.corpusId)).toThrow('evaluation corpora are frozen');
   });
 
   it('generates warnings when candidate has no living context', async () => {
