@@ -386,6 +386,11 @@ export async function ingestAssessmentToLivingContext(
   for (const report of reports) {
     const reportClaims = claims.filter((c) => c.report_id === report.id);
     for (const claim of reportClaims) {
+      const refs = claimSourceRefs.get(claim.id) ?? [];
+      if (refs.length === 0) {
+        continue;
+      }
+
       const claimEpisodeKey = `assessment_claim:${claim.id}`;
       const claimEpisode = await store.upsertEpisode({
         ingestionKey: claimEpisodeKey,
@@ -423,7 +428,6 @@ export async function ingestAssessmentToLivingContext(
       });
       claimAssertionCount++;
 
-      const refs = claimSourceRefs.get(claim.id) ?? [];
       const claimSources: ContextRecordSourceInput[] = [];
       for (const ref of refs) {
         claimSources.push(await normalizeAssessmentSourceRef(db, ref));
@@ -431,20 +435,6 @@ export async function ingestAssessmentToLivingContext(
         if (ref.source_span_id) {
           await store.linkAssertionSourceSpan(claimAssertion.id, ref.source_span_id);
         }
-      }
-      if (claimSources.length === 0) {
-        claimSources.push({
-          sourceRefType: 'assessment_evaluation_claim',
-          sourceRefId: claim.id,
-          evidenceRole: 'primary',
-          exactText: claim.narrative,
-          contentHash: await sha256(claim.narrative),
-          locator: {
-            reportId: report.id,
-            dimension: claim.dimension,
-            polarity: claim.polarity,
-          },
-        });
       }
 
       const claimConcepts: ContextRecordConceptInput[] = [];

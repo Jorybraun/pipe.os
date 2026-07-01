@@ -252,25 +252,24 @@ describe('ingestAssessmentToLivingContext', () => {
     );
 
     expect(result).not.toBeNull();
-    expect(result!.claimAssertionCount).toBe(2);
-    expect(result!.episodeCount).toBe(2);
-    expect(result!.contextRecordCount).toBe(2);
+    expect(result!.claimAssertionCount).toBe(1);
+    expect(result!.episodeCount).toBe(1);
+    expect(result!.contextRecordCount).toBe(1);
 
     const assertions = sqlite.prepare(
       `SELECT * FROM semantic_assertions WHERE predicate LIKE 'evaluation:%' ORDER BY observed_at`,
     ).all() as Array<Record<string, unknown>>;
-    expect(assertions.length).toBe(2);
+    expect(assertions.length).toBe(1);
     expect(assertions[0].predicate).toBe('evaluation:debugging_skill');
-    expect(assertions[1].predicate).toBe('evaluation:test_coverage');
     expect(assertions[0].polarity).toBe(1);
-    expect(assertions[1].polarity).toBe(-1);
+    expect(assertions.some((assertion) => assertion.predicate === 'evaluation:test_coverage')).toBe(false);
 
     const contextRecords = sqlite.prepare(
       `SELECT * FROM context_records WHERE record_type LIKE 'evaluation:%' ORDER BY observed_at`,
     ).all() as Array<Record<string, unknown>>;
-    expect(contextRecords.length).toBe(2);
+    expect(contextRecords.length).toBe(1);
     expect(contextRecords[0].predicate).toBe('positive');
-    expect(contextRecords[1].predicate).toBe('negative');
+    expect(contextRecords.some((record) => record.narrative === 'Did not add regression test for the fix')).toBe(false);
   });
 
   it('is idempotent — running twice produces the same entity count', async () => {

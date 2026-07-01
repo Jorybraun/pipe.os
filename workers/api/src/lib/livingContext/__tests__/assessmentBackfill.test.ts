@@ -202,6 +202,10 @@ describe('assessments_to_living_context backfill', () => {
       INSERT INTO assessment_evaluation_claims
         (id, report_id, polarity, dimension, narrative, confidence, created_at)
       VALUES ('claim-partial-1', 'report-partial-1', 'positive', 'debugging_skill', 'Candidate isolated the bug and committed a targeted fix.', 0.86, '${now}');
+
+      INSERT INTO assessment_claim_source_refs
+        (id, claim_id, source_ref_type, source_ref_id, evidence_role, locator_json, exact_text, content_hash, metadata_json, created_at)
+      VALUES ('claim-ref-partial-1', 'claim-partial-1', 'assessment_evidence_event', 'event-partial-1', 'support', '{}', 'Candidate created an assessment commit.', 'sha256:claim-ref-partial-1', '{}', '${now}');
     `);
 
     const reportEntitiesBefore = sqlite.prepare(
