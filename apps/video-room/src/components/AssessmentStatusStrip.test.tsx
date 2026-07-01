@@ -164,7 +164,7 @@ describe('AssessmentStatusStrip', () => {
     expect(screen.getByTestId('assessment-readiness').textContent).toContain('Ready to evaluate');
     expect(screen.getByTestId('assessment-progress-commit').textContent).toContain('Commit cccccccc');
     expect(screen.getByText('Start source-backed AI or human evaluation.')).not.toBeNull();
-    expect(screen.getByTestId('assessment-progress-coverage').textContent).toContain('challenge, chat, workspace, room, commit, AI, tests');
+    expect(screen.getByTestId('assessment-progress-coverage').textContent).toContain('challenge, chat, workspace, tool activity, commit, AI, tests');
   });
 
   it('surfaces verification gaps in live room progress coverage', () => {
@@ -200,7 +200,7 @@ describe('AssessmentStatusStrip', () => {
     );
 
     const coverage = screen.getByTestId('assessment-progress-coverage');
-    expect(coverage.textContent).toContain('challenge, chat, workspace, room, commit, AI, verification gap');
+    expect(coverage.textContent).toContain('challenge, chat, workspace, tool activity, commit, AI, verification gap');
     expect(coverage.textContent).not.toContain('tests');
   });
 

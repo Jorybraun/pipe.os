@@ -182,6 +182,10 @@ The controlling product rule remains:
 - Live assessment-room progress coverage must name those same verification gaps,
   so hosts and candidates do not read a missing-test note as captured passing
   tests while the session is still underway.
+- Live assessment-room progress coverage must label accepted terminal, code,
+  and tool evidence as `tool activity`, matching recruiter summaries and
+  preserving the distinction between generic room presence and actual assessment
+  work proof.
 - Accepted guest join/leave and recording start/stop room lifecycle events now
   persist as source-backed `meeting_session_event` evidence, with recording
   stop captured only when recording evidence was actually active.
