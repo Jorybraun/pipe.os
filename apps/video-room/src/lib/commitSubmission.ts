@@ -81,10 +81,19 @@ function githubPathParts(parsed: URL, label: string): string[] {
   return parts;
 }
 
-function validateGithubRepositoryUrl(value: string, label: string): string {
+function normalizedGithubRepositoryUrl(value: string, label: string): string {
   const parsed = parseHttpsUrl(value, label);
-  githubPathParts(parsed, label);
-  return value.trim();
+  const parts = githubPathParts(parsed, label);
+  const [owner, repoWithSuffix] = parts;
+  const repo = repoWithSuffix?.endsWith('.git') ? repoWithSuffix.slice(0, -4) : repoWithSuffix;
+  if (!owner || !repo) {
+    throw new Error(`${label} must include a GitHub owner and repository.`);
+  }
+  return `https://github.com/${owner}/${repo}`;
+}
+
+function validateGithubRepositoryUrl(value: string, label: string): string {
+  return normalizedGithubRepositoryUrl(value, label);
 }
 
 function validateGithubCommitUrl(value: string, commitSha: string): string {
@@ -98,7 +107,7 @@ function validateGithubCommitUrl(value: string, commitSha: string): string {
   return value.trim();
 }
 
-function validateGithubPullRequestUrl(value: string): string {
+function githubRepositoryUrlFromPullRequestUrl(value: string): string {
   const parsed = parseHttpsUrl(value, 'Upstream PR URL');
   const parts = githubPathParts(parsed, 'Upstream PR URL');
   const pullIndex = parts.findIndex((part) => part === 'pull');
@@ -106,7 +115,28 @@ function validateGithubPullRequestUrl(value: string): string {
   if (!Number.isInteger(prNumber) || prNumber <= 0) {
     throw new Error('Upstream PR URL must point to a GitHub pull request.');
   }
-  return value.trim();
+  const [owner, repoWithSuffix] = parts;
+  const repo = repoWithSuffix?.endsWith('.git') ? repoWithSuffix.slice(0, -4) : repoWithSuffix;
+  if (!owner || !repo) {
+    throw new Error('Upstream PR URL must include a GitHub owner and repository.');
+  }
+  return `https://github.com/${owner}/${repo}`;
+}
+
+function validateGithubPullRequestUrl(value: string, repositoryUrl: string): string {
+  const parsed = parseHttpsUrl(value, 'Upstream PR URL');
+  const parts = githubPathParts(parsed, 'Upstream PR URL');
+  const pullIndex = parts.findIndex((part) => part === 'pull');
+  const prNumber = pullIndex >= 0 ? Number(parts[pullIndex + 1]) : NaN;
+  if (!Number.isInteger(prNumber) || prNumber <= 0) {
+    throw new Error('Upstream PR URL must point to a GitHub pull request.');
+  }
+  if (githubRepositoryUrlFromPullRequestUrl(value) !== repositoryUrl) {
+    throw new Error('Upstream PR URL must belong to the assigned repository.');
+  }
+  parsed.search = '';
+  parsed.hash = '';
+  return parsed.toString();
 }
 
 function validateAssessmentBranchName(branchName: string): string {
@@ -242,7 +272,7 @@ export async function buildCommitSubmissionPayload(
     throw new Error('Upstream PR URL requires explicit candidate approval.');
   }
   const validatedUpstreamPullRequestUrl = upstreamPullRequestUrl
-    ? validateGithubPullRequestUrl(upstreamPullRequestUrl)
+    ? validateGithubPullRequestUrl(upstreamPullRequestUrl, validatedRepositoryUrl)
     : null;
 
   const sourceRepositoryUrl = validatedForkRepositoryUrl ?? validatedRepositoryUrl;

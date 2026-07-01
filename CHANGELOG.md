@@ -27,6 +27,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Fixed — CODE_REVIEW assessment runtime
 
+- Commit submission now rejects optional upstream PR links unless they belong to the assigned repository and include exact upstream pull-request source evidence, preventing unrelated PRs from being stored as assessment proof.
 - Recruiter invite panels now distinguish standalone CODE_REVIEW `/assess` links from open-source/dev-container workspace room links, preventing room-backed assessments from being described as one-use assess links.
 - Person CODE_REVIEW decision cards now render an explicit no-blocking-gap message when a selected assessment has no missing-context items instead of leaving hiring managers with an empty section.
 - Manual PR CODE_REVIEW scores now show assignment-calibration validity and fairness-before-advance recommendations instead of generic usable/advance wording, preventing hiring managers from reading a recruiter-selected PR as automatic candidate-fit proof.

@@ -755,6 +755,155 @@ index 5c7b20a..7f9a12e 100644
     ]);
   });
 
+  it('persists upstream PR tracking only when it is repo-bound and source-backed', async () => {
+    const session = await createSession(app, env, {
+      ingestionKey: 'assessment-session:commit-submission-upstream-pr',
+      mode: 'OPEN_SOURCE_BUG_FIX',
+      candidateId: 'candidate-upstream-pr',
+    });
+    const baseCommitSha = '1111111111111111111111111111111111111111';
+    const commitSha = 'abababababababababababababababababababab';
+    const upstreamPullRequestUrl = 'https://github.com/open-source/widgets/pull/42';
+    const commitText = `commit ${commitSha}
+Author: Candidate <candidate@example.com>
+
+Fix stale popover listener cleanup.`;
+    const diffText = `diff --git a/src/popover.ts b/src/popover.ts
+--- a/src/popover.ts
++++ b/src/popover.ts
+@@ -42,6 +42,7 @@ export function closePopover() {
++  cleanupStaleHandler();
+}`;
+
+    const response = await app.request(
+      `/api/v1/assessment/repo-task/sessions/${session.id}/commit-submissions`,
+      jsonRequest({
+        ingestionKey: 'assessment-event:commit-submission-upstream-pr',
+        actorType: 'candidate',
+        actorId: 'candidate-upstream-pr',
+        narrative: 'Candidate submitted a source-backed assessment commit with reviewed upstream PR tracking.',
+        repositoryUrl: 'https://github.com/open-source/widgets',
+        forkRepositoryUrl: 'https://github.com/candidate/widgets',
+        branchName: 'pipe-assessment/popover-cleanup',
+        baseCommitSha,
+        commitSha,
+        commitUrl: `https://github.com/candidate/widgets/commit/${commitSha}`,
+        upstreamPullRequestUrl,
+        upstreamPrConsent: true,
+        changedFiles: [{ path: 'src/popover.ts', status: 'modified' }],
+        sourceRefs: [
+          await sourceRef('git_commit', commitSha, commitText),
+          await sourceRef('code_diff', `${baseCommitSha}..${commitSha}`, diffText),
+          await sourceRef('upstream_pull_request', upstreamPullRequestUrl, upstreamPullRequestUrl),
+        ],
+      }),
+      env,
+    );
+
+    expect(response.status).toBe(201);
+    const body = await response.json() as {
+      submission: { event: { id: string } };
+    };
+    const persistedEvent = sqlite.prepare(
+      `SELECT payload_json
+         FROM assessment_evidence_events
+        WHERE id = ?`,
+    ).get(body.submission.event.id) as { payload_json: string };
+    expect(JSON.parse(persistedEvent.payload_json)).toMatchObject({
+      repositoryUrl: 'https://github.com/open-source/widgets',
+      forkRepositoryUrl: 'https://github.com/candidate/widgets',
+      upstreamPullRequestUrl,
+      upstreamPrConsent: true,
+    });
+    expect(sqlite.prepare(
+      `SELECT source_ref_type, source_ref_id, exact_text
+         FROM assessment_event_source_refs
+        WHERE event_id = ?
+          AND source_ref_type = 'upstream_pull_request'`,
+    ).get(body.submission.event.id)).toEqual({
+      source_ref_type: 'upstream_pull_request',
+      source_ref_id: upstreamPullRequestUrl,
+      exact_text: upstreamPullRequestUrl,
+    });
+  });
+
+  it('rejects upstream PR tracking for unrelated or source-less pull requests', async () => {
+    const baseCommitSha = '1111111111111111111111111111111111111111';
+    const commitSha = 'acacacacacacacacacacacacacacacacacacacac';
+    const commitText = `commit ${commitSha}
+Author: Candidate <candidate@example.com>
+
+Fix stale popover listener cleanup.`;
+    const diffText = `diff --git a/src/popover.ts b/src/popover.ts
+--- a/src/popover.ts
++++ b/src/popover.ts
+@@ -42,6 +42,7 @@ export function closePopover() {
++  cleanupStaleHandler();
+}`;
+    const validBody = {
+      actorType: 'candidate',
+      actorId: 'candidate-upstream-pr',
+      narrative: 'Candidate tried to attach an upstream PR link.',
+      repositoryUrl: 'https://github.com/open-source/widgets',
+      forkRepositoryUrl: 'https://github.com/candidate/widgets',
+      branchName: 'pipe-assessment/popover-cleanup',
+      baseCommitSha,
+      commitSha,
+      commitUrl: `https://github.com/candidate/widgets/commit/${commitSha}`,
+      upstreamPullRequestUrl: 'https://github.com/open-source/widgets/pull/42',
+      upstreamPrConsent: true,
+      changedFiles: [{ path: 'src/popover.ts', status: 'modified' }],
+      sourceRefs: [
+        await sourceRef('git_commit', commitSha, commitText),
+        await sourceRef('code_diff', `${baseCommitSha}..${commitSha}`, diffText),
+      ],
+    };
+
+    const sourceLessSession = await createSession(app, env, {
+      ingestionKey: 'assessment-session:source-less-upstream-pr',
+      mode: 'OPEN_SOURCE_BUG_FIX',
+    });
+    const sourceLessResponse = await app.request(
+      `/api/v1/assessment/repo-task/sessions/${sourceLessSession.id}/commit-submissions`,
+      jsonRequest({
+        ...validBody,
+        ingestionKey: 'assessment-event:source-less-upstream-pr',
+      }),
+      env,
+    );
+    expect(sourceLessResponse.status).toBe(400);
+    const sourceLessBody = await sourceLessResponse.json() as { error: { message: string } };
+    expect(sourceLessBody.error.message).toContain(
+      'upstreamPullRequestUrl requires an upstream_pull_request source ref',
+    );
+
+    const unrelatedSession = await createSession(app, env, {
+      ingestionKey: 'assessment-session:unrelated-upstream-pr',
+      mode: 'OPEN_SOURCE_BUG_FIX',
+    });
+    const unrelatedPullRequestUrl = 'https://github.com/unrelated/widgets/pull/42';
+    const unrelatedResponse = await app.request(
+      `/api/v1/assessment/repo-task/sessions/${unrelatedSession.id}/commit-submissions`,
+      jsonRequest({
+        ...validBody,
+        ingestionKey: 'assessment-event:unrelated-upstream-pr',
+        upstreamPullRequestUrl: unrelatedPullRequestUrl,
+        sourceRefs: [
+          ...validBody.sourceRefs,
+          await sourceRef('upstream_pull_request', unrelatedPullRequestUrl, unrelatedPullRequestUrl),
+        ],
+      }),
+      env,
+    );
+    expect(unrelatedResponse.status).toBe(400);
+    const unrelatedBody = await unrelatedResponse.json() as { error: { message: string } };
+    expect(unrelatedBody.error.message).toContain('upstreamPullRequestUrl must belong to repositoryUrl');
+
+    expect(sqlite.prepare(
+      'SELECT COUNT(*) AS count FROM assessment_evidence_events WHERE session_id IN (?, ?)',
+    ).get(sourceLessSession.id, unrelatedSession.id)).toEqual({ count: 0 });
+  });
+
   it('rejects commit submissions that are not backed by exact commit and diff source refs', async () => {
     const session = await createSession(app, env, {
       ingestionKey: 'assessment-session:commit-submission-rejection',

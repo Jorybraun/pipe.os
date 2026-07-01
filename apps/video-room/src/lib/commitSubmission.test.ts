@@ -119,6 +119,7 @@ describe('commit submission payloads', () => {
     const baseCommitSha = 'a'.repeat(40);
     const commitSha = 'b'.repeat(40);
     const upstreamPullRequestUrl = 'https://github.com/pipe/source-backed-worker/pull/42';
+    const pastedUpstreamPullRequestUrl = `${upstreamPullRequestUrl}?conversation=1#discussion_r123`;
 
     const payload = await buildCommitSubmissionPayload({
       narrative: 'Submitted retry fix with an approved upstream PR link.',
@@ -128,7 +129,7 @@ describe('commit submission payloads', () => {
       baseCommitSha,
       commitSha,
       commitUrl: `https://github.com/candidate/source-backed-worker/commit/${commitSha}`,
-      upstreamPullRequestUrl,
+      upstreamPullRequestUrl: pastedUpstreamPullRequestUrl,
       upstreamPrConsent: true,
       changedFilesText: 'modified src/retry.ts',
       commitEvidenceText: `commit ${commitSha}\nAuthor: Candidate`,
@@ -303,6 +304,12 @@ describe('commit submission payloads', () => {
       upstreamPullRequestUrl: 'https://github.com/pipe/source-backed-worker/issues/42',
       upstreamPrConsent: true,
     })).rejects.toThrow('Upstream PR URL must point to a GitHub pull request.');
+
+    await expect(buildCommitSubmissionPayload({
+      ...validFields,
+      upstreamPullRequestUrl: 'https://github.com/unrelated/source-backed-worker/pull/42',
+      upstreamPrConsent: true,
+    })).rejects.toThrow('Upstream PR URL must belong to the assigned repository.');
 
     await expect(buildCommitSubmissionPayload({
       ...validFields,

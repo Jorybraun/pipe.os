@@ -796,9 +796,27 @@ function assertCommitUrlBelongsToSubmittedRepository(input: {
   }
 }
 
+function normalizedRepositoryUrlFromPullRequestUrl(value: string): string {
+  const url = new URL(value);
+  const segments = url.pathname.split('/').filter(Boolean);
+  if (segments.length !== 4 || segments[2] !== 'pull') {
+    throw new Error('upstreamPullRequestUrl must be a GitHub HTTPS pull request URL');
+  }
+  const [owner, repoWithSuffix] = segments;
+  if (!owner || !repoWithSuffix) {
+    throw new Error('upstreamPullRequestUrl must identify a GitHub owner and repository');
+  }
+  const repo = repoWithSuffix.endsWith('.git') ? repoWithSuffix.slice(0, -4) : repoWithSuffix;
+  if (!repo) {
+    throw new Error('upstreamPullRequestUrl must identify a GitHub owner and repository');
+  }
+  return `https://github.com/${owner}/${repo}`;
+}
+
 function normalizePullRequestUrl(
   value: string | null | undefined,
   consent: boolean | undefined,
+  repositoryUrl: string,
 ): string | null {
   if (!value) return null;
   if (consent !== true) {
@@ -817,7 +835,30 @@ function normalizePullRequestUrl(
   ) {
     throw new Error('upstreamPullRequestUrl must be a GitHub HTTPS pull request URL');
   }
-  return url.toString();
+  url.search = '';
+  url.hash = '';
+  const normalizedPullRequestUrl = url.toString();
+  const pullRequestRepositoryUrl = normalizedRepositoryUrlFromPullRequestUrl(normalizedPullRequestUrl);
+  if (pullRequestRepositoryUrl !== repositoryUrl) {
+    throw new Error('upstreamPullRequestUrl must belong to repositoryUrl');
+  }
+  return normalizedPullRequestUrl;
+}
+
+function assertUpstreamPullRequestSourceRef(input: {
+  upstreamPullRequestUrl: string | null;
+  sourceRefs: readonly AssessmentEvidenceSourceRefInput[];
+}): void {
+  if (!input.upstreamPullRequestUrl) return;
+  const normalizedPullRequestUrl = input.upstreamPullRequestUrl.toLowerCase();
+  const upstreamPullRequestRef = input.sourceRefs.find((ref) =>
+    ref.sourceRefType === 'upstream_pull_request'
+    && ref.sourceRefId.toLowerCase() === normalizedPullRequestUrl
+    && typeof ref.exactText === 'string'
+    && ref.exactText.toLowerCase().includes(normalizedPullRequestUrl));
+  if (!upstreamPullRequestRef) {
+    throw new Error('upstreamPullRequestUrl requires an upstream_pull_request source ref');
+  }
 }
 
 function assertChangedFiles(files: readonly CommitSubmissionChangedFileInput[]): void {
@@ -1793,7 +1834,12 @@ export class RepoTaskInterviewSessionStore {
     const upstreamPullRequestUrl = normalizePullRequestUrl(
       input.upstreamPullRequestUrl,
       input.upstreamPrConsent,
+      repositoryUrl,
     );
+    assertUpstreamPullRequestSourceRef({
+      upstreamPullRequestUrl,
+      sourceRefs: input.sourceRefs,
+    });
     const challengeRef = await this.loadChallengeSourceRef(input.sessionId);
     assertCommitSubmissionMatchesChallenge(input, repositoryUrl, challengeRef);
 
