@@ -120,6 +120,10 @@ vi.mock('../../../hooks/useMatchDecisions', () => ({
   useMatchDecisions: () => ({ history: null, isLoading: false, error: null, refetch: vi.fn(), recordDecision: vi.fn() }),
 }));
 
+vi.mock('../../../hooks/useRepoDecomposition', () => ({
+  useRepoDecomposition: () => ({ overlay: null, isLoading: false, error: null, refetch: vi.fn() }),
+}));
+
 beforeEach(() => {
   mocks.livingContext = null;
   mocks.evidenceConflictsReport = null;
