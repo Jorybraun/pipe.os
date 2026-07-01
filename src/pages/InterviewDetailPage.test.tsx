@@ -316,6 +316,12 @@ describe('InterviewDetailPage', () => {
               detail: 'Captured by the live dev-container finalizer from the workspace HEAD and exact source refs.',
               tone: 'verified',
             },
+            challengeBinding: {
+              status: 'bound_to_assigned_challenge',
+              label: 'Bound to assigned challenge',
+              detail: 'Submitted repository and base commit match the assigned source-backed challenge packet.',
+              tone: 'verified',
+            },
             changedFiles: [{ path: 'src/popover.ts', status: 'modified' }],
             occurredAt: '2026-06-23T00:18:00.000Z',
           },
@@ -344,11 +350,15 @@ describe('InterviewDetailPage', () => {
     expect(progress).toHaveTextContent('Commit integrity');
     expect(progress).toHaveTextContent('Workspace-captured commit');
     expect(progress).toHaveTextContent('Captured by the live dev-container finalizer from the workspace HEAD and exact source refs.');
+    expect(progress).toHaveTextContent('Challenge binding');
+    expect(progress).toHaveTextContent('Bound to assigned challenge');
+    expect(progress).toHaveTextContent('Submitted repository and base commit match the assigned source-backed challenge packet.');
     const workPacket = screen.getByTestId('interview-assessment-work-packet');
     expect(workPacket).toHaveTextContent('Candidate work packet');
     expect(workPacket).toHaveTextContent('Commit artifact');
     expect(workPacket).toHaveTextContent('abcdef1234');
     expect(workPacket).toHaveTextContent('Workspace-captured commit');
+    expect(workPacket).toHaveTextContent('Bound to assigned challenge');
     expect(workPacket).toHaveTextContent('Branch pipe-assessment/popover-cleanup');
     expect(workPacket).toHaveTextContent('1 changed file: src/popover.ts · Modified');
     expect(workPacket).toHaveTextContent('Verification');

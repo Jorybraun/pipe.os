@@ -71,6 +71,7 @@ export interface CandidateAssessmentProgress {
     submissionSource: string;
     submissionSourceLabel: string;
     integrity: { label: string; detail: string } | null;
+    challengeBinding?: { label: string; detail: string } | null;
     changedFiles: CandidateCommitChangedFile[];
     occurredAt: string;
   } | null;

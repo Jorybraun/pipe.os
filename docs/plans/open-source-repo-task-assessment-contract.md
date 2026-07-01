@@ -158,6 +158,11 @@ The controlling product rule remains:
   submission status: live dev-container finalizer captures are labelled
   workspace-captured, while manual evidence fallback remains explicit as needing
   verification before final reliance.
+- Assessment progress must expose commit-to-challenge binding separately from
+  capture integrity: the submitted repository and base commit must match the
+  assigned source-backed challenge packet. The validator uses exact challenge
+  packet text as a fallback when locator metadata is missing, so packet prose
+  remains authoritative source evidence.
 - Accepted guest join/leave and recording start/stop room lifecycle events now
   persist as source-backed `meeting_session_event` evidence, with recording
   stop captured only when recording evidence was actually active.

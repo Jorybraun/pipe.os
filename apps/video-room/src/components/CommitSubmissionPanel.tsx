@@ -295,6 +295,14 @@ function AssessmentProgressPanel({
                 ? `${progress.commit.integrity.label}: ${progress.commit.integrity.detail}`
                 : progress.commit.submissionSourceLabel ?? 'Unknown capture source'}
             </dd>
+            {progress.commit.challengeBinding && (
+              <>
+                <dt>Challenge binding</dt>
+                <dd data-testid="commit-submission-progress-challenge-binding">
+                  {`${progress.commit.challengeBinding.label}: ${progress.commit.challengeBinding.detail}`}
+                </dd>
+              </>
+            )}
             {baseSha && (
               <>
                 <dt>Base</dt>

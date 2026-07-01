@@ -1007,6 +1007,7 @@ function workspaceAssessmentWorkPacket(progress: AssessmentProgressSnapshot | nu
 
   const commitDetail = [
     progress.commit.integrity?.label ?? progress.commit.submissionSourceLabel ?? null,
+    progress.commit.challengeBinding?.label ?? null,
     progress.commit.branchName ? `Branch ${progress.commit.branchName}` : null,
     changedFileDetail,
   ].filter((item): item is string => Boolean(item)).join(' · ');
@@ -3720,6 +3721,14 @@ export default function InterviewDetailPage(): JSX.Element {
                     {assessmentProgress.commit.integrity
                       ? `${assessmentProgress.commit.integrity.label} · ${assessmentProgress.commit.integrity.detail}`
                       : assessmentProgress.commit.submissionSourceLabel}
+                  </span>
+                </div>
+              )}
+              {assessmentProgress.commit?.challengeBinding && (
+                <div style={{ ...EVIDENCE_ROW, alignItems: 'flex-start' }}>
+                  <span style={FIELD_LABEL}>Challenge binding</span>
+                  <span style={{ ...FIELD_VALUE, lineHeight: 1.5 }}>
+                    {`${assessmentProgress.commit.challengeBinding.label} · ${assessmentProgress.commit.challengeBinding.detail}`}
                   </span>
                 </div>
               )}

@@ -222,6 +222,12 @@ describe('CommitSubmissionPanel', () => {
             detail: 'Captured by the live dev-container finalizer from the workspace HEAD and exact source refs.',
             tone: 'verified',
           },
+          challengeBinding: {
+            status: 'bound_to_assigned_challenge',
+            label: 'Bound to assigned challenge',
+            detail: 'Submitted repository and base commit match the assigned source-backed challenge packet.',
+            tone: 'verified',
+          },
           changedFiles: [{ path: 'src/retry.ts', status: 'modified' }],
           occurredAt: '2026-06-29T20:02:00.000Z',
         },
@@ -266,6 +272,10 @@ describe('CommitSubmissionPanel', () => {
           status: 'workspace_captured',
           label: 'Workspace-captured commit',
         }),
+        challengeBinding: expect.objectContaining({
+          status: 'bound_to_assigned_challenge',
+          label: 'Bound to assigned challenge',
+        }),
       }),
     }));
     expect(screen.getByTestId('workspace-finalize-success').textContent).toContain(commitSha.slice(0, 12));
@@ -273,6 +283,9 @@ describe('CommitSubmissionPanel', () => {
     expect(screen.getByTestId('commit-submission-progress-source').textContent).toContain('Workspace-captured commit');
     expect(screen.getByTestId('commit-submission-progress-source').textContent).toContain(
       'Captured by the live dev-container finalizer from the workspace HEAD and exact source refs.',
+    );
+    expect(screen.getByTestId('commit-submission-progress-challenge-binding').textContent).toContain(
+      'Bound to assigned challenge',
     );
   });
 

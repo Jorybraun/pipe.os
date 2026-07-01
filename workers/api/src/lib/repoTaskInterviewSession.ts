@@ -321,8 +321,22 @@ export type AssessmentProgressCommitIntegrityStatus =
   | 'mixed_needs_review'
   | 'unknown_needs_review';
 
+export type AssessmentProgressCommitChallengeBindingStatus =
+  | 'bound_to_assigned_challenge'
+  | 'missing_challenge_packet'
+  | 'challenge_packet_missing_anchor'
+  | 'commit_missing_anchor'
+  | 'challenge_binding_mismatch';
+
 export interface AssessmentProgressCommitIntegrity {
   status: AssessmentProgressCommitIntegrityStatus;
+  label: string;
+  detail: string;
+  tone: 'verified' | 'warning' | 'neutral';
+}
+
+export interface AssessmentProgressCommitChallengeBinding {
+  status: AssessmentProgressCommitChallengeBindingStatus;
   label: string;
   detail: string;
   tone: 'verified' | 'warning' | 'neutral';
@@ -339,6 +353,7 @@ export interface AssessmentProgressCommit {
   submissionSource: 'live_workspace' | 'manual_fallback' | 'mixed' | 'unknown';
   submissionSourceLabel: string;
   integrity: AssessmentProgressCommitIntegrity;
+  challengeBinding: AssessmentProgressCommitChallengeBinding;
   changedFiles: JsonValue[];
   occurredAt: string;
 }
@@ -869,7 +884,7 @@ function assertCommitSubmissionMatchesChallenge(
 ): void {
   if (!challengeRef) return;
 
-  const assignedRepositoryUrl = stringLocatorValue(challengeRef.locator, 'repositoryUrl');
+  const assignedRepositoryUrl = challengeRepositoryUrl(challengeRef);
   if (assignedRepositoryUrl) {
     const normalizedAssignedRepositoryUrl = normalizeGitHubRepositoryUrl(
       assignedRepositoryUrl,
@@ -880,7 +895,7 @@ function assertCommitSubmissionMatchesChallenge(
     }
   }
 
-  const assignedBaseCommitSha = stringLocatorValue(challengeRef.locator, 'baseCommitSha');
+  const assignedBaseCommitSha = challengeBaseCommitSha(challengeRef);
   if (assignedBaseCommitSha) {
     assertCommitSha(assignedBaseCommitSha, 'assigned challenge baseCommitSha');
     if (assignedBaseCommitSha.toLowerCase() !== input.baseCommitSha.toLowerCase()) {
@@ -1105,13 +1120,8 @@ function challengePacketContract(
     };
   }
 
-  const repositoryUrl = stringLocatorValue(challenge.locator, 'repositoryUrl')
-    ?? stringLocatorValue(challenge.locator, 'githubRepoUrl')
-    ?? stringLocatorValue(challenge.locator, 'repoUrl')
-    ?? challengePacketLineValue(challenge.exactText, ['Repo', 'Repository']);
-  const baseCommitSha = stringLocatorValue(challenge.locator, 'baseCommitSha')
-    ?? stringLocatorValue(challenge.locator, 'baseCommit')
-    ?? challengePacketLineValue(challenge.exactText, ['Base commit', 'Base commit SHA', 'Base']);
+  const repositoryUrl = challengeRepositoryUrl(challenge);
+  const baseCommitSha = challengeBaseCommitSha(challenge);
   const task = challengePacketLineValue(challenge.exactText, ['Task', 'Title']);
   const successCriteria = [
     ...challengePacketSectionItems(challenge.exactText, ['Success criteria']),
@@ -1138,6 +1148,89 @@ function challengePacketContract(
   if (!contract.hasExpectedEvidence) contract.missingFields.push('expected evidence');
   contract.isComplete = contract.missingFields.length === 0;
   return contract;
+}
+
+function challengeRepositoryUrl(challenge: AssessmentProgressSourceRef): string | null {
+  return stringLocatorValue(challenge.locator, 'repositoryUrl')
+    ?? stringLocatorValue(challenge.locator, 'githubRepoUrl')
+    ?? stringLocatorValue(challenge.locator, 'repoUrl')
+    ?? challengePacketLineValue(challenge.exactText, ['Repo', 'Repository']);
+}
+
+function challengeBaseCommitSha(challenge: AssessmentProgressSourceRef): string | null {
+  return stringLocatorValue(challenge.locator, 'baseCommitSha')
+    ?? stringLocatorValue(challenge.locator, 'baseCommit')
+    ?? challengePacketLineValue(challenge.exactText, ['Base commit', 'Base commit SHA', 'Base']);
+}
+
+function commitChallengeBinding(input: {
+  commitRepositoryUrl: string | null;
+  commitBaseCommitSha: string | null;
+  challenge: AssessmentProgressSourceRef | null;
+}): AssessmentProgressCommitChallengeBinding {
+  if (!input.challenge) {
+    return {
+      status: 'missing_challenge_packet',
+      label: 'No assigned challenge binding',
+      detail: 'The commit exists, but no assigned challenge packet is attached to prove what task it answers.',
+      tone: 'warning',
+    };
+  }
+
+  const assignedRepositoryUrl = challengeRepositoryUrl(input.challenge);
+  const assignedBaseCommitSha = challengeBaseCommitSha(input.challenge);
+  if (!assignedRepositoryUrl || !assignedBaseCommitSha) {
+    return {
+      status: 'challenge_packet_missing_anchor',
+      label: 'Challenge binding incomplete',
+      detail: 'The assigned challenge packet is missing a repo URL or base commit anchor, so PIPE cannot prove this commit answers the exact task.',
+      tone: 'warning',
+    };
+  }
+  if (!input.commitRepositoryUrl || !input.commitBaseCommitSha) {
+    return {
+      status: 'commit_missing_anchor',
+      label: 'Commit binding incomplete',
+      detail: 'The submitted commit is missing the repository or base commit anchor needed to compare it with the assigned challenge.',
+      tone: 'warning',
+    };
+  }
+
+  let normalizedAssignedRepositoryUrl: string;
+  let normalizedCommitRepositoryUrl: string;
+  try {
+    normalizedAssignedRepositoryUrl = normalizeGitHubRepositoryUrl(
+      assignedRepositoryUrl,
+      'assigned challenge repositoryUrl',
+    );
+    normalizedCommitRepositoryUrl = normalizeGitHubRepositoryUrl(input.commitRepositoryUrl, 'commit repositoryUrl');
+  } catch {
+    return {
+      status: 'challenge_packet_missing_anchor',
+      label: 'Challenge binding incomplete',
+      detail: 'PIPE could not normalize the assigned challenge repository URL or submitted repository URL for binding proof.',
+      tone: 'warning',
+    };
+  }
+
+  if (
+    normalizedAssignedRepositoryUrl !== normalizedCommitRepositoryUrl
+    || assignedBaseCommitSha.toLowerCase() !== input.commitBaseCommitSha.toLowerCase()
+  ) {
+    return {
+      status: 'challenge_binding_mismatch',
+      label: 'Challenge binding mismatch',
+      detail: 'Submitted repository or base commit does not match the assigned source-backed challenge packet.',
+      tone: 'warning',
+    };
+  }
+
+  return {
+    status: 'bound_to_assigned_challenge',
+    label: 'Bound to assigned challenge',
+    detail: 'Submitted repository and base commit match the assigned source-backed challenge packet.',
+    tone: 'verified',
+  };
 }
 
 function progressAssignmentTrust(input: {
@@ -1877,7 +1970,7 @@ export class RepoTaskInterviewSessionStore {
     const challenge = await this.loadChallengeSourceRef(session.id);
     const contract = challengePacketContract(challenge);
     const latestEvent = await this.loadLatestEvent(session.id);
-    const commit = await this.loadLatestCommitSubmission(session.id);
+    const commit = await this.loadLatestCommitSubmission(session.id, challenge);
     const evaluation = await this.loadLatestEvaluation(session.id);
     const humanDecision = await this.loadLatestHumanDecision(session.id);
 
@@ -2218,7 +2311,10 @@ export class RepoTaskInterviewSessionStore {
     return row !== null;
   }
 
-  private async loadLatestCommitSubmission(sessionId: string): Promise<AssessmentProgressCommit | null> {
+  private async loadLatestCommitSubmission(
+    sessionId: string,
+    challenge: AssessmentProgressSourceRef | null,
+  ): Promise<AssessmentProgressCommit | null> {
     const row = await this.db.prepare(
       `SELECT id, payload_json, occurred_at
          FROM assessment_evidence_events
@@ -2234,17 +2330,24 @@ export class RepoTaskInterviewSessionStore {
     if (!row) return null;
     const payload = parseJsonObject(row.payload_json);
     const submissionSource = await this.loadCommitSubmissionSource(row.id);
+    const repositoryUrl = jsonStringValue(payload.repositoryUrl);
+    const baseCommitSha = jsonStringValue(payload.baseCommitSha);
     return {
       eventId: row.id,
-      repositoryUrl: jsonStringValue(payload.repositoryUrl),
+      repositoryUrl,
       forkRepositoryUrl: jsonStringValue(payload.forkRepositoryUrl),
       branchName: jsonStringValue(payload.branchName),
-      baseCommitSha: jsonStringValue(payload.baseCommitSha),
+      baseCommitSha,
       commitSha: jsonStringValue(payload.commitSha),
       commitUrl: jsonStringValue(payload.commitUrl),
       submissionSource,
       submissionSourceLabel: commitSubmissionSourceLabel(submissionSource),
       integrity: commitSubmissionIntegrity(submissionSource),
+      challengeBinding: commitChallengeBinding({
+        commitRepositoryUrl: repositoryUrl,
+        commitBaseCommitSha: baseCommitSha,
+        challenge,
+      }),
       changedFiles: jsonArrayValue(payload.changedFiles),
       occurredAt: row.occurred_at,
     };

@@ -1013,6 +1013,84 @@ Fix stale popover listener cleanup.`;
         WHERE session_id = ?
           AND kind = 'commit_submission'`,
     ).get(baseCase.sessionId)).toEqual({ count: 0 });
+
+    const textOnlySession = await createSession(app, env, {
+      ingestionKey: 'assessment-session:assigned-challenge-text-only',
+      mode: 'OPEN_SOURCE_BUG_FIX',
+    });
+    const textOnlyBaseCommitSha = '3333333333333333333333333333333333333333';
+    const textOnlyCommitSha = 'dddddddddddddddddddddddddddddddddddddddd';
+    const textOnlyChallengeText = [
+      'Repo: https://github.com/open-source/widgets',
+      `Base commit: ${textOnlyBaseCommitSha}`,
+      'Task: Fix stale popover listener cleanup.',
+      'Success criteria:',
+      '- Commit a focused patch with passing popover tests.',
+      'Expected evidence:',
+      '- git commit SHA on a pipe-assessment branch',
+      '- code diff for the popover cleanup fix',
+    ].join('\n');
+    const textOnlyChallengeResponse = await app.request(
+      `/api/v1/assessment/repo-task/sessions/${textOnlySession.id}/events`,
+      jsonRequest({
+        ingestionKey: 'assessment-event:assigned-challenge-text-only',
+        kind: 'recruiter_note',
+        actorType: 'recruiter',
+        narrative: 'Recruiter assigned a source-backed challenge packet with repo/base in exact text only.',
+        sourceRefs: [{
+          ...await sourceRef(
+            'open_source_challenge_packet',
+            'challenge-packet-text-only',
+            textOnlyChallengeText,
+          ),
+          evidenceRole: 'assigned_challenge',
+        }],
+      }),
+      env,
+    );
+    expect(textOnlyChallengeResponse.status).toBe(201);
+
+    const textOnlyWrongBaseCommitSha = '4444444444444444444444444444444444444444';
+    const textOnlyCommitText = `commit ${textOnlyCommitSha}
+Author: Candidate <candidate@example.com>
+
+Fix stale popover listener cleanup.`;
+    const textOnlyDiffText = `diff --git a/src/popover.ts b/src/popover.ts
+--- a/src/popover.ts
++++ b/src/popover.ts
+@@ -1,2 +1,3 @@
++cleanupStaleHandler();`;
+    const textOnlyMismatchResponse = await app.request(
+      `/api/v1/assessment/repo-task/sessions/${textOnlySession.id}/commit-submissions`,
+      jsonRequest({
+        ingestionKey: 'assessment-event:text-only-base-mismatch',
+        actorType: 'candidate',
+        narrative: 'Candidate submitted work from the wrong base commit.',
+        repositoryUrl: 'https://github.com/open-source/widgets',
+        branchName: 'pipe-assessment/popover-cleanup',
+        baseCommitSha: textOnlyWrongBaseCommitSha,
+        commitSha: textOnlyCommitSha,
+        changedFiles: [{ path: 'src/popover.ts', status: 'modified' }],
+        sourceRefs: [
+          await sourceRef('git_commit', textOnlyCommitSha, textOnlyCommitText),
+          await sourceRef(
+            'code_diff',
+            `${textOnlyWrongBaseCommitSha}..${textOnlyCommitSha}`,
+            textOnlyDiffText,
+          ),
+        ],
+      }),
+      env,
+    );
+    expect(textOnlyMismatchResponse.status).toBe(400);
+    const textOnlyBody = await textOnlyMismatchResponse.json() as { error: { message: string } };
+    expect(textOnlyBody.error.message).toContain('baseCommitSha must be the assigned challenge baseCommitSha');
+    expect(sqlite.prepare(
+      `SELECT COUNT(*) AS count
+         FROM assessment_evidence_events
+        WHERE session_id = ?
+          AND kind = 'commit_submission'`,
+    ).get(textOnlySession.id)).toEqual({ count: 0 });
   });
 
   it('rejects direct commit submissions from non-assessment branches', async () => {
@@ -1474,6 +1552,12 @@ Fix stale popover listener cleanup.`;
             detail: string;
             tone: string;
           };
+          challengeBinding: {
+            status: string;
+            label: string;
+            detail: string;
+            tone: string;
+          };
           changedFiles: Array<{ path: string; status: string }>;
         };
         evidenceCounts: Array<{ kind: string; count: number }>;
@@ -1506,6 +1590,12 @@ Fix stale popover listener cleanup.`;
           label: 'Manual commit evidence',
           detail: 'Candidate-entered commit evidence passed source-ref validation, but still needs repository verification before final reliance.',
           tone: 'warning',
+        },
+        challengeBinding: {
+          status: 'bound_to_assigned_challenge',
+          label: 'Bound to assigned challenge',
+          detail: 'Submitted repository and base commit match the assigned source-backed challenge packet.',
+          tone: 'verified',
         },
         changedFiles: [{ path: 'src/popover.ts', status: 'modified' }],
       },

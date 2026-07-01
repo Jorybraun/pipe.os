@@ -2125,6 +2125,7 @@ function serializeRoomAssessmentProgress(
           submissionSource: progress.commit.submissionSource,
           submissionSourceLabel: progress.commit.submissionSourceLabel,
           integrity: progress.commit.integrity,
+          challengeBinding: progress.commit.challengeBinding,
           changedFiles: progress.commit.changedFiles,
           occurredAt: progress.commit.occurredAt,
         }

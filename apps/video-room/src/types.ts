@@ -138,6 +138,12 @@ export interface RoomAssessmentProgressCommit {
     detail: string;
     tone: 'verified' | 'warning' | 'neutral';
   };
+  challengeBinding?: {
+    status: 'bound_to_assigned_challenge' | 'missing_challenge_packet' | 'challenge_packet_missing_anchor' | 'commit_missing_anchor' | 'challenge_binding_mismatch';
+    label: string;
+    detail: string;
+    tone: 'verified' | 'warning' | 'neutral';
+  };
   changedFiles: unknown[];
   occurredAt: string;
 }

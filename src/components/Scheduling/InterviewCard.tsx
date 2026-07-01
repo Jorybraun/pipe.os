@@ -452,6 +452,7 @@ export function InterviewCard({
   const assessmentCommitIntegrityLabel = assessmentProgress?.commit?.integrity?.label
     ?? assessmentProgress?.commit?.submissionSourceLabel
     ?? null;
+  const assessmentChallengeBindingLabel = assessmentProgress?.commit?.challengeBinding?.label ?? null;
   const assessmentEvaluationLabel = assessmentProgress?.evaluation?.status
     ? sentenceCaseToken(assessmentProgress.evaluation.status)
     : null;
@@ -657,7 +658,7 @@ export function InterviewCard({
                     COMMIT
                   </div>
                   <div style={{ minWidth: 0, fontSize: 10, color: 'var(--pipe-text-dim)', overflowWrap: 'anywhere' }}>
-                    {[assessmentCommitLabel, assessmentCommitIntegrityLabel].filter(Boolean).join(' · ')}
+                    {[assessmentCommitLabel, assessmentCommitIntegrityLabel, assessmentChallengeBindingLabel].filter(Boolean).join(' · ')}
                   </div>
                 </>
               )}
