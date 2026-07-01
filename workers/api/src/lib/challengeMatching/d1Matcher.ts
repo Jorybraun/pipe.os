@@ -1005,6 +1005,8 @@ export interface CandidateReviewChallengeOptions {
   minEvidenceDiversity?: number;
   /** Temporal decay configuration for evidence freshness weighting. */
   temporalDecay?: Partial<TemporalDecayConfig>;
+  /** Packet IDs to exclude from matching, such as prior recruiter decisions. */
+  excludePacketIds?: string[];
 }
 
 function sourceRefToContextSource(
@@ -1784,7 +1786,13 @@ export async function matchCandidateToReviewChallenge(
       },
     };
   }
-  const { packets: challenges, exclusions: packetLoadExclusions } = challengeLoad;
+  const { packets: loadedChallenges, exclusions: packetLoadExclusions } = challengeLoad;
+  const excludePacketIds = options.excludePacketIds?.length
+    ? new Set(options.excludePacketIds)
+    : null;
+  const challenges = excludePacketIds
+    ? loadedChallenges.filter((challenge) => !excludePacketIds.has(challenge.id))
+    : loadedChallenges;
   const genericConcepts = deriveCorpusGenericConcepts(challenges);
   const genericConceptSet = new Set(genericConcepts);
   const challengeSelectionConcepts = [...new Set(

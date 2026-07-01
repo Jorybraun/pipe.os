@@ -11,8 +11,13 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 - Recruiter open-source assessment invites now show a live challenge-packet checklist for repo, exact base commit, task, success criteria, and expected evidence before creation, making manual tasks visibly concrete instead of a loose repo dump.
 
+### Added — CODE_REVIEW assessment runtime
+
+- Added an internal living-context match-quality evaluation gate with compact match reports, labelled contrast cases, source-backed PR checks, and decision-weighted rematch exclusions, harvesting PR #171 backend primitives without exposing graph cockpit or matching diagnostics to candidates.
+
 ### Fixed — Open-source assessment progress
 
+- Challenge-packet summaries now avoid inventing structured locator fields from raw exact text when persisted locator metadata is missing, preserving the distinction between source evidence and normalized packet fields.
 - Matched open-source challenge packets now carry a deterministic workspace verification command, so matched-repo dev-container finalization captures `test_run` evidence instead of falling back to a verification gap.
 - The app-dev recruiter assessment smoke can now submit a real human decision from the evaluated workspace page, proving the assessment loop reaches reviewer closure instead of stopping at AI evaluation.
 - Candidate dev-container commit panels now block manual commit submission and workspace finalization until the assigned source-backed challenge packet is complete, preventing standalone assessment paths from accepting unreviewable work.

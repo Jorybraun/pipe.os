@@ -1,23 +1,34 @@
 import { renderHook, waitFor } from '@testing-library/react';
+import { createElement, type ReactNode } from 'react';
 import { afterEach, describe, expect, it, vi } from 'vitest';
+import { PipeProviderRoot } from '../providers/DataContext';
+import type { AuthProvider, DataProviderFactory, StorageProvider } from '../providers/types';
 
-const mocks = vi.hoisted(() => {
-  return {
-    clerkUseAuth: vi.fn(() => {
-      throw new Error('Clerk useAuth should not be called during app-dev proxy auth');
-    }),
+const getSessionToken = vi.fn(async () => 'test-token');
+
+function wrapper({ children }: { children: ReactNode }): JSX.Element {
+  const auth: AuthProvider = {
+    currentUser: { userId: 'user_1', username: 'test@example.com', email: 'test@example.com' },
+    isLoading: false,
+    signOut: async () => {},
+    getSessionToken,
   };
-});
-
-vi.mock('@clerk/react', () => ({
-  useAuth: mocks.clerkUseAuth,
-}));
+  return createElement(PipeProviderRoot, {
+    providers: {
+      data: {} as DataProviderFactory,
+      storage: {} as StorageProvider,
+      auth,
+    },
+    children,
+  });
+}
 
 describe('useRoomStatusNotifications', () => {
   afterEach(() => {
     vi.restoreAllMocks();
     vi.unstubAllGlobals();
     vi.resetModules();
+    getSessionToken.mockClear();
     window.history.pushState({}, '', '/');
   });
 
@@ -27,10 +38,10 @@ describe('useRoomStatusNotifications', () => {
     vi.stubGlobal('fetch', fetchMock);
     const { useRoomStatusNotifications } = await import('./useRoomStatusNotifications');
 
-    renderHook(() => useRoomStatusNotifications());
+    renderHook(() => useRoomStatusNotifications(), { wrapper });
 
     await waitFor(() => expect(fetchMock).toHaveBeenCalled());
-    expect(mocks.clerkUseAuth).not.toHaveBeenCalled();
+    expect(getSessionToken).not.toHaveBeenCalled();
     expect(fetchMock).toHaveBeenCalledWith(
       '/api/v1/scheduling/room-events',
       expect.objectContaining({

@@ -122,6 +122,14 @@ still a useful end-to-end flow smoke, but it must be treated as `NEEDS_REVIEW`
 for the "best repo for this person" claim until a second real calibrated
 packet is available in that environment.
 
+On 2026-07-01, PR #171's backend-only matching primitives were harvested as an
+internal quality slice instead of merging the branch wholesale. The accepted
+surface is `runMatchQualityEvaluation({ corpusId })`, compact match reports,
+decision-weighted packet exclusions, source-backed PR checks, and labelled
+contrast cases. The rejected surface remains candidate/recruiter graph cockpit
+expansion, concept merge/split APIs, batch-eval recruiter routes, and any
+candidate-visible matching/decomposition dashboard inside `/assess`.
+
 The manual override full-submit app-dev lane passed after updating the smoke to
 assert the candidate-facing product language ("a recruiter selected this PR")
 instead of the internal phrase "manual override." The passing run created

@@ -2286,6 +2286,31 @@ describe('matchCandidateToReviewChallenge', () => {
     )).toBe(true);
   });
 
+  it('honors excluded packet IDs during review challenge matching', async () => {
+    seedCandidateEvidence(sqlite);
+    moveCandidateMeaningToContextRecords(sqlite);
+    const data = await seedProductionReadyPacket(sqlite, 3);
+
+    const result = await matchCandidateToReviewChallenge(createNodeSqliteD1(sqlite), 'candidate-1', {
+      excludePacketIds: [data.packet.id],
+    });
+
+    expect(result.status).toBe('NO_ROLE_SAFE_CHALLENGE');
+    expect(result.repoId).toBeUndefined();
+    expect(result.prNumber).toBeUndefined();
+    expect(result.diagnostics?.recalledPacketIds).not.toContain(data.packet.id);
+    expect(result.diagnostics?.evaluatedChallenges).toEqual([]);
+
+    const row = sqlite.prepare(
+      'SELECT selected_packet_id, ranked_results_json FROM match_runs WHERE id = ?',
+    ).get(result.matchRunId) as {
+      selected_packet_id: string | null;
+      ranked_results_json: string;
+    };
+    expect(row.selected_packet_id).toBeNull();
+    expect(JSON.parse(row.ranked_results_json)).toEqual([]);
+  });
+
   it('matches source-backed PR challenges from meeting transcript-derived person evidence', async () => {
     const { transcriptText } = await seedMeetingTranscriptCandidateEvidence(sqlite);
     const data = await seedProductionReadyPacket(sqlite, 3);

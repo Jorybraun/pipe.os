@@ -172,6 +172,12 @@ function validateAssessmentBranchName(branchName: string): string {
   return branchName;
 }
 
+function challengePacketLineValue(exactText: string, labels: readonly string[]): string | null {
+  const escapedLabels = labels.map((label) => label.replace(/[.*+?^${}()|[\]\\]/g, '\\$&'));
+  const match = exactText.match(new RegExp(`^\\s*(?:${escapedLabels.join('|')})\\s*:\\s*(.+)$`, 'im'));
+  return match?.[1]?.trim() || null;
+}
+
 function diffMentionsChangedFile(diffText: string, changedFiles: RoomCommitChangedFile[]): boolean {
   const normalizedDiff = diffText.toLowerCase();
   return changedFiles.some((file) => {
@@ -184,8 +190,11 @@ export function buildCommitSubmissionDefaults(
   input: CommitSubmissionDefaultInput,
 ): CommitSubmissionDefaults {
   const summary = summarizeChallengePacket(input.challengePacket ?? null);
-  const packetRepositoryUrl = summary.repositoryUrl;
-  const baseCommitSha = summary.baseCommitSha;
+  const exactText = input.challengePacket?.exactText ?? '';
+  const packetRepositoryUrl = summary.repositoryUrl
+    ?? challengePacketLineValue(exactText, ['Repo', 'Repository']);
+  const baseCommitSha = summary.baseCommitSha
+    ?? challengePacketLineValue(exactText, ['Base commit', 'Base commit SHA', 'Base']);
   const normalizedBaseCommitSha = baseCommitSha && GIT_COMMIT_SHA_PATTERN.test(baseCommitSha)
     ? baseCommitSha.toLowerCase()
     : '';
