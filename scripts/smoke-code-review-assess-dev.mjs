@@ -632,6 +632,33 @@ async function bootstrapStageConfig(sessionToken) {
   return stageConfig;
 }
 
+async function waitForBootstrapStageConfig(sessionToken) {
+  if (!AUTO_MATCH) return bootstrapStageConfig(sessionToken);
+
+  const deadline = Date.now() + 120_000;
+  let last = null;
+  while (Date.now() < deadline) {
+    last = await getStageConfig(sessionToken);
+    if (
+      last?.isComplete !== true
+      && last?.stageId
+      && Array.isArray(last.challenges)
+      && last.challenges.length > 0
+    ) {
+      return last;
+    }
+    if (
+      last?.isComplete === true
+      && last?.stageId === 'candidate-intake-queued'
+    ) {
+      await sleep(5_000);
+      continue;
+    }
+    throw new Error(`Unexpected stage config while waiting for CODE_REVIEW: ${JSON.stringify(last).slice(0, 1200)}`);
+  }
+  throw new Error(`CODE_REVIEW stage config did not become ready after upstream matching. Last response: ${JSON.stringify(last).slice(0, 1200)}`);
+}
+
 async function pollCodeReviewChallenge(sessionToken, order = 0, options = {}) {
   const deadline = Date.now() + 120_000;
   let last = null;
@@ -649,6 +676,10 @@ async function pollCodeReviewChallenge(sessionToken, order = 0, options = {}) {
     }
     if (last?.type === 'CODE_REVIEW') {
       return last;
+    }
+    if (AUTO_MATCH && last?.type === 'PROFILE_RECEIVED') {
+      await sleep(5_000);
+      continue;
     }
     if (last?.type !== 'WAITING_FOR_MATCH') {
       throw new Error(`Expected CODE_REVIEW or WAITING_FOR_MATCH, got: ${JSON.stringify(last).slice(0, 800)}`);
@@ -1424,7 +1455,7 @@ async function main() {
     await submitIntake(session.sessionToken);
     const initialStageConfig = EXPECT_BLOCKED_MATCH
       ? await getStageConfig(session.sessionToken)
-      : await bootstrapStageConfig(session.sessionToken);
+      : await waitForBootstrapStageConfig(session.sessionToken);
     const challengeOrder = ROLE_BACKED ? 1 : 0;
     const challenge = await pollCodeReviewChallenge(session.sessionToken, challengeOrder, {
       expectBlocked: EXPECT_BLOCKED_MATCH,
@@ -1487,7 +1518,7 @@ async function main() {
       }, null, 2));
       return;
     }
-    const readyStageConfig = await bootstrapStageConfig(session.sessionToken);
+    const readyStageConfig = await waitForBootstrapStageConfig(session.sessionToken);
     const preview = challengePreview(challenge);
     assert(challenge.githubRepoUrl, `CODE_REVIEW challenge missing githubRepoUrl: ${JSON.stringify(preview)}`);
     assert(challenge.githubPrNumber, `CODE_REVIEW challenge missing githubPrNumber: ${JSON.stringify(preview)}`);

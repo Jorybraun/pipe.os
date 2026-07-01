@@ -821,7 +821,7 @@ describe('POST /rpc/get-stage-config', () => {
     expect(body.waitingChallenge).toBeUndefined();
   });
 
-  it('defers role-backed CODE_REVIEW matching while candidate evidence ingestion is still active', async () => {
+  it('defers role-backed CODE_REVIEW matching while active candidate ingestion has no matchable evidence', async () => {
     const db = fakeD1({
       firstResponders: [
         {
@@ -839,7 +839,7 @@ describe('POST /rpc/get-stage-config', () => {
           value: {
             resume_s3_key: 'text-intake/cand_1/role-backed',
             raw_node_count: 16,
-            node_count: 16,
+            node_count: 0,
           },
         },
         {
@@ -866,7 +866,7 @@ describe('POST /rpc/get-stage-config', () => {
             estimated_completion_at: '2026-06-28T16:59:40.000Z',
             updated_at: '2026-06-28T16:59:23.000Z',
             raw_node_count: 16,
-            node_count: 16,
+            node_count: 0,
           },
         },
       ],
@@ -918,6 +918,117 @@ describe('POST /rpc/get-stage-config', () => {
     });
     expect(body.waitingChallenge).toBeUndefined();
     expect(matchCandidateToReviewChallenge).not.toHaveBeenCalled();
+  });
+
+  it('runs role-backed CODE_REVIEW matching when active ingestion already produced matchable evidence', async () => {
+    vi.mocked(matchCandidateToReviewChallenge).mockResolvedValueOnce({
+      status: 'MATCHED',
+      repoId: 973,
+      prNumber: 973,
+      explanation: roleBackedAutomaticMatchExplanation(973, 1),
+    } as Awaited<ReturnType<typeof matchCandidateToReviewChallenge>>);
+    const db = fakeD1({
+      firstResponders: [
+        {
+          match: 'FROM candidates WHERE id',
+          value: {
+            id: 'cand_1',
+            pipeline_id: 'pipe_1',
+            owner_id: 'owner_1',
+            current_stage_id: null,
+            resume_s3_key: 'text-intake/cand_1/role-backed',
+          },
+        },
+        {
+          match: 'FROM candidates c WHERE c.id',
+          value: {
+            resume_s3_key: 'text-intake/cand_1/role-backed',
+            raw_node_count: 18,
+            node_count: 18,
+          },
+        },
+        {
+          match: 'SELECT match_philosophy FROM pipeline_match_config',
+          value: { match_philosophy: 'tailored' },
+        },
+        {
+          match: 'FROM role_contexts',
+          value: {
+            id: 'role_ctx_1',
+            persona_json: null,
+            rcd_json: JSON.stringify({ rcd_version: 'simple-jd-v1' }),
+            job_description_md: 'React TypeScript usePopoverRoot rendered trigger id ownership.',
+            non_negotiable_skills_json: JSON.stringify(['React', 'TypeScript', 'usePopoverRoot']),
+          },
+        },
+        {
+          match: 'LEFT JOIN candidate_ingestion',
+          value: {
+            resume_s3_key: 'text-intake/cand_1/role-backed',
+            status: 'pending',
+            current_step: 'decompose_resume',
+            error_text: null,
+            estimated_completion_at: null,
+            updated_at: '2026-06-28T16:59:23.000Z',
+            raw_node_count: 18,
+            node_count: 18,
+          },
+        },
+        { match: 'SELECT github_url FROM qualified_repos', value: { github_url: 'https://github.com/mui/base-ui' } },
+      ],
+      allResponders: [
+        {
+          match: 'FROM stages s',
+          value: [{
+            stage_id: 'stage_code_review',
+            stage_title: 'Code Review',
+            stage_order: 0,
+            stage_mode: 'ASYNC',
+            time_limit: null,
+            screening_input_mode: null,
+            video_config: null,
+            challenge_id: 'challenge_code_review',
+            challenge_type: 'CODE_REVIEW',
+            challenge_title: 'Code Review',
+            challenge_order: 0,
+            challenge_config: '{}',
+            challenge_instructions: 'Review the matched PR.',
+          }],
+        },
+      ],
+    });
+    const env = buildEnv({ DB: db });
+
+    const res = await rpcAuth.request(
+      '/get-stage-config',
+      {
+        method: 'POST',
+        headers: { Authorization: await authHeader('cand_1', 'pipe_1') },
+      },
+      env,
+    );
+
+    expect(res.status).toBe(200);
+    const body = await res.json() as {
+      isComplete?: boolean;
+      stageId?: string;
+      challenges?: Array<{ type: string; title: string }>;
+    };
+    expect(body).toMatchObject({
+      isComplete: false,
+      stageId: 'stage_code_review',
+      challenges: [
+        { type: 'WELCOME', order: 0 },
+        { type: 'CODE_REVIEW', order: 1, title: 'Code Review' },
+      ],
+    });
+    expect(matchCandidateToReviewChallenge).toHaveBeenCalledOnce();
+    expect(db.__calls.some((call) =>
+      call.ran
+      && call.sql.includes('INSERT INTO candidate_challenge_assignment')
+      && call.params.includes('https://github.com/mui/base-ui')
+      && call.params.includes(973)
+    )).toBe(true);
   });
 
   it('retries stale Workers AI model failures from stored text-intake source on status refresh', async () => {
