@@ -250,6 +250,8 @@ describe('InterviewDetailPage', () => {
             { kind: 'git_commit', count: 1 },
             { kind: 'code_diff', count: 1 },
             { kind: 'test_run', count: 1 },
+            { kind: 'ai_user_prompt', count: 2 },
+            { kind: 'ai_agent_response', count: 1 },
           ],
           evidenceSnippets: [
             {
@@ -365,6 +367,7 @@ describe('InterviewDetailPage', () => {
     expect(workPacket).toHaveTextContent('Tests captured');
     expect(workPacket).toHaveTextContent('AI transparency');
     expect(workPacket).toHaveTextContent('AI use observed');
+    expect(workPacket).toHaveTextContent('2 prompts and 1 agent response captured from the real agent bridge.');
     expect(workPacket).toHaveTextContent('Human review');
     expect(workPacket).toHaveTextContent('Run evaluation');
     const contract = screen.getByTestId('interview-assessment-challenge-contract');
@@ -388,6 +391,87 @@ describe('InterviewDetailPage', () => {
     expect(snippets).toHaveTextContent('passed the impatient click regression');
     expect(progress).toHaveTextContent('pipe-assessment/popover-cleanup');
     expect(progress).not.toHaveTextContent('challenge-packet-popover');
+  });
+
+  it('treats missing AI bridge evidence as unobserved instead of absent in the work packet', async () => {
+    mocks.api.get.mockResolvedValueOnce({
+      interview: makeInterview({
+        interviewType: 'OPEN_SOURCE_BUG_FIX',
+        status: 'COMPLETED',
+        assessmentProgress: {
+          session: {
+            id: 'assessment-session-no-ai',
+            ingestionKey: 'assessment-session:no-ai',
+            interviewId: 'interview-1',
+            candidateId: 'candidate-1',
+            workspaceId: 'workspace-1',
+            workspacePersonId: null,
+            applicationId: null,
+            mode: 'OPEN_SOURCE_BUG_FIX',
+            state: 'FINAL_SUBMITTED',
+            createdAt: '2026-06-23T00:00:00.000Z',
+            updatedAt: '2026-06-23T00:20:00.000Z',
+          },
+          stage: 'READY_FOR_EVALUATION',
+          nextAction: 'START_EVALUATION',
+          nextActionLabel: 'Start source-backed AI or human evaluation.',
+          hasChallengePacket: true,
+          hasWorkEvidence: true,
+          hasMessageEvidence: false,
+          hasDevContainerEvidence: true,
+          hasToolUsageEvidence: true,
+          hasCommitSubmission: true,
+          hasFinalSubmission: true,
+          hasAiInteraction: false,
+          hasTranscriptEvidence: false,
+          hasTestEvidence: true,
+          evidenceCounts: [{ kind: 'commit_submission', count: 1 }],
+          sourceRefCounts: [
+            { kind: 'review_challenge_packet', count: 1 },
+            { kind: 'git_commit', count: 1 },
+            { kind: 'code_diff', count: 1 },
+            { kind: 'test_run', count: 1 },
+          ],
+          challenge: {
+            sourceRefType: 'review_challenge_packet',
+            sourceRefId: 'challenge-packet-no-ai',
+            evidenceRole: 'assigned_challenge',
+            exactText: 'Task: fix the no-ai transparency copy.',
+            locator: { repositoryUrl: 'https://github.com/open-source/widgets' },
+          },
+          latestEvent: {
+            id: 'assessment-event-no-ai',
+            kind: 'commit_submission',
+            sequence: 2,
+            occurredAt: '2026-06-23T00:18:00.000Z',
+          },
+          commit: {
+            eventId: 'assessment-event-no-ai',
+            repositoryUrl: 'https://github.com/open-source/widgets',
+            forkRepositoryUrl: 'https://github.com/candidate/widgets',
+            branchName: 'pipe-assessment/no-ai-copy',
+            baseCommitSha: '2222222222222222222222222222222222222222',
+            commitSha: 'bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb',
+            commitUrl: 'https://github.com/candidate/widgets/commit/bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb',
+            changedFiles: [{ path: 'src/transparency.ts', status: 'modified' }],
+            occurredAt: '2026-06-23T00:18:00.000Z',
+          },
+          evaluation: null,
+        },
+      }),
+    });
+
+    renderDetail();
+    await flushAsyncUpdates();
+
+    const workPacket = screen.getByTestId('interview-assessment-work-packet');
+    expect(workPacket).toHaveTextContent('AI transparency');
+    expect(workPacket).toHaveTextContent('No AI evidence captured');
+    expect(workPacket).toHaveTextContent(
+      'No candidate AI-assistance evidence is attached; treat AI use as unobserved, not absent.',
+    );
+    expect(workPacket).not.toHaveTextContent('AI use observed');
+    expect(workPacket).not.toHaveTextContent('agent response captured');
   });
 
   it('shows the exact missing proof checklist before an open-source workspace can be evaluated', async () => {

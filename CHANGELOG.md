@@ -13,6 +13,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Fixed — Open-source assessment progress
 
+- Workspace assessment work packets now quantify captured AI prompt and agent-response evidence, so hiring managers can distinguish observed AI assistance from unobserved AI use.
 - Recruiter interview cards now flag incomplete open-source challenge packets, including the missing packet fields, so a partially assigned repo task cannot look ready for candidate work.
 - Assessment room tests now reject retired novelty branding and desktop-shell affordances, keeping the candidate room anchored to the core open-source assessment product.
 - Candidate assessment rooms now show the workspace finalizer trust contract before submission, making it clear the trusted path reads git HEAD inside the container, verifies challenge anchors, and stores source refs for commit, diff, tests, and workspace state.

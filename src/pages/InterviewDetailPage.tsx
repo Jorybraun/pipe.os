@@ -728,6 +728,11 @@ function assessmentSourceRefCount(progress: AssessmentProgressSnapshot | null, k
   return progress?.sourceRefCounts.find((item) => item.kind === kind)?.count ?? 0;
 }
 
+function sourceRefCountLabel(count: number, singular: string, plural = `${singular}s`): string | null {
+  if (count <= 0) return null;
+  return `${count} ${count === 1 ? singular : plural}`;
+}
+
 function assessmentHasSatisfiedCoverage(
   progress: AssessmentProgressSnapshot | null,
   label: string,
@@ -1005,6 +1010,17 @@ function workspaceAssessmentWorkPacket(progress: AssessmentProgressSnapshot | nu
   if (!progress?.commit) return [];
 
   const changedFiles = assessmentChangedFiles(progress);
+  const aiPromptCount = assessmentSourceRefCount(progress, 'ai_user_prompt');
+  const aiResponseCount = assessmentSourceRefCount(progress, 'ai_agent_response');
+  const aiEvidenceParts = [
+    sourceRefCountLabel(aiPromptCount, 'prompt'),
+    sourceRefCountLabel(aiResponseCount, 'agent response'),
+  ].filter((item): item is string => Boolean(item));
+  const aiTransparencyDetail = progress.hasAiInteraction
+    ? aiEvidenceParts.length > 0
+      ? `${aiEvidenceParts.join(' and ')} captured from the real agent bridge.`
+      : 'AI prompts, responses, or bridge traces are part of the source-backed evidence trail.'
+    : 'No candidate AI-assistance evidence is attached; treat AI use as unobserved, not absent.';
   const filePreview = changedFiles
     .slice(0, 4)
     .map((file) => file.status ? `${file.path} · ${sentenceCaseToken(file.status)}` : file.path)
@@ -1078,9 +1094,7 @@ function workspaceAssessmentWorkPacket(progress: AssessmentProgressSnapshot | nu
     {
       label: 'AI transparency',
       value: progress.hasAiInteraction ? 'AI use observed' : 'No AI evidence captured',
-      detail: progress.hasAiInteraction
-        ? 'AI prompts or agent traces are part of the source-backed evidence trail.'
-        : 'No candidate AI-assistance evidence is attached to this assessment yet.',
+      detail: aiTransparencyDetail,
       tone: progress.hasAiInteraction ? 'neutral' : 'watch',
     },
     reviewItem,
