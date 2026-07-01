@@ -83,6 +83,7 @@ const MATCHED_REPO_ID = RAW_MATCHED_REPO_ID ? Number(RAW_MATCHED_REPO_ID) : null
 const BASE_COMMIT_SHA = process.env.WORKSPACE_SMOKE_BASE_COMMIT_SHA || CHANGE_PROFILE?.baseCommitSha || '';
 const EXPECTED_BRIDGE_REVISION = process.env.WORKSPACE_SMOKE_EXPECTED_BRIDGE_REVISION
   || '2026-06-30-assessment-branch-v1';
+const REQUIRE_ROOM = process.env.WORKSPACE_SMOKE_REQUIRE_ROOM === '1';
 const REMOTE = !APP_BASE.includes('localhost') && !APP_BASE.includes('127.0.0.1');
 
 function assertEnv() {
@@ -309,6 +310,18 @@ function cleanRoomUrl(rawUrl) {
   return url.toString().replace(/\/room\/.+$/, '/room/<token>');
 }
 
+function cleanMaybeAssessUrl(rawUrl) {
+  if (typeof rawUrl !== 'string' || !rawUrl.trim()) return null;
+  try {
+    const url = new URL(rawUrl);
+    url.username = '';
+    url.password = '';
+    return url.toString().replace(/\/assess\/[^/?#]+/, '/assess/<token>');
+  } catch {
+    return null;
+  }
+}
+
 function sleep(ms) {
   return new Promise((resolve) => setTimeout(resolve, ms));
 }
@@ -441,6 +454,22 @@ async function main() {
       message: 'Automated dev smoke for the PIPE live code-review workspace.',
     }),
   });
+  if (!invited?.room?.hostUrl) {
+    const proof = {
+      ok: true,
+      skipped: true,
+      reason: 'assessment_only_handoff',
+      interviewId,
+      interviewType: INTERVIEW_TYPE,
+      deliveredUrl: cleanMaybeAssessUrl(invited?.deliveredUrl ?? invited?.meetingUrl),
+      message: 'Invite delivered an assessment-only link, not a room-backed workspace. This is expected for current CODE_REVIEW/Open-source assessment handoff; set WORKSPACE_SMOKE_REQUIRE_ROOM=1 to fail instead.',
+    };
+    if (REQUIRE_ROOM) {
+      throw new Error(`Workspace smoke requires a room-backed invite but received assessment-only handoff: ${JSON.stringify(proof)}`);
+    }
+    console.log(JSON.stringify(proof, null, 2));
+    return;
+  }
   const hostToken = tokenFromRoomUrl(invited?.room?.hostUrl ?? '');
   const roomAuthHeaders = authHeadersFromUrl(invited?.room?.hostUrl ?? '');
   const room = await requestJson(ROOM_BASE, `/api/v1/meeting-rooms/${hostToken}`, {
