@@ -213,7 +213,7 @@ function proxyApi(request, env) {
 
 async function serveStatic(request, env) {
   const response = await env.ASSETS.fetch(request);
-  if (isStaleAssetFallback(request, response)) return staleAssetResponse(request);
+  if (isStaleAssetFallback(request, response)) return recoverStaleAsset(request, env);
   if (response.status !== 404 || request.method !== 'GET') return withCleanBase(response, request);
 
   const accept = request.headers.get('Accept') ?? '';
@@ -231,6 +231,60 @@ function isStaleAssetFallback(request, response) {
 
   const contentType = response.headers.get('Content-Type') ?? '';
   return contentType.includes('text/html');
+}
+
+async function recoverStaleAsset(request, env) {
+  if (request.method !== 'GET') return staleAssetResponse(request);
+
+  const requestedUrl = new URL(request.url);
+  const targetExtension = requestedUrl.pathname.endsWith('.js')
+    ? 'js'
+    : requestedUrl.pathname.endsWith('.css')
+      ? 'css'
+      : null;
+
+  if (!targetExtension) return staleAssetResponse(request);
+
+  const indexUrl = new URL(request.url);
+  indexUrl.pathname = '/index.html';
+  indexUrl.search = '';
+  const indexResponse = await env.ASSETS.fetch(new Request(indexUrl.toString(), request));
+  if (indexResponse.status !== 200) return staleAssetResponse(request);
+
+  const indexHtml = await indexResponse.text();
+  const currentAssetPath = targetExtension === 'js'
+    ? currentJavaScriptAssetPath(indexHtml)
+    : currentStylesheetAssetPath(indexHtml);
+
+  if (!currentAssetPath || currentAssetPath === requestedUrl.pathname) {
+    return staleAssetResponse(request);
+  }
+
+  const currentAssetUrl = new URL(currentAssetPath, request.url);
+  const currentAssetResponse = await env.ASSETS.fetch(new Request(currentAssetUrl.toString(), request));
+  if (isStaleAssetFallback(new Request(currentAssetUrl.toString(), request), currentAssetResponse)) {
+    return staleAssetResponse(request);
+  }
+  if (currentAssetResponse.status !== 200) return staleAssetResponse(request);
+
+  const headers = new Headers(currentAssetResponse.headers);
+  headers.set('Cache-Control', 'no-store');
+  headers.set('X-Pipe-Stale-Asset-Recovered', '1');
+  return new Response(currentAssetResponse.body, {
+    status: currentAssetResponse.status,
+    statusText: currentAssetResponse.statusText,
+    headers,
+  });
+}
+
+function currentJavaScriptAssetPath(indexHtml) {
+  const match = indexHtml.match(/<script\b[^>]*\bsrc=["']([^"']+\.js)["'][^>]*>/i);
+  return match?.[1] ?? null;
+}
+
+function currentStylesheetAssetPath(indexHtml) {
+  const match = indexHtml.match(/<link\b[^>]*\bhref=["']([^"']+\.css)["'][^>]*>/i);
+  return match?.[1] ?? null;
 }
 
 function staleAssetResponse(request) {

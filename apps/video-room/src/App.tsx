@@ -1321,10 +1321,6 @@ function Room({ token, metadata }: { token: string; metadata: RoomMetadata }): J
       id: 'workspace',
       surfaceType: 'workspace',
       title: workspace?.repoUrl ?? 'VS Code',
-      x: 80,
-      y: 80,
-      width: 800,
-      height: 500,
     });
   };
 
@@ -1348,10 +1344,6 @@ function Room({ token, metadata }: { token: string; metadata: RoomMetadata }): J
       id: 'terminal',
       surfaceType: 'terminal',
       title: 'Container terminal',
-      x: 120,
-      y: 80,
-      width: 640,
-      height: 400,
     });
   };
 
@@ -1360,10 +1352,6 @@ function Room({ token, metadata }: { token: string; metadata: RoomMetadata }): J
       id: 'submission',
       surfaceType: 'submission',
       title: 'Submit Work',
-      x: 150,
-      y: 70,
-      width: 680,
-      height: 560,
     });
   };
 

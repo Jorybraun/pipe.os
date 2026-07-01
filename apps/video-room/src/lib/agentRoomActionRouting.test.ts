@@ -40,7 +40,7 @@ describe('routeAgentRoomAction', () => {
     });
   });
 
-  it('rejects legacy chat-response action arrays instead of relabeling them as assistant actions', () => {
+  it('rejects unsupported chat-response action arrays instead of relabeling them as assistant actions', () => {
     const action: AgentRoomAction = {
       id: 'open-terminal',
       label: 'Open Terminal',

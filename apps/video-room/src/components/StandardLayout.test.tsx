@@ -7,14 +7,7 @@ import type { ToolSurfaceManagerApi, ToolSurfaceState, ToolSurfaceType } from '.
 
 function roomSurface(input: Partial<ToolSurfaceState> & Pick<ToolSurfaceState, 'id' | 'surfaceType' | 'title'>): ToolSurfaceState {
   return {
-    x: 0,
-    y: 0,
-    width: 480,
-    height: 360,
-    zIndex: 1,
-    minimized: false,
-    maximized: false,
-    focused: false,
+    active: false,
     ...input,
   };
 }
@@ -24,7 +17,7 @@ function makeSurfaceManager(surfaces: ToolSurfaceState[] = [
     id: 'video',
     surfaceType: 'video',
     title: 'Video Call',
-    focused: true,
+    active: true,
   }),
 ]): ToolSurfaceManagerApi {
   return {
@@ -32,13 +25,7 @@ function makeSurfaceManager(surfaces: ToolSurfaceState[] = [
     openSurface: vi.fn(() => 'surface-id'),
     closeSurface: vi.fn(),
     focusSurface: vi.fn(),
-    minimizeSurface: vi.fn(),
-    toggleMaximizeSurface: vi.fn(),
-    moveSurface: vi.fn(),
-    resizeSurface: vi.fn(),
     updateSurfaceData: vi.fn(),
-    applySurfaceState: vi.fn(),
-    restoreSurface: vi.fn(),
     isSurfaceOpen: vi.fn((_surfaceType: ToolSurfaceType) => false),
     getSurfaceByType: vi.fn((_surfaceType: ToolSurfaceType) => undefined),
   };
@@ -61,7 +48,7 @@ describe('StandardLayout', () => {
   it('uses the workspace as the primary pane for dev-container assessments', () => {
     const toolSurfaces = makeSurfaceManager([
       roomSurface({ id: 'video', surfaceType: 'video', title: 'Video Call' }),
-      roomSurface({ id: 'workspace', surfaceType: 'workspace', title: 'VS Code', focused: true }),
+      roomSurface({ id: 'workspace', surfaceType: 'workspace', title: 'VS Code', active: true }),
     ]);
 
     render(
@@ -83,7 +70,7 @@ describe('StandardLayout', () => {
   it('keeps the assessment brief persistently beside the primary workspace', () => {
     const toolSurfaces = makeSurfaceManager([
       roomSurface({ id: 'video', surfaceType: 'video', title: 'Video Call' }),
-      roomSurface({ id: 'workspace', surfaceType: 'workspace', title: 'VS Code', focused: true }),
+      roomSurface({ id: 'workspace', surfaceType: 'workspace', title: 'VS Code', active: true }),
     ]);
 
     render(
@@ -100,7 +87,7 @@ describe('StandardLayout', () => {
     expect(screen.getByTestId('standard-assessment-aside').textContent).toContain('source-backed task brief');
   });
 
-  it('does not expose legacy layout controls', () => {
+  it('does not expose placement controls', () => {
     render(
       <StandardLayout
         toolSurfaces={makeSurfaceManager()}
@@ -108,14 +95,16 @@ describe('StandardLayout', () => {
       />,
     );
 
-    expect(screen.queryByRole('button', { name: /legacy layout/i })).toBeNull();
+    expect(screen.queryByRole('button', { name: /minimize/i })).toBeNull();
+    expect(screen.queryByRole('button', { name: /maximize/i })).toBeNull();
+    expect(screen.queryByRole('button', { name: /move/i })).toBeNull();
   });
 
   it('renders utility tools as an assessment panel', () => {
     const toolSurfaces = makeSurfaceManager([
       roomSurface({ id: 'video', surfaceType: 'video', title: 'Video Call' }),
-      roomSurface({ id: 'terminal', surfaceType: 'terminal', title: 'Container terminal', zIndex: 9 }),
-      roomSurface({ id: 'submission', surfaceType: 'submission', title: 'Submit Work', zIndex: 4 }),
+      roomSurface({ id: 'terminal', surfaceType: 'terminal', title: 'Container terminal', active: true }),
+      roomSurface({ id: 'submission', surfaceType: 'submission', title: 'Submit Work' }),
     ]);
 
     render(

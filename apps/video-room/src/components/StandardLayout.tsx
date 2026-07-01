@@ -27,33 +27,31 @@ export function StandardLayout({
   const [workspaceOpen, setWorkspaceOpen] = useState(false);
   const [activeToolId, setActiveToolId] = useState<string | null>(null);
 
-  const videoSurface = toolSurfaces.surfaces.find((w) => w.surfaceType === 'video');
-  const chatSurface = toolSurfaces.surfaces.find((w) => w.surfaceType === 'chat');
-  const workspaceSurface = toolSurfaces.surfaces.find((w) => w.surfaceType === 'workspace');
+  const videoSurface = toolSurfaces.surfaces.find((surface) => surface.surfaceType === 'video');
+  const chatSurface = toolSurfaces.surfaces.find((surface) => surface.surfaceType === 'chat');
+  const workspaceSurface = toolSurfaces.surfaces.find((surface) => surface.surfaceType === 'workspace');
 
   const hasWorkspace = Boolean(workspaceSurface);
   const workspaceIsPrimary = primarySurface === 'workspace' && Boolean(workspaceSurface);
   const primarySurfaceState = workspaceIsPrimary ? workspaceSurface : videoSurface;
-  const utilitySurfaces = toolSurfaces.surfaces.filter((win) => (
-    win.surfaceType !== 'video'
-    && win.surfaceType !== 'chat'
-    && win.surfaceType !== 'workspace'
+  const utilitySurfaces = toolSurfaces.surfaces.filter((surface) => (
+    surface.surfaceType !== 'video'
+    && surface.surfaceType !== 'chat'
+    && surface.surfaceType !== 'workspace'
   ));
-  const visibleUtilitySurfaces = utilitySurfaces.filter((win) => !win.minimized);
-  const activeTool = visibleUtilitySurfaces.find((win) => win.id === activeToolId)
-    ?? visibleUtilitySurfaces.reduce<ToolSurfaceState | null>((current, win) => {
-      if (!current || win.zIndex > current.zIndex) return win;
-      return current;
-    }, null);
+  const activeTool = utilitySurfaces.find((surface) => surface.id === activeToolId)
+    ?? utilitySurfaces.find((surface) => surface.active)
+    ?? utilitySurfaces[0]
+    ?? null;
 
-  const selectTool = (win: ToolSurfaceState): void => {
-    setActiveToolId(win.id);
-    toolSurfaces.focusSurface(win.id);
+  const selectTool = (surface: ToolSurfaceState): void => {
+    setActiveToolId(surface.id);
+    toolSurfaces.focusSurface(surface.id);
   };
 
-  const closeTool = (win: ToolSurfaceState): void => {
-    toolSurfaces.closeSurface(win.id);
-    if (activeToolId === win.id) {
+  const closeTool = (surface: ToolSurfaceState): void => {
+    toolSurfaces.closeSurface(surface.id);
+    if (activeToolId === surface.id) {
       setActiveToolId(null);
     }
   };
@@ -125,7 +123,7 @@ export function StandardLayout({
         )}
       </div>
 
-      {visibleUtilitySurfaces.length > 0 && activeTool && (
+      {utilitySurfaces.length > 0 && activeTool && (
         <aside className="standard-tools-panel" data-testid="standard-tools-panel">
           <header className="standard-tools-header">
             <span>Assessment tools</span>
@@ -138,14 +136,14 @@ export function StandardLayout({
             </button>
           </header>
           <nav className="standard-tools-tabs" aria-label="Assessment tools">
-            {visibleUtilitySurfaces.map((win) => (
+            {utilitySurfaces.map((surface) => (
               <button
-                key={win.id}
+                key={surface.id}
                 type="button"
-                className={win.id === activeTool.id ? 'is-active' : ''}
-                onClick={() => selectTool(win)}
+                className={surface.id === activeTool.id ? 'is-active' : ''}
+                onClick={() => selectTool(surface)}
               >
-                {win.title}
+                {surface.title}
               </button>
             ))}
           </nav>

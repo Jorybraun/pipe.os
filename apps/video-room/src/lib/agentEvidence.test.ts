@@ -284,7 +284,7 @@ describe('agent evidence', () => {
     })).toBeNull();
   });
 
-  it('rejects legacy chat-response action arrays as executable Devin room actions', () => {
+  it('rejects unsupported chat-response action arrays as executable Devin room actions', () => {
     expect(buildAgentRoomActionExecutionEvidence({
       actionId: 'open-terminal',
       text: 'Agent action: open terminal',

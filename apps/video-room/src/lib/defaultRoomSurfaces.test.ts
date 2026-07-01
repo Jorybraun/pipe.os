@@ -2,7 +2,7 @@ import { describe, expect, it } from 'vitest';
 import { defaultRoomSurfaceConfigs } from './defaultRoomSurfaces';
 
 describe('defaultRoomSurfaceConfigs', () => {
-  it('keeps standard calls focused on video and chat', () => {
+  it('keeps standard calls limited to video and chat panels', () => {
     const configs = defaultRoomSurfaceConfigs({
       mode: 'standard_call',
       workspaceEnabled: false,
@@ -24,12 +24,11 @@ describe('defaultRoomSurfaceConfigs', () => {
     expect(configs[configs.length - 1]).toMatchObject({
       surfaceType: 'workspace',
       title: 'https://github.com/cloudflare/workers-sdk',
-      width: 860,
-      height: 610,
+      active: true,
     });
     expect(configs.find((config) => config.id === 'submission')).toMatchObject({
       surfaceType: 'submission',
-      minimized: true,
+      active: false,
     });
   });
 });

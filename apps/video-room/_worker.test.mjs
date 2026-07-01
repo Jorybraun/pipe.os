@@ -15,7 +15,39 @@ function request(path, init = {}) {
 }
 
 describe('video room worker static assets', () => {
-  it('does not serve the SPA shell as a stale JavaScript asset', async () => {
+  it('recovers stale JavaScript asset requests from the current bundle', async () => {
+    const response = await worker.fetch(
+      request('/assets/index-old.js', {
+        headers: { Accept: '*/*' },
+      }),
+      env((assetRequest) => {
+        const { pathname } = new URL(assetRequest.url);
+        if (pathname === '/index.html') {
+          return new Response(
+            '<!doctype html><html><head><script type="module" src="/assets/index-new.js"></script></head></html>',
+            { status: 200, headers: { 'Content-Type': 'text/html' } },
+          );
+        }
+        if (pathname === '/assets/index-new.js') {
+          return new Response('console.log("current room bundle");', {
+            status: 200,
+            headers: { 'Content-Type': 'text/javascript' },
+          });
+        }
+        return new Response('<!doctype html><div id="root"></div>', {
+          status: 200,
+          headers: { 'Content-Type': 'text/html' },
+        });
+      }),
+    );
+
+    expect(response.status).toBe(200);
+    expect(response.headers.get('Content-Type')).toContain('text/javascript');
+    expect(response.headers.get('X-Pipe-Stale-Asset-Recovered')).toBe('1');
+    expect(await response.text()).toContain('current room bundle');
+  });
+
+  it('does not serve the SPA shell when stale asset recovery is unavailable', async () => {
     const response = await worker.fetch(
       request('/assets/index-old.js', {
         headers: { Accept: '*/*' },
