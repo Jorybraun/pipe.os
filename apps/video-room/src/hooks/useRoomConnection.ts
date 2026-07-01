@@ -25,7 +25,7 @@ const ROOM_PHASES = new Set<RoomPhase>([
   'error',
 ]);
 
-export type RoomSurface = 'standard' | 'assessment';
+export type RoomSurface = 'standard';
 export type RoomAgentInteractionEventType = Extract<
   SessionEventType,
   'ai_chat_user' | 'ai_chat_agent' | 'ai_agent_status' | 'agent_action'
@@ -282,7 +282,7 @@ function recordOrUndefined(value: unknown): Record<string, unknown> | undefined 
 }
 
 function isRoomSurface(value: unknown): value is RoomSurface {
-  return value === 'standard' || value === 'assessment';
+  return value === 'standard';
 }
 
 function isRoomRole(value: unknown): value is RoomRole {
@@ -391,7 +391,7 @@ export function hasSourceBackedAgentInteractionEvidence(
       && AGENT_PROMPT_FINGERPRINT_RE.test(promptFingerprint)
       && evidence.promptLength === event.text.length
       && evidence.promptId === expectedPromptId
-      && (evidence.surface === 'standard' || evidence.surface === 'assessment')
+      && isRoomSurface(evidence.surface)
       && typeof evidence.roomPhase === 'string'
       && (evidence.workspaceStatus === null || typeof evidence.workspaceStatus === 'string')
       && (evidence.repoUrl === null || typeof evidence.repoUrl === 'string');
@@ -412,7 +412,7 @@ export function hasSourceBackedAgentInteractionEvidence(
       && evidence.actionCount >= 0;
     const fallbackOk = evidence.bridgePersisted === false
       && evidence.persistenceFallback === 'browser_after_bridge_persist_failed'
-      && (evidence.surface === 'standard' || evidence.surface === 'assessment')
+      && isRoomSurface(evidence.surface)
       && typeof evidence.roomPhase === 'string'
       && typeof evidence.messageTimestamp === 'number'
       && Number.isFinite(evidence.messageTimestamp)
@@ -449,7 +449,7 @@ export function hasSourceBackedAgentInteractionEvidence(
       : null;
     const statusOk = status === null || AGENT_STATUSES.has(status);
     const browserObservationOk = evidence.agentStatusEventSource === 'browser_agent_ws'
-      && (evidence.surface === 'standard' || evidence.surface === 'assessment')
+      && isRoomSurface(evidence.surface)
       && typeof evidence.roomPhase === 'string'
       && typeof evidence.messageTimestamp === 'number'
       && Number.isFinite(evidence.messageTimestamp)
@@ -491,7 +491,7 @@ export function hasSourceBackedAgentInteractionEvidence(
     const idOk = typeof evidence.agentActionEventId === 'string'
       && AGENT_ACTION_EVENT_ID_RE.test(evidence.agentActionEventId)
       && evidence.agentActionEventId === expectedId;
-    const roomContextOk = (evidence.surface === 'standard' || evidence.surface === 'assessment')
+    const roomContextOk = isRoomSurface(evidence.surface)
       && typeof evidence.roomPhase === 'string';
 
     if (source === 'agent_tray_ui' || source === 'agent_chat_ui' || source === 'agent_call_controls_ui') {
@@ -736,9 +736,7 @@ export function hasSourceBackedMediaControlEvidence(
   if (!isRecord(evidence) || !role) return false;
   const actor = role === 'HOST' ? 'host' : 'guest';
   const action = event.enabled ? 'enabled' : 'disabled';
-  const controlSurface = evidence.surface === 'assessment'
-    ? 'assessment_video_panel'
-    : 'standard_video_call';
+  const controlSurface = 'standard_video_call';
   return event.role === role
     && evidence.source === 'video_room_media_controls'
     && evidence.mediaControlEventSource === 'browser_video_control_button'
@@ -748,7 +746,7 @@ export function hasSourceBackedMediaControlEvidence(
     && evidence.enabled === event.enabled
     && evidence.action === action
     && evidence.controlAction === 'toggle'
-    && (evidence.surface === 'standard' || evidence.surface === 'assessment')
+    && isRoomSurface(evidence.surface)
     && typeof evidence.roomPhase === 'string'
     && evidence.roomPhase.length > 0
     && evidence.controlSurface === controlSurface
@@ -900,7 +898,7 @@ export function hasSourceBackedRecordingStateEvidence(
     && RECORDING_STATE_EVENT_ID_RE.test(recordingStateEventId)
     && event.id === recordingStateEventId
     && recordingStateEventId === `recording:host:${capturedAtMs}:${event.lifecycleKind}:${event.status}`
-    && (evidence.surface === 'standard' || evidence.surface === 'assessment')
+    && isRoomSurface(evidence.surface)
     && typeof evidence.roomPhase === 'string'
     && evidence.roomPhase.length > 0
     && evidence.durableObjectReplayExpected === true
@@ -1034,7 +1032,7 @@ export function hasSourceBackedCodeServerFileEvidence(event: RoomCodeServerFileE
     && typeof evidence.observedAt === 'string'
     && evidence.observedAt.trim().length > 0
     && evidence.bridgePersisted === false
-    && (evidence.surface === 'standard' || evidence.surface === 'assessment')
+    && isRoomSurface(evidence.surface)
     && typeof evidence.roomPhase === 'string'
     && typeof evidence.workspaceStatus === 'string'
     && typeof evidence.workspaceSessionId === 'string'
@@ -1101,7 +1099,7 @@ export function hasSourceBackedTerminalEvidence(
     && evidence.terminalEventSource === 'browser_terminal_ws'
     && terminalSessionId !== null
     && capturedAtMs !== null
-    && (evidence.surface === 'standard' || evidence.surface === 'assessment')
+    && isRoomSurface(evidence.surface)
     && typeof evidence.roomPhase === 'string'
     && evidence.roomPhase.trim().length > 0
     && typeof evidence.workspaceStatus === 'string'

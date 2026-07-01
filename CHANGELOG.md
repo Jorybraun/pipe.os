@@ -47,6 +47,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 - Simplified standard-layout tests and render callback naming so the room code stays focused on assessment surfaces.
 - Removed obsolete assessment-panel coordinate and ordering state from the video-room app.
+- Collapsed video-room evidence capture to a single standard room surface, removing the stale alternate assessment-surface replay path.
 - Current room evidence is limited to the core assessment surfaces: video, chat, workspace, terminal, code-server/file events, recording, transcription, commit submissions, and the real AI assistant bridge.
 - Scrubbed current room vocabulary, QA labels, planning docs, contract notes, smoke scripts, and evidence fixtures so product language stays anchored to open-source repo-task assessment.
 - Replaced branded room-assistant chrome with a plain source-backed AI assistant bridge panel and kept candidate/recruiter room flows on the standard assessment layout.

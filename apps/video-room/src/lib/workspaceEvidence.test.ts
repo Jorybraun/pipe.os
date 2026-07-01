@@ -48,7 +48,7 @@ describe('buildCodeEditorOpenEvidence', () => {
     const evidence = buildCodeEditorOpenEvidence({
       workspace,
       actor: 'guest',
-      surface: 'assessment',
+      surface: 'standard',
       roomPhase: 'connected',
       capturedAtMs: 1700000000000,
     });
@@ -63,7 +63,7 @@ describe('buildCodeEditorOpenEvidence', () => {
         openStatus: 'loaded',
         actor: 'guest',
         capturedAtMs: 1700000000000,
-        surface: 'assessment',
+        surface: 'standard',
         roomPhase: 'connected',
         workspaceSessionId: 'workspace-session-1',
         workspaceStatus: 'READY',
@@ -107,7 +107,7 @@ describe('buildCodeServerFileChangeEvidence', () => {
       contentPreview: 'export const answer = 42;',
       persisted: false,
       workspace,
-      surface: 'assessment',
+      surface: 'standard',
       roomPhase: 'connected',
     })).toEqual({
       eventType: 'code_editor_save',
@@ -119,7 +119,7 @@ describe('buildCodeServerFileChangeEvidence', () => {
         editorSurface: 'code-server',
         codeServerFileChangeId: 'code-server-file:workspace-session-1:1782561600000:modified:path_cb48a478:aaaaaaaaaaaaaaaa',
         action: 'modified',
-        surface: 'assessment',
+        surface: 'standard',
         roomPhase: 'connected',
         workspaceStatus: 'READY',
         workspaceSessionId: 'workspace-session-1',
@@ -144,7 +144,7 @@ describe('buildCodeServerFileChangeEvidence', () => {
       contentPreview: 'export const answer = 42;',
       persisted: false,
       workspace,
-      surface: 'assessment',
+      surface: 'standard',
       roomPhase: 'connected',
     })).toBeNull();
   });
@@ -160,7 +160,7 @@ describe('buildCodeServerFileChangeEvidence', () => {
       contentPreview: 'export const answer = 42;',
       persisted: false,
       workspace,
-      surface: 'assessment' as const,
+      surface: 'standard' as const,
       roomPhase: 'connected' as const,
     };
 

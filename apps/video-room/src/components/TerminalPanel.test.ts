@@ -60,7 +60,7 @@ describe('terminal WebSocket protocol', () => {
 
   it('does not build terminal evidence until a real workspace session exists', () => {
     const context = {
-      surface: 'assessment',
+      surface: 'standard',
       roomPhase: 'ACTIVE',
       workspaceStatus: null,
       workspaceSessionId: null,
@@ -87,7 +87,7 @@ describe('terminal WebSocket protocol', () => {
 
   it('links terminal output chunks to the completed command that produced them', () => {
     const context = {
-      surface: 'assessment',
+      surface: 'standard',
       roomPhase: 'ACTIVE',
       workspaceStatus: 'READY',
       workspaceSessionId: 'workspace-session-1',
@@ -162,7 +162,7 @@ describe('terminal WebSocket protocol', () => {
 
   it('redacts secrets before fingerprinting terminal evidence', () => {
     const context = {
-      surface: 'assessment',
+      surface: 'standard',
       roomPhase: 'ACTIVE',
       workspaceStatus: 'READY',
       workspaceSessionId: 'workspace-session-1',

@@ -5,7 +5,7 @@ describe('chat evidence', () => {
   it('builds source-backed room chat evidence from the shared message identity', () => {
     expect(buildRoomChatEvidence({
       actor: 'guest',
-      surface: 'assessment',
+      surface: 'standard',
       roomPhase: 'connected',
       message: {
         id: 'chat-message-1',
@@ -27,7 +27,7 @@ describe('chat evidence', () => {
         messageLength: 50,
         messageFingerprint: roomChatMessageFingerprint('I think the retry test should fail before the fix.'),
         deliveryStatus: 'pending',
-        surface: 'assessment',
+        surface: 'standard',
         roomPhase: 'connected',
         durableObjectReplayExpected: true,
       },
@@ -45,7 +45,7 @@ describe('chat evidence', () => {
         source: 'room_chat_client_submit',
         chatEventSource: 'browser_room_chat_panel',
         actor: 'host',
-        surface: 'assessment',
+        surface: 'standard',
         roomPhase: 'connected',
         durableObjectReplayExpected: true,
       },
@@ -53,7 +53,7 @@ describe('chat evidence', () => {
 
     expect(buildRoomChatEvidence({
       actor: 'host',
-      surface: 'assessment',
+      surface: 'standard',
       roomPhase: 'connected',
       message: {
         ...baseMessage,
@@ -79,7 +79,7 @@ describe('chat evidence', () => {
 
     expect(buildRoomChatEvidence({
       actor: 'host',
-      surface: 'assessment',
+      surface: 'standard',
       roomPhase: 'connected',
       message: {
         ...baseMessage,

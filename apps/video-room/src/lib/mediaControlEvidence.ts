@@ -27,10 +27,6 @@ function controlLabel(control: MediaControlKind): string {
   return control === 'microphone' ? 'microphone' : 'camera';
 }
 
-function controlSurface(surface: RoomSurface): string {
-  return surface === 'assessment' ? 'assessment_video_panel' : 'standard_video_call';
-}
-
 function mediaControlId(input: MediaControlEvidenceInput, capturedAtMs: number): string {
   const action = input.enabled ? 'enabled' : 'disabled';
   return ['media', input.actor, input.control, capturedAtMs, action].join(':');
@@ -56,7 +52,7 @@ export function buildMediaControlEvidence(input: MediaControlEvidenceInput): Med
       action,
       surface: input.surface,
       roomPhase: input.roomPhase,
-      controlSurface: controlSurface(input.surface),
+      controlSurface: 'standard_video_call',
       controlAction: 'toggle',
       mediaSource: 'local_media_stream',
       rawMediaStreamPersisted: false,
