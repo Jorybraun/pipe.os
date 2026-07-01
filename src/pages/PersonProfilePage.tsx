@@ -1265,11 +1265,11 @@ function deriveWorkspaceAssessmentDecision(
         };
   const assessmentValidity = proofItems.length >= 3 && evaluationRecords.length > 0
     ? {
-        value: 'Usable source-backed workspace assessment signal',
+        value: 'Usable source-backed signal from workspace assessment',
         detail: 'Evaluation claims, source refs, and assessment evidence are present. Use this as person-level signal, not an automatic decision.',
       }
     : {
-        value: 'Partial source-backed workspace assessment signal',
+        value: 'Partial source-backed signal from workspace assessment',
         detail: 'Assessment evidence exists, but the source chain is incomplete. Review the underlying interaction before relying on it.',
       };
   const uncertainty = negativeClaims.length > 0
@@ -1405,11 +1405,11 @@ function deriveSelectedWorkspaceAssessmentDecision(
   const hasCompleteProof = sourceRefCount >= 3 && Boolean(progress.evaluation);
   const assessmentValidity = hasCompleteProof
     ? {
-        value: 'Usable source-backed workspace assessment signal',
+        value: 'Usable source-backed signal from workspace assessment',
         detail: 'The selected interview includes evaluator evidence and source references. Treat this as selected-interaction signal until the person graph rollup catches up.',
       }
     : {
-        value: 'Partial source-backed workspace assessment signal',
+        value: 'Partial source-backed signal from workspace assessment',
         detail: 'The selected interview has assessment evidence, but the source chain is not complete enough for high confidence.',
       };
   const uncertainty = negativeClaims.length > 0
