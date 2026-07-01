@@ -257,6 +257,13 @@ function codeReviewBasisItemsFromUnknown(
             satisfied: false,
           }];
         }
+        if (item.satisfied && isMatchProof && hasRouteSourceProof && !claimsSourceBackedMatch) {
+          return [{
+            label,
+            value: `Source-backed match (${itemValue})`,
+            satisfied: true,
+          }];
+        }
         return [{
           label,
           value: itemValue,
