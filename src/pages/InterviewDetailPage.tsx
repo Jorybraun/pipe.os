@@ -123,6 +123,15 @@ interface StartAssessmentEvaluationResponse {
 
 type HumanAssessmentDecisionValue = NonNullable<NonNullable<AssessmentProgressSnapshot['humanDecision']>>['decision'];
 
+interface AssessmentProofChecklistItem {
+  id: string;
+  label: string;
+  required: boolean;
+  sourceRefTypes: string[];
+  satisfied: boolean;
+  missingImpact: string;
+}
+
 interface RecordHumanAssessmentDecisionResponse {
   decision: NonNullable<NonNullable<AssessmentProgressSnapshot['humanDecision']>>;
   progress: AssessmentProgressSnapshot;
@@ -612,6 +621,13 @@ function assessmentCoverageLabel(label: string): string {
   }
 }
 
+function assessmentProofDisplayLabel(label: string): string {
+  if (!/\s/.test(label) && (/[_-]/.test(label) || label === label.toLowerCase())) {
+    return assessmentCoverageLabel(label);
+  }
+  return label;
+}
+
 function assessmentEvidenceSnippetLabel(sourceRefType: string): string {
   switch (sourceRefType) {
     case 'review_challenge_packet':
@@ -639,25 +655,64 @@ function assessmentEvidenceSnippetLabel(sourceRefType: string): string {
   }
 }
 
-function assessmentRequiredProofItems(progress: AssessmentProgressSnapshot | null): AssessmentEvidenceCoverageItem[] {
-  const coverage = progress?.evaluation?.evidenceCoverage ?? null;
-  if (!coverage) return [];
-  return coverage.requiredForEvaluation.filter((item) => [
-    'challenge_packet',
-    'git_commit',
-    'code_diff',
-  ].includes(item.label));
+function assessmentCoverageToProofItem(item: AssessmentEvidenceCoverageItem): AssessmentProofChecklistItem {
+  return {
+    id: item.label,
+    label: item.label,
+    required: item.required,
+    sourceRefTypes: item.sourceRefTypes,
+    satisfied: item.satisfied,
+    missingImpact: item.missingImpact,
+  };
 }
 
-function assessmentConfidenceSignalItems(progress: AssessmentProgressSnapshot | null): AssessmentEvidenceCoverageItem[] {
+function assessmentRequiredProofItems(progress: AssessmentProgressSnapshot | null): AssessmentProofChecklistItem[] {
+  const readiness = progress?.readiness?.required ?? [];
+  if (readiness.length > 0) {
+    return readiness.map((item) => ({
+      id: item.id,
+      label: item.label,
+      required: item.required,
+      sourceRefTypes: item.sourceRefTypes,
+      satisfied: item.satisfied,
+      missingImpact: item.missingImpact,
+    }));
+  }
+
   const coverage = progress?.evaluation?.evidenceCoverage ?? null;
   if (!coverage) return [];
-  return coverage.expectedForHighConfidence.filter((item) => [
-    'test_run',
-    'terminal_activity',
-    'code_editor_activity',
-    'ai_assistance',
-  ].includes(item.label));
+  return coverage.requiredForEvaluation
+    .filter((item) => [
+      'challenge_packet',
+      'git_commit',
+      'code_diff',
+    ].includes(item.label))
+    .map(assessmentCoverageToProofItem);
+}
+
+function assessmentConfidenceSignalItems(progress: AssessmentProgressSnapshot | null): AssessmentProofChecklistItem[] {
+  const readiness = progress?.readiness?.confidence ?? [];
+  if (readiness.length > 0) {
+    return readiness.map((item) => ({
+      id: item.id,
+      label: item.label,
+      required: item.required,
+      sourceRefTypes: item.sourceRefTypes,
+      satisfied: item.satisfied,
+      missingImpact: item.missingImpact,
+    }));
+  }
+
+  const coverage = progress?.evaluation?.evidenceCoverage ?? null;
+  if (!coverage) return [];
+  return coverage.expectedForHighConfidence
+    .filter((item) => [
+      'test_run',
+      'terminal_activity',
+      'code_editor_activity',
+      'ai_assistance',
+    ].includes(item.label))
+    .map(assessmentCoverageToProofItem);
 }
 
 function assessmentSourceRefCount(progress: AssessmentProgressSnapshot | null, kind: string): number {
@@ -3838,35 +3893,65 @@ export default function InterviewDetailPage(): JSX.Element {
                   </span>
                 </div>
               )}
-              {assessmentRequiredProof.length > 0 && (
-                <div style={{ ...EVIDENCE_ROW, alignItems: 'flex-start' }}>
-                  <span style={FIELD_LABEL}>Required proof</span>
-                  <span style={{ ...FIELD_VALUE, ...ASSESSMENT_COVERAGE_CHIPS }}>
-                    {assessmentRequiredProof.map((item) => (
-                      <span
-                        key={item.label}
-                        style={item.satisfied ? ASSESSMENT_COVERAGE_OK : ASSESSMENT_COVERAGE_MISSING}
-                        title={item.satisfied ? undefined : item.missingImpact}
-                      >
-                        {assessmentCoverageLabel(item.label)} {item.satisfied ? 'captured' : 'missing'}
+              {(assessmentRequiredProof.length > 0 || assessmentConfidenceSignals.length > 0) && (
+                <div
+                  data-testid="interview-assessment-proof-checklist"
+                  style={{ ...EVIDENCE_ROW, alignItems: 'flex-start' }}
+                >
+                  <span style={FIELD_LABEL}>Proof checklist</span>
+                  <span style={{ ...FIELD_VALUE, ...ASSESSMENT_CLAIM_LIST }}>
+                    {assessmentRequiredProof.length > 0 && (
+                      <span style={ASSESSMENT_CLAIM_ROW}>
+                        <span style={ASSESSMENT_CLAIM_HEAD}>Required proof</span>
+                        <span style={ASSESSMENT_COVERAGE_CHIPS}>
+                          {assessmentRequiredProof.map((item) => {
+                            const label = assessmentProofDisplayLabel(item.label);
+                            return (
+                              <span key={item.id} style={ASSESSMENT_CLAIM_ROW}>
+                                <span
+                                  style={item.satisfied ? ASSESSMENT_COVERAGE_OK : ASSESSMENT_COVERAGE_MISSING}
+                                >
+                                  {label} {item.satisfied ? 'captured' : 'missing'}
+                                </span>
+                                <span style={ASSESSMENT_CLAIM_HEAD}>
+                                  <span>{item.satisfied ? 'Captured' : 'Missing'}</span>
+                                  <span>{item.sourceRefTypes.map(sentenceCaseToken).join(', ')}</span>
+                                </span>
+                                {!item.satisfied && item.missingImpact.trim().length > 0 && (
+                                  <span style={ASSESSMENT_CLAIM_NARRATIVE}>{item.missingImpact}</span>
+                                )}
+                              </span>
+                            );
+                          })}
+                        </span>
                       </span>
-                    ))}
-                  </span>
-                </div>
-              )}
-              {assessmentConfidenceSignals.length > 0 && (
-                <div style={{ ...EVIDENCE_ROW, alignItems: 'flex-start' }}>
-                  <span style={FIELD_LABEL}>Confidence signals</span>
-                  <span style={{ ...FIELD_VALUE, ...ASSESSMENT_COVERAGE_CHIPS }}>
-                    {assessmentConfidenceSignals.map((item) => (
-                      <span
-                        key={item.label}
-                        style={item.satisfied ? ASSESSMENT_COVERAGE_OK : ASSESSMENT_COVERAGE_MISSING}
-                        title={item.satisfied ? undefined : item.missingImpact}
-                      >
-                        {assessmentCoverageLabel(item.label)} {item.satisfied ? 'captured' : 'missing'}
+                    )}
+                    {assessmentConfidenceSignals.length > 0 && (
+                      <span style={ASSESSMENT_CLAIM_ROW}>
+                        <span style={ASSESSMENT_CLAIM_HEAD}>Confidence signals</span>
+                        <span style={ASSESSMENT_COVERAGE_CHIPS}>
+                          {assessmentConfidenceSignals.map((item) => {
+                            const label = assessmentProofDisplayLabel(item.label);
+                            return (
+                              <span key={item.id} style={ASSESSMENT_CLAIM_ROW}>
+                                <span
+                                  style={item.satisfied ? ASSESSMENT_COVERAGE_OK : ASSESSMENT_COVERAGE_MISSING}
+                                >
+                                  {label} {item.satisfied ? 'captured' : 'missing'}
+                                </span>
+                                <span style={ASSESSMENT_CLAIM_HEAD}>
+                                  <span>{item.satisfied ? 'Captured' : 'Missing'}</span>
+                                  <span>{item.sourceRefTypes.map(sentenceCaseToken).join(', ')}</span>
+                                </span>
+                                {!item.satisfied && item.missingImpact.trim().length > 0 && (
+                                  <span style={ASSESSMENT_CLAIM_NARRATIVE}>{item.missingImpact}</span>
+                                )}
+                              </span>
+                            );
+                          })}
+                        </span>
                       </span>
-                    ))}
+                    )}
                   </span>
                 </div>
               )}

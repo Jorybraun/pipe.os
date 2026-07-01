@@ -380,6 +380,190 @@ describe('InterviewDetailPage', () => {
     expect(progress).not.toHaveTextContent('challenge-packet-popover');
   });
 
+  it('shows the exact missing proof checklist before an open-source workspace can be evaluated', async () => {
+    mocks.api.get.mockResolvedValueOnce({
+      interview: makeInterview({
+        interviewType: 'OPEN_SOURCE_BUG_FIX',
+        githubRepoUrl: 'https://github.com/open-source/streaming',
+        assessmentSetup: {
+          status: 'reviewable_task_assigned',
+          kind: 'github_pr',
+          source: 'recruiter_manual_override',
+          blocksPositiveAssessment: false,
+          message: 'A concrete open-source task packet was assigned by the recruiter.',
+        },
+        workspaceSession: {
+          status: 'READY',
+          errorMessage: null,
+          expiresAt: '2026-06-23T01:00:00.000Z',
+          updatedAt: '2026-06-23T00:10:00.000Z',
+          repoGitUrl: 'https://github.com/open-source/streaming',
+          baseCommitSha: '2222222222222222222222222222222222222222',
+        },
+        assessmentProgress: {
+          session: {
+            id: 'assessment-session-missing-proof',
+            ingestionKey: 'assessment-session:missing-proof',
+            interviewId: 'interview-1',
+            candidateId: null,
+            workspaceId: 'workspace-1',
+            workspacePersonId: null,
+            applicationId: null,
+            mode: 'OPEN_SOURCE_BUG_FIX',
+            state: 'CHALLENGE_ASSIGNED',
+            createdAt: '2026-06-23T00:00:00.000Z',
+            updatedAt: '2026-06-23T00:20:00.000Z',
+          },
+          stage: 'CHALLENGE_READY',
+          nextAction: 'OPEN_ROOM_OR_WORKSPACE',
+          nextActionLabel: 'Open the room and launch the controlled workspace.',
+          assignmentTrust: {
+            state: 'manual_challenge',
+            label: 'Manual task assignment',
+            detail: 'A concrete open-source task packet was assigned by the recruiter.',
+            tone: 'manual',
+          },
+          readiness: {
+            status: 'READY_TO_START',
+            label: 'Challenge ready',
+            detail: '3 required proof items are still missing before evaluation.',
+            isReadyForEvaluation: false,
+            isUsableHiringSignal: false,
+            missingRequiredCount: 3,
+            required: [
+              {
+                id: 'challenge_packet',
+                label: 'Complete challenge packet',
+                required: true,
+                satisfied: true,
+                sourceRefTypes: ['open_source_challenge_packet'],
+                missingImpact: 'Without a source-backed task packet, PIPE cannot prove what work was assigned.',
+              },
+              {
+                id: 'work_evidence',
+                label: 'Candidate work evidence',
+                required: true,
+                satisfied: false,
+                sourceRefTypes: ['terminal_output', 'code_diff', 'room_chat_message'],
+                missingImpact: 'Without work evidence, the session only proves an assignment existed.',
+              },
+              {
+                id: 'assessment_commit',
+                label: 'Assessment branch commit',
+                required: true,
+                satisfied: false,
+                sourceRefTypes: ['git_commit'],
+                missingImpact: 'A real commit hash is required before evaluating open-source implementation work.',
+              },
+              {
+                id: 'code_diff',
+                label: 'Exact code diff',
+                required: true,
+                satisfied: false,
+                sourceRefTypes: ['code_diff'],
+                missingImpact: 'The evaluator must inspect the exact diff from base commit to submitted commit.',
+              },
+            ],
+            confidence: [
+              {
+                id: 'workspace_captured_commit',
+                label: 'Workspace-captured commit',
+                required: false,
+                satisfied: false,
+                sourceRefTypes: ['git_commit', 'dev_container_workspace_state'],
+                missingImpact: 'Manual commit evidence can start review, but workspace capture is needed for highest trust.',
+              },
+              {
+                id: 'ai_usage_transparency',
+                label: 'AI-use transparency',
+                required: false,
+                satisfied: false,
+                sourceRefTypes: ['ai_usage_event'],
+                missingImpact: 'If the candidate used AI, prompts and responses should be captured honestly.',
+              },
+            ],
+          },
+          hasChallengePacket: true,
+          hasWorkEvidence: false,
+          hasMessageEvidence: false,
+          hasDevContainerEvidence: false,
+          hasToolUsageEvidence: false,
+          hasCommitSubmission: false,
+          hasFinalSubmission: false,
+          hasAiInteraction: false,
+          hasTranscriptEvidence: false,
+          hasTestEvidence: false,
+          hasVerificationGap: false,
+          evidenceCounts: [{ kind: 'recruiter_note', count: 1 }],
+          sourceRefCounts: [{ kind: 'open_source_challenge_packet', count: 1 }],
+          evidenceSnippets: [],
+          challengePacketContract: {
+            schemaVersion: 'challenge-packet-contract-v1',
+            isComplete: true,
+            missingFields: [],
+            hasRepositoryUrl: true,
+            hasBaseCommitSha: true,
+            hasTask: true,
+            hasSuccessCriteria: true,
+            hasExpectedEvidence: true,
+          },
+          challenge: {
+            sourceRefType: 'open_source_challenge_packet',
+            sourceRefId: 'challenge-packet-hidden',
+            evidenceRole: 'assigned_challenge',
+            exactText: [
+              'Repo: https://github.com/open-source/streaming',
+              'Base commit: 2222222222222222222222222222222222222222',
+              'Task: Fix reconnect ordering in the event stream.',
+              'Success criteria:',
+              '- Reconnect keeps event order deterministic',
+              'Expected evidence:',
+              '- Commit SHA on assessment branch',
+              '- Exact diff from base commit to submitted commit',
+            ].join('\n'),
+            locator: {
+              repositoryUrl: 'https://github.com/open-source/streaming',
+              baseCommitSha: '2222222222222222222222222222222222222222',
+            },
+          },
+          latestEvent: {
+            id: 'assessment-event-hidden',
+            kind: 'recruiter_note',
+            sequence: 1,
+            occurredAt: '2026-06-23T00:20:00.000Z',
+          },
+          commit: null,
+          evaluation: null,
+          humanDecision: null,
+        },
+      }),
+    });
+
+    renderDetail();
+    await flushAsyncUpdates();
+
+    const progress = screen.getByTestId('interview-assessment-progress');
+    expect(progress).toHaveTextContent('Challenge ready');
+    expect(progress).toHaveTextContent('3 required proof items are still missing before evaluation.');
+    const checklist = screen.getByTestId('interview-assessment-proof-checklist');
+    expect(checklist).toHaveTextContent('Required proof');
+    expect(checklist).toHaveTextContent('Complete challenge packet');
+    expect(checklist).toHaveTextContent('Captured');
+    expect(checklist).toHaveTextContent('Candidate work evidence');
+    expect(checklist).toHaveTextContent('Missing');
+    expect(checklist).toHaveTextContent('Without work evidence, the session only proves an assignment existed.');
+    expect(checklist).toHaveTextContent('Assessment branch commit');
+    expect(checklist).toHaveTextContent('A real commit hash is required before evaluating open-source implementation work.');
+    expect(checklist).toHaveTextContent('Exact code diff');
+    expect(checklist).toHaveTextContent('The evaluator must inspect the exact diff from base commit to submitted commit.');
+    expect(checklist).toHaveTextContent('Confidence signals');
+    expect(checklist).toHaveTextContent('Workspace-captured commit');
+    expect(checklist).toHaveTextContent('AI-use transparency');
+    expect(progress).not.toHaveTextContent('assessment-session-missing-proof');
+    expect(progress).not.toHaveTextContent('challenge-packet-hidden');
+    expect(progress).not.toHaveTextContent('assessment-event-hidden');
+  });
+
   it('starts source-backed assessment evaluation and surfaces a specific evaluator diagnostic', async () => {
     const readyProgress: NonNullable<ScheduledInterviewDetail['assessmentProgress']> = {
       session: {
