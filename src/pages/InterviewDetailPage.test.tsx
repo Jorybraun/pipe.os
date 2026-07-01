@@ -1703,6 +1703,8 @@ describe('InterviewDetailPage', () => {
           source: 'contact_first_invite',
           blocksPositiveAssessment: true,
           message: 'This contact-first assessment invite has no candidate evidence yet.',
+          nextAction: 'COLLECT_CANDIDATE_EVIDENCE',
+          nextActionLabel: 'Send the intake link or schedule a context call.',
           lastDeliveredUrl: null,
           lastDeliveredUrlState: null,
           lastDeliveredUrlMessage: null,
@@ -1719,6 +1721,8 @@ describe('InterviewDetailPage', () => {
     expect(setupGap).toHaveTextContent('Jorybraun/agentic-engineering-book');
     expect(setupGap).toHaveTextContent('Why it is not ready');
     expect(setupGap).toHaveTextContent("No reviewable PR or source-backed match is attached yet, so this should not be treated as the candidate's code-review assignment.");
+    expect(setupGap).toHaveTextContent('Next action');
+    expect(setupGap).toHaveTextContent('Send the intake link or schedule a context call.');
   });
 
   it('shows completed evidence-plan refresh state instead of the old missing-evidence prompt', async () => {

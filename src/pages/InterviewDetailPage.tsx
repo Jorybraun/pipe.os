@@ -2857,6 +2857,9 @@ export default function InterviewDetailPage(): JSX.Element {
       && !hasConcreteReviewAssignment
       && (interview.githubRepoUrl || interview.githubPrNumber || interview.matchedRepoId),
   );
+  const codeReviewSetupNextAction = hasReviewSetupGap
+    ? interview.assessmentSetup?.nextActionLabel ?? null
+    : null;
   const showsReviewAssignmentPanel = hasConcreteReviewAssignment || hasReviewSetupGap;
   const primaryMatchEvidence = codeReviewMatch?.evidence[0] ?? null;
   const primaryMatchHasRoleContext = Boolean(
@@ -4605,6 +4608,14 @@ export default function InterviewDetailPage(): JSX.Element {
                   <span style={FIELD_LABEL}>Why it is not ready</span>
                   <span style={{ ...FIELD_VALUE, lineHeight: 1.6 }}>
                     This interview only has repository setup data. No reviewable PR or source-backed match is attached yet, so this should not be treated as the candidate's code-review assignment.
+                  </span>
+                </div>
+              )}
+              {codeReviewSetupNextAction && (
+                <div style={{ ...EVIDENCE_ROW, alignItems: 'flex-start' }}>
+                  <span style={FIELD_LABEL}>Next action</span>
+                  <span style={{ ...FIELD_VALUE, lineHeight: 1.6 }}>
+                    {codeReviewSetupNextAction}
                   </span>
                 </div>
               )}
