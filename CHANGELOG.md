@@ -22,6 +22,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Fixed — Open-source assessment progress
 
+- The app-dev open-source workspace smoke now verifies the recruiter detail projection exposes the evaluated, trusted, challenge-bound submitted commit and a reviewable GitHub compare URL.
 - Interview assessment details now show a direct GitHub compare link from the assigned base commit to the submitted assessment commit when source-backed commit metadata is available.
 - Recruiter interview lists now include a product-mode filter for standard calls, code review, dev-container, and open-source bug-fix assessments, making real assessment sessions easier to find without mixing them with calls.
 - Recruiter interview cards now show assessment room state alongside workspace state, including active rooms and waiting guests, so live assessment status is visible without opening the detail page.

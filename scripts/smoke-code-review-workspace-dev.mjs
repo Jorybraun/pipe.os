@@ -324,6 +324,67 @@ function cleanMaybeAssessUrl(rawUrl) {
   }
 }
 
+function githubCompareUrl({ repositoryUrl, forkRepositoryUrl, baseCommitSha, commitSha }) {
+  const repoUrl = forkRepositoryUrl || repositoryUrl;
+  const base = typeof baseCommitSha === 'string' ? baseCommitSha.trim() : '';
+  const head = typeof commitSha === 'string' ? commitSha.trim() : '';
+  if (!repoUrl || !/^[a-f0-9]{7,40}$/i.test(base) || !/^[a-f0-9]{7,40}$/i.test(head)) return null;
+
+  try {
+    const url = new URL(repoUrl);
+    if (url.hostname !== 'github.com') return null;
+    const parts = url.pathname
+      .replace(/\.git$/i, '')
+      .split('/')
+      .filter(Boolean);
+    if (parts.length < 2) return null;
+    return `https://github.com/${parts[0]}/${parts[1]}/compare/${base}...${head}`;
+  } catch {
+    return null;
+  }
+}
+
+async function assertRecruiterAssessmentProjection(interviewId, workspaceCommit, expectedBaseCommitSha) {
+  const detail = await requestJson(APP_BASE, `/api/v1/scheduling/interviews/${interviewId}`);
+  const progress = detail?.interview?.assessmentProgress ?? null;
+  const commit = progress?.commit ?? null;
+  if (!progress || !commit) {
+    throw new Error(`Recruiter detail did not expose assessment commit progress: ${JSON.stringify(detail?.interview)}`);
+  }
+  if (commit.commitSha !== workspaceCommit.commitSha) {
+    throw new Error(`Recruiter detail exposed the wrong submitted commit: ${JSON.stringify(commit)}`);
+  }
+  if (commit.baseCommitSha !== expectedBaseCommitSha) {
+    throw new Error(`Recruiter detail exposed the wrong base commit: ${JSON.stringify(commit)}`);
+  }
+  if (!commit.repositoryUrl) {
+    throw new Error(`Recruiter detail did not expose a repository for commit review: ${JSON.stringify(commit)}`);
+  }
+  if (commit.integrity?.state !== 'trusted') {
+    throw new Error(`Recruiter detail did not expose trusted workspace commit integrity: ${JSON.stringify(commit.integrity)}`);
+  }
+  if (commit.challengeBinding?.state !== 'bound') {
+    throw new Error(`Recruiter detail did not bind the commit to the assigned challenge: ${JSON.stringify(commit.challengeBinding)}`);
+  }
+  if (progress.stage !== 'EVALUATED' || progress.nextAction !== 'REVIEW_EVALUATION') {
+    throw new Error(`Recruiter detail did not expose the evaluated review state: ${JSON.stringify(progress)}`);
+  }
+  const compareUrl = githubCompareUrl({
+    repositoryUrl: commit.repositoryUrl,
+    forkRepositoryUrl: commit.forkRepositoryUrl,
+    baseCommitSha: commit.baseCommitSha,
+    commitSha: commit.commitSha,
+  });
+  if (!compareUrl) {
+    throw new Error(`Recruiter detail cannot produce a GitHub compare URL from commit metadata: ${JSON.stringify(commit)}`);
+  }
+
+  return {
+    compareUrl,
+    sourceRefCounts: progress.sourceRefCounts ?? [],
+  };
+}
+
 function sleep(ms) {
   return new Promise((resolve) => setTimeout(resolve, ms));
 }
@@ -618,6 +679,11 @@ async function main() {
       throw new Error(`Task-aligned workspace smoke evaluation summary missed challenged behavior terms ${missingTerms.join(', ')}: ${summary}`);
     }
   }
+  const recruiterProjection = await assertRecruiterAssessmentProjection(
+    interviewId,
+    workspaceCommit,
+    expectedBaseCommitSha,
+  );
 
   console.log(JSON.stringify({
     ok: true,
@@ -654,6 +720,9 @@ async function main() {
     evaluationRecommendation: recommendation,
     evaluationSummary: evaluationProgress.evaluation?.summary ?? null,
     evaluationReportId: evaluationBody.report?.id ?? null,
+    recruiterDetailReviewable: true,
+    recruiterCompareUrl: recruiterProjection.compareUrl,
+    recruiterSourceRefCounts: recruiterProjection.sourceRefCounts,
   }, null, 2));
 }
 
