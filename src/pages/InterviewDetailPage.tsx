@@ -1743,6 +1743,7 @@ function codeReviewNextStepRecommendation(
   score: CodeReviewScoreSummary | null,
   submission: CodeReviewSubmissionDetail | null,
   match: CodeReviewMatchDetail | null,
+  setup: AssessmentSetupProjection | null | undefined,
   evidencePlan: CodeReviewEvidencePlanItem[],
 ): CodeReviewNextStep {
   if (match && match.status !== 'MATCHED') {
@@ -1772,11 +1773,21 @@ function codeReviewNextStepRecommendation(
   }
   const scoreValue = score?.score;
   const scoreBand = score?.band?.toLowerCase() ?? null;
+  const manualAssignment = setup?.kind === 'manual_open_source_task'
+    || setup?.source === 'recruiter_manual_override'
+    || match?.validatorAgent?.mode === 'manual_override';
   if (typeof scoreValue === 'number' && Number.isFinite(scoreValue)) {
     if (scoreValue < 50 || scoreBand === 'weak') {
       return {
         value: 'Review assignment fairness before rejecting',
         detail: 'Use the weak score and growth area to verify whether this reflects candidate ability, assignment fit, or missing context before rejecting.',
+        tone: 'watch',
+      };
+    }
+    if (manualAssignment) {
+      return {
+        value: 'Review assignment fairness before advancing',
+        detail: 'The review signal is usable, but manual PR selection does not prove candidate-fit. Confirm assignment fairness before advancing.',
         tone: 'watch',
       };
     }
@@ -3112,6 +3123,7 @@ export default function InterviewDetailPage(): JSX.Element {
     codeReviewScore,
     codeReviewSubmission,
     codeReviewMatch,
+    interview.assessmentSetup,
     codeReviewEvidencePlan,
   );
   const codeReviewDecisionRisk = codeReviewDecisionRiskSummary(

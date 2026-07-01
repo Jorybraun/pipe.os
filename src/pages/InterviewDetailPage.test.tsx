@@ -1445,8 +1445,8 @@ describe('InterviewDetailPage', () => {
         codeReviewScore: {
           reviewSessionId: 'manual-review-session',
           status: 'scored',
-          score: 38,
-          band: 'weak',
+          score: 68,
+          band: 'adequate',
           narrative: 'Candidate found one issue but missed implementation risks.',
           strengths: ['Concrete blocker.'],
           growthAreas: ['Probe implementation trade-offs.'],
@@ -1463,6 +1463,9 @@ describe('InterviewDetailPage', () => {
     renderDetail();
 
     await flushAsyncUpdates();
+    const decision = screen.getByTestId('interview-code-review-decision-summary');
+    expect(decision).toHaveTextContent('Review assignment fairness before advancing');
+    expect(decision).not.toHaveTextContent('Advance with focused probe');
     const scoreValidity = screen.getByTestId('interview-code-review-score-validity');
     expect(scoreValidity).toHaveTextContent('Usable with assignment calibration');
     expect(scoreValidity).toHaveTextContent('manual PR selection does not prove candidate-fit');
