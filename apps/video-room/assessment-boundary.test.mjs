@@ -1,5 +1,6 @@
 import { describe, expect, it } from 'vitest';
-import { readdirSync, readFileSync, statSync } from 'node:fs';
+import { readFileSync } from 'node:fs';
+import { execFileSync } from 'node:child_process';
 import { join, relative } from 'node:path';
 
 const appRoot = process.cwd();
@@ -11,17 +12,27 @@ const scannedRoomEntries = [
   'src',
 ];
 
-const scannedProductEntries = [
-  'CHANGELOG.md',
-  'docs',
-  'e2e',
-  'src',
-  'workers/api/src',
-  'workers/app/src',
-  'apps/intake/src',
-  'apps/meetings/src',
-  'scripts',
-];
+const textFileExtensions = new Set([
+  '',
+  '.cjs',
+  '.css',
+  '.csv',
+  '.html',
+  '.js',
+  '.json',
+  '.jsonc',
+  '.md',
+  '.mjs',
+  '.sh',
+  '.sql',
+  '.svg',
+  '.ts',
+  '.tsx',
+  '.txt',
+  '.xml',
+  '.yaml',
+  '.yml',
+]);
 
 const encodedRetiredProductPhrases = [
   [57, 53, 32, 117, 110, 116, 105, 108, 32, 105, 110, 102, 105, 110, 105, 116, 121],
@@ -66,23 +77,33 @@ function regexFromPhrase(encodedPhrase) {
 const forbiddenProductPatterns = encodedRetiredProductPhrases.map(regexFromPhrase);
 const forbiddenRoomPatterns = encodedRetiredRoomPhrases.map(regexFromPhrase);
 
-function collectFiles(root, entry) {
-  const absolutePath = join(root, entry);
-  const stats = statSync(absolutePath);
-  if (stats.isFile()) return [absolutePath];
-  return readdirSync(absolutePath).flatMap((child) => collectFiles(root, join(entry, child)));
+function isTextFile(path) {
+  const basename = path.split('/').at(-1) ?? path;
+  if (basename === 'AGENTS.md' || basename === 'CLAUDE.md') return true;
+  const dotIndex = basename.lastIndexOf('.');
+  const extension = dotIndex === -1 ? '' : basename.slice(dotIndex).toLowerCase();
+  return textFileExtensions.has(extension);
 }
 
-function collectExistingFiles(root, entries) {
-  return entries.flatMap((entry) => {
-    try {
-      return collectFiles(root, entry);
-    } catch (error) {
-      if (error && typeof error === 'object' && 'code' in error && error.code === 'ENOENT') {
-        return [];
-      }
-      throw error;
-    }
+function collectTrackedTextFiles() {
+  const output = execFileSync('git', ['ls-files', '-z'], {
+    cwd: repoRoot,
+    encoding: 'utf8',
+  });
+  return output
+    .split('\0')
+    .filter(Boolean)
+    .filter(isTextFile)
+    .map((path) => join(repoRoot, path));
+}
+
+function collectRoomFilesFromTrackedFiles(files) {
+  const normalizedRoot = `${relative(repoRoot, appRoot)}/`;
+  return files.filter((file) => {
+    const path = relative(repoRoot, file);
+    if (!path.startsWith(normalizedRoot)) return false;
+    const roomPath = path.slice(normalizedRoot.length);
+    return scannedRoomEntries.some((entry) => roomPath === entry || roomPath.startsWith(`${entry}/`));
   });
 }
 
@@ -101,8 +122,8 @@ function scanFiles(files, patterns, root) {
 
 describe('assessment room product boundary', () => {
   it('ships only the core assessment room experience', () => {
-    const roomFiles = collectExistingFiles(appRoot, scannedRoomEntries);
-    const productFiles = collectExistingFiles(repoRoot, scannedProductEntries);
+    const productFiles = collectTrackedTextFiles();
+    const roomFiles = collectRoomFilesFromTrackedFiles(productFiles);
     const violations = [
       ...scanFiles(productFiles, forbiddenProductPatterns, repoRoot),
       ...scanFiles(roomFiles, forbiddenRoomPatterns, appRoot),
