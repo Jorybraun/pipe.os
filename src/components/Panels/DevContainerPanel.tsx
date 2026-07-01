@@ -74,6 +74,68 @@ function challengePacketSubmissionBlocker(progress: CandidateAssessmentProgress 
     : 'Assign a complete source-backed challenge packet before submitting work.';
 }
 
+function isDirtyWorkspaceFinalizeError(message: string | null): boolean {
+  return message?.toLowerCase().includes('commit or discard uncommitted workspace changes') ?? false;
+}
+
+function WorkspaceFinalizeTrustContract(): JSX.Element {
+  return (
+    <div
+      data-testid="assessment-workspace-finalize-trust-contract"
+      aria-label="Workspace finalizer trust contract"
+      style={{
+        gridColumn: '1 / -1',
+        border: '1px solid rgba(74,222,128,0.28)',
+        background: 'rgba(74,222,128,0.05)',
+        padding: 10,
+        color: 'var(--pipe-text-dim)',
+        fontSize: 10,
+        lineHeight: 1.55,
+      }}
+    >
+      <strong style={{ display: 'block', color: '#4ade80', letterSpacing: '0.12em', marginBottom: 4 }}>
+        TRUSTED FINALIZER PATH
+      </strong>
+      <ul style={{ margin: 0, paddingLeft: 18 }}>
+        <li>Reads the current git HEAD inside the controlled workspace.</li>
+        <li>Verifies repository and base commit against the assigned challenge packet.</li>
+        <li>Captures changed files, source diff, and configured verification output or an explicit gap.</li>
+        <li>Stores source refs for the commit, diff, tests, and workspace state before evaluation.</li>
+      </ul>
+    </div>
+  );
+}
+
+function WorkspaceFinalizeRecovery({ error }: { error: string | null }): JSX.Element | null {
+  if (!isDirtyWorkspaceFinalizeError(error)) return null;
+
+  return (
+    <div
+      data-testid="assessment-workspace-finalize-recovery"
+      role="status"
+      style={{
+        gridColumn: '1 / -1',
+        border: '1px solid rgba(251,191,36,0.45)',
+        background: 'rgba(251,191,36,0.08)',
+        color: '#fde68a',
+        padding: 10,
+        fontSize: 10,
+        lineHeight: 1.55,
+      }}
+    >
+      <strong style={{ display: 'block', color: '#fbbf24', letterSpacing: '0.12em', marginBottom: 4 }}>
+        COMMIT WORKSPACE CHANGES FIRST
+      </strong>
+      <span>Run these in the workspace terminal, then click Finalize workspace head again.</span>
+      <ol style={{ margin: '6px 0 0', paddingLeft: 18 }}>
+        <li><code>git status --short</code></li>
+        <li><code>git add &lt;files&gt;</code></li>
+        <li><code>git commit -m "pipe assessment submission"</code></li>
+      </ol>
+    </div>
+  );
+}
+
 function fieldStyle(kind: 'input' | 'textarea' = 'input'): CSSProperties {
   return {
     width: '100%',
@@ -449,7 +511,9 @@ export function DevContainerPanel({ challengeId }: DevContainerPanelProps): JSX.
               >
                 {workspaceFinalizing ? 'FINALIZING...' : 'FINALIZE WORKSPACE HEAD'}
               </button>
+              <WorkspaceFinalizeTrustContract />
             </div>
+            <WorkspaceFinalizeRecovery error={commitError} />
 
             <label style={{ display: 'grid', gap: 4 }}>
               <span>Repository URL</span>

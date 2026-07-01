@@ -3302,7 +3302,9 @@ export default function InterviewDetailPage(): JSX.Element {
   const assessmentEvidenceSnippets = assessmentProgress?.evidenceSnippets?.slice(0, 6) ?? [];
   const assessmentRequiredProof = assessmentRequiredProofItems(assessmentProgress);
   const assessmentConfidenceSignals = assessmentConfidenceSignalItems(assessmentProgress);
-  const assessmentEvaluationClaims = assessmentProgress?.evaluation?.claims?.slice(0, 3) ?? [];
+  const assessmentEvaluationClaims = assessmentProgress?.evaluation?.claims
+    ?.filter((claim) => claim.sourceRefCount > 0)
+    .slice(0, 3) ?? [];
   const assessmentEvaluationDiagnostics = assessmentProgress?.evaluation?.diagnostics?.slice(0, 3) ?? [];
   const canStartAssessmentEvaluation = assessmentProgress?.nextAction === 'START_EVALUATION';
   const canRecordHumanAssessmentDecision = Boolean(assessmentProgress?.evaluation && !assessmentProgress.humanDecision);
