@@ -199,6 +199,23 @@ async function checkMatchingGate(
   }
 
   if (nextChallengeType === 'CODE_REVIEW') {
+    const readiness = await standaloneReviewEvidenceReadiness(db, candidateId);
+    if (activeIngestionBlocksCodeReviewMatching(readiness)) {
+      return waitingForMatch(
+        readiness.terminal
+          ? readiness.reason ?? 'Candidate evidence ingestion needs recruiter attention before matching.'
+          : 'Candidate evidence ingestion is still running.',
+        {
+          terminal: true,
+          diagnostics: diagnosticsForStandaloneReviewReadiness(readiness, {
+            phase: 'candidate_evidence',
+            repoMatchingStatus: 'pending',
+            repoMatchingDetail: 'Matching is deferred until candidate evidence ingestion finishes.',
+          }),
+        },
+      );
+    }
+
     const roleContext = await db.prepare(
       `SELECT id, persona_json, rcd_json, job_description_md, non_negotiable_skills_json
          FROM role_contexts
@@ -246,7 +263,6 @@ async function checkMatchingGate(
       })),
     });
     if (match.status !== 'MATCHED' || !match.repoId || !match.prNumber) {
-      const readiness = await standaloneReviewEvidenceReadiness(db, candidateId);
       return waitingForMatch(`Deterministic challenge matcher returned ${match.status}`, {
         terminal: true,
         diagnostics: diagnosticsForStandaloneReviewReadiness(readiness, {
@@ -727,6 +743,12 @@ function standaloneEvidenceIsStale(status: string | null, updatedAt: string | nu
   const updatedMs = Date.parse(updatedAt);
   if (!Number.isFinite(updatedMs)) return false;
   return Date.now() - updatedMs >= STANDALONE_EVIDENCE_STALE_AFTER_MS;
+}
+
+function activeIngestionBlocksCodeReviewMatching(
+  readiness: StandaloneReviewEvidenceReadiness,
+): boolean {
+  return isInProgressStandaloneIngestionStatus(readiness.status);
 }
 
 const STANDALONE_REVIEW_CHALLENGE_CONFIG = {

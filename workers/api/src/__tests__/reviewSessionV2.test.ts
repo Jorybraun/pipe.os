@@ -821,7 +821,7 @@ describe('POST /rpc/get-stage-config', () => {
     expect(body.waitingChallenge).toBeUndefined();
   });
 
-  it('hides role-backed CODE_REVIEW no-match diagnostics from the candidate-facing intake response', async () => {
+  it('defers role-backed CODE_REVIEW matching while candidate evidence ingestion is still active', async () => {
     const db = fakeD1({
       firstResponders: [
         {
@@ -917,7 +917,7 @@ describe('POST /rpc/get-stage-config', () => {
       challenges: [],
     });
     expect(body.waitingChallenge).toBeUndefined();
-    expect(matchCandidateToReviewChallenge).toHaveBeenCalledOnce();
+    expect(matchCandidateToReviewChallenge).not.toHaveBeenCalled();
   });
 
   it('retries stale Workers AI model failures from stored text-intake source on status refresh', async () => {
