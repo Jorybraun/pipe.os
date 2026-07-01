@@ -18,6 +18,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Fixed — Open-source assessment progress
 
+- Recruiter interview cards now show source-backed evaluator claim previews, diagnostic evidence types, and missing evidence-coverage gaps while filtering source-less positive claims from the card.
 - Challenge-packet summaries now avoid inventing structured locator fields from raw exact text when persisted locator metadata is missing, preserving the distinction between source evidence and normalized packet fields.
 - Matched open-source challenge packets now carry a deterministic workspace verification command, so matched-repo dev-container finalization captures `test_run` evidence instead of falling back to a verification gap.
 - The app-dev recruiter assessment smoke can now submit a real human decision from the evaluated workspace page, proving the assessment loop reaches reviewer closure instead of stopping at AI evaluation.

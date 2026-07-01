@@ -723,6 +723,161 @@ describe('InterviewCard assessment progress', () => {
     expect(progress).not.toHaveTextContent('assessment-event-verification-gap');
   });
 
+  it('shows sourced evaluator claims, coverage gaps, and diagnostics without source-less praise or ids', () => {
+    renderCard({
+      id: 'interview-evaluation-proof',
+      createdAt: '2026-06-23T00:00:00.000Z',
+      updatedAt: '2026-06-23T00:20:00.000Z',
+      status: 'COMPLETED',
+      interviewType: 'OPEN_SOURCE_BUG_FIX',
+      meetingType: 'DIRECT_VIDEO_CALL',
+      scheduledAt: null,
+      assessmentSetup: {
+        status: 'reviewable_task_assigned',
+        kind: 'manual_open_source_task',
+        source: 'recruiter_manual_override',
+        blocksPositiveAssessment: false,
+        message: 'A concrete open-source task packet was assigned by the recruiter.',
+      },
+      assessmentProgress: {
+        session: {
+          id: 'assessment-session-proof-secret',
+          ingestionKey: 'assessment-session:proof',
+          interviewId: 'interview-evaluation-proof',
+          candidateId: 'candidate-1',
+          workspaceId: 'workspace-1',
+          workspacePersonId: null,
+          applicationId: null,
+          mode: 'OPEN_SOURCE_BUG_FIX',
+          state: 'EVALUATED',
+          createdAt: '2026-06-23T00:00:00.000Z',
+          updatedAt: '2026-06-23T00:20:00.000Z',
+        },
+        stage: 'EVALUATED',
+        nextAction: 'REVIEW_EVALUATION',
+        nextActionLabel: 'Review the source-backed evaluator report.',
+        hasChallengePacket: true,
+        hasWorkEvidence: true,
+        hasMessageEvidence: true,
+        hasDevContainerEvidence: true,
+        hasToolUsageEvidence: true,
+        hasCommitSubmission: true,
+        hasFinalSubmission: true,
+        hasAiInteraction: true,
+        hasTranscriptEvidence: true,
+        hasTestEvidence: false,
+        hasVerificationGap: true,
+        evidenceCounts: [{ kind: 'commit_submission', count: 1 }],
+        sourceRefCounts: [{ kind: 'git_commit', count: 1 }],
+        challenge: null,
+        latestEvent: {
+          id: 'assessment-event-proof-secret',
+          kind: 'final_submission',
+          sequence: 4,
+          occurredAt: '2026-06-23T00:20:00.000Z',
+        },
+        commit: {
+          eventId: 'assessment-event-proof-secret',
+          repositoryUrl: 'https://github.com/open-source/widgets',
+          forkRepositoryUrl: 'https://github.com/candidate/widgets',
+          branchName: 'pipe-assessment/widgets',
+          baseCommitSha: '3333333333333333333333333333333333333333',
+          commitSha: '123456abcdef123456abcdef123456abcdef1234',
+          commitUrl: 'https://github.com/candidate/widgets/commit/123456abcdef123456abcdef123456abcdef1234',
+          changedFiles: [{ path: 'src/widget.ts', status: 'modified' }],
+          occurredAt: '2026-06-23T00:18:00.000Z',
+        },
+        evaluation: {
+          id: 'assessment-evaluation-proof-secret',
+          status: 'EVALUATED',
+          summary: 'Candidate produced a focused source-backed fix with commit evidence.',
+          recommendation: 'Human review recommended',
+          createdAt: '2026-06-23T00:22:00.000Z',
+          evidenceCoverage: {
+            schemaVersion: 'assessment-evidence-coverage-v1',
+            sourceRefCount: 2,
+            sourceRefTypeCounts: {
+              git_commit: 1,
+              code_diff: 1,
+            },
+            requiredForEvaluation: [
+              {
+                label: 'Assessment branch commit',
+                required: true,
+                sourceRefTypes: ['git_commit'],
+                satisfied: true,
+                sourceRefKeys: ['commit_submission:git_commit:commit-proof-secret'],
+                missingImpact: 'A real commit hash is required before evaluation.',
+              },
+              {
+                label: 'Test or verification evidence',
+                required: true,
+                sourceRefTypes: ['test_run'],
+                satisfied: false,
+                sourceRefKeys: [],
+                missingImpact: 'Without test output, the evaluator can discuss the diff but cannot prove it works.',
+              },
+            ],
+            expectedForHighConfidence: [
+              {
+                label: 'Transcript explanation',
+                required: false,
+                sourceRefTypes: ['transcript_span'],
+                satisfied: false,
+                sourceRefKeys: [],
+                missingImpact: 'Missing explanation evidence lowers confidence in the candidate reasoning assessment.',
+              },
+            ],
+          },
+          claims: [
+            {
+              id: 'assessment-claim-cited-secret',
+              polarity: 'positive',
+              dimension: 'repo_understanding',
+              narrative: 'The candidate isolated the regression to the widget loader and changed only the relevant file.',
+              confidence: 0.82,
+              sourceRefCount: 2,
+              sourceRefTypes: ['git_commit', 'code_diff'],
+            },
+            {
+              id: 'assessment-claim-uncited-secret',
+              polarity: 'positive',
+              dimension: 'seniority',
+              narrative: 'This source-less praise must not appear in the recruiter card.',
+              confidence: 0.9,
+              sourceRefCount: 0,
+              sourceRefTypes: [],
+            },
+          ],
+          diagnostics: [{
+            id: 'assessment-diagnostic-proof-secret',
+            code: 'TEST_OUTPUT_MISSING',
+            severity: 'warning',
+            message: 'The final submission did not include captured test output.',
+            sourceRefCount: 1,
+            sourceRefTypes: ['verification_gap'],
+          }],
+        },
+      },
+    });
+
+    const progress = screen.getByTestId('interview-card-assessment-progress');
+    expect(progress).toHaveTextContent('CLAIMS');
+    expect(progress).toHaveTextContent('Repo understanding · Positive · 82%');
+    expect(progress).toHaveTextContent('The candidate isolated the regression to the widget loader');
+    expect(progress).toHaveTextContent('2 source refs: Git commit, Code diff');
+    expect(progress).toHaveTextContent('GAPS');
+    expect(progress).toHaveTextContent('Missing: Test or verification evidence');
+    expect(progress).toHaveTextContent('Missing: Transcript explanation');
+    expect(progress).toHaveTextContent('DIAGNOSTICS');
+    expect(progress).toHaveTextContent('Test output missing · Warning');
+    expect(progress).toHaveTextContent('1 source ref: Verification gap');
+    expect(progress).not.toHaveTextContent('source-less praise');
+    expect(progress).not.toHaveTextContent('assessment-evaluation-proof-secret');
+    expect(progress).not.toHaveTextContent('assessment-claim-cited-secret');
+    expect(progress).not.toHaveTextContent('assessment-diagnostic-proof-secret');
+  });
+
   it('shows human assessment decision before evaluator recommendation without exposing ids', () => {
     renderCard({
       id: 'interview-evaluated',
