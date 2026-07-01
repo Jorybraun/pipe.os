@@ -1300,12 +1300,12 @@ describe('POST /rpc/submit-challenge-response', () => {
     await waitUntilAll();
   });
 
-  it('advances after intake when standalone CODE_REVIEW auto-match becomes ready from inline evidence', async () => {
+  it('advances after intake when standalone CODE_REVIEW auto-match is roleless but source-backed', async () => {
     vi.mocked(matchCandidateToReviewChallenge).mockResolvedValueOnce({
       status: 'MATCHED',
       repoId: 973,
       prNumber: 973,
-      explanation: automaticMatchExplanation(973, 1),
+      explanation: automaticMatchExplanation(973, 0),
     } as Awaited<ReturnType<typeof matchCandidateToReviewChallenge>>);
 
     const db = fakeD1({
