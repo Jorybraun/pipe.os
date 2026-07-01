@@ -765,7 +765,7 @@ function seedSchema(sqlite: BetterSqliteDb): void {
     ALTER TABLE meetings ADD COLUMN video_enabled INTEGER NOT NULL DEFAULT 1;
     ALTER TABLE meetings ADD COLUMN workspace_enabled INTEGER NOT NULL DEFAULT 1;
     ALTER TABLE meetings ADD COLUMN recording_enabled INTEGER NOT NULL DEFAULT 1;
-    ALTER TABLE meetings ADD COLUMN clippy_enabled INTEGER NOT NULL DEFAULT 1;
+    ALTER TABLE meetings ADD COLUMN agent_enabled INTEGER NOT NULL DEFAULT 1;
   `);
   sqlite.exec(livingContextMigration);
   sqlite.exec(repoSemanticGraphMigration);
@@ -1105,28 +1105,30 @@ describe('meeting room recording living-context route', () => {
       hostToken: string;
     };
 
-    const lifecycleRes = await app.request(`/meeting/${created.hostToken}/events`, {
+    const sessionEventRes = await app.request(`/meeting/${created.hostToken}/session-events`, {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify({
-        type: 'window_open',
-        text: 'Microsoft Edge',
-        actor: 'guest',
-      }),
-    }, env, ctx);
-    expect(lifecycleRes.status).toBe(422);
-
-    const fakeWindowOpenRes = await app.request(`/meeting/${created.hostToken}/session-events`, {
-      method: 'POST',
-      headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({
-        type: 'window_open',
-        text: 'Microsoft Edge',
+        type: 'media_control',
+        text: 'Guest turned microphone off',
         actor: 'guest',
         properties: {
-          windowId: 'browser',
-          windowType: 'browser',
-          surface: 'win95',
+          source: 'video_room_media_controls',
+          mediaControlEventSource: 'browser_video_control_button',
+          mediaControlId: 'media:guest:microphone:1782601200000:disabled',
+          capturedAtMs: 1782601200000,
+          actor: 'guest',
+          control: 'microphone',
+          previousEnabled: true,
+          enabled: false,
+          action: 'disabled',
+          controlAction: 'toggle',
+          surface: 'standard',
+          roomPhase: 'connected',
+          controlSurface: 'standard_video_call',
+          mediaSource: 'local_media_stream',
+          rawMediaStreamPersisted: false,
+          durableObjectReplayExpected: true,
         },
       }),
     }, env, ctx);
@@ -1220,16 +1222,17 @@ describe('meeting room recording living-context route', () => {
     } | undefined;
     expect(node).toMatchObject({
       candidate_id: linked?.candidate_id,
-      node_type: 'session_window_open',
+      node_type: 'session_media_control',
       source_type: 'meeting_session',
     });
-    expect(node?.narrative_text).toContain('Window opened: Microsoft Edge');
+    expect(node?.narrative_text).toContain('Media control changed: Guest turned microphone off');
     expect(JSON.parse(node?.extracted_properties_json ?? '{}')).toMatchObject({
       actor: 'guest',
       sessionId: node?.source_reference,
-      windowId: 'browser',
-      lifecycleSource: 'clippy_action',
-      surface: 'win95',
+      control: 'microphone',
+      previousEnabled: true,
+      enabled: false,
+      surface: 'standard',
     });
 
     const sessionContextRecord = sqlite.prepare(
@@ -1237,7 +1240,7 @@ describe('meeting room recording living-context route', () => {
               narrative, qualifiers_json, confidence
          FROM context_records
         WHERE record_type = 'meeting_session_event'
-          AND predicate = 'session_event:window_open'`,
+          AND predicate = 'session_event:media_control'`,
     ).get() as {
       id: string;
       workspace_person_id: string;
@@ -1250,15 +1253,15 @@ describe('meeting room recording living-context route', () => {
     } | undefined;
     expect(sessionContextRecord).toMatchObject({
       record_type: 'meeting_session_event',
-      predicate: 'session_event:window_open',
+      predicate: 'session_event:media_control',
       confidence: 1,
     });
-    expect(sessionContextRecord?.narrative).toContain('Window opened: Microsoft Edge');
+    expect(sessionContextRecord?.narrative).toContain('Media control changed: Guest turned microphone off');
     expect(JSON.parse(sessionContextRecord?.qualifiers_json ?? '{}')).toMatchObject({
-      eventType: 'window_open',
+      eventType: 'media_control',
       actor: 'guest',
       sessionId: node?.source_reference,
-      surface: 'win95',
+      surface: 'standard',
     });
 
     const contextSources = sqlite.prepare(
@@ -1285,7 +1288,7 @@ describe('meeting room recording living-context route', () => {
       expect.objectContaining({
         source_ref_type: 'source_span',
         evidence_role: 'source_text',
-        exact_text: expect.stringContaining('Window opened: Microsoft Edge'),
+        exact_text: expect.stringContaining('Media control changed: Guest turned microphone off'),
         source_span_id: expect.any(String),
       }),
     ]));
@@ -1293,215 +1296,27 @@ describe('meeting room recording living-context route', () => {
       (source) => source.source_ref_type === 'meeting_session_event',
     );
     expect(JSON.parse(eventSource?.exact_text ?? '{}')).toMatchObject({
-      type: 'window_open',
+      type: 'media_control',
       sessionId: node?.source_reference,
       candidateId: linked?.candidate_id,
       actor: 'guest',
-      text: 'Microsoft Edge',
+      text: 'Guest turned microphone off',
       properties: {
         actor: 'guest',
-        windowId: 'browser',
-        lifecycleSource: 'clippy_action',
-        surface: 'win95',
+        control: 'microphone',
+        previousEnabled: true,
+        enabled: false,
+        surface: 'standard',
       },
       candidateNodeId: node?.id,
     });
     expect(eventSource?.content_hash).toEqual(expect.stringMatching(/^content_[a-f0-9]{32}$/));
     expect(JSON.parse(eventSource?.locator_json ?? '{}')).toMatchObject({
       sessionId: node?.source_reference,
-      eventType: 'window_open',
+      eventType: 'media_control',
       actor: 'guest',
       candidateNodeId: node?.id,
     });
-
-    const fakeBrowserNavigationRes = await app.request(`/meeting/${created.hostToken}/session-events`, {
-      method: 'POST',
-      headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({
-        type: 'browser_navigation',
-        text: 'https://example.com/review',
-        actor: 'guest',
-        properties: {
-          source: 'browser_url_claim',
-          windowId: 'browser',
-          url: 'https://example.com/review',
-          surface: 'win95',
-        },
-      }),
-    }, env, ctx);
-    expect(fakeBrowserNavigationRes.status).toBe(422);
-
-    const sourceOnlyBrowserNavigationRes = await app.request(`/meeting/${created.hostToken}/session-events`, {
-      method: 'POST',
-      headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({
-        type: 'browser_navigation',
-        text: 'https://example.com/review?step=1',
-        actor: 'guest',
-        properties: {
-          source: 'room_browser_window',
-          navigationSource: 'browser_window_client_submit',
-          actor: 'guest',
-          windowId: 'browser',
-          navigationTrigger: 'go_button',
-          url: 'https://example.com/review?step=1',
-          urlHost: 'example.com',
-          urlProtocol: 'https',
-          urlPath: '/review?step=1',
-          knownEmbedBlocked: false,
-          surface: 'win95',
-          roomPhase: 'connected',
-          durableObjectReplayExpected: true,
-        },
-      }),
-    }, env, ctx);
-    expect(sourceOnlyBrowserNavigationRes.status).toBe(422);
-
-    const browserNavigationRes = await app.request(`/meeting/${created.hostToken}/session-events`, {
-      method: 'POST',
-      headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({
-        type: 'browser_navigation',
-        text: 'https://example.com/review?step=1',
-        actor: 'guest',
-        properties: {
-          source: 'room_browser_window',
-          navigationSource: 'browser_window_client_submit',
-          actor: 'guest',
-          windowId: 'browser',
-          navigationTrigger: 'go_button',
-          browserNavigationId: 'browser-navigation:guest:1782601300000:browser:go_button:nav_54d2c495',
-          capturedAtMs: 1782601300000,
-          urlFingerprint: 'nav_54d2c495',
-          url: 'https://example.com/review?step=1',
-          urlHost: 'example.com',
-          urlProtocol: 'https',
-          urlPath: '/review?step=1',
-          knownEmbedBlocked: false,
-          surface: 'win95',
-          roomPhase: 'connected',
-          durableObjectReplayExpected: true,
-        },
-      }),
-    }, env, ctx);
-    expect(browserNavigationRes.status).toBe(200);
-
-    const browserNavigationNode = sqlite.prepare(
-      `SELECT node_type, narrative_text, source_type, extracted_properties_json
-         FROM candidate_nodes
-        WHERE candidate_id = ? AND node_type = 'session_browser_nav'`,
-    ).get(linked?.candidate_id) as {
-      node_type: string;
-      narrative_text: string;
-      source_type: string;
-      extracted_properties_json: string;
-    } | undefined;
-    expect(browserNavigationNode).toMatchObject({
-      node_type: 'session_browser_nav',
-      source_type: 'meeting_session',
-    });
-    expect(browserNavigationNode?.narrative_text).toContain('Browser navigated to: https://example.com/review?step=1');
-    expect(JSON.parse(browserNavigationNode?.extracted_properties_json ?? '{}')).toMatchObject({
-      actor: 'guest',
-      source: 'room_browser_window',
-      navigationSource: 'browser_window_client_submit',
-      windowId: 'browser',
-      navigationTrigger: 'go_button',
-      browserNavigationId: 'browser-navigation:guest:1782601300000:browser:go_button:nav_54d2c495',
-      capturedAtMs: 1782601300000,
-      urlFingerprint: 'nav_54d2c495',
-      urlHost: 'example.com',
-      urlProtocol: 'https',
-      surface: 'win95',
-      roomPhase: 'connected',
-    });
-
-    const reloadBrowserNavigationRes = await app.request(`/meeting/${created.hostToken}/session-events`, {
-      method: 'POST',
-      headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({
-        type: 'browser_navigation',
-        text: 'https://example.com/review?step=1',
-        actor: 'guest',
-        properties: {
-          source: 'room_browser_window',
-          navigationSource: 'browser_window_client_submit',
-          actor: 'guest',
-          windowId: 'browser',
-          navigationTrigger: 'reload_button',
-          browserNavigationId: 'browser-navigation:guest:1782601300001:browser:reload_button:nav_54d2c495',
-          capturedAtMs: 1782601300001,
-          urlFingerprint: 'nav_54d2c495',
-          url: 'https://example.com/review?step=1',
-          urlHost: 'example.com',
-          urlProtocol: 'https',
-          urlPath: '/review?step=1',
-          knownEmbedBlocked: false,
-          surface: 'win95',
-          roomPhase: 'connected',
-          durableObjectReplayExpected: true,
-        },
-      }),
-    }, env, ctx);
-    expect(reloadBrowserNavigationRes.status).toBe(200);
-
-    const externalOpenBrowserNavigationRes = await app.request(`/meeting/${created.hostToken}/session-events`, {
-      method: 'POST',
-      headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({
-        type: 'browser_navigation',
-        text: 'https://example.com/review?step=1',
-        actor: 'guest',
-        properties: {
-          source: 'room_browser_window',
-          navigationSource: 'browser_window_client_submit',
-          actor: 'guest',
-          windowId: 'browser',
-          navigationTrigger: 'external_open',
-          browserNavigationId: 'browser-navigation:guest:1782601300002:browser:external_open:nav_54d2c495',
-          capturedAtMs: 1782601300002,
-          urlFingerprint: 'nav_54d2c495',
-          url: 'https://example.com/review?step=1',
-          urlHost: 'example.com',
-          urlProtocol: 'https',
-          urlPath: '/review?step=1',
-          knownEmbedBlocked: false,
-          surface: 'win95',
-          roomPhase: 'connected',
-          durableObjectReplayExpected: true,
-        },
-      }),
-    }, env, ctx);
-    expect(externalOpenBrowserNavigationRes.status).toBe(200);
-
-    const fileLinkBrowserNavigationRes = await app.request(`/meeting/${created.hostToken}/session-events`, {
-      method: 'POST',
-      headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({
-        type: 'browser_navigation',
-        text: 'https://example.com/review?step=1',
-        actor: 'guest',
-        properties: {
-          source: 'room_browser_window',
-          navigationSource: 'browser_window_client_submit',
-          actor: 'guest',
-          windowId: 'browser',
-          navigationTrigger: 'file_system_link_open',
-          browserNavigationId: 'browser-navigation:guest:1782601300003:browser:file_system_link_open:nav_54d2c495',
-          capturedAtMs: 1782601300003,
-          urlFingerprint: 'nav_54d2c495',
-          url: 'https://example.com/review?step=1',
-          urlHost: 'example.com',
-          urlProtocol: 'https',
-          urlPath: '/review?step=1',
-          knownEmbedBlocked: false,
-          surface: 'win95',
-          roomPhase: 'connected',
-          durableObjectReplayExpected: true,
-        },
-      }),
-    }, env, ctx);
-    expect(fileLinkBrowserNavigationRes.status).toBe(200);
 
     const fakeChatRes = await app.request(`/meeting/${created.hostToken}/session-events`, {
       method: 'POST',
@@ -1527,14 +1342,14 @@ describe('meeting room recording living-context route', () => {
         actor: 'guest',
         properties: {
           source: 'room_chat_client_submit',
-          chatEventSource: 'browser_room_chat_window',
+          chatEventSource: 'browser_room_chat_panel',
           actor: 'guest',
           roomMessageId: 'chat-message-1',
           clientId: 'browser-client-1',
           messageCreatedAt: 1782602000000,
           messageLength: 50,
           deliveryStatus: 'pending',
-          surface: 'win95',
+          surface: 'standard',
           roomPhase: 'connected',
           durableObjectReplayExpected: true,
         },
@@ -1562,11 +1377,11 @@ describe('meeting room recording living-context route', () => {
     expect(JSON.parse(chatNode?.extracted_properties_json ?? '{}')).toMatchObject({
       actor: 'guest',
       source: 'room_chat_client_submit',
-      chatEventSource: 'browser_room_chat_window',
+      chatEventSource: 'browser_room_chat_panel',
       roomMessageId: 'chat-message-1',
       clientId: 'browser-client-1',
       deliveryStatus: 'pending',
-      surface: 'win95',
+      surface: 'standard',
       roomPhase: 'connected',
     });
 
@@ -1604,7 +1419,7 @@ describe('meeting room recording living-context route', () => {
           capturedAtMs: 1700000001000,
           commandFingerprint: 'terminal_dc5964d6',
           commandLength: 8,
-          surface: 'win95',
+          surface: 'standard',
           roomPhase: 'connected',
           workspaceStatus: 'READY',
           workspaceSessionId: 'workspace-session-1',
@@ -1632,7 +1447,7 @@ describe('meeting room recording living-context route', () => {
           capturedAtMs: 1700000002000,
           outputFingerprint: 'terminal_4f2d0d8f',
           outputLength: 21,
-          surface: 'win95',
+          surface: 'standard',
           roomPhase: 'connected',
           workspaceStatus: 'READY',
           workspaceSessionId: 'workspace-session-1',
@@ -1687,276 +1502,6 @@ describe('meeting room recording living-context route', () => {
         workspaceSessionId: 'workspace-session-1',
       }),
     ]));
-
-    vi.useFakeTimers();
-    vi.setSystemTime(new Date('2026-06-27T23:05:00.000Z'));
-
-    const browserWindowMoveEvent = {
-      type: 'window_update',
-      text: 'Window state updated: browser',
-      actor: 'guest',
-      properties: {
-        source: 'window_state_client_submit',
-        stateSource: 'win95_window_chrome',
-        actor: 'guest',
-        windowId: 'browser',
-        action: 'move',
-        windowStateChangeId: 'window-state:guest:1782601500000:browser:move',
-        capturedAtMs: 1782601500000,
-        statePatch: { x: 120, y: 80 },
-        stateKeys: ['x', 'y'],
-        surface: 'win95',
-        roomPhase: 'connected',
-        durableObjectReplayExpected: true,
-        clientCapturedAtMs: 1782601500000,
-      },
-    };
-    const beaconSessionEventRes = await app.request(`/meeting/${created.hostToken}/session-events`, {
-      method: 'POST',
-      headers: { 'Content-Type': 'text/plain;charset=UTF-8' },
-      body: JSON.stringify({
-        ...browserWindowMoveEvent,
-        properties: {
-          ...browserWindowMoveEvent.properties,
-          clientEventId: 'browser-window-move-1',
-        },
-      }),
-    }, env, ctx);
-    expect(beaconSessionEventRes.status).toBe(200);
-    const firstBeaconBody = await beaconSessionEventRes.json() as { captured: boolean; nodeId: string };
-    expect(firstBeaconBody).toMatchObject({
-      captured: true,
-      nodeId: expect.any(String),
-    });
-
-    const duplicateBeaconSessionEventRes = await app.request(`/meeting/${created.hostToken}/session-events`, {
-      method: 'POST',
-      headers: { 'Content-Type': 'text/plain;charset=UTF-8' },
-      body: JSON.stringify({
-        ...browserWindowMoveEvent,
-        properties: {
-          ...browserWindowMoveEvent.properties,
-          clientEventId: 'browser-window-move-1',
-        },
-      }),
-    }, env, ctx);
-    expect(duplicateBeaconSessionEventRes.status).toBe(200);
-    await expect(duplicateBeaconSessionEventRes.json()).resolves.toMatchObject({
-      captured: true,
-      nodeId: firstBeaconBody.nodeId,
-    });
-
-    const secondBeaconSessionEventRes = await app.request(`/meeting/${created.hostToken}/session-events`, {
-      method: 'POST',
-      headers: { 'Content-Type': 'text/plain;charset=UTF-8' },
-      body: JSON.stringify({
-        ...browserWindowMoveEvent,
-        properties: {
-          ...browserWindowMoveEvent.properties,
-          clientEventId: 'browser-window-move-2',
-        },
-      }),
-    }, env, ctx);
-    expect(secondBeaconSessionEventRes.status).toBe(200);
-    const secondBeaconBody = await secondBeaconSessionEventRes.json() as { captured: boolean; nodeId: string };
-    expect(secondBeaconBody).toMatchObject({
-      captured: true,
-      nodeId: expect.any(String),
-    });
-    expect(secondBeaconBody.nodeId).not.toBe(firstBeaconBody.nodeId);
-
-    const beaconNodes = sqlite.prepare(
-      `SELECT id, node_type, narrative_text, extracted_properties_json
-         FROM candidate_nodes
-        WHERE candidate_id = ?
-          AND node_type = 'session_window_update'
-        ORDER BY id`,
-    ).all(linked?.candidate_id) as Array<{
-      id: string;
-      node_type: string;
-      narrative_text: string;
-      extracted_properties_json: string;
-    }>;
-    expect(beaconNodes).toHaveLength(2);
-    expect(beaconNodes.map((node) => node.id).sort()).toEqual([
-      firstBeaconBody.nodeId,
-      secondBeaconBody.nodeId,
-    ].sort());
-    const beaconProperties = beaconNodes.map((node) =>
-      JSON.parse(node.extracted_properties_json) as { clientEventId: string; clientCapturedAtMs: number },
-    );
-    expect(beaconNodes[0]?.narrative_text).toContain('Window updated: Window state updated: browser');
-    expect(beaconProperties.map((properties) => properties.clientEventId).sort()).toEqual([
-      'browser-window-move-1',
-      'browser-window-move-2',
-    ]);
-    expect(beaconProperties).toEqual(expect.arrayContaining([
-      expect.objectContaining({
-        actor: 'guest',
-        source: 'window_state_client_submit',
-        windowId: 'browser',
-        surface: 'win95',
-        windowStateChangeId: 'window-state:guest:1782601500000:browser:move',
-        capturedAtMs: 1782601500000,
-        clientCapturedAtMs: 1782601500000,
-      }),
-    ]));
-
-    const windowUpdateContextRecords = sqlite.prepare(
-      `SELECT id, qualifiers_json
-         FROM context_records
-        WHERE record_type = 'meeting_session_event'
-          AND predicate = 'session_event:window_update'
-        ORDER BY id`,
-    ).all() as Array<{ id: string; qualifiers_json: string }>;
-    expect(windowUpdateContextRecords).toHaveLength(2);
-    const windowUpdateContextClientIds = windowUpdateContextRecords.map((record) => {
-      const qualifiers = JSON.parse(record.qualifiers_json) as {
-        properties: { clientEventId: string };
-      };
-      return qualifiers.properties.clientEventId;
-    });
-    expect(windowUpdateContextClientIds.sort()).toEqual([
-      'browser-window-move-1',
-      'browser-window-move-2',
-    ]);
-    expect(JSON.parse(beaconNodes[0]?.extracted_properties_json ?? '{}')).toMatchObject({
-      actor: 'guest',
-      source: 'window_state_client_submit',
-      windowId: 'browser',
-      surface: 'win95',
-      windowStateChangeId: 'window-state:guest:1782601500000:browser:move',
-      capturedAtMs: 1782601500000,
-    });
-
-    const sourceOnlyRoomSurfaceRes = await app.request(`/meeting/${created.hostToken}/session-events`, {
-      method: 'POST',
-      headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({
-        type: 'room_surface_change',
-        text: 'Room surface changed to 95 Until Infinity desktop',
-        actor: 'guest',
-        properties: {
-          source: 'room_surface_control',
-          actor: 'guest',
-          surface: 'win95',
-          previousSurface: 'standard',
-          action: 'enter_desktop',
-          roomPhase: 'connected',
-        },
-      }),
-    }, env, ctx);
-    expect(sourceOnlyRoomSurfaceRes.status).toBe(422);
-
-    const roomSurfaceRes = await app.request(`/meeting/${created.hostToken}/session-events`, {
-      method: 'POST',
-      headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({
-        type: 'room_surface_change',
-        text: 'Room surface changed to 95 Until Infinity desktop',
-        actor: 'guest',
-        properties: {
-          source: 'room_surface_control',
-          surfaceControlEventSource: 'browser_room_surface_toggle',
-          actor: 'guest',
-          surfaceChangeId: 'surface:guest:1782601510000:standard:win95',
-          capturedAtMs: 1782601510000,
-          surface: 'win95',
-          previousSurface: 'standard',
-          action: 'enter_desktop',
-          roomPhase: 'connected',
-          durableObjectReplayExpected: true,
-        },
-      }),
-    }, env, ctx);
-    expect(roomSurfaceRes.status).toBe(200);
-
-    const surfaceNode = sqlite.prepare(
-      `SELECT node_type, extracted_properties_json
-         FROM candidate_nodes
-        WHERE candidate_id = ? AND node_type = 'session_room_surface_change'
-        ORDER BY captured_at DESC
-        LIMIT 1`,
-    ).get(linked?.candidate_id) as {
-      node_type: string;
-      extracted_properties_json: string;
-    } | undefined;
-    expect(JSON.parse(surfaceNode?.extracted_properties_json ?? '{}')).toMatchObject({
-      actor: 'guest',
-      source: 'room_surface_control',
-      surfaceControlEventSource: 'browser_room_surface_toggle',
-      surfaceChangeId: 'surface:guest:1782601510000:standard:win95',
-      surface: 'win95',
-      previousSurface: 'standard',
-      durableObjectReplayExpected: true,
-    });
-
-    const sourceOnlyStartMenuRes = await app.request(`/meeting/${created.hostToken}/session-events`, {
-      method: 'POST',
-      headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({
-        type: 'desktop_menu_toggle',
-        text: 'Start menu opened',
-        actor: 'guest',
-        properties: {
-          source: 'win95_start_menu_control',
-          menuEventSource: 'win95_start_button',
-          actor: 'guest',
-          menuId: 'start',
-          action: 'open',
-          open: true,
-          surface: 'win95',
-          roomPhase: 'connected',
-        },
-      }),
-    }, env, ctx);
-    expect(sourceOnlyStartMenuRes.status).toBe(422);
-
-    const startMenuRes = await app.request(`/meeting/${created.hostToken}/session-events`, {
-      method: 'POST',
-      headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({
-        type: 'desktop_menu_toggle',
-        text: 'Start menu opened',
-        actor: 'guest',
-        properties: {
-          source: 'win95_start_menu_control',
-          menuEventSource: 'win95_start_button',
-          actor: 'guest',
-          menuId: 'start',
-          action: 'open',
-          open: true,
-          startMenuEventId: 'start-menu:guest:1782601520000:open:win95_start_button',
-          capturedAtMs: 1782601520000,
-          surface: 'win95',
-          roomPhase: 'connected',
-          durableObjectReplayExpected: true,
-        },
-      }),
-    }, env, ctx);
-    expect(startMenuRes.status).toBe(200);
-
-    const startMenuNode = sqlite.prepare(
-      `SELECT node_type, extracted_properties_json
-         FROM candidate_nodes
-        WHERE candidate_id = ? AND node_type = 'session_desktop_menu_toggle'
-        ORDER BY captured_at DESC
-        LIMIT 1`,
-    ).get(linked?.candidate_id) as {
-      node_type: string;
-      extracted_properties_json: string;
-    } | undefined;
-    expect(JSON.parse(startMenuNode?.extracted_properties_json ?? '{}')).toMatchObject({
-      actor: 'guest',
-      source: 'win95_start_menu_control',
-      menuEventSource: 'win95_start_button',
-      startMenuEventId: 'start-menu:guest:1782601520000:open:win95_start_button',
-      menuId: 'start',
-      action: 'open',
-      open: true,
-      surface: 'win95',
-      durableObjectReplayExpected: true,
-    });
 
     const fakeWorkspaceStateRes = await app.request(`/meeting/${created.hostToken}/session-events`, {
       method: 'POST',
@@ -2038,7 +1583,7 @@ describe('meeting room recording living-context route', () => {
       headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify({
         type: 'participant_join',
-        text: 'Host joined the 95 Until Infinity room',
+        text: 'Host joined the assessment room',
         actor: 'host',
         properties: {
           source: 'meeting_room_lifecycle',
@@ -2078,11 +1623,11 @@ describe('meeting room recording living-context route', () => {
       }),
     ]));
 
-    const fakeClippyPromptRes = await app.request(`/meeting/${created.hostToken}/session-events`, {
+    const fakeAgentPromptRes = await app.request(`/meeting/${created.hostToken}/session-events`, {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify({
-        type: 'clippy_prompt',
+        type: 'agent_prompt',
         text: 'Would you like to start recording?',
         actor: 'host',
         properties: {
@@ -2092,18 +1637,18 @@ describe('meeting room recording living-context route', () => {
         },
       }),
     }, env, ctx);
-    expect(fakeClippyPromptRes.status).toBe(422);
+    expect(fakeAgentPromptRes.status).toBe(422);
 
-    const clippyPromptRes = await app.request(`/meeting/${created.hostToken}/session-events`, {
+    const agentPromptRes = await app.request(`/meeting/${created.hostToken}/session-events`, {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify({
-        type: 'clippy_prompt',
+        type: 'agent_prompt',
         text: 'Would you like to start recording?',
         actor: 'host',
         properties: {
-          source: 'clippy_prompt_client_submit',
-          promptEventSource: 'browser_proactive_clippy_prompt',
+          source: 'agent_prompt_client_submit',
+          promptEventSource: 'browser_proactive_agent_prompt',
           promptTrigger: 'recording_start_suggestion',
           actor: 'host',
           promptId: 'prompt-start-recording',
@@ -2111,7 +1656,7 @@ describe('meeting room recording living-context route', () => {
           promptCreatedAt: 1782601501000,
           promptLength: 'Would you like to start recording?'.length,
           promptSource: 'system',
-          surface: 'win95',
+          surface: 'standard',
           roomPhase: 'connected',
           workspaceStatus: 'READY',
           workspaceSessionId: 'workspace-session-1',
@@ -2119,58 +1664,58 @@ describe('meeting room recording living-context route', () => {
         },
       }),
     }, env, ctx);
-    expect(clippyPromptRes.status).toBe(200);
+    expect(agentPromptRes.status).toBe(200);
 
-    const clippyPromptNode = sqlite.prepare(
+    const agentPromptNode = sqlite.prepare(
       `SELECT node_type, narrative_text, source_type, extracted_properties_json
          FROM candidate_nodes
-        WHERE candidate_id = ? AND node_type = 'session_clippy_prompt'
-          AND extracted_properties_json LIKE '%clippy_prompt_client_submit%'`,
+        WHERE candidate_id = ? AND node_type = 'session_agent_prompt'
+          AND extracted_properties_json LIKE '%agent_prompt_client_submit%'`,
     ).get(linked?.candidate_id) as {
       node_type: string;
       narrative_text: string;
       source_type: string;
       extracted_properties_json: string;
     } | undefined;
-    expect(clippyPromptNode).toMatchObject({
-      node_type: 'session_clippy_prompt',
+    expect(agentPromptNode).toMatchObject({
+      node_type: 'session_agent_prompt',
       source_type: 'meeting_session',
     });
-    expect(clippyPromptNode?.narrative_text).toContain('Clippy prompted');
-    expect(JSON.parse(clippyPromptNode?.extracted_properties_json ?? '{}')).toMatchObject({
+    expect(agentPromptNode?.narrative_text).toContain('Agent prompted');
+    expect(JSON.parse(agentPromptNode?.extracted_properties_json ?? '{}')).toMatchObject({
       actor: 'host',
-      source: 'clippy_prompt_client_submit',
-      promptEventSource: 'browser_proactive_clippy_prompt',
+      source: 'agent_prompt_client_submit',
+      promptEventSource: 'browser_proactive_agent_prompt',
       promptTrigger: 'recording_start_suggestion',
       promptId: 'prompt-start-recording',
       promptLength: 'Would you like to start recording?'.length,
       agentResponseClaimed: false,
     });
 
-    const fakeClippyActionRes = await app.request(`/meeting/${created.hostToken}/session-events`, {
+    const fakeAgentActionRes = await app.request(`/meeting/${created.hostToken}/session-events`, {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify({
-        type: 'clippy_action',
-        text: 'Clippy action: start recording',
+        type: 'agent_action',
+        text: 'Agent action: start recording',
         actor: 'host',
         properties: {
           actionId: 'start-recording',
-          surface: 'win95',
+          surface: 'standard',
         },
       }),
     }, env, ctx);
-    expect(fakeClippyActionRes.status).toBe(422);
+    expect(fakeAgentActionRes.status).toBe(422);
 
     const legacyBridgeActionRes = await app.request(`/meeting/${created.hostToken}/session-events`, {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify({
-        type: 'clippy_action',
+        type: 'agent_action',
         text: 'devin suggested room action: open-terminal',
         actor: 'agent',
         properties: {
-          source: 'clippy_agent_bridge',
+          source: 'agent_bridge',
           origin: 'agent',
           executionStatus: 'suggested',
           actionId: 'open-terminal',
@@ -2180,10 +1725,10 @@ describe('meeting room recording living-context route', () => {
           agent: 'devin',
           observedAt: '2026-06-27T21:10:00.000Z',
           capturedAtMs: 1782594600000,
-          clippyActionEventId: 'clippy-action:agent:1782594600000:clippy_agent_bridge:agent:suggested:open-terminal',
+          agentActionEventId: 'agent-action:agent:1782594600000:agent_bridge:agent:suggested:open-terminal',
           bridgePersisted: true,
-          browserPromptId: 'workspace-session-1:guest:prompt:1782603900000:clippy_0123abcd',
-          browserPromptFingerprint: 'clippy_0123abcd',
+          browserPromptId: 'workspace-session-1:guest:prompt:1782603900000:agent_0123abcd',
+          browserPromptFingerprint: 'agent_0123abcd',
           browserPromptTimestamp: 1782603900000,
           browserPromptLength: 48,
         },
@@ -2195,21 +1740,21 @@ describe('meeting room recording living-context route', () => {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify({
-        type: 'clippy_action',
-        text: 'Clippy action: start recording',
+        type: 'agent_action',
+        text: 'Agent action: start recording',
         actor: 'host',
         properties: {
-          source: 'clippy_prompt_ui',
+          source: 'agent_prompt_ui',
           actionId: 'start-recording',
           origin: 'prompt',
           executedBy: 'host',
-          actionSource: 'clippy_prompt_ui',
+          actionSource: 'agent_prompt_ui',
           executionStatus: 'executed',
           capturedAtMs: 1782594200000,
-          clippyActionEventId: 'clippy-action:host:1782594200000:clippy_prompt_ui:prompt:executed:start-recording',
+          agentActionEventId: 'agent-action:host:1782594200000:agent_prompt_ui:prompt:executed:start-recording',
           agent: 'devin',
           agentResponseClaimed: false,
-          surface: 'win95',
+          surface: 'standard',
           roomPhase: 'connected',
           workspaceStatus: 'READY',
           workspaceSessionId: 'workspace-session-1',
@@ -2218,155 +1763,155 @@ describe('meeting room recording living-context route', () => {
     }, env, ctx);
     expect(attributedUiActionRes.status).toBe(422);
 
-    const clippyActionRes = await app.request(`/meeting/${created.hostToken}/session-events`, {
+    const agentActionRes = await app.request(`/meeting/${created.hostToken}/session-events`, {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify({
-        type: 'clippy_action',
-        text: 'Clippy action: start recording',
+        type: 'agent_action',
+        text: 'Agent action: start recording',
         actor: 'host',
         properties: {
-          source: 'clippy_prompt_ui',
+          source: 'agent_prompt_ui',
           actionId: 'start-recording',
           origin: 'prompt',
           executedBy: 'host',
-          actionSource: 'clippy_prompt_ui',
+          actionSource: 'agent_prompt_ui',
           executionStatus: 'executed',
           capturedAtMs: 1782594200000,
-          clippyActionEventId: 'clippy-action:host:1782594200000:clippy_prompt_ui:prompt:executed:start-recording',
+          agentActionEventId: 'agent-action:host:1782594200000:agent_prompt_ui:prompt:executed:start-recording',
           agent: null,
           agentResponseClaimed: false,
-          surface: 'win95',
+          surface: 'standard',
           roomPhase: 'connected',
           workspaceStatus: 'READY',
           workspaceSessionId: 'workspace-session-1',
         },
       }),
     }, env, ctx);
-    expect(clippyActionRes.status).toBe(200);
+    expect(agentActionRes.status).toBe(200);
 
-    const clippyChatOpenRes = await app.request(`/meeting/${created.hostToken}/session-events`, {
+    const agentChatOpenRes = await app.request(`/meeting/${created.hostToken}/session-events`, {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify({
-        type: 'clippy_action',
-        text: 'Clippy chat opened from the room chat window',
+        type: 'agent_action',
+        text: 'AI assistant opened from the room chat panel',
         actor: 'host',
         properties: {
-          source: 'clippy_chat_ui',
-          actionId: 'open-clippy-chat',
+          source: 'agent_chat_ui',
+          actionId: 'open-agent-chat',
           origin: 'chat',
           executedBy: 'host',
-          actionSource: 'clippy_chat_window',
+          actionSource: 'agent_chat_panel',
           executionStatus: 'opened',
           capturedAtMs: 1782594250000,
-          clippyActionEventId: 'clippy-action:host:1782594250000:clippy_chat_ui:chat:opened:open-clippy-chat',
+          agentActionEventId: 'agent-action:host:1782594250000:agent_chat_ui:chat:opened:open-agent-chat',
           agent: null,
           agentResponseClaimed: false,
-          surface: 'win95',
+          surface: 'standard',
           roomPhase: 'connected',
           workspaceStatus: 'READY',
           workspaceSessionId: 'workspace-session-1',
         },
       }),
     }, env, ctx);
-    expect(clippyChatOpenRes.status).toBe(200);
+    expect(agentChatOpenRes.status).toBe(200);
 
-    const clippyChatCloseRes = await app.request(`/meeting/${created.hostToken}/session-events`, {
+    const agentChatCloseRes = await app.request(`/meeting/${created.hostToken}/session-events`, {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify({
-        type: 'clippy_action',
-        text: 'Clippy chat window closed',
+        type: 'agent_action',
+        text: 'AI assistant chat panel closed',
         actor: 'host',
         properties: {
-          source: 'clippy_chat_ui',
-          actionId: 'close-clippy-chat',
+          source: 'agent_chat_ui',
+          actionId: 'close-agent-chat',
           origin: 'chat',
           executedBy: 'host',
-          actionSource: 'clippy_chat_window',
+          actionSource: 'agent_chat_panel',
           executionStatus: 'closed',
           capturedAtMs: 1782594300000,
-          clippyActionEventId: 'clippy-action:host:1782594300000:clippy_chat_ui:chat:closed:close-clippy-chat',
+          agentActionEventId: 'agent-action:host:1782594300000:agent_chat_ui:chat:closed:close-agent-chat',
           agent: null,
           agentResponseClaimed: false,
-          surface: 'win95',
+          surface: 'standard',
           roomPhase: 'connected',
           workspaceStatus: 'READY',
           workspaceSessionId: 'workspace-session-1',
         },
       }),
     }, env, ctx);
-    expect(clippyChatCloseRes.status).toBe(200);
+    expect(agentChatCloseRes.status).toBe(200);
 
-    const clippyAuthBrowserRes = await app.request(`/meeting/${created.hostToken}/session-events`, {
+    const agentAuthBrowserRes = await app.request(`/meeting/${created.hostToken}/session-events`, {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify({
-        type: 'clippy_action',
-        text: 'Clippy opened Devin browser authentication',
+        type: 'agent_action',
+        text: 'Agent opened Devin browser authentication',
         actor: 'host',
         properties: {
-          source: 'clippy_prompt_ui',
+          source: 'agent_prompt_ui',
           actionId: 'open-devin-auth-browser',
           origin: 'prompt',
           executedBy: 'host',
-          actionSource: 'clippy_prompt_ui',
+          actionSource: 'agent_prompt_ui',
           executionStatus: 'executed',
           capturedAtMs: 1782594350000,
-          clippyActionEventId: 'clippy-action:host:1782594350000:clippy_prompt_ui:prompt:executed:open-devin-auth-browser',
+          agentActionEventId: 'agent-action:host:1782594350000:agent_prompt_ui:prompt:executed:open-devin-auth-browser',
           agent: null,
           agentResponseClaimed: false,
-          surface: 'win95',
+          surface: 'standard',
           roomPhase: 'connected',
           workspaceStatus: 'READY',
           workspaceSessionId: 'workspace-session-1',
         },
       }),
     }, env, ctx);
-    expect(clippyAuthBrowserRes.status).toBe(200);
+    expect(agentAuthBrowserRes.status).toBe(200);
 
-    const clippyAuthTerminalRes = await app.request(`/meeting/${created.hostToken}/session-events`, {
+    const agentAuthTerminalRes = await app.request(`/meeting/${created.hostToken}/session-events`, {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify({
-        type: 'clippy_action',
-        text: 'Clippy action: open terminal for Devin authentication',
+        type: 'agent_action',
+        text: 'Agent action: open terminal for Devin authentication',
         actor: 'host',
         properties: {
-          source: 'clippy_prompt_ui',
+          source: 'agent_prompt_ui',
           actionId: 'open-devin-auth-terminal',
           origin: 'prompt',
           executedBy: 'host',
-          actionSource: 'clippy_prompt_ui',
+          actionSource: 'agent_prompt_ui',
           executionStatus: 'executed',
           capturedAtMs: 1782594400000,
-          clippyActionEventId: 'clippy-action:host:1782594400000:clippy_prompt_ui:prompt:executed:open-devin-auth-terminal',
+          agentActionEventId: 'agent-action:host:1782594400000:agent_prompt_ui:prompt:executed:open-devin-auth-terminal',
           agent: null,
           agentResponseClaimed: false,
-          surface: 'win95',
+          surface: 'standard',
           roomPhase: 'connected',
           workspaceStatus: 'READY',
           workspaceSessionId: 'workspace-session-1',
         },
       }),
     }, env, ctx);
-    expect(clippyAuthTerminalRes.status).toBe(200);
+    expect(agentAuthTerminalRes.status).toBe(200);
 
-    const clippyAgentSuggestionRes = await app.request(`/meeting/${created.hostToken}/session-events`, {
+    const agentSuggestionRes = await app.request(`/meeting/${created.hostToken}/session-events`, {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify({
-        type: 'clippy_action',
+        type: 'agent_action',
         text: 'devin suggested room action: open-terminal',
         actor: 'agent',
         properties: {
-          source: 'clippy_agent_bridge',
+          source: 'agent_bridge',
           origin: 'agent',
           executionStatus: 'suggested',
           actionId: 'open-terminal',
           actionSource: 'agent_stdout',
-          actionProtocol: 'clippy_room_action_tag',
+          actionProtocol: 'agent_room_action_tag',
           bridgeEventType: 'ROOM_ACTION',
           agent: 'devin',
           agentActionLabel: 'Open Terminal',
@@ -2375,21 +1920,21 @@ describe('meeting room recording living-context route', () => {
           url: null,
           observedAt: '2026-06-27T21:10:00.000Z',
           capturedAtMs: 1782594600000,
-          clippyActionEventId: 'clippy-action:agent:1782594600000:clippy_agent_bridge:agent:suggested:open-terminal',
+          agentActionEventId: 'agent-action:agent:1782594600000:agent_bridge:agent:suggested:open-terminal',
           bridgePersisted: true,
-          browserPromptId: 'workspace-session-1:guest:prompt:1782603900000:clippy_0123abcd',
-          browserPromptFingerprint: 'clippy_0123abcd',
+          browserPromptId: 'workspace-session-1:guest:prompt:1782603900000:agent_0123abcd',
+          browserPromptFingerprint: 'agent_0123abcd',
           browserPromptTimestamp: 1782603900000,
           browserPromptLength: 48,
         },
       }),
     }, env, ctx);
-    expect(clippyAgentSuggestionRes.status).toBe(200);
+    expect(agentSuggestionRes.status).toBe(200);
 
-    const clippyNodes = sqlite.prepare(
+    const agentNodes = sqlite.prepare(
       `SELECT node_type, narrative_text, source_type, extracted_properties_json
          FROM candidate_nodes
-        WHERE candidate_id = ? AND node_type = 'session_clippy_action'
+        WHERE candidate_id = ? AND node_type = 'session_agent_action'
         ORDER BY narrative_text`,
     ).all(linked?.candidate_id) as Array<{
       node_type: string;
@@ -2397,100 +1942,100 @@ describe('meeting room recording living-context route', () => {
       source_type: string;
       extracted_properties_json: string;
     }>;
-    expect(clippyNodes).toHaveLength(6);
-    expect(clippyNodes).toEqual(expect.arrayContaining([
+    expect(agentNodes).toHaveLength(6);
+    expect(agentNodes).toEqual(expect.arrayContaining([
       expect.objectContaining({
-        node_type: 'session_clippy_action',
+        node_type: 'session_agent_action',
         source_type: 'meeting_session',
-        narrative_text: expect.stringContaining('Clippy action: start recording'),
+        narrative_text: expect.stringContaining('Agent action: start recording'),
       }),
       expect.objectContaining({
-        node_type: 'session_clippy_action',
+        node_type: 'session_agent_action',
         source_type: 'meeting_session',
-        narrative_text: expect.stringContaining('Clippy chat opened from the room chat window'),
+        narrative_text: expect.stringContaining('AI assistant opened from the room chat panel'),
       }),
       expect.objectContaining({
-        node_type: 'session_clippy_action',
+        node_type: 'session_agent_action',
         source_type: 'meeting_session',
-        narrative_text: expect.stringContaining('Clippy chat window closed'),
+        narrative_text: expect.stringContaining('AI assistant chat panel closed'),
       }),
       expect.objectContaining({
-        node_type: 'session_clippy_action',
+        node_type: 'session_agent_action',
         source_type: 'meeting_session',
-        narrative_text: expect.stringContaining('Clippy opened Devin browser authentication'),
+        narrative_text: expect.stringContaining('Agent opened Devin browser authentication'),
       }),
       expect.objectContaining({
-        node_type: 'session_clippy_action',
+        node_type: 'session_agent_action',
         source_type: 'meeting_session',
-        narrative_text: expect.stringContaining('Clippy action: open terminal for Devin authentication'),
+        narrative_text: expect.stringContaining('Agent action: open terminal for Devin authentication'),
       }),
       expect.objectContaining({
-        node_type: 'session_clippy_action',
+        node_type: 'session_agent_action',
         source_type: 'meeting_session',
         narrative_text: expect.stringContaining('devin suggested room action: open-terminal'),
       }),
     ]));
-    expect(clippyNodes.map((entry) => JSON.parse(entry.extracted_properties_json))).toEqual(expect.arrayContaining([
+    expect(agentNodes.map((entry) => JSON.parse(entry.extracted_properties_json))).toEqual(expect.arrayContaining([
       expect.objectContaining({
         actor: 'host',
-        source: 'clippy_prompt_ui',
+        source: 'agent_prompt_ui',
         actionId: 'start-recording',
-        actionSource: 'clippy_prompt_ui',
+        actionSource: 'agent_prompt_ui',
         executionStatus: 'executed',
         capturedAtMs: 1782594200000,
-        clippyActionEventId: 'clippy-action:host:1782594200000:clippy_prompt_ui:prompt:executed:start-recording',
-        surface: 'win95',
+        agentActionEventId: 'agent-action:host:1782594200000:agent_prompt_ui:prompt:executed:start-recording',
+        surface: 'standard',
       }),
       expect.objectContaining({
         actor: 'host',
-        source: 'clippy_chat_ui',
-        actionId: 'open-clippy-chat',
-        actionSource: 'clippy_chat_window',
+        source: 'agent_chat_ui',
+        actionId: 'open-agent-chat',
+        actionSource: 'agent_chat_panel',
         executionStatus: 'opened',
         capturedAtMs: 1782594250000,
-        clippyActionEventId: 'clippy-action:host:1782594250000:clippy_chat_ui:chat:opened:open-clippy-chat',
-        surface: 'win95',
+        agentActionEventId: 'agent-action:host:1782594250000:agent_chat_ui:chat:opened:open-agent-chat',
+        surface: 'standard',
       }),
       expect.objectContaining({
         actor: 'host',
-        source: 'clippy_chat_ui',
-        actionId: 'close-clippy-chat',
-        actionSource: 'clippy_chat_window',
+        source: 'agent_chat_ui',
+        actionId: 'close-agent-chat',
+        actionSource: 'agent_chat_panel',
         executionStatus: 'closed',
         capturedAtMs: 1782594300000,
-        clippyActionEventId: 'clippy-action:host:1782594300000:clippy_chat_ui:chat:closed:close-clippy-chat',
-        surface: 'win95',
+        agentActionEventId: 'agent-action:host:1782594300000:agent_chat_ui:chat:closed:close-agent-chat',
+        surface: 'standard',
       }),
       expect.objectContaining({
         actor: 'host',
-        source: 'clippy_prompt_ui',
+        source: 'agent_prompt_ui',
         actionId: 'open-devin-auth-browser',
-        actionSource: 'clippy_prompt_ui',
+        actionSource: 'agent_prompt_ui',
         executionStatus: 'executed',
         capturedAtMs: 1782594350000,
-        clippyActionEventId: 'clippy-action:host:1782594350000:clippy_prompt_ui:prompt:executed:open-devin-auth-browser',
-        surface: 'win95',
+        agentActionEventId: 'agent-action:host:1782594350000:agent_prompt_ui:prompt:executed:open-devin-auth-browser',
+        surface: 'standard',
       }),
       expect.objectContaining({
         actor: 'host',
-        source: 'clippy_prompt_ui',
+        source: 'agent_prompt_ui',
         actionId: 'open-devin-auth-terminal',
-        actionSource: 'clippy_prompt_ui',
+        actionSource: 'agent_prompt_ui',
         executionStatus: 'executed',
         capturedAtMs: 1782594400000,
-        clippyActionEventId: 'clippy-action:host:1782594400000:clippy_prompt_ui:prompt:executed:open-devin-auth-terminal',
-        surface: 'win95',
+        agentActionEventId: 'agent-action:host:1782594400000:agent_prompt_ui:prompt:executed:open-devin-auth-terminal',
+        surface: 'standard',
       }),
       expect.objectContaining({
         actor: 'agent',
-        source: 'clippy_agent_bridge',
+        source: 'agent_bridge',
         actionId: 'open-terminal',
         bridgeEventType: 'ROOM_ACTION',
         observedAt: '2026-06-27T21:10:00.000Z',
         capturedAtMs: 1782594600000,
-        clippyActionEventId: 'clippy-action:agent:1782594600000:clippy_agent_bridge:agent:suggested:open-terminal',
+        agentActionEventId: 'agent-action:agent:1782594600000:agent_bridge:agent:suggested:open-terminal',
         bridgePersisted: true,
-        browserPromptId: 'workspace-session-1:guest:prompt:1782603900000:clippy_0123abcd',
+        browserPromptId: 'workspace-session-1:guest:prompt:1782603900000:agent_0123abcd',
       }),
     ]));
 
@@ -2498,21 +2043,21 @@ describe('meeting room recording living-context route', () => {
       `SELECT qualifiers_json
          FROM context_records
         WHERE record_type = 'meeting_session_event'
-          AND predicate = 'session_event:clippy_action'
+          AND predicate = 'session_event:agent_action'
           AND narrative LIKE '%devin suggested room action%'`,
     ).get() as { qualifiers_json: string } | undefined;
     expect(JSON.parse(agentActionContextRecord?.qualifiers_json ?? '{}')).toMatchObject({
-      eventType: 'clippy_action',
+      eventType: 'agent_action',
       actor: 'agent',
       correlationRefs: {
         browserPrompt: {
-          promptId: 'workspace-session-1:guest:prompt:1782603900000:clippy_0123abcd',
-          fingerprint: 'clippy_0123abcd',
+          promptId: 'workspace-session-1:guest:prompt:1782603900000:agent_0123abcd',
+          fingerprint: 'agent_0123abcd',
           timestamp: 1782603900000,
           length: 48,
         },
-        clippyAction: {
-          actionEventId: 'clippy-action:agent:1782594600000:clippy_agent_bridge:agent:suggested:open-terminal',
+        agentAction: {
+          actionEventId: 'agent-action:agent:1782594600000:agent_bridge:agent:suggested:open-terminal',
         },
       },
     });
@@ -2525,7 +2070,7 @@ describe('meeting room recording living-context route', () => {
         text: 'devin is definitely ready.',
         actor: 'agent',
         properties: {
-          source: 'clippy_agent_bridge',
+          source: 'agent_bridge',
           agent: 'devin',
           status: 'idle',
         },
@@ -2541,15 +2086,15 @@ describe('meeting room recording living-context route', () => {
         text: 'devin is starting from the real container bridge.',
         actor: 'agent',
         properties: {
-          source: 'clippy_agent_bridge',
-          agentStatusEventSource: 'browser_clippy_agent_ws',
+          source: 'agent_bridge',
+          agentStatusEventSource: 'browser_agent_ws',
           agent: 'devin',
           status: 'starting',
           bridgeMessageSource: 'agent_status',
           observedAt: '2026-06-27T21:12:00.000Z',
           capturedAtMs: 1782594720000,
           agentStatusEventId: 'agent-status:devin:1782594720000:agent_status:starting:none',
-          surface: 'win95',
+          surface: 'standard',
           roomPhase: 'connected',
           workspaceStatus: 'READY',
           workspaceSessionId: 'workspace-session-1',
@@ -2568,7 +2113,7 @@ describe('meeting room recording living-context route', () => {
         text: 'devin chat prompt delivered to process stdin.',
         actor: 'agent',
         properties: {
-          source: 'clippy_agent_bridge',
+          source: 'agent_bridge',
           agent: 'devin',
           status: 'thinking',
           diagnosticSource: 'agent_prompt_sent',
@@ -2601,8 +2146,8 @@ describe('meeting room recording living-context route', () => {
     expect(agentStatusNodes.map((entry) => JSON.parse(entry.extracted_properties_json))).toEqual(expect.arrayContaining([
       expect.objectContaining({
         actor: 'agent',
-        source: 'clippy_agent_bridge',
-        agentStatusEventSource: 'browser_clippy_agent_ws',
+        source: 'agent_bridge',
+        agentStatusEventSource: 'browser_agent_ws',
         bridgeMessageSource: 'agent_status',
         observedAt: '2026-06-27T21:12:00.000Z',
         capturedAtMs: 1782594720000,
@@ -2611,7 +2156,7 @@ describe('meeting room recording living-context route', () => {
       }),
       expect.objectContaining({
         actor: 'agent',
-        source: 'clippy_agent_bridge',
+        source: 'agent_bridge',
         bridgeMessageSource: 'bridge_diagnostic',
         diagnosticSource: 'agent_prompt_sent',
         observedAt: '2026-06-27T21:13:00.000Z',
@@ -2620,100 +2165,6 @@ describe('meeting room recording living-context route', () => {
         bridgePersisted: true,
       }),
     ]));
-
-    const fakeCursorPresenceRes = await app.request(`/meeting/${created.hostToken}/session-events`, {
-      method: 'POST',
-      headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({
-        type: 'cursor_presence',
-        text: 'Guest cursor presence sampled on 95 Until Infinity desktop',
-        actor: 'guest',
-        properties: {
-          source: 'room_cursor_claim',
-          surface: 'standard',
-          normalizedX: 1.2,
-          normalizedY: 0.5,
-        },
-      }),
-    }, env, ctx);
-    expect(fakeCursorPresenceRes.status).toBe(422);
-
-    const sourceOnlyCursorPresenceRes = await app.request(`/meeting/${created.hostToken}/session-events`, {
-      method: 'POST',
-      headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({
-        type: 'cursor_presence',
-        text: 'Guest cursor presence sampled on 95 Until Infinity desktop',
-        actor: 'guest',
-        properties: {
-          source: 'win95_cursor_presence_client_sample',
-          surface: 'win95',
-          roomPhase: 'connected',
-          normalizedX: 0.42,
-          normalizedY: 0.61,
-          evidenceSampling: 'presence_sample',
-          rawCursorMovesPersisted: false,
-        },
-      }),
-    }, env, ctx);
-    expect(sourceOnlyCursorPresenceRes.status).toBe(422);
-
-    const cursorPresenceRes = await app.request(`/meeting/${created.hostToken}/session-events`, {
-      method: 'POST',
-      headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({
-        type: 'cursor_presence',
-        text: 'Guest cursor presence sampled on 95 Until Infinity desktop',
-        actor: 'guest',
-        properties: {
-          source: 'win95_cursor_presence_client_sample',
-          cursorEventSource: 'browser_win95_desktop_pointermove',
-          actor: 'guest',
-          cursorSampleId: 'cursor:guest:1761592321000:420:610',
-          sampledAtMs: 1761592321000,
-          surface: 'win95',
-          roomPhase: 'connected',
-          normalizedX: 0.42,
-          normalizedY: 0.61,
-          previousNormalizedX: null,
-          previousNormalizedY: null,
-          distanceFromPrevious: null,
-          evidenceSampling: 'presence_sample',
-          sampleIntervalMs: 15000,
-          movementThreshold: 0.03,
-          rawCursorMovesPersisted: false,
-        },
-      }),
-    }, env, ctx);
-    expect(cursorPresenceRes.status).toBe(200);
-
-    const cursorNode = sqlite.prepare(
-      `SELECT node_type, narrative_text, source_type, extracted_properties_json
-         FROM candidate_nodes
-        WHERE candidate_id = ? AND node_type = 'session_cursor_presence'`,
-    ).get(linked?.candidate_id) as {
-      node_type: string;
-      narrative_text: string;
-      source_type: string;
-      extracted_properties_json: string;
-    } | undefined;
-    expect(cursorNode).toMatchObject({
-      node_type: 'session_cursor_presence',
-      source_type: 'meeting_session',
-    });
-    expect(cursorNode?.narrative_text).toContain('Guest cursor presence sampled');
-    expect(JSON.parse(cursorNode?.extracted_properties_json ?? '{}')).toMatchObject({
-      actor: 'guest',
-      source: 'win95_cursor_presence_client_sample',
-      cursorEventSource: 'browser_win95_desktop_pointermove',
-      cursorSampleId: 'cursor:guest:1761592321000:420:610',
-      surface: 'win95',
-      normalizedX: 0.42,
-      normalizedY: 0.61,
-      sampleIntervalMs: 15000,
-      movementThreshold: 0.03,
-      rawCursorMovesPersisted: false,
-    });
 
     const fakeMediaControlRes = await app.request(`/meeting/${created.hostToken}/session-events`, {
       method: 'POST',
@@ -2726,7 +2177,7 @@ describe('meeting room recording living-context route', () => {
           source: 'browser_media_claim',
           control: 'microphone',
           enabled: false,
-          surface: 'win95',
+          surface: 'standard',
           roomPhase: 'connected',
         },
       }),
@@ -2745,9 +2196,9 @@ describe('meeting room recording living-context route', () => {
           control: 'microphone',
           enabled: false,
           action: 'disabled',
-          surface: 'win95',
+          surface: 'standard',
           roomPhase: 'connected',
-          controlSurface: 'win95_video_window',
+          controlSurface: 'standard_video_call',
           mediaSource: 'local_media_stream',
           rawMediaStreamPersisted: false,
         },
@@ -2772,9 +2223,9 @@ describe('meeting room recording living-context route', () => {
           previousEnabled: true,
           enabled: false,
           action: 'disabled',
-          surface: 'win95',
+          surface: 'standard',
           roomPhase: 'connected',
-          controlSurface: 'win95_video_window',
+          controlSurface: 'standard_video_call',
           controlAction: 'toggle',
           mediaSource: 'local_media_stream',
           rawMediaStreamPersisted: false,
@@ -2786,7 +2237,9 @@ describe('meeting room recording living-context route', () => {
     const mediaControlNode = sqlite.prepare(
       `SELECT node_type, narrative_text, source_type, extracted_properties_json
          FROM candidate_nodes
-        WHERE candidate_id = ? AND node_type = 'session_media_control'`,
+        WHERE candidate_id = ? AND node_type = 'session_media_control'
+        ORDER BY captured_at ASC, id ASC
+        LIMIT 1`,
     ).get(linked?.candidate_id) as {
       node_type: string;
       narrative_text: string;
@@ -2802,14 +2255,14 @@ describe('meeting room recording living-context route', () => {
       actor: 'guest',
       source: 'video_room_media_controls',
       mediaControlEventSource: 'browser_video_control_button',
-      mediaControlId: 'media:guest:microphone:1761592322000:disabled',
+      mediaControlId: expect.stringMatching(/^media:guest:microphone:\d+:disabled$/),
       control: 'microphone',
       previousEnabled: true,
       enabled: false,
       action: 'disabled',
-      surface: 'win95',
+      surface: 'standard',
       roomPhase: 'connected',
-      controlSurface: 'win95_video_window',
+      controlSurface: 'standard_video_call',
       controlAction: 'toggle',
       rawMediaStreamPersisted: false,
     });
@@ -2920,89 +2373,6 @@ describe('meeting room recording living-context route', () => {
       transcriptionBytes: 2345,
     });
 
-    const fakeWin95FileChangeRes = await app.request(`/meeting/${created.hostToken}/session-events`, {
-      method: 'POST',
-      headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({
-        type: 'file_change',
-        text: 'Guest saved Notes.txt',
-        actor: 'guest',
-        properties: {
-          source: 'win95_shared_file_system',
-          fileEventSource: 'browser_client_submit',
-          operation: 'upsert',
-          fileId: 'desktop-notes',
-          fileName: 'Notes.txt',
-          fileKind: 'text',
-          surface: 'win95',
-          roomPhase: 'connected',
-          contentLength: 31,
-        },
-      }),
-    }, env, ctx);
-    expect(fakeWin95FileChangeRes.status).toBe(422);
-
-    const win95FileChangeRes = await app.request(`/meeting/${created.hostToken}/session-events`, {
-      method: 'POST',
-      headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({
-        type: 'file_change',
-        text: 'Guest saved Notes.txt',
-        actor: 'guest',
-        properties: {
-          source: 'win95_shared_file_system',
-          fileEventSource: 'browser_client_submit',
-          actor: 'guest',
-          fileChangeId: 'file:guest:1700000001100:upsert:desktop-notes',
-          operation: 'upsert',
-          fileId: 'desktop-notes',
-          fileName: 'Notes.txt',
-          fileKind: 'text',
-          mimeType: 'text/plain',
-          path: 'Desktop/Notes.txt',
-          surface: 'win95',
-          roomPhase: 'connected',
-          capturedAtMs: 1700000001100,
-          contentLength: 31,
-          contentHash: 'content_0123456789abcdef0123456789abcdef',
-          contentPreview: 'Candidate noted retry evidence.',
-          fileCreatedAt: 1700000000000,
-          fileUpdatedAt: 1700000001000,
-          durableObjectReplayExpected: true,
-        },
-      }),
-    }, env, ctx);
-    expect(win95FileChangeRes.status).toBe(200);
-
-    const win95FileChangeNode = sqlite.prepare(
-      `SELECT node_type, narrative_text, source_type, extracted_properties_json
-         FROM candidate_nodes
-        WHERE candidate_id = ? AND node_type = 'session_file_change'
-          AND extracted_properties_json LIKE '%win95_shared_file_system%'`,
-    ).get(linked?.candidate_id) as {
-      node_type: string;
-      narrative_text: string;
-      source_type: string;
-      extracted_properties_json: string;
-    } | undefined;
-    expect(win95FileChangeNode).toMatchObject({
-      node_type: 'session_file_change',
-      source_type: 'meeting_session',
-    });
-    expect(win95FileChangeNode?.narrative_text).toContain('File upsert: Guest saved Notes.txt');
-    expect(JSON.parse(win95FileChangeNode?.extracted_properties_json ?? '{}')).toMatchObject({
-      actor: 'guest',
-      source: 'win95_shared_file_system',
-      fileEventSource: 'browser_client_submit',
-      fileChangeId: 'file:guest:1700000001100:upsert:desktop-notes',
-      operation: 'upsert',
-      fileId: 'desktop-notes',
-      fileName: 'Notes.txt',
-      contentHash: 'content_0123456789abcdef0123456789abcdef',
-      capturedAtMs: 1700000001100,
-      durableObjectReplayExpected: true,
-    });
-
     const codeServerDeleteRes = await app.request(`/meeting/${created.hostToken}/session-events`, {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
@@ -3012,7 +2382,7 @@ describe('meeting room recording living-context route', () => {
         actor: 'system',
         properties: {
           source: 'code_server_workspace',
-          observedBy: 'clippy_agent_bridge',
+          observedBy: 'agent_bridge',
           bridgeEventType: 'FILE_CHANGED',
           editorSurface: 'code-server',
           codeServerFileChangeId: 'code-server-file:workspace-session-1:1782594420000:deleted:path_7f2bf00a:abcdefabcdefabcd',
@@ -3021,7 +2391,7 @@ describe('meeting room recording living-context route', () => {
           observedAt: '2026-06-27T21:07:00.000Z',
           contentHash: 'abcdefabcdefabcdefabcdefabcdefabcdefabcdefabcdefabcdefabcdefabcd',
           sizeBytes: 64,
-          surface: 'win95',
+          surface: 'standard',
           roomPhase: 'connected',
           workspaceStatus: 'READY',
           workspaceSessionId: 'workspace-session-1',
@@ -3064,7 +2434,7 @@ describe('meeting room recording living-context route', () => {
           openStatus: 'loaded',
           actor: 'guest',
           capturedAtMs: 1700000002100,
-          surface: 'win95',
+          surface: 'standard',
           roomPhase: 'connected',
           workspaceSessionId: 'workspace-session-1',
           workspaceStatus: 'READY',
@@ -3199,7 +2569,7 @@ describe('meeting room recording living-context route', () => {
       bridgePersisted: true,
     });
 
-    const fakeClippyUserChatRes = await app.request(`/meeting/${created.hostToken}/session-events`, {
+    const fakeAgentUserChatRes = await app.request(`/meeting/${created.hostToken}/session-events`, {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify({
@@ -3207,21 +2577,21 @@ describe('meeting room recording living-context route', () => {
         text: 'Can you explain the failing order recovery test?',
         actor: 'guest',
         properties: {
-          source: 'clippy_agent_chat',
-          surface: 'win95',
+          source: 'agent_chat',
+          surface: 'standard',
           workspaceSessionId: 'workspace-session-1',
         },
       }),
     }, env, ctx);
-    expect(fakeClippyUserChatRes.status).toBe(422);
-    await expect(fakeClippyUserChatRes.json()).resolves.toMatchObject({
+    expect(fakeAgentUserChatRes.status).toBe(422);
+    await expect(fakeAgentUserChatRes.json()).resolves.toMatchObject({
       error: {
         code: 'VALIDATION_ERROR',
         message: 'Invalid session event.',
       },
     });
 
-    const attributedClippyUserChatRes = await app.request(`/meeting/${created.hostToken}/session-events`, {
+    const attributedAgentUserChatRes = await app.request(`/meeting/${created.hostToken}/session-events`, {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify({
@@ -3229,18 +2599,18 @@ describe('meeting room recording living-context route', () => {
         text: 'Can you explain the failing order recovery test?',
         actor: 'guest',
         properties: {
-          source: 'clippy_agent_chat_client_submit',
-          agentChatEventSource: 'browser_clippy_chat_window',
+          source: 'agent_chat_client_submit',
+          agentChatEventSource: 'browser_agent_chat_panel',
           bridgeMessageType: 'CHAT',
-          bridgeProtocol: 'clippy_dev_container_ws',
-          promptId: 'workspace-session-1:guest:prompt:1782603900000:clippy_0123abcd',
-          promptFingerprint: 'clippy_0123abcd',
+          bridgeProtocol: 'agent_dev_container_ws',
+          promptId: 'workspace-session-1:guest:prompt:1782603900000:agent_0123abcd',
+          promptFingerprint: 'agent_0123abcd',
           promptLength: 48,
           promptTimestamp: 1782603900000,
           deliveredToAgentBridge: true,
           agent: 'devin',
           agentResponseClaimed: false,
-          surface: 'win95',
+          surface: 'standard',
           roomPhase: 'connected',
           workspaceStatus: 'READY',
           workspaceSessionId: 'workspace-session-1',
@@ -3248,15 +2618,15 @@ describe('meeting room recording living-context route', () => {
         },
       }),
     }, env, ctx);
-    expect(attributedClippyUserChatRes.status).toBe(422);
-    await expect(attributedClippyUserChatRes.json()).resolves.toMatchObject({
+    expect(attributedAgentUserChatRes.status).toBe(422);
+    await expect(attributedAgentUserChatRes.json()).resolves.toMatchObject({
       error: {
         code: 'VALIDATION_ERROR',
         message: 'Invalid session event.',
       },
     });
 
-    const deliveredClippyUserChatRes = await app.request(`/meeting/${created.hostToken}/session-events`, {
+    const deliveredAgentUserChatRes = await app.request(`/meeting/${created.hostToken}/session-events`, {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify({
@@ -3264,18 +2634,18 @@ describe('meeting room recording living-context route', () => {
         text: 'Can you explain the failing order recovery test?',
         actor: 'guest',
         properties: {
-          source: 'clippy_agent_chat_client_submit',
-          agentChatEventSource: 'browser_clippy_chat_window',
+          source: 'agent_chat_client_submit',
+          agentChatEventSource: 'browser_agent_chat_panel',
           bridgeMessageType: 'CHAT',
-          bridgeProtocol: 'clippy_dev_container_ws',
-          promptId: 'workspace-session-1:guest:prompt:1782603900000:clippy_0123abcd',
-          promptFingerprint: 'clippy_0123abcd',
+          bridgeProtocol: 'agent_dev_container_ws',
+          promptId: 'workspace-session-1:guest:prompt:1782603900000:agent_0123abcd',
+          promptFingerprint: 'agent_0123abcd',
           promptLength: 48,
           promptTimestamp: 1782603900000,
           deliveredToAgentBridge: true,
           agent: null,
           agentResponseClaimed: false,
-          surface: 'win95',
+          surface: 'standard',
           roomPhase: 'connected',
           workspaceStatus: 'READY',
           workspaceSessionId: 'workspace-session-1',
@@ -3283,15 +2653,15 @@ describe('meeting room recording living-context route', () => {
         },
       }),
     }, env, ctx);
-    expect(deliveredClippyUserChatRes.status).toBe(422);
-    await expect(deliveredClippyUserChatRes.json()).resolves.toMatchObject({
+    expect(deliveredAgentUserChatRes.status).toBe(422);
+    await expect(deliveredAgentUserChatRes.json()).resolves.toMatchObject({
       error: {
         code: 'VALIDATION_ERROR',
         message: 'Invalid session event.',
       },
     });
 
-    const clippyUserChatRes = await app.request(`/meeting/${created.hostToken}/session-events`, {
+    const agentUserChatRes = await app.request(`/meeting/${created.hostToken}/session-events`, {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify({
@@ -3299,19 +2669,19 @@ describe('meeting room recording living-context route', () => {
         text: 'Can you explain the failing order recovery test?',
         actor: 'guest',
         properties: {
-          source: 'clippy_agent_chat_client_submit',
-          agentChatEventSource: 'browser_clippy_chat_window',
+          source: 'agent_chat_client_submit',
+          agentChatEventSource: 'browser_agent_chat_panel',
           bridgeMessageType: 'CHAT',
-          bridgeProtocol: 'clippy_dev_container_ws',
-          promptId: 'workspace-session-1:guest:prompt:1782603900000:clippy_0123abcd',
-          promptFingerprint: 'clippy_0123abcd',
+          bridgeProtocol: 'agent_dev_container_ws',
+          promptId: 'workspace-session-1:guest:prompt:1782603900000:agent_0123abcd',
+          promptFingerprint: 'agent_0123abcd',
           promptLength: 48,
           promptTimestamp: 1782603900000,
           browserQueuedBridgeMessage: true,
           bridgeDeliveryConfirmed: false,
           agent: null,
           agentResponseClaimed: false,
-          surface: 'win95',
+          surface: 'standard',
           roomPhase: 'connected',
           workspaceStatus: 'READY',
           workspaceSessionId: 'workspace-session-1',
@@ -3319,9 +2689,9 @@ describe('meeting room recording living-context route', () => {
         },
       }),
     }, env, ctx);
-    expect(clippyUserChatRes.status).toBe(200);
+    expect(agentUserChatRes.status).toBe(200);
 
-    const fakeClippyAgentChatRes = await app.request(`/meeting/${created.hostToken}/session-events`, {
+    const fakeAgentChatRes = await app.request(`/meeting/${created.hostToken}/session-events`, {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify({
@@ -3329,15 +2699,15 @@ describe('meeting room recording living-context route', () => {
         text: 'The fake agent claims it inspected the code.',
         actor: 'agent',
         properties: {
-          source: 'clippy_agent_chat',
+          source: 'agent_chat',
           agent: 'devin',
-          surface: 'win95',
+          surface: 'standard',
           workspaceSessionId: 'workspace-session-1',
         },
       }),
     }, env, ctx);
-    expect(fakeClippyAgentChatRes.status).toBe(422);
-    await expect(fakeClippyAgentChatRes.json()).resolves.toMatchObject({
+    expect(fakeAgentChatRes.status).toBe(422);
+    await expect(fakeAgentChatRes.json()).resolves.toMatchObject({
       error: {
         code: 'VALIDATION_ERROR',
         message: 'Invalid session event.',
@@ -3352,7 +2722,7 @@ describe('meeting room recording living-context route', () => {
         text: 'The fake bridge-shaped agent claims it inspected the code.',
         actor: 'agent',
         properties: {
-          source: 'clippy_agent_bridge',
+          source: 'agent_bridge',
           agent: 'devin',
           bridgeEventType: 'CHAT_RESPONSE',
           observedAt: '2026-06-27T21:05:00.000Z',
@@ -3361,15 +2731,15 @@ describe('meeting room recording living-context route', () => {
     }, env, ctx);
     expect(fakeBridgeAgentChatRes.status).toBe(422);
 
-    const clippyAgentChatRes = await app.request(`/meeting/${created.hostToken}/session-events`, {
+    const agentChatRes = await app.request(`/meeting/${created.hostToken}/session-events`, {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify({
         type: 'ai_chat_agent',
-        text: 'The failing test is asserting replay idempotency after an inventory timeout.',
+        text: 'The fake agent claims it inspected the code.',
         actor: 'agent',
         properties: {
-          source: 'clippy_agent_bridge',
+          source: 'agent_bridge',
           agent: 'devin',
           bridgeEventType: 'CHAT_RESPONSE',
           bridgeMessageSource: 'agent_stdout',
@@ -3380,16 +2750,74 @@ describe('meeting room recording living-context route', () => {
           responseLength: 76,
           actionCount: 0,
           bridgePersisted: true,
-          browserPromptId: 'workspace-session-1:guest:prompt:1782603900000:clippy_0123abcd',
-          browserPromptFingerprint: 'clippy_0123abcd',
+          browserPromptId: 'workspace-session-1:guest:prompt:1782603900000:agent_0123abcd',
+          browserPromptFingerprint: 'agent_0123abcd',
           browserPromptTimestamp: 1782603900000,
           browserPromptLength: 48,
-          surface: 'win95',
+          surface: 'standard',
           workspaceSessionId: 'workspace-session-1',
         },
       }),
     }, env, ctx);
-    expect(clippyAgentChatRes.status).toBe(200);
+    expect(agentChatRes.status).toBe(200);
+
+    const malformedPromptRefAgentChatRes = await app.request(`/meeting/${created.hostToken}/session-events`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({
+        type: 'ai_chat_agent',
+        text: 'The failing test is asserting replay idempotency after an inventory timeout.',
+        actor: 'agent',
+        properties: {
+          source: 'agent_bridge',
+          agent: 'devin',
+          bridgeEventType: 'CHAT_RESPONSE',
+          bridgeMessageSource: 'agent_stdout',
+          observedAt: '2026-06-27T21:05:00.000Z',
+          capturedAtMs: 1782594300000,
+          agentChatResponseId: 'agent-chat:devin:1782594300000:CHAT_RESPONSE:agent_4c000d1c',
+          responseFingerprint: 'agent_4c000d1c',
+          responseLength: 76,
+          actionCount: 0,
+          bridgePersisted: true,
+          browserPromptId: 'source-less-prompt-ref',
+          browserPromptFingerprint: 'agent_0123abcd',
+          browserPromptTimestamp: 1782603900000,
+          browserPromptLength: 48,
+        },
+      }),
+    }, env, ctx);
+    expect(malformedPromptRefAgentChatRes.status).toBe(422);
+
+    const agentFallbackRes = await app.request(`/meeting/${created.hostToken}/session-events`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({
+        type: 'ai_chat_agent',
+        text: 'I saw the same timeout in the order recovery test output.',
+        actor: 'agent',
+        properties: {
+          source: 'agent_bridge',
+          agent: 'devin',
+          bridgeEventType: 'CHAT_RESPONSE',
+          bridgeMessageSource: 'agent_stdout',
+          observedAt: '2026-06-27T21:06:00.000Z',
+          capturedAtMs: 1782594360000,
+          agentChatResponseId: 'agent-chat:devin:1782594360000:CHAT_RESPONSE:agent_525b9849',
+          responseFingerprint: 'agent_525b9849',
+          responseLength: 57,
+          bridgePersisted: false,
+          persistenceFallback: 'browser_after_bridge_persist_failed',
+          surface: 'standard',
+          roomPhase: 'connected',
+          workspaceStatus: 'READY',
+          workspaceSessionId: 'workspace-session-1',
+          messageTimestamp: 1782603960000,
+          agentResponseClaimed: true,
+        },
+      }),
+    }, env, ctx);
+    expect(agentFallbackRes.status).toBe(200);
 
     const malformedPromptRefAgentChatRes = await app.request(`/meeting/${created.hostToken}/session-events`, {
       method: 'POST',
@@ -3475,7 +2903,7 @@ describe('meeting room recording living-context route', () => {
     expect(agentChatProperties).toEqual(expect.arrayContaining([
       expect.objectContaining({
         actor: 'agent',
-        source: 'clippy_agent_bridge',
+        source: 'agent_bridge',
         agent: 'devin',
         bridgeEventType: 'CHAT_RESPONSE',
         bridgeMessageSource: 'agent_stdout',
@@ -3490,7 +2918,7 @@ describe('meeting room recording living-context route', () => {
       }),
       expect.objectContaining({
         actor: 'agent',
-        source: 'clippy_agent_bridge',
+        source: 'agent_bridge',
         agent: 'devin',
         bridgeEventType: 'CHAT_RESPONSE',
         bridgeMessageSource: 'agent_stdout',
@@ -3518,8 +2946,8 @@ describe('meeting room recording living-context route', () => {
       actor: 'agent',
       correlationRefs: {
         browserPrompt: {
-          promptId: 'workspace-session-1:guest:prompt:1782603900000:clippy_0123abcd',
-          fingerprint: 'clippy_0123abcd',
+          promptId: 'workspace-session-1:guest:prompt:1782603900000:agent_0123abcd',
+          fingerprint: 'agent_0123abcd',
           timestamp: 1782603900000,
           length: 48,
         },
@@ -3533,11 +2961,11 @@ describe('meeting room recording living-context route', () => {
     expect(chatNodes[2]?.narrative_text).toContain('order recovery test');
     expect(JSON.parse(chatNodes[2]?.extracted_properties_json ?? '{}')).toMatchObject({
       actor: 'guest',
-      source: 'clippy_agent_chat_client_submit',
-      agentChatEventSource: 'browser_clippy_chat_window',
+      source: 'agent_chat_client_submit',
+      agentChatEventSource: 'browser_agent_chat_panel',
       bridgeMessageType: 'CHAT',
-      promptId: 'workspace-session-1:guest:prompt:1782603900000:clippy_0123abcd',
-      promptFingerprint: 'clippy_0123abcd',
+      promptId: 'workspace-session-1:guest:prompt:1782603900000:agent_0123abcd',
+      promptFingerprint: 'agent_0123abcd',
       promptLength: 48,
       browserQueuedBridgeMessage: true,
       bridgeDeliveryConfirmed: false,
@@ -3546,290 +2974,7 @@ describe('meeting room recording living-context route', () => {
     });
   });
 
-  it('persists Win95 source-specific window lifecycle evidence with exact source provenance', async () => {
-    const app = mountApp();
-    const { ctx } = buildCtx();
-    const now = new Date().toISOString();
-    sqlite.prepare(
-      `INSERT INTO scheduled_interviews (
-         id, candidate_id, owner_id, recipient_name, recipient_email, interview_type, status, updated_at
-       ) VALUES (?, NULL, ?, ?, ?, 'DEV_CONTAINER_CHALLENGE', 'INVITED', ?)`,
-    ).run(
-      'scheduled-start-menu-window-evidence',
-      'owner-1',
-      'Start Menu Candidate',
-      'start-menu-window@example.com',
-      now,
-    );
 
-    const createMeetingRes = await app.request('/meetings', {
-      method: 'POST',
-      headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({
-        recipientName: 'Start Menu Candidate',
-        recipientEmail: 'start-menu-window@example.com',
-        title: 'Start menu evidence room',
-        meetingType: 'INTERVIEW',
-        scheduledInterviewId: 'scheduled-start-menu-window-evidence',
-      }),
-    }, env, ctx);
-    expect(createMeetingRes.status).toBe(201);
-    const created = await createMeetingRes.json() as { hostToken: string };
-
-    const lifecycleRes = await app.request(`/meeting/${created.hostToken}/session-events`, {
-      method: 'POST',
-      headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({
-        type: 'window_open',
-        text: 'notes.txt - Notepad',
-        actor: 'guest',
-        properties: {
-          source: 'window_lifecycle_client_submit',
-          lifecycleSource: 'win95_start_menu',
-          lifecycleKind: 'open',
-          windowLifecycleId: 'window-lifecycle:guest:1782601800000:open:notepad',
-          capturedAtMs: 1782601800000,
-          actor: 'guest',
-          windowId: 'notepad',
-          windowType: 'notepad',
-          windowTitle: 'notes.txt - Notepad',
-          surface: 'win95',
-          roomPhase: 'connected',
-          durableObjectReplayExpected: true,
-        },
-      }),
-    }, env, ctx);
-    expect(lifecycleRes.status).toBe(200);
-
-    const linked = sqlite.prepare(
-      'SELECT candidate_id FROM scheduled_interviews WHERE id = ?',
-    ).get('scheduled-start-menu-window-evidence') as { candidate_id: string } | undefined;
-    const node = sqlite.prepare(
-      `SELECT node_type, narrative_text, extracted_properties_json
-         FROM candidate_nodes
-        WHERE candidate_id = ? AND node_type = 'session_window_open'`,
-    ).get(linked?.candidate_id) as {
-      node_type: string;
-      narrative_text: string;
-      extracted_properties_json: string;
-    } | undefined;
-    expect(node?.narrative_text).toContain('Window opened: notes.txt - Notepad');
-    expect(JSON.parse(node?.extracted_properties_json ?? '{}')).toMatchObject({
-      source: 'window_lifecycle_client_submit',
-      lifecycleSource: 'win95_start_menu',
-      lifecycleKind: 'open',
-      actor: 'guest',
-      windowId: 'notepad',
-      windowType: 'notepad',
-      windowTitle: 'notes.txt - Notepad',
-      windowLifecycleId: 'window-lifecycle:guest:1782601800000:open:notepad',
-      capturedAtMs: 1782601800000,
-      surface: 'win95',
-    });
-
-    const fileManagerLifecycleRes = await app.request(`/meeting/${created.hostToken}/session-events`, {
-      method: 'POST',
-      headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({
-        type: 'window_open',
-        text: 'notes.txt - Notepad',
-        actor: 'guest',
-        properties: {
-          source: 'window_lifecycle_client_submit',
-          lifecycleSource: 'win95_file_system',
-          lifecycleKind: 'open',
-          windowLifecycleId: 'window-lifecycle:guest:1782601800100:open:notepad',
-          capturedAtMs: 1782601800100,
-          actor: 'guest',
-          windowId: 'notepad',
-          windowType: 'notepad',
-          windowTitle: 'notes.txt - Notepad',
-          surface: 'win95',
-          roomPhase: 'connected',
-          durableObjectReplayExpected: true,
-        },
-      }),
-    }, env, ctx);
-    expect(fileManagerLifecycleRes.status).toBe(200);
-
-    const fileManagerNode = sqlite.prepare(
-      `SELECT node_type, narrative_text, extracted_properties_json
-         FROM candidate_nodes
-        WHERE candidate_id = ?
-          AND node_type = 'session_window_open'
-          AND extracted_properties_json LIKE '%win95_file_system%'`,
-    ).get(linked?.candidate_id) as {
-      node_type: string;
-      narrative_text: string;
-      extracted_properties_json: string;
-    } | undefined;
-    expect(fileManagerNode?.narrative_text).toContain('Window opened: notes.txt - Notepad');
-    expect(JSON.parse(fileManagerNode?.extracted_properties_json ?? '{}')).toMatchObject({
-      source: 'window_lifecycle_client_submit',
-      lifecycleSource: 'win95_file_system',
-      lifecycleKind: 'open',
-      actor: 'guest',
-      windowId: 'notepad',
-      windowType: 'notepad',
-      windowTitle: 'notes.txt - Notepad',
-      windowLifecycleId: 'window-lifecycle:guest:1782601800100:open:notepad',
-      capturedAtMs: 1782601800100,
-      surface: 'win95',
-    });
-  });
-
-  it('requires stable source-backed evidence for synced window data updates', async () => {
-    const app = mountApp();
-    const { ctx } = buildCtx();
-    const now = new Date().toISOString();
-    sqlite.prepare(
-      `INSERT INTO scheduled_interviews (
-         id, candidate_id, owner_id, recipient_name, recipient_email, interview_type, status, updated_at
-       ) VALUES (?, NULL, ?, ?, ?, 'DEV_CONTAINER_CHALLENGE', 'INVITED', ?)`,
-    ).run(
-      'scheduled-window-data-evidence',
-      'owner-1',
-      'Window Data Candidate',
-      'window-data@example.com',
-      now,
-    );
-
-    const createMeetingRes = await app.request('/meetings', {
-      method: 'POST',
-      headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({
-        recipientName: 'Window Data Candidate',
-        recipientEmail: 'window-data@example.com',
-        title: 'Window data evidence room',
-        meetingType: 'INTERVIEW',
-        scheduledInterviewId: 'scheduled-window-data-evidence',
-      }),
-    }, env, ctx);
-    expect(createMeetingRes.status).toBe(201);
-    const created = await createMeetingRes.json() as { hostToken: string };
-
-    const sourceOnlyRes = await app.request(`/meeting/${created.hostToken}/session-events`, {
-      method: 'POST',
-      headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({
-        type: 'window_update',
-        text: 'Window data updated: notepad',
-        actor: 'guest',
-        properties: {
-          source: 'window_data_client_submit',
-          dataSource: 'win95_window_data_sync',
-          actor: 'guest',
-          windowId: 'notepad',
-          action: 'edit_text',
-          dataKeys: ['text'],
-          dataValueFingerprints: { text: 'data_81a94acf' },
-          surface: 'win95',
-          roomPhase: 'connected',
-          durableObjectReplayExpected: true,
-        },
-      }),
-    }, env, ctx);
-    expect(sourceOnlyRes.status).toBe(422);
-
-    const validRes = await app.request(`/meeting/${created.hostToken}/session-events`, {
-      method: 'POST',
-      headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({
-        type: 'window_update',
-        text: 'Window data updated: notepad',
-        actor: 'guest',
-        properties: {
-          source: 'window_data_client_submit',
-          dataSource: 'win95_window_data_sync',
-          actor: 'guest',
-          windowId: 'notepad',
-          action: 'edit_text',
-          windowDataUpdateId: 'window-data:guest:1782601700000:notepad:edit_text',
-          capturedAtMs: 1782601700000,
-          dataKeys: ['text'],
-          dataValueFingerprints: { text: 'data_81a94acf' },
-          surface: 'win95',
-          roomPhase: 'connected',
-          durableObjectReplayExpected: true,
-        },
-      }),
-    }, env, ctx);
-    expect(validRes.status).toBe(200);
-
-    const deleteClearRes = await app.request(`/meeting/${created.hostToken}/session-events`, {
-      method: 'POST',
-      headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({
-        type: 'window_update',
-        text: 'Window data updated: notepad',
-        actor: 'guest',
-        properties: {
-          source: 'window_data_client_submit',
-          dataSource: 'win95_file_delete_sync',
-          actor: 'guest',
-          windowId: 'notepad',
-          action: 'edit_text',
-          windowDataUpdateId: 'window-data:guest:1782601700100:notepad:edit_text',
-          capturedAtMs: 1782601700100,
-          dataKeys: ['text'],
-          dataValueFingerprints: { text: 'data_12345678' },
-          surface: 'win95',
-          roomPhase: 'connected',
-          durableObjectReplayExpected: true,
-        },
-      }),
-    }, env, ctx);
-    expect(deleteClearRes.status).toBe(200);
-
-    const linked = sqlite.prepare(
-      'SELECT candidate_id FROM scheduled_interviews WHERE id = ?',
-    ).get('scheduled-window-data-evidence') as { candidate_id: string } | undefined;
-    const node = sqlite.prepare(
-      `SELECT node_type, narrative_text, extracted_properties_json
-         FROM candidate_nodes
-        WHERE candidate_id = ? AND node_type = 'session_window_update'`,
-    ).get(linked?.candidate_id) as {
-      node_type: string;
-      narrative_text: string;
-      extracted_properties_json: string;
-    } | undefined;
-    expect(node?.narrative_text).toContain('Window updated: Window data updated: notepad');
-    expect(JSON.parse(node?.extracted_properties_json ?? '{}')).toMatchObject({
-      source: 'window_data_client_submit',
-      dataSource: 'win95_window_data_sync',
-      actor: 'guest',
-      windowId: 'notepad',
-      action: 'edit_text',
-      windowDataUpdateId: 'window-data:guest:1782601700000:notepad:edit_text',
-      capturedAtMs: 1782601700000,
-      dataKeys: ['text'],
-      dataValueFingerprints: { text: 'data_81a94acf' },
-    });
-
-    const deleteClearNode = sqlite.prepare(
-      `SELECT node_type, narrative_text, extracted_properties_json
-         FROM candidate_nodes
-        WHERE candidate_id = ?
-          AND node_type = 'session_window_update'
-          AND extracted_properties_json LIKE '%win95_file_delete_sync%'`,
-    ).get(linked?.candidate_id) as {
-      node_type: string;
-      narrative_text: string;
-      extracted_properties_json: string;
-    } | undefined;
-    expect(deleteClearNode?.narrative_text).toContain('Window updated: Window data updated: notepad');
-    expect(JSON.parse(deleteClearNode?.extracted_properties_json ?? '{}')).toMatchObject({
-      source: 'window_data_client_submit',
-      dataSource: 'win95_file_delete_sync',
-      actor: 'guest',
-      windowId: 'notepad',
-      action: 'edit_text',
-      windowDataUpdateId: 'window-data:guest:1782601700100:notepad:edit_text',
-      capturedAtMs: 1782601700100,
-      dataKeys: ['text'],
-      dataValueFingerprints: { text: 'data_12345678' },
-    });
-  });
 
   it('returns non-OK when a valid session event cannot be persisted', async () => {
     const app = mountApp();
@@ -3868,21 +3013,25 @@ describe('meeting room recording living-context route', () => {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify({
-        type: 'window_update',
-        text: 'Window state updated: browser',
+        type: 'media_control',
+        text: 'Guest turned microphone off',
         actor: 'guest',
         properties: {
-          source: 'window_state_client_submit',
-          stateSource: 'win95_start_menu',
-          actor: 'guest',
-          windowId: 'browser',
-          action: 'restore_or_focus',
-          windowStateChangeId: 'window-state:guest:1782601600000:browser:restore_or_focus',
+          source: 'video_room_media_controls',
+          mediaControlEventSource: 'browser_video_control_button',
+          mediaControlId: 'media:guest:microphone:1782601600000:disabled',
           capturedAtMs: 1782601600000,
-          statePatch: { minimized: false, focused: true },
-          stateKeys: ['focused', 'minimized'],
-          surface: 'win95',
+          actor: 'guest',
+          control: 'microphone',
+          previousEnabled: true,
+          enabled: false,
+          action: 'disabled',
+          controlAction: 'toggle',
+          surface: 'standard',
           roomPhase: 'connected',
+          controlSurface: 'standard_video_call',
+          mediaSource: 'local_media_stream',
+          rawMediaStreamPersisted: false,
           durableObjectReplayExpected: true,
         },
       }),
@@ -3905,112 +3054,7 @@ describe('meeting room recording living-context route', () => {
   it('syncs durable room activity into the candidate context graph before graph reads', async () => {
     const app = mountApp();
     const { ctx } = buildCtx();
-    const activitySnapshot = {
-      desktopActivityLog: [
-        {
-          role: 'HOST',
-          recordedAt: 1700000000000,
-          event: {
-            id: 'evt-enter-95',
-            clientId: 'host-client',
-            createdAt: 1700000000000,
-            kind: 'SET_ROOM_SURFACE',
-            surface: 'win95',
-            previousSurface: 'standard',
-            action: 'enter_desktop',
-            source: 'room_surface_control',
-            surfaceControlEventSource: 'browser_room_surface_toggle',
-            actor: 'host',
-            surfaceChangeId: 'surface:host:1700000000000:standard:win95',
-            capturedAtMs: 1700000000000,
-            roomPhase: 'connected',
-            durableObjectReplayExpected: true,
-          },
-        },
-        {
-          role: 'HOST',
-          recordedAt: 1700000000500,
-          event: {
-            id: 'evt-browser-move-1',
-            clientId: 'host-client',
-            createdAt: 1700000000500,
-            kind: 'UPDATE_WINDOW_STATE',
-            windowId: 'browser',
-            x: 120,
-            y: 80,
-            focused: true,
-            evidence: {
-              source: 'window_state_client_submit',
-              stateSource: 'win95_window_chrome',
-              actor: 'host',
-              windowId: 'browser',
-              action: 'move',
-              windowStateChangeId: 'window-state:host:1700000000500:browser:move',
-              capturedAtMs: 1700000000500,
-              surface: 'win95',
-              roomPhase: 'connected',
-              durableObjectReplayExpected: true,
-            },
-          },
-        },
-        {
-          role: 'HOST',
-          recordedAt: 1700000000600,
-          event: {
-            id: 'evt-browser-move-2',
-            clientId: 'host-client',
-            createdAt: 1700000000600,
-            kind: 'UPDATE_WINDOW_STATE',
-            windowId: 'browser',
-            x: 180,
-            y: 120,
-            focused: true,
-            evidence: {
-              source: 'window_state_client_submit',
-              stateSource: 'win95_window_chrome',
-              actor: 'host',
-              windowId: 'browser',
-              action: 'move',
-              windowStateChangeId: 'window-state:host:1700000000600:browser:move',
-              capturedAtMs: 1700000000600,
-              surface: 'win95',
-              roomPhase: 'connected',
-              durableObjectReplayExpected: true,
-            },
-          },
-        },
-        {
-          role: 'HOST',
-          recordedAt: 1700000001000,
-          event: {
-            id: 'evt-workspace-ready',
-            clientId: 'host-client',
-            createdAt: 1700000001000,
-            kind: 'WORKSPACE_STATE_CHANGED',
-            actor: 'host',
-            workspaceStateEventId: 'workspace-state:host:1700000001000:launch:workspace-session-1:READY',
-            capturedAtMs: 1700000001000,
-            status: 'READY',
-            workspaceSessionId: 'workspace-session-1',
-            repoUrl: 'https://github.com/cloudflare/workers-sdk',
-            githubPrNumber: 14435,
-            matchedRepoId: 42,
-            challengeStatus: 'github_pr_assigned',
-            challengeKind: 'github_pr',
-            challengeSource: 'scheduled_interview.github_pr_number',
-            challengeMessage: null,
-            ttlSeconds: 3600,
-            ttlSource: 'default',
-            expiringSoon: false,
-            source: 'browser_workspace_state_observer',
-            workspaceEventSource: 'browser_workspace_state_observer',
-            workspaceStateSource: 'launch',
-            workspaceTelemetryPersisted: true,
-            proxyUrlPersisted: false,
-          },
-        },
-      ],
-      chatActivityLog: [
+    const activitySnapshot = {      chatActivityLog: [
         {
           role: 'GUEST',
           recordedAt: 1700000002000,
@@ -4023,14 +3067,14 @@ describe('meeting room recording living-context route', () => {
             deliveryStatus: 'accepted',
             evidence: {
               source: 'room_chat_client_submit',
-              chatEventSource: 'browser_room_chat_window',
+              chatEventSource: 'browser_room_chat_panel',
               actor: 'guest',
               roomMessageId: 'chat-1',
               clientId: 'guest-client',
               messageCreatedAt: 1700000002000,
               messageLength: 'I found the retry bug in the queue worker.'.length,
               deliveryStatus: 'accepted',
-              surface: 'win95',
+              surface: 'standard',
               roomPhase: 'connected',
               durableObjectReplayExpected: true,
             },
@@ -4050,12 +3094,12 @@ describe('meeting room recording living-context route', () => {
             text: 'src/app.ts',
             evidence: {
               source: 'code_server_workspace',
-              observedBy: 'clippy_agent_bridge',
+              observedBy: 'agent_bridge',
               bridgeEventType: 'FILE_CHANGED',
               editorSurface: 'code-server',
               codeServerFileChangeId: 'code-server-file:workspace-session-1:1782590500000:modified:path_cb48a478:aaaaaaaaaaaaaaaa',
               action: 'modified',
-              surface: 'win95',
+              surface: 'standard',
               roomPhase: 'connected',
               workspaceStatus: 'READY',
               workspaceSessionId: 'workspace-session-1',
@@ -4091,7 +3135,7 @@ describe('meeting room recording living-context route', () => {
               capturedAtMs: 1700000002500,
               commandFingerprint: 'terminal_dc5964d6',
               commandLength: 8,
-              surface: 'win95',
+              surface: 'standard',
               roomPhase: 'connected',
               workspaceStatus: 'READY',
               workspaceSessionId: 'workspace-session-1',
@@ -4120,7 +3164,7 @@ describe('meeting room recording living-context route', () => {
               capturedAtMs: 1700000002600,
               outputFingerprint: 'terminal_4f2d0d8f',
               outputLength: 21,
-              surface: 'win95',
+              surface: 'standard',
               roomPhase: 'connected',
               workspaceStatus: 'READY',
               workspaceSessionId: 'workspace-session-1',
@@ -4130,7 +3174,7 @@ describe('meeting room recording living-context route', () => {
           },
         },
       ],
-      clippyPromptActivityLog: [
+      agentPromptActivityLog: [
         {
           role: 'HOST',
           recordedAt: 1700000003000,
@@ -4139,9 +3183,9 @@ describe('meeting room recording living-context route', () => {
             clientId: 'host-client',
             createdAt: 1700000003000,
             source: 'system',
-            promptEventSource: 'browser_proactive_clippy_prompt',
+            promptEventSource: 'browser_proactive_agent_prompt',
             promptTrigger: 'host_waiting_prepare_workspace',
-            surface: 'win95',
+            surface: 'standard',
             roomPhase: 'connected',
             workspaceStatus: 'READY',
             workspaceSessionId: 'workspace-session-1',
@@ -4151,30 +3195,30 @@ describe('meeting room recording living-context route', () => {
           },
         },
       ],
-      clippyInteractionActivityLog: [
+      agentInteractionActivityLog: [
         {
           role: 'GUEST',
           recordedAt: 1700000003200,
           event: {
-            id: 'clippy-user-chat-sync',
+            id: 'agent-user-chat-sync',
             clientId: 'guest-client',
             createdAt: 1700000003200,
             eventType: 'ai_chat_user',
             actor: 'guest',
             text: 'Can you inspect the failing test?',
             evidence: {
-              source: 'clippy_agent_chat_client_submit',
-              agentChatEventSource: 'browser_clippy_chat_window',
+              source: 'agent_chat_client_submit',
+              agentChatEventSource: 'browser_agent_chat_panel',
               bridgeMessageType: 'CHAT',
-              bridgeProtocol: 'clippy_dev_container_ws',
-              promptId: 'workspace-session-1:guest:prompt:1700000003200:clippy_0123abcd',
-              promptFingerprint: 'clippy_0123abcd',
+              bridgeProtocol: 'agent_dev_container_ws',
+              promptId: 'workspace-session-1:guest:prompt:1700000003200:agent_0123abcd',
+              promptFingerprint: 'agent_0123abcd',
               promptLength: 'Can you inspect the failing test?'.length,
               promptTimestamp: 1700000003200,
               browserQueuedBridgeMessage: true,
               bridgeDeliveryConfirmed: false,
               agent: null,
-              surface: 'win95',
+              surface: 'standard',
               roomPhase: 'connected',
               workspaceStatus: 'READY',
               workspaceSessionId: 'workspace-session-1',
@@ -4189,15 +3233,15 @@ describe('meeting room recording living-context route', () => {
           role: 'GUEST',
           recordedAt: 1700000003300,
           event: {
-            id: 'clippy-agent-status-sync',
+            id: 'agent-agent-status-sync',
             clientId: 'guest-client',
             createdAt: 1700000003300,
             eventType: 'ai_agent_status',
             actor: 'agent',
             text: 'devin is ready.',
             evidence: {
-              source: 'clippy_agent_bridge',
-              agentStatusEventSource: 'browser_clippy_agent_ws',
+              source: 'agent_bridge',
+              agentStatusEventSource: 'browser_agent_ws',
               agent: 'devin',
               status: 'idle',
               diagnosticSource: null,
@@ -4205,34 +3249,13 @@ describe('meeting room recording living-context route', () => {
               observedAt: '2026-06-27T20:00:00.000Z',
               capturedAtMs: 1700000003300,
               agentStatusEventId: 'agent-status:devin:1700000003300:agent_status:idle:none',
-              surface: 'win95',
+              surface: 'standard',
               roomPhase: 'connected',
               workspaceStatus: 'READY',
               workspaceSessionId: 'workspace-session-1',
               messageTimestamp: 1700000003300,
               agentResponseClaimed: false,
               durableObjectReplayExpected: true,
-            },
-          },
-        },
-      ],
-      fileSystemActivityLog: [
-        {
-          role: 'GUEST',
-          recordedAt: 1700000004000,
-          event: {
-            id: 'fs-notes-save',
-            clientId: 'guest-client',
-            createdAt: 1700000004000,
-            kind: 'UPSERT_FILE',
-            file: {
-              id: 'notepad',
-              name: 'notes.txt',
-              kind: 'text',
-              content: 'Candidate identified retry bug evidence.',
-              mimeType: 'text/plain',
-              createdAt: 1700000004000,
-              updatedAt: 1700000004000,
             },
             evidence: {
               source: 'win95_shared_file_system',
@@ -4306,46 +3329,28 @@ describe('meeting room recording living-context route', () => {
       }>;
     };
     expect(graphBody.events.map((event) => event.nodeType)).toEqual([
-      'session_room_surface_change',
-      'session_window_update',
-      'session_window_update',
-      'session_workspace_state',
       'session_chat_message',
       'session_code_editor_save',
       'session_terminal_command',
       'session_terminal_output',
+      'session_agent_prompt',
       'session_agent_status',
       'session_chat_user',
-      'session_clippy_prompt',
-      'session_file_change',
     ]);
     expect(graphBody.events.map((event) => event.narrativeText).join('\n')).toContain(
       'I found the retry bug in the queue worker.',
     );
-    expect(graphBody.events.find((event) => event.nodeType === 'session_workspace_state')?.properties).toMatchObject({
-      roomActivitySource: 'durable_object',
-      source: 'browser_workspace_state_observer',
-      workspaceEventSource: 'browser_workspace_state_observer',
-      workspaceStateSource: 'launch',
-      actor: 'host',
-      workspaceStateEventId: 'workspace-state:host:1700000001000:launch:workspace-session-1:READY',
-      capturedAtMs: 1700000001000,
-      workspaceTelemetryPersisted: true,
-      proxyUrlPersisted: false,
-      workspaceStatus: 'READY',
-      workspaceSessionId: 'workspace-session-1',
-    });
     expect(graphBody.events.find((event) => event.nodeType === 'session_chat_message')?.properties).toMatchObject({
       roomActivitySource: 'durable_object',
       source: 'room_chat_client_submit',
-      chatEventSource: 'browser_room_chat_window',
+      chatEventSource: 'browser_room_chat_panel',
       actor: 'guest',
       roomMessageId: 'chat-1',
       clientId: 'guest-client',
       messageCreatedAt: 1700000002000,
       messageLength: 'I found the retry bug in the queue worker.'.length,
       deliveryStatus: 'accepted',
-      surface: 'win95',
+      surface: 'standard',
       roomPhase: 'connected',
       durableObjectReplayExpected: true,
     });
@@ -4353,7 +3358,7 @@ describe('meeting room recording living-context route', () => {
       roomActivitySource: 'durable_object',
       roomActivityKind: 'code_server_file',
       source: 'code_server_workspace',
-      observedBy: 'clippy_agent_bridge',
+      observedBy: 'agent_bridge',
       bridgeEventType: 'FILE_CHANGED',
       editorSurface: 'code-server',
       action: 'modified',
@@ -4390,12 +3395,12 @@ describe('meeting room recording living-context route', () => {
       capturedAtMs: 1700000002600,
       workspaceSessionId: 'workspace-session-1',
     });
-    expect(graphBody.events.find((event) => event.nodeType === 'session_clippy_prompt')?.properties).toMatchObject({
+    expect(graphBody.events.find((event) => event.nodeType === 'session_agent_prompt')?.properties).toMatchObject({
       roomActivitySource: 'durable_object',
-      source: 'clippy_prompt_client_submit',
-      promptEventSource: 'browser_proactive_clippy_prompt',
+      source: 'agent_prompt_client_submit',
+      promptEventSource: 'browser_proactive_agent_prompt',
       promptTrigger: 'host_waiting_prepare_workspace',
-      surface: 'win95',
+      surface: 'standard',
       roomPhase: 'connected',
       workspaceStatus: 'READY',
       workspaceSessionId: 'workspace-session-1',
@@ -4405,55 +3410,35 @@ describe('meeting room recording living-context route', () => {
     });
     expect(graphBody.events.find((event) => event.nodeType === 'session_chat_user')?.properties).toMatchObject({
       roomActivitySource: 'durable_object',
-      roomActivityKind: 'clippy_interaction',
-      source: 'clippy_agent_chat_client_submit',
-      agentChatEventSource: 'browser_clippy_chat_window',
-      promptId: 'workspace-session-1:guest:prompt:1700000003200:clippy_0123abcd',
+      roomActivityKind: 'agent_interaction',
+      source: 'agent_chat_client_submit',
+      agentChatEventSource: 'browser_agent_chat_panel',
+      promptId: 'workspace-session-1:guest:prompt:1700000003200:agent_0123abcd',
       browserQueuedBridgeMessage: true,
       bridgeDeliveryConfirmed: false,
       agent: null,
       actor: 'guest',
-      roomEventId: 'clippy-user-chat-sync',
+      roomEventId: 'agent-user-chat-sync',
       workspaceSessionId: 'workspace-session-1',
     });
     expect(graphBody.events.find((event) => event.nodeType === 'session_agent_status')?.properties).toMatchObject({
       roomActivitySource: 'durable_object',
-      roomActivityKind: 'clippy_interaction',
-      source: 'clippy_agent_bridge',
-      agentStatusEventSource: 'browser_clippy_agent_ws',
+      roomActivityKind: 'agent_interaction',
+      source: 'agent_bridge',
+      agentStatusEventSource: 'browser_agent_ws',
       agent: 'devin',
       status: 'idle',
       agentStatusEventId: 'agent-status:devin:1700000003300:agent_status:idle:none',
       actor: 'agent',
-      roomEventId: 'clippy-agent-status-sync',
+      roomEventId: 'agent-agent-status-sync',
       workspaceSessionId: 'workspace-session-1',
     });
-    expect(graphBody.events.at(-1)?.properties).toMatchObject({
-      roomActivitySource: 'durable_object',
-      operation: 'upsert',
-      fileId: 'notepad',
-      contentPreview: 'Candidate identified retry bug evidence.',
-    });
-
     const nodeCountAfterFirstRead = sqlite.prepare(
       `SELECT COUNT(*) AS count
          FROM candidate_nodes
         WHERE candidate_id = ? AND source_type = 'meeting_session'`,
     ).get(graphBody.candidateId) as { count: number };
-    expect(nodeCountAfterFirstRead.count).toBe(12);
-    const windowUpdateRows = sqlite.prepare(
-      `SELECT extracted_properties_json
-         FROM candidate_nodes
-        WHERE candidate_id = ?
-          AND source_type = 'meeting_session'
-          AND node_type = 'session_window_update'
-        ORDER BY captured_at ASC, id ASC`,
-    ).all(graphBody.candidateId) as Array<{ extracted_properties_json: string }>;
-    expect(windowUpdateRows).toHaveLength(2);
-    expect(windowUpdateRows.map((row) => JSON.parse(row.extracted_properties_json).roomEventId).sort()).toEqual([
-      'evt-browser-move-1',
-      'evt-browser-move-2',
-    ]);
+    expect(nodeCountAfterFirstRead.count).toBe(7);
 
     const secondGraphRes = await app.request(`/meeting/${created.hostToken}/context-graph`, {
       method: 'GET',
@@ -4464,7 +3449,7 @@ describe('meeting room recording living-context route', () => {
          FROM candidate_nodes
         WHERE candidate_id = ? AND source_type = 'meeting_session'`,
     ).get(graphBody.candidateId) as { count: number };
-    expect(nodeCountAfterSecondRead.count).toBe(12);
+    expect(nodeCountAfterSecondRead.count).toBe(7);
     expect(doFetch).toHaveBeenCalledWith(expect.objectContaining({
       url: 'https://do/activity-log',
     }));
@@ -4473,30 +3458,7 @@ describe('meeting room recording living-context route', () => {
   it('syncs durable room activity into source-backed evidence when the host ends the room', async () => {
     const app = mountApp();
     const { ctx } = buildCtx();
-    const activitySnapshot = {
-      desktopActivityLog: [
-        {
-          role: 'HOST',
-          recordedAt: 1700000100000,
-          event: {
-            id: 'evt-enter-95-on-end',
-            clientId: 'host-client',
-            createdAt: 1700000100000,
-            kind: 'SET_ROOM_SURFACE',
-            surface: 'win95',
-            previousSurface: 'standard',
-            action: 'enter_desktop',
-            source: 'room_surface_control',
-            surfaceControlEventSource: 'browser_room_surface_toggle',
-            actor: 'host',
-            surfaceChangeId: 'surface:host:1700000100000:standard:win95',
-            capturedAtMs: 1700000100000,
-            roomPhase: 'connected',
-            durableObjectReplayExpected: true,
-          },
-        },
-      ],
-      chatActivityLog: [
+    const activitySnapshot = {      chatActivityLog: [
         {
           role: 'GUEST',
           recordedAt: 1700000101000,
@@ -4509,38 +3471,16 @@ describe('meeting room recording living-context route', () => {
             deliveryStatus: 'accepted',
             evidence: {
               source: 'room_chat_client_submit',
-              chatEventSource: 'browser_room_chat_window',
+              chatEventSource: 'browser_room_chat_panel',
               actor: 'guest',
               roomMessageId: 'chat-end-1',
               clientId: 'guest-client',
               messageCreatedAt: 1700000101000,
               messageLength: 'I would test the retry branch before touching the queue worker.'.length,
               deliveryStatus: 'accepted',
-              surface: 'win95',
+              surface: 'standard',
               roomPhase: 'connected',
               durableObjectReplayExpected: true,
-            },
-          },
-        },
-      ],
-      clippyPromptActivityLog: [],
-      fileSystemActivityLog: [
-        {
-          role: 'GUEST',
-          recordedAt: 1700000102000,
-          event: {
-            id: 'fs-end-notes-save',
-            clientId: 'guest-client',
-            createdAt: 1700000102000,
-            kind: 'UPSERT_FILE',
-            file: {
-              id: 'end-notes',
-              name: 'review-notes.txt',
-              kind: 'text',
-              content: 'Candidate plans a focused retry test.',
-              mimeType: 'text/plain',
-              createdAt: 1700000102000,
-              updatedAt: 1700000102000,
             },
             evidence: {
               source: 'win95_shared_file_system',
@@ -4559,6 +3499,7 @@ describe('meeting room recording living-context route', () => {
           },
         },
       ],
+      agentPromptActivityLog: [],
     };
     const doFetch = vi.fn(async (request: Request) => {
       const url = new URL(request.url);
@@ -4624,20 +3565,11 @@ describe('meeting room recording living-context route', () => {
       extracted_properties_json: string | null;
     }>;
     expect(evidenceRows.map((row) => row.node_type)).toEqual([
-      'session_room_surface_change',
       'session_chat_message',
-      'session_file_change',
     ]);
     expect(evidenceRows.map((row) => row.narrative_text).join('\n')).toContain(
       'I would test the retry branch before touching the queue worker.',
     );
-    const fileEvidence = evidenceRows.find((row) => row.node_type === 'session_file_change');
-    expect(JSON.parse(fileEvidence?.extracted_properties_json ?? '{}')).toMatchObject({
-      roomActivitySource: 'durable_object',
-      operation: 'upsert',
-      fileId: 'end-notes',
-      contentPreview: 'Candidate plans a focused retry test.',
-    });
 
     const contextRows = sqlite.prepare(
       `SELECT predicate
@@ -4646,9 +3578,7 @@ describe('meeting room recording living-context route', () => {
         ORDER BY observed_at ASC`,
     ).all() as Array<{ predicate: string }>;
     expect(contextRows.map((row) => row.predicate)).toEqual([
-      'session_event:room_surface_change',
       'session_event:chat_message',
-      'session_event:file_change',
     ]);
     expect(doFetch).toHaveBeenCalledWith(expect.objectContaining({
       url: 'https://do/activity-log',
@@ -4662,10 +3592,8 @@ describe('meeting room recording living-context route', () => {
       const url = new URL(request.url);
       if (url.pathname === '/activity-log') {
         return new Response(JSON.stringify({
-          desktopActivityLog: [],
           chatActivityLog: [],
-          clippyPromptActivityLog: [],
-          fileSystemActivityLog: [],
+          agentPromptActivityLog: [],
         }), {
           headers: { 'Content-Type': 'application/json' },
         });
@@ -4765,7 +3693,7 @@ describe('meeting room recording living-context route', () => {
       'session_recording_stop',
     ]);
     expect(evidenceRows.map((row) => row.narrative_text).join('\n')).toContain(
-      'Participant joined: Guest joined the 95 Until Infinity room',
+      'Participant joined: Guest joined the assessment room',
     );
     expect(evidenceRows.map((row) => row.narrative_text).join('\n')).toContain(
       'Recording started',
@@ -4807,10 +3735,10 @@ describe('meeting room recording living-context route', () => {
       .map((source) => source.text)
       .sort();
     expect(sourceEventTexts).toEqual([
-      'Guest joined the 95 Until Infinity room',
-      'Guest left the 95 Until Infinity room',
-      'Recording started for the 95 Until Infinity room',
-      'Recording stopped for the 95 Until Infinity room',
+      'Guest joined the assessment room',
+      'Guest left the assessment room',
+      'Recording started for the assessment room',
+      'Recording stopped for the assessment room',
     ]);
   });
 
@@ -5648,14 +4576,14 @@ describe('meeting room recording living-context route', () => {
         actor: 'guest',
         properties: {
           source: 'room_chat_client_submit',
-          chatEventSource: 'browser_room_chat_window',
+          chatEventSource: 'browser_room_chat_panel',
           actor: 'guest',
           roomMessageId: 'chat-message-progress-refresh',
           clientId: 'browser-client-progress-refresh',
           messageCreatedAt: 1782603000000,
           messageLength: text.length,
           deliveryStatus: 'pending',
-          surface: 'win95',
+          surface: 'standard',
           roomPhase: 'connected',
           durableObjectReplayExpected: true,
         },
@@ -6061,7 +4989,17 @@ describe('meeting room recording living-context route', () => {
         repositoryUrl: 'https://github.com/pipe/source-backed-worker',
         baseCommitSha,
       }),
-      `Repo: https://github.com/pipe/source-backed-worker\nBase commit: ${baseCommitSha}\nTask: Fix the source-backed worker retry path.`,
+      [
+        'Repo: https://github.com/pipe/source-backed-worker',
+        `Base commit: ${baseCommitSha}`,
+        'Task: Fix the source-backed worker retry path.',
+        'Success criteria:',
+        '- Existing worker tests pass',
+        'Expected evidence:',
+        '- Commit SHA on assessment branch',
+        '- Code diff for the retry path fix',
+        '- Test command output',
+      ].join('\n'),
       'challenge-content-hash',
       now,
     );
@@ -6368,7 +5306,7 @@ describe('meeting room recording living-context route', () => {
     ).get()).toEqual({ count: 0 });
   });
 
-  it('keeps standard meeting rooms off the workspace desktop path', async () => {
+  it('keeps standard meeting rooms off the workspace layout path', async () => {
     const app = mountApp();
     const { ctx } = buildCtx();
     const ensureBodies: unknown[] = [];
@@ -6424,7 +5362,6 @@ describe('meeting room recording living-context route', () => {
     expect(wsRes.status).toBe(200);
     expect(ensureBodies).toContainEqual(expect.objectContaining({
       meetingId: expect.any(String),
-      initialSurface: 'standard',
     }));
   });
 
@@ -6477,7 +5414,6 @@ describe('meeting room recording living-context route', () => {
     expect(wsRes.status).toBe(200);
     expect(ensureBodies).toContainEqual(expect.objectContaining({
       meetingId: expect.any(String),
-      initialSurface: 'standard',
     }));
   });
 
@@ -7756,11 +6692,11 @@ describe('meeting room recording living-context route', () => {
           videoEnabled: boolean;
           workspaceEnabled: boolean;
           recordingEnabled: boolean;
-          clippyEnabled: boolean;
+          agentEnabled: boolean;
           video?: boolean;
           workspace?: boolean;
           recording?: boolean;
-          clippy?: boolean;
+          agent?: boolean;
         };
       };
     };
@@ -7770,10 +6706,10 @@ describe('meeting room recording living-context route', () => {
       videoEnabled: true,
       workspaceEnabled: true,
       recordingEnabled: true,
-      clippyEnabled: true,
+      agentEnabled: true,
     });
     expect(guestRoom.room.features.video).toBeUndefined();
-    expect(guestRoom.room.features.clippy).toBeUndefined();
+    expect(guestRoom.room.features.agent).toBeUndefined();
 
     // Reopening the room must still produce /room/ links, never /video/ fallbacks.
     const reopenRes = await app.request(`/meetings/${created.meeting.id}/room`, {

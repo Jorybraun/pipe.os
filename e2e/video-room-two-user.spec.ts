@@ -168,7 +168,7 @@ async function installDevWorkspaceMocks(
       body.room.features = {
         ...(body.room.features ?? {}),
         workspaceEnabled: true,
-        clippyEnabled: true,
+        agentEnabled: true,
       };
       await route.fulfill({
         status: upstream.status(),
@@ -849,14 +849,14 @@ test.describe('two-user video room', () => {
     }
   });
 
-  test('syncs shared desktop windows across host and guest', async ({
+  test('shares assessment room chat between host and guest', async ({
     browser,
     page,
     request,
   }) => {
     const token = await getAuthToken(page);
     const { hostUrl, guestUrl } = await createMeetingRoom(request, token, {
-      title: 'E2E Shared Desktop Room',
+      title: 'E2E Standard Assessment Room',
     });
 
     const hostContext = await browser.newContext({
@@ -889,125 +889,41 @@ test.describe('two-user video room', () => {
       await expect(guest.getByTestId('call-stage')).toHaveAttribute('data-room-phase', 'connected', { timeout: 30_000 });
       await expect(host.getByTestId('standard-layout')).toBeVisible();
       await expect(guest.getByTestId('standard-layout')).toBeVisible();
+      await expect(host.getByTestId('call-stage')).toHaveAttribute('data-room-layout', 'standard');
+      await expect(guest.getByTestId('call-stage')).toHaveAttribute('data-room-layout', 'standard');
 
-      await host.getByTestId('enter-win95-desktop').click();
-      await expect(host.getByTestId('call-stage')).toHaveAttribute('data-room-layout', 'win95', { timeout: 10_000 });
-      await expect(guest.getByTestId('call-stage')).toHaveAttribute('data-room-layout', 'win95', { timeout: 10_000 });
-      await expect(host.getByTestId('win95-desktop')).toBeVisible();
-      await expect(guest.getByTestId('win95-desktop')).toBeVisible();
-      await expect(host.getByTestId('room-window-chat')).toBeVisible();
-      await expect(guest.getByTestId('room-window-chat')).toBeVisible();
+      await host.getByRole('button', { name: 'Toggle room chat' }).click();
+      await guest.getByRole('button', { name: 'Toggle room chat' }).click();
+      await expect(host.getByTestId('standard-chat')).toBeVisible();
+      await expect(guest.getByTestId('standard-chat')).toBeVisible();
 
-      await host.getByTestId('chat-input').fill('Host can send messages inside the shared room.');
+      await host.getByTestId('chat-input').fill('Host can send messages inside the assessment room.');
       await host.getByTestId('chat-send').click();
       await expect(guest.getByTestId('chat-window')).toContainText(
-        'Host can send messages inside the shared room.',
+        'Host can send messages inside the assessment room.',
         { timeout: 10_000 },
       );
 
-      await guest.getByTestId('chat-input').fill('Guest can reply from the same desktop.');
+      await guest.getByTestId('chat-input').fill('Guest can reply from the same room.');
       await guest.getByTestId('chat-send').click();
       await expect(host.getByTestId('chat-window')).toContainText(
-        'Guest can reply from the same desktop.',
+        'Guest can reply from the same room.',
         { timeout: 10_000 },
       );
-
-      const hostDesktopBox = await host.getByTestId('win95-desktop').boundingBox();
-      expect(hostDesktopBox).toBeTruthy();
-      await host.mouse.move(hostDesktopBox!.x + 260, hostDesktopBox!.y + 180);
-      await expect(guest.getByTestId('room-peer-cursor-host')).toBeVisible({ timeout: 10_000 });
-      await expect(guest.getByTestId('room-peer-cursor-host')).toContainText('Host');
-
-      const guestDesktopBox = await guest.getByTestId('win95-desktop').boundingBox();
-      expect(guestDesktopBox).toBeTruthy();
-      await guest.mouse.move(guestDesktopBox!.x + 420, guestDesktopBox!.y + 220);
-      await expect(host.getByTestId('room-peer-cursor-guest')).toBeVisible({ timeout: 10_000 });
-      await expect(host.getByTestId('room-peer-cursor-guest')).toContainText('Guest');
-
-      await host.getByTestId('room-desktop-icon-browser').dblclick();
-      await expect(host.getByTestId('room-window-browser')).toBeVisible();
-      await expect(guest.getByTestId('room-window-browser')).toBeVisible({ timeout: 10_000 });
-
-      const guestBrowserBeforeMove = await guest.getByTestId('room-window-browser').boundingBox();
-      expect(guestBrowserBeforeMove).toBeTruthy();
-      const hostBrowserTitle = host.getByTestId('room-window-browser').locator('.win95-title-bar');
-      const hostBrowserTitleBox = await hostBrowserTitle.boundingBox();
-      expect(hostBrowserTitleBox).toBeTruthy();
-      await host.mouse.move(hostBrowserTitleBox!.x + 80, hostBrowserTitleBox!.y + 8);
-      await host.mouse.down();
-      await host.mouse.move(hostBrowserTitleBox!.x + 240, hostBrowserTitleBox!.y + 92, { steps: 8 });
-      await host.mouse.up();
-      await expect.poll(async () => {
-        const movedBox = await guest.getByTestId('room-window-browser').boundingBox();
-        return movedBox?.x ?? 0;
-      }, { timeout: 10_000 }).toBeGreaterThan(guestBrowserBeforeMove!.x + 80);
-
-      await host.getByTestId('room-browser-address-input').fill('example.com');
-      await host.getByTestId('room-browser-go').click();
-      await expect(guest.getByTestId('room-browser-address-input')).toHaveValue('https://example.com', { timeout: 10_000 });
-      await host.getByTestId('room-browser-address-input').fill('https://www.google.com');
-      await host.getByTestId('room-browser-go').click();
-      await expect(host.getByTestId('room-browser-embed-blocked')).toContainText('blocks embedded browsing');
-      await expect(guest.getByTestId('room-browser-embed-blocked')).toContainText('blocks embedded browsing', { timeout: 10_000 });
-
-      await guest.getByTestId('room-desktop-icon-notepad').dblclick();
-      await expect(host.getByTestId('room-window-notepad')).toBeVisible({ timeout: 10_000 });
-      await guest.getByTestId('room-notepad-textarea').fill('Candidate notes sync in the shared desktop.');
-      await expect(host.getByTestId('room-notepad-textarea')).toHaveValue(
-        'Candidate notes sync in the shared desktop.',
-        { timeout: 10_000 },
-      );
-
-      await host.getByTestId('room-desktop-icon-paint').dblclick();
-      await expect(host.getByTestId('room-window-paint')).toBeVisible({ timeout: 10_000 });
-      await expect(guest.getByTestId('room-window-paint')).toBeVisible({ timeout: 10_000 });
-      await expect(host.getByRole('button', { name: 'Rectangle' })).toBeVisible();
-      await expect(host.getByRole('button', { name: 'Diamond' })).toBeVisible();
-      await expect(host.getByRole('button', { name: 'Arrow' })).toBeVisible();
-      await expect(host.getByRole('button', { name: 'Pan' })).toBeVisible();
-      await expect(host.getByRole('button', { name: 'Zoom in' })).toBeVisible();
-      await expect(host.getByRole('button', { name: 'Zoom out' })).toBeVisible();
-
-      const guestPaintCanvas = guest.getByTestId('room-paint-canvas');
-      const guestPaintBefore = await guestPaintCanvas.evaluate((canvas) => (
-        canvas instanceof HTMLCanvasElement ? canvas.toDataURL() : ''
-      ));
-      const hostPaintCanvas = host.getByTestId('room-paint-canvas');
-      const hostPaintBox = await hostPaintCanvas.boundingBox();
-      expect(hostPaintBox).toBeTruthy();
-      await host.getByRole('button', { name: 'Rectangle' }).click();
-      await host.mouse.move(hostPaintBox!.x + 120, hostPaintBox!.y + 120);
-      await host.mouse.down();
-      await host.mouse.move(hostPaintBox!.x + 340, hostPaintBox!.y + 240, { steps: 8 });
-      await host.mouse.up();
-      await expect.poll(async () => guestPaintCanvas.evaluate((canvas) => (
-        canvas instanceof HTMLCanvasElement ? canvas.toDataURL() : ''
-      )), { timeout: 10_000 }).not.toBe(guestPaintBefore);
-
-      await guest.getByTestId('room-window-browser').getByLabel('Close').click();
-      await expect(host.getByTestId('room-window-browser')).toHaveCount(0, { timeout: 10_000 });
-      await expect(guest.getByTestId('room-window-browser')).toHaveCount(0);
-
-      await host.getByTestId('win95-start-btn').click();
-      await host.getByText('Return to Call').click();
-      await expect(host.getByTestId('call-stage')).toHaveAttribute('data-room-layout', 'standard', { timeout: 10_000 });
-      await expect(guest.getByTestId('call-stage')).toHaveAttribute('data-room-layout', 'standard', { timeout: 10_000 });
-      await expect(host.getByTestId('standard-layout')).toBeVisible();
-      await expect(guest.getByTestId('standard-layout')).toBeVisible();
     } finally {
       await hostContext.close();
       await guestContext.close();
     }
   });
 
-  test('syncs a host-launched dev workspace iframe to the guest desktop', async ({
+  test('opens the controlled dev workspace in the assessment room', async ({
     browser,
     page,
     request,
   }) => {
     const token = await getAuthToken(page);
     const { hostUrl, guestUrl } = await createMeetingRoom(request, token, {
-      title: 'E2E Shared Dev Workspace Room',
+      title: 'E2E Dev Workspace Assessment',
     });
 
     const hostContext = await browser.newContext({
@@ -1039,15 +955,15 @@ test.describe('two-user video room', () => {
         guest.getByTestId('join-room').click(),
       ]);
 
-      await expect(host.getByTestId('call-stage')).toHaveAttribute('data-room-layout', 'win95', { timeout: 10_000 });
-      await expect(guest.getByTestId('call-stage')).toHaveAttribute('data-room-layout', 'win95', { timeout: 10_000 });
-      await expect(host.getByTestId('room-window-workspace')).toBeVisible();
-      await expect(guest.getByTestId('room-window-workspace')).toBeVisible();
-      await expect(guest.getByTestId('room-window-workspace')).toContainText('host can launch', {
+      await expect(host.getByTestId('call-stage')).toHaveAttribute('data-room-layout', 'standard', { timeout: 10_000 });
+      await expect(guest.getByTestId('call-stage')).toHaveAttribute('data-room-layout', 'standard', { timeout: 10_000 });
+      await expect(host.getByTestId('standard-primary-workspace')).toBeVisible();
+      await expect(guest.getByTestId('standard-primary-workspace')).toBeVisible();
+      await expect(guest.getByTestId('standard-primary-workspace')).toContainText('host can launch', {
         ignoreCase: true,
       });
 
-      await host.getByTestId('room-window-workspace').getByText('Launch workspace').click();
+      await host.getByTestId('standard-primary-workspace').getByText('Launch workspace').click();
 
       await expect(host.getByTestId('workspace-iframe')).toHaveAttribute('src', /e2e-workspace-session/, { timeout: 10_000 });
       await expect(guest.getByTestId('workspace-iframe')).toHaveAttribute('src', /e2e-workspace-session/, { timeout: 10_000 });
@@ -1105,11 +1021,8 @@ test.describe('two-user video room', () => {
       );
       expect(beforeRecordingDetail.recordingR2Key).toBeNull();
 
-      await expect(host.getByTestId('clippy-proactive-card')).toContainText('begin recording', { timeout: 10_000 });
-      await expect(host.getByTestId('clippy-action-start-recording')).toBeVisible();
-      await host.getByTestId('clippy-action-start-recording').click();
+      await host.getByTestId('start-recording').click();
       await expect(host.getByTestId('recording-state')).toContainText('Recording', { timeout: 10_000 });
-      await expect(host.getByTestId('win95-tray-recording')).toContainText('Recording', { timeout: 10_000 });
       await expect(host.getByTestId('stop-recording')).toBeEnabled();
       const recordingDetail = await waitForMeetingDetail(
         request,

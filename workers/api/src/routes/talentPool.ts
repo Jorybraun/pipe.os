@@ -1,0 +1,742 @@
+import { Hono, type Context } from 'hono';
+import { z } from 'zod';
+import { buildRuleBasedParsedCV, parseResumeText, persistParsedCV } from '../lib/cvParser';
+import { runCandidateIngestion } from '../lib/candidateDiscovery/orchestrate';
+import { processResumeFromR2 } from '../lib/enrichment/resumeIngestion';
+import type { Env, Variables } from '../types';
+
+type TalentPoolStatus =
+  | 'PROFILE_NEEDED'
+  | 'PROFILE_RECEIVED'
+  | 'PHONE_SCREENER_OFFERED'
+  | 'PHONE_SCREENER_SCHEDULED'
+  | 'CHALLENGE_PREPARING'
+  | 'CHALLENGE_READY'
+  | 'ASSESSMENT_IN_PROGRESS'
+  | 'COMPLETED';
+
+type PhoneScreenerStatus = 'NOT_REQUESTED' | 'PHONE_SCREENER_OFFERED' | 'PHONE_SCREENER_SCHEDULED';
+
+interface CandidateRow {
+  id: string;
+  owner_id: string;
+  name: string | null;
+  email: string | null;
+  invite_token: string;
+  status: 'INVITED' | 'IN_PROGRESS' | 'COMPLETED';
+  pipeline_id: string | null;
+  current_stage_id: string | null;
+  resume_s3_key: string | null;
+  phone_number: string | null;
+}
+
+interface IntakeRow {
+  status: TalentPoolStatus;
+  profile_r2_key: string | null;
+  profile_text_excerpt: string | null;
+  github_url: string | null;
+  linkedin_url: string | null;
+  portfolio_url: string | null;
+  phone_screener_consent: number;
+  phone_number: string | null;
+  timezone: string | null;
+  availability: string | null;
+  submitted_at: string | null;
+}
+
+interface ReadyChallengeRow {
+  title: string | null;
+  type: string | null;
+  github_repo_url: string | null;
+  github_pr_number: number | null;
+}
+
+interface CompletedChallengeRow {
+  interview_type: string | null;
+  updated_at: string | null;
+}
+
+interface ReadyChallenge {
+  title: string;
+  type: string;
+  entryUrl: string;
+  summary: string;
+}
+
+interface CompletedChallenge {
+  title: string;
+  completedAt: string | null;
+  summary: string;
+}
+
+interface TalentPoolDashboardResponse {
+  status: TalentPoolStatus;
+  candidateName: string | null;
+  profileReceivedAt: string | null;
+  phoneScreener: {
+    consent: boolean;
+    status: PhoneScreenerStatus;
+    phoneNumber: string | null;
+    timezone: string | null;
+    availability: string | null;
+  };
+  readyChallenges: ReadyChallenge[];
+  completedChallenges: CompletedChallenge[];
+}
+
+const route = new Hono<{ Bindings: Env; Variables: Variables }>();
+const MAX_PROFILE_FILE_BYTES = 10 * 1024 * 1024;
+const ALLOWED_PROFILE_MIME_TYPES = new Set([
+  'application/pdf',
+  'application/vnd.openxmlformats-officedocument.wordprocessingml.document',
+  'text/plain',
+]);
+
+function emptyStringToUndefined(value: unknown): unknown {
+  if (typeof value !== 'string') return value;
+  const trimmed = value.trim();
+  return trimmed.length === 0 ? undefined : trimmed;
+}
+
+const optionalUrl = z.preprocess(
+  emptyStringToUndefined,
+  z.string().trim().max(500).url().optional(),
+);
+
+function optionalText(max: number): z.ZodEffects<z.ZodOptional<z.ZodString>, string | undefined, unknown> {
+  return z.preprocess(
+    emptyStringToUndefined,
+    z.string().trim().max(max).optional(),
+  );
+}
+
+const resolveSchema = z.object({
+  inviteToken: z.string().trim().min(1).max(300),
+});
+
+const submitProfileSchema = z.object({
+  inviteToken: z.string().trim().min(1).max(300),
+  resumeText: z.string().trim().min(20).max(50_000),
+  githubUrl: optionalUrl,
+  linkedinUrl: optionalUrl,
+  portfolioUrl: optionalUrl,
+  phoneScreenerConsent: z.boolean().optional().default(false),
+  phoneNumber: z.preprocess(
+    emptyStringToUndefined,
+    z.string().trim().regex(/^\+[1-9]\d{1,14}$/, 'phoneNumber must be E.164 format').optional(),
+  ),
+  timezone: optionalText(100),
+  availability: optionalText(1000),
+});
+
+type SubmitProfileInput = z.infer<typeof submitProfileSchema>;
+const uploadProfileSchema = submitProfileSchema.omit({ resumeText: true }).extend({
+  resumeText: z.string().trim().max(50_000).optional().default(''),
+});
+type UploadProfileInput = z.infer<typeof uploadProfileSchema>;
+type TalentContext = Context<{ Bindings: Env; Variables: Variables }>;
+
+async function readJson(c: TalentContext): Promise<unknown> {
+  try {
+    return await c.req.json();
+  } catch {
+    return null;
+  }
+}
+
+function errorResponse(
+  c: TalentContext,
+  code: string,
+  message: string,
+  status: 400 | 404 | 413 | 415 | 500,
+): Response {
+  return c.json({ error: { code, message } }, status);
+}
+
+async function loadCandidateByInviteToken(
+  db: D1Database,
+  inviteToken: string,
+): Promise<CandidateRow | null> {
+  return await db
+    .prepare(
+      `SELECT id, owner_id, name, email, invite_token, status, pipeline_id,
+              current_stage_id, resume_s3_key, phone_number
+         FROM candidates
+        WHERE invite_token = ?1
+        LIMIT 1`,
+    )
+    .bind(inviteToken)
+    .first<CandidateRow>();
+}
+
+async function loadIntake(db: D1Database, candidateId: string): Promise<IntakeRow | null> {
+  return await db
+    .prepare(
+      `SELECT status, profile_r2_key, profile_text_excerpt, github_url, linkedin_url,
+              portfolio_url, phone_screener_consent, phone_number, timezone,
+              availability, submitted_at
+         FROM talent_pool_intakes
+        WHERE candidate_id = ?1
+        LIMIT 1`,
+    )
+    .bind(candidateId)
+    .first<IntakeRow>();
+}
+
+async function loadReadyChallenges(
+  db: D1Database,
+  candidateId: string,
+  inviteToken: string,
+): Promise<ReadyChallenge[]> {
+  const result = await db
+    .prepare(
+      `SELECT ch.title, ch.type, cca.github_repo_url, cca.github_pr_number
+         FROM candidate_challenge_assignment cca
+         JOIN challenges ch ON ch.id = cca.challenge_id
+        WHERE cca.candidate_id = ?1
+          AND cca.github_repo_url IS NOT NULL
+          AND cca.github_pr_number IS NOT NULL
+        ORDER BY cca.assigned_at DESC
+        LIMIT 5`,
+    )
+    .bind(candidateId)
+    .all<ReadyChallengeRow>();
+
+  return (result.results ?? []).map((row) => {
+    let repoName = 'the assigned repository';
+    if (row.github_repo_url) {
+      try {
+        repoName = new URL(row.github_repo_url).pathname.replace(/^\//, '') || repoName;
+      } catch {
+        repoName = 'the assigned repository';
+      }
+    }
+
+    return {
+      title: row.title ?? 'Code review challenge',
+      type: row.type ?? 'CODE_REVIEW',
+      entryUrl: `/assess/${encodeURIComponent(inviteToken)}`,
+      summary: row.github_pr_number
+        ? `Ready for ${repoName} PR #${row.github_pr_number}.`
+        : 'Ready to start.',
+    };
+  });
+}
+
+async function loadCompletedChallenges(
+  db: D1Database,
+  candidateId: string,
+): Promise<CompletedChallenge[]> {
+  const result = await db
+    .prepare(
+      `SELECT interview_type, updated_at
+         FROM scheduled_interviews
+        WHERE candidate_id = ?1
+          AND status = 'COMPLETED'
+        ORDER BY updated_at DESC
+        LIMIT 5`,
+    )
+    .bind(candidateId)
+    .all<CompletedChallengeRow>();
+
+  return (result.results ?? []).map((row) => ({
+    title: row.interview_type ? row.interview_type.replace(/_/g, ' ') : 'Completed work',
+    completedAt: row.updated_at,
+    summary: 'Completed',
+  }));
+}
+
+function phoneStatus(intake: IntakeRow | null): PhoneScreenerStatus {
+  if (!intake?.phone_screener_consent) return 'NOT_REQUESTED';
+  return intake.status === 'PHONE_SCREENER_SCHEDULED'
+    ? 'PHONE_SCREENER_SCHEDULED'
+    : 'PHONE_SCREENER_OFFERED';
+}
+
+function dashboardStatus(input: {
+  candidate: CandidateRow;
+  intake: IntakeRow | null;
+  readyChallenges: ReadyChallenge[];
+  completedChallenges: CompletedChallenge[];
+}): TalentPoolStatus {
+  if (input.candidate.status === 'COMPLETED' || input.completedChallenges.length > 0) {
+    return 'COMPLETED';
+  }
+  if (input.candidate.status === 'IN_PROGRESS') return 'ASSESSMENT_IN_PROGRESS';
+  if (input.readyChallenges.length > 0) return 'CHALLENGE_READY';
+  if (input.intake?.submitted_at || input.candidate.resume_s3_key) return 'CHALLENGE_PREPARING';
+  return 'PROFILE_NEEDED';
+}
+
+async function buildDashboard(
+  db: D1Database,
+  candidate: CandidateRow,
+): Promise<TalentPoolDashboardResponse> {
+  const intake = await loadIntake(db, candidate.id);
+  const readyChallenges = await loadReadyChallenges(db, candidate.id, candidate.invite_token);
+  const completedChallenges = await loadCompletedChallenges(db, candidate.id);
+  const status = dashboardStatus({ candidate, intake, readyChallenges, completedChallenges });
+
+  return {
+    status,
+    candidateName: candidate.name,
+    profileReceivedAt: intake?.submitted_at ?? (candidate.resume_s3_key ? intake?.submitted_at ?? null : null),
+    phoneScreener: {
+      consent: Boolean(intake?.phone_screener_consent),
+      status: phoneStatus(intake),
+      phoneNumber: intake?.phone_number ?? candidate.phone_number,
+      timezone: intake?.timezone ?? null,
+      availability: intake?.availability ?? null,
+    },
+    readyChallenges,
+    completedChallenges,
+  };
+}
+
+function excerpt(text: string): string {
+  const normalized = text.replace(/\s+/g, ' ').trim();
+  return normalized.length > 1200 ? `${normalized.slice(0, 1197)}...` : normalized;
+}
+
+function suggestedRepoFamilies(input: SubmitProfileInput): string[] {
+  const haystack = [
+    input.resumeText,
+    input.githubUrl ?? '',
+    input.linkedinUrl ?? '',
+    input.portfolioUrl ?? '',
+  ].join(' ').toLowerCase();
+  const families = new Set<string>();
+  if (haystack.includes('react') || haystack.includes('frontend')) families.add('frontend application code');
+  if (haystack.includes('worker') || haystack.includes('cloudflare')) families.add('edge and serverless systems');
+  if (haystack.includes('api') || haystack.includes('backend')) families.add('backend service code');
+  if (haystack.includes('accessibility') || haystack.includes('a11y')) families.add('accessible UI systems');
+  if (families.size === 0) families.add('general TypeScript application code');
+  return [...families];
+}
+
+function candidateSummary(candidate: CandidateRow, input: SubmitProfileInput): string {
+  const parts = [
+    candidate.name ? `Candidate: ${candidate.name}` : null,
+    candidate.email ? `Email: ${candidate.email}` : null,
+    `Profile excerpt: ${excerpt(input.resumeText)}`,
+    input.githubUrl ? `GitHub: ${input.githubUrl}` : null,
+    input.linkedinUrl ? `LinkedIn: ${input.linkedinUrl}` : null,
+    input.portfolioUrl ? `Portfolio: ${input.portfolioUrl}` : null,
+    input.phoneScreenerConsent ? 'Phone screener: candidate is open to a short phone screen.' : null,
+  ];
+  return parts.filter((part): part is string => Boolean(part)).join('\n');
+}
+
+function safeFileName(name: string): string {
+  const normalized = name.trim().replace(/[^a-zA-Z0-9._-]/g, '_').replace(/^_+/, '');
+  return normalized.slice(0, 160) || 'profile';
+}
+
+function normalizeProfileContentType(contentType: string, fileName: string): string {
+  const normalized = contentType.split(';')[0]?.trim().toLowerCase() ?? '';
+  if (normalized) return normalized;
+  if (fileName.toLowerCase().endsWith('.pdf')) return 'application/pdf';
+  if (fileName.toLowerCase().endsWith('.docx')) {
+    return 'application/vnd.openxmlformats-officedocument.wordprocessingml.document';
+  }
+  if (fileName.toLowerCase().endsWith('.txt')) return 'text/plain';
+  return 'application/octet-stream';
+}
+
+function formString(formData: FormData, field: string): string | undefined {
+  const value = formData.get(field);
+  return typeof value === 'string' ? value : undefined;
+}
+
+function formBoolean(formData: FormData, field: string): boolean {
+  const value = formString(formData, field);
+  return value === 'true' || value === '1' || value === 'on';
+}
+
+interface ProfileFileEntry {
+  name: string;
+  type: string;
+  size: number;
+  arrayBuffer: () => Promise<ArrayBuffer>;
+}
+
+function isProfileFileEntry(value: unknown): value is ProfileFileEntry {
+  if (typeof value !== 'object' || value === null) return false;
+  const candidate = value as Record<string, unknown>;
+  return (
+    typeof candidate.name === 'string'
+    && typeof candidate.type === 'string'
+    && typeof candidate.size === 'number'
+    && typeof candidate.arrayBuffer === 'function'
+  );
+}
+
+function queueBackgroundTask(c: TalentContext, label: string, task: () => Promise<unknown>): void {
+  let executionCtx: ExecutionContext | undefined;
+  try {
+    executionCtx = c.executionCtx;
+  } catch {
+    return;
+  }
+  if (!executionCtx || typeof executionCtx.waitUntil !== 'function') return;
+
+  executionCtx.waitUntil(
+    task().catch((err) => {
+      console.error(`[talentPool/${label}] background task failed:`, err instanceof Error ? err.message : String(err));
+    }),
+  );
+}
+
+async function ingestTextProfile(input: {
+  env: Env;
+  candidateId: string;
+  resumeText: string;
+}): Promise<void> {
+  const parsed = await parseResumeText({
+    resumeText: input.resumeText,
+    env: input.env,
+  });
+  const parsedCV = parsed?.parsedCV ?? buildRuleBasedParsedCV(input.resumeText);
+  await persistParsedCV(input.env.DB, input.candidateId, parsedCV);
+  await runCandidateIngestion({
+    env: input.env,
+    db: input.env.DB,
+    candidateId: input.candidateId,
+    parsed: parsedCV,
+    resumeText: input.resumeText,
+    decompositionResult: parsed?.decompositionResult ?? null,
+  });
+}
+
+function queueProfileIngestion(input: {
+  c: TalentContext;
+  candidateId: string;
+  profileKey: string;
+  contentType: string;
+  resumeText: string;
+}): void {
+  const trimmedText = input.resumeText.trim();
+  if (trimmedText.length >= 20) {
+    queueBackgroundTask(
+      input.c,
+      'text-ingestion',
+      () => ingestTextProfile({
+        env: input.c.env,
+        candidateId: input.candidateId,
+        resumeText: trimmedText,
+      }),
+    );
+    return;
+  }
+
+  if (input.contentType === 'application/pdf') {
+    queueBackgroundTask(
+      input.c,
+      'pdf-ingestion',
+      () => processResumeFromR2({
+        env: input.c.env,
+        db: input.c.env.DB,
+        candidateId: input.candidateId,
+        r2Key: input.profileKey,
+      }),
+    );
+  }
+}
+
+async function ensureCandidateIngestionQueued(
+  db: D1Database,
+  candidateId: string,
+  input: SubmitProfileInput,
+  now: string,
+): Promise<void> {
+  await db
+    .prepare(
+      `INSERT INTO candidate_ingestion (
+         candidate_id, status, github_url, linkedin_url, current_step, created_at, updated_at
+       )
+       VALUES (?1, 'pending', ?2, ?3, 'talent_pool_profile_received', ?4, ?4)
+       ON CONFLICT(candidate_id) DO UPDATE SET
+         status = CASE
+           WHEN status IN ('embedded', 'enriched', 'matched') THEN status
+           ELSE 'pending'
+         END,
+         github_url = COALESCE(excluded.github_url, github_url),
+         linkedin_url = COALESCE(excluded.linkedin_url, linkedin_url),
+         current_step = 'talent_pool_profile_received',
+         error_text = NULL,
+         updated_at = excluded.updated_at`,
+    )
+    .bind(candidateId, input.githubUrl ?? null, input.linkedinUrl ?? null, now)
+    .run();
+}
+
+async function persistIntake(
+  c: TalentContext,
+  candidate: CandidateRow,
+  input: SubmitProfileInput,
+  now: string,
+  options: { profileKey?: string; profileExcerpt?: string } = {},
+): Promise<void> {
+  const profileKey = options.profileKey ?? `talent-intake/${candidate.id}/${now.replace(/[:.]/g, '-')}.txt`;
+  if (!options.profileKey) {
+    await c.env.STORAGE.put(profileKey, input.resumeText, {
+      httpMetadata: { contentType: 'text/plain; charset=utf-8' },
+      customMetadata: { source: 'talent_pool_intake' },
+    });
+  }
+
+  await c.env.DB
+    .prepare(
+      `INSERT INTO talent_pool_intakes (
+         candidate_id, status, profile_r2_key, profile_text_excerpt,
+         github_url, linkedin_url, portfolio_url, phone_screener_consent,
+         phone_number, timezone, availability, submitted_at, created_at, updated_at
+       )
+       VALUES (
+         ?1, 'CHALLENGE_PREPARING', ?2, ?3, ?4, ?5, ?6, ?7, ?8, ?9, ?10, ?11, ?11, ?11
+       )
+       ON CONFLICT(candidate_id) DO UPDATE SET
+         status = 'CHALLENGE_PREPARING',
+         profile_r2_key = excluded.profile_r2_key,
+         profile_text_excerpt = excluded.profile_text_excerpt,
+         github_url = excluded.github_url,
+         linkedin_url = excluded.linkedin_url,
+         portfolio_url = excluded.portfolio_url,
+         phone_screener_consent = excluded.phone_screener_consent,
+         phone_number = excluded.phone_number,
+         timezone = excluded.timezone,
+         availability = excluded.availability,
+         submitted_at = excluded.submitted_at,
+         updated_at = excluded.updated_at`,
+    )
+    .bind(
+      candidate.id,
+      profileKey,
+      options.profileExcerpt ?? excerpt(input.resumeText),
+      input.githubUrl ?? null,
+      input.linkedinUrl ?? null,
+      input.portfolioUrl ?? null,
+      input.phoneScreenerConsent ? 1 : 0,
+      input.phoneNumber ?? null,
+      input.timezone ?? null,
+      input.availability ?? null,
+      now,
+    )
+    .run();
+
+  await c.env.DB
+    .prepare(
+      `UPDATE candidates
+          SET resume_s3_key = ?1,
+              phone_number = COALESCE(?2, phone_number),
+              updated_at = ?3
+        WHERE id = ?4`,
+    )
+    .bind(profileKey, input.phoneNumber ?? null, now, candidate.id)
+    .run();
+
+  await ensureCandidateIngestionQueued(c.env.DB, candidate.id, input, now);
+}
+
+async function ensureChallengeDesignQueueItem(
+  db: D1Database,
+  candidate: CandidateRow,
+  input: SubmitProfileInput,
+  now: string,
+): Promise<void> {
+  const existing = await db
+    .prepare(
+      `SELECT id
+         FROM challenge_design_queue
+        WHERE candidate_id = ?1
+          AND status IN ('queued', 'in_review')
+        LIMIT 1`,
+    )
+    .bind(candidate.id)
+    .first<{ id: string }>();
+
+  const summary = candidateSummary(candidate, input);
+  const repoFamilies = JSON.stringify(suggestedRepoFamilies(input));
+
+  if (existing) {
+    await db
+      .prepare(
+        `UPDATE challenge_design_queue
+            SET candidate_summary = ?1,
+                suggested_repo_families = ?2,
+                updated_at = ?3
+          WHERE id = ?4`,
+      )
+      .bind(summary, repoFamilies, now, existing.id)
+      .run();
+    return;
+  }
+
+  await db
+    .prepare(
+      `INSERT INTO challenge_design_queue (
+         id, candidate_id, owner_id, status, candidate_summary, missing_signal,
+         inventory_failure_reason, suggested_repo_families, desired_assessment_signal,
+         proposed_challenge_type, validation_status, created_at, updated_at
+       )
+       VALUES (
+         ?1, ?2, ?3, 'queued', ?4, ?5, ?6, ?7, ?8, 'CODE_REVIEW', 'needs_design', ?9, ?9
+       )`,
+    )
+    .bind(
+      crypto.randomUUID(),
+      candidate.id,
+      candidate.owner_id,
+      summary,
+      'Needs a validated source-backed challenge assignment for the submitted candidate profile.',
+      'No ready challenge assignment was available at intake completion.',
+      repoFamilies,
+      'Assess code review judgment against source-backed production code once inventory is ready.',
+      now,
+    )
+    .run();
+}
+
+route.post('/resolve-token', async (c) => {
+  const parsed = resolveSchema.safeParse(await readJson(c));
+  if (!parsed.success) {
+    return errorResponse(c, 'BAD_REQUEST', 'inviteToken is required.', 400);
+  }
+
+  const candidate = await loadCandidateByInviteToken(c.env.DB, parsed.data.inviteToken);
+  if (!candidate) return errorResponse(c, 'NOT_FOUND', 'Invite not found.', 404);
+
+  return c.json(await buildDashboard(c.env.DB, candidate));
+});
+
+route.post('/upload-profile', async (c) => {
+  let formData: FormData;
+  try {
+    formData = await c.req.formData();
+  } catch {
+    return errorResponse(c, 'BAD_REQUEST', 'Request must be multipart/form-data.', 400);
+  }
+
+  const fileEntry = formData.get('file') as unknown;
+  if (!isProfileFileEntry(fileEntry)) {
+    return errorResponse(c, 'BAD_REQUEST', 'A profile file is required.', 400);
+  }
+
+  const contentType = normalizeProfileContentType(fileEntry.type, fileEntry.name);
+  if (!ALLOWED_PROFILE_MIME_TYPES.has(contentType)) {
+    return errorResponse(
+      c,
+      'UNSUPPORTED_MEDIA_TYPE',
+      'Upload a PDF, DOCX, or plain text profile file.',
+      415,
+    );
+  }
+
+  if (fileEntry.size > MAX_PROFILE_FILE_BYTES) {
+    return errorResponse(c, 'PAYLOAD_TOO_LARGE', 'Profile file exceeds the 10 MB limit.', 413);
+  }
+
+  const parsed = uploadProfileSchema.safeParse({
+    inviteToken: formString(formData, 'inviteToken'),
+    resumeText: formString(formData, 'resumeText') ?? '',
+    githubUrl: formString(formData, 'githubUrl'),
+    linkedinUrl: formString(formData, 'linkedinUrl'),
+    portfolioUrl: formString(formData, 'portfolioUrl'),
+    phoneScreenerConsent: formBoolean(formData, 'phoneScreenerConsent'),
+    phoneNumber: formString(formData, 'phoneNumber'),
+    timezone: formString(formData, 'timezone'),
+    availability: formString(formData, 'availability'),
+  });
+  if (!parsed.success) {
+    return errorResponse(
+      c,
+      'BAD_REQUEST',
+      parsed.error.issues[0]?.message ?? 'Profile upload payload is invalid.',
+      400,
+    );
+  }
+
+  const candidate = await loadCandidateByInviteToken(c.env.DB, parsed.data.inviteToken);
+  if (!candidate) return errorResponse(c, 'NOT_FOUND', 'Invite not found.', 404);
+
+  const now = new Date().toISOString();
+  const rawFileName = safeFileName(fileEntry.name);
+  const profileKey = `talent-intake/${candidate.id}/${now.replace(/[:.]/g, '-')}-${rawFileName}`;
+  const arrayBuffer = await fileEntry.arrayBuffer();
+  let resumeText = parsed.data.resumeText.trim();
+  if (contentType === 'text/plain' && resumeText.length === 0) {
+    resumeText = new TextDecoder().decode(arrayBuffer).trim().slice(0, 50_000);
+  }
+
+  const profileInput: SubmitProfileInput = {
+    ...parsed.data,
+    resumeText: resumeText.length >= 20 ? resumeText : `Uploaded profile file: ${rawFileName}`,
+  };
+
+  await c.env.STORAGE.put(profileKey, arrayBuffer, {
+    httpMetadata: { contentType },
+    customMetadata: {
+      source: 'talent_pool_intake',
+      candidateId: candidate.id,
+    },
+  });
+
+  await persistIntake(c, candidate, profileInput, now, {
+    profileKey,
+    profileExcerpt: resumeText.length >= 20 ? excerpt(resumeText) : `Uploaded ${rawFileName}`,
+  });
+  queueProfileIngestion({
+    c,
+    candidateId: candidate.id,
+    profileKey,
+    contentType,
+    resumeText,
+  });
+
+  const readyChallenges = await loadReadyChallenges(c.env.DB, candidate.id, candidate.invite_token);
+  if (readyChallenges.length === 0) {
+    await ensureChallengeDesignQueueItem(c.env.DB, candidate, profileInput, now);
+  }
+
+  const refreshed = await loadCandidateByInviteToken(c.env.DB, parsed.data.inviteToken);
+  if (!refreshed) return errorResponse(c, 'NOT_FOUND', 'Invite not found.', 404);
+
+  return c.json(await buildDashboard(c.env.DB, refreshed));
+});
+
+route.post('/submit-profile', async (c) => {
+  const parsed = submitProfileSchema.safeParse(await readJson(c));
+  if (!parsed.success) {
+    return errorResponse(
+      c,
+      'BAD_REQUEST',
+      parsed.error.issues[0]?.message ?? 'Profile payload is invalid.',
+      400,
+    );
+  }
+
+  const candidate = await loadCandidateByInviteToken(c.env.DB, parsed.data.inviteToken);
+  if (!candidate) return errorResponse(c, 'NOT_FOUND', 'Invite not found.', 404);
+
+  const now = new Date().toISOString();
+  await persistIntake(c, candidate, parsed.data, now);
+  queueProfileIngestion({
+    c,
+    candidateId: candidate.id,
+    profileKey: `talent-intake/${candidate.id}/${now.replace(/[:.]/g, '-')}.txt`,
+    contentType: 'text/plain',
+    resumeText: parsed.data.resumeText,
+  });
+
+  const readyChallenges = await loadReadyChallenges(c.env.DB, candidate.id, candidate.invite_token);
+  if (readyChallenges.length === 0) {
+    await ensureChallengeDesignQueueItem(c.env.DB, candidate, parsed.data, now);
+  }
+
+  const refreshed = await loadCandidateByInviteToken(c.env.DB, parsed.data.inviteToken);
+  if (!refreshed) return errorResponse(c, 'NOT_FOUND', 'Invite not found.', 404);
+
+  return c.json(await buildDashboard(c.env.DB, refreshed));
+});
+
+export { route as talentPoolPublic };

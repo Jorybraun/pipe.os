@@ -1,7 +1,20 @@
 import type { RoomPhase, RoomWorkspace } from '../types';
 
 export type RoomEvidenceActor = 'host' | 'guest';
-export type RoomEvidenceSurface = 'standard' | 'win95';
+export type RoomEvidenceSurface = 'standard' | 'assessment';
+
+const SHA256_HEX_RE = /^[a-f0-9]{64}$/i;
+const WORKSPACE_DIAGNOSTIC_LIMIT = 500;
+const WORKSPACE_REDACTED_SECRET = '[REDACTED_SECRET]';
+const BARE_SECRET_RE = /\b(?:cog|ghp|gho|ghu|ghs|ghr|devin)_[A-Za-z0-9_-]{20,}\b/g;
+const GITHUB_PAT_RE = /\bgithub_pat_[A-Za-z0-9_]{20,}\b/g;
+const OPENAI_KEY_RE = /\bsk-[A-Za-z0-9_-]{8,}\b/g;
+const BEARER_TOKEN_RE = /\b(Bearer\s+)[A-Za-z0-9._~+/=-]+/gi;
+const ENV_SECRET_ASSIGNMENT_RE = /\b([A-Za-z0-9_]*(?:API_KEY|AUTH_TOKEN|ACCESS_TOKEN|REFRESH_TOKEN|TOKEN|SECRET|PASSWORD))=([^\s"'`]+)/gi;
+const SECRET_QUERY_RE = /([?&](?:api_key|key|token|secret|password)=)[^&\s]+/gi;
+const ROOM_TOKEN_PATH_RE = /(\/api\/v1\/meeting-rooms\/)[^/\s]+/g;
+const FNV_32_OFFSET = 0x811c9dc5;
+const FNV_32_PRIME = 0x01000193;
 
 const SHA256_HEX_RE = /^[a-f0-9]{64}$/i;
 const WORKSPACE_DIAGNOSTIC_LIMIT = 500;
@@ -27,9 +40,12 @@ export interface CodeServerFileChangeEvidence {
   properties: Record<string, unknown>;
 }
 
-export interface WorkspaceStateDesktopEvent {
-  kind: 'WORKSPACE_STATE_CHANGED';
-  actor: RoomEvidenceActor;
+export interface WorkspaceStateEvidence {
+  text: string;
+  properties: Record<string, unknown>;
+}
+
+export interface WorkspaceStateSnapshot {
   workspaceStateEventId: string;
   capturedAtMs: number;
   status: string | null;
@@ -50,7 +66,7 @@ export interface WorkspaceStateDesktopEvent {
   ttlSource: string | null;
   expiresAt: string | null;
   expiringSoon: boolean;
-  source: 'browser_workspace_state_observer';
+  source: 'workspace_state_client_submit';
   workspaceEventSource: 'browser_workspace_state_observer';
   workspaceStateSource: 'initial_load' | 'launch' | 'refresh' | 'error';
   workspaceTelemetryPersisted: true;
@@ -175,7 +191,7 @@ export function buildCodeServerFileChangeEvidence(input: {
     text: filePath,
     properties: {
       source: 'code_server_workspace',
-      observedBy: 'clippy_agent_bridge',
+      observedBy: 'agent_bridge',
       bridgeEventType: 'FILE_CHANGED',
       editorSurface: 'code-server',
       codeServerFileChangeId,
@@ -195,14 +211,14 @@ export function buildCodeServerFileChangeEvidence(input: {
   };
 }
 
-export function buildWorkspaceStateDesktopEvent(input: {
+export function buildWorkspaceStateEvidence(input: {
   workspace: RoomWorkspace | null;
   actor: RoomEvidenceActor;
   source: 'initial_load' | 'launch' | 'refresh' | 'error';
   capturedAtMs: number;
   fallbackRepoUrl?: string | null;
   errorMessage?: string | null;
-}): WorkspaceStateDesktopEvent {
+}): WorkspaceStateEvidence {
   const session = input.workspace?.session ?? null;
   const errorMessage = redactWorkspaceDiagnostic(session?.errorMessage ?? input.errorMessage ?? null);
   const status = session?.status ?? (errorMessage ? 'ERROR' : input.workspace?.enabled ? 'NOT_LAUNCHED' : null);
@@ -210,9 +226,7 @@ export function buildWorkspaceStateDesktopEvent(input: {
   const capturedAtMs = Number.isFinite(input.capturedAtMs) ? Math.max(0, Math.round(input.capturedAtMs)) : 0;
   const stateIdSession = workspaceSessionId ?? 'no-session';
   const stateIdStatus = status ?? 'unknown';
-  return {
-    kind: 'WORKSPACE_STATE_CHANGED',
-    actor: input.actor,
+  const snapshot: WorkspaceStateSnapshot = {
     workspaceStateEventId: `workspace-state:${input.actor}:${capturedAtMs}:${input.source}:${stateIdSession}:${stateIdStatus}`,
     capturedAtMs,
     status,
@@ -233,10 +247,18 @@ export function buildWorkspaceStateDesktopEvent(input: {
     ttlSource: session?.ttlSource ?? null,
     expiresAt: session?.expiresAt ?? null,
     expiringSoon: Boolean(session?.expiringSoon),
-    source: 'browser_workspace_state_observer',
+    source: 'workspace_state_client_submit',
     workspaceEventSource: 'browser_workspace_state_observer',
     workspaceStateSource: input.source,
     workspaceTelemetryPersisted: true,
     proxyUrlPersisted: false,
+  };
+  const repoLabel = snapshot.repoUrl ?? 'unassigned repository';
+  return {
+    text: `Workspace ${snapshot.status ?? 'state'} for ${repoLabel}`,
+    properties: {
+      actor: input.actor,
+      ...snapshot,
+    },
   };
 }

@@ -11,7 +11,7 @@
 1. **Recruiter Onboarding & Role Discovery:** Structured interview agent (UAR or legacy) to build rich RCD. Wizard for match philosophy (validate/tailored/hybrid).
 2. **Candidate Intake & Enrichment:** Form for seed data (resume/LinkedIn/GitHub), automated public data enrichment, loose match preview.
 3. **Screening:** Automated conversational screener (profile_builder or role_fit modes) that fills graph gaps with calibrated probes. Coverage tracking and termination logic.
-4. **Technical Validation:** Code review challenge (multi-turn agent) and implementation challenge (issue-based). Scoring with BARS rubric and evidence. See [`code-review-product-readiness.md`](./code-review-product-readiness.md) for the CODE_REVIEW hypergraph, AI-pushback, recruiter-evidence, and feedback-loop contract. See [`candidate-assessment-cockpit-backlog.md`](./candidate-assessment-cockpit-backlog.md) for the code-first candidate cockpit plan that demotes Win95 to an optional skin.
+4. **Technical Validation:** Code review challenge (multi-turn agent) and implementation challenge (issue-based). Scoring with BARS rubric and evidence. See [`code-review-product-readiness.md`](./code-review-product-readiness.md) for the CODE_REVIEW hypergraph, AI-pushback, recruiter-evidence, and feedback-loop contract. See [`candidate-assessment-cockpit-backlog.md`](./candidate-assessment-cockpit-backlog.md) for the code-first candidate cockpit plan.
 5. **Matching & Review:** Per-element match reports with drill-down to evidence. Triangulation summary. Recruiter dashboard for override and decision.
 6. **Ongoing Relationship:** Candidate profile evolution view, opt-in updates.
 

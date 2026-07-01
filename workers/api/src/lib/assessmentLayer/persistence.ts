@@ -12,9 +12,8 @@ export type AssessmentSessionMode =
   | 'DEV_CONTAINER_REPO_TASK'
   | 'OPEN_SOURCE_BUG_FIX'
   | 'REPO_MATCHING'
-  | 'NINETY_FIVE_UNTIL_INFINITY_ROOM'
   | 'STANDARD_VIDEO_INTERVIEW'
-  | 'CLIPPY_DEVIN_INTERACTION'
+  | 'AI_DEVIN_INTERACTION'
   | 'VIDEO'
   | 'TECHNICAL'
   | 'SCREENING';
@@ -35,7 +34,7 @@ export type AssessmentActorType =
   | 'recruiter'
   | 'ai_agent'
   | 'ai_developer'
-  | 'clippy'
+  | 'agent'
   | 'devin'
   | 'dev_container'
   | 'system';

@@ -29,7 +29,7 @@ interface InviteCreationData {
     videoEnabled: boolean;
     workspaceEnabled: boolean;
     recordingEnabled: boolean;
-    clippyEnabled: boolean;
+    aiAssistantEnabled: boolean;
   };
   agentType?: string | null;
 }
@@ -140,7 +140,7 @@ export function InviteCreationModal({
   const [videoEnabled, setVideoEnabled] = useState(true);
   const [workspaceEnabled, setWorkspaceEnabled] = useState(true);
   const [recordingEnabled, setRecordingEnabled] = useState(true);
-  const [clippyEnabled, setClippyEnabled] = useState(true);
+  const [assistantEnabled, setAssistantEnabled] = useState(true);
   const [agentType, setAgentType] = useState<string>('none');
   const [isCreating, setIsCreating] = useState(false);
   const [createError, setCreateError] = useState<string | null>(null);
@@ -290,7 +290,7 @@ export function InviteCreationModal({
         videoEnabled,
         workspaceEnabled,
         recordingEnabled,
-        clippyEnabled,
+        aiAssistantEnabled: assistantEnabled,
       };
       if (agentType !== 'none') {
         inviteData.agentType = agentType;
@@ -417,7 +417,7 @@ export function InviteCreationModal({
                     ? `${linkLabel} is ready, but email delivery failed. Copy and send it manually.`
                     : `${linkLabel} is ready. Copy it or send it from the interview page.`}
               </div>
-              {createdInvite.assessmentSetup?.message && (
+              {(createdInvite.assessmentSetup?.message || createdInvite.assessmentSetup?.nextActionLabel) && (
                 <div
                   style={{
                     fontSize: 10,
@@ -427,7 +427,10 @@ export function InviteCreationModal({
                     lineHeight: 1.5,
                   }}
                 >
-                  {createdInvite.assessmentSetup.message}
+                  {[
+                    createdInvite.assessmentSetup.message,
+                    createdInvite.assessmentSetup.nextActionLabel,
+                  ].filter(Boolean).join(' Next: ')}
                 </div>
               )}
               <div
@@ -775,15 +778,15 @@ export function InviteCreationModal({
                   Recording
                 </label>
                 <label style={{ display: 'flex', alignItems: 'center', gap: 6, fontSize: 11, fontFamily: '"Space Mono", monospace', color: 'var(--pipe-text)', cursor: 'pointer' }}>
-                  <input type="checkbox" checked={clippyEnabled} onChange={(e) => setClippyEnabled(e.target.checked)} />
-                  Clippy AI
+                  <input type="checkbox" checked={assistantEnabled} onChange={(e) => setAssistantEnabled(e.target.checked)} />
+                  AI assistant
                 </label>
               </div>
             </div>
             )}
 
             {/* Agent selection */}
-            {clippyEnabled && showsRoomFeatures && supportsManualRepoOverride && (
+            {assistantEnabled && showsRoomFeatures && supportsManualRepoOverride && (
               <div style={{ marginBottom: 28 }}>
                 <label style={labelStyle}>AI AGENT</label>
                 <select

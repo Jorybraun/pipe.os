@@ -29,7 +29,7 @@ export interface RoomMetadata {
     videoEnabled: boolean;
     workspaceEnabled: boolean;
     recordingEnabled: boolean;
-    clippyEnabled: boolean;
+    agentEnabled: boolean;
   };
 }
 
@@ -130,8 +130,56 @@ export interface RoomAssessmentProgressCommit {
   baseCommitSha: string | null;
   commitSha: string | null;
   commitUrl: string | null;
+  submissionSource?: 'live_workspace' | 'manual_fallback' | 'mixed' | 'unknown';
+  submissionSourceLabel?: string;
+  integrity?: {
+    status: 'workspace_captured' | 'manual_needs_verification' | 'mixed_needs_review' | 'unknown_needs_review';
+    label: string;
+    detail: string;
+    tone: 'verified' | 'warning' | 'neutral';
+  };
   changedFiles: unknown[];
   occurredAt: string;
+}
+
+export type RoomAssessmentReadinessStatus =
+  | 'WAITING_FOR_CHALLENGE'
+  | 'READY_TO_START'
+  | 'WORK_IN_PROGRESS'
+  | 'READY_FOR_EVALUATION'
+  | 'EVALUATED'
+  | 'NEEDS_ATTENTION'
+  | 'CANCELLED';
+
+export interface RoomAssessmentReadinessItem {
+  id: string;
+  label: string;
+  required: boolean;
+  satisfied: boolean;
+  sourceRefTypes: string[];
+  missingImpact: string;
+}
+
+export interface RoomAssessmentReadinessSnapshot {
+  status: RoomAssessmentReadinessStatus;
+  label: string;
+  detail: string;
+  isReadyForEvaluation: boolean;
+  isUsableHiringSignal: boolean;
+  missingRequiredCount: number;
+  required: RoomAssessmentReadinessItem[];
+  confidence: RoomAssessmentReadinessItem[];
+}
+
+export interface RoomAssessmentChallengePacketContract {
+  schemaVersion: 'challenge-packet-contract-v1';
+  isComplete: boolean;
+  missingFields: string[];
+  hasRepositoryUrl: boolean;
+  hasBaseCommitSha: boolean;
+  hasTask: boolean;
+  hasSuccessCriteria: boolean;
+  hasExpectedEvidence: boolean;
 }
 
 export interface RoomAssessmentProgressSnapshot {
@@ -140,6 +188,13 @@ export interface RoomAssessmentProgressSnapshot {
   stage: string;
   nextAction: string;
   nextActionLabel: string;
+  assignmentTrust?: {
+    state: 'matched_challenge' | 'manual_challenge' | 'source_backed_challenge' | 'waiting_for_challenge';
+    label: string;
+    detail: string;
+    tone: 'matched' | 'manual' | 'waiting' | 'blocked' | 'neutral';
+  };
+  challengePacketContract?: RoomAssessmentChallengePacketContract;
   hasChallengePacket: boolean;
   hasWorkEvidence: boolean;
   hasMessageEvidence?: boolean;
@@ -182,6 +237,7 @@ export interface RoomAssessmentProgressSnapshot {
       sourceRefTypes: string[];
     }>;
   } | null;
+  readiness?: RoomAssessmentReadinessSnapshot;
 }
 
 export interface RoomWorkspaceLaunchResponse {

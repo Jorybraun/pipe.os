@@ -478,7 +478,7 @@ describe('GET /interviews/:id detail', () => {
         video_enabled INTEGER NOT NULL DEFAULT 1,
         workspace_enabled INTEGER NOT NULL DEFAULT 1,
         recording_enabled INTEGER NOT NULL DEFAULT 1,
-        clippy_enabled INTEGER NOT NULL DEFAULT 1,
+        agent_enabled INTEGER NOT NULL DEFAULT 1,
         transcript_status TEXT DEFAULT 'NONE',
         transcript_summary TEXT,
         transcript_json TEXT,
@@ -1299,6 +1299,10 @@ describe('GET /interviews/:id detail', () => {
       `Base commit: ${baseCommitSha}`,
       'Task: fix the popover cleanup regression.',
       'Success: commit a focused patch with tests.',
+      'Expected evidence:',
+      '- git commit SHA on a pipe-assessment branch',
+      '- code diff for the popover cleanup fix',
+      '- test output or verification note',
     ].join('\n');
     const commitText = `commit ${commitSha}\nAuthor: Candidate <candidate@example.com>\n\nFix popover cleanup.`;
     const diffText = 'diff --git a/src/popover.ts b/src/popover.ts\n+cleanupStaleHandler();';
@@ -1391,7 +1395,7 @@ describe('GET /interviews/:id detail', () => {
       INSERT INTO assessment_event_source_refs (
         id, event_id, source_ref_type, source_ref_id, source_span_id, evidence_role,
         locator_json, exact_text, content_hash, metadata_json, created_at
-      ) VALUES (?, ?, ?, ?, NULL, ?, ?, ?, ?, '{}', ?)
+      ) VALUES (?, ?, ?, ?, NULL, ?, ?, ?, ?, ?, ?)
     `).run(
       'assessment-source-progress-commit',
       'assessment-event-progress-commit',
@@ -1401,13 +1405,14 @@ describe('GET /interviews/:id detail', () => {
       JSON.stringify({ commitUrl: `https://github.com/candidate/widgets/commit/${commitSha}` }),
       commitText,
       sha256Hex(commitText),
+      JSON.stringify({ source: 'agent_bridge_workspace_finalize' }),
       now,
     );
     sqlite!.prepare(`
       INSERT INTO assessment_event_source_refs (
         id, event_id, source_ref_type, source_ref_id, source_span_id, evidence_role,
         locator_json, exact_text, content_hash, metadata_json, created_at
-      ) VALUES (?, ?, ?, ?, NULL, ?, ?, ?, ?, '{}', ?)
+      ) VALUES (?, ?, ?, ?, NULL, ?, ?, ?, ?, ?, ?)
     `).run(
       'assessment-source-progress-diff',
       'assessment-event-progress-commit',
@@ -1417,6 +1422,7 @@ describe('GET /interviews/:id detail', () => {
       JSON.stringify({ path: 'src/popover.ts', baseCommitSha, commitSha }),
       diffText,
       sha256Hex(diffText),
+      JSON.stringify({ source: 'agent_bridge_workspace_finalize' }),
       now,
     );
 
@@ -1428,10 +1434,28 @@ describe('GET /interviews/:id detail', () => {
         assessmentProgress: {
           stage: string;
           nextAction: string;
+          readiness: {
+            status: string;
+            isReadyForEvaluation: boolean;
+            isUsableHiringSignal: boolean;
+            missingRequiredCount: number;
+            confidence: Array<{ id: string; satisfied: boolean }>;
+          };
           hasChallengePacket: boolean;
           hasCommitSubmission: boolean;
           challenge: { sourceRefId: string } | null;
-          commit: { commitSha: string | null; repositoryUrl: string | null } | null;
+          commit: {
+            commitSha: string | null;
+            repositoryUrl: string | null;
+            submissionSource: string;
+            submissionSourceLabel: string;
+            integrity: {
+              status: string;
+              label: string;
+              detail: string;
+              tone: string;
+            };
+          } | null;
           evidenceSnippets: Array<{
             sourceRefType: string;
             evidenceRole: string;
@@ -1444,14 +1468,32 @@ describe('GET /interviews/:id detail', () => {
     expect(body.interview.assessmentProgress).toMatchObject({
       stage: 'READY_FOR_EVALUATION',
       nextAction: 'START_EVALUATION',
+      readiness: {
+        status: 'READY_FOR_EVALUATION',
+        isReadyForEvaluation: true,
+        isUsableHiringSignal: false,
+        missingRequiredCount: 0,
+      },
       hasChallengePacket: true,
       hasCommitSubmission: true,
       challenge: { sourceRefId: 'challenge-packet-progress-detail' },
       commit: {
         commitSha,
         repositoryUrl: 'https://github.com/open-source/widgets',
+        submissionSource: 'live_workspace',
+        submissionSourceLabel: 'Live workspace finalizer',
+        integrity: {
+          status: 'workspace_captured',
+          label: 'Workspace-captured commit',
+          detail: 'Captured by the live dev-container finalizer from the workspace HEAD and exact source refs.',
+          tone: 'verified',
+        },
       },
     });
+    expect(body.interview.assessmentProgress?.readiness.confidence).toEqual(expect.arrayContaining([
+      expect.objectContaining({ id: 'workspace_captured_commit', satisfied: true }),
+      expect.objectContaining({ id: 'test_run', satisfied: false }),
+    ]));
     expect(body.interview.assessmentProgress?.evidenceSnippets).toEqual(expect.arrayContaining([
       expect.objectContaining({
         sourceRefType: 'review_challenge_packet',
@@ -1479,6 +1521,10 @@ describe('GET /interviews/:id detail', () => {
       `Base commit: ${baseCommitSha}`,
       'Task: fix the start-evaluation regression.',
       'Success: commit a focused patch with tests.',
+      'Expected evidence:',
+      '- git commit SHA on a pipe-assessment branch',
+      '- code diff for the start-evaluation fix',
+      '- test output or verification note',
     ].join('\n');
     const commitText = `commit ${commitSha}\nAuthor: Candidate <candidate@example.com>\n\nFix start evaluation.`;
     const diffText = [
@@ -1728,6 +1774,10 @@ describe('GET /interviews/:id detail', () => {
       `Base commit: ${baseCommitSha}`,
       'Task: fix the start-evaluation regression with a real patch.',
       'Success: commit a focused patch with tests.',
+      'Expected evidence:',
+      '- git commit SHA on a pipe-assessment branch',
+      '- code diff for the start-evaluation fix',
+      '- test output or verification note',
     ].join('\n');
     const commitText = `commit ${commitSha}\nAuthor: Candidate <candidate@example.com>\n\nFix start evaluation.`;
     const diffText = [
@@ -1743,7 +1793,7 @@ describe('GET /interviews/:id detail', () => {
       action: 'modified',
       observedAt: now,
       fileContentHash: 'content_file_observation_hash',
-      observedBy: 'clippy_agent_bridge',
+      observedBy: 'agent_bridge',
       editorSurface: 'code-server',
     });
 
@@ -1884,7 +1934,7 @@ describe('GET /interviews/:id detail', () => {
       response: `\`\`\`json
 {
   summary: "Candidate made a focused source-backed change and cited the submitted diff evidence.",
-  recommendation: "mixed_evidence_human_review",
+  recommendation: "hire_now",
   claims: [
     {
       id: "focused-diff",
@@ -1931,6 +1981,7 @@ describe('GET /interviews/:id detail', () => {
         evaluation: {
           status: string;
           summary: string;
+          recommendation?: string | null;
           evidenceCoverage?: {
             schemaVersion?: string;
             expectedForHighConfidence?: Array<{ label?: string; satisfied?: boolean }>;
@@ -2023,6 +2074,7 @@ describe('GET /interviews/:id detail', () => {
       evaluation: {
         status: 'EVALUATED',
         summary: 'Fix the start-evaluation regression with a real patch: Candidate made a focused source-backed change and cited the submitted diff evidence.',
+        recommendation: 'mixed_evidence_human_review',
         evidenceCoverage: {
           schemaVersion: 'assessment-evidence-coverage-v1',
           expectedForHighConfidence: expect.arrayContaining([
@@ -2037,6 +2089,13 @@ describe('GET /interviews/:id detail', () => {
             message: 'No test_run source ref was attached to the session.',
             sourceRefCount: 1,
             sourceRefTypes: ['code_diff'],
+          }),
+          expect.objectContaining({
+            code: 'MODEL_RECOMMENDATION_UNSUPPORTED',
+            severity: 'warning',
+            message: 'AI evaluator returned unsupported recommendation "hire_now"; PIPE defaulted to human review.',
+            sourceRefCount: 0,
+            sourceRefTypes: [],
           }),
         ],
       },
@@ -2075,8 +2134,10 @@ describe('GET /interviews/:id detail', () => {
         schemaVersion?: string;
         expectedForHighConfidence?: Array<{ label?: string; satisfied?: boolean }>;
       };
+      recommendation?: string | null;
     };
     expect(reportOutput.challengeFocus).toBe('Fix the start-evaluation regression with a real patch');
+    expect(reportOutput.recommendation).toBe('mixed_evidence_human_review');
     expect(reportOutput.evidenceCoverage).toMatchObject({
       schemaVersion: 'assessment-evidence-coverage-v1',
     });
@@ -2116,6 +2177,10 @@ describe('GET /interviews/:id detail', () => {
       `Base commit: ${baseCommitSha}`,
       'Task: fix the assessment list progress regression.',
       'Success: commit a focused patch with tests.',
+      'Expected evidence:',
+      '- git commit SHA on a pipe-assessment branch',
+      '- code diff for the list progress fix',
+      '- test output or verification note',
     ].join('\n');
     const commitText = `commit ${commitSha}\nAuthor: Candidate <candidate@example.com>\n\nShow list progress.`;
     const diffText = 'diff --git a/src/list.ts b/src/list.ts\n+showAssessmentProgress();';
@@ -2526,6 +2591,20 @@ describe('GET /interviews/:id detail', () => {
         '2026-06-22T18:00:00.000Z', '2026-06-22T18:31:00.000Z', 'bug_finding'
       )
     `).run(JSON.stringify({
+      dimensions: {
+        issue_identification: 3,
+        prioritization: 3,
+        reasoning_quality: 3,
+      },
+      evidence: {
+        annotations: ['comment-1'],
+        pushback_threads: ['thread-1'],
+      },
+      metrics: {
+        true_finding_count: 1,
+        false_positive_count: 0,
+        bugs_found_pct: 50,
+      },
       overall: {
         score: 72,
         band: 'adequate',
@@ -2569,6 +2648,20 @@ describe('GET /interviews/:id detail', () => {
               };
             }>;
           }>;
+        } | null;
+        codeReviewScore: {
+          reviewSessionId: string;
+          status: string;
+          score: number | null;
+          band: string | null;
+          narrative: string | null;
+          strengths: string[];
+          growthAreas: string[];
+          provenance: {
+            rubricDimensionCount: number;
+            evidenceItemCount: number;
+            metricCount: number;
+          };
         } | null;
       };
     };
@@ -2630,6 +2723,11 @@ describe('GET /interviews/:id detail', () => {
       narrative: 'Candidate found the merge-blocking retry risk but missed one verification detail.',
       strengths: ['Concrete blocking comment tied to source behavior.'],
       growthAreas: ['Probe how they validate the timing cleanup under load.'],
+      provenance: {
+        rubricDimensionCount: 3,
+        evidenceItemCount: 2,
+        metricCount: 3,
+      },
     });
   });
 
@@ -4738,6 +4836,8 @@ describe('GET /interviews/:id detail', () => {
       'Assessment setup source: not_workspace_assessment',
       'Assessment setup blocks positive assessment: no',
       'Assessment setup message: none',
+      'Assessment setup next action: NONE',
+      'Assessment setup next action label: none',
       'Scheduled at: 2026-06-24T18:00:00.000Z',
       'Scheduling provider: none',
       'Scheduling URL: none',
@@ -4752,6 +4852,7 @@ describe('GET /interviews/:id detail', () => {
       assessmentSetupKind: 'not_applicable',
       assessmentSetupSource: 'not_workspace_assessment',
       assessmentSetupBlocksPositiveAssessment: false,
+      assessmentSetupNextAction: 'NONE',
       recruiterNotes: 'PIPE next action: ask how graph algorithms experience maps to repo review work.',
     });
 
@@ -5412,15 +5513,9 @@ describe('GET /interviews/:id detail', () => {
     const inviteBody = await inviteResponse.json() as {
       success: boolean;
       emailSent: boolean;
-      meetingUrl: string;
+      meetingUrl: string | null;
       deliveredUrl: string;
-      room: {
-        id: string;
-        sessionId: string;
-        hostUrl: string;
-        guestUrl: string;
-        expiresAt: string;
-      };
+      room: null;
     };
     expect(inviteBody).toMatchObject({
       success: true,
@@ -5429,15 +5524,8 @@ describe('GET /interviews/:id detail', () => {
     expect(inviteBody.deliveredUrl).toMatch(/^http:\/\/localhost:5173\/assess\/.+/);
     expect(inviteBody.deliveredUrl).not.toContain('/room/');
     expect(inviteBody.deliveredUrl).not.toContain('/video/');
-    expect(inviteBody.meetingUrl).toMatch(/^http:\/\/localhost:5175\/room\/.+/);
-    expect(inviteBody.room).toMatchObject({
-      id: expect.any(String),
-      sessionId: expect.any(String),
-      hostUrl: expect.stringMatching(/^http:\/\/localhost:5175\/room\/.+/),
-      guestUrl: inviteBody.meetingUrl,
-      expiresAt: expect.any(String),
-    });
-    expect(inviteBody.room.hostUrl).not.toBe(inviteBody.room.guestUrl);
+    expect(inviteBody.meetingUrl).toBeNull();
+    expect(inviteBody.room).toBeNull();
 
     const scheduledRow = sqlite!.prepare(
       `SELECT interview_type, meeting_url, invite_link_sent_at, email_sent_at
@@ -5450,16 +5538,15 @@ describe('GET /interviews/:id detail', () => {
       email_sent_at: string | null;
     };
     expect(scheduledRow.interview_type).toBe('CODE_REVIEW');
-    expect(scheduledRow.meeting_url).toBe(inviteBody.meetingUrl);
+    expect(scheduledRow.meeting_url).toBeNull();
     expect(scheduledRow.invite_link_sent_at).toEqual(expect.any(String));
     expect(scheduledRow.email_sent_at).toBeNull();
 
     expect(sqlite!.prepare(
       `SELECT COUNT(*) AS count
          FROM meetings
-        WHERE scheduled_interview_id = ?
-          AND meeting_url = ?`,
-    ).get(created.interview.id, inviteBody.meetingUrl)).toEqual({ count: 1 });
+        WHERE scheduled_interview_id = ?`,
+    ).get(created.interview.id)).toEqual({ count: 0 });
     expect(sqlite!.prepare(
       `SELECT COUNT(*) AS count
          FROM meeting_room_tokens mrt
@@ -5468,7 +5555,7 @@ describe('GET /interviews/:id detail', () => {
         WHERE m.scheduled_interview_id = ?
           AND mrt.role = 'GUEST'
           AND mrt.revoked_at IS NULL`,
-    ).get(created.interview.id)).toEqual({ count: 1 });
+    ).get(created.interview.id)).toEqual({ count: 0 });
 
     const graphRows = sqlite!.prepare(
       `SELECT cr.record_type,
@@ -5512,7 +5599,7 @@ describe('GET /interviews/:id detail', () => {
       'Recipient email: barbara@example.com',
       expect.stringMatching(/^Subject: Assessment invitation — Interview \(.+\)$/),
       `Delivered URL: ${inviteBody.deliveredUrl}`,
-      `Room URL: ${inviteBody.meetingUrl}`,
+      'Room URL: none',
       'Custom message: Please join prepared code review discussion.',
       'Email sent: no',
       'Provider message id: none',
@@ -5808,7 +5895,7 @@ describe('GET /interviews/:id detail', () => {
     const inviteBody = await inviteResponse.json() as {
       success: boolean;
       emailSent: boolean;
-      meetingUrl: string;
+      meetingUrl: string | null;
       schedulingUrl: string | null;
       deliveredUrl: string;
     };
@@ -5821,7 +5908,7 @@ describe('GET /interviews/:id detail', () => {
     expect(inviteBody.deliveredUrl).toMatch(/^http:\/\/localhost:5173\/assess\/.+/);
     expect(inviteBody.deliveredUrl).not.toBe(schedulingUrl);
     expect(inviteBody.deliveredUrl).not.toContain('/room/');
-    expect(inviteBody.meetingUrl).toMatch(/^http:\/\/localhost:5175\/room\/.+/);
+    expect(inviteBody.meetingUrl).toBeNull();
 
     const scheduledRow = sqlite!.prepare(
       `SELECT meeting_url, scheduling_provider, scheduling_url
@@ -5833,7 +5920,7 @@ describe('GET /interviews/:id detail', () => {
       scheduling_url: string | null;
     };
     expect(scheduledRow).toMatchObject({
-      meeting_url: inviteBody.meetingUrl,
+      meeting_url: null,
       scheduling_provider: 'CALENDLY',
       scheduling_url: schedulingUrl,
     });
@@ -5853,7 +5940,7 @@ describe('GET /interviews/:id detail', () => {
       'Recipient email: frances@example.com',
       'Subject: Assessment invitation — Interview',
       `Delivered URL: ${inviteBody.deliveredUrl}`,
-      `Room URL: ${inviteBody.meetingUrl}`,
+      'Room URL: none',
       'Email sent: no',
       'Provider message id: none',
     ]));
@@ -6729,7 +6816,7 @@ describe('POST /interviews dev-container challenge (HAS-80)', () => {
         video_enabled INTEGER NOT NULL DEFAULT 1,
         workspace_enabled INTEGER NOT NULL DEFAULT 1,
         recording_enabled INTEGER NOT NULL DEFAULT 1,
-        clippy_enabled INTEGER NOT NULL DEFAULT 1,
+        agent_enabled INTEGER NOT NULL DEFAULT 1,
         transcript_status TEXT DEFAULT 'NONE',
         transcript_summary TEXT,
         transcript_json TEXT,
@@ -6997,6 +7084,8 @@ describe('POST /interviews dev-container challenge (HAS-80)', () => {
           status: string;
           kind: string;
           blocksPositiveAssessment: boolean;
+          nextAction: string;
+          nextActionLabel: string | null;
         };
       };
     };
@@ -7005,7 +7094,9 @@ describe('POST /interviews dev-container challenge (HAS-80)', () => {
       status: 'waiting_for_candidate_evidence',
       kind: 'auto_match',
       blocksPositiveAssessment: true,
+      nextAction: 'COLLECT_CANDIDATE_EVIDENCE',
     });
+    expect(body.interview.assessmentSetup.nextActionLabel).toContain('Send the intake link');
 
     const graphRow = sqlite!.prepare(
       `SELECT cr.qualifiers_json, ss.exact_text
@@ -7025,12 +7116,116 @@ describe('POST /interviews dev-container challenge (HAS-80)', () => {
       'Assessment setup source: contact_first_invite',
       'Assessment setup blocks positive assessment: yes',
       'Assessment setup message: This contact-first assessment invite has no candidate evidence yet. PIPE must ingest source-backed resume, transcript, chat, or interview evidence before selecting a PR task.',
+      'Assessment setup next action: COLLECT_CANDIDATE_EVIDENCE',
+      'Assessment setup next action label: Send the intake link or schedule a context call that captures source-backed examples of the candidate’s real engineering work.',
     ]));
     expect(JSON.parse(graphRow?.qualifiers_json ?? '{}')).toMatchObject({
       assessmentSetupStatus: 'waiting_for_candidate_evidence',
       assessmentSetupKind: 'auto_match',
       assessmentSetupSource: 'contact_first_invite',
       assessmentSetupBlocksPositiveAssessment: true,
+      assessmentSetupNextAction: 'COLLECT_CANDIDATE_EVIDENCE',
+    });
+  });
+
+  it('sends a CODE_REVIEW assessment link without requiring a video room destination', async () => {
+    seedDevContainerFixture();
+    const app = mountSchedulingApp({
+      APP_BASE_URL: 'https://app-dev.hire-pipe.com',
+      ENV: 'dev',
+      DEV_BASIC_AUTH_USER: 'pipetest',
+      DEV_BASIC_AUTH_PASSWORD: 'pipetest123',
+    } as Partial<Env>);
+
+    const createdResponse = await app.request('/interviews', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({
+        recipientName: 'Code Review Smoke',
+        recipientEmail: 'code-review-smoke@example.com',
+        meetingType: 'DIRECT_VIDEO_CALL',
+        interviewType: 'CODE_REVIEW',
+      }),
+    });
+    expect(createdResponse.status).toBe(201);
+    const created = await createdResponse.json() as {
+      interview: {
+        id: string;
+        interviewType: string;
+        candidateId: string | null;
+        assessmentSetup: {
+          status: string;
+          nextAction: string;
+        };
+      };
+    };
+    expect(created.interview).toMatchObject({
+      interviewType: 'CODE_REVIEW',
+      candidateId: null,
+      assessmentSetup: {
+        status: 'waiting_for_candidate_evidence',
+        nextAction: 'COLLECT_CANDIDATE_EVIDENCE',
+      },
+    });
+
+    const inviteResponse = await app.request(`/interviews/${created.interview.id}/invite`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({
+        email: 'code-review-smoke@example.com',
+        sendEmail: false,
+        message: 'Automated smoke for the async CODE_REVIEW assess-link path.',
+      }),
+    });
+    expect(inviteResponse.status).toBe(200);
+    const invited = await inviteResponse.json() as {
+      success: boolean;
+      emailSent: boolean;
+      deliveredUrl: string;
+      meetingUrl: string | null;
+      room: null;
+    };
+    expect(invited).toMatchObject({
+      success: true,
+      emailSent: false,
+    });
+    expect(invited.deliveredUrl).toContain('/assess/');
+    expect(invited.deliveredUrl).toContain('pipetest:pipetest123@app-dev.hire-pipe.com');
+    expect(invited.deliveredUrl).not.toContain('/room/');
+    expect(invited.meetingUrl).toBeNull();
+    expect(invited.room).toBeNull();
+
+    const row = sqlite!.prepare(
+      `SELECT c.invite_token, c.status, si.candidate_id, si.invite_link_sent_at
+         FROM scheduled_interviews si
+         JOIN candidates c ON c.id = si.candidate_id
+        WHERE si.id = ?`,
+    ).get(created.interview.id) as {
+      invite_token: string;
+      status: string;
+      candidate_id: string;
+      invite_link_sent_at: string | null;
+    } | undefined;
+    expect(row?.status).toBe('INVITED');
+    expect(row?.invite_token).not.toMatch(/^CLAIMED::/);
+    expect(row?.candidate_id).toBeTruthy();
+    expect(row?.invite_link_sent_at).toBeTruthy();
+
+    const deliveryContext = sqlite!.prepare(
+      `SELECT cr.narrative, cr.qualifiers_json, ss.exact_text
+         FROM context_records cr
+         JOIN context_record_source_spans crss ON crss.context_record_id = cr.id
+         JOIN source_spans ss ON ss.id = crss.source_span_id
+        WHERE cr.record_type = 'scheduled_interview_invite_delivery'
+        LIMIT 1`,
+    ).get() as { narrative: string; qualifiers_json: string; exact_text: string } | undefined;
+    expect(deliveryContext?.narrative).toContain('code-review-smoke@example.com');
+    expect(deliveryContext?.exact_text).toContain('Delivered URL: https://pipetest:pipetest123@app-dev.hire-pipe.com/assess/');
+    expect(deliveryContext?.exact_text).toContain('Room URL: none');
+    expect(deliveryContext?.exact_text).toContain('Email sent: no');
+    expect(JSON.parse(deliveryContext?.qualifiers_json ?? '{}')).toMatchObject({
+      scheduledInterviewId: created.interview.id,
+      emailSent: false,
     });
   });
 
@@ -7608,6 +7803,8 @@ describe('POST /interviews dev-container challenge (HAS-80)', () => {
           source: string;
           blocksPositiveAssessment: boolean;
           message: string | null;
+          nextAction: string;
+          nextActionLabel: string | null;
         };
         assessmentProgress: unknown;
       };
@@ -7622,8 +7819,10 @@ describe('POST /interviews dev-container challenge (HAS-80)', () => {
       kind: 'matched_repo_without_pr',
       source: 'matched_repo_id',
       blocksPositiveAssessment: true,
+      nextAction: 'ATTACH_CHALLENGE_PACKET',
     });
     expect(body.interview.assessmentSetup.message).toContain('no GitHub PR or task was assigned');
+    expect(body.interview.assessmentSetup.nextActionLabel).toContain('Attach a source-backed PR/task packet');
 
     expect(sqlite!.prepare(
       `SELECT COUNT(*) AS count
@@ -7663,7 +7862,7 @@ describe('POST /interviews dev-container challenge (HAS-80)', () => {
     const inviteBody = await inviteResponse.json() as {
       success: boolean;
       emailSent: boolean;
-      meetingUrl: string;
+      meetingUrl: string | null;
       deliveredUrl: string;
     };
 
@@ -7673,7 +7872,7 @@ describe('POST /interviews dev-container challenge (HAS-80)', () => {
     });
     expect(inviteBody.deliveredUrl).toMatch(/^http:\/\/localhost:5173\/assess\/.+/);
     expect(inviteBody.deliveredUrl).not.toContain('/room/');
-    expect(inviteBody.meetingUrl).toMatch(/^http:\/\/localhost:5175\/room\/.+/);
+    expect(inviteBody.meetingUrl).toBeNull();
 
     const row = sqlite!.prepare(
       `SELECT si.interview_type, si.candidate_id, si.github_repo_url, si.github_pr_number, c.invite_token
@@ -7816,7 +8015,7 @@ describe('POST /interviews dev-container challenge (HAS-80)', () => {
       applicationCount: number;
     };
     expect(graphCounts).toEqual({
-      meetingCount: 2,
+      meetingCount: 0,
       contextRecordCount: 4,
       applicationCount: 2,
     });

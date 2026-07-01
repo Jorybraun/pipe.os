@@ -1268,7 +1268,7 @@ export interface LivingContextReadModel {
   person: {
     personId: string;
     workspacePersonId: string;
-    applicationId: string;
+    applicationId: string | null;
     displayName: string | null;
     primaryEmail: string | null;
     primaryPhone: string | null;
@@ -1713,18 +1713,6 @@ export interface PostRespondResponse {
   rcd?: RoleContextDocument | null;
 }
 
-export interface RematchPriorDecisions {
-  excludedCount: number;
-  deferredCount: number;
-  totalDecisions: number;
-  excludedChallenges: Array<{
-    challengeId: string;
-    repoId: string;
-    prNumber: number;
-    verdict: 'accepted' | 'rejected';
-  }>;
-}
-
 export interface RematchResult {
   candidateId: string;
   status: string;
@@ -1742,7 +1730,6 @@ export interface RematchResult {
     eligible: boolean;
   } | null;
   reason?: string;
-  priorDecisions?: RematchPriorDecisions | null;
 }
 
 export interface ConceptGraphConcept {
@@ -1888,80 +1875,6 @@ export interface EvidenceConflictReport {
   lowSeverity: number;
   conflicts: EvidenceConflict[];
   analyzedAt: string;
-}
-
-// ── Evidence timeline ────────────────────────────────────────────────────────
-
-export interface TimelineEntry {
-  id: string;
-  timestamp: string;
-  entryType: 'interaction' | 'assertion' | 'context_record' | 'artifact';
-  interactionId: string | null;
-  interactionType: string | null;
-  narrative: string;
-  concepts: string[];
-  sourceCount: number;
-  confidence: number | null;
-}
-
-export interface PersonEvidenceTimeline {
-  workspacePersonId: string;
-  totalEntries: number;
-  entries: TimelineEntry[];
-}
-
-// ── Cross-candidate comparison ──────────────────────────────────────────────
-
-export interface ComparisonConceptEvidence {
-  conceptKey: string;
-  label: string;
-  evidenceCount: number;
-  bestStrength: number;
-  effectiveStrength: number;
-  sources: string[];
-}
-
-export interface CandidateEvidenceProfile {
-  candidateId: string;
-  workspacePersonId: string | null;
-  candidateName: string;
-  totalInteractions: number;
-  totalAssertions: number;
-  totalSourceSpans: number;
-  sourceDiversity: number;
-  interactionBreakdown: Record<string, number>;
-  topConcepts: ComparisonConceptEvidence[];
-  latestInteractionAt: string | null;
-  freshestEvidenceAt: string | null;
-}
-
-export interface ConceptComparison {
-  conceptKey: string;
-  label: string;
-  candidates: Array<{
-    candidateId: string;
-    evidenceCount: number;
-    bestStrength: number;
-    effectiveStrength: number;
-    coverageLevel: 'strong' | 'partial' | 'weak' | 'none';
-  }>;
-}
-
-export interface ComparisonSummary {
-  totalCandidates: number;
-  comparedConceptCount: number;
-  sharedConceptCount: number;
-  uniqueConceptsPerCandidate: Record<string, number>;
-  evidenceDiversityRanking: Array<{ candidateId: string; score: number }>;
-  evidenceDepthRanking: Array<{ candidateId: string; totalAssertions: number }>;
-  evidenceFreshnessRanking: Array<{ candidateId: string; freshestAt: string | null }>;
-}
-
-export interface CandidateComparisonReport {
-  pipelineId: string | null;
-  candidateProfiles: CandidateEvidenceProfile[];
-  conceptComparisons: ConceptComparison[];
-  summary: ComparisonSummary;
 }
 
 export interface PostSynthesizeResponse {

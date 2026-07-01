@@ -1,10 +1,13 @@
 import { spawnSync } from 'node:child_process';
 
 const PROFILE_MATRIX = [
+  // Standalone /assess must not run candidate-to-repo matching. These CV-only
+  // profiles should complete intake and hand off until a source-backed PR is
+  // assigned by the upstream ingestion/challenge-design path.
   {
     id: 'react-interaction-platform',
     label: 'React interaction platform engineer',
-    expectedOutcome: 'matched',
+    expectedOutcome: 'blocked',
     env: {
       CODE_REVIEW_SMOKE_GITHUB_HANDLE: 'code-review-smoke-react-platform',
       CODE_REVIEW_SMOKE_RESUME_TEXT: [
@@ -155,11 +158,10 @@ function summarizeSmoke(profile, parsed, durationMs) {
     recruiterBrowserSmokeSkipped: parsed?.recruiterBrowserSmoke?.skipped ?? null,
     recruiterMatchStatus: parsed?.submissionSmoke?.recruiterResults?.codeReviewMatchStatus ?? null,
     evidenceHyperedgeCount: parsed?.submissionSmoke?.recruiterResults?.evidenceHyperedgeCount ?? null,
-    blockedState: parsed?.blockedMatch?.state ?? null,
-    blockedPhase: parsed?.blockedMatch?.phase ?? null,
-    blockedReason: parsed?.blockedMatch?.reason ?? null,
-    blockedMatchableNodeCount: parsed?.blockedMatch?.matchableNodeCount ?? null,
-    blockedAutoRefresh: parsed?.blockedMatch?.autoRefresh ?? null,
+    candidateHandoffType: parsed?.candidateHandoff?.type ?? null,
+    candidateHandoffStageId: parsed?.candidateHandoff?.stageId ?? null,
+    candidateHandoffComplete: parsed?.candidateHandoff?.isComplete ?? null,
+    candidateHandoffTitle: parsed?.candidateHandoff?.title ?? null,
   };
 }
 

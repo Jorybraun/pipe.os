@@ -67,12 +67,21 @@ export type AssessmentSetupSource =
   | 'contact_first_invite'
   | 'candidate_id';
 
+export type AssessmentSetupNextAction =
+  | 'NONE'
+  | 'OPEN_ROOM_OR_WORKSPACE'
+  | 'COLLECT_CANDIDATE_EVIDENCE'
+  | 'RERUN_OR_ENRICH_MATCHING'
+  | 'ATTACH_CHALLENGE_PACKET';
+
 export interface AssessmentSetupProjection {
   status: AssessmentSetupStatus;
   kind: AssessmentSetupKind;
   source: AssessmentSetupSource;
   blocksPositiveAssessment: boolean;
   message: string | null;
+  nextAction?: AssessmentSetupNextAction;
+  nextActionLabel?: string | null;
   lastDeliveredUrl?: string | null;
   lastDeliveredUrlState?: 'active' | 'claimed' | 'stale' | null;
   lastDeliveredUrlMessage?: string | null;
@@ -114,6 +123,46 @@ export interface AssessmentEvidenceCoverageSnapshot {
   expectedForHighConfidence: AssessmentEvidenceCoverageItem[];
 }
 
+export type AssessmentProgressReadinessStatus =
+  | 'WAITING_FOR_CHALLENGE'
+  | 'READY_TO_START'
+  | 'WORK_IN_PROGRESS'
+  | 'READY_FOR_EVALUATION'
+  | 'EVALUATED'
+  | 'NEEDS_ATTENTION'
+  | 'CANCELLED';
+
+export interface AssessmentProgressReadinessItem {
+  id: string;
+  label: string;
+  required: boolean;
+  satisfied: boolean;
+  sourceRefTypes: string[];
+  missingImpact: string;
+}
+
+export interface AssessmentProgressReadinessSnapshot {
+  status: AssessmentProgressReadinessStatus;
+  label: string;
+  detail: string;
+  isReadyForEvaluation: boolean;
+  isUsableHiringSignal: boolean;
+  missingRequiredCount: number;
+  required: AssessmentProgressReadinessItem[];
+  confidence: AssessmentProgressReadinessItem[];
+}
+
+export interface AssessmentProgressChallengePacketContract {
+  schemaVersion: 'challenge-packet-contract-v1';
+  isComplete: boolean;
+  missingFields: string[];
+  hasRepositoryUrl: boolean;
+  hasBaseCommitSha: boolean;
+  hasTask: boolean;
+  hasSuccessCriteria: boolean;
+  hasExpectedEvidence: boolean;
+}
+
 export interface AssessmentProgressSnapshot {
   session: {
     id: string;
@@ -131,6 +180,14 @@ export interface AssessmentProgressSnapshot {
   stage: AssessmentProgressStage;
   nextAction: AssessmentProgressNextAction;
   nextActionLabel: string;
+  assignmentTrust?: {
+    state: 'matched_challenge' | 'manual_challenge' | 'source_backed_challenge' | 'waiting_for_challenge';
+    label: string;
+    detail: string;
+    tone: 'matched' | 'manual' | 'waiting' | 'blocked' | 'neutral';
+  };
+  readiness?: AssessmentProgressReadinessSnapshot;
+  challengePacketContract?: AssessmentProgressChallengePacketContract;
   hasChallengePacket: boolean;
   hasWorkEvidence: boolean;
   hasMessageEvidence?: boolean;
@@ -166,6 +223,14 @@ export interface AssessmentProgressSnapshot {
     baseCommitSha: string | null;
     commitSha: string | null;
     commitUrl: string | null;
+    submissionSource?: 'live_workspace' | 'manual_fallback' | 'mixed' | 'unknown';
+    submissionSourceLabel?: string;
+    integrity?: {
+      status: 'workspace_captured' | 'manual_needs_verification' | 'mixed_needs_review' | 'unknown_needs_review';
+      label: string;
+      detail: string;
+      tone: 'verified' | 'warning' | 'neutral';
+    };
     changedFiles: unknown[];
     occurredAt: string;
   } | null;
@@ -411,6 +476,11 @@ export interface CodeReviewScoreSummary {
   narrative: string | null;
   strengths: string[];
   growthAreas: string[];
+  provenance?: {
+    rubricDimensionCount: number;
+    evidenceItemCount: number;
+    metricCount: number;
+  };
   updatedAt: string;
 }
 

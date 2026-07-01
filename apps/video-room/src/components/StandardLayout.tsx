@@ -1,42 +1,60 @@
 import { useState, type ReactNode } from 'react';
 import { Circle, MessageSquare, Monitor, SquareTerminal, X } from 'lucide-react';
-import type { WindowManagerApi, WindowState } from '../hooks/useWindowManager';
+import type { ToolSurfaceManagerApi, ToolSurfaceState } from '../hooks/useToolSurfaceManager';
 
 interface StandardLayoutProps {
-  wm: WindowManagerApi;
-  renderWindowContent: (win: WindowState) => ReactNode;
+  toolSurfaces: ToolSurfaceManagerApi;
+  renderSurfaceContent: (surface: ToolSurfaceState) => ReactNode;
   assessmentHeader?: ReactNode;
   assessmentAside?: ReactNode;
   recordingLabel?: string;
   recordingActive?: boolean;
-  canEnterDesktop?: boolean;
-  onEnterDesktop?: () => void;
   modeLabel?: string;
   primarySurface?: 'video' | 'workspace';
 }
 
 export function StandardLayout({
-  wm,
-  renderWindowContent,
+  toolSurfaces,
+  renderSurfaceContent,
   assessmentHeader,
   assessmentAside,
   recordingLabel,
   recordingActive,
-  canEnterDesktop = false,
-  onEnterDesktop,
   modeLabel = 'Standard call',
   primarySurface = 'video',
 }: StandardLayoutProps): JSX.Element {
   const [chatOpen, setChatOpen] = useState(false);
   const [workspaceOpen, setWorkspaceOpen] = useState(false);
+  const [activeToolId, setActiveToolId] = useState<string | null>(null);
 
-  const videoWin = wm.windows.find((w) => w.windowType === 'video');
-  const chatWin = wm.windows.find((w) => w.windowType === 'chat');
-  const workspaceWin = wm.windows.find((w) => w.windowType === 'workspace');
+  const videoSurface = toolSurfaces.surfaces.find((surface) => surface.surfaceType === 'video');
+  const chatSurface = toolSurfaces.surfaces.find((surface) => surface.surfaceType === 'chat');
+  const workspaceSurface = toolSurfaces.surfaces.find((surface) => surface.surfaceType === 'workspace');
 
-  const hasWorkspace = Boolean(workspaceWin);
-  const workspaceIsPrimary = primarySurface === 'workspace' && Boolean(workspaceWin);
-  const primaryWin = workspaceIsPrimary ? workspaceWin : videoWin;
+  const hasWorkspace = Boolean(workspaceSurface);
+  const workspaceIsPrimary = primarySurface === 'workspace' && Boolean(workspaceSurface);
+  const primarySurfaceState = workspaceIsPrimary ? workspaceSurface : videoSurface;
+  const utilitySurfaces = toolSurfaces.surfaces.filter((surface) => (
+    surface.surfaceType !== 'video'
+    && surface.surfaceType !== 'chat'
+    && surface.surfaceType !== 'workspace'
+  ));
+  const activeTool = utilitySurfaces.find((surface) => surface.id === activeToolId)
+    ?? utilitySurfaces.find((surface) => surface.active)
+    ?? utilitySurfaces[0]
+    ?? null;
+
+  const selectTool = (surface: ToolSurfaceState): void => {
+    setActiveToolId(surface.id);
+    toolSurfaces.focusSurface(surface.id);
+  };
+
+  const closeTool = (surface: ToolSurfaceState): void => {
+    toolSurfaces.closeSurface(surface.id);
+    if (activeToolId === surface.id) {
+      setActiveToolId(null);
+    }
+  };
 
   return (
     <div
@@ -46,17 +64,17 @@ export function StandardLayout({
       {/* Main video/workspace area */}
       <div className={workspaceIsPrimary && assessmentAside ? 'standard-assessment-shell' : 'standard-video-area'}>
         <div className="standard-video-area" data-testid={workspaceIsPrimary ? 'standard-primary-workspace' : 'standard-primary-video'}>
-          {primaryWin ? (
-            renderWindowContent(primaryWin)
+          {primarySurfaceState ? (
+            renderSurfaceContent(primarySurfaceState)
           ) : (
             <div className="standard-video-placeholder">
               <Monitor size={48} />
               <p>Connecting...</p>
             </div>
           )}
-          {workspaceIsPrimary && videoWin && (
+          {workspaceIsPrimary && videoSurface && (
             <div className="standard-video-pip" data-testid="standard-video-pip">
-              {renderWindowContent(videoWin)}
+              {renderSurfaceContent(videoSurface)}
             </div>
           )}
         </div>
@@ -89,17 +107,6 @@ export function StandardLayout({
             <SquareTerminal size={18} />
           </button>
         )}
-        {canEnterDesktop && (
-          <button
-            className="standard-control-btn"
-            onClick={onEnterDesktop}
-            title="Open legacy desktop"
-            aria-label="Open legacy desktop"
-            data-testid="enter-win95-desktop"
-          >
-            <Monitor size={18} />
-          </button>
-        )}
         <button
           className={`standard-control-btn${chatOpen ? ' is-active' : ''}`}
           onClick={() => setChatOpen((v) => !v)}
@@ -116,8 +123,41 @@ export function StandardLayout({
         )}
       </div>
 
+      {utilitySurfaces.length > 0 && activeTool && (
+        <aside className="standard-tools-panel" data-testid="standard-tools-panel">
+          <header className="standard-tools-header">
+            <span>Assessment tools</span>
+            <button
+              type="button"
+              onClick={() => closeTool(activeTool)}
+              aria-label={`Close ${activeTool.title}`}
+            >
+              <X size={16} />
+            </button>
+          </header>
+          <nav className="standard-tools-tabs" aria-label="Assessment tools">
+            {utilitySurfaces.map((surface) => (
+              <button
+                key={surface.id}
+                type="button"
+                className={surface.id === activeTool.id ? 'is-active' : ''}
+                onClick={() => selectTool(surface)}
+              >
+                {surface.title}
+              </button>
+            ))}
+          </nav>
+          <div
+            className={`standard-tool-body is-${activeTool.surfaceType}`}
+            data-testid={`standard-tool-${activeTool.surfaceType}`}
+          >
+            {renderSurfaceContent(activeTool)}
+          </div>
+        </aside>
+      )}
+
       {/* Slide-in chat panel */}
-      {chatOpen && chatWin && (
+      {chatOpen && chatSurface && (
         <div className="standard-chat-panel" data-testid="standard-chat">
           <div className="standard-chat-header">
             <span>Room Chat</span>
@@ -126,13 +166,13 @@ export function StandardLayout({
             </button>
           </div>
           <div className="standard-chat-body">
-            {renderWindowContent(chatWin)}
+            {renderSurfaceContent(chatSurface)}
           </div>
         </div>
       )}
 
       {/* Full-screen workspace overlay */}
-      {workspaceOpen && workspaceWin && (
+      {workspaceOpen && workspaceSurface && (
         <div className="standard-workspace-overlay" data-testid="standard-workspace">
           <div className="standard-workspace-header">
             <span>Workspace</span>
@@ -141,7 +181,7 @@ export function StandardLayout({
             </button>
           </div>
           <div className="standard-workspace-body">
-            {renderWindowContent(workspaceWin)}
+            {renderSurfaceContent(workspaceSurface)}
           </div>
         </div>
       )}

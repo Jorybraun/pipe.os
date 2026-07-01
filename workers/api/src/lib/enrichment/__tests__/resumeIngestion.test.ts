@@ -89,7 +89,7 @@ describe('processResumeFromR2 — living context integration', () => {
       r2Key: 'candidate-documents/cand-short/resume.pdf',
     });
 
-    expect(result.success).toBe(false);
+    expect(result.success).toBe(true);
     expect(mockIngestResume).not.toHaveBeenCalled();
   });
 

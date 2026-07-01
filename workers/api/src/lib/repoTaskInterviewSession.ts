@@ -19,7 +19,7 @@ type Clock = () => string;
 export type RepoTaskInterviewMode =
   | AssessmentSessionMode
   | 'STANDARD_VIDEO_INTERVIEW'
-  | 'CLIPPY_DEVIN_INTERACTION';
+  | 'AI_DEVIN_INTERACTION';
 
 export type RepoTaskInterviewState =
   | 'INTAKE'
@@ -51,7 +51,7 @@ export type AssessmentEvidenceEventKind =
 export type RepoTaskAssessmentActorType =
   | CanonicalAssessmentActorType
   | 'ai_developer'
-  | 'clippy'
+  | 'agent'
   | 'devin';
 
 export type EvaluationReportStatus = AssessmentEvaluationStatus;
@@ -297,11 +297,35 @@ export interface AssessmentProgressSourceRef {
   locator: JsonObject;
 }
 
+export interface AssessmentProgressChallengePacketContract {
+  schemaVersion: 'challenge-packet-contract-v1';
+  isComplete: boolean;
+  missingFields: string[];
+  hasRepositoryUrl: boolean;
+  hasBaseCommitSha: boolean;
+  hasTask: boolean;
+  hasSuccessCriteria: boolean;
+  hasExpectedEvidence: boolean;
+}
+
 export interface AssessmentProgressLatestEvent {
   id: string;
   kind: string;
   sequence: number;
   occurredAt: string;
+}
+
+export type AssessmentProgressCommitIntegrityStatus =
+  | 'workspace_captured'
+  | 'manual_needs_verification'
+  | 'mixed_needs_review'
+  | 'unknown_needs_review';
+
+export interface AssessmentProgressCommitIntegrity {
+  status: AssessmentProgressCommitIntegrityStatus;
+  label: string;
+  detail: string;
+  tone: 'verified' | 'warning' | 'neutral';
 }
 
 export interface AssessmentProgressCommit {
@@ -312,8 +336,61 @@ export interface AssessmentProgressCommit {
   baseCommitSha: string | null;
   commitSha: string | null;
   commitUrl: string | null;
+  submissionSource: 'live_workspace' | 'manual_fallback' | 'mixed' | 'unknown';
+  submissionSourceLabel: string;
+  integrity: AssessmentProgressCommitIntegrity;
   changedFiles: JsonValue[];
   occurredAt: string;
+}
+
+type CommitSubmissionSource = AssessmentProgressCommit['submissionSource'];
+
+function commitSubmissionSourceLabel(source: CommitSubmissionSource): string {
+  switch (source) {
+    case 'live_workspace':
+      return 'Live workspace finalizer';
+    case 'manual_fallback':
+      return 'Manual evidence fallback';
+    case 'mixed':
+      return 'Mixed source refs';
+    case 'unknown':
+    default:
+      return 'Unknown capture source';
+  }
+}
+
+function commitSubmissionIntegrity(source: CommitSubmissionSource): AssessmentProgressCommitIntegrity {
+  switch (source) {
+    case 'live_workspace':
+      return {
+        status: 'workspace_captured',
+        label: 'Workspace-captured commit',
+        detail: 'Captured by the live dev-container finalizer from the workspace HEAD and exact source refs.',
+        tone: 'verified',
+      };
+    case 'manual_fallback':
+      return {
+        status: 'manual_needs_verification',
+        label: 'Manual commit evidence',
+        detail: 'Candidate-entered commit evidence passed source-ref validation, but still needs repository verification before final reliance.',
+        tone: 'warning',
+      };
+    case 'mixed':
+      return {
+        status: 'mixed_needs_review',
+        label: 'Mixed commit evidence',
+        detail: 'Commit evidence combines live workspace and manual source refs; review the audit trail before relying on it.',
+        tone: 'warning',
+      };
+    case 'unknown':
+    default:
+      return {
+        status: 'unknown_needs_review',
+        label: 'Unknown commit capture',
+        detail: 'Commit evidence passed structural validation, but its capture source was not identified.',
+        tone: 'neutral',
+      };
+  }
 }
 
 export interface AssessmentProgressEvidenceSnippet {
@@ -373,11 +450,55 @@ export interface AssessmentProgressEvaluationDiagnostic {
 
 export interface AssessmentProgressHumanDecision extends PersistedHumanAssessmentDecision {}
 
+export type AssessmentProgressAssignmentTrustState =
+  | 'matched_challenge'
+  | 'manual_challenge'
+  | 'source_backed_challenge'
+  | 'waiting_for_challenge';
+
+export interface AssessmentProgressAssignmentTrust {
+  state: AssessmentProgressAssignmentTrustState;
+  label: string;
+  detail: string;
+  tone: 'matched' | 'manual' | 'waiting' | 'blocked' | 'neutral';
+}
+
+export type AssessmentProgressReadinessStatus =
+  | 'WAITING_FOR_CHALLENGE'
+  | 'READY_TO_START'
+  | 'WORK_IN_PROGRESS'
+  | 'READY_FOR_EVALUATION'
+  | 'EVALUATED'
+  | 'NEEDS_ATTENTION'
+  | 'CANCELLED';
+
+export interface AssessmentProgressReadinessItem {
+  id: string;
+  label: string;
+  required: boolean;
+  satisfied: boolean;
+  sourceRefTypes: string[];
+  missingImpact: string;
+}
+
+export interface AssessmentProgressReadinessSnapshot {
+  status: AssessmentProgressReadinessStatus;
+  label: string;
+  detail: string;
+  isReadyForEvaluation: boolean;
+  isUsableHiringSignal: boolean;
+  missingRequiredCount: number;
+  required: AssessmentProgressReadinessItem[];
+  confidence: AssessmentProgressReadinessItem[];
+}
+
 export interface AssessmentProgressSnapshot {
   session: PersistedRepoTaskInterviewSession;
   stage: AssessmentProgressStage;
   nextAction: AssessmentProgressNextAction;
   nextActionLabel: string;
+  assignmentTrust: AssessmentProgressAssignmentTrust;
+  readiness: AssessmentProgressReadinessSnapshot;
   hasChallengePacket: boolean;
   hasWorkEvidence: boolean;
   hasMessageEvidence: boolean;
@@ -393,6 +514,7 @@ export interface AssessmentProgressSnapshot {
   sourceRefCounts: AssessmentEvidenceKindCount[];
   evidenceSnippets: AssessmentProgressEvidenceSnippet[];
   challenge: AssessmentProgressSourceRef | null;
+  challengePacketContract: AssessmentProgressChallengePacketContract;
   latestEvent: AssessmentProgressLatestEvent | null;
   commit: AssessmentProgressCommit | null;
   evaluation: AssessmentProgressEvaluation | null;
@@ -624,6 +746,39 @@ function normalizeCommitUrl(value: string | null | undefined, commitSha: string)
     throw new Error('commitUrl must be a GitHub HTTPS commit URL for commitSha');
   }
   return url.toString();
+}
+
+function normalizedRepositoryUrlFromCommitUrl(value: string): string {
+  const url = new URL(value);
+  const segments = url.pathname.split('/').filter(Boolean);
+  if (segments.length !== 4 || segments[2] !== 'commit') {
+    throw new Error('commitUrl must be a GitHub HTTPS commit URL for commitSha');
+  }
+  const [owner, repoWithSuffix] = segments;
+  if (!owner || !repoWithSuffix) {
+    throw new Error('commitUrl must identify a GitHub owner and repository');
+  }
+  const repo = repoWithSuffix.endsWith('.git') ? repoWithSuffix.slice(0, -4) : repoWithSuffix;
+  if (!repo) {
+    throw new Error('commitUrl must identify a GitHub owner and repository');
+  }
+  return `https://github.com/${owner}/${repo}`;
+}
+
+function assertCommitUrlBelongsToSubmittedRepository(input: {
+  commitUrl: string | null;
+  repositoryUrl: string;
+  forkRepositoryUrl: string | null;
+}): void {
+  if (!input.commitUrl) return;
+  const commitRepositoryUrl = normalizedRepositoryUrlFromCommitUrl(input.commitUrl);
+  const allowedRepositoryUrls = new Set<string>([input.repositoryUrl]);
+  if (input.forkRepositoryUrl) {
+    allowedRepositoryUrls.add(input.forkRepositoryUrl);
+  }
+  if (!allowedRepositoryUrls.has(commitRepositoryUrl)) {
+    throw new Error('commitUrl must belong to repositoryUrl or forkRepositoryUrl');
+  }
 }
 
 function normalizePullRequestUrl(
@@ -883,6 +1038,159 @@ function hasEventKind(
   return counts.some((count) => kinds.includes(count.kind) && count.count > 0);
 }
 
+function challengePacketLineValue(exactText: string, labels: readonly string[]): string | null {
+  const escapedLabels = labels.map((label) => label.replace(/[.*+?^${}()|[\]\\]/g, '\\$&'));
+  const match = exactText.match(new RegExp(`^\\s*(?:${escapedLabels.join('|')})\\s*:\\s*(.+)$`, 'im'));
+  return match?.[1]?.trim() || null;
+}
+
+function normalizeChallengePacketListItem(value: string): string {
+  return value
+    .trim()
+    .replace(/^[-*]\s+/, '')
+    .replace(/^\d+[.)]\s+/, '')
+    .trim();
+}
+
+function challengePacketSectionItems(exactText: string, labels: readonly string[]): string[] {
+  const normalizedLabels = new Set(labels.map((label) => label.toLowerCase()));
+  const lines = exactText.split(/\r?\n/);
+  const items: string[] = [];
+  let inSection = false;
+
+  for (const rawLine of lines) {
+    const line = rawLine.trim();
+    if (!line) continue;
+    const heading = line.match(/^([A-Za-z][A-Za-z\s-]{2,})\s*:\s*$/);
+    if (heading?.[1]) {
+      const normalizedHeading = heading[1].trim().toLowerCase();
+      inSection = normalizedLabels.has(normalizedHeading);
+      continue;
+    }
+    if (!inSection) continue;
+    if (/^[A-Za-z][A-Za-z\s-]{2,}\s*:/.test(line) && !/^[-*]|\d+[.)]/.test(line)) {
+      inSection = false;
+      continue;
+    }
+    const item = normalizeChallengePacketListItem(line);
+    if (item) items.push(item);
+  }
+
+  return items;
+}
+
+function hasValidGitHubRepositoryUrl(value: string | null): boolean {
+  if (!value) return false;
+  try {
+    normalizeGitHubRepositoryUrl(value, 'challenge repositoryUrl');
+    return true;
+  } catch {
+    return false;
+  }
+}
+
+function challengePacketContract(
+  challenge: AssessmentProgressSourceRef | null,
+): AssessmentProgressChallengePacketContract {
+  if (!challenge) {
+    return {
+      schemaVersion: 'challenge-packet-contract-v1',
+      isComplete: false,
+      missingFields: ['repo URL', 'base commit SHA', 'task', 'success criteria', 'expected evidence'],
+      hasRepositoryUrl: false,
+      hasBaseCommitSha: false,
+      hasTask: false,
+      hasSuccessCriteria: false,
+      hasExpectedEvidence: false,
+    };
+  }
+
+  const repositoryUrl = stringLocatorValue(challenge.locator, 'repositoryUrl')
+    ?? stringLocatorValue(challenge.locator, 'githubRepoUrl')
+    ?? stringLocatorValue(challenge.locator, 'repoUrl')
+    ?? challengePacketLineValue(challenge.exactText, ['Repo', 'Repository']);
+  const baseCommitSha = stringLocatorValue(challenge.locator, 'baseCommitSha')
+    ?? stringLocatorValue(challenge.locator, 'baseCommit')
+    ?? challengePacketLineValue(challenge.exactText, ['Base commit', 'Base commit SHA', 'Base']);
+  const task = challengePacketLineValue(challenge.exactText, ['Task', 'Title']);
+  const successCriteria = [
+    ...challengePacketSectionItems(challenge.exactText, ['Success criteria']),
+    ...(challengePacketLineValue(challenge.exactText, ['Success'])
+      ? [challengePacketLineValue(challenge.exactText, ['Success']) as string]
+      : []),
+  ];
+  const expectedEvidence = challengePacketSectionItems(challenge.exactText, ['Expected evidence']);
+
+  const contract = {
+    schemaVersion: 'challenge-packet-contract-v1' as const,
+    isComplete: false,
+    missingFields: [] as string[],
+    hasRepositoryUrl: hasValidGitHubRepositoryUrl(repositoryUrl),
+    hasBaseCommitSha: Boolean(baseCommitSha && COMMIT_SHA_PATTERN.test(baseCommitSha)),
+    hasTask: Boolean(task),
+    hasSuccessCriteria: successCriteria.length > 0,
+    hasExpectedEvidence: expectedEvidence.length > 0,
+  };
+  if (!contract.hasRepositoryUrl) contract.missingFields.push('repo URL');
+  if (!contract.hasBaseCommitSha) contract.missingFields.push('base commit SHA');
+  if (!contract.hasTask) contract.missingFields.push('task');
+  if (!contract.hasSuccessCriteria) contract.missingFields.push('success criteria');
+  if (!contract.hasExpectedEvidence) contract.missingFields.push('expected evidence');
+  contract.isComplete = contract.missingFields.length === 0;
+  return contract;
+}
+
+function progressAssignmentTrust(input: {
+  session: PersistedRepoTaskInterviewSession;
+  challenge: AssessmentProgressSourceRef | null;
+}): AssessmentProgressAssignmentTrust {
+  if (!input.challenge) {
+    return {
+      state: 'waiting_for_challenge',
+      label: 'No challenge packet',
+      detail: 'Assign a concrete repo URL, base commit, task, success criteria, and expected evidence before relying on this assessment.',
+      tone: 'blocked',
+    };
+  }
+
+  const matchedRepoId = input.challenge.locator.matchedRepoId;
+  const hasMatchedRepo = typeof matchedRepoId === 'number'
+    || (typeof matchedRepoId === 'string' && matchedRepoId.trim().length > 0);
+  if (hasMatchedRepo) {
+    return {
+      state: 'matched_challenge',
+      label: 'PIPE-matched challenge',
+      detail: 'PIPE selected this task from source-backed candidate evidence, role context, and repository demand.',
+      tone: 'matched',
+    };
+  }
+
+  if (input.challenge.sourceRefType === 'open_source_challenge_packet') {
+    return {
+      state: 'manual_challenge',
+      label: 'Manual task assignment',
+      detail: 'A recruiter supplied the task packet. Treat candidate work as real evidence, but not as proof that PIPE automatically matched the candidate to this repo.',
+      tone: 'manual',
+    };
+  }
+
+  if (input.challenge.sourceRefType === 'review_challenge_packet') {
+    return {
+      state: 'source_backed_challenge',
+      label: 'Source-backed challenge',
+      detail: 'A reviewable challenge packet is captured as source evidence; confirm match proof before treating assignment fit as automatic.',
+      tone: 'neutral',
+    };
+  }
+
+  return {
+    state: 'source_backed_challenge',
+    label: 'Source-backed task',
+    detail: 'The assigned task packet is captured as immutable source evidence.',
+    tone: 'neutral',
+  };
+}
+
 function modeRequiresCommit(mode: RepoTaskInterviewMode): boolean {
   return mode === 'OPEN_SOURCE_BUG_FIX'
     || mode === 'DEV_CONTAINER_REPO_TASK'
@@ -912,7 +1220,7 @@ function progressNextActionLabel(action: AssessmentProgressNextAction): string {
 
 function progressStageAndAction(input: {
   session: PersistedRepoTaskInterviewSession;
-  hasChallengePacket: boolean;
+  hasCompleteChallengePacket: boolean;
   hasWorkEvidence: boolean;
   hasCommitSubmission: boolean;
   hasFinalSubmission: boolean;
@@ -934,7 +1242,7 @@ function progressStageAndAction(input: {
     }
     return { stage: 'NEEDS_ATTENTION', nextAction: 'RESOLVE_DIAGNOSTIC' };
   }
-  if (!input.hasChallengePacket) {
+  if (!input.hasCompleteChallengePacket) {
     return { stage: 'WAITING_FOR_CHALLENGE', nextAction: 'ASSIGN_CHALLENGE' };
   }
   if (modeRequiresCommit(input.session.mode) && !input.hasCommitSubmission) {
@@ -950,6 +1258,243 @@ function progressStageAndAction(input: {
     return { stage: 'WORK_IN_PROGRESS', nextAction: 'CAPTURE_WORK_EVIDENCE' };
   }
   return { stage: 'CHALLENGE_READY', nextAction: 'OPEN_ROOM_OR_WORKSPACE' };
+}
+
+function assessmentReadinessStatusLabel(status: AssessmentProgressReadinessStatus): string {
+  switch (status) {
+    case 'WAITING_FOR_CHALLENGE':
+      return 'Waiting for challenge';
+    case 'READY_TO_START':
+      return 'Ready to start';
+    case 'WORK_IN_PROGRESS':
+      return 'Work evidence in progress';
+    case 'READY_FOR_EVALUATION':
+      return 'Ready for evaluation';
+    case 'EVALUATED':
+      return 'Evaluated';
+    case 'NEEDS_ATTENTION':
+      return 'Needs attention';
+    case 'CANCELLED':
+      return 'Cancelled';
+  }
+}
+
+function assessmentReadinessStatusDetail(input: {
+  status: AssessmentProgressReadinessStatus;
+  missingRequiredCount: number;
+  requiresCommit: boolean;
+  commit: AssessmentProgressCommit | null;
+  evaluation: AssessmentProgressEvaluation | null;
+  humanDecision: AssessmentProgressHumanDecision | null;
+}): string {
+  if (input.status === 'CANCELLED') return 'This assessment session was cancelled.';
+  if (input.status === 'NEEDS_ATTENTION') return 'Resolve the diagnostic before relying on this assessment.';
+  if (input.status === 'EVALUATED') {
+    if (input.humanDecision) return 'A human decision is recorded with source-backed evidence.';
+    if (input.evaluation?.status === 'EVALUATED') return 'A source-backed evaluation report is available for review.';
+    return 'The assessment has a terminal review state.';
+  }
+  if (input.status === 'WAITING_FOR_CHALLENGE') {
+    return 'Assign a concrete repo URL, base commit, task, success criteria, and expected evidence before candidate work starts.';
+  }
+  if (input.missingRequiredCount > 0) {
+    return `${input.missingRequiredCount} required proof ${input.missingRequiredCount === 1 ? 'item is' : 'items are'} still missing before evaluation.`;
+  }
+  if (input.requiresCommit && input.commit?.integrity.status !== 'workspace_captured') {
+    return 'Required evidence is captured, but commit provenance needs repository or workspace verification before final reliance.';
+  }
+  return 'Challenge, work evidence, and required source refs are captured; start source-backed AI or human evaluation.';
+}
+
+function buildAssessmentReadiness(input: {
+  session: PersistedRepoTaskInterviewSession;
+  hasChallengePacket: boolean;
+  challengePacketContract: AssessmentProgressChallengePacketContract;
+  hasWorkEvidence: boolean;
+  hasMessageEvidence: boolean;
+  hasDevContainerEvidence: boolean;
+  hasToolUsageEvidence: boolean;
+  hasCommitSubmission: boolean;
+  hasFinalSubmission: boolean;
+  hasAiInteraction: boolean;
+  hasTranscriptEvidence: boolean;
+  hasTestEvidence: boolean;
+  hasVerificationGap: boolean;
+  sourceRefCounts: readonly AssessmentEvidenceKindCount[];
+  commit: AssessmentProgressCommit | null;
+  evaluation: AssessmentProgressEvaluation | null;
+  humanDecision: AssessmentProgressHumanDecision | null;
+}): AssessmentProgressReadinessSnapshot {
+  const requiresCommit = modeRequiresCommit(input.session.mode);
+  const hasCodeDiff = hasEventKind(input.sourceRefCounts, ['code_diff']);
+  const hasGitCommit = hasEventKind(input.sourceRefCounts, ['git_commit']);
+  const challengeMissingImpact = input.hasChallengePacket
+    ? `Challenge packet is missing ${input.challengePacketContract.missingFields.join(', ')}.`
+      + ' PIPE cannot prove the assigned task contract yet.'
+    : 'Without a source-backed task packet, PIPE cannot prove what work was assigned.';
+  const required: AssessmentProgressReadinessItem[] = [
+    {
+      id: 'challenge_packet',
+      label: 'Complete challenge packet',
+      required: true,
+      satisfied: input.challengePacketContract.isComplete,
+      sourceRefTypes: [
+        'review_challenge_packet',
+        'open_source_challenge_packet',
+        'repo_task_challenge_packet',
+        'challenge_packet',
+      ],
+      missingImpact: challengeMissingImpact,
+    },
+    {
+      id: 'work_evidence',
+      label: 'Candidate work evidence',
+      required: true,
+      satisfied: input.hasWorkEvidence,
+      sourceRefTypes: [
+        'terminal_output',
+        'test_run',
+        'code_diff',
+        'ai_usage_event',
+        'room_chat_message',
+        'meeting_transcript_segment',
+        'dev_container_workspace_state',
+        'code_server_file_observation',
+      ],
+      missingImpact: 'Without work evidence, the session only proves an assignment existed.',
+    },
+  ];
+
+  if (requiresCommit) {
+    required.push(
+      {
+        id: 'assessment_commit',
+        label: 'Assessment branch commit',
+        required: true,
+        satisfied: input.hasCommitSubmission && hasGitCommit,
+        sourceRefTypes: ['git_commit'],
+        missingImpact: 'A real commit hash is required before evaluating open-source implementation work.',
+      },
+      {
+        id: 'code_diff',
+        label: 'Exact code diff',
+        required: true,
+        satisfied: hasCodeDiff,
+        sourceRefTypes: ['code_diff'],
+        missingImpact: 'The evaluator must inspect the exact diff from base commit to submitted commit.',
+      },
+    );
+  }
+
+  const confidence: AssessmentProgressReadinessItem[] = [
+    {
+      id: 'workspace_captured_commit',
+      label: 'Workspace-captured commit',
+      required: false,
+      satisfied: !requiresCommit || input.commit?.integrity.status === 'workspace_captured',
+      sourceRefTypes: ['git_commit', 'dev_container_workspace_state'],
+      missingImpact: 'Manual commit evidence can start review, but workspace capture is needed for highest trust.',
+    },
+    {
+      id: 'test_run',
+      label: 'Test or verification evidence',
+      required: false,
+      satisfied: input.hasTestEvidence || input.hasVerificationGap,
+      sourceRefTypes: ['test_run', 'verification_gap'],
+      missingImpact: 'Missing test evidence lowers confidence; an explicit verification gap is better than silence.',
+    },
+    {
+      id: 'ai_usage_transparency',
+      label: 'AI-use transparency',
+      required: false,
+      satisfied: input.hasAiInteraction,
+      sourceRefTypes: ['ai_usage_event'],
+      missingImpact: 'If the candidate used AI, prompts and responses should be captured honestly.',
+    },
+    {
+      id: 'transcript_context',
+      label: 'Conversation transcript context',
+      required: false,
+      satisfied: input.hasTranscriptEvidence,
+      sourceRefTypes: ['meeting_transcript_segment'],
+      missingImpact: 'Transcript context helps explain reasoning, tradeoffs, and communication quality.',
+    },
+    {
+      id: 'room_chat_context',
+      label: 'Room chat context',
+      required: false,
+      satisfied: input.hasMessageEvidence,
+      sourceRefTypes: ['room_chat_message'],
+      missingImpact: 'Chat messages can preserve clarifications and collaboration evidence.',
+    },
+    {
+      id: 'workspace_activity',
+      label: 'Workspace and tool activity',
+      required: false,
+      satisfied: input.hasDevContainerEvidence || input.hasToolUsageEvidence,
+      sourceRefTypes: [
+        'dev_container_workspace_state',
+        'code_server_file_observation',
+        'terminal_command',
+        'room_media_control',
+      ],
+      missingImpact: 'Workspace telemetry helps distinguish real implementation work from a pasted final answer.',
+    },
+  ];
+
+  const missingRequiredCount = required.filter((item) => !item.satisfied).length;
+  const isReadyForEvaluation = missingRequiredCount === 0
+    && input.session.state !== 'CANCELLED'
+    && input.session.state !== 'DIAGNOSTIC'
+    && input.evaluation?.status !== 'PROVENANCE_INCOMPLETE'
+    && input.evaluation?.status !== 'AI_DEVELOPER_UNAVAILABLE'
+    && input.evaluation?.status !== 'BLOCKED';
+  const hasReviewedOutcome = Boolean(input.humanDecision || input.evaluation?.status === 'EVALUATED');
+  const commitHighTrust = !requiresCommit || input.commit?.integrity.status === 'workspace_captured';
+  const isUsableHiringSignal = isReadyForEvaluation && hasReviewedOutcome && commitHighTrust;
+
+  let status: AssessmentProgressReadinessStatus;
+  if (input.session.state === 'CANCELLED') {
+    status = 'CANCELLED';
+  } else if (
+    input.session.state === 'DIAGNOSTIC'
+    || input.evaluation?.status === 'PROVENANCE_INCOMPLETE'
+    || input.evaluation?.status === 'AI_DEVELOPER_UNAVAILABLE'
+    || input.evaluation?.status === 'BLOCKED'
+    || input.evaluation?.status === 'NEEDS_MORE_EVIDENCE'
+    || input.evaluation?.status === 'NO_ROLE_SAFE_CHALLENGE'
+    || input.evaluation?.status === 'NEEDS_HUMAN_REVIEW'
+  ) {
+    status = 'NEEDS_ATTENTION';
+  } else if (input.humanDecision || input.evaluation?.status === 'EVALUATED') {
+    status = 'EVALUATED';
+  } else if (!input.challengePacketContract.isComplete) {
+    status = 'WAITING_FOR_CHALLENGE';
+  } else if (isReadyForEvaluation) {
+    status = 'READY_FOR_EVALUATION';
+  } else if (input.hasWorkEvidence || input.hasCommitSubmission || input.hasFinalSubmission) {
+    status = 'WORK_IN_PROGRESS';
+  } else {
+    status = 'READY_TO_START';
+  }
+
+  return {
+    status,
+    label: assessmentReadinessStatusLabel(status),
+    detail: assessmentReadinessStatusDetail({
+      status,
+      missingRequiredCount,
+      requiresCommit,
+      commit: input.commit,
+      evaluation: input.evaluation,
+      humanDecision: input.humanDecision,
+    }),
+    isReadyForEvaluation,
+    isUsableHiringSignal,
+    missingRequiredCount,
+    required,
+    confidence,
+  };
 }
 
 export class RepoTaskInterviewSessionStore {
@@ -1128,6 +1673,11 @@ export class RepoTaskInterviewSessionStore {
       ? normalizeGitHubRepositoryUrl(input.forkRepositoryUrl, 'forkRepositoryUrl')
       : null;
     const commitUrl = normalizeCommitUrl(input.commitUrl, input.commitSha);
+    assertCommitUrlBelongsToSubmittedRepository({
+      commitUrl,
+      repositoryUrl,
+      forkRepositoryUrl,
+    });
     const upstreamPullRequestUrl = normalizePullRequestUrl(
       input.upstreamPullRequestUrl,
       input.upstreamPrConsent,
@@ -1325,6 +1875,7 @@ export class RepoTaskInterviewSessionStore {
     const sourceRefCounts = await this.loadSourceRefCounts(session.id);
     const evidenceSnippets = await this.loadEvidenceSnippets(session.id);
     const challenge = await this.loadChallengeSourceRef(session.id);
+    const contract = challengePacketContract(challenge);
     const latestEvent = await this.loadLatestEvent(session.id);
     const commit = await this.loadLatestCommitSubmission(session.id);
     const evaluation = await this.loadLatestEvaluation(session.id);
@@ -1353,17 +1904,9 @@ export class RepoTaskInterviewSessionStore {
         'dev_container_workspace_state',
         'code_server_file_observation',
         'code_server_editor_open',
-        'room_file_content',
       ]);
     const hasToolUsageEvidence = hasEventKind(evidenceCounts, ['tool_usage'])
       || hasEventKind(sourceRefCounts, [
-        'room_surface_change',
-        'win95_start_menu_state',
-        'room_browser_navigation',
-        'room_window_lifecycle',
-        'room_window_data_update',
-        'room_window_state_change',
-        'room_cursor_presence_sample',
         'room_media_control',
       ]);
     const hasTranscriptEvidence = hasEventKind(evidenceCounts, ['transcript_span']);
@@ -1371,9 +1914,28 @@ export class RepoTaskInterviewSessionStore {
       || hasEventKind(sourceRefCounts, ['test_run']);
     const hasVerificationGap = hasEventKind(sourceRefCounts, ['verification_gap']);
     const hasChallengePacket = challenge !== null;
-    const { stage, nextAction } = progressStageAndAction({
+    const readiness = buildAssessmentReadiness({
       session,
       hasChallengePacket,
+      challengePacketContract: contract,
+      hasWorkEvidence,
+      hasMessageEvidence,
+      hasDevContainerEvidence,
+      hasToolUsageEvidence,
+      hasCommitSubmission,
+      hasFinalSubmission,
+      hasAiInteraction,
+      hasTranscriptEvidence,
+      hasTestEvidence,
+      hasVerificationGap,
+      sourceRefCounts,
+      commit,
+      evaluation,
+      humanDecision,
+    });
+    const { stage, nextAction } = progressStageAndAction({
+      session,
+      hasCompleteChallengePacket: contract.isComplete,
       hasWorkEvidence,
       hasCommitSubmission,
       hasFinalSubmission,
@@ -1386,6 +1948,8 @@ export class RepoTaskInterviewSessionStore {
       stage,
       nextAction,
       nextActionLabel: progressNextActionLabel(nextAction),
+      assignmentTrust: progressAssignmentTrust({ session, challenge }),
+      readiness,
       hasChallengePacket,
       hasWorkEvidence,
       hasMessageEvidence,
@@ -1401,6 +1965,7 @@ export class RepoTaskInterviewSessionStore {
       sourceRefCounts,
       evidenceSnippets,
       challenge,
+      challengePacketContract: contract,
       latestEvent,
       commit,
       evaluation,
@@ -1668,6 +2233,7 @@ export class RepoTaskInterviewSessionStore {
     }>();
     if (!row) return null;
     const payload = parseJsonObject(row.payload_json);
+    const submissionSource = await this.loadCommitSubmissionSource(row.id);
     return {
       eventId: row.id,
       repositoryUrl: jsonStringValue(payload.repositoryUrl),
@@ -1676,9 +2242,32 @@ export class RepoTaskInterviewSessionStore {
       baseCommitSha: jsonStringValue(payload.baseCommitSha),
       commitSha: jsonStringValue(payload.commitSha),
       commitUrl: jsonStringValue(payload.commitUrl),
+      submissionSource,
+      submissionSourceLabel: commitSubmissionSourceLabel(submissionSource),
+      integrity: commitSubmissionIntegrity(submissionSource),
       changedFiles: jsonArrayValue(payload.changedFiles),
       occurredAt: row.occurred_at,
     };
+  }
+
+  private async loadCommitSubmissionSource(eventId: string): Promise<CommitSubmissionSource> {
+    const result = await this.db.prepare(
+      `SELECT metadata_json
+         FROM assessment_event_source_refs
+        WHERE event_id = ?1`,
+    ).bind(eventId).all<{ metadata_json: string }>();
+    const sourceValues = new Set<string>();
+    for (const row of result.results ?? []) {
+      const metadata = parseJsonObject(row.metadata_json);
+      const source = jsonStringValue(metadata.source);
+      if (source) sourceValues.add(source);
+    }
+    const hasWorkspaceFinalizer = sourceValues.has('agent_bridge_workspace_finalize');
+    const hasManualPanel = sourceValues.has('assessment_commit_submission_panel');
+    if (hasWorkspaceFinalizer && hasManualPanel) return 'mixed';
+    if (hasWorkspaceFinalizer) return 'live_workspace';
+    if (hasManualPanel) return 'manual_fallback';
+    return 'unknown';
   }
 
   private async loadLatestHumanDecision(sessionId: string): Promise<AssessmentProgressHumanDecision | null> {

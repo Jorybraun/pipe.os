@@ -1,7 +1,7 @@
 -- 0102_assessment_layer.sql
 --
 -- Source-backed assessment evidence spine. Assessment surfaces such as
--- CODE_REVIEW, OPEN_SOURCE_BUG_FIX, dev containers, and the shared 95 room
+-- CODE_REVIEW, OPEN_SOURCE_BUG_FIX, dev containers, and assessment rooms
 -- write immutable events here; context_records remain rebuildable projections.
 
 CREATE TABLE IF NOT EXISTS assessment_sessions (

@@ -141,7 +141,7 @@ Logic:
 1. Create candidate with `pipeline_id = NULL`
 2. Create `candidate_ingestion` row (status: `pending`)
 3. If `interviewType` provided → create `scheduled_interviews` row (no pipeline/stage)
-4. Send invite email with assessment link (`/assess/:inviteToken`)
+4. Send invite email with Talent Pool intake link (`/talent/:inviteToken`)
 5. Return `{ id, inviteToken, emailSent }`
 
 **Modify ingestion orchestrator** (`lib/candidateDiscovery/orchestrate.ts`):
@@ -157,19 +157,25 @@ Logic:
 - Calls `POST /api/v1/candidates` directly
 - New interview card shows candidate without pipeline/stage context
 
+**Talent Pool intake page (`/talent/:token`, alias `/intake/:token`)**:
+- Resolves the candidate invite token through `/rpc/talent/resolve-token`
+- Shows profile paste or upload, GitHub, LinkedIn, portfolio, and phone screener consent fields
+- Submits through `/rpc/talent/submit-profile` or `/rpc/talent/upload-profile`
+- Shows candidate-safe dashboard states such as profile received, challenge preparing, ready challenges, and past work
+- Never shows repo-matching progress, decomposition details, diagnostics, quality gates, or `WAITING_FOR_MATCH`
+
 **Candidate assessment page (`/assess/:token`)**:
-- Already handles the assessment flow
-- For pipeline-free candidates: show CV upload prompt → then show selected interview type
-- Video: redirect to video room
-- Technical: show code review (requires repo matching — can be deferred or use a default challenge set)
+- Reserved for real ready assessment work
+- Opened from the Talent Pool dashboard only when a source-backed assignment exists
 
-### Phase 4: CV Upload for Pipeline-Free Candidates
+### Phase 4: Profile Capture for Pipeline-Free Candidates
 
-The `/assess/:token` route for pipeline-free candidates needs a simple flow:
-1. Resolve token → check if candidate has `resume_s3_key`
-2. If no CV → show upload screen (already exists as INTAKE challenge type)
-3. On upload → trigger `processResumeFromR2` → ingestion runs (stops at embed, no pipeline matching)
-4. Candidate is now searchable in talent pool
+The `/talent/:token` route for pipeline-free candidates needs a simple flow:
+1. Resolve token → check whether candidate profile evidence exists
+2. If no profile → show the Talent Pool intake form
+3. On submit → persist profile evidence, phone screener intent, and candidate ingestion state
+4. If no real challenge is ready → create an internal challenge-design queue item
+5. Candidate sees profile received / challenge preparing, not internal matching state
 
 ---
 
@@ -200,7 +206,7 @@ The `/assess/:token` route for pipeline-free candidates needs a simple flow:
 2. **New `POST /api/v1/candidates` endpoint** — standalone candidate creation + email
 3. **Modify ingestion orchestrator** — graceful skip when no pipeline
 4. **Frontend invite modal** — on scheduling dashboard
-5. **Assessment page CV upload** — for pipeline-free candidates without CV
+5. **Talent Pool intake page** — `/talent/:token` captures profile and phone screener intent before assessment
 
 ---
 
@@ -211,4 +217,4 @@ The `/assess/:token` route for pipeline-free candidates needs a simple flow:
    - Let recruiter pick from a challenge template library
    - Defer technical interviews until candidate IS assigned to a pipeline
 2. **Duplicate detection** — currently scoped to pipeline (`WHERE pipeline_id = ? AND email = ?`). For standalone candidates, scope to owner_id instead?
-3. **Assessment URL behavior** — for video-only invites, should `/assess/:token` redirect directly to the video room, or show a waiting room?
+3. **Video-only invite behavior** — should Talent Pool dashboard route video-only invites directly to the room, or show a waiting room first?

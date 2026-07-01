@@ -51,8 +51,8 @@ function createDevContainerSessionsTable(sqlite: BetterSqliteDb): void {
       started_at TEXT,
       stopped_at TEXT,
       error_message TEXT,
-      created_at TEXT NOT NULL DEFAULT '2026-06-28T07:00:00.000Z',
-      updated_at TEXT NOT NULL DEFAULT '2026-06-28T07:00:00.000Z'
+      created_at TEXT,
+      updated_at TEXT
     );
   `);
 }
@@ -107,7 +107,8 @@ describe('devContainerSessions assessment evidence', () => {
     expect(count(sqlite, 'assessment_state_transitions')).toBe(1);
 
     const session = sqlite.prepare(
-      `SELECT interview_id, mode, state, candidate_id, workspace_id, created_by, metadata_json
+      `SELECT interview_id, mode, state, candidate_id, workspace_id, created_by,
+              metadata_json, created_at, updated_at
          FROM assessment_sessions`,
     ).get() as {
       interview_id: string;
@@ -117,6 +118,8 @@ describe('devContainerSessions assessment evidence', () => {
       workspace_id: string;
       created_by: string;
       metadata_json: string;
+      created_at: string;
+      updated_at: string;
     };
     expect(session).toMatchObject({
       interview_id: 'meeting-1',
@@ -126,6 +129,8 @@ describe('devContainerSessions assessment evidence', () => {
       workspace_id: 'workspace-1',
       created_by: 'dev-container-session-lifecycle',
     });
+    expect(session.created_at).toMatch(/^\d{4}-\d{2}-\d{2}T/);
+    expect(session.updated_at).toMatch(/^\d{4}-\d{2}-\d{2}T/);
     expect(JSON.parse(session.metadata_json)).toMatchObject({
       sessionId: 'room-session-1',
       meetingId: 'meeting-1',
@@ -229,6 +234,53 @@ describe('devContainerSessions assessment evidence', () => {
       sessionId: 'room-session-1',
       stoppedAt: '2026-06-28T07:59:30.000Z',
       repoGitUrl: 'https://github.com/example/source-backed-repo',
+    });
+  });
+
+  it('stamps launch timestamps even when the remote table copy lost defaults', async () => {
+    await insertRoomSession(db, {
+      id: 'row-room-no-defaults',
+      sessionId: 'room-session-no-defaults',
+      meetingId: 'meeting-no-defaults',
+      meetingRoomId: 'room-no-defaults',
+      ownerId: 'workspace-no-defaults',
+      instanceType: 'standard-1',
+      ttlSeconds: 3600,
+      ttlSource: 'GLOBAL',
+      expiresAt: '2026-06-28T08:00:00.000Z',
+      repoGitUrl: 'https://github.com/example/no-defaults-repo',
+      challengeBranch: 'pr-88',
+      baseCommitSha: 'e'.repeat(40),
+    });
+
+    const liveRow = sqlite.prepare(
+      `SELECT created_at, updated_at
+         FROM dev_container_sessions
+        WHERE session_id = 'room-session-no-defaults'`,
+    ).get() as { created_at: string | null; updated_at: string | null };
+    expect(liveRow.created_at).toMatch(/^\d{4}-\d{2}-\d{2}T/);
+    expect(liveRow.updated_at).toBe(liveRow.created_at);
+
+    const evidenceRow = sqlite.prepare(
+      `SELECT s.created_at AS session_created_at,
+              e.occurred_at,
+              e.created_at AS event_created_at,
+              r.evidence_role
+         FROM assessment_sessions s
+         JOIN assessment_evidence_events e ON e.session_id = s.id
+         JOIN assessment_event_source_refs r ON r.event_id = e.id
+        WHERE r.source_ref_id = 'room-session-no-defaults'`,
+    ).get() as {
+      session_created_at: string;
+      occurred_at: string;
+      event_created_at: string;
+      evidence_role: string;
+    };
+    expect(evidenceRow).toMatchObject({
+      evidence_role: 'launching',
+      occurred_at: liveRow.created_at,
+      event_created_at: liveRow.created_at,
+      session_created_at: liveRow.created_at,
     });
   });
 

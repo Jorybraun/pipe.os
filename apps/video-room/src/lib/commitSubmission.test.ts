@@ -147,7 +147,7 @@ describe('commit submission payloads', () => {
         exactText: upstreamPullRequestUrl,
         contentHash: await sha256ContentHash(upstreamPullRequestUrl),
         metadata: expect.objectContaining({
-          source: 'win95_commit_submission_window',
+          source: 'assessment_commit_submission_panel',
           upstreamPrConsent: true,
         }),
       }),
@@ -208,7 +208,7 @@ describe('commit submission payloads', () => {
         exactText: verificationNotesText,
         contentHash: await sha256ContentHash(verificationNotesText),
         metadata: expect.objectContaining({
-          source: 'win95_commit_submission_window',
+          source: 'assessment_commit_submission_panel',
           missingEvidence: 'test_run',
         }),
       }),

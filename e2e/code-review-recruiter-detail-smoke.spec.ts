@@ -79,8 +79,16 @@ async function expectPersonProfileDecision(page: Page): Promise<void> {
   const personDecision = page.getByTestId('person-code-review-decision');
   await expect(personDecision).toBeVisible();
   await expect(personDecision).toContainText(/Workspace assessment decision|Code-review decision|Code review decision/);
-  await expect(personDecision).toContainText(/source-backed signal|needs review|Do not advance from this signal yet/);
+  await expect(personDecision).toContainText(
+    /source-backed signal|needs review|Do not advance from this signal yet|Wait for candidate review|do not make a hiring decision/i,
+  );
   await expect(personDecision).toContainText('source-backed proof items');
+  if (EXPECT_SCORE) {
+    await expect(personDecision).toContainText('Score provenance');
+    await expect(personDecision).toContainText(/rubric dimensions?/);
+    await expect(personDecision).toContainText(/evidence items?/);
+    await expect(personDecision).toContainText(/scoring metrics?/);
+  }
   const rationale = page.getByTestId('person-code-review-rationale');
   await expect(rationale).toBeVisible();
   await expect(rationale).toContainText('Why this recommendation');
@@ -107,10 +115,30 @@ test.describe('Feature: assessment recruiter detail smoke', () => {
     const decision = page.getByTestId('interview-code-review-decision-summary');
     const workspaceDecision = page.getByTestId('interview-workspace-assessment-decision-summary');
     const visibleDecision = decision.or(workspaceDecision).first();
-    await expect(visibleDecision).toBeVisible({ timeout: 45_000 });
     await expect(page.locator('body')).not.toContainText('An unexpected error occurred');
     await expect(page.locator('body')).not.toContainText('MATCHING IN PROGRESS');
     await expect(page.locator('body')).not.toContainText('Building your personalized challenge');
+
+    if (EXPECTED_OUTCOME === 'blocked') {
+      const progress = page.getByTestId('interview-assessment-progress');
+      await expect(progress).toBeVisible({ timeout: 45_000 });
+
+      if (!await visibleDecision.isVisible()) {
+        await expect(progress).toContainText('Assessment progress');
+        await expect(progress).toContainText('Candidate evidence is available for matching');
+        await expect(progress).toContainText('no source-backed PR task has been assigned yet');
+        await expect(page.getByTestId('interview-assessment-assignment')).toContainText('Waiting for PIPE match');
+
+        const inviteState = page.getByTestId('interview-assessment-link-state');
+        await expect(inviteState).toBeVisible();
+        await expect(inviteState).toContainText('ASSESSMENT');
+        await expect(inviteState).toContainText(/Started, no submission|Profile handoff, no PR challenge|No assessment link sent/);
+        await expect(page.getByRole('button', { name: /send assessment invite|resend assessment invite/i })).toBeVisible();
+        return;
+      }
+    }
+
+    await expect(visibleDecision).toBeVisible({ timeout: 45_000 });
     await expect(visibleDecision).not.toContainText('Not recorded yet');
     await expectHumanDecisionState(page);
 
@@ -214,6 +242,7 @@ test.describe('Feature: assessment recruiter detail smoke', () => {
       await expect(scoreTrust).toContainText('Score trust');
       await expect(scoreTrust).toContainText('Valid because');
       await expect(scoreTrust).toContainText('Calibrate because');
+      await expect(scoreTrust).toContainText('Score provenance');
       await expect(scoreTrust).toContainText('Use as');
       await expect(scoreValidity).toContainText(/Usable|Score needs human calibration|Submitted, scoring pending/);
     }

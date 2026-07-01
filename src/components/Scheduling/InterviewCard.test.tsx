@@ -82,6 +82,42 @@ describe('InterviewCard assessment progress', () => {
         stage: 'READY_FOR_EVALUATION',
         nextAction: 'START_EVALUATION',
         nextActionLabel: 'Start source-backed AI or human evaluation.',
+        readiness: {
+          status: 'READY_FOR_EVALUATION',
+          label: 'Ready for evaluation',
+          detail: 'Challenge, work evidence, and required source refs are captured; start source-backed AI or human evaluation.',
+          isReadyForEvaluation: true,
+          isUsableHiringSignal: false,
+          missingRequiredCount: 0,
+          required: [
+            {
+              id: 'challenge_packet',
+              label: 'Complete challenge packet',
+              required: true,
+              satisfied: true,
+              sourceRefTypes: ['review_challenge_packet'],
+              missingImpact: 'Without a task packet, PIPE cannot prove what work was assigned.',
+            },
+            {
+              id: 'assessment_commit',
+              label: 'Assessment branch commit',
+              required: true,
+              satisfied: true,
+              sourceRefTypes: ['git_commit'],
+              missingImpact: 'A real commit hash is required before evaluation.',
+            },
+          ],
+          confidence: [
+            {
+              id: 'workspace_captured_commit',
+              label: 'Workspace-captured commit',
+              required: false,
+              satisfied: true,
+              sourceRefTypes: ['git_commit', 'dev_container_workspace_state'],
+              missingImpact: 'Manual commit evidence lowers trust.',
+            },
+          ],
+        },
         hasChallengePacket: true,
         hasWorkEvidence: true,
         hasMessageEvidence: true,
@@ -125,6 +161,14 @@ describe('InterviewCard assessment progress', () => {
           baseCommitSha: '1111111111111111111111111111111111111111',
           commitSha: 'abcdef1234567890abcdef1234567890abcdef12',
           commitUrl: 'https://github.com/candidate/widgets/commit/abcdef1234567890abcdef1234567890abcdef12',
+          submissionSource: 'live_workspace',
+          submissionSourceLabel: 'Live workspace finalizer',
+          integrity: {
+            status: 'workspace_captured',
+            label: 'Workspace-captured commit',
+            detail: 'Captured by the live dev-container finalizer from the workspace HEAD and exact source refs.',
+            tone: 'verified',
+          },
           changedFiles: [{ path: 'src/card.ts', status: 'modified' }],
           occurredAt: '2026-06-23T00:18:00.000Z',
         },
@@ -141,8 +185,7 @@ describe('InterviewCard assessment progress', () => {
       'Repo task was selected from source-backed candidate evidence and an approved challenge packet.',
     );
     expect(progress).toHaveTextContent('DECISION');
-    expect(progress).toHaveTextContent('Challenge and commit evidence are captured; run source-backed AI or human evaluation.');
-    expect(progress).toHaveTextContent('Start source-backed AI or human evaluation.');
+    expect(progress).toHaveTextContent('Challenge, work evidence, and required source refs are captured; start source-backed AI or human evaluation.');
     expect(progress).toHaveTextContent('challenge, chat, workspace telemetry, room actions, commit, AI use, transcript, tests');
     expect(progress).toHaveTextContent('WORKSPACE');
     expect(progress).toHaveTextContent('Ready · open-source/widgets · base 111111111111');
@@ -153,6 +196,7 @@ describe('InterviewCard assessment progress', () => {
     expect(progress).toHaveTextContent('TASK');
     expect(progress).toHaveTextContent('Fix the assessment card progress regression.');
     expect(progress).toHaveTextContent('abcdef123456');
+    expect(progress).toHaveTextContent('Workspace-captured commit');
     expect(progress).not.toHaveTextContent('assessment-session-card');
     expect(progress).not.toHaveTextContent('challenge-packet-card');
     expect(progress).not.toHaveTextContent('abcdef1234567890abcdef1234567890abcdef12');
@@ -252,6 +296,87 @@ describe('InterviewCard assessment progress', () => {
     expect(progress).not.toHaveTextContent('assessment-session-setup');
   });
 
+  it('falls back to durable progress trust when setup projection is missing', () => {
+    renderCard({
+      id: 'interview-progress-trust',
+      createdAt: '2026-06-23T00:00:00.000Z',
+      updatedAt: '2026-06-23T00:20:00.000Z',
+      status: 'INVITED',
+      interviewType: 'OPEN_SOURCE_BUG_FIX',
+      meetingType: 'DIRECT_VIDEO_CALL',
+      scheduledAt: null,
+      assessmentSetup: null,
+      assessmentProgress: {
+        session: {
+          id: 'assessment-session-progress-trust',
+          ingestionKey: 'assessment-session:progress-trust',
+          interviewId: 'interview-progress-trust',
+          candidateId: null,
+          workspaceId: null,
+          workspacePersonId: null,
+          applicationId: null,
+          mode: 'OPEN_SOURCE_BUG_FIX',
+          state: 'IN_PROGRESS',
+          createdAt: '2026-06-23T00:00:00.000Z',
+          updatedAt: '2026-06-23T00:20:00.000Z',
+        },
+        stage: 'CHALLENGE_READY',
+        nextAction: 'OPEN_ROOM_OR_WORKSPACE',
+        nextActionLabel: 'Open the assessment room and start the workspace.',
+        assignmentTrust: {
+          state: 'matched_challenge',
+          label: 'PIPE-matched challenge',
+          detail: 'PIPE selected this task from source-backed candidate evidence, role context, and repository demand.',
+          tone: 'matched',
+        },
+        hasChallengePacket: true,
+        hasWorkEvidence: false,
+        hasMessageEvidence: false,
+        hasDevContainerEvidence: false,
+        hasToolUsageEvidence: false,
+        hasCommitSubmission: false,
+        hasFinalSubmission: false,
+        hasAiInteraction: false,
+        hasTranscriptEvidence: false,
+        hasTestEvidence: false,
+        evidenceCounts: [{ kind: 'match_decision', count: 1 }],
+        sourceRefCounts: [{ kind: 'review_challenge_packet', count: 1 }],
+        challenge: {
+          sourceRefType: 'review_challenge_packet',
+          sourceRefId: 'challenge-packet-progress-trust',
+          evidenceRole: 'assigned_challenge',
+          exactText: [
+            'Repo: https://github.com/open-source/widgets',
+            'Base commit: 4444444444444444444444444444444444444444',
+            'Task: Fix the matched assignment fallback.',
+          ].join('\n'),
+          locator: {
+            repositoryUrl: 'https://github.com/open-source/widgets',
+            matchedRepoId: 42,
+            baseCommitSha: '4444444444444444444444444444444444444444',
+          },
+        },
+        latestEvent: {
+          id: 'assessment-event-progress-trust',
+          kind: 'match_decision',
+          sequence: 1,
+          occurredAt: '2026-06-23T00:20:00.000Z',
+        },
+        commit: null,
+        evaluation: null,
+      },
+    });
+
+    const progress = screen.getByTestId('interview-card-assessment-progress');
+    expect(progress).toHaveTextContent('ASSIGNMENT');
+    expect(progress).toHaveTextContent('PIPE-matched challenge');
+    expect(progress).toHaveTextContent(
+      'PIPE selected this task from source-backed candidate evidence, role context, and repository demand.',
+    );
+    expect(progress).not.toHaveTextContent('challenge-packet-progress-trust');
+    expect(progress).not.toHaveTextContent('assessment-session-progress-trust');
+  });
+
   it('shows setup gaps for assessment interviews before a session exists', () => {
     renderCard({
       id: 'interview-2',
@@ -267,6 +392,8 @@ describe('InterviewCard assessment progress', () => {
         source: 'contact_first_invite',
         blocksPositiveAssessment: true,
         message: 'PIPE must ingest source-backed evidence before selecting a PR task.',
+        nextAction: 'COLLECT_CANDIDATE_EVIDENCE',
+        nextActionLabel: 'Send the intake link or schedule a context call.',
       },
       assessmentProgress: null,
     });
@@ -275,6 +402,7 @@ describe('InterviewCard assessment progress', () => {
     expect(progress).toHaveTextContent('Setup gap');
     expect(progress).toHaveTextContent('Waiting for PIPE match');
     expect(progress).toHaveTextContent('PIPE must ingest source-backed evidence before selecting a PR task.');
+    expect(progress).toHaveTextContent('Send the intake link or schedule a context call.');
     expect(progress).toHaveTextContent('no assessment session yet');
   });
 

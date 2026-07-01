@@ -28,6 +28,8 @@ import { useSetAuth } from '../DataContext';
 import type { AuthProvider } from '../types';
 import { AppBackground } from '../../components/ui/AppBackground';
 import { LoadingSplash } from '../../components/ui/LoadingSplash';
+import { warmApiClientToken } from '../../hooks/useApiClient';
+import { DEV_PROXY_RECRUITER_USER_ID } from '../../lib/auth/devProxyAuth';
 
 // ─── ClerkAuthGate ────────────────────────────────────────────────────────────
 
@@ -209,13 +211,37 @@ export function useClerkAuth(): AuthProvider {
  */
 export function ClerkAuthWrapper({ children }: { children: React.ReactNode }): JSX.Element {
   const auth = useClerkAuth();
+  const { getToken, userId } = useClerkAuthHook();
   const setAuth = useSetAuth();
+
+  useEffect(() => {
+    if (!userId) return;
+    warmApiClientToken(getToken, userId);
+  }, [getToken, userId]);
 
   useEffect(() => {
     setAuth(auth);
     // Re-register on sign-in, sign-out, and loading transitions.
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [auth.currentUser?.userId, auth.isLoading]);
+
+  return <>{children}</>;
+}
+
+export function DevProxyAuthWrapper({ children }: { children: React.ReactNode }): JSX.Element {
+  const setAuth = useSetAuth();
+
+  useEffect(() => {
+    setAuth({
+      currentUser: {
+        userId: DEV_PROXY_RECRUITER_USER_ID,
+        username: 'PIPE app-dev recruiter',
+      },
+      isLoading: false,
+      signOut: async (): Promise<void> => {},
+      getSessionToken: async (): Promise<string | null> => null,
+    });
+  }, [setAuth]);
 
   return <>{children}</>;
 }

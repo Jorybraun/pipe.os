@@ -154,817 +154,6 @@ describe('VideoRoom Durable Object signaling lifecycle', () => {
     }));
   });
 
-  it('stores and broadcasts shared desktop window events', async () => {
-    const host = new FakeSocket();
-    const guest = new FakeSocket();
-    const { state, storage } = makeState([
-      [host, 'HOST'],
-      [guest, 'GUEST'],
-    ]);
-    const room = new VideoRoom(state);
-
-    await room.webSocketMessage(host as unknown as WebSocket, JSON.stringify({
-      type: 'ROOM_DESKTOP_EVENT',
-      payload: {
-        id: 'evt-open-browser',
-        clientId: 'host-client',
-        createdAt: 1,
-        kind: 'OPEN_WINDOW',
-        window: {
-          id: 'browser',
-          windowType: 'browser',
-          title: 'Microsoft Edge',
-          x: 100,
-          y: 60,
-          width: 800,
-          height: 560,
-          data: { currentUrl: 'https://example.com' },
-        },
-        evidence: {
-          source: 'window_lifecycle_client_submit',
-          lifecycleSource: 'win95_file_system',
-          lifecycleKind: 'open',
-          windowLifecycleId: 'window-lifecycle:host:1:open:browser',
-          capturedAtMs: 1,
-          actor: 'host',
-          windowId: 'browser',
-          windowType: 'browser',
-          windowTitle: 'Microsoft Edge',
-          surface: 'win95',
-          roomPhase: 'connected',
-          durableObjectReplayExpected: true,
-        },
-      },
-    }));
-
-    expect(storage.get('desktopWindows')).toEqual([
-      expect.objectContaining({
-        id: 'browser',
-        windowType: 'browser',
-        title: 'Microsoft Edge',
-        data: { currentUrl: 'https://example.com' },
-      }),
-    ]);
-    expect(parseSent(guest)).toContainEqual(expect.objectContaining({
-      type: 'ROOM_DESKTOP_EVENT',
-      role: 'HOST',
-      payload: expect.objectContaining({
-        kind: 'OPEN_WINDOW',
-        window: expect.objectContaining({ id: 'browser' }),
-        evidence: expect.objectContaining({ lifecycleSource: 'win95_file_system' }),
-      }),
-    }));
-
-    await room.webSocketMessage(host as unknown as WebSocket, JSON.stringify({
-      type: 'ROOM_DESKTOP_EVENT',
-      payload: {
-        id: 'evt-browser-nav',
-        clientId: 'host-client',
-        createdAt: 1.5,
-        kind: 'UPDATE_WINDOW_DATA',
-        windowId: 'browser',
-        data: { currentUrl: 'https://example.com/review?step=1' },
-        evidence: {
-          source: 'room_browser_window',
-          navigationSource: 'browser_window_client_submit',
-          actor: 'host',
-          windowId: 'browser',
-          navigationTrigger: 'go_button',
-          browserNavigationId: 'browser-navigation:host:1500:browser:go_button:nav_54d2c495',
-          capturedAtMs: 1500,
-          url: 'https://example.com/review?step=1',
-          urlFingerprint: 'nav_54d2c495',
-          surface: 'win95',
-          roomPhase: 'connected',
-          durableObjectReplayExpected: true,
-        },
-      },
-    }));
-
-    expect(storage.get('desktopWindows')).toEqual([
-      expect.objectContaining({
-        id: 'browser',
-        data: { currentUrl: 'https://example.com/review?step=1' },
-      }),
-    ]);
-    expect(parseSent(guest)).toContainEqual(expect.objectContaining({
-      type: 'ROOM_DESKTOP_EVENT',
-      role: 'HOST',
-      payload: expect.objectContaining({
-        kind: 'UPDATE_WINDOW_DATA',
-        windowId: 'browser',
-        evidence: expect.objectContaining({
-          source: 'room_browser_window',
-          navigationSource: 'browser_window_client_submit',
-          browserNavigationId: 'browser-navigation:host:1500:browser:go_button:nav_54d2c495',
-        }),
-      }),
-    }));
-
-    await room.webSocketMessage(guest as unknown as WebSocket, JSON.stringify({
-      type: 'ROOM_DESKTOP_EVENT',
-      payload: {
-        id: 'evt-close-browser',
-        clientId: 'guest-client',
-        createdAt: 2,
-        kind: 'CLOSE_WINDOW',
-        windowId: 'browser',
-        evidence: {
-          source: 'window_lifecycle_client_submit',
-          lifecycleSource: 'win95_window_chrome',
-          lifecycleKind: 'close',
-          windowLifecycleId: 'window-lifecycle:guest:2:close:browser',
-          capturedAtMs: 2,
-          actor: 'guest',
-          windowId: 'browser',
-          windowType: 'browser',
-          windowTitle: 'Microsoft Edge',
-          surface: 'win95',
-          roomPhase: 'connected',
-          durableObjectReplayExpected: true,
-        },
-      },
-    }));
-
-    expect(storage.get('desktopWindows')).toEqual([]);
-    expect(parseSent(host)).toContainEqual(expect.objectContaining({
-      type: 'ROOM_DESKTOP_EVENT',
-      role: 'GUEST',
-      payload: expect.objectContaining({
-        kind: 'CLOSE_WINDOW',
-        windowId: 'browser',
-      }),
-    }));
-  });
-
-  it('persists and broadcasts shared desktop window state changes', async () => {
-    const host = new FakeSocket();
-    const guest = new FakeSocket();
-    const { state, storage } = makeState([
-      [host, 'HOST'],
-      [guest, 'GUEST'],
-    ]);
-    storage.set('desktopWindows', [
-      {
-        id: 'browser',
-        windowType: 'browser',
-        title: 'Microsoft Edge',
-        x: 100,
-        y: 60,
-        width: 800,
-        height: 560,
-      },
-    ]);
-    const room = new VideoRoom(state);
-
-    await room.webSocketMessage(host as unknown as WebSocket, JSON.stringify({
-      type: 'ROOM_DESKTOP_EVENT',
-      payload: {
-        id: 'evt-move-browser',
-        clientId: 'host-client',
-        createdAt: 3,
-        kind: 'UPDATE_WINDOW_STATE',
-        windowId: 'browser',
-        x: 260,
-        y: 140,
-        minimized: false,
-        focused: true,
-        evidence: {
-          source: 'window_state_client_submit',
-          stateSource: 'win95_taskbar',
-          actor: 'host',
-          windowId: 'browser',
-          action: 'restore_or_focus',
-          windowStateChangeId: 'window-state:host:3:browser:restore_or_focus',
-          capturedAtMs: 3,
-          surface: 'win95',
-          roomPhase: 'connected',
-          durableObjectReplayExpected: true,
-        },
-      },
-    }));
-
-    expect(storage.get('desktopWindows')).toEqual([
-      expect.objectContaining({
-        id: 'browser',
-        x: 260,
-        y: 140,
-        minimized: false,
-        focused: true,
-      }),
-    ]);
-    expect(parseSent(guest)).toContainEqual(expect.objectContaining({
-      type: 'ROOM_DESKTOP_EVENT',
-      role: 'HOST',
-      payload: expect.objectContaining({
-        kind: 'UPDATE_WINDOW_STATE',
-        windowId: 'browser',
-        x: 260,
-        y: 140,
-        focused: true,
-      }),
-    }));
-    expect(storage.get('desktopActivityLog')).toEqual([
-      expect.objectContaining({
-        role: 'HOST',
-        event: expect.objectContaining({
-          id: 'evt-move-browser',
-          kind: 'UPDATE_WINDOW_STATE',
-          windowId: 'browser',
-          evidence: expect.objectContaining({
-            source: 'window_state_client_submit',
-            stateSource: 'win95_taskbar',
-            windowStateChangeId: 'window-state:host:3:browser:restore_or_focus',
-          }),
-        }),
-      }),
-    ]);
-  });
-
-  it('accepts file-delete-sourced shared window data clears', async () => {
-    const host = new FakeSocket();
-    const guest = new FakeSocket();
-    const { state, storage } = makeState([
-      [host, 'HOST'],
-      [guest, 'GUEST'],
-    ]);
-    const room = new VideoRoom(state);
-
-    await room.webSocketMessage(host as unknown as WebSocket, JSON.stringify({
-      type: 'ROOM_DESKTOP_EVENT',
-      payload: {
-        id: 'evt-open-notepad',
-        clientId: 'host-client',
-        createdAt: 1,
-        kind: 'OPEN_WINDOW',
-        window: {
-          id: 'notepad',
-          windowType: 'notepad',
-          title: 'notes.txt - Notepad',
-          x: 100,
-          y: 60,
-          width: 520,
-          height: 420,
-          data: { text: 'Candidate wrote a note.' },
-        },
-        evidence: {
-          source: 'window_lifecycle_client_submit',
-          lifecycleSource: 'win95_file_system',
-          lifecycleKind: 'open',
-          windowLifecycleId: 'window-lifecycle:host:1:open:notepad',
-          capturedAtMs: 1,
-          actor: 'host',
-          windowId: 'notepad',
-          windowType: 'notepad',
-          windowTitle: 'notes.txt - Notepad',
-          surface: 'win95',
-          roomPhase: 'connected',
-          durableObjectReplayExpected: true,
-        },
-      },
-    }));
-
-    await room.webSocketMessage(host as unknown as WebSocket, JSON.stringify({
-      type: 'ROOM_DESKTOP_EVENT',
-      payload: {
-        id: 'evt-delete-clears-notepad',
-        clientId: 'host-client',
-        createdAt: 2,
-        kind: 'UPDATE_WINDOW_DATA',
-        windowId: 'notepad',
-        data: { text: '' },
-        evidence: {
-          source: 'window_data_client_submit',
-          dataSource: 'win95_file_delete_sync',
-          actor: 'host',
-          windowId: 'notepad',
-          action: 'edit_text',
-          windowDataUpdateId: 'window-data:host:2:notepad:edit_text',
-          capturedAtMs: 2,
-          surface: 'win95',
-          roomPhase: 'connected',
-          dataKeys: ['text'],
-          dataValueFingerprints: { text: 'data_12345678' },
-          durableObjectReplayExpected: true,
-        },
-      },
-    }));
-
-    expect(storage.get('desktopWindows')).toEqual([
-      expect.objectContaining({
-        id: 'notepad',
-        data: { text: '' },
-      }),
-    ]);
-    expect(parseSent(guest)).toContainEqual(expect.objectContaining({
-      type: 'ROOM_DESKTOP_EVENT',
-      role: 'HOST',
-      payload: expect.objectContaining({
-        kind: 'UPDATE_WINDOW_DATA',
-        windowId: 'notepad',
-        evidence: expect.objectContaining({
-          dataSource: 'win95_file_delete_sync',
-          windowDataUpdateId: 'window-data:host:2:notepad:edit_text',
-        }),
-      }),
-    }));
-  });
-
-  it('rejects shared desktop window events without browser source evidence', async () => {
-    const host = new FakeSocket();
-    const guest = new FakeSocket();
-    const { state, storage } = makeState([
-      [host, 'HOST'],
-      [guest, 'GUEST'],
-    ]);
-    const room = new VideoRoom(state);
-
-    await room.webSocketMessage(host as unknown as WebSocket, JSON.stringify({
-      type: 'ROOM_DESKTOP_EVENT',
-      payload: {
-        id: 'evt-source-less-open',
-        clientId: 'host-client',
-        createdAt: 3.5,
-        kind: 'OPEN_WINDOW',
-        window: {
-          id: 'notepad',
-          windowType: 'notepad',
-          title: 'Notepad',
-          x: 80,
-          y: 60,
-          width: 520,
-          height: 420,
-        },
-      },
-    }));
-
-    expect(parseSent(host)).toContainEqual(expect.objectContaining({
-      type: 'ROOM_DESKTOP_EVENT_REJECTED',
-      reason: 'MISSING_SOURCE_EVIDENCE',
-    }));
-    expect(parseSent(guest)).not.toContainEqual(expect.objectContaining({
-      type: 'ROOM_DESKTOP_EVENT',
-    }));
-    expect(storage.has('desktopWindows')).toBe(false);
-    expect(storage.has('desktopActivityLog')).toBe(false);
-  });
-
-  it('persists participant-controlled desktop surface changes and records activity', async () => {
-    const host = new FakeSocket();
-    const guest = new FakeSocket();
-    const { state, storage } = makeState([
-      [host, 'HOST'],
-      [guest, 'GUEST'],
-    ]);
-    const room = new VideoRoom(state);
-
-    await room.webSocketMessage(guest as unknown as WebSocket, JSON.stringify({
-      type: 'ROOM_DESKTOP_EVENT',
-      payload: {
-        id: 'evt-guest-surface',
-        clientId: 'guest-client',
-        createdAt: 1,
-        kind: 'SET_ROOM_SURFACE',
-        surface: 'win95',
-        previousSurface: 'standard',
-        action: 'enter_desktop',
-        source: 'room_surface_control',
-        surfaceControlEventSource: 'browser_room_surface_toggle',
-        surfaceChangeId: 'surface:guest:1:standard:win95',
-        capturedAtMs: 1,
-        roomPhase: 'connected',
-        durableObjectReplayExpected: true,
-      },
-    }));
-
-    expect(storage.get('roomSurface')).toBe('win95');
-    expect(parseSent(host)).toContainEqual(expect.objectContaining({
-      type: 'ROOM_DESKTOP_EVENT',
-      role: 'GUEST',
-      payload: expect.objectContaining({
-        kind: 'SET_ROOM_SURFACE',
-        surface: 'win95',
-        source: 'room_surface_control',
-        surfaceChangeId: 'surface:guest:1:standard:win95',
-      }),
-    }));
-
-    await room.webSocketMessage(host as unknown as WebSocket, JSON.stringify({
-      type: 'ROOM_DESKTOP_EVENT',
-      payload: {
-        id: 'evt-host-surface',
-        clientId: 'host-client',
-        createdAt: 2,
-        kind: 'SET_ROOM_SURFACE',
-        surface: 'standard',
-        previousSurface: 'win95',
-        action: 'exit_desktop',
-        source: 'room_surface_control',
-        surfaceControlEventSource: 'browser_room_surface_toggle',
-        surfaceChangeId: 'surface:host:2:win95:standard',
-        capturedAtMs: 2,
-        roomPhase: 'connected',
-        durableObjectReplayExpected: true,
-      },
-    }));
-
-    expect(storage.get('roomSurface')).toBe('standard');
-    expect(parseSent(guest)).toContainEqual(expect.objectContaining({
-      type: 'ROOM_DESKTOP_EVENT',
-      role: 'HOST',
-      payload: expect.objectContaining({
-        kind: 'SET_ROOM_SURFACE',
-        surface: 'standard',
-        source: 'room_surface_control',
-        surfaceChangeId: 'surface:host:2:win95:standard',
-      }),
-    }));
-    expect(storage.get('desktopActivityLog')).toEqual([
-      expect.objectContaining({
-        role: 'GUEST',
-        event: expect.objectContaining({
-          id: 'evt-guest-surface',
-          kind: 'SET_ROOM_SURFACE',
-          surface: 'win95',
-          surfaceChangeId: 'surface:guest:1:standard:win95',
-        }),
-      }),
-      expect.objectContaining({
-        role: 'HOST',
-        event: expect.objectContaining({
-          id: 'evt-host-surface',
-          kind: 'SET_ROOM_SURFACE',
-          surface: 'standard',
-          surfaceChangeId: 'surface:host:2:win95:standard',
-        }),
-      }),
-    ]);
-  });
-
-  it('persists and broadcasts source-backed Win95 Start menu state', async () => {
-    const host = new FakeSocket();
-    const guest = new FakeSocket();
-    const { state, storage } = makeState([
-      [host, 'HOST'],
-      [guest, 'GUEST'],
-    ]);
-    const room = new VideoRoom(state);
-
-    await room.webSocketMessage(guest as unknown as WebSocket, JSON.stringify({
-      type: 'ROOM_DESKTOP_EVENT',
-      payload: {
-        id: 'evt-guest-start-menu-open',
-        clientId: 'guest-client',
-        createdAt: 3,
-        kind: 'START_MENU_STATE',
-        open: true,
-        evidence: {
-          source: 'win95_start_menu_control',
-          menuEventSource: 'win95_start_button',
-          actor: 'guest',
-          menuId: 'start',
-          action: 'open',
-          open: true,
-          startMenuEventId: 'start-menu:guest:3000:open:win95_start_button',
-          capturedAtMs: 3000,
-          surface: 'win95',
-          roomPhase: 'connected',
-          durableObjectReplayExpected: true,
-        },
-      },
-    }));
-
-    expect(storage.get('desktopStartMenuOpen')).toBe(true);
-    expect(parseSent(host)).toContainEqual(expect.objectContaining({
-      type: 'ROOM_DESKTOP_EVENT',
-      role: 'GUEST',
-      payload: expect.objectContaining({
-        kind: 'START_MENU_STATE',
-        open: true,
-        evidence: expect.objectContaining({
-          source: 'win95_start_menu_control',
-          startMenuEventId: 'start-menu:guest:3000:open:win95_start_button',
-        }),
-      }),
-    }));
-    expect(storage.get('desktopActivityLog')).toEqual([
-      expect.objectContaining({
-        role: 'GUEST',
-        event: expect.objectContaining({
-          id: 'evt-guest-start-menu-open',
-          kind: 'START_MENU_STATE',
-          open: true,
-          evidence: expect.objectContaining({
-            startMenuEventId: 'start-menu:guest:3000:open:win95_start_button',
-          }),
-        }),
-      }),
-    ]);
-  });
-
-  it('rejects Win95 Start menu state without source evidence', async () => {
-    const host = new FakeSocket();
-    const guest = new FakeSocket();
-    const { state, storage } = makeState([
-      [host, 'HOST'],
-      [guest, 'GUEST'],
-    ]);
-    const room = new VideoRoom(state);
-
-    await room.webSocketMessage(guest as unknown as WebSocket, JSON.stringify({
-      type: 'ROOM_DESKTOP_EVENT',
-      payload: {
-        id: 'evt-source-less-start-menu',
-        clientId: 'guest-client',
-        createdAt: 3.5,
-        kind: 'START_MENU_STATE',
-        open: true,
-      },
-    }));
-
-    expect(parseSent(guest)).toContainEqual(expect.objectContaining({
-      type: 'ROOM_DESKTOP_EVENT_REJECTED',
-      reason: 'MISSING_SOURCE_EVIDENCE',
-      payload: expect.objectContaining({
-        surface: 'standard',
-        startMenuOpen: false,
-        windows: [],
-      }),
-    }));
-    expect(parseSent(host)).not.toContainEqual(expect.objectContaining({
-      type: 'ROOM_DESKTOP_EVENT',
-    }));
-    expect(storage.has('desktopStartMenuOpen')).toBe(false);
-    expect(storage.has('desktopActivityLog')).toBe(false);
-  });
-
-  it('rejects shared room surface changes without browser source evidence', async () => {
-    const host = new FakeSocket();
-    const guest = new FakeSocket();
-    const { state, storage } = makeState([
-      [host, 'HOST'],
-      [guest, 'GUEST'],
-    ]);
-    const room = new VideoRoom(state);
-
-    await room.webSocketMessage(guest as unknown as WebSocket, JSON.stringify({
-      type: 'ROOM_DESKTOP_EVENT',
-      payload: {
-        id: 'evt-source-less-surface',
-        clientId: 'guest-client',
-        createdAt: 2.5,
-        kind: 'SET_ROOM_SURFACE',
-        surface: 'win95',
-      },
-    }));
-
-    expect(parseSent(guest)).toContainEqual(expect.objectContaining({
-      type: 'ROOM_DESKTOP_EVENT_REJECTED',
-      reason: 'MISSING_SOURCE_EVIDENCE',
-    }));
-    expect(parseSent(host)).not.toContainEqual(expect.objectContaining({
-      type: 'ROOM_DESKTOP_EVENT',
-    }));
-    expect(storage.has('roomSurface')).toBe(false);
-    expect(storage.has('desktopActivityLog')).toBe(false);
-  });
-
-  it('broadcasts workspace state changes without changing shared windows', async () => {
-    const host = new FakeSocket();
-    const guest = new FakeSocket();
-    const { state, storage } = makeState([
-      [host, 'HOST'],
-      [guest, 'GUEST'],
-    ]);
-    storage.set('desktopWindows', [
-      {
-        id: 'workspace',
-        windowType: 'workspace',
-        title: 'VS Code',
-      },
-    ]);
-    const room = new VideoRoom(state);
-
-    await room.webSocketMessage(host as unknown as WebSocket, JSON.stringify({
-      type: 'ROOM_DESKTOP_EVENT',
-      payload: {
-        id: 'evt-workspace-ready',
-        clientId: 'host-client',
-        createdAt: 3,
-        kind: 'WORKSPACE_STATE_CHANGED',
-        actor: 'host',
-        workspaceStateEventId: 'workspace-state:host:3:launch:workspace-session-1:READY',
-        capturedAtMs: 3,
-        status: 'READY',
-        workspaceSessionId: 'workspace-session-1',
-        repoUrl: 'https://github.com/cloudflare/workers-sdk',
-        githubPrNumber: 14435,
-        matchedRepoId: 42,
-        challengeStatus: 'github_pr_assigned',
-        challengeKind: 'github_pr',
-        challengeSource: 'scheduled_interview.github_pr_number',
-        challengeMessage: null,
-        ttlSeconds: 3600,
-        ttlSource: 'default',
-        expiringSoon: false,
-        source: 'browser_workspace_state_observer',
-        workspaceEventSource: 'browser_workspace_state_observer',
-        workspaceStateSource: 'launch',
-        workspaceTelemetryPersisted: true,
-        proxyUrlPersisted: false,
-      },
-    }));
-
-    expect(storage.get('desktopWindows')).toEqual([
-      expect.objectContaining({
-        id: 'workspace',
-        windowType: 'workspace',
-        title: 'VS Code',
-      }),
-    ]);
-    expect(parseSent(guest)).toContainEqual(expect.objectContaining({
-      type: 'ROOM_DESKTOP_EVENT',
-      role: 'HOST',
-      payload: expect.objectContaining({
-        kind: 'WORKSPACE_STATE_CHANGED',
-        actor: 'host',
-        workspaceStateEventId: 'workspace-state:host:3:launch:workspace-session-1:READY',
-        capturedAtMs: 3,
-        status: 'READY',
-        workspaceSessionId: 'workspace-session-1',
-        repoUrl: 'https://github.com/cloudflare/workers-sdk',
-        githubPrNumber: 14435,
-        matchedRepoId: 42,
-        challengeStatus: 'github_pr_assigned',
-        challengeKind: 'github_pr',
-        challengeSource: 'scheduled_interview.github_pr_number',
-        challengeMessage: null,
-        source: 'browser_workspace_state_observer',
-        workspaceEventSource: 'browser_workspace_state_observer',
-        workspaceStateSource: 'launch',
-        workspaceTelemetryPersisted: true,
-        proxyUrlPersisted: false,
-      }),
-    }));
-    expect(storage.get('desktopActivityLog')).toEqual([
-      expect.objectContaining({
-        role: 'HOST',
-        event: expect.objectContaining({
-          id: 'evt-workspace-ready',
-          kind: 'WORKSPACE_STATE_CHANGED',
-          actor: 'host',
-          workspaceStateEventId: 'workspace-state:host:3:launch:workspace-session-1:READY',
-          capturedAtMs: 3,
-          status: 'READY',
-          workspaceSessionId: 'workspace-session-1',
-          repoUrl: 'https://github.com/cloudflare/workers-sdk',
-          githubPrNumber: 14435,
-          matchedRepoId: 42,
-          challengeStatus: 'github_pr_assigned',
-          challengeKind: 'github_pr',
-          challengeSource: 'scheduled_interview.github_pr_number',
-          challengeMessage: null,
-          ttlSeconds: 3600,
-          ttlSource: 'default',
-          expiringSoon: false,
-          source: 'browser_workspace_state_observer',
-          workspaceEventSource: 'browser_workspace_state_observer',
-          workspaceStateSource: 'launch',
-          workspaceTelemetryPersisted: true,
-          proxyUrlPersisted: false,
-        }),
-      }),
-    ]);
-  });
-
-  it('redacts workspace error diagnostics before broadcast and storage', async () => {
-    const host = new FakeSocket();
-    const guest = new FakeSocket();
-    const { state, storage } = makeState([
-      [host, 'HOST'],
-      [guest, 'GUEST'],
-    ]);
-    const room = new VideoRoom(state);
-    const rawServiceKey = 'cog_abcdefghijklmnopqrstuvwxyz123456';
-    const rawRoomToken = 'room-token-secret-123';
-    const rawQueryToken = 'query-token-secret-456';
-    const rawDiagnostic = `Init failed DEVIN_API_KEY=${rawServiceKey} at /api/v1/meeting-rooms/${rawRoomToken}/workspace?token=${rawQueryToken}`;
-
-    await room.webSocketMessage(host as unknown as WebSocket, JSON.stringify({
-      type: 'ROOM_DESKTOP_EVENT',
-      payload: {
-        id: 'evt-workspace-error',
-        clientId: 'host-client',
-        createdAt: 4,
-        kind: 'WORKSPACE_STATE_CHANGED',
-        actor: 'host',
-        workspaceStateEventId: 'workspace-state:host:4:error:no-session:ERROR',
-        capturedAtMs: 4,
-        status: 'ERROR',
-        workspaceSessionId: null,
-        errorMessage: rawDiagnostic,
-        repoUrl: 'https://github.com/cloudflare/workers-sdk',
-        githubPrNumber: null,
-        matchedRepoId: 42,
-        challengeStatus: 'github_pr_assigned',
-        challengeKind: 'github_pr',
-        challengeSource: 'scheduled_interview.github_pr_number',
-        challengeMessage: null,
-        ttlSeconds: null,
-        ttlSource: null,
-        expiringSoon: false,
-        source: 'browser_workspace_state_observer',
-        workspaceEventSource: 'browser_workspace_state_observer',
-        workspaceStateSource: 'error',
-        workspaceTelemetryPersisted: true,
-        proxyUrlPersisted: false,
-      },
-    }));
-
-    const guestEvent = parseSent(guest).find((message) =>
-      message.type === 'ROOM_DESKTOP_EVENT'
-      && (message.payload as { id?: string } | undefined)?.id === 'evt-workspace-error',
-    );
-    expect(guestEvent).toEqual(expect.objectContaining({
-      payload: expect.objectContaining({
-        errorMessage: 'Init failed DEVIN_API_KEY=[REDACTED_SECRET] at /api/v1/meeting-rooms/[REDACTED_SECRET]/workspace?token=[REDACTED_SECRET]',
-      }),
-    }));
-
-    const activityLog = storage.get('desktopActivityLog') as Array<{
-      event?: { errorMessage?: string | null };
-    }>;
-    expect(activityLog[0]?.event?.errorMessage).toBe(
-      'Init failed DEVIN_API_KEY=[REDACTED_SECRET] at /api/v1/meeting-rooms/[REDACTED_SECRET]/workspace?token=[REDACTED_SECRET]',
-    );
-
-    const serialized = JSON.stringify({ guestEvent, activityLog });
-    expect(serialized).not.toContain(rawServiceKey);
-    expect(serialized).not.toContain(rawRoomToken);
-    expect(serialized).not.toContain(rawQueryToken);
-  });
-
-  it('rejects workspace state changes without browser observer evidence', async () => {
-    const host = new FakeSocket();
-    const guest = new FakeSocket();
-    const { state, storage } = makeState([
-      [host, 'HOST'],
-      [guest, 'GUEST'],
-    ]);
-    const room = new VideoRoom(state);
-
-    await room.webSocketMessage(host as unknown as WebSocket, JSON.stringify({
-      type: 'ROOM_DESKTOP_EVENT',
-      payload: {
-        id: 'evt-source-less-workspace',
-        clientId: 'host-client',
-        createdAt: 3,
-        kind: 'WORKSPACE_STATE_CHANGED',
-        actor: 'host',
-        status: 'READY',
-        workspaceSessionId: 'workspace-session-1',
-      },
-    }));
-
-    expect(parseSent(host)).toContainEqual(expect.objectContaining({
-      type: 'ROOM_DESKTOP_EVENT_REJECTED',
-      reason: 'MISSING_SOURCE_EVIDENCE',
-    }));
-    expect(parseSent(guest)).not.toContainEqual(expect.objectContaining({
-      type: 'ROOM_DESKTOP_EVENT',
-    }));
-    expect(storage.has('desktopActivityLog')).toBe(false);
-  });
-
-  it('rejects live room cursor presence without source-backed sample evidence', async () => {
-    const host = new FakeSocket();
-    const guest = new FakeSocket();
-    const { state, storage } = makeState([
-      [host, 'HOST'],
-      [guest, 'GUEST'],
-    ]);
-    const room = new VideoRoom(state);
-
-    await room.webSocketMessage(host as unknown as WebSocket, JSON.stringify({
-      type: 'ROOM_CURSOR',
-      payload: {
-        clientId: 'host-client',
-        x: 0.25,
-        y: 0.4,
-        updatedAt: 123,
-      },
-    }));
-
-    expect(parseSent(host)).toContainEqual(expect.objectContaining({
-      type: 'ROOM_CURSOR_REJECTED',
-      reason: 'MISSING_SOURCE_EVIDENCE',
-    }));
-    expect(parseSent(guest)).not.toContainEqual(expect.objectContaining({
-      type: 'ROOM_CURSOR',
-    }));
-    expect(storage.get('cursorActivityLog')).toBeUndefined();
-  });
-
   it('stores and broadcasts room chat messages for participant replay', async () => {
     const host = new FakeSocket();
     const guest = new FakeSocket();
@@ -985,9 +174,9 @@ describe('VideoRoom Durable Object signaling lifecycle', () => {
         deliveryStatus: 'pending',
         evidence: {
           source: 'room_chat_client_submit',
-          chatEventSource: 'browser_room_chat_window',
+          chatEventSource: 'browser_room_chat_panel',
           actor: 'host',
-          surface: 'win95',
+          surface: 'standard',
           roomPhase: 'connected',
           durableObjectReplayExpected: true,
         },
@@ -996,7 +185,7 @@ describe('VideoRoom Durable Object signaling lifecycle', () => {
 
     const acceptedEvidence = {
       source: 'room_chat_client_submit',
-      chatEventSource: 'browser_room_chat_window',
+      chatEventSource: 'browser_room_chat_panel',
       actor: 'host',
       roomMessageId: 'chat-1',
       clientId: 'host-client',
@@ -1004,7 +193,7 @@ describe('VideoRoom Durable Object signaling lifecycle', () => {
       messageLength: 'Can you see this message?'.length,
       messageFingerprint: roomChatMessageFingerprint('Can you see this message?'),
       deliveryStatus: 'accepted',
-      surface: 'win95',
+      surface: 'standard',
       roomPhase: 'connected',
       durableObjectReplayExpected: true,
     };
@@ -1077,7 +266,7 @@ describe('VideoRoom Durable Object signaling lifecycle', () => {
           source: 'room_chat_claim',
           chatEventSource: 'manual_test_payload',
           actor: 'host',
-          surface: 'win95',
+          surface: 'standard',
           roomPhase: 'connected',
           durableObjectReplayExpected: true,
         },
@@ -1149,9 +338,9 @@ describe('VideoRoom Durable Object signaling lifecycle', () => {
           previousEnabled: true,
           enabled: false,
           action: 'disabled',
-          surface: 'win95',
+          surface: 'standard',
           roomPhase: 'connected',
-          controlSurface: 'win95_video_window',
+          controlSurface: 'standard_video_call',
           controlAction: 'toggle',
           mediaSource: 'local_media_stream',
           rawMediaStreamPersisted: false,
@@ -1259,9 +448,9 @@ describe('VideoRoom Durable Object signaling lifecycle', () => {
           previousEnabled: true,
           enabled: false,
           action: 'disabled',
-          surface: 'win95',
+          surface: 'standard',
           roomPhase: 'connected',
-          controlSurface: 'win95_video_window',
+          controlSurface: 'standard_video_call',
           controlAction: 'toggle',
           mediaSource: 'local_media_stream',
           rawMediaStreamPersisted: false,
@@ -1304,7 +493,7 @@ describe('VideoRoom Durable Object signaling lifecycle', () => {
           recordingLifecycleKind: 'start',
           recordingStateEventId: 'recording:host:1700000000500:start:recording',
           capturedAtMs: 1700000000500,
-          surface: 'win95',
+          surface: 'standard',
           roomPhase: 'connected',
           recordingStatus: 'recording',
           recordingActive: true,
@@ -1389,7 +578,7 @@ describe('VideoRoom Durable Object signaling lifecycle', () => {
           recordingLifecycleKind: 'stop',
           recordingStateEventId: 'recording:host:1700000000900:stop:failed',
           capturedAtMs: 1700000000900,
-          surface: 'win95',
+          surface: 'standard',
           roomPhase: 'connected',
           recordingStatus: 'failed',
           recordingActive: false,
@@ -1461,7 +650,7 @@ describe('VideoRoom Durable Object signaling lifecycle', () => {
           recordingLifecycleKind: 'start',
           recordingStateEventId: 'recording:host:1700000000500:start:recording',
           capturedAtMs: 1700000000500,
-          surface: 'win95',
+          surface: 'standard',
           roomPhase: 'connected',
           recordingStatus: 'recording',
           recordingActive: true,
@@ -1510,7 +699,7 @@ describe('VideoRoom Durable Object signaling lifecycle', () => {
           recordingLifecycleKind: 'stop',
           recordingStateEventId: 'recording:host:1700000000900:stop:failed',
           capturedAtMs: 1700000000900,
-          surface: 'win95',
+          surface: 'standard',
           roomPhase: 'connected',
           recordingStatus: 'failed',
           recordingActive: false,
@@ -1562,136 +751,7 @@ describe('VideoRoom Durable Object signaling lifecycle', () => {
     expect(storage.has('recordingActivityLog')).toBe(false);
   });
 
-  it('rejects raw cursor moves without source-backed sample evidence', async () => {
-    const host = new FakeSocket();
-    const guest = new FakeSocket();
-    const { state, storage } = makeState([
-      [host, 'HOST'],
-      [guest, 'GUEST'],
-    ]);
-    const room = new VideoRoom(state);
-
-    await room.webSocketMessage(guest as unknown as WebSocket, JSON.stringify({
-      type: 'ROOM_CURSOR',
-      payload: {
-        clientId: 'guest-client',
-        role: 'GUEST',
-        x: 0.42,
-        y: 0.61,
-        updatedAt: 1761592321000,
-      },
-    }));
-
-    expect(parseSent(guest)).toContainEqual(expect.objectContaining({
-      type: 'ROOM_CURSOR_REJECTED',
-      reason: 'MISSING_SOURCE_EVIDENCE',
-    }));
-    expect(parseSent(host)).not.toContainEqual(expect.objectContaining({
-      type: 'ROOM_CURSOR',
-    }));
-    expect(storage.has('cursorActivityLog')).toBe(false);
-  });
-
-  it('records source-backed sampled cursor evidence for replay', async () => {
-    const host = new FakeSocket();
-    const guest = new FakeSocket();
-    const { state, storage } = makeState([
-      [host, 'HOST'],
-      [guest, 'GUEST'],
-    ]);
-    const room = new VideoRoom(state);
-
-    await room.webSocketMessage(guest as unknown as WebSocket, JSON.stringify({
-      type: 'ROOM_CURSOR',
-      payload: {
-        clientId: 'guest-client',
-        role: 'GUEST',
-        x: 0.42,
-        y: 0.61,
-        updatedAt: 1761592321000,
-        evidence: {
-          source: 'win95_cursor_presence_client_sample',
-          cursorEventSource: 'browser_win95_desktop_pointermove',
-          actor: 'guest',
-          cursorSampleId: 'cursor:guest:1761592321000:420:610',
-          sampledAtMs: 1761592321000,
-          surface: 'win95',
-          roomPhase: 'connected',
-          normalizedX: 0.42,
-          normalizedY: 0.61,
-          previousNormalizedX: null,
-          previousNormalizedY: null,
-          distanceFromPrevious: null,
-          evidenceSampling: 'presence_sample',
-          sampleIntervalMs: 15000,
-          movementThreshold: 0.03,
-          rawCursorMovesPersisted: false,
-        },
-      },
-    }));
-
-    expect(parseSent(host)).toContainEqual(expect.objectContaining({
-      type: 'ROOM_CURSOR',
-      role: 'GUEST',
-      payload: expect.objectContaining({
-        clientId: 'guest-client',
-        evidence: expect.objectContaining({
-          source: 'win95_cursor_presence_client_sample',
-          cursorSampleId: 'cursor:guest:1761592321000:420:610',
-        }),
-      }),
-    }));
-    expect(storage.get('cursorActivityLog')).toEqual([
-      expect.objectContaining({
-        role: 'GUEST',
-        cursor: expect.objectContaining({
-          clientId: 'guest-client',
-          evidence: expect.objectContaining({
-            source: 'win95_cursor_presence_client_sample',
-            cursorSampleId: 'cursor:guest:1761592321000:420:610',
-          }),
-        }),
-      }),
-    ]);
-  });
-
-  it('rejects cursor samples with source-less evidence', async () => {
-    const host = new FakeSocket();
-    const guest = new FakeSocket();
-    const { state, storage } = makeState([
-      [host, 'HOST'],
-      [guest, 'GUEST'],
-    ]);
-    const room = new VideoRoom(state);
-
-    await room.webSocketMessage(guest as unknown as WebSocket, JSON.stringify({
-      type: 'ROOM_CURSOR',
-      payload: {
-        clientId: 'guest-client',
-        role: 'GUEST',
-        x: 0.42,
-        y: 0.61,
-        updatedAt: 1761592321000,
-        evidence: {
-          source: 'room_cursor_claim',
-          actor: 'guest',
-          normalizedX: 0.42,
-          normalizedY: 0.61,
-        },
-      },
-    }));
-
-    expect(parseSent(guest)).toContainEqual(expect.objectContaining({
-      type: 'ROOM_CURSOR_REJECTED',
-      reason: 'MISSING_SOURCE_EVIDENCE',
-    }));
-    expect(parseSent(host)).not.toContainEqual(expect.objectContaining({
-      type: 'ROOM_CURSOR',
-    }));
-    expect(storage.has('cursorActivityLog')).toBe(false);
-  });
-
-  it('stores and broadcasts shared Clippy prompts for proactive room guidance', async () => {
+  it('stores and broadcasts shared Agent prompts for proactive room guidance', async () => {
     const host = new FakeSocket();
     const guest = new FakeSocket();
     const { state, storage } = makeState([
@@ -1701,15 +761,15 @@ describe('VideoRoom Durable Object signaling lifecycle', () => {
     const room = new VideoRoom(state);
 
     await room.webSocketMessage(host as unknown as WebSocket, JSON.stringify({
-      type: 'ROOM_CLIPPY_PROMPT',
+      type: 'ROOM_AGENT_PROMPT',
       payload: {
-        id: 'clippy-recording',
+        id: 'agent-recording',
         clientId: 'host-client',
         createdAt: 3,
         source: 'system',
-        promptEventSource: 'browser_proactive_clippy_prompt',
+        promptEventSource: 'browser_proactive_agent_prompt',
         promptTrigger: 'recording_start_suggestion',
-        surface: 'win95',
+        surface: 'standard',
         roomPhase: 'connected',
         workspaceStatus: 'READY',
         workspaceSessionId: 'workspace-session-1',
@@ -1723,13 +783,13 @@ describe('VideoRoom Durable Object signaling lifecycle', () => {
       },
     }));
 
-    expect(storage.get('currentClippyPrompt')).toEqual(expect.objectContaining({
-      id: 'clippy-recording',
+    expect(storage.get('currentAgentPrompt')).toEqual(expect.objectContaining({
+      id: 'agent-recording',
       clientId: 'host-client',
       source: 'system',
-      promptEventSource: 'browser_proactive_clippy_prompt',
+      promptEventSource: 'browser_proactive_agent_prompt',
       promptTrigger: 'recording_start_suggestion',
-      surface: 'win95',
+      surface: 'standard',
       roomPhase: 'connected',
       workspaceStatus: 'READY',
       workspaceSessionId: 'workspace-session-1',
@@ -1741,21 +801,21 @@ describe('VideoRoom Durable Object signaling lifecycle', () => {
       ],
     }));
     expect(parseSent(guest)).toContainEqual(expect.objectContaining({
-      type: 'ROOM_CLIPPY_PROMPT',
+      type: 'ROOM_AGENT_PROMPT',
       role: 'HOST',
       payload: expect.objectContaining({
-        id: 'clippy-recording',
-        promptEventSource: 'browser_proactive_clippy_prompt',
+        id: 'agent-recording',
+        promptEventSource: 'browser_proactive_agent_prompt',
         promptTrigger: 'recording_start_suggestion',
         text: "It looks like you're starting an interview. Would you like to begin recording?",
       }),
     }));
-    expect(storage.get('clippyPromptActivityLog')).toEqual([
+    expect(storage.get('agentPromptActivityLog')).toEqual([
       expect.objectContaining({
         role: 'HOST',
         prompt: expect.objectContaining({
-          id: 'clippy-recording',
-          promptEventSource: 'browser_proactive_clippy_prompt',
+          id: 'agent-recording',
+          promptEventSource: 'browser_proactive_agent_prompt',
           promptTrigger: 'recording_start_suggestion',
           agentResponseClaimed: false,
         }),
@@ -1763,7 +823,7 @@ describe('VideoRoom Durable Object signaling lifecycle', () => {
     ]);
   });
 
-  it('rejects Clippy prompts without browser prompt evidence', async () => {
+  it('rejects Agent prompts without browser prompt evidence', async () => {
     const host = new FakeSocket();
     const guest = new FakeSocket();
     const { state, storage } = makeState([
@@ -1773,14 +833,14 @@ describe('VideoRoom Durable Object signaling lifecycle', () => {
     const room = new VideoRoom(state);
 
     await room.webSocketMessage(host as unknown as WebSocket, JSON.stringify({
-      type: 'ROOM_CLIPPY_PROMPT',
+      type: 'ROOM_AGENT_PROMPT',
       payload: {
-        id: 'clippy-source-less',
+        id: 'agent-source-less',
         clientId: 'host-client',
         createdAt: 3,
         source: 'system',
         promptTrigger: 'missing_prompt_event_source',
-        surface: 'win95',
+        surface: 'standard',
         roomPhase: 'connected',
         agentResponseClaimed: false,
         text: 'This should not be saved as prompt evidence.',
@@ -1788,17 +848,17 @@ describe('VideoRoom Durable Object signaling lifecycle', () => {
     }));
 
     expect(parseSent(host)).toContainEqual(expect.objectContaining({
-      type: 'ROOM_CLIPPY_PROMPT_REJECTED',
+      type: 'ROOM_AGENT_PROMPT_REJECTED',
       reason: 'MISSING_SOURCE_EVIDENCE',
     }));
     expect(parseSent(guest)).not.toContainEqual(expect.objectContaining({
-      type: 'ROOM_CLIPPY_PROMPT',
+      type: 'ROOM_AGENT_PROMPT',
     }));
-    expect(storage.has('currentClippyPrompt')).toBe(false);
-    expect(storage.has('clippyPromptActivityLog')).toBe(false);
+    expect(storage.has('currentAgentPrompt')).toBe(false);
+    expect(storage.has('agentPromptActivityLog')).toBe(false);
   });
 
-  it('broadcasts and records source-backed Clippy/Devin interaction events', async () => {
+  it('broadcasts and records source-backed AI assistant/Devin interaction events', async () => {
     const host = new FakeSocket();
     const guest = new FakeSocket();
     const { state, storage } = makeState([
@@ -1808,28 +868,28 @@ describe('VideoRoom Durable Object signaling lifecycle', () => {
     const room = new VideoRoom(state);
 
     await room.webSocketMessage(guest as unknown as WebSocket, JSON.stringify({
-      type: 'ROOM_CLIPPY_INTERACTION',
+      type: 'ROOM_AGENT_INTERACTION',
       payload: {
-        id: 'clippy-user-chat-1',
+        id: 'agent-user-chat-1',
         clientId: 'guest-client',
         createdAt: 1782603900000,
         eventType: 'ai_chat_user',
         actor: 'guest',
         text: 'Can you inspect the failing test?',
         evidence: {
-          source: 'clippy_agent_chat_client_submit',
-          agentChatEventSource: 'browser_clippy_chat_window',
+          source: 'agent_chat_client_submit',
+          agentChatEventSource: 'browser_agent_chat_panel',
           bridgeMessageType: 'CHAT',
-          bridgeProtocol: 'clippy_dev_container_ws',
-          promptId: 'workspace-session-1:guest:prompt:1782603900000:clippy_0123abcd',
-          promptFingerprint: 'clippy_0123abcd',
+          bridgeProtocol: 'agent_dev_container_ws',
+          promptId: 'workspace-session-1:guest:prompt:1782603900000:agent_0123abcd',
+          promptFingerprint: 'agent_0123abcd',
           promptLength: 'Can you inspect the failing test?'.length,
           promptTimestamp: 1782603900000,
           bridgeDeliveryStatus: 'queued',
           browserQueuedBridgeMessage: true,
           bridgeDeliveryConfirmed: false,
           agent: null,
-          surface: 'win95',
+          surface: 'standard',
           roomPhase: 'connected',
           workspaceStatus: 'READY',
           workspaceSessionId: 'workspace-session-1',
@@ -1837,533 +897,6 @@ describe('VideoRoom Durable Object signaling lifecycle', () => {
           agentResponseClaimed: false,
           actor: 'guest',
           durableObjectReplayExpected: true,
-        },
-      },
-    }));
-
-    await room.webSocketMessage(guest as unknown as WebSocket, JSON.stringify({
-      type: 'ROOM_CLIPPY_INTERACTION',
-      payload: {
-        id: 'clippy-agent-status-1',
-        clientId: 'guest-client',
-        createdAt: 1782604000000,
-        eventType: 'ai_agent_status',
-        actor: 'agent',
-        text: 'devin is ready.',
-        evidence: {
-          source: 'clippy_agent_bridge',
-          agentStatusEventSource: 'browser_clippy_agent_ws',
-          agent: 'devin',
-          status: 'idle',
-          diagnosticSource: null,
-          bridgeMessageSource: 'agent_status',
-          observedAt: '2026-06-27T20:00:00.000Z',
-          capturedAtMs: 1782604000000,
-          agentStatusEventId: 'agent-status:devin:1782604000000:agent_status:idle:none',
-          surface: 'win95',
-          roomPhase: 'connected',
-          workspaceStatus: 'READY',
-          workspaceSessionId: 'workspace-session-1',
-          messageTimestamp: 1782604000000,
-          agentResponseClaimed: false,
-          durableObjectReplayExpected: true,
-        },
-      },
-    }));
-
-    expect(parseSent(host)).toEqual(expect.arrayContaining([
-      expect.objectContaining({
-        type: 'ROOM_CLIPPY_INTERACTION',
-        role: 'GUEST',
-        payload: expect.objectContaining({
-          eventType: 'ai_chat_user',
-          actor: 'guest',
-          text: 'Can you inspect the failing test?',
-          evidence: expect.objectContaining({
-            source: 'clippy_agent_chat_client_submit',
-            promptId: 'workspace-session-1:guest:prompt:1782603900000:clippy_0123abcd',
-          }),
-        }),
-      }),
-      expect.objectContaining({
-        type: 'ROOM_CLIPPY_INTERACTION',
-        role: 'GUEST',
-        payload: expect.objectContaining({
-          eventType: 'ai_agent_status',
-          actor: 'agent',
-          evidence: expect.objectContaining({
-            source: 'clippy_agent_bridge',
-            agentStatusEventId: 'agent-status:devin:1782604000000:agent_status:idle:none',
-          }),
-        }),
-      }),
-    ]));
-    expect(storage.get('clippyInteractionActivityLog')).toEqual([
-      expect.objectContaining({
-        role: 'GUEST',
-        event: expect.objectContaining({
-          id: 'clippy-user-chat-1',
-          eventType: 'ai_chat_user',
-        }),
-      }),
-      expect.objectContaining({
-        role: 'GUEST',
-        event: expect.objectContaining({
-          id: 'clippy-agent-status-1',
-          eventType: 'ai_agent_status',
-        }),
-      }),
-    ]);
-  });
-
-  it('records blocked Clippy prompts without claiming delivery to Devin', async () => {
-    const host = new FakeSocket();
-    const guest = new FakeSocket();
-    const { state, storage } = makeState([
-      [host, 'HOST'],
-      [guest, 'GUEST'],
-    ]);
-    const room = new VideoRoom(state);
-    const promptText = 'Can you inspect this before the workspace starts?';
-
-    await room.webSocketMessage(guest as unknown as WebSocket, JSON.stringify({
-      type: 'ROOM_CLIPPY_INTERACTION',
-      payload: {
-        id: 'clippy-user-chat-blocked',
-        clientId: 'guest-client',
-        createdAt: 1782603950000,
-        eventType: 'ai_chat_user',
-        actor: 'guest',
-        text: promptText,
-        evidence: {
-          source: 'clippy_agent_chat_client_submit',
-          agentChatEventSource: 'browser_clippy_chat_window',
-          bridgeMessageType: 'CHAT',
-          bridgeProtocol: 'clippy_dev_container_ws',
-          bridgeDeliveryStatus: 'blocked',
-          bridgeBlockedReason: 'workspace_required',
-          promptId: 'none:guest:prompt:1782603950000:clippy_89abcdef',
-          promptFingerprint: 'clippy_89abcdef',
-          promptLength: promptText.length,
-          promptTimestamp: 1782603950000,
-          browserQueuedBridgeMessage: false,
-          bridgeDeliveryConfirmed: false,
-          agent: null,
-          surface: 'win95',
-          roomPhase: 'connected',
-          workspaceStatus: null,
-          workspaceSessionId: null,
-          repoUrl: null,
-          agentResponseClaimed: false,
-          actor: 'guest',
-          durableObjectReplayExpected: true,
-        },
-      },
-    }));
-
-    expect(parseSent(host)).toContainEqual(expect.objectContaining({
-      type: 'ROOM_CLIPPY_INTERACTION',
-      role: 'GUEST',
-      payload: expect.objectContaining({
-        id: 'clippy-user-chat-blocked',
-        eventType: 'ai_chat_user',
-        text: promptText,
-        evidence: expect.objectContaining({
-          bridgeDeliveryStatus: 'blocked',
-          bridgeBlockedReason: 'workspace_required',
-          browserQueuedBridgeMessage: false,
-        }),
-      }),
-    }));
-    expect(storage.get('clippyInteractionActivityLog')).toEqual([
-      expect.objectContaining({
-        role: 'GUEST',
-        event: expect.objectContaining({
-          id: 'clippy-user-chat-blocked',
-          evidence: expect.objectContaining({
-            bridgeDeliveryStatus: 'blocked',
-            bridgeBlockedReason: 'workspace_required',
-          }),
-        }),
-      }),
-    ]);
-  });
-
-  it('redacts Clippy/Devin status diagnostics before broadcast and storage', async () => {
-    const host = new FakeSocket();
-    const guest = new FakeSocket();
-    const { state, storage } = makeState([
-      [host, 'HOST'],
-      [guest, 'GUEST'],
-    ]);
-    const room = new VideoRoom(state);
-    const rawText = [
-      'Auth failed with DEVIN_API_KEY=cog_aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa',
-      'Bearer ghp_bbbbbbbbbbbbbbbbbbbbbbbbbbbb',
-      '/api/v1/meeting-rooms/live-room-token?token=raw-token',
-    ].join(' ');
-
-    await room.webSocketMessage(guest as unknown as WebSocket, JSON.stringify({
-      type: 'ROOM_CLIPPY_INTERACTION',
-      payload: {
-        id: 'clippy-agent-status-redacted',
-        clientId: 'guest-client',
-        createdAt: 1782604100000,
-        eventType: 'ai_agent_status',
-        actor: 'agent',
-        text: rawText,
-        evidence: {
-          source: 'clippy_agent_bridge',
-          agentStatusEventSource: 'browser_clippy_agent_ws',
-          agent: 'devin',
-          status: 'auth_needed',
-          diagnosticSource: 'agent_auth_check',
-          bridgeMessageSource: 'bridge_diagnostic',
-          observedAt: '2026-06-27T20:00:00.000Z',
-          capturedAtMs: 1782604100000,
-          agentStatusEventId: 'agent-status:devin:1782604100000:bridge_diagnostic:auth_needed:agent_auth_check',
-          surface: 'win95',
-          roomPhase: 'connected',
-          workspaceStatus: 'READY',
-          workspaceSessionId: 'workspace-session-1',
-          messageTimestamp: 1782604100000,
-          agentResponseClaimed: false,
-          durableObjectReplayExpected: true,
-        },
-      },
-    }));
-
-    const broadcast = parseSent(host).find((message) => (
-      message.type === 'ROOM_CLIPPY_INTERACTION'
-      && typeof message.payload === 'object'
-      && message.payload !== null
-      && 'id' in message.payload
-      && message.payload.id === 'clippy-agent-status-redacted'
-    ));
-    expect(broadcast).toMatchObject({
-      type: 'ROOM_CLIPPY_INTERACTION',
-      payload: {
-        text: 'Auth failed with DEVIN_API_KEY=[REDACTED_SECRET] Bearer [REDACTED_SECRET] /api/v1/meeting-rooms/[REDACTED_SECRET]',
-      },
-    });
-    const log = storage.get('clippyInteractionActivityLog');
-    expect(log).toEqual([
-      expect.objectContaining({
-        event: expect.objectContaining({
-          id: 'clippy-agent-status-redacted',
-          text: 'Auth failed with DEVIN_API_KEY=[REDACTED_SECRET] Bearer [REDACTED_SECRET] /api/v1/meeting-rooms/[REDACTED_SECRET]',
-        }),
-      }),
-    ]);
-    expect(JSON.stringify(parseSent(host))).not.toContain('cog_aaaaaaaa');
-    expect(JSON.stringify(log)).not.toContain('live-room-token');
-    expect(JSON.stringify(log)).not.toContain('ghp_bbbbbbbb');
-  });
-
-  it('rejects Clippy/Devin interaction events without source evidence', async () => {
-    const host = new FakeSocket();
-    const guest = new FakeSocket();
-    const { state, storage } = makeState([
-      [host, 'HOST'],
-      [guest, 'GUEST'],
-    ]);
-    const room = new VideoRoom(state);
-
-    await room.webSocketMessage(guest as unknown as WebSocket, JSON.stringify({
-      type: 'ROOM_CLIPPY_INTERACTION',
-      payload: {
-        id: 'clippy-fake-user-chat',
-        clientId: 'guest-client',
-        createdAt: 1782603900000,
-        eventType: 'ai_chat_user',
-        actor: 'guest',
-        text: 'This should not be saved.',
-        evidence: {
-          source: 'clippy_agent_chat',
-          promptLength: 'This should not be saved.'.length,
-        },
-      },
-    }));
-
-    expect(parseSent(guest)).toContainEqual(expect.objectContaining({
-      type: 'ROOM_CLIPPY_INTERACTION_REJECTED',
-      reason: 'MISSING_SOURCE_EVIDENCE',
-    }));
-    expect(parseSent(host)).not.toContainEqual(expect.objectContaining({
-      type: 'ROOM_CLIPPY_INTERACTION',
-    }));
-    expect(storage.has('clippyInteractionActivityLog')).toBe(false);
-  });
-
-  it('rejects Clippy/Devin agent output with malformed browser prompt refs', async () => {
-    const host = new FakeSocket();
-    const guest = new FakeSocket();
-    const { state, storage } = makeState([
-      [host, 'HOST'],
-      [guest, 'GUEST'],
-    ]);
-    const room = new VideoRoom(state);
-
-    await room.webSocketMessage(guest as unknown as WebSocket, JSON.stringify({
-      type: 'ROOM_CLIPPY_INTERACTION',
-      payload: {
-        id: 'clippy-agent-chat-malformed-prompt-ref',
-        clientId: 'guest-client',
-        createdAt: 1782603900000,
-        eventType: 'ai_chat_agent',
-        actor: 'agent',
-        text: 'I inspected the failing test.',
-        evidence: {
-          source: 'clippy_agent_bridge',
-          agent: 'devin',
-          bridgeEventType: 'CHAT_RESPONSE',
-          bridgeMessageSource: 'agent_stdout',
-          observedAt: '2026-06-27T21:05:00.000Z',
-          capturedAtMs: 1782594300000,
-          agentChatResponseId: 'agent-chat:devin:1782594300000:CHAT_RESPONSE:agent_314a13fc',
-          responseFingerprint: 'agent_314a13fc',
-          responseLength: 'I inspected the failing test.'.length,
-          actionCount: 0,
-          bridgePersisted: true,
-          browserPromptId: 'source-less-prompt-ref',
-          browserPromptFingerprint: 'clippy_0123abcd',
-          browserPromptTimestamp: 1782603900000,
-          browserPromptLength: 'Can you inspect the failing test?'.length,
-        },
-      },
-    }));
-
-    expect(parseSent(guest)).toContainEqual(expect.objectContaining({
-      type: 'ROOM_CLIPPY_INTERACTION_REJECTED',
-      reason: 'MISSING_SOURCE_EVIDENCE',
-    }));
-    expect(parseSent(host)).not.toContainEqual(expect.objectContaining({
-      type: 'ROOM_CLIPPY_INTERACTION',
-    }));
-    expect(storage.has('clippyInteractionActivityLog')).toBe(false);
-  });
-
-  it('rejects Clippy user prompts that claim a Devin agent attribution', async () => {
-    const host = new FakeSocket();
-    const guest = new FakeSocket();
-    const { state, storage } = makeState([
-      [host, 'HOST'],
-      [guest, 'GUEST'],
-    ]);
-    const room = new VideoRoom(state);
-
-    await room.webSocketMessage(guest as unknown as WebSocket, JSON.stringify({
-      type: 'ROOM_CLIPPY_INTERACTION',
-      payload: {
-        id: 'clippy-attributed-user-chat',
-        clientId: 'guest-client',
-        createdAt: 1782603900000,
-        eventType: 'ai_chat_user',
-        actor: 'guest',
-        text: 'Can you inspect the failing test?',
-        evidence: {
-          source: 'clippy_agent_chat_client_submit',
-          agentChatEventSource: 'browser_clippy_chat_window',
-          bridgeMessageType: 'CHAT',
-          bridgeProtocol: 'clippy_dev_container_ws',
-          promptId: 'workspace-session-1:guest:prompt:1782603900000:clippy_0123abcd',
-          promptFingerprint: 'clippy_0123abcd',
-          promptLength: 'Can you inspect the failing test?'.length,
-          promptTimestamp: 1782603900000,
-          deliveredToAgentBridge: true,
-          agent: 'devin',
-          surface: 'win95',
-          roomPhase: 'connected',
-          workspaceStatus: 'READY',
-          workspaceSessionId: 'workspace-session-1',
-          repoUrl: 'https://github.com/cloudflare/workers-sdk',
-          agentResponseClaimed: false,
-          actor: 'guest',
-          durableObjectReplayExpected: true,
-        },
-      },
-    }));
-
-    expect(parseSent(guest)).toContainEqual(expect.objectContaining({
-      type: 'ROOM_CLIPPY_INTERACTION_REJECTED',
-      reason: 'MISSING_SOURCE_EVIDENCE',
-    }));
-    expect(parseSent(host)).not.toContainEqual(expect.objectContaining({
-      type: 'ROOM_CLIPPY_INTERACTION',
-    }));
-    expect(storage.has('clippyInteractionActivityLog')).toBe(false);
-  });
-
-  it('rejects Clippy user prompts that claim confirmed bridge delivery', async () => {
-    const host = new FakeSocket();
-    const guest = new FakeSocket();
-    const { state, storage } = makeState([
-      [host, 'HOST'],
-      [guest, 'GUEST'],
-    ]);
-    const room = new VideoRoom(state);
-
-    await room.webSocketMessage(guest as unknown as WebSocket, JSON.stringify({
-      type: 'ROOM_CLIPPY_INTERACTION',
-      payload: {
-        id: 'clippy-delivered-user-chat',
-        clientId: 'guest-client',
-        createdAt: 1782603900000,
-        eventType: 'ai_chat_user',
-        actor: 'guest',
-        text: 'Can you inspect the failing test?',
-        evidence: {
-          source: 'clippy_agent_chat_client_submit',
-          agentChatEventSource: 'browser_clippy_chat_window',
-          bridgeMessageType: 'CHAT',
-          bridgeProtocol: 'clippy_dev_container_ws',
-          promptId: 'workspace-session-1:guest:prompt:1782603900000:clippy_0123abcd',
-          promptFingerprint: 'clippy_0123abcd',
-          promptLength: 'Can you inspect the failing test?'.length,
-          promptTimestamp: 1782603900000,
-          deliveredToAgentBridge: true,
-          agent: null,
-          surface: 'win95',
-          roomPhase: 'connected',
-          workspaceStatus: 'READY',
-          workspaceSessionId: 'workspace-session-1',
-          repoUrl: 'https://github.com/cloudflare/workers-sdk',
-          agentResponseClaimed: false,
-          actor: 'guest',
-          durableObjectReplayExpected: true,
-        },
-      },
-    }));
-
-    expect(parseSent(guest)).toContainEqual(expect.objectContaining({
-      type: 'ROOM_CLIPPY_INTERACTION_REJECTED',
-      reason: 'MISSING_SOURCE_EVIDENCE',
-    }));
-    expect(parseSent(host)).not.toContainEqual(expect.objectContaining({
-      type: 'ROOM_CLIPPY_INTERACTION',
-    }));
-    expect(storage.has('clippyInteractionActivityLog')).toBe(false);
-  });
-
-  it('rejects Clippy/Devin room actions without the exact bridge tag protocol', async () => {
-    const host = new FakeSocket();
-    const guest = new FakeSocket();
-    const { state, storage } = makeState([
-      [host, 'HOST'],
-      [guest, 'GUEST'],
-    ]);
-    const room = new VideoRoom(state);
-
-    await room.webSocketMessage(guest as unknown as WebSocket, JSON.stringify({
-      type: 'ROOM_CLIPPY_INTERACTION',
-      payload: {
-        id: 'clippy-legacy-agent-action',
-        clientId: 'guest-client',
-        createdAt: 1782594600000,
-        eventType: 'clippy_action',
-        actor: 'agent',
-        text: 'devin suggested room action: open-terminal',
-        evidence: {
-          source: 'clippy_agent_bridge',
-          origin: 'agent',
-          executionStatus: 'suggested',
-          actionId: 'open-terminal',
-          actionSource: 'agent_stdout',
-          actionProtocol: 'bridge_actions_field',
-          bridgeEventType: 'ROOM_ACTION',
-          agent: 'devin',
-          observedAt: '2026-06-27T21:10:00.000Z',
-          capturedAtMs: 1782594600000,
-          clippyActionEventId: 'clippy-action:agent:1782594600000:clippy_agent_bridge:agent:suggested:open-terminal',
-          bridgePersisted: true,
-          durableObjectReplayExpected: true,
-        },
-      },
-    }));
-
-    expect(parseSent(guest)).toContainEqual(expect.objectContaining({
-      type: 'ROOM_CLIPPY_INTERACTION_REJECTED',
-      reason: 'MISSING_SOURCE_EVIDENCE',
-    }));
-    expect(parseSent(host)).not.toContainEqual(expect.objectContaining({
-      type: 'ROOM_CLIPPY_INTERACTION',
-    }));
-    expect(storage.has('clippyInteractionActivityLog')).toBe(false);
-  });
-
-  it('rejects human Clippy UI actions that claim a Devin agent attribution', async () => {
-    const host = new FakeSocket();
-    const guest = new FakeSocket();
-    const { state, storage } = makeState([
-      [host, 'HOST'],
-      [guest, 'GUEST'],
-    ]);
-    const room = new VideoRoom(state);
-
-    await room.webSocketMessage(host as unknown as WebSocket, JSON.stringify({
-      type: 'ROOM_CLIPPY_INTERACTION',
-      payload: {
-        id: 'clippy-attributed-ui-action',
-        clientId: 'host-client',
-        createdAt: 1782594200000,
-        eventType: 'clippy_action',
-        actor: 'host',
-        text: 'Clippy action: start recording',
-        evidence: {
-          source: 'clippy_prompt_ui',
-          actionId: 'start-recording',
-          origin: 'prompt',
-          executedBy: 'host',
-          actionSource: 'clippy_prompt_ui',
-          executionStatus: 'executed',
-          capturedAtMs: 1782594200000,
-          clippyActionEventId: 'clippy-action:host:1782594200000:clippy_prompt_ui:prompt:executed:start-recording',
-          agent: 'devin',
-          agentResponseClaimed: false,
-          surface: 'win95',
-          roomPhase: 'connected',
-          workspaceStatus: 'READY',
-          workspaceSessionId: 'workspace-session-1',
-          durableObjectReplayExpected: true,
-        },
-      },
-    }));
-
-    expect(parseSent(host)).toContainEqual(expect.objectContaining({
-      type: 'ROOM_CLIPPY_INTERACTION_REJECTED',
-      reason: 'MISSING_SOURCE_EVIDENCE',
-    }));
-    expect(parseSent(guest)).not.toContainEqual(expect.objectContaining({
-      type: 'ROOM_CLIPPY_INTERACTION',
-    }));
-    expect(storage.has('clippyInteractionActivityLog')).toBe(false);
-  });
-
-  it('stores, broadcasts, and records shared room filesystem edits', async () => {
-    const host = new FakeSocket();
-    const guest = new FakeSocket();
-    const { state, storage } = makeState([
-      [host, 'HOST'],
-      [guest, 'GUEST'],
-    ]);
-    const room = new VideoRoom(state);
-
-    await room.webSocketMessage(host as unknown as WebSocket, JSON.stringify({
-      type: 'ROOM_FILE_SYSTEM_EVENT',
-      payload: {
-        id: 'fs-save-notes',
-        clientId: 'host-client',
-        createdAt: 4,
-        kind: 'UPSERT_FILE',
-        file: {
-          id: 'desktop-notes',
-          name: 'notes.txt',
-          kind: 'text',
-          content: 'Candidate asked about testing strategy.',
-          mimeType: 'text/plain',
-          metadata: { app: 'notepad' },
-          createdAt: 4,
-          updatedAt: 4,
         },
         evidence: {
           source: 'win95_shared_file_system',
@@ -2388,128 +921,152 @@ describe('VideoRoom Durable Object signaling lifecycle', () => {
       },
     }));
 
-    expect(storage.get('roomFileSystem')).toEqual([
-      expect.objectContaining({
-        id: 'desktop-notes',
-        name: 'notes.txt',
-        kind: 'text',
-        content: 'Candidate asked about testing strategy.',
-        mimeType: 'text/plain',
-        metadata: {
-          app: 'notepad',
-          roomFileProjectionEvidence: expect.objectContaining({
-            source: 'win95_shared_file_system',
-            fileEventSource: 'browser_client_submit',
-            fileChangeId: 'file:host:4:upsert:desktop-notes',
-            actor: 'host',
-            operation: 'upsert',
-            action: 'upsert',
-            fileId: 'desktop-notes',
-            fileName: 'notes.txt',
-            fileKind: 'text',
-            mimeType: 'text/plain',
-            surface: 'win95',
-            roomPhase: 'connected',
-            capturedAtMs: 4,
-            durableObjectReplayExpected: true,
-            contentLength: 'Candidate asked about testing strategy.'.length,
-            contentHash: 'content_bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb',
-            fileCreatedAt: 4,
-            fileUpdatedAt: 4,
-          }),
-        },
-      }),
-    ]);
-    expect(parseSent(guest)).toContainEqual(expect.objectContaining({
-      type: 'ROOM_FILE_SYSTEM_EVENT',
-      role: 'HOST',
-      payload: expect.objectContaining({
-        kind: 'UPSERT_FILE',
-        file: expect.objectContaining({
-          id: 'desktop-notes',
-          name: 'notes.txt',
-        }),
-        evidence: expect.objectContaining({
-          source: 'win95_shared_file_system',
-          fileChangeId: 'file:host:4:upsert:desktop-notes',
-        }),
-      }),
-    }));
-    expect(storage.get('fileSystemActivityLog')).toEqual([
-      expect.objectContaining({
-        role: 'HOST',
-        event: expect.objectContaining({
-          id: 'fs-save-notes',
-          kind: 'UPSERT_FILE',
-          evidence: expect.objectContaining({
-            source: 'win95_shared_file_system',
-            fileChangeId: 'file:host:4:upsert:desktop-notes',
-          }),
-        }),
-      }),
-    ]);
-
     await room.webSocketMessage(guest as unknown as WebSocket, JSON.stringify({
-      type: 'ROOM_FILE_SYSTEM_EVENT',
+      type: 'ROOM_AGENT_INTERACTION',
       payload: {
-        id: 'fs-delete-notes',
+        id: 'agent-agent-status-1',
         clientId: 'guest-client',
-        createdAt: 5,
-        kind: 'DELETE_FILE',
-        fileId: 'desktop-notes',
+        createdAt: 1782604000000,
+        eventType: 'ai_agent_status',
+        actor: 'agent',
+        text: 'devin is ready.',
         evidence: {
-          source: 'win95_shared_file_system',
-          fileEventSource: 'browser_client_submit',
-          fileChangeId: 'file:guest:5:delete:desktop-notes',
-          actor: 'guest',
-          operation: 'delete',
-          fileId: 'desktop-notes',
-          fileName: 'notes.txt',
-          fileKind: 'text',
-          surface: 'win95',
+          source: 'agent_bridge',
+          agentStatusEventSource: 'browser_agent_ws',
+          agent: 'devin',
+          status: 'idle',
+          diagnosticSource: null,
+          bridgeMessageSource: 'agent_status',
+          observedAt: '2026-06-27T20:00:00.000Z',
+          capturedAtMs: 1782604000000,
+          agentStatusEventId: 'agent-status:devin:1782604000000:agent_status:idle:none',
+          surface: 'standard',
           roomPhase: 'connected',
-          capturedAtMs: 5,
+          workspaceStatus: 'READY',
+          workspaceSessionId: 'workspace-session-1',
+          messageTimestamp: 1782604000000,
+          agentResponseClaimed: false,
           durableObjectReplayExpected: true,
         },
       },
     }));
 
-    expect(storage.get('roomFileSystem')).toEqual([]);
-    expect(parseSent(host)).toContainEqual(expect.objectContaining({
-      type: 'ROOM_FILE_SYSTEM_EVENT',
-      role: 'GUEST',
-      payload: expect.objectContaining({
-        kind: 'DELETE_FILE',
-        fileId: 'desktop-notes',
-        file: expect.objectContaining({
-          id: 'desktop-notes',
-          name: 'notes.txt',
-          content: 'Candidate asked about testing strategy.',
+    expect(parseSent(host)).toEqual(expect.arrayContaining([
+      expect.objectContaining({
+        type: 'ROOM_AGENT_INTERACTION',
+        role: 'GUEST',
+        payload: expect.objectContaining({
+          eventType: 'ai_chat_user',
+          actor: 'guest',
+          text: 'Can you inspect the failing test?',
+          evidence: expect.objectContaining({
+            source: 'agent_chat_client_submit',
+            promptId: 'workspace-session-1:guest:prompt:1782603900000:agent_0123abcd',
+          }),
         }),
         evidence: expect.objectContaining({
           source: 'win95_shared_file_system',
           fileChangeId: 'file:guest:5:delete:desktop-notes',
         }),
       }),
-    }));
-    expect(storage.get('fileSystemActivityLog')).toEqual([
       expect.objectContaining({
-        role: 'HOST',
+        type: 'ROOM_AGENT_INTERACTION',
+        role: 'GUEST',
+        payload: expect.objectContaining({
+          eventType: 'ai_agent_status',
+          actor: 'agent',
+          evidence: expect.objectContaining({
+            source: 'agent_bridge',
+            agentStatusEventId: 'agent-status:devin:1782604000000:agent_status:idle:none',
+          }),
+        }),
+      }),
+    ]));
+    expect(storage.get('agentInteractionActivityLog')).toEqual([
+      expect.objectContaining({
+        role: 'GUEST',
         event: expect.objectContaining({
-          id: 'fs-save-notes',
-          kind: 'UPSERT_FILE',
+          id: 'agent-user-chat-1',
+          eventType: 'ai_chat_user',
         }),
       }),
       expect.objectContaining({
         role: 'GUEST',
         event: expect.objectContaining({
-          id: 'fs-delete-notes',
-          kind: 'DELETE_FILE',
-          fileId: 'desktop-notes',
-          file: expect.objectContaining({
-            id: 'desktop-notes',
-            name: 'notes.txt',
-            content: 'Candidate asked about testing strategy.',
+          id: 'agent-agent-status-1',
+          eventType: 'ai_agent_status',
+        }),
+      }),
+    ]);
+  });
+
+  it('records blocked Agent prompts without claiming delivery to Devin', async () => {
+    const host = new FakeSocket();
+    const guest = new FakeSocket();
+    const { state, storage } = makeState([
+      [host, 'HOST'],
+      [guest, 'GUEST'],
+    ]);
+    const room = new VideoRoom(state);
+    const promptText = 'Can you inspect this before the workspace starts?';
+
+    await room.webSocketMessage(guest as unknown as WebSocket, JSON.stringify({
+      type: 'ROOM_AGENT_INTERACTION',
+      payload: {
+        id: 'agent-user-chat-blocked',
+        clientId: 'guest-client',
+        createdAt: 1782603950000,
+        eventType: 'ai_chat_user',
+        actor: 'guest',
+        text: promptText,
+        evidence: {
+          source: 'agent_chat_client_submit',
+          agentChatEventSource: 'browser_agent_chat_panel',
+          bridgeMessageType: 'CHAT',
+          bridgeProtocol: 'agent_dev_container_ws',
+          bridgeDeliveryStatus: 'blocked',
+          bridgeBlockedReason: 'workspace_required',
+          promptId: 'none:guest:prompt:1782603950000:agent_89abcdef',
+          promptFingerprint: 'agent_89abcdef',
+          promptLength: promptText.length,
+          promptTimestamp: 1782603950000,
+          browserQueuedBridgeMessage: false,
+          bridgeDeliveryConfirmed: false,
+          agent: null,
+          surface: 'standard',
+          roomPhase: 'connected',
+          workspaceStatus: null,
+          workspaceSessionId: null,
+          repoUrl: null,
+          agentResponseClaimed: false,
+          actor: 'guest',
+          durableObjectReplayExpected: true,
+        },
+      },
+    }));
+
+    expect(parseSent(host)).toContainEqual(expect.objectContaining({
+      type: 'ROOM_AGENT_INTERACTION',
+      role: 'GUEST',
+      payload: expect.objectContaining({
+        id: 'agent-user-chat-blocked',
+        eventType: 'ai_chat_user',
+        text: promptText,
+        evidence: expect.objectContaining({
+          bridgeDeliveryStatus: 'blocked',
+          bridgeBlockedReason: 'workspace_required',
+          browserQueuedBridgeMessage: false,
+        }),
+      }),
+    }));
+    expect(storage.get('agentInteractionActivityLog')).toEqual([
+      expect.objectContaining({
+        role: 'GUEST',
+        event: expect.objectContaining({
+          id: 'agent-user-chat-blocked',
+          evidence: expect.objectContaining({
+            bridgeDeliveryStatus: 'blocked',
+            bridgeBlockedReason: 'workspace_required',
           }),
           evidence: expect.objectContaining({
             source: 'win95_shared_file_system',
@@ -2520,67 +1077,354 @@ describe('VideoRoom Durable Object signaling lifecycle', () => {
     ]);
   });
 
-  it('rejects shared room filesystem edits without browser source evidence', async () => {
+  it('redacts AI assistant/Devin status diagnostics before broadcast and storage', async () => {
     const host = new FakeSocket();
     const guest = new FakeSocket();
     const { state, storage } = makeState([
       [host, 'HOST'],
       [guest, 'GUEST'],
     ]);
-    storage.set('roomFileSystem', [{
-      id: 'accepted-notes',
-      name: 'accepted-notes.txt',
-      kind: 'text',
-      content: 'Already accepted evidence.',
-      mimeType: 'text/plain',
-      createdAt: 5,
-      updatedAt: 5,
-      updatedBy: 'GUEST',
-    }]);
+    const room = new VideoRoom(state);
+    const rawText = [
+      'Auth failed with DEVIN_API_KEY=cog_aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa',
+      'Bearer ghp_bbbbbbbbbbbbbbbbbbbbbbbbbbbb',
+      '/api/v1/meeting-rooms/live-room-token?token=raw-token',
+    ].join(' ');
+
+    await room.webSocketMessage(guest as unknown as WebSocket, JSON.stringify({
+      type: 'ROOM_AGENT_INTERACTION',
+      payload: {
+        id: 'agent-agent-status-redacted',
+        clientId: 'guest-client',
+        createdAt: 1782604100000,
+        eventType: 'ai_agent_status',
+        actor: 'agent',
+        text: rawText,
+        evidence: {
+          source: 'agent_bridge',
+          agentStatusEventSource: 'browser_agent_ws',
+          agent: 'devin',
+          status: 'auth_needed',
+          diagnosticSource: 'agent_auth_check',
+          bridgeMessageSource: 'bridge_diagnostic',
+          observedAt: '2026-06-27T20:00:00.000Z',
+          capturedAtMs: 1782604100000,
+          agentStatusEventId: 'agent-status:devin:1782604100000:bridge_diagnostic:auth_needed:agent_auth_check',
+          surface: 'standard',
+          roomPhase: 'connected',
+          workspaceStatus: 'READY',
+          workspaceSessionId: 'workspace-session-1',
+          messageTimestamp: 1782604100000,
+          agentResponseClaimed: false,
+          durableObjectReplayExpected: true,
+        },
+      },
+    }));
+
+    const broadcast = parseSent(host).find((message) => (
+      message.type === 'ROOM_AGENT_INTERACTION'
+      && typeof message.payload === 'object'
+      && message.payload !== null
+      && 'id' in message.payload
+      && message.payload.id === 'agent-agent-status-redacted'
+    ));
+    expect(broadcast).toMatchObject({
+      type: 'ROOM_AGENT_INTERACTION',
+      payload: {
+        text: 'Auth failed with DEVIN_API_KEY=[REDACTED_SECRET] Bearer [REDACTED_SECRET] /api/v1/meeting-rooms/[REDACTED_SECRET]',
+      },
+    });
+    const log = storage.get('agentInteractionActivityLog');
+    expect(log).toEqual([
+      expect.objectContaining({
+        event: expect.objectContaining({
+          id: 'agent-agent-status-redacted',
+          text: 'Auth failed with DEVIN_API_KEY=[REDACTED_SECRET] Bearer [REDACTED_SECRET] /api/v1/meeting-rooms/[REDACTED_SECRET]',
+        }),
+      }),
+    ]);
+    expect(JSON.stringify(parseSent(host))).not.toContain('cog_aaaaaaaa');
+    expect(JSON.stringify(log)).not.toContain('live-room-token');
+    expect(JSON.stringify(log)).not.toContain('ghp_bbbbbbbb');
+  });
+
+  it('rejects AI assistant/Devin interaction events without source evidence', async () => {
+    const host = new FakeSocket();
+    const guest = new FakeSocket();
+    const { state, storage } = makeState([
+      [host, 'HOST'],
+      [guest, 'GUEST'],
+    ]);
+    const room = new VideoRoom(state);
+
+    await room.webSocketMessage(guest as unknown as WebSocket, JSON.stringify({
+      type: 'ROOM_AGENT_INTERACTION',
+      payload: {
+        id: 'agent-fake-user-chat',
+        clientId: 'guest-client',
+        createdAt: 1782603900000,
+        eventType: 'ai_chat_user',
+        actor: 'guest',
+        text: 'This should not be saved.',
+        evidence: {
+          source: 'agent_chat',
+          promptLength: 'This should not be saved.'.length,
+        },
+      },
+    }));
+
+    expect(parseSent(guest)).toContainEqual(expect.objectContaining({
+      type: 'ROOM_AGENT_INTERACTION_REJECTED',
+      reason: 'MISSING_SOURCE_EVIDENCE',
+    }));
+    expect(parseSent(host)).not.toContainEqual(expect.objectContaining({
+      type: 'ROOM_AGENT_INTERACTION',
+    }));
+    expect(storage.has('agentInteractionActivityLog')).toBe(false);
+  });
+
+  it('rejects AI assistant/Devin agent output with malformed browser prompt refs', async () => {
+    const host = new FakeSocket();
+    const guest = new FakeSocket();
+    const { state, storage } = makeState([
+      [host, 'HOST'],
+      [guest, 'GUEST'],
+    ]);
+    const room = new VideoRoom(state);
+
+    await room.webSocketMessage(guest as unknown as WebSocket, JSON.stringify({
+      type: 'ROOM_AGENT_INTERACTION',
+      payload: {
+        id: 'agent-agent-chat-malformed-prompt-ref',
+        clientId: 'guest-client',
+        createdAt: 1782603900000,
+        eventType: 'ai_chat_agent',
+        actor: 'agent',
+        text: 'I inspected the failing test.',
+        evidence: {
+          source: 'agent_bridge',
+          agent: 'devin',
+          bridgeEventType: 'CHAT_RESPONSE',
+          bridgeMessageSource: 'agent_stdout',
+          observedAt: '2026-06-27T21:05:00.000Z',
+          capturedAtMs: 1782594300000,
+          agentChatResponseId: 'agent-chat:devin:1782594300000:CHAT_RESPONSE:agent_314a13fc',
+          responseFingerprint: 'agent_314a13fc',
+          responseLength: 'I inspected the failing test.'.length,
+          actionCount: 0,
+          bridgePersisted: true,
+          browserPromptId: 'source-less-prompt-ref',
+          browserPromptFingerprint: 'agent_0123abcd',
+          browserPromptTimestamp: 1782603900000,
+          browserPromptLength: 'Can you inspect the failing test?'.length,
+        },
+      },
+    }));
+
+    expect(parseSent(guest)).toContainEqual(expect.objectContaining({
+      type: 'ROOM_AGENT_INTERACTION_REJECTED',
+      reason: 'MISSING_SOURCE_EVIDENCE',
+    }));
+    expect(parseSent(host)).not.toContainEqual(expect.objectContaining({
+      type: 'ROOM_AGENT_INTERACTION',
+    }));
+    expect(storage.has('agentInteractionActivityLog')).toBe(false);
+  });
+
+  it('rejects Agent user prompts that claim a Devin agent attribution', async () => {
+    const host = new FakeSocket();
+    const guest = new FakeSocket();
+    const { state, storage } = makeState([
+      [host, 'HOST'],
+      [guest, 'GUEST'],
+    ]);
+    const room = new VideoRoom(state);
+
+    await room.webSocketMessage(guest as unknown as WebSocket, JSON.stringify({
+      type: 'ROOM_AGENT_INTERACTION',
+      payload: {
+        id: 'agent-attributed-user-chat',
+        clientId: 'guest-client',
+        createdAt: 1782603900000,
+        eventType: 'ai_chat_user',
+        actor: 'guest',
+        text: 'Can you inspect the failing test?',
+        evidence: {
+          source: 'agent_chat_client_submit',
+          agentChatEventSource: 'browser_agent_chat_panel',
+          bridgeMessageType: 'CHAT',
+          bridgeProtocol: 'agent_dev_container_ws',
+          promptId: 'workspace-session-1:guest:prompt:1782603900000:agent_0123abcd',
+          promptFingerprint: 'agent_0123abcd',
+          promptLength: 'Can you inspect the failing test?'.length,
+          promptTimestamp: 1782603900000,
+          deliveredToAgentBridge: true,
+          agent: 'devin',
+          surface: 'standard',
+          roomPhase: 'connected',
+          workspaceStatus: 'READY',
+          workspaceSessionId: 'workspace-session-1',
+          repoUrl: 'https://github.com/cloudflare/workers-sdk',
+          agentResponseClaimed: false,
+          actor: 'guest',
+          durableObjectReplayExpected: true,
+        },
+      },
+    }));
+
+    expect(parseSent(guest)).toContainEqual(expect.objectContaining({
+      type: 'ROOM_AGENT_INTERACTION_REJECTED',
+      reason: 'MISSING_SOURCE_EVIDENCE',
+    }));
+    expect(parseSent(host)).not.toContainEqual(expect.objectContaining({
+      type: 'ROOM_AGENT_INTERACTION',
+    }));
+    expect(storage.has('agentInteractionActivityLog')).toBe(false);
+  });
+
+  it('rejects Agent user prompts that claim confirmed bridge delivery', async () => {
+    const host = new FakeSocket();
+    const guest = new FakeSocket();
+    const { state, storage } = makeState([
+      [host, 'HOST'],
+      [guest, 'GUEST'],
+    ]);
+    const room = new VideoRoom(state);
+
+    await room.webSocketMessage(guest as unknown as WebSocket, JSON.stringify({
+      type: 'ROOM_AGENT_INTERACTION',
+      payload: {
+        id: 'agent-delivered-user-chat',
+        clientId: 'guest-client',
+        createdAt: 1782603900000,
+        eventType: 'ai_chat_user',
+        actor: 'guest',
+        text: 'Can you inspect the failing test?',
+        evidence: {
+          source: 'agent_chat_client_submit',
+          agentChatEventSource: 'browser_agent_chat_panel',
+          bridgeMessageType: 'CHAT',
+          bridgeProtocol: 'agent_dev_container_ws',
+          promptId: 'workspace-session-1:guest:prompt:1782603900000:agent_0123abcd',
+          promptFingerprint: 'agent_0123abcd',
+          promptLength: 'Can you inspect the failing test?'.length,
+          promptTimestamp: 1782603900000,
+          deliveredToAgentBridge: true,
+          agent: null,
+          surface: 'standard',
+          roomPhase: 'connected',
+          workspaceStatus: 'READY',
+          workspaceSessionId: 'workspace-session-1',
+          repoUrl: 'https://github.com/cloudflare/workers-sdk',
+          agentResponseClaimed: false,
+          actor: 'guest',
+          durableObjectReplayExpected: true,
+        },
+      },
+    }));
+
+    expect(parseSent(guest)).toContainEqual(expect.objectContaining({
+      type: 'ROOM_AGENT_INTERACTION_REJECTED',
+      reason: 'MISSING_SOURCE_EVIDENCE',
+    }));
+    expect(parseSent(host)).not.toContainEqual(expect.objectContaining({
+      type: 'ROOM_AGENT_INTERACTION',
+    }));
+    expect(storage.has('agentInteractionActivityLog')).toBe(false);
+  });
+
+  it('rejects AI assistant/Devin room actions without the exact bridge tag protocol', async () => {
+    const host = new FakeSocket();
+    const guest = new FakeSocket();
+    const { state, storage } = makeState([
+      [host, 'HOST'],
+      [guest, 'GUEST'],
+    ]);
+    const room = new VideoRoom(state);
+
+    await room.webSocketMessage(guest as unknown as WebSocket, JSON.stringify({
+      type: 'ROOM_AGENT_INTERACTION',
+      payload: {
+        id: 'agent-legacy-agent-action',
+        clientId: 'guest-client',
+        createdAt: 1782594600000,
+        eventType: 'agent_action',
+        actor: 'agent',
+        text: 'devin suggested room action: open-terminal',
+        evidence: {
+          source: 'agent_bridge',
+          origin: 'agent',
+          executionStatus: 'suggested',
+          actionId: 'open-terminal',
+          actionSource: 'agent_stdout',
+          actionProtocol: 'bridge_actions_field',
+          bridgeEventType: 'ROOM_ACTION',
+          agent: 'devin',
+          observedAt: '2026-06-27T21:10:00.000Z',
+          capturedAtMs: 1782594600000,
+          agentActionEventId: 'agent-action:agent:1782594600000:agent_bridge:agent:suggested:open-terminal',
+          bridgePersisted: true,
+          durableObjectReplayExpected: true,
+        },
+      },
+    }));
+
+    expect(parseSent(guest)).toContainEqual(expect.objectContaining({
+      type: 'ROOM_AGENT_INTERACTION_REJECTED',
+      reason: 'MISSING_SOURCE_EVIDENCE',
+    }));
+    expect(parseSent(host)).not.toContainEqual(expect.objectContaining({
+      type: 'ROOM_AGENT_INTERACTION',
+    }));
+    expect(storage.has('agentInteractionActivityLog')).toBe(false);
+  });
+
+  it('rejects human AI assistant UI actions that claim a Devin agent attribution', async () => {
+    const host = new FakeSocket();
+    const guest = new FakeSocket();
+    const { state, storage } = makeState([
+      [host, 'HOST'],
+      [guest, 'GUEST'],
+    ]);
     const room = new VideoRoom(state);
 
     await room.webSocketMessage(host as unknown as WebSocket, JSON.stringify({
-      type: 'ROOM_FILE_SYSTEM_EVENT',
+      type: 'ROOM_AGENT_INTERACTION',
       payload: {
-        id: 'fs-source-less-save',
+        id: 'agent-attributed-ui-action',
         clientId: 'host-client',
-        createdAt: 6,
-        kind: 'UPSERT_FILE',
-        file: {
-          id: 'desktop-source-less-notes',
-          name: 'source-less-notes.txt',
-          kind: 'text',
-          content: 'This should not become graph evidence.',
-          mimeType: 'text/plain',
-          metadata: { app: 'notepad' },
-          createdAt: 6,
-          updatedAt: 6,
+        createdAt: 1782594200000,
+        eventType: 'agent_action',
+        actor: 'host',
+        text: 'Agent action: start recording',
+        evidence: {
+          source: 'agent_prompt_ui',
+          actionId: 'start-recording',
+          origin: 'prompt',
+          executedBy: 'host',
+          actionSource: 'agent_prompt_ui',
+          executionStatus: 'executed',
+          capturedAtMs: 1782594200000,
+          agentActionEventId: 'agent-action:host:1782594200000:agent_prompt_ui:prompt:executed:start-recording',
+          agent: 'devin',
+          agentResponseClaimed: false,
+          surface: 'standard',
+          roomPhase: 'connected',
+          workspaceStatus: 'READY',
+          workspaceSessionId: 'workspace-session-1',
+          durableObjectReplayExpected: true,
         },
       },
     }));
 
     expect(parseSent(host)).toContainEqual(expect.objectContaining({
-      type: 'ROOM_FILE_SYSTEM_EVENT_REJECTED',
+      type: 'ROOM_AGENT_INTERACTION_REJECTED',
       reason: 'MISSING_SOURCE_EVIDENCE',
-      payload: {
-        files: [
-          expect.objectContaining({
-            id: 'accepted-notes',
-            content: 'Already accepted evidence.',
-          }),
-        ],
-      },
     }));
     expect(parseSent(guest)).not.toContainEqual(expect.objectContaining({
-      type: 'ROOM_FILE_SYSTEM_EVENT',
+      type: 'ROOM_AGENT_INTERACTION',
     }));
-    expect(storage.get('roomFileSystem')).toEqual([
-      expect.objectContaining({
-        id: 'accepted-notes',
-        content: 'Already accepted evidence.',
-      }),
-    ]);
-    expect(storage.has('fileSystemActivityLog')).toBe(false);
+    expect(storage.has('agentInteractionActivityLog')).toBe(false);
   });
 
   it('broadcasts and records source-backed terminal command and output events', async () => {
@@ -2610,7 +1454,7 @@ describe('VideoRoom Durable Object signaling lifecycle', () => {
           capturedAtMs: 1700000001000,
           commandFingerprint: 'terminal_dc5964d6',
           commandLength: 8,
-          surface: 'win95',
+          surface: 'standard',
           roomPhase: 'connected',
           workspaceStatus: 'READY',
           workspaceSessionId: 'workspace-session-1',
@@ -2639,7 +1483,7 @@ describe('VideoRoom Durable Object signaling lifecycle', () => {
           capturedAtMs: 1700000002000,
           outputFingerprint: 'terminal_4f2d0d8f',
           outputLength: 21,
-          surface: 'win95',
+          surface: 'standard',
           roomPhase: 'connected',
           workspaceStatus: 'READY',
           workspaceSessionId: 'workspace-session-1',
@@ -2756,7 +1600,7 @@ describe('VideoRoom Durable Object signaling lifecycle', () => {
           capturedAtMs: 1700000001000,
           commandFingerprint: 'terminal_dc5964d6',
           commandLength: 8,
-          surface: 'win95',
+          surface: 'standard',
           roomPhase: 'connected',
           workspaceStatus: 'READY',
           workspaceSessionId: 'workspace-session-1',
@@ -2796,12 +1640,12 @@ describe('VideoRoom Durable Object signaling lifecycle', () => {
         text: 'src/app.ts',
         evidence: {
           source: 'code_server_workspace',
-          observedBy: 'clippy_agent_bridge',
+          observedBy: 'agent_bridge',
           bridgeEventType: 'FILE_CHANGED',
           editorSurface: 'code-server',
           codeServerFileChangeId: 'code-server-file:workspace-session-1:1782590500000:modified:path_cb48a478:aaaaaaaaaaaaaaaa',
           action: 'modified',
-          surface: 'win95',
+          surface: 'standard',
           roomPhase: 'connected',
           workspaceStatus: 'READY',
           workspaceSessionId: 'workspace-session-1',
@@ -2826,7 +1670,7 @@ describe('VideoRoom Durable Object signaling lifecycle', () => {
         text: 'src/app.ts',
         evidence: expect.objectContaining({
           source: 'code_server_workspace',
-          observedBy: 'clippy_agent_bridge',
+          observedBy: 'agent_bridge',
           contentHash: 'a'.repeat(64),
         }),
       }),
@@ -2863,12 +1707,12 @@ describe('VideoRoom Durable Object signaling lifecycle', () => {
         text: 'src/app.ts',
         evidence: {
           source: 'code_server_workspace',
-          observedBy: 'clippy_agent_bridge',
+          observedBy: 'agent_bridge',
           bridgeEventType: 'FILE_CHANGED',
           editorSurface: 'code-server',
           codeServerFileChangeId: 'code-server-file:workspace-session-1:1782590500000:modified:path_cb48a478:aaaaaaaaaaaaaaaa',
           action: 'modified',
-          surface: 'win95',
+          surface: 'standard',
           roomPhase: 'connected',
           workspaceStatus: 'READY',
           workspaceSessionId: 'workspace-session-1',
@@ -2938,24 +1782,6 @@ describe('VideoRoom Durable Object signaling lifecycle', () => {
     ]);
     const room = new VideoRoom(state);
 
-    await room.webSocketMessage(host as unknown as WebSocket, JSON.stringify({
-      type: 'ROOM_DESKTOP_EVENT',
-      payload: {
-        id: 'evt-enter-95',
-        clientId: 'host-client',
-        createdAt: 1000,
-        kind: 'SET_ROOM_SURFACE',
-        surface: 'win95',
-        previousSurface: 'standard',
-        action: 'enter_desktop',
-        source: 'room_surface_control',
-        surfaceControlEventSource: 'browser_room_surface_toggle',
-        surfaceChangeId: 'surface:host:1000:standard:win95',
-        capturedAtMs: 1000,
-        roomPhase: 'connected',
-        durableObjectReplayExpected: true,
-      },
-    }));
     await room.webSocketMessage(guest as unknown as WebSocket, JSON.stringify({
       type: 'ROOM_CHAT_MESSAGE',
       payload: {
@@ -2967,9 +1793,9 @@ describe('VideoRoom Durable Object signaling lifecycle', () => {
         deliveryStatus: 'pending',
         evidence: {
           source: 'room_chat_client_submit',
-          chatEventSource: 'browser_room_chat_window',
+          chatEventSource: 'browser_room_chat_panel',
           actor: 'guest',
-          surface: 'win95',
+          surface: 'standard',
           roomPhase: 'connected',
           durableObjectReplayExpected: true,
         },
@@ -2995,9 +1821,9 @@ describe('VideoRoom Durable Object signaling lifecycle', () => {
           previousEnabled: true,
           enabled: false,
           action: 'disabled',
-          surface: 'win95',
+          surface: 'standard',
           roomPhase: 'connected',
-          controlSurface: 'win95_video_window',
+          controlSurface: 'standard_video_call',
           controlAction: 'toggle',
           mediaSource: 'local_media_stream',
           rawMediaStreamPersisted: false,
@@ -3005,27 +1831,27 @@ describe('VideoRoom Durable Object signaling lifecycle', () => {
       },
     }));
     await room.webSocketMessage(guest as unknown as WebSocket, JSON.stringify({
-      type: 'ROOM_CLIPPY_INTERACTION',
+      type: 'ROOM_AGENT_INTERACTION',
       payload: {
-        id: 'clippy-user-chat-activity',
+        id: 'agent-user-chat-activity',
         clientId: 'guest-client',
         createdAt: 2400,
         eventType: 'ai_chat_user',
         actor: 'guest',
         text: 'Can you inspect the failing test?',
         evidence: {
-          source: 'clippy_agent_chat_client_submit',
-          agentChatEventSource: 'browser_clippy_chat_window',
+          source: 'agent_chat_client_submit',
+          agentChatEventSource: 'browser_agent_chat_panel',
           bridgeMessageType: 'CHAT',
-          bridgeProtocol: 'clippy_dev_container_ws',
-          promptId: 'workspace-session-1:guest:prompt:2400:clippy_0123abcd',
-          promptFingerprint: 'clippy_0123abcd',
+          bridgeProtocol: 'agent_dev_container_ws',
+          promptId: 'workspace-session-1:guest:prompt:2400:agent_0123abcd',
+          promptFingerprint: 'agent_0123abcd',
           promptLength: 'Can you inspect the failing test?'.length,
           promptTimestamp: 2400,
           browserQueuedBridgeMessage: true,
           bridgeDeliveryConfirmed: false,
           agent: null,
-          surface: 'win95',
+          surface: 'standard',
           roomPhase: 'connected',
           workspaceStatus: 'READY',
           workspaceSessionId: 'workspace-session-1',
@@ -3047,12 +1873,12 @@ describe('VideoRoom Durable Object signaling lifecycle', () => {
         text: 'src/app.ts',
         evidence: {
           source: 'code_server_workspace',
-          observedBy: 'clippy_agent_bridge',
+          observedBy: 'agent_bridge',
           bridgeEventType: 'FILE_CHANGED',
           editorSurface: 'code-server',
           codeServerFileChangeId: 'code-server-file:workspace-session-1:1782590500000:modified:path_cb48a478:aaaaaaaaaaaaaaaa',
           action: 'modified',
-          surface: 'win95',
+          surface: 'standard',
           roomPhase: 'connected',
           workspaceStatus: 'READY',
           workspaceSessionId: 'workspace-session-1',
@@ -3085,30 +1911,12 @@ describe('VideoRoom Durable Object signaling lifecycle', () => {
           capturedAtMs: 2500,
           commandFingerprint: 'terminal_dc5964d6',
           commandLength: 8,
-          surface: 'win95',
+          surface: 'standard',
           roomPhase: 'connected',
           workspaceStatus: 'READY',
           workspaceSessionId: 'workspace-session-1',
           repoUrl: 'https://github.com/cloudflare/workers-sdk',
           durableObjectReplayExpected: true,
-        },
-      },
-    }));
-    await room.webSocketMessage(host as unknown as WebSocket, JSON.stringify({
-      type: 'ROOM_FILE_SYSTEM_EVENT',
-      payload: {
-        id: 'fs-notes-save',
-        clientId: 'host-client',
-        createdAt: 3000,
-        kind: 'UPSERT_FILE',
-        file: {
-          id: 'notepad',
-          name: 'notes.txt',
-          kind: 'text',
-          content: 'Candidate identified retry bug evidence.',
-          mimeType: 'text/plain',
-          createdAt: 3000,
-          updatedAt: 3000,
         },
         evidence: {
           source: 'win95_shared_file_system',
@@ -3126,31 +1934,16 @@ describe('VideoRoom Durable Object signaling lifecycle', () => {
         },
       },
     }));
-
     const response = await room.fetch(new Request('https://do/activity-log'));
     expect(response.status).toBe(200);
     const body = await response.json() as {
-      desktopActivityLog: unknown[];
       chatActivityLog: unknown[];
       mediaControlActivityLog: unknown[];
-      clippyInteractionActivityLog: unknown[];
+      agentInteractionActivityLog: unknown[];
       codeServerFileActivityLog: unknown[];
       terminalActivityLog: unknown[];
-      fileSystemActivityLog: unknown[];
     };
 
-    expect(body.desktopActivityLog).toEqual([
-      expect.objectContaining({
-        role: 'HOST',
-        event: expect.objectContaining({
-          id: 'evt-enter-95',
-          kind: 'SET_ROOM_SURFACE',
-          surface: 'win95',
-          source: 'room_surface_control',
-          surfaceChangeId: 'surface:host:1000:standard:win95',
-        }),
-      }),
-    ]);
     expect(body.chatActivityLog).toEqual([
       expect.objectContaining({
         role: 'GUEST',
@@ -3160,12 +1953,12 @@ describe('VideoRoom Durable Object signaling lifecycle', () => {
           deliveryStatus: 'accepted',
           evidence: expect.objectContaining({
             source: 'room_chat_client_submit',
-            chatEventSource: 'browser_room_chat_window',
+            chatEventSource: 'browser_room_chat_panel',
             actor: 'guest',
             roomMessageId: 'chat-guest-question',
             clientId: 'guest-client',
             deliveryStatus: 'accepted',
-            surface: 'win95',
+            surface: 'standard',
             roomPhase: 'connected',
           }),
         }),
@@ -3185,16 +1978,16 @@ describe('VideoRoom Durable Object signaling lifecycle', () => {
         }),
       }),
     ]);
-    expect(body.clippyInteractionActivityLog).toEqual([
+    expect(body.agentInteractionActivityLog).toEqual([
       expect.objectContaining({
         role: 'GUEST',
         event: expect.objectContaining({
-          id: 'clippy-user-chat-activity',
+          id: 'agent-user-chat-activity',
           eventType: 'ai_chat_user',
           text: 'Can you inspect the failing test?',
           evidence: expect.objectContaining({
-            source: 'clippy_agent_chat_client_submit',
-            agentChatEventSource: 'browser_clippy_chat_window',
+            source: 'agent_chat_client_submit',
+            agentChatEventSource: 'browser_agent_chat_panel',
           }),
         }),
       }),
@@ -3208,7 +2001,7 @@ describe('VideoRoom Durable Object signaling lifecycle', () => {
           text: 'src/app.ts',
           evidence: expect.objectContaining({
             source: 'code_server_workspace',
-            observedBy: 'clippy_agent_bridge',
+            observedBy: 'agent_bridge',
           }),
         }),
       }),
@@ -3223,19 +2016,6 @@ describe('VideoRoom Durable Object signaling lifecycle', () => {
           evidence: expect.objectContaining({
             source: 'container_terminal',
             terminalEventSource: 'browser_terminal_ws',
-          }),
-        }),
-      }),
-    ]);
-    expect(body.fileSystemActivityLog).toEqual([
-      expect.objectContaining({
-        role: 'HOST',
-        event: expect.objectContaining({
-          id: 'fs-notes-save',
-          kind: 'UPSERT_FILE',
-          evidence: expect.objectContaining({
-            source: 'win95_shared_file_system',
-            fileChangeId: 'file:host:3000:upsert:notepad',
           }),
         }),
       }),

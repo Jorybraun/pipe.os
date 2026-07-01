@@ -1,0 +1,189 @@
+import { fireEvent, render, screen, waitFor } from '@testing-library/react';
+import { beforeEach, describe, expect, it, vi } from 'vitest';
+import { DevContainerPanel } from '../DevContainerPanel';
+import type { UseDevContainerSessionReturn } from '../../../hooks/useDevContainerSession';
+
+const destroyMock = vi.fn(async () => {});
+const launchMock = vi.fn(async () => {});
+const resetMock = vi.fn();
+
+vi.mock('../../../hooks/useDevContainerSession', () => ({
+  useDevContainerSession: (): UseDevContainerSessionReturn => ({
+    state: 'READY',
+    containerUrl: 'https://container.example.test/',
+    accessToken: null,
+    taskArn: 'workspace-session-1',
+    error: null,
+    expiresAt: '2026-07-01T12:00:00.000Z',
+    expiringSoon: false,
+    launch: launchMock,
+    destroy: destroyMock,
+    reset: resetMock,
+  }),
+}));
+
+vi.mock('../../../contexts/SessionTokenContext', () => ({
+  useSessionToken: (): string => 'candidate-session-token',
+}));
+
+const baseCommitSha = '1111111111111111111111111111111111111111';
+const commitSha = '2222222222222222222222222222222222222222';
+
+function progressResponse() {
+  return {
+    progress: {
+      mode: 'OPEN_SOURCE_BUG_FIX',
+      state: 'IN_PROGRESS',
+      stage: 'WORKSPACE_ACTIVE',
+      nextAction: 'SUBMIT_COMMIT',
+      nextActionLabel: 'Submit assessment commit',
+      assignmentTrust: null,
+      readiness: {
+        label: 'Commit evidence required',
+        detail: 'Submit the assessment branch commit with exact source evidence.',
+        isReadyForEvaluation: false,
+        missingRequiredCount: 2,
+        required: [],
+      },
+      challengePacketContract: {
+        isComplete: true,
+        missing: [],
+      },
+      hasChallengePacket: true,
+      hasWorkEvidence: true,
+      hasMessageEvidence: false,
+      hasDevContainerEvidence: true,
+      hasToolUsageEvidence: false,
+      hasCommitSubmission: false,
+      hasFinalSubmission: false,
+      hasAiInteraction: false,
+      hasTranscriptEvidence: false,
+      hasTestEvidence: false,
+      hasVerificationGap: false,
+      evidenceCounts: [],
+      sourceRefCounts: [],
+      evidenceSnippets: [],
+      challenge: {
+        sourceRefType: 'open_source_challenge_packet',
+        evidenceRole: 'assigned_challenge',
+        exactText: 'Fix retry handling in acme/repo.',
+        contentHash: 'sha256:challenge',
+        locator: {
+          repositoryUrl: 'https://github.com/acme/repo',
+          baseCommitSha,
+        },
+      },
+      latestEvent: null,
+      commit: null,
+      evaluation: null,
+    },
+  };
+}
+
+describe('DevContainerPanel assessment submission', () => {
+  beforeEach(() => {
+    vi.clearAllMocks();
+  });
+
+  it('lets candidates submit source-backed commit evidence from a ready dev container', async () => {
+    const fetchMock = vi.fn(async (input: RequestInfo | URL, _init?: RequestInit) => {
+      const url = input.toString();
+      if (url.endsWith('/rpc/assessment/progress')) {
+        return new Response(JSON.stringify(progressResponse()), {
+          status: 200,
+          headers: { 'Content-Type': 'application/json' },
+        });
+      }
+      if (url.endsWith('/rpc/assessment/commit-submission')) {
+        return new Response(JSON.stringify({
+          submission: {
+            accepted: true,
+            repositoryUrl: 'https://github.com/acme/repo',
+            branchName: 'pipe-assessment',
+            commitSha,
+            commitUrl: null,
+          },
+          progress: {
+            ...progressResponse().progress,
+            hasCommitSubmission: true,
+            hasTestEvidence: true,
+            nextActionLabel: 'Ready for evaluation',
+            commit: {
+              repositoryUrl: 'https://github.com/acme/repo',
+              forkRepositoryUrl: null,
+              branchName: 'pipe-assessment',
+              baseCommitSha,
+              commitSha,
+              commitUrl: null,
+              submissionSource: 'manual_fallback',
+              submissionSourceLabel: 'Manual commit evidence',
+              integrity: null,
+              changedFiles: [{ path: 'src/retry.ts', status: 'modified' }],
+              occurredAt: '2026-07-01T12:01:00.000Z',
+            },
+          },
+        }), {
+          status: 201,
+          headers: { 'Content-Type': 'application/json' },
+        });
+      }
+      throw new Error(`Unexpected fetch ${url}`);
+    });
+    vi.stubGlobal('fetch', fetchMock);
+
+    render(<DevContainerPanel challengeId="challenge-1" />);
+
+    await screen.findByText('SUBMIT COMMIT');
+    fireEvent.click(screen.getByTestId('assessment-submit-toggle'));
+
+    await waitFor(() => {
+      expect(screen.getByTestId('assessment-commit-repository-url')).toHaveValue('https://github.com/acme/repo');
+      expect(screen.getByTestId('assessment-commit-base-sha')).toHaveValue(baseCommitSha);
+    });
+
+    fireEvent.change(screen.getByTestId('assessment-commit-narrative'), {
+      target: { value: 'Fixed retry handling and verified the focused test.' },
+    });
+    fireEvent.change(screen.getByTestId('assessment-commit-commit-sha'), {
+      target: { value: commitSha },
+    });
+    fireEvent.change(screen.getByTestId('assessment-commit-changed-files'), {
+      target: { value: 'modified src/retry.ts' },
+    });
+    fireEvent.change(screen.getByTestId('assessment-commit-commit-evidence'), {
+      target: { value: `commit ${commitSha}\nAuthor: Candidate\n\nFix retry handling` },
+    });
+    fireEvent.change(screen.getByTestId('assessment-commit-diff'), {
+      target: { value: `diff --git a/src/retry.ts b/src/retry.ts\n+export const retry = true;` },
+    });
+    fireEvent.change(screen.getByTestId('assessment-commit-test-evidence'), {
+      target: { value: 'npm test -- retry\nPASS src/retry.test.ts' },
+    });
+    fireEvent.click(screen.getByTestId('assessment-commit-submit'));
+
+    await waitFor(() => {
+      expect(screen.getByTestId('assessment-commit-result')).toHaveTextContent('Ready for evaluation');
+    });
+
+    const submitCall = fetchMock.mock.calls.find(([input]) =>
+      input.toString().endsWith('/rpc/assessment/commit-submission'),
+    );
+    expect(submitCall).toBeTruthy();
+    expect(submitCall?.[1]?.headers).toMatchObject({
+      Authorization: 'Bearer candidate-session-token',
+    });
+    const payload = JSON.parse(String(submitCall?.[1]?.body)) as {
+      sourceRefs: Array<{ sourceRefType: string; metadata?: { source?: string } }>;
+      branchName: string;
+      commitSha: string;
+    };
+    expect(payload.branchName).toBe('pipe-assessment');
+    expect(payload.commitSha).toBe(commitSha);
+    expect(payload.sourceRefs.map((ref) => ref.sourceRefType)).toEqual([
+      'git_commit',
+      'code_diff',
+      'test_run',
+    ]);
+    expect(payload.sourceRefs.every((ref) => ref.metadata?.source === 'assessment_commit_submission_panel')).toBe(true);
+  });
+});

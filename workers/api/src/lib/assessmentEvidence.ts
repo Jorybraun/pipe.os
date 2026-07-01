@@ -8,8 +8,7 @@ export type AssessmentSurfaceMode =
   | 'STANDARD_VIDEO_INTERVIEW'
   | 'CODE_REVIEW'
   | RepoTaskAssessmentMode
-  | 'NINETY_FIVE_UNTIL_INFINITY_ROOM'
-  | 'CLIPPY_DEVIN_INTERACTION';
+  | 'AGENT_DEVIN_INTERACTION';
 
 export type AssessmentMode =
   | AssessmentSurfaceMode
