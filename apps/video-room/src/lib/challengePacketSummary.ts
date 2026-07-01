@@ -53,9 +53,15 @@ export function parseChallengePacketContract(exactText: string): ChallengePacket
   };
 
   for (const line of lines) {
-    const taskMatch = line.match(/^task\s*:\s*(.+)$/i);
+    const taskMatch = line.match(/^(?:task|title)\s*:\s*(.+)$/i);
     if (taskMatch?.[1]) {
       contract.task = taskMatch[1].trim();
+      section = null;
+      continue;
+    }
+    const successMatch = line.match(/^success\s*:\s*(.+)$/i);
+    if (successMatch?.[1]) {
+      contract.successCriteria.push(successMatch[1].trim());
       section = null;
       continue;
     }
@@ -86,7 +92,7 @@ export function summarizeChallengePacket(packet: RoomWorkspaceChallengePacket | 
         task: null,
         successCriteria: [],
         expectedEvidence: [],
-      };
+  };
   const locator = packet?.locator ?? {};
 
   return {

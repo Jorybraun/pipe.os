@@ -34,6 +34,7 @@ async function sourceRef(
   sourceRefType: string,
   sourceRefId: string,
   exactText: string,
+  metadata?: Record<string, unknown>,
 ): Promise<AssessmentEvidenceSourceRefInput> {
   return {
     sourceRefType,
@@ -41,6 +42,7 @@ async function sourceRef(
     exactText,
     contentHash: await sha256Hex(exactText),
     locator: { label: sourceRefId },
+    ...(metadata ? { metadata } : {}),
   };
 }
 
@@ -88,6 +90,58 @@ async function createSession(
     session: { id: string; state: string; mode: string };
   };
   return body.session;
+}
+
+async function assignOpenSourceChallenge(
+  app: Hono<{ Bindings: Env }>,
+  env: Env,
+  input: {
+    sessionId: string;
+    ingestionKey: string;
+    sourceRefId: string;
+    repositoryUrl: string;
+    baseCommitSha: string;
+    task?: string;
+    successCriteria?: string[];
+    expectedEvidence?: string[];
+  },
+): Promise<void> {
+  const challengeText = [
+    `Repo: ${input.repositoryUrl}`,
+    `Base commit: ${input.baseCommitSha}`,
+    `Task: ${input.task ?? 'Fix stale popover listener cleanup.'}`,
+    'Success criteria:',
+    ...(input.successCriteria ?? ['Commit a focused patch with passing popover tests.']).map((item) => `- ${item}`),
+    'Expected evidence:',
+    ...(input.expectedEvidence ?? [
+      'git commit SHA on a pipe-assessment branch',
+      'code diff for the popover cleanup fix',
+      'test output or verification note',
+    ]).map((item) => `- ${item}`),
+  ].join('\n');
+  const response = await app.request(
+    `/api/v1/assessment/repo-task/sessions/${input.sessionId}/events`,
+    jsonRequest({
+      ingestionKey: input.ingestionKey,
+      kind: 'recruiter_note',
+      actorType: 'recruiter',
+      narrative: 'Recruiter assigned a concrete source-backed open-source challenge packet.',
+      payload: {
+        repositoryUrl: input.repositoryUrl,
+        baseCommitSha: input.baseCommitSha,
+      },
+      sourceRefs: [{
+        ...await sourceRef('open_source_challenge_packet', input.sourceRefId, challengeText),
+        evidenceRole: 'assigned_challenge',
+        locator: {
+          repositoryUrl: input.repositoryUrl,
+          baseCommitSha: input.baseCommitSha,
+        },
+      }],
+    }),
+    env,
+  );
+  expect(response.status).toBe(201);
 }
 
 describe('repo task assessment session routes', () => {
@@ -260,6 +314,13 @@ describe('repo task assessment session routes', () => {
     const commitSha = '4444444444444444444444444444444444444444';
     const commitText = `commit ${commitSha}\n\nFix reconnect ordering.`;
     const diffText = 'diff --git a/src/stream.ts b/src/stream.ts\n+sortBufferedSegmentsByTimestamp();';
+    await assignOpenSourceChallenge(app, env, {
+      sessionId: session.id,
+      ingestionKey: 'assessment-event:graph-challenge',
+      sourceRefId: 'challenge-packet-graph',
+      repositoryUrl: 'https://github.com/open-source/streaming',
+      baseCommitSha,
+    });
     const commitResponse = await app.request(
       `/api/v1/assessment/repo-task/sessions/${session.id}/commit-submissions`,
       jsonRequest({
@@ -662,7 +723,14 @@ index 5c7b20a..7f9a12e 100644
 +++ b/src/popover.ts
 @@ -42,6 +42,7 @@ export function closePopover() {
 +  cleanupStaleHandler();
- }`;
+}`;
+    await assignOpenSourceChallenge(app, env, {
+      sessionId: session.id,
+      ingestionKey: 'assessment-event:commit-submission-challenge',
+      sourceRefId: 'challenge-packet-commit-submission',
+      repositoryUrl: 'https://github.com/open-source/widgets',
+      baseCommitSha,
+    });
 
     const response = await app.request(
       `/api/v1/assessment/repo-task/sessions/${session.id}/commit-submissions`,
@@ -753,6 +821,268 @@ index 5c7b20a..7f9a12e 100644
     ]);
   });
 
+  it('persists upstream PR tracking only when it is repo-bound and source-backed', async () => {
+    const session = await createSession(app, env, {
+      ingestionKey: 'assessment-session:commit-submission-upstream-pr',
+      mode: 'OPEN_SOURCE_BUG_FIX',
+      candidateId: 'candidate-upstream-pr',
+    });
+    const baseCommitSha = '1111111111111111111111111111111111111111';
+    const commitSha = 'abababababababababababababababababababab';
+    const upstreamPullRequestUrl = 'https://github.com/open-source/widgets/pull/42';
+    const commitText = `commit ${commitSha}
+Author: Candidate <candidate@example.com>
+
+Fix stale popover listener cleanup.`;
+    const diffText = `diff --git a/src/popover.ts b/src/popover.ts
+--- a/src/popover.ts
++++ b/src/popover.ts
+@@ -42,6 +42,7 @@ export function closePopover() {
++  cleanupStaleHandler();
+}`;
+    await assignOpenSourceChallenge(app, env, {
+      sessionId: session.id,
+      ingestionKey: 'assessment-event:commit-submission-upstream-pr-challenge',
+      sourceRefId: 'challenge-packet-upstream-pr',
+      repositoryUrl: 'https://github.com/open-source/widgets',
+      baseCommitSha,
+    });
+
+    const response = await app.request(
+      `/api/v1/assessment/repo-task/sessions/${session.id}/commit-submissions`,
+      jsonRequest({
+        ingestionKey: 'assessment-event:commit-submission-upstream-pr',
+        actorType: 'candidate',
+        actorId: 'candidate-upstream-pr',
+        narrative: 'Candidate submitted a source-backed assessment commit with reviewed upstream PR tracking.',
+        repositoryUrl: 'https://github.com/open-source/widgets',
+        forkRepositoryUrl: 'https://github.com/candidate/widgets',
+        branchName: 'pipe-assessment/popover-cleanup',
+        baseCommitSha,
+        commitSha,
+        commitUrl: `https://github.com/candidate/widgets/commit/${commitSha}`,
+        upstreamPullRequestUrl,
+        upstreamPrConsent: true,
+        changedFiles: [{ path: 'src/popover.ts', status: 'modified' }],
+        sourceRefs: [
+          await sourceRef('git_commit', commitSha, commitText),
+          await sourceRef('code_diff', `${baseCommitSha}..${commitSha}`, diffText),
+          await sourceRef('upstream_pull_request', upstreamPullRequestUrl, upstreamPullRequestUrl),
+        ],
+      }),
+      env,
+    );
+
+    expect(response.status).toBe(201);
+    const body = await response.json() as {
+      submission: { event: { id: string } };
+    };
+    const persistedEvent = sqlite.prepare(
+      `SELECT payload_json
+         FROM assessment_evidence_events
+        WHERE id = ?`,
+    ).get(body.submission.event.id) as { payload_json: string };
+    expect(JSON.parse(persistedEvent.payload_json)).toMatchObject({
+      repositoryUrl: 'https://github.com/open-source/widgets',
+      forkRepositoryUrl: 'https://github.com/candidate/widgets',
+      upstreamPullRequestUrl,
+      upstreamPrConsent: true,
+    });
+    expect(sqlite.prepare(
+      `SELECT source_ref_type, source_ref_id, exact_text
+         FROM assessment_event_source_refs
+        WHERE event_id = ?
+          AND source_ref_type = 'upstream_pull_request'`,
+    ).get(body.submission.event.id)).toEqual({
+      source_ref_type: 'upstream_pull_request',
+      source_ref_id: upstreamPullRequestUrl,
+      exact_text: upstreamPullRequestUrl,
+    });
+  });
+
+  it('rejects upstream PR tracking for unrelated or source-less pull requests', async () => {
+    const baseCommitSha = '1111111111111111111111111111111111111111';
+    const commitSha = 'acacacacacacacacacacacacacacacacacacacac';
+    const commitText = `commit ${commitSha}
+Author: Candidate <candidate@example.com>
+
+Fix stale popover listener cleanup.`;
+    const diffText = `diff --git a/src/popover.ts b/src/popover.ts
+--- a/src/popover.ts
++++ b/src/popover.ts
+@@ -42,6 +42,7 @@ export function closePopover() {
++  cleanupStaleHandler();
+}`;
+    const validBody = {
+      actorType: 'candidate',
+      actorId: 'candidate-upstream-pr',
+      narrative: 'Candidate tried to attach an upstream PR link.',
+      repositoryUrl: 'https://github.com/open-source/widgets',
+      forkRepositoryUrl: 'https://github.com/candidate/widgets',
+      branchName: 'pipe-assessment/popover-cleanup',
+      baseCommitSha,
+      commitSha,
+      commitUrl: `https://github.com/candidate/widgets/commit/${commitSha}`,
+      upstreamPullRequestUrl: 'https://github.com/open-source/widgets/pull/42',
+      upstreamPrConsent: true,
+      changedFiles: [{ path: 'src/popover.ts', status: 'modified' }],
+      sourceRefs: [
+        await sourceRef('git_commit', commitSha, commitText),
+        await sourceRef('code_diff', `${baseCommitSha}..${commitSha}`, diffText),
+      ],
+    };
+
+    const sourceLessSession = await createSession(app, env, {
+      ingestionKey: 'assessment-session:source-less-upstream-pr',
+      mode: 'OPEN_SOURCE_BUG_FIX',
+    });
+    const sourceLessResponse = await app.request(
+      `/api/v1/assessment/repo-task/sessions/${sourceLessSession.id}/commit-submissions`,
+      jsonRequest({
+        ...validBody,
+        ingestionKey: 'assessment-event:source-less-upstream-pr',
+      }),
+      env,
+    );
+    expect(sourceLessResponse.status).toBe(400);
+    const sourceLessBody = await sourceLessResponse.json() as { error: { message: string } };
+    expect(sourceLessBody.error.message).toContain(
+      'upstreamPullRequestUrl requires an upstream_pull_request source ref',
+    );
+
+    const unrelatedSession = await createSession(app, env, {
+      ingestionKey: 'assessment-session:unrelated-upstream-pr',
+      mode: 'OPEN_SOURCE_BUG_FIX',
+    });
+    const unrelatedPullRequestUrl = 'https://github.com/unrelated/widgets/pull/42';
+    const unrelatedResponse = await app.request(
+      `/api/v1/assessment/repo-task/sessions/${unrelatedSession.id}/commit-submissions`,
+      jsonRequest({
+        ...validBody,
+        ingestionKey: 'assessment-event:unrelated-upstream-pr',
+        upstreamPullRequestUrl: unrelatedPullRequestUrl,
+        sourceRefs: [
+          ...validBody.sourceRefs,
+          await sourceRef('upstream_pull_request', unrelatedPullRequestUrl, unrelatedPullRequestUrl),
+        ],
+      }),
+      env,
+    );
+    expect(unrelatedResponse.status).toBe(400);
+    const unrelatedBody = await unrelatedResponse.json() as { error: { message: string } };
+    expect(unrelatedBody.error.message).toContain('upstreamPullRequestUrl must belong to repositoryUrl');
+
+    expect(sqlite.prepare(
+      'SELECT COUNT(*) AS count FROM assessment_evidence_events WHERE session_id IN (?, ?)',
+    ).get(sourceLessSession.id, unrelatedSession.id)).toEqual({ count: 0 });
+  });
+
+  it('rejects commit submissions before a complete source-backed challenge packet exists', async () => {
+    const baseCommitSha = '1111111111111111111111111111111111111111';
+    const commitSha = 'adadadadadadadadadadadadadadadadadadadad';
+    const commitText = `commit ${commitSha}
+Author: Candidate <candidate@example.com>
+
+Fix stale popover listener cleanup.`;
+    const diffText = `diff --git a/src/popover.ts b/src/popover.ts
+--- a/src/popover.ts
++++ b/src/popover.ts
+@@ -42,6 +42,7 @@ export function closePopover() {
++  cleanupStaleHandler();
+}`;
+    const validCommitBody = {
+      actorType: 'candidate',
+      actorId: 'candidate-missing-challenge',
+      narrative: 'Candidate submitted a valid-looking source-backed commit.',
+      repositoryUrl: 'https://github.com/open-source/widgets',
+      forkRepositoryUrl: 'https://github.com/candidate/widgets',
+      branchName: 'pipe-assessment/popover-cleanup',
+      baseCommitSha,
+      commitSha,
+      commitUrl: `https://github.com/candidate/widgets/commit/${commitSha}`,
+      upstreamPrConsent: false,
+      changedFiles: [{ path: 'src/popover.ts', status: 'modified' }],
+      sourceRefs: [
+        await sourceRef('git_commit', commitSha, commitText),
+        await sourceRef('code_diff', `${baseCommitSha}..${commitSha}`, diffText),
+      ],
+    };
+
+    const missingChallengeSession = await createSession(app, env, {
+      ingestionKey: 'assessment-session:commit-missing-challenge-packet',
+      mode: 'OPEN_SOURCE_BUG_FIX',
+      candidateId: 'candidate-missing-challenge',
+    });
+    const missingChallengeResponse = await app.request(
+      `/api/v1/assessment/repo-task/sessions/${missingChallengeSession.id}/commit-submissions`,
+      jsonRequest({
+        ...validCommitBody,
+        ingestionKey: 'assessment-event:commit-missing-challenge-packet',
+      }),
+      env,
+    );
+    expect(missingChallengeResponse.status).toBe(400);
+    const missingBody = await missingChallengeResponse.json() as { error: { message: string } };
+    expect(missingBody.error.message).toContain(
+      'commit submission requires a complete source-backed challenge packet',
+    );
+    expect(missingBody.error.message).toContain('missing repo URL, base commit SHA, task, success criteria, expected evidence');
+
+    const incompleteChallengeSession = await createSession(app, env, {
+      ingestionKey: 'assessment-session:commit-incomplete-challenge-packet',
+      mode: 'OPEN_SOURCE_BUG_FIX',
+      candidateId: 'candidate-incomplete-challenge',
+    });
+    const incompleteChallengeText = [
+      'Repo: https://github.com/open-source/widgets',
+      `Base commit: ${baseCommitSha}`,
+      'Task: Fix stale popover listener cleanup.',
+      'Success: commit a focused patch with passing popover tests.',
+    ].join('\n');
+    const challengeResponse = await app.request(
+      `/api/v1/assessment/repo-task/sessions/${incompleteChallengeSession.id}/events`,
+      jsonRequest({
+        ingestionKey: 'assessment-event:commit-incomplete-challenge-packet',
+        kind: 'recruiter_note',
+        actorType: 'recruiter',
+        narrative: 'Recruiter assigned an incomplete source-backed challenge packet.',
+        sourceRefs: [{
+          ...await sourceRef(
+            'open_source_challenge_packet',
+            'challenge-packet-commit-incomplete',
+            incompleteChallengeText,
+          ),
+          evidenceRole: 'assigned_challenge',
+        }],
+      }),
+      env,
+    );
+    expect(challengeResponse.status).toBe(201);
+
+    const incompleteChallengeResponse = await app.request(
+      `/api/v1/assessment/repo-task/sessions/${incompleteChallengeSession.id}/commit-submissions`,
+      jsonRequest({
+        ...validCommitBody,
+        actorId: 'candidate-incomplete-challenge',
+        ingestionKey: 'assessment-event:commit-incomplete-challenge-packet',
+      }),
+      env,
+    );
+    expect(incompleteChallengeResponse.status).toBe(400);
+    const incompleteBody = await incompleteChallengeResponse.json() as { error: { message: string } };
+    expect(incompleteBody.error.message).toContain(
+      'commit submission requires a complete source-backed challenge packet',
+    );
+    expect(incompleteBody.error.message).toContain('missing expected evidence');
+
+    expect(sqlite.prepare(
+      `SELECT COUNT(*) AS count
+         FROM assessment_evidence_events
+        WHERE session_id IN (?, ?)
+          AND kind = 'commit_submission'`,
+    ).get(missingChallengeSession.id, incompleteChallengeSession.id)).toEqual({ count: 0 });
+  });
+
   it('rejects commit submissions that are not backed by exact commit and diff source refs', async () => {
     const session = await createSession(app, env, {
       ingestionKey: 'assessment-session:commit-submission-rejection',
@@ -835,6 +1165,52 @@ Fix stale popover listener cleanup.`;
     ).get(session.id)).toEqual({ count: 0 });
   });
 
+  it('rejects commit submissions whose commit URL belongs to an unrelated GitHub repository', async () => {
+    const session = await createSession(app, env, {
+      ingestionKey: 'assessment-session:commit-submission-unrelated-url',
+      mode: 'OPEN_SOURCE_BUG_FIX',
+    });
+    const baseCommitSha = '2222222222222222222222222222222222222222';
+    const commitSha = 'cccccccccccccccccccccccccccccccccccccccc';
+    const commitText = `commit ${commitSha}
+Author: Candidate <candidate@example.com>
+
+Fix stale popover listener cleanup.`;
+    const diffText = `diff --git a/src/popover.ts b/src/popover.ts
+--- a/src/popover.ts
++++ b/src/popover.ts
+@@ -1,2 +1,3 @@
++cleanupStaleHandler();`;
+
+    const response = await app.request(
+      `/api/v1/assessment/repo-task/sessions/${session.id}/commit-submissions`,
+      jsonRequest({
+        ingestionKey: 'assessment-event:commit-submission-unrelated-url',
+        actorType: 'candidate',
+        narrative: 'Candidate submitted a commit URL from an unrelated repository.',
+        repositoryUrl: 'https://github.com/open-source/widgets',
+        forkRepositoryUrl: 'https://github.com/candidate/widgets',
+        branchName: 'pipe-assessment/popover-cleanup',
+        baseCommitSha,
+        commitSha,
+        commitUrl: `https://github.com/unrelated/widgets/commit/${commitSha}`,
+        changedFiles: [{ path: 'src/popover.ts', status: 'modified' }],
+        sourceRefs: [
+          await sourceRef('git_commit', commitSha, commitText),
+          await sourceRef('code_diff', `${baseCommitSha}..${commitSha}`, diffText),
+        ],
+      }),
+      env,
+    );
+
+    expect(response.status).toBe(400);
+    const body = await response.json() as { error: { message: string } };
+    expect(body.error.message).toContain('commitUrl must belong to repositoryUrl or forkRepositoryUrl');
+    expect(sqlite.prepare(
+      'SELECT COUNT(*) AS count FROM assessment_evidence_events WHERE session_id = ?',
+    ).get(session.id)).toEqual({ count: 0 });
+  });
+
   it('rejects commit submissions that do not match the assigned challenge repo and base commit', async () => {
     async function createAssignedChallengeSession(idSuffix: string): Promise<{
       sessionId: string;
@@ -852,6 +1228,12 @@ Fix stale popover listener cleanup.`;
         'Repo: https://github.com/open-source/widgets',
         `Base commit: ${assignedBaseCommitSha}`,
         'Task: Fix stale popover listener cleanup.',
+        'Success criteria:',
+        '- Commit a focused patch with passing popover tests.',
+        'Expected evidence:',
+        '- git commit SHA on a pipe-assessment branch',
+        '- code diff for the popover cleanup fix',
+        '- test output or verification note',
       ].join('\n');
       const challengeRef = await sourceRef(
         'open_source_challenge_packet',
@@ -959,6 +1341,84 @@ Fix stale popover listener cleanup.`;
         WHERE session_id = ?
           AND kind = 'commit_submission'`,
     ).get(baseCase.sessionId)).toEqual({ count: 0 });
+
+    const textOnlySession = await createSession(app, env, {
+      ingestionKey: 'assessment-session:assigned-challenge-text-only',
+      mode: 'OPEN_SOURCE_BUG_FIX',
+    });
+    const textOnlyBaseCommitSha = '3333333333333333333333333333333333333333';
+    const textOnlyCommitSha = 'dddddddddddddddddddddddddddddddddddddddd';
+    const textOnlyChallengeText = [
+      'Repo: https://github.com/open-source/widgets',
+      `Base commit: ${textOnlyBaseCommitSha}`,
+      'Task: Fix stale popover listener cleanup.',
+      'Success criteria:',
+      '- Commit a focused patch with passing popover tests.',
+      'Expected evidence:',
+      '- git commit SHA on a pipe-assessment branch',
+      '- code diff for the popover cleanup fix',
+    ].join('\n');
+    const textOnlyChallengeResponse = await app.request(
+      `/api/v1/assessment/repo-task/sessions/${textOnlySession.id}/events`,
+      jsonRequest({
+        ingestionKey: 'assessment-event:assigned-challenge-text-only',
+        kind: 'recruiter_note',
+        actorType: 'recruiter',
+        narrative: 'Recruiter assigned a source-backed challenge packet with repo/base in exact text only.',
+        sourceRefs: [{
+          ...await sourceRef(
+            'open_source_challenge_packet',
+            'challenge-packet-text-only',
+            textOnlyChallengeText,
+          ),
+          evidenceRole: 'assigned_challenge',
+        }],
+      }),
+      env,
+    );
+    expect(textOnlyChallengeResponse.status).toBe(201);
+
+    const textOnlyWrongBaseCommitSha = '4444444444444444444444444444444444444444';
+    const textOnlyCommitText = `commit ${textOnlyCommitSha}
+Author: Candidate <candidate@example.com>
+
+Fix stale popover listener cleanup.`;
+    const textOnlyDiffText = `diff --git a/src/popover.ts b/src/popover.ts
+--- a/src/popover.ts
++++ b/src/popover.ts
+@@ -1,2 +1,3 @@
++cleanupStaleHandler();`;
+    const textOnlyMismatchResponse = await app.request(
+      `/api/v1/assessment/repo-task/sessions/${textOnlySession.id}/commit-submissions`,
+      jsonRequest({
+        ingestionKey: 'assessment-event:text-only-base-mismatch',
+        actorType: 'candidate',
+        narrative: 'Candidate submitted work from the wrong base commit.',
+        repositoryUrl: 'https://github.com/open-source/widgets',
+        branchName: 'pipe-assessment/popover-cleanup',
+        baseCommitSha: textOnlyWrongBaseCommitSha,
+        commitSha: textOnlyCommitSha,
+        changedFiles: [{ path: 'src/popover.ts', status: 'modified' }],
+        sourceRefs: [
+          await sourceRef('git_commit', textOnlyCommitSha, textOnlyCommitText),
+          await sourceRef(
+            'code_diff',
+            `${textOnlyWrongBaseCommitSha}..${textOnlyCommitSha}`,
+            textOnlyDiffText,
+          ),
+        ],
+      }),
+      env,
+    );
+    expect(textOnlyMismatchResponse.status).toBe(400);
+    const textOnlyBody = await textOnlyMismatchResponse.json() as { error: { message: string } };
+    expect(textOnlyBody.error.message).toContain('baseCommitSha must be the assigned challenge baseCommitSha');
+    expect(sqlite.prepare(
+      `SELECT COUNT(*) AS count
+         FROM assessment_evidence_events
+        WHERE session_id = ?
+          AND kind = 'commit_submission'`,
+    ).get(textOnlySession.id)).toEqual({ count: 0 });
   });
 
   it('rejects direct commit submissions from non-assessment branches', async () => {
@@ -1007,6 +1467,160 @@ Fix stale popover listener cleanup.`;
     ).get(session.id)).toEqual({ count: 0 });
   });
 
+  it('keeps reassigned challenges out of ready state until the submitted commit binds to the latest task', async () => {
+    const session = await createSession(app, env, {
+      ingestionKey: 'assessment-session:reassigned-challenge-binding',
+      mode: 'OPEN_SOURCE_BUG_FIX',
+    });
+    const originalBaseCommitSha = '1111111111111111111111111111111111111111';
+    const reassignedBaseCommitSha = '2222222222222222222222222222222222222222';
+    const commitSha = 'aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa';
+    const originalChallengeText = [
+      'Repo: https://github.com/open-source/widgets',
+      `Base commit: ${originalBaseCommitSha}`,
+      'Task: Fix stale popover listener cleanup.',
+      'Success criteria:',
+      '- Commit a focused patch with passing popover tests.',
+      'Expected evidence:',
+      '- git commit SHA on a pipe-assessment branch',
+      '- code diff for the popover cleanup fix',
+      '- test output or verification note',
+    ].join('\n');
+    const originalChallengeResponse = await app.request(
+      `/api/v1/assessment/repo-task/sessions/${session.id}/events`,
+      jsonRequest({
+        ingestionKey: 'assessment-event:reassigned-original-challenge',
+        kind: 'recruiter_note',
+        actorType: 'recruiter',
+        narrative: 'Recruiter assigned the original source-backed challenge packet.',
+        sourceRefs: [{
+          ...await sourceRef('open_source_challenge_packet', 'challenge-packet-original', originalChallengeText),
+          evidenceRole: 'assigned_challenge',
+          locator: {
+            repositoryUrl: 'https://github.com/open-source/widgets',
+            baseCommitSha: originalBaseCommitSha,
+          },
+        }],
+      }),
+      env,
+    );
+    expect(originalChallengeResponse.status).toBe(201);
+
+    const commitText = `commit ${commitSha}
+Author: Candidate <candidate@example.com>
+
+Fix stale popover listener cleanup.`;
+    const diffText = `diff --git a/src/popover.ts b/src/popover.ts
+--- a/src/popover.ts
++++ b/src/popover.ts
+@@ -1,2 +1,3 @@
++cleanupStaleHandler();`;
+    const commitResponse = await app.request(
+      `/api/v1/assessment/repo-task/sessions/${session.id}/commit-submissions`,
+      jsonRequest({
+        ingestionKey: 'assessment-event:reassigned-original-commit',
+        actorType: 'candidate',
+        narrative: 'Candidate submitted work for the original assigned challenge.',
+        repositoryUrl: 'https://github.com/open-source/widgets',
+        forkRepositoryUrl: 'https://github.com/candidate/widgets',
+        branchName: 'pipe-assessment/popover-cleanup',
+        baseCommitSha: originalBaseCommitSha,
+        commitSha,
+        commitUrl: `https://github.com/candidate/widgets/commit/${commitSha}`,
+        changedFiles: [{ path: 'src/popover.ts', status: 'modified' }],
+        sourceRefs: [
+          await sourceRef('git_commit', commitSha, commitText),
+          await sourceRef('code_diff', `${originalBaseCommitSha}..${commitSha}`, diffText),
+          await sourceRef('test_run', `${commitSha}:test-run`, 'npm test -- popover\nPASS'),
+        ],
+      }),
+      env,
+    );
+    expect(commitResponse.status).toBe(201);
+
+    const reassignedChallengeText = [
+      'Repo: https://github.com/open-source/widgets',
+      `Base commit: ${reassignedBaseCommitSha}`,
+      'Task: Fix focus trap cleanup after the latest upstream refactor.',
+      'Success criteria:',
+      '- Commit a focused patch with passing focus-trap tests.',
+      'Expected evidence:',
+      '- git commit SHA on a pipe-assessment branch',
+      '- code diff for the focus-trap cleanup fix',
+      '- test output or verification note',
+    ].join('\n');
+    const reassignedChallengeResponse = await app.request(
+      `/api/v1/assessment/repo-task/sessions/${session.id}/events`,
+      jsonRequest({
+        ingestionKey: 'assessment-event:reassigned-latest-challenge',
+        kind: 'recruiter_note',
+        actorType: 'recruiter',
+        narrative: 'Recruiter reassigned the source-backed challenge packet after the original commit.',
+        sourceRefs: [{
+          ...await sourceRef('open_source_challenge_packet', 'challenge-packet-reassigned', reassignedChallengeText),
+          evidenceRole: 'assigned_challenge',
+          locator: {
+            repositoryUrl: 'https://github.com/open-source/widgets',
+            baseCommitSha: reassignedBaseCommitSha,
+          },
+        }],
+      }),
+      env,
+    );
+    expect(reassignedChallengeResponse.status).toBe(201);
+
+    const progressResponse = await app.request(
+      `/api/v1/assessment/repo-task/sessions/${session.id}/progress`,
+      { method: 'GET' },
+      env,
+    );
+    expect(progressResponse.status).toBe(200);
+    const body = await progressResponse.json() as {
+      progress: {
+        stage: string;
+        nextAction: string;
+        readiness: {
+          status: string;
+          isReadyForEvaluation: boolean;
+          missingRequiredCount: number;
+          required: Array<{ id: string; satisfied: boolean; missingImpact: string }>;
+        };
+        commit: {
+          challengeBinding: {
+            status: string;
+            label: string;
+            detail: string;
+            tone: string;
+          };
+        };
+      };
+    };
+    expect(body.progress).toMatchObject({
+      stage: 'WORK_IN_PROGRESS',
+      nextAction: 'SUBMIT_COMMIT',
+      readiness: {
+        status: 'WORK_IN_PROGRESS',
+        isReadyForEvaluation: false,
+        missingRequiredCount: 1,
+      },
+      commit: {
+        challengeBinding: {
+          status: 'challenge_binding_mismatch',
+          label: 'Challenge binding mismatch',
+          detail: 'Submitted repository or base commit does not match the assigned source-backed challenge packet.',
+          tone: 'warning',
+        },
+      },
+    });
+    expect(body.progress.readiness.required).toEqual(expect.arrayContaining([
+      expect.objectContaining({
+        id: 'commit_challenge_binding',
+        satisfied: false,
+        missingImpact: 'The submitted commit must match the latest assigned challenge repo and base commit before evaluation.',
+      }),
+    ]));
+  });
+
   it('treats dev-container challenges as commit-required assessment sessions', async () => {
     const session = await createSession(app, env, {
       ingestionKey: 'assessment-session:dev-container-commit-required',
@@ -1018,6 +1632,12 @@ Fix stale popover listener cleanup.`;
       'Repo: https://github.com/open-source/widgets',
       'Base commit: 3333333333333333333333333333333333333333',
       'Task: fix stale popover listener cleanup and add a regression test.',
+      'Success criteria:',
+      '- commit a focused patch with passing popover tests.',
+      'Expected evidence:',
+      '- git commit SHA on a pipe-assessment branch',
+      '- code diff for the popover cleanup fix',
+      '- test output for the regression',
     ].join('\n');
     const challengeResponse = await app.request(
       `/api/v1/assessment/repo-task/sessions/${session.id}/events`,
@@ -1098,6 +1718,102 @@ Fix stale popover listener cleanup.`;
     ]);
   });
 
+  it('keeps incomplete challenge packets waiting for recruiter completion', async () => {
+    const session = await createSession(app, env, {
+      ingestionKey: 'assessment-session:incomplete-challenge-packet',
+      mode: 'OPEN_SOURCE_BUG_FIX',
+      candidateId: 'candidate-incomplete-packet',
+    });
+
+    const challengeText = [
+      'Repo: https://github.com/open-source/widgets',
+      'Base commit: 3333333333333333333333333333333333333333',
+      'Task: fix stale popover listener cleanup and add a regression test.',
+      'Success: commit a focused patch with passing popover tests.',
+    ].join('\n');
+    const challengeResponse = await app.request(
+      `/api/v1/assessment/repo-task/sessions/${session.id}/events`,
+      jsonRequest({
+        ingestionKey: 'assessment-event:incomplete-challenge-packet',
+        kind: 'recruiter_note',
+        actorType: 'recruiter',
+        actorId: 'recruiter-1',
+        narrative: 'Recruiter assigned a source-backed open-source challenge packet with missing expected evidence.',
+        sourceRefs: [{
+          ...await sourceRef('review_challenge_packet', 'challenge-packet-incomplete', challengeText),
+          evidenceRole: 'assigned_challenge',
+          locator: {
+            repositoryUrl: 'https://github.com/open-source/widgets',
+            baseCommitSha: '3333333333333333333333333333333333333333',
+          },
+        }],
+      }),
+      env,
+    );
+    expect(challengeResponse.status).toBe(201);
+
+    const progressResponse = await app.request(
+      `/api/v1/assessment/repo-task/sessions/${session.id}/progress`,
+      { method: 'GET' },
+      env,
+    );
+    expect(progressResponse.status).toBe(200);
+    const body = await progressResponse.json() as {
+      progress: {
+        stage: string;
+        nextAction: string;
+        hasChallengePacket: boolean;
+        challengePacketContract: {
+          isComplete: boolean;
+          missingFields: string[];
+          hasRepositoryUrl: boolean;
+          hasBaseCommitSha: boolean;
+          hasTask: boolean;
+          hasSuccessCriteria: boolean;
+          hasExpectedEvidence: boolean;
+        };
+        readiness: {
+          status: string;
+          isReadyForEvaluation: boolean;
+          missingRequiredCount: number;
+          required: Array<{
+            id: string;
+            label: string;
+            satisfied: boolean;
+            missingImpact: string;
+          }>;
+        };
+      };
+    };
+
+    const challengeReadiness = body.progress.readiness.required.find(
+      (item) => item.id === 'challenge_packet',
+    );
+    expect(body.progress).toMatchObject({
+      stage: 'WAITING_FOR_CHALLENGE',
+      nextAction: 'ASSIGN_CHALLENGE',
+      hasChallengePacket: true,
+      challengePacketContract: {
+        isComplete: false,
+        missingFields: ['expected evidence'],
+        hasRepositoryUrl: true,
+        hasBaseCommitSha: true,
+        hasTask: true,
+        hasSuccessCriteria: true,
+        hasExpectedEvidence: false,
+      },
+      readiness: {
+        status: 'WAITING_FOR_CHALLENGE',
+        isReadyForEvaluation: false,
+      },
+    });
+    expect(challengeReadiness).toMatchObject({
+      label: 'Complete challenge packet',
+      satisfied: false,
+      missingImpact: expect.stringContaining('expected evidence'),
+    });
+  });
+
   it('summarizes source-backed repo-task progress from challenge assignment through evaluation', async () => {
     const session = await createSession(app, env, {
       ingestionKey: 'assessment-session:progress-snapshot',
@@ -1115,6 +1831,18 @@ Fix stale popover listener cleanup.`;
       progress: {
         stage: string;
         nextAction: string;
+        readiness: {
+          status: string;
+          isReadyForEvaluation: boolean;
+          isUsableHiringSignal: boolean;
+          missingRequiredCount: number;
+          required: Array<{ id: string; satisfied: boolean }>;
+        };
+        assignmentTrust: {
+          state: string;
+          label: string;
+          tone: string;
+        };
         hasChallengePacket: boolean;
         hasCommitSubmission: boolean;
       };
@@ -1122,6 +1850,17 @@ Fix stale popover listener cleanup.`;
     expect(initialProgressBody.progress).toMatchObject({
       stage: 'WAITING_FOR_CHALLENGE',
       nextAction: 'ASSIGN_CHALLENGE',
+      readiness: {
+        status: 'WAITING_FOR_CHALLENGE',
+        isReadyForEvaluation: false,
+        isUsableHiringSignal: false,
+        missingRequiredCount: 4,
+      },
+      assignmentTrust: {
+        state: 'waiting_for_challenge',
+        label: 'No challenge packet',
+        tone: 'blocked',
+      },
       hasChallengePacket: false,
       hasCommitSubmission: false,
     });
@@ -1131,6 +1870,10 @@ Fix stale popover listener cleanup.`;
       'Base commit: 3333333333333333333333333333333333333333',
       'Task: fix stale popover listener cleanup and add a regression test.',
       'Success: commit a focused patch with passing popover tests.',
+      'Expected evidence:',
+      '- git commit SHA on a pipe-assessment branch',
+      '- code diff for the popover cleanup fix',
+      '- test output for the regression',
     ].join('\n');
     const challengeSourceRef = {
       ...await sourceRef('review_challenge_packet', 'challenge-packet-popover-cleanup', challengeText),
@@ -1165,6 +1908,19 @@ Fix stale popover listener cleanup.`;
       progress: {
         stage: string;
         nextAction: string;
+        readiness: {
+          status: string;
+          label: string;
+          isReadyForEvaluation: boolean;
+          missingRequiredCount: number;
+          required: Array<{ id: string; satisfied: boolean }>;
+        };
+        assignmentTrust: {
+          state: string;
+          label: string;
+          detail: string;
+          tone: string;
+        };
         hasChallengePacket: boolean;
         challenge: { sourceRefType: string; sourceRefId: string; exactText: string };
       };
@@ -1172,6 +1928,18 @@ Fix stale popover listener cleanup.`;
     expect(challengeProgressBody.progress).toMatchObject({
       stage: 'CHALLENGE_READY',
       nextAction: 'OPEN_ROOM_OR_WORKSPACE',
+      readiness: {
+        status: 'READY_TO_START',
+        label: 'Ready to start',
+        isReadyForEvaluation: false,
+        missingRequiredCount: 3,
+      },
+      assignmentTrust: {
+        state: 'source_backed_challenge',
+        label: 'Source-backed challenge',
+        detail: 'A reviewable challenge packet is captured as source evidence; confirm match proof before treating assignment fit as automatic.',
+        tone: 'neutral',
+      },
       hasChallengePacket: true,
       challenge: {
         sourceRefType: 'review_challenge_packet',
@@ -1192,12 +1960,23 @@ Fix stale popover listener cleanup.`;
 @@ -42,6 +42,7 @@ export function closePopover() {
 +  cleanupStaleHandler();
 }`;
-    const commitSourceRef = await sourceRef('git_commit', commitSha, commitText);
-    const codeDiffSourceRef = await sourceRef('code_diff', `${baseCommitSha}..${commitSha}`, diffText);
+    const commitSourceRef = await sourceRef(
+      'git_commit',
+      commitSha,
+      commitText,
+      { source: 'assessment_commit_submission_panel' },
+    );
+    const codeDiffSourceRef = await sourceRef(
+      'code_diff',
+      `${baseCommitSha}..${commitSha}`,
+      diffText,
+      { source: 'assessment_commit_submission_panel' },
+    );
     const testRunSourceRef = await sourceRef(
       'test_run',
       `${commitSha}:test-run`,
       'npm test -- popover\nPASS popover cleanup regression',
+      { source: 'assessment_commit_submission_panel' },
     );
     const commitResponse = await app.request(
       `/api/v1/assessment/repo-task/sessions/${session.id}/commit-submissions`,
@@ -1229,6 +2008,16 @@ Fix stale popover listener cleanup.`;
       progress: {
         stage: string;
         nextAction: string;
+        readiness: {
+          status: string;
+          label: string;
+          detail: string;
+          isReadyForEvaluation: boolean;
+          isUsableHiringSignal: boolean;
+          missingRequiredCount: number;
+          required: Array<{ id: string; satisfied: boolean }>;
+          confidence: Array<{ id: string; satisfied: boolean }>;
+        };
         hasCommitSubmission: boolean;
         hasWorkEvidence: boolean;
         hasTestEvidence: boolean;
@@ -1239,6 +2028,18 @@ Fix stale popover listener cleanup.`;
           forkRepositoryUrl: string;
           branchName: string;
           commitSha: string;
+          integrity: {
+            status: string;
+            label: string;
+            detail: string;
+            tone: string;
+          };
+          challengeBinding: {
+            status: string;
+            label: string;
+            detail: string;
+            tone: string;
+          };
           changedFiles: Array<{ path: string; status: string }>;
         };
         evidenceCounts: Array<{ kind: string; count: number }>;
@@ -1248,6 +2049,14 @@ Fix stale popover listener cleanup.`;
     expect(commitProgressBody.progress).toMatchObject({
       stage: 'READY_FOR_EVALUATION',
       nextAction: 'START_EVALUATION',
+      readiness: {
+        status: 'READY_FOR_EVALUATION',
+        label: 'Ready for evaluation',
+        detail: 'Required evidence is captured, but commit provenance needs repository or workspace verification before final reliance.',
+        isReadyForEvaluation: true,
+        isUsableHiringSignal: false,
+        missingRequiredCount: 0,
+      },
       hasCommitSubmission: true,
       hasWorkEvidence: true,
       hasTestEvidence: true,
@@ -1258,6 +2067,18 @@ Fix stale popover listener cleanup.`;
         forkRepositoryUrl: 'https://github.com/candidate/widgets',
         branchName: 'pipe-assessment/progress-popover',
         commitSha,
+        integrity: {
+          status: 'manual_needs_verification',
+          label: 'Manual commit evidence',
+          detail: 'Candidate-entered commit evidence passed source-ref validation, but still needs repository verification before final reliance.',
+          tone: 'warning',
+        },
+        challengeBinding: {
+          status: 'bound_to_assigned_challenge',
+          label: 'Bound to assigned challenge',
+          detail: 'Submitted repository and base commit match the assigned source-backed challenge packet.',
+          tone: 'verified',
+        },
         changedFiles: [{ path: 'src/popover.ts', status: 'modified' }],
       },
     });
@@ -1270,6 +2091,17 @@ Fix stale popover listener cleanup.`;
       { kind: 'git_commit', count: 1 },
       { kind: 'review_challenge_packet', count: 1 },
       { kind: 'test_run', count: 1 },
+    ]));
+    expect(commitProgressBody.progress.readiness.required).toEqual(expect.arrayContaining([
+      expect.objectContaining({ id: 'challenge_packet', satisfied: true }),
+      expect.objectContaining({ id: 'work_evidence', satisfied: true }),
+      expect.objectContaining({ id: 'assessment_commit', satisfied: true }),
+      expect.objectContaining({ id: 'code_diff', satisfied: true }),
+      expect.objectContaining({ id: 'commit_challenge_binding', satisfied: true }),
+    ]));
+    expect(commitProgressBody.progress.readiness.confidence).toEqual(expect.arrayContaining([
+      expect.objectContaining({ id: 'workspace_captured_commit', satisfied: false }),
+      expect.objectContaining({ id: 'test_run', satisfied: true }),
     ]));
 
     const evaluationResponse = await app.request(
@@ -1435,6 +2267,13 @@ Fix retry cleanup without captured tests.`;
 @@ -1,3 +1,4 @@
 +cleanupRetryState();`;
     const verificationGapText = 'I could not run tests because dependency installation failed before the suite could start.';
+    await assignOpenSourceChallenge(app, env, {
+      sessionId: session.id,
+      ingestionKey: 'assessment-event:verification-gap-challenge',
+      sourceRefId: 'challenge-packet-verification-gap',
+      repositoryUrl: 'https://github.com/open-source/widgets',
+      baseCommitSha,
+    });
 
     const commitResponse = await app.request(
       `/api/v1/assessment/repo-task/sessions/${session.id}/commit-submissions`,

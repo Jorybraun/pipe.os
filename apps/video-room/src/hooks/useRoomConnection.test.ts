@@ -4,32 +4,18 @@ import {
   applyRoomChatRejection,
   applyRoomMediaControlEvent,
   applyRoomRecordingStateEvent,
-  decideRoomSurfaceSnapshot,
   hasSourceBackedCodeServerFileEvidence,
-  hasSourceBackedCursorEvidence,
   hasSourceBackedChatEvidence,
-  hasSourceBackedClippyInteractionEvidence,
-  hasSourceBackedClippyPromptEvidence,
-  hasSourceBackedDesktopEventEvidence,
+  hasSourceBackedAgentInteractionEvidence,
   hasSourceBackedMediaControlEvidence,
   hasSourceBackedMediaControlStateEvidence,
   hasSourceBackedRecordingStateEvidence,
   hasSourceBackedRecordingStateSnapshotEvidence,
-  hasSourceBackedRoomFileSnapshotEvidence,
-  hasSourceBackedRoomFileSystemEvidence,
   hasSourceBackedTerminalEvidence,
-  mergePeerCursorPresence,
   mergeRoomChatMessage,
-  ROOM_CURSOR_SEND_INTERVAL_MS,
-  shouldSendCursorPresence,
   type RoomChatMessage,
-  type RoomClippyInteractionEvent,
-  type RoomClippyPrompt,
+  type RoomAgentInteractionEvent,
   type RoomCodeServerFileEvent,
-  type RoomCursorPresence,
-  type RoomDesktopEvent,
-  type RoomFile,
-  type RoomFileSystemEvent,
   type RoomMediaControlEvent,
   type RoomMediaControlState,
   type RoomRecordingState,
@@ -89,132 +75,32 @@ describe('addLocalMediaToPeer', () => {
   });
 });
 
-describe('decideRoomSurfaceSnapshot', () => {
-  it('applies the Durable Object snapshot on a new socket so missed surface changes resync', () => {
-    expect(decideRoomSurfaceSnapshot({
-      snapshotSurface: 'standard',
-      surfaceEventSeenOnSocket: false,
-      pendingLocalSurfaceEvent: null,
-      nowMs: 10_000,
-    })).toEqual({
-      applySnapshot: true,
-      clearPendingLocalSurface: false,
-    });
-  });
-
-  it('does not let an older snapshot overwrite a fresh local surface toggle queued during reconnect', () => {
-    expect(decideRoomSurfaceSnapshot({
-      snapshotSurface: 'standard',
-      surfaceEventSeenOnSocket: false,
-      pendingLocalSurfaceEvent: {
-        surface: 'win95',
-        createdAt: 9_900,
-      },
-      nowMs: 10_000,
-      guardMs: 5_000,
-    })).toEqual({
-      applySnapshot: false,
-      clearPendingLocalSurface: false,
-    });
-  });
-
-  it('ignores snapshots after a live surface event on the current socket', () => {
-    expect(decideRoomSurfaceSnapshot({
-      snapshotSurface: 'standard',
-      surfaceEventSeenOnSocket: true,
-      pendingLocalSurfaceEvent: null,
-      nowMs: 10_000,
-    })).toEqual({
-      applySnapshot: false,
-      clearPendingLocalSurface: false,
-    });
-  });
-
-  it('can ignore the initial Durable Object surface for code-first assessment rooms', () => {
-    expect(decideRoomSurfaceSnapshot({
-      snapshotSurface: 'win95',
-      surfaceEventSeenOnSocket: false,
-      pendingLocalSurfaceEvent: null,
-      nowMs: 10_000,
-      ignoreInitialSnapshot: true,
-    })).toEqual({
-      applySnapshot: false,
-      clearPendingLocalSurface: false,
-    });
-  });
-
-  it('clears a pending local marker when the authoritative snapshot catches up', () => {
-    expect(decideRoomSurfaceSnapshot({
-      snapshotSurface: 'win95',
-      surfaceEventSeenOnSocket: false,
-      pendingLocalSurfaceEvent: {
-        surface: 'win95',
-        createdAt: 9_900,
-      },
-      nowMs: 10_000,
-      guardMs: 5_000,
-    })).toEqual({
-      applySnapshot: true,
-      clearPendingLocalSurface: true,
-    });
-  });
-});
-
-describe('hasSourceBackedClippyPromptEvidence', () => {
-  const prompt: RoomClippyPrompt = {
-    id: 'prompt-1',
-    clientId: 'host-client',
-    createdAt: 1700000001000,
-    source: 'system',
-    text: 'Would you like to start recording?',
-    promptEventSource: 'browser_proactive_clippy_prompt',
-    promptTrigger: 'recording_start_suggestion',
-    surface: 'win95',
-    roomPhase: 'connected',
-    workspaceStatus: 'running',
-    workspaceSessionId: 'workspace-1',
-    agentResponseClaimed: false,
-  };
-
-  it('accepts host-authored proactive Clippy prompts with room provenance', () => {
-    expect(hasSourceBackedClippyPromptEvidence(prompt, 'HOST')).toBe(true);
-  });
-
-  it('rejects guest-authored or source-thin Clippy prompts', () => {
-    expect(hasSourceBackedClippyPromptEvidence(prompt, 'GUEST')).toBe(false);
-    expect(hasSourceBackedClippyPromptEvidence({
-      ...prompt,
-      promptEventSource: undefined,
-    }, 'HOST')).toBe(false);
-  });
-});
-
-describe('hasSourceBackedClippyInteractionEvidence', () => {
-  it('accepts source-backed user chat submitted to the real Clippy/Devin bridge', () => {
+describe('hasSourceBackedAgentInteractionEvidence', () => {
+  it('accepts source-backed user chat submitted to the real agent bridge', () => {
     const text = 'Can you inspect the task?';
-    const event: RoomClippyInteractionEvent = {
-      id: 'clippy-interaction-1',
+    const event: RoomAgentInteractionEvent = {
+      id: 'agent-interaction-1',
       clientId: 'guest-client',
       createdAt: 1700000002000,
       eventType: 'ai_chat_user',
       actor: 'guest',
       text,
       evidence: {
-        source: 'clippy_agent_chat_client_submit',
-        agentChatEventSource: 'browser_clippy_chat_window',
+        source: 'agent_chat_client_submit',
+        agentChatEventSource: 'browser_agent_chat_panel',
         actor: 'guest',
         bridgeMessageType: 'CHAT',
-        bridgeProtocol: 'clippy_dev_container_ws',
+        bridgeProtocol: 'agent_dev_container_ws',
         bridgeDeliveryStatus: 'queued',
-        promptId: 'workspace-1:guest:prompt:1700000002000:clippy_0123abcd',
-        promptFingerprint: 'clippy_0123abcd',
+        promptId: 'workspace-1:guest:prompt:1700000002000:agent_0123abcd',
+        promptFingerprint: 'agent_0123abcd',
         promptLength: text.length,
         promptTimestamp: 1700000002000,
         browserQueuedBridgeMessage: true,
         bridgeDeliveryConfirmed: false,
         deliveredToAgentBridge: false,
         agent: null,
-        surface: 'win95',
+        surface: 'standard',
         roomPhase: 'connected',
         workspaceStatus: 'running',
         workspaceSessionId: 'workspace-1',
@@ -224,21 +110,21 @@ describe('hasSourceBackedClippyInteractionEvidence', () => {
       },
     };
 
-    expect(hasSourceBackedClippyInteractionEvidence(event, 'GUEST')).toBe(true);
-    expect(hasSourceBackedClippyInteractionEvidence(event, 'HOST')).toBe(false);
+    expect(hasSourceBackedAgentInteractionEvidence(event, 'GUEST')).toBe(true);
+    expect(hasSourceBackedAgentInteractionEvidence(event, 'HOST')).toBe(false);
   });
 
   it('accepts real agent response evidence without fabricating a local Devin reply', () => {
     const text = 'I found the repository task context.';
-    const event: RoomClippyInteractionEvent = {
-      id: 'clippy-interaction-2',
+    const event: RoomAgentInteractionEvent = {
+      id: 'agent-interaction-2',
       clientId: 'host-client',
       createdAt: 1700000003000,
       eventType: 'ai_chat_agent',
       actor: 'agent',
       text,
       evidence: {
-        source: 'clippy_agent_bridge',
+        source: 'agent_bridge',
         bridgeEventType: 'CHAT_RESPONSE',
         bridgeMessageSource: 'agent_stdout',
         observedAt: '2026-06-28T17:00:03.000Z',
@@ -249,7 +135,7 @@ describe('hasSourceBackedClippyInteractionEvidence', () => {
         agentChatResponseId: 'agent-chat:devin:1700000003000:CHAT_RESPONSE:agent_89abcdef',
         bridgePersisted: false,
         persistenceFallback: 'browser_after_bridge_persist_failed',
-        surface: 'win95',
+        surface: 'standard',
         roomPhase: 'connected',
         workspaceStatus: 'running',
         workspaceSessionId: 'workspace-1',
@@ -259,520 +145,9 @@ describe('hasSourceBackedClippyInteractionEvidence', () => {
       },
     };
 
-    expect(hasSourceBackedClippyInteractionEvidence(event, 'HOST')).toBe(true);
+    expect(hasSourceBackedAgentInteractionEvidence(event, 'HOST')).toBe(true);
   });
 
-  it('accepts source-backed Clippy UI actions and rejects source-less events', () => {
-    const action: RoomClippyInteractionEvent = {
-      id: 'clippy-interaction-3',
-      clientId: 'host-client',
-      createdAt: 1700000004000,
-      eventType: 'clippy_action',
-      actor: 'host',
-      text: 'Clippy chat opened from the Win95 taskbar tray',
-      evidence: {
-        source: 'clippy_tray_ui',
-        actionId: 'open-clippy-chat',
-        origin: 'tray',
-        executedBy: 'host',
-        actionSource: 'win95_taskbar_tray',
-        executionStatus: 'opened',
-        capturedAtMs: 1700000004000,
-        clippyActionEventId: 'clippy-action:host:1700000004000:clippy_tray_ui:tray:opened:open-clippy-chat',
-        surface: 'win95',
-        roomPhase: 'connected',
-        workspaceStatus: 'running',
-        workspaceSessionId: 'workspace-1',
-        agent: null,
-        agentResponseClaimed: false,
-        durableObjectReplayExpected: true,
-      },
-    };
-
-    expect(hasSourceBackedClippyInteractionEvidence(action, 'HOST')).toBe(true);
-    expect(hasSourceBackedClippyInteractionEvidence({
-      ...action,
-      text: 'AI assistant opened from the video call controls',
-      actor: 'guest',
-      evidence: {
-        source: 'clippy_call_controls_ui',
-        actionId: 'open-clippy-chat',
-        origin: 'call',
-        executedBy: 'guest',
-        actionSource: 'video_call_controls',
-        executionStatus: 'opened',
-        capturedAtMs: 1700000005000,
-        clippyActionEventId: 'clippy-action:guest:1700000005000:clippy_call_controls_ui:call:opened:open-clippy-chat',
-        surface: 'win95',
-        roomPhase: 'connected',
-        workspaceStatus: null,
-        workspaceSessionId: null,
-        agent: null,
-        agentResponseClaimed: false,
-        durableObjectReplayExpected: true,
-      },
-    }, 'GUEST')).toBe(true);
-    expect(hasSourceBackedClippyInteractionEvidence({
-      ...action,
-      text: 'AI assistant opened from the video call controls',
-      actor: 'guest',
-      evidence: {
-        source: 'clippy_call_controls_ui',
-        actionId: 'open-clippy-chat',
-        origin: 'tray',
-        executedBy: 'guest',
-        actionSource: 'win95_taskbar_tray',
-        executionStatus: 'opened',
-        capturedAtMs: 1700000005000,
-        clippyActionEventId: 'clippy-action:guest:1700000005000:clippy_call_controls_ui:tray:opened:open-clippy-chat',
-        surface: 'win95',
-        roomPhase: 'connected',
-        workspaceStatus: null,
-        workspaceSessionId: null,
-        agent: null,
-        agentResponseClaimed: false,
-        durableObjectReplayExpected: true,
-      },
-    }, 'GUEST')).toBe(false);
-    expect(hasSourceBackedClippyInteractionEvidence({
-      ...action,
-      evidence: {
-        source: 'clippy_tray_ui',
-      },
-    }, 'HOST')).toBe(false);
-  });
-});
-
-describe('hasSourceBackedDesktopEventEvidence', () => {
-  const surfaceEvent: RoomDesktopEvent = {
-    id: 'surface-event-1',
-    clientId: 'host-client',
-    createdAt: 1700000001000,
-    kind: 'SET_ROOM_SURFACE',
-    surface: 'win95',
-    previousSurface: 'standard',
-    action: 'enter_desktop',
-    source: 'room_surface_control',
-    surfaceControlEventSource: 'browser_room_surface_toggle',
-    surfaceChangeId: 'surface:host:1700000001000:standard:win95',
-    capturedAtMs: 1700000001000,
-    roomPhase: 'connected',
-    durableObjectReplayExpected: true,
-  };
-
-  const startMenuEvent: RoomDesktopEvent = {
-    id: 'start-menu-event-1',
-    clientId: 'guest-client',
-    createdAt: 1700000002000,
-    kind: 'START_MENU_STATE',
-    open: true,
-    evidence: {
-      source: 'win95_start_menu_control',
-      menuEventSource: 'win95_start_button',
-      actor: 'guest',
-      menuId: 'start',
-      action: 'open',
-      open: true,
-      startMenuEventId: 'start-menu:guest:1700000002000:open:win95_start_button',
-      capturedAtMs: 1700000002000,
-      surface: 'win95',
-      roomPhase: 'connected',
-      durableObjectReplayExpected: true,
-    },
-  };
-
-  const workspaceEvent: RoomDesktopEvent = {
-    id: 'workspace-state-event-1',
-    clientId: 'host-client',
-    createdAt: 1700000003000,
-    kind: 'WORKSPACE_STATE_CHANGED',
-    actor: 'host',
-    workspaceStateEventId: 'workspace-state:host:1700000003000:launch:workspace-session-1:READY',
-    capturedAtMs: 1700000003000,
-    status: 'READY',
-    workspaceSessionId: 'workspace-session-1',
-    repoUrl: 'https://github.com/cloudflare/workers-sdk',
-    source: 'browser_workspace_state_observer',
-    workspaceEventSource: 'browser_workspace_state_observer',
-    workspaceStateSource: 'launch',
-    workspaceTelemetryPersisted: true,
-    proxyUrlPersisted: false,
-  };
-  const openWindowEvent: RoomDesktopEvent = {
-    id: 'open-window-1',
-    clientId: 'guest-client',
-    createdAt: 1700000003500,
-    kind: 'OPEN_WINDOW',
-    window: {
-      id: 'chat',
-      windowType: 'chat',
-      title: 'Room Chat',
-    },
-    evidence: {
-      source: 'window_lifecycle_client_submit',
-      lifecycleSource: 'win95_desktop_ui',
-      lifecycleKind: 'open',
-      actor: 'guest',
-      windowId: 'chat',
-      windowType: 'chat',
-      windowTitle: 'Room Chat',
-      windowLifecycleId: 'window-lifecycle:guest:1700000003500:open:chat',
-      capturedAtMs: 1700000003500,
-      surface: 'win95',
-      roomPhase: 'connected',
-      durableObjectReplayExpected: true,
-    },
-  };
-  const closeWindowEvent: RoomDesktopEvent = {
-    id: 'close-window-1',
-    clientId: 'guest-client',
-    createdAt: 1700000003600,
-    kind: 'CLOSE_WINDOW',
-    windowId: 'chat',
-    evidence: {
-      source: 'window_lifecycle_client_submit',
-      lifecycleSource: 'win95_window_chrome',
-      lifecycleKind: 'close',
-      actor: 'guest',
-      windowId: 'chat',
-      windowType: 'chat',
-      windowTitle: 'Room Chat',
-      windowLifecycleId: 'window-lifecycle:guest:1700000003600:close:chat',
-      capturedAtMs: 1700000003600,
-      surface: 'win95',
-      roomPhase: 'connected',
-      durableObjectReplayExpected: true,
-    },
-  };
-  const windowDataEvent: RoomDesktopEvent = {
-    id: 'window-data-event-1',
-    clientId: 'guest-client',
-    createdAt: 1700000004000,
-    kind: 'UPDATE_WINDOW_DATA',
-    windowId: 'notepad',
-    data: { text: 'Candidate writes a replay test plan.' },
-    evidence: {
-      source: 'window_data_client_submit',
-      dataSource: 'win95_window_data_sync',
-      actor: 'guest',
-      windowId: 'notepad',
-      action: 'edit_text',
-      windowDataUpdateId: 'window-data:guest:1700000004000:notepad:edit_text',
-      capturedAtMs: 1700000004000,
-      surface: 'win95',
-      roomPhase: 'connected',
-      dataKeys: ['text'],
-      dataValueFingerprints: { text: 'data_81a94acf' },
-      durableObjectReplayExpected: true,
-    },
-  };
-  const browserNavigationEvent: RoomDesktopEvent = {
-    id: 'browser-navigation-event-1',
-    clientId: 'host-client',
-    createdAt: 1700000005000,
-    kind: 'UPDATE_WINDOW_DATA',
-    windowId: 'browser',
-    data: { currentUrl: 'https://example.com/review?step=1' },
-    evidence: {
-      source: 'room_browser_window',
-      navigationSource: 'browser_window_client_submit',
-      actor: 'host',
-      windowId: 'browser',
-      navigationTrigger: 'go_button',
-      browserNavigationId: 'browser-navigation:host:1700000005000:browser:go_button:nav_54d2c495',
-      capturedAtMs: 1700000005000,
-      urlFingerprint: 'nav_54d2c495',
-      url: 'https://example.com/review?step=1',
-      surface: 'win95',
-      roomPhase: 'connected',
-      durableObjectReplayExpected: true,
-    },
-  };
-  const windowStateEvent: RoomDesktopEvent = {
-    id: 'window-state-event-1',
-    clientId: 'guest-client',
-    createdAt: 1700000006000,
-    kind: 'UPDATE_WINDOW_STATE',
-    windowId: 'workspace',
-    x: 120,
-    y: 80,
-    evidence: {
-      source: 'window_state_client_submit',
-      stateSource: 'win95_window_chrome',
-      actor: 'guest',
-      windowId: 'workspace',
-      action: 'move',
-      windowStateChangeId: 'window-state:guest:1700000006000:workspace:move',
-      capturedAtMs: 1700000006000,
-      surface: 'win95',
-      roomPhase: 'connected',
-      statePatch: { x: 120, y: 80 },
-      stateKeys: ['x', 'y'],
-      durableObjectReplayExpected: true,
-    },
-  };
-
-  it('accepts surface changes only when browser toggle evidence matches the room actor and transition', () => {
-    expect(hasSourceBackedDesktopEventEvidence(surfaceEvent, 'HOST')).toBe(true);
-  });
-
-  it('rejects source-less surface changes before optimistic desktop mode can change', () => {
-    expect(hasSourceBackedDesktopEventEvidence({
-      ...surfaceEvent,
-      source: undefined,
-      surfaceChangeId: undefined,
-    }, 'HOST')).toBe(false);
-  });
-
-  it('rejects room surface evidence unless the timestamp and phase are deterministic', () => {
-    expect(hasSourceBackedDesktopEventEvidence({
-      ...surfaceEvent,
-      capturedAtMs: 1700000001000.5,
-      surfaceChangeId: 'surface:host:1700000001000.5:standard:win95',
-    }, 'HOST')).toBe(false);
-    expect(hasSourceBackedDesktopEventEvidence({
-      ...surfaceEvent,
-      roomPhase: 'hydrating' as never,
-    }, 'HOST')).toBe(false);
-  });
-
-  it('accepts Start menu changes with source-backed Win95 menu evidence', () => {
-    expect(hasSourceBackedDesktopEventEvidence(startMenuEvent, 'GUEST')).toBe(true);
-  });
-
-  it('rejects window lifecycle events without source-backed window evidence', () => {
-    expect(hasSourceBackedDesktopEventEvidence({
-      id: 'open-window-1',
-      clientId: 'guest-client',
-      createdAt: 1700000002500,
-      kind: 'OPEN_WINDOW',
-      window: {
-        id: 'chat',
-        windowType: 'chat',
-        title: 'Chat',
-      },
-    }, 'GUEST')).toBe(false);
-  });
-
-  it('accepts window lifecycle events only when evidence reconstructs the exact open or close event', () => {
-    expect(hasSourceBackedDesktopEventEvidence(openWindowEvent, 'GUEST')).toBe(true);
-    expect(hasSourceBackedDesktopEventEvidence(closeWindowEvent, 'GUEST')).toBe(true);
-    expect(hasSourceBackedDesktopEventEvidence({
-      ...openWindowEvent,
-      window: {
-        ...openWindowEvent.window,
-        title: 'Chat',
-      },
-    }, 'GUEST')).toBe(false);
-    expect(hasSourceBackedDesktopEventEvidence({
-      ...openWindowEvent,
-      evidence: {
-        ...openWindowEvent.evidence!,
-        windowLifecycleId: 'window-lifecycle:guest:1700000003500:close:chat',
-      },
-    }, 'GUEST')).toBe(false);
-    expect(hasSourceBackedDesktopEventEvidence({
-      ...closeWindowEvent,
-      evidence: {
-        ...closeWindowEvent.evidence!,
-        lifecycleKind: 'open',
-      },
-    }, 'GUEST')).toBe(false);
-  });
-
-  it('accepts workspace state only when the observer event id and session provenance match', () => {
-    expect(hasSourceBackedDesktopEventEvidence(workspaceEvent, 'HOST')).toBe(true);
-    expect(hasSourceBackedDesktopEventEvidence({
-      ...workspaceEvent,
-      workspaceStateEventId: 'workspace-state:host:1700000003000:initial_load:no-session:NOT_LAUNCHED',
-      workspaceStateSource: 'initial_load',
-      status: 'NOT_LAUNCHED',
-      workspaceSessionId: null,
-    }, 'HOST')).toBe(true);
-  });
-
-  it('accepts window data updates only when evidence reconstructs from the exact shared data patch', () => {
-    expect(hasSourceBackedDesktopEventEvidence(windowDataEvent, 'GUEST')).toBe(true);
-    expect(hasSourceBackedDesktopEventEvidence({
-      ...windowDataEvent,
-      data: { text: 'Candidate writes a replay test plan!' },
-    }, 'GUEST')).toBe(false);
-    expect(hasSourceBackedDesktopEventEvidence({
-      ...windowDataEvent,
-      evidence: {
-        ...windowDataEvent.evidence!,
-        dataKeys: ['strokes'],
-      },
-    }, 'GUEST')).toBe(false);
-  });
-
-  it('accepts browser navigation updates only when URL evidence matches the shared browser URL', () => {
-    expect(hasSourceBackedDesktopEventEvidence(browserNavigationEvent, 'HOST')).toBe(true);
-    expect(hasSourceBackedDesktopEventEvidence({
-      ...browserNavigationEvent,
-      data: { currentUrl: 'https://example.com/review?step=2' },
-    }, 'HOST')).toBe(false);
-    expect(hasSourceBackedDesktopEventEvidence({
-      ...browserNavigationEvent,
-      evidence: {
-        ...browserNavigationEvent.evidence!,
-        browserNavigationId: 'browser-navigation:host:1700000005000:browser:reload_button:nav_54d2c495',
-      },
-    }, 'HOST')).toBe(false);
-  });
-
-  it('accepts window state updates only when evidence reconstructs from the exact shared state patch', () => {
-    expect(hasSourceBackedDesktopEventEvidence(windowStateEvent, 'GUEST')).toBe(true);
-    expect(hasSourceBackedDesktopEventEvidence({
-      ...windowStateEvent,
-      x: 121,
-    }, 'GUEST')).toBe(false);
-    expect(hasSourceBackedDesktopEventEvidence({
-      ...windowStateEvent,
-      evidence: {
-        ...windowStateEvent.evidence!,
-        statePatch: { x: 120, y: 80, width: 640 },
-        stateKeys: ['width', 'x', 'y'],
-      },
-    }, 'GUEST')).toBe(false);
-    expect(hasSourceBackedDesktopEventEvidence({
-      ...windowStateEvent,
-      evidence: {
-        ...windowStateEvent.evidence!,
-        action: 'resize',
-        windowStateChangeId: 'window-state:guest:1700000006000:workspace:resize',
-      },
-    }, 'GUEST')).toBe(false);
-  });
-});
-
-describe('mergePeerCursorPresence', () => {
-  it('keeps one fresh cursor per role and uses receive time for presence expiry', () => {
-    const previous: RoomCursorPresence[] = [
-      {
-        clientId: 'guest-stale',
-        role: 'GUEST',
-        x: 0.1,
-        y: 0.1,
-        updatedAt: 900,
-      },
-      {
-        clientId: 'guest-reloaded',
-        role: 'GUEST',
-        x: 0.2,
-        y: 0.2,
-        updatedAt: 4900,
-      },
-      {
-        clientId: 'host-live',
-        role: 'HOST',
-        x: 0.4,
-        y: 0.5,
-        updatedAt: 4900,
-      },
-    ];
-
-    const next = mergePeerCursorPresence(
-      previous,
-      {
-        clientId: 'guest-active',
-        role: 'GUEST',
-        x: 0.7,
-        y: 0.8,
-        updatedAt: 100,
-      },
-      5000,
-      4000,
-    );
-
-    expect(next).toEqual([
-      {
-        clientId: 'host-live',
-        role: 'HOST',
-        x: 0.4,
-        y: 0.5,
-        updatedAt: 4900,
-      },
-      {
-        clientId: 'guest-active',
-        role: 'GUEST',
-        x: 0.7,
-        y: 0.8,
-        updatedAt: 5000,
-      },
-    ]);
-  });
-});
-
-describe('shouldSendCursorPresence', () => {
-  it('rejects raw cursor moves while always preserving source-backed samples', () => {
-    expect(shouldSendCursorPresence({
-      hasEvidence: false,
-      nowMs: 1000,
-      lastSentAtMs: 0,
-    })).toBe(false);
-
-    expect(shouldSendCursorPresence({
-      hasEvidence: false,
-      nowMs: 1000 + ROOM_CURSOR_SEND_INTERVAL_MS - 1,
-      lastSentAtMs: 1000,
-    })).toBe(false);
-
-    expect(shouldSendCursorPresence({
-      hasEvidence: false,
-      nowMs: 1000 + ROOM_CURSOR_SEND_INTERVAL_MS,
-      lastSentAtMs: 1000,
-    })).toBe(false);
-
-    expect(shouldSendCursorPresence({
-      hasEvidence: true,
-      nowMs: 1001,
-      lastSentAtMs: 1000,
-    })).toBe(true);
-  });
-});
-
-describe('hasSourceBackedCursorEvidence', () => {
-  const sourceBackedCursor: RoomCursorPresence = {
-    clientId: 'guest-client',
-    role: 'GUEST',
-    x: 0.42,
-    y: 0.61,
-    updatedAt: 1761592321000,
-    evidence: {
-      source: 'win95_cursor_presence_client_sample',
-      cursorEventSource: 'browser_win95_desktop_pointermove',
-      actor: 'guest',
-      cursorSampleId: 'cursor:guest:1761592321000:420:610',
-      sampledAtMs: 1761592321000,
-      surface: 'win95',
-      roomPhase: 'connected',
-      normalizedX: 0.42,
-      normalizedY: 0.61,
-      previousNormalizedX: null,
-      previousNormalizedY: null,
-      distanceFromPrevious: null,
-      evidenceSampling: 'presence_sample',
-      sampleIntervalMs: 15000,
-      movementThreshold: 0.03,
-      rawCursorMovesPersisted: false,
-    },
-  };
-
-  it('accepts cursor presence only when the Win95 browser sample evidence matches the payload', () => {
-    expect(hasSourceBackedCursorEvidence(sourceBackedCursor, 'GUEST')).toBe(true);
-  });
-
-  it('rejects raw cursor presence before it can be sent or rendered', () => {
-    expect(hasSourceBackedCursorEvidence({
-      ...sourceBackedCursor,
-      evidence: undefined,
-    }, 'GUEST')).toBe(false);
-  });
-
-  it('rejects cursor samples attributed to the wrong room actor', () => {
-    expect(hasSourceBackedCursorEvidence(sourceBackedCursor, 'HOST')).toBe(false);
-  });
 });
 
 describe('applyRoomRecordingStateEvent', () => {
@@ -813,9 +188,9 @@ describe('hasSourceBackedMediaControlEvidence', () => {
     previousEnabled: true,
     enabled: false,
     action: 'disabled',
-    surface: 'win95',
+    surface: 'standard',
     roomPhase: 'connected',
-    controlSurface: 'win95_video_window',
+    controlSurface: 'standard_video_call',
     controlAction: 'toggle',
     mediaSource: 'local_media_stream',
     rawMediaStreamPersisted: false,
@@ -896,7 +271,7 @@ describe('hasSourceBackedRecordingStateEvidence', () => {
       recordingLifecycleKind: 'start',
       recordingStateEventId: 'recording:host:1700000003000:start:recording',
       capturedAtMs: 1700000003000,
-      surface: 'win95',
+      surface: 'standard',
       roomPhase: 'connected',
       recordingStatus: 'recording',
       recordingActive: true,
@@ -989,7 +364,7 @@ describe('mergeRoomChatMessage', () => {
       deliveryStatus: 'pending',
       evidence: {
         source: 'room_chat_client_submit',
-        chatEventSource: 'browser_room_chat_window',
+        chatEventSource: 'browser_room_chat_panel',
         actor: 'host',
         roomMessageId: 'chat-1',
         clientId: 'host-client',
@@ -997,7 +372,7 @@ describe('mergeRoomChatMessage', () => {
         messageLength: text.length,
         messageFingerprint: roomChatMessageFingerprint(text),
         deliveryStatus: 'pending',
-        surface: 'win95',
+        surface: 'standard',
         roomPhase: 'connected',
         durableObjectReplayExpected: true,
       },
@@ -1017,7 +392,7 @@ describe('mergeRoomChatMessage', () => {
       deliveryStatus: 'accepted',
       evidence: {
         source: 'room_chat_client_submit',
-        chatEventSource: 'browser_room_chat_window',
+        chatEventSource: 'browser_room_chat_panel',
         actor: 'host',
         roomMessageId: 'chat-1',
         clientId: 'host-client',
@@ -1025,7 +400,7 @@ describe('mergeRoomChatMessage', () => {
         messageLength: text.length,
         messageFingerprint: roomChatMessageFingerprint(text),
         deliveryStatus: 'accepted',
-        surface: 'win95',
+        surface: 'standard',
         roomPhase: 'connected',
         durableObjectReplayExpected: true,
       },
@@ -1045,14 +420,14 @@ describe('mergeRoomChatMessage', () => {
       deliveryStatus: 'accepted',
       evidence: {
         source: 'room_chat_client_submit',
-        chatEventSource: 'browser_room_chat_window',
+        chatEventSource: 'browser_room_chat_panel',
         actor: 'host',
         clientId: 'host-client',
         messageCreatedAt: 1000,
         messageLength: text.length,
         messageFingerprint: roomChatMessageFingerprint(text),
         deliveryStatus: 'accepted',
-        surface: 'win95',
+        surface: 'standard',
         roomPhase: 'connected',
         durableObjectReplayExpected: true,
       },
@@ -1072,7 +447,7 @@ describe('mergeRoomChatMessage', () => {
       deliveryStatus: 'accepted',
       evidence: {
         source: 'room_chat_client_submit',
-        chatEventSource: 'browser_room_chat_window',
+        chatEventSource: 'browser_room_chat_panel',
         actor: 'host',
         roomMessageId: 'chat-1',
         clientId: 'host-client',
@@ -1080,7 +455,7 @@ describe('mergeRoomChatMessage', () => {
         messageLength: text.length,
         messageFingerprint: roomChatMessageFingerprint('Can we see those?'),
         deliveryStatus: 'accepted',
-        surface: 'win95',
+        surface: 'standard',
         roomPhase: 'connected',
         durableObjectReplayExpected: true,
       },
@@ -1116,9 +491,9 @@ describe('mergeRoomChatMessage', () => {
       deliveryStatus: 'pending',
       evidence: {
         source: 'room_chat_client_submit',
-        chatEventSource: 'browser_room_chat_window',
+        chatEventSource: 'browser_room_chat_panel',
         deliveryStatus: 'pending',
-        surface: 'win95',
+        surface: 'standard',
         roomPhase: 'connected',
       },
     };
@@ -1145,9 +520,9 @@ describe('mergeRoomChatMessage', () => {
       deliveryStatus: 'pending',
       evidence: {
         source: 'room_chat_client_submit',
-        chatEventSource: 'browser_room_chat_window',
+        chatEventSource: 'browser_room_chat_panel',
         deliveryStatus: 'pending',
-        surface: 'win95',
+        surface: 'standard',
         roomPhase: 'connected',
       },
     };
@@ -1217,163 +592,6 @@ describe('applyRoomMediaControlEvent', () => {
   });
 });
 
-describe('hasSourceBackedRoomFileSystemEvidence', () => {
-  const sourceBackedUpsert: RoomFileSystemEvent = {
-    id: 'fs-save-notes',
-    clientId: 'host-client',
-    createdAt: 4,
-    kind: 'UPSERT_FILE',
-    file: {
-      id: 'desktop-notes',
-      name: 'notes.txt',
-      kind: 'text',
-      content: 'Candidate asked about testing strategy.',
-      mimeType: 'text/plain',
-      createdAt: 4,
-      updatedAt: 4,
-      updatedBy: 'HOST',
-    },
-    evidence: {
-      source: 'win95_shared_file_system',
-      fileEventSource: 'browser_client_submit',
-      fileChangeId: 'file:host:4:upsert:desktop-notes',
-      actor: 'host',
-      operation: 'upsert',
-      fileId: 'desktop-notes',
-      fileName: 'notes.txt',
-      fileKind: 'text',
-      mimeType: 'text/plain',
-      surface: 'win95',
-      roomPhase: 'connected',
-      capturedAtMs: 4,
-      durableObjectReplayExpected: true,
-      action: 'upsert',
-      contentLength: 'Candidate asked about testing strategy.'.length,
-      contentHash: 'content_aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa',
-      contentExactText: 'Candidate asked about testing strategy.',
-      fileCreatedAt: 4,
-      fileUpdatedAt: 4,
-    },
-  };
-  const sourceBackedDelete: RoomFileSystemEvent = {
-    id: 'fs-delete-notes',
-    clientId: 'host-client',
-    createdAt: 5,
-    kind: 'DELETE_FILE',
-    fileId: 'desktop-notes',
-    file: sourceBackedUpsert.file,
-    evidence: {
-      source: 'win95_shared_file_system',
-      fileEventSource: 'browser_client_submit',
-      fileChangeId: 'file:host:5:delete:desktop-notes',
-      actor: 'host',
-      operation: 'delete',
-      fileId: 'desktop-notes',
-      fileName: 'notes.txt',
-      fileKind: 'text',
-      mimeType: 'text/plain',
-      surface: 'win95',
-      roomPhase: 'connected',
-      capturedAtMs: 5,
-      durableObjectReplayExpected: true,
-      action: 'delete',
-      deletedContentLength: 'Candidate asked about testing strategy.'.length,
-      deletedContentHash: 'content_bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb',
-      deletedContentExactText: 'Candidate asked about testing strategy.',
-      deletedFileCreatedAt: 4,
-      deletedFileUpdatedAt: 4,
-    },
-  };
-
-  it('accepts Win95 file mutations only when browser evidence matches the event and actor', () => {
-    expect(hasSourceBackedRoomFileSystemEvidence(sourceBackedUpsert, 'HOST')).toBe(true);
-  });
-
-  it('rejects source-less file mutations before optimistic local state can change', () => {
-    expect(hasSourceBackedRoomFileSystemEvidence({
-      ...sourceBackedUpsert,
-      evidence: undefined,
-    }, 'HOST')).toBe(false);
-  });
-
-  it('rejects file mutations attributed to the wrong room actor', () => {
-    expect(hasSourceBackedRoomFileSystemEvidence(sourceBackedUpsert, 'GUEST')).toBe(false);
-  });
-
-  it('rejects file mutations when exact saved content evidence is missing or stale', () => {
-    expect(hasSourceBackedRoomFileSystemEvidence({
-      ...sourceBackedUpsert,
-      evidence: {
-        ...sourceBackedUpsert.evidence!,
-        contentExactText: undefined,
-      },
-    }, 'HOST')).toBe(false);
-    expect(hasSourceBackedRoomFileSystemEvidence({
-      ...sourceBackedUpsert,
-      evidence: {
-        ...sourceBackedUpsert.evidence!,
-        contentExactText: 'Candidate asked about testing strategy!',
-      },
-    }, 'HOST')).toBe(false);
-  });
-
-  it('accepts file deletes only when the deleted file content is carried as exact evidence', () => {
-    expect(hasSourceBackedRoomFileSystemEvidence(sourceBackedDelete, 'HOST')).toBe(true);
-    expect(hasSourceBackedRoomFileSystemEvidence({
-      ...sourceBackedDelete,
-      file: undefined,
-    }, 'HOST')).toBe(false);
-    expect(hasSourceBackedRoomFileSystemEvidence({
-      ...sourceBackedDelete,
-      evidence: {
-        ...sourceBackedDelete.evidence!,
-        deletedContentExactText: 'Candidate asked about testing strategy!',
-      },
-    }, 'HOST')).toBe(false);
-  });
-
-  it('accepts file snapshots only when metadata carries source-backed upsert projection evidence', () => {
-    const file: RoomFile = {
-      ...sourceBackedUpsert.file,
-      metadata: {
-        roomFileProjectionEvidence: {
-          ...sourceBackedUpsert.evidence,
-        },
-      },
-    };
-
-    expect(hasSourceBackedRoomFileSnapshotEvidence(file)).toBe(true);
-  });
-
-  it('rejects source-thin or content-mismatched file snapshot projections', () => {
-    const sourceThinFile: RoomFile = {
-      ...sourceBackedUpsert.file,
-    };
-    const contentMismatchedFile: RoomFile = {
-      ...sourceBackedUpsert.file,
-      content: 'Different content should not hydrate.',
-      metadata: {
-        roomFileProjectionEvidence: {
-          ...sourceBackedUpsert.evidence,
-        },
-      },
-    };
-    const exactContentMismatchedFile: RoomFile = {
-      ...sourceBackedUpsert.file,
-      content: 'Candidate asked about testing strategy!',
-      metadata: {
-        roomFileProjectionEvidence: {
-          ...sourceBackedUpsert.evidence,
-        },
-      },
-    };
-
-    expect(hasSourceBackedRoomFileSnapshotEvidence(sourceThinFile)).toBe(false);
-    expect(hasSourceBackedRoomFileSnapshotEvidence(contentMismatchedFile)).toBe(false);
-    expect(hasSourceBackedRoomFileSnapshotEvidence(exactContentMismatchedFile)).toBe(false);
-  });
-});
-
 describe('hasSourceBackedTerminalEvidence', () => {
   const sourceBackedCommand: RoomTerminalEvent = {
     id: 'terminal-workspace-session-1-guest:command:guest:1700000001000:1:terminal_dc5964d6',
@@ -1391,7 +609,7 @@ describe('hasSourceBackedTerminalEvidence', () => {
       capturedAtMs: 1700000001000,
       commandFingerprint: 'terminal_dc5964d6',
       commandLength: 8,
-      surface: 'win95',
+      surface: 'standard',
       roomPhase: 'connected',
       workspaceStatus: 'READY',
       workspaceSessionId: 'workspace-session-1',
@@ -1440,7 +658,7 @@ describe('hasSourceBackedTerminalEvidence', () => {
         capturedAtMs: 1700000002000,
         outputFingerprint: 'terminal_4f2d0d8f',
         outputLength: 21,
-        surface: 'win95',
+        surface: 'standard',
         roomPhase: 'connected',
         workspaceStatus: 'READY',
         workspaceSessionId: 'workspace-session-1',
@@ -1467,12 +685,12 @@ describe('hasSourceBackedCodeServerFileEvidence', () => {
     text: 'src/app.ts',
     evidence: {
       source: 'code_server_workspace',
-      observedBy: 'clippy_agent_bridge',
+      observedBy: 'agent_bridge',
       bridgeEventType: 'FILE_CHANGED',
       editorSurface: 'code-server',
       codeServerFileChangeId: 'code-server-file:workspace-session-1:1782561600000:modified:path_cb48a478:aaaaaaaaaaaaaaaa',
       action: 'modified',
-      surface: 'win95',
+      surface: 'standard',
       roomPhase: 'connected',
       workspaceStatus: 'READY',
       workspaceSessionId: 'workspace-session-1',
@@ -1486,7 +704,7 @@ describe('hasSourceBackedCodeServerFileEvidence', () => {
     },
   };
 
-  it('accepts code-server saves only when Clippy bridge workspace evidence matches the event', () => {
+  it('accepts code-server saves only when Agent bridge workspace evidence matches the event', () => {
     expect(hasSourceBackedCodeServerFileEvidence(sourceBackedSave)).toBe(true);
   });
 

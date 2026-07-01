@@ -71,7 +71,7 @@ const MOVE_CONFIG: Record<ImplementerMove, { label: string; color: string; bg: s
     border: 'rgba(52,211,153,0.25)',
   },
   pushback: {
-    label: 'PUSHBACK',
+    label: 'AUTHOR REPLY',
     color: '#f87171',
     bg: 'rgba(248,113,113,0.10)',
     border: 'rgba(248,113,113,0.25)',
@@ -581,7 +581,7 @@ function EmptyState(): JSX.Element {
  * ConversationPanel — GitHub-style PR conversation UI for multi-turn code review.
  *
  * Renders Thread[] with initial ReviewComment + ThreadExchange[] exchanges.
- * Move badges (comment/change/pushback), severity indicators (blocking/major/suggestion/nit),
+ * Move badges (comment/change/author reply), severity indicators (blocking/major/suggestion/nit),
  * thread resolution status, and round-based submit controls.
  */
 export function ConversationPanel({

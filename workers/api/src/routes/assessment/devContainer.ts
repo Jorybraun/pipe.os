@@ -14,6 +14,7 @@
  */
 
 import { Hono } from 'hono';
+import { z } from 'zod';
 import type { Env } from '../../types';
 import type { CandidateVariables } from '../../middleware/candidateAuth';
 import {
@@ -29,8 +30,15 @@ import {
   markStopped,
   mintExchangeToken,
   consumeExchangeToken,
+  type DevContainerSessionRow,
 } from '../../lib/devContainerSessions';
 import { signJwt, verifyJwt } from '../../lib/jwt';
+import {
+  RepoTaskInterviewSessionStore,
+  type AssessmentProgressSnapshot,
+  type CommitSubmissionChangedFileStatus,
+} from '../../lib/repoTaskInterviewSession';
+import type { JsonObject, JsonValue } from '../../lib/livingContext/types';
 
 // ─── Defaults (used when the wrangler vars are not set) ─────────────────────
 
@@ -38,6 +46,83 @@ const DEFAULT_GLOBAL_TTL = 3600; // 60 min
 const DEFAULT_MAX_TTL = 7200; // 2 hours
 const DEFAULT_INSTANCE_TYPE = 'standard-1';
 const MAX_DEV_CONTAINER_INIT_DIAGNOSTIC_CHARS = 1_000;
+const GIT_COMMIT_SHA_PATTERN = /^[a-f0-9]{40}$/i;
+
+const finalizeAllowedStatus: ReadonlySet<string> = new Set(['READY', 'SLEEPING']);
+
+interface CandidateAssessmentSessionRow {
+  id: string;
+  mode: string;
+  state: string;
+}
+
+const assessmentJsonValueSchema: z.ZodType<JsonValue> = z.lazy(() => z.union([
+  z.string(),
+  z.number(),
+  z.boolean(),
+  z.null(),
+  z.array(assessmentJsonValueSchema),
+  z.record(assessmentJsonValueSchema),
+]));
+const assessmentJsonObjectSchema: z.ZodType<JsonObject> = z.record(assessmentJsonValueSchema);
+
+const sourceRefSchema = z.object({
+  sourceRefType: z.string().trim().min(1),
+  sourceRefId: z.string().trim().min(1),
+  sourceSpanId: z.string().trim().min(1).nullable().optional(),
+  evidenceRole: z.string().trim().min(1).optional(),
+  locator: assessmentJsonObjectSchema.optional(),
+  exactText: z.string().min(1),
+  contentHash: z.string().trim().min(1),
+  metadata: assessmentJsonObjectSchema.optional(),
+});
+
+const changedFileStatusSchema = z.enum([
+  'added',
+  'modified',
+  'deleted',
+  'renamed',
+  'copied',
+] satisfies [CommitSubmissionChangedFileStatus, ...CommitSubmissionChangedFileStatus[]]);
+
+const changedFileSchema = z.object({
+  path: z.string().trim().min(1),
+  status: changedFileStatusSchema,
+  previousPath: z.string().trim().min(1).nullable().optional(),
+  additions: z.number().int().min(0).nullable().optional(),
+  deletions: z.number().int().min(0).nullable().optional(),
+});
+
+const workspaceFinalizeRequestSchema = z.object({
+  narrative: z.string().trim().min(1).optional(),
+  forkRepositoryUrl: z.string().trim().min(1).nullable().optional(),
+  commitUrl: z.string().trim().min(1).nullable().optional(),
+  upstreamPullRequestUrl: z.string().trim().min(1).nullable().optional(),
+  upstreamPrConsent: z.boolean().optional(),
+});
+
+const bridgeSubmissionPayloadSchema = z.object({
+  narrative: z.string().trim().min(1),
+  repositoryUrl: z.string().trim().min(1),
+  forkRepositoryUrl: z.string().trim().min(1).nullable().optional(),
+  branchName: z.string().trim().min(1),
+  baseCommitSha: z.string().trim().min(1),
+  commitSha: z.string().trim().min(1),
+  commitUrl: z.string().trim().min(1).nullable().optional(),
+  upstreamPullRequestUrl: z.string().trim().min(1).nullable().optional(),
+  upstreamPrConsent: z.boolean().optional(),
+  changedFiles: z.array(changedFileSchema).min(1),
+  occurredAt: z.string().trim().min(1).nullable().optional(),
+  sourceRefs: z.array(sourceRefSchema).min(2),
+});
+
+const bridgeFinalizeResponseSchema = z.object({
+  ok: z.literal(true),
+  submitted: z.literal(false),
+  submissionPayload: bridgeSubmissionPayloadSchema,
+});
+
+type WorkspaceFinalizeRequest = z.infer<typeof workspaceFinalizeRequestSchema>;
 
 function parseIntEnv(value: string | undefined, fallback: number): number {
   if (!value) return fallback;
@@ -66,6 +151,214 @@ async function markInitFailedIfStillLaunching(input: {
   const session = await getSessionByIdForCandidate(input.db, input.sessionId, input.candidateId);
   if (!session || session.status !== 'LAUNCHING') return;
   await markError(input.db, input.sessionId, input.diagnostic);
+}
+
+async function assessmentSessionsTableExists(db: D1Database): Promise<boolean> {
+  const row = await db.prepare(
+    `SELECT name
+       FROM sqlite_master
+      WHERE type = 'table'
+        AND name = 'assessment_sessions'
+      LIMIT 1`,
+  ).first<{ name: string }>().catch(() => null);
+  return row?.name === 'assessment_sessions';
+}
+
+async function loadAssessmentSessionForDevContainer(
+  db: D1Database,
+  candidateId: string,
+  devContainerSession: DevContainerSessionRow,
+): Promise<CandidateAssessmentSessionRow | null> {
+  if (!await assessmentSessionsTableExists(db)) return null;
+  return db.prepare(
+    `SELECT s.id, s.mode, s.state
+       FROM assessment_sessions s
+       LEFT JOIN scheduled_interviews si ON si.id = s.interview_id
+      WHERE s.state <> 'CANCELLED'
+        AND s.mode IN ('OPEN_SOURCE_BUG_FIX', 'DEV_CONTAINER_REPO_TASK', 'DEV_CONTAINER_CHALLENGE')
+        AND (s.candidate_id = ?1 OR si.candidate_id = ?1)
+        AND (
+          s.workspace_id = ?2
+          OR (?3 IS NOT NULL AND s.interview_id = ?3)
+          OR (s.workspace_id IS NULL AND (?3 IS NULL OR s.interview_id IS NULL OR s.interview_id = ?3))
+        )
+      ORDER BY
+        CASE
+          WHEN s.workspace_id = ?2 THEN 0
+          WHEN ?3 IS NOT NULL AND s.interview_id = ?3 THEN 1
+          ELSE 2
+        END,
+        s.created_at DESC
+      LIMIT 1`,
+  ).bind(
+    candidateId,
+    devContainerSession.session_id,
+    devContainerSession.meeting_id,
+  ).first<CandidateAssessmentSessionRow>();
+}
+
+function candidateSafeAssessmentLocator(locator: JsonObject): JsonObject {
+  const safe: JsonObject = {};
+  for (const key of [
+    'repositoryUrl',
+    'githubPrNumber',
+    'pullRequestUrl',
+    'baseCommitSha',
+    'headCommitSha',
+  ]) {
+    const value = locator[key];
+    if (
+      typeof value === 'string'
+      || typeof value === 'number'
+      || typeof value === 'boolean'
+      || value === null
+    ) {
+      safe[key] = value;
+    }
+  }
+  return safe;
+}
+
+function toJsonObject(value: Record<string, unknown>): JsonObject {
+  return JSON.parse(JSON.stringify(value)) as JsonObject;
+}
+
+function serializeCandidateAssessmentProgress(
+  progress: AssessmentProgressSnapshot,
+): JsonObject {
+  return toJsonObject({
+    mode: progress.session.mode,
+    state: progress.session.state,
+    stage: progress.stage,
+    nextAction: progress.nextAction,
+    nextActionLabel: progress.nextActionLabel,
+    assignmentTrust: progress.assignmentTrust,
+    readiness: progress.readiness,
+    challengePacketContract: progress.challengePacketContract,
+    hasChallengePacket: progress.hasChallengePacket,
+    hasWorkEvidence: progress.hasWorkEvidence,
+    hasMessageEvidence: progress.hasMessageEvidence,
+    hasDevContainerEvidence: progress.hasDevContainerEvidence,
+    hasToolUsageEvidence: progress.hasToolUsageEvidence,
+    hasCommitSubmission: progress.hasCommitSubmission,
+    hasFinalSubmission: progress.hasFinalSubmission,
+    hasAiInteraction: progress.hasAiInteraction,
+    hasTranscriptEvidence: progress.hasTranscriptEvidence,
+    hasTestEvidence: progress.hasTestEvidence,
+    hasVerificationGap: progress.hasVerificationGap,
+    evidenceCounts: progress.evidenceCounts,
+    sourceRefCounts: progress.sourceRefCounts,
+    evidenceSnippets: progress.evidenceSnippets,
+    challenge: progress.challenge
+      ? {
+          sourceRefType: progress.challenge.sourceRefType,
+          evidenceRole: progress.challenge.evidenceRole,
+          exactText: progress.challenge.exactText,
+          contentHash: progress.challenge.contentHash,
+          locator: candidateSafeAssessmentLocator(progress.challenge.locator),
+        }
+      : null,
+    latestEvent: progress.latestEvent
+      ? {
+          kind: progress.latestEvent.kind,
+          sequence: progress.latestEvent.sequence,
+          occurredAt: progress.latestEvent.occurredAt,
+        }
+      : null,
+    commit: progress.commit
+      ? {
+          repositoryUrl: progress.commit.repositoryUrl,
+          forkRepositoryUrl: progress.commit.forkRepositoryUrl,
+          branchName: progress.commit.branchName,
+          baseCommitSha: progress.commit.baseCommitSha,
+          commitSha: progress.commit.commitSha,
+          commitUrl: progress.commit.commitUrl,
+          submissionSource: progress.commit.submissionSource,
+          submissionSourceLabel: progress.commit.submissionSourceLabel,
+          integrity: progress.commit.integrity,
+          challengeBinding: progress.commit.challengeBinding,
+          changedFiles: progress.commit.changedFiles,
+          occurredAt: progress.commit.occurredAt,
+        }
+      : null,
+    evaluation: progress.evaluation
+      ? {
+          status: progress.evaluation.status,
+          summary: progress.evaluation.summary,
+          recommendation: progress.evaluation.recommendation,
+          createdAt: progress.evaluation.createdAt,
+          evidenceCoverage: progress.evaluation.evidenceCoverage,
+          claims: progress.evaluation.claims,
+          diagnostics: progress.evaluation.diagnostics,
+        }
+      : null,
+  });
+}
+
+function stringLocatorValue(locator: JsonObject | undefined, key: string): string | null {
+  const value = locator?.[key];
+  return typeof value === 'string' && value.trim() ? value.trim() : null;
+}
+
+function progressRepositoryUrl(progress: AssessmentProgressSnapshot): string | null {
+  return progress.commit?.repositoryUrl
+    ?? stringLocatorValue(progress.challenge?.locator, 'repositoryUrl')
+    ?? stringLocatorValue(progress.challenge?.locator, 'githubRepoUrl')
+    ?? stringLocatorValue(progress.challenge?.locator, 'repoUrl');
+}
+
+function progressBaseCommitSha(progress: AssessmentProgressSnapshot): string | null {
+  const value = progress.commit?.baseCommitSha
+    ?? stringLocatorValue(progress.challenge?.locator, 'baseCommitSha')
+    ?? stringLocatorValue(progress.challenge?.locator, 'baseCommit')
+    ?? stringLocatorValue(progress.challenge?.locator, 'base_commit_sha')
+    ?? stringLocatorValue(progress.challenge?.locator, 'base_commit');
+  return value && GIT_COMMIT_SHA_PATTERN.test(value) ? value.toLowerCase() : null;
+}
+
+function devContainerErrorResponse(message: string, status = 422): Response {
+  return new Response(JSON.stringify({
+    error: {
+      code: status === 404
+        ? 'NOT_FOUND'
+        : status === 409
+          ? 'CONFLICT'
+          : status === 425
+            ? 'NOT_READY'
+            : status === 410
+              ? 'SESSION_ENDED'
+              : status >= 500
+                ? 'INTERNAL_ERROR'
+                : 'BAD_REQUEST',
+      message,
+    },
+  }), {
+    status,
+    headers: { 'Content-Type': 'application/json' },
+  });
+}
+
+function storeErrorResponse(error: unknown): Response {
+  const message = error instanceof Error ? error.message : 'Commit finalization failed.';
+  if (message.includes('does not exist')) return devContainerErrorResponse(message, 404);
+  if (
+    message.includes('requires')
+    || message.includes('must')
+    || message.includes('cannot transition')
+    || message.includes('is required')
+  ) {
+    return devContainerErrorResponse(message, 422);
+  }
+  console.error('[devContainer.assessment.finalize] failed:', { error: message });
+  return devContainerErrorResponse('Commit finalization failed.', 500);
+}
+
+function bridgeErrorMessage(value: unknown): string | null {
+  if (typeof value !== 'object' || value === null || Array.isArray(value)) return null;
+  const error = (value as { error?: unknown }).error;
+  if (typeof error !== 'object' || error === null || Array.isArray(error)) return null;
+  const message = (error as { message?: unknown }).message;
+  return typeof message === 'string' && message.trim() ? message.trim() : null;
 }
 
 // ─── Router ──────────────────────────────────────────────────────────────────
@@ -365,6 +658,137 @@ devContainer.post('/:sessionId/destroy', async (c) => {
   }
 
   return c.json({ sessionId, status: 'STOPPED' }, 200);
+});
+
+// ─── POST /:sessionId/assessment/finalize ───────────────────────────────────
+//
+// Candidate-facing one-click commit submission. The Worker owns auth and
+// persistence; the container bridge only inspects the actual git workspace and
+// returns source-backed commit/diff/test evidence.
+
+devContainer.post('/:sessionId/assessment/finalize', async (c) => {
+  const candidateId = c.get('candidateId');
+  const sessionId = c.req.param('sessionId');
+  const requestBody = workspaceFinalizeRequestSchema.safeParse(
+    await c.req.json().catch(() => ({})),
+  );
+  if (!requestBody.success) {
+    return devContainerErrorResponse(
+      requestBody.error.issues[0]?.message ?? 'Invalid workspace finalization body.',
+      422,
+    );
+  }
+
+  const row = await getSessionByIdForCandidate(c.env.DB, sessionId, candidateId);
+  if (!row) {
+    return devContainerErrorResponse('Session not found.', 404);
+  }
+
+  if (!finalizeAllowedStatus.has(row.status)) {
+    const status = row.status === 'LAUNCHING' ? 425 : 410;
+    return devContainerErrorResponse(`Session is ${row.status}.`, status);
+  }
+
+  const assessmentSession = await loadAssessmentSessionForDevContainer(c.env.DB, candidateId, row);
+  if (!assessmentSession) {
+    return devContainerErrorResponse(
+      'No open-source assessment session is available for this candidate.',
+      409,
+    );
+  }
+
+  const store = new RepoTaskInterviewSessionStore(c.env.DB);
+  let progress: AssessmentProgressSnapshot;
+  try {
+    progress = await store.loadProgress(assessmentSession.id);
+  } catch (error) {
+    console.error('[devContainer.assessment.finalize] progress load failed:', {
+      candidateId,
+      error: error instanceof Error ? error.message : String(error),
+    });
+    return devContainerErrorResponse('Assessment progress failed.', 500);
+  }
+
+  const repositoryUrl = row.repo_git_url ?? progressRepositoryUrl(progress);
+  const baseCommitSha = row.base_commit_sha ?? progressBaseCommitSha(progress);
+  if (!repositoryUrl || !baseCommitSha) {
+    return devContainerErrorResponse(
+      'Challenge packet must include repository URL and base commit SHA before workspace finalization.',
+      409,
+    );
+  }
+
+  const doId = c.env.DEV_CONTAINER.idFromName(sessionId);
+  const doStub = c.env.DEV_CONTAINER.get(doId);
+  const upstream = await doStub.fetch('https://do.internal/assessment/finalize', {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({
+      ...requestBody.data,
+      submitToPipe: false,
+      repositoryUrl,
+      baseCommitSha,
+    }),
+  }).catch((error: unknown) => {
+    console.error('[devContainer.assessment.finalize] bridge fetch failed:', {
+      sessionId,
+      error: error instanceof Error ? error.message : String(error),
+    });
+    return null;
+  });
+
+  if (!upstream) {
+    return devContainerErrorResponse('Workspace finalizer bridge is unavailable.', 502);
+  }
+
+  const upstreamBody = await upstream.json().catch(() => null) as unknown;
+  if (!upstream.ok) {
+    const message = bridgeErrorMessage(upstreamBody)
+      ?? `Workspace finalizer failed with HTTP ${upstream.status}.`;
+    return devContainerErrorResponse(message, upstream.status === 409 ? 422 : 502);
+  }
+
+  const parsedBridge = bridgeFinalizeResponseSchema.safeParse(upstreamBody);
+  if (!parsedBridge.success) {
+    console.error('[devContainer.assessment.finalize] invalid bridge response:', parsedBridge.error.issues);
+    return devContainerErrorResponse('Workspace finalizer returned invalid evidence payload.', 502);
+  }
+
+  const payload = parsedBridge.data.submissionPayload;
+  const commitSha = payload.commitSha.trim().toLowerCase();
+  try {
+    await store.submitCommit({
+      sessionId: assessmentSession.id,
+      ingestionKey: `assessment-event:candidate-workspace-finalize:${assessmentSession.id}:${commitSha}`,
+      actorType: 'candidate',
+      actorId: candidateId,
+      narrative: payload.narrative,
+      repositoryUrl: payload.repositoryUrl,
+      forkRepositoryUrl: payload.forkRepositoryUrl ?? null,
+      branchName: payload.branchName,
+      baseCommitSha: payload.baseCommitSha,
+      commitSha: payload.commitSha,
+      commitUrl: payload.commitUrl ?? null,
+      upstreamPullRequestUrl: payload.upstreamPullRequestUrl ?? null,
+      upstreamPrConsent: payload.upstreamPrConsent,
+      changedFiles: payload.changedFiles,
+      occurredAt: payload.occurredAt,
+      sourceRefs: payload.sourceRefs,
+    });
+    const updatedProgress = await store.loadProgress(assessmentSession.id);
+    return c.json({
+      submission: {
+        accepted: true,
+        repositoryUrl: updatedProgress.commit?.repositoryUrl ?? payload.repositoryUrl,
+        branchName: updatedProgress.commit?.branchName ?? payload.branchName,
+        commitSha: updatedProgress.commit?.commitSha ?? commitSha,
+        commitUrl: updatedProgress.commit?.commitUrl ?? payload.commitUrl ?? null,
+      },
+      progress: serializeCandidateAssessmentProgress(updatedProgress),
+    }, 201);
+  } catch (error) {
+    return storeErrorResponse(error);
+  }
 });
 
 // ─── POST /:sessionId/exchange-token ─────────────────────────────────────────

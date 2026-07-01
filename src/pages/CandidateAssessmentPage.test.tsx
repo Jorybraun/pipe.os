@@ -234,6 +234,133 @@ describe('CandidateAssessmentPage', () => {
     expect(screen.getByTestId('code-review-challenge')).toBeInTheDocument();
   });
 
+  it('shows profile received instead of a waiting matcher screen when code review assignment is not ready', () => {
+    useAssessmentMock.mockReturnValue({
+      candidate: {
+        id: 'candidate-1',
+        pipelineId: null,
+        status: 'IN_PROGRESS',
+        name: 'Ada Candidate',
+        email: 'ada@example.com',
+      },
+      stageConfig: {
+        isComplete: false,
+        stageId: 'standalone-code-review',
+        candidateId: 'candidate-1',
+        stageTitle: 'Code Review',
+        mode: 'ASYNC',
+        timeLimit: null,
+        challenges: [{ type: 'CODE_REVIEW', order: 0, title: 'Code Review' }],
+        currentIndex: 0,
+      },
+      challengeContent: {
+        id: 'profile-received',
+        type: 'PROFILE_RECEIVED',
+        title: 'Profile received',
+        instructions: 'Your profile has been received. PIPE will email you when your code review is ready.',
+        config: {},
+      },
+      currentOrder: 0,
+      isLoading: false,
+      error: null,
+      isSubmitted: false,
+      hasStarted: true,
+      followUpQuestions: null,
+      followUpLoading: false,
+      lastChallengeSubmissionId: null,
+      submitChallenge: vi.fn(),
+      onStart: vi.fn(),
+      claimAssessmentStart: vi.fn(),
+      reset: vi.fn(),
+      refresh: vi.fn(),
+      sessionToken: 'session-token',
+    });
+
+    render(
+      <MemoryRouter initialEntries={['/assess/pending-code-review-token']}>
+        <Routes>
+          <Route path="/assess/:token" element={<CandidateAssessmentPage />} />
+        </Routes>
+      </MemoryRouter>,
+    );
+
+    expect(screen.getByTestId('assessment-submitted')).toHaveTextContent('Profile received.');
+    expect(screen.getByTestId('assessment-submitted')).toHaveTextContent("You're done here for now.");
+    expect(screen.getByTestId('assessment-submitted')).toHaveTextContent('PIPE will email you when a source-backed code review is ready.');
+    expect(screen.getByTestId('assessment-submitted')).not.toHaveTextContent('Submitted.');
+    expect(screen.getByTestId('assessment-submitted')).not.toHaveTextContent('Building your personalized challenge');
+    expect(screen.getByTestId('assessment-submitted')).not.toHaveTextContent('MATCHING IN PROGRESS');
+    expect(screen.queryByTestId('waiting-for-match')).not.toBeInTheDocument();
+    expect(screen.queryByTestId('code-review-challenge')).not.toBeInTheDocument();
+  });
+
+  it('fails closed to profile received when a standalone code review accidentally returns WAITING_FOR_MATCH', () => {
+    useAssessmentMock.mockReturnValue({
+      candidate: {
+        id: 'candidate-1',
+        pipelineId: null,
+        status: 'IN_PROGRESS',
+        name: 'Ada Candidate',
+        email: 'ada@example.com',
+      },
+      stageConfig: {
+        isComplete: false,
+        stageId: 'standalone-code-review',
+        candidateId: 'candidate-1',
+        stageTitle: 'Code Review',
+        mode: 'ASYNC',
+        timeLimit: null,
+        challenges: [{ type: 'CODE_REVIEW', order: 0, title: 'Code Review' }],
+        currentIndex: 0,
+      },
+      challengeContent: {
+        id: 'waiting-for-match',
+        type: 'WAITING_FOR_MATCH',
+        title: 'Building your personalized challenge',
+        instructions: 'We are analyzing your profile to find the best open-source project match.',
+        config: {
+          state: 'pending',
+          diagnostics: {
+            phase: 'repo_matching',
+            step: 'select_repo',
+            message: 'Repo matching is still running.',
+          },
+        },
+      },
+      currentOrder: 0,
+      isLoading: false,
+      error: null,
+      isSubmitted: false,
+      hasStarted: true,
+      followUpQuestions: null,
+      followUpLoading: false,
+      lastChallengeSubmissionId: null,
+      submitChallenge: vi.fn(),
+      onStart: vi.fn(),
+      claimAssessmentStart: vi.fn(),
+      reset: vi.fn(),
+      refresh: vi.fn(),
+      sessionToken: 'session-token',
+    });
+
+    render(
+      <MemoryRouter initialEntries={['/assess/pending-code-review-token']}>
+        <Routes>
+          <Route path="/assess/:token" element={<CandidateAssessmentPage />} />
+        </Routes>
+      </MemoryRouter>,
+    );
+
+    const handoff = screen.getByTestId('assessment-submitted');
+    expect(handoff).toHaveTextContent('Profile received.');
+    expect(handoff).toHaveTextContent("You're done here for now.");
+    expect(handoff).toHaveTextContent('PIPE will email you when a source-backed code review is ready.');
+    expect(handoff).not.toHaveTextContent('Building your personalized challenge');
+    expect(handoff).not.toHaveTextContent('MATCHING IN PROGRESS');
+    expect(screen.queryByTestId('waiting-for-match')).not.toBeInTheDocument();
+    expect(screen.queryByTestId('code-review-challenge')).not.toBeInTheDocument();
+  });
+
   it('shows a start error when a fresh direct code-review assessment cannot be claimed', async () => {
     const claimAssessmentStart = vi.fn().mockRejectedValue(new Error('This invite link is no longer current.'));
     useAssessmentMock.mockReturnValue({

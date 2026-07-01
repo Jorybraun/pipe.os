@@ -150,6 +150,16 @@ function buildRawStage(
   };
 }
 
+function isStandaloneCodeReviewWaitingHandoff(
+  stageConfig: StageConfigDTO | null,
+  currentType: string | undefined,
+): boolean {
+  if (currentType !== 'WAITING_FOR_MATCH') return false;
+  const stageId = stageConfig?.stageId?.toLowerCase() ?? '';
+  const challengeTypes = stageConfig?.challenges?.map((challenge) => challenge.type) ?? [];
+  return stageId === 'standalone-code-review' && challengeTypes.includes('CODE_REVIEW');
+}
+
 // ============================================================================
 // Component
 // ============================================================================
@@ -202,6 +212,7 @@ export default function CandidateAssessmentPage({ hideHeader = false }: Candidat
   }, [stageConfig, challengeContent, currentOrder]);
 
   const currentType = challengeContent?.type ?? stageConfig?.challenges?.[currentOrder]?.type;
+  const shouldFailClosedToProfileReceived = isStandaloneCodeReviewWaitingHandoff(stageConfig, currentType);
 
   // Review session v2 state (CODE_REVIEW golden path)
   const [reviewSessionMeta, setReviewSessionMeta] = useState<{
@@ -381,15 +392,20 @@ export default function CandidateAssessmentPage({ hideHeader = false }: Candidat
   // Completed state
   // ---------------------------------------------------------------------------
 
-  if (isSubmitted) {
+  if (isSubmitted || currentType === 'PROFILE_RECEIVED' || shouldFailClosedToProfileReceived) {
+    const isProfileReceived = currentType === 'PROFILE_RECEIVED' || shouldFailClosedToProfileReceived;
     return (
       <div data-testid="assessment-submitted" style={{ minHeight: '100vh', display: 'flex', alignItems: 'center', justifyContent: 'center', background: '#0c0c0e', padding: 24 }}>
         <ChromeMeshGrid />
         <LiquidMetalCard variant="chrome" style={{ maxWidth: 480, padding: 60, textAlign: 'center', zIndex: 1 }}>
           <CheckCircle size={64} color="#10b981" style={{ marginBottom: 32 }} />
-          <h2 style={{ fontSize: 32, fontWeight: 800, color: 'var(--pipe-text, #fff)', marginBottom: 16, letterSpacing: '-0.02em' }}>Submitted.</h2>
+          <h2 style={{ fontSize: 32, fontWeight: 800, color: 'var(--pipe-text, #fff)', marginBottom: 16, letterSpacing: '-0.02em' }}>
+            {isProfileReceived ? 'Profile received.' : 'Submitted.'}
+          </h2>
           <p style={{ fontSize: 14, color: 'var(--pipe-text-muted)', lineHeight: 1.6, fontFamily: '"Space Mono", monospace' }}>
-            Your assessment has been securely delivered. The team will review your submission and get back to you soon.
+            {isProfileReceived
+              ? "You're done here for now. PIPE will email you when a source-backed code review is ready."
+              : 'Your assessment has been submitted. Thank you for your time.'}
           </p>
         </LiquidMetalCard>
       </div>

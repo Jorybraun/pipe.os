@@ -29,7 +29,7 @@ jobs:
         working-directory: workers/api
         run: npm ci
 
-      - name: Install dependencies (video room)
+      - name: Install dependencies (assessment room)
         working-directory: apps/video-room
         run: npm install --no-audit --no-fund
 
@@ -38,7 +38,7 @@ jobs:
           VITE_CLERK_PUBLISHABLE_KEY: ${{ secrets.CLERK_PUBLISHABLE_KEY_TEST }}
         run: npm run build
 
-      - name: Build video room
+      - name: Build assessment room
         working-directory: apps/video-room
         run: npm run build
 
@@ -54,7 +54,7 @@ jobs:
           CLOUDFLARE_ACCOUNT_ID: ${{ secrets.CLOUDFLARE_ACCOUNT_ID }}
         run: ./workers/api/node_modules/.bin/wrangler deploy --config workers/app/wrangler.jsonc
 
-      - name: Deploy video room (dev)
+      - name: Deploy assessment room (dev)
         env:
           CLOUDFLARE_API_TOKEN: ${{ secrets.CLOUDFLARE_API_TOKEN }}
           CLOUDFLARE_ACCOUNT_ID: ${{ secrets.CLOUDFLARE_ACCOUNT_ID }}

@@ -29,6 +29,7 @@
  *    the shape returned by the candidate-facing endpoint (tested via shape check)
  */
 
+import { Hono } from 'hono';
 import { describe, it, expect, beforeEach, vi } from 'vitest';
 import {
   startCultureInterview,
@@ -44,6 +45,8 @@ import {
   type CultureScoreReport,
   type OrgCultureBenchmark,
 } from '../../../lib/cultureScorer';
+import type { Env } from '../../../types';
+import { cultureRecruiter } from '../culture';
 
 // ─── Silence expected console noise ─────────────────────────────────────────
 
@@ -72,6 +75,21 @@ const LONG_ANSWER =
 
 /** A short answer (<200 chars) that causes deterministic null-provider questioning to probe. */
 const SHORT_ANSWER = 'I just took ownership of the project and made sure it was done.';
+
+function buildExecutionContext(): { ctx: ExecutionContext; waitUntilAll: () => Promise<void> } {
+  const promises: Promise<unknown>[] = [];
+  return {
+    ctx: {
+      waitUntil: (promise: Promise<unknown>) => {
+        promises.push(promise);
+      },
+      passThroughOnException: () => {},
+    } as unknown as ExecutionContext,
+    waitUntilAll: async () => {
+      await Promise.all(promises);
+    },
+  };
+}
 
 function buildTestCultureScoreReport(orgBenchmark: OrgCultureBenchmark): CultureScoreReport {
   return {
@@ -105,6 +123,64 @@ function buildTestCultureScoreReport(orgBenchmark: OrgCultureBenchmark): Culture
     scoredAt: new Date().toISOString(),
   };
 }
+
+// ─── Route benchmark safety contracts ────────────────────────────────────────
+
+describe('POST /calibration/run', () => {
+  it('queues calibration asynchronously by default', async () => {
+    const app = new Hono();
+    app.route('/', cultureRecruiter);
+    const { ctx } = buildExecutionContext();
+
+    const res = await app.request('/calibration/run', {
+      method: 'POST',
+      body: JSON.stringify({ fixtureLimit: 1 }),
+      headers: { 'Content-Type': 'application/json' },
+    }, {
+      AI: { run: vi.fn() },
+      DEV_AUTH_BYPASS: 'true',
+      DEV_BYPASS_USER_ID: 'test-user',
+    } as unknown as Env, ctx);
+
+    expect(res.status).toBe(202);
+    const body = await res.json() as {
+      status: string;
+      mode: string;
+      plannedFixtureCount: number;
+      estimatedScoringCalls: number;
+    };
+    expect(body.status).toBe('queued');
+    expect(body.mode).toBe('async');
+    expect(body.plannedFixtureCount).toBe(1);
+    expect(body.estimatedScoringCalls).toBe(11);
+  });
+
+  it('supports dry-run calibration planning without an AI binding', async () => {
+    const app = new Hono();
+    app.route('/', cultureRecruiter);
+
+    const res = await app.request('/calibration/run', {
+      method: 'POST',
+      body: JSON.stringify({ dryRun: true, fixtureLimit: 1 }),
+      headers: { 'Content-Type': 'application/json' },
+    }, {
+      DEV_AUTH_BYPASS: 'true',
+      DEV_BYPASS_USER_ID: 'test-user',
+    } as unknown as Env);
+
+    expect(res.status).toBe(200);
+    const body = await res.json() as {
+      dryRun: boolean;
+      plannedFixtureCount: number;
+      totalFixtureCount: number;
+      estimatedScoringCalls: number;
+    };
+    expect(body.dryRun).toBe(true);
+    expect(body.plannedFixtureCount).toBe(1);
+    expect(body.totalFixtureCount).toBeGreaterThanOrEqual(1);
+    expect(body.estimatedScoringCalls).toBe(11);
+  });
+});
 
 // ─── 1. startCultureInterview ────────────────────────────────────────────────
 

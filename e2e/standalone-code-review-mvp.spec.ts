@@ -10,15 +10,16 @@
  *
  * Product slice: recruiter invites a person to a standalone code-review
  * challenge outside any pipeline or role → candidate opens /assess/:token →
- * candidate provides resume/profile evidence → PIPE builds living context →
- * PIPE matches to a real reviewable PR or waits safely → candidate submits
- * review → recruiter sees context graph and source-backed result.
+ * candidate provides resume/profile evidence → PIPE queues living-context
+ * ingestion in the background → PIPE later matches to a real reviewable PR or
+ * requests more context → candidate submits review → recruiter sees context
+ * graph and source-backed result.
  *
  * These tests protect the source-backed standalone path end-to-end.
  *
  * Invariants asserted:
  *   - No generic repo / smallest-PR / fabricated evidence fallback
- *   - Missing evidence → explicit WAITING_FOR_MATCH, not a fake challenge
+ *   - Missing evidence → completed intake state, not a fake challenge or waiting room
  *   - Every match links to source evidence
  *   - Ground truth never leaks to candidate
  *
@@ -58,6 +59,7 @@ interface StageConfigResponse {
   isComplete: boolean;
   stageId?: string;
   stageTitle?: string;
+  message?: string;
   mode?: string;
   timeLimit?: number | null;
   challenges?: Array<{ type: string; order: number; title?: string }>;
@@ -327,16 +329,23 @@ async function seedStandaloneReviewMatchFixture(
   candidate: StandaloneCandidate,
 ): Promise<SeedStandaloneReviewFixture> {
   const suffix = candidate.id.replace(/[^a-zA-Z0-9]/g, '').slice(0, 10).toLowerCase();
-  const conceptKey = 'term:workflow-conflict-warning';
+  const conceptKey = `term:workflow-conflict-warning-${suffix}`;
   const conceptLabel = 'workflow conflict warning';
-  const uniquenessConceptKey = 'term:workflow-name-uniqueness';
-  const configRenameConceptKey = 'term:wrangler-config-rename';
-  const deployWarningConceptKey = 'term:deploy-warning';
-  const changesetConceptKey = 'term:changeset-release-note';
-  const vitestConceptKey = 'term:vitest';
-  const repoFullName = 'cloudflare/workers-sdk';
-  const repoUrl = 'https://github.com/cloudflare/workers-sdk';
-  const prNumber = 14435;
+  const uniquenessConceptKey = `term:workflow-name-uniqueness-${suffix}`;
+  const releaseNoteConceptKey = `term:release-note-wording-${suffix}`;
+  const dashboardPolishConceptKey = `term:dashboard-polish-${suffix}`;
+  const copyEditingConceptKey = `term:copy-editing-${suffix}`;
+  const readmeDocsConceptKey = `term:readme-docs-${suffix}`;
+  const configRenameConceptKey = `term:wrangler-config-rename-${suffix}`;
+  const deployWarningConceptKey = `term:deploy-warning-${suffix}`;
+  const changesetConceptKey = `term:changeset-release-note-${suffix}`;
+  const vitestConceptKey = `term:vitest-${suffix}`;
+  const repoFullName = `cloudflare/workers-sdk-assessment-${suffix}`;
+  const comparatorRepoFullName = `cloudflare/workers-sdk-comparator-${suffix}`;
+  const repoUrl = `https://github.com/cloudflare/workers-sdk-assessment-${suffix}`;
+  const comparatorRepoUrl = `https://github.com/cloudflare/workers-sdk-comparator-${suffix}`;
+  const prNumber = 14000 + (Number.parseInt(suffix.slice(0, 5), 16) % 50000);
+  const comparatorPrNumber = prNumber + 1;
   const recordingKey = `meetings/e2e-owner/${suffix}/recording.webm`;
   const transcriptionAudioKey = `meetings/e2e-owner/${suffix}/transcription-audio.webm`;
   const transcriptStatus = 'READY';
@@ -351,19 +360,19 @@ async function seedStandaloneReviewMatchFixture(
       concepts: [
         { canonicalKey: conceptKey, namespace: 'term', label: conceptLabel },
         { canonicalKey: uniquenessConceptKey, namespace: 'term', label: 'workflow name uniqueness' },
-        { canonicalKey: 'term:release-note-wording', namespace: 'term', label: 'release note wording' },
-        { canonicalKey: 'term:dashboard-polish', namespace: 'term', label: 'dashboard polish' },
-        { canonicalKey: 'term:copy-editing', namespace: 'term', label: 'copy editing' },
-        { canonicalKey: 'term:readme-docs', namespace: 'term', label: 'readme docs' },
+        { canonicalKey: releaseNoteConceptKey, namespace: 'term', label: 'release note wording' },
+        { canonicalKey: dashboardPolishConceptKey, namespace: 'term', label: 'dashboard polish' },
+        { canonicalKey: copyEditingConceptKey, namespace: 'term', label: 'copy editing' },
+        { canonicalKey: readmeDocsConceptKey, namespace: 'term', label: 'readme docs' },
       ],
       repo: {
-        githubUrl: 'https://github.com/cloudflare/workers-sdk',
-        fullName: repoFullName,
+        githubUrl: comparatorRepoUrl,
+        fullName: comparatorRepoFullName,
         primaryLanguage: 'TypeScript',
-        description: 'Cloudflare Workers SDK and Wrangler source repository.',
+        description: 'Comparator repository used to prove automatic match score separation.',
       },
       pullRequest: {
-        number: 14436,
+        number: comparatorPrNumber,
         title: '[Wrangler] Tidy copy for workflow dashboard notes',
         author: 'pipe-e2e',
         baseSha: 'bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb',
@@ -428,42 +437,37 @@ async function seedStandaloneReviewMatchFixture(
           family: 'source-backed:dashboard-copy',
           narrative: 'Review broad dashboard copy for workflow naming guidance.',
           conceptKeys: [
-            conceptKey,
             uniquenessConceptKey,
-            'term:release-note-wording',
-            'term:dashboard-polish',
-            'term:copy-editing',
+            releaseNoteConceptKey,
+            dashboardPolishConceptKey,
+            copyEditingConceptKey,
           ],
           sourceSpanKeys: ['dashboard-copy'],
-          weight: 0.4,
+          weight: 0.1,
         },
         {
           id: 'dashboard-test-demand',
           family: 'source-backed:dashboard-copy-test',
           narrative: 'Review broad test coverage for workflow dashboard copy.',
           conceptKeys: [
-            conceptKey,
-            uniquenessConceptKey,
-            'term:dashboard-polish',
-            'term:copy-editing',
-            'term:readme-docs',
+            dashboardPolishConceptKey,
+            copyEditingConceptKey,
+            readmeDocsConceptKey,
           ],
           sourceSpanKeys: ['dashboard-test'],
-          weight: 0.3,
+          weight: 0.45,
         },
         {
           id: 'readme-note-demand',
           family: 'source-backed:readme-docs',
           narrative: 'Review README wording for workflow naming guidance.',
           conceptKeys: [
-            conceptKey,
-            uniquenessConceptKey,
-            'term:readme-docs',
-            'term:copy-editing',
-            'term:dashboard-polish',
+            readmeDocsConceptKey,
+            copyEditingConceptKey,
+            dashboardPolishConceptKey,
           ],
           sourceSpanKeys: ['readme-note'],
-          weight: 0.3,
+          weight: 0.45,
         },
       ],
     },
@@ -472,7 +476,7 @@ async function seedStandaloneReviewMatchFixture(
   expect(comparatorRes.status(), comparatorText).toBe(200);
   const comparatorBody = JSON.parse(comparatorText) as SeedStandaloneReviewFixtureResponse;
   expect(comparatorBody.ok).toBe(true);
-  expect(comparatorBody.prNumber).toBe(14436);
+  expect(comparatorBody.prNumber).toBe(comparatorPrNumber);
 
   const res = await request.post(`${API_BASE}/api/v1/internal/e2e/standalone-review-match-fixture`, {
     headers: recruiterHeaders(authToken),
@@ -1109,31 +1113,37 @@ test.describe('§MVP.4 — Deterministic matching: no generic/smallest-PR fallba
       },
     });
     expect(intakeRes.status()).toBe(200);
-    const intakeBody = await intakeRes.json() as { success?: boolean; message?: string };
+    const intakeBody = await intakeRes.json() as {
+      success?: boolean;
+      complete?: boolean;
+      queued?: boolean;
+      message?: string;
+    };
     expect(intakeBody.success).toBe(true);
-    expect(intakeBody.message).toBe('INTAKE submission received');
+    expect(intakeBody.complete).toBe(true);
+    expect(intakeBody.queued).toBe(true);
+    expect(intakeBody.message).toBe('INTAKE queued for background processing');
   });
 
-  test('candidate with thin evidence sees WAITING_FOR_MATCH, not a generic PR', async ({ request }) => {
-    const res = await request.post(`${API_BASE}/rpc/get-challenge`, {
+  test('candidate with thin evidence completes intake instead of seeing a waiting room or generic PR', async ({ request }) => {
+    const res = await request.post(`${API_BASE}/rpc/get-stage-config`, {
       headers: candidateHeaders(sessionToken),
-      data: { order: 0 },
+      data: {},
     });
     expect(res.status()).toBe(200);
 
-    const challenge = (await res.json()) as ChallengeResponse;
+    const config = (await res.json()) as StageConfigResponse;
 
-    expect(challenge.type).toBe('WAITING_FOR_MATCH');
-    expect(challenge.githubPrNumber).toBeUndefined();
-    expect(challenge.githubRepoUrl).toBeUndefined();
-    expect(challenge.cachedDiffJson).toBeUndefined();
-    expect(challenge.title).toBe('Building your personalized challenge');
+    expect(config.isComplete).toBe(true);
+    expect(config.stageId).toBe('candidate-intake-queued');
+    expect(config.challenges).toEqual([]);
+    expect(config.message).toContain('email you when your code review is ready');
   });
 
-  test('WAITING_FOR_MATCH challenge never exposes ground truth', async ({ request }) => {
-    const res = await request.post(`${API_BASE}/rpc/get-challenge`, {
+  test('queued intake response never exposes ground truth', async ({ request }) => {
+    const res = await request.post(`${API_BASE}/rpc/get-stage-config`, {
       headers: candidateHeaders(sessionToken),
-      data: { order: 0 },
+      data: {},
     });
     const body = await res.text();
 
@@ -1630,10 +1640,17 @@ test.describe('§MVP.7 — Candidate submits standalone code review', () => {
     expect(prematureRes.status()).toBe(409);
     const prematureBody = await prematureRes.json() as {
       error?: { code?: string };
-      challenge?: { type?: string };
+      challenge?: { type?: string; id?: string; instructions?: string };
+      stageId?: string;
+      isComplete?: boolean;
     };
-    expect(prematureBody.error?.code).toBe('WAITING_FOR_MATCH');
-    expect(prematureBody.challenge?.type).toBe('WAITING_FOR_MATCH');
+    expect(prematureBody.error?.code).toBe('PROFILE_RECEIVED');
+    expect(prematureBody.challenge?.type).toBe('PROFILE_RECEIVED');
+    expect(prematureBody.challenge?.id).toBe('profile-received');
+    expect(prematureBody.challenge?.instructions).toContain('email you when your code review is ready');
+    expect(prematureBody.stageId).toBe('candidate-intake-queued');
+    expect(prematureBody.isComplete).toBe(true);
+    expect(JSON.stringify(prematureBody)).not.toContain('WAITING_FOR_MATCH');
 
     await submitStandaloneIntakeEvidence(request, sessionToken);
     const fixture = await seedStandaloneReviewMatchFixture(request, authToken, candidate);

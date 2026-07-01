@@ -1,6 +1,6 @@
 import { act, fireEvent, render, screen } from '@testing-library/react';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
-import { MemoryRouter, Route, Routes, useParams } from 'react-router-dom';
+import { MemoryRouter, Route, Routes, useLocation, useParams } from 'react-router-dom';
 import InterviewDetailPage from './InterviewDetailPage';
 import type { ScheduledInterviewDetail } from '../lib/scheduling/types';
 
@@ -65,7 +65,13 @@ function makeInterview(
 
 function PersonRouteEcho(): JSX.Element {
   const { personId } = useParams<{ personId: string }>();
-  return <div data-testid="person-route-echo">{personId}</div>;
+  const location = useLocation();
+  return (
+    <div>
+      <div data-testid="person-route-echo">{personId}</div>
+      <pre data-testid="person-route-state">{JSON.stringify(location.state)}</pre>
+    </div>
+  );
 }
 
 function renderDetail(): void {
@@ -244,6 +250,8 @@ describe('InterviewDetailPage', () => {
             { kind: 'git_commit', count: 1 },
             { kind: 'code_diff', count: 1 },
             { kind: 'test_run', count: 1 },
+            { kind: 'ai_user_prompt', count: 2 },
+            { kind: 'ai_agent_response', count: 1 },
           ],
           evidenceSnippets: [
             {
@@ -302,6 +310,20 @@ describe('InterviewDetailPage', () => {
             baseCommitSha: '1111111111111111111111111111111111111111',
             commitSha: 'abcdef1234567890abcdef1234567890abcdef12',
             commitUrl: 'https://github.com/candidate/widgets/commit/abcdef1234567890abcdef1234567890abcdef12',
+            submissionSource: 'live_workspace',
+            submissionSourceLabel: 'Live workspace finalizer',
+            integrity: {
+              status: 'workspace_captured',
+              label: 'Workspace-captured commit',
+              detail: 'Captured by the live dev-container finalizer from the workspace HEAD and exact source refs.',
+              tone: 'verified',
+            },
+            challengeBinding: {
+              status: 'bound_to_assigned_challenge',
+              label: 'Bound to assigned challenge',
+              detail: 'Submitted repository and base commit match the assigned source-backed challenge packet.',
+              tone: 'verified',
+            },
             changedFiles: [{ path: 'src/popover.ts', status: 'modified' }],
             occurredAt: '2026-06-23T00:18:00.000Z',
           },
@@ -323,20 +345,29 @@ describe('InterviewDetailPage', () => {
       'Repo task was selected from source-backed candidate evidence and an approved challenge packet.',
     );
     expect(progress).toHaveTextContent('Start source-backed AI or human evaluation.');
-    expect(progress).toHaveTextContent('challenge, chat, workspace telemetry, room actions, commit, AI use, transcript, tests');
+    expect(progress).toHaveTextContent('challenge, chat, workspace telemetry, tool activity, commit, AI use, transcript, tests');
     expect(progress).toHaveTextContent('Workspace');
     expect(progress).toHaveTextContent('Ready · open-source/widgets · base 1111111111');
     expect(progress).toHaveTextContent('abcdef1234');
+    expect(progress).toHaveTextContent('Commit integrity');
+    expect(progress).toHaveTextContent('Workspace-captured commit');
+    expect(progress).toHaveTextContent('Captured by the live dev-container finalizer from the workspace HEAD and exact source refs.');
+    expect(progress).toHaveTextContent('Challenge binding');
+    expect(progress).toHaveTextContent('Bound to assigned challenge');
+    expect(progress).toHaveTextContent('Submitted repository and base commit match the assigned source-backed challenge packet.');
     const workPacket = screen.getByTestId('interview-assessment-work-packet');
     expect(workPacket).toHaveTextContent('Candidate work packet');
     expect(workPacket).toHaveTextContent('Commit artifact');
     expect(workPacket).toHaveTextContent('abcdef1234');
+    expect(workPacket).toHaveTextContent('Workspace-captured commit');
+    expect(workPacket).toHaveTextContent('Bound to assigned challenge');
     expect(workPacket).toHaveTextContent('Branch pipe-assessment/popover-cleanup');
     expect(workPacket).toHaveTextContent('1 changed file: src/popover.ts · Modified');
     expect(workPacket).toHaveTextContent('Verification');
     expect(workPacket).toHaveTextContent('Tests captured');
     expect(workPacket).toHaveTextContent('AI transparency');
     expect(workPacket).toHaveTextContent('AI use observed');
+    expect(workPacket).toHaveTextContent('2 prompts and 1 agent response captured from the real agent bridge.');
     expect(workPacket).toHaveTextContent('Human review');
     expect(workPacket).toHaveTextContent('Run evaluation');
     const contract = screen.getByTestId('interview-assessment-challenge-contract');
@@ -360,6 +391,271 @@ describe('InterviewDetailPage', () => {
     expect(snippets).toHaveTextContent('passed the impatient click regression');
     expect(progress).toHaveTextContent('pipe-assessment/popover-cleanup');
     expect(progress).not.toHaveTextContent('challenge-packet-popover');
+  });
+
+  it('treats missing AI bridge evidence as unobserved instead of absent in the work packet', async () => {
+    mocks.api.get.mockResolvedValueOnce({
+      interview: makeInterview({
+        interviewType: 'OPEN_SOURCE_BUG_FIX',
+        status: 'COMPLETED',
+        assessmentProgress: {
+          session: {
+            id: 'assessment-session-no-ai',
+            ingestionKey: 'assessment-session:no-ai',
+            interviewId: 'interview-1',
+            candidateId: 'candidate-1',
+            workspaceId: 'workspace-1',
+            workspacePersonId: null,
+            applicationId: null,
+            mode: 'OPEN_SOURCE_BUG_FIX',
+            state: 'FINAL_SUBMITTED',
+            createdAt: '2026-06-23T00:00:00.000Z',
+            updatedAt: '2026-06-23T00:20:00.000Z',
+          },
+          stage: 'READY_FOR_EVALUATION',
+          nextAction: 'START_EVALUATION',
+          nextActionLabel: 'Start source-backed AI or human evaluation.',
+          hasChallengePacket: true,
+          hasWorkEvidence: true,
+          hasMessageEvidence: false,
+          hasDevContainerEvidence: true,
+          hasToolUsageEvidence: true,
+          hasCommitSubmission: true,
+          hasFinalSubmission: true,
+          hasAiInteraction: false,
+          hasTranscriptEvidence: false,
+          hasTestEvidence: true,
+          evidenceCounts: [{ kind: 'commit_submission', count: 1 }],
+          sourceRefCounts: [
+            { kind: 'review_challenge_packet', count: 1 },
+            { kind: 'git_commit', count: 1 },
+            { kind: 'code_diff', count: 1 },
+            { kind: 'test_run', count: 1 },
+          ],
+          challenge: {
+            sourceRefType: 'review_challenge_packet',
+            sourceRefId: 'challenge-packet-no-ai',
+            evidenceRole: 'assigned_challenge',
+            exactText: 'Task: fix the no-ai transparency copy.',
+            locator: { repositoryUrl: 'https://github.com/open-source/widgets' },
+          },
+          latestEvent: {
+            id: 'assessment-event-no-ai',
+            kind: 'commit_submission',
+            sequence: 2,
+            occurredAt: '2026-06-23T00:18:00.000Z',
+          },
+          commit: {
+            eventId: 'assessment-event-no-ai',
+            repositoryUrl: 'https://github.com/open-source/widgets',
+            forkRepositoryUrl: 'https://github.com/candidate/widgets',
+            branchName: 'pipe-assessment/no-ai-copy',
+            baseCommitSha: '2222222222222222222222222222222222222222',
+            commitSha: 'bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb',
+            commitUrl: 'https://github.com/candidate/widgets/commit/bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb',
+            changedFiles: [{ path: 'src/transparency.ts', status: 'modified' }],
+            occurredAt: '2026-06-23T00:18:00.000Z',
+          },
+          evaluation: null,
+        },
+      }),
+    });
+
+    renderDetail();
+    await flushAsyncUpdates();
+
+    const workPacket = screen.getByTestId('interview-assessment-work-packet');
+    expect(workPacket).toHaveTextContent('AI transparency');
+    expect(workPacket).toHaveTextContent('No AI evidence captured');
+    expect(workPacket).toHaveTextContent(
+      'No candidate AI-assistance evidence is attached; treat AI use as unobserved, not absent.',
+    );
+    expect(workPacket).not.toHaveTextContent('AI use observed');
+    expect(workPacket).not.toHaveTextContent('agent response captured');
+  });
+
+  it('shows the exact missing proof checklist before an open-source workspace can be evaluated', async () => {
+    mocks.api.get.mockResolvedValueOnce({
+      interview: makeInterview({
+        interviewType: 'OPEN_SOURCE_BUG_FIX',
+        githubRepoUrl: 'https://github.com/open-source/streaming',
+        assessmentSetup: {
+          status: 'reviewable_task_assigned',
+          kind: 'github_pr',
+          source: 'recruiter_manual_override',
+          blocksPositiveAssessment: false,
+          message: 'A concrete open-source task packet was assigned by the recruiter.',
+        },
+        workspaceSession: {
+          status: 'READY',
+          errorMessage: null,
+          expiresAt: '2026-06-23T01:00:00.000Z',
+          updatedAt: '2026-06-23T00:10:00.000Z',
+          repoGitUrl: 'https://github.com/open-source/streaming',
+          baseCommitSha: '2222222222222222222222222222222222222222',
+        },
+        assessmentProgress: {
+          session: {
+            id: 'assessment-session-missing-proof',
+            ingestionKey: 'assessment-session:missing-proof',
+            interviewId: 'interview-1',
+            candidateId: null,
+            workspaceId: 'workspace-1',
+            workspacePersonId: null,
+            applicationId: null,
+            mode: 'OPEN_SOURCE_BUG_FIX',
+            state: 'CHALLENGE_ASSIGNED',
+            createdAt: '2026-06-23T00:00:00.000Z',
+            updatedAt: '2026-06-23T00:20:00.000Z',
+          },
+          stage: 'CHALLENGE_READY',
+          nextAction: 'OPEN_ROOM_OR_WORKSPACE',
+          nextActionLabel: 'Open the room and launch the controlled workspace.',
+          assignmentTrust: {
+            state: 'manual_challenge',
+            label: 'Manual task assignment',
+            detail: 'A concrete open-source task packet was assigned by the recruiter.',
+            tone: 'manual',
+          },
+          readiness: {
+            status: 'READY_TO_START',
+            label: 'Challenge ready',
+            detail: '3 required proof items are still missing before evaluation.',
+            isReadyForEvaluation: false,
+            isUsableHiringSignal: false,
+            missingRequiredCount: 3,
+            required: [
+              {
+                id: 'challenge_packet',
+                label: 'Complete challenge packet',
+                required: true,
+                satisfied: true,
+                sourceRefTypes: ['open_source_challenge_packet'],
+                missingImpact: 'Without a source-backed task packet, PIPE cannot prove what work was assigned.',
+              },
+              {
+                id: 'work_evidence',
+                label: 'Candidate work evidence',
+                required: true,
+                satisfied: false,
+                sourceRefTypes: ['terminal_output', 'code_diff', 'room_chat_message'],
+                missingImpact: 'Without work evidence, the session only proves an assignment existed.',
+              },
+              {
+                id: 'assessment_commit',
+                label: 'Assessment branch commit',
+                required: true,
+                satisfied: false,
+                sourceRefTypes: ['git_commit'],
+                missingImpact: 'A real commit hash is required before evaluating open-source implementation work.',
+              },
+              {
+                id: 'code_diff',
+                label: 'Exact code diff',
+                required: true,
+                satisfied: false,
+                sourceRefTypes: ['code_diff'],
+                missingImpact: 'The evaluator must inspect the exact diff from base commit to submitted commit.',
+              },
+            ],
+            confidence: [
+              {
+                id: 'workspace_captured_commit',
+                label: 'Workspace-captured commit',
+                required: false,
+                satisfied: false,
+                sourceRefTypes: ['git_commit', 'dev_container_workspace_state'],
+                missingImpact: 'Manual commit evidence can start review, but workspace capture is needed for highest trust.',
+              },
+              {
+                id: 'ai_usage_transparency',
+                label: 'AI-use transparency',
+                required: false,
+                satisfied: false,
+                sourceRefTypes: ['ai_usage_event'],
+                missingImpact: 'If the candidate used AI, prompts and responses should be captured honestly.',
+              },
+            ],
+          },
+          hasChallengePacket: true,
+          hasWorkEvidence: false,
+          hasMessageEvidence: false,
+          hasDevContainerEvidence: false,
+          hasToolUsageEvidence: false,
+          hasCommitSubmission: false,
+          hasFinalSubmission: false,
+          hasAiInteraction: false,
+          hasTranscriptEvidence: false,
+          hasTestEvidence: false,
+          hasVerificationGap: false,
+          evidenceCounts: [{ kind: 'recruiter_note', count: 1 }],
+          sourceRefCounts: [{ kind: 'open_source_challenge_packet', count: 1 }],
+          evidenceSnippets: [],
+          challengePacketContract: {
+            schemaVersion: 'challenge-packet-contract-v1',
+            isComplete: true,
+            missingFields: [],
+            hasRepositoryUrl: true,
+            hasBaseCommitSha: true,
+            hasTask: true,
+            hasSuccessCriteria: true,
+            hasExpectedEvidence: true,
+          },
+          challenge: {
+            sourceRefType: 'open_source_challenge_packet',
+            sourceRefId: 'challenge-packet-hidden',
+            evidenceRole: 'assigned_challenge',
+            exactText: [
+              'Repo: https://github.com/open-source/streaming',
+              'Base commit: 2222222222222222222222222222222222222222',
+              'Task: Fix reconnect ordering in the event stream.',
+              'Success criteria:',
+              '- Reconnect keeps event order deterministic',
+              'Expected evidence:',
+              '- Commit SHA on assessment branch',
+              '- Exact diff from base commit to submitted commit',
+            ].join('\n'),
+            locator: {
+              repositoryUrl: 'https://github.com/open-source/streaming',
+              baseCommitSha: '2222222222222222222222222222222222222222',
+            },
+          },
+          latestEvent: {
+            id: 'assessment-event-hidden',
+            kind: 'recruiter_note',
+            sequence: 1,
+            occurredAt: '2026-06-23T00:20:00.000Z',
+          },
+          commit: null,
+          evaluation: null,
+          humanDecision: null,
+        },
+      }),
+    });
+
+    renderDetail();
+    await flushAsyncUpdates();
+
+    const progress = screen.getByTestId('interview-assessment-progress');
+    expect(progress).toHaveTextContent('Challenge ready');
+    expect(progress).toHaveTextContent('3 required proof items are still missing before evaluation.');
+    const checklist = screen.getByTestId('interview-assessment-proof-checklist');
+    expect(checklist).toHaveTextContent('Required proof');
+    expect(checklist).toHaveTextContent('Complete challenge packet');
+    expect(checklist).toHaveTextContent('Captured');
+    expect(checklist).toHaveTextContent('Candidate work evidence');
+    expect(checklist).toHaveTextContent('Missing');
+    expect(checklist).toHaveTextContent('Without work evidence, the session only proves an assignment existed.');
+    expect(checklist).toHaveTextContent('Assessment branch commit');
+    expect(checklist).toHaveTextContent('A real commit hash is required before evaluating open-source implementation work.');
+    expect(checklist).toHaveTextContent('Exact code diff');
+    expect(checklist).toHaveTextContent('The evaluator must inspect the exact diff from base commit to submitted commit.');
+    expect(checklist).toHaveTextContent('Confidence signals');
+    expect(checklist).toHaveTextContent('Workspace-captured commit');
+    expect(checklist).toHaveTextContent('AI-use transparency');
+    expect(progress).not.toHaveTextContent('assessment-session-missing-proof');
+    expect(progress).not.toHaveTextContent('challenge-packet-hidden');
+    expect(progress).not.toHaveTextContent('assessment-event-hidden');
   });
 
   it('starts source-backed assessment evaluation and surfaces a specific evaluator diagnostic', async () => {
@@ -549,7 +845,7 @@ describe('InterviewDetailPage', () => {
         id: 'assessment-report-source-backed',
         status: 'EVALUATED',
         summary: 'Candidate made a focused source-backed change and cited the submitted diff evidence.',
-        recommendation: 'strong_evidence_to_advance',
+        recommendation: 'hire_now',
         createdAt: '2026-06-23T00:22:00.000Z',
         claims: [{
           id: 'claim-focused-diff',
@@ -630,10 +926,10 @@ describe('InterviewDetailPage', () => {
             {
               label: 'ai_assistance',
               required: false,
-              sourceRefTypes: ['clippy_user_prompt', 'clippy_agent_response'],
+              sourceRefTypes: ['ai_user_prompt', 'ai_agent_response'],
               satisfied: false,
               sourceRefKeys: [],
-              missingImpact: 'Treat AI usage as unobserved when Clippy/Devin or AI chat evidence is absent.',
+              missingImpact: 'Treat AI usage as unobserved when real agent bridge chat evidence is absent.',
             },
           ],
         },
@@ -666,12 +962,14 @@ describe('InterviewDetailPage', () => {
     const progress = screen.getByTestId('interview-assessment-progress');
     expect(progress).toHaveTextContent('Evaluated');
     expect(progress).toHaveTextContent('Review the assessment report and evidence.');
-    expect(progress).toHaveTextContent('Evaluated · Strong evidence to advance · Candidate made a focused source-backed change and cited the submitted diff evidence.');
+    expect(progress).toHaveTextContent('Evaluated · Unvalidated recommendation · Candidate made a focused source-backed change and cited the submitted diff evidence.');
+    expect(progress).not.toHaveTextContent('Hire now');
     const decision = screen.getByTestId('interview-workspace-assessment-decision-summary');
     expect(decision).toHaveTextContent('Assessment decision');
     expect(decision).toHaveTextContent('Hiring manager readout');
     expect(decision).toHaveTextContent('Decision');
-    expect(decision).toHaveTextContent('Strong evidence to advance');
+    expect(decision).toHaveTextContent('Unvalidated recommendation');
+    expect(decision).not.toHaveTextContent('Hire now');
     expect(decision).toHaveTextContent('Candidate made a focused source-backed change and cited the submitted diff evidence.');
     expect(decision).toHaveTextContent('Challenge fit');
     expect(decision).toHaveTextContent('Source-backed task');
@@ -902,6 +1200,7 @@ describe('InterviewDetailPage', () => {
   });
 
   it('leads completed code-review interviews with recruiter decision value', async () => {
+    const deliveredUrl = 'https://app-dev.hire-pipe.com/assess/recruiter-visible-token';
     mocks.api.get.mockResolvedValueOnce({
       interview: makeInterview({
         interviewType: 'CODE_REVIEW',
@@ -909,6 +1208,16 @@ describe('InterviewDetailPage', () => {
         githubRepoUrl: 'https://github.com/mui/base-ui',
         githubPrNumber: 973,
         matchedRepoId: 973,
+        assessmentSetup: {
+          status: 'reviewable_task_assigned',
+          kind: 'github_pr',
+          source: 'matched_repo_id',
+          blocksPositiveAssessment: false,
+          message: 'PIPE matched a reviewable source-backed PR task.',
+          lastDeliveredUrl: deliveredUrl,
+          lastDeliveredUrlState: 'active',
+          lastDeliveredUrlMessage: 'Candidate assessment link delivered.',
+        },
         linkedMeeting: {
           id: 'meeting-code-review-empty-call',
           title: 'Code review assessment',
@@ -1041,6 +1350,11 @@ describe('InterviewDetailPage', () => {
           narrative: 'Candidate found the interaction regression and gave a concrete blocking reason, but missed one verification detail.',
           strengths: ['Concrete source-backed blocking comment.'],
           growthAreas: ['Probe how they would validate timing cleanup.'],
+          provenance: {
+            rubricDimensionCount: 6,
+            evidenceItemCount: 2,
+            metricCount: 5,
+          },
           updatedAt: '2026-06-23T01:00:00.000Z',
         },
       }),
@@ -1049,6 +1363,16 @@ describe('InterviewDetailPage', () => {
     renderDetail();
 
     await flushAsyncUpdates();
+    const priority = screen.getByTestId('interview-code-review-priority-cockpit');
+    expect(priority).toHaveTextContent('Decision cockpit');
+    expect(priority).toHaveTextContent('Candidate requested changes');
+    expect(priority).toHaveTextContent('Usable with calibration');
+    expect(priority).toHaveTextContent('Advance with focused probe');
+    const linkPanel = screen.getByTestId('interview-assessment-link');
+    expect(linkPanel).toHaveTextContent('Assessment invite');
+    expect(
+      priority.compareDocumentPosition(linkPanel) & Node.DOCUMENT_POSITION_FOLLOWING,
+    ).toBeTruthy();
     const decision = screen.getByTestId('interview-code-review-decision-summary');
     expect(decision).toHaveTextContent('Candidate requested changes');
     const hiringReadout = screen.getByTestId('interview-code-review-hiring-readout');
@@ -1075,22 +1399,22 @@ describe('InterviewDetailPage', () => {
     expect(decision).toHaveTextContent('Probe how they would validate timing cleanup.');
     expect(decision).toHaveTextContent('Score validity');
     expect(decision).toHaveTextContent('Usable with calibration');
-    expect(decision).toHaveTextContent('Score, review comments, developer pushback, and match proof are present');
+    expect(decision).toHaveTextContent('Score, review comments, implementation-author replies, and match proof are present');
     expect(decision).toHaveTextContent('Assignment trust');
     expect(decision).toHaveTextContent('Matched');
     expect(decision).toHaveTextContent('PIPE selected this challenge from source-backed candidate evidence');
-    expect(decision).toHaveTextContent('Use the annotated lines and developer pushback to judge whether the requested changes are concrete, source-backed, and worth blocking the PR.');
+    expect(decision).toHaveTextContent('Use the annotated lines and implementation-author replies to judge whether the requested changes are concrete, source-backed, and worth blocking the PR.');
     expect(decision).toHaveTextContent('Strong assessment fit');
     expect(decision).toHaveTextContent('72/100 Adequate');
-    expect(decision).toHaveTextContent('1 pushback thread');
+    expect(decision).toHaveTextContent('1 implementation-author reply thread');
     const scoreSummary = screen.getByTestId('interview-code-review-score-summary');
     expect(scoreSummary).toHaveTextContent('Signal basis');
     expect(scoreSummary).toHaveTextContent('Score report');
     expect(scoreSummary).toHaveTextContent('Scored');
     expect(scoreSummary).toHaveTextContent('Review evidence');
     expect(scoreSummary).toHaveTextContent('1 annotation');
-    expect(scoreSummary).toHaveTextContent('Pushback');
-    expect(scoreSummary).toHaveTextContent('1 thread');
+    expect(scoreSummary).toHaveTextContent('Author replies');
+    expect(scoreSummary).toHaveTextContent('1 implementation-author reply thread');
     expect(scoreSummary).toHaveTextContent('Match proof');
     expect(scoreSummary).toHaveTextContent('1 bridge');
     const scoreTrust = screen.getByTestId('interview-code-review-score-trust');
@@ -1098,14 +1422,21 @@ describe('InterviewDetailPage', () => {
     expect(scoreTrust).toHaveTextContent('Valid because');
     expect(scoreTrust).toHaveTextContent('Scored review');
     expect(scoreTrust).toHaveTextContent('1 annotation');
-    expect(scoreTrust).toHaveTextContent('1 pushback thread');
+    expect(scoreTrust).toHaveTextContent('1 implementation-author reply thread');
     expect(scoreTrust).toHaveTextContent('1 evidence bridge');
     expect(scoreTrust).toHaveTextContent('strong match gate');
     expect(scoreTrust).toHaveTextContent('Calibrate because');
     expect(scoreTrust).toHaveTextContent('adequate band');
     expect(scoreTrust).toHaveTextContent('Probe how they would validate timing cleanup.');
+    expect(scoreTrust).toHaveTextContent('Score provenance');
+    expect(scoreTrust).toHaveTextContent('6 rubric dimensions');
+    expect(scoreTrust).toHaveTextContent('2 evidence items');
+    expect(scoreTrust).toHaveTextContent('5 scoring metrics');
     expect(scoreTrust).toHaveTextContent('Use as');
     expect(scoreTrust).toHaveTextContent('source-backed signal, not an automatic decision');
+    expect(screen.queryByTestId('interview-assessment-progress')).toBeNull();
+    expect(decision).not.toHaveTextContent('Not started');
+    expect(decision).not.toHaveTextContent('No assessment session');
     expect(screen.queryByText('Call record')).toBeNull();
     expect(screen.queryByText('Not recorded yet')).toBeNull();
     expect(screen.queryByText('Confidence')).toBeNull();
@@ -1118,6 +1449,145 @@ describe('InterviewDetailPage', () => {
 
     const sourceProof = screen.getByText('Source proof').closest('details');
     expect(sourceProof).not.toHaveAttribute('open');
+    expect(sourceProof?.querySelector('summary')).toHaveTextContent(
+      'candidate-repo evidence bridges, candidate evidence, role evidence, repo evidence, and scoring provenance',
+    );
+  });
+
+  it('labels failed code-review scoring as unavailable instead of pending', async () => {
+    mocks.api.get.mockResolvedValueOnce({
+      interview: makeInterview({
+        interviewType: 'CODE_REVIEW',
+        status: 'COMPLETED',
+        githubRepoUrl: 'https://github.com/mui/base-ui',
+        githubPrNumber: 973,
+        matchedRepoId: 973,
+        submissionJson: JSON.stringify({
+          type: 'CODE_REVIEW',
+          verdict: 'request_changes',
+          summary: 'Candidate requested changes with one concrete blocker.',
+          annotations: [
+            {
+              file: 'packages/react/src/popover/root/usePopoverRoot.ts',
+              line: 60,
+              severity: 'major',
+              comment: 'Add a regression test for impatient trigger clicks.',
+            },
+          ],
+          transcript: {
+            rounds: [
+              {
+                round: 1,
+                reviewer_comments: [
+                  {
+                    id: 'comment-1',
+                    file: 'packages/react/src/popover/root/usePopoverRoot.ts',
+                    line: 60,
+                    severity: 'major',
+                    comment: 'Add a regression test for impatient trigger clicks.',
+                  },
+                ],
+                implementer_responses: [
+                  {
+                    to_comment_id: 'comment-1',
+                    move: 'comment',
+                    content: 'Good catch. I will add coverage around the impatient click path.',
+                  },
+                ],
+              },
+            ],
+          },
+        }),
+        codeReviewMatch: {
+          status: 'MATCHED',
+          matchRunId: 'match-run-score-failed',
+          packetId: 'packet-score-failed',
+          summary: 'Matched source-backed React interaction evidence to the Base UI popover PR.',
+          score: 0.82,
+          assessmentQuality: {
+            verdict: 'STRONG',
+            score: 10,
+            maxScore: 12,
+            metrics: [],
+          },
+          reviewProfile: null,
+          validatorAgent: {
+            agentName: 'quality-gate',
+            agentVersion: '1',
+            mode: 'source_backed',
+            verdict: 'PASSED',
+            rationale: 'The match is grounded in candidate and repo evidence.',
+            checks: [],
+            sourceBridge: {
+              prNumber: 973,
+              candidateSourceCount: 2,
+              roleSourceCount: 0,
+              repoSourceCount: 4,
+              alignedDemandCount: 4,
+              stretchCount: 0,
+              provenanceComplete: true,
+            },
+          },
+          roleSources: [],
+          evidence: [],
+          evidenceHyperedges: [
+            {
+              relation: 'candidate_repo_evidence_alignment',
+              label: 'Candidate evidence bridge 1',
+              pairScore: 0.74,
+              nodes: [
+                {
+                  kind: 'person_evidence',
+                  label: 'Person evidence',
+                  sourceRef: {
+                    exactText: 'Reviewed React popover timing behavior.',
+                    locator: 'resume:span-1',
+                  },
+                },
+                {
+                  kind: 'repo_challenge',
+                  label: 'Repo challenge',
+                  sourceRef: {
+                    exactText: 'click = useClick(context, { enabled: clickEnabled })',
+                    locator: 'packages/react/src/popover/root/usePopoverRoot.ts',
+                  },
+                },
+              ],
+            },
+          ],
+          gaps: [],
+        },
+        codeReviewScore: {
+          reviewSessionId: 'review-session-score-failed',
+          status: 'scoring_failed',
+          score: null,
+          band: null,
+          narrative: null,
+          strengths: [],
+          growthAreas: [],
+          updatedAt: '2026-06-23T01:00:00.000Z',
+        },
+      }),
+    });
+
+    renderDetail();
+
+    await flushAsyncUpdates();
+    const decision = screen.getByTestId('interview-code-review-decision-summary');
+    const hiringReadout = screen.getByTestId('interview-code-review-hiring-readout');
+    expect(hiringReadout).toHaveTextContent('Score unavailable');
+    expect(hiringReadout).toHaveTextContent('Retry scoring or review manually');
+    expect(decision).toHaveTextContent('Score validity');
+    expect(decision).toHaveTextContent('Score unavailable');
+    expect(decision).toHaveTextContent('Scoring failed, so this assessment is not a scored hiring signal.');
+    expect(decision).toHaveTextContent('Recommended next step');
+    expect(decision).toHaveTextContent('Retry scoring or review manually');
+    expect(decision).toHaveTextContent('Submitted review can be read as source-backed raw evidence');
+    expect(decision).toHaveTextContent('Uncertainty');
+    expect(decision).toHaveTextContent('Score unavailable');
+    expect(decision).toHaveTextContent('no scored assessment should drive a hiring decision');
+    expect(decision).not.toHaveTextContent('Wait for scoring');
+    expect(decision).not.toHaveTextContent('scoring pending');
   });
 
   it('labels manual repo tasks as assignment evidence, not automatic candidate-fit proof', async () => {
@@ -1148,6 +1618,148 @@ describe('InterviewDetailPage', () => {
     expect(assessmentAssignment).toHaveTextContent('A recruiter supplied a repo-only task packet.');
     expect(assessmentAssignment).not.toHaveTextContent('PIPE-matched challenge');
     expect(screen.queryByTestId('interview-code-review-decision-summary')).toBeNull();
+  });
+
+  it('keeps manual scored PR proof wording honest and deduped', async () => {
+    mocks.api.get.mockResolvedValueOnce({
+      interview: makeInterview({
+        interviewType: 'CODE_REVIEW',
+        status: 'COMPLETED',
+        candidateId: 'candidate-manual-1',
+        githubRepoUrl: 'https://github.com/mui/base-ui',
+        githubPrNumber: 973,
+        submissionJson: JSON.stringify({
+          type: 'CODE_REVIEW',
+          verdict: 'request_changes',
+          summary: 'Candidate requested changes with one concrete blocker.',
+          annotations: [
+            { file: 'packages/react/src/popover/root/usePopoverRoot.ts', line: 60, comment: 'Add a regression test.' },
+          ],
+          transcript: {
+            rounds: [
+              {
+                round: 1,
+                reviewer_comments: [
+                  { id: 1, file: 'packages/react/src/popover/root/usePopoverRoot.ts', line: 60, comment: 'Add a regression test.' },
+                ],
+                implementer_responses: [
+                  { to_comment_id: 1, move: 'comment', content: 'Good catch. I will add coverage.' },
+                ],
+              },
+            ],
+          },
+        }),
+        codeReviewMatch: {
+          status: 'MATCHED',
+          matchRunId: 'manual-match-run',
+          packetId: 'manual-packet',
+          summary: 'Manual override: recruiter-selected source-backed review challenge.',
+          score: null,
+          assessmentQuality: {
+            verdict: 'USABLE',
+            score: 8,
+            maxScore: 12,
+            metrics: [
+              {
+                id: 'pr_reviewability',
+                label: 'PR reviewability',
+                score: 2,
+                maxScore: 2,
+                reason: 'The selected PR has a concrete behavior diff.',
+              },
+            ],
+          },
+          reviewProfile: null,
+          validatorAgent: {
+            agentName: 'source_backed_match_validator',
+            agentVersion: 'v1',
+            mode: 'deterministic',
+            verdict: 'PASSED',
+            rationale: 'Recruiter-selected PR #973 is accepted as a manual CODE_REVIEW override because it has a production-ready source-backed review packet. Candidate-specific CV alignment is not inferred on this path.',
+            checks: [
+              {
+                id: 'source_backed_manual_override',
+                passed: true,
+                reason: 'The recruiter explicitly selected this PR, so PIPE validates reviewability and provenance instead of claiming an automatic CV match.',
+              },
+            ],
+            sourceBridge: {
+              prNumber: 973,
+              candidateSourceCount: 0,
+              repoSourceCount: 1,
+              roleSourceCount: 0,
+              alignedDemandCount: 1,
+              stretchCount: 0,
+              provenanceComplete: true,
+            },
+          },
+          roleSources: [],
+          evidence: [],
+          evidenceHyperedges: [],
+          gaps: [],
+        },
+        codeReviewScore: {
+          reviewSessionId: 'manual-review-session',
+          status: 'scored',
+          score: 68,
+          band: 'adequate',
+          narrative: 'Candidate found one issue but missed implementation risks.',
+          strengths: ['Concrete blocker.'],
+          growthAreas: ['Probe implementation trade-offs.'],
+          provenance: {
+            rubricDimensionCount: 6,
+            evidenceItemCount: 6,
+            metricCount: 8,
+          },
+          updatedAt: '2026-06-23T01:00:00.000Z',
+        },
+      }),
+    });
+
+    renderDetail();
+
+    await flushAsyncUpdates();
+    const decision = screen.getByTestId('interview-code-review-decision-summary');
+    expect(decision).toHaveTextContent('Review assignment fairness before advancing');
+    expect(decision).not.toHaveTextContent('Advance with focused probe');
+    const scoreValidity = screen.getByTestId('interview-code-review-score-validity');
+    expect(scoreValidity).toHaveTextContent('Usable with assignment calibration');
+    expect(scoreValidity).toHaveTextContent('manual PR selection does not prove candidate-fit');
+    expect(scoreValidity).toHaveTextContent('Calibrate assignment fairness before making a hiring decision');
+    const scoreTrust = screen.getByTestId('interview-code-review-score-trust');
+    expect(scoreTrust).toHaveTextContent('usable match gate');
+    const gateMentions = scoreTrust.textContent?.match(/usable match gate/g) ?? [];
+    expect(gateMentions).toHaveLength(1);
+    expect(scoreTrust).toHaveTextContent('no rendered source bridge');
+    const scoreSummary = screen.getByTestId('interview-code-review-score-summary');
+    expect(scoreSummary).toHaveTextContent('Match proof');
+    expect(scoreSummary).toHaveTextContent('Assignment evidence only');
+    expect(scoreSummary).not.toHaveTextContent('8/12 Usable');
+    const explanation = screen.getByTestId('interview-code-review-match-explanation');
+    expect(explanation).toHaveTextContent('Assignment proof');
+    expect(explanation).not.toHaveTextContent('Valid because');
+    expect(explanation).toHaveTextContent('1 repo source');
+    expect(explanation).toHaveTextContent('quality 8/12 Usable');
+    expect(explanation).toHaveTextContent('Manual PR');
+    expect(explanation).toHaveTextContent('do not read the assignment itself as candidate-fit proof');
+
+    const sourceProof = screen.getByText('Source proof').closest('details');
+    expect(sourceProof).not.toHaveAttribute('open');
+    expect(sourceProof?.querySelector('summary')).toHaveTextContent('repo evidence and scoring provenance');
+    expect(sourceProof?.querySelector('summary')).not.toHaveTextContent('candidate, role, repo');
+
+    fireEvent.click(screen.getAllByTestId('interview-open-person-profile')[0]!);
+    const state = screen.getByTestId('person-route-state').textContent ?? '';
+    const routeState = JSON.parse(state) as {
+      selectedCodeReviewDecision?: {
+        basisItems?: Array<{ label: string; value: string; satisfied: boolean }>;
+      };
+    };
+    expect(routeState.selectedCodeReviewDecision?.basisItems).toContainEqual({
+      label: 'Match proof',
+      value: 'Assignment evidence only',
+      satisfied: false,
+    });
   });
 
   it('shows assessment progress as a quiet hiring-manager snapshot', async () => {
@@ -1249,7 +1861,7 @@ describe('InterviewDetailPage', () => {
     expect(progress).toHaveTextContent('Assessment progress');
     expect(progress).toHaveTextContent('Evaluated');
     expect(progress).toHaveTextContent('No further assessment action is required.');
-    expect(progress).toHaveTextContent('challenge, chat, workspace telemetry, room actions, commit, AI use, transcript, tests');
+    expect(progress).toHaveTextContent('challenge, chat, workspace telemetry, tool activity, commit, AI use, transcript, tests');
     expect(progress).toHaveTextContent('1 Test run');
     expect(progress).toHaveTextContent('ffffffffff');
     expect(progress).toHaveTextContent('fix the popover cleanup regression.');
@@ -1310,7 +1922,7 @@ describe('InterviewDetailPage', () => {
     expect(hiringReadout).toHaveTextContent('Repo fit not proven');
     expect(hiringReadout).toHaveTextContent('Schedule evidence call');
     expect(hiringReadout).toHaveTextContent(SOURCE_BACKED_WORK_EVIDENCE_QUESTION);
-    expect(decision).toHaveTextContent('Resolve the missing source-backed evidence before relying on this code-review assignment.');
+    expect(decision).toHaveTextContent('Resolve the source-backed match quality gate before sending or trusting this code-review assignment.');
     expect(decision).toHaveTextContent('NEEDS MORE EVIDENCE');
     expect(decision).toHaveTextContent('resolve missing evidence');
     expect(decision).toHaveTextContent('Recommended next step');
@@ -1329,7 +1941,7 @@ describe('InterviewDetailPage', () => {
     expect(explanation).toHaveTextContent('NEEDS MORE EVIDENCE');
     expect(explanation).toHaveTextContent('Why selected');
     expect(explanation).toHaveTextContent('No quality-gated source-backed PR challenge was selected.');
-    expect(explanation).toHaveTextContent('Valid because');
+    expect(explanation).toHaveTextContent('Missing proof');
     expect(explanation).toHaveTextContent('Missing: The deterministic repo matcher did not return a quality-gated PR.');
     expect(explanation).toHaveTextContent('Do not over-trust because');
     expect(explanation).toHaveTextContent('Repo fit is not source-backed');
@@ -1349,6 +1961,70 @@ describe('InterviewDetailPage', () => {
     expect(evidencePlan).toHaveTextContent('What good evidence looks like');
     expect(evidencePlan).toHaveTextContent('A short recorded or written answer with a concrete project, personal actions, technical constraints, and verification details.');
     expect(evidencePlan).toHaveTextContent('CREATE FOLLOW-UP ASSESSMENT');
+  });
+
+  it('treats matched code-review PRs with needs-review quality as unsafe assignments', async () => {
+    mocks.api.get.mockResolvedValueOnce({
+      interview: makeInterview({
+        interviewType: 'CODE_REVIEW',
+        status: 'INVITED',
+        githubRepoUrl: 'https://github.com/mui/base-ui',
+        githubPrNumber: 973,
+        codeReviewMatch: {
+          status: 'MATCHED',
+          matchRunId: 'match-run-needs-review',
+          packetId: 'packet-needs-review',
+          summary: 'Matched 5 source-backed demands (0 stretch).',
+          score: 0.91,
+          assessmentQuality: {
+            verdict: 'NEEDS_REVIEW',
+            score: 9,
+            maxScore: 12,
+            metrics: [{
+              id: 'contrast_separation',
+              label: 'Contrast separation',
+              score: 0,
+              maxScore: 2,
+              reason: 'The selected challenge leads the next comparable challenge by 1%.',
+            }],
+          },
+          reviewProfile: null,
+          validatorAgent: {
+            agentName: 'quality-gate',
+            agentVersion: '1',
+            mode: 'source_backed',
+            verdict: 'NEEDS_REVIEW',
+            rationale: 'The selected PR is source-backed, but contrast separation is too weak.',
+            checks: [],
+            sourceBridge: {
+              prNumber: 973,
+              candidateSourceCount: 5,
+              roleSourceCount: 1,
+              repoSourceCount: 17,
+              alignedDemandCount: 5,
+              stretchCount: 0,
+              provenanceComplete: true,
+            },
+          },
+          roleSources: [],
+          evidence: [],
+          evidenceHyperedges: [],
+          gaps: ['The selected challenge leads the next comparable challenge by 1%.'],
+          evidencePlan: [],
+        },
+      }),
+    });
+
+    renderDetail();
+
+    await flushAsyncUpdates();
+    const decision = screen.getByTestId('interview-code-review-decision-summary');
+    expect(decision).toHaveTextContent('No confident repo match yet');
+    expect(decision).toHaveTextContent('No safe challenge');
+    expect(decision).toHaveTextContent('Review challenge assignment');
+    expect(decision).toHaveTextContent('Do not rely on score yet');
+    expect(decision).toHaveTextContent('The selected challenge leads the next comparable challenge by 1%.');
+    expect(decision).not.toHaveTextContent('The PR assignment is ready. Wait for the candidate review');
   });
 
   it('keeps accumulated person context out of the meeting evidence timeline', async () => {
@@ -1421,6 +2097,42 @@ describe('InterviewDetailPage', () => {
           relationships: [],
         },
         relatedEvidenceInterviews: [
+          {
+            id: 'interview-low-value-screening-1',
+            relationship: 'same_person_assessment',
+            interviewType: 'SCREENING',
+            meetingType: 'SCREENING_INTERVIEW',
+            status: 'INVITED',
+            scheduledAt: null,
+            candidateId: 'candidate-low-1',
+            contactId: null,
+            displayName: 'Low value screening 1',
+            primaryEmail: 'ada@example.com',
+            linkedMeetingId: null,
+            transcriptStatus: null,
+            assessmentSessionId: null,
+            assessmentSessionState: null,
+            createdAt: '2026-06-24T19:10:00.000Z',
+            updatedAt: '2026-06-24T19:10:00.000Z',
+          },
+          {
+            id: 'interview-low-value-screening-2',
+            relationship: 'same_person_assessment',
+            interviewType: 'SCREENING',
+            meetingType: 'SCREENING_INTERVIEW',
+            status: 'INVITED',
+            scheduledAt: null,
+            candidateId: 'candidate-low-2',
+            contactId: null,
+            displayName: 'Low value screening 2',
+            primaryEmail: 'ada@example.com',
+            linkedMeetingId: null,
+            transcriptStatus: null,
+            assessmentSessionId: null,
+            assessmentSessionState: null,
+            createdAt: '2026-06-24T19:20:00.000Z',
+            updatedAt: '2026-06-24T19:20:00.000Z',
+          },
           {
             id: 'context-call-1',
             relationship: 'code_review_evidence_follow_up',
@@ -1535,7 +2247,7 @@ describe('InterviewDetailPage', () => {
     expect(relatedSummary).toHaveTextContent('technical assessments');
     expect(relatedSummary).toHaveTextContent('1');
     expect(relatedSummary).toHaveTextContent('ready transcripts');
-    expect(related).toHaveTextContent('Showing 4 of 5 related context previews.');
+    expect(related).toHaveTextContent('Showing 4 highest-value related context previews before 3 lower-priority related interviews kept on the person graph.');
     expect(related).toHaveTextContent('Open full person graph');
     expect(related).toHaveTextContent('Evidence follow-up');
     expect(related).toHaveTextContent('assessment in progress');
@@ -1548,12 +2260,38 @@ describe('InterviewDetailPage', () => {
     expect(related).toHaveTextContent('Background call');
     expect(related).toHaveTextContent('Dev challenge');
     expect(related).not.toHaveTextContent('Hidden extra context');
+    expect(related).not.toHaveTextContent('Low value screening 1');
+    expect(related).not.toHaveTextContent('Low value screening 2');
     expect(related).not.toHaveTextContent('interview-second-code-review');
     fireEvent.click(screen.getAllByTestId('interview-open-person-profile')[0]!);
     expect(screen.getByTestId('person-route-echo')).toHaveTextContent('person-graph-1');
     expect(screen.queryByTestId('interview-person-context-timeline')).toBeNull();
     expect(screen.queryByText('Code Review Context Call Recommendation')).toBeNull();
     expect(screen.queryByText('Scheduled Interview Invite Delivery')).toBeNull();
+  });
+
+  it('keeps the single-meeting scope visible before person context exists', async () => {
+    mocks.api.get.mockResolvedValueOnce({
+      interview: makeInterview({
+        interviewType: 'CODE_REVIEW',
+        status: 'INVITED',
+        contactId: 'person-without-context',
+        recipientName: 'Sparse Candidate',
+        recipientEmail: 'sparse@example.com',
+        livingContext: null,
+        relatedEvidenceInterviews: [],
+      }),
+    });
+
+    renderDetail();
+
+    await flushAsyncUpdates();
+    const relationship = screen.getByTestId('interview-person-context-relationship');
+    expect(relationship).toHaveTextContent('Person context rollup');
+    expect(relationship).toHaveTextContent('0 evidence moments on the person profile');
+    expect(relationship).toHaveTextContent('This meeting remains scoped to its own invite, room, transcript, and assessment evidence.');
+    expect(screen.getByText('Person context will appear after PIPE has exact source evidence from the invite, transcript, assessment, or code-review material.')).toBeVisible();
+    expect(screen.queryByTestId('interview-related-evidence-interviews')).toBeNull();
   });
 
   it('labels repo-only code-review rows as setup gaps instead of assignments', async () => {
@@ -1572,6 +2310,8 @@ describe('InterviewDetailPage', () => {
           source: 'contact_first_invite',
           blocksPositiveAssessment: true,
           message: 'This contact-first assessment invite has no candidate evidence yet.',
+          nextAction: 'COLLECT_CANDIDATE_EVIDENCE',
+          nextActionLabel: 'Send the intake link or schedule a context call.',
           lastDeliveredUrl: null,
           lastDeliveredUrlState: null,
           lastDeliveredUrlMessage: null,
@@ -1588,6 +2328,8 @@ describe('InterviewDetailPage', () => {
     expect(setupGap).toHaveTextContent('Jorybraun/agentic-engineering-book');
     expect(setupGap).toHaveTextContent('Why it is not ready');
     expect(setupGap).toHaveTextContent("No reviewable PR or source-backed match is attached yet, so this should not be treated as the candidate's code-review assignment.");
+    expect(setupGap).toHaveTextContent('Next action');
+    expect(setupGap).toHaveTextContent('Send the intake link or schedule a context call.');
   });
 
   it('shows completed evidence-plan refresh state instead of the old missing-evidence prompt', async () => {
@@ -1667,12 +2409,16 @@ describe('InterviewDetailPage', () => {
     expect(screen.queryByTestId('interview-code-review-evidence-plan')).toBeNull();
   });
 
-  it('shows a copyable assessment link for code-review interviews after invite delivery', async () => {
+  it('labels active assessment links without a source-backed PR as profile handoff links', async () => {
     const deliveredUrl = 'https://app-dev.hire-pipe.com/assess/recruiter-visible-token';
     const writeText = vi.fn().mockResolvedValue(undefined);
     Object.defineProperty(navigator, 'clipboard', {
       configurable: true,
       value: { writeText },
+    });
+    Object.defineProperty(document, 'execCommand', {
+      configurable: true,
+      value: vi.fn().mockReturnValue(false),
     });
     mocks.api.get.mockResolvedValueOnce({
       interview: makeInterview({
@@ -1695,14 +2441,15 @@ describe('InterviewDetailPage', () => {
     const linkPanel = screen.getByTestId('interview-assessment-link');
     expect(linkPanel).toHaveTextContent('Assessment invite');
     expect(linkPanel).toHaveTextContent('Candidate assessment link');
-    expect(linkPanel).toHaveTextContent('One-use candidate invite');
+    expect(linkPanel).toHaveTextContent('Candidate evidence is available for matching, but no source-backed PR task has been assigned yet.');
     expect(screen.getByTestId('interview-assessment-link-state')).toHaveTextContent('Active');
     expect(screen.getByTestId('interview-assessment-link-state')).toHaveTextContent('Copyable one-use link');
     expect(screen.getByTestId('interview-assessment-link-state')).toHaveTextContent('ASSESSMENT');
-    expect(screen.getByTestId('interview-assessment-link-state')).toHaveTextContent('Awaiting candidate submission');
+    expect(screen.getByTestId('interview-assessment-link-state')).toHaveTextContent('Profile handoff, no PR challenge');
     expect(screen.getByTestId('interview-assessment-link-state')).toHaveTextContent('RECIPIENT');
     expect(screen.getByTestId('interview-assessment-link-state')).toHaveTextContent('Ada Candidate · ada@example.com');
-    expect(screen.getByTestId('interview-assessment-link-state')).toHaveTextContent('Copy the candidate link, or resend if the candidate needs a new email.');
+    expect(screen.getByTestId('interview-assessment-link-state')).toHaveTextContent('Assign or refresh a source-backed PR before treating this as a code-review assessment.');
+    expect(linkPanel).toHaveTextContent('The candidate can use this link for profile intake only; PIPE will show a profile-received handoff until a source-backed PR is assigned.');
     expect(linkPanel).toHaveTextContent('CANDIDATE ASSESSMENT URL');
     expect(screen.getByDisplayValue(deliveredUrl)).toBeTruthy();
 
@@ -1751,6 +2498,57 @@ describe('InterviewDetailPage', () => {
     expect(execCommand).toHaveBeenCalledWith('copy');
     expect(document.activeElement).toBe(input);
     expect(screen.getByTestId('interview-assessment-link')).toHaveTextContent('Assessment link copied.');
+  });
+
+  it('labels active open-source assessment room links as controlled workspace links', async () => {
+    const deliveredUrl = 'https://room-dev.hire-pipe.com/room/workspace-token';
+    const writeText = vi.fn().mockResolvedValue(undefined);
+    Object.defineProperty(navigator, 'clipboard', {
+      configurable: true,
+      value: { writeText },
+    });
+    Object.defineProperty(document, 'execCommand', {
+      configurable: true,
+      value: vi.fn().mockReturnValue(false),
+    });
+    mocks.api.get.mockResolvedValueOnce({
+      interview: makeInterview({
+        interviewType: 'OPEN_SOURCE_BUG_FIX',
+        candidateId: 'candidate-1',
+        assessmentSetup: {
+          status: 'reviewable_task_assigned',
+          kind: 'github_pr',
+          source: 'recruiter_manual_override',
+          blocksPositiveAssessment: false,
+          message: 'A concrete GitHub repo task was assigned by the recruiter.',
+          lastDeliveredUrl: deliveredUrl,
+          lastDeliveredUrlState: 'active',
+        },
+      }),
+    });
+
+    renderDetail();
+
+    await flushAsyncUpdates();
+    const linkPanel = screen.getByTestId('interview-assessment-link');
+    expect(linkPanel).toHaveTextContent('Candidate workspace room link');
+    expect(linkPanel).toHaveTextContent('Controlled workspace room invite.');
+    expect(linkPanel).toHaveTextContent('video, chat, terminal, code-server, AI use, and commit evidence');
+    expect(screen.getByTestId('interview-assessment-link-state')).toHaveTextContent('Active');
+    expect(screen.getByTestId('interview-assessment-link-state')).toHaveTextContent('Copyable workspace room link');
+    expect(screen.getByTestId('interview-assessment-link-state')).toHaveTextContent('Share the candidate workspace link; open the host room to watch progress.');
+    expect(linkPanel).toHaveTextContent('CANDIDATE WORKSPACE ROOM URL');
+    expect(linkPanel).toHaveTextContent('COPY WORKSPACE LINK');
+    expect(linkPanel).toHaveTextContent('RESEND WORKSPACE INVITE');
+    expect(linkPanel).not.toHaveTextContent('Copyable one-use link');
+    expect(linkPanel).not.toHaveTextContent('COPY CANDIDATE LINK');
+    expect(screen.getByDisplayValue(deliveredUrl)).toBeTruthy();
+
+    fireEvent.click(screen.getByText('COPY WORKSPACE LINK'));
+    await flushAsyncUpdates();
+
+    expect(writeText).toHaveBeenCalledWith(deliveredUrl);
+    expect(linkPanel).toHaveTextContent('Workspace link copied.');
   });
 
   it('keeps the assessment link selected when browser clipboard APIs are blocked', async () => {
@@ -1873,12 +2671,16 @@ describe('InterviewDetailPage', () => {
     expect(screen.getByDisplayValue(freshUrl)).toBeTruthy();
   });
 
-  it('treats stale assessment links as historical and blocks copying the old token', async () => {
-    const deliveredUrl = 'https://app-dev.hire-pipe.com/assess/old-token';
+  it('treats stale workspace room links as historical and blocks copying the old token', async () => {
+    const deliveredUrl = 'https://room-dev.hire-pipe.com/room/old-token';
     const writeText = vi.fn().mockResolvedValue(undefined);
     Object.defineProperty(navigator, 'clipboard', {
       configurable: true,
       value: { writeText },
+    });
+    Object.defineProperty(document, 'execCommand', {
+      configurable: true,
+      value: vi.fn().mockReturnValue(false),
     });
     mocks.api.get.mockResolvedValueOnce({
       interview: makeInterview({
@@ -1903,13 +2705,13 @@ describe('InterviewDetailPage', () => {
     const linkPanel = screen.getByTestId('interview-assessment-link');
     expect(linkPanel).toHaveTextContent('This is an older delivered assessment link.');
     expect(screen.getByTestId('interview-assessment-link-state')).toHaveTextContent('Stale');
-    expect(screen.getByTestId('interview-assessment-link-state')).toHaveTextContent('Older token, do not share');
+    expect(screen.getByTestId('interview-assessment-link-state')).toHaveTextContent('Older room link, do not share');
     expect(screen.getByTestId('interview-assessment-link-state')).toHaveTextContent('ASSESSMENT');
     expect(screen.getByTestId('interview-assessment-link-state')).toHaveTextContent('No current assessment evidence');
-    expect(screen.getByTestId('interview-assessment-link-state')).toHaveTextContent('Resend the invite before sharing a candidate assessment link.');
-    expect(linkPanel).toHaveTextContent('LAST CANDIDATE ASSESSMENT URL');
-    expect(linkPanel).toHaveTextContent('RESEND ASSESSMENT INVITE');
-    expect(screen.queryByText('COPY CANDIDATE LINK')).toBeNull();
+    expect(screen.getByTestId('interview-assessment-link-state')).toHaveTextContent('Resend the invite before sharing this workspace room link.');
+    expect(linkPanel).toHaveTextContent('LAST CANDIDATE WORKSPACE ROOM URL');
+    expect(linkPanel).toHaveTextContent('RESEND WORKSPACE INVITE');
+    expect(screen.queryByText('COPY WORKSPACE LINK')).toBeNull();
     expect(screen.getByDisplayValue(deliveredUrl)).toBeTruthy();
     expect(writeText).not.toHaveBeenCalled();
   });
@@ -2371,6 +3173,184 @@ describe('InterviewDetailPage', () => {
     expect(screen.getByTestId('person-route-echo')).toHaveTextContent('person-graph-1');
   });
 
+  it('passes a compact code-review decision when opening the person profile', async () => {
+    mocks.api.get.mockResolvedValueOnce({
+      interview: makeInterview({
+        interviewType: 'CODE_REVIEW',
+        candidateId: 'candidate-1',
+        contactId: null,
+        githubRepoUrl: 'https://github.com/acme/widgets',
+        githubPrNumber: 42,
+        livingContext: {
+          person: {
+            personId: 'person-code-review-1',
+            workspacePersonId: 'workspace-person-1',
+            applicationId: 'application-1',
+            displayName: 'Ada Candidate',
+            primaryEmail: 'ada@example.com',
+            primaryPhone: null,
+            relationshipSummary: null,
+            applicationStatus: null,
+            pipelineId: null,
+            roles: [],
+          },
+          summary: {
+            interactionCount: 18,
+            artifactCount: 19,
+            contextRecordCount: 24,
+            assertionCount: 18,
+            signalCount: 0,
+            sourceSpanCount: 25,
+          },
+          interactions: [],
+          artifacts: [],
+          contextRecords: [],
+          assertions: [],
+          signals: [],
+          relationships: [],
+        },
+        codeReviewMatch: {
+          status: 'MATCHED',
+          matchRunId: 'match-run-1',
+          packetId: 'packet-1',
+          summary: 'Matched to a source-backed review challenge.',
+          score: 0.87,
+          assessmentQuality: null,
+          reviewProfile: null,
+          validatorAgent: null,
+          roleSources: [],
+          evidence: [],
+          evidenceHyperedges: [],
+          gaps: [],
+          evidencePlan: [],
+          evidenceFollowUp: null,
+          evidenceRefresh: null,
+        },
+        codeReviewScore: {
+          reviewSessionId: 'review-session-1',
+          status: 'scored',
+          score: 82,
+          band: 'strong',
+          narrative: 'Candidate found the missing retry test and defended the review.',
+          strengths: ['Found the release-blocking risk.'],
+          growthAreas: ['Probe timing trade-offs.'],
+          provenance: {
+            rubricDimensionCount: 6,
+            evidenceItemCount: 2,
+            metricCount: 5,
+          },
+          updatedAt: '2026-06-23T00:00:00.000Z',
+        },
+      }),
+    });
+
+    renderDetail();
+    await flushAsyncUpdates();
+
+    fireEvent.click(screen.getAllByTestId('interview-open-person-profile')[0]!);
+
+    expect(screen.getByTestId('person-route-echo')).toHaveTextContent('person-code-review-1');
+    const state = screen.getByTestId('person-route-state').textContent ?? '';
+    expect(state).toContain('selectedCodeReviewDecision');
+    expect(state).toContain('Code-review decision');
+    expect(state).toContain('82/100 Strong');
+    expect(state).toContain('6 rubric dimensions');
+    expect(state).toContain('2 evidence items');
+    expect(state).toContain('5 scoring metrics');
+    expect(state).toContain('acme/widgets PR #42');
+    expect(state).not.toContain('contextRecords":[{');
+  });
+
+  it('passes weak code-review scores to the person profile as assignment-fairness decisions', async () => {
+    mocks.api.get.mockResolvedValueOnce({
+      interview: makeInterview({
+        interviewType: 'CODE_REVIEW',
+        status: 'COMPLETED',
+        candidateId: 'candidate-weak-1',
+        contactId: null,
+        recipientName: 'Casey Candidate',
+        recipientEmail: 'casey@example.com',
+        githubRepoUrl: 'https://github.com/mui/base-ui',
+        githubPrNumber: 973,
+        livingContext: {
+          person: {
+            personId: 'person-weak-code-review-1',
+            workspacePersonId: 'workspace-person-weak-1',
+            applicationId: 'application-weak-1',
+            displayName: 'Casey Candidate',
+            primaryEmail: 'casey@example.com',
+            primaryPhone: null,
+            relationshipSummary: null,
+            applicationStatus: null,
+            pipelineId: null,
+            roles: [],
+          },
+          summary: {
+            interactionCount: 4,
+            artifactCount: 6,
+            contextRecordCount: 8,
+            assertionCount: 3,
+            signalCount: 0,
+            sourceSpanCount: 10,
+          },
+          interactions: [],
+          artifacts: [],
+          contextRecords: [],
+          assertions: [],
+          signals: [],
+          relationships: [],
+        },
+        codeReviewMatch: {
+          status: 'MATCHED',
+          matchRunId: 'match-run-weak-1',
+          packetId: 'packet-weak-1',
+          summary: 'Matched to a source-backed review challenge, but the weak score needs fairness review.',
+          score: 0.74,
+          assessmentQuality: null,
+          reviewProfile: null,
+          validatorAgent: null,
+          roleSources: [],
+          evidence: [],
+          evidenceHyperedges: [],
+          gaps: [],
+          evidencePlan: [],
+          evidenceFollowUp: null,
+          evidenceRefresh: null,
+        },
+        codeReviewScore: {
+          reviewSessionId: 'review-session-weak-1',
+          status: 'scored',
+          score: 42,
+          band: 'weak',
+          narrative: 'Candidate missed the core regression risk in the review.',
+          strengths: [],
+          growthAreas: ['Confirm whether the selected PR was fair for their React experience.'],
+          provenance: {
+            rubricDimensionCount: 6,
+            evidenceItemCount: 2,
+            metricCount: 5,
+          },
+          updatedAt: '2026-06-23T00:00:00.000Z',
+        },
+      }),
+    });
+
+    renderDetail();
+    await flushAsyncUpdates();
+
+    fireEvent.click(screen.getAllByTestId('interview-open-person-profile')[0]!);
+
+    expect(screen.getByTestId('person-route-echo')).toHaveTextContent('person-weak-code-review-1');
+    const state = screen.getByTestId('person-route-state').textContent ?? '';
+    expect(state).toContain('selectedCodeReviewDecision');
+    expect(state).toContain('42/100 Weak');
+    expect(state).toContain('mui/base-ui PR #973');
+    expect(state).toContain('Review assignment fairness before rejecting');
+    expect(state).toContain('verify whether this reflects candidate ability, assignment fit, or missing context');
+    expect(state).not.toContain('Schedule targeted follow-up');
+    expect(state).not.toContain('contextRecords":[{');
+  });
+
   it('includes the evidence-plan question when inviting a follow-up assessment candidate', async () => {
     const followUp = makeInterview({
       id: 'context-call-1',
@@ -2573,6 +3553,7 @@ describe('InterviewDetailPage', () => {
     expect(explanation).toHaveTextContent('Why selected');
     expect(explanation).toHaveTextContent('Matched 2 source-backed demands.');
     expect(explanation).toHaveTextContent('Valid because');
+    expect(explanation).not.toHaveTextContent('Assignment proof');
     expect(explanation).toHaveTextContent('1 evidence bridge');
     expect(explanation).toHaveTextContent('quality 0.82');
     expect(explanation).toHaveTextContent('Do not over-trust because');
@@ -2715,7 +3696,7 @@ describe('InterviewDetailPage', () => {
     expect(result).toHaveTextContent('This threshold changes click semantics and needs a focused impatient-click regression.');
   });
 
-  it('shows AI developer pushback threads from submitted code-review transcripts', async () => {
+  it('shows implementation-author reply threads from submitted code-review transcripts', async () => {
     mocks.api.get.mockResolvedValueOnce({
       interview: makeInterview({
         interviewType: 'CODE_REVIEW',
@@ -2784,12 +3765,13 @@ describe('InterviewDetailPage', () => {
     await flushAsyncUpdates();
     const defenseThreads = screen.getByTestId('interview-code-review-defense-threads');
     expect(defenseThreads).toHaveTextContent('Review interaction');
+    expect(defenseThreads).toHaveTextContent('candidate comments and implementation author replies');
     expect(defenseThreads).toHaveTextContent('Candidate comment');
-    expect(defenseThreads).toHaveTextContent('AI developer · pushback · round 1');
+    expect(defenseThreads).toHaveTextContent('Implementation author · author reply · round 1');
     expect(defenseThreads).toHaveTextContent('Can you point to a user-visible failure?');
     expect(defenseThreads).toHaveTextContent('Candidate defense · round 2');
     expect(defenseThreads).toHaveTextContent('keyboard and pointer users can issue the click');
-    expect(defenseThreads).toHaveTextContent('AI developer · comment · round 2');
+    expect(defenseThreads).toHaveTextContent('Implementation author · author comment · round 2');
     expect(defenseThreads).toHaveTextContent('I will add coverage around the impatient click path.');
   });
 
@@ -3001,7 +3983,7 @@ describe('InterviewDetailPage', () => {
     expect(result).toHaveTextContent('This threshold changes click semantics and needs a focused impatient-click regression.');
   });
 
-  it('shows AI developer pushback threads from submitted code-review transcripts', async () => {
+  it('shows implementation-author reply threads from submitted code-review transcripts', async () => {
     mocks.api.get.mockResolvedValueOnce({
       interview: makeInterview({
         interviewType: 'CODE_REVIEW',
@@ -3070,12 +4052,13 @@ describe('InterviewDetailPage', () => {
     await flushAsyncUpdates();
     const defenseThreads = screen.getByTestId('interview-code-review-defense-threads');
     expect(defenseThreads).toHaveTextContent('Review interaction');
+    expect(defenseThreads).toHaveTextContent('candidate comments and implementation author replies');
     expect(defenseThreads).toHaveTextContent('Candidate comment');
-    expect(defenseThreads).toHaveTextContent('AI developer · pushback · round 1');
+    expect(defenseThreads).toHaveTextContent('Implementation author · author reply · round 1');
     expect(defenseThreads).toHaveTextContent('Can you point to a user-visible failure?');
     expect(defenseThreads).toHaveTextContent('Candidate defense · round 2');
     expect(defenseThreads).toHaveTextContent('keyboard and pointer users can issue the click');
-    expect(defenseThreads).toHaveTextContent('AI developer · comment · round 2');
+    expect(defenseThreads).toHaveTextContent('Implementation author · author comment · round 2');
     expect(defenseThreads).toHaveTextContent('I will add coverage around the impatient click path.');
   });
 

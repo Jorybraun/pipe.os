@@ -6,7 +6,8 @@
  */
 
 import { useEffect, useRef, useState } from 'react';
-import { useAuth as useClerkAuth } from '@clerk/react';
+import { isDevProxyRecruiterAuthBypassEnabled } from '../lib/auth/devProxyAuth';
+import { useAuth } from '../providers/DataContext';
 
 export interface RoomStatusNotification {
   interviewId: string;
@@ -34,14 +35,16 @@ function apiBaseUrl(): string {
 }
 
 export function useRoomStatusNotifications(): UseRoomStatusNotificationsResult {
-  const { getToken } = useClerkAuth();
-  const getTokenRef = useRef(getToken);
+  const bypassClerkToken = isDevProxyRecruiterAuthBypassEnabled();
+  const auth = useAuth();
+  const getSessionToken = auth.getSessionToken;
+  const getTokenRef = useRef<() => Promise<string | null>>(async () => null);
   const [updates, setUpdates] = useState<RoomStatusNotification[]>([]);
   const [isConnected, setIsConnected] = useState(false);
 
   useEffect(() => {
-    getTokenRef.current = getToken;
-  }, [getToken]);
+    getTokenRef.current = bypassClerkToken ? async () => null : getSessionToken;
+  }, [bypassClerkToken, getSessionToken]);
 
   useEffect(() => {
     let cancelled = false;

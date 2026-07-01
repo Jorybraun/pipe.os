@@ -11,6 +11,10 @@ const RPC_BASE = (process.env.RPC_BASE || API_BASE).replace(/\/$/, '');
 const VIDEO_ROOM_BASE = (process.env.VIDEO_ROOM_BASE || process.env.ROOM_BASE || 'https://room-dev.hire-pipe.com').replace(/\/$/, '');
 const BASIC_USER = process.env.PIPE_DEV_BASIC_AUTH_USER || process.env.DEV_BASIC_AUTH_USER || '';
 const BASIC_PASSWORD = process.env.PIPE_DEV_BASIC_AUTH_PASSWORD || process.env.DEV_BASIC_AUTH_PASSWORD || '';
+const REQUEST_TIMEOUT_MS = Math.max(
+  1,
+  Number.parseInt(process.env.CODE_REVIEW_SMOKE_REQUEST_TIMEOUT_MS || '20000', 10) || 20_000,
+);
 const SEND_EMAIL = process.env.CODE_REVIEW_SMOKE_SEND_EMAIL === '1';
 const SKIP_BROWSER = process.env.CODE_REVIEW_SMOKE_SKIP_BROWSER === '1';
 const SKIP_RECRUITER_BROWSER = process.env.CODE_REVIEW_SMOKE_SKIP_RECRUITER_BROWSER === '1';
@@ -28,6 +32,14 @@ const EXPECT_AUTOMATCH = process.env.CODE_REVIEW_EXPECT_AUTOMATCH
 const REQUIRE_CONTRAST = process.env.CODE_REVIEW_REQUIRE_CONTRAST
   ?? (!REPO_URL && !PR_NUMBER ? '1' : '0');
 const EXPECT_BLOCKED_MATCH = process.env.CODE_REVIEW_EXPECT_BLOCKED_MATCH === '1';
+const PERSON_RELATED_BOUNDARY = process.env.CODE_REVIEW_SMOKE_PERSON_RELATED_BOUNDARY === '1';
+const RELATED_BOUNDARY_REPO_URL = (
+  process.env.CODE_REVIEW_SMOKE_RELATED_BOUNDARY_REPO_URL
+  || 'https://github.com/facebook/react'
+).trim();
+const RELATED_BOUNDARY_PR_NUMBER = Number(
+  (process.env.CODE_REVIEW_SMOKE_RELATED_BOUNDARY_PR_NUMBER || '1').trim(),
+);
 
 const DEFAULT_RESUME_TEXT = [
   'Senior frontend platform engineer with deep React and TypeScript experience.',
@@ -92,6 +104,11 @@ function assertEnv() {
   if (!RESUME_TEXT) {
     throw new Error('CODE_REVIEW_SMOKE_RESUME_TEXT must not be empty.');
   }
+  if (PERSON_RELATED_BOUNDARY) {
+    if (!RELATED_BOUNDARY_REPO_URL || !Number.isInteger(RELATED_BOUNDARY_PR_NUMBER) || RELATED_BOUNDARY_PR_NUMBER <= 0) {
+      throw new Error('Set CODE_REVIEW_SMOKE_RELATED_BOUNDARY_REPO_URL and CODE_REVIEW_SMOKE_RELATED_BOUNDARY_PR_NUMBER to valid values.');
+    }
+  }
 }
 
 function authHeaders() {
@@ -113,17 +130,59 @@ function requestBaseFor(path, options) {
   return RECRUITER_API_BASE;
 }
 
+async function requestJsonWithTimeout(path, init = {}, options = {}) {
+  const timeoutMs = options.timeoutMs ?? REQUEST_TIMEOUT_MS;
+  const useBasicAuth = options.basicAuth !== false;
+  const url = `${requestBaseFor(path, options)}${path}`;
+  const controller = new AbortController();
+  const timeout = setTimeout(() => controller.abort(new Error('timeout')), timeoutMs);
+  try {
+    const response = await fetch(url, {
+      ...init,
+      signal: controller.signal,
+      headers: {
+        ...(useBasicAuth ? authHeaders() : {}),
+        ...(init.body ? { 'Content-Type': 'application/json' } : {}),
+        ...(init.headers ?? {}),
+      },
+    });
+    const text = await response.text();
+    let body = null;
+    if (text) {
+      try {
+        body = JSON.parse(text);
+      } catch {
+        body = text;
+      }
+    }
+    if (!response.ok) {
+      throw new Error(`${init.method ?? 'GET'} ${path} failed (${response.status}): ${text}`);
+    }
+    return body;
+  } finally {
+    clearTimeout(timeout);
+  }
+}
+
 async function requestJson(path, init = {}, options = {}) {
   const useBasicAuth = options.basicAuth !== false;
   const url = `${requestBaseFor(path, options)}${path}`;
   const maxAttempts = options.retryTransient === false ? 1 : 3;
+  const timeoutMs = options.timeoutMs ?? REQUEST_TIMEOUT_MS;
+  const method = init.method ?? 'GET';
   let response;
   let lastError;
 
   for (let attempt = 1; attempt <= maxAttempts; attempt += 1) {
+    const controller = new AbortController();
+    const timeout = setTimeout(
+      () => controller.abort(new Error(`${method} ${path} timed out after ${timeoutMs}ms`)),
+      timeoutMs,
+    );
     try {
       response = await fetch(url, {
         ...init,
+        signal: controller.signal,
         headers: {
           ...(useBasicAuth ? authHeaders() : {}),
           ...(init.body ? { 'Content-Type': 'application/json' } : {}),
@@ -137,7 +196,11 @@ async function requestJson(path, init = {}, options = {}) {
       const causeCode = error instanceof Error && error.cause && typeof error.cause === 'object'
         ? error.cause.code
         : null;
+      const errorName = error instanceof Error ? error.name : '';
       const transient = message.includes('fetch failed')
+        || message.includes('timed out')
+        || message.includes('timeout')
+        || errorName === 'AbortError'
         || causeCode === 'ECONNRESET'
         || causeCode === 'EPIPE'
         || causeCode === 'ECONNREFUSED';
@@ -145,11 +208,13 @@ async function requestJson(path, init = {}, options = {}) {
         throw error;
       }
       await sleep(500 * attempt);
+    } finally {
+      clearTimeout(timeout);
     }
   }
 
   if (!response) {
-    throw lastError ?? new Error(`${init.method ?? 'GET'} ${path} did not return a response`);
+    throw lastError ?? new Error(`${method} ${path} did not return a response`);
   }
 
   const text = await response.text();
@@ -162,7 +227,7 @@ async function requestJson(path, init = {}, options = {}) {
     }
   }
   if (!response.ok) {
-    throw new Error(`${init.method ?? 'GET'} ${path} failed (${response.status}): ${text}`);
+    throw new Error(`${method} ${path} failed (${response.status}): ${text}`);
   }
   return body;
 }
@@ -467,12 +532,52 @@ async function createCodeReviewInvite() {
     !canonicalUrl(deliveredUrl)?.includes('/room/'),
     `CODE_REVIEW delivered URL must not be a room URL: ${cleanUrl(deliveredUrl)}`,
   );
-  assert(
-    canonicalUrl(deliveredUrl) !== canonicalUrl(invited?.room?.guestUrl),
-    'CODE_REVIEW deliveredUrl must be distinct from the generated guest room URL.',
-  );
+  if (invited?.room?.guestUrl) {
+    assert(
+      canonicalUrl(deliveredUrl) !== canonicalUrl(invited.room.guestUrl),
+      'CODE_REVIEW deliveredUrl must be distinct from the generated guest room URL.',
+    );
+  }
 
   return { interviewId, recipientEmail, recipientName, deliveredUrl, inviteToken, invited };
+}
+
+async function createRelatedPersonBoundaryInterview(invite) {
+  if (!PERSON_RELATED_BOUNDARY) return null;
+
+  const created = await requestJson('/api/v1/scheduling/interviews', {
+    method: 'POST',
+    body: JSON.stringify({
+      recipientName: invite.recipientName,
+      recipientEmail: invite.recipientEmail,
+      meetingType: 'DIRECT_VIDEO_CALL',
+      interviewType: 'CODE_REVIEW',
+      githubRepoUrl: RELATED_BOUNDARY_REPO_URL,
+      githubPrNumber: RELATED_BOUNDARY_PR_NUMBER,
+      recruiterNotes: [
+        'Automated same-person boundary smoke.',
+        'This related CODE_REVIEW invite intentionally has no candidate submission.',
+        'The person profile must not use it as the completed recommendation.',
+      ].join(' '),
+    }),
+  });
+
+  const interview = created?.interview;
+  assert(interview?.id, `Related boundary interview response missing id: ${JSON.stringify(created)}`);
+  assert(interview?.interviewType === 'CODE_REVIEW', `Related boundary interview is not CODE_REVIEW: ${JSON.stringify(created)}`);
+  assert(
+    interview?.recipientEmail === invite.recipientEmail,
+    `Related boundary interview did not preserve same recipient email: ${JSON.stringify(created)}`,
+  );
+
+  return {
+    interviewId: interview.id,
+    contactId: interview.contactId ?? null,
+    status: interview.status ?? null,
+    repoUrl: interview.githubRepoUrl ?? RELATED_BOUNDARY_REPO_URL,
+    prNumber: interview.githubPrNumber ?? RELATED_BOUNDARY_PR_NUMBER,
+    assessmentSetupStatus: interview.assessmentSetup?.status ?? null,
+  };
 }
 
 async function resolveInvite(inviteToken) {
@@ -506,12 +611,16 @@ async function getChallenge(sessionToken, order = 0) {
   }, { basicAuth: false });
 }
 
-async function bootstrapStageConfig(sessionToken) {
-  const stageConfig = await requestJson('/rpc/get-stage-config', {
+async function getStageConfig(sessionToken) {
+  return requestJson('/rpc/get-stage-config', {
     method: 'POST',
     headers: candidateHeaders(sessionToken),
     body: JSON.stringify({}),
   }, { basicAuth: false });
+}
+
+async function bootstrapStageConfig(sessionToken) {
+  const stageConfig = await getStageConfig(sessionToken);
 
   assert(stageConfig?.isComplete !== true, `Stage config unexpectedly complete before CODE_REVIEW: ${JSON.stringify(stageConfig)}`);
   assert(stageConfig?.stageId, `Stage config missing stage id: ${JSON.stringify(stageConfig)}`);
@@ -528,22 +637,34 @@ async function pollCodeReviewChallenge(sessionToken, order = 0, options = {}) {
   let last = null;
   while (Date.now() < deadline) {
     last = await getChallenge(sessionToken, order);
-    if (last?.type === 'CODE_REVIEW') {
-      if (options.expectBlocked) {
+    if (options.expectBlocked) {
+      if (last?.type === 'PROFILE_RECEIVED') return last;
+      if (last?.type === 'CODE_REVIEW') {
         throw new Error(`Expected repo matching to block, but CODE_REVIEW became ready: ${JSON.stringify(challengePreview(last))}`);
       }
+      if (last?.type === 'WAITING_FOR_MATCH') {
+        throw new Error(`Standalone CODE_REVIEW blocked handoff must return PROFILE_RECEIVED, not candidate-visible WAITING_FOR_MATCH: ${JSON.stringify(last).slice(0, 800)}`);
+      }
+      throw new Error(`Expected PROFILE_RECEIVED blocked handoff, got: ${JSON.stringify(last).slice(0, 800)}`);
+    }
+    if (last?.type === 'CODE_REVIEW') {
       return last;
     }
     if (last?.type !== 'WAITING_FOR_MATCH') {
       throw new Error(`Expected CODE_REVIEW or WAITING_FOR_MATCH, got: ${JSON.stringify(last).slice(0, 800)}`);
     }
-    if (options.expectBlocked && last?.config?.state === 'blocked') return last;
     await sleep(5_000);
   }
   throw new Error(`CODE_REVIEW challenge did not become ready. Last response: ${JSON.stringify(last).slice(0, 1200)}`);
 }
 
-function runBrowserSmoke({ deliveredUrl, inviteToken, session, expectedMatchProofVerdict }) {
+function runBrowserSmoke({
+  deliveredUrl,
+  inviteToken,
+  session,
+  expectedMatchProofVerdict,
+  expectProfileReceived = false,
+}) {
   if (SKIP_BROWSER) return { skipped: true };
 
   const candidate = JSON.stringify({
@@ -575,6 +696,7 @@ function runBrowserSmoke({ deliveredUrl, inviteToken, session, expectedMatchProo
         CODE_REVIEW_SESSION_CANDIDATE_JSON: candidate,
         CODE_REVIEW_EXPECT_AUTOMATCH: EXPECT_AUTOMATCH,
         CODE_REVIEW_EXPECT_MANUAL_OVERRIDE: REPO_URL && PR_NUMBER ? '1' : '0',
+        CODE_REVIEW_EXPECT_PROFILE_RECEIVED: expectProfileReceived ? '1' : '0',
         CODE_REVIEW_EXPECT_MATCH_PROOF_VERDICT: expectedMatchProofVerdict,
         CODE_REVIEW_REQUIRE_HYPEREDGES: REPO_URL && PR_NUMBER ? '0' : '1',
         CODE_REVIEW_BROWSER_SUBMIT_ROUND: SUBMIT_REVIEW ? '1' : '0',
@@ -588,7 +710,96 @@ function runBrowserSmoke({ deliveredUrl, inviteToken, session, expectedMatchProo
   return { skipped: false };
 }
 
-function runRecruiterDetailBrowserSmoke({
+function recruiterDetailReady(interview, {
+  expectedOutcome,
+  expectedRepoUrl = '',
+  expectedPrNumber = '',
+  expectSubmission = false,
+  expectScore = false,
+}) {
+  if (!interview || typeof interview !== 'object') {
+    return { ready: false, reason: 'detail missing interview object' };
+  }
+  if (expectedOutcome === 'blocked') {
+    const setupStatus = interview.assessmentSetup?.status ?? null;
+    const progressStage = interview.assessmentProgress?.stage ?? null;
+    const progressNextAction = interview.assessmentProgress?.nextAction ?? null;
+    const blocked = [
+      'missing_reviewable_task',
+      'waiting_for_candidate_evidence',
+      'waiting_for_source_backed_match',
+    ].includes(setupStatus)
+      || progressStage === 'NEEDS_ATTENTION'
+      || progressNextAction === 'ASSIGN_CHALLENGE'
+      || progressNextAction === 'RESOLVE_DIAGNOSTIC'
+      || interview.assessmentSetup?.lastDeliveredUrlState === 'claimed';
+    return blocked || interview.assessmentSetup
+      ? { ready: true, reason: 'blocked projection ready' }
+      : { ready: false, reason: 'blocked projection missing setup/progress' };
+  }
+
+  const acceptableStatuses = expectSubmission || expectScore
+    ? ['COMPLETED']
+    : ['ACTIVE', 'COMPLETED'];
+  if (!acceptableStatuses.includes(interview.status)) {
+    return {
+      ready: false,
+      reason: `interview status is ${interview.status ?? 'missing'}`,
+    };
+  }
+  if (expectedRepoUrl && interview.githubRepoUrl !== expectedRepoUrl) {
+    return { ready: false, reason: `repo is ${interview.githubRepoUrl ?? 'missing'}` };
+  }
+  if (expectedPrNumber && String(interview.githubPrNumber ?? '') !== String(expectedPrNumber)) {
+    return { ready: false, reason: `PR is ${interview.githubPrNumber ?? 'missing'}` };
+  }
+  if (interview.codeReviewMatch?.status !== 'MATCHED') {
+    return { ready: false, reason: 'codeReviewMatch is not MATCHED' };
+  }
+  if (expectSubmission && !interview.submissionJson) {
+    return { ready: false, reason: 'submissionJson missing' };
+  }
+  if (expectScore) {
+    const score = interview.codeReviewScore;
+    if (!score || score.status !== 'scored' || !Number.isFinite(Number(score.score))) {
+      return { ready: false, reason: 'scored codeReviewScore missing' };
+    }
+  }
+  return { ready: true, reason: 'matched recruiter projection ready' };
+}
+
+async function waitForRecruiterDetailProjection(input) {
+  const deadlineMs = Date.now() + (input.timeoutMs ?? 90_000);
+  let attempt = 0;
+  let lastReason = 'not checked';
+  while (Date.now() < deadlineMs) {
+    attempt += 1;
+    try {
+      const detail = await requestJsonWithTimeout(
+        `/api/v1/scheduling/interviews/${input.interviewId}`,
+        {},
+        { timeoutMs: 12_000 },
+      );
+      const readiness = recruiterDetailReady(detail?.interview, input);
+      lastReason = readiness.reason;
+      if (readiness.ready) {
+        return {
+          ready: true,
+          attempts: attempt,
+          reason: readiness.reason,
+        };
+      }
+    } catch (error) {
+      lastReason = error instanceof Error ? error.message : String(error);
+    }
+    await sleep(Math.min(2_000 + attempt * 250, 5_000));
+  }
+  throw new Error(
+    `Recruiter detail projection was not ready for ${input.interviewId}: ${lastReason}`,
+  );
+}
+
+function runRecruiterDetailPlaywright({
   interviewId,
   expectedOutcome,
   expectedRepoUrl = '',
@@ -596,6 +807,9 @@ function runRecruiterDetailBrowserSmoke({
   expectSubmission = false,
   expectScore = false,
   requireHyperedges = false,
+  expectPersonProfileDecision = false,
+  expectPersonProfilePending = false,
+  expectPersonProfileRelatedBoundary = false,
 }) {
   if (SKIP_BROWSER || SKIP_RECRUITER_BROWSER) {
     return {
@@ -625,11 +839,17 @@ function runRecruiterDetailBrowserSmoke({
         VIDEO_ROOM_BASE,
         CODE_REVIEW_RECRUITER_INTERVIEW_ID: interviewId,
         CODE_REVIEW_RECRUITER_EXPECT_OUTCOME: expectedOutcome,
+        CODE_REVIEW_RECRUITER_EXPECT_MATCH_MODE: currentMatchMode(),
         CODE_REVIEW_RECRUITER_EXPECT_REPO_URL: expectedRepoUrl,
         CODE_REVIEW_RECRUITER_EXPECT_PR_NUMBER: String(expectedPrNumber ?? ''),
         CODE_REVIEW_RECRUITER_EXPECT_SUBMISSION: expectSubmission ? '1' : '0',
         CODE_REVIEW_RECRUITER_EXPECT_SCORE: expectScore ? '1' : '0',
         CODE_REVIEW_RECRUITER_REQUIRE_HYPEREDGES: requireHyperedges ? '1' : '0',
+        CODE_REVIEW_RECRUITER_EXPECT_PERSON_PROFILE_DECISION: expectPersonProfileDecision ? '1' : '0',
+        CODE_REVIEW_RECRUITER_EXPECT_PERSON_PROFILE_PENDING: expectPersonProfilePending ? '1' : '0',
+        CODE_REVIEW_RECRUITER_EXPECT_PERSON_PROFILE_RELATED_BOUNDARY: expectPersonProfileRelatedBoundary ? '1' : '0',
+        CODE_REVIEW_RECRUITER_RELATED_BOUNDARY_REPO_URL: RELATED_BOUNDARY_REPO_URL,
+        CODE_REVIEW_RECRUITER_RELATED_BOUNDARY_PR_NUMBER: String(RELATED_BOUNDARY_PR_NUMBER),
       },
     },
   );
@@ -638,6 +858,43 @@ function runRecruiterDetailBrowserSmoke({
     throw new Error(`Playwright recruiter detail smoke failed with exit code ${result.status}`);
   }
   return { skipped: false };
+}
+
+async function runRecruiterDetailBrowserSmoke(input) {
+  if (SKIP_BROWSER || SKIP_RECRUITER_BROWSER) {
+    return {
+      skipped: true,
+      reason: SKIP_BROWSER
+        ? 'CODE_REVIEW_SMOKE_SKIP_BROWSER=1'
+        : 'CODE_REVIEW_SMOKE_SKIP_RECRUITER_BROWSER=1',
+    };
+  }
+
+  const readiness = await waitForRecruiterDetailProjection(input);
+  try {
+    return {
+      ...runRecruiterDetailPlaywright(input),
+      readiness,
+      attempts: 1,
+    };
+  } catch (error) {
+    const firstError = error instanceof Error ? error.message : String(error);
+    const retryReadiness = await waitForRecruiterDetailProjection({
+      ...input,
+      timeoutMs: 45_000,
+    });
+    try {
+      return {
+        ...runRecruiterDetailPlaywright(input),
+        readiness: retryReadiness,
+        attempts: 2,
+        firstError,
+      };
+    } catch (retryError) {
+      const message = retryError instanceof Error ? retryError.message : String(retryError);
+      throw new Error(`${message}; first recruiter smoke failure: ${firstError}`);
+    }
+  }
 }
 
 async function initReviewSession(sessionToken, challenge) {
@@ -681,8 +938,8 @@ async function sendFirstReviewRound(sessionToken, sessionId, challenge) {
   }, { basicAuth: false });
 
   assert(Number.isInteger(body?.round) && body.round >= 1, `review/session/message missing round: ${JSON.stringify(body)}`);
-  assert(Array.isArray(body?.agentResponse) && body.agentResponse.length > 0, `AI developer response missing: ${JSON.stringify(body)}`);
-  assert(Array.isArray(body?.threads) && body.threads.length > 0, `AI developer thread missing: ${JSON.stringify(body)}`);
+  assert(Array.isArray(body?.agentResponse) && body.agentResponse.length > 0, `Implementation author response missing: ${JSON.stringify(body)}`);
+  assert(Array.isArray(body?.threads) && body.threads.length > 0, `Implementation author thread missing: ${JSON.stringify(body)}`);
 
   return {
     target,
@@ -759,7 +1016,7 @@ function assertSubmissionJson(submissionJson, sessionId, annotation) {
         && response.content.length > 0
       )
     ),
-    `submissionJson missing AI developer pushback in transcript: ${JSON.stringify(rounds)}`,
+    `submissionJson missing implementation-author pushback in transcript: ${JSON.stringify(rounds)}`,
   );
   return submission;
 }
@@ -879,7 +1136,7 @@ async function verifyJudgeExample(reviewSessionId) {
   assert(
     Array.isArray(example.promptInput?.aiDeveloperPushback)
       && example.promptInput.aiDeveloperPushback.length > 0,
-    `Judge example missing AI developer pushback: ${JSON.stringify(example.promptInput)}`,
+    `Judge example missing implementation-author pushback: ${JSON.stringify(example.promptInput)}`,
   );
   assert(
     Array.isArray(example.promptInput?.improvementUses)
@@ -1165,28 +1422,35 @@ async function main() {
     assert(session?.sessionToken, `resolve-token response missing session token: ${JSON.stringify(session)}`);
 
     await submitIntake(session.sessionToken);
-    const initialStageConfig = await bootstrapStageConfig(session.sessionToken);
+    const initialStageConfig = EXPECT_BLOCKED_MATCH
+      ? await getStageConfig(session.sessionToken)
+      : await bootstrapStageConfig(session.sessionToken);
     const challengeOrder = ROLE_BACKED ? 1 : 0;
     const challenge = await pollCodeReviewChallenge(session.sessionToken, challengeOrder, {
       expectBlocked: EXPECT_BLOCKED_MATCH,
     });
     if (EXPECT_BLOCKED_MATCH) {
-      assert(challenge?.type === 'WAITING_FOR_MATCH', `Expected WAITING_FOR_MATCH, got: ${JSON.stringify(challenge)}`);
-      assert(challenge?.config?.state === 'blocked', `Expected blocked repo matching state, got: ${JSON.stringify(challenge)}`);
-      assert(challenge?.config?.autoRefresh === false, `Blocked repo matching should not auto-refresh: ${JSON.stringify(challenge)}`);
+      assert(challenge?.type === 'PROFILE_RECEIVED', `Expected PROFILE_RECEIVED handoff, got: ${JSON.stringify(challenge)}`);
+      assert(challenge?.id === 'profile-received', `Expected profile-received challenge id, got: ${JSON.stringify(challenge)}`);
       assert(
-        challenge?.config?.diagnostics?.phase === 'repo_matching',
-        `Expected repo_matching diagnostics, got: ${JSON.stringify(challenge?.config?.diagnostics)}`,
+        typeof challenge?.instructions === 'string'
+          && challenge.instructions.includes('email you when your code review is ready'),
+        `Expected candidate-safe email handoff instructions, got: ${JSON.stringify(challenge)}`,
       );
       assert(
-        Array.isArray(challenge?.config?.diagnostics?.pipeline)
-          && challenge.config.diagnostics.pipeline.some((step) =>
-            step?.id === 'repo_matching' && step?.status === 'blocked'
-          ),
-        `Expected repo_matching pipeline step to be blocked: ${JSON.stringify(challenge?.config?.diagnostics?.pipeline)}`,
+        initialStageConfig?.isComplete === true
+          && initialStageConfig?.stageId === 'candidate-intake-queued',
+        `Expected candidate-intake-queued complete stage config, got: ${JSON.stringify(initialStageConfig)}`,
       );
 
-      const recruiterBrowserSmoke = runRecruiterDetailBrowserSmoke({
+      const browserSmoke = runBrowserSmoke({
+        deliveredUrl: invite.deliveredUrl,
+        inviteToken: invite.inviteToken,
+        session,
+        expectedMatchProofVerdict: '',
+        expectProfileReceived: true,
+      });
+      const recruiterBrowserSmoke = await runRecruiterDetailBrowserSmoke({
         interviewId: invite.interviewId,
         expectedOutcome: 'blocked',
       });
@@ -1202,18 +1466,19 @@ async function main() {
         expectedOutcome: 'blocked',
         deliveredUrl: cleanUrl(invite.deliveredUrl),
         roomGuestUrl: cleanUrl(invite.invited?.room?.guestUrl),
-        blockedMatch: {
+        candidateHandoff: {
+          type: challenge.type,
+          id: challenge.id,
           title: challenge.title ?? null,
-          state: challenge.config.state,
-          reason: challenge.config.reason ?? null,
-          phase: challenge.config.diagnostics.phase ?? null,
-          matchableNodeCount: challenge.config.diagnostics.matchableNodeCount ?? null,
-          rawNodeCount: challenge.config.diagnostics.rawNodeCount ?? null,
-          autoRefresh: challenge.config.autoRefresh ?? null,
+          instructions: challenge.instructions ?? null,
+          stageId: initialStageConfig.stageId,
+          isComplete: initialStageConfig.isComplete,
         },
+        browserSmoke,
         recruiterBrowserSmoke,
         stageConfig: {
           initialStageId: initialStageConfig.stageId,
+          initialIsComplete: initialStageConfig.isComplete ?? null,
           initialCurrentIndex: initialStageConfig.currentIndex ?? null,
           initialChallengeTypes: Array.isArray(initialStageConfig.challenges)
             ? initialStageConfig.challenges.map((candidateChallenge) => candidateChallenge?.type ?? null)
@@ -1279,7 +1544,8 @@ async function main() {
       challenge,
       interviewId: invite.interviewId,
     });
-    const recruiterBrowserSmoke = runRecruiterDetailBrowserSmoke({
+    const relatedBoundaryInterview = await createRelatedPersonBoundaryInterview(invite);
+    const recruiterBrowserSmoke = await runRecruiterDetailBrowserSmoke({
       interviewId: invite.interviewId,
       expectedOutcome: 'matched',
       expectedRepoUrl: challenge.githubRepoUrl,
@@ -1287,6 +1553,9 @@ async function main() {
       expectSubmission: SUBMIT_REVIEW,
       expectScore: SUBMIT_REVIEW,
       requireHyperedges: !REPO_URL && !PR_NUMBER,
+      expectPersonProfileDecision: SUBMIT_REVIEW,
+      expectPersonProfilePending: !SUBMIT_REVIEW,
+      expectPersonProfileRelatedBoundary: Boolean(relatedBoundaryInterview),
     });
 
     console.log(JSON.stringify({
@@ -1321,6 +1590,7 @@ async function main() {
       browserSmoke,
       recruiterBrowserSmoke,
       submissionSmoke,
+      relatedBoundaryInterview,
     }, null, 2));
   } catch (error) {
     const context = {

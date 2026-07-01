@@ -48,7 +48,7 @@ emailRoutes.post('/:candidateId/send-invite', async (c) => {
   if (!candidate) return apiError(c, 'NOT_FOUND', 'Candidate not found.');
 
   const baseUrl = c.env.APP_BASE_URL ?? 'https://pipe.build';
-  const assessUrl = `${baseUrl}/assess/${candidate.invite_token}`;
+  const assessUrl = `${baseUrl}/talent/${candidate.invite_token}`;
 
   let stageTemplatesJson: string | null = null;
   let bookingUrl: string | undefined;

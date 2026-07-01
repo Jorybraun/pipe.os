@@ -208,7 +208,7 @@ async function startFakeDevinApiServer() {
         messages.push({
           event_id: `devin-${messageCounter}`,
           role: 'assistant',
-          message: 'I can help from the real Devin API session. [[room_action:open-workspace|Open VS Code]]',
+          message: 'I can help from the real Devin API session.',
         });
         res.writeHead(200, { 'Content-Type': 'application/json' });
         res.end(JSON.stringify({ accepted: true }));
@@ -440,7 +440,7 @@ describe('agent bridge readiness', () => {
           branchName: 'pipe-assessment',
           baseCommitSha,
           commitSha,
-          sourceRefTypes: ['git_commit', 'code_diff', 'terminal_command', 'test_run'],
+          sourceRefTypes: ['git_commit', 'code_diff', 'terminal_command', 'test_run', 'code_server_file_observation'],
         },
       });
 
@@ -461,6 +461,7 @@ describe('agent bridge readiness', () => {
         'code_diff',
         'terminal_command',
         'test_run',
+        'code_server_file_observation',
       ]);
       expect(submission.sourceRefs.every((ref) => /^sha256:[a-f0-9]{64}$/.test(ref.contentHash))).toBe(true);
       expect(submission.sourceRefs[0]).toMatchObject({
@@ -500,9 +501,227 @@ describe('agent bridge readiness', () => {
       expect(submission.sourceRefs[3].exactText).toContain('$ node -e "console.log(42)"');
       expect(submission.sourceRefs[3].exactText).toContain('exitCode: 0');
       expect(submission.sourceRefs[3].exactText).toContain('42');
+      expect(submission.sourceRefs[4]).toMatchObject({
+        sourceRefType: 'code_server_file_observation',
+        evidenceRole: 'workspace_file_observation',
+        locator: {
+          repositoryUrl: 'https://github.com/example/repo',
+          baseCommitSha,
+          commitSha,
+          path: 'README.md',
+          status: 'modified',
+          observedBy: 'agent_bridge_workspace_finalize',
+        },
+        metadata: {
+          source: 'agent_bridge_workspace_finalize',
+          sourceKind: 'code_server_workspace.file_observation',
+        },
+      });
+      expect(submission.sourceRefs[4].exactText).toContain('"sourceKind": "code_server_workspace.file_observation"');
+      expect(submission.sourceRefs[4].exactText).toContain('"blobSha"');
+      expect(submission.sourceRefs[4].exactText).toContain('"fileContentHash": "sha256:');
+      expect(submission.sourceRefs[4].exactText).toContain('Fixed behavior with evidence.');
     } finally {
       await captureServer.close();
     }
+  });
+
+  it('can return workspace commit evidence without posting to a room endpoint', async () => {
+    const { workspaceDir, baseCommitSha, commitSha } = createCommittedWorkspace();
+    const { port } = await startBridge('', {
+      AGENT_TYPE: '',
+      PATH: process.env.PATH ?? '',
+      REPO_GIT_URL: 'https://github.com/example/repo',
+      CHALLENGE_BASE_COMMIT_SHA: baseCommitSha,
+      PIPE_TEST_COMMAND: 'node -e "console.log(42)"',
+    }, {
+      installFakeDevin: false,
+      workspaceDir,
+    });
+
+    const response = await fetch(`http://127.0.0.1:${port}/assessment/finalize`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({
+        submitToPipe: false,
+        narrative: 'Candidate fixed the assessment repo behavior.',
+      }),
+    });
+
+    expect(response.status).toBe(200);
+    const body = await response.json();
+    expect(body).toMatchObject({
+      ok: true,
+      submitted: false,
+      commit: {
+        repositoryUrl: 'https://github.com/example/repo',
+        branchName: 'pipe-assessment',
+        baseCommitSha,
+        commitSha,
+        sourceRefTypes: ['git_commit', 'code_diff', 'terminal_command', 'test_run', 'code_server_file_observation'],
+      },
+      submission: null,
+      progress: null,
+    });
+    expect(body.submissionPayload).toMatchObject({
+      narrative: 'Candidate fixed the assessment repo behavior.',
+      repositoryUrl: 'https://github.com/example/repo',
+      forkRepositoryUrl: null,
+      branchName: 'pipe-assessment',
+      baseCommitSha,
+      commitSha,
+      upstreamPrConsent: false,
+      changedFiles: [{ path: 'README.md', status: 'modified' }],
+    });
+    expect(body.submissionPayload.sourceRefs.map((ref) => ref.sourceRefType)).toEqual([
+      'git_commit',
+      'code_diff',
+      'terminal_command',
+      'test_run',
+      'code_server_file_observation',
+    ]);
+    expect(body.submissionPayload.sourceRefs.every((ref) =>
+      ref.metadata?.source === 'agent_bridge_workspace_finalize'
+    )).toBe(true);
+  });
+
+  it('canonicalizes the checked-out git remote before labeling workspace commit evidence', async () => {
+    const { workspaceDir, baseCommitSha, commitSha } = createCommittedWorkspace();
+    git(['remote', 'add', 'origin', 'git@github.com:Open-Source/Widgets.git'], workspaceDir);
+    const { port } = await startBridge('', {
+      AGENT_TYPE: '',
+      PATH: process.env.PATH ?? '',
+      REPO_GIT_URL: 'https://github.com/open-source/widgets.git',
+      CHALLENGE_BASE_COMMIT_SHA: baseCommitSha,
+      PIPE_TEST_COMMAND: 'node -e "console.log(42)"',
+    }, {
+      installFakeDevin: false,
+      workspaceDir,
+    });
+
+    const response = await fetch(`http://127.0.0.1:${port}/assessment/finalize`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({
+        submitToPipe: false,
+        repositoryUrl: 'https://github.com/open-source/widgets',
+      }),
+    });
+
+    expect(response.status).toBe(200);
+    const body = await response.json();
+    expect(body.commit).toMatchObject({
+      repositoryUrl: 'https://github.com/open-source/widgets',
+      branchName: 'pipe-assessment',
+      baseCommitSha,
+      commitSha,
+    });
+    expect(body.submissionPayload).toMatchObject({
+      repositoryUrl: 'https://github.com/open-source/widgets',
+      forkRepositoryUrl: null,
+    });
+    const locatorRepositoryUrls = body.submissionPayload.sourceRefs
+      .map((ref) => ref.locator?.repositoryUrl)
+      .filter(Boolean);
+    expect(new Set(locatorRepositoryUrls)).toEqual(new Set(['https://github.com/open-source/widgets']));
+  });
+
+  it('uses only the configured verification command for workspace finalization test evidence', async () => {
+    const { workspaceDir, baseCommitSha, commitSha } = createCommittedWorkspace();
+    const { port } = await startBridge('', {
+      AGENT_TYPE: '',
+      PATH: process.env.PATH ?? '',
+      REPO_GIT_URL: 'https://github.com/example/repo',
+      CHALLENGE_BASE_COMMIT_SHA: baseCommitSha,
+      PIPE_TEST_COMMAND: 'node -e "console.log(42)"',
+    }, {
+      installFakeDevin: false,
+      workspaceDir,
+    });
+
+    const response = await fetch(`http://127.0.0.1:${port}/assessment/finalize`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({
+        submitToPipe: false,
+        testCommand: 'node -e "console.log(999)"',
+      }),
+    });
+
+    expect(response.status).toBe(200);
+    const body = await response.json();
+    const testRun = body.submissionPayload.sourceRefs.find((ref) => ref.sourceRefType === 'test_run');
+    expect(testRun).toMatchObject({
+      sourceRefType: 'test_run',
+      sourceRefId: `${commitSha}:test-run`,
+      evidenceRole: 'verification_test_output',
+      locator: {
+        command: 'node -e "console.log(42)"',
+        exitCode: 0,
+      },
+    });
+    expect(testRun.exactText).toContain('$ node -e "console.log(42)"');
+    expect(testRun.exactText).toContain('42');
+    expect(testRun.exactText).not.toContain('999');
+  });
+
+  it('blocks workspace finalization when the request repository does not match the configured challenge repo', async () => {
+    const { workspaceDir, baseCommitSha } = createCommittedWorkspace();
+    git(['remote', 'add', 'origin', 'https://github.com/open-source/widgets.git'], workspaceDir);
+    const { port } = await startBridge('', {
+      AGENT_TYPE: '',
+      PATH: process.env.PATH ?? '',
+      REPO_GIT_URL: 'https://github.com/open-source/widgets',
+      CHALLENGE_BASE_COMMIT_SHA: baseCommitSha,
+    }, {
+      installFakeDevin: false,
+      workspaceDir,
+    });
+
+    const response = await fetch(`http://127.0.0.1:${port}/assessment/finalize`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({
+        submitToPipe: false,
+        repositoryUrl: 'https://github.com/other/widgets',
+      }),
+    });
+
+    expect(response.status).toBe(409);
+    const body = await response.json();
+    expect(body).toMatchObject({
+      ok: false,
+      error: {
+        code: 'ASSESSMENT_FINALIZE_BLOCKED',
+      },
+    });
+    expect(body.error.message).toContain('requested repository does not match the configured challenge repository');
+  });
+
+  it('rejects browser-only repository URLs when no workspace remote or configured challenge repo exists', async () => {
+    const { workspaceDir, baseCommitSha } = createCommittedWorkspace();
+    const { port } = await startBridge('', {
+      AGENT_TYPE: '',
+      PATH: process.env.PATH ?? '',
+      REPO_GIT_URL: '',
+      CHALLENGE_BASE_COMMIT_SHA: baseCommitSha,
+    }, {
+      installFakeDevin: false,
+      workspaceDir,
+    });
+
+    const response = await fetch(`http://127.0.0.1:${port}/assessment/finalize`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({
+        submitToPipe: false,
+        repositoryUrl: 'https://github.com/open-source/widgets',
+      }),
+    });
+
+    expect(response.status).toBe(409);
+    const body = await response.json();
+    expect(body.error.message).toContain('workspace git remote or REPO_GIT_URL');
   });
 
   it('records a verification gap instead of inventing test output when no test command is configured', async () => {
@@ -581,7 +800,7 @@ describe('agent bridge readiness', () => {
     }
   });
 
-  it('does not fabricate a Devin bridge when AGENT_TYPE is missing', async () => {
+  it('does not fabricate an agent bridge when AGENT_TYPE is missing', async () => {
     const { port } = await startBridge(`
 process.stdin.setEncoding('utf8');
 process.stdin.once('data', () => process.stdout.write('This fake Devin process should not start.\\n'));
@@ -599,7 +818,7 @@ setInterval(() => {}, 1000);
     const error = await waitForMessage(messages, (message) => message.type === 'ERROR');
     expect(error).toEqual({
       type: 'ERROR',
-      message: 'No real agent is configured in this container. Set AGENT_TYPE to a supported bridge agent before enabling Clippy chat.',
+      message: 'No real agent is configured in this container. Set AGENT_TYPE to a supported bridge agent before enabling agent chat.',
     });
     expect(messages.some((message) => message.agent === 'devin')).toBe(false);
     ws.close();
@@ -655,8 +874,8 @@ setInterval(() => {}, 1000);
       ws.send(JSON.stringify({
         type: 'CHAT',
         text: 'Please inspect the repo.',
-        browserPromptId: 'workspace-123:guest:prompt:1782603900000:clippy_0123abcd',
-        browserPromptFingerprint: 'clippy_0123abcd',
+        browserPromptId: 'workspace-123:guest:prompt:1782603900000:agent_0123abcd',
+        browserPromptFingerprint: 'agent_0123abcd',
         browserPromptTimestamp: 1782603900000,
         browserPromptLength: 24,
       }));
@@ -668,21 +887,10 @@ setInterval(() => {}, 1000);
       expect(response).toMatchObject({
         agent: 'devin',
         text: 'I can help from the real Devin API session.',
-        browserPromptId: 'workspace-123:guest:prompt:1782603900000:clippy_0123abcd',
-        browserPromptFingerprint: 'clippy_0123abcd',
+        browserPromptId: 'workspace-123:guest:prompt:1782603900000:agent_0123abcd',
+        browserPromptFingerprint: 'agent_0123abcd',
         browserPromptTimestamp: 1782603900000,
         browserPromptLength: 24,
-      });
-
-      const roomAction = await waitForMessage(messages, (message) => (
-        message.type === 'ROOM_ACTION'
-        && message.source === 'agent_api_response'
-      ));
-      expect(roomAction).toMatchObject({
-        agent: 'devin',
-        action: 'open-workspace',
-        protocol: 'clippy_room_action_tag',
-        browserPromptId: 'workspace-123:guest:prompt:1782603900000:clippy_0123abcd',
       });
 
       const chatEvent = captureServer.events.find((event) => event.type === 'ai_chat_agent');
@@ -691,23 +899,13 @@ setInterval(() => {}, 1000);
         text: 'I can help from the real Devin API session.',
         actor: 'agent',
         properties: {
-          source: 'clippy_agent_bridge',
+          source: 'agent_bridge',
           bridgeEventType: 'CHAT_RESPONSE',
           bridgeMessageSource: 'agent_api_response',
           bridgePersisted: true,
         },
       });
-      const actionEvent = captureServer.events.find((event) => event.type === 'clippy_action');
-      expect(actionEvent).toMatchObject({
-        type: 'clippy_action',
-        actor: 'agent',
-        properties: {
-          source: 'clippy_agent_bridge',
-          actionSource: 'agent_api_response',
-          actionProtocol: 'clippy_room_action_tag',
-          bridgeEventType: 'ROOM_ACTION',
-        },
-      });
+      expect(captureServer.events.filter((event) => event.type === 'ai_chat_agent')).toHaveLength(1);
       ws.close();
     } finally {
       await apiServer.close();
@@ -813,12 +1011,10 @@ setInterval(() => {}, 1000);
     const { ws, messages } = await connectAgent(port);
     const authStatus = await waitForMessage(messages, (message) => message.type === 'AGENT_STATUS' && message.status === 'auth_needed');
     expect(authStatus).toMatchObject({ agent: 'devin' });
+    const authNeeded = await waitForMessage(messages, (message) => message.type === 'AUTH_NEEDED');
+    expect(authNeeded).toMatchObject({ agent: 'devin' });
 
     expect(messages.some((message) => message.type === 'AGENT_READY')).toBe(false);
-    expect(messages).toContainEqual(expect.objectContaining({
-      type: 'AUTH_NEEDED',
-      agent: 'devin',
-    }));
     ws.close();
   });
 
@@ -879,7 +1075,7 @@ process.stdin.setEncoding('utf8');
 let buffer = '';
 process.stdin.on('data', (chunk) => {
   buffer += chunk;
-  if (buffer.includes('Current Clippy chat message:')) {
+  if (buffer.includes('Current candidate message:')) {
     process.stdout.write('Real Devin received the candidate request.\\n');
   }
 });
@@ -894,21 +1090,21 @@ setInterval(() => {}, 1000);
     ws.send(JSON.stringify({
       type: 'CHAT',
       text: 'Please inspect the task.',
-      browserPromptId: 'workspace-123:guest:prompt:1782603900000:clippy_0123abcd',
-      browserPromptFingerprint: 'clippy_0123abcd',
+      browserPromptId: 'workspace-123:guest:prompt:1782603900000:agent_0123abcd',
+      browserPromptFingerprint: 'agent_0123abcd',
       browserPromptTimestamp: 1782603900000,
       browserPromptLength: 24,
     }));
     const diagnostic = await waitForMessage(messages, (message) => (
       message.type === 'AGENT_DIAGNOSTIC'
-      && message.diagnosticSource === 'agent_prompt_sent'
+      && message.diagnosticSource === 'user_prompt_sent'
     ));
     expect(diagnostic).toMatchObject({
       agent: 'devin',
       promptType: 'chat_prompt',
       deliveredToAgent: true,
-      browserPromptId: 'workspace-123:guest:prompt:1782603900000:clippy_0123abcd',
-      browserPromptFingerprint: 'clippy_0123abcd',
+      browserPromptId: 'workspace-123:guest:prompt:1782603900000:agent_0123abcd',
+      browserPromptFingerprint: 'agent_0123abcd',
       browserPromptTimestamp: 1782603900000,
       browserPromptLength: 24,
     });
@@ -920,8 +1116,8 @@ setInterval(() => {}, 1000);
     expect(response).toMatchObject({
       agent: 'devin',
       source: 'agent_stdout',
-      browserPromptId: 'workspace-123:guest:prompt:1782603900000:clippy_0123abcd',
-      browserPromptFingerprint: 'clippy_0123abcd',
+      browserPromptId: 'workspace-123:guest:prompt:1782603900000:agent_0123abcd',
+      browserPromptFingerprint: 'agent_0123abcd',
       browserPromptTimestamp: 1782603900000,
       browserPromptLength: 24,
     });
@@ -937,7 +1133,7 @@ process.stdin.setEncoding('utf8');
 let buffer = '';
 process.stdin.on('data', (chunk) => {
   buffer += chunk;
-  if (buffer.includes('Current Clippy chat message:')) {
+  if (buffer.includes('Current candidate message:')) {
     process.stdout.write('Auth check used DEVIN_API_KEY=${rawToken}.\\n');
   }
 });
@@ -954,8 +1150,8 @@ setInterval(() => {}, 1000);
       ws.send(JSON.stringify({
         type: 'CHAT',
         text: 'Please inspect auth.',
-        browserPromptId: 'workspace-123:guest:prompt:1782603900000:clippy_0123abcd',
-        browserPromptFingerprint: 'clippy_0123abcd',
+        browserPromptId: 'workspace-123:guest:prompt:1782603900000:agent_0123abcd',
+        browserPromptFingerprint: 'agent_0123abcd',
         browserPromptTimestamp: 1782603900000,
         browserPromptLength: 20,
       }));
@@ -973,7 +1169,7 @@ setInterval(() => {}, 1000);
         text: 'Auth check used DEVIN_API_KEY=[REDACTED_SECRET]',
         actor: 'agent',
         properties: {
-          source: 'clippy_agent_bridge',
+          source: 'agent_bridge',
           bridgeEventType: 'CHAT_RESPONSE',
           bridgeMessageSource: 'agent_stdout',
           responseLength: 'Auth check used DEVIN_API_KEY=[REDACTED_SECRET]'.length,

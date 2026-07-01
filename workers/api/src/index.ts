@@ -48,6 +48,7 @@ import livingContextHealth from './routes/internal/livingContextHealth';
 import { e2eSeed } from './routes/internal/e2eSeed';
 // Candidate runtime entry (cross-cutting JWT layer)
 import { rpcPublic, rpcAuth } from './routes/rpc';
+import { talentPoolPublic } from './routes/talentPool';
 import { globalErrorHandler } from './middleware/errors';
 import type { Env, Variables } from './types';
 import { processProjectionOutbox } from './lib/livingContext';
@@ -256,6 +257,7 @@ app.route('/api/v1/voice-sessions', voiceSessions);
 app.route('/api/v1/tts', ttsRouter);
 
 // RPC: Candidate-facing routes (custom JWT auth, no Clerk)
+app.route('/rpc/talent', talentPoolPublic);
 app.route('/rpc', rpcPublic);
 app.route('/rpc', rpcAuth);
 

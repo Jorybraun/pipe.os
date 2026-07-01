@@ -184,7 +184,7 @@ describe('GET /rpc/ingestion-status', () => {
   });
 
   it('queues source-backed retry when candidate ingestion stalls before matchable evidence exists', async () => {
-    const resumeText = 'Frontend platform engineer building synchronized interview desktops, dev containers, and source-backed Vitest coverage.';
+    const resumeText = 'Frontend platform engineer building repo-task assessments, dev containers, and source-backed Vitest coverage.';
     const db = fakeD1({
       firstResponders: [
         {

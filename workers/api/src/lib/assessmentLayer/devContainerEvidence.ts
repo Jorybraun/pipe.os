@@ -73,20 +73,36 @@ function interviewIdForSession(row: DevContainerSessionRow): string {
     ?? row.session_id;
 }
 
+function nonEmptyTimestamp(value: string | null | undefined): string | null {
+  if (typeof value !== 'string') return null;
+  const trimmed = value.trim();
+  return trimmed.length > 0 ? trimmed : null;
+}
+
+function fallbackTimestamp(row: DevContainerSessionRow): string {
+  return nonEmptyTimestamp(row.updated_at)
+    ?? nonEmptyTimestamp(row.created_at)
+    ?? nonEmptyTimestamp(row.started_at)
+    ?? nonEmptyTimestamp(row.stopped_at)
+    ?? nonEmptyTimestamp(row.warned_at)
+    ?? nonEmptyTimestamp(row.expires_at)
+    ?? new Date().toISOString();
+}
+
 function eventTimestamp(row: DevContainerSessionRow, event: DevContainerLifecycleEvent): string {
   switch (event) {
     case 'launching':
-      return row.created_at;
+      return nonEmptyTimestamp(row.created_at) ?? fallbackTimestamp(row);
     case 'ready':
-      return row.started_at ?? row.updated_at;
+      return nonEmptyTimestamp(row.started_at) ?? fallbackTimestamp(row);
     case 'warned':
-      return row.warned_at ?? row.updated_at;
+      return nonEmptyTimestamp(row.warned_at) ?? fallbackTimestamp(row);
     case 'stopped':
     case 'expired':
-      return row.stopped_at ?? row.updated_at;
+      return nonEmptyTimestamp(row.stopped_at) ?? fallbackTimestamp(row);
     case 'error':
     case 'sleeping':
-      return row.updated_at;
+      return fallbackTimestamp(row);
   }
 }
 

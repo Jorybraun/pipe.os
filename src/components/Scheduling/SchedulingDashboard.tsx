@@ -163,6 +163,9 @@ function firstNonBlank(...values: Array<string | null | undefined>): string | nu
 
 function assessmentFilterBucket(interview: ScheduledInterview): Exclude<AssessmentFilterMode, 'ALL' | 'ACTION_NEEDED'> | null {
   const progress = interview.assessmentProgress ?? null;
+  if (progress?.readiness?.status === 'EVALUATED' || progress?.readiness?.isUsableHiringSignal) return 'EVALUATED';
+  if (progress?.readiness?.status === 'NEEDS_ATTENTION') return 'NEEDS_ATTENTION';
+  if (progress?.readiness?.isReadyForEvaluation) return 'READY_TO_EVALUATE';
   if (progress?.evaluation?.status === 'EVALUATED') return 'EVALUATED';
   if (
     progress?.stage === 'NEEDS_ATTENTION'
@@ -232,7 +235,18 @@ function statusMessage(notification: BookingNotification): string {
 }
 
 export function SchedulingDashboard(): JSX.Element {
-  const { interviews, isLoading, error, updateStatus, sendInvite, refetch } = useScheduledInterviews();
+  const {
+    interviews,
+    isLoading,
+    isLoadingMore = false,
+    error,
+    total = interviews.length,
+    hasMore = false,
+    updateStatus,
+    sendInvite,
+    refetch,
+    loadMore = async () => undefined,
+  } = useScheduledInterviews();
   const { notifications, isConnected } = useBookingNotifications();
   const api = useApiClient();
   const [showInviteModal, setShowInviteModal] = useState(false);
@@ -324,6 +338,15 @@ export function SchedulingDashboard(): JSX.Element {
     () => interviews.filter((interview) => matchesAssessmentFilter(interview, assessmentFilter)),
     [assessmentFilter, interviews],
   );
+  const loadedInterviewCount = interviews.length;
+  const totalInterviewCount = Math.max(total, loadedInterviewCount);
+  const interviewCountLabel = assessmentFilter === 'ALL'
+    ? hasMore
+      ? `${loadedInterviewCount} loaded · ${totalInterviewCount} total`
+      : `${loadedInterviewCount} total`
+    : hasMore
+      ? `${visibleInterviews.length} shown · ${loadedInterviewCount} loaded · ${totalInterviewCount} total`
+      : `${visibleInterviews.length} shown · ${loadedInterviewCount} total`;
 
   // Group interviews by the selected recruiter view.
   const groupedInterviews = useMemo(() => {
@@ -495,9 +518,7 @@ export function SchedulingDashboard(): JSX.Element {
             NEW INTERVIEW
           </button>
           <span style={{ fontSize: 13, color: 'var(--pipe-text-dim)', fontFamily: '"Space Mono", monospace' }}>
-            {assessmentFilter === 'ALL'
-              ? `${interviews.length} total`
-              : `${visibleInterviews.length} shown · ${interviews.length} total`}
+            {interviewCountLabel}
           </span>
           <div
             role="group"
@@ -649,6 +670,30 @@ export function SchedulingDashboard(): JSX.Element {
               </div>
             </div>
           ))}
+          {hasMore && (
+            <div style={{ display: 'flex', justifyContent: 'center', paddingTop: 8 }}>
+              <button
+                type="button"
+                onClick={() => void loadMore()}
+                disabled={isLoadingMore}
+                style={{
+                  minHeight: 36,
+                  padding: '0 18px',
+                  border: '1px solid var(--pipe-border)',
+                  borderRadius: 6,
+                  background: 'var(--pipe-surface-solid)',
+                  color: 'var(--pipe-text)',
+                  fontFamily: '"Space Mono", monospace',
+                  fontSize: 11,
+                  fontWeight: 700,
+                  letterSpacing: '0.05em',
+                  cursor: isLoadingMore ? 'wait' : 'pointer',
+                }}
+              >
+                {isLoadingMore ? 'LOADING...' : `LOAD MORE (${totalInterviewCount - loadedInterviewCount} REMAINING)`}
+              </button>
+            </div>
+          )}
         </div>
       )}
 
@@ -675,9 +720,8 @@ export function SchedulingDashboard(): JSX.Element {
             videoEnabled: boolean;
             workspaceEnabled: boolean;
             recordingEnabled: boolean;
-            clippyEnabled: boolean;
+            aiAssistantEnabled: boolean;
           };
-          agentType?: string | null;
         }) => {
           const result = await api.post<{
             interview: {

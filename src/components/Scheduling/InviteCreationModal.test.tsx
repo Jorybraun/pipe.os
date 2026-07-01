@@ -38,6 +38,25 @@ describe('InviteCreationModal open-source challenge packets', () => {
     });
   });
 
+  it('keeps standalone code review invites on the assess-link path', () => {
+    mocks.useSchedulingConnection.mockReturnValue({
+      connection: null,
+    });
+
+    render(
+      <InviteCreationModal
+        isOpen
+        onClose={vi.fn()}
+        onCreateInvite={vi.fn()}
+        initialInterviewType="CODE_REVIEW"
+      />,
+    );
+
+    expect(screen.getByText('Assessment invite')).toBeInTheDocument();
+    expect(screen.getByText('Send the assess link')).toBeInTheDocument();
+    expect(screen.queryByText('Send a controlled workspace room link')).toBeNull();
+  });
+
   it('submits a complete manual open-source challenge packet for assessment invites', async () => {
     mocks.useSchedulingConnection.mockReturnValue({
       connection: null,
@@ -58,6 +77,9 @@ describe('InviteCreationModal open-source challenge packets', () => {
 
     expect(screen.getByText('Matched repo task in a secure assessment workspace')).toBeInTheDocument();
     fireEvent.click(screen.getByRole('button', { name: /Open-source bug fix/i }));
+    expect(screen.getByText('Workspace invite')).toBeInTheDocument();
+    expect(screen.getByText('Send a controlled workspace room link')).toBeInTheDocument();
+    expect(screen.queryByText('Send the assess link')).toBeNull();
     fireEvent.change(screen.getByPlaceholderText('Jane Doe'), {
       target: { value: 'Ada Lovelace' },
     });
@@ -68,29 +90,41 @@ describe('InviteCreationModal open-source challenge packets', () => {
       target: { value: 'Confirm the manual challenge is fair before treating the result as signal.' },
     });
     fireEvent.click(screen.getByRole('button', { name: 'Specify repo manually' }));
+    expect(screen.getByTestId('open-source-packet-checklist')).toHaveTextContent('Concrete GitHub repo');
+    expect(screen.getByTestId('open-source-packet-checklist')).toHaveTextContent('Missing');
+    expect(screen.getByRole('button', { name: 'CREATE ASSESSMENT INVITE' })).toBeDisabled();
     fireEvent.change(screen.getByPlaceholderText('https://github.com/owner/repo'), {
       target: { value: 'https://github.com/sourcegraph/sourcegraph' },
     });
+    expect(screen.getByTestId('packet-check-repository')).toHaveTextContent('Ready');
+    expect(screen.getByTestId('packet-check-base-commit')).toHaveTextContent('Missing');
     expect(screen.getByPlaceholderText('PR number (optional)')).toBeInTheDocument();
     fireEvent.change(screen.getByPlaceholderText('40-character base commit SHA'), {
       target: { value: '1111111111111111111111111111111111111111' },
     });
+    expect(screen.getByTestId('packet-check-base-commit')).toHaveTextContent('Ready');
     fireEvent.change(screen.getByPlaceholderText('Fix streaming transcript ordering'), {
       target: { value: 'Fix event ordering in the transcript stream' },
     });
     fireEvent.change(screen.getByPlaceholderText('Describe the exact bug, task, and boundaries.'), {
       target: { value: 'Investigate and fix transcript segments arriving out of order after reconnect.' },
     });
+    expect(screen.getByTestId('packet-check-task')).toHaveTextContent('Ready');
     fireEvent.change(screen.getByPlaceholderText('One success criterion per line'), {
       target: {
         value: 'Segments remain ordered by timestamp\nReconnect does not duplicate final segments',
       },
     });
+    expect(screen.getByTestId('packet-check-success-criteria')).toHaveTextContent('Ready');
     fireEvent.change(screen.getByPlaceholderText('One required evidence item per line'), {
       target: {
         value: 'Commit SHA on assessment branch\nTest command output\nCandidate explanation',
       },
     });
+    expect(screen.getByTestId('packet-check-expected-evidence')).toHaveTextContent('Ready');
+    expect(screen.getByTestId('open-source-packet-checklist')).toHaveTextContent(
+      'Candidate works on an assessment branch or fork. Upstream PRs require later review.',
+    );
 
     fireEvent.click(screen.getByRole('button', { name: 'CREATE ASSESSMENT INVITE' }));
 
@@ -114,8 +148,15 @@ describe('InviteCreationModal open-source challenge packets', () => {
         'Test command output',
         'Candidate explanation',
       ],
+      features: {
+        videoEnabled: true,
+        workspaceEnabled: true,
+        recordingEnabled: true,
+        aiAssistantEnabled: false,
+      },
     }));
     expect(onCreateInvite.mock.calls[0]?.[0]).not.toHaveProperty('githubPrNumber');
+    expect(onCreateInvite.mock.calls[0]?.[0]).not.toHaveProperty('agentType');
   });
 
   it('keeps manual open-source packets blocked until the base commit is a 40-character hex SHA', () => {

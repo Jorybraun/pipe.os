@@ -13,6 +13,7 @@ const PIERRE_ERROR_PATTERN = /parsePatchContent|Invalid hunk|@pierre\/diffs|pier
 const VIDEO_ROOM_PATTERN = /video room|waiting room|camera|microphone|join video|open host room/i;
 const EXPECT_AUTOMATCH = process.env.CODE_REVIEW_EXPECT_AUTOMATCH === '1';
 const EXPECT_MANUAL_OVERRIDE = process.env.CODE_REVIEW_EXPECT_MANUAL_OVERRIDE === '1';
+const EXPECT_PROFILE_RECEIVED = process.env.CODE_REVIEW_EXPECT_PROFILE_RECEIVED === '1';
 const EXPECT_MATCH_PROOF_VERDICT = (
   process.env.CODE_REVIEW_EXPECT_MATCH_PROOF_VERDICT || 'PASSED'
 ).trim();
@@ -36,15 +37,32 @@ function inviteTokenFromAssessInput(tokenOrUrl: string): string {
 }
 
 async function startWelcomeScreenIfPresent(page: Page): Promise<void> {
-  const startButton = page.getByRole('button', { name: 'START_INTERVIEW' });
-  await startButton.waitFor({ state: 'visible', timeout: 10_000 }).catch(() => undefined);
+  const startButtons = page.getByRole('button', { name: 'START_INTERVIEW' });
+  await startButtons.first().waitFor({ state: 'visible', timeout: 10_000 }).catch(() => undefined);
 
-  const startButtonCount = await startButton.count();
-  if (startButtonCount !== 1) return;
-  if (!(await startButton.isVisible())) return;
+  for (let attempt = 0; attempt < 3; attempt += 1) {
+    const startButtonCount = await startButtons.count();
+    let clicked = false;
+    for (let index = 0; index < startButtonCount; index += 1) {
+      const startButton = startButtons.nth(index);
+      if (!(await startButton.isVisible())) continue;
+      await startButton.click();
+      clicked = true;
+      break;
+    }
+    if (!clicked) return;
 
-  await startButton.click();
-  await startButton.waitFor({ state: 'hidden', timeout: 10_000 }).catch(() => undefined);
+    const advanced = await Promise.race([
+      page.getByTestId('code-review-challenge').waitFor({ state: 'visible', timeout: 6_000 })
+        .then(() => true)
+        .catch(() => false),
+      page.getByTestId('assessment-submitted').waitFor({ state: 'visible', timeout: 6_000 })
+        .then(() => true)
+        .catch(() => false),
+    ]);
+    if (advanced) return;
+    await page.waitForTimeout(500);
+  }
 }
 
 function isReviewableDiffLineText(text: string): boolean {
@@ -140,8 +158,21 @@ test.describe('CODE_REVIEW assess-link smoke', () => {
     await page.goto(buildAssessUrl(ASSESS_TOKEN));
     await startWelcomeScreenIfPresent(page);
 
+    if (EXPECT_PROFILE_RECEIVED) {
+      const submitted = page.getByTestId('assessment-submitted');
+      await expect(submitted).toBeVisible({ timeout: 45_000 });
+      await expect(submitted).toContainText('Profile received.');
+      await expect(submitted).toContainText('email you when a source-backed code review is ready');
+      await expect(page.locator('body')).not.toContainText(/WAITING_FOR_MATCH|MATCHING IN PROGRESS|Building your personalized challenge|Repo matching|Challenge needs attention/i);
+      await expect(page.getByTestId('code-review-challenge')).toHaveCount(0);
+      await expect(page.locator('body')).not.toContainText(VIDEO_ROOM_PATTERN);
+      expect(diffRenderErrors).toEqual([]);
+      return;
+    }
+
     const codeReview = page.getByTestId('code-review-challenge');
     await expect(codeReview).toBeVisible({ timeout: 45_000 });
+    await expect(page.locator('body')).not.toContainText(/WAITING_FOR_MATCH|MATCHING IN PROGRESS|Building your personalized challenge/i);
 
     const repoLink = page.getByTestId('code-review-repo-link');
     const prLink = page.getByTestId('code-review-pr-link');

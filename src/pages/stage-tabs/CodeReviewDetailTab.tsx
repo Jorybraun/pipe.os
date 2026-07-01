@@ -3,7 +3,7 @@
  *
  * Replaces the generic "Challenges" tab entirely. Code review is an async
  * assessment: candidates review a source-backed PR, defend comments against an
- * AI implementer, and leave evidence recruiters can inspect later.
+ * implementation author, and leave evidence recruiters can inspect later.
  */
 
 import { useState, useCallback } from 'react';
@@ -119,7 +119,7 @@ export default function CodeReviewDetailTab(): JSX.Element {
             {[
               { label: 'ASSESS LINK', icon: GitPullRequest },
               { label: 'REVIEW PR', icon: Search },
-              { label: 'AI PUSHBACK', icon: Bot },
+              { label: 'AUTHOR REPLIES', icon: Bot },
               { label: 'RESULT', icon: CheckCircle2 },
             ].map((step, i, arr) => (
               <div
@@ -236,8 +236,8 @@ export default function CodeReviewDetailTab(): JSX.Element {
             },
             {
               icon: Bot,
-              label: 'AI DEVELOPER',
-              text: 'Candidate comments can trigger implementer pushback so reviewers must defend engineering decisions, not just spot syntax.',
+              label: 'IMPLEMENTATION AUTHOR',
+              text: 'Candidate comments can trigger author replies so reviewers must defend engineering decisions, not just spot syntax.',
             },
           ].map((item) => (
             <div

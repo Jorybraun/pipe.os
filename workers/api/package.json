@@ -7,6 +7,7 @@
     "deploy": "wrangler deploy",
     "type-check": "tsc --noEmit",
     "test": "vitest run",
+    "bench:routes": "tsx scripts/benchmarkApiRoutes.ts",
     "review-graph:readiness": "tsx scripts/checkReviewChallengeGraphReadiness.ts --json",
     "review-graph:remote-readiness": "tsx scripts/checkReviewChallengeGraphReadiness.ts --remote --json",
     "review-graph:remote-schema-readiness": "tsx scripts/checkReviewChallengeGraphReadiness.ts --remote --schema-only --json",
@@ -16,6 +17,7 @@
     "review-graph:backfill-remote": "tsx scripts/backfillReviewChallengePackets.ts --remote",
     "review-graph:backfill-report-gate": "tsx scripts/checkReviewGraphBackfillReport.ts",
     "matching-eval:readiness": "tsx scripts/evaluateMatching.ts --remote --check-latest-production-pass",
+    "living-context:match-quality": "tsx scripts/runMatchQualityEvaluation.ts",
     "review-judge:verify": "tsx scripts/verifyCodeReviewJudgeExamples.ts --require-replay-ready --json",
     "review-packets:repair-profiles": "tsx scripts/backfillReviewPacketReviewProfiles.ts"
   },

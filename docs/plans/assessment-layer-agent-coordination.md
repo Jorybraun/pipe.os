@@ -2,16 +2,16 @@
 
 **Date:** 2026-06-27
 **Active PR:** https://github.com/Jorybraun/pipe.os/pull/104
-**Purpose:** Keep parallel agents aligned while building the PIPE-OS assessment layer and 95 Until Infinity runtime.
+**Purpose:** Keep parallel agents aligned while building the PIPE-OS assessment layer and room runtime.
 
 This document is an ownership and integration contract, not a personal todo list.
 Update it only when lanes, interfaces, or merge rules change.
 
 ## North Star
 
-PIPE-OS is building a source-backed assessment layer. The 95 Until Infinity room,
-standard video room, code review flow, dev container, chat, transcript pipeline,
-and Clippy/Devin interactions are evidence-producing surfaces.
+PIPE-OS is building a source-backed assessment layer. The standard video room,
+code review flow, dev container, chat, transcript pipeline, and AI agent bridge
+interactions are evidence-producing surfaces.
 
 The assessment layer is the durable system underneath them. It captures candidate
 reasoning, communication, AI/tool usage, code changes, tests, transcripts, and
@@ -20,22 +20,22 @@ claims when those claims cite exact source evidence.
 
 ## Non-Negotiables
 
-- No fake Devin, fake Clippy, simulated AI developer, or mocked assessment claims.
+- No fake Devin, simulated AI developer, or mocked assessment claims.
 - If the AI provider is unavailable, record `AI_DEVELOPER_UNAVAILABLE`.
 - No positive evaluation claim without source refs.
 - No embedding-only match or generic fallback challenge.
 - Candidate-facing clients receive invite/session tokens, not internal IDs.
 - Server-only rubrics, planted bugs, and expected solutions stay server-side.
 
-## Agent A Lane: 95 Runtime And Mode Routing
+## Agent A Lane: Room Runtime And Mode Routing
 
 Agent A owns the live interview surface and mode-routing seam.
 
 Primary responsibilities:
 
-- Keep standard video room and 95 room usable in `app-dev.hire-app.com`.
-- Maintain room synchronization, shared state, chat, mouse presence, recording,
-  transcription, and dev-container launch behavior.
+- Keep standard video and assessment rooms usable in `app-dev.hire-app.com`.
+- Maintain reliable video, chat, recording, transcription, room state, and
+  dev-container launch behavior.
 - Keep `OPEN_SOURCE_BUG_FIX` selectable and routable as an assessment mode.
 - Ensure app-dev deployment stays continuously testable.
 
@@ -74,7 +74,7 @@ Preferred files for Agent B:
 - `workers/api/src/lib/assessmentLayer/persistence.ts`
 - `workers/api/src/routes/assessment/repoTaskSessions.ts`
 - `workers/api/src/routes/assessment/__tests__/repoTaskSessions.test.ts`
-- `docs/plans/95-until-infinity-repo-task-interview-session.md`
+- `docs/plans/open-source-repo-task-interview-session.md`
 
 Agent B should not edit Agent A's routing/runtime files unless coordination is
 recorded here first.
@@ -110,7 +110,7 @@ OPEN_SOURCE_BUG_FIX scheduled interview
 
 ## Branch And Merge Protocol
 
-- Start from latest pushed `codex/video-room-paint-recording-fixes` or PR #104.
+- Start from the latest pushed open-source assessment branch or PR #104.
 - Prefer separate branches for parallel work.
 - Do not edit another agent's owned files without first adding a short note to
   this document under "Coordination Notes".

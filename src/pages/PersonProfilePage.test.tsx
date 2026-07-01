@@ -61,6 +61,25 @@ function sourceSpan(overrides: Partial<LivingContextSourceRef> = {}): LivingCont
         strengths: ['Found the source-backed regression risk.'],
         growth_areas: ['Probe how they balance timing trade-offs under pushback.'],
       },
+      dimensions: {
+        source_accuracy: { score: 2 },
+        bug_detection: { score: 2 },
+        test_reasoning: { score: 2 },
+        risk_calibration: { score: 1 },
+        communication: { score: 2 },
+        ai_usage_judgment: { score: 1 },
+      },
+      evidence: [
+        { id: 'comment-1', text: 'Add a regression test around impatient hover click timing.' },
+        { id: 'pushback-1', text: 'The timeout cleanup needs to be defended before merge.' },
+      ],
+      metrics: {
+        annotations: 1,
+        pushback_threads: 1,
+        source_refs: 4,
+        rubric_dimensions: 6,
+        score_confidence: 0.82,
+      },
     }),
     byteStart: 0,
     byteEnd: null,
@@ -141,6 +160,11 @@ function matchDecisionRecord(): LivingContextRecord {
           challengeId: 'challenge-packet-1',
           prNumber: 95,
           repoId: 'repo-1',
+          candidateSourceCount: 2,
+          repoSourceCount: 2,
+          roleSourceCount: 0,
+          alignedDemandCount: 2,
+          stretchCount: 0,
           provenanceComplete: true,
         },
       },
@@ -558,6 +582,69 @@ function makeContact(): PersonContact {
   };
 }
 
+function makeSelectedCodeReviewDecision(): unknown {
+  return {
+    decisionLabel: 'Code-review decision',
+    sessionId: 'review-session-1',
+    outcome: 'Candidate requested changes',
+    recommendation: 'Advance with focused probe',
+    recommendationDetail: 'Use the source-backed review as a positive signal, then calibrate the remaining uncertainty.',
+    uncertainty: 'Focused calibration needed',
+    uncertaintyDetail: 'Probe timing trade-offs before treating the score as final hiring signal.',
+    missingContext: ['Probe timing trade-offs.'],
+    assessmentValidity: 'Usable source-backed signal',
+    assessmentValidityDetail: 'Score, selected PR, and match proof are present.',
+    nextAction: 'Schedule focused technical calibration',
+    nextActionDetail: 'Use the next conversation to pressure-test the weakest review dimension.',
+    scoreLabel: '82/100 Strong',
+    scoreProvenanceLabel: '6 rubric dimensions · 2 evidence items · 5 scoring metrics',
+    challengeLabel: 'acme/widgets PR #42',
+    challengeUrl: 'https://github.com/acme/widgets/pull/42',
+    narrative: 'Candidate found the missing retry test and defended the review.',
+    strengths: ['Found the release-blocking risk.'],
+    probes: ['Probe timing trade-offs.'],
+    proofCount: 4,
+    proofItems: [
+      { id: 'assignment', label: 'assignment', text: 'acme/widgets PR #42' },
+      { id: 'score', label: 'score report', text: '82/100 Strong' },
+      { id: 'match-proof', label: 'match proof', text: 'Rendered candidate evidence and repo evidence are bridged by exact source spans.' },
+    ],
+    basisItems: [
+      { label: 'Score report', value: 'Scored', satisfied: true },
+      { label: 'Match proof', value: 'Source-backed match', satisfied: true },
+    ],
+  };
+}
+
+function makeSelectedManualCodeReviewDecision(): unknown {
+  return {
+    ...(makeSelectedCodeReviewDecision() as Record<string, unknown>),
+    recommendation: 'Review assignment fairness before rejecting',
+    recommendationDetail: 'Use the weak review as a technical signal, then calibrate whether the gap was ability, context, or assignment fit.',
+    uncertainty: 'High calibration risk',
+    uncertaintyDetail: 'Manual PR assignment does not prove candidate-fit matching.',
+    missingContext: ['Manual PR assignment needs candidate-fit calibration.'],
+    assessmentValidity: 'Score needs human calibration',
+    assessmentValidityDetail: 'Score, review comments, and repo challenge proof exist, but candidate-fit proof is not present.',
+    nextAction: 'Review assignment fairness before rejecting',
+    nextActionDetail: 'Use the weak score and growth area to verify whether this reflects candidate ability, assignment fit, or missing context before rejecting.',
+    scoreLabel: '38/100 Weak',
+    challengeLabel: 'mui/base-ui PR #973',
+    challengeUrl: 'https://github.com/mui/base-ui/pull/973',
+    sourceProofSummary: 'repo evidence, scoring provenance, and open gaps',
+    proofItems: [
+      { id: 'assignment', label: 'assignment', text: 'mui/base-ui PR #973' },
+      { id: 'score', label: 'score report', text: '38/100 Weak' },
+      { id: 'match-proof', label: 'match proof', text: 'Manual override: recruiter-selected source-backed review challenge.' },
+    ],
+    basisItems: [
+      { label: 'Score report', value: 'Scored', satisfied: true },
+      { label: 'Review evidence', value: '2 annotations', satisfied: true },
+      { label: 'Match proof', value: 'Assignment evidence only', satisfied: false },
+    ],
+  };
+}
+
 async function flushAsyncUpdates(): Promise<void> {
   await act(async () => {
     await Promise.resolve();
@@ -596,6 +683,474 @@ describe('PersonProfilePage', () => {
     mocks.api.get.mockReset();
   });
 
+  it('renders navigation living context immediately and hydrates the full graph in the background', async () => {
+    const initialContext = makeLivingContext();
+
+    mocks.api.get
+      .mockResolvedValueOnce({ contact: makeContact() })
+      .mockResolvedValueOnce(initialContext);
+
+    renderPage({ livingContext: initialContext, selectedAssessment: makeSelectedAssessmentProgress() });
+    await flushAsyncUpdates();
+
+    expect(screen.queryByText('Loading person context...')).not.toBeInTheDocument();
+    expect(screen.getByRole('heading', { name: 'Ada Reviewer' })).toBeInTheDocument();
+    const cockpit = screen.getByTestId('person-decision-cockpit');
+    expect(cockpit).toHaveTextContent('Decision cockpit');
+    expect(cockpit).toHaveTextContent('Advance with focused probe');
+    expect(screen.getByTestId('person-code-review-decision')).toHaveTextContent('Code-review decision');
+    expect(mocks.api.get).toHaveBeenCalledWith('/api/v1/contacts/person-1');
+    expect(mocks.api.get).toHaveBeenCalledWith('/api/v1/contacts/person-1/living-context');
+  });
+
+  it('keeps generic navigation living context lightweight without full graph hydration', async () => {
+    const initialContext = makeLivingContext();
+
+    mocks.api.get
+      .mockResolvedValueOnce({ contact: makeContact() });
+
+    renderPage({ livingContext: initialContext });
+    await flushAsyncUpdates();
+
+    expect(screen.queryByText('Loading person context...')).not.toBeInTheDocument();
+    expect(screen.getByRole('heading', { name: 'Ada Reviewer' })).toBeInTheDocument();
+    expect(mocks.api.get).toHaveBeenCalledWith('/api/v1/contacts/person-1');
+    expect(mocks.api.get).not.toHaveBeenCalledWith('/api/v1/contacts/person-1/living-context');
+  });
+
+  it('renders a selected code-review decision from navigation while background graph hydration is empty', async () => {
+    const summaryContext = makeLivingContext();
+    summaryContext.interactions = [];
+    summaryContext.artifacts = [];
+    summaryContext.contextRecords = [];
+    summaryContext.assertions = [];
+    summaryContext.signals = [];
+    summaryContext.relationships = [];
+
+    mocks.api.get
+      .mockResolvedValueOnce({ contact: makeContact() })
+      .mockResolvedValueOnce(summaryContext);
+
+    renderPage({
+      livingContext: summaryContext,
+      selectedCodeReviewDecision: makeSelectedCodeReviewDecision(),
+    });
+    await flushAsyncUpdates();
+
+    expect(screen.queryByText('Loading person context...')).not.toBeInTheDocument();
+    const cockpit = screen.getByTestId('person-decision-cockpit');
+    expect(cockpit).toHaveTextContent('Advance with focused probe');
+    expect(cockpit).toHaveTextContent('Usable source-backed signal');
+    const decision = screen.getByTestId('person-code-review-decision');
+    expect(decision).toHaveTextContent('82/100 Strong');
+    expect(screen.getByTestId('person-code-review-decision-state')).toHaveTextContent('Usable signal');
+    expect(screen.getByTestId('person-code-review-decision-state')).toHaveAttribute('aria-label', 'Code-review decision state: usable signal');
+    expect(decision).toHaveTextContent('Score provenance');
+    expect(decision).toHaveTextContent('6 rubric dimensions · 2 evidence items · 5 scoring metrics');
+    expect(decision).toHaveTextContent('acme/widgets PR #42');
+    const mix = screen.getByTestId('person-evidence-mix');
+    expect(mix).toHaveTextContent('Technical assessment signal is present');
+    expect(mix).toHaveTextContent('Use this selected code-review decision as current technical evidence');
+    expect(mix).toHaveTextContent('Schedule focused technical calibration');
+    expect(mix).not.toHaveTextContent('No source mix yet');
+    expect(mix).not.toHaveTextContent('Collect first source-backed evidence');
+    expect(mocks.api.get).toHaveBeenCalledWith('/api/v1/contacts/person-1/living-context');
+  });
+
+  it('makes empty selected code-review missing context explicit', async () => {
+    const summaryContext = makeLivingContext();
+    summaryContext.interactions = [];
+    summaryContext.artifacts = [];
+    summaryContext.contextRecords = [];
+    summaryContext.assertions = [];
+    summaryContext.signals = [];
+    summaryContext.relationships = [];
+    const decision = makeSelectedCodeReviewDecision() as Record<string, unknown>;
+    decision.missingContext = [];
+
+    mocks.api.get
+      .mockResolvedValueOnce({ contact: makeContact() })
+      .mockResolvedValueOnce(summaryContext);
+
+    renderPage({
+      livingContext: summaryContext,
+      selectedCodeReviewDecision: decision,
+    });
+    await flushAsyncUpdates();
+
+    const decisionCard = screen.getByTestId('person-code-review-decision');
+    expect(decisionCard).toHaveTextContent('Missing context');
+    expect(decisionCard).toHaveTextContent('No blocking evidence gap recorded; confirm the signal transfers beyond this task.');
+    expect(screen.getByTestId('person-decision-cockpit')).toHaveTextContent('No blocking evidence gap');
+  });
+
+  it('hydrates real interaction coverage after opening from a compact code-review navigation decision', async () => {
+    const summaryContext = makeLivingContext();
+    summaryContext.interactions = [];
+    summaryContext.artifacts = [];
+    summaryContext.contextRecords = [];
+    summaryContext.assertions = [];
+    summaryContext.signals = [];
+    summaryContext.relationships = [];
+    let resolveContext: (value: LivingContextReadModel) => void = () => undefined;
+    const pendingContext = new Promise<LivingContextReadModel>((resolve) => {
+      resolveContext = resolve;
+    });
+
+    mocks.api.get
+      .mockResolvedValueOnce({ contact: makeContact() })
+      .mockReturnValueOnce(pendingContext);
+
+    renderPage({
+      livingContext: summaryContext,
+      selectedCodeReviewDecision: makeSelectedCodeReviewDecision(),
+    });
+    await flushAsyncUpdates();
+
+    expect(screen.queryByText('Loading person context...')).not.toBeInTheDocument();
+    expect(screen.getByTestId('person-code-review-decision')).toHaveTextContent('acme/widgets PR #42');
+    expect(screen.getByTestId('person-interaction-coverage')).toHaveTextContent(
+      'Full source rows are loading.',
+    );
+
+    await act(async () => {
+      resolveContext(makeLivingContext());
+      await pendingContext;
+    });
+
+    expect(screen.getByTestId('person-code-review-decision')).toHaveTextContent('pierre/diffs PR #95');
+    expect(screen.getByTestId('person-interaction-coverage')).toHaveTextContent('1 code review');
+    expect(screen.getByTestId('person-interaction-coverage')).toHaveTextContent('1 resume');
+  });
+
+  it('keeps selected manual code-review proof wording honest on the person profile', async () => {
+    const summaryContext = makeLivingContext();
+    summaryContext.interactions = [];
+    summaryContext.artifacts = [];
+    summaryContext.contextRecords = [];
+    summaryContext.assertions = [];
+    summaryContext.signals = [];
+    summaryContext.relationships = [];
+
+    mocks.api.get
+      .mockResolvedValueOnce({ contact: makeContact() })
+      .mockResolvedValueOnce(summaryContext);
+
+    renderPage({
+      livingContext: summaryContext,
+      selectedCodeReviewDecision: makeSelectedManualCodeReviewDecision(),
+    });
+    await flushAsyncUpdates();
+
+    const decision = screen.getByTestId('person-code-review-decision');
+    expect(decision).toHaveTextContent('Review assignment fairness before rejecting');
+    expect(screen.getByTestId('person-code-review-decision-state')).toHaveTextContent('Calibration needed');
+    expect(screen.getByTestId('person-code-review-decision-state')).toHaveAttribute('aria-label', 'Code-review decision state: calibration needed');
+    expect(decision).toHaveTextContent('38/100 Weak');
+    expect(decision).toHaveTextContent('mui/base-ui PR #973');
+    expect(screen.getByTestId('person-decision-cockpit')).toHaveTextContent('Create fairness review');
+    const proof = screen.getByTestId('person-code-review-source-proof');
+    const proofSummary = proof.querySelector('summary');
+    expect(proofSummary).toHaveTextContent('repo evidence, scoring provenance, and open gaps');
+    expect(proofSummary).not.toHaveTextContent('candidate, role, repo');
+    expect(proofSummary).not.toHaveTextContent('candidate-repo match proof');
+    expect(proofSummary).not.toHaveTextContent('role evidence');
+    const basis = screen.getByTestId('person-code-review-decision-basis');
+    expect(basis).toHaveTextContent('Match proof');
+    expect(basis).toHaveTextContent('Assignment evidence only');
+    expect(basis).not.toHaveTextContent('8/12 Usable');
+    expect(basis).not.toHaveTextContent('Source-backed match');
+  });
+
+  it('does not turn wait-for-review wording into a duplicate code-review assessment CTA', async () => {
+    const summaryContext = makeLivingContext();
+    summaryContext.interactions = [];
+    summaryContext.artifacts = [];
+    summaryContext.contextRecords = [];
+    summaryContext.assertions = [];
+    summaryContext.signals = [];
+    summaryContext.relationships = [];
+
+    mocks.api.get
+      .mockResolvedValueOnce({ contact: makeContact() })
+      .mockResolvedValueOnce(summaryContext);
+
+    renderPage({
+      livingContext: summaryContext,
+      selectedCodeReviewDecision: {
+        ...(makeSelectedCodeReviewDecision() as Record<string, unknown>),
+        recommendation: 'Wait for review signal',
+        recommendationDetail: 'The PR assignment is ready, but the candidate has not submitted review evidence yet.',
+        uncertainty: 'Performance not scored',
+        uncertaintyDetail: 'The assignment is setup only until review comments and score evidence exist.',
+        missingContext: ['Candidate review transcript or source-backed review comments'],
+        assessmentValidity: 'Assignment ready, score missing',
+        assessmentValidityDetail: 'The repo challenge and match provenance are source-backed, but there is no performance signal yet.',
+        nextAction: 'Wait for review signal',
+        nextActionDetail: 'Do not create another code-review invite; evaluate once the candidate submits review evidence.',
+        scoreLabel: null,
+        scoreProvenanceLabel: null,
+      },
+    });
+    await flushAsyncUpdates();
+
+    const cockpit = screen.getByTestId('person-decision-cockpit');
+    expect(cockpit).toHaveTextContent('Wait for review signal');
+    expect(cockpit).toHaveTextContent('Do not create another code-review invite');
+    expect(screen.queryByTestId('person-next-action-cta')).not.toBeInTheDocument();
+    expect(screen.queryByRole('button', { name: 'Create code-review assessment' })).not.toBeInTheDocument();
+  });
+
+  it('sanitizes stale selected code-review navigation state instead of crashing the profile', async () => {
+    const summaryContext = makeLivingContext();
+    summaryContext.interactions = [];
+    summaryContext.artifacts = [];
+    summaryContext.contextRecords = [];
+    summaryContext.assertions = [];
+    summaryContext.signals = [];
+    summaryContext.relationships = [];
+
+    mocks.api.get
+      .mockResolvedValueOnce({ contact: makeContact() })
+      .mockResolvedValueOnce(summaryContext);
+
+    renderPage({
+      livingContext: summaryContext,
+      selectedCodeReviewDecision: {
+        decisionLabel: 'Code-review decision',
+        sessionId: 'review-session-stale',
+        outcome: 'Candidate requested changes',
+        recommendation: 'Review assignment fairness before rejecting',
+        recommendationDetail: 'Route-state fallback should remain visible without trusting malformed proof.',
+        uncertainty: 'High calibration risk',
+        uncertaintyDetail: 'Malformed navigation state cannot prove candidate-fit matching.',
+        missingContext: 'Manual PR assignment needs candidate-fit calibration.',
+        assessmentValidity: 'Score needs human calibration',
+        assessmentValidityDetail: 'The selected review exists, but proof arrays were not valid.',
+        nextAction: 'Review assignment fairness before rejecting',
+        nextActionDetail: 'Ask the hiring team to verify assignment fit before deciding.',
+        scoreLabel: '38/100 Weak',
+        scoreProvenanceLabel: null,
+        challengeLabel: 'mui/base-ui PR #973',
+        challengeUrl: 'https://github.com/mui/base-ui/pull/973',
+        narrative: 'Malformed route state should not crash this page.',
+        strengths: 'Found one issue.',
+        probes: null,
+        proofCount: '4',
+        sourceProofSummary: null,
+        proofItems: null,
+        basisItems: '8/12 Usable',
+      },
+    });
+    await flushAsyncUpdates();
+
+    const decision = screen.getByTestId('person-code-review-decision');
+    expect(decision).toHaveTextContent('Review assignment fairness before rejecting');
+    expect(decision).toHaveTextContent('38/100 Weak');
+    expect(decision).toHaveTextContent('0 source-backed proof items');
+    expect(decision).toHaveTextContent('No blocking evidence gap recorded; confirm the signal transfers beyond this task.');
+    const basis = screen.getByTestId('person-code-review-decision-basis');
+    expect(basis).toHaveTextContent('Match proof');
+    expect(basis).toHaveTextContent('Missing');
+    expect(basis).not.toHaveTextContent('8/12 Usable');
+  });
+
+  it('does not trust source-backed match route-state claims without candidate and repo proof', async () => {
+    const summaryContext = makeLivingContext();
+    summaryContext.interactions = [];
+    summaryContext.artifacts = [];
+    summaryContext.contextRecords = [];
+    summaryContext.assertions = [];
+    summaryContext.signals = [];
+    summaryContext.relationships = [];
+
+    mocks.api.get
+      .mockResolvedValueOnce({ contact: makeContact() })
+      .mockResolvedValueOnce(summaryContext);
+
+    renderPage({
+      livingContext: summaryContext,
+      selectedCodeReviewDecision: {
+        ...(makeSelectedCodeReviewDecision() as Record<string, unknown>),
+        proofItems: [
+          { id: 'assignment', label: 'assignment', text: 'acme/widgets PR #42' },
+          { id: 'score', label: 'score report', text: '82/100 Strong' },
+        ],
+        sourceProofSummary: 'repo evidence and scoring provenance',
+        basisItems: [
+          { label: 'Score report', value: 'Scored', satisfied: true },
+          { label: 'Match proof', value: 'Source-backed match', satisfied: true },
+        ],
+      },
+    });
+    await flushAsyncUpdates();
+
+    const basis = screen.getByTestId('person-code-review-decision-basis');
+    expect(basis).toHaveTextContent('Match proof');
+    expect(basis).toHaveTextContent('Missing');
+    expect(basis).not.toHaveTextContent('Source-backed match');
+    const cockpit = screen.getByTestId('person-decision-cockpit');
+    expect(cockpit).toHaveTextContent('Collect missing evidence');
+    expect(cockpit).not.toHaveTextContent('Advance with focused probe');
+    const proof = screen.getByTestId('person-code-review-source-proof');
+    const proofSummary = proof.querySelector('summary');
+    expect(proofSummary).not.toHaveTextContent('candidate-repo match proof');
+  });
+
+  it('does not trust source proof summary text as candidate-repo match proof by itself', async () => {
+    const summaryContext = makeLivingContext();
+    summaryContext.interactions = [];
+    summaryContext.artifacts = [];
+    summaryContext.contextRecords = [];
+    summaryContext.assertions = [];
+    summaryContext.signals = [];
+    summaryContext.relationships = [];
+
+    mocks.api.get
+      .mockResolvedValueOnce({ contact: makeContact() })
+      .mockResolvedValueOnce(summaryContext);
+
+    renderPage({
+      livingContext: summaryContext,
+      selectedCodeReviewDecision: {
+        ...(makeSelectedCodeReviewDecision() as Record<string, unknown>),
+        proofItems: [
+          { id: 'assignment', label: 'assignment', text: 'acme/widgets PR #42' },
+          { id: 'score', label: 'score report', text: '82/100 Strong' },
+        ],
+        sourceProofSummary: 'candidate-repo match proof, repo evidence, and scoring provenance',
+        basisItems: [
+          { label: 'Score report', value: 'Scored', satisfied: true },
+          { label: 'Match proof', value: 'Source-backed match', satisfied: true },
+        ],
+      },
+    });
+    await flushAsyncUpdates();
+
+    const basis = screen.getByTestId('person-code-review-decision-basis');
+    expect(basis).toHaveTextContent('Match proof');
+    expect(basis).toHaveTextContent('Missing');
+    expect(basis).not.toHaveTextContent('Source-backed match');
+    const cockpit = screen.getByTestId('person-decision-cockpit');
+    expect(cockpit).toHaveTextContent('Collect missing evidence');
+    expect(cockpit).not.toHaveTextContent('Advance with focused probe');
+    const proof = screen.getByTestId('person-code-review-source-proof');
+    const proofSummary = proof.querySelector('summary');
+    expect(proofSummary).not.toHaveTextContent('candidate-repo match proof');
+  });
+
+  it('does not trust route-state proof counts without parsed proof items', async () => {
+    const summaryContext = makeLivingContext();
+    summaryContext.interactions = [];
+    summaryContext.artifacts = [];
+    summaryContext.contextRecords = [];
+    summaryContext.assertions = [];
+    summaryContext.signals = [];
+    summaryContext.relationships = [];
+
+    mocks.api.get
+      .mockResolvedValueOnce({ contact: makeContact() })
+      .mockResolvedValueOnce(summaryContext);
+
+    renderPage({
+      livingContext: summaryContext,
+      selectedCodeReviewDecision: {
+        ...(makeSelectedManualCodeReviewDecision() as Record<string, unknown>),
+        proofCount: 9,
+        proofItems: null,
+        sourceProofSummary: null,
+        basisItems: [
+          { label: 'Score report', value: 'Scored', satisfied: true },
+          { label: 'Match proof', value: 'Assignment evidence only', satisfied: false },
+        ],
+      },
+    });
+    await flushAsyncUpdates();
+
+    const decision = screen.getByTestId('person-code-review-decision');
+    expect(decision).toHaveTextContent('0 source-backed proof items');
+    expect(decision).not.toHaveTextContent('9 source-backed proof items');
+    const proof = screen.getByTestId('person-code-review-source-proof');
+    expect(proof).toHaveTextContent('No source proof items were preserved for this selected decision.');
+  });
+
+  it('does not trust route-state source proof summary without parsed proof items', async () => {
+    const summaryContext = makeLivingContext();
+    summaryContext.interactions = [];
+    summaryContext.artifacts = [];
+    summaryContext.contextRecords = [];
+    summaryContext.assertions = [];
+    summaryContext.signals = [];
+    summaryContext.relationships = [];
+
+    mocks.api.get
+      .mockResolvedValueOnce({ contact: makeContact() })
+      .mockResolvedValueOnce(summaryContext);
+
+    renderPage({
+      livingContext: summaryContext,
+      selectedCodeReviewDecision: {
+        ...(makeSelectedManualCodeReviewDecision() as Record<string, unknown>),
+        proofItems: null,
+        proofCount: 3,
+        sourceProofSummary: 'repo evidence and scoring provenance',
+        basisItems: [
+          { label: 'Score report', value: 'Scored', satisfied: true },
+          { label: 'Match proof', value: 'Assignment evidence only', satisfied: false },
+        ],
+      },
+    });
+    await flushAsyncUpdates();
+
+    const decision = screen.getByTestId('person-code-review-decision');
+    expect(decision).toHaveTextContent('0 source-backed proof items');
+    const proof = screen.getByTestId('person-code-review-source-proof');
+    const proofSummary = proof.querySelector('summary');
+    expect(proofSummary).not.toHaveTextContent('repo evidence and scoring provenance');
+    expect(proof).toHaveTextContent('No source proof items were preserved for this selected decision.');
+  });
+
+  it('renders direct profile loads from a lightweight summary and hydrates full graph on audit open', async () => {
+    const summaryContext = makeLivingContext();
+    summaryContext.interactions = [];
+    summaryContext.artifacts = [];
+    summaryContext.contextRecords = [];
+    summaryContext.assertions = [];
+    summaryContext.signals = [];
+    summaryContext.relationships = [];
+    let resolveContext: (value: LivingContextReadModel) => void = () => undefined;
+    const pendingContext = new Promise<LivingContextReadModel>((resolve) => {
+      resolveContext = resolve;
+    });
+
+    mocks.api.get
+      .mockResolvedValueOnce({ contact: makeContact() })
+      .mockResolvedValueOnce(summaryContext)
+      .mockReturnValueOnce(pendingContext);
+
+    renderPage();
+    await flushAsyncUpdates();
+
+    expect(screen.queryByText('Loading person context...')).not.toBeInTheDocument();
+    expect(screen.getByRole('heading', { name: 'Ada Reviewer' })).toBeInTheDocument();
+    expect(screen.getByText('Source-backed profile')).toBeInTheDocument();
+    expect(mocks.api.get).toHaveBeenCalledWith('/api/v1/contacts/person-1');
+    expect(mocks.api.get).toHaveBeenCalledWith('/api/v1/contacts/person-1/living-context/summary');
+    expect(mocks.api.get).not.toHaveBeenCalledWith('/api/v1/contacts/person-1/living-context');
+
+    const audit = screen.getByTestId('person-source-audit') as HTMLDetailsElement;
+    await act(async () => {
+      audit.open = true;
+      fireEvent(audit, new Event('toggle'));
+    });
+    expect(mocks.api.get).toHaveBeenCalledWith('/api/v1/contacts/person-1/living-context');
+
+    await act(async () => {
+      resolveContext(makeLivingContext());
+      await pendingContext;
+    });
+  });
+
   it('leads source-backed code-review profiles with a concise hiring decision snapshot', async () => {
     mocks.api.get
       .mockResolvedValueOnce({ contact: makeContact() })
@@ -627,6 +1182,8 @@ describe('PersonProfilePage', () => {
     expect(decision).toHaveTextContent('Code-review decision');
     expect(decision).toHaveTextContent('Advance with focused probe');
     expect(decision).toHaveTextContent('82/100 Strong');
+    expect(decision).toHaveTextContent('Score provenance');
+    expect(decision).toHaveTextContent('6 rubric dimensions · 2 evidence items · 5 scoring metrics');
     expect(decision).toHaveTextContent('pierre/diffs PR #95');
     expect(decision).toHaveTextContent('Candidate found the missing retry test and defended the review.');
     expect(decision).toHaveTextContent('Probe how they balance timing trade-offs under pushback.');
@@ -650,6 +1207,15 @@ describe('PersonProfilePage', () => {
     expect(rationale).toHaveTextContent('Calibrate');
     expect(rationale).toHaveTextContent('Focused calibration needed');
     expect(rationale).toHaveTextContent('Schedule focused technical calibration');
+    const scoreValidity = screen.getByTestId('person-code-review-score-validity');
+    expect(scoreValidity).toHaveTextContent('Score validity');
+    expect(scoreValidity).toHaveTextContent('Valid because');
+    expect(scoreValidity).toHaveTextContent('score report is captured');
+    expect(scoreValidity).toHaveTextContent('review transcript is captured');
+    expect(scoreValidity).toHaveTextContent('repo challenge is source-backed');
+    expect(scoreValidity).toHaveTextContent('candidate/repo match proof is source-backed');
+    expect(scoreValidity).toHaveTextContent('6 rubric dimensions · 2 evidence items · 5 scoring metrics');
+    expect(scoreValidity).toHaveTextContent('This is evidence, not an automatic decision.');
     const basis = screen.getByTestId('person-code-review-decision-basis');
     expect(basis).toHaveTextContent('Decision basis');
     expect(basis).toHaveTextContent('Score report');
@@ -665,11 +1231,16 @@ describe('PersonProfilePage', () => {
     const proof = screen.getByTestId('person-code-review-source-proof');
     const proofSummary = proof.querySelector('summary');
     expect(proofSummary).toHaveTextContent('Source proof');
-    expect(proofSummary).toHaveTextContent('candidate, repo, and scoring provenance');
+    expect(proofSummary).toHaveTextContent('candidate-repo match proof, repo evidence, and scoring provenance');
     expect(proofSummary).not.toHaveTextContent('review-session-1');
     expect(proof).toHaveTextContent('Source proof');
     expect(proof).toHaveTextContent('score report');
+    expect(proof).toHaveTextContent('82/100 Strong · 6 rubric dimensions · 2 evidence items · 5 scoring metrics');
+    expect(proof).not.toHaveTextContent('"overall"');
+    expect(proof).not.toHaveTextContent('"growth_areas"');
     expect(proof).toHaveTextContent('transcript segment');
+    expect(screen.getByText('Decision evidence')).toBeInTheDocument();
+    expect(screen.getByText('Background evidence')).toBeInTheDocument();
     expect(screen.getByText('Code-review assessment evidence')).toBeInTheDocument();
     expect(screen.getByRole('button', { name: 'Open interaction' })).toBeInTheDocument();
     expect(screen.getByText('Resume evidence attached')).toBeInTheDocument();
@@ -718,7 +1289,58 @@ describe('PersonProfilePage', () => {
     const recruiterNotes = params.get('recruiterNotes') ?? '';
     expect(recruiterNotes).toContain('PIPE person-profile next action');
     expect(recruiterNotes).toContain('Recommendation: Advance with focused probe');
+    expect(recruiterNotes).toContain('Candidate signal: 82/100 Strong');
+    expect(recruiterNotes).toContain('Score provenance: 6 rubric dimensions · 2 evidence items · 5 scoring metrics');
+    expect(recruiterNotes).toContain('Repo challenge: pierre/diffs PR #95');
+    expect(recruiterNotes).toContain('Assessment validity: Usable source-backed signal');
     expect(recruiterNotes).toContain('Missing context: Probe: Probe how they balance timing trade-offs under pushback.');
+  });
+
+  it('keeps technical decision evidence visible when operational interactions are noisy', async () => {
+    const context = makeLivingContext();
+    const operationalInteractions = Array.from({ length: 6 }, (_, index) => ({
+      id: `interaction-invite-noise-${index + 1}`,
+      interactionType: 'scheduled_interview_invite_delivery',
+      externalReference: `invite-delivery-${index + 1}`,
+      startedAt: `2026-06-29T1${index}:00:00.000Z`,
+      endedAt: `2026-06-29T1${index}:01:00.000Z`,
+      createdAt: `2026-06-29T1${index}:00:00.000Z`,
+      updatedAt: `2026-06-29T1${index}:01:00.000Z`,
+      metadata: {
+        summary: `Invite delivery operational record ${index + 1}`,
+        scheduledInterviewId: `interview-invite-noise-${index + 1}`,
+      },
+      artifactIds: [],
+      contextRecordIds: [],
+      assertionIds: [],
+      signalKeys: [],
+    }));
+    context.summary = {
+      ...context.summary,
+      interactionCount: context.interactions.length + operationalInteractions.length,
+    };
+    context.interactions = [
+      ...operationalInteractions,
+      ...context.interactions,
+    ];
+
+    mocks.api.get
+      .mockResolvedValueOnce({ contact: makeContact() })
+      .mockResolvedValueOnce(context);
+
+    renderPage();
+    await flushAsyncUpdates();
+
+    const coverage = screen.getByTestId('person-interaction-coverage');
+    expect(coverage).toHaveTextContent('6 messages or invites');
+    expect(coverage).toHaveTextContent('1 code review');
+    expect(coverage).toHaveTextContent('1 resume');
+    expect(coverage).toHaveTextContent('Showing 5 highest-value interaction rows before 3 lower-priority interactions kept in the audit trail.');
+    expect(screen.getByText('Decision evidence')).toBeInTheDocument();
+    expect(screen.getByText('Background evidence')).toBeInTheDocument();
+    expect(screen.getByText('Code-review assessment evidence')).toBeInTheDocument();
+    expect(screen.getByText('Resume evidence attached')).toBeInTheDocument();
+    expect(screen.queryByText('Invite delivery operational record 1')).not.toBeInTheDocument();
   });
 
   it('does not trust a scored code review when repo-match provenance is missing', async () => {
@@ -755,6 +1377,11 @@ describe('PersonProfilePage', () => {
     expect(decision).toHaveTextContent('Source-backed repo match decision provenance');
     expect(decision).not.toHaveTextContent('Usable source-backed signal');
     expect(decision).not.toHaveTextContent('Advance with focused probe');
+    const scoreValidity = screen.getByTestId('person-code-review-score-validity');
+    expect(scoreValidity).toHaveTextContent('Score validity');
+    expect(scoreValidity).toHaveTextContent('Do not rely yet');
+    expect(scoreValidity).toHaveTextContent('candidate/repo match proof is missing');
+    expect(scoreValidity).toHaveTextContent('A score exists, but the supporting transcript, selected PR, or match provenance is incomplete.');
     const basis = screen.getByTestId('person-code-review-decision-basis');
     expect(basis).toHaveTextContent('Score report');
     expect(basis).toHaveTextContent('82/100 Strong');
@@ -764,6 +1391,341 @@ describe('PersonProfilePage', () => {
     expect(basis).toHaveTextContent('Missing');
     expect(basis).toHaveTextContent('Match proof');
     expect(basis).toHaveTextContent('Missing');
+  });
+
+  it('shows pending code-review assignments as waiting for candidate review, not hiring signal', async () => {
+    const context = makeLivingContext();
+    context.contextRecords = context.contextRecords.filter((record) =>
+      record.recordType === 'candidate_pr_match_decision'
+    );
+    context.summary = {
+      ...context.summary,
+      contextRecordCount: 1,
+      sourceSpanCount: 2,
+    };
+    context.interactions = context.interactions.map((interaction) =>
+      interaction.id === 'interaction-code-review'
+        ? {
+            ...interaction,
+            metadata: {
+              ...interaction.metadata,
+              status: 'matched',
+            },
+            contextRecordIds: ['record-match'],
+          }
+        : interaction
+    );
+
+    mocks.api.get
+      .mockResolvedValueOnce({ contact: makeContact() })
+      .mockResolvedValueOnce(context);
+
+    renderPage();
+    await flushAsyncUpdates();
+
+    const cockpit = screen.getByTestId('person-decision-cockpit');
+    expect(cockpit).toHaveTextContent('Wait for candidate review');
+    expect(cockpit).toHaveTextContent('No score signal yet');
+    expect(cockpit).toHaveTextContent('do not make a hiring decision until the candidate submits source-backed review comments');
+    expect(cockpit).toHaveTextContent('Candidate review transcript or source-backed review comments');
+    expect(cockpit).toHaveTextContent('Wait for candidate submission');
+    expect(screen.queryByTestId('person-next-action-cta')).not.toBeInTheDocument();
+
+    const decision = screen.getByTestId('person-code-review-decision');
+    expect(decision).toHaveTextContent('Code-review assignment');
+    expect(decision).toHaveTextContent('Wait for candidate review');
+    expect(decision).toHaveTextContent('No score signal yet');
+    expect(decision).toHaveTextContent('Score report');
+    expect(decision).toHaveTextContent('Missing');
+    expect(decision).toHaveTextContent('Review evidence');
+    expect(decision).toHaveTextContent('0 annotations');
+
+    const mix = screen.getByTestId('person-evidence-mix');
+    expect(mix).toHaveTextContent('Code-review assignment is waiting on candidate review');
+    expect(mix).toHaveTextContent('technical assessment is missing candidate review comments and a score');
+    expect(mix).toHaveTextContent('Wait for candidate review submission');
+  });
+
+  it('does not blend a newer related match-only interview into the completed code-review recommendation', async () => {
+    const context = makeLivingContext();
+    context.summary = {
+      ...context.summary,
+      interactionCount: 3,
+      contextRecordCount: 4,
+      sourceSpanCount: 6,
+    };
+    context.interactions = [
+      {
+        id: 'interaction-new-match-only',
+        interactionType: 'code_review_assessment',
+        externalReference: 'review-session-new-match-only',
+        startedAt: '2026-06-29T15:00:00.000Z',
+        endedAt: '2026-06-29T15:10:00.000Z',
+        createdAt: '2026-06-29T15:00:00.000Z',
+        updatedAt: '2026-06-29T15:10:00.000Z',
+        metadata: {
+          sessionId: 'review-session-new-match-only',
+          scheduledInterviewId: 'interview-new-match-only',
+          status: 'matched',
+        },
+        artifactIds: [],
+        contextRecordIds: ['record-new-match-only'],
+        assertionIds: [],
+        signalKeys: [],
+      },
+      ...context.interactions,
+    ];
+    context.contextRecords = [
+      ...context.contextRecords,
+      contextRecord({
+        id: 'record-new-match-only',
+        interactionId: 'interaction-new-match-only',
+        recordType: 'candidate_pr_match_decision',
+        predicate: 'selects review challenge',
+        narrative: 'Matched candidate candidate-1 to PR #101 from repo repo-new, but no score or transcript exists yet.',
+        observedAt: '2026-06-29T15:10:00.000Z',
+        qualifiers: {
+          sessionId: 'review-session-new-match-only',
+          status: 'MATCHED',
+          selectedPacketId: 'challenge-packet-new',
+          evaluatedChallenges: [{
+            challengeId: 'challenge-packet-new',
+            eligible: true,
+            prNumber: 101,
+            repoId: 'repo-new',
+            rank: 1,
+          }],
+          validatorAgent: {
+            sourceBridge: {
+              challengeId: 'challenge-packet-new',
+              prNumber: 101,
+              repoId: 'repo-new',
+              provenanceComplete: true,
+            },
+          },
+        },
+        entities: [{
+          entityType: 'pull_request',
+          entityId: 'repo-new#101',
+          relationship: 'selected_pull_request',
+          value: null,
+          confidence: null,
+          metadata: {
+            prNumber: 101,
+            repoId: 'repo-new',
+          },
+        }],
+        sources: [
+          genericSource({
+            evidenceRole: 'selected_repo_evidence',
+            locator: {
+              repoFullName: 'react/noisy-related',
+              repoUrl: 'https://github.com/react/noisy-related',
+              prNumber: 101,
+              matchStatus: 'MATCHED',
+            },
+            exactText: 'Related match evidence from https://github.com/react/noisy-related/pull/101 is not a completed review signal yet.',
+          }),
+        ],
+      }),
+    ];
+
+    mocks.api.get
+      .mockResolvedValueOnce({ contact: makeContact() })
+      .mockResolvedValueOnce(context);
+
+    renderPage();
+    await flushAsyncUpdates();
+
+    const cockpit = screen.getByTestId('person-decision-cockpit');
+    expect(cockpit).toHaveTextContent('Current recommendation');
+    expect(cockpit).toHaveTextContent('Advance with focused probe');
+
+    const decision = await screen.findByTestId('person-code-review-decision');
+    expect(decision).toHaveTextContent('pierre/diffs PR #95');
+    expect(decision).toHaveTextContent('82/100 Strong');
+    expect(decision).toHaveTextContent('Usable source-backed signal');
+    expect(decision).not.toHaveTextContent('react/noisy-related');
+    expect(decision).not.toHaveTextContent('PR #101');
+
+    const coverage = screen.getByTestId('person-interaction-coverage');
+    expect(coverage).toHaveTextContent('2 code reviews');
+    expect(coverage).toHaveTextContent('1 resume');
+  });
+
+  it('treats weak graph-derived code-review scores as assignment-fairness decisions', async () => {
+    const context = makeLivingContext();
+    context.contextRecords = context.contextRecords.map((record) =>
+      record.id === 'record-score'
+        ? contextRecord({
+            ...record,
+            sources: [sourceSpan({
+              exactText: JSON.stringify({
+                overall: {
+                  score: 42,
+                  band: 'weak',
+                  narrative: 'Candidate missed the core regression risk in the review.',
+                  strengths: [],
+                  growth_areas: ['Confirm whether the selected PR was fair for their React experience.'],
+                },
+                dimensions: {
+                  source_accuracy: { score: 1 },
+                  bug_detection: { score: 1 },
+                  test_reasoning: { score: 1 },
+                  risk_calibration: { score: 0 },
+                  communication: { score: 1 },
+                  ai_usage_judgment: { score: 1 },
+                },
+                evidence: [
+                  { id: 'comment-1', text: 'Candidate missed the timing regression.' },
+                  { id: 'pushback-1', text: 'Candidate did not defend the requested change.' },
+                ],
+                metrics: {
+                  annotations: 1,
+                  pushback_threads: 1,
+                  source_refs: 4,
+                  rubric_dimensions: 6,
+                  score_confidence: 0.64,
+                },
+              }),
+            })],
+          })
+        : record
+    );
+
+    mocks.api.get
+      .mockResolvedValueOnce({ contact: makeContact() })
+      .mockResolvedValueOnce(context);
+
+    renderPage();
+    await flushAsyncUpdates();
+
+    const cockpit = screen.getByTestId('person-decision-cockpit');
+    expect(cockpit).toHaveTextContent('Current recommendation');
+    expect(cockpit).toHaveTextContent('Review assignment fairness before rejecting');
+    expect(cockpit).toHaveTextContent('Assignment fairness risk');
+    expect(cockpit).toHaveTextContent('Create fairness review');
+
+    const decision = await screen.findByTestId('person-code-review-decision');
+    expect(decision).toHaveTextContent('42/100 Weak');
+    expect(decision).toHaveTextContent('Review assignment fairness before rejecting');
+    expect(decision).toHaveTextContent('Check whether the repo challenge was well matched before treating the weak score as candidate signal.');
+    expect(decision).not.toHaveTextContent('Do not advance from this signal yet');
+  });
+
+  it('does not call assignment-only code-review records candidate-repo match proof', async () => {
+    const context = makeLivingContext();
+    context.contextRecords = context.contextRecords.map((record) =>
+      record.id === 'record-match'
+        ? contextRecord({
+            ...record,
+            qualifiers: {
+              ...record.qualifiers,
+              validatorAgent: {
+                sourceBridge: {
+                  challengeId: 'challenge-packet-1',
+                  prNumber: 95,
+                  repoId: 'repo-1',
+                  provenanceComplete: true,
+                },
+              },
+            },
+          })
+        : record
+    );
+
+    mocks.api.get
+      .mockResolvedValueOnce({ contact: makeContact() })
+      .mockResolvedValueOnce(context);
+
+    renderPage();
+    await flushAsyncUpdates();
+
+    const cockpit = screen.getByTestId('person-decision-cockpit');
+    expect(cockpit).toHaveTextContent('Collect missing evidence');
+    expect(cockpit).not.toHaveTextContent('Advance with focused probe');
+    expect(cockpit).toHaveTextContent('Partial source-backed signal');
+    expect(cockpit).toHaveTextContent('Repo-match proof incomplete');
+
+    const basis = screen.getByTestId('person-code-review-decision-basis');
+    expect(basis).toHaveTextContent('Match proof');
+    expect(basis).toHaveTextContent('Assignment evidence only');
+    expect(basis).not.toHaveTextContent('Source-backed match');
+
+    const decision = await screen.findByTestId('person-code-review-decision');
+    expect(decision).toHaveTextContent('Collect missing evidence');
+    expect(decision).not.toHaveTextContent('Advance with focused probe');
+    expect(decision).toHaveTextContent('Rendered candidate/repo source bridge');
+    expect(decision).toHaveTextContent('PIPE has a visible repo challenge, but the rendered candidate-to-repo source bridge is missing from the person graph.');
+
+    const proof = screen.getByTestId('person-code-review-source-proof');
+    const proofSummary = proof.querySelector('summary');
+    expect(proofSummary).toHaveTextContent('repo evidence, scoring provenance, and open gaps');
+    expect(proofSummary).not.toHaveTextContent('candidate-repo match proof');
+  });
+
+  it('routes conversation-only profiles toward a code-review assessment next action', async () => {
+    const context = makeLivingContext();
+    context.summary = {
+      ...context.summary,
+      interactionCount: 1,
+      artifactCount: 1,
+      contextRecordCount: 0,
+      sourceSpanCount: 1,
+    };
+    context.interactions = [{
+      ...context.interactions[0]!,
+      id: 'interaction-background-call',
+      interactionType: 'context_call',
+      externalReference: 'meeting-background-call',
+      metadata: {
+        meetingType: 'SCREENING_INTERVIEW',
+        status: 'completed',
+      },
+      artifactIds: ['artifact-background-call'],
+      contextRecordIds: [],
+      assertionIds: [],
+      signalKeys: [],
+    }];
+    context.contextRecords = [];
+    context.artifacts = [{
+      ...context.artifacts[0]!,
+      id: 'artifact-background-call',
+      interactionId: 'interaction-background-call',
+      artifactType: 'meeting_transcript',
+      logicalKey: 'meeting-background-call',
+      sourceSpans: [sourceSpan({
+        sourceSpanId: 'source-span-background-call',
+        artifactType: 'meeting_transcript',
+        artifactLogicalKey: 'meeting-background-call',
+        evidenceRole: 'conversation_context',
+        exactText: 'Discussed React platform ownership, but no code-review assessment has been assigned yet.',
+      })],
+    }];
+
+    mocks.api.get
+      .mockResolvedValueOnce({ contact: makeContact() })
+      .mockResolvedValueOnce(context);
+
+    renderPage();
+    await flushAsyncUpdates();
+
+    const mix = screen.getByTestId('person-evidence-mix');
+    expect(mix).toHaveTextContent('Conversation context exists; technical assessment is missing');
+    expect(mix).toHaveTextContent('Assign a source-backed technical assessment');
+
+    const cta = screen.getByTestId('person-next-action-cta');
+    expect(cta).toHaveTextContent('Create code-review assessment');
+    fireEvent.click(cta);
+
+    const location = screen.getByTestId('location-echo');
+    expect(location).toHaveTextContent('/interviews?');
+    expect(location).toHaveTextContent('new=1');
+    expect(location).toHaveTextContent('interviewType=CODE_REVIEW');
+    const params = new URLSearchParams((location.textContent ?? '').split('?')[1] ?? '');
+    const recruiterNotes = params.get('recruiterNotes') ?? '';
+    expect(recruiterNotes).toContain('Next action: Assign a source-backed technical assessment');
+    expect(recruiterNotes).toContain('Reason: Use existing conversation evidence to assign a source-backed code-review or workspace challenge.');
   });
 
   it('derives a person-level hiring decision from source-backed workspace assessment claims', async () => {
@@ -778,7 +1740,7 @@ describe('PersonProfilePage', () => {
     expect(cockpit).toHaveTextContent('Current recommendation');
     expect(cockpit).toHaveTextContent('Advance from human-reviewed assessment');
     expect(cockpit).toHaveTextContent('Assessment validity');
-    expect(cockpit).toHaveTextContent('Usable workspace assessment signal');
+    expect(cockpit).toHaveTextContent('Usable source-backed signal from workspace assessment');
     expect(cockpit).toHaveTextContent('Uncertainty');
     expect(cockpit).toHaveTextContent('Low remaining uncertainty');
     expect(cockpit).toHaveTextContent('Missing context');
@@ -809,7 +1771,7 @@ describe('PersonProfilePage', () => {
     expect(screen.getByRole('heading', { name: 'Ada Reviewer' })).toBeInTheDocument();
     const cockpit = screen.getByTestId('person-decision-cockpit');
     expect(cockpit).toHaveTextContent('Advance from human-reviewed assessment');
-    expect(cockpit).toHaveTextContent('Usable workspace assessment signal');
+    expect(cockpit).toHaveTextContent('Usable source-backed signal from workspace assessment');
     expect(screen.getByTestId('person-code-review-decision')).toHaveTextContent('Workspace assessment decision');
   });
 
@@ -845,12 +1807,56 @@ describe('PersonProfilePage', () => {
 
     const cockpit = screen.getByTestId('person-decision-cockpit');
     expect(cockpit).toHaveTextContent('Advance');
-    expect(cockpit).toHaveTextContent('Usable workspace assessment signal');
+    expect(cockpit).toHaveTextContent('Usable source-backed signal from workspace assessment');
     expect(cockpit).toHaveTextContent('Graph rollup pending');
+    expect(screen.getByTestId('person-interaction-coverage')).toHaveTextContent('1 code review');
+    expect(screen.getByText('Decision evidence')).toBeInTheDocument();
     const decision = screen.getByTestId('person-code-review-decision');
     expect(decision).toHaveTextContent('Workspace assessment decision');
     expect(decision).toHaveTextContent('Candidate addressed the impatient click issue');
+    expect(decision).toHaveTextContent('Score provenance');
+    expect(decision).toHaveTextContent('1 rubric dimension · 4 evidence items · 3 scoring metrics');
     expect(decision).toHaveTextContent('source-backed proof items');
+  });
+
+  it('does not trust malformed selected assessment route-state evidence counts', async () => {
+    const graphOnlyContext = makeLivingContext();
+    graphOnlyContext.contextRecords = [];
+    graphOnlyContext.summary = {
+      ...graphOnlyContext.summary,
+      contextRecordCount: 0,
+      sourceSpanCount: 2,
+    };
+    mocks.api.get
+      .mockResolvedValueOnce({ contact: makeContact() })
+      .mockResolvedValueOnce(graphOnlyContext);
+
+    renderPage({
+      selectedAssessment: {
+        ...(makeSelectedAssessmentProgress() as unknown as Record<string, unknown>),
+        sourceRefCounts: '99 refs',
+        evidenceSnippets: null,
+        evaluation: {
+          id: 'evaluation-stale',
+          status: 'EVALUATED',
+          summary: 'Malformed route state should not create source proof.',
+          recommendation: 'advance',
+          createdAt: '2026-06-30T14:25:00.000Z',
+          claims: null,
+          diagnostics: null,
+        },
+      },
+    });
+    await flushAsyncUpdates();
+
+    const decision = screen.getByTestId('person-code-review-decision');
+    expect(decision).toHaveTextContent('Workspace assessment decision');
+    expect(decision).toHaveTextContent('0 source-backed proof items');
+    expect(decision).not.toHaveTextContent('99 refs');
+    expect(decision).not.toHaveTextContent('99 source-backed proof items');
+    const basis = screen.getByTestId('person-code-review-decision-basis');
+    expect(basis).toHaveTextContent('Source proof');
+    expect(basis).toHaveTextContent('Missing');
   });
 
   it('shows a visible profile error instead of spinning forever when the person id is missing', async () => {

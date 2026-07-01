@@ -88,6 +88,7 @@ const ALLOWED_RECOMMENDATIONS = new Set([
   'insufficient_evidence',
   'not_demonstrated',
 ]);
+const DEFAULT_RECOMMENDATION = 'mixed_evidence_human_review';
 type EvaluatorDiagnosticSeverity = 'info' | 'warning' | 'blocking';
 const MAX_SOURCE_REF_EXACT_TEXT_CHARS = 800;
 const MAX_AI_PROMPT_SOURCE_REFS = 16;
@@ -112,16 +113,16 @@ const EXPECTED_HIGH_CONFIDENCE_REF_GROUPS = [
   {
     label: 'ai_assistance',
     sourceRefTypes: [
-      'clippy_user_prompt',
-      'clippy_user_prompt_blocked',
-      'clippy_agent_response',
-      'clippy_agent_diagnostic',
+      'ai_user_prompt',
+      'ai_user_prompt_blocked',
+      'ai_agent_response',
+      'ai_agent_diagnostic',
       'session_chat_agent',
       'session_chat_user',
       'ai_chat_user',
       'ai_chat_agent',
     ],
-    missingImpact: 'Treat AI usage as unobserved when Clippy/Devin or AI chat evidence is absent.',
+    missingImpact: 'Treat AI usage as unobserved when real agent bridge chat evidence is absent.',
   },
 ] as const;
 
@@ -267,15 +268,100 @@ function coverageItem(input: {
   sourceRefTypes: readonly string[];
   sourceRefKeys: readonly string[];
   missingImpact: string;
+  satisfied?: boolean;
 }): JsonObject {
   return {
     label: input.label,
     required: input.required,
     sourceRefTypes: [...input.sourceRefTypes],
-    satisfied: input.sourceRefKeys.length > 0,
+    satisfied: input.satisfied ?? input.sourceRefKeys.length > 0,
     sourceRefKeys: [...input.sourceRefKeys],
     missingImpact: input.missingImpact,
   };
+}
+
+function challengePacketLineValue(exactText: string, labels: readonly string[]): string | null {
+  const escapedLabels = labels.map((label) => label.replace(/[.*+?^${}()|[\]\\]/g, '\\$&'));
+  const match = exactText.match(new RegExp(`^\\s*(?:${escapedLabels.join('|')})\\s*:\\s*(.+)$`, 'im'));
+  return stringValue(match?.[1]);
+}
+
+function normalizeChallengePacketListItem(value: string): string {
+  return value
+    .trim()
+    .replace(/^[-*]\s+/, '')
+    .replace(/^\d+[.)]\s+/, '')
+    .trim();
+}
+
+function challengePacketSectionItems(exactText: string, labels: readonly string[]): string[] {
+  const normalizedLabels = new Set(labels.map((label) => label.toLowerCase()));
+  const lines = exactText.split(/\r?\n/);
+  const items: string[] = [];
+  let inSection = false;
+
+  for (const rawLine of lines) {
+    const line = rawLine.trim();
+    if (!line) continue;
+    const heading = line.match(/^([A-Za-z][A-Za-z\s-]{2,})\s*:\s*$/);
+    if (heading?.[1]) {
+      inSection = normalizedLabels.has(heading[1].trim().toLowerCase());
+      continue;
+    }
+    if (!inSection) continue;
+    if (/^[A-Za-z][A-Za-z\s-]{2,}\s*:/.test(line) && !/^[-*]|\d+[.)]/.test(line)) {
+      inSection = false;
+      continue;
+    }
+    const item = normalizeChallengePacketListItem(line);
+    if (item) items.push(item);
+  }
+
+  return items;
+}
+
+function isGitHubRepositoryUrl(value: string | null): boolean {
+  if (!value) return false;
+  try {
+    const url = new URL(value);
+    const segments = url.pathname.split('/').filter(Boolean);
+    return url.protocol === 'https:' && url.hostname.toLowerCase() === 'github.com' && segments.length === 2;
+  } catch {
+    return false;
+  }
+}
+
+function challengePacketContractMissingFields(sourceRefs: readonly SessionSourceRef[]): string[] {
+  const challengeRef = sourceRefs.find((ref) =>
+    CHALLENGE_REF_TYPES.has(ref.sourceRefType) || ref.evidenceRole === 'assigned_challenge');
+  if (!challengeRef) {
+    return ['repo URL', 'base commit SHA', 'task', 'success criteria', 'expected evidence'];
+  }
+
+  const locator = challengeRef.locator ?? {};
+  const exactText = challengeRef.exactText ?? '';
+  const repositoryUrl = stringValue(locator.repositoryUrl)
+    ?? stringValue(locator.githubRepoUrl)
+    ?? stringValue(locator.repoUrl)
+    ?? challengePacketLineValue(exactText, ['Repo', 'Repository']);
+  const baseCommitSha = stringValue(locator.baseCommitSha)
+    ?? stringValue(locator.baseCommit)
+    ?? challengePacketLineValue(exactText, ['Base commit', 'Base commit SHA', 'Base']);
+  const task = challengePacketLineValue(exactText, ['Task', 'Title']);
+  const inlineSuccess = challengePacketLineValue(exactText, ['Success']);
+  const successCriteria = [
+    ...challengePacketSectionItems(exactText, ['Success criteria']),
+    ...(inlineSuccess ? [inlineSuccess] : []),
+  ];
+  const expectedEvidence = challengePacketSectionItems(exactText, ['Expected evidence']);
+
+  const missing: string[] = [];
+  if (!isGitHubRepositoryUrl(repositoryUrl)) missing.push('repo URL');
+  if (!baseCommitSha || !/^[0-9a-f]{40}$/i.test(baseCommitSha)) missing.push('base commit SHA');
+  if (!task) missing.push('task');
+  if (successCriteria.length === 0) missing.push('success criteria');
+  if (expectedEvidence.length === 0) missing.push('expected evidence');
+  return missing;
 }
 
 function buildEvidenceCoverage(sourceRefs: readonly SessionSourceRef[]): JsonObject {
@@ -286,13 +372,17 @@ function buildEvidenceCoverage(sourceRefs: readonly SessionSourceRef[]): JsonObj
   }
 
   const challengeKeys = sourceRefKeysForChallenge(sourceRefs);
+  const missingChallengeFields = challengePacketContractMissingFields(sourceRefs);
   const requiredForEvaluation = [
     coverageItem({
       label: 'challenge_packet',
       required: true,
       sourceRefTypes: [...CHALLENGE_REF_TYPES],
       sourceRefKeys: challengeKeys,
-      missingImpact: 'Cannot evaluate a real open-source assessment without the assigned challenge packet.',
+      satisfied: missingChallengeFields.length === 0,
+      missingImpact: missingChallengeFields.length === 0
+        ? 'Challenge packet contract is complete.'
+        : `Cannot evaluate a real open-source assessment because the assigned challenge packet is missing ${missingChallengeFields.join(', ')}.`,
     }),
     coverageItem({
       label: 'git_commit',
@@ -331,8 +421,11 @@ function buildEvidenceCoverage(sourceRefs: readonly SessionSourceRef[]): JsonObj
 function hasRequiredEvidence(sourceRefs: readonly SessionSourceRef[]): boolean {
   const hasChallenge = sourceRefs.some((ref) =>
     CHALLENGE_REF_TYPES.has(ref.sourceRefType) || ref.evidenceRole === 'assigned_challenge');
+  const hasCompleteChallengeContract = challengePacketContractMissingFields(sourceRefs).length === 0;
   const presentTypes = new Set(sourceRefs.map((ref) => ref.sourceRefType));
-  return hasChallenge && [...REQUIRED_EVALUATION_REF_TYPES].every((type) => presentTypes.has(type));
+  return hasChallenge
+    && hasCompleteChallengeContract
+    && [...REQUIRED_EVALUATION_REF_TYPES].every((type) => presentTypes.has(type));
 }
 
 function diagnosticInput(input: {
@@ -865,6 +958,39 @@ function normalizeAiDiagnostics(
   }).slice(0, 8);
 }
 
+function normalizeAiRecommendation(rawRecommendation: unknown): {
+  recommendation: string;
+  diagnostics: AssessmentDiagnosticInput[];
+} {
+  const recommendation = stringValue(rawRecommendation);
+  if (recommendation && ALLOWED_RECOMMENDATIONS.has(recommendation)) {
+    return { recommendation, diagnostics: [] };
+  }
+
+  const message = recommendation
+    ? `AI evaluator returned unsupported recommendation "${recommendation}"; PIPE defaulted to human review.`
+    : 'AI evaluator did not return an allowed recommendation; PIPE defaulted to human review.';
+
+  return {
+    recommendation: DEFAULT_RECOMMENDATION,
+    diagnostics: [
+      diagnosticInput({
+        code: recommendation
+          ? 'MODEL_RECOMMENDATION_UNSUPPORTED'
+          : 'MODEL_RECOMMENDATION_MISSING',
+        severity: 'warning',
+        message,
+        retryable: false,
+        details: {
+          returnedRecommendation: recommendation,
+          defaultRecommendation: DEFAULT_RECOMMENDATION,
+          allowedRecommendations: Array.from(ALLOWED_RECOMMENDATIONS),
+        },
+      }),
+    ],
+  };
+}
+
 async function recordAiInteraction(input: {
   store: RepoTaskInterviewSessionStore;
   sessionId: string;
@@ -934,16 +1060,18 @@ export async function evaluateRepoTaskAssessmentSession(
   const evidenceCoverage = buildEvidenceCoverage(sourceRefs);
 
   if (!hasRequiredEvidence(sourceRefs)) {
+    const missingChallengeFields = challengePacketContractMissingFields(sourceRefs);
     return createDiagnostic({
       store: input.store,
       sessionId: input.sessionId,
       diagnostic: diagnosticInput({
         code: 'PROVENANCE_INCOMPLETE',
-        message: 'Assessment evaluation requires an assigned challenge packet plus exact git_commit and code_diff evidence before scoring.',
+        message: 'Assessment evaluation requires a complete assigned challenge packet plus exact git_commit and code_diff evidence before scoring.',
         sourceRefs: [input.requestSourceRef],
         details: {
           scheduledInterviewId: input.scheduledInterviewId,
           sourceRefCount: sourceRefs.length,
+          missingChallengePacketFields: missingChallengeFields,
         },
       }),
     });
@@ -1024,6 +1152,7 @@ export async function evaluateRepoTaskAssessmentSession(
 
   const claims = normalizeAiClaims(aiOutput.claims, sourceRefByKey, input.sessionId);
   const diagnostics = normalizeAiDiagnostics(aiOutput.diagnostics, sourceRefByKey);
+  const normalizedRecommendation = normalizeAiRecommendation(aiOutput.recommendation);
   const groundedClaims = claims.filter((claim) => claim.polarity !== 'diagnostic');
   if (groundedClaims.length === 0) {
     return createDiagnostic({
@@ -1044,7 +1173,7 @@ export async function evaluateRepoTaskAssessmentSession(
 
   const summary = sourceBackedEvaluationSummary(aiOutput.summary, sourceRefs);
   const challengeFocus = challengeFocusSummary(sourceRefs);
-  const recommendation = stringValue(aiOutput.recommendation) ?? 'mixed_evidence_human_review';
+  const recommendation = normalizedRecommendation.recommendation;
   const status: EvaluationReportStatus = 'EVALUATED';
   const report = await input.store.createEvaluationReport({
     sessionId: input.sessionId,
@@ -1066,7 +1195,10 @@ export async function evaluateRepoTaskAssessmentSession(
       diagnosticCodes: diagnostics.map((diagnostic) => diagnostic.code),
     },
     claims,
-    diagnostics,
+    diagnostics: [
+      ...diagnostics,
+      ...normalizedRecommendation.diagnostics,
+    ],
   });
 
   await input.store.transitionState({

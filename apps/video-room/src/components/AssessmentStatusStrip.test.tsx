@@ -94,6 +94,25 @@ const progress: RoomAssessmentProgressSnapshot = {
     occurredAt: '2026-06-29T22:00:00.000Z',
   },
   evaluation: null,
+  readiness: {
+    status: 'READY_FOR_EVALUATION',
+    label: 'Ready for evaluation',
+    detail: 'Required challenge, work, commit, and source evidence are captured.',
+    isReadyForEvaluation: true,
+    isUsableHiringSignal: false,
+    missingRequiredCount: 0,
+    required: [
+      {
+        id: 'challenge_packet',
+        label: 'Complete challenge packet',
+        required: true,
+        satisfied: true,
+        sourceRefTypes: ['open_source_challenge_packet'],
+        missingImpact: 'Assign a source-backed challenge packet.',
+      },
+    ],
+    confidence: [],
+  },
 };
 
 describe('AssessmentStatusStrip', () => {
@@ -142,9 +161,47 @@ describe('AssessmentStatusStrip', () => {
     );
 
     expect(screen.getByTestId('assessment-progress-stage').textContent).toContain('Ready For Evaluation');
+    expect(screen.getByTestId('assessment-readiness').textContent).toContain('Ready to evaluate');
     expect(screen.getByTestId('assessment-progress-commit').textContent).toContain('Commit cccccccc');
     expect(screen.getByText('Start source-backed AI or human evaluation.')).not.toBeNull();
-    expect(screen.getByTestId('assessment-progress-coverage').textContent).toContain('challenge, chat, workspace, room, commit, AI, tests');
+    expect(screen.getByTestId('assessment-progress-coverage').textContent).toContain('challenge, chat, workspace, tool activity, commit, AI use, tests');
+  });
+
+  it('surfaces verification gaps in live room progress coverage', () => {
+    render(
+      <AssessmentStatusStrip
+        meetingType="DEV_CONTAINER_CHALLENGE"
+        workspace={workspace()}
+        assessmentProgress={{
+          ...progress,
+          hasTestEvidence: false,
+          hasVerificationGap: true,
+          sourceRefCounts: [
+            { kind: 'git_commit', count: 1 },
+            { kind: 'code_diff', count: 1 },
+            { kind: 'verification_gap', count: 1 },
+          ],
+          readiness: {
+            ...progress.readiness!,
+            detail: 'Required proof is captured, but passing test output is missing.',
+            confidence: [
+              {
+                id: 'test_or_verification',
+                label: 'Tests or verification note',
+                required: false,
+                satisfied: true,
+                sourceRefTypes: ['test_run', 'verification_gap'],
+                missingImpact: 'Missing test evidence lowers confidence; an explicit verification gap is better than silence.',
+              },
+            ],
+          },
+        }}
+      />,
+    );
+
+    const coverage = screen.getByTestId('assessment-progress-coverage');
+    expect(coverage.textContent).toContain('challenge, chat, workspace, tool activity, commit, AI use, verification gap');
+    expect(coverage.textContent).not.toContain('tests');
   });
 
   it('shows a launch action when the host can start the controlled workspace', () => {
@@ -238,5 +295,63 @@ describe('AssessmentStatusStrip', () => {
     expect(screen.getByTestId('assessment-next-action').textContent).toContain(
       'Repo matched, but no reviewable PR or task is configured.',
     );
+    expect(screen.getByText('Assign a GitHub PR or complete source-backed task packet before launching')).not.toBeNull();
+    expect(screen.queryByTestId('assessment-launch-workspace')).toBeNull();
+  });
+
+  it('prioritizes incomplete packet fields over a generic progress action', () => {
+    render(
+      <AssessmentStatusStrip
+        meetingType="DEV_CONTAINER_CHALLENGE"
+        workspace={workspace({
+          canLaunch: false,
+          challenge: {
+            status: 'repo_task_assigned',
+            kind: 'repo_only',
+            source: 'scheduled_interview.challenge_packet',
+            message: null,
+            packet: {
+              ...challengePacket,
+              exactText: [
+                'Repo: https://github.com/pipe/source-backed-worker',
+                'Base commit: dddddddddddddddddddddddddddddddddddddddd',
+                'Task: Fix the source-backed worker retry path.',
+                'Success criteria:',
+                '- Retry order remains deterministic',
+              ].join('\n'),
+            },
+          },
+          session: null,
+        })}
+        assessmentProgress={{
+          ...progress,
+          stage: 'WAITING_FOR_CHALLENGE',
+          nextAction: 'ASSIGN_CHALLENGE',
+          nextActionLabel: 'Assign a concrete repo challenge packet.',
+          challengePacketContract: {
+            schemaVersion: 'challenge-packet-contract-v1',
+            isComplete: false,
+            missingFields: ['expected evidence'],
+            hasRepositoryUrl: true,
+            hasBaseCommitSha: true,
+            hasTask: true,
+            hasSuccessCriteria: true,
+            hasExpectedEvidence: false,
+          },
+          readiness: {
+            ...progress.readiness!,
+            status: 'WAITING_FOR_CHALLENGE',
+            label: 'Waiting for challenge',
+            detail: 'Assign expected evidence before candidate work starts.',
+            isReadyForEvaluation: false,
+            missingRequiredCount: 1,
+          },
+        }}
+      />,
+    );
+
+    expect(screen.getByText('Complete challenge packet: missing expected evidence')).not.toBeNull();
+    expect(screen.queryByText('Assign a concrete repo challenge packet.')).toBeNull();
+    expect(screen.queryByTestId('assessment-launch-workspace')).toBeNull();
   });
 });

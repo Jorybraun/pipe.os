@@ -29,9 +29,8 @@ interface InviteCreationData {
     videoEnabled: boolean;
     workspaceEnabled: boolean;
     recordingEnabled: boolean;
-    clippyEnabled: boolean;
+    aiAssistantEnabled: boolean;
   };
-  agentType?: string | null;
 }
 
 interface InviteCreationModalProps {
@@ -102,6 +101,11 @@ function isWorkspaceAssessment(interviewType: InterviewType): boolean {
     || interviewType === 'OPEN_SOURCE_BUG_FIX';
 }
 
+function isRoomBackedAssessment(interviewType: InterviewType): boolean {
+  return interviewType === 'DEV_CONTAINER_CHALLENGE'
+    || interviewType === 'OPEN_SOURCE_BUG_FIX';
+}
+
 function splitTextLines(value: string): string[] {
   return value
     .split('\n')
@@ -111,6 +115,65 @@ function splitTextLines(value: string): string[] {
 
 function isGitCommitSha(value: string): boolean {
   return /^[0-9a-f]{40}$/i.test(value.trim());
+}
+
+interface PacketChecklistItem {
+  id: string;
+  label: string;
+  ready: boolean;
+}
+
+function PacketChecklist({
+  items,
+}: {
+  items: PacketChecklistItem[];
+}): JSX.Element {
+  return (
+    <div
+      data-testid="open-source-packet-checklist"
+      style={{
+        display: 'grid',
+        gap: 6,
+        padding: 10,
+        background: 'rgba(255,255,255,0.03)',
+        border: '1px solid var(--pipe-border)',
+        borderRadius: 4,
+        fontFamily: '"Space Mono", monospace',
+      }}
+    >
+      <div style={{ fontSize: 10, color: '#93c5fd', letterSpacing: '0.12em', fontWeight: 700 }}>
+        PACKET CONTRACT
+      </div>
+      {items.map((item) => (
+        <div
+          key={item.id}
+          data-testid={`packet-check-${item.id}`}
+          style={{
+            display: 'flex',
+            alignItems: 'center',
+            justifyContent: 'space-between',
+            gap: 10,
+            fontSize: 10,
+            lineHeight: 1.4,
+          }}
+        >
+          <span style={{ color: 'var(--pipe-text-dim)' }}>{item.label}</span>
+          <span
+            style={{
+              color: item.ready ? '#4ade80' : '#fbbf24',
+              fontWeight: 700,
+              whiteSpace: 'nowrap',
+            }}
+          >
+            {item.ready ? 'Ready' : 'Missing'}
+          </span>
+        </div>
+      ))}
+      <div style={{ fontSize: 10, color: 'var(--pipe-text-muted)', lineHeight: 1.45, marginTop: 2 }}>
+        Candidate works on an assessment branch or fork. Upstream PRs require later review.
+      </div>
+    </div>
+  );
 }
 
 export function InviteCreationModal({
@@ -140,8 +203,6 @@ export function InviteCreationModal({
   const [videoEnabled, setVideoEnabled] = useState(true);
   const [workspaceEnabled, setWorkspaceEnabled] = useState(true);
   const [recordingEnabled, setRecordingEnabled] = useState(true);
-  const [clippyEnabled, setClippyEnabled] = useState(true);
-  const [agentType, setAgentType] = useState<string>('none');
   const [isCreating, setIsCreating] = useState(false);
   const [createError, setCreateError] = useState<string | null>(null);
   const [createdInvite, setCreatedInvite] = useState<CreatedInviteState | null>(null);
@@ -216,6 +277,13 @@ export function InviteCreationModal({
   const selectedCalendlyEventType = calendlyEventTypes[0] ?? null;
   const canUseCalendly = hasCalendly && Boolean(selectedCalendlyEventType?.schedulingUrl);
   const workspaceAssessment = isWorkspaceAssessment(interviewType);
+  const roomBackedAssessment = isRoomBackedAssessment(interviewType);
+  const manualInviteLabel = workspaceAssessment
+    ? roomBackedAssessment ? 'Workspace invite' : 'Assessment invite'
+    : 'Room invite';
+  const manualInviteDescription = workspaceAssessment
+    ? roomBackedAssessment ? 'Send a controlled workspace room link' : 'Send the assess link'
+    : 'Send a private room link';
   const supportsManualRepoOverride = workspaceAssessment;
   const showsRoomFeatures = !workspaceAssessment;
   const parsedPrNumber = githubPrNumber.trim().length > 0
@@ -228,10 +296,17 @@ export function InviteCreationModal({
   const challengeSuccessCriteriaItems = splitTextLines(challengeSuccessCriteria);
   const challengeExpectedEvidenceItems = splitTextLines(challengeExpectedEvidence);
   const requiresManualChallengePacket = interviewType === 'OPEN_SOURCE_BUG_FIX' && manualRepoOverride;
+  const packetTaskReady = challengeTitle.trim().length > 0 && challengeInstructions.trim().length > 0;
+  const packetChecklistItems: PacketChecklistItem[] = [
+    { id: 'repository', label: 'Concrete GitHub repo', ready: hasManualRepoUrl },
+    { id: 'base-commit', label: 'Exact base commit SHA', ready: isGitCommitSha(challengeBaseCommitSha) },
+    { id: 'task', label: 'Task title and instructions', ready: packetTaskReady },
+    { id: 'success-criteria', label: 'Success criteria', ready: challengeSuccessCriteriaItems.length > 0 },
+    { id: 'expected-evidence', label: 'Expected evidence', ready: challengeExpectedEvidenceItems.length > 0 },
+  ];
   const manualChallengePacketComplete = !requiresManualChallengePacket || (
     isGitCommitSha(challengeBaseCommitSha)
-    && challengeTitle.trim().length > 0
-    && challengeInstructions.trim().length > 0
+    && packetTaskReady
     && challengeSuccessCriteriaItems.length > 0
     && challengeExpectedEvidenceItems.length > 0
   );
@@ -290,11 +365,8 @@ export function InviteCreationModal({
         videoEnabled,
         workspaceEnabled,
         recordingEnabled,
-        clippyEnabled,
+        aiAssistantEnabled: false,
       };
-      if (agentType !== 'none') {
-        inviteData.agentType = agentType;
-      }
       
       if (!workspaceAssessment && schedulingMode === 'calendly' && canUseCalendly && selectedCalendlyEventType) {
         inviteData.schedulingProvider = 'CALENDLY';
@@ -417,7 +489,7 @@ export function InviteCreationModal({
                     ? `${linkLabel} is ready, but email delivery failed. Copy and send it manually.`
                     : `${linkLabel} is ready. Copy it or send it from the interview page.`}
               </div>
-              {createdInvite.assessmentSetup?.message && (
+              {(createdInvite.assessmentSetup?.message || createdInvite.assessmentSetup?.nextActionLabel) && (
                 <div
                   style={{
                     fontSize: 10,
@@ -427,7 +499,10 @@ export function InviteCreationModal({
                     lineHeight: 1.5,
                   }}
                 >
-                  {createdInvite.assessmentSetup.message}
+                  {[
+                    createdInvite.assessmentSetup.message,
+                    createdInvite.assessmentSetup.nextActionLabel,
+                  ].filter(Boolean).join(' Next: ')}
                 </div>
               )}
               <div
@@ -581,10 +656,10 @@ export function InviteCreationModal({
                 >
                   <span style={{ display: 'inline-flex', alignItems: 'center', gap: 7 }}>
                     <Video size={15} />
-                    {workspaceAssessment ? 'Assessment invite' : 'Room invite'}
+                    {manualInviteLabel}
                   </span>
                   <span style={{ fontSize: 9, color: 'var(--pipe-text-muted)', letterSpacing: '0.03em' }}>
-                    {workspaceAssessment ? 'Send the assess link' : 'Send a private room link'}
+                    {manualInviteDescription}
                   </span>
                 </button>
                 {!workspaceAssessment && (
@@ -740,6 +815,7 @@ export function InviteCreationModal({
                             placeholder="One required evidence item per line"
                             style={{ ...inputStyle, minHeight: 76, resize: 'vertical' }}
                           />
+                          <PacketChecklist items={packetChecklistItems} />
                         </div>
                       </div>
                     )}
@@ -774,30 +850,8 @@ export function InviteCreationModal({
                   <input type="checkbox" checked={recordingEnabled} onChange={(e) => setRecordingEnabled(e.target.checked)} />
                   Recording
                 </label>
-                <label style={{ display: 'flex', alignItems: 'center', gap: 6, fontSize: 11, fontFamily: '"Space Mono", monospace', color: 'var(--pipe-text)', cursor: 'pointer' }}>
-                  <input type="checkbox" checked={clippyEnabled} onChange={(e) => setClippyEnabled(e.target.checked)} />
-                  Clippy AI
-                </label>
               </div>
             </div>
-            )}
-
-            {/* Agent selection */}
-            {clippyEnabled && showsRoomFeatures && supportsManualRepoOverride && (
-              <div style={{ marginBottom: 28 }}>
-                <label style={labelStyle}>AI AGENT</label>
-                <select
-                  value={agentType}
-                  onChange={(e) => setAgentType(e.target.value)}
-                  style={inputStyle}
-                >
-                  <option value="none">No agent</option>
-                  <option value="devin">Devin CLI</option>
-                </select>
-                <div style={{ fontSize: 10, color: 'var(--pipe-text-dim)', fontFamily: '"Space Mono", monospace', marginTop: 4 }}>
-                  Launches an AI pair programmer inside the dev container.
-                </div>
-              </div>
             )}
 
             {/* Optional scheduled time - only show in manual mode */}

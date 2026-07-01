@@ -8,8 +8,18 @@
  * once the container reaches READY.
  */
 
-import { useEffect, useRef, useState } from 'react';
+import { useEffect, useRef, useState, type CSSProperties, type FormEvent } from 'react';
+import { useSessionToken } from '../../contexts/SessionTokenContext';
 import { useDevContainerSession } from '../../hooks/useDevContainerSession';
+import {
+  buildCandidateCommitSubmissionDefaults,
+  buildCandidateCommitSubmissionPayload,
+  getCandidateAssessmentProgress,
+  submitCandidateAssessmentCommit,
+  type CandidateAssessmentProgress,
+  type CandidateCommitSubmissionFormFields,
+} from '../../lib/assessmentCommitSubmission';
+import { finalizeDevContainerAssessment } from '../../lib/devContainerClient';
 
 export interface DevContainerPanelProps {
   challengeId: string;
@@ -26,9 +36,73 @@ function formatRemaining(expiresAt: string | null): string | null {
   return `${m}:${s.toString().padStart(2, '0')}`;
 }
 
+const EMPTY_COMMIT_FIELDS: CandidateCommitSubmissionFormFields = {
+  narrative: '',
+  repositoryUrl: '',
+  forkRepositoryUrl: '',
+  branchName: '',
+  baseCommitSha: '',
+  commitSha: '',
+  commitUrl: '',
+  upstreamPullRequestUrl: '',
+  upstreamPrConsent: false,
+  changedFilesText: '',
+  commitEvidenceText: '',
+  diffText: '',
+  testEvidenceText: '',
+  verificationNotesText: '',
+};
+
+function shortSha(value: string | null | undefined): string | null {
+  const trimmed = value?.trim();
+  return trimmed ? trimmed.slice(0, 12) : null;
+}
+
+function challengePacketSubmissionBlocker(progress: CandidateAssessmentProgress | null): string | null {
+  if (!progress) return 'Assessment session is not ready for commit submission.';
+  if (progress.challengePacketContract) {
+    if (progress.challengePacketContract.isComplete) return null;
+    const missingFields = progress.challengePacketContract.missingFields
+      .map((field) => field.trim())
+      .filter(Boolean);
+    return missingFields.length > 0
+      ? `Complete the source-backed challenge packet before submitting work. Missing ${missingFields.join(', ')}.`
+      : 'Complete the source-backed challenge packet before submitting work.';
+  }
+  return progress.hasChallengePacket
+    ? null
+    : 'Assign a complete source-backed challenge packet before submitting work.';
+}
+
+function fieldStyle(kind: 'input' | 'textarea' = 'input'): CSSProperties {
+  return {
+    width: '100%',
+    minHeight: kind === 'textarea' ? 58 : 34,
+    resize: kind === 'textarea' ? 'vertical' : undefined,
+    background: '#050507',
+    border: '1px solid rgba(148,163,184,0.32)',
+    color: '#f8fafc',
+    padding: '8px 10px',
+    fontSize: 11,
+    fontFamily: '"Space Mono", monospace',
+    boxSizing: 'border-box',
+  };
+}
+
 export function DevContainerPanel({ challengeId }: DevContainerPanelProps): JSX.Element {
-  const { state, containerUrl, error, expiresAt, expiringSoon, launch, destroy, reset } =
+  const sessionToken = useSessionToken();
+  const { state, containerUrl, taskArn, error, expiresAt, expiringSoon, launch, destroy, reset } =
     useDevContainerSession();
+  const [submitPanelOpen, setSubmitPanelOpen] = useState(false);
+  const [assessmentProgress, setAssessmentProgress] = useState<CandidateAssessmentProgress | null>(null);
+  const [assessmentLoading, setAssessmentLoading] = useState(false);
+  const [assessmentError, setAssessmentError] = useState<string | null>(null);
+  const [commitFields, setCommitFields] = useState<CandidateCommitSubmissionFormFields>(EMPTY_COMMIT_FIELDS);
+  const [commitSubmitting, setCommitSubmitting] = useState(false);
+  const [commitError, setCommitError] = useState<string | null>(null);
+  const [commitSuccess, setCommitSuccess] = useState<string | null>(null);
+  const [workspaceNarrative, setWorkspaceNarrative] = useState('');
+  const [workspaceFinalizing, setWorkspaceFinalizing] = useState(false);
 
   // Auto-launch exactly once when the panel mounts and there is no live
   // session. React strict-mode double-invokes effects in dev, so we guard
@@ -49,7 +123,105 @@ export function DevContainerPanel({ challengeId }: DevContainerPanelProps): JSX.
     return () => clearInterval(interval);
   }, [expiresAt]);
 
+  useEffect(() => {
+    if (state !== 'READY') {
+      setAssessmentProgress(null);
+      setAssessmentError(null);
+      setCommitSuccess(null);
+      return;
+    }
+
+    let cancelled = false;
+    setAssessmentLoading(true);
+    setAssessmentError(null);
+    void getCandidateAssessmentProgress(sessionToken)
+      .then((response) => {
+        if (cancelled) return;
+        setAssessmentProgress(response.progress);
+      })
+      .catch((err: unknown) => {
+        if (cancelled) return;
+        setAssessmentError(err instanceof Error ? err.message : 'Assessment progress could not be loaded.');
+      })
+      .finally(() => {
+        if (!cancelled) setAssessmentLoading(false);
+      });
+
+    return () => {
+      cancelled = true;
+    };
+  }, [sessionToken, state]);
+
+  useEffect(() => {
+    const defaults = buildCandidateCommitSubmissionDefaults(assessmentProgress);
+    setCommitFields((current) => ({
+      ...current,
+      repositoryUrl: current.repositoryUrl.trim() ? current.repositoryUrl : defaults.repositoryUrl,
+      branchName: current.branchName.trim() ? current.branchName : defaults.branchName,
+      baseCommitSha: current.baseCommitSha.trim() ? current.baseCommitSha : defaults.baseCommitSha,
+    }));
+  }, [assessmentProgress]);
+
   const remaining = formatRemaining(expiresAt);
+  const setCommitField = (
+    key: keyof CandidateCommitSubmissionFormFields,
+    value: string | boolean,
+  ): void => {
+    setCommitFields((current) => ({ ...current, [key]: value }));
+    setCommitError(null);
+    setCommitSuccess(null);
+  };
+
+  const handleCommitSubmit = async (event: FormEvent<HTMLFormElement>): Promise<void> => {
+    event.preventDefault();
+    const submissionBlocker = challengePacketSubmissionBlocker(assessmentProgress);
+    if (submissionBlocker) {
+      setCommitError(submissionBlocker);
+      return;
+    }
+    setCommitSubmitting(true);
+    setCommitError(null);
+    setCommitSuccess(null);
+    try {
+      const payload = await buildCandidateCommitSubmissionPayload(commitFields);
+      const response = await submitCandidateAssessmentCommit(payload, sessionToken);
+      setAssessmentProgress(response.progress);
+      setCommitSuccess(response.progress.nextActionLabel);
+    } catch (err) {
+      setCommitError(err instanceof Error ? err.message : 'Commit submission failed.');
+    } finally {
+      setCommitSubmitting(false);
+    }
+  };
+
+  const handleWorkspaceFinalize = async (): Promise<void> => {
+    if (!taskArn) {
+      setCommitError('Dev container session is not ready for workspace finalization.');
+      return;
+    }
+    const submissionBlocker = challengePacketSubmissionBlocker(assessmentProgress);
+    if (submissionBlocker) {
+      setCommitError(submissionBlocker);
+      return;
+    }
+    setWorkspaceFinalizing(true);
+    setCommitError(null);
+    setCommitSuccess(null);
+    try {
+      const response = await finalizeDevContainerAssessment(taskArn, {
+        ...(workspaceNarrative.trim() ? { narrative: workspaceNarrative.trim() } : {}),
+      }, sessionToken);
+      setAssessmentProgress(response.progress);
+      setCommitSuccess(response.progress.commit?.commitSha
+        ? `Workspace commit ${shortSha(response.progress.commit.commitSha)} captured. ${response.progress.nextActionLabel}`
+        : response.progress.nextActionLabel);
+    } catch (err) {
+      const message = err instanceof Error ? err.message : 'Workspace finalization failed.';
+      setCommitError(message);
+    } finally {
+      setWorkspaceFinalizing(false);
+    }
+  };
 
   if (state === 'ERROR') {
     return (
@@ -97,6 +269,15 @@ export function DevContainerPanel({ challengeId }: DevContainerPanelProps): JSX.
   }
 
   if (state === 'READY' && containerUrl) {
+    const submissionBlocker = challengePacketSubmissionBlocker(assessmentProgress);
+    const commitBlocked = Boolean(submissionBlocker) || commitSubmitting;
+    const workspaceFinalizeBlocked = Boolean(submissionBlocker) || !taskArn || workspaceFinalizing;
+    const commitStatusLabel = assessmentLoading
+      ? 'LOADING ASSESSMENT STATE'
+      : assessmentProgress?.hasCommitSubmission
+        ? `SUBMITTED ${shortSha(assessmentProgress.commit?.commitSha) ?? ''}`.trim()
+        : assessmentProgress?.nextActionLabel ?? 'ASSESSMENT SESSION REQUIRED';
+
     return (
       <div
         style={{
@@ -122,11 +303,32 @@ export function DevContainerPanel({ challengeId }: DevContainerPanelProps): JSX.
         >
           <span style={{ color: '#4ade80' }}>● DEV CONTAINER LIVE</span>
           <div style={{ display: 'flex', alignItems: 'center', gap: 16 }}>
+            <span style={{ color: assessmentProgress?.hasCommitSubmission ? '#4ade80' : '#fbbf24' }}>
+              {commitStatusLabel}
+            </span>
             {remaining && (
               <span style={{ color: expiringSoon ? '#fbbf24' : 'var(--pipe-text-dim)' }}>
                 TTL {remaining}
               </span>
             )}
+            <button
+              type="button"
+              onClick={() => setSubmitPanelOpen((open) => !open)}
+              data-testid="assessment-submit-toggle"
+              style={{
+                padding: '4px 12px',
+                background: submitPanelOpen ? 'rgba(251,191,36,0.18)' : 'transparent',
+                border: '1px solid rgba(251,191,36,0.48)',
+                color: '#fbbf24',
+                fontSize: 9,
+                letterSpacing: '0.15em',
+                fontWeight: 700,
+                cursor: 'pointer',
+                fontFamily: 'inherit',
+              }}
+            >
+              SUBMIT COMMIT
+            </button>
             <button
               onClick={() => void destroy()}
               style={{
@@ -159,6 +361,234 @@ export function DevContainerPanel({ challengeId }: DevContainerPanelProps): JSX.
           >
             ⚠ SESSION ENDING SOON — save your work, the container will be destroyed in ~{remaining ?? '1:00'}.
           </div>
+        )}
+        {submitPanelOpen && (
+          <form
+            onSubmit={(event) => void handleCommitSubmit(event)}
+            data-testid="assessment-commit-panel"
+            style={{
+              display: 'grid',
+              gridTemplateColumns: 'repeat(4, minmax(0, 1fr))',
+              gap: 10,
+              padding: 12,
+              background: '#09090b',
+              borderBottom: '1px solid rgba(251,191,36,0.24)',
+              color: '#f8fafc',
+              maxHeight: 360,
+              overflow: 'auto',
+              fontSize: 11,
+            }}
+          >
+            <div style={{ gridColumn: '1 / -1', display: 'flex', justifyContent: 'space-between', gap: 12 }}>
+              <strong style={{ color: '#fbbf24', letterSpacing: '0.14em' }}>ASSESSMENT COMMIT</strong>
+              <span style={{ color: assessmentError ? '#f87171' : 'var(--pipe-text-dim)' }}>
+                {assessmentError ?? (assessmentProgress?.nextActionLabel ?? 'No assessment session loaded')}
+              </span>
+            </div>
+            {submissionBlocker && (
+              <div
+                data-testid="assessment-commit-packet-blocker"
+                role="alert"
+                style={{
+                  gridColumn: '1 / -1',
+                  color: '#fbbf24',
+                  border: '1px solid rgba(251,191,36,0.45)',
+                  background: 'rgba(251,191,36,0.08)',
+                  padding: 8,
+                }}
+              >
+                {submissionBlocker}
+              </div>
+            )}
+
+            <div
+              style={{
+                gridColumn: '1 / -1',
+                display: 'grid',
+                gridTemplateColumns: 'minmax(0, 1fr) auto',
+                gap: 10,
+                alignItems: 'end',
+                border: '1px solid rgba(74,222,128,0.24)',
+                background: 'rgba(74,222,128,0.06)',
+                padding: 10,
+              }}
+            >
+              <label style={{ display: 'grid', gap: 4 }}>
+                <span>Workspace submission note</span>
+                <input
+                  value={workspaceNarrative}
+                  onChange={(event) => {
+                    setWorkspaceNarrative(event.target.value);
+                    setCommitError(null);
+                    setCommitSuccess(null);
+                  }}
+                  disabled={workspaceFinalizing}
+                  data-testid="assessment-workspace-finalize-narrative"
+                  placeholder="What did you change?"
+                  style={fieldStyle()}
+                />
+              </label>
+              <button
+                type="button"
+                onClick={() => void handleWorkspaceFinalize()}
+                disabled={workspaceFinalizeBlocked}
+                data-testid="assessment-workspace-finalize-submit"
+                style={{
+                  padding: '9px 14px',
+                  minHeight: 34,
+                  background: workspaceFinalizeBlocked ? 'rgba(148,163,184,0.12)' : 'rgba(74,222,128,0.16)',
+                  border: '1px solid rgba(74,222,128,0.48)',
+                  color: workspaceFinalizeBlocked ? 'var(--pipe-text-dim)' : '#4ade80',
+                  fontSize: 10,
+                  letterSpacing: '0.15em',
+                  fontWeight: 700,
+                  cursor: workspaceFinalizeBlocked ? 'not-allowed' : 'pointer',
+                  fontFamily: 'inherit',
+                  whiteSpace: 'nowrap',
+                }}
+              >
+                {workspaceFinalizing ? 'FINALIZING...' : 'FINALIZE WORKSPACE HEAD'}
+              </button>
+            </div>
+
+            <label style={{ display: 'grid', gap: 4 }}>
+              <span>Repository URL</span>
+              <input
+                value={commitFields.repositoryUrl}
+                onChange={(event) => setCommitField('repositoryUrl', event.target.value)}
+                disabled={commitSubmitting}
+                data-testid="assessment-commit-repository-url"
+                style={fieldStyle()}
+              />
+            </label>
+            <label style={{ display: 'grid', gap: 4 }}>
+              <span>Branch</span>
+              <input
+                value={commitFields.branchName}
+                onChange={(event) => setCommitField('branchName', event.target.value)}
+                disabled={commitSubmitting}
+                data-testid="assessment-commit-branch"
+                style={fieldStyle()}
+              />
+            </label>
+            <label style={{ display: 'grid', gap: 4 }}>
+              <span>Base commit SHA</span>
+              <input
+                value={commitFields.baseCommitSha}
+                onChange={(event) => setCommitField('baseCommitSha', event.target.value)}
+                disabled={commitSubmitting}
+                data-testid="assessment-commit-base-sha"
+                style={fieldStyle()}
+              />
+            </label>
+            <label style={{ display: 'grid', gap: 4 }}>
+              <span>Commit SHA</span>
+              <input
+                value={commitFields.commitSha}
+                onChange={(event) => setCommitField('commitSha', event.target.value)}
+                disabled={commitSubmitting}
+                data-testid="assessment-commit-commit-sha"
+                style={fieldStyle()}
+              />
+            </label>
+
+            <label style={{ gridColumn: 'span 2', display: 'grid', gap: 4 }}>
+              <span>Submission note</span>
+              <textarea
+                value={commitFields.narrative}
+                onChange={(event) => setCommitField('narrative', event.target.value)}
+                disabled={commitSubmitting}
+                data-testid="assessment-commit-narrative"
+                style={fieldStyle('textarea')}
+              />
+            </label>
+            <label style={{ gridColumn: 'span 2', display: 'grid', gap: 4 }}>
+              <span>Changed files</span>
+              <textarea
+                value={commitFields.changedFilesText}
+                onChange={(event) => setCommitField('changedFilesText', event.target.value)}
+                disabled={commitSubmitting}
+                data-testid="assessment-commit-changed-files"
+                style={fieldStyle('textarea')}
+              />
+            </label>
+
+            <label style={{ gridColumn: 'span 2', display: 'grid', gap: 4 }}>
+              <span>Commit evidence</span>
+              <textarea
+                value={commitFields.commitEvidenceText}
+                onChange={(event) => setCommitField('commitEvidenceText', event.target.value)}
+                disabled={commitSubmitting}
+                data-testid="assessment-commit-commit-evidence"
+                style={fieldStyle('textarea')}
+              />
+            </label>
+            <label style={{ gridColumn: 'span 2', display: 'grid', gap: 4 }}>
+              <span>Diff evidence</span>
+              <textarea
+                value={commitFields.diffText}
+                onChange={(event) => setCommitField('diffText', event.target.value)}
+                disabled={commitSubmitting}
+                data-testid="assessment-commit-diff"
+                style={fieldStyle('textarea')}
+              />
+            </label>
+            <label style={{ gridColumn: 'span 2', display: 'grid', gap: 4 }}>
+              <span>Test evidence</span>
+              <textarea
+                value={commitFields.testEvidenceText}
+                onChange={(event) => setCommitField('testEvidenceText', event.target.value)}
+                disabled={commitSubmitting}
+                data-testid="assessment-commit-test-evidence"
+                style={fieldStyle('textarea')}
+              />
+            </label>
+            <label style={{ gridColumn: 'span 2', display: 'grid', gap: 4 }}>
+              <span>Missing test note</span>
+              <textarea
+                value={commitFields.verificationNotesText}
+                onChange={(event) => setCommitField('verificationNotesText', event.target.value)}
+                disabled={commitSubmitting}
+                data-testid="assessment-commit-verification-note"
+                style={fieldStyle('textarea')}
+              />
+            </label>
+
+            {(commitError || commitSuccess) && (
+              <div
+                data-testid="assessment-commit-result"
+                style={{
+                  gridColumn: '1 / -1',
+                  color: commitError ? '#f87171' : '#4ade80',
+                  border: `1px solid ${commitError ? 'rgba(248,113,113,0.4)' : 'rgba(74,222,128,0.4)'}`,
+                  padding: 8,
+                }}
+              >
+                {commitError ?? commitSuccess}
+              </div>
+            )}
+
+            <div style={{ gridColumn: '1 / -1', display: 'flex', justifyContent: 'flex-end', gap: 10 }}>
+              <button
+                type="submit"
+                disabled={commitBlocked}
+                data-testid="assessment-commit-submit"
+                style={{
+                  padding: '8px 14px',
+                  background: commitBlocked ? 'rgba(148,163,184,0.12)' : 'rgba(251,191,36,0.18)',
+                  border: '1px solid rgba(251,191,36,0.48)',
+                  color: commitBlocked ? 'var(--pipe-text-dim)' : '#fbbf24',
+                  fontSize: 10,
+                  letterSpacing: '0.15em',
+                  fontWeight: 700,
+                  cursor: commitBlocked ? 'not-allowed' : 'pointer',
+                  fontFamily: 'inherit',
+                }}
+              >
+                {commitSubmitting ? 'SUBMITTING...' : 'SUBMIT SOURCE-BACKED COMMIT'}
+              </button>
+            </div>
+          </form>
         )}
         <iframe
           src={containerUrl}

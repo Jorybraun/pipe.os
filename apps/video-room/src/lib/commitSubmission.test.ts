@@ -28,6 +28,30 @@ describe('commit submission payloads', () => {
     });
   });
 
+  it('derives submission defaults from immutable packet text when locator anchors are sparse', () => {
+    expect(buildCommitSubmissionDefaults({
+      repositoryUrl: 'https://github.com/fallback/repo',
+      challengePacket: {
+        sourceRefType: 'open_source_challenge_packet',
+        evidenceRole: 'assigned_challenge',
+        exactText: [
+          'Repo: https://github.com/pipe/source-backed-worker',
+          'Base commit: ABCDEFabcdefABCDEFabcdefABCDEFabcdefABCD',
+          'Task: Fix the source-backed worker retry path.',
+          'Success: retry path is deterministic.',
+          'Expected evidence:',
+          '- Commit SHA on assessment branch',
+        ].join('\n'),
+        contentHash: 'sha256:packet',
+        locator: {},
+      },
+    })).toEqual({
+      repositoryUrl: 'https://github.com/pipe/source-backed-worker',
+      branchName: 'pipe-assessment',
+      baseCommitSha: 'abcdefabcdefabcdefabcdefabcdefabcdefabcd',
+    });
+  });
+
   it('does not invent a base commit or assessment branch without a valid packet SHA', () => {
     expect(buildCommitSubmissionDefaults({
       repositoryUrl: 'https://github.com/pipe/source-backed-worker',
@@ -119,6 +143,7 @@ describe('commit submission payloads', () => {
     const baseCommitSha = 'a'.repeat(40);
     const commitSha = 'b'.repeat(40);
     const upstreamPullRequestUrl = 'https://github.com/pipe/source-backed-worker/pull/42';
+    const pastedUpstreamPullRequestUrl = `${upstreamPullRequestUrl}?conversation=1#discussion_r123`;
 
     const payload = await buildCommitSubmissionPayload({
       narrative: 'Submitted retry fix with an approved upstream PR link.',
@@ -128,7 +153,7 @@ describe('commit submission payloads', () => {
       baseCommitSha,
       commitSha,
       commitUrl: `https://github.com/candidate/source-backed-worker/commit/${commitSha}`,
-      upstreamPullRequestUrl,
+      upstreamPullRequestUrl: pastedUpstreamPullRequestUrl,
       upstreamPrConsent: true,
       changedFilesText: 'modified src/retry.ts',
       commitEvidenceText: `commit ${commitSha}\nAuthor: Candidate`,
@@ -147,7 +172,7 @@ describe('commit submission payloads', () => {
         exactText: upstreamPullRequestUrl,
         contentHash: await sha256ContentHash(upstreamPullRequestUrl),
         metadata: expect.objectContaining({
-          source: 'win95_commit_submission_window',
+          source: 'assessment_commit_submission_panel',
           upstreamPrConsent: true,
         }),
       }),
@@ -208,7 +233,7 @@ describe('commit submission payloads', () => {
         exactText: verificationNotesText,
         contentHash: await sha256ContentHash(verificationNotesText),
         metadata: expect.objectContaining({
-          source: 'win95_commit_submission_window',
+          source: 'assessment_commit_submission_panel',
           missingEvidence: 'test_run',
         }),
       }),
@@ -300,9 +325,20 @@ describe('commit submission payloads', () => {
 
     await expect(buildCommitSubmissionPayload({
       ...validFields,
+      commitUrl: `https://github.com/unrelated/source-backed-worker/commit/${'b'.repeat(40)}`,
+    })).rejects.toThrow('Commit URL must belong to the assigned repository or declared fork.');
+
+    await expect(buildCommitSubmissionPayload({
+      ...validFields,
       upstreamPullRequestUrl: 'https://github.com/pipe/source-backed-worker/issues/42',
       upstreamPrConsent: true,
     })).rejects.toThrow('Upstream PR URL must point to a GitHub pull request.');
+
+    await expect(buildCommitSubmissionPayload({
+      ...validFields,
+      upstreamPullRequestUrl: 'https://github.com/unrelated/source-backed-worker/pull/42',
+      upstreamPrConsent: true,
+    })).rejects.toThrow('Upstream PR URL must belong to the assigned repository.');
 
     await expect(buildCommitSubmissionPayload({
       ...validFields,

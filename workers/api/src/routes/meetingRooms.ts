@@ -23,6 +23,7 @@ import {
 } from '../lib/devContainerTtl';
 import {
   RepoTaskInterviewSessionStore,
+  challengePacketContract,
   type AssessmentActorType,
   type AssessmentProgressSnapshot,
   type CommitSubmissionChangedFileStatus,
@@ -65,7 +66,7 @@ interface ResolvedRoom {
   video_enabled: number;
   workspace_enabled: number;
   recording_enabled: number;
-  clippy_enabled: number;
+  agent_enabled: number;
 }
 
 interface MeetingAnalysis {
@@ -110,94 +111,23 @@ const MAX_WORKSPACE_INIT_DIAGNOSTIC_CHARS = 1_000;
 const WORKSPACE_INTERVIEW_TYPES = new Set(['DEV_CONTAINER_CHALLENGE', 'OPEN_SOURCE_BUG_FIX']);
 const WORKSPACE_TERMINAL_STATUSES = new Set(['ERROR', 'STOPPED', 'EXPIRED']);
 const WORKSPACE_PROXY_ALLOWED_STATUS: ReadonlySet<string> = new Set(['READY', 'SLEEPING']);
-const LIVING_CONTENT_HASH_RE = /^content_[a-f0-9]{32}$/;
 const SHA256_HEX_RE = /^[a-f0-9]{64}$/;
 const TERMINAL_FINGERPRINT_RE = /^terminal_[a-f0-9]{8}$/;
 const TERMINAL_COMMAND_ID_RE = /^.+:command:(host|guest):\d+:\d+:terminal_[a-f0-9]{8}$/;
-const CLIPPY_PROMPT_FINGERPRINT_RE = /^clippy_[a-f0-9]{8}$/;
-const BROWSER_PROMPT_ID_RE = /^[a-zA-Z0-9:_-]+:(host|guest):prompt:\d+:clippy_[a-f0-9]{8}$/;
-const ROOM_SURFACES = new Set(['standard', 'win95']);
-const WINDOW_LIFECYCLE_SOURCES = new Set([
-  'win95_desktop_ui',
-  'win95_file_system',
-  'win95_start_menu',
-  'win95_window_chrome',
-  'win95_taskbar',
-  'standard_assessment_ui',
-  'clippy_action',
-  'shared_state_sync',
-]);
-const WINDOW_STATE_ACTIONS = new Set([
-  'focus',
-  'maximize',
-  'minimize',
-  'move',
-  'resize',
-  'restore_or_focus',
-  'restore_size',
-  'update',
-]);
-const WINDOW_STATE_SOURCES = new Set([
-  'win95_desktop_ui',
-  'win95_start_menu',
-  'win95_window_chrome',
-  'win95_taskbar',
-]);
-const WINDOW_STATE_KEYS = new Set(['x', 'y', 'width', 'height', 'minimized', 'maximized', 'focused']);
-const WINDOW_DATA_ACTIONS = new Set(['edit_text', 'edit_paint', 'update_data']);
-const WINDOW_DATA_SOURCES = new Set(['win95_window_data_sync', 'win95_file_delete_sync']);
+const AGENT_PROMPT_FINGERPRINT_RE = /^agent_[a-f0-9]{8}$/;
+const BROWSER_PROMPT_ID_RE = /^[a-zA-Z0-9:_-]+:(host|guest):prompt:\d+:agent_[a-f0-9]{8}$/;
+const ROOM_SURFACES = new Set(['standard']);
 const CHAT_DELIVERY_STATUSES = new Set(['pending', 'accepted', 'rejected']);
-const CLIPPY_UI_SOURCES = new Set(['clippy_tray_ui', 'clippy_prompt_ui', 'clippy_chat_ui']);
-const CLIPPY_UI_EXECUTION_STATUSES = new Set(['opened', 'closed', 'dismissed', 'executed']);
-const CLIPPY_PROMPT_EVENT_SOURCES = new Set(['browser_proactive_clippy_prompt', 'clippy_agent_bridge']);
-const CLIPPY_ACTION_EVENT_ID_RE = /^clippy-action:(host|guest|agent):\d+:(clippy_tray_ui|clippy_prompt_ui|clippy_chat_ui|clippy_agent_bridge):(tray|prompt|chat|agent):(opened|closed|dismissed|executed|suggested):[a-zA-Z0-9:_-]+$/;
 const AGENT_STATUSES = new Set(['starting', 'idle', 'thinking', 'working', 'auth_needed', 'disconnected']);
 const AGENT_STATUS_MESSAGE_SOURCES = new Set(['agent_status', 'bridge_diagnostic', 'bridge_observation', 'agent_stdout', 'agent_api_response']);
 const AGENT_STATUS_EVENT_ID_RE = /^agent-status:[a-zA-Z0-9:_-]+:\d+:(agent_status|bridge_diagnostic|bridge_observation|agent_stdout|agent_api_response):[a-zA-Z0-9:_-]+:[a-zA-Z0-9:_-]+$/;
 const AGENT_CHAT_RESPONSE_ID_RE = /^agent-chat:[a-zA-Z0-9:_-]+:\d+:CHAT_RESPONSE:agent_[a-f0-9]{8}$/;
 const AGENT_CHAT_RESPONSE_FINGERPRINT_RE = /^agent_[a-f0-9]{8}$/;
-const BROWSER_NAVIGATION_TRIGGERS = new Set([
-  'address_bar',
-  'go_button',
-  'history_back',
-  'history_forward',
-  'reload_button',
-  'external_open',
-  'file_system_link_open',
-  'open_window_initial_url',
-  'shared_state_sync',
-]);
 const WORKSPACE_STATE_SOURCES = new Set(['initial_load', 'launch', 'refresh', 'error']);
-const CURSOR_PRESENCE_SAMPLE_INTERVAL_MS = 15_000;
-const CURSOR_PRESENCE_MOVEMENT_THRESHOLD = 0.03;
-const CURSOR_SAMPLE_ID_RE = /^cursor:(host|guest):\d+:\d+:\d+$/;
-const START_MENU_EVENT_SOURCES = new Set([
-  'win95_start_button',
-  'win95_desktop_click',
-  'win95_start_menu_item',
-]);
-const START_MENU_EVENT_ID_RE = /^start-menu:(host|guest):\d+:(open|close):[a-z0-9_]+$/;
 const MEDIA_CONTROL_ID_RE = /^media:(host|guest):(microphone|camera):\d+:(enabled|disabled)$/;
 const CODE_SERVER_SAVE_ACTIONS = new Set(['created', 'modified']);
-const SURFACE_CHANGE_ID_RE = /^surface:(host|guest):\d+:(standard|win95):(standard|win95)$/;
 const WORKSPACE_STATE_EVENT_ID_RE = /^workspace-state:(host|guest):\d+:(initial_load|launch|refresh|error):[^:]+:.+$/;
-const WINDOW_LIFECYCLE_ID_RE = /^window-lifecycle:(host|guest):\d+:(open|close):[^:]+$/;
-const WINDOW_STATE_CHANGE_ID_RE = /^window-state:(host|guest):\d+:[^:]+:[a-z_]+$/;
-const WINDOW_DATA_UPDATE_ID_RE = /^window-data:(host|guest):\d+:[^:]+:[a-z_]+$/;
-const WINDOW_DATA_FINGERPRINT_RE = /^data_[a-f0-9]{8}$/;
-const BROWSER_NAVIGATION_ID_RE = /^browser-navigation:(host|guest):\d+:[^:]+:[a-z_]+:nav_[a-f0-9]{8}$/;
-const BROWSER_NAVIGATION_FINGERPRINT_RE = /^nav_[a-f0-9]{8}$/;
-const FILE_CHANGE_ID_RE = /^file:(host|guest):\d+:(upsert|delete):[^:]+$/;
 const CODE_EDITOR_OPEN_ID_RE = /^code-editor-open:(host|guest):\d+:.+$/;
-
-function browserNavigationFingerprint(value: string): string {
-  let hash = 0x811c9dc5;
-  for (let index = 0; index < value.length; index += 1) {
-    hash ^= value.charCodeAt(index);
-    hash = Math.imul(hash, 0x01000193);
-  }
-  return `nav_${(hash >>> 0).toString(16).padStart(8, '0')}`;
-}
 
 function safeEvidenceIdPart(value: unknown): string {
   const normalized = (typeof value === 'string' ? value : 'none')
@@ -220,7 +150,7 @@ function hasOptionalBrowserPromptRef(properties: Record<string, unknown>): boole
   return typeof promptId === 'string'
     && BROWSER_PROMPT_ID_RE.test(promptId)
     && typeof promptFingerprint === 'string'
-    && CLIPPY_PROMPT_FINGERPRINT_RE.test(promptFingerprint)
+    && AGENT_PROMPT_FINGERPRINT_RE.test(promptFingerprint)
     && typeof promptTimestamp === 'number'
     && Number.isInteger(promptTimestamp)
     && promptTimestamp >= 0
@@ -243,20 +173,10 @@ const sessionEventSchema = z.object({
     'terminal_command',
     'terminal_output',
     'file_change',
-    'browser_navigation',
-    'window_open',
-    'window_close',
-    'window_update',
-    'window_focus',
-    'cursor_presence',
     'media_control',
-    'room_surface_change',
-    'desktop_menu_toggle',
     'workspace_state',
     'participant_join',
     'participant_leave',
-    'clippy_prompt',
-    'clippy_action',
     'recording_start',
     'recording_stop',
     'code_editor_open',
@@ -276,7 +196,7 @@ const sessionEventSchema = z.object({
     && (properties.actor === undefined || properties.actor === event.actor);
   if (event.type === 'chat_message') {
     const sourceOk = properties.source === 'room_chat_client_submit'
-      && properties.chatEventSource === 'browser_room_chat_window';
+      && properties.chatEventSource === 'browser_room_chat_panel';
     const actorOk = (event.actor === 'host' || event.actor === 'guest')
       && propertyActorMatches;
     const messageOk = hasString(properties.roomMessageId)
@@ -298,49 +218,9 @@ const sessionEventSchema = z.object({
     return;
   }
   if (event.type === 'file_change') {
-    if (properties.source === 'win95_shared_file_system') {
-      const operation = properties.operation;
-      const operationOk = operation === 'upsert' || operation === 'delete';
-      const capturedAtMs = properties.capturedAtMs;
-      const capturedAtOk = typeof capturedAtMs === 'number'
-        && Number.isInteger(capturedAtMs)
-        && capturedAtMs >= 0;
-      const actorOk = (event.actor === 'host' || event.actor === 'guest')
-        && propertyActorMatches;
-      const fileChangeIdOk = typeof properties.fileChangeId === 'string'
-        && FILE_CHANGE_ID_RE.test(properties.fileChangeId)
-        && operationOk
-        && capturedAtOk
-        && hasString(properties.fileId)
-        && properties.fileChangeId === `file:${event.actor}:${capturedAtMs}:${operation}:${properties.fileId}`;
-      const sharedOk = properties.fileEventSource === 'browser_client_submit'
-        && hasString(properties.fileId)
-        && hasString(properties.fileName)
-        && hasString(properties.fileKind)
-        && properties.surface === 'win95'
-        && hasString(properties.roomPhase)
-        && typeof properties.durableObjectReplayExpected === 'boolean';
-      const upsertOk = operation === 'upsert'
-        && typeof properties.contentHash === 'string'
-        && LIVING_CONTENT_HASH_RE.test(properties.contentHash)
-        && hasFiniteNonNegativeNumber(properties.contentLength)
-        && hasFiniteNonNegativeNumber(properties.fileUpdatedAt);
-      const deleteOk = operation === 'delete'
-        && typeof properties.deletedContentHash === 'string'
-        && LIVING_CONTENT_HASH_RE.test(properties.deletedContentHash)
-        && hasFiniteNonNegativeNumber(properties.deletedContentLength)
-        && hasFiniteNonNegativeNumber(properties.deletedFileUpdatedAt);
-      if (actorOk && fileChangeIdOk && sharedOk && (upsertOk || deleteOk)) return;
-      ctx.addIssue({
-        code: z.ZodIssueCode.custom,
-        message: 'Win95 file-change evidence must include browser source, actor-bound file-change id, capture timestamp, file identity, operation, content hash, and file timestamps.',
-        path: ['properties'],
-      });
-      return;
-    }
     if (properties.source === 'code_server_workspace') {
       const observedBy = properties.observedBy;
-      const observedByOk = observedBy === 'agent_bridge' || observedBy === 'clippy_agent_bridge';
+      const observedByOk = observedBy === 'agent_bridge';
       const observedAtOk = hasString(properties.observedAt);
       const bridgeOk = properties.bridgeEventType === 'FILE_CHANGED'
         && properties.editorSurface === 'code-server';
@@ -352,7 +232,7 @@ const sessionEventSchema = z.object({
         && observedBy === 'agent_bridge'
         && hasString(properties.workspaceRoot);
       const browserFallbackOk = properties.bridgePersisted === false
-        && observedBy === 'clippy_agent_bridge'
+        && observedBy === 'agent_bridge'
         && hasRoomSurface(properties.surface)
         && hasString(properties.roomPhase)
         && hasString(properties.workspaceStatus)
@@ -383,248 +263,6 @@ const sessionEventSchema = z.object({
     ctx.addIssue({
       code: z.ZodIssueCode.custom,
       message: 'File-change evidence must come from a recognized source-backed file surface.',
-      path: ['properties'],
-    });
-    return;
-  }
-  if (event.type === 'browser_navigation') {
-    const url = properties.url;
-    let parsedUrl: URL | null = null;
-    if (typeof url === 'string') {
-      try {
-        parsedUrl = new URL(url);
-      } catch {
-        parsedUrl = null;
-      }
-    }
-    const protocol = parsedUrl?.protocol.replace(':', '');
-    const sourceOk = properties.source === 'room_browser_window'
-      && properties.navigationSource === 'browser_window_client_submit';
-    const urlOk = typeof url === 'string'
-      && url.trim().length > 0
-      && event.text === url
-      && parsedUrl !== null
-      && (protocol === 'http' || protocol === 'https');
-    const urlPartsOk = parsedUrl !== null
-      && properties.urlHost === parsedUrl.hostname
-      && properties.urlProtocol === protocol;
-    const triggerOk = typeof properties.navigationTrigger === 'string'
-      && BROWSER_NAVIGATION_TRIGGERS.has(properties.navigationTrigger);
-    const actorOk = (event.actor === 'host' || event.actor === 'guest')
-      && properties.actor === event.actor;
-    const capturedAtMs = properties.capturedAtMs;
-    const navigationId = properties.browserNavigationId;
-    const urlFingerprint = properties.urlFingerprint;
-    const idOk = typeof navigationId === 'string'
-      && BROWSER_NAVIGATION_ID_RE.test(navigationId)
-      && typeof capturedAtMs === 'number'
-      && Number.isInteger(capturedAtMs)
-      && capturedAtMs >= 0
-      && typeof urlFingerprint === 'string'
-      && BROWSER_NAVIGATION_FINGERPRINT_RE.test(urlFingerprint)
-      && typeof url === 'string'
-      && urlFingerprint === browserNavigationFingerprint(url)
-      && navigationId === `browser-navigation:${event.actor}:${capturedAtMs}:${properties.windowId}:${properties.navigationTrigger}:${urlFingerprint}`;
-    const contextOk = hasString(properties.windowId)
-      && (properties.surface === 'standard' || properties.surface === 'win95')
-      && hasString(properties.roomPhase);
-    if (sourceOk && urlOk && urlPartsOk && triggerOk && actorOk && idOk && contextOk) return;
-    ctx.addIssue({
-      code: z.ZodIssueCode.custom,
-      message: 'Browser navigation evidence must come from the room browser window with actor, stable navigation id, timestamp, normalized URL, trigger, and room context.',
-      path: ['properties'],
-    });
-    return;
-  }
-  if (event.type === 'window_open' || event.type === 'window_close') {
-    const expectedLifecycleKind = event.type === 'window_open' ? 'open' : 'close';
-    const sourceOk = properties.source === 'window_lifecycle_client_submit'
-      && typeof properties.lifecycleSource === 'string'
-      && WINDOW_LIFECYCLE_SOURCES.has(properties.lifecycleSource);
-    const lifecycleOk = properties.lifecycleKind === expectedLifecycleKind;
-    const actorOk = (event.actor === 'host' || event.actor === 'guest')
-      && properties.actor === event.actor;
-    const windowIdOk = hasString(properties.windowId);
-    const windowTypeOk = hasString(properties.windowType);
-    const windowTitleOk = hasString(properties.windowTitle)
-      && event.text === properties.windowTitle;
-    const capturedAtMs = properties.capturedAtMs;
-    const lifecycleId = properties.windowLifecycleId;
-    const idOk = typeof lifecycleId === 'string'
-      && WINDOW_LIFECYCLE_ID_RE.test(lifecycleId)
-      && typeof capturedAtMs === 'number'
-      && Number.isInteger(capturedAtMs)
-      && capturedAtMs >= 0
-      && lifecycleId === `window-lifecycle:${event.actor}:${capturedAtMs}:${expectedLifecycleKind}:${properties.windowId}`;
-    const contextOk = hasRoomSurface(properties.surface)
-      && hasString(properties.roomPhase)
-      && typeof properties.durableObjectReplayExpected === 'boolean';
-    if (sourceOk && lifecycleOk && actorOk && windowIdOk && windowTypeOk && windowTitleOk && idOk && contextOk) return;
-    ctx.addIssue({
-      code: z.ZodIssueCode.custom,
-      message: 'Window lifecycle evidence must come from the room window client with actor, lifecycle kind, stable event id, timestamp, window identity, surface, and room phase.',
-      path: ['properties'],
-    });
-    return;
-  }
-  if (event.type === 'window_update' || event.type === 'window_focus') {
-    if (properties.source === 'window_data_client_submit') {
-      const dataKeys = Array.isArray(properties.dataKeys)
-        ? properties.dataKeys.filter((key): key is string => typeof key === 'string')
-        : [];
-      const dataValueFingerprints = (
-        typeof properties.dataValueFingerprints === 'object'
-        && properties.dataValueFingerprints !== null
-        && !Array.isArray(properties.dataValueFingerprints)
-      )
-        ? properties.dataValueFingerprints as Record<string, unknown>
-        : null;
-      const sortedDataKeys = [...dataKeys].sort();
-      const dataKeysOk = dataKeys.length > 0
-        && dataKeys.every((key, index) => key === sortedDataKeys[index] && hasString(key));
-      const fingerprintKeys = dataValueFingerprints ? Object.keys(dataValueFingerprints).sort() : [];
-      const fingerprintsOk = dataValueFingerprints !== null
-        && fingerprintKeys.length === dataKeys.length
-        && fingerprintKeys.every((key, index) => (
-          key === dataKeys[index]
-          && typeof dataValueFingerprints[key] === 'string'
-          && WINDOW_DATA_FINGERPRINT_RE.test(dataValueFingerprints[key])
-        ));
-      const sourceOk = event.type === 'window_update'
-        && typeof properties.dataSource === 'string'
-        && WINDOW_DATA_SOURCES.has(properties.dataSource);
-      const actionOk = typeof properties.action === 'string' && WINDOW_DATA_ACTIONS.has(properties.action);
-      const actorOk = (event.actor === 'host' || event.actor === 'guest')
-        && properties.actor === event.actor;
-      const windowOk = hasString(properties.windowId)
-        && event.text === `Window data updated: ${properties.windowId}`;
-      const capturedAtMs = properties.capturedAtMs;
-      const dataUpdateId = properties.windowDataUpdateId;
-      const idOk = typeof dataUpdateId === 'string'
-        && WINDOW_DATA_UPDATE_ID_RE.test(dataUpdateId)
-        && typeof capturedAtMs === 'number'
-        && Number.isInteger(capturedAtMs)
-        && capturedAtMs >= 0
-        && dataUpdateId === `window-data:${event.actor}:${capturedAtMs}:${properties.windowId}:${properties.action}`;
-      const contextOk = hasRoomSurface(properties.surface)
-        && hasString(properties.roomPhase)
-        && typeof properties.durableObjectReplayExpected === 'boolean';
-      if (
-        sourceOk
-        && actionOk
-        && actorOk
-        && windowOk
-        && idOk
-        && dataKeysOk
-        && fingerprintsOk
-        && contextOk
-      ) return;
-      ctx.addIssue({
-        code: z.ZodIssueCode.custom,
-        message: 'Window data evidence must include the client source, actor, stable event id, timestamp, data keys, value fingerprints, surface, and room phase.',
-        path: ['properties'],
-      });
-      return;
-    }
-    const statePatch = properties.statePatch;
-    const statePatchRecord = typeof statePatch === 'object' && statePatch !== null && !Array.isArray(statePatch)
-      ? statePatch as Record<string, unknown>
-      : null;
-    const stateKeys = Array.isArray(properties.stateKeys)
-      ? properties.stateKeys.filter((key): key is string => typeof key === 'string')
-      : [];
-    const patchEntries = statePatchRecord ? Object.entries(statePatchRecord) : [];
-    const patchOk = patchEntries.length > 0
-      && patchEntries.every(([key, value]) =>
-        WINDOW_STATE_KEYS.has(key)
-        && (typeof value === 'number' || typeof value === 'boolean')
-        && (typeof value !== 'number' || Number.isFinite(value)),
-      );
-    const sortedPatchKeys = patchEntries.map(([key]) => key).sort();
-    const stateKeysOk = stateKeys.length === sortedPatchKeys.length
-      && stateKeys.every((key, index) => key === sortedPatchKeys[index]);
-    const sourceOk = properties.source === 'window_state_client_submit'
-      && typeof properties.stateSource === 'string'
-      && WINDOW_STATE_SOURCES.has(properties.stateSource);
-    const actionOk = typeof properties.action === 'string' && WINDOW_STATE_ACTIONS.has(properties.action);
-    const actorOk = (event.actor === 'host' || event.actor === 'guest')
-      && properties.actor === event.actor;
-    const windowOk = hasString(properties.windowId)
-      && event.text === `Window state updated: ${properties.windowId}`;
-    const capturedAtMs = properties.capturedAtMs;
-    const stateChangeId = properties.windowStateChangeId;
-    const idOk = typeof stateChangeId === 'string'
-      && WINDOW_STATE_CHANGE_ID_RE.test(stateChangeId)
-      && typeof capturedAtMs === 'number'
-      && Number.isInteger(capturedAtMs)
-      && capturedAtMs >= 0
-      && stateChangeId === `window-state:${event.actor}:${capturedAtMs}:${properties.windowId}:${properties.action}`;
-    const contextOk = hasRoomSurface(properties.surface)
-      && hasString(properties.roomPhase)
-      && typeof properties.durableObjectReplayExpected === 'boolean';
-    if (sourceOk && actionOk && actorOk && windowOk && idOk && contextOk && patchOk && stateKeysOk) return;
-    ctx.addIssue({
-      code: z.ZodIssueCode.custom,
-      message: 'Window state evidence must include the client source, actor, stable event id, timestamp, action, exact state patch, surface, and room phase.',
-      path: ['properties'],
-    });
-    return;
-  }
-  if (event.type === 'room_surface_change') {
-    const sourceOk = properties.source === 'room_surface_control';
-    const actorOk = (event.actor === 'host' || event.actor === 'guest')
-      && properties.actor === event.actor;
-    const eventSourceOk = properties.surfaceControlEventSource === 'browser_room_surface_toggle';
-    const surfacesOk = hasRoomSurface(properties.surface)
-      && hasRoomSurface(properties.previousSurface)
-      && properties.surface !== properties.previousSurface;
-    const expectedAction = properties.surface === 'win95' ? 'enter_desktop' : 'exit_desktop';
-    const actionOk = properties.action === expectedAction;
-    const roomPhaseOk = hasString(properties.roomPhase);
-    const capturedAtMs = properties.capturedAtMs;
-    const surfaceChangeId = properties.surfaceChangeId;
-    const idOk = typeof surfaceChangeId === 'string'
-      && SURFACE_CHANGE_ID_RE.test(surfaceChangeId)
-      && typeof capturedAtMs === 'number'
-      && Number.isInteger(capturedAtMs)
-      && capturedAtMs >= 0
-      && surfaceChangeId === `surface:${event.actor}:${capturedAtMs}:${properties.previousSurface}:${properties.surface}`;
-    const replayOk = properties.durableObjectReplayExpected === true;
-    if (sourceOk && actorOk && eventSourceOk && surfacesOk && actionOk && roomPhaseOk && idOk && replayOk) return;
-    ctx.addIssue({
-      code: z.ZodIssueCode.custom,
-      message: 'Room surface evidence must come from a browser room surface toggle with actor, previous/next surface, stable event id, timestamp, action, replay expectation, and room phase.',
-      path: ['properties'],
-    });
-    return;
-  }
-  if (event.type === 'desktop_menu_toggle') {
-    const sourceOk = properties.source === 'win95_start_menu_control';
-    const actorOk = (event.actor === 'host' || event.actor === 'guest')
-      && properties.actor === event.actor;
-    const eventSource = properties.menuEventSource;
-    const eventSourceOk = typeof eventSource === 'string' && START_MENU_EVENT_SOURCES.has(eventSource);
-    const open = properties.open;
-    const expectedAction = open === true ? 'open' : open === false ? 'close' : null;
-    const menuOk = properties.menuId === 'start' && typeof open === 'boolean';
-    const actionOk = expectedAction !== null
-      && properties.action === expectedAction
-      && event.text === (open ? 'Start menu opened' : 'Start menu closed');
-    const capturedAtMs = properties.capturedAtMs;
-    const startMenuEventId = properties.startMenuEventId;
-    const idOk = typeof startMenuEventId === 'string'
-      && START_MENU_EVENT_ID_RE.test(startMenuEventId)
-      && typeof capturedAtMs === 'number'
-      && Number.isInteger(capturedAtMs)
-      && capturedAtMs >= 0
-      && startMenuEventId === `start-menu:${event.actor}:${capturedAtMs}:${expectedAction}:${eventSource}`;
-    const contextOk = properties.surface === 'win95'
-      && hasString(properties.roomPhase)
-      && properties.durableObjectReplayExpected === true;
-    if (sourceOk && actorOk && eventSourceOk && menuOk && actionOk && idOk && contextOk) return;
-    ctx.addIssue({
-      code: z.ZodIssueCode.custom,
-      message: 'Start menu evidence must come from a Win95 desktop menu control with actor, source, stable event id, timestamp, action, surface, replay expectation, and room phase.',
       path: ['properties'],
     });
     return;
@@ -682,118 +320,6 @@ const sessionEventSchema = z.object({
     });
     return;
   }
-  if (event.type === 'clippy_prompt') {
-    const promptCreatedAt = properties.promptCreatedAt;
-    const sourceOk = properties.source === 'clippy_prompt_client_submit'
-      && typeof properties.promptEventSource === 'string'
-      && CLIPPY_PROMPT_EVENT_SOURCES.has(properties.promptEventSource);
-    const actorOk = (event.actor === 'host' || event.actor === 'agent')
-      && (properties.actor === undefined || properties.actor === event.actor);
-    const promptOk = hasString(properties.promptId)
-      && hasString(properties.clientId)
-      && typeof promptCreatedAt === 'number'
-      && Number.isFinite(promptCreatedAt)
-      && promptCreatedAt >= 0
-      && typeof properties.promptLength === 'number'
-      && properties.promptLength === event.text.length
-      && hasString(properties.promptTrigger)
-      && hasString(properties.promptSource);
-    const browserPromptOk = properties.promptEventSource === 'browser_proactive_clippy_prompt'
-      && event.actor === 'host'
-      && properties.agentResponseClaimed === false
-      && hasRoomSurface(properties.surface)
-      && hasString(properties.roomPhase);
-    const agentPromptOk = properties.promptEventSource === 'clippy_agent_bridge'
-      && event.actor === 'agent'
-      && properties.bridgeEventType === 'CLIPPY_PROMPT'
-      && hasString(properties.observedAt)
-      && typeof properties.bridgePersisted === 'boolean';
-    if (sourceOk && actorOk && promptOk && (browserPromptOk || agentPromptOk)) return;
-    ctx.addIssue({
-      code: z.ZodIssueCode.custom,
-      message: 'Clippy prompt evidence must come from the browser proactive prompt flow or real agent bridge with prompt identity, trigger, length, source, and room context.',
-      path: ['properties'],
-    });
-    return;
-  }
-  if (event.type === 'clippy_action') {
-    const source = properties.source;
-    const capturedAtMs = properties.capturedAtMs;
-    const actionIdOk = hasString(properties.actionId);
-    const capturedAtOk = typeof capturedAtMs === 'number'
-      && Number.isInteger(capturedAtMs)
-      && capturedAtMs >= 0;
-    const expectedActionEventId = (
-      capturedAtOk
-      && hasString(source)
-      && hasString(properties.origin)
-      && hasString(properties.executionStatus)
-      && hasString(properties.actionId)
-    )
-      ? `clippy-action:${event.actor}:${capturedAtMs}:${source}:${properties.origin}:${properties.executionStatus}:${safeEvidenceIdPart(properties.actionId)}`
-      : null;
-    const actionEventIdOk = typeof properties.clippyActionEventId === 'string'
-      && CLIPPY_ACTION_EVENT_ID_RE.test(properties.clippyActionEventId)
-      && properties.clippyActionEventId === expectedActionEventId;
-    const surfaceContextOk = hasRoomSurface(properties.surface)
-      && hasString(properties.roomPhase);
-    if (typeof source === 'string' && CLIPPY_UI_SOURCES.has(source)) {
-      const originOk = source === 'clippy_tray_ui'
-        ? properties.origin === 'tray' && properties.actionSource === 'win95_taskbar_tray'
-        : source === 'clippy_chat_ui'
-          ? properties.origin === 'chat' && properties.actionSource === 'clippy_chat_window'
-          : properties.origin === 'prompt' && properties.actionSource === 'clippy_prompt_ui';
-      const actorOk = (event.actor === 'host' || event.actor === 'guest')
-        && properties.executedBy === event.actor;
-      const statusOk = typeof properties.executionStatus === 'string'
-        && CLIPPY_UI_EXECUTION_STATUSES.has(properties.executionStatus);
-      const noFakeAgentOk = properties.agentResponseClaimed === false
-        && (properties.agent === undefined || properties.agent === null);
-      if (actionIdOk && capturedAtOk && actionEventIdOk && surfaceContextOk && originOk && actorOk && statusOk && noFakeAgentOk) return;
-      ctx.addIssue({
-        code: z.ZodIssueCode.custom,
-        message: 'Clippy UI action evidence must come from tray, prompt, or chat UI with actor, stable action id, capture timestamp, action source, execution status, surface, and no agent attribution.',
-        path: ['properties'],
-      });
-      return;
-    }
-    if (source === 'clippy_agent_bridge') {
-      const commonOk = actionIdOk
-        && capturedAtOk
-        && actionEventIdOk
-        && properties.origin === 'agent'
-        && hasString(properties.agent)
-        && hasOptionalBrowserPromptRef(properties)
-        && properties.actionProtocol === 'clippy_room_action_tag'
-        && properties.bridgeEventType === 'ROOM_ACTION';
-      const suggestedOk = event.actor === 'agent'
-        && properties.executionStatus === 'suggested'
-        && (properties.actionSource === 'agent_stdout' || properties.actionSource === 'agent_api_response')
-        && hasString(properties.observedAt)
-        && typeof properties.bridgePersisted === 'boolean';
-      const executedOk = (event.actor === 'host' || event.actor === 'guest')
-        && properties.executionStatus === 'executed'
-        && properties.executedBy === event.actor
-        && (properties.actionSource === 'agent_stdout_action' || properties.actionSource === 'agent_api_response_action')
-        && hasString(properties.agentActionObservedAt)
-        && typeof properties.agentActionBridgePersisted === 'boolean'
-        && surfaceContextOk
-        && properties.agentResponseClaimed === false;
-      if (commonOk && (suggestedOk || executedOk)) return;
-      ctx.addIssue({
-        code: z.ZodIssueCode.custom,
-        message: 'Clippy agent action evidence must come from the real bridge with stable action id, capture timestamp, ROOM_ACTION metadata, and either a suggested agent event or a browser execution linked to that bridge event.',
-        path: ['properties'],
-      });
-      return;
-    }
-    ctx.addIssue({
-      code: z.ZodIssueCode.custom,
-      message: 'Clippy action evidence must come from a recognized Clippy UI or agent bridge source.',
-      path: ['properties'],
-    });
-    return;
-  }
   if (event.type === 'ai_chat_user') {
     const promptTimestamp = properties.promptTimestamp;
     const promptFingerprint = properties.promptFingerprint;
@@ -801,10 +327,10 @@ const sessionEventSchema = z.object({
     const promptId = properties.promptId;
     const actorOk = (event.actor === 'host' || event.actor === 'guest')
       && propertyActorMatches;
-    const sourceOk = properties.source === 'clippy_agent_chat_client_submit'
-      && properties.agentChatEventSource === 'browser_clippy_chat_window';
+    const sourceOk = properties.source === 'agent_chat_client_submit'
+      && properties.agentChatEventSource === 'browser_agent_chat_panel';
     const bridgeOk = properties.bridgeMessageType === 'CHAT'
-      && properties.bridgeProtocol === 'clippy_dev_container_ws'
+      && properties.bridgeProtocol === 'agent_dev_container_ws'
       && properties.browserQueuedBridgeMessage === true
       && properties.bridgeDeliveryConfirmed === false
       && properties.deliveredToAgentBridge !== true
@@ -814,7 +340,7 @@ const sessionEventSchema = z.object({
       && Number.isFinite(promptTimestamp)
       && promptTimestamp >= 0
       && typeof promptFingerprint === 'string'
-      && CLIPPY_PROMPT_FINGERPRINT_RE.test(promptFingerprint)
+      && AGENT_PROMPT_FINGERPRINT_RE.test(promptFingerprint)
       && typeof properties.promptLength === 'number'
       && properties.promptLength === event.text.length
       && typeof promptId === 'string'
@@ -828,7 +354,7 @@ const sessionEventSchema = z.object({
     if (actorOk && sourceOk && bridgeOk && noAgentAttributionOk && promptOk && contextOk) return;
     ctx.addIssue({
       code: z.ZodIssueCode.custom,
-      message: 'Clippy user chat evidence must come from the browser Clippy chat window and include a queued bridge CHAT prompt id, fingerprint, length, workspace context, no confirmed bridge delivery, and no agent attribution.',
+      message: 'AI assistant user chat evidence must come from the browser assistant chat panel and include a queued bridge CHAT prompt id, fingerprint, length, workspace context, no confirmed bridge delivery, and no agent attribution.',
       path: ['properties'],
     });
     return;
@@ -929,7 +455,7 @@ const sessionEventSchema = z.object({
     const statusOk = status === null
       || status === undefined
       || (typeof status === 'string' && AGENT_STATUSES.has(status));
-    const sourceOk = properties.source === 'clippy_agent_bridge';
+    const sourceOk = properties.source === 'agent_bridge';
     const actorOk = event.actor === 'agent';
     const agentOk = hasString(properties.agent);
     const observedOk = hasString(properties.observedAt);
@@ -944,7 +470,7 @@ const sessionEventSchema = z.object({
     const statusIdOk = typeof properties.agentStatusEventId === 'string'
       && AGENT_STATUS_EVENT_ID_RE.test(properties.agentStatusEventId)
       && properties.agentStatusEventId === expectedStatusEventId;
-    const browserObservationOk = properties.agentStatusEventSource === 'browser_clippy_agent_ws'
+    const browserObservationOk = properties.agentStatusEventSource === 'browser_agent_ws'
       && hasRoomSurface(properties.surface)
       && hasString(properties.roomPhase)
       && hasFiniteNonNegativeNumber(properties.messageTimestamp)
@@ -969,7 +495,7 @@ const sessionEventSchema = z.object({
     ) return;
     ctx.addIssue({
       code: z.ZodIssueCode.custom,
-      message: 'Agent status evidence must come from the Clippy/Devin bridge with stable status id, capture timestamp, and observed status or persisted diagnostic provenance.',
+      message: 'Agent status evidence must come from the real agent bridge with stable status id, capture timestamp, and observed status or persisted diagnostic provenance.',
       path: ['properties'],
     });
     return;
@@ -977,7 +503,7 @@ const sessionEventSchema = z.object({
   if (event.type === 'ai_chat_agent') {
     const capturedAtMs = properties.capturedAtMs;
     const responseFingerprint = properties.responseFingerprint;
-    const sourceOk = properties.source === 'clippy_agent_bridge';
+    const sourceOk = properties.source === 'agent_bridge';
     const actorOk = event.actor === 'agent';
     const agentOk = hasString(properties.agent);
     const chatResponseOk = properties.bridgeEventType === 'CHAT_RESPONSE'
@@ -1024,60 +550,10 @@ const sessionEventSchema = z.object({
     ) return;
     ctx.addIssue({
       code: z.ZodIssueCode.custom,
-      message: 'Agent chat evidence must come from a real Clippy/Devin bridge CHAT_RESPONSE with stable response id, capture timestamp, fingerprint, length, and persisted bridge or browser fallback provenance.',
+      message: 'Agent chat evidence must come from a real agent bridge CHAT_RESPONSE with stable response id, capture timestamp, fingerprint, length, and persisted bridge or browser fallback provenance.',
       path: ['properties'],
     });
     return;
-  }
-  if (event.type === 'cursor_presence') {
-    const sourceOk = properties.source === 'win95_cursor_presence_client_sample';
-    const actorOk = (event.actor === 'host' || event.actor === 'guest')
-      && properties.actor === event.actor;
-    const eventSourceOk = properties.cursorEventSource === 'browser_win95_desktop_pointermove';
-    const contextOk = properties.surface === 'win95' && hasString(properties.roomPhase);
-    const x = properties.normalizedX;
-    const y = properties.normalizedY;
-    const previousX = properties.previousNormalizedX;
-    const previousY = properties.previousNormalizedY;
-    const distance = properties.distanceFromPrevious;
-    const xOk = typeof x === 'number' && Number.isFinite(x) && x >= 0 && x <= 1;
-    const yOk = typeof y === 'number' && Number.isFinite(y) && y >= 0 && y <= 1;
-    const previousXOk = previousX === null || (
-      typeof previousX === 'number' && Number.isFinite(previousX) && previousX >= 0 && previousX <= 1
-    );
-    const previousYOk = previousY === null || (
-      typeof previousY === 'number' && Number.isFinite(previousY) && previousY >= 0 && previousY <= 1
-    );
-    const distanceOk = distance === null || hasFiniteNonNegativeNumber(distance);
-    const samplingOk = properties.evidenceSampling === 'presence_sample'
-      && properties.sampleIntervalMs === CURSOR_PRESENCE_SAMPLE_INTERVAL_MS
-      && properties.movementThreshold === CURSOR_PRESENCE_MOVEMENT_THRESHOLD
-      && properties.rawCursorMovesPersisted === false;
-    const sampleId = properties.cursorSampleId;
-    const sampledAtMs = properties.sampledAtMs;
-    const sampleIdOk = typeof sampleId === 'string'
-      && CURSOR_SAMPLE_ID_RE.test(sampleId)
-      && typeof sampledAtMs === 'number'
-      && Number.isInteger(sampledAtMs)
-      && sampleId.startsWith(`cursor:${event.actor}:${sampledAtMs}:`);
-    if (
-      sourceOk
-      && actorOk
-      && eventSourceOk
-      && contextOk
-      && xOk
-      && yOk
-      && previousXOk
-      && previousYOk
-      && distanceOk
-      && samplingOk
-      && sampleIdOk
-    ) return;
-    ctx.addIssue({
-      code: z.ZodIssueCode.custom,
-      message: 'Cursor presence evidence must be an actor-bound sampled Win95 browser cursor event with stable sample provenance.',
-      path: ['properties'],
-    });
   }
   if (event.type === 'media_control') {
     const sourceOk = properties.source === 'video_room_media_controls';
@@ -1091,9 +567,7 @@ const sessionEventSchema = z.object({
       && properties.previousEnabled !== properties.enabled;
     const expectedAction = properties.enabled === true ? 'enabled' : 'disabled';
     const actionOk = properties.action === expectedAction && properties.controlAction === 'toggle';
-    const expectedControlSurface = properties.surface === 'win95'
-      ? 'win95_video_window'
-      : 'standard_video_call';
+    const expectedControlSurface = 'standard_video_call';
     const contextOk = hasRoomSurface(properties.surface)
       && hasString(properties.roomPhase)
       && properties.controlSurface === expectedControlSurface;
@@ -1194,7 +668,7 @@ const sessionEventSchema = z.object({
   if (event.type === 'code_editor_save') {
     const sourceOk = properties.source === 'code_server_workspace';
     const observedBy = properties.observedBy;
-    const observedByOk = observedBy === 'agent_bridge' || observedBy === 'clippy_agent_bridge';
+    const observedByOk = observedBy === 'agent_bridge';
     const bridgeOk = properties.bridgeEventType === 'FILE_CHANGED'
       && properties.editorSurface === 'code-server';
     const actionOk = typeof properties.action === 'string'
@@ -1210,7 +684,7 @@ const sessionEventSchema = z.object({
       && observedBy === 'agent_bridge'
       && hasString(properties.workspaceRoot);
     const browserFallbackOk = properties.bridgePersisted === false
-      && observedBy === 'clippy_agent_bridge'
+      && observedBy === 'agent_bridge'
       && hasRoomSurface(properties.surface)
       && hasString(properties.roomPhase)
       && hasString(properties.workspaceStatus)
@@ -1336,21 +810,21 @@ function roomLifecycleEvidencePayload(
   if (event === 'JOINED') {
     return {
       type: 'participant_join',
-      text: `${roleLabel} joined the 95 Until Infinity room`,
+      text: `${roleLabel} joined the assessment room`,
       properties: sharedProperties,
     };
   }
   if (event === 'LEFT') {
     return {
       type: 'participant_leave',
-      text: `${roleLabel} left the 95 Until Infinity room`,
+      text: `${roleLabel} left the assessment room`,
       properties: sharedProperties,
     };
   }
   if (event === 'RECORDING_STARTED' && room.role === 'HOST') {
     return {
       type: 'recording_start',
-      text: 'Recording started for the 95 Until Infinity room',
+      text: 'Recording started for the assessment room',
       properties: {
         ...sharedProperties,
         recordingStatus: 'started',
@@ -1360,7 +834,7 @@ function roomLifecycleEvidencePayload(
   if (event === 'ENDED' && room.role === 'HOST' && options.recordingWasActive) {
     return {
       type: 'recording_stop',
-      text: 'Recording stopped for the 95 Until Infinity room',
+      text: 'Recording stopped for the assessment room',
       properties: {
         ...sharedProperties,
         recordingStatus: 'stopped',
@@ -1747,6 +1221,17 @@ function challengePacketBaseCommitSha(packet: RoomWorkspaceChallengePacketPayloa
   return value.toLowerCase();
 }
 
+function challengePacketVerificationCommand(packet: RoomWorkspaceChallengePacketPayload | null): string | null {
+  if (!packet) return null;
+  const value = locatorString(packet.locator, [
+    'verificationCommand',
+    'testCommand',
+    'verification_command',
+    'test_command',
+  ]);
+  return value?.slice(0, 1_000) ?? null;
+}
+
 function buildRoomWorkspaceChallenge(
   interview: RoomWorkspaceInterview | null,
   enabled: boolean,
@@ -1804,6 +1289,22 @@ function buildRoomWorkspaceChallenge(
     message: 'This workspace interview has no repository, GitHub PR, or task assigned yet. Treat this as an assessment setup gap, not candidate evidence.',
     packet,
   };
+}
+
+function roomWorkspaceLaunchBlocker(input: {
+  enabled: boolean;
+  challenge: RoomWorkspaceChallengePayload;
+}): string | null {
+  if (!input.enabled) return 'Workspace is only available for dev-container interviews.';
+  if (input.challenge.status === 'missing_reviewable_task') {
+    return input.challenge.message
+      ?? 'Assign a GitHub PR or complete source-backed task packet before launching the workspace.';
+  }
+  if (input.challenge.status !== 'repo_task_assigned') return null;
+
+  const contract = challengePacketContract(input.challenge.packet);
+  if (contract.isComplete) return null;
+  return `Complete the source-backed challenge packet before launching the workspace. Missing ${contract.missingFields.join(', ')}.`;
 }
 
 function serializeWorkspaceSession(
@@ -1902,19 +1403,16 @@ async function buildRoomWorkspacePayload(
   const session = await getLatestSessionForRoom(db, room.room_id).catch(() => null);
   const challengePacket = enabled ? await loadRoomWorkspaceChallengePacket(db, room) : null;
   const repoUrl = interview?.github_repo_url ?? session?.repo_git_url ?? null;
+  const challenge = buildRoomWorkspaceChallenge(interview, enabled, challengePacket);
   return {
     enabled,
-    canLaunch: enabled && room.role === 'HOST',
+    canLaunch: enabled && room.role === 'HOST' && !roomWorkspaceLaunchBlocker({ enabled, challenge }),
     repoUrl,
     githubPrNumber: interview?.github_pr_number ?? null,
     matchedRepoId: interview?.matched_repo_id ?? null,
-    challenge: buildRoomWorkspaceChallenge(interview, enabled, challengePacket),
+    challenge,
     session: serializeWorkspaceSession(token, session),
   };
-}
-
-function initialRoomSurfaceForWorkspace(_workspace: RoomWorkspacePayload): 'standard' | 'win95' {
-  return 'standard';
 }
 
 async function resolveRoom(db: D1Database, token: string): Promise<ResolvedRoom | null> {
@@ -1926,7 +1424,7 @@ async function resolveRoom(db: D1Database, token: string): Promise<ResolvedRoom 
             m.owner_id, m.title, m.description, m.scheduled_at,
             m.meeting_type, m.status AS meeting_status,
             m.started_at, m.ended_at, m.scheduled_interview_id,
-            m.video_enabled, m.workspace_enabled, m.recording_enabled, m.clippy_enabled,
+            m.video_enabled, m.workspace_enabled, m.recording_enabled, m.agent_enabled,
             (
               SELECT mp.contact_id
                 FROM meeting_room_tokens guest_token
@@ -2328,7 +1826,7 @@ meetingRooms.get('/:token', async (c) => {
         videoEnabled: room.video_enabled !== 0,
         workspaceEnabled: room.workspace_enabled !== 0,
         recordingEnabled: room.recording_enabled !== 0,
-        clippyEnabled: room.clippy_enabled !== 0,
+        agentEnabled: room.agent_enabled !== 0,
       },
     },
   });
@@ -2420,6 +1918,9 @@ interface RoomAssessmentProgressPayload {
   stage: AssessmentProgressSnapshot['stage'];
   nextAction: AssessmentProgressSnapshot['nextAction'];
   nextActionLabel: string;
+  assignmentTrust: AssessmentProgressSnapshot['assignmentTrust'];
+  readiness: AssessmentProgressSnapshot['readiness'];
+  challengePacketContract: AssessmentProgressSnapshot['challengePacketContract'];
   hasChallengePacket: boolean;
   hasWorkEvidence: boolean;
   hasMessageEvidence: boolean;
@@ -2500,6 +2001,9 @@ function serializeRoomAssessmentProgress(
     stage: progress.stage,
     nextAction: progress.nextAction,
     nextActionLabel: progress.nextActionLabel,
+    assignmentTrust: progress.assignmentTrust,
+    readiness: progress.readiness,
+    challengePacketContract: progress.challengePacketContract,
     hasChallengePacket: progress.hasChallengePacket,
     hasWorkEvidence: progress.hasWorkEvidence,
     hasMessageEvidence: progress.hasMessageEvidence,
@@ -2529,20 +2033,24 @@ function serializeRoomAssessmentProgress(
           baseCommitSha: progress.commit.baseCommitSha,
           commitSha: progress.commit.commitSha,
           commitUrl: progress.commit.commitUrl,
+          submissionSource: progress.commit.submissionSource,
+          submissionSourceLabel: progress.commit.submissionSourceLabel,
+          integrity: progress.commit.integrity,
+          challengeBinding: progress.commit.challengeBinding,
           changedFiles: progress.commit.changedFiles,
           occurredAt: progress.commit.occurredAt,
         }
       : null,
-	    evaluation: progress.evaluation
-	      ? {
-	          status: progress.evaluation.status,
-	          summary: progress.evaluation.summary,
-	          recommendation: progress.evaluation.recommendation,
-	          createdAt: progress.evaluation.createdAt,
-	          evidenceCoverage: progress.evaluation.evidenceCoverage,
-	          claims: progress.evaluation.claims,
-	          diagnostics: progress.evaluation.diagnostics,
-	        }
+    evaluation: progress.evaluation
+      ? {
+          status: progress.evaluation.status,
+          summary: progress.evaluation.summary,
+          recommendation: progress.evaluation.recommendation,
+          createdAt: progress.evaluation.createdAt,
+          evidenceCoverage: progress.evaluation.evidenceCoverage,
+          claims: progress.evaluation.claims,
+          diagnostics: progress.evaluation.diagnostics,
+        }
       : null,
   };
 }
@@ -2803,6 +2311,13 @@ meetingRooms.post('/:token/workspace/launch', async (c) => {
   if (!workspace.enabled) {
     return apiError(c, 'FORBIDDEN', 'Workspace is only available for dev-container interviews.');
   }
+  const launchBlocker = roomWorkspaceLaunchBlocker({
+    enabled: workspace.enabled,
+    challenge: workspace.challenge,
+  });
+  if (launchBlocker) {
+    return apiError(c, 'CONFLICT', launchBlocker);
+  }
   let body: z.infer<typeof workspaceLaunchSchema> = {};
   try {
     const raw = await c.req.json().catch(() => null);
@@ -2870,6 +2385,7 @@ meetingRooms.post('/:token/workspace/launch', async (c) => {
   const expiresAt = new Date(Date.now() + effective.ttlSeconds * 1000).toISOString();
   const challenge = workspace.challenge;
   const baseCommitSha = challengePacketBaseCommitSha(challenge.packet);
+  const verificationCommand = challengePacketVerificationCommand(challenge.packet);
   const challengeBranch = baseCommitSha ? null : githubPrChallengeRef(workspace.githubPrNumber);
   await insertRoomSession(c.env.DB, {
     id: crypto.randomUUID(),
@@ -2898,6 +2414,7 @@ meetingRooms.post('/:token/workspace/launch', async (c) => {
       repoGitUrl: effectiveRepoUrl,
       challengeBranch,
       baseCommitSha,
+      verificationCommand,
       challengePacketContentHash: challenge.packet?.contentHash ?? null,
       matchedRepoId: workspace.matchedRepoId,
       githubPrNumber: workspace.githubPrNumber,
@@ -3071,7 +2588,7 @@ async function proxyWorkspaceRequest(c: Context<{ Bindings: Env }>): Promise<Res
 meetingRooms.all('/:token/workspace/proxy/:sessionId', proxyWorkspaceRequest);
 meetingRooms.all('/:token/workspace/proxy/:sessionId/*', proxyWorkspaceRequest);
 
-// Agent bridge WebSocket proxy — connects Clippy UI to the baked bridge/router inside the container.
+// Agent bridge WebSocket proxy — connects the assistant UI to the baked bridge/router inside the container.
 // Path: /:token/agent/:sessionId/ws
 meetingRooms.all('/:token/agent/:sessionId/ws', async (c) => {
   const token = c.req.param('token');
@@ -3256,8 +2773,6 @@ meetingRooms.get('/:token/ws', async (c) => {
   if (c.req.header('Upgrade')?.toLowerCase() !== 'websocket') {
     return apiError(c, 'VALIDATION_ERROR', 'Expected WebSocket upgrade.');
   }
-  const workspace = await buildRoomWorkspacePayload(c.env.DB, token, room);
-
   const doId = c.env.VIDEO_ROOM.idFromName(room.session_id);
   const stub = c.env.VIDEO_ROOM.get(doId);
   await stub.fetch(new Request('https://do/ensure', {
@@ -3267,7 +2782,6 @@ meetingRooms.get('/:token/ws', async (c) => {
       meetingId: room.meeting_id,
       hostId: room.owner_id,
       resetEnded: room.room_status !== 'ENDED',
-      initialSurface: initialRoomSurfaceForWorkspace(workspace),
     }),
   }));
   return stub.fetch(new Request(`https://do/ws?role=${room.role}`, {

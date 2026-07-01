@@ -1,6 +1,7 @@
-import { useCallback, useEffect, useState, type CSSProperties, type ReactNode } from 'react';
+import { Suspense, lazy, useCallback, useEffect, useState, type CSSProperties, type ReactNode, type SyntheticEvent } from 'react';
 import { useLocation, useNavigate, useParams } from 'react-router-dom';
 import {
+  AlertTriangle,
   ArrowLeft,
   Briefcase,
   Calendar,
@@ -10,10 +11,10 @@ import {
   Mail,
   Network,
   Phone,
+  ShieldCheck,
   Signal,
   UserRound,
 } from 'lucide-react';
-import { LivingContextGraph } from '../components/Candidate/LivingContextGraph';
 import { useApiClient } from '../hooks/useApiClient';
 import type {
   LivingContextArtifact,
@@ -23,6 +24,12 @@ import type {
   LivingContextRecordSourceRef,
 } from '../lib/api/types';
 import type { AssessmentProgressSnapshot } from '../lib/scheduling/types';
+
+const LivingContextGraph = lazy(() =>
+  import('../components/Candidate/LivingContextGraph').then((module) => ({
+    default: module.LivingContextGraph,
+  }))
+);
 import {
   contextRecordTitle,
   contextRecordTypeLabel,
@@ -62,6 +69,13 @@ interface CodeReviewScoreProjection {
   narrative: string | null;
   strengths: string[];
   growthAreas: string[];
+  provenance: CodeReviewScoreProvenance | null;
+}
+
+interface CodeReviewScoreProvenance {
+  rubricDimensionCount: number;
+  evidenceItemCount: number;
+  metricCount: number;
 }
 
 interface CodeReviewChallengeProjection {
@@ -69,6 +83,13 @@ interface CodeReviewChallengeProjection {
   repoUrl: string | null;
   prNumber: number | null;
   matchStatus: string | null;
+}
+
+interface CodeReviewMatchSourceBridgeProjection {
+  candidateSourceCount: number;
+  repoSourceCount: number;
+  roleSourceCount: number;
+  provenanceComplete: boolean;
 }
 
 interface CodeReviewProofItem {
@@ -116,12 +137,14 @@ interface CodeReviewDecisionProjection {
   nextAction: string;
   nextActionDetail: string;
   scoreLabel: string | null;
+  scoreProvenanceLabel?: string | null;
   challengeLabel: string | null;
   challengeUrl: string | null;
   narrative: string | null;
   strengths: string[];
   probes: string[];
   proofCount: number;
+  sourceProofSummary?: string | null;
   proofItems: CodeReviewProofItem[];
   basisItems: CodeReviewBasisItem[];
 }
@@ -179,6 +202,166 @@ function selectedAssessmentFromNavigationState(state: unknown): AssessmentProgre
     return null;
   }
   return state.selectedAssessment as unknown as AssessmentProgressSnapshot;
+}
+
+function codeReviewProofItemsFromUnknown(value: unknown): CodeReviewProofItem[] {
+  if (!Array.isArray(value)) return [];
+  return value.flatMap((item, index) => {
+    if (!isRecord(item)) return [];
+    const label = optionalString(item.label);
+    if (!label) return [];
+    return [{
+      id: optionalString(item.id) ?? `navigation-proof-${index}`,
+      label,
+      text: optionalString(item.text),
+    }];
+  });
+}
+
+function hasCandidateRepoRouteProof(
+  proofItems: CodeReviewProofItem[],
+): boolean {
+  const proofText = proofItems
+    .flatMap((item) => [item.label, item.text])
+    .filter((part): part is string => Boolean(part))
+    .join(' ')
+    .toLowerCase();
+  return /candidate[-/\s]+repo/.test(proofText)
+    || /candidate.*repo/.test(proofText)
+    || /repo.*candidate/.test(proofText)
+    || /source bridge/.test(proofText)
+    || /evidence bridge/.test(proofText)
+    || (/candidate evidence/.test(proofText) && /repo evidence/.test(proofText));
+}
+
+function codeReviewBasisItemsFromUnknown(
+  value: unknown,
+  scoreLabel: string | null,
+  proofItems: CodeReviewProofItem[],
+): CodeReviewBasisItem[] {
+  const hasRouteSourceProof = hasCandidateRepoRouteProof(proofItems);
+  const items = Array.isArray(value)
+    ? value.flatMap((item) => {
+        if (!isRecord(item)) return [];
+        const label = optionalString(item.label);
+        const itemValue = optionalString(item.value);
+        if (!label || !itemValue || typeof item.satisfied !== 'boolean') return [];
+        const isMatchProof = label.toLowerCase().includes('match');
+        const claimsSourceBackedMatch = item.satisfied
+          && isMatchProof
+          && /source-backed|candidate.*repo|repo.*candidate|source bridge|evidence bridge/i.test(itemValue);
+        if (claimsSourceBackedMatch && !hasRouteSourceProof) {
+          return [{
+            label,
+            value: 'Missing',
+            satisfied: false,
+          }];
+        }
+        return [{
+          label,
+          value: itemValue,
+          satisfied: item.satisfied,
+        }];
+      })
+    : [];
+
+  return items.length > 0
+    ? items
+    : [
+        {
+          label: 'Score report',
+          value: scoreLabel ?? 'Missing',
+          satisfied: Boolean(scoreLabel),
+        },
+        {
+          label: 'Match proof',
+          value: 'Missing',
+          satisfied: false,
+        },
+      ];
+}
+
+function prependMissingContext(items: string[], item: string): string[] {
+  const normalizedItem = item.toLowerCase();
+  const withoutDuplicate = items.filter((existing) => existing.toLowerCase() !== normalizedItem);
+  return [item, ...withoutDuplicate];
+}
+
+function codeReviewDecisionFromNavigationState(state: unknown): CodeReviewDecisionProjection | null {
+  if (!isRecord(state) || !isRecord(state.selectedCodeReviewDecision)) return null;
+  const decision = state.selectedCodeReviewDecision;
+  if (
+    typeof decision.decisionLabel !== 'string'
+    || typeof decision.recommendation !== 'string'
+    || typeof decision.recommendationDetail !== 'string'
+    || typeof decision.uncertainty !== 'string'
+    || typeof decision.uncertaintyDetail !== 'string'
+    || typeof decision.assessmentValidity !== 'string'
+    || typeof decision.assessmentValidityDetail !== 'string'
+    || typeof decision.nextAction !== 'string'
+    || typeof decision.nextActionDetail !== 'string'
+  ) {
+    return null;
+  }
+  const scoreLabel = optionalString(decision.scoreLabel);
+  const proofItems = codeReviewProofItemsFromUnknown(decision.proofItems);
+  const rawSourceProofSummary = optionalString(decision.sourceProofSummary);
+  const hasRouteSourceProof = hasCandidateRepoRouteProof(proofItems);
+  const sourceProofSummary = proofItems.length === 0
+    ? null
+    : rawSourceProofSummary
+      && (/candidate[-/\s]+repo|source bridge|evidence bridge/i.test(rawSourceProofSummary) && !hasRouteSourceProof)
+        ? null
+        : rawSourceProofSummary;
+  const routeProofCount = optionalNumber(decision.proofCount);
+  const proofCount = hasRouteSourceProof
+    ? Math.max(proofItems.length, routeProofCount ?? 0)
+    : proofItems.length;
+  const shouldDowngradeOptimisticRouteState = !hasRouteSourceProof
+    && (
+      /advance/i.test(decision.recommendation)
+      || /usable source-backed/i.test(decision.assessmentValidity)
+    );
+  const missingContext = stringArray(decision.missingContext);
+  return {
+    decisionLabel: decision.decisionLabel,
+    sessionId: optionalString(decision.sessionId),
+    outcome: optionalString(decision.outcome),
+    recommendation: shouldDowngradeOptimisticRouteState ? 'Collect missing evidence' : decision.recommendation,
+    recommendationDetail: shouldDowngradeOptimisticRouteState
+      ? 'The selected review has a score or assignment, but PIPE did not preserve parsed candidate/repo proof for this handoff. Keep it out of the hiring recommendation until the source bridge is visible.'
+      : decision.recommendationDetail,
+    uncertainty: shouldDowngradeOptimisticRouteState ? 'Repo-match proof incomplete' : decision.uncertainty,
+    uncertaintyDetail: shouldDowngradeOptimisticRouteState
+      ? 'The selected review may be real, but the person profile cannot prove that this PR was a fair candidate-specific assessment yet.'
+      : decision.uncertaintyDetail,
+    missingContext: shouldDowngradeOptimisticRouteState
+      ? prependMissingContext(missingContext, 'Rendered candidate/repo source bridge')
+      : missingContext,
+    assessmentValidity: shouldDowngradeOptimisticRouteState ? 'Match provenance incomplete' : decision.assessmentValidity,
+    assessmentValidityDetail: shouldDowngradeOptimisticRouteState
+      ? 'A selected review is visible, but candidate/repo match proof is missing from parsed source items.'
+      : decision.assessmentValidityDetail,
+    nextAction: shouldDowngradeOptimisticRouteState ? 'Schedule evidence-gathering call' : decision.nextAction,
+    nextActionDetail: shouldDowngradeOptimisticRouteState
+      ? 'Collect or refresh the missing candidate/repo evidence before treating this score as hiring signal.'
+      : decision.nextActionDetail,
+    scoreLabel,
+    scoreProvenanceLabel: optionalString(decision.scoreProvenanceLabel),
+    challengeLabel: optionalString(decision.challengeLabel),
+    challengeUrl: optionalString(decision.challengeUrl),
+    narrative: optionalString(decision.narrative),
+    strengths: stringArray(decision.strengths),
+    probes: stringArray(decision.probes),
+    proofCount,
+    sourceProofSummary,
+    proofItems,
+    basisItems: codeReviewBasisItemsFromUnknown(
+      decision.basisItems,
+      scoreLabel,
+      proofItems,
+    ),
+  };
 }
 
 function livingContextFromCandidateResponse(response: unknown): LivingContextReadModel | null {
@@ -291,6 +474,46 @@ function evidenceSummaryText(livingContext: LivingContextReadModel | null): stri
   return `PIPE currently knows this relationship from ${parts.join(', ')}.`;
 }
 
+function interactionIndexText(interaction: LivingContextInteraction): string {
+  return [
+    interaction.interactionType,
+    optionalString(interaction.externalReference),
+    optionalString(interaction.metadata.mode),
+    optionalString(interaction.metadata.state),
+    optionalString(interaction.metadata.matchStatus),
+  ].filter((value): value is string => Boolean(value)).join(' ').toLowerCase();
+}
+
+function isResumeInteraction(interaction: LivingContextInteraction): boolean {
+  const text = interactionIndexText(interaction);
+  return text.includes('resume') || text.includes('cv');
+}
+
+function isConversationInteraction(interaction: LivingContextInteraction): boolean {
+  const text = interactionIndexText(interaction);
+  if (text.includes('invite') || text.includes('message') || text.includes('email')) return false;
+  return text.includes('context_call')
+    || text.includes('meeting')
+    || text.includes('interview')
+    || text.includes('phone')
+    || text.includes('call');
+}
+
+function isTechnicalAssessmentInteraction(interaction: LivingContextInteraction): boolean {
+  const text = interactionIndexText(interaction);
+  if (text.includes('context_call')) return false;
+  return text.includes('code_review')
+    || text.includes('open_source')
+    || text.includes('dev_container')
+    || text.includes('bug_fix')
+    || text.includes('review-session');
+}
+
+function isOperationalInteraction(interaction: LivingContextInteraction): boolean {
+  const text = interactionIndexText(interaction);
+  return text.includes('invite') || text.includes('message') || text.includes('email');
+}
+
 function interactionCoverageCounts(interactions: LivingContextInteraction[]): InteractionCoverageCounts {
   const counts = {
     codeReviews: 0,
@@ -301,21 +524,13 @@ function interactionCoverageCounts(interactions: LivingContextInteraction[]): In
   };
 
   for (const interaction of interactions) {
-    const interactionType = interaction.interactionType.toLowerCase();
-    const reference = optionalString(interaction.externalReference)?.toLowerCase() ?? '';
-    if (interactionType.includes('code_review') || reference.startsWith('review-session')) {
+    if (isTechnicalAssessmentInteraction(interaction)) {
       counts.codeReviews += 1;
-    } else if (
-      interactionType.includes('meeting')
-      || interactionType.includes('interview')
-      || interactionType.includes('phone')
-      || interactionType.includes('call')
-      || reference.includes('meeting')
-    ) {
+    } else if (isConversationInteraction(interaction)) {
       counts.calls += 1;
-    } else if (interactionType.includes('resume') || reference.startsWith('resume:')) {
+    } else if (isResumeInteraction(interaction)) {
       counts.resumes += 1;
-    } else if (interactionType.includes('invite') || interactionType.includes('message') || reference.includes('invite')) {
+    } else if (isOperationalInteraction(interaction)) {
       counts.messages += 1;
     } else {
       counts.other += 1;
@@ -340,9 +555,25 @@ function interactionCoverageItems(interactions: LivingContextInteraction[]): Int
 function evidenceMixReadout(
   interactions: LivingContextInteraction[],
   decision: CodeReviewDecisionProjection | null,
+  hasPendingAssignment = false,
 ): EvidenceMixReadout {
   const counts = interactionCoverageCounts(interactions);
+  if ((decision && isPendingCodeReviewDecision(decision)) || (!decision && hasPendingAssignment)) {
+    return {
+      headline: 'Code-review assignment is waiting on candidate review',
+      detail: 'A source-backed challenge is assigned, but the technical assessment is missing candidate review comments and a score.',
+      nextSource: 'Wait for candidate review submission',
+    };
+  }
   if (interactions.length === 0) {
+    if (decision && decision.proofCount > 0) {
+      return {
+        headline: 'Technical assessment signal is present',
+        detail: 'Use this selected code-review decision as current technical evidence, then add resume or conversation context before treating the person profile as complete.',
+        nextSource: decision.nextAction,
+      };
+    }
+
     return {
       headline: 'No source mix yet',
       detail: 'Start with one durable source: resume, invite, call transcript, or assessment evidence.',
@@ -381,11 +612,69 @@ function evidenceMixReadout(
   };
 }
 
-function interactionCoverageSummary(interactions: LivingContextInteraction[]): string {
+function hasPendingCodeReviewAssignment(livingContext: LivingContextReadModel | null): boolean {
+  if (!livingContext) return false;
+  return livingContext.contextRecords.some((record) => {
+    const isMatchRecord = record.recordType === 'candidate_pr_match_decision'
+      || record.predicate === 'selects review challenge';
+    return isMatchRecord && hasMatchedReviewChallenge(readChallengeProjection(record));
+  });
+}
+
+function isPendingCodeReviewDecision(decision: CodeReviewDecisionProjection | null): boolean {
+  if (!decision) return false;
+  return isWaitForAssessmentSignalAction(decision.recommendation)
+    || isWaitForAssessmentSignalAction(decision.nextAction);
+}
+
+function interactionCoverageSummary(
+  interactions: LivingContextInteraction[],
+  expectedInteractionCount = interactions.length,
+): string {
   if (interactions.length === 0) {
+    if (expectedInteractionCount > 0) {
+      const verb = expectedInteractionCount === 1 ? 'is' : 'are';
+      return `${countWithLabel(expectedInteractionCount, 'evidence-producing interaction')} ${verb} attached to this person. Full source rows are loading.`;
+    }
     return 'No evidence-producing interactions are attached to this person yet.';
   }
   return `Person-level rollup from ${countWithLabel(interactions.length, 'evidence-producing interaction')}. Open a row only when you need the single-meeting source record.`;
+}
+
+function interactionTimestampMs(interaction: LivingContextInteraction): number {
+  const value = interaction.startedAt ?? interaction.createdAt ?? interaction.updatedAt ?? '';
+  const timestamp = new Date(value).getTime();
+  return Number.isFinite(timestamp) ? timestamp : 0;
+}
+
+function interactionTimelinePriority(interaction: LivingContextInteraction): number {
+  if (isTechnicalAssessmentInteraction(interaction)) return 0;
+  if (isConversationInteraction(interaction)) return 1;
+  if (isResumeInteraction(interaction)) return 2;
+  if (isOperationalInteraction(interaction)) return 4;
+  return 3;
+}
+
+function personTimelineInteractions(
+  interactions: LivingContextInteraction[],
+  limit: number,
+): LivingContextInteraction[] {
+  return [...interactions]
+    .sort((left, right) => {
+      const priorityDelta = interactionTimelinePriority(left) - interactionTimelinePriority(right);
+      if (priorityDelta !== 0) return priorityDelta;
+      return interactionTimestampMs(right) - interactionTimestampMs(left);
+    })
+    .slice(0, limit);
+}
+
+function interactionTimelineSelectionSummary(
+  totalInteractionCount: number,
+  shownInteractionCount: number,
+): string | null {
+  if (totalInteractionCount <= shownInteractionCount) return null;
+  const hiddenCount = totalInteractionCount - shownInteractionCount;
+  return `Showing ${countWithLabel(shownInteractionCount, 'highest-value interaction row')} before ${countWithLabel(hiddenCount, 'lower-priority interaction')} kept in the audit trail.`;
 }
 
 function quietEvidenceText(value: string): string {
@@ -410,25 +699,28 @@ function contextRecordDisplayNarrative(record: LivingContextRecord): string | nu
 function interactionSourceLabel(interaction: LivingContextInteraction): string | null {
   const externalReference = optionalString(interaction.externalReference);
   if (!externalReference) return null;
-  const interactionType = interaction.interactionType.toLowerCase();
-  const reference = externalReference.toLowerCase();
 
-  if (reference.startsWith('resume:') || interactionType.includes('resume')) {
+  if (isResumeInteraction(interaction)) {
     return 'Resume evidence attached';
   }
-  if (interactionType.includes('code_review') || reference.startsWith('review-session')) {
+  if (isTechnicalAssessmentInteraction(interaction)) {
     return 'Code-review assessment evidence';
   }
-  if (interactionType.includes('meeting') || interactionType.includes('interview') || reference.includes('meeting')) {
+  if (isConversationInteraction(interaction)) {
     return 'Meeting evidence attached';
   }
-  if (interactionType.includes('phone') || interactionType.includes('call')) {
-    return 'Call evidence attached';
-  }
-  if (interactionType.includes('invite') || reference.includes('invite')) {
+  if (isOperationalInteraction(interaction)) {
     return 'Invite evidence attached';
   }
   return 'Source evidence attached';
+}
+
+function interactionDecisionRoleLabel(interaction: LivingContextInteraction): string {
+  if (isTechnicalAssessmentInteraction(interaction)) return 'Decision evidence';
+  if (isConversationInteraction(interaction)) return 'Calibration context';
+  if (isResumeInteraction(interaction)) return 'Background evidence';
+  if (isOperationalInteraction(interaction)) return 'Operational event';
+  return 'Supporting evidence';
 }
 
 function sourceArtifactTitle(artifact: LivingContextArtifact): string {
@@ -486,6 +778,9 @@ function recordTimestamp(record: LivingContextRecord): number {
 function sessionIdFromRecord(record: LivingContextRecord | null): string | null {
   if (!record) return null;
   return optionalString(record.qualifiers.sessionId)
+    ?? optionalString(record.qualifiers.reviewSessionId)
+    ?? optionalString(record.qualifiers.codeReviewSessionId)
+    ?? optionalString(record.qualifiers.assessmentSessionId)
     ?? record.entities
       .map((entity) =>
         entity.entityType === 'code_review_session' || entity.entityType === 'assessment_session'
@@ -494,6 +789,202 @@ function sessionIdFromRecord(record: LivingContextRecord | null): string | null 
       )
       .find((value): value is string => typeof value === 'string' && value.length > 0)
     ?? null;
+}
+
+function codeReviewEvidenceKeys(record: LivingContextRecord | null): string[] {
+  if (!record) return [];
+  return [
+    sessionIdFromRecord(record) ? `session:${sessionIdFromRecord(record)}` : null,
+    record.interactionId ? `interaction:${record.interactionId}` : null,
+  ].filter((value): value is string => Boolean(value));
+}
+
+function selectMatchingChallengeRecord(
+  records: LivingContextRecord[],
+  evidenceRecords: Array<LivingContextRecord | null>,
+): LivingContextRecord | null {
+  const evidenceKeys = new Set(
+    evidenceRecords
+      .flatMap(codeReviewEvidenceKeys),
+  );
+  if (evidenceKeys.size === 0) {
+    return records.length === 1 ? records[0] ?? null : null;
+  }
+
+  const matchedRecord = records.find((record) => {
+    const recordKeys = codeReviewEvidenceKeys(record);
+    return recordKeys.some((key) => evidenceKeys.has(key));
+  });
+
+  return matchedRecord ?? null;
+}
+
+function collectionEntryCount(value: unknown): number {
+  if (Array.isArray(value)) return value.length;
+  if (isRecord(value)) return Object.keys(value).length;
+  return 0;
+}
+
+function wholeCount(value: unknown): number | null {
+  const numberValue = optionalNumber(value);
+  if (numberValue === null) return null;
+  return Math.max(0, Math.trunc(numberValue));
+}
+
+function scoreProvenanceFromReport(report: Record<string, unknown>): CodeReviewScoreProvenance | null {
+  const explicit = isRecord(report.provenance) ? report.provenance : null;
+  const rubricDimensionCount = wholeCount(explicit?.rubricDimensionCount)
+    ?? collectionEntryCount(report.dimensions);
+  const evidenceItemCount = wholeCount(explicit?.evidenceItemCount)
+    ?? collectionEntryCount(report.evidence);
+  const metricCount = wholeCount(explicit?.metricCount)
+    ?? collectionEntryCount(report.metrics);
+  if (rubricDimensionCount === 0 && evidenceItemCount === 0 && metricCount === 0) return null;
+  return {
+    rubricDimensionCount,
+    evidenceItemCount,
+    metricCount,
+  };
+}
+
+function pluralCount(count: number, singular: string, plural = `${singular}s`): string {
+  return `${count} ${count === 1 ? singular : plural}`;
+}
+
+function scoreProvenanceLabel(provenance: CodeReviewScoreProvenance | null): string | null {
+  if (!provenance) return null;
+  return [
+    pluralCount(provenance.rubricDimensionCount, 'rubric dimension'),
+    pluralCount(provenance.evidenceItemCount, 'evidence item'),
+    pluralCount(provenance.metricCount, 'scoring metric'),
+  ].join(' · ');
+}
+
+function selectedAssessmentSourceRefCounts(
+  progress: AssessmentProgressSnapshot,
+): Array<{ kind: string; count: number }> {
+  const value = isRecord(progress) ? progress.sourceRefCounts : null;
+  if (!Array.isArray(value)) return [];
+  return value.flatMap((item) => {
+    if (!isRecord(item)) return [];
+    const count = wholeCount(item.count);
+    if (count === null) return [];
+    return [{
+      kind: optionalString(item.kind) ?? 'source',
+      count,
+    }];
+  });
+}
+
+function selectedAssessmentEvidenceSnippets(progress: AssessmentProgressSnapshot): Array<{
+  eventKind: string;
+  sourceRefType: string;
+  evidenceRole: string;
+  exactText: string;
+  occurredAt: string;
+}> {
+  const value = isRecord(progress) ? progress.evidenceSnippets : null;
+  if (!Array.isArray(value)) return [];
+  return value.flatMap((item) => {
+    if (!isRecord(item)) return [];
+    const sourceRefType = optionalString(item.sourceRefType);
+    const exactText = optionalString(item.exactText);
+    const occurredAt = optionalString(item.occurredAt);
+    if (!sourceRefType || !exactText || !occurredAt) return [];
+    return [{
+      eventKind: optionalString(item.eventKind) ?? 'assessment_evidence',
+      sourceRefType,
+      evidenceRole: optionalString(item.evidenceRole) ?? 'assessment_source',
+      exactText,
+      occurredAt,
+    }];
+  });
+}
+
+function selectedAssessmentEvaluationClaims(progress: AssessmentProgressSnapshot): Array<{
+  polarity: string;
+  dimension: string;
+  narrative: string;
+}> {
+  const evaluation = isRecord(progress.evaluation) ? progress.evaluation : null;
+  const claims = evaluation && Array.isArray(evaluation.claims) ? evaluation.claims : [];
+  return claims.flatMap((claim) => {
+    if (!isRecord(claim)) return [];
+    const polarity = optionalString(claim.polarity);
+    const dimension = optionalString(claim.dimension);
+    const narrative = optionalString(claim.narrative);
+    if (!polarity || !dimension || !narrative) return [];
+    return [{ polarity, dimension, narrative }];
+  });
+}
+
+function selectedAssessmentScoreProvenance(
+  progress: AssessmentProgressSnapshot,
+  sourceRefCount: number,
+): CodeReviewScoreProvenance | null {
+  const evaluation = isRecord(progress.evaluation) ? progress.evaluation : null;
+  if (!evaluation) return null;
+  const claims = selectedAssessmentEvaluationClaims(progress);
+  const sourceRefCounts = selectedAssessmentSourceRefCounts(progress);
+  const evidenceSnippets = selectedAssessmentEvidenceSnippets(progress);
+  const claimDimensions = new Set(
+    claims
+      .map((claim) => claim.dimension.trim())
+      .filter(Boolean),
+  );
+  const coverage = isRecord(evaluation.evidenceCoverage) ? evaluation.evidenceCoverage : null;
+  const requiredForEvaluation = Array.isArray(coverage?.requiredForEvaluation)
+    ? coverage.requiredForEvaluation.length
+    : 0;
+  const expectedForHighConfidence = Array.isArray(coverage?.expectedForHighConfidence)
+    ? coverage.expectedForHighConfidence.length
+    : 0;
+  const sourceRefTypeCounts = isRecord(coverage?.sourceRefTypeCounts) ? coverage.sourceRefTypeCounts : null;
+  const coverageMetricCount = requiredForEvaluation + expectedForHighConfidence;
+  const sourceTypeMetricCount = sourceRefTypeCounts
+    ? Object.keys(sourceRefTypeCounts).length
+    : sourceRefCounts.length;
+  return {
+    rubricDimensionCount: Math.max(1, claimDimensions.size),
+    evidenceItemCount: Math.max(sourceRefCount, evidenceSnippets.length),
+    metricCount: Math.max(1, coverageMetricCount, sourceTypeMetricCount),
+  };
+}
+
+function scoreLabelForProjection(score: CodeReviewScoreProjection | null): string | null {
+  if (score?.score === null || score?.score === undefined) return null;
+  return `${Math.round(score.score)}/100${score.band ? ` ${titleCaseToken(score.band)}` : ''}`;
+}
+
+function codeReviewScoreProjectionFromReport(report: Record<string, unknown>): CodeReviewScoreProjection {
+  const overall = isRecord(report.overall) ? report.overall : report;
+  return {
+    score: optionalNumber(overall.score),
+    band: optionalString(overall.band),
+    narrative: optionalString(overall.narrative),
+    strengths: stringArray(overall.strengths),
+    growthAreas: stringArray(overall.growth_areas ?? overall.growthAreas),
+    provenance: scoreProvenanceFromReport(report),
+  };
+}
+
+function codeReviewScoreProjectionFromText(value: string): CodeReviewScoreProjection | null {
+  try {
+    const parsed = JSON.parse(value) as unknown;
+    return isRecord(parsed) ? codeReviewScoreProjectionFromReport(parsed) : null;
+  } catch {
+    return null;
+  }
+}
+
+function scoreProofTextFromExactText(value: string): string | null {
+  const score = codeReviewScoreProjectionFromText(value);
+  const scoreLabel = scoreLabelForProjection(score);
+  if (!scoreLabel) return null;
+  return [
+    scoreLabel,
+    scoreProvenanceLabel(score?.provenance ?? null),
+  ].filter((item): item is string => Boolean(item)).join(' · ');
 }
 
 function parseScoreProjection(record: LivingContextRecord | null): CodeReviewScoreProjection | null {
@@ -505,20 +996,7 @@ function parseScoreProjection(record: LivingContextRecord | null): CodeReviewSco
   );
   if (!scoreSource || typeof scoreSource.exactText !== 'string') return null;
 
-  try {
-    const parsed = JSON.parse(scoreSource.exactText) as unknown;
-    if (!isRecord(parsed)) return null;
-    const overall = isRecord(parsed.overall) ? parsed.overall : parsed;
-    return {
-      score: optionalNumber(overall.score),
-      band: optionalString(overall.band),
-      narrative: optionalString(overall.narrative),
-      strengths: stringArray(overall.strengths),
-      growthAreas: stringArray(overall.growth_areas ?? overall.growthAreas),
-    };
-  } catch {
-    return null;
-  }
+  return codeReviewScoreProjectionFromText(scoreSource.exactText);
 }
 
 function readChallengeProjection(record: LivingContextRecord | null): CodeReviewChallengeProjection | null {
@@ -607,6 +1085,49 @@ function hasMatchedReviewChallenge(challenge: CodeReviewChallengeProjection | nu
   return Boolean(challenge.repoLabel || challenge.repoUrl || challenge.prNumber !== null);
 }
 
+function matchSourceBridgeFromRecord(record: LivingContextRecord | null): CodeReviewMatchSourceBridgeProjection | null {
+  const validatorAgent = isRecord(record?.qualifiers.validatorAgent) ? record.qualifiers.validatorAgent : null;
+  const sourceBridge = validatorAgent && isRecord(validatorAgent.sourceBridge)
+    ? validatorAgent.sourceBridge
+    : null;
+  if (!sourceBridge) return null;
+  return {
+    candidateSourceCount: optionalNumericValue(sourceBridge.candidateSourceCount) ?? 0,
+    repoSourceCount: optionalNumericValue(sourceBridge.repoSourceCount) ?? 0,
+    roleSourceCount: optionalNumericValue(sourceBridge.roleSourceCount) ?? 0,
+    provenanceComplete: sourceBridge.provenanceComplete === true,
+  };
+}
+
+function sourceRoleText(source: LivingContextRecordSourceRef): string {
+  const parts = [
+    source.evidenceRole,
+    source.sourceRefType,
+    'artifactType' in source ? source.artifactType : null,
+    'locator' in source && isRecord(source.locator) ? source.locator.repoFullName : null,
+    'locator' in source && isRecord(source.locator) ? source.locator.repoUrl : null,
+  ];
+  return parts.filter((part): part is string => typeof part === 'string').join(' ').toLowerCase();
+}
+
+function recordHasCandidateAndRepoSourceRefs(record: LivingContextRecord | null): boolean {
+  if (!record) return false;
+  const sourceRoles = record.sources.map(sourceRoleText);
+  const hasCandidateSource = sourceRoles.some((role) => /candidate|person|profile|resume/.test(role));
+  const hasRepoSource = sourceRoles.some((role) => /repo|pr|pull_request|challenge|selected_repo/.test(role));
+  return hasCandidateSource && hasRepoSource;
+}
+
+function hasRenderedCandidateRepoMatchProof(record: LivingContextRecord | null): boolean {
+  const bridge = matchSourceBridgeFromRecord(record);
+  if (bridge) {
+    return bridge.provenanceComplete
+      && bridge.candidateSourceCount > 0
+      && bridge.repoSourceCount > 0;
+  }
+  return recordHasCandidateAndRepoSourceRefs(record);
+}
+
 function verdictLabel(verdict: string | null): string | null {
   if (!verdict) return null;
   switch (verdict.toLowerCase()) {
@@ -627,11 +1148,12 @@ function verdictLabel(verdict: string | null): string | null {
 function recommendationForScore(
   score: CodeReviewScoreProjection | null,
   challenge: CodeReviewChallengeProjection | null,
+  hasMatchProvenance: boolean,
 ): { value: string; detail: string } {
-  if (!hasMatchedReviewChallenge(challenge)) {
+  if (!hasMatchedReviewChallenge(challenge) || !hasMatchProvenance) {
     return {
       value: 'Collect missing evidence',
-      detail: 'PIPE has not proven a source-backed repo challenge match yet, so any score should stay out of the hiring recommendation.',
+      detail: 'PIPE has not proven a source-backed candidate/repo challenge match yet, so any score should stay out of the hiring recommendation.',
     };
   }
   if (score?.score !== null && score?.score !== undefined) {
@@ -648,8 +1170,8 @@ function recommendationForScore(
       };
     }
     return {
-      value: 'Do not advance from this signal yet',
-      detail: 'The review did not produce enough positive technical evidence. Confirm whether the assignment was fair before rejecting.',
+      value: 'Review assignment fairness before rejecting',
+      detail: 'The review did not produce enough positive technical evidence. Confirm whether the PR challenge was well matched before treating this as rejection signal.',
     };
   }
   return {
@@ -726,21 +1248,58 @@ function nextActionForDecision(
   };
 }
 
-function nextInterviewCtaLabel(decision: CodeReviewDecisionProjection | null): string {
-  const nextAction = decision?.nextAction.toLowerCase() ?? '';
+function nextActionText(
+  decision: CodeReviewDecisionProjection | null,
+  evidenceMixNextSource?: string,
+): string {
+  return decision?.nextAction ?? evidenceMixNextSource ?? 'Schedule targeted context gathering';
+}
+
+function isCodeReviewAssessmentAction(action: string): boolean {
+  const normalized = action.toLowerCase();
+  if (isWaitForAssessmentSignalAction(normalized)) return false;
+  return normalized.includes('technical assessment')
+    || normalized.includes('code-review')
+    || normalized.includes('code review')
+    || normalized.includes('repo challenge')
+    || normalized.includes('review signal');
+}
+
+function isWaitForAssessmentSignalAction(action: string): boolean {
+  const normalized = action.toLowerCase();
+  if (!/\bwait\b/.test(normalized)) return false;
+  return normalized.includes('candidate review')
+    || normalized.includes('candidate submission')
+    || normalized.includes('review signal')
+    || normalized.includes('review evidence')
+    || normalized.includes('review comments');
+}
+
+function nextInterviewCtaLabel(
+  decision: CodeReviewDecisionProjection | null,
+  evidenceMixNextSource?: string,
+): string {
+  const nextAction = nextActionText(decision, evidenceMixNextSource).toLowerCase();
+  if (isCodeReviewAssessmentAction(nextAction)) return 'Create code-review assessment';
   if (nextAction.includes('evidence')) return 'Create evidence interview';
   if (nextAction.includes('calibration')) return 'Create calibration interview';
   if (nextAction.includes('fairness')) return 'Create fairness review';
   return 'Create context interview';
 }
 
-function nextInterviewRecruiterNotes(decision: CodeReviewDecisionProjection | null): string {
+function nextInterviewRecruiterNotes(
+  decision: CodeReviewDecisionProjection | null,
+  evidenceMixNextSource?: string,
+): string {
   if (!decision) {
+    const nextAction = nextActionText(decision, evidenceMixNextSource);
     return [
       'PIPE person-profile next action',
       'Recommendation: Collect source-backed context',
-      'Next action: Schedule targeted context gathering',
-      'Reason: Use this interview to collect missing evidence before treating the profile as hiring signal.',
+      `Next action: ${nextAction}`,
+      isCodeReviewAssessmentAction(nextAction)
+        ? 'Reason: Use existing conversation evidence to assign a source-backed code-review or workspace challenge.'
+        : 'Reason: Use this interview to collect missing evidence before treating the profile as hiring signal.',
       'Uncertainty: Decision not ready',
       'Missing context: first source-backed evidence',
     ].join('\n');
@@ -749,12 +1308,19 @@ function nextInterviewRecruiterNotes(decision: CodeReviewDecisionProjection | nu
   const missingContext = decision.missingContext
     .filter((item) => item.trim().length > 0)
     .slice(0, 4);
+  const decisionContext = [
+    decision.scoreLabel ? `Candidate signal: ${decision.scoreLabel}` : null,
+    decision.scoreProvenanceLabel ? `Score provenance: ${decision.scoreProvenanceLabel}` : null,
+    decision.challengeLabel ? `Repo challenge: ${decision.challengeLabel}` : null,
+    `Assessment validity: ${decision.assessmentValidity} - ${decision.assessmentValidityDetail}`,
+  ].filter((item): item is string => Boolean(item));
 
   return [
     'PIPE person-profile next action',
     `Recommendation: ${decision.recommendation}`,
     `Next action: ${decision.nextAction}`,
     `Reason: ${decision.nextActionDetail}`,
+    ...decisionContext,
     `Uncertainty: ${decision.uncertainty} - ${decision.uncertaintyDetail}`,
     missingContext.length > 0
       ? `Missing context: ${missingContext.join('; ')}`
@@ -763,7 +1329,11 @@ function nextInterviewRecruiterNotes(decision: CodeReviewDecisionProjection | nu
   ].join('\n');
 }
 
-function nextInterviewPath(contact: PersonContact, decision: CodeReviewDecisionProjection | null): string {
+function nextInterviewPath(
+  contact: PersonContact,
+  decision: CodeReviewDecisionProjection | null,
+  evidenceMixNextSource?: string,
+): string {
   const params = new URLSearchParams({
     new: '1',
     interviewType: 'VIDEO',
@@ -773,11 +1343,11 @@ function nextInterviewPath(contact: PersonContact, decision: CodeReviewDecisionP
   if (name) params.set('recipientName', name);
   if (email) params.set('recipientEmail', email);
   if (!name && email) params.set('recipientName', email);
-  const action = decision?.nextAction.toLowerCase() ?? '';
-  if (action.includes('code review') || action.includes('review signal')) {
+  const action = nextActionText(decision, evidenceMixNextSource);
+  if (isCodeReviewAssessmentAction(action)) {
     params.set('interviewType', 'CODE_REVIEW');
   }
-  params.set('recruiterNotes', nextInterviewRecruiterNotes(decision));
+  params.set('recruiterNotes', nextInterviewRecruiterNotes(decision, evidenceMixNextSource));
   return `/interviews?${params.toString()}`;
 }
 
@@ -840,7 +1410,7 @@ function uncertaintyForDecision(input: {
   if (!input.hasMatchProvenance) {
     return {
       value: 'Repo-match proof incomplete',
-      detail: 'PIPE has a visible repo challenge, but the source-backed match decision record is missing from the person graph.',
+      detail: 'PIPE has a visible repo challenge, but the rendered candidate-to-repo source bridge is missing from the person graph.',
     };
   }
   if (!hasScore) {
@@ -885,7 +1455,11 @@ function missingContextForDecision(input: {
   const hasScore = input.score?.score !== null && input.score?.score !== undefined;
   const hasMatchedChallenge = hasMatchedReviewChallenge(input.challenge);
   if (!hasMatchedChallenge) items.push('Source-backed repo challenge selection');
-  if (!input.hasMatchProvenance) items.push('Source-backed repo match decision provenance');
+  if (!input.hasMatchProvenance) {
+    items.push(hasMatchedChallenge
+      ? 'Rendered candidate/repo source bridge'
+      : 'Source-backed repo match decision provenance');
+  }
   if (!hasScore) items.push('Completed code-review score report');
   if (!input.hasTranscript) items.push('Candidate review transcript or review conversation');
   if (input.proofCount < 4) items.push('Complete candidate/repo provenance chain');
@@ -905,6 +1479,10 @@ function sourceProofLabel(source: LivingContextRecordSourceRef): string {
 
 function sourceProofText(source: LivingContextRecordSourceRef): string | null {
   if (typeof source.exactText === 'string' && source.exactText.trim()) {
+    if (source.evidenceRole === 'score_report') {
+      const compactScoreProof = scoreProofTextFromExactText(source.exactText);
+      if (compactScoreProof) return compactScoreProof;
+    }
     return source.exactText.length > 180 ? `${source.exactText.slice(0, 180)}...` : source.exactText;
   }
   if ('locator' in source && isRecord(source.locator)) {
@@ -916,6 +1494,210 @@ function sourceProofText(source: LivingContextRecordSourceRef): string | null {
     if (repo) return repo;
   }
   return 'Source reference preserved';
+}
+
+function uniqueTextParts(parts: Array<string | null | undefined>): string[] {
+  return [...new Set(parts.filter((part): part is string => Boolean(part)))];
+}
+
+function codeReviewDecisionSourceProofSummary(decision: CodeReviewDecisionProjection): string {
+  if (decision.sourceProofSummary?.trim()) {
+    return decision.sourceProofSummary.trim();
+  }
+
+  const proofText = decision.proofItems
+    .map((item) => `${item.label} ${item.text ?? ''}`.toLowerCase())
+    .join(' ');
+  const hasSourceBackedMatch = decision.basisItems.some((item) =>
+    item.satisfied
+      && item.label.toLowerCase().includes('match')
+      && /source-backed|candidate|repo/i.test(item.value),
+  );
+  const hasRepoProof = Boolean(
+    decision.challengeLabel
+      || /repo|pr #|challenge|assignment|match proof/.test(proofText),
+  );
+  const hasScoringProof = Boolean(
+    decision.scoreProvenanceLabel
+      || /score|rubric|metric/.test(proofText),
+  );
+  const hasOpenGaps = decision.missingContext.length > 0
+    || /missing|gap|calibration|probe|uncertainty/.test(proofText);
+
+  const parts = uniqueTextParts([
+    hasSourceBackedMatch ? 'candidate-repo match proof' : null,
+    hasRepoProof ? 'repo evidence' : null,
+    hasScoringProof ? 'scoring provenance' : null,
+    hasOpenGaps && !hasSourceBackedMatch ? 'open gaps' : null,
+  ]);
+
+  if (parts.length === 0) return 'proof provenance';
+  if (parts.length === 1) return parts[0]!;
+  if (parts.length === 2) return `${parts[0]} and ${parts[1]}`;
+  return `${parts.slice(0, -1).join(', ')}, and ${parts[parts.length - 1]}`;
+}
+
+function codeReviewScoreValidityReadout(decision: CodeReviewDecisionProjection): {
+  headline: string;
+  detail: string;
+  reasons: string[];
+} {
+  const basisReasons = decision.basisItems.map((item) => {
+    const label = item.label.toLowerCase();
+    if (label.includes('score')) {
+      return item.satisfied ? 'score report is captured' : 'score report is missing';
+    }
+    if (label.includes('transcript') || label.includes('review evidence')) {
+      return item.satisfied ? 'review transcript is captured' : 'review transcript is missing';
+    }
+    if (label.includes('repo') || label.includes('challenge')) {
+      return item.satisfied ? 'repo challenge is source-backed' : 'repo challenge is missing';
+    }
+    if (label.includes('match')) {
+      return item.satisfied
+        ? 'candidate/repo match proof is source-backed'
+        : 'candidate/repo match proof is missing';
+    }
+    return item.satisfied
+      ? `${item.label.toLowerCase()} is captured`
+      : `${item.label.toLowerCase()} is missing`;
+  });
+  const reasons = uniqueTextParts([
+    ...basisReasons,
+    decision.scoreProvenanceLabel,
+  ]);
+  const hasMissingReason = reasons.some((reason) => /missing|incomplete|only/i.test(reason))
+    || /partial|incomplete|missing|needs more|no score/i.test(decision.assessmentValidity);
+  return {
+    headline: hasMissingReason ? 'Do not rely yet' : 'Valid because',
+    detail: hasMissingReason
+      ? decision.assessmentValidityDetail
+      : 'This is evidence, not an automatic decision.',
+    reasons,
+  };
+}
+
+type CodeReviewDecisionStateTone = 'positive' | 'watch' | 'blocked';
+
+function codeReviewDecisionState(decision: CodeReviewDecisionProjection): {
+  label: string;
+  ariaLabel: string;
+  tone: CodeReviewDecisionStateTone;
+} {
+  const joinedBasis = decision.basisItems
+    .map((item) => `${item.label} ${item.value}`)
+    .join(' ')
+    .toLowerCase();
+  const joinedDecisionText = [
+    decision.recommendation,
+    decision.recommendationDetail,
+    decision.assessmentValidity,
+    decision.assessmentValidityDetail,
+    decision.uncertainty,
+    decision.uncertaintyDetail,
+    decision.nextAction,
+    decision.nextActionDetail,
+  ].join(' ').toLowerCase();
+  const allBasisSatisfied = decision.basisItems.length > 0
+    && decision.basisItems.every((item) => item.satisfied);
+  const hasExplicitNotReadySignal = /do not rely|not assessment signal|no score|missing|partial|incomplete|unavailable|failed|wait for candidate|wait for review|collect/.test(joinedDecisionText);
+  const hasCalibrationSignal = /calibration|calibrate|assignment fairness|manual|weak|probe|focused/.test(joinedDecisionText)
+    || /assignment evidence only/.test(joinedBasis);
+  const hasUsableSignal = /usable|valid because|source-backed signal|advance/.test(joinedDecisionText);
+
+  if (allBasisSatisfied && hasUsableSignal && !hasExplicitNotReadySignal && !/manual|assignment evidence only/.test(joinedBasis)) {
+    return {
+      label: 'Usable signal',
+      ariaLabel: 'Code-review decision state: usable signal',
+      tone: 'positive',
+    };
+  }
+
+  if (hasExplicitNotReadySignal && !hasCalibrationSignal) {
+    return {
+      label: 'Not ready',
+      ariaLabel: 'Code-review decision state: not ready',
+      tone: 'blocked',
+    };
+  }
+
+  return {
+    label: 'Calibration needed',
+    ariaLabel: 'Code-review decision state: calibration needed',
+    tone: 'watch',
+  };
+}
+
+function derivePendingCodeReviewAssignmentDecision(
+  livingContext: LivingContextReadModel | null,
+): CodeReviewDecisionProjection | null {
+  if (!livingContext) return null;
+  const matchRecord = livingContext.contextRecords
+    .filter((record) => record.recordType === 'candidate_pr_match_decision' || record.predicate === 'selects review challenge')
+    .sort((a, b) => recordTimestamp(b) - recordTimestamp(a))
+    .find((record) => hasMatchedReviewChallenge(readChallengeProjection(record))) ?? null;
+  const challenge = readChallengeProjection(matchRecord);
+  if (!matchRecord || !hasMatchedReviewChallenge(challenge)) return null;
+
+  const hasMatchProvenance = hasRenderedCandidateRepoMatchProof(matchRecord);
+  const proofItems = matchRecord.sources.slice(0, 6).map((source, index) => ({
+    id: `${matchRecord.id}:${index}:${source.sourceRefId ?? source.sourceSpanId ?? 'source'}`,
+    label: sourceProofLabel(source),
+    text: sourceProofText(source),
+  }));
+  const challengeLabel = challenge?.repoLabel
+    ? `${challenge.repoLabel}${challenge.prNumber !== null ? ` PR #${challenge.prNumber}` : ''}`
+    : null;
+
+  return {
+    decisionLabel: 'Code-review assignment',
+    sessionId: sessionIdFromRecord(matchRecord),
+    outcome: null,
+    recommendation: 'Wait for candidate review',
+    recommendationDetail: 'A source-backed PR challenge is assigned, but it is not performance evidence yet.',
+    uncertainty: 'Performance not observed',
+    uncertaintyDetail: 'PIPE has not captured candidate review comments, pushback, or a score for this assignment.',
+    missingContext: [
+      'Candidate review transcript or source-backed review comments',
+      'Completed code-review score report',
+    ],
+    assessmentValidity: 'No score signal yet',
+    assessmentValidityDetail: 'Assignment is not assessment signal; do not make a hiring decision until the candidate submits source-backed review comments.',
+    nextAction: 'Wait for candidate submission',
+    nextActionDetail: 'Use the assigned challenge as setup only; evaluate once source-backed review evidence arrives.',
+    scoreLabel: null,
+    scoreProvenanceLabel: null,
+    challengeLabel,
+    challengeUrl: challengeUrlForProjection(challenge),
+    narrative: matchRecord.narrative,
+    strengths: [],
+    probes: [],
+    proofCount: proofItems.length,
+    sourceProofSummary: null,
+    proofItems,
+    basisItems: [
+      {
+        label: 'Score report',
+        value: 'Missing',
+        satisfied: false,
+      },
+      {
+        label: 'Review evidence',
+        value: '0 annotations',
+        satisfied: false,
+      },
+      {
+        label: 'Repo challenge',
+        value: challengeLabel ?? 'Assigned',
+        satisfied: true,
+      },
+      {
+        label: 'Match proof',
+        value: hasMatchProvenance ? 'Source-backed match' : 'Assignment evidence only',
+        satisfied: hasMatchProvenance,
+      },
+    ],
+  };
 }
 
 function deriveCodeReviewDecision(
@@ -934,19 +1716,22 @@ function deriveCodeReviewDecision(
     record.recordType === 'code_review_transcript'
     && (!sessionId || sessionIdFromRecord(record) === sessionId),
   ) ?? codeReviewRecords.find((record) => record.recordType === 'code_review_transcript') ?? null;
-  const matchRecord = livingContext.contextRecords
+  const matchRecords = livingContext.contextRecords
     .filter((record) => record.recordType === 'candidate_pr_match_decision' || record.predicate === 'selects review challenge')
-    .sort((a, b) => recordTimestamp(b) - recordTimestamp(a))[0] ?? null;
+    .sort((a, b) => recordTimestamp(b) - recordTimestamp(a));
+  const matchRecord = selectMatchingChallengeRecord(matchRecords, [scoreRecord, transcriptRecord]);
   const matchChallenge = readChallengeProjection(matchRecord);
   const challenge = matchChallenge
     ?? readChallengeProjection(scoreRecord)
     ?? readChallengeProjection(transcriptRecord)
     ?? readChallengeProjection(codeReviewRecords[0] ?? null);
-  const hasMatchProvenance = Boolean(matchRecord && matchRecord.sources.length > 0 && hasMatchedReviewChallenge(matchChallenge));
-  const recommendation = recommendationForScore(score, challenge);
-  const scoreLabel = score?.score !== null && score?.score !== undefined
-    ? `${Math.round(score.score)}/100${score.band ? ` ${titleCaseToken(score.band)}` : ''}`
-    : null;
+  const hasMatchProvenance = Boolean(
+    matchRecord
+      && hasMatchedReviewChallenge(matchChallenge)
+      && hasRenderedCandidateRepoMatchProof(matchRecord),
+  );
+  const recommendation = recommendationForScore(score, challenge, hasMatchProvenance);
+  const scoreLabel = scoreLabelForProjection(score);
   const challengeLabel = challenge?.repoLabel
     ? `${challenge.repoLabel}${challenge.prNumber !== null ? ` PR #${challenge.prNumber}` : ''}`
     : null;
@@ -1001,9 +1786,11 @@ function deriveCodeReviewDecision(
     },
     {
       label: 'Match proof',
-      value: hasMatchProvenance && matchRecord
+      value: hasMatchProvenance
         ? 'Source-backed match'
-        : 'Missing',
+        : matchRecord && hasMatchedReviewChallenge(matchChallenge)
+          ? 'Assignment evidence only'
+          : 'Missing',
       satisfied: hasMatchProvenance,
     },
   ];
@@ -1022,12 +1809,14 @@ function deriveCodeReviewDecision(
     nextAction: nextAction.value,
     nextActionDetail: nextAction.detail,
     scoreLabel,
+    scoreProvenanceLabel: scoreProvenanceLabel(score?.provenance ?? null),
     challengeLabel,
     challengeUrl: challengeUrlForProjection(challenge),
     narrative: score?.narrative ?? transcriptRecord?.narrative ?? scoreRecord?.narrative ?? null,
     strengths: score?.strengths ?? [],
     probes,
     proofCount: proofItems.length,
+    sourceProofSummary: null,
     proofItems,
     basisItems,
   };
@@ -1108,11 +1897,11 @@ function deriveWorkspaceAssessmentDecision(
         };
   const assessmentValidity = proofItems.length >= 3 && evaluationRecords.length > 0
     ? {
-        value: 'Usable workspace assessment signal',
+        value: 'Usable source-backed signal from workspace assessment',
         detail: 'Evaluation claims, source refs, and assessment evidence are present. Use this as person-level signal, not an automatic decision.',
       }
     : {
-        value: 'Partial workspace assessment signal',
+        value: 'Partial source-backed signal from workspace assessment',
         detail: 'Assessment evidence exists, but the source chain is incomplete. Review the underlying interaction before relying on it.',
       };
   const uncertainty = negativeClaims.length > 0
@@ -1227,32 +2016,40 @@ function deriveSelectedWorkspaceAssessmentDecision(
 ): CodeReviewDecisionProjection | null {
   if (!progress?.humanDecision && !progress?.evaluation) return null;
 
-  const sourceRefCount = progress.humanDecision?.sourceRefCount
-    ?? progress.evaluation?.evidenceCoverage?.sourceRefCount
-    ?? progress.sourceRefCounts.reduce((total, item) => total + item.count, 0)
-    ?? 0;
-  const proofItems = progress.evidenceSnippets?.slice(0, 6).map((snippet, index) => ({
+  const humanDecisionRecord = isRecord(progress.humanDecision) ? progress.humanDecision : null;
+  const evaluationRecord = isRecord(progress.evaluation) ? progress.evaluation : null;
+  const evidenceCoverage = isRecord(evaluationRecord?.evidenceCoverage)
+    ? evaluationRecord.evidenceCoverage
+    : null;
+  const sourceRefCounts = selectedAssessmentSourceRefCounts(progress);
+  const evidenceSnippets = selectedAssessmentEvidenceSnippets(progress);
+  const sourceRefCount = wholeCount(humanDecisionRecord?.sourceRefCount)
+    ?? wholeCount(evidenceCoverage?.sourceRefCount)
+    ?? sourceRefCounts.reduce((total, item) => total + item.count, 0);
+  const scoreProvenance = selectedAssessmentScoreProvenance(progress, sourceRefCount);
+  const proofItems = evidenceSnippets.slice(0, 6).map((snippet, index) => ({
     id: `${progress.session.id}:${index}:${snippet.sourceRefType}:${snippet.occurredAt}`,
     label: snippet.sourceRefType.replace(/[_-]+/g, ' ').toLowerCase(),
     text: snippet.exactText.length > 180 ? `${snippet.exactText.slice(0, 180)}...` : snippet.exactText,
-  })) ?? [];
-  const positiveClaims = progress.evaluation?.claims?.filter((claim) => claim.polarity === 'positive') ?? [];
-  const negativeClaims = progress.evaluation?.claims?.filter((claim) => claim.polarity === 'negative') ?? [];
-  const humanDecision = progress.humanDecision?.decision ?? null;
-  const recommendation = progress.humanDecision
-    ? humanAssessmentDecisionLabel(progress.humanDecision.decision)
-    : assessmentEvaluationRecommendationLabel(progress.evaluation?.recommendation) ?? 'Review selected assessment';
-  const recommendationDetail = progress.humanDecision?.summary
-    ?? progress.evaluation?.summary
+  }));
+  const claims = selectedAssessmentEvaluationClaims(progress);
+  const positiveClaims = claims.filter((claim) => claim.polarity === 'positive');
+  const negativeClaims = claims.filter((claim) => claim.polarity === 'negative');
+  const humanDecision = optionalString(humanDecisionRecord?.decision);
+  const recommendation = humanDecision
+    ? humanAssessmentDecisionLabel(humanDecision)
+    : assessmentEvaluationRecommendationLabel(optionalString(evaluationRecord?.recommendation)) ?? 'Review selected assessment';
+  const recommendationDetail = optionalString(humanDecisionRecord?.summary)
+    ?? optionalString(evaluationRecord?.summary)
     ?? 'The selected interview has source-backed assessment evidence, but the accumulated person graph has not absorbed it yet.';
-  const hasCompleteProof = sourceRefCount >= 3 && Boolean(progress.evaluation);
+  const hasCompleteProof = sourceRefCount >= 3 && Boolean(evaluationRecord);
   const assessmentValidity = hasCompleteProof
     ? {
-        value: 'Usable workspace assessment signal',
+        value: 'Usable source-backed signal from workspace assessment',
         detail: 'The selected interview includes evaluator evidence and source references. Treat this as selected-interaction signal until the person graph rollup catches up.',
       }
     : {
-        value: 'Partial workspace assessment signal',
+        value: 'Partial source-backed signal from workspace assessment',
         detail: 'The selected interview has assessment evidence, but the source chain is not complete enough for high confidence.',
       };
   const uncertainty = negativeClaims.length > 0
@@ -1260,7 +2057,7 @@ function deriveSelectedWorkspaceAssessmentDecision(
         value: 'Assessment has cautions',
         detail: negativeClaims[0]?.narrative ?? 'The evaluator raised a caution that needs hiring-team calibration.',
       }
-    : progress.humanDecision && hasCompleteProof
+    : humanDecisionRecord && hasCompleteProof
       ? {
           value: 'Low remaining uncertainty',
           detail: 'The selected assessment has a human decision and source-backed evaluator evidence.',
@@ -1271,10 +2068,10 @@ function deriveSelectedWorkspaceAssessmentDecision(
         };
   const missingContext = negativeClaims.length > 0
     ? ['Review evaluator cautions before using this as final hiring signal']
-    : progress.humanDecision
+    : humanDecisionRecord
       ? ['Persist this selected assessment into the person graph rollup']
       : ['Record a human assessment decision after reviewing the selected interview evidence'];
-  const nextAction = progress.humanDecision
+  const nextAction = humanDecisionRecord
     ? {
         value: 'Review with hiring team',
         detail: 'Use this selected-interview assessment with the profile evidence while the graph rollup catches up.',
@@ -1283,6 +2080,10 @@ function deriveSelectedWorkspaceAssessmentDecision(
         value: 'Record human assessment decision',
         detail: 'Have a reviewer inspect the selected assessment evidence and record advance, hold, reject, or needs-more-evidence.',
       };
+
+  const challenge = isRecord(progress.challenge) ? progress.challenge : null;
+  const challengeLocator = isRecord(challenge?.locator) ? challenge.locator : null;
+  const challengeRepositoryUrl = optionalString(challengeLocator?.repositoryUrl);
 
   return {
     decisionLabel: 'Workspace assessment decision',
@@ -1298,13 +2099,12 @@ function deriveSelectedWorkspaceAssessmentDecision(
     nextAction: nextAction.value,
     nextActionDetail: nextAction.detail,
     scoreLabel: null,
-    challengeLabel: progress.challenge?.locator.repositoryUrl
-      ? String(progress.challenge.locator.repositoryUrl).replace(/^https:\/\/github\.com\//, '')
+    scoreProvenanceLabel: scoreProvenanceLabel(scoreProvenance),
+    challengeLabel: challengeRepositoryUrl
+      ? challengeRepositoryUrl.replace(/^https:\/\/github\.com\//, '')
       : null,
-    challengeUrl: typeof progress.challenge?.locator.repositoryUrl === 'string'
-      ? progress.challenge.locator.repositoryUrl
-      : null,
-    narrative: progress.evaluation?.summary ?? progress.humanDecision?.summary ?? null,
+    challengeUrl: challengeRepositoryUrl,
+    narrative: optionalString(evaluationRecord?.summary) ?? optionalString(humanDecisionRecord?.summary),
     strengths: positiveClaims.map((claim) => claim.narrative).slice(0, 3),
     probes: negativeClaims.map((claim) => claim.narrative).slice(0, 2),
     proofCount: Math.max(sourceRefCount, proofItems.length),
@@ -1317,8 +2117,8 @@ function deriveSelectedWorkspaceAssessmentDecision(
       },
       {
         label: 'Evaluation claims',
-        value: positiveClaims.length > 0 ? `${positiveClaims.length} positive` : progress.evaluation ? 'Recorded' : 'Missing',
-        satisfied: Boolean(progress.evaluation),
+        value: positiveClaims.length > 0 ? `${positiveClaims.length} positive` : evaluationRecord ? 'Recorded' : 'Missing',
+        satisfied: Boolean(evaluationRecord),
       },
       {
         label: 'Human decision',
@@ -1379,15 +2179,18 @@ function EmptyPanel({ children }: { children: string }): JSX.Element {
 function ProfileDecisionCockpit({
   decision,
   livingContext,
+  nextActionSource,
   onCreateNextInterview,
 }: {
   decision: CodeReviewDecisionProjection | null;
   livingContext: LivingContextReadModel | null;
+  nextActionSource: string;
   onCreateNextInterview: () => void;
 }): JSX.Element {
   const hasEvidence = (livingContext?.summary.interactionCount ?? 0) > 0
     || (livingContext?.summary.contextRecordCount ?? 0) > 0
     || (livingContext?.summary.artifactCount ?? 0) > 0;
+  const hasPendingAssignment = !decision && hasPendingCodeReviewAssignment(livingContext);
   const proofCount = decision?.proofCount ?? livingContext?.summary.sourceSpanCount ?? 0;
   const proofLabel = decision
     ? `source proof ${proofCount === 1 ? 'item' : 'items'}`
@@ -1421,6 +2224,34 @@ function ProfileDecisionCockpit({
           detail: decision.nextActionDetail,
         },
       ]
+    : hasPendingAssignment
+      ? [
+          {
+            label: 'Current recommendation',
+            value: 'Wait for candidate review',
+            detail: 'A source-backed PR challenge is assigned, but it is not performance evidence yet.',
+          },
+          {
+            label: 'Assessment validity',
+            value: 'No score signal yet',
+            detail: 'Assignment is not assessment signal; do not make a hiring decision until the candidate submits source-backed review comments.',
+          },
+          {
+            label: 'Uncertainty',
+            value: 'Performance not observed',
+            detail: 'PIPE has not captured candidate review comments, pushback, or a score for this assignment.',
+          },
+          {
+            label: 'Missing context',
+            value: 'Candidate review transcript or source-backed review comments',
+            detail: 'The profile should stay pending until the candidate produces review evidence.',
+          },
+          {
+            label: 'Next action',
+            value: 'Wait for candidate submission',
+            detail: 'Use the assigned challenge as setup only; evaluate once source-backed review evidence arrives.',
+          },
+        ]
     : [
         {
           label: 'Current recommendation',
@@ -1450,6 +2281,7 @@ function ProfileDecisionCockpit({
           detail: 'Use the missing evidence to decide whether the next step should be a call, resume review, or code review.',
         },
       ];
+  const showNextActionCta = !hasPendingAssignment && !isPendingCodeReviewDecision(decision);
 
   return (
     <section data-testid="person-decision-cockpit" style={PROFILE_COCKPIT}>
@@ -1479,22 +2311,27 @@ function ProfileDecisionCockpit({
           </div>
         ))}
       </div>
-      <div style={PROFILE_COCKPIT_ACTION_ROW}>
-        <button
-          type="button"
-          data-testid="person-next-action-cta"
-          onClick={onCreateNextInterview}
-          style={PROFILE_COCKPIT_ACTION}
-        >
-          <Calendar size={14} />
-          {nextInterviewCtaLabel(decision)}
-        </button>
-      </div>
+      {showNextActionCta && (
+        <div style={PROFILE_COCKPIT_ACTION_ROW}>
+          <button
+            type="button"
+            data-testid="person-next-action-cta"
+            onClick={onCreateNextInterview}
+            style={PROFILE_COCKPIT_ACTION}
+          >
+            <Calendar size={14} />
+            {nextInterviewCtaLabel(decision, nextActionSource)}
+          </button>
+        </div>
+      )}
     </section>
   );
 }
 
 function CodeReviewDecisionCard({ decision }: { decision: CodeReviewDecisionProjection }): JSX.Element {
+  const sourceProofSummary = codeReviewDecisionSourceProofSummary(decision);
+  const scoreValidity = codeReviewScoreValidityReadout(decision);
+  const decisionState = codeReviewDecisionState(decision);
   const signalSummary = [
     decision.scoreLabel,
     decision.challengeLabel,
@@ -1517,7 +2354,18 @@ function CodeReviewDecisionCard({ decision }: { decision: CodeReviewDecisionProj
           <h2 style={DECISION_TITLE}>{decision.recommendation}</h2>
           <p style={DECISION_COPY}>{decision.recommendationDetail}</p>
         </div>
-        <CheckCircle size={24} color="var(--pipe-accent)" />
+        <div
+          data-testid="person-code-review-decision-state"
+          aria-label={decisionState.ariaLabel}
+          style={decisionStateBadgeStyle(decisionState.tone)}
+        >
+          {decisionState.tone === 'positive' ? (
+            <CheckCircle size={15} aria-hidden="true" />
+          ) : (
+            <AlertTriangle size={15} aria-hidden="true" />
+          )}
+          {decisionState.label}
+        </div>
       </div>
 
       <div data-testid="person-code-review-decision-basis" style={DECISION_BASIS}>
@@ -1553,11 +2401,33 @@ function CodeReviewDecisionCard({ decision }: { decision: CodeReviewDecisionProj
         </div>
       </div>
 
+      <div data-testid="person-code-review-score-validity" style={SCORE_VALIDITY_PANEL}>
+        <div style={SCORE_VALIDITY_HEADER}>
+          <div>
+            <div style={DECISION_BASIS_TITLE}>Score validity</div>
+            <div style={SCORE_VALIDITY_HEADLINE}>{scoreValidity.headline}</div>
+          </div>
+          <ShieldCheck size={20} color="var(--pipe-accent)" />
+        </div>
+        <ul style={SCORE_VALIDITY_LIST}>
+          {scoreValidity.reasons.map((reason) => (
+            <li key={reason}>{reason}</li>
+          ))}
+        </ul>
+        <p style={DECISION_FACT_DETAIL}>{scoreValidity.detail}</p>
+      </div>
+
       <div style={DECISION_FACT_GRID}>
         {decision.scoreLabel && (
           <div style={DECISION_FACT}>
             <div style={DECISION_FACT_LABEL}>Candidate signal</div>
             <div style={DECISION_FACT_VALUE}>{decision.scoreLabel}</div>
+          </div>
+        )}
+        {decision.scoreProvenanceLabel && (
+          <div style={DECISION_FACT}>
+            <div style={DECISION_FACT_LABEL}>Score provenance</div>
+            <div style={DECISION_FACT_VALUE}>{decision.scoreProvenanceLabel}</div>
           </div>
         )}
         {decision.challengeLabel && (
@@ -1596,9 +2466,13 @@ function CodeReviewDecisionCard({ decision }: { decision: CodeReviewDecisionProj
         <div style={DECISION_FACT}>
           <div style={DECISION_FACT_LABEL}>Missing context</div>
           <ul style={DECISION_LIST}>
-            {decision.missingContext.map((item) => (
-              <li key={item}>{item}</li>
-            ))}
+            {decision.missingContext.length > 0 ? (
+              decision.missingContext.map((item) => (
+                <li key={item}>{item}</li>
+              ))
+            ) : (
+              <li>No blocking evidence gap recorded; confirm the signal transfers beyond this task.</li>
+            )}
           </ul>
         </div>
         <div style={DECISION_FACT}>
@@ -1636,15 +2510,21 @@ function CodeReviewDecisionCard({ decision }: { decision: CodeReviewDecisionProj
       <details data-testid="person-code-review-source-proof" style={DECISION_PROOF}>
         <summary style={DECISION_PROOF_SUMMARY}>
           <span>Source proof</span>
-          <span style={DECISION_PROOF_HINT}>candidate, repo, and scoring provenance</span>
+          <span style={DECISION_PROOF_HINT}>{sourceProofSummary}</span>
         </summary>
         <div style={DECISION_PROOF_LIST}>
-          {decision.proofItems.map((item) => (
-            <div key={item.id} style={DECISION_PROOF_ITEM}>
-              <div style={DECISION_FACT_LABEL}>{item.label}</div>
-              {item.text && <div style={DECISION_PROOF_TEXT}>{item.text}</div>}
+          {decision.proofItems.length > 0 ? (
+            decision.proofItems.map((item) => (
+              <div key={item.id} style={DECISION_PROOF_ITEM}>
+                <div style={DECISION_FACT_LABEL}>{item.label}</div>
+                {item.text && <div style={DECISION_PROOF_TEXT}>{item.text}</div>}
+              </div>
+            ))
+          ) : (
+            <div style={DECISION_PROOF_TEXT}>
+              No source proof items were preserved for this selected decision.
             </div>
-          ))}
+          )}
         </div>
       </details>
     </section>
@@ -1659,35 +2539,91 @@ export default function PersonProfilePage(): JSX.Element {
   const navigationLivingContext = livingContextFromNavigationState(location.state);
   const navigationCandidateId = candidateIdFromNavigationState(location.state);
   const selectedAssessment = selectedAssessmentFromNavigationState(location.state);
+  const selectedCodeReviewDecision = codeReviewDecisionFromNavigationState(location.state);
+  const hasInitialLivingContext = navigationLivingContext !== null;
+  const shouldHydrateNavigationContext = selectedAssessment !== null || selectedCodeReviewDecision !== null;
 
   const [contact, setContact] = useState<PersonContact | null>(null);
   const [livingContext, setLivingContext] = useState<LivingContextReadModel | null>(navigationLivingContext);
-  const [isLoading, setIsLoading] = useState(true);
+  const [isLoading, setIsLoading] = useState(!hasInitialLivingContext);
   const [error, setError] = useState<string | null>(null);
   const [showSourceGraph, setShowSourceGraph] = useState(false);
+  const [hasRequestedFullContext, setHasRequestedFullContext] = useState(false);
 
   const contextEndpoint = personId ? `/api/v1/contacts/${personId}/living-context` : null;
+  const summaryEndpoint = contextEndpoint ? `${contextEndpoint}/summary` : null;
   const candidateContextEndpoint = navigationCandidateId
     ? `/api/v1/candidates/${navigationCandidateId}/living-context`
     : null;
 
+  const hydrateFullContext = useCallback(async (): Promise<void> => {
+    if (!contextEndpoint || hasRequestedFullContext) return;
+    setHasRequestedFullContext(true);
+    try {
+      const fullContext = await api.get<LivingContextReadModel>(contextEndpoint);
+      if (fullContext) setLivingContext(fullContext);
+    } catch (err) {
+      if (candidateContextEndpoint) {
+        try {
+          const candidateContext = await api.get<unknown>(candidateContextEndpoint);
+          const parsedCandidateContext = livingContextFromCandidateResponse(candidateContext);
+          if (parsedCandidateContext) setLivingContext(parsedCandidateContext);
+          return;
+        } catch (candidateErr) {
+          console.error('[PersonProfilePage] Background candidate profile hydration failed:', candidateErr);
+        }
+      }
+      console.error('[PersonProfilePage] Background profile hydration failed:', err);
+      setHasRequestedFullContext(false);
+    }
+  }, [api, candidateContextEndpoint, contextEndpoint, hasRequestedFullContext]);
+
+  const handleSourceAuditToggle = useCallback((event: SyntheticEvent<HTMLDetailsElement>): void => {
+    if (event.currentTarget.open) {
+      void hydrateFullContext();
+    }
+  }, [hydrateFullContext]);
+
+  const handleSourceGraphToggle = useCallback((): void => {
+    setShowSourceGraph((value) => {
+      const nextValue = !value;
+      if (nextValue) {
+        void hydrateFullContext();
+      }
+      return nextValue;
+    });
+  }, [hydrateFullContext]);
+
   const load = useCallback(async (): Promise<void> => {
-    if (!personId || !contextEndpoint) {
+    if (!personId || !contextEndpoint || !summaryEndpoint) {
       setError('Missing person id for this profile.');
       setContact(null);
       setLivingContext(null);
       setIsLoading(false);
       return;
     }
-    setIsLoading(true);
     setError(null);
+
+    if (hasInitialLivingContext) {
+      try {
+        const contactResult = await api.get<{ contact: PersonContact }>(`/api/v1/contacts/${personId}`);
+        setContact(contactResult.contact);
+      } catch (err) {
+        console.error('[PersonProfilePage] Profile contact refresh failed:', err);
+      } finally {
+        setIsLoading(false);
+      }
+      return;
+    }
+
+    setIsLoading(true);
     try {
-      const [contactResult, contextResult] = await Promise.allSettled([
+      const [contactResult, summaryResult] = await Promise.allSettled([
         api.get<{ contact: PersonContact }>(`/api/v1/contacts/${personId}`),
-        api.get<LivingContextReadModel>(contextEndpoint),
+        api.get<LivingContextReadModel>(summaryEndpoint),
       ]);
       const loadedContact = contactResult.status === 'fulfilled' ? contactResult.value.contact : null;
-      let loadedContext = contextResult.status === 'fulfilled' ? contextResult.value : navigationLivingContext;
+      let loadedContext = summaryResult.status === 'fulfilled' ? summaryResult.value : navigationLivingContext;
       let candidateContextError: unknown = null;
       if (!loadedContext && candidateContextEndpoint) {
         try {
@@ -1699,12 +2635,12 @@ export default function PersonProfilePage(): JSX.Element {
       }
       if (!loadedContact && !loadedContext) {
         const reason = candidateContextError
-          ?? (contextResult.status === 'rejected' ? contextResult.reason : null)
+          ?? (summaryResult.status === 'rejected' ? summaryResult.reason : null)
           ?? (contactResult.status === 'rejected' ? contactResult.reason : null);
         throw reason instanceof Error ? reason : new Error('Unable to load person profile.');
       }
       setContact(loadedContact);
-      setLivingContext(loadedContext);
+      setLivingContext(loadedContext ?? navigationLivingContext);
     } catch (err) {
       setError(err instanceof Error ? err.message : 'Unable to load person profile.');
       setContact(null);
@@ -1712,11 +2648,30 @@ export default function PersonProfilePage(): JSX.Element {
     } finally {
       setIsLoading(false);
     }
-  }, [api, candidateContextEndpoint, contextEndpoint, navigationLivingContext, personId]);
+  }, [
+    api,
+    candidateContextEndpoint,
+    contextEndpoint,
+    hasInitialLivingContext,
+    navigationLivingContext,
+    personId,
+    summaryEndpoint,
+  ]);
 
   useEffect(() => {
     void load();
   }, [load]);
+
+  useEffect(() => {
+    if (!shouldHydrateNavigationContext || !hasInitialLivingContext || !contextEndpoint || hasRequestedFullContext) return;
+    void hydrateFullContext();
+  }, [
+    contextEndpoint,
+    hasInitialLivingContext,
+    hasRequestedFullContext,
+    hydrateFullContext,
+    shouldHydrateNavigationContext,
+  ]);
 
   const profileContact = contact ?? contactFromLivingContext(livingContext, personId);
   const displayName = profileContact?.name
@@ -1729,7 +2684,11 @@ export default function PersonProfilePage(): JSX.Element {
     ?? profileContact?.notes
     ?? 'No relationship summary has been earned from evidence yet.';
 
-  const recentInteractions = livingContext?.interactions.slice(0, 5) ?? [];
+  const recentInteractions = personTimelineInteractions(livingContext?.interactions ?? [], 5);
+  const interactionTimelineSummary = interactionTimelineSelectionSummary(
+    livingContext?.interactions.length ?? 0,
+    recentInteractions.length,
+  );
   const interactionCoverage = interactionCoverageItems(livingContext?.interactions ?? []);
   const recentRecords = livingContext?.contextRecords.slice(0, 5) ?? [];
   const sourceBackedSignals = livingContext?.signals
@@ -1737,10 +2696,14 @@ export default function PersonProfilePage(): JSX.Element {
     .slice(0, 5) ?? [];
   const evidenceArtifacts = livingContext?.artifacts.slice(0, 5) ?? [];
   const codeReviewDecision = deriveCodeReviewDecision(livingContext);
+  const pendingCodeReviewAssignment = derivePendingCodeReviewAssignmentDecision(livingContext);
   const decision = codeReviewDecision
+    ?? pendingCodeReviewAssignment
+    ?? selectedCodeReviewDecision
     ?? deriveWorkspaceAssessmentDecision(livingContext)
     ?? deriveSelectedWorkspaceAssessmentDecision(selectedAssessment);
-  const evidenceMix = evidenceMixReadout(livingContext?.interactions ?? [], decision);
+  const hasPendingAssignment = !decision && hasPendingCodeReviewAssignment(livingContext);
+  const evidenceMix = evidenceMixReadout(livingContext?.interactions ?? [], decision, hasPendingAssignment);
 
   if (isLoading) {
     return (
@@ -1816,7 +2779,8 @@ export default function PersonProfilePage(): JSX.Element {
       <ProfileDecisionCockpit
         decision={decision}
         livingContext={livingContext}
-        onCreateNextInterview={() => navigate(nextInterviewPath(profileContact, decision))}
+        nextActionSource={evidenceMix.nextSource}
+        onCreateNextInterview={() => navigate(nextInterviewPath(profileContact, decision, evidenceMix.nextSource))}
       />
 
       {decision && (
@@ -1830,7 +2794,10 @@ export default function PersonProfilePage(): JSX.Element {
               <div>
                 <div style={FIELD_LABEL}>Evidence coverage</div>
                 <p style={INTERACTION_COVERAGE_COPY}>
-                  {interactionCoverageSummary(livingContext?.interactions ?? [])}
+                  {interactionCoverageSummary(
+                    livingContext?.interactions ?? [],
+                    livingContext?.summary.interactionCount ?? 0,
+                  )}
                 </p>
               </div>
             </div>
@@ -1843,6 +2810,9 @@ export default function PersonProfilePage(): JSX.Element {
                 ))}
               </div>
             )}
+            {interactionTimelineSummary && (
+              <p style={INTERACTION_COVERAGE_COPY}>{interactionTimelineSummary}</p>
+            )}
             <div data-testid="person-evidence-mix" style={EVIDENCE_MIX}>
               <div style={FIELD_LABEL}>Evidence mix</div>
               <div style={EVIDENCE_MIX_HEADLINE}>{evidenceMix.headline}</div>
@@ -1854,7 +2824,11 @@ export default function PersonProfilePage(): JSX.Element {
             </div>
           </div>
           {recentInteractions.length === 0 ? (
-            <EmptyPanel>No interactions have been captured yet.</EmptyPanel>
+            <EmptyPanel>
+              {(livingContext?.summary.interactionCount ?? 0) > 0
+                ? 'Full interaction rows are loading.'
+                : 'No interactions have been captured yet.'}
+            </EmptyPanel>
           ) : recentInteractions.map((interaction) => {
             const scheduledInterviewPath = scheduledInterviewPathFromInteraction(interaction);
 
@@ -1879,6 +2853,9 @@ export default function PersonProfilePage(): JSX.Element {
                     </button>
                   )}
                 </div>
+                <div style={{ marginTop: 8, fontSize: 10, color: 'var(--pipe-accent)', letterSpacing: 0.8, textTransform: 'uppercase' }}>
+                  {interactionDecisionRoleLabel(interaction)}
+                </div>
                 {interactionSourceLabel(interaction) && (
                   <div style={{ marginTop: 6, fontSize: 10, color: 'var(--pipe-text-dim)', overflowWrap: 'anywhere' }}>
                     {interactionSourceLabel(interaction)}
@@ -1895,7 +2872,7 @@ export default function PersonProfilePage(): JSX.Element {
         </Panel>
       </section>
 
-      <details data-testid="person-source-audit" style={SOURCE_AUDIT}>
+      <details data-testid="person-source-audit" style={SOURCE_AUDIT} onToggle={handleSourceAuditToggle}>
         <summary style={SOURCE_AUDIT_SUMMARY}>
           <span style={SOURCE_AUDIT_TITLE}>
             <FileText size={15} />
@@ -1984,18 +2961,20 @@ export default function PersonProfilePage(): JSX.Element {
           </div>
           <button
             type="button"
-            onClick={() => setShowSourceGraph((value) => !value)}
+            onClick={handleSourceGraphToggle}
             style={GRAPH_TOGGLE}
           >
             {showSourceGraph ? 'Hide graph' : 'Open graph'}
           </button>
         </div>
         {showSourceGraph && contextEndpoint ? (
-          <LivingContextGraph
-            candidateId={personId ?? profileContact.id}
-            livingContextEndpoint={contextEndpoint}
-            initialLivingContext={livingContext}
-          />
+          <Suspense fallback={<div style={SOURCE_GRAPH_PLACEHOLDER}>Loading graph...</div>}>
+            <LivingContextGraph
+              candidateId={personId ?? profileContact.id}
+              livingContextEndpoint={contextEndpoint}
+              initialLivingContext={livingContext}
+            />
+          </Suspense>
         ) : (
           <div style={SOURCE_GRAPH_PLACEHOLDER}>
             This profile is summarized from source-backed context. Open the graph when you need provenance, exact source text, or accumulated relationship evidence.
@@ -2418,6 +3397,44 @@ const CODE_REVIEW_DECISION_HEADER: CSSProperties = {
   gap: 16,
 };
 
+function decisionStateBadgeStyle(tone: CodeReviewDecisionStateTone): CSSProperties {
+  const palette = tone === 'positive'
+    ? {
+        color: 'var(--pipe-success, #4ade80)',
+        border: 'rgba(74, 222, 128, 0.32)',
+        background: 'rgba(74, 222, 128, 0.08)',
+      }
+    : tone === 'blocked'
+      ? {
+          color: '#f87171',
+          border: 'rgba(248, 113, 113, 0.34)',
+          background: 'rgba(248, 113, 113, 0.08)',
+        }
+      : {
+          color: '#fbbf24',
+          border: 'rgba(251, 191, 36, 0.34)',
+          background: 'rgba(251, 191, 36, 0.08)',
+        };
+
+  return {
+    alignItems: 'center',
+    background: palette.background,
+    border: `1px solid ${palette.border}`,
+    borderRadius: 6,
+    color: palette.color,
+    display: 'inline-flex',
+    flex: '0 0 auto',
+    fontSize: 10,
+    fontWeight: 800,
+    gap: 6,
+    letterSpacing: '0.08em',
+    lineHeight: 1,
+    padding: '8px 9px',
+    textTransform: 'uppercase',
+    whiteSpace: 'nowrap',
+  };
+}
+
 const DECISION_EYEBROW: CSSProperties = {
   color: 'var(--pipe-accent)',
   fontSize: 10,
@@ -2517,6 +3534,40 @@ const DECISION_RATIONALE_ITEM: CSSProperties = {
   display: 'grid',
   gap: 4,
   minWidth: 0,
+};
+
+const SCORE_VALIDITY_PANEL: CSSProperties = {
+  display: 'grid',
+  gap: 10,
+  padding: 12,
+  border: '1px solid rgba(74,222,128,0.26)',
+  borderRadius: 6,
+  background: 'rgba(74,222,128,0.07)',
+};
+
+const SCORE_VALIDITY_HEADER: CSSProperties = {
+  display: 'flex',
+  alignItems: 'flex-start',
+  justifyContent: 'space-between',
+  gap: 12,
+};
+
+const SCORE_VALIDITY_HEADLINE: CSSProperties = {
+  marginTop: 5,
+  color: 'var(--pipe-text)',
+  fontSize: 14,
+  fontWeight: 800,
+  lineHeight: 1.3,
+};
+
+const SCORE_VALIDITY_LIST: CSSProperties = {
+  display: 'grid',
+  gap: 6,
+  margin: 0,
+  paddingLeft: 18,
+  color: 'var(--pipe-text)',
+  fontSize: 12,
+  lineHeight: 1.45,
 };
 
 const DECISION_FACT: CSSProperties = {

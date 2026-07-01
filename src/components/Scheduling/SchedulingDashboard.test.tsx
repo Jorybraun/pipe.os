@@ -127,16 +127,27 @@ function cardNames(): string[] {
 function renderDashboard(
   interviews: ScheduledInterview[],
   initialEntry = '/interviews',
-  options: { refetch?: () => Promise<void> } = {},
-): { refetch: () => Promise<void> } {
+  options: {
+    refetch?: () => Promise<void>;
+    loadMore?: () => Promise<void>;
+    total?: number;
+    hasMore?: boolean;
+    isLoadingMore?: boolean;
+  } = {},
+): { refetch: () => Promise<void>; loadMore: () => Promise<void> } {
   const refetch = options.refetch ?? vi.fn().mockResolvedValue(undefined);
+  const loadMore = options.loadMore ?? vi.fn().mockResolvedValue(undefined);
   mocks.useScheduledInterviews.mockReturnValue({
     interviews,
     isLoading: false,
+    isLoadingMore: options.isLoadingMore ?? false,
     error: null,
+    total: options.total ?? interviews.length,
+    hasMore: options.hasMore ?? false,
     updateStatus: vi.fn(),
     sendInvite: vi.fn(),
     refetch,
+    loadMore,
   });
   mocks.useBookingNotifications.mockReturnValue({
     notifications: [],
@@ -149,7 +160,7 @@ function renderDashboard(
       <SchedulingDashboard />
     </MemoryRouter>,
   );
-  return { refetch };
+  return { refetch, loadMore };
 }
 
 describe('SchedulingDashboard interview ordering', () => {
@@ -207,6 +218,21 @@ describe('SchedulingDashboard interview ordering', () => {
 
     expect(screen.getByText('OLDEST CREATED')).toBeInTheDocument();
     expect(cardNames()).toEqual(['Oldest invite', 'Middle invite', 'Newest invite']);
+  });
+
+  it('shows paged interview counts and loads more history on demand', () => {
+    const loadMore = vi.fn().mockResolvedValue(undefined);
+
+    renderDashboard(interviews.slice(0, 2), '/interviews', {
+      total: 137,
+      hasMore: true,
+      loadMore,
+    });
+
+    expect(screen.getByText('2 loaded · 137 total')).toBeInTheDocument();
+    const button = screen.getByRole('button', { name: 'LOAD MORE (135 REMAINING)' });
+    fireEvent.click(button);
+    expect(loadMore).toHaveBeenCalledTimes(1);
   });
 
   it('uses the per-interview recipient label before the canonical person name', () => {
@@ -271,6 +297,16 @@ describe('SchedulingDashboard interview ordering', () => {
           stage: 'READY_FOR_EVALUATION',
           nextAction: 'START_EVALUATION',
           nextActionLabel: 'Start source-backed AI or human evaluation.',
+          readiness: {
+            status: 'READY_FOR_EVALUATION',
+            label: 'Ready for evaluation',
+            detail: 'Required source-backed evidence is captured.',
+            isReadyForEvaluation: true,
+            isUsableHiringSignal: false,
+            missingRequiredCount: 0,
+            required: [],
+            confidence: [],
+          },
         }),
       }),
       makeInterview({
@@ -282,6 +318,16 @@ describe('SchedulingDashboard interview ordering', () => {
           stage: 'NEEDS_ATTENTION',
           nextAction: 'RESOLVE_DIAGNOSTIC',
           nextActionLabel: 'Resolve evaluator diagnostic.',
+          readiness: {
+            status: 'NEEDS_ATTENTION',
+            label: 'Needs attention',
+            detail: 'Resolve evaluator diagnostic.',
+            isReadyForEvaluation: false,
+            isUsableHiringSignal: false,
+            missingRequiredCount: 1,
+            required: [],
+            confidence: [],
+          },
         }),
       }),
       makeInterview({
@@ -293,6 +339,16 @@ describe('SchedulingDashboard interview ordering', () => {
           stage: 'EVALUATED',
           nextAction: 'REVIEW_EVALUATION',
           nextActionLabel: 'Review evaluation.',
+          readiness: {
+            status: 'EVALUATED',
+            label: 'Evaluated',
+            detail: 'Source-backed report ready.',
+            isReadyForEvaluation: true,
+            isUsableHiringSignal: false,
+            missingRequiredCount: 0,
+            required: [],
+            confidence: [],
+          },
           evaluation: {
             id: 'evaluation-1',
             status: 'EVALUATED',

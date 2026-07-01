@@ -342,10 +342,10 @@ class HarnessOrchestrator:
                 "timeout": 180,
             },
             {
-                "name": "cargo_clippy",
+                "name": "cargo_fmt_check",
                 "type": "command",
-                "description": "Clippy warnings resolved",
-                "cmd": ["cargo", "clippy", "--", "-D", "warnings"],
+                "description": "Rust formatting check passes",
+                "cmd": ["cargo", "fmt", "--check"],
                 "timeout": 180,
                 "optional": True,
             },

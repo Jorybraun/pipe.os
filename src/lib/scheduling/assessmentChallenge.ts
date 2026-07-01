@@ -10,6 +10,8 @@ export interface AssessmentChallengeSummary {
   githubPrNumber: number | null;
   baseCommitSha: string | null;
   task: string | null;
+  successCriteria: string[];
+  expectedEvidence: string[];
 }
 
 export interface AssessmentAssignmentSummary {
@@ -38,6 +40,31 @@ function locatorNumber(locator: Record<string, unknown>, keys: string[]): number
   return null;
 }
 
+function cleanListItem(line: string): string | null {
+  const cleaned = line.replace(/^[-*]\s*/, '').trim();
+  return cleaned.length > 0 ? cleaned : null;
+}
+
+function collectSectionItems(lines: string[], header: 'success criteria' | 'expected evidence'): string[] {
+  const items: string[] = [];
+  let collecting = false;
+
+  for (const line of lines) {
+    const normalized = line.replace(/:$/, '').toLowerCase();
+    if (normalized === header) {
+      collecting = true;
+      continue;
+    }
+    if (collecting && /^[a-z][a-z\s]+:$/i.test(line)) break;
+    if (!collecting) continue;
+
+    const item = cleanListItem(line);
+    if (item) items.push(item);
+  }
+
+  return items;
+}
+
 export function summarizeAssessmentChallenge(
   challenge: AssessmentChallengeSource | null | undefined,
 ): AssessmentChallengeSummary | null {
@@ -51,6 +78,8 @@ export function summarizeAssessmentChallenge(
     githubPrNumber: locatorNumber(challenge.locator, ['githubPrNumber', 'prNumber']),
     baseCommitSha: locatorString(challenge.locator, ['baseCommitSha', 'baseCommit']),
     task: null,
+    successCriteria: collectSectionItems(lines, 'success criteria'),
+    expectedEvidence: collectSectionItems(lines, 'expected evidence'),
   };
 
   for (const line of lines) {
@@ -75,7 +104,12 @@ export function summarizeAssessmentChallenge(
     }
   }
 
-  return summary.repositoryUrl || summary.githubPrNumber || summary.baseCommitSha || summary.task
+  return summary.repositoryUrl
+    || summary.githubPrNumber
+    || summary.baseCommitSha
+    || summary.task
+    || summary.successCriteria.length > 0
+    || summary.expectedEvidence.length > 0
     ? summary
     : null;
 }

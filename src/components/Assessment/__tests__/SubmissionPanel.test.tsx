@@ -1,4 +1,4 @@
-import { describe, it, expect, vi } from 'vitest';
+import { beforeEach, describe, it, expect, vi } from 'vitest';
 import { render, screen, fireEvent, waitFor } from '@testing-library/react';
 import { SubmissionPanel } from '../SubmissionPanel';
 import { Annotation } from '../DiffPanel';
@@ -15,6 +15,21 @@ const mockAnnotations: Annotation[] = [
 ];
 
 describe('SubmissionPanel', () => {
+  const successfulSubmit = vi.fn(async () => ({
+    success: true,
+    assessmentId: 'test-123',
+    submittedAt: '2026-03-14T10:05:00Z',
+  }));
+
+  const fillReadySubmission = (): void => {
+    fireEvent.click(screen.getByTestId('verdict-approve'));
+    fireEvent.change(screen.getByTestId('summary-textarea'), { target: { value: 'Good code' } });
+  };
+
+  beforeEach(() => {
+    successfulSubmit.mockClear();
+  });
+
   describe('Rendering', () => {
     it('should render the verdict options', () => {
       const onSubmitComplete = vi.fn();
@@ -303,16 +318,22 @@ describe('SubmissionPanel', () => {
           annotations={mockAnnotations}
           onSubmitComplete={onSubmitComplete}
           onError={onError}
+          submitReview={successfulSubmit}
         />
       );
       
-      fireEvent.click(screen.getByTestId('verdict-approve'));
-      fireEvent.change(screen.getByTestId('summary-textarea'), { target: { value: 'Good code' } });
+      fillReadySubmission();
       fireEvent.click(screen.getByTestId('submit-button'));
       
       await waitFor(() => {
+        expect(successfulSubmit).toHaveBeenCalledWith({
+          assessmentId: 'test-123',
+          annotations: mockAnnotations,
+          verdict: 'approve',
+          summary: 'Good code',
+        });
         expect(onSubmitComplete).toHaveBeenCalledWith(
-          expect.objectContaining({ success: true })
+          { success: true, submittedAt: '2026-03-14T10:05:00Z' }
         );
       });
     });
@@ -327,11 +348,11 @@ describe('SubmissionPanel', () => {
           annotations={mockAnnotations}
           onSubmitComplete={onSubmitComplete}
           onError={onError}
+          submitReview={successfulSubmit}
         />
       );
       
-      fireEvent.click(screen.getByTestId('verdict-approve'));
-      fireEvent.change(screen.getByTestId('summary-textarea'), { target: { value: 'Good code' } });
+      fillReadySubmission();
       fireEvent.click(screen.getByTestId('submit-button'));
       
       await waitFor(() => {
@@ -342,6 +363,7 @@ describe('SubmissionPanel', () => {
     it('should show loading state during submission', async () => {
       const onSubmitComplete = vi.fn();
       const onError = vi.fn();
+      const submitReview = vi.fn(() => new Promise<Awaited<ReturnType<typeof successfulSubmit>>>(() => {}));
       
       render(
         <SubmissionPanel
@@ -349,11 +371,11 @@ describe('SubmissionPanel', () => {
           annotations={mockAnnotations}
           onSubmitComplete={onSubmitComplete}
           onError={onError}
+          submitReview={submitReview}
         />
       );
       
-      fireEvent.click(screen.getByTestId('verdict-approve'));
-      fireEvent.change(screen.getByTestId('summary-textarea'), { target: { value: 'Good code' } });
+      fillReadySubmission();
       fireEvent.click(screen.getByTestId('submit-button'));
       
       expect(screen.getByText('SUBMITTING...')).toBeTruthy();
@@ -361,12 +383,9 @@ describe('SubmissionPanel', () => {
   });
 
   describe('Error Handling', () => {
-    it('should show error card on submission failure', async () => {
+    it('should reject submission when no real submit handler is connected', async () => {
       const onSubmitComplete = vi.fn();
       const onError = vi.fn();
-      
-      // Mock fetch to simulate error
-      global.fetch = vi.fn(() => Promise.reject(new Error('Network error')));
       
       render(
         <SubmissionPanel
@@ -377,12 +396,41 @@ describe('SubmissionPanel', () => {
         />
       );
       
-      fireEvent.click(screen.getByTestId('verdict-approve'));
-      fireEvent.change(screen.getByTestId('summary-textarea'), { target: { value: 'Good code' } });
+      fillReadySubmission();
       fireEvent.click(screen.getByTestId('submit-button'));
       
-      // Note: Error handling in actual implementation would depend on how errors are thrown
-      // This test is a placeholder for when real API integration is added
+      await waitFor(() => {
+        expect(onSubmitComplete).not.toHaveBeenCalled();
+        expect(onError).toHaveBeenCalledWith('Submission service is not connected');
+        expect(screen.getByTestId('error-card')).toHaveTextContent('Submission service is not connected');
+      });
+    });
+
+    it('should show error card on submission failure', async () => {
+      const onSubmitComplete = vi.fn();
+      const onError = vi.fn();
+      const submitReview = vi.fn(async () => {
+        throw new Error('Network error');
+      });
+
+      render(
+        <SubmissionPanel
+          assessmentId="test-123"
+          annotations={mockAnnotations}
+          onSubmitComplete={onSubmitComplete}
+          onError={onError}
+          submitReview={submitReview}
+        />
+      );
+
+      fillReadySubmission();
+      fireEvent.click(screen.getByTestId('submit-button'));
+
+      await waitFor(() => {
+        expect(onSubmitComplete).not.toHaveBeenCalled();
+        expect(onError).toHaveBeenCalledWith('Network error');
+        expect(screen.getByTestId('error-card')).toHaveTextContent('Network error');
+      });
     });
 
     it('should allow dismissing error card', () => {

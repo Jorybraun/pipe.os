@@ -143,3 +143,65 @@ export type {
   EvidenceConflictReport,
   EvidenceConflictOptions,
 } from './evidenceConflicts';
+export { recordMatchDecision, loadMatchDecisionHistory } from './matchDecisionAudit';
+export type {
+  MatchDecisionVerdict,
+  MatchDecisionInput,
+  MatchDecisionResult,
+  MatchDecisionHistoryEntry,
+  MatchDecisionHistory,
+} from './matchDecisionAudit';
+export { loadPriorDecisionExclusions, buildDecisionExclusionDiagnostics } from './decisionWeightedRematch';
+export type {
+  DecisionExclusion,
+  DecisionExclusionResult,
+  DecisionExclusionDiagnostic,
+} from './decisionWeightedRematch';
+export { loadRepoDecompositionOverlay } from './repoDecompositionOverlay';
+export type {
+  RepoFileNode,
+  RepoSymbolNode,
+  RepoDemandNode,
+  RepoStructuralFactNode,
+  CandidateEvidenceOverlay,
+  RepoDecompositionOverlay,
+} from './repoDecompositionOverlay';
+export { scoreMatchConfidence, computeMatchConfidence } from './matchConfidenceScoring';
+export type {
+  ConfidenceLevel,
+  DemandConfidence,
+  ConfidenceDimension,
+  MatchConfidenceReport,
+  MatchConfidenceOptions,
+} from './matchConfidenceScoring';
+export {
+  compactMatchReport,
+  generateCompactMatchReport,
+  generateUnifiedMatchReport,
+} from './matchReportPipeline';
+export type {
+  CompactMatchEvidenceLine,
+  CompactMatchReport,
+  MatchVerdict,
+  MatchReportSection,
+  MatchReportConfidence,
+  MatchReportGaps,
+  MatchReportStaleness,
+  MatchReportProvenance,
+  MatchReportDecisionHistory,
+  VerdictRationale,
+  UnifiedMatchReport,
+  MatchReportPipelineOptions,
+} from './matchReportPipeline';
+export { runBatchEvaluation, runMatchQualityEvaluation } from './batchEvaluationHarness';
+export type {
+  MatchQualityReasonCategory,
+  BatchEvaluationCandidate,
+  BatchEvaluationPairResult,
+  BatchEvaluationMetrics,
+  BatchEvaluationResult,
+  MatchQualityEvaluationThresholds,
+  MatchQualityEvaluationResult,
+  MatchQualityEvaluationOptions,
+  BatchEvaluationOptions,
+} from './batchEvaluationHarness';

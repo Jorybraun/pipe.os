@@ -167,21 +167,13 @@ async function main() {
     await expect(host.getByTestId('remote-video')).toBeVisible();
     await expect(guest.getByTestId('remote-video')).toBeVisible();
 
-    await host.getByTestId('enter-win95-desktop').click();
-    await expect(host.getByTestId('call-stage')).toHaveAttribute('data-room-layout', 'win95');
-    await expect(guest.getByTestId('call-stage')).toHaveAttribute('data-room-layout', 'win95');
-    await expect(host.getByTestId('win95-desktop')).toBeVisible();
-    await expect(guest.getByTestId('win95-desktop')).toBeVisible();
     await expect(host.getByTestId('remote-video')).toBeVisible();
     await expect(guest.getByTestId('remote-video')).toBeVisible();
     await expect(host.getByTestId('start-recording')).toBeEnabled({
       timeout: 10_000,
     });
-    await expect(host.getByTestId('clippy-proactive-card')).toContainText('begin recording', {
-      timeout: 10_000,
-    });
-    await host.getByTestId('clippy-action-start-recording').click();
-    await expect(host.getByTestId('win95-tray-recording')).toContainText('Recording', {
+    await host.getByTestId('start-recording').click();
+    await expect(host.getByTestId('recording-state')).toContainText('Recording', {
       timeout: 10_000,
     });
 

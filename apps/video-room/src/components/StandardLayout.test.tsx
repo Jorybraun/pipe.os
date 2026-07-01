@@ -3,44 +3,31 @@
 import { render, screen } from '@testing-library/react';
 import { describe, expect, it, vi } from 'vitest';
 import { StandardLayout } from './StandardLayout';
-import type { WindowManagerApi, WindowState, WindowType } from '../hooks/useWindowManager';
+import type { ToolSurfaceManagerApi, ToolSurfaceState, ToolSurfaceType } from '../hooks/useToolSurfaceManager';
 
-function roomWindow(input: Partial<WindowState> & Pick<WindowState, 'id' | 'windowType' | 'title'>): WindowState {
+function roomSurface(input: Partial<ToolSurfaceState> & Pick<ToolSurfaceState, 'id' | 'surfaceType' | 'title'>): ToolSurfaceState {
   return {
-    x: 0,
-    y: 0,
-    width: 480,
-    height: 360,
-    zIndex: 1,
-    minimized: false,
-    maximized: false,
-    focused: false,
+    active: false,
     ...input,
   };
 }
 
-function makeWindowManager(windows: WindowState[] = [
-  roomWindow({
+function makeSurfaceManager(surfaces: ToolSurfaceState[] = [
+  roomSurface({
     id: 'video',
-    windowType: 'video',
+    surfaceType: 'video',
     title: 'Video Call',
-    focused: true,
+    active: true,
   }),
-]): WindowManagerApi {
+]): ToolSurfaceManagerApi {
   return {
-    windows,
-    openWindow: vi.fn(() => 'window-id'),
-    closeWindow: vi.fn(),
-    focusWindow: vi.fn(),
-    minimizeWindow: vi.fn(),
-    toggleMaximize: vi.fn(),
-    moveWindow: vi.fn(),
-    resizeWindow: vi.fn(),
-    updateWindowData: vi.fn(),
-    applyWindowState: vi.fn(),
-    restoreWindow: vi.fn(),
-    isWindowOpen: vi.fn((_windowType: WindowType) => false),
-    getWindowByType: vi.fn((_windowType: WindowType) => undefined),
+    surfaces,
+    openSurface: vi.fn(() => 'surface-id'),
+    closeSurface: vi.fn(),
+    focusSurface: vi.fn(),
+    updateSurfaceData: vi.fn(),
+    isSurfaceOpen: vi.fn((_surfaceType: ToolSurfaceType) => false),
+    getSurfaceByType: vi.fn((_surfaceType: ToolSurfaceType) => undefined),
   };
 }
 
@@ -48,8 +35,8 @@ describe('StandardLayout', () => {
   it('renders the room mode label instead of always saying standard call', () => {
     render(
       <StandardLayout
-        wm={makeWindowManager()}
-        renderWindowContent={() => <div>video</div>}
+        toolSurfaces={makeSurfaceManager()}
+        renderSurfaceContent={() => <div>video</div>}
         modeLabel="Dev-container assessment"
       />,
     );
@@ -59,16 +46,16 @@ describe('StandardLayout', () => {
   });
 
   it('uses the workspace as the primary pane for dev-container assessments', () => {
-    const wm = makeWindowManager([
-      roomWindow({ id: 'video', windowType: 'video', title: 'Video Call' }),
-      roomWindow({ id: 'workspace', windowType: 'workspace', title: 'VS Code', focused: true }),
+    const toolSurfaces = makeSurfaceManager([
+      roomSurface({ id: 'video', surfaceType: 'video', title: 'Video Call' }),
+      roomSurface({ id: 'workspace', surfaceType: 'workspace', title: 'VS Code', active: true }),
     ]);
 
     render(
       <StandardLayout
-        wm={wm}
+        toolSurfaces={toolSurfaces}
         assessmentHeader={<div>assessment status header</div>}
-        renderWindowContent={(win) => <div>{win.windowType === 'workspace' ? 'code workspace' : 'video call'}</div>}
+        renderSurfaceContent={(surface) => <div>{surface.surfaceType === 'workspace' ? 'code workspace' : 'video call'}</div>}
         modeLabel="Dev-container assessment"
         primarySurface="workspace"
       />,
@@ -81,16 +68,16 @@ describe('StandardLayout', () => {
   });
 
   it('keeps the assessment brief persistently beside the primary workspace', () => {
-    const wm = makeWindowManager([
-      roomWindow({ id: 'video', windowType: 'video', title: 'Video Call' }),
-      roomWindow({ id: 'workspace', windowType: 'workspace', title: 'VS Code', focused: true }),
+    const toolSurfaces = makeSurfaceManager([
+      roomSurface({ id: 'video', surfaceType: 'video', title: 'Video Call' }),
+      roomSurface({ id: 'workspace', surfaceType: 'workspace', title: 'VS Code', active: true }),
     ]);
 
     render(
       <StandardLayout
-        wm={wm}
+        toolSurfaces={toolSurfaces}
         assessmentAside={<div>source-backed task brief</div>}
-        renderWindowContent={(win) => <div>{win.windowType === 'workspace' ? 'code workspace' : 'video call'}</div>}
+        renderSurfaceContent={(surface) => <div>{surface.surfaceType === 'workspace' ? 'code workspace' : 'video call'}</div>}
         modeLabel="Dev-container assessment"
         primarySurface="workspace"
       />,
@@ -100,17 +87,34 @@ describe('StandardLayout', () => {
     expect(screen.getByTestId('standard-assessment-aside').textContent).toContain('source-backed task brief');
   });
 
-  it('keeps the legacy desktop as an optional control', () => {
+  it('keeps standard calls in a single primary product layout', () => {
     render(
       <StandardLayout
-        wm={makeWindowManager()}
-        renderWindowContent={() => <div>video</div>}
-        canEnterDesktop
-        onEnterDesktop={vi.fn()}
+        toolSurfaces={makeSurfaceManager()}
+        renderSurfaceContent={() => <div>video</div>}
       />,
     );
 
-    expect(screen.getByTestId('enter-win95-desktop').getAttribute('aria-label')).toBe('Open legacy desktop');
-    expect(screen.queryByLabelText('Launch 95 desktop')).toBeNull();
+    expect(screen.getByTestId('standard-primary-video').textContent).toContain('video');
+    expect(screen.queryByTestId('standard-tools-panel')).toBeNull();
+    expect(screen.queryByTestId('standard-workspace')).toBeNull();
+  });
+
+  it('renders utility tools as an assessment panel', () => {
+    const toolSurfaces = makeSurfaceManager([
+      roomSurface({ id: 'video', surfaceType: 'video', title: 'Video Call' }),
+      roomSurface({ id: 'terminal', surfaceType: 'terminal', title: 'Container terminal', active: true }),
+      roomSurface({ id: 'submission', surfaceType: 'submission', title: 'Submit Work' }),
+    ]);
+
+    render(
+      <StandardLayout
+        toolSurfaces={toolSurfaces}
+        renderSurfaceContent={(surface) => <div>{surface.surfaceType} surface</div>}
+      />,
+    );
+
+    expect(screen.getByTestId('standard-tools-panel').textContent).toContain('terminal surface');
+    expect(screen.getByRole('button', { name: 'Close Container terminal' })).toBeTruthy();
   });
 });

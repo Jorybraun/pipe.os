@@ -567,12 +567,49 @@ async function buildPrContext(
   };
 }
 
-function sourceBackedReviewNotReadyResponse() {
+function sourceBackedReviewNotReadyResponse(): {
+  error: {
+    code: 'PROFILE_RECEIVED';
+    message: string;
+  };
+  challenge: {
+    id: string;
+    type: 'PROFILE_RECEIVED';
+    title: string;
+    instructions: string;
+    config: Record<string, never>;
+  };
+  isComplete: true;
+  stageId: string;
+  stageTitle: string;
+  mode: 'INTAKE';
+  timeLimit: null;
+  challenges: [];
+  currentIndex: 0;
+  message: string;
+} {
+  const message = 'Your profile has been received. PIPE will email you when your code review is ready.';
+
   return {
     error: {
-      code: 'WAITING_FOR_MATCH',
-      message: 'A source-backed review challenge has not been selected yet.',
+      code: 'PROFILE_RECEIVED',
+      message,
     },
+    challenge: {
+      id: 'profile-received',
+      type: 'PROFILE_RECEIVED',
+      title: 'Profile received',
+      instructions: message,
+      config: {},
+    },
+    isComplete: true,
+    stageId: 'candidate-intake-queued',
+    stageTitle: 'Profile received',
+    mode: 'INTAKE',
+    timeLimit: null,
+    challenges: [],
+    currentIndex: 0,
+    message,
   };
 }
 

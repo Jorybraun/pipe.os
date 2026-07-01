@@ -117,18 +117,20 @@ function assessmentProgressEvidenceLabels(progress: RoomAssessmentProgressSnapsh
     || progress.hasToolUsageEvidence
     || progress.hasAiInteraction
     || progress.hasTranscriptEvidence
-    || progress.hasTestEvidence,
+    || progress.hasTestEvidence
+    || progress.hasVerificationGap,
   );
   return [
     progress.hasChallengePacket ? 'challenge' : null,
     progress.hasMessageEvidence ? 'chat' : null,
     progress.hasDevContainerEvidence ? 'workspace' : null,
-    progress.hasToolUsageEvidence ? 'room' : null,
+    progress.hasToolUsageEvidence ? 'tool activity' : null,
     progress.hasWorkEvidence && !hasGranularWorkEvidence ? 'work' : null,
     progress.hasCommitSubmission ? 'commit' : null,
-    progress.hasAiInteraction ? 'AI' : null,
+    progress.hasAiInteraction ? 'AI use' : null,
     progress.hasTranscriptEvidence ? 'transcript' : null,
     progress.hasTestEvidence ? 'tests' : null,
+    progress.hasVerificationGap ? 'verification gap' : null,
   ].filter(Boolean).join(', ') || 'no evidence yet';
 }
 
@@ -156,7 +158,15 @@ export function AssessmentStatusStrip({
   const workspaceReady = statusInfo.state === 'ready';
   const workspaceRecoverable = canRecoverWorkspace(workspace);
   const challengeNeedsAttention = workspace?.challenge.status === 'missing_reviewable_task';
-  const nextAction = assessmentProgress?.nextActionLabel ?? (workspace?.enabled
+  const packetMissingFields = assessmentProgress?.challengePacketContract?.isComplete === false
+    ? assessmentProgress.challengePacketContract.missingFields
+    : [];
+  const challengeSetupAction = packetMissingFields.length > 0
+    ? `Complete challenge packet: missing ${packetMissingFields.join(', ')}`
+    : challengeNeedsAttention
+      ? 'Assign a GitHub PR or complete source-backed task packet before launching'
+      : null;
+  const nextAction = challengeSetupAction ?? assessmentProgress?.nextActionLabel ?? (workspace?.enabled
     ? workspaceReady
       ? 'Commit changes, then submit work'
       : canLaunchWorkspace
@@ -206,6 +216,13 @@ export function AssessmentStatusStrip({
           <span className="assessment-status-pill is-progress" data-testid="assessment-progress-stage">
             <CheckCircle2 size={12} />
             {formatProgressToken(assessmentProgress.stage)}
+          </span>
+        )}
+        {assessmentProgress?.readiness && (
+          <span className="assessment-status-pill is-progress" data-testid="assessment-readiness">
+            {assessmentProgress.readiness.isReadyForEvaluation
+              ? 'Ready to evaluate'
+              : assessmentProgress.readiness.label}
           </span>
         )}
         {progressCommitSha && (

@@ -31,8 +31,8 @@ const ROOM_BASIC_PASSWORD = process.env.PIPE_ROOM_DEV_BASIC_AUTH_PASSWORD
   || process.env.ROOM_DEV_BASIC_AUTH_PASSWORD
   || process.env.VIDEO_ROOM_DEV_AUTH_PASSWORD
   || '';
-const INTERVIEW_TYPE = process.env.WORKSPACE_SMOKE_INTERVIEW_TYPE || 'DEV_CONTAINER_CHALLENGE';
-const CHANGE_MODE = process.env.WORKSPACE_SMOKE_CHANGE_MODE || 'placeholder';
+const INTERVIEW_TYPE = process.env.WORKSPACE_SMOKE_INTERVIEW_TYPE || 'OPEN_SOURCE_BUG_FIX';
+const CHANGE_MODE = process.env.WORKSPACE_SMOKE_CHANGE_MODE || 'mui-popover-fix';
 const TASK_ALIGNED_PROFILES = {
   'mui-popover-fix': {
     repositoryUrl: 'https://github.com/mui/base-ui',
@@ -75,11 +75,17 @@ const CHANGE_PROFILE = TASK_ALIGNED_PROFILES[CHANGE_MODE] ?? null;
 const REPO_URL = process.env.WORKSPACE_SMOKE_REPO_URL || CHANGE_PROFILE?.repositoryUrl || 'https://github.com/octocat/Hello-World';
 const RAW_PR_NUMBER = process.env.WORKSPACE_SMOKE_PR_NUMBER || (INTERVIEW_TYPE === 'OPEN_SOURCE_BUG_FIX' ? '' : '1');
 const PR_NUMBER = RAW_PR_NUMBER ? Number(RAW_PR_NUMBER) : null;
-const RAW_MATCHED_REPO_ID = process.env.WORKSPACE_SMOKE_MATCHED_REPO_ID || '';
+const RAW_MATCHED_REPO_ID = process.env.WORKSPACE_SMOKE_MATCHED_REPO_ID
+  || (process.env.WORKSPACE_SMOKE_USE_MATCHED_REPO === '1'
+    && INTERVIEW_TYPE === 'OPEN_SOURCE_BUG_FIX'
+    && CHANGE_PROFILE?.matchedRepoId
+    ? String(CHANGE_PROFILE.matchedRepoId)
+    : '');
 const MATCHED_REPO_ID = RAW_MATCHED_REPO_ID ? Number(RAW_MATCHED_REPO_ID) : null;
 const BASE_COMMIT_SHA = process.env.WORKSPACE_SMOKE_BASE_COMMIT_SHA || CHANGE_PROFILE?.baseCommitSha || '';
 const EXPECTED_BRIDGE_REVISION = process.env.WORKSPACE_SMOKE_EXPECTED_BRIDGE_REVISION
   || '2026-06-30-assessment-branch-v1';
+const REQUIRE_ROOM = process.env.WORKSPACE_SMOKE_REQUIRE_ROOM === '1';
 const REMOTE = !APP_BASE.includes('localhost') && !APP_BASE.includes('127.0.0.1');
 
 function assertEnv() {
@@ -306,6 +312,18 @@ function cleanRoomUrl(rawUrl) {
   return url.toString().replace(/\/room\/.+$/, '/room/<token>');
 }
 
+function cleanMaybeAssessUrl(rawUrl) {
+  if (typeof rawUrl !== 'string' || !rawUrl.trim()) return null;
+  try {
+    const url = new URL(rawUrl);
+    url.username = '';
+    url.password = '';
+    return url.toString().replace(/\/assess\/[^/?#]+/, '/assess/<token>');
+  } catch {
+    return null;
+  }
+}
+
 function sleep(ms) {
   return new Promise((resolve) => setTimeout(resolve, ms));
 }
@@ -339,6 +357,7 @@ async function main() {
           challengeInstructions: CHANGE_PROFILE.challengeInstructions,
           challengeSuccessCriteria: CHANGE_PROFILE.challengeSuccessCriteria,
           challengeExpectedEvidence: CHANGE_PROFILE.challengeExpectedEvidence,
+          challengeVerificationCommand: CHANGE_PROFILE.testCommand,
         }
       : {
           challengeBaseCommitSha: BASE_COMMIT_SHA,
@@ -438,6 +457,29 @@ async function main() {
       message: 'Automated dev smoke for the PIPE live code-review workspace.',
     }),
   });
+  if (!invited?.room?.hostUrl) {
+    if (INTERVIEW_TYPE !== 'CODE_REVIEW') {
+      throw new Error(`Workspace smoke expected a room-backed ${INTERVIEW_TYPE} invite but received: ${JSON.stringify({
+        interviewId,
+        deliveredUrl: cleanMaybeAssessUrl(invited?.deliveredUrl ?? invited?.meetingUrl),
+        meetingUrl: cleanMaybeAssessUrl(invited?.meetingUrl),
+      })}`);
+    }
+    const proof = {
+      ok: true,
+      skipped: true,
+      reason: 'assessment_only_handoff',
+      interviewId,
+      interviewType: INTERVIEW_TYPE,
+      deliveredUrl: cleanMaybeAssessUrl(invited?.deliveredUrl ?? invited?.meetingUrl),
+      message: 'CODE_REVIEW delivered an assessment-only link. This is expected for the current CODE_REVIEW /assess boundary; set WORKSPACE_SMOKE_REQUIRE_ROOM=1 to fail instead.',
+    };
+    if (REQUIRE_ROOM) {
+      throw new Error(`Workspace smoke requires a room-backed invite but received assessment-only handoff: ${JSON.stringify(proof)}`);
+    }
+    console.log(JSON.stringify(proof, null, 2));
+    return;
+  }
   const hostToken = tokenFromRoomUrl(invited?.room?.hostUrl ?? '');
   const roomAuthHeaders = authHeadersFromUrl(invited?.room?.hostUrl ?? '');
   const room = await requestJson(ROOM_BASE, `/api/v1/meeting-rooms/${hostToken}`, {

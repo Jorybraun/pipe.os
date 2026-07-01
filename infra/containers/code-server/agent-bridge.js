@@ -7,7 +7,6 @@ const {
   agentChatSessionEvent,
   agentDiagnosticMessage,
   agentDiagnosticSessionEvent,
-  agentRoomActionSessionEvent,
   agentPromptHandoffDiagnosticMessage,
   isAgentAuthFailureText,
   redactDiagnosticText,
@@ -21,8 +20,8 @@ const REQUESTED_AGENT_NAME = String(process.env.AGENT_TYPE || '').trim();
 const SUPPORTED_AGENT_TYPES = new Set(['devin']);
 const AGENT_NAME = SUPPORTED_AGENT_TYPES.has(REQUESTED_AGENT_NAME) ? REQUESTED_AGENT_NAME : '';
 const AGENT_UNCONFIGURED_MESSAGE = REQUESTED_AGENT_NAME
-  ? `Agent type "${REQUESTED_AGENT_NAME}" is not supported by this bridge. Configure a real bridge for that agent before enabling Clippy chat.`
-  : 'No real agent is configured in this container. Set AGENT_TYPE to a supported bridge agent before enabling Clippy chat.';
+  ? `Agent type "${REQUESTED_AGENT_NAME}" is not supported by this bridge. Configure a real bridge for that agent before enabling agent chat.`
+  : 'No real agent is configured in this container. Set AGENT_TYPE to a supported bridge agent before enabling agent chat.';
 const PIPE_API_URL = process.env.PIPE_API_URL || '';
 const ROOM_TOKEN = process.env.ROOM_TOKEN || '';
 const AGENT_CONTEXT_MAX_LENGTH = Number(process.env.AGENT_CONTEXT_MAX_LENGTH || 6000);
@@ -30,6 +29,7 @@ const WORKSPACE_SCAN_INTERVAL_MS = positiveIntEnv('WORKSPACE_SCAN_INTERVAL_MS', 
 const WORKSPACE_MAX_SCAN_FILES = positiveIntEnv('WORKSPACE_MAX_SCAN_FILES', 1500, 100);
 const WORKSPACE_MAX_HASH_BYTES = positiveIntEnv('WORKSPACE_MAX_HASH_BYTES', 1024 * 1024, 1024);
 const WORKSPACE_PREVIEW_BYTES = positiveIntEnv('WORKSPACE_PREVIEW_BYTES', 2048, 0);
+const WORKSPACE_FINALIZER_MAX_FILE_REFS = positiveIntEnv('WORKSPACE_FINALIZER_MAX_FILE_REFS', 20, 1);
 const AGENT_START_READY_TIMEOUT_MS = positiveIntEnv('AGENT_START_READY_TIMEOUT_MS', 15000, 1000);
 const AGENT_READY_AFTER_PRIMER_MS = positiveIntEnv('AGENT_READY_AFTER_PRIMER_MS', 3000, 25);
 const DEVIN_API_BASE_URL = String(process.env.DEVIN_API_BASE_URL || 'https://api.devin.ai/v3').replace(/\/+$/, '');
@@ -37,7 +37,7 @@ const DEVIN_API_KEY = String(process.env.DEVIN_API_KEY || '').trim();
 const DEVIN_ORG_ID = String(process.env.DEVIN_ORG_ID || '').trim();
 const DEVIN_API_RESPONSE_TIMEOUT_MS = positiveIntEnv('DEVIN_API_RESPONSE_TIMEOUT_MS', 45000, 1000);
 const DEVIN_API_POLL_INTERVAL_MS = positiveIntEnv('DEVIN_API_POLL_INTERVAL_MS', 2500, 250);
-const DEVIN_AUTH_MESSAGE = 'Devin CLI is not logged in inside this container. Authenticate the real Devin CLI before using Clippy chat.';
+const DEVIN_AUTH_MESSAGE = 'Devin CLI is not logged in inside this container. Authenticate the real Devin CLI before using agent chat.';
 const ASSESSMENT_FINALIZE_TIMEOUT_MS = positiveIntEnv('ASSESSMENT_FINALIZE_TIMEOUT_MS', 120000, 1000);
 const ASSESSMENT_BRANCH_NAME = 'pipe-assessment';
 
@@ -74,56 +74,14 @@ const WORKSPACE_IGNORED_DIRS = new Set([
   '.pnpm-store',
 ]);
 
-const ROOM_ACTIONS = {
-  'open-browser': { label: 'Open Browser', aliases: ['open browser', 'browser', 'open edge', 'edge'] },
-  'open-terminal': { label: 'Open Terminal', aliases: ['open terminal', 'terminal', 'shell'] },
-  'open-workspace': { label: 'Open Workspace', aliases: ['open workspace', 'workspace', 'editor', 'code server', 'code-server'] },
-  'launch-workspace': { label: 'Launch Workspace', aliases: ['launch workspace', 'start workspace', 'launch container'] },
-  'open-files': { label: 'Open Files', aliases: ['open files', 'files', 'file manager', 'explorer'] },
-  'open-notepad': { label: 'Open Notepad', aliases: ['open notepad', 'notepad', 'notes'] },
-  'open-paint': { label: 'Open Paint', aliases: ['open paint', 'paint', 'ms paint', 'mspaint'] },
-  'start-recording': { label: 'Start Recording', aliases: ['start recording', 'record interview', 'begin recording'] },
-};
-
-function roomActionName(value) {
-  return String(value || '').trim().toLowerCase().replace(/[_\s]+/g, '-');
-}
-
 function positiveIntEnv(name, fallback, minimum = 1) {
   const value = Number(process.env[name]);
   if (!Number.isFinite(value)) return fallback;
   return Math.max(Math.floor(value), minimum);
 }
 
-function normalizeRoomAction(value) {
-  const normalized = roomActionName(value);
-  if (ROOM_ACTIONS[normalized]) return normalized;
-  for (const [id, config] of Object.entries(ROOM_ACTIONS)) {
-    if (config.aliases.some((alias) => roomActionName(alias) === normalized)) return id;
-  }
-  return null;
-}
-
-function extractTaggedRoomActions(text, source = 'agent_stdout') {
-  const actions = [];
-  const cleanText = String(text || '').replace(
-    /\[\[room_action:([a-zA-Z0-9_-]+)(?:\|([^\]]+))?\]\]/g,
-    (_match, rawAction, rawLabel) => {
-      const action = normalizeRoomAction(rawAction);
-      if (action) {
-        actions.push({
-          action,
-          agent: AGENT_NAME,
-          label: rawLabel || ROOM_ACTIONS[action].label,
-          text: rawLabel ? String(rawLabel) : ROOM_ACTIONS[action].label,
-          source,
-          protocol: 'clippy_room_action_tag',
-        });
-      }
-      return '';
-    },
-  ).trim();
-  return { text: cleanText, actions };
+function stripBridgeControlTags(text) {
+  return String(text || '').replace(/\[\[[^\]]+\]\]/g, '').trim();
 }
 
 function send(ws, msg) {
@@ -214,6 +172,23 @@ function sha256ContentHash(text) {
   return `sha256:${crypto.createHash('sha256').update(String(text)).digest('hex')}`;
 }
 
+function sha256BufferHash(buffer) {
+  return `sha256:${crypto.createHash('sha256').update(buffer).digest('hex')}`;
+}
+
+function shortFingerprint(value, length = 12) {
+  return crypto.createHash('sha256').update(String(value)).digest('hex').slice(0, length);
+}
+
+function safeSourceRefIdPart(value) {
+  const normalized = String(value || '')
+    .trim()
+    .replace(/[^a-zA-Z0-9._-]+/g, '_')
+    .replace(/^_+|_+$/g, '')
+    .slice(0, 80);
+  return normalized || 'file';
+}
+
 function jsonResponse(res, status, body) {
   res.writeHead(status, {
     'Content-Type': 'application/json',
@@ -276,6 +251,24 @@ function runGit(args, options = {}) {
   return runCommand('git', args, options);
 }
 
+function tryRunGit(args, options = {}) {
+  const result = spawnSync('git', args, {
+    cwd: options.cwd || WORKSPACE,
+    env: options.env || process.env,
+    encoding: options.encoding ?? 'utf8',
+    maxBuffer: options.maxBuffer ?? 10 * 1024 * 1024,
+    timeout: options.timeoutMs ?? 30000,
+  });
+  return {
+    ok: !result.error && result.status === 0,
+    status: result.status,
+    signal: result.signal,
+    stdout: result.stdout || '',
+    stderr: result.stderr || '',
+    error: result.error ? result.error.message : null,
+  };
+}
+
 function parseChangedFiles(nameStatusText) {
   return String(nameStatusText || '')
     .split('\n')
@@ -303,6 +296,73 @@ function parseChangedFiles(nameStatusText) {
 
 function normalizeOptionalString(value) {
   return typeof value === 'string' && value.trim() ? value.trim() : null;
+}
+
+function canonicalRepositoryUrl(value) {
+  const text = normalizeOptionalString(value);
+  if (!text) return null;
+  const scpLikeGitHub = text.match(/^git@github\.com:([^/\s]+)\/([^/\s]+?)(?:\.git)?\/?$/i);
+  if (scpLikeGitHub) {
+    return `https://github.com/${scpLikeGitHub[1].toLowerCase()}/${scpLikeGitHub[2].replace(/\.git$/i, '').toLowerCase()}`;
+  }
+
+  try {
+    const url = new URL(text);
+    if (url.hostname.toLowerCase() === 'github.com') {
+      const parts = url.pathname.split('/').filter(Boolean);
+      if (parts.length >= 2) {
+        return `https://github.com/${parts[0].toLowerCase()}/${parts[1].replace(/\.git$/i, '').toLowerCase()}`;
+      }
+    }
+    url.username = '';
+    url.password = '';
+    url.search = '';
+    url.hash = '';
+    return url.toString().replace(/\/+$/g, '').replace(/\.git$/i, '');
+  } catch {
+    return text.replace(/\/+$/g, '').replace(/\.git$/i, '');
+  }
+}
+
+function resolveWorkspaceRepositoryUrls(body = {}) {
+  const requestedRepositoryUrl = canonicalRepositoryUrl(body.repositoryUrl);
+  const configuredRepositoryUrl = canonicalRepositoryUrl(process.env.REPO_GIT_URL);
+  const forkRepositoryUrl = canonicalRepositoryUrl(body.forkRepositoryUrl);
+  const remoteResult = tryRunGit(['config', '--get', 'remote.origin.url']);
+  const remoteRepositoryUrl = remoteResult.ok ? canonicalRepositoryUrl(remoteResult.stdout) : null;
+
+  if (!configuredRepositoryUrl && !remoteRepositoryUrl) {
+    throw new Error('Repository URL is required from the workspace git remote or REPO_GIT_URL before finalizing assessment evidence.');
+  }
+  if (
+    requestedRepositoryUrl
+    && configuredRepositoryUrl
+    && requestedRepositoryUrl !== configuredRepositoryUrl
+  ) {
+    throw new Error('Cannot finalize assessment: requested repository does not match the configured challenge repository.');
+  }
+  if (
+    requestedRepositoryUrl
+    && !configuredRepositoryUrl
+    && remoteRepositoryUrl
+    && requestedRepositoryUrl !== remoteRepositoryUrl
+  ) {
+    throw new Error('Cannot finalize assessment: workspace repository does not match the assigned repository.');
+  }
+  if (
+    configuredRepositoryUrl
+    && remoteRepositoryUrl
+    && configuredRepositoryUrl !== remoteRepositoryUrl
+    && forkRepositoryUrl !== remoteRepositoryUrl
+  ) {
+    throw new Error('Cannot finalize assessment: workspace repository does not match the assigned repository.');
+  }
+
+  return {
+    repositoryUrl: configuredRepositoryUrl || remoteRepositoryUrl,
+    workspaceRepositoryUrl: remoteRepositoryUrl || configuredRepositoryUrl,
+    forkRepositoryUrl,
+  };
 }
 
 function defaultCommitNarrative(commitSha, changedFiles) {
@@ -352,6 +412,137 @@ function buildFinalizerCommandEvidenceText({ baseCommitSha, commitSha, testComma
   ].join('\n');
 }
 
+function parseLsTreeEntry(text) {
+  const match = String(text || '').match(/^(\d+)\s+(\w+)\s+([0-9a-f]{40})\t(.+)$/s);
+  if (!match) return null;
+  return {
+    mode: match[1],
+    objectType: match[2],
+    blobSha: match[3],
+    path: match[4],
+  };
+}
+
+function readGitBlobObservation(blobSha, commitish, filePath) {
+  const sizeResult = tryRunGit(['cat-file', '-s', blobSha]);
+  const sizeBytes = sizeResult.ok ? Number(String(sizeResult.stdout).trim()) : null;
+  if (typeof sizeBytes !== 'number' || !Number.isFinite(sizeBytes)) {
+    return {
+      sizeBytes: null,
+      fileContentHash: null,
+      contentPreview: null,
+      previewTruncated: false,
+      readError: redactDiagnosticText(sizeResult.error || sizeResult.stderr || 'Unable to read git blob size.'),
+    };
+  }
+  if (sizeBytes > WORKSPACE_MAX_HASH_BYTES) {
+    return {
+      sizeBytes,
+      fileContentHash: null,
+      contentPreview: null,
+      previewTruncated: true,
+      readError: `File is ${sizeBytes} bytes, above WORKSPACE_MAX_HASH_BYTES=${WORKSPACE_MAX_HASH_BYTES}.`,
+    };
+  }
+
+  const contentResult = tryRunGit(['show', `${commitish}:${filePath}`], {
+    encoding: 'buffer',
+    maxBuffer: WORKSPACE_MAX_HASH_BYTES + 1024,
+  });
+  if (!contentResult.ok || !Buffer.isBuffer(contentResult.stdout)) {
+    return {
+      sizeBytes,
+      fileContentHash: null,
+      contentPreview: null,
+      previewTruncated: false,
+      readError: redactDiagnosticText(contentResult.error || String(contentResult.stderr || '') || 'Unable to read git blob content.'),
+    };
+  }
+
+  const previewBytes = Math.min(WORKSPACE_PREVIEW_BYTES, contentResult.stdout.length);
+  return {
+    sizeBytes,
+    fileContentHash: sha256BufferHash(contentResult.stdout),
+    contentPreview: WORKSPACE_PREVIEW_BYTES > 0
+      ? contentResult.stdout.subarray(0, previewBytes).toString('utf8')
+      : null,
+    previewTruncated: contentResult.stdout.length > previewBytes,
+    readError: null,
+  };
+}
+
+function buildFileObservationSourceRefs({
+  changedFiles,
+  baseCommitSha,
+  commitSha,
+  repositoryUrl,
+  occurredAt,
+}) {
+  return changedFiles.slice(0, WORKSPACE_FINALIZER_MAX_FILE_REFS).map((change) => {
+    const targetCommit = change.status === 'deleted' ? baseCommitSha : commitSha;
+    const targetPath = change.status === 'deleted'
+      ? (change.previousPath || change.path)
+      : change.path;
+    const lsTree = parseLsTreeEntry(tryRunGit(['ls-tree', targetCommit, '--', targetPath]).stdout);
+    const blobObservation = lsTree?.blobSha
+      ? readGitBlobObservation(lsTree.blobSha, targetCommit, targetPath)
+      : {
+          sizeBytes: null,
+          fileContentHash: null,
+          contentPreview: null,
+          previewTruncated: false,
+          readError: `Unable to resolve ${targetPath} at ${targetCommit}.`,
+        };
+    const observation = {
+      sourceKind: 'code_server_workspace.file_observation',
+      observedBy: 'agent_bridge_workspace_finalize',
+      editorSurface: 'code-server',
+      workspaceRoot: WORKSPACE,
+      repositoryUrl,
+      path: change.path,
+      previousPath: change.previousPath ?? null,
+      action: change.status,
+      baseCommitSha,
+      commitSha,
+      observedCommitSha: targetCommit,
+      observedPath: targetPath,
+      gitMode: lsTree?.mode ?? null,
+      gitObjectType: lsTree?.objectType ?? null,
+      blobSha: lsTree?.blobSha ?? null,
+      sizeBytes: blobObservation.sizeBytes,
+      fileContentHash: blobObservation.fileContentHash,
+      contentPreview: blobObservation.contentPreview,
+      previewTruncated: blobObservation.previewTruncated,
+      readError: blobObservation.readError,
+      observedAt: occurredAt,
+      truncatedByMaxFileRefs: changedFiles.length > WORKSPACE_FINALIZER_MAX_FILE_REFS,
+      maxFileRefs: WORKSPACE_FINALIZER_MAX_FILE_REFS,
+    };
+    const exactText = JSON.stringify(observation, null, 2);
+    return {
+      sourceRefType: 'code_server_file_observation',
+      sourceRefId: `${commitSha}:file-observation:${safeSourceRefIdPart(change.path)}:${shortFingerprint(change.path)}`,
+      evidenceRole: 'workspace_file_observation',
+      locator: {
+        repositoryUrl,
+        baseCommitSha,
+        commitSha,
+        path: change.path,
+        previousPath: change.previousPath ?? null,
+        status: change.status,
+        blobSha: lsTree?.blobSha ?? null,
+        observedBy: 'agent_bridge_workspace_finalize',
+      },
+      exactText,
+      contentHash: sha256ContentHash(exactText),
+      metadata: {
+        source: 'agent_bridge_workspace_finalize',
+        sourceKind: 'code_server_workspace.file_observation',
+      },
+    };
+  });
+}
+
 async function buildWorkspaceCommitSubmission(body = {}) {
   runGit(['rev-parse', '--is-inside-work-tree']);
   const baseCommitSha = normalizeOptionalString(body.baseCommitSha)
@@ -371,12 +562,11 @@ async function buildWorkspaceCommitSubmission(body = {}) {
 
   const branchName = runGit(['rev-parse', '--abbrev-ref', 'HEAD']).trim();
   assertAssessmentBranchName(branchName);
-  const repositoryUrl = normalizeOptionalString(body.repositoryUrl)
-    || normalizeOptionalString(process.env.REPO_GIT_URL)
-    || normalizeOptionalString(runGit(['config', '--get', 'remote.origin.url']));
-  if (!repositoryUrl) {
-    throw new Error('Repository URL is required before finalizing assessment evidence.');
-  }
+  const {
+    repositoryUrl,
+    workspaceRepositoryUrl,
+    forkRepositoryUrl,
+  } = resolveWorkspaceRepositoryUrls(body);
 
   const commitEvidenceText = runGit(['show', '--no-patch', '--format=fuller', commitSha]);
   const diffText = runGit(['diff', '--no-ext-diff', '--find-renames', `${baseCommitSha}..${commitSha}`]);
@@ -388,13 +578,19 @@ async function buildWorkspaceCommitSubmission(body = {}) {
   }
 
   const occurredAt = new Date().toISOString();
-  const sourceRepositoryUrl = normalizeOptionalString(body.forkRepositoryUrl) || repositoryUrl;
-  const testCommand = normalizeOptionalString(body.testCommand)
-    || normalizeOptionalString(process.env.PIPE_TEST_COMMAND);
+  const sourceRepositoryUrl = workspaceRepositoryUrl || repositoryUrl;
+  const testCommand = normalizeOptionalString(process.env.PIPE_TEST_COMMAND);
   const finalizerCommandEvidenceText = buildFinalizerCommandEvidenceText({
     baseCommitSha: baseCommitSha.toLowerCase(),
     commitSha,
     testCommand,
+  });
+  const fileObservationSourceRefs = buildFileObservationSourceRefs({
+    changedFiles,
+    baseCommitSha: baseCommitSha.toLowerCase(),
+    commitSha,
+    repositoryUrl: sourceRepositoryUrl,
+    occurredAt,
   });
   let verificationSourceRef;
   if (testCommand) {
@@ -446,7 +642,7 @@ async function buildWorkspaceCommitSubmission(body = {}) {
   return {
     narrative: normalizeOptionalString(body.narrative) || defaultCommitNarrative(commitSha, changedFiles),
     repositoryUrl,
-    forkRepositoryUrl: normalizeOptionalString(body.forkRepositoryUrl),
+    forkRepositoryUrl,
     branchName,
     baseCommitSha: baseCommitSha.toLowerCase(),
     commitSha,
@@ -503,6 +699,7 @@ async function buildWorkspaceCommitSubmission(body = {}) {
         },
       },
       verificationSourceRef,
+      ...fileObservationSourceRefs,
     ],
   };
 }
@@ -599,13 +796,6 @@ async function captureAgentChatEvidence(message) {
   return postSessionEventEvidence(agentChatSessionEvent(message), 'agent chat');
 }
 
-async function captureAgentRoomActionEvidence(action, observedAt) {
-  return postSessionEventEvidence(
-    agentRoomActionSessionEvent({ agent: AGENT_NAME, action, observedAt }),
-    'agent room action',
-  );
-}
-
 function broadcastAgentDiagnostic(message) {
   if (!message) return;
   void captureAgentDiagnosticEvidence(message)
@@ -666,21 +856,6 @@ function takePromptRefForAgentResponse() {
 
 function clearPendingPromptRefs() {
   pendingAgentChatPromptRefs.splice(0, pendingAgentChatPromptRefs.length);
-}
-
-function broadcastAgentRoomAction(action, observedAt) {
-  if (!action) return;
-  const safeAction = {
-    ...action,
-    ...(typeof action.label === 'string' ? { label: redactDiagnosticText(action.label) } : {}),
-    ...(typeof action.text === 'string' ? { text: redactDiagnosticText(action.text) } : {}),
-    ...(typeof action.url === 'string' ? { url: redactDiagnosticText(action.url) } : {}),
-    ...(typeof action.href === 'string' ? { href: redactDiagnosticText(action.href) } : {}),
-  };
-  void captureAgentRoomActionEvidence(safeAction, observedAt)
-    .then((persisted) => {
-      broadcast({ type: 'ROOM_ACTION', ...safeAction, observedAt, persisted });
-    });
 }
 
 function workspaceEventPayload(action, fact, observedAt, persisted) {
@@ -1044,27 +1219,18 @@ function compactAgentContext(value, maxLength = AGENT_CONTEXT_MAX_LENGTH) {
   return `${text.slice(0, maxLength)}\n[PIPE room context truncated]`;
 }
 
-function roomActionProtocolGuide() {
-  return Object.entries(ROOM_ACTIONS)
-    .map(([id, config]) => `- ${id}: ${config.label}`)
-    .join('\n');
-}
-
 function buildAgentContextPrompt(roomContext, userMessage = '') {
   const parts = [
     'PIPE room context',
-    'You are Devin running as Clippy inside a PIPE-OS "95 Until Infinity" technical interview dev container.',
+    'You are Devin running inside a PIPE-OS open-source assessment dev container.',
     'Use the source-backed room context below to help the candidate without inventing facts.',
-    'When you want the shared interview desktop to do something, include one allow-listed tag in your response.',
-    'Example: [[room_action:open-workspace|Open VS Code]]',
-    'Allowed shared desktop actions:',
-    roomActionProtocolGuide(),
+    'Do not ask the room UI to open panels or perform actions. Explain the next useful workspace step in plain text.',
     'Current source-backed room context:',
     compactAgentContext(roomContext),
   ];
   const message = String(userMessage || '').trim();
   if (message) {
-    parts.push('Current Clippy chat message:', message);
+    parts.push('Current candidate message:', message);
   }
   return `${parts.join('\n')}\n`;
 }
@@ -1242,7 +1408,7 @@ function shouldAcceptDevinApiMessage(message, sentPrompt) {
   if (!text) return false;
   const trimmedPrompt = String(sentPrompt || '').trim();
   if (trimmedPrompt && text.trim() === trimmedPrompt) return false;
-  if (text.includes('PIPE room context') || text.includes('Current Clippy chat message:')) return false;
+  if (text.includes('PIPE room context') || text.includes('Current candidate message:')) return false;
   if (isUserAuthoredDevinApiMessage(message)) return false;
   return isAgentAuthoredDevinApiMessage(message) || !devinApiMessageAuthor(message);
 }
@@ -1263,24 +1429,19 @@ async function pollDevinApiForResponse(sentPrompt, browserPromptRef) {
       for (const message of accepted) {
         const rawText = devinApiMessageText(message);
         if (!rawText) continue;
-        const parsed = extractTaggedRoomActions(rawText, 'agent_api_response');
+        const text = stripBridgeControlTags(rawText);
         const observedAt = new Date().toISOString();
         const agentRunRef = devinApiAgentRunReference();
-        const responsePromptRef = parsed.text || parsed.actions.length > 0
-          ? takePromptRefForAgentResponse()
-          : {};
-        if (parsed.text) {
+        const responsePromptRef = text ? takePromptRefForAgentResponse() : {};
+        if (text) {
           broadcastAgentChat({
             agent: AGENT_NAME,
-            text: parsed.text,
+            text,
             observedAt,
-            actionCount: parsed.actions.length,
+            actionCount: 0,
             ...agentRunRef,
             ...responsePromptRef,
           }, 'agent_api_response');
-        }
-        for (const action of parsed.actions) {
-          broadcastAgentRoomAction({ ...action, ...agentRunRef, ...responsePromptRef }, observedAt);
         }
       }
       return true;
@@ -1290,7 +1451,7 @@ async function pollDevinApiForResponse(sentPrompt, browserPromptRef) {
   broadcastAgentDiagnostic(agentDiagnosticMessage({
     agent: AGENT_NAME,
     status: 'idle',
-    message: `Devin API accepted the Clippy message but did not return a new assistant message within ${DEVIN_API_RESPONSE_TIMEOUT_MS}ms.`,
+    message: `Devin API accepted the candidate message but did not return a new assistant message within ${DEVIN_API_RESPONSE_TIMEOUT_MS}ms.`,
     diagnosticSource: 'devin_api_response_timeout',
     ...devinApiAgentRunReference(),
   }));
@@ -1308,14 +1469,14 @@ async function startDevinApiAgent() {
   try {
     const orgId = await resolveDevinOrgId();
     const context = await fetchRoomContextSummary();
-    const prompt = `${buildAgentContextPrompt(context.text)}Do not begin work yet. Wait for explicit Clippy chat messages before taking action.\n`;
+    const prompt = `${buildAgentContextPrompt(context.text)}Do not begin work yet. Wait for explicit candidate chat messages before taking action.\n`;
     const response = await devinApiRequest(
       `/organizations/${encodeURIComponent(orgId)}/sessions`,
       {
         method: 'POST',
         body: {
           prompt,
-          tags: ['pipe-os', '95-until-infinity', 'clippy'],
+          tags: ['pipe-os', 'open-source-assessment', 'agent-bridge'],
         },
         timeoutMs: 30000,
       },
@@ -1342,7 +1503,7 @@ async function startDevinApiAgent() {
     broadcastAgentDiagnostic(agentDiagnosticMessage({
       agent: AGENT_NAME,
       status: 'idle',
-      message: 'Devin API session created and ready for Clippy chat.',
+      message: 'Devin API session created and ready for agent chat.',
       diagnosticSource: 'devin_api_session_ready',
       ...agentRunRef,
     }));
@@ -1569,7 +1730,7 @@ function checkDevinCliAuth(command) {
   if (!command) {
     return {
       ok: false,
-      message: 'Devin CLI executable was not found in the container image. Install the real Devin CLI before enabling Clippy chat.',
+      message: 'Devin CLI executable was not found in the container image. Install the real Devin CLI before enabling agent chat.',
       diagnosticSource: 'agent_cli_missing',
     };
   }
@@ -1637,7 +1798,7 @@ async function startAgent() {
     }
     if (!command) {
       markAgentDisconnected(
-        'Devin CLI executable was not found in the container image. Install the real Devin CLI before enabling Clippy chat.',
+        'Devin CLI executable was not found in the container image. Install the real Devin CLI before enabling agent chat.',
         'agent_cli_missing',
         null,
       );
@@ -1691,24 +1852,19 @@ async function startAgent() {
         }
         return;
       }
-      const parsed = extractTaggedRoomActions(rawText);
+      const text = stripBridgeControlTags(rawText);
       agentStatus = 'working';
       broadcastAgentStatus();
       const observedAt = new Date().toISOString();
-      const responsePromptRef = parsed.text || parsed.actions.length > 0
-        ? takePromptRefForAgentResponse()
-        : {};
-      if (parsed.text) {
+      const responsePromptRef = text ? takePromptRefForAgentResponse() : {};
+      if (text) {
         broadcastAgentChat({
           agent: AGENT_NAME,
-          text: parsed.text,
+          text,
           observedAt,
-          actionCount: parsed.actions.length,
+          actionCount: 0,
           ...responsePromptRef,
         });
-      }
-      for (const action of parsed.actions) {
-        broadcastAgentRoomAction({ ...action, ...responsePromptRef }, observedAt);
       }
       agentStatus = 'idle';
       broadcastAgentStatus();
@@ -1990,6 +2146,24 @@ const server = http.createServer(async (req, res) => {
     try {
       const body = await readJsonRequestBody(req);
       const payload = await buildWorkspaceCommitSubmission(body);
+      if (body && body.submitToPipe === false) {
+        jsonResponse(res, 200, {
+          ok: true,
+          submitted: false,
+          commit: {
+            repositoryUrl: payload.repositoryUrl,
+            branchName: payload.branchName,
+            baseCommitSha: payload.baseCommitSha,
+            commitSha: payload.commitSha,
+            changedFiles: payload.changedFiles,
+            sourceRefTypes: payload.sourceRefs.map((ref) => ref.sourceRefType),
+          },
+          submissionPayload: payload,
+          submission: null,
+          progress: null,
+        });
+        return;
+      }
       const submitted = await submitWorkspaceCommitSubmission(payload);
       jsonResponse(res, 201, {
         ok: true,

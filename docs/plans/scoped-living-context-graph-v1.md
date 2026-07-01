@@ -221,7 +221,7 @@ One semantic record can connect multiple nodes, concepts, sources, and later mat
 
 ## Non-Goals For V1
 
-- Live AI assistant during the call.
+- Live in-call agent assistant during the call.
 - Live captions or real-time interventions.
 - Hard-coded skills, aliases, seniority levels, domains, node types, or semantic predicates.
 - A graph UI that invents conclusions from layout data.

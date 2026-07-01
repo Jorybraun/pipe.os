@@ -82,6 +82,42 @@ describe('InterviewCard assessment progress', () => {
         stage: 'READY_FOR_EVALUATION',
         nextAction: 'START_EVALUATION',
         nextActionLabel: 'Start source-backed AI or human evaluation.',
+        readiness: {
+          status: 'READY_FOR_EVALUATION',
+          label: 'Ready for evaluation',
+          detail: 'Challenge, work evidence, and required source refs are captured; start source-backed AI or human evaluation.',
+          isReadyForEvaluation: true,
+          isUsableHiringSignal: false,
+          missingRequiredCount: 0,
+          required: [
+            {
+              id: 'challenge_packet',
+              label: 'Complete challenge packet',
+              required: true,
+              satisfied: true,
+              sourceRefTypes: ['review_challenge_packet'],
+              missingImpact: 'Without a task packet, PIPE cannot prove what work was assigned.',
+            },
+            {
+              id: 'assessment_commit',
+              label: 'Assessment branch commit',
+              required: true,
+              satisfied: true,
+              sourceRefTypes: ['git_commit'],
+              missingImpact: 'A real commit hash is required before evaluation.',
+            },
+          ],
+          confidence: [
+            {
+              id: 'workspace_captured_commit',
+              label: 'Workspace-captured commit',
+              required: false,
+              satisfied: true,
+              sourceRefTypes: ['git_commit', 'dev_container_workspace_state'],
+              missingImpact: 'Manual commit evidence lowers trust.',
+            },
+          ],
+        },
         hasChallengePacket: true,
         hasWorkEvidence: true,
         hasMessageEvidence: true,
@@ -104,6 +140,8 @@ describe('InterviewCard assessment progress', () => {
             'Task: Fix the assessment card progress regression.',
             'Success criteria:',
             '- Card shows stage and next action',
+            'Expected evidence:',
+            '- Commit SHA on assessment branch',
           ].join('\n'),
           locator: {
             repositoryUrl: 'https://github.com/open-source/widgets',
@@ -125,6 +163,20 @@ describe('InterviewCard assessment progress', () => {
           baseCommitSha: '1111111111111111111111111111111111111111',
           commitSha: 'abcdef1234567890abcdef1234567890abcdef12',
           commitUrl: 'https://github.com/candidate/widgets/commit/abcdef1234567890abcdef1234567890abcdef12',
+          submissionSource: 'live_workspace',
+          submissionSourceLabel: 'Live workspace finalizer',
+          integrity: {
+            status: 'workspace_captured',
+            label: 'Workspace-captured commit',
+            detail: 'Captured by the live dev-container finalizer from the workspace HEAD and exact source refs.',
+            tone: 'verified',
+          },
+          challengeBinding: {
+            status: 'bound_to_assigned_challenge',
+            label: 'Bound to assigned challenge',
+            detail: 'Commit repository and base commit match the assigned open-source challenge packet.',
+            tone: 'verified',
+          },
           changedFiles: [{ path: 'src/card.ts', status: 'modified' }],
           occurredAt: '2026-06-23T00:18:00.000Z',
         },
@@ -141,9 +193,11 @@ describe('InterviewCard assessment progress', () => {
       'Repo task was selected from source-backed candidate evidence and an approved challenge packet.',
     );
     expect(progress).toHaveTextContent('DECISION');
-    expect(progress).toHaveTextContent('Challenge and commit evidence are captured; run source-backed AI or human evaluation.');
-    expect(progress).toHaveTextContent('Start source-backed AI or human evaluation.');
-    expect(progress).toHaveTextContent('challenge, chat, workspace telemetry, room actions, commit, AI use, transcript, tests');
+    expect(progress).toHaveTextContent('Challenge, work evidence, and required source refs are captured; start source-backed AI or human evaluation.');
+    expect(progress).toHaveTextContent('challenge, chat, workspace telemetry, tool activity, commit, AI use, transcript, tests');
+    expect(progress).toHaveTextContent('PROOF');
+    expect(progress).toHaveTextContent('Required: Captured: Complete challenge packet · Captured: Assessment branch commit');
+    expect(progress).toHaveTextContent('Confidence: Captured: Workspace-captured commit');
     expect(progress).toHaveTextContent('WORKSPACE');
     expect(progress).toHaveTextContent('Ready · open-source/widgets · base 111111111111');
     expect(progress).toHaveTextContent('open-source/widgets');
@@ -152,7 +206,16 @@ describe('InterviewCard assessment progress', () => {
     expect(progress).toHaveTextContent('111111111111');
     expect(progress).toHaveTextContent('TASK');
     expect(progress).toHaveTextContent('Fix the assessment card progress regression.');
+    expect(progress).toHaveTextContent('CRITERIA');
+    expect(progress).toHaveTextContent('Card shows stage and next action');
+    expect(progress).toHaveTextContent('EXPECTED');
+    expect(progress).toHaveTextContent('Commit SHA on assessment branch');
     expect(progress).toHaveTextContent('abcdef123456');
+    expect(progress).toHaveTextContent('Workspace-captured commit');
+    expect(progress).toHaveTextContent('COMMIT TRUST');
+    expect(progress).toHaveTextContent('Workspace-captured commit · Bound to assigned challenge');
+    expect(progress).toHaveTextContent('Captured by the live dev-container finalizer from the workspace HEAD and exact source refs.');
+    expect(progress).toHaveTextContent('Commit repository and base commit match the assigned open-source challenge packet.');
     expect(progress).not.toHaveTextContent('assessment-session-card');
     expect(progress).not.toHaveTextContent('challenge-packet-card');
     expect(progress).not.toHaveTextContent('abcdef1234567890abcdef1234567890abcdef12');
@@ -248,8 +311,206 @@ describe('InterviewCard assessment progress', () => {
     expect(progress).toHaveTextContent('222222222222');
     expect(progress).toHaveTextContent('TASK');
     expect(progress).toHaveTextContent('Fix reconnect ordering in the event stream.');
+    expect(progress).toHaveTextContent('CRITERIA');
+    expect(progress).toHaveTextContent('Reconnect keeps event order deterministic');
+    expect(progress).toHaveTextContent('EXPECTED');
+    expect(progress).toHaveTextContent('Commit SHA on assessment branch');
     expect(progress).not.toHaveTextContent('challenge-packet-setup');
     expect(progress).not.toHaveTextContent('assessment-session-setup');
+  });
+
+  it('warns recruiters when an assigned challenge packet is incomplete', () => {
+    renderCard({
+      id: 'interview-incomplete-packet',
+      createdAt: '2026-06-23T00:00:00.000Z',
+      updatedAt: '2026-06-23T00:20:00.000Z',
+      status: 'INVITED',
+      interviewType: 'OPEN_SOURCE_BUG_FIX',
+      meetingType: 'DIRECT_VIDEO_CALL',
+      scheduledAt: null,
+      githubRepoUrl: 'https://github.com/open-source/streaming',
+      assessmentSetup: {
+        status: 'reviewable_task_assigned',
+        kind: 'manual_open_source_task',
+        source: 'recruiter_manual_override',
+        blocksPositiveAssessment: false,
+        message: 'A concrete open-source task packet was started by the recruiter.',
+      },
+      assessmentProgress: {
+        session: {
+          id: 'assessment-session-incomplete-packet',
+          ingestionKey: 'assessment-session:incomplete-packet',
+          interviewId: 'interview-incomplete-packet',
+          candidateId: null,
+          workspaceId: null,
+          workspacePersonId: null,
+          applicationId: null,
+          mode: 'OPEN_SOURCE_BUG_FIX',
+          state: 'CHALLENGE_ASSIGNED',
+          createdAt: '2026-06-23T00:00:00.000Z',
+          updatedAt: '2026-06-23T00:20:00.000Z',
+        },
+        stage: 'WAITING_FOR_CHALLENGE',
+        nextAction: 'ASSIGN_CHALLENGE',
+        nextActionLabel: 'Add success criteria and expected evidence before the candidate starts.',
+        readiness: {
+          status: 'WAITING_FOR_CHALLENGE',
+          label: 'Waiting for complete challenge packet',
+          detail: 'The assigned open-source task is missing required packet fields.',
+          isReadyForEvaluation: false,
+          isUsableHiringSignal: false,
+          missingRequiredCount: 1,
+          required: [
+            {
+              id: 'challenge_packet',
+              label: 'Complete challenge packet',
+              required: true,
+              satisfied: false,
+              sourceRefTypes: ['open_source_challenge_packet'],
+              missingImpact: 'Challenge packet is missing success criteria and expected evidence.',
+            },
+          ],
+          confidence: [],
+        },
+        challengePacketContract: {
+          schemaVersion: 'challenge-packet-contract-v1',
+          isComplete: false,
+          missingFields: ['success criteria', 'expected evidence'],
+          hasRepositoryUrl: true,
+          hasBaseCommitSha: true,
+          hasTask: true,
+          hasSuccessCriteria: false,
+          hasExpectedEvidence: false,
+        },
+        hasChallengePacket: true,
+        hasWorkEvidence: false,
+        hasMessageEvidence: false,
+        hasDevContainerEvidence: false,
+        hasToolUsageEvidence: false,
+        hasCommitSubmission: false,
+        hasFinalSubmission: false,
+        hasAiInteraction: false,
+        hasTranscriptEvidence: false,
+        hasTestEvidence: false,
+        evidenceCounts: [{ kind: 'recruiter_note', count: 1 }],
+        sourceRefCounts: [{ kind: 'open_source_challenge_packet', count: 1 }],
+        challenge: {
+          sourceRefType: 'open_source_challenge_packet',
+          sourceRefId: 'challenge-packet-incomplete',
+          evidenceRole: 'assigned_challenge',
+          exactText: [
+            'Repo: https://github.com/open-source/streaming',
+            'Base commit: 2222222222222222222222222222222222222222',
+            'Task: Fix reconnect ordering in the event stream.',
+          ].join('\n'),
+          locator: {
+            repositoryUrl: 'https://github.com/open-source/streaming',
+            baseCommitSha: '2222222222222222222222222222222222222222',
+          },
+        },
+        latestEvent: {
+          id: 'assessment-event-incomplete-packet',
+          kind: 'recruiter_note',
+          sequence: 1,
+          occurredAt: '2026-06-23T00:20:00.000Z',
+        },
+        commit: null,
+        evaluation: null,
+      },
+    });
+
+    const progress = screen.getByTestId('interview-card-assessment-progress');
+    expect(progress).toHaveTextContent('Waiting for complete challenge packet');
+    expect(progress).toHaveTextContent('PROOF');
+    expect(progress).toHaveTextContent('Required: Missing: Complete challenge packet');
+    expect(progress).toHaveTextContent('PACKET');
+    expect(progress).toHaveTextContent('Incomplete challenge packet');
+    expect(progress).toHaveTextContent('Missing Success criteria, Expected evidence.');
+    expect(progress).toHaveTextContent('Complete the packet before candidate work starts.');
+    expect(progress).toHaveTextContent('Add success criteria and expected evidence before the candidate starts.');
+    expect(progress).not.toHaveTextContent('challenge-packet-incomplete');
+    expect(progress).not.toHaveTextContent('assessment-session-incomplete-packet');
+  });
+
+  it('falls back to durable progress trust when setup projection is missing', () => {
+    renderCard({
+      id: 'interview-progress-trust',
+      createdAt: '2026-06-23T00:00:00.000Z',
+      updatedAt: '2026-06-23T00:20:00.000Z',
+      status: 'INVITED',
+      interviewType: 'OPEN_SOURCE_BUG_FIX',
+      meetingType: 'DIRECT_VIDEO_CALL',
+      scheduledAt: null,
+      assessmentSetup: null,
+      assessmentProgress: {
+        session: {
+          id: 'assessment-session-progress-trust',
+          ingestionKey: 'assessment-session:progress-trust',
+          interviewId: 'interview-progress-trust',
+          candidateId: null,
+          workspaceId: null,
+          workspacePersonId: null,
+          applicationId: null,
+          mode: 'OPEN_SOURCE_BUG_FIX',
+          state: 'IN_PROGRESS',
+          createdAt: '2026-06-23T00:00:00.000Z',
+          updatedAt: '2026-06-23T00:20:00.000Z',
+        },
+        stage: 'CHALLENGE_READY',
+        nextAction: 'OPEN_ROOM_OR_WORKSPACE',
+        nextActionLabel: 'Open the assessment room and start the workspace.',
+        assignmentTrust: {
+          state: 'matched_challenge',
+          label: 'PIPE-matched challenge',
+          detail: 'PIPE selected this task from source-backed candidate evidence, role context, and repository demand.',
+          tone: 'matched',
+        },
+        hasChallengePacket: true,
+        hasWorkEvidence: false,
+        hasMessageEvidence: false,
+        hasDevContainerEvidence: false,
+        hasToolUsageEvidence: false,
+        hasCommitSubmission: false,
+        hasFinalSubmission: false,
+        hasAiInteraction: false,
+        hasTranscriptEvidence: false,
+        hasTestEvidence: false,
+        evidenceCounts: [{ kind: 'match_decision', count: 1 }],
+        sourceRefCounts: [{ kind: 'review_challenge_packet', count: 1 }],
+        challenge: {
+          sourceRefType: 'review_challenge_packet',
+          sourceRefId: 'challenge-packet-progress-trust',
+          evidenceRole: 'assigned_challenge',
+          exactText: [
+            'Repo: https://github.com/open-source/widgets',
+            'Base commit: 4444444444444444444444444444444444444444',
+            'Task: Fix the matched assignment fallback.',
+          ].join('\n'),
+          locator: {
+            repositoryUrl: 'https://github.com/open-source/widgets',
+            matchedRepoId: 42,
+            baseCommitSha: '4444444444444444444444444444444444444444',
+          },
+        },
+        latestEvent: {
+          id: 'assessment-event-progress-trust',
+          kind: 'match_decision',
+          sequence: 1,
+          occurredAt: '2026-06-23T00:20:00.000Z',
+        },
+        commit: null,
+        evaluation: null,
+      },
+    });
+
+    const progress = screen.getByTestId('interview-card-assessment-progress');
+    expect(progress).toHaveTextContent('ASSIGNMENT');
+    expect(progress).toHaveTextContent('PIPE-matched challenge');
+    expect(progress).toHaveTextContent(
+      'PIPE selected this task from source-backed candidate evidence, role context, and repository demand.',
+    );
+    expect(progress).not.toHaveTextContent('challenge-packet-progress-trust');
+    expect(progress).not.toHaveTextContent('assessment-session-progress-trust');
   });
 
   it('shows setup gaps for assessment interviews before a session exists', () => {
@@ -267,6 +528,8 @@ describe('InterviewCard assessment progress', () => {
         source: 'contact_first_invite',
         blocksPositiveAssessment: true,
         message: 'PIPE must ingest source-backed evidence before selecting a PR task.',
+        nextAction: 'COLLECT_CANDIDATE_EVIDENCE',
+        nextActionLabel: 'Send the intake link or schedule a context call.',
       },
       assessmentProgress: null,
     });
@@ -275,6 +538,7 @@ describe('InterviewCard assessment progress', () => {
     expect(progress).toHaveTextContent('Setup gap');
     expect(progress).toHaveTextContent('Waiting for PIPE match');
     expect(progress).toHaveTextContent('PIPE must ingest source-backed evidence before selecting a PR task.');
+    expect(progress).toHaveTextContent('Send the intake link or schedule a context call.');
     expect(progress).toHaveTextContent('no assessment session yet');
   });
 
@@ -359,6 +623,104 @@ describe('InterviewCard assessment progress', () => {
     expect(screen.getByTestId('interview-card-assessment-progress')).toHaveTextContent(
       'Evaluation needs attention: Workers AI unavailable.',
     );
+  });
+
+  it('surfaces verification gaps in the recruiter evidence summary', () => {
+    renderCard({
+      id: 'interview-verification-gap',
+      createdAt: '2026-06-23T00:00:00.000Z',
+      updatedAt: '2026-06-23T00:20:00.000Z',
+      status: 'INVITED',
+      interviewType: 'OPEN_SOURCE_BUG_FIX',
+      meetingType: 'DIRECT_VIDEO_CALL',
+      scheduledAt: null,
+      assessmentSetup: {
+        status: 'reviewable_task_assigned',
+        kind: 'manual_open_source_task',
+        source: 'recruiter_manual_override',
+        blocksPositiveAssessment: false,
+        message: 'A concrete open-source task packet was assigned by the recruiter.',
+      },
+      assessmentProgress: {
+        session: {
+          id: 'assessment-session-verification-gap',
+          ingestionKey: 'assessment-session:verification-gap',
+          interviewId: 'interview-verification-gap',
+          candidateId: 'candidate-1',
+          workspaceId: 'workspace-1',
+          workspacePersonId: null,
+          applicationId: null,
+          mode: 'OPEN_SOURCE_BUG_FIX',
+          state: 'FINAL_SUBMITTED',
+          createdAt: '2026-06-23T00:00:00.000Z',
+          updatedAt: '2026-06-23T00:20:00.000Z',
+        },
+        stage: 'READY_FOR_EVALUATION',
+        nextAction: 'START_EVALUATION',
+        nextActionLabel: 'Start source-backed AI or human evaluation.',
+        readiness: {
+          status: 'READY_FOR_EVALUATION',
+          label: 'Ready for evaluation',
+          detail: 'Required evidence is captured, but commit provenance needs repository or workspace verification before final reliance.',
+          isReadyForEvaluation: true,
+          isUsableHiringSignal: false,
+          missingRequiredCount: 0,
+          required: [],
+          confidence: [
+            {
+              id: 'test_run',
+              label: 'Test or verification evidence',
+              required: false,
+              satisfied: true,
+              sourceRefTypes: ['test_run', 'verification_gap'],
+              missingImpact: 'Missing test evidence lowers confidence; an explicit verification gap is better than silence.',
+            },
+          ],
+        },
+        hasChallengePacket: true,
+        hasWorkEvidence: true,
+        hasMessageEvidence: false,
+        hasDevContainerEvidence: true,
+        hasToolUsageEvidence: true,
+        hasCommitSubmission: true,
+        hasFinalSubmission: false,
+        hasAiInteraction: false,
+        hasTranscriptEvidence: false,
+        hasTestEvidence: false,
+        hasVerificationGap: true,
+        evidenceCounts: [{ kind: 'commit_submission', count: 1 }],
+        sourceRefCounts: [
+          { kind: 'git_commit', count: 1 },
+          { kind: 'code_diff', count: 1 },
+          { kind: 'verification_gap', count: 1 },
+        ],
+        challenge: null,
+        latestEvent: {
+          id: 'assessment-event-verification-gap',
+          kind: 'commit_submission',
+          sequence: 2,
+          occurredAt: '2026-06-23T00:18:00.000Z',
+        },
+        commit: {
+          eventId: 'assessment-event-verification-gap',
+          repositoryUrl: 'https://github.com/open-source/widgets',
+          forkRepositoryUrl: 'https://github.com/candidate/widgets',
+          branchName: 'pipe-assessment/widgets',
+          baseCommitSha: '3333333333333333333333333333333333333333',
+          commitSha: '123456abcdef123456abcdef123456abcdef1234',
+          commitUrl: 'https://github.com/candidate/widgets/commit/123456abcdef123456abcdef123456abcdef1234',
+          changedFiles: [{ path: 'src/widget.ts', status: 'modified' }],
+          occurredAt: '2026-06-23T00:18:00.000Z',
+        },
+        evaluation: null,
+      },
+    });
+
+    const progress = screen.getByTestId('interview-card-assessment-progress');
+    expect(progress).toHaveTextContent('workspace telemetry, tool activity, commit, verification gap');
+    expect(progress).not.toHaveTextContent('tests');
+    expect(progress).not.toHaveTextContent('assessment-session-verification-gap');
+    expect(progress).not.toHaveTextContent('assessment-event-verification-gap');
   });
 
   it('shows human assessment decision before evaluator recommendation without exposing ids', () => {

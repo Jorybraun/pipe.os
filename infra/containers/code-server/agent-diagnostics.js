@@ -161,26 +161,6 @@ function agentChatResponseId({
   ].join(':');
 }
 
-function clippyActionEventId({
-  actor = 'agent',
-  capturedAtMs = 0,
-  source = 'clippy_agent_bridge',
-  origin = 'agent',
-  executionStatus = 'suggested',
-  actionId = 'unknown-action',
-}) {
-  const captured = Number.isFinite(capturedAtMs) ? Math.max(0, Math.round(capturedAtMs)) : 0;
-  return [
-    'clippy-action',
-    safeEvidenceIdPart(actor),
-    String(captured),
-    safeEvidenceIdPart(source),
-    safeEvidenceIdPart(origin),
-    safeEvidenceIdPart(executionStatus),
-    safeEvidenceIdPart(actionId),
-  ].join(':');
-}
-
 function agentDiagnosticMessage({
   agent = null,
   status = 'disconnected',
@@ -258,10 +238,10 @@ function agentPromptHandoffDiagnosticMessage({
   const baseMessage = agentDiagnosticMessage({
     agent: safeAgent,
     status,
-    message: `${safeAgent} ${promptLabel} ${delivered ? 'delivered' : 'was not delivered'} to ${targetLabel}.`,
+    message: `agent ${promptLabel} ${delivered ? 'delivered' : 'was not delivered'} to ${targetLabel}.`,
     diagnosticSource: safePromptType === 'context_primer'
       ? 'agent_context_primer_sent'
-      : 'agent_prompt_sent',
+      : 'user_prompt_sent',
     observedAt,
     agentRuntime,
     agentRunProvider,
@@ -316,7 +296,7 @@ function agentDiagnosticSessionEvent(message) {
     text: String(eventMessage.message || 'Agent bridge diagnostic.'),
     actor: 'agent',
     properties: {
-      source: 'clippy_agent_bridge',
+      source: 'agent_bridge',
       agent,
       status,
       diagnosticSource,
@@ -397,7 +377,7 @@ function agentChatSessionEvent({
     text: responseText,
     actor: 'agent',
     properties: {
-      source: 'clippy_agent_bridge',
+      source: 'agent_bridge',
       agent: safeAgent,
       bridgeEventType: 'CHAT_RESPONSE',
       bridgeMessageSource,
@@ -432,91 +412,10 @@ function agentChatSessionEvent({
   };
 }
 
-function safeActionString(value, fallback = null, maxChars = DEFAULT_MAX_CHARS) {
-  const raw = typeof value === 'string' && value.trim().length > 0 ? value : fallback;
-  if (raw === null || raw === undefined) return null;
-  return boundedDiagnosticText(raw, maxChars).text || null;
-}
-
-function agentRoomActionSessionEvent({
-  agent = null,
-  action,
-  observedAt = new Date().toISOString(),
-} = {}) {
-  const safeAgent = safeAgentName(agent);
-  if (!safeAgent) return null;
-  const rawAction = action && typeof action === 'object' ? action : {};
-  const actionId = safeActionString(rawAction.action ?? rawAction.id ?? rawAction.name, null, 120);
-  const actionSource = safeActionString(rawAction.source, null, 120);
-  const actionProtocol = safeActionString(rawAction.protocol, null, 120);
-  if (
-    !actionId
-    || (actionSource !== 'agent_stdout' && actionSource !== 'agent_api_response')
-    || actionProtocol !== 'clippy_room_action_tag'
-  ) {
-    return null;
-  }
-  const browserPromptReferences = {
-    browserPromptId: safePromptReferenceString(rawAction.browserPromptId),
-    browserPromptFingerprint: safePromptReferenceString(rawAction.browserPromptFingerprint, 80),
-    browserPromptTimestamp: safePromptReferenceNumber(rawAction.browserPromptTimestamp),
-    browserPromptLength: safePromptReferenceNumber(rawAction.browserPromptLength),
-  };
-  const parsedObservedAt = typeof observedAt === 'string' ? Date.parse(observedAt) : Number.NaN;
-  const capturedAtMs = Number.isFinite(parsedObservedAt) ? parsedObservedAt : Date.now();
-  return {
-    type: 'clippy_action',
-    text: `${safeAgent} suggested room action: ${actionId}`,
-    actor: 'agent',
-    properties: {
-      source: 'clippy_agent_bridge',
-      origin: 'agent',
-      executionStatus: 'suggested',
-      actionId,
-      actionSource,
-      actionProtocol,
-      bridgeEventType: 'ROOM_ACTION',
-      agent: safeAgent,
-      agentActionLabel: safeActionString(rawAction.label, null, 500),
-      agentActionText: safeActionString(rawAction.text, null, 1000),
-      autoExecute: typeof rawAction.autoExecute === 'boolean' ? rawAction.autoExecute : null,
-      url: safeActionString(rawAction.url ?? rawAction.href, null, 2048),
-      ...agentRunReferences({
-        agentRuntime: rawAction.agentRuntime,
-        agentRunProvider: rawAction.agentRunProvider,
-        agentRunId: rawAction.agentRunId,
-        agentRunExternalSessionHash: rawAction.agentRunExternalSessionHash,
-      }),
-      ...(browserPromptReferences.browserPromptId ? { browserPromptId: browserPromptReferences.browserPromptId } : {}),
-      ...(browserPromptReferences.browserPromptFingerprint
-        ? { browserPromptFingerprint: browserPromptReferences.browserPromptFingerprint }
-        : {}),
-      ...(browserPromptReferences.browserPromptTimestamp !== null
-        ? { browserPromptTimestamp: browserPromptReferences.browserPromptTimestamp }
-        : {}),
-      ...(browserPromptReferences.browserPromptLength !== null
-        ? { browserPromptLength: browserPromptReferences.browserPromptLength }
-        : {}),
-      observedAt,
-      capturedAtMs,
-      clippyActionEventId: clippyActionEventId({
-        actor: 'agent',
-        capturedAtMs,
-        source: 'clippy_agent_bridge',
-        origin: 'agent',
-        executionStatus: 'suggested',
-        actionId,
-      }),
-      bridgePersisted: true,
-    },
-  };
-}
-
 module.exports = {
   agentChatSessionEvent,
   agentDiagnosticMessage,
   agentDiagnosticSessionEvent,
-  agentRoomActionSessionEvent,
   agentPromptHandoffDiagnosticMessage,
   boundedDiagnosticText,
   diagnosticTextMetrics,

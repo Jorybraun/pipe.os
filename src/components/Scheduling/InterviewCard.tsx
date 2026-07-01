@@ -10,6 +10,7 @@ import type { InterviewStatus } from '../../lib/scheduling/types';
 import {
   summarizeAssessmentAssignment,
   summarizeAssessmentChallenge,
+  type AssessmentAssignmentSummary,
 } from '../../lib/scheduling/assessmentChallenge';
 
 // TODO: Wire candidateName and pipelineTitle via enriched data once we join
@@ -137,6 +138,7 @@ function assessmentEvidenceSummary(input: {
   hasAiInteraction: boolean;
   hasTranscriptEvidence: boolean;
   hasTestEvidence: boolean;
+  hasVerificationGap?: boolean;
 }): string {
   const hasGranularWorkEvidence = Boolean(
     input.hasMessageEvidence
@@ -144,18 +146,20 @@ function assessmentEvidenceSummary(input: {
     || input.hasToolUsageEvidence
     || input.hasAiInteraction
     || input.hasTranscriptEvidence
-    || input.hasTestEvidence,
+    || input.hasTestEvidence
+    || input.hasVerificationGap,
   );
   const ready = [
     input.hasChallengePacket ? 'challenge' : null,
     input.hasMessageEvidence ? 'chat' : null,
     input.hasDevContainerEvidence ? 'workspace telemetry' : null,
-    input.hasToolUsageEvidence ? 'room actions' : null,
+    input.hasToolUsageEvidence ? 'tool activity' : null,
     input.hasWorkEvidence && !hasGranularWorkEvidence ? 'work evidence' : null,
     input.hasCommitSubmission ? 'commit' : null,
     input.hasAiInteraction ? 'AI use' : null,
     input.hasTranscriptEvidence ? 'transcript' : null,
     input.hasTestEvidence ? 'tests' : null,
+    input.hasVerificationGap ? 'verification gap' : null,
   ].filter((value): value is string => Boolean(value));
   return ready.length > 0 ? ready.join(', ') : 'no evidence yet';
 }
@@ -177,9 +181,54 @@ function assessmentAssignmentColor(
   }
 }
 
+function assessmentAssignmentFromProgressTrust(
+  trust: NonNullable<ScheduledInterview['assessmentProgress']>['assignmentTrust'],
+): AssessmentAssignmentSummary | null {
+  if (!trust || typeof trust !== 'object') return null;
+  const candidate = trust as {
+    label?: unknown;
+    detail?: unknown;
+    tone?: unknown;
+  };
+  if (typeof candidate.label !== 'string' || typeof candidate.detail !== 'string') return null;
+  const tone = candidate.tone;
+  if (
+    tone !== 'matched'
+    && tone !== 'manual'
+    && tone !== 'waiting'
+    && tone !== 'blocked'
+    && tone !== 'neutral'
+  ) {
+    return null;
+  }
+  return {
+    label: candidate.label,
+    detail: candidate.detail,
+    tone,
+  };
+}
+
 interface AssessmentDecisionSummary {
   value: string;
   detail: string;
+}
+
+interface AssessmentCommitTrustSummary {
+  label: string;
+  detail: string;
+  tone: 'verified' | 'warning' | 'neutral';
+}
+
+interface AssessmentPacketContractSummary {
+  label: string;
+  detail: string;
+  tone: 'verified' | 'warning' | 'neutral';
+}
+
+interface AssessmentProofChecklistSummary {
+  required: string[];
+  confidence: string[];
+  missingRequiredCount: number;
 }
 
 function assessmentDecisionSummary(input: {
@@ -218,6 +267,27 @@ function assessmentDecisionSummary(input: {
     };
   }
 
+  if (progress?.readiness) {
+    if (progress.readiness.status === 'NEEDS_ATTENTION') {
+      return {
+        value: progress.readiness.label,
+        detail: compactText(progress.readiness.detail, 150),
+      };
+    }
+    if (progress.readiness.isReadyForEvaluation) {
+      return {
+        value: progress.readiness.label,
+        detail: compactText(progress.readiness.detail, 150),
+      };
+    }
+    if (progress.readiness.status !== 'WAITING_FOR_CHALLENGE') {
+      return {
+        value: progress.readiness.label,
+        detail: compactText(progress.readiness.detail, 150),
+      };
+    }
+  }
+
   if (progress?.nextAction === 'RESOLVE_DIAGNOSTIC' || progress?.stage === 'NEEDS_ATTENTION') {
     return {
       value: 'Needs attention',
@@ -254,6 +324,97 @@ function assessmentDecisionSummary(input: {
   }
 
   return null;
+}
+
+function assessmentCommitTrustSummary(
+  commit: NonNullable<ScheduledInterview['assessmentProgress']>['commit'] | null | undefined,
+): AssessmentCommitTrustSummary | null {
+  if (!commit) return null;
+  const labels = [
+    commit.integrity?.label,
+    commit.challengeBinding?.label,
+  ].filter((value): value is string => Boolean(value?.trim()));
+  const details = [
+    commit.integrity?.detail,
+    commit.challengeBinding?.detail,
+  ].filter((value): value is string => Boolean(value?.trim()));
+  if (labels.length === 0 && details.length === 0) return null;
+
+  const hasWarning = commit.integrity?.tone === 'warning' || commit.challengeBinding?.tone === 'warning';
+  const hasVerified = commit.integrity?.tone === 'verified' || commit.challengeBinding?.tone === 'verified';
+  return {
+    label: labels.length > 0 ? labels.join(' · ') : 'Commit provenance captured',
+    detail: compactText(details.join(' '), 180),
+    tone: hasWarning ? 'warning' : hasVerified ? 'verified' : 'neutral',
+  };
+}
+
+function assessmentCommitTrustColor(tone: AssessmentCommitTrustSummary['tone']): string {
+  switch (tone) {
+    case 'verified':
+      return '#4ade80';
+    case 'warning':
+      return '#fbbf24';
+    default:
+      return 'var(--pipe-text-dim)';
+  }
+}
+
+function assessmentPacketContractSummary(
+  contract: NonNullable<ScheduledInterview['assessmentProgress']>['challengePacketContract'] | null | undefined,
+): AssessmentPacketContractSummary | null {
+  if (!contract) return null;
+  if (contract.isComplete) {
+    return {
+      label: 'Complete challenge packet',
+      detail: 'Repo, base commit, task, success criteria, and expected evidence are captured.',
+      tone: 'verified',
+    };
+  }
+  const missingFields = contract.missingFields
+    .map((field) => sentenceCaseToken(field))
+    .join(', ');
+  return {
+    label: 'Incomplete challenge packet',
+    detail: missingFields
+      ? `Missing ${missingFields}. Complete the packet before candidate work starts.`
+      : 'Complete the repo URL, base commit, task, success criteria, and expected evidence before candidate work starts.',
+    tone: 'warning',
+  };
+}
+
+function assessmentPacketContractColor(tone: AssessmentPacketContractSummary['tone']): string {
+  switch (tone) {
+    case 'verified':
+      return '#4ade80';
+    case 'warning':
+      return '#fbbf24';
+    default:
+      return 'var(--pipe-text-dim)';
+  }
+}
+
+function assessmentProofItemLabel(
+  item: NonNullable<NonNullable<ScheduledInterview['assessmentProgress']>['readiness']>['required'][number],
+): string {
+  return `${item.satisfied ? 'Captured' : 'Missing'}: ${item.label}`;
+}
+
+function assessmentProofChecklistSummary(
+  readiness: NonNullable<ScheduledInterview['assessmentProgress']>['readiness'] | null | undefined,
+): AssessmentProofChecklistSummary | null {
+  if (!readiness) return null;
+
+  const required = readiness.required.map(assessmentProofItemLabel);
+  const confidence = readiness.confidence.map(assessmentProofItemLabel);
+
+  if (required.length === 0 && confidence.length === 0) return null;
+
+  return {
+    required,
+    confidence,
+    missingRequiredCount: readiness.missingRequiredCount,
+  };
 }
 
 function assessmentEvaluationStartNotice(result: AssessmentEvaluationStartResult | void): string {
@@ -367,15 +528,18 @@ export function InterviewCard({
     interview.status === 'INVITED' && !hasInviteDelivery ? 'Ready' : undefined;
   const assessmentProgress = interview.assessmentProgress ?? null;
   const assessmentSetup = interview.assessmentSetup ?? null;
-  const assessmentAssignment = summarizeAssessmentAssignment(assessmentSetup);
+  const assessmentAssignment = summarizeAssessmentAssignment(assessmentSetup)
+    ?? assessmentAssignmentFromProgressTrust(assessmentProgress?.assignmentTrust);
   const showsAssessmentSnapshot = isAssessmentInterviewType(interview.interviewType)
     || Boolean(assessmentProgress);
   const assessmentStageLabel = assessmentProgress
-    ? sentenceCaseToken(assessmentProgress.stage)
+    ? assessmentProgress.readiness?.label ?? sentenceCaseToken(assessmentProgress.stage)
     : assessmentSetup?.blocksPositiveAssessment
       ? 'Setup gap'
       : 'Assessment ready';
   const assessmentNextAction = assessmentProgress?.nextActionLabel
+    ?? assessmentProgress?.readiness?.detail
+    ?? assessmentSetup?.nextActionLabel
     ?? assessmentSetup?.message
     ?? 'Assessment evidence will appear after the session starts.';
   const assessmentEvidence = assessmentProgress
@@ -397,6 +561,18 @@ export function InterviewCard({
       ?? null,
   );
   const assessmentCommitLabel = shortCommitSha(assessmentProgress?.commit?.commitSha);
+  const assessmentCommitIntegrityLabel = assessmentProgress?.commit?.integrity?.label
+    ?? assessmentProgress?.commit?.submissionSourceLabel
+    ?? null;
+  const assessmentChallengeBindingLabel = assessmentProgress?.commit?.challengeBinding?.label ?? null;
+  const assessmentCommitTrust = assessmentCommitTrustSummary(assessmentProgress?.commit);
+  const assessmentPacketContract = assessmentPacketContractSummary(assessmentProgress?.challengePacketContract);
+  const assessmentCriteriaLabel = assessmentChallenge?.successCriteria.length
+    ? compactText(assessmentChallenge.successCriteria.join(' · '), 150)
+    : null;
+  const assessmentExpectedEvidenceLabel = assessmentChallenge?.expectedEvidence.length
+    ? compactText(assessmentChallenge.expectedEvidence.join(' · '), 150)
+    : null;
   const assessmentEvaluationLabel = assessmentProgress?.evaluation?.status
     ? sentenceCaseToken(assessmentProgress.evaluation.status)
     : null;
@@ -405,6 +581,7 @@ export function InterviewCard({
     setup: assessmentSetup,
     progress: assessmentProgress,
   });
+  const assessmentProofChecklist = assessmentProofChecklistSummary(assessmentProgress?.readiness);
   const canStartAssessmentEvaluation = Boolean(
     startAssessmentEvaluation && assessmentProgress?.nextAction === 'START_EVALUATION',
   );
@@ -556,6 +733,48 @@ export function InterviewCard({
               <div style={{ minWidth: 0, fontSize: 10, color: 'var(--pipe-text-dim)', overflowWrap: 'anywhere' }}>
                 {assessmentEvidence}
               </div>
+              {assessmentProofChecklist && (
+                <>
+                  <div style={{
+                    fontSize: 9,
+                    color: assessmentProofChecklist.missingRequiredCount > 0 ? '#fbbf24' : '#4ade80',
+                    letterSpacing: '0.12em',
+                    fontWeight: 700,
+                  }}>
+                    PROOF
+                  </div>
+                  <div style={{ minWidth: 0, overflowWrap: 'anywhere' }}>
+                    {assessmentProofChecklist.required.length > 0 && (
+                      <div style={{
+                        fontSize: 10,
+                        color: assessmentProofChecklist.missingRequiredCount > 0 ? '#fde68a' : 'var(--pipe-text-dim)',
+                      }}>
+                        Required: {assessmentProofChecklist.required.join(' · ')}
+                      </div>
+                    )}
+                    {assessmentProofChecklist.confidence.length > 0 && (
+                      <div style={{ fontSize: 10, color: 'var(--pipe-text-dim)' }}>
+                        Confidence: {assessmentProofChecklist.confidence.join(' · ')}
+                      </div>
+                    )}
+                  </div>
+                </>
+              )}
+              {assessmentPacketContract && (
+                <>
+                  <div style={{ fontSize: 9, color: assessmentPacketContractColor(assessmentPacketContract.tone), letterSpacing: '0.12em', fontWeight: 700 }}>
+                    PACKET
+                  </div>
+                  <div style={{ minWidth: 0, overflowWrap: 'anywhere' }}>
+                    <div style={{ fontSize: 10, color: assessmentPacketContractColor(assessmentPacketContract.tone), fontWeight: 700 }}>
+                      {assessmentPacketContract.label}
+                    </div>
+                    <div style={{ fontSize: 10, color: 'var(--pipe-text-dim)' }}>
+                      {assessmentPacketContract.detail}
+                    </div>
+                  </div>
+                </>
+              )}
               {workspaceSummary && (
                 <>
                   <div style={{ fontSize: 9, color: 'var(--pipe-text-muted)', letterSpacing: '0.12em', fontWeight: 700 }}>
@@ -596,13 +815,50 @@ export function InterviewCard({
                   </div>
                 </>
               )}
+              {assessmentCriteriaLabel && (
+                <>
+                  <div style={{ fontSize: 9, color: 'var(--pipe-text-muted)', letterSpacing: '0.12em', fontWeight: 700 }}>
+                    CRITERIA
+                  </div>
+                  <div style={{ minWidth: 0, fontSize: 10, color: 'var(--pipe-text-dim)', overflowWrap: 'anywhere' }}>
+                    {assessmentCriteriaLabel}
+                  </div>
+                </>
+              )}
+              {assessmentExpectedEvidenceLabel && (
+                <>
+                  <div style={{ fontSize: 9, color: 'var(--pipe-text-muted)', letterSpacing: '0.12em', fontWeight: 700 }}>
+                    EXPECTED
+                  </div>
+                  <div style={{ minWidth: 0, fontSize: 10, color: 'var(--pipe-text-dim)', overflowWrap: 'anywhere' }}>
+                    {assessmentExpectedEvidenceLabel}
+                  </div>
+                </>
+              )}
               {assessmentCommitLabel && (
                 <>
                   <div style={{ fontSize: 9, color: 'var(--pipe-text-muted)', letterSpacing: '0.12em', fontWeight: 700 }}>
                     COMMIT
                   </div>
                   <div style={{ minWidth: 0, fontSize: 10, color: 'var(--pipe-text-dim)', overflowWrap: 'anywhere' }}>
-                    {assessmentCommitLabel}
+                    {[assessmentCommitLabel, assessmentCommitIntegrityLabel, assessmentChallengeBindingLabel].filter(Boolean).join(' · ')}
+                  </div>
+                </>
+              )}
+              {assessmentCommitTrust && (
+                <>
+                  <div style={{ fontSize: 9, color: assessmentCommitTrustColor(assessmentCommitTrust.tone), letterSpacing: '0.12em', fontWeight: 700 }}>
+                    COMMIT TRUST
+                  </div>
+                  <div style={{ minWidth: 0, overflowWrap: 'anywhere' }}>
+                    <div style={{ fontSize: 10, color: assessmentCommitTrustColor(assessmentCommitTrust.tone), fontWeight: 700 }}>
+                      {assessmentCommitTrust.label}
+                    </div>
+                    {assessmentCommitTrust.detail && (
+                      <div style={{ fontSize: 10, color: 'var(--pipe-text-dim)' }}>
+                        {assessmentCommitTrust.detail}
+                      </div>
+                    )}
                   </div>
                 </>
               )}

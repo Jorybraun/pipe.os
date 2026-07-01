@@ -1,7 +1,7 @@
 /**
  * Contacts routes — unified address book for leads, candidates, customers, etc.
  *
- * GET    /api/v1/contacts          — list all contacts for the current user
+ * GET    /api/v1/contacts          — list contacts for the current user
  * POST   /api/v1/contacts          — create a contact
  * GET    /api/v1/contacts/:id      — get a single contact
  * PATCH  /api/v1/contacts/:id      — update a contact
@@ -15,7 +15,9 @@ import { apiError } from '../../middleware/errors';
 import {
   ensureContactLivingContext,
   loadContactLivingContext,
+  loadContactLivingContextSummary,
   loadWorkspacePersonLivingContext,
+  loadWorkspacePersonLivingContextSummary,
   searchSourceContent,
   requireGate,
 } from '../../lib/livingContext';
@@ -82,6 +84,13 @@ interface WorkspacePersonRow {
   role: string | null;
   created_at: string;
   updated_at: string;
+}
+
+function parsePositiveInt(value: string | undefined, fallback: number, max: number): number {
+  if (!value) return fallback;
+  const parsed = Number.parseInt(value, 10);
+  if (!Number.isFinite(parsed)) return fallback;
+  return Math.min(max, Math.max(1, parsed));
 }
 
 function parseContext(raw: string | null): Record<string, unknown> {
@@ -160,13 +169,28 @@ contacts.use('*', authMiddleware);
 contacts.get('/', async (c) => {
   const userId = c.var.userId;
   const db = c.env.DB;
+  const page = parsePositiveInt(c.req.query('page'), 1, 10_000);
+  const limit = parsePositiveInt(c.req.query('limit'), 100, 500);
+  const offset = (page - 1) * limit;
+
+  const countRow = await db
+    .prepare('SELECT COUNT(*) AS total FROM contacts WHERE owner_id = ?')
+    .bind(userId)
+    .first<{ total: number }>();
+  const total = countRow?.total ?? 0;
 
   const { results } = await db
-    .prepare('SELECT * FROM contacts WHERE owner_id = ? ORDER BY created_at DESC')
-    .bind(userId)
+    .prepare('SELECT * FROM contacts WHERE owner_id = ? ORDER BY created_at DESC LIMIT ? OFFSET ?')
+    .bind(userId, limit, offset)
     .all<ContactRow>();
 
-  return c.json({ contacts: results ?? [] });
+  return c.json({
+    contacts: results ?? [],
+    total,
+    page,
+    limit,
+    hasMore: offset + (results?.length ?? 0) < total,
+  });
 });
 
 // POST / — create contact
@@ -238,6 +262,47 @@ contacts.get('/:id', async (c) => {
   const personContact = await loadWorkspacePersonAsContact(db, userId, id);
   if (!personContact) return apiError(c, 'NOT_FOUND', 'Person not found.');
   return c.json({ contact: personContact });
+});
+
+// GET /:id/living-context/summary — first-paint contact living context projection
+contacts.get('/:id/living-context/summary', requireGate('living_context_read'), async (c) => {
+  const userId = c.var.userId;
+  const { id } = c.req.param();
+  const db = c.env.DB;
+
+  const contact = await db
+    .prepare('SELECT id FROM contacts WHERE id = ? AND owner_id = ?')
+    .bind(id, userId)
+    .first<{ id: string }>();
+  if (!contact) {
+    const livingContext = await loadWorkspacePersonLivingContextSummary(db, userId, id);
+    if (!livingContext) return apiError(c, 'NOT_FOUND', 'Person not found.');
+    return c.json(livingContext);
+  }
+
+  await ensureContactLivingContext(db, id);
+  const livingContext = await loadContactLivingContextSummary(db, id);
+  if (!livingContext) {
+    return c.json({
+      person: null,
+      summary: {
+        interactionCount: 0,
+        artifactCount: 0,
+        contextRecordCount: 0,
+        assertionCount: 0,
+        signalCount: 0,
+        sourceSpanCount: 0,
+      },
+      interactions: [],
+      artifacts: [],
+      contextRecords: [],
+      assertions: [],
+      signals: [],
+      relationships: [],
+    });
+  }
+
+  return c.json(livingContext);
 });
 
 // GET /:id/living-context — contact living context graph

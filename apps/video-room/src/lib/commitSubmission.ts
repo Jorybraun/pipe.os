@@ -4,6 +4,7 @@ import type {
   RoomCommitSubmissionRequest,
   RoomWorkspaceChallengePacket,
 } from '../types';
+import { summarizeChallengePacket } from './challengePacketSummary';
 
 export interface CommitSubmissionFormFields {
   narrative: string;
@@ -81,13 +82,22 @@ function githubPathParts(parsed: URL, label: string): string[] {
   return parts;
 }
 
-function validateGithubRepositoryUrl(value: string, label: string): string {
+function normalizedGithubRepositoryUrl(value: string, label: string): string {
   const parsed = parseHttpsUrl(value, label);
-  githubPathParts(parsed, label);
-  return value.trim();
+  const parts = githubPathParts(parsed, label);
+  const [owner, repoWithSuffix] = parts;
+  const repo = repoWithSuffix?.endsWith('.git') ? repoWithSuffix.slice(0, -4) : repoWithSuffix;
+  if (!owner || !repo) {
+    throw new Error(`${label} must include a GitHub owner and repository.`);
+  }
+  return `https://github.com/${owner}/${repo}`;
 }
 
-function validateGithubCommitUrl(value: string, commitSha: string): string {
+function validateGithubRepositoryUrl(value: string, label: string): string {
+  return normalizedGithubRepositoryUrl(value, label);
+}
+
+function commitUrlRepositoryUrl(value: string, commitSha: string): { commitUrl: string; repositoryUrl: string } {
   const parsed = parseHttpsUrl(value, 'Commit URL');
   const parts = githubPathParts(parsed, 'Commit URL');
   const commitIndex = parts.findIndex((part) => part === 'commit');
@@ -95,10 +105,32 @@ function validateGithubCommitUrl(value: string, commitSha: string): string {
   if (!urlSha || urlSha.toLowerCase() !== commitSha.toLowerCase()) {
     throw new Error('Commit URL must point to the submitted commit SHA.');
   }
-  return value.trim();
+  const [owner, repoWithSuffix] = parts;
+  const repo = repoWithSuffix?.endsWith('.git') ? repoWithSuffix.slice(0, -4) : repoWithSuffix;
+  if (!owner || !repo) {
+    throw new Error('Commit URL must include a GitHub owner and repository.');
+  }
+  parsed.search = '';
+  parsed.hash = '';
+  return {
+    commitUrl: parsed.toString(),
+    repositoryUrl: `https://github.com/${owner}/${repo}`,
+  };
 }
 
-function validateGithubPullRequestUrl(value: string): string {
+function validateGithubCommitUrl(
+  value: string,
+  commitSha: string,
+  allowedRepositoryUrls: readonly string[],
+): string {
+  const parsed = commitUrlRepositoryUrl(value, commitSha);
+  if (!new Set(allowedRepositoryUrls).has(parsed.repositoryUrl)) {
+    throw new Error('Commit URL must belong to the assigned repository or declared fork.');
+  }
+  return parsed.commitUrl;
+}
+
+function githubRepositoryUrlFromPullRequestUrl(value: string): string {
   const parsed = parseHttpsUrl(value, 'Upstream PR URL');
   const parts = githubPathParts(parsed, 'Upstream PR URL');
   const pullIndex = parts.findIndex((part) => part === 'pull');
@@ -106,7 +138,28 @@ function validateGithubPullRequestUrl(value: string): string {
   if (!Number.isInteger(prNumber) || prNumber <= 0) {
     throw new Error('Upstream PR URL must point to a GitHub pull request.');
   }
-  return value.trim();
+  const [owner, repoWithSuffix] = parts;
+  const repo = repoWithSuffix?.endsWith('.git') ? repoWithSuffix.slice(0, -4) : repoWithSuffix;
+  if (!owner || !repo) {
+    throw new Error('Upstream PR URL must include a GitHub owner and repository.');
+  }
+  return `https://github.com/${owner}/${repo}`;
+}
+
+function validateGithubPullRequestUrl(value: string, repositoryUrl: string): string {
+  const parsed = parseHttpsUrl(value, 'Upstream PR URL');
+  const parts = githubPathParts(parsed, 'Upstream PR URL');
+  const pullIndex = parts.findIndex((part) => part === 'pull');
+  const prNumber = pullIndex >= 0 ? Number(parts[pullIndex + 1]) : NaN;
+  if (!Number.isInteger(prNumber) || prNumber <= 0) {
+    throw new Error('Upstream PR URL must point to a GitHub pull request.');
+  }
+  if (githubRepositoryUrlFromPullRequestUrl(value) !== repositoryUrl) {
+    throw new Error('Upstream PR URL must belong to the assigned repository.');
+  }
+  parsed.search = '';
+  parsed.hash = '';
+  return parsed.toString();
 }
 
 function validateAssessmentBranchName(branchName: string): string {
@@ -119,6 +172,12 @@ function validateAssessmentBranchName(branchName: string): string {
   return branchName;
 }
 
+function challengePacketLineValue(exactText: string, labels: readonly string[]): string | null {
+  const escapedLabels = labels.map((label) => label.replace(/[.*+?^${}()|[\]\\]/g, '\\$&'));
+  const match = exactText.match(new RegExp(`^\\s*(?:${escapedLabels.join('|')})\\s*:\\s*(.+)$`, 'im'));
+  return match?.[1]?.trim() || null;
+}
+
 function diffMentionsChangedFile(diffText: string, changedFiles: RoomCommitChangedFile[]): boolean {
   const normalizedDiff = diffText.toLowerCase();
   return changedFiles.some((file) => {
@@ -127,31 +186,15 @@ function diffMentionsChangedFile(diffText: string, changedFiles: RoomCommitChang
   });
 }
 
-function firstLocatorString(locator: Record<string, unknown>, keys: string[]): string | null {
-  for (const key of keys) {
-    const value = locator[key];
-    if (typeof value !== 'string') continue;
-    const trimmed = value.trim();
-    if (trimmed) return trimmed;
-  }
-  return null;
-}
-
 export function buildCommitSubmissionDefaults(
   input: CommitSubmissionDefaultInput,
 ): CommitSubmissionDefaults {
-  const packet = input.challengePacket ?? null;
-  const packetRepositoryUrl = packet
-    ? firstLocatorString(packet.locator, ['repositoryUrl', 'githubRepoUrl', 'repoUrl'])
-    : null;
-  const baseCommitSha = packet
-    ? firstLocatorString(packet.locator, [
-      'baseCommitSha',
-      'baseCommit',
-      'base_commit_sha',
-      'base_commit',
-    ])
-    : null;
+  const summary = summarizeChallengePacket(input.challengePacket ?? null);
+  const exactText = input.challengePacket?.exactText ?? '';
+  const packetRepositoryUrl = summary.repositoryUrl
+    ?? challengePacketLineValue(exactText, ['Repo', 'Repository']);
+  const baseCommitSha = summary.baseCommitSha
+    ?? challengePacketLineValue(exactText, ['Base commit', 'Base commit SHA', 'Base']);
   const normalizedBaseCommitSha = baseCommitSha && GIT_COMMIT_SHA_PATTERN.test(baseCommitSha)
     ? baseCommitSha.toLowerCase()
     : '';
@@ -224,7 +267,13 @@ export async function buildCommitSubmissionPayload(
     ? validateGithubRepositoryUrl(forkRepositoryUrl, 'Fork URL')
     : null;
   const commitUrl = normalizeOptionalText(fields.commitUrl);
-  const validatedCommitUrl = commitUrl ? validateGithubCommitUrl(commitUrl, commitSha) : null;
+  const validatedCommitUrl = commitUrl
+    ? validateGithubCommitUrl(
+        commitUrl,
+        commitSha,
+        [validatedRepositoryUrl, validatedForkRepositoryUrl].filter((url): url is string => Boolean(url)),
+      )
+    : null;
   if (changedFiles.length === 0) throw new Error('At least one changed file is required.');
   if (!commitEvidenceText) throw new Error('Commit evidence text is required.');
   if (!commitEvidenceText.toLowerCase().includes(commitSha.toLowerCase())) {
@@ -242,7 +291,7 @@ export async function buildCommitSubmissionPayload(
     throw new Error('Upstream PR URL requires explicit candidate approval.');
   }
   const validatedUpstreamPullRequestUrl = upstreamPullRequestUrl
-    ? validateGithubPullRequestUrl(upstreamPullRequestUrl)
+    ? validateGithubPullRequestUrl(upstreamPullRequestUrl, validatedRepositoryUrl)
     : null;
 
   const sourceRepositoryUrl = validatedForkRepositoryUrl ?? validatedRepositoryUrl;
@@ -271,7 +320,7 @@ export async function buildCommitSubmissionPayload(
         exactText: commitEvidenceText,
         contentHash: await sha256ContentHash(commitEvidenceText),
         metadata: {
-          source: 'win95_commit_submission_window',
+          source: 'assessment_commit_submission_panel',
         },
       },
       {
@@ -286,7 +335,7 @@ export async function buildCommitSubmissionPayload(
         exactText: diffText,
         contentHash: await sha256ContentHash(diffText),
         metadata: {
-          source: 'win95_commit_submission_window',
+          source: 'assessment_commit_submission_panel',
         },
       },
       ...(testEvidenceText
@@ -301,7 +350,7 @@ export async function buildCommitSubmissionPayload(
             exactText: testEvidenceText,
             contentHash: await sha256ContentHash(testEvidenceText),
             metadata: {
-              source: 'win95_commit_submission_window',
+              source: 'assessment_commit_submission_panel',
             },
           }]
         : [{
@@ -316,7 +365,7 @@ export async function buildCommitSubmissionPayload(
             exactText: verificationNotesText,
             contentHash: await sha256ContentHash(verificationNotesText),
             metadata: {
-              source: 'win95_commit_submission_window',
+              source: 'assessment_commit_submission_panel',
               missingEvidence: 'test_run',
             },
           }]),
@@ -334,7 +383,7 @@ export async function buildCommitSubmissionPayload(
             exactText: validatedUpstreamPullRequestUrl,
             contentHash: await sha256ContentHash(validatedUpstreamPullRequestUrl),
             metadata: {
-              source: 'win95_commit_submission_window',
+              source: 'assessment_commit_submission_panel',
               upstreamPrConsent: true,
             },
           }]

@@ -1306,6 +1306,80 @@ describe('fake semantics and fallback removal (HAS-86)', () => {
     expect(explanation.assessmentQuality.verdict).not.toBe('WEAK');
   });
 
+  it('keeps source-backed role-overlap atoms when production resume extraction emits compound terms', () => {
+    const roleConcepts = [
+      'term:dom-id-versus-internal-registry-state',
+      'term:javascript-test-runner-regression-tests',
+      'term:patient-click-thresholds',
+      'term:react',
+      'term:rendered-trigger-id-ownership',
+      'term:typescript',
+      'term:use-popover-root',
+    ];
+    const compiled = compileCandidateMatchQuery({
+      candidateSnapshotId: 'candidate-snapshot',
+      roleSnapshotId: 'role-snapshot',
+      roleGuardrails: {
+        requiredLanguages: [],
+        relevantConcepts: roleConcepts,
+        genericConcepts: [],
+      },
+      selectionConcepts: roleConcepts,
+      signals: [
+        signal('deep-react-typescript', {
+          episodeId: 'episode-resume',
+          evidenceLevel: 'used',
+          evidenceStrength: 0.85,
+          confidence: 0.85,
+          concepts: deriveCandidateSignalFacets({
+            narrative: 'Candidate supplied review evidence for deep React typescript.',
+            exactText: 'Senior frontend platform engineer with deep React and TypeScript experience.',
+            concepts: ['term:deep-react-typescript'],
+          }).concepts,
+        }),
+        signal('use-popover-root', {
+          episodeId: 'episode-resume',
+          evidenceLevel: 'implemented',
+          evidenceStrength: 0.85,
+          confidence: 0.85,
+          concepts: deriveCandidateSignalFacets({
+            narrative: 'Candidate supplied review evidence for click handling usePopoverRoot.',
+            exactText: 'Recently implemented popover trigger click handling in usePopoverRoot for a large component library.',
+            concepts: ['term:click-handling-use-popover-root'],
+          }).concepts,
+        }),
+        signal('click-threshold-impatient', {
+          episodeId: 'episode-resume',
+          evidenceLevel: 'implemented',
+          evidenceStrength: 0.85,
+          confidence: 0.85,
+          concepts: deriveCandidateSignalFacets({
+            narrative: 'Candidate supplied review evidence for click threshold impatient.',
+            exactText: 'Designed a patient click threshold so impatient trigger clicks do not immediately close hover-open popovers.',
+            concepts: ['term:click-threshold-impatient'],
+          }).concepts,
+        }),
+        signal('javascript-test-runner', {
+          episodeId: 'episode-resume',
+          evidenceLevel: 'validated',
+          evidenceStrength: 0.85,
+          confidence: 0.85,
+          concepts: deriveCandidateSignalFacets({
+            narrative: 'Candidate supplied review evidence for javascript test runner.',
+            exactText: 'Comfortable assessing JavaScript test runner regression tests and maintainability trade-offs.',
+            concepts: ['term:javascript-test-runner'],
+          }).concepts,
+        }),
+      ],
+    });
+
+    const atomConcepts = new Set(compiled.query.validationAtoms.flatMap((atom) => atom.concepts));
+    expect(atomConcepts.has('term:use-popover-root')).toBe(true);
+    expect(atomConcepts.has('term:patient-click-threshold')).toBe(true);
+    expect(atomConcepts.has('term:javascript-test-runner')).toBe(true);
+    expect(compiled.query.validationAtoms.length).toBeGreaterThanOrEqual(3);
+  });
+
   it('accepts sparse exact source-backed evidence when a role-backed PR is strongly role-relevant', () => {
     const compiled = compile([
       signal('use-popover-root', {

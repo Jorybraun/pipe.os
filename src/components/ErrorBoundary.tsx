@@ -1,5 +1,9 @@
 import { Component, type ReactNode, type ErrorInfo } from 'react';
 
+const CHUNK_RELOAD_PREFIX = 'pipe:chunk-reload:v1:';
+const CHUNK_ERROR_PATTERN = /failed to fetch dynamically imported module|error loading dynamically imported module|importing a module script failed|chunkloaderror|loading chunk \d+ failed/i;
+const CHUNK_URL_PATTERN = /https?:\/\/[^\s'")]+\/assets\/[^\s'")]+\.js/i;
+
 interface ErrorBoundaryProps {
   children: ReactNode;
   fallback?: ReactNode;
@@ -8,6 +12,29 @@ interface ErrorBoundaryProps {
 interface ErrorBoundaryState {
   hasError: boolean;
   error: Error | null;
+}
+
+export function shouldRecoverFromChunkLoadError(error: Error): boolean {
+  return CHUNK_ERROR_PATTERN.test(error.message);
+}
+
+function chunkReloadKey(error: Error, href: string): string {
+  const chunkUrl = error.message.match(CHUNK_URL_PATTERN)?.[0] ?? href;
+  return `${CHUNK_RELOAD_PREFIX}${chunkUrl}`;
+}
+
+export function recoverFromChunkLoadError(error: Error, win: Window = window): boolean {
+  if (!shouldRecoverFromChunkLoadError(error)) return false;
+  try {
+    const key = chunkReloadKey(error, win.location.href);
+    if (win.sessionStorage.getItem(key) === '1') return false;
+    win.sessionStorage.setItem(key, '1');
+    win.location.reload();
+    return true;
+  } catch (recoveryError) {
+    console.error('[ErrorBoundary] Chunk recovery failed:', recoveryError);
+    return false;
+  }
 }
 
 /**
@@ -23,6 +50,7 @@ export class ErrorBoundary extends Component<ErrorBoundaryProps, ErrorBoundarySt
 
   componentDidCatch(error: Error, info: ErrorInfo): void {
     console.error('[ErrorBoundary] Caught render error:', error, info.componentStack);
+    recoverFromChunkLoadError(error);
   }
 
   render(): ReactNode {

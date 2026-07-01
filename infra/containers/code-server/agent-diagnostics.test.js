@@ -5,7 +5,6 @@ const {
   agentDiagnosticMessage,
   agentDiagnosticSessionEvent,
   agentChatSessionEvent,
-  agentRoomActionSessionEvent,
   agentPromptHandoffDiagnosticMessage,
   boundedDiagnosticText,
   isAgentAuthFailureText,
@@ -80,14 +79,6 @@ describe('agent diagnostics', () => {
       observedAt: '2026-06-27T21:05:00.000Z',
     })).toBeNull();
 
-    expect(agentRoomActionSessionEvent({
-      action: {
-        action: 'open-terminal',
-        source: 'agent_stdout',
-        protocol: 'clippy_room_action_tag',
-      },
-      observedAt: '2026-06-27T21:10:00.000Z',
-    })).toBeNull();
   });
 
   it('builds source-marked agent diagnostic messages', () => {
@@ -120,10 +111,10 @@ describe('agent diagnostics', () => {
       deliveredToAgent: true,
       roomContextStatus: 200,
       roomContextText: 'Candidate opened VS Code with token=room-secret',
-      promptText: 'PIPE room context\nCurrent Clippy chat message: please run the tests TOKEN=hidden',
+      promptText: 'PIPE room context\nCurrent candidate message: please run the tests TOKEN=hidden',
       userMessage: 'please run the tests TOKEN=hidden',
-      browserPromptId: 'workspace-123:guest:prompt:1782603900000:clippy_0123abcd',
-      browserPromptFingerprint: 'clippy_0123abcd',
+      browserPromptId: 'workspace-123:guest:prompt:1782603900000:agent_0123abcd',
+      browserPromptFingerprint: 'agent_0123abcd',
       browserPromptTimestamp: 1782603900000,
       browserPromptLength: 35,
       agentRuntime: 'api',
@@ -137,8 +128,8 @@ describe('agent diagnostics', () => {
       type: 'AGENT_DIAGNOSTIC',
       agent: 'devin',
       status: 'thinking',
-      message: 'devin chat prompt delivered to process stdin.',
-      diagnosticSource: 'agent_prompt_sent',
+      message: 'agent chat prompt delivered to process stdin.',
+      diagnosticSource: 'user_prompt_sent',
       observedAt: '2026-06-27T20:00:00.000Z',
       promptType: 'chat_prompt',
       deliveredToAgent: true,
@@ -150,8 +141,8 @@ describe('agent diagnostics', () => {
       userMessageLength: expect.any(Number),
       userMessageFingerprint: expect.stringMatching(/^sha256:[a-f0-9]{64}$/),
       contextTruncated: false,
-      browserPromptId: 'workspace-123:guest:prompt:1782603900000:clippy_0123abcd',
-      browserPromptFingerprint: 'clippy_0123abcd',
+      browserPromptId: 'workspace-123:guest:prompt:1782603900000:agent_0123abcd',
+      browserPromptFingerprint: 'agent_0123abcd',
       browserPromptTimestamp: 1782603900000,
       browserPromptLength: 35,
       agentRuntime: 'api',
@@ -181,7 +172,7 @@ describe('agent diagnostics', () => {
       type: 'AGENT_DIAGNOSTIC',
       agent: 'devin',
       status: 'idle',
-      message: 'devin context primer was not delivered to process stdin.',
+      message: 'agent context primer was not delivered to process stdin.',
       diagnosticSource: 'agent_context_primer_sent',
       observedAt: '2026-06-27T20:05:00.000Z',
       promptType: 'context_primer',
@@ -200,8 +191,8 @@ describe('agent diagnostics', () => {
       roomContextText: 'Room context with TOKEN=secret',
       promptText: 'Private prompt with TOKEN=secret',
       userMessage: 'Private user message',
-      browserPromptId: 'workspace-123:guest:prompt:1782603900000:clippy_0123abcd',
-      browserPromptFingerprint: 'clippy_0123abcd',
+      browserPromptId: 'workspace-123:guest:prompt:1782603900000:agent_0123abcd',
+      browserPromptFingerprint: 'agent_0123abcd',
       browserPromptTimestamp: 1782603900000,
       browserPromptLength: 20,
       agentRuntime: 'api',
@@ -213,24 +204,24 @@ describe('agent diagnostics', () => {
 
     expect(agentDiagnosticSessionEvent(diagnostic)).toMatchObject({
       type: 'ai_agent_status',
-      text: 'devin chat prompt delivered to process stdin.',
+      text: 'agent chat prompt delivered to process stdin.',
       actor: 'agent',
       properties: {
-        source: 'clippy_agent_bridge',
+        source: 'agent_bridge',
         agent: 'devin',
         status: 'thinking',
-        diagnosticSource: 'agent_prompt_sent',
+        diagnosticSource: 'user_prompt_sent',
         bridgeMessageSource: 'bridge_diagnostic',
         observedAt: '2026-06-27T21:00:00.000Z',
         capturedAtMs: 1782594000000,
-        agentStatusEventId: 'agent-status:devin:1782594000000:bridge_diagnostic:thinking:agent_prompt_sent',
+        agentStatusEventId: 'agent-status:devin:1782594000000:bridge_diagnostic:thinking:user_prompt_sent',
         promptType: 'chat_prompt',
         deliveredToAgent: true,
         promptFingerprint: expect.stringMatching(/^sha256:[a-f0-9]{64}$/),
         roomContextFingerprint: expect.stringMatching(/^sha256:[a-f0-9]{64}$/),
         userMessageFingerprint: expect.stringMatching(/^sha256:[a-f0-9]{64}$/),
-        browserPromptId: 'workspace-123:guest:prompt:1782603900000:clippy_0123abcd',
-        browserPromptFingerprint: 'clippy_0123abcd',
+        browserPromptId: 'workspace-123:guest:prompt:1782603900000:agent_0123abcd',
+        browserPromptFingerprint: 'agent_0123abcd',
         browserPromptTimestamp: 1782603900000,
         browserPromptLength: 20,
         agentRuntime: 'api',
@@ -253,8 +244,8 @@ describe('agent diagnostics', () => {
       text: 'I inspected the failing test.',
       observedAt: '2026-06-27T21:05:00.000Z',
       actionCount: 1,
-      browserPromptId: 'workspace-123:guest:prompt:1782603900000:clippy_0123abcd',
-      browserPromptFingerprint: 'clippy_0123abcd',
+      browserPromptId: 'workspace-123:guest:prompt:1782603900000:agent_0123abcd',
+      browserPromptFingerprint: 'agent_0123abcd',
       browserPromptTimestamp: 1782603900000,
       browserPromptLength: 24,
     })).toEqual({
@@ -262,7 +253,7 @@ describe('agent diagnostics', () => {
       text: 'I inspected the failing test.',
       actor: 'agent',
       properties: {
-        source: 'clippy_agent_bridge',
+        source: 'agent_bridge',
         agent: 'devin',
         bridgeEventType: 'CHAT_RESPONSE',
         bridgeMessageSource: 'agent_stdout',
@@ -272,8 +263,8 @@ describe('agent diagnostics', () => {
         responseFingerprint: 'agent_314a13fc',
         responseLength: 29,
         actionCount: 1,
-        browserPromptId: 'workspace-123:guest:prompt:1782603900000:clippy_0123abcd',
-        browserPromptFingerprint: 'clippy_0123abcd',
+        browserPromptId: 'workspace-123:guest:prompt:1782603900000:agent_0123abcd',
+        browserPromptFingerprint: 'agent_0123abcd',
         browserPromptTimestamp: 1782603900000,
         browserPromptLength: 24,
         bridgePersisted: true,
@@ -287,8 +278,8 @@ describe('agent diagnostics', () => {
       text: 'I inspected the failing test.',
       observedAt: '2026-06-27T21:05:00.000Z',
       bridgeMessageSource: 'agent_api_response',
-      browserPromptId: 'workspace-123:guest:prompt:1782603900000:clippy_0123abcd',
-      browserPromptFingerprint: 'clippy_0123abcd',
+      browserPromptId: 'workspace-123:guest:prompt:1782603900000:agent_0123abcd',
+      browserPromptFingerprint: 'agent_0123abcd',
       browserPromptTimestamp: 1782603900000,
       browserPromptLength: 24,
       agentRuntime: 'api',
@@ -300,94 +291,17 @@ describe('agent diagnostics', () => {
       text: 'I inspected the failing test.',
       actor: 'agent',
       properties: {
-        source: 'clippy_agent_bridge',
+        source: 'agent_bridge',
         agent: 'devin',
         bridgeEventType: 'CHAT_RESPONSE',
         bridgeMessageSource: 'agent_api_response',
-        browserPromptId: 'workspace-123:guest:prompt:1782603900000:clippy_0123abcd',
+        browserPromptId: 'workspace-123:guest:prompt:1782603900000:agent_0123abcd',
         agentRuntime: 'api',
         agentRunProvider: 'devin_api',
         agentRunId: 'devin-api:1234abcd',
         agentRunExternalSessionHash: 'sha256:1234abcd',
       },
     });
-  });
-
-  it('builds source-backed session events for real Devin room action suggestions', () => {
-    expect(agentRoomActionSessionEvent({
-      agent: 'devin',
-      action: {
-        action: 'open-terminal',
-        label: 'Open Terminal',
-        text: 'Open a terminal so we can inspect the failure TOKEN=secret',
-        source: 'agent_stdout',
-        protocol: 'clippy_room_action_tag',
-        autoExecute: false,
-        browserPromptId: 'workspace-123:guest:prompt:1782603900000:clippy_0123abcd',
-        browserPromptFingerprint: 'clippy_0123abcd',
-        browserPromptTimestamp: 1782603900000,
-        browserPromptLength: 24,
-        agentRuntime: 'api',
-        agentRunProvider: 'devin_api',
-        agentRunId: 'devin-api:1234abcd',
-        agentRunExternalSessionHash: 'sha256:1234abcd',
-      },
-      observedAt: '2026-06-27T21:10:00.000Z',
-    })).toEqual({
-      type: 'clippy_action',
-      text: 'devin suggested room action: open-terminal',
-      actor: 'agent',
-      properties: {
-        source: 'clippy_agent_bridge',
-        origin: 'agent',
-        executionStatus: 'suggested',
-        actionId: 'open-terminal',
-        actionSource: 'agent_stdout',
-        actionProtocol: 'clippy_room_action_tag',
-        bridgeEventType: 'ROOM_ACTION',
-        agent: 'devin',
-        agentActionLabel: 'Open Terminal',
-        agentActionText: 'Open a terminal so we can inspect the failure TOKEN=[REDACTED_SECRET]',
-        autoExecute: false,
-        url: null,
-        browserPromptId: 'workspace-123:guest:prompt:1782603900000:clippy_0123abcd',
-        browserPromptFingerprint: 'clippy_0123abcd',
-        browserPromptTimestamp: 1782603900000,
-        browserPromptLength: 24,
-        agentRuntime: 'api',
-        agentRunProvider: 'devin_api',
-        agentRunId: 'devin-api:1234abcd',
-        agentRunExternalSessionHash: 'sha256:1234abcd',
-        observedAt: '2026-06-27T21:10:00.000Z',
-        capturedAtMs: 1782594600000,
-        clippyActionEventId: 'clippy-action:agent:1782594600000:clippy_agent_bridge:agent:suggested:open-terminal',
-        bridgePersisted: true,
-      },
-    });
-  });
-
-  it('does not fabricate source metadata for incomplete room action suggestions', () => {
-    expect(agentRoomActionSessionEvent({
-      agent: 'devin',
-      action: {
-        action: 'open-terminal',
-        label: 'Open Terminal',
-        text: 'Open a terminal so we can inspect the failure.',
-      },
-      observedAt: '2026-06-27T21:10:00.000Z',
-    })).toBeNull();
-
-    expect(agentRoomActionSessionEvent({
-      agent: 'devin',
-      action: {
-        action: 'open-terminal',
-        label: 'Open Terminal',
-        text: 'Open a terminal so we can inspect the failure.',
-        source: 'agent_stdout',
-        protocol: 'bridge_actions_field',
-      },
-      observedAt: '2026-06-27T21:10:00.000Z',
-    })).toBeNull();
   });
 
   it('redacts real Devin stdout before building response ids and lengths', () => {

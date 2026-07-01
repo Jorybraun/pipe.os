@@ -33,7 +33,8 @@ import {
   ensureCandidateLivingContext,
   ensureContactLivingContext,
   loadCandidateLivingContext,
-  loadContactLivingContext,
+  loadCandidateLivingContextSummary,
+  loadContactLivingContextSummary,
   type ContextRecordConceptInput,
   type ContextRecordEntityInput,
   type ContextRecordSourceInput,
@@ -117,6 +118,23 @@ function getProviderConfig(providerId: string, env: Env): ProviderOAuthConfig | 
 
 // ─── Validation ─────────────────────────────────────────────────────────────
 
+const SCHEDULED_INTERVIEWS_DEFAULT_LIMIT = 20;
+const SCHEDULED_INTERVIEWS_MAX_LIMIT = 100;
+
+function parsePositiveInt(value: string | undefined, fallback: number, max: number): number {
+  if (!value) return fallback;
+  const parsed = Number.parseInt(value, 10);
+  if (!Number.isFinite(parsed)) return fallback;
+  return Math.min(max, Math.max(1, parsed));
+}
+
+function parseNonNegativeInt(value: string | undefined, fallback: number): number {
+  if (!value) return fallback;
+  const parsed = Number.parseInt(value, 10);
+  if (!Number.isFinite(parsed)) return fallback;
+  return Math.max(0, parsed);
+}
+
 const connectSchema = z.object({
   providerId: z.enum(['CALENDLY', 'CAL_COM']),
   redirectUri: z.string().url(),
@@ -149,11 +167,21 @@ function isWorkspaceAssessmentInterviewType(value: string | null | undefined): v
     || value === 'OPEN_SOURCE_BUG_FIX';
 }
 
+function isAssessmentOnlyInviteInterviewType(value: string | null | undefined): value is 'CODE_REVIEW' {
+  return value === 'CODE_REVIEW';
+}
+
+function isRoomBackedWorkspaceAssessmentInterviewType(
+  value: string | null | undefined,
+): value is Extract<InterviewTypeValue, 'DEV_CONTAINER_CHALLENGE' | 'OPEN_SOURCE_BUG_FIX'> {
+  return value === 'DEV_CONTAINER_CHALLENGE' || value === 'OPEN_SOURCE_BUG_FIX';
+}
+
 interface ScheduledInterviewRoomFeatures {
   videoEnabled: boolean;
   workspaceEnabled: boolean;
   recordingEnabled: boolean;
-  clippyEnabled: boolean;
+  agentEnabled: boolean;
 }
 
 export function scheduledInterviewRoomFeatures(
@@ -164,7 +192,7 @@ export function scheduledInterviewRoomFeatures(
     videoEnabled: true,
     workspaceEnabled: workspaceAssessment,
     recordingEnabled: true,
-    clippyEnabled: workspaceAssessment,
+    agentEnabled: workspaceAssessment,
   };
 }
 
@@ -225,12 +253,21 @@ type ScheduledAssessmentSetupSource =
   | 'contact_first_invite'
   | 'candidate_id';
 
+type ScheduledAssessmentSetupNextAction =
+  | 'NONE'
+  | 'OPEN_ROOM_OR_WORKSPACE'
+  | 'COLLECT_CANDIDATE_EVIDENCE'
+  | 'RERUN_OR_ENRICH_MATCHING'
+  | 'ATTACH_CHALLENGE_PACKET';
+
 interface ScheduledAssessmentSetupProjection {
   status: ScheduledAssessmentSetupStatus;
   kind: ScheduledAssessmentSetupKind;
   source: ScheduledAssessmentSetupSource;
   blocksPositiveAssessment: boolean;
   message: string | null;
+  nextAction: ScheduledAssessmentSetupNextAction;
+  nextActionLabel: string | null;
   lastDeliveredUrl?: string | null;
   lastDeliveredUrlState?: 'active' | 'claimed' | 'stale' | null;
   lastDeliveredUrlMessage?: string | null;
@@ -289,6 +326,8 @@ function buildScheduledAssessmentSetup(input: {
       source: 'not_workspace_assessment',
       blocksPositiveAssessment: false,
       message: null,
+      nextAction: 'NONE',
+      nextActionLabel: null,
       lastDeliveredUrl: null,
       lastDeliveredUrlState: null,
       lastDeliveredUrlMessage: null,
@@ -302,6 +341,8 @@ function buildScheduledAssessmentSetup(input: {
       source: 'recruiter_manual_override',
       blocksPositiveAssessment: false,
       message: 'A concrete open-source task packet was assigned by the recruiter. PIPE can launch that repo task from the exact base commit without inferring candidate-specific alignment.',
+      nextAction: 'OPEN_ROOM_OR_WORKSPACE',
+      nextActionLabel: 'Open the assessment room and launch the controlled workspace from the assigned base commit.',
       lastDeliveredUrl,
       lastDeliveredUrlState,
       lastDeliveredUrlMessage,
@@ -315,6 +356,8 @@ function buildScheduledAssessmentSetup(input: {
       source: 'matched_repo_id',
       blocksPositiveAssessment: false,
       message: 'PIPE selected a concrete GitHub PR from source-backed candidate evidence and repository demands. Use the assignment as match-fit evidence alongside the candidate review.',
+      nextAction: 'OPEN_ROOM_OR_WORKSPACE',
+      nextActionLabel: 'Open the assessment room and capture the candidate work against the matched PR task.',
       lastDeliveredUrl,
       lastDeliveredUrlState,
       lastDeliveredUrlMessage,
@@ -328,6 +371,8 @@ function buildScheduledAssessmentSetup(input: {
       source: 'recruiter_manual_override',
       blocksPositiveAssessment: false,
       message: 'A concrete GitHub PR was assigned by the recruiter. PIPE can launch that task, but candidate-specific alignment is not inferred from this manual override.',
+      nextAction: 'OPEN_ROOM_OR_WORKSPACE',
+      nextActionLabel: 'Open the assessment room and capture source-backed review or implementation evidence.',
       lastDeliveredUrl,
       lastDeliveredUrlState,
       lastDeliveredUrlMessage,
@@ -341,6 +386,8 @@ function buildScheduledAssessmentSetup(input: {
       source: 'matched_repo_id',
       blocksPositiveAssessment: true,
       message: 'A matched repository exists, but no GitHub PR or task was assigned. Treat this as an assessment setup gap, not candidate evidence.',
+      nextAction: 'ATTACH_CHALLENGE_PACKET',
+      nextActionLabel: 'Attach a source-backed PR/task packet for the matched repo, or ingest more eligible repo challenges before inviting the candidate to work.',
       lastDeliveredUrl,
       lastDeliveredUrlState,
       lastDeliveredUrlMessage,
@@ -354,6 +401,8 @@ function buildScheduledAssessmentSetup(input: {
       source: 'contact_first_invite',
       blocksPositiveAssessment: true,
       message: 'This contact-first assessment invite has no candidate evidence yet. PIPE must ingest source-backed resume, transcript, chat, or interview evidence before selecting a PR task.',
+      nextAction: 'COLLECT_CANDIDATE_EVIDENCE',
+      nextActionLabel: 'Send the intake link or schedule a context call that captures source-backed examples of the candidate’s real engineering work.',
       lastDeliveredUrl,
       lastDeliveredUrlState,
       lastDeliveredUrlMessage,
@@ -366,6 +415,8 @@ function buildScheduledAssessmentSetup(input: {
     source: 'candidate_id',
     blocksPositiveAssessment: true,
     message: 'Candidate evidence is available for matching, but no source-backed PR task has been assigned yet.',
+    nextAction: 'RERUN_OR_ENRICH_MATCHING',
+    nextActionLabel: 'Rerun repo matching after adding role requirements, candidate work evidence, or more eligible source-backed repo challenges.',
     lastDeliveredUrl,
     lastDeliveredUrlState,
     lastDeliveredUrlMessage,
@@ -455,6 +506,7 @@ const createInterviewSchema = z.object({
   challengeInstructions: z.string().trim().min(1).max(5000).optional(),
   challengeSuccessCriteria: z.array(z.string().trim().min(1).max(500)).min(1).max(12).optional(),
   challengeExpectedEvidence: z.array(z.string().trim().min(1).max(500)).min(1).max(12).optional(),
+  challengeVerificationCommand: z.string().trim().min(1).max(1000).optional(),
   recruiterNotes: z.string().trim().max(5000).optional(),
 }).superRefine((value, ctx) => {
   const hasCandidate = Boolean(value.candidateId);
@@ -487,6 +539,7 @@ const createInterviewSchema = z.object({
       value.challengeInstructions,
       value.challengeSuccessCriteria,
       value.challengeExpectedEvidence,
+      value.challengeVerificationCommand,
     ];
     const hasAnyChallengePacketField = challengeFields.some((field) =>
       Array.isArray(field) ? field.length > 0 : Boolean(field));
@@ -551,6 +604,7 @@ const createInterviewSchema = z.object({
     || value.challengeInstructions
     || value.challengeSuccessCriteria?.length
     || value.challengeExpectedEvidence?.length
+    || value.challengeVerificationCommand
   ) {
     ctx.addIssue({
       code: z.ZodIssueCode.custom,
@@ -733,6 +787,34 @@ function assessmentTokenFromUrl(value: string): string | null {
   }
 }
 
+async function optionalScheduledDetailProjection<T>(
+  name: string,
+  promise: Promise<T>,
+  fallback: T,
+  timeoutMs = 4_000,
+): Promise<T> {
+  let timeoutId: ReturnType<typeof setTimeout> | null = null;
+  const guarded = promise.catch((error: unknown) => {
+    console.error('[scheduling/detail] optional projection failed:', {
+      projection: name,
+      error: error instanceof Error ? error.message : String(error),
+    });
+    return fallback;
+  });
+  const timeout = new Promise<T>((resolve) => {
+    timeoutId = setTimeout(() => {
+      console.error('[scheduling/detail] optional projection timed out:', {
+        projection: name,
+        timeoutMs,
+      });
+      resolve(fallback);
+    }, timeoutMs);
+  });
+  const value = await Promise.race([guarded, timeout]);
+  if (timeoutId) clearTimeout(timeoutId);
+  return value;
+}
+
 async function loadScheduledInterviewLivingContext(
   db: D1Database,
   ownerId: string,
@@ -744,7 +826,7 @@ async function loadScheduledInterviewLivingContext(
 ): Promise<InterviewLivingContext> {
   if (interview.candidate_id) {
     await ensureCandidateLivingContext(db, interview.candidate_id);
-    return loadCandidateLivingContext(db, interview.candidate_id);
+    return loadCandidateLivingContextSummary(db, interview.candidate_id);
   }
 
   const recipientEmail = interview.recipient_email?.trim().toLowerCase();
@@ -774,7 +856,7 @@ async function loadScheduledInterviewLivingContext(
   if (!contactId) return null;
 
   await ensureContactLivingContext(db, contactId);
-  return loadContactLivingContext(db, contactId);
+  return loadContactLivingContextSummary(db, contactId);
 }
 
 async function loadLatestDeliveredAssessmentUrl(
@@ -800,7 +882,10 @@ async function loadLatestDeliveredAssessmentUrl(
     const deliveredUrl = metadata.deliveredUrl;
     if (typeof deliveredUrl !== 'string') return null;
     const trimmed = deliveredUrl.trim();
-    if (!trimmed.includes('/assess/')) return null;
+    if (!trimmed.includes('/assess/') && !trimmed.includes('/room/')) return null;
+    if (!trimmed.includes('/assess/')) {
+      return { url: trimmed, state: 'active', message: null };
+    }
 
     const deliveredToken = assessmentTokenFromUrl(trimmed);
     if (!candidateId || !deliveredToken) {
@@ -849,7 +934,7 @@ async function loadCandidateAssessmentInviteLinkFromToken(
   state: 'active';
   message: string | null;
 } | null> {
-  if (!isWorkspaceAssessmentInterviewType(input.interviewType) || !input.candidateId) return null;
+  if (!isAssessmentOnlyInviteInterviewType(input.interviewType) || !input.candidateId) return null;
   const candidate = await db
     .prepare('SELECT invite_token FROM candidates WHERE id = ?1')
     .bind(input.candidateId)
@@ -1206,6 +1291,11 @@ interface ScheduledCodeReviewScoreSummary {
   narrative: string | null;
   strengths: string[];
   growthAreas: string[];
+  provenance: {
+    rubricDimensionCount: number;
+    evidenceItemCount: number;
+    metricCount: number;
+  };
   updatedAt: string;
 }
 
@@ -1217,10 +1307,39 @@ function optionalString(value: unknown): string | undefined {
   return typeof value === 'string' && value.trim().length > 0 ? value.trim() : undefined;
 }
 
+const SCHEDULED_CODE_REVIEW_SOURCE_TEXT_MAX_LENGTH = 240;
+
+function compactScheduledCodeReviewSourceText(value: string | undefined): string | undefined {
+  if (!value) return undefined;
+  const compacted = value.replace(/\s+/g, ' ').trim();
+  if (!compacted) return undefined;
+  if (compacted.length <= SCHEDULED_CODE_REVIEW_SOURCE_TEXT_MAX_LENGTH) return compacted;
+  return `${compacted.slice(0, SCHEDULED_CODE_REVIEW_SOURCE_TEXT_MAX_LENGTH - 1).trimEnd()}...`;
+}
+
 function stringArray(value: unknown): string[] {
   return Array.isArray(value)
     ? value.filter((item): item is string => typeof item === 'string' && item.trim().length > 0)
     : [];
+}
+
+function objectEntryCount(value: unknown): number {
+  if (Array.isArray(value)) return value.length;
+  if (isRecord(value)) return Object.keys(value).length;
+  return 0;
+}
+
+function evidenceItemCount(value: unknown): number {
+  if (value === null || value === undefined) return 0;
+  if (Array.isArray(value)) {
+    return value.reduce((sum, item) => sum + evidenceItemCount(item), 0);
+  }
+  if (isRecord(value)) {
+    const values = Object.values(value);
+    if (values.length === 0) return 0;
+    return values.reduce<number>((sum, item) => sum + evidenceItemCount(item), 0);
+  }
+  return 1;
 }
 
 function numberOrNull(value: unknown): number | null {
@@ -1329,8 +1448,8 @@ function parseScheduledCodeReviewSourceRefs(value: unknown): ScheduledCodeReview
     const sourceRefType = optionalString(item.sourceRefType);
     const sourceRefId = optionalString(item.sourceRefId);
     const sourceSpanId = optionalString(item.sourceSpanId);
-    const locator = optionalString(item.locator);
-    const exactText = optionalString(item.exactText);
+    const locator = compactScheduledCodeReviewSourceText(optionalString(item.locator));
+    const exactText = compactScheduledCodeReviewSourceText(optionalString(item.exactText));
     const contentHash = optionalString(item.contentHash);
     if (sourceRefType) sourceRef.sourceRefType = sourceRefType;
     if (sourceRefId) sourceRef.sourceRefId = sourceRefId;
@@ -1356,8 +1475,8 @@ function parseScheduledCodeReviewRoleSources(value: unknown): ScheduledCodeRevie
     const sourceRefType = optionalString(item.sourceRefType);
     const sourceRefId = optionalString(item.sourceRefId);
     const sourceSpanId = optionalString(item.sourceSpanId);
-    const locator = optionalString(item.locator);
-    const exactText = optionalString(item.exactText);
+    const locator = compactScheduledCodeReviewSourceText(optionalString(item.locator));
+    const exactText = compactScheduledCodeReviewSourceText(optionalString(item.exactText));
     const contentHash = optionalString(item.contentHash);
     if (sourceRefType) roleSource.sourceRefType = sourceRefType;
     if (sourceRefId) roleSource.sourceRefId = sourceRefId;
@@ -2889,6 +3008,11 @@ async function loadScheduledCodeReviewScoreSummary(
     narrative: optionalString(overall.narrative) ?? null,
     strengths: stringArray(overall.strengths),
     growthAreas: stringArray(overall.growth_areas),
+    provenance: {
+      rubricDimensionCount: objectEntryCount(report.dimensions),
+      evidenceItemCount: evidenceItemCount(report.evidence),
+      metricCount: objectEntryCount(report.metrics),
+    },
     updatedAt: row.updated_at,
   };
 }
@@ -2998,6 +3122,7 @@ interface ManualOpenSourceChallengePacketInput {
   instructions: string;
   successCriteria: readonly string[];
   expectedEvidence: readonly string[];
+  verificationCommand?: string | null;
   createdAt: string;
 }
 
@@ -3008,6 +3133,7 @@ interface MatchedOpenSourceChallengePacket {
   pullRequestUrl: string;
   baseCommitSha: string;
   headCommitSha: string;
+  verificationCommand: string;
   title: string;
   instructions: string;
   successCriteria: string[];
@@ -3028,6 +3154,7 @@ function hasManualOpenSourceChallengePacket(input: {
   challengeInstructions: string | undefined;
   challengeSuccessCriteria: readonly string[] | undefined;
   challengeExpectedEvidence: readonly string[] | undefined;
+  challengeVerificationCommand?: string | undefined;
 }): boolean {
   return input.interviewType === 'OPEN_SOURCE_BUG_FIX'
     && Boolean(input.githubRepoUrl)
@@ -3079,6 +3206,10 @@ function matchedPacketExpectedEvidence(): string[] {
   ];
 }
 
+function matchedPacketVerificationCommand(): string {
+  return 'git diff --check HEAD~1 HEAD && git diff --name-only HEAD~1 HEAD';
+}
+
 function materializeMatchedOpenSourcePacket(
   row: {
     id: string;
@@ -3126,6 +3257,7 @@ function materializeMatchedOpenSourcePacket(
     pullRequestUrl: packet.pullRequest.url,
     baseCommitSha,
     headCommitSha,
+    verificationCommand: matchedPacketVerificationCommand(),
     title: packet.pullRequest.title,
     instructions: matchedPacketInstructions(packet),
     successCriteria: matchedPacketSuccessCriteria(packet),
@@ -3202,6 +3334,7 @@ function buildManualOpenSourceChallengeExactText(
     ...(input.githubPrNumber ? [`Pull request: #${input.githubPrNumber}`] : []),
     `Task: ${input.title}`,
     `Instructions: ${input.instructions}`,
+    ...(input.verificationCommand ? [`Verification command: ${input.verificationCommand}`] : []),
     'Success criteria:',
     ...input.successCriteria.map((criterion) => `- ${criterion}`),
     'Expected evidence:',
@@ -3219,6 +3352,7 @@ function buildMatchedOpenSourceChallengeExactText(
     `Pull request URL: ${input.pullRequestUrl}`,
     `Task: ${input.title}`,
     `Instructions: ${input.instructions}`,
+    `Verification command: ${input.verificationCommand}`,
     'Success criteria:',
     ...input.successCriteria.map((criterion) => `- ${criterion}`),
     'Expected evidence:',
@@ -3243,6 +3377,7 @@ async function createManualOpenSourceChallengeAssessmentSession(
       ...(input.githubPrNumber ? { githubPrNumber: input.githubPrNumber } : {}),
       baseCommitSha: input.baseCommitSha.toLowerCase(),
       challengeTitle: input.title,
+      ...(input.verificationCommand ? { verificationCommand: input.verificationCommand } : {}),
     },
   });
   const exactText = buildManualOpenSourceChallengeExactText(input);
@@ -3256,6 +3391,7 @@ async function createManualOpenSourceChallengeAssessmentSession(
       repositoryUrl: input.repositoryUrl,
       ...(input.githubPrNumber ? { githubPrNumber: input.githubPrNumber } : {}),
       baseCommitSha: input.baseCommitSha.toLowerCase(),
+      ...(input.verificationCommand ? { verificationCommand: input.verificationCommand } : {}),
     },
     exactText,
     contentHash,
@@ -3280,6 +3416,7 @@ async function createManualOpenSourceChallengeAssessmentSession(
       instructions: input.instructions,
       successCriteria: [...input.successCriteria],
       expectedEvidence: [...input.expectedEvidence],
+      ...(input.verificationCommand ? { verificationCommand: input.verificationCommand } : {}),
     },
     occurredAt: input.createdAt,
     sourceRefs: [sourceRef],
@@ -3312,6 +3449,7 @@ async function createMatchedOpenSourceChallengeAssessmentSession(
       repositoryUrl: input.packet.repositoryUrl,
       githubPrNumber: input.packet.githubPrNumber,
       baseCommitSha: input.packet.baseCommitSha,
+      verificationCommand: input.packet.verificationCommand,
       challengePacketId: input.packet.packetId,
       repoSnapshotId: input.packet.repoSnapshotId,
       challengeTitle: input.packet.title,
@@ -3330,6 +3468,7 @@ async function createMatchedOpenSourceChallengeAssessmentSession(
       pullRequestUrl: input.packet.pullRequestUrl,
       baseCommitSha: input.packet.baseCommitSha,
       headCommitSha: input.packet.headCommitSha,
+      verificationCommand: input.packet.verificationCommand,
       repoSnapshotId: input.packet.repoSnapshotId,
     },
     exactText,
@@ -3356,6 +3495,7 @@ async function createMatchedOpenSourceChallengeAssessmentSession(
       githubPrNumber: input.packet.githubPrNumber,
       pullRequestUrl: input.packet.pullRequestUrl,
       baseCommitSha: input.packet.baseCommitSha,
+      verificationCommand: input.packet.verificationCommand,
       title: input.packet.title,
       successCriteria: input.packet.successCriteria,
       expectedEvidence: input.packet.expectedEvidence,
@@ -3410,9 +3550,8 @@ async function ensureRecipientContact(
 
 /**
  * Ensure a standalone (pipeline-free) candidate exists for the given email,
- * returning the candidate id + invite token. Used for workspace-backed
- * assessments so the email can include an assessment link that authenticates
- * the candidate through /assess/:token.
+ * returning the candidate id + invite token. Used for assessment-only
+ * CODE_REVIEW handoffs so the email can include an /assess/:token link.
  */
 async function ensureStandaloneCandidateForInterview(
   db: D1Database,
@@ -3508,7 +3647,7 @@ async function ensureScheduledInterviewRoomLinks(
       `INSERT INTO meetings
        (id, owner_id, title, description, status, scheduled_at, meeting_type,
         scheduled_interview_id, scheduling_provider, external_event_id,
-        video_enabled, workspace_enabled, recording_enabled, clippy_enabled,
+        video_enabled, workspace_enabled, recording_enabled, agent_enabled,
         created_at, updated_at)
        VALUES (?1, ?2, ?3, ?4, 'SCHEDULED', ?5, 'INTERVIEW', ?6, ?7, ?8, ?9, ?10, ?11, ?12, ?13, ?13)`,
     ).bind(
@@ -3523,7 +3662,7 @@ async function ensureScheduledInterviewRoomLinks(
       features.videoEnabled ? 1 : 0,
       features.workspaceEnabled ? 1 : 0,
       features.recordingEnabled ? 1 : 0,
-      features.clippyEnabled ? 1 : 0,
+      features.agentEnabled ? 1 : 0,
       now,
     ).run();
     meeting = { id: meetingId };
@@ -3547,7 +3686,7 @@ async function ensureScheduledInterviewRoomLinks(
               video_enabled = ?6,
               workspace_enabled = ?7,
               recording_enabled = ?8,
-              clippy_enabled = ?9,
+              agent_enabled = ?9,
               updated_at = ?10
         WHERE id = ?11`,
     ).bind(
@@ -3559,7 +3698,7 @@ async function ensureScheduledInterviewRoomLinks(
       features.videoEnabled ? 1 : 0,
       features.workspaceEnabled ? 1 : 0,
       features.recordingEnabled ? 1 : 0,
-      features.clippyEnabled ? 1 : 0,
+      features.agentEnabled ? 1 : 0,
       now,
       meeting.id,
     ).run();
@@ -3608,11 +3747,27 @@ function lineCount(value: string): number {
   return Math.max(1, value.split('\n').length);
 }
 
+const tableExistsCache = new WeakMap<D1Database, Map<string, Promise<boolean>>>();
+
 async function tableExists(db: D1Database, tableName: string): Promise<boolean> {
-  const row = await db.prepare(
+  let dbCache = tableExistsCache.get(db);
+  if (!dbCache) {
+    dbCache = new Map<string, Promise<boolean>>();
+    tableExistsCache.set(db, dbCache);
+  }
+  const cached = dbCache.get(tableName);
+  if (cached) return cached;
+
+  const exists = db.prepare(
     `SELECT name FROM sqlite_master WHERE type = 'table' AND name = ?1`,
-  ).bind(tableName).first<{ name: string }>();
-  return Boolean(row);
+  ).bind(tableName).first<{ name: string }>()
+    .then((row) => Boolean(row))
+    .catch((error: unknown) => {
+      dbCache?.delete(tableName);
+      throw error;
+    });
+  dbCache.set(tableName, exists);
+  return exists;
 }
 
 async function hasScheduledAssessmentProgressSchema(db: D1Database): Promise<boolean> {
@@ -3653,6 +3808,8 @@ function contactFirstInterviewSourceText(input: {
     `Assessment setup source: ${input.assessmentSetup.source}`,
     `Assessment setup blocks positive assessment: ${input.assessmentSetup.blocksPositiveAssessment ? 'yes' : 'no'}`,
     `Assessment setup message: ${input.assessmentSetup.message ?? 'none'}`,
+    `Assessment setup next action: ${input.assessmentSetup.nextAction}`,
+    `Assessment setup next action label: ${input.assessmentSetup.nextActionLabel ?? 'none'}`,
     `Scheduled at: ${input.scheduledAt ?? 'unscheduled'}`,
     `Scheduling provider: ${input.schedulingProvider ?? 'none'}`,
     `Scheduling URL: ${input.schedulingUrl ?? 'none'}`,
@@ -3699,6 +3856,8 @@ async function persistContactFirstInterviewInviteContext(
       assessmentSetupKind: input.assessmentSetup.kind,
       assessmentSetupSource: input.assessmentSetup.source,
       assessmentSetupBlocksPositiveAssessment: input.assessmentSetup.blocksPositiveAssessment,
+      assessmentSetupNextAction: input.assessmentSetup.nextAction,
+      assessmentSetupNextActionLabel: input.assessmentSetup.nextActionLabel,
       recruiterNotes: input.recruiterNotes ?? null,
     },
   });
@@ -3764,6 +3923,8 @@ async function persistContactFirstInterviewInviteContext(
       assessmentSetupSource: input.assessmentSetup.source,
       assessmentSetupBlocksPositiveAssessment: input.assessmentSetup.blocksPositiveAssessment,
       assessmentSetupMessage: input.assessmentSetup.message,
+      assessmentSetupNextAction: input.assessmentSetup.nextAction,
+      assessmentSetupNextActionLabel: input.assessmentSetup.nextActionLabel,
       recruiterNotes: input.recruiterNotes ?? null,
     },
     confidence: 1,
@@ -4037,7 +4198,7 @@ function inviteDeliverySourceText(input: {
   recipientEmail: string;
   subject: string;
   deliveredUrl: string;
-  roomUrl: string;
+  roomUrl: string | null;
   customMessage: string | null;
   emailSent: boolean;
   providerMessageId: string | null;
@@ -4048,7 +4209,7 @@ function inviteDeliverySourceText(input: {
     `Recipient email: ${input.recipientEmail}`,
     `Subject: ${input.subject}`,
     `Delivered URL: ${input.deliveredUrl}`,
-    `Room URL: ${input.roomUrl}`,
+    `Room URL: ${input.roomUrl ?? 'none'}`,
     `Custom message: ${input.customMessage ?? 'none'}`,
     `Email sent: ${input.emailSent ? 'yes' : 'no'}`,
     `Provider message id: ${input.providerMessageId ?? 'none'}`,
@@ -4062,11 +4223,11 @@ async function persistScheduledInterviewInviteDeliveryContext(
     contactId: string;
     ownerId: string;
     interviewId: string;
-    meetingId: string;
+    meetingId: string | null;
     recipientEmail: string;
     subject: string;
     deliveredUrl: string;
-    roomUrl: string;
+    roomUrl: string | null;
     customMessage: string | null;
     emailSent: boolean;
     providerMessageId: string | null;
@@ -4165,11 +4326,13 @@ async function persistScheduledInterviewInviteDeliveryContext(
         entityId: input.interviewId,
         relationship: 'source_event',
       },
-      {
-        entityType: 'meeting',
-        entityId: input.meetingId,
-        relationship: 'delivery_link_target',
-      },
+      ...(input.meetingId
+        ? [{
+            entityType: 'meeting',
+            entityId: input.meetingId,
+            relationship: 'delivery_link_target',
+          }]
+        : []),
       {
         entityType: 'contact',
         entityId: input.contactId,
@@ -4809,6 +4972,12 @@ schedulingAuth.get('/event-types', async (c) => {
 schedulingAuth.get('/interviews', async (c) => {
   const userId = c.var.userId;
   const db = c.env.DB;
+  const limit = parsePositiveInt(
+    c.req.query('limit'),
+    SCHEDULED_INTERVIEWS_DEFAULT_LIMIT,
+    SCHEDULED_INTERVIEWS_MAX_LIMIT,
+  );
+  const offset = parseNonNegativeInt(c.req.query('offset'), 0);
   const hasWorkspaceSessions = await tableExists(db, 'dev_container_sessions');
   const workspaceSessionSelect = hasWorkspaceSessions
     ? `dcs.status AS workspace_status,
@@ -4833,6 +5002,12 @@ schedulingAuth.get('/interviews', async (c) => {
           LIMIT 1
        )`
     : '';
+
+  const countRow = await db
+    .prepare('SELECT COUNT(*) AS total FROM scheduled_interviews WHERE owner_id = ?')
+    .bind(userId)
+    .first<{ total: number }>();
+  const total = countRow?.total ?? 0;
 
   const result = await db
     .prepare(
@@ -4877,9 +5052,10 @@ schedulingAuth.get('/interviews', async (c) => {
        LEFT JOIN meeting_rooms mr ON mr.meeting_id = m.id
        ${workspaceSessionJoin}
        WHERE si.owner_id = ?
-       ORDER BY si.scheduled_at ASC`
+       ORDER BY si.created_at DESC, si.id ASC
+       LIMIT ? OFFSET ?`
     )
-    .bind(userId)
+    .bind(userId, limit, offset)
     .all<{
       id: string;
       candidate_id: string | null;
@@ -4981,7 +5157,18 @@ schedulingAuth.get('/interviews', async (c) => {
     };
   });
 
-  return c.json({ interviews });
+  const nextOffset = offset + rows.length < total ? offset + rows.length : null;
+
+  return c.json({
+    interviews,
+    pagination: {
+      total,
+      limit,
+      offset,
+      nextOffset,
+      hasMore: nextOffset !== null,
+    },
+  });
 });
 
 // GET /interviews/:id — scheduled interview detail
@@ -5057,7 +5244,9 @@ schedulingAuth.get('/interviews/:id', async (c) => {
 
   if (!interview) return apiError(c, 'NOT_FOUND', 'Interview not found.');
 
-  const transcriptArtifact = await db
+  const transcriptArtifactPromise = optionalScheduledDetailProjection(
+    'transcriptArtifact',
+    db
     .prepare(
       `SELECT id, scheduled_interview_id, status, transcript_json, error_message,
               created_at, updated_at
@@ -5075,98 +5264,152 @@ schedulingAuth.get('/interviews/:id', async (c) => {
       error_message: string | null;
       created_at: string;
       updated_at: string;
-    }>();
-
-  const hasWorkspaceSessions = await tableExists(db, 'dev_container_sessions');
-  const workspaceSessionSelect = hasWorkspaceSessions
-    ? `dcs.status AS workspace_status,
-              dcs.error_message AS workspace_error_message,
-              dcs.expires_at AS workspace_expires_at,
-              dcs.updated_at AS workspace_updated_at,
-              dcs.repo_git_url AS workspace_repo_git_url,
-              dcs.base_commit_sha AS workspace_base_commit_sha`
-    : `NULL AS workspace_status,
-              NULL AS workspace_error_message,
-              NULL AS workspace_expires_at,
-              NULL AS workspace_updated_at,
-              NULL AS workspace_repo_git_url,
-              NULL AS workspace_base_commit_sha`;
-  const workspaceSessionJoin = hasWorkspaceSessions
-    ? `LEFT JOIN dev_container_sessions dcs ON dcs.id = (
-         SELECT latest_dcs.id
-           FROM dev_container_sessions latest_dcs
-          WHERE latest_dcs.meeting_id = m.id
-             OR latest_dcs.meeting_room_id = mr.id
-          ORDER BY latest_dcs.updated_at DESC, latest_dcs.created_at DESC
-          LIMIT 1
-       )`
-    : '';
-
-  const linkedMeeting = await db
-    .prepare(
-      `SELECT m.id, m.title, m.description, m.status, m.scheduled_at,
-              m.started_at, m.ended_at, m.duration_secs, m.meeting_url,
-              m.meeting_type, m.scheduling_provider, m.external_event_id,
-              m.transcript_status, m.transcript_summary,
-              m.transcript_json, m.transcript_analysis_json, m.transcript_error,
-              m.recording_r2_key, m.created_at, m.updated_at,
-              mr.id AS room_id, mr.session_id, mr.status AS room_status,
-              ${workspaceSessionSelect}
-       FROM meetings m
-       LEFT JOIN meeting_rooms mr ON mr.meeting_id = m.id
-       ${workspaceSessionJoin}
-       WHERE m.scheduled_interview_id = ? AND m.owner_id = ?
-       ORDER BY m.created_at DESC
-       LIMIT 1`
-    )
-    .bind(id, userId)
-    .first<{
-      id: string;
-      title: string;
-      description: string | null;
-      status: string;
-      scheduled_at: string | null;
-      started_at: string | null;
-      ended_at: string | null;
-      duration_secs: number | null;
-      meeting_url: string | null;
-      meeting_type: string;
-      scheduling_provider: string | null;
-      external_event_id: string | null;
-      transcript_status: string;
-      transcript_summary: string | null;
-      transcript_json: string | null;
-      transcript_analysis_json: string | null;
-      transcript_error: string | null;
-      recording_r2_key: string | null;
-      created_at: string;
-      updated_at: string;
-      room_id: string | null;
-      session_id: string | null;
-      room_status: string | null;
-      workspace_status: string | null;
-      workspace_error_message: string | null;
-      workspace_expires_at: string | null;
-      workspace_updated_at: string | null;
-      workspace_repo_git_url: string | null;
-      workspace_base_commit_sha: string | null;
-    }>();
-
-  const livingContext = await loadScheduledInterviewLivingContext(db, userId, interview);
-  const relatedEvidenceInterviews = await loadRelatedEvidenceInterviews(
-    db,
-    userId,
-    interview.id,
-    livingContext,
+    }>(),
+    null,
   );
-  const codeReviewMatch = await loadScheduledCodeReviewMatchDetail(db, interview);
-  const codeReviewScore = await loadScheduledCodeReviewScoreSummary(db, interview);
-  const assessmentProgress = await loadScheduledAssessmentProgress(db, interview.id);
-  const assessmentInviteLink = await loadLatestDeliveredAssessmentUrl(db, interview.id, interview.candidate_id)
-    ?? await loadCandidateAssessmentInviteLinkFromToken(db, c.env, {
-      interviewType: interview.interview_type,
-      candidateId: interview.candidate_id,
-    });
+
+  const linkedMeetingPromise = optionalScheduledDetailProjection('linkedMeeting', (async () => {
+    const hasWorkspaceSessions = await tableExists(db, 'dev_container_sessions');
+    const workspaceSessionSelect = hasWorkspaceSessions
+      ? `dcs.status AS workspace_status,
+                dcs.error_message AS workspace_error_message,
+                dcs.expires_at AS workspace_expires_at,
+                dcs.updated_at AS workspace_updated_at,
+                dcs.repo_git_url AS workspace_repo_git_url,
+                dcs.base_commit_sha AS workspace_base_commit_sha`
+      : `NULL AS workspace_status,
+                NULL AS workspace_error_message,
+                NULL AS workspace_expires_at,
+                NULL AS workspace_updated_at,
+                NULL AS workspace_repo_git_url,
+                NULL AS workspace_base_commit_sha`;
+    const workspaceSessionJoin = hasWorkspaceSessions
+      ? `LEFT JOIN dev_container_sessions dcs ON dcs.id = (
+           SELECT latest_dcs.id
+             FROM dev_container_sessions latest_dcs
+            WHERE latest_dcs.meeting_id = m.id
+               OR latest_dcs.meeting_room_id = mr.id
+            ORDER BY latest_dcs.updated_at DESC, latest_dcs.created_at DESC
+            LIMIT 1
+         )`
+      : '';
+
+    return db
+      .prepare(
+        `SELECT m.id, m.title, m.description, m.status, m.scheduled_at,
+                m.started_at, m.ended_at, m.duration_secs, m.meeting_url,
+                m.meeting_type, m.scheduling_provider, m.external_event_id,
+                m.transcript_status, m.transcript_summary,
+                m.transcript_json, m.transcript_analysis_json, m.transcript_error,
+                m.recording_r2_key, m.created_at, m.updated_at,
+                mr.id AS room_id, mr.session_id, mr.status AS room_status,
+                ${workspaceSessionSelect}
+         FROM meetings m
+         LEFT JOIN meeting_rooms mr ON mr.meeting_id = m.id
+         ${workspaceSessionJoin}
+         WHERE m.scheduled_interview_id = ? AND m.owner_id = ?
+         ORDER BY m.created_at DESC
+         LIMIT 1`
+      )
+      .bind(id, userId)
+      .first<{
+        id: string;
+        title: string;
+        description: string | null;
+        status: string;
+        scheduled_at: string | null;
+        started_at: string | null;
+        ended_at: string | null;
+        duration_secs: number | null;
+        meeting_url: string | null;
+        meeting_type: string;
+        scheduling_provider: string | null;
+        external_event_id: string | null;
+        transcript_status: string;
+        transcript_summary: string | null;
+        transcript_json: string | null;
+        transcript_analysis_json: string | null;
+        transcript_error: string | null;
+        recording_r2_key: string | null;
+        created_at: string;
+        updated_at: string;
+        room_id: string | null;
+        session_id: string | null;
+        room_status: string | null;
+        workspace_status: string | null;
+        workspace_error_message: string | null;
+        workspace_expires_at: string | null;
+        workspace_updated_at: string | null;
+        workspace_repo_git_url: string | null;
+        workspace_base_commit_sha: string | null;
+      }>();
+  })(), null);
+
+  const livingContextPromise = optionalScheduledDetailProjection(
+    'livingContext',
+    loadScheduledInterviewLivingContext(db, userId, interview),
+    null,
+  );
+  const relatedEvidenceInterviewsPromise = livingContextPromise.then((livingContext) =>
+    optionalScheduledDetailProjection(
+      'relatedEvidenceInterviews',
+      loadRelatedEvidenceInterviews(
+        db,
+        userId,
+        interview.id,
+        livingContext,
+      ),
+      [],
+    )
+  );
+  const codeReviewMatchPromise = optionalScheduledDetailProjection(
+    'codeReviewMatch',
+    loadScheduledCodeReviewMatchDetail(db, interview),
+    null,
+    6_000,
+  );
+  const codeReviewScorePromise = optionalScheduledDetailProjection(
+    'codeReviewScore',
+    loadScheduledCodeReviewScoreSummary(db, interview),
+    null,
+    6_000,
+  );
+  const assessmentProgressPromise = optionalScheduledDetailProjection(
+    'assessmentProgress',
+    loadScheduledAssessmentProgress(db, interview.id),
+    null,
+  );
+  const assessmentInviteLinkPromise = (async () =>
+    await loadLatestDeliveredAssessmentUrl(db, interview.id, interview.candidate_id)
+      ?? await loadCandidateAssessmentInviteLinkFromToken(db, c.env, {
+        interviewType: interview.interview_type,
+        candidateId: interview.candidate_id,
+      }))();
+  const safeAssessmentInviteLinkPromise = optionalScheduledDetailProjection(
+    'assessmentInviteLink',
+    assessmentInviteLinkPromise,
+    null,
+  );
+
+  const [
+    transcriptArtifact,
+    linkedMeeting,
+    livingContext,
+    relatedEvidenceInterviews,
+    codeReviewMatch,
+    codeReviewScore,
+    assessmentProgress,
+    assessmentInviteLink,
+  ] = await Promise.all([
+    transcriptArtifactPromise,
+    linkedMeetingPromise,
+    livingContextPromise,
+    relatedEvidenceInterviewsPromise,
+    codeReviewMatchPromise,
+    codeReviewScorePromise,
+    assessmentProgressPromise,
+    safeAssessmentInviteLinkPromise,
+  ]);
 
   return c.json({
     interview: {
@@ -5516,6 +5759,7 @@ schedulingAuth.post('/interviews', async (c) => {
     challengeInstructions,
     challengeSuccessCriteria,
     challengeExpectedEvidence,
+    challengeVerificationCommand,
     recruiterNotes,
   } = parsed.data;
 
@@ -5572,6 +5816,7 @@ schedulingAuth.post('/interviews', async (c) => {
     challengeInstructions,
     challengeSuccessCriteria,
     challengeExpectedEvidence,
+    challengeVerificationCommand,
   });
   if (hasManualOpenSourceTaskPacket) {
     const commitVerification = await verifyGitHubCommitReachable({
@@ -5674,6 +5919,7 @@ schedulingAuth.post('/interviews', async (c) => {
       instructions: challengeInstructions!,
       successCriteria: challengeSuccessCriteria!,
       expectedEvidence: challengeExpectedEvidence!,
+      verificationCommand: challengeVerificationCommand ?? null,
       createdAt: now,
     });
   } else if (matchedOpenSourceChallengePacket && typeof matchedRepoId === 'number') {
@@ -6155,14 +6401,27 @@ schedulingAuth.post('/interviews/:id/invite', async (c) => {
 
   if (!interview) return apiError(c, 'NOT_FOUND', 'Interview not found.');
 
-  const roomLinks = await ensureScheduledInterviewRoomLinks(
-    db,
-    userId,
-    c.env,
-    interview,
-    email,
-  );
-  const meetingUrl = roomLinks.guestUrl;
+  const workspaceAssessment = isWorkspaceAssessmentInterviewType(interview.interview_type);
+  const needsAssessmentLink = isAssessmentOnlyInviteInterviewType(interview.interview_type);
+  const needsRoomBackedWorkspace = isRoomBackedWorkspaceAssessmentInterviewType(interview.interview_type);
+  const inviteRecipientName = (
+    interview.candidate_name
+    ?? interview.recipient_name
+    ?? email.split('@')[0]
+    ?? 'Candidate'
+  ).trim();
+  const roomLinks = needsAssessmentLink
+    ? null
+    : await ensureScheduledInterviewRoomLinks(
+        db,
+        userId,
+        c.env,
+        interview,
+        email,
+      );
+  const contactId = roomLinks?.contactId
+    ?? await ensureRecipientContact(db, userId, { name: inviteRecipientName, email });
+  const meetingUrl = roomLinks?.guestUrl ?? null;
   const recipientNameForScheduling = interview.candidate_name
     ?? interview.recipient_name
     ?? null;
@@ -6181,20 +6440,15 @@ schedulingAuth.post('/interviews/:id/invite', async (c) => {
       })
     : null;
 
-  // For workspace-backed assessments, ensure a standalone
+  // For assessment-only CODE_REVIEW handoffs, ensure a standalone
   // candidate exists so the email includes an assessment link that authenticates
-  // the candidate and routes them to the code review / dev container challenge.
-  const needsAssessmentLink = isWorkspaceAssessmentInterviewType(interview.interview_type);
+  // the candidate and routes them to the CODE_REVIEW runtime.
   let assessUrl: string | null = null;
   if (needsAssessmentLink && !interview.candidate_id) {
-    const recipientName = interview.candidate_name
-      ?? interview.recipient_name
-      ?? email.split('@')[0]
-      ?? 'Candidate';
     const { inviteToken } = await ensureStandaloneCandidateForInterview(
       db,
       userId,
-      { name: recipientName, email },
+      { name: inviteRecipientName, email },
       interview.id,
     );
     const baseUrl = c.env.APP_BASE_URL ?? 'https://pipe.build';
@@ -6216,14 +6470,28 @@ schedulingAuth.post('/interviews/:id/invite', async (c) => {
     }
   }
 
-  // For assessment-type interviews, the candidate should land on the assess URL
-  // (which renders the code review / dev container challenge), not the video room.
-  // Assessment links also take precedence over any stale scheduling URL that may
-  // exist on the row from earlier flows.
-  const effectiveSchedulingInviteUrl = needsAssessmentLink ? null : schedulingInviteUrl;
+  // Assessment-specific interviews should not deliver stale provider scheduling
+  // URLs. CODE_REVIEW uses /assess; room-backed workspace assessments use the
+  // generated room URL.
+  const effectiveSchedulingInviteUrl = workspaceAssessment ? null : schedulingInviteUrl;
   const deliveredUrl = assessUrl ?? effectiveSchedulingInviteUrl ?? meetingUrl;
-  const inviteVerb = needsAssessmentLink ? 'start your assessment' : effectiveSchedulingInviteUrl ? 'schedule an interview' : 'join a video call';
-  const inviteCta = needsAssessmentLink ? 'START ASSESSMENT' : effectiveSchedulingInviteUrl ? 'SCHEDULE INTERVIEW' : 'JOIN VIDEO CALL';
+  if (!deliveredUrl) {
+    return apiError(c, 'INTERNAL_ERROR', 'Could not create an invite link for this interview.');
+  }
+  const inviteVerb = needsAssessmentLink
+    ? 'start your assessment'
+    : needsRoomBackedWorkspace
+      ? 'join your assessment workspace'
+      : effectiveSchedulingInviteUrl
+        ? 'schedule an interview'
+        : 'join a video call';
+  const inviteCta = needsAssessmentLink
+    ? 'START ASSESSMENT'
+    : needsRoomBackedWorkspace
+      ? 'JOIN ASSESSMENT WORKSPACE'
+      : effectiveSchedulingInviteUrl
+        ? 'SCHEDULE INTERVIEW'
+        : 'JOIN VIDEO CALL';
   const linkLabel = effectiveSchedulingInviteUrl ? 'Scheduling link' : 'Link';
 
   const scheduledTime = interview.scheduled_at
@@ -6279,7 +6547,7 @@ schedulingAuth.post('/interviews/:id/invite', async (c) => {
   const rawPipelineTitle = interview.pipeline_title ?? 'Interview';
   const subjectPrefix = effectiveSchedulingInviteUrl
     ? 'Schedule interview'
-    : needsAssessmentLink
+    : workspaceAssessment
       ? 'Assessment invitation'
       : 'Video call invitation';
   const subject = scheduledTime
@@ -6297,10 +6565,10 @@ schedulingAuth.post('/interviews/:id/invite', async (c) => {
       .bind(now, now, id)
       .run();
     await persistScheduledInterviewInviteDeliveryContext(db, {
-      contactId: roomLinks.contactId,
+      contactId,
       ownerId: userId,
       interviewId: id,
-      meetingId: roomLinks.meetingId,
+      meetingId: roomLinks?.meetingId ?? null,
       recipientEmail: email.trim().toLowerCase(),
       subject,
       deliveredUrl,
@@ -6316,13 +6584,15 @@ schedulingAuth.post('/interviews/:id/invite', async (c) => {
       meetingUrl,
       schedulingUrl: effectiveSchedulingInviteUrl,
       deliveredUrl,
-      room: {
-        id: roomLinks.roomId,
-        sessionId: roomLinks.sessionId,
-        hostUrl: roomLinks.hostUrl,
-        guestUrl: roomLinks.guestUrl,
-        expiresAt: roomLinks.expiresAt,
-      },
+      room: roomLinks
+        ? {
+            id: roomLinks.roomId,
+            sessionId: roomLinks.sessionId,
+            hostUrl: roomLinks.hostUrl,
+            guestUrl: roomLinks.guestUrl,
+            expiresAt: roomLinks.expiresAt,
+          }
+        : null,
     });
   }
 
@@ -6345,10 +6615,10 @@ schedulingAuth.post('/interviews/:id/invite', async (c) => {
       .bind(now, now, id)
       .run();
     await persistScheduledInterviewInviteDeliveryContext(db, {
-      contactId: roomLinks.contactId,
+      contactId,
       ownerId: userId,
       interviewId: id,
-      meetingId: roomLinks.meetingId,
+      meetingId: roomLinks?.meetingId ?? null,
       recipientEmail: email.trim().toLowerCase(),
       subject,
       deliveredUrl,
@@ -6365,13 +6635,15 @@ schedulingAuth.post('/interviews/:id/invite', async (c) => {
       meetingUrl,
       schedulingUrl: effectiveSchedulingInviteUrl,
       deliveredUrl,
-      room: {
-        id: roomLinks.roomId,
-        sessionId: roomLinks.sessionId,
-        hostUrl: roomLinks.hostUrl,
-        guestUrl: roomLinks.guestUrl,
-        expiresAt: roomLinks.expiresAt,
-      },
+      room: roomLinks
+        ? {
+            id: roomLinks.roomId,
+            sessionId: roomLinks.sessionId,
+            hostUrl: roomLinks.hostUrl,
+            guestUrl: roomLinks.guestUrl,
+            expiresAt: roomLinks.expiresAt,
+          }
+        : null,
     });
   }
 
@@ -6385,10 +6657,10 @@ schedulingAuth.post('/interviews/:id/invite', async (c) => {
       .bind(now, now, id)
       .run();
     await persistScheduledInterviewInviteDeliveryContext(db, {
-      contactId: roomLinks.contactId,
+      contactId,
       ownerId: userId,
       interviewId: id,
-      meetingId: roomLinks.meetingId,
+      meetingId: roomLinks?.meetingId ?? null,
       recipientEmail: email.trim().toLowerCase(),
       subject,
       deliveredUrl,
@@ -6404,13 +6676,15 @@ schedulingAuth.post('/interviews/:id/invite', async (c) => {
       meetingUrl,
       schedulingUrl: effectiveSchedulingInviteUrl,
       deliveredUrl,
-      room: {
-        id: roomLinks.roomId,
-        sessionId: roomLinks.sessionId,
-        hostUrl: roomLinks.hostUrl,
-        guestUrl: roomLinks.guestUrl,
-        expiresAt: roomLinks.expiresAt,
-      },
+      room: roomLinks
+        ? {
+            id: roomLinks.roomId,
+            sessionId: roomLinks.sessionId,
+            hostUrl: roomLinks.hostUrl,
+            guestUrl: roomLinks.guestUrl,
+            expiresAt: roomLinks.expiresAt,
+          }
+        : null,
     });
   }
 
@@ -6427,10 +6701,10 @@ schedulingAuth.post('/interviews/:id/invite', async (c) => {
   }
 
   await persistScheduledInterviewInviteDeliveryContext(db, {
-    contactId: roomLinks.contactId,
+    contactId,
     ownerId: userId,
     interviewId: id,
-    meetingId: roomLinks.meetingId,
+    meetingId: roomLinks?.meetingId ?? null,
     recipientEmail: email.trim().toLowerCase(),
     subject,
     deliveredUrl,
@@ -6448,13 +6722,15 @@ schedulingAuth.post('/interviews/:id/invite', async (c) => {
     schedulingUrl: effectiveSchedulingInviteUrl,
     deliveredUrl,
     provider: result.provider,
-    room: {
-      id: roomLinks.roomId,
-      sessionId: roomLinks.sessionId,
-      hostUrl: roomLinks.hostUrl,
-      guestUrl: roomLinks.guestUrl,
-      expiresAt: roomLinks.expiresAt,
-    },
+    room: roomLinks
+      ? {
+          id: roomLinks.roomId,
+          sessionId: roomLinks.sessionId,
+          hostUrl: roomLinks.hostUrl,
+          guestUrl: roomLinks.guestUrl,
+          expiresAt: roomLinks.expiresAt,
+        }
+      : null,
   });
 });
 

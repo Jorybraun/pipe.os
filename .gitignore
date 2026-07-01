@@ -51,6 +51,7 @@ tmp/code-review-smoke-runs/
 
 # Vite
 vite.config.ts.timestamp-*
+.wrangler/
 workers/api/.wrangler/
 
 # Binary toolchain artifacts (keep out of repo)

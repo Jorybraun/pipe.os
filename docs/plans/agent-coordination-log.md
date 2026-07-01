@@ -360,7 +360,7 @@ Inter-agent handoff log for the living context graph goal. Each agent appends a 
 **Open PRs analyzed:**
 - PR #139 (temporal decay + evidence aggregation, consolidation of #135-#138) — latest, aligned
 - PR #135-#138 (superseded by #139) — need manual closure
-- Codex branch (video-room-paint-recording-fixes, 399 commits) — separate concern, not merged
+- Legacy Codex branch — separate concern, not merged
 
 **New code added (this session):**
 1. `evidenceLineage.ts` — traces match decisions back through assertion → source span → artifact → interaction chain with temporal decay multipliers and effective strength at each node (criteria #2, #6)

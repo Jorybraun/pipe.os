@@ -157,6 +157,7 @@ The smoke proves the candidate lands in CODE_REVIEW rather than a video room, th
 ## 10. CODE_REVIEW Recruiter Detail Smoke
 
 This smoke verifies the recruiter-side decision cockpit for an existing code-review or workspace assessment interview. It catches fallback loaders, infinite matching screens, missing next actions, missing score-validity state, missing workspace work packets, missing human-review state, and optional invite-recipient drift.
+When `ASSESSMENT_RECRUITER_EXPECT_PERSON_PROFILE_DECISION=1` and score proof is expected, it also clicks through to the person profile and verifies the CODE_REVIEW score-validity readout explains why the score is usable or why it must be withheld.
 
 ```bash
 APP_BASE=https://app-dev.hire-pipe.com \
@@ -182,7 +183,7 @@ PIPE_DEV_BASIC_AUTH_PASSWORD=<password> \
 npm run smoke:code-review-assess-dev
 ```
 
-The smoke command loads `.env.local`/`.env`, so local dev basic-auth values do not need to be exported manually when they already live there. By default this uses the source-backed `mui/base-ui#973` manual override so the smoke is stable. To smoke another manual source-backed PR, add `CODE_REVIEW_SMOKE_REPO_URL=https://github.com/<owner>/<repo>` and `CODE_REVIEW_SMOKE_PR_NUMBER=<pr>`. Manual override smoke proves source-backed assess rendering, match proof, validator, assessment-fit calibration, quality gate, diff, no video-room fallback, and recruiter-visible manual match proof. It does not require candidate-to-repo or person-role-repo hyperedges because the recruiter selected the PR and PIPE must not pretend it inferred CV fit. To exercise strict auto-match plus evidence hyperedges, set `CODE_REVIEW_SMOKE_AUTO_MATCH=1`; that mode uses the default Base UI CV phrases, requires enough source-backed candidate graph evidence for the matcher to pass, and should report the selected PR rather than a manual override fallback.
+The smoke command loads `.env.local`/`.env`, so local dev basic-auth values do not need to be exported manually when they already live there. By default this uses the source-backed `mui/base-ui#973` manual override so the smoke is stable. To smoke another ready source-backed PR, add `CODE_REVIEW_SMOKE_REPO_URL=https://github.com/<owner>/<repo>` and `CODE_REVIEW_SMOKE_PR_NUMBER=<pr>`. Manual override smoke proves source-backed assess rendering, match proof, validator, assessment-fit calibration, quality gate, diff, no video-room fallback, and recruiter-visible manual match proof. It does not require candidate-to-repo or person-role-repo hyperedges because the recruiter selected the PR and PIPE must not pretend it inferred CV fit. Standalone `/assess` no longer runs candidate-to-repo matching internally; CV-only auto-match attempts should complete intake and return the profile-received email handoff until the upstream ingestion/challenge-design path assigns a source-backed PR.
 
 For app-dev, recruiter setup goes through `APP_BASE`/`RECRUITER_API_BASE` so the authenticated dev app proxy can inject its internal secret, while candidate `/rpc` calls use `API_BASE`/`RPC_BASE` so the candidate bearer token is not replaced by HTTP Basic auth.
 
@@ -190,14 +191,13 @@ Validated app-dev examples:
 
 ```bash
 npm run smoke:code-review-assess-dev
-CODE_REVIEW_SMOKE_AUTO_MATCH=1 npm run smoke:code-review-assess-dev
-CODE_REVIEW_SMOKE_SUBMIT=1 CODE_REVIEW_SMOKE_AUTO_MATCH=1 npm run smoke:code-review-assess-dev
-CODE_REVIEW_SMOKE_SUBMIT=1 CODE_REVIEW_SMOKE_AUTO_MATCH=1 CODE_REVIEW_SMOKE_ROLE_BACKED=1 npm run smoke:code-review-assess-dev
+CODE_REVIEW_SMOKE_SUBMIT=1 npm run smoke:code-review-assess-dev
+CODE_REVIEW_SMOKE_AUTO_MATCH=1 CODE_REVIEW_EXPECT_BLOCKED_MATCH=1 npm run smoke:code-review-assess-dev
 ```
 
-Both should select `https://github.com/mui/base-ui` PR `#973`, return `MATCHED`, pass the source-backed quality gate, render a Pierre diff, and avoid any video-room UI. Manual mode is expected to report `assessmentQuality: "USABLE"` because it validates the recruiter-selected source-backed PR without inferring CV fit. Roleless auto-match mode must also report measured positive contrast separation against a second eligible concept-near packet; the app-dev smoke fails if only one packet is recalled for the default `usePopoverRoot` candidate evidence. Role-backed auto-match uses stricter selected role terms and does not require contrast by default when the validator reports that no second eligible source-backed challenge exists; it still must prove role source evidence, validator approval, and a `candidate_role_repo_alignment` hyperedge.
+The manual ready-assignment commands should select `https://github.com/mui/base-ui` PR `#973`, return `MATCHED`, pass the source-backed quality gate, render a Pierre diff, and avoid any video-room UI. Manual mode is expected to report `assessmentQuality: "USABLE"` because it validates the recruiter-selected source-backed PR without inferring CV fit. The blocked auto-match command should return `PROFILE_RECEIVED`, complete the candidate stage as `candidate-intake-queued`, and prove the recruiter sees assessment progress instead of a candidate-visible matching loop.
 
-Set `CODE_REVIEW_SMOKE_SUBMIT=1` for the stronger end-to-end gate. That mode keeps the browser assess smoke, drives the visible candidate UI to add an inline diff comment, submits the first review round in the browser, waits for the author response/thread, then completes with `request_changes`, submits the review-session reference through `/rpc/submit-challenge-response`, verifies both `/api/v1/scheduling/interviews/:id` and `/api/v1/candidates/:id` expose the completed recruiter result, fails if scheduled detail loses transcript rounds, reviewer comments, or AI developer responses, checks the judge-example replay queue contains the review session with candidate comments, AI pushback, `human_label_queue`, and `cross_model_calibration` metadata, and polls D1 until `review_sessions.score_report`, `challenge_submissions.score_report_json`, `challenge_submissions.score`, and `assessments.score` are durable. In auto-match mode it also requires recruiter-visible evidence hyperedges. The score-persistence check uses local `pipe-db` for localhost and remote `pipe-db-test` for app-dev; override with `CODE_REVIEW_SMOKE_D1_DATABASE` only when deliberately targeting another D1 database.
+Set `CODE_REVIEW_SMOKE_SUBMIT=1` for the stronger end-to-end gate. That mode keeps the browser assess smoke, drives the visible candidate UI to add an inline diff comment, submits the first review round in the browser, waits for the author response/thread, then completes with `request_changes`, submits the review-session reference through `/rpc/submit-challenge-response`, verifies both `/api/v1/scheduling/interviews/:id` and `/api/v1/candidates/:id` expose the completed recruiter result, fails if scheduled detail loses transcript rounds, reviewer comments, or AI developer responses, checks the judge-example replay queue contains the review session with candidate comments, AI pushback, `human_label_queue`, and `cross_model_calibration` metadata, and polls D1 until `review_sessions.score_report`, `challenge_submissions.score_report_json`, `challenge_submissions.score`, and `assessments.score` are durable. The score-persistence check uses local `pipe-db` for localhost and remote `pipe-db-test` for app-dev; override with `CODE_REVIEW_SMOKE_D1_DATABASE` only when deliberately targeting another D1 database.
 
 To run the stronger app-dev gate across multiple realistic candidate profiles, use:
 
@@ -205,21 +205,16 @@ To run the stronger app-dev gate across multiple realistic candidate profiles, u
 npm run smoke:code-review-assess-dev:matrix
 ```
 
-The matrix creates fresh CODE_REVIEW invites and covers both happy-path and
-pushback behavior. The matchable profile submits a full browser-visible review,
-waits for AI developer pushback, verifies recruiter/profile projections, and
-checks remote D1 score persistence. Each profile also opens the authenticated
-recruiter interview detail page in a browser: matched runs must render the
-assignment, match decision, and score summary; blocked runs must render the
-needs-more-evidence decision, evidence-to-collect plan, and follow-up assessment
-CTA without an error page or matching loop. The accessibility-state and
-frontend-quality profiles are intentional ambiguous/near-tie lanes: they must
-return explicit blocked `repo_matching` attention states with diagnostics, no
-auto-refresh loop, and no video-room fallback. Use
+The matrix creates fresh CODE_REVIEW invites for realistic CV-only profiles and
+asserts the standalone `/assess` boundary. Every profile should complete intake,
+return the candidate-safe `PROFILE_RECEIVED` handoff, and open the authenticated
+recruiter interview detail page without an error page or matching loop. This is
+not a repo-matching quality eval; it proves CV ingestion and PR assignment have
+been separated from the CODE_REVIEW runtime. Use
 `CODE_REVIEW_SMOKE_MATRIX_PROFILES=react-interaction-platform,frontend-quality-infra`
-to run only the full-submit profiles, `CODE_REVIEW_SMOKE_MATRIX_REPEAT=2` for
-repeated runs, and `CODE_REVIEW_SMOKE_MATRIX_STOP_ON_FAILURE=1` when you want
-the first failure to stop the batch.
+to run a subset, `CODE_REVIEW_SMOKE_MATRIX_REPEAT=2` for repeated runs, and
+`CODE_REVIEW_SMOKE_MATRIX_STOP_ON_FAILURE=1` when you want the first failure to
+stop the batch.
 
 For a repeatable pilot-reliability gate with stored artifacts, use:
 
@@ -277,13 +272,25 @@ not use that lane as evidence that repo matching selected the best challenge.
 The browser smoke reads `CODE_REVIEW_EXPECT_MATCH_PROOF_VERDICT` from the setup
 script so it can assert either `PASSED` or an intentional `NEEDS_REVIEW` state.
 
-The full-submit smoke bootstraps stage config once before polling and again after matching is ready. The first response can legitimately be `WAITING_FOR_MATCH`; the second response must expose `WELCOME` + `CODE_REVIEW`, which creates the assessment row required by `/rpc/review/session/init`.
+The full-submit smoke bootstraps stage config once before polling and again after the source-backed PR assignment is ready. Standalone CODE_REVIEW blocked-handoff smokes must return `PROFILE_RECEIVED` plus the `candidate-intake-queued` complete stage; they should never accept candidate-visible `WAITING_FOR_MATCH`. The client also fails closed to the same `Profile received` handoff if a standalone CODE_REVIEW stage config accidentally returns `WAITING_FOR_MATCH`, so the old matching dashboard cannot reappear in `/assess` while the backend boundary is being repaired. Ready-assignment smokes must expose `WELCOME` + `CODE_REVIEW`, which creates the assessment row required by `/rpc/review/session/init`.
 
 Latest deployed app-dev proof: after deploying dev API version `043f0c50-1552-4114-9aff-e3f3de1b6b23`, the manual full-submit smoke passed for `mui/base-ui#973` with recruiter-visible `codeReviewMatchStatus: "MATCHED"`, validator `PASSED`, browser inline Pierre comment, AI developer response, completed recruiter/profile results, and judge replay example `code_review_judge_example_c5c31416e69b945c1f2f67256a7ac134`. A later manual full-submit smoke after the recruiter defense-thread UI deployed passed for interview `f351c4f1-c324-4524-bac8-0efe00dc948b`, review session `4090c1fa-91cf-42e4-8534-5e429f038e54`, and judge replay example `code_review_judge_example_98833208c471ec6fc5fa777979d417b9`; an in-app browser check of `/interviews/f351c4f1-c324-4524-bac8-0efe00dc948b` confirmed the recruiter page renders `AI developer defense` with candidate annotations, AI developer pushback, and the final AI developer change response. The roleless full-submit auto-match smoke also passed for `mui/base-ui#973` with measured contrast separation score `1/2`, four evidence hyperedges, recruiter-visible validator `PASSED`, browser pushback, and judge replay example `code_review_judge_example_8c90fdfa5a8d5e6825b42f0a4a5aa8f8`. After deploying dev API version `e1b98750-0f61-407a-9e5d-c2e299cef507` and dev app shell version `3fec1ccc-3311-44c7-8cb2-313a2c06bcc2`, the role-backed full-submit command passed for interview `d8d65789-a653-4617-8ad4-1658a6653bb1`, review session `2149cfd1-3030-4f85-99fa-589c6dbb93d8`, and judge replay example `code_review_judge_example_bb02405ddcb09edd24f6618756dfe496`, selecting `mui/base-ui#973`, rendering readable match reason, `ASSESSMENT_FIT`, validator, hypergraph evidence, and Pierre diff, submitting visible candidate comments, receiving AI developer pushback, and completing recruiter results with 4 evidence hyperedges plus a person-role-repo hyperedge.
 
 The same deployed API/app pair also passed the roleless full-submit auto-match command for interview `43210dfe-d589-4229-841f-f9b9c9b9fe5e`, review session `ea8a07c9-9631-4ace-8f67-8f1cbdfb8f41`, and judge replay example `code_review_judge_example_ee8b8947c9838f1e25bd80e8714a1c25`, selecting `mui/base-ui#973`, returning `MATCHED`, passing the source-backed quality gate, measuring positive contrast separation against the next comparable challenge (`1/2`, selected challenge ahead by 2%), completing recruiter/profile results, and preserving 4 recruiter-visible evidence hyperedges.
 
 The deployed manual override full-submit smoke passed for interview `c89541cb-3b52-4eb1-9652-6f4f5f9e4bef`, review session `2e007d00-5f99-4dd4-8d0c-b959b5d421ea`, and judge replay example `code_review_judge_example_647b6624f16a85fb8314808f879fe26b`, selecting `mui/base-ui#973`, rendering the recruiter-selected source-backed match reason without claiming CV fit, completing candidate browser comments and AI developer pushback, and completing recruiter/profile results with validator `PASSED`. Evidence hyperedges are expected to be `0` in this lane because manual override validates the selected PR's source-backed reviewability rather than inferring a candidate-to-repo match.
+
+Latest standalone `/assess` blocked-boundary proof: after deploying app-dev
+version `3413dea3-2899-40ac-afc0-8163e3a899ff`, the CODE_REVIEW matrix passed
+`3 / 3` CV-only profiles as candidate-safe queued handoffs rather than
+candidate-visible matching screens. The interviews
+`e33eb6dd-35e2-402b-9cb0-43fc93d9df64`,
+`b4e244fd-46ba-4e88-bdd0-71cbdbc8d089`, and
+`f8955b42-2d2b-40c8-931b-ab1c517d8de3` all returned `PROFILE_RECEIVED`,
+`candidate-intake-queued`, and authenticated recruiter browser smoke passed.
+Treat this as runtime-boundary proof only: it does not claim automatic repo-fit
+quality because standalone `/assess` must not run PR assignment in front of the
+candidate.
 
 ## 10. When Tests Break, Ask Why
 

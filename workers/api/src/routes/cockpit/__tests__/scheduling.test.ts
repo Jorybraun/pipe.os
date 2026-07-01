@@ -10,7 +10,7 @@ describe('scheduled assessment meeting contract', () => {
       videoEnabled: true,
       workspaceEnabled: true,
       recordingEnabled: true,
-      clippyEnabled: true,
+      agentEnabled: true,
     });
 
     expect(scheduledInterviewMeetingCopy({
@@ -29,7 +29,7 @@ describe('scheduled assessment meeting contract', () => {
       videoEnabled: true,
       workspaceEnabled: false,
       recordingEnabled: true,
-      clippyEnabled: false,
+      agentEnabled: false,
     });
 
     expect(scheduledInterviewMeetingCopy({
