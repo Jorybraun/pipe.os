@@ -125,6 +125,8 @@ describe('InterviewCard assessment progress', () => {
           baseCommitSha: '1111111111111111111111111111111111111111',
           commitSha: 'abcdef1234567890abcdef1234567890abcdef12',
           commitUrl: 'https://github.com/candidate/widgets/commit/abcdef1234567890abcdef1234567890abcdef12',
+          submissionSource: 'live_workspace',
+          submissionSourceLabel: 'Live workspace finalizer',
           changedFiles: [{ path: 'src/card.ts', status: 'modified' }],
           occurredAt: '2026-06-23T00:18:00.000Z',
         },
@@ -153,6 +155,7 @@ describe('InterviewCard assessment progress', () => {
     expect(progress).toHaveTextContent('TASK');
     expect(progress).toHaveTextContent('Fix the assessment card progress regression.');
     expect(progress).toHaveTextContent('abcdef123456');
+    expect(progress).toHaveTextContent('Live workspace finalizer');
     expect(progress).not.toHaveTextContent('assessment-session-card');
     expect(progress).not.toHaveTextContent('challenge-packet-card');
     expect(progress).not.toHaveTextContent('abcdef1234567890abcdef1234567890abcdef12');

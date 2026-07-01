@@ -1391,7 +1391,7 @@ describe('GET /interviews/:id detail', () => {
       INSERT INTO assessment_event_source_refs (
         id, event_id, source_ref_type, source_ref_id, source_span_id, evidence_role,
         locator_json, exact_text, content_hash, metadata_json, created_at
-      ) VALUES (?, ?, ?, ?, NULL, ?, ?, ?, ?, '{}', ?)
+      ) VALUES (?, ?, ?, ?, NULL, ?, ?, ?, ?, ?, ?)
     `).run(
       'assessment-source-progress-commit',
       'assessment-event-progress-commit',
@@ -1401,13 +1401,14 @@ describe('GET /interviews/:id detail', () => {
       JSON.stringify({ commitUrl: `https://github.com/candidate/widgets/commit/${commitSha}` }),
       commitText,
       sha256Hex(commitText),
+      JSON.stringify({ source: 'agent_bridge_workspace_finalize' }),
       now,
     );
     sqlite!.prepare(`
       INSERT INTO assessment_event_source_refs (
         id, event_id, source_ref_type, source_ref_id, source_span_id, evidence_role,
         locator_json, exact_text, content_hash, metadata_json, created_at
-      ) VALUES (?, ?, ?, ?, NULL, ?, ?, ?, ?, '{}', ?)
+      ) VALUES (?, ?, ?, ?, NULL, ?, ?, ?, ?, ?, ?)
     `).run(
       'assessment-source-progress-diff',
       'assessment-event-progress-commit',
@@ -1417,6 +1418,7 @@ describe('GET /interviews/:id detail', () => {
       JSON.stringify({ path: 'src/popover.ts', baseCommitSha, commitSha }),
       diffText,
       sha256Hex(diffText),
+      JSON.stringify({ source: 'agent_bridge_workspace_finalize' }),
       now,
     );
 
@@ -1431,7 +1433,12 @@ describe('GET /interviews/:id detail', () => {
           hasChallengePacket: boolean;
           hasCommitSubmission: boolean;
           challenge: { sourceRefId: string } | null;
-          commit: { commitSha: string | null; repositoryUrl: string | null } | null;
+          commit: {
+            commitSha: string | null;
+            repositoryUrl: string | null;
+            submissionSource: string;
+            submissionSourceLabel: string;
+          } | null;
           evidenceSnippets: Array<{
             sourceRefType: string;
             evidenceRole: string;
@@ -1450,6 +1457,8 @@ describe('GET /interviews/:id detail', () => {
       commit: {
         commitSha,
         repositoryUrl: 'https://github.com/open-source/widgets',
+        submissionSource: 'live_workspace',
+        submissionSourceLabel: 'Live workspace finalizer',
       },
     });
     expect(body.interview.assessmentProgress?.evidenceSnippets).toEqual(expect.arrayContaining([

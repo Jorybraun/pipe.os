@@ -1779,6 +1779,8 @@ function serializeCandidateAssessmentProgress(
           baseCommitSha: progress.commit.baseCommitSha,
           commitSha: progress.commit.commitSha,
           commitUrl: progress.commit.commitUrl,
+          submissionSource: progress.commit.submissionSource,
+          submissionSourceLabel: progress.commit.submissionSourceLabel,
           changedFiles: progress.commit.changedFiles,
           occurredAt: progress.commit.occurredAt,
         }

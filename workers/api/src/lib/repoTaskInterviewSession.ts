@@ -312,8 +312,26 @@ export interface AssessmentProgressCommit {
   baseCommitSha: string | null;
   commitSha: string | null;
   commitUrl: string | null;
+  submissionSource: 'live_workspace' | 'manual_fallback' | 'mixed' | 'unknown';
+  submissionSourceLabel: string;
   changedFiles: JsonValue[];
   occurredAt: string;
+}
+
+type CommitSubmissionSource = AssessmentProgressCommit['submissionSource'];
+
+function commitSubmissionSourceLabel(source: CommitSubmissionSource): string {
+  switch (source) {
+    case 'live_workspace':
+      return 'Live workspace finalizer';
+    case 'manual_fallback':
+      return 'Manual evidence fallback';
+    case 'mixed':
+      return 'Mixed source refs';
+    case 'unknown':
+    default:
+      return 'Unknown capture source';
+  }
 }
 
 export interface AssessmentProgressEvidenceSnippet {
@@ -1668,6 +1686,7 @@ export class RepoTaskInterviewSessionStore {
     }>();
     if (!row) return null;
     const payload = parseJsonObject(row.payload_json);
+    const submissionSource = await this.loadCommitSubmissionSource(row.id);
     return {
       eventId: row.id,
       repositoryUrl: jsonStringValue(payload.repositoryUrl),
@@ -1676,9 +1695,31 @@ export class RepoTaskInterviewSessionStore {
       baseCommitSha: jsonStringValue(payload.baseCommitSha),
       commitSha: jsonStringValue(payload.commitSha),
       commitUrl: jsonStringValue(payload.commitUrl),
+      submissionSource,
+      submissionSourceLabel: commitSubmissionSourceLabel(submissionSource),
       changedFiles: jsonArrayValue(payload.changedFiles),
       occurredAt: row.occurred_at,
     };
+  }
+
+  private async loadCommitSubmissionSource(eventId: string): Promise<CommitSubmissionSource> {
+    const result = await this.db.prepare(
+      `SELECT metadata_json
+         FROM assessment_event_source_refs
+        WHERE event_id = ?1`,
+    ).bind(eventId).all<{ metadata_json: string }>();
+    const sourceValues = new Set<string>();
+    for (const row of result.results ?? []) {
+      const metadata = parseJsonObject(row.metadata_json);
+      const source = jsonStringValue(metadata.source);
+      if (source) sourceValues.add(source);
+    }
+    const hasWorkspaceFinalizer = sourceValues.has('agent_bridge_workspace_finalize');
+    const hasManualPanel = sourceValues.has('assessment_commit_submission_panel');
+    if (hasWorkspaceFinalizer && hasManualPanel) return 'mixed';
+    if (hasWorkspaceFinalizer) return 'live_workspace';
+    if (hasManualPanel) return 'manual_fallback';
+    return 'unknown';
   }
 
   private async loadLatestHumanDecision(sessionId: string): Promise<AssessmentProgressHumanDecision | null> {

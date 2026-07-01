@@ -919,6 +919,7 @@ function workspaceAssessmentWorkPacket(progress: AssessmentProgressSnapshot | nu
     : 'Changed file list was not captured in the commit payload.';
 
   const commitDetail = [
+    progress.commit.submissionSourceLabel ?? null,
     progress.commit.branchName ? `Branch ${progress.commit.branchName}` : null,
     changedFileDetail,
   ].filter((item): item is string => Boolean(item)).join(' · ');
@@ -3616,6 +3617,12 @@ export default function InterviewDetailPage(): JSX.Element {
                 <div style={EVIDENCE_ROW}>
                   <span style={FIELD_LABEL}>Branch</span>
                   <span style={FIELD_VALUE}>{assessmentProgress.commit.branchName}</span>
+                </div>
+              )}
+              {assessmentProgress.commit?.submissionSourceLabel && (
+                <div style={EVIDENCE_ROW}>
+                  <span style={FIELD_LABEL}>Captured by</span>
+                  <span style={FIELD_VALUE}>{assessmentProgress.commit.submissionSourceLabel}</span>
                 </div>
               )}
               {assessmentProgress.humanDecision && (

@@ -203,6 +203,8 @@ describe('CommitSubmissionPanel', () => {
           baseCommitSha: 'd'.repeat(40),
           commitSha,
           commitUrl: null,
+          submissionSource: 'live_workspace',
+          submissionSourceLabel: 'Live workspace finalizer',
           changedFiles: [{ path: 'src/retry.ts', status: 'modified' }],
           occurredAt: '2026-06-29T20:02:00.000Z',
         },
@@ -238,10 +240,15 @@ describe('CommitSubmissionPanel', () => {
     expect(onProgressChange).toHaveBeenCalledWith(expect.objectContaining({
       stage: 'READY_FOR_EVALUATION',
       hasCommitSubmission: true,
-      commit: expect.objectContaining({ commitSha }),
+      commit: expect.objectContaining({
+        commitSha,
+        submissionSource: 'live_workspace',
+        submissionSourceLabel: 'Live workspace finalizer',
+      }),
     }));
     expect(screen.getByTestId('workspace-finalize-success').textContent).toContain(commitSha.slice(0, 12));
     expect(screen.getByTestId('commit-submission-progress').textContent).toContain('Ready For Evaluation');
+    expect(screen.getByTestId('commit-submission-progress-source').textContent).toContain('Live workspace finalizer');
   });
 
   it('keeps workspace finalization blocked until the live workspace is ready', () => {

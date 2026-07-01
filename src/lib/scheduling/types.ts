@@ -166,6 +166,8 @@ export interface AssessmentProgressSnapshot {
     baseCommitSha: string | null;
     commitSha: string | null;
     commitUrl: string | null;
+    submissionSource?: 'live_workspace' | 'manual_fallback' | 'mixed' | 'unknown';
+    submissionSourceLabel?: string;
     changedFiles: unknown[];
     occurredAt: string;
   } | null;

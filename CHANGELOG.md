@@ -13,6 +13,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - Standalone CODE_REVIEW interview details no longer render the generic workspace assessment progress panel when only a repo/PR assignment exists, preventing completed scored reviews from showing stale “Not started” or “No assessment session” copy above the hiring-manager decision readout.
 - Person profiles opened from a selected CODE_REVIEW decision now treat that assessment as present technical evidence in the evidence-mix readout instead of incorrectly saying no source mix exists while the full graph stays unloaded.
 - Person CODE_REVIEW source-proof summaries now reuse or derive evidence-specific proof wording, so manual PR decisions shown on a person profile do not claim candidate/role provenance that the match did not earn.
+- CODE_REVIEW work-packet readouts now show whether submitted commit evidence came from the live workspace finalizer or a manual fallback, keeping hiring-manager trust labels source-backed across the room, interview, and dashboard surfaces.
 
 ### Added — Assessment readiness
 

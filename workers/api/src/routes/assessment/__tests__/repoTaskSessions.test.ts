@@ -34,6 +34,7 @@ async function sourceRef(
   sourceRefType: string,
   sourceRefId: string,
   exactText: string,
+  metadata?: Record<string, unknown>,
 ): Promise<AssessmentEvidenceSourceRefInput> {
   return {
     sourceRefType,
@@ -41,6 +42,7 @@ async function sourceRef(
     exactText,
     contentHash: await sha256Hex(exactText),
     locator: { label: sourceRefId },
+    ...(metadata ? { metadata } : {}),
   };
 }
 

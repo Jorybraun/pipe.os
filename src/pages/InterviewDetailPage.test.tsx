@@ -308,6 +308,8 @@ describe('InterviewDetailPage', () => {
             baseCommitSha: '1111111111111111111111111111111111111111',
             commitSha: 'abcdef1234567890abcdef1234567890abcdef12',
             commitUrl: 'https://github.com/candidate/widgets/commit/abcdef1234567890abcdef1234567890abcdef12',
+            submissionSource: 'live_workspace',
+            submissionSourceLabel: 'Live workspace finalizer',
             changedFiles: [{ path: 'src/popover.ts', status: 'modified' }],
             occurredAt: '2026-06-23T00:18:00.000Z',
           },
@@ -333,10 +335,13 @@ describe('InterviewDetailPage', () => {
     expect(progress).toHaveTextContent('Workspace');
     expect(progress).toHaveTextContent('Ready · open-source/widgets · base 1111111111');
     expect(progress).toHaveTextContent('abcdef1234');
+    expect(progress).toHaveTextContent('Captured by');
+    expect(progress).toHaveTextContent('Live workspace finalizer');
     const workPacket = screen.getByTestId('interview-assessment-work-packet');
     expect(workPacket).toHaveTextContent('Candidate work packet');
     expect(workPacket).toHaveTextContent('Commit artifact');
     expect(workPacket).toHaveTextContent('abcdef1234');
+    expect(workPacket).toHaveTextContent('Live workspace finalizer');
     expect(workPacket).toHaveTextContent('Branch pipe-assessment/popover-cleanup');
     expect(workPacket).toHaveTextContent('1 changed file: src/popover.ts · Modified');
     expect(workPacket).toHaveTextContent('Verification');
