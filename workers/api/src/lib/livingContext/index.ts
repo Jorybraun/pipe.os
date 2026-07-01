@@ -201,3 +201,12 @@ export type {
   UnifiedMatchReport,
   MatchReportPipelineOptions,
 } from './matchReportPipeline';
+export { traverseLivingContextGraph } from './graphTraversal';
+export type {
+  GraphEntityType,
+  GraphNode,
+  GraphEdge,
+  EdgeSourceEvidence,
+  GraphTraversalResult,
+  GraphTraversalOptions,
+} from './graphTraversal';

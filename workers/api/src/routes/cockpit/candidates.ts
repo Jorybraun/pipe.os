@@ -2304,6 +2304,64 @@ candidateOps.get('/:candidateId/living-context/match-report', requireGate('livin
   return c.json(report);
 });
 
+// GET /:candidateId/living-context/graph-traversal — navigable graph traversal from any entity
+candidateOps.get('/:candidateId/living-context/graph-traversal', requireGate('living_context_read'), async (c) => {
+  const userId = c.var.userId;
+  const { candidateId } = c.req.param();
+  const startEntityType = c.req.query('entityType');
+  const startEntityId = c.req.query('entityId');
+  const maxDepthParam = c.req.query('maxDepth');
+  const maxNodesParam = c.req.query('maxNodes');
+  const entityTypeFilterParam = c.req.query('entityTypeFilter');
+  const db = c.env.DB;
+
+  if (!startEntityType || !startEntityId) {
+    return apiError(c, 'VALIDATION_ERROR', 'entityType and entityId query parameters are required.');
+  }
+
+  const validEntityTypes = [
+    'person', 'workspace_person', 'interaction', 'artifact',
+    'assertion', 'concept', 'signal_evidence', 'source_span', 'match_run',
+  ];
+  if (!validEntityTypes.includes(startEntityType)) {
+    return apiError(c, 'VALIDATION_ERROR', `entityType must be one of: ${validEntityTypes.join(', ')}`);
+  }
+
+  const candidate = await db.prepare(
+    `SELECT c.id
+       FROM candidates c
+       LEFT JOIN pipelines p ON p.id = c.pipeline_id
+      WHERE c.id = ?1 AND (c.owner_id = ?2 OR p.owner_id = ?2)`,
+  ).bind(candidateId, userId).first<{ id: string }>();
+  if (!candidate) return apiError(c, 'NOT_FOUND', 'Candidate not found.');
+
+  const { traverseLivingContextGraph } = await import('../../lib/livingContext/graphTraversal');
+  type GraphEntityType = import('../../lib/livingContext/graphTraversal').GraphEntityType;
+
+  const options: import('../../lib/livingContext/graphTraversal').GraphTraversalOptions = {};
+  if (maxDepthParam) {
+    const parsed = parseInt(maxDepthParam, 10);
+    if (!isNaN(parsed) && parsed >= 0 && parsed <= 5) options.maxDepth = parsed;
+  }
+  if (maxNodesParam) {
+    const parsed = parseInt(maxNodesParam, 10);
+    if (!isNaN(parsed) && parsed > 0 && parsed <= 500) options.maxNodes = parsed;
+  }
+  if (entityTypeFilterParam) {
+    const types = entityTypeFilterParam.split(',').filter((t) => validEntityTypes.includes(t));
+    if (types.length > 0) options.entityTypeFilter = types as GraphEntityType[];
+  }
+
+  const result = await traverseLivingContextGraph(
+    db,
+    candidateId,
+    startEntityType as GraphEntityType,
+    startEntityId,
+    options,
+  );
+  return c.json(result);
+});
+
 // GET /:candidateId/pipeline-siblings — other candidates in the same pipeline
 candidateOps.get('/:candidateId/pipeline-siblings', async (c) => {
   const userId = c.var.userId;
