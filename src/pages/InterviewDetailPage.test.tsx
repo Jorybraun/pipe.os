@@ -1349,6 +1349,142 @@ describe('InterviewDetailPage', () => {
     );
   });
 
+  it('labels failed code-review scoring as unavailable instead of pending', async () => {
+    mocks.api.get.mockResolvedValueOnce({
+      interview: makeInterview({
+        interviewType: 'CODE_REVIEW',
+        status: 'COMPLETED',
+        githubRepoUrl: 'https://github.com/mui/base-ui',
+        githubPrNumber: 973,
+        matchedRepoId: 973,
+        submissionJson: JSON.stringify({
+          type: 'CODE_REVIEW',
+          verdict: 'request_changes',
+          summary: 'Candidate requested changes with one concrete blocker.',
+          annotations: [
+            {
+              file: 'packages/react/src/popover/root/usePopoverRoot.ts',
+              line: 60,
+              severity: 'major',
+              comment: 'Add a regression test for impatient trigger clicks.',
+            },
+          ],
+          transcript: {
+            rounds: [
+              {
+                round: 1,
+                reviewer_comments: [
+                  {
+                    id: 'comment-1',
+                    file: 'packages/react/src/popover/root/usePopoverRoot.ts',
+                    line: 60,
+                    severity: 'major',
+                    comment: 'Add a regression test for impatient trigger clicks.',
+                  },
+                ],
+                implementer_responses: [
+                  {
+                    to_comment_id: 'comment-1',
+                    move: 'comment',
+                    content: 'Good catch. I will add coverage around the impatient click path.',
+                  },
+                ],
+              },
+            ],
+          },
+        }),
+        codeReviewMatch: {
+          status: 'MATCHED',
+          matchRunId: 'match-run-score-failed',
+          packetId: 'packet-score-failed',
+          summary: 'Matched source-backed React interaction evidence to the Base UI popover PR.',
+          score: 0.82,
+          assessmentQuality: {
+            verdict: 'STRONG',
+            score: 10,
+            maxScore: 12,
+            metrics: [],
+          },
+          reviewProfile: null,
+          validatorAgent: {
+            agentName: 'quality-gate',
+            agentVersion: '1',
+            mode: 'source_backed',
+            verdict: 'PASSED',
+            rationale: 'The match is grounded in candidate and repo evidence.',
+            checks: [],
+            sourceBridge: {
+              prNumber: 973,
+              candidateSourceCount: 2,
+              roleSourceCount: 0,
+              repoSourceCount: 4,
+              alignedDemandCount: 4,
+              stretchCount: 0,
+              provenanceComplete: true,
+            },
+          },
+          roleSources: [],
+          evidence: [],
+          evidenceHyperedges: [
+            {
+              relation: 'candidate_repo_evidence_alignment',
+              label: 'Candidate evidence bridge 1',
+              pairScore: 0.74,
+              nodes: [
+                {
+                  kind: 'person_evidence',
+                  label: 'Person evidence',
+                  sourceRef: {
+                    exactText: 'Reviewed React popover timing behavior.',
+                    locator: 'resume:span-1',
+                  },
+                },
+                {
+                  kind: 'repo_challenge',
+                  label: 'Repo challenge',
+                  sourceRef: {
+                    exactText: 'click = useClick(context, { enabled: clickEnabled })',
+                    locator: 'packages/react/src/popover/root/usePopoverRoot.ts',
+                  },
+                },
+              ],
+            },
+          ],
+          gaps: [],
+        },
+        codeReviewScore: {
+          reviewSessionId: 'review-session-score-failed',
+          status: 'scoring_failed',
+          score: null,
+          band: null,
+          narrative: null,
+          strengths: [],
+          growthAreas: [],
+          updatedAt: '2026-06-23T01:00:00.000Z',
+        },
+      }),
+    });
+
+    renderDetail();
+
+    await flushAsyncUpdates();
+    const decision = screen.getByTestId('interview-code-review-decision-summary');
+    const hiringReadout = screen.getByTestId('interview-code-review-hiring-readout');
+    expect(hiringReadout).toHaveTextContent('Score unavailable');
+    expect(hiringReadout).toHaveTextContent('Retry scoring or review manually');
+    expect(decision).toHaveTextContent('Score validity');
+    expect(decision).toHaveTextContent('Score unavailable');
+    expect(decision).toHaveTextContent('Scoring failed, so this assessment is not a scored hiring signal.');
+    expect(decision).toHaveTextContent('Recommended next step');
+    expect(decision).toHaveTextContent('Retry scoring or review manually');
+    expect(decision).toHaveTextContent('Submitted review can be read as source-backed raw evidence');
+    expect(decision).toHaveTextContent('Uncertainty');
+    expect(decision).toHaveTextContent('Score unavailable');
+    expect(decision).toHaveTextContent('no scored assessment should drive a hiring decision');
+    expect(decision).not.toHaveTextContent('Wait for scoring');
+    expect(decision).not.toHaveTextContent('scoring pending');
+  });
+
   it('labels manual repo tasks as assignment evidence, not automatic candidate-fit proof', async () => {
     mocks.api.get.mockResolvedValueOnce({
       interview: makeInterview({

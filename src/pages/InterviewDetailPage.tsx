@@ -1373,6 +1373,7 @@ function codeReviewFitDetail(match: CodeReviewMatchDetail | null): string {
 
 function codeReviewScoreHeadline(score: CodeReviewScoreSummary | null): string | null {
   if (!score) return null;
+  if (codeReviewScoreIsUnavailable(score)) return 'Score unavailable';
   if (typeof score.score === 'number' && Number.isFinite(score.score)) {
     const band = score.band ? ` ${titleCaseToken(score.band)}` : '';
     return `${Math.round(score.score)}/100${band}`;
@@ -1385,7 +1386,14 @@ function codeReviewScoreNarrative(score: CodeReviewScoreSummary | null): string 
   return score.narrative
     ?? (score.status === 'scored'
       ? 'Score report is available, but no narrative was returned.'
+      : codeReviewScoreIsUnavailable(score)
+        ? 'Scoring failed; no durable score report was produced.'
       : 'The score report will appear after scoring completes.');
+}
+
+function codeReviewScoreIsUnavailable(score: CodeReviewScoreSummary | null): boolean {
+  const status = score?.status.toLowerCase() ?? '';
+  return status.includes('fail') || status === 'error' || status === 'unavailable';
 }
 
 function codeReviewSignalBasisItems(input: {
@@ -1450,13 +1458,18 @@ function codeReviewScoreTrustSummary(input: {
 }): CodeReviewScoreTrust {
   const annotationCount = input.submission?.annotations.length ?? 0;
   const pushbackCount = input.submission?.defenseThreads.length ?? 0;
+  const scoreUnavailable = codeReviewScoreIsUnavailable(input.score);
   const qualityGate = input.match?.assessmentQuality
     ? `${input.match.assessmentQuality.verdict.toLowerCase()} match gate`
     : input.match?.status === 'MATCHED'
       ? 'matched challenge'
       : 'unproven match';
   const validParts = uniqueTextParts([
-    input.score.status === 'scored' ? 'Scored review' : `Score ${titleCaseToken(input.score.status)}`,
+    input.score.status === 'scored'
+      ? 'Scored review'
+      : scoreUnavailable
+        ? 'Score unavailable'
+        : `Score ${titleCaseToken(input.score.status)}`,
     countLabel(annotationCount, 'annotation'),
     countLabel(pushbackCount, 'implementation-author reply thread'),
     input.proofCount > 0 ? countLabel(input.proofCount, 'evidence bridge') : null,
@@ -1464,6 +1477,7 @@ function codeReviewScoreTrustSummary(input: {
   ]);
 
   const calibrators = [
+    scoreUnavailable ? 'scoring failed' : null,
     input.score.band ? `${input.score.band.toLowerCase()} band` : null,
     input.proofCount === 0 ? 'no rendered source bridge' : null,
     annotationCount === 0 ? 'no review annotations' : null,
@@ -1578,6 +1592,14 @@ function codeReviewAssessmentValiditySummary(input: {
     return {
       value: 'Score needs human calibration',
       detail: 'A score report exists, but the review evidence or match proof is incomplete; read the source trail before relying on it.',
+      tone: 'watch',
+    };
+  }
+
+  if (codeReviewScoreIsUnavailable(input.score)) {
+    return {
+      value: 'Score unavailable',
+      detail: 'Scoring failed, so this assessment is not a scored hiring signal. Retry scoring or manually review the source-backed comments.',
       tone: 'watch',
     };
   }
@@ -1739,9 +1761,11 @@ function codeReviewMatchExplanation(input: {
     : formatMatchScore(input.match.score);
   const scoreText = input.score?.status === 'scored'
     ? (codeReviewScoreHeadline(input.score) ?? 'Score ready')
-    : input.submission
-      ? 'Candidate review submitted; scoring pending'
-      : 'Candidate review not submitted yet';
+    : codeReviewScoreIsUnavailable(input.score)
+      ? 'Candidate review submitted; scoring failed'
+      : input.submission
+        ? 'Candidate review submitted; scoring pending'
+        : 'Candidate review not submitted yet';
   const proofParts = [
     personSources > 0 ? countLabel(personSources, 'person source') : null,
     roleSources > 0 ? countLabel(roleSources, 'role source') : null,
@@ -1793,6 +1817,13 @@ function codeReviewNextStepRecommendation(
     };
   }
   if (score && score.status !== 'scored') {
+    if (codeReviewScoreIsUnavailable(score)) {
+      return {
+        value: 'Retry scoring or review manually',
+        detail: 'Submitted review can be read as source-backed raw evidence, but no scored assessment should drive a hiring decision until scoring is retried or a recruiter reviews it.',
+        tone: 'watch',
+      };
+    }
     return {
       value: 'Wait for scoring',
       detail: 'The candidate review is submitted; wait for the score report before using this as a hiring signal.',
@@ -1959,6 +1990,16 @@ function codeReviewDecisionRiskSummary(
   }
   for (const area of score?.growthAreas.slice(0, 2) ?? []) {
     missingContext.push(probeContextLabel(area));
+  }
+
+  if (codeReviewScoreIsUnavailable(score)) {
+    return {
+      uncertainty: {
+        value: 'Score unavailable',
+        detail: 'Scoring failed. The submitted review can still be read as source-backed raw evidence, but no scored assessment should drive a hiring decision until retry or manual review.',
+      },
+      missingContext: missingContext.slice(0, 4),
+    };
   }
 
   const scoreValue = score?.score;
@@ -3300,7 +3341,7 @@ export default function InterviewDetailPage(): JSX.Element {
         match: codeReviewMatch,
         hyperedgeCount: matchHyperedges.length,
         hasPrimaryEvidence: Boolean(primaryMatchEvidence),
-        hasScore: Boolean(codeReviewScore),
+        hasScore: codeReviewScore?.status === 'scored',
       })
     : null;
   const codeReviewExplanation = codeReviewMatchExplanation({

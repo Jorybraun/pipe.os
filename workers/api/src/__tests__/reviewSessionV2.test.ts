@@ -1300,6 +1300,90 @@ describe('POST /rpc/submit-challenge-response', () => {
     await waitUntilAll();
   });
 
+  it('advances after intake when standalone CODE_REVIEW auto-match becomes ready from inline evidence', async () => {
+    vi.mocked(matchCandidateToReviewChallenge).mockResolvedValueOnce({
+      status: 'MATCHED',
+      repoId: 973,
+      prNumber: 973,
+      explanation: automaticMatchExplanation(973, 1),
+    } as Awaited<ReturnType<typeof matchCandidateToReviewChallenge>>);
+
+    const db = fakeD1({
+      firstResponders: [
+        {
+          match: 'SELECT invite_token, status FROM candidates WHERE id',
+          value: { invite_token: 'CLAIMED::invite-token', status: 'IN_PROGRESS' },
+        },
+        {
+          match: "interview_type = 'CODE_REVIEW'",
+          value: {
+            id: 'standalone_auto_match',
+            status: 'INVITED',
+            matched_repo_id: null,
+            github_repo_url: null,
+            github_pr_number: null,
+            submission_json: null,
+          },
+        },
+        {
+          match: 'LEFT JOIN candidate_ingestion',
+          value: {
+            resume_s3_key: 'text-intake/cand_1',
+            status: 'embedded',
+            current_step: 'embed_profile',
+            error_text: null,
+            node_count: 16,
+            raw_node_count: 16,
+          },
+        },
+        { match: 'SELECT github_url FROM qualified_repos', value: { github_url: 'https://github.com/mui/base-ui' } },
+      ],
+    });
+    const storage = { put: vi.fn(async () => null) } as unknown as R2Bucket;
+    const env = buildEnv({ DB: db, STORAGE: storage });
+    const { ctx, waitUntilAll } = buildCtx();
+
+    const res = await rpcAuth.request(
+      '/submit-challenge-response',
+      {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json',
+          Authorization: await authHeaderWithoutPipeline(),
+        },
+        body: JSON.stringify({
+          order: 0,
+          submission: {
+            resumeText: 'Senior frontend engineer with React, TypeScript, accessibility, and source-backed code review experience.',
+          },
+        }),
+      },
+      env,
+      ctx,
+    );
+
+    expect(res.status).toBe(200);
+    const body = await res.json() as { success?: boolean; next?: boolean; complete?: boolean; queued?: boolean };
+    expect(body).toMatchObject({
+      success: true,
+      next: true,
+    });
+    expect(body.complete).toBeUndefined();
+    expect(body.queued).toBeUndefined();
+    expect(runCandidateIngestion).toHaveBeenCalledWith(expect.objectContaining({
+      candidateId: 'cand_1',
+      resumeText: expect.stringContaining('source-backed code review experience'),
+    }));
+    expect(matchCandidateToReviewChallenge).toHaveBeenCalledOnce();
+    expect(db.__calls.some((call) =>
+      call.ran
+      && call.sql.includes('UPDATE scheduled_interviews')
+      && call.params.includes(973)
+      && call.params.includes('https://github.com/mui/base-ui')
+    )).toBe(true);
+    await waitUntilAll();
+  });
+
   it('queues standalone CODE_REVIEW submission attempts when no PR assignment is ready', async () => {
     const db = fakeD1({
       firstResponders: [

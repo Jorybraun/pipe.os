@@ -2146,6 +2146,18 @@ async function matchStandaloneReview(
   });
 }
 
+async function advanceStandaloneReviewAfterIntake(
+  db: D1Database,
+  candidateId: string,
+  interview: StandaloneReviewRow | null,
+): Promise<boolean> {
+  if (!interview) return false;
+  if (await hasReadyStandaloneCodeReviewAssignment(db, candidateId, interview)) {
+    return true;
+  }
+  return (await matchStandaloneReview(db, candidateId, interview)) !== null;
+}
+
 export async function matchStandaloneDevContainerAssessment(
   db: D1Database,
   candidateId: string,
@@ -2305,6 +2317,9 @@ async function handleIntakePayload(
   candidateId: string,
   submission: unknown,
   now: string,
+  options: {
+    inlineTextIngestion?: boolean;
+  } = {},
 ): Promise<void> {
   let intakePayload: Record<string, unknown> = {};
   try {
@@ -2382,27 +2397,30 @@ async function handleIntakePayload(
     } catch (err) {
       console.error(`[rpc/intake] failed to set synthetic resume key:`, err);
     }
+    const runTextIngestion = async (): Promise<void> => {
+      try {
+        const parsedCV = buildRuleBasedParsedCV(resumeText);
+        await persistParsedCV(env.DB, candidateId, parsedCV);
+        await runCandidateIngestion({
+          env,
+          db: env.DB,
+          candidateId,
+          parsed: parsedCV,
+          resumeText,
+          decompositionResult: null,
+        });
+        console.log(`[rpc/intake] text-based ingestion completed for candidate ${candidateId}`);
+      } catch (err) {
+        const msg = err instanceof Error ? err.message : String(err);
+        console.error(`[rpc/intake] text-based ingestion failed for ${candidateId}:`, msg);
+      }
+    };
 
-    executionCtx.waitUntil(
-      (async () => {
-        try {
-          const parsedCV = buildRuleBasedParsedCV(resumeText);
-          await persistParsedCV(env.DB, candidateId, parsedCV);
-          await runCandidateIngestion({
-            env,
-            db: env.DB,
-            candidateId,
-            parsed: parsedCV,
-            resumeText,
-            decompositionResult: null,
-          });
-          console.log(`[rpc/intake] text-based ingestion completed for candidate ${candidateId}`);
-        } catch (err) {
-          const msg = err instanceof Error ? err.message : String(err);
-          console.error(`[rpc/intake] text-based ingestion failed for ${candidateId}:`, msg);
-        }
-      })(),
-    );
+    if (options.inlineTextIngestion) {
+      await runTextIngestion();
+    } else {
+      executionCtx.waitUntil(runTextIngestion());
+    }
   }
 
   // 2. Queue GitHub enrichment
@@ -3822,9 +3840,11 @@ rpcAuth.post('/submit-challenge-response', async (c) => {
   // Pipeline-free candidate (talent pool / standalone code review)
   if (!pipelineId) {
     if (parseIntakePayload(submission)) {
-      await handleIntakePayload(c.env, c.executionCtx, candidateId, submission, new Date().toISOString());
       const standaloneReview = await getPendingStandaloneReview(c.env.DB, candidateId);
-      if (await hasReadyStandaloneCodeReviewAssignment(c.env.DB, candidateId, standaloneReview)) {
+      await handleIntakePayload(c.env, c.executionCtx, candidateId, submission, new Date().toISOString(), {
+        inlineTextIngestion: standaloneReview !== null,
+      });
+      if (await advanceStandaloneReviewAfterIntake(c.env.DB, candidateId, standaloneReview)) {
         return c.json({
           success: true,
           next: true,

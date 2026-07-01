@@ -117,6 +117,10 @@ The controlling product rule remains:
   `code_review_evidence_plan_response` records, not only the assessment report
   status, so a captured follow-up answer cannot trigger a stale rerun until the
   candidate context projection exists.
+- Standalone CODE_REVIEW text-intake submissions run the real candidate
+  evidence ingestion inline before returning, then immediately attempt the
+  source-backed PR match so auto-match invites can advance to a ready review
+  instead of stopping at `PROFILE_RECEIVED` with no assigned challenge.
 - CODE_REVIEW interview detail now returns and renders related evidence
   interviews from the same person graph, so context calls and multiple
   same-email assessment invites stay visible as separate evidence-producing
