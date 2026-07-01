@@ -100,6 +100,24 @@ function WorkspaceFinalizeRecovery({
   );
 }
 
+function WorkspaceFinalizeTrustContract(): JSX.Element {
+  return (
+    <div
+      className="workspace-finalize-trust-contract"
+      data-testid="workspace-finalize-trust-contract"
+      aria-label="Workspace finalizer trust contract"
+    >
+      <strong>Trusted finalizer path</strong>
+      <ul>
+        <li>Reads the current git HEAD inside the controlled workspace.</li>
+        <li>Verifies repository and base commit against the assigned challenge packet.</li>
+        <li>Captures changed files, source diff, and configured verification output or an explicit gap.</li>
+        <li>Stores source refs for the commit, diff, tests, and workspace state before evaluation.</li>
+      </ul>
+    </div>
+  );
+}
+
 function EvidenceStatusChip({
   label,
   captured,
@@ -495,6 +513,7 @@ export function CommitSubmissionPanel({
           <strong>Workspace commit</strong>
           <span>Submit the current assessment branch HEAD with configured verification or an explicit gap.</span>
         </div>
+        <WorkspaceFinalizeTrustContract />
         <label>
           <span>Submission note</span>
           <textarea

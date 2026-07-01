@@ -149,6 +149,12 @@ describe('CommitSubmissionPanel', () => {
     const readiness = screen.getByTestId('commit-submission-readiness');
     expect(readiness.textContent).toContain('Work evidence in progress');
     expect(readiness.textContent).toContain('Assessment branch commit');
+    const finalizerContract = screen.getByTestId('workspace-finalize-trust-contract');
+    expect(finalizerContract.textContent).toContain('Trusted finalizer path');
+    expect(finalizerContract.textContent).toContain('Reads the current git HEAD inside the controlled workspace.');
+    expect(finalizerContract.textContent).toContain('Verifies repository and base commit against the assigned challenge packet.');
+    expect(finalizerContract.textContent).toContain('Captures changed files, source diff, and configured verification output or an explicit gap.');
+    expect(finalizerContract.textContent).toContain('Stores source refs for the commit, diff, tests, and workspace state before evaluation.');
   });
 
   it('prefills source-backed repo, base commit, and assessment branch without inventing commit evidence', () => {
@@ -252,6 +258,9 @@ describe('CommitSubmissionPanel', () => {
       target: { value: 'Submitted retry fix from the assessment branch.' },
     });
     expect(screen.queryByTestId('workspace-finalize-test-command')).toBeNull();
+    expect(screen.getByTestId('workspace-finalize-trust-contract').textContent).toContain(
+      'Verifies repository and base commit against the assigned challenge packet.',
+    );
     fireEvent.click(screen.getByTestId('workspace-finalize-submit'));
 
     await waitFor(() => expect(onFinalizeWorkspace).toHaveBeenCalledTimes(1));
