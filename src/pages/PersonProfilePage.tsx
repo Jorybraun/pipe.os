@@ -491,6 +491,7 @@ function isResumeInteraction(interaction: LivingContextInteraction): boolean {
 
 function isConversationInteraction(interaction: LivingContextInteraction): boolean {
   const text = interactionIndexText(interaction);
+  if (text.includes('invite') || text.includes('message') || text.includes('email')) return false;
   return text.includes('context_call')
     || text.includes('meeting')
     || text.includes('interview')
@@ -638,6 +639,42 @@ function interactionCoverageSummary(
     return 'No evidence-producing interactions are attached to this person yet.';
   }
   return `Person-level rollup from ${countWithLabel(interactions.length, 'evidence-producing interaction')}. Open a row only when you need the single-meeting source record.`;
+}
+
+function interactionTimestampMs(interaction: LivingContextInteraction): number {
+  const value = interaction.startedAt ?? interaction.createdAt ?? interaction.updatedAt ?? '';
+  const timestamp = new Date(value).getTime();
+  return Number.isFinite(timestamp) ? timestamp : 0;
+}
+
+function interactionTimelinePriority(interaction: LivingContextInteraction): number {
+  if (isTechnicalAssessmentInteraction(interaction)) return 0;
+  if (isConversationInteraction(interaction)) return 1;
+  if (isResumeInteraction(interaction)) return 2;
+  if (isOperationalInteraction(interaction)) return 4;
+  return 3;
+}
+
+function personTimelineInteractions(
+  interactions: LivingContextInteraction[],
+  limit: number,
+): LivingContextInteraction[] {
+  return [...interactions]
+    .sort((left, right) => {
+      const priorityDelta = interactionTimelinePriority(left) - interactionTimelinePriority(right);
+      if (priorityDelta !== 0) return priorityDelta;
+      return interactionTimestampMs(right) - interactionTimestampMs(left);
+    })
+    .slice(0, limit);
+}
+
+function interactionTimelineSelectionSummary(
+  totalInteractionCount: number,
+  shownInteractionCount: number,
+): string | null {
+  if (totalInteractionCount <= shownInteractionCount) return null;
+  const hiddenCount = totalInteractionCount - shownInteractionCount;
+  return `Showing ${countWithLabel(shownInteractionCount, 'highest-value interaction row')} before ${countWithLabel(hiddenCount, 'lower-priority interaction')} kept in the audit trail.`;
 }
 
 function quietEvidenceText(value: string): string {
@@ -2647,7 +2684,11 @@ export default function PersonProfilePage(): JSX.Element {
     ?? profileContact?.notes
     ?? 'No relationship summary has been earned from evidence yet.';
 
-  const recentInteractions = livingContext?.interactions.slice(0, 5) ?? [];
+  const recentInteractions = personTimelineInteractions(livingContext?.interactions ?? [], 5);
+  const interactionTimelineSummary = interactionTimelineSelectionSummary(
+    livingContext?.interactions.length ?? 0,
+    recentInteractions.length,
+  );
   const interactionCoverage = interactionCoverageItems(livingContext?.interactions ?? []);
   const recentRecords = livingContext?.contextRecords.slice(0, 5) ?? [];
   const sourceBackedSignals = livingContext?.signals
@@ -2768,6 +2809,9 @@ export default function PersonProfilePage(): JSX.Element {
                   </span>
                 ))}
               </div>
+            )}
+            {interactionTimelineSummary && (
+              <p style={INTERACTION_COVERAGE_COPY}>{interactionTimelineSummary}</p>
             )}
             <div data-testid="person-evidence-mix" style={EVIDENCE_MIX}>
               <div style={FIELD_LABEL}>Evidence mix</div>

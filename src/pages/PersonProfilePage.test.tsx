@@ -1296,6 +1296,53 @@ describe('PersonProfilePage', () => {
     expect(recruiterNotes).toContain('Missing context: Probe: Probe how they balance timing trade-offs under pushback.');
   });
 
+  it('keeps technical decision evidence visible when operational interactions are noisy', async () => {
+    const context = makeLivingContext();
+    const operationalInteractions = Array.from({ length: 6 }, (_, index) => ({
+      id: `interaction-invite-noise-${index + 1}`,
+      interactionType: 'scheduled_interview_invite_delivery',
+      externalReference: `invite-delivery-${index + 1}`,
+      startedAt: `2026-06-29T1${index}:00:00.000Z`,
+      endedAt: `2026-06-29T1${index}:01:00.000Z`,
+      createdAt: `2026-06-29T1${index}:00:00.000Z`,
+      updatedAt: `2026-06-29T1${index}:01:00.000Z`,
+      metadata: {
+        summary: `Invite delivery operational record ${index + 1}`,
+        scheduledInterviewId: `interview-invite-noise-${index + 1}`,
+      },
+      artifactIds: [],
+      contextRecordIds: [],
+      assertionIds: [],
+      signalKeys: [],
+    }));
+    context.summary = {
+      ...context.summary,
+      interactionCount: context.interactions.length + operationalInteractions.length,
+    };
+    context.interactions = [
+      ...operationalInteractions,
+      ...context.interactions,
+    ];
+
+    mocks.api.get
+      .mockResolvedValueOnce({ contact: makeContact() })
+      .mockResolvedValueOnce(context);
+
+    renderPage();
+    await flushAsyncUpdates();
+
+    const coverage = screen.getByTestId('person-interaction-coverage');
+    expect(coverage).toHaveTextContent('6 messages or invites');
+    expect(coverage).toHaveTextContent('1 code review');
+    expect(coverage).toHaveTextContent('1 resume');
+    expect(coverage).toHaveTextContent('Showing 5 highest-value interaction rows before 3 lower-priority interactions kept in the audit trail.');
+    expect(screen.getByText('Decision evidence')).toBeInTheDocument();
+    expect(screen.getByText('Background evidence')).toBeInTheDocument();
+    expect(screen.getByText('Code-review assessment evidence')).toBeInTheDocument();
+    expect(screen.getByText('Resume evidence attached')).toBeInTheDocument();
+    expect(screen.queryByText('Invite delivery operational record 1')).not.toBeInTheDocument();
+  });
+
   it('does not trust a scored code review when repo-match provenance is missing', async () => {
     const context = makeLivingContext();
     context.contextRecords = context.contextRecords.filter((record) =>

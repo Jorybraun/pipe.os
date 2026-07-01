@@ -55,6 +55,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Fixed — CODE_REVIEW assessment runtime
 
+- Person-profile relationship timelines now classify invite/email rows as operational evidence and prioritize code-review, call, and resume evidence ahead of lower-priority operational rows, keeping hiring-manager context from being buried under delivery noise.
 - Interview detail match explanations now label manual assignment-only PR evidence as `Assignment proof` instead of `Valid because`, preventing recruiter-selected PRs from being mistaken for automatic candidate-repo fit proof.
 - The app-dev CODE_REVIEW recruiter smoke now expects manual override PRs to show `Assignment proof`, while keeping `Valid because` reserved for source-bridged automatic candidate-repo matches.
 - Standalone CODE_REVIEW `/assess` now fails closed to the candidate-safe `Profile received` handoff if a regressed stage config tries to render `WAITING_FOR_MATCH`, preventing the old matching dashboard from reappearing in the assessment runtime.
