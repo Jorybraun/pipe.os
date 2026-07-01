@@ -946,6 +946,9 @@ describe('PersonProfilePage', () => {
     expect(basis).toHaveTextContent('Match proof');
     expect(basis).toHaveTextContent('Missing');
     expect(basis).not.toHaveTextContent('Source-backed match');
+    const cockpit = screen.getByTestId('person-decision-cockpit');
+    expect(cockpit).toHaveTextContent('Collect missing evidence');
+    expect(cockpit).not.toHaveTextContent('Advance with focused probe');
     const proof = screen.getByTestId('person-code-review-source-proof');
     const proofSummary = proof.querySelector('summary');
     expect(proofSummary).not.toHaveTextContent('candidate-repo match proof');
@@ -985,6 +988,9 @@ describe('PersonProfilePage', () => {
     expect(basis).toHaveTextContent('Match proof');
     expect(basis).toHaveTextContent('Missing');
     expect(basis).not.toHaveTextContent('Source-backed match');
+    const cockpit = screen.getByTestId('person-decision-cockpit');
+    expect(cockpit).toHaveTextContent('Collect missing evidence');
+    expect(cockpit).not.toHaveTextContent('Advance with focused probe');
     const proof = screen.getByTestId('person-code-review-source-proof');
     const proofSummary = proof.querySelector('summary');
     expect(proofSummary).not.toHaveTextContent('candidate-repo match proof');
@@ -1443,6 +1449,8 @@ describe('PersonProfilePage', () => {
     await flushAsyncUpdates();
 
     const cockpit = screen.getByTestId('person-decision-cockpit');
+    expect(cockpit).toHaveTextContent('Collect missing evidence');
+    expect(cockpit).not.toHaveTextContent('Advance with focused probe');
     expect(cockpit).toHaveTextContent('Partial source-backed signal');
     expect(cockpit).toHaveTextContent('Repo-match proof incomplete');
 
@@ -1452,6 +1460,8 @@ describe('PersonProfilePage', () => {
     expect(basis).not.toHaveTextContent('Source-backed match');
 
     const decision = await screen.findByTestId('person-code-review-decision');
+    expect(decision).toHaveTextContent('Collect missing evidence');
+    expect(decision).not.toHaveTextContent('Advance with focused probe');
     expect(decision).toHaveTextContent('Rendered candidate/repo source bridge');
     expect(decision).toHaveTextContent('PIPE has a visible repo challenge, but the rendered candidate-to-repo source bridge is missing from the person graph.');
 

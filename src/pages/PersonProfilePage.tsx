@@ -279,6 +279,12 @@ function codeReviewBasisItemsFromUnknown(
       ];
 }
 
+function prependMissingContext(items: string[], item: string): string[] {
+  const normalizedItem = item.toLowerCase();
+  const withoutDuplicate = items.filter((existing) => existing.toLowerCase() !== normalizedItem);
+  return [item, ...withoutDuplicate];
+}
+
 function codeReviewDecisionFromNavigationState(state: unknown): CodeReviewDecisionProjection | null {
   if (!isRecord(state) || !isRecord(state.selectedCodeReviewDecision)) return null;
   const decision = state.selectedCodeReviewDecision;
@@ -307,19 +313,35 @@ function codeReviewDecisionFromNavigationState(state: unknown): CodeReviewDecisi
   const proofCount = hasRouteSourceProof
     ? Math.max(proofItems.length, routeProofCount ?? 0)
     : proofItems.length;
+  const shouldDowngradeOptimisticRouteState = !hasRouteSourceProof
+    && (
+      /advance/i.test(decision.recommendation)
+      || /usable source-backed/i.test(decision.assessmentValidity)
+    );
+  const missingContext = stringArray(decision.missingContext);
   return {
     decisionLabel: decision.decisionLabel,
     sessionId: optionalString(decision.sessionId),
     outcome: optionalString(decision.outcome),
-    recommendation: decision.recommendation,
-    recommendationDetail: decision.recommendationDetail,
-    uncertainty: decision.uncertainty,
-    uncertaintyDetail: decision.uncertaintyDetail,
-    missingContext: stringArray(decision.missingContext),
-    assessmentValidity: decision.assessmentValidity,
-    assessmentValidityDetail: decision.assessmentValidityDetail,
-    nextAction: decision.nextAction,
-    nextActionDetail: decision.nextActionDetail,
+    recommendation: shouldDowngradeOptimisticRouteState ? 'Collect missing evidence' : decision.recommendation,
+    recommendationDetail: shouldDowngradeOptimisticRouteState
+      ? 'The selected review has a score or assignment, but PIPE did not preserve parsed candidate/repo proof for this handoff. Keep it out of the hiring recommendation until the source bridge is visible.'
+      : decision.recommendationDetail,
+    uncertainty: shouldDowngradeOptimisticRouteState ? 'Repo-match proof incomplete' : decision.uncertainty,
+    uncertaintyDetail: shouldDowngradeOptimisticRouteState
+      ? 'The selected review may be real, but the person profile cannot prove that this PR was a fair candidate-specific assessment yet.'
+      : decision.uncertaintyDetail,
+    missingContext: shouldDowngradeOptimisticRouteState
+      ? prependMissingContext(missingContext, 'Rendered candidate/repo source bridge')
+      : missingContext,
+    assessmentValidity: shouldDowngradeOptimisticRouteState ? 'Match provenance incomplete' : decision.assessmentValidity,
+    assessmentValidityDetail: shouldDowngradeOptimisticRouteState
+      ? 'A selected review is visible, but candidate/repo match proof is missing from parsed source items.'
+      : decision.assessmentValidityDetail,
+    nextAction: shouldDowngradeOptimisticRouteState ? 'Schedule evidence-gathering call' : decision.nextAction,
+    nextActionDetail: shouldDowngradeOptimisticRouteState
+      ? 'Collect or refresh the missing candidate/repo evidence before treating this score as hiring signal.'
+      : decision.nextActionDetail,
     scoreLabel,
     scoreProvenanceLabel: optionalString(decision.scoreProvenanceLabel),
     challengeLabel: optionalString(decision.challengeLabel),
@@ -1062,11 +1084,12 @@ function verdictLabel(verdict: string | null): string | null {
 function recommendationForScore(
   score: CodeReviewScoreProjection | null,
   challenge: CodeReviewChallengeProjection | null,
+  hasMatchProvenance: boolean,
 ): { value: string; detail: string } {
-  if (!hasMatchedReviewChallenge(challenge)) {
+  if (!hasMatchedReviewChallenge(challenge) || !hasMatchProvenance) {
     return {
       value: 'Collect missing evidence',
-      detail: 'PIPE has not proven a source-backed repo challenge match yet, so any score should stay out of the hiring recommendation.',
+      detail: 'PIPE has not proven a source-backed candidate/repo challenge match yet, so any score should stay out of the hiring recommendation.',
     };
   }
   if (score?.score !== null && score?.score !== undefined) {
@@ -1469,7 +1492,7 @@ function deriveCodeReviewDecision(
       && hasMatchedReviewChallenge(matchChallenge)
       && hasRenderedCandidateRepoMatchProof(matchRecord),
   );
-  const recommendation = recommendationForScore(score, challenge);
+  const recommendation = recommendationForScore(score, challenge, hasMatchProvenance);
   const scoreLabel = scoreLabelForProjection(score);
   const challengeLabel = challenge?.repoLabel
     ? `${challenge.repoLabel}${challenge.prNumber !== null ? ` PR #${challenge.prNumber}` : ''}`
