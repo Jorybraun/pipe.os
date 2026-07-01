@@ -23,6 +23,8 @@ const INTENTIONAL_SLEEP_KEY = 'intentional_sleep_stop';
 const MAX_CONTAINER_DIAGNOSTIC_CHARS = 1_000;
 const CODE_SERVER_ENTRYPOINT = '/usr/local/bin/entrypoint.sh';
 
+type ContainerStorageSql = (strings: TemplateStringsArray, ...values: unknown[]) => unknown[];
+
 interface InitPayload {
   sessionId: string;
   expiresAt: string;
@@ -68,6 +70,11 @@ export class DevContainerDO extends Container<Env> {
   // Sleep the DO after 10 minutes of inactivity so we don't pay for idle.
   sleepAfter = '10m';
   private initializing = false;
+
+  override async alarm(alarmProps?: { isRetry: boolean; retryCount: number }): Promise<void> {
+    this.ensureContainerSchedulerSchema();
+    await super.alarm(alarmProps);
+  }
 
   async fetch(request: Request): Promise<Response> {
     const url = new URL(request.url);
@@ -157,6 +164,7 @@ export class DevContainerDO extends Container<Env> {
       const warnBeforeSeconds = parseWarnSeconds(this.env.DEV_CONTAINER_WARN_BEFORE_SECONDS);
       const warnAt = new Date(expireAt.getTime() - warnBeforeSeconds * 1000);
       try {
+        this.ensureContainerSchedulerSchema();
         if (warnAt.getTime() > Date.now()) {
           await this.schedule(warnAt, 'onWarn');
         } else {
@@ -223,6 +231,24 @@ export class DevContainerDO extends Container<Env> {
     return (await this.ctx.storage.get<InitPayload>('config')) ?? null;
   }
 
+  private ensureContainerSchedulerSchema(): void {
+    const sql = (this as unknown as { sql?: ContainerStorageSql }).sql;
+    if (typeof sql !== 'function') return;
+
+    const runSql = sql.bind(this) as ContainerStorageSql;
+    runSql`
+      CREATE TABLE IF NOT EXISTS container_schedules (
+        id TEXT PRIMARY KEY NOT NULL DEFAULT (randomblob(9)),
+        callback TEXT NOT NULL,
+        payload TEXT,
+        type TEXT NOT NULL CHECK(type IN ('scheduled', 'delayed')),
+        time INTEGER NOT NULL,
+        delayInSeconds INTEGER,
+        created_at INTEGER DEFAULT (unixepoch())
+      )
+    `;
+  }
+
   /**
    * Manual destroy handler. Called when the candidate clicks "END SESSION".
    * Stops the container and clears storage. D1 status is already marked
@@ -277,6 +303,7 @@ export class DevContainerDO extends Container<Env> {
     const expireAt = new Date(config.expiresAt);
     if (!Number.isNaN(expireAt.getTime())) {
       try {
+        this.ensureContainerSchedulerSchema();
         await this.schedule(expireAt, 'onExpire');
       } catch (err) {
         console.error('[DevContainerDO.onWarn] schedule(onExpire) failed:', err);

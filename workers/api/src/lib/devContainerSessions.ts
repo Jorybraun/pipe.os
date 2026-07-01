@@ -50,6 +50,10 @@ export interface DevContainerSessionRow {
   updated_at: string;
 }
 
+function nowIso(): string {
+  return new Date().toISOString();
+}
+
 const DEV_CONTAINER_SESSION_COLUMNS = `
   id, session_id, candidate_id, challenge_id, pipeline_id,
   meeting_id, meeting_room_id, owner_id, access_scope,
@@ -93,13 +97,14 @@ export async function insertSession(
   db: D1Database,
   input: InsertSessionInput,
 ): Promise<void> {
+  const now = nowIso();
   await db
     .prepare(
       `INSERT INTO dev_container_sessions (
          id, session_id, candidate_id, challenge_id, pipeline_id,
          status, instance_type, ttl_seconds, ttl_source, expires_at,
-         repo_git_url, challenge_branch, base_commit_sha
-       ) VALUES (?1, ?2, ?3, ?4, ?5, 'LAUNCHING', ?6, ?7, ?8, ?9, ?10, ?11, ?12)`,
+         repo_git_url, challenge_branch, base_commit_sha, created_at, updated_at
+       ) VALUES (?1, ?2, ?3, ?4, ?5, 'LAUNCHING', ?6, ?7, ?8, ?9, ?10, ?11, ?12, ?13, ?13)`,
     )
     .bind(
       input.id,
@@ -114,6 +119,7 @@ export async function insertSession(
       input.repoGitUrl,
       input.challengeBranch,
       input.baseCommitSha ?? null,
+      now,
     )
     .run();
   await persistLifecycleAssessmentEvidence(db, input.sessionId, 'launching');
@@ -124,15 +130,16 @@ export async function insertRoomSession(
   db: D1Database,
   input: InsertRoomSessionInput,
 ): Promise<void> {
+  const now = nowIso();
   await db
     .prepare(
       `INSERT INTO dev_container_sessions (
          id, session_id, candidate_id, challenge_id, pipeline_id,
          meeting_id, meeting_room_id, owner_id, access_scope,
          status, instance_type, ttl_seconds, ttl_source, expires_at,
-         repo_git_url, challenge_branch, base_commit_sha
+         repo_git_url, challenge_branch, base_commit_sha, created_at, updated_at
        ) VALUES (?1, ?2, NULL, NULL, NULL, ?3, ?4, ?5, 'meeting_room',
-         'LAUNCHING', ?6, ?7, ?8, ?9, ?10, ?11, ?12)`,
+         'LAUNCHING', ?6, ?7, ?8, ?9, ?10, ?11, ?12, ?13, ?13)`,
     )
     .bind(
       input.id,
@@ -147,6 +154,7 @@ export async function insertRoomSession(
       input.repoGitUrl,
       input.challengeBranch,
       input.baseCommitSha ?? null,
+      now,
     )
     .run();
   await persistLifecycleAssessmentEvidence(db, input.sessionId, 'launching');

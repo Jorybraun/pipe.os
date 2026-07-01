@@ -19,6 +19,8 @@ interface SpyFields {
   __startCalls: unknown[];
   __destroyCalls: number;
   __stopCalls: Array<number | string>;
+  __alarmCalls: number;
+  __scheduleTableReady: boolean;
 }
 type SpyableDO = DevContainerDO & SpyFields;
 
@@ -148,6 +150,19 @@ async function init(
 // ─── /__init scheduling ─────────────────────────────────────────────────────
 
 describe('DevContainerDO /__init — Step 11 warn-then-expire scheduling', () => {
+  it('repairs the Container scheduler table before alarm delegation', async () => {
+    const db = fakeD1();
+    const env = buildEnv(db);
+    const instance = new DevContainerDO(buildState(), env) as SpyableDO;
+
+    instance.__scheduleTableReady = false;
+
+    await expect(instance.alarm({ isRetry: false, retryCount: 0 })).resolves.toBeUndefined();
+
+    expect(instance.__scheduleTableReady).toBe(true);
+    expect(instance.__alarmCalls).toBe(1);
+  });
+
   it('starts the shared bridge/router port before marking the session READY', async () => {
     const db = fakeD1();
     const env = buildEnv(db);
