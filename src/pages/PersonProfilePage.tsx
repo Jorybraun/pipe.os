@@ -202,6 +202,54 @@ function selectedAssessmentFromNavigationState(state: unknown): AssessmentProgre
   return state.selectedAssessment as unknown as AssessmentProgressSnapshot;
 }
 
+function codeReviewProofItemsFromUnknown(value: unknown): CodeReviewProofItem[] {
+  if (!Array.isArray(value)) return [];
+  return value.flatMap((item, index) => {
+    if (!isRecord(item)) return [];
+    const label = optionalString(item.label);
+    if (!label) return [];
+    return [{
+      id: optionalString(item.id) ?? `navigation-proof-${index}`,
+      label,
+      text: optionalString(item.text),
+    }];
+  });
+}
+
+function codeReviewBasisItemsFromUnknown(
+  value: unknown,
+  scoreLabel: string | null,
+): CodeReviewBasisItem[] {
+  const items = Array.isArray(value)
+    ? value.flatMap((item) => {
+        if (!isRecord(item)) return [];
+        const label = optionalString(item.label);
+        const itemValue = optionalString(item.value);
+        if (!label || !itemValue || typeof item.satisfied !== 'boolean') return [];
+        return [{
+          label,
+          value: itemValue,
+          satisfied: item.satisfied,
+        }];
+      })
+    : [];
+
+  return items.length > 0
+    ? items
+    : [
+        {
+          label: 'Score report',
+          value: scoreLabel ?? 'Missing',
+          satisfied: Boolean(scoreLabel),
+        },
+        {
+          label: 'Match proof',
+          value: 'Missing',
+          satisfied: false,
+        },
+      ];
+}
+
 function codeReviewDecisionFromNavigationState(state: unknown): CodeReviewDecisionProjection | null {
   if (!isRecord(state) || !isRecord(state.selectedCodeReviewDecision)) return null;
   const decision = state.selectedCodeReviewDecision;
@@ -218,7 +266,33 @@ function codeReviewDecisionFromNavigationState(state: unknown): CodeReviewDecisi
   ) {
     return null;
   }
-  return decision as unknown as CodeReviewDecisionProjection;
+  const scoreLabel = optionalString(decision.scoreLabel);
+  const proofItems = codeReviewProofItemsFromUnknown(decision.proofItems);
+  return {
+    decisionLabel: decision.decisionLabel,
+    sessionId: optionalString(decision.sessionId),
+    outcome: optionalString(decision.outcome),
+    recommendation: decision.recommendation,
+    recommendationDetail: decision.recommendationDetail,
+    uncertainty: decision.uncertainty,
+    uncertaintyDetail: decision.uncertaintyDetail,
+    missingContext: stringArray(decision.missingContext),
+    assessmentValidity: decision.assessmentValidity,
+    assessmentValidityDetail: decision.assessmentValidityDetail,
+    nextAction: decision.nextAction,
+    nextActionDetail: decision.nextActionDetail,
+    scoreLabel,
+    scoreProvenanceLabel: optionalString(decision.scoreProvenanceLabel),
+    challengeLabel: optionalString(decision.challengeLabel),
+    challengeUrl: optionalString(decision.challengeUrl),
+    narrative: optionalString(decision.narrative),
+    strengths: stringArray(decision.strengths),
+    probes: stringArray(decision.probes),
+    proofCount: optionalNumber(decision.proofCount) ?? proofItems.length,
+    sourceProofSummary: optionalString(decision.sourceProofSummary),
+    proofItems,
+    basisItems: codeReviewBasisItemsFromUnknown(decision.basisItems, scoreLabel),
+  };
 }
 
 function livingContextFromCandidateResponse(response: unknown): LivingContextReadModel | null {

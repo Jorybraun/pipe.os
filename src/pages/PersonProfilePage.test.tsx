@@ -639,7 +639,7 @@ function makeSelectedManualCodeReviewDecision(): unknown {
     basisItems: [
       { label: 'Score report', value: 'Scored', satisfied: true },
       { label: 'Review evidence', value: '2 annotations', satisfied: true },
-      { label: 'Match proof', value: '8/12 Usable', satisfied: true },
+      { label: 'Match proof', value: 'Assignment evidence only', satisfied: false },
     ],
   };
 }
@@ -850,6 +850,65 @@ describe('PersonProfilePage', () => {
     expect(proofSummary).not.toHaveTextContent('candidate, role, repo');
     expect(proofSummary).not.toHaveTextContent('candidate-repo match proof');
     expect(proofSummary).not.toHaveTextContent('role evidence');
+    const basis = screen.getByTestId('person-code-review-decision-basis');
+    expect(basis).toHaveTextContent('Match proof');
+    expect(basis).toHaveTextContent('Assignment evidence only');
+    expect(basis).not.toHaveTextContent('8/12 Usable');
+    expect(basis).not.toHaveTextContent('Source-backed match');
+  });
+
+  it('sanitizes stale selected code-review navigation state instead of crashing the profile', async () => {
+    const summaryContext = makeLivingContext();
+    summaryContext.interactions = [];
+    summaryContext.artifacts = [];
+    summaryContext.contextRecords = [];
+    summaryContext.assertions = [];
+    summaryContext.signals = [];
+    summaryContext.relationships = [];
+
+    mocks.api.get
+      .mockResolvedValueOnce({ contact: makeContact() })
+      .mockResolvedValueOnce(summaryContext);
+
+    renderPage({
+      livingContext: summaryContext,
+      selectedCodeReviewDecision: {
+        decisionLabel: 'Code-review decision',
+        sessionId: 'review-session-stale',
+        outcome: 'Candidate requested changes',
+        recommendation: 'Review assignment fairness before rejecting',
+        recommendationDetail: 'Route-state fallback should remain visible without trusting malformed proof.',
+        uncertainty: 'High calibration risk',
+        uncertaintyDetail: 'Malformed navigation state cannot prove candidate-fit matching.',
+        missingContext: 'Manual PR assignment needs candidate-fit calibration.',
+        assessmentValidity: 'Score needs human calibration',
+        assessmentValidityDetail: 'The selected review exists, but proof arrays were not valid.',
+        nextAction: 'Review assignment fairness before rejecting',
+        nextActionDetail: 'Ask the hiring team to verify assignment fit before deciding.',
+        scoreLabel: '38/100 Weak',
+        scoreProvenanceLabel: null,
+        challengeLabel: 'mui/base-ui PR #973',
+        challengeUrl: 'https://github.com/mui/base-ui/pull/973',
+        narrative: 'Malformed route state should not crash this page.',
+        strengths: 'Found one issue.',
+        probes: null,
+        proofCount: '4',
+        sourceProofSummary: null,
+        proofItems: null,
+        basisItems: '8/12 Usable',
+      },
+    });
+    await flushAsyncUpdates();
+
+    const decision = screen.getByTestId('person-code-review-decision');
+    expect(decision).toHaveTextContent('Review assignment fairness before rejecting');
+    expect(decision).toHaveTextContent('38/100 Weak');
+    expect(decision).toHaveTextContent('0 source-backed proof items');
+    expect(decision).toHaveTextContent('No blocking evidence gap recorded; confirm the signal transfers beyond this task.');
+    const basis = screen.getByTestId('person-code-review-decision-basis');
+    expect(basis).toHaveTextContent('Match proof');
+    expect(basis).toHaveTextContent('Missing');
+    expect(basis).not.toHaveTextContent('8/12 Usable');
   });
 
   it('renders direct profile loads from a lightweight summary and hydrates full graph on audit open', async () => {
