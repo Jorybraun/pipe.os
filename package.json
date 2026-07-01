@@ -18,6 +18,7 @@
     "smoke:video-room-dev": "node scripts/smoke-video-room-dev.mjs",
     "smoke:scheduling-invite-dev": "node scripts/smoke-scheduling-invite-dev.mjs",
     "smoke:code-review-assess-dev": "node scripts/smoke-code-review-assess-dev.mjs",
+    "smoke:assess-session-isolation": "playwright test e2e/assess-session-isolation.unauth.spec.ts --project=unauthenticated --reporter=line",
     "smoke:code-review-assess-dev:matrix": "node scripts/smoke-code-review-assess-dev-matrix.mjs",
     "smoke:code-review-assess-dev:loop": "node scripts/smoke-code-review-assess-dev-loop.mjs",
     "smoke:code-review-workspace-dev": "node scripts/smoke-code-review-workspace-dev.mjs",

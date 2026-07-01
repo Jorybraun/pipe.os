@@ -26,6 +26,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Fixed — CODE_REVIEW assessment runtime
 
+- The `/assess` browser smoke suite now proves same-browser stale candidate sessions are discarded when a different invite token is opened, so token B resolves and stores candidate B instead of leaking token A state.
 - Person-profile CODE_REVIEW rollups now bind score, transcript, and match proof by shared session or interaction before presenting a current recommendation, preventing a newer related match-only interview from being blended into an older completed review score.
 - The recruiter CODE_REVIEW browser smoke now requires matched interview pages to render the meeting/person boundary copy, proving app-dev keeps the interview scoped to its own evidence while treating same-person interviews as separate context.
 - The deployed workspace smoke now reports current assessment-only CODE_REVIEW handoffs as an explicit `assessment_only_handoff` skip unless `WORKSPACE_SMOKE_REQUIRE_ROOM=1` is set, replacing the stale room-URL parsing failure.

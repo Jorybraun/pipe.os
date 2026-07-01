@@ -68,11 +68,12 @@ Run these in real browser automation whenever repo matching or CODE_REVIEW chang
 - `(cd workers/api && npm test -- --run src/routes/__tests__/meetingRooms.rest.test.ts -t "launches a live workspace|without an agent")`
 - `WORKSPACE_SMOKE_INTERVIEW_TYPE=OPEN_SOURCE_BUG_FIX ... npm run smoke:code-review-workspace-dev`
 - `npx vitest run src/pages/PersonProfilePage.test.tsx -t "does not blend a newer related match-only interview"` proves the person rollup binds score, transcript, and match proof by shared session/interaction before using a CODE_REVIEW result as the current recommendation.
+- `npm run smoke:assess-session-isolation` proves opening token B in a browser with stale token A sessionStorage resolves token B, stores candidate B, uses token B for stage config, and never fetches a challenge from candidate A.
 
 ## Immediate Gaps
 
 1. WebBridge is currently unavailable because the daemon reports `extension_connected:false`; browser proof must use Playwright or in-app browser until the extension reconnects.
-2. Candidate link lifecycle still needs a same-browser token A/token B smoke to prove sessionStorage never crosses candidates.
+2. Candidate link lifecycle still needs a real app-dev token A/token B smoke, but the browser-level mocked RPC proof now covers same-browser sessionStorage isolation.
 3. The waiting/matching state needs a no-infinite-spinner proof for missing evidence and missing repo prerequisites.
 4. Interview detail needs a manager-facing trust model display: matched/manual/needs evidence/no safe challenge/score unavailable/score valid.
 5. Person rollup still needs a deployed browser E2E where two related interviews exist, but the component regression now proves that only session/interaction-bound completed CODE_REVIEW evidence affects the current recommendation.
