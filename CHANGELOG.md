@@ -14,6 +14,8 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - Added frontend types for concept evolution (timeline, merge/split results), evidence semantic search (hits + provenance), and search strategy.
 - Added frontend hooks: `useConceptEvolution`, `useEvidenceSearch`, `useGraphTraversal`, `useMatchReport`, `useStalenessAlerts`, `useMatchDecisions`.
 - Added `MatchDecisionResult` interface to frontend API types for match decision audit responses.
+- Added candidate comparison panel rendering to `LivingContextGraph` with profile cards, concept coverage grid, and evidence diversity/depth rankings.
+- Added evidence timeline panel rendering to `LivingContextGraph` showing chronological entries with concepts, source counts, and confidence scores.
 
 ### Fixed — Route performance
 
