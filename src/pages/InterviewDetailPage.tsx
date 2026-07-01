@@ -1502,6 +1502,7 @@ function codeReviewAssessmentValiditySummary(input: {
   score: CodeReviewScoreSummary | null;
   submission: CodeReviewSubmissionDetail | null;
   match: CodeReviewMatchDetail | null;
+  setup: AssessmentSetupProjection | null | undefined;
   proofCount: number;
 }): CodeReviewAssessmentValidity {
   const matchReady = codeReviewMatchIsQualityGated(input.match);
@@ -1509,12 +1510,27 @@ function codeReviewAssessmentValiditySummary(input: {
   const annotationCount = input.submission?.annotations.length ?? 0;
   const pushbackCount = input.submission?.defenseThreads.length ?? 0;
   const hasMatchProof = input.proofCount > 0 || Boolean(input.match?.assessmentQuality);
+  const manualAssignment = input.setup?.kind === 'manual_open_source_task'
+    || input.setup?.source === 'recruiter_manual_override'
+    || input.match?.validatorAgent?.mode === 'manual_override';
 
   if (!matchReady) {
     return {
       value: 'Do not rely on score yet',
       detail: 'Repo fit is not source-backed, so this interview can only guide evidence collection until a quality-gated PR challenge exists.',
       tone: 'blocked',
+    };
+  }
+
+  if (scoreReady && manualAssignment) {
+    return {
+      value: annotationCount > 0 && hasMatchProof
+        ? 'Usable with assignment calibration'
+        : 'Score needs assignment calibration',
+      detail: pushbackCount > 0
+        ? 'Score, review comments, and developer pushback are present, but manual PR selection does not prove candidate-fit. Calibrate assignment fairness before making a hiring decision.'
+        : 'A score exists, but manual PR selection does not prove candidate-fit. Review source evidence and assignment fairness before relying on it.',
+      tone: 'watch',
     };
   }
 
@@ -3138,6 +3154,7 @@ export default function InterviewDetailPage(): JSX.Element {
     score: codeReviewScore,
     submission: codeReviewSubmission,
     match: codeReviewMatch,
+    setup: interview.assessmentSetup,
     proofCount: matchHyperedges.length,
   });
   const codeReviewAssignmentTrust = codeReviewAssignmentTrustSummary({

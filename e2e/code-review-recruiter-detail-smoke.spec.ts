@@ -14,6 +14,9 @@ const INTERVIEW_ID = envText('ASSESSMENT_RECRUITER_INTERVIEW_ID', 'CODE_REVIEW_R
 const EXPECTED_OUTCOME = (
   envText('ASSESSMENT_RECRUITER_EXPECT_OUTCOME', 'CODE_REVIEW_RECRUITER_EXPECT_OUTCOME', 'matched')
 ).toLowerCase();
+const EXPECTED_MATCH_MODE = (
+  envText('ASSESSMENT_RECRUITER_EXPECT_MATCH_MODE', 'CODE_REVIEW_RECRUITER_EXPECT_MATCH_MODE')
+).toLowerCase();
 const EXPECTED_REPO_URL = envText('ASSESSMENT_RECRUITER_EXPECT_REPO_URL', 'CODE_REVIEW_RECRUITER_EXPECT_REPO_URL');
 const EXPECTED_PR_NUMBER = envText('ASSESSMENT_RECRUITER_EXPECT_PR_NUMBER', 'CODE_REVIEW_RECRUITER_EXPECT_PR_NUMBER');
 const EXPECT_SCORE = envFlag('ASSESSMENT_RECRUITER_EXPECT_SCORE', 'CODE_REVIEW_RECRUITER_EXPECT_SCORE');
@@ -365,7 +368,12 @@ test.describe('Feature: assessment recruiter detail smoke', () => {
       await expect(scoreTrust).toContainText('Calibrate because');
       await expect(scoreTrust).toContainText('Score provenance');
       await expect(scoreTrust).toContainText('Use as');
-      await expect(scoreValidity).toContainText(/Usable|Score needs human calibration|Submitted, scoring pending/);
+      if (EXPECTED_MATCH_MODE === 'manual_override') {
+        await expect(scoreValidity).toContainText('Usable with assignment calibration');
+        await expect(scoreValidity).toContainText('manual PR selection does not prove candidate-fit');
+      } else {
+        await expect(scoreValidity).toContainText(/Usable|Score needs human calibration|Submitted, scoring pending/);
+      }
     }
 
     if (REQUIRE_HYPEREDGES) {

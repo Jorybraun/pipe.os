@@ -26,6 +26,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Fixed — CODE_REVIEW assessment runtime
 
+- Manual PR CODE_REVIEW scores now show assignment-calibration validity instead of generic usable-score wording, preventing hiring managers from reading a recruiter-selected PR as automatic candidate-fit proof.
 - Interview detail pages now always show the single-meeting/person-rollup boundary cue, even before living-context evidence exists, so sparse CODE_REVIEW records do not look like they contain every related meeting.
 - Person-profile CODE_REVIEW browser smoke now asserts the relationship timeline boundary copy, keeping same-person interactions useful as context without implying the profile owns every meeting row by default.
 - CODE_REVIEW recruiter browser smoke now proves interview and person source-proof drawers stay collapsed by default, preserving source traceability without reopening noisy raw evidence in the hiring-manager readout.
@@ -103,10 +104,10 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Removed — Assessment room simplification
 
-- Expanded the retired novelty-desktop boundary guard across product source, docs, e2e tests, and scripts so the assessment product cannot drift back into the old desktop experiment.
+- Expanded the assessment-room boundary guard across product source, docs, e2e tests, and scripts so the product stays focused on source-backed coding assessments.
 - Removed the browser-controlled AI helper launch path from the assessment room and invite form; workspace launches now stay focused on repo, terminal, code-server, chat, recording, transcript, commit, and submission evidence.
 - Simplified layout tests and render callback naming so the room code stays focused on assessment work instead of alternate room modes.
-- Added an assessment-room boundary regression test that keeps retired novelty UI language out of shipped room files.
+- Added an assessment-room boundary regression test that keeps off-goal room UI language out of shipped room files.
 - Expanded the assessment-room boundary guard to block retired brand and mode spellings.
 - Retired client-UI synchronization from the current product plan so the assessment room stays anchored to real repo-task evidence.
 - Removed obsolete assessment-panel coordinate and ordering state from the video-room app.

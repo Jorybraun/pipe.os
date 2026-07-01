@@ -814,6 +814,7 @@ function runRecruiterDetailPlaywright({
         VIDEO_ROOM_BASE,
         CODE_REVIEW_RECRUITER_INTERVIEW_ID: interviewId,
         CODE_REVIEW_RECRUITER_EXPECT_OUTCOME: expectedOutcome,
+        CODE_REVIEW_RECRUITER_EXPECT_MATCH_MODE: currentMatchMode(),
         CODE_REVIEW_RECRUITER_EXPECT_REPO_URL: expectedRepoUrl,
         CODE_REVIEW_RECRUITER_EXPECT_PR_NUMBER: String(expectedPrNumber ?? ''),
         CODE_REVIEW_RECRUITER_EXPECT_SUBMISSION: expectSubmission ? '1' : '0',

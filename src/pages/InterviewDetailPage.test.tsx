@@ -1463,6 +1463,10 @@ describe('InterviewDetailPage', () => {
     renderDetail();
 
     await flushAsyncUpdates();
+    const scoreValidity = screen.getByTestId('interview-code-review-score-validity');
+    expect(scoreValidity).toHaveTextContent('Usable with assignment calibration');
+    expect(scoreValidity).toHaveTextContent('manual PR selection does not prove candidate-fit');
+    expect(scoreValidity).toHaveTextContent('Calibrate assignment fairness before making a hiring decision');
     const scoreTrust = screen.getByTestId('interview-code-review-score-trust');
     expect(scoreTrust).toHaveTextContent('usable match gate');
     const gateMentions = scoreTrust.textContent?.match(/usable match gate/g) ?? [];
