@@ -80,8 +80,9 @@ async function expectPersonProfileDecision(page: Page): Promise<void> {
   await expect(personDecision).toBeVisible();
   await expect(personDecision).toContainText(/Workspace assessment decision|Code-review decision|Code review decision/);
   await expect(personDecision).toContainText(
-    /source-backed signal|needs review|Do not advance from this signal yet|Wait for candidate review|do not make a hiring decision/i,
+    /source-backed signal|needs review|Review assignment fairness before rejecting|Wait for candidate review|do not make a hiring decision/i,
   );
+  await expect(personDecision).not.toContainText('Do not advance from this signal yet');
   await expect(personDecision).toContainText('source-backed proof items');
   if (EXPECT_SCORE) {
     await expect(personDecision).toContainText('Score provenance');
