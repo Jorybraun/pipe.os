@@ -160,6 +160,8 @@ async function proxyApi(request, env, authState) {
   const url = new URL(request.url);
   const target = new URL(`${url.pathname}${url.search}`, apiOrigin);
   const headers = new Headers(request.headers);
+  headers.delete('Host');
+  headers.delete('Content-Length');
   const authorization = headers.get('Authorization');
   if (!(authState === 'cookie' && authorization?.startsWith('Bearer '))) {
     headers.delete('Authorization');
@@ -176,14 +178,16 @@ async function proxyApi(request, env, authState) {
   headers.set('X-Forwarded-Host', url.host);
   headers.set('X-Forwarded-Proto', url.protocol.replace(':', ''));
 
-  const response = await fetch(
-    new Request(target.toString(), {
-      method: request.method,
-      headers,
-      body: request.body,
-      redirect: request.redirect,
-    }),
-  );
+  const init = {
+    method: request.method,
+    headers,
+    redirect: request.redirect,
+  };
+  if (request.method !== 'GET' && request.method !== 'HEAD') {
+    init.body = request.body;
+  }
+
+  const response = await fetch(target.toString(), init);
   return new Response(response.body, response);
 }
 
