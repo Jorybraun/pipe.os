@@ -455,6 +455,13 @@ async function main() {
     }),
   });
   if (!invited?.room?.hostUrl) {
+    if (INTERVIEW_TYPE !== 'CODE_REVIEW') {
+      throw new Error(`Workspace smoke expected a room-backed ${INTERVIEW_TYPE} invite but received: ${JSON.stringify({
+        interviewId,
+        deliveredUrl: cleanMaybeAssessUrl(invited?.deliveredUrl ?? invited?.meetingUrl),
+        meetingUrl: cleanMaybeAssessUrl(invited?.meetingUrl),
+      })}`);
+    }
     const proof = {
       ok: true,
       skipped: true,
@@ -462,7 +469,7 @@ async function main() {
       interviewId,
       interviewType: INTERVIEW_TYPE,
       deliveredUrl: cleanMaybeAssessUrl(invited?.deliveredUrl ?? invited?.meetingUrl),
-      message: 'Invite delivered an assessment-only link, not a room-backed workspace. This is expected for current CODE_REVIEW/Open-source assessment handoff; set WORKSPACE_SMOKE_REQUIRE_ROOM=1 to fail instead.',
+      message: 'CODE_REVIEW delivered an assessment-only link. This is expected for the current CODE_REVIEW /assess boundary; set WORKSPACE_SMOKE_REQUIRE_ROOM=1 to fail instead.',
     };
     if (REQUIRE_ROOM) {
       throw new Error(`Workspace smoke requires a room-backed invite but received assessment-only handoff: ${JSON.stringify(proof)}`);

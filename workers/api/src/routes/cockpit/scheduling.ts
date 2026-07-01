@@ -150,6 +150,16 @@ function isWorkspaceAssessmentInterviewType(value: string | null | undefined): v
     || value === 'OPEN_SOURCE_BUG_FIX';
 }
 
+function isAssessmentOnlyInviteInterviewType(value: string | null | undefined): value is 'CODE_REVIEW' {
+  return value === 'CODE_REVIEW';
+}
+
+function isRoomBackedWorkspaceAssessmentInterviewType(
+  value: string | null | undefined,
+): value is Extract<InterviewTypeValue, 'DEV_CONTAINER_CHALLENGE' | 'OPEN_SOURCE_BUG_FIX'> {
+  return value === 'DEV_CONTAINER_CHALLENGE' || value === 'OPEN_SOURCE_BUG_FIX';
+}
+
 interface ScheduledInterviewRoomFeatures {
   videoEnabled: boolean;
   workspaceEnabled: boolean;
@@ -852,7 +862,10 @@ async function loadLatestDeliveredAssessmentUrl(
     const deliveredUrl = metadata.deliveredUrl;
     if (typeof deliveredUrl !== 'string') return null;
     const trimmed = deliveredUrl.trim();
-    if (!trimmed.includes('/assess/')) return null;
+    if (!trimmed.includes('/assess/') && !trimmed.includes('/room/')) return null;
+    if (!trimmed.includes('/assess/')) {
+      return { url: trimmed, state: 'active', message: null };
+    }
 
     const deliveredToken = assessmentTokenFromUrl(trimmed);
     if (!candidateId || !deliveredToken) {
@@ -901,7 +914,7 @@ async function loadCandidateAssessmentInviteLinkFromToken(
   state: 'active';
   message: string | null;
 } | null> {
-  if (!isWorkspaceAssessmentInterviewType(input.interviewType) || !input.candidateId) return null;
+  if (!isAssessmentOnlyInviteInterviewType(input.interviewType) || !input.candidateId) return null;
   const candidate = await db
     .prepare('SELECT invite_token FROM candidates WHERE id = ?1')
     .bind(input.candidateId)
@@ -3501,9 +3514,8 @@ async function ensureRecipientContact(
 
 /**
  * Ensure a standalone (pipeline-free) candidate exists for the given email,
- * returning the candidate id + invite token. Used for workspace-backed
- * assessments so the email can include an assessment link that authenticates
- * the candidate through /assess/:token.
+ * returning the candidate id + invite token. Used for assessment-only
+ * CODE_REVIEW handoffs so the email can include an /assess/:token link.
  */
 async function ensureStandaloneCandidateForInterview(
   db: D1Database,
@@ -6326,7 +6338,9 @@ schedulingAuth.post('/interviews/:id/invite', async (c) => {
 
   if (!interview) return apiError(c, 'NOT_FOUND', 'Interview not found.');
 
-  const needsAssessmentLink = isWorkspaceAssessmentInterviewType(interview.interview_type);
+  const workspaceAssessment = isWorkspaceAssessmentInterviewType(interview.interview_type);
+  const needsAssessmentLink = isAssessmentOnlyInviteInterviewType(interview.interview_type);
+  const needsRoomBackedWorkspace = isRoomBackedWorkspaceAssessmentInterviewType(interview.interview_type);
   const inviteRecipientName = (
     interview.candidate_name
     ?? interview.recipient_name
@@ -6363,9 +6377,9 @@ schedulingAuth.post('/interviews/:id/invite', async (c) => {
       })
     : null;
 
-  // For workspace-backed assessments, ensure a standalone
+  // For assessment-only CODE_REVIEW handoffs, ensure a standalone
   // candidate exists so the email includes an assessment link that authenticates
-  // the candidate and routes them to the code review / dev container challenge.
+  // the candidate and routes them to the CODE_REVIEW runtime.
   let assessUrl: string | null = null;
   if (needsAssessmentLink && !interview.candidate_id) {
     const { inviteToken } = await ensureStandaloneCandidateForInterview(
@@ -6393,17 +6407,28 @@ schedulingAuth.post('/interviews/:id/invite', async (c) => {
     }
   }
 
-  // For assessment-type interviews, the candidate should land on the assess URL
-  // (which renders the code review / dev container challenge), not the video room.
-  // Assessment links also take precedence over any stale scheduling URL that may
-  // exist on the row from earlier flows.
-  const effectiveSchedulingInviteUrl = needsAssessmentLink ? null : schedulingInviteUrl;
+  // Assessment-specific interviews should not deliver stale provider scheduling
+  // URLs. CODE_REVIEW uses /assess; room-backed workspace assessments use the
+  // generated room URL.
+  const effectiveSchedulingInviteUrl = workspaceAssessment ? null : schedulingInviteUrl;
   const deliveredUrl = assessUrl ?? effectiveSchedulingInviteUrl ?? meetingUrl;
   if (!deliveredUrl) {
     return apiError(c, 'INTERNAL_ERROR', 'Could not create an invite link for this interview.');
   }
-  const inviteVerb = needsAssessmentLink ? 'start your assessment' : effectiveSchedulingInviteUrl ? 'schedule an interview' : 'join a video call';
-  const inviteCta = needsAssessmentLink ? 'START ASSESSMENT' : effectiveSchedulingInviteUrl ? 'SCHEDULE INTERVIEW' : 'JOIN VIDEO CALL';
+  const inviteVerb = needsAssessmentLink
+    ? 'start your assessment'
+    : needsRoomBackedWorkspace
+      ? 'join your assessment workspace'
+      : effectiveSchedulingInviteUrl
+        ? 'schedule an interview'
+        : 'join a video call';
+  const inviteCta = needsAssessmentLink
+    ? 'START ASSESSMENT'
+    : needsRoomBackedWorkspace
+      ? 'JOIN ASSESSMENT WORKSPACE'
+      : effectiveSchedulingInviteUrl
+        ? 'SCHEDULE INTERVIEW'
+        : 'JOIN VIDEO CALL';
   const linkLabel = effectiveSchedulingInviteUrl ? 'Scheduling link' : 'Link';
 
   const scheduledTime = interview.scheduled_at
@@ -6459,7 +6484,7 @@ schedulingAuth.post('/interviews/:id/invite', async (c) => {
   const rawPipelineTitle = interview.pipeline_title ?? 'Interview';
   const subjectPrefix = effectiveSchedulingInviteUrl
     ? 'Schedule interview'
-    : needsAssessmentLink
+    : workspaceAssessment
       ? 'Assessment invitation'
       : 'Video call invitation';
   const subject = scheduledTime
