@@ -399,6 +399,31 @@ function automaticMatchExplanation(prNumber: number, contrastScore: number): Rec
   };
 }
 
+function roleBackedAutomaticMatchExplanation(prNumber: number, contrastScore: number): Record<string, unknown> {
+  const roleSourceRef = {
+    sourceRefType: 'role_context',
+    locator: 'role_context:job_description',
+    exactText: 'The role requires React, TypeScript, accessibility, and regression-test review.',
+    conceptKeys: ['react', 'typescript', 'accessibility', 'regression-testing'],
+  };
+  const validator = matchValidator(prNumber);
+  return {
+    ...automaticMatchExplanation(prNumber, contrastScore),
+    roleSources: [roleSourceRef],
+    evidence: [{
+      ...evidenceAlignment(),
+      roleSourceRefs: [roleSourceRef],
+    }],
+    validatorAgent: {
+      ...validator,
+      sourceBridge: {
+        ...(validator.sourceBridge as Record<string, unknown>),
+        roleSourceCount: 1,
+      },
+    },
+  };
+}
+
 // ─── Tests ────────────────────────────────────────────────────────────────────
 
 beforeEach(() => {
@@ -1549,6 +1574,98 @@ describe('POST /rpc/get-challenge', () => {
     expect(body.instructions).toContain('email you when your code review is ready');
     expect(matchReposByGroundedEdges).not.toHaveBeenCalled();
     expect(matchReposForCandidateNeo4j).not.toHaveBeenCalled();
+  });
+
+  it('keeps role-backed CODE_REVIEW near-ties out of the candidate runtime', async () => {
+    vi.mocked(matchCandidateToReviewChallenge).mockResolvedValueOnce({
+      status: 'MATCHED',
+      repoId: 973,
+      prNumber: 973,
+      explanation: roleBackedAutomaticMatchExplanation(973, 0),
+    } as Awaited<ReturnType<typeof matchCandidateToReviewChallenge>>);
+
+    const db = fakeD1({
+      firstResponders: [
+        { match: 'FROM candidates WHERE id', value: { current_stage_id: 'stage_code' } },
+        { match: 'FROM stages WHERE id', value: { mode: 'ASYNC', screening_input_mode: null } },
+        { match: 'FROM pipeline_match_config', value: { match_philosophy: 'tailored' } },
+        { match: 'FROM candidate_challenge_assignment', value: null },
+        {
+          match: 'FROM role_contexts',
+          value: {
+            id: 'role_ctx_review',
+            persona_json: null,
+            rcd_json: null,
+            job_description_md: 'The role requires React, TypeScript, accessibility, and regression-test review.',
+            non_negotiable_skills_json: JSON.stringify(['React', 'TypeScript', 'accessibility']),
+          },
+        },
+        {
+          match: 'FROM candidates c WHERE c.id',
+          value: { resume_s3_key: 'resume.pdf', node_count: 38 },
+        },
+        {
+          match: 'LEFT JOIN candidate_ingestion',
+          value: {
+            resume_s3_key: 'resume.pdf',
+            status: 'embedded',
+            current_step: 'embed_profile',
+            error_text: null,
+            node_count: 38,
+          },
+        },
+      ],
+      allResponders: [
+        {
+          match: 'FROM challenges ch',
+          value: [{
+            id: 'ch_review',
+            type: 'CODE_REVIEW',
+            title: 'Code Review',
+            instructions: 'Review a source-backed PR',
+            config: JSON.stringify({ isMultiTurn: true }),
+            cached_diff_json: null,
+            github_pr_title: null,
+            github_pr_number: null,
+            github_repo_url: null,
+            github_pr_description: null,
+            dev_container_repo_url: null,
+            assignment_id: null,
+            assignment_repo_url: null,
+            assignment_pr_number: null,
+            effective_repo_url: null,
+            effective_pr_number: null,
+            effective_issue_number: null,
+          }],
+        },
+      ],
+    });
+    const env = buildEnv({ DB: db });
+
+    const res = await rpcAuth.request(
+      '/get-challenge',
+      {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json',
+          Authorization: await authHeader(),
+        },
+        body: JSON.stringify({ order: 1 }),
+      },
+      env,
+    );
+
+    expect(res.status).toBe(200);
+    const body = await res.json() as { type: string; id: string; instructions?: string };
+    expect(body).toMatchObject({
+      id: 'profile-received',
+      type: 'PROFILE_RECEIVED',
+    });
+    expect(body.instructions).toContain('email you when your code review is ready');
+    expect(matchCandidateToReviewChallenge).toHaveBeenCalledOnce();
+    expect(db.__calls.some((call) =>
+      call.ran && call.sql.includes('INSERT INTO candidate_challenge_assignment')
+    )).toBe(false);
   });
 
   it('uses source-backed issue context for CODE_IMPLEMENTATION without Neo4j recall', async () => {

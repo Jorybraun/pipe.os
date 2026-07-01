@@ -26,6 +26,8 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Fixed — CODE_REVIEW assessment runtime
 
+- Pipeline-backed CODE_REVIEW matching now applies the same candidate-safe quality gate as standalone matching before assigning a PR, so role-backed near-ties or `NEEDS_REVIEW` matches remain queued for recruiter review instead of being served to candidates.
+- Added a named role-backed deployed CODE_REVIEW smoke that proves role-backed no-assignment candidates still receive the safe `PROFILE_RECEIVED` handoff instead of a candidate-visible matching loop.
 - Added a legacy D1 repair migration for `candidates.pipeline_id` so app-dev can create pipeline-free standalone CODE_REVIEW assessment invites.
 - The deployed `/assess` smoke suite now creates two real app-dev CODE_REVIEW invites and proves opening token B after token A in the same browser resolves/stores candidate B before either invite is claimed.
 - The deployed CODE_REVIEW assess smoke now treats non-submit mode as ready once the recruiter detail has an active matched assignment, while full-submit mode still requires completion, submission, and scoring proof.

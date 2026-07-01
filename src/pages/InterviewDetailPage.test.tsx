@@ -1676,6 +1676,70 @@ describe('InterviewDetailPage', () => {
     expect(evidencePlan).toHaveTextContent('CREATE FOLLOW-UP ASSESSMENT');
   });
 
+  it('treats matched code-review PRs with needs-review quality as unsafe assignments', async () => {
+    mocks.api.get.mockResolvedValueOnce({
+      interview: makeInterview({
+        interviewType: 'CODE_REVIEW',
+        status: 'INVITED',
+        githubRepoUrl: 'https://github.com/mui/base-ui',
+        githubPrNumber: 973,
+        codeReviewMatch: {
+          status: 'MATCHED',
+          matchRunId: 'match-run-needs-review',
+          packetId: 'packet-needs-review',
+          summary: 'Matched 5 source-backed demands (0 stretch).',
+          score: 0.91,
+          assessmentQuality: {
+            verdict: 'NEEDS_REVIEW',
+            score: 9,
+            maxScore: 12,
+            metrics: [{
+              id: 'contrast_separation',
+              label: 'Contrast separation',
+              score: 0,
+              maxScore: 2,
+              reason: 'The selected challenge leads the next comparable challenge by 1%.',
+            }],
+          },
+          reviewProfile: null,
+          validatorAgent: {
+            agentName: 'quality-gate',
+            agentVersion: '1',
+            mode: 'source_backed',
+            verdict: 'NEEDS_REVIEW',
+            rationale: 'The selected PR is source-backed, but contrast separation is too weak.',
+            checks: [],
+            sourceBridge: {
+              prNumber: 973,
+              candidateSourceCount: 5,
+              roleSourceCount: 1,
+              repoSourceCount: 17,
+              alignedDemandCount: 5,
+              stretchCount: 0,
+              provenanceComplete: true,
+            },
+          },
+          roleSources: [],
+          evidence: [],
+          evidenceHyperedges: [],
+          gaps: ['The selected challenge leads the next comparable challenge by 1%.'],
+          evidencePlan: [],
+        },
+      }),
+    });
+
+    renderDetail();
+
+    await flushAsyncUpdates();
+    const decision = screen.getByTestId('interview-code-review-decision-summary');
+    expect(decision).toHaveTextContent('No confident repo match yet');
+    expect(decision).toHaveTextContent('No safe challenge');
+    expect(decision).toHaveTextContent('Review challenge assignment');
+    expect(decision).toHaveTextContent('Do not rely on score yet');
+    expect(decision).toHaveTextContent('The selected challenge leads the next comparable challenge by 1%.');
+    expect(decision).not.toHaveTextContent('The PR assignment is ready. Wait for the candidate review');
+  });
+
   it('keeps accumulated person context out of the meeting evidence timeline', async () => {
     mocks.api.get.mockResolvedValueOnce({
       interview: makeInterview({

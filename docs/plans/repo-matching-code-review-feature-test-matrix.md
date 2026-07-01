@@ -67,6 +67,7 @@ Run these in real browser automation whenever repo matching or CODE_REVIEW chang
 - `(cd workers/api && npm test -- --run src/__tests__/DevContainerDO.test.ts -t "internet access")`
 - `(cd workers/api && npm test -- --run src/routes/__tests__/meetingRooms.rest.test.ts -t "launches a live workspace|without an agent")`
 - `npm run smoke:code-review-assess-dev` proves the deployed ready CODE_REVIEW path delivers `/assess`, renders the source-backed PR diff, opens recruiter detail, and keeps the person profile pending instead of overclaiming before submission.
+- `npm run smoke:code-review-assess-dev:role-backed` proves the deployed role-backed CODE_REVIEW path creates role context but, without a ready source-backed PR assignment, still returns the safe `PROFILE_RECEIVED` / `candidate-intake-queued` handoff instead of exposing internal matching.
 - `WORKSPACE_SMOKE_INTERVIEW_TYPE=OPEN_SOURCE_BUG_FIX ... npm run smoke:code-review-workspace-dev`
 - `npx vitest run src/pages/PersonProfilePage.test.tsx -t "does not blend a newer related match-only interview"` proves the person rollup binds score, transcript, and match proof by shared session/interaction before using a CODE_REVIEW result as the current recommendation.
 - `npm run smoke:assess-session-isolation` proves opening token B in a browser with stale token A sessionStorage resolves token B, stores candidate B, uses token B for stage config, and never fetches a challenge from candidate A.

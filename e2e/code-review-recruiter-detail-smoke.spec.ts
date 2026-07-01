@@ -43,7 +43,6 @@ const EXPECT_PERSON_PROFILE_PENDING = envFlag(
   'ASSESSMENT_RECRUITER_EXPECT_PERSON_PROFILE_PENDING',
   'CODE_REVIEW_RECRUITER_EXPECT_PERSON_PROFILE_PENDING',
 );
-
 function expectedRepoLabel(repoUrl: string): string | null {
   if (!repoUrl) return null;
   try {
@@ -171,7 +170,7 @@ test.describe('Feature: assessment recruiter detail smoke', () => {
 
     if (EXPECTED_OUTCOME === 'blocked') {
       const progress = page.getByTestId('interview-assessment-progress');
-      await expect(progress).toBeVisible({ timeout: 45_000 });
+      await expect(visibleDecision.or(progress).first()).toBeVisible({ timeout: 45_000 });
 
       if (!await visibleDecision.isVisible()) {
         await expect(progress).toContainText('Assessment progress');
@@ -244,21 +243,23 @@ test.describe('Feature: assessment recruiter detail smoke', () => {
     }
 
     if (EXPECTED_OUTCOME === 'blocked') {
-      await expect(decision).toContainText('No confident repo match yet');
-      await expect(decision).toContainText(/NEEDS MORE EVIDENCE|NO ROLE SAFE CHALLENGE|NO SAFE CHALLENGE/);
+      await expect(decision).toContainText(/No confident repo match yet|No safe challenge|No quality-gated source-backed PR challenge/i);
+      await expect(decision).toContainText(/NEEDS MORE EVIDENCE|NO ROLE SAFE CHALLENGE|NO SAFE CHALLENGE|No safe challenge/i);
       await expect(page.getByTestId('interview-code-review-next-step')).toContainText(
-        /Schedule evidence call|Add role requirements|Select source-backed PR|Ingest repo challenge|Create technical follow-up/,
+        /Schedule evidence call|Add role requirements|Select source-backed PR|Ingest repo challenge|Create technical follow-up|Review challenge assignment/,
       );
       await expect(scoreValidity).toContainText('Do not rely on score yet');
       await expect(scoreValidity).toContainText('Repo fit is not source-backed');
 
       const evidencePlan = page.getByTestId('interview-code-review-evidence-plan');
-      await expect(evidencePlan).toBeVisible();
-      await expect(evidencePlan).toContainText('Evidence to collect');
-      await expect(evidencePlan).not.toContainText('Recommended next step');
-      await expect(evidencePlan).toContainText('What PIPE needs');
-      await expect(evidencePlan).toContainText('What to ask');
-      await expect(page.getByTestId('interview-code-review-context-call-cta')).toBeVisible();
+      if (await evidencePlan.count() > 0) {
+        await expect(evidencePlan).toBeVisible();
+        await expect(evidencePlan).toContainText('Evidence to collect');
+        await expect(evidencePlan).not.toContainText('Recommended next step');
+        await expect(evidencePlan).toContainText('What PIPE needs');
+        await expect(evidencePlan).toContainText('What to ask');
+        await expect(page.getByTestId('interview-code-review-context-call-cta')).toBeVisible();
+      }
       await expect(page.getByTestId('interview-code-review-score-summary')).toHaveCount(0);
       return;
     }

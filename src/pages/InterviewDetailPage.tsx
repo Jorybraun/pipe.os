@@ -1301,11 +1301,18 @@ function codeReviewVerdictLabel(
     case 'commented':
       return 'Candidate left review comments';
     default:
-      if (!verdict && match && match.status !== 'MATCHED') {
+      if (!verdict && match && !codeReviewMatchIsQualityGated(match)) {
         return 'No confident repo match yet';
       }
       return verdict ? `Candidate submitted ${titleCaseToken(verdict)}` : 'Waiting for candidate review';
   }
+}
+
+function codeReviewMatchIsQualityGated(match: CodeReviewMatchDetail | null): boolean {
+  if (!match || match.status !== 'MATCHED') return false;
+  const qualityVerdict = match.assessmentQuality?.verdict?.toUpperCase() ?? null;
+  if (!qualityVerdict) return true;
+  return qualityVerdict === 'STRONG' || qualityVerdict === 'USABLE' || qualityVerdict === 'PASSED';
 }
 
 function codeReviewActionText(
@@ -1322,7 +1329,10 @@ function codeReviewActionText(
   if (submission) {
     return 'Read the candidate comments and developer replies before deciding whether this review shows the judgment you need.';
   }
-  if (match?.status === 'MATCHED') {
+  if (match && !codeReviewMatchIsQualityGated(match)) {
+    return 'Resolve the source-backed match quality gate before sending or trusting this code-review assignment.';
+  }
+  if (codeReviewMatchIsQualityGated(match)) {
     return 'The PR assignment is ready. Wait for the candidate review before making a hiring decision.';
   }
   if (match && match.status !== 'MATCHED') {
@@ -1332,6 +1342,7 @@ function codeReviewActionText(
 }
 
 function codeReviewFitLabel(match: CodeReviewMatchDetail | null): string {
+  if (match && !codeReviewMatchIsQualityGated(match)) return 'No safe challenge';
   if (match?.assessmentQuality) {
     return `${titleCaseToken(match.assessmentQuality.verdict.toLowerCase())} assessment fit`;
   }
@@ -1493,7 +1504,7 @@ function codeReviewAssessmentValiditySummary(input: {
   match: CodeReviewMatchDetail | null;
   proofCount: number;
 }): CodeReviewAssessmentValidity {
-  const matchReady = input.match?.status === 'MATCHED';
+  const matchReady = codeReviewMatchIsQualityGated(input.match);
   const scoreReady = input.score?.status === 'scored' && typeof input.score.score === 'number' && Number.isFinite(input.score.score);
   const annotationCount = input.submission?.annotations.length ?? 0;
   const pushbackCount = input.submission?.defenseThreads.length ?? 0;
@@ -1594,7 +1605,15 @@ function codeReviewAssignmentTrustSummary(input: {
     };
   }
 
-  if (source === 'matched_repo_id' || kind === 'auto_match' || input.match?.status === 'MATCHED') {
+  if (input.match && !codeReviewMatchIsQualityGated(input.match)) {
+    return {
+      value: 'No safe challenge',
+      detail: 'The matcher found a PR, but its quality gate still needs recruiter review before it can be used as a candidate assignment.',
+      tone: 'blocked',
+    };
+  }
+
+  if (source === 'matched_repo_id' || kind === 'auto_match' || codeReviewMatchIsQualityGated(input.match)) {
     return {
       value: 'Matched',
       detail: 'PIPE selected this challenge from source-backed candidate evidence, role context, and repo demand. Use it as assignment-fit evidence alongside the candidate review.',
@@ -1652,9 +1671,7 @@ function codeReviewMatchExplanation(input: {
     prNumber: input.prNumber,
     match: input.match,
   });
-  const matchStatus = input.match?.status?.toUpperCase() ?? null;
-
-  if (!input.match || matchStatus !== 'MATCHED') {
+  if (!input.match || !codeReviewMatchIsQualityGated(input.match)) {
     return {
       selectedChallenge,
       whyThisChallenge: input.match?.summary
@@ -1718,6 +1735,15 @@ function codeReviewNextStepRecommendation(
     return {
       value: 'Collect missing evidence',
       detail: 'Create the targeted follow-up assessment before sending or trusting a PR challenge.',
+      tone: 'blocked',
+    };
+  }
+  if (match && !codeReviewMatchIsQualityGated(match)) {
+    const plannedStep = codeReviewBlockedMatchNextStep(evidencePlan);
+    if (plannedStep) return plannedStep;
+    return {
+      value: 'Review challenge assignment',
+      detail: 'The matcher found a source-backed PR, but the quality gate needs recruiter review before the candidate should receive or be judged on it.',
       tone: 'blocked',
     };
   }
@@ -1837,8 +1863,7 @@ function codeReviewDecisionRiskSummary(
   match: CodeReviewMatchDetail | null,
 ): CodeReviewDecisionRisk {
   const missingContext: string[] = [];
-  const matchStatus = match?.status?.toUpperCase() ?? null;
-  const hasMatchedChallenge = matchStatus === 'MATCHED';
+  const hasMatchedChallenge = codeReviewMatchIsQualityGated(match);
 
   if (!match) {
     return {

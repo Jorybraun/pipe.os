@@ -20,27 +20,28 @@ App-dev now has end-to-end smoke gates for the current Base UI packet:
 ```bash
 CODE_REVIEW_SMOKE_SUBMIT=1 npm run smoke:code-review-assess-dev
 CODE_REVIEW_SMOKE_SUBMIT=1 CODE_REVIEW_SMOKE_AUTO_MATCH=1 npm run smoke:code-review-assess-dev
-CODE_REVIEW_SMOKE_SUBMIT=1 CODE_REVIEW_SMOKE_AUTO_MATCH=1 CODE_REVIEW_SMOKE_ROLE_BACKED=1 npm run smoke:code-review-assess-dev
+npm run smoke:code-review-assess-dev:role-backed
 ```
 
-The validated manual, roleless auto-match, and role-backed auto-match runs
-created disposable CODE_REVIEW invites, delivered `/assess/:token` links, and
-selected `mui/base-ui#973`. Manual mode validated the recruiter-selected
-source-backed PR without inferring CV fit; roleless and role-backed modes
-auto-matched candidate evidence to the PR, with roleless contrast measured
-against a second eligible concept-near challenge and role-backed proof carrying
-role source evidence. All three modes rendered the Pierre diff in the browser,
-drove the visible candidate UI to add an inline diff comment, submitted the
-first review round in the browser, waited for the AI developer response/thread,
-then submitted a `request_changes` verdict and verified recruiter-visible
-completion on both interview detail and candidate profile result surfaces. The
+The validated manual and roleless auto-match runs created disposable
+CODE_REVIEW invites, delivered `/assess/:token` links, selected
+`mui/base-ui#973`, rendered the Pierre diff in the browser, drove the visible
+candidate UI to add an inline diff comment, submitted the first review round,
+waited for the AI developer response/thread, then submitted a `request_changes`
+verdict and verified recruiter-visible completion on both interview detail and
+candidate profile result surfaces. Manual mode validates a recruiter-selected
+source-backed PR without inferring CV fit; roleless auto-match must show enough
+candidate-to-repo contrast before it can become a candidate challenge. The
 full-submit smoke now also verifies that the
 `code_review_judge_examples` replay queue contains the completed review session
 with candidate comments, AI developer pushback, and improvement-loop metadata
-for human labelling and cross-model calibration. The role-backed run also
-created a simple-JD role context, auto-built a CODE_REVIEW pipeline, clicked
-through the candidate Welcome gate, and verified recruiter-visible role source
-evidence plus a `candidate_role_repo_alignment` person-role-repo hyperedge.
+for human labelling and cross-model calibration.
+
+The role-backed smoke creates a simple-JD role context and auto-builds a
+CODE_REVIEW pipeline. If the deterministic matcher cannot produce a source-backed
+PR that passes the candidate-safe quality gate, `/assess` must stop at the
+candidate-safe `PROFILE_RECEIVED` handoff instead of running internal matching or
+serving a `NEEDS_REVIEW` challenge to the candidate.
 
 Local validation on 2026-06-27 also proved the full-submit smoke no longer
 relies on the browser to create hidden assessment state. Ready-assignment
@@ -62,16 +63,8 @@ selected `https://github.com/mui/base-ui` PR `#973`, returned `MATCHED`,
 `codeReviewMatchStatus: MATCHED`, and validator `PASSED`; it rendered the
 candidate-safe proof in the browser, drove a visible Pierre inline comment,
 received an AI developer response, completed the recruiter interview/profile
-result, and created judge replay example
-`code_review_judge_example_c5c31416e69b945c1f2f67256a7ac134`. The roleless
-auto-match proof selected the same PR with contrast separation `1/2`, four
-evidence hyperedges, recruiter-visible validator `PASSED`, browser pushback,
-and judge replay example
-`code_review_judge_example_8c90fdfa5a8d5e6825b42f0a4a5aa8f8`. The role-backed
-app-dev proof rendered `ASSESSMENT_FOCUS`, drove browser pushback, completed
-recruiter results, and created judge replay example
-`code_review_judge_example_1c60cf9ef9aadc11caff2b6e501db499` with
-`human_label_queue` and `cross_model_calibration` metadata.
+result, persisted score `62`, and created judge replay example
+`code_review_judge_example_01655744bddfa410c15a6bafbc416415`.
 
 After the recruiter detail defense-thread UI was added, a fresh manual
 full-submit app-dev proof passed for interview

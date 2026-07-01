@@ -257,6 +257,19 @@ async function checkMatchingGate(
       });
     }
 
+    const matchExplanation = sanitizeMatchExplanation(match.explanation);
+    if (!standaloneAutomaticMatchPasses(matchExplanation)) {
+      const readiness = await standaloneReviewEvidenceReadiness(db, candidateId);
+      return waitingForMatch('Deterministic challenge matcher needs recruiter review', {
+        terminal: true,
+        diagnostics: diagnosticsForStandaloneReviewReadiness(readiness, {
+          phase: 'repo_matching',
+          repoMatchingStatus: 'blocked',
+          repoMatchingDetail: `Deterministic challenge matcher needs recruiter review (gate=${matchExplanation?.qualityGate.verdict ?? 'missing'}, contrast=${contrastSeparationScore(matchExplanation) ?? 'missing'})`,
+        }),
+      });
+    }
+
     const repo = await db.prepare(
       `SELECT github_url FROM qualified_repos WHERE id = ?1`,
     ).bind(match.repoId).first<{ github_url: string | null }>();
