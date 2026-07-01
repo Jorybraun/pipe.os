@@ -417,7 +417,7 @@ export function InviteCreationModal({
                     ? `${linkLabel} is ready, but email delivery failed. Copy and send it manually.`
                     : `${linkLabel} is ready. Copy it or send it from the interview page.`}
               </div>
-              {createdInvite.assessmentSetup?.message && (
+              {(createdInvite.assessmentSetup?.message || createdInvite.assessmentSetup?.nextActionLabel) && (
                 <div
                   style={{
                     fontSize: 10,
@@ -427,7 +427,10 @@ export function InviteCreationModal({
                     lineHeight: 1.5,
                   }}
                 >
-                  {createdInvite.assessmentSetup.message}
+                  {[
+                    createdInvite.assessmentSetup.message,
+                    createdInvite.assessmentSetup.nextActionLabel,
+                  ].filter(Boolean).join(' Next: ')}
                 </div>
               )}
               <div

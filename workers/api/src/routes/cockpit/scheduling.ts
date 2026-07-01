@@ -226,12 +226,21 @@ type ScheduledAssessmentSetupSource =
   | 'contact_first_invite'
   | 'candidate_id';
 
+type ScheduledAssessmentSetupNextAction =
+  | 'NONE'
+  | 'OPEN_ROOM_OR_WORKSPACE'
+  | 'COLLECT_CANDIDATE_EVIDENCE'
+  | 'RERUN_OR_ENRICH_MATCHING'
+  | 'ATTACH_CHALLENGE_PACKET';
+
 interface ScheduledAssessmentSetupProjection {
   status: ScheduledAssessmentSetupStatus;
   kind: ScheduledAssessmentSetupKind;
   source: ScheduledAssessmentSetupSource;
   blocksPositiveAssessment: boolean;
   message: string | null;
+  nextAction: ScheduledAssessmentSetupNextAction;
+  nextActionLabel: string | null;
   lastDeliveredUrl?: string | null;
   lastDeliveredUrlState?: 'active' | 'claimed' | 'stale' | null;
   lastDeliveredUrlMessage?: string | null;
@@ -290,6 +299,8 @@ function buildScheduledAssessmentSetup(input: {
       source: 'not_workspace_assessment',
       blocksPositiveAssessment: false,
       message: null,
+      nextAction: 'NONE',
+      nextActionLabel: null,
       lastDeliveredUrl: null,
       lastDeliveredUrlState: null,
       lastDeliveredUrlMessage: null,
@@ -303,6 +314,8 @@ function buildScheduledAssessmentSetup(input: {
       source: 'recruiter_manual_override',
       blocksPositiveAssessment: false,
       message: 'A concrete open-source task packet was assigned by the recruiter. PIPE can launch that repo task from the exact base commit without inferring candidate-specific alignment.',
+      nextAction: 'OPEN_ROOM_OR_WORKSPACE',
+      nextActionLabel: 'Open the assessment room and launch the controlled workspace from the assigned base commit.',
       lastDeliveredUrl,
       lastDeliveredUrlState,
       lastDeliveredUrlMessage,
@@ -316,6 +329,8 @@ function buildScheduledAssessmentSetup(input: {
       source: 'matched_repo_id',
       blocksPositiveAssessment: false,
       message: 'PIPE selected a concrete GitHub PR from source-backed candidate evidence and repository demands. Use the assignment as match-fit evidence alongside the candidate review.',
+      nextAction: 'OPEN_ROOM_OR_WORKSPACE',
+      nextActionLabel: 'Open the assessment room and capture the candidate work against the matched PR task.',
       lastDeliveredUrl,
       lastDeliveredUrlState,
       lastDeliveredUrlMessage,
@@ -329,6 +344,8 @@ function buildScheduledAssessmentSetup(input: {
       source: 'recruiter_manual_override',
       blocksPositiveAssessment: false,
       message: 'A concrete GitHub PR was assigned by the recruiter. PIPE can launch that task, but candidate-specific alignment is not inferred from this manual override.',
+      nextAction: 'OPEN_ROOM_OR_WORKSPACE',
+      nextActionLabel: 'Open the assessment room and capture source-backed review or implementation evidence.',
       lastDeliveredUrl,
       lastDeliveredUrlState,
       lastDeliveredUrlMessage,
@@ -342,6 +359,8 @@ function buildScheduledAssessmentSetup(input: {
       source: 'matched_repo_id',
       blocksPositiveAssessment: true,
       message: 'A matched repository exists, but no GitHub PR or task was assigned. Treat this as an assessment setup gap, not candidate evidence.',
+      nextAction: 'ATTACH_CHALLENGE_PACKET',
+      nextActionLabel: 'Attach a source-backed PR/task packet for the matched repo, or ingest more eligible repo challenges before inviting the candidate to work.',
       lastDeliveredUrl,
       lastDeliveredUrlState,
       lastDeliveredUrlMessage,
@@ -355,6 +374,8 @@ function buildScheduledAssessmentSetup(input: {
       source: 'contact_first_invite',
       blocksPositiveAssessment: true,
       message: 'This contact-first assessment invite has no candidate evidence yet. PIPE must ingest source-backed resume, transcript, chat, or interview evidence before selecting a PR task.',
+      nextAction: 'COLLECT_CANDIDATE_EVIDENCE',
+      nextActionLabel: 'Send the intake link or schedule a context call that captures source-backed examples of the candidate’s real engineering work.',
       lastDeliveredUrl,
       lastDeliveredUrlState,
       lastDeliveredUrlMessage,
@@ -367,6 +388,8 @@ function buildScheduledAssessmentSetup(input: {
     source: 'candidate_id',
     blocksPositiveAssessment: true,
     message: 'Candidate evidence is available for matching, but no source-backed PR task has been assigned yet.',
+    nextAction: 'RERUN_OR_ENRICH_MATCHING',
+    nextActionLabel: 'Rerun repo matching after adding role requirements, candidate work evidence, or more eligible source-backed repo challenges.',
     lastDeliveredUrl,
     lastDeliveredUrlState,
     lastDeliveredUrlMessage,
@@ -3709,6 +3732,8 @@ function contactFirstInterviewSourceText(input: {
     `Assessment setup source: ${input.assessmentSetup.source}`,
     `Assessment setup blocks positive assessment: ${input.assessmentSetup.blocksPositiveAssessment ? 'yes' : 'no'}`,
     `Assessment setup message: ${input.assessmentSetup.message ?? 'none'}`,
+    `Assessment setup next action: ${input.assessmentSetup.nextAction}`,
+    `Assessment setup next action label: ${input.assessmentSetup.nextActionLabel ?? 'none'}`,
     `Scheduled at: ${input.scheduledAt ?? 'unscheduled'}`,
     `Scheduling provider: ${input.schedulingProvider ?? 'none'}`,
     `Scheduling URL: ${input.schedulingUrl ?? 'none'}`,
@@ -3755,6 +3780,8 @@ async function persistContactFirstInterviewInviteContext(
       assessmentSetupKind: input.assessmentSetup.kind,
       assessmentSetupSource: input.assessmentSetup.source,
       assessmentSetupBlocksPositiveAssessment: input.assessmentSetup.blocksPositiveAssessment,
+      assessmentSetupNextAction: input.assessmentSetup.nextAction,
+      assessmentSetupNextActionLabel: input.assessmentSetup.nextActionLabel,
       recruiterNotes: input.recruiterNotes ?? null,
     },
   });
@@ -3820,6 +3847,8 @@ async function persistContactFirstInterviewInviteContext(
       assessmentSetupSource: input.assessmentSetup.source,
       assessmentSetupBlocksPositiveAssessment: input.assessmentSetup.blocksPositiveAssessment,
       assessmentSetupMessage: input.assessmentSetup.message,
+      assessmentSetupNextAction: input.assessmentSetup.nextAction,
+      assessmentSetupNextActionLabel: input.assessmentSetup.nextActionLabel,
       recruiterNotes: input.recruiterNotes ?? null,
     },
     confidence: 1,

@@ -788,7 +788,7 @@ function workspaceAssessmentFitItem(input: {
     return {
       label: 'Challenge fit',
       value: 'Do not rely yet',
-      detail: input.setup.message ?? 'The current assignment is not safe for positive assessment.',
+      detail: input.setup.nextActionLabel ?? input.setup.message ?? 'The current assignment is not safe for positive assessment.',
       tone: 'blocked',
     };
   }
@@ -2952,6 +2952,7 @@ export default function InterviewDetailPage(): JSX.Element {
     : 'Not started';
   const assessmentProgressNextAction = assessmentProgress?.readiness?.detail
     ?? assessmentProgress?.nextActionLabel
+    ?? interview.assessmentSetup?.nextActionLabel
     ?? interview.assessmentSetup?.message
     ?? 'Open or configure the assessment room to start collecting evidence.';
   const assessmentProgressEvidence = assessmentProgress
@@ -3490,7 +3491,9 @@ export default function InterviewDetailPage(): JSX.Element {
                 Assessment progress
               </div>
               <div style={ROOM_LINK_TEXT}>
-                {interview.assessmentSetup?.message ?? 'Source-backed assessment evidence is tracked against this interview.'}
+                {interview.assessmentSetup?.nextActionLabel
+                  ?? interview.assessmentSetup?.message
+                  ?? 'Source-backed assessment evidence is tracked against this interview.'}
               </div>
             </div>
             <div style={{ display: 'flex', alignItems: 'center', gap: 10, flexWrap: 'wrap', justifyContent: 'flex-end' }}>

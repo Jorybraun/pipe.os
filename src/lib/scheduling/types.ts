@@ -67,12 +67,21 @@ export type AssessmentSetupSource =
   | 'contact_first_invite'
   | 'candidate_id';
 
+export type AssessmentSetupNextAction =
+  | 'NONE'
+  | 'OPEN_ROOM_OR_WORKSPACE'
+  | 'COLLECT_CANDIDATE_EVIDENCE'
+  | 'RERUN_OR_ENRICH_MATCHING'
+  | 'ATTACH_CHALLENGE_PACKET';
+
 export interface AssessmentSetupProjection {
   status: AssessmentSetupStatus;
   kind: AssessmentSetupKind;
   source: AssessmentSetupSource;
   blocksPositiveAssessment: boolean;
   message: string | null;
+  nextAction?: AssessmentSetupNextAction;
+  nextActionLabel?: string | null;
   lastDeliveredUrl?: string | null;
   lastDeliveredUrlState?: 'active' | 'claimed' | 'stale' | null;
   lastDeliveredUrlMessage?: string | null;

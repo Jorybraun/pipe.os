@@ -4836,6 +4836,8 @@ describe('GET /interviews/:id detail', () => {
       'Assessment setup source: not_workspace_assessment',
       'Assessment setup blocks positive assessment: no',
       'Assessment setup message: none',
+      'Assessment setup next action: NONE',
+      'Assessment setup next action label: none',
       'Scheduled at: 2026-06-24T18:00:00.000Z',
       'Scheduling provider: none',
       'Scheduling URL: none',
@@ -4850,6 +4852,7 @@ describe('GET /interviews/:id detail', () => {
       assessmentSetupKind: 'not_applicable',
       assessmentSetupSource: 'not_workspace_assessment',
       assessmentSetupBlocksPositiveAssessment: false,
+      assessmentSetupNextAction: 'NONE',
       recruiterNotes: 'PIPE next action: ask how graph algorithms experience maps to repo review work.',
     });
 
@@ -7095,6 +7098,8 @@ describe('POST /interviews dev-container challenge (HAS-80)', () => {
           status: string;
           kind: string;
           blocksPositiveAssessment: boolean;
+          nextAction: string;
+          nextActionLabel: string | null;
         };
       };
     };
@@ -7103,7 +7108,9 @@ describe('POST /interviews dev-container challenge (HAS-80)', () => {
       status: 'waiting_for_candidate_evidence',
       kind: 'auto_match',
       blocksPositiveAssessment: true,
+      nextAction: 'COLLECT_CANDIDATE_EVIDENCE',
     });
+    expect(body.interview.assessmentSetup.nextActionLabel).toContain('Send the intake link');
 
     const graphRow = sqlite!.prepare(
       `SELECT cr.qualifiers_json, ss.exact_text
@@ -7123,12 +7130,15 @@ describe('POST /interviews dev-container challenge (HAS-80)', () => {
       'Assessment setup source: contact_first_invite',
       'Assessment setup blocks positive assessment: yes',
       'Assessment setup message: This contact-first assessment invite has no candidate evidence yet. PIPE must ingest source-backed resume, transcript, chat, or interview evidence before selecting a PR task.',
+      'Assessment setup next action: COLLECT_CANDIDATE_EVIDENCE',
+      'Assessment setup next action label: Send the intake link or schedule a context call that captures source-backed examples of the candidate’s real engineering work.',
     ]));
     expect(JSON.parse(graphRow?.qualifiers_json ?? '{}')).toMatchObject({
       assessmentSetupStatus: 'waiting_for_candidate_evidence',
       assessmentSetupKind: 'auto_match',
       assessmentSetupSource: 'contact_first_invite',
       assessmentSetupBlocksPositiveAssessment: true,
+      assessmentSetupNextAction: 'COLLECT_CANDIDATE_EVIDENCE',
     });
   });
 
@@ -7706,6 +7716,8 @@ describe('POST /interviews dev-container challenge (HAS-80)', () => {
           source: string;
           blocksPositiveAssessment: boolean;
           message: string | null;
+          nextAction: string;
+          nextActionLabel: string | null;
         };
         assessmentProgress: unknown;
       };
@@ -7720,8 +7732,10 @@ describe('POST /interviews dev-container challenge (HAS-80)', () => {
       kind: 'matched_repo_without_pr',
       source: 'matched_repo_id',
       blocksPositiveAssessment: true,
+      nextAction: 'ATTACH_CHALLENGE_PACKET',
     });
     expect(body.interview.assessmentSetup.message).toContain('no GitHub PR or task was assigned');
+    expect(body.interview.assessmentSetup.nextActionLabel).toContain('Attach a source-backed PR/task packet');
 
     expect(sqlite!.prepare(
       `SELECT COUNT(*) AS count

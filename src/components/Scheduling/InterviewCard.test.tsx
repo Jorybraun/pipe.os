@@ -392,6 +392,8 @@ describe('InterviewCard assessment progress', () => {
         source: 'contact_first_invite',
         blocksPositiveAssessment: true,
         message: 'PIPE must ingest source-backed evidence before selecting a PR task.',
+        nextAction: 'COLLECT_CANDIDATE_EVIDENCE',
+        nextActionLabel: 'Send the intake link or schedule a context call.',
       },
       assessmentProgress: null,
     });
@@ -400,6 +402,7 @@ describe('InterviewCard assessment progress', () => {
     expect(progress).toHaveTextContent('Setup gap');
     expect(progress).toHaveTextContent('Waiting for PIPE match');
     expect(progress).toHaveTextContent('PIPE must ingest source-backed evidence before selecting a PR task.');
+    expect(progress).toHaveTextContent('Send the intake link or schedule a context call.');
     expect(progress).toHaveTextContent('no assessment session yet');
   });
 

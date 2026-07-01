@@ -427,6 +427,7 @@ export function InterviewCard({
       : 'Assessment ready';
   const assessmentNextAction = assessmentProgress?.readiness?.detail
     ?? assessmentProgress?.nextActionLabel
+    ?? assessmentSetup?.nextActionLabel
     ?? assessmentSetup?.message
     ?? 'Assessment evidence will appear after the session starts.';
   const assessmentEvidence = assessmentProgress
