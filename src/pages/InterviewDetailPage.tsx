@@ -5135,7 +5135,7 @@ export default function InterviewDetailPage(): JSX.Element {
                 <details data-testid="interview-code-review-defense-threads" style={DETAILS_CARD}>
                   <summary style={DETAILS_SUMMARY}>
                     Review interaction
-                    <span style={DETAILS_HINT}>candidate comments and AI developer pushback</span>
+                    <span style={DETAILS_HINT}>candidate comments and implementation author replies</span>
                   </summary>
                   <div style={{ display: 'grid', gap: 12 }}>
                     {codeReviewSubmission.defenseThreads.slice(0, 4).map((thread) => (
@@ -5156,7 +5156,7 @@ export default function InterviewDetailPage(): JSX.Element {
                               style={exchange.actor === 'ai_developer' ? DEFENSE_EXCHANGE_AI : DEFENSE_EXCHANGE_CANDIDATE}
                             >
                               <div style={TRANSCRIPT_ROLE}>
-                                {exchange.actor === 'ai_developer' ? 'AI developer' : 'Candidate defense'}
+                                {exchange.actor === 'ai_developer' ? 'Implementation author' : 'Candidate defense'}
                                 {exchange.move ? ` · ${exchange.move}` : ''}
                                 {exchange.round !== null ? ` · round ${exchange.round}` : ''}
                               </div>

@@ -913,8 +913,8 @@ async function sendFirstReviewRound(sessionToken, sessionId, challenge) {
   }, { basicAuth: false });
 
   assert(Number.isInteger(body?.round) && body.round >= 1, `review/session/message missing round: ${JSON.stringify(body)}`);
-  assert(Array.isArray(body?.agentResponse) && body.agentResponse.length > 0, `AI developer response missing: ${JSON.stringify(body)}`);
-  assert(Array.isArray(body?.threads) && body.threads.length > 0, `AI developer thread missing: ${JSON.stringify(body)}`);
+  assert(Array.isArray(body?.agentResponse) && body.agentResponse.length > 0, `Implementation author response missing: ${JSON.stringify(body)}`);
+  assert(Array.isArray(body?.threads) && body.threads.length > 0, `Implementation author thread missing: ${JSON.stringify(body)}`);
 
   return {
     target,
@@ -991,7 +991,7 @@ function assertSubmissionJson(submissionJson, sessionId, annotation) {
         && response.content.length > 0
       )
     ),
-    `submissionJson missing AI developer pushback in transcript: ${JSON.stringify(rounds)}`,
+    `submissionJson missing implementation-author pushback in transcript: ${JSON.stringify(rounds)}`,
   );
   return submission;
 }
@@ -1111,7 +1111,7 @@ async function verifyJudgeExample(reviewSessionId) {
   assert(
     Array.isArray(example.promptInput?.aiDeveloperPushback)
       && example.promptInput.aiDeveloperPushback.length > 0,
-    `Judge example missing AI developer pushback: ${JSON.stringify(example.promptInput)}`,
+    `Judge example missing implementation-author pushback: ${JSON.stringify(example.promptInput)}`,
   );
   assert(
     Array.isArray(example.promptInput?.improvementUses)

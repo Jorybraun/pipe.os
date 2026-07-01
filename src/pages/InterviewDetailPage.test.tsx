@@ -3377,7 +3377,7 @@ describe('InterviewDetailPage', () => {
     expect(result).toHaveTextContent('This threshold changes click semantics and needs a focused impatient-click regression.');
   });
 
-  it('shows AI developer pushback threads from submitted code-review transcripts', async () => {
+  it('shows implementation-author pushback threads from submitted code-review transcripts', async () => {
     mocks.api.get.mockResolvedValueOnce({
       interview: makeInterview({
         interviewType: 'CODE_REVIEW',
@@ -3446,12 +3446,13 @@ describe('InterviewDetailPage', () => {
     await flushAsyncUpdates();
     const defenseThreads = screen.getByTestId('interview-code-review-defense-threads');
     expect(defenseThreads).toHaveTextContent('Review interaction');
+    expect(defenseThreads).toHaveTextContent('candidate comments and implementation author replies');
     expect(defenseThreads).toHaveTextContent('Candidate comment');
-    expect(defenseThreads).toHaveTextContent('AI developer · pushback · round 1');
+    expect(defenseThreads).toHaveTextContent('Implementation author · pushback · round 1');
     expect(defenseThreads).toHaveTextContent('Can you point to a user-visible failure?');
     expect(defenseThreads).toHaveTextContent('Candidate defense · round 2');
     expect(defenseThreads).toHaveTextContent('keyboard and pointer users can issue the click');
-    expect(defenseThreads).toHaveTextContent('AI developer · comment · round 2');
+    expect(defenseThreads).toHaveTextContent('Implementation author · comment · round 2');
     expect(defenseThreads).toHaveTextContent('I will add coverage around the impatient click path.');
   });
 
@@ -3663,7 +3664,7 @@ describe('InterviewDetailPage', () => {
     expect(result).toHaveTextContent('This threshold changes click semantics and needs a focused impatient-click regression.');
   });
 
-  it('shows AI developer pushback threads from submitted code-review transcripts', async () => {
+  it('shows implementation-author pushback threads from submitted code-review transcripts', async () => {
     mocks.api.get.mockResolvedValueOnce({
       interview: makeInterview({
         interviewType: 'CODE_REVIEW',
@@ -3732,12 +3733,13 @@ describe('InterviewDetailPage', () => {
     await flushAsyncUpdates();
     const defenseThreads = screen.getByTestId('interview-code-review-defense-threads');
     expect(defenseThreads).toHaveTextContent('Review interaction');
+    expect(defenseThreads).toHaveTextContent('candidate comments and implementation author replies');
     expect(defenseThreads).toHaveTextContent('Candidate comment');
-    expect(defenseThreads).toHaveTextContent('AI developer · pushback · round 1');
+    expect(defenseThreads).toHaveTextContent('Implementation author · pushback · round 1');
     expect(defenseThreads).toHaveTextContent('Can you point to a user-visible failure?');
     expect(defenseThreads).toHaveTextContent('Candidate defense · round 2');
     expect(defenseThreads).toHaveTextContent('keyboard and pointer users can issue the click');
-    expect(defenseThreads).toHaveTextContent('AI developer · comment · round 2');
+    expect(defenseThreads).toHaveTextContent('Implementation author · comment · round 2');
     expect(defenseThreads).toHaveTextContent('I will add coverage around the impatient click path.');
   });
 

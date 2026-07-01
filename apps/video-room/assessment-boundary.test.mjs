@@ -1,9 +1,10 @@
 import { describe, expect, it } from 'vitest';
 import { readFileSync } from 'node:fs';
 import { execFileSync } from 'node:child_process';
-import { join, relative } from 'node:path';
+import { dirname, join, relative } from 'node:path';
+import { fileURLToPath } from 'node:url';
 
-const appRoot = process.cwd();
+const appRoot = dirname(fileURLToPath(import.meta.url));
 const repoRoot = join(appRoot, '..', '..');
 
 const scannedRoomEntries = [
