@@ -1,5 +1,5 @@
 import { useState, type ReactNode } from 'react';
-import { Circle, MessageSquare, Monitor, SquareTerminal, X } from 'lucide-react';
+import { Circle, MessageSquare, Monitor, SquareTerminal, Upload, X } from 'lucide-react';
 import type { ToolSurfaceManagerApi, ToolSurfaceState } from '../hooks/useToolSurfaceManager';
 
 interface StandardLayoutProps {
@@ -30,6 +30,7 @@ export function StandardLayout({
   const videoSurface = toolSurfaces.surfaces.find((surface) => surface.surfaceType === 'video');
   const chatSurface = toolSurfaces.surfaces.find((surface) => surface.surfaceType === 'chat');
   const workspaceSurface = toolSurfaces.surfaces.find((surface) => surface.surfaceType === 'workspace');
+  const submissionSurface = toolSurfaces.surfaces.find((surface) => surface.surfaceType === 'submission');
 
   const hasWorkspace = Boolean(workspaceSurface);
   const workspaceIsPrimary = primarySurface === 'workspace' && Boolean(workspaceSurface);
@@ -105,6 +106,18 @@ export function StandardLayout({
             title="Toggle workspace"
           >
             <SquareTerminal size={18} />
+          </button>
+        )}
+        {workspaceIsPrimary && submissionSurface && (
+          <button
+            className={`standard-control-btn is-submit${activeTool?.id === submissionSurface.id ? ' is-active' : ''}`}
+            onClick={() => selectTool(submissionSurface)}
+            title="Open Submit Work"
+            aria-label="Open Submit Work"
+            data-testid="standard-open-submission"
+          >
+            <Upload size={18} />
+            <span>Submit Work</span>
           </button>
         )}
         <button

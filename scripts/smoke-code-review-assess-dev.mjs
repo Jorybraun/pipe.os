@@ -681,10 +681,10 @@ async function pollCodeReviewChallenge(sessionToken, order = 0, options = {}) {
       await sleep(5_000);
       continue;
     }
-    if (last?.type !== 'WAITING_FOR_MATCH') {
-      throw new Error(`Expected CODE_REVIEW or WAITING_FOR_MATCH, got: ${JSON.stringify(last).slice(0, 800)}`);
+    if (last?.type === 'WAITING_FOR_MATCH') {
+      throw new Error(`CODE_REVIEW /assess must not expose candidate-visible WAITING_FOR_MATCH; expected ready CODE_REVIEW or PROFILE_RECEIVED handoff: ${JSON.stringify(last).slice(0, 800)}`);
     }
-    await sleep(5_000);
+    throw new Error(`Expected CODE_REVIEW or PROFILE_RECEIVED handoff, got: ${JSON.stringify(last).slice(0, 800)}`);
   }
   throw new Error(`CODE_REVIEW challenge did not become ready. Last response: ${JSON.stringify(last).slice(0, 1200)}`);
 }

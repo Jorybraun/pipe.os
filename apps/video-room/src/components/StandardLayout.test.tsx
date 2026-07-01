@@ -1,6 +1,6 @@
 // @vitest-environment jsdom
 
-import { render, screen } from '@testing-library/react';
+import { fireEvent, render, screen } from '@testing-library/react';
 import { describe, expect, it, vi } from 'vitest';
 import { StandardLayout } from './StandardLayout';
 import type { ToolSurfaceManagerApi, ToolSurfaceState, ToolSurfaceType } from '../hooks/useToolSurfaceManager';
@@ -116,5 +116,32 @@ describe('StandardLayout', () => {
 
     expect(screen.getByTestId('standard-tools-panel').textContent).toContain('terminal surface');
     expect(screen.getByRole('button', { name: 'Close Container terminal' })).toBeTruthy();
+  });
+
+  it('keeps Submit Work visible in the control bar for workspace assessments', () => {
+    const toolSurfaces = makeSurfaceManager([
+      roomSurface({ id: 'video', surfaceType: 'video', title: 'Video Call' }),
+      roomSurface({ id: 'workspace', surfaceType: 'workspace', title: 'VS Code', active: true }),
+      roomSurface({ id: 'terminal', surfaceType: 'terminal', title: 'Container terminal', active: true }),
+      roomSurface({ id: 'submission', surfaceType: 'submission', title: 'Submit Work' }),
+    ]);
+
+    render(
+      <StandardLayout
+        toolSurfaces={toolSurfaces}
+        renderSurfaceContent={(surface) => <div>{surface.surfaceType} surface</div>}
+        modeLabel="Dev-container assessment"
+        primarySurface="workspace"
+      />,
+    );
+
+    const submitButton = screen.getByRole('button', { name: 'Open Submit Work' });
+    expect(submitButton).toBeTruthy();
+    expect(screen.getByTestId('standard-tool-terminal').textContent).toContain('terminal surface');
+
+    fireEvent.click(submitButton);
+
+    expect(toolSurfaces.focusSurface).toHaveBeenCalledWith('submission');
+    expect(screen.getByTestId('standard-tool-submission').textContent).toContain('submission surface');
   });
 });

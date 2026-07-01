@@ -20,6 +20,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Fixed — Open-source assessment progress
 
+- Assessment-room workspace layouts now keep a persistent `Submit Work` control in the bottom bar, so candidates can finalize the real workspace commit without hunting through tool tabs.
 - Role-backed CODE_REVIEW matching now proceeds once active candidate ingestion has advanced past resume decomposition and produced matchable source-backed evidence, while still deferring candidates with no usable evidence.
 - Person-profile code-review decision cards now label proven match bridges as source-backed matches instead of vague bridge counts.
 - Recruiter interview cards now translate source-backed assessment evaluator recommendation enums into hiring-manager-readable next actions.
@@ -74,6 +75,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Fixed — CODE_REVIEW assessment runtime
 
+- CODE_REVIEW app-dev smokes now fail immediately if `/rpc/get-challenge` returns candidate-visible `WAITING_FOR_MATCH`, ensuring transient matching dashboards cannot pass the ready-assessment proof after a later assignment appears.
 - The role-backed app-dev CODE_REVIEW smoke script now expects the ready automatic-match path, keeping the packaged proof command aligned with the current `/assess` behavior while the blocked smoke remains the explicit no-assignment handoff gate.
 - Recruiter interview list and detail projections now use the candidate's role-backed CODE_REVIEW assignment as the effective repo/PR when the scheduled interview row has not been denormalized yet, keeping the hiring-manager readout aligned with the candidate assessment runtime and preserving `candidate_challenge_assignment` as the setup source.
 - The deployed CODE_REVIEW smoke proof now reports recruiter assessment setup status, kind, source, repo, and PR from the live detail projection so assignment-source drift is visible in CI/live verification output.
