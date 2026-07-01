@@ -281,6 +281,19 @@ The same deployed API/app pair also passed the roleless full-submit auto-match c
 
 The deployed manual override full-submit smoke passed for interview `c89541cb-3b52-4eb1-9652-6f4f5f9e4bef`, review session `2e007d00-5f99-4dd4-8d0c-b959b5d421ea`, and judge replay example `code_review_judge_example_647b6624f16a85fb8314808f879fe26b`, selecting `mui/base-ui#973`, rendering the recruiter-selected source-backed match reason without claiming CV fit, completing candidate browser comments and AI developer pushback, and completing recruiter/profile results with validator `PASSED`. Evidence hyperedges are expected to be `0` in this lane because manual override validates the selected PR's source-backed reviewability rather than inferring a candidate-to-repo match.
 
+Use `npm run smoke:open-source-workspace-dev` for the real open-source bug-fix
+workspace path. It creates an `OPEN_SOURCE_BUG_FIX` invite, launches the
+controlled room workspace, verifies the bridge, confirms unchanged work is
+blocked, creates a real commit inside the workspace, finalizes the live
+workspace `HEAD`, requires `git_commit`, `code_diff`, `terminal_command`, and
+`test_run` source refs, then starts source-backed evaluation from the recruiter
+API. Latest deployed proof on 2026-07-01 passed for interview
+`294e05c3-999d-40a7-9a17-04c508ba98b2`, repo `mui/base-ui`, workspace commit
+`55f7825e6dd74ee9e5fcb2d698238142fb66ef37`, bridge revision
+`2026-06-30-assessment-branch-v1`, and evaluation report
+`assessment_evaluation_report_155c83055a115a1dde5a030cc14a428f` with
+recommendation `strong_evidence_to_advance`.
+
 Latest standalone `/assess` blocked-boundary proof: after deploying app-dev
 version `3413dea3-2899-40ac-afc0-8163e3a899ff`, the CODE_REVIEW matrix passed
 `3 / 3` CV-only profiles as candidate-safe queued handoffs rather than

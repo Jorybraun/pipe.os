@@ -10,6 +10,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 ### Added — Open-source assessment setup
 
 - Recruiter open-source assessment invites now show a live challenge-packet checklist for repo, exact base commit, task, success criteria, and expected evidence before creation, making manual tasks visibly concrete instead of a loose repo dump.
+- Added `npm run smoke:open-source-workspace-dev` as the explicit dev proof command for the real open-source bug-fix workspace path, covering room launch, source-backed workspace finalization, commit evidence, and evaluator readiness.
 - Added explicit app-dev deployment scripts for `pipe-api-dev`, `pipe-app-dev`, and the assessment room, including an explicit room-dev Wrangler target, so manual assessment fixes ship to the same dev surfaces used by smoke tests.
 
 ### Added — CODE_REVIEW assessment runtime
