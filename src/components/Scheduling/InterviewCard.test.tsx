@@ -255,6 +255,87 @@ describe('InterviewCard assessment progress', () => {
     expect(progress).not.toHaveTextContent('assessment-session-setup');
   });
 
+  it('falls back to durable progress trust when setup projection is missing', () => {
+    renderCard({
+      id: 'interview-progress-trust',
+      createdAt: '2026-06-23T00:00:00.000Z',
+      updatedAt: '2026-06-23T00:20:00.000Z',
+      status: 'INVITED',
+      interviewType: 'OPEN_SOURCE_BUG_FIX',
+      meetingType: 'DIRECT_VIDEO_CALL',
+      scheduledAt: null,
+      assessmentSetup: null,
+      assessmentProgress: {
+        session: {
+          id: 'assessment-session-progress-trust',
+          ingestionKey: 'assessment-session:progress-trust',
+          interviewId: 'interview-progress-trust',
+          candidateId: null,
+          workspaceId: null,
+          workspacePersonId: null,
+          applicationId: null,
+          mode: 'OPEN_SOURCE_BUG_FIX',
+          state: 'IN_PROGRESS',
+          createdAt: '2026-06-23T00:00:00.000Z',
+          updatedAt: '2026-06-23T00:20:00.000Z',
+        },
+        stage: 'CHALLENGE_READY',
+        nextAction: 'OPEN_ROOM_OR_WORKSPACE',
+        nextActionLabel: 'Open the assessment room and start the workspace.',
+        assignmentTrust: {
+          state: 'matched_challenge',
+          label: 'PIPE-matched challenge',
+          detail: 'PIPE selected this task from source-backed candidate evidence, role context, and repository demand.',
+          tone: 'matched',
+        },
+        hasChallengePacket: true,
+        hasWorkEvidence: false,
+        hasMessageEvidence: false,
+        hasDevContainerEvidence: false,
+        hasToolUsageEvidence: false,
+        hasCommitSubmission: false,
+        hasFinalSubmission: false,
+        hasAiInteraction: false,
+        hasTranscriptEvidence: false,
+        hasTestEvidence: false,
+        evidenceCounts: [{ kind: 'match_decision', count: 1 }],
+        sourceRefCounts: [{ kind: 'review_challenge_packet', count: 1 }],
+        challenge: {
+          sourceRefType: 'review_challenge_packet',
+          sourceRefId: 'challenge-packet-progress-trust',
+          evidenceRole: 'assigned_challenge',
+          exactText: [
+            'Repo: https://github.com/open-source/widgets',
+            'Base commit: 4444444444444444444444444444444444444444',
+            'Task: Fix the matched assignment fallback.',
+          ].join('\n'),
+          locator: {
+            repositoryUrl: 'https://github.com/open-source/widgets',
+            matchedRepoId: 42,
+            baseCommitSha: '4444444444444444444444444444444444444444',
+          },
+        },
+        latestEvent: {
+          id: 'assessment-event-progress-trust',
+          kind: 'match_decision',
+          sequence: 1,
+          occurredAt: '2026-06-23T00:20:00.000Z',
+        },
+        commit: null,
+        evaluation: null,
+      },
+    });
+
+    const progress = screen.getByTestId('interview-card-assessment-progress');
+    expect(progress).toHaveTextContent('ASSIGNMENT');
+    expect(progress).toHaveTextContent('PIPE-matched challenge');
+    expect(progress).toHaveTextContent(
+      'PIPE selected this task from source-backed candidate evidence, role context, and repository demand.',
+    );
+    expect(progress).not.toHaveTextContent('challenge-packet-progress-trust');
+    expect(progress).not.toHaveTextContent('assessment-session-progress-trust');
+  });
+
   it('shows setup gaps for assessment interviews before a session exists', () => {
     renderCard({
       id: 'interview-2',

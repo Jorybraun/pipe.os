@@ -752,6 +752,7 @@ interface CandidateAssessmentProgressPayload {
   stage: AssessmentProgressSnapshot['stage'];
   nextAction: AssessmentProgressSnapshot['nextAction'];
   nextActionLabel: string;
+  assignmentTrust: AssessmentProgressSnapshot['assignmentTrust'];
   hasChallengePacket: boolean;
   hasWorkEvidence: boolean;
   hasMessageEvidence: boolean;
@@ -1741,6 +1742,7 @@ function serializeCandidateAssessmentProgress(
     stage: progress.stage,
     nextAction: progress.nextAction,
     nextActionLabel: progress.nextActionLabel,
+    assignmentTrust: progress.assignmentTrust,
     hasChallengePacket: progress.hasChallengePacket,
     hasWorkEvidence: progress.hasWorkEvidence,
     hasMessageEvidence: progress.hasMessageEvidence,

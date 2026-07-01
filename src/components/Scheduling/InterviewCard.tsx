@@ -10,6 +10,7 @@ import type { InterviewStatus } from '../../lib/scheduling/types';
 import {
   summarizeAssessmentAssignment,
   summarizeAssessmentChallenge,
+  type AssessmentAssignmentSummary,
 } from '../../lib/scheduling/assessmentChallenge';
 
 // TODO: Wire candidateName and pipelineTitle via enriched data once we join
@@ -175,6 +176,33 @@ function assessmentAssignmentColor(
     default:
       return 'var(--pipe-text)';
   }
+}
+
+function assessmentAssignmentFromProgressTrust(
+  trust: NonNullable<ScheduledInterview['assessmentProgress']>['assignmentTrust'],
+): AssessmentAssignmentSummary | null {
+  if (!trust || typeof trust !== 'object') return null;
+  const candidate = trust as {
+    label?: unknown;
+    detail?: unknown;
+    tone?: unknown;
+  };
+  if (typeof candidate.label !== 'string' || typeof candidate.detail !== 'string') return null;
+  const tone = candidate.tone;
+  if (
+    tone !== 'matched'
+    && tone !== 'manual'
+    && tone !== 'waiting'
+    && tone !== 'blocked'
+    && tone !== 'neutral'
+  ) {
+    return null;
+  }
+  return {
+    label: candidate.label,
+    detail: candidate.detail,
+    tone,
+  };
 }
 
 interface AssessmentDecisionSummary {
@@ -367,7 +395,8 @@ export function InterviewCard({
     interview.status === 'INVITED' && !hasInviteDelivery ? 'Ready' : undefined;
   const assessmentProgress = interview.assessmentProgress ?? null;
   const assessmentSetup = interview.assessmentSetup ?? null;
-  const assessmentAssignment = summarizeAssessmentAssignment(assessmentSetup);
+  const assessmentAssignment = summarizeAssessmentAssignment(assessmentSetup)
+    ?? assessmentAssignmentFromProgressTrust(assessmentProgress?.assignmentTrust);
   const showsAssessmentSnapshot = isAssessmentInterviewType(interview.interviewType)
     || Boolean(assessmentProgress);
   const assessmentStageLabel = assessmentProgress

@@ -9,6 +9,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Fixed — CODE_REVIEW assessment runtime
 
+- The deployed CODE_REVIEW workspace smoke now defaults to the source-backed MUI popover challenge profile, so `npm run smoke:code-review-workspace-dev` proves a real repo/base-commit/finalizer/evaluation path without hidden env overrides.
 - CODE_REVIEW source-proof summaries now name the evidence that actually exists for each assessment, dedupe repeated quality-gate wording, and surface missing source bridges before lower-value calibration notes so manual PR assignments do not look like automatic candidate-fit proof.
 - Standalone CODE_REVIEW interview details no longer render the generic workspace assessment progress panel when only a repo/PR assignment exists, preventing completed scored reviews from showing stale “Not started” or “No assessment session” copy above the hiring-manager decision readout.
 - Person profiles opened from a selected CODE_REVIEW decision now treat that assessment as present technical evidence in the evidence-mix readout instead of incorrectly saying no source mix exists while the full graph stays unloaded.
@@ -17,6 +18,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Added — Assessment readiness
 
+- Repo-task assessment progress now includes a durable assignment-trust summary (`matched`, `manual`, `source-backed`, or waiting) so recruiter lists, detail pages, room payloads, and candidate-safe progress can share the same non-overclaiming challenge-fit language.
 - Repo-task assessment progress now includes a canonical readiness snapshot with required proof, confidence signals, missing-proof counts, ready-for-evaluation state, and usable-hiring-signal state.
 - Candidate room task briefs, submission panels, and status strips now show the same source-backed readiness signal, so candidates can see whether challenge, work, commit, diff, tests/verification, and process evidence are captured before review.
 - Recruiter interview cards and detail pages now prefer the readiness snapshot when explaining whether an open-source workspace assessment is ready, blocked, or still missing required proof.

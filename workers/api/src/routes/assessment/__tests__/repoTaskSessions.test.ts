@@ -1117,6 +1117,11 @@ Fix stale popover listener cleanup.`;
       progress: {
         stage: string;
         nextAction: string;
+        assignmentTrust: {
+          state: string;
+          label: string;
+          tone: string;
+        };
         hasChallengePacket: boolean;
         hasCommitSubmission: boolean;
       };
@@ -1124,6 +1129,11 @@ Fix stale popover listener cleanup.`;
     expect(initialProgressBody.progress).toMatchObject({
       stage: 'WAITING_FOR_CHALLENGE',
       nextAction: 'ASSIGN_CHALLENGE',
+      assignmentTrust: {
+        state: 'waiting_for_challenge',
+        label: 'No challenge packet',
+        tone: 'blocked',
+      },
       hasChallengePacket: false,
       hasCommitSubmission: false,
     });
@@ -1167,6 +1177,12 @@ Fix stale popover listener cleanup.`;
       progress: {
         stage: string;
         nextAction: string;
+        assignmentTrust: {
+          state: string;
+          label: string;
+          detail: string;
+          tone: string;
+        };
         hasChallengePacket: boolean;
         challenge: { sourceRefType: string; sourceRefId: string; exactText: string };
       };
@@ -1174,6 +1190,12 @@ Fix stale popover listener cleanup.`;
     expect(challengeProgressBody.progress).toMatchObject({
       stage: 'CHALLENGE_READY',
       nextAction: 'OPEN_ROOM_OR_WORKSPACE',
+      assignmentTrust: {
+        state: 'source_backed_challenge',
+        label: 'Source-backed challenge',
+        detail: 'A reviewable challenge packet is captured as source evidence; confirm match proof before treating assignment fit as automatic.',
+        tone: 'neutral',
+      },
       hasChallengePacket: true,
       challenge: {
         sourceRefType: 'review_challenge_packet',

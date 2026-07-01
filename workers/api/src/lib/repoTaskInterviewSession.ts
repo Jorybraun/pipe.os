@@ -391,11 +391,25 @@ export interface AssessmentProgressEvaluationDiagnostic {
 
 export interface AssessmentProgressHumanDecision extends PersistedHumanAssessmentDecision {}
 
+export type AssessmentProgressAssignmentTrustState =
+  | 'matched_challenge'
+  | 'manual_challenge'
+  | 'source_backed_challenge'
+  | 'waiting_for_challenge';
+
+export interface AssessmentProgressAssignmentTrust {
+  state: AssessmentProgressAssignmentTrustState;
+  label: string;
+  detail: string;
+  tone: 'matched' | 'manual' | 'waiting' | 'blocked' | 'neutral';
+}
+
 export interface AssessmentProgressSnapshot {
   session: PersistedRepoTaskInterviewSession;
   stage: AssessmentProgressStage;
   nextAction: AssessmentProgressNextAction;
   nextActionLabel: string;
+  assignmentTrust: AssessmentProgressAssignmentTrust;
   hasChallengePacket: boolean;
   hasWorkEvidence: boolean;
   hasMessageEvidence: boolean;
@@ -901,6 +915,57 @@ function hasEventKind(
   return counts.some((count) => kinds.includes(count.kind) && count.count > 0);
 }
 
+function progressAssignmentTrust(input: {
+  session: PersistedRepoTaskInterviewSession;
+  challenge: AssessmentProgressSourceRef | null;
+}): AssessmentProgressAssignmentTrust {
+  if (!input.challenge) {
+    return {
+      state: 'waiting_for_challenge',
+      label: 'No challenge packet',
+      detail: 'Assign a concrete repo URL, base commit, task, success criteria, and expected evidence before relying on this assessment.',
+      tone: 'blocked',
+    };
+  }
+
+  const matchedRepoId = input.challenge.locator.matchedRepoId;
+  const hasMatchedRepo = typeof matchedRepoId === 'number'
+    || (typeof matchedRepoId === 'string' && matchedRepoId.trim().length > 0);
+  if (hasMatchedRepo) {
+    return {
+      state: 'matched_challenge',
+      label: 'PIPE-matched challenge',
+      detail: 'PIPE selected this task from source-backed candidate evidence, role context, and repository demand.',
+      tone: 'matched',
+    };
+  }
+
+  if (input.challenge.sourceRefType === 'open_source_challenge_packet') {
+    return {
+      state: 'manual_challenge',
+      label: 'Manual task assignment',
+      detail: 'A recruiter supplied the task packet. Treat candidate work as real evidence, but not as proof that PIPE automatically matched the candidate to this repo.',
+      tone: 'manual',
+    };
+  }
+
+  if (input.challenge.sourceRefType === 'review_challenge_packet') {
+    return {
+      state: 'source_backed_challenge',
+      label: 'Source-backed challenge',
+      detail: 'A reviewable challenge packet is captured as source evidence; confirm match proof before treating assignment fit as automatic.',
+      tone: 'neutral',
+    };
+  }
+
+  return {
+    state: 'source_backed_challenge',
+    label: 'Source-backed task',
+    detail: 'The assigned task packet is captured as immutable source evidence.',
+    tone: 'neutral',
+  };
+}
+
 function modeRequiresCommit(mode: RepoTaskInterviewMode): boolean {
   return mode === 'OPEN_SOURCE_BUG_FIX'
     || mode === 'DEV_CONTAINER_REPO_TASK'
@@ -1397,6 +1462,7 @@ export class RepoTaskInterviewSessionStore {
       stage,
       nextAction,
       nextActionLabel: progressNextActionLabel(nextAction),
+      assignmentTrust: progressAssignmentTrust({ session, challenge }),
       hasChallengePacket,
       hasWorkEvidence,
       hasMessageEvidence,

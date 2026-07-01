@@ -171,6 +171,12 @@ export interface RoomAssessmentProgressSnapshot {
   stage: string;
   nextAction: string;
   nextActionLabel: string;
+  assignmentTrust?: {
+    state: 'matched_challenge' | 'manual_challenge' | 'source_backed_challenge' | 'waiting_for_challenge';
+    label: string;
+    detail: string;
+    tone: 'matched' | 'manual' | 'waiting' | 'blocked' | 'neutral';
+  };
   hasChallengePacket: boolean;
   hasWorkEvidence: boolean;
   hasMessageEvidence?: boolean;
