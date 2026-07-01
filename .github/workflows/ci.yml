@@ -76,6 +76,10 @@ jobs:
           }
           JSON
             cat matching-evaluation-readiness.json
+            if [ "$GITHUB_EVENT_NAME" = "push" ] && [ "$GITHUB_REF" = "refs/heads/main" ]; then
+              echo "Production matching evaluation readiness is required for pushes to main."
+              exit 1
+            fi
             exit 0
           fi
           npm run matching-eval:readiness -- \
