@@ -133,6 +133,9 @@ The controlling product rule remains:
   `OPEN_SOURCE_BUG_FIX`; manual task assignment must carry repo URL, base
   commit, task, success criteria, and expected evidence instead of falling back
   to a generic quick-create invite.
+- The invite modal renders a live packet-contract checklist for those required
+  fields and tells recruiters the candidate should work on an assessment branch
+  or fork, with any upstream PR gated behind later review.
 - Candidate assessment routing currently serves it through the existing
   dev-container `CODE_IMPLEMENTATION` runtime.
 - Meeting-room workspace provisioning treats it as a workspace-backed interview.

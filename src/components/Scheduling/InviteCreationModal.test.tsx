@@ -90,29 +90,41 @@ describe('InviteCreationModal open-source challenge packets', () => {
       target: { value: 'Confirm the manual challenge is fair before treating the result as signal.' },
     });
     fireEvent.click(screen.getByRole('button', { name: 'Specify repo manually' }));
+    expect(screen.getByTestId('open-source-packet-checklist')).toHaveTextContent('Concrete GitHub repo');
+    expect(screen.getByTestId('open-source-packet-checklist')).toHaveTextContent('Missing');
+    expect(screen.getByRole('button', { name: 'CREATE ASSESSMENT INVITE' })).toBeDisabled();
     fireEvent.change(screen.getByPlaceholderText('https://github.com/owner/repo'), {
       target: { value: 'https://github.com/sourcegraph/sourcegraph' },
     });
+    expect(screen.getByTestId('packet-check-repository')).toHaveTextContent('Ready');
+    expect(screen.getByTestId('packet-check-base-commit')).toHaveTextContent('Missing');
     expect(screen.getByPlaceholderText('PR number (optional)')).toBeInTheDocument();
     fireEvent.change(screen.getByPlaceholderText('40-character base commit SHA'), {
       target: { value: '1111111111111111111111111111111111111111' },
     });
+    expect(screen.getByTestId('packet-check-base-commit')).toHaveTextContent('Ready');
     fireEvent.change(screen.getByPlaceholderText('Fix streaming transcript ordering'), {
       target: { value: 'Fix event ordering in the transcript stream' },
     });
     fireEvent.change(screen.getByPlaceholderText('Describe the exact bug, task, and boundaries.'), {
       target: { value: 'Investigate and fix transcript segments arriving out of order after reconnect.' },
     });
+    expect(screen.getByTestId('packet-check-task')).toHaveTextContent('Ready');
     fireEvent.change(screen.getByPlaceholderText('One success criterion per line'), {
       target: {
         value: 'Segments remain ordered by timestamp\nReconnect does not duplicate final segments',
       },
     });
+    expect(screen.getByTestId('packet-check-success-criteria')).toHaveTextContent('Ready');
     fireEvent.change(screen.getByPlaceholderText('One required evidence item per line'), {
       target: {
         value: 'Commit SHA on assessment branch\nTest command output\nCandidate explanation',
       },
     });
+    expect(screen.getByTestId('packet-check-expected-evidence')).toHaveTextContent('Ready');
+    expect(screen.getByTestId('open-source-packet-checklist')).toHaveTextContent(
+      'Candidate works on an assessment branch or fork. Upstream PRs require later review.',
+    );
 
     fireEvent.click(screen.getByRole('button', { name: 'CREATE ASSESSMENT INVITE' }));
 

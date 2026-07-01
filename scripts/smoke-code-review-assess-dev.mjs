@@ -658,7 +658,13 @@ async function pollCodeReviewChallenge(sessionToken, order = 0, options = {}) {
   throw new Error(`CODE_REVIEW challenge did not become ready. Last response: ${JSON.stringify(last).slice(0, 1200)}`);
 }
 
-function runBrowserSmoke({ deliveredUrl, inviteToken, session, expectedMatchProofVerdict }) {
+function runBrowserSmoke({
+  deliveredUrl,
+  inviteToken,
+  session,
+  expectedMatchProofVerdict,
+  expectProfileReceived = false,
+}) {
   if (SKIP_BROWSER) return { skipped: true };
 
   const candidate = JSON.stringify({
@@ -690,6 +696,7 @@ function runBrowserSmoke({ deliveredUrl, inviteToken, session, expectedMatchProo
         CODE_REVIEW_SESSION_CANDIDATE_JSON: candidate,
         CODE_REVIEW_EXPECT_AUTOMATCH: EXPECT_AUTOMATCH,
         CODE_REVIEW_EXPECT_MANUAL_OVERRIDE: REPO_URL && PR_NUMBER ? '1' : '0',
+        CODE_REVIEW_EXPECT_PROFILE_RECEIVED: expectProfileReceived ? '1' : '0',
         CODE_REVIEW_EXPECT_MATCH_PROOF_VERDICT: expectedMatchProofVerdict,
         CODE_REVIEW_REQUIRE_HYPEREDGES: REPO_URL && PR_NUMBER ? '0' : '1',
         CODE_REVIEW_BROWSER_SUBMIT_ROUND: SUBMIT_REVIEW ? '1' : '0',
@@ -1436,6 +1443,13 @@ async function main() {
         `Expected candidate-intake-queued complete stage config, got: ${JSON.stringify(initialStageConfig)}`,
       );
 
+      const browserSmoke = runBrowserSmoke({
+        deliveredUrl: invite.deliveredUrl,
+        inviteToken: invite.inviteToken,
+        session,
+        expectedMatchProofVerdict: '',
+        expectProfileReceived: true,
+      });
       const recruiterBrowserSmoke = await runRecruiterDetailBrowserSmoke({
         interviewId: invite.interviewId,
         expectedOutcome: 'blocked',
@@ -1460,6 +1474,7 @@ async function main() {
           stageId: initialStageConfig.stageId,
           isComplete: initialStageConfig.isComplete,
         },
+        browserSmoke,
         recruiterBrowserSmoke,
         stageConfig: {
           initialStageId: initialStageConfig.stageId,

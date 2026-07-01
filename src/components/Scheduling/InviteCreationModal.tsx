@@ -117,6 +117,65 @@ function isGitCommitSha(value: string): boolean {
   return /^[0-9a-f]{40}$/i.test(value.trim());
 }
 
+interface PacketChecklistItem {
+  id: string;
+  label: string;
+  ready: boolean;
+}
+
+function PacketChecklist({
+  items,
+}: {
+  items: PacketChecklistItem[];
+}): JSX.Element {
+  return (
+    <div
+      data-testid="open-source-packet-checklist"
+      style={{
+        display: 'grid',
+        gap: 6,
+        padding: 10,
+        background: 'rgba(255,255,255,0.03)',
+        border: '1px solid var(--pipe-border)',
+        borderRadius: 4,
+        fontFamily: '"Space Mono", monospace',
+      }}
+    >
+      <div style={{ fontSize: 10, color: '#93c5fd', letterSpacing: '0.12em', fontWeight: 700 }}>
+        PACKET CONTRACT
+      </div>
+      {items.map((item) => (
+        <div
+          key={item.id}
+          data-testid={`packet-check-${item.id}`}
+          style={{
+            display: 'flex',
+            alignItems: 'center',
+            justifyContent: 'space-between',
+            gap: 10,
+            fontSize: 10,
+            lineHeight: 1.4,
+          }}
+        >
+          <span style={{ color: 'var(--pipe-text-dim)' }}>{item.label}</span>
+          <span
+            style={{
+              color: item.ready ? '#4ade80' : '#fbbf24',
+              fontWeight: 700,
+              whiteSpace: 'nowrap',
+            }}
+          >
+            {item.ready ? 'Ready' : 'Missing'}
+          </span>
+        </div>
+      ))}
+      <div style={{ fontSize: 10, color: 'var(--pipe-text-muted)', lineHeight: 1.45, marginTop: 2 }}>
+        Candidate works on an assessment branch or fork. Upstream PRs require later review.
+      </div>
+    </div>
+  );
+}
+
 export function InviteCreationModal({
   isOpen,
   onClose,
@@ -237,10 +296,17 @@ export function InviteCreationModal({
   const challengeSuccessCriteriaItems = splitTextLines(challengeSuccessCriteria);
   const challengeExpectedEvidenceItems = splitTextLines(challengeExpectedEvidence);
   const requiresManualChallengePacket = interviewType === 'OPEN_SOURCE_BUG_FIX' && manualRepoOverride;
+  const packetTaskReady = challengeTitle.trim().length > 0 && challengeInstructions.trim().length > 0;
+  const packetChecklistItems: PacketChecklistItem[] = [
+    { id: 'repository', label: 'Concrete GitHub repo', ready: hasManualRepoUrl },
+    { id: 'base-commit', label: 'Exact base commit SHA', ready: isGitCommitSha(challengeBaseCommitSha) },
+    { id: 'task', label: 'Task title and instructions', ready: packetTaskReady },
+    { id: 'success-criteria', label: 'Success criteria', ready: challengeSuccessCriteriaItems.length > 0 },
+    { id: 'expected-evidence', label: 'Expected evidence', ready: challengeExpectedEvidenceItems.length > 0 },
+  ];
   const manualChallengePacketComplete = !requiresManualChallengePacket || (
     isGitCommitSha(challengeBaseCommitSha)
-    && challengeTitle.trim().length > 0
-    && challengeInstructions.trim().length > 0
+    && packetTaskReady
     && challengeSuccessCriteriaItems.length > 0
     && challengeExpectedEvidenceItems.length > 0
   );
@@ -749,6 +815,7 @@ export function InviteCreationModal({
                             placeholder="One required evidence item per line"
                             style={{ ...inputStyle, minHeight: 76, resize: 'vertical' }}
                           />
+                          <PacketChecklist items={packetChecklistItems} />
                         </div>
                       </div>
                     )}

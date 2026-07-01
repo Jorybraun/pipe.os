@@ -7,6 +7,10 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Added — Open-source assessment setup
+
+- Recruiter open-source assessment invites now show a live challenge-packet checklist for repo, exact base commit, task, success criteria, and expected evidence before creation, making manual tasks visibly concrete instead of a loose repo dump.
+
 ### Fixed — Route performance
 
 - Scheduled interview list responses now enforce a 20-row newest-created first page and the recruiter dashboard loads older interviews on demand, reducing `/interviews` first-paint work before assessment progress enrichment.
@@ -29,6 +33,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Fixed — CODE_REVIEW assessment runtime
 
+- Blocked CODE_REVIEW app-dev smokes now open the candidate `/assess` page and assert the `Profile received` handoff directly, including negative checks against the old matching dashboard copy.
 - Deployed CODE_REVIEW smoke API calls now enforce configurable per-attempt abort timeouts (`CODE_REVIEW_SMOKE_REQUEST_TIMEOUT_MS`), so blocked-path proofs fail with a useful route timeout instead of sitting silently during app-dev/API stalls.
 - CODE_REVIEW recruiter readouts now treat failed scoring as `Score unavailable` with retry/manual-review guidance instead of saying the assessment is still scoring.
 - Standalone roleless CODE_REVIEW auto-matches now accept the explicit `contrast_separation_not_required_roleless` quality check, allowing source-backed roleless matches to advance without a fake role contrast requirement.

@@ -13,6 +13,7 @@ const PIERRE_ERROR_PATTERN = /parsePatchContent|Invalid hunk|@pierre\/diffs|pier
 const VIDEO_ROOM_PATTERN = /video room|waiting room|camera|microphone|join video|open host room/i;
 const EXPECT_AUTOMATCH = process.env.CODE_REVIEW_EXPECT_AUTOMATCH === '1';
 const EXPECT_MANUAL_OVERRIDE = process.env.CODE_REVIEW_EXPECT_MANUAL_OVERRIDE === '1';
+const EXPECT_PROFILE_RECEIVED = process.env.CODE_REVIEW_EXPECT_PROFILE_RECEIVED === '1';
 const EXPECT_MATCH_PROOF_VERDICT = (
   process.env.CODE_REVIEW_EXPECT_MATCH_PROOF_VERDICT || 'PASSED'
 ).trim();
@@ -142,8 +143,21 @@ test.describe('CODE_REVIEW assess-link smoke', () => {
     await page.goto(buildAssessUrl(ASSESS_TOKEN));
     await startWelcomeScreenIfPresent(page);
 
+    if (EXPECT_PROFILE_RECEIVED) {
+      const submitted = page.getByTestId('assessment-submitted');
+      await expect(submitted).toBeVisible({ timeout: 45_000 });
+      await expect(submitted).toContainText('Profile received.');
+      await expect(submitted).toContainText('email you when a source-backed code review is ready');
+      await expect(page.locator('body')).not.toContainText(/WAITING_FOR_MATCH|MATCHING IN PROGRESS|Building your personalized challenge|Repo matching|Challenge needs attention/i);
+      await expect(page.getByTestId('code-review-challenge')).toHaveCount(0);
+      await expect(page.locator('body')).not.toContainText(VIDEO_ROOM_PATTERN);
+      expect(diffRenderErrors).toEqual([]);
+      return;
+    }
+
     const codeReview = page.getByTestId('code-review-challenge');
     await expect(codeReview).toBeVisible({ timeout: 45_000 });
+    await expect(page.locator('body')).not.toContainText(/WAITING_FOR_MATCH|MATCHING IN PROGRESS|Building your personalized challenge/i);
 
     const repoLink = page.getByTestId('code-review-repo-link');
     const prLink = page.getByTestId('code-review-pr-link');
