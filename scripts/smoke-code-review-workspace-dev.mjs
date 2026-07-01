@@ -360,10 +360,10 @@ async function assertRecruiterAssessmentProjection(interviewId, workspaceCommit,
   if (!commit.repositoryUrl) {
     throw new Error(`Recruiter detail did not expose a repository for commit review: ${JSON.stringify(commit)}`);
   }
-  if (commit.integrity?.state !== 'trusted') {
+  if (commit.integrity?.status !== 'workspace_captured' || commit.integrity?.tone !== 'verified') {
     throw new Error(`Recruiter detail did not expose trusted workspace commit integrity: ${JSON.stringify(commit.integrity)}`);
   }
-  if (commit.challengeBinding?.state !== 'bound') {
+  if (commit.challengeBinding?.status !== 'bound_to_assigned_challenge' || commit.challengeBinding?.tone !== 'verified') {
     throw new Error(`Recruiter detail did not bind the commit to the assigned challenge: ${JSON.stringify(commit.challengeBinding)}`);
   }
   if (progress.stage !== 'EVALUATED' || progress.nextAction !== 'REVIEW_EVALUATION') {
