@@ -1438,6 +1438,12 @@ describe('GET /interviews/:id detail', () => {
             repositoryUrl: string | null;
             submissionSource: string;
             submissionSourceLabel: string;
+            integrity: {
+              status: string;
+              label: string;
+              detail: string;
+              tone: string;
+            };
           } | null;
           evidenceSnippets: Array<{
             sourceRefType: string;
@@ -1459,6 +1465,12 @@ describe('GET /interviews/:id detail', () => {
         repositoryUrl: 'https://github.com/open-source/widgets',
         submissionSource: 'live_workspace',
         submissionSourceLabel: 'Live workspace finalizer',
+        integrity: {
+          status: 'workspace_captured',
+          label: 'Workspace-captured commit',
+          detail: 'Captured by the live dev-container finalizer from the workspace HEAD and exact source refs.',
+          tone: 'verified',
+        },
       },
     });
     expect(body.interview.assessmentProgress?.evidenceSnippets).toEqual(expect.arrayContaining([

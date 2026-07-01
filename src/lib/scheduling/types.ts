@@ -174,6 +174,12 @@ export interface AssessmentProgressSnapshot {
     commitUrl: string | null;
     submissionSource?: 'live_workspace' | 'manual_fallback' | 'mixed' | 'unknown';
     submissionSourceLabel?: string;
+    integrity?: {
+      status: 'workspace_captured' | 'manual_needs_verification' | 'mixed_needs_review' | 'unknown_needs_review';
+      label: string;
+      detail: string;
+      tone: 'verified' | 'warning' | 'neutral';
+    };
     changedFiles: unknown[];
     occurredAt: string;
   } | null;

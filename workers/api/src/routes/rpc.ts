@@ -1783,6 +1783,7 @@ function serializeCandidateAssessmentProgress(
           commitUrl: progress.commit.commitUrl,
           submissionSource: progress.commit.submissionSource,
           submissionSourceLabel: progress.commit.submissionSourceLabel,
+          integrity: progress.commit.integrity,
           changedFiles: progress.commit.changedFiles,
           occurredAt: progress.commit.occurredAt,
         }

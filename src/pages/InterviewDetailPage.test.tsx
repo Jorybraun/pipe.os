@@ -310,6 +310,12 @@ describe('InterviewDetailPage', () => {
             commitUrl: 'https://github.com/candidate/widgets/commit/abcdef1234567890abcdef1234567890abcdef12',
             submissionSource: 'live_workspace',
             submissionSourceLabel: 'Live workspace finalizer',
+            integrity: {
+              status: 'workspace_captured',
+              label: 'Workspace-captured commit',
+              detail: 'Captured by the live dev-container finalizer from the workspace HEAD and exact source refs.',
+              tone: 'verified',
+            },
             changedFiles: [{ path: 'src/popover.ts', status: 'modified' }],
             occurredAt: '2026-06-23T00:18:00.000Z',
           },
@@ -335,13 +341,14 @@ describe('InterviewDetailPage', () => {
     expect(progress).toHaveTextContent('Workspace');
     expect(progress).toHaveTextContent('Ready · open-source/widgets · base 1111111111');
     expect(progress).toHaveTextContent('abcdef1234');
-    expect(progress).toHaveTextContent('Captured by');
-    expect(progress).toHaveTextContent('Live workspace finalizer');
+    expect(progress).toHaveTextContent('Commit integrity');
+    expect(progress).toHaveTextContent('Workspace-captured commit');
+    expect(progress).toHaveTextContent('Captured by the live dev-container finalizer from the workspace HEAD and exact source refs.');
     const workPacket = screen.getByTestId('interview-assessment-work-packet');
     expect(workPacket).toHaveTextContent('Candidate work packet');
     expect(workPacket).toHaveTextContent('Commit artifact');
     expect(workPacket).toHaveTextContent('abcdef1234');
-    expect(workPacket).toHaveTextContent('Live workspace finalizer');
+    expect(workPacket).toHaveTextContent('Workspace-captured commit');
     expect(workPacket).toHaveTextContent('Branch pipe-assessment/popover-cleanup');
     expect(workPacket).toHaveTextContent('1 changed file: src/popover.ts · Modified');
     expect(workPacket).toHaveTextContent('Verification');

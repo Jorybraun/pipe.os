@@ -154,6 +154,10 @@ The controlling product rule remains:
   repository or the candidate's declared fork. A GitHub commit URL from an
   unrelated repository is rejected even when the commit SHA, diff source ref, and
   source hashes are otherwise well-formed.
+- Assessment progress must expose commit integrity separately from generic
+  submission status: live dev-container finalizer captures are labelled
+  workspace-captured, while manual evidence fallback remains explicit as needing
+  verification before final reliance.
 - Accepted guest join/leave and recording start/stop room lifecycle events now
   persist as source-backed `meeting_session_event` evidence, with recording
   stop captured only when recording evidence was actually active.

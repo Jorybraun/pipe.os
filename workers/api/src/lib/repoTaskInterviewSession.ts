@@ -304,6 +304,19 @@ export interface AssessmentProgressLatestEvent {
   occurredAt: string;
 }
 
+export type AssessmentProgressCommitIntegrityStatus =
+  | 'workspace_captured'
+  | 'manual_needs_verification'
+  | 'mixed_needs_review'
+  | 'unknown_needs_review';
+
+export interface AssessmentProgressCommitIntegrity {
+  status: AssessmentProgressCommitIntegrityStatus;
+  label: string;
+  detail: string;
+  tone: 'verified' | 'warning' | 'neutral';
+}
+
 export interface AssessmentProgressCommit {
   eventId: string;
   repositoryUrl: string | null;
@@ -314,6 +327,7 @@ export interface AssessmentProgressCommit {
   commitUrl: string | null;
   submissionSource: 'live_workspace' | 'manual_fallback' | 'mixed' | 'unknown';
   submissionSourceLabel: string;
+  integrity: AssessmentProgressCommitIntegrity;
   changedFiles: JsonValue[];
   occurredAt: string;
 }
@@ -331,6 +345,40 @@ function commitSubmissionSourceLabel(source: CommitSubmissionSource): string {
     case 'unknown':
     default:
       return 'Unknown capture source';
+  }
+}
+
+function commitSubmissionIntegrity(source: CommitSubmissionSource): AssessmentProgressCommitIntegrity {
+  switch (source) {
+    case 'live_workspace':
+      return {
+        status: 'workspace_captured',
+        label: 'Workspace-captured commit',
+        detail: 'Captured by the live dev-container finalizer from the workspace HEAD and exact source refs.',
+        tone: 'verified',
+      };
+    case 'manual_fallback':
+      return {
+        status: 'manual_needs_verification',
+        label: 'Manual commit evidence',
+        detail: 'Candidate-entered commit evidence passed source-ref validation, but still needs repository verification before final reliance.',
+        tone: 'warning',
+      };
+    case 'mixed':
+      return {
+        status: 'mixed_needs_review',
+        label: 'Mixed commit evidence',
+        detail: 'Commit evidence combines live workspace and manual source refs; review the audit trail before relying on it.',
+        tone: 'warning',
+      };
+    case 'unknown':
+    default:
+      return {
+        status: 'unknown_needs_review',
+        label: 'Unknown commit capture',
+        detail: 'Commit evidence passed structural validation, but its capture source was not identified.',
+        tone: 'neutral',
+      };
   }
 }
 
@@ -1794,6 +1842,7 @@ export class RepoTaskInterviewSessionStore {
       commitUrl: jsonStringValue(payload.commitUrl),
       submissionSource,
       submissionSourceLabel: commitSubmissionSourceLabel(submissionSource),
+      integrity: commitSubmissionIntegrity(submissionSource),
       changedFiles: jsonArrayValue(payload.changedFiles),
       occurredAt: row.occurred_at,
     };

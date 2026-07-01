@@ -1262,12 +1262,23 @@ Fix stale popover listener cleanup.`;
 @@ -42,6 +42,7 @@ export function closePopover() {
 +  cleanupStaleHandler();
 }`;
-    const commitSourceRef = await sourceRef('git_commit', commitSha, commitText);
-    const codeDiffSourceRef = await sourceRef('code_diff', `${baseCommitSha}..${commitSha}`, diffText);
+    const commitSourceRef = await sourceRef(
+      'git_commit',
+      commitSha,
+      commitText,
+      { source: 'assessment_commit_submission_panel' },
+    );
+    const codeDiffSourceRef = await sourceRef(
+      'code_diff',
+      `${baseCommitSha}..${commitSha}`,
+      diffText,
+      { source: 'assessment_commit_submission_panel' },
+    );
     const testRunSourceRef = await sourceRef(
       'test_run',
       `${commitSha}:test-run`,
       'npm test -- popover\nPASS popover cleanup regression',
+      { source: 'assessment_commit_submission_panel' },
     );
     const commitResponse = await app.request(
       `/api/v1/assessment/repo-task/sessions/${session.id}/commit-submissions`,
@@ -1309,6 +1320,12 @@ Fix stale popover listener cleanup.`;
           forkRepositoryUrl: string;
           branchName: string;
           commitSha: string;
+          integrity: {
+            status: string;
+            label: string;
+            detail: string;
+            tone: string;
+          };
           changedFiles: Array<{ path: string; status: string }>;
         };
         evidenceCounts: Array<{ kind: string; count: number }>;
@@ -1328,6 +1345,12 @@ Fix stale popover listener cleanup.`;
         forkRepositoryUrl: 'https://github.com/candidate/widgets',
         branchName: 'pipe-assessment/progress-popover',
         commitSha,
+        integrity: {
+          status: 'manual_needs_verification',
+          label: 'Manual commit evidence',
+          detail: 'Candidate-entered commit evidence passed source-ref validation, but still needs repository verification before final reliance.',
+          tone: 'warning',
+        },
         changedFiles: [{ path: 'src/popover.ts', status: 'modified' }],
       },
     });

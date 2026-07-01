@@ -426,7 +426,9 @@ export function InterviewCard({
       ?? null,
   );
   const assessmentCommitLabel = shortCommitSha(assessmentProgress?.commit?.commitSha);
-  const assessmentCommitSourceLabel = assessmentProgress?.commit?.submissionSourceLabel ?? null;
+  const assessmentCommitIntegrityLabel = assessmentProgress?.commit?.integrity?.label
+    ?? assessmentProgress?.commit?.submissionSourceLabel
+    ?? null;
   const assessmentEvaluationLabel = assessmentProgress?.evaluation?.status
     ? sentenceCaseToken(assessmentProgress.evaluation.status)
     : null;
@@ -632,7 +634,7 @@ export function InterviewCard({
                     COMMIT
                   </div>
                   <div style={{ minWidth: 0, fontSize: 10, color: 'var(--pipe-text-dim)', overflowWrap: 'anywhere' }}>
-                    {[assessmentCommitLabel, assessmentCommitSourceLabel].filter(Boolean).join(' · ')}
+                    {[assessmentCommitLabel, assessmentCommitIntegrityLabel].filter(Boolean).join(' · ')}
                   </div>
                 </>
               )}

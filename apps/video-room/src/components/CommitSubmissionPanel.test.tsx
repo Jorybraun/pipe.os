@@ -206,6 +206,12 @@ describe('CommitSubmissionPanel', () => {
           commitUrl: null,
           submissionSource: 'live_workspace',
           submissionSourceLabel: 'Live workspace finalizer',
+          integrity: {
+            status: 'workspace_captured',
+            label: 'Workspace-captured commit',
+            detail: 'Captured by the live dev-container finalizer from the workspace HEAD and exact source refs.',
+            tone: 'verified',
+          },
           changedFiles: [{ path: 'src/retry.ts', status: 'modified' }],
           occurredAt: '2026-06-29T20:02:00.000Z',
         },
@@ -246,11 +252,18 @@ describe('CommitSubmissionPanel', () => {
         commitSha,
         submissionSource: 'live_workspace',
         submissionSourceLabel: 'Live workspace finalizer',
+        integrity: expect.objectContaining({
+          status: 'workspace_captured',
+          label: 'Workspace-captured commit',
+        }),
       }),
     }));
     expect(screen.getByTestId('workspace-finalize-success').textContent).toContain(commitSha.slice(0, 12));
     expect(screen.getByTestId('commit-submission-progress').textContent).toContain('Ready For Evaluation');
-    expect(screen.getByTestId('commit-submission-progress-source').textContent).toContain('Live workspace finalizer');
+    expect(screen.getByTestId('commit-submission-progress-source').textContent).toContain('Workspace-captured commit');
+    expect(screen.getByTestId('commit-submission-progress-source').textContent).toContain(
+      'Captured by the live dev-container finalizer from the workspace HEAD and exact source refs.',
+    );
   });
 
   it('keeps workspace finalization blocked until the live workspace is ready', () => {

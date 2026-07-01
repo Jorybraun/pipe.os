@@ -281,9 +281,11 @@ function AssessmentProgressPanel({
             <dd data-testid="commit-submission-progress-commit">{commitSha ?? 'Recorded'}</dd>
             <dt>Branch</dt>
             <dd>{progress.commit.branchName ?? 'Recorded'}</dd>
-            <dt>Captured by</dt>
+            <dt>Commit integrity</dt>
             <dd data-testid="commit-submission-progress-source">
-              {progress.commit.submissionSourceLabel ?? 'Unknown capture source'}
+              {progress.commit.integrity
+                ? `${progress.commit.integrity.label}: ${progress.commit.integrity.detail}`
+                : progress.commit.submissionSourceLabel ?? 'Unknown capture source'}
             </dd>
             {baseSha && (
               <>
