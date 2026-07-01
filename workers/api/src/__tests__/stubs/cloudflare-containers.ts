@@ -50,6 +50,7 @@ export class Container<Env = unknown> extends DurableObject<Env> {
   __destroyCalls = 0;
   __alarmCalls = 0;
   __scheduleTableReady = false;
+  __alarmAlwaysMissingTable = false;
 
   // Stub lifecycle hooks — not called in unit tests.
   async onStart(): Promise<void> {}
@@ -85,7 +86,7 @@ export class Container<Env = unknown> extends DurableObject<Env> {
   }
 
   async alarm(): Promise<void> {
-    if (!this.__scheduleTableReady) {
+    if (this.__alarmAlwaysMissingTable || !this.__scheduleTableReady) {
       throw new Error('no such table: container_schedules: SQLITE_ERROR');
     }
     this.__alarmCalls += 1;

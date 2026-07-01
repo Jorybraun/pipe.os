@@ -73,7 +73,13 @@ export class DevContainerDO extends Container<Env> {
 
   override async alarm(alarmProps?: { isRetry: boolean; retryCount: number }): Promise<void> {
     this.ensureContainerSchedulerSchema();
-    await super.alarm(alarmProps);
+    try {
+      await super.alarm(alarmProps);
+    } catch (error) {
+      if (!isMissingContainerSchedulesTable(error)) throw error;
+      console.error('[DevContainerDO.alarm] Container scheduler table missing; using TTL fallback.');
+      await this.runTtlAlarmFallback();
+    }
   }
 
   async fetch(request: Request): Promise<Response> {
@@ -163,6 +169,7 @@ export class DevContainerDO extends Container<Env> {
     if (!Number.isNaN(expireAt.getTime())) {
       const warnBeforeSeconds = parseWarnSeconds(this.env.DEV_CONTAINER_WARN_BEFORE_SECONDS);
       const warnAt = new Date(expireAt.getTime() - warnBeforeSeconds * 1000);
+      const fallbackAlarmAt = warnAt.getTime() > Date.now() ? warnAt : expireAt;
       try {
         this.ensureContainerSchedulerSchema();
         if (warnAt.getTime() > Date.now()) {
@@ -172,6 +179,7 @@ export class DevContainerDO extends Container<Env> {
         }
       } catch (err) {
         console.error('[DevContainerDO.handleInit] schedule failed:', err);
+        await this.setFallbackAlarm(fallbackAlarmAt, '[DevContainerDO.handleInit] fallback alarm failed');
       }
     }
 
@@ -229,6 +237,36 @@ export class DevContainerDO extends Container<Env> {
 
   private async loadConfig(): Promise<InitPayload | null> {
     return (await this.ctx.storage.get<InitPayload>('config')) ?? null;
+  }
+
+  private async runTtlAlarmFallback(): Promise<void> {
+    const config = await this.loadConfig();
+    if (!config) return;
+
+    const expireAtMs = Date.parse(config.expiresAt);
+    if (!Number.isFinite(expireAtMs)) return;
+    const now = Date.now();
+    if (expireAtMs <= now) {
+      await this.onExpire();
+      return;
+    }
+
+    const warnBeforeSeconds = parseWarnSeconds(this.env.DEV_CONTAINER_WARN_BEFORE_SECONDS);
+    const warnAtMs = expireAtMs - warnBeforeSeconds * 1000;
+    if (warnAtMs <= now) {
+      await this.onWarn();
+      return;
+    }
+
+    await this.setFallbackAlarm(new Date(warnAtMs), '[DevContainerDO.alarm] fallback warn alarm failed');
+  }
+
+  private async setFallbackAlarm(when: Date, logPrefix: string): Promise<void> {
+    try {
+      await this.ctx.storage.setAlarm(when.getTime());
+    } catch (error) {
+      console.error(logPrefix, error);
+    }
   }
 
   private ensureContainerSchedulerSchema(): void {
@@ -307,6 +345,7 @@ export class DevContainerDO extends Container<Env> {
         await this.schedule(expireAt, 'onExpire');
       } catch (err) {
         console.error('[DevContainerDO.onWarn] schedule(onExpire) failed:', err);
+        await this.setFallbackAlarm(expireAt, '[DevContainerDO.onWarn] fallback expire alarm failed');
       }
     }
   }
@@ -369,4 +408,9 @@ function sanitizeContainerDiagnostic(value: string): string {
     .trim();
   if (redacted.length <= MAX_CONTAINER_DIAGNOSTIC_CHARS) return redacted;
   return `${redacted.slice(0, MAX_CONTAINER_DIAGNOSTIC_CHARS)}\n[diagnostic truncated]`;
+}
+
+function isMissingContainerSchedulesTable(error: unknown): boolean {
+  const message = error instanceof Error ? error.message : String(error);
+  return message.includes('no such table: container_schedules');
 }
