@@ -92,6 +92,22 @@ function assessmentHumanDecisionLabel(decision: string): string {
   }
 }
 
+function assessmentEvaluationRecommendationLabel(recommendation: string | null | undefined): string | null {
+  if (!recommendation) return null;
+  switch (recommendation.trim()) {
+    case 'strong_evidence_to_advance':
+      return 'Strong evidence to advance';
+    case 'mixed_evidence_human_review':
+      return 'Human review needed';
+    case 'insufficient_evidence':
+      return 'Insufficient evidence';
+    case 'not_demonstrated':
+      return 'Not demonstrated';
+    default:
+      return sentenceCaseToken(recommendation);
+  }
+}
+
 function repoLabelFromUrl(value: string | null | undefined): string | null {
   if (!value) return null;
   try {
@@ -315,7 +331,7 @@ function assessmentDecisionSummary(input: {
     const status = progress.evaluation.status.toUpperCase();
     if (status === 'EVALUATED') {
       return {
-        value: progress.evaluation.recommendation?.trim() || 'Evaluated',
+        value: assessmentEvaluationRecommendationLabel(progress.evaluation.recommendation) ?? 'Evaluated',
         detail: compactText(
           progress.evaluation.summary
           || 'Review the source-backed evaluation report before advancing the candidate.',

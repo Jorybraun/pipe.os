@@ -791,7 +791,7 @@ describe('InterviewCard assessment progress', () => {
           id: 'assessment-evaluation-proof-secret',
           status: 'EVALUATED',
           summary: 'Candidate produced a focused source-backed fix with commit evidence.',
-          recommendation: 'Human review recommended',
+          recommendation: 'mixed_evidence_human_review',
           createdAt: '2026-06-23T00:22:00.000Z',
           evidenceCoverage: {
             schemaVersion: 'assessment-evidence-coverage-v1',
@@ -862,6 +862,8 @@ describe('InterviewCard assessment progress', () => {
     });
 
     const progress = screen.getByTestId('interview-card-assessment-progress');
+    expect(progress).toHaveTextContent('Human review needed');
+    expect(progress).not.toHaveTextContent('mixed_evidence_human_review');
     expect(progress).toHaveTextContent('CLAIMS');
     expect(progress).toHaveTextContent('Repo understanding · Positive · 82%');
     expect(progress).toHaveTextContent('The candidate isolated the regression to the widget loader');
