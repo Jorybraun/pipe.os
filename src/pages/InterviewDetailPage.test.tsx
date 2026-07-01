@@ -1671,13 +1671,27 @@ describe('InterviewDetailPage', () => {
           },
           reviewProfile: null,
           validatorAgent: {
-            agentName: 'quality-gate',
-            agentVersion: '1',
-            mode: 'manual_override',
+            agentName: 'source_backed_match_validator',
+            agentVersion: 'v1',
+            mode: 'deterministic',
             verdict: 'PASSED',
-            rationale: 'The PR is source-backed and reviewable, but no candidate-fit inference was made.',
-            checks: [],
-            sourceBridge: null,
+            rationale: 'Recruiter-selected PR #973 is accepted as a manual CODE_REVIEW override because it has a production-ready source-backed review packet. Candidate-specific CV alignment is not inferred on this path.',
+            checks: [
+              {
+                id: 'source_backed_manual_override',
+                passed: true,
+                reason: 'The recruiter explicitly selected this PR, so PIPE validates reviewability and provenance instead of claiming an automatic CV match.',
+              },
+            ],
+            sourceBridge: {
+              prNumber: 973,
+              candidateSourceCount: 0,
+              repoSourceCount: 1,
+              roleSourceCount: 0,
+              alignedDemandCount: 1,
+              stretchCount: 0,
+              provenanceComplete: true,
+            },
           },
           roleSources: [],
           evidence: [],
@@ -1722,13 +1736,16 @@ describe('InterviewDetailPage', () => {
     expect(scoreSummary).toHaveTextContent('Assignment evidence only');
     expect(scoreSummary).not.toHaveTextContent('8/12 Usable');
     const explanation = screen.getByTestId('interview-code-review-match-explanation');
-    expect(explanation).toHaveTextContent('Quality gate 8/12 Usable');
-    expect(explanation).toHaveTextContent('no rendered source bridge is available');
-    expect(explanation).toHaveTextContent('treat this as assignment evidence until exact candidate, role, and repo spans are visible');
+    expect(explanation).toHaveTextContent('Assignment proof');
+    expect(explanation).not.toHaveTextContent('Valid because');
+    expect(explanation).toHaveTextContent('1 repo source');
+    expect(explanation).toHaveTextContent('quality 8/12 Usable');
+    expect(explanation).toHaveTextContent('Manual PR');
+    expect(explanation).toHaveTextContent('do not read the assignment itself as candidate-fit proof');
 
     const sourceProof = screen.getByText('Source proof').closest('details');
     expect(sourceProof).not.toHaveAttribute('open');
-    expect(sourceProof?.querySelector('summary')).toHaveTextContent('repo challenge proof and scoring provenance');
+    expect(sourceProof?.querySelector('summary')).toHaveTextContent('repo evidence and scoring provenance');
     expect(sourceProof?.querySelector('summary')).not.toHaveTextContent('candidate, role, repo');
 
     fireEvent.click(screen.getAllByTestId('interview-open-person-profile')[0]!);
@@ -1924,7 +1941,7 @@ describe('InterviewDetailPage', () => {
     expect(explanation).toHaveTextContent('NEEDS MORE EVIDENCE');
     expect(explanation).toHaveTextContent('Why selected');
     expect(explanation).toHaveTextContent('No quality-gated source-backed PR challenge was selected.');
-    expect(explanation).toHaveTextContent('Valid because');
+    expect(explanation).toHaveTextContent('Missing proof');
     expect(explanation).toHaveTextContent('Missing: The deterministic repo matcher did not return a quality-gated PR.');
     expect(explanation).toHaveTextContent('Do not over-trust because');
     expect(explanation).toHaveTextContent('Repo fit is not source-backed');
@@ -3498,6 +3515,7 @@ describe('InterviewDetailPage', () => {
     expect(explanation).toHaveTextContent('Why selected');
     expect(explanation).toHaveTextContent('Matched 2 source-backed demands.');
     expect(explanation).toHaveTextContent('Valid because');
+    expect(explanation).not.toHaveTextContent('Assignment proof');
     expect(explanation).toHaveTextContent('1 evidence bridge');
     expect(explanation).toHaveTextContent('quality 0.82');
     expect(explanation).toHaveTextContent('Do not over-trust because');

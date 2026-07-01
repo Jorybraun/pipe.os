@@ -55,6 +55,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Fixed — CODE_REVIEW assessment runtime
 
+- Interview detail match explanations now label manual assignment-only PR evidence as `Assignment proof` instead of `Valid because`, preventing recruiter-selected PRs from being mistaken for automatic candidate-repo fit proof.
 - Standalone CODE_REVIEW `/assess` now fails closed to the candidate-safe `Profile received` handoff if a regressed stage config tries to render `WAITING_FOR_MATCH`, preventing the old matching dashboard from reappearing in the assessment runtime.
 - Person-profile CODE_REVIEW decisions now show a concise score-validity readout that explains whether a score is usable because rubric coverage, review transcript, repo challenge, and candidate/repo match proof are present, or withheld because a required proof link is missing.
 - CODE_REVIEW interview detail pages now render a compact decision cockpit above invite/progress mechanics, so hiring managers see outcome, validity, risk, and next action before operational link state.

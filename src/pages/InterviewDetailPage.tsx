@@ -225,6 +225,7 @@ interface CodeReviewAssignmentTrust {
 interface CodeReviewMatchExplanation {
   selectedChallenge: string;
   whyThisChallenge: string;
+  proofLabel: string;
   proofSummary: string;
   riskSummary: string;
   remainingQuestion: string;
@@ -1410,6 +1411,26 @@ function codeReviewScoreIsUnavailable(score: CodeReviewScoreSummary | null): boo
   return status.includes('fail') || status === 'error' || status === 'unavailable';
 }
 
+function codeReviewMatchIsManualOverride(match: CodeReviewMatchDetail | null | undefined): boolean {
+  if (!match) return false;
+  if (match.validatorAgent?.mode === 'manual_override') return true;
+  if (/^manual override\b/i.test(match.summary)) return true;
+  const rationale = match.validatorAgent?.rationale ?? '';
+  if (/\bmanual\b.*\boverride\b/i.test(rationale)) return true;
+  return match.validatorAgent?.checks.some((check) =>
+    /\bmanual\b.*\boverride\b/i.test(`${check.id} ${check.reason}`),
+  ) ?? false;
+}
+
+function codeReviewAssignmentIsManualOverride(input: {
+  setup: AssessmentSetupProjection | null | undefined;
+  match: CodeReviewMatchDetail | null | undefined;
+}): boolean {
+  return input.setup?.kind === 'manual_open_source_task'
+    || input.setup?.source === 'recruiter_manual_override'
+    || codeReviewMatchIsManualOverride(input.match);
+}
+
 function codeReviewSignalBasisItems(input: {
   score: CodeReviewScoreSummary | null;
   submission: CodeReviewSubmissionDetail | null;
@@ -1428,7 +1449,7 @@ function codeReviewSignalBasisItems(input: {
         && sourceBridge.candidateSourceCount > 0
         && sourceBridge.repoSourceCount > 0,
     );
-  const manualAssignment = input.assignmentIsManual || input.match?.validatorAgent?.mode === 'manual_override';
+  const manualAssignment = input.assignmentIsManual || codeReviewMatchIsManualOverride(input.match);
   const qualityScore = input.match?.assessmentQuality
     ? `${input.match.assessmentQuality.score}/${input.match.assessmentQuality.maxScore} ${titleCaseToken(input.match.assessmentQuality.verdict.toLowerCase())}`
     : null;
@@ -1562,9 +1583,10 @@ function codeReviewAssessmentValiditySummary(input: {
   const annotationCount = input.submission?.annotations.length ?? 0;
   const pushbackCount = input.submission?.defenseThreads.length ?? 0;
   const hasMatchProof = input.proofCount > 0 || Boolean(input.match?.assessmentQuality);
-  const manualAssignment = input.setup?.kind === 'manual_open_source_task'
-    || input.setup?.source === 'recruiter_manual_override'
-    || input.match?.validatorAgent?.mode === 'manual_override';
+  const manualAssignment = codeReviewAssignmentIsManualOverride({
+    setup: input.setup,
+    match: input.match,
+  });
 
   if (!matchReady) {
     return {
@@ -1650,6 +1672,14 @@ function codeReviewAssignmentTrustSummary(input: {
   }
 
   if (source === 'recruiter_manual_override') {
+    return {
+      value: 'Manual PR',
+      detail: 'This PR was selected manually. Use the candidate review as evidence, but do not read the assignment itself as candidate-fit proof.',
+      tone: 'watch',
+    };
+  }
+
+  if (codeReviewMatchIsManualOverride(input.match)) {
     return {
       value: 'Manual PR',
       detail: 'This PR was selected manually. Use the candidate review as evidence, but do not read the assignment itself as candidate-fit proof.',
@@ -1752,6 +1782,7 @@ function codeReviewMatchExplanation(input: {
       selectedChallenge,
       whyThisChallenge: input.match?.summary
         || 'PIPE has not selected a quality-gated, source-backed repo challenge for this interview.',
+      proofLabel: 'Missing proof',
       proofSummary: input.risk.missingContext[0]
         ? `Missing: ${input.risk.missingContext[0]}`
         : 'Missing source-backed candidate, role, or repo evidence.',
@@ -1788,6 +1819,7 @@ function codeReviewMatchExplanation(input: {
     quality ? `quality ${quality}` : null,
   ].filter((part): part is string => Boolean(part));
   const renderedSourceBridgeCount = personSources + roleSources + repoSources + hyperedgeCount;
+  const hasCandidateRepoBridge = hyperedgeCount > 0 || (personSources > 0 && repoSources > 0);
   const proofSummary = renderedSourceBridgeCount > 0
     ? proofParts.join(' · ')
     : quality
@@ -1798,6 +1830,7 @@ function codeReviewMatchExplanation(input: {
     selectedChallenge,
     whyThisChallenge: input.match.summary
       || `PIPE aligned ${input.matchPathLabel} for this reviewable PR challenge.`,
+    proofLabel: hasCandidateRepoBridge ? 'Valid because' : 'Assignment proof',
     proofSummary,
     riskSummary: `${input.assignmentTrust.value}: ${input.assignmentTrust.detail}`,
     remainingQuestion: `${input.validity.value}: ${input.validity.detail} ${scoreText}.`,
@@ -1846,9 +1879,7 @@ function codeReviewNextStepRecommendation(
   }
   const scoreValue = score?.score;
   const scoreBand = score?.band?.toLowerCase() ?? null;
-  const manualAssignment = setup?.kind === 'manual_open_source_task'
-    || setup?.source === 'recruiter_manual_override'
-    || match?.validatorAgent?.mode === 'manual_override';
+  const manualAssignment = codeReviewAssignmentIsManualOverride({ setup, match });
   if (typeof scoreValue === 'number' && Number.isFinite(scoreValue)) {
     if (scoreValue < 50 || scoreBand === 'weak') {
       return {
@@ -3319,10 +3350,10 @@ export default function InterviewDetailPage(): JSX.Element {
   const shouldShowEvidencePlan = codeReviewEvidencePlan.length > 0
     && !codeReviewEvidenceRefresh
     && !codeReviewEvidenceFollowUp;
-  const codeReviewAssignmentIsManual = interview.assessmentSetup?.kind === 'manual_open_source_task'
-    || interview.assessmentSetup?.source === 'recruiter_manual_override'
-    || codeReviewMatch?.validatorAgent?.mode === 'manual_override'
-    || /^manual override\b/i.test(codeReviewMatch?.summary ?? '');
+  const codeReviewAssignmentIsManual = codeReviewAssignmentIsManualOverride({
+    setup: interview.assessmentSetup,
+    match: codeReviewMatch,
+  });
   const codeReviewSignalBasis = codeReviewSignalBasisItems({
     score: codeReviewScore,
     submission: codeReviewSubmission,
@@ -4334,7 +4365,7 @@ export default function InterviewDetailPage(): JSX.Element {
                     <div style={CONTEXT_RECORD_NARRATIVE}>{codeReviewExplanation.whyThisChallenge}</div>
                   </div>
                   <div style={DECISION_MATCH_EXPLANATION_ITEM}>
-                    <div style={FIELD_LABEL}>Valid because</div>
+                    <div style={FIELD_LABEL}>{codeReviewExplanation.proofLabel}</div>
                     <div style={CONTEXT_RECORD_NARRATIVE}>{codeReviewExplanation.proofSummary}</div>
                   </div>
                   <div style={DECISION_MATCH_EXPLANATION_ITEM}>
