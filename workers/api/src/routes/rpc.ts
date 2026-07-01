@@ -206,7 +206,7 @@ async function checkMatchingGate(
           ? readiness.reason ?? 'Candidate evidence ingestion needs recruiter attention before matching.'
           : 'Candidate evidence ingestion is still running.',
         {
-          terminal: true,
+          terminal: readiness.terminal,
           diagnostics: diagnosticsForStandaloneReviewReadiness(readiness, {
             phase: 'candidate_evidence',
             repoMatchingStatus: 'pending',
