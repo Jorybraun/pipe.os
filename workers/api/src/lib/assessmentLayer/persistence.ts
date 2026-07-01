@@ -10,6 +10,7 @@ export type AssessmentSessionMode =
   | 'CODE_REVIEW'
   | 'DEV_CONTAINER_CHALLENGE'
   | 'DEV_CONTAINER_REPO_TASK'
+  | 'NINETY_FIVE_UNTIL_INFINITY_ROOM'
   | 'OPEN_SOURCE_BUG_FIX'
   | 'REPO_MATCHING'
   | 'STANDARD_VIDEO_INTERVIEW'
@@ -35,6 +36,7 @@ export type AssessmentActorType =
   | 'ai_agent'
   | 'ai_developer'
   | 'agent'
+  | 'clippy'
   | 'devin'
   | 'dev_container'
   | 'system';

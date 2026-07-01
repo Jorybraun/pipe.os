@@ -3473,14 +3473,14 @@ function assessmentActorForSessionEvent(event: SessionEvent): { actorType: Asses
     return { actorType: agentActorType, actorId: explicitAgentId };
   }
 
-  if (event.type === 'agent_prompt') {
-    return { actorType: 'agent', actorId: 'agent' };
+  if (event.type === 'clippy_prompt' || event.type === 'agent_prompt') {
+    return { actorType: 'clippy', actorId: 'clippy' };
   }
 
-  if (event.type === 'agent_action') {
+  if (event.type === 'clippy_action' || event.type === 'agent_action') {
     return source === 'clippy_agent_bridge'
       ? { actorType: agentActorType, actorId: explicitAgentId }
-      : { actorType: 'agent', actorId: 'agent' };
+      : { actorType: 'clippy', actorId: 'clippy' };
   }
 
   if (event.actor === 'guest') return { actorType: 'candidate', actorId: event.candidateId };
@@ -3564,7 +3564,7 @@ async function persistSessionEventAssessmentEvidence(
   const session = existingSession ?? await store.createAssessmentSession({
     ingestionKey: `assessment-session:95-room:${event.candidateId}:${event.sessionId}`,
     interviewId: event.sessionId,
-    mode: 'CODE_REVIEW',
+    mode: 'NINETY_FIVE_UNTIL_INFINITY_ROOM',
     candidateId: event.candidateId,
     workspaceId: null,
     createdBy: 'meeting-room-session-events',

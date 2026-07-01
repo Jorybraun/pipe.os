@@ -23,6 +23,14 @@ const contextRecordMigration = readFileSync(
   new URL('../../../../migrations/0095_context_records.sql', import.meta.url),
   'utf8',
 );
+const candidateNodesMigration = readFileSync(
+  new URL('../../../../migrations/0052_candidate_nodes.sql', import.meta.url),
+  'utf8',
+);
+const candidateNodeIdempotencyMigration = readFileSync(
+  new URL('../../../../migrations/0085_candidate_node_idempotency.sql', import.meta.url),
+  'utf8',
+);
 
 function changedPatch(label: string, lines = 8): string {
   return [
@@ -218,6 +226,8 @@ function setupDb(): BetterSqliteDb {
       status TEXT NOT NULL DEFAULT 'active'
     );
   `);
+  sqlite.exec(candidateNodesMigration);
+  sqlite.exec(candidateNodeIdempotencyMigration);
   sqlite.exec(livingContextMigration);
   sqlite.exec(repoGraphMigration);
   sqlite.exec(contextRecordMigration);

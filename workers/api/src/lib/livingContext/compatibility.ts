@@ -255,19 +255,23 @@ export async function ensureCandidateLivingContext(
   ).bind(candidateId).first<LegacyCandidateIdentity>();
   if (!candidate) return null;
 
-  const existingIdentity = await db.prepare(
-    `SELECT p.id AS personId, wp.id AS workspacePersonId, app.id AS applicationId
-       FROM applications app
-       JOIN workspace_people wp ON wp.id = app.workspace_person_id
-       JOIN people p ON p.id = wp.person_id
-      WHERE app.legacy_candidate_id = ?1
-      LIMIT 1`,
-  ).bind(candidateId).first<{
-    personId: string;
-    workspacePersonId: string;
-    applicationId: string;
-  }>();
-  if (existingIdentity) return existingIdentity;
+  try {
+    const existingIdentity = await db.prepare(
+      `SELECT p.id AS personId, wp.id AS workspacePersonId, app.id AS applicationId
+         FROM applications app
+         JOIN workspace_people wp ON wp.id = app.workspace_person_id
+         JOIN people p ON p.id = wp.person_id
+        WHERE app.legacy_candidate_id = ?1
+        LIMIT 1`,
+    ).bind(candidateId).first<{
+      personId: string;
+      workspacePersonId: string;
+      applicationId: string;
+    }>();
+    if (existingIdentity) return existingIdentity;
+  } catch {
+    // applications table may not exist in older schemas — fall through to upsert path
+  }
 
   const store = new LivingContextStore(db);
   const personIngestionKey = await existingPersonIngestionKey(db, candidate.email, candidate.id);

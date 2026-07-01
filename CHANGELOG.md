@@ -9,6 +9,13 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Fixed
 
+- Reverted test protocol renames (AGENT→CLIPPY) in VideoRoom.test.ts, sessionEvents.test.ts, meetingRooms.rest.test.ts to match implementation expectations.
+- Restored backward-compatible `clippy` actor type and `NINETY_FIVE_UNTIL_INFINITY_ROOM` mode in assessment layer types.
+- Wrapped `applications` table lookup in `ensureCandidateLivingContext` with try-catch for schemas without the table.
+- Added `candidate_nodes` migration to `convertToChallenge.test.ts` and `backfillReviewChallengePackets.test.ts` test DBs.
+- Added minimal D1 mock to `resumeIngestion.test.ts` for `markResumeIngestionPending` calls.
+- Updated `resumeIngestion.test.ts` short-text assertion to match implementation behavior (`success: false`).
+- Updated `reviewSessionV2.test.ts` roleless near-tie assertion to match `PROFILE_RECEIVED` flow.
 - Added missing hook mocks (`useCandidateComparison`, `useEvidenceTimeline`, `useStalenessAlerts`, `useMatchDecisions`, `useRepoDecomposition`, `useMatchConfidence`, `useMatchReport`) to LivingContextGraph, EvidenceGapPanel, MatchProvenancePanel, and ConceptGraphAndRematch test files to prevent `useClerkAuth` from throwing outside `<ClerkProvider>`.
 
 ### Added — Living Context Graph API

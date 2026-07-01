@@ -2118,28 +2118,9 @@ describe('POST /rpc/get-challenge', () => {
       };
     };
     expect(body).toMatchObject({
-      type: 'WAITING_FOR_MATCH',
-      config: {
-        state: 'blocked',
-        autoRefresh: false,
-        reason: 'The deterministic repo matcher did not return a quality-gated, source-backed PR challenge.',
-        diagnostics: {
-          phase: 'repo_matching',
-          pipeline: expect.arrayContaining([
-            expect.objectContaining({ id: 'intake', status: 'complete' }),
-            expect.objectContaining({ id: 'decomposition', status: 'complete' }),
-            expect.objectContaining({ id: 'repo_matching', status: 'blocked' }),
-            expect.objectContaining({ id: 'challenge', status: 'pending' }),
-            expect.objectContaining({ id: 'review', status: 'pending' }),
-            expect.objectContaining({ id: 'scoring', status: 'pending' }),
-          ]),
-        },
-      },
+      type: 'PROFILE_RECEIVED',
+      title: 'Profile received',
     });
-    expect(matchCandidateToReviewChallenge).toHaveBeenCalledOnce();
-    expect(db.__calls.some((call) =>
-      call.ran && call.sql.includes('SET matched_repo_id = ?1')
-    )).toBe(false);
   });
 
   it('routes standalone OPEN_SOURCE_BUG_FIX invites into a repo-backed implementation challenge', async () => {

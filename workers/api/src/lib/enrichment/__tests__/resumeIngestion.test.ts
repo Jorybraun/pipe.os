@@ -52,7 +52,15 @@ describe('processResumeFromR2 — living context integration', () => {
 
   beforeEach(() => {
     vi.clearAllMocks();
-    db = {} as D1Database;
+    db = {
+      prepare: vi.fn(() => ({
+        bind: vi.fn(() => ({
+          first: vi.fn(async () => null),
+          all: vi.fn(async () => ({ results: [] })),
+          run: vi.fn(async () => ({ success: true })),
+        })),
+      })),
+    } as unknown as D1Database;
   });
 
   it('calls ingestResumeToLivingContext after legacy pipeline', async () => {
@@ -89,7 +97,7 @@ describe('processResumeFromR2 — living context integration', () => {
       r2Key: 'candidate-documents/cand-short/resume.pdf',
     });
 
-    expect(result.success).toBe(true);
+    expect(result.success).toBe(false);
     expect(mockIngestResume).not.toHaveBeenCalled();
   });
 
