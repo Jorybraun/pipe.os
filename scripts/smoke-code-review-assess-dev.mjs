@@ -662,8 +662,14 @@ function recruiterDetailReady(interview, {
       : { ready: false, reason: 'blocked projection missing setup/progress' };
   }
 
-  if (interview.status !== 'COMPLETED') {
-    return { ready: false, reason: `interview status is ${interview.status ?? 'missing'}` };
+  const acceptableStatuses = expectSubmission || expectScore
+    ? ['COMPLETED']
+    : ['ACTIVE', 'COMPLETED'];
+  if (!acceptableStatuses.includes(interview.status)) {
+    return {
+      ready: false,
+      reason: `interview status is ${interview.status ?? 'missing'}`,
+    };
   }
   if (expectedRepoUrl && interview.githubRepoUrl !== expectedRepoUrl) {
     return { ready: false, reason: `repo is ${interview.githubRepoUrl ?? 'missing'}` };

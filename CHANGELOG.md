@@ -26,7 +26,8 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Fixed — CODE_REVIEW assessment runtime
 
-- The deployed `/assess` smoke suite now creates two real app-dev CODE_REVIEW invites and proves opening token B after token A in the same browser resolves/stores candidate B before starting B's challenge.
+- The deployed `/assess` smoke suite now creates two real app-dev CODE_REVIEW invites and proves opening token B after token A in the same browser resolves/stores candidate B before either invite is claimed.
+- The deployed CODE_REVIEW assess smoke now treats non-submit mode as ready once the recruiter detail has an active matched assignment, while full-submit mode still requires completion, submission, and scoring proof.
 - The `/assess` browser smoke suite now proves same-browser stale candidate sessions are discarded when a different invite token is opened, so token B resolves and stores candidate B instead of leaking token A state.
 - Person-profile CODE_REVIEW rollups now bind score, transcript, and match proof by shared session or interaction before presenting a current recommendation, preventing a newer related match-only interview from being blended into an older completed review score.
 - The recruiter CODE_REVIEW browser smoke now requires matched interview pages to render the meeting/person boundary copy, proving app-dev keeps the interview scoped to its own evidence while treating same-person interviews as separate context.
