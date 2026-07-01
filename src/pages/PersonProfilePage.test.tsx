@@ -160,6 +160,11 @@ function matchDecisionRecord(): LivingContextRecord {
           challengeId: 'challenge-packet-1',
           prNumber: 95,
           repoId: 'repo-1',
+          candidateSourceCount: 2,
+          repoSourceCount: 2,
+          roleSourceCount: 0,
+          alignedDemandCount: 2,
+          stretchCount: 0,
           provenanceComplete: true,
         },
       },
@@ -1234,6 +1239,53 @@ describe('PersonProfilePage', () => {
     expect(decision).toHaveTextContent('Review assignment fairness before rejecting');
     expect(decision).toHaveTextContent('Check whether the repo challenge was well matched before treating the weak score as candidate signal.');
     expect(decision).not.toHaveTextContent('Do not advance from this signal yet');
+  });
+
+  it('does not call assignment-only code-review records candidate-repo match proof', async () => {
+    const context = makeLivingContext();
+    context.contextRecords = context.contextRecords.map((record) =>
+      record.id === 'record-match'
+        ? contextRecord({
+            ...record,
+            qualifiers: {
+              ...record.qualifiers,
+              validatorAgent: {
+                sourceBridge: {
+                  challengeId: 'challenge-packet-1',
+                  prNumber: 95,
+                  repoId: 'repo-1',
+                  provenanceComplete: true,
+                },
+              },
+            },
+          })
+        : record
+    );
+
+    mocks.api.get
+      .mockResolvedValueOnce({ contact: makeContact() })
+      .mockResolvedValueOnce(context);
+
+    renderPage();
+    await flushAsyncUpdates();
+
+    const cockpit = screen.getByTestId('person-decision-cockpit');
+    expect(cockpit).toHaveTextContent('Partial source-backed signal');
+    expect(cockpit).toHaveTextContent('Repo-match proof incomplete');
+
+    const basis = screen.getByTestId('person-code-review-decision-basis');
+    expect(basis).toHaveTextContent('Match proof');
+    expect(basis).toHaveTextContent('Assignment evidence only');
+    expect(basis).not.toHaveTextContent('Source-backed match');
+
+    const decision = await screen.findByTestId('person-code-review-decision');
+    expect(decision).toHaveTextContent('Rendered candidate/repo source bridge');
+    expect(decision).toHaveTextContent('PIPE has a visible repo challenge, but the rendered candidate-to-repo source bridge is missing from the person graph.');
+
+    const proof = screen.getByTestId('person-code-review-source-proof');
+    const proofSummary = proof.querySelector('summary');
+    expect(proofSummary).toHaveTextContent('repo evidence, scoring provenance, and open gaps');
+    expect(proofSummary).not.toHaveTextContent('candidate-repo match proof');
   });
 
   it('routes conversation-only profiles toward a code-review assessment next action', async () => {

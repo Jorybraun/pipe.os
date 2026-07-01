@@ -27,6 +27,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Fixed — CODE_REVIEW assessment runtime
 
+- Person-profile CODE_REVIEW decisions now require rendered candidate and repo source-bridge evidence before labeling a PR assignment as a source-backed candidate-repo match, otherwise the readout calls it assignment evidence and surfaces the missing bridge.
 - Workspace finalization now runs only the container-configured verification command for `test_run` evidence and records a verification gap when none is configured, preventing candidate-selected commands from satisfying assessment proof.
 - Candidate and recruiter CODE_REVIEW surfaces now consistently describe implementation-author replies instead of exposing AI-developer or generic pushback wording in default instructions and trust signals.
 - Workspace finalization now canonicalizes and verifies the checked-out git remote or configured challenge repo before emitting commit evidence, blocking browser-supplied repository spoofing.

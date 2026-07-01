@@ -83,6 +83,13 @@ interface CodeReviewChallengeProjection {
   matchStatus: string | null;
 }
 
+interface CodeReviewMatchSourceBridgeProjection {
+  candidateSourceCount: number;
+  repoSourceCount: number;
+  roleSourceCount: number;
+  provenanceComplete: boolean;
+}
+
 interface CodeReviewProofItem {
   id: string;
   label: string;
@@ -807,6 +814,49 @@ function hasMatchedReviewChallenge(challenge: CodeReviewChallengeProjection | nu
   return Boolean(challenge.repoLabel || challenge.repoUrl || challenge.prNumber !== null);
 }
 
+function matchSourceBridgeFromRecord(record: LivingContextRecord | null): CodeReviewMatchSourceBridgeProjection | null {
+  const validatorAgent = isRecord(record?.qualifiers.validatorAgent) ? record.qualifiers.validatorAgent : null;
+  const sourceBridge = validatorAgent && isRecord(validatorAgent.sourceBridge)
+    ? validatorAgent.sourceBridge
+    : null;
+  if (!sourceBridge) return null;
+  return {
+    candidateSourceCount: optionalNumericValue(sourceBridge.candidateSourceCount) ?? 0,
+    repoSourceCount: optionalNumericValue(sourceBridge.repoSourceCount) ?? 0,
+    roleSourceCount: optionalNumericValue(sourceBridge.roleSourceCount) ?? 0,
+    provenanceComplete: sourceBridge.provenanceComplete === true,
+  };
+}
+
+function sourceRoleText(source: LivingContextRecordSourceRef): string {
+  const parts = [
+    source.evidenceRole,
+    source.sourceRefType,
+    'artifactType' in source ? source.artifactType : null,
+    'locator' in source && isRecord(source.locator) ? source.locator.repoFullName : null,
+    'locator' in source && isRecord(source.locator) ? source.locator.repoUrl : null,
+  ];
+  return parts.filter((part): part is string => typeof part === 'string').join(' ').toLowerCase();
+}
+
+function recordHasCandidateAndRepoSourceRefs(record: LivingContextRecord | null): boolean {
+  if (!record) return false;
+  const sourceRoles = record.sources.map(sourceRoleText);
+  const hasCandidateSource = sourceRoles.some((role) => /candidate|person|profile|resume/.test(role));
+  const hasRepoSource = sourceRoles.some((role) => /repo|pr|pull_request|challenge|selected_repo/.test(role));
+  return hasCandidateSource && hasRepoSource;
+}
+
+function hasRenderedCandidateRepoMatchProof(record: LivingContextRecord | null): boolean {
+  const bridge = matchSourceBridgeFromRecord(record);
+  if (bridge) {
+    return bridge.provenanceComplete
+      && bridge.candidateSourceCount > 0
+      && bridge.repoSourceCount > 0;
+  }
+  return recordHasCandidateAndRepoSourceRefs(record);
+}
+
 function verdictLabel(verdict: string | null): string | null {
   if (!verdict) return null;
   switch (verdict.toLowerCase()) {
@@ -1077,7 +1127,7 @@ function uncertaintyForDecision(input: {
   if (!input.hasMatchProvenance) {
     return {
       value: 'Repo-match proof incomplete',
-      detail: 'PIPE has a visible repo challenge, but the source-backed match decision record is missing from the person graph.',
+      detail: 'PIPE has a visible repo challenge, but the rendered candidate-to-repo source bridge is missing from the person graph.',
     };
   }
   if (!hasScore) {
@@ -1122,7 +1172,11 @@ function missingContextForDecision(input: {
   const hasScore = input.score?.score !== null && input.score?.score !== undefined;
   const hasMatchedChallenge = hasMatchedReviewChallenge(input.challenge);
   if (!hasMatchedChallenge) items.push('Source-backed repo challenge selection');
-  if (!input.hasMatchProvenance) items.push('Source-backed repo match decision provenance');
+  if (!input.hasMatchProvenance) {
+    items.push(hasMatchedChallenge
+      ? 'Rendered candidate/repo source bridge'
+      : 'Source-backed repo match decision provenance');
+  }
   if (!hasScore) items.push('Completed code-review score report');
   if (!input.hasTranscript) items.push('Candidate review transcript or review conversation');
   if (input.proofCount < 4) items.push('Complete candidate/repo provenance chain');
@@ -1225,7 +1279,11 @@ function deriveCodeReviewDecision(
     ?? readChallengeProjection(scoreRecord)
     ?? readChallengeProjection(transcriptRecord)
     ?? readChallengeProjection(codeReviewRecords[0] ?? null);
-  const hasMatchProvenance = Boolean(matchRecord && matchRecord.sources.length > 0 && hasMatchedReviewChallenge(matchChallenge));
+  const hasMatchProvenance = Boolean(
+    matchRecord
+      && hasMatchedReviewChallenge(matchChallenge)
+      && hasRenderedCandidateRepoMatchProof(matchRecord),
+  );
   const recommendation = recommendationForScore(score, challenge);
   const scoreLabel = scoreLabelForProjection(score);
   const challengeLabel = challenge?.repoLabel
@@ -1282,9 +1340,11 @@ function deriveCodeReviewDecision(
     },
     {
       label: 'Match proof',
-      value: hasMatchProvenance && matchRecord
+      value: hasMatchProvenance
         ? 'Source-backed match'
-        : 'Missing',
+        : matchRecord && hasMatchedReviewChallenge(matchChallenge)
+          ? 'Assignment evidence only'
+          : 'Missing',
       satisfied: hasMatchProvenance,
     },
   ];
