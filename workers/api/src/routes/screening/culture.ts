@@ -94,6 +94,15 @@ function parseJsonColumn<T>(raw: string | null, fallback: T): T {
   }
 }
 
+function isRecord(value: unknown): value is Record<string, unknown> {
+  return value !== null && typeof value === 'object' && !Array.isArray(value);
+}
+
+async function readOptionalJsonBody(req: { json<T = unknown>(): Promise<T> }): Promise<Record<string, unknown>> {
+  const body = await req.json<unknown>().catch(() => null);
+  return isRecord(body) ? body : {};
+}
+
 /**
  * ADR-031 §5.4 — Required disclosures for AI-conducted interviews.
  * Shown once before any turn is written to the transcript.
@@ -647,6 +656,28 @@ cultureRecruiter.get('/cost-dashboard', async (c) => {
 // Returns the full CalibrationReport JSON. The caller (recruiter UI or curl)
 // can inspect QWK metrics and per-dimension confusion.
 cultureRecruiter.post('/calibration/run', async (c) => {
+  const body = await readOptionalJsonBody(c.req);
+  const rawFixtureLimit = body.fixtureLimit;
+  const fixtureLimit = typeof rawFixtureLimit === 'number' && Number.isInteger(rawFixtureLimit) && rawFixtureLimit > 0
+    ? rawFixtureLimit
+    : undefined;
+
+  if (rawFixtureLimit !== undefined && fixtureLimit === undefined) {
+    return apiError(c, 'VALIDATION_ERROR', 'fixtureLimit must be a positive integer.');
+  }
+
+  if (body.dryRun === true) {
+    const { CALIBRATION_FIXTURES } = await import('../../lib/__tests__/cultureScorerCalibration.fixtures');
+    const plannedFixtureCount = Math.min(fixtureLimit ?? CALIBRATION_FIXTURES.length, CALIBRATION_FIXTURES.length);
+
+    return c.json({
+      dryRun: true,
+      plannedFixtureCount,
+      totalFixtureCount: CALIBRATION_FIXTURES.length,
+      estimatedScoringCalls: plannedFixtureCount * 11,
+    });
+  }
+
   if (!c.env.AI) {
     return c.json(
       {
@@ -666,6 +697,9 @@ cultureRecruiter.post('/calibration/run', async (c) => {
     import('../../lib/__tests__/cultureScorerCalibration.fixtures'),
     import('../../lib/llm/cloudflareAIProvider'),
   ]);
+  const fixtures = fixtureLimit !== undefined
+    ? CALIBRATION_FIXTURES.slice(0, fixtureLimit)
+    : CALIBRATION_FIXTURES;
 
   const provider = new CloudflareAIProvider(c.env.AI);
 
@@ -682,7 +716,7 @@ cultureRecruiter.post('/calibration/run', async (c) => {
   try {
     const report = await runCalibration({
       provider,
-      fixtures: CALIBRATION_FIXTURES,
+      fixtures,
       orgBenchmark,
     });
 

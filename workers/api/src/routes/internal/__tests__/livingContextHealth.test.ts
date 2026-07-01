@@ -136,6 +136,46 @@ describe('POST /living-context-rebuild-projections', () => {
     const body = await res.json() as { status: string; enqueued: number };
     expect(body.enqueued).toBe(0);
   });
+
+  it('reports rebuild scope in dry-run mode without enqueuing jobs', async () => {
+    sqlite.exec(`
+      INSERT INTO people (id, ingestion_key, created_at, updated_at)
+      VALUES ('person-1', 'person:p1', datetime('now'), datetime('now'));
+    `);
+    sqlite.exec(`
+      INSERT INTO people (id, ingestion_key, created_at, updated_at)
+      VALUES ('person-2', 'person:p2', datetime('now'), datetime('now'));
+    `);
+    sqlite.exec(`
+      INSERT INTO workspace_people (id, ingestion_key, workspace_id, person_id, created_at, updated_at)
+      VALUES ('wp-1', 'wp:1', 'ws-1', 'person-1', datetime('now'), datetime('now'));
+    `);
+    sqlite.exec(`
+      INSERT INTO workspace_people (id, ingestion_key, workspace_id, person_id, created_at, updated_at)
+      VALUES ('wp-2', 'wp:2', 'ws-1', 'person-2', datetime('now'), datetime('now'));
+    `);
+
+    const db = createMockD1(sqlite);
+    const app = new Hono();
+    app.route('/', livingContextHealth);
+
+    const res = await app.request('/living-context-rebuild-projections', {
+      method: 'POST',
+      body: JSON.stringify({ dryRun: true }),
+      headers: { 'Content-Type': 'application/json' },
+    }, { DB: db });
+    expect(res.status).toBe(200);
+
+    const body = await res.json() as { status: string; enqueued: number; wouldEnqueue: number };
+    expect(body.status).toBe('dry_run');
+    expect(body.enqueued).toBe(0);
+    expect(body.wouldEnqueue).toBe(2);
+
+    const rows = sqlite.prepare(
+      `SELECT aggregate_id FROM projection_outbox WHERE operation = 'rebuild'`,
+    ).all();
+    expect(rows).toHaveLength(0);
+  });
 });
 
 describe('GET /living-context-stats', () => {
@@ -299,6 +339,55 @@ describe('GET /living-context-backfill', () => {
     expect(body.error).toBeTruthy();
 
     emptySqlite.close();
+  });
+});
+
+describe('POST /living-context-backfill-trigger', () => {
+  let sqlite: BetterSqliteDb;
+
+  beforeEach(() => {
+    sqlite = new Database(':memory:');
+    sqlite.exec('PRAGMA foreign_keys = ON;');
+    sqlite.exec(livingContextMigration);
+    sqlite.exec(contextRecordsMigration);
+    sqlite.exec(checkpointMigration);
+    sqlite.exec(gatesMigration);
+  });
+
+  afterEach(() => {
+    sqlite.close();
+  });
+
+  it('returns a dry-run plan without creating checkpoints or running tasks', async () => {
+    const db = createMockD1(sqlite);
+    const app = new Hono();
+    app.route('/', livingContextHealth);
+
+    const res = await app.request('/living-context-backfill-trigger', {
+      method: 'POST',
+      body: JSON.stringify({ dryRun: true }),
+      headers: { 'Content-Type': 'application/json' },
+    }, { DB: db });
+    expect(res.status).toBe(200);
+
+    const body = await res.json() as {
+      dryRun: boolean;
+      gateEnabled: boolean;
+      gateStage: string;
+      tasksWouldExecute: string[];
+      registeredTasks: Array<{ taskKey: string }>;
+    };
+
+    expect(body.dryRun).toBe(true);
+    expect(body.gateEnabled).toBe(false);
+    expect(body.gateStage).toBe('disabled');
+    expect(body.tasksWouldExecute).toEqual([]);
+    expect(body.registeredTasks.length).toBeGreaterThan(0);
+
+    const checkpointCount = sqlite.prepare(
+      `SELECT COUNT(*) AS cnt FROM backfill_checkpoints`,
+    ).get() as { cnt: number };
+    expect(checkpointCount.cnt).toBe(0);
   });
 });
 

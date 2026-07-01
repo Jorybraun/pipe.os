@@ -15,6 +15,8 @@ import { Hono } from 'hono';
 import { z } from 'zod';
 import { scheduleFullProjectionRebuild } from '../../lib/livingContext/projection';
 import { runScheduledBackfill, BACKFILL_TASKS } from '../../lib/livingContext/backfillScheduled';
+import { BackfillOrchestrator } from '../../lib/livingContext/backfillOrchestrator';
+import { checkGate } from '../../lib/livingContext/rolloutEnforcement';
 import { seedCorpusFromMatchRuns, persistSeededCorpus } from '../../lib/challengeMatching/evaluation/corpusSeeder';
 import { runEvaluation, generateHumanReadableReport } from '../../lib/challengeMatching/evaluation/cli';
 import type { AcceptanceThresholds } from '../../lib/challengeMatching/evaluation/types';
@@ -51,6 +53,15 @@ const REQUIRED_TABLES = [
 ] as const;
 
 const app = new Hono<{ Bindings: Env }>();
+
+function isRecord(value: unknown): value is Record<string, unknown> {
+  return value !== null && typeof value === 'object' && !Array.isArray(value);
+}
+
+async function readOptionalJsonBody(req: { json<T = unknown>(): Promise<T> }): Promise<Record<string, unknown>> {
+  const body = await req.json<unknown>().catch(() => null);
+  return isRecord(body) ? body : {};
+}
 
 app.get('/living-context-health', async (c) => {
   const db = c.env.DB;
@@ -354,6 +365,20 @@ app.get('/evaluation-readiness', async (c) => {
  */
 app.post('/living-context-rebuild-projections', async (c) => {
   const db = c.env.DB;
+  const body = await readOptionalJsonBody(c.req);
+
+  if (body.dryRun === true) {
+    const row = await db.prepare(
+      `SELECT COUNT(*) AS cnt FROM workspace_people`,
+    ).first<{ cnt: number }>();
+
+    return c.json({
+      status: 'dry_run',
+      enqueued: 0,
+      wouldEnqueue: row?.cnt ?? 0,
+    });
+  }
+
   const result = await scheduleFullProjectionRebuild(db);
   return c.json({
     status: 'scheduled',
@@ -560,6 +585,28 @@ app.get('/living-context-backfill', async (c) => {
  * logic as the scheduled handler. Returns per-task results.
  */
 app.post('/living-context-backfill-trigger', async (c) => {
+  const body = await readOptionalJsonBody(c.req);
+
+  if (body.dryRun === true) {
+    const gateResult = await checkGate(c.env.DB, 'living_context_backfill');
+    const orchestrator = new BackfillOrchestrator(c.env.DB, BACKFILL_TASKS);
+    const status = await orchestrator.getStatus();
+    const readyTasks = gateResult.allowed ? await orchestrator.getReadyTasks() : [];
+
+    return c.json({
+      dryRun: true,
+      gateEnabled: gateResult.allowed,
+      gateStage: gateResult.stage,
+      tasksWouldExecute: readyTasks,
+      orchestratorStatus: status,
+      registeredTasks: BACKFILL_TASKS.map((t) => ({
+        taskKey: t.taskKey,
+        description: t.description,
+        dependsOn: t.dependsOn,
+      })),
+    });
+  }
+
   const result = await runScheduledBackfill(c.env);
 
   return c.json({
