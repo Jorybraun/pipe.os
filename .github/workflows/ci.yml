@@ -28,6 +28,10 @@ jobs:
         working-directory: workers/api
         run: npm ci
 
+      - name: Install dependencies (assessment room)
+        working-directory: apps/video-room
+        run: npm ci
+
       - name: Typecheck frontend
         run: npx tsc --noEmit
 
@@ -35,10 +39,18 @@ jobs:
         working-directory: workers/api
         run: npx tsc --noEmit
 
+      - name: Typecheck assessment room
+        working-directory: apps/video-room
+        run: npm run type-check
+
       - name: Lint
         run: npm run lint
 
       - name: Unit tests (frontend)
+        run: npm run test
+
+      - name: Unit tests (assessment room)
+        working-directory: apps/video-room
         run: npm run test
 
       - name: Unit tests (worker)

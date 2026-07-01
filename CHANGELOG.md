@@ -20,6 +20,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Fixed — Open-source assessment progress
 
+- CI now runs the assessment-room unit tests inside the room package instead of sweeping them through the root app Vitest runner, preserving room evidence-capture coverage without duplicate-React hook failures.
 - Person-profile workspace assessment smokes now assert assessment evidence, human decision, and source proof instead of requiring candidate-to-repo match proof when no match provenance exists.
 - Recruiters can no longer record final human assessment decisions from diagnostic-only evaluator reports; the app now requires a completed source-backed `EVALUATED` report before closing the assessment loop.
 - Open-source assessment evaluation now produces a conservative source-backed fallback report when the AI evaluator returns no usable claims, keeping real challenge, commit, diff, test, and workspace evidence reviewable instead of blocking the session as diagnostic-only.

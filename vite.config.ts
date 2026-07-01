@@ -23,6 +23,7 @@ export default defineConfig({
     setupFiles: './src/test/setup.ts',
     exclude: [
       '**/node_modules/**',
+      'apps/video-room/**',
       '.hermes/**',
       'e2e/**',
       '.claude/**',
