@@ -186,4 +186,86 @@ describe('DevContainerPanel assessment submission', () => {
     ]);
     expect(payload.sourceRefs.every((ref) => ref.metadata?.source === 'assessment_commit_submission_panel')).toBe(true);
   });
+
+  it('finalizes the committed workspace HEAD through the live dev-container bridge', async () => {
+    const fetchMock = vi.fn(async (input: RequestInfo | URL, _init?: RequestInit) => {
+      const url = input.toString();
+      if (url.endsWith('/rpc/assessment/progress')) {
+        return new Response(JSON.stringify(progressResponse()), {
+          status: 200,
+          headers: { 'Content-Type': 'application/json' },
+        });
+      }
+      if (url.endsWith('/rpc/dev-container/workspace-session-1/assessment/finalize')) {
+        return new Response(JSON.stringify({
+          submission: {
+            accepted: true,
+            repositoryUrl: 'https://github.com/acme/repo',
+            branchName: 'pipe-assessment',
+            commitSha,
+            commitUrl: null,
+          },
+          progress: {
+            ...progressResponse().progress,
+            hasCommitSubmission: true,
+            hasTestEvidence: true,
+            nextActionLabel: 'Ready for evaluation',
+            commit: {
+              repositoryUrl: 'https://github.com/acme/repo',
+              forkRepositoryUrl: null,
+              branchName: 'pipe-assessment',
+              baseCommitSha,
+              commitSha,
+              commitUrl: null,
+              submissionSource: 'workspace_finalizer',
+              submissionSourceLabel: 'Live workspace finalizer',
+              integrity: {
+                label: 'Live workspace commit',
+                detail: 'Captured by the live dev-container finalizer from the workspace HEAD.',
+              },
+              changedFiles: [{ path: 'src/retry.ts', status: 'modified' }],
+              occurredAt: '2026-07-01T12:01:00.000Z',
+            },
+          },
+        }), {
+          status: 201,
+          headers: { 'Content-Type': 'application/json' },
+        });
+      }
+      throw new Error(`Unexpected fetch ${url}`);
+    });
+    vi.stubGlobal('fetch', fetchMock);
+
+    render(<DevContainerPanel challengeId="challenge-1" />);
+
+    await screen.findByText('SUBMIT COMMIT');
+    fireEvent.click(screen.getByTestId('assessment-submit-toggle'));
+    await waitFor(() => {
+      expect(screen.getByTestId('assessment-workspace-finalize-submit')).not.toBeDisabled();
+    });
+
+    fireEvent.change(screen.getByTestId('assessment-workspace-finalize-narrative'), {
+      target: { value: 'Fixed retry handling and committed the focused patch.' },
+    });
+    fireEvent.change(screen.getByTestId('assessment-workspace-finalize-test-command'), {
+      target: { value: 'npm test -- retry' },
+    });
+    fireEvent.click(screen.getByTestId('assessment-workspace-finalize-submit'));
+
+    await waitFor(() => {
+      expect(screen.getByTestId('assessment-commit-result')).toHaveTextContent('Workspace commit 222222222222 captured. Ready for evaluation');
+    });
+
+    const finalizeCall = fetchMock.mock.calls.find(([input]) =>
+      input.toString().endsWith('/rpc/dev-container/workspace-session-1/assessment/finalize'),
+    );
+    expect(finalizeCall).toBeTruthy();
+    expect(finalizeCall?.[1]?.headers).toMatchObject({
+      Authorization: 'Bearer candidate-session-token',
+    });
+    expect(JSON.parse(String(finalizeCall?.[1]?.body))).toEqual({
+      narrative: 'Fixed retry handling and committed the focused patch.',
+      testCommand: 'npm test -- retry',
+    });
+  });
 });

@@ -272,9 +272,14 @@ The controlling product rule remains:
 - Completed scored CODE_REVIEW sessions now write their final transcript and
   automated score report into the canonical assessment event spine as exact
   source-backed evidence, then project an evaluated assessment report.
-- Dev-container workspace finalization can submit the live assessment-branch
-  `HEAD` through the room evidence endpoint, but refuses dirty or untracked
-  worktrees so uncommitted editor changes cannot be mistaken for submitted work.
+- Candidate dev-container workspace finalization now submits the live
+  assessment-branch `HEAD` through
+  `/rpc/dev-container/:sessionId/assessment/finalize`. The Worker resolves the
+  candidate's open assessment server-side, asks the container bridge for
+  source-backed git evidence without letting the bridge persist directly, then
+  stores the commit through the repo-task assessment spine. Dirty or untracked
+  worktrees are still refused so uncommitted editor changes cannot be mistaken
+  for submitted work.
 - Candidate Submit Work now turns that dirty-worktree refusal into an explicit
   recovery path: inspect `git status --short`, add intended files, commit the
   assessment branch work, then retry live workspace finalization.

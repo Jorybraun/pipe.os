@@ -1,3 +1,9 @@
+import type {
+  CandidateAssessmentProgress,
+  CandidateCommitSubmissionResponse,
+  JsonObject,
+} from './assessmentCommitSubmission';
+
 /**
  * devContainerClient — typed REST client for the Cloudflare dev-container routes.
  *
@@ -50,6 +56,19 @@ export interface StatusResponse {
 export interface DestroyResponse {
   sessionId: string;
   status: 'STOPPED' | 'EXPIRED';
+}
+
+export interface FinalizeDevContainerAssessmentRequest {
+  narrative?: string;
+  testCommand?: string;
+  forkRepositoryUrl?: string | null;
+  commitUrl?: string | null;
+  upstreamPullRequestUrl?: string | null;
+  upstreamPrConsent?: boolean;
+}
+
+export interface FinalizeDevContainerAssessmentResponse extends CandidateCommitSubmissionResponse {
+  progress: CandidateAssessmentProgress & JsonObject;
 }
 
 export class DevContainerApiError extends Error {
@@ -148,6 +167,23 @@ export async function destroyDevContainer(
   );
   if (!res.ok) throw await parseError(res);
   return (await res.json()) as DestroyResponse;
+}
+
+export async function finalizeDevContainerAssessment(
+  sessionId: string,
+  body: FinalizeDevContainerAssessmentRequest,
+  token: string | null,
+): Promise<FinalizeDevContainerAssessmentResponse> {
+  const res = await fetch(
+    `${apiBase()}/rpc/dev-container/${encodeURIComponent(sessionId)}/assessment/finalize`,
+    {
+      method: 'POST',
+      headers: authHeaders(token),
+      body: JSON.stringify(body),
+    },
+  );
+  if (!res.ok) throw await parseError(res);
+  return (await res.json()) as FinalizeDevContainerAssessmentResponse;
 }
 
 export interface ExchangeTokenResponse {

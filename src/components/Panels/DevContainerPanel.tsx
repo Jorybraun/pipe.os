@@ -19,6 +19,7 @@ import {
   type CandidateAssessmentProgress,
   type CandidateCommitSubmissionFormFields,
 } from '../../lib/assessmentCommitSubmission';
+import { finalizeDevContainerAssessment } from '../../lib/devContainerClient';
 
 export interface DevContainerPanelProps {
   challengeId: string;
@@ -74,7 +75,7 @@ function fieldStyle(kind: 'input' | 'textarea' = 'input'): CSSProperties {
 
 export function DevContainerPanel({ challengeId }: DevContainerPanelProps): JSX.Element {
   const sessionToken = useSessionToken();
-  const { state, containerUrl, error, expiresAt, expiringSoon, launch, destroy, reset } =
+  const { state, containerUrl, taskArn, error, expiresAt, expiringSoon, launch, destroy, reset } =
     useDevContainerSession();
   const [submitPanelOpen, setSubmitPanelOpen] = useState(false);
   const [assessmentProgress, setAssessmentProgress] = useState<CandidateAssessmentProgress | null>(null);
@@ -84,6 +85,9 @@ export function DevContainerPanel({ challengeId }: DevContainerPanelProps): JSX.
   const [commitSubmitting, setCommitSubmitting] = useState(false);
   const [commitError, setCommitError] = useState<string | null>(null);
   const [commitSuccess, setCommitSuccess] = useState<string | null>(null);
+  const [workspaceNarrative, setWorkspaceNarrative] = useState('');
+  const [workspaceTestCommand, setWorkspaceTestCommand] = useState('');
+  const [workspaceFinalizing, setWorkspaceFinalizing] = useState(false);
 
   // Auto-launch exactly once when the panel mounts and there is no live
   // session. React strict-mode double-invokes effects in dev, so we guard
@@ -174,6 +178,35 @@ export function DevContainerPanel({ challengeId }: DevContainerPanelProps): JSX.
     }
   };
 
+  const handleWorkspaceFinalize = async (): Promise<void> => {
+    if (!taskArn) {
+      setCommitError('Dev container session is not ready for workspace finalization.');
+      return;
+    }
+    if (!assessmentProgress) {
+      setCommitError('Assessment session is not ready for workspace finalization.');
+      return;
+    }
+    setWorkspaceFinalizing(true);
+    setCommitError(null);
+    setCommitSuccess(null);
+    try {
+      const response = await finalizeDevContainerAssessment(taskArn, {
+        ...(workspaceNarrative.trim() ? { narrative: workspaceNarrative.trim() } : {}),
+        ...(workspaceTestCommand.trim() ? { testCommand: workspaceTestCommand.trim() } : {}),
+      }, sessionToken);
+      setAssessmentProgress(response.progress);
+      setCommitSuccess(response.progress.commit?.commitSha
+        ? `Workspace commit ${shortSha(response.progress.commit.commitSha)} captured. ${response.progress.nextActionLabel}`
+        : response.progress.nextActionLabel);
+    } catch (err) {
+      const message = err instanceof Error ? err.message : 'Workspace finalization failed.';
+      setCommitError(message);
+    } finally {
+      setWorkspaceFinalizing(false);
+    }
+  };
+
   if (state === 'ERROR') {
     return (
       <div
@@ -221,6 +254,7 @@ export function DevContainerPanel({ challengeId }: DevContainerPanelProps): JSX.
 
   if (state === 'READY' && containerUrl) {
     const commitBlocked = !assessmentProgress || commitSubmitting;
+    const workspaceFinalizeBlocked = !assessmentProgress || !taskArn || workspaceFinalizing;
     const commitStatusLabel = assessmentLoading
       ? 'LOADING ASSESSMENT STATE'
       : assessmentProgress?.hasCommitSubmission
@@ -333,6 +367,71 @@ export function DevContainerPanel({ challengeId }: DevContainerPanelProps): JSX.
               <span style={{ color: assessmentError ? '#f87171' : 'var(--pipe-text-dim)' }}>
                 {assessmentError ?? (assessmentProgress?.nextActionLabel ?? 'No assessment session loaded')}
               </span>
+            </div>
+
+            <div
+              style={{
+                gridColumn: '1 / -1',
+                display: 'grid',
+                gridTemplateColumns: 'minmax(0, 1.2fr) minmax(0, 1fr) auto',
+                gap: 10,
+                alignItems: 'end',
+                border: '1px solid rgba(74,222,128,0.24)',
+                background: 'rgba(74,222,128,0.06)',
+                padding: 10,
+              }}
+            >
+              <label style={{ display: 'grid', gap: 4 }}>
+                <span>Workspace submission note</span>
+                <input
+                  value={workspaceNarrative}
+                  onChange={(event) => {
+                    setWorkspaceNarrative(event.target.value);
+                    setCommitError(null);
+                    setCommitSuccess(null);
+                  }}
+                  disabled={workspaceFinalizing}
+                  data-testid="assessment-workspace-finalize-narrative"
+                  placeholder="What did you change?"
+                  style={fieldStyle()}
+                />
+              </label>
+              <label style={{ display: 'grid', gap: 4 }}>
+                <span>Test command</span>
+                <input
+                  value={workspaceTestCommand}
+                  onChange={(event) => {
+                    setWorkspaceTestCommand(event.target.value);
+                    setCommitError(null);
+                    setCommitSuccess(null);
+                  }}
+                  disabled={workspaceFinalizing}
+                  data-testid="assessment-workspace-finalize-test-command"
+                  placeholder="npm test -- --runInBand"
+                  style={fieldStyle()}
+                />
+              </label>
+              <button
+                type="button"
+                onClick={() => void handleWorkspaceFinalize()}
+                disabled={workspaceFinalizeBlocked}
+                data-testid="assessment-workspace-finalize-submit"
+                style={{
+                  padding: '9px 14px',
+                  minHeight: 34,
+                  background: workspaceFinalizeBlocked ? 'rgba(148,163,184,0.12)' : 'rgba(74,222,128,0.16)',
+                  border: '1px solid rgba(74,222,128,0.48)',
+                  color: workspaceFinalizeBlocked ? 'var(--pipe-text-dim)' : '#4ade80',
+                  fontSize: 10,
+                  letterSpacing: '0.15em',
+                  fontWeight: 700,
+                  cursor: workspaceFinalizeBlocked ? 'not-allowed' : 'pointer',
+                  fontFamily: 'inherit',
+                  whiteSpace: 'nowrap',
+                }}
+              >
+                {workspaceFinalizing ? 'FINALIZING...' : 'FINALIZE WORKSPACE HEAD'}
+              </button>
             </div>
 
             <label style={{ display: 'grid', gap: 4 }}>
