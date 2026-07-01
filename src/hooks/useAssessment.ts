@@ -70,6 +70,7 @@ export interface StageConfigDTO {
   stageId?: string;
   candidateId?: string;
   stageTitle?: string;
+  message?: string;
   mode?: string;
   timeLimit?: number | null;
   videoConfig?: unknown;
@@ -133,6 +134,32 @@ interface UseAssessmentReturn extends AssessmentState {
   reset: () => void;
   refresh: () => Promise<void>;
   sessionToken: string | null;
+}
+
+function candidateFacingProfileReceivedMessage(message?: string | null): string {
+  const trimmed = message?.trim() ?? '';
+  if (trimmed.includes('profile has been received') || trimmed.includes('code review is ready')) {
+    return trimmed;
+  }
+  return 'Your profile has been received. PIPE will email you when your code review is ready.';
+}
+
+function profileReceivedContent(message?: string | null): ChallengeContentDTO {
+  return {
+    id: 'profile-received',
+    type: 'PROFILE_RECEIVED',
+    title: 'Profile received',
+    instructions: candidateFacingProfileReceivedMessage(message),
+    config: {},
+  };
+}
+
+function completionContent(config: StageConfigDTO | null): ChallengeContentDTO | null {
+  if (!config?.isComplete) return null;
+  if (config.stageId === 'candidate-intake-queued' || config.message?.includes('code review is ready')) {
+    return profileReceivedContent(config.message);
+  }
+  return null;
 }
 
 // ============================================================================
@@ -332,7 +359,13 @@ export function useAssessment(inviteToken: string): UseAssessmentReturn {
       const config = await loadStageConfig();
 
       if (!config || config.isComplete) {
-        setState((prev) => ({ ...prev, isLoading: false, isSubmitted: true }));
+        setState((prev) => ({
+          ...prev,
+          isLoading: false,
+          isSubmitted: true,
+          stageConfig: config,
+          challengeContent: completionContent(config),
+        }));
         return;
       }
 
@@ -442,13 +475,22 @@ export function useAssessment(inviteToken: string): UseAssessmentReturn {
         const config = await loadStageConfig();
 
         if (!config || config.isComplete) {
+          const completedContent = completionContent(config);
           // Update candidate status to COMPLETED
-          await rpcPost('/rpc/submit-status', { status: 'COMPLETED' }, sessionTokenRef.current);
+          if (!completedContent) {
+            await rpcPost('/rpc/submit-status', { status: 'COMPLETED' }, sessionTokenRef.current);
 
-          sessionStorage.removeItem('pipe_session_token');
-          sessionStorage.removeItem('pipe_session_candidate');
-          sessionStorage.removeItem('pipe_session_invite_token');
-          setState((prev) => ({ ...prev, isLoading: false, isSubmitted: true }));
+            sessionStorage.removeItem('pipe_session_token');
+            sessionStorage.removeItem('pipe_session_candidate');
+            sessionStorage.removeItem('pipe_session_invite_token');
+          }
+          setState((prev) => ({
+            ...prev,
+            isLoading: false,
+            isSubmitted: true,
+            stageConfig: config,
+            challengeContent: completedContent,
+          }));
           return;
         }
 
@@ -497,14 +539,27 @@ export function useAssessment(inviteToken: string): UseAssessmentReturn {
           return;
         }
 
-        const result = await rpcPost<{ success: boolean; next?: boolean; complete?: boolean; challengeSubmissionId?: string; error?: string }>(
+        const result = await rpcPost<{
+          success: boolean;
+          next?: boolean;
+          complete?: boolean;
+          queued?: boolean;
+          message?: string;
+          challengeSubmissionId?: string;
+          error?: string;
+        }>(
           '/rpc/submit-challenge-response',
           { order: currentOrder, submission: JSON.stringify(submission) },
           sessionTokenRef.current,
         );
 
         if (result.success && result.complete) {
-          setState((prev) => ({ ...prev, isLoading: false, isSubmitted: true }));
+          setState((prev) => ({
+            ...prev,
+            isLoading: false,
+            isSubmitted: true,
+            challengeContent: result.queued ? profileReceivedContent(result.message) : prev.challengeContent,
+          }));
           return;
         }
 
@@ -546,7 +601,13 @@ export function useAssessment(inviteToken: string): UseAssessmentReturn {
       const config = await loadStageConfig();
 
       if (!config || config.isComplete) {
-        setState((prev) => ({ ...prev, isLoading: false, isSubmitted: true }));
+        setState((prev) => ({
+          ...prev,
+          isLoading: false,
+          isSubmitted: true,
+          stageConfig: config,
+          challengeContent: completionContent(config),
+        }));
         return;
       }
 
