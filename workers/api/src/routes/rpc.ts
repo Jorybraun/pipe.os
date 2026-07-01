@@ -2296,6 +2296,9 @@ async function handleIntakePayload(
   candidateId: string,
   submission: unknown,
   now: string,
+  options: {
+    afterTextIngestion?: () => Promise<void>;
+  } = {},
 ): Promise<void> {
   let intakePayload: Record<string, unknown> = {};
   try {
@@ -2386,6 +2389,14 @@ async function handleIntakePayload(
           decompositionResult: null,
         });
         console.log(`[rpc/intake] text-based ingestion completed for candidate ${candidateId}`);
+        if (options.afterTextIngestion) {
+          try {
+            await options.afterTextIngestion();
+          } catch (err) {
+            const msg = err instanceof Error ? err.message : String(err);
+            console.error(`[rpc/intake] post-ingestion action failed for ${candidateId}:`, msg);
+          }
+        }
       } catch (err) {
         const msg = err instanceof Error ? err.message : String(err);
         console.error(`[rpc/intake] text-based ingestion failed for ${candidateId}:`, msg);
@@ -3812,7 +3823,16 @@ rpcAuth.post('/submit-challenge-response', async (c) => {
   // Pipeline-free candidate (talent pool / standalone code review)
   if (!pipelineId) {
     if (parseIntakePayload(submission)) {
-      await handleIntakePayload(c.env, c.executionCtx, candidateId, submission, new Date().toISOString());
+      await handleIntakePayload(c.env, c.executionCtx, candidateId, submission, new Date().toISOString(), {
+        afterTextIngestion: async () => {
+          const review = await getPendingStandaloneReview(c.env.DB, candidateId);
+          if (review && !(await hasReadyStandaloneCodeReviewAssignment(c.env.DB, candidateId, review))) {
+            await matchStandaloneSourceBackedAssignment(c.env.DB, candidateId, review, {
+              logLabel: 'standaloneReview',
+            });
+          }
+        },
+      });
       const standaloneReview = await getPendingStandaloneReview(c.env.DB, candidateId);
       if (await hasReadyStandaloneCodeReviewAssignment(c.env.DB, candidateId, standaloneReview)) {
         return c.json({

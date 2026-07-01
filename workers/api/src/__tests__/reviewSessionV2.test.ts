@@ -1414,6 +1414,13 @@ describe('POST /rpc/submit-challenge-response', () => {
     }));
     resolveIngestion?.();
     await waitUntilAll();
+    expect(matchCandidateToReviewChallenge).toHaveBeenCalledOnce();
+    expect(db.__calls.some((call) =>
+      call.ran
+      && call.sql.includes('UPDATE scheduled_interviews')
+      && call.params.includes(973)
+      && call.params.includes('https://github.com/mui/base-ui')
+    )).toBe(true);
   });
 
   it('queues standalone CODE_REVIEW submission attempts when no PR assignment is ready', async () => {
