@@ -110,7 +110,10 @@ async function expectPersonProfileDecision(page: Page): Promise<void> {
     const relatedRepoLabel = expectedRepoLabel(RELATED_BOUNDARY_REPO_URL);
     const coverage = page.getByTestId('person-interaction-coverage');
     await expect(coverage).toBeVisible();
-    await expect(coverage).toContainText(/[1-9][0-9]* code reviews?/, { timeout: 45_000 });
+    await expect(coverage).toContainText('Person-level rollup', { timeout: 45_000 });
+    const normalizedCoverage = ((await coverage.textContent()) ?? '').replace(/\s+/g, ' ');
+    expect(normalizedCoverage).toMatch(/[1-9][0-9]*\s*code\s*reviews?/i);
+    expect(normalizedCoverage).toMatch(/[1-9][0-9]*\s*calls?\s*or\s*meetings?/i);
     await expect(personDecision).toContainText('Score provenance');
     await expect(personDecision).not.toContainText('No complete code-review decision yet');
     if (relatedRepoLabel) {
