@@ -37,7 +37,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - Person-profile CODE_REVIEW browser smoke now asserts the deployed hiring cockpit renders recommendation, assessment validity, uncertainty, missing context, and next action before accepting a person-rollup proof.
 - Recruiter CODE_REVIEW detail smoke now browser-asserts the hiring-manager trust model, including assignment trust, score validity, risk, and next action, so matched pages cannot silently fall back to unknown assignment provenance.
 - Hardened the deployed same-person CODE_REVIEW boundary smoke to wait for the hydrated person rollup and verify completed code-review evidence separately from related meeting context.
-- Removed tracked root `.wrangler` local D1 state and ignored the repo-root Wrangler cache so stale room experiment data cannot remain in the source tree.
+- Removed tracked root `.wrangler` local D1 state and ignored the repo-root Wrangler cache so stale local room data cannot remain in the source tree.
 - Added a named deployed person-rollup boundary smoke that creates a completed CODE_REVIEW plus a second same-person unsubmitted CODE_REVIEW, then proves the profile recommendation stays anchored to the completed scored review instead of blending related match-only evidence.
 - Pipeline-backed CODE_REVIEW matching now applies the same candidate-safe quality gate as standalone matching before assigning a PR, so role-backed near-ties or `NEEDS_REVIEW` matches remain queued for recruiter review instead of being served to candidates.
 - Added a named role-backed deployed CODE_REVIEW smoke that proves role-backed no-assignment candidates still receive the safe `PROFILE_RECEIVED` handoff instead of a candidate-visible matching loop.
@@ -56,7 +56,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - The deployed CODE_REVIEW smoke now hard-fails blocked standalone handoffs that return candidate-visible `WAITING_FOR_MATCH`, preserving the `/assess` boundary by requiring the candidate-safe `PROFILE_RECEIVED` queued state instead.
 - Candidate `/assess` now preserves queued standalone CODE_REVIEW handoffs as a first-class “Profile received” state when the server returns `candidate-intake-queued`, keeping candidates out of the old matching dashboard and making it clear they are done until a source-backed review is assigned.
 - Person profiles now use the same assignment-fairness recommendation for weak graph-derived CODE_REVIEW scores as selected-interview CODE_REVIEW decisions, so hiring managers see a consistent “review fairness before rejecting” callout instead of a harsher unexplained stop signal.
-- Assessment room package metadata, CI labels, brand chip copy, and basic-auth handoff pages now consistently use assessment-workspace wording instead of stale room-experiment branding.
+- Assessment room package metadata, CI labels, brand chip copy, and basic-auth handoff pages now consistently use assessment-workspace wording.
 - Room-dev now ships PIPE assessment-room shell metadata, keeping browser titles anchored to the core assessment product.
 - Weak CODE_REVIEW scores now propagate to the person profile as assignment-fairness decisions even when the compact submission projection is absent, preventing scored interviews from telling hiring managers to wait for a review that already produced a score.
 - Recruiter interview detail now fails soft on optional living-context, related-evidence, linked-meeting, invite-link, progress, and score/match projections, so the core CODE_REVIEW decision surface does not sit on an indefinite spinner when an auxiliary app-dev read stalls.
@@ -108,29 +108,24 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Removed — Assessment room simplification
 
-- Expanded the retired room-experiment boundary guard to scan every tracked text file, so obsolete novelty-room vocabulary cannot remain hidden in unscanned source, docs, scripts, fixtures, or app packages.
-- Reworded active agent evidence validators, diagnostics, comments, and tests around the neutral real agent bridge so current assessment surfaces no longer carry obsolete assistant-themed product language.
+- Removed the obsolete assessment-room vocabulary scanner and package hooks; concrete mode/surface tests now define the supported product surface without carrying discarded product phrasing as fixture data.
+- Reworded active agent evidence validators, diagnostics, comments, and tests around the neutral real agent bridge so current assessment surfaces no longer carry off-goal helper language.
 - Reworded recruiter code-review transcript pushback labels as implementation-author replies, keeping the hiring-manager readout focused on review behavior rather than internal agent role names.
-- Expanded the assessment-room boundary guard across product source, docs, e2e tests, and scripts so the product stays focused on source-backed coding assessments.
 - Removed the browser-controlled AI helper launch path from the assessment room and invite form; workspace launches now stay focused on repo, terminal, code-server, chat, recording, transcript, commit, and submission evidence.
-- Simplified layout tests and render callback naming so the room code stays focused on assessment work instead of alternate room modes.
-- Added an assessment-room boundary regression test that keeps off-goal room UI language out of shipped room files.
-- Expanded the assessment-room boundary guard to block retired brand and mode spellings.
+- Simplified layout tests and render callback naming so the room code stays focused on assessment work instead of unused layout branches.
 - Retired client-UI synchronization from the current product plan so the assessment room stays anchored to real repo-task evidence.
 - Removed obsolete assessment-panel coordinate and ordering state from the video-room app.
-- Collapsed video-room evidence capture to the standard assessment room path, removing the stale alternate replay path.
+- Collapsed video-room evidence capture to the standard assessment room path, removing the stale replay path.
 - Current room evidence is limited to the core assessment sources: video, chat, workspace, terminal, code-server/file events, recording, transcription, commit submissions, and the real agent bridge.
 - Removed the legacy room file-system evidence path so CODE_REVIEW proof depends on workspace, terminal, code-server, chat, recording, transcript, commit, and AI-bridge sources instead of stale files.
 - Scrubbed current room vocabulary, QA labels, planning docs, contract notes, smoke scripts, and evidence fixtures so product language stays anchored to open-source repo-task assessment.
-- Removed branded room-assistant chrome and the floating assistant panel; real agent bridge status, stdout, and file-change observations now run as headless workspace evidence.
+- Removed obsolete helper chrome and floating panels; real agent bridge status, stdout, and file-change observations now run as headless workspace evidence.
 - Removed the remaining fake external-browser label from assessment browser evidence fixtures and historical notes, replacing it with neutral Assessment Browser language.
 - Workspace assessment detail pages now keep evaluator claims, cautions, source snippets, coverage chips, and source-ref counts behind a collapsed Evidence audit trail so the hiring-manager decision readout stays primary without losing provenance.
 - Assessment setup gaps now render explicit recruiter next actions across interview cards and detail assignment panels, such as sending the candidate evidence invite, rerunning/enriching matching, or attaching a concrete challenge packet.
 - The video-room assessment shell now opens terminal and submission inside a focused assessment tools panel.
 - Removed abandoned action aliases from the real agent bridge.
 - The room now keeps focus on video, chat, workspace, terminal, Submit Work, recording, transcription, and the real agent bridge.
-- Added a video-room regression guard that fails if retired novelty UI vocabulary returns to the shipped room source or public worker assets.
-- Wired the assessment-room boundary guard into package scripts so retired novelty UI cannot silently re-enter the deployable room app.
 
 ### Added — Human assessment decisions
 
