@@ -3841,10 +3841,11 @@ rpcAuth.post('/submit-challenge-response', async (c) => {
   // Pipeline-free candidate (talent pool / standalone code review)
   if (!pipelineId) {
     if (parseIntakePayload(submission)) {
-      const standaloneReview = await getPendingStandaloneReview(c.env.DB, candidateId);
+      const standaloneAssessment = await getPendingStandaloneAssessment(c.env.DB, candidateId);
       await handleIntakePayload(c.env, c.executionCtx, candidateId, submission, new Date().toISOString(), {
-        inlineTextIngestion: standaloneReview !== null,
+        inlineTextIngestion: standaloneAssessment !== null,
       });
+      const standaloneReview = await getPendingStandaloneReview(c.env.DB, candidateId);
       if (await advanceStandaloneReviewAfterIntake(c.env.DB, candidateId, standaloneReview)) {
         return c.json({
           success: true,
