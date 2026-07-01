@@ -218,12 +218,12 @@ function codeReviewProofItemsFromUnknown(value: unknown): CodeReviewProofItem[] 
 
 function hasCandidateRepoRouteProof(
   proofItems: CodeReviewProofItem[],
-  sourceProofSummary: string | null,
 ): boolean {
-  const proofText = [
-    sourceProofSummary,
-    ...proofItems.flatMap((item) => [item.label, item.text]),
-  ].filter((part): part is string => Boolean(part)).join(' ').toLowerCase();
+  const proofText = proofItems
+    .flatMap((item) => [item.label, item.text])
+    .filter((part): part is string => Boolean(part))
+    .join(' ')
+    .toLowerCase();
   return /candidate[-/\s]+repo/.test(proofText)
     || /candidate.*repo/.test(proofText)
     || /repo.*candidate/.test(proofText)
@@ -236,9 +236,8 @@ function codeReviewBasisItemsFromUnknown(
   value: unknown,
   scoreLabel: string | null,
   proofItems: CodeReviewProofItem[],
-  sourceProofSummary: string | null,
 ): CodeReviewBasisItem[] {
-  const hasRouteSourceProof = hasCandidateRepoRouteProof(proofItems, sourceProofSummary);
+  const hasRouteSourceProof = hasCandidateRepoRouteProof(proofItems);
   const items = Array.isArray(value)
     ? value.flatMap((item) => {
         if (!isRecord(item)) return [];
@@ -298,8 +297,12 @@ function codeReviewDecisionFromNavigationState(state: unknown): CodeReviewDecisi
   }
   const scoreLabel = optionalString(decision.scoreLabel);
   const proofItems = codeReviewProofItemsFromUnknown(decision.proofItems);
-  const sourceProofSummary = optionalString(decision.sourceProofSummary);
-  const hasRouteSourceProof = hasCandidateRepoRouteProof(proofItems, sourceProofSummary);
+  const rawSourceProofSummary = optionalString(decision.sourceProofSummary);
+  const hasRouteSourceProof = hasCandidateRepoRouteProof(proofItems);
+  const sourceProofSummary = rawSourceProofSummary
+    && (/candidate[-/\s]+repo|source bridge|evidence bridge/i.test(rawSourceProofSummary) && !hasRouteSourceProof)
+      ? null
+      : rawSourceProofSummary;
   const routeProofCount = optionalNumber(decision.proofCount);
   const proofCount = hasRouteSourceProof
     ? Math.max(proofItems.length, routeProofCount ?? 0)
@@ -331,7 +334,6 @@ function codeReviewDecisionFromNavigationState(state: unknown): CodeReviewDecisi
       decision.basisItems,
       scoreLabel,
       proofItems,
-      sourceProofSummary,
     ),
   };
 }

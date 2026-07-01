@@ -951,6 +951,45 @@ describe('PersonProfilePage', () => {
     expect(proofSummary).not.toHaveTextContent('candidate-repo match proof');
   });
 
+  it('does not trust source proof summary text as candidate-repo match proof by itself', async () => {
+    const summaryContext = makeLivingContext();
+    summaryContext.interactions = [];
+    summaryContext.artifacts = [];
+    summaryContext.contextRecords = [];
+    summaryContext.assertions = [];
+    summaryContext.signals = [];
+    summaryContext.relationships = [];
+
+    mocks.api.get
+      .mockResolvedValueOnce({ contact: makeContact() })
+      .mockResolvedValueOnce(summaryContext);
+
+    renderPage({
+      livingContext: summaryContext,
+      selectedCodeReviewDecision: {
+        ...(makeSelectedCodeReviewDecision() as Record<string, unknown>),
+        proofItems: [
+          { id: 'assignment', label: 'assignment', text: 'acme/widgets PR #42' },
+          { id: 'score', label: 'score report', text: '82/100 Strong' },
+        ],
+        sourceProofSummary: 'candidate-repo match proof, repo evidence, and scoring provenance',
+        basisItems: [
+          { label: 'Score report', value: 'Scored', satisfied: true },
+          { label: 'Match proof', value: 'Source-backed match', satisfied: true },
+        ],
+      },
+    });
+    await flushAsyncUpdates();
+
+    const basis = screen.getByTestId('person-code-review-decision-basis');
+    expect(basis).toHaveTextContent('Match proof');
+    expect(basis).toHaveTextContent('Missing');
+    expect(basis).not.toHaveTextContent('Source-backed match');
+    const proof = screen.getByTestId('person-code-review-source-proof');
+    const proofSummary = proof.querySelector('summary');
+    expect(proofSummary).not.toHaveTextContent('candidate-repo match proof');
+  });
+
   it('does not trust route-state proof counts without parsed proof items', async () => {
     const summaryContext = makeLivingContext();
     summaryContext.interactions = [];

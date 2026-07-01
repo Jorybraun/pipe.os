@@ -27,6 +27,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Fixed — CODE_REVIEW assessment runtime
 
+- Person-profile CODE_REVIEW route-state source proof summaries can no longer prove candidate/repo match alignment by themselves; candidate/repo proof must come from parsed proof items or the summary is recomputed.
 - Person-profile selected-assessment route-state handoffs now sanitize source-ref counts, evidence snippets, evaluator claims, and challenge URLs before deriving workspace-assessment proof, preventing stale route state from crashing or inventing assessment evidence.
 - Person-profile CODE_REVIEW selected-decision route state now derives displayed proof counts from parsed proof items unless candidate/repo bridge proof is present, and empty proof drawers explain that no source proof survived the handoff.
 - Person-profile CODE_REVIEW route-state handoffs now only preserve `Source-backed match` basis claims when the selected decision also carries candidate/repo bridge proof text, otherwise match proof is downgraded to missing evidence.
