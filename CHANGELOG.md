@@ -26,6 +26,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Removed — Assessment-room distractions
 
+- Scrubbed the last archived QA label that matched the retired room-assistant terminology, leaving tracked abandoned-skin searches clean while keeping the core assessment product vocabulary focused.
 - Removed the remaining active desktop-metaphor vocabulary from the video-room app by renaming local surfaces to assessment tools/panels, replacing Chat/Terminal/Submission components with panels, and updating new source-backed evidence strings from layout wording to panel wording.
 - Updated the open-source assessment contract to remove non-assessment collaboration and presentation-layer replay promises from the current product path.
 - Removed active layout-event publishing from the video-room app: workspace state now records through source-backed assessment session events, local panels no longer emit shared layout lifecycle/state evidence, and the unused layout evidence helper/tests were deleted.
