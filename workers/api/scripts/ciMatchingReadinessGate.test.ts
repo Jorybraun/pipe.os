@@ -20,7 +20,16 @@ describe('CI matching evaluation readiness gate', () => {
 
     expect(step).not.toContain('continue-on-error');
     expect(step).toContain('npm run matching-eval:readiness');
+  });
+
+  it('blocks push-to-main when the production matching readiness gate is not configured', () => {
+    const step = matchingReadinessStep(workflow);
+
     expect(step).toContain('exit 0');
     expect(step).toContain('"status": "not_configured"');
+    expect(step).toContain('"$GITHUB_EVENT_NAME" = "push"');
+    expect(step).toContain('"$GITHUB_REF" = "refs/heads/main"');
+    expect(step).toContain('Production matching evaluation readiness is required for pushes to main.');
+    expect(step).toContain('exit 1');
   });
 });
