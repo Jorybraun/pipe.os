@@ -137,7 +137,7 @@ async function devAuthEntryPage(request, env) {
   const cleanUrl = url.toString();
 
   return new Response(
-    `<!doctype html><html><head><meta charset="utf-8"><meta name="referrer" content="no-referrer"><title>Opening PIPE Room</title><script>location.replace(${JSON.stringify(cleanUrl)});</script></head><body><a href="${escapeHtml(cleanUrl)}">Open PIPE Room</a></body></html>`,
+    `<!doctype html><html><head><meta charset="utf-8"><meta name="referrer" content="no-referrer"><title>Opening PIPE Assessment Room</title><script>location.replace(${JSON.stringify(cleanUrl)});</script></head><body><a href="${escapeHtml(cleanUrl)}">Open PIPE Assessment Room</a></body></html>`,
     {
       status: 200,
       headers: {

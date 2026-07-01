@@ -14,7 +14,7 @@ function request(path, init = {}) {
   return new Request(`https://room-dev.hire-pipe.com${path}`, init);
 }
 
-describe('video room worker static assets', () => {
+describe('assessment room worker static assets', () => {
   it('recovers stale JavaScript asset requests from the current bundle', async () => {
     const response = await worker.fetch(
       request('/assets/index-old.js', {
@@ -109,6 +109,6 @@ describe('video room worker static assets', () => {
     expect(response.headers.get('Pragma')).toBe('no-cache');
     expect(response.headers.get('Expires')).toBe('0');
     expect(response.headers.get('Set-Cookie')).toContain('pipe_room_dev_auth=');
-    expect(await response.text()).toContain('Opening PIPE Room');
+    expect(await response.text()).toContain('Opening PIPE Assessment Room');
   });
 });

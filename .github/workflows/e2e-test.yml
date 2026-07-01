@@ -126,7 +126,7 @@ jobs:
         working-directory: workers/api
         run: npm ci
 
-      - name: Install dependencies (video room)
+      - name: Install dependencies (assessment room)
         if: env.REMOTE_E2E == 'true'
         working-directory: apps/video-room
         run: npm install --no-audit --no-fund
@@ -147,7 +147,7 @@ jobs:
           VITE_CLERK_PUBLISHABLE_KEY: ${{ secrets.CLERK_PUBLISHABLE_KEY_TEST }}
         run: npm run build
 
-      - name: Build video room (test target)
+      - name: Build assessment room (test target)
         if: env.REMOTE_E2E == 'true'
         working-directory: apps/video-room
         run: npm run build
@@ -162,7 +162,7 @@ jobs:
           directory: dist
           gitHubToken: ${{ secrets.GITHUB_TOKEN }}
 
-      - name: Configure video room test API origin
+      - name: Configure assessment room test API origin
         if: env.REMOTE_E2E == 'true'
         env:
           CLOUDFLARE_API_TOKEN: ${{ secrets.CLOUDFLARE_API_TOKEN }}
@@ -170,7 +170,7 @@ jobs:
           TEST_API_BASE: ${{ secrets.TEST_API_BASE }}
         run: printf '%s' "$TEST_API_BASE" | ./workers/api/node_modules/.bin/wrangler secret put API_ORIGIN --config apps/video-room/wrangler.jsonc --env test
 
-      - name: Deploy video room (test)
+      - name: Deploy assessment room (test)
         if: env.REMOTE_E2E == 'true'
         env:
           CLOUDFLARE_API_TOKEN: ${{ secrets.CLOUDFLARE_API_TOKEN }}
@@ -188,11 +188,11 @@ jobs:
             video_room_base="$(node -e 'const token=process.env.CLOUDFLARE_API_TOKEN; const accountId=process.env.CLOUDFLARE_ACCOUNT_ID; if(!token||!accountId) process.exit(1); fetch("https://api.cloudflare.com/client/v4/accounts/"+accountId+"/workers/subdomain",{headers:{Authorization:"Bearer "+token}}).then(async response=>{const payload=await response.json(); const subdomain=payload&&payload.result&&payload.result.subdomain; if(!response.ok||!payload.success||typeof subdomain!=="string"||subdomain.length===0) process.exit(1); console.log("https://pipe-room-test."+subdomain+".workers.dev");}).catch(()=>process.exit(1));')"
           fi
           if [ -z "$video_room_base" ]; then
-            echo "Could not resolve deployed video room URL from Wrangler output. Set TEST_VIDEO_ROOM_BASE as an override." >&2
+            echo "Could not resolve deployed assessment room URL from Wrangler output. Set TEST_VIDEO_ROOM_BASE as an override." >&2
             exit 1
           fi
           echo "VIDEO_ROOM_BASE=$video_room_base" >> "$GITHUB_ENV"
-          echo "Resolved video room base: $video_room_base"
+          echo "Resolved assessment room base: $video_room_base"
 
       - name: Configure API test room URL
         if: env.REMOTE_E2E == 'true'
@@ -223,7 +223,7 @@ jobs:
             sleep 2
           done
 
-      - name: Wait for video room health
+      - name: Wait for assessment room health
         if: env.REMOTE_E2E == 'true'
         run: |
           deadline=$((SECONDS+60))

@@ -131,12 +131,12 @@ function PipeMark({ className }: { className?: string }): JSX.Element {
 
 function BrandMark({ compact = false }: { compact?: boolean }): JSX.Element {
   return (
-    <div className={compact ? 'brand compact' : 'brand'} aria-label="PIPE room">
+    <div className={compact ? 'brand compact' : 'brand'} aria-label="PIPE assessment room">
       <span className="brand-logo-shell">
         <PipeMark className="brand-logo" />
       </span>
       <span className="brand-word">PIPE</span>
-      <span className="brand-chip">Room</span>
+      <span className="brand-chip">Assess</span>
     </div>
   );
 }
