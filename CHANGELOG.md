@@ -7,6 +7,10 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Fixed
+
+- Added missing hook mocks (`useCandidateComparison`, `useEvidenceTimeline`, `useStalenessAlerts`, `useMatchDecisions`, `useRepoDecomposition`, `useMatchConfidence`, `useMatchReport`) to LivingContextGraph, EvidenceGapPanel, MatchProvenancePanel, and ConceptGraphAndRematch test files to prevent `useClerkAuth` from throwing outside `<ClerkProvider>`.
+
 ### Added — Living Context Graph API
 
 - Added 10 new API endpoints under `/api/v1/candidates/:candidateId/living-context/` for full living context graph operations: concept merge/split/evolution, evidence semantic search, BFS graph traversal, unified match report, staleness alerts, match decision audit (record + history), and repo decomposition overlay.
