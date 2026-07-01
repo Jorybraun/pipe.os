@@ -118,6 +118,23 @@ function getProviderConfig(providerId: string, env: Env): ProviderOAuthConfig | 
 
 // ─── Validation ─────────────────────────────────────────────────────────────
 
+const SCHEDULED_INTERVIEWS_DEFAULT_LIMIT = 50;
+const SCHEDULED_INTERVIEWS_MAX_LIMIT = 100;
+
+function parsePositiveInt(value: string | undefined, fallback: number, max: number): number {
+  if (!value) return fallback;
+  const parsed = Number.parseInt(value, 10);
+  if (!Number.isFinite(parsed)) return fallback;
+  return Math.min(max, Math.max(1, parsed));
+}
+
+function parseNonNegativeInt(value: string | undefined, fallback: number): number {
+  if (!value) return fallback;
+  const parsed = Number.parseInt(value, 10);
+  if (!Number.isFinite(parsed)) return fallback;
+  return Math.max(0, parsed);
+}
+
 const connectSchema = z.object({
   providerId: z.enum(['CALENDLY', 'CAL_COM']),
   redirectUri: z.string().url(),
@@ -4936,6 +4953,12 @@ schedulingAuth.get('/event-types', async (c) => {
 schedulingAuth.get('/interviews', async (c) => {
   const userId = c.var.userId;
   const db = c.env.DB;
+  const limit = parsePositiveInt(
+    c.req.query('limit'),
+    SCHEDULED_INTERVIEWS_DEFAULT_LIMIT,
+    SCHEDULED_INTERVIEWS_MAX_LIMIT,
+  );
+  const offset = parseNonNegativeInt(c.req.query('offset'), 0);
   const hasWorkspaceSessions = await tableExists(db, 'dev_container_sessions');
   const workspaceSessionSelect = hasWorkspaceSessions
     ? `dcs.status AS workspace_status,
@@ -4960,6 +4983,12 @@ schedulingAuth.get('/interviews', async (c) => {
           LIMIT 1
        )`
     : '';
+
+  const countRow = await db
+    .prepare('SELECT COUNT(*) AS total FROM scheduled_interviews WHERE owner_id = ?')
+    .bind(userId)
+    .first<{ total: number }>();
+  const total = countRow?.total ?? 0;
 
   const result = await db
     .prepare(
@@ -5004,9 +5033,10 @@ schedulingAuth.get('/interviews', async (c) => {
        LEFT JOIN meeting_rooms mr ON mr.meeting_id = m.id
        ${workspaceSessionJoin}
        WHERE si.owner_id = ?
-       ORDER BY si.scheduled_at ASC`
+       ORDER BY si.created_at DESC, si.id ASC
+       LIMIT ? OFFSET ?`
     )
-    .bind(userId)
+    .bind(userId, limit, offset)
     .all<{
       id: string;
       candidate_id: string | null;
@@ -5108,7 +5138,18 @@ schedulingAuth.get('/interviews', async (c) => {
     };
   });
 
-  return c.json({ interviews });
+  const nextOffset = offset + rows.length < total ? offset + rows.length : null;
+
+  return c.json({
+    interviews,
+    pagination: {
+      total,
+      limit,
+      offset,
+      nextOffset,
+      hasMore: nextOffset !== null,
+    },
+  });
 });
 
 // GET /interviews/:id — scheduled interview detail

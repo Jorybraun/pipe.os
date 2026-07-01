@@ -10,10 +10,23 @@ import type {
 } from '../lib/scheduling/types';
 import { useRoomStatusNotifications } from './useRoomStatusNotifications';
 
+const INTERVIEW_PAGE_LIMIT = 50;
+
+interface ScheduledInterviewsPagination {
+  total: number;
+  limit: number;
+  offset: number;
+  nextOffset: number | null;
+  hasMore: boolean;
+}
+
 interface UseScheduledInterviewsResult {
   interviews: ScheduledInterview[];
   isLoading: boolean;
+  isLoadingMore: boolean;
   error: Error | null;
+  total: number;
+  hasMore: boolean;
   updateStatus: (
     id: string,
     patch: {
@@ -25,10 +38,11 @@ interface UseScheduledInterviewsResult {
   ) => Promise<void>;
   sendInvite: (id: string, email: string, message?: string) => Promise<void>;
   refetch: () => Promise<void>;
+  loadMore: () => Promise<void>;
 }
 
 /**
- * useScheduledInterviews — fetches all ScheduledInterviews
+ * useScheduledInterviews — fetches paged ScheduledInterviews
  * owned by the authenticated recruiter via Cloudflare Worker API.
  */
 export function useScheduledInterviews(): UseScheduledInterviewsResult {
@@ -37,11 +51,26 @@ export function useScheduledInterviews(): UseScheduledInterviewsResult {
 
   const [interviews, setInterviews] = useState<ScheduledInterview[]>([]);
   const [isLoading, setIsLoading] = useState(true);
+  const [isLoadingMore, setIsLoadingMore] = useState(false);
   const [error, setError] = useState<Error | null>(null);
+  const [pagination, setPagination] = useState<ScheduledInterviewsPagination | null>(null);
   const processedRoomStatusKeysRef = useRef<Set<string>>(new Set());
+  const interviewsRef = useRef<ScheduledInterview[]>([]);
+  const paginationRef = useRef<ScheduledInterviewsPagination | null>(null);
 
-  const fetchInterviews = useCallback(async () => {
+  const fetchInterviews = useCallback(async (options: { append?: boolean } = {}) => {
+    const append = options.append === true;
+    const offset = append
+      ? paginationRef.current?.nextOffset ?? interviewsRef.current.length
+      : 0;
+    if (append && paginationRef.current?.hasMore === false) return;
+
     try {
+      if (append) {
+        setIsLoadingMore(true);
+      } else {
+        setIsLoading(true);
+      }
       const result = await api.get<{
         interviews: Array<{
           id: string;
@@ -83,10 +112,10 @@ export function useScheduledInterviews(): UseScheduledInterviewsResult {
           guestWaiting?: boolean;
           workspaceSession?: WorkspaceSessionSummary | null;
         }>;
-      }>('/api/v1/scheduling/interviews');
+        pagination?: ScheduledInterviewsPagination;
+      }>(`/api/v1/scheduling/interviews?limit=${INTERVIEW_PAGE_LIMIT}&offset=${offset}`);
 
-      setInterviews(
-        result.interviews.map((r) => ({
+      const nextPage = result.interviews.map((r) => ({
           id: r.id,
           createdAt: r.createdAt,
           updatedAt: r.updatedAt,
@@ -125,13 +154,35 @@ export function useScheduledInterviews(): UseScheduledInterviewsResult {
           roomStatus: r.roomStatus ?? null,
           guestWaiting: r.guestWaiting ?? false,
           workspaceSession: r.workspaceSession ?? null,
-        })),
-      );
+      }));
+      const merged = append
+        ? [
+            ...interviewsRef.current,
+            ...nextPage.filter((item) => !interviewsRef.current.some((existing) => existing.id === item.id)),
+          ]
+        : nextPage;
+      const nextPagination = result.pagination ?? {
+        total: merged.length,
+        limit: INTERVIEW_PAGE_LIMIT,
+        offset,
+        nextOffset: null,
+        hasMore: false,
+      };
+
+      interviewsRef.current = merged;
+      paginationRef.current = nextPagination;
+      setInterviews(merged);
+      setPagination(nextPagination);
+      setError(null);
     } catch (err) {
       console.error('[useScheduledInterviews] fetch error:', err);
       setError(err instanceof Error ? err : new Error('Failed to fetch interviews'));
     } finally {
-      setIsLoading(false);
+      if (append) {
+        setIsLoadingMore(false);
+      } else {
+        setIsLoading(false);
+      }
     }
   }, [api]);
 
@@ -162,7 +213,7 @@ export function useScheduledInterviews(): UseScheduledInterviewsResult {
 
     setInterviews((prev) => {
       const byInterviewId = new Map(freshUpdates.map((update) => [update.interviewId, update]));
-      return prev.map((interview) => {
+      const next = prev.map((interview) => {
         const update = byInterviewId.get(interview.id);
         if (!update) return interview;
         return {
@@ -173,8 +224,15 @@ export function useScheduledInterviews(): UseScheduledInterviewsResult {
           updatedAt: update.updatedAt,
         };
       });
+      interviewsRef.current = next;
+      return next;
     });
   }, [roomStatusUpdates]);
+
+  const loadMore = useCallback(async (): Promise<void> => {
+    if (isLoadingMore || paginationRef.current?.hasMore === false) return;
+    await fetchInterviews({ append: true });
+  }, [fetchInterviews, isLoadingMore]);
 
   const updateStatus = useCallback(
     async (
@@ -214,5 +272,16 @@ export function useScheduledInterviews(): UseScheduledInterviewsResult {
     [api, fetchInterviews],
   );
 
-  return { interviews, isLoading, error, updateStatus, sendInvite, refetch: fetchInterviews };
+  return {
+    interviews,
+    isLoading,
+    isLoadingMore,
+    error,
+    total: pagination?.total ?? interviews.length,
+    hasMore: pagination?.hasMore ?? false,
+    updateStatus,
+    sendInvite,
+    refetch: fetchInterviews,
+    loadMore,
+  };
 }

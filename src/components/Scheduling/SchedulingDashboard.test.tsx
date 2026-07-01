@@ -127,16 +127,27 @@ function cardNames(): string[] {
 function renderDashboard(
   interviews: ScheduledInterview[],
   initialEntry = '/interviews',
-  options: { refetch?: () => Promise<void> } = {},
-): { refetch: () => Promise<void> } {
+  options: {
+    refetch?: () => Promise<void>;
+    loadMore?: () => Promise<void>;
+    total?: number;
+    hasMore?: boolean;
+    isLoadingMore?: boolean;
+  } = {},
+): { refetch: () => Promise<void>; loadMore: () => Promise<void> } {
   const refetch = options.refetch ?? vi.fn().mockResolvedValue(undefined);
+  const loadMore = options.loadMore ?? vi.fn().mockResolvedValue(undefined);
   mocks.useScheduledInterviews.mockReturnValue({
     interviews,
     isLoading: false,
+    isLoadingMore: options.isLoadingMore ?? false,
     error: null,
+    total: options.total ?? interviews.length,
+    hasMore: options.hasMore ?? false,
     updateStatus: vi.fn(),
     sendInvite: vi.fn(),
     refetch,
+    loadMore,
   });
   mocks.useBookingNotifications.mockReturnValue({
     notifications: [],
@@ -149,7 +160,7 @@ function renderDashboard(
       <SchedulingDashboard />
     </MemoryRouter>,
   );
-  return { refetch };
+  return { refetch, loadMore };
 }
 
 describe('SchedulingDashboard interview ordering', () => {
@@ -207,6 +218,21 @@ describe('SchedulingDashboard interview ordering', () => {
 
     expect(screen.getByText('OLDEST CREATED')).toBeInTheDocument();
     expect(cardNames()).toEqual(['Oldest invite', 'Middle invite', 'Newest invite']);
+  });
+
+  it('shows paged interview counts and loads more history on demand', () => {
+    const loadMore = vi.fn().mockResolvedValue(undefined);
+
+    renderDashboard(interviews.slice(0, 2), '/interviews', {
+      total: 137,
+      hasMore: true,
+      loadMore,
+    });
+
+    expect(screen.getByText('2 loaded · 137 total')).toBeInTheDocument();
+    const button = screen.getByRole('button', { name: 'LOAD MORE (135 REMAINING)' });
+    fireEvent.click(button);
+    expect(loadMore).toHaveBeenCalledTimes(1);
   });
 
   it('uses the per-interview recipient label before the canonical person name', () => {

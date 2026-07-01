@@ -2189,7 +2189,9 @@ describe('GET /interviews/:id detail', () => {
       UPDATE scheduled_interviews
          SET interview_type = 'OPEN_SOURCE_BUG_FIX',
              github_repo_url = 'https://github.com/open-source/widgets',
-             github_pr_number = NULL
+             github_pr_number = NULL,
+             created_at = '2026-06-22T20:00:00.000Z',
+             updated_at = '2026-06-22T20:00:00.000Z'
        WHERE id = 'interview-1'
     `).run();
     sqlite!.prepare(`
@@ -2332,9 +2334,9 @@ describe('GET /interviews/:id detail', () => {
         NULL, 'MANUAL', NULL, NULL, 'Corrupted assessment progress should not break the list.',
         'MANUAL', NULL, NULL, NULL,
         NULL, NULL, 77, 'https://github.com/open-source/widgets', 101, NULL, NULL,
-        ?, ?
+        '2026-06-22T20:01:00.000Z', '2026-06-22T20:01:00.000Z'
       )
-    `).run(now, now);
+    `).run();
     sqlite!.prepare(`
       INSERT INTO assessment_sessions (
         id, ingestion_key, interview_id, mode, state, candidate_id, workspace_id,
@@ -2402,9 +2404,26 @@ describe('GET /interviews/:id detail', () => {
             commit: { commitSha: string | null; branchName: string | null } | null;
           } | null;
         }>;
+        pagination: {
+          total: number;
+          limit: number;
+          offset: number;
+          nextOffset: number | null;
+          hasMore: boolean;
+        };
       };
 
-      expect(body.interviews.length).toBeGreaterThan(100);
+      expect(body.pagination).toMatchObject({
+        total: expect.any(Number),
+        limit: 50,
+        offset: 0,
+        nextOffset: 50,
+        hasMore: true,
+      });
+      expect(body.pagination.total).toBeGreaterThan(100);
+      expect(body.interviews).toHaveLength(50);
+      expect(body.interviews[0]?.id).toBe('interview-list-corrupt-progress');
+      expect(body.interviews[1]?.id).toBe('interview-1');
       const interview = body.interviews.find((item) => item.id === 'interview-1');
       expect(interview?.assessmentProgress).toMatchObject({
         stage: 'READY_FOR_EVALUATION',
