@@ -4,6 +4,7 @@ import { prefetchDevProxyApiJson } from './devProxyPrefetch';
 
 describe('createApiClient', () => {
   afterEach(() => {
+    vi.useRealTimers();
     vi.unstubAllGlobals();
     window.__PIPE_DEV_PROXY_API_PREFETCHES__?.clear();
     window.history.pushState({}, '', '/');
@@ -24,5 +25,27 @@ describe('createApiClient', () => {
     expect(result).toEqual({ source: 'prefetch' });
     expect(fetchMock).toHaveBeenCalledTimes(1);
     expect(getToken).not.toHaveBeenCalled();
+  });
+
+  it('falls back to a normal fetch when a dev proxy prefetch stalls', async () => {
+    vi.useFakeTimers();
+    window.history.pushState({}, '', '/interviews?devProxyAuth=1');
+    const stalledPrefetch = new Promise<Response>(() => undefined);
+    const fetchMock = vi
+      .fn<typeof fetch>()
+      .mockReturnValueOnce(stalledPrefetch)
+      .mockResolvedValueOnce(new Response(JSON.stringify({ source: 'fallback' }), { status: 200 }));
+    const getToken = vi.fn(() => null);
+    vi.stubGlobal('fetch', fetchMock);
+
+    prefetchDevProxyApiJson('/api/v1/demo');
+    const client = createApiClient({ getToken });
+    const resultPromise = client.get<{ source: string }>('/api/v1/demo');
+    await vi.advanceTimersByTimeAsync(1500);
+    const result = await resultPromise;
+
+    expect(result).toEqual({ source: 'fallback' });
+    expect(fetchMock).toHaveBeenCalledTimes(2);
+    expect(getToken).toHaveBeenCalledTimes(1);
   });
 });
