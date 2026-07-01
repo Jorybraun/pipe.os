@@ -113,3 +113,11 @@ transcript/report into the assessment evidence spine with exact source refs.
 
 Candidate-facing clients should keep receiving invite/session tokens only.
 Internal session ids stay server-side until a Worker has resolved ownership.
+
+As of 2026-07-01, the candidate dev-container panel resolves assessment
+progress through `/rpc/assessment/progress` and submits the final assessment
+branch commit through `/rpc/assessment/commit-submission`. The client builds
+exact `git_commit`, `code_diff`, and either `test_run` or `verification_gap`
+source refs from candidate-provided workspace evidence; the Worker still
+resolves the assessment session server-side and enforces the repo-task
+`submitCommit` invariants.
