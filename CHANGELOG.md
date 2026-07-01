@@ -13,6 +13,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Fixed — Open-source assessment progress
 
+- Assessment room tests now reject retired novelty branding and desktop-shell affordances, keeping the candidate room anchored to the core open-source assessment product.
 - Candidate assessment rooms now show the workspace finalizer trust contract before submission, making it clear the trusted path reads git HEAD inside the container, verifies challenge anchors, and stores source refs for commit, diff, tests, and workspace state.
 - Recruiter interview cards now show commit trust separately from the short SHA, including workspace-capture integrity and whether the commit is bound to the assigned open-source challenge packet.
 - Dev-container assessment room progress coverage now labels captured agent evidence as `AI use`, matching recruiter summaries and making transparent AI assistance visible in-room.
