@@ -127,7 +127,7 @@ function assessmentProgressEvidenceLabels(progress: RoomAssessmentProgressSnapsh
     progress.hasToolUsageEvidence ? 'tool activity' : null,
     progress.hasWorkEvidence && !hasGranularWorkEvidence ? 'work' : null,
     progress.hasCommitSubmission ? 'commit' : null,
-    progress.hasAiInteraction ? 'AI' : null,
+    progress.hasAiInteraction ? 'AI use' : null,
     progress.hasTranscriptEvidence ? 'transcript' : null,
     progress.hasTestEvidence ? 'tests' : null,
     progress.hasVerificationGap ? 'verification gap' : null,

@@ -186,6 +186,9 @@ The controlling product rule remains:
   and tool evidence as `tool activity`, matching recruiter summaries and
   preserving the distinction between generic room presence and actual assessment
   work proof.
+- Live assessment-room progress coverage must label accepted agent evidence as
+  `AI use`, matching recruiter summaries and making transparent candidate AI
+  assistance observable instead of implying generic platform AI.
 - Accepted guest join/leave and recording start/stop room lifecycle events now
   persist as source-backed `meeting_session_event` evidence, with recording
   stop captured only when recording evidence was actually active.
