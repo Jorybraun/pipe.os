@@ -46,7 +46,6 @@ jobs:
         run: npx vitest run
 
       - name: Matching evaluation readiness report
-        continue-on-error: true
         working-directory: workers/api
         env:
           CLOUDFLARE_ACCOUNT_ID:      ${{ secrets.CLOUDFLARE_ACCOUNT_ID }}

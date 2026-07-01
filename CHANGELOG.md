@@ -65,6 +65,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Fixed — CODE_REVIEW assessment runtime
 
+- CI now treats a configured production matching-evaluation readiness failure as a blocking CODE_REVIEW gate while still emitting a non-blocking `not_configured` artifact when the required Cloudflare secrets or corpus id are absent.
 - Match-quality bridge repairs now tolerate legacy/local fixtures without newer candidate-node projections while preserving strict source-backed challenge packet hash and exact-text validation.
 - Assessment-to-living-context backfills now normalize legacy review-challenge packet refs to the stored immutable packet JSON before writing context records, keeping old event rows source-backed under stricter provenance validation.
 - Candidate-discovery model-key attribution now falls back to the provider name when a local/test provider omits a model string, preventing discovery fixtures from crashing before evidence decomposition.
