@@ -193,7 +193,7 @@ The controlling product rule remains:
 - Workspace state events now persist dev-container diagnostics with workspace
   session id, status, repo context, TTL details, and error messages, while
   excluding room-token proxy paths from the evidence payload.
-- AI assistant/Devin bridge status transitions now persist as source-backed
+- Agent bridge/Devin status transitions now persist as source-backed
   `meeting_session_event` evidence, including real auth-required or
   disconnected states instead of simulated agent availability.
 - AI agent bridge/Devin chat evidence distinguishes real Devin stdout from bridge
@@ -207,7 +207,7 @@ The controlling product rule remains:
   evidence for real stderr, context-primer failures, process exits, and startup
   errors, including diagnostic source, observed time, exit code, and signal
   metadata instead of leaving failures only in container logs.
-- AI assistant/Devin bridge statuses and diagnostics now preserve direct exact-text
+- Agent bridge/Devin statuses and diagnostics now preserve direct exact-text
   `agent_status` / `agent_diagnostic` source refs in both
   living-context and assessment evidence, so auth, startup, prompt-handoff, and
   process-failure states can be cited without unpacking the broad session event.
@@ -216,15 +216,15 @@ The controlling product rule remains:
   including delivery state, room-context fetch status, and redacted
   fingerprints/lengths for prompt, room context, and candidate message without
   storing the private prompt body.
-- The assessment-room AI assistant entrypoint remains recoverable after prompt
-  dismissal or chat close, while its active state reflects the actual chat panel
-  open/closed state rather than merely whether the assistant component is mounted.
-- AI assistant/Devin bridge diagnostics, prompt handoffs, and real Devin stdout now
+- The assessment room no longer mounts a floating assistant entrypoint; agent
+  status, diagnostics, prompt handoffs, and real Devin stdout are bridge-origin
+  evidence from the controlled workspace.
+- Agent bridge/Devin diagnostics, prompt handoffs, and real Devin stdout now
   post token-scoped `session-events` directly from the dev container before
   broadcasting to browsers. Browser evidence capture remains a fallback only
   when the bridge cannot persist, preventing duplicate graph events while
   preserving the visible chat/diagnostic stream.
-- AI assistant/Devin bridge diagnostic, auth/status, room-action, and stdout fallback
+- Agent bridge/Devin diagnostic, auth/status, room-action, and stdout fallback
   text is redacted before browser evidence, Durable Object broadcast/storage,
   or session-event persistence. Secret-bearing agent chat is rejected rather
   than rewriting fingerprinted source evidence.
@@ -244,12 +244,12 @@ The controlling product rule remains:
   prove the same source-backed workspace evidence path used by production room
   token validation.
 - Dev-container idle sleep, wake, and unexpected stop/error lifecycle hooks now
-  update the canonical D1 session row before projection, so AI assistant availability,
+  update the canonical D1 session row before projection, so agent bridge availability,
   room workspace state, and assessment evidence reflect the real container
   lifecycle instead of a stale `READY` session.
 - Standalone candidate dev-container launches now pass the same real Devin
   bridge configuration into the server-side container init payload without
-  returning secrets to the browser, so AI assistant chat can only become available
+  returning secrets to the browser, so agent interaction can only become available
   through the actual container bridge instead of a UI-only placeholder.
 - Dev-container expiry/manual teardown now marks intentional container stops
   before destroy, so normal `EXPIRED` / `STOPPED` sessions do not retain false

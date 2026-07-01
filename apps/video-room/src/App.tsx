@@ -1,7 +1,6 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { useLocation } from 'react-router-dom';
 import {
-  Bot,
   Camera,
   CameraOff,
   Circle,
@@ -40,9 +39,6 @@ import {
 import {
   buildAgentMessageSessionEvidence,
   buildAgentStatusEvidence,
-  buildAgentRoomActionExecutionEvidence,
-  buildAgentUiActionEvidence,
-  buildAgentUserChatEvidence,
 } from './lib/agentEvidence';
 import {
   buildCodeEditorOpenEvidence,
@@ -54,7 +50,6 @@ import {
   type MediaControlKind,
 } from './lib/mediaControlEvidence';
 import { buildRoomChatEvidence } from './lib/chatEvidence';
-import { routeAgentRoomAction } from './lib/agentRoomActionRouting';
 import {
   useRoomConnection,
   type RoomChatMessage,
@@ -65,12 +60,11 @@ import { useAssessmentProgressPolling } from './hooks/useAssessmentProgressPolli
 import { useToolSurfaceManager } from './hooks/useToolSurfaceManager';
 import { StandardLayout } from './components/StandardLayout';
 import { ChatPanel, type ChatMessage } from './components/ChatPanel';
-import { AgentAssistant } from './components/AgentAssistant';
 import {
+  useAgentConnection,
   agentStatusEvidenceText,
   type AgentChatMessage,
   type AgentFileChangeEvent,
-  type AgentRoomAction,
   type AgentStatus,
 } from './hooks/useAgentConnection';
 import { TerminalPanel } from './components/TerminalPanel';
@@ -104,8 +98,6 @@ import type {
 } from './types';
 
 type RecordingState = 'idle' | 'starting' | 'recording' | 'uploading' | 'saved' | 'failed';
-const DEVIN_AUTH_TERMINAL_COMMAND = 'devin auth login --force-manual-token-flow';
-type AssistantTrayStatus = AgentStatus | 'unavailable';
 
 function PipeMark({ className }: { className?: string }): JSX.Element {
   return (
@@ -249,26 +241,6 @@ function mediaStatusLabel(state: Pick<RoomMediaControlState, 'microphoneEnabled'
   return parts.join(', ');
 }
 
-function assistantStatusLabel(status: AssistantTrayStatus, hasWorkspaceFeature: boolean): string {
-  switch (status) {
-    case 'idle':
-      return 'agent ready';
-    case 'starting':
-      return 'agent starting';
-    case 'thinking':
-      return 'agent thinking';
-    case 'working':
-      return 'agent working';
-    case 'auth_needed':
-      return 'agent authentication required';
-    case 'disconnected':
-      return hasWorkspaceFeature ? 'agent disconnected' : 'workspace required';
-    case 'unavailable':
-    default:
-      return hasWorkspaceFeature ? 'agent unavailable' : 'workspace required';
-  }
-}
-
 function Room({ token, metadata }: { token: string; metadata: RoomMetadata }): JSX.Element {
   const [enteredRoom, setEnteredRoom] = useState(false);
   const initialAssessmentMode = assessmentModeForRoom({
@@ -320,11 +292,6 @@ function Room({ token, metadata }: { token: string; metadata: RoomMetadata }): J
   const [recordingState, setRecordingState] = useState<RecordingState>('idle');
   const [recordingNotice, setRecordingNotice] = useState<string | null>(null);
   const [recordingError, setRecordingError] = useState<string | null>(null);
-  const [agentChatOpen, setAgentChatOpen] = useState(false);
-  const [agentChatRequest, setAgentChatRequest] = useState(0);
-  const [agentStatus, setAgentStatus] = useState<AgentStatus>('disconnected');
-  const [queuedTerminalCommand, setQueuedTerminalCommand] = useState<string | null>(null);
-  const [queuedTerminalCommandRequest, setQueuedTerminalCommandRequest] = useState(0);
   const recorderRef = useRef<MediaRecorder | null>(null);
   const transcriptionRecorderRef = useRef<MediaRecorder | null>(null);
   const recordingChunksRef = useRef<Blob[]>([]);
@@ -341,7 +308,9 @@ function Room({ token, metadata }: { token: string; metadata: RoomMetadata }): J
   const terminalCommandSequenceRef = useRef(0);
   const terminalOutputSequenceRef = useRef(0);
   const activeTerminalCommandIdRef = useRef<string | null>(null);
-  const queuedTerminalCommandRequestRef = useRef(0);
+  const capturedAgentMessagesRef = useRef<Set<string>>(new Set());
+  const capturedAgentStatusRef = useRef<string | null>(null);
+  const capturedAgentFileChangesRef = useRef<Set<string>>(new Set());
 
   const requestDevices = useCallback(async (): Promise<void> => {
     const requestId = deviceRequestRef.current + 1;
@@ -903,85 +872,22 @@ function Room({ token, metadata }: { token: string; metadata: RoomMetadata }): J
   const showWorkspacePanel = hasWorkspaceFeature;
   const needsRepoUrl = canLaunchWorkspace && !workspace?.repoUrl;
   const hasActiveWorkspace = workspaceSession?.status === 'READY' || workspaceSession?.status === 'SLEEPING';
-  const agentTrayStatus: AssistantTrayStatus = !hasWorkspaceFeature
-    ? 'unavailable'
-    : !hasActiveWorkspace
-      ? workspaceSession?.status === 'LAUNCHING'
-        ? 'starting'
-        : 'unavailable'
-      : agentStatus;
   const workspaceChallengeMessage = workspace?.challenge?.status === 'missing_reviewable_task'
     ? workspace.challenge.message
     : null;
   const workspaceChallengePacket = workspace?.challenge?.packet ?? null;
-  const agentUnavailableMessage = !hasWorkspaceFeature
-    ? 'This room was not configured with a dev workspace. Room chat still goes to people; AI assistant chat requires a real container workspace.'
-    : workspaceSession?.status === 'LAUNCHING'
-      ? 'The VS Code workspace is starting. The AI assistant will connect when the container bridge reports a real agent identity.'
-      : workspaceSession?.status === 'ERROR'
-        ? `The VS Code workspace failed: ${workspaceSession.errorMessage ?? workspaceError ?? 'container startup did not complete'}. AI assistant chat stays disabled until the workspace is relaunched.`
-        : metadata.role === 'HOST' && canLaunchWorkspace
-        ? 'Launch the VS Code workspace to connect a real agent. AI assistant chat stays disabled until the container bridge is connected.'
-        : 'The host needs to launch the VS Code workspace before the AI assistant can connect to a real agent.';
-  const canOpenAgentBridgePanel = metadata.features?.agentEnabled ?? true;
-  const assistantCallStatus = assistantStatusLabel(agentTrayStatus, hasWorkspaceFeature);
+  const agentBridgeEnabled = Boolean((metadata.features?.agentEnabled ?? true) && workspaceSession && hasActiveWorkspace);
+  const agentConn = useAgentConnection({
+    wsUrl: agentBridgeEnabled && workspaceSession ? roomAgentWsUrl(token, workspaceSession.sessionId) : null,
+    enabled: agentBridgeEnabled,
+    promptActor: roomActor,
+    promptWorkspaceSessionId: workspaceSession?.sessionId ?? null,
+  });
   const roomAssessmentMode = assessmentModeForRoom({
     meetingType: metadata.meetingType,
     workspaceEnabled: hasWorkspaceFeature,
   });
   const roomAssessmentModeLabel = assessmentModeLabel(roomAssessmentMode);
-  useEffect(() => {
-    if (!canOpenAgentBridgePanel && agentChatOpen) {
-      setAgentChatOpen(false);
-    }
-  }, [canOpenAgentBridgePanel, agentChatOpen]);
-  useEffect(() => {
-    if (!hasActiveWorkspace) {
-      setAgentStatus('disconnected');
-    }
-  }, [hasActiveWorkspace, workspaceSession?.sessionId]);
-  const captureAgentUiAction = (
-    actionId: 'open-agent-chat' | 'close-agent-chat' | 'open-devin-auth-browser' | 'check-devin-auth',
-    origin: 'tray' | 'chat' | 'call',
-  ): void => {
-    const evidence = buildAgentUiActionEvidence({
-      actionId,
-      origin,
-      actor: roomActor,
-      capturedAtMs: Date.now(),
-      surface: room.roomSurface,
-      roomPhase: room.phase,
-      workspaceStatus: workspaceSession?.status ?? null,
-      workspaceSessionId: workspaceSession?.sessionId ?? null,
-      agentWorkspaceReady: hasActiveWorkspace,
-    });
-    const properties = {
-      ...evidence.properties,
-      durableObjectReplayExpected: true,
-    };
-    captureSessionEvent('agent_action', evidence.text, roomActor, properties);
-    publishAgentInteractionEvent({
-      eventType: 'agent_action',
-      actor: roomActor,
-      text: evidence.text,
-      evidence: properties,
-    });
-  };
-  const openAgentChat = (origin: 'tray' | 'chat' | 'call' = 'tray'): void => {
-    captureAgentUiAction('open-agent-chat', origin);
-    setAgentChatOpen(canOpenAgentBridgePanel);
-    setAgentChatRequest((request) => request + 1);
-  };
-  const closeAgentChat = (): void => {
-    captureAgentUiAction('close-agent-chat', 'chat');
-    setAgentChatOpen(false);
-  };
-  const checkDevinAuth = (): void => {
-    captureAgentUiAction('check-devin-auth', 'chat');
-  };
-  const openDevinAuthBrowser = (): void => {
-    captureAgentUiAction('open-devin-auth-browser', 'chat');
-  };
   const terminalSessionId = `terminal-${workspaceSession?.sessionId ?? 'no-workspace'}-${metadata.role.toLowerCase()}`;
   const terminalEvidenceContext: TerminalEvidenceContext = useMemo(() => ({
     surface: room.roomSurface,
@@ -1234,7 +1140,7 @@ function Room({ token, metadata }: { token: string; metadata: RoomMetadata }): J
                     data-testid="prejoin-repo-input"
                   />
                 )}
-                {canOpenAgentBridgePanel && (
+                {(metadata.features?.agentEnabled ?? true) && (
                   <label className="workspace-agent-toggle">
                     <input
                       type="checkbox"
@@ -1324,129 +1230,12 @@ function Room({ token, metadata }: { token: string; metadata: RoomMetadata }): J
     });
   };
 
-  const openBrowserTab = (url = ''): void => {
-    const trimmed = url.trim();
-    let currentUrl: string | null = null;
-    try {
-      const parsed = new URL(trimmed.includes('://') ? trimmed : `https://${trimmed}`);
-      if (parsed.protocol === 'http:' || parsed.protocol === 'https:') {
-        currentUrl = parsed.toString();
-      }
-    } catch {
-      currentUrl = null;
-    }
-    if (!currentUrl) return;
-    window.open(currentUrl, '_blank', 'noopener,noreferrer');
-  };
-
-  const openTerminalPanel = (): void => {
-    openLocalPanel({
-      id: 'terminal',
-      surfaceType: 'terminal',
-      title: 'Container terminal',
-    });
-  };
-
   const openSubmissionPanel = (): void => {
     openLocalPanel({
       id: 'submission',
       surfaceType: 'submission',
       title: 'Submit Work',
     });
-  };
-
-  const captureAgentAction = (
-    actionId: string,
-    text: string,
-    options: {
-      origin: 'chat' | 'agent';
-      agentAction?: AgentRoomAction;
-    },
-  ): boolean => {
-    const evidence = buildAgentRoomActionExecutionEvidence({
-      actionId,
-      text,
-      origin: options.origin,
-      actor: roomActor,
-      capturedAtMs: Date.now(),
-      agentAction: options.agentAction,
-      surface: room.roomSurface,
-      roomPhase: room.phase,
-      workspaceStatus: workspaceSession?.status ?? null,
-      workspaceSessionId: workspaceSession?.sessionId ?? null,
-    });
-    if (!evidence) {
-      console.error('[captureAgentAction] rejected agent room action without source-backed bridge metadata:', {
-        actionId,
-        bridgeEventType: options.agentAction?.bridgeEventType ?? null,
-        protocol: options.agentAction?.protocol ?? null,
-        source: options.agentAction?.source ?? null,
-      });
-      return false;
-    }
-    const properties = {
-      ...evidence.properties,
-      durableObjectReplayExpected: true,
-    };
-    captureSessionEvent('agent_action', evidence.text, roomActor, properties);
-    publishAgentInteractionEvent({
-      eventType: 'agent_action',
-      actor: roomActor,
-      text: evidence.text,
-      evidence: properties,
-    });
-    return true;
-  };
-
-  const executeRoomAction = (actionId: string, options: { url?: string; source?: 'chat' | 'agent'; agentAction?: AgentRoomAction } = {}): void => {
-    const source = options.source ?? 'chat';
-    const actionEvidence = { origin: source, agentAction: options.agentAction } as const;
-    const actorLabel = source === 'agent' ? 'Agent' : 'Assistant';
-    switch (actionId) {
-      case 'start-recording':
-        if (!captureAgentAction(actionId, `${actorLabel} action: start recording`, actionEvidence)) return;
-        void startRecording();
-        break;
-      case 'stop-recording':
-        if (!captureAgentAction(actionId, `${actorLabel} action: stop recording`, actionEvidence)) return;
-        void stopRecording();
-        break;
-      case 'launch-workspace':
-        if (!captureAgentAction(actionId, `${actorLabel} action: launch workspace`, actionEvidence)) return;
-        openWorkspacePanel();
-        void launchWorkspace();
-        break;
-      case 'open-workspace':
-        if (!captureAgentAction(actionId, `${actorLabel} action: open workspace`, actionEvidence)) return;
-        openWorkspacePanel();
-        break;
-      case 'open-terminal':
-        if (!captureAgentAction(actionId, `${actorLabel} action: open terminal`, actionEvidence)) return;
-        openTerminalPanel();
-        break;
-      case 'open-submission':
-        if (!captureAgentAction(actionId, `${actorLabel} action: open submission`, actionEvidence)) return;
-        openSubmissionPanel();
-        break;
-      case 'open-browser':
-        if (!captureAgentAction(actionId, `${actorLabel} action: open browser`, actionEvidence)) return;
-        openBrowserTab(options.url ?? '');
-        break;
-      default:
-        break;
-    }
-  };
-
-  const openDevinAuthTerminal = (): void => {
-    if (!captureAgentAction(
-      'open-devin-auth-terminal',
-      'Assistant action: open terminal for Devin authentication',
-      { origin: 'chat' },
-    )) return;
-    openTerminalPanel();
-    queuedTerminalCommandRequestRef.current += 1;
-    setQueuedTerminalCommand(DEVIN_AUTH_TERMINAL_COMMAND);
-    setQueuedTerminalCommandRequest(queuedTerminalCommandRequestRef.current);
   };
 
   const submitCommitFromRoom = (
@@ -1468,52 +1257,6 @@ function Room({ token, metadata }: { token: string; metadata: RoomMetadata }): J
         if (response.progress) setAssessmentProgress(response.progress);
         return response;
       });
-  };
-
-  const handleAgentAction = (actionId: string): void => {
-    executeRoomAction(actionId);
-  };
-
-  const handleAgentRoomAction = (action: AgentRoomAction): void => {
-    const route = routeAgentRoomAction(action);
-    if (route.kind === 'reject') {
-      console.error('[handleAgentRoomAction] rejected unsupported bridge room action:', {
-        actionId: action.id,
-        bridgeEventType: action.bridgeEventType ?? null,
-        protocol: action.protocol ?? null,
-        source: action.source ?? null,
-        reason: route.reason,
-      });
-      return;
-    }
-    executeRoomAction(route.action.id, {
-      url: route.action.url,
-      source: route.source,
-      agentAction: route.kind === 'agent' ? route.action : undefined,
-    });
-  };
-
-  const captureAgentUserChatMessage = (message: AgentChatMessage): void => {
-    const evidence = buildAgentUserChatEvidence({
-      message,
-      actor: roomActor,
-      surface: room.roomSurface,
-      roomPhase: room.phase,
-      workspaceStatus: workspaceSession?.status ?? null,
-      workspaceSessionId: workspaceSession?.sessionId ?? null,
-      repoUrl: workspace?.repoUrl ?? null,
-    });
-    const properties = {
-      ...evidence.properties,
-      durableObjectReplayExpected: true,
-    };
-    captureSessionEvent('ai_chat_user', evidence.text, roomActor, properties);
-    publishAgentInteractionEvent({
-      eventType: 'ai_chat_user',
-      actor: roomActor,
-      text: evidence.text,
-      evidence: properties,
-    });
   };
 
   const captureAgentChatMessage = (message: AgentChatMessage): void => {
@@ -1563,7 +1306,6 @@ function Room({ token, metadata }: { token: string; metadata: RoomMetadata }): J
   };
 
   const captureAgentStatus = (status: AgentStatus, agentName: string): void => {
-    setAgentStatus(status);
     if (!agentName.trim()) return;
     const capturedAtMs = Date.now();
     const observedAt = new Date(capturedAtMs).toISOString();
@@ -1623,6 +1365,39 @@ function Room({ token, metadata }: { token: string; metadata: RoomMetadata }): J
       evidence: properties,
     });
   };
+
+  useEffect(() => {
+    for (const message of agentConn.messages) {
+      if (message.role !== 'agent') continue;
+      const signature = `${message.timestamp}|${message.text}`;
+      if (capturedAgentMessagesRef.current.has(signature)) continue;
+      capturedAgentMessagesRef.current.add(signature);
+      captureAgentChatMessage(message);
+    }
+  }, [agentConn.messages]);
+
+  useEffect(() => {
+    if (!agentBridgeEnabled) return;
+    const signature = `${agentConn.agentName}|${agentConn.status}`;
+    if (capturedAgentStatusRef.current === signature) return;
+    capturedAgentStatusRef.current = signature;
+    captureAgentStatus(agentConn.status, agentConn.agentName);
+  }, [agentBridgeEnabled, agentConn.agentName, agentConn.status]);
+
+  useEffect(() => {
+    for (const event of agentConn.fileChanges) {
+      const signature = [
+        event.timestamp,
+        event.filePath,
+        event.actionName,
+        event.contentHash ?? '',
+        event.sizeBytes ?? '',
+      ].join('|');
+      if (capturedAgentFileChangesRef.current.has(signature)) continue;
+      capturedAgentFileChangesRef.current.add(signature);
+      captureAgentFileChange(event);
+    }
+  }, [agentConn.fileChanges]);
 
   const remoteParticipantLabel = metadata.role === 'HOST' ? 'Guest' : 'Host';
   const remoteParticipantRole = metadata.role === 'HOST' ? 'GUEST' : 'HOST';
@@ -1738,18 +1513,6 @@ function Room({ token, metadata }: { token: string; metadata: RoomMetadata }): J
               >
                 {room.cameraEnabled ? <Camera size={16} /> : <CameraOff size={16} />}
               </button>
-              {(metadata.features?.agentEnabled ?? true) && (
-                <button
-                  className={`room-video-btn is-assistant${agentChatOpen ? ' is-active' : ''}`}
-                  onClick={() => openAgentChat('call')}
-                  aria-label={`Open AI assistant - ${assistantCallStatus}`}
-                  title={`AI assistant - ${assistantCallStatus}`}
-                  data-testid="open-ai-assistant"
-                >
-                  <Bot size={16} />
-                  <span className={`room-video-btn-status ${agentTrayStatus}`} aria-hidden="true" />
-                </button>
-              )}
               {metadata.role === 'HOST' && (metadata.features?.recordingEnabled ?? true) && (
                 recordingState === 'recording' ? (
                   <button
@@ -1852,7 +1615,7 @@ function Room({ token, metadata }: { token: string; metadata: RoomMetadata }): J
                 )}
                 {canLaunchWorkspace && (
                   <>
-                    {canOpenAgentBridgePanel && (
+                    {(metadata.features?.agentEnabled ?? true) && (
                       <label className="workspace-agent-toggle">
                         <input
                           type="checkbox"
@@ -1889,9 +1652,6 @@ function Room({ token, metadata }: { token: string; metadata: RoomMetadata }): J
             messages={chatMessages}
             onSend={(text) => sendChatMessage(text)}
             currentUserRole={metadata.role}
-            onAskAssistant={(metadata.features?.agentEnabled ?? true)
-              ? () => openAgentChat('chat')
-              : undefined}
           />
         );
 
@@ -1903,9 +1663,6 @@ function Room({ token, metadata }: { token: string; metadata: RoomMetadata }): J
               : ''}
             onCommand={captureTerminalCommand}
             onOutput={captureTerminalOutput}
-            queuedCommand={queuedTerminalCommand}
-            queuedCommandRequest={queuedTerminalCommandRequest}
-            onQueuedCommandSent={() => setQueuedTerminalCommand(null)}
           />
         );
 
@@ -1964,33 +1721,6 @@ function Room({ token, metadata }: { token: string; metadata: RoomMetadata }): J
       >
         {roomSurface}
       </div>
-      {enteredRoom && (metadata.features?.agentEnabled ?? true) && (
-        <AgentAssistant
-          chatOpen={agentChatOpen}
-          onChatOpen={() => setAgentChatOpen(true)}
-          onChatClose={closeAgentChat}
-          agentWsUrl={workspaceSession && hasActiveWorkspace
-            ? roomAgentWsUrl(token, workspaceSession.sessionId)
-            : null}
-          agentEnabled={hasActiveWorkspace}
-          agentUnavailableMessage={agentUnavailableMessage}
-          canLaunchAgentWorkspace={canLaunchWorkspace}
-          promptActor={roomActor}
-          promptWorkspaceSessionId={workspaceSession?.sessionId ?? null}
-          openChatRequest={agentChatRequest}
-          onOpenBrowser={openBrowserTab}
-          onOpenAuthBrowser={openDevinAuthBrowser}
-          onOpenTerminal={openTerminalPanel}
-          onOpenAuthTerminal={openDevinAuthTerminal}
-          onCheckAuth={checkDevinAuth}
-          onAction={handleAgentAction}
-          onAgentRoomAction={handleAgentRoomAction}
-          onUserChatMessage={captureAgentUserChatMessage}
-          onAgentChatMessage={captureAgentChatMessage}
-          onAgentStatus={captureAgentStatus}
-          onAgentFileChange={captureAgentFileChange}
-        />
-      )}
       {room.phase === 'ended' && (
         <div className="ended-overlay" style={{ zIndex: 99999 }}>
           <RoomStateMark />

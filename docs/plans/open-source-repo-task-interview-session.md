@@ -103,7 +103,7 @@ Agent A/runtime surfaces should submit evidence in this order:
 3. Submit the final bundle when the candidate is done. The backend records all
    included artifact events before marking `FINAL_SUBMITTED`.
 4. If a real AI provider cannot respond, call the AI-unavailable diagnostic
-   path. Do not simulate Devin, an AI assistant, or a PR author.
+   path. Do not simulate Devin, an agent, or a PR author.
 5. Evaluation workers consume the session evidence and write either a cited
    report or diagnostics.
 

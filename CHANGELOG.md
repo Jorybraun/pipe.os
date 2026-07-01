@@ -98,16 +98,16 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - Retired client-UI synchronization from the current product plan so the assessment room stays anchored to real repo-task evidence.
 - Removed obsolete assessment-panel coordinate and ordering state from the video-room app.
 - Collapsed video-room evidence capture to the standard assessment room path, removing the stale alternate replay path.
-- Current room evidence is limited to the core assessment sources: video, chat, workspace, terminal, code-server/file events, recording, transcription, commit submissions, and the real AI assistant bridge.
+- Current room evidence is limited to the core assessment sources: video, chat, workspace, terminal, code-server/file events, recording, transcription, commit submissions, and the real agent bridge.
 - Removed the legacy room file-system evidence path so CODE_REVIEW proof depends on workspace, terminal, code-server, chat, recording, transcript, commit, and AI-bridge sources instead of stale files.
 - Scrubbed current room vocabulary, QA labels, planning docs, contract notes, smoke scripts, and evidence fixtures so product language stays anchored to open-source repo-task assessment.
-- Replaced branded room-assistant chrome with a plain source-backed AI assistant bridge panel and kept candidate/recruiter room flows on the standard assessment layout.
+- Removed branded room-assistant chrome and the floating assistant panel; real agent bridge status, stdout, and file-change observations now run as headless workspace evidence.
 - Removed the remaining fake external-browser label from assessment browser evidence fixtures and historical notes, replacing it with neutral Assessment Browser language.
 - Workspace assessment detail pages now keep evaluator claims, cautions, source snippets, coverage chips, and source-ref counts behind a collapsed Evidence audit trail so the hiring-manager decision readout stays primary without losing provenance.
 - Assessment setup gaps now render explicit recruiter next actions across interview cards and detail assignment panels, such as sending the candidate evidence invite, rerunning/enriching matching, or attaching a concrete challenge packet.
 - The video-room assessment shell now opens terminal and submission inside a focused assessment tools panel.
 - Removed abandoned action aliases from the real agent bridge.
-- The room now keeps focus on video, chat, workspace, terminal, Submit Work, recording, transcription, and the real AI assistant bridge.
+- The room now keeps focus on video, chat, workspace, terminal, Submit Work, recording, transcription, and the real agent bridge.
 - Added a video-room regression guard that fails if retired novelty UI vocabulary returns to the shipped room source or public worker assets.
 - Wired the assessment-room boundary guard into package scripts so retired novelty UI cannot silently re-enter the deployable room app.
 
@@ -199,7 +199,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - Dev-container assessment rooms now open into a code-first assessment layout by default, with the VS Code workspace as the primary surface, video/chat supporting the session, and Submit Work present as the completion path.
 - Assessment Submit Work now validates GitHub repo/fork/commit/PR URLs, full commit SHAs, assessment branch names, and diff-to-file alignment before sending source-backed commit evidence, and shows the exact Git commands candidates should paste.
 - Video rooms now show a compact assessment status strip with mode, repo/PR/base commit, workspace state, challenge task, and next action so standard calls, code reviews, and dev-container assessments are legible inside the call.
-- Video call controls now include an explicit AI assistant button that opens the real Agent/Devin bridge status panel and records call-control provenance instead of hiding assistant access behind room chat.
+- Video call controls no longer include a separate assistant button; real Agent/Devin bridge evidence is captured from the workspace bridge without opening a floating room panel.
 - The assistant bridge now uses plain assessment UI instead of character branding.
 - Closing the Agent bridge now closes only the assistant panel, so the room no longer leaves orphaned assistant UI over chat.
 - Assessment commit submission now makes upstream PR tracking an explicit opt-in, blocks upstream PR URLs without candidate approval, and stores approved PR links as exact source-backed evidence instead of treating them as implicit metadata.

@@ -76,7 +76,7 @@ describe('addLocalMediaToPeer', () => {
 });
 
 describe('hasSourceBackedAgentInteractionEvidence', () => {
-  it('accepts source-backed user chat submitted to the real AI assistant/Devin bridge', () => {
+  it('accepts source-backed user chat submitted to the real agent bridge', () => {
     const text = 'Can you inspect the task?';
     const event: RoomAgentInteractionEvent = {
       id: 'agent-interaction-1',
@@ -148,14 +148,14 @@ describe('hasSourceBackedAgentInteractionEvidence', () => {
     expect(hasSourceBackedAgentInteractionEvidence(event, 'HOST')).toBe(true);
   });
 
-  it('accepts source-backed AI assistant UI actions and rejects source-less events', () => {
+  it('accepts source-backed agent bridge UI actions and rejects source-less events', () => {
     const action: RoomAgentInteractionEvent = {
       id: 'agent-interaction-3',
       clientId: 'host-client',
       createdAt: 1700000004000,
       eventType: 'agent_action',
       actor: 'host',
-      text: 'AI assistant opened from the room controls',
+      text: 'Agent bridge opened from the room controls',
       evidence: {
         source: 'agent_tray_ui',
         actionId: 'open-agent-chat',
@@ -178,7 +178,7 @@ describe('hasSourceBackedAgentInteractionEvidence', () => {
     expect(hasSourceBackedAgentInteractionEvidence(action, 'HOST')).toBe(true);
     expect(hasSourceBackedAgentInteractionEvidence({
       ...action,
-      text: 'AI assistant opened from the video call controls',
+      text: 'Agent bridge opened from the video call controls',
       actor: 'guest',
       evidence: {
         source: 'agent_call_controls_ui',
@@ -200,7 +200,7 @@ describe('hasSourceBackedAgentInteractionEvidence', () => {
     }, 'GUEST')).toBe(true);
     expect(hasSourceBackedAgentInteractionEvidence({
       ...action,
-      text: 'AI assistant opened from the video call controls',
+      text: 'Agent bridge opened from the video call controls',
       actor: 'guest',
       evidence: {
         source: 'agent_call_controls_ui',

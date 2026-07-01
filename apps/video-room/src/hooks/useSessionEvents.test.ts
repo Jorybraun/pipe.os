@@ -207,7 +207,7 @@ describe('useSessionEvents', () => {
     }));
 
     act(() => {
-      result.current.capture('agent_action', 'AI assistant opened', 'host', {
+      result.current.capture('agent_action', 'Agent bridge opened', 'host', {
         source: 'agent_tray_ui',
         agentResponseClaimed: false,
       });
@@ -233,7 +233,7 @@ describe('useSessionEvents', () => {
     };
     expect(parsedPayload).toMatchObject({
       type: 'agent_action',
-      text: 'AI assistant opened',
+      text: 'Agent bridge opened',
       actor: 'host',
       properties: {
         source: 'agent_tray_ui',

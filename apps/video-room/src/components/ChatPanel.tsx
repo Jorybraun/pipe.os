@@ -1,5 +1,5 @@
 import { useCallback, useRef, useState, useEffect } from 'react';
-import { Send, User, Bot, Cpu, Sparkles } from 'lucide-react';
+import { Send, User, Bot, Cpu } from 'lucide-react';
 
 export type ChatRole = 'host' | 'candidate' | 'ai';
 
@@ -16,7 +16,6 @@ interface ChatPanelProps {
   messages: ChatMessage[];
   onSend: (text: string) => void;
   currentUserRole: 'HOST' | 'GUEST';
-  onAskAssistant?: () => void;
 }
 
 let msgCounter = 0;
@@ -48,7 +47,6 @@ export function ChatPanel({
   messages,
   onSend,
   currentUserRole,
-  onAskAssistant,
 }: ChatPanelProps): JSX.Element {
   const [input, setInput] = useState('');
   const scrollRef = useRef<HTMLDivElement>(null);
@@ -128,18 +126,6 @@ export function ChatPanel({
           onKeyDown={handleKeyDown}
           data-testid="chat-input"
         />
-        {onAskAssistant && (
-          <button
-            type="button"
-            className="chat-assistant-btn"
-            onClick={onAskAssistant}
-            title="Ask AI assistant"
-            aria-label="Ask AI assistant"
-            data-testid="chat-ask-assistant"
-          >
-            <Sparkles size={14} />
-          </button>
-        )}
         <button
           className="chat-send-btn"
           onClick={handleSend}

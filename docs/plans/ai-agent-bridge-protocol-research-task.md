@@ -2,7 +2,7 @@
 
 ## Question
 
-What is the best-practice remote agent architecture for an AI assistant inside PIPE's live assessment room?
+What is the best-practice remote agent architecture for a real agent bridge inside PIPE's live assessment room?
 
 Evaluate whether Hermes, Devin, ACP, A2A, MCP, or a small PIPE-native bridge should own the assessment-room agent layer.
 

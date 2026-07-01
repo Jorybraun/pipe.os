@@ -35,6 +35,12 @@ export function defaultRoomSurfaceConfigs({
         active: false,
       },
       {
+        id: 'terminal',
+        surfaceType: 'terminal',
+        title: 'Container Terminal',
+        active: false,
+      },
+      {
         id: 'workspace',
         surfaceType: 'workspace',
         title: workspaceTitle ?? 'VS Code',

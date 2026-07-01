@@ -60,7 +60,7 @@ Defer or remove from the critical path:
   server-only rubrics to candidate clients.
 - Do not make client UI state a prerequisite for scoring.
 - Do not replace CODE_REVIEW's standalone diff assessment flow.
-- Do not add fake AI assistants, fake Devin, simulated agent replies, or optimistic
+- Do not add fake agent assistants, fake Devin, simulated agent replies, or optimistic
   score claims.
 
 ## Migration Sequence
