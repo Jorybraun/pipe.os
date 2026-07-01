@@ -138,6 +138,7 @@ function assessmentEvidenceSummary(input: {
   hasAiInteraction: boolean;
   hasTranscriptEvidence: boolean;
   hasTestEvidence: boolean;
+  hasVerificationGap?: boolean;
 }): string {
   const hasGranularWorkEvidence = Boolean(
     input.hasMessageEvidence
@@ -145,7 +146,8 @@ function assessmentEvidenceSummary(input: {
     || input.hasToolUsageEvidence
     || input.hasAiInteraction
     || input.hasTranscriptEvidence
-    || input.hasTestEvidence,
+    || input.hasTestEvidence
+    || input.hasVerificationGap,
   );
   const ready = [
     input.hasChallengePacket ? 'challenge' : null,
@@ -157,6 +159,7 @@ function assessmentEvidenceSummary(input: {
     input.hasAiInteraction ? 'AI use' : null,
     input.hasTranscriptEvidence ? 'transcript' : null,
     input.hasTestEvidence ? 'tests' : null,
+    input.hasVerificationGap ? 'verification gap' : null,
   ].filter((value): value is string => Boolean(value));
   return ready.length > 0 ? ready.join(', ') : 'no evidence yet';
 }

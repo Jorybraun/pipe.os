@@ -11,6 +11,10 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 - Recruiter open-source assessment invites now show a live challenge-packet checklist for repo, exact base commit, task, success criteria, and expected evidence before creation, making manual tasks visibly concrete instead of a loose repo dump.
 
+### Fixed — Open-source assessment progress
+
+- Recruiter interview cards now surface source-backed verification gaps in the evidence summary when candidates submit a missing-test note, so ready-for-evaluation assessments do not hide absent test output.
+
 ### Fixed — Route performance
 
 - Scheduled interview list responses now enforce a 20-row newest-created first page and the recruiter dashboard loads older interviews on demand, reducing `/interviews` first-paint work before assessment progress enrichment.

@@ -176,6 +176,9 @@ The controlling product rule remains:
   entering `READY_FOR_EVALUATION`. If the assigned challenge packet changes
   after a commit submission, the old commit remains visible as evidence but no
   longer satisfies the current task until a bound commit is submitted.
+- Recruiter list evidence summaries must name explicit verification gaps when a
+  candidate submits a missing-test note instead of test output, so scan-level
+  progress never hides absent verification evidence behind a generic ready state.
 - Accepted guest join/leave and recording start/stop room lifecycle events now
   persist as source-backed `meeting_session_event` evidence, with recording
   stop captured only when recording evidence was actually active.

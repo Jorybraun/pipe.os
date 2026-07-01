@@ -499,6 +499,104 @@ describe('InterviewCard assessment progress', () => {
     );
   });
 
+  it('surfaces verification gaps in the recruiter evidence summary', () => {
+    renderCard({
+      id: 'interview-verification-gap',
+      createdAt: '2026-06-23T00:00:00.000Z',
+      updatedAt: '2026-06-23T00:20:00.000Z',
+      status: 'INVITED',
+      interviewType: 'OPEN_SOURCE_BUG_FIX',
+      meetingType: 'DIRECT_VIDEO_CALL',
+      scheduledAt: null,
+      assessmentSetup: {
+        status: 'reviewable_task_assigned',
+        kind: 'manual_open_source_task',
+        source: 'recruiter_manual_override',
+        blocksPositiveAssessment: false,
+        message: 'A concrete open-source task packet was assigned by the recruiter.',
+      },
+      assessmentProgress: {
+        session: {
+          id: 'assessment-session-verification-gap',
+          ingestionKey: 'assessment-session:verification-gap',
+          interviewId: 'interview-verification-gap',
+          candidateId: 'candidate-1',
+          workspaceId: 'workspace-1',
+          workspacePersonId: null,
+          applicationId: null,
+          mode: 'OPEN_SOURCE_BUG_FIX',
+          state: 'FINAL_SUBMITTED',
+          createdAt: '2026-06-23T00:00:00.000Z',
+          updatedAt: '2026-06-23T00:20:00.000Z',
+        },
+        stage: 'READY_FOR_EVALUATION',
+        nextAction: 'START_EVALUATION',
+        nextActionLabel: 'Start source-backed AI or human evaluation.',
+        readiness: {
+          status: 'READY_FOR_EVALUATION',
+          label: 'Ready for evaluation',
+          detail: 'Required evidence is captured, but commit provenance needs repository or workspace verification before final reliance.',
+          isReadyForEvaluation: true,
+          isUsableHiringSignal: false,
+          missingRequiredCount: 0,
+          required: [],
+          confidence: [
+            {
+              id: 'test_run',
+              label: 'Test or verification evidence',
+              required: false,
+              satisfied: true,
+              sourceRefTypes: ['test_run', 'verification_gap'],
+              missingImpact: 'Missing test evidence lowers confidence; an explicit verification gap is better than silence.',
+            },
+          ],
+        },
+        hasChallengePacket: true,
+        hasWorkEvidence: true,
+        hasMessageEvidence: false,
+        hasDevContainerEvidence: true,
+        hasToolUsageEvidence: true,
+        hasCommitSubmission: true,
+        hasFinalSubmission: false,
+        hasAiInteraction: false,
+        hasTranscriptEvidence: false,
+        hasTestEvidence: false,
+        hasVerificationGap: true,
+        evidenceCounts: [{ kind: 'commit_submission', count: 1 }],
+        sourceRefCounts: [
+          { kind: 'git_commit', count: 1 },
+          { kind: 'code_diff', count: 1 },
+          { kind: 'verification_gap', count: 1 },
+        ],
+        challenge: null,
+        latestEvent: {
+          id: 'assessment-event-verification-gap',
+          kind: 'commit_submission',
+          sequence: 2,
+          occurredAt: '2026-06-23T00:18:00.000Z',
+        },
+        commit: {
+          eventId: 'assessment-event-verification-gap',
+          repositoryUrl: 'https://github.com/open-source/widgets',
+          forkRepositoryUrl: 'https://github.com/candidate/widgets',
+          branchName: 'pipe-assessment/widgets',
+          baseCommitSha: '3333333333333333333333333333333333333333',
+          commitSha: '123456abcdef123456abcdef123456abcdef1234',
+          commitUrl: 'https://github.com/candidate/widgets/commit/123456abcdef123456abcdef123456abcdef1234',
+          changedFiles: [{ path: 'src/widget.ts', status: 'modified' }],
+          occurredAt: '2026-06-23T00:18:00.000Z',
+        },
+        evaluation: null,
+      },
+    });
+
+    const progress = screen.getByTestId('interview-card-assessment-progress');
+    expect(progress).toHaveTextContent('workspace telemetry, tool activity, commit, verification gap');
+    expect(progress).not.toHaveTextContent('tests');
+    expect(progress).not.toHaveTextContent('assessment-session-verification-gap');
+    expect(progress).not.toHaveTextContent('assessment-event-verification-gap');
+  });
+
   it('shows human assessment decision before evaluator recommendation without exposing ids', () => {
     renderCard({
       id: 'interview-evaluated',
