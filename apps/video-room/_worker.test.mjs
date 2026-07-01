@@ -22,7 +22,7 @@ describe('video room worker static assets', () => {
       }),
       env((assetRequest) => {
         const { pathname } = new URL(assetRequest.url);
-        if (pathname === '/index.html') {
+        if (pathname === '/') {
           return new Response(
             '<!doctype html><html><head><script type="module" src="/assets/index-new.js"></script></head></html>',
             { status: 200, headers: { 'Content-Type': 'text/html' } },

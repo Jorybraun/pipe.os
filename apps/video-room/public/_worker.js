@@ -246,9 +246,12 @@ async function recoverStaleAsset(request, env) {
   if (!targetExtension) return staleAssetResponse(request);
 
   const indexUrl = new URL(request.url);
-  indexUrl.pathname = '/index.html';
+  indexUrl.pathname = '/';
   indexUrl.search = '';
-  const indexResponse = await env.ASSETS.fetch(new Request(indexUrl.toString(), request));
+  const indexResponse = await env.ASSETS.fetch(new Request(indexUrl.toString(), {
+    method: 'GET',
+    headers: { Accept: 'text/html' },
+  }));
   if (indexResponse.status !== 200) return staleAssetResponse(request);
 
   const indexHtml = await indexResponse.text();

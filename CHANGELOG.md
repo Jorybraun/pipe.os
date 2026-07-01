@@ -115,7 +115,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Fixed — Video room
 
-- Room-dev now recovers stale hashed JS/CSS asset requests by serving the current deployed bundle from `index.html`, preventing cached room shells from blanking after rapid deploys.
+- Room-dev now recovers stale hashed JS/CSS asset requests by serving the current deployed bundle from the active room shell, preventing cached room shells from blanking after rapid deploys.
 - Workspace launch now has an explicit host opt-in for starting the real Devin bridge and sends `agentType: "devin"` only when selected, so Agent agent chat remains honest instead of implying a fake assistant.
 - Workspace finalization now refuses dirty or untracked working trees before submitting `HEAD`, preventing uncommitted VS Code edits from being hidden behind an older assessment-branch commit.
 - Room metadata now returns `videoEnabled`, `workspaceEnabled`, `recordingEnabled`, and `agentEnabled` feature flags matching the frontend contract, preventing Agent or recording controls from silently falling back around stale short-form keys.
