@@ -129,6 +129,7 @@ async function expectPersonProfileDecision(page: Page): Promise<void> {
     const coverage = page.getByTestId('person-interaction-coverage');
     await expect(coverage).toBeVisible();
     await expect(coverage).toContainText('Person-level rollup', { timeout: 45_000 });
+    await expect(coverage).toContainText('Open a row only when you need the single-meeting source record.');
     const normalizedCoverage = ((await coverage.textContent()) ?? '').replace(/\s+/g, ' ');
     expect(normalizedCoverage).toMatch(/[1-9][0-9]*\s*code\s*reviews?/i);
     expect(normalizedCoverage).toMatch(/[1-9][0-9]*\s*calls?\s*or\s*meetings?/i);

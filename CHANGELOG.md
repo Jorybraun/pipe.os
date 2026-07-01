@@ -26,6 +26,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Fixed — CODE_REVIEW assessment runtime
 
+- Person-profile CODE_REVIEW browser smoke now asserts the relationship timeline boundary copy, keeping same-person interactions useful as context without implying the profile owns every meeting row by default.
 - CODE_REVIEW recruiter browser smoke now proves interview and person source-proof drawers stay collapsed by default, preserving source traceability without reopening noisy raw evidence in the hiring-manager readout.
 - Person-profile CODE_REVIEW browser smoke now asserts the deployed hiring cockpit renders recommendation, assessment validity, uncertainty, missing context, and next action before accepting a person-rollup proof.
 - Recruiter CODE_REVIEW detail smoke now browser-asserts the hiring-manager trust model, including assignment trust, score validity, risk, and next action, so matched pages cannot silently fall back to unknown assignment provenance.
