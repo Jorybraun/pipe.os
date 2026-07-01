@@ -81,6 +81,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Fixed — CODE_REVIEW assessment runtime
 
+- CI matching-evaluation readiness now treats missing production secrets or corpus configuration as a loud non-blocking artifact on `main`, while still failing CI for configured production readiness failures.
 - CODE_REVIEW app-dev smokes now fail immediately if `/rpc/get-challenge` returns candidate-visible `WAITING_FOR_MATCH`, ensuring transient matching dashboards cannot pass the ready-assessment proof after a later assignment appears.
 - The role-backed app-dev CODE_REVIEW smoke script now expects the ready automatic-match path, keeping the packaged proof command aligned with the current `/assess` behavior while the blocked smoke remains the explicit no-assignment handoff gate.
 - Recruiter interview list and detail projections now use the candidate's role-backed CODE_REVIEW assignment as the effective repo/PR when the scheduled interview row has not been denormalized yet, keeping the hiring-manager readout aligned with the candidate assessment runtime and preserving `candidate_challenge_assignment` as the setup source.
