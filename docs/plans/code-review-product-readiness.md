@@ -43,14 +43,17 @@ through the candidate Welcome gate, and verified recruiter-visible role source
 evidence plus a `candidate_role_repo_alignment` person-role-repo hyperedge.
 
 Local validation on 2026-06-27 also proved the full-submit smoke no longer
-relies on the browser to create hidden assessment state. The smoke now observes
-the initial `WAITING_FOR_MATCH` stage config, polls until the role-backed
-CODE_REVIEW challenge is ready, replays `/rpc/get-stage-config` to materialize
-the assessment row, then initializes the review session and verifies recruiter
-and judge-example outputs. A passing local proof selected `mui/base-ui#973`,
-rendered the browser smoke, completed a `request_changes` review, stored a
-judge example with `human_label_queue` and `cross_model_calibration`, and
-reported recruiter-visible validator approval plus four evidence hyperedges.
+relies on the browser to create hidden assessment state. Ready-assignment
+smokes may observe internal transient matching readiness while the source-backed
+PR assignment is being prepared, but blocked standalone CODE_REVIEW handoffs
+must return the candidate-safe `PROFILE_RECEIVED` / `candidate-intake-queued`
+state instead of a candidate-visible matching screen. Once the challenge is
+ready, the smoke replays `/rpc/get-stage-config` to materialize the assessment
+row, initializes the review session, and verifies recruiter and judge-example
+outputs. A passing local proof selected `mui/base-ui#973`, rendered the browser
+smoke, completed a `request_changes` review, stored a judge example with
+`human_label_queue` and `cross_model_calibration`, and reported
+recruiter-visible validator approval plus four evidence hyperedges.
 
 The same full-submit smoke family now passes against deployed app-dev after
 deploying `pipe-api-dev` and `pipe-app-dev`. The latest manual app-dev proof

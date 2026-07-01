@@ -26,6 +26,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Fixed — CODE_REVIEW assessment runtime
 
+- The local repo-matching test skill and product-readiness playbook now document the current `/assess` boundary: ready CODE_REVIEW assignments render the challenge, while blocked standalone handoffs must stop at `PROFILE_RECEIVED` / `candidate-intake-queued` instead of teaching agents to wait inside a matching screen.
 - Recruiter CODE_REVIEW detail smoke now rejects the stale “Do not advance from this signal yet” person-profile recommendation and accepts the assignment-fairness review wording instead, keeping deployed browser proof aligned with the current hiring-manager decision model.
 - The deployed CODE_REVIEW smoke now hard-fails blocked standalone handoffs that return candidate-visible `WAITING_FOR_MATCH`, preserving the `/assess` boundary by requiring the candidate-safe `PROFILE_RECEIVED` queued state instead.
 - Candidate `/assess` now preserves queued standalone CODE_REVIEW handoffs as a first-class “Profile received” state when the server returns `candidate-intake-queued`, keeping candidates out of the old matching dashboard and making it clear they are done until a source-backed review is assigned.
