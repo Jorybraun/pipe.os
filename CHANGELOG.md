@@ -18,7 +18,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Fixed — Open-source assessment progress
 
-- Role-backed CODE_REVIEW matching now proceeds once candidate ingestion has produced matchable source-backed evidence, while still deferring candidates with no usable evidence.
+- Role-backed CODE_REVIEW matching now proceeds once active candidate ingestion has advanced past resume decomposition and produced matchable source-backed evidence, while still deferring candidates with no usable evidence.
 - Person-profile code-review decision cards now label proven match bridges as source-backed matches instead of vague bridge counts.
 - Recruiter interview cards now translate source-backed assessment evaluator recommendation enums into hiring-manager-readable next actions.
 - CODE_REVIEW readiness diagnostics now distinguish active resume decomposition from terminal evidence gaps without blocking matching once usable evidence exists.
