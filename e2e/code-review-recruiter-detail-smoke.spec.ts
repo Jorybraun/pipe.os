@@ -1,4 +1,4 @@
-import { expect, test, type Page } from '@playwright/test';
+import { expect, test, type Locator, type Page } from '@playwright/test';
 
 function envText(primaryName: string, legacyName: string, fallback = ''): string {
   return (process.env[primaryName] ?? process.env[legacyName] ?? fallback).trim();
@@ -65,6 +65,12 @@ function expectedRepoLabel(repoUrl: string): string | null {
   }
 }
 
+async function expectDetailsClosed(details: Locator): Promise<void> {
+  await expect(details).toBeVisible();
+  const isOpen = await details.evaluate((node) => (node as HTMLDetailsElement).open);
+  expect(isOpen).toBe(false);
+}
+
 async function expectHumanDecisionState(page: Page): Promise<void> {
   if (!EXPECT_HUMAN_DECISION_FORM && !EXPECT_HUMAN_DECISION) return;
 
@@ -109,6 +115,9 @@ async function expectPersonProfileDecision(page: Page): Promise<void> {
   await expect(personDecision).toContainText('Uncertainty');
   await expect(personDecision).toContainText('Missing context');
   await expect(personDecision).toContainText('Next action');
+  const personSourceProof = page.getByTestId('person-code-review-source-proof');
+  await expect(personSourceProof).toContainText('Source proof');
+  await expectDetailsClosed(personSourceProof);
   if (EXPECT_SCORE) {
     await expect(personDecision).toContainText('Score provenance');
     await expect(personDecision).toContainText(/rubric dimensions?/);
@@ -327,6 +336,8 @@ test.describe('Feature: assessment recruiter detail smoke', () => {
     await expect(explanation).toContainText('Valid because');
     await expect(explanation).toContainText('Do not over-trust because');
     await expect(explanation).toContainText('Remaining question');
+    const sourceProof = page.locator('details', { hasText: 'Source proof' }).first();
+    await expectDetailsClosed(sourceProof);
     await expect(page.getByTestId('interview-code-review-match')).toBeVisible();
     await expect(page.getByTestId('interview-code-review-match')).toContainText('MATCHED');
     if (EXPECT_SUBMISSION) {
