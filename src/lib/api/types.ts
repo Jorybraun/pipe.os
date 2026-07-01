@@ -2241,3 +2241,52 @@ export interface UnifiedMatchReport {
   generatedAt: string;
   pipelineVersion: string;
 }
+
+// ── Graph Traversal ─────────────────────────────────────────────────────────
+
+export type GraphEntityType =
+  | 'person'
+  | 'workspace_person'
+  | 'interaction'
+  | 'artifact'
+  | 'assertion'
+  | 'concept'
+  | 'signal_evidence'
+  | 'source_span'
+  | 'match_run';
+
+export interface GraphNode {
+  id: string;
+  entityType: GraphEntityType;
+  label: string;
+  metadata: Record<string, unknown>;
+  depth: number;
+}
+
+export interface GraphEdge {
+  fromId: string;
+  fromType: GraphEntityType;
+  toId: string;
+  toType: GraphEntityType;
+  relationship: string;
+  sourceEvidence: EdgeSourceEvidence | null;
+}
+
+export interface EdgeSourceEvidence {
+  sourceSpanId: string | null;
+  exactText: string | null;
+  confidence: number | null;
+}
+
+export interface GraphTraversalResult {
+  root: GraphNode;
+  nodes: GraphNode[];
+  edges: GraphEdge[];
+  truncated: boolean;
+}
+
+export interface GraphTraversalOptions {
+  maxDepth?: number;
+  maxNodes?: number;
+  entityTypeFilter?: GraphEntityType[];
+}

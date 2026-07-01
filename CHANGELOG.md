@@ -7,6 +7,16 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Added — Graph traversal engine (criterion #7)
+
+- `graphTraversal.ts`: BFS-based graph traversal engine for the living context entity graph. Starts from any entity type (person, workspace_person, interaction, artifact, assertion, concept, signal_evidence, source_span, match_run) and walks connected entities up to configurable depth/maxNodes. Every edge carries source evidence (sourceSpanId, exactText, confidence) for full explainability. Deduplicates nodes and edges, supports entity type filtering, and sets a truncated flag when maxNodes is exceeded.
+- `GET /:candidateId/living-context/graph-traversal?entityType=...&entityId=...`: API endpoint for graph traversal. Accepts optional `maxDepth` (0-5), `maxNodes` (1-500), and `entityTypeFilter` (comma-separated). Gated by `living_context_read`.
+- `useGraphTraversal` hook: Frontend data hook with `traverse(entityType, entityId, options?)` for on-demand graph exploration. Supports initial auto-fetch and manual re-traversal.
+- `graphTraversal.test.ts`: 13-test suite covering all entity type starting points, depth control, entity type filtering, maxNodes truncation, edge deduplication, source evidence propagation, and not-found handling.
+- `useGraphTraversal.test.ts`: 5-test hook suite covering null candidateId, initial fetch, manual traverse with options, error handling, and state clearing.
+- E2E integration test in `fullPipelineE2E.test.ts`: Verifies graph traversal against real ingested meeting transcript data — workspace_person → interaction → artifact → source_span chain with source evidence on edges, entity type filtering, and maxNodes truncation.
+- Frontend types: `GraphEntityType`, `GraphNode`, `GraphEdge`, `EdgeSourceEvidence`, `GraphTraversalResult`, `GraphTraversalOptions` added to `src/lib/api/types.ts`.
+
 ### Added — Unified match report pipeline (criteria #5, #6, #7, #8)
 
 - `matchReportPipeline.ts`: Single orchestrator that chains confidence scoring, gap analysis, staleness alerts, provenance chains, and decision history into one comprehensive `UnifiedMatchReport`. Computes a `MatchVerdict` (strong_match/likely_match/needs_review/weak_match/insufficient_evidence) with score adjustments for staleness and gap penalties.

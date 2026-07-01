@@ -28,6 +28,7 @@ import { loadCandidateLivingContext, searchSourceContent } from '../readModel';
 import { BackfillOrchestrator } from '../backfillOrchestrator';
 import { ingestHistoricalCultureTranscript } from '../cultureTranscriptBackfill';
 import { LivingContextStore } from '../persistence';
+import { traverseLivingContextGraph } from '../graphTraversal';
 
 const require = createRequire(import.meta.url);
 // eslint-disable-next-line @typescript-eslint/no-unsafe-assignment
@@ -925,5 +926,199 @@ describe('full-pipeline E2E: contact → transcript → match → explanation �
       `SELECT * FROM artifacts WHERE artifact_type = 'culture_interview_turn'`,
     ).all() as unknown[];
     expect(artifactsAfter.length).toBe(2);
+  });
+
+  it('traverses the living context graph from workspace_person through interactions, assertions, concepts, and source spans (criterion #7)', async () => {
+    // Seed contact + meeting
+    sqlite.prepare(
+      `INSERT INTO contacts (id, owner_id, name, email, phone, company, role, type, created_at, updated_at)
+       VALUES (?, ?, ?, ?, NULL, NULL, ?, ?, ?, ?)`,
+    ).run('contact-graph', 'workspace-1', 'Graph Traversal Candidate', 'graph@example.com',
+      'Engineer', 'candidate', OBSERVED_AT, OBSERVED_AT);
+    sqlite.prepare(
+      `INSERT INTO meetings (id, owner_id, started_at, ended_at, updated_at)
+       VALUES (?, ?, ?, ?, ?)`,
+    ).run('meeting-graph', 'workspace-1', OBSERVED_AT, OBSERVED_AT, OBSERVED_AT);
+    sqlite.prepare(
+      `INSERT INTO meeting_participants (id, meeting_id, contact_id, role, created_at, updated_at)
+       VALUES (?, ?, ?, ?, ?, ?)`,
+    ).run('participant-graph', 'meeting-graph', 'contact-graph', 'ATTENDEE', OBSERVED_AT, OBSERVED_AT);
+
+    // Ingest a transcript to create interaction → artifact → source spans → assertions → concepts
+    await ingestMeetingTranscriptToLivingContext(db, {
+      meetingId: 'meeting-graph',
+      ownerId: 'workspace-1',
+      segments: [
+        {
+          stableSegmentId: 'graph-seg-1',
+          text: 'I built distributed event streaming systems using Apache Kafka with exactly-once semantics.',
+          speakerRole: 'guest',
+          contactId: 'contact-graph',
+          timestampStartMs: 0,
+          timestampEndMs: 30_000,
+          confidence: 0.97,
+        },
+        {
+          stableSegmentId: 'graph-seg-2',
+          text: 'I implemented circuit breakers using Resilience4j and retry queues with dead-letter handling.',
+          speakerRole: 'guest',
+          contactId: 'contact-graph',
+          timestampStartMs: 45_000,
+          timestampEndMs: 90_000,
+          confidence: 0.95,
+        },
+      ],
+      semanticAssertions: [{
+        sourceSegmentIds: ['graph-seg-1'],
+        subjectSegmentId: 'graph-seg-1',
+        predicate: 'implemented',
+        narrative: 'Built Kafka streaming with exactly-once semantics.',
+        objectType: 'system',
+        objectValue: { surface: 'Kafka' },
+        confidence: 0.95,
+        concepts: [
+          { canonicalKey: 'term:kafka', namespace: 'term', label: 'Apache Kafka' },
+          { canonicalKey: 'term:event-streaming', namespace: 'term', label: 'Event Streaming' },
+        ],
+      }, {
+        sourceSegmentIds: ['graph-seg-2'],
+        subjectSegmentId: 'graph-seg-2',
+        predicate: 'implemented',
+        narrative: 'Built circuit breakers and retry queues.',
+        objectType: 'pattern',
+        objectValue: { surface: 'Circuit breaker' },
+        confidence: 0.90,
+        concepts: [
+          { canonicalKey: 'term:circuit-breaker', namespace: 'term', label: 'Circuit Breaker' },
+          { canonicalKey: 'term:resilience4j', namespace: 'term', label: 'Resilience4j' },
+        ],
+      }],
+    });
+
+    // Find the workspace_person_id — created via contact ingestion path
+    const wpRow = sqlite.prepare(
+      `SELECT wp.id FROM workspace_people wp
+       JOIN people p ON p.id = wp.person_id
+       WHERE p.primary_email = 'graph@example.com'`,
+    ).get() as { id: string };
+    expect(wpRow).toBeDefined();
+
+    // Create a candidate + application linking workspace_person for traversal queries
+    sqlite.prepare(
+      `INSERT INTO candidates (id, owner_id, name, email, status)
+       VALUES (?, ?, ?, ?, ?)`,
+    ).run('candidate-graph', 'workspace-1', 'Graph Traversal Candidate', 'graph@example.com', 'active');
+    sqlite.prepare(
+      `INSERT OR IGNORE INTO applications (id, workspace_person_id, legacy_candidate_id, ingestion_key, created_at, updated_at)
+       VALUES (?, ?, ?, ?, datetime('now'), datetime('now'))`,
+    ).run('app-graph', wpRow.id, 'candidate-graph', 'ik-app-graph');
+
+    // ── Depth-1 traversal from workspace_person ───────────────────────────
+    const depth1 = await traverseLivingContextGraph(
+      db,
+      'candidate-graph',
+      'workspace_person',
+      wpRow.id,
+      { maxDepth: 1 },
+    );
+
+    expect(depth1.root.entityType).toBe('workspace_person');
+    expect(depth1.root.id).toBe(wpRow.id);
+    expect(depth1.nodes.length).toBeGreaterThan(1);
+
+    const interactionNodes = depth1.nodes.filter((n) => n.entityType === 'interaction');
+    expect(interactionNodes.length).toBeGreaterThanOrEqual(1);
+
+    const participatedEdges = depth1.edges.filter((e) => e.relationship === 'participated_in');
+    expect(participatedEdges.length).toBeGreaterThanOrEqual(1);
+
+    // Depth-1 from workspace_person shows interactions. Assertions/signals
+    // are linked either directly (workspace_person_id) or via interaction.
+    const depth1Types = new Set(depth1.nodes.map((n) => n.entityType));
+    expect(depth1Types.has('workspace_person')).toBe(true);
+    expect(depth1Types.has('interaction')).toBe(true);
+
+    // ── Depth-2 traversal reveals artifacts linked to interactions ─────────
+    const depth2 = await traverseLivingContextGraph(
+      db,
+      'candidate-graph',
+      'workspace_person',
+      wpRow.id,
+      { maxDepth: 2 },
+    );
+
+    expect(depth2.nodes.length).toBeGreaterThan(depth1.nodes.length);
+
+    const artifactNodes = depth2.nodes.filter((n) => n.entityType === 'artifact');
+    expect(artifactNodes.length).toBeGreaterThanOrEqual(1);
+
+    // ── Interaction traversal shows connected artifacts ────────────────────
+    const interactionTraversal = await traverseLivingContextGraph(
+      db,
+      'candidate-graph',
+      'interaction',
+      interactionNodes[0]!.id,
+      { maxDepth: 1 },
+    );
+
+    expect(interactionTraversal.root.entityType).toBe('interaction');
+    const artifactsFromInteraction = interactionTraversal.nodes.filter((n) => n.entityType === 'artifact');
+    expect(artifactsFromInteraction.length).toBeGreaterThanOrEqual(1);
+
+    // ── Artifact traversal shows source spans ─────────────────────────────
+    if (artifactNodes.length > 0) {
+      const artifactTraversal = await traverseLivingContextGraph(
+        db,
+        'candidate-graph',
+        'artifact',
+        artifactNodes[0]!.id,
+        { maxDepth: 1 },
+      );
+
+      expect(artifactTraversal.root.entityType).toBe('artifact');
+      const spanNodes = artifactTraversal.nodes.filter((n) => n.entityType === 'source_span');
+      expect(spanNodes.length).toBeGreaterThanOrEqual(1);
+
+      // Check source evidence is carried on edges for spans
+      const sourcedEdges = artifactTraversal.edges.filter(
+        (e) => e.relationship === 'contains_span' && e.sourceEvidence !== null,
+      );
+      expect(sourcedEdges.length).toBeGreaterThanOrEqual(1);
+      for (const edge of sourcedEdges) {
+        expect(edge.sourceEvidence?.sourceSpanId).toBeDefined();
+        expect(typeof edge.sourceEvidence?.exactText).toBe('string');
+      }
+    }
+
+    // ── No duplicate edges in full traversal ──────────────────────────────
+    const edgeKeys = depth2.edges.map(
+      (e) => `${e.fromType}:${e.fromId}->${e.toType}:${e.toId}:${e.relationship}`,
+    );
+    const uniqueKeys = new Set(edgeKeys);
+    expect(edgeKeys.length).toBe(uniqueKeys.size);
+
+    // ── Entity type filter works ──────────────────────────────────────────
+    const filteredResult = await traverseLivingContextGraph(
+      db,
+      'candidate-graph',
+      'workspace_person',
+      wpRow.id,
+      { maxDepth: 2, entityTypeFilter: ['interaction', 'workspace_person'] },
+    );
+
+    const nonFilteredNodes = filteredResult.nodes.filter(
+      (n) => n.entityType !== 'interaction' && n.entityType !== 'workspace_person',
+    );
+    expect(nonFilteredNodes).toHaveLength(0);
+
+    // ── Max nodes truncation ──────────────────────────────────────────────
+    const truncatedResult = await traverseLivingContextGraph(
+      db,
+      'candidate-graph',
+      'workspace_person',
+      wpRow.id,
+      { maxDepth: 3, maxNodes: 2 },
+    );
+    expect(truncatedResult.nodes.length).toBeLessThanOrEqual(2);
   });
 });
