@@ -270,7 +270,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - Meeting transcript living-context ingestion now skips only concept-adjacency persistence when partial schemas lack the adjacency table, preserving source-backed transcript and assessment evidence during staged rollout.
 - Repo-task assessment evaluation now repairs bare-key JSON object responses from Workers AI before validating source-backed claims, preventing matched open-source assessments from becoming diagnostics when the model returns JavaScript-style object syntax.
 - Interview detail assessment progress now renders the source-backed open-source challenge contract, including repo, base commit, task, success criteria, and expected evidence, so recruiters can review the actual assignment instead of a one-line challenge summary.
-- Assessment progress readouts now distinguish chat, workspace telemetry, and room action evidence instead of collapsing every captured interaction into a vague work-evidence bucket.
+- Assessment progress readouts now distinguish chat, workspace telemetry, and tool activity evidence instead of collapsing every captured interaction into a vague work-evidence bucket.
 - Recruiter assessment reports now separate required proof from confidence signals, making the challenge/commit/diff proof chain visible apart from optional tests, terminal, editor, and AI-use coverage.
 - Source-backed assessment progress now exposes evaluator claim previews, and recruiter reports render those claims with polarity, dimension, confidence, and source-ref counts/types.
 - Open-source workspace interviews now lead with a hiring-manager assessment decision readout for decision, challenge fit, required proof, risk, and next action before exposing raw progress evidence.
@@ -848,15 +848,15 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - Historical layout events required source-backed surface, menu, lifecycle, data, state, or workspace observer evidence before local optimistic state or peer replay could change shared layout state.
 - Assessment file-manager opens now preserve `assessment_file_system` lifecycle provenance, and `.link` file opens emit source-specific browser navigation evidence instead of being flattened into generic layout launches.
 - Assessment browser reload and external-open clicks now emit source-backed browser navigation evidence, so repeated or blocked-site browsing remains synced and replayable across shared layout sessions.
-- Agent/Devin bridge evidence now carries a hashed Devin API run reference through prompt handoffs, API responses, room actions, browser fallbacks, and source refs so real agent interactions remain joinable without exposing raw provider session ids.
-- Agent/Devin room-action suggestions now require explicit `agent_stdout` or `agent_api_response` bridge source metadata before rendering as executable layout actions, preventing source-less action hints from implying real agent provenance.
+- Agent/Devin bridge evidence now carries a hashed Devin API run reference through prompt handoffs, API responses, browser fallbacks, and source refs so real agent interactions remain joinable without exposing raw provider session ids.
+- Agent/Devin control suggestions no longer render as executable layout controls, preventing source-less action hints from implying real agent provenance.
 - Agent/Devin chat replies now require bridge-observed timestamps and persistence state before rendering as agent messages, preventing source-thin responses from being shown as real Devin output.
 - Dev-container sessions now clear stale live error messages when the real container recovers to a non-error state, while preserving the original failure as immutable assessment evidence.
 - Blocked Agent chat submits now stay typeable and persist replayable source-backed non-delivery evidence with exact prompt text, prompt fingerprint, and readiness reason instead of silently disabling the input or implying Devin received the message.
 - Failed video-room recording stops now broadcast and persist source-backed browser failure stage/source/message facts, while vague failed recording states are rejected instead of entering the evidence graph.
 - Candidate ingestion status now queues a source-backed retry for stale Workers AI model failures, so the challenge wait screen can recover from deprecated-model errors instead of replaying an old terminal failure.
-- Agent room-action routing now rejects unsupported bridge action shapes instead of relabeling old agent suggestions as human prompt actions, while still allowing file-change observations to offer a user-clicked workspace prompt.
-- Agent/Devin can now use a real Devin service-user API session from the dev-container bridge, preserving API replies and room-action suggestions as `agent_api_response` source-backed evidence instead of requiring CLI login or relabeling API output as stdout.
+- Agent control routing now rejects unsupported bridge control shapes instead of relabeling old agent suggestions as human prompt actions, while still allowing file-change observations to offer a user-clicked workspace prompt.
+- Agent/Devin can now use a real Devin service-user API session from the dev-container bridge, preserving API replies as `agent_api_response` source-backed evidence instead of requiring CLI login or relabeling API output as stdout.
 - Candidate dev-container launches now pass the real Devin bridge configuration into the server-side container init payload without returning secrets to the browser, keeping Agent chat eligible for real-agent operation outside meeting-room launches.
 - Dev-container expiry/manual teardown now marks intentional container stops before destroy, preventing normal `EXPIRED` sessions from retaining false "container stopped unexpectedly" diagnostics in UI and evidence projections.
 - Agent/Devin bridge diagnostics, auth/status messages, room-action text, and real stdout fallback evidence now redact service tokens, bearer tokens, room tokens, and secret query parameters before browser evidence, Durable Object broadcast/storage, or session-event persistence; secret-bearing agent chat is rejected instead of rewriting fingerprinted evidence.
@@ -882,12 +882,12 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - Agent chat now shows a live bridge readiness checklist for workspace, WebSocket, agent identity, state, and capabilities with distinct status dots, so disabled Devin chat is diagnosable without enabling fake or source-less messages.
 - Host recording start/stop/upload state now persists through the room Durable Object, with source-backed MediaRecorder provenance replayable into session evidence instead of remaining host-local UI state.
 - Historical panel-state evidence preserved whether state changes came from the assistant control or panel control instead of collapsing every update to a generic room source.
-- Historical agent-opened assessment tools persisted lifecycle evidence with `lifecycleSource: agent_action` instead of misattributing those opens to direct layout UI clicks.
+- Historical agent-opened assessment tools persisted explicit lifecycle evidence instead of misattributing those opens to direct layout UI clicks.
 - Agent’s Devin login terminal button now records `open-devin-auth-terminal` evidence instead of the generic `open-terminal` action id.
 - Agent’s browser-based Devin auth button now records `open-devin-auth-browser` evidence instead of collapsing the click into a CLI auth recheck.
-- Room Chat’s assistant launcher records browser assistant-panel provenance instead of misattributing the Agent open action to the assessment layout.
+- Room Chat’s agent launcher records browser provenance instead of misattributing the Agent open action to the assessment layout.
 - Closing the Agent chat panel closes only the chat panel and persists a browser assistant-panel close action, keeping the assessment assistant entrypoint mounted for the next real-agent interaction.
-- Agent chat’s generic “Open Terminal” button now routes through source-backed `open-terminal` Agent action evidence before opening the shared terminal panel.
+- Agent chat’s generic “Open Terminal” button now records source-backed human UI intent before opening the terminal panel.
 - Agent “Check Devin auth” clicks now emit source-backed human UI action evidence before the bridge re-runs real Devin CLI auth preflight, keeping auth recovery intent separate from bridge diagnostics.
 - Agent auth-needed chat now includes a real “Check Devin auth” retry after terminal login, reusing the container bridge auth preflight so Devin only becomes ready after the CLI reports a stored login.
 - Summary-only meeting transcript analysis now strips model-produced semantic assertions from stored analysis JSON and records suppression metadata, preventing mixed-audio transcripts from leaving candidate-shaped claims outside the source-backed ingestion gate.
@@ -902,23 +902,23 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - Dev-container agent startup now requires an explicit supported `AGENT_TYPE` through the meeting launch path and bridge runtime instead of defaulting missing or unsupported agent configuration to Devin.
 - Agent chat UI now waits for an explicit container bridge agent identity before enabling chat or naming Devin, preventing the room surface from visually implying a fake agent is connected.
 - Browser-side Agent/Devin evidence builders now fail closed when bridge agent identity is missing, preventing room clients from defaulting source-less fallback/status evidence to `devin`.
-- Agent/Devin container diagnostics now fail closed when agent identity is missing, preventing the bridge helper from fabricating `devin` on source-less diagnostics, chat responses, or room-action evidence.
-- Agent/Devin agent replies and room-action suggestions now expose normalized browser prompt correlation refs in meeting-session context records and compact agent context summaries, so rebuildable hypergraph projections can join prompt, response, and action evidence without guessing.
-- Agent/Devin browser prompt correlation refs are now validated across HTTP session ingestion, Durable Object room sync, and replay projections, rejecting malformed agent-output/action evidence instead of accepting loose prompt-link JSON.
-- Real Agent/Devin stdout responses and room-action suggestions now preserve the browser prompt id that caused the bridge handoff, letting the hypergraph join user chat, stdin delivery diagnostics, agent output, and executed actions without guessing.
+- Agent/Devin container diagnostics now fail closed when agent identity is missing, preventing the bridge helper from fabricating `devin` on source-less diagnostics or chat responses.
+- Agent/Devin agent replies now expose normalized browser prompt correlation refs in meeting-session context records and compact agent context summaries, so rebuildable hypergraph projections can join prompt and response evidence without guessing.
+- Agent/Devin browser prompt correlation refs are now validated across HTTP session ingestion, Durable Object room sync, and replay projections, rejecting malformed agent-output evidence instead of accepting loose prompt-link JSON.
+- Real Agent/Devin stdout responses now preserve the browser prompt id that caused the bridge handoff, letting the hypergraph join user chat, stdin delivery diagnostics, and agent output without guessing.
 - Agent CHAT frames now carry a stable browser prompt id into the real dev-container bridge, and bridge handoff diagnostics preserve the same prompt reference after stdin delivery attempts for source-backed hypergraph correlation.
 - Agent user prompt evidence now distinguishes browser-queued CHAT frames from confirmed bridge delivery, and HTTP, Durable Object, and replay validators reject stale prompt evidence that claims bridge delivery.
 - Agent/Devin container bridge diagnostics now redact bare Cognition/Devin service-token strings before they can appear in chat, session events, or hypergraph evidence.
 - Agent user-prompt evidence now records browser-to-bridge CHAT submission without Devin attribution, and HTTP, Durable Object, and replay validators reject human prompts that stamp an agent identity.
 - Room assessment evidence now preserves explicit Agent/Devin bridge agent identity from `agent`/`agentName` metadata and leaves missing agent ids absent instead of defaulting assessment actors to Devin.
 - Agent UI action evidence from tray and prompt clicks now rejects any agent attribution server-side, keeping human Agent interactions separate from real Devin bridge evidence.
-- Agent/Devin bridge room-action validators now require the exact stdout tag source and `agent_room_action_tag` protocol across HTTP session events, Durable Object replay, graph replay, and the container bridge helper instead of accepting generic bridge-shaped action strings.
-- Agent tray actions no longer stamp Devin as the acting agent, and browser-executed Devin actions now require source-backed `ROOM_ACTION` bridge metadata before executing or persisting.
-- Agent/Devin browser bridge parsing now ignores `CHAT_RESPONSE` and `ROOM_ACTION` packets without explicit bridge-provided agent identity instead of defaulting them to Devin.
+- Agent bridge validators now reject executable UI-control claims across HTTP session events, Durable Object replay, graph replay, and the container bridge helper instead of accepting generic bridge-shaped strings.
+- Agent tray actions no longer stamp Devin as the acting agent, keeping human UI intent separate from real bridge evidence.
+- Agent/Devin browser bridge parsing now ignores `CHAT_RESPONSE` packets without explicit bridge-provided agent identity instead of defaulting them to Devin.
 - Meeting recording uploads now require explicit speaker-channel metadata before separate transcription audio can produce attributed transcript evidence; missing metadata stays summary-only instead of defaulting channel 0/1 to host/guest.
 - Agent/Devin room context summaries now include compact source refs for each session event, preserving candidate node ids, session refs, captured timestamps, and stable event ids inside the real Devin prompt context.
 - Code-server save/delete observations from the real Agent/Devin bridge now publish into a source-validated room activity log for replayable context-graph projection instead of existing only in one browser's direct session-event queue.
-- Agent/Devin user prompts, bridge status/replies, and room-action executions now publish into a source-validated room activity log for replayable context-graph projection instead of existing only in one browser's direct session-event queue.
+- Agent/Devin user prompts, bridge status, and bridge replies now publish into a source-validated room activity log for replayable context-graph projection instead of existing only in one browser's direct session-event queue.
 - Container terminal command/output events now publish into the room Durable Object, replay into context-graph projection, and reject source-less terminal claims instead of relying only on one browser's direct session-event POST.
 - Meeting transcript processing failures now append immutable assessment diagnostics with exact recording/transcription source keys and error provenance instead of living only in the mutable meeting row.
 - open-source assessment room room session evidence now stores the full stable browser/bridge event packet as the immutable `meeting_session_event` source text instead of reducing source refs to display text.
@@ -952,7 +952,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - Code-server editor-open evidence now requires browser iframe load provenance, workspace session context, and an explicit no-proxy-URL persistence marker before entering the meeting-session graph.
 - Recording start/stop evidence now requires host browser MediaRecorder provenance, lifecycle kind, speaker-channel metadata, and upload source facts before entering the meeting-session graph.
 - Agent/Devin user prompts now require source-backed browser chat evidence with bridge delivery, prompt ids, fingerprints, lengths, and workspace context before entering the meeting-session graph.
-- Agent action evidence now rejects source-less action claims and requires either source-backed tray/prompt UI metadata or real Devin bridge `ROOM_ACTION` provenance before entering the meeting-session graph.
+- Agent control evidence now rejects source-less UI-control claims before entering the meeting-session graph.
 - open-source assessment room room chat browser submissions now use source-backed chat evidence with shared-room message ids, client ids, delivery status, message timing, surface, and room phase before entering the meeting-session graph.
 - open-source assessment room terminal command/output evidence now requires browser terminal WebSocket provenance, deterministic command/output ids, fingerprints, lengths, and workspace context before entering the meeting-session graph.
 - Assessment panel open/close and state updates now require source-backed lifecycle/state metadata before entering meeting-session evidence, and already-open tool clicks restore focus through source-backed room state.
@@ -973,7 +973,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - The VideoRoom Durable Object now accepts host and guest room activity through the same assessment path instead of rejecting guest updates.
 - Agent/Devin chat now opens from the assessment assistant control even before the workspace is ready, clearly distinguishes real Devin availability from Room Chat, and lets users restore Agent after dismissing the prompt.
 - The video-room package now owns its Agent/Assessment component test harness, preventing duplicate React renderers from invalidating the real-agent chat tests.
-- Opening or closing the assessment assistant now emits source-backed `agent_action` evidence as human UI actions without claiming a Devin response.
+- Opening or closing the assessment agent now emits source-backed human UI lifecycle evidence without claiming a Devin response.
 - Video-room session evidence now requeues non-OK API writes and drains queued events with Beacon/keepalive on page unload so short-lived Assessment interactions are less likely to disappear before persistence.
 - The session-events API now accepts Beacon-style `text/plain` JSON and returns non-OK when persistence fails, letting the room client retry instead of dropping uncaptured evidence.
 - Dev-container workspace launches now pass the Worker `DEVIN_API_KEY` secret into the container as server-side init data for the real Agent/Devin bridge without exposing the key in candidate-facing room responses.
@@ -1009,11 +1009,11 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - open-source assessment room workspace state events now preserve source-backed dev-container diagnostics, including session id, status, repo context, TTL, and error message, without persisting room-token proxy paths.
 - Agent/Devin bridge status transitions now persist as source-backed meeting-session evidence, including real auth-required/disconnected states instead of simulated agent availability.
 - Agent/Devin chat evidence now distinguishes real Devin stdout from bridge diagnostics and file-watcher observations, so auth-required and container-observed events are not recorded as fabricated Devin replies.
-- Agent/Devin room actions now preserve their origin, bridge event type, action protocol, agent name, execution role, and stdout-tag source in `agent_action` evidence, distinguishing real Devin-driven layout actions from local prompt-button nudges.
+- Agent/Devin bridge outputs now preserve their origin, bridge event type, agent name, and stdout source in evidence, distinguishing real Devin output from local prompt-button nudges.
 - Agent/Devin process diagnostics now broadcast bounded, redacted stderr, context-primer failures, process exits, and startup errors into `ai_agent_status` evidence with diagnostic source, observed time, exit code, and signal metadata.
 - Agent/Devin prompt handoffs now persist bridge diagnostics for real context-primer and chat-prompt delivery into Devin stdin, including delivery status, context status, and redacted fingerprints/lengths without storing raw prompt text.
 - Agent/Devin bridge diagnostics, prompt handoffs, and real Devin stdout now post token-scoped `session-events` directly from the dev container before broadcasting to browsers, with browser fallback only when bridge persistence fails.
-- Agent/Devin room-action suggestions now persist directly from the bridge as source-backed `agent_action` suggestion events, while browser execution evidence links back to the persisted suggestion metadata.
+- Agent/Devin bridge responses now persist directly from the bridge as source-backed chat/status evidence, while browser workspace evidence remains separate.
 - Code-server workspace file create/modify/delete events are now observed by the container bridge and captured as source-backed `file_change` meeting-session evidence with path, hash, size, and bounded text preview when available.
 - Dev containers can now post token-scoped room `session-events` directly in dev without the browser Basic Auth proxy, so code-server workspace evidence persists through the same room-token validation path as room context.
 

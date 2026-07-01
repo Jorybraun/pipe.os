@@ -5,7 +5,6 @@ const {
   agentDiagnosticMessage,
   agentDiagnosticSessionEvent,
   agentChatSessionEvent,
-  agentRoomActionSessionEvent,
   agentPromptHandoffDiagnosticMessage,
   boundedDiagnosticText,
   isAgentAuthFailureText,
@@ -80,14 +79,6 @@ describe('agent diagnostics', () => {
       observedAt: '2026-06-27T21:05:00.000Z',
     })).toBeNull();
 
-    expect(agentRoomActionSessionEvent({
-      action: {
-        action: 'open-terminal',
-        source: 'agent_stdout',
-        protocol: 'agent_room_action_tag',
-      },
-      observedAt: '2026-06-27T21:10:00.000Z',
-    })).toBeNull();
   });
 
   it('builds source-marked agent diagnostic messages', () => {
@@ -311,83 +302,6 @@ describe('agent diagnostics', () => {
         agentRunExternalSessionHash: 'sha256:1234abcd',
       },
     });
-  });
-
-  it('builds source-backed session events for real Devin room action suggestions', () => {
-    expect(agentRoomActionSessionEvent({
-      agent: 'devin',
-      action: {
-        action: 'open-terminal',
-        label: 'Open Terminal',
-        text: 'Open a terminal so we can inspect the failure TOKEN=secret',
-        source: 'agent_stdout',
-        protocol: 'agent_room_action_tag',
-        autoExecute: false,
-        browserPromptId: 'workspace-123:guest:prompt:1782603900000:agent_0123abcd',
-        browserPromptFingerprint: 'agent_0123abcd',
-        browserPromptTimestamp: 1782603900000,
-        browserPromptLength: 24,
-        agentRuntime: 'api',
-        agentRunProvider: 'devin_api',
-        agentRunId: 'devin-api:1234abcd',
-        agentRunExternalSessionHash: 'sha256:1234abcd',
-      },
-      observedAt: '2026-06-27T21:10:00.000Z',
-    })).toEqual({
-      type: 'agent_action',
-      text: 'devin suggested room action: open-terminal',
-      actor: 'agent',
-      properties: {
-        source: 'agent_bridge',
-        origin: 'agent',
-        executionStatus: 'suggested',
-        actionId: 'open-terminal',
-        actionSource: 'agent_stdout',
-        actionProtocol: 'agent_room_action_tag',
-        bridgeEventType: 'ROOM_ACTION',
-        agent: 'devin',
-        agentActionLabel: 'Open Terminal',
-        agentActionText: 'Open a terminal so we can inspect the failure TOKEN=[REDACTED_SECRET]',
-        autoExecute: false,
-        url: null,
-        browserPromptId: 'workspace-123:guest:prompt:1782603900000:agent_0123abcd',
-        browserPromptFingerprint: 'agent_0123abcd',
-        browserPromptTimestamp: 1782603900000,
-        browserPromptLength: 24,
-        agentRuntime: 'api',
-        agentRunProvider: 'devin_api',
-        agentRunId: 'devin-api:1234abcd',
-        agentRunExternalSessionHash: 'sha256:1234abcd',
-        observedAt: '2026-06-27T21:10:00.000Z',
-        capturedAtMs: 1782594600000,
-        agentActionEventId: 'agent-action:agent:1782594600000:agent_bridge:agent:suggested:open-terminal',
-        bridgePersisted: true,
-      },
-    });
-  });
-
-  it('does not fabricate source metadata for incomplete room action suggestions', () => {
-    expect(agentRoomActionSessionEvent({
-      agent: 'devin',
-      action: {
-        action: 'open-terminal',
-        label: 'Open Terminal',
-        text: 'Open a terminal so we can inspect the failure.',
-      },
-      observedAt: '2026-06-27T21:10:00.000Z',
-    })).toBeNull();
-
-    expect(agentRoomActionSessionEvent({
-      agent: 'devin',
-      action: {
-        action: 'open-terminal',
-        label: 'Open Terminal',
-        text: 'Open a terminal so we can inspect the failure.',
-        source: 'agent_stdout',
-        protocol: 'bridge_actions_field',
-      },
-      observedAt: '2026-06-27T21:10:00.000Z',
-    })).toBeNull();
   });
 
   it('redacts real Devin stdout before building response ids and lengths', () => {

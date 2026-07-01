@@ -11,7 +11,6 @@ export type SessionEventType =
   | 'file_change'
   | 'media_control'
   | 'workspace_state'
-  | 'agent_action'
   | 'recording_start'
   | 'recording_stop'
   | 'code_editor_open'

@@ -148,60 +148,6 @@ describe('hasSourceBackedAgentInteractionEvidence', () => {
     expect(hasSourceBackedAgentInteractionEvidence(event, 'HOST')).toBe(true);
   });
 
-  it('accepts source-backed real bridge actions and rejects browser UI action evidence', () => {
-    const action: RoomAgentInteractionEvent = {
-      id: 'agent-interaction-3',
-      clientId: 'host-client',
-      createdAt: 1700000004000,
-      eventType: 'agent_action',
-      actor: 'agent',
-      text: 'Agent suggested running tests',
-      evidence: {
-        source: 'agent_bridge',
-        actionId: 'run-tests',
-        origin: 'agent',
-        actionSource: 'agent_stdout',
-        actionProtocol: 'agent_room_action_tag',
-        bridgeEventType: 'ROOM_ACTION',
-        executionStatus: 'suggested',
-        capturedAtMs: 1700000004000,
-        agentActionEventId: 'agent-action:agent:1700000004000:agent_bridge:agent:suggested:run-tests',
-        observedAt: '2026-06-28T00:00:04.000Z',
-        bridgePersisted: true,
-        agent: 'devin',
-        durableObjectReplayExpected: true,
-      },
-    };
-
-    expect(hasSourceBackedAgentInteractionEvidence(action, 'HOST')).toBe(true);
-    expect(hasSourceBackedAgentInteractionEvidence({
-      ...action,
-      actor: 'guest',
-      evidence: {
-        source: 'browser_assistant_ui',
-        actionId: 'open-agent-chat',
-        origin: 'panel',
-        executedBy: 'guest',
-        actionSource: 'assistant_panel',
-        executionStatus: 'opened',
-        capturedAtMs: 1700000005000,
-        agentActionEventId: 'agent-action:guest:1700000005000:browser_assistant_ui:panel:opened:open-agent-chat',
-        surface: 'standard',
-        roomPhase: 'connected',
-        workspaceStatus: null,
-        workspaceSessionId: null,
-        agent: null,
-        agentResponseClaimed: false,
-        durableObjectReplayExpected: true,
-      },
-    }, 'GUEST')).toBe(false);
-    expect(hasSourceBackedAgentInteractionEvidence({
-      ...action,
-      evidence: {
-        source: 'agent_bridge',
-      },
-    }, 'HOST')).toBe(false);
-  });
 });
 
 describe('applyRoomRecordingStateEvent', () => {

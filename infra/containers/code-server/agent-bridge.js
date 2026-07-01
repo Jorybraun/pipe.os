@@ -7,7 +7,6 @@ const {
   agentChatSessionEvent,
   agentDiagnosticMessage,
   agentDiagnosticSessionEvent,
-  agentRoomActionSessionEvent,
   agentPromptHandoffDiagnosticMessage,
   isAgentAuthFailureText,
   redactDiagnosticText,
@@ -75,54 +74,14 @@ const WORKSPACE_IGNORED_DIRS = new Set([
   '.pnpm-store',
 ]);
 
-const ROOM_ACTIONS = {
-  'open-browser': { label: 'Open Browser', aliases: ['open browser', 'browser'] },
-  'open-terminal': { label: 'Open Terminal', aliases: ['open terminal', 'terminal', 'shell'] },
-  'open-workspace': { label: 'Open Workspace', aliases: ['open workspace', 'workspace', 'editor', 'code server', 'code-server'] },
-  'launch-workspace': { label: 'Launch Workspace', aliases: ['launch workspace', 'start workspace', 'launch container'] },
-  'open-files': { label: 'Open Files', aliases: ['open files', 'files', 'file manager', 'explorer'] },
-  'start-recording': { label: 'Start Recording', aliases: ['start recording', 'record interview', 'begin recording'] },
-};
-
-function roomActionName(value) {
-  return String(value || '').trim().toLowerCase().replace(/[_\s]+/g, '-');
-}
-
 function positiveIntEnv(name, fallback, minimum = 1) {
   const value = Number(process.env[name]);
   if (!Number.isFinite(value)) return fallback;
   return Math.max(Math.floor(value), minimum);
 }
 
-function normalizeRoomAction(value) {
-  const normalized = roomActionName(value);
-  if (ROOM_ACTIONS[normalized]) return normalized;
-  for (const [id, config] of Object.entries(ROOM_ACTIONS)) {
-    if (config.aliases.some((alias) => roomActionName(alias) === normalized)) return id;
-  }
-  return null;
-}
-
-function extractTaggedRoomActions(text, source = 'agent_stdout') {
-  const actions = [];
-  const cleanText = String(text || '').replace(
-    /\[\[room_action:([a-zA-Z0-9_-]+)(?:\|([^\]]+))?\]\]/g,
-    (_match, rawAction, rawLabel) => {
-      const action = normalizeRoomAction(rawAction);
-      if (action) {
-        actions.push({
-          action,
-          agent: AGENT_NAME,
-          label: rawLabel || ROOM_ACTIONS[action].label,
-          text: rawLabel ? String(rawLabel) : ROOM_ACTIONS[action].label,
-          source,
-          protocol: 'agent_room_action_tag',
-        });
-      }
-      return '';
-    },
-  ).trim();
-  return { text: cleanText, actions };
+function stripBridgeControlTags(text) {
+  return String(text || '').replace(/\[\[[^\]]+\]\]/g, '').trim();
 }
 
 function send(ws, msg) {
@@ -837,13 +796,6 @@ async function captureAgentChatEvidence(message) {
   return postSessionEventEvidence(agentChatSessionEvent(message), 'agent chat');
 }
 
-async function captureAgentRoomActionEvidence(action, observedAt) {
-  return postSessionEventEvidence(
-    agentRoomActionSessionEvent({ agent: AGENT_NAME, action, observedAt }),
-    'agent room action',
-  );
-}
-
 function broadcastAgentDiagnostic(message) {
   if (!message) return;
   void captureAgentDiagnosticEvidence(message)
@@ -904,21 +856,6 @@ function takePromptRefForAgentResponse() {
 
 function clearPendingPromptRefs() {
   pendingAgentChatPromptRefs.splice(0, pendingAgentChatPromptRefs.length);
-}
-
-function broadcastAgentRoomAction(action, observedAt) {
-  if (!action) return;
-  const safeAction = {
-    ...action,
-    ...(typeof action.label === 'string' ? { label: redactDiagnosticText(action.label) } : {}),
-    ...(typeof action.text === 'string' ? { text: redactDiagnosticText(action.text) } : {}),
-    ...(typeof action.url === 'string' ? { url: redactDiagnosticText(action.url) } : {}),
-    ...(typeof action.href === 'string' ? { href: redactDiagnosticText(action.href) } : {}),
-  };
-  void captureAgentRoomActionEvidence(safeAction, observedAt)
-    .then((persisted) => {
-      broadcast({ type: 'ROOM_ACTION', ...safeAction, observedAt, persisted });
-    });
 }
 
 function workspaceEventPayload(action, fact, observedAt, persisted) {
@@ -1282,21 +1219,12 @@ function compactAgentContext(value, maxLength = AGENT_CONTEXT_MAX_LENGTH) {
   return `${text.slice(0, maxLength)}\n[PIPE room context truncated]`;
 }
 
-function roomActionProtocolGuide() {
-  return Object.entries(ROOM_ACTIONS)
-    .map(([id, config]) => `- ${id}: ${config.label}`)
-    .join('\n');
-}
-
 function buildAgentContextPrompt(roomContext, userMessage = '') {
   const parts = [
     'PIPE room context',
     'You are Devin running inside a PIPE-OS open-source assessment dev container.',
     'Use the source-backed room context below to help the candidate without inventing facts.',
-    'When you want the shared assessment room to do something, include one allow-listed tag in your response.',
-    'Example: [[room_action:open-workspace|Open VS Code]]',
-    'Allowed shared room actions:',
-    roomActionProtocolGuide(),
+    'Do not ask the room UI to open panels or perform actions. Explain the next useful workspace step in plain text.',
     'Current source-backed room context:',
     compactAgentContext(roomContext),
   ];
@@ -1501,24 +1429,19 @@ async function pollDevinApiForResponse(sentPrompt, browserPromptRef) {
       for (const message of accepted) {
         const rawText = devinApiMessageText(message);
         if (!rawText) continue;
-        const parsed = extractTaggedRoomActions(rawText, 'agent_api_response');
+        const text = stripBridgeControlTags(rawText);
         const observedAt = new Date().toISOString();
         const agentRunRef = devinApiAgentRunReference();
-        const responsePromptRef = parsed.text || parsed.actions.length > 0
-          ? takePromptRefForAgentResponse()
-          : {};
-        if (parsed.text) {
+        const responsePromptRef = text ? takePromptRefForAgentResponse() : {};
+        if (text) {
           broadcastAgentChat({
             agent: AGENT_NAME,
-            text: parsed.text,
+            text,
             observedAt,
-            actionCount: parsed.actions.length,
+            actionCount: 0,
             ...agentRunRef,
             ...responsePromptRef,
           }, 'agent_api_response');
-        }
-        for (const action of parsed.actions) {
-          broadcastAgentRoomAction({ ...action, ...agentRunRef, ...responsePromptRef }, observedAt);
         }
       }
       return true;
@@ -1929,24 +1852,19 @@ async function startAgent() {
         }
         return;
       }
-      const parsed = extractTaggedRoomActions(rawText);
+      const text = stripBridgeControlTags(rawText);
       agentStatus = 'working';
       broadcastAgentStatus();
       const observedAt = new Date().toISOString();
-      const responsePromptRef = parsed.text || parsed.actions.length > 0
-        ? takePromptRefForAgentResponse()
-        : {};
-      if (parsed.text) {
+      const responsePromptRef = text ? takePromptRefForAgentResponse() : {};
+      if (text) {
         broadcastAgentChat({
           agent: AGENT_NAME,
-          text: parsed.text,
+          text,
           observedAt,
-          actionCount: parsed.actions.length,
+          actionCount: 0,
           ...responsePromptRef,
         });
-      }
-      for (const action of parsed.actions) {
-        broadcastAgentRoomAction({ ...action, ...responsePromptRef }, observedAt);
       }
       agentStatus = 'idle';
       broadcastAgentStatus();

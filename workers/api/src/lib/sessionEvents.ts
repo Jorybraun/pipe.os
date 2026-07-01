@@ -43,7 +43,6 @@ export type SessionEventType =
   | 'workspace_state'
   | 'participant_join'
   | 'participant_leave'
-  | 'agent_action'
   | 'recording_start'
   | 'recording_stop'
   | 'code_editor_open'
@@ -65,7 +64,6 @@ const TERMINAL_FINGERPRINT_RE = /^terminal_[a-f0-9]{8}$/;
 const TERMINAL_COMMAND_ID_RE = /^.+:command:(host|guest):\d+:\d+:terminal_[a-f0-9]{8}$/;
 const AGENT_PROMPT_FINGERPRINT_RE = /^agent_[a-f0-9]{8}$/;
 const BROWSER_PROMPT_ID_RE = /^[a-zA-Z0-9:_-]+:(host|guest):prompt:\d+:agent_[a-f0-9]{8}$/;
-const AGENT_ACTION_EVENT_ID_RE = /^agent-action:(host|guest|agent):\d+:[a-z_]+:[a-z_]+:[a-z_]+:[a-zA-Z0-9:_-]+$/;
 const AGENT_CHAT_RESPONSE_FINGERPRINT_RE = /^agent_[a-f0-9]{8}$/;
 const AGENT_CHAT_RESPONSE_ID_RE = /^agent-chat:[a-zA-Z0-9:_-]+:\d+:CHAT_RESPONSE:agent_[a-f0-9]{8}$/;
 const AGENT_STATUS_EVENT_ID_RE = /^agent-status:[a-zA-Z0-9:_-]+:\d+:[a-z_]+:[a-zA-Z0-9:_-]+:[a-zA-Z0-9:_-]+$/;
@@ -835,48 +833,6 @@ function isSourceBackedAgentInteractionEvidence(
       && (browserObservationOk || persistedDiagnosticOk);
   }
 
-  if (eventType === 'agent_action') {
-    const source = stringOrNull(evidence.source);
-    const capturedAtMs = numberOrNull(evidence.capturedAtMs);
-    const origin = stringOrNull(evidence.origin);
-    const executionStatus = stringOrNull(evidence.executionStatus);
-    const actionId = stringOrNull(evidence.actionId);
-    const expectedId = source && capturedAtMs !== null && origin && executionStatus && actionId
-      ? `agent-action:${actor}:${capturedAtMs}:${source}:${origin}:${executionStatus}:${safeEvidenceIdPart(actionId)}`
-      : null;
-    const idOk = typeof evidence.agentActionEventId === 'string'
-      && AGENT_ACTION_EVENT_ID_RE.test(evidence.agentActionEventId)
-      && evidence.agentActionEventId === expectedId;
-    const roomContextOk = evidence.surface === 'standard'
-      && stringOrNull(evidence.roomPhase) !== null;
-    if (source === 'agent_bridge') {
-      const commonOk = actionId !== null
-        && capturedAtMs !== null
-        && Number.isInteger(capturedAtMs)
-        && capturedAtMs >= 0
-        && idOk
-        && origin === 'agent'
-        && stringOrNull(evidence.agent) !== null
-        && hasOptionalBrowserPromptRef(evidence)
-        && evidence.actionProtocol === 'agent_room_action_tag'
-        && evidence.bridgeEventType === 'ROOM_ACTION';
-      const suggestedOk = actor === 'agent'
-        && executionStatus === 'suggested'
-        && (evidence.actionSource === 'agent_stdout' || evidence.actionSource === 'agent_api_response')
-        && stringOrNull(evidence.observedAt) !== null
-        && typeof evidence.bridgePersisted === 'boolean';
-      const executedOk = (actor === 'host' || actor === 'guest')
-        && executionStatus === 'executed'
-        && evidence.executedBy === actor
-        && (evidence.actionSource === 'agent_stdout_action' || evidence.actionSource === 'agent_api_response_action')
-        && stringOrNull(evidence.agentActionObservedAt) !== null
-        && typeof evidence.agentActionBridgePersisted === 'boolean'
-        && roomContextOk
-        && evidence.agentResponseClaimed === false;
-      return commonOk && (suggestedOk || executedOk);
-    }
-  }
-
   return false;
 }
 
@@ -888,7 +844,6 @@ function agentInteractionActivityToSessionEvent(input: RoomActivitySyncInput, va
     eventType !== 'ai_chat_user'
     && eventType !== 'ai_chat_agent'
     && eventType !== 'ai_agent_status'
-    && eventType !== 'agent_action'
   ) {
     return null;
   }
@@ -1017,7 +972,6 @@ function mapEventTypeToNodeType(type: SessionEventType): string {
     workspace_state: 'session_workspace_state',
     participant_join: 'session_participant_join',
     participant_leave: 'session_participant_leave',
-    agent_action: 'session_agent_action',
     recording_start: 'session_recording_start',
     recording_stop: 'session_recording_stop',
     code_editor_open: 'session_code_editor_open',
@@ -1051,8 +1005,6 @@ function formatEventNarrative(event: SessionEvent): string {
       return `[${time}] Participant joined: ${event.text}`;
     case 'participant_leave':
       return `[${time}] Participant left: ${event.text}`;
-    case 'agent_action':
-      return `[${time}] ${event.text}`;
     case 'recording_start':
       return `[${time}] Recording started`;
     case 'recording_stop':
@@ -1145,11 +1097,6 @@ function sessionEventCorrelationRefs(event: SessionEvent, properties: JsonObject
   const agentChatResponseId = stringProperty(properties, 'agentChatResponseId');
   if (event.type === 'ai_chat_agent' && agentChatResponseId) {
     refs.agentResponse = { responseId: agentChatResponseId };
-  }
-
-  const agentActionEventId = stringProperty(properties, 'agentActionEventId');
-  if (event.type === 'agent_action' && agentActionEventId) {
-    refs.agentAction = { actionEventId: agentActionEventId };
   }
 
   return Object.keys(refs).length > 0 ? refs : null;
@@ -1345,23 +1292,6 @@ function sessionEventEntities(input: {
         agent: stringProperty(properties, 'agent'),
         responseLength: numberProperty(properties, 'responseLength'),
         linkedPromptId: browserPromptId,
-      },
-    });
-  }
-
-  const agentActionEventId = stringProperty(properties, 'agentActionEventId');
-  if (agentActionEventId) {
-    entities.push({
-      entityType: 'agent_action',
-      entityId: agentActionEventId,
-      relationship: 'source_action',
-      metadata: {
-        actor: event.actor,
-        actionId: stringProperty(properties, 'actionId'),
-        origin: stringProperty(properties, 'origin'),
-        executionStatus: stringProperty(properties, 'executionStatus'),
-        source: stringProperty(properties, 'source'),
-        agent: stringProperty(properties, 'agent'),
       },
     });
   }
@@ -1664,78 +1594,6 @@ async function chatTextSourceRef(input: {
   }
 
   return null;
-}
-
-async function agentActionSourceRef(input: {
-  event: SessionEvent;
-  node: CandidateNode;
-  properties: JsonObject;
-}): Promise<SessionEventExactSourceRef | null> {
-  if (input.event.type !== 'agent_action') return null;
-  if (input.event.text.trim().length === 0) return null;
-  if (!isSourceBackedAgentInteractionEvidence('agent_action', input.event.actor, input.event.text, input.properties)) {
-    return null;
-  }
-
-  const source = stringProperty(input.properties, 'source');
-  const actionId = stringProperty(input.properties, 'actionId');
-  const origin = stringProperty(input.properties, 'origin');
-  const executionStatus = stringProperty(input.properties, 'executionStatus');
-  const agentActionEventId = stringProperty(input.properties, 'agentActionEventId');
-  if (!source || !actionId || !origin || !executionStatus || !agentActionEventId) return null;
-
-  const agentBacked = source === 'agent_bridge';
-  const evidenceRole = agentBacked
-    ? executionStatus === 'suggested'
-      ? 'agent_suggested_action'
-      : 'agent_executed_action'
-    : 'agent_ui_action';
-
-  return {
-    sourceRefType: agentBacked ? 'agent_room_action' : 'agent_ui_action',
-    sourceRefId: agentActionEventId,
-    evidenceRole,
-    locator: {
-      sessionId: input.event.sessionId,
-      candidateId: input.event.candidateId,
-      candidateNodeId: input.node.id,
-      actor: input.event.actor,
-      source,
-      actionId,
-      origin,
-      executionStatus,
-      agentActionEventId,
-      capturedAtMs: numberProperty(input.properties, 'capturedAtMs'),
-      executedBy: stringProperty(input.properties, 'executedBy'),
-      agent: stringProperty(input.properties, 'agent'),
-      observedAt: stringProperty(input.properties, 'observedAt'),
-      agentActionObservedAt: stringProperty(input.properties, 'agentActionObservedAt'),
-      browserPromptId: stringProperty(input.properties, 'browserPromptId'),
-      agentRuntime: stringProperty(input.properties, 'agentRuntime'),
-      agentRunProvider: stringProperty(input.properties, 'agentRunProvider'),
-      agentRunId: stringProperty(input.properties, 'agentRunId'),
-      workspaceSessionId: stringProperty(input.properties, 'workspaceSessionId'),
-      surface: stringProperty(input.properties, 'surface'),
-      roomPhase: stringProperty(input.properties, 'roomPhase'),
-    },
-    exactText: input.event.text,
-    contentHash: await sha256Hex(input.event.text),
-    metadata: {
-      sourceKind: agentBacked ? 'agent.agent_room_action' : 'agent.ui_action',
-      actionSource: stringProperty(input.properties, 'actionSource'),
-      actionProtocol: stringProperty(input.properties, 'actionProtocol'),
-      bridgeEventType: stringProperty(input.properties, 'bridgeEventType'),
-      bridgePersisted: typeof input.properties.bridgePersisted === 'boolean'
-        ? input.properties.bridgePersisted
-        : null,
-      agentActionBridgePersisted: typeof input.properties.agentActionBridgePersisted === 'boolean'
-        ? input.properties.agentActionBridgePersisted
-        : null,
-      agentRunExternalSessionHash: stringProperty(input.properties, 'agentRunExternalSessionHash'),
-      agentResponseClaimed: input.properties.agentResponseClaimed === true,
-      durableObjectReplayExpected: input.properties.durableObjectReplayExpected === true,
-    },
-  };
 }
 
 async function terminalTextSourceRef(input: {
@@ -2196,7 +2054,6 @@ async function persistSessionEventContextRecord(
   const contentHash = await deterministicEntityId('content', sourceExactText);
   const sourceSpanId = await findCandidateNodeSourceSpanId(db, node.id);
   const chatTextSource = await chatTextSourceRef({ event, node, properties });
-  const agentActionSource = await agentActionSourceRef({ event, node, properties });
   const terminalTextSource = await terminalTextSourceRef({ event, node, properties });
   const codeServerFileSource = await codeServerFileObservationSourceRef({ event, node, properties });
   const directRoomActivitySource = await directRoomActivitySourceRef({ event, node, properties });
@@ -2223,7 +2080,6 @@ async function persistSessionEventContextRecord(
     },
   ];
   if (chatTextSource) sources.push(chatTextSource);
-  if (agentActionSource) sources.push(agentActionSource);
   if (terminalTextSource) sources.push(terminalTextSource);
   if (codeServerFileSource) sources.push(codeServerFileSource);
   if (directRoomActivitySource) sources.push(directRoomActivitySource);
@@ -2278,7 +2134,6 @@ function assessmentEventKindForSessionEvent(type: SessionEventType): string {
     case 'ai_chat_user':
     case 'ai_chat_agent':
     case 'ai_agent_status':
-    case 'agent_action':
       return 'ai_interaction';
     case 'terminal_command':
     case 'terminal_output':
@@ -2307,12 +2162,6 @@ function assessmentActorForSessionEvent(event: SessionEvent): { actorType: Asses
 
   if (event.type === 'ai_chat_agent' || event.type === 'ai_agent_status') {
     return { actorType: agentActorType, actorId: explicitAgentId };
-  }
-
-  if (event.type === 'agent_action') {
-    return source === 'agent_bridge'
-      ? { actorType: agentActorType, actorId: explicitAgentId }
-      : { actorType: 'agent', actorId: 'agent' };
   }
 
   if (event.actor === 'guest') return { actorType: 'candidate', actorId: event.candidateId };
@@ -2412,7 +2261,6 @@ async function persistSessionEventAssessmentEvidence(
   const narrative = formatEventNarrative(event);
   const sourceExactText = stableJson(sessionEventSourcePayload(event, node));
   const chatTextSource = await chatTextSourceRef({ event, node, properties });
-  const agentActionSource = await agentActionSourceRef({ event, node, properties });
   const terminalTextSource = await terminalTextSourceRef({ event, node, properties });
   const codeServerFileSource = await codeServerFileObservationSourceRef({ event, node, properties });
   const directRoomActivitySource = await directRoomActivitySourceRef({ event, node, properties });
@@ -2438,7 +2286,6 @@ async function persistSessionEventAssessmentEvidence(
       },
     },
     ...(chatTextSource ? [chatTextSource] : []),
-    ...(agentActionSource ? [agentActionSource] : []),
     ...(terminalTextSource ? [terminalTextSource] : []),
     ...(codeServerFileSource ? [codeServerFileSource] : []),
     ...(directRoomActivitySource ? [directRoomActivitySource] : []),
@@ -2673,7 +2520,6 @@ const CONTEXT_SOURCE_REF_KEYS = [
   'promptId',
   'agentChatResponseId',
   'agentStatusEventId',
-  'agentActionEventId',
   'recordingEventId',
   'recordingStateEventId',
   'mediaControlId',

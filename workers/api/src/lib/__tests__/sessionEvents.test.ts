@@ -1096,109 +1096,6 @@ describe('sessionEvents', () => {
       }
     });
 
-    it('preserves real agent bridge room actions as direct source refs', async () => {
-      const { sqlite, db: realDb } = createSessionEvidenceDb();
-      try {
-        const agentSuggestionText = 'devin suggested room action: open-terminal';
-        const agentSuggestionId = 'agent-action:agent:1782604710000:agent_bridge:agent:suggested:open-terminal';
-        const events: SessionEvent[] = [
-          {
-            type: 'agent_action',
-            sessionId: 'meeting-session-agent-actions',
-            candidateId: 'cand-assessment',
-            timestamp: 1782604710,
-            actor: 'agent',
-            text: agentSuggestionText,
-            properties: {
-              source: 'agent_bridge',
-              origin: 'agent',
-              executionStatus: 'suggested',
-              actionId: 'open-terminal',
-              actionSource: 'agent_stdout',
-              actionProtocol: 'agent_room_action_tag',
-              bridgeEventType: 'ROOM_ACTION',
-              agent: 'devin',
-              observedAt: '2026-06-27T20:18:30.000Z',
-              capturedAtMs: 1782604710000,
-              agentActionEventId: agentSuggestionId,
-              bridgePersisted: true,
-              browserPromptId: 'workspace-session-1:guest:prompt:1782604705000:agent_0123abcd',
-              browserPromptFingerprint: 'agent_0123abcd',
-              browserPromptTimestamp: 1782604705000,
-              browserPromptLength: 'Open the terminal'.length,
-              durableObjectReplayExpected: true,
-            },
-          },
-        ];
-
-        const nodes = [];
-        for (const event of events) {
-          nodes.push(await captureSessionEvent(realDb, event));
-        }
-        expect(nodes.every((node) => node !== null)).toBe(true);
-
-        const contextSources = sqlite.prepare(
-          `SELECT csr.source_ref_type, csr.source_ref_id, csr.evidence_role,
-                  csr.exact_text, csr.content_hash
-              FROM context_record_source_refs csr
-             JOIN context_records cr ON cr.id = csr.context_record_id
-            WHERE cr.record_type = 'meeting_session_event'
-              AND csr.source_ref_type = 'agent_room_action'
-            ORDER BY csr.source_ref_type`,
-        ).all() as Array<{
-          source_ref_type: string;
-          source_ref_id: string;
-          evidence_role: string;
-          exact_text: string;
-          content_hash: string;
-        }>;
-
-        expect(contextSources).toEqual([
-          {
-            source_ref_type: 'agent_room_action',
-            source_ref_id: agentSuggestionId,
-            evidence_role: 'agent_suggested_action',
-            exact_text: agentSuggestionText,
-            content_hash: await sha256Hex(agentSuggestionText),
-          },
-        ]);
-
-        const assessmentSources = sqlite.prepare(
-          `SELECT source_ref_type, source_ref_id, evidence_role, exact_text, content_hash
-             FROM assessment_event_source_refs
-            WHERE source_ref_type = 'agent_room_action'
-            ORDER BY source_ref_type`,
-        ).all() as Array<{
-          source_ref_type: string;
-          source_ref_id: string;
-          evidence_role: string;
-          exact_text: string;
-          content_hash: string;
-        }>;
-        expect(assessmentSources).toEqual(contextSources);
-
-        const entities = sqlite.prepare(
-          `SELECT entity_type, entity_id, relationship
-             FROM context_record_entities
-            WHERE entity_type = 'agent_action'
-            ORDER BY entity_id`,
-        ).all() as Array<{
-          entity_type: string;
-          entity_id: string;
-          relationship: string;
-        }>;
-        expect(entities).toEqual([
-          {
-            entity_type: 'agent_action',
-            entity_id: agentSuggestionId,
-            relationship: 'source_action',
-          },
-        ]);
-      } finally {
-        sqlite.close();
-      }
-    });
-
     it('preserves source-backed layout, video, and workspace activity as direct source refs', async () => {
       const { sqlite, db: realDb } = createSessionEvidenceDb();
       try {
@@ -1410,25 +1307,25 @@ describe('sessionEvents', () => {
     it('preserves explicit agent identity in room assessment evidence without defaulting to Devin', async () => {
       const { sqlite, db: realDb } = createSessionEvidenceDb();
       try {
-        const hermesAction: SessionEvent = {
-          type: 'agent_action',
+        const hermesResponse: SessionEvent = {
+          type: 'ai_chat_agent',
           sessionId: 'meeting-session-agent-identity',
           candidateId: 'cand-assessment',
           timestamp: 1782604100,
           actor: 'agent',
-          text: 'hermes suggested room action: open-terminal',
+          text: 'Hermes inspected the failing test and found the missing assertion.',
           properties: {
             source: 'agent_bridge',
-            origin: 'agent',
-            executionStatus: 'suggested',
-            actionId: 'open-terminal',
-            actionSource: 'agent_stdout',
-            actionProtocol: 'agent_room_action_tag',
-            bridgeEventType: 'ROOM_ACTION',
+            bridgeEventType: 'CHAT_RESPONSE',
+            bridgeMessageSource: 'agent_stdout',
             agent: 'hermes',
             observedAt: '2026-06-27T21:10:00.000Z',
+            capturedAtMs: 1782604100000,
+            responseFingerprint: 'agent_abcdef12',
+            responseLength: 'Hermes inspected the failing test and found the missing assertion.'.length,
+            agentChatResponseId: 'agent-chat:hermes:1782604100000:CHAT_RESPONSE:agent_abcdef12',
+            actionCount: 0,
             bridgePersisted: true,
-            surface: 'standard',
           },
         };
         const missingIdentityStatus: SessionEvent = {
@@ -1445,7 +1342,7 @@ describe('sessionEvents', () => {
           },
         };
 
-        await captureSessionEvent(realDb, hermesAction);
+        await captureSessionEvent(realDb, hermesResponse);
         await captureSessionEvent(realDb, missingIdentityStatus);
 
         const eventRows = sqlite.prepare(
@@ -1460,17 +1357,31 @@ describe('sessionEvents', () => {
         }>;
 
         expect(eventRows).toHaveLength(2);
+        expect(eventRows).toEqual(expect.arrayContaining([
+          expect.objectContaining({
+            kind: 'ai_interaction',
+            actor_type: 'ai_agent',
+            actor_id: 'hermes',
+            narrative: expect.stringContaining('Hermes inspected'),
+          }),
+          expect.objectContaining({
+            kind: 'ai_interaction',
+            actor_type: 'ai_agent',
+            actor_id: null,
+            narrative: expect.stringContaining('Agent status'),
+          }),
+        ]));
+        expect(eventRows).not.toEqual(expect.arrayContaining([
+          expect.objectContaining({
+            actor_type: 'devin',
+            narrative: expect.stringContaining('Agent status changed without explicit bridge identity'),
+          }),
+        ]));
         expect(eventRows[0]).toMatchObject({
           kind: 'ai_interaction',
           actor_type: 'ai_agent',
           actor_id: 'hermes',
-          narrative: expect.stringContaining('hermes suggested room action'),
-        });
-        expect(eventRows[1]).toMatchObject({
-          kind: 'ai_interaction',
-          actor_type: 'ai_agent',
-          actor_id: null,
-          narrative: expect.stringContaining('Agent status'),
+          narrative: expect.stringContaining('Hermes inspected'),
         });
       } finally {
         sqlite.close();
@@ -1785,68 +1696,6 @@ describe('sessionEvents', () => {
         agentInteractionActivityLog: [
           {
             role: 'GUEST',
-            recordedAt: 1700000003200,
-            event: {
-              id: 'agent-action-valid',
-              clientId: 'guest-client',
-              createdAt: 1700000003200,
-              eventType: 'agent_action',
-              actor: 'agent',
-              text: 'devin suggested room action: open-terminal',
-              evidence: {
-                source: 'agent_bridge',
-                origin: 'agent',
-                executionStatus: 'suggested',
-                actionId: 'open-terminal',
-                actionSource: 'agent_stdout',
-                actionProtocol: 'agent_room_action_tag',
-                bridgeEventType: 'ROOM_ACTION',
-                agent: 'devin',
-                observedAt: '2026-06-27T21:10:00.000Z',
-                capturedAtMs: 1700000003200,
-                agentActionEventId: 'agent-action:agent:1700000003200:agent_bridge:agent:suggested:open-terminal',
-                bridgePersisted: true,
-                browserPromptId: 'workspace-session-1:guest:prompt:1700000003210:agent_0123abcd',
-                browserPromptFingerprint: 'agent_0123abcd',
-                browserPromptTimestamp: 1700000003210,
-                browserPromptLength: 'Can you inspect the failing test?'.length,
-                durableObjectReplayExpected: true,
-              },
-            },
-          },
-          {
-            role: 'GUEST',
-            recordedAt: 1700000003205,
-            event: {
-              id: 'agent-action-malformed-prompt-ref',
-              clientId: 'guest-client',
-              createdAt: 1700000003205,
-              eventType: 'agent_action',
-              actor: 'agent',
-              text: 'devin suggested room action: open-terminal',
-              evidence: {
-                source: 'agent_bridge',
-                origin: 'agent',
-                executionStatus: 'suggested',
-                actionId: 'open-terminal',
-                actionSource: 'agent_stdout',
-                actionProtocol: 'agent_room_action_tag',
-                bridgeEventType: 'ROOM_ACTION',
-                agent: 'devin',
-                observedAt: '2026-06-27T21:10:00.000Z',
-                capturedAtMs: 1700000003205,
-                agentActionEventId: 'agent-action:agent:1700000003205:agent_bridge:agent:suggested:open-terminal',
-                bridgePersisted: true,
-                browserPromptId: 'malformed-prompt-ref',
-                browserPromptFingerprint: 'agent_0123abcd',
-                browserPromptTimestamp: 1700000003210,
-                browserPromptLength: 'Can you inspect the failing test?'.length,
-                durableObjectReplayExpected: true,
-              },
-            },
-          },
-          {
-            role: 'GUEST',
             recordedAt: 1700000003210,
             event: {
               id: 'agent-user-chat-valid',
@@ -1943,69 +1792,13 @@ describe('sessionEvents', () => {
               },
             },
           },
-          {
-            role: 'GUEST',
-            recordedAt: 1700000003220,
-            event: {
-              id: 'agent-action-legacy-protocol',
-              clientId: 'guest-client',
-              createdAt: 1700000003220,
-              eventType: 'agent_action',
-              actor: 'agent',
-              text: 'devin suggested room action: open-terminal',
-              evidence: {
-                source: 'agent_bridge',
-                origin: 'agent',
-                executionStatus: 'suggested',
-                actionId: 'open-terminal',
-                actionSource: 'agent_stdout',
-                actionProtocol: 'bridge_actions_field',
-                bridgeEventType: 'ROOM_ACTION',
-                agent: 'devin',
-                observedAt: '2026-06-27T21:10:00.000Z',
-                capturedAtMs: 1700000003220,
-                agentActionEventId: 'agent-action:agent:1700000003220:agent_bridge:agent:suggested:open-terminal',
-                bridgePersisted: true,
-                durableObjectReplayExpected: true,
-              },
-            },
-          },
-          {
-            role: 'HOST',
-            recordedAt: 1700000003300,
-            event: {
-              id: 'agent-attributed-ui-action',
-              clientId: 'host-client',
-              createdAt: 1700000003300,
-              eventType: 'agent_action',
-              actor: 'host',
-              text: 'Agent action: start recording',
-              evidence: {
-                source: 'browser_assistant_ui',
-                actionId: 'start-recording',
-                origin: 'panel',
-                executedBy: 'host',
-                actionSource: 'assistant_panel',
-                executionStatus: 'executed',
-                capturedAtMs: 1700000003300,
-                agentActionEventId: 'agent-action:host:1700000003300:browser_assistant_ui:panel:executed:start-recording',
-                agent: 'devin',
-                agentResponseClaimed: false,
-                surface: 'standard',
-                roomPhase: 'connected',
-                workspaceStatus: 'READY',
-                workspaceSessionId: 'workspace-session-1',
-                durableObjectReplayExpected: true,
-              },
-            },
-          },
         ],
       }, {
         candidateId: 'cand-room',
         sessionId: 'meeting--room-sync',
       });
 
-      expect(events).toHaveLength(4);
+      expect(events).toHaveLength(3);
       expect(events).toEqual(expect.arrayContaining([
         expect.objectContaining({
           type: 'chat_message',
@@ -2068,39 +1861,6 @@ describe('sessionEvents', () => {
             agent: null,
             roomEventId: 'agent-user-chat-valid',
             workspaceSessionId: 'workspace-session-1',
-          }),
-        }),
-        expect.objectContaining({
-          type: 'agent_action',
-          actor: 'agent',
-          text: 'devin suggested room action: open-terminal',
-          properties: expect.objectContaining({
-            roomActivitySource: 'durable_object',
-            source: 'agent_bridge',
-            origin: 'agent',
-            executionStatus: 'suggested',
-            actionId: 'open-terminal',
-            actionSource: 'agent_stdout',
-            actionProtocol: 'agent_room_action_tag',
-            bridgeEventType: 'ROOM_ACTION',
-            agent: 'devin',
-            agentActionEventId: 'agent-action:agent:1700000003200:agent_bridge:agent:suggested:open-terminal',
-            bridgePersisted: true,
-            browserPromptId: 'workspace-session-1:guest:prompt:1700000003210:agent_0123abcd',
-            browserPromptFingerprint: 'agent_0123abcd',
-            browserPromptTimestamp: 1700000003210,
-            browserPromptLength: 'Can you inspect the failing test?'.length,
-          }),
-        }),
-      ]));
-      expect(events).not.toEqual(expect.arrayContaining([
-        expect.objectContaining({
-          type: 'agent_action',
-          actor: 'host',
-          properties: expect.objectContaining({
-            roomEventId: 'agent-attributed-ui-action',
-            source: 'browser_assistant_ui',
-            agent: 'devin',
           }),
         }),
       ]));

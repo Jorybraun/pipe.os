@@ -16,10 +16,10 @@ describe('dev-container agent bridge context endpoint', () => {
     expect(bridgeSource).not.toContain('Room context endpoint is available from the PIPE API bridge.');
   });
 
-  it('primes Devin with room context and the assessment action protocol', () => {
+  it('primes Devin with room context without a UI-control protocol', () => {
     expect(bridgeSource).toContain('buildAgentContextPrompt');
     expect(bridgeSource).toContain('PIPE room context');
-    expect(bridgeSource).toContain('[[room_action:open-workspace');
+    expect(bridgeSource).toContain('Explain the next useful workspace step in plain text.');
     expect(bridgeSource).toContain('primeAgentWithRoomContext');
     expect(bridgeSource).toContain('agentProcess.stdin.write');
   });
@@ -27,7 +27,6 @@ describe('dev-container agent bridge context endpoint', () => {
   it('does not expose a local Devin auth bypass or non-agent AI assistant responder', () => {
     expect(bridgeSource).not.toContain(forbiddenAuthBypass);
     expect(bridgeSource).not.toContain('AUTH_CALLBACK');
-    expect(bridgeSource).not.toContain('roomActionFromText');
     expect(bridgeSource).not.toContain('I can help by opening');
     expect(bridgeSource).toContain('DEVIN_API_KEY');
     expect(bridgeSource).toContain('authUrl: null');

@@ -117,7 +117,6 @@ const AGENT_PROMPT_FINGERPRINT_RE = /^agent_[a-f0-9]{8}$/;
 const BROWSER_PROMPT_ID_RE = /^[a-zA-Z0-9:_-]+:(host|guest):prompt:\d+:agent_[a-f0-9]{8}$/;
 const ROOM_SURFACES = new Set(['standard']);
 const CHAT_DELIVERY_STATUSES = new Set(['pending', 'accepted', 'rejected']);
-const AGENT_ACTION_EVENT_ID_RE = /^agent-action:(host|guest|agent):\d+:agent_bridge:agent:(executed|suggested):[a-zA-Z0-9:_-]+$/;
 const AGENT_STATUSES = new Set(['starting', 'idle', 'thinking', 'working', 'auth_needed', 'disconnected']);
 const AGENT_STATUS_MESSAGE_SOURCES = new Set(['agent_status', 'bridge_diagnostic', 'bridge_observation', 'agent_stdout', 'agent_api_response']);
 const AGENT_STATUS_EVENT_ID_RE = /^agent-status:[a-zA-Z0-9:_-]+:\d+:(agent_status|bridge_diagnostic|bridge_observation|agent_stdout|agent_api_response):[a-zA-Z0-9:_-]+:[a-zA-Z0-9:_-]+$/;
@@ -177,7 +176,6 @@ const sessionEventSchema = z.object({
     'workspace_state',
     'participant_join',
     'participant_leave',
-    'agent_action',
     'recording_start',
     'recording_stop',
     'code_editor_open',
@@ -317,64 +315,6 @@ const sessionEventSchema = z.object({
     ctx.addIssue({
       code: z.ZodIssueCode.custom,
       message: 'Workspace-state evidence must come from the browser workspace observer with actor-bound state id, capture timestamp, status/session context, challenge diagnostics, and no persisted proxy URL.',
-      path: ['properties'],
-    });
-    return;
-  }
-  if (event.type === 'agent_action') {
-    const source = properties.source;
-    const capturedAtMs = properties.capturedAtMs;
-    const actionIdOk = hasString(properties.actionId);
-    const capturedAtOk = typeof capturedAtMs === 'number'
-      && Number.isInteger(capturedAtMs)
-      && capturedAtMs >= 0;
-    const expectedActionEventId = (
-      capturedAtOk
-      && hasString(source)
-      && hasString(properties.origin)
-      && hasString(properties.executionStatus)
-      && hasString(properties.actionId)
-    )
-      ? `agent-action:${event.actor}:${capturedAtMs}:${source}:${properties.origin}:${properties.executionStatus}:${safeEvidenceIdPart(properties.actionId)}`
-      : null;
-    const actionEventIdOk = typeof properties.agentActionEventId === 'string'
-      && AGENT_ACTION_EVENT_ID_RE.test(properties.agentActionEventId)
-      && properties.agentActionEventId === expectedActionEventId;
-    const surfaceContextOk = hasRoomSurface(properties.surface)
-      && hasString(properties.roomPhase);
-    if (source === 'agent_bridge') {
-      const commonOk = actionIdOk
-        && capturedAtOk
-        && actionEventIdOk
-        && properties.origin === 'agent'
-        && hasString(properties.agent)
-        && hasOptionalBrowserPromptRef(properties)
-        && properties.actionProtocol === 'agent_room_action_tag'
-        && properties.bridgeEventType === 'ROOM_ACTION';
-      const suggestedOk = event.actor === 'agent'
-        && properties.executionStatus === 'suggested'
-        && (properties.actionSource === 'agent_stdout' || properties.actionSource === 'agent_api_response')
-        && hasString(properties.observedAt)
-        && typeof properties.bridgePersisted === 'boolean';
-      const executedOk = (event.actor === 'host' || event.actor === 'guest')
-        && properties.executionStatus === 'executed'
-        && properties.executedBy === event.actor
-        && (properties.actionSource === 'agent_stdout_action' || properties.actionSource === 'agent_api_response_action')
-        && hasString(properties.agentActionObservedAt)
-        && typeof properties.agentActionBridgePersisted === 'boolean'
-        && surfaceContextOk
-        && properties.agentResponseClaimed === false;
-      if (commonOk && (suggestedOk || executedOk)) return;
-      ctx.addIssue({
-        code: z.ZodIssueCode.custom,
-        message: 'AI assistant agent action evidence must come from the real bridge with stable action id, capture timestamp, ROOM_ACTION metadata, and either a suggested agent event or a browser execution linked to that bridge event.',
-        path: ['properties'],
-      });
-      return;
-    }
-    ctx.addIssue({
-      code: z.ZodIssueCode.custom,
-      message: 'AI assistant action evidence must come from the real agent bridge.',
       path: ['properties'],
     });
     return;

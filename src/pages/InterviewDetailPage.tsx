@@ -580,7 +580,7 @@ function assessmentEvidenceSummary(input: {
     input.hasChallengePacket ? 'challenge' : null,
     input.hasMessageEvidence ? 'chat' : null,
     input.hasDevContainerEvidence ? 'workspace telemetry' : null,
-    input.hasToolUsageEvidence ? 'room actions' : null,
+    input.hasToolUsageEvidence ? 'tool activity' : null,
     input.hasWorkEvidence && !hasGranularWorkEvidence ? 'work evidence' : null,
     input.hasCommitSubmission ? 'commit' : null,
     input.hasAiInteraction ? 'AI use' : null,
@@ -3496,7 +3496,7 @@ export default function InterviewDetailPage(): JSX.Element {
               </div>
             )}
           </div>
-          <div style={ROOM_ACTIONS}>
+          <div style={DETAIL_ACTIONS}>
             {personEmail && (
               <button
                 onClick={() => void sendInvite()}
@@ -3575,7 +3575,7 @@ export default function InterviewDetailPage(): JSX.Element {
               </div>
             </div>
           </div>
-          <div style={ROOM_ACTIONS}>
+          <div style={DETAIL_ACTIONS}>
             {canCopyAssessmentInvite && (
               <button
                 type="button"
@@ -5582,7 +5582,7 @@ const TEXT_BUTTON: CSSProperties = recruiterTextButtonStyle;
 
 const INLINE_LINK: CSSProperties = recruiterInlineLinkStyle;
 
-const ROOM_ACTIONS: CSSProperties = {
+const DETAIL_ACTIONS: CSSProperties = {
   display: 'grid',
   gridTemplateColumns: '1fr',
   gap: 10,

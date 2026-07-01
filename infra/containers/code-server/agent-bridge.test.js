@@ -208,7 +208,7 @@ async function startFakeDevinApiServer() {
         messages.push({
           event_id: `devin-${messageCounter}`,
           role: 'assistant',
-          message: 'I can help from the real Devin API session. [[room_action:open-workspace|Open VS Code]]',
+          message: 'I can help from the real Devin API session.',
         });
         res.writeHead(200, { 'Content-Type': 'application/json' });
         res.end(JSON.stringify({ accepted: true }));
@@ -893,17 +893,6 @@ setInterval(() => {}, 1000);
         browserPromptLength: 24,
       });
 
-      const roomAction = await waitForMessage(messages, (message) => (
-        message.type === 'ROOM_ACTION'
-        && message.source === 'agent_api_response'
-      ));
-      expect(roomAction).toMatchObject({
-        agent: 'devin',
-        action: 'open-workspace',
-        protocol: 'agent_room_action_tag',
-        browserPromptId: 'workspace-123:guest:prompt:1782603900000:agent_0123abcd',
-      });
-
       const chatEvent = captureServer.events.find((event) => event.type === 'ai_chat_agent');
       expect(chatEvent).toMatchObject({
         type: 'ai_chat_agent',
@@ -916,17 +905,7 @@ setInterval(() => {}, 1000);
           bridgePersisted: true,
         },
       });
-      const actionEvent = captureServer.events.find((event) => event.type === 'agent_action');
-      expect(actionEvent).toMatchObject({
-        type: 'agent_action',
-        actor: 'agent',
-        properties: {
-          source: 'agent_bridge',
-          actionSource: 'agent_api_response',
-          actionProtocol: 'agent_room_action_tag',
-          bridgeEventType: 'ROOM_ACTION',
-        },
-      });
+      expect(captureServer.events.filter((event) => event.type === 'ai_chat_agent')).toHaveLength(1);
       ws.close();
     } finally {
       await apiServer.close();

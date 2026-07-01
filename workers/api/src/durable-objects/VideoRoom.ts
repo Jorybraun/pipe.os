@@ -30,7 +30,6 @@ const TERMINAL_COMMAND_ID_RE = /^.+:command:(host|guest):\d+:\d+:terminal_[0-9a-
 const ROOM_CHAT_MESSAGE_FINGERPRINT_RE = /^chat_[0-9a-f]{8}$/;
 const AGENT_PROMPT_FINGERPRINT_RE = /^agent_[0-9a-f]{8}$/;
 const BROWSER_PROMPT_ID_RE = /^[a-zA-Z0-9:_-]+:(host|guest):prompt:\d+:agent_[0-9a-f]{8}$/;
-const AGENT_ACTION_EVENT_ID_RE = /^agent-action:(host|guest|agent):\d+:[a-z_]+:[a-z_]+:[a-z_]+:[a-zA-Z0-9:_-]+$/;
 const AGENT_CHAT_RESPONSE_FINGERPRINT_RE = /^agent_[0-9a-f]{8}$/;
 const AGENT_CHAT_RESPONSE_ID_RE = /^agent-chat:[a-zA-Z0-9:_-]+:\d+:CHAT_RESPONSE:agent_[0-9a-f]{8}$/;
 const AGENT_STATUS_EVENT_ID_RE = /^agent-status:[a-zA-Z0-9:_-]+:\d+:[a-z_]+:[a-zA-Z0-9:_-]+:[a-zA-Z0-9:_-]+$/;
@@ -181,7 +180,7 @@ interface RoomRecordingActivityEntry {
   recordedAt: number;
 }
 
-type RoomAgentInteractionEventType = 'ai_chat_user' | 'ai_chat_agent' | 'ai_agent_status' | 'agent_action';
+type RoomAgentInteractionEventType = 'ai_chat_user' | 'ai_chat_agent' | 'ai_agent_status';
 
 interface RoomAgentInteractionEvent {
   id: string;
@@ -340,8 +339,7 @@ export class VideoRoom {
   private isRoomAgentInteractionEventType(value: unknown): value is RoomAgentInteractionEventType {
     return value === 'ai_chat_user'
       || value === 'ai_chat_agent'
-      || value === 'ai_agent_status'
-      || value === 'agent_action';
+      || value === 'ai_agent_status';
   }
 
   private safeAgentInteractionTextOrNull(eventType: RoomAgentInteractionEventType, value: unknown): string | undefined {
@@ -517,51 +515,6 @@ export class VideoRoom {
         && AGENT_STATUS_EVENT_ID_RE.test(evidence.agentStatusEventId)
         && evidence.agentStatusEventId === expectedId
         && (browserObservationOk || persistedDiagnosticOk);
-    }
-
-    if (event.eventType === 'agent_action') {
-      const source = typeof evidence.source === 'string' ? evidence.source : null;
-      const capturedAtMs = typeof evidence.capturedAtMs === 'number' && Number.isInteger(evidence.capturedAtMs)
-        ? evidence.capturedAtMs
-        : null;
-      const origin = typeof evidence.origin === 'string' ? evidence.origin : null;
-      const executionStatus = typeof evidence.executionStatus === 'string' ? evidence.executionStatus : null;
-      const actionId = typeof evidence.actionId === 'string' ? evidence.actionId : null;
-      const expectedId = source && capturedAtMs !== null && origin && executionStatus && actionId
-        ? `agent-action:${event.actor}:${capturedAtMs}:${source}:${origin}:${executionStatus}:${safeEvidenceIdPart(actionId)}`
-        : null;
-      const idOk = typeof evidence.agentActionEventId === 'string'
-        && AGENT_ACTION_EVENT_ID_RE.test(evidence.agentActionEventId)
-        && evidence.agentActionEventId === expectedId;
-      const surfaceOk = evidence.surface === 'standard';
-      const roomContextOk = surfaceOk && typeof evidence.roomPhase === 'string';
-      if (source === 'agent_bridge') {
-        const commonOk = actionId !== null
-          && capturedAtMs !== null
-          && capturedAtMs >= 0
-          && idOk
-          && origin === 'agent'
-          && typeof evidence.agent === 'string'
-          && evidence.agent.trim().length > 0
-          && hasOptionalBrowserPromptRef(evidence)
-          && evidence.actionProtocol === 'agent_room_action_tag'
-          && evidence.bridgeEventType === 'ROOM_ACTION';
-        const suggestedOk = event.actor === 'agent'
-          && executionStatus === 'suggested'
-          && (evidence.actionSource === 'agent_stdout' || evidence.actionSource === 'agent_api_response')
-          && typeof evidence.observedAt === 'string'
-          && typeof evidence.bridgePersisted === 'boolean';
-        const executedOk = (event.actor === 'host' || event.actor === 'guest')
-          && event.actor === senderActor
-          && executionStatus === 'executed'
-          && evidence.executedBy === event.actor
-          && (evidence.actionSource === 'agent_stdout_action' || evidence.actionSource === 'agent_api_response_action')
-          && typeof evidence.agentActionObservedAt === 'string'
-          && typeof evidence.agentActionBridgePersisted === 'boolean'
-          && roomContextOk
-          && evidence.agentResponseClaimed === false;
-        return commonOk && (suggestedOk || executedOk);
-      }
     }
 
     return false;

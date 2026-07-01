@@ -343,7 +343,7 @@ describe('InterviewDetailPage', () => {
       'Repo task was selected from source-backed candidate evidence and an approved challenge packet.',
     );
     expect(progress).toHaveTextContent('Start source-backed AI or human evaluation.');
-    expect(progress).toHaveTextContent('challenge, chat, workspace telemetry, room actions, commit, AI use, transcript, tests');
+    expect(progress).toHaveTextContent('challenge, chat, workspace telemetry, tool activity, commit, AI use, transcript, tests');
     expect(progress).toHaveTextContent('Workspace');
     expect(progress).toHaveTextContent('Ready · open-source/widgets · base 1111111111');
     expect(progress).toHaveTextContent('abcdef1234');
@@ -1603,7 +1603,7 @@ describe('InterviewDetailPage', () => {
     expect(progress).toHaveTextContent('Assessment progress');
     expect(progress).toHaveTextContent('Evaluated');
     expect(progress).toHaveTextContent('No further assessment action is required.');
-    expect(progress).toHaveTextContent('challenge, chat, workspace telemetry, room actions, commit, AI use, transcript, tests');
+    expect(progress).toHaveTextContent('challenge, chat, workspace telemetry, tool activity, commit, AI use, transcript, tests');
     expect(progress).toHaveTextContent('1 Test run');
     expect(progress).toHaveTextContent('ffffffffff');
     expect(progress).toHaveTextContent('fix the popover cleanup regression.');

@@ -151,7 +151,7 @@ function assessmentEvidenceSummary(input: {
     input.hasChallengePacket ? 'challenge' : null,
     input.hasMessageEvidence ? 'chat' : null,
     input.hasDevContainerEvidence ? 'workspace telemetry' : null,
-    input.hasToolUsageEvidence ? 'room actions' : null,
+    input.hasToolUsageEvidence ? 'tool activity' : null,
     input.hasWorkEvidence && !hasGranularWorkEvidence ? 'work evidence' : null,
     input.hasCommitSubmission ? 'commit' : null,
     input.hasAiInteraction ? 'AI use' : null,

@@ -95,7 +95,7 @@ function proofChecklistItems(progress: RoomAssessmentProgressSnapshot): ProofChe
     {
       label: 'Interview context',
       captured: Boolean(progress.hasMessageEvidence || progress.hasTranscriptEvidence || progress.hasToolUsageEvidence),
-      detail: 'Chat, transcript, and room actions add context for the reviewer.',
+      detail: 'Chat, transcript, and workspace activity add context for the reviewer.',
       required: false,
     },
   ];

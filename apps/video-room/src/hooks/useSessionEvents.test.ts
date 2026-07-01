@@ -207,9 +207,9 @@ describe('useSessionEvents', () => {
     }));
 
     act(() => {
-      result.current.capture('agent_action', 'Agent bridge opened', 'host', {
-        source: 'agent_bridge',
-        agentResponseClaimed: false,
+      result.current.capture('chat_message', 'Host sent room chat message', 'host', {
+        source: 'room_chat_client_submit',
+        roomMessageId: 'message-before-unload',
       });
     });
 
@@ -226,18 +226,18 @@ describe('useSessionEvents', () => {
       actor: string;
       properties: {
         source: string;
-        agentResponseClaimed: boolean;
+        roomMessageId: string;
         clientEventId: string;
         clientCapturedAtMs: number;
       };
     };
     expect(parsedPayload).toMatchObject({
-      type: 'agent_action',
-      text: 'Agent bridge opened',
+      type: 'chat_message',
+      text: 'Host sent room chat message',
       actor: 'host',
       properties: {
-        source: 'agent_bridge',
-        agentResponseClaimed: false,
+        source: 'room_chat_client_submit',
+        roomMessageId: 'message-before-unload',
         clientCapturedAtMs: 1782600720000,
       },
     });

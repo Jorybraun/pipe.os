@@ -186,7 +186,7 @@ describe('InterviewCard assessment progress', () => {
     );
     expect(progress).toHaveTextContent('DECISION');
     expect(progress).toHaveTextContent('Challenge, work evidence, and required source refs are captured; start source-backed AI or human evaluation.');
-    expect(progress).toHaveTextContent('challenge, chat, workspace telemetry, room actions, commit, AI use, transcript, tests');
+    expect(progress).toHaveTextContent('challenge, chat, workspace telemetry, tool activity, commit, AI use, transcript, tests');
     expect(progress).toHaveTextContent('WORKSPACE');
     expect(progress).toHaveTextContent('Ready · open-source/widgets · base 111111111111');
     expect(progress).toHaveTextContent('open-source/widgets');
