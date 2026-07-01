@@ -578,6 +578,29 @@ function scoreProvenanceLabel(provenance: CodeReviewScoreProvenance | null): str
   ].join(' · ');
 }
 
+function selectedAssessmentScoreProvenance(
+  progress: AssessmentProgressSnapshot,
+  sourceRefCount: number,
+): CodeReviewScoreProvenance | null {
+  if (!progress.evaluation) return null;
+  const claimDimensions = new Set(
+    (progress.evaluation.claims ?? [])
+      .map((claim) => claim.dimension.trim())
+      .filter(Boolean),
+  );
+  const coverage = progress.evaluation.evidenceCoverage ?? null;
+  const coverageMetricCount = (coverage?.requiredForEvaluation.length ?? 0)
+    + (coverage?.expectedForHighConfidence.length ?? 0);
+  const sourceTypeMetricCount = coverage
+    ? Object.keys(coverage.sourceRefTypeCounts).length
+    : progress.sourceRefCounts.length;
+  return {
+    rubricDimensionCount: Math.max(1, claimDimensions.size),
+    evidenceItemCount: Math.max(sourceRefCount, progress.evidenceSnippets?.length ?? 0),
+    metricCount: Math.max(1, coverageMetricCount, sourceTypeMetricCount),
+  };
+}
+
 function scoreLabelForProjection(score: CodeReviewScoreProjection | null): string | null {
   if (score?.score === null || score?.score === undefined) return null;
   return `${Math.round(score.score)}/100${score.band ? ` ${titleCaseToken(score.band)}` : ''}`;
@@ -1388,6 +1411,7 @@ function deriveSelectedWorkspaceAssessmentDecision(
     ?? progress.evaluation?.evidenceCoverage?.sourceRefCount
     ?? progress.sourceRefCounts.reduce((total, item) => total + item.count, 0)
     ?? 0;
+  const scoreProvenance = selectedAssessmentScoreProvenance(progress, sourceRefCount);
   const proofItems = progress.evidenceSnippets?.slice(0, 6).map((snippet, index) => ({
     id: `${progress.session.id}:${index}:${snippet.sourceRefType}:${snippet.occurredAt}`,
     label: snippet.sourceRefType.replace(/[_-]+/g, ' ').toLowerCase(),
@@ -1455,6 +1479,7 @@ function deriveSelectedWorkspaceAssessmentDecision(
     nextAction: nextAction.value,
     nextActionDetail: nextAction.detail,
     scoreLabel: null,
+    scoreProvenanceLabel: scoreProvenanceLabel(scoreProvenance),
     challengeLabel: progress.challenge?.locator.repositoryUrl
       ? String(progress.challenge.locator.repositoryUrl).replace(/^https:\/\/github\.com\//, '')
       : null,

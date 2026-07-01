@@ -1066,6 +1066,8 @@ describe('PersonProfilePage', () => {
     const decision = screen.getByTestId('person-code-review-decision');
     expect(decision).toHaveTextContent('Workspace assessment decision');
     expect(decision).toHaveTextContent('Candidate addressed the impatient click issue');
+    expect(decision).toHaveTextContent('Score provenance');
+    expect(decision).toHaveTextContent('1 rubric dimension · 4 evidence items · 3 scoring metrics');
     expect(decision).toHaveTextContent('source-backed proof items');
   });
 
