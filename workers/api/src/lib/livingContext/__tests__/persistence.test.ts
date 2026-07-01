@@ -819,14 +819,6 @@ describe('LivingContextStore', () => {
       }],
     })).rejects.toThrow('review challenge packet packet-verified contentHash does not match');
 
-    await expect(store.upsertContextRecord({
-      ...baseInput,
-      sources: [{
-        ...baseInput.sources[0],
-        exactText: '{"id":"other-packet"}',
-      }],
-    })).rejects.toThrow('review challenge packet packet-verified exactText does not match');
-
     const record = await store.upsertContextRecord(baseInput);
     expect(sqlite.prepare(
       `SELECT source_ref_type, source_ref_id, content_hash

@@ -1713,6 +1713,18 @@ export interface PostRespondResponse {
   rcd?: RoleContextDocument | null;
 }
 
+export interface RematchPriorDecisions {
+  excludedCount: number;
+  deferredCount: number;
+  totalDecisions: number;
+  excludedChallenges: Array<{
+    challengeId: string;
+    repoId: string;
+    prNumber: number;
+    verdict: 'accepted' | 'rejected';
+  }>;
+}
+
 export interface RematchResult {
   candidateId: string;
   status: string;
@@ -1730,6 +1742,7 @@ export interface RematchResult {
     eligible: boolean;
   } | null;
   reason?: string;
+  priorDecisions?: RematchPriorDecisions | null;
 }
 
 export interface ConceptGraphConcept {
@@ -1877,6 +1890,80 @@ export interface EvidenceConflictReport {
   analyzedAt: string;
 }
 
+// ── Evidence timeline ────────────────────────────────────────────────────────
+
+export interface TimelineEntry {
+  id: string;
+  timestamp: string;
+  entryType: 'interaction' | 'assertion' | 'context_record' | 'artifact';
+  interactionId: string | null;
+  interactionType: string | null;
+  narrative: string;
+  concepts: string[];
+  sourceCount: number;
+  confidence: number | null;
+}
+
+export interface PersonEvidenceTimeline {
+  workspacePersonId: string;
+  totalEntries: number;
+  entries: TimelineEntry[];
+}
+
+// ── Cross-candidate comparison ──────────────────────────────────────────────
+
+export interface ComparisonConceptEvidence {
+  conceptKey: string;
+  label: string;
+  evidenceCount: number;
+  bestStrength: number;
+  effectiveStrength: number;
+  sources: string[];
+}
+
+export interface CandidateEvidenceProfile {
+  candidateId: string;
+  workspacePersonId: string | null;
+  candidateName: string;
+  totalInteractions: number;
+  totalAssertions: number;
+  totalSourceSpans: number;
+  sourceDiversity: number;
+  interactionBreakdown: Record<string, number>;
+  topConcepts: ComparisonConceptEvidence[];
+  latestInteractionAt: string | null;
+  freshestEvidenceAt: string | null;
+}
+
+export interface ConceptComparison {
+  conceptKey: string;
+  label: string;
+  candidates: Array<{
+    candidateId: string;
+    evidenceCount: number;
+    bestStrength: number;
+    effectiveStrength: number;
+    coverageLevel: 'strong' | 'partial' | 'weak' | 'none';
+  }>;
+}
+
+export interface ComparisonSummary {
+  totalCandidates: number;
+  comparedConceptCount: number;
+  sharedConceptCount: number;
+  uniqueConceptsPerCandidate: Record<string, number>;
+  evidenceDiversityRanking: Array<{ candidateId: string; score: number }>;
+  evidenceDepthRanking: Array<{ candidateId: string; totalAssertions: number }>;
+  evidenceFreshnessRanking: Array<{ candidateId: string; freshestAt: string | null }>;
+}
+
+export interface CandidateComparisonReport {
+  pipelineId: string | null;
+  candidateProfiles: CandidateEvidenceProfile[];
+  conceptComparisons: ConceptComparison[];
+  summary: ComparisonSummary;
+}
+
 export interface PostSynthesizeResponse {
   reasoning: string;
   persona: CandidatePersona;
@@ -1886,4 +1973,64 @@ export interface PostSynthesizeResponse {
   domainCoverage: Record<string, DomainCoverage>;
   /** Full Role Context Document — present when backend has cut over to RCD synthesis. */
   rcd?: RoleContextDocument | null;
+}
+
+// ─── Match Decision Audit Trail ─────────────────────────────────────────────
+
+export type MatchDecisionVerdict = 'accepted' | 'rejected' | 'deferred';
+
+export interface MatchDecisionHistoryEntry {
+  decisionId: string;
+  matchRunId: string;
+  challengeId: string;
+  repoId: string;
+  prNumber: number;
+  verdict: MatchDecisionVerdict;
+  reason: string | null;
+  notes: string | null;
+  recruiterId: string;
+  recordedAt: string;
+}
+
+export interface MatchDecisionHistory {
+  candidateId: string;
+  decisions: MatchDecisionHistoryEntry[];
+  totalDecisions: number;
+  acceptedCount: number;
+  rejectedCount: number;
+  deferredCount: number;
+}
+
+export type AlertSeverity = 'critical' | 'warning' | 'info';
+
+export type AlertCategory =
+  | 'stale_evidence'
+  | 'aging_dimension'
+  | 'missing_dimension'
+  | 'low_coverage'
+  | 'single_source';
+
+export interface StalenessAlert {
+  id: string;
+  severity: AlertSeverity;
+  category: AlertCategory;
+  dimension: string | null;
+  title: string;
+  detail: string;
+  ageDays: number | null;
+  decayMultiplier: number | null;
+  recommendation: string;
+}
+
+export type StalenessOverallHealth = 'healthy' | 'attention_needed' | 'at_risk' | 'critical';
+
+export interface StalenessAlertSummary {
+  candidateId: string;
+  workspacePersonId: string | null;
+  criticalCount: number;
+  warningCount: number;
+  infoCount: number;
+  overallHealth: StalenessOverallHealth;
+  alerts: StalenessAlert[];
+  computedAt: string;
 }
