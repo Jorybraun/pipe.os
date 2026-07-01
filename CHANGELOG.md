@@ -26,6 +26,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Fixed — CODE_REVIEW assessment runtime
 
+- The recruiter CODE_REVIEW browser smoke now requires matched interview pages to render the meeting/person boundary copy, proving app-dev keeps the interview scoped to its own evidence while treating same-person interviews as separate context.
 - The deployed workspace smoke now reports current assessment-only CODE_REVIEW handoffs as an explicit `assessment_only_handoff` skip unless `WORKSPACE_SMOKE_REQUIRE_ROOM=1` is set, replacing the stale room-URL parsing failure.
 - The local repo-matching test skill and product-readiness playbook now document the current `/assess` boundary: ready CODE_REVIEW assignments render the challenge, while blocked standalone handoffs must stop at `PROFILE_RECEIVED` / `candidate-intake-queued` instead of teaching agents to wait inside a matching screen.
 - Recruiter CODE_REVIEW detail smoke now rejects the stale “Do not advance from this signal yet” person-profile recommendation and accepts the assignment-fairness review wording instead, keeping deployed browser proof aligned with the current hiring-manager decision model.

@@ -102,6 +102,30 @@ async function expectPersonProfileDecision(page: Page): Promise<void> {
   await expect(evidenceMix).toContainText('Next best source');
 }
 
+async function expectInterviewScopeBoundary(page: Page, options: { required?: boolean } = {}): Promise<void> {
+  const relationship = page.getByTestId('interview-person-context-relationship');
+  if (options.required) {
+    await expect(relationship).toBeVisible();
+  } else if (await relationship.count() === 0) {
+    return;
+  }
+
+  await expect(relationship).toContainText('Person context rollup');
+  await expect(relationship).toContainText(
+    'This meeting remains scoped to its own invite, room, transcript, and assessment evidence.',
+  );
+
+  const related = page.getByTestId('interview-related-evidence-interviews');
+  if (await related.count() > 0) {
+    await expect(related).toContainText('Other interviews for this person');
+    await expect(related).toContainText(
+      'These are separate interviews on the same person graph. Open the person profile for the full cross-meeting view.',
+    );
+    await expect(related).toContainText(/related context preview/);
+    await expect(related).toContainText('Open full person graph');
+  }
+}
+
 test.describe('Feature: assessment recruiter detail smoke', () => {
   test.skip(
     INTERVIEW_ID.length === 0,
@@ -141,6 +165,7 @@ test.describe('Feature: assessment recruiter detail smoke', () => {
 
     await expect(visibleDecision).toBeVisible({ timeout: 45_000 });
     await expect(visibleDecision).not.toContainText('Not recorded yet');
+    await expectInterviewScopeBoundary(page, { required: true });
     await expectHumanDecisionState(page);
 
     const repoLabel = expectedRepoLabel(EXPECTED_REPO_URL);
