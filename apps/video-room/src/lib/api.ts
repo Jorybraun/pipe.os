@@ -150,11 +150,9 @@ export async function getRoomWorkspace(token: string): Promise<RoomWorkspace> {
 export async function launchRoomWorkspace(
   token: string,
   repoUrl?: string,
-  agentType?: 'devin' | null,
 ): Promise<RoomWorkspaceLaunchResponse> {
-  const body: { repoUrl?: string; agentType?: 'devin' } = {};
+  const body: { repoUrl?: string } = {};
   if (repoUrl) body.repoUrl = repoUrl;
-  if (agentType === 'devin') body.agentType = agentType;
   const response = await fetch(apiUrl(`/api/v1/meeting-rooms/${token}/workspace/launch`), {
     method: 'POST',
     headers: { 'Content-Type': 'application/json' },
@@ -210,13 +208,6 @@ export async function finalizeRoomWorkspaceAssessment(
     },
   );
   return parseResponse<RoomWorkspaceFinalizeResponse>(response);
-}
-
-export function roomAgentWsUrl(token: string, sessionId: string): string {
-  const httpUrl = apiUrl(
-    `/api/v1/meeting-rooms/${encodeURIComponent(token)}/agent/${encodeURIComponent(sessionId)}/ws`,
-  );
-  return httpUrl.replace(/^http:/, 'ws:').replace(/^https:/, 'wss:');
 }
 
 export function roomTerminalWsUrl(token: string, sessionId: string): string {

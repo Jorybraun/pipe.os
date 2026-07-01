@@ -21,7 +21,6 @@ import {
   loadRoom,
   postRoomEvent,
   roomWorkspaceProxyUrl,
-  roomAgentWsUrl,
   roomTerminalWsUrl,
   submitRoomAssessmentCommit,
   uploadRecording,
@@ -37,12 +36,7 @@ import {
   type RecordingFailureStage,
 } from './lib/recordingEvidence';
 import {
-  buildAgentMessageSessionEvidence,
-  buildAgentStatusEvidence,
-} from './lib/agentEvidence';
-import {
   buildCodeEditorOpenEvidence,
-  buildCodeServerFileChangeEvidence,
   buildWorkspaceStateEvidence,
 } from './lib/workspaceEvidence';
 import {
@@ -60,13 +54,6 @@ import { useAssessmentProgressPolling } from './hooks/useAssessmentProgressPolli
 import { useToolSurfaceManager } from './hooks/useToolSurfaceManager';
 import { StandardLayout } from './components/StandardLayout';
 import { ChatPanel, type ChatMessage } from './components/ChatPanel';
-import {
-  useAgentConnection,
-  agentStatusEvidenceText,
-  type AgentChatMessage,
-  type AgentFileChangeEvent,
-  type AgentStatus,
-} from './hooks/useAgentConnection';
 import { TerminalPanel } from './components/TerminalPanel';
 import {
   buildTerminalCommandEvidence,
@@ -278,13 +265,10 @@ function Room({ token, metadata }: { token: string; metadata: RoomMetadata }): J
     onChatDeliveryEvidence: captureChatDeliveryEvidence,
   });
   const publishTerminalEvent = room.publishTerminalEvent;
-  const publishAgentInteractionEvent = room.publishAgentInteractionEvent;
-  const publishCodeServerFileEvent = room.publishCodeServerFileEvent;
   const [workspace, setWorkspace] = useState<RoomWorkspace | null>(metadata.workspace ?? null);
   const [workspaceLoading, setWorkspaceLoading] = useState(false);
   const [workspaceError, setWorkspaceError] = useState<string | null>(null);
   const [workspaceRepoInput, setWorkspaceRepoInput] = useState('');
-  const [workspaceAgentEnabled, setWorkspaceAgentEnabled] = useState(false);
   const [iframeLoaded, setIframeLoaded] = useState(false);
   const toolSurfaces = useToolSurfaceManager();
   const [deviceState, setDeviceState] = useState<DeviceState>('checking');
@@ -308,9 +292,6 @@ function Room({ token, metadata }: { token: string; metadata: RoomMetadata }): J
   const terminalCommandSequenceRef = useRef(0);
   const terminalOutputSequenceRef = useRef(0);
   const activeTerminalCommandIdRef = useRef<string | null>(null);
-  const capturedAgentMessagesRef = useRef<Set<string>>(new Set());
-  const capturedAgentStatusRef = useRef<string | null>(null);
-  const capturedAgentFileChangesRef = useRef<Set<string>>(new Set());
 
   const requestDevices = useCallback(async (): Promise<void> => {
     const requestId = deviceRequestRef.current + 1;
@@ -442,7 +423,6 @@ function Room({ token, metadata }: { token: string; metadata: RoomMetadata }): J
       const launch = await launchRoomWorkspace(
         token,
         repoUrl,
-        workspaceAgentEnabled ? 'devin' : null,
       );
       setWorkspace(launch.workspace);
       if (launch.progress) setAssessmentProgress(launch.progress);
@@ -457,7 +437,7 @@ function Room({ token, metadata }: { token: string; metadata: RoomMetadata }): J
     } finally {
       setWorkspaceLoading(false);
     }
-  }, [publishWorkspaceStateEvent, token, workspace, workspaceAgentEnabled, workspaceRepoInput]);
+  }, [publishWorkspaceStateEvent, token, workspace, workspaceRepoInput]);
 
   useEffect(() => {
     if (!workspace?.enabled) return undefined;
@@ -876,13 +856,6 @@ function Room({ token, metadata }: { token: string; metadata: RoomMetadata }): J
     ? workspace.challenge.message
     : null;
   const workspaceChallengePacket = workspace?.challenge?.packet ?? null;
-  const agentBridgeEnabled = Boolean((metadata.features?.agentEnabled ?? true) && workspaceSession && hasActiveWorkspace);
-  const agentConn = useAgentConnection({
-    wsUrl: agentBridgeEnabled && workspaceSession ? roomAgentWsUrl(token, workspaceSession.sessionId) : null,
-    enabled: agentBridgeEnabled,
-    promptActor: roomActor,
-    promptWorkspaceSessionId: workspaceSession?.sessionId ?? null,
-  });
   const roomAssessmentMode = assessmentModeForRoom({
     meetingType: metadata.meetingType,
     workspaceEnabled: hasWorkspaceFeature,
@@ -1140,17 +1113,6 @@ function Room({ token, metadata }: { token: string; metadata: RoomMetadata }): J
                     data-testid="prejoin-repo-input"
                   />
                 )}
-                {(metadata.features?.agentEnabled ?? true) && (
-                  <label className="workspace-agent-toggle">
-                    <input
-                      type="checkbox"
-                      checked={workspaceAgentEnabled}
-                      onChange={(e) => setWorkspaceAgentEnabled(e.target.checked)}
-                      data-testid="prejoin-devin-agent-toggle"
-                    />
-                    <span>Start Devin bridge</span>
-                  </label>
-                )}
                 <button
                   className="prejoin-launch-btn"
                   onClick={() => void launchWorkspace()}
@@ -1258,146 +1220,6 @@ function Room({ token, metadata }: { token: string; metadata: RoomMetadata }): J
         return response;
       });
   };
-
-  const captureAgentChatMessage = (message: AgentChatMessage): void => {
-    const evidence = buildAgentMessageSessionEvidence({
-      text: message.text,
-      source: message.source,
-      agentName: message.agentName ?? null,
-      agentStatus: message.agentStatus ?? null,
-      diagnosticSource: message.diagnosticSource ?? null,
-      observedAt: message.observedAt ?? null,
-      exitCode: message.exitCode ?? null,
-      signal: message.signal ?? null,
-      truncated: message.truncated ?? null,
-      persisted: message.persisted ?? null,
-      promptType: message.promptType ?? null,
-      deliveredToAgent: message.deliveredToAgent ?? null,
-      promptLength: message.promptLength ?? null,
-      promptFingerprint: message.promptFingerprint ?? null,
-      roomContextStatus: message.roomContextStatus ?? null,
-      roomContextLength: message.roomContextLength ?? null,
-      roomContextFingerprint: message.roomContextFingerprint ?? null,
-      userMessageLength: message.userMessageLength ?? null,
-      userMessageFingerprint: message.userMessageFingerprint ?? null,
-      contextTruncated: message.contextTruncated ?? null,
-      browserPromptId: message.browserPromptId ?? null,
-      browserPromptFingerprint: message.browserPromptFingerprint ?? null,
-      browserPromptTimestamp: message.browserPromptTimestamp ?? null,
-      browserPromptLength: message.browserPromptLength ?? null,
-      surface: room.roomSurface,
-      roomPhase: room.phase,
-      workspaceStatus: workspaceSession?.status ?? null,
-      workspaceSessionId: workspaceSession?.sessionId ?? null,
-      messageTimestamp: message.timestamp,
-    });
-    if (!evidence) return;
-    const properties = {
-      ...evidence.properties,
-      durableObjectReplayExpected: true,
-    };
-    captureSessionEvent(evidence.eventType, evidence.text, 'agent', properties);
-    publishAgentInteractionEvent({
-      eventType: evidence.eventType,
-      actor: 'agent',
-      text: evidence.text,
-      evidence: properties,
-    });
-  };
-
-  const captureAgentStatus = (status: AgentStatus, agentName: string): void => {
-    if (!agentName.trim()) return;
-    const capturedAtMs = Date.now();
-    const observedAt = new Date(capturedAtMs).toISOString();
-    const text = agentStatusEvidenceText(status, agentName);
-    if (!text) return;
-    const evidence = buildAgentStatusEvidence({
-      text,
-      agentName,
-      status,
-      bridgeMessageSource: 'agent_status',
-      observedAt,
-      surface: room.roomSurface,
-      roomPhase: room.phase,
-      workspaceStatus: workspaceSession?.status ?? null,
-      workspaceSessionId: workspaceSession?.sessionId ?? null,
-      capturedAtMs,
-      messageTimestamp: capturedAtMs,
-    });
-    if (!evidence) return;
-    const properties = {
-      ...evidence.properties,
-      durableObjectReplayExpected: true,
-    };
-    captureSessionEvent('ai_agent_status', evidence.text, 'agent', properties);
-    publishAgentInteractionEvent({
-      eventType: 'ai_agent_status',
-      actor: 'agent',
-      text: evidence.text,
-      evidence: properties,
-    });
-  };
-
-  const captureAgentFileChange = (event: AgentFileChangeEvent): void => {
-    const evidence = buildCodeServerFileChangeEvidence({
-      filePath: event.filePath,
-      actionName: event.actionName,
-      source: event.source,
-      observedAt: event.observedAt,
-      sizeBytes: event.sizeBytes,
-      contentHash: event.contentHash,
-      contentPreview: event.contentPreview,
-      persisted: event.persisted,
-      workspace,
-      surface: room.roomSurface,
-      roomPhase: room.phase,
-    });
-    if (!evidence) return;
-    const properties = {
-      ...evidence.properties,
-      durableObjectReplayExpected: true,
-    };
-    captureSessionEvent(evidence.eventType, evidence.text, 'system', properties);
-    publishCodeServerFileEvent({
-      eventType: evidence.eventType,
-      actor: 'system',
-      text: evidence.text,
-      evidence: properties,
-    });
-  };
-
-  useEffect(() => {
-    for (const message of agentConn.messages) {
-      if (message.role !== 'agent') continue;
-      const signature = `${message.timestamp}|${message.text}`;
-      if (capturedAgentMessagesRef.current.has(signature)) continue;
-      capturedAgentMessagesRef.current.add(signature);
-      captureAgentChatMessage(message);
-    }
-  }, [agentConn.messages]);
-
-  useEffect(() => {
-    if (!agentBridgeEnabled) return;
-    const signature = `${agentConn.agentName}|${agentConn.status}`;
-    if (capturedAgentStatusRef.current === signature) return;
-    capturedAgentStatusRef.current = signature;
-    captureAgentStatus(agentConn.status, agentConn.agentName);
-  }, [agentBridgeEnabled, agentConn.agentName, agentConn.status]);
-
-  useEffect(() => {
-    for (const event of agentConn.fileChanges) {
-      const signature = [
-        event.timestamp,
-        event.filePath,
-        event.actionName,
-        event.contentHash ?? '',
-        event.sizeBytes ?? '',
-      ].join('|');
-      if (capturedAgentFileChangesRef.current.has(signature)) continue;
-      capturedAgentFileChangesRef.current.add(signature);
-      captureAgentFileChange(event);
-    }
-  }, [agentConn.fileChanges]);
 
   const remoteParticipantLabel = metadata.role === 'HOST' ? 'Guest' : 'Host';
   const remoteParticipantRole = metadata.role === 'HOST' ? 'GUEST' : 'HOST';
@@ -1615,17 +1437,6 @@ function Room({ token, metadata }: { token: string; metadata: RoomMetadata }): J
                 )}
                 {canLaunchWorkspace && (
                   <>
-                    {(metadata.features?.agentEnabled ?? true) && (
-                      <label className="workspace-agent-toggle">
-                        <input
-                          type="checkbox"
-                          checked={workspaceAgentEnabled}
-                          onChange={(e) => setWorkspaceAgentEnabled(e.target.checked)}
-                          data-testid="workspace-devin-agent-toggle"
-                        />
-                        <span>Start Devin bridge</span>
-                      </label>
-                    )}
                     <button
                       className="room-workspace-launch-btn"
                       onClick={() => void launchWorkspace()}

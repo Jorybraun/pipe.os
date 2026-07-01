@@ -680,7 +680,6 @@ export function SchedulingDashboard(): JSX.Element {
             recordingEnabled: boolean;
             aiAssistantEnabled: boolean;
           };
-          agentType?: string | null;
         }) => {
           const result = await api.post<{
             interview: {

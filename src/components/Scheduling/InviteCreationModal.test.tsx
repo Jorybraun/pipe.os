@@ -114,8 +114,15 @@ describe('InviteCreationModal open-source challenge packets', () => {
         'Test command output',
         'Candidate explanation',
       ],
+      features: {
+        videoEnabled: true,
+        workspaceEnabled: true,
+        recordingEnabled: true,
+        aiAssistantEnabled: false,
+      },
     }));
     expect(onCreateInvite.mock.calls[0]?.[0]).not.toHaveProperty('githubPrNumber');
+    expect(onCreateInvite.mock.calls[0]?.[0]).not.toHaveProperty('agentType');
   });
 
   it('keeps manual open-source packets blocked until the base commit is a 40-character hex SHA', () => {

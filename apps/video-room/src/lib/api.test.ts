@@ -271,41 +271,6 @@ describe('launchRoomWorkspace', () => {
     fetchSpy.mockRestore();
   });
 
-  it('requests a real Devin bridge only when the host opts in', async () => {
-    const fetchSpy = vi.spyOn(globalThis, 'fetch').mockResolvedValue(new Response(
-      JSON.stringify({
-        workspace: {
-          enabled: true,
-          canLaunch: true,
-          repoUrl: 'https://github.com/pipe/source-backed-worker',
-          githubPrNumber: null,
-          matchedRepoId: null,
-          challenge: {
-            status: 'repo_task_assigned',
-            kind: 'repo_only',
-            source: 'scheduled_interview.challenge_packet',
-            message: null,
-            packet: null,
-          },
-          session: null,
-        },
-        progress: null,
-      }),
-      { status: 201, headers: { 'Content-Type': 'application/json' } },
-    ));
-
-    await launchRoomWorkspace(
-      'room-token',
-      'https://github.com/pipe/source-backed-worker',
-      'devin',
-    );
-
-    expect(JSON.parse(String(fetchSpy.mock.calls[0]?.[1]?.body))).toEqual({
-      repoUrl: 'https://github.com/pipe/source-backed-worker',
-      agentType: 'devin',
-    });
-    fetchSpy.mockRestore();
-  });
 });
 
 describe('getRoomAssessmentProgress', () => {

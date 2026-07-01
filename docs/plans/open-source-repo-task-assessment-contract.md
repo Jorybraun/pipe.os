@@ -131,13 +131,13 @@ The controlling product rule remains:
   dev-container `CODE_IMPLEMENTATION` runtime.
 - Meeting-room workspace provisioning treats it as a workspace-backed interview.
 - Host room end now replays the authoritative Durable Object chat, media,
-  recording, workspace, terminal, code-server, and agent activity logs into
+  recording, workspace, terminal, and code-server activity logs into
   source-backed `meeting_session_event` evidence,
   so assessment-room interactions are captured as part of the interview lifecycle
   instead of only when a graph read is requested later.
-- Shared host/guest room chat is recorded as human `chat_message` evidence,
-  while AI agent bridge/Devin chat remains separately classified as `ai_chat_user` and
-  `ai_chat_agent` evidence.
+- Shared host/guest room chat is recorded as human `chat_message` evidence.
+  AI-usage proof must come from a deliberate source-backed integration, not a
+  candidate-facing assistant surface in the room.
 - Accepted mic/camera control toggles now replay from the Durable Object
   activity log as source-backed `media_control` evidence, preserving actor,
   room phase, previous state, next state, and browser-control provenance for
@@ -148,7 +148,7 @@ The controlling product rule remains:
   the authoritative accepted-chat replay source.
 - Candidate-opened external task, issue, docs, or repository links remain local
   browser actions. Assessment evidence should come from accepted room events,
-  workspace telemetry, terminal/code activity, chat, transcript, AI bridge logs,
+  workspace telemetry, terminal/code activity, chat, transcript,
   and submitted commit/diff/test proof.
 - Submitted commit proof must tie the commit URL back to the assigned
   repository or the candidate's declared fork. A GitHub commit URL from an
@@ -193,48 +193,15 @@ The controlling product rule remains:
 - Workspace state events now persist dev-container diagnostics with workspace
   session id, status, repo context, TTL details, and error messages, while
   excluding room-token proxy paths from the evidence payload.
-- Agent bridge/Devin status transitions now persist as source-backed
-  `meeting_session_event` evidence, including real auth-required or
-  disconnected states instead of simulated agent availability.
-- AI agent bridge/Devin chat evidence distinguishes real Devin stdout from bridge
-  diagnostics and file-watcher observations, preventing auth-required or
-  container-observed facts from being projected as fabricated Devin replies.
-- AI agent bridge/Devin room actions emitted from the real bridge stdout tag protocol
-  now persist origin, bridge event type, action protocol, agent name, and
-  browser execution role in `agent_action` evidence, so prompt-button actions
-  and real agent-directed room actions remain separate.
-- AI agent bridge/Devin process diagnostics now persist bounded and redacted bridge
-  evidence for real stderr, context-primer failures, process exits, and startup
-  errors, including diagnostic source, observed time, exit code, and signal
-  metadata instead of leaving failures only in container logs.
-- Agent bridge/Devin statuses and diagnostics now preserve direct exact-text
-  `agent_status` / `agent_diagnostic` source refs in both
-  living-context and assessment evidence, so auth, startup, prompt-handoff, and
-  process-failure states can be cited without unpacking the broad session event.
-- AI agent bridge/Devin context-primer and chat-prompt handoffs now persist
-  `ai_agent_status` diagnostics when the bridge writes to real Devin stdin,
-  including delivery state, room-context fetch status, and redacted
-  fingerprints/lengths for prompt, room context, and candidate message without
-  storing the private prompt body.
-- The assessment room no longer mounts a floating assistant entrypoint; agent
-  status, diagnostics, prompt handoffs, and real Devin stdout are bridge-origin
-  evidence from the controlled workspace.
-- Agent bridge/Devin diagnostics, prompt handoffs, and real Devin stdout now
-  post token-scoped `session-events` directly from the dev container before
-  broadcasting to browsers. Browser evidence capture remains a fallback only
-  when the bridge cannot persist, preventing duplicate graph events while
-  preserving the visible chat/diagnostic stream.
-- Agent bridge/Devin diagnostic, auth/status, room-action, and stdout fallback
-  text is redacted before browser evidence, Durable Object broadcast/storage,
-  or session-event persistence. Secret-bearing agent chat is rejected rather
-  than rewriting fingerprinted source evidence.
-- The container bridge applies the same redaction before WebSocket broadcasts
-  and direct `session-events` writes, so bridge-origin response ids and lengths
-  are derived from the stored redacted stdout rather than raw agent output.
-- AI agent bridge/Devin room-action suggestions now persist directly from the bridge as
-  `agent_action` events with `executionStatus: suggested`. Browser-side action
-  execution remains separate `agent_action` evidence with
-  `executionStatus: executed` and links back to the bridge suggestion metadata.
+- The shipped assessment room no longer mounts browser-controlled AI chat,
+  floating assistant entrypoints, or candidate-facing agent controls.
+- Future AI-usage telemetry must be source-backed server-origin evidence before
+  any UI exposes it to candidates or recruiters; browser-only AI claims are not
+  accepted as assessment proof.
+- Workspace-origin diagnostics and tool observations should post token-scoped
+  `session-events` directly from the controlled dev container before browser
+  replay is considered, preventing duplicate graph events while preserving
+  direct source refs.
 - Code-server workspace create/modify/delete events are now observed by the
   container bridge and persisted as source-backed `file_change`
   `meeting_session_event` evidence with path, content hash, file size, and a

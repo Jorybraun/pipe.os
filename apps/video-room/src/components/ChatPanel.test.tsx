@@ -5,7 +5,7 @@ import { describe, expect, it, vi } from 'vitest';
 import { ChatPanel } from './ChatPanel';
 
 describe('ChatPanel', () => {
-  it('keeps room chat human-only without an assistant launcher', () => {
+  it('keeps room chat human-only without extra tool launchers', () => {
     const onSend = vi.fn();
 
     render(

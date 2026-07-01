@@ -31,7 +31,6 @@ interface InviteCreationData {
     recordingEnabled: boolean;
     aiAssistantEnabled: boolean;
   };
-  agentType?: string | null;
 }
 
 interface InviteCreationModalProps {
@@ -140,8 +139,6 @@ export function InviteCreationModal({
   const [videoEnabled, setVideoEnabled] = useState(true);
   const [workspaceEnabled, setWorkspaceEnabled] = useState(true);
   const [recordingEnabled, setRecordingEnabled] = useState(true);
-  const [assistantEnabled, setAssistantEnabled] = useState(true);
-  const [agentType, setAgentType] = useState<string>('none');
   const [isCreating, setIsCreating] = useState(false);
   const [createError, setCreateError] = useState<string | null>(null);
   const [createdInvite, setCreatedInvite] = useState<CreatedInviteState | null>(null);
@@ -290,11 +287,8 @@ export function InviteCreationModal({
         videoEnabled,
         workspaceEnabled,
         recordingEnabled,
-        aiAssistantEnabled: assistantEnabled,
+        aiAssistantEnabled: false,
       };
-      if (agentType !== 'none') {
-        inviteData.agentType = agentType;
-      }
       
       if (!workspaceAssessment && schedulingMode === 'calendly' && canUseCalendly && selectedCalendlyEventType) {
         inviteData.schedulingProvider = 'CALENDLY';
@@ -777,30 +771,8 @@ export function InviteCreationModal({
                   <input type="checkbox" checked={recordingEnabled} onChange={(e) => setRecordingEnabled(e.target.checked)} />
                   Recording
                 </label>
-                <label style={{ display: 'flex', alignItems: 'center', gap: 6, fontSize: 11, fontFamily: '"Space Mono", monospace', color: 'var(--pipe-text)', cursor: 'pointer' }}>
-                  <input type="checkbox" checked={assistantEnabled} onChange={(e) => setAssistantEnabled(e.target.checked)} />
-                  AI assistant
-                </label>
               </div>
             </div>
-            )}
-
-            {/* Agent selection */}
-            {assistantEnabled && showsRoomFeatures && supportsManualRepoOverride && (
-              <div style={{ marginBottom: 28 }}>
-                <label style={labelStyle}>AI AGENT</label>
-                <select
-                  value={agentType}
-                  onChange={(e) => setAgentType(e.target.value)}
-                  style={inputStyle}
-                >
-                  <option value="none">No agent</option>
-                  <option value="devin">Devin CLI</option>
-                </select>
-                <div style={{ fontSize: 10, color: 'var(--pipe-text-dim)', fontFamily: '"Space Mono", monospace', marginTop: 4 }}>
-                  Launches an AI pair programmer inside the dev container.
-                </div>
-              </div>
             )}
 
             {/* Optional scheduled time - only show in manual mode */}
