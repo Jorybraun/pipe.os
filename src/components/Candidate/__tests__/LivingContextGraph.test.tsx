@@ -104,6 +104,31 @@ vi.mock('../../../hooks/useEvidenceConflicts', () => ({
   }),
 }));
 
+vi.mock('../../../hooks/useCandidateComparison', () => ({
+  useCandidateComparison: () => ({ report: null, isLoading: false, error: null, compare: vi.fn() }),
+}));
+
+vi.mock('../../../hooks/useEvidenceTimeline', () => ({
+  useEvidenceTimeline: () => ({ timeline: null, isLoading: false, error: null, refetch: vi.fn() }),
+}));
+
+vi.mock('../../../hooks/useStalenessAlerts', () => ({
+  useStalenessAlerts: () => ({ alerts: null, isLoading: false, error: null, refetch: vi.fn() }),
+}));
+
+vi.mock('../../../hooks/useMatchDecisions', () => ({
+  useMatchDecisions: () => ({ history: null, isLoading: false, error: null, refetch: vi.fn(), recordDecision: vi.fn() }),
+}));
+
+vi.mock('../../../hooks/useRepoDecomposition', () => ({
+  useRepoDecomposition: () => ({ overlay: null, isLoading: false, error: null, refetch: vi.fn() }),
+}));
+
+vi.mock('../../../hooks/useMatchConfidence', () => ({
+  useMatchConfidence: () => ({ report: null, isLoading: false, error: null, refetch: vi.fn() }),
+
+}));
+
 beforeEach(() => {
   mocks.livingContext = null;
   mocks.evidenceConflictsReport = null;

@@ -2,6 +2,7 @@ import { useCallback, useEffect, useMemo, useState } from 'react';
 import {
   Activity,
   AlertTriangle,
+  Clock,
   ExternalLink,
   FileText,
   GitPullRequest,
@@ -16,7 +17,10 @@ import {
   Zap,
 } from 'lucide-react';
 import type {
+  CandidateEvidenceProfile,
+  ConceptComparison,
   ConceptGraphAdjacency,
+  PersonEvidenceTimeline,
   ConceptGraphConcept,
   CoverageLevel,
   EvidenceFreshnessResponse,
@@ -50,7 +54,13 @@ import { useEvidenceGaps } from '../../hooks/useEvidenceGaps';
 import { useEvidenceLineage } from '../../hooks/useEvidenceLineage';
 import { useMatchProvenance } from '../../hooks/useMatchProvenance';
 import { useMatchHistory } from '../../hooks/useMatchHistory';
+import { useMatchDecisions } from '../../hooks/useMatchDecisions';
 import { useRematch } from '../../hooks/useRematch';
+import { useCandidateComparison } from '../../hooks/useCandidateComparison';
+import { useEvidenceTimeline } from '../../hooks/useEvidenceTimeline';
+import { useStalenessAlerts } from '../../hooks/useStalenessAlerts';
+import { useRepoDecomposition } from '../../hooks/useRepoDecomposition';
+import { useMatchConfidence } from '../../hooks/useMatchConfidence';
 import { useLivingContext } from '../../hooks/useLivingContext';
 import { buildLivingContextBranches } from '../../lib/livingContextTree';
 import { ContextRecordForest } from './ContextRecordTree';
@@ -1976,6 +1986,138 @@ function EvidenceDepthPanel({
   );
 }
 
+// ── Evidence timeline ────────────────────────────────────────────────────────
+
+const ENTRY_TYPE_ICON_COLOR: Record<string, string> = {
+  interaction: 'var(--lc-concept, #60a5fa)',
+  assertion: 'var(--lc-structural, rgba(255,255,255,0.6))',
+  context_record: 'var(--lc-gap-weak, #f59e0b)',
+  artifact: 'var(--lc-concept, #60a5fa)',
+};
+
+function EvidenceTimelinePanel({
+  candidateId,
+}: {
+  candidateId: string;
+}): JSX.Element | null {
+  const { timeline, isLoading, error, refetch } = useEvidenceTimeline(candidateId);
+
+  if (isLoading && !timeline) return null;
+  if (error || !timeline || timeline.entries.length === 0) return null;
+
+  const grouped = groupTimelineByDate(timeline.entries);
+
+  return (
+    <section
+      className="living-context__panel"
+      data-testid="evidence-timeline-panel"
+    >
+      <div className="living-context__section-head">
+        <div style={{ display: 'flex', gap: 6, alignItems: 'center' }}>
+          <Clock size={13} color="var(--lc-concept)" />
+          <div className="living-context__section-title">Evidence timeline</div>
+          <div className="living-context__count">{timeline.totalEntries}</div>
+        </div>
+        <button
+          type="button"
+          className="living-context__refresh"
+          onClick={() => void refetch()}
+          title="Refresh timeline"
+          aria-label="Refresh timeline"
+        >
+          <RefreshCw size={12} />
+        </button>
+      </div>
+
+      <div className="living-context__timeline" data-testid="timeline-entries">
+        {grouped.map(([dateLabel, entries]) => (
+          <div key={dateLabel} className="living-context__timeline-group">
+            <div className="living-context__timeline-date">{dateLabel}</div>
+            {entries.map((entry) => (
+              <div
+                key={entry.id}
+                className="living-context__timeline-entry"
+                data-testid="timeline-entry"
+              >
+                <div className="living-context__timeline-dot" style={{ background: ENTRY_TYPE_ICON_COLOR[entry.entryType] ?? 'var(--lc-structural)' }} />
+                <div className="living-context__timeline-content">
+                  <div className="living-context__timeline-header">
+                    <span className="living-context__timeline-type">
+                      {titleCase(entry.entryType)}
+                    </span>
+                    <span className="living-context__timeline-time">
+                      {formatTimeOnly(entry.timestamp)}
+                    </span>
+                  </div>
+                  <div className="living-context__timeline-narrative">
+                    {entry.narrative}
+                  </div>
+                  <div className="living-context__timeline-meta">
+                    {entry.interactionType && (
+                      <span className="living-context__timeline-badge">
+                        {titleCase(entry.interactionType)}
+                      </span>
+                    )}
+                    {entry.sourceCount > 0 && (
+                      <span className="living-context__timeline-stat">
+                        {entry.sourceCount} source{entry.sourceCount === 1 ? '' : 's'}
+                      </span>
+                    )}
+                    {entry.confidence !== null && (
+                      <span className="living-context__timeline-stat">
+                        {Math.round(entry.confidence * 100)}% confidence
+                      </span>
+                    )}
+                  </div>
+                  {entry.concepts.length > 0 && (
+                    <div className="living-context__timeline-concepts">
+                      {entry.concepts.slice(0, 5).map((concept) => (
+                        <span key={concept} className="living-context__concept">
+                          {concept}
+                        </span>
+                      ))}
+                      {entry.concepts.length > 5 && (
+                        <span className="living-context__timeline-stat">
+                          +{entry.concepts.length - 5} more
+                        </span>
+                      )}
+                    </div>
+                  )}
+                </div>
+              </div>
+            ))}
+          </div>
+        ))}
+      </div>
+    </section>
+  );
+}
+
+function formatTimeOnly(timestamp: string): string {
+  const date = new Date(timestamp);
+  if (Number.isNaN(date.getTime())) return timestamp;
+  return date.toLocaleTimeString([], { hour: 'numeric', minute: '2-digit' });
+}
+
+function groupTimelineByDate(
+  entries: PersonEvidenceTimeline['entries'],
+): Array<[string, PersonEvidenceTimeline['entries']]> {
+  const groups = new Map<string, PersonEvidenceTimeline['entries']>();
+  for (const entry of entries) {
+    const date = new Date(entry.timestamp);
+    const key = Number.isNaN(date.getTime())
+      ? 'Unknown'
+      : date.toLocaleDateString([], { month: 'short', day: 'numeric', year: 'numeric' });
+    const existing = groups.get(key);
+    if (existing) {
+      existing.push(entry);
+    } else {
+      groups.set(key, [entry]);
+    }
+  }
+  return Array.from(groups.entries());
+}
+
 function ConceptGraphPanel({
   concepts,
   adjacencies,
@@ -2213,6 +2355,319 @@ function MatchHistoryPanel({
   );
 }
 
+function MatchDecisionPanel({
+  candidateId,
+}: {
+  candidateId: string;
+}): JSX.Element | null {
+  const { history, isLoading, error, refetch } = useMatchDecisions(candidateId);
+
+  if (isLoading && !history) return null;
+  if (error || !history || history.totalDecisions === 0) return null;
+
+  return (
+    <section
+      className="living-context__panel"
+      data-testid="match-decision-panel"
+    >
+      <div className="living-context__section-head">
+        <div style={{ display: 'flex', gap: 6, alignItems: 'center' }}>
+          <div className="living-context__section-title">Match decisions</div>
+          <div className="living-context__count">{history.totalDecisions}</div>
+        </div>
+        <button
+          type="button"
+          className="living-context__refresh"
+          onClick={() => void refetch()}
+          title="Refresh decisions"
+          aria-label="Refresh decisions"
+        >
+          <RefreshCw size={12} />
+        </button>
+      </div>
+
+      <div className="living-context__match-decision-summary">
+        {history.acceptedCount > 0 && (
+          <span className="living-context__match-decision-badge living-context__match-decision-badge--accepted">
+            {history.acceptedCount} accepted
+          </span>
+        )}
+        {history.rejectedCount > 0 && (
+          <span className="living-context__match-decision-badge living-context__match-decision-badge--rejected">
+            {history.rejectedCount} rejected
+          </span>
+        )}
+        {history.deferredCount > 0 && (
+          <span className="living-context__match-decision-badge living-context__match-decision-badge--deferred">
+            {history.deferredCount} deferred
+          </span>
+        )}
+      </div>
+
+      <div className="living-context__match-decision-list">
+        {history.decisions.slice(0, 10).map((decision) => (
+          <div
+            key={decision.decisionId}
+            className="living-context__match-decision-entry"
+            data-testid="match-decision-entry"
+          >
+            <div className="living-context__match-decision-header">
+              <span className={`living-context__match-decision-verdict living-context__match-decision-verdict--${decision.verdict}`}>
+                {decision.verdict}
+              </span>
+              <span className="living-context__match-decision-date">
+                {formatDate(decision.recordedAt)}
+              </span>
+            </div>
+            <div className="living-context__match-decision-challenge">
+              <GitPullRequest size={11} />
+              <span>{decision.repoId}#{decision.prNumber}</span>
+            </div>
+            {decision.reason && (
+              <div className="living-context__match-decision-reason">
+                {decision.reason}
+              </div>
+            )}
+          </div>
+        ))}
+      </div>
+    </section>
+  );
+}
+
+function RepoDecompositionPanel({
+  candidateId,
+  packetId,
+}: {
+  candidateId: string;
+  packetId: string | null;
+}): JSX.Element | null {
+  const { overlay, isLoading, error, refetch } = useRepoDecomposition(candidateId, packetId);
+
+  if (!packetId) return null;
+  if (isLoading && !overlay) return null;
+  if (error || !overlay) return null;
+
+  const coveragePercent = Math.round(overlay.coverageSummary.overallScore * 100);
+  const filesByDemand = overlay.files.filter((f) => f.demandCount > 0);
+
+  return (
+    <section
+      className="living-context__panel"
+      data-testid="repo-decomposition-panel"
+    >
+      <div className="living-context__section-head">
+        <div>
+          <div className="living-context__section-title">Repository decomposition</div>
+          <div className="living-context__eyebrow">
+            {overlay.repoName} &middot; PR #{overlay.prNumber} &middot; {overlay.primaryLanguage}
+          </div>
+        </div>
+        <button
+          type="button"
+          className="living-context__refresh"
+          onClick={() => void refetch()}
+          title="Refresh decomposition"
+          aria-label="Refresh decomposition"
+        >
+          <RefreshCw size={12} />
+        </button>
+      </div>
+
+      <div className="living-context__repo-decomposition-summary">
+        <div className="living-context__metric">
+          <div className="living-context__metric-value">{coveragePercent}%</div>
+          <div className="living-context__metric-label">coverage</div>
+        </div>
+        <div className="living-context__metric">
+          <div className="living-context__metric-value">{overlay.coverageSummary.coveredDemands}</div>
+          <div className="living-context__metric-label">covered</div>
+        </div>
+        <div className="living-context__metric">
+          <div className="living-context__metric-value">{overlay.coverageSummary.partialDemands}</div>
+          <div className="living-context__metric-label">partial</div>
+        </div>
+        <div className="living-context__metric">
+          <div className="living-context__metric-value">{overlay.coverageSummary.uncoveredDemands}</div>
+          <div className="living-context__metric-label">gaps</div>
+        </div>
+      </div>
+
+      {filesByDemand.length > 0 && (
+        <div className="living-context__repo-decomposition-files">
+          <div className="living-context__subsection-title">Changed files</div>
+          {filesByDemand.slice(0, 15).map((file) => {
+            const score = file.candidateAlignmentScore;
+            const barWidth = score !== null ? Math.round(score * 100) : 0;
+            return (
+              <div
+                key={file.path}
+                className="living-context__repo-decomposition-file"
+                data-testid="repo-decomposition-file"
+              >
+                <div className="living-context__repo-decomposition-file-info">
+                  <span className="living-context__repo-decomposition-path">{file.path}</span>
+                  <span className="living-context__repo-decomposition-meta">
+                    {file.language ?? ''} &middot; {file.symbolCount} symbols &middot; {file.demandCount} demands
+                  </span>
+                </div>
+                <div className="living-context__repo-decomposition-bar">
+                  <div
+                    className="living-context__repo-decomposition-bar-fill"
+                    style={{ width: `${barWidth}%` }}
+                    data-score={score}
+                  />
+                </div>
+              </div>
+            );
+          })}
+        </div>
+      )}
+
+      {overlay.demands.length > 0 && (
+        <div className="living-context__repo-decomposition-demands">
+          <div className="living-context__subsection-title">Code demands</div>
+          {overlay.demands.slice(0, 10).map((demand) => {
+            const score = demand.candidateAlignmentScore;
+            const level = score === null || score === 0 ? 'gap'
+              : score >= 0.6 ? 'covered'
+              : 'partial';
+            return (
+              <div
+                key={demand.id}
+                className={`living-context__repo-decomposition-demand living-context__repo-decomposition-demand--${level}`}
+                data-testid="repo-decomposition-demand"
+              >
+                <div className="living-context__repo-decomposition-demand-head">
+                  <span className="living-context__repo-decomposition-demand-family">{demand.family}</span>
+                  <span className={`living-context__repo-decomposition-demand-level living-context__repo-decomposition-demand-level--${level}`}>
+                    {level}
+                  </span>
+                </div>
+                <div className="living-context__repo-decomposition-demand-narrative">
+                  {demand.narrative}
+                </div>
+                {demand.conceptKeys.length > 0 && (
+                  <div className="living-context__concepts">
+                    {demand.conceptKeys.slice(0, 5).map((key) => (
+                      <span key={key} className="living-context__concept">{key}</span>
+                    ))}
+                  </div>
+                )}
+                {demand.candidateEvidenceCount > 0 && (
+                  <div className="living-context__repo-decomposition-demand-evidence">
+                    {demand.candidateEvidenceCount} evidence items
+                  </div>
+                )}
+              </div>
+            );
+          })}
+        </div>
+      )}
+    </section>
+  );
+}
+
+function MatchConfidencePanel({
+  candidateId,
+  packetId,
+}: {
+  candidateId: string;
+  packetId: string | null;
+}): JSX.Element | null {
+  const { report, isLoading, error, refetch } = useMatchConfidence(candidateId, packetId);
+
+  if (!packetId) return null;
+  if (isLoading && !report) return null;
+  if (error || !report) return null;
+
+  const levelColor: Record<string, string> = {
+    high: 'var(--lc-signal, #10b981)',
+    moderate: 'var(--lc-concept, #3b82f6)',
+    low: 'var(--lc-gap-weak, #f59e0b)',
+    insufficient: 'var(--lc-gap-none, #ef4444)',
+  };
+
+  const compositePercent = Math.round(report.compositeScore * 100);
+
+  return (
+    <section
+      className="living-context__panel"
+      data-testid="match-confidence-panel"
+    >
+      <div className="living-context__section-head">
+        <div>
+          <div className="living-context__section-title">Match confidence</div>
+          <div className="living-context__eyebrow">
+            <span
+              className="living-context__badge"
+              style={{ background: levelColor[report.compositeLevel] ?? levelColor.low }}
+            >
+              {report.compositeLevel}
+            </span>
+            {compositePercent}% composite score
+          </div>
+        </div>
+        <button
+          type="button"
+          className="living-context__refresh"
+          onClick={() => void refetch()}
+          title="Refresh confidence"
+          aria-label="Refresh confidence"
+        >
+          <RefreshCw size={12} />
+        </button>
+      </div>
+
+      <div className="living-context__confidence-dimensions">
+        {report.dimensions.map((dim) => {
+          const pct = Math.round(dim.score * 100);
+          return (
+            <div key={dim.name} className="living-context__confidence-dimension">
+              <div className="living-context__confidence-dimension-head">
+                <span className="living-context__confidence-dimension-label">{dim.label}</span>
+                <span className="living-context__confidence-dimension-score">{pct}%</span>
+              </div>
+              <div className="living-context__repo-decomposition-bar">
+                <div
+                  className="living-context__repo-decomposition-bar-fill"
+                  style={{ width: `${pct}%` }}
+                />
+              </div>
+              <div className="living-context__confidence-dimension-detail">{dim.detail}</div>
+            </div>
+          );
+        })}
+      </div>
+
+      {report.stretchAreas.length > 0 && (
+        <div className="living-context__confidence-stretch">
+          <div className="living-context__subsection-title">Stretch areas</div>
+          {report.stretchAreas.slice(0, 5).map((s) => (
+            <div key={s.demandId} className="living-context__confidence-stretch-item">
+              <div className="living-context__confidence-stretch-narrative">{s.demandNarrative}</div>
+              {s.stretchReason && (
+                <div className="living-context__confidence-stretch-reason">{s.stretchReason}</div>
+              )}
+            </div>
+          ))}
+        </div>
+      )}
+
+      {report.recommendations.length > 0 && (
+        <div className="living-context__recommendations">
+          <div className="living-context__subsection-title">Recommendations</div>
+          <ul className="living-context__recommendation-list">
+            {report.recommendations.map((rec, i) => (
+              <li key={i} className="living-context__recommendation-item">{rec}</li>
+            ))}
+          </ul>
+        </div>
+      )}
+    </section>
+  );
+}
+
 function EvidenceReadinessPanel({
   candidateId,
 }: {
@@ -2407,6 +2862,357 @@ function EvidenceConflictsPanel({
   );
 }
 
+// ── Staleness alerts ────────────────────────────────────────────────────────
+
+const ALERT_SEVERITY_COLOR: Record<string, string> = {
+  critical: 'var(--lc-gap-none, #ef4444)',
+  warning: 'var(--lc-gap-weak, #f59e0b)',
+  info: 'var(--lc-structural, rgba(255,255,255,0.4))',
+};
+
+function StalenessAlertsPanel({
+  candidateId,
+}: {
+  candidateId: string;
+}): JSX.Element | null {
+  const { alerts: summary, isLoading, error, refetch } = useStalenessAlerts(candidateId);
+
+  if (isLoading && !summary) return null;
+  if (error || !summary || summary.alerts.length === 0) return null;
+
+  const healthColor = summary.overallHealth === 'critical'
+    ? ALERT_SEVERITY_COLOR.critical
+    : summary.overallHealth === 'at_risk'
+      ? ALERT_SEVERITY_COLOR.warning
+      : ALERT_SEVERITY_COLOR.info;
+
+  return (
+    <section
+      className="living-context__panel"
+      data-testid="staleness-alerts-panel"
+    >
+      <div className="living-context__section-head">
+        <div style={{ display: 'flex', gap: 6, alignItems: 'center' }}>
+          <Clock size={13} color={healthColor} />
+          <div className="living-context__section-title">Evidence health</div>
+          <div
+            className="living-context__count"
+            style={{ color: healthColor }}
+          >
+            {titleCase(summary.overallHealth)}
+          </div>
+        </div>
+        <button
+          type="button"
+          className="living-context__refresh"
+          onClick={() => void refetch()}
+          title="Refresh staleness alerts"
+          aria-label="Refresh staleness alerts"
+        >
+          <RefreshCw size={12} />
+        </button>
+      </div>
+
+      <div className="living-context__conflicts-summary" data-testid="staleness-summary">
+        {summary.criticalCount > 0 && (
+          <span className="living-context__conflict-badge" style={{ color: ALERT_SEVERITY_COLOR.critical }}>
+            {summary.criticalCount} critical
+          </span>
+        )}
+        {summary.warningCount > 0 && (
+          <span className="living-context__conflict-badge" style={{ color: ALERT_SEVERITY_COLOR.warning }}>
+            {summary.warningCount} warning
+          </span>
+        )}
+        {summary.infoCount > 0 && (
+          <span className="living-context__conflict-badge" style={{ color: ALERT_SEVERITY_COLOR.info }}>
+            {summary.infoCount} info
+          </span>
+        )}
+      </div>
+
+      <div className="living-context__conflicts-list">
+        {summary.alerts.map((alert) => (
+          <div
+            key={alert.id}
+            className={`living-context__conflict-card living-context__conflict-card--${alert.severity}`}
+            data-testid={`alert-${alert.id}`}
+          >
+            <div className="living-context__conflict-head">
+              <span className="living-context__concept">
+                {alert.dimension ? titleCase(alert.dimension) : 'Overall'}
+              </span>
+              <span
+                className="living-context__conflict-severity"
+                style={{ color: ALERT_SEVERITY_COLOR[alert.severity] }}
+              >
+                {alert.severity}
+              </span>
+            </div>
+            <div className="living-context__conflict-desc">{alert.title}</div>
+            <div className="living-context__conflict-impact">{alert.detail}</div>
+            {(alert.ageDays !== null || alert.decayMultiplier !== null) && (
+              <div className="living-context__staleness-metrics">
+                {alert.ageDays !== null && (
+                  <span className="living-context__staleness-age">
+                    {alert.ageDays}d old
+                  </span>
+                )}
+                {alert.decayMultiplier !== null && (
+                  <span className="living-context__staleness-decay">
+                    {Math.round(alert.decayMultiplier * 100)}% weight
+                  </span>
+                )}
+              </div>
+            )}
+            <div className="living-context__staleness-recommendation">
+              {alert.recommendation}
+            </div>
+          </div>
+        ))}
+      </div>
+    </section>
+  );
+}
+
+// ── Candidate comparison ────────────────────────────────────────────────────
+
+const COVERAGE_COLOR: Record<string, string> = {
+  strong: 'var(--lc-concept, #60a5fa)',
+  partial: 'var(--lc-structural, rgba(255,255,255,0.6))',
+  weak: 'var(--lc-gap-weak, #f59e0b)',
+  none: 'var(--lc-gap-none, #ef4444)',
+};
+
+function CandidateComparisonPanel({
+  candidateId,
+  comparisonCandidateIds,
+}: {
+  candidateId: string;
+  comparisonCandidateIds: string[] | null;
+}): JSX.Element | null {
+  const ids = useMemo(() => {
+    if (!comparisonCandidateIds || comparisonCandidateIds.length === 0) return null;
+    const all = [candidateId, ...comparisonCandidateIds.filter((id) => id !== candidateId)];
+    return all.length >= 2 ? all : null;
+  }, [candidateId, comparisonCandidateIds]);
+
+  const { report, isLoading, error } = useCandidateComparison(ids);
+
+  if (!ids || ids.length < 2) return null;
+  if (isLoading && !report) {
+    return (
+      <section className="living-context__panel" data-testid="comparison-panel-loading">
+        <div className="living-context__section-head">
+          <div className="living-context__section-title">Comparing candidates...</div>
+        </div>
+      </section>
+    );
+  }
+  if (error || !report) return null;
+
+  const currentProfile = report.candidateProfiles.find((p) => p.candidateId === candidateId);
+  const otherProfiles = report.candidateProfiles.filter((p) => p.candidateId !== candidateId);
+
+  return (
+    <section
+      className="living-context__panel"
+      data-testid="candidate-comparison-panel"
+    >
+      <div className="living-context__section-head">
+        <div style={{ display: 'flex', gap: 6, alignItems: 'center' }}>
+          <Shuffle size={13} color="var(--lc-concept)" />
+          <div className="living-context__section-title">Candidate comparison</div>
+          <div className="living-context__count">{report.summary.totalCandidates}</div>
+        </div>
+      </div>
+
+      <div className="living-context__comparison-summary" data-testid="comparison-summary">
+        <span className="living-context__comparison-stat">
+          {report.summary.comparedConceptCount} concepts compared
+        </span>
+        <span className="living-context__comparison-stat">
+          {report.summary.sharedConceptCount} shared
+        </span>
+      </div>
+
+      <ComparisonProfileCards
+        currentProfile={currentProfile}
+        otherProfiles={otherProfiles}
+        uniqueConcepts={report.summary.uniqueConceptsPerCandidate}
+      />
+
+      {report.conceptComparisons.length > 0 && (
+        <ComparisonConceptGrid
+          comparisons={report.conceptComparisons}
+          candidateId={candidateId}
+          profiles={report.candidateProfiles}
+        />
+      )}
+
+      <ComparisonRankings
+        diversityRanking={report.summary.evidenceDiversityRanking}
+        depthRanking={report.summary.evidenceDepthRanking}
+        profiles={report.candidateProfiles}
+        candidateId={candidateId}
+      />
+    </section>
+  );
+}
+
+function ComparisonProfileCards({
+  currentProfile,
+  otherProfiles,
+  uniqueConcepts,
+}: {
+  currentProfile: CandidateEvidenceProfile | undefined;
+  otherProfiles: CandidateEvidenceProfile[];
+  uniqueConcepts: Record<string, number>;
+}): JSX.Element {
+  const allProfiles = currentProfile ? [currentProfile, ...otherProfiles] : otherProfiles;
+  return (
+    <div className="living-context__comparison-profiles" data-testid="comparison-profiles">
+      {allProfiles.map((profile) => (
+        <div
+          key={profile.candidateId}
+          className={`living-context__comparison-card${
+            profile === currentProfile ? ' living-context__comparison-card--current' : ''
+          }`}
+          data-testid={`comparison-profile-${profile.candidateId}`}
+        >
+          <div className="living-context__comparison-card-name">
+            {profile.candidateName}
+            {profile === currentProfile && (
+              <span className="living-context__comparison-badge">current</span>
+            )}
+          </div>
+          <div className="living-context__comparison-card-stats">
+            <span>{profile.totalAssertions} assertions</span>
+            <span>{profile.totalInteractions} interactions</span>
+            <span>diversity {(profile.sourceDiversity * 100).toFixed(0)}%</span>
+            <span>{uniqueConcepts[profile.candidateId] ?? 0} unique concepts</span>
+          </div>
+          {profile.topConcepts.length > 0 && (
+            <div className="living-context__comparison-concepts">
+              {profile.topConcepts.slice(0, 5).map((concept) => (
+                <span
+                  key={concept.conceptKey}
+                  className="living-context__concept"
+                  title={`${concept.evidenceCount} evidence, strength ${(concept.effectiveStrength * 100).toFixed(0)}%`}
+                >
+                  {concept.label}
+                </span>
+              ))}
+            </div>
+          )}
+        </div>
+      ))}
+    </div>
+  );
+}
+
+function ComparisonConceptGrid({
+  comparisons,
+  candidateId,
+  profiles,
+}: {
+  comparisons: ConceptComparison[];
+  candidateId: string;
+  profiles: CandidateEvidenceProfile[];
+}): JSX.Element {
+  const topComparisons = comparisons.slice(0, 10);
+  return (
+    <div className="living-context__comparison-grid" data-testid="comparison-concept-grid">
+      <div className="living-context__section-head">
+        <div className="living-context__section-title">Concept coverage</div>
+      </div>
+      <table className="living-context__comparison-table">
+        <thead>
+          <tr>
+            <th>Concept</th>
+            {profiles.map((p) => (
+              <th key={p.candidateId}>
+                {p.candidateId === candidateId ? 'Current' : p.candidateName}
+              </th>
+            ))}
+          </tr>
+        </thead>
+        <tbody>
+          {topComparisons.map((comparison) => (
+            <tr key={comparison.conceptKey}>
+              <td className="living-context__concept">{comparison.label}</td>
+              {profiles.map((profile) => {
+                const entry = comparison.candidates.find((c) => c.candidateId === profile.candidateId);
+                const level = entry?.coverageLevel ?? 'none';
+                return (
+                  <td
+                    key={profile.candidateId}
+                    style={{ color: COVERAGE_COLOR[level] }}
+                    title={entry ? `${entry.evidenceCount} evidence, strength ${(entry.effectiveStrength * 100).toFixed(0)}%` : 'No evidence'}
+                  >
+                    {level}
+                  </td>
+                );
+              })}
+            </tr>
+          ))}
+        </tbody>
+      </table>
+    </div>
+  );
+}
+
+function ComparisonRankings({
+  diversityRanking,
+  depthRanking,
+  profiles,
+  candidateId,
+}: {
+  diversityRanking: Array<{ candidateId: string; score: number }>;
+  depthRanking: Array<{ candidateId: string; totalAssertions: number }>;
+  profiles: CandidateEvidenceProfile[];
+  candidateId: string;
+}): JSX.Element {
+  const nameOf = (id: string): string => {
+    const profile = profiles.find((p) => p.candidateId === id);
+    return id === candidateId ? 'You (current)' : profile?.candidateName ?? id;
+  };
+  return (
+    <div className="living-context__comparison-rankings" data-testid="comparison-rankings">
+      <div className="living-context__ranking-col">
+        <div className="living-context__eyebrow">Source diversity</div>
+        {diversityRanking.map((entry, index) => (
+          <div
+            key={entry.candidateId}
+            className={`living-context__ranking-row${
+              entry.candidateId === candidateId ? ' living-context__ranking-row--current' : ''
+            }`}
+          >
+            <span className="living-context__ranking-pos">#{index + 1}</span>
+            <span>{nameOf(entry.candidateId)}</span>
+            <span className="living-context__ranking-score">{(entry.score * 100).toFixed(0)}%</span>
+          </div>
+        ))}
+      </div>
+      <div className="living-context__ranking-col">
+        <div className="living-context__eyebrow">Evidence depth</div>
+        {depthRanking.map((entry, index) => (
+          <div
+            key={entry.candidateId}
+            className={`living-context__ranking-row${
+              entry.candidateId === candidateId ? ' living-context__ranking-row--current' : ''
+            }`}
+          >
+            <span className="living-context__ranking-pos">#{index + 1}</span>
+            <span>{nameOf(entry.candidateId)}</span>
+            <span className="living-context__ranking-score">{entry.totalAssertions} assertions</span>
+          </div>
+        ))}
+      </div>
+    </div>
+  );
+}
+
 function RematchButton({
   candidateId,
   onRematchComplete,
@@ -2453,6 +3259,11 @@ function RematchButton({
                 ? result.reason ?? 'More evidence needed before matching'
                 : `Status: ${result.status} · ${result.evaluatedCount} challenge${result.evaluatedCount === 1 ? '' : 's'} evaluated`}
           </span>
+          {result.priorDecisions && result.priorDecisions.excludedCount > 0 && (
+            <span className="living-context__rematch-decisions" data-testid="rematch-prior-decisions">
+              · {result.priorDecisions.excludedCount} challenge{result.priorDecisions.excludedCount === 1 ? '' : 's'} excluded by prior decisions
+            </span>
+          )}
         </div>
       )}
     </div>
@@ -2464,11 +3275,13 @@ export function LivingContextGraph({
   livingContextEndpoint,
   initialLivingContext,
   standaloneReviewMatch,
+  comparisonCandidateIds,
 }: {
   candidateId: string;
   livingContextEndpoint?: string;
   initialLivingContext?: LivingContextReadModel | null;
   standaloneReviewMatch?: StandaloneReviewMatchRecord | null;
+  comparisonCandidateIds?: string[] | null;
 }): JSX.Element {
   const livingContextSource = livingContextEndpoint
     ? initialLivingContext === undefined
@@ -2722,13 +3535,22 @@ export function LivingContextGraph({
       )}
 
       <EvidenceReadinessPanel candidateId={candidateId} />
+      <StalenessAlertsPanel candidateId={candidateId} />
       <EvidenceConflictsPanel candidateId={candidateId} />
       <EvidenceDepthPanel livingContext={livingContext} />
+      <EvidenceTimelinePanel candidateId={candidateId} />
       <EvidenceFreshnessPanel freshness={freshness} />
       <EvidenceLineagePanel lineage={lineage} />
       <EvidenceGapPanel report={gapReport} />
       <MatchProvenancePanel provenance={provenance} />
       <MatchHistoryPanel candidateId={candidateId} />
+      <MatchDecisionPanel candidateId={candidateId} />
+      <RepoDecompositionPanel candidateId={candidateId} packetId={challengePacketId} />
+      <MatchConfidencePanel candidateId={candidateId} packetId={challengePacketId} />
+      <CandidateComparisonPanel
+        candidateId={candidateId}
+        comparisonCandidateIds={comparisonCandidateIds ?? null}
+      />
 
       <ConceptGraphPanel
         concepts={conceptGraph?.concepts ?? []}
