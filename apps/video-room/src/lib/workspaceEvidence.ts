@@ -1,20 +1,7 @@
 import type { RoomPhase, RoomWorkspace } from '../types';
 
 export type RoomEvidenceActor = 'host' | 'guest';
-export type RoomEvidenceSurface = 'standard' | 'assessment';
-
-const SHA256_HEX_RE = /^[a-f0-9]{64}$/i;
-const WORKSPACE_DIAGNOSTIC_LIMIT = 500;
-const WORKSPACE_REDACTED_SECRET = '[REDACTED_SECRET]';
-const BARE_SECRET_RE = /\b(?:cog|ghp|gho|ghu|ghs|ghr|devin)_[A-Za-z0-9_-]{20,}\b/g;
-const GITHUB_PAT_RE = /\bgithub_pat_[A-Za-z0-9_]{20,}\b/g;
-const OPENAI_KEY_RE = /\bsk-[A-Za-z0-9_-]{8,}\b/g;
-const BEARER_TOKEN_RE = /\b(Bearer\s+)[A-Za-z0-9._~+/=-]+/gi;
-const ENV_SECRET_ASSIGNMENT_RE = /\b([A-Za-z0-9_]*(?:API_KEY|AUTH_TOKEN|ACCESS_TOKEN|REFRESH_TOKEN|TOKEN|SECRET|PASSWORD))=([^\s"'`]+)/gi;
-const SECRET_QUERY_RE = /([?&](?:api_key|key|token|secret|password)=)[^&\s]+/gi;
-const ROOM_TOKEN_PATH_RE = /(\/api\/v1\/meeting-rooms\/)[^/\s]+/g;
-const FNV_32_OFFSET = 0x811c9dc5;
-const FNV_32_PRIME = 0x01000193;
+export type RoomEvidenceSurface = 'standard' | 'assessment' | 'win95';
 
 const SHA256_HEX_RE = /^[a-f0-9]{64}$/i;
 const WORKSPACE_DIAGNOSTIC_LIMIT = 500;

@@ -6,7 +6,7 @@ import {
   applyRoomRecordingStateEvent,
   hasSourceBackedCodeServerFileEvidence,
   hasSourceBackedChatEvidence,
-  hasSourceBackedAgentInteractionEvidence,
+  hasSourceBackedClippyInteractionEvidence,
   hasSourceBackedMediaControlEvidence,
   hasSourceBackedMediaControlStateEvidence,
   hasSourceBackedRecordingStateEvidence,
@@ -16,7 +16,7 @@ import {
   ROOM_CURSOR_SEND_INTERVAL_MS,
   shouldSendCursorPresence,
   type RoomChatMessage,
-  type RoomAgentInteractionEvent,
+  type RoomClippyInteractionEvent,
   type RoomCodeServerFileEvent,
   type RoomMediaControlEvent,
   type RoomMediaControlState,
@@ -77,10 +77,10 @@ describe('addLocalMediaToPeer', () => {
   });
 });
 
-describe('hasSourceBackedAgentInteractionEvidence', () => {
+describe('hasSourceBackedClippyInteractionEvidence', () => {
   it('accepts source-backed user chat submitted to the real AI assistant/Devin bridge', () => {
     const text = 'Can you inspect the task?';
-    const event: RoomAgentInteractionEvent = {
+    const event: RoomClippyInteractionEvent = {
       id: 'agent-interaction-1',
       clientId: 'guest-client',
       createdAt: 1700000002000,
@@ -112,13 +112,13 @@ describe('hasSourceBackedAgentInteractionEvidence', () => {
       },
     };
 
-    expect(hasSourceBackedAgentInteractionEvidence(event, 'GUEST')).toBe(true);
-    expect(hasSourceBackedAgentInteractionEvidence(event, 'HOST')).toBe(false);
+    expect(hasSourceBackedClippyInteractionEvidence(event, 'GUEST')).toBe(true);
+    expect(hasSourceBackedClippyInteractionEvidence(event, 'HOST')).toBe(false);
   });
 
   it('accepts real agent response evidence without fabricating a local Devin reply', () => {
     const text = 'I found the repository task context.';
-    const event: RoomAgentInteractionEvent = {
+    const event: RoomClippyInteractionEvent = {
       id: 'agent-interaction-2',
       clientId: 'host-client',
       createdAt: 1700000003000,
@@ -147,11 +147,11 @@ describe('hasSourceBackedAgentInteractionEvidence', () => {
       },
     };
 
-    expect(hasSourceBackedAgentInteractionEvidence(event, 'HOST')).toBe(true);
+    expect(hasSourceBackedClippyInteractionEvidence(event, 'HOST')).toBe(true);
   });
 
   it('accepts source-backed AI assistant UI actions and rejects source-less events', () => {
-    const action: RoomAgentInteractionEvent = {
+    const action: RoomClippyInteractionEvent = {
       id: 'agent-interaction-3',
       clientId: 'host-client',
       createdAt: 1700000004000,
@@ -177,8 +177,8 @@ describe('hasSourceBackedAgentInteractionEvidence', () => {
       },
     };
 
-    expect(hasSourceBackedAgentInteractionEvidence(action, 'HOST')).toBe(true);
-    expect(hasSourceBackedAgentInteractionEvidence({
+    expect(hasSourceBackedClippyInteractionEvidence(action, 'HOST')).toBe(true);
+    expect(hasSourceBackedClippyInteractionEvidence({
       ...action,
       text: 'AI assistant opened from the video call controls',
       actor: 'guest',
@@ -200,7 +200,7 @@ describe('hasSourceBackedAgentInteractionEvidence', () => {
         durableObjectReplayExpected: true,
       },
     }, 'GUEST')).toBe(true);
-    expect(hasSourceBackedAgentInteractionEvidence({
+    expect(hasSourceBackedClippyInteractionEvidence({
       ...action,
       text: 'AI assistant opened from the video call controls',
       actor: 'guest',
@@ -222,7 +222,7 @@ describe('hasSourceBackedAgentInteractionEvidence', () => {
         durableObjectReplayExpected: true,
       },
     }, 'GUEST')).toBe(false);
-    expect(hasSourceBackedAgentInteractionEvidence({
+    expect(hasSourceBackedClippyInteractionEvidence({
       ...action,
       evidence: {
         source: 'agent_tray_ui',

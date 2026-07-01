@@ -309,11 +309,11 @@ function Room({ token, metadata }: { token: string; metadata: RoomMetadata }): J
     });
     captureSessionEvent('chat_message', evidence.text, roomActor, evidence.properties);
   }, [captureSessionEvent, roomActor]);
-  const room = useRoomConnection(token, metadata.role, enteredRoom, {
+  const room = useRoomConnection(token, metadata.role, enteredRoom, 'standard', {
     onChatDeliveryEvidence: captureChatDeliveryEvidence,
   });
   const publishTerminalEvent = room.publishTerminalEvent;
-  const publishAgentInteractionEvent = room.publishAgentInteractionEvent;
+  const publishAgentInteractionEvent = room.publishClippyInteractionEvent;
   const publishCodeServerFileEvent = room.publishCodeServerFileEvent;
   const [workspace, setWorkspace] = useState<RoomWorkspace | null>(metadata.workspace ?? null);
   const [workspaceLoading, setWorkspaceLoading] = useState(false);
