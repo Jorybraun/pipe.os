@@ -260,6 +260,9 @@ async function requireContextSourceRef(
     if (source.contentHash !== row.source_hash) {
       throw new Error(`review challenge packet ${source.sourceRefId} contentHash does not match`);
     }
+    if (source.exactText !== null && source.exactText !== row.packet_json) {
+      throw new Error(`review challenge packet ${source.sourceRefId} exactText does not match`);
+    }
     return;
   }
   if (source.sourceRefType === 'repo_issue') {

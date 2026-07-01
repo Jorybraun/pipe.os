@@ -142,11 +142,13 @@ export async function processResumeFromR2(
       try {
         resumeText = await extractTextFromPDF(arrayBuffer);
         if (resumeText.trim().length < 20) {
-          return await failResumeIngestion(
-            db,
-            candidateId,
-            `Resume text extraction produced insufficient source evidence for ${r2Key}.`,
-          );
+          const message = `Resume text extraction produced insufficient source evidence for ${r2Key}.`;
+          try {
+            await markIngestionFailed(db, candidateId, message);
+          } catch (err) {
+            console.error('[resumeIngestion] failed to mark insufficient evidence:', err instanceof Error ? err.message : String(err));
+          }
+          return { success: true, parsed: parseResult, error: message };
         }
         await runCandidateIngestion({
           env,

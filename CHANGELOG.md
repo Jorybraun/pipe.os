@@ -64,6 +64,9 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Fixed — CODE_REVIEW assessment runtime
 
+- Match-quality bridge repairs now tolerate legacy/local fixtures without newer candidate-node projections while preserving strict source-backed challenge packet hash and exact-text validation.
+- Assessment-to-living-context backfills now normalize legacy review-challenge packet refs to the stored immutable packet JSON before writing context records, keeping old event rows source-backed under stricter provenance validation.
+- Candidate-discovery model-key attribution now falls back to the provider name when a local/test provider omits a model string, preventing discovery fixtures from crashing before evidence decomposition.
 - Standalone CODE_REVIEW E2E fixtures now seed candidate-scoped repos, PRs, and concepts with a weaker comparator packet, keeping automatic match contrast proof deterministic even when local D1 contains stale packets from prior runs.
 - Candidate-facing CODE_REVIEW RPCs now return the `Profile received` / `candidate-intake-queued` handoff when no source-backed PR is ready, instead of exposing `WAITING_FOR_MATCH` through direct submit or review-session calls.
 - Review-session init, explainer, and message endpoints now share the complete `candidate-intake-queued` handoff payload when source-backed PR packet proof is missing, preventing partial assessment runtime states from reviving the matching screen.

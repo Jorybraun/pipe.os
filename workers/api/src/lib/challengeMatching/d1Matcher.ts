@@ -507,6 +507,9 @@ async function ensureCandidateMatchBridge(
   candidateId: string,
 ): Promise<void> {
   await ensureCandidateLivingContext(db, candidateId);
+  const hasCandidateNodes = await tableExists(db, 'candidate_nodes');
+  if (!hasCandidateNodes) return;
+
   const unprojected = await db.prepare(
     `SELECT cn.*
        FROM candidate_nodes cn
@@ -531,6 +534,21 @@ async function ensureCandidateMatchBridge(
         error: error instanceof Error ? error.message : String(error),
       });
     }
+  }
+}
+
+async function tableExists(db: D1Database, tableName: string): Promise<boolean> {
+  try {
+    const row = await db.prepare(
+      `SELECT name
+         FROM sqlite_master
+        WHERE type IN ('table', 'view')
+          AND name = ?1
+        LIMIT 1`,
+    ).bind(tableName).first<{ name: string }>();
+    return Boolean(row);
+  } catch {
+    return false;
   }
 }
 

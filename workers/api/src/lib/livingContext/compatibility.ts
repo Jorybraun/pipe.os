@@ -250,7 +250,7 @@ export async function ensureCandidateLivingContext(
   candidateId: string,
 ): Promise<{ personId: string; workspacePersonId: string; applicationId: string } | null> {
   const candidate = await db.prepare(
-    `SELECT id, owner_id, pipeline_id, name, email, status
+    `SELECT *
        FROM candidates WHERE id = ?1`,
   ).bind(candidateId).first<LegacyCandidateIdentity>();
   if (!candidate) return null;
@@ -277,10 +277,11 @@ export async function ensureCandidateLivingContext(
     primaryEmail: candidate.email,
     externalIds: { legacyCandidateId: candidate.id },
   });
-  const workspacePersonIngestionKey = `workspace:${candidate.owner_id}:person:${person.id}`;
+  const workspaceId = candidate.owner_id ?? 'legacy-workspace';
+  const workspacePersonIngestionKey = `workspace:${workspaceId}:person:${person.id}`;
   const workspacePerson = await store.upsertWorkspacePerson({
     ingestionKey: workspacePersonIngestionKey,
-    workspaceId: candidate.owner_id,
+    workspaceId,
     personId: person.id,
     context: mergeContextSource(
       await existingWorkspacePersonContext(db, workspacePersonIngestionKey),
@@ -292,7 +293,7 @@ export async function ensureCandidateLivingContext(
     workspacePersonId: workspacePerson.id,
     legacyCandidateId: candidate.id,
     pipelineId: candidate.pipeline_id,
-    status: candidate.status,
+    status: candidate.status ?? 'unknown',
   });
   await store.upsertPersonRole({
     ingestionKey: `candidate:${candidate.id}:role`,
