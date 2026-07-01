@@ -888,21 +888,47 @@ function nextActionForDecision(
   };
 }
 
-function nextInterviewCtaLabel(decision: CodeReviewDecisionProjection | null): string {
-  const nextAction = decision?.nextAction.toLowerCase() ?? '';
+function nextActionText(
+  decision: CodeReviewDecisionProjection | null,
+  evidenceMixNextSource?: string,
+): string {
+  return decision?.nextAction ?? evidenceMixNextSource ?? 'Schedule targeted context gathering';
+}
+
+function isCodeReviewAssessmentAction(action: string): boolean {
+  const normalized = action.toLowerCase();
+  return normalized.includes('technical assessment')
+    || normalized.includes('code-review')
+    || normalized.includes('code review')
+    || normalized.includes('repo challenge')
+    || normalized.includes('review signal');
+}
+
+function nextInterviewCtaLabel(
+  decision: CodeReviewDecisionProjection | null,
+  evidenceMixNextSource?: string,
+): string {
+  const nextAction = nextActionText(decision, evidenceMixNextSource).toLowerCase();
+  if (isCodeReviewAssessmentAction(nextAction)) return 'Create code-review assessment';
   if (nextAction.includes('evidence')) return 'Create evidence interview';
   if (nextAction.includes('calibration')) return 'Create calibration interview';
   if (nextAction.includes('fairness')) return 'Create fairness review';
   return 'Create context interview';
 }
 
-function nextInterviewRecruiterNotes(decision: CodeReviewDecisionProjection | null): string {
+function nextInterviewRecruiterNotes(
+  decision: CodeReviewDecisionProjection | null,
+  evidenceMixNextSource?: string,
+): string {
   if (!decision) {
+    const nextAction = nextActionText(decision, evidenceMixNextSource);
     return [
       'PIPE person-profile next action',
       'Recommendation: Collect source-backed context',
-      'Next action: Schedule targeted context gathering',
-      'Reason: Use this interview to collect missing evidence before treating the profile as hiring signal.',
+      `Next action: ${nextAction}`,
+      isCodeReviewAssessmentAction(nextAction)
+        ? 'Reason: Use existing conversation evidence to assign a source-backed code-review or workspace challenge.'
+        : 'Reason: Use this interview to collect missing evidence before treating the profile as hiring signal.',
       'Uncertainty: Decision not ready',
       'Missing context: first source-backed evidence',
     ].join('\n');
@@ -932,7 +958,11 @@ function nextInterviewRecruiterNotes(decision: CodeReviewDecisionProjection | nu
   ].join('\n');
 }
 
-function nextInterviewPath(contact: PersonContact, decision: CodeReviewDecisionProjection | null): string {
+function nextInterviewPath(
+  contact: PersonContact,
+  decision: CodeReviewDecisionProjection | null,
+  evidenceMixNextSource?: string,
+): string {
   const params = new URLSearchParams({
     new: '1',
     interviewType: 'VIDEO',
@@ -942,11 +972,11 @@ function nextInterviewPath(contact: PersonContact, decision: CodeReviewDecisionP
   if (name) params.set('recipientName', name);
   if (email) params.set('recipientEmail', email);
   if (!name && email) params.set('recipientName', email);
-  const action = decision?.nextAction.toLowerCase() ?? '';
-  if (action.includes('code review') || action.includes('review signal')) {
+  const action = nextActionText(decision, evidenceMixNextSource);
+  if (isCodeReviewAssessmentAction(action)) {
     params.set('interviewType', 'CODE_REVIEW');
   }
-  params.set('recruiterNotes', nextInterviewRecruiterNotes(decision));
+  params.set('recruiterNotes', nextInterviewRecruiterNotes(decision, evidenceMixNextSource));
   return `/interviews?${params.toString()}`;
 }
 
@@ -1595,10 +1625,12 @@ function EmptyPanel({ children }: { children: string }): JSX.Element {
 function ProfileDecisionCockpit({
   decision,
   livingContext,
+  nextActionSource,
   onCreateNextInterview,
 }: {
   decision: CodeReviewDecisionProjection | null;
   livingContext: LivingContextReadModel | null;
+  nextActionSource: string;
   onCreateNextInterview: () => void;
 }): JSX.Element {
   const hasEvidence = (livingContext?.summary.interactionCount ?? 0) > 0
@@ -1703,7 +1735,7 @@ function ProfileDecisionCockpit({
           style={PROFILE_COCKPIT_ACTION}
         >
           <Calendar size={14} />
-          {nextInterviewCtaLabel(decision)}
+          {nextInterviewCtaLabel(decision, nextActionSource)}
         </button>
       </div>
     </section>
@@ -2103,7 +2135,8 @@ export default function PersonProfilePage(): JSX.Element {
       <ProfileDecisionCockpit
         decision={decision}
         livingContext={livingContext}
-        onCreateNextInterview={() => navigate(nextInterviewPath(profileContact, decision))}
+        nextActionSource={evidenceMix.nextSource}
+        onCreateNextInterview={() => navigate(nextInterviewPath(profileContact, decision, evidenceMix.nextSource))}
       />
 
       {decision && (

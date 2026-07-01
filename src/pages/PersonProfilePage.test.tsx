@@ -984,6 +984,70 @@ describe('PersonProfilePage', () => {
     expect(basis).toHaveTextContent('Missing');
   });
 
+  it('routes conversation-only profiles toward a code-review assessment next action', async () => {
+    const context = makeLivingContext();
+    context.summary = {
+      ...context.summary,
+      interactionCount: 1,
+      artifactCount: 1,
+      contextRecordCount: 0,
+      sourceSpanCount: 1,
+    };
+    context.interactions = [{
+      ...context.interactions[0]!,
+      id: 'interaction-background-call',
+      interactionType: 'context_call',
+      externalReference: 'meeting-background-call',
+      metadata: {
+        meetingType: 'SCREENING_INTERVIEW',
+        status: 'completed',
+      },
+      artifactIds: ['artifact-background-call'],
+      contextRecordIds: [],
+      assertionIds: [],
+      signalKeys: [],
+    }];
+    context.contextRecords = [];
+    context.artifacts = [{
+      ...context.artifacts[0]!,
+      id: 'artifact-background-call',
+      interactionId: 'interaction-background-call',
+      artifactType: 'meeting_transcript',
+      logicalKey: 'meeting-background-call',
+      sourceSpans: [sourceSpan({
+        sourceSpanId: 'source-span-background-call',
+        artifactType: 'meeting_transcript',
+        artifactLogicalKey: 'meeting-background-call',
+        evidenceRole: 'conversation_context',
+        exactText: 'Discussed React platform ownership, but no code-review assessment has been assigned yet.',
+      })],
+    }];
+
+    mocks.api.get
+      .mockResolvedValueOnce({ contact: makeContact() })
+      .mockResolvedValueOnce(context);
+
+    renderPage();
+    await flushAsyncUpdates();
+
+    const mix = screen.getByTestId('person-evidence-mix');
+    expect(mix).toHaveTextContent('Conversation context exists; technical assessment is missing');
+    expect(mix).toHaveTextContent('Assign a source-backed technical assessment');
+
+    const cta = screen.getByTestId('person-next-action-cta');
+    expect(cta).toHaveTextContent('Create code-review assessment');
+    fireEvent.click(cta);
+
+    const location = screen.getByTestId('location-echo');
+    expect(location).toHaveTextContent('/interviews?');
+    expect(location).toHaveTextContent('new=1');
+    expect(location).toHaveTextContent('interviewType=CODE_REVIEW');
+    const params = new URLSearchParams((location.textContent ?? '').split('?')[1] ?? '');
+    const recruiterNotes = params.get('recruiterNotes') ?? '';
+    expect(recruiterNotes).toContain('Next action: Assign a source-backed technical assessment');
+    expect(recruiterNotes).toContain('Reason: Use existing conversation evidence to assign a source-backed code-review or workspace challenge.');
+  });
+
   it('derives a person-level hiring decision from source-backed workspace assessment claims', async () => {
     mocks.api.get
       .mockResolvedValueOnce({ contact: makeContact() })

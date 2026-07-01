@@ -37,6 +37,7 @@ type ContactType = 'lead' | 'candidate' | 'customer' | 'person' | 'other';
 type EditableContactType = 'lead' | 'candidate' | 'customer' | 'other';
 
 const EDITABLE_RELATIONSHIP_TYPES: EditableContactType[] = ['lead', 'candidate', 'customer', 'other'];
+const CONTACT_PAGE_SIZE = 100;
 
 interface PdlPerson {
   poolId: string;
@@ -82,6 +83,14 @@ interface Contact {
   updated_at: string;
 }
 
+interface ContactListResponse {
+  contacts: Contact[];
+  total?: number;
+  page?: number;
+  limit?: number;
+  hasMore?: boolean;
+}
+
 const TYPE_COLORS: Record<ContactType, string> = {
   lead:      '#fbbf24',
   candidate: '#60a5fa',
@@ -114,23 +123,44 @@ export default function ContactsPage(): JSX.Element {
   const navigate = useNavigate();
 
   const [contacts, setContacts] = useState<Contact[]>([]);
+  const [contactTotal, setContactTotal] = useState(0);
+  const [nextPage, setNextPage] = useState(2);
+  const [hasMoreContacts, setHasMoreContacts] = useState(false);
   const [isLoading, setIsLoading] = useState(true);
+  const [isLoadingMore, setIsLoadingMore] = useState(false);
   const [search, setSearch] = useState('');
   const [selected, setSelected] = useState<Contact | null>(null);
   const [showAdd, setShowAdd] = useState(false);
   const [activeTab, setActiveTab] = useState<'contacts' | 'source'>('contacts');
 
-  const load = useCallback(async () => {
-    setIsLoading(true);
+  const loadPage = useCallback(async (page: number, mode: 'replace' | 'append') => {
+    if (mode === 'replace') setIsLoading(true);
+    else setIsLoadingMore(true);
     try {
-      const res = await api.get<{ contacts: Contact[] }>('/api/v1/contacts');
-      setContacts(res.contacts);
+      const res = await api.get<ContactListResponse>(`/api/v1/contacts?page=${page}&limit=${CONTACT_PAGE_SIZE}`);
+      setContacts((prev) => {
+        if (mode === 'replace') return res.contacts;
+        const seen = new Set(prev.map((contact) => contact.id));
+        return [...prev, ...res.contacts.filter((contact) => !seen.has(contact.id))];
+      });
+      setContactTotal(res.total ?? res.contacts.length);
+      setNextPage((res.page ?? page) + 1);
+      setHasMoreContacts(Boolean(res.hasMore));
     } catch {
       // ignore
     } finally {
-      setIsLoading(false);
+      if (mode === 'replace') setIsLoading(false);
+      else setIsLoadingMore(false);
     }
   }, []);  // eslint-disable-line react-hooks/exhaustive-deps
+
+  const load = useCallback(async () => {
+    await loadPage(1, 'replace');
+  }, [loadPage]);
+
+  const loadMore = useCallback(async () => {
+    await loadPage(nextPage, 'append');
+  }, [loadPage, nextPage]);
 
   useEffect(() => { void load(); }, [load]);
 
@@ -152,7 +182,7 @@ export default function ContactsPage(): JSX.Element {
           <h1 style={TITLE}>{activeTab === 'contacts' ? 'People' : 'Find people'}</h1>
           <p style={SUBTITLE}>
             {activeTab === 'contacts'
-              ? `${contacts.length} ${contacts.length === 1 ? 'person' : 'people'} in the relationship graph. Open any profile to inspect evidence, interviews, and next actions.`
+              ? `${contactTotal || contacts.length} ${(contactTotal || contacts.length) === 1 ? 'person' : 'people'} in the relationship graph. Open any profile to inspect evidence, interviews, and next actions.`
               : 'Search source data, add promising people, and keep relationship context attached to the same profile surface.'}
           </p>
         </div>
@@ -244,6 +274,19 @@ export default function ContactsPage(): JSX.Element {
                     onClick={() => { navigate(`/people/${contact.id}`); }}
                   />
                 ))}
+                {!isLoading && hasMoreContacts && (
+                  <div style={LOAD_MORE_BAR}>
+                    <button
+                      type="button"
+                      onClick={() => void loadMore()}
+                      disabled={isLoadingMore}
+                      style={LOAD_MORE_BUTTON}
+                    >
+                      {isLoadingMore ? <Loader size={13} style={{ animation: 'spin 1s linear infinite' }} /> : null}
+                      Load more
+                    </button>
+                  </div>
+                )}
               </div>
             </>
           ) : (
@@ -259,7 +302,7 @@ export default function ContactsPage(): JSX.Element {
           <aside style={SIDE_PANEL}>
             {showAdd && !selected ? (
               <AddContactPanel
-                onSaved={(c) => { setContacts((prev) => [c, ...prev]); setSelected(c); setShowAdd(false); }}
+                onSaved={(c) => { setContacts((prev) => [c, ...prev]); setContactTotal((prev) => prev + 1); setSelected(c); setShowAdd(false); }}
                 onClose={() => setShowAdd(false)}
                 api={api}
               />
@@ -272,6 +315,7 @@ export default function ContactsPage(): JSX.Element {
                 }}
                 onDeleted={() => {
                   setContacts((prev) => prev.filter((x) => x.id !== selected.id));
+                  setContactTotal((prev) => Math.max(0, prev - 1));
                   setSelected(null);
                 }}
                 onClose={() => setSelected(null)}
@@ -1054,6 +1098,31 @@ const SCROLL_AREA: CSSProperties = {
   flex: 1,
   minHeight: 0,
   overflowY: 'auto',
+};
+
+const LOAD_MORE_BAR: CSSProperties = {
+  padding: '14px 18px',
+  display: 'flex',
+  justifyContent: 'center',
+  borderTop: '1px solid var(--pipe-border-light)',
+};
+
+const LOAD_MORE_BUTTON: CSSProperties = {
+  display: 'inline-flex',
+  alignItems: 'center',
+  justifyContent: 'center',
+  gap: 8,
+  minHeight: 34,
+  padding: '0 14px',
+  border: '1px solid var(--pipe-border)',
+  borderRadius: 5,
+  background: 'var(--pipe-surface)',
+  color: 'var(--pipe-text)',
+  cursor: 'pointer',
+  fontFamily: FONT,
+  fontSize: 10,
+  fontWeight: 800,
+  letterSpacing: '0.08em',
 };
 
 const EMPTY_STATE: CSSProperties = {

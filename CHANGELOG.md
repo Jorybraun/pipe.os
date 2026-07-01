@@ -7,6 +7,10 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Fixed — Route performance
+
+- Contacts list responses are now paginated by default and the People page loads additional pages on demand, preventing large relationship graphs from shipping unbounded multi-megabyte `/api/v1/contacts` payloads.
+
 ### Fixed — CODE_REVIEW assessment runtime
 
 - CODE_REVIEW progress and scoring now require a complete challenge packet contract — repo URL, base commit SHA, task, success criteria, and expected evidence — before treating a task as ready or scoreable.
@@ -38,6 +42,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - Recruiter interview cards and detail pages now prefer the readiness snapshot when explaining whether an open-source workspace assessment is ready, blocked, or still missing required proof.
 - Assessment setup projections now carry structured recruiter next actions for blocked states, so contact-first invites, candidate-backed unmatched assessments, and matched repos without packets all say exactly what evidence or challenge packet to capture next.
 - CODE_REVIEW setup-gap panels now show the same structured next action on the interview detail page, making blocked assignments actionable instead of only explanatory.
+- Person-profile next-action CTAs now route conversation-only profiles toward a CODE_REVIEW assessment when the evidence mix says the missing source is a technical assessment, instead of opening another generic context interview.
 - Recruiter interview lists now fetch paged, newest-created server results with `limit`, `offset`, and `sort` metadata, loading source-backed assessment progress only for the returned page and exposing an honest load-more count in the dashboard.
 - The recruiter dashboard now keeps open-source invite creation on the packet-aware flow by passing explicit repo-task packet fields through the active invite callback and removing the unused quick-create modal that could create partial assessment-looking invites.
 - Candidate Submit Work now shows a dirty-worktree recovery checklist when live workspace finalization refuses uncommitted or untracked changes, giving the exact `git status`, `git add`, and `git commit` commands before retrying finalization.

@@ -1,7 +1,7 @@
 /**
  * Contacts routes — unified address book for leads, candidates, customers, etc.
  *
- * GET    /api/v1/contacts          — list all contacts for the current user
+ * GET    /api/v1/contacts          — list contacts for the current user
  * POST   /api/v1/contacts          — create a contact
  * GET    /api/v1/contacts/:id      — get a single contact
  * PATCH  /api/v1/contacts/:id      — update a contact
@@ -86,6 +86,13 @@ interface WorkspacePersonRow {
   updated_at: string;
 }
 
+function parsePositiveInt(value: string | undefined, fallback: number, max: number): number {
+  if (!value) return fallback;
+  const parsed = Number.parseInt(value, 10);
+  if (!Number.isFinite(parsed)) return fallback;
+  return Math.min(max, Math.max(1, parsed));
+}
+
 function parseContext(raw: string | null): Record<string, unknown> {
   if (!raw) return {};
   try {
@@ -162,13 +169,28 @@ contacts.use('*', authMiddleware);
 contacts.get('/', async (c) => {
   const userId = c.var.userId;
   const db = c.env.DB;
+  const page = parsePositiveInt(c.req.query('page'), 1, 10_000);
+  const limit = parsePositiveInt(c.req.query('limit'), 100, 500);
+  const offset = (page - 1) * limit;
+
+  const countRow = await db
+    .prepare('SELECT COUNT(*) AS total FROM contacts WHERE owner_id = ?')
+    .bind(userId)
+    .first<{ total: number }>();
+  const total = countRow?.total ?? 0;
 
   const { results } = await db
-    .prepare('SELECT * FROM contacts WHERE owner_id = ? ORDER BY created_at DESC')
-    .bind(userId)
+    .prepare('SELECT * FROM contacts WHERE owner_id = ? ORDER BY created_at DESC LIMIT ? OFFSET ?')
+    .bind(userId, limit, offset)
     .all<ContactRow>();
 
-  return c.json({ contacts: results ?? [] });
+  return c.json({
+    contacts: results ?? [],
+    total,
+    page,
+    limit,
+    hasMore: offset + (results?.length ?? 0) < total,
+  });
 });
 
 // POST / — create contact
