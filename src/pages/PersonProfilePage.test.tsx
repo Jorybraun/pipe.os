@@ -1253,6 +1253,59 @@ describe('PersonProfilePage', () => {
     expect(basis).toHaveTextContent('Missing');
   });
 
+  it('shows pending code-review assignments as waiting for candidate review, not hiring signal', async () => {
+    const context = makeLivingContext();
+    context.contextRecords = context.contextRecords.filter((record) =>
+      record.recordType === 'candidate_pr_match_decision'
+    );
+    context.summary = {
+      ...context.summary,
+      contextRecordCount: 1,
+      sourceSpanCount: 2,
+    };
+    context.interactions = context.interactions.map((interaction) =>
+      interaction.id === 'interaction-code-review'
+        ? {
+            ...interaction,
+            metadata: {
+              ...interaction.metadata,
+              status: 'matched',
+            },
+            contextRecordIds: ['record-match'],
+          }
+        : interaction
+    );
+
+    mocks.api.get
+      .mockResolvedValueOnce({ contact: makeContact() })
+      .mockResolvedValueOnce(context);
+
+    renderPage();
+    await flushAsyncUpdates();
+
+    const cockpit = screen.getByTestId('person-decision-cockpit');
+    expect(cockpit).toHaveTextContent('Wait for candidate review');
+    expect(cockpit).toHaveTextContent('No score signal yet');
+    expect(cockpit).toHaveTextContent('do not make a hiring decision until the candidate submits source-backed review comments');
+    expect(cockpit).toHaveTextContent('Candidate review transcript or source-backed review comments');
+    expect(cockpit).toHaveTextContent('Wait for candidate submission');
+    expect(screen.queryByTestId('person-next-action-cta')).not.toBeInTheDocument();
+
+    const decision = screen.getByTestId('person-code-review-decision');
+    expect(decision).toHaveTextContent('Code-review assignment');
+    expect(decision).toHaveTextContent('Wait for candidate review');
+    expect(decision).toHaveTextContent('No score signal yet');
+    expect(decision).toHaveTextContent('Score report');
+    expect(decision).toHaveTextContent('Missing');
+    expect(decision).toHaveTextContent('Review evidence');
+    expect(decision).toHaveTextContent('0 annotations');
+
+    const mix = screen.getByTestId('person-evidence-mix');
+    expect(mix).toHaveTextContent('Code-review assignment is waiting on candidate review');
+    expect(mix).toHaveTextContent('technical assessment is missing candidate review comments and a score');
+    expect(mix).toHaveTextContent('Wait for candidate review submission');
+  });
+
   it('does not blend a newer related match-only interview into the completed code-review recommendation', async () => {
     const context = makeLivingContext();
     context.summary = {

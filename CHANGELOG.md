@@ -24,6 +24,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - The app-dev CODE_REVIEW reliability loop now runs a timeout-bounded real ready-submit smoke separately from the blocked matching matrix, proving both viable assessment submission and honest blocked-state behavior without hanging indefinitely.
 - The deployed CODE_REVIEW smoke now waits for recruiter-detail projections with bounded API requests before launching Playwright, then retries once after projection readiness so app-dev verification fails with a useful reason instead of hanging on stale recruiter state.
 - The app-dev CODE_REVIEW reliability loop now parses the blocked-profile matrix summary from its explicit marker instead of accidentally treating a nested profile proof as the matrix result.
+- The deployed CODE_REVIEW recruiter smoke now asserts the pending-assignment person profile says to wait for candidate review and withhold hiring decisions until source-backed review comments arrive.
 
 ### Fixed — CODE_REVIEW assessment runtime
 

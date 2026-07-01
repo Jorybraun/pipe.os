@@ -550,8 +550,16 @@ function interactionCoverageItems(interactions: LivingContextInteraction[]): Int
 function evidenceMixReadout(
   interactions: LivingContextInteraction[],
   decision: CodeReviewDecisionProjection | null,
+  hasPendingAssignment = false,
 ): EvidenceMixReadout {
   const counts = interactionCoverageCounts(interactions);
+  if ((decision && isPendingCodeReviewDecision(decision)) || (!decision && hasPendingAssignment)) {
+    return {
+      headline: 'Code-review assignment is waiting on candidate review',
+      detail: 'A source-backed challenge is assigned, but the technical assessment is missing candidate review comments and a score.',
+      nextSource: 'Wait for candidate review submission',
+    };
+  }
   if (interactions.length === 0) {
     if (decision && decision.proofCount > 0) {
       return {
@@ -597,6 +605,21 @@ function evidenceMixReadout(
     detail: 'The profile has source-backed records, but it needs another evidence type before the recommendation becomes robust.',
     nextSource: decision?.nextAction ?? 'Schedule targeted context gathering',
   };
+}
+
+function hasPendingCodeReviewAssignment(livingContext: LivingContextReadModel | null): boolean {
+  if (!livingContext) return false;
+  return livingContext.contextRecords.some((record) => {
+    const isMatchRecord = record.recordType === 'candidate_pr_match_decision'
+      || record.predicate === 'selects review challenge';
+    return isMatchRecord && hasMatchedReviewChallenge(readChallengeProjection(record));
+  });
+}
+
+function isPendingCodeReviewDecision(decision: CodeReviewDecisionProjection | null): boolean {
+  if (!decision) return false;
+  return decision.recommendation === 'Wait for candidate review'
+    || decision.nextAction === 'Wait for candidate submission';
 }
 
 function interactionCoverageSummary(
@@ -1462,6 +1485,78 @@ function codeReviewDecisionSourceProofSummary(decision: CodeReviewDecisionProjec
   return `${parts.slice(0, -1).join(', ')}, and ${parts[parts.length - 1]}`;
 }
 
+function derivePendingCodeReviewAssignmentDecision(
+  livingContext: LivingContextReadModel | null,
+): CodeReviewDecisionProjection | null {
+  if (!livingContext) return null;
+  const matchRecord = livingContext.contextRecords
+    .filter((record) => record.recordType === 'candidate_pr_match_decision' || record.predicate === 'selects review challenge')
+    .sort((a, b) => recordTimestamp(b) - recordTimestamp(a))
+    .find((record) => hasMatchedReviewChallenge(readChallengeProjection(record))) ?? null;
+  const challenge = readChallengeProjection(matchRecord);
+  if (!matchRecord || !hasMatchedReviewChallenge(challenge)) return null;
+
+  const hasMatchProvenance = hasRenderedCandidateRepoMatchProof(matchRecord);
+  const proofItems = matchRecord.sources.slice(0, 6).map((source, index) => ({
+    id: `${matchRecord.id}:${index}:${source.sourceRefId ?? source.sourceSpanId ?? 'source'}`,
+    label: sourceProofLabel(source),
+    text: sourceProofText(source),
+  }));
+  const challengeLabel = challenge?.repoLabel
+    ? `${challenge.repoLabel}${challenge.prNumber !== null ? ` PR #${challenge.prNumber}` : ''}`
+    : null;
+
+  return {
+    decisionLabel: 'Code-review assignment',
+    sessionId: sessionIdFromRecord(matchRecord),
+    outcome: null,
+    recommendation: 'Wait for candidate review',
+    recommendationDetail: 'A source-backed PR challenge is assigned, but it is not performance evidence yet.',
+    uncertainty: 'Performance not observed',
+    uncertaintyDetail: 'PIPE has not captured candidate review comments, pushback, or a score for this assignment.',
+    missingContext: [
+      'Candidate review transcript or source-backed review comments',
+      'Completed code-review score report',
+    ],
+    assessmentValidity: 'No score signal yet',
+    assessmentValidityDetail: 'Assignment is not assessment signal; do not make a hiring decision until the candidate submits source-backed review comments.',
+    nextAction: 'Wait for candidate submission',
+    nextActionDetail: 'Use the assigned challenge as setup only; evaluate once source-backed review evidence arrives.',
+    scoreLabel: null,
+    scoreProvenanceLabel: null,
+    challengeLabel,
+    challengeUrl: challengeUrlForProjection(challenge),
+    narrative: matchRecord.narrative,
+    strengths: [],
+    probes: [],
+    proofCount: proofItems.length,
+    sourceProofSummary: null,
+    proofItems,
+    basisItems: [
+      {
+        label: 'Score report',
+        value: 'Missing',
+        satisfied: false,
+      },
+      {
+        label: 'Review evidence',
+        value: '0 annotations',
+        satisfied: false,
+      },
+      {
+        label: 'Repo challenge',
+        value: challengeLabel ?? 'Assigned',
+        satisfied: true,
+      },
+      {
+        label: 'Match proof',
+        value: hasMatchProvenance ? 'Source-backed match' : 'Assignment evidence only',
+        satisfied: hasMatchProvenance,
+      },
+    ],
+  };
+}
+
 function deriveCodeReviewDecision(
   livingContext: LivingContextReadModel | null,
 ): CodeReviewDecisionProjection | null {
@@ -1952,6 +2047,7 @@ function ProfileDecisionCockpit({
   const hasEvidence = (livingContext?.summary.interactionCount ?? 0) > 0
     || (livingContext?.summary.contextRecordCount ?? 0) > 0
     || (livingContext?.summary.artifactCount ?? 0) > 0;
+  const hasPendingAssignment = !decision && hasPendingCodeReviewAssignment(livingContext);
   const proofCount = decision?.proofCount ?? livingContext?.summary.sourceSpanCount ?? 0;
   const proofLabel = decision
     ? `source proof ${proofCount === 1 ? 'item' : 'items'}`
@@ -1985,6 +2081,34 @@ function ProfileDecisionCockpit({
           detail: decision.nextActionDetail,
         },
       ]
+    : hasPendingAssignment
+      ? [
+          {
+            label: 'Current recommendation',
+            value: 'Wait for candidate review',
+            detail: 'A source-backed PR challenge is assigned, but it is not performance evidence yet.',
+          },
+          {
+            label: 'Assessment validity',
+            value: 'No score signal yet',
+            detail: 'Assignment is not assessment signal; do not make a hiring decision until the candidate submits source-backed review comments.',
+          },
+          {
+            label: 'Uncertainty',
+            value: 'Performance not observed',
+            detail: 'PIPE has not captured candidate review comments, pushback, or a score for this assignment.',
+          },
+          {
+            label: 'Missing context',
+            value: 'Candidate review transcript or source-backed review comments',
+            detail: 'The profile should stay pending until the candidate produces review evidence.',
+          },
+          {
+            label: 'Next action',
+            value: 'Wait for candidate submission',
+            detail: 'Use the assigned challenge as setup only; evaluate once source-backed review evidence arrives.',
+          },
+        ]
     : [
         {
           label: 'Current recommendation',
@@ -2014,6 +2138,7 @@ function ProfileDecisionCockpit({
           detail: 'Use the missing evidence to decide whether the next step should be a call, resume review, or code review.',
         },
       ];
+  const showNextActionCta = !hasPendingAssignment && !isPendingCodeReviewDecision(decision);
 
   return (
     <section data-testid="person-decision-cockpit" style={PROFILE_COCKPIT}>
@@ -2043,17 +2168,19 @@ function ProfileDecisionCockpit({
           </div>
         ))}
       </div>
-      <div style={PROFILE_COCKPIT_ACTION_ROW}>
-        <button
-          type="button"
-          data-testid="person-next-action-cta"
-          onClick={onCreateNextInterview}
-          style={PROFILE_COCKPIT_ACTION}
-        >
-          <Calendar size={14} />
-          {nextInterviewCtaLabel(decision, nextActionSource)}
-        </button>
-      </div>
+      {showNextActionCta && (
+        <div style={PROFILE_COCKPIT_ACTION_ROW}>
+          <button
+            type="button"
+            data-testid="person-next-action-cta"
+            onClick={onCreateNextInterview}
+            style={PROFILE_COCKPIT_ACTION}
+          >
+            <Calendar size={14} />
+            {nextInterviewCtaLabel(decision, nextActionSource)}
+          </button>
+        </div>
+      )}
     </section>
   );
 }
@@ -2393,11 +2520,14 @@ export default function PersonProfilePage(): JSX.Element {
     .slice(0, 5) ?? [];
   const evidenceArtifacts = livingContext?.artifacts.slice(0, 5) ?? [];
   const codeReviewDecision = deriveCodeReviewDecision(livingContext);
+  const pendingCodeReviewAssignment = derivePendingCodeReviewAssignmentDecision(livingContext);
   const decision = codeReviewDecision
+    ?? pendingCodeReviewAssignment
     ?? selectedCodeReviewDecision
     ?? deriveWorkspaceAssessmentDecision(livingContext)
     ?? deriveSelectedWorkspaceAssessmentDecision(selectedAssessment);
-  const evidenceMix = evidenceMixReadout(livingContext?.interactions ?? [], decision);
+  const hasPendingAssignment = !decision && hasPendingCodeReviewAssignment(livingContext);
+  const evidenceMix = evidenceMixReadout(livingContext?.interactions ?? [], decision, hasPendingAssignment);
 
   if (isLoading) {
     return (

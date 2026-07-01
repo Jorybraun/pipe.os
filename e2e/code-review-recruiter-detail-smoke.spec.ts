@@ -176,15 +176,24 @@ async function expectPersonProfilePending(page: Page): Promise<void> {
   const cockpit = page.getByTestId('person-decision-cockpit');
   await expect(cockpit).toBeVisible({ timeout: 45_000 });
   await expect(cockpit).toContainText('Decision cockpit');
-  await expect(cockpit).toContainText('Keep collecting source-backed signal');
-  await expect(cockpit).toContainText('no complete code-review decision yet');
-  await expect(page.getByTestId('person-code-review-decision')).toHaveCount(0);
+  await expect(cockpit).toContainText('Wait for candidate review');
+  await expect(cockpit).toContainText('No score signal yet');
+  await expect(cockpit).toContainText('do not make a hiring decision until the candidate submits source-backed review comments');
+  const pendingDecision = page.getByTestId('person-code-review-decision');
+  await expect(pendingDecision).toBeVisible();
+  await expect(pendingDecision).toContainText('Wait for candidate review');
+  await expect(pendingDecision).toContainText('Score report');
+  await expect(pendingDecision).toContainText('Missing');
+  await expect(pendingDecision).toContainText('Review evidence');
+  await expect(pendingDecision).toContainText('0 annotations');
+  await expect(pendingDecision).toContainText('No score signal yet');
 
   const evidenceMix = page.getByTestId('person-evidence-mix');
   await expect(evidenceMix).toBeVisible();
   await expect(evidenceMix).toContainText('Evidence mix');
-  await expect(evidenceMix).toContainText('technical assessment is missing');
-  await expect(evidenceMix).toContainText('Assign a source-backed technical assessment');
+  await expect(evidenceMix).toContainText('Code-review assignment is waiting on candidate review');
+  await expect(evidenceMix).toContainText('technical assessment is missing candidate review comments and a score');
+  await expect(evidenceMix).toContainText('Wait for candidate review submission');
 }
 
 async function expectInterviewScopeBoundary(page: Page, options: { required?: boolean } = {}): Promise<void> {
