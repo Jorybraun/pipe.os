@@ -985,6 +985,113 @@ describe('PersonProfilePage', () => {
     expect(basis).toHaveTextContent('Missing');
   });
 
+  it('does not blend a newer related match-only interview into the completed code-review recommendation', async () => {
+    const context = makeLivingContext();
+    context.summary = {
+      ...context.summary,
+      interactionCount: 3,
+      contextRecordCount: 4,
+      sourceSpanCount: 6,
+    };
+    context.interactions = [
+      {
+        id: 'interaction-new-match-only',
+        interactionType: 'code_review_assessment',
+        externalReference: 'review-session-new-match-only',
+        startedAt: '2026-06-29T15:00:00.000Z',
+        endedAt: '2026-06-29T15:10:00.000Z',
+        createdAt: '2026-06-29T15:00:00.000Z',
+        updatedAt: '2026-06-29T15:10:00.000Z',
+        metadata: {
+          sessionId: 'review-session-new-match-only',
+          scheduledInterviewId: 'interview-new-match-only',
+          status: 'matched',
+        },
+        artifactIds: [],
+        contextRecordIds: ['record-new-match-only'],
+        assertionIds: [],
+        signalKeys: [],
+      },
+      ...context.interactions,
+    ];
+    context.contextRecords = [
+      ...context.contextRecords,
+      contextRecord({
+        id: 'record-new-match-only',
+        interactionId: 'interaction-new-match-only',
+        recordType: 'candidate_pr_match_decision',
+        predicate: 'selects review challenge',
+        narrative: 'Matched candidate candidate-1 to PR #101 from repo repo-new, but no score or transcript exists yet.',
+        observedAt: '2026-06-29T15:10:00.000Z',
+        qualifiers: {
+          sessionId: 'review-session-new-match-only',
+          status: 'MATCHED',
+          selectedPacketId: 'challenge-packet-new',
+          evaluatedChallenges: [{
+            challengeId: 'challenge-packet-new',
+            eligible: true,
+            prNumber: 101,
+            repoId: 'repo-new',
+            rank: 1,
+          }],
+          validatorAgent: {
+            sourceBridge: {
+              challengeId: 'challenge-packet-new',
+              prNumber: 101,
+              repoId: 'repo-new',
+              provenanceComplete: true,
+            },
+          },
+        },
+        entities: [{
+          entityType: 'pull_request',
+          entityId: 'repo-new#101',
+          relationship: 'selected_pull_request',
+          value: null,
+          confidence: null,
+          metadata: {
+            prNumber: 101,
+            repoId: 'repo-new',
+          },
+        }],
+        sources: [
+          genericSource({
+            evidenceRole: 'selected_repo_evidence',
+            locator: {
+              repoFullName: 'react/noisy-related',
+              repoUrl: 'https://github.com/react/noisy-related',
+              prNumber: 101,
+              matchStatus: 'MATCHED',
+            },
+            exactText: 'Related match evidence from https://github.com/react/noisy-related/pull/101 is not a completed review signal yet.',
+          }),
+        ],
+      }),
+    ];
+
+    mocks.api.get
+      .mockResolvedValueOnce({ contact: makeContact() })
+      .mockResolvedValueOnce(context);
+
+    renderPage();
+    await flushAsyncUpdates();
+
+    const cockpit = screen.getByTestId('person-decision-cockpit');
+    expect(cockpit).toHaveTextContent('Current recommendation');
+    expect(cockpit).toHaveTextContent('Advance with focused probe');
+
+    const decision = await screen.findByTestId('person-code-review-decision');
+    expect(decision).toHaveTextContent('pierre/diffs PR #95');
+    expect(decision).toHaveTextContent('82/100 Strong');
+    expect(decision).toHaveTextContent('Usable source-backed signal');
+    expect(decision).not.toHaveTextContent('react/noisy-related');
+    expect(decision).not.toHaveTextContent('PR #101');
+
+    const coverage = screen.getByTestId('person-interaction-coverage');
+    expect(coverage).toHaveTextContent('2 code reviews');
+    expect(coverage).toHaveTextContent('1 resume');
+  });
+
   it('treats weak graph-derived code-review scores as assignment-fairness decisions', async () => {
     const context = makeLivingContext();
     context.contextRecords = context.contextRecords.map((record) =>

@@ -26,6 +26,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Fixed — CODE_REVIEW assessment runtime
 
+- Person-profile CODE_REVIEW rollups now bind score, transcript, and match proof by shared session or interaction before presenting a current recommendation, preventing a newer related match-only interview from being blended into an older completed review score.
 - The recruiter CODE_REVIEW browser smoke now requires matched interview pages to render the meeting/person boundary copy, proving app-dev keeps the interview scoped to its own evidence while treating same-person interviews as separate context.
 - The deployed workspace smoke now reports current assessment-only CODE_REVIEW handoffs as an explicit `assessment_only_handoff` skip unless `WORKSPACE_SMOKE_REQUIRE_ROOM=1` is set, replacing the stale room-URL parsing failure.
 - The local repo-matching test skill and product-readiness playbook now document the current `/assess` boundary: ready CODE_REVIEW assignments render the challenge, while blocked standalone handoffs must stop at `PROFILE_RECEIVED` / `candidate-intake-queued` instead of teaching agents to wait inside a matching screen.
@@ -33,6 +34,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - The deployed CODE_REVIEW smoke now hard-fails blocked standalone handoffs that return candidate-visible `WAITING_FOR_MATCH`, preserving the `/assess` boundary by requiring the candidate-safe `PROFILE_RECEIVED` queued state instead.
 - Candidate `/assess` now preserves queued standalone CODE_REVIEW handoffs as a first-class “Profile received” state when the server returns `candidate-intake-queued`, keeping candidates out of the old matching dashboard and making it clear they are done until a source-backed review is assigned.
 - Person profiles now use the same assignment-fairness recommendation for weak graph-derived CODE_REVIEW scores as selected-interview CODE_REVIEW decisions, so hiring managers see a consistent “review fairness before rejecting” callout instead of a harsher unexplained stop signal.
+- Assessment room package metadata, CI labels, brand chip copy, and basic-auth handoff pages now consistently use assessment-room wording instead of stale room-experiment branding.
 - Room-dev now ships PIPE assessment-room shell metadata, keeping browser titles anchored to the core assessment product.
 - Weak CODE_REVIEW scores now propagate to the person profile as assignment-fairness decisions even when the compact submission projection is absent, preventing scored interviews from telling hiring managers to wait for a review that already produced a score.
 - Recruiter interview detail now fails soft on optional living-context, related-evidence, linked-meeting, invite-link, progress, and score/match projections, so the core CODE_REVIEW decision surface does not sit on an indefinite spinner when an auxiliary app-dev read stalls.

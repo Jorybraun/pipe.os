@@ -561,6 +561,9 @@ function recordTimestamp(record: LivingContextRecord): number {
 function sessionIdFromRecord(record: LivingContextRecord | null): string | null {
   if (!record) return null;
   return optionalString(record.qualifiers.sessionId)
+    ?? optionalString(record.qualifiers.reviewSessionId)
+    ?? optionalString(record.qualifiers.codeReviewSessionId)
+    ?? optionalString(record.qualifiers.assessmentSessionId)
     ?? record.entities
       .map((entity) =>
         entity.entityType === 'code_review_session' || entity.entityType === 'assessment_session'
@@ -569,6 +572,34 @@ function sessionIdFromRecord(record: LivingContextRecord | null): string | null 
       )
       .find((value): value is string => typeof value === 'string' && value.length > 0)
     ?? null;
+}
+
+function codeReviewEvidenceKeys(record: LivingContextRecord | null): string[] {
+  if (!record) return [];
+  return [
+    sessionIdFromRecord(record) ? `session:${sessionIdFromRecord(record)}` : null,
+    record.interactionId ? `interaction:${record.interactionId}` : null,
+  ].filter((value): value is string => Boolean(value));
+}
+
+function selectMatchingChallengeRecord(
+  records: LivingContextRecord[],
+  evidenceRecords: Array<LivingContextRecord | null>,
+): LivingContextRecord | null {
+  const evidenceKeys = new Set(
+    evidenceRecords
+      .flatMap(codeReviewEvidenceKeys),
+  );
+  if (evidenceKeys.size === 0) {
+    return records.length === 1 ? records[0] ?? null : null;
+  }
+
+  const matchedRecord = records.find((record) => {
+    const recordKeys = codeReviewEvidenceKeys(record);
+    return recordKeys.some((key) => evidenceKeys.has(key));
+  });
+
+  return matchedRecord ?? null;
 }
 
 function collectionEntryCount(value: unknown): number {
@@ -1178,9 +1209,10 @@ function deriveCodeReviewDecision(
     record.recordType === 'code_review_transcript'
     && (!sessionId || sessionIdFromRecord(record) === sessionId),
   ) ?? codeReviewRecords.find((record) => record.recordType === 'code_review_transcript') ?? null;
-  const matchRecord = livingContext.contextRecords
+  const matchRecords = livingContext.contextRecords
     .filter((record) => record.recordType === 'candidate_pr_match_decision' || record.predicate === 'selects review challenge')
-    .sort((a, b) => recordTimestamp(b) - recordTimestamp(a))[0] ?? null;
+    .sort((a, b) => recordTimestamp(b) - recordTimestamp(a));
+  const matchRecord = selectMatchingChallengeRecord(matchRecords, [scoreRecord, transcriptRecord]);
   const matchChallenge = readChallengeProjection(matchRecord);
   const challenge = matchChallenge
     ?? readChallengeProjection(scoreRecord)
