@@ -39,10 +39,13 @@ with candidate comments, AI developer pushback, and improvement-loop metadata
 for human labelling and cross-model calibration.
 
 The role-backed smoke creates a simple-JD role context and auto-builds a
-CODE_REVIEW pipeline. If the deterministic matcher cannot produce a source-backed
-PR that passes the candidate-safe quality gate, `/assess` must stop at the
-candidate-safe `PROFILE_RECEIVED` handoff instead of running internal matching or
-serving a `NEEDS_REVIEW` challenge to the candidate.
+CODE_REVIEW pipeline. When matchable source-backed resume evidence exists, the
+smoke must produce a ready source-backed PR assignment, render `WELCOME` +
+`CODE_REVIEW` for the candidate, and verify recruiter detail projects the repo/PR
+from `candidate_challenge_assignment`. If the deterministic matcher cannot
+produce a source-backed PR that passes the candidate-safe quality gate, `/assess`
+must stop at the candidate-safe `PROFILE_RECEIVED` handoff instead of serving a
+`NEEDS_REVIEW` challenge to the candidate.
 
 The person-boundary smoke extends the manual full-submit path by creating a
 second same-email CODE_REVIEW invite with no candidate submission. Recruiter

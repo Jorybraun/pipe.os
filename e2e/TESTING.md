@@ -193,6 +193,7 @@ Validated app-dev examples:
 npm run smoke:code-review-assess-dev
 CODE_REVIEW_SMOKE_SUBMIT=1 npm run smoke:code-review-assess-dev
 CODE_REVIEW_SMOKE_AUTO_MATCH=1 CODE_REVIEW_EXPECT_BLOCKED_MATCH=1 npm run smoke:code-review-assess-dev
+npm run smoke:code-review-assess-dev:role-backed
 ```
 
 The manual ready-assignment commands should select `https://github.com/mui/base-ui` PR `#973`, return `MATCHED`, pass the source-backed quality gate, render a Pierre diff, and avoid any video-room UI. Manual mode is expected to report `assessmentQuality: "USABLE"` because it validates the recruiter-selected source-backed PR without inferring CV fit. The blocked auto-match command should return `PROFILE_RECEIVED`, complete the candidate stage as `candidate-intake-queued`, and prove the recruiter sees assessment progress instead of a candidate-visible matching loop.
@@ -263,7 +264,7 @@ npm run review-packets:repair-profiles -- --write
 npx tsx scripts/verifyCodeReviewMatchingLocal.ts --json
 ```
 
-Set `CODE_REVIEW_SMOKE_ROLE_BACKED=1` with auto-match to create a simple-JD role context, auto-build a role-backed CODE_REVIEW pipeline, add a candidate to that pipeline, and prove the completed recruiter result carries role source evidence plus a `candidate_role_repo_alignment` person-role-repo hyperedge. Role-backed mode intentionally clicks through the candidate Welcome gate before asserting the CODE_REVIEW browser surface.
+Set `CODE_REVIEW_SMOKE_ROLE_BACKED=1` with auto-match, or run `npm run smoke:code-review-assess-dev:role-backed`, to create a simple-JD role context, auto-build a role-backed CODE_REVIEW pipeline, add a candidate to that pipeline, and prove the candidate receives a ready source-backed CODE_REVIEW challenge when matchable source-backed resume evidence exists. Role-backed mode intentionally clicks through the candidate Welcome gate before asserting the CODE_REVIEW browser surface and verifying the recruiter projection uses the `candidate_challenge_assignment` repo/PR.
 
 Auto-match smoke runs now require measured positive contrast separation by
 default, including role-backed mode. Set `CODE_REVIEW_REQUIRE_CONTRAST=0` only
