@@ -233,7 +233,7 @@ function ChallengeCompletionPanel({
           <EvidenceStatusChip label="Work evidence" captured={progress.hasWorkEvidence} />
           <EvidenceStatusChip label="Chat evidence" captured={Boolean(progress.hasMessageEvidence)} />
           <EvidenceStatusChip label="Workspace telemetry" captured={Boolean(progress.hasDevContainerEvidence)} />
-          <EvidenceStatusChip label="Room actions" captured={Boolean(progress.hasToolUsageEvidence)} />
+          <EvidenceStatusChip label="Tool activity" captured={Boolean(progress.hasToolUsageEvidence)} />
           <EvidenceStatusChip label="Commit submission" captured={progress.hasCommitSubmission} />
           <EvidenceStatusChip label="Test evidence" captured={progress.hasTestEvidence} />
           <EvidenceStatusChip label="AI interaction" captured={progress.hasAiInteraction} />
@@ -335,7 +335,7 @@ function AssessmentProgressPanel({
         <span>Work evidence: {evidenceFlagLabel(progress.hasWorkEvidence)}</span>
         <span>Chat evidence: {evidenceFlagLabel(Boolean(progress.hasMessageEvidence))}</span>
         <span>Workspace telemetry: {evidenceFlagLabel(Boolean(progress.hasDevContainerEvidence))}</span>
-        <span>Room actions: {evidenceFlagLabel(Boolean(progress.hasToolUsageEvidence))}</span>
+        <span>Tool activity: {evidenceFlagLabel(Boolean(progress.hasToolUsageEvidence))}</span>
         <span>Commit submission: {evidenceFlagLabel(progress.hasCommitSubmission)}</span>
         <span>AI interaction: {evidenceFlagLabel(progress.hasAiInteraction)}</span>
         <span>Transcript evidence: {evidenceFlagLabel(progress.hasTranscriptEvidence)}</span>

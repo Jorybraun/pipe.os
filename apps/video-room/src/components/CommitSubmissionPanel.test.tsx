@@ -137,7 +137,8 @@ describe('CommitSubmissionPanel', () => {
     expect(flags.textContent).toContain('Work evidence: Captured');
     expect(flags.textContent).toContain('Chat evidence: Captured');
     expect(flags.textContent).toContain('Workspace telemetry: Captured');
-    expect(flags.textContent).toContain('Room actions: Captured');
+    expect(flags.textContent).toContain('Tool activity: Captured');
+    expect(flags.textContent).not.toContain(['Room', 'actions'].join(' '));
     expect(flags.textContent).toContain('Commit submission: Missing');
     expect(flags.textContent).toContain('Test evidence: Missing');
     expect(flags.textContent).toContain('AI interaction: Captured');
