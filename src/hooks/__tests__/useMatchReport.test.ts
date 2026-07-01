@@ -1,10 +1,23 @@
-import { describe, it, expect, vi, beforeEach } from 'vitest';
 import { renderHook, waitFor } from '@testing-library/react';
+import { beforeEach, describe, expect, it, vi } from 'vitest';
+import type { ApiClient } from '../../lib/api/client';
 import { useMatchReport } from '../useMatchReport';
 
-const mockGet = vi.fn();
+const apiMocks = vi.hoisted(() => ({
+  mockGet: vi.fn(),
+}));
+
+const mockApiClient: ApiClient = {
+  get: apiMocks.mockGet,
+  post: vi.fn(),
+  patch: vi.fn(),
+  put: vi.fn(),
+  del: vi.fn(),
+  postStream: vi.fn(),
+};
+
 vi.mock('../useApiClient', () => ({
-  useApiClient: () => ({ get: mockGet }),
+  useApiClient: () => mockApiClient,
 }));
 
 describe('useMatchReport', () => {
@@ -16,14 +29,14 @@ describe('useMatchReport', () => {
     const { result } = renderHook(() => useMatchReport(null, 'pkt-1'));
     expect(result.current.report).toBeNull();
     expect(result.current.isLoading).toBe(false);
-    expect(mockGet).not.toHaveBeenCalled();
+    expect(apiMocks.mockGet).not.toHaveBeenCalled();
   });
 
   it('returns null report when packetId is null', () => {
     const { result } = renderHook(() => useMatchReport('cand-1', null));
     expect(result.current.report).toBeNull();
     expect(result.current.isLoading).toBe(false);
-    expect(mockGet).not.toHaveBeenCalled();
+    expect(apiMocks.mockGet).not.toHaveBeenCalled();
   });
 
   it('fetches match report when both IDs are provided', async () => {
@@ -40,7 +53,7 @@ describe('useMatchReport', () => {
       generatedAt: '2026-07-01T00:00:00.000Z',
       pipelineVersion: '1.0.0',
     };
-    mockGet.mockResolvedValue(mockReport);
+    apiMocks.mockGet.mockResolvedValue(mockReport);
 
     const { result } = renderHook(() => useMatchReport('cand-1', 'pkt-1'));
 
@@ -49,25 +62,25 @@ describe('useMatchReport', () => {
     });
 
     expect(result.current.report?.verdict.verdict).toBe('likely_match');
-    expect(mockGet).toHaveBeenCalledWith(
+    expect(apiMocks.mockGet).toHaveBeenCalledWith(
       '/api/v1/candidates/cand-1/living-context/match-report?packetId=pkt-1',
     );
   });
 
   it('includes matchRunId in URL when provided', async () => {
-    mockGet.mockResolvedValue({ verdict: { verdict: 'strong_match' } });
+    apiMocks.mockGet.mockResolvedValue({ verdict: { verdict: 'strong_match' } });
 
     renderHook(() => useMatchReport('cand-1', 'pkt-1', 'run-42'));
 
     await waitFor(() => {
-      expect(mockGet).toHaveBeenCalledWith(
+      expect(apiMocks.mockGet).toHaveBeenCalledWith(
         '/api/v1/candidates/cand-1/living-context/match-report?packetId=pkt-1&matchRunId=run-42',
       );
     });
   });
 
-  it('sets error on failure', async () => {
-    mockGet.mockRejectedValue(new Error('Server error'));
+  it('sets error on fetch failure', async () => {
+    apiMocks.mockGet.mockRejectedValue(new Error('Server error'));
 
     const { result } = renderHook(() => useMatchReport('cand-1', 'pkt-1'));
 
@@ -75,7 +88,7 @@ describe('useMatchReport', () => {
       expect(result.current.error).not.toBeNull();
     });
 
-    expect(result.current.error?.message).toBe('Server error');
+    expect(result.current.error!.message).toBe('Server error');
     expect(result.current.report).toBeNull();
   });
 });
