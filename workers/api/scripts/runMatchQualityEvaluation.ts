@@ -9,12 +9,20 @@
 import Database from 'better-sqlite3';
 import { readFileSync } from 'node:fs';
 import { resolve } from 'node:path';
+import { pathToFileURL } from 'node:url';
 import type { D1Database } from '@cloudflare/workers-types';
+import {
+  loadCorpus as loadFrozenEvaluationCorpus,
+  type EvaluationCorpus,
+  type RelevanceGrade,
+} from '../src/lib/challengeMatching/evaluation';
 import {
   runMatchQualityEvaluation,
   type BatchEvaluationCandidate,
+  type MatchQualityReasonCategory,
   type MatchQualityEvaluationThresholds,
 } from '../src/lib/livingContext/batchEvaluationHarness';
+import type { MatchVerdict } from '../src/lib/livingContext/matchReportPipeline';
 
 type SqlValue = string | number | null;
 type BetterSqliteDb = InstanceType<typeof Database>;
@@ -36,6 +44,10 @@ interface MatchQualityCorpusFile {
   corpusId: string;
   cases: BatchEvaluationCandidate[];
   thresholds?: Partial<MatchQualityEvaluationThresholds>;
+}
+
+interface FrozenCorpusRow {
+  corpus_json: string;
 }
 
 class LocalStatement implements StatementLike {
@@ -106,28 +118,110 @@ function hasFlag(argv: string[], flag: string): boolean {
   return argv.includes(flag);
 }
 
-function loadCorpus(path: string): MatchQualityCorpusFile {
-  const parsed = JSON.parse(readFileSync(resolve(path), 'utf8')) as MatchQualityCorpusFile;
-  if (!parsed.corpusId || !Array.isArray(parsed.cases)) {
-    throw new Error('corpus file must include { corpusId, cases }');
+function isMatchQualityCorpusFile(value: unknown): value is MatchQualityCorpusFile {
+  return Boolean(value)
+    && typeof value === 'object'
+    && typeof (value as { corpusId?: unknown }).corpusId === 'string'
+    && Array.isArray((value as { cases?: unknown }).cases);
+}
+
+function expectedVerdictForGrade(grade: RelevanceGrade): MatchVerdict {
+  switch (grade) {
+    case 'highly_relevant':
+      return 'strong_match';
+    case 'relevant':
+      return 'likely_match';
+    case 'borderline':
+      return 'needs_review';
+    case 'irrelevant':
+    case 'forbidden':
+      return 'insufficient_evidence';
   }
-  return parsed;
+}
+
+function reasonForGrade(grade: RelevanceGrade): MatchQualityReasonCategory {
+  switch (grade) {
+    case 'highly_relevant':
+    case 'relevant':
+      return 'aligned';
+    case 'borderline':
+      return 'negative_contrast';
+    case 'irrelevant':
+    case 'forbidden':
+      return 'insufficient_evidence';
+  }
+}
+
+export function matchQualityCasesFromEvaluationCorpus(corpus: EvaluationCorpus): MatchQualityCorpusFile {
+  const cases = corpus.expertLabels.map((label): BatchEvaluationCandidate => {
+    const expectedVerdict = expectedVerdictForGrade(label.relevanceGrade);
+    const positive = expectedVerdict === 'strong_match' || expectedVerdict === 'likely_match';
+    return {
+      caseId: label.labelId,
+      candidateId: label.candidateId,
+      challengePacketId: label.challengeId,
+      expectedVerdict,
+      expectedReasonCategory: reasonForGrade(label.relevanceGrade),
+      expertLabel: label.explanation ?? `${label.relevanceGrade} by ${label.labeledBy}`,
+      requireCandidateEvidence: positive,
+      requireRepoEvidence: true,
+      requireSourceBackedPr: true,
+    };
+  });
+  return {
+    corpusId: corpus.corpusId,
+    cases,
+  };
+}
+
+export function parseMatchQualityCorpusJson(json: string): MatchQualityCorpusFile {
+  const parsed = JSON.parse(json) as unknown;
+  if (isMatchQualityCorpusFile(parsed)) return parsed;
+  const evaluationCorpus = loadFrozenEvaluationCorpus(json);
+  return matchQualityCasesFromEvaluationCorpus(evaluationCorpus);
+}
+
+function loadCorpusFile(path: string): MatchQualityCorpusFile {
+  const parsed = JSON.parse(readFileSync(resolve(path), 'utf8')) as MatchQualityCorpusFile;
+  if (isMatchQualityCorpusFile(parsed)) return parsed;
+  return parseMatchQualityCorpusJson(JSON.stringify(parsed));
+}
+
+async function loadStoredCorpus(db: D1Database, corpusId: string): Promise<MatchQualityCorpusFile> {
+  const row = await db.prepare(
+    'SELECT corpus_json FROM evaluation_corpora WHERE corpus_id = ?1',
+  ).bind(corpusId).first<FrozenCorpusRow>();
+  if (!row) {
+    throw new Error(`stored evaluation corpus not found: ${corpusId}`);
+  }
+  const corpus = parseMatchQualityCorpusJson(row.corpus_json);
+  if (corpus.corpusId !== corpusId) {
+    throw new Error(`stored corpus row "${corpusId}" contains corpus "${corpus.corpusId}"`);
+  }
+  return corpus;
 }
 
 async function main(): Promise<void> {
   const databasePath = valueFor(process.argv, '--database-path');
   const corpusFile = valueFor(process.argv, '--corpus-file');
+  const corpusId = valueFor(process.argv, '--corpus-id');
   const requirePass = hasFlag(process.argv, '--require-pass');
   const json = hasFlag(process.argv, '--json');
-  if (!databasePath || !corpusFile) {
-    throw new Error('--database-path and --corpus-file are required');
+  if (!databasePath || (!corpusFile && !corpusId)) {
+    throw new Error('--database-path and either --corpus-file or --corpus-id are required');
+  }
+  if (corpusFile && corpusId) {
+    throw new Error('pass only one of --corpus-file or --corpus-id');
   }
 
-  const corpus = loadCorpus(corpusFile);
   const sqlite = new Database(resolve(databasePath));
+  const db = new LocalD1(sqlite) as unknown as D1Database;
   try {
+    const corpus = corpusFile
+      ? loadCorpusFile(corpusFile)
+      : await loadStoredCorpus(db, corpusId!);
     const result = await runMatchQualityEvaluation(
-      new LocalD1(sqlite) as unknown as D1Database,
+      db,
       {
         corpusId: corpus.corpusId,
         cases: corpus.cases,
@@ -149,7 +243,10 @@ async function main(): Promise<void> {
   }
 }
 
-void main().catch((error) => {
-  console.error(error instanceof Error ? error.message : String(error));
-  process.exitCode = 1;
-});
+const invokedPath = process.argv[1] ? pathToFileURL(resolve(process.argv[1])).href : '';
+if (import.meta.url === invokedPath) {
+  void main().catch((error) => {
+    console.error(error instanceof Error ? error.message : String(error));
+    process.exitCode = 1;
+  });
+}

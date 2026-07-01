@@ -76,6 +76,7 @@ Run these in real browser automation whenever repo matching or CODE_REVIEW chang
 - `npm run smoke:assess-token-lifecycle-dev` creates two real app-dev CODE_REVIEW assessment links, opens token A then token B in one browser, and proves token B resolves/stores candidate B before claim without a used-link or matching-loop fallback. Ready challenge start/render remains covered by `npm run smoke:code-review-assess-dev`.
 - `npm run smoke:code-review-assess-dev:blocked` proves the deployed standalone CODE_REVIEW blocked path returns `PROFILE_RECEIVED` / `candidate-intake-queued`, opens recruiter detail, and rejects candidate-visible matching-loop copy.
 - `cd workers/api && npx vitest run src/lib/challengeMatching/__tests__/d1Matcher.test.ts src/lib/livingContext/__tests__/batchEvaluationHarness.test.ts src/lib/livingContext/__tests__/matchConfidenceScoring.test.ts src/lib/livingContext/__tests__/decisionWeightedRematch.test.ts src/lib/livingContext/__tests__/repoDecompositionOverlay.test.ts src/lib/livingContext/__tests__/matchDecisionAudit.test.ts src/lib/livingContext/__tests__/evidenceStalenessAlerts.test.ts` proves the harvested internal quality primitives: compact match reports, labelled contrast gates, source-backed PR checks, staleness/decision diagnostics, repo overlays, and prior-decision packet exclusions.
+- `cd workers/api && npx vitest run scripts/runMatchQualityEvaluation.test.ts` proves the operator CLI loads both compact match-quality JSON and frozen `evaluation_corpora` rows without running the CLI body during imports.
 
 ## Immediate Gaps
 

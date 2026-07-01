@@ -130,6 +130,13 @@ contrast cases. The rejected surface remains candidate/recruiter graph cockpit
 expansion, concept merge/split APIs, batch-eval recruiter routes, and any
 candidate-visible matching/decomposition dashboard inside `/assess`.
 
+The operator entrypoint is `cd workers/api && npm run living-context:match-quality
+-- --database-path <sqlite> --corpus-id <frozen-corpus-id> --require-pass`. It
+also accepts `--corpus-file <json>` for compact match-quality fixtures. When a
+stored row contains the older `evaluation_corpora` schema, the CLI adapts
+candidate-role-challenge relevance labels into candidate-to-packet quality cases
+instead of creating a second unrelated corpus format.
+
 The manual override full-submit app-dev lane passed after updating the smoke to
 assert the candidate-facing product language ("a recruiter selected this PR")
 instead of the internal phrase "manual override." The passing run created
