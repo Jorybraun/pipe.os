@@ -4,6 +4,35 @@ Inter-agent handoff log for the living context graph goal. Each agent appends a 
 
 ## Log
 
+### 2026-07-01T03:20Z — Devin: match confidence scoring + consolidated PR #166
+
+**Agent:** Devin session `e14f0d727aef4354a701bd9aa43673f8`
+**Branch:** `devin/1782875178-living-context-consolidated`
+**PR:** #166 (consolidates PR #165 + new match confidence scoring)
+
+**Work completed:**
+1. Analyzed open PRs #163, #164, #165 — identified #165 as latest consolidation (merged to main as PR #165).
+2. Created fresh branch from main (post-#165 merge) for continued work.
+3. Built **match confidence scoring system** — multi-dimensional confidence quantification for candidate-to-challenge matches:
+   - `matchConfidenceScoring.ts`: Pure scoring function + D1 integration. Four weighted dimensions: coverage (0.35), recency (0.25), depth (0.25), consistency (0.15). Composite score → confidence level (high/moderate/low/insufficient). Identifies stretch areas (partial concept overlap) and generates actionable recommendations.
+   - `GET /:candidateId/living-context/match-confidence?packetId=...`: API endpoint gated by `living_context_read`, returns `MatchConfidenceReport`.
+   - `useMatchConfidence` hook: Frontend data hook following `useRepoDecomposition` pattern.
+   - `MatchConfidencePanel`: LivingContextGraph panel with dimension progress bars, stretch area callouts, recommendation list.
+   - Frontend types: `MatchConfidenceLevel`, `DemandConfidence`, `ConfidenceDimension`, `MatchConfidenceReport`.
+4. All 2048 worker tests pass (213 test files), 16 frontend tests pass, TypeScript strict clean, lint 0 errors.
+5. CI failures are pre-existing: `ClippyAssistant.test.tsx` (missing `clippyjs` dep, same on main) and Workers Builds (Cloudflare deployment check).
+
+**Criteria advanced:**
+- #5 (evidence-based matching): Multi-dimensional confidence scoring replaces binary match/no-match with nuanced reliability assessment
+- #6 (explain every match): Per-demand breakdown shows coverage, recency, corroboration, stretch areas, and missing evidence
+- #8 (production quality): 12 backend tests (9 pure + 3 D1 integration), 5 frontend hook tests, deterministic scoring
+
+**Next priorities:**
+- Merge PR #166 after review
+- Integrate match confidence into recruiter decision workflows
+- Wire stretch area recommendations into evidence collection guidance
+- Close stale draft PRs #105-#163 (auth blocked for automation sessions)
+
 ### 2026-06-30T23:01Z — Devin: evidence staleness alerting + consolidated PR #162
 
 **Agent:** Devin session `54fb112c427648b6a4e5e2fc0db34b60`
