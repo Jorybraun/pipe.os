@@ -339,6 +339,73 @@ function normalizeOptionalString(value) {
   return typeof value === 'string' && value.trim() ? value.trim() : null;
 }
 
+function canonicalRepositoryUrl(value) {
+  const text = normalizeOptionalString(value);
+  if (!text) return null;
+  const scpLikeGitHub = text.match(/^git@github\.com:([^/\s]+)\/([^/\s]+?)(?:\.git)?\/?$/i);
+  if (scpLikeGitHub) {
+    return `https://github.com/${scpLikeGitHub[1].toLowerCase()}/${scpLikeGitHub[2].replace(/\.git$/i, '').toLowerCase()}`;
+  }
+
+  try {
+    const url = new URL(text);
+    if (url.hostname.toLowerCase() === 'github.com') {
+      const parts = url.pathname.split('/').filter(Boolean);
+      if (parts.length >= 2) {
+        return `https://github.com/${parts[0].toLowerCase()}/${parts[1].replace(/\.git$/i, '').toLowerCase()}`;
+      }
+    }
+    url.username = '';
+    url.password = '';
+    url.search = '';
+    url.hash = '';
+    return url.toString().replace(/\/+$/g, '').replace(/\.git$/i, '');
+  } catch {
+    return text.replace(/\/+$/g, '').replace(/\.git$/i, '');
+  }
+}
+
+function resolveWorkspaceRepositoryUrls(body = {}) {
+  const requestedRepositoryUrl = canonicalRepositoryUrl(body.repositoryUrl);
+  const configuredRepositoryUrl = canonicalRepositoryUrl(process.env.REPO_GIT_URL);
+  const forkRepositoryUrl = canonicalRepositoryUrl(body.forkRepositoryUrl);
+  const remoteResult = tryRunGit(['config', '--get', 'remote.origin.url']);
+  const remoteRepositoryUrl = remoteResult.ok ? canonicalRepositoryUrl(remoteResult.stdout) : null;
+
+  if (!configuredRepositoryUrl && !remoteRepositoryUrl) {
+    throw new Error('Repository URL is required from the workspace git remote or REPO_GIT_URL before finalizing assessment evidence.');
+  }
+  if (
+    requestedRepositoryUrl
+    && configuredRepositoryUrl
+    && requestedRepositoryUrl !== configuredRepositoryUrl
+  ) {
+    throw new Error('Cannot finalize assessment: requested repository does not match the configured challenge repository.');
+  }
+  if (
+    requestedRepositoryUrl
+    && !configuredRepositoryUrl
+    && remoteRepositoryUrl
+    && requestedRepositoryUrl !== remoteRepositoryUrl
+  ) {
+    throw new Error('Cannot finalize assessment: workspace repository does not match the assigned repository.');
+  }
+  if (
+    configuredRepositoryUrl
+    && remoteRepositoryUrl
+    && configuredRepositoryUrl !== remoteRepositoryUrl
+    && forkRepositoryUrl !== remoteRepositoryUrl
+  ) {
+    throw new Error('Cannot finalize assessment: workspace repository does not match the assigned repository.');
+  }
+
+  return {
+    repositoryUrl: configuredRepositoryUrl || remoteRepositoryUrl,
+    workspaceRepositoryUrl: remoteRepositoryUrl || configuredRepositoryUrl,
+    forkRepositoryUrl,
+  };
+}
+
 function defaultCommitNarrative(commitSha, changedFiles) {
   const fileSummary = changedFiles.length === 1
     ? changedFiles[0].path
@@ -536,12 +603,11 @@ async function buildWorkspaceCommitSubmission(body = {}) {
 
   const branchName = runGit(['rev-parse', '--abbrev-ref', 'HEAD']).trim();
   assertAssessmentBranchName(branchName);
-  const repositoryUrl = normalizeOptionalString(body.repositoryUrl)
-    || normalizeOptionalString(process.env.REPO_GIT_URL)
-    || normalizeOptionalString(runGit(['config', '--get', 'remote.origin.url']));
-  if (!repositoryUrl) {
-    throw new Error('Repository URL is required before finalizing assessment evidence.');
-  }
+  const {
+    repositoryUrl,
+    workspaceRepositoryUrl,
+    forkRepositoryUrl,
+  } = resolveWorkspaceRepositoryUrls(body);
 
   const commitEvidenceText = runGit(['show', '--no-patch', '--format=fuller', commitSha]);
   const diffText = runGit(['diff', '--no-ext-diff', '--find-renames', `${baseCommitSha}..${commitSha}`]);
@@ -553,7 +619,7 @@ async function buildWorkspaceCommitSubmission(body = {}) {
   }
 
   const occurredAt = new Date().toISOString();
-  const sourceRepositoryUrl = normalizeOptionalString(body.forkRepositoryUrl) || repositoryUrl;
+  const sourceRepositoryUrl = workspaceRepositoryUrl || repositoryUrl;
   const testCommand = normalizeOptionalString(body.testCommand)
     || normalizeOptionalString(process.env.PIPE_TEST_COMMAND);
   const finalizerCommandEvidenceText = buildFinalizerCommandEvidenceText({
@@ -618,7 +684,7 @@ async function buildWorkspaceCommitSubmission(body = {}) {
   return {
     narrative: normalizeOptionalString(body.narrative) || defaultCommitNarrative(commitSha, changedFiles),
     repositoryUrl,
-    forkRepositoryUrl: normalizeOptionalString(body.forkRepositoryUrl),
+    forkRepositoryUrl,
     branchName,
     baseCommitSha: baseCommitSha.toLowerCase(),
     commitSha,

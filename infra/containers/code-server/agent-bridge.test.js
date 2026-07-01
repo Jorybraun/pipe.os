@@ -585,6 +585,106 @@ describe('agent bridge readiness', () => {
     )).toBe(true);
   });
 
+  it('canonicalizes the checked-out git remote before labeling workspace commit evidence', async () => {
+    const { workspaceDir, baseCommitSha, commitSha } = createCommittedWorkspace();
+    git(['remote', 'add', 'origin', 'git@github.com:Open-Source/Widgets.git'], workspaceDir);
+    const { port } = await startBridge('', {
+      AGENT_TYPE: '',
+      PATH: process.env.PATH ?? '',
+      REPO_GIT_URL: 'https://github.com/open-source/widgets.git',
+      CHALLENGE_BASE_COMMIT_SHA: baseCommitSha,
+      PIPE_TEST_COMMAND: 'node -e "console.log(42)"',
+    }, {
+      installFakeDevin: false,
+      workspaceDir,
+    });
+
+    const response = await fetch(`http://127.0.0.1:${port}/assessment/finalize`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({
+        submitToPipe: false,
+        repositoryUrl: 'https://github.com/open-source/widgets',
+      }),
+    });
+
+    expect(response.status).toBe(200);
+    const body = await response.json();
+    expect(body.commit).toMatchObject({
+      repositoryUrl: 'https://github.com/open-source/widgets',
+      branchName: 'pipe-assessment',
+      baseCommitSha,
+      commitSha,
+    });
+    expect(body.submissionPayload).toMatchObject({
+      repositoryUrl: 'https://github.com/open-source/widgets',
+      forkRepositoryUrl: null,
+    });
+    const locatorRepositoryUrls = body.submissionPayload.sourceRefs
+      .map((ref) => ref.locator?.repositoryUrl)
+      .filter(Boolean);
+    expect(new Set(locatorRepositoryUrls)).toEqual(new Set(['https://github.com/open-source/widgets']));
+  });
+
+  it('blocks workspace finalization when the request repository does not match the configured challenge repo', async () => {
+    const { workspaceDir, baseCommitSha } = createCommittedWorkspace();
+    git(['remote', 'add', 'origin', 'https://github.com/open-source/widgets.git'], workspaceDir);
+    const { port } = await startBridge('', {
+      AGENT_TYPE: '',
+      PATH: process.env.PATH ?? '',
+      REPO_GIT_URL: 'https://github.com/open-source/widgets',
+      CHALLENGE_BASE_COMMIT_SHA: baseCommitSha,
+    }, {
+      installFakeDevin: false,
+      workspaceDir,
+    });
+
+    const response = await fetch(`http://127.0.0.1:${port}/assessment/finalize`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({
+        submitToPipe: false,
+        repositoryUrl: 'https://github.com/other/widgets',
+      }),
+    });
+
+    expect(response.status).toBe(409);
+    const body = await response.json();
+    expect(body).toMatchObject({
+      ok: false,
+      error: {
+        code: 'ASSESSMENT_FINALIZE_BLOCKED',
+      },
+    });
+    expect(body.error.message).toContain('requested repository does not match the configured challenge repository');
+  });
+
+  it('rejects browser-only repository URLs when no workspace remote or configured challenge repo exists', async () => {
+    const { workspaceDir, baseCommitSha } = createCommittedWorkspace();
+    const { port } = await startBridge('', {
+      AGENT_TYPE: '',
+      PATH: process.env.PATH ?? '',
+      REPO_GIT_URL: '',
+      CHALLENGE_BASE_COMMIT_SHA: baseCommitSha,
+    }, {
+      installFakeDevin: false,
+      workspaceDir,
+    });
+
+    const response = await fetch(`http://127.0.0.1:${port}/assessment/finalize`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({
+        submitToPipe: false,
+        repositoryUrl: 'https://github.com/open-source/widgets',
+      }),
+    });
+
+    expect(response.status).toBe(409);
+    const body = await response.json();
+    expect(body.error.message).toContain('workspace git remote or REPO_GIT_URL');
+  });
+
   it('records a verification gap instead of inventing test output when no test command is configured', async () => {
     const captureServer = await startCommitSubmissionCaptureServer();
     const { workspaceDir, baseCommitSha, commitSha } = createCommittedWorkspace();
