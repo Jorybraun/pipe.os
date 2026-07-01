@@ -2290,3 +2290,85 @@ export interface GraphTraversalOptions {
   maxNodes?: number;
   entityTypeFilter?: GraphEntityType[];
 }
+
+// --- Concept Evolution Types ---
+
+export type EvolutionEventType = 'merge' | 'split' | 'rename' | 'supersede';
+
+export interface ConceptEvolutionEvent {
+  eventId: string;
+  eventType: EvolutionEventType;
+  conceptId: string;
+  relatedConceptId: string | null;
+  reason: string | null;
+  createdAt: string;
+}
+
+export interface SupersessionLink {
+  fromConceptId: string;
+  toConceptId: string;
+  eventType: EvolutionEventType;
+  eventId: string;
+  createdAt: string;
+}
+
+export interface ConceptEvolutionTimeline {
+  conceptKey: string;
+  events: ConceptEvolutionEvent[];
+  supersessionChain: SupersessionLink[];
+  aliases: string[];
+}
+
+export interface MergeConceptsResult {
+  survivorConceptId: string;
+  absorbedCount: number;
+  relinkedSurfaces: number;
+  relinkedAdjacencies: number;
+  relinkedAssertionConcepts: number;
+  eventId: string;
+}
+
+export interface SplitConceptResult {
+  newConceptId: string;
+  movedSurfaces: number;
+  eventId: string;
+}
+
+// --- Evidence Semantic Search Types ---
+
+export type SearchStrategy = 'text' | 'concept' | 'hybrid';
+
+export type EvidenceHitType = 'source_span' | 'assertion' | 'concept_match';
+
+export interface EvidenceHitProvenance {
+  interactionId: string | null;
+  interactionType: string | null;
+  artifactId: string | null;
+  observedAt: string | null;
+}
+
+export interface EvidenceSearchHit {
+  hitId: string;
+  hitType: EvidenceHitType;
+  text: string;
+  relevanceScore: number;
+  confidence: number;
+  conceptKey: string | null;
+  provenance: EvidenceHitProvenance;
+}
+
+export interface EvidenceSearchResult {
+  query: string;
+  strategy: SearchStrategy;
+  workspacePersonId: string;
+  hits: EvidenceSearchHit[];
+  totalHits: number;
+  truncated: boolean;
+}
+
+export interface EvidenceSearchOptions {
+  strategy?: SearchStrategy;
+  limit?: number;
+  minConfidence?: number;
+  interactionTypes?: string[];
+}

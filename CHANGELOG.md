@@ -7,6 +7,17 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Added — Living context API surface + frontend hooks
+
+- `POST /:candidateId/living-context/concepts/merge`: API endpoint to merge concepts (repoints surfaces, adjacencies, assertion_concepts). Gated by `living_context_read`.
+- `POST /:candidateId/living-context/concepts/split`: API endpoint to split a concept into a new one. Gated by `living_context_read`.
+- `GET /:candidateId/living-context/concepts/evolution?conceptKey=...`: API endpoint for concept evolution timeline with supersession chain and aliases. Gated by `living_context_read`.
+- `GET /:candidateId/living-context/evidence-search?q=...&strategy=hybrid`: Semantic search across source evidence (text, concept, or hybrid strategy) with confidence/type filters. Gated by `living_context_read`.
+- `POST /:candidateId/living-context/batch-rematch`: Batch rematch across multiple candidates (max 50) with per-candidate decision exclusions. Gated by `living_context_read`.
+- `useConceptEvolution` hook: Frontend data hook for concept evolution timeline + merge/split mutations with auto-refetch.
+- `useEvidenceSearch` hook: Frontend data hook for semantic evidence search with strategy/filter options and clear state.
+- Frontend types: `ConceptEvolutionTimeline`, `ConceptEvolutionEvent`, `SupersessionLink`, `MergeConceptsResult`, `SplitConceptResult`, `EvidenceSearchResult`, `EvidenceSearchHit`, `EvidenceHitProvenance`, `SearchStrategy`, `EvidenceSearchOptions`.
+
 ### Added — Concept evolution tracking (criterion #3)
 
 - `conceptEvolution.ts`: Tracks concept merges, splits, and evolution over time. `mergeConcepts` consolidates multiple concepts into a survivor (repoints surfaces, adjacencies, assertion_concepts links, marks absorbed as superseded, records event). `splitConcept` moves a subset of surfaces to a new concept. `queryConceptEvolution` returns full evolution timeline, current aliases, and supersession chain with time filtering.

@@ -2362,6 +2362,178 @@ candidateOps.get('/:candidateId/living-context/graph-traversal', requireGate('li
   return c.json(result);
 });
 
+// POST /:candidateId/living-context/concepts/merge — merge concepts (repoints surfaces/adjacencies)
+candidateOps.post('/:candidateId/living-context/concepts/merge', requireGate('living_context_read'), async (c) => {
+  const userId = c.var.userId;
+  const { candidateId } = c.req.param();
+  const db = c.env.DB;
+
+  const candidate = await db.prepare(
+    `SELECT c.id
+       FROM candidates c
+       LEFT JOIN pipelines p ON p.id = c.pipeline_id
+      WHERE c.id = ?1 AND (c.owner_id = ?2 OR p.owner_id = ?2)`,
+  ).bind(candidateId, userId).first<{ id: string }>();
+  if (!candidate) return apiError(c, 'NOT_FOUND', 'Candidate not found.');
+
+  const body = await c.req.json<{
+    survivorConceptId: string;
+    absorbedConceptIds: string[];
+    reason?: string;
+  }>();
+  if (!body.survivorConceptId || !Array.isArray(body.absorbedConceptIds) || body.absorbedConceptIds.length === 0) {
+    return apiError(c, 'VALIDATION_ERROR', 'survivorConceptId and non-empty absorbedConceptIds are required.');
+  }
+
+  const { mergeConcepts } = await import('../../lib/livingContext/conceptEvolution');
+  const result = await mergeConcepts(db, {
+    survivorConceptId: body.survivorConceptId,
+    absorbedConceptIds: body.absorbedConceptIds,
+    reason: body.reason ?? 'manual merge',
+  });
+  return c.json(result);
+});
+
+// POST /:candidateId/living-context/concepts/split — split a concept into a new one
+candidateOps.post('/:candidateId/living-context/concepts/split', requireGate('living_context_read'), async (c) => {
+  const userId = c.var.userId;
+  const { candidateId } = c.req.param();
+  const db = c.env.DB;
+
+  const candidate = await db.prepare(
+    `SELECT c.id
+       FROM candidates c
+       LEFT JOIN pipelines p ON p.id = c.pipeline_id
+      WHERE c.id = ?1 AND (c.owner_id = ?2 OR p.owner_id = ?2)`,
+  ).bind(candidateId, userId).first<{ id: string }>();
+  if (!candidate) return apiError(c, 'NOT_FOUND', 'Candidate not found.');
+
+  const body = await c.req.json<{
+    sourceConceptId: string;
+    newCanonicalKey: string;
+    newLabel?: string;
+    surfaceIdsToMove: string[];
+    reason?: string;
+  }>();
+  if (!body.sourceConceptId || !body.newCanonicalKey || !Array.isArray(body.surfaceIdsToMove)) {
+    return apiError(c, 'VALIDATION_ERROR', 'sourceConceptId, newCanonicalKey, and surfaceIdsToMove are required.');
+  }
+
+  const { splitConcept } = await import('../../lib/livingContext/conceptEvolution');
+  const result = await splitConcept(db, {
+    sourceConceptId: body.sourceConceptId,
+    newCanonicalKey: body.newCanonicalKey,
+    newLabel: body.newLabel ?? body.newCanonicalKey,
+    surfaceIdsToMove: body.surfaceIdsToMove,
+    reason: body.reason ?? 'manual split',
+  });
+  return c.json(result);
+});
+
+// GET /:candidateId/living-context/concepts/evolution — concept evolution timeline
+candidateOps.get('/:candidateId/living-context/concepts/evolution', requireGate('living_context_read'), async (c) => {
+  const userId = c.var.userId;
+  const { candidateId } = c.req.param();
+  const conceptKey = c.req.query('conceptKey');
+  const since = c.req.query('since');
+  const limitParam = c.req.query('limit');
+  const db = c.env.DB;
+
+  if (!conceptKey) {
+    return apiError(c, 'VALIDATION_ERROR', 'conceptKey query parameter is required.');
+  }
+
+  const candidate = await db.prepare(
+    `SELECT c.id
+       FROM candidates c
+       LEFT JOIN pipelines p ON p.id = c.pipeline_id
+      WHERE c.id = ?1 AND (c.owner_id = ?2 OR p.owner_id = ?2)`,
+  ).bind(candidateId, userId).first<{ id: string }>();
+  if (!candidate) return apiError(c, 'NOT_FOUND', 'Candidate not found.');
+
+  const { queryConceptEvolution } = await import('../../lib/livingContext/conceptEvolution');
+  const options: { since?: string; limit?: number } = {};
+  if (since) options.since = since;
+  if (limitParam) {
+    const parsed = parseInt(limitParam, 10);
+    if (!isNaN(parsed) && parsed > 0) options.limit = parsed;
+  }
+
+  const result = await queryConceptEvolution(db, conceptKey, options);
+  return c.json(result);
+});
+
+// GET /:candidateId/living-context/evidence-search — semantic search across evidence
+candidateOps.get('/:candidateId/living-context/evidence-search', requireGate('living_context_read'), async (c) => {
+  const userId = c.var.userId;
+  const { candidateId } = c.req.param();
+  const q = c.req.query('q');
+  const strategy = c.req.query('strategy') as 'text' | 'concept' | 'hybrid' | undefined;
+  const limitParam = c.req.query('limit');
+  const minConfidenceParam = c.req.query('minConfidence');
+  const interactionTypesParam = c.req.query('interactionTypes');
+  const db = c.env.DB;
+
+  if (!q) {
+    return apiError(c, 'VALIDATION_ERROR', 'q query parameter is required.');
+  }
+
+  const candidate = await db.prepare(
+    `SELECT c.id
+       FROM candidates c
+       LEFT JOIN pipelines p ON p.id = c.pipeline_id
+      WHERE c.id = ?1 AND (c.owner_id = ?2 OR p.owner_id = ?2)`,
+  ).bind(candidateId, userId).first<{ id: string }>();
+  if (!candidate) return apiError(c, 'NOT_FOUND', 'Candidate not found.');
+
+  const { ensureCandidateLivingContext } = await import('../../lib/livingContext/compatibility');
+  const bridge = await ensureCandidateLivingContext(db, candidateId);
+  if (!bridge?.workspacePersonId) {
+    return apiError(c, 'NOT_FOUND', 'No living context found for candidate.');
+  }
+
+  const { searchEvidence } = await import('../../lib/livingContext/evidenceSemanticSearch');
+  type SearchStrategy = import('../../lib/livingContext/evidenceSemanticSearch').SearchStrategy;
+  type EvidenceSearchOptions = import('../../lib/livingContext/evidenceSemanticSearch').EvidenceSearchOptions;
+
+  const options: EvidenceSearchOptions = {};
+  if (strategy && ['text', 'concept', 'hybrid'].includes(strategy)) {
+    options.strategy = strategy as SearchStrategy;
+  }
+  if (limitParam) {
+    const parsed = parseInt(limitParam, 10);
+    if (!isNaN(parsed) && parsed > 0 && parsed <= 100) options.limit = parsed;
+  }
+  if (minConfidenceParam) {
+    const parsed = parseFloat(minConfidenceParam);
+    if (!isNaN(parsed) && parsed >= 0 && parsed <= 1) options.minConfidence = parsed;
+  }
+  if (interactionTypesParam) {
+    options.interactionTypes = interactionTypesParam.split(',');
+  }
+
+  const result = await searchEvidence(db, bridge.workspacePersonId, q, options);
+  return c.json(result);
+});
+
+// POST /:candidateId/living-context/batch-rematch — rematch across multiple candidates
+candidateOps.post('/:candidateId/living-context/batch-rematch', requireGate('living_context_read'), async (c) => {
+  const userId = c.var.userId;
+  const db = c.env.DB;
+
+  const body = await c.req.json<{ candidateIds: string[] }>();
+  if (!Array.isArray(body.candidateIds) || body.candidateIds.length === 0) {
+    return apiError(c, 'VALIDATION_ERROR', 'candidateIds array is required.');
+  }
+  if (body.candidateIds.length > 50) {
+    return apiError(c, 'VALIDATION_ERROR', 'Maximum 50 candidates per batch.');
+  }
+
+  const { runBatchRematch } = await import('../../lib/livingContext/batchRematch');
+  const result = await runBatchRematch(db, body.candidateIds, userId);
+  return c.json(result);
+});
+
 // GET /:candidateId/pipeline-siblings — other candidates in the same pipeline
 candidateOps.get('/:candidateId/pipeline-siblings', async (c) => {
   const userId = c.var.userId;
