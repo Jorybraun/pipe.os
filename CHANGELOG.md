@@ -14,6 +14,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 ### Fixed — Open-source assessment progress
 
 - Matched open-source challenge packets now carry a deterministic workspace verification command, so matched-repo dev-container finalization captures `test_run` evidence instead of falling back to a verification gap.
+- The app-dev recruiter assessment smoke can now submit a real human decision from the evaluated workspace page, proving the assessment loop reaches reviewer closure instead of stopping at AI evaluation.
 - Candidate dev-container commit panels now block manual commit submission and workspace finalization until the assigned source-backed challenge packet is complete, preventing standalone assessment paths from accepting unreviewable work.
 - Person-profile code-review decision cards now show an explicit `Usable signal`, `Calibration needed`, or `Not ready` state instead of always using a success icon, so hiring managers get a truthful first read before scanning the evidence.
 - Recruiter interview cards now render the assessment readiness contract as a required/confidence proof checklist, making missing challenge, commit, workspace, transcript, AI-use, or verification evidence visible without decoding raw source-ref counts.

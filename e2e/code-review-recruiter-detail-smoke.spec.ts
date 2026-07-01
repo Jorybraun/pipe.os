@@ -38,6 +38,10 @@ const EXPECT_HUMAN_DECISION = envFlag(
   'ASSESSMENT_RECRUITER_EXPECT_HUMAN_DECISION',
   'CODE_REVIEW_RECRUITER_EXPECT_HUMAN_DECISION',
 );
+const RECORD_HUMAN_DECISION = envFlag(
+  'ASSESSMENT_RECRUITER_RECORD_HUMAN_DECISION',
+  'CODE_REVIEW_RECRUITER_RECORD_HUMAN_DECISION',
+);
 const EXPECT_PERSON_PROFILE_DECISION = envFlag(
   'ASSESSMENT_RECRUITER_EXPECT_PERSON_PROFILE_DECISION',
   'CODE_REVIEW_RECRUITER_EXPECT_PERSON_PROFILE_DECISION',
@@ -75,17 +79,31 @@ async function expectDetailsClosed(details: Locator): Promise<void> {
 }
 
 async function expectHumanDecisionState(page: Page): Promise<void> {
-  if (!EXPECT_HUMAN_DECISION_FORM && !EXPECT_HUMAN_DECISION) return;
+  if (!EXPECT_HUMAN_DECISION_FORM && !EXPECT_HUMAN_DECISION && !RECORD_HUMAN_DECISION) return;
 
   const progress = page.getByTestId('interview-assessment-progress');
   await expect(progress).toBeVisible();
-  if (EXPECT_HUMAN_DECISION_FORM) {
-    await expect(page.getByTestId('interview-human-decision-form')).toBeVisible();
+  const form = page.getByTestId('interview-human-decision-form');
+  if (EXPECT_HUMAN_DECISION_FORM || RECORD_HUMAN_DECISION) {
+    await expect(form).toBeVisible();
     await expect(page.getByRole('button', { name: /record human decision/i })).toBeVisible();
+  }
+  if (RECORD_HUMAN_DECISION) {
+    await form.getByRole('combobox').selectOption('advance');
+    await form.getByPlaceholder(/why this is the right hiring decision/i).fill(
+      'Advance after checking the source-backed commit, diff, verification evidence, and evaluator report.',
+    );
+    await form.getByPlaceholder(/optional calibration notes/i).fill(
+      'Recorded by app-dev smoke to prove human review closes the assessment loop.',
+    );
+    await form.getByRole('button', { name: /record human decision/i }).click();
+    await expect(progress).toContainText('Human: advance', { timeout: 45_000 });
+    await expect(progress).toContainText('Advance after checking the source-backed commit');
+    await expect(form).toHaveCount(0);
   }
   if (EXPECT_HUMAN_DECISION) {
     await expect(progress).toContainText(/Human: (advance|hold|reject|needs more evidence)/);
-    await expect(page.getByTestId('interview-human-decision-form')).toHaveCount(0);
+    await expect(form).toHaveCount(0);
   }
 }
 
