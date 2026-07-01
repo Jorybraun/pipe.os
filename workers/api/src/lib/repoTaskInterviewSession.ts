@@ -1316,6 +1316,7 @@ function progressStageAndAction(input: {
   hasCompleteChallengePacket: boolean;
   hasWorkEvidence: boolean;
   hasCommitSubmission: boolean;
+  hasBoundCommitSubmission: boolean;
   hasFinalSubmission: boolean;
   evaluation: AssessmentProgressEvaluation | null;
   humanDecision: AssessmentProgressHumanDecision | null;
@@ -1338,7 +1339,7 @@ function progressStageAndAction(input: {
   if (!input.hasCompleteChallengePacket) {
     return { stage: 'WAITING_FOR_CHALLENGE', nextAction: 'ASSIGN_CHALLENGE' };
   }
-  if (modeRequiresCommit(input.session.mode) && !input.hasCommitSubmission) {
+  if (modeRequiresCommit(input.session.mode) && !input.hasBoundCommitSubmission) {
     if (input.hasWorkEvidence || input.hasFinalSubmission) {
       return { stage: 'WORK_IN_PROGRESS', nextAction: 'SUBMIT_COMMIT' };
     }
@@ -1477,6 +1478,24 @@ function buildAssessmentReadiness(input: {
         missingImpact: 'The evaluator must inspect the exact diff from base commit to submitted commit.',
       },
     );
+
+    if (input.hasCommitSubmission) {
+      required.push({
+        id: 'commit_challenge_binding',
+        label: 'Commit bound to assigned challenge',
+        required: true,
+        satisfied: input.commit?.challengeBinding.status === 'bound_to_assigned_challenge',
+        sourceRefTypes: [
+          'git_commit',
+          'code_diff',
+          'review_challenge_packet',
+          'open_source_challenge_packet',
+          'repo_task_challenge_packet',
+          'challenge_packet',
+        ],
+        missingImpact: 'The submitted commit must match the latest assigned challenge repo and base commit before evaluation.',
+      });
+    }
   }
 
   const confidence: AssessmentProgressReadinessItem[] = [
@@ -2031,6 +2050,8 @@ export class RepoTaskInterviewSessionStore {
       hasCompleteChallengePacket: contract.isComplete,
       hasWorkEvidence,
       hasCommitSubmission,
+      hasBoundCommitSubmission: !modeRequiresCommit(session.mode)
+        || commit?.challengeBinding.status === 'bound_to_assigned_challenge',
       hasFinalSubmission,
       evaluation,
       humanDecision,

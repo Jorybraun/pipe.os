@@ -26,6 +26,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Fixed — CODE_REVIEW assessment runtime
 
+- The deployed `/assess` smoke suite now creates two real app-dev CODE_REVIEW invites and proves opening token B after token A in the same browser resolves/stores candidate B before starting B's challenge.
 - The `/assess` browser smoke suite now proves same-browser stale candidate sessions are discarded when a different invite token is opened, so token B resolves and stores candidate B instead of leaking token A state.
 - Person-profile CODE_REVIEW rollups now bind score, transcript, and match proof by shared session or interaction before presenting a current recommendation, preventing a newer related match-only interview from being blended into an older completed review score.
 - The recruiter CODE_REVIEW browser smoke now requires matched interview pages to render the meeting/person boundary copy, proving app-dev keeps the interview scoped to its own evidence while treating same-person interviews as separate context.
@@ -45,6 +46,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - Person profile assessment validity copy now explicitly calls selected-interview workspace assessments source-backed signals, preserving the boundary between evidence and hiring decisions.
 - Person profile selected-interview assessment readouts now show score provenance from evaluator dimensions, source evidence items, and scoring coverage metrics.
 - Assessment progress now exposes commit-to-challenge binding separately from commit capture integrity, and commit submissions are checked against assigned challenge repo/base anchors even when those anchors exist only in exact packet text.
+- Assessment readiness now requires the submitted commit to bind to the latest assigned challenge packet before entering ready-for-evaluation, so reassigned tasks cannot inherit stale commits as usable proof.
 - Person profile relationship timelines now classify related interactions as decision evidence, calibration context, background evidence, or operational events so related meetings stay useful without blurring the hiring recommendation.
 - Dev-container Durable Object alarms now repair the Container scheduler table and fall back to the stored TTL config when Cloudflare's scheduler still reports a missing table, preventing old or partially initialized CODE_REVIEW workspaces from throwing `container_schedules` errors during TTL/finalization alarms.
 - Dev-container session creation now stamps lifecycle timestamps explicitly and backfills older null timestamp rows, preventing workspace launch evidence from silently failing after D1 table-copy migrations stripped defaults.

@@ -163,6 +163,10 @@ The controlling product rule remains:
   assigned source-backed challenge packet. The validator uses exact challenge
   packet text as a fallback when locator metadata is missing, so packet prose
   remains authoritative source evidence.
+- Assessment readiness must require that commit-to-challenge binding before
+  entering `READY_FOR_EVALUATION`. If the assigned challenge packet changes
+  after a commit submission, the old commit remains visible as evidence but no
+  longer satisfies the current task until a bound commit is submitted.
 - Accepted guest join/leave and recording start/stop room lifecycle events now
   persist as source-backed `meeting_session_event` evidence, with recording
   stop captured only when recording evidence was actually active.

@@ -1139,6 +1139,160 @@ Fix stale popover listener cleanup.`;
     ).get(session.id)).toEqual({ count: 0 });
   });
 
+  it('keeps reassigned challenges out of ready state until the submitted commit binds to the latest task', async () => {
+    const session = await createSession(app, env, {
+      ingestionKey: 'assessment-session:reassigned-challenge-binding',
+      mode: 'OPEN_SOURCE_BUG_FIX',
+    });
+    const originalBaseCommitSha = '1111111111111111111111111111111111111111';
+    const reassignedBaseCommitSha = '2222222222222222222222222222222222222222';
+    const commitSha = 'aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa';
+    const originalChallengeText = [
+      'Repo: https://github.com/open-source/widgets',
+      `Base commit: ${originalBaseCommitSha}`,
+      'Task: Fix stale popover listener cleanup.',
+      'Success criteria:',
+      '- Commit a focused patch with passing popover tests.',
+      'Expected evidence:',
+      '- git commit SHA on a pipe-assessment branch',
+      '- code diff for the popover cleanup fix',
+      '- test output or verification note',
+    ].join('\n');
+    const originalChallengeResponse = await app.request(
+      `/api/v1/assessment/repo-task/sessions/${session.id}/events`,
+      jsonRequest({
+        ingestionKey: 'assessment-event:reassigned-original-challenge',
+        kind: 'recruiter_note',
+        actorType: 'recruiter',
+        narrative: 'Recruiter assigned the original source-backed challenge packet.',
+        sourceRefs: [{
+          ...await sourceRef('open_source_challenge_packet', 'challenge-packet-original', originalChallengeText),
+          evidenceRole: 'assigned_challenge',
+          locator: {
+            repositoryUrl: 'https://github.com/open-source/widgets',
+            baseCommitSha: originalBaseCommitSha,
+          },
+        }],
+      }),
+      env,
+    );
+    expect(originalChallengeResponse.status).toBe(201);
+
+    const commitText = `commit ${commitSha}
+Author: Candidate <candidate@example.com>
+
+Fix stale popover listener cleanup.`;
+    const diffText = `diff --git a/src/popover.ts b/src/popover.ts
+--- a/src/popover.ts
++++ b/src/popover.ts
+@@ -1,2 +1,3 @@
++cleanupStaleHandler();`;
+    const commitResponse = await app.request(
+      `/api/v1/assessment/repo-task/sessions/${session.id}/commit-submissions`,
+      jsonRequest({
+        ingestionKey: 'assessment-event:reassigned-original-commit',
+        actorType: 'candidate',
+        narrative: 'Candidate submitted work for the original assigned challenge.',
+        repositoryUrl: 'https://github.com/open-source/widgets',
+        forkRepositoryUrl: 'https://github.com/candidate/widgets',
+        branchName: 'pipe-assessment/popover-cleanup',
+        baseCommitSha: originalBaseCommitSha,
+        commitSha,
+        commitUrl: `https://github.com/candidate/widgets/commit/${commitSha}`,
+        changedFiles: [{ path: 'src/popover.ts', status: 'modified' }],
+        sourceRefs: [
+          await sourceRef('git_commit', commitSha, commitText),
+          await sourceRef('code_diff', `${originalBaseCommitSha}..${commitSha}`, diffText),
+          await sourceRef('test_run', `${commitSha}:test-run`, 'npm test -- popover\nPASS'),
+        ],
+      }),
+      env,
+    );
+    expect(commitResponse.status).toBe(201);
+
+    const reassignedChallengeText = [
+      'Repo: https://github.com/open-source/widgets',
+      `Base commit: ${reassignedBaseCommitSha}`,
+      'Task: Fix focus trap cleanup after the latest upstream refactor.',
+      'Success criteria:',
+      '- Commit a focused patch with passing focus-trap tests.',
+      'Expected evidence:',
+      '- git commit SHA on a pipe-assessment branch',
+      '- code diff for the focus-trap cleanup fix',
+      '- test output or verification note',
+    ].join('\n');
+    const reassignedChallengeResponse = await app.request(
+      `/api/v1/assessment/repo-task/sessions/${session.id}/events`,
+      jsonRequest({
+        ingestionKey: 'assessment-event:reassigned-latest-challenge',
+        kind: 'recruiter_note',
+        actorType: 'recruiter',
+        narrative: 'Recruiter reassigned the source-backed challenge packet after the original commit.',
+        sourceRefs: [{
+          ...await sourceRef('open_source_challenge_packet', 'challenge-packet-reassigned', reassignedChallengeText),
+          evidenceRole: 'assigned_challenge',
+          locator: {
+            repositoryUrl: 'https://github.com/open-source/widgets',
+            baseCommitSha: reassignedBaseCommitSha,
+          },
+        }],
+      }),
+      env,
+    );
+    expect(reassignedChallengeResponse.status).toBe(201);
+
+    const progressResponse = await app.request(
+      `/api/v1/assessment/repo-task/sessions/${session.id}/progress`,
+      { method: 'GET' },
+      env,
+    );
+    expect(progressResponse.status).toBe(200);
+    const body = await progressResponse.json() as {
+      progress: {
+        stage: string;
+        nextAction: string;
+        readiness: {
+          status: string;
+          isReadyForEvaluation: boolean;
+          missingRequiredCount: number;
+          required: Array<{ id: string; satisfied: boolean; missingImpact: string }>;
+        };
+        commit: {
+          challengeBinding: {
+            status: string;
+            label: string;
+            detail: string;
+            tone: string;
+          };
+        };
+      };
+    };
+    expect(body.progress).toMatchObject({
+      stage: 'WORK_IN_PROGRESS',
+      nextAction: 'SUBMIT_COMMIT',
+      readiness: {
+        status: 'WORK_IN_PROGRESS',
+        isReadyForEvaluation: false,
+        missingRequiredCount: 1,
+      },
+      commit: {
+        challengeBinding: {
+          status: 'challenge_binding_mismatch',
+          label: 'Challenge binding mismatch',
+          detail: 'Submitted repository or base commit does not match the assigned source-backed challenge packet.',
+          tone: 'warning',
+        },
+      },
+    });
+    expect(body.progress.readiness.required).toEqual(expect.arrayContaining([
+      expect.objectContaining({
+        id: 'commit_challenge_binding',
+        satisfied: false,
+        missingImpact: 'The submitted commit must match the latest assigned challenge repo and base commit before evaluation.',
+      }),
+    ]));
+  });
+
   it('treats dev-container challenges as commit-required assessment sessions', async () => {
     const session = await createSession(app, env, {
       ingestionKey: 'assessment-session:dev-container-commit-required',
@@ -1615,6 +1769,7 @@ Fix stale popover listener cleanup.`;
       expect.objectContaining({ id: 'work_evidence', satisfied: true }),
       expect.objectContaining({ id: 'assessment_commit', satisfied: true }),
       expect.objectContaining({ id: 'code_diff', satisfied: true }),
+      expect.objectContaining({ id: 'commit_challenge_binding', satisfied: true }),
     ]));
     expect(commitProgressBody.progress.readiness.confidence).toEqual(expect.arrayContaining([
       expect.objectContaining({ id: 'workspace_captured_commit', satisfied: false }),
