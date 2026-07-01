@@ -179,6 +179,9 @@ The controlling product rule remains:
 - Recruiter list evidence summaries must name explicit verification gaps when a
   candidate submits a missing-test note instead of test output, so scan-level
   progress never hides absent verification evidence behind a generic ready state.
+- Live assessment-room progress coverage must name those same verification gaps,
+  so hosts and candidates do not read a missing-test note as captured passing
+  tests while the session is still underway.
 - Accepted guest join/leave and recording start/stop room lifecycle events now
   persist as source-backed `meeting_session_event` evidence, with recording
   stop captured only when recording evidence was actually active.

@@ -14,6 +14,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 ### Fixed — Open-source assessment progress
 
 - Recruiter interview cards now surface source-backed verification gaps in the evidence summary when candidates submit a missing-test note, so ready-for-evaluation assessments do not hide absent test output.
+- Dev-container assessment room status strips now surface verification gaps in live progress coverage, keeping hosts and candidates aligned on missing test proof before evaluation.
 
 ### Fixed — Route performance
 

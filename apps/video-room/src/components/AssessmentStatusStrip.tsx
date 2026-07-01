@@ -117,7 +117,8 @@ function assessmentProgressEvidenceLabels(progress: RoomAssessmentProgressSnapsh
     || progress.hasToolUsageEvidence
     || progress.hasAiInteraction
     || progress.hasTranscriptEvidence
-    || progress.hasTestEvidence,
+    || progress.hasTestEvidence
+    || progress.hasVerificationGap,
   );
   return [
     progress.hasChallengePacket ? 'challenge' : null,
@@ -129,6 +130,7 @@ function assessmentProgressEvidenceLabels(progress: RoomAssessmentProgressSnapsh
     progress.hasAiInteraction ? 'AI' : null,
     progress.hasTranscriptEvidence ? 'transcript' : null,
     progress.hasTestEvidence ? 'tests' : null,
+    progress.hasVerificationGap ? 'verification gap' : null,
   ].filter(Boolean).join(', ') || 'no evidence yet';
 }
 

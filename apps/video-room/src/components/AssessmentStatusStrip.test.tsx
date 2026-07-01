@@ -167,6 +167,43 @@ describe('AssessmentStatusStrip', () => {
     expect(screen.getByTestId('assessment-progress-coverage').textContent).toContain('challenge, chat, workspace, room, commit, AI, tests');
   });
 
+  it('surfaces verification gaps in live room progress coverage', () => {
+    render(
+      <AssessmentStatusStrip
+        meetingType="DEV_CONTAINER_CHALLENGE"
+        workspace={workspace()}
+        assessmentProgress={{
+          ...progress,
+          hasTestEvidence: false,
+          hasVerificationGap: true,
+          sourceRefCounts: [
+            { kind: 'git_commit', count: 1 },
+            { kind: 'code_diff', count: 1 },
+            { kind: 'verification_gap', count: 1 },
+          ],
+          readiness: {
+            ...progress.readiness!,
+            detail: 'Required proof is captured, but passing test output is missing.',
+            confidence: [
+              {
+                id: 'test_or_verification',
+                label: 'Tests or verification note',
+                required: false,
+                satisfied: true,
+                sourceRefTypes: ['test_run', 'verification_gap'],
+                missingImpact: 'Missing test evidence lowers confidence; an explicit verification gap is better than silence.',
+              },
+            ],
+          },
+        }}
+      />,
+    );
+
+    const coverage = screen.getByTestId('assessment-progress-coverage');
+    expect(coverage.textContent).toContain('challenge, chat, workspace, room, commit, AI, verification gap');
+    expect(coverage.textContent).not.toContain('tests');
+  });
+
   it('shows a launch action when the host can start the controlled workspace', () => {
     const onLaunchWorkspace = vi.fn();
     render(
