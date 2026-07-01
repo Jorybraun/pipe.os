@@ -291,6 +291,7 @@ describe('full-pipeline E2E: contact → transcript → match → explanation �
       ],
       extractorVersion: 'e2e-proof-v1',
       provider: 'e2e-test-provider',
+      personContextMode: 'attributed',
       startedAt: '2026-06-28T09:30:00.000Z',
       endedAt: OBSERVED_AT,
     });

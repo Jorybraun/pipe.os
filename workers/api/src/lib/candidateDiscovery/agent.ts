@@ -199,7 +199,7 @@ function modelKeyForProvider(provider: LLMProvider): string {
     }
   }
 
-  const model = provider.model.trim();
+  const model = typeof provider.model === 'string' ? provider.model.trim() : '';
   return model.length > 0 ? model : provider.name;
 }
 

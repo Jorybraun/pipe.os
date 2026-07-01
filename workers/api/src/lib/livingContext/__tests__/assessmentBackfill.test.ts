@@ -183,7 +183,7 @@ describe('assessments_to_living_context backfill', () => {
 
       INSERT INTO assessment_event_source_refs
         (id, event_id, source_ref_type, source_ref_id, evidence_role, locator_json, exact_text, content_hash, metadata_json, created_at)
-      VALUES ('event-ref-packet-1', 'event-partial-1', 'review_challenge_packet', 'packet-assess-1', 'assigned_challenge', '{}', 'Repo: example/repo\\nTask: fix the popover race.', 'sha256:packet-json-hash', '{}', '${now}');
+      VALUES ('event-ref-packet-1', 'event-partial-1', 'review_challenge_packet', 'packet-assess-1', 'assigned_challenge', '{}', '{"id":"packet-assess-1","repo":"example/repo"}', 'sha256:packet-json-hash', '{}', '${now}');
     `);
 
     const partial = await ingestAssessmentSessionRealTime(db, 'sess-partial-1');

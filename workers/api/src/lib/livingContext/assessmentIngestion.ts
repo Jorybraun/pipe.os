@@ -141,6 +141,41 @@ function byteLength(value: string): number {
   return new TextEncoder().encode(value).byteLength;
 }
 
+interface ReviewChallengePacketSourceRow {
+  source_hash: string;
+  packet_json: string;
+}
+
+async function normalizeAssessmentSourceRef(
+  db: D1Database,
+  ref: AssessmentEventSourceRefRow | AssessmentClaimSourceRefRow,
+): Promise<ContextRecordSourceInput> {
+  let exactText = ref.exact_text;
+  let contentHash = ref.content_hash;
+  if (ref.source_ref_type === 'review_challenge_packet') {
+    const packet = await db.prepare(
+      `SELECT source_hash, packet_json
+         FROM review_challenge_packets
+        WHERE id = ?1
+        LIMIT 1`,
+    ).bind(ref.source_ref_id).first<ReviewChallengePacketSourceRow>();
+    if (packet && (!contentHash || contentHash === packet.source_hash)) {
+      exactText = packet.packet_json;
+      contentHash = packet.source_hash;
+    }
+  }
+  return {
+    sourceRefType: ref.source_ref_type,
+    sourceRefId: ref.source_ref_id,
+    sourceSpanId: ref.source_span_id,
+    evidenceRole: ref.evidence_role,
+    locator: safeParseJson(ref.locator_json),
+    exactText,
+    contentHash,
+    metadata: safeParseJson(ref.metadata_json),
+  };
+}
+
 /**
  * Ingest a single assessment session (events + evaluation claims) into the
  * living context graph for the candidate.
@@ -304,16 +339,7 @@ export async function ingestAssessmentToLivingContext(
     }
 
     for (const ref of refs) {
-      sources.push({
-        sourceRefType: ref.source_ref_type,
-        sourceRefId: ref.source_ref_id,
-        sourceSpanId: ref.source_span_id,
-        evidenceRole: ref.evidence_role,
-        locator: safeParseJson(ref.locator_json),
-        exactText: ref.exact_text,
-        contentHash: ref.content_hash,
-        metadata: safeParseJson(ref.metadata_json),
-      });
+      sources.push(await normalizeAssessmentSourceRef(db, ref));
     }
 
     entities.push({
@@ -400,16 +426,7 @@ export async function ingestAssessmentToLivingContext(
       const refs = claimSourceRefs.get(claim.id) ?? [];
       const claimSources: ContextRecordSourceInput[] = [];
       for (const ref of refs) {
-        claimSources.push({
-          sourceRefType: ref.source_ref_type,
-          sourceRefId: ref.source_ref_id,
-          sourceSpanId: ref.source_span_id,
-          evidenceRole: ref.evidence_role,
-          locator: safeParseJson(ref.locator_json),
-          exactText: ref.exact_text,
-          contentHash: ref.content_hash,
-          metadata: safeParseJson(ref.metadata_json),
-        });
+        claimSources.push(await normalizeAssessmentSourceRef(db, ref));
 
         if (ref.source_span_id) {
           await store.linkAssertionSourceSpan(claimAssertion.id, ref.source_span_id);
