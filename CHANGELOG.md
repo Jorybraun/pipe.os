@@ -66,6 +66,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Fixed — CODE_REVIEW assessment runtime
 
+- Person profile code-review decisions now ignore evaluator claims without source refs, so source-less positive praise cannot become a strength, basis item, or person-level hiring signal.
 - Interview detail hiring-manager readouts now hide evaluator claims with zero source refs, matching the interview-card rule that source-less positive praise must not become recruiter-facing proof.
 - CI now treats a configured production matching-evaluation readiness failure as a blocking CODE_REVIEW gate while still emitting a non-blocking `not_configured` artifact when the required Cloudflare secrets or corpus id are absent.
 - Match-quality bridge repairs now tolerate legacy/local fixtures without newer candidate-node projections while preserving strict source-backed challenge packet hash and exact-text validation.

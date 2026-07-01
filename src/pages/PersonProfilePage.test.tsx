@@ -345,7 +345,12 @@ function makeWorkspaceAssessmentContext(): LivingContextReadModel {
         state: 'EVALUATED',
       },
       artifactIds: ['artifact-workspace-evaluation'],
-      contextRecordIds: ['record-assessment-claim-1', 'record-assessment-claim-2', 'record-assessment-human-decision'],
+      contextRecordIds: [
+        'record-assessment-claim-1',
+        'record-assessment-claim-2',
+        'record-assessment-source-less-claim',
+        'record-assessment-human-decision',
+      ],
       assertionIds: [],
       signalKeys: [],
     },
@@ -425,6 +430,32 @@ function makeWorkspaceAssessmentContext(): LivingContextReadModel {
           exactText: '$ git diff --check HEAD~1 HEAD && git diff --name-only HEAD~1 HEAD\nexitCode: 0',
         }),
       ],
+    }),
+    contextRecord({
+      id: 'record-assessment-source-less-claim',
+      interactionId: 'interaction-workspace-assessment',
+      recordType: 'evaluation:seniority',
+      predicate: 'positive',
+      narrative: 'This source-less person-profile praise must not appear in the hiring-manager readout.',
+      qualifiers: {
+        mode: 'OPEN_SOURCE_BUG_FIX',
+        dimension: 'seniority',
+        reportStatus: 'EVALUATED',
+        reportSummary: 'Source-less praise should not shape the profile decision.',
+      },
+      confidence: 0.99,
+      observedAt: '2026-06-30T14:27:00.000Z',
+      entities: [
+        {
+          entityType: 'assessment_session',
+          entityId: 'assessment-session-1',
+          relationship: 'source_session',
+          value: null,
+          confidence: null,
+          metadata: {},
+        },
+      ],
+      sources: [],
     }),
     contextRecord({
       id: 'record-assessment-human-decision',
@@ -558,6 +589,15 @@ function makeSelectedAssessmentProgress(): AssessmentProgressSnapshot {
           confidence: 0.9,
           sourceRefCount: 2,
           sourceRefTypes: ['code_diff'],
+        },
+        {
+          id: 'claim-source-less-profile-praise',
+          polarity: 'positive',
+          dimension: 'seniority',
+          narrative: 'This selected-assessment source-less praise must not appear on the profile.',
+          confidence: 0.99,
+          sourceRefCount: 0,
+          sourceRefTypes: [],
         },
       ],
       diagnostics: [],
@@ -1756,6 +1796,10 @@ describe('PersonProfilePage', () => {
     expect(decision).toHaveTextContent('The candidate fixed the impatient popover click path with a focused source-backed diff.');
     expect(decision).toHaveTextContent('The submitted test evidence covers the popover trigger regression.');
     expect(decision).toHaveTextContent('3 source-backed proof items');
+    expect(decision).not.toHaveTextContent('source-less person-profile praise');
+    const basis = screen.getByTestId('person-code-review-decision-basis');
+    expect(basis).toHaveTextContent('2 positive');
+    expect(basis).not.toHaveTextContent('3 positive');
     expect(decision).not.toHaveTextContent('Collect first source-backed evidence');
   });
 
@@ -1817,6 +1861,7 @@ describe('PersonProfilePage', () => {
     expect(decision).toHaveTextContent('Score provenance');
     expect(decision).toHaveTextContent('1 rubric dimension · 4 evidence items · 3 scoring metrics');
     expect(decision).toHaveTextContent('source-backed proof items');
+    expect(decision).not.toHaveTextContent('selected-assessment source-less praise');
   });
 
   it('does not trust malformed selected assessment route-state evidence counts', async () => {

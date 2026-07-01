@@ -913,7 +913,8 @@ function selectedAssessmentEvaluationClaims(progress: AssessmentProgressSnapshot
     const polarity = optionalString(claim.polarity);
     const dimension = optionalString(claim.dimension);
     const narrative = optionalString(claim.narrative);
-    if (!polarity || !dimension || !narrative) return [];
+    const sourceRefCount = wholeCount(claim.sourceRefCount);
+    if (!polarity || !dimension || !narrative || sourceRefCount === null || sourceRefCount <= 0) return [];
     return [{ polarity, dimension, narrative }];
   });
 }
@@ -1856,8 +1857,9 @@ function deriveWorkspaceAssessmentDecision(
       && (!sessionId || sessionIdFromRecord(record) === sessionId)
   );
   if (evaluationRecords.length === 0 && !humanDecisionRecord) return null;
+  const sourceBackedEvaluationRecords = evaluationRecords.filter((record) => record.sources.length > 0);
 
-  const proofSources = [humanDecisionRecord, ...evaluationRecords]
+  const proofSources = [humanDecisionRecord, ...sourceBackedEvaluationRecords]
     .filter((record): record is LivingContextRecord => record !== null)
     .flatMap((record) => record.sources.map((source) => ({ record, source })));
   const proofItems = proofSources.slice(0, 6).map(({ record, source }, index) => ({
@@ -1865,13 +1867,13 @@ function deriveWorkspaceAssessmentDecision(
     label: sourceProofLabel(source),
     text: sourceProofText(source),
   }));
-  const positiveClaims = evaluationRecords.filter((record) => record.polarity > 0 || record.predicate === 'positive');
-  const negativeClaims = evaluationRecords.filter((record) => record.polarity < 0 || record.predicate === 'negative');
-  const reportSummary = evaluationRecords
+  const positiveClaims = sourceBackedEvaluationRecords.filter((record) => record.polarity > 0 || record.predicate === 'positive');
+  const negativeClaims = sourceBackedEvaluationRecords.filter((record) => record.polarity < 0 || record.predicate === 'negative');
+  const reportSummary = sourceBackedEvaluationRecords
     .map((record) => optionalString(record.qualifiers.reportSummary))
     .find((value): value is string => Boolean(value))
     ?? humanDecisionRecord?.narrative
-    ?? evaluationRecords[0]?.narrative
+    ?? sourceBackedEvaluationRecords[0]?.narrative
     ?? null;
   const humanDecision = optionalString(humanDecisionRecord?.qualifiers.decision)
     ?? optionalString(humanDecisionRecord?.predicate);
@@ -1895,7 +1897,7 @@ function deriveWorkspaceAssessmentDecision(
           detail: reportSummary
             ?? 'Source-backed workspace assessment claims exist and need hiring-team review.',
         };
-  const assessmentValidity = proofItems.length >= 3 && evaluationRecords.length > 0
+  const assessmentValidity = proofItems.length >= 3 && sourceBackedEvaluationRecords.length > 0
     ? {
         value: 'Usable source-backed signal from workspace assessment',
         detail: 'Evaluation claims, source refs, and assessment evidence are present. Use this as person-level signal, not an automatic decision.',
@@ -1948,7 +1950,7 @@ function deriveWorkspaceAssessmentDecision(
     },
     {
       label: 'Assessment mode',
-      value: optionalString(evaluationRecords[0]?.qualifiers.mode)
+      value: optionalString(sourceBackedEvaluationRecords[0]?.qualifiers.mode)
         ?? optionalString(humanDecisionRecord?.qualifiers.mode)
         ?? 'Workspace assessment',
       satisfied: true,
