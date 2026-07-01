@@ -54,6 +54,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 ### Fixed — Auth
 
 - App-dev recruiter routes now use the authenticated dev proxy as the recruiter auth source, avoiding Clerk dev-key startup and token calls on protected route loads while normal Clerk hosts keep the existing Clerk provider path.
+- App-dev recruiter scheduling routes now open booking and room-status SSE streams through the dev proxy without touching Clerk, preventing blank protected-route renders when the deployed shell intentionally runs without `ClerkProvider`.
 - Recruiter e2e auth smoke now targets a stable auth-gate sign-in test id and waits long enough for slow Clerk dev-instance boots, so local click testing does not fail while the app is still on the loading splash.
 
 ### Fixed — Scheduling
