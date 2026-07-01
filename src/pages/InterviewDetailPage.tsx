@@ -2347,6 +2347,18 @@ function summarizeRelatedEvidenceInterviews(
 }
 
 type AssessmentInviteLinkState = 'active' | 'claimed' | 'stale' | null;
+type AssessmentInviteLinkKind = 'assessment' | 'workspace';
+
+function assessmentInviteLinkKind(
+  interviewType: string | null | undefined,
+  url: string | null | undefined,
+): AssessmentInviteLinkKind {
+  if (interviewType === 'DEV_CONTAINER_CHALLENGE' || interviewType === 'OPEN_SOURCE_BUG_FIX') {
+    return 'workspace';
+  }
+  if (url && /\/room\//.test(url)) return 'workspace';
+  return 'assessment';
+}
 
 function assessmentInviteStatusLabel(state: AssessmentInviteLinkState, hasUrl: boolean): string {
   if (!hasUrl) return 'Not sent';
@@ -2362,16 +2374,24 @@ function assessmentInviteStatusLabel(state: AssessmentInviteLinkState, hasUrl: b
   }
 }
 
-function assessmentInviteValidityLabel(state: AssessmentInviteLinkState, hasUrl: boolean): string {
-  if (!hasUrl) return 'No candidate link exists yet';
+function assessmentInviteValidityLabel(
+  state: AssessmentInviteLinkState,
+  hasUrl: boolean,
+  linkKind: AssessmentInviteLinkKind,
+): string {
+  if (!hasUrl) {
+    return linkKind === 'workspace'
+      ? 'No workspace room exists yet'
+      : 'No candidate link exists yet';
+  }
   switch (state) {
     case 'claimed':
-      return 'Historical link only';
+      return linkKind === 'workspace' ? 'Historical workspace link only' : 'Historical link only';
     case 'stale':
-      return 'Older token, do not share';
+      return linkKind === 'workspace' ? 'Older room link, do not share' : 'Older token, do not share';
     case 'active':
     default:
-      return 'Copyable one-use link';
+      return linkKind === 'workspace' ? 'Copyable workspace room link' : 'Copyable one-use link';
   }
 }
 
@@ -2389,21 +2409,40 @@ function assessmentInviteEvidenceLabel(
 
 function assessmentInviteNextActionLabel(
   state: AssessmentInviteLinkState,
-  input: { hasUrl: boolean; hasEmail: boolean; reviewAssignmentBlocked?: boolean },
+  input: {
+    hasUrl: boolean;
+    hasEmail: boolean;
+    linkKind: AssessmentInviteLinkKind;
+    reviewAssignmentBlocked?: boolean;
+  },
 ): string {
-  if (!input.hasEmail) return 'Add a candidate email before sending an assessment invite.';
-  if (!input.hasUrl) return 'Send the assessment invite to create a one-use candidate link.';
+  if (!input.hasEmail) {
+    return input.linkKind === 'workspace'
+      ? 'Add a candidate email before sending a workspace invite.'
+      : 'Add a candidate email before sending an assessment invite.';
+  }
+  if (!input.hasUrl) {
+    return input.linkKind === 'workspace'
+      ? 'Send the workspace invite to create a controlled room link.'
+      : 'Send the assessment invite to create a one-use candidate link.';
+  }
   if (input.reviewAssignmentBlocked) {
     return 'Assign or refresh a source-backed PR before treating this as a code-review assessment.';
   }
   switch (state) {
     case 'claimed':
-      return 'Resend the invite to issue a fresh one-use assessment link.';
+      return input.linkKind === 'workspace'
+        ? 'Resend the invite if the candidate needs a fresh workspace room link.'
+        : 'Resend the invite to issue a fresh one-use assessment link.';
     case 'stale':
-      return 'Resend the invite before sharing a candidate assessment link.';
+      return input.linkKind === 'workspace'
+        ? 'Resend the invite before sharing this workspace room link.'
+        : 'Resend the invite before sharing a candidate assessment link.';
     case 'active':
     default:
-      return 'Copy the candidate link, or resend if the candidate needs a new email.';
+      return input.linkKind === 'workspace'
+        ? 'Share the candidate workspace link; open the host room to watch progress.'
+        : 'Copy the candidate link, or resend if the candidate needs a new email.';
   }
 }
 
@@ -2640,19 +2679,28 @@ export default function InterviewDetailPage(): JSX.Element {
     const assessmentUrl = interview?.assessmentSetup?.lastDeliveredUrl ?? null;
     const assessmentUrlState = interview?.assessmentSetup?.lastDeliveredUrlState ?? (assessmentUrl ? 'active' : null);
     if (!assessmentUrl || assessmentUrlState !== 'active') return;
+    const linkKind = assessmentInviteLinkKind(interview?.interviewType, assessmentUrl);
     setAssessmentLinkError(null);
     setAssessmentLinkNotice(null);
     const copyResult = await copyTextToClipboard(assessmentUrl, assessmentLinkInputRef.current);
     if (copyResult === 'copied') {
-      setAssessmentLinkNotice('Assessment link copied.');
+      setAssessmentLinkNotice(linkKind === 'workspace' ? 'Workspace link copied.' : 'Assessment link copied.');
       return;
     }
     if (copyResult === 'selected') {
-      setAssessmentLinkNotice('Assessment link selected. Press Cmd+C to copy.');
+      setAssessmentLinkNotice(
+        linkKind === 'workspace'
+          ? 'Workspace link selected. Press Cmd+C to copy.'
+          : 'Assessment link selected. Press Cmd+C to copy.',
+      );
       return;
     }
-    setAssessmentLinkError('Copy failed. Select the assessment link below.');
-  }, [interview?.assessmentSetup?.lastDeliveredUrl, interview?.assessmentSetup?.lastDeliveredUrlState]);
+    setAssessmentLinkError(
+      linkKind === 'workspace'
+        ? 'Copy failed. Select the workspace link below.'
+        : 'Copy failed. Select the assessment link below.',
+    );
+  }, [interview?.assessmentSetup?.lastDeliveredUrl, interview?.assessmentSetup?.lastDeliveredUrlState, interview?.interviewType]);
 
   const resendAssessmentInvite = useCallback(async () => {
     if (!interview) return;
@@ -2672,11 +2720,14 @@ export default function InterviewDetailPage(): JSX.Element {
       if (result.room) {
         setRoomLinks(result.room);
       }
+      const deliveredKind = assessmentInviteLinkKind(interview.interviewType, result.deliveredUrl ?? result.meetingUrl ?? null);
+      const inviteNoun = deliveredKind === 'workspace' ? 'Workspace invite' : 'Assessment invite';
+      const linkNoun = deliveredKind === 'workspace' ? 'workspace link' : 'assessment link';
       setAssessmentLinkNotice(result.emailSent
-        ? `Assessment invite sent${result.provider ? ` via ${result.provider}` : ''}.`
+        ? `${inviteNoun} sent${result.provider ? ` via ${result.provider}` : ''}.`
         : result.emailError
-          ? 'Fresh assessment link is ready, but email delivery failed. Copy it manually.'
-          : 'Fresh assessment link is ready. Email delivery is not configured locally.');
+          ? `Fresh ${linkNoun} is ready, but email delivery failed. Copy it manually.`
+          : `Fresh ${linkNoun} is ready. Email delivery is not configured locally.`);
       await load({ showLoading: false });
     } catch (err) {
       setAssessmentLinkError(err instanceof Error ? err.message : 'Unable to send assessment invite');
@@ -2997,6 +3048,8 @@ export default function InterviewDetailPage(): JSX.Element {
   const assessmentInviteState = interview.assessmentSetup?.lastDeliveredUrlState
     ?? (assessmentInviteUrl ? 'active' : null);
   const hasAssessmentInviteUrl = Boolean(assessmentInviteUrl);
+  const assessmentInviteKind = assessmentInviteLinkKind(interview.interviewType, assessmentInviteUrl);
+  const assessmentInviteIsWorkspace = assessmentInviteKind === 'workspace';
   const hasSubmittedAssessmentEvidence = Boolean(
     interview.completedAt
     || interview.submissionJson
@@ -3015,7 +3068,11 @@ export default function InterviewDetailPage(): JSX.Element {
   );
   const canCopyAssessmentInvite = Boolean(assessmentInviteUrl && assessmentInviteState === 'active');
   const assessmentInviteStatus = assessmentInviteStatusLabel(assessmentInviteState, hasAssessmentInviteUrl);
-  const assessmentInviteValidity = assessmentInviteValidityLabel(assessmentInviteState, hasAssessmentInviteUrl);
+  const assessmentInviteValidity = assessmentInviteValidityLabel(
+    assessmentInviteState,
+    hasAssessmentInviteUrl,
+    assessmentInviteKind,
+  );
   const assessmentInviteEvidenceState = assessmentInviteEvidenceLabel(assessmentInviteState, {
     hasUrl: hasAssessmentInviteUrl,
     hasSubmittedEvidence: hasSubmittedAssessmentEvidence,
@@ -3027,6 +3084,7 @@ export default function InterviewDetailPage(): JSX.Element {
   const assessmentInviteNextAction = assessmentInviteNextActionLabel(assessmentInviteState, {
     hasUrl: hasAssessmentInviteUrl,
     hasEmail: Boolean(personEmail),
+    linkKind: assessmentInviteKind,
     reviewAssignmentBlocked: assessmentLinkIsProfileHandoff && assessmentInviteState === 'active',
   });
   const showsAssessmentInvitePanel = Boolean(
@@ -3039,16 +3097,38 @@ export default function InterviewDetailPage(): JSX.Element {
       ? `${interview.assessmentSetup?.message ?? 'No source-backed PR task has been assigned yet.'} The candidate can use this link for profile intake only; PIPE will show a profile-received handoff until a source-backed PR is assigned.`
       : assessmentInviteState === 'claimed'
       ? hasSubmittedAssessmentEvidence
-        ? 'The candidate started this one-use assessment link and assessment evidence is attached below. Resend only if they need a fresh attempt.'
-        : 'The candidate started this one-use assessment link, but this interview has no submitted assessment evidence yet. Resend the invite to issue a fresh link.'
+        ? assessmentInviteIsWorkspace
+          ? 'The candidate opened this workspace room and assessment evidence is attached below. Resend only if they need a fresh room link.'
+          : 'The candidate started this one-use assessment link and assessment evidence is attached below. Resend only if they need a fresh attempt.'
+        : assessmentInviteIsWorkspace
+          ? 'The candidate opened this workspace room, but this interview has no submitted assessment evidence yet. Resend the invite if they need a fresh room link.'
+          : 'The candidate started this one-use assessment link, but this interview has no submitted assessment evidence yet. Resend the invite to issue a fresh link.'
       : assessmentInviteState === 'stale'
-        ? 'This saved assessment link is older than the current candidate token. Resend the invite before sharing it.'
+        ? assessmentInviteIsWorkspace
+          ? 'This saved workspace room link is older than the current candidate token. Resend the invite before sharing it.'
+          : 'This saved assessment link is older than the current candidate token. Resend the invite before sharing it.'
         : assessmentInviteUrl
-          ? 'One-use candidate invite. Copy it for the candidate instead of opening it in a recruiter browser.'
-          : 'No candidate assessment link has been delivered yet. Send the invite to create a usable one-use link.';
+          ? assessmentInviteIsWorkspace
+            ? 'Controlled workspace room invite. Share it with the candidate; use the host room to observe video, chat, terminal, code-server, AI use, and commit evidence.'
+            : 'One-use candidate invite. Copy it for the candidate instead of opening it in a recruiter browser.'
+          : assessmentInviteIsWorkspace
+            ? 'No workspace room link has been delivered yet. Send the invite to create a controlled room for the candidate.'
+            : 'No candidate assessment link has been delivered yet. Send the invite to create a usable one-use link.';
   const assessmentInviteMessage = assessmentInviteState === 'claimed'
     ? assessmentInviteDescription
     : interview.assessmentSetup?.lastDeliveredUrlMessage ?? assessmentInviteDescription;
+  const assessmentInvitePanelTitle = assessmentInviteIsWorkspace
+    ? 'Candidate workspace room link'
+    : 'Candidate assessment link';
+  const assessmentInviteCopyLabel = assessmentInviteIsWorkspace
+    ? 'COPY WORKSPACE LINK'
+    : 'COPY CANDIDATE LINK';
+  const assessmentInviteSendLabel = assessmentInviteUrl
+    ? (assessmentInviteIsWorkspace ? 'RESEND WORKSPACE INVITE' : 'RESEND ASSESSMENT INVITE')
+    : (assessmentInviteIsWorkspace ? 'SEND WORKSPACE INVITE' : 'SEND ASSESSMENT INVITE');
+  const assessmentInviteUrlLabel = canCopyAssessmentInvite
+    ? (assessmentInviteIsWorkspace ? 'CANDIDATE WORKSPACE ROOM URL' : 'CANDIDATE ASSESSMENT URL')
+    : (assessmentInviteIsWorkspace ? 'LAST CANDIDATE WORKSPACE ROOM URL' : 'LAST CANDIDATE ASSESSMENT URL');
   const assessmentAssignment = summarizeAssessmentAssignment(interview.assessmentSetup);
   const hasStandaloneCodeReviewReadout = isCodeReviewInterview && Boolean(
     interview.codeReviewMatch
@@ -3435,7 +3515,7 @@ export default function InterviewDetailPage(): JSX.Element {
               <Mail size={15} />
               Assessment invite
             </div>
-            <h2 style={ROOM_TITLE}>Candidate assessment link</h2>
+            <h2 style={ROOM_TITLE}>{assessmentInvitePanelTitle}</h2>
             <div style={ROOM_LINK_TEXT}>
               {assessmentInviteMessage}
             </div>
@@ -3470,7 +3550,7 @@ export default function InterviewDetailPage(): JSX.Element {
                 style={{ ...PRIMARY_BUTTON, ...ROOM_SECONDARY_BUTTON }}
               >
                 <Copy size={14} />
-                COPY CANDIDATE LINK
+                {assessmentInviteCopyLabel}
               </button>
             )}
             {personEmail && (
@@ -3479,16 +3559,14 @@ export default function InterviewDetailPage(): JSX.Element {
                 onClick={() => void resendAssessmentInvite()}
                 disabled={isSendingInvite}
                 style={{ ...PRIMARY_BUTTON, ...ROOM_SECONDARY_BUTTON }}
-              >
-                {isSendingInvite ? <Loader2 size={14} style={{ animation: 'spin 1s linear infinite' }} /> : <Mail size={14} />}
-                {assessmentInviteUrl ? 'RESEND ASSESSMENT INVITE' : 'SEND ASSESSMENT INVITE'}
-              </button>
+            >
+              {isSendingInvite ? <Loader2 size={14} style={{ animation: 'spin 1s linear infinite' }} /> : <Mail size={14} />}
+              {assessmentInviteSendLabel}
+            </button>
             )}
             {assessmentInviteUrl && (
               <label style={ROOM_GUEST_LINK_LABEL}>
-                <span style={ROOM_GUEST_LINK_TEXT}>
-                  {canCopyAssessmentInvite ? 'CANDIDATE ASSESSMENT URL' : 'LAST CANDIDATE ASSESSMENT URL'}
-                </span>
+                <span style={ROOM_GUEST_LINK_TEXT}>{assessmentInviteUrlLabel}</span>
                 <input
                   ref={assessmentLinkInputRef}
                   readOnly

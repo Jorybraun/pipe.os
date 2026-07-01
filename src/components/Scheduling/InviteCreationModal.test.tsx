@@ -38,6 +38,25 @@ describe('InviteCreationModal open-source challenge packets', () => {
     });
   });
 
+  it('keeps standalone code review invites on the assess-link path', () => {
+    mocks.useSchedulingConnection.mockReturnValue({
+      connection: null,
+    });
+
+    render(
+      <InviteCreationModal
+        isOpen
+        onClose={vi.fn()}
+        onCreateInvite={vi.fn()}
+        initialInterviewType="CODE_REVIEW"
+      />,
+    );
+
+    expect(screen.getByText('Assessment invite')).toBeInTheDocument();
+    expect(screen.getByText('Send the assess link')).toBeInTheDocument();
+    expect(screen.queryByText('Send a controlled workspace room link')).toBeNull();
+  });
+
   it('submits a complete manual open-source challenge packet for assessment invites', async () => {
     mocks.useSchedulingConnection.mockReturnValue({
       connection: null,
@@ -58,6 +77,9 @@ describe('InviteCreationModal open-source challenge packets', () => {
 
     expect(screen.getByText('Matched repo task in a secure assessment workspace')).toBeInTheDocument();
     fireEvent.click(screen.getByRole('button', { name: /Open-source bug fix/i }));
+    expect(screen.getByText('Workspace invite')).toBeInTheDocument();
+    expect(screen.getByText('Send a controlled workspace room link')).toBeInTheDocument();
+    expect(screen.queryByText('Send the assess link')).toBeNull();
     fireEvent.change(screen.getByPlaceholderText('Jane Doe'), {
       target: { value: 'Ada Lovelace' },
     });

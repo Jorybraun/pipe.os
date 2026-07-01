@@ -2098,6 +2098,10 @@ describe('InterviewDetailPage', () => {
       configurable: true,
       value: { writeText },
     });
+    Object.defineProperty(document, 'execCommand', {
+      configurable: true,
+      value: vi.fn().mockReturnValue(false),
+    });
     mocks.api.get.mockResolvedValueOnce({
       interview: makeInterview({
         interviewType: 'CODE_REVIEW',
@@ -2176,6 +2180,57 @@ describe('InterviewDetailPage', () => {
     expect(execCommand).toHaveBeenCalledWith('copy');
     expect(document.activeElement).toBe(input);
     expect(screen.getByTestId('interview-assessment-link')).toHaveTextContent('Assessment link copied.');
+  });
+
+  it('labels active open-source assessment room links as controlled workspace links', async () => {
+    const deliveredUrl = 'https://room-dev.hire-pipe.com/room/workspace-token';
+    const writeText = vi.fn().mockResolvedValue(undefined);
+    Object.defineProperty(navigator, 'clipboard', {
+      configurable: true,
+      value: { writeText },
+    });
+    Object.defineProperty(document, 'execCommand', {
+      configurable: true,
+      value: vi.fn().mockReturnValue(false),
+    });
+    mocks.api.get.mockResolvedValueOnce({
+      interview: makeInterview({
+        interviewType: 'OPEN_SOURCE_BUG_FIX',
+        candidateId: 'candidate-1',
+        assessmentSetup: {
+          status: 'reviewable_task_assigned',
+          kind: 'github_pr',
+          source: 'recruiter_manual_override',
+          blocksPositiveAssessment: false,
+          message: 'A concrete GitHub repo task was assigned by the recruiter.',
+          lastDeliveredUrl: deliveredUrl,
+          lastDeliveredUrlState: 'active',
+        },
+      }),
+    });
+
+    renderDetail();
+
+    await flushAsyncUpdates();
+    const linkPanel = screen.getByTestId('interview-assessment-link');
+    expect(linkPanel).toHaveTextContent('Candidate workspace room link');
+    expect(linkPanel).toHaveTextContent('Controlled workspace room invite.');
+    expect(linkPanel).toHaveTextContent('video, chat, terminal, code-server, AI use, and commit evidence');
+    expect(screen.getByTestId('interview-assessment-link-state')).toHaveTextContent('Active');
+    expect(screen.getByTestId('interview-assessment-link-state')).toHaveTextContent('Copyable workspace room link');
+    expect(screen.getByTestId('interview-assessment-link-state')).toHaveTextContent('Share the candidate workspace link; open the host room to watch progress.');
+    expect(linkPanel).toHaveTextContent('CANDIDATE WORKSPACE ROOM URL');
+    expect(linkPanel).toHaveTextContent('COPY WORKSPACE LINK');
+    expect(linkPanel).toHaveTextContent('RESEND WORKSPACE INVITE');
+    expect(linkPanel).not.toHaveTextContent('Copyable one-use link');
+    expect(linkPanel).not.toHaveTextContent('COPY CANDIDATE LINK');
+    expect(screen.getByDisplayValue(deliveredUrl)).toBeTruthy();
+
+    fireEvent.click(screen.getByText('COPY WORKSPACE LINK'));
+    await flushAsyncUpdates();
+
+    expect(writeText).toHaveBeenCalledWith(deliveredUrl);
+    expect(linkPanel).toHaveTextContent('Workspace link copied.');
   });
 
   it('keeps the assessment link selected when browser clipboard APIs are blocked', async () => {
@@ -2298,12 +2353,16 @@ describe('InterviewDetailPage', () => {
     expect(screen.getByDisplayValue(freshUrl)).toBeTruthy();
   });
 
-  it('treats stale assessment links as historical and blocks copying the old token', async () => {
-    const deliveredUrl = 'https://app-dev.hire-pipe.com/assess/old-token';
+  it('treats stale workspace room links as historical and blocks copying the old token', async () => {
+    const deliveredUrl = 'https://room-dev.hire-pipe.com/room/old-token';
     const writeText = vi.fn().mockResolvedValue(undefined);
     Object.defineProperty(navigator, 'clipboard', {
       configurable: true,
       value: { writeText },
+    });
+    Object.defineProperty(document, 'execCommand', {
+      configurable: true,
+      value: vi.fn().mockReturnValue(false),
     });
     mocks.api.get.mockResolvedValueOnce({
       interview: makeInterview({
@@ -2328,13 +2387,13 @@ describe('InterviewDetailPage', () => {
     const linkPanel = screen.getByTestId('interview-assessment-link');
     expect(linkPanel).toHaveTextContent('This is an older delivered assessment link.');
     expect(screen.getByTestId('interview-assessment-link-state')).toHaveTextContent('Stale');
-    expect(screen.getByTestId('interview-assessment-link-state')).toHaveTextContent('Older token, do not share');
+    expect(screen.getByTestId('interview-assessment-link-state')).toHaveTextContent('Older room link, do not share');
     expect(screen.getByTestId('interview-assessment-link-state')).toHaveTextContent('ASSESSMENT');
     expect(screen.getByTestId('interview-assessment-link-state')).toHaveTextContent('No current assessment evidence');
-    expect(screen.getByTestId('interview-assessment-link-state')).toHaveTextContent('Resend the invite before sharing a candidate assessment link.');
-    expect(linkPanel).toHaveTextContent('LAST CANDIDATE ASSESSMENT URL');
-    expect(linkPanel).toHaveTextContent('RESEND ASSESSMENT INVITE');
-    expect(screen.queryByText('COPY CANDIDATE LINK')).toBeNull();
+    expect(screen.getByTestId('interview-assessment-link-state')).toHaveTextContent('Resend the invite before sharing this workspace room link.');
+    expect(linkPanel).toHaveTextContent('LAST CANDIDATE WORKSPACE ROOM URL');
+    expect(linkPanel).toHaveTextContent('RESEND WORKSPACE INVITE');
+    expect(screen.queryByText('COPY WORKSPACE LINK')).toBeNull();
     expect(screen.getByDisplayValue(deliveredUrl)).toBeTruthy();
     expect(writeText).not.toHaveBeenCalled();
   });

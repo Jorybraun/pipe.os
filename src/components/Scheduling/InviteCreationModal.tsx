@@ -101,6 +101,11 @@ function isWorkspaceAssessment(interviewType: InterviewType): boolean {
     || interviewType === 'OPEN_SOURCE_BUG_FIX';
 }
 
+function isRoomBackedAssessment(interviewType: InterviewType): boolean {
+  return interviewType === 'DEV_CONTAINER_CHALLENGE'
+    || interviewType === 'OPEN_SOURCE_BUG_FIX';
+}
+
 function splitTextLines(value: string): string[] {
   return value
     .split('\n')
@@ -213,6 +218,13 @@ export function InviteCreationModal({
   const selectedCalendlyEventType = calendlyEventTypes[0] ?? null;
   const canUseCalendly = hasCalendly && Boolean(selectedCalendlyEventType?.schedulingUrl);
   const workspaceAssessment = isWorkspaceAssessment(interviewType);
+  const roomBackedAssessment = isRoomBackedAssessment(interviewType);
+  const manualInviteLabel = workspaceAssessment
+    ? roomBackedAssessment ? 'Workspace invite' : 'Assessment invite'
+    : 'Room invite';
+  const manualInviteDescription = workspaceAssessment
+    ? roomBackedAssessment ? 'Send a controlled workspace room link' : 'Send the assess link'
+    : 'Send a private room link';
   const supportsManualRepoOverride = workspaceAssessment;
   const showsRoomFeatures = !workspaceAssessment;
   const parsedPrNumber = githubPrNumber.trim().length > 0
@@ -578,10 +590,10 @@ export function InviteCreationModal({
                 >
                   <span style={{ display: 'inline-flex', alignItems: 'center', gap: 7 }}>
                     <Video size={15} />
-                    {workspaceAssessment ? 'Assessment invite' : 'Room invite'}
+                    {manualInviteLabel}
                   </span>
                   <span style={{ fontSize: 9, color: 'var(--pipe-text-muted)', letterSpacing: '0.03em' }}>
-                    {workspaceAssessment ? 'Send the assess link' : 'Send a private room link'}
+                    {manualInviteDescription}
                   </span>
                 </button>
                 {!workspaceAssessment && (

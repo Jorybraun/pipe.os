@@ -26,6 +26,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Fixed — CODE_REVIEW assessment runtime
 
+- Recruiter invite panels now distinguish standalone CODE_REVIEW `/assess` links from open-source/dev-container workspace room links, preventing room-backed assessments from being described as one-use assess links.
 - Manual PR CODE_REVIEW scores now show assignment-calibration validity and fairness-before-advance recommendations instead of generic usable/advance wording, preventing hiring managers from reading a recruiter-selected PR as automatic candidate-fit proof.
 - Interview detail pages now always show the single-meeting/person-rollup boundary cue, even before living-context evidence exists, so sparse CODE_REVIEW records do not look like they contain every related meeting.
 - Person-profile CODE_REVIEW browser smoke now asserts the relationship timeline boundary copy, keeping same-person interactions useful as context without implying the profile owns every meeting row by default.
