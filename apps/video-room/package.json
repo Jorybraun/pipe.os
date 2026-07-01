@@ -6,6 +6,7 @@
   "scripts": {
     "dev": "vite --port 5175",
     "build": "tsc && vite build",
+    "test:boundary": "vitest run assessment-boundary.test.mjs",
     "type-check": "tsc --noEmit",
     "preview": "vite preview --port 4175"
   },

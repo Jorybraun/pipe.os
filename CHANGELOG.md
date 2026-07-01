@@ -106,6 +106,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - Removed abandoned action aliases from the real agent bridge.
 - The room now keeps focus on video, chat, workspace, terminal, Submit Work, recording, transcription, and the real AI assistant bridge.
 - Added a video-room regression guard that fails if retired novelty UI vocabulary returns to the shipped room source or public worker assets.
+- Wired the assessment-room boundary guard into package scripts so the retired 95/Clippy experience cannot silently re-enter the deployable room app.
 
 ### Added — Human assessment decisions
 
