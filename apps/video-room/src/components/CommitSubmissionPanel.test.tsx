@@ -48,6 +48,16 @@ const loadedProgress: RoomAssessmentProgressSnapshot = {
   nextAction: 'SUBMIT_COMMIT',
   nextActionLabel: 'Submit the assessment branch commit.',
   hasChallengePacket: true,
+  challengePacketContract: {
+    schemaVersion: 'challenge-packet-contract-v1',
+    isComplete: true,
+    missingFields: [],
+    hasRepositoryUrl: true,
+    hasBaseCommitSha: true,
+    hasTask: true,
+    hasSuccessCriteria: true,
+    hasExpectedEvidence: true,
+  },
   hasWorkEvidence: true,
   hasMessageEvidence: true,
   hasDevContainerEvidence: true,
@@ -123,7 +133,7 @@ describe('CommitSubmissionPanel', () => {
     expect(completion.textContent).toContain('Commit SHA on assessment branch');
 
     const flags = screen.getByTestId('commit-submission-completion-flags');
-    expect(flags.textContent).toContain('Challenge packet: Captured');
+    expect(flags.textContent).toContain('Complete challenge packet: Captured');
     expect(flags.textContent).toContain('Work evidence: Captured');
     expect(flags.textContent).toContain('Chat evidence: Captured');
     expect(flags.textContent).toContain('Workspace telemetry: Captured');

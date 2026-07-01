@@ -1904,7 +1904,6 @@ export class RepoTaskInterviewSessionStore {
         'dev_container_workspace_state',
         'code_server_file_observation',
         'code_server_editor_open',
-        'room_file_content',
       ]);
     const hasToolUsageEvidence = hasEventKind(evidenceCounts, ['tool_usage'])
       || hasEventKind(sourceRefCounts, [

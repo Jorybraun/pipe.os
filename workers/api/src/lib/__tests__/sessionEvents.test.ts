@@ -119,7 +119,7 @@ describe('sessionEvents', () => {
           properties: {
             source: 'agent_bridge',
             agentName: 'devin',
-            surface: 'assessment',
+            surface: 'standard',
             workspaceSessionId: 'workspace-session-1',
           },
         };
@@ -174,7 +174,7 @@ describe('sessionEvents', () => {
           properties: {
             source: 'agent_bridge',
             agentName: 'devin',
-            surface: 'assessment',
+            surface: 'standard',
             workspaceSessionId: 'workspace-session-1',
           },
           candidateNodeId: node!.id,
@@ -222,7 +222,7 @@ describe('sessionEvents', () => {
           text: 'npm test -- --runInBand',
           properties: {
             source: 'container_terminal',
-            surface: 'assessment',
+            surface: 'standard',
             scheduledInterviewId: 'scheduled-interview-1',
             terminalSessionId: 'workspace-terminal-1',
             terminalCommandId: 'workspace-terminal-1:command:guest:1782604800000:1:terminal_1234abcd',
@@ -293,7 +293,7 @@ describe('sessionEvents', () => {
             source: 'agent_bridge',
             agent: 'devin',
             status: 'auth_needed',
-            surface: 'assessment',
+            surface: 'standard',
           },
         };
 
@@ -350,218 +350,6 @@ describe('sessionEvents', () => {
       }
     });
 
-    it('preserves exact legacy layout text file content as source refs', async () => {
-      const { sqlite, db: realDb } = createSessionEvidenceDb();
-      try {
-        const exactText = 'Candidate identified retry bug evidence.\nAdd a failing replay test first.';
-        const event: SessionEvent = {
-          type: 'file_change',
-          sessionId: 'meeting-session-file-content',
-          candidateId: 'cand-assessment',
-          timestamp: 1782604300,
-          actor: 'guest',
-          text: 'notes.txt',
-          properties: {
-            source: 'assessment_shared_file_system',
-            fileEventSource: 'browser_client_submit',
-            fileChangeId: 'file:guest:1782604300000:upsert:notes',
-            actor: 'guest',
-            operation: 'upsert',
-            fileId: 'notes',
-            fileName: 'notes.txt',
-            fileKind: 'text',
-            surface: 'assessment',
-            roomPhase: 'connected',
-            capturedAtMs: 1782604300000,
-            durableObjectReplayExpected: true,
-            contentLength: exactText.length,
-            contentHash: 'content_0123456789abcdef0123456789abcdef',
-            contentPreview: exactText,
-            contentExactText: exactText,
-          },
-        };
-
-        const node = await captureSessionEvent(realDb, event);
-        expect(node).not.toBeNull();
-
-        const contextSource = sqlite.prepare(
-          `SELECT csr.source_ref_type, csr.source_ref_id, csr.evidence_role,
-                  csr.exact_text, csr.content_hash, csr.locator_json
-             FROM context_record_source_refs csr
-             JOIN context_records cr ON cr.id = csr.context_record_id
-            WHERE cr.record_type = 'meeting_session_event'
-              AND csr.source_ref_type = 'room_file_content'`,
-        ).get() as {
-          source_ref_type: string;
-          source_ref_id: string;
-          evidence_role: string;
-          exact_text: string;
-          content_hash: string;
-          locator_json: string;
-        } | undefined;
-
-        expect(contextSource).toMatchObject({
-          source_ref_type: 'room_file_content',
-          source_ref_id: `${node!.id}:upsert:notes`,
-          evidence_role: 'file_content',
-          exact_text: exactText,
-          content_hash: await sha256Hex(exactText),
-        });
-        expect(JSON.parse(contextSource?.locator_json ?? '{}')).toMatchObject({
-          sessionId: 'meeting-session-file-content',
-          candidateId: 'cand-assessment',
-          candidateNodeId: node!.id,
-          fileId: 'notes',
-          fileName: 'notes.txt',
-          fileChangeId: 'file:guest:1782604300000:upsert:notes',
-          operation: 'upsert',
-        });
-
-        const assessmentSource = sqlite.prepare(
-          `SELECT source_ref_type, source_ref_id, evidence_role, exact_text, content_hash
-             FROM assessment_event_source_refs
-            WHERE source_ref_type = 'room_file_content'`,
-        ).get() as {
-          source_ref_type: string;
-          source_ref_id: string;
-          evidence_role: string;
-          exact_text: string;
-          content_hash: string;
-        } | undefined;
-        expect(assessmentSource).toMatchObject({
-          source_ref_type: 'room_file_content',
-          source_ref_id: `${node!.id}:upsert:notes`,
-          evidence_role: 'file_content',
-          exact_text: exactText,
-          content_hash: await sha256Hex(exactText),
-        });
-
-        const fileEntity = sqlite.prepare(
-          `SELECT entity_type, entity_id, relationship, metadata_json
-             FROM context_record_entities
-            WHERE entity_type = 'room_file'`,
-        ).get() as {
-          entity_type: string;
-          entity_id: string;
-          relationship: string;
-          metadata_json: string;
-        } | undefined;
-        expect(fileEntity).toMatchObject({
-          entity_type: 'room_file',
-          entity_id: 'notes',
-          relationship: 'affected_file',
-        });
-        expect(JSON.parse(fileEntity?.metadata_json ?? '{}')).toMatchObject({
-          fileName: 'notes.txt',
-          fileKind: 'text',
-          operation: 'upsert',
-        });
-      } finally {
-        sqlite.close();
-      }
-    });
-
-    it('preserves exact legacy layout drawing JSON as source refs without requiring previews', async () => {
-      const { sqlite, db: realDb } = createSessionEvidenceDb();
-      try {
-        const exactJson = '[{"kind":"rectangle","start":{"x":1,"y":2},"end":{"x":3,"y":4}}]';
-        const event: SessionEvent = {
-          type: 'file_change',
-          sessionId: 'meeting-session-diagram-content',
-          candidateId: 'cand-assessment',
-          timestamp: 1782604310,
-          actor: 'host',
-          text: 'Sketch.pipe-diagram',
-          properties: {
-            source: 'assessment_shared_file_system',
-            fileEventSource: 'browser_client_submit',
-            fileChangeId: 'file:host:1782604310000:upsert:diagram',
-            actor: 'host',
-            operation: 'upsert',
-            fileId: 'diagram',
-            fileName: 'Sketch.pipe-diagram',
-            fileKind: 'diagram',
-            surface: 'assessment',
-            roomPhase: 'connected',
-            capturedAtMs: 1782604310000,
-            durableObjectReplayExpected: true,
-            contentLength: exactJson.length,
-            contentHash: 'content_fedcba9876543210fedcba9876543210',
-            contentExactJson: exactJson,
-          },
-        };
-
-        const node = await captureSessionEvent(realDb, event);
-        expect(node).not.toBeNull();
-
-        const contextSource = sqlite.prepare(
-          `SELECT csr.source_ref_type, csr.source_ref_id, csr.evidence_role,
-                  csr.exact_text, csr.content_hash, csr.locator_json, csr.metadata_json
-             FROM context_record_source_refs csr
-             JOIN context_records cr ON cr.id = csr.context_record_id
-            WHERE cr.record_type = 'meeting_session_event'
-              AND csr.source_ref_type = 'room_file_content'`,
-        ).get() as {
-          source_ref_type: string;
-          source_ref_id: string;
-          evidence_role: string;
-          exact_text: string;
-          content_hash: string;
-          locator_json: string;
-          metadata_json: string;
-        } | undefined;
-
-        expect(contextSource).toMatchObject({
-          source_ref_type: 'room_file_content',
-          source_ref_id: `${node!.id}:upsert:diagram`,
-          evidence_role: 'file_content',
-          exact_text: exactJson,
-          content_hash: await sha256Hex(exactJson),
-        });
-        expect(JSON.parse(contextSource?.locator_json ?? '{}')).toMatchObject({
-          sessionId: 'meeting-session-diagram-content',
-          candidateId: 'cand-assessment',
-          candidateNodeId: node!.id,
-          fileId: 'diagram',
-          fileName: 'Sketch.pipe-diagram',
-          fileChangeId: 'file:host:1782604310000:upsert:diagram',
-          operation: 'upsert',
-        });
-        expect(JSON.parse(contextSource?.metadata_json ?? '{}')).toMatchObject({
-          sourceKind: 'assessment_shared_file_system.diagram_content',
-          fileKind: 'diagram',
-          operation: 'upsert',
-          exactContentKey: 'contentExactJson',
-        });
-
-        const assessmentSource = sqlite.prepare(
-          `SELECT source_ref_type, source_ref_id, evidence_role, exact_text, content_hash, metadata_json
-             FROM assessment_event_source_refs
-            WHERE source_ref_type = 'room_file_content'`,
-        ).get() as {
-          source_ref_type: string;
-          source_ref_id: string;
-          evidence_role: string;
-          exact_text: string;
-          content_hash: string;
-          metadata_json: string;
-        } | undefined;
-        expect(assessmentSource).toMatchObject({
-          source_ref_type: 'room_file_content',
-          source_ref_id: `${node!.id}:upsert:diagram`,
-          evidence_role: 'file_content',
-          exact_text: exactJson,
-          content_hash: await sha256Hex(exactJson),
-        });
-        expect(JSON.parse(assessmentSource?.metadata_json ?? '{}')).toMatchObject({
-          sourceKind: 'assessment_shared_file_system.diagram_content',
-          exactContentKey: 'contentExactJson',
-        });
-      } finally {
-        sqlite.close();
-      }
-    });
-
     it('preserves exact terminal command and output text as source refs', async () => {
       const { sqlite, db: realDb } = createSessionEvidenceDb();
       try {
@@ -587,7 +375,7 @@ describe('sessionEvents', () => {
             capturedAtMs: 1782604400000,
             commandFingerprint: 'terminal_dc5964d6',
             commandLength: commandText.length,
-            surface: 'assessment',
+            surface: 'standard',
             roomPhase: 'connected',
             workspaceStatus: 'READY',
             workspaceSessionId: 'workspace-session-1',
@@ -612,7 +400,7 @@ describe('sessionEvents', () => {
             capturedAtMs: 1782604410000,
             outputFingerprint: 'terminal_4f2d0d8f',
             outputLength: outputText.length,
-            surface: 'assessment',
+            surface: 'standard',
             roomPhase: 'connected',
             workspaceStatus: 'READY',
             workspaceSessionId: 'workspace-session-1',
@@ -728,7 +516,7 @@ describe('sessionEvents', () => {
             editorSurface: 'code-server',
             codeServerFileChangeId,
             action: 'modified',
-            surface: 'assessment',
+            surface: 'standard',
             roomPhase: 'connected',
             workspaceStatus: 'READY',
             workspaceSessionId: 'workspace-session-1',
@@ -884,7 +672,7 @@ describe('sessionEvents', () => {
               messageCreatedAt: 1782604580000,
               messageLength: 'Can we look at the retry bug first?'.length,
               deliveryStatus: 'accepted',
-              surface: 'assessment',
+              surface: 'standard',
               roomPhase: 'connected',
               durableObjectReplayExpected: true,
             },
@@ -903,7 +691,7 @@ describe('sessionEvents', () => {
               promptSource: 'host',
               promptEventSource: 'browser_proactive_agent_prompt',
               promptTrigger: 'host_waiting_prepare_workspace',
-              surface: 'assessment',
+              surface: 'standard',
               roomPhase: 'connected',
               workspaceStatus: 'READY',
               workspaceSessionId: 'workspace-session-1',
@@ -935,7 +723,7 @@ describe('sessionEvents', () => {
               promptTimestamp: 1782604600000,
               promptFingerprint: 'agent_0123abcd',
               promptLength: promptText.length,
-              surface: 'assessment',
+              surface: 'standard',
               roomPhase: 'connected',
               workspaceStatus: 'READY',
               workspaceSessionId: 'workspace-session-1',
@@ -967,7 +755,7 @@ describe('sessionEvents', () => {
               promptTimestamp: 1782604620000,
               promptFingerprint: 'agent_89abcdef',
               promptLength: blockedPromptText.length,
-              surface: 'assessment',
+              surface: 'standard',
               roomPhase: 'connected',
               workspaceStatus: null,
               workspaceSessionId: null,
@@ -1199,7 +987,7 @@ describe('sessionEvents', () => {
             messageLength: text.length,
             deliveryStatus: 'rejected',
             deliveryRejectionReason: 'INVALID_EVIDENCE',
-            surface: 'assessment',
+            surface: 'standard',
             roomPhase: 'connected',
             durableObjectReplayExpected: true,
           },
@@ -1254,7 +1042,7 @@ describe('sessionEvents', () => {
               observedAt: '2026-06-27T21:12:00.000Z',
               capturedAtMs: 1782594720000,
               agentStatusEventId: statusId,
-              surface: 'assessment',
+              surface: 'standard',
               roomPhase: 'connected',
               workspaceStatus: 'READY',
               workspaceSessionId: 'workspace-session-1',
@@ -1368,7 +1156,7 @@ describe('sessionEvents', () => {
               executionStatus: 'opened',
               capturedAtMs: 1782604700000,
               agentActionEventId: trayOpenId,
-              surface: 'assessment',
+              surface: 'standard',
               roomPhase: 'connected',
               workspaceStatus: 'READY',
               workspaceSessionId: 'workspace-session-1',
@@ -1508,9 +1296,9 @@ describe('sessionEvents', () => {
               previousEnabled: true,
               enabled: false,
               action: 'disabled',
-              surface: 'assessment',
+              surface: 'standard',
               roomPhase: 'connected',
-              controlSurface: 'assessment_video_panel',
+              controlSurface: 'standard_video_call',
               controlAction: 'toggle',
               mediaSource: 'local_media_stream',
               rawMediaStreamPersisted: false,
@@ -1531,7 +1319,7 @@ describe('sessionEvents', () => {
               recordingLifecycleKind: 'start',
               recordingStateEventId: 'recording:host:1782604808000:start:recording',
               capturedAtMs: 1782604808000,
-              surface: 'assessment',
+              surface: 'standard',
               roomPhase: 'connected',
               recordingStatus: 'recording',
               recordingActive: true,
@@ -1591,7 +1379,7 @@ describe('sessionEvents', () => {
               openStatus: 'loaded',
               actor: 'guest',
               capturedAtMs: 1782604810000,
-              surface: 'assessment',
+              surface: 'standard',
               roomPhase: 'connected',
               workspaceSessionId: 'workspace-session-1',
               workspaceStatus: 'READY',
@@ -1716,7 +1504,7 @@ describe('sessionEvents', () => {
             agent: 'hermes',
             observedAt: '2026-06-27T21:10:00.000Z',
             bridgePersisted: true,
-            surface: 'assessment',
+            surface: 'standard',
           },
         };
         const missingIdentityStatus: SessionEvent = {
@@ -1729,7 +1517,7 @@ describe('sessionEvents', () => {
           properties: {
             source: 'agent_bridge',
             status: 'thinking',
-            surface: 'assessment',
+            surface: 'standard',
           },
         };
 
@@ -1943,7 +1731,7 @@ describe('sessionEvents', () => {
                 messageCreatedAt: 1700000002000,
                 messageLength: 'I found the retry bug in the queue worker.'.length,
                 deliveryStatus: 'accepted',
-                surface: 'assessment',
+                surface: 'standard',
                 roomPhase: 'connected',
                 durableObjectReplayExpected: true,
               },
@@ -1968,7 +1756,7 @@ describe('sessionEvents', () => {
                 messageCreatedAt: 1700000002050,
                 messageLength: 'This source-less chat claim should not become graph evidence.'.length,
                 deliveryStatus: 'accepted',
-                surface: 'assessment',
+                surface: 'standard',
                 roomPhase: 'connected',
                 durableObjectReplayExpected: true,
               },
@@ -1993,7 +1781,7 @@ describe('sessionEvents', () => {
                 messageCreatedAt: 1700000002100,
                 messageLength: 1,
                 deliveryStatus: 'accepted',
-                surface: 'assessment',
+                surface: 'standard',
                 roomPhase: 'connected',
                 durableObjectReplayExpected: true,
               },
@@ -2018,7 +1806,7 @@ describe('sessionEvents', () => {
                 messageCreatedAt: 1700000002150,
                 messageLength: 'This chat has a forged actor.'.length,
                 deliveryStatus: 'accepted',
-                surface: 'assessment',
+                surface: 'standard',
                 roomPhase: 'connected',
                 durableObjectReplayExpected: true,
               },
@@ -2047,9 +1835,9 @@ describe('sessionEvents', () => {
                 previousEnabled: true,
                 enabled: false,
                 action: 'disabled',
-                surface: 'assessment',
+                surface: 'standard',
                 roomPhase: 'connected',
-                controlSurface: 'assessment_video_panel',
+                controlSurface: 'standard_video_call',
                 controlAction: 'toggle',
                 mediaSource: 'local_media_stream',
                 rawMediaStreamPersisted: false,
@@ -2080,7 +1868,7 @@ describe('sessionEvents', () => {
               source: 'system',
               promptEventSource: 'browser_proactive_agent_prompt',
               promptTrigger: 'host_waiting_prepare_workspace',
-              surface: 'assessment',
+              surface: 'standard',
               roomPhase: 'connected',
               workspaceStatus: 'READY',
               workspaceSessionId: 'workspace-session-1',
@@ -2098,7 +1886,7 @@ describe('sessionEvents', () => {
               createdAt: 1700000003100,
               source: 'system',
               promptTrigger: 'missing_prompt_event_source',
-              surface: 'assessment',
+              surface: 'standard',
               roomPhase: 'connected',
               agentResponseClaimed: false,
               text: 'This prompt should not become graph evidence.',
@@ -2190,7 +1978,7 @@ describe('sessionEvents', () => {
                 browserQueuedBridgeMessage: true,
                 bridgeDeliveryConfirmed: false,
                 agent: null,
-                surface: 'assessment',
+                surface: 'standard',
                 roomPhase: 'connected',
                 workspaceStatus: 'READY',
                 workspaceSessionId: 'workspace-session-1',
@@ -2222,7 +2010,7 @@ describe('sessionEvents', () => {
                 promptTimestamp: 1700000003215,
                 deliveredToAgentBridge: true,
                 agent: null,
-                surface: 'assessment',
+                surface: 'standard',
                 roomPhase: 'connected',
                 workspaceStatus: 'READY',
                 workspaceSessionId: 'workspace-session-1',
@@ -2255,7 +2043,7 @@ describe('sessionEvents', () => {
                 browserQueuedBridgeMessage: true,
                 bridgeDeliveryConfirmed: false,
                 agent: 'devin',
-                surface: 'assessment',
+                surface: 'standard',
                 roomPhase: 'connected',
                 workspaceStatus: 'READY',
                 workspaceSessionId: 'workspace-session-1',
@@ -2314,166 +2102,11 @@ describe('sessionEvents', () => {
                 agentActionEventId: 'agent-action:host:1700000003300:agent_prompt_ui:prompt:executed:start-recording',
                 agent: 'devin',
                 agentResponseClaimed: false,
-                surface: 'assessment',
+                surface: 'standard',
                 roomPhase: 'connected',
                 workspaceStatus: 'READY',
                 workspaceSessionId: 'workspace-session-1',
                 durableObjectReplayExpected: true,
-              },
-            },
-          },
-        ],
-        fileSystemActivityLog: [
-          {
-            role: 'GUEST',
-            recordedAt: 1700000004000,
-            event: {
-              id: 'fs-notes-save',
-              clientId: 'guest-client',
-              createdAt: 1700000004000,
-              kind: 'UPSERT_FILE',
-              file: {
-                id: 'notes',
-                name: 'notes.txt',
-                kind: 'text',
-                content: 'Candidate identified retry bug evidence.',
-                mimeType: 'text/plain',
-                createdAt: 1700000004000,
-                updatedAt: 1700000004000,
-              },
-              evidence: {
-                source: 'assessment_shared_file_system',
-                fileEventSource: 'browser_client_submit',
-                fileChangeId: 'file:guest:1700000004000:upsert:notes',
-                actor: 'guest',
-                operation: 'upsert',
-                fileId: 'notes',
-                fileName: 'notes.txt',
-                fileKind: 'text',
-                surface: 'assessment',
-                roomPhase: 'connected',
-                capturedAtMs: 1700000004000,
-                durableObjectReplayExpected: true,
-              },
-            },
-          },
-          {
-            role: 'GUEST',
-            recordedAt: 1700000005000,
-            event: {
-              id: 'fs-notes-delete',
-              clientId: 'guest-client',
-              createdAt: 1700000005000,
-              kind: 'DELETE_FILE',
-              fileId: 'notes',
-              file: {
-                id: 'notes',
-                name: 'notes.txt',
-                kind: 'text',
-                content: 'Candidate identified retry bug evidence.',
-                mimeType: 'text/plain',
-                createdAt: 1700000004000,
-                updatedAt: 1700000004000,
-              },
-              evidence: {
-                source: 'assessment_shared_file_system',
-                fileEventSource: 'browser_client_submit',
-                fileChangeId: 'file:guest:1700000005000:delete:notes',
-                actor: 'guest',
-                operation: 'delete',
-                fileId: 'notes',
-                fileName: 'notes.txt',
-                fileKind: 'text',
-                surface: 'assessment',
-                roomPhase: 'connected',
-                capturedAtMs: 1700000005000,
-                durableObjectReplayExpected: true,
-              },
-            },
-          },
-          {
-            role: 'GUEST',
-            recordedAt: 1700000006000,
-            event: {
-              id: 'fs-diagram-save',
-              clientId: 'guest-client',
-              createdAt: 1700000006000,
-              kind: 'UPSERT_FILE',
-              file: {
-                id: 'diagram',
-                name: 'Sketch.pipe-diagram',
-                kind: 'diagram',
-                content: '[{"kind":"rectangle","start":{"x":1,"y":2},"end":{"x":3,"y":4}}]',
-                mimeType: 'application/json',
-                createdAt: 1700000006000,
-                updatedAt: 1700000006000,
-              },
-              evidence: {
-                source: 'assessment_shared_file_system',
-                fileEventSource: 'browser_client_submit',
-                fileChangeId: 'file:guest:1700000006000:upsert:diagram',
-                actor: 'guest',
-                operation: 'upsert',
-                fileId: 'diagram',
-                fileName: 'Sketch.pipe-diagram',
-                fileKind: 'diagram',
-                surface: 'assessment',
-                roomPhase: 'connected',
-                capturedAtMs: 1700000006000,
-                durableObjectReplayExpected: true,
-              },
-            },
-          },
-          {
-            role: 'GUEST',
-            recordedAt: 1700000007000,
-            event: {
-              id: 'fs-diagram-delete',
-              clientId: 'guest-client',
-              createdAt: 1700000007000,
-              kind: 'DELETE_FILE',
-              fileId: 'diagram',
-              file: {
-                id: 'diagram',
-                name: 'Sketch.pipe-diagram',
-                kind: 'diagram',
-                content: '[{"kind":"rectangle","start":{"x":1,"y":2},"end":{"x":3,"y":4}}]',
-                mimeType: 'application/json',
-                createdAt: 1700000006000,
-                updatedAt: 1700000006000,
-              },
-              evidence: {
-                source: 'assessment_shared_file_system',
-                fileEventSource: 'browser_client_submit',
-                fileChangeId: 'file:guest:1700000007000:delete:diagram',
-                actor: 'guest',
-                operation: 'delete',
-                fileId: 'diagram',
-                fileName: 'Sketch.pipe-diagram',
-                fileKind: 'diagram',
-                surface: 'assessment',
-                roomPhase: 'connected',
-                capturedAtMs: 1700000007000,
-                durableObjectReplayExpected: true,
-              },
-            },
-          },
-          {
-            role: 'GUEST',
-            recordedAt: 1700000008000,
-            event: {
-              id: 'fs-source-less-save',
-              clientId: 'guest-client',
-              createdAt: 1700000008000,
-              kind: 'UPSERT_FILE',
-              file: {
-                id: 'source-less-notes',
-                name: 'source-less-notes.txt',
-                kind: 'text',
-                content: 'This should not become graph evidence.',
-                mimeType: 'text/plain',
-                createdAt: 1700000008000,
-                updatedAt: 1700000008000,
               },
             },
           },
@@ -2483,7 +2116,7 @@ describe('sessionEvents', () => {
         sessionId: 'meeting--room-sync',
       });
 
-      expect(events).toHaveLength(9);
+      expect(events).toHaveLength(5);
       expect(events).toEqual(expect.arrayContaining([
         expect.objectContaining({
           type: 'chat_message',
@@ -2499,7 +2132,7 @@ describe('sessionEvents', () => {
             messageCreatedAt: 1700000002000,
             messageLength: 'I found the retry bug in the queue worker.'.length,
             deliveryStatus: 'accepted',
-            surface: 'assessment',
+            surface: 'standard',
             roomPhase: 'connected',
             durableObjectReplayExpected: true,
           }),
@@ -2519,9 +2152,9 @@ describe('sessionEvents', () => {
             previousEnabled: true,
             enabled: false,
             action: 'disabled',
-            surface: 'assessment',
+            surface: 'standard',
             roomPhase: 'connected',
-            controlSurface: 'assessment_video_panel',
+            controlSurface: 'standard_video_call',
             controlAction: 'toggle',
             mediaSource: 'local_media_stream',
             rawMediaStreamPersisted: false,
@@ -2578,7 +2211,7 @@ describe('sessionEvents', () => {
             source: 'agent_prompt_client_submit',
             promptEventSource: 'browser_proactive_agent_prompt',
             promptTrigger: 'host_waiting_prepare_workspace',
-            surface: 'assessment',
+            surface: 'standard',
             roomPhase: 'connected',
             workspaceStatus: 'READY',
             workspaceSessionId: 'workspace-session-1',
@@ -2587,123 +2220,7 @@ describe('sessionEvents', () => {
             promptLength: 'Would you like to open the workspace?'.length,
           }),
         }),
-        expect.objectContaining({
-          type: 'file_change',
-          actor: 'guest',
-          text: 'notes.txt',
-        }),
-        expect.objectContaining({
-          type: 'file_change',
-          actor: 'guest',
-          text: 'notes.txt',
-        }),
-        expect.objectContaining({
-          type: 'file_change',
-          actor: 'guest',
-          text: 'Sketch.pipe-diagram',
-        }),
-        expect.objectContaining({
-          type: 'file_change',
-          actor: 'guest',
-          text: 'Sketch.pipe-diagram',
-        }),
       ]));
-      const upsertFileEvent = events.find((event) => (
-        event.type === 'file_change'
-        && event.actor === 'guest'
-        && event.properties?.fileChangeId === 'file:guest:1700000004000:upsert:notes'
-      ));
-      expect(upsertFileEvent?.properties).toMatchObject({
-        roomActivitySource: 'durable_object',
-        source: 'assessment_shared_file_system',
-        fileEventSource: 'browser_client_submit',
-        fileChangeId: 'file:guest:1700000004000:upsert:notes',
-        actor: 'guest',
-        operation: 'upsert',
-        fileId: 'notes',
-        fileName: 'notes.txt',
-        fileKind: 'text',
-        surface: 'assessment',
-        roomPhase: 'connected',
-        capturedAtMs: 1700000004000,
-        durableObjectReplayExpected: true,
-        contentPreview: 'Candidate identified retry bug evidence.',
-        contentExactText: 'Candidate identified retry bug evidence.',
-      });
-      expect(upsertFileEvent?.properties?.contentHash).toMatch(/^content_[a-f0-9]{32}$/);
-      const deleteFileEvent = events.find((event) => (
-        event.type === 'file_change'
-        && event.actor === 'guest'
-        && event.properties?.fileChangeId === 'file:guest:1700000005000:delete:notes'
-      ));
-      expect(deleteFileEvent?.properties).toMatchObject({
-        roomActivitySource: 'durable_object',
-        source: 'assessment_shared_file_system',
-        fileEventSource: 'browser_client_submit',
-        fileChangeId: 'file:guest:1700000005000:delete:notes',
-        actor: 'guest',
-        operation: 'delete',
-        fileId: 'notes',
-        fileName: 'notes.txt',
-        fileKind: 'text',
-        surface: 'assessment',
-        roomPhase: 'connected',
-        capturedAtMs: 1700000005000,
-        durableObjectReplayExpected: true,
-        deletedContentLength: 'Candidate identified retry bug evidence.'.length,
-        deletedContentPreview: 'Candidate identified retry bug evidence.',
-        deletedContentExactText: 'Candidate identified retry bug evidence.',
-      });
-      expect(deleteFileEvent?.properties?.deletedContentHash).toMatch(/^content_[a-f0-9]{32}$/);
-      const diagramJson = '[{"kind":"rectangle","start":{"x":1,"y":2},"end":{"x":3,"y":4}}]';
-      const upsertDiagramEvent = events.find((event) => (
-        event.type === 'file_change'
-        && event.actor === 'guest'
-        && event.properties?.fileChangeId === 'file:guest:1700000006000:upsert:diagram'
-      ));
-      expect(upsertDiagramEvent?.properties).toMatchObject({
-        roomActivitySource: 'durable_object',
-        source: 'assessment_shared_file_system',
-        fileEventSource: 'browser_client_submit',
-        fileChangeId: 'file:guest:1700000006000:upsert:diagram',
-        actor: 'guest',
-        operation: 'upsert',
-        fileId: 'diagram',
-        fileName: 'Sketch.pipe-diagram',
-        fileKind: 'diagram',
-        surface: 'assessment',
-        roomPhase: 'connected',
-        capturedAtMs: 1700000006000,
-        durableObjectReplayExpected: true,
-        contentLength: diagramJson.length,
-        contentExactJson: diagramJson,
-      });
-      expect(upsertDiagramEvent?.properties?.contentHash).toMatch(/^content_[a-f0-9]{32}$/);
-      expect(upsertDiagramEvent?.properties).not.toHaveProperty('contentPreview');
-      const deleteDiagramEvent = events.find((event) => (
-        event.type === 'file_change'
-        && event.actor === 'guest'
-        && event.properties?.fileChangeId === 'file:guest:1700000007000:delete:diagram'
-      ));
-      expect(deleteDiagramEvent?.properties).toMatchObject({
-        roomActivitySource: 'durable_object',
-        source: 'assessment_shared_file_system',
-        fileEventSource: 'browser_client_submit',
-        fileChangeId: 'file:guest:1700000007000:delete:diagram',
-        actor: 'guest',
-        operation: 'delete',
-        fileId: 'diagram',
-        fileName: 'Sketch.pipe-diagram',
-        fileKind: 'diagram',
-        surface: 'assessment',
-        roomPhase: 'connected',
-        capturedAtMs: 1700000007000,
-        durableObjectReplayExpected: true,
-        deletedContentLength: diagramJson.length,
-        deletedContentExactJson: diagramJson,
-      });
-      expect(deleteDiagramEvent?.properties?.deletedContentHash).toMatch(/^content_[a-f0-9]{32}$/);
-      expect(deleteDiagramEvent?.properties).not.toHaveProperty('deletedContentPreview');
       expect(events).not.toEqual(expect.arrayContaining([
         expect.objectContaining({
           type: 'agent_action',
@@ -2737,15 +2254,6 @@ describe('sessionEvents', () => {
           }),
         }),
       ]));
-      expect(events).not.toEqual(expect.arrayContaining([
-        expect.objectContaining({
-          type: 'file_change',
-          text: 'source-less-notes.txt',
-          properties: expect.objectContaining({
-            source: 'file_system_durable_object',
-          }),
-        }),
-      ]));
     });
 
     it('converts source-backed recording room state into session evidence', async () => {
@@ -2770,7 +2278,7 @@ describe('sessionEvents', () => {
                 recordingLifecycleKind: 'start',
                 recordingStateEventId: 'recording:host:1700000000500:start:recording',
                 capturedAtMs: 1700000000500,
-                surface: 'assessment',
+                surface: 'standard',
                 roomPhase: 'connected',
                 recordingStatus: 'recording',
                 recordingActive: true,
@@ -2819,7 +2327,7 @@ describe('sessionEvents', () => {
                 recordingLifecycleKind: 'stop',
                 recordingStateEventId: 'recording:host:1700000000700:stop:failed',
                 capturedAtMs: 1700000000700,
-                surface: 'assessment',
+                surface: 'standard',
                 roomPhase: 'connected',
                 recordingStatus: 'failed',
                 recordingActive: false,
@@ -2863,7 +2371,7 @@ describe('sessionEvents', () => {
                 recordingLifecycleKind: 'stop',
                 recordingStateEventId: 'recording:host:1700000000800:stop:failed',
                 capturedAtMs: 1700000000800,
-                surface: 'assessment',
+                surface: 'standard',
                 roomPhase: 'connected',
                 recordingStatus: 'failed',
                 recordingActive: false,

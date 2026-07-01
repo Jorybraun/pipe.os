@@ -1123,9 +1123,9 @@ describe('meeting room recording living-context route', () => {
           enabled: false,
           action: 'disabled',
           controlAction: 'toggle',
-          surface: 'assessment',
+          surface: 'standard',
           roomPhase: 'connected',
-          controlSurface: 'assessment_video_panel',
+          controlSurface: 'standard_video_call',
           mediaSource: 'local_media_stream',
           rawMediaStreamPersisted: false,
           durableObjectReplayExpected: true,
@@ -1184,7 +1184,7 @@ describe('meeting room recording living-context route', () => {
       control: 'microphone',
       previousEnabled: true,
       enabled: false,
-      surface: 'assessment',
+      surface: 'standard',
     });
 
     const sessionContextRecord = sqlite.prepare(
@@ -1213,7 +1213,7 @@ describe('meeting room recording living-context route', () => {
       eventType: 'media_control',
       actor: 'guest',
       sessionId: node?.source_reference,
-      surface: 'assessment',
+      surface: 'standard',
     });
 
     const contextSources = sqlite.prepare(
@@ -1258,7 +1258,7 @@ describe('meeting room recording living-context route', () => {
         control: 'microphone',
         previousEnabled: true,
         enabled: false,
-        surface: 'assessment',
+        surface: 'standard',
       },
       candidateNodeId: node?.id,
     });
@@ -1301,7 +1301,7 @@ describe('meeting room recording living-context route', () => {
           messageCreatedAt: 1782602000000,
           messageLength: 50,
           deliveryStatus: 'pending',
-          surface: 'assessment',
+          surface: 'standard',
           roomPhase: 'connected',
           durableObjectReplayExpected: true,
         },
@@ -1333,7 +1333,7 @@ describe('meeting room recording living-context route', () => {
       roomMessageId: 'chat-message-1',
       clientId: 'browser-client-1',
       deliveryStatus: 'pending',
-      surface: 'assessment',
+      surface: 'standard',
       roomPhase: 'connected',
     });
 
@@ -1371,7 +1371,7 @@ describe('meeting room recording living-context route', () => {
           capturedAtMs: 1700000001000,
           commandFingerprint: 'terminal_dc5964d6',
           commandLength: 8,
-          surface: 'assessment',
+          surface: 'standard',
           roomPhase: 'connected',
           workspaceStatus: 'READY',
           workspaceSessionId: 'workspace-session-1',
@@ -1399,7 +1399,7 @@ describe('meeting room recording living-context route', () => {
           capturedAtMs: 1700000002000,
           outputFingerprint: 'terminal_4f2d0d8f',
           outputLength: 21,
-          surface: 'assessment',
+          surface: 'standard',
           roomPhase: 'connected',
           workspaceStatus: 'READY',
           workspaceSessionId: 'workspace-session-1',
@@ -1608,7 +1608,7 @@ describe('meeting room recording living-context route', () => {
           promptCreatedAt: 1782601501000,
           promptLength: 'Would you like to start recording?'.length,
           promptSource: 'system',
-          surface: 'assessment',
+          surface: 'standard',
           roomPhase: 'connected',
           workspaceStatus: 'READY',
           workspaceSessionId: 'workspace-session-1',
@@ -1653,7 +1653,7 @@ describe('meeting room recording living-context route', () => {
         actor: 'host',
         properties: {
           actionId: 'start-recording',
-          surface: 'assessment',
+          surface: 'standard',
         },
       }),
     }, env, ctx);
@@ -1706,7 +1706,7 @@ describe('meeting room recording living-context route', () => {
           agentActionEventId: 'agent-action:host:1782594200000:agent_prompt_ui:prompt:executed:start-recording',
           agent: 'devin',
           agentResponseClaimed: false,
-          surface: 'assessment',
+          surface: 'standard',
           roomPhase: 'connected',
           workspaceStatus: 'READY',
           workspaceSessionId: 'workspace-session-1',
@@ -1733,7 +1733,7 @@ describe('meeting room recording living-context route', () => {
           agentActionEventId: 'agent-action:host:1782594200000:agent_prompt_ui:prompt:executed:start-recording',
           agent: null,
           agentResponseClaimed: false,
-          surface: 'assessment',
+          surface: 'standard',
           roomPhase: 'connected',
           workspaceStatus: 'READY',
           workspaceSessionId: 'workspace-session-1',
@@ -1760,7 +1760,7 @@ describe('meeting room recording living-context route', () => {
           agentActionEventId: 'agent-action:host:1782594250000:agent_chat_ui:chat:opened:open-agent-chat',
           agent: null,
           agentResponseClaimed: false,
-          surface: 'assessment',
+          surface: 'standard',
           roomPhase: 'connected',
           workspaceStatus: 'READY',
           workspaceSessionId: 'workspace-session-1',
@@ -1787,7 +1787,7 @@ describe('meeting room recording living-context route', () => {
           agentActionEventId: 'agent-action:host:1782594300000:agent_chat_ui:chat:closed:close-agent-chat',
           agent: null,
           agentResponseClaimed: false,
-          surface: 'assessment',
+          surface: 'standard',
           roomPhase: 'connected',
           workspaceStatus: 'READY',
           workspaceSessionId: 'workspace-session-1',
@@ -1814,7 +1814,7 @@ describe('meeting room recording living-context route', () => {
           agentActionEventId: 'agent-action:host:1782594350000:agent_prompt_ui:prompt:executed:open-devin-auth-browser',
           agent: null,
           agentResponseClaimed: false,
-          surface: 'assessment',
+          surface: 'standard',
           roomPhase: 'connected',
           workspaceStatus: 'READY',
           workspaceSessionId: 'workspace-session-1',
@@ -1841,7 +1841,7 @@ describe('meeting room recording living-context route', () => {
           agentActionEventId: 'agent-action:host:1782594400000:agent_prompt_ui:prompt:executed:open-devin-auth-terminal',
           agent: null,
           agentResponseClaimed: false,
-          surface: 'assessment',
+          surface: 'standard',
           roomPhase: 'connected',
           workspaceStatus: 'READY',
           workspaceSessionId: 'workspace-session-1',
@@ -1936,7 +1936,7 @@ describe('meeting room recording living-context route', () => {
         executionStatus: 'executed',
         capturedAtMs: 1782594200000,
         agentActionEventId: 'agent-action:host:1782594200000:agent_prompt_ui:prompt:executed:start-recording',
-        surface: 'assessment',
+        surface: 'standard',
       }),
       expect.objectContaining({
         actor: 'host',
@@ -1946,7 +1946,7 @@ describe('meeting room recording living-context route', () => {
         executionStatus: 'opened',
         capturedAtMs: 1782594250000,
         agentActionEventId: 'agent-action:host:1782594250000:agent_chat_ui:chat:opened:open-agent-chat',
-        surface: 'assessment',
+        surface: 'standard',
       }),
       expect.objectContaining({
         actor: 'host',
@@ -1956,7 +1956,7 @@ describe('meeting room recording living-context route', () => {
         executionStatus: 'closed',
         capturedAtMs: 1782594300000,
         agentActionEventId: 'agent-action:host:1782594300000:agent_chat_ui:chat:closed:close-agent-chat',
-        surface: 'assessment',
+        surface: 'standard',
       }),
       expect.objectContaining({
         actor: 'host',
@@ -1966,7 +1966,7 @@ describe('meeting room recording living-context route', () => {
         executionStatus: 'executed',
         capturedAtMs: 1782594350000,
         agentActionEventId: 'agent-action:host:1782594350000:agent_prompt_ui:prompt:executed:open-devin-auth-browser',
-        surface: 'assessment',
+        surface: 'standard',
       }),
       expect.objectContaining({
         actor: 'host',
@@ -1976,7 +1976,7 @@ describe('meeting room recording living-context route', () => {
         executionStatus: 'executed',
         capturedAtMs: 1782594400000,
         agentActionEventId: 'agent-action:host:1782594400000:agent_prompt_ui:prompt:executed:open-devin-auth-terminal',
-        surface: 'assessment',
+        surface: 'standard',
       }),
       expect.objectContaining({
         actor: 'agent',
@@ -2046,7 +2046,7 @@ describe('meeting room recording living-context route', () => {
           observedAt: '2026-06-27T21:12:00.000Z',
           capturedAtMs: 1782594720000,
           agentStatusEventId: 'agent-status:devin:1782594720000:agent_status:starting:none',
-          surface: 'assessment',
+          surface: 'standard',
           roomPhase: 'connected',
           workspaceStatus: 'READY',
           workspaceSessionId: 'workspace-session-1',
@@ -2129,7 +2129,7 @@ describe('meeting room recording living-context route', () => {
           source: 'browser_media_claim',
           control: 'microphone',
           enabled: false,
-          surface: 'assessment',
+          surface: 'standard',
           roomPhase: 'connected',
         },
       }),
@@ -2148,9 +2148,9 @@ describe('meeting room recording living-context route', () => {
           control: 'microphone',
           enabled: false,
           action: 'disabled',
-          surface: 'assessment',
+          surface: 'standard',
           roomPhase: 'connected',
-          controlSurface: 'assessment_video_panel',
+          controlSurface: 'standard_video_call',
           mediaSource: 'local_media_stream',
           rawMediaStreamPersisted: false,
         },
@@ -2175,9 +2175,9 @@ describe('meeting room recording living-context route', () => {
           previousEnabled: true,
           enabled: false,
           action: 'disabled',
-          surface: 'assessment',
+          surface: 'standard',
           roomPhase: 'connected',
-          controlSurface: 'assessment_video_panel',
+          controlSurface: 'standard_video_call',
           controlAction: 'toggle',
           mediaSource: 'local_media_stream',
           rawMediaStreamPersisted: false,
@@ -2212,9 +2212,9 @@ describe('meeting room recording living-context route', () => {
       previousEnabled: true,
       enabled: false,
       action: 'disabled',
-      surface: 'assessment',
+      surface: 'standard',
       roomPhase: 'connected',
-      controlSurface: 'assessment_video_panel',
+      controlSurface: 'standard_video_call',
       controlAction: 'toggle',
       rawMediaStreamPersisted: false,
     });
@@ -2325,89 +2325,6 @@ describe('meeting room recording living-context route', () => {
       transcriptionBytes: 2345,
     });
 
-    const fakeLegacyLayoutFileChangeRes = await app.request(`/meeting/${created.hostToken}/session-events`, {
-      method: 'POST',
-      headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({
-        type: 'file_change',
-        text: 'Guest saved Notes.txt',
-        actor: 'guest',
-        properties: {
-          source: 'assessment_shared_file_system',
-          fileEventSource: 'browser_client_submit',
-          operation: 'upsert',
-          fileId: 'layout-notes',
-          fileName: 'Notes.txt',
-          fileKind: 'text',
-          surface: 'assessment',
-          roomPhase: 'connected',
-          contentLength: 31,
-        },
-      }),
-    }, env, ctx);
-    expect(fakeLegacyLayoutFileChangeRes.status).toBe(422);
-
-    const legacyLayoutFileChangeRes = await app.request(`/meeting/${created.hostToken}/session-events`, {
-      method: 'POST',
-      headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({
-        type: 'file_change',
-        text: 'Guest saved Notes.txt',
-        actor: 'guest',
-        properties: {
-          source: 'assessment_shared_file_system',
-          fileEventSource: 'browser_client_submit',
-          actor: 'guest',
-          fileChangeId: 'file:guest:1700000001100:upsert:layout-notes',
-          operation: 'upsert',
-          fileId: 'layout-notes',
-          fileName: 'Notes.txt',
-          fileKind: 'text',
-          mimeType: 'text/plain',
-          path: 'Layout/Notes.txt',
-          surface: 'assessment',
-          roomPhase: 'connected',
-          capturedAtMs: 1700000001100,
-          contentLength: 31,
-          contentHash: 'content_0123456789abcdef0123456789abcdef',
-          contentPreview: 'Candidate noted retry evidence.',
-          fileCreatedAt: 1700000000000,
-          fileUpdatedAt: 1700000001000,
-          durableObjectReplayExpected: true,
-        },
-      }),
-    }, env, ctx);
-    expect(legacyLayoutFileChangeRes.status).toBe(200);
-
-    const assessmentFileChangeNode = sqlite.prepare(
-      `SELECT node_type, narrative_text, source_type, extracted_properties_json
-         FROM candidate_nodes
-        WHERE candidate_id = ? AND node_type = 'session_file_change'
-          AND extracted_properties_json LIKE '%assessment_shared_file_system%'`,
-    ).get(linked?.candidate_id) as {
-      node_type: string;
-      narrative_text: string;
-      source_type: string;
-      extracted_properties_json: string;
-    } | undefined;
-    expect(assessmentFileChangeNode).toMatchObject({
-      node_type: 'session_file_change',
-      source_type: 'meeting_session',
-    });
-    expect(assessmentFileChangeNode?.narrative_text).toContain('File upsert: Guest saved Notes.txt');
-    expect(JSON.parse(assessmentFileChangeNode?.extracted_properties_json ?? '{}')).toMatchObject({
-      actor: 'guest',
-      source: 'assessment_shared_file_system',
-      fileEventSource: 'browser_client_submit',
-      fileChangeId: 'file:guest:1700000001100:upsert:layout-notes',
-      operation: 'upsert',
-      fileId: 'layout-notes',
-      fileName: 'Notes.txt',
-      contentHash: 'content_0123456789abcdef0123456789abcdef',
-      capturedAtMs: 1700000001100,
-      durableObjectReplayExpected: true,
-    });
-
     const codeServerDeleteRes = await app.request(`/meeting/${created.hostToken}/session-events`, {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
@@ -2426,7 +2343,7 @@ describe('meeting room recording living-context route', () => {
           observedAt: '2026-06-27T21:07:00.000Z',
           contentHash: 'abcdefabcdefabcdefabcdefabcdefabcdefabcdefabcdefabcdefabcdefabcd',
           sizeBytes: 64,
-          surface: 'assessment',
+          surface: 'standard',
           roomPhase: 'connected',
           workspaceStatus: 'READY',
           workspaceSessionId: 'workspace-session-1',
@@ -2469,7 +2386,7 @@ describe('meeting room recording living-context route', () => {
           openStatus: 'loaded',
           actor: 'guest',
           capturedAtMs: 1700000002100,
-          surface: 'assessment',
+          surface: 'standard',
           roomPhase: 'connected',
           workspaceSessionId: 'workspace-session-1',
           workspaceStatus: 'READY',
@@ -2613,7 +2530,7 @@ describe('meeting room recording living-context route', () => {
         actor: 'guest',
         properties: {
           source: 'agent_chat',
-          surface: 'assessment',
+          surface: 'standard',
           workspaceSessionId: 'workspace-session-1',
         },
       }),
@@ -2645,7 +2562,7 @@ describe('meeting room recording living-context route', () => {
           deliveredToAgentBridge: true,
           agent: 'devin',
           agentResponseClaimed: false,
-          surface: 'assessment',
+          surface: 'standard',
           roomPhase: 'connected',
           workspaceStatus: 'READY',
           workspaceSessionId: 'workspace-session-1',
@@ -2680,7 +2597,7 @@ describe('meeting room recording living-context route', () => {
           deliveredToAgentBridge: true,
           agent: null,
           agentResponseClaimed: false,
-          surface: 'assessment',
+          surface: 'standard',
           roomPhase: 'connected',
           workspaceStatus: 'READY',
           workspaceSessionId: 'workspace-session-1',
@@ -2716,7 +2633,7 @@ describe('meeting room recording living-context route', () => {
           bridgeDeliveryConfirmed: false,
           agent: null,
           agentResponseClaimed: false,
-          surface: 'assessment',
+          surface: 'standard',
           roomPhase: 'connected',
           workspaceStatus: 'READY',
           workspaceSessionId: 'workspace-session-1',
@@ -2736,7 +2653,7 @@ describe('meeting room recording living-context route', () => {
         properties: {
           source: 'agent_chat',
           agent: 'devin',
-          surface: 'assessment',
+          surface: 'standard',
           workspaceSessionId: 'workspace-session-1',
         },
       }),
@@ -2789,7 +2706,7 @@ describe('meeting room recording living-context route', () => {
           browserPromptFingerprint: 'agent_0123abcd',
           browserPromptTimestamp: 1782603900000,
           browserPromptLength: 48,
-          surface: 'assessment',
+          surface: 'standard',
           workspaceSessionId: 'workspace-session-1',
         },
       }),
@@ -2843,7 +2760,7 @@ describe('meeting room recording living-context route', () => {
           responseLength: 57,
           bridgePersisted: false,
           persistenceFallback: 'browser_after_bridge_persist_failed',
-          surface: 'assessment',
+          surface: 'standard',
           roomPhase: 'connected',
           workspaceStatus: 'READY',
           workspaceSessionId: 'workspace-session-1',
@@ -3004,9 +2921,9 @@ describe('meeting room recording living-context route', () => {
           enabled: false,
           action: 'disabled',
           controlAction: 'toggle',
-          surface: 'assessment',
+          surface: 'standard',
           roomPhase: 'connected',
-          controlSurface: 'assessment_video_panel',
+          controlSurface: 'standard_video_call',
           mediaSource: 'local_media_stream',
           rawMediaStreamPersisted: false,
           durableObjectReplayExpected: true,
@@ -3051,7 +2968,7 @@ describe('meeting room recording living-context route', () => {
               messageCreatedAt: 1700000002000,
               messageLength: 'I found the retry bug in the queue worker.'.length,
               deliveryStatus: 'accepted',
-              surface: 'assessment',
+              surface: 'standard',
               roomPhase: 'connected',
               durableObjectReplayExpected: true,
             },
@@ -3076,7 +2993,7 @@ describe('meeting room recording living-context route', () => {
               editorSurface: 'code-server',
               codeServerFileChangeId: 'code-server-file:workspace-session-1:1782590500000:modified:path_cb48a478:aaaaaaaaaaaaaaaa',
               action: 'modified',
-              surface: 'assessment',
+              surface: 'standard',
               roomPhase: 'connected',
               workspaceStatus: 'READY',
               workspaceSessionId: 'workspace-session-1',
@@ -3112,7 +3029,7 @@ describe('meeting room recording living-context route', () => {
               capturedAtMs: 1700000002500,
               commandFingerprint: 'terminal_dc5964d6',
               commandLength: 8,
-              surface: 'assessment',
+              surface: 'standard',
               roomPhase: 'connected',
               workspaceStatus: 'READY',
               workspaceSessionId: 'workspace-session-1',
@@ -3141,7 +3058,7 @@ describe('meeting room recording living-context route', () => {
               capturedAtMs: 1700000002600,
               outputFingerprint: 'terminal_4f2d0d8f',
               outputLength: 21,
-              surface: 'assessment',
+              surface: 'standard',
               roomPhase: 'connected',
               workspaceStatus: 'READY',
               workspaceSessionId: 'workspace-session-1',
@@ -3162,7 +3079,7 @@ describe('meeting room recording living-context route', () => {
             source: 'system',
             promptEventSource: 'browser_proactive_agent_prompt',
             promptTrigger: 'host_waiting_prepare_workspace',
-            surface: 'assessment',
+            surface: 'standard',
             roomPhase: 'connected',
             workspaceStatus: 'READY',
             workspaceSessionId: 'workspace-session-1',
@@ -3195,7 +3112,7 @@ describe('meeting room recording living-context route', () => {
               browserQueuedBridgeMessage: true,
               bridgeDeliveryConfirmed: false,
               agent: null,
-              surface: 'assessment',
+              surface: 'standard',
               roomPhase: 'connected',
               workspaceStatus: 'READY',
               workspaceSessionId: 'workspace-session-1',
@@ -3226,47 +3143,12 @@ describe('meeting room recording living-context route', () => {
               observedAt: '2026-06-27T20:00:00.000Z',
               capturedAtMs: 1700000003300,
               agentStatusEventId: 'agent-status:devin:1700000003300:agent_status:idle:none',
-              surface: 'assessment',
+              surface: 'standard',
               roomPhase: 'connected',
               workspaceStatus: 'READY',
               workspaceSessionId: 'workspace-session-1',
               messageTimestamp: 1700000003300,
               agentResponseClaimed: false,
-              durableObjectReplayExpected: true,
-            },
-          },
-        },
-      ],
-      fileSystemActivityLog: [
-        {
-          role: 'GUEST',
-          recordedAt: 1700000004000,
-          event: {
-            id: 'fs-notes-save',
-            clientId: 'guest-client',
-            createdAt: 1700000004000,
-            kind: 'UPSERT_FILE',
-            file: {
-              id: 'notes',
-              name: 'notes.txt',
-              kind: 'text',
-              content: 'Candidate identified retry bug evidence.',
-              mimeType: 'text/plain',
-              createdAt: 1700000004000,
-              updatedAt: 1700000004000,
-            },
-            evidence: {
-              source: 'assessment_shared_file_system',
-              fileEventSource: 'browser_client_submit',
-              fileChangeId: 'file:guest:1700000004000:upsert:notes',
-              actor: 'guest',
-              operation: 'upsert',
-              fileId: 'notes',
-              fileName: 'notes.txt',
-              fileKind: 'text',
-              surface: 'assessment',
-              roomPhase: 'connected',
-              capturedAtMs: 1700000004000,
               durableObjectReplayExpected: true,
             },
           },
@@ -3334,7 +3216,6 @@ describe('meeting room recording living-context route', () => {
       'session_agent_prompt',
       'session_agent_status',
       'session_chat_user',
-      'session_file_change',
     ]);
     expect(graphBody.events.map((event) => event.narrativeText).join('\n')).toContain(
       'I found the retry bug in the queue worker.',
@@ -3349,7 +3230,7 @@ describe('meeting room recording living-context route', () => {
       messageCreatedAt: 1700000002000,
       messageLength: 'I found the retry bug in the queue worker.'.length,
       deliveryStatus: 'accepted',
-      surface: 'assessment',
+      surface: 'standard',
       roomPhase: 'connected',
       durableObjectReplayExpected: true,
     });
@@ -3399,7 +3280,7 @@ describe('meeting room recording living-context route', () => {
       source: 'agent_prompt_client_submit',
       promptEventSource: 'browser_proactive_agent_prompt',
       promptTrigger: 'host_waiting_prepare_workspace',
-      surface: 'assessment',
+      surface: 'standard',
       roomPhase: 'connected',
       workspaceStatus: 'READY',
       workspaceSessionId: 'workspace-session-1',
@@ -3432,19 +3313,12 @@ describe('meeting room recording living-context route', () => {
       roomEventId: 'agent-agent-status-sync',
       workspaceSessionId: 'workspace-session-1',
     });
-    expect(graphBody.events.at(-1)?.properties).toMatchObject({
-      roomActivitySource: 'durable_object',
-      operation: 'upsert',
-      fileId: 'notes',
-      contentPreview: 'Candidate identified retry bug evidence.',
-    });
-
     const nodeCountAfterFirstRead = sqlite.prepare(
       `SELECT COUNT(*) AS count
          FROM candidate_nodes
         WHERE candidate_id = ? AND source_type = 'meeting_session'`,
     ).get(graphBody.candidateId) as { count: number };
-    expect(nodeCountAfterFirstRead.count).toBe(8);
+    expect(nodeCountAfterFirstRead.count).toBe(7);
 
     const secondGraphRes = await app.request(`/meeting/${created.hostToken}/context-graph`, {
       method: 'GET',
@@ -3455,7 +3329,7 @@ describe('meeting room recording living-context route', () => {
          FROM candidate_nodes
         WHERE candidate_id = ? AND source_type = 'meeting_session'`,
     ).get(graphBody.candidateId) as { count: number };
-    expect(nodeCountAfterSecondRead.count).toBe(8);
+    expect(nodeCountAfterSecondRead.count).toBe(7);
     expect(doFetch).toHaveBeenCalledWith(expect.objectContaining({
       url: 'https://do/activity-log',
     }));
@@ -3484,7 +3358,7 @@ describe('meeting room recording living-context route', () => {
               messageCreatedAt: 1700000101000,
               messageLength: 'I would test the retry branch before touching the queue worker.'.length,
               deliveryStatus: 'accepted',
-              surface: 'assessment',
+              surface: 'standard',
               roomPhase: 'connected',
               durableObjectReplayExpected: true,
             },
@@ -3492,41 +3366,6 @@ describe('meeting room recording living-context route', () => {
         },
       ],
       agentPromptActivityLog: [],
-      fileSystemActivityLog: [
-        {
-          role: 'GUEST',
-          recordedAt: 1700000102000,
-          event: {
-            id: 'fs-end-notes-save',
-            clientId: 'guest-client',
-            createdAt: 1700000102000,
-            kind: 'UPSERT_FILE',
-            file: {
-              id: 'end-notes',
-              name: 'review-notes.txt',
-              kind: 'text',
-              content: 'Candidate plans a focused retry test.',
-              mimeType: 'text/plain',
-              createdAt: 1700000102000,
-              updatedAt: 1700000102000,
-            },
-            evidence: {
-              source: 'assessment_shared_file_system',
-              fileEventSource: 'browser_client_submit',
-              fileChangeId: 'file:guest:1700000102000:upsert:end-notes',
-              actor: 'guest',
-              operation: 'upsert',
-              fileId: 'end-notes',
-              fileName: 'review-notes.txt',
-              fileKind: 'text',
-              surface: 'assessment',
-              roomPhase: 'connected',
-              capturedAtMs: 1700000102000,
-              durableObjectReplayExpected: true,
-            },
-          },
-        },
-      ],
     };
     const doFetch = vi.fn(async (request: Request) => {
       const url = new URL(request.url);
@@ -3593,18 +3432,10 @@ describe('meeting room recording living-context route', () => {
     }>;
     expect(evidenceRows.map((row) => row.node_type)).toEqual([
       'session_chat_message',
-      'session_file_change',
     ]);
     expect(evidenceRows.map((row) => row.narrative_text).join('\n')).toContain(
       'I would test the retry branch before touching the queue worker.',
     );
-    const fileEvidence = evidenceRows.find((row) => row.node_type === 'session_file_change');
-    expect(JSON.parse(fileEvidence?.extracted_properties_json ?? '{}')).toMatchObject({
-      roomActivitySource: 'durable_object',
-      operation: 'upsert',
-      fileId: 'end-notes',
-      contentPreview: 'Candidate plans a focused retry test.',
-    });
 
     const contextRows = sqlite.prepare(
       `SELECT predicate
@@ -3614,7 +3445,6 @@ describe('meeting room recording living-context route', () => {
     ).all() as Array<{ predicate: string }>;
     expect(contextRows.map((row) => row.predicate)).toEqual([
       'session_event:chat_message',
-      'session_event:file_change',
     ]);
     expect(doFetch).toHaveBeenCalledWith(expect.objectContaining({
       url: 'https://do/activity-log',
@@ -3630,7 +3460,6 @@ describe('meeting room recording living-context route', () => {
         return new Response(JSON.stringify({
           chatActivityLog: [],
           agentPromptActivityLog: [],
-          fileSystemActivityLog: [],
         }), {
           headers: { 'Content-Type': 'application/json' },
         });
@@ -4620,7 +4449,7 @@ describe('meeting room recording living-context route', () => {
           messageCreatedAt: 1782603000000,
           messageLength: text.length,
           deliveryStatus: 'pending',
-          surface: 'assessment',
+          surface: 'standard',
           roomPhase: 'connected',
           durableObjectReplayExpected: true,
         },

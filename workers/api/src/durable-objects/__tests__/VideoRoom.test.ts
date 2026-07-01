@@ -176,7 +176,7 @@ describe('VideoRoom Durable Object signaling lifecycle', () => {
           source: 'room_chat_client_submit',
           chatEventSource: 'browser_room_chat_panel',
           actor: 'host',
-          surface: 'assessment',
+          surface: 'standard',
           roomPhase: 'connected',
           durableObjectReplayExpected: true,
         },
@@ -193,7 +193,7 @@ describe('VideoRoom Durable Object signaling lifecycle', () => {
       messageLength: 'Can you see this message?'.length,
       messageFingerprint: roomChatMessageFingerprint('Can you see this message?'),
       deliveryStatus: 'accepted',
-      surface: 'assessment',
+      surface: 'standard',
       roomPhase: 'connected',
       durableObjectReplayExpected: true,
     };
@@ -266,7 +266,7 @@ describe('VideoRoom Durable Object signaling lifecycle', () => {
           source: 'room_chat_claim',
           chatEventSource: 'manual_test_payload',
           actor: 'host',
-          surface: 'assessment',
+          surface: 'standard',
           roomPhase: 'connected',
           durableObjectReplayExpected: true,
         },
@@ -338,9 +338,9 @@ describe('VideoRoom Durable Object signaling lifecycle', () => {
           previousEnabled: true,
           enabled: false,
           action: 'disabled',
-          surface: 'assessment',
+          surface: 'standard',
           roomPhase: 'connected',
-          controlSurface: 'assessment_video_panel',
+          controlSurface: 'standard_video_call',
           controlAction: 'toggle',
           mediaSource: 'local_media_stream',
           rawMediaStreamPersisted: false,
@@ -448,9 +448,9 @@ describe('VideoRoom Durable Object signaling lifecycle', () => {
           previousEnabled: true,
           enabled: false,
           action: 'disabled',
-          surface: 'assessment',
+          surface: 'standard',
           roomPhase: 'connected',
-          controlSurface: 'assessment_video_panel',
+          controlSurface: 'standard_video_call',
           controlAction: 'toggle',
           mediaSource: 'local_media_stream',
           rawMediaStreamPersisted: false,
@@ -493,7 +493,7 @@ describe('VideoRoom Durable Object signaling lifecycle', () => {
           recordingLifecycleKind: 'start',
           recordingStateEventId: 'recording:host:1700000000500:start:recording',
           capturedAtMs: 1700000000500,
-          surface: 'assessment',
+          surface: 'standard',
           roomPhase: 'connected',
           recordingStatus: 'recording',
           recordingActive: true,
@@ -578,7 +578,7 @@ describe('VideoRoom Durable Object signaling lifecycle', () => {
           recordingLifecycleKind: 'stop',
           recordingStateEventId: 'recording:host:1700000000900:stop:failed',
           capturedAtMs: 1700000000900,
-          surface: 'assessment',
+          surface: 'standard',
           roomPhase: 'connected',
           recordingStatus: 'failed',
           recordingActive: false,
@@ -650,7 +650,7 @@ describe('VideoRoom Durable Object signaling lifecycle', () => {
           recordingLifecycleKind: 'start',
           recordingStateEventId: 'recording:host:1700000000500:start:recording',
           capturedAtMs: 1700000000500,
-          surface: 'assessment',
+          surface: 'standard',
           roomPhase: 'connected',
           recordingStatus: 'recording',
           recordingActive: true,
@@ -699,7 +699,7 @@ describe('VideoRoom Durable Object signaling lifecycle', () => {
           recordingLifecycleKind: 'stop',
           recordingStateEventId: 'recording:host:1700000000900:stop:failed',
           capturedAtMs: 1700000000900,
-          surface: 'assessment',
+          surface: 'standard',
           roomPhase: 'connected',
           recordingStatus: 'failed',
           recordingActive: false,
@@ -769,7 +769,7 @@ describe('VideoRoom Durable Object signaling lifecycle', () => {
         source: 'system',
         promptEventSource: 'browser_proactive_agent_prompt',
         promptTrigger: 'recording_start_suggestion',
-        surface: 'assessment',
+        surface: 'standard',
         roomPhase: 'connected',
         workspaceStatus: 'READY',
         workspaceSessionId: 'workspace-session-1',
@@ -789,7 +789,7 @@ describe('VideoRoom Durable Object signaling lifecycle', () => {
       source: 'system',
       promptEventSource: 'browser_proactive_agent_prompt',
       promptTrigger: 'recording_start_suggestion',
-      surface: 'assessment',
+      surface: 'standard',
       roomPhase: 'connected',
       workspaceStatus: 'READY',
       workspaceSessionId: 'workspace-session-1',
@@ -840,7 +840,7 @@ describe('VideoRoom Durable Object signaling lifecycle', () => {
         createdAt: 3,
         source: 'system',
         promptTrigger: 'missing_prompt_event_source',
-        surface: 'assessment',
+        surface: 'standard',
         roomPhase: 'connected',
         agentResponseClaimed: false,
         text: 'This should not be saved as prompt evidence.',
@@ -889,7 +889,7 @@ describe('VideoRoom Durable Object signaling lifecycle', () => {
           browserQueuedBridgeMessage: true,
           bridgeDeliveryConfirmed: false,
           agent: null,
-          surface: 'assessment',
+          surface: 'standard',
           roomPhase: 'connected',
           workspaceStatus: 'READY',
           workspaceSessionId: 'workspace-session-1',
@@ -920,7 +920,7 @@ describe('VideoRoom Durable Object signaling lifecycle', () => {
           observedAt: '2026-06-27T20:00:00.000Z',
           capturedAtMs: 1782604000000,
           agentStatusEventId: 'agent-status:devin:1782604000000:agent_status:idle:none',
-          surface: 'assessment',
+          surface: 'standard',
           roomPhase: 'connected',
           workspaceStatus: 'READY',
           workspaceSessionId: 'workspace-session-1',
@@ -1009,7 +1009,7 @@ describe('VideoRoom Durable Object signaling lifecycle', () => {
           browserQueuedBridgeMessage: false,
           bridgeDeliveryConfirmed: false,
           agent: null,
-          surface: 'assessment',
+          surface: 'standard',
           roomPhase: 'connected',
           workspaceStatus: null,
           workspaceSessionId: null,
@@ -1082,7 +1082,7 @@ describe('VideoRoom Durable Object signaling lifecycle', () => {
           observedAt: '2026-06-27T20:00:00.000Z',
           capturedAtMs: 1782604100000,
           agentStatusEventId: 'agent-status:devin:1782604100000:bridge_diagnostic:auth_needed:agent_auth_check',
-          surface: 'assessment',
+          surface: 'standard',
           roomPhase: 'connected',
           workspaceStatus: 'READY',
           workspaceSessionId: 'workspace-session-1',
@@ -1232,7 +1232,7 @@ describe('VideoRoom Durable Object signaling lifecycle', () => {
           promptTimestamp: 1782603900000,
           deliveredToAgentBridge: true,
           agent: 'devin',
-          surface: 'assessment',
+          surface: 'standard',
           roomPhase: 'connected',
           workspaceStatus: 'READY',
           workspaceSessionId: 'workspace-session-1',
@@ -1283,7 +1283,7 @@ describe('VideoRoom Durable Object signaling lifecycle', () => {
           promptTimestamp: 1782603900000,
           deliveredToAgentBridge: true,
           agent: null,
-          surface: 'assessment',
+          surface: 'standard',
           roomPhase: 'connected',
           workspaceStatus: 'READY',
           workspaceSessionId: 'workspace-session-1',
@@ -1380,7 +1380,7 @@ describe('VideoRoom Durable Object signaling lifecycle', () => {
           agentActionEventId: 'agent-action:host:1782594200000:agent_prompt_ui:prompt:executed:start-recording',
           agent: 'devin',
           agentResponseClaimed: false,
-          surface: 'assessment',
+          surface: 'standard',
           roomPhase: 'connected',
           workspaceStatus: 'READY',
           workspaceSessionId: 'workspace-session-1',
@@ -1397,250 +1397,6 @@ describe('VideoRoom Durable Object signaling lifecycle', () => {
       type: 'ROOM_AGENT_INTERACTION',
     }));
     expect(storage.has('agentInteractionActivityLog')).toBe(false);
-  });
-
-  it('stores, broadcasts, and records shared room filesystem edits', async () => {
-    const host = new FakeSocket();
-    const guest = new FakeSocket();
-    const { state, storage } = makeState([
-      [host, 'HOST'],
-      [guest, 'GUEST'],
-    ]);
-    const room = new VideoRoom(state);
-
-    await room.webSocketMessage(host as unknown as WebSocket, JSON.stringify({
-      type: 'ROOM_FILE_SYSTEM_EVENT',
-      payload: {
-        id: 'fs-save-notes',
-        clientId: 'host-client',
-        createdAt: 4,
-        kind: 'UPSERT_FILE',
-        file: {
-          id: 'layout-notes',
-          name: 'notes.txt',
-          kind: 'text',
-          content: 'Candidate asked about testing strategy.',
-          mimeType: 'text/plain',
-          metadata: { app: 'notes' },
-          createdAt: 4,
-          updatedAt: 4,
-        },
-        evidence: {
-          source: 'assessment_shared_file_system',
-          fileEventSource: 'browser_client_submit',
-          fileChangeId: 'file:host:4:upsert:layout-notes',
-          actor: 'host',
-          operation: 'upsert',
-          action: 'upsert',
-          fileId: 'layout-notes',
-          fileName: 'notes.txt',
-          fileKind: 'text',
-          mimeType: 'text/plain',
-          surface: 'assessment',
-          roomPhase: 'connected',
-          capturedAtMs: 4,
-          durableObjectReplayExpected: true,
-          contentLength: 'Candidate asked about testing strategy.'.length,
-          contentHash: 'content_bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb',
-          fileCreatedAt: 4,
-          fileUpdatedAt: 4,
-        },
-      },
-    }));
-
-    expect(storage.get('roomFileSystem')).toEqual([
-      expect.objectContaining({
-        id: 'layout-notes',
-        name: 'notes.txt',
-        kind: 'text',
-        content: 'Candidate asked about testing strategy.',
-        mimeType: 'text/plain',
-        metadata: {
-          app: 'notes',
-          roomFileProjectionEvidence: expect.objectContaining({
-            source: 'assessment_shared_file_system',
-            fileEventSource: 'browser_client_submit',
-            fileChangeId: 'file:host:4:upsert:layout-notes',
-            actor: 'host',
-            operation: 'upsert',
-            action: 'upsert',
-            fileId: 'layout-notes',
-            fileName: 'notes.txt',
-            fileKind: 'text',
-            mimeType: 'text/plain',
-            surface: 'assessment',
-            roomPhase: 'connected',
-            capturedAtMs: 4,
-            durableObjectReplayExpected: true,
-            contentLength: 'Candidate asked about testing strategy.'.length,
-            contentHash: 'content_bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb',
-            fileCreatedAt: 4,
-            fileUpdatedAt: 4,
-          }),
-        },
-      }),
-    ]);
-    expect(parseSent(guest)).toContainEqual(expect.objectContaining({
-      type: 'ROOM_FILE_SYSTEM_EVENT',
-      role: 'HOST',
-      payload: expect.objectContaining({
-        kind: 'UPSERT_FILE',
-        file: expect.objectContaining({
-          id: 'layout-notes',
-          name: 'notes.txt',
-        }),
-        evidence: expect.objectContaining({
-          source: 'assessment_shared_file_system',
-          fileChangeId: 'file:host:4:upsert:layout-notes',
-        }),
-      }),
-    }));
-    expect(storage.get('fileSystemActivityLog')).toEqual([
-      expect.objectContaining({
-        role: 'HOST',
-        event: expect.objectContaining({
-          id: 'fs-save-notes',
-          kind: 'UPSERT_FILE',
-          evidence: expect.objectContaining({
-            source: 'assessment_shared_file_system',
-            fileChangeId: 'file:host:4:upsert:layout-notes',
-          }),
-        }),
-      }),
-    ]);
-
-    await room.webSocketMessage(guest as unknown as WebSocket, JSON.stringify({
-      type: 'ROOM_FILE_SYSTEM_EVENT',
-      payload: {
-        id: 'fs-delete-notes',
-        clientId: 'guest-client',
-        createdAt: 5,
-        kind: 'DELETE_FILE',
-        fileId: 'layout-notes',
-        evidence: {
-          source: 'assessment_shared_file_system',
-          fileEventSource: 'browser_client_submit',
-          fileChangeId: 'file:guest:5:delete:layout-notes',
-          actor: 'guest',
-          operation: 'delete',
-          fileId: 'layout-notes',
-          fileName: 'notes.txt',
-          fileKind: 'text',
-          surface: 'assessment',
-          roomPhase: 'connected',
-          capturedAtMs: 5,
-          durableObjectReplayExpected: true,
-        },
-      },
-    }));
-
-    expect(storage.get('roomFileSystem')).toEqual([]);
-    expect(parseSent(host)).toContainEqual(expect.objectContaining({
-      type: 'ROOM_FILE_SYSTEM_EVENT',
-      role: 'GUEST',
-      payload: expect.objectContaining({
-        kind: 'DELETE_FILE',
-        fileId: 'layout-notes',
-        file: expect.objectContaining({
-          id: 'layout-notes',
-          name: 'notes.txt',
-          content: 'Candidate asked about testing strategy.',
-        }),
-        evidence: expect.objectContaining({
-          source: 'assessment_shared_file_system',
-          fileChangeId: 'file:guest:5:delete:layout-notes',
-        }),
-      }),
-    }));
-    expect(storage.get('fileSystemActivityLog')).toEqual([
-      expect.objectContaining({
-        role: 'HOST',
-        event: expect.objectContaining({
-          id: 'fs-save-notes',
-          kind: 'UPSERT_FILE',
-        }),
-      }),
-      expect.objectContaining({
-        role: 'GUEST',
-        event: expect.objectContaining({
-          id: 'fs-delete-notes',
-          kind: 'DELETE_FILE',
-          fileId: 'layout-notes',
-          file: expect.objectContaining({
-            id: 'layout-notes',
-            name: 'notes.txt',
-            content: 'Candidate asked about testing strategy.',
-          }),
-          evidence: expect.objectContaining({
-            source: 'assessment_shared_file_system',
-            fileChangeId: 'file:guest:5:delete:layout-notes',
-          }),
-        }),
-      }),
-    ]);
-  });
-
-  it('rejects shared room filesystem edits without browser source evidence', async () => {
-    const host = new FakeSocket();
-    const guest = new FakeSocket();
-    const { state, storage } = makeState([
-      [host, 'HOST'],
-      [guest, 'GUEST'],
-    ]);
-    storage.set('roomFileSystem', [{
-      id: 'accepted-notes',
-      name: 'accepted-notes.txt',
-      kind: 'text',
-      content: 'Already accepted evidence.',
-      mimeType: 'text/plain',
-      createdAt: 5,
-      updatedAt: 5,
-      updatedBy: 'GUEST',
-    }]);
-    const room = new VideoRoom(state);
-
-    await room.webSocketMessage(host as unknown as WebSocket, JSON.stringify({
-      type: 'ROOM_FILE_SYSTEM_EVENT',
-      payload: {
-        id: 'fs-source-less-save',
-        clientId: 'host-client',
-        createdAt: 6,
-        kind: 'UPSERT_FILE',
-        file: {
-          id: 'layout-source-less-notes',
-          name: 'source-less-notes.txt',
-          kind: 'text',
-          content: 'This should not become graph evidence.',
-          mimeType: 'text/plain',
-          metadata: { app: 'notes' },
-          createdAt: 6,
-          updatedAt: 6,
-        },
-      },
-    }));
-
-    expect(parseSent(host)).toContainEqual(expect.objectContaining({
-      type: 'ROOM_FILE_SYSTEM_EVENT_REJECTED',
-      reason: 'MISSING_SOURCE_EVIDENCE',
-      payload: {
-        files: [
-          expect.objectContaining({
-            id: 'accepted-notes',
-            content: 'Already accepted evidence.',
-          }),
-        ],
-      },
-    }));
-    expect(parseSent(guest)).not.toContainEqual(expect.objectContaining({
-      type: 'ROOM_FILE_SYSTEM_EVENT',
-    }));
-    expect(storage.get('roomFileSystem')).toEqual([
-      expect.objectContaining({
-        id: 'accepted-notes',
-        content: 'Already accepted evidence.',
-      }),
-    ]);
-    expect(storage.has('fileSystemActivityLog')).toBe(false);
   });
 
   it('broadcasts and records source-backed terminal command and output events', async () => {
@@ -1670,7 +1426,7 @@ describe('VideoRoom Durable Object signaling lifecycle', () => {
           capturedAtMs: 1700000001000,
           commandFingerprint: 'terminal_dc5964d6',
           commandLength: 8,
-          surface: 'assessment',
+          surface: 'standard',
           roomPhase: 'connected',
           workspaceStatus: 'READY',
           workspaceSessionId: 'workspace-session-1',
@@ -1699,7 +1455,7 @@ describe('VideoRoom Durable Object signaling lifecycle', () => {
           capturedAtMs: 1700000002000,
           outputFingerprint: 'terminal_4f2d0d8f',
           outputLength: 21,
-          surface: 'assessment',
+          surface: 'standard',
           roomPhase: 'connected',
           workspaceStatus: 'READY',
           workspaceSessionId: 'workspace-session-1',
@@ -1816,7 +1572,7 @@ describe('VideoRoom Durable Object signaling lifecycle', () => {
           capturedAtMs: 1700000001000,
           commandFingerprint: 'terminal_dc5964d6',
           commandLength: 8,
-          surface: 'assessment',
+          surface: 'standard',
           roomPhase: 'connected',
           workspaceStatus: 'READY',
           workspaceSessionId: 'workspace-session-1',
@@ -1861,7 +1617,7 @@ describe('VideoRoom Durable Object signaling lifecycle', () => {
           editorSurface: 'code-server',
           codeServerFileChangeId: 'code-server-file:workspace-session-1:1782590500000:modified:path_cb48a478:aaaaaaaaaaaaaaaa',
           action: 'modified',
-          surface: 'assessment',
+          surface: 'standard',
           roomPhase: 'connected',
           workspaceStatus: 'READY',
           workspaceSessionId: 'workspace-session-1',
@@ -1928,7 +1684,7 @@ describe('VideoRoom Durable Object signaling lifecycle', () => {
           editorSurface: 'code-server',
           codeServerFileChangeId: 'code-server-file:workspace-session-1:1782590500000:modified:path_cb48a478:aaaaaaaaaaaaaaaa',
           action: 'modified',
-          surface: 'assessment',
+          surface: 'standard',
           roomPhase: 'connected',
           workspaceStatus: 'READY',
           workspaceSessionId: 'workspace-session-1',
@@ -2011,7 +1767,7 @@ describe('VideoRoom Durable Object signaling lifecycle', () => {
           source: 'room_chat_client_submit',
           chatEventSource: 'browser_room_chat_panel',
           actor: 'guest',
-          surface: 'assessment',
+          surface: 'standard',
           roomPhase: 'connected',
           durableObjectReplayExpected: true,
         },
@@ -2037,9 +1793,9 @@ describe('VideoRoom Durable Object signaling lifecycle', () => {
           previousEnabled: true,
           enabled: false,
           action: 'disabled',
-          surface: 'assessment',
+          surface: 'standard',
           roomPhase: 'connected',
-          controlSurface: 'assessment_video_panel',
+          controlSurface: 'standard_video_call',
           controlAction: 'toggle',
           mediaSource: 'local_media_stream',
           rawMediaStreamPersisted: false,
@@ -2067,7 +1823,7 @@ describe('VideoRoom Durable Object signaling lifecycle', () => {
           browserQueuedBridgeMessage: true,
           bridgeDeliveryConfirmed: false,
           agent: null,
-          surface: 'assessment',
+          surface: 'standard',
           roomPhase: 'connected',
           workspaceStatus: 'READY',
           workspaceSessionId: 'workspace-session-1',
@@ -2094,7 +1850,7 @@ describe('VideoRoom Durable Object signaling lifecycle', () => {
           editorSurface: 'code-server',
           codeServerFileChangeId: 'code-server-file:workspace-session-1:1782590500000:modified:path_cb48a478:aaaaaaaaaaaaaaaa',
           action: 'modified',
-          surface: 'assessment',
+          surface: 'standard',
           roomPhase: 'connected',
           workspaceStatus: 'READY',
           workspaceSessionId: 'workspace-session-1',
@@ -2127,7 +1883,7 @@ describe('VideoRoom Durable Object signaling lifecycle', () => {
           capturedAtMs: 2500,
           commandFingerprint: 'terminal_dc5964d6',
           commandLength: 8,
-          surface: 'assessment',
+          surface: 'standard',
           roomPhase: 'connected',
           workspaceStatus: 'READY',
           workspaceSessionId: 'workspace-session-1',
@@ -2136,39 +1892,6 @@ describe('VideoRoom Durable Object signaling lifecycle', () => {
         },
       },
     }));
-    await room.webSocketMessage(host as unknown as WebSocket, JSON.stringify({
-      type: 'ROOM_FILE_SYSTEM_EVENT',
-      payload: {
-        id: 'fs-notes-save',
-        clientId: 'host-client',
-        createdAt: 3000,
-        kind: 'UPSERT_FILE',
-        file: {
-          id: 'notes',
-          name: 'notes.txt',
-          kind: 'text',
-          content: 'Candidate identified retry bug evidence.',
-          mimeType: 'text/plain',
-          createdAt: 3000,
-          updatedAt: 3000,
-        },
-        evidence: {
-          source: 'assessment_shared_file_system',
-          fileEventSource: 'browser_client_submit',
-          fileChangeId: 'file:host:3000:upsert:notes',
-          actor: 'host',
-          operation: 'upsert',
-          fileId: 'notes',
-          fileName: 'notes.txt',
-          fileKind: 'text',
-          surface: 'assessment',
-          roomPhase: 'connected',
-          capturedAtMs: 3000,
-          durableObjectReplayExpected: true,
-        },
-      },
-    }));
-
     const response = await room.fetch(new Request('https://do/activity-log'));
     expect(response.status).toBe(200);
     const body = await response.json() as {
@@ -2177,7 +1900,6 @@ describe('VideoRoom Durable Object signaling lifecycle', () => {
       agentInteractionActivityLog: unknown[];
       codeServerFileActivityLog: unknown[];
       terminalActivityLog: unknown[];
-      fileSystemActivityLog: unknown[];
     };
 
     expect(body.chatActivityLog).toEqual([
@@ -2194,7 +1916,7 @@ describe('VideoRoom Durable Object signaling lifecycle', () => {
             roomMessageId: 'chat-guest-question',
             clientId: 'guest-client',
             deliveryStatus: 'accepted',
-            surface: 'assessment',
+            surface: 'standard',
             roomPhase: 'connected',
           }),
         }),
@@ -2252,19 +1974,6 @@ describe('VideoRoom Durable Object signaling lifecycle', () => {
           evidence: expect.objectContaining({
             source: 'container_terminal',
             terminalEventSource: 'browser_terminal_ws',
-          }),
-        }),
-      }),
-    ]);
-    expect(body.fileSystemActivityLog).toEqual([
-      expect.objectContaining({
-        role: 'HOST',
-        event: expect.objectContaining({
-          id: 'fs-notes-save',
-          kind: 'UPSERT_FILE',
-          evidence: expect.objectContaining({
-            source: 'assessment_shared_file_system',
-            fileChangeId: 'file:host:3000:upsert:notes',
           }),
         }),
       }),

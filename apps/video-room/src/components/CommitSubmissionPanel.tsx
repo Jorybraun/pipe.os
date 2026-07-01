@@ -66,6 +66,12 @@ function evidenceFlagLabel(value: boolean): string {
   return value ? 'Captured' : 'Missing';
 }
 
+function hasCompleteChallengePacket(progress: RoomAssessmentProgressSnapshot): boolean {
+  return progress.challengePacketContract
+    ? progress.challengePacketContract.isComplete
+    : progress.hasChallengePacket;
+}
+
 function isDirtyWorkspaceFinalizeError(message: string | null): boolean {
   return message?.toLowerCase().includes('commit or discard uncommitted workspace changes') ?? false;
 }
@@ -152,6 +158,7 @@ function ChallengeCompletionPanel({
   progress: RoomAssessmentProgressSnapshot | null;
 }): JSX.Element {
   const summary = summarizeChallengePacket(packet);
+  const hasCompletePacket = progress ? hasCompleteChallengePacket(progress) : Boolean(packet);
   const hasLocator = Boolean(summary.repositoryUrl || summary.githubPrNumber || summary.baseCommitSha);
   const hasContract = Boolean(
     summary.task
@@ -222,7 +229,7 @@ function ChallengeCompletionPanel({
 
       {progress && (
         <div className="commit-submission-completion-flags" data-testid="commit-submission-completion-flags">
-          <EvidenceStatusChip label="Challenge packet" captured={progress.hasChallengePacket} />
+          <EvidenceStatusChip label="Complete challenge packet" captured={hasCompletePacket} />
           <EvidenceStatusChip label="Work evidence" captured={progress.hasWorkEvidence} />
           <EvidenceStatusChip label="Chat evidence" captured={Boolean(progress.hasMessageEvidence)} />
           <EvidenceStatusChip label="Workspace telemetry" captured={Boolean(progress.hasDevContainerEvidence)} />
@@ -248,6 +255,7 @@ function AssessmentProgressPanel({
   const sourceRefCounts = progress.sourceRefCounts ?? [];
   const hasVerificationGap = progress.hasVerificationGap === true
     || sourceRefCounts.some((evidence) => evidence.kind === 'verification_gap' && evidence.count > 0);
+  const hasCompletePacket = hasCompleteChallengePacket(progress);
   const latestEventLabel = progress.latestEvent
     ? `${formatProgressLabel(progress.latestEvent.kind)} #${progress.latestEvent.sequence}`
     : null;
@@ -315,7 +323,7 @@ function AssessmentProgressPanel({
       </dl>
 
       <div className="commit-submission-progress-flags">
-        <span>Challenge packet: {evidenceFlagLabel(progress.hasChallengePacket)}</span>
+        <span>Complete challenge packet: {evidenceFlagLabel(hasCompletePacket)}</span>
         <span>Work evidence: {evidenceFlagLabel(progress.hasWorkEvidence)}</span>
         <span>Chat evidence: {evidenceFlagLabel(Boolean(progress.hasMessageEvidence))}</span>
         <span>Workspace telemetry: {evidenceFlagLabel(Boolean(progress.hasDevContainerEvidence))}</span>

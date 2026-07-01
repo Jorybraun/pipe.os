@@ -158,13 +158,6 @@ function unixTimestampFromActivity(primary: unknown, fallback: unknown): number 
   return Math.floor(value > 10_000_000_000 ? value / 1000 : value);
 }
 
-function compactPreview(value: unknown, maxLength = 1000): string | undefined {
-  if (typeof value !== 'string') return undefined;
-  const text = value.trim();
-  if (!text) return undefined;
-  return text.length > maxLength ? `${text.slice(0, maxLength)}...` : text;
-}
-
 function redactAgentDiagnosticText(value: string, maxLength = 8000): string | null {
   if (!value.trim()) return null;
   const redacted = value
@@ -271,24 +264,6 @@ function createSessionEvent(
   };
 }
 
-function isSourceBackedRoomFileEvidence(
-  evidence: Record<string, unknown> | null,
-  actor: SessionEvent['actor'],
-  operation: 'upsert' | 'delete',
-  fileId: string,
-): evidence is Record<string, unknown> {
-  return evidence !== null
-    && (actor === 'host' || actor === 'guest')
-    && evidence.source === 'assessment_shared_file_system'
-    && evidence.fileEventSource === 'browser_client_submit'
-    && evidence.actor === actor
-    && evidence.operation === operation
-    && evidence.fileId === fileId
-    && typeof evidence.fileChangeId === 'string'
-    && typeof evidence.capturedAtMs === 'number'
-    && Number.isFinite(evidence.capturedAtMs);
-}
-
 function hasSourceBackedWorkspaceStateEvidence(
   event: Record<string, unknown>,
   actor: SessionEvent['actor'],
@@ -382,7 +357,7 @@ function isSourceBackedChatEvidence(
     && evidence.messageLength === text.length
     && evidenceDeliveryStatus === messageDeliveryStatus
     && CHAT_DELIVERY_STATUSES.has(evidenceDeliveryStatus)
-    && (evidence.surface === 'standard' || evidence.surface === 'assessment')
+    && evidence.surface === 'standard'
     && stringOrNull(evidence.roomPhase) !== null
     && evidence.durableObjectReplayExpected === true;
 }
@@ -409,9 +384,7 @@ function isSourceBackedMediaControlEvidence(
   const action = enabled ? 'enabled' : 'disabled';
   const capturedAtMs = numberOrNull(evidence.capturedAtMs);
   const mediaControlId = stringOrNull(evidence.mediaControlId);
-  const expectedControlSurface = evidence.surface === 'assessment'
-    ? 'assessment_video_panel'
-    : 'standard_video_call';
+  const expectedControlSurface = 'standard_video_call';
   return evidence.source === 'video_room_media_controls'
     && evidence.mediaControlEventSource === 'browser_video_control_button'
     && evidence.actor === actor
@@ -420,7 +393,7 @@ function isSourceBackedMediaControlEvidence(
     && evidence.enabled === enabled
     && evidence.action === action
     && evidence.controlAction === 'toggle'
-    && (evidence.surface === 'standard' || evidence.surface === 'assessment')
+    && evidence.surface === 'standard'
     && stringOrNull(evidence.roomPhase) !== null
     && evidence.controlSurface === expectedControlSurface
     && evidence.mediaSource === 'local_media_stream'
@@ -506,7 +479,7 @@ function isSourceBackedRecordingStateEvidence(
     && recordingStateEventId !== null
     && RECORDING_STATE_EVENT_ID_RE.test(recordingStateEventId)
     && recordingStateEventId === `recording:host:${capturedAtMs}:${lifecycleKind}:${status}`
-    && (evidence.surface === 'standard' || evidence.surface === 'assessment')
+    && evidence.surface === 'standard'
     && stringOrNull(evidence.roomPhase) !== null
     && evidence.durableObjectReplayExpected === true
     && stringOrNull(evidence.iceProvider) !== null
@@ -612,7 +585,7 @@ function isSourceBackedCodeServerFileEvidence(
     && evidence.sizeBytes >= 0
     && stringOrNull(evidence.observedAt) !== null
     && evidence.bridgePersisted === false
-    && (evidence.surface === 'standard' || evidence.surface === 'assessment')
+    && evidence.surface === 'standard'
     && stringOrNull(evidence.roomPhase) !== null
     && stringOrNull(evidence.workspaceStatus) !== null
     && stringOrNull(evidence.workspaceSessionId) !== null
@@ -667,7 +640,7 @@ function isSourceBackedTerminalEvidence(
     && capturedAtMs !== null
     && Number.isInteger(capturedAtMs)
     && capturedAtMs >= 0
-    && (evidence.surface === 'standard' || evidence.surface === 'assessment')
+    && evidence.surface === 'standard'
     && stringOrNull(evidence.roomPhase) !== null
     && stringOrNull(evidence.workspaceStatus) !== null
     && stringOrNull(evidence.workspaceSessionId) !== null
@@ -780,7 +753,7 @@ function isSourceBackedAgentInteractionEvidence(
       && AGENT_PROMPT_FINGERPRINT_RE.test(promptFingerprint)
       && evidence.promptLength === text.length
       && evidence.promptId === `${workspacePart}:${actor}:prompt:${promptTimestamp}:${promptFingerprint}`
-      && (evidence.surface === 'standard' || evidence.surface === 'assessment')
+      && evidence.surface === 'standard'
       && stringOrNull(evidence.roomPhase) !== null
       && (evidence.workspaceStatus === null || evidence.workspaceStatus === undefined || stringOrNull(evidence.workspaceStatus) !== null)
       && (evidence.repoUrl === null || evidence.repoUrl === undefined || typeof evidence.repoUrl === 'string');
@@ -799,7 +772,7 @@ function isSourceBackedAgentInteractionEvidence(
       && evidence.actionCount >= 0;
     const fallbackOk = evidence.bridgePersisted === false
       && evidence.persistenceFallback === 'browser_after_bridge_persist_failed'
-      && (evidence.surface === 'standard' || evidence.surface === 'assessment')
+      && evidence.surface === 'standard'
       && stringOrNull(evidence.roomPhase) !== null
       && numberOrNull(evidence.messageTimestamp) !== null
       && evidence.agentResponseClaimed === true;
@@ -836,7 +809,7 @@ function isSourceBackedAgentInteractionEvidence(
       : null;
     const statusOk = status === null || AGENT_STATUSES.has(status);
     const browserObservationOk = evidence.agentStatusEventSource === 'browser_agent_ws'
-      && (evidence.surface === 'standard' || evidence.surface === 'assessment')
+      && evidence.surface === 'standard'
       && stringOrNull(evidence.roomPhase) !== null
       && numberOrNull(evidence.messageTimestamp) !== null
       && evidence.agentResponseClaimed === false
@@ -875,7 +848,7 @@ function isSourceBackedAgentInteractionEvidence(
     const idOk = typeof evidence.agentActionEventId === 'string'
       && AGENT_ACTION_EVENT_ID_RE.test(evidence.agentActionEventId)
       && evidence.agentActionEventId === expectedId;
-    const roomContextOk = (evidence.surface === 'standard' || evidence.surface === 'assessment')
+    const roomContextOk = evidence.surface === 'standard'
       && stringOrNull(evidence.roomPhase) !== null;
     if (source === 'agent_tray_ui' || source === 'agent_prompt_ui' || source === 'agent_chat_ui') {
       const originOk = source === 'agent_tray_ui'
@@ -998,7 +971,7 @@ function hasSourceBackedAgentPromptEvidence(
     && Number.isInteger(promptCreatedAt)
     && promptCreatedAt >= 0
     && promptTrigger !== null
-    && (surface === 'standard' || surface === 'assessment')
+    && surface === 'standard'
     && roomPhase !== null
     && prompt.agentResponseClaimed === false
     && text.length > 0;
@@ -1058,101 +1031,6 @@ function agentPromptActivityToSessionEvent(input: RoomActivitySyncInput, value: 
   });
 }
 
-async function fileSystemActivityToSessionEvent(input: RoomActivitySyncInput, value: unknown): Promise<SessionEvent | null> {
-  if (!isRecord(value) || !isRecord(value.event)) return null;
-  const event = value.event;
-  const role = isRoomActivityRole(value.role) ? value.role : null;
-  const actor = actorFromRoomRole(role);
-  const evidence = isRecord(event.evidence) ? event.evidence : null;
-  const base = roomActivityBaseProperties('file_system', role, value.recordedAt);
-  const eventId = stringOrNull(event.id);
-  const clientId = stringOrNull(event.clientId);
-
-  if (event.kind === 'UPSERT_FILE' && isRecord(event.file)) {
-    const file = event.file;
-    const fileId = stringOrNull(file.id);
-    const name = stringOrNull(file.name);
-    const fileKind = stringOrNull(file.kind);
-    if (!fileId || !name || !fileKind) return null;
-    if (!isSourceBackedRoomFileEvidence(evidence, actor, 'upsert', fileId)) return null;
-    const properties = {
-      ...base,
-      ...evidence,
-    };
-    if (eventId) properties.roomEventId = eventId;
-    if (clientId) properties.clientId = clientId;
-    properties.operation = 'upsert';
-    properties.fileId = fileId;
-    properties.fileName = name;
-    properties.fileKind = fileKind;
-    const mimeType = stringOrNull(file.mimeType);
-    if (mimeType) properties.mimeType = mimeType;
-    if (typeof file.content === 'string') {
-      properties.contentLength = file.content.length;
-      properties.contentHash = await deterministicEntityId('content', file.content);
-      const preview = compactPreview(file.content);
-      if (preview && fileKind !== 'diagram') properties.contentPreview = preview;
-      if (fileKind === 'text') properties.contentExactText = file.content;
-      if (fileKind === 'diagram') properties.contentExactJson = file.content;
-    }
-    return createSessionEvent(input, {
-      type: 'file_change',
-      timestamp: unixTimestampFromActivity(event.createdAt, value.recordedAt),
-      actor,
-      text: name,
-      properties,
-    });
-  }
-
-  if (event.kind === 'DELETE_FILE') {
-    const fileId = stringOrNull(event.fileId);
-    if (!fileId) return null;
-    if (!isSourceBackedRoomFileEvidence(evidence, actor, 'delete', fileId)) return null;
-    const properties = {
-      ...base,
-      ...evidence,
-    };
-    if (eventId) properties.roomEventId = eventId;
-    if (clientId) properties.clientId = clientId;
-    properties.operation = 'delete';
-    properties.fileId = fileId;
-    let text = fileId;
-    if (isRecord(event.file)) {
-      const file = event.file;
-      const name = stringOrNull(file.name);
-      const fileKind = stringOrNull(file.kind);
-      const mimeType = stringOrNull(file.mimeType);
-      if (name) {
-        properties.fileName = name;
-        text = name;
-      }
-      if (fileKind) properties.fileKind = fileKind;
-      if (mimeType) properties.mimeType = mimeType;
-      if (typeof file.content === 'string') {
-        properties.deletedContentLength = file.content.length;
-        properties.deletedContentHash = await deterministicEntityId('content', file.content);
-        const preview = compactPreview(file.content);
-        if (preview && fileKind !== 'diagram') properties.deletedContentPreview = preview;
-        if (fileKind === 'text') properties.deletedContentExactText = file.content;
-        if (fileKind === 'diagram') properties.deletedContentExactJson = file.content;
-      }
-      const createdAt = numberOrNull(file.createdAt);
-      const updatedAt = numberOrNull(file.updatedAt);
-      if (createdAt !== null) properties.deletedFileCreatedAt = createdAt;
-      if (updatedAt !== null) properties.deletedFileUpdatedAt = updatedAt;
-    }
-    return createSessionEvent(input, {
-      type: 'file_change',
-      timestamp: unixTimestampFromActivity(event.createdAt, value.recordedAt),
-      actor,
-      text,
-      properties,
-    });
-  }
-
-  return null;
-}
-
 export async function roomActivitySnapshotToSessionEvents(
   snapshot: unknown,
   input: RoomActivitySyncInput,
@@ -1180,7 +1058,6 @@ export async function roomActivitySnapshotToSessionEvents(
   const agentInteractionActivityLog = Array.isArray(snapshot.agentInteractionActivityLog)
     ? snapshot.agentInteractionActivityLog
     : [];
-  const fileSystemActivityLog = Array.isArray(snapshot.fileSystemActivityLog) ? snapshot.fileSystemActivityLog : [];
 
   chatActivityLog.forEach((entry) => pushMapped(chatActivityToSessionEvent(input, entry)));
   codeServerFileActivityLog.forEach((entry) => pushMapped(codeServerFileActivityToSessionEvent(input, entry)));
@@ -1189,9 +1066,6 @@ export async function roomActivitySnapshotToSessionEvents(
   recordingActivityLog.forEach((entry) => pushMapped(recordingActivityToSessionEvent(input, entry)));
   agentPromptActivityLog.forEach((entry) => pushMapped(agentPromptActivityToSessionEvent(input, entry)));
   agentInteractionActivityLog.forEach((entry) => pushMapped(agentInteractionActivityToSessionEvent(input, entry)));
-  for (const entry of fileSystemActivityLog) {
-    pushMapped(await fileSystemActivityToSessionEvent(input, entry));
-  }
 
   return events.sort((a, b) => (
     a.timestamp - b.timestamp
@@ -1605,20 +1479,6 @@ function sessionEventEntities(input: {
     });
   }
 
-  const fileId = stringProperty(properties, 'fileId');
-  if (fileId) {
-    entities.push({
-      entityType: 'room_file',
-      entityId: fileId,
-      relationship: 'affected_file',
-      metadata: {
-        fileName: stringProperty(properties, 'fileName'),
-        fileKind: stringProperty(properties, 'fileKind'),
-        operation: stringProperty(properties, 'operation'),
-      },
-    });
-  }
-
   const terminalSessionId = stringProperty(properties, 'terminalSessionId');
   if (terminalSessionId) {
     entities.push({
@@ -1699,51 +1559,6 @@ function sessionEventSourcePayload(event: SessionEvent, node: CandidateNode): Js
 }
 
 type SessionEventExactSourceRef = ContextRecordSourceInput & AssessmentEvidenceSourceRefInput;
-
-async function roomFileContentSourceRef(input: {
-  event: SessionEvent;
-  node: CandidateNode;
-  properties: JsonObject;
-}): Promise<SessionEventExactSourceRef | null> {
-  if (input.event.type !== 'file_change') return null;
-  const fileKind = stringProperty(input.properties, 'fileKind');
-  if (fileKind !== 'text' && fileKind !== 'diagram') return null;
-  const operation = stringProperty(input.properties, 'operation');
-  if (operation !== 'upsert' && operation !== 'delete') return null;
-  const exactTextKey = fileKind === 'diagram'
-    ? (operation === 'delete' ? 'deletedContentExactJson' : 'contentExactJson')
-    : (operation === 'delete' ? 'deletedContentExactText' : 'contentExactText');
-  const exactText = stringProperty(input.properties, exactTextKey);
-  if (!exactText) return null;
-  const fileId = stringProperty(input.properties, 'fileId');
-  if (!fileId) return null;
-  const fileName = stringProperty(input.properties, 'fileName');
-  const fileChangeId = stringProperty(input.properties, 'fileChangeId');
-  return {
-    sourceRefType: 'room_file_content',
-    sourceRefId: `${input.node.id}:${operation}:${fileId}`,
-    evidenceRole: operation === 'delete' ? 'deleted_file_content' : 'file_content',
-    locator: {
-      sessionId: input.event.sessionId,
-      candidateId: input.event.candidateId,
-      candidateNodeId: input.node.id,
-      fileId,
-      fileName,
-      fileChangeId,
-      operation,
-      eventType: input.event.type,
-      timestamp: input.event.timestamp,
-    },
-    exactText,
-    contentHash: await sha256Hex(exactText),
-    metadata: {
-      sourceKind: `assessment_shared_file_system.${fileKind}_content`,
-      fileKind,
-      operation,
-      exactContentKey: exactTextKey,
-    },
-  };
-}
 
 async function chatTextSourceRef(input: {
   event: SessionEvent;
@@ -2175,7 +1990,7 @@ function codeServerFileObservationIsSourceBacked(
     return properties.observedBy === 'agent_bridge'
       && codeServerFileChangeId !== null
       && CODE_SERVER_FILE_CHANGE_ID_RE.test(codeServerFileChangeId)
-      && (properties.surface === 'standard' || properties.surface === 'assessment')
+      && properties.surface === 'standard'
       && Boolean(stringProperty(properties, 'roomPhase'))
       && Boolean(stringProperty(properties, 'workspaceStatus'))
       && Boolean(stringProperty(properties, 'workspaceSessionId'))
@@ -2211,7 +2026,7 @@ function codeEditorOpenIsSourceBacked(
     && workspaceSessionId !== null
     && codeEditorOpenId === `code-editor-open:${event.actor}:${capturedAtMs}:${workspaceSessionId}`
     && workspaceStatus !== null
-    && (surface === 'standard' || surface === 'assessment')
+    && surface === 'standard'
     && roomPhase !== null
     && properties.proxyUrlPersisted === false
     && event.text === expectedText;
@@ -2527,7 +2342,6 @@ async function persistSessionEventContextRecord(
   const sourceExactText = stableJson(sessionEventSourcePayload(event, node));
   const contentHash = await deterministicEntityId('content', sourceExactText);
   const sourceSpanId = await findCandidateNodeSourceSpanId(db, node.id);
-  const roomFileContentSource = await roomFileContentSourceRef({ event, node, properties });
   const chatTextSource = await chatTextSourceRef({ event, node, properties });
   const agentActionSource = await agentActionSourceRef({ event, node, properties });
   const terminalTextSource = await terminalTextSourceRef({ event, node, properties });
@@ -2555,7 +2369,6 @@ async function persistSessionEventContextRecord(
       },
     },
   ];
-  if (roomFileContentSource) sources.push(roomFileContentSource);
   if (chatTextSource) sources.push(chatTextSource);
   if (agentActionSource) sources.push(agentActionSource);
   if (terminalTextSource) sources.push(terminalTextSource);
@@ -2750,7 +2563,6 @@ async function persistSessionEventAssessmentEvidence(
   const { actorType, actorId } = assessmentActorForSessionEvent(event);
   const narrative = formatEventNarrative(event);
   const sourceExactText = stableJson(sessionEventSourcePayload(event, node));
-  const roomFileContentSource = await roomFileContentSourceRef({ event, node, properties });
   const chatTextSource = await chatTextSourceRef({ event, node, properties });
   const agentActionSource = await agentActionSourceRef({ event, node, properties });
   const terminalTextSource = await terminalTextSourceRef({ event, node, properties });
@@ -2777,7 +2589,6 @@ async function persistSessionEventAssessmentEvidence(
         sourceReference: node.source_reference ?? null,
       },
     },
-    ...(roomFileContentSource ? [roomFileContentSource] : []),
     ...(chatTextSource ? [chatTextSource] : []),
     ...(agentActionSource ? [agentActionSource] : []),
     ...(terminalTextSource ? [terminalTextSource] : []),

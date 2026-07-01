@@ -49,6 +49,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - Removed obsolete assessment-panel coordinate and ordering state from the video-room app.
 - Collapsed video-room evidence capture to a single standard room surface, removing the stale alternate assessment-surface replay path.
 - Current room evidence is limited to the core assessment surfaces: video, chat, workspace, terminal, code-server/file events, recording, transcription, commit submissions, and the real AI assistant bridge.
+- Removed the legacy shared room file-system evidence path so CODE_REVIEW proof depends on workspace, terminal, code-server, chat, recording, transcript, commit, and AI-bridge sources instead of stale layout files.
 - Scrubbed current room vocabulary, QA labels, planning docs, contract notes, smoke scripts, and evidence fixtures so product language stays anchored to open-source repo-task assessment.
 - Replaced branded room-assistant chrome with a plain source-backed AI assistant bridge panel and kept candidate/recruiter room flows on the standard assessment layout.
 - Removed the remaining fake external-browser label from assessment browser evidence fixtures and historical notes, replacing it with neutral Assessment Browser language.
@@ -795,7 +796,6 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - Room chat, Agent user messages, and real agent stdout replies now preserve direct exact-text source refs in living-context and assessment evidence, so chat turns can be cited without unpacking the broader room event packet.
 - Code-server file saves/deletes now preserve direct `code_server_file_observation` source refs in living-context and assessment evidence, keeping observed path/action/hash/size/preview/workspace provenance citeable without pretending the full file body was captured.
 - Container terminal commands and output chunks now preserve direct `terminal_command` / `terminal_output` exact-text source refs in living-context and assessment evidence, so terminal activity can be cited without unpacking the broader room event packet.
-- Historical diagram saves/deletes preserved exact canvas JSON as `room_file_content` source refs in both living-context and assessment evidence, without adding raw preview fields, so diagram activity was citeable from immutable source evidence instead of only a content hash.
 - Room chat evidence now fails closed unless Durable Object messages and replayed room activity carry browser chat source, stable message identity, actor, delivery status, surface, room phase, and exact message length, preventing forged chat claims from entering meeting-session evidence.
 - Code-server file-change evidence now fails closed unless bridge metadata includes a real workspace session, observed timestamp, SHA-256 content hash, and size, preventing browser-only events that room replay would reject.
 - Agent workspace file-change observations now require code-server bridge source, observed timestamp, SHA-256 content hash, file size, and persistence state before rendering a workspace suggestion, preventing source-less agent messages from implying a real edit.

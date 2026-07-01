@@ -110,13 +110,12 @@ const MAX_WORKSPACE_INIT_DIAGNOSTIC_CHARS = 1_000;
 const WORKSPACE_INTERVIEW_TYPES = new Set(['DEV_CONTAINER_CHALLENGE', 'OPEN_SOURCE_BUG_FIX']);
 const WORKSPACE_TERMINAL_STATUSES = new Set(['ERROR', 'STOPPED', 'EXPIRED']);
 const WORKSPACE_PROXY_ALLOWED_STATUS: ReadonlySet<string> = new Set(['READY', 'SLEEPING']);
-const LIVING_CONTENT_HASH_RE = /^content_[a-f0-9]{32}$/;
 const SHA256_HEX_RE = /^[a-f0-9]{64}$/;
 const TERMINAL_FINGERPRINT_RE = /^terminal_[a-f0-9]{8}$/;
 const TERMINAL_COMMAND_ID_RE = /^.+:command:(host|guest):\d+:\d+:terminal_[a-f0-9]{8}$/;
 const AGENT_PROMPT_FINGERPRINT_RE = /^agent_[a-f0-9]{8}$/;
 const BROWSER_PROMPT_ID_RE = /^[a-zA-Z0-9:_-]+:(host|guest):prompt:\d+:agent_[a-f0-9]{8}$/;
-const ROOM_SURFACES = new Set(['standard', 'assessment']);
+const ROOM_SURFACES = new Set(['standard']);
 const CHAT_DELIVERY_STATUSES = new Set(['pending', 'accepted', 'rejected']);
 const AGENT_UI_SOURCES = new Set(['agent_tray_ui', 'agent_prompt_ui', 'agent_chat_ui']);
 const AGENT_UI_EXECUTION_STATUSES = new Set(['opened', 'closed', 'dismissed', 'executed']);
@@ -131,7 +130,6 @@ const WORKSPACE_STATE_SOURCES = new Set(['initial_load', 'launch', 'refresh', 'e
 const MEDIA_CONTROL_ID_RE = /^media:(host|guest):(microphone|camera):\d+:(enabled|disabled)$/;
 const CODE_SERVER_SAVE_ACTIONS = new Set(['created', 'modified']);
 const WORKSPACE_STATE_EVENT_ID_RE = /^workspace-state:(host|guest):\d+:(initial_load|launch|refresh|error):[^:]+:.+$/;
-const FILE_CHANGE_ID_RE = /^file:(host|guest):\d+:(upsert|delete):[^:]+$/;
 const CODE_EDITOR_OPEN_ID_RE = /^code-editor-open:(host|guest):\d+:.+$/;
 
 function safeEvidenceIdPart(value: unknown): string {
@@ -225,46 +223,6 @@ const sessionEventSchema = z.object({
     return;
   }
   if (event.type === 'file_change') {
-    if (properties.source === 'assessment_shared_file_system') {
-      const operation = properties.operation;
-      const operationOk = operation === 'upsert' || operation === 'delete';
-      const capturedAtMs = properties.capturedAtMs;
-      const capturedAtOk = typeof capturedAtMs === 'number'
-        && Number.isInteger(capturedAtMs)
-        && capturedAtMs >= 0;
-      const actorOk = (event.actor === 'host' || event.actor === 'guest')
-        && propertyActorMatches;
-      const fileChangeIdOk = typeof properties.fileChangeId === 'string'
-        && FILE_CHANGE_ID_RE.test(properties.fileChangeId)
-        && operationOk
-        && capturedAtOk
-        && hasString(properties.fileId)
-        && properties.fileChangeId === `file:${event.actor}:${capturedAtMs}:${operation}:${properties.fileId}`;
-      const sharedOk = properties.fileEventSource === 'browser_client_submit'
-        && hasString(properties.fileId)
-        && hasString(properties.fileName)
-        && hasString(properties.fileKind)
-        && properties.surface === 'assessment'
-        && hasString(properties.roomPhase)
-        && typeof properties.durableObjectReplayExpected === 'boolean';
-      const upsertOk = operation === 'upsert'
-        && typeof properties.contentHash === 'string'
-        && LIVING_CONTENT_HASH_RE.test(properties.contentHash)
-        && hasFiniteNonNegativeNumber(properties.contentLength)
-        && hasFiniteNonNegativeNumber(properties.fileUpdatedAt);
-      const deleteOk = operation === 'delete'
-        && typeof properties.deletedContentHash === 'string'
-        && LIVING_CONTENT_HASH_RE.test(properties.deletedContentHash)
-        && hasFiniteNonNegativeNumber(properties.deletedContentLength)
-        && hasFiniteNonNegativeNumber(properties.deletedFileUpdatedAt);
-      if (actorOk && fileChangeIdOk && sharedOk && (upsertOk || deleteOk)) return;
-      ctx.addIssue({
-        code: z.ZodIssueCode.custom,
-        message: 'legacy layout file-change evidence must include browser source, actor-bound file-change id, capture timestamp, file identity, operation, content hash, and file timestamps.',
-        path: ['properties'],
-      });
-      return;
-    }
     if (properties.source === 'code_server_workspace') {
       const observedBy = properties.observedBy;
       const observedByOk = observedBy === 'agent_bridge';
@@ -726,9 +684,7 @@ const sessionEventSchema = z.object({
       && properties.previousEnabled !== properties.enabled;
     const expectedAction = properties.enabled === true ? 'enabled' : 'disabled';
     const actionOk = properties.action === expectedAction && properties.controlAction === 'toggle';
-    const expectedControlSurface = properties.surface === 'assessment'
-      ? 'assessment_video_panel'
-      : 'standard_video_call';
+    const expectedControlSurface = 'standard_video_call';
     const contextOk = hasRoomSurface(properties.surface)
       && hasString(properties.roomPhase)
       && properties.controlSurface === expectedControlSurface;

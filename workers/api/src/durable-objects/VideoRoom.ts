@@ -24,7 +24,7 @@ import type { DurableObjectState } from '@cloudflare/workers-types';
 type VideoRole = 'RECRUITER' | 'CANDIDATE' | 'HOST' | 'GUEST';
 type SessionStatus = 'WAITING' | 'CALLING' | 'ACTIVE' | 'ENDED';
 type SignalStatus = SessionStatus | 'LEFT';
-type RoomSurface = 'standard' | 'assessment';
+type RoomSurface = 'standard';
 const TERMINAL_FINGERPRINT_RE = /^terminal_[0-9a-f]{8}$/;
 const TERMINAL_COMMAND_ID_RE = /^.+:command:(host|guest):\d+:\d+:terminal_[0-9a-f]{8}$/;
 const ROOM_CHAT_MESSAGE_FINGERPRINT_RE = /^chat_[0-9a-f]{8}$/;
@@ -58,28 +58,6 @@ const RECORDING_FAILURE_SOURCES = new Set([
 const MAX_RECORDING_FAILURE_MESSAGE_LENGTH = 240;
 const FNV_32_OFFSET = 0x811c9dc5;
 const FNV_32_PRIME = 0x01000193;
-const ROOM_FILE_PROJECTION_EVIDENCE_METADATA_KEY = 'roomFileProjectionEvidence';
-const ROOM_FILE_PROJECTION_EVIDENCE_KEYS = [
-  'source',
-  'fileEventSource',
-  'fileChangeId',
-  'actor',
-  'operation',
-  'action',
-  'fileId',
-  'fileName',
-  'fileKind',
-  'mimeType',
-  'path',
-  'surface',
-  'roomPhase',
-  'capturedAtMs',
-  'durableObjectReplayExpected',
-  'contentLength',
-  'contentHash',
-  'fileCreatedAt',
-  'fileUpdatedAt',
-] as const;
 const WORKSPACE_REDACTED_SECRET = '[REDACTED_SECRET]';
 const WORKSPACE_BARE_SECRET_RE = /\b(?:cog|ghp|gho|ghu|ghs|ghr|devin)_[A-Za-z0-9_-]{20,}\b/g;
 const WORKSPACE_GITHUB_PAT_RE = /\bgithub_pat_[A-Za-z0-9_]{20,}\b/g;
@@ -102,8 +80,7 @@ interface SignalMessage {
     | 'ROOM_MEDIA_CONTROL'
     | 'ROOM_RECORDING_STATE'
     | 'ROOM_CODE_SERVER_FILE_EVENT'
-    | 'ROOM_TERMINAL_EVENT'
-    | 'ROOM_FILE_SYSTEM_EVENT';
+    | 'ROOM_TERMINAL_EVENT';
   role?: VideoRole;
   status?: SignalStatus;
   payload?: unknown;
@@ -313,45 +290,6 @@ interface RoomTerminalActivityEntry {
   recordedAt: number;
 }
 
-type RoomFileKind = 'text' | 'diagram' | 'json' | 'link';
-
-interface RoomFile {
-  id: string;
-  name: string;
-  kind: RoomFileKind;
-  content: string;
-  mimeType?: string;
-  metadata?: Record<string, unknown>;
-  createdAt: number;
-  updatedAt: number;
-  updatedBy?: VideoRole;
-}
-
-type RoomFileSystemEvent =
-  | {
-      id: string;
-      clientId: string;
-      createdAt: number;
-      kind: 'UPSERT_FILE';
-      file: RoomFile;
-      evidence?: Record<string, unknown>;
-    }
-  | {
-      id: string;
-      clientId: string;
-      createdAt: number;
-      kind: 'DELETE_FILE';
-      fileId: string;
-      file?: RoomFile;
-      evidence?: Record<string, unknown>;
-    };
-
-interface RoomFileSystemActivityEntry {
-  event: RoomFileSystemEvent;
-  role: VideoRole;
-  recordedAt: number;
-}
-
 interface VideoRoomMetadata {
   stageId?: string;
   candidateId?: string;
@@ -422,7 +360,7 @@ export class VideoRoom {
   }
 
   private isRoomSurface(value: unknown): value is RoomSurface {
-    return value === 'standard' || value === 'assessment';
+    return value === 'standard';
   }
 
   private isRoomAgentPromptSource(value: unknown): value is RoomAgentPromptSource {
@@ -508,7 +446,7 @@ export class VideoRoom {
       && prompt.createdAt >= 0
       && typeof prompt.promptTrigger === 'string'
       && prompt.promptTrigger.length > 0
-      && (prompt.surface === 'standard' || prompt.surface === 'assessment')
+      && prompt.surface === 'standard'
       && typeof prompt.roomPhase === 'string'
       && prompt.roomPhase.length > 0
       && prompt.agentResponseClaimed === false;
@@ -630,7 +568,7 @@ export class VideoRoom {
         && AGENT_PROMPT_FINGERPRINT_RE.test(promptFingerprint)
         && evidence.promptLength === event.text.length
         && evidence.promptId === `${workspacePart}:${event.actor}:prompt:${promptTimestamp}:${promptFingerprint}`
-        && (evidence.surface === 'standard' || evidence.surface === 'assessment')
+        && evidence.surface === 'standard'
         && typeof evidence.roomPhase === 'string'
         && (evidence.workspaceStatus === null || typeof evidence.workspaceStatus === 'string')
         && (evidence.repoUrl === null || typeof evidence.repoUrl === 'string');
@@ -651,7 +589,7 @@ export class VideoRoom {
         && evidence.actionCount >= 0;
       const fallbackOk = evidence.bridgePersisted === false
         && evidence.persistenceFallback === 'browser_after_bridge_persist_failed'
-        && (evidence.surface === 'standard' || evidence.surface === 'assessment')
+        && evidence.surface === 'standard'
         && typeof evidence.roomPhase === 'string'
         && typeof evidence.messageTimestamp === 'number'
         && Number.isFinite(evidence.messageTimestamp)
@@ -693,7 +631,7 @@ export class VideoRoom {
         : null;
       const statusOk = status === null || AGENT_STATUSES.has(status);
       const browserObservationOk = evidence.agentStatusEventSource === 'browser_agent_ws'
-        && (evidence.surface === 'standard' || evidence.surface === 'assessment')
+        && evidence.surface === 'standard'
         && typeof evidence.roomPhase === 'string'
         && typeof evidence.messageTimestamp === 'number'
         && Number.isFinite(evidence.messageTimestamp)
@@ -735,7 +673,7 @@ export class VideoRoom {
       const idOk = typeof evidence.agentActionEventId === 'string'
         && AGENT_ACTION_EVENT_ID_RE.test(evidence.agentActionEventId)
         && evidence.agentActionEventId === expectedId;
-      const surfaceOk = evidence.surface === 'standard' || evidence.surface === 'assessment';
+      const surfaceOk = evidence.surface === 'standard';
       const roomContextOk = surfaceOk && typeof evidence.roomPhase === 'string';
       if (source === 'agent_tray_ui' || source === 'agent_prompt_ui' || source === 'agent_chat_ui') {
         const originOk = source === 'agent_tray_ui'
@@ -851,7 +789,7 @@ export class VideoRoom {
     const source = this.safeTextOrNull(value.source, 80);
     const chatEventSource = this.safeTextOrNull(value.chatEventSource, 120);
     const actor = value.actor === 'host' || value.actor === 'guest' ? value.actor : undefined;
-    const surface = value.surface === 'standard' || value.surface === 'assessment' ? value.surface : undefined;
+    const surface = value.surface === 'standard' ? value.surface : undefined;
     const roomPhase = this.safeTextOrNull(value.roomPhase, 80);
     const deliveryStatus = this.parseChatDeliveryStatus(value.deliveryStatus);
     const roomMessageId = this.safeTextOrNull(value.roomMessageId, 120);
@@ -974,9 +912,7 @@ export class VideoRoom {
     if (!this.isRecord(evidence)) return false;
     const actor = this.isHostRole(role) ? 'host' : 'guest';
     const action = event.enabled ? 'enabled' : 'disabled';
-    const controlSurface = evidence.surface === 'assessment'
-      ? 'assessment_video_panel'
-      : 'standard_video_call';
+    const controlSurface = 'standard_video_call';
     return event.role === role
       && evidence.source === 'video_room_media_controls'
       && evidence.mediaControlEventSource === 'browser_video_control_button'
@@ -986,7 +922,7 @@ export class VideoRoom {
       && evidence.enabled === event.enabled
       && evidence.action === action
       && evidence.controlAction === 'toggle'
-      && (evidence.surface === 'standard' || evidence.surface === 'assessment')
+      && evidence.surface === 'standard'
       && typeof evidence.roomPhase === 'string'
       && evidence.roomPhase.length > 0
       && evidence.controlSurface === controlSurface
@@ -1153,7 +1089,7 @@ export class VideoRoom {
       && RECORDING_STATE_EVENT_ID_RE.test(recordingStateEventId)
       && event.id === recordingStateEventId
       && recordingStateEventId === `recording:host:${capturedAtMs}:${event.lifecycleKind}:${event.status}`
-      && (evidence.surface === 'standard' || evidence.surface === 'assessment')
+      && evidence.surface === 'standard'
       && typeof evidence.roomPhase === 'string'
       && evidence.roomPhase.length > 0
       && evidence.durableObjectReplayExpected === true
@@ -1358,7 +1294,7 @@ export class VideoRoom {
       && typeof evidence.observedAt === 'string'
       && evidence.observedAt.trim().length > 0
       && evidence.bridgePersisted === false
-      && (evidence.surface === 'standard' || evidence.surface === 'assessment')
+      && evidence.surface === 'standard'
       && typeof evidence.roomPhase === 'string'
       && typeof evidence.workspaceStatus === 'string'
       && typeof evidence.workspaceSessionId === 'string'
@@ -1500,7 +1436,7 @@ export class VideoRoom {
       && terminalSessionId !== null
       && capturedAtMs !== null
       && capturedAtMs >= 0
-      && (evidence.surface === 'standard' || evidence.surface === 'assessment')
+      && evidence.surface === 'standard'
       && typeof evidence.roomPhase === 'string'
       && typeof evidence.workspaceStatus === 'string'
       && typeof evidence.workspaceSessionId === 'string'
@@ -1566,10 +1502,6 @@ export class VideoRoom {
       .filter((entry): entry is RoomTerminalActivityEntry => entry !== null);
   }
 
-  private isRoomFileKind(value: unknown): value is RoomFileKind {
-    return value === 'text' || value === 'diagram' || value === 'json' || value === 'link';
-  }
-
   private isSafeFileText(value: unknown, maxLength: number): value is string {
     return typeof value === 'string' && value.length > 0 && value.length <= maxLength;
   }
@@ -1602,143 +1534,6 @@ export class VideoRoom {
 
   private safeBoolean(value: unknown): boolean | undefined {
     return typeof value === 'boolean' ? value : undefined;
-  }
-
-  private parseRoomFile(value: unknown): RoomFile | null {
-    if (!this.isRecord(value)) return null;
-    if (
-      !this.isSafeFileText(value.id, 120)
-      || !this.isSafeFileText(value.name, 160)
-      || !this.isRoomFileKind(value.kind)
-      || typeof value.content !== 'string'
-      || value.content.length > 512_000
-      || typeof value.createdAt !== 'number'
-      || typeof value.updatedAt !== 'number'
-      || !Number.isFinite(value.createdAt)
-      || !Number.isFinite(value.updatedAt)
-    ) {
-      return null;
-    }
-    const metadata = this.isRecord(value.metadata) ? value.metadata : undefined;
-    if (metadata) {
-      try {
-        if (JSON.stringify(metadata).length > 8192) return null;
-      } catch {
-        return null;
-      }
-    }
-    return {
-      id: value.id,
-      name: value.name,
-      kind: value.kind,
-      content: value.content,
-      mimeType: this.isSafeFileText(value.mimeType, 160) ? value.mimeType : undefined,
-      metadata,
-      createdAt: value.createdAt,
-      updatedAt: value.updatedAt,
-      updatedBy: this.isVideoRole(value.updatedBy) ? value.updatedBy : undefined,
-    };
-  }
-
-  private parseFileSystemEvent(value: unknown): RoomFileSystemEvent | null {
-    if (!this.isRecord(value)) return null;
-    if (
-      !this.isSafeFileText(value.id, 120)
-      || !this.isSafeFileText(value.clientId, 120)
-      || typeof value.createdAt !== 'number'
-      || !Number.isFinite(value.createdAt)
-    ) {
-      return null;
-    }
-    if (value.kind === 'UPSERT_FILE') {
-      const file = this.parseRoomFile(value.file);
-      if (!file) return null;
-      return {
-        id: value.id,
-        clientId: value.clientId,
-        createdAt: value.createdAt,
-        kind: 'UPSERT_FILE',
-        file,
-        evidence: this.isRecord(value.evidence) ? value.evidence : undefined,
-      };
-    }
-    if (value.kind === 'DELETE_FILE' && this.isSafeFileText(value.fileId, 120)) {
-      const file = this.parseRoomFile(value.file);
-      return {
-        id: value.id,
-        clientId: value.clientId,
-        createdAt: value.createdAt,
-        kind: 'DELETE_FILE',
-        fileId: value.fileId,
-        file: file ?? undefined,
-        evidence: this.isRecord(value.evidence) ? value.evidence : undefined,
-      };
-    }
-    return null;
-  }
-
-  private parseRoomFiles(value: unknown): RoomFile[] {
-    if (!Array.isArray(value)) return [];
-    return value
-      .map((entry) => this.parseRoomFile(entry))
-      .filter((entry): entry is RoomFile => entry !== null);
-  }
-
-  private async getRoomFileSystem(): Promise<RoomFile[]> {
-    return this.parseRoomFiles(await this.state.storage.get<unknown>('roomFileSystem'));
-  }
-
-  private async enrichFileSystemEvent(event: RoomFileSystemEvent): Promise<RoomFileSystemEvent> {
-    if (event.kind !== 'DELETE_FILE') return event;
-    const files = await this.getRoomFileSystem();
-    const deletedFile = files.find((file) => file.id === event.fileId);
-    if (!deletedFile) {
-      return {
-        ...event,
-        file: undefined,
-      };
-    }
-    return { ...event, file: deletedFile };
-  }
-
-  private hasSourceBackedFileEvidence(event: RoomFileSystemEvent, role: VideoRole): boolean {
-    const evidence = event.evidence;
-    if (!this.isRecord(evidence)) return false;
-    const actor = this.isHostRole(role) ? 'host' : 'guest';
-    const operation = event.kind === 'DELETE_FILE' ? 'delete' : 'upsert';
-    const fileId = event.kind === 'DELETE_FILE' ? event.fileId : event.file.id;
-    return evidence.source === 'assessment_shared_file_system'
-      && evidence.fileEventSource === 'browser_client_submit'
-      && evidence.actor === actor
-      && evidence.operation === operation
-      && evidence.fileId === fileId
-      && typeof evidence.fileChangeId === 'string'
-      && typeof evidence.capturedAtMs === 'number'
-      && Number.isFinite(evidence.capturedAtMs)
-      && evidence.surface === 'assessment'
-      && typeof evidence.roomPhase === 'string'
-      && evidence.durableObjectReplayExpected === true;
-  }
-
-  private parseFileSystemActivityEntry(value: unknown): RoomFileSystemActivityEntry | null {
-    if (!this.isRecord(value)) return null;
-    const event = this.parseFileSystemEvent(value.event);
-    if (
-      event === null
-      || !this.isVideoRole(value.role)
-      || typeof value.recordedAt !== 'number'
-      || !Number.isFinite(value.recordedAt)
-    ) {
-      return null;
-    }
-    return { event, role: value.role, recordedAt: value.recordedAt };
-  }
-
-  private parseFileSystemActivityLog(value: unknown): RoomFileSystemActivityEntry[] {
-    if (!Array.isArray(value)) return [];
-    return value
-      .map((entry) => this.parseFileSystemActivityEntry(entry))
-      .filter((entry): entry is RoomFileSystemActivityEntry => entry !== null);
   }
 
   private async persistAgentPrompt(prompt: RoomAgentPrompt): Promise<void> {
@@ -1809,70 +1604,6 @@ export class VideoRoom {
       { event, role, recordedAt: Date.now() },
     ];
     await this.state.storage.put('terminalActivityLog', next);
-  }
-
-  private roomFileProjectionEvidenceFromEvent(event: RoomFileSystemEvent): Record<string, unknown> | undefined {
-    const evidence = event.evidence;
-    if (event.kind !== 'UPSERT_FILE' || !this.isRecord(evidence)) return undefined;
-    const projection: Record<string, unknown> = {};
-    for (const key of ROOM_FILE_PROJECTION_EVIDENCE_KEYS) {
-      if (evidence[key] !== undefined) {
-        projection[key] = evidence[key];
-      }
-    }
-    return projection;
-  }
-
-  private roomFileWithProjectionEvidence(file: RoomFile, event: RoomFileSystemEvent): RoomFile {
-    const evidence = this.roomFileProjectionEvidenceFromEvent(event);
-    if (!evidence) return file;
-    return {
-      ...file,
-      metadata: {
-        ...(file.metadata ?? {}),
-        [ROOM_FILE_PROJECTION_EVIDENCE_METADATA_KEY]: evidence,
-      },
-    };
-  }
-
-  private async persistFileSystemEvent(event: RoomFileSystemEvent, role: VideoRole): Promise<RoomFile[]> {
-    const files = await this.getRoomFileSystem();
-    if (event.kind === 'DELETE_FILE') {
-      const nextFiles = files.filter((file) => file.id !== event.fileId);
-      await this.state.storage.put('roomFileSystem', nextFiles);
-      return nextFiles;
-    }
-    const nextFile = this.roomFileWithProjectionEvidence({
-      ...event.file,
-      updatedBy: role,
-    }, event);
-    const nextFiles = [
-      ...files.filter((file) => file.id !== event.file.id),
-      nextFile,
-    ];
-    await this.state.storage.put('roomFileSystem', nextFiles);
-    return nextFiles;
-  }
-
-  private async recordFileSystemActivity(event: RoomFileSystemEvent, role: VideoRole): Promise<void> {
-    const previous = this.parseFileSystemActivityLog(
-      await this.state.storage.get<unknown>('fileSystemActivityLog'),
-    );
-    const next = [
-      ...previous.slice(-249),
-      { event, role, recordedAt: Date.now() },
-    ];
-    await this.state.storage.put('fileSystemActivityLog', next);
-  }
-
-  private async sendFileSystemEventRejected(ws: WebSocket, reason: string): Promise<void> {
-    ws.send(JSON.stringify({
-      type: 'ROOM_FILE_SYSTEM_EVENT_REJECTED',
-      reason,
-      payload: {
-        files: await this.getRoomFileSystem(),
-      },
-    }));
   }
 
   /** Get all active WebSockets */
@@ -2027,9 +1758,6 @@ export class VideoRoom {
         recordingActivityLog: this.parseRecordingActivityLog(
           await this.state.storage.get<unknown>('recordingActivityLog'),
         ),
-        fileSystemActivityLog: this.parseFileSystemActivityLog(
-          await this.state.storage.get<unknown>('fileSystemActivityLog'),
-        ),
       }), {
         headers: { 'Content-Type': 'application/json' },
       });
@@ -2090,12 +1818,6 @@ export class VideoRoom {
       server.send(JSON.stringify({
         type: 'ROOM_RECORDING_STATE_SNAPSHOT',
         payload: { state: recordingState },
-      }));
-
-      const roomFileSystem = await this.getRoomFileSystem();
-      server.send(JSON.stringify({
-        type: 'ROOM_FILE_SYSTEM_STATE',
-        payload: { files: roomFileSystem },
       }));
 
       // Notify other peers that this role has connected
@@ -2474,31 +2196,6 @@ export class VideoRoom {
         type: 'ROOM_TERMINAL_EVENT',
         role: senderRole,
         payload: terminalEvent,
-      }));
-      return;
-    }
-
-    if (message.type === 'ROOM_FILE_SYSTEM_EVENT') {
-      if (this.sessionStatus === 'ENDED') {
-        await this.sendFileSystemEventRejected(ws, 'ROOM_ENDED');
-        return;
-      }
-      const event = this.parseFileSystemEvent(message.payload);
-      if (!event) {
-        await this.sendFileSystemEventRejected(ws, 'INVALID_EVENT');
-        return;
-      }
-      if (!this.hasSourceBackedFileEvidence(event, senderRole)) {
-        await this.sendFileSystemEventRejected(ws, 'MISSING_SOURCE_EVIDENCE');
-        return;
-      }
-      const enrichedEvent = await this.enrichFileSystemEvent(event);
-      await this.persistFileSystemEvent(enrichedEvent, senderRole);
-      await this.recordFileSystemActivity(enrichedEvent, senderRole);
-      this.broadcastExcept(ws, JSON.stringify({
-        type: 'ROOM_FILE_SYSTEM_EVENT',
-        role: senderRole,
-        payload: enrichedEvent,
       }));
       return;
     }
