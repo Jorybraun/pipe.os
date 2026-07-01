@@ -3127,6 +3127,7 @@ export default function InterviewDetailPage(): JSX.Element {
           matchHyperedges.length,
           codeReviewMatch?.roleSources.length ?? 0,
         ),
+        sourceProofSummary: codeReviewSourceProofSummary,
         proofItems: selectedCodeReviewProofItems,
         basisItems: codeReviewSignalBasis.map((item) => ({
           label: item.label,

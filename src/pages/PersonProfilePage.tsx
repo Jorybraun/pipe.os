@@ -135,6 +135,7 @@ interface CodeReviewDecisionProjection {
   strengths: string[];
   probes: string[];
   proofCount: number;
+  sourceProofSummary?: string | null;
   proofItems: CodeReviewProofItem[];
   basisItems: CodeReviewBasisItem[];
 }
@@ -1033,6 +1034,47 @@ function sourceProofText(source: LivingContextRecordSourceRef): string | null {
   return 'Source reference preserved';
 }
 
+function uniqueTextParts(parts: Array<string | null | undefined>): string[] {
+  return [...new Set(parts.filter((part): part is string => Boolean(part)))];
+}
+
+function codeReviewDecisionSourceProofSummary(decision: CodeReviewDecisionProjection): string {
+  if (decision.sourceProofSummary?.trim()) {
+    return decision.sourceProofSummary.trim();
+  }
+
+  const proofText = decision.proofItems
+    .map((item) => `${item.label} ${item.text ?? ''}`.toLowerCase())
+    .join(' ');
+  const hasSourceBackedMatch = decision.basisItems.some((item) =>
+    item.satisfied
+      && item.label.toLowerCase().includes('match')
+      && /source-backed|candidate|repo/i.test(item.value),
+  );
+  const hasRepoProof = Boolean(
+    decision.challengeLabel
+      || /repo|pr #|challenge|assignment|match proof/.test(proofText),
+  );
+  const hasScoringProof = Boolean(
+    decision.scoreProvenanceLabel
+      || /score|rubric|metric/.test(proofText),
+  );
+  const hasOpenGaps = decision.missingContext.length > 0
+    || /missing|gap|calibration|probe|uncertainty/.test(proofText);
+
+  const parts = uniqueTextParts([
+    hasSourceBackedMatch ? 'candidate-repo match proof' : null,
+    hasRepoProof ? 'repo evidence' : null,
+    hasScoringProof ? 'scoring provenance' : null,
+    hasOpenGaps && !hasSourceBackedMatch ? 'open gaps' : null,
+  ]);
+
+  if (parts.length === 0) return 'proof provenance';
+  if (parts.length === 1) return parts[0]!;
+  if (parts.length === 2) return `${parts[0]} and ${parts[1]}`;
+  return `${parts.slice(0, -1).join(', ')}, and ${parts[parts.length - 1]}`;
+}
+
 function deriveCodeReviewDecision(
   livingContext: LivingContextReadModel | null,
 ): CodeReviewDecisionProjection | null {
@@ -1142,6 +1184,7 @@ function deriveCodeReviewDecision(
     strengths: score?.strengths ?? [],
     probes,
     proofCount: proofItems.length,
+    sourceProofSummary: null,
     proofItems,
     basisItems,
   };
@@ -1609,6 +1652,7 @@ function ProfileDecisionCockpit({
 }
 
 function CodeReviewDecisionCard({ decision }: { decision: CodeReviewDecisionProjection }): JSX.Element {
+  const sourceProofSummary = codeReviewDecisionSourceProofSummary(decision);
   const signalSummary = [
     decision.scoreLabel,
     decision.challengeLabel,
@@ -1756,7 +1800,7 @@ function CodeReviewDecisionCard({ decision }: { decision: CodeReviewDecisionProj
       <details data-testid="person-code-review-source-proof" style={DECISION_PROOF}>
         <summary style={DECISION_PROOF_SUMMARY}>
           <span>Source proof</span>
-          <span style={DECISION_PROOF_HINT}>candidate, repo, and scoring provenance</span>
+          <span style={DECISION_PROOF_HINT}>{sourceProofSummary}</span>
         </summary>
         <div style={DECISION_PROOF_LIST}>
           {decision.proofItems.map((item) => (

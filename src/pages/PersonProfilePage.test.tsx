@@ -610,6 +610,35 @@ function makeSelectedCodeReviewDecision(): unknown {
   };
 }
 
+function makeSelectedManualCodeReviewDecision(): unknown {
+  return {
+    ...(makeSelectedCodeReviewDecision() as Record<string, unknown>),
+    recommendation: 'Schedule targeted follow-up',
+    recommendationDetail: 'Use the weak review as a technical signal, then calibrate whether the gap was ability, context, or assignment fit.',
+    uncertainty: 'High calibration risk',
+    uncertaintyDetail: 'Manual PR assignment does not prove candidate-fit matching.',
+    missingContext: ['Manual PR assignment needs candidate-fit calibration.'],
+    assessmentValidity: 'Score needs human calibration',
+    assessmentValidityDetail: 'Score, review comments, and repo challenge proof exist, but candidate-fit proof is not present.',
+    nextAction: 'Schedule targeted follow-up',
+    nextActionDetail: 'Ask a focused question before advancing.',
+    scoreLabel: '38/100 Weak',
+    challengeLabel: 'mui/base-ui PR #973',
+    challengeUrl: 'https://github.com/mui/base-ui/pull/973',
+    sourceProofSummary: 'repo evidence, scoring provenance, and open gaps',
+    proofItems: [
+      { id: 'assignment', label: 'assignment', text: 'mui/base-ui PR #973' },
+      { id: 'score', label: 'score report', text: '38/100 Weak' },
+      { id: 'match-proof', label: 'match proof', text: 'Manual override: recruiter-selected source-backed review challenge.' },
+    ],
+    basisItems: [
+      { label: 'Score report', value: 'Scored', satisfied: true },
+      { label: 'Review evidence', value: '2 annotations', satisfied: true },
+      { label: 'Match proof', value: '8/12 Usable', satisfied: true },
+    ],
+  };
+}
+
 async function flushAsyncUpdates(): Promise<void> {
   await act(async () => {
     await Promise.resolve();
@@ -701,6 +730,36 @@ describe('PersonProfilePage', () => {
     expect(mix).not.toHaveTextContent('No source mix yet');
     expect(mix).not.toHaveTextContent('Collect first source-backed evidence');
     expect(mocks.api.get).not.toHaveBeenCalledWith('/api/v1/contacts/person-1/living-context');
+  });
+
+  it('keeps selected manual code-review proof wording honest on the person profile', async () => {
+    const summaryContext = makeLivingContext();
+    summaryContext.interactions = [];
+    summaryContext.artifacts = [];
+    summaryContext.contextRecords = [];
+    summaryContext.assertions = [];
+    summaryContext.signals = [];
+    summaryContext.relationships = [];
+
+    mocks.api.get
+      .mockResolvedValueOnce({ contact: makeContact() });
+
+    renderPage({
+      livingContext: summaryContext,
+      selectedCodeReviewDecision: makeSelectedManualCodeReviewDecision(),
+    });
+    await flushAsyncUpdates();
+
+    const decision = screen.getByTestId('person-code-review-decision');
+    expect(decision).toHaveTextContent('Schedule targeted follow-up');
+    expect(decision).toHaveTextContent('38/100 Weak');
+    expect(decision).toHaveTextContent('mui/base-ui PR #973');
+    const proof = screen.getByTestId('person-code-review-source-proof');
+    const proofSummary = proof.querySelector('summary');
+    expect(proofSummary).toHaveTextContent('repo evidence, scoring provenance, and open gaps');
+    expect(proofSummary).not.toHaveTextContent('candidate, role, repo');
+    expect(proofSummary).not.toHaveTextContent('candidate-repo match proof');
+    expect(proofSummary).not.toHaveTextContent('role evidence');
   });
 
   it('renders direct profile loads from a lightweight summary and hydrates full graph on audit open', async () => {
@@ -815,7 +874,7 @@ describe('PersonProfilePage', () => {
     const proof = screen.getByTestId('person-code-review-source-proof');
     const proofSummary = proof.querySelector('summary');
     expect(proofSummary).toHaveTextContent('Source proof');
-    expect(proofSummary).toHaveTextContent('candidate, repo, and scoring provenance');
+    expect(proofSummary).toHaveTextContent('candidate-repo match proof, repo evidence, and scoring provenance');
     expect(proofSummary).not.toHaveTextContent('review-session-1');
     expect(proof).toHaveTextContent('Source proof');
     expect(proof).toHaveTextContent('score report');
