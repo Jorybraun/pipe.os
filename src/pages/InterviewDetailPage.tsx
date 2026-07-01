@@ -2876,7 +2876,14 @@ export default function InterviewDetailPage(): JSX.Element {
     ? assessmentInviteDescription
     : interview.assessmentSetup?.lastDeliveredUrlMessage ?? assessmentInviteDescription;
   const assessmentAssignment = summarizeAssessmentAssignment(interview.assessmentSetup);
-  const showsAssessmentProgress = usesWorkspaceInterview || Boolean(assessmentProgress) || Boolean(assessmentAssignment);
+  const hasStandaloneCodeReviewReadout = isCodeReviewInterview && Boolean(
+    interview.codeReviewMatch
+      || interview.codeReviewScore
+      || interview.submissionJson,
+  );
+  const showsAssessmentProgress = usesWorkspaceInterview
+    || Boolean(assessmentProgress)
+    || (Boolean(assessmentAssignment) && !hasStandaloneCodeReviewReadout);
   const assessmentProgressStage = assessmentProgress
     ? assessmentProgressStageLabel(assessmentProgress.stage)
     : 'Not started';

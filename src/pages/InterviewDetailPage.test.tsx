@@ -1121,6 +1121,9 @@ describe('InterviewDetailPage', () => {
     expect(scoreTrust).toHaveTextContent('5 scoring metrics');
     expect(scoreTrust).toHaveTextContent('Use as');
     expect(scoreTrust).toHaveTextContent('source-backed signal, not an automatic decision');
+    expect(screen.queryByTestId('interview-assessment-progress')).toBeNull();
+    expect(decision).not.toHaveTextContent('Not started');
+    expect(decision).not.toHaveTextContent('No assessment session');
     expect(screen.queryByText('Call record')).toBeNull();
     expect(screen.queryByText('Not recorded yet')).toBeNull();
     expect(screen.queryByText('Confidence')).toBeNull();

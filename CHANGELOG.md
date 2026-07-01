@@ -7,6 +7,10 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Fixed — CODE_REVIEW assessment runtime
+
+- Standalone CODE_REVIEW interview details no longer render the generic workspace assessment progress panel when only a repo/PR assignment exists, preventing completed scored reviews from showing stale “Not started” or “No assessment session” copy above the hiring-manager decision readout.
+
 ### Removed — Retro room shell
 
 - Removed the retro-themed room shell from the video-room app, including the taskbar/start-menu desktop, synced retro window chrome, embedded Paint/Notepad/browser/file-manager tools, cursor-trail sync, and mascot/retro UI dependencies.
