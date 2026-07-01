@@ -3851,11 +3851,13 @@ describe('meeting room recording living-context route', () => {
     const eventId = 'assessment-event-matched-packet-pr';
     const baseCommitSha = 'f'.repeat(40);
     const headCommitSha = '1'.repeat(40);
+    const verificationCommand = 'git diff --check HEAD~1 HEAD && git diff --name-only HEAD~1 HEAD';
     const packetText = [
       'Repo: https://github.com/pipe/source-backed-worker',
       `Base commit: ${baseCommitSha}`,
       'Pull request: #5110',
       'Task: Fix the matched retry scheduler packet.',
+      `Verification command: ${verificationCommand}`,
       'Success criteria:',
       '- Launch uses the immutable base commit',
       'Expected evidence:',
@@ -3948,6 +3950,7 @@ describe('meeting room recording living-context route', () => {
         pullRequestUrl: 'https://github.com/pipe/source-backed-worker/pull/5110',
         baseCommitSha,
         headCommitSha,
+        verificationCommand,
         repoSnapshotId: 'snapshot-matched-packet-pr',
       }),
       packetText,
@@ -3990,6 +3993,7 @@ describe('meeting room recording living-context route', () => {
           githubPrNumber: 5110,
           baseCommitSha,
           headCommitSha,
+          verificationCommand,
         },
         contentHash: 'sha256:matched-packet-pr-content-hash',
       },
@@ -4027,6 +4031,7 @@ describe('meeting room recording living-context route', () => {
       repoGitUrl: 'https://github.com/pipe/source-backed-worker',
       challengeBranch: null,
       baseCommitSha,
+      verificationCommand,
       challengePacketContentHash: 'sha256:matched-packet-pr-content-hash',
       matchedRepoId: 973,
       githubPrNumber: 5110,

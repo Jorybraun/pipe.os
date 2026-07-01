@@ -1221,6 +1221,17 @@ function challengePacketBaseCommitSha(packet: RoomWorkspaceChallengePacketPayloa
   return value.toLowerCase();
 }
 
+function challengePacketVerificationCommand(packet: RoomWorkspaceChallengePacketPayload | null): string | null {
+  if (!packet) return null;
+  const value = locatorString(packet.locator, [
+    'verificationCommand',
+    'testCommand',
+    'verification_command',
+    'test_command',
+  ]);
+  return value?.slice(0, 1_000) ?? null;
+}
+
 function buildRoomWorkspaceChallenge(
   interview: RoomWorkspaceInterview | null,
   enabled: boolean,
@@ -2374,6 +2385,7 @@ meetingRooms.post('/:token/workspace/launch', async (c) => {
   const expiresAt = new Date(Date.now() + effective.ttlSeconds * 1000).toISOString();
   const challenge = workspace.challenge;
   const baseCommitSha = challengePacketBaseCommitSha(challenge.packet);
+  const verificationCommand = challengePacketVerificationCommand(challenge.packet);
   const challengeBranch = baseCommitSha ? null : githubPrChallengeRef(workspace.githubPrNumber);
   await insertRoomSession(c.env.DB, {
     id: crypto.randomUUID(),
@@ -2402,6 +2414,7 @@ meetingRooms.post('/:token/workspace/launch', async (c) => {
       repoGitUrl: effectiveRepoUrl,
       challengeBranch,
       baseCommitSha,
+      verificationCommand,
       challengePacketContentHash: challenge.packet?.contentHash ?? null,
       matchedRepoId: workspace.matchedRepoId,
       githubPrNumber: workspace.githubPrNumber,

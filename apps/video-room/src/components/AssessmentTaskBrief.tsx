@@ -112,15 +112,24 @@ export function AssessmentTaskBrief({
   const summary = summarizeChallengePacket(packet);
   const repositoryUrl = summary.repositoryUrl ?? workspace?.repoUrl ?? null;
   const baseCommitSha = summary.baseCommitSha ?? progress?.commit?.baseCommitSha ?? null;
+  const incompletePacketFields = progress?.challengePacketContract?.isComplete === false
+    ? progress.challengePacketContract.missingFields
+    : [];
+  const challengeSetupStep = incompletePacketFields.length > 0
+    ? `Complete challenge packet before candidate work starts: missing ${incompletePacketFields.join(', ')}.`
+    : workspace?.challenge.status === 'missing_reviewable_task'
+      ? workspace.challenge.message ?? 'Assign a GitHub PR or complete source-backed task packet before launching.'
+      : !packet
+        ? 'Attach a complete source-backed task packet before candidate work starts.'
+        : null;
   const currentStep = progress?.readiness?.detail
     ?? progress?.nextActionLabel
+    ?? challengeSetupStep
     ?? (workspaceReady ? 'Commit changes, then submit work.' : 'Launch the controlled workspace to begin.');
   const proofItems = progress ? proofChecklistItems(progress) : [];
   const missingRequiredProof = progress?.readiness?.missingRequiredCount
     ?? proofItems.filter((item) => item.required && !item.captured).length;
-  const incompletePacketFields = progress?.challengePacketContract?.isComplete === false
-    ? progress.challengePacketContract.missingFields
-    : [];
+  const canOpenSubmission = workspaceReady && !challengeSetupStep;
   const hasContract = Boolean(
     summary.task
     || summary.successCriteria.length > 0
@@ -257,7 +266,7 @@ export function AssessmentTaskBrief({
             Workspace
           </button>
         )}
-        {workspaceReady && onOpenSubmission && (
+        {canOpenSubmission && onOpenSubmission && (
           <button type="button" onClick={onOpenSubmission} data-testid="assessment-brief-open-submission">
             <Upload size={14} />
             Submit work

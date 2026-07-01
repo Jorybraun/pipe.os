@@ -13,6 +13,8 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Fixed — Open-source assessment progress
 
+- Manual open-source challenge packets can now carry a trusted verification command into the dev-container finalizer, so source-backed workspace submissions produce `test_run` evidence from challenge config instead of candidate-supplied request data.
+- Repo-task commit submissions now require a complete source-backed challenge packet before accepting candidate work, preventing incomplete assignments from becoming review evidence.
 - Dev-container workspace launch now fails closed unless the room has a GitHub PR or a complete source-backed open-source challenge packet, preventing repo-only matches from becoming unreviewable candidate work.
 - Person-profile route-state proof summaries now require parsed source proof items before they appear in the decision card.
 - Person-profile next-action CTAs now suppress duplicate code-review assessment creation when the selected decision is still waiting on candidate review evidence.

@@ -28,6 +28,30 @@ describe('commit submission payloads', () => {
     });
   });
 
+  it('derives submission defaults from immutable packet text when locator anchors are sparse', () => {
+    expect(buildCommitSubmissionDefaults({
+      repositoryUrl: 'https://github.com/fallback/repo',
+      challengePacket: {
+        sourceRefType: 'open_source_challenge_packet',
+        evidenceRole: 'assigned_challenge',
+        exactText: [
+          'Repo: https://github.com/pipe/source-backed-worker',
+          'Base commit: ABCDEFabcdefABCDEFabcdefABCDEFabcdefABCD',
+          'Task: Fix the source-backed worker retry path.',
+          'Success: retry path is deterministic.',
+          'Expected evidence:',
+          '- Commit SHA on assessment branch',
+        ].join('\n'),
+        contentHash: 'sha256:packet',
+        locator: {},
+      },
+    })).toEqual({
+      repositoryUrl: 'https://github.com/pipe/source-backed-worker',
+      branchName: 'pipe-assessment',
+      baseCommitSha: 'abcdefabcdefabcdefabcdefabcdefabcdefabcd',
+    });
+  });
+
   it('does not invent a base commit or assessment branch without a valid packet SHA', () => {
     expect(buildCommitSubmissionDefaults({
       repositoryUrl: 'https://github.com/pipe/source-backed-worker',

@@ -9,6 +9,7 @@ import { summarizeChallengePacket } from '../lib/challengePacketSummary';
 import type {
   RoomCommitSubmissionRequest,
   RoomCommitSubmissionResponse,
+  RoomAssessmentChallengePacketContract,
   RoomAssessmentProgressSnapshot,
   RoomWorkspaceFinalizeRequest,
   RoomWorkspaceFinalizeResponse,
@@ -43,6 +44,7 @@ const EMPTY_FIELDS: CommitSubmissionFormFields = {
   testEvidenceText: '',
   verificationNotesText: '',
 };
+const GIT_COMMIT_SHA_PATTERN = /^[a-f0-9]{40}$/i;
 
 function formatProgressLabel(value: string | null | undefined): string {
   const normalized = value?.trim();
@@ -70,6 +72,36 @@ function hasCompleteChallengePacket(progress: RoomAssessmentProgressSnapshot): b
   return progress.challengePacketContract
     ? progress.challengePacketContract.isComplete
     : progress.hasChallengePacket;
+}
+
+function challengePacketMissingFields(
+  packet: RoomWorkspaceChallengePacket | null | undefined,
+  contract: RoomAssessmentChallengePacketContract | null | undefined,
+): string[] {
+  if (contract) return contract.isComplete ? [] : contract.missingFields;
+  if (!packet) return ['repo URL', 'base commit SHA', 'task', 'success criteria', 'expected evidence'];
+
+  const summary = summarizeChallengePacket(packet);
+  const missing: string[] = [];
+  if (!summary.repositoryUrl) missing.push('repo URL');
+  if (!summary.baseCommitSha || !GIT_COMMIT_SHA_PATTERN.test(summary.baseCommitSha)) {
+    missing.push('base commit SHA');
+  }
+  if (!summary.task) missing.push('task');
+  if (summary.successCriteria.length === 0) missing.push('success criteria');
+  if (summary.expectedEvidence.length === 0) missing.push('expected evidence');
+  return missing;
+}
+
+function challengePacketDisabledReason(
+  packet: RoomWorkspaceChallengePacket | null | undefined,
+  progress: RoomAssessmentProgressSnapshot | null | undefined,
+): string | null {
+  const missing = challengePacketMissingFields(packet, progress?.challengePacketContract);
+  if (missing.length === 0) return null;
+  return packet
+    ? `Complete the source-backed challenge packet before submitting work. Missing ${missing.join(', ')}.`
+    : 'Assign a complete source-backed challenge packet before submitting work.';
 }
 
 function isDirtyWorkspaceFinalizeError(message: string | null): boolean {
@@ -176,7 +208,8 @@ function ChallengeCompletionPanel({
   progress: RoomAssessmentProgressSnapshot | null;
 }): JSX.Element {
   const summary = summarizeChallengePacket(packet);
-  const hasCompletePacket = progress ? hasCompleteChallengePacket(progress) : Boolean(packet);
+  const missingFields = challengePacketMissingFields(packet, progress?.challengePacketContract);
+  const hasCompletePacket = missingFields.length === 0;
   const hasLocator = Boolean(summary.repositoryUrl || summary.githubPrNumber || summary.baseCommitSha);
   const hasContract = Boolean(
     summary.task
@@ -192,7 +225,11 @@ function ChallengeCompletionPanel({
     >
       <div className="commit-submission-completion-header">
         <strong>{packet ? 'Assigned open-source challenge' : 'Challenge packet missing'}</strong>
-        <span>{progress?.nextActionLabel ?? 'Submit the assessment branch commit with exact source evidence.'}</span>
+        <span>
+          {missingFields.length > 0
+            ? `Complete packet before submission: missing ${missingFields.join(', ')}.`
+            : progress?.nextActionLabel ?? 'Submit the assessment branch commit with exact source evidence.'}
+        </span>
       </div>
 
       {hasLocator && (
@@ -256,6 +293,16 @@ function ChallengeCompletionPanel({
           <EvidenceStatusChip label="Test evidence" captured={progress.hasTestEvidence} />
           <EvidenceStatusChip label="AI interaction" captured={progress.hasAiInteraction} />
           <EvidenceStatusChip label="Transcript evidence" captured={progress.hasTranscriptEvidence} />
+        </div>
+      )}
+      {missingFields.length > 0 && (
+        <div className="commit-submission-status is-blocked" data-testid="commit-submission-challenge-warning">
+          <TriangleAlert size={16} />
+          <span>
+            {packet
+              ? `Challenge packet incomplete: missing ${missingFields.join(', ')}.`
+              : 'Challenge packet missing: assign a repo URL, base commit, task, success criteria, and expected evidence.'}
+          </span>
         </div>
       )}
     </section>
@@ -413,7 +460,9 @@ export function CommitSubmissionPanel({
     narrative: '',
   });
   const displayedProgress = workspaceFinalizeResult?.progress ?? result?.progress ?? assessmentProgress;
-  const workspaceFinalizeBlockedReason = disabledReason
+  const challengeDisabledReason = challengePacketDisabledReason(challengePacket, displayedProgress);
+  const effectiveDisabledReason = disabledReason ?? challengeDisabledReason;
+  const workspaceFinalizeBlockedReason = effectiveDisabledReason
     ?? workspaceFinalizeDisabledReason
     ?? (!workspaceFinalizeAvailable ? 'Launch the workspace before finalizing the assessment commit.' : null);
 
@@ -477,8 +526,8 @@ export function CommitSubmissionPanel({
 
   const handleSubmit = async (event: FormEvent<HTMLFormElement>): Promise<void> => {
     event.preventDefault();
-    if (disabledReason) {
-      setError(disabledReason);
+    if (effectiveDisabledReason) {
+      setError(effectiveDisabledReason);
       return;
     }
     setSubmitting(true);
@@ -714,10 +763,10 @@ export function CommitSubmissionPanel({
         />
       </label>
 
-      {disabledReason && (
+      {effectiveDisabledReason && (
         <div className="commit-submission-status is-blocked" data-testid="commit-submission-disabled">
           <TriangleAlert size={16} />
-          <span>{disabledReason}</span>
+          <span>{effectiveDisabledReason}</span>
         </div>
       )}
       {error && (
@@ -741,7 +790,7 @@ export function CommitSubmissionPanel({
         <button
           type="submit"
           className="room-workspace-launch-btn"
-          disabled={Boolean(disabledReason) || submitting}
+          disabled={Boolean(effectiveDisabledReason) || submitting}
           data-testid="commit-submission-submit"
         >
           {submitting ? <Loader2 size={14} className="spin" /> : <Send size={14} />}

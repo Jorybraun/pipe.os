@@ -950,6 +950,15 @@ function assertCommitSubmissionMatchesChallenge(
   }
 }
 
+function assertCompleteCommitChallengePacket(challengeRef: AssessmentProgressSourceRef | null): void {
+  const contract = challengePacketContract(challengeRef);
+  if (contract.isComplete) return;
+  throw new Error(
+    `commit submission requires a complete source-backed challenge packet before candidate work can be accepted; `
+    + `missing ${contract.missingFields.join(', ')}`,
+  );
+}
+
 async function sha256Hex(value: string): Promise<string> {
   const bytes = new TextEncoder().encode(value);
   const digest = await crypto.subtle.digest('SHA-256', bytes);
@@ -1846,6 +1855,7 @@ export class RepoTaskInterviewSessionStore {
       sourceRefs: input.sourceRefs,
     });
     const challengeRef = await this.loadChallengeSourceRef(input.sessionId);
+    assertCompleteCommitChallengePacket(challengeRef);
     assertCommitSubmissionMatchesChallenge(input, repositoryUrl, challengeRef);
 
     const initialSession = await this.loadSession(input.sessionId);

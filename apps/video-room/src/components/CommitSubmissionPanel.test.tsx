@@ -161,7 +161,7 @@ describe('CommitSubmissionPanel', () => {
     render(
       <CommitSubmissionPanel
         defaultRepositoryUrl="https://github.com/fallback/repo"
-        challengePacket={packet}
+        challengePacket={richPacket}
         onSubmit={vi.fn()}
       />,
     );
@@ -178,6 +178,37 @@ describe('CommitSubmissionPanel', () => {
     expect(screen.getByTestId('commit-submission-commit-sha')).toHaveProperty('value', '');
     expect(screen.getByTestId('commit-submission-changed-files')).toHaveProperty('value', '');
     expect(screen.getByTestId('commit-submission-diff')).toHaveProperty('value', '');
+  });
+
+  it('blocks manual submit and workspace finalization until the challenge packet is complete', () => {
+    const onSubmit = vi.fn();
+    const onFinalizeWorkspace = vi.fn();
+
+    render(
+      <CommitSubmissionPanel
+        defaultRepositoryUrl="https://github.com/fallback/repo"
+        challengePacket={packet}
+        onSubmit={onSubmit}
+        workspaceFinalizeAvailable
+        onFinalizeWorkspace={onFinalizeWorkspace}
+      />,
+    );
+
+    const completion = screen.getByTestId('commit-submission-completion');
+    expect(completion.textContent).toContain('Complete packet before submission');
+    expect(screen.getByTestId('commit-submission-challenge-warning').textContent).toContain(
+      'Challenge packet incomplete',
+    );
+    expect(screen.getByTestId('commit-submission-challenge-warning').textContent).toContain(
+      'missing task, success criteria, expected evidence',
+    );
+    expect(screen.getByTestId('commit-submission-disabled').textContent).toContain(
+      'Complete the source-backed challenge packet before submitting work.',
+    );
+    expect(screen.getByTestId('workspace-finalize-submit')).toHaveProperty('disabled', true);
+    expect(screen.getByTestId('commit-submission-submit')).toHaveProperty('disabled', true);
+    expect(onSubmit).not.toHaveBeenCalled();
+    expect(onFinalizeWorkspace).not.toHaveBeenCalled();
   });
 
   it('submits the current live workspace HEAD through the real finalizer path', async () => {
@@ -245,7 +276,7 @@ describe('CommitSubmissionPanel', () => {
     render(
       <CommitSubmissionPanel
         defaultRepositoryUrl="https://github.com/fallback/repo"
-        challengePacket={packet}
+        challengePacket={richPacket}
         assessmentProgress={loadedProgress}
         onSubmit={onSubmit}
         onProgressChange={onProgressChange}
@@ -300,7 +331,7 @@ describe('CommitSubmissionPanel', () => {
     render(
       <CommitSubmissionPanel
         defaultRepositoryUrl="https://github.com/fallback/repo"
-        challengePacket={packet}
+        challengePacket={richPacket}
         onSubmit={vi.fn()}
         workspaceFinalizeDisabledReason="Launch the workspace before finalizing the assessment commit."
         onFinalizeWorkspace={vi.fn()}
@@ -322,7 +353,7 @@ describe('CommitSubmissionPanel', () => {
     render(
       <CommitSubmissionPanel
         defaultRepositoryUrl="https://github.com/fallback/repo"
-        challengePacket={packet}
+        challengePacket={richPacket}
         onSubmit={onSubmit}
         workspaceFinalizeAvailable
         onFinalizeWorkspace={onFinalizeWorkspace}
@@ -353,7 +384,7 @@ describe('CommitSubmissionPanel', () => {
     render(
       <CommitSubmissionPanel
         defaultRepositoryUrl="https://github.com/fallback/repo"
-        challengePacket={packet}
+        challengePacket={richPacket}
         onSubmit={onSubmit}
       />,
     );
@@ -406,7 +437,7 @@ describe('CommitSubmissionPanel', () => {
     render(
       <CommitSubmissionPanel
         defaultRepositoryUrl="https://github.com/fallback/repo"
-        challengePacket={packet}
+        challengePacket={richPacket}
         onSubmit={onSubmit}
       />,
     );
@@ -497,7 +528,7 @@ describe('CommitSubmissionPanel', () => {
     render(
       <CommitSubmissionPanel
         defaultRepositoryUrl="https://github.com/fallback/repo"
-        challengePacket={packet}
+        challengePacket={richPacket}
         onSubmit={onSubmit}
         onProgressChange={onProgressChange}
       />,
@@ -647,7 +678,7 @@ describe('CommitSubmissionPanel', () => {
     render(
       <CommitSubmissionPanel
         defaultRepositoryUrl="https://github.com/fallback/repo"
-        challengePacket={packet}
+        challengePacket={richPacket}
         onSubmit={onSubmit}
       />,
     );

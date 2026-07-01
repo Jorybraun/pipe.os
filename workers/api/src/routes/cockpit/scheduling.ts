@@ -506,6 +506,7 @@ const createInterviewSchema = z.object({
   challengeInstructions: z.string().trim().min(1).max(5000).optional(),
   challengeSuccessCriteria: z.array(z.string().trim().min(1).max(500)).min(1).max(12).optional(),
   challengeExpectedEvidence: z.array(z.string().trim().min(1).max(500)).min(1).max(12).optional(),
+  challengeVerificationCommand: z.string().trim().min(1).max(1000).optional(),
   recruiterNotes: z.string().trim().max(5000).optional(),
 }).superRefine((value, ctx) => {
   const hasCandidate = Boolean(value.candidateId);
@@ -538,6 +539,7 @@ const createInterviewSchema = z.object({
       value.challengeInstructions,
       value.challengeSuccessCriteria,
       value.challengeExpectedEvidence,
+      value.challengeVerificationCommand,
     ];
     const hasAnyChallengePacketField = challengeFields.some((field) =>
       Array.isArray(field) ? field.length > 0 : Boolean(field));
@@ -602,6 +604,7 @@ const createInterviewSchema = z.object({
     || value.challengeInstructions
     || value.challengeSuccessCriteria?.length
     || value.challengeExpectedEvidence?.length
+    || value.challengeVerificationCommand
   ) {
     ctx.addIssue({
       code: z.ZodIssueCode.custom,
@@ -3119,6 +3122,7 @@ interface ManualOpenSourceChallengePacketInput {
   instructions: string;
   successCriteria: readonly string[];
   expectedEvidence: readonly string[];
+  verificationCommand?: string | null;
   createdAt: string;
 }
 
@@ -3149,6 +3153,7 @@ function hasManualOpenSourceChallengePacket(input: {
   challengeInstructions: string | undefined;
   challengeSuccessCriteria: readonly string[] | undefined;
   challengeExpectedEvidence: readonly string[] | undefined;
+  challengeVerificationCommand?: string | undefined;
 }): boolean {
   return input.interviewType === 'OPEN_SOURCE_BUG_FIX'
     && Boolean(input.githubRepoUrl)
@@ -3323,6 +3328,7 @@ function buildManualOpenSourceChallengeExactText(
     ...(input.githubPrNumber ? [`Pull request: #${input.githubPrNumber}`] : []),
     `Task: ${input.title}`,
     `Instructions: ${input.instructions}`,
+    ...(input.verificationCommand ? [`Verification command: ${input.verificationCommand}`] : []),
     'Success criteria:',
     ...input.successCriteria.map((criterion) => `- ${criterion}`),
     'Expected evidence:',
@@ -3364,6 +3370,7 @@ async function createManualOpenSourceChallengeAssessmentSession(
       ...(input.githubPrNumber ? { githubPrNumber: input.githubPrNumber } : {}),
       baseCommitSha: input.baseCommitSha.toLowerCase(),
       challengeTitle: input.title,
+      ...(input.verificationCommand ? { verificationCommand: input.verificationCommand } : {}),
     },
   });
   const exactText = buildManualOpenSourceChallengeExactText(input);
@@ -3377,6 +3384,7 @@ async function createManualOpenSourceChallengeAssessmentSession(
       repositoryUrl: input.repositoryUrl,
       ...(input.githubPrNumber ? { githubPrNumber: input.githubPrNumber } : {}),
       baseCommitSha: input.baseCommitSha.toLowerCase(),
+      ...(input.verificationCommand ? { verificationCommand: input.verificationCommand } : {}),
     },
     exactText,
     contentHash,
@@ -3401,6 +3409,7 @@ async function createManualOpenSourceChallengeAssessmentSession(
       instructions: input.instructions,
       successCriteria: [...input.successCriteria],
       expectedEvidence: [...input.expectedEvidence],
+      ...(input.verificationCommand ? { verificationCommand: input.verificationCommand } : {}),
     },
     occurredAt: input.createdAt,
     sourceRefs: [sourceRef],
@@ -5740,6 +5749,7 @@ schedulingAuth.post('/interviews', async (c) => {
     challengeInstructions,
     challengeSuccessCriteria,
     challengeExpectedEvidence,
+    challengeVerificationCommand,
     recruiterNotes,
   } = parsed.data;
 
@@ -5796,6 +5806,7 @@ schedulingAuth.post('/interviews', async (c) => {
     challengeInstructions,
     challengeSuccessCriteria,
     challengeExpectedEvidence,
+    challengeVerificationCommand,
   });
   if (hasManualOpenSourceTaskPacket) {
     const commitVerification = await verifyGitHubCommitReachable({
@@ -5898,6 +5909,7 @@ schedulingAuth.post('/interviews', async (c) => {
       instructions: challengeInstructions!,
       successCriteria: challengeSuccessCriteria!,
       expectedEvidence: challengeExpectedEvidence!,
+      verificationCommand: challengeVerificationCommand ?? null,
       createdAt: now,
     });
   } else if (matchedOpenSourceChallengePacket && typeof matchedRepoId === 'number') {

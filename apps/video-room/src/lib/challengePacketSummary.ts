@@ -12,6 +12,12 @@ export interface ChallengePacketSummary extends ChallengePacketContract {
   githubPrNumber: number | null;
 }
 
+function challengePacketLineValue(exactText: string, labels: readonly string[]): string | null {
+  const escapedLabels = labels.map((label) => label.replace(/[.*+?^${}()|[\]\\]/g, '\\$&'));
+  const match = exactText.match(new RegExp(`^\\s*(?:${escapedLabels.join('|')})\\s*:\\s*(.+)$`, 'im'));
+  return match?.[1]?.trim() || null;
+}
+
 export function firstLocatorString(locator: Record<string, unknown>, keys: string[]): string | null {
   for (const key of keys) {
     const value = locator[key];
@@ -30,6 +36,13 @@ export function firstLocatorNumber(locator: Record<string, unknown>, keys: strin
     }
   }
   return null;
+}
+
+function firstTextNumber(exactText: string, labels: readonly string[]): number | null {
+  const value = challengePacketLineValue(exactText, labels);
+  if (!value) return null;
+  const parsed = Number(value.trim().replace(/^#/, ''));
+  return Number.isInteger(parsed) && parsed > 0 ? parsed : null;
 }
 
 function normalizePacketListItem(line: string): string {
@@ -53,9 +66,15 @@ export function parseChallengePacketContract(exactText: string): ChallengePacket
   };
 
   for (const line of lines) {
-    const taskMatch = line.match(/^task\s*:\s*(.+)$/i);
+    const taskMatch = line.match(/^(?:task|title)\s*:\s*(.+)$/i);
     if (taskMatch?.[1]) {
       contract.task = taskMatch[1].trim();
+      section = null;
+      continue;
+    }
+    const successMatch = line.match(/^success\s*:\s*(.+)$/i);
+    if (successMatch?.[1]) {
+      contract.successCriteria.push(successMatch[1].trim());
       section = null;
       continue;
     }
@@ -88,11 +107,15 @@ export function summarizeChallengePacket(packet: RoomWorkspaceChallengePacket | 
         expectedEvidence: [],
       };
   const locator = packet?.locator ?? {};
+  const exactText = packet?.exactText ?? '';
 
   return {
     ...contract,
-    repositoryUrl: firstLocatorString(locator, ['repositoryUrl', 'githubRepoUrl', 'repoUrl']),
-    baseCommitSha: firstLocatorString(locator, ['baseCommitSha', 'baseCommit']),
-    githubPrNumber: firstLocatorNumber(locator, ['githubPrNumber', 'prNumber', 'pullRequestNumber']),
+    repositoryUrl: firstLocatorString(locator, ['repositoryUrl', 'githubRepoUrl', 'repoUrl'])
+      ?? challengePacketLineValue(exactText, ['Repo', 'Repository']),
+    baseCommitSha: firstLocatorString(locator, ['baseCommitSha', 'baseCommit'])
+      ?? challengePacketLineValue(exactText, ['Base commit', 'Base commit SHA', 'Base']),
+    githubPrNumber: firstLocatorNumber(locator, ['githubPrNumber', 'prNumber', 'pullRequestNumber'])
+      ?? firstTextNumber(exactText, ['PR', 'Pull request', 'GitHub PR']),
   };
 }

@@ -76,7 +76,9 @@ const REPO_URL = process.env.WORKSPACE_SMOKE_REPO_URL || CHANGE_PROFILE?.reposit
 const RAW_PR_NUMBER = process.env.WORKSPACE_SMOKE_PR_NUMBER || (INTERVIEW_TYPE === 'OPEN_SOURCE_BUG_FIX' ? '' : '1');
 const PR_NUMBER = RAW_PR_NUMBER ? Number(RAW_PR_NUMBER) : null;
 const RAW_MATCHED_REPO_ID = process.env.WORKSPACE_SMOKE_MATCHED_REPO_ID
-  || (INTERVIEW_TYPE === 'OPEN_SOURCE_BUG_FIX' && CHANGE_PROFILE?.matchedRepoId
+  || (process.env.WORKSPACE_SMOKE_USE_MATCHED_REPO === '1'
+    && INTERVIEW_TYPE === 'OPEN_SOURCE_BUG_FIX'
+    && CHANGE_PROFILE?.matchedRepoId
     ? String(CHANGE_PROFILE.matchedRepoId)
     : '');
 const MATCHED_REPO_ID = RAW_MATCHED_REPO_ID ? Number(RAW_MATCHED_REPO_ID) : null;
@@ -355,6 +357,7 @@ async function main() {
           challengeInstructions: CHANGE_PROFILE.challengeInstructions,
           challengeSuccessCriteria: CHANGE_PROFILE.challengeSuccessCriteria,
           challengeExpectedEvidence: CHANGE_PROFILE.challengeExpectedEvidence,
+          challengeVerificationCommand: CHANGE_PROFILE.testCommand,
         }
       : {
           challengeBaseCommitSha: BASE_COMMIT_SHA,

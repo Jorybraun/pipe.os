@@ -199,6 +199,7 @@ describe('AssessmentTaskBrief', () => {
     );
 
     expect(screen.getByText('The host still needs to attach a source-backed task packet before this assessment can be trusted.')).not.toBeNull();
+    expect(screen.getByText('Attach a complete source-backed task packet before candidate work starts.')).not.toBeNull();
     expect(screen.queryByTestId('assessment-brief-open-submission')).toBeNull();
     expect(screen.queryByTestId('assessment-task-brief-proof')).toBeNull();
   });

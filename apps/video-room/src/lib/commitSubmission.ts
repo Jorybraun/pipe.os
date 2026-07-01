@@ -4,6 +4,7 @@ import type {
   RoomCommitSubmissionRequest,
   RoomWorkspaceChallengePacket,
 } from '../types';
+import { summarizeChallengePacket } from './challengePacketSummary';
 
 export interface CommitSubmissionFormFields {
   narrative: string;
@@ -179,31 +180,12 @@ function diffMentionsChangedFile(diffText: string, changedFiles: RoomCommitChang
   });
 }
 
-function firstLocatorString(locator: Record<string, unknown>, keys: string[]): string | null {
-  for (const key of keys) {
-    const value = locator[key];
-    if (typeof value !== 'string') continue;
-    const trimmed = value.trim();
-    if (trimmed) return trimmed;
-  }
-  return null;
-}
-
 export function buildCommitSubmissionDefaults(
   input: CommitSubmissionDefaultInput,
 ): CommitSubmissionDefaults {
-  const packet = input.challengePacket ?? null;
-  const packetRepositoryUrl = packet
-    ? firstLocatorString(packet.locator, ['repositoryUrl', 'githubRepoUrl', 'repoUrl'])
-    : null;
-  const baseCommitSha = packet
-    ? firstLocatorString(packet.locator, [
-      'baseCommitSha',
-      'baseCommit',
-      'base_commit_sha',
-      'base_commit',
-    ])
-    : null;
+  const summary = summarizeChallengePacket(input.challengePacket ?? null);
+  const packetRepositoryUrl = summary.repositoryUrl;
+  const baseCommitSha = summary.baseCommitSha;
   const normalizedBaseCommitSha = baseCommitSha && GIT_COMMIT_SHA_PATTERN.test(baseCommitSha)
     ? baseCommitSha.toLowerCase()
     : '';

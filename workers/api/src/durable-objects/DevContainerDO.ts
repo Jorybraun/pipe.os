@@ -33,6 +33,7 @@ interface InitPayload {
   challengeBranch: string | null;
   baseCommitSha?: string | null;
   challengePacketContentHash?: string | null;
+  verificationCommand?: string | null;
   agentType?: string | null;
   agentApiKey?: string | null;
   agentOrgId?: string | null;
@@ -54,6 +55,7 @@ function buildEnvVars(payload: InitPayload): Record<string, string> {
   if (payload.challengeBranch) env.CHALLENGE_BRANCH = payload.challengeBranch;
   if (payload.baseCommitSha) env.CHALLENGE_BASE_COMMIT_SHA = payload.baseCommitSha;
   if (payload.challengePacketContentHash) env.CHALLENGE_PACKET_CONTENT_HASH = payload.challengePacketContentHash;
+  if (payload.verificationCommand) env.PIPE_TEST_COMMAND = payload.verificationCommand;
   if (payload.agentApiKey) env.DEVIN_API_KEY = payload.agentApiKey;
   if (payload.agentOrgId) env.DEVIN_ORG_ID = payload.agentOrgId;
   if (payload.pipeApiUrl) env.PIPE_API_URL = payload.pipeApiUrl;
