@@ -140,6 +140,13 @@ function workspaceSessionSummary(interview: ScheduledInterview): string | null {
   return details.length > 0 ? `${status} · ${details.join(' · ')}` : status;
 }
 
+function roomStateSummary(interview: ScheduledInterview): string | null {
+  const roomStatus = interview.roomStatus ? sentenceCaseToken(interview.roomStatus) : null;
+  const guestState = interview.guestWaiting ? 'guest waiting' : null;
+  const parts = [roomStatus, guestState].filter((value): value is string => Boolean(value));
+  return parts.length > 0 ? parts.join(' · ') : null;
+}
+
 function isAssessmentInterviewType(value: ScheduledInterview['interviewType']): boolean {
   return typeof value === 'string' && ASSESSMENT_INTERVIEW_TYPES.has(value);
 }
@@ -691,6 +698,7 @@ export function InterviewCard({
   const canStartAssessmentEvaluation = Boolean(
     startAssessmentEvaluation && assessmentProgress?.nextAction === 'START_EVALUATION',
   );
+  const roomSummary = roomStateSummary(interview);
   const workspaceSummary = workspaceSessionSummary(interview);
 
   return (
@@ -888,6 +896,16 @@ export function InterviewCard({
                   </div>
                   <div style={{ minWidth: 0, fontSize: 10, color: 'var(--pipe-text-dim)', overflowWrap: 'anywhere' }}>
                     {workspaceSummary}
+                  </div>
+                </>
+              )}
+              {roomSummary && (
+                <>
+                  <div style={{ fontSize: 9, color: guestWaiting ? '#10b981' : 'var(--pipe-text-muted)', letterSpacing: '0.12em', fontWeight: 700 }}>
+                    ROOM
+                  </div>
+                  <div style={{ minWidth: 0, fontSize: 10, color: guestWaiting ? '#10b981' : 'var(--pipe-text-dim)', overflowWrap: 'anywhere' }}>
+                    {roomSummary}
                   </div>
                 </>
               )}

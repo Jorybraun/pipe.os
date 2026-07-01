@@ -50,6 +50,8 @@ describe('InterviewCard assessment progress', () => {
       interviewType: 'OPEN_SOURCE_BUG_FIX',
       meetingType: 'DIRECT_VIDEO_CALL',
       scheduledAt: null,
+      roomStatus: 'ACTIVE',
+      guestWaiting: true,
       assessmentSetup: {
         status: 'reviewable_task_assigned',
         kind: 'github_pr',
@@ -200,6 +202,8 @@ describe('InterviewCard assessment progress', () => {
     expect(progress).toHaveTextContent('Confidence: Captured: Workspace-captured commit');
     expect(progress).toHaveTextContent('WORKSPACE');
     expect(progress).toHaveTextContent('Ready · open-source/widgets · base 111111111111');
+    expect(progress).toHaveTextContent('ROOM');
+    expect(progress).toHaveTextContent('Active · guest waiting');
     expect(progress).toHaveTextContent('open-source/widgets');
     expect(progress).toHaveTextContent('PR #72');
     expect(progress).toHaveTextContent('BASE');

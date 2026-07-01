@@ -20,6 +20,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Fixed — Open-source assessment progress
 
+- Recruiter interview cards now show assessment room state alongside workspace state, including active rooms and waiting guests, so live assessment status is visible without opening the detail page.
 - CI now runs the assessment-room unit tests inside the room package instead of sweeping them through the root app Vitest runner, preserving room evidence-capture coverage without duplicate-React hook failures.
 - Person-profile workspace assessment smokes now assert assessment evidence, human decision, and source proof instead of requiring candidate-to-repo match proof when no match provenance exists.
 - Recruiters can no longer record final human assessment decisions from diagnostic-only evaluator reports; the app now requires a completed source-backed `EVALUATED` report before closing the assessment loop.
