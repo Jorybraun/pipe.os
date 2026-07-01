@@ -407,6 +407,111 @@ describe('GET /:candidateId/living-context/evidence-conflicts', () => {
   });
 });
 
+describe('GET /:candidateId/living-context/staleness-alerts', () => {
+  let sqlite: BetterSqliteDb | null = null;
+
+  afterEach(() => {
+    clearGateCache();
+    sqlite?.close();
+    sqlite = null;
+  });
+
+  it('returns staleness alerts for an owned candidate with stale evidence', async () => {
+    clearGateCache();
+    sqlite = new Database(':memory:');
+    sqlite.exec('PRAGMA foreign_keys = ON;');
+    sqlite.exec(`
+      CREATE TABLE candidates (
+        id TEXT PRIMARY KEY,
+        name TEXT NOT NULL,
+        email TEXT,
+        owner_id TEXT,
+        pipeline_id TEXT
+      );
+      CREATE TABLE pipelines (
+        id TEXT PRIMARY KEY,
+        owner_id TEXT
+      );
+    `);
+    sqlite.exec(livingContextMigration);
+    sqlite.exec(rolloutGatesMigration);
+    sqlite.exec(rolloutGateAuditMigration);
+    sqlite.prepare(`
+      INSERT INTO candidates (id, name, email, owner_id, pipeline_id)
+      VALUES ('candidate-staleness', 'Ada Staleness', 'ada-stale@example.com', 'test-user', NULL)
+    `).run();
+
+    const db = createMockD1(sqlite);
+    const store = new LivingContextStore(db);
+    const person = await store.upsertPerson({
+      ingestionKey: 'person:ada-staleness',
+      displayName: 'Ada Staleness',
+      primaryEmail: 'ada-stale@example.com',
+    });
+    const workspacePerson = await store.upsertWorkspacePerson({
+      ingestionKey: 'workspace-person:ada-staleness',
+      workspaceId: 'workspace-1',
+      personId: person.id,
+    });
+    await store.upsertApplication({
+      ingestionKey: 'application:ada-staleness',
+      workspacePersonId: workspacePerson.id,
+      legacyCandidateId: 'candidate-staleness',
+    });
+
+    const staleDate = new Date(Date.now() - 200 * 86_400_000).toISOString();
+    const interaction = await store.upsertInteraction({
+      ingestionKey: 'interaction:ada-stale-resume',
+      workspacePersonId: workspacePerson.id,
+      interactionType: 'resume_upload',
+      startedAt: staleDate,
+    });
+
+    await updateGateStage(db, 'living_context_read', 'GA', 'test');
+
+    const app = new Hono<{ Bindings: Env }>();
+    app.use('*', async (c, next) => {
+      // @ts-expect-error route test overrides Worker bindings.
+      c.env = {
+        DB: db,
+        CLERK_SECRET_KEY: 'test',
+        DEV_AUTH_BYPASS: 'true',
+        DEV_BYPASS_USER_ID: 'test-user',
+      };
+      await next();
+    });
+    app.route('/', candidateOps);
+
+    const response = await app.request('/candidate-staleness/living-context/staleness-alerts');
+    expect(response.status).toBe(200);
+    const body = await response.json() as {
+      candidateId: string;
+      workspacePersonId: string | null;
+      criticalCount: number;
+      warningCount: number;
+      infoCount: number;
+      overallHealth: string;
+      alerts: Array<{
+        id: string;
+        severity: string;
+        category: string;
+        dimension: string | null;
+        title: string;
+      }>;
+    };
+
+    expect(body.candidateId).toBe('candidate-staleness');
+    expect(body.workspacePersonId).not.toBeNull();
+    const staleAlerts = body.alerts.filter(
+      (a) => a.category === 'stale_evidence' && a.dimension === 'resume',
+    );
+    expect(staleAlerts).toHaveLength(1);
+    expect(staleAlerts[0]!.severity).toBe('critical');
+    expect(body.criticalCount).toBeGreaterThanOrEqual(1);
+    expect(body.overallHealth).toBe('critical');
+  });
+});
+
 // ─── SQL shape validation ────────────────────────────────────────────────────
 
 describe('Enrichment job SQL shapes', () => {

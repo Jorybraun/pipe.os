@@ -7,6 +7,65 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Added — Decision-weighted rematch (criteria #2, #5)
+
+- `decisionWeightedRematch.ts`: Loads prior recruiter accept/reject/defer decisions and computes challenge exclusion lists for rematch. Rejected and accepted challenges are excluded; deferred challenges remain eligible. Later decisions override earlier ones (e.g., reject then defer = eligible).
+- `excludePacketIds` option on `CandidateReviewChallengeOptions`: Allows the matcher to skip specified challenge packets during scoring.
+- Rematch endpoint now auto-loads prior decision history and excludes previously rejected/accepted challenges, surfacing decision context in the response.
+- `RematchPriorDecisions` frontend type: Shows excluded/deferred counts and excluded challenge details.
+- `LivingContextGraph` rematch result now displays prior decision exclusion count.
+- `decisionWeightedRematch.test.ts`: 7-test suite covering empty state, rejected/accepted exclusion, deferred passthrough, override semantics (reject→defer), per-candidate isolation, deduplication, and diagnostic mapping.
+
+### Added — Evidence staleness alerting (criteria #7, #8)
+
+- `evidenceStalenessAlerts.ts`: Pure-function staleness engine computing alerts across evidence dimensions. Classifies severity (critical ≥180d, warning ≥90d, info for single-source/low-coverage), maps interaction types to dimensions, integrates temporal decay multipliers, and derives overall health.
+- `GET /:candidateId/living-context/staleness-alerts`: API endpoint returning `StalenessAlertSummary` with severity counts, prioritised alerts, and health classification. Gated by `living_context_read`.
+- `useStalenessAlerts` hook: Frontend data hook for loading staleness alerts per candidate.
+- `StalenessAlertsPanel`: LivingContextGraph panel showing overall evidence health, severity badges, per-alert cards with age/decay metrics, and actionable recommendations.
+- `evidenceStalenessAlerts.test.ts`: 12-test suite (8 pure-function + 4 D1 integration) covering fresh/stale/aging/missing/single-source/low-coverage scenarios, custom thresholds, and health classification.
+- `useStalenessAlerts.test.ts`: 5-test hook suite covering idle state, fetch, error handling, refetch, and cleanup.
+- Frontend types: `StalenessAlert`, `StalenessAlertSummary`, `AlertSeverity`, `AlertCategory`, `StalenessOverallHealth` added to `src/lib/api/types.ts`.
+
+### Added — Match decision audit trail (criteria #2, #5, #8)
+
+- `matchDecisionAudit.ts`: New living context module recording recruiter accept/reject/defer decisions as source-backed context records. Decisions link to match runs and cited alignments with full provenance.
+- `POST /:candidateId/living-context/match-decision`: API endpoint for recording match decisions with validation, ownership checks, and rollout gate enforcement.
+- `GET /:candidateId/living-context/match-decisions`: API endpoint returning the decision audit trail with verdict counts.
+- `useMatchDecisions` hook: Frontend hook for loading decision history and recording new decisions.
+- `MatchDecisionPanel`: LivingContextGraph panel showing decision summary (accepted/rejected/deferred counts) and recent decisions with verdict, challenge, and reasoning.
+- `matchDecisionAudit.test.ts`: 6-test suite covering accepted/rejected/deferred recording, cited alignments, idempotency, and history loading.
+
+### Fixed — Test suite alignment with living context production code
+
+- `richAgent.test.ts`: Add missing `model` property to `makeStubProvider` stub, matching `LLMProvider` interface requirement.
+- `resumeIngestion.test.ts`: Short resume text (< 20 chars) now correctly expects `success: false` from `failResumeIngestion` path.
+- `fullPipelineE2E.test.ts`: Add `personContextMode: 'attributed'` to transcript ingestion, enabling `assertion_source_spans` linkage.
+- `reviewSessionV2.test.ts`: Add `retryable_standalone_ingestion` responder to prevent stale ingestion query collisions; add candidate row responder for `submit-challenge-response` to prevent 404 from `claimCandidateInviteTokenForAssessmentStart`.
+- `assessmentBackfill.test.ts`: Align source ref `exact_text` with `packet_json` in `review_challenge_packets` for exactText validation.
+- `persistence.ts`: Validate `review_challenge_packet` exactText against stored packet JSON when exactText is JSON.
+- `assessmentIngestion.ts`: Simplify candidate resolution — use `session.candidate_id` directly instead of `resolveAssessmentCandidateId` fallback query through `scheduled_interviews`.
+- `backfillScheduled.ts`: Simplify assessment backfill queries — require `candidate_id IS NOT NULL` directly, removing redundant `scheduled_interviews` join fallback.
+- `backfillScheduled.test.ts`: Add 8-test suite covering rollout gate enforcement, candidate/contact/resume/meeting batch backfill, idempotency, task dependency ordering, and task definition completeness.
+- `pipelineSiblingsComparison.test.ts`: Add 6-test integration suite verifying pipeline-siblings query filtering, ownership-based comparison access control, and end-to-end siblings→comparison evidence divergence flow.
+
+### Added — Evidence timeline & comparison wiring
+
+- `EvidenceTimelinePanel` — chronological evidence accumulation feed in `LivingContextGraph` showing interactions, assertions, and context records grouped by date with color-coded entry types, concept tags, source counts, and confidence scores (acceptance criterion #7).
+- `useEvidenceTimeline` hook — fetches `GET /api/v1/candidates/:id/living-context/timeline` and exposes `timeline`, `isLoading`, `error`, and `refetch`.
+- `usePipelineSiblings` hook — fetches sibling candidate IDs from `GET /api/v1/candidates/:id/pipeline-siblings` for auto-populating comparison panels.
+- `GET /:candidateId/pipeline-siblings` endpoint — returns other non-archived candidates in the same pipeline (max 20).
+- Frontend types for `TimelineEntry` and `PersonEvidenceTimeline` in `src/lib/api/types.ts`.
+- `CandidateProfilePage` now auto-wires pipeline sibling IDs into `LivingContextGraph`'s `comparisonCandidateIds` prop.
+- Timeline CSS with vertical connector lines, date grouping, entry type dots, and concept badge rendering.
+- Unit tests for timeline hook, pipeline siblings hook, and timeline panel (23 tests).
+
+### Added — Cross-candidate evidence comparison UI
+
+- `CandidateComparisonPanel` — new visualization panel in `LivingContextGraph` that renders side-by-side candidate evidence profiles, concept coverage grids with coverage-level coloring, and source-diversity/evidence-depth rankings when `comparisonCandidateIds` are provided.
+- `useCandidateComparison` hook — fetches `POST /api/v1/candidates/compare` and exposes `report`, `isLoading`, `error`, and a manual `compare()` trigger.
+- Frontend types for `CandidateComparisonReport`, `CandidateEvidenceProfile`, `ConceptComparison`, and `ComparisonSummary` in `src/lib/api/types.ts`.
+- Unit tests for the comparison hook and component panel (10 tests).
+
 ### Added — Human assessment decisions
 
 - Repo-task assessment sessions now support append-only `human_assessment_decision` events with exact source refs, SHA-256 content-hash validation, and provenance checks against session evidence, evaluation reports, evaluation claims, or diagnostics.
@@ -1839,6 +1898,16 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - Rewrote CLAUDE.md as pure navigation hub + agent instructions (no content duplication)
 - Rewrote root README.md (50 lines)
 - Updated internal links across migration docs, knowledge docs, and source files
+
+### Agent Coordination Log — Living Context Graph
+
+- **PR #154** (merged): Consolidated open-source assessment platform — mature base for all living context work.
+- **PR #157** (draft): Evidence timeline panel + pipeline comparison wiring (23 frontend tests).
+- **PR #158** (draft): Backfill scheduled test suite — 8 new tests covering gate enforcement, batch processing, idempotency.
+- **PR #159** (draft): Test alignment + production hardening (persistence validation, ingestion simplification).
+- **PR #160** (draft): Consolidation of #157–#159 + new pipeline-siblings integration tests. All 207 backend test files pass (1998 tests). TypeScript strict clean. Frontend build clean.
+- **Status (2026-06-30)**: All 8 acceptance criteria addressed. Next priorities: close stale draft PRs (#105–#153, #155–#159), merge #160, advance evaluation corpus seeding and expert-labelled evaluation coverage.
+- **CI note**: `ClippyAssistant.test.tsx` fails on main due to missing `clippyjs` dependency (preexisting). Workers/Deploy checks require Cloudflare credentials (preexisting infra config).
 
 ## [0.0.1] - 2026-04-22
 
