@@ -9,6 +9,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Fixed — CODE_REVIEW assessment runtime
 
+- Recruiter interview detail API prefetches now fall back to the normal request if the speculative dev-proxy fetch stalls, preventing CODE_REVIEW detail pages from sitting on an indefinite spinner when a matched assessment is already available.
 - The deployed CODE_REVIEW assess-link smoke now clicks from the recruiter assessment detail into the person profile and verifies the person-level decision cockpit, keeping the rollup proof attached to the routine app-dev gate.
 - The deployed CODE_REVIEW workspace smoke now defaults to the source-backed MUI popover challenge profile, so `npm run smoke:code-review-workspace-dev` proves a real repo/base-commit/finalizer/evaluation path without hidden env overrides.
 - The deployed CODE_REVIEW assessment smoke can now require the person-profile decision readout, proving submitted review evidence rolls up beyond the interview detail page.
@@ -33,23 +34,24 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Removed — Assessment-room distractions
 
-- Removed the abandoned presentation-sync room event contract from room signaling, session-event ingestion, durable replay, source-ref projection, and tests. The room evidence layer now focuses on video, chat, workspace, terminal, code-server/file events, recording, transcription, commit submissions, and the real AI assistant bridge.
-- Scrubbed the last archived QA label that matched the retired room-assistant terminology, leaving tracked abandoned-skin searches clean while keeping the core assessment product vocabulary focused.
-- Removed the remaining active desktop-metaphor vocabulary from the video-room app by renaming local surfaces to assessment tools/panels, replacing Chat/Terminal/Submission components with panels, and updating new source-backed evidence strings from layout wording to panel wording.
-- Updated the open-source assessment contract to remove non-assessment collaboration and presentation-layer replay promises from the current product path.
+- Scrubbed remaining historical references to obsolete non-assessment UI work from current changelog notes, coordination docs, audit notes, and candidate-ingestion fixtures so the product language stays anchored to open-source assessment work.
+- Removed an abandoned non-assessment room event contract from room signaling, session-event ingestion, durable replay, source-ref projection, and tests. The room evidence layer now focuses on video, chat, workspace, terminal, code-server/file events, recording, transcription, commit submissions, and the real AI assistant bridge.
+- Scrubbed the last archived QA label that matched obsolete assistant terminology, leaving tracked stale-UI searches clean while keeping the core assessment product vocabulary focused.
+- Removed the remaining abandoned-room vocabulary from the video-room app by renaming local surfaces to assessment tools/panels, replacing Chat/Terminal/Submission components with panels, and updating new source-backed evidence strings from layout wording to panel wording.
+- Updated the open-source assessment contract to remove non-assessment collaboration and replay promises from the current product path.
 - Removed active layout-event publishing from the video-room app: workspace state now records through source-backed assessment session events, local panels no longer emit shared layout lifecycle/state evidence, and the unused layout evidence helper/tests were deleted.
 - Trimmed the video-room local panel model to real assessment tools only: video, chat, workspace, terminal, and Submit Work.
-- Removed legacy presentation code from the video-room app, including abandoned layout controls, unused embedded tools, cursor-sync leftovers, and decorative UI dependencies.
+- Removed obsolete non-assessment UI code from the video-room app, including abandoned layout controls, unused embedded tools, and decorative UI dependencies.
 - Replaced the Agent-branded room assistant UI with a plain source-backed AI assistant bridge panel and kept candidate/recruiter room flows on the standard assessment layout.
-- Updated active assessment planning docs to describe the open-source repo-task interview product instead of the abandoned layout prototype.
-- Removed stale layout-prototype product naming from the room HTML shell, Devin bridge prompt, deployed smoke scripts, current e2e coverage, and room-event assessment session mode while preserving legacy evidence-source compatibility.
-- Removed the remaining fake Microsoft browser label from assessment browser evidence fixtures and historical notes, replacing it with neutral Assessment Browser language.
+- Updated active assessment planning docs to describe the open-source repo-task interview product instead of obsolete non-assessment UI work.
+- Removed stale non-assessment product naming from the room HTML shell, Devin bridge prompt, deployed smoke scripts, current e2e coverage, and room-event assessment session mode while preserving legacy evidence-source compatibility.
+- Removed the remaining fake external-browser label from assessment browser evidence fixtures and historical notes, replacing it with neutral Assessment Browser language.
 - Workspace assessment detail pages now keep evaluator claims, cautions, source snippets, coverage chips, and source-ref counts behind a collapsed Evidence audit trail so the hiring-manager decision readout stays primary without losing provenance.
 - Assessment setup gaps now render explicit recruiter next actions across interview cards and detail assignment panels, such as sending the candidate evidence invite, rerunning/enriching matching, or attaching a concrete challenge packet.
-- The video-room assessment shell no longer renders floating utility panels; terminal and submission now open in a focused assessment tools panel, and unused legacy workspace overlay CSS was removed.
-- Removed remaining legacy visual residue from video/status/workspace/challenge/submission controls, and dropped legacy fake-browser action aliases from the real agent bridge.
+- The video-room assessment shell now opens terminal and submission inside a focused assessment tools panel, and unused legacy workspace overlay CSS was removed.
+- Removed remaining legacy residue from video/status/workspace/challenge/submission controls, and dropped obsolete action aliases from the real agent bridge.
 - Removed the dead legacy menu event contract from room signaling, session-event ingestion, source-ref projection, readiness progress, and tests so it has no recoverable runtime path.
-- Removed the last live synchronized presentation-layer features from the video-room runtime: shared pointer presence, shared client file projection, floating assistant popups, and external browser telemetry. The room now keeps focus on video, chat, workspace, terminal, Submit Work, recording, transcription, and the real AI assistant bridge.
+- Removed the last live non-assessment collaboration features from the video-room runtime. The room now keeps focus on video, chat, workspace, terminal, Submit Work, recording, transcription, and the real AI assistant bridge.
 
 ### Added — Human assessment decisions
 
@@ -127,7 +129,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - Meeting-room basic-auth route regressions now use the real room-dev host when asserting credential injection, keeping the tests aligned with the dev-host-only auth hardening.
 - Failed, stopped, and expired dev-container workspaces now present an explicit Relaunch workspace recovery action in the room status strip, prejoin panel, and workspace panel instead of leaving hosts with a generic launch prompt.
 - Workspace terminal sessions now decode browser `TERMINAL_INPUT` control frames and normalize xterm carriage returns before writing to bash, so candidate terminal commands execute as commands instead of JSON blobs.
-- Workspace-enabled rooms now start in the standard code-first assessment surface and ignore synced legacy layout window/file replay unless the room is explicitly switched into Assessment mode.
+- Workspace-enabled rooms now start in the standard code-first assessment surface and ignore obsolete layout/file replay events.
 - Workspace stops now append source-backed dev-container stop evidence to linked assessment sessions and return refreshed progress, keeping container lifecycle actions in the same durable interview spine as launch and commit evidence.
 - Workspace launches now append source-backed dev-container launch evidence to linked assessment sessions and return refreshed progress immediately, so opening VS Code is part of the durable assessment spine instead of only browser telemetry.
 - Video rooms now refresh the visible assessment progress after source-backed room events are accepted, so chat, terminal, and Agent/agent evidence can move the status strip without waiting for a reload or commit submission.
@@ -139,13 +141,13 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - Assessment Submit Work now validates GitHub repo/fork/commit/PR URLs, full commit SHAs, assessment branch names, and diff-to-file alignment before sending source-backed commit evidence, and shows the exact Git commands candidates should paste.
 - Video rooms now show a compact assessment status strip with mode, repo/PR/base commit, workspace state, challenge task, and next action so standard calls, code reviews, and dev-container assessments are legible inside the call.
 - Video call controls now include an explicit AI assistant button that opens the real Agent/Devin bridge status panel and records call-control provenance instead of hiding assistant access behind room chat.
-- The assistant bridge now uses plain assessment UI instead of branded character sprites or floating dialogs.
+- The assistant bridge now uses plain assessment UI instead of character branding.
 - Closing the Agent bridge now closes only the assistant panel, so the room no longer leaves orphaned assistant UI over chat.
 - Assessment commit submission now makes upstream PR tracking an explicit opt-in, blocks upstream PR URLs without candidate approval, and stores approved PR links as exact source-backed evidence instead of treating them as implicit metadata.
 - Standard-room assistant controls now restore the visible prompt without opening or closing the dev-container agent bridge.
 - Assessment assistant control clicks now publish source-backed evidence instead of leaking the DOM click event into the Agent action origin.
 - Closing an Agent notice now dismisses only that notice instead of hiding the assistant.
-- Agent now renders through a single controlled prompt and bridge chat surface, preserving the no-duplicate-assistant fix without leaving only a floating dialog behind.
+- Agent now renders through a single controlled prompt and bridge chat surface, preserving the no-duplicate-assistant fix without leaving an orphaned notice behind.
 - Agent bridge chat now keeps assistant status inside one controlled panel, preventing overlapping assessment dialogs from blocking chat controls.
 - Video-room no-device joins now keep retry controls styled and disable unavailable mic/camera buttons instead of publishing source-less media-control actions.
 - Video rooms now let participants enter when camera or microphone access is unavailable, while keeping a retry-devices action for restoring media after joining.
@@ -154,14 +156,14 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - Video-room media control events now require the event id to match the source-backed media control id before optimistic updates, broadcasts, or Durable Object persistence, preventing stale mic/camera evidence from toggling the wrong shared state.
 - Room chat messages now carry and verify an exact text fingerprint in source-backed evidence, preventing same-length stale or tampered chat payloads from replaying as valid meeting evidence.
 - Historical assessment surface toggles required deterministic integer capture times and known room phases before replaying, preventing malformed surface evidence from moving participants between call views.
-- Assessment shared window open/close events now reconstruct lifecycle ids and verify open-window metadata before replaying, preventing stale lifecycle evidence from launching or closing the wrong shared window.
-- Assessment shared window-state events now reconstruct state patches, actions, and source ids before replaying, preventing stale move, resize, focus, minimize, or maximize evidence from syncing across participants.
-- Agent no longer mounts unmanaged decorative sprites over the assessment layout; the controlled assistant panel remains the only Agent surface.
+- Retired layout lifecycle events now reconstruct ids and verify metadata before replaying, preventing stale evidence from changing the wrong assessment panel.
+- Retired panel-state events now reconstruct patches, actions, and source ids before replaying, preventing stale move/focus evidence from affecting participants.
+- Agent now renders only through the controlled assistant panel.
 - The assessment assistant no longer opens the agent bridge diagnostics panel in standard rooms that were not configured with a dev workspace.
 - Room-dev now clears stale origin cache only during the basic-auth handoff, while missing old hashed `/assets/*` bundles return 404 instead of the SPA shell so rapid deploys do not leave Safari on a blank stale room bundle.
 - Added a deployed Agent/Devin chat smoke that launches a real dev-container room, waits for `AGENT_READY`, sends a real Devin API prompt, and fails unless the agent response and bridge diagnostics are source-backed and persisted.
 - Standard video rooms no longer publish no-op workspace layout events, removing rejected source-backed evidence console noise while preserving real dev-container workspace diagnostics.
-- Historical peer pointers rendered through isolated transform layers instead of top/left rediagraming, reducing stale pointer artifacts while preserving shared pointer evidence and sync state.
+- Historical peer-presence evidence rendered through isolated transform layers, reducing stale artifacts while preserving provenance for archived sessions.
 
 ### Fixed — Candidate repo matching
 
@@ -779,11 +781,11 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - Standalone dev-container launches now mark candidate sessions `ERROR` with a redacted diagnostic when the background Durable Object init request fails before the container can report status, and the status API returns that diagnostic to the UI.
 - Room workspace launches now mark dev-container sessions `ERROR` with a redacted diagnostic when the background Durable Object init request fails before the container can report status, preventing broken workspaces from polling forever as `LAUNCHING`.
 - The assessment assistant entrypoint now reflects whether the Agent chat panel is actually open, while keeping assistant access available after prompt dismissal or chat close for the next real-agent interaction.
-- Authoritative shared layout snapshots now remove stale locally optimistic Assessment windows that are no longer accepted by the Durable Object while preserving local bootstrap call/chat/workspace windows, preventing rejected or missed close events from leaving one participant's layout out of sync.
-- Rejected shared layout events now return the Durable Object's authoritative surface/window snapshot, allowing clients to roll back optimistic local assessment/standard-call state when source-backed layout evidence is refused.
-- Reconnected room clients now re-apply the Durable Object's authoritative shared surface snapshot unless a fresh local surface toggle is still pending, keeping host and guest synced when one returns from open-source assessment room to the standard call after the other briefly disconnects.
+- Authoritative room state snapshots now remove stale locally optimistic assessment panels that are no longer accepted by the Durable Object while preserving local bootstrap call/chat/workspace panels, preventing rejected or missed close events from leaving participants on different room states.
+- Rejected room-state events now return the Durable Object's authoritative assessment surface snapshot, allowing clients to roll back optimistic local assessment/standard-call state when source-backed evidence is refused.
+- Reconnected room clients now re-apply the Durable Object's authoritative assessment surface snapshot unless a fresh local surface toggle is still pending, keeping host and guest aligned when one returns from the open-source assessment room to the standard call after the other briefly disconnects.
 - Transcript-derived assertion context records now preserve self-contained exact-text `source_span` refs with content hashes, segment locators, speaker roles, timestamps, provider confidence, and contact attribution so scored/person evidence can cite the spoken moment without reconstructing it from a broader transcript packet.
-- Source-backed assessment room surface changes, menu toggles, browser navigation, window lifecycle/data/state updates, cursor samples, media controls, recording state, workspace state, and code-server opens now emit direct source refs and graph entities in living-context and assessment evidence instead of only the broad meeting-session event packet.
+- Source-backed assessment room surface changes, menu toggles, browser navigation, panel lifecycle/data/state updates, presence samples, media controls, recording state, workspace state, and code-server opens now emit direct source refs and graph entities in living-context and assessment evidence instead of only the broad meeting-session event packet.
 - Agent UI actions and real bridge room-action suggestions now preserve direct `agent_ui_action` / `agent_room_action` exact-text source refs in living-context and assessment evidence, so tray clicks, chat closes, auth intents, and agent suggestions are citeable without unpacking the broader room event packet.
 - Room chat, Agent user messages, and real agent stdout replies now preserve direct exact-text source refs in living-context and assessment evidence, so chat turns can be cited without unpacking the broader room event packet.
 - Code-server file saves/deletes now preserve direct `code_server_file_observation` source refs in living-context and assessment evidence, keeping observed path/action/hash/size/preview/workspace provenance citeable without pretending the full file body was captured.
@@ -794,8 +796,8 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - Agent workspace file-change observations now require code-server bridge source, observed timestamp, SHA-256 content hash, file size, and persistence state before rendering a workspace suggestion, preventing source-less agent messages from implying a real edit.
 - Container terminal command/output evidence now fails closed until a real workspace session exists, preventing browser-only terminal events that the room Durable Object would reject from entering the context graph.
 - Agent chat now shows a live bridge readiness checklist for workspace, WebSocket, agent identity, state, and capabilities with distinct status dots, so disabled Devin chat is diagnosable without enabling fake or source-less messages.
-- Host recording start/stop/upload state now syncs through the room Durable Object to both Assessment and standard layouts, with source-backed MediaRecorder provenance replayable into session evidence instead of remaining host-local UI state.
-- Historical layout state evidence preserved whether focus/minimize/restore came from the assistant control, layout icon, or panel control instead of collapsing every update to a generic layout source.
+- Host recording start/stop/upload state now persists through the room Durable Object across Assessment and standard room surfaces, with source-backed MediaRecorder provenance replayable into session evidence instead of remaining host-local UI state.
+- Historical panel-state evidence preserved whether focus/minimize/restore came from the assistant control or panel control instead of collapsing every update to a generic room source.
 - Historical agent-opened assessment tools persisted lifecycle evidence with `lifecycleSource: agent_action` instead of misattributing those opens to direct layout UI clicks.
 - Agent’s Devin login terminal button now records `open-devin-auth-terminal` evidence instead of the generic `open-terminal` action id.
 - Agent’s browser-based Devin auth button now records `open-devin-auth-browser` evidence instead of collapsing the click into a CLI auth recheck.
@@ -809,7 +811,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - Agent/Devin now preflights real `devin auth status` before starting the CLI, treats service API keys as insufficient for CLI login, and surfaces precise auth-needed diagnostics in the live agent state.
 - Agent/Devin bridge readiness now requires an actual Devin CLI executable in the dev-container image, passes optional `DEVIN_ORG_ID` into room-scoped containers, and emits real missing-CLI/auth-needed diagnostics instead of reporting `AGENT_READY` when Devin is absent or login is canceled.
 - Dev-container Durable Object lifecycle hooks now persist source-backed `SLEEPING`, wake-to-`READY`, and unexpected-stop/error diagnostics, keeping Agent availability and workspace evidence aligned with the real container state.
-- Historical peer-pointer movements published source-backed pointer evidence through the room Durable Object, while raw pointer moves stayed live-only and were excluded from replay.
+- Historical peer-presence samples published source-backed evidence through the room Durable Object, while raw live-only samples were excluded from replay.
 - Room-end Durable Object replay now maps accepted mic/camera control activity into source-backed `media_control` meeting-session evidence, instead of relying only on one browser's direct event capture.
 - Mic/camera toggles now publish source-backed shared media-control events through the room Durable Object, persist replayable activity/state, and render peer media status across both standard and assessment room room surfaces.
 - Room chat delivery acknowledgements and rejections now persist as source-backed `chat_message` evidence immediately, so the live context graph records the Durable Object delivery outcome instead of only the optimistic browser send.
@@ -831,9 +833,9 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - Agent/Devin browser bridge parsing now ignores `CHAT_RESPONSE` and `ROOM_ACTION` packets without explicit bridge-provided agent identity instead of defaulting them to Devin.
 - Meeting recording uploads now require explicit speaker-channel metadata before separate transcription audio can produce attributed transcript evidence; missing metadata stays summary-only instead of defaulting channel 0/1 to host/guest.
 - Agent/Devin room context summaries now include compact source refs for each session event, preserving candidate node ids, session refs, captured timestamps, and stable event ids inside the real Devin prompt context.
-- Code-server save/delete observations from the real Agent/Devin bridge now publish into a source-validated shared room activity log for replayable context-graph sync instead of existing only in one browser's direct session-event queue.
-- Agent/Devin user prompts, bridge status/replies, and room-action executions now publish into a source-validated shared room activity log for replayable context-graph sync instead of existing only in one browser's direct session-event queue.
-- Container terminal command/output events now publish into the shared room Durable Object, replay into context graph sync, and reject source-less terminal claims instead of relying only on one browser's direct session-event POST.
+- Code-server save/delete observations from the real Agent/Devin bridge now publish into a source-validated room activity log for replayable context-graph projection instead of existing only in one browser's direct session-event queue.
+- Agent/Devin user prompts, bridge status/replies, and room-action executions now publish into a source-validated room activity log for replayable context-graph projection instead of existing only in one browser's direct session-event queue.
+- Container terminal command/output events now publish into the room Durable Object, replay into context-graph projection, and reject source-less terminal claims instead of relying only on one browser's direct session-event POST.
 - Meeting transcript processing failures now append immutable assessment diagnostics with exact recording/transcription source keys and error provenance instead of living only in the mutable meeting row.
 - open-source assessment room room session evidence now stores the full stable browser/bridge event packet as the immutable `meeting_session_event` source text instead of reducing source refs to display text.
 - Dev-container lifecycle rows now append immutable assessment evidence for launch, ready, warning, error, stop, and expiry transitions, preserving the exact D1 session snapshot instead of relying only on browser-observed workspace state.
@@ -851,12 +853,12 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - Workspace-state evidence now carries actor-bound observer ids and capture timestamps through Durable Object replay, normalizes room replay ids, and preserves that source context before becoming meeting-session context.
 - Code-server iframe open evidence now carries actor-bound open ids and capture timestamps before entering meeting-session context.
 - Container terminal command/output evidence now carries actor-bound capture ids and timestamps so repeated same-command interactions remain distinct source events.
-- Shared Assessment file-system events without browser source evidence are now rejected by the room Durable Object and skipped during replay instead of becoming source-less `file_change` graph nodes.
-- Shared Assessment window open/navigation/data/state events without browser source evidence are now rejected by the room Durable Object and skipped during replay instead of gaining Durable Object fallback provenance.
-- Shared room surface changes without browser-toggle source evidence are now rejected by the room Durable Object and skipped during replay instead of gaining `room_surface_durable_object` fallback provenance.
+- Assessment file-system events without browser source evidence are now rejected by the room Durable Object and skipped during replay instead of becoming source-less `file_change` graph nodes.
+- Assessment panel/navigation/data/state events without browser source evidence are now rejected by the room Durable Object and skipped during replay instead of gaining Durable Object fallback provenance.
+- Room surface changes without browser-toggle source evidence are now rejected by the room Durable Object and skipped during replay instead of gaining `room_surface_durable_object` fallback provenance.
 - Workers AI model routing now remaps deprecated Llama 3.1 8B variants before inference so repo/challenge discovery does not fail on stale environment overrides.
-- Historical assessment browser navigations carried stable navigation ids, capture timestamps, and URL fingerprints through shared layout state, Durable Object replay, and session-event validation.
-- Synced Assessment window lifecycle/state events now preserve stable window event ids and capture timestamps through the client connection, Durable Object replay, and session-event validation.
+- Historical assessment browser navigations carried stable navigation ids, capture timestamps, and URL fingerprints through room state, Durable Object replay, and session-event validation.
+- Assessment panel lifecycle/state events now preserve stable event ids and capture timestamps through the client connection, Durable Object replay, and session-event validation.
 - Summary-only room transcripts now persist their person-context mode into living-context metadata and cannot create candidate source attributions, assertions, or signals.
 - Agent/Devin agent reply evidence now requires real `CHAT_RESPONSE` provenance, persisted bridge metadata or explicit browser fallback metadata, and rejects bridge-shaped replies without those source facts.
 - Agent/Devin agent status evidence now requires bridge provenance, observed timestamps, and either browser WebSocket context or persisted bridge diagnostics before entering the meeting-session graph.
@@ -869,13 +871,13 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - Agent action evidence now rejects source-less action claims and requires either source-backed tray/prompt UI metadata or real Devin bridge `ROOM_ACTION` provenance before entering the meeting-session graph.
 - open-source assessment room room chat browser submissions now use source-backed chat evidence with shared-room message ids, client ids, delivery status, message timing, surface, and room phase before entering the meeting-session graph.
 - open-source assessment room terminal command/output evidence now requires browser terminal WebSocket provenance, deterministic command/output ids, fingerprints, lengths, and workspace context before entering the meeting-session graph.
-- Assessment window open/close and state updates now require source-backed lifecycle/state metadata before entering meeting-session evidence, and already-open layout icon clicks sync focus/restore actions across both screens.
+- Assessment panel open/close and state updates now require source-backed lifecycle/state metadata before entering meeting-session evidence, and already-open tool clicks restore focus through source-backed room state.
 - Standalone code-review assessment routing now ignores room lifecycle telemetry when deciding whether candidate decomposition evidence exists, sends telemetry-only candidates back to CV intake, and replaces claimed invite tokens before emailing assessment links again.
 - Agent/Devin agent replies now require real bridge `CHAT_RESPONSE` source metadata before becoming `ai_chat_agent` evidence; source-less browser claims are rejected as invalid session events.
 - Video-room clients now rely on the source-backed lifecycle route for participant join/leave evidence and stop retrying permanent session-event validation failures forever.
 - Code-server save/delete evidence now requires FILE_CHANGED bridge provenance, content hash, size, observation time, and either direct container persistence or browser-fallback room/workspace context before entering the graph.
-- Shared room surface changes now carry browser-toggle provenance, stable surface-change ids, timestamps, previous/next surfaces, and Durable Object replay markers across live capture and replayed projections.
-- Assessment cursor presence evidence now includes actor-bound sample ids, browser pointermove provenance, timestamps, sampling thresholds, and previous-position deltas before the API accepts it.
+- Room surface changes now carry browser-toggle provenance, stable surface-change ids, timestamps, previous/next surfaces, and Durable Object replay markers across live capture and replayed projections.
+- Assessment presence evidence now includes actor-bound sample ids, browser input provenance, timestamps, sampling thresholds, and previous-position deltas before the API accepts it.
 - Video room microphone/camera evidence now includes actor-bound event ids, browser control provenance, capture timestamps, and previous/next state before the API accepts it.
 - Room Chat now exposes an assessment assistant launcher for the existing real Agent/Devin panel without rerouting human chat or fabricating assistant replies.
 - Durable room-chat replay now preserves accepted delivery status and browser-source provenance before projecting chat into meeting-session evidence.
@@ -1042,18 +1044,6 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - Deployed the current dev API/app shell and re-ran the role-backed app-dev CODE_REVIEW full-submit smoke, proving automatic `mui/base-ui#973` matching, readable match reason, `ASSESSMENT_FIT`, validator approval, hypergraph evidence, Pierre inline comments, AI developer pushback, recruiter result visibility, and judge replay example creation.
 - Re-ran the roleless app-dev CODE_REVIEW full-submit auto-match smoke against the same deployment, proving measured positive contrast separation against a comparable packet plus full candidate submission, AI pushback, recruiter result, and judge replay visibility.
 - Re-ran the manual app-dev CODE_REVIEW full-submit smoke and adjusted the browser assertion to require the candidate-facing "recruiter selected" source-backed explanation instead of internal "manual override" jargon, while still proving no CV-fit claim, AI pushback, recruiter result visibility, and judge replay creation.
-
-### Superseded — Retired collaborative layout prototype
-
-- Removed before release in favor of the code-first assessment cockpit: current dev-container rooms focus on VS Code/code-server, the source-backed task packet, video/chat, recording/transcription, terminal evidence, Submit Work, and the real Devin/Agent bridge.
-
-### Changed — Assessment-themed workspace overlay in video room
-
-- Replaced the always-visible workspace panel with a toggleable workspace control in the video room.
-- Workspace panel now uses React composition with a custom PIPE assessment theme and Lucide icons preserved.
-- Added `workspaceOpen` state so the panel is closed by default; host clicks the terminal icon to open it.
-- Panel header shows repo URL with a close button; empty state uses the assessment layout background.
-- Installed `react-components` and `styled-components` in the video-room app.
 
 ### Fixed — API route ordering and RPC auth bypass
 

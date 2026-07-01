@@ -2,7 +2,7 @@
 
 **Date:** 2026-06-27
 **Active PR:** https://github.com/Jorybraun/pipe.os/pull/104
-**Purpose:** Keep parallel agents aligned while building the PIPE-OS assessment layer and assessment-room runtime.
+**Purpose:** Keep parallel agents aligned while building the PIPE-OS assessment layer and room runtime.
 
 This document is an ownership and integration contract, not a personal todo list.
 Update it only when lanes, interfaces, or merge rules change.
@@ -27,15 +27,15 @@ claims when those claims cite exact source evidence.
 - Candidate-facing clients receive invite/session tokens, not internal IDs.
 - Server-only rubrics, planted bugs, and expected solutions stay server-side.
 
-## Agent A Lane: Assessment Room Runtime And Mode Routing
+## Agent A Lane: Room Runtime And Mode Routing
 
 Agent A owns the live interview surface and mode-routing seam.
 
 Primary responsibilities:
 
 - Keep standard video and assessment rooms usable in `app-dev.hire-app.com`.
-- Maintain room synchronization, shared state, chat, mouse presence, recording,
-  transcription, and dev-container launch behavior.
+- Maintain reliable video, chat, recording, transcription, room state, and
+  dev-container launch behavior.
 - Keep `OPEN_SOURCE_BUG_FIX` selectable and routable as an assessment mode.
 - Ensure app-dev deployment stays continuously testable.
 
@@ -110,7 +110,7 @@ OPEN_SOURCE_BUG_FIX scheduled interview
 
 ## Branch And Merge Protocol
 
-- Start from latest pushed `codex/video-room-paint-recording-fixes` or PR #104.
+- Start from the latest pushed open-source assessment branch or PR #104.
 - Prefer separate branches for parallel work.
 - Do not edit another agent's owned files without first adding a short note to
   this document under "Coordination Notes".

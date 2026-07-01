@@ -146,8 +146,8 @@ Person profile `64d40e72-1c43-4279-a9d7-92612122c668` renders the decision cockp
 - Candidate rooms now keep a proof checklist beside the task brief so candidates can see whether the challenge packet, workspace telemetry, work evidence, assessment branch commit, tests/verification note, AI usage, and interview context have been captured before they submit.
 - Workspace assessment detail pages now lead with the hiring-manager decision readout and candidate work packet while keeping raw evaluator claims, cautions, exact snippets, coverage chips, and source-ref counts in a collapsed evidence audit trail.
 - Assessment setup gaps now give recruiters a concrete next action instead of only a diagnostic: send/collect candidate evidence, rerun or enrich matching, or attach a source-backed challenge packet.
-- The assessment room now opens terminal and submission as focused assessment tools instead of floating utility panels, keeping the candidate flow centered on the repo task and evidence capture.
-- Remaining room controls and assessment panels now use the core PIPE assessment styling, and the agent bridge no longer accepts old fake-browser aliases.
+- The assessment room now opens terminal and submission as focused assessment tools, keeping the candidate flow centered on the repo task and evidence capture.
+- Remaining room controls and assessment panels now use the core PIPE assessment styling, and the agent bridge no longer accepts obsolete action aliases.
 - Repo-task progress now computes a canonical readiness snapshot: required proof, confidence signals, missing-proof count, ready-for-evaluation, and usable-hiring-signal. Candidate room panels and recruiter list/detail readouts use that same snapshot instead of separate local heuristics.
 
 ## What Still Needs Improvement
