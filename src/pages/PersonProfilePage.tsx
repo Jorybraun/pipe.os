@@ -375,6 +375,14 @@ function evidenceMixReadout(
 ): EvidenceMixReadout {
   const counts = interactionCoverageCounts(interactions);
   if (interactions.length === 0) {
+    if (decision && decision.proofCount > 0) {
+      return {
+        headline: 'Technical assessment signal is present',
+        detail: 'Use this selected code-review decision as current technical evidence, then add resume or conversation context before treating the person profile as complete.',
+        nextSource: decision.nextAction,
+      };
+    }
+
     return {
       headline: 'No source mix yet',
       detail: 'Start with one durable source: resume, invite, call transcript, or assessment evidence.',

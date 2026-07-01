@@ -694,6 +694,12 @@ describe('PersonProfilePage', () => {
     expect(decision).toHaveTextContent('Score provenance');
     expect(decision).toHaveTextContent('6 rubric dimensions · 2 evidence items · 5 scoring metrics');
     expect(decision).toHaveTextContent('acme/widgets PR #42');
+    const mix = screen.getByTestId('person-evidence-mix');
+    expect(mix).toHaveTextContent('Technical assessment signal is present');
+    expect(mix).toHaveTextContent('Use this selected code-review decision as current technical evidence');
+    expect(mix).toHaveTextContent('Schedule focused technical calibration');
+    expect(mix).not.toHaveTextContent('No source mix yet');
+    expect(mix).not.toHaveTextContent('Collect first source-backed evidence');
     expect(mocks.api.get).not.toHaveBeenCalledWith('/api/v1/contacts/person-1/living-context');
   });
 
