@@ -225,6 +225,12 @@ interface AssessmentPacketContractSummary {
   tone: 'verified' | 'warning' | 'neutral';
 }
 
+interface AssessmentProofChecklistSummary {
+  required: string[];
+  confidence: string[];
+  missingRequiredCount: number;
+}
+
 function assessmentDecisionSummary(input: {
   setup: ScheduledInterview['assessmentSetup'] | null;
   progress: ScheduledInterview['assessmentProgress'] | null;
@@ -386,6 +392,29 @@ function assessmentPacketContractColor(tone: AssessmentPacketContractSummary['to
     default:
       return 'var(--pipe-text-dim)';
   }
+}
+
+function assessmentProofItemLabel(
+  item: NonNullable<NonNullable<ScheduledInterview['assessmentProgress']>['readiness']>['required'][number],
+): string {
+  return `${item.satisfied ? 'Captured' : 'Missing'}: ${item.label}`;
+}
+
+function assessmentProofChecklistSummary(
+  readiness: NonNullable<ScheduledInterview['assessmentProgress']>['readiness'] | null | undefined,
+): AssessmentProofChecklistSummary | null {
+  if (!readiness) return null;
+
+  const required = readiness.required.map(assessmentProofItemLabel);
+  const confidence = readiness.confidence.map(assessmentProofItemLabel);
+
+  if (required.length === 0 && confidence.length === 0) return null;
+
+  return {
+    required,
+    confidence,
+    missingRequiredCount: readiness.missingRequiredCount,
+  };
 }
 
 function assessmentEvaluationStartNotice(result: AssessmentEvaluationStartResult | void): string {
@@ -552,6 +581,7 @@ export function InterviewCard({
     setup: assessmentSetup,
     progress: assessmentProgress,
   });
+  const assessmentProofChecklist = assessmentProofChecklistSummary(assessmentProgress?.readiness);
   const canStartAssessmentEvaluation = Boolean(
     startAssessmentEvaluation && assessmentProgress?.nextAction === 'START_EVALUATION',
   );
@@ -703,6 +733,33 @@ export function InterviewCard({
               <div style={{ minWidth: 0, fontSize: 10, color: 'var(--pipe-text-dim)', overflowWrap: 'anywhere' }}>
                 {assessmentEvidence}
               </div>
+              {assessmentProofChecklist && (
+                <>
+                  <div style={{
+                    fontSize: 9,
+                    color: assessmentProofChecklist.missingRequiredCount > 0 ? '#fbbf24' : '#4ade80',
+                    letterSpacing: '0.12em',
+                    fontWeight: 700,
+                  }}>
+                    PROOF
+                  </div>
+                  <div style={{ minWidth: 0, overflowWrap: 'anywhere' }}>
+                    {assessmentProofChecklist.required.length > 0 && (
+                      <div style={{
+                        fontSize: 10,
+                        color: assessmentProofChecklist.missingRequiredCount > 0 ? '#fde68a' : 'var(--pipe-text-dim)',
+                      }}>
+                        Required: {assessmentProofChecklist.required.join(' · ')}
+                      </div>
+                    )}
+                    {assessmentProofChecklist.confidence.length > 0 && (
+                      <div style={{ fontSize: 10, color: 'var(--pipe-text-dim)' }}>
+                        Confidence: {assessmentProofChecklist.confidence.join(' · ')}
+                      </div>
+                    )}
+                  </div>
+                </>
+              )}
               {assessmentPacketContract && (
                 <>
                   <div style={{ fontSize: 9, color: assessmentPacketContractColor(assessmentPacketContract.tone), letterSpacing: '0.12em', fontWeight: 700 }}>

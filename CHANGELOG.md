@@ -13,6 +13,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Fixed — Open-source assessment progress
 
+- Recruiter interview cards now render the assessment readiness contract as a required/confidence proof checklist, making missing challenge, commit, workspace, transcript, AI-use, or verification evidence visible without decoding raw source-ref counts.
 - Assessment-room source now has a regression guard against reintroducing retired novelty-room branding or affordances, keeping the room focused on the core candidate assessment product.
 - Manual open-source challenge packets can now carry a trusted verification command into the dev-container finalizer, so source-backed workspace submissions produce `test_run` evidence from challenge config instead of candidate-supplied request data.
 - Repo-task commit submissions now require a complete source-backed challenge packet before accepting candidate work, preventing incomplete assignments from becoming review evidence.

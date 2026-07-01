@@ -195,6 +195,9 @@ describe('InterviewCard assessment progress', () => {
     expect(progress).toHaveTextContent('DECISION');
     expect(progress).toHaveTextContent('Challenge, work evidence, and required source refs are captured; start source-backed AI or human evaluation.');
     expect(progress).toHaveTextContent('challenge, chat, workspace telemetry, tool activity, commit, AI use, transcript, tests');
+    expect(progress).toHaveTextContent('PROOF');
+    expect(progress).toHaveTextContent('Required: Captured: Complete challenge packet · Captured: Assessment branch commit');
+    expect(progress).toHaveTextContent('Confidence: Captured: Workspace-captured commit');
     expect(progress).toHaveTextContent('WORKSPACE');
     expect(progress).toHaveTextContent('Ready · open-source/widgets · base 111111111111');
     expect(progress).toHaveTextContent('open-source/widgets');
@@ -418,6 +421,8 @@ describe('InterviewCard assessment progress', () => {
 
     const progress = screen.getByTestId('interview-card-assessment-progress');
     expect(progress).toHaveTextContent('Waiting for complete challenge packet');
+    expect(progress).toHaveTextContent('PROOF');
+    expect(progress).toHaveTextContent('Required: Missing: Complete challenge packet');
     expect(progress).toHaveTextContent('PACKET');
     expect(progress).toHaveTextContent('Incomplete challenge packet');
     expect(progress).toHaveTextContent('Missing Success criteria, Expected evidence.');
