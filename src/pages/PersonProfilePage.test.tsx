@@ -613,15 +613,15 @@ function makeSelectedCodeReviewDecision(): unknown {
 function makeSelectedManualCodeReviewDecision(): unknown {
   return {
     ...(makeSelectedCodeReviewDecision() as Record<string, unknown>),
-    recommendation: 'Schedule targeted follow-up',
+    recommendation: 'Review assignment fairness before rejecting',
     recommendationDetail: 'Use the weak review as a technical signal, then calibrate whether the gap was ability, context, or assignment fit.',
     uncertainty: 'High calibration risk',
     uncertaintyDetail: 'Manual PR assignment does not prove candidate-fit matching.',
     missingContext: ['Manual PR assignment needs candidate-fit calibration.'],
     assessmentValidity: 'Score needs human calibration',
     assessmentValidityDetail: 'Score, review comments, and repo challenge proof exist, but candidate-fit proof is not present.',
-    nextAction: 'Schedule targeted follow-up',
-    nextActionDetail: 'Ask a focused question before advancing.',
+    nextAction: 'Review assignment fairness before rejecting',
+    nextActionDetail: 'Use the weak score and growth area to verify whether this reflects candidate ability, assignment fit, or missing context before rejecting.',
     scoreLabel: '38/100 Weak',
     challengeLabel: 'mui/base-ui PR #973',
     challengeUrl: 'https://github.com/mui/base-ui/pull/973',
@@ -751,9 +751,10 @@ describe('PersonProfilePage', () => {
     await flushAsyncUpdates();
 
     const decision = screen.getByTestId('person-code-review-decision');
-    expect(decision).toHaveTextContent('Schedule targeted follow-up');
+    expect(decision).toHaveTextContent('Review assignment fairness before rejecting');
     expect(decision).toHaveTextContent('38/100 Weak');
     expect(decision).toHaveTextContent('mui/base-ui PR #973');
+    expect(screen.getByTestId('person-decision-cockpit')).toHaveTextContent('Create fairness review');
     const proof = screen.getByTestId('person-code-review-source-proof');
     const proofSummary = proof.querySelector('summary');
     expect(proofSummary).toHaveTextContent('repo evidence, scoring provenance, and open gaps');

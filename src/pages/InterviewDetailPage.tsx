@@ -1720,13 +1720,6 @@ function codeReviewNextStepRecommendation(
       tone: 'blocked',
     };
   }
-  if (!submission && match?.status === 'MATCHED') {
-    return {
-      value: 'Wait for candidate review',
-      detail: 'The PR assignment is ready; do not make a hiring decision until the candidate submits source-backed review comments.',
-      tone: 'neutral',
-    };
-  }
   if (score && score.status !== 'scored') {
     return {
       value: 'Wait for scoring',
@@ -1739,8 +1732,8 @@ function codeReviewNextStepRecommendation(
   if (typeof scoreValue === 'number' && Number.isFinite(scoreValue)) {
     if (scoreValue < 50 || scoreBand === 'weak') {
       return {
-        value: 'Schedule targeted follow-up',
-        detail: 'Use the growth area as the next live interview prompt before advancing this candidate.',
+        value: 'Review assignment fairness before rejecting',
+        detail: 'Use the weak score and growth area to verify whether this reflects candidate ability, assignment fit, or missing context before rejecting.',
         tone: 'watch',
       };
     }
@@ -1755,6 +1748,13 @@ function codeReviewNextStepRecommendation(
       value: 'Advance to next stage',
       detail: 'Use the source-backed review, annotations, and pushback as evidence to move the candidate forward.',
       tone: 'positive',
+    };
+  }
+  if (!submission && match?.status === 'MATCHED') {
+    return {
+      value: 'Wait for candidate review',
+      detail: 'The PR assignment is ready; do not make a hiring decision until the candidate submits source-backed review comments.',
+      tone: 'neutral',
     };
   }
   if (submission) {

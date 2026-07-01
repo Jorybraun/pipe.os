@@ -2779,6 +2779,96 @@ describe('InterviewDetailPage', () => {
     expect(state).not.toContain('contextRecords":[{');
   });
 
+  it('passes weak code-review scores to the person profile as assignment-fairness decisions', async () => {
+    mocks.api.get.mockResolvedValueOnce({
+      interview: makeInterview({
+        interviewType: 'CODE_REVIEW',
+        status: 'COMPLETED',
+        candidateId: 'candidate-weak-1',
+        contactId: null,
+        recipientName: 'Casey Candidate',
+        recipientEmail: 'casey@example.com',
+        githubRepoUrl: 'https://github.com/mui/base-ui',
+        githubPrNumber: 973,
+        livingContext: {
+          person: {
+            personId: 'person-weak-code-review-1',
+            workspacePersonId: 'workspace-person-weak-1',
+            applicationId: 'application-weak-1',
+            displayName: 'Casey Candidate',
+            primaryEmail: 'casey@example.com',
+            primaryPhone: null,
+            relationshipSummary: null,
+            applicationStatus: null,
+            pipelineId: null,
+            roles: [],
+          },
+          summary: {
+            interactionCount: 4,
+            artifactCount: 6,
+            contextRecordCount: 8,
+            assertionCount: 3,
+            signalCount: 0,
+            sourceSpanCount: 10,
+          },
+          interactions: [],
+          artifacts: [],
+          contextRecords: [],
+          assertions: [],
+          signals: [],
+          relationships: [],
+        },
+        codeReviewMatch: {
+          status: 'MATCHED',
+          matchRunId: 'match-run-weak-1',
+          packetId: 'packet-weak-1',
+          summary: 'Matched to a source-backed review challenge, but the weak score needs fairness review.',
+          score: 0.74,
+          assessmentQuality: null,
+          reviewProfile: null,
+          validatorAgent: null,
+          roleSources: [],
+          evidence: [],
+          evidenceHyperedges: [],
+          gaps: [],
+          evidencePlan: [],
+          evidenceFollowUp: null,
+          evidenceRefresh: null,
+        },
+        codeReviewScore: {
+          reviewSessionId: 'review-session-weak-1',
+          status: 'scored',
+          score: 42,
+          band: 'weak',
+          narrative: 'Candidate missed the core regression risk in the review.',
+          strengths: [],
+          growthAreas: ['Confirm whether the selected PR was fair for their React experience.'],
+          provenance: {
+            rubricDimensionCount: 6,
+            evidenceItemCount: 2,
+            metricCount: 5,
+          },
+          updatedAt: '2026-06-23T00:00:00.000Z',
+        },
+      }),
+    });
+
+    renderDetail();
+    await flushAsyncUpdates();
+
+    fireEvent.click(screen.getAllByTestId('interview-open-person-profile')[0]!);
+
+    expect(screen.getByTestId('person-route-echo')).toHaveTextContent('person-weak-code-review-1');
+    const state = screen.getByTestId('person-route-state').textContent ?? '';
+    expect(state).toContain('selectedCodeReviewDecision');
+    expect(state).toContain('42/100 Weak');
+    expect(state).toContain('mui/base-ui PR #973');
+    expect(state).toContain('Review assignment fairness before rejecting');
+    expect(state).toContain('verify whether this reflects candidate ability, assignment fit, or missing context');
+    expect(state).not.toContain('Schedule targeted follow-up');
+    expect(state).not.toContain('contextRecords":[{');
+  });
+
   it('includes the evidence-plan question when inviting a follow-up assessment candidate', async () => {
     const followUp = makeInterview({
       id: 'context-call-1',
