@@ -371,7 +371,12 @@ test.describe('Feature: assessment recruiter detail smoke', () => {
     await expect(explanation).toBeVisible();
     await expect(explanation).toContainText('Why this challenge');
     await expect(explanation).toContainText('Why selected');
-    await expect(explanation).toContainText('Valid because');
+    if (EXPECTED_MATCH_MODE === 'manual_override') {
+      await expect(explanation).toContainText('Assignment proof');
+      await expect(explanation).not.toContainText('Valid because');
+    } else {
+      await expect(explanation).toContainText('Valid because');
+    }
     await expect(explanation).toContainText('Do not over-trust because');
     await expect(explanation).toContainText('Remaining question');
     const sourceProof = page.locator('details', { hasText: 'Source proof' }).first();
