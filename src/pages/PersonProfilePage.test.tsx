@@ -677,11 +677,12 @@ describe('PersonProfilePage', () => {
     mocks.api.get.mockReset();
   });
 
-  it('renders navigation living context immediately without automatic full graph hydration', async () => {
+  it('renders navigation living context immediately and hydrates the full graph in the background', async () => {
     const initialContext = makeLivingContext();
 
     mocks.api.get
-      .mockResolvedValueOnce({ contact: makeContact() });
+      .mockResolvedValueOnce({ contact: makeContact() })
+      .mockResolvedValueOnce(initialContext);
 
     renderPage({ livingContext: initialContext, selectedAssessment: makeSelectedAssessmentProgress() });
     await flushAsyncUpdates();
@@ -693,10 +694,25 @@ describe('PersonProfilePage', () => {
     expect(cockpit).toHaveTextContent('Advance with focused probe');
     expect(screen.getByTestId('person-code-review-decision')).toHaveTextContent('Code-review decision');
     expect(mocks.api.get).toHaveBeenCalledWith('/api/v1/contacts/person-1');
+    expect(mocks.api.get).toHaveBeenCalledWith('/api/v1/contacts/person-1/living-context');
+  });
+
+  it('keeps generic navigation living context lightweight without full graph hydration', async () => {
+    const initialContext = makeLivingContext();
+
+    mocks.api.get
+      .mockResolvedValueOnce({ contact: makeContact() });
+
+    renderPage({ livingContext: initialContext });
+    await flushAsyncUpdates();
+
+    expect(screen.queryByText('Loading person context...')).not.toBeInTheDocument();
+    expect(screen.getByRole('heading', { name: 'Ada Reviewer' })).toBeInTheDocument();
+    expect(mocks.api.get).toHaveBeenCalledWith('/api/v1/contacts/person-1');
     expect(mocks.api.get).not.toHaveBeenCalledWith('/api/v1/contacts/person-1/living-context');
   });
 
-  it('renders a selected code-review decision from navigation without full graph hydration', async () => {
+  it('renders a selected code-review decision from navigation while background graph hydration is empty', async () => {
     const summaryContext = makeLivingContext();
     summaryContext.interactions = [];
     summaryContext.artifacts = [];
@@ -706,7 +722,8 @@ describe('PersonProfilePage', () => {
     summaryContext.relationships = [];
 
     mocks.api.get
-      .mockResolvedValueOnce({ contact: makeContact() });
+      .mockResolvedValueOnce({ contact: makeContact() })
+      .mockResolvedValueOnce(summaryContext);
 
     renderPage({
       livingContext: summaryContext,
@@ -729,7 +746,46 @@ describe('PersonProfilePage', () => {
     expect(mix).toHaveTextContent('Schedule focused technical calibration');
     expect(mix).not.toHaveTextContent('No source mix yet');
     expect(mix).not.toHaveTextContent('Collect first source-backed evidence');
-    expect(mocks.api.get).not.toHaveBeenCalledWith('/api/v1/contacts/person-1/living-context');
+    expect(mocks.api.get).toHaveBeenCalledWith('/api/v1/contacts/person-1/living-context');
+  });
+
+  it('hydrates real interaction coverage after opening from a compact code-review navigation decision', async () => {
+    const summaryContext = makeLivingContext();
+    summaryContext.interactions = [];
+    summaryContext.artifacts = [];
+    summaryContext.contextRecords = [];
+    summaryContext.assertions = [];
+    summaryContext.signals = [];
+    summaryContext.relationships = [];
+    let resolveContext: (value: LivingContextReadModel) => void = () => undefined;
+    const pendingContext = new Promise<LivingContextReadModel>((resolve) => {
+      resolveContext = resolve;
+    });
+
+    mocks.api.get
+      .mockResolvedValueOnce({ contact: makeContact() })
+      .mockReturnValueOnce(pendingContext);
+
+    renderPage({
+      livingContext: summaryContext,
+      selectedCodeReviewDecision: makeSelectedCodeReviewDecision(),
+    });
+    await flushAsyncUpdates();
+
+    expect(screen.queryByText('Loading person context...')).not.toBeInTheDocument();
+    expect(screen.getByTestId('person-code-review-decision')).toHaveTextContent('acme/widgets PR #42');
+    expect(screen.getByTestId('person-interaction-coverage')).toHaveTextContent(
+      'Full source rows are loading.',
+    );
+
+    await act(async () => {
+      resolveContext(makeLivingContext());
+      await pendingContext;
+    });
+
+    expect(screen.getByTestId('person-code-review-decision')).toHaveTextContent('pierre/diffs PR #95');
+    expect(screen.getByTestId('person-interaction-coverage')).toHaveTextContent('1 code review');
+    expect(screen.getByTestId('person-interaction-coverage')).toHaveTextContent('1 resume');
   });
 
   it('keeps selected manual code-review proof wording honest on the person profile', async () => {
@@ -742,7 +798,8 @@ describe('PersonProfilePage', () => {
     summaryContext.relationships = [];
 
     mocks.api.get
-      .mockResolvedValueOnce({ contact: makeContact() });
+      .mockResolvedValueOnce({ contact: makeContact() })
+      .mockResolvedValueOnce(summaryContext);
 
     renderPage({
       livingContext: summaryContext,

@@ -43,6 +43,19 @@ const EXPECT_PERSON_PROFILE_PENDING = envFlag(
   'ASSESSMENT_RECRUITER_EXPECT_PERSON_PROFILE_PENDING',
   'CODE_REVIEW_RECRUITER_EXPECT_PERSON_PROFILE_PENDING',
 );
+const EXPECT_PERSON_PROFILE_RELATED_BOUNDARY = envFlag(
+  'ASSESSMENT_RECRUITER_EXPECT_PERSON_PROFILE_RELATED_BOUNDARY',
+  'CODE_REVIEW_RECRUITER_EXPECT_PERSON_PROFILE_RELATED_BOUNDARY',
+);
+const RELATED_BOUNDARY_REPO_URL = envText(
+  'ASSESSMENT_RECRUITER_RELATED_BOUNDARY_REPO_URL',
+  'CODE_REVIEW_RECRUITER_RELATED_BOUNDARY_REPO_URL',
+);
+const RELATED_BOUNDARY_PR_NUMBER = envText(
+  'ASSESSMENT_RECRUITER_RELATED_BOUNDARY_PR_NUMBER',
+  'CODE_REVIEW_RECRUITER_RELATED_BOUNDARY_PR_NUMBER',
+);
+
 function expectedRepoLabel(repoUrl: string): string | null {
   if (!repoUrl) return null;
   try {
@@ -93,6 +106,20 @@ async function expectPersonProfileDecision(page: Page): Promise<void> {
     await expect(personDecision).toContainText(/evidence items?/);
     await expect(personDecision).toContainText(/scoring metrics?/);
   }
+  if (EXPECT_PERSON_PROFILE_RELATED_BOUNDARY) {
+    const relatedRepoLabel = expectedRepoLabel(RELATED_BOUNDARY_REPO_URL);
+    const coverage = page.getByTestId('person-interaction-coverage');
+    await expect(coverage).toBeVisible();
+    await expect(coverage).toContainText(/[2-9] code reviews?/, { timeout: 45_000 });
+    await expect(personDecision).toContainText('Score provenance');
+    await expect(personDecision).not.toContainText('No complete code-review decision yet');
+    if (relatedRepoLabel) {
+      await expect(personDecision).not.toContainText(relatedRepoLabel);
+    }
+    if (RELATED_BOUNDARY_PR_NUMBER) {
+      await expect(personDecision).not.toContainText(`PR #${RELATED_BOUNDARY_PR_NUMBER}`);
+    }
+  }
   const rationale = page.getByTestId('person-code-review-rationale');
   await expect(rationale).toBeVisible();
   await expect(rationale).toContainText('Why this recommendation');
@@ -140,6 +167,16 @@ async function expectInterviewScopeBoundary(page: Page, options: { required?: bo
   );
 
   const related = page.getByTestId('interview-related-evidence-interviews');
+  if (EXPECT_PERSON_PROFILE_RELATED_BOUNDARY) {
+    await expect(related).toBeVisible({ timeout: 45_000 });
+    await expect(related).toContainText('Other interviews for this person');
+    await expect(related).toContainText(
+      'These are separate interviews on the same person graph. Open the person profile for the full cross-meeting view.',
+    );
+    await expect(related).toContainText(/related context preview/);
+    await expect(related).toContainText('Open full person graph');
+    return;
+  }
   if (await related.count() > 0) {
     await expect(related).toContainText('Other interviews for this person');
     await expect(related).toContainText(

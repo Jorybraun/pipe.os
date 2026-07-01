@@ -453,8 +453,15 @@ function evidenceMixReadout(
   };
 }
 
-function interactionCoverageSummary(interactions: LivingContextInteraction[]): string {
+function interactionCoverageSummary(
+  interactions: LivingContextInteraction[],
+  expectedInteractionCount = interactions.length,
+): string {
   if (interactions.length === 0) {
+    if (expectedInteractionCount > 0) {
+      const verb = expectedInteractionCount === 1 ? 'is' : 'are';
+      return `${countWithLabel(expectedInteractionCount, 'evidence-producing interaction')} ${verb} attached to this person. Full source rows are loading.`;
+    }
     return 'No evidence-producing interactions are attached to this person yet.';
   }
   return `Person-level rollup from ${countWithLabel(interactions.length, 'evidence-producing interaction')}. Open a row only when you need the single-meeting source record.`;
@@ -1948,6 +1955,7 @@ export default function PersonProfilePage(): JSX.Element {
   const selectedAssessment = selectedAssessmentFromNavigationState(location.state);
   const selectedCodeReviewDecision = codeReviewDecisionFromNavigationState(location.state);
   const hasInitialLivingContext = navigationLivingContext !== null;
+  const shouldHydrateNavigationContext = selectedAssessment !== null || selectedCodeReviewDecision !== null;
 
   const [contact, setContact] = useState<PersonContact | null>(null);
   const [livingContext, setLivingContext] = useState<LivingContextReadModel | null>(navigationLivingContext);
@@ -2068,6 +2076,17 @@ export default function PersonProfilePage(): JSX.Element {
     void load();
   }, [load]);
 
+  useEffect(() => {
+    if (!shouldHydrateNavigationContext || !hasInitialLivingContext || !contextEndpoint || hasRequestedFullContext) return;
+    void hydrateFullContext();
+  }, [
+    contextEndpoint,
+    hasInitialLivingContext,
+    hasRequestedFullContext,
+    hydrateFullContext,
+    shouldHydrateNavigationContext,
+  ]);
+
   const profileContact = contact ?? contactFromLivingContext(livingContext, personId);
   const displayName = profileContact?.name
     ?? livingContext?.person?.displayName
@@ -2182,7 +2201,10 @@ export default function PersonProfilePage(): JSX.Element {
               <div>
                 <div style={FIELD_LABEL}>Evidence coverage</div>
                 <p style={INTERACTION_COVERAGE_COPY}>
-                  {interactionCoverageSummary(livingContext?.interactions ?? [])}
+                  {interactionCoverageSummary(
+                    livingContext?.interactions ?? [],
+                    livingContext?.summary.interactionCount ?? 0,
+                  )}
                 </p>
               </div>
             </div>
@@ -2206,7 +2228,11 @@ export default function PersonProfilePage(): JSX.Element {
             </div>
           </div>
           {recentInteractions.length === 0 ? (
-            <EmptyPanel>No interactions have been captured yet.</EmptyPanel>
+            <EmptyPanel>
+              {(livingContext?.summary.interactionCount ?? 0) > 0
+                ? 'Full interaction rows are loading.'
+                : 'No interactions have been captured yet.'}
+            </EmptyPanel>
           ) : recentInteractions.map((interaction) => {
             const scheduledInterviewPath = scheduledInterviewPathFromInteraction(interaction);
 

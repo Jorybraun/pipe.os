@@ -28,6 +28,14 @@ const EXPECT_AUTOMATCH = process.env.CODE_REVIEW_EXPECT_AUTOMATCH
 const REQUIRE_CONTRAST = process.env.CODE_REVIEW_REQUIRE_CONTRAST
   ?? (!REPO_URL && !PR_NUMBER ? '1' : '0');
 const EXPECT_BLOCKED_MATCH = process.env.CODE_REVIEW_EXPECT_BLOCKED_MATCH === '1';
+const PERSON_RELATED_BOUNDARY = process.env.CODE_REVIEW_SMOKE_PERSON_RELATED_BOUNDARY === '1';
+const RELATED_BOUNDARY_REPO_URL = (
+  process.env.CODE_REVIEW_SMOKE_RELATED_BOUNDARY_REPO_URL
+  || 'https://github.com/facebook/react'
+).trim();
+const RELATED_BOUNDARY_PR_NUMBER = Number(
+  (process.env.CODE_REVIEW_SMOKE_RELATED_BOUNDARY_PR_NUMBER || '1').trim(),
+);
 
 const DEFAULT_RESUME_TEXT = [
   'Senior frontend platform engineer with deep React and TypeScript experience.',
@@ -91,6 +99,11 @@ function assertEnv() {
   }
   if (!RESUME_TEXT) {
     throw new Error('CODE_REVIEW_SMOKE_RESUME_TEXT must not be empty.');
+  }
+  if (PERSON_RELATED_BOUNDARY) {
+    if (!RELATED_BOUNDARY_REPO_URL || !Number.isInteger(RELATED_BOUNDARY_PR_NUMBER) || RELATED_BOUNDARY_PR_NUMBER <= 0) {
+      throw new Error('Set CODE_REVIEW_SMOKE_RELATED_BOUNDARY_REPO_URL and CODE_REVIEW_SMOKE_RELATED_BOUNDARY_PR_NUMBER to valid values.');
+    }
   }
 }
 
@@ -511,6 +524,44 @@ async function createCodeReviewInvite() {
   return { interviewId, recipientEmail, recipientName, deliveredUrl, inviteToken, invited };
 }
 
+async function createRelatedPersonBoundaryInterview(invite) {
+  if (!PERSON_RELATED_BOUNDARY) return null;
+
+  const created = await requestJson('/api/v1/scheduling/interviews', {
+    method: 'POST',
+    body: JSON.stringify({
+      recipientName: invite.recipientName,
+      recipientEmail: invite.recipientEmail,
+      meetingType: 'DIRECT_VIDEO_CALL',
+      interviewType: 'CODE_REVIEW',
+      githubRepoUrl: RELATED_BOUNDARY_REPO_URL,
+      githubPrNumber: RELATED_BOUNDARY_PR_NUMBER,
+      recruiterNotes: [
+        'Automated same-person boundary smoke.',
+        'This related CODE_REVIEW invite intentionally has no candidate submission.',
+        'The person profile must not use it as the completed recommendation.',
+      ].join(' '),
+    }),
+  });
+
+  const interview = created?.interview;
+  assert(interview?.id, `Related boundary interview response missing id: ${JSON.stringify(created)}`);
+  assert(interview?.interviewType === 'CODE_REVIEW', `Related boundary interview is not CODE_REVIEW: ${JSON.stringify(created)}`);
+  assert(
+    interview?.recipientEmail === invite.recipientEmail,
+    `Related boundary interview did not preserve same recipient email: ${JSON.stringify(created)}`,
+  );
+
+  return {
+    interviewId: interview.id,
+    contactId: interview.contactId ?? null,
+    status: interview.status ?? null,
+    repoUrl: interview.githubRepoUrl ?? RELATED_BOUNDARY_REPO_URL,
+    prNumber: interview.githubPrNumber ?? RELATED_BOUNDARY_PR_NUMBER,
+    assessmentSetupStatus: interview.assessmentSetup?.status ?? null,
+  };
+}
+
 async function resolveInvite(inviteToken) {
   return requestJson('/rpc/resolve-token', {
     method: 'POST',
@@ -733,6 +784,7 @@ function runRecruiterDetailPlaywright({
   requireHyperedges = false,
   expectPersonProfileDecision = false,
   expectPersonProfilePending = false,
+  expectPersonProfileRelatedBoundary = false,
 }) {
   if (SKIP_BROWSER || SKIP_RECRUITER_BROWSER) {
     return {
@@ -769,6 +821,9 @@ function runRecruiterDetailPlaywright({
         CODE_REVIEW_RECRUITER_REQUIRE_HYPEREDGES: requireHyperedges ? '1' : '0',
         CODE_REVIEW_RECRUITER_EXPECT_PERSON_PROFILE_DECISION: expectPersonProfileDecision ? '1' : '0',
         CODE_REVIEW_RECRUITER_EXPECT_PERSON_PROFILE_PENDING: expectPersonProfilePending ? '1' : '0',
+        CODE_REVIEW_RECRUITER_EXPECT_PERSON_PROFILE_RELATED_BOUNDARY: expectPersonProfileRelatedBoundary ? '1' : '0',
+        CODE_REVIEW_RECRUITER_RELATED_BOUNDARY_REPO_URL: RELATED_BOUNDARY_REPO_URL,
+        CODE_REVIEW_RECRUITER_RELATED_BOUNDARY_PR_NUMBER: String(RELATED_BOUNDARY_PR_NUMBER),
       },
     },
   );
@@ -1455,6 +1510,7 @@ async function main() {
       challenge,
       interviewId: invite.interviewId,
     });
+    const relatedBoundaryInterview = await createRelatedPersonBoundaryInterview(invite);
     const recruiterBrowserSmoke = await runRecruiterDetailBrowserSmoke({
       interviewId: invite.interviewId,
       expectedOutcome: 'matched',
@@ -1465,6 +1521,7 @@ async function main() {
       requireHyperedges: !REPO_URL && !PR_NUMBER,
       expectPersonProfileDecision: SUBMIT_REVIEW,
       expectPersonProfilePending: !SUBMIT_REVIEW,
+      expectPersonProfileRelatedBoundary: Boolean(relatedBoundaryInterview),
     });
 
     console.log(JSON.stringify({
@@ -1499,6 +1556,7 @@ async function main() {
       browserSmoke,
       recruiterBrowserSmoke,
       submissionSmoke,
+      relatedBoundaryInterview,
     }, null, 2));
   } catch (error) {
     const context = {

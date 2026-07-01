@@ -67,6 +67,7 @@ Run these in real browser automation whenever repo matching or CODE_REVIEW chang
 - `(cd workers/api && npm test -- --run src/__tests__/DevContainerDO.test.ts -t "internet access")`
 - `(cd workers/api && npm test -- --run src/routes/__tests__/meetingRooms.rest.test.ts -t "launches a live workspace|without an agent")`
 - `npm run smoke:code-review-assess-dev` proves the deployed ready CODE_REVIEW path delivers `/assess`, renders the source-backed PR diff, opens recruiter detail, and keeps the person profile pending instead of overclaiming before submission.
+- `npm run smoke:code-review-assess-dev:person-boundary` proves the deployed completed CODE_REVIEW path can coexist with a second same-person unsubmitted CODE_REVIEW while the person profile keeps the current recommendation anchored to the completed scored review.
 - `npm run smoke:code-review-assess-dev:role-backed` proves the deployed role-backed CODE_REVIEW path creates role context but, without a ready source-backed PR assignment, still returns the safe `PROFILE_RECEIVED` / `candidate-intake-queued` handoff instead of exposing internal matching.
 - `WORKSPACE_SMOKE_INTERVIEW_TYPE=OPEN_SOURCE_BUG_FIX ... npm run smoke:code-review-workspace-dev`
 - `npx vitest run src/pages/PersonProfilePage.test.tsx -t "does not blend a newer related match-only interview"` proves the person rollup binds score, transcript, and match proof by shared session/interaction before using a CODE_REVIEW result as the current recommendation.
@@ -80,4 +81,4 @@ Run these in real browser automation whenever repo matching or CODE_REVIEW chang
 2. Candidate link lifecycle has mocked-RPC and real app-dev same-browser token A/token B proof; keep extending it only when the invite lifecycle adds new states such as regenerated or expired links.
 3. The waiting/matching state now has a named deployed no-spinner proof for the standalone CODE_REVIEW blocked path; add a dedicated repo-catalog prerequisite fixture if challenge-packet coverage changes.
 4. Interview detail needs a manager-facing trust model display: matched/manual/needs evidence/no safe challenge/score unavailable/score valid.
-5. Person rollup still needs a deployed browser E2E where two related interviews exist, but the component regression now proves that only session/interaction-bound completed CODE_REVIEW evidence affects the current recommendation.
+5. Keep expanding the person-rollup browser proof when new interaction types can affect the current recommendation; the current deployed smoke covers a completed CODE_REVIEW plus a second same-person unsubmitted CODE_REVIEW.

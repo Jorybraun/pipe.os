@@ -20,6 +20,7 @@ App-dev now has end-to-end smoke gates for the current Base UI packet:
 ```bash
 CODE_REVIEW_SMOKE_SUBMIT=1 npm run smoke:code-review-assess-dev
 CODE_REVIEW_SMOKE_SUBMIT=1 CODE_REVIEW_SMOKE_AUTO_MATCH=1 npm run smoke:code-review-assess-dev
+npm run smoke:code-review-assess-dev:person-boundary
 npm run smoke:code-review-assess-dev:role-backed
 ```
 
@@ -42,6 +43,13 @@ CODE_REVIEW pipeline. If the deterministic matcher cannot produce a source-backe
 PR that passes the candidate-safe quality gate, `/assess` must stop at the
 candidate-safe `PROFILE_RECEIVED` handoff instead of running internal matching or
 serving a `NEEDS_REVIEW` challenge to the candidate.
+
+The person-boundary smoke extends the manual full-submit path by creating a
+second same-email CODE_REVIEW invite with no candidate submission. Recruiter
+browser proof must still show the interview as scoped to its own evidence, and
+the person profile must keep the current recommendation anchored to the completed
+scored review instead of blending the related unsubmitted assessment into the
+decision.
 
 Local validation on 2026-06-27 also proved the full-submit smoke no longer
 relies on the browser to create hidden assessment state. Ready-assignment
