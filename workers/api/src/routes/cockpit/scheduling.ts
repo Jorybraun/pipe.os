@@ -118,7 +118,7 @@ function getProviderConfig(providerId: string, env: Env): ProviderOAuthConfig | 
 
 // ─── Validation ─────────────────────────────────────────────────────────────
 
-const SCHEDULED_INTERVIEWS_DEFAULT_LIMIT = 50;
+const SCHEDULED_INTERVIEWS_DEFAULT_LIMIT = 20;
 const SCHEDULED_INTERVIEWS_MAX_LIMIT = 100;
 
 function parsePositiveInt(value: string | undefined, fallback: number, max: number): number {

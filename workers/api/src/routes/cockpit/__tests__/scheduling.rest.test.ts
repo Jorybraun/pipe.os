@@ -2415,13 +2415,13 @@ describe('GET /interviews/:id detail', () => {
 
       expect(body.pagination).toMatchObject({
         total: expect.any(Number),
-        limit: 50,
+        limit: 20,
         offset: 0,
-        nextOffset: 50,
+        nextOffset: 20,
         hasMore: true,
       });
       expect(body.pagination.total).toBeGreaterThan(100);
-      expect(body.interviews).toHaveLength(50);
+      expect(body.interviews).toHaveLength(20);
       expect(body.interviews[0]?.id).toBe('interview-list-corrupt-progress');
       expect(body.interviews[1]?.id).toBe('interview-1');
       const interview = body.interviews.find((item) => item.id === 'interview-1');

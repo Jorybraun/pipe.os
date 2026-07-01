@@ -10,7 +10,7 @@ import type {
 } from '../lib/scheduling/types';
 import { useRoomStatusNotifications } from './useRoomStatusNotifications';
 
-const INTERVIEW_PAGE_LIMIT = 50;
+const INTERVIEW_PAGE_LIMIT = 20;
 
 interface ScheduledInterviewsPagination {
   total: number;

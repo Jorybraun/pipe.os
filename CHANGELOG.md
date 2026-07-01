@@ -9,7 +9,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Fixed — Route performance
 
-- Scheduled interview list responses now enforce newest-created pagination by default and the recruiter dashboard loads older interviews on demand, preventing `/interviews` first paint from hydrating every historical assessment row.
+- Scheduled interview list responses now enforce a 20-row newest-created first page and the recruiter dashboard loads older interviews on demand, reducing `/interviews` first-paint work before assessment progress enrichment.
 - Contacts list responses are now paginated by default and the People page loads additional pages on demand, preventing large relationship graphs from shipping unbounded multi-megabyte `/api/v1/contacts` payloads.
 - The People page now uses the shared cached recruiter API client hook, avoiding a one-off Clerk client path while keeping paginated contact loads on the same auth/cache behavior as other recruiter surfaces.
 
