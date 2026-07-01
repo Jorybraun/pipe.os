@@ -10,13 +10,13 @@
  */
 
 import { useState, useCallback, useEffect, type CSSProperties, type ReactNode } from 'react';
-import { useAuth } from '@clerk/react';
 import { useNavigate } from 'react-router-dom';
 import {
   UserPlus, Search, X, ChevronRight, Loader,
   Mail, Phone, Building2, Briefcase, Link, StickyNote, Trash2, Save,
 } from 'lucide-react';
-import { createApiClient } from '../lib/api/client';
+import { useApiClient } from '../hooks/useApiClient';
+import type { ApiClient } from '../lib/api/client';
 import type { LivingContextReadModel } from '../lib/api/types';
 import { LivingContextGraph } from '../components/Candidate/LivingContextGraph';
 import {
@@ -118,8 +118,7 @@ function typeLabel(type: ContactType | string): string {
 // ─── Main page ───────────────────────────────────────────────────────────────
 
 export default function ContactsPage(): JSX.Element {
-  const { getToken } = useAuth();
-  const api = createApiClient({ getToken });
+  const api = useApiClient();
   const navigate = useNavigate();
 
   const [contacts, setContacts] = useState<Contact[]>([]);
@@ -391,7 +390,7 @@ function ContactRow({ contact, isSelected, onClick }: {
 function AddContactPanel({ onSaved, onClose, api }: {
   onSaved: (c: Contact) => void;
   onClose: () => void;
-  api: ReturnType<typeof createApiClient>;
+  api: ApiClient;
 }): JSX.Element {
   const [form, setForm] = useState({ email: '', name: '', company: '', role: '', phone: '', linkedin: '', notes: '', type: 'lead' as EditableContactType });
   const [isSaving, setIsSaving] = useState(false);
@@ -440,7 +439,7 @@ function ContactDetailPanel({ contact, onUpdated, onDeleted, onClose, api }: {
   onUpdated: (c: Contact) => void;
   onDeleted: () => void;
   onClose: () => void;
-  api: ReturnType<typeof createApiClient>;
+  api: ApiClient;
 }): JSX.Element {
   const [form, setForm] = useState({
     email: contact.email,
@@ -752,7 +751,7 @@ function parseSearchQuery(raw: string): { jobTitleRole: string | undefined; jobC
 }
 
 function SourceSearchPanel({ api, onContact }: {
-  api: ReturnType<typeof createApiClient>;
+  api: ApiClient;
   onContact: () => void;
 }): JSX.Element {
   const [query, setQuery] = useState('');
@@ -969,7 +968,7 @@ function SourceSearchPanel({ api, onContact }: {
 
 // ─── Contact Living Context ─────────────────────────────────────────────────────
 
-function ContactLivingContext({ contactId, api }: { contactId: string; api: ReturnType<typeof createApiClient> }): JSX.Element {
+function ContactLivingContext({ contactId, api }: { contactId: string; api: ApiClient }): JSX.Element {
   const [livingContext, setLivingContext] = useState<LivingContextReadModel | null>(null);
   const [isLoading, setIsLoading] = useState(true);
   const endpoint = `/api/v1/contacts/${contactId}/living-context`;

@@ -10,6 +10,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 ### Fixed — Route performance
 
 - Contacts list responses are now paginated by default and the People page loads additional pages on demand, preventing large relationship graphs from shipping unbounded multi-megabyte `/api/v1/contacts` payloads.
+- The People page now uses the shared cached recruiter API client hook, avoiding a one-off Clerk client path while keeping paginated contact loads on the same auth/cache behavior as other recruiter surfaces.
 
 ### Fixed — CODE_REVIEW assessment runtime
 

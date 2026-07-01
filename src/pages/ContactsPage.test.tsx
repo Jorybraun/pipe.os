@@ -10,15 +10,10 @@ const mocks = vi.hoisted(() => ({
     patch: vi.fn(),
     del: vi.fn(),
   },
-  getToken: vi.fn(),
 }));
 
-vi.mock('@clerk/react', () => ({
-  useAuth: () => ({ getToken: mocks.getToken }),
-}));
-
-vi.mock('../lib/api/client', () => ({
-  createApiClient: () => mocks.api,
+vi.mock('../hooks/useApiClient', () => ({
+  useApiClient: () => mocks.api,
 }));
 
 vi.mock('../components/Candidate/LivingContextGraph', () => ({
@@ -35,7 +30,6 @@ function renderPeoplePage(): void {
 
 describe('ContactsPage recruiter surface', () => {
   beforeEach(() => {
-    mocks.getToken.mockReset();
     mocks.api.get.mockReset();
     mocks.api.post.mockReset();
     mocks.api.patch.mockReset();
