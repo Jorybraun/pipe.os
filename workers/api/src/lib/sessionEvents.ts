@@ -53,6 +53,8 @@ export type SessionEventType =
   | 'participant_leave'
   | 'clippy_prompt'
   | 'clippy_action'
+  | 'agent_prompt'
+  | 'agent_action'
   | 'recording_start'
   | 'recording_stop'
   | 'code_editor_open'
@@ -1758,6 +1760,8 @@ function mapEventTypeToNodeType(type: SessionEventType): string {
     participant_leave: 'session_participant_leave',
     clippy_prompt: 'session_clippy_prompt',
     clippy_action: 'session_clippy_action',
+    agent_prompt: 'session_agent_prompt',
+    agent_action: 'session_agent_action',
     recording_start: 'session_recording_start',
     recording_stop: 'session_recording_stop',
     code_editor_open: 'session_code_editor_open',
@@ -3429,6 +3433,8 @@ function assessmentEventKindForSessionEvent(type: SessionEventType): string {
     case 'ai_agent_status':
     case 'clippy_prompt':
     case 'clippy_action':
+    case 'agent_prompt':
+    case 'agent_action':
       return 'ai_interaction';
     case 'terminal_command':
     case 'terminal_output':
@@ -3467,11 +3473,11 @@ function assessmentActorForSessionEvent(event: SessionEvent): { actorType: Asses
     return { actorType: agentActorType, actorId: explicitAgentId };
   }
 
-  if (event.type === 'clippy_prompt') {
+  if (event.type === 'clippy_prompt' || event.type === 'agent_prompt') {
     return { actorType: 'clippy', actorId: 'clippy' };
   }
 
-  if (event.type === 'clippy_action') {
+  if (event.type === 'clippy_action' || event.type === 'agent_action') {
     return source === 'clippy_agent_bridge'
       ? { actorType: agentActorType, actorId: explicitAgentId }
       : { actorType: 'clippy', actorId: 'clippy' };

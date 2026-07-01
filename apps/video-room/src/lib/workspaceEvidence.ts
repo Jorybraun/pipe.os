@@ -1,7 +1,7 @@
 import type { RoomPhase, RoomWorkspace } from '../types';
 
 export type RoomEvidenceActor = 'host' | 'guest';
-export type RoomEvidenceSurface = 'standard' | 'win95';
+export type RoomEvidenceSurface = 'standard' | 'assessment' | 'win95';
 
 const SHA256_HEX_RE = /^[a-f0-9]{64}$/i;
 const WORKSPACE_DIAGNOSTIC_LIMIT = 500;
@@ -27,9 +27,12 @@ export interface CodeServerFileChangeEvidence {
   properties: Record<string, unknown>;
 }
 
-export interface WorkspaceStateDesktopEvent {
-  kind: 'WORKSPACE_STATE_CHANGED';
-  actor: RoomEvidenceActor;
+export interface WorkspaceStateEvidence {
+  text: string;
+  properties: Record<string, unknown>;
+}
+
+export interface WorkspaceStateSnapshot {
   workspaceStateEventId: string;
   capturedAtMs: number;
   status: string | null;
@@ -50,7 +53,7 @@ export interface WorkspaceStateDesktopEvent {
   ttlSource: string | null;
   expiresAt: string | null;
   expiringSoon: boolean;
-  source: 'browser_workspace_state_observer';
+  source: 'workspace_state_client_submit';
   workspaceEventSource: 'browser_workspace_state_observer';
   workspaceStateSource: 'initial_load' | 'launch' | 'refresh' | 'error';
   workspaceTelemetryPersisted: true;
@@ -175,7 +178,7 @@ export function buildCodeServerFileChangeEvidence(input: {
     text: filePath,
     properties: {
       source: 'code_server_workspace',
-      observedBy: 'clippy_agent_bridge',
+      observedBy: 'agent_bridge',
       bridgeEventType: 'FILE_CHANGED',
       editorSurface: 'code-server',
       codeServerFileChangeId,
@@ -195,14 +198,14 @@ export function buildCodeServerFileChangeEvidence(input: {
   };
 }
 
-export function buildWorkspaceStateDesktopEvent(input: {
+export function buildWorkspaceStateEvidence(input: {
   workspace: RoomWorkspace | null;
   actor: RoomEvidenceActor;
   source: 'initial_load' | 'launch' | 'refresh' | 'error';
   capturedAtMs: number;
   fallbackRepoUrl?: string | null;
   errorMessage?: string | null;
-}): WorkspaceStateDesktopEvent {
+}): WorkspaceStateEvidence {
   const session = input.workspace?.session ?? null;
   const errorMessage = redactWorkspaceDiagnostic(session?.errorMessage ?? input.errorMessage ?? null);
   const status = session?.status ?? (errorMessage ? 'ERROR' : input.workspace?.enabled ? 'NOT_LAUNCHED' : null);
@@ -210,9 +213,7 @@ export function buildWorkspaceStateDesktopEvent(input: {
   const capturedAtMs = Number.isFinite(input.capturedAtMs) ? Math.max(0, Math.round(input.capturedAtMs)) : 0;
   const stateIdSession = workspaceSessionId ?? 'no-session';
   const stateIdStatus = status ?? 'unknown';
-  return {
-    kind: 'WORKSPACE_STATE_CHANGED',
-    actor: input.actor,
+  const snapshot: WorkspaceStateSnapshot = {
     workspaceStateEventId: `workspace-state:${input.actor}:${capturedAtMs}:${input.source}:${stateIdSession}:${stateIdStatus}`,
     capturedAtMs,
     status,
@@ -233,10 +234,18 @@ export function buildWorkspaceStateDesktopEvent(input: {
     ttlSource: session?.ttlSource ?? null,
     expiresAt: session?.expiresAt ?? null,
     expiringSoon: Boolean(session?.expiringSoon),
-    source: 'browser_workspace_state_observer',
+    source: 'workspace_state_client_submit',
     workspaceEventSource: 'browser_workspace_state_observer',
     workspaceStateSource: input.source,
     workspaceTelemetryPersisted: true,
     proxyUrlPersisted: false,
+  };
+  const repoLabel = snapshot.repoUrl ?? 'unassigned repository';
+  return {
+    text: `Workspace ${snapshot.status ?? 'state'} for ${repoLabel}`,
+    properties: {
+      actor: input.actor,
+      ...snapshot,
+    },
   };
 }

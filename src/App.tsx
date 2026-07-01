@@ -11,7 +11,7 @@ import {
   useParams,
   useLocation,
 } from "react-router-dom";
-import { ClerkAuthGate, ClerkAuthWrapper } from "./providers/clerk";
+import { ClerkAuthGate, ClerkAuthWrapper, DevProxyAuthWrapper } from "./providers/clerk";
 import { useAuth } from "./providers";
 import { Layout, SidebarNav } from "./components";
 import { AgentDrawerProvider, useAgentDrawer } from "./contexts/AgentDrawerContext";
@@ -32,6 +32,7 @@ const CandidateScreeningPage = lazy(() => import("./pages/CandidateScreeningPage
 const PipelineNewRoutePage = lazy(() => import("./pages/PipelineNewRoutePage"));
 const ChallengeEditorPage = lazy(() => import("./pages/ChallengeEditorPage"));
 const CandidateAssessmentPage = lazy(() => import("./pages/CandidateAssessmentPage"));
+const TalentPoolIntakePage = lazy(() => import("./pages/TalentPoolIntakePage"));
 const CultureInterviewPage = lazy(() => import("./pages/CultureInterviewPage"));
 const VideoJoinPage = lazy(() => import("./pages/VideoJoinPage"));
 const PersonProfilePage = lazy(() => import("./pages/PersonProfilePage"));
@@ -57,6 +58,7 @@ import { SettingsPanel } from "./components/SettingsPanel";
 import { RecruiterCallDrawer } from "./components/Video/RecruiterCallDrawer";
 import { SidebarPortalProvider } from "./contexts/SidebarPortalContext";
 import { StageRefetchProvider } from "./contexts/StageRefetchContext";
+import { isDevProxyRecruiterAuthBypassEnabled } from "./lib/auth/devProxyAuth";
 
 /**
  * SubHeader - Main interactive UI for navigation and context
@@ -434,6 +436,108 @@ interface AppProps {
   recruiterAuthUnavailable?: boolean;
 }
 
+function RecruiterRouteTree({ syncClerkTheme }: { syncClerkTheme: boolean }): JSX.Element {
+  return (
+    <>
+      {syncClerkTheme && <RecruiterThemeSync />}
+      <AgentDrawerProvider>
+        <Suspense fallback={<PageLoader />}>
+          <Routes>
+            <Route element={<AppLayout />}>
+              <Route path="/" element={<SchedulingPage />} />
+              <Route path="/interviews" element={<SchedulingPage />} />
+              <Route path="/interviews/:interviewId" element={<InterviewDetailPage />} />
+              <Route path="/schedule" element={<ScheduleRedirect />} />
+              <Route path="/roles" element={<ListingPage />} />
+              <Route path="/roles/new" element={<PipelineNewRoutePage />} />
+              <Route path="/roles/:id/*" element={<RoleRedirect />} />
+              <Route path="/pipeline/:id" element={<PipelineShellPage />}>
+                <Route index element={<PipelineInsightsPanel />} />
+                <Route path="kanban" element={<KanbanPage />} />
+                <Route path="new-stage" element={<NewStageFormPage />} />
+                <Route path="stage/:stageId" element={<StagePanel />}>
+                  <Route index element={<StageIndexTab />} />
+                  <Route path="candidates" element={<CandidatesTab />} />
+                  <Route path="configure" element={<ConfigureTab />} />
+                  <Route path="gate" element={<GateConfigTab />} />
+                  <Route path="benchmark" element={<CultureBenchmarkTab />} />
+                </Route>
+              </Route>
+              {/* Legacy redirects — old /stages/:stageId paths */}
+              <Route
+                path="/pipeline/:id/stages/:stageId"
+                element={<LegacyStageRedirect />}
+              />
+              <Route
+                path="/pipeline/:id/stages/:stageId/challenges"
+                element={<LegacyStageRedirect />}
+              />
+              {FEATURE_FLAGS.FEATURE_FLAG_CHALLENGE_EDITOR && (
+                <Route
+                  path="/pipeline/:id/challenges/:challengeId"
+                  element={<ChallengeEditorPage />}
+                />
+              )}
+              <Route path="/pipeline/new" element={<PipelineNewRoutePage />} />
+              <Route
+                path="/candidates/:id"
+                element={<CandidateProfilePage />}
+              />
+              <Route
+                path="/screenings/:id/preview"
+                element={<CandidateScreeningPage />}
+              />
+              <Route path="/outreach" element={<OutreachPage />} />
+              <Route path="/people" element={<ContactsPage />} />
+              <Route path="/people/:personId" element={<PersonProfilePage />} />
+              <Route path="/person/:personId" element={<NavigateToPeopleProfile />} />
+              <Route path="/clients" element={<Navigate to="/people" replace />} />
+              <Route path="/contacts" element={<Navigate to="/people" replace />} />
+              {FEATURE_FLAGS.FEATURE_FLAG_DEV_CONTAINER_ROUTE && (
+                <Route
+                  path="/sandbox/dev-container"
+                  element={<DevContainerSandboxPage />}
+                />
+              )}
+              <Route
+                path="/prototype/report"
+                element={<CandidateReportPrototype />}
+              />
+              <Route path="/admin/repos" element={<RepoAdminPage />} />
+              <Route path="/admin/repos/search" element={<RepoSearchPage />} />
+              <Route path="/admin/repos/:id" element={<RepoDetailPage />} />
+              <Route path="/admin/ai-usage" element={<AiUsagePage />} />
+            </Route>
+            <Route path="*" element={<Navigate to="/" replace />} />
+          </Routes>
+        </Suspense>
+      </AgentDrawerProvider>
+    </>
+  );
+}
+
+function RecruiterApp(): JSX.Element {
+  if (isDevProxyRecruiterAuthBypassEnabled()) {
+    return (
+      <ThemeProvider forceMode="pipe-blue">
+        <DevProxyAuthWrapper>
+          <RecruiterRouteTree syncClerkTheme={false} />
+        </DevProxyAuthWrapper>
+      </ThemeProvider>
+    );
+  }
+
+  return (
+    <ThemeProvider forceMode="pipe-blue">
+      <ClerkAuthGate>
+        <ClerkAuthWrapper>
+          <RecruiterRouteTree syncClerkTheme />
+        </ClerkAuthWrapper>
+      </ClerkAuthGate>
+    </ThemeProvider>
+  );
+}
+
 /**
  * App - Main application component with routing configuration
  */
@@ -449,6 +553,33 @@ function App({ recruiterAuthUnavailable = false }: AppProps): JSX.Element {
               <ErrorBoundary>
                 <Suspense fallback={<PageLoader />}>
                   <CandidateAssessmentPage />
+                </Suspense>
+              </ErrorBoundary>
+            </ThemeProvider>
+          }
+        />
+
+        {/* Public Talent Pool Intake Route */}
+        <Route
+          path="/talent/:token"
+          element={
+            <ThemeProvider forceMode="dark">
+              <ErrorBoundary>
+                <Suspense fallback={<PageLoader />}>
+                  <TalentPoolIntakePage />
+                </Suspense>
+              </ErrorBoundary>
+            </ThemeProvider>
+          }
+        />
+
+        <Route
+          path="/intake/:token"
+          element={
+            <ThemeProvider forceMode="dark">
+              <ErrorBoundary>
+                <Suspense fallback={<PageLoader />}>
+                  <TalentPoolIntakePage />
                 </Suspense>
               </ErrorBoundary>
             </ThemeProvider>
@@ -490,85 +621,7 @@ function App({ recruiterAuthUnavailable = false }: AppProps): JSX.Element {
             recruiterAuthUnavailable ? (
               <MissingAuthConfiguration />
             ) : (
-            <ThemeProvider forceMode="pipe-blue">
-            <ClerkAuthGate>
-              <ClerkAuthWrapper>
-                <RecruiterThemeSync />
-                <AgentDrawerProvider>
-                <Suspense fallback={<PageLoader />}>
-                <Routes>
-                  <Route element={<AppLayout />}>
-                    <Route path="/" element={<SchedulingPage />} />
-                    <Route path="/interviews" element={<SchedulingPage />} />
-                    <Route path="/interviews/:interviewId" element={<InterviewDetailPage />} />
-                    <Route path="/schedule" element={<ScheduleRedirect />} />
-                    <Route path="/roles" element={<ListingPage />} />
-                    <Route path="/roles/new" element={<PipelineNewRoutePage />} />
-                    <Route path="/roles/:id/*" element={<RoleRedirect />} />
-                    <Route path="/pipeline/:id" element={<PipelineShellPage />}>
-                      <Route index element={<PipelineInsightsPanel />} />
-                      <Route path="kanban" element={<KanbanPage />} />
-                      <Route path="new-stage" element={<NewStageFormPage />} />
-                      <Route path="stage/:stageId" element={<StagePanel />}>
-                        <Route index element={<StageIndexTab />} />
-                        <Route path="candidates" element={<CandidatesTab />} />
-                        <Route path="configure" element={<ConfigureTab />} />
-                        <Route path="gate" element={<GateConfigTab />} />
-                        <Route path="benchmark" element={<CultureBenchmarkTab />} />
-                      </Route>
-                    </Route>
-                    {/* Legacy redirects — old /stages/:stageId paths */}
-                    <Route
-                      path="/pipeline/:id/stages/:stageId"
-                      element={<LegacyStageRedirect />}
-                    />
-                    <Route
-                      path="/pipeline/:id/stages/:stageId/challenges"
-                      element={<LegacyStageRedirect />}
-                    />
-                    {FEATURE_FLAGS.FEATURE_FLAG_CHALLENGE_EDITOR && (
-                      <Route
-                        path="/pipeline/:id/challenges/:challengeId"
-                        element={<ChallengeEditorPage />}
-                      />
-                    )}
-                    <Route path="/pipeline/new" element={<PipelineNewRoutePage />} />
-                    <Route
-                      path="/candidates/:id"
-                      element={<CandidateProfilePage />}
-                    />
-                    <Route
-                      path="/screenings/:id/preview"
-                      element={<CandidateScreeningPage />}
-                    />
-                    <Route path="/outreach" element={<OutreachPage />} />
-                    <Route path="/people" element={<ContactsPage />} />
-                    <Route path="/people/:personId" element={<PersonProfilePage />} />
-                    <Route path="/person/:personId" element={<NavigateToPeopleProfile />} />
-                    <Route path="/clients" element={<Navigate to="/people" replace />} />
-                    <Route path="/contacts" element={<Navigate to="/people" replace />} />
-                    {FEATURE_FLAGS.FEATURE_FLAG_DEV_CONTAINER_ROUTE && (
-                      <Route
-                        path="/sandbox/dev-container"
-                        element={<DevContainerSandboxPage />}
-                      />
-                    )}
-                    <Route
-                      path="/prototype/report"
-                      element={<CandidateReportPrototype />}
-                    />
-                    <Route path="/admin/repos" element={<RepoAdminPage />} />
-                    <Route path="/admin/repos/search" element={<RepoSearchPage />} />
-                    <Route path="/admin/repos/:id" element={<RepoDetailPage />} />
-                    <Route path="/admin/ai-usage" element={<AiUsagePage />} />
-                  </Route>
-                  <Route path="*" element={<Navigate to="/" replace />} />
-                </Routes>
-                </Suspense>
-                </AgentDrawerProvider>
-              </ClerkAuthWrapper>
-            </ClerkAuthGate>
-            </ThemeProvider>
+              <RecruiterApp />
             )
           }
         />

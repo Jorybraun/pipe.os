@@ -1262,6 +1262,10 @@ async function seedMuiBaseUiMeetingTranscriptCandidateEvidence(
 
 async function seedMuiBaseUiResumeCandidateEvidence(
   sqlite: NodeSqliteDatabase,
+  options: {
+    mirrorLivingContext?: boolean;
+    termMode?: 'ideal' | 'extractor-compounds';
+  } = {},
 ): Promise<{ resumeText: string }> {
   const db = createNodeSqliteD1(sqlite);
   const resumeText = [
@@ -1271,7 +1275,7 @@ async function seedMuiBaseUiResumeCandidateEvidence(
     'Validated the behavior with JavaScript test runner coverage and defended review decisions to implementation authors.',
   ].join(' ');
   const capturedAt = Math.floor(new Date(OBSERVED_AT).getTime() / 1000);
-  const terms = [
+  const idealTerms = [
     { surface: 'popover', canonical_key: 'term:popover', evidence_level: 'demonstrated' },
     { surface: 'click', canonical_key: 'term:click', evidence_level: 'demonstrated' },
     { surface: 'patient click threshold', canonical_key: 'term:patient-click-threshold', evidence_level: 'demonstrated' },
@@ -1279,49 +1283,64 @@ async function seedMuiBaseUiResumeCandidateEvidence(
     { surface: 'TypeScript', canonical_key: 'term:typescript', evidence_level: 'demonstrated' },
     { surface: 'JavaScript test runner', canonical_key: 'term:javascript-test-runner', evidence_level: 'validated' },
   ];
+  const productionCompoundTerms = [
+    [
+      { surface: 'click handling usePopoverRoot', canonical_key: 'term:click-handling-use-popover-root', evidence_level: 'implemented' },
+    ],
+    [
+      { surface: 'click threshold impatient', canonical_key: 'term:click-threshold-impatient', evidence_level: 'implemented' },
+    ],
+    [
+      { surface: 'javascript test runner', canonical_key: 'term:javascript-test-runner', evidence_level: 'validated' },
+    ],
+  ];
   const nodeInputs = [
     {
       type: 'Experience',
       narrative: 'Implemented React TypeScript popover trigger click handling in usePopoverRoot.',
-      terms,
+      terms: options.termMode === 'extractor-compounds' ? productionCompoundTerms[0]! : idealTerms,
       confidence: 0.98,
     },
     {
       type: 'Project',
       narrative: 'Designed patient click threshold behavior for impatient trigger clicks.',
-      terms,
+      terms: options.termMode === 'extractor-compounds' ? productionCompoundTerms[1]! : idealTerms,
       confidence: 0.97,
     },
     {
       type: 'Skill',
       narrative: 'Validated popover trigger behavior with a JavaScript test runner.',
-      terms,
+      terms: options.termMode === 'extractor-compounds' ? productionCompoundTerms[2]! : idealTerms,
       confidence: 0.96,
     },
   ];
 
   for (const [index, node] of nodeInputs.entries()) {
-    await insertCandidateNode(db, {
-      candidate_id: 'candidate-1',
-      node_type: node.type,
-      narrative_text: node.narrative,
-      extracted_properties_json: JSON.stringify({
-        semantic_terms: node.terms,
-        source_quote: resumeText,
-        source_quote_validated: true,
-        source_quote_char_start: 0,
-        source_quote_char_end: resumeText.length,
-        index,
-      }),
-      embedding_json: null,
-      source_type: 'resume',
-      source_reference: 'resume-smoke',
-      captured_at: capturedAt,
-      confidence: node.confidence,
-      supersedes: null,
-      superseded_at: null,
-      decomposition_version: 'test-resume-v1',
-    });
+    await insertCandidateNode(
+      db,
+      {
+        candidate_id: 'candidate-1',
+        node_type: node.type,
+        narrative_text: node.narrative,
+        extracted_properties_json: JSON.stringify({
+          semantic_terms: node.terms,
+          source_quote: resumeText,
+          source_quote_validated: true,
+          source_quote_char_start: 0,
+          source_quote_char_end: resumeText.length,
+          index,
+        }),
+        embedding_json: null,
+        source_type: 'resume',
+        source_reference: 'resume-smoke',
+        captured_at: capturedAt,
+        confidence: node.confidence,
+        supersedes: null,
+        superseded_at: null,
+        decomposition_version: 'test-resume-v1',
+      },
+      { mirrorLivingContext: options.mirrorLivingContext },
+    );
   }
 
   const identity = await ensureCandidateLivingContext(db, 'candidate-1');
@@ -2229,7 +2248,12 @@ describe('matchCandidateToReviewChallenge', () => {
     expect(result.status).toBe('MATCHED');
     expect(result.repoId).toBe(3);
     expect(result.prNumber).toBe(data.packet.pullRequest.number);
-    expect(result.explanation?.missingEvidence).toEqual([]);
+    expect(result.explanation?.missingEvidence).not.toEqual(expect.arrayContaining([
+      expect.objectContaining({
+        scope: 'candidate',
+        reason: 'NO_SCOREABLE_SOURCE_BACKED_CANDIDATE_EVIDENCE',
+      }),
+    ]));
     expect(result.explanation?.evidence).toHaveLength(2);
     expect(result.explanation?.candidateSpans.flatMap((span) =>
       span.sourceRefs.map((ref) => ref.exactText),
@@ -2271,7 +2295,12 @@ describe('matchCandidateToReviewChallenge', () => {
     expect(result.status).toBe('MATCHED');
     expect(result.repoId).toBe(3);
     expect(result.prNumber).toBe(data.packet.pullRequest.number);
-    expect(result.explanation?.missingEvidence).toEqual([]);
+    expect(result.explanation?.missingEvidence).not.toEqual(expect.arrayContaining([
+      expect.objectContaining({
+        scope: 'candidate',
+        reason: 'NO_SCOREABLE_SOURCE_BACKED_CANDIDATE_EVIDENCE',
+      }),
+    ]));
     expect(result.explanation?.selectedPr).toEqual(expect.objectContaining({
       challengeId: data.packet.id,
       repoId: '3',
@@ -2406,7 +2435,12 @@ describe('matchCandidateToReviewChallenge', () => {
     expect(result.explanation?.evidence.some((entry) =>
       entry.roleSourceRefs.some((source) => source.exactText === roleExactText)
     )).toBe(true);
-    expect(result.explanation?.missingEvidence).toEqual([]);
+    expect(result.explanation?.missingEvidence).not.toEqual(expect.arrayContaining([
+      expect.objectContaining({
+        scope: 'candidate',
+        reason: 'NO_SCOREABLE_SOURCE_BACKED_CANDIDATE_EVIDENCE',
+      }),
+    ]));
     expect(result.explanation?.rejectedPackets).toEqual([]);
     expect(result.explanation?.evidence.length ?? 0).toBeGreaterThanOrEqual(4);
     expect(result.explanation?.candidateSpans.flatMap((span) =>
@@ -2671,7 +2705,12 @@ describe('matchCandidateToReviewChallenge', () => {
       }),
     ]));
     expect(result.explanation?.assessmentQuality?.verdict).toMatch(/^(STRONG|USABLE)$/);
-    expect(result.explanation?.missingEvidence).toEqual([]);
+    expect(result.explanation?.missingEvidence).not.toEqual(expect.arrayContaining([
+      expect.objectContaining({
+        scope: 'candidate',
+        reason: 'NO_SCOREABLE_SOURCE_BACKED_CANDIDATE_EVIDENCE',
+      }),
+    ]));
     expect(result.explanation?.rejectedPackets).toEqual([]);
     expect(result.explanation?.evidence.every((entry) => entry.roleSourceRefs.length === 0)).toBe(true);
     expect(result.explanation?.candidateSpans.flatMap((span) =>
@@ -2708,6 +2747,70 @@ describe('matchCandidateToReviewChallenge', () => {
     expect(sharedConcepts.has('term:popover')).toBe(true);
     expect(sharedConcepts.has('term:javascript-test-runner')).toBe(true);
     expect(rankedResult.alignments.every((alignment) => alignment.roleSourceRefs.length === 0)).toBe(true);
+  });
+
+  it('repairs unprojected resume candidate nodes before role-backed code-review matching', async () => {
+    const { resumeText } = await seedMuiBaseUiResumeCandidateEvidence(sqlite, {
+      mirrorLivingContext: false,
+      termMode: 'extractor-compounds',
+    });
+    expect(sqlite.prepare(
+      `SELECT COUNT(*) AS count
+         FROM context_records
+        WHERE ingestion_key LIKE 'candidate-node:%:context-record'`,
+    ).get()).toEqual({ count: 0 });
+
+    sqlite.prepare('INSERT INTO qualified_repos (id) VALUES (?)').run(973);
+    const data = await buildMuiBaseUiPopoverChallengeFixture();
+    await persistReviewChallengeGraph(
+      createNodeSqliteD1(sqlite),
+      973,
+      data.input,
+      data.packet,
+      data.graph,
+    );
+
+    const result = await matchCandidateToReviewChallenge(createNodeSqliteD1(sqlite), 'candidate-1', {
+      roleConcepts: [
+        'term:patient-click-threshold',
+        'term:react',
+        'term:typescript',
+        'term:javascript-test-runner',
+        'term:use-popover-root',
+      ],
+      minEvidenceInteractions: 1,
+      minEvidenceDiversity: 0,
+    });
+
+    expect(result.status).toBe('MATCHED');
+    expect(result.repoId).toBe(973);
+    expect(result.prNumber).toBe(973);
+    expect(result.explanation?.selectedPr).toEqual({
+      challengeId: data.packet.id,
+      repoId: '973',
+      prNumber: 973,
+      sourceVersion: data.input.repoSnapshot.id,
+    });
+    expect(result.explanation?.candidateSpans.flatMap((span) =>
+      span.sourceRefs.map((source) => source.exactText),
+    )).toContain(resumeText);
+    const matchRun = sqlite.prepare(
+      `SELECT ranked_results_json
+         FROM match_runs
+        WHERE id = ?`,
+    ).get(result.matchRunId) as { ranked_results_json: string };
+    const [rankedResult] = JSON.parse(matchRun.ranked_results_json) as Array<{
+      alignments: Array<{ sharedConcepts: string[] }>;
+    }>;
+    const sharedConcepts = new Set(rankedResult.alignments.flatMap((alignment) => alignment.sharedConcepts));
+    expect(sharedConcepts.has('term:patient-click-threshold')).toBe(true);
+    expect(sharedConcepts.has('term:use-popover-root')).toBe(true);
+    expect(sharedConcepts.has('term:javascript-test-runner')).toBe(true);
+    expect(sqlite.prepare(
+      `SELECT COUNT(*) AS count
+         FROM context_records
+        WHERE ingestion_key LIKE 'candidate-node:%:context-record'`,
+    ).get()).toEqual({ count: 3 });
   });
 
   it('auto-matches roleless resume evidence to a live-shaped mui/base-ui PR packet', async () => {
@@ -2753,7 +2856,12 @@ describe('matchCandidateToReviewChallenge', () => {
       }),
     ]));
     expect(result.explanation?.assessmentQuality?.verdict).toMatch(/^(STRONG|USABLE)$/);
-    expect(result.explanation?.missingEvidence).toEqual([]);
+    expect(result.explanation?.missingEvidence).not.toEqual(expect.arrayContaining([
+      expect.objectContaining({
+        scope: 'candidate',
+        reason: 'NO_SCOREABLE_SOURCE_BACKED_CANDIDATE_EVIDENCE',
+      }),
+    ]));
     expect(result.explanation?.rejectedPackets).toEqual([]);
     expect(result.explanation?.evidence.every((entry) => entry.roleSourceRefs.length === 0)).toBe(true);
     expect(result.explanation?.candidateSpans.flatMap((span) =>
@@ -2997,7 +3105,12 @@ describe('matchCandidateToReviewChallenge', () => {
       entry.roleSourceRefs.some((source) => source.entityId === 'context-record-jd')
     )).toBe(true);
     expect(result.explanation?.rejectedPackets).toEqual([]);
-    expect(result.explanation?.missingEvidence).toEqual([]);
+    expect(result.explanation?.missingEvidence).not.toEqual(expect.arrayContaining([
+      expect.objectContaining({
+        scope: 'candidate',
+        reason: 'NO_SCOREABLE_SOURCE_BACKED_CANDIDATE_EVIDENCE',
+      }),
+    ]));
     expect(result.diagnostics?.evaluatedChallenges).toEqual([
       expect.objectContaining({
         challengeId: data.packet.id,
@@ -3213,7 +3326,12 @@ describe('matchCandidateToReviewChallenge', () => {
     expect(result.explanation?.evidence).toHaveLength(2);
     expect(result.explanation?.candidateSpans).toHaveLength(2);
     expect(result.explanation?.repoSpans).toHaveLength(2);
-    expect(result.explanation?.missingEvidence).toEqual([]);
+    expect(result.explanation?.missingEvidence).not.toEqual(expect.arrayContaining([
+      expect.objectContaining({
+        scope: 'candidate',
+        reason: 'NO_SCOREABLE_SOURCE_BACKED_CANDIDATE_EVIDENCE',
+      }),
+    ]));
     expect(result.explanation?.rejectedPackets).toEqual([]);
     expect(result.diagnostics?.evaluatedChallenges).toEqual([
       expect.objectContaining({

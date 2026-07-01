@@ -23,7 +23,18 @@ import {
   LivingContextStore,
   searchSourceContent,
   requireGate,
+  mergeConcepts,
+  splitConcept,
+  queryConceptEvolution,
+  searchEvidence,
+  traverseLivingContextGraph,
+  generateUnifiedMatchReport,
+  loadCandidateStalenessAlerts,
+  recordMatchDecision,
+  loadMatchDecisionHistory,
+  loadRepoDecompositionOverlay,
 } from '../../lib/livingContext';
+import type { SearchStrategy, GraphEntityType, MatchDecisionVerdict } from '../../lib/livingContext';
 import {
   formatMatchNarrative,
   type MatchNarrative,
@@ -1117,12 +1128,12 @@ pipelineCandidates.post('/:pipelineId/candidates', async (c) => {
     throw err;
   }
 
-  // Fire-and-forget assessment email for non-scheduled stages. Scheduled
+  // Fire-and-forget Talent Pool intake email for non-scheduled stages. Scheduled
   // interviews use /scheduling/interviews/:id/invite so room links, email
   // delivery, and living-context evidence stay on one canonical path.
   if (c.env.RESEND_API_KEY && !skipEmail && !scheduledInterview) {
     const baseUrl = c.env.APP_BASE_URL ?? 'https://pipe.build';
-    const assessUrl = `${baseUrl}/assess/${inviteToken}`;
+    const assessUrl = `${baseUrl}/talent/${inviteToken}`;
 
     // Fetch stage info (mode, templates) and scheduling connection for booking URL
     let stageTemplatesJson: string | null = null;
@@ -1534,7 +1545,7 @@ candidateOps.post('/', async (c) => {
   // Fire-and-forget invitation email
   if (c.env.RESEND_API_KEY && !skipEmail) {
     const baseUrl = c.env.APP_BASE_URL ?? 'https://pipe.build';
-    const assessUrl = `${baseUrl}/assess/${inviteToken}`;
+    const assessUrl = `${baseUrl}/talent/${inviteToken}`;
 
     c.executionCtx.waitUntil(
       sendNotificationEmail({
@@ -2079,6 +2090,231 @@ candidateOps.post('/compare', requireGate('living_context_read'), async (c) => {
   });
 
   return c.json(report);
+});
+
+// ── Concept Evolution endpoints ──────────────────────────────────────────────
+
+// POST /:candidateId/living-context/concepts/merge — merge concepts
+candidateOps.post('/:candidateId/living-context/concepts/merge', requireGate('living_context_read'), async (c) => {
+  const db = c.env.DB;
+  const body = await c.req.json<{
+    survivorConceptId: string;
+    absorbedConceptIds: string[];
+    reason: string;
+  }>();
+
+  if (!body.survivorConceptId || !Array.isArray(body.absorbedConceptIds) || body.absorbedConceptIds.length === 0) {
+    return apiError(c, 'VALIDATION_ERROR', 'survivorConceptId and non-empty absorbedConceptIds required.');
+  }
+  if (!body.reason) {
+    return apiError(c, 'VALIDATION_ERROR', 'reason is required.');
+  }
+
+  const result = await mergeConcepts(db, {
+    survivorConceptId: body.survivorConceptId,
+    absorbedConceptIds: body.absorbedConceptIds,
+    reason: body.reason,
+  });
+
+  return c.json(result);
+});
+
+// POST /:candidateId/living-context/concepts/split — split concept
+candidateOps.post('/:candidateId/living-context/concepts/split', requireGate('living_context_read'), async (c) => {
+  const db = c.env.DB;
+  const body = await c.req.json<{
+    sourceConceptId: string;
+    newCanonicalKey: string;
+    newLabel: string;
+    newNamespace?: string;
+    surfaceIdsToMove: string[];
+    reason: string;
+  }>();
+
+  if (!body.sourceConceptId || !body.newCanonicalKey || !body.newLabel
+    || !Array.isArray(body.surfaceIdsToMove) || body.surfaceIdsToMove.length === 0) {
+    return apiError(c, 'VALIDATION_ERROR', 'sourceConceptId, newCanonicalKey, newLabel, and non-empty surfaceIdsToMove required.');
+  }
+  if (!body.reason) {
+    return apiError(c, 'VALIDATION_ERROR', 'reason is required.');
+  }
+
+  const result = await splitConcept(db, {
+    sourceConceptId: body.sourceConceptId,
+    newCanonicalKey: body.newCanonicalKey,
+    newLabel: body.newLabel,
+    newNamespace: body.newNamespace,
+    surfaceIdsToMove: body.surfaceIdsToMove,
+    reason: body.reason,
+  });
+
+  return c.json(result);
+});
+
+// GET /:candidateId/living-context/concepts/evolution — concept evolution timeline
+candidateOps.get('/:candidateId/living-context/concepts/evolution', requireGate('living_context_read'), async (c) => {
+  const db = c.env.DB;
+  const conceptKey = c.req.query('conceptKey');
+  const since = c.req.query('since');
+
+  if (!conceptKey) {
+    return apiError(c, 'VALIDATION_ERROR', 'conceptKey query parameter required.');
+  }
+
+  const timeline = await queryConceptEvolution(db, conceptKey, {
+    since: since ?? undefined,
+  });
+
+  return c.json(timeline);
+});
+
+// ── Evidence Semantic Search endpoint ────────────────────────────────────────
+
+// GET /:candidateId/living-context/evidence-search — hybrid semantic search
+candidateOps.get('/:candidateId/living-context/evidence-search', requireGate('living_context_read'), async (c) => {
+  const { candidateId } = c.req.param();
+  const db = c.env.DB;
+  const q = c.req.query('q') ?? '';
+  const strategy = (c.req.query('strategy') ?? 'hybrid') as SearchStrategy;
+  const limitParam = c.req.query('limit');
+  const limit = limitParam ? Math.min(parseInt(limitParam, 10) || 50, 200) : 50;
+
+  if (!q) {
+    return apiError(c, 'VALIDATION_ERROR', 'q query parameter required.');
+  }
+
+  const wpRow = await db
+    .prepare('SELECT wp.id FROM workspace_people wp JOIN candidates ca ON ca.id = wp.candidate_id WHERE ca.id = ?')
+    .bind(candidateId)
+    .first<{ id: string }>();
+  if (!wpRow) {
+    return apiError(c, 'NOT_FOUND', 'Candidate has no living context workspace person.');
+  }
+
+  const result = await searchEvidence(db, wpRow.id, q, { strategy, limit });
+
+  return c.json(result);
+});
+
+// ── Graph Traversal endpoint ─────────────────────────────────────────────────
+
+// GET /:candidateId/living-context/graph — BFS graph traversal
+candidateOps.get('/:candidateId/living-context/graph', requireGate('living_context_read'), async (c) => {
+  const { candidateId } = c.req.param();
+  const db = c.env.DB;
+  const startId = c.req.query('startId');
+  const startType = (c.req.query('startType') ?? 'person') as GraphEntityType;
+  const depthParam = c.req.query('depth');
+  const depth = depthParam ? Math.min(parseInt(depthParam, 10) || 3, 5) : 3;
+
+  if (!startId) {
+    return apiError(c, 'VALIDATION_ERROR', 'startId query parameter required.');
+  }
+
+  const result = await traverseLivingContextGraph(db, candidateId, startType, startId, {
+    maxDepth: depth,
+  });
+
+  return c.json(result);
+});
+
+// ── Unified Match Report endpoint ────────────────────────────────────────────
+
+// GET /:candidateId/living-context/match-report — full unified match report
+candidateOps.get('/:candidateId/living-context/match-report', requireGate('living_context_read'), async (c) => {
+  const { candidateId } = c.req.param();
+  const db = c.env.DB;
+  const challengePacketId = c.req.query('challengePacketId');
+
+  if (!challengePacketId) {
+    return apiError(c, 'VALIDATION_ERROR', 'challengePacketId query parameter required.');
+  }
+
+  const report = await generateUnifiedMatchReport(db, candidateId, challengePacketId);
+
+  return c.json(report);
+});
+
+// ── Evidence Staleness Alerts endpoint ───────────────────────────────────────
+
+// GET /:candidateId/living-context/staleness-alerts — time-decay alerts
+candidateOps.get('/:candidateId/living-context/staleness-alerts', requireGate('living_context_read'), async (c) => {
+  const { candidateId } = c.req.param();
+  const db = c.env.DB;
+
+  const alerts = await loadCandidateStalenessAlerts(db, candidateId);
+
+  return c.json(alerts);
+});
+
+// ── Match Decision Audit Trail endpoints ─────────────────────────────────────
+
+// POST /:candidateId/living-context/match-decisions — record accept/reject/defer
+candidateOps.post('/:candidateId/living-context/match-decisions', requireGate('living_context_read'), async (c) => {
+  const { candidateId } = c.req.param();
+  const db = c.env.DB;
+  const userId = c.var.userId;
+  const body = await c.req.json<{
+    matchRunId: string;
+    challengeId: string;
+    repoId: string;
+    prNumber: number;
+    verdict: string;
+    reason?: string;
+    citedAlignmentIds?: string[];
+    notes?: string;
+  }>();
+
+  if (!body.matchRunId || !body.challengeId || !body.verdict || !body.repoId || typeof body.prNumber !== 'number') {
+    return apiError(c, 'VALIDATION_ERROR', 'matchRunId, challengeId, repoId, prNumber, and verdict required.');
+  }
+
+  const validVerdicts: MatchDecisionVerdict[] = ['accepted', 'rejected', 'deferred'];
+  if (!validVerdicts.includes(body.verdict as MatchDecisionVerdict)) {
+    return apiError(c, 'VALIDATION_ERROR', `verdict must be one of: ${validVerdicts.join(', ')}`);
+  }
+
+  const result = await recordMatchDecision(db, {
+    candidateId,
+    matchRunId: body.matchRunId,
+    challengeId: body.challengeId,
+    repoId: body.repoId,
+    prNumber: body.prNumber,
+    verdict: body.verdict as MatchDecisionVerdict,
+    reason: body.reason,
+    citedAlignmentIds: body.citedAlignmentIds,
+    notes: body.notes,
+    recruiterId: userId,
+  });
+
+  return c.json(result);
+});
+
+// GET /:candidateId/living-context/match-decisions — decision history
+candidateOps.get('/:candidateId/living-context/match-decisions', requireGate('living_context_read'), async (c) => {
+  const { candidateId } = c.req.param();
+  const db = c.env.DB;
+
+  const history = await loadMatchDecisionHistory(db, candidateId);
+
+  return c.json(history);
+});
+
+// ── Repo Decomposition Overlay endpoint ──────────────────────────────────────
+
+// GET /:candidateId/living-context/repo-overlay — candidate evidence ↔ repo structure
+candidateOps.get('/:candidateId/living-context/repo-overlay', requireGate('living_context_read'), async (c) => {
+  const { candidateId } = c.req.param();
+  const db = c.env.DB;
+  const packetId = c.req.query('packetId');
+
+  if (!packetId) {
+    return apiError(c, 'VALIDATION_ERROR', 'packetId query parameter required.');
+  }
+
+  const overlay = await loadRepoDecompositionOverlay(db, packetId, candidateId);
+
+  return c.json(overlay);
 });
 
 // GET /:candidateId — full profile with stages + challenge submissions

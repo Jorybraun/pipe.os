@@ -10,7 +10,7 @@ import {
   terminalResizeMessage,
 } from '../lib/terminalProtocol';
 
-export interface TerminalWindowProps {
+export interface TerminalPanelProps {
   wsUrl: string;
   onCommand?: (command: string) => void;
   onOutput?: (output: string) => void;
@@ -19,14 +19,14 @@ export interface TerminalWindowProps {
   onQueuedCommandSent?: (command: string, request: number) => void;
 }
 
-export function TerminalWindow({
+export function TerminalPanel({
   wsUrl,
   onCommand,
   onOutput,
   queuedCommand,
   queuedCommandRequest = 0,
   onQueuedCommandSent,
-}: TerminalWindowProps): JSX.Element {
+}: TerminalPanelProps): JSX.Element {
   const containerRef = useRef<HTMLDivElement>(null);
   const termRef = useRef<Terminal | null>(null);
   const wsRef = useRef<WebSocket | null>(null);
@@ -67,28 +67,28 @@ export function TerminalWindow({
     if (!containerRef.current) return;
 
     const term = new Terminal({
-      fontFamily: '"Courier New", "Lucida Console", monospace',
+      fontFamily: '"JetBrains Mono", ui-monospace, Menlo, Consolas, monospace',
       fontSize: 13,
       theme: {
-        background: '#000000',
-        foreground: '#c0c0c0',
-        cursor: '#ffffff',
-        selectionBackground: '#000080',
+        background: '#01050b',
+        foreground: '#dbeafe',
+        cursor: '#bfdbfe',
+        selectionBackground: '#1d4ed8',
         black: '#000000',
-        red: '#800000',
-        green: '#008000',
-        yellow: '#808000',
-        blue: '#000080',
-        magenta: '#800080',
-        cyan: '#008080',
-        white: '#c0c0c0',
-        brightBlack: '#808080',
-        brightRed: '#ff0000',
-        brightGreen: '#00ff00',
-        brightYellow: '#ffff00',
-        brightBlue: '#0000ff',
-        brightMagenta: '#ff00ff',
-        brightCyan: '#00ffff',
+        red: '#f87171',
+        green: '#34d399',
+        yellow: '#facc15',
+        blue: '#60a5fa',
+        magenta: '#c084fc',
+        cyan: '#67e8f9',
+        white: '#dbeafe',
+        brightBlack: '#64748b',
+        brightRed: '#fca5a5',
+        brightGreen: '#86efac',
+        brightYellow: '#fde68a',
+        brightBlue: '#93c5fd',
+        brightMagenta: '#d8b4fe',
+        brightCyan: '#a5f3fc',
         brightWhite: '#ffffff',
       },
       cursorBlink: true,
@@ -159,7 +159,7 @@ export function TerminalWindow({
       }
     });
 
-    // Window resize observer
+    // Panel resize observer
     const resizeObserver = new ResizeObserver(() => {
       fitAddon.fit();
     });
@@ -183,6 +183,6 @@ export function TerminalWindow({
   }, [onOutput, wsUrl]);
 
   return (
-    <div className="win95-terminal-container" ref={containerRef} />
+    <div className="terminal-container" ref={containerRef} />
   );
 }

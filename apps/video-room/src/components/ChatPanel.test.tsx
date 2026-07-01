@@ -2,24 +2,24 @@
 
 import { fireEvent, render, screen } from '@testing-library/react';
 import { describe, expect, it, vi } from 'vitest';
-import { ChatWindow } from './ChatWindow';
+import { ChatPanel } from './ChatPanel';
 
-describe('ChatWindow', () => {
-  it('keeps room chat human-only while exposing the real Clippy launcher', () => {
+describe('ChatPanel', () => {
+  it('keeps room chat human-only while exposing the real AI assistant launcher', () => {
     const onSend = vi.fn();
-    const onAskClippy = vi.fn();
+    const onAskAssistant = vi.fn();
 
     render(
-      <ChatWindow
+      <ChatPanel
         messages={[]}
         onSend={onSend}
         currentUserRole="HOST"
-        onAskClippy={onAskClippy}
+        onAskAssistant={onAskAssistant}
       />,
     );
 
-    fireEvent.click(screen.getByTestId('chat-ask-clippy'));
-    expect(onAskClippy).toHaveBeenCalledTimes(1);
+    fireEvent.click(screen.getByTestId('chat-ask-assistant'));
+    expect(onAskAssistant).toHaveBeenCalledTimes(1);
     expect(onSend).not.toHaveBeenCalled();
 
     fireEvent.change(screen.getByTestId('chat-input'), {
@@ -27,12 +27,12 @@ describe('ChatWindow', () => {
     });
     fireEvent.click(screen.getByTestId('chat-send'));
     expect(onSend).toHaveBeenCalledWith('hello candidate');
-    expect(onAskClippy).toHaveBeenCalledTimes(1);
+    expect(onAskAssistant).toHaveBeenCalledTimes(1);
   });
 
   it('keeps the real server rejection reason on failed sends', () => {
     render(
-      <ChatWindow
+      <ChatPanel
         messages={[{
           id: 'chat-rejected-1',
           role: 'host',

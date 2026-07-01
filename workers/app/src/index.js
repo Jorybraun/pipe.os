@@ -152,38 +152,55 @@ async function devAuthEntryPage(request, env) {
   );
 }
 
-function proxyApi(request, env, authState) {
+async function proxyApi(request, env, authState) {
   const secret = env.DEV_PROXY_SECRET;
   if (!secret) return new Response('Missing dev proxy secret', { status: 503 });
 
   const apiOrigin = env.API_ORIGIN || DEFAULT_API_ORIGIN;
   const url = new URL(request.url);
   const target = new URL(`${url.pathname}${url.search}`, apiOrigin);
-  const headers = new Headers(request.headers);
-  const authorization = headers.get('Authorization');
+  const requestHeaders = request.headers;
+  const headers = new Headers();
+  const accept = requestHeaders.get('Accept');
+  const contentType = requestHeaders.get('Content-Type');
+  const authorization = requestHeaders.get('Authorization');
+
+  if (accept) headers.set('Accept', accept);
+  if (contentType) headers.set('Content-Type', contentType);
   if (!(authState === 'cookie' && authorization?.startsWith('Bearer '))) {
     headers.delete('Authorization');
+  } else {
+    headers.set('Authorization', authorization);
   }
   const proxyCookie = url.pathname.startsWith('/rpc/dev-container-proxy/')
-    ? filterCookieHeader(headers.get('Cookie'), [DEV_CONTAINER_PROXY_COOKIE])
+    ? filterCookieHeader(requestHeaders.get('Cookie'), [DEV_CONTAINER_PROXY_COOKIE])
     : null;
   if (proxyCookie) {
     headers.set('Cookie', proxyCookie);
-  } else {
-    headers.delete('Cookie');
   }
   headers.set('X-Pipe-Dev-Proxy-Secret', secret);
   headers.set('X-Forwarded-Host', url.host);
   headers.set('X-Forwarded-Proto', url.protocol.replace(':', ''));
 
-  return fetch(
-    new Request(target.toString(), {
-      method: request.method,
-      headers,
-      body: request.body,
-      redirect: request.redirect,
-    }),
-  );
+  const init = {
+    method: request.method,
+    headers,
+    redirect: request.redirect,
+  };
+  if (request.method !== 'GET' && request.method !== 'HEAD') {
+    init.body = request.body;
+  }
+
+  const response = await fetch(target.toString(), init);
+  const responseHeaders = new Headers(response.headers);
+  responseHeaders.delete('Content-Encoding');
+  responseHeaders.delete('Content-Length');
+  responseHeaders.delete('Transfer-Encoding');
+  return new Response(await response.arrayBuffer(), {
+    status: response.status,
+    statusText: response.statusText,
+    headers: responseHeaders,
+  });
 }
 
 async function serveStatic(request, env) {

@@ -36,15 +36,17 @@ function inviteTokenFromAssessInput(tokenOrUrl: string): string {
 }
 
 async function startWelcomeScreenIfPresent(page: Page): Promise<void> {
-  const startButton = page.getByRole('button', { name: 'START_INTERVIEW' });
-  await startButton.waitFor({ state: 'visible', timeout: 10_000 }).catch(() => undefined);
+  const startButtons = page.getByRole('button', { name: 'START_INTERVIEW' });
+  await startButtons.first().waitFor({ state: 'visible', timeout: 10_000 }).catch(() => undefined);
 
-  const startButtonCount = await startButton.count();
-  if (startButtonCount !== 1) return;
-  if (!(await startButton.isVisible())) return;
-
-  await startButton.click();
-  await startButton.waitFor({ state: 'hidden', timeout: 10_000 }).catch(() => undefined);
+  const startButtonCount = await startButtons.count();
+  for (let index = 0; index < startButtonCount; index += 1) {
+    const startButton = startButtons.nth(index);
+    if (!(await startButton.isVisible())) continue;
+    await startButton.click();
+    await startButton.waitFor({ state: 'hidden', timeout: 10_000 }).catch(() => undefined);
+    return;
+  }
 }
 
 function isReviewableDiffLineText(text: string): boolean {

@@ -27,6 +27,14 @@ const contextRecordMigration = readFileSync(
   new URL('../migrations/0095_context_records.sql', import.meta.url),
   'utf8',
 );
+const candidateNodesMigration = readFileSync(
+  new URL('../migrations/0052_candidate_nodes.sql', import.meta.url),
+  'utf8',
+);
+const candidateNodeIdempotencyMigration = readFileSync(
+  new URL('../migrations/0085_candidate_node_idempotency.sql', import.meta.url),
+  'utf8',
+);
 
 interface CandidateConceptEvidence {
   conceptKey: string;
@@ -207,7 +215,14 @@ function setupDb(): BetterSqliteDb {
       (7, 'https://github.com/pipe/e2e-source-backed-local', 'pipe/e2e-source-backed-local', 'TypeScript', 'source-backed-fixture', 0),
       (77, 'https://github.com/pipe-labs/orders', 'pipe-labs/orders', 'TypeScript', NULL, 0);
 
-    CREATE TABLE candidates (id TEXT PRIMARY KEY);
+    CREATE TABLE candidates (
+      id TEXT PRIMARY KEY,
+      pipeline_id TEXT,
+      owner_id TEXT NOT NULL DEFAULT 'workspace-1',
+      name TEXT,
+      email TEXT,
+      status TEXT NOT NULL DEFAULT 'active'
+    );
     CREATE TABLE repo_sample_prs (
       repo_id INTEGER NOT NULL,
       pr_number INTEGER NOT NULL,
@@ -237,6 +252,8 @@ function setupDb(): BetterSqliteDb {
         3, 1, 1, 24, 2, NULL
       );
   `);
+  sqlite.exec(candidateNodesMigration);
+  sqlite.exec(candidateNodeIdempotencyMigration);
   sqlite.exec(livingContextMigration);
   sqlite.exec(repoGraphMigration);
   sqlite.exec(contextRecordMigration);

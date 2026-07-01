@@ -1,16 +1,16 @@
-# Research Task: Remote OS Agent Protocol for 95 Until Infinity
+# Research Task: Remote AI Agent Bridge Protocol
 
 ## Question
 
-What is the best-practice remote agent architecture for "Clippy as an OS agent" inside PIPE's live interview room?
+What is the best-practice remote agent architecture for an AI assistant inside PIPE's live assessment room?
 
-Evaluate whether Hermes, Devin, ACP, A2A, MCP, or a small PIPE-native bridge should own the OS-agent layer.
+Evaluate whether Hermes, Devin, ACP, A2A, MCP, or a small PIPE-native bridge should own the assessment-room agent layer.
 
 ## Context
 
 The current dev-container room needs a reliable VS Code/code-server workspace first. The earlier approach embedded a large Devin bridge script into the Cloudflare Container startup command, which pushed the startup payload near Cloudflare runtime value limits and caused container boot failures.
 
-Clippy should feel like an OS-native assistant, but the implementation must not couple the interview room's critical editor/video path to any single agent CLI.
+The assistant should feel integrated with the assessment workspace, but the implementation must not couple the interview room's critical editor/video path to any single agent CLI.
 
 ## Research Scope
 
@@ -35,7 +35,7 @@ A short architecture recommendation with:
 - Why alternatives were rejected or deferred.
 - Sequence diagram for room UI, Durable Object, container, agent, and context graph.
 - Security model and candidate-safe permissions.
-- Migration plan from the current Clippy prompt/action path.
+- Migration plan from the current assistant prompt/action path.
 - First implementation slice that cannot break VS Code startup.
 
 ## Acceptance Criteria

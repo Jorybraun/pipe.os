@@ -48,6 +48,9 @@ export class Container<Env = unknown> extends DurableObject<Env> {
   __startCalls: unknown[] = [];
   __stopCalls: Array<number | string> = [];
   __destroyCalls = 0;
+  __alarmCalls = 0;
+  __scheduleTableReady = false;
+  __alarmAlwaysMissingTable = false;
 
   // Stub lifecycle hooks — not called in unit tests.
   async onStart(): Promise<void> {}
@@ -72,6 +75,21 @@ export class Container<Env = unknown> extends DurableObject<Env> {
       type: 'scheduled',
       time,
     };
+  }
+
+  sql(strings: TemplateStringsArray, ..._values: unknown[]): unknown[] {
+    const query = strings.join('?');
+    if (query.includes('CREATE TABLE IF NOT EXISTS container_schedules')) {
+      this.__scheduleTableReady = true;
+    }
+    return [];
+  }
+
+  async alarm(): Promise<void> {
+    if (this.__alarmAlwaysMissingTable || !this.__scheduleTableReady) {
+      throw new Error('no such table: container_schedules: SQLITE_ERROR');
+    }
+    this.__alarmCalls += 1;
   }
 
   async stop(signal: number | string = 15): Promise<void> {

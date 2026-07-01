@@ -57,7 +57,7 @@ export type RoomSurface = 'standard' | 'win95';
 export type RoomClippyPromptSource = 'system' | 'agent' | 'host' | 'guest';
 export type RoomClippyInteractionEventType = Extract<
   SessionEventType,
-  'ai_chat_user' | 'ai_chat_agent' | 'ai_agent_status' | 'clippy_action'
+  'ai_chat_user' | 'ai_chat_agent' | 'ai_agent_status' | 'agent_action'
 >;
 export type RoomCodeServerFileEventType = Extract<SessionEventType, 'code_editor_save' | 'file_change'>;
 export type RoomFileKind = 'text' | 'paint' | 'json' | 'link';
@@ -1424,7 +1424,7 @@ export function hasSourceBackedClippyInteractionEvidence(
       && (browserObservationOk || persistedDiagnosticOk);
   }
 
-  if (event.eventType === 'clippy_action') {
+  if (event.eventType === 'agent_action') {
     const source = typeof evidence.source === 'string' ? evidence.source : null;
     const capturedAtMs = typeof evidence.capturedAtMs === 'number' && Number.isInteger(evidence.capturedAtMs)
       ? evidence.capturedAtMs

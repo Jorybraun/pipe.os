@@ -1268,7 +1268,7 @@ export interface LivingContextReadModel {
   person: {
     personId: string;
     workspacePersonId: string;
-    applicationId: string;
+    applicationId: string | null;
     displayName: string | null;
     primaryEmail: string | null;
     primaryPhone: string | null;
@@ -1887,3 +1887,478 @@ export interface PostSynthesizeResponse {
   /** Full Role Context Document — present when backend has cut over to RCD synthesis. */
   rcd?: RoleContextDocument | null;
 }
+
+// ─── Match Decision Audit Trail ─────────────────────────────────────────────
+
+export type MatchDecisionVerdict = 'accepted' | 'rejected' | 'deferred';
+
+export interface MatchDecisionHistoryEntry {
+  decisionId: string;
+  matchRunId: string;
+  challengeId: string;
+  repoId: string;
+  prNumber: number;
+  verdict: MatchDecisionVerdict;
+  reason: string | null;
+  notes: string | null;
+  recruiterId: string;
+  recordedAt: string;
+}
+
+export interface MatchDecisionResult {
+  success: boolean;
+  decisionId: string;
+  contextRecordId: string;
+  candidateId: string;
+}
+
+export interface MatchDecisionHistory {
+  candidateId: string;
+  decisions: MatchDecisionHistoryEntry[];
+  totalDecisions: number;
+  acceptedCount: number;
+  rejectedCount: number;
+  deferredCount: number;
+}
+
+export type AlertSeverity = 'critical' | 'warning' | 'info';
+
+export type AlertCategory =
+  | 'stale_evidence'
+  | 'aging_dimension'
+  | 'missing_dimension'
+  | 'low_coverage'
+  | 'single_source';
+
+export interface StalenessAlert {
+  id: string;
+  severity: AlertSeverity;
+  category: AlertCategory;
+  dimension: string | null;
+  title: string;
+  detail: string;
+  ageDays: number | null;
+  decayMultiplier: number | null;
+  recommendation: string;
+}
+
+export type StalenessOverallHealth = 'healthy' | 'attention_needed' | 'at_risk' | 'critical';
+
+export interface StalenessAlertSummary {
+  candidateId: string;
+  workspacePersonId: string | null;
+  criticalCount: number;
+  warningCount: number;
+  infoCount: number;
+  overallHealth: StalenessOverallHealth;
+  alerts: StalenessAlert[];
+  computedAt: string;
+}
+
+// ─── Repo decomposition overlay ───────────────────────────────────────────────
+
+export interface RepoFileNode {
+  path: string;
+  language: string | null;
+  artifactType: string;
+  lineCount: number | null;
+  symbolCount: number;
+  demandCount: number;
+  candidateAlignmentScore: number | null;
+}
+
+export interface RepoSymbolNode {
+  id: string;
+  qualifiedName: string;
+  kind: string;
+  language: string;
+  signature: string | null;
+  filePath: string | null;
+  lineStart: number | null;
+  lineEnd: number | null;
+  containingSymbolId: string | null;
+  demandIds: string[];
+  candidateAlignmentScore: number | null;
+}
+
+export interface RepoDemandNode {
+  id: string;
+  family: string;
+  narrative: string;
+  conceptKeys: string[];
+  weight: number;
+  sourceFilePaths: string[];
+  symbolIds: string[];
+  candidateAlignmentScore: number | null;
+  candidateEvidenceCount: number;
+}
+
+export interface RepoStructuralFactNode {
+  id: string;
+  factType: string;
+  subjectSymbolId: string | null;
+  objectSymbolId: string | null;
+  sourceFilePath: string | null;
+}
+
+export interface CandidateEvidenceOverlayEntry {
+  conceptKey: string;
+  evidenceCount: number;
+  totalStrength: number;
+  sourceTypes: string[];
+}
+
+export interface RepoDecompositionOverlay {
+  packetId: string;
+  repoSnapshotId: string;
+  repoName: string;
+  prNumber: number;
+  prTitle: string;
+  primaryLanguage: string;
+  files: RepoFileNode[];
+  symbols: RepoSymbolNode[];
+  demands: RepoDemandNode[];
+  structuralFacts: RepoStructuralFactNode[];
+  candidateEvidenceOverlay: CandidateEvidenceOverlayEntry[];
+  coverageSummary: {
+    totalDemands: number;
+    coveredDemands: number;
+    partialDemands: number;
+    uncoveredDemands: number;
+    overallScore: number;
+  };
+}
+
+// ─── Batch rematch ────────────────────────────────────────────────────────────
+
+export interface BatchRematchResultEntry {
+  candidateId: string;
+  status: string;
+  matchRunId: string | null;
+  repoId: number | null;
+  prNumber: number | null;
+  evaluatedCount: number;
+  topChallenge: {
+    challengeId: string;
+    repoId: string;
+    prNumber: number;
+    rank: number | null;
+    alignedDemandCount: number;
+    stretchCount: number;
+    eligible: boolean;
+  } | null;
+  priorDecisions: {
+    excludedCount: number;
+    deferredCount: number;
+    totalDecisions: number;
+  } | null;
+  error: string | null;
+}
+
+export interface BatchRematchResult {
+  totalCandidates: number;
+  processedCount: number;
+  results: BatchRematchResultEntry[];
+  skippedCandidateIds: string[];
+}
+
+// ─── Match confidence scoring ─────────────────────────────────────────────────
+
+export type MatchConfidenceLevel = 'high' | 'moderate' | 'low' | 'insufficient';
+
+export interface DemandConfidence {
+  demandId: string;
+  demandNarrative: string;
+  demandWeight: number;
+  demandConcepts: string[];
+  matchedConcepts: string[];
+  missingConcepts: string[];
+  coverageRatio: number;
+  averageRecency: number;
+  corroboratingSourceCount: number;
+  bestStrength: number;
+  effectiveStrength: number;
+  confidenceScore: number;
+  confidenceLevel: MatchConfidenceLevel;
+  isStretch: boolean;
+  stretchReason: string | null;
+}
+
+export interface ConfidenceDimension {
+  name: 'coverage' | 'recency' | 'depth' | 'consistency';
+  label: string;
+  score: number;
+  weight: number;
+  detail: string;
+}
+
+export interface MatchConfidenceReport {
+  candidateId: string;
+  workspacePersonId: string | null;
+  challengeId: string;
+  compositeScore: number;
+  compositeLevel: MatchConfidenceLevel;
+  dimensions: ConfidenceDimension[];
+  demands: DemandConfidence[];
+  stretchAreas: DemandConfidence[];
+  strongMatches: DemandConfidence[];
+  recommendations: string[];
+  computedAt: string;
+}
+
+// ─── Unified Match Report ───────────────────────────────────────────────────
+
+export type MatchVerdict = 'strong_match' | 'likely_match' | 'needs_review' | 'weak_match' | 'insufficient_evidence';
+
+export interface VerdictRationale {
+  verdict: MatchVerdict;
+  score: number;
+  label: string;
+  primaryReasons: string[];
+  riskFactors: string[];
+}
+
+export interface MatchReportSection {
+  loaded: boolean;
+  errorMessage: string | null;
+}
+
+export interface MatchReportConfidence extends MatchReportSection {
+  report: MatchConfidenceReport | null;
+}
+
+export interface MatchReportGaps extends MatchReportSection {
+  report: EvidenceGapReport | null;
+}
+
+export interface MatchReportStaleness extends MatchReportSection {
+  summary: StalenessAlertSummary | null;
+}
+
+export interface MatchReportProvenance extends MatchReportSection {
+  chain: unknown;
+}
+
+export interface MatchReportDecisionHistory extends MatchReportSection {
+  exclusions: {
+    excludedPacketIds: string[];
+    exclusions: Array<{ packetId: string; verdict: string; decidedAt: string }>;
+    deferredCount: number;
+    totalDecisions: number;
+  } | null;
+}
+
+export interface UnifiedMatchReport {
+  candidateId: string;
+  challengePacketId: string;
+  matchRunId: string | null;
+  verdict: VerdictRationale;
+  confidence: MatchReportConfidence;
+  gaps: MatchReportGaps;
+  staleness: MatchReportStaleness;
+  provenance: MatchReportProvenance;
+  decisionHistory: MatchReportDecisionHistory;
+  generatedAt: string;
+  pipelineVersion: string;
+}
+
+// ── Graph Traversal ─────────────────────────────────────────────────────────
+
+export type GraphEntityType =
+  | 'person'
+  | 'workspace_person'
+  | 'interaction'
+  | 'artifact'
+  | 'assertion'
+  | 'concept'
+  | 'signal_evidence'
+  | 'source_span'
+  | 'match_run';
+
+export interface GraphNode {
+  id: string;
+  entityType: GraphEntityType;
+  label: string;
+  metadata: Record<string, unknown>;
+  depth: number;
+}
+
+export interface GraphEdge {
+  fromId: string;
+  fromType: GraphEntityType;
+  toId: string;
+  toType: GraphEntityType;
+  relationship: string;
+  sourceEvidence: EdgeSourceEvidence | null;
+}
+
+export interface EdgeSourceEvidence {
+  sourceSpanId: string | null;
+  exactText: string | null;
+  confidence: number | null;
+}
+
+export interface GraphTraversalResult {
+  root: GraphNode;
+  nodes: GraphNode[];
+  edges: GraphEdge[];
+  truncated: boolean;
+}
+
+export interface GraphTraversalOptions {
+  maxDepth?: number;
+  maxNodes?: number;
+  entityTypeFilter?: GraphEntityType[];
+}
+
+// ── Evidence timeline ────────────────────────────────────────────────────────
+
+export interface TimelineEntry {
+  id: string;
+  timestamp: string;
+  entryType: 'interaction' | 'assertion' | 'context_record' | 'artifact';
+  interactionId: string | null;
+  interactionType: string | null;
+  narrative: string;
+  concepts: string[];
+  sourceCount: number;
+  confidence: number | null;
+}
+
+export interface PersonEvidenceTimeline {
+  workspacePersonId: string;
+  totalEntries: number;
+  entries: TimelineEntry[];
+}
+
+// ── Cross-candidate comparison ──────────────────────────────────────────────
+
+export interface ComparisonConceptEvidence {
+  conceptKey: string;
+  label: string;
+  evidenceCount: number;
+  bestStrength: number;
+  effectiveStrength: number;
+  sources: string[];
+}
+
+export interface CandidateEvidenceProfile {
+  candidateId: string;
+  workspacePersonId: string | null;
+  candidateName: string;
+  totalInteractions: number;
+  totalAssertions: number;
+  totalSourceSpans: number;
+  sourceDiversity: number;
+  interactionBreakdown: Record<string, number>;
+  topConcepts: ComparisonConceptEvidence[];
+  latestInteractionAt: string | null;
+  freshestEvidenceAt: string | null;
+}
+
+export interface ConceptComparison {
+  conceptKey: string;
+  label: string;
+  candidates: Array<{
+    candidateId: string;
+    evidenceCount: number;
+    bestStrength: number;
+    effectiveStrength: number;
+    coverageLevel: 'strong' | 'partial' | 'weak' | 'none';
+  }>;
+}
+
+export interface ComparisonSummary {
+  totalCandidates: number;
+  comparedConceptCount: number;
+  sharedConceptCount: number;
+  uniqueConceptsPerCandidate: Record<string, number>;
+  evidenceDiversityRanking: Array<{ candidateId: string; score: number }>;
+  evidenceDepthRanking: Array<{ candidateId: string; totalAssertions: number }>;
+  evidenceFreshnessRanking: Array<{ candidateId: string; freshestAt: string | null }>;
+}
+
+export interface CandidateComparisonReport {
+  pipelineId: string | null;
+  candidateProfiles: CandidateEvidenceProfile[];
+  conceptComparisons: ConceptComparison[];
+  summary: ComparisonSummary;
+}
+
+// ── Concept Evolution ─────────────────────────────────────────────────────────
+
+export type EvolutionEventType = 'merge' | 'split' | 'alias_added' | 'superseded';
+
+export interface ConceptEvolutionEvent {
+  id: string;
+  eventType: EvolutionEventType;
+  conceptId: string;
+  relatedConceptId: string | null;
+  reason: string;
+  metadata: Record<string, unknown>;
+  occurredAt: string;
+}
+
+export interface ConceptEvolutionTimeline {
+  conceptId: string;
+  canonicalKey: string;
+  label: string;
+  events: ConceptEvolutionEvent[];
+  supersessionChain: SupersessionLink[];
+}
+
+export interface SupersessionLink {
+  fromConceptId: string;
+  toConceptId: string;
+  eventType: EvolutionEventType;
+  occurredAt: string;
+}
+
+export interface MergeConceptsResult {
+  survivorConceptId: string;
+  survivorCanonicalKey: string;
+  mergedCount: number;
+  surfacesRepointed: number;
+  adjacenciesRepointed: number;
+  evolutionEventIds: string[];
+}
+
+export interface SplitConceptResult {
+  newConceptId: string;
+  newCanonicalKey: string;
+  surfacesMoved: number;
+  evolutionEventId: string;
+}
+
+// ── Evidence Semantic Search ──────────────────────────────────────────────────
+
+export type SearchStrategy = 'text' | 'concept' | 'hybrid';
+export type EvidenceHitType = 'source_span' | 'assertion' | 'signal_evidence';
+
+export interface EvidenceHitProvenance {
+  interactionId: string | null;
+  interactionType: string | null;
+  interactionOccurredAt: string | null;
+}
+
+export interface EvidenceSearchHit {
+  id: string;
+  hitType: EvidenceHitType;
+  content: string;
+  score: number;
+  conceptKeys: string[];
+  confidence: number | null;
+  provenance: EvidenceHitProvenance;
+  sourceSpanId: string | null;
+  charStart: number | null;
+  charEnd: number | null;
+}
+
+export interface EvidenceSearchResult {
+  query: string;
+  strategy: SearchStrategy;
+  totalHits: number;
+  hits: EvidenceSearchHit[];
+}
+
+

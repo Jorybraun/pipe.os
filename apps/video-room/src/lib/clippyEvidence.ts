@@ -177,7 +177,7 @@ function isSourceBackedAgentRoomAction(
   source: 'agent_stdout_action' | 'agent_api_response_action';
   agentName: string;
   bridgeEventType: 'ROOM_ACTION';
-  protocol: 'clippy_room_action_tag';
+  protocol: 'agent_room_action_tag';
   observedAt: string;
   persisted: boolean;
 } {
@@ -187,7 +187,7 @@ function isSourceBackedAgentRoomAction(
     && typeof action.agentName === 'string'
     && action.agentName.trim().length > 0
     && action.bridgeEventType === 'ROOM_ACTION'
-    && action.protocol === 'clippy_room_action_tag'
+    && action.protocol === 'agent_room_action_tag'
     && typeof action.observedAt === 'string'
     && action.observedAt.trim().length > 0
     && typeof action.persisted === 'boolean';

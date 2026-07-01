@@ -19,6 +19,9 @@ interface SpyFields {
   __startCalls: unknown[];
   __destroyCalls: number;
   __stopCalls: Array<number | string>;
+  __alarmCalls: number;
+  __scheduleTableReady: boolean;
+  __alarmAlwaysMissingTable: boolean;
 }
 type SpyableDO = DevContainerDO & SpyFields;
 
@@ -148,6 +151,45 @@ async function init(
 // ─── /__init scheduling ─────────────────────────────────────────────────────
 
 describe('DevContainerDO /__init — Step 11 warn-then-expire scheduling', () => {
+  it('repairs the Container scheduler table before alarm delegation', async () => {
+    const db = fakeD1();
+    const env = buildEnv(db);
+    const instance = new DevContainerDO(buildState(), env) as SpyableDO;
+
+    instance.__scheduleTableReady = false;
+
+    await expect(instance.alarm({ isRetry: false, retryCount: 0 })).resolves.toBeUndefined();
+
+    expect(instance.__scheduleTableReady).toBe(true);
+    expect(instance.__alarmCalls).toBe(1);
+  });
+
+  it('falls back to stored TTL config when the Container scheduler table remains unavailable', async () => {
+    const db = fakeD1();
+    const state = buildState();
+    const env = buildEnv(db);
+    const instance = new DevContainerDO(state, env) as SpyableDO;
+
+    await state.storage.put('config', {
+      sessionId: 'sess_alarm_missing_schedule_table',
+      expiresAt: new Date(Date.now() - 1_000).toISOString(),
+      ttlSeconds: 60,
+      repoGitUrl: null,
+      challengeBranch: null,
+    });
+    instance.__alarmAlwaysMissingTable = true;
+
+    await expect(instance.alarm({ isRetry: false, retryCount: 0 })).resolves.toBeUndefined();
+
+    expect(instance.__destroyCalls).toBe(1);
+    const updates = db.__calls.filter(
+      (c) => c.sql.includes('UPDATE dev_container_sessions') && c.ran,
+    );
+    const last = updates[updates.length - 1]!;
+    expect(last.params[0]).toBe('EXPIRED');
+    expect(last.params[5]).toBe('sess_alarm_missing_schedule_table');
+  });
+
   it('starts the shared bridge/router port before marking the session READY', async () => {
     const db = fakeD1();
     const env = buildEnv(db);

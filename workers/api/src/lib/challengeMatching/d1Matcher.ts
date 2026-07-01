@@ -23,7 +23,10 @@ import {
 } from '../repoSemanticGraph';
 import { LivingContextStore } from '../livingContext/persistence';
 import { normalizeOpenTermSurface, openSemanticTerm } from '../livingContext/openTerms';
-import { ensureCandidateLivingContext } from '../livingContext/compatibility';
+import {
+  ensureCandidateLivingContext,
+  mirrorCandidateNodeToLivingContext,
+} from '../livingContext/compatibility';
 import { ingestMatchRunAssessmentEvidence } from '../assessmentLayer/matchEvidence';
 import {
   applyTemporalDecay,
@@ -41,6 +44,7 @@ import type {
   JsonObject,
   JsonValue,
 } from '../livingContext/types';
+import type { CandidateNode } from '../../types';
 
 interface CandidateEvidenceRow {
   context_record_id: string | null;
@@ -238,10 +242,18 @@ const CANDIDATE_EXACT_MECHANISM_SEGMENTS = new Set([
   'deploy',
   'deployment',
   'deployments',
+  'dom',
+  'id',
+  'ids',
+  'javascript',
   'kv',
+  'patient',
+  'popover',
   'queue',
   'queues',
+  'react',
   'request',
+  'root',
   'routing',
   'runner',
   'runtime',
@@ -252,6 +264,8 @@ const CANDIDATE_EXACT_MECHANISM_SEGMENTS = new Set([
   'threshold',
   'tooling',
   'trigger',
+  'typescript',
+  'use',
   'workflow',
   'workflows',
   'wrangler',
@@ -281,6 +295,16 @@ function sourceTextOpenTerms(text: string, limit = 24): string[] {
     );
 
   const terms = new Set<string>();
+  for (const size of [3, 2]) {
+    for (let index = 0; index <= tokens.length - size; index += 1) {
+      const phraseTokens = tokens.slice(index, index + size);
+      if (!phraseTokens.some((token) => CANDIDATE_EXACT_MECHANISM_SEGMENTS.has(token))) {
+        continue;
+      }
+      addCanonicalTerm(terms, phraseTokens.join(' '));
+      if (terms.size >= limit) return [...terms];
+    }
+  }
   for (const token of tokens) {
     addCanonicalTerm(terms, token);
     if (terms.size >= limit) return [...terms];
@@ -482,11 +506,32 @@ async function ensureCandidateMatchBridge(
   db: D1Database,
   candidateId: string,
 ): Promise<void> {
-  const existing = await db.prepare(
-    `SELECT id FROM applications WHERE legacy_candidate_id = ?1 LIMIT 1`,
-  ).bind(candidateId).first<{ id: string }>();
-  if (existing) return;
   await ensureCandidateLivingContext(db, candidateId);
+  const unprojected = await db.prepare(
+    `SELECT cn.*
+       FROM candidate_nodes cn
+      WHERE cn.candidate_id = ?1
+        AND cn.superseded_at IS NULL
+        AND NOT EXISTS (
+          SELECT 1
+            FROM context_records cr
+           WHERE cr.ingestion_key = 'candidate-node:' || cn.id || ':context-record'
+        )
+      ORDER BY cn.captured_at DESC, cn.id
+      LIMIT 100`,
+  ).bind(candidateId).all<CandidateNode>();
+
+  for (const node of unprojected.results ?? []) {
+    try {
+      await mirrorCandidateNodeToLivingContext(db, node);
+    } catch (error) {
+      console.error('[matchCandidateToReviewChallenge] candidate node projection repair failed:', {
+        candidateId,
+        nodeId: node.id,
+        error: error instanceof Error ? error.message : String(error),
+      });
+    }
+  }
 }
 
 function packetSourceRef(span: RepoSpanRow): SourceRef {
@@ -960,6 +1005,8 @@ export interface CandidateReviewChallengeOptions {
   minEvidenceDiversity?: number;
   /** Temporal decay configuration for evidence freshness weighting. */
   temporalDecay?: Partial<TemporalDecayConfig>;
+  /** Exclude specific packet IDs from matching (e.g. previously rejected challenges). */
+  excludePacketIds?: string[];
 }
 
 function sourceRefToContextSource(
@@ -1739,7 +1786,13 @@ export async function matchCandidateToReviewChallenge(
       },
     };
   }
-  const { packets: challenges, exclusions: packetLoadExclusions } = challengeLoad;
+  const { packets: rawChallenges, exclusions: packetLoadExclusions } = challengeLoad;
+  const excludeSet = options.excludePacketIds?.length
+    ? new Set(options.excludePacketIds)
+    : null;
+  const challenges = excludeSet
+    ? rawChallenges.filter((c) => !excludeSet.has(c.id))
+    : rawChallenges;
   const genericConcepts = deriveCorpusGenericConcepts(challenges);
   const genericConceptSet = new Set(genericConcepts);
   const challengeSelectionConcepts = [...new Set(

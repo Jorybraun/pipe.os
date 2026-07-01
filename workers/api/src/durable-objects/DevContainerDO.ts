@@ -7,7 +7,7 @@
  *   - the `code-server` container lifecycle via @cloudflare/containers
  *   - TTL warn-then-expire bisection via this.schedule() (Steps 10–11)
  *   - (Step 9) proxy passthrough to the container's :8080 for the code-server iframe
- *   - baked bridge/router support for Clippy/Devin and code-server traffic
+ *   - baked bridge/router support for AI assistant/Devin and code-server traffic
  *
  * The DO is addressed by `sessionId` (idFromName). All internal routes use
  * the `/__*` prefix so they cannot collide with the proxy passthrough path
@@ -22,6 +22,8 @@ const DEFAULT_WARN_BEFORE_SECONDS = 60;
 const INTENTIONAL_SLEEP_KEY = 'intentional_sleep_stop';
 const MAX_CONTAINER_DIAGNOSTIC_CHARS = 1_000;
 const CODE_SERVER_ENTRYPOINT = '/usr/local/bin/entrypoint.sh';
+
+type ContainerStorageSql = (strings: TemplateStringsArray, ...values: unknown[]) => unknown[];
 
 interface InitPayload {
   sessionId: string;
@@ -61,13 +63,24 @@ function buildEnvVars(payload: InitPayload): Record<string, string> {
 
 export class DevContainerDO extends Container<Env> {
   // The baked bridge/router owns the Cloudflare-facing port. It handles
-  // Clippy/Devin endpoints directly and proxies everything else to code-server.
+  // AI assistant/Devin endpoints directly and proxies everything else to code-server.
   defaultPort = 8080;
   requiredPorts = [8080];
 
   // Sleep the DO after 10 minutes of inactivity so we don't pay for idle.
   sleepAfter = '10m';
   private initializing = false;
+
+  override async alarm(alarmProps?: { isRetry: boolean; retryCount: number }): Promise<void> {
+    this.ensureContainerSchedulerSchema();
+    try {
+      await super.alarm(alarmProps);
+    } catch (error) {
+      if (!isMissingContainerSchedulesTable(error)) throw error;
+      console.error('[DevContainerDO.alarm] Container scheduler table missing; using TTL fallback.');
+      await this.runTtlAlarmFallback();
+    }
+  }
 
   async fetch(request: Request): Promise<Response> {
     const url = new URL(request.url);
@@ -156,7 +169,9 @@ export class DevContainerDO extends Container<Env> {
     if (!Number.isNaN(expireAt.getTime())) {
       const warnBeforeSeconds = parseWarnSeconds(this.env.DEV_CONTAINER_WARN_BEFORE_SECONDS);
       const warnAt = new Date(expireAt.getTime() - warnBeforeSeconds * 1000);
+      const fallbackAlarmAt = warnAt.getTime() > Date.now() ? warnAt : expireAt;
       try {
+        this.ensureContainerSchedulerSchema();
         if (warnAt.getTime() > Date.now()) {
           await this.schedule(warnAt, 'onWarn');
         } else {
@@ -164,6 +179,7 @@ export class DevContainerDO extends Container<Env> {
         }
       } catch (err) {
         console.error('[DevContainerDO.handleInit] schedule failed:', err);
+        await this.setFallbackAlarm(fallbackAlarmAt, '[DevContainerDO.handleInit] fallback alarm failed');
       }
     }
 
@@ -223,6 +239,54 @@ export class DevContainerDO extends Container<Env> {
     return (await this.ctx.storage.get<InitPayload>('config')) ?? null;
   }
 
+  private async runTtlAlarmFallback(): Promise<void> {
+    const config = await this.loadConfig();
+    if (!config) return;
+
+    const expireAtMs = Date.parse(config.expiresAt);
+    if (!Number.isFinite(expireAtMs)) return;
+    const now = Date.now();
+    if (expireAtMs <= now) {
+      await this.onExpire();
+      return;
+    }
+
+    const warnBeforeSeconds = parseWarnSeconds(this.env.DEV_CONTAINER_WARN_BEFORE_SECONDS);
+    const warnAtMs = expireAtMs - warnBeforeSeconds * 1000;
+    if (warnAtMs <= now) {
+      await this.onWarn();
+      return;
+    }
+
+    await this.setFallbackAlarm(new Date(warnAtMs), '[DevContainerDO.alarm] fallback warn alarm failed');
+  }
+
+  private async setFallbackAlarm(when: Date, logPrefix: string): Promise<void> {
+    try {
+      await this.ctx.storage.setAlarm(when.getTime());
+    } catch (error) {
+      console.error(logPrefix, error);
+    }
+  }
+
+  private ensureContainerSchedulerSchema(): void {
+    const sql = (this as unknown as { sql?: ContainerStorageSql }).sql;
+    if (typeof sql !== 'function') return;
+
+    const runSql = sql.bind(this) as ContainerStorageSql;
+    runSql`
+      CREATE TABLE IF NOT EXISTS container_schedules (
+        id TEXT PRIMARY KEY NOT NULL DEFAULT (randomblob(9)),
+        callback TEXT NOT NULL,
+        payload TEXT,
+        type TEXT NOT NULL CHECK(type IN ('scheduled', 'delayed')),
+        time INTEGER NOT NULL,
+        delayInSeconds INTEGER,
+        created_at INTEGER DEFAULT (unixepoch())
+      )
+    `;
+  }
+
   /**
    * Manual destroy handler. Called when the candidate clicks "END SESSION".
    * Stops the container and clears storage. D1 status is already marked
@@ -277,9 +341,11 @@ export class DevContainerDO extends Container<Env> {
     const expireAt = new Date(config.expiresAt);
     if (!Number.isNaN(expireAt.getTime())) {
       try {
+        this.ensureContainerSchedulerSchema();
         await this.schedule(expireAt, 'onExpire');
       } catch (err) {
         console.error('[DevContainerDO.onWarn] schedule(onExpire) failed:', err);
+        await this.setFallbackAlarm(expireAt, '[DevContainerDO.onWarn] fallback expire alarm failed');
       }
     }
   }
@@ -342,4 +408,9 @@ function sanitizeContainerDiagnostic(value: string): string {
     .trim();
   if (redacted.length <= MAX_CONTAINER_DIAGNOSTIC_CHARS) return redacted;
   return `${redacted.slice(0, MAX_CONTAINER_DIAGNOSTIC_CHARS)}\n[diagnostic truncated]`;
+}
+
+function isMissingContainerSchedulesTable(error: unknown): boolean {
+  const message = error instanceof Error ? error.message : String(error);
+  return message.includes('no such table: container_schedules');
 }

@@ -7,6 +7,7 @@
 
 import { useEffect, useRef, useState } from 'react';
 import { useAuth as useClerkAuth } from '@clerk/react';
+import { isDevProxyRecruiterAuthBypassEnabled } from '../lib/auth/devProxyAuth';
 
 export interface RoomStatusNotification {
   interviewId: string;
@@ -34,7 +35,9 @@ function apiBaseUrl(): string {
 }
 
 export function useRoomStatusNotifications(): UseRoomStatusNotificationsResult {
-  const { getToken } = useClerkAuth();
+  const bypassClerkToken = isDevProxyRecruiterAuthBypassEnabled();
+  const { getToken: clerkGetToken } = useClerkAuth();
+  const getToken = bypassClerkToken ? (async () => null) : clerkGetToken;
   const getTokenRef = useRef(getToken);
   const [updates, setUpdates] = useState<RoomStatusNotification[]>([]);
   const [isConnected, setIsConnected] = useState(false);

@@ -1,5 +1,5 @@
 import { useCallback, useRef, useState, useEffect } from 'react';
-import { Send, User, Bot, Cpu, Paperclip } from 'lucide-react';
+import { Send, User, Bot, Cpu, Sparkles } from 'lucide-react';
 
 export type ChatRole = 'host' | 'candidate' | 'ai';
 
@@ -12,11 +12,11 @@ export interface ChatMessage {
   deliveryRejectionReason?: string;
 }
 
-interface ChatWindowProps {
+interface ChatPanelProps {
   messages: ChatMessage[];
   onSend: (text: string) => void;
   currentUserRole: 'HOST' | 'GUEST';
-  onAskClippy?: () => void;
+  onAskAssistant?: () => void;
 }
 
 let msgCounter = 0;
@@ -44,12 +44,12 @@ function formatTime(ts: number): string {
   return `${h.toString().padStart(2, '0')}:${m.toString().padStart(2, '0')}`;
 }
 
-export function ChatWindow({
+export function ChatPanel({
   messages,
   onSend,
   currentUserRole,
-  onAskClippy,
-}: ChatWindowProps): JSX.Element {
+  onAskAssistant,
+}: ChatPanelProps): JSX.Element {
   const [input, setInput] = useState('');
   const scrollRef = useRef<HTMLDivElement>(null);
 
@@ -77,7 +77,7 @@ export function ChatWindow({
   );
 
   return (
-    <div className="chat-window" data-testid="chat-window">
+    <div className="chat-panel" data-testid="chat-panel">
       <div className="chat-messages" ref={scrollRef}>
         {messages.length === 0 && (
           <div className="chat-empty">
@@ -128,16 +128,16 @@ export function ChatWindow({
           onKeyDown={handleKeyDown}
           data-testid="chat-input"
         />
-        {onAskClippy && (
+        {onAskAssistant && (
           <button
             type="button"
-            className="chat-clippy-btn"
-            onClick={onAskClippy}
-            title="Ask Clippy"
-            aria-label="Ask Clippy"
-            data-testid="chat-ask-clippy"
+            className="chat-assistant-btn"
+            onClick={onAskAssistant}
+            title="Ask AI assistant"
+            aria-label="Ask AI assistant"
+            data-testid="chat-ask-assistant"
           >
-            <Paperclip size={14} />
+            <Sparkles size={14} />
           </button>
         )}
         <button

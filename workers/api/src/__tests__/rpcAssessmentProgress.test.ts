@@ -119,6 +119,12 @@ describe('candidate assessment RPC progress and commit submission', () => {
       'Repo: https://github.com/pipe/source-backed-worker',
       `Base commit: ${baseCommitSha}`,
       'Task: Fix the durable retry path.',
+      'Success criteria:',
+      '- Retry behavior is deterministic and covered by a focused test.',
+      'Expected evidence:',
+      '- git commit SHA on a pipe-assessment branch',
+      '- code diff for the retry path',
+      '- test output or verification note',
     ].join('\n');
 
     sqlite.prepare(

@@ -11,7 +11,7 @@ describe('routeAgentRoomAction', () => {
       source: 'agent_api_response_action',
       agentName: 'devin',
       bridgeEventType: 'ROOM_ACTION',
-      protocol: 'clippy_room_action_tag',
+      protocol: 'agent_room_action_tag',
       observedAt: '2026-06-27T21:10:00.000Z',
       persisted: true,
     };
@@ -23,7 +23,7 @@ describe('routeAgentRoomAction', () => {
     });
   });
 
-  it('allows file-change observations to offer a user-clicked workspace prompt', () => {
+  it('allows file-change observations to offer a user-clicked workspace chat action', () => {
     const action: AgentRoomAction = {
       id: 'open-workspace',
       label: 'Open Workspace',
@@ -34,13 +34,13 @@ describe('routeAgentRoomAction', () => {
     };
 
     expect(routeAgentRoomAction(action)).toEqual({
-      kind: 'bridge_observation_prompt',
-      source: 'prompt',
+      kind: 'bridge_observation_chat',
+      source: 'chat',
       action,
     });
   });
 
-  it('rejects legacy chat-response action arrays instead of relabeling them as prompt actions', () => {
+  it('rejects unsupported chat-response action arrays instead of relabeling them as assistant actions', () => {
     const action: AgentRoomAction = {
       id: 'open-terminal',
       label: 'Open Terminal',

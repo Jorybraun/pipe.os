@@ -20,6 +20,105 @@ const contextRecordsMigration = readFileSync(
   'utf8',
 );
 
+describe('GET / contacts list', () => {
+  let sqlite: BetterSqliteDb;
+
+  beforeEach(() => {
+    sqlite = new Database(':memory:');
+    sqlite.exec(`
+      CREATE TABLE contacts (
+        id TEXT PRIMARY KEY,
+        owner_id TEXT NOT NULL,
+        email TEXT NOT NULL,
+        name TEXT,
+        company TEXT,
+        role TEXT,
+        phone TEXT,
+        linkedin TEXT,
+        notes TEXT,
+        type TEXT NOT NULL,
+        created_at TEXT NOT NULL,
+        updated_at TEXT NOT NULL
+      );
+    `);
+
+    const insert = sqlite.prepare(`
+      INSERT INTO contacts (
+        id, owner_id, email, name, company, role, phone, linkedin, notes, type, created_at, updated_at
+      ) VALUES (?, ?, ?, ?, ?, ?, NULL, NULL, NULL, 'lead', ?, ?)
+    `);
+    const now = '2026-06-22T00:00:00.000Z';
+    for (let i = 0; i < 105; i += 1) {
+      insert.run(
+        `contact-${i}`,
+        'test-user',
+        `person-${i}@example.com`,
+        `Person ${i}`,
+        'PIPE Labs',
+        'Engineer',
+        new Date(Date.parse(now) + i * 1000).toISOString(),
+        now,
+      );
+    }
+  });
+
+  afterEach(() => {
+    sqlite.close();
+  });
+
+  function createApp() {
+    const app = new Hono<{ Bindings: Env; Variables: Variables }>();
+    app.use('*', async (c, next) => {
+      c.env = {
+        DB: createMockD1(sqlite),
+        CLERK_SECRET_KEY: 'test',
+        DEV_AUTH_BYPASS: 'true',
+        DEV_BYPASS_USER_ID: 'test-user',
+      } as unknown as Env;
+      await next();
+    });
+    app.route('/', contacts);
+    return app;
+  }
+
+  it('bounds the default list response and returns pagination metadata', async () => {
+    const response = await createApp().request('/');
+
+    expect(response.status).toBe(200);
+    const body = await response.json() as {
+      contacts: Array<{ id: string }>;
+      total: number;
+      page: number;
+      limit: number;
+      hasMore: boolean;
+    };
+    expect(body.contacts).toHaveLength(100);
+    expect(body.total).toBe(105);
+    expect(body.page).toBe(1);
+    expect(body.limit).toBe(100);
+    expect(body.hasMore).toBe(true);
+    expect(body.contacts[0]?.id).toBe('contact-104');
+  });
+
+  it('supports explicit page and limit parameters', async () => {
+    const response = await createApp().request('/?page=3&limit=40');
+
+    expect(response.status).toBe(200);
+    const body = await response.json() as {
+      contacts: Array<{ id: string }>;
+      total: number;
+      page: number;
+      limit: number;
+      hasMore: boolean;
+    };
+    expect(body.contacts).toHaveLength(25);
+    expect(body.total).toBe(105);
+    expect(body.page).toBe(3);
+    expect(body.limit).toBe(40);
+    expect(body.hasMore).toBe(false);
+  });
+});
+
 describe('GET /:id/living-context', () => {
   let sqlite: BetterSqliteDb;
 
@@ -163,6 +262,61 @@ describe('GET /:id/living-context', () => {
       personId,
       primaryEmail: 'ada@example.com',
     });
+  });
+
+  it('returns a lightweight person summary without loading the full graph arrays', async () => {
+    const app = createApp();
+
+    const response = await app.request('/contact-1/living-context/summary');
+
+    expect(response.status).toBe(200);
+    const body = await response.json() as {
+      person: {
+        personId: string;
+        workspacePersonId: string;
+        displayName: string | null;
+        primaryEmail: string | null;
+        roles: Array<{ roleType: string; label: string | null }>;
+      } | null;
+      summary: {
+        interactionCount: number;
+        artifactCount: number;
+        contextRecordCount: number;
+        assertionCount: number;
+        signalCount: number;
+        sourceSpanCount: number;
+      };
+      interactions: unknown[];
+      artifacts: unknown[];
+      contextRecords: unknown[];
+      assertions: unknown[];
+      signals: unknown[];
+      relationships: unknown[];
+    };
+
+    expect(body.person).toMatchObject({
+      displayName: 'Ada Contact',
+      primaryEmail: 'ada@example.com',
+      roles: [expect.objectContaining({
+        roleType: 'candidate',
+        label: 'Systems Lead',
+      })],
+    });
+    expect(body.summary).toEqual({
+      interactionCount: 0,
+      artifactCount: 0,
+      contextRecordCount: 0,
+      assertionCount: 0,
+      signalCount: 0,
+      sourceSpanCount: 0,
+    });
+    expect(body.interactions).toEqual([]);
+    expect(body.artifacts).toEqual([]);
+    expect(body.contextRecords).toEqual([]);
+    expect(body.assertions).toEqual([]);
+    expect(body.signals).toEqual([]);
+    expect(body.relationships).toEqual([]);
+    expect(sqlite.prepare('SELECT COUNT(*) AS count FROM people').get()).toEqual({ count: 1 });
   });
 
   it('keeps a contact living-context read attached after a same-email roleless candidate is created', async () => {

@@ -123,6 +123,15 @@ interface StartAssessmentEvaluationResponse {
 
 type HumanAssessmentDecisionValue = NonNullable<NonNullable<AssessmentProgressSnapshot['humanDecision']>>['decision'];
 
+interface AssessmentProofChecklistItem {
+  id: string;
+  label: string;
+  required: boolean;
+  sourceRefTypes: string[];
+  satisfied: boolean;
+  missingImpact: string;
+}
+
 interface RecordHumanAssessmentDecisionResponse {
   decision: NonNullable<NonNullable<AssessmentProgressSnapshot['humanDecision']>>;
   progress: AssessmentProgressSnapshot;
@@ -190,6 +199,7 @@ interface CodeReviewSignalBasisItem {
 interface CodeReviewScoreTrust {
   validBecause: string;
   calibrateBecause: string;
+  provenance: string;
   useAs: string;
   tone: CodeReviewNextStepTone;
 }
@@ -310,7 +320,18 @@ function assessmentAssignmentToneStyle(
 
 function assessmentEvaluationRecommendationLabel(recommendation: string | null | undefined): string | null {
   if (!recommendation) return null;
-  return sentenceCaseToken(recommendation);
+  switch (recommendation) {
+    case 'strong_evidence_to_advance':
+      return 'Strong evidence to advance';
+    case 'mixed_evidence_human_review':
+      return 'Human review needed';
+    case 'insufficient_evidence':
+      return 'Insufficient evidence';
+    case 'not_demonstrated':
+      return 'Not demonstrated';
+    default:
+      return 'Unvalidated recommendation';
+  }
 }
 
 function assessmentHumanDecisionLabel(decision: string): string {
@@ -600,6 +621,13 @@ function assessmentCoverageLabel(label: string): string {
   }
 }
 
+function assessmentProofDisplayLabel(label: string): string {
+  if (!/\s/.test(label) && (/[_-]/.test(label) || label === label.toLowerCase())) {
+    return assessmentCoverageLabel(label);
+  }
+  return label;
+}
+
 function assessmentEvidenceSnippetLabel(sourceRefType: string): string {
   switch (sourceRefType) {
     case 'review_challenge_packet':
@@ -627,25 +655,64 @@ function assessmentEvidenceSnippetLabel(sourceRefType: string): string {
   }
 }
 
-function assessmentRequiredProofItems(progress: AssessmentProgressSnapshot | null): AssessmentEvidenceCoverageItem[] {
-  const coverage = progress?.evaluation?.evidenceCoverage ?? null;
-  if (!coverage) return [];
-  return coverage.requiredForEvaluation.filter((item) => [
-    'challenge_packet',
-    'git_commit',
-    'code_diff',
-  ].includes(item.label));
+function assessmentCoverageToProofItem(item: AssessmentEvidenceCoverageItem): AssessmentProofChecklistItem {
+  return {
+    id: item.label,
+    label: item.label,
+    required: item.required,
+    sourceRefTypes: item.sourceRefTypes,
+    satisfied: item.satisfied,
+    missingImpact: item.missingImpact,
+  };
 }
 
-function assessmentConfidenceSignalItems(progress: AssessmentProgressSnapshot | null): AssessmentEvidenceCoverageItem[] {
+function assessmentRequiredProofItems(progress: AssessmentProgressSnapshot | null): AssessmentProofChecklistItem[] {
+  const readiness = progress?.readiness?.required ?? [];
+  if (readiness.length > 0) {
+    return readiness.map((item) => ({
+      id: item.id,
+      label: item.label,
+      required: item.required,
+      sourceRefTypes: item.sourceRefTypes,
+      satisfied: item.satisfied,
+      missingImpact: item.missingImpact,
+    }));
+  }
+
   const coverage = progress?.evaluation?.evidenceCoverage ?? null;
   if (!coverage) return [];
-  return coverage.expectedForHighConfidence.filter((item) => [
-    'test_run',
-    'terminal_activity',
-    'code_editor_activity',
-    'ai_assistance',
-  ].includes(item.label));
+  return coverage.requiredForEvaluation
+    .filter((item) => [
+      'challenge_packet',
+      'git_commit',
+      'code_diff',
+    ].includes(item.label))
+    .map(assessmentCoverageToProofItem);
+}
+
+function assessmentConfidenceSignalItems(progress: AssessmentProgressSnapshot | null): AssessmentProofChecklistItem[] {
+  const readiness = progress?.readiness?.confidence ?? [];
+  if (readiness.length > 0) {
+    return readiness.map((item) => ({
+      id: item.id,
+      label: item.label,
+      required: item.required,
+      sourceRefTypes: item.sourceRefTypes,
+      satisfied: item.satisfied,
+      missingImpact: item.missingImpact,
+    }));
+  }
+
+  const coverage = progress?.evaluation?.evidenceCoverage ?? null;
+  if (!coverage) return [];
+  return coverage.expectedForHighConfidence
+    .filter((item) => [
+      'test_run',
+      'terminal_activity',
+      'code_editor_activity',
+      'ai_assistance',
+    ].includes(item.label))
+    .map(assessmentCoverageToProofItem);
 }
 
 function assessmentSourceRefCount(progress: AssessmentProgressSnapshot | null, kind: string): number {
@@ -741,6 +808,15 @@ function workspaceAssessmentDecisionItem(progress: AssessmentProgressSnapshot | 
     };
   }
 
+  if (progress.challengePacketContract?.isComplete === false) {
+    return {
+      label: 'Decision',
+      value: 'Waiting for complete task',
+      detail: `The assigned packet is missing ${progress.challengePacketContract.missingFields.join(', ')}.`,
+      tone: 'blocked',
+    };
+  }
+
   if (progress.hasChallengePacket) {
     return {
       label: 'Decision',
@@ -767,7 +843,7 @@ function workspaceAssessmentFitItem(input: {
     return {
       label: 'Challenge fit',
       value: 'Do not rely yet',
-      detail: input.setup.message ?? 'The current assignment is not safe for positive assessment.',
+      detail: input.setup.nextActionLabel ?? input.setup.message ?? 'The current assignment is not safe for positive assessment.',
       tone: 'blocked',
     };
   }
@@ -790,6 +866,15 @@ function workspaceAssessmentFitItem(input: {
     };
   }
 
+  if (input.progress?.challengePacketContract?.isComplete === false) {
+    return {
+      label: 'Challenge fit',
+      value: 'Incomplete task packet',
+      detail: `Add ${input.progress.challengePacketContract.missingFields.join(', ')} before using this assessment.`,
+      tone: 'blocked',
+    };
+  }
+
   if (input.progress?.hasChallengePacket) {
     return {
       label: 'Challenge fit',
@@ -808,10 +893,13 @@ function workspaceAssessmentFitItem(input: {
 }
 
 function workspaceAssessmentProofItem(progress: AssessmentProgressSnapshot | null): WorkspaceAssessmentReadoutItem {
+  const challengeContractComplete = progress?.challengePacketContract
+    ? progress.challengePacketContract.isComplete
+    : Boolean(progress?.hasChallengePacket || assessmentSourceRefCount(progress, 'review_challenge_packet') > 0);
   const challengeCaptured = assessmentHasSatisfiedCoverage(
     progress,
     'challenge_packet',
-    Boolean(progress?.hasChallengePacket || assessmentSourceRefCount(progress, 'review_challenge_packet') > 0),
+    challengeContractComplete,
   );
   const commitCaptured = assessmentHasSatisfiedCoverage(
     progress,
@@ -918,6 +1006,7 @@ function workspaceAssessmentWorkPacket(progress: AssessmentProgressSnapshot | nu
     : 'Changed file list was not captured in the commit payload.';
 
   const commitDetail = [
+    progress.commit.integrity?.label ?? progress.commit.submissionSourceLabel ?? null,
     progress.commit.branchName ? `Branch ${progress.commit.branchName}` : null,
     changedFileDetail,
   ].filter((item): item is string => Boolean(item)).join(' · ');
@@ -1330,32 +1419,71 @@ function codeReviewScoreTrustSummary(input: {
     : input.match?.status === 'MATCHED'
       ? 'matched challenge'
       : 'unproven match';
-  const validParts = [
+  const validParts = uniqueTextParts([
     input.score.status === 'scored' ? 'Scored review' : `Score ${titleCaseToken(input.score.status)}`,
     countLabel(annotationCount, 'annotation'),
     countLabel(pushbackCount, 'pushback thread'),
-    input.proofCount > 0 ? countLabel(input.proofCount, 'evidence bridge') : qualityGate,
+    input.proofCount > 0 ? countLabel(input.proofCount, 'evidence bridge') : null,
     qualityGate,
-  ];
+  ]);
 
   const calibrators = [
     input.score.band ? `${input.score.band.toLowerCase()} band` : null,
-    input.score.growthAreas[0] ?? null,
+    input.proofCount === 0 ? 'no rendered source bridge' : null,
     annotationCount === 0 ? 'no review annotations' : null,
     pushbackCount === 0 ? 'no developer pushback thread' : null,
-    input.proofCount === 0 ? 'no rendered source bridge' : null,
+    input.score.growthAreas[0] ?? null,
   ].filter((item): item is string => Boolean(item));
+  const scoreProvenance = input.score.provenance;
+  const provenanceParts = scoreProvenance
+    ? [
+        countLabel(scoreProvenance.rubricDimensionCount, 'rubric dimension'),
+        countLabel(scoreProvenance.evidenceItemCount, 'evidence item'),
+        countLabel(scoreProvenance.metricCount, 'scoring metric'),
+      ]
+    : ['Score report did not expose compact provenance counters.'];
 
   return {
     validBecause: validParts.join(' · '),
     calibrateBecause: calibrators.length > 0
       ? calibrators.slice(0, 3).join(' · ')
       : 'No blocking calibration gap in this score packet.',
+    provenance: provenanceParts.join(' · '),
     useAs: input.validity.tone === 'positive'
       ? 'Use as source-backed signal, not an automatic decision.'
       : `${input.validity.value}: ${input.validity.detail}`,
     tone: input.validity.tone,
   };
+}
+
+function uniqueTextParts(parts: Array<string | null | undefined>): string[] {
+  return [...new Set(parts.filter((part): part is string => Boolean(part)))];
+}
+
+function codeReviewSourceProofHint(input: {
+  match: CodeReviewMatchDetail;
+  hyperedgeCount: number;
+  hasPrimaryEvidence: boolean;
+  hasScore: boolean;
+}): string {
+  const bridge = input.match.validatorAgent?.sourceBridge ?? null;
+  const parts = uniqueTextParts([
+    input.hyperedgeCount > 0 ? 'candidate-repo evidence bridges' : null,
+    bridge && bridge.candidateSourceCount > 0 ? 'candidate evidence' : null,
+    bridge && bridge.roleSourceCount > 0 ? 'role evidence' : null,
+    bridge && bridge.repoSourceCount > 0 ? 'repo evidence' : null,
+    !bridge && input.hasPrimaryEvidence ? 'source-aligned evidence' : null,
+    !bridge && input.match.assessmentQuality ? 'repo challenge proof' : null,
+    input.hasScore ? 'scoring provenance' : null,
+    input.match.gaps.length > 0 ? 'open gaps' : null,
+    !bridge && input.hyperedgeCount === 0 && !input.hasPrimaryEvidence && !input.match.assessmentQuality && !input.hasScore
+      ? 'match packet provenance'
+      : null,
+  ]);
+
+  if (parts.length === 1) return parts[0]!;
+  if (parts.length === 2) return `${parts[0]} and ${parts[1]}`;
+  return `${parts.slice(0, -1).join(', ')}, and ${parts[parts.length - 1]}`;
 }
 
 function codeReviewAssessmentValiditySummary(input: {
@@ -1592,13 +1720,6 @@ function codeReviewNextStepRecommendation(
       tone: 'blocked',
     };
   }
-  if (!submission && match?.status === 'MATCHED') {
-    return {
-      value: 'Wait for candidate review',
-      detail: 'The PR assignment is ready; do not make a hiring decision until the candidate submits source-backed review comments.',
-      tone: 'neutral',
-    };
-  }
   if (score && score.status !== 'scored') {
     return {
       value: 'Wait for scoring',
@@ -1611,8 +1732,8 @@ function codeReviewNextStepRecommendation(
   if (typeof scoreValue === 'number' && Number.isFinite(scoreValue)) {
     if (scoreValue < 50 || scoreBand === 'weak') {
       return {
-        value: 'Schedule targeted follow-up',
-        detail: 'Use the growth area as the next live interview prompt before advancing this candidate.',
+        value: 'Review assignment fairness before rejecting',
+        detail: 'Use the weak score and growth area to verify whether this reflects candidate ability, assignment fit, or missing context before rejecting.',
         tone: 'watch',
       };
     }
@@ -1627,6 +1748,13 @@ function codeReviewNextStepRecommendation(
       value: 'Advance to next stage',
       detail: 'Use the source-backed review, annotations, and pushback as evidence to move the candidate forward.',
       tone: 'positive',
+    };
+  }
+  if (!submission && match?.status === 'MATCHED') {
+    return {
+      value: 'Wait for candidate review',
+      detail: 'The PR assignment is ready; do not make a hiring decision until the candidate submits source-backed review comments.',
+      tone: 'neutral',
     };
   }
   if (submission) {
@@ -2196,10 +2324,11 @@ function assessmentInviteValidityLabel(state: AssessmentInviteLinkState, hasUrl:
 
 function assessmentInviteEvidenceLabel(
   state: AssessmentInviteLinkState,
-  input: { hasUrl: boolean; hasSubmittedEvidence: boolean },
+  input: { hasUrl: boolean; hasSubmittedEvidence: boolean; reviewAssignmentBlocked?: boolean },
 ): string {
   if (input.hasSubmittedEvidence) return 'Assessment evidence attached';
   if (!input.hasUrl) return 'No assessment link sent';
+  if (input.reviewAssignmentBlocked) return 'Profile handoff, no PR challenge';
   if (state === 'claimed') return 'Started, no submission';
   if (state === 'stale') return 'No current assessment evidence';
   return 'Awaiting candidate submission';
@@ -2207,10 +2336,13 @@ function assessmentInviteEvidenceLabel(
 
 function assessmentInviteNextActionLabel(
   state: AssessmentInviteLinkState,
-  input: { hasUrl: boolean; hasEmail: boolean },
+  input: { hasUrl: boolean; hasEmail: boolean; reviewAssignmentBlocked?: boolean },
 ): string {
   if (!input.hasEmail) return 'Add a candidate email before sending an assessment invite.';
   if (!input.hasUrl) return 'Send the assessment invite to create a one-use candidate link.';
+  if (input.reviewAssignmentBlocked) {
+    return 'Assign or refresh a source-backed PR before treating this as a code-review assessment.';
+  }
   switch (state) {
     case 'claimed':
       return 'Resend the invite to issue a fresh one-use assessment link.';
@@ -2780,6 +2912,9 @@ export default function InterviewDetailPage(): JSX.Element {
       && !hasConcreteReviewAssignment
       && (interview.githubRepoUrl || interview.githubPrNumber || interview.matchedRepoId),
   );
+  const codeReviewSetupNextAction = hasReviewSetupGap
+    ? interview.assessmentSetup?.nextActionLabel ?? null
+    : null;
   const showsReviewAssignmentPanel = hasConcreteReviewAssignment || hasReviewSetupGap;
   const primaryMatchEvidence = codeReviewMatch?.evidence[0] ?? null;
   const primaryMatchHasRoleContext = Boolean(
@@ -2815,12 +2950,23 @@ export default function InterviewDetailPage(): JSX.Element {
     || assessmentProgress?.hasFinalSubmission
     || assessmentProgress?.evaluation,
   );
+  const assessmentLinkIsProfileHandoff = Boolean(
+    isCodeReviewInterview
+      && interview.assessmentSetup?.blocksPositiveAssessment
+      && !hasSubmittedAssessmentEvidence
+      && (
+        interview.assessmentSetup.status === 'waiting_for_candidate_evidence'
+        || interview.assessmentSetup.status === 'waiting_for_source_backed_match'
+        || interview.assessmentSetup.status === 'missing_reviewable_task'
+      ),
+  );
   const canCopyAssessmentInvite = Boolean(assessmentInviteUrl && assessmentInviteState === 'active');
   const assessmentInviteStatus = assessmentInviteStatusLabel(assessmentInviteState, hasAssessmentInviteUrl);
   const assessmentInviteValidity = assessmentInviteValidityLabel(assessmentInviteState, hasAssessmentInviteUrl);
   const assessmentInviteEvidenceState = assessmentInviteEvidenceLabel(assessmentInviteState, {
     hasUrl: hasAssessmentInviteUrl,
     hasSubmittedEvidence: hasSubmittedAssessmentEvidence,
+    reviewAssignmentBlocked: assessmentLinkIsProfileHandoff && assessmentInviteState === 'active',
   });
   const assessmentInviteRecipient = personEmail
     ? `${personName} · ${personEmail}`
@@ -2828,6 +2974,7 @@ export default function InterviewDetailPage(): JSX.Element {
   const assessmentInviteNextAction = assessmentInviteNextActionLabel(assessmentInviteState, {
     hasUrl: hasAssessmentInviteUrl,
     hasEmail: Boolean(personEmail),
+    reviewAssignmentBlocked: assessmentLinkIsProfileHandoff && assessmentInviteState === 'active',
   });
   const showsAssessmentInvitePanel = Boolean(
     interview.assessmentSetup
@@ -2835,7 +2982,9 @@ export default function InterviewDetailPage(): JSX.Element {
       && (isCodeReviewInterview || assessmentInviteUrl),
   );
   const assessmentInviteDescription =
-    assessmentInviteState === 'claimed'
+    assessmentLinkIsProfileHandoff && assessmentInviteState === 'active'
+      ? `${interview.assessmentSetup?.message ?? 'No source-backed PR task has been assigned yet.'} The candidate can use this link for profile intake only; PIPE will show a profile-received handoff until a source-backed PR is assigned.`
+      : assessmentInviteState === 'claimed'
       ? hasSubmittedAssessmentEvidence
         ? 'The candidate started this one-use assessment link and assessment evidence is attached below. Resend only if they need a fresh attempt.'
         : 'The candidate started this one-use assessment link, but this interview has no submitted assessment evidence yet. Resend the invite to issue a fresh link.'
@@ -2848,11 +2997,20 @@ export default function InterviewDetailPage(): JSX.Element {
     ? assessmentInviteDescription
     : interview.assessmentSetup?.lastDeliveredUrlMessage ?? assessmentInviteDescription;
   const assessmentAssignment = summarizeAssessmentAssignment(interview.assessmentSetup);
-  const showsAssessmentProgress = usesWorkspaceInterview || Boolean(assessmentProgress) || Boolean(assessmentAssignment);
+  const hasStandaloneCodeReviewReadout = isCodeReviewInterview && Boolean(
+    interview.codeReviewMatch
+      || interview.codeReviewScore
+      || interview.submissionJson,
+  );
+  const showsAssessmentProgress = usesWorkspaceInterview
+    || Boolean(assessmentProgress)
+    || (Boolean(assessmentAssignment) && !hasStandaloneCodeReviewReadout);
   const assessmentProgressStage = assessmentProgress
-    ? assessmentProgressStageLabel(assessmentProgress.stage)
+    ? assessmentProgress.readiness?.label ?? assessmentProgressStageLabel(assessmentProgress.stage)
     : 'Not started';
-  const assessmentProgressNextAction = assessmentProgress?.nextActionLabel
+  const assessmentProgressNextAction = assessmentProgress?.readiness?.detail
+    ?? assessmentProgress?.nextActionLabel
+    ?? interview.assessmentSetup?.nextActionLabel
     ?? interview.assessmentSetup?.message
     ?? 'Open or configure the assessment room to start collecting evidence.';
   const assessmentProgressEvidence = assessmentProgress
@@ -2969,6 +3127,14 @@ export default function InterviewDetailPage(): JSX.Element {
         validity: codeReviewAssessmentValidity,
       })
     : null;
+  const codeReviewSourceProofSummary = codeReviewMatch
+    ? codeReviewSourceProofHint({
+        match: codeReviewMatch,
+        hyperedgeCount: matchHyperedges.length,
+        hasPrimaryEvidence: Boolean(primaryMatchEvidence),
+        hasScore: Boolean(codeReviewScore),
+      })
+    : null;
   const codeReviewExplanation = codeReviewMatchExplanation({
     repoUrl: interview.githubRepoUrl,
     prNumber: interview.githubPrNumber,
@@ -3004,6 +3170,65 @@ export default function InterviewDetailPage(): JSX.Element {
       detail: codeReviewMatch?.summary ?? 'source trail appears after a match is selected',
     },
   ];
+  const selectedCodeReviewProofItems = [
+    {
+      id: 'assignment',
+      label: 'assignment',
+      text: codeReviewExplanation.selectedChallenge,
+    },
+    {
+      id: 'score',
+      label: 'score report',
+      text: codeReviewScoreValue ?? codeReviewScoreDetail ?? null,
+    },
+    {
+      id: 'match-proof',
+      label: 'match proof',
+      text: codeReviewExplanation.proofSummary,
+    },
+    {
+      id: 'calibration',
+      label: 'calibration',
+      text: codeReviewDecisionRisk.uncertainty.detail,
+    },
+  ].filter((item): item is { id: string; label: string; text: string } => Boolean(item.text));
+  const selectedCodeReviewDecision = isCodeReviewInterview && (codeReviewMatch || codeReviewScore || codeReviewSubmission)
+    ? {
+        decisionLabel: 'Code-review decision',
+        sessionId: codeReviewScore?.reviewSessionId ?? null,
+        outcome: codeReviewOutcome,
+        recommendation: codeReviewNextStep.value,
+        recommendationDetail: codeReviewNextStep.detail,
+        uncertainty: codeReviewDecisionRisk.uncertainty.value,
+        uncertaintyDetail: codeReviewDecisionRisk.uncertainty.detail,
+        missingContext: codeReviewDecisionRisk.missingContext,
+        assessmentValidity: codeReviewAssessmentValidity.value,
+        assessmentValidityDetail: codeReviewAssessmentValidity.detail,
+        nextAction: codeReviewNextStep.value,
+        nextActionDetail: codeReviewNextStep.detail,
+        scoreLabel: codeReviewScoreValue,
+        scoreProvenanceLabel: codeReviewScoreTrust?.provenance ?? null,
+        challengeLabel: codeReviewExplanation.selectedChallenge,
+        challengeUrl: interview.githubRepoUrl && typeof interview.githubPrNumber === 'number'
+          ? `${interview.githubRepoUrl.replace(/\/$/, '')}/pull/${interview.githubPrNumber}`
+          : interview.githubRepoUrl,
+        narrative: codeReviewScoreDetail ?? codeReviewExplanation.whyThisChallenge,
+        strengths: codeReviewScore?.strengths.slice(0, 2) ?? [],
+        probes: codeReviewScore?.growthAreas.slice(0, 2) ?? codeReviewDecisionRisk.missingContext.slice(0, 2),
+        proofCount: Math.max(
+          selectedCodeReviewProofItems.length,
+          matchHyperedges.length,
+          codeReviewMatch?.roleSources.length ?? 0,
+        ),
+        sourceProofSummary: codeReviewSourceProofSummary,
+        proofItems: selectedCodeReviewProofItems,
+        basisItems: codeReviewSignalBasis.map((item) => ({
+          label: item.label,
+          value: item.value,
+          satisfied: item.satisfied,
+        })),
+      }
+    : null;
   const codeReviewHiringReadout = [
     {
       label: 'Decision',
@@ -3043,6 +3268,7 @@ export default function InterviewDetailPage(): JSX.Element {
           livingContext: interview.livingContext ?? undefined,
           candidateId: interview.candidateId ?? undefined,
           selectedAssessment: assessmentProgress ?? undefined,
+          selectedCodeReviewDecision: selectedCodeReviewDecision ?? undefined,
         }
       : undefined;
     navigate(personProfilePath, {
@@ -3323,7 +3549,9 @@ export default function InterviewDetailPage(): JSX.Element {
                 Assessment progress
               </div>
               <div style={ROOM_LINK_TEXT}>
-                {interview.assessmentSetup?.message ?? 'Source-backed assessment evidence is tracked against this interview.'}
+                {interview.assessmentSetup?.nextActionLabel
+                  ?? interview.assessmentSetup?.message
+                  ?? 'Source-backed assessment evidence is tracked against this interview.'}
               </div>
             </div>
             <div style={{ display: 'flex', alignItems: 'center', gap: 10, flexWrap: 'wrap', justifyContent: 'flex-end' }}>
@@ -3483,6 +3711,16 @@ export default function InterviewDetailPage(): JSX.Element {
                 <div style={EVIDENCE_ROW}>
                   <span style={FIELD_LABEL}>Branch</span>
                   <span style={FIELD_VALUE}>{assessmentProgress.commit.branchName}</span>
+                </div>
+              )}
+              {(assessmentProgress.commit?.integrity?.label ?? assessmentProgress.commit?.submissionSourceLabel) && (
+                <div style={{ ...EVIDENCE_ROW, alignItems: 'flex-start' }}>
+                  <span style={FIELD_LABEL}>Commit integrity</span>
+                  <span style={{ ...FIELD_VALUE, lineHeight: 1.5 }}>
+                    {assessmentProgress.commit.integrity
+                      ? `${assessmentProgress.commit.integrity.label} · ${assessmentProgress.commit.integrity.detail}`
+                      : assessmentProgress.commit.submissionSourceLabel}
+                  </span>
                 </div>
               )}
               {assessmentProgress.humanDecision && (
@@ -3655,35 +3893,65 @@ export default function InterviewDetailPage(): JSX.Element {
                   </span>
                 </div>
               )}
-              {assessmentRequiredProof.length > 0 && (
-                <div style={{ ...EVIDENCE_ROW, alignItems: 'flex-start' }}>
-                  <span style={FIELD_LABEL}>Required proof</span>
-                  <span style={{ ...FIELD_VALUE, ...ASSESSMENT_COVERAGE_CHIPS }}>
-                    {assessmentRequiredProof.map((item) => (
-                      <span
-                        key={item.label}
-                        style={item.satisfied ? ASSESSMENT_COVERAGE_OK : ASSESSMENT_COVERAGE_MISSING}
-                        title={item.satisfied ? undefined : item.missingImpact}
-                      >
-                        {assessmentCoverageLabel(item.label)} {item.satisfied ? 'captured' : 'missing'}
+              {(assessmentRequiredProof.length > 0 || assessmentConfidenceSignals.length > 0) && (
+                <div
+                  data-testid="interview-assessment-proof-checklist"
+                  style={{ ...EVIDENCE_ROW, alignItems: 'flex-start' }}
+                >
+                  <span style={FIELD_LABEL}>Proof checklist</span>
+                  <span style={{ ...FIELD_VALUE, ...ASSESSMENT_CLAIM_LIST }}>
+                    {assessmentRequiredProof.length > 0 && (
+                      <span style={ASSESSMENT_CLAIM_ROW}>
+                        <span style={ASSESSMENT_CLAIM_HEAD}>Required proof</span>
+                        <span style={ASSESSMENT_COVERAGE_CHIPS}>
+                          {assessmentRequiredProof.map((item) => {
+                            const label = assessmentProofDisplayLabel(item.label);
+                            return (
+                              <span key={item.id} style={ASSESSMENT_CLAIM_ROW}>
+                                <span
+                                  style={item.satisfied ? ASSESSMENT_COVERAGE_OK : ASSESSMENT_COVERAGE_MISSING}
+                                >
+                                  {label} {item.satisfied ? 'captured' : 'missing'}
+                                </span>
+                                <span style={ASSESSMENT_CLAIM_HEAD}>
+                                  <span>{item.satisfied ? 'Captured' : 'Missing'}</span>
+                                  <span>{item.sourceRefTypes.map(sentenceCaseToken).join(', ')}</span>
+                                </span>
+                                {!item.satisfied && item.missingImpact.trim().length > 0 && (
+                                  <span style={ASSESSMENT_CLAIM_NARRATIVE}>{item.missingImpact}</span>
+                                )}
+                              </span>
+                            );
+                          })}
+                        </span>
                       </span>
-                    ))}
-                  </span>
-                </div>
-              )}
-              {assessmentConfidenceSignals.length > 0 && (
-                <div style={{ ...EVIDENCE_ROW, alignItems: 'flex-start' }}>
-                  <span style={FIELD_LABEL}>Confidence signals</span>
-                  <span style={{ ...FIELD_VALUE, ...ASSESSMENT_COVERAGE_CHIPS }}>
-                    {assessmentConfidenceSignals.map((item) => (
-                      <span
-                        key={item.label}
-                        style={item.satisfied ? ASSESSMENT_COVERAGE_OK : ASSESSMENT_COVERAGE_MISSING}
-                        title={item.satisfied ? undefined : item.missingImpact}
-                      >
-                        {assessmentCoverageLabel(item.label)} {item.satisfied ? 'captured' : 'missing'}
+                    )}
+                    {assessmentConfidenceSignals.length > 0 && (
+                      <span style={ASSESSMENT_CLAIM_ROW}>
+                        <span style={ASSESSMENT_CLAIM_HEAD}>Confidence signals</span>
+                        <span style={ASSESSMENT_COVERAGE_CHIPS}>
+                          {assessmentConfidenceSignals.map((item) => {
+                            const label = assessmentProofDisplayLabel(item.label);
+                            return (
+                              <span key={item.id} style={ASSESSMENT_CLAIM_ROW}>
+                                <span
+                                  style={item.satisfied ? ASSESSMENT_COVERAGE_OK : ASSESSMENT_COVERAGE_MISSING}
+                                >
+                                  {label} {item.satisfied ? 'captured' : 'missing'}
+                                </span>
+                                <span style={ASSESSMENT_CLAIM_HEAD}>
+                                  <span>{item.satisfied ? 'Captured' : 'Missing'}</span>
+                                  <span>{item.sourceRefTypes.map(sentenceCaseToken).join(', ')}</span>
+                                </span>
+                                {!item.satisfied && item.missingImpact.trim().length > 0 && (
+                                  <span style={ASSESSMENT_CLAIM_NARRATIVE}>{item.missingImpact}</span>
+                                )}
+                              </span>
+                            );
+                          })}
+                        </span>
                       </span>
-                    ))}
+                    )}
                   </span>
                 </div>
               )}
@@ -3902,6 +4170,10 @@ export default function InterviewDetailPage(): JSX.Element {
                         <div style={DECISION_SCORE_TRUST_ITEM}>
                           <div style={FIELD_LABEL}>Calibrate because</div>
                           <div style={CONTEXT_RECORD_NARRATIVE}>{codeReviewScoreTrust.calibrateBecause}</div>
+                        </div>
+                        <div style={DECISION_SCORE_TRUST_ITEM}>
+                          <div style={FIELD_LABEL}>Score provenance</div>
+                          <div style={CONTEXT_RECORD_NARRATIVE}>{codeReviewScoreTrust.provenance}</div>
                         </div>
                         <div style={DECISION_SCORE_TRUST_ITEM}>
                           <div style={FIELD_LABEL}>Use as</div>
@@ -4424,6 +4696,14 @@ export default function InterviewDetailPage(): JSX.Element {
                   </span>
                 </div>
               )}
+              {codeReviewSetupNextAction && (
+                <div style={{ ...EVIDENCE_ROW, alignItems: 'flex-start' }}>
+                  <span style={FIELD_LABEL}>Next action</span>
+                  <span style={{ ...FIELD_VALUE, lineHeight: 1.6 }}>
+                    {codeReviewSetupNextAction}
+                  </span>
+                </div>
+              )}
             </div>
           </Section>
         )}
@@ -4493,7 +4773,7 @@ export default function InterviewDetailPage(): JSX.Element {
                 <details style={DETAILS_CARD}>
                   <summary style={DETAILS_SUMMARY}>
                     Source proof
-                    <span style={DETAILS_HINT}>candidate, role, repo, and scoring provenance</span>
+                    <span style={DETAILS_HINT}>{codeReviewSourceProofSummary}</span>
                   </summary>
 
                   {codeReviewMatch.validatorAgent && (

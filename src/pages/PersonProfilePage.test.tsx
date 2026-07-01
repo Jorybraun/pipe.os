@@ -61,6 +61,25 @@ function sourceSpan(overrides: Partial<LivingContextSourceRef> = {}): LivingCont
         strengths: ['Found the source-backed regression risk.'],
         growth_areas: ['Probe how they balance timing trade-offs under pushback.'],
       },
+      dimensions: {
+        source_accuracy: { score: 2 },
+        bug_detection: { score: 2 },
+        test_reasoning: { score: 2 },
+        risk_calibration: { score: 1 },
+        communication: { score: 2 },
+        ai_usage_judgment: { score: 1 },
+      },
+      evidence: [
+        { id: 'comment-1', text: 'Add a regression test around impatient hover click timing.' },
+        { id: 'pushback-1', text: 'The timeout cleanup needs to be defended before merge.' },
+      ],
+      metrics: {
+        annotations: 1,
+        pushback_threads: 1,
+        source_refs: 4,
+        rubric_dimensions: 6,
+        score_confidence: 0.82,
+      },
     }),
     byteStart: 0,
     byteEnd: null,
@@ -558,6 +577,68 @@ function makeContact(): PersonContact {
   };
 }
 
+function makeSelectedCodeReviewDecision(): unknown {
+  return {
+    decisionLabel: 'Code-review decision',
+    sessionId: 'review-session-1',
+    outcome: 'Candidate requested changes',
+    recommendation: 'Advance with focused probe',
+    recommendationDetail: 'Use the source-backed review as a positive signal, then calibrate the remaining uncertainty.',
+    uncertainty: 'Focused calibration needed',
+    uncertaintyDetail: 'Probe timing trade-offs before treating the score as final hiring signal.',
+    missingContext: ['Probe timing trade-offs.'],
+    assessmentValidity: 'Usable source-backed signal',
+    assessmentValidityDetail: 'Score, selected PR, and match proof are present.',
+    nextAction: 'Schedule focused technical calibration',
+    nextActionDetail: 'Use the next conversation to pressure-test the weakest review dimension.',
+    scoreLabel: '82/100 Strong',
+    scoreProvenanceLabel: '6 rubric dimensions · 2 evidence items · 5 scoring metrics',
+    challengeLabel: 'acme/widgets PR #42',
+    challengeUrl: 'https://github.com/acme/widgets/pull/42',
+    narrative: 'Candidate found the missing retry test and defended the review.',
+    strengths: ['Found the release-blocking risk.'],
+    probes: ['Probe timing trade-offs.'],
+    proofCount: 4,
+    proofItems: [
+      { id: 'assignment', label: 'assignment', text: 'acme/widgets PR #42' },
+      { id: 'score', label: 'score report', text: '82/100 Strong' },
+    ],
+    basisItems: [
+      { label: 'Score report', value: 'Scored', satisfied: true },
+      { label: 'Match proof', value: 'Source-backed match', satisfied: true },
+    ],
+  };
+}
+
+function makeSelectedManualCodeReviewDecision(): unknown {
+  return {
+    ...(makeSelectedCodeReviewDecision() as Record<string, unknown>),
+    recommendation: 'Review assignment fairness before rejecting',
+    recommendationDetail: 'Use the weak review as a technical signal, then calibrate whether the gap was ability, context, or assignment fit.',
+    uncertainty: 'High calibration risk',
+    uncertaintyDetail: 'Manual PR assignment does not prove candidate-fit matching.',
+    missingContext: ['Manual PR assignment needs candidate-fit calibration.'],
+    assessmentValidity: 'Score needs human calibration',
+    assessmentValidityDetail: 'Score, review comments, and repo challenge proof exist, but candidate-fit proof is not present.',
+    nextAction: 'Review assignment fairness before rejecting',
+    nextActionDetail: 'Use the weak score and growth area to verify whether this reflects candidate ability, assignment fit, or missing context before rejecting.',
+    scoreLabel: '38/100 Weak',
+    challengeLabel: 'mui/base-ui PR #973',
+    challengeUrl: 'https://github.com/mui/base-ui/pull/973',
+    sourceProofSummary: 'repo evidence, scoring provenance, and open gaps',
+    proofItems: [
+      { id: 'assignment', label: 'assignment', text: 'mui/base-ui PR #973' },
+      { id: 'score', label: 'score report', text: '38/100 Weak' },
+      { id: 'match-proof', label: 'match proof', text: 'Manual override: recruiter-selected source-backed review challenge.' },
+    ],
+    basisItems: [
+      { label: 'Score report', value: 'Scored', satisfied: true },
+      { label: 'Review evidence', value: '2 annotations', satisfied: true },
+      { label: 'Match proof', value: '8/12 Usable', satisfied: true },
+    ],
+  };
+}
+
 async function flushAsyncUpdates(): Promise<void> {
   await act(async () => {
     await Promise.resolve();
@@ -596,6 +677,133 @@ describe('PersonProfilePage', () => {
     mocks.api.get.mockReset();
   });
 
+  it('renders navigation living context immediately without automatic full graph hydration', async () => {
+    const initialContext = makeLivingContext();
+
+    mocks.api.get
+      .mockResolvedValueOnce({ contact: makeContact() });
+
+    renderPage({ livingContext: initialContext, selectedAssessment: makeSelectedAssessmentProgress() });
+    await flushAsyncUpdates();
+
+    expect(screen.queryByText('Loading person context...')).not.toBeInTheDocument();
+    expect(screen.getByRole('heading', { name: 'Ada Reviewer' })).toBeInTheDocument();
+    const cockpit = screen.getByTestId('person-decision-cockpit');
+    expect(cockpit).toHaveTextContent('Decision cockpit');
+    expect(cockpit).toHaveTextContent('Advance with focused probe');
+    expect(screen.getByTestId('person-code-review-decision')).toHaveTextContent('Code-review decision');
+    expect(mocks.api.get).toHaveBeenCalledWith('/api/v1/contacts/person-1');
+    expect(mocks.api.get).not.toHaveBeenCalledWith('/api/v1/contacts/person-1/living-context');
+  });
+
+  it('renders a selected code-review decision from navigation without full graph hydration', async () => {
+    const summaryContext = makeLivingContext();
+    summaryContext.interactions = [];
+    summaryContext.artifacts = [];
+    summaryContext.contextRecords = [];
+    summaryContext.assertions = [];
+    summaryContext.signals = [];
+    summaryContext.relationships = [];
+
+    mocks.api.get
+      .mockResolvedValueOnce({ contact: makeContact() });
+
+    renderPage({
+      livingContext: summaryContext,
+      selectedCodeReviewDecision: makeSelectedCodeReviewDecision(),
+    });
+    await flushAsyncUpdates();
+
+    expect(screen.queryByText('Loading person context...')).not.toBeInTheDocument();
+    const cockpit = screen.getByTestId('person-decision-cockpit');
+    expect(cockpit).toHaveTextContent('Advance with focused probe');
+    expect(cockpit).toHaveTextContent('Usable source-backed signal');
+    const decision = screen.getByTestId('person-code-review-decision');
+    expect(decision).toHaveTextContent('82/100 Strong');
+    expect(decision).toHaveTextContent('Score provenance');
+    expect(decision).toHaveTextContent('6 rubric dimensions · 2 evidence items · 5 scoring metrics');
+    expect(decision).toHaveTextContent('acme/widgets PR #42');
+    const mix = screen.getByTestId('person-evidence-mix');
+    expect(mix).toHaveTextContent('Technical assessment signal is present');
+    expect(mix).toHaveTextContent('Use this selected code-review decision as current technical evidence');
+    expect(mix).toHaveTextContent('Schedule focused technical calibration');
+    expect(mix).not.toHaveTextContent('No source mix yet');
+    expect(mix).not.toHaveTextContent('Collect first source-backed evidence');
+    expect(mocks.api.get).not.toHaveBeenCalledWith('/api/v1/contacts/person-1/living-context');
+  });
+
+  it('keeps selected manual code-review proof wording honest on the person profile', async () => {
+    const summaryContext = makeLivingContext();
+    summaryContext.interactions = [];
+    summaryContext.artifacts = [];
+    summaryContext.contextRecords = [];
+    summaryContext.assertions = [];
+    summaryContext.signals = [];
+    summaryContext.relationships = [];
+
+    mocks.api.get
+      .mockResolvedValueOnce({ contact: makeContact() });
+
+    renderPage({
+      livingContext: summaryContext,
+      selectedCodeReviewDecision: makeSelectedManualCodeReviewDecision(),
+    });
+    await flushAsyncUpdates();
+
+    const decision = screen.getByTestId('person-code-review-decision');
+    expect(decision).toHaveTextContent('Review assignment fairness before rejecting');
+    expect(decision).toHaveTextContent('38/100 Weak');
+    expect(decision).toHaveTextContent('mui/base-ui PR #973');
+    expect(screen.getByTestId('person-decision-cockpit')).toHaveTextContent('Create fairness review');
+    const proof = screen.getByTestId('person-code-review-source-proof');
+    const proofSummary = proof.querySelector('summary');
+    expect(proofSummary).toHaveTextContent('repo evidence, scoring provenance, and open gaps');
+    expect(proofSummary).not.toHaveTextContent('candidate, role, repo');
+    expect(proofSummary).not.toHaveTextContent('candidate-repo match proof');
+    expect(proofSummary).not.toHaveTextContent('role evidence');
+  });
+
+  it('renders direct profile loads from a lightweight summary and hydrates full graph on audit open', async () => {
+    const summaryContext = makeLivingContext();
+    summaryContext.interactions = [];
+    summaryContext.artifacts = [];
+    summaryContext.contextRecords = [];
+    summaryContext.assertions = [];
+    summaryContext.signals = [];
+    summaryContext.relationships = [];
+    let resolveContext: (value: LivingContextReadModel) => void = () => undefined;
+    const pendingContext = new Promise<LivingContextReadModel>((resolve) => {
+      resolveContext = resolve;
+    });
+
+    mocks.api.get
+      .mockResolvedValueOnce({ contact: makeContact() })
+      .mockResolvedValueOnce(summaryContext)
+      .mockReturnValueOnce(pendingContext);
+
+    renderPage();
+    await flushAsyncUpdates();
+
+    expect(screen.queryByText('Loading person context...')).not.toBeInTheDocument();
+    expect(screen.getByRole('heading', { name: 'Ada Reviewer' })).toBeInTheDocument();
+    expect(screen.getByText('Source-backed profile')).toBeInTheDocument();
+    expect(mocks.api.get).toHaveBeenCalledWith('/api/v1/contacts/person-1');
+    expect(mocks.api.get).toHaveBeenCalledWith('/api/v1/contacts/person-1/living-context/summary');
+    expect(mocks.api.get).not.toHaveBeenCalledWith('/api/v1/contacts/person-1/living-context');
+
+    const audit = screen.getByTestId('person-source-audit') as HTMLDetailsElement;
+    await act(async () => {
+      audit.open = true;
+      fireEvent(audit, new Event('toggle'));
+    });
+    expect(mocks.api.get).toHaveBeenCalledWith('/api/v1/contacts/person-1/living-context');
+
+    await act(async () => {
+      resolveContext(makeLivingContext());
+      await pendingContext;
+    });
+  });
+
   it('leads source-backed code-review profiles with a concise hiring decision snapshot', async () => {
     mocks.api.get
       .mockResolvedValueOnce({ contact: makeContact() })
@@ -627,6 +835,8 @@ describe('PersonProfilePage', () => {
     expect(decision).toHaveTextContent('Code-review decision');
     expect(decision).toHaveTextContent('Advance with focused probe');
     expect(decision).toHaveTextContent('82/100 Strong');
+    expect(decision).toHaveTextContent('Score provenance');
+    expect(decision).toHaveTextContent('6 rubric dimensions · 2 evidence items · 5 scoring metrics');
     expect(decision).toHaveTextContent('pierre/diffs PR #95');
     expect(decision).toHaveTextContent('Candidate found the missing retry test and defended the review.');
     expect(decision).toHaveTextContent('Probe how they balance timing trade-offs under pushback.');
@@ -665,11 +875,16 @@ describe('PersonProfilePage', () => {
     const proof = screen.getByTestId('person-code-review-source-proof');
     const proofSummary = proof.querySelector('summary');
     expect(proofSummary).toHaveTextContent('Source proof');
-    expect(proofSummary).toHaveTextContent('candidate, repo, and scoring provenance');
+    expect(proofSummary).toHaveTextContent('candidate-repo match proof, repo evidence, and scoring provenance');
     expect(proofSummary).not.toHaveTextContent('review-session-1');
     expect(proof).toHaveTextContent('Source proof');
     expect(proof).toHaveTextContent('score report');
+    expect(proof).toHaveTextContent('82/100 Strong · 6 rubric dimensions · 2 evidence items · 5 scoring metrics');
+    expect(proof).not.toHaveTextContent('"overall"');
+    expect(proof).not.toHaveTextContent('"growth_areas"');
     expect(proof).toHaveTextContent('transcript segment');
+    expect(screen.getByText('Decision evidence')).toBeInTheDocument();
+    expect(screen.getByText('Background evidence')).toBeInTheDocument();
     expect(screen.getByText('Code-review assessment evidence')).toBeInTheDocument();
     expect(screen.getByRole('button', { name: 'Open interaction' })).toBeInTheDocument();
     expect(screen.getByText('Resume evidence attached')).toBeInTheDocument();
@@ -718,6 +933,10 @@ describe('PersonProfilePage', () => {
     const recruiterNotes = params.get('recruiterNotes') ?? '';
     expect(recruiterNotes).toContain('PIPE person-profile next action');
     expect(recruiterNotes).toContain('Recommendation: Advance with focused probe');
+    expect(recruiterNotes).toContain('Candidate signal: 82/100 Strong');
+    expect(recruiterNotes).toContain('Score provenance: 6 rubric dimensions · 2 evidence items · 5 scoring metrics');
+    expect(recruiterNotes).toContain('Repo challenge: pierre/diffs PR #95');
+    expect(recruiterNotes).toContain('Assessment validity: Usable source-backed signal');
     expect(recruiterNotes).toContain('Missing context: Probe: Probe how they balance timing trade-offs under pushback.');
   });
 
@@ -766,6 +985,130 @@ describe('PersonProfilePage', () => {
     expect(basis).toHaveTextContent('Missing');
   });
 
+  it('treats weak graph-derived code-review scores as assignment-fairness decisions', async () => {
+    const context = makeLivingContext();
+    context.contextRecords = context.contextRecords.map((record) =>
+      record.id === 'record-score'
+        ? contextRecord({
+            ...record,
+            sources: [sourceSpan({
+              exactText: JSON.stringify({
+                overall: {
+                  score: 42,
+                  band: 'weak',
+                  narrative: 'Candidate missed the core regression risk in the review.',
+                  strengths: [],
+                  growth_areas: ['Confirm whether the selected PR was fair for their React experience.'],
+                },
+                dimensions: {
+                  source_accuracy: { score: 1 },
+                  bug_detection: { score: 1 },
+                  test_reasoning: { score: 1 },
+                  risk_calibration: { score: 0 },
+                  communication: { score: 1 },
+                  ai_usage_judgment: { score: 1 },
+                },
+                evidence: [
+                  { id: 'comment-1', text: 'Candidate missed the timing regression.' },
+                  { id: 'pushback-1', text: 'Candidate did not defend the requested change.' },
+                ],
+                metrics: {
+                  annotations: 1,
+                  pushback_threads: 1,
+                  source_refs: 4,
+                  rubric_dimensions: 6,
+                  score_confidence: 0.64,
+                },
+              }),
+            })],
+          })
+        : record
+    );
+
+    mocks.api.get
+      .mockResolvedValueOnce({ contact: makeContact() })
+      .mockResolvedValueOnce(context);
+
+    renderPage();
+    await flushAsyncUpdates();
+
+    const cockpit = screen.getByTestId('person-decision-cockpit');
+    expect(cockpit).toHaveTextContent('Current recommendation');
+    expect(cockpit).toHaveTextContent('Review assignment fairness before rejecting');
+    expect(cockpit).toHaveTextContent('Assignment fairness risk');
+    expect(cockpit).toHaveTextContent('Create fairness review');
+
+    const decision = await screen.findByTestId('person-code-review-decision');
+    expect(decision).toHaveTextContent('42/100 Weak');
+    expect(decision).toHaveTextContent('Review assignment fairness before rejecting');
+    expect(decision).toHaveTextContent('Check whether the repo challenge was well matched before treating the weak score as candidate signal.');
+    expect(decision).not.toHaveTextContent('Do not advance from this signal yet');
+  });
+
+  it('routes conversation-only profiles toward a code-review assessment next action', async () => {
+    const context = makeLivingContext();
+    context.summary = {
+      ...context.summary,
+      interactionCount: 1,
+      artifactCount: 1,
+      contextRecordCount: 0,
+      sourceSpanCount: 1,
+    };
+    context.interactions = [{
+      ...context.interactions[0]!,
+      id: 'interaction-background-call',
+      interactionType: 'context_call',
+      externalReference: 'meeting-background-call',
+      metadata: {
+        meetingType: 'SCREENING_INTERVIEW',
+        status: 'completed',
+      },
+      artifactIds: ['artifact-background-call'],
+      contextRecordIds: [],
+      assertionIds: [],
+      signalKeys: [],
+    }];
+    context.contextRecords = [];
+    context.artifacts = [{
+      ...context.artifacts[0]!,
+      id: 'artifact-background-call',
+      interactionId: 'interaction-background-call',
+      artifactType: 'meeting_transcript',
+      logicalKey: 'meeting-background-call',
+      sourceSpans: [sourceSpan({
+        sourceSpanId: 'source-span-background-call',
+        artifactType: 'meeting_transcript',
+        artifactLogicalKey: 'meeting-background-call',
+        evidenceRole: 'conversation_context',
+        exactText: 'Discussed React platform ownership, but no code-review assessment has been assigned yet.',
+      })],
+    }];
+
+    mocks.api.get
+      .mockResolvedValueOnce({ contact: makeContact() })
+      .mockResolvedValueOnce(context);
+
+    renderPage();
+    await flushAsyncUpdates();
+
+    const mix = screen.getByTestId('person-evidence-mix');
+    expect(mix).toHaveTextContent('Conversation context exists; technical assessment is missing');
+    expect(mix).toHaveTextContent('Assign a source-backed technical assessment');
+
+    const cta = screen.getByTestId('person-next-action-cta');
+    expect(cta).toHaveTextContent('Create code-review assessment');
+    fireEvent.click(cta);
+
+    const location = screen.getByTestId('location-echo');
+    expect(location).toHaveTextContent('/interviews?');
+    expect(location).toHaveTextContent('new=1');
+    expect(location).toHaveTextContent('interviewType=CODE_REVIEW');
+    const params = new URLSearchParams((location.textContent ?? '').split('?')[1] ?? '');
+    const recruiterNotes = params.get('recruiterNotes') ?? '';
+    expect(recruiterNotes).toContain('Next action: Assign a source-backed technical assessment');
+    expect(recruiterNotes).toContain('Reason: Use existing conversation evidence to assign a source-backed code-review or workspace challenge.');
+  });
+
   it('derives a person-level hiring decision from source-backed workspace assessment claims', async () => {
     mocks.api.get
       .mockResolvedValueOnce({ contact: makeContact() })
@@ -778,7 +1121,7 @@ describe('PersonProfilePage', () => {
     expect(cockpit).toHaveTextContent('Current recommendation');
     expect(cockpit).toHaveTextContent('Advance from human-reviewed assessment');
     expect(cockpit).toHaveTextContent('Assessment validity');
-    expect(cockpit).toHaveTextContent('Usable workspace assessment signal');
+    expect(cockpit).toHaveTextContent('Usable source-backed signal from workspace assessment');
     expect(cockpit).toHaveTextContent('Uncertainty');
     expect(cockpit).toHaveTextContent('Low remaining uncertainty');
     expect(cockpit).toHaveTextContent('Missing context');
@@ -809,7 +1152,7 @@ describe('PersonProfilePage', () => {
     expect(screen.getByRole('heading', { name: 'Ada Reviewer' })).toBeInTheDocument();
     const cockpit = screen.getByTestId('person-decision-cockpit');
     expect(cockpit).toHaveTextContent('Advance from human-reviewed assessment');
-    expect(cockpit).toHaveTextContent('Usable workspace assessment signal');
+    expect(cockpit).toHaveTextContent('Usable source-backed signal from workspace assessment');
     expect(screen.getByTestId('person-code-review-decision')).toHaveTextContent('Workspace assessment decision');
   });
 
@@ -845,11 +1188,15 @@ describe('PersonProfilePage', () => {
 
     const cockpit = screen.getByTestId('person-decision-cockpit');
     expect(cockpit).toHaveTextContent('Advance');
-    expect(cockpit).toHaveTextContent('Usable workspace assessment signal');
+    expect(cockpit).toHaveTextContent('Usable source-backed signal from workspace assessment');
     expect(cockpit).toHaveTextContent('Graph rollup pending');
+    expect(screen.getByTestId('person-interaction-coverage')).toHaveTextContent('1 code review');
+    expect(screen.getByText('Decision evidence')).toBeInTheDocument();
     const decision = screen.getByTestId('person-code-review-decision');
     expect(decision).toHaveTextContent('Workspace assessment decision');
     expect(decision).toHaveTextContent('Candidate addressed the impatient click issue');
+    expect(decision).toHaveTextContent('Score provenance');
+    expect(decision).toHaveTextContent('1 rubric dimension · 4 evidence items · 3 scoring metrics');
     expect(decision).toHaveTextContent('source-backed proof items');
   });
 

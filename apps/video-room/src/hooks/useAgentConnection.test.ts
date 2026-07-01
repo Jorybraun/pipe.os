@@ -33,7 +33,7 @@ describe('parseAgentBridgeMessage', () => {
     })).toEqual({ kind: 'ignored' });
   });
 
-  it('normalizes Devin room action messages into safe Clippy actions', () => {
+  it('normalizes Devin room action messages into safe Agent actions', () => {
     expect(parseAgentBridgeMessage({
       type: 'ROOM_ACTION',
       source: 'agent_stdout',
@@ -42,8 +42,8 @@ describe('parseAgentBridgeMessage', () => {
       text: 'I can inspect that from the terminal.',
       autoExecute: true,
       observedAt: '2026-06-27T21:10:00.000Z',
-      browserPromptId: 'workspace-123:guest:prompt:1782603900000:clippy_0123abcd',
-      browserPromptFingerprint: 'clippy_0123abcd',
+      browserPromptId: 'workspace-123:guest:prompt:1782603900000:agent_0123abcd',
+      browserPromptFingerprint: 'agent_0123abcd',
       browserPromptTimestamp: 1782603900000,
       browserPromptLength: 24,
       persisted: true,
@@ -58,10 +58,10 @@ describe('parseAgentBridgeMessage', () => {
         source: 'agent_stdout_action',
         agentName: 'devin',
         bridgeEventType: 'ROOM_ACTION',
-        protocol: 'clippy_room_action_tag',
+        protocol: 'agent_room_action_tag',
         observedAt: '2026-06-27T21:10:00.000Z',
-        browserPromptId: 'workspace-123:guest:prompt:1782603900000:clippy_0123abcd',
-        browserPromptFingerprint: 'clippy_0123abcd',
+        browserPromptId: 'workspace-123:guest:prompt:1782603900000:agent_0123abcd',
+        browserPromptFingerprint: 'agent_0123abcd',
         browserPromptTimestamp: 1782603900000,
         browserPromptLength: 24,
         persisted: true,
@@ -100,7 +100,7 @@ describe('parseAgentBridgeMessage', () => {
         source: 'agent_api_response_action',
         agentName: 'devin',
         bridgeEventType: 'ROOM_ACTION',
-        protocol: 'clippy_room_action_tag',
+        protocol: 'agent_room_action_tag',
         agentRuntime: 'api',
         agentRunProvider: 'devin_api',
         agentRunId: 'devin-api:1234abcd',
@@ -201,7 +201,7 @@ describe('parseAgentBridgeMessage', () => {
     });
   });
 
-  it('redacts bridge diagnostics before they become Clippy messages', () => {
+  it('redacts bridge diagnostics before they become agent messages', () => {
     const raw = [
       'DEVIN_API_KEY=cog_aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa',
       'Bearer ghp_bbbbbbbbbbbbbbbbbbbbbbbbbbbb',
@@ -300,8 +300,8 @@ describe('parseAgentBridgeMessage', () => {
       userMessageLength: 18,
       userMessageFingerprint: 'sha256:cccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccc',
       contextTruncated: false,
-      browserPromptId: 'workspace-123:guest:prompt:1782603900000:clippy_0123abcd',
-      browserPromptFingerprint: 'clippy_0123abcd',
+      browserPromptId: 'workspace-123:guest:prompt:1782603900000:agent_0123abcd',
+      browserPromptFingerprint: 'agent_0123abcd',
       browserPromptTimestamp: 1782603900000,
       browserPromptLength: 18,
       agentRuntime: 'api',
@@ -331,8 +331,8 @@ describe('parseAgentBridgeMessage', () => {
         userMessageLength: 18,
         userMessageFingerprint: 'sha256:cccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccc',
         contextTruncated: false,
-        browserPromptId: 'workspace-123:guest:prompt:1782603900000:clippy_0123abcd',
-        browserPromptFingerprint: 'clippy_0123abcd',
+        browserPromptId: 'workspace-123:guest:prompt:1782603900000:agent_0123abcd',
+        browserPromptFingerprint: 'agent_0123abcd',
         browserPromptTimestamp: 1782603900000,
         browserPromptLength: 18,
         agentRuntime: 'api',
@@ -351,8 +351,8 @@ describe('parseAgentBridgeMessage', () => {
       text: 'I inspected the failing test.',
       agent: 'devin',
       observedAt: '2026-06-27T21:05:00.000Z',
-      browserPromptId: 'workspace-123:guest:prompt:1782603900000:clippy_0123abcd',
-      browserPromptFingerprint: 'clippy_0123abcd',
+      browserPromptId: 'workspace-123:guest:prompt:1782603900000:agent_0123abcd',
+      browserPromptFingerprint: 'agent_0123abcd',
       browserPromptTimestamp: 1782603900000,
       browserPromptLength: 24,
       persisted: true,
@@ -364,8 +364,8 @@ describe('parseAgentBridgeMessage', () => {
         source: 'agent_stdout',
         agentName: 'devin',
         observedAt: '2026-06-27T21:05:00.000Z',
-        browserPromptId: 'workspace-123:guest:prompt:1782603900000:clippy_0123abcd',
-        browserPromptFingerprint: 'clippy_0123abcd',
+        browserPromptId: 'workspace-123:guest:prompt:1782603900000:agent_0123abcd',
+        browserPromptFingerprint: 'agent_0123abcd',
         browserPromptTimestamp: 1782603900000,
         browserPromptLength: 24,
         persisted: true,
@@ -422,7 +422,7 @@ describe('parseAgentBridgeMessage', () => {
     });
   });
 
-  it('does not turn CHAT_RESPONSE action arrays into executable desktop actions', () => {
+  it('does not turn CHAT_RESPONSE action arrays into executable room actions', () => {
     expect(parseAgentBridgeMessage({
       type: 'CHAT_RESPONSE',
       source: 'agent_stdout',

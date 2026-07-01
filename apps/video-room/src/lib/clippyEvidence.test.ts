@@ -350,7 +350,7 @@ describe('clippy evidence', () => {
         source: 'agent_stdout_action',
         agentName: 'devin',
         bridgeEventType: 'ROOM_ACTION',
-        protocol: 'clippy_room_action_tag',
+        protocol: 'agent_room_action_tag',
         observedAt: '2026-06-27T21:10:00.000Z',
         persisted: true,
         autoExecute: false,

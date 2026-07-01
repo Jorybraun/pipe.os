@@ -10,6 +10,7 @@ import type { InterviewStatus } from '../../lib/scheduling/types';
 import {
   summarizeAssessmentAssignment,
   summarizeAssessmentChallenge,
+  type AssessmentAssignmentSummary,
 } from '../../lib/scheduling/assessmentChallenge';
 
 // TODO: Wire candidateName and pipelineTitle via enriched data once we join
@@ -177,6 +178,33 @@ function assessmentAssignmentColor(
   }
 }
 
+function assessmentAssignmentFromProgressTrust(
+  trust: NonNullable<ScheduledInterview['assessmentProgress']>['assignmentTrust'],
+): AssessmentAssignmentSummary | null {
+  if (!trust || typeof trust !== 'object') return null;
+  const candidate = trust as {
+    label?: unknown;
+    detail?: unknown;
+    tone?: unknown;
+  };
+  if (typeof candidate.label !== 'string' || typeof candidate.detail !== 'string') return null;
+  const tone = candidate.tone;
+  if (
+    tone !== 'matched'
+    && tone !== 'manual'
+    && tone !== 'waiting'
+    && tone !== 'blocked'
+    && tone !== 'neutral'
+  ) {
+    return null;
+  }
+  return {
+    label: candidate.label,
+    detail: candidate.detail,
+    tone,
+  };
+}
+
 interface AssessmentDecisionSummary {
   value: string;
   detail: string;
@@ -216,6 +244,27 @@ function assessmentDecisionSummary(input: {
         150,
       ),
     };
+  }
+
+  if (progress?.readiness) {
+    if (progress.readiness.status === 'NEEDS_ATTENTION') {
+      return {
+        value: progress.readiness.label,
+        detail: compactText(progress.readiness.detail, 150),
+      };
+    }
+    if (progress.readiness.isReadyForEvaluation) {
+      return {
+        value: progress.readiness.label,
+        detail: compactText(progress.readiness.detail, 150),
+      };
+    }
+    if (progress.readiness.status !== 'WAITING_FOR_CHALLENGE') {
+      return {
+        value: progress.readiness.label,
+        detail: compactText(progress.readiness.detail, 150),
+      };
+    }
   }
 
   if (progress?.nextAction === 'RESOLVE_DIAGNOSTIC' || progress?.stage === 'NEEDS_ATTENTION') {
@@ -367,15 +416,18 @@ export function InterviewCard({
     interview.status === 'INVITED' && !hasInviteDelivery ? 'Ready' : undefined;
   const assessmentProgress = interview.assessmentProgress ?? null;
   const assessmentSetup = interview.assessmentSetup ?? null;
-  const assessmentAssignment = summarizeAssessmentAssignment(assessmentSetup);
+  const assessmentAssignment = summarizeAssessmentAssignment(assessmentSetup)
+    ?? assessmentAssignmentFromProgressTrust(assessmentProgress?.assignmentTrust);
   const showsAssessmentSnapshot = isAssessmentInterviewType(interview.interviewType)
     || Boolean(assessmentProgress);
   const assessmentStageLabel = assessmentProgress
-    ? sentenceCaseToken(assessmentProgress.stage)
+    ? assessmentProgress.readiness?.label ?? sentenceCaseToken(assessmentProgress.stage)
     : assessmentSetup?.blocksPositiveAssessment
       ? 'Setup gap'
       : 'Assessment ready';
-  const assessmentNextAction = assessmentProgress?.nextActionLabel
+  const assessmentNextAction = assessmentProgress?.readiness?.detail
+    ?? assessmentProgress?.nextActionLabel
+    ?? assessmentSetup?.nextActionLabel
     ?? assessmentSetup?.message
     ?? 'Assessment evidence will appear after the session starts.';
   const assessmentEvidence = assessmentProgress
@@ -397,6 +449,9 @@ export function InterviewCard({
       ?? null,
   );
   const assessmentCommitLabel = shortCommitSha(assessmentProgress?.commit?.commitSha);
+  const assessmentCommitIntegrityLabel = assessmentProgress?.commit?.integrity?.label
+    ?? assessmentProgress?.commit?.submissionSourceLabel
+    ?? null;
   const assessmentEvaluationLabel = assessmentProgress?.evaluation?.status
     ? sentenceCaseToken(assessmentProgress.evaluation.status)
     : null;
@@ -602,7 +657,7 @@ export function InterviewCard({
                     COMMIT
                   </div>
                   <div style={{ minWidth: 0, fontSize: 10, color: 'var(--pipe-text-dim)', overflowWrap: 'anywhere' }}>
-                    {assessmentCommitLabel}
+                    {[assessmentCommitLabel, assessmentCommitIntegrityLabel].filter(Boolean).join(' · ')}
                   </div>
                 </>
               )}

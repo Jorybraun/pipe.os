@@ -5,9 +5,9 @@ Owner: Agent B, Assessment Layer Event Spine
 
 ## Purpose
 
-This is the backend assessment substrate underneath repo-task interviews, not a
-95 UI/runtime mode. `OPEN_SOURCE_BUG_FIX`, `DEV_CONTAINER_REPO_TASK`,
-`CODE_REVIEW`, standard video interviews, 95 room interviews, and Clippy/Devin
+This is the backend assessment substrate underneath repo-task interviews.
+`OPEN_SOURCE_BUG_FIX`, `DEV_CONTAINER_REPO_TASK`, `CODE_REVIEW`, standard video
+interviews, dev-container work, chat, transcript segments, and AI agent bridge
 interactions all become assessment sessions that append source-backed evidence.
 
 The layer stores what happened. It does not invent match quality, seniority, AI
@@ -103,7 +103,7 @@ Agent A/runtime surfaces should submit evidence in this order:
 3. Submit the final bundle when the candidate is done. The backend records all
    included artifact events before marking `FINAL_SUBMITTED`.
 4. If a real AI provider cannot respond, call the AI-unavailable diagnostic
-   path. Do not simulate Devin, Clippy, or a PR author.
+   path. Do not simulate Devin, an AI assistant, or a PR author.
 5. Evaluation workers consume the session evidence and write either a cited
    report or diagnostics.
 
@@ -113,3 +113,11 @@ transcript/report into the assessment evidence spine with exact source refs.
 
 Candidate-facing clients should keep receiving invite/session tokens only.
 Internal session ids stay server-side until a Worker has resolved ownership.
+
+As of 2026-07-01, the candidate dev-container panel resolves assessment
+progress through `/rpc/assessment/progress` and submits the final assessment
+branch commit through `/rpc/assessment/commit-submission`. The client builds
+exact `git_commit`, `code_diff`, and either `test_run` or `verification_gap`
+source refs from candidate-provided workspace evidence; the Worker still
+resolves the assessment session server-side and enforces the repo-task
+`submitCommit` invariants.

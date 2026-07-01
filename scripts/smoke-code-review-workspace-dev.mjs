@@ -31,8 +31,8 @@ const ROOM_BASIC_PASSWORD = process.env.PIPE_ROOM_DEV_BASIC_AUTH_PASSWORD
   || process.env.ROOM_DEV_BASIC_AUTH_PASSWORD
   || process.env.VIDEO_ROOM_DEV_AUTH_PASSWORD
   || '';
-const INTERVIEW_TYPE = process.env.WORKSPACE_SMOKE_INTERVIEW_TYPE || 'DEV_CONTAINER_CHALLENGE';
-const CHANGE_MODE = process.env.WORKSPACE_SMOKE_CHANGE_MODE || 'placeholder';
+const INTERVIEW_TYPE = process.env.WORKSPACE_SMOKE_INTERVIEW_TYPE || 'OPEN_SOURCE_BUG_FIX';
+const CHANGE_MODE = process.env.WORKSPACE_SMOKE_CHANGE_MODE || 'mui-popover-fix';
 const TASK_ALIGNED_PROFILES = {
   'mui-popover-fix': {
     repositoryUrl: 'https://github.com/mui/base-ui',
@@ -75,7 +75,10 @@ const CHANGE_PROFILE = TASK_ALIGNED_PROFILES[CHANGE_MODE] ?? null;
 const REPO_URL = process.env.WORKSPACE_SMOKE_REPO_URL || CHANGE_PROFILE?.repositoryUrl || 'https://github.com/octocat/Hello-World';
 const RAW_PR_NUMBER = process.env.WORKSPACE_SMOKE_PR_NUMBER || (INTERVIEW_TYPE === 'OPEN_SOURCE_BUG_FIX' ? '' : '1');
 const PR_NUMBER = RAW_PR_NUMBER ? Number(RAW_PR_NUMBER) : null;
-const RAW_MATCHED_REPO_ID = process.env.WORKSPACE_SMOKE_MATCHED_REPO_ID || '';
+const RAW_MATCHED_REPO_ID = process.env.WORKSPACE_SMOKE_MATCHED_REPO_ID
+  || (INTERVIEW_TYPE === 'OPEN_SOURCE_BUG_FIX' && CHANGE_PROFILE?.matchedRepoId
+    ? String(CHANGE_PROFILE.matchedRepoId)
+    : '');
 const MATCHED_REPO_ID = RAW_MATCHED_REPO_ID ? Number(RAW_MATCHED_REPO_ID) : null;
 const BASE_COMMIT_SHA = process.env.WORKSPACE_SMOKE_BASE_COMMIT_SHA || CHANGE_PROFILE?.baseCommitSha || '';
 const EXPECTED_BRIDGE_REVISION = process.env.WORKSPACE_SMOKE_EXPECTED_BRIDGE_REVISION

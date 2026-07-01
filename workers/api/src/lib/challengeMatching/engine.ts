@@ -173,6 +173,10 @@ function expandOpenTermConcept(concept: string): string[] {
       addDerivedTerm(expanded, phraseSegments.join('-'));
       const variantPhrase = phraseSegments.map((segment) => segmentVariants(segment)[0] ?? segment).join('-');
       addDerivedTerm(expanded, variantPhrase);
+      const singularPhrase = phraseSegments
+        .map((segment) => singularSegment(segment) ?? segment)
+        .join('-');
+      addDerivedTerm(expanded, singularPhrase);
     }
   }
 
@@ -234,6 +238,14 @@ function compareSignals(
   );
 }
 
+function hasSelectionConceptOverlap(
+  signal: CompileCandidateMatchInput['signals'][number],
+  selectionConcepts: Set<string>,
+): boolean {
+  return selectionConcepts.size > 0
+    && expandedConcepts(signal.concepts).some((concept) => selectionConcepts.has(concept));
+}
+
 function withEpisodeMultipliers(atoms: QueryAtom[]): QueryAtom[] {
   const episodeCounts = new Map<string, number>();
   return atoms.map((atom) => {
@@ -259,7 +271,7 @@ export function compileCandidateMatchQuery(input: CompileCandidateMatchInput): C
   const episodeCounts = new Map<string, number>();
   const conceptCounts = new Map<string, number>();
 
-  const selectionConcepts = new Set(normalized(input.selectionConcepts));
+  const selectionConcepts = new Set(expandedConcepts(input.selectionConcepts));
   for (const signal of [...input.signals].sort((a, b) => compareSignals(a, b, selectionConcepts))) {
     if (
       !hasCompleteSourceRefs(signal.sourceRefs)
@@ -299,12 +311,13 @@ export function compileCandidateMatchQuery(input: CompileCandidateMatchInput): C
       continue;
     }
 
+    const preserveRoleOverlap = hasSelectionConceptOverlap(signal, selectionConcepts);
     const episodeCount = episodeCounts.get(atom.episodeId) ?? 0;
     const concepts = conceptCapKeys(signal);
     const exceedsConceptCap = concepts.some(
       (concept) => (conceptCounts.get(concept) ?? 0) >= MAX_ATOMS_PER_CONCEPT,
     );
-    if (episodeCount >= MAX_ATOMS_PER_EPISODE || exceedsConceptCap) {
+    if (!preserveRoleOverlap && (episodeCount >= MAX_ATOMS_PER_EPISODE || exceedsConceptCap)) {
       excludedSignalIds.push(signal.id);
       continue;
     }

@@ -1,5 +1,5 @@
 import { useCallback, useState } from 'react';
-import type { ChatMessage, ChatRole } from '../components/ChatWindow';
+import type { ChatMessage, ChatRole } from '../components/ChatPanel';
 
 let msgCounter = 0;
 function nextMsgId(): string {

@@ -35,6 +35,23 @@ setup("authenticate via Clerk", async ({ page }) => {
 
   // Step 1: Click the SIGN IN button on the custom gate
   const signInButton = page.getByTestId("auth-gate-sign-in");
+  const alreadySignedIn = page.getByRole("button", { name: /sign out/i });
+  const recruiterShell = page.getByRole("button", { name: /new interview/i }).first();
+  const visibleState = async (locator: ReturnType<Page["locator"]>, state: string): Promise<string> => {
+    await locator.waitFor({ state: "visible", timeout: AUTH_GATE_TIMEOUT_MS });
+    return state;
+  };
+  const authState = await Promise.race([
+    visibleState(signInButton, "auth-gate").catch(() => "missing"),
+    visibleState(alreadySignedIn, "signed-in").catch(() => "missing"),
+    visibleState(recruiterShell, "signed-in").catch(() => "missing"),
+  ]);
+
+  if (authState === "signed-in") {
+    await page.context().storageState({ path: authFile });
+    return;
+  }
+
   await expect(signInButton).toBeVisible({ timeout: AUTH_GATE_TIMEOUT_MS });
   await signInButton.click();
 
