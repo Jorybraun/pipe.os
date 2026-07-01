@@ -9,10 +9,10 @@
  */
 
 import { useEffect, useMemo, useRef } from 'react';
-import { useAuth as useClerkAuth } from '@clerk/react';
 import { createApiClient } from '../lib/api/client';
 import type { ApiClient } from '../lib/api/client';
 import { isDevProxyRecruiterAuthBypassEnabled } from '../lib/auth/devProxyAuth';
+import { useAuth } from '../providers/DataContext';
 
 const TOKEN_CACHE_TTL_MS = 45_000;
 
@@ -95,21 +95,24 @@ export function warmApiClientToken(
  */
 export function useApiClient(): ApiClient {
   const bypassClerkToken = isDevProxyRecruiterAuthBypassEnabled();
-  if (bypassClerkToken) {
-    return useMemo(() => createApiClient({ getToken: () => null }), []);
-  }
-
-  const { getToken, userId } = useClerkAuth();
-  const getTokenRef = useRef(getToken);
-  const userIdRef = useRef(userId);
+  const auth = useAuth();
+  const getSessionToken = auth.getSessionToken;
+  const userId = auth.currentUser?.userId ?? null;
+  const getTokenRef = useRef(getSessionToken);
+  const userIdRef = useRef<string | null>(userId);
+  const bypassRef = useRef(bypassClerkToken);
 
   useEffect(() => {
-    getTokenRef.current = getToken;
+    getTokenRef.current = getSessionToken;
     userIdRef.current = userId;
-    syncSharedTokenUser(userId);
-  }, [getToken, userId]);
+    bypassRef.current = bypassClerkToken;
+    syncSharedTokenUser(bypassClerkToken ? null : userId);
+  }, [bypassClerkToken, getSessionToken, userId]);
 
   return useMemo(() => createApiClient({
-    getToken: () => resolveSharedToken(() => getTokenRef.current(), userIdRef.current),
+    getToken: () => {
+      if (bypassRef.current) return null;
+      return resolveSharedToken(() => getTokenRef.current(), userIdRef.current);
+    },
   }), []);
 }

@@ -10,8 +10,8 @@
  */
 
 import { useEffect, useRef, useState, useCallback } from 'react';
-import { useAuth as useClerkAuth } from '@clerk/react';
 import { isDevProxyRecruiterAuthBypassEnabled } from '../lib/auth/devProxyAuth';
+import { useAuth } from '../providers/DataContext';
 
 export interface BookingNotification {
   interviewId: string;
@@ -33,13 +33,13 @@ interface UseBookingNotificationsResult {
 
 export function useBookingNotifications(): UseBookingNotificationsResult {
   const bypassClerkToken = isDevProxyRecruiterAuthBypassEnabled();
-  const clerkAuth = bypassClerkToken ? null : useClerkAuth();
-  const getToken = clerkAuth?.getToken ?? (async () => null);
-  const getTokenRef = useRef(getToken);
+  const auth = useAuth();
+  const getSessionToken = auth.getSessionToken;
+  const getTokenRef = useRef<() => Promise<string | null>>(async () => null);
 
   useEffect(() => {
-    getTokenRef.current = getToken;
-  }, [getToken]);
+    getTokenRef.current = bypassClerkToken ? async () => null : getSessionToken;
+  }, [bypassClerkToken, getSessionToken]);
 
   const [notifications, setNotifications] = useState<BookingNotification[]>([]);
   const [isConnected, setIsConnected] = useState(false);
