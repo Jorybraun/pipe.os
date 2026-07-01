@@ -453,6 +453,32 @@ function repoLabelFromUrl(value: string | null | undefined): string | null {
   return compactEvidenceText(value, 56);
 }
 
+function githubCompareUrl(input: {
+  repositoryUrl: string | null | undefined;
+  forkRepositoryUrl?: string | null | undefined;
+  baseCommitSha: string | null | undefined;
+  commitSha: string | null | undefined;
+}): string | null {
+  const repoUrl = input.forkRepositoryUrl ?? input.repositoryUrl;
+  const base = input.baseCommitSha?.trim();
+  const head = input.commitSha?.trim();
+  if (!repoUrl || !base || !head) return null;
+  if (!/^[a-f0-9]{7,40}$/i.test(base) || !/^[a-f0-9]{7,40}$/i.test(head)) return null;
+
+  try {
+    const url = new URL(repoUrl);
+    if (url.hostname !== 'github.com') return null;
+    const parts = url.pathname
+      .replace(/\.git$/i, '')
+      .split('/')
+      .filter(Boolean);
+    if (parts.length < 2) return null;
+    return `https://github.com/${parts[0]}/${parts[1]}/compare/${base}...${head}`;
+  } catch {
+    return null;
+  }
+}
+
 function firstLocatorString(locator: Record<string, unknown>, keys: string[]): string | null {
   for (const key of keys) {
     const value = locator[key];
@@ -3352,6 +3378,12 @@ export default function InterviewDetailPage(): JSX.Element {
   const assessmentEvidenceSnippets = assessmentProgress?.evidenceSnippets?.slice(0, 6) ?? [];
   const assessmentRequiredProof = assessmentRequiredProofItems(assessmentProgress);
   const assessmentConfidenceSignals = assessmentConfidenceSignalItems(assessmentProgress);
+  const assessmentCommitCompareUrl = githubCompareUrl({
+    repositoryUrl: assessmentProgress?.commit?.repositoryUrl,
+    forkRepositoryUrl: assessmentProgress?.commit?.forkRepositoryUrl,
+    baseCommitSha: assessmentProgress?.commit?.baseCommitSha,
+    commitSha: assessmentProgress?.commit?.commitSha,
+  });
   const assessmentEvaluationClaims = assessmentProgress?.evaluation?.claims
     ?.filter((claim) => claim.sourceRefCount > 0)
     .slice(0, 3) ?? [];
@@ -4084,6 +4116,14 @@ export default function InterviewDetailPage(): JSX.Element {
                 <div style={EVIDENCE_ROW}>
                   <span style={FIELD_LABEL}>Branch</span>
                   <span style={FIELD_VALUE}>{assessmentProgress.commit.branchName}</span>
+                </div>
+              )}
+              {assessmentCommitCompareUrl && (
+                <div style={EVIDENCE_ROW}>
+                  <span style={FIELD_LABEL}>Diff</span>
+                  <a href={assessmentCommitCompareUrl} target="_blank" rel="noopener noreferrer" style={INLINE_LINK}>
+                    Compare base to submitted commit
+                  </a>
                 </div>
               )}
               {(assessmentProgress.commit?.integrity?.label ?? assessmentProgress.commit?.submissionSourceLabel) && (

@@ -355,6 +355,10 @@ describe('InterviewDetailPage', () => {
     expect(progress).toHaveTextContent('Challenge binding');
     expect(progress).toHaveTextContent('Bound to assigned challenge');
     expect(progress).toHaveTextContent('Submitted repository and base commit match the assigned source-backed challenge packet.');
+    expect(screen.getByRole('link', { name: 'Compare base to submitted commit' })).toHaveAttribute(
+      'href',
+      'https://github.com/candidate/widgets/compare/1111111111111111111111111111111111111111...abcdef1234567890abcdef1234567890abcdef12',
+    );
     const workPacket = screen.getByTestId('interview-assessment-work-packet');
     expect(workPacket).toHaveTextContent('Candidate work packet');
     expect(workPacket).toHaveTextContent('Commit artifact');
