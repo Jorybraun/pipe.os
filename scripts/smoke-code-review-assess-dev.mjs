@@ -568,17 +568,22 @@ async function pollCodeReviewChallenge(sessionToken, order = 0, options = {}) {
   let last = null;
   while (Date.now() < deadline) {
     last = await getChallenge(sessionToken, order);
-    if (last?.type === 'CODE_REVIEW') {
-      if (options.expectBlocked) {
+    if (options.expectBlocked) {
+      if (last?.type === 'PROFILE_RECEIVED') return last;
+      if (last?.type === 'CODE_REVIEW') {
         throw new Error(`Expected repo matching to block, but CODE_REVIEW became ready: ${JSON.stringify(challengePreview(last))}`);
       }
+      if (last?.type === 'WAITING_FOR_MATCH') {
+        throw new Error(`Standalone CODE_REVIEW blocked handoff must return PROFILE_RECEIVED, not candidate-visible WAITING_FOR_MATCH: ${JSON.stringify(last).slice(0, 800)}`);
+      }
+      throw new Error(`Expected PROFILE_RECEIVED blocked handoff, got: ${JSON.stringify(last).slice(0, 800)}`);
+    }
+    if (last?.type === 'CODE_REVIEW') {
       return last;
     }
-    if (options.expectBlocked && last?.type === 'PROFILE_RECEIVED') return last;
     if (last?.type !== 'WAITING_FOR_MATCH') {
-      throw new Error(`Expected CODE_REVIEW${options.expectBlocked ? ', PROFILE_RECEIVED,' : ''} or WAITING_FOR_MATCH, got: ${JSON.stringify(last).slice(0, 800)}`);
+      throw new Error(`Expected CODE_REVIEW or WAITING_FOR_MATCH, got: ${JSON.stringify(last).slice(0, 800)}`);
     }
-    if (options.expectBlocked && last?.config?.state === 'blocked') return last;
     await sleep(5_000);
   }
   throw new Error(`CODE_REVIEW challenge did not become ready. Last response: ${JSON.stringify(last).slice(0, 1200)}`);

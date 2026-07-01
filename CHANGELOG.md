@@ -26,6 +26,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Fixed — CODE_REVIEW assessment runtime
 
+- The deployed CODE_REVIEW smoke now hard-fails blocked standalone handoffs that return candidate-visible `WAITING_FOR_MATCH`, preserving the `/assess` boundary by requiring the candidate-safe `PROFILE_RECEIVED` queued state instead.
 - Candidate `/assess` now preserves queued standalone CODE_REVIEW handoffs as a first-class “Profile received” state when the server returns `candidate-intake-queued`, keeping candidates out of the old matching dashboard and making it clear they are done until a source-backed review is assigned.
 - Person profiles now use the same assignment-fairness recommendation for weak graph-derived CODE_REVIEW scores as selected-interview CODE_REVIEW decisions, so hiring managers see a consistent “review fairness before rejecting” callout instead of a harsher unexplained stop signal.
 - Room-dev now ships the assessment-room shell metadata so stale novelty-room browser titles are replaced by the core PIPE assessment room identity.
