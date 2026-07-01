@@ -767,6 +767,8 @@ describe('InterviewDetailPage', () => {
     expect(progress).toHaveTextContent('Evaluator unavailable · Workers AI is not configured for source-backed repo-task evaluation.');
     expect(progress).toHaveTextContent('Evaluation needs attention: Workers AI is not configured for source-backed repo-task evaluation.');
     expect(screen.queryByRole('button', { name: /start evaluation/i })).toBeNull();
+    expect(screen.queryByTestId('interview-human-decision-form')).toBeNull();
+    expect(screen.queryByRole('button', { name: /record human decision/i })).toBeNull();
   });
 
   it('starts source-backed assessment evaluation and surfaces a report-ready notice when evaluated', async () => {

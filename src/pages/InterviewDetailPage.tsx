@@ -3357,7 +3357,9 @@ export default function InterviewDetailPage(): JSX.Element {
     .slice(0, 3) ?? [];
   const assessmentEvaluationDiagnostics = assessmentProgress?.evaluation?.diagnostics?.slice(0, 3) ?? [];
   const canStartAssessmentEvaluation = assessmentProgress?.nextAction === 'START_EVALUATION';
-  const canRecordHumanAssessmentDecision = Boolean(assessmentProgress?.evaluation && !assessmentProgress.humanDecision);
+  const canRecordHumanAssessmentDecision = Boolean(
+    assessmentProgress?.evaluation?.status === 'EVALUATED' && !assessmentProgress.humanDecision,
+  );
   const assessmentWorkPacket = workspaceAssessmentWorkPacket(assessmentProgress);
   const workspaceAssessmentReadout = workspaceAssessmentHiringReadout({
     progress: assessmentProgress,

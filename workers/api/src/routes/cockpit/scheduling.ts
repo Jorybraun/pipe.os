@@ -5718,6 +5718,9 @@ schedulingAuth.post('/interviews/:id/assessment/human-decision', async (c) => {
   if (!latestReport) {
     return apiError(c, 'CONFLICT', 'Run source-backed assessment evaluation before recording a human decision.');
   }
+  if (latestReport.status !== 'EVALUATED') {
+    return apiError(c, 'CONFLICT', 'Resolve assessment diagnostics and produce an evaluated source-backed report before recording a human decision.');
+  }
 
   const store = new RepoTaskInterviewSessionStore(db);
   try {

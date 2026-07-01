@@ -20,6 +20,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Fixed — Open-source assessment progress
 
+- Recruiters can no longer record final human assessment decisions from diagnostic-only evaluator reports; the app now requires a completed source-backed `EVALUATED` report before closing the assessment loop.
 - Open-source assessment evaluation now produces a conservative source-backed fallback report when the AI evaluator returns no usable claims, keeping real challenge, commit, diff, test, and workspace evidence reviewable instead of blocking the session as diagnostic-only.
 - Interview assessment readouts now label conservative fallback evaluations as requiring human review instead of presenting source-backed but unproven commits as positive hiring decisions.
 - Assessment-room workspace layouts now keep a persistent `Submit Work` control in the bottom bar, so candidates can finalize the real workspace commit without hunting through tool tabs.
