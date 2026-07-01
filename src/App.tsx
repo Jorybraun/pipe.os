@@ -32,6 +32,7 @@ const CandidateScreeningPage = lazy(() => import("./pages/CandidateScreeningPage
 const PipelineNewRoutePage = lazy(() => import("./pages/PipelineNewRoutePage"));
 const ChallengeEditorPage = lazy(() => import("./pages/ChallengeEditorPage"));
 const CandidateAssessmentPage = lazy(() => import("./pages/CandidateAssessmentPage"));
+const TalentPoolIntakePage = lazy(() => import("./pages/TalentPoolIntakePage"));
 const CultureInterviewPage = lazy(() => import("./pages/CultureInterviewPage"));
 const VideoJoinPage = lazy(() => import("./pages/VideoJoinPage"));
 const PersonProfilePage = lazy(() => import("./pages/PersonProfilePage"));
@@ -552,6 +553,33 @@ function App({ recruiterAuthUnavailable = false }: AppProps): JSX.Element {
               <ErrorBoundary>
                 <Suspense fallback={<PageLoader />}>
                   <CandidateAssessmentPage />
+                </Suspense>
+              </ErrorBoundary>
+            </ThemeProvider>
+          }
+        />
+
+        {/* Public Talent Pool Intake Route */}
+        <Route
+          path="/talent/:token"
+          element={
+            <ThemeProvider forceMode="dark">
+              <ErrorBoundary>
+                <Suspense fallback={<PageLoader />}>
+                  <TalentPoolIntakePage />
+                </Suspense>
+              </ErrorBoundary>
+            </ThemeProvider>
+          }
+        />
+
+        <Route
+          path="/intake/:token"
+          element={
+            <ThemeProvider forceMode="dark">
+              <ErrorBoundary>
+                <Suspense fallback={<PageLoader />}>
+                  <TalentPoolIntakePage />
                 </Suspense>
               </ErrorBoundary>
             </ThemeProvider>

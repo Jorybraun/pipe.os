@@ -1117,12 +1117,12 @@ pipelineCandidates.post('/:pipelineId/candidates', async (c) => {
     throw err;
   }
 
-  // Fire-and-forget assessment email for non-scheduled stages. Scheduled
+  // Fire-and-forget Talent Pool intake email for non-scheduled stages. Scheduled
   // interviews use /scheduling/interviews/:id/invite so room links, email
   // delivery, and living-context evidence stay on one canonical path.
   if (c.env.RESEND_API_KEY && !skipEmail && !scheduledInterview) {
     const baseUrl = c.env.APP_BASE_URL ?? 'https://pipe.build';
-    const assessUrl = `${baseUrl}/assess/${inviteToken}`;
+    const assessUrl = `${baseUrl}/talent/${inviteToken}`;
 
     // Fetch stage info (mode, templates) and scheduling connection for booking URL
     let stageTemplatesJson: string | null = null;
@@ -1534,7 +1534,7 @@ candidateOps.post('/', async (c) => {
   // Fire-and-forget invitation email
   if (c.env.RESEND_API_KEY && !skipEmail) {
     const baseUrl = c.env.APP_BASE_URL ?? 'https://pipe.build';
-    const assessUrl = `${baseUrl}/assess/${inviteToken}`;
+    const assessUrl = `${baseUrl}/talent/${inviteToken}`;
 
     c.executionCtx.waitUntil(
       sendNotificationEmail({

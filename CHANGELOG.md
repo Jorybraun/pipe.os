@@ -14,6 +14,12 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - Updated active assessment planning docs to describe the open-source repo-task interview product instead of the retro desktop prototype.
 - Removed stale 95-era product naming from the room HTML shell, Devin bridge prompt, deployed smoke scripts, current e2e coverage, and room-event assessment session mode while preserving legacy evidence-source compatibility.
 
+### Added — Talent Pool intake
+
+- Candidate Talent Pool intake now has a public `/talent/:token` route with `/intake/:token` alias, profile paste, GitHub/LinkedIn/portfolio fields, phone screener consent capture, and a dashboard that shows profile received, challenge preparing, ready challenges, and past work without leaking repo-matching internals.
+- New `/rpc/talent/resolve-token`, `/rpc/talent/submit-profile`, and `/rpc/talent/upload-profile` routes persist profile evidence, resume uploads, phone screener intent, candidate ingestion state, and internal `challenge_design_queue` items while returning only candidate-safe statuses and ready assessment links.
+- Initial candidate invite emails now point to `/talent/:token`; `/assess/:token` remains the entrypoint for real ready assessment assignments.
+
 ### Added — Human assessment decisions
 
 - Repo-task assessment sessions now support append-only `human_assessment_decision` events with exact source refs, SHA-256 content-hash validation, and provenance checks against session evidence, evaluation reports, evaluation claims, or diagnostics.
@@ -63,7 +69,6 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - Pipeline CODE_REVIEW `/assess` challenge fetches now also hide stale or non-source-backed PR assignments behind the profile-received handoff instead of showing candidate-visible matcher diagnostics.
 - CODE_REVIEW recruiter assessment-link panels now distinguish active profile handoff links from ready code-review assignments, telling recruiters to assign or refresh a source-backed PR before treating the invite as assessment-ready.
 - CODE_REVIEW smoke matrix blocked cases now assert the candidate-safe profile-received handoff instead of expecting a candidate-visible repo-matching wait screen.
-- CODE_REVIEW recruiter detail smoke now treats blocked no-assignment interviews as a valid assessment-progress handoff instead of requiring a completed decision summary.
 - CODE_REVIEW smoke matrix profiles now validate the standalone `/assess` boundary for CV-only candidates instead of expecting internal auto-match assignment.
 - Standalone CODE_REVIEW `/assess` runtime now fails closed to the profile-received email handoff until a source-backed repo/PR assignment already exists, instead of running matcher work or showing a candidate-facing waiting loop.
 - Candidate `/assess` profile-received handoffs now render as a finished intake state with email follow-up copy, not as a submitted code-review or personalized-challenge waiting screen.
@@ -73,7 +78,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - Person profile CODE_REVIEW decisions now preserve compact score-provenance counters when opened from a scored interview, so rubric, evidence, and metric context survives the interview-to-profile handoff.
 - CODE_REVIEW recruiter readouts now expose compact score provenance counters for rubric dimensions, scoring metrics, and evidence items, making scored assessments easier to calibrate without dumping raw scorer output.
 - CODE_REVIEW recruiter smoke coverage now asserts score-provenance visibility on scored hiring-manager readouts.
-- Interview detail and person profile first paint now use lightweight living-context summaries, parallelized interview-detail reads, and compact code-review source refs; profile click-throughs no longer auto-fetch the full person graph until the recruiter opens the audit trail or graph.
+- Interview detail and person profile first paint now use lightweight living-context summaries, parallelized interview-detail reads, compact code-review source refs, and app-dev direct-route API prefetching; profile click-throughs no longer auto-fetch the 258KB full person graph or graph bundle until the recruiter opens the audit trail or graph.
 - CODE_REVIEW matching now repairs unprojected resume candidate nodes into living-context records, derives source-text phrase terms, and preserves role-overlap evidence atoms before selecting a PR, so role-backed repo matching can use decomposed evidence instead of falling back to queued intake.
 - CODE_REVIEW stage config now keeps blocked or pending repo matching inside an incomplete assessment stage with a `WAITING_FOR_MATCH` challenge instead of marking candidate intake complete.
 - Standalone CODE_REVIEW intake now advances directly into an explicitly assigned source-backed PR review instead of incorrectly queuing the candidate behind background matching.

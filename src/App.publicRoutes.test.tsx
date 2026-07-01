@@ -8,6 +8,10 @@ vi.mock('./pages/CandidateAssessmentPage', () => ({
   default: () => <div data-testid="candidate-assess-route">Candidate assessment route</div>,
 }));
 
+vi.mock('./pages/TalentPoolIntakePage', () => ({
+  default: () => <div data-testid="talent-pool-route">Talent pool route</div>,
+}));
+
 vi.mock('./pages/CultureInterviewPage', () => ({
   default: () => <div data-testid="candidate-culture-route">Candidate culture route</div>,
 }));
@@ -49,6 +53,13 @@ describe('App public candidate routes', () => {
     renderAt('/assess/public-token');
 
     expect(await screen.findByTestId('candidate-assess-route')).toBeTruthy();
+    expect(screen.queryByText('Auth configuration missing')).toBeNull();
+  });
+
+  it('renders /talent/:token without requiring Clerk configuration', async () => {
+    renderAt('/talent/public-token');
+
+    expect(await screen.findByTestId('talent-pool-route')).toBeTruthy();
     expect(screen.queryByText('Auth configuration missing')).toBeNull();
   });
 
