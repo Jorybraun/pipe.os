@@ -5,6 +5,8 @@
   "scripts": {
     "dev": "wrangler dev",
     "deploy": "wrangler deploy",
+    "deploy:dev": "wrangler deploy --env dev",
+    "deploy:production": "wrangler deploy --env production",
     "type-check": "tsc --noEmit",
     "test": "vitest run",
     "bench:routes": "tsx scripts/benchmarkApiRoutes.ts",
