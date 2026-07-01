@@ -1,8 +1,8 @@
 /**
  * sessionEvents.ts — Capture meeting session events as source-backed evidence.
  *
- * Every event during a meeting (AI chat, terminal I/O, file changes,
- * browser navigation, workspace state) is preserved as both the legacy
+ * Every source-backed event during a meeting (AI chat, terminal I/O, file changes,
+ * workspace state, media, recording, and editor activity) is preserved as both the legacy
  * candidate_node compatibility projection and a first-class
  * meeting_session_event context_record for the evidence hypergraph.
  *
@@ -39,14 +39,7 @@ export type SessionEventType =
   | 'terminal_command'
   | 'terminal_output'
   | 'file_change'
-  | 'browser_navigation'
-  | 'window_open'
-  | 'window_close'
-  | 'window_update'
-  | 'window_focus'
-  | 'cursor_presence'
   | 'media_control'
-  | 'room_surface_change'
   | 'workspace_state'
   | 'participant_join'
   | 'participant_leave'
@@ -69,21 +62,6 @@ export interface SessionEvent {
 
 type RoomActivityRole = 'RECRUITER' | 'CANDIDATE' | 'HOST' | 'GUEST';
 const WORKSPACE_STATE_SOURCES = new Set(['initial_load', 'launch', 'refresh', 'error']);
-const WINDOW_LIFECYCLE_SOURCES = new Set([
-  'assessment_layout_ui',
-  'assessment_file_system',
-  'assessment_window_chrome',
-  'assessment_agent_tray',
-  'standard_assessment_ui',
-  'agent_action',
-  'shared_state_sync',
-]);
-const WINDOW_STATE_SOURCES = new Set([
-  'assessment_layout_ui',
-  'assessment_window_chrome',
-  'assessment_agent_tray',
-]);
-const WINDOW_DATA_SOURCES = new Set(['assessment_window_data_sync', 'assessment_file_delete_sync']);
 const TERMINAL_FINGERPRINT_RE = /^terminal_[a-f0-9]{8}$/;
 const TERMINAL_COMMAND_ID_RE = /^.+:command:(host|guest):\d+:\d+:terminal_[a-f0-9]{8}$/;
 const AGENT_PROMPT_FINGERPRINT_RE = /^agent_[a-f0-9]{8}$/;
@@ -116,9 +94,6 @@ const RECORDING_FAILURE_SOURCES = new Set([
   'recording_upload_exception',
 ]);
 const MAX_RECORDING_FAILURE_MESSAGE_LENGTH = 240;
-const CURSOR_PRESENCE_SAMPLE_INTERVAL_MS = 15_000;
-const CURSOR_PRESENCE_MOVEMENT_THRESHOLD = 0.03;
-const CURSOR_SAMPLE_ID_RE = /^cursor:(host|guest):\d+:\d+:\d+$/;
 const CODE_EDITOR_OPEN_ID_RE = /^code-editor-open:(host|guest):\d+:[a-zA-Z0-9:_-]+$/;
 const AGENT_DIAGNOSTIC_REDACTED_SECRET = '[REDACTED_SECRET]';
 const AGENT_BARE_SECRET_RE = /\b(?:cog|ghp|gho|ghu|ghs|ghr|devin)_[A-Za-z0-9_-]{20,}\b/g;
@@ -314,125 +289,6 @@ function isSourceBackedRoomFileEvidence(
     && Number.isFinite(evidence.capturedAtMs);
 }
 
-function hasSourceBackedWindowLifecycleEvidence(
-  evidence: Record<string, unknown> | null,
-  actor: SessionEvent['actor'],
-  kind: 'open' | 'close',
-  windowId: string,
-): evidence is Record<string, unknown> {
-  return evidence !== null
-    && (actor === 'host' || actor === 'guest')
-    && evidence.source === 'window_lifecycle_client_submit'
-    && typeof evidence.lifecycleSource === 'string'
-    && WINDOW_LIFECYCLE_SOURCES.has(evidence.lifecycleSource)
-    && evidence.lifecycleKind === kind
-    && evidence.actor === actor
-    && evidence.windowId === windowId
-    && typeof evidence.windowType === 'string'
-    && typeof evidence.windowTitle === 'string'
-    && typeof evidence.windowLifecycleId === 'string'
-    && typeof evidence.capturedAtMs === 'number'
-    && Number.isFinite(evidence.capturedAtMs)
-    && typeof evidence.surface === 'string'
-    && typeof evidence.roomPhase === 'string'
-    && typeof evidence.durableObjectReplayExpected === 'boolean';
-}
-
-function hasSourceBackedBrowserNavigationEvidence(
-  evidence: Record<string, unknown> | null,
-  actor: SessionEvent['actor'],
-  windowId: string,
-): evidence is Record<string, unknown> {
-  return evidence !== null
-    && (actor === 'host' || actor === 'guest')
-    && evidence.source === 'room_browser_panel'
-    && evidence.navigationSource === 'browser_panel_client_submit'
-    && evidence.actor === actor
-    && evidence.windowId === windowId
-    && typeof evidence.browserNavigationId === 'string'
-    && typeof evidence.capturedAtMs === 'number'
-    && Number.isFinite(evidence.capturedAtMs)
-    && typeof evidence.url === 'string'
-    && typeof evidence.urlFingerprint === 'string'
-    && typeof evidence.navigationTrigger === 'string'
-    && typeof evidence.surface === 'string'
-    && typeof evidence.roomPhase === 'string'
-    && typeof evidence.durableObjectReplayExpected === 'boolean';
-}
-
-function hasSourceBackedWindowDataEvidence(
-  evidence: Record<string, unknown> | null,
-  actor: SessionEvent['actor'],
-  windowId: string,
-): evidence is Record<string, unknown> {
-  return evidence !== null
-    && (actor === 'host' || actor === 'guest')
-    && evidence.source === 'window_data_client_submit'
-    && typeof evidence.dataSource === 'string'
-    && WINDOW_DATA_SOURCES.has(evidence.dataSource)
-    && evidence.actor === actor
-    && evidence.windowId === windowId
-    && typeof evidence.windowDataUpdateId === 'string'
-    && typeof evidence.capturedAtMs === 'number'
-    && Number.isFinite(evidence.capturedAtMs)
-    && Array.isArray(evidence.dataKeys)
-    && evidence.dataKeys.length > 0
-    && typeof evidence.dataValueFingerprints === 'object'
-    && evidence.dataValueFingerprints !== null
-    && !Array.isArray(evidence.dataValueFingerprints)
-    && typeof evidence.surface === 'string'
-    && typeof evidence.roomPhase === 'string'
-    && typeof evidence.durableObjectReplayExpected === 'boolean';
-}
-
-function hasSourceBackedWindowStateEvidence(
-  evidence: Record<string, unknown> | null,
-  actor: SessionEvent['actor'],
-  windowId: string,
-): evidence is Record<string, unknown> {
-  return evidence !== null
-    && (actor === 'host' || actor === 'guest')
-    && evidence.source === 'window_state_client_submit'
-    && typeof evidence.stateSource === 'string'
-    && WINDOW_STATE_SOURCES.has(evidence.stateSource)
-    && evidence.actor === actor
-    && evidence.windowId === windowId
-    && typeof evidence.windowStateChangeId === 'string'
-    && typeof evidence.capturedAtMs === 'number'
-    && Number.isFinite(evidence.capturedAtMs)
-    && typeof evidence.action === 'string'
-    && typeof evidence.surface === 'string'
-    && typeof evidence.roomPhase === 'string'
-    && typeof evidence.durableObjectReplayExpected === 'boolean';
-}
-
-function hasSourceBackedRoomSurfaceEvidence(
-  event: Record<string, unknown>,
-  actor: SessionEvent['actor'],
-  surface: string,
-): boolean {
-  const previousSurface = stringOrNull(event.previousSurface);
-  const action = stringOrNull(event.action);
-  const source = stringOrNull(event.source);
-  const surfaceControlEventSource = stringOrNull(event.surfaceControlEventSource);
-  const surfaceChangeId = stringOrNull(event.surfaceChangeId);
-  const capturedAtMs = numberOrNull(event.capturedAtMs);
-  const roomPhase = stringOrNull(event.roomPhase);
-  return (actor === 'host' || actor === 'guest')
-    && source === 'room_surface_control'
-    && surfaceControlEventSource === 'browser_room_surface_toggle'
-    && event.actor === actor
-    && (surface === 'standard' || surface === 'assessment')
-    && (previousSurface === 'standard' || previousSurface === 'assessment')
-    && previousSurface !== surface
-    && action === (surface === 'assessment' ? 'enter_assessment' : 'exit_assessment')
-    && surfaceChangeId === `surface:${actor}:${capturedAtMs}:${previousSurface}:${surface}`
-    && capturedAtMs !== null
-    && capturedAtMs >= 0
-    && roomPhase !== null
-    && event.durableObjectReplayExpected === true;
-}
-
 function hasSourceBackedWorkspaceStateEvidence(
   event: Record<string, unknown>,
   actor: SessionEvent['actor'],
@@ -458,219 +314,6 @@ function hasSourceBackedWorkspaceStateEvidence(
     && (status === 'ERROR' || workspaceSessionId !== null)
     && event.workspaceTelemetryPersisted === true
     && event.proxyUrlPersisted === false;
-}
-
-function roomActivityToSessionEvent(input: RoomActivitySyncInput, value: unknown): SessionEvent | null {
-  if (!isRecord(value) || !isRecord(value.event)) return null;
-  const event = value.event;
-  const role = isRoomActivityRole(value.role) ? value.role : null;
-  const actor = actorFromRoomRole(role);
-  const timestamp = unixTimestampFromActivity(event.createdAt, value.recordedAt);
-  const base = roomActivityBaseProperties('layout', role, value.recordedAt);
-  const eventId = stringOrNull(event.id);
-  const clientId = stringOrNull(event.clientId);
-  if (eventId) base.roomEventId = eventId;
-  if (clientId) base.clientId = clientId;
-
-  if (event.kind === 'SET_ROOM_SURFACE') {
-    const surface = stringOrNull(event.surface);
-    if (!surface) return null;
-    if (!hasSourceBackedRoomSurfaceEvidence(event, actor, surface)) return null;
-    const properties: Record<string, unknown> = { ...base, surface };
-    const previousSurface = stringOrNull(event.previousSurface);
-    const action = stringOrNull(event.action);
-    const source = stringOrNull(event.source);
-    const surfaceControlEventSource = stringOrNull(event.surfaceControlEventSource);
-    const surfaceChangeId = stringOrNull(event.surfaceChangeId);
-    const capturedAtMs = numberOrNull(event.capturedAtMs);
-    const roomPhase = stringOrNull(event.roomPhase);
-    if (previousSurface) properties.previousSurface = previousSurface;
-    if (action) properties.action = action;
-    properties.source = source;
-    if (surfaceControlEventSource) properties.surfaceControlEventSource = surfaceControlEventSource;
-    if (surfaceChangeId) properties.surfaceChangeId = surfaceChangeId;
-    if (capturedAtMs !== null) properties.capturedAtMs = capturedAtMs;
-    if (roomPhase) properties.roomPhase = roomPhase;
-    if (typeof event.durableObjectReplayExpected === 'boolean') {
-      properties.durableObjectReplayExpected = event.durableObjectReplayExpected;
-    }
-    return createSessionEvent(input, {
-      type: 'room_surface_change',
-      timestamp,
-      actor,
-      text: `Room surface changed to ${surface}`,
-      properties,
-    });
-  }
-
-  if (event.kind === 'WORKSPACE_STATE_CHANGED') {
-    const status = stringOrNull(event.status);
-    if (!status) return null;
-    if (!hasSourceBackedWorkspaceStateEvidence(event, actor, status)) return null;
-    const properties: Record<string, unknown> = {
-      ...base,
-      source: 'browser_workspace_state_observer',
-      workspaceStatus: status,
-    };
-    const workspaceSessionId = stringOrNull(event.workspaceSessionId);
-    const errorMessage = stringOrNull(event.errorMessage);
-    const repoUrl = stringOrNull(event.repoUrl);
-    const githubPrNumber = numberOrNull(event.githubPrNumber);
-    const matchedRepoId = numberOrNull(event.matchedRepoId);
-    const challengeStatus = stringOrNull(event.challengeStatus);
-    const challengeKind = stringOrNull(event.challengeKind);
-    const challengeSource = stringOrNull(event.challengeSource);
-    const challengeMessage = stringOrNull(event.challengeMessage);
-    const ttlSeconds = numberOrNull(event.ttlSeconds);
-    const ttlSource = stringOrNull(event.ttlSource);
-    const expiresAt = stringOrNull(event.expiresAt);
-    const workspaceStateEventId = stringOrNull(event.workspaceStateEventId);
-    const capturedAtMs = numberOrNull(event.capturedAtMs);
-    const eventActor = stringOrNull(event.actor);
-    const source = stringOrNull(event.source);
-    const workspaceEventSource = stringOrNull(event.workspaceEventSource)
-      ?? (source && !WORKSPACE_STATE_SOURCES.has(source) ? source : null);
-    const workspaceStateSource = stringOrNull(event.workspaceStateSource)
-      ?? (source && WORKSPACE_STATE_SOURCES.has(source) ? source : null);
-    if (workspaceSessionId) properties.workspaceSessionId = workspaceSessionId;
-    if (errorMessage) properties.errorMessage = errorMessage;
-    if (repoUrl) properties.repoUrl = repoUrl;
-    if (githubPrNumber !== null) properties.githubPrNumber = githubPrNumber;
-    if (matchedRepoId !== null) properties.matchedRepoId = matchedRepoId;
-    if (challengeStatus) properties.challengeStatus = challengeStatus;
-    if (challengeKind) properties.challengeKind = challengeKind;
-    if (challengeSource) properties.challengeSource = challengeSource;
-    if (challengeMessage) properties.challengeMessage = challengeMessage;
-    if (typeof event.canLaunch === 'boolean') properties.canLaunch = event.canLaunch;
-    if (ttlSeconds !== null) properties.ttlSeconds = ttlSeconds;
-    if (ttlSource) properties.ttlSource = ttlSource;
-    if (expiresAt) properties.expiresAt = expiresAt;
-    if (eventActor === 'host' || eventActor === 'guest') properties.actor = eventActor;
-    if (workspaceStateEventId) properties.workspaceStateEventId = workspaceStateEventId;
-    if (capturedAtMs !== null) properties.capturedAtMs = capturedAtMs;
-    if (typeof event.expiringSoon === 'boolean') properties.expiringSoon = event.expiringSoon;
-    if (workspaceEventSource) properties.workspaceEventSource = workspaceEventSource;
-    if (workspaceStateSource) properties.workspaceStateSource = workspaceStateSource;
-    if (typeof event.workspaceTelemetryPersisted === 'boolean') {
-      properties.workspaceTelemetryPersisted = event.workspaceTelemetryPersisted;
-    }
-    if (typeof event.proxyUrlPersisted === 'boolean') properties.proxyUrlPersisted = event.proxyUrlPersisted;
-    return createSessionEvent(input, {
-      type: 'workspace_state',
-      timestamp,
-      actor,
-      text: `Workspace state changed to ${status}`,
-      properties,
-    });
-  }
-
-  if (event.kind === 'OPEN_WINDOW' && isRecord(event.window)) {
-    const title = stringOrNull(event.window.title);
-    const windowId = stringOrNull(event.window.id);
-    const windowType = stringOrNull(event.window.windowType);
-    if (!title || !windowId || !windowType) return null;
-    const evidence = isRecord(event.evidence) ? event.evidence : null;
-    if (!hasSourceBackedWindowLifecycleEvidence(evidence, actor, 'open', windowId)) return null;
-    return createSessionEvent(input, {
-      type: 'window_open',
-      timestamp,
-      actor,
-      text: title,
-      properties: {
-        ...base,
-        ...evidence,
-        windowId,
-        windowType,
-      },
-    });
-  }
-
-  if (event.kind === 'CLOSE_WINDOW') {
-    const windowId = stringOrNull(event.windowId);
-    if (!windowId) return null;
-    const evidence = isRecord(event.evidence) ? event.evidence : null;
-    if (!hasSourceBackedWindowLifecycleEvidence(evidence, actor, 'close', windowId)) return null;
-    const title = stringOrNull(evidence?.windowTitle) ?? windowId;
-    return createSessionEvent(input, {
-      type: 'window_close',
-      timestamp,
-      actor,
-      text: title,
-      properties: {
-        ...base,
-        ...evidence,
-        windowId,
-      },
-    });
-  }
-
-  if (event.kind === 'UPDATE_WINDOW_DATA') {
-    const windowId = stringOrNull(event.windowId);
-    if (!windowId || !isRecord(event.data)) return null;
-    const currentUrl = stringOrNull(event.data.currentUrl);
-    if (currentUrl) {
-      const evidence = isRecord(event.evidence) ? event.evidence : null;
-      if (!hasSourceBackedBrowserNavigationEvidence(evidence, actor, windowId)) return null;
-      const text = stringOrNull(evidence?.url) ?? currentUrl;
-      return createSessionEvent(input, {
-        type: 'browser_navigation',
-        timestamp,
-        actor,
-        text,
-        properties: {
-          ...base,
-          ...evidence,
-          windowId,
-        },
-      });
-    }
-    const evidence = isRecord(event.evidence) ? event.evidence : null;
-    if (!hasSourceBackedWindowDataEvidence(evidence, actor, windowId)) return null;
-    const dataKeys = Object.keys(event.data).sort();
-    return createSessionEvent(input, {
-      type: 'window_update',
-      timestamp,
-      actor,
-      text: `Window data updated: ${windowId}`,
-      properties: {
-        ...base,
-        ...evidence,
-        windowId,
-        dataKeys,
-      },
-    });
-  }
-
-  if (event.kind === 'UPDATE_WINDOW_STATE') {
-    const windowId = stringOrNull(event.windowId);
-    if (!windowId) return null;
-    const evidence = isRecord(event.evidence) ? event.evidence : null;
-    const statePatch: Record<string, unknown> = {};
-    for (const key of ['x', 'y', 'width', 'height', 'minimized', 'maximized', 'focused']) {
-      const valueAtKey = event[key];
-      if (typeof valueAtKey === 'number' || typeof valueAtKey === 'boolean') {
-        statePatch[key] = valueAtKey;
-      }
-    }
-    const stateKeys = Object.keys(statePatch).sort();
-    if (stateKeys.length === 0) return null;
-    if (!hasSourceBackedWindowStateEvidence(evidence, actor, windowId)) return null;
-    return createSessionEvent(input, {
-      type: 'window_update',
-      timestamp,
-      actor,
-      text: `Window state updated: ${windowId}`,
-      properties: {
-        ...base,
-        ...evidence,
-        windowId,
-        statePatch,
-        stateKeys,
-      },
-    });
-  }
-
-  return null;
 }
 
 function chatActivityToSessionEvent(input: RoomActivitySyncInput, value: unknown): SessionEvent | null {
@@ -945,83 +588,6 @@ function recordingActivityToSessionEvent(input: RoomActivitySyncInput, value: un
     timestamp: unixTimestampFromActivity(event.createdAt, value.recordedAt),
     actor: 'host',
     text: recordingStateText(lifecycleKind, event.status),
-    properties,
-  });
-}
-
-function cursorPresenceText(actor: SessionEvent['actor']): string {
-  const actorLabel = actor === 'host' ? 'Host' : 'Guest';
-  return `${actorLabel} cursor presence sampled in the assessment room`;
-}
-
-function isSourceBackedCursorEvidence(
-  evidence: Record<string, unknown> | null,
-  actor: SessionEvent['actor'],
-  cursorX: number,
-  cursorY: number,
-): evidence is Record<string, unknown> {
-  if (evidence === null) return false;
-  if (actor !== 'host' && actor !== 'guest') return false;
-  const normalizedX = unitNumberOrNull(evidence.normalizedX);
-  const normalizedY = unitNumberOrNull(evidence.normalizedY);
-  if (normalizedX === null || normalizedY === null) return false;
-  const previousX = evidence.previousNormalizedX;
-  const previousY = evidence.previousNormalizedY;
-  const distance = evidence.distanceFromPrevious;
-  if (previousX !== null && unitNumberOrNull(previousX) === null) return false;
-  if (previousY !== null && unitNumberOrNull(previousY) === null) return false;
-  if (distance !== null && (typeof distance !== 'number' || !Number.isFinite(distance) || distance < 0)) {
-    return false;
-  }
-  const sampledAtMs = numberOrNull(evidence.sampledAtMs);
-  const cursorSampleId = stringOrNull(evidence.cursorSampleId);
-  if (sampledAtMs === null || !Number.isInteger(sampledAtMs) || sampledAtMs < 0 || cursorSampleId === null) {
-    return false;
-  }
-  const expectedSampleId = `cursor:${actor}:${sampledAtMs}:${Math.round(normalizedX * 1000)}:${Math.round(normalizedY * 1000)}`;
-  return evidence.source === 'assessment_cursor_presence_client_sample'
-    && evidence.cursorEventSource === 'browser_assessment_room_pointermove'
-    && evidence.actor === actor
-    && evidence.surface === 'assessment'
-    && stringOrNull(evidence.roomPhase) !== null
-    && evidence.evidenceSampling === 'presence_sample'
-    && evidence.sampleIntervalMs === CURSOR_PRESENCE_SAMPLE_INTERVAL_MS
-    && evidence.movementThreshold === CURSOR_PRESENCE_MOVEMENT_THRESHOLD
-    && evidence.rawCursorMovesPersisted === false
-    && CURSOR_SAMPLE_ID_RE.test(cursorSampleId)
-    && cursorSampleId === expectedSampleId
-    && Math.abs(cursorX - normalizedX) <= 0.001
-    && Math.abs(cursorY - normalizedY) <= 0.001;
-}
-
-function cursorActivityToSessionEvent(input: RoomActivitySyncInput, value: unknown): SessionEvent | null {
-  if (!isRecord(value) || !isRecord(value.cursor)) return null;
-  const cursor = value.cursor;
-  const role = isRoomActivityRole(value.role)
-    ? value.role
-    : isRoomActivityRole(cursor.role)
-      ? cursor.role
-      : null;
-  if (!role) return null;
-  if (isRoomActivityRole(cursor.role) && cursor.role !== role) return null;
-  const actor = actorFromRoomRole(role);
-  if (actor !== 'host' && actor !== 'guest') return null;
-  const x = unitNumberOrNull(cursor.x);
-  const y = unitNumberOrNull(cursor.y);
-  if (x === null || y === null) return null;
-  const evidence = isRecord(cursor.evidence) ? cursor.evidence : null;
-  if (!isSourceBackedCursorEvidence(evidence, actor, x, y)) return null;
-  const properties = {
-    ...roomActivityBaseProperties('cursor_presence', role, value.recordedAt),
-    ...evidence,
-  };
-  const clientId = stringOrNull(cursor.clientId);
-  if (clientId) properties.clientId = clientId;
-  return createSessionEvent(input, {
-    type: 'cursor_presence',
-    timestamp: unixTimestampFromActivity(evidence.sampledAtMs, cursor.updatedAt ?? value.recordedAt),
-    actor,
-    text: cursorPresenceText(actor),
     properties,
   });
 }
@@ -1597,7 +1163,6 @@ export async function roomActivitySnapshotToSessionEvents(
     if (event) events.push(event);
   };
 
-  const roomActivityLog = Array.isArray(snapshot.roomActivityLog) ? snapshot.roomActivityLog : [];
   const chatActivityLog = Array.isArray(snapshot.chatActivityLog) ? snapshot.chatActivityLog : [];
   const codeServerFileActivityLog = Array.isArray(snapshot.codeServerFileActivityLog)
     ? snapshot.codeServerFileActivityLog
@@ -1609,7 +1174,6 @@ export async function roomActivitySnapshotToSessionEvents(
   const recordingActivityLog = Array.isArray(snapshot.recordingActivityLog)
     ? snapshot.recordingActivityLog
     : [];
-  const cursorActivityLog = Array.isArray(snapshot.cursorActivityLog) ? snapshot.cursorActivityLog : [];
   const agentPromptActivityLog = Array.isArray(snapshot.agentPromptActivityLog)
     ? snapshot.agentPromptActivityLog
     : [];
@@ -1618,13 +1182,11 @@ export async function roomActivitySnapshotToSessionEvents(
     : [];
   const fileSystemActivityLog = Array.isArray(snapshot.fileSystemActivityLog) ? snapshot.fileSystemActivityLog : [];
 
-  roomActivityLog.forEach((entry) => pushMapped(roomActivityToSessionEvent(input, entry)));
   chatActivityLog.forEach((entry) => pushMapped(chatActivityToSessionEvent(input, entry)));
   codeServerFileActivityLog.forEach((entry) => pushMapped(codeServerFileActivityToSessionEvent(input, entry)));
   terminalActivityLog.forEach((entry) => pushMapped(terminalActivityToSessionEvent(input, entry)));
   mediaControlActivityLog.forEach((entry) => pushMapped(mediaControlActivityToSessionEvent(input, entry)));
   recordingActivityLog.forEach((entry) => pushMapped(recordingActivityToSessionEvent(input, entry)));
-  cursorActivityLog.forEach((entry) => pushMapped(cursorActivityToSessionEvent(input, entry)));
   agentPromptActivityLog.forEach((entry) => pushMapped(agentPromptActivityToSessionEvent(input, entry)));
   agentInteractionActivityLog.forEach((entry) => pushMapped(agentInteractionActivityToSessionEvent(input, entry)));
   for (const entry of fileSystemActivityLog) {
@@ -1687,14 +1249,7 @@ function mapEventTypeToNodeType(type: SessionEventType): string {
     terminal_command: 'session_terminal_command',
     terminal_output: 'session_terminal_output',
     file_change: 'session_file_change',
-    browser_navigation: 'session_browser_nav',
-    window_open: 'session_window_open',
-    window_close: 'session_window_close',
-    window_update: 'session_window_update',
-    window_focus: 'session_window_focus',
-    cursor_presence: 'session_cursor_presence',
     media_control: 'session_media_control',
-    room_surface_change: 'session_room_surface_change',
     workspace_state: 'session_workspace_state',
     participant_join: 'session_participant_join',
     participant_leave: 'session_participant_leave',
@@ -1725,22 +1280,8 @@ function formatEventNarrative(event: SessionEvent): string {
       return `[${time}] Terminal output: ${event.text.slice(0, 500)}`;
     case 'file_change':
       return `[${time}] File ${event.properties?.operation ?? event.properties?.action ?? 'changed'}: ${event.text}`;
-    case 'browser_navigation':
-      return `[${time}] Browser navigated to: ${event.text}`;
-    case 'window_open':
-      return `[${time}] Window opened: ${event.text}`;
-    case 'window_close':
-      return `[${time}] Window closed: ${event.text}`;
-    case 'window_update':
-      return `[${time}] Window updated: ${event.text}`;
-    case 'window_focus':
-      return `[${time}] Window focused: ${event.text}`;
-    case 'cursor_presence':
-      return `[${time}] ${event.text}`;
     case 'media_control':
       return `[${time}] Media control changed: ${event.text}`;
-    case 'room_surface_change':
-      return `[${time}] ${event.text}`;
     case 'workspace_state':
       return `[${time}] ${event.text}`;
     case 'participant_join':
@@ -1924,88 +1465,6 @@ function sessionEventEntities(input: {
     });
   }
 
-  const windowId = stringProperty(properties, 'windowId');
-  if (windowId) {
-    entities.push({
-      entityType: 'room_window',
-      entityId: windowId,
-      relationship: 'affected_window',
-      metadata: {
-        windowType: stringProperty(properties, 'windowType'),
-      },
-    });
-  }
-
-  const surfaceChangeId = stringProperty(properties, 'surfaceChangeId');
-  if (surfaceChangeId) {
-    entities.push({
-      entityType: 'room_surface_change',
-      entityId: surfaceChangeId,
-      relationship: 'source_surface_transition',
-      metadata: {
-        previousSurface: stringProperty(properties, 'previousSurface'),
-        nextSurface: stringProperty(properties, 'surface'),
-        action: stringProperty(properties, 'action'),
-      },
-    });
-  }
-
-  const windowLifecycleId = stringProperty(properties, 'windowLifecycleId');
-  if (windowLifecycleId) {
-    entities.push({
-      entityType: 'room_window_lifecycle',
-      entityId: windowLifecycleId,
-      relationship: 'source_window_lifecycle',
-      metadata: {
-        lifecycleKind: stringProperty(properties, 'lifecycleKind'),
-        lifecycleSource: stringProperty(properties, 'lifecycleSource'),
-        windowId,
-      },
-    });
-  }
-
-  const windowStateChangeId = stringProperty(properties, 'windowStateChangeId');
-  if (windowStateChangeId) {
-    entities.push({
-      entityType: 'room_window_state_change',
-      entityId: windowStateChangeId,
-      relationship: 'source_window_state',
-      metadata: {
-        action: stringProperty(properties, 'action'),
-        stateSource: stringProperty(properties, 'stateSource'),
-        windowId,
-      },
-    });
-  }
-
-  const windowDataUpdateId = stringProperty(properties, 'windowDataUpdateId');
-  if (windowDataUpdateId) {
-    entities.push({
-      entityType: 'room_window_data_update',
-      entityId: windowDataUpdateId,
-      relationship: 'source_window_data',
-      metadata: {
-        action: stringProperty(properties, 'action'),
-        dataSource: stringProperty(properties, 'dataSource'),
-        windowId,
-      },
-    });
-  }
-
-  const browserNavigationId = stringProperty(properties, 'browserNavigationId');
-  if (browserNavigationId) {
-    entities.push({
-      entityType: 'room_browser_navigation',
-      entityId: browserNavigationId,
-      relationship: 'source_navigation',
-      metadata: {
-        windowId,
-        urlHost: stringProperty(properties, 'urlHost'),
-        navigationTrigger: stringProperty(properties, 'navigationTrigger'),
-      },
-    });
-  }
-
   const mediaControlId = stringProperty(properties, 'mediaControlId');
   if (mediaControlId) {
     entities.push({
@@ -2016,20 +1475,6 @@ function sessionEventEntities(input: {
         control: stringProperty(properties, 'control'),
         action: stringProperty(properties, 'action'),
         controlSurface: stringProperty(properties, 'controlSurface'),
-      },
-    });
-  }
-
-  const cursorSampleId = stringProperty(properties, 'cursorSampleId');
-  if (cursorSampleId) {
-    entities.push({
-      entityType: 'room_cursor_sample',
-      entityId: cursorSampleId,
-      relationship: 'source_cursor_sample',
-      metadata: {
-        normalizedX: numberProperty(properties, 'normalizedX'),
-        normalizedY: numberProperty(properties, 'normalizedY'),
-        sampledAtMs: numberProperty(properties, 'sampledAtMs'),
       },
     });
   }
@@ -2877,157 +2322,6 @@ function directRoomActivitySourceSpec(
     clientId: stringProperty(properties, 'clientId'),
   };
 
-  if (event.type === 'room_surface_change') {
-    const surface = stringProperty(properties, 'surface');
-    const surfaceChangeId = stringProperty(properties, 'surfaceChangeId');
-    if (!surface || !surfaceChangeId || !hasSourceBackedRoomSurfaceEvidence(properties, event.actor, surface)) return null;
-    return {
-      sourceRefType: 'room_surface_change',
-      sourceRefId: surfaceChangeId,
-      evidenceRole: 'room_surface_transition',
-      sourceKind: 'room.surface_control',
-      locator: {
-        ...baseLocator,
-        surfaceChangeId,
-        previousSurface: stringProperty(properties, 'previousSurface'),
-        nextSurface: surface,
-        action: stringProperty(properties, 'action'),
-      },
-    };
-  }
-
-  if (event.type === 'browser_navigation') {
-    const windowId = stringProperty(properties, 'windowId');
-    const browserNavigationId = stringProperty(properties, 'browserNavigationId');
-    if (!windowId || !browserNavigationId || !hasSourceBackedBrowserNavigationEvidence(properties, event.actor, windowId)) {
-      return null;
-    }
-    return {
-      sourceRefType: 'room_browser_navigation',
-      sourceRefId: browserNavigationId,
-      evidenceRole: 'browser_navigation',
-      sourceKind: 'assessment.browser_navigation',
-      locator: {
-        ...baseLocator,
-        browserNavigationId,
-        windowId,
-        url: stringProperty(properties, 'url') ?? event.text,
-        urlHost: stringProperty(properties, 'urlHost'),
-        urlProtocol: stringProperty(properties, 'urlProtocol'),
-        navigationTrigger: stringProperty(properties, 'navigationTrigger'),
-      },
-    };
-  }
-
-  if (event.type === 'window_open' || event.type === 'window_close') {
-    const windowId = stringProperty(properties, 'windowId');
-    const windowLifecycleId = stringProperty(properties, 'windowLifecycleId');
-    const lifecycleKind = event.type === 'window_open' ? 'open' : 'close';
-    if (
-      !windowId
-      || !windowLifecycleId
-      || !hasSourceBackedWindowLifecycleEvidence(properties, event.actor, lifecycleKind, windowId)
-    ) {
-      return null;
-    }
-    return {
-      sourceRefType: 'room_window_lifecycle',
-      sourceRefId: windowLifecycleId,
-      evidenceRole: event.type,
-      sourceKind: 'assessment.window_lifecycle',
-      locator: {
-        ...baseLocator,
-        windowLifecycleId,
-        lifecycleKind,
-        lifecycleSource: stringProperty(properties, 'lifecycleSource'),
-        windowId,
-        windowType: stringProperty(properties, 'windowType'),
-        windowTitle: stringProperty(properties, 'windowTitle'),
-      },
-    };
-  }
-
-  if (event.type === 'window_update') {
-    const windowId = stringProperty(properties, 'windowId');
-    if (!windowId) return null;
-    if (properties.source === 'window_data_client_submit') {
-      const windowDataUpdateId = stringProperty(properties, 'windowDataUpdateId');
-      if (!windowDataUpdateId || !hasSourceBackedWindowDataEvidence(properties, event.actor, windowId)) return null;
-      return {
-        sourceRefType: 'room_window_data_update',
-        sourceRefId: windowDataUpdateId,
-        evidenceRole: stringProperty(properties, 'action') === 'edit_text'
-          ? 'window_text_update'
-          : 'window_data_update',
-        sourceKind: 'assessment.window_data_sync',
-        locator: {
-          ...baseLocator,
-          windowDataUpdateId,
-          windowId,
-          action: stringProperty(properties, 'action'),
-          dataSource: stringProperty(properties, 'dataSource'),
-          dataKeys: Array.isArray(properties.dataKeys) ? properties.dataKeys : [],
-          dataValueFingerprints: isRecord(properties.dataValueFingerprints)
-            ? jsonValue(properties.dataValueFingerprints) ?? null
-            : null,
-        },
-      };
-    }
-    if (properties.source === 'window_state_client_submit') {
-      const windowStateChangeId = stringProperty(properties, 'windowStateChangeId');
-      if (!windowStateChangeId || !hasSourceBackedWindowStateEvidence(properties, event.actor, windowId)) return null;
-      return {
-        sourceRefType: 'room_window_state_change',
-        sourceRefId: windowStateChangeId,
-        evidenceRole: 'window_state_change',
-        sourceKind: 'assessment.window_state_sync',
-        locator: {
-          ...baseLocator,
-          windowStateChangeId,
-          windowId,
-          action: stringProperty(properties, 'action'),
-          stateSource: stringProperty(properties, 'stateSource'),
-          stateKeys: Array.isArray(properties.stateKeys) ? properties.stateKeys : [],
-          statePatch: isRecord(properties.statePatch) ? jsonValue(properties.statePatch) ?? null : null,
-        },
-      };
-    }
-  }
-
-  if (event.type === 'cursor_presence') {
-    const normalizedX = numberProperty(properties, 'normalizedX');
-    const normalizedY = numberProperty(properties, 'normalizedY');
-    const cursorSampleId = stringProperty(properties, 'cursorSampleId');
-    if (
-      normalizedX === null
-      || normalizedY === null
-      || !cursorSampleId
-      || !isSourceBackedCursorEvidence(properties, event.actor, normalizedX, normalizedY)
-    ) {
-      return null;
-    }
-    return {
-      sourceRefType: 'room_cursor_presence_sample',
-      sourceRefId: cursorSampleId,
-      evidenceRole: 'cursor_presence_sample',
-      sourceKind: 'assessment.cursor_presence_sample',
-      locator: {
-        ...baseLocator,
-        cursorSampleId,
-        sampledAtMs: numberProperty(properties, 'sampledAtMs'),
-        normalizedX,
-        normalizedY,
-        evidenceSampling: stringProperty(properties, 'evidenceSampling'),
-        rawCursorMovesPersisted: properties.rawCursorMovesPersisted === true,
-      },
-      metadata: {
-        sampleIntervalMs: numberProperty(properties, 'sampleIntervalMs'),
-        movementThreshold: numberProperty(properties, 'movementThreshold'),
-        distanceFromPrevious: numberProperty(properties, 'distanceFromPrevious'),
-      },
-    };
-  }
-
   if (event.type === 'media_control') {
     const control = stringProperty(properties, 'control');
     const previousEnabled = properties.previousEnabled;
@@ -3332,14 +2626,7 @@ function assessmentEventKindForSessionEvent(type: SessionEventType): string {
     case 'code_editor_open':
     case 'code_editor_save':
       return 'dev_container_event';
-    case 'browser_navigation':
-    case 'window_open':
-    case 'window_close':
-    case 'window_update':
-    case 'window_focus':
-    case 'cursor_presence':
     case 'media_control':
-    case 'room_surface_change':
     case 'participant_join':
     case 'participant_leave':
     default:
@@ -3720,9 +3007,6 @@ const CONTEXT_SOURCE_REF_KEYS = [
   'roomMessageId',
   'roomEventId',
   'workspaceStateEventId',
-  'windowEventId',
-  'windowDataUpdateId',
-  'browserNavigationId',
   'fileChangeId',
   'codeEditorOpenId',
   'terminalCommandId',
@@ -3734,7 +3018,6 @@ const CONTEXT_SOURCE_REF_KEYS = [
   'recordingEventId',
   'recordingStateEventId',
   'mediaControlId',
-  'cursorSampleId',
 ] as const;
 
 function contextCapturedAtIso(capturedAt: number): string {

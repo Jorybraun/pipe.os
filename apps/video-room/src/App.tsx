@@ -271,7 +271,6 @@ function assistantStatusLabel(status: AssistantTrayStatus, hasWorkspaceFeature: 
 
 function Room({ token, metadata }: { token: string; metadata: RoomMetadata }): JSX.Element {
   const [enteredRoom, setEnteredRoom] = useState(false);
-  const initialRoomSurface = 'standard';
   const initialAssessmentMode = assessmentModeForRoom({
     meetingType: metadata.meetingType,
     workspaceEnabled: Boolean(metadata.workspace?.enabled || metadata.features?.workspaceEnabled),
@@ -290,7 +289,7 @@ function Room({ token, metadata }: { token: string; metadata: RoomMetadata }): J
     if (chatDeliveryEvidenceKeysRef.current.has(evidenceKey)) return;
     chatDeliveryEvidenceKeysRef.current.add(evidenceKey);
     const evidenceSurface = message.evidence?.surface;
-    const surface: RoomSurface = evidenceSurface === 'standard' ? evidenceSurface : initialRoomSurface;
+    const surface: RoomSurface = evidenceSurface === 'standard' ? evidenceSurface : 'standard';
     const evidenceRoomPhase = message.evidence?.roomPhase;
     const roomPhase: RoomPhase = typeof evidenceRoomPhase === 'string' && evidenceRoomPhase.trim().length > 0
       ? evidenceRoomPhase as RoomPhase
@@ -302,8 +301,8 @@ function Room({ token, metadata }: { token: string; metadata: RoomMetadata }): J
       roomPhase,
     });
     captureSessionEvent('chat_message', evidence.text, roomActor, evidence.properties);
-  }, [captureSessionEvent, initialRoomSurface, roomActor]);
-  const room = useRoomConnection(token, metadata.role, enteredRoom, initialRoomSurface, {
+  }, [captureSessionEvent, roomActor]);
+  const room = useRoomConnection(token, metadata.role, enteredRoom, {
     onChatDeliveryEvidence: captureChatDeliveryEvidence,
   });
   const publishTerminalEvent = room.publishTerminalEvent;

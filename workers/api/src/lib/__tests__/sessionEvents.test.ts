@@ -1492,142 +1492,6 @@ describe('sessionEvents', () => {
       try {
         const events: SessionEvent[] = [
           {
-            type: 'room_surface_change',
-            sessionId: 'meeting-session-room-activity',
-            candidateId: 'cand-assessment',
-            timestamp: 1782604800,
-            actor: 'host',
-            text: 'Room surface changed to assessment room',
-            properties: {
-              source: 'room_surface_control',
-              surfaceControlEventSource: 'browser_room_surface_toggle',
-              actor: 'host',
-              surfaceChangeId: 'surface:host:1782604800000:standard:assessment',
-              capturedAtMs: 1782604800000,
-              previousSurface: 'standard',
-              surface: 'assessment',
-              action: 'enter_assessment',
-              roomPhase: 'connected',
-              durableObjectReplayExpected: true,
-            },
-          },
-          {
-            type: 'browser_navigation',
-            sessionId: 'meeting-session-room-activity',
-            candidateId: 'cand-assessment',
-            timestamp: 1782604802,
-            actor: 'guest',
-            text: 'https://github.com/cloudflare/workers-sdk/pull/14435',
-            properties: {
-              source: 'room_browser_panel',
-              navigationSource: 'browser_panel_client_submit',
-              actor: 'guest',
-              windowId: 'browser',
-              browserNavigationId: 'browser-navigation:guest:1782604802000:browser:go_button:nav_54d2c495',
-              capturedAtMs: 1782604802000,
-              url: 'https://github.com/cloudflare/workers-sdk/pull/14435',
-              urlFingerprint: 'nav_54d2c495',
-              urlHost: 'github.com',
-              urlProtocol: 'https',
-              navigationTrigger: 'go_button',
-              surface: 'assessment',
-              roomPhase: 'connected',
-              durableObjectReplayExpected: true,
-            },
-          },
-          {
-            type: 'window_open',
-            sessionId: 'meeting-session-room-activity',
-            candidateId: 'cand-assessment',
-            timestamp: 1782604803,
-            actor: 'guest',
-            text: 'Notes',
-            properties: {
-              source: 'window_lifecycle_client_submit',
-              lifecycleSource: 'assessment_file_system',
-              lifecycleKind: 'open',
-              actor: 'guest',
-              windowId: 'notes',
-              windowType: 'notes',
-              windowTitle: 'Notes',
-              windowLifecycleId: 'window-lifecycle:guest:1782604803000:open:notes',
-              capturedAtMs: 1782604803000,
-              surface: 'assessment',
-              roomPhase: 'connected',
-              durableObjectReplayExpected: true,
-            },
-          },
-          {
-            type: 'window_update',
-            sessionId: 'meeting-session-room-activity',
-            candidateId: 'cand-assessment',
-            timestamp: 1782604804,
-            actor: 'guest',
-            text: 'Window state updated: notes',
-            properties: {
-              source: 'window_state_client_submit',
-              stateSource: 'assessment_window_chrome',
-              actor: 'guest',
-              windowId: 'notes',
-              action: 'move',
-              windowStateChangeId: 'window-state:guest:1782604804000:notes:move',
-              capturedAtMs: 1782604804000,
-              surface: 'assessment',
-              roomPhase: 'connected',
-              statePatch: { x: 120, y: 160 },
-              stateKeys: ['x', 'y'],
-              durableObjectReplayExpected: true,
-            },
-          },
-          {
-            type: 'window_update',
-            sessionId: 'meeting-session-room-activity',
-            candidateId: 'cand-assessment',
-            timestamp: 1782604805,
-            actor: 'guest',
-            text: 'Window data updated: notes',
-            properties: {
-              source: 'window_data_client_submit',
-              dataSource: 'assessment_window_data_sync',
-              actor: 'guest',
-              windowId: 'notes',
-              action: 'edit_text',
-              windowDataUpdateId: 'window-data:guest:1782604805000:notes:edit_text',
-              capturedAtMs: 1782604805000,
-              surface: 'assessment',
-              roomPhase: 'connected',
-              dataKeys: ['text'],
-              dataValueFingerprints: { text: 'data_81a94acf' },
-              durableObjectReplayExpected: true,
-            },
-          },
-          {
-            type: 'cursor_presence',
-            sessionId: 'meeting-session-room-activity',
-            candidateId: 'cand-assessment',
-            timestamp: 1782604806,
-            actor: 'guest',
-            text: 'Guest cursor presence sampled in the assessment room',
-            properties: {
-              source: 'assessment_cursor_presence_client_sample',
-              cursorEventSource: 'browser_assessment_room_pointermove',
-              actor: 'guest',
-              cursorSampleId: 'cursor:guest:1782604806000:420:610',
-              sampledAtMs: 1782604806000,
-              surface: 'assessment',
-              roomPhase: 'connected',
-              normalizedX: 0.42,
-              normalizedY: 0.61,
-              previousNormalizedX: null,
-              previousNormalizedY: null,
-              distanceFromPrevious: null,
-              evidenceSampling: 'presence_sample',
-              sampleIntervalMs: 15000,
-              movementThreshold: 0.03,
-              rawCursorMovesPersisted: false,
-            },
-          },
-          {
             type: 'media_control',
             sessionId: 'meeting-session-room-activity',
             candidateId: 'cand-assessment',
@@ -1750,14 +1614,8 @@ describe('sessionEvents', () => {
         const expectedRefs = [
           ['code_server_editor_open', 'code-editor-open:guest:1782604810000:workspace-session-1', 'code_editor_open'],
           ['dev_container_workspace_state', 'workspace-state:host:1782604809000:launch:workspace-session-1:READY', 'workspace_state'],
-          ['room_browser_navigation', 'browser-navigation:guest:1782604802000:browser:go_button:nav_54d2c495', 'browser_navigation'],
-          ['room_cursor_presence_sample', 'cursor:guest:1782604806000:420:610', 'cursor_presence_sample'],
           ['room_media_control', 'media:guest:microphone:1782604807000:disabled', 'microphone_disabled'],
           ['room_recording_state', 'recording:host:1782604808000:start:recording', 'recording_start'],
-          ['room_surface_change', 'surface:host:1782604800000:standard:assessment', 'room_surface_transition'],
-          ['room_window_data_update', 'window-data:guest:1782604805000:notes:edit_text', 'window_text_update'],
-          ['room_window_lifecycle', 'window-lifecycle:guest:1782604803000:open:notes', 'window_open'],
-          ['room_window_state_change', 'window-state:guest:1782604804000:notes:move', 'window_state_change'],
         ];
 
         const sourceTypes = expectedRefs.map(([sourceRefType]) => `'${sourceRefType}'`).join(',');
@@ -1790,16 +1648,6 @@ describe('sessionEvents', () => {
             candidateId: 'cand-assessment',
           });
         }
-        const lifecycleSourcePayload = contextSources.find(
-          (row) => row.source_ref_type === 'room_window_lifecycle',
-        );
-        expect(JSON.parse(lifecycleSourcePayload?.exact_text ?? '{}')).toMatchObject({
-          properties: {
-            lifecycleSource: 'assessment_file_system',
-            windowId: 'notes',
-          },
-        });
-
         const assessmentSources = sqlite.prepare(
           `SELECT source_ref_type, source_ref_id, evidence_role, exact_text, content_hash
              FROM assessment_event_source_refs
@@ -1818,13 +1666,7 @@ describe('sessionEvents', () => {
           `SELECT entity_type, entity_id, relationship
              FROM context_record_entities
             WHERE entity_type IN (
-              'room_surface_change',
               'layout_menu_event',
-              'room_browser_navigation',
-              'room_window_lifecycle',
-              'room_window_state_change',
-              'room_window_data_update',
-              'room_cursor_sample',
               'room_media_control',
               'room_recording_state',
               'workspace_state_event',
@@ -1841,11 +1683,6 @@ describe('sessionEvents', () => {
             entity_type: 'room_media_control',
             entity_id: 'media:guest:microphone:1782604807000:disabled',
             relationship: 'source_media_control',
-          },
-          {
-            entity_type: 'room_cursor_sample',
-            entity_id: 'cursor:guest:1782604806000:420:610',
-            relationship: 'source_cursor_sample',
           },
           {
             entity_type: 'workspace_state_event',
@@ -1923,72 +1760,6 @@ describe('sessionEvents', () => {
           actor_id: null,
           narrative: expect.stringContaining('Agent status'),
         });
-      } finally {
-        sqlite.close();
-      }
-    });
-
-    it('preserves file-delete-sourced window data clears as direct source refs', async () => {
-      const { sqlite, db: realDb } = createSessionEvidenceDb();
-      try {
-        const event: SessionEvent = {
-          type: 'window_update',
-          sessionId: 'meeting-session-file-delete-clear',
-          candidateId: 'cand-assessment',
-          timestamp: 1782604900,
-          actor: 'guest',
-          text: 'Window data updated: notes',
-          properties: {
-            source: 'window_data_client_submit',
-            dataSource: 'assessment_file_delete_sync',
-            actor: 'guest',
-            windowId: 'notes',
-            action: 'edit_text',
-            windowDataUpdateId: 'window-data:guest:1782604900000:notes:edit_text',
-            capturedAtMs: 1782604900000,
-            surface: 'assessment',
-            roomPhase: 'connected',
-            dataKeys: ['text'],
-            dataValueFingerprints: { text: 'data_12345678' },
-            durableObjectReplayExpected: true,
-          },
-        };
-
-        const node = await captureSessionEvent(realDb, event);
-        expect(node).not.toBeNull();
-
-        const contextSource = sqlite.prepare(
-          `SELECT source_ref_type, source_ref_id, evidence_role, exact_text, content_hash
-             FROM context_record_source_refs
-            WHERE source_ref_type = 'room_window_data_update'`,
-        ).get() as {
-          source_ref_type: string;
-          source_ref_id: string;
-          evidence_role: string;
-          exact_text: string;
-          content_hash: string;
-        } | undefined;
-        expect(contextSource).toMatchObject({
-          source_ref_type: 'room_window_data_update',
-          source_ref_id: 'window-data:guest:1782604900000:notes:edit_text',
-          evidence_role: 'window_text_update',
-        });
-        expect(contextSource?.content_hash).toBe(await sha256Hex(contextSource?.exact_text ?? ''));
-        expect(JSON.parse(contextSource?.exact_text ?? '{}')).toMatchObject({
-          sourceRefType: 'room_window_data_update',
-          sourceRefId: 'window-data:guest:1782604900000:notes:edit_text',
-          properties: {
-            dataSource: 'assessment_file_delete_sync',
-            windowId: 'notes',
-          },
-        });
-
-        const assessmentSource = sqlite.prepare(
-          `SELECT source_ref_type, source_ref_id, evidence_role, exact_text, content_hash
-             FROM assessment_event_source_refs
-            WHERE source_ref_type = 'room_window_data_update'`,
-        ).get();
-        expect(assessmentSource).toEqual(contextSource);
       } finally {
         sqlite.close();
       }
@@ -2152,213 +1923,7 @@ describe('sessionEvents', () => {
 
   describe('roomActivitySnapshotToSessionEvents', () => {
     it('converts durable room activity logs into source-backed session events', async () => {
-      const events = await roomActivitySnapshotToSessionEvents({
-        roomActivityLog: [
-          {
-            role: 'HOST',
-            recordedAt: 1700000000000,
-            event: {
-              id: 'evt-enter-assessment',
-              clientId: 'host-client',
-              createdAt: 1700000000000,
-              kind: 'SET_ROOM_SURFACE',
-              surface: 'assessment',
-              previousSurface: 'standard',
-              action: 'enter_assessment',
-              source: 'room_surface_control',
-              surfaceControlEventSource: 'browser_room_surface_toggle',
-              actor: 'host',
-              surfaceChangeId: 'surface:host:1700000000000:standard:assessment',
-              capturedAtMs: 1700000000000,
-              roomPhase: 'connected',
-              durableObjectReplayExpected: true,
-            },
-          },
-          {
-            role: 'HOST',
-            recordedAt: 1700000001000,
-            event: {
-              id: 'evt-source-less-surface',
-              clientId: 'host-client',
-              createdAt: 1700000000500,
-              kind: 'SET_ROOM_SURFACE',
-              surface: 'standard',
-            },
-          },
-          {
-            role: 'HOST',
-            recordedAt: 1700000001000,
-            event: {
-              id: 'evt-workspace-ready',
-              clientId: 'host-client',
-              createdAt: 1700000001000,
-              kind: 'WORKSPACE_STATE_CHANGED',
-              actor: 'host',
-              workspaceStateEventId: 'workspace-state:host:1700000001000:launch:workspace-session-1:READY',
-              capturedAtMs: 1700000001000,
-              status: 'READY',
-              workspaceSessionId: 'workspace-session-1',
-              repoUrl: 'https://github.com/cloudflare/workers-sdk',
-              githubPrNumber: 14435,
-              matchedRepoId: 42,
-              challengeStatus: 'github_pr_assigned',
-              challengeKind: 'github_pr',
-              challengeSource: 'scheduled_interview.github_pr_number',
-              challengeMessage: null,
-              ttlSeconds: 3600,
-              ttlSource: 'default',
-              expiringSoon: false,
-              source: 'browser_workspace_state_observer',
-              workspaceEventSource: 'browser_workspace_state_observer',
-              workspaceStateSource: 'launch',
-              workspaceTelemetryPersisted: true,
-              proxyUrlPersisted: false,
-            },
-          },
-          {
-            role: 'HOST',
-            recordedAt: 1700000001100,
-            event: {
-              id: 'evt-source-less-workspace',
-              clientId: 'host-client',
-              createdAt: 1700000001100,
-              kind: 'WORKSPACE_STATE_CHANGED',
-              actor: 'host',
-              status: 'READY',
-              workspaceSessionId: 'workspace-session-1',
-            },
-          },
-          {
-            role: 'GUEST',
-            recordedAt: 1700000001250,
-            event: {
-              id: 'evt-browser-navigate',
-              clientId: 'guest-client',
-              createdAt: 1700000001250,
-              kind: 'UPDATE_WINDOW_DATA',
-              windowId: 'browser',
-              data: {
-                currentUrl: 'https://example.com/review?step=1',
-              },
-              evidence: {
-                source: 'room_browser_panel',
-                navigationSource: 'browser_panel_client_submit',
-                actor: 'guest',
-                windowId: 'browser',
-                navigationTrigger: 'go_button',
-                browserNavigationId: 'browser-navigation:guest:1700000001250:browser:go_button:nav_54d2c495',
-                capturedAtMs: 1700000001250,
-                urlFingerprint: 'nav_54d2c495',
-                url: 'https://example.com/review?step=1',
-                urlHost: 'example.com',
-                urlProtocol: 'https',
-                urlPath: '/review?step=1',
-                knownEmbedBlocked: false,
-                surface: 'assessment',
-                roomPhase: 'connected',
-                durableObjectReplayExpected: true,
-              },
-            },
-          },
-          {
-            role: 'GUEST',
-            recordedAt: 1700000001500,
-            event: {
-              id: 'evt-browser-moved',
-              clientId: 'guest-client',
-              createdAt: 1700000001500,
-              kind: 'UPDATE_WINDOW_STATE',
-              windowId: 'browser',
-              x: 220,
-              y: 140,
-              focused: true,
-              minimized: false,
-              evidence: {
-                source: 'window_state_client_submit',
-                stateSource: 'assessment_agent_tray',
-                actor: 'guest',
-                windowId: 'browser',
-                action: 'restore_or_focus',
-                windowStateChangeId: 'window-state:guest:1700000001500:browser:restore_or_focus',
-                capturedAtMs: 1700000001500,
-                surface: 'assessment',
-                roomPhase: 'connected',
-                durableObjectReplayExpected: true,
-              },
-            },
-          },
-          {
-            role: 'GUEST',
-            recordedAt: 1700000002500,
-            event: {
-              id: 'evt-notes-data',
-              clientId: 'guest-client',
-              createdAt: 1700000002500,
-              kind: 'UPDATE_WINDOW_DATA',
-              windowId: 'notes',
-              data: {
-                text: 'Candidate writes a replay test plan.',
-              },
-              evidence: {
-                source: 'window_data_client_submit',
-                dataSource: 'assessment_window_data_sync',
-                actor: 'guest',
-                windowId: 'notes',
-                action: 'edit_text',
-                windowDataUpdateId: 'window-data:guest:1700000002500:notes:edit_text',
-                capturedAtMs: 1700000002500,
-                surface: 'assessment',
-                roomPhase: 'connected',
-                dataKeys: ['text'],
-                dataValueFingerprints: { text: 'data_81a94acf' },
-                durableObjectReplayExpected: true,
-              },
-            },
-          },
-          {
-            role: 'GUEST',
-            recordedAt: 1700000002600,
-            event: {
-              id: 'evt-source-less-open',
-              clientId: 'guest-client',
-              createdAt: 1700000002600,
-              kind: 'OPEN_WINDOW',
-              window: {
-                id: 'source-less-notes',
-                windowType: 'notes',
-                title: 'Source-less Notes',
-              },
-            },
-          },
-          {
-            role: 'GUEST',
-            recordedAt: 1700000002700,
-            event: {
-              id: 'evt-source-less-nav',
-              clientId: 'guest-client',
-              createdAt: 1700000002700,
-              kind: 'UPDATE_WINDOW_DATA',
-              windowId: 'browser',
-              data: {
-                currentUrl: 'https://example.com/source-less',
-              },
-            },
-          },
-          {
-            role: 'GUEST',
-            recordedAt: 1700000002800,
-            event: {
-              id: 'evt-source-less-state',
-              clientId: 'guest-client',
-              createdAt: 1700000002800,
-              kind: 'UPDATE_WINDOW_STATE',
-              windowId: 'browser',
-              x: 300,
-              y: 180,
-            },
-          },
-        ],
-        chatActivityLog: [
+      const events = await roomActivitySnapshotToSessionEvents({        chatActivityLog: [
           {
             role: 'GUEST',
             recordedAt: 1700000002000,
@@ -2504,50 +2069,7 @@ describe('sessionEvents', () => {
               enabled: false,
             },
           },
-        ],
-        cursorActivityLog: [
-          {
-            role: 'GUEST',
-            recordedAt: 1700000002400,
-            cursor: {
-              clientId: 'guest-client',
-              role: 'GUEST',
-              x: 0.42,
-              y: 0.61,
-              updatedAt: 1700000002400,
-              evidence: {
-                source: 'assessment_cursor_presence_client_sample',
-                cursorEventSource: 'browser_assessment_room_pointermove',
-                actor: 'guest',
-                cursorSampleId: 'cursor:guest:1700000002400:420:610',
-                sampledAtMs: 1700000002400,
-                surface: 'assessment',
-                roomPhase: 'connected',
-                normalizedX: 0.42,
-                normalizedY: 0.61,
-                previousNormalizedX: null,
-                previousNormalizedY: null,
-                distanceFromPrevious: null,
-                evidenceSampling: 'presence_sample',
-                sampleIntervalMs: 15000,
-                movementThreshold: 0.03,
-                rawCursorMovesPersisted: false,
-              },
-            },
-          },
-          {
-            role: 'GUEST',
-            recordedAt: 1700000002450,
-            cursor: {
-              clientId: 'guest-client',
-              role: 'GUEST',
-              x: 0.42,
-              y: 0.61,
-              updatedAt: 1700000002400,
-            },
-          },
-        ],
-        agentPromptActivityLog: [
+        ],        agentPromptActivityLog: [
           {
             role: 'HOST',
             recordedAt: 1700000003000,
@@ -2961,75 +2483,8 @@ describe('sessionEvents', () => {
         sessionId: 'meeting--room-sync',
       });
 
-      expect(events).toHaveLength(15);
+      expect(events).toHaveLength(9);
       expect(events).toEqual(expect.arrayContaining([
-        expect.objectContaining({
-          type: 'room_surface_change',
-          actor: 'host',
-          text: 'Room surface changed to assessment',
-          candidateId: 'cand-room',
-          sessionId: 'meeting--room-sync',
-          timestamp: 1700000000,
-          properties: expect.objectContaining({
-            source: 'room_surface_control',
-            surfaceControlEventSource: 'browser_room_surface_toggle',
-            surfaceChangeId: 'surface:host:1700000000000:standard:assessment',
-            surface: 'assessment',
-            previousSurface: 'standard',
-            action: 'enter_assessment',
-            roomPhase: 'connected',
-            durableObjectReplayExpected: true,
-          }),
-        }),
-        expect.objectContaining({
-          type: 'browser_navigation',
-          actor: 'guest',
-          text: 'https://example.com/review?step=1',
-          properties: expect.objectContaining({
-            roomActivitySource: 'durable_object',
-            source: 'room_browser_panel',
-            navigationSource: 'browser_panel_client_submit',
-            navigationTrigger: 'go_button',
-            browserNavigationId: 'browser-navigation:guest:1700000001250:browser:go_button:nav_54d2c495',
-            capturedAtMs: 1700000001250,
-            urlFingerprint: 'nav_54d2c495',
-            urlHost: 'example.com',
-            urlProtocol: 'https',
-            surface: 'assessment',
-            roomPhase: 'connected',
-          }),
-        }),
-        expect.objectContaining({
-          type: 'window_update',
-          actor: 'guest',
-          text: 'Window state updated: browser',
-        }),
-        expect.objectContaining({
-          type: 'workspace_state',
-          actor: 'host',
-          text: 'Workspace state changed to READY',
-          properties: expect.objectContaining({
-            workspaceStatus: 'READY',
-            actor: 'host',
-            workspaceStateEventId: 'workspace-state:host:1700000001000:launch:workspace-session-1:READY',
-            capturedAtMs: 1700000001000,
-            workspaceSessionId: 'workspace-session-1',
-            repoUrl: 'https://github.com/cloudflare/workers-sdk',
-            githubPrNumber: 14435,
-            matchedRepoId: 42,
-            challengeStatus: 'github_pr_assigned',
-            challengeKind: 'github_pr',
-            challengeSource: 'scheduled_interview.github_pr_number',
-            ttlSeconds: 3600,
-            ttlSource: 'default',
-            expiringSoon: false,
-            source: 'browser_workspace_state_observer',
-            workspaceEventSource: 'browser_workspace_state_observer',
-            workspaceStateSource: 'launch',
-            workspaceTelemetryPersisted: true,
-            proxyUrlPersisted: false,
-          }),
-        }),
         expect.objectContaining({
           type: 'chat_message',
           actor: 'guest',
@@ -3047,32 +2502,6 @@ describe('sessionEvents', () => {
             surface: 'assessment',
             roomPhase: 'connected',
             durableObjectReplayExpected: true,
-          }),
-        }),
-        expect.objectContaining({
-          type: 'cursor_presence',
-          actor: 'guest',
-          text: 'Guest cursor presence sampled in the assessment room',
-          properties: expect.objectContaining({
-            roomActivitySource: 'durable_object',
-            roomActivityKind: 'cursor_presence',
-            source: 'assessment_cursor_presence_client_sample',
-            cursorEventSource: 'browser_assessment_room_pointermove',
-            actor: 'guest',
-            cursorSampleId: 'cursor:guest:1700000002400:420:610',
-            sampledAtMs: 1700000002400,
-            surface: 'assessment',
-            roomPhase: 'connected',
-            normalizedX: 0.42,
-            normalizedY: 0.61,
-            previousNormalizedX: null,
-            previousNormalizedY: null,
-            distanceFromPrevious: null,
-            evidenceSampling: 'presence_sample',
-            sampleIntervalMs: 15000,
-            movementThreshold: 0.03,
-            rawCursorMovesPersisted: false,
-            clientId: 'guest-client',
           }),
         }),
         expect.objectContaining({
@@ -3098,21 +2527,6 @@ describe('sessionEvents', () => {
             rawMediaStreamPersisted: false,
             roomEventId: 'media-mic-off',
             clientId: 'guest-client',
-          }),
-        }),
-        expect.objectContaining({
-          type: 'window_update',
-          actor: 'guest',
-          text: 'Window data updated: notes',
-          properties: expect.objectContaining({
-            roomActivitySource: 'durable_object',
-            source: 'window_data_client_submit',
-            dataSource: 'assessment_window_data_sync',
-            action: 'edit_text',
-            windowDataUpdateId: 'window-data:guest:1700000002500:notes:edit_text',
-            capturedAtMs: 1700000002500,
-            dataKeys: ['text'],
-            dataValueFingerprints: { text: 'data_81a94acf' },
           }),
         }),
         expect.objectContaining({
@@ -3194,30 +2608,6 @@ describe('sessionEvents', () => {
           text: 'Sketch.pipe-diagram',
         }),
       ]));
-      const restoredWindowEvent = events.find((event) => (
-        event.type === 'window_update'
-        && event.properties?.windowStateChangeId === 'window-state:guest:1700000001500:browser:restore_or_focus'
-      ));
-      expect(restoredWindowEvent?.properties).toMatchObject({
-        roomActivitySource: 'durable_object',
-        source: 'window_state_client_submit',
-        stateSource: 'assessment_agent_tray',
-        actor: 'guest',
-        windowId: 'browser',
-        action: 'restore_or_focus',
-        windowStateChangeId: 'window-state:guest:1700000001500:browser:restore_or_focus',
-        capturedAtMs: 1700000001500,
-        surface: 'assessment',
-        roomPhase: 'connected',
-        durableObjectReplayExpected: true,
-        stateKeys: ['focused', 'minimized', 'x', 'y'],
-        statePatch: {
-          focused: true,
-          minimized: false,
-          x: 220,
-          y: 140,
-        },
-      });
       const upsertFileEvent = events.find((event) => (
         event.type === 'file_change'
         && event.actor === 'guest'
@@ -3356,22 +2746,6 @@ describe('sessionEvents', () => {
           }),
         }),
       ]));
-      for (const fallbackSource of [
-        'room_surface_durable_object',
-        'layout_menu_durable_object',
-        'window_lifecycle_durable_object',
-        'browser_navigation_durable_object',
-        'window_data_durable_object',
-        'window_state_durable_object',
-      ]) {
-        expect(events).not.toEqual(expect.arrayContaining([
-          expect.objectContaining({
-            properties: expect.objectContaining({
-              source: fallbackSource,
-            }),
-          }),
-        ]));
-      }
     });
 
     it('converts source-backed recording room state into session evidence', async () => {

@@ -56,9 +56,6 @@ const RECORDING_FAILURE_SOURCES = new Set([
   'recording_upload_exception',
 ]);
 const MAX_RECORDING_FAILURE_MESSAGE_LENGTH = 240;
-const CURSOR_PRESENCE_SAMPLE_INTERVAL_MS = 15_000;
-const CURSOR_PRESENCE_MOVEMENT_THRESHOLD = 0.03;
-const CURSOR_SAMPLE_ID_RE = /^cursor:(host|guest):\d+:\d+:\d+$/;
 const FNV_32_OFFSET = 0x811c9dc5;
 const FNV_32_PRIME = 0x01000193;
 const ROOM_FILE_PROJECTION_EVIDENCE_METADATA_KEY = 'roomFileProjectionEvidence';
@@ -83,21 +80,6 @@ const ROOM_FILE_PROJECTION_EVIDENCE_KEYS = [
   'fileCreatedAt',
   'fileUpdatedAt',
 ] as const;
-const WINDOW_LIFECYCLE_SOURCES = new Set([
-  'assessment_layout_ui',
-  'assessment_file_system',
-  'assessment_window_chrome',
-  'assessment_agent_tray',
-  'standard_assessment_ui',
-  'agent_action',
-  'shared_state_sync',
-]);
-const WINDOW_STATE_SOURCES = new Set([
-  'assessment_layout_ui',
-  'assessment_window_chrome',
-  'assessment_agent_tray',
-]);
-const WINDOW_DATA_SOURCES = new Set(['assessment_window_data_sync', 'assessment_file_delete_sync']);
 const WORKSPACE_REDACTED_SECRET = '[REDACTED_SECRET]';
 const WORKSPACE_BARE_SECRET_RE = /\b(?:cog|ghp|gho|ghu|ghs|ghr|devin)_[A-Za-z0-9_-]{20,}\b/g;
 const WORKSPACE_GITHUB_PAT_RE = /\bgithub_pat_[A-Za-z0-9_]{20,}\b/g;
@@ -114,11 +96,9 @@ interface SignalMessage {
     | 'ICE_CANDIDATE'
     | 'HANGUP'
     | 'STATUS_UPDATE'
-    | 'ROOM_LAYOUT_EVENT'
     | 'ROOM_AGENT_PROMPT'
     | 'ROOM_AGENT_INTERACTION'
     | 'ROOM_CHAT_MESSAGE'
-    | 'ROOM_CURSOR'
     | 'ROOM_MEDIA_CONTROL'
     | 'ROOM_RECORDING_STATE'
     | 'ROOM_CODE_SERVER_FILE_EVENT'
@@ -168,125 +148,6 @@ function hasOptionalBrowserPromptRef(evidence: Record<string, unknown>): boolean
     && Number.isInteger(promptLength)
     && promptLength > 0
     && promptId.endsWith(`:${promptTimestamp}:${promptFingerprint}`);
-}
-
-type RoomLayoutWindowType =
-  | 'video'
-  | 'workspace'
-  | 'chat'
-  | 'tasks'
-  | 'snippet'
-  | 'browser'
-  | 'notes'
-  | 'diagram'
-  | 'terminal'
-  | 'custom';
-
-interface RoomLayoutWindow {
-  id: string;
-  windowType: RoomLayoutWindowType;
-  title: string;
-  icon?: string;
-  x?: number;
-  y?: number;
-  width?: number;
-  height?: number;
-  minimized?: boolean;
-  maximized?: boolean;
-  focused?: boolean;
-  data?: Record<string, unknown>;
-}
-
-type RoomLayoutEvent =
-  | {
-      id: string;
-      clientId: string;
-      createdAt: number;
-      kind: 'SET_ROOM_SURFACE';
-      surface: RoomSurface;
-      previousSurface?: RoomSurface;
-      action?: string;
-      source?: string;
-      surfaceControlEventSource?: string;
-      surfaceChangeId?: string;
-      capturedAtMs?: number;
-      roomPhase?: string;
-      durableObjectReplayExpected?: boolean;
-    }
-  | {
-      id: string;
-      clientId: string;
-      createdAt: number;
-      kind: 'OPEN_WINDOW';
-      window: RoomLayoutWindow;
-      evidence?: Record<string, unknown>;
-    }
-  | {
-      id: string;
-      clientId: string;
-      createdAt: number;
-      kind: 'CLOSE_WINDOW';
-      windowId: string;
-      evidence?: Record<string, unknown>;
-    }
-  | {
-      id: string;
-      clientId: string;
-      createdAt: number;
-      kind: 'UPDATE_WINDOW_DATA';
-      windowId: string;
-      data: Record<string, unknown>;
-      evidence?: Record<string, unknown>;
-    }
-  | {
-      id: string;
-      clientId: string;
-      createdAt: number;
-      kind: 'UPDATE_WINDOW_STATE';
-      windowId: string;
-      x?: number;
-      y?: number;
-      width?: number;
-      height?: number;
-      minimized?: boolean;
-      maximized?: boolean;
-      focused?: boolean;
-      evidence?: Record<string, unknown>;
-    }
-  | {
-      id: string;
-      clientId: string;
-      createdAt: number;
-      kind: 'WORKSPACE_STATE_CHANGED';
-      actor?: 'host' | 'guest';
-      workspaceStateEventId?: string;
-      capturedAtMs?: number;
-      status?: string | null;
-      workspaceSessionId?: string | null;
-      errorMessage?: string | null;
-      repoUrl?: string | null;
-      githubPrNumber?: number | null;
-      matchedRepoId?: number | null;
-      challengeStatus?: string | null;
-      challengeKind?: string | null;
-      challengeSource?: string | null;
-      challengeMessage?: string | null;
-      canLaunch?: boolean;
-      ttlSeconds?: number | null;
-      ttlSource?: string | null;
-      expiresAt?: string | null;
-      expiringSoon?: boolean;
-      source?: string;
-      workspaceEventSource?: string;
-      workspaceStateSource?: string;
-      workspaceTelemetryPersisted?: boolean;
-      proxyUrlPersisted?: boolean;
-    };
-
-interface RoomLayoutActivityEntry {
-  event: RoomLayoutEvent;
-  role: VideoRole;
-  recordedAt: number;
 }
 
 type RoomMediaControlKind = 'microphone' | 'camera';
@@ -340,21 +201,6 @@ interface RoomRecordingState {
 
 interface RoomRecordingActivityEntry {
   event: RoomRecordingStateEvent;
-  role: VideoRole;
-  recordedAt: number;
-}
-
-interface RoomCursorPresence {
-  clientId: string;
-  role: VideoRole;
-  x: number;
-  y: number;
-  updatedAt: number;
-  evidence?: Record<string, unknown>;
-}
-
-interface RoomCursorActivityEntry {
-  cursor: RoomCursorPresence;
   role: VideoRole;
   recordedAt: number;
 }
@@ -518,7 +364,6 @@ interface VideoRoomMetadata {
 export class VideoRoom {
   private state: DurableObjectState;
   private sessionStatus: SessionStatus = 'WAITING';
-  private roomSurface: RoomSurface = 'standard';
   private metadata: VideoRoomMetadata = {};
 
   constructor(state: DurableObjectState) {
@@ -530,8 +375,6 @@ export class VideoRoom {
       if (this.isSessionStatus(stored)) this.sessionStatus = stored;
       const meta = await state.storage.get<VideoRoomMetadata>('metadata');
       if (meta) this.metadata = meta;
-      const surface = await state.storage.get<unknown>('roomSurface');
-      if (this.isRoomSurface(surface)) this.roomSurface = surface;
       const offer = await state.storage.get<string>('lastOffer');
       if (offer) this._lastOffer = offer;
     });
@@ -578,312 +421,8 @@ export class VideoRoom {
     return Boolean(value) && typeof value === 'object' && !Array.isArray(value);
   }
 
-  private isRoomLayoutWindowType(value: unknown): value is RoomLayoutWindowType {
-    return typeof value === 'string'
-      && [
-        'video',
-        'workspace',
-        'chat',
-        'tasks',
-        'snippet',
-        'browser',
-        'notes',
-        'diagram',
-        'terminal',
-        'custom',
-      ].includes(value);
-  }
-
   private isRoomSurface(value: unknown): value is RoomSurface {
     return value === 'standard' || value === 'assessment';
-  }
-
-  private optionalNumber(value: unknown): number | undefined {
-    return typeof value === 'number' && Number.isFinite(value) ? value : undefined;
-  }
-
-  private isUnitNumber(value: unknown): value is number {
-    return typeof value === 'number' && Number.isFinite(value) && value >= 0 && value <= 1;
-  }
-
-  private parseLayoutWindow(value: unknown): RoomLayoutWindow | null {
-    if (!this.isRecord(value)) return null;
-    if (
-      typeof value.id !== 'string'
-      || !this.isRoomLayoutWindowType(value.windowType)
-      || typeof value.title !== 'string'
-    ) {
-      return null;
-    }
-    return {
-      id: value.id,
-      windowType: value.windowType,
-      title: value.title,
-      icon: typeof value.icon === 'string' ? value.icon : undefined,
-      x: this.optionalNumber(value.x),
-      y: this.optionalNumber(value.y),
-      width: this.optionalNumber(value.width),
-      height: this.optionalNumber(value.height),
-      minimized: typeof value.minimized === 'boolean' ? value.minimized : undefined,
-      maximized: typeof value.maximized === 'boolean' ? value.maximized : undefined,
-      focused: typeof value.focused === 'boolean' ? value.focused : undefined,
-      data: this.isRecord(value.data) ? value.data : undefined,
-    };
-  }
-
-  private parseLayoutEvent(value: unknown): RoomLayoutEvent | null {
-    if (!this.isRecord(value)) return null;
-    if (
-      typeof value.id !== 'string'
-      || typeof value.clientId !== 'string'
-      || typeof value.createdAt !== 'number'
-    ) {
-      return null;
-    }
-    if (value.kind === 'OPEN_WINDOW') {
-      const windowConfig = this.parseLayoutWindow(value.window);
-      if (!windowConfig) return null;
-      return {
-        id: value.id,
-        clientId: value.clientId,
-        createdAt: value.createdAt,
-        kind: 'OPEN_WINDOW',
-        window: windowConfig,
-        evidence: this.isRecord(value.evidence) ? value.evidence : undefined,
-      };
-    }
-    if (value.kind === 'SET_ROOM_SURFACE' && this.isRoomSurface(value.surface)) {
-      return {
-        id: value.id,
-        clientId: value.clientId,
-        createdAt: value.createdAt,
-        kind: 'SET_ROOM_SURFACE',
-        surface: value.surface,
-        previousSurface: this.isRoomSurface(value.previousSurface) ? value.previousSurface : undefined,
-        action: typeof value.action === 'string' ? value.action : undefined,
-        source: typeof value.source === 'string' ? value.source : undefined,
-        surfaceControlEventSource: typeof value.surfaceControlEventSource === 'string'
-          ? value.surfaceControlEventSource
-          : undefined,
-        surfaceChangeId: typeof value.surfaceChangeId === 'string' ? value.surfaceChangeId : undefined,
-        capturedAtMs: this.optionalNumber(value.capturedAtMs),
-        roomPhase: typeof value.roomPhase === 'string' ? value.roomPhase : undefined,
-        durableObjectReplayExpected: typeof value.durableObjectReplayExpected === 'boolean'
-          ? value.durableObjectReplayExpected
-          : undefined,
-      };
-    }
-    if (value.kind === 'CLOSE_WINDOW' && typeof value.windowId === 'string') {
-      return {
-        id: value.id,
-        clientId: value.clientId,
-        createdAt: value.createdAt,
-        kind: 'CLOSE_WINDOW',
-        windowId: value.windowId,
-        evidence: this.isRecord(value.evidence) ? value.evidence : undefined,
-      };
-    }
-    if (value.kind === 'UPDATE_WINDOW_DATA' && typeof value.windowId === 'string' && this.isRecord(value.data)) {
-      return {
-        id: value.id,
-        clientId: value.clientId,
-        createdAt: value.createdAt,
-        kind: 'UPDATE_WINDOW_DATA',
-        windowId: value.windowId,
-        data: value.data,
-        evidence: this.isRecord(value.evidence) ? value.evidence : undefined,
-      };
-    }
-    if (value.kind === 'UPDATE_WINDOW_STATE' && typeof value.windowId === 'string') {
-      const event: RoomLayoutEvent = {
-        id: value.id,
-        clientId: value.clientId,
-        createdAt: value.createdAt,
-        kind: 'UPDATE_WINDOW_STATE',
-        windowId: value.windowId,
-        x: this.optionalNumber(value.x),
-        y: this.optionalNumber(value.y),
-        width: this.optionalNumber(value.width),
-        height: this.optionalNumber(value.height),
-        minimized: typeof value.minimized === 'boolean' ? value.minimized : undefined,
-        maximized: typeof value.maximized === 'boolean' ? value.maximized : undefined,
-        focused: typeof value.focused === 'boolean' ? value.focused : undefined,
-        evidence: this.isRecord(value.evidence) ? value.evidence : undefined,
-      };
-      if (
-        event.x === undefined
-        && event.y === undefined
-        && event.width === undefined
-        && event.height === undefined
-        && event.minimized === undefined
-        && event.maximized === undefined
-        && event.focused === undefined
-      ) {
-        return null;
-      }
-      return event;
-    }
-    if (value.kind === 'WORKSPACE_STATE_CHANGED') {
-      const status = typeof value.status === 'string' && value.status.length <= 80
-        ? value.status
-        : null;
-      return {
-        id: value.id,
-        clientId: value.clientId,
-        createdAt: value.createdAt,
-        kind: 'WORKSPACE_STATE_CHANGED',
-        actor: value.actor === 'host' || value.actor === 'guest' ? value.actor : undefined,
-        workspaceStateEventId: this.safeTextOrNull(value.workspaceStateEventId, 240) ?? undefined,
-        capturedAtMs: this.safeNumberOrNull(value.capturedAtMs) ?? undefined,
-        status,
-        workspaceSessionId: this.safeTextOrNull(value.workspaceSessionId, 160),
-        errorMessage: this.safeWorkspaceDiagnosticOrNull(value.errorMessage, 500),
-        repoUrl: this.safeTextOrNull(value.repoUrl, 500),
-        githubPrNumber: this.safeNumberOrNull(value.githubPrNumber),
-        matchedRepoId: this.safeNumberOrNull(value.matchedRepoId),
-        challengeStatus: this.safeTextOrNull(value.challengeStatus, 80),
-        challengeKind: this.safeTextOrNull(value.challengeKind, 80),
-        challengeSource: this.safeTextOrNull(value.challengeSource, 120),
-        challengeMessage: this.safeTextOrNull(value.challengeMessage, 500),
-        canLaunch: this.safeBoolean(value.canLaunch),
-        ttlSeconds: this.safeNumberOrNull(value.ttlSeconds),
-        ttlSource: this.safeTextOrNull(value.ttlSource, 80),
-        expiresAt: this.safeTextOrNull(value.expiresAt, 80),
-        expiringSoon: this.safeBoolean(value.expiringSoon),
-        source: this.safeTextOrNull(value.source, 80) ?? undefined,
-        workspaceEventSource: this.safeTextOrNull(value.workspaceEventSource, 80) ?? undefined,
-        workspaceStateSource: this.safeTextOrNull(value.workspaceStateSource, 80) ?? undefined,
-        workspaceTelemetryPersisted: this.safeBoolean(value.workspaceTelemetryPersisted),
-        proxyUrlPersisted: this.safeBoolean(value.proxyUrlPersisted),
-      };
-    }
-    return null;
-  }
-
-  private hasSourceBackedWorkspaceStateEvidence(
-    event: Extract<RoomLayoutEvent, { kind: 'WORKSPACE_STATE_CHANGED' }>,
-    actor: 'host' | 'guest',
-  ): boolean {
-    const status = typeof event.status === 'string' && event.status.length > 0 ? event.status : null;
-    const capturedAtMs = event.capturedAtMs;
-    const workspaceStateSource = event.workspaceStateSource;
-    const workspaceSessionId = typeof event.workspaceSessionId === 'string' && event.workspaceSessionId.length > 0
-      ? event.workspaceSessionId
-      : null;
-    const stateIdSession = workspaceSessionId ?? 'no-session';
-    return event.actor === actor
-      && status !== null
-      && event.source === 'browser_workspace_state_observer'
-      && event.workspaceEventSource === 'browser_workspace_state_observer'
-      && typeof workspaceStateSource === 'string'
-      && (
-        workspaceStateSource === 'initial_load'
-        || workspaceStateSource === 'launch'
-        || workspaceStateSource === 'refresh'
-        || workspaceStateSource === 'error'
-      )
-      && typeof capturedAtMs === 'number'
-      && Number.isInteger(capturedAtMs)
-      && capturedAtMs >= 0
-      && event.workspaceStateEventId === `workspace-state:${actor}:${capturedAtMs}:${workspaceStateSource}:${stateIdSession}:${status}`
-      && (status === 'ERROR' || workspaceSessionId !== null)
-      && event.workspaceTelemetryPersisted === true
-      && event.proxyUrlPersisted === false;
-  }
-
-  private hasSourceBackedLayoutEventEvidence(event: RoomLayoutEvent, role: VideoRole): boolean {
-    const actor = this.isHostRole(role) ? 'host' : 'guest';
-    if (event.kind === 'SET_ROOM_SURFACE') {
-      const expectedAction = event.surface === 'assessment' ? 'enter_assessment' : 'exit_assessment';
-      return event.source === 'room_surface_control'
-        && event.surfaceControlEventSource === 'browser_room_surface_toggle'
-        && event.action === expectedAction
-        && event.previousSurface !== undefined
-        && event.previousSurface !== event.surface
-        && typeof event.surfaceChangeId === 'string'
-        && typeof event.capturedAtMs === 'number'
-        && Number.isFinite(event.capturedAtMs)
-        && event.surfaceChangeId === `surface:${actor}:${event.capturedAtMs}:${event.previousSurface}:${event.surface}`
-        && typeof event.roomPhase === 'string'
-        && event.durableObjectReplayExpected === true;
-    }
-    if (event.kind === 'WORKSPACE_STATE_CHANGED') {
-      return this.hasSourceBackedWorkspaceStateEvidence(event, actor);
-    }
-    const evidence = event.evidence;
-    if (!this.isRecord(evidence)) return false;
-    if (event.kind === 'OPEN_WINDOW' || event.kind === 'CLOSE_WINDOW') {
-      const kind = event.kind === 'OPEN_WINDOW' ? 'open' : 'close';
-      const windowId = event.kind === 'OPEN_WINDOW' ? event.window.id : event.windowId;
-      return evidence.source === 'window_lifecycle_client_submit'
-        && typeof evidence.lifecycleSource === 'string'
-        && WINDOW_LIFECYCLE_SOURCES.has(evidence.lifecycleSource)
-        && evidence.lifecycleKind === kind
-        && evidence.actor === actor
-        && evidence.windowId === windowId
-        && typeof evidence.windowType === 'string'
-        && typeof evidence.windowTitle === 'string'
-        && typeof evidence.windowLifecycleId === 'string'
-        && typeof evidence.capturedAtMs === 'number'
-        && Number.isFinite(evidence.capturedAtMs)
-        && evidence.surface === 'assessment'
-        && typeof evidence.roomPhase === 'string'
-        && evidence.durableObjectReplayExpected === true;
-    }
-    if (event.kind === 'UPDATE_WINDOW_DATA') {
-      const isBrowserNavigation = this.isRecord(event.data) && typeof event.data.currentUrl === 'string';
-      if (isBrowserNavigation) {
-        return evidence.source === 'room_browser_panel'
-          && evidence.navigationSource === 'browser_panel_client_submit'
-          && evidence.actor === actor
-          && evidence.windowId === event.windowId
-          && typeof evidence.browserNavigationId === 'string'
-          && typeof evidence.capturedAtMs === 'number'
-          && Number.isFinite(evidence.capturedAtMs)
-          && typeof evidence.navigationTrigger === 'string'
-          && typeof evidence.url === 'string'
-          && typeof evidence.urlFingerprint === 'string'
-          && evidence.surface === 'assessment'
-          && typeof evidence.roomPhase === 'string'
-          && evidence.durableObjectReplayExpected === true;
-      }
-      return evidence.source === 'window_data_client_submit'
-        && typeof evidence.dataSource === 'string'
-        && WINDOW_DATA_SOURCES.has(evidence.dataSource)
-        && evidence.actor === actor
-        && evidence.windowId === event.windowId
-        && typeof evidence.windowDataUpdateId === 'string'
-        && typeof evidence.capturedAtMs === 'number'
-        && Number.isFinite(evidence.capturedAtMs)
-        && Array.isArray(evidence.dataKeys)
-        && evidence.dataKeys.length > 0
-        && this.isRecord(evidence.dataValueFingerprints)
-        && evidence.surface === 'assessment'
-        && typeof evidence.roomPhase === 'string'
-        && evidence.durableObjectReplayExpected === true;
-    }
-    if (event.kind === 'UPDATE_WINDOW_STATE') {
-      return evidence.source === 'window_state_client_submit'
-        && typeof evidence.stateSource === 'string'
-        && WINDOW_STATE_SOURCES.has(evidence.stateSource)
-        && evidence.actor === actor
-        && evidence.windowId === event.windowId
-        && typeof evidence.windowStateChangeId === 'string'
-        && typeof evidence.capturedAtMs === 'number'
-        && Number.isFinite(evidence.capturedAtMs)
-        && typeof evidence.action === 'string'
-        && evidence.surface === 'assessment'
-        && typeof evidence.roomPhase === 'string'
-        && evidence.durableObjectReplayExpected === true;
-    }
-    return false;
-  }
-
-  private parseLayoutWindows(value: unknown): RoomLayoutWindow[] {
-    if (!Array.isArray(value)) return [];
-    return value
-      .map((entry) => this.parseLayoutWindow(entry))
-      .filter((entry): entry is RoomLayoutWindow => entry !== null);
   }
 
   private isRoomAgentPromptSource(value: unknown): value is RoomAgentPromptSource {
@@ -973,31 +512,6 @@ export class VideoRoom {
       && typeof prompt.roomPhase === 'string'
       && prompt.roomPhase.length > 0
       && prompt.agentResponseClaimed === false;
-  }
-
-  private async getLayoutWindows(): Promise<RoomLayoutWindow[]> {
-    return this.parseLayoutWindows(await this.state.storage.get<unknown>('roomPanels'));
-  }
-
-  private parseLayoutActivityEntry(value: unknown): RoomLayoutActivityEntry | null {
-    if (!this.isRecord(value)) return null;
-    const event = this.parseLayoutEvent(value.event);
-    if (
-      event === null
-      || !this.isVideoRole(value.role)
-      || typeof value.recordedAt !== 'number'
-      || !Number.isFinite(value.recordedAt)
-    ) {
-      return null;
-    }
-    return { event, role: value.role, recordedAt: value.recordedAt };
-  }
-
-  private parseLayoutActivityLog(value: unknown): RoomLayoutActivityEntry[] {
-    if (!Array.isArray(value)) return [];
-    return value
-      .map((entry) => this.parseLayoutActivityEntry(entry))
-      .filter((entry): entry is RoomLayoutActivityEntry => entry !== null);
   }
 
   private async getCurrentAgentPrompt(): Promise<RoomAgentPrompt | null> {
@@ -1770,99 +1284,6 @@ export class VideoRoom {
     await this.state.storage.put('recordingActivityLog', next);
   }
 
-  private parseCursorPresence(value: unknown, fallbackRole?: VideoRole): RoomCursorPresence | null {
-    if (!this.isRecord(value)) return null;
-    const role = this.isVideoRole(value.role) ? value.role : fallbackRole;
-    if (
-      !this.isSafeFileText(value.clientId, 160)
-      || !role
-      || !this.isUnitNumber(value.x)
-      || !this.isUnitNumber(value.y)
-      || typeof value.updatedAt !== 'number'
-      || !Number.isFinite(value.updatedAt)
-      || value.updatedAt < 0
-    ) {
-      return null;
-    }
-    return {
-      clientId: value.clientId,
-      role,
-      x: value.x,
-      y: value.y,
-      updatedAt: value.updatedAt,
-      evidence: this.isRecord(value.evidence) ? value.evidence : undefined,
-    };
-  }
-
-  private hasSourceBackedCursorEvidence(cursor: RoomCursorPresence, role: VideoRole): boolean {
-    const evidence = cursor.evidence;
-    if (!this.isRecord(evidence)) return false;
-    const actor = this.isHostRole(role) ? 'host' : 'guest';
-    const normalizedX = this.isUnitNumber(evidence.normalizedX) ? evidence.normalizedX : null;
-    const normalizedY = this.isUnitNumber(evidence.normalizedY) ? evidence.normalizedY : null;
-    const previousX = evidence.previousNormalizedX;
-    const previousY = evidence.previousNormalizedY;
-    const distance = evidence.distanceFromPrevious;
-    const sampledAtMs = evidence.sampledAtMs;
-    const cursorSampleId = evidence.cursorSampleId;
-    if (normalizedX === null || normalizedY === null) return false;
-    if (previousX !== null && !this.isUnitNumber(previousX)) return false;
-    if (previousY !== null && !this.isUnitNumber(previousY)) return false;
-    if (distance !== null && (typeof distance !== 'number' || !Number.isFinite(distance) || distance < 0)) {
-      return false;
-    }
-    if (typeof sampledAtMs !== 'number' || !Number.isInteger(sampledAtMs) || sampledAtMs < 0) {
-      return false;
-    }
-    const expectedSampleId = `cursor:${actor}:${sampledAtMs}:${Math.round(normalizedX * 1000)}:${Math.round(normalizedY * 1000)}`;
-    return cursor.role === role
-      && evidence.source === 'assessment_cursor_presence_client_sample'
-      && evidence.cursorEventSource === 'browser_assessment_room_pointermove'
-      && evidence.actor === actor
-      && evidence.surface === 'assessment'
-      && typeof evidence.roomPhase === 'string'
-      && evidence.roomPhase.length > 0
-      && evidence.evidenceSampling === 'presence_sample'
-      && evidence.sampleIntervalMs === CURSOR_PRESENCE_SAMPLE_INTERVAL_MS
-      && evidence.movementThreshold === CURSOR_PRESENCE_MOVEMENT_THRESHOLD
-      && evidence.rawCursorMovesPersisted === false
-      && typeof cursorSampleId === 'string'
-      && CURSOR_SAMPLE_ID_RE.test(cursorSampleId)
-      && cursorSampleId === expectedSampleId
-      && Math.abs(cursor.x - normalizedX) <= 0.001
-      && Math.abs(cursor.y - normalizedY) <= 0.001;
-  }
-
-  private parseCursorActivityEntry(value: unknown): RoomCursorActivityEntry | null {
-    if (!this.isRecord(value)) return null;
-    const cursor = this.parseCursorPresence(value.cursor);
-    if (
-      cursor === null
-      || !this.isVideoRole(value.role)
-      || typeof value.recordedAt !== 'number'
-      || !Number.isFinite(value.recordedAt)
-    ) {
-      return null;
-    }
-    return { cursor, role: value.role, recordedAt: value.recordedAt };
-  }
-
-  private parseCursorActivityLog(value: unknown): RoomCursorActivityEntry[] {
-    if (!Array.isArray(value)) return [];
-    return value
-      .map((entry) => this.parseCursorActivityEntry(entry))
-      .filter((entry): entry is RoomCursorActivityEntry => entry !== null);
-  }
-
-  private async recordCursorActivity(cursor: RoomCursorPresence, role: VideoRole): Promise<void> {
-    const previous = this.parseCursorActivityLog(await this.state.storage.get<unknown>('cursorActivityLog'));
-    const next = [
-      ...previous.slice(-249),
-      { cursor, role, recordedAt: Date.now() },
-    ];
-    await this.state.storage.put('cursorActivityLog', next);
-  }
-
   private parseChatActivityEntry(value: unknown): RoomChatActivityEntry | null {
     if (!this.isRecord(value)) return null;
     const message = this.parseChatMessage(value.message);
@@ -2320,79 +1741,6 @@ export class VideoRoom {
       .filter((entry): entry is RoomFileSystemActivityEntry => entry !== null);
   }
 
-  private async persistRoomSurface(surface: RoomSurface): Promise<void> {
-    this.roomSurface = surface;
-    await this.state.storage.put('roomSurface', surface);
-  }
-
-  private async persistLayoutEvent(event: RoomLayoutEvent): Promise<RoomLayoutWindow[]> {
-    if (event.kind === 'SET_ROOM_SURFACE') {
-      await this.persistRoomSurface(event.surface);
-      return this.getLayoutWindows();
-    }
-    const windows = await this.getLayoutWindows();
-    if (event.kind === 'OPEN_WINDOW') {
-      const withoutExisting = windows.filter((windowConfig) => windowConfig.id !== event.window.id);
-      const nextWindows = [...withoutExisting, event.window];
-      await this.state.storage.put('roomPanels', nextWindows);
-      return nextWindows;
-    }
-    if (event.kind === 'CLOSE_WINDOW') {
-      const nextWindows = windows.filter((windowConfig) => windowConfig.id !== event.windowId);
-      await this.state.storage.put('roomPanels', nextWindows);
-      return nextWindows;
-    }
-    if (event.kind === 'WORKSPACE_STATE_CHANGED') {
-      return windows;
-    }
-    if (event.kind === 'UPDATE_WINDOW_STATE') {
-      const nextWindows = windows.map((windowConfig) => {
-        if (windowConfig.id !== event.windowId) {
-          return event.focused === true ? { ...windowConfig, focused: false } : windowConfig;
-        }
-        return {
-          ...windowConfig,
-          x: event.x ?? windowConfig.x,
-          y: event.y ?? windowConfig.y,
-          width: event.width ?? windowConfig.width,
-          height: event.height ?? windowConfig.height,
-          minimized: event.minimized ?? windowConfig.minimized,
-          maximized: event.maximized ?? windowConfig.maximized,
-          focused: event.focused ?? windowConfig.focused,
-        };
-      });
-      await this.state.storage.put('roomPanels', nextWindows);
-      return nextWindows;
-    }
-    const nextWindows = windows.map((windowConfig) => (
-      windowConfig.id === event.windowId
-        ? { ...windowConfig, data: { ...windowConfig.data, ...event.data } }
-        : windowConfig
-    ));
-    await this.state.storage.put('roomPanels', nextWindows);
-    return nextWindows;
-  }
-
-  private async sendLayoutEventRejected(ws: WebSocket, reason: string): Promise<void> {
-    ws.send(JSON.stringify({
-      type: 'ROOM_LAYOUT_EVENT_REJECTED',
-      reason,
-      payload: {
-        windows: await this.getLayoutWindows(),
-        surface: this.roomSurface,
-      },
-    }));
-  }
-
-  private async recordLayoutActivity(event: RoomLayoutEvent, role: VideoRole): Promise<void> {
-    const previous = this.parseLayoutActivityLog(await this.state.storage.get<unknown>('roomActivityLog'));
-    const next = [
-      ...previous.slice(-249),
-      { event, role, recordedAt: Date.now() },
-    ];
-    await this.state.storage.put('roomActivityLog', next);
-  }
-
   private async persistAgentPrompt(prompt: RoomAgentPrompt): Promise<void> {
     await this.state.storage.put('currentAgentPrompt', prompt);
   }
@@ -2621,18 +1969,10 @@ export class VideoRoom {
         meetingId: string;
         hostId: string;
         resetEnded?: boolean;
-        initialSurface?: RoomSurface;
       };
       if (!this.metadata.meetingId) {
         this.metadata = { meetingId: body.meetingId, hostId: body.hostId };
         await this.state.storage.put('metadata', this.metadata);
-      }
-      const storedSurface = await this.state.storage.get<unknown>('roomSurface');
-      if (this.isRoomSurface(storedSurface)) {
-        this.roomSurface = storedSurface;
-      } else if (this.isRoomSurface(body.initialSurface)) {
-        this.roomSurface = body.initialSurface;
-        await this.state.storage.put('roomSurface', this.roomSurface);
       }
       const storedStatus = await this.state.storage.get<unknown>('status');
       const endedByHost = await this.state.storage.get<boolean>('endedByHost');
@@ -2666,9 +2006,6 @@ export class VideoRoom {
 
     if (request.method === 'GET' && url.pathname === '/activity-log') {
       return new Response(JSON.stringify({
-        roomActivityLog: this.parseLayoutActivityLog(
-          await this.state.storage.get<unknown>('roomActivityLog'),
-        ),
         chatActivityLog: this.parseChatActivityLog(
           await this.state.storage.get<unknown>('chatActivityLog'),
         ),
@@ -2689,9 +2026,6 @@ export class VideoRoom {
         ),
         recordingActivityLog: this.parseRecordingActivityLog(
           await this.state.storage.get<unknown>('recordingActivityLog'),
-        ),
-        cursorActivityLog: this.parseCursorActivityLog(
-          await this.state.storage.get<unknown>('cursorActivityLog'),
         ),
         fileSystemActivityLog: this.parseFileSystemActivityLog(
           await this.state.storage.get<unknown>('fileSystemActivityLog'),
@@ -2732,14 +2066,6 @@ export class VideoRoom {
         status: this.sessionStatus,
         metadata: this.metadata,
         peers: peerCount,
-      }));
-
-      server.send(JSON.stringify({
-        type: 'ROOM_LAYOUT_STATE',
-        payload: {
-          windows: await this.getLayoutWindows(),
-          surface: this.roomSurface,
-        },
       }));
 
       const currentAgentPrompt = await this.getCurrentAgentPrompt();
@@ -2882,30 +2208,6 @@ export class VideoRoom {
         type: 'SIGNAL_REJECTED',
         signalType: message.type,
         reason: 'ONLY_HOST_CAN_END_ROOM',
-      }));
-      return;
-    }
-
-    if (message.type === 'ROOM_LAYOUT_EVENT') {
-      if (this.sessionStatus === 'ENDED') {
-        await this.sendLayoutEventRejected(ws, 'ROOM_ENDED');
-        return;
-      }
-      const event = this.parseLayoutEvent(message.payload);
-      if (!event) {
-        await this.sendLayoutEventRejected(ws, 'INVALID_EVENT');
-        return;
-      }
-      if (!this.hasSourceBackedLayoutEventEvidence(event, senderRole)) {
-        await this.sendLayoutEventRejected(ws, 'MISSING_SOURCE_EVIDENCE');
-        return;
-      }
-      await this.persistLayoutEvent(event);
-      await this.recordLayoutActivity(event, senderRole);
-      this.broadcastExcept(ws, JSON.stringify({
-        type: 'ROOM_LAYOUT_EVENT',
-        role: senderRole,
-        payload: event,
       }));
       return;
     }
@@ -3197,48 +2499,6 @@ export class VideoRoom {
         type: 'ROOM_FILE_SYSTEM_EVENT',
         role: senderRole,
         payload: enrichedEvent,
-      }));
-      return;
-    }
-
-    if (message.type === 'ROOM_CURSOR') {
-      if (this.sessionStatus === 'ENDED') {
-        ws.send(JSON.stringify({
-          type: 'ROOM_CURSOR_REJECTED',
-          reason: 'ROOM_ENDED',
-        }));
-        return;
-      }
-      const cursor = this.parseCursorPresence(message.payload, senderRole);
-      if (!cursor || cursor.role !== senderRole) {
-        ws.send(JSON.stringify({
-          type: 'ROOM_CURSOR_REJECTED',
-          reason: 'INVALID_CURSOR',
-        }));
-        return;
-      }
-      if (!this.hasSourceBackedCursorEvidence(cursor, senderRole)) {
-        ws.send(JSON.stringify({
-          type: 'ROOM_CURSOR_REJECTED',
-          reason: 'MISSING_SOURCE_EVIDENCE',
-        }));
-        return;
-      }
-      await this.recordCursorActivity(cursor, senderRole);
-      const payloadHadRole = this.isRecord(message.payload) && this.isVideoRole(message.payload.role);
-      const cursorPayload = payloadHadRole
-        ? cursor
-        : {
-            clientId: cursor.clientId,
-            x: cursor.x,
-            y: cursor.y,
-            updatedAt: cursor.updatedAt,
-            ...(cursor.evidence ? { evidence: cursor.evidence } : {}),
-          };
-      this.broadcastExcept(ws, JSON.stringify({
-        type: 'ROOM_CURSOR',
-        role: senderRole,
-        payload: cursorPayload,
       }));
       return;
     }

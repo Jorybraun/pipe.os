@@ -1375,13 +1375,6 @@ export class RepoTaskInterviewSessionStore {
       ]);
     const hasToolUsageEvidence = hasEventKind(evidenceCounts, ['tool_usage'])
       || hasEventKind(sourceRefCounts, [
-        'room_surface_change',
-        'room_surface_change',
-        'room_browser_navigation',
-        'room_window_lifecycle',
-        'room_window_data_update',
-        'room_window_state_change',
-        'room_cursor_presence_sample',
         'room_media_control',
       ]);
     const hasTranscriptEvidence = hasEventKind(evidenceCounts, ['transcript_span']);

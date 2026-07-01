@@ -1105,75 +1105,29 @@ describe('meeting room recording living-context route', () => {
       hostToken: string;
     };
 
-    const lifecycleRes = await app.request(`/meeting/${created.hostToken}/events`, {
-      method: 'POST',
-      headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({
-        type: 'window_open',
-        text: 'Assessment Browser',
-        actor: 'guest',
-      }),
-    }, env, ctx);
-    expect(lifecycleRes.status).toBe(422);
-
-    const fakeWindowOpenRes = await app.request(`/meeting/${created.hostToken}/session-events`, {
-      method: 'POST',
-      headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({
-        type: 'window_open',
-        text: 'Assessment Browser',
-        actor: 'guest',
-        properties: {
-          windowId: 'browser',
-          windowType: 'browser',
-          surface: 'assessment',
-        },
-      }),
-    }, env, ctx);
-    expect(fakeWindowOpenRes.status).toBe(422);
-
-    const sourceOnlyWindowOpenRes = await app.request(`/meeting/${created.hostToken}/session-events`, {
-      method: 'POST',
-      headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({
-        type: 'window_open',
-        text: 'Assessment Browser',
-        actor: 'guest',
-        properties: {
-          source: 'window_lifecycle_client_submit',
-          lifecycleSource: 'agent_action',
-          lifecycleKind: 'open',
-          actor: 'guest',
-          windowId: 'browser',
-          windowType: 'browser',
-          windowTitle: 'Assessment Browser',
-          surface: 'assessment',
-          roomPhase: 'connected',
-          durableObjectReplayExpected: true,
-        },
-      }),
-    }, env, ctx);
-    expect(sourceOnlyWindowOpenRes.status).toBe(422);
-
     const sessionEventRes = await app.request(`/meeting/${created.hostToken}/session-events`, {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify({
-        type: 'window_open',
-        text: 'Assessment Browser',
+        type: 'media_control',
+        text: 'Guest turned microphone off',
         actor: 'guest',
         properties: {
-          source: 'window_lifecycle_client_submit',
-          lifecycleSource: 'agent_action',
-          lifecycleKind: 'open',
-          windowLifecycleId: 'window-lifecycle:guest:1782601200000:open:browser',
+          source: 'video_room_media_controls',
+          mediaControlEventSource: 'browser_video_control_button',
+          mediaControlId: 'media:guest:microphone:1782601200000:disabled',
           capturedAtMs: 1782601200000,
           actor: 'guest',
-          windowId: 'browser',
-          windowType: 'browser',
-          windowTitle: 'Assessment Browser',
+          control: 'microphone',
+          previousEnabled: true,
+          enabled: false,
+          action: 'disabled',
+          controlAction: 'toggle',
           surface: 'assessment',
           roomPhase: 'connected',
+          controlSurface: 'assessment_video_panel',
+          mediaSource: 'local_media_stream',
+          rawMediaStreamPersisted: false,
           durableObjectReplayExpected: true,
         },
       }),
@@ -1220,15 +1174,16 @@ describe('meeting room recording living-context route', () => {
     } | undefined;
     expect(node).toMatchObject({
       candidate_id: linked?.candidate_id,
-      node_type: 'session_window_open',
+      node_type: 'session_media_control',
       source_type: 'meeting_session',
     });
-    expect(node?.narrative_text).toContain('Window opened: Assessment Browser');
+    expect(node?.narrative_text).toContain('Media control changed: Guest turned microphone off');
     expect(JSON.parse(node?.extracted_properties_json ?? '{}')).toMatchObject({
       actor: 'guest',
       sessionId: node?.source_reference,
-      windowId: 'browser',
-      lifecycleSource: 'agent_action',
+      control: 'microphone',
+      previousEnabled: true,
+      enabled: false,
       surface: 'assessment',
     });
 
@@ -1237,7 +1192,7 @@ describe('meeting room recording living-context route', () => {
               narrative, qualifiers_json, confidence
          FROM context_records
         WHERE record_type = 'meeting_session_event'
-          AND predicate = 'session_event:window_open'`,
+          AND predicate = 'session_event:media_control'`,
     ).get() as {
       id: string;
       workspace_person_id: string;
@@ -1250,12 +1205,12 @@ describe('meeting room recording living-context route', () => {
     } | undefined;
     expect(sessionContextRecord).toMatchObject({
       record_type: 'meeting_session_event',
-      predicate: 'session_event:window_open',
+      predicate: 'session_event:media_control',
       confidence: 1,
     });
-    expect(sessionContextRecord?.narrative).toContain('Window opened: Assessment Browser');
+    expect(sessionContextRecord?.narrative).toContain('Media control changed: Guest turned microphone off');
     expect(JSON.parse(sessionContextRecord?.qualifiers_json ?? '{}')).toMatchObject({
-      eventType: 'window_open',
+      eventType: 'media_control',
       actor: 'guest',
       sessionId: node?.source_reference,
       surface: 'assessment',
@@ -1285,7 +1240,7 @@ describe('meeting room recording living-context route', () => {
       expect.objectContaining({
         source_ref_type: 'source_span',
         evidence_role: 'source_text',
-        exact_text: expect.stringContaining('Window opened: Assessment Browser'),
+        exact_text: expect.stringContaining('Media control changed: Guest turned microphone off'),
         source_span_id: expect.any(String),
       }),
     ]));
@@ -1293,15 +1248,16 @@ describe('meeting room recording living-context route', () => {
       (source) => source.source_ref_type === 'meeting_session_event',
     );
     expect(JSON.parse(eventSource?.exact_text ?? '{}')).toMatchObject({
-      type: 'window_open',
+      type: 'media_control',
       sessionId: node?.source_reference,
       candidateId: linked?.candidate_id,
       actor: 'guest',
-      text: 'Assessment Browser',
+      text: 'Guest turned microphone off',
       properties: {
         actor: 'guest',
-        windowId: 'browser',
-        lifecycleSource: 'agent_action',
+        control: 'microphone',
+        previousEnabled: true,
+        enabled: false,
         surface: 'assessment',
       },
       candidateNodeId: node?.id,
@@ -1309,199 +1265,10 @@ describe('meeting room recording living-context route', () => {
     expect(eventSource?.content_hash).toEqual(expect.stringMatching(/^content_[a-f0-9]{32}$/));
     expect(JSON.parse(eventSource?.locator_json ?? '{}')).toMatchObject({
       sessionId: node?.source_reference,
-      eventType: 'window_open',
+      eventType: 'media_control',
       actor: 'guest',
       candidateNodeId: node?.id,
     });
-
-    const fakeBrowserNavigationRes = await app.request(`/meeting/${created.hostToken}/session-events`, {
-      method: 'POST',
-      headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({
-        type: 'browser_navigation',
-        text: 'https://example.com/review',
-        actor: 'guest',
-        properties: {
-          source: 'browser_url_claim',
-          windowId: 'browser',
-          url: 'https://example.com/review',
-          surface: 'assessment',
-        },
-      }),
-    }, env, ctx);
-    expect(fakeBrowserNavigationRes.status).toBe(422);
-
-    const sourceOnlyBrowserNavigationRes = await app.request(`/meeting/${created.hostToken}/session-events`, {
-      method: 'POST',
-      headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({
-        type: 'browser_navigation',
-        text: 'https://example.com/review?step=1',
-        actor: 'guest',
-        properties: {
-          source: 'room_browser_panel',
-          navigationSource: 'browser_panel_client_submit',
-          actor: 'guest',
-          windowId: 'browser',
-          navigationTrigger: 'go_button',
-          url: 'https://example.com/review?step=1',
-          urlHost: 'example.com',
-          urlProtocol: 'https',
-          urlPath: '/review?step=1',
-          knownEmbedBlocked: false,
-          surface: 'assessment',
-          roomPhase: 'connected',
-          durableObjectReplayExpected: true,
-        },
-      }),
-    }, env, ctx);
-    expect(sourceOnlyBrowserNavigationRes.status).toBe(422);
-
-    const browserNavigationRes = await app.request(`/meeting/${created.hostToken}/session-events`, {
-      method: 'POST',
-      headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({
-        type: 'browser_navigation',
-        text: 'https://example.com/review?step=1',
-        actor: 'guest',
-        properties: {
-          source: 'room_browser_panel',
-          navigationSource: 'browser_panel_client_submit',
-          actor: 'guest',
-          windowId: 'browser',
-          navigationTrigger: 'go_button',
-          browserNavigationId: 'browser-navigation:guest:1782601300000:browser:go_button:nav_54d2c495',
-          capturedAtMs: 1782601300000,
-          urlFingerprint: 'nav_54d2c495',
-          url: 'https://example.com/review?step=1',
-          urlHost: 'example.com',
-          urlProtocol: 'https',
-          urlPath: '/review?step=1',
-          knownEmbedBlocked: false,
-          surface: 'assessment',
-          roomPhase: 'connected',
-          durableObjectReplayExpected: true,
-        },
-      }),
-    }, env, ctx);
-    expect(browserNavigationRes.status).toBe(200);
-
-    const browserNavigationNode = sqlite.prepare(
-      `SELECT node_type, narrative_text, source_type, extracted_properties_json
-         FROM candidate_nodes
-        WHERE candidate_id = ? AND node_type = 'session_browser_nav'`,
-    ).get(linked?.candidate_id) as {
-      node_type: string;
-      narrative_text: string;
-      source_type: string;
-      extracted_properties_json: string;
-    } | undefined;
-    expect(browserNavigationNode).toMatchObject({
-      node_type: 'session_browser_nav',
-      source_type: 'meeting_session',
-    });
-    expect(browserNavigationNode?.narrative_text).toContain('Browser navigated to: https://example.com/review?step=1');
-    expect(JSON.parse(browserNavigationNode?.extracted_properties_json ?? '{}')).toMatchObject({
-      actor: 'guest',
-      source: 'room_browser_panel',
-      navigationSource: 'browser_panel_client_submit',
-      windowId: 'browser',
-      navigationTrigger: 'go_button',
-      browserNavigationId: 'browser-navigation:guest:1782601300000:browser:go_button:nav_54d2c495',
-      capturedAtMs: 1782601300000,
-      urlFingerprint: 'nav_54d2c495',
-      urlHost: 'example.com',
-      urlProtocol: 'https',
-      surface: 'assessment',
-      roomPhase: 'connected',
-    });
-
-    const reloadBrowserNavigationRes = await app.request(`/meeting/${created.hostToken}/session-events`, {
-      method: 'POST',
-      headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({
-        type: 'browser_navigation',
-        text: 'https://example.com/review?step=1',
-        actor: 'guest',
-        properties: {
-          source: 'room_browser_panel',
-          navigationSource: 'browser_panel_client_submit',
-          actor: 'guest',
-          windowId: 'browser',
-          navigationTrigger: 'reload_button',
-          browserNavigationId: 'browser-navigation:guest:1782601300001:browser:reload_button:nav_54d2c495',
-          capturedAtMs: 1782601300001,
-          urlFingerprint: 'nav_54d2c495',
-          url: 'https://example.com/review?step=1',
-          urlHost: 'example.com',
-          urlProtocol: 'https',
-          urlPath: '/review?step=1',
-          knownEmbedBlocked: false,
-          surface: 'assessment',
-          roomPhase: 'connected',
-          durableObjectReplayExpected: true,
-        },
-      }),
-    }, env, ctx);
-    expect(reloadBrowserNavigationRes.status).toBe(200);
-
-    const externalOpenBrowserNavigationRes = await app.request(`/meeting/${created.hostToken}/session-events`, {
-      method: 'POST',
-      headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({
-        type: 'browser_navigation',
-        text: 'https://example.com/review?step=1',
-        actor: 'guest',
-        properties: {
-          source: 'room_browser_panel',
-          navigationSource: 'browser_panel_client_submit',
-          actor: 'guest',
-          windowId: 'browser',
-          navigationTrigger: 'external_open',
-          browserNavigationId: 'browser-navigation:guest:1782601300002:browser:external_open:nav_54d2c495',
-          capturedAtMs: 1782601300002,
-          urlFingerprint: 'nav_54d2c495',
-          url: 'https://example.com/review?step=1',
-          urlHost: 'example.com',
-          urlProtocol: 'https',
-          urlPath: '/review?step=1',
-          knownEmbedBlocked: false,
-          surface: 'assessment',
-          roomPhase: 'connected',
-          durableObjectReplayExpected: true,
-        },
-      }),
-    }, env, ctx);
-    expect(externalOpenBrowserNavigationRes.status).toBe(200);
-
-    const fileLinkBrowserNavigationRes = await app.request(`/meeting/${created.hostToken}/session-events`, {
-      method: 'POST',
-      headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({
-        type: 'browser_navigation',
-        text: 'https://example.com/review?step=1',
-        actor: 'guest',
-        properties: {
-          source: 'room_browser_panel',
-          navigationSource: 'browser_panel_client_submit',
-          actor: 'guest',
-          windowId: 'browser',
-          navigationTrigger: 'file_system_link_open',
-          browserNavigationId: 'browser-navigation:guest:1782601300003:browser:file_system_link_open:nav_54d2c495',
-          capturedAtMs: 1782601300003,
-          urlFingerprint: 'nav_54d2c495',
-          url: 'https://example.com/review?step=1',
-          urlHost: 'example.com',
-          urlProtocol: 'https',
-          urlPath: '/review?step=1',
-          knownEmbedBlocked: false,
-          surface: 'assessment',
-          roomPhase: 'connected',
-          durableObjectReplayExpected: true,
-        },
-      }),
-    }, env, ctx);
-    expect(fileLinkBrowserNavigationRes.status).toBe(200);
 
     const fakeChatRes = await app.request(`/meeting/${created.hostToken}/session-events`, {
       method: 'POST',
@@ -1687,209 +1454,6 @@ describe('meeting room recording living-context route', () => {
         workspaceSessionId: 'workspace-session-1',
       }),
     ]));
-
-    vi.useFakeTimers();
-    vi.setSystemTime(new Date('2026-06-27T23:05:00.000Z'));
-
-    const browserWindowMoveEvent = {
-      type: 'window_update',
-      text: 'Window state updated: browser',
-      actor: 'guest',
-      properties: {
-        source: 'window_state_client_submit',
-        stateSource: 'assessment_window_chrome',
-        actor: 'guest',
-        windowId: 'browser',
-        action: 'move',
-        windowStateChangeId: 'window-state:guest:1782601500000:browser:move',
-        capturedAtMs: 1782601500000,
-        statePatch: { x: 120, y: 80 },
-        stateKeys: ['x', 'y'],
-        surface: 'assessment',
-        roomPhase: 'connected',
-        durableObjectReplayExpected: true,
-        clientCapturedAtMs: 1782601500000,
-      },
-    };
-    const beaconSessionEventRes = await app.request(`/meeting/${created.hostToken}/session-events`, {
-      method: 'POST',
-      headers: { 'Content-Type': 'text/plain;charset=UTF-8' },
-      body: JSON.stringify({
-        ...browserWindowMoveEvent,
-        properties: {
-          ...browserWindowMoveEvent.properties,
-          clientEventId: 'browser-window-move-1',
-        },
-      }),
-    }, env, ctx);
-    expect(beaconSessionEventRes.status).toBe(200);
-    const firstBeaconBody = await beaconSessionEventRes.json() as { captured: boolean; nodeId: string };
-    expect(firstBeaconBody).toMatchObject({
-      captured: true,
-      nodeId: expect.any(String),
-    });
-
-    const duplicateBeaconSessionEventRes = await app.request(`/meeting/${created.hostToken}/session-events`, {
-      method: 'POST',
-      headers: { 'Content-Type': 'text/plain;charset=UTF-8' },
-      body: JSON.stringify({
-        ...browserWindowMoveEvent,
-        properties: {
-          ...browserWindowMoveEvent.properties,
-          clientEventId: 'browser-window-move-1',
-        },
-      }),
-    }, env, ctx);
-    expect(duplicateBeaconSessionEventRes.status).toBe(200);
-    await expect(duplicateBeaconSessionEventRes.json()).resolves.toMatchObject({
-      captured: true,
-      nodeId: firstBeaconBody.nodeId,
-    });
-
-    const secondBeaconSessionEventRes = await app.request(`/meeting/${created.hostToken}/session-events`, {
-      method: 'POST',
-      headers: { 'Content-Type': 'text/plain;charset=UTF-8' },
-      body: JSON.stringify({
-        ...browserWindowMoveEvent,
-        properties: {
-          ...browserWindowMoveEvent.properties,
-          clientEventId: 'browser-window-move-2',
-        },
-      }),
-    }, env, ctx);
-    expect(secondBeaconSessionEventRes.status).toBe(200);
-    const secondBeaconBody = await secondBeaconSessionEventRes.json() as { captured: boolean; nodeId: string };
-    expect(secondBeaconBody).toMatchObject({
-      captured: true,
-      nodeId: expect.any(String),
-    });
-    expect(secondBeaconBody.nodeId).not.toBe(firstBeaconBody.nodeId);
-
-    const beaconNodes = sqlite.prepare(
-      `SELECT id, node_type, narrative_text, extracted_properties_json
-         FROM candidate_nodes
-        WHERE candidate_id = ?
-          AND node_type = 'session_window_update'
-        ORDER BY id`,
-    ).all(linked?.candidate_id) as Array<{
-      id: string;
-      node_type: string;
-      narrative_text: string;
-      extracted_properties_json: string;
-    }>;
-    expect(beaconNodes).toHaveLength(2);
-    expect(beaconNodes.map((node) => node.id).sort()).toEqual([
-      firstBeaconBody.nodeId,
-      secondBeaconBody.nodeId,
-    ].sort());
-    const beaconProperties = beaconNodes.map((node) =>
-      JSON.parse(node.extracted_properties_json) as { clientEventId: string; clientCapturedAtMs: number },
-    );
-    expect(beaconNodes[0]?.narrative_text).toContain('Window updated: Window state updated: browser');
-    expect(beaconProperties.map((properties) => properties.clientEventId).sort()).toEqual([
-      'browser-window-move-1',
-      'browser-window-move-2',
-    ]);
-    expect(beaconProperties).toEqual(expect.arrayContaining([
-      expect.objectContaining({
-        actor: 'guest',
-        source: 'window_state_client_submit',
-        windowId: 'browser',
-        surface: 'assessment',
-        windowStateChangeId: 'window-state:guest:1782601500000:browser:move',
-        capturedAtMs: 1782601500000,
-        clientCapturedAtMs: 1782601500000,
-      }),
-    ]));
-
-    const windowUpdateContextRecords = sqlite.prepare(
-      `SELECT id, qualifiers_json
-         FROM context_records
-        WHERE record_type = 'meeting_session_event'
-          AND predicate = 'session_event:window_update'
-        ORDER BY id`,
-    ).all() as Array<{ id: string; qualifiers_json: string }>;
-    expect(windowUpdateContextRecords).toHaveLength(2);
-    const windowUpdateContextClientIds = windowUpdateContextRecords.map((record) => {
-      const qualifiers = JSON.parse(record.qualifiers_json) as {
-        properties: { clientEventId: string };
-      };
-      return qualifiers.properties.clientEventId;
-    });
-    expect(windowUpdateContextClientIds.sort()).toEqual([
-      'browser-window-move-1',
-      'browser-window-move-2',
-    ]);
-    expect(JSON.parse(beaconNodes[0]?.extracted_properties_json ?? '{}')).toMatchObject({
-      actor: 'guest',
-      source: 'window_state_client_submit',
-      windowId: 'browser',
-      surface: 'assessment',
-      windowStateChangeId: 'window-state:guest:1782601500000:browser:move',
-      capturedAtMs: 1782601500000,
-    });
-
-    const sourceOnlyRoomSurfaceRes = await app.request(`/meeting/${created.hostToken}/session-events`, {
-      method: 'POST',
-      headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({
-        type: 'room_surface_change',
-        text: 'Room surface changed to assessment room',
-        actor: 'guest',
-        properties: {
-          source: 'room_surface_control',
-          actor: 'guest',
-          surface: 'assessment',
-          previousSurface: 'standard',
-          action: 'enter_assessment',
-          roomPhase: 'connected',
-        },
-      }),
-    }, env, ctx);
-    expect(sourceOnlyRoomSurfaceRes.status).toBe(422);
-
-    const roomSurfaceRes = await app.request(`/meeting/${created.hostToken}/session-events`, {
-      method: 'POST',
-      headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({
-        type: 'room_surface_change',
-        text: 'Room surface changed to assessment room',
-        actor: 'guest',
-        properties: {
-          source: 'room_surface_control',
-          surfaceControlEventSource: 'browser_room_surface_toggle',
-          actor: 'guest',
-          surfaceChangeId: 'surface:guest:1782601510000:standard:assessment',
-          capturedAtMs: 1782601510000,
-          surface: 'assessment',
-          previousSurface: 'standard',
-          action: 'enter_assessment',
-          roomPhase: 'connected',
-          durableObjectReplayExpected: true,
-        },
-      }),
-    }, env, ctx);
-    expect(roomSurfaceRes.status).toBe(200);
-
-    const surfaceNode = sqlite.prepare(
-      `SELECT node_type, extracted_properties_json
-         FROM candidate_nodes
-        WHERE candidate_id = ? AND node_type = 'session_room_surface_change'
-        ORDER BY captured_at DESC
-        LIMIT 1`,
-    ).get(linked?.candidate_id) as {
-      node_type: string;
-      extracted_properties_json: string;
-    } | undefined;
-    expect(JSON.parse(surfaceNode?.extracted_properties_json ?? '{}')).toMatchObject({
-      actor: 'guest',
-      source: 'room_surface_control',
-      surfaceControlEventSource: 'browser_room_surface_toggle',
-      surfaceChangeId: 'surface:guest:1782601510000:standard:assessment',
-      surface: 'assessment',
-      previousSurface: 'standard',
-      durableObjectReplayExpected: true,
-    });
 
     const fakeWorkspaceStateRes = await app.request(`/meeting/${created.hostToken}/session-events`, {
       method: 'POST',
@@ -2554,100 +2118,6 @@ describe('meeting room recording living-context route', () => {
       }),
     ]));
 
-    const fakeCursorPresenceRes = await app.request(`/meeting/${created.hostToken}/session-events`, {
-      method: 'POST',
-      headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({
-        type: 'cursor_presence',
-        text: 'Guest cursor presence sampled in the assessment room',
-        actor: 'guest',
-        properties: {
-          source: 'room_cursor_claim',
-          surface: 'standard',
-          normalizedX: 1.2,
-          normalizedY: 0.5,
-        },
-      }),
-    }, env, ctx);
-    expect(fakeCursorPresenceRes.status).toBe(422);
-
-    const sourceOnlyCursorPresenceRes = await app.request(`/meeting/${created.hostToken}/session-events`, {
-      method: 'POST',
-      headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({
-        type: 'cursor_presence',
-        text: 'Guest cursor presence sampled in the assessment room',
-        actor: 'guest',
-        properties: {
-          source: 'assessment_cursor_presence_client_sample',
-          surface: 'assessment',
-          roomPhase: 'connected',
-          normalizedX: 0.42,
-          normalizedY: 0.61,
-          evidenceSampling: 'presence_sample',
-          rawCursorMovesPersisted: false,
-        },
-      }),
-    }, env, ctx);
-    expect(sourceOnlyCursorPresenceRes.status).toBe(422);
-
-    const cursorPresenceRes = await app.request(`/meeting/${created.hostToken}/session-events`, {
-      method: 'POST',
-      headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({
-        type: 'cursor_presence',
-        text: 'Guest cursor presence sampled in the assessment room',
-        actor: 'guest',
-        properties: {
-          source: 'assessment_cursor_presence_client_sample',
-          cursorEventSource: 'browser_assessment_room_pointermove',
-          actor: 'guest',
-          cursorSampleId: 'cursor:guest:1761592321000:420:610',
-          sampledAtMs: 1761592321000,
-          surface: 'assessment',
-          roomPhase: 'connected',
-          normalizedX: 0.42,
-          normalizedY: 0.61,
-          previousNormalizedX: null,
-          previousNormalizedY: null,
-          distanceFromPrevious: null,
-          evidenceSampling: 'presence_sample',
-          sampleIntervalMs: 15000,
-          movementThreshold: 0.03,
-          rawCursorMovesPersisted: false,
-        },
-      }),
-    }, env, ctx);
-    expect(cursorPresenceRes.status).toBe(200);
-
-    const cursorNode = sqlite.prepare(
-      `SELECT node_type, narrative_text, source_type, extracted_properties_json
-         FROM candidate_nodes
-        WHERE candidate_id = ? AND node_type = 'session_cursor_presence'`,
-    ).get(linked?.candidate_id) as {
-      node_type: string;
-      narrative_text: string;
-      source_type: string;
-      extracted_properties_json: string;
-    } | undefined;
-    expect(cursorNode).toMatchObject({
-      node_type: 'session_cursor_presence',
-      source_type: 'meeting_session',
-    });
-    expect(cursorNode?.narrative_text).toContain('Guest cursor presence sampled');
-    expect(JSON.parse(cursorNode?.extracted_properties_json ?? '{}')).toMatchObject({
-      actor: 'guest',
-      source: 'assessment_cursor_presence_client_sample',
-      cursorEventSource: 'browser_assessment_room_pointermove',
-      cursorSampleId: 'cursor:guest:1761592321000:420:610',
-      surface: 'assessment',
-      normalizedX: 0.42,
-      normalizedY: 0.61,
-      sampleIntervalMs: 15000,
-      movementThreshold: 0.03,
-      rawCursorMovesPersisted: false,
-    });
-
     const fakeMediaControlRes = await app.request(`/meeting/${created.hostToken}/session-events`, {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
@@ -2719,7 +2189,9 @@ describe('meeting room recording living-context route', () => {
     const mediaControlNode = sqlite.prepare(
       `SELECT node_type, narrative_text, source_type, extracted_properties_json
          FROM candidate_nodes
-        WHERE candidate_id = ? AND node_type = 'session_media_control'`,
+        WHERE candidate_id = ? AND node_type = 'session_media_control'
+        ORDER BY captured_at ASC, id ASC
+        LIMIT 1`,
     ).get(linked?.candidate_id) as {
       node_type: string;
       narrative_text: string;
@@ -2735,7 +2207,7 @@ describe('meeting room recording living-context route', () => {
       actor: 'guest',
       source: 'video_room_media_controls',
       mediaControlEventSource: 'browser_video_control_button',
-      mediaControlId: 'media:guest:microphone:1761592322000:disabled',
+      mediaControlId: expect.stringMatching(/^media:guest:microphone:\d+:disabled$/),
       control: 'microphone',
       previousEnabled: true,
       enabled: false,
@@ -3479,290 +2951,7 @@ describe('meeting room recording living-context route', () => {
     });
   });
 
-  it('persists assessment layout source-specific window lifecycle evidence with exact source provenance', async () => {
-    const app = mountApp();
-    const { ctx } = buildCtx();
-    const now = new Date().toISOString();
-    sqlite.prepare(
-      `INSERT INTO scheduled_interviews (
-         id, candidate_id, owner_id, recipient_name, recipient_email, interview_type, status, updated_at
-       ) VALUES (?, NULL, ?, ?, ?, 'DEV_CONTAINER_CHALLENGE', 'INVITED', ?)`,
-    ).run(
-      'scheduled-layout-window-evidence',
-      'owner-1',
-      'layout Candidate',
-      'layout-window@example.com',
-      now,
-    );
 
-    const createMeetingRes = await app.request('/meetings', {
-      method: 'POST',
-      headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({
-        recipientName: 'layout Candidate',
-        recipientEmail: 'layout-window@example.com',
-        title: 'layout evidence room',
-        meetingType: 'INTERVIEW',
-        scheduledInterviewId: 'scheduled-layout-window-evidence',
-      }),
-    }, env, ctx);
-    expect(createMeetingRes.status).toBe(201);
-    const created = await createMeetingRes.json() as { hostToken: string };
-
-    const lifecycleRes = await app.request(`/meeting/${created.hostToken}/session-events`, {
-      method: 'POST',
-      headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({
-        type: 'window_open',
-        text: 'notes.txt - Notes',
-        actor: 'guest',
-        properties: {
-          source: 'window_lifecycle_client_submit',
-          lifecycleSource: 'assessment_layout_ui',
-          lifecycleKind: 'open',
-          windowLifecycleId: 'window-lifecycle:guest:1782601800000:open:notes',
-          capturedAtMs: 1782601800000,
-          actor: 'guest',
-          windowId: 'notes',
-          windowType: 'notes',
-          windowTitle: 'notes.txt - Notes',
-          surface: 'assessment',
-          roomPhase: 'connected',
-          durableObjectReplayExpected: true,
-        },
-      }),
-    }, env, ctx);
-    expect(lifecycleRes.status).toBe(200);
-
-    const linked = sqlite.prepare(
-      'SELECT candidate_id FROM scheduled_interviews WHERE id = ?',
-    ).get('scheduled-layout-window-evidence') as { candidate_id: string } | undefined;
-    const node = sqlite.prepare(
-      `SELECT node_type, narrative_text, extracted_properties_json
-         FROM candidate_nodes
-        WHERE candidate_id = ? AND node_type = 'session_window_open'`,
-    ).get(linked?.candidate_id) as {
-      node_type: string;
-      narrative_text: string;
-      extracted_properties_json: string;
-    } | undefined;
-    expect(node?.narrative_text).toContain('Window opened: notes.txt - Notes');
-    expect(JSON.parse(node?.extracted_properties_json ?? '{}')).toMatchObject({
-      source: 'window_lifecycle_client_submit',
-      lifecycleSource: 'assessment_layout_ui',
-      lifecycleKind: 'open',
-      actor: 'guest',
-      windowId: 'notes',
-      windowType: 'notes',
-      windowTitle: 'notes.txt - Notes',
-      windowLifecycleId: 'window-lifecycle:guest:1782601800000:open:notes',
-      capturedAtMs: 1782601800000,
-      surface: 'assessment',
-    });
-
-    const fileManagerLifecycleRes = await app.request(`/meeting/${created.hostToken}/session-events`, {
-      method: 'POST',
-      headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({
-        type: 'window_open',
-        text: 'notes.txt - Notes',
-        actor: 'guest',
-        properties: {
-          source: 'window_lifecycle_client_submit',
-          lifecycleSource: 'assessment_file_system',
-          lifecycleKind: 'open',
-          windowLifecycleId: 'window-lifecycle:guest:1782601800100:open:notes',
-          capturedAtMs: 1782601800100,
-          actor: 'guest',
-          windowId: 'notes',
-          windowType: 'notes',
-          windowTitle: 'notes.txt - Notes',
-          surface: 'assessment',
-          roomPhase: 'connected',
-          durableObjectReplayExpected: true,
-        },
-      }),
-    }, env, ctx);
-    expect(fileManagerLifecycleRes.status).toBe(200);
-
-    const fileManagerNode = sqlite.prepare(
-      `SELECT node_type, narrative_text, extracted_properties_json
-         FROM candidate_nodes
-        WHERE candidate_id = ?
-          AND node_type = 'session_window_open'
-          AND extracted_properties_json LIKE '%assessment_file_system%'`,
-    ).get(linked?.candidate_id) as {
-      node_type: string;
-      narrative_text: string;
-      extracted_properties_json: string;
-    } | undefined;
-    expect(fileManagerNode?.narrative_text).toContain('Window opened: notes.txt - Notes');
-    expect(JSON.parse(fileManagerNode?.extracted_properties_json ?? '{}')).toMatchObject({
-      source: 'window_lifecycle_client_submit',
-      lifecycleSource: 'assessment_file_system',
-      lifecycleKind: 'open',
-      actor: 'guest',
-      windowId: 'notes',
-      windowType: 'notes',
-      windowTitle: 'notes.txt - Notes',
-      windowLifecycleId: 'window-lifecycle:guest:1782601800100:open:notes',
-      capturedAtMs: 1782601800100,
-      surface: 'assessment',
-    });
-  });
-
-  it('requires stable source-backed evidence for synced window data updates', async () => {
-    const app = mountApp();
-    const { ctx } = buildCtx();
-    const now = new Date().toISOString();
-    sqlite.prepare(
-      `INSERT INTO scheduled_interviews (
-         id, candidate_id, owner_id, recipient_name, recipient_email, interview_type, status, updated_at
-       ) VALUES (?, NULL, ?, ?, ?, 'DEV_CONTAINER_CHALLENGE', 'INVITED', ?)`,
-    ).run(
-      'scheduled-window-data-evidence',
-      'owner-1',
-      'Window Data Candidate',
-      'window-data@example.com',
-      now,
-    );
-
-    const createMeetingRes = await app.request('/meetings', {
-      method: 'POST',
-      headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({
-        recipientName: 'Window Data Candidate',
-        recipientEmail: 'window-data@example.com',
-        title: 'Window data evidence room',
-        meetingType: 'INTERVIEW',
-        scheduledInterviewId: 'scheduled-window-data-evidence',
-      }),
-    }, env, ctx);
-    expect(createMeetingRes.status).toBe(201);
-    const created = await createMeetingRes.json() as { hostToken: string };
-
-    const sourceOnlyRes = await app.request(`/meeting/${created.hostToken}/session-events`, {
-      method: 'POST',
-      headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({
-        type: 'window_update',
-        text: 'Window data updated: notes',
-        actor: 'guest',
-        properties: {
-          source: 'window_data_client_submit',
-          dataSource: 'assessment_window_data_sync',
-          actor: 'guest',
-          windowId: 'notes',
-          action: 'edit_text',
-          dataKeys: ['text'],
-          dataValueFingerprints: { text: 'data_81a94acf' },
-          surface: 'assessment',
-          roomPhase: 'connected',
-          durableObjectReplayExpected: true,
-        },
-      }),
-    }, env, ctx);
-    expect(sourceOnlyRes.status).toBe(422);
-
-    const validRes = await app.request(`/meeting/${created.hostToken}/session-events`, {
-      method: 'POST',
-      headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({
-        type: 'window_update',
-        text: 'Window data updated: notes',
-        actor: 'guest',
-        properties: {
-          source: 'window_data_client_submit',
-          dataSource: 'assessment_window_data_sync',
-          actor: 'guest',
-          windowId: 'notes',
-          action: 'edit_text',
-          windowDataUpdateId: 'window-data:guest:1782601700000:notes:edit_text',
-          capturedAtMs: 1782601700000,
-          dataKeys: ['text'],
-          dataValueFingerprints: { text: 'data_81a94acf' },
-          surface: 'assessment',
-          roomPhase: 'connected',
-          durableObjectReplayExpected: true,
-        },
-      }),
-    }, env, ctx);
-    expect(validRes.status).toBe(200);
-
-    const deleteClearRes = await app.request(`/meeting/${created.hostToken}/session-events`, {
-      method: 'POST',
-      headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({
-        type: 'window_update',
-        text: 'Window data updated: notes',
-        actor: 'guest',
-        properties: {
-          source: 'window_data_client_submit',
-          dataSource: 'assessment_file_delete_sync',
-          actor: 'guest',
-          windowId: 'notes',
-          action: 'edit_text',
-          windowDataUpdateId: 'window-data:guest:1782601700100:notes:edit_text',
-          capturedAtMs: 1782601700100,
-          dataKeys: ['text'],
-          dataValueFingerprints: { text: 'data_12345678' },
-          surface: 'assessment',
-          roomPhase: 'connected',
-          durableObjectReplayExpected: true,
-        },
-      }),
-    }, env, ctx);
-    expect(deleteClearRes.status).toBe(200);
-
-    const linked = sqlite.prepare(
-      'SELECT candidate_id FROM scheduled_interviews WHERE id = ?',
-    ).get('scheduled-window-data-evidence') as { candidate_id: string } | undefined;
-    const node = sqlite.prepare(
-      `SELECT node_type, narrative_text, extracted_properties_json
-         FROM candidate_nodes
-        WHERE candidate_id = ? AND node_type = 'session_window_update'`,
-    ).get(linked?.candidate_id) as {
-      node_type: string;
-      narrative_text: string;
-      extracted_properties_json: string;
-    } | undefined;
-    expect(node?.narrative_text).toContain('Window updated: Window data updated: notes');
-    expect(JSON.parse(node?.extracted_properties_json ?? '{}')).toMatchObject({
-      source: 'window_data_client_submit',
-      dataSource: 'assessment_window_data_sync',
-      actor: 'guest',
-      windowId: 'notes',
-      action: 'edit_text',
-      windowDataUpdateId: 'window-data:guest:1782601700000:notes:edit_text',
-      capturedAtMs: 1782601700000,
-      dataKeys: ['text'],
-      dataValueFingerprints: { text: 'data_81a94acf' },
-    });
-
-    const deleteClearNode = sqlite.prepare(
-      `SELECT node_type, narrative_text, extracted_properties_json
-         FROM candidate_nodes
-        WHERE candidate_id = ?
-          AND node_type = 'session_window_update'
-          AND extracted_properties_json LIKE '%assessment_file_delete_sync%'`,
-    ).get(linked?.candidate_id) as {
-      node_type: string;
-      narrative_text: string;
-      extracted_properties_json: string;
-    } | undefined;
-    expect(deleteClearNode?.narrative_text).toContain('Window updated: Window data updated: notes');
-    expect(JSON.parse(deleteClearNode?.extracted_properties_json ?? '{}')).toMatchObject({
-      source: 'window_data_client_submit',
-      dataSource: 'assessment_file_delete_sync',
-      actor: 'guest',
-      windowId: 'notes',
-      action: 'edit_text',
-      windowDataUpdateId: 'window-data:guest:1782601700100:notes:edit_text',
-      capturedAtMs: 1782601700100,
-      dataKeys: ['text'],
-      dataValueFingerprints: { text: 'data_12345678' },
-    });
-  });
 
   it('returns non-OK when a valid session event cannot be persisted', async () => {
     const app = mountApp();
@@ -3801,21 +2990,25 @@ describe('meeting room recording living-context route', () => {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify({
-        type: 'window_update',
-        text: 'Window state updated: browser',
+        type: 'media_control',
+        text: 'Guest turned microphone off',
         actor: 'guest',
         properties: {
-          source: 'window_state_client_submit',
-          stateSource: 'assessment_layout_ui',
-          actor: 'guest',
-          windowId: 'browser',
-          action: 'restore_or_focus',
-          windowStateChangeId: 'window-state:guest:1782601600000:browser:restore_or_focus',
+          source: 'video_room_media_controls',
+          mediaControlEventSource: 'browser_video_control_button',
+          mediaControlId: 'media:guest:microphone:1782601600000:disabled',
           capturedAtMs: 1782601600000,
-          statePatch: { minimized: false, focused: true },
-          stateKeys: ['focused', 'minimized'],
+          actor: 'guest',
+          control: 'microphone',
+          previousEnabled: true,
+          enabled: false,
+          action: 'disabled',
+          controlAction: 'toggle',
           surface: 'assessment',
           roomPhase: 'connected',
+          controlSurface: 'assessment_video_panel',
+          mediaSource: 'local_media_stream',
+          rawMediaStreamPersisted: false,
           durableObjectReplayExpected: true,
         },
       }),
@@ -3838,112 +3031,7 @@ describe('meeting room recording living-context route', () => {
   it('syncs durable room activity into the candidate context graph before graph reads', async () => {
     const app = mountApp();
     const { ctx } = buildCtx();
-    const activitySnapshot = {
-      roomActivityLog: [
-        {
-          role: 'HOST',
-          recordedAt: 1700000000000,
-          event: {
-            id: 'evt-enter-assessment',
-            clientId: 'host-client',
-            createdAt: 1700000000000,
-            kind: 'SET_ROOM_SURFACE',
-            surface: 'assessment',
-            previousSurface: 'standard',
-            action: 'enter_assessment',
-            source: 'room_surface_control',
-            surfaceControlEventSource: 'browser_room_surface_toggle',
-            actor: 'host',
-            surfaceChangeId: 'surface:host:1700000000000:standard:assessment',
-            capturedAtMs: 1700000000000,
-            roomPhase: 'connected',
-            durableObjectReplayExpected: true,
-          },
-        },
-        {
-          role: 'HOST',
-          recordedAt: 1700000000500,
-          event: {
-            id: 'evt-browser-move-1',
-            clientId: 'host-client',
-            createdAt: 1700000000500,
-            kind: 'UPDATE_WINDOW_STATE',
-            windowId: 'browser',
-            x: 120,
-            y: 80,
-            focused: true,
-            evidence: {
-              source: 'window_state_client_submit',
-              stateSource: 'assessment_window_chrome',
-              actor: 'host',
-              windowId: 'browser',
-              action: 'move',
-              windowStateChangeId: 'window-state:host:1700000000500:browser:move',
-              capturedAtMs: 1700000000500,
-              surface: 'assessment',
-              roomPhase: 'connected',
-              durableObjectReplayExpected: true,
-            },
-          },
-        },
-        {
-          role: 'HOST',
-          recordedAt: 1700000000600,
-          event: {
-            id: 'evt-browser-move-2',
-            clientId: 'host-client',
-            createdAt: 1700000000600,
-            kind: 'UPDATE_WINDOW_STATE',
-            windowId: 'browser',
-            x: 180,
-            y: 120,
-            focused: true,
-            evidence: {
-              source: 'window_state_client_submit',
-              stateSource: 'assessment_window_chrome',
-              actor: 'host',
-              windowId: 'browser',
-              action: 'move',
-              windowStateChangeId: 'window-state:host:1700000000600:browser:move',
-              capturedAtMs: 1700000000600,
-              surface: 'assessment',
-              roomPhase: 'connected',
-              durableObjectReplayExpected: true,
-            },
-          },
-        },
-        {
-          role: 'HOST',
-          recordedAt: 1700000001000,
-          event: {
-            id: 'evt-workspace-ready',
-            clientId: 'host-client',
-            createdAt: 1700000001000,
-            kind: 'WORKSPACE_STATE_CHANGED',
-            actor: 'host',
-            workspaceStateEventId: 'workspace-state:host:1700000001000:launch:workspace-session-1:READY',
-            capturedAtMs: 1700000001000,
-            status: 'READY',
-            workspaceSessionId: 'workspace-session-1',
-            repoUrl: 'https://github.com/cloudflare/workers-sdk',
-            githubPrNumber: 14435,
-            matchedRepoId: 42,
-            challengeStatus: 'github_pr_assigned',
-            challengeKind: 'github_pr',
-            challengeSource: 'scheduled_interview.github_pr_number',
-            challengeMessage: null,
-            ttlSeconds: 3600,
-            ttlSource: 'default',
-            expiringSoon: false,
-            source: 'browser_workspace_state_observer',
-            workspaceEventSource: 'browser_workspace_state_observer',
-            workspaceStateSource: 'launch',
-            workspaceTelemetryPersisted: true,
-            proxyUrlPersisted: false,
-          },
-        },
-      ],
-      chatActivityLog: [
+    const activitySnapshot = {      chatActivityLog: [
         {
           role: 'GUEST',
           recordedAt: 1700000002000,
@@ -4239,10 +3327,6 @@ describe('meeting room recording living-context route', () => {
       }>;
     };
     expect(graphBody.events.map((event) => event.nodeType)).toEqual([
-      'session_room_surface_change',
-      'session_window_update',
-      'session_window_update',
-      'session_workspace_state',
       'session_chat_message',
       'session_code_editor_save',
       'session_terminal_command',
@@ -4255,19 +3339,6 @@ describe('meeting room recording living-context route', () => {
     expect(graphBody.events.map((event) => event.narrativeText).join('\n')).toContain(
       'I found the retry bug in the queue worker.',
     );
-    expect(graphBody.events.find((event) => event.nodeType === 'session_workspace_state')?.properties).toMatchObject({
-      roomActivitySource: 'durable_object',
-      source: 'browser_workspace_state_observer',
-      workspaceEventSource: 'browser_workspace_state_observer',
-      workspaceStateSource: 'launch',
-      actor: 'host',
-      workspaceStateEventId: 'workspace-state:host:1700000001000:launch:workspace-session-1:READY',
-      capturedAtMs: 1700000001000,
-      workspaceTelemetryPersisted: true,
-      proxyUrlPersisted: false,
-      workspaceStatus: 'READY',
-      workspaceSessionId: 'workspace-session-1',
-    });
     expect(graphBody.events.find((event) => event.nodeType === 'session_chat_message')?.properties).toMatchObject({
       roomActivitySource: 'durable_object',
       source: 'room_chat_client_submit',
@@ -4373,20 +3444,7 @@ describe('meeting room recording living-context route', () => {
          FROM candidate_nodes
         WHERE candidate_id = ? AND source_type = 'meeting_session'`,
     ).get(graphBody.candidateId) as { count: number };
-    expect(nodeCountAfterFirstRead.count).toBe(12);
-    const windowUpdateRows = sqlite.prepare(
-      `SELECT extracted_properties_json
-         FROM candidate_nodes
-        WHERE candidate_id = ?
-          AND source_type = 'meeting_session'
-          AND node_type = 'session_window_update'
-        ORDER BY captured_at ASC, id ASC`,
-    ).all(graphBody.candidateId) as Array<{ extracted_properties_json: string }>;
-    expect(windowUpdateRows).toHaveLength(2);
-    expect(windowUpdateRows.map((row) => JSON.parse(row.extracted_properties_json).roomEventId).sort()).toEqual([
-      'evt-browser-move-1',
-      'evt-browser-move-2',
-    ]);
+    expect(nodeCountAfterFirstRead.count).toBe(8);
 
     const secondGraphRes = await app.request(`/meeting/${created.hostToken}/context-graph`, {
       method: 'GET',
@@ -4397,7 +3455,7 @@ describe('meeting room recording living-context route', () => {
          FROM candidate_nodes
         WHERE candidate_id = ? AND source_type = 'meeting_session'`,
     ).get(graphBody.candidateId) as { count: number };
-    expect(nodeCountAfterSecondRead.count).toBe(12);
+    expect(nodeCountAfterSecondRead.count).toBe(8);
     expect(doFetch).toHaveBeenCalledWith(expect.objectContaining({
       url: 'https://do/activity-log',
     }));
@@ -4406,30 +3464,7 @@ describe('meeting room recording living-context route', () => {
   it('syncs durable room activity into source-backed evidence when the host ends the room', async () => {
     const app = mountApp();
     const { ctx } = buildCtx();
-    const activitySnapshot = {
-      roomActivityLog: [
-        {
-          role: 'HOST',
-          recordedAt: 1700000100000,
-          event: {
-            id: 'evt-enter-assessment-on-end',
-            clientId: 'host-client',
-            createdAt: 1700000100000,
-            kind: 'SET_ROOM_SURFACE',
-            surface: 'assessment',
-            previousSurface: 'standard',
-            action: 'enter_assessment',
-            source: 'room_surface_control',
-            surfaceControlEventSource: 'browser_room_surface_toggle',
-            actor: 'host',
-            surfaceChangeId: 'surface:host:1700000100000:standard:assessment',
-            capturedAtMs: 1700000100000,
-            roomPhase: 'connected',
-            durableObjectReplayExpected: true,
-          },
-        },
-      ],
-      chatActivityLog: [
+    const activitySnapshot = {      chatActivityLog: [
         {
           role: 'GUEST',
           recordedAt: 1700000101000,
@@ -4557,7 +3592,6 @@ describe('meeting room recording living-context route', () => {
       extracted_properties_json: string | null;
     }>;
     expect(evidenceRows.map((row) => row.node_type)).toEqual([
-      'session_room_surface_change',
       'session_chat_message',
       'session_file_change',
     ]);
@@ -4579,7 +3613,6 @@ describe('meeting room recording living-context route', () => {
         ORDER BY observed_at ASC`,
     ).all() as Array<{ predicate: string }>;
     expect(contextRows.map((row) => row.predicate)).toEqual([
-      'session_event:room_surface_change',
       'session_event:chat_message',
       'session_event:file_change',
     ]);
@@ -4595,7 +3628,6 @@ describe('meeting room recording living-context route', () => {
       const url = new URL(request.url);
       if (url.pathname === '/activity-log') {
         return new Response(JSON.stringify({
-          roomActivityLog: [],
           chatActivityLog: [],
           agentPromptActivityLog: [],
           fileSystemActivityLog: [],
@@ -6357,7 +5389,6 @@ describe('meeting room recording living-context route', () => {
     expect(wsRes.status).toBe(200);
     expect(ensureBodies).toContainEqual(expect.objectContaining({
       meetingId: expect.any(String),
-      initialSurface: 'standard',
     }));
   });
 
@@ -6410,7 +5441,6 @@ describe('meeting room recording living-context route', () => {
     expect(wsRes.status).toBe(200);
     expect(ensureBodies).toContainEqual(expect.objectContaining({
       meetingId: expect.any(String),
-      initialSurface: 'standard',
     }));
   });
 

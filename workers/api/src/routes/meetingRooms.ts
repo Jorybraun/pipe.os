@@ -117,33 +117,6 @@ const TERMINAL_COMMAND_ID_RE = /^.+:command:(host|guest):\d+:\d+:terminal_[a-f0-
 const AGENT_PROMPT_FINGERPRINT_RE = /^agent_[a-f0-9]{8}$/;
 const BROWSER_PROMPT_ID_RE = /^[a-zA-Z0-9:_-]+:(host|guest):prompt:\d+:agent_[a-f0-9]{8}$/;
 const ROOM_SURFACES = new Set(['standard', 'assessment']);
-const WINDOW_LIFECYCLE_SOURCES = new Set([
-  'assessment_layout_ui',
-  'assessment_file_system',
-  'assessment_window_chrome',
-  'assessment_agent_tray',
-  'standard_assessment_ui',
-  'agent_action',
-  'shared_state_sync',
-]);
-const WINDOW_STATE_ACTIONS = new Set([
-  'focus',
-  'maximize',
-  'minimize',
-  'move',
-  'resize',
-  'restore_or_focus',
-  'restore_size',
-  'update',
-]);
-const WINDOW_STATE_SOURCES = new Set([
-  'assessment_layout_ui',
-  'assessment_window_chrome',
-  'assessment_agent_tray',
-]);
-const WINDOW_STATE_KEYS = new Set(['x', 'y', 'width', 'height', 'minimized', 'maximized', 'focused']);
-const WINDOW_DATA_ACTIONS = new Set(['edit_text', 'edit_diagram', 'update_data']);
-const WINDOW_DATA_SOURCES = new Set(['assessment_window_data_sync', 'assessment_file_delete_sync']);
 const CHAT_DELIVERY_STATUSES = new Set(['pending', 'accepted', 'rejected']);
 const AGENT_UI_SOURCES = new Set(['agent_tray_ui', 'agent_prompt_ui', 'agent_chat_ui']);
 const AGENT_UI_EXECUTION_STATUSES = new Set(['opened', 'closed', 'dismissed', 'executed']);
@@ -154,42 +127,12 @@ const AGENT_STATUS_MESSAGE_SOURCES = new Set(['agent_status', 'bridge_diagnostic
 const AGENT_STATUS_EVENT_ID_RE = /^agent-status:[a-zA-Z0-9:_-]+:\d+:(agent_status|bridge_diagnostic|bridge_observation|agent_stdout|agent_api_response):[a-zA-Z0-9:_-]+:[a-zA-Z0-9:_-]+$/;
 const AGENT_CHAT_RESPONSE_ID_RE = /^agent-chat:[a-zA-Z0-9:_-]+:\d+:CHAT_RESPONSE:agent_[a-f0-9]{8}$/;
 const AGENT_CHAT_RESPONSE_FINGERPRINT_RE = /^agent_[a-f0-9]{8}$/;
-const BROWSER_NAVIGATION_TRIGGERS = new Set([
-  'address_bar',
-  'go_button',
-  'history_back',
-  'history_forward',
-  'reload_button',
-  'external_open',
-  'file_system_link_open',
-  'open_window_initial_url',
-  'shared_state_sync',
-]);
 const WORKSPACE_STATE_SOURCES = new Set(['initial_load', 'launch', 'refresh', 'error']);
-const CURSOR_PRESENCE_SAMPLE_INTERVAL_MS = 15_000;
-const CURSOR_PRESENCE_MOVEMENT_THRESHOLD = 0.03;
-const CURSOR_SAMPLE_ID_RE = /^cursor:(host|guest):\d+:\d+:\d+$/;
 const MEDIA_CONTROL_ID_RE = /^media:(host|guest):(microphone|camera):\d+:(enabled|disabled)$/;
 const CODE_SERVER_SAVE_ACTIONS = new Set(['created', 'modified']);
-const SURFACE_CHANGE_ID_RE = /^surface:(host|guest):\d+:(standard|assessment):(standard|assessment)$/;
 const WORKSPACE_STATE_EVENT_ID_RE = /^workspace-state:(host|guest):\d+:(initial_load|launch|refresh|error):[^:]+:.+$/;
-const WINDOW_LIFECYCLE_ID_RE = /^window-lifecycle:(host|guest):\d+:(open|close):[^:]+$/;
-const WINDOW_STATE_CHANGE_ID_RE = /^window-state:(host|guest):\d+:[^:]+:[a-z_]+$/;
-const WINDOW_DATA_UPDATE_ID_RE = /^window-data:(host|guest):\d+:[^:]+:[a-z_]+$/;
-const WINDOW_DATA_FINGERPRINT_RE = /^data_[a-f0-9]{8}$/;
-const BROWSER_NAVIGATION_ID_RE = /^browser-navigation:(host|guest):\d+:[^:]+:[a-z_]+:nav_[a-f0-9]{8}$/;
-const BROWSER_NAVIGATION_FINGERPRINT_RE = /^nav_[a-f0-9]{8}$/;
 const FILE_CHANGE_ID_RE = /^file:(host|guest):\d+:(upsert|delete):[^:]+$/;
 const CODE_EDITOR_OPEN_ID_RE = /^code-editor-open:(host|guest):\d+:.+$/;
-
-function browserNavigationFingerprint(value: string): string {
-  let hash = 0x811c9dc5;
-  for (let index = 0; index < value.length; index += 1) {
-    hash ^= value.charCodeAt(index);
-    hash = Math.imul(hash, 0x01000193);
-  }
-  return `nav_${(hash >>> 0).toString(16).padStart(8, '0')}`;
-}
 
 function safeEvidenceIdPart(value: unknown): string {
   const normalized = (typeof value === 'string' ? value : 'none')
@@ -235,14 +178,7 @@ const sessionEventSchema = z.object({
     'terminal_command',
     'terminal_output',
     'file_change',
-    'browser_navigation',
-    'window_open',
-    'window_close',
-    'window_update',
-    'window_focus',
-    'cursor_presence',
     'media_control',
-    'room_surface_change',
     'workspace_state',
     'participant_join',
     'participant_leave',
@@ -374,217 +310,6 @@ const sessionEventSchema = z.object({
     ctx.addIssue({
       code: z.ZodIssueCode.custom,
       message: 'File-change evidence must come from a recognized source-backed file surface.',
-      path: ['properties'],
-    });
-    return;
-  }
-  if (event.type === 'browser_navigation') {
-    const url = properties.url;
-    let parsedUrl: URL | null = null;
-    if (typeof url === 'string') {
-      try {
-        parsedUrl = new URL(url);
-      } catch {
-        parsedUrl = null;
-      }
-    }
-    const protocol = parsedUrl?.protocol.replace(':', '');
-    const sourceOk = properties.source === 'room_browser_panel'
-      && properties.navigationSource === 'browser_panel_client_submit';
-    const urlOk = typeof url === 'string'
-      && url.trim().length > 0
-      && event.text === url
-      && parsedUrl !== null
-      && (protocol === 'http' || protocol === 'https');
-    const urlPartsOk = parsedUrl !== null
-      && properties.urlHost === parsedUrl.hostname
-      && properties.urlProtocol === protocol;
-    const triggerOk = typeof properties.navigationTrigger === 'string'
-      && BROWSER_NAVIGATION_TRIGGERS.has(properties.navigationTrigger);
-    const actorOk = (event.actor === 'host' || event.actor === 'guest')
-      && properties.actor === event.actor;
-    const capturedAtMs = properties.capturedAtMs;
-    const navigationId = properties.browserNavigationId;
-    const urlFingerprint = properties.urlFingerprint;
-    const idOk = typeof navigationId === 'string'
-      && BROWSER_NAVIGATION_ID_RE.test(navigationId)
-      && typeof capturedAtMs === 'number'
-      && Number.isInteger(capturedAtMs)
-      && capturedAtMs >= 0
-      && typeof urlFingerprint === 'string'
-      && BROWSER_NAVIGATION_FINGERPRINT_RE.test(urlFingerprint)
-      && typeof url === 'string'
-      && urlFingerprint === browserNavigationFingerprint(url)
-      && navigationId === `browser-navigation:${event.actor}:${capturedAtMs}:${properties.windowId}:${properties.navigationTrigger}:${urlFingerprint}`;
-    const contextOk = hasString(properties.windowId)
-      && (properties.surface === 'standard' || properties.surface === 'assessment')
-      && hasString(properties.roomPhase);
-    if (sourceOk && urlOk && urlPartsOk && triggerOk && actorOk && idOk && contextOk) return;
-    ctx.addIssue({
-      code: z.ZodIssueCode.custom,
-      message: 'Browser navigation evidence must come from the room browser window with actor, stable navigation id, timestamp, normalized URL, trigger, and room context.',
-      path: ['properties'],
-    });
-    return;
-  }
-  if (event.type === 'window_open' || event.type === 'window_close') {
-    const expectedLifecycleKind = event.type === 'window_open' ? 'open' : 'close';
-    const sourceOk = properties.source === 'window_lifecycle_client_submit'
-      && typeof properties.lifecycleSource === 'string'
-      && WINDOW_LIFECYCLE_SOURCES.has(properties.lifecycleSource);
-    const lifecycleOk = properties.lifecycleKind === expectedLifecycleKind;
-    const actorOk = (event.actor === 'host' || event.actor === 'guest')
-      && properties.actor === event.actor;
-    const windowIdOk = hasString(properties.windowId);
-    const windowTypeOk = hasString(properties.windowType);
-    const windowTitleOk = hasString(properties.windowTitle)
-      && event.text === properties.windowTitle;
-    const capturedAtMs = properties.capturedAtMs;
-    const lifecycleId = properties.windowLifecycleId;
-    const idOk = typeof lifecycleId === 'string'
-      && WINDOW_LIFECYCLE_ID_RE.test(lifecycleId)
-      && typeof capturedAtMs === 'number'
-      && Number.isInteger(capturedAtMs)
-      && capturedAtMs >= 0
-      && lifecycleId === `window-lifecycle:${event.actor}:${capturedAtMs}:${expectedLifecycleKind}:${properties.windowId}`;
-    const contextOk = hasRoomSurface(properties.surface)
-      && hasString(properties.roomPhase)
-      && typeof properties.durableObjectReplayExpected === 'boolean';
-    if (sourceOk && lifecycleOk && actorOk && windowIdOk && windowTypeOk && windowTitleOk && idOk && contextOk) return;
-    ctx.addIssue({
-      code: z.ZodIssueCode.custom,
-      message: 'Window lifecycle evidence must come from the room window client with actor, lifecycle kind, stable event id, timestamp, window identity, surface, and room phase.',
-      path: ['properties'],
-    });
-    return;
-  }
-  if (event.type === 'window_update' || event.type === 'window_focus') {
-    if (properties.source === 'window_data_client_submit') {
-      const dataKeys = Array.isArray(properties.dataKeys)
-        ? properties.dataKeys.filter((key): key is string => typeof key === 'string')
-        : [];
-      const dataValueFingerprints = (
-        typeof properties.dataValueFingerprints === 'object'
-        && properties.dataValueFingerprints !== null
-        && !Array.isArray(properties.dataValueFingerprints)
-      )
-        ? properties.dataValueFingerprints as Record<string, unknown>
-        : null;
-      const sortedDataKeys = [...dataKeys].sort();
-      const dataKeysOk = dataKeys.length > 0
-        && dataKeys.every((key, index) => key === sortedDataKeys[index] && hasString(key));
-      const fingerprintKeys = dataValueFingerprints ? Object.keys(dataValueFingerprints).sort() : [];
-      const fingerprintsOk = dataValueFingerprints !== null
-        && fingerprintKeys.length === dataKeys.length
-        && fingerprintKeys.every((key, index) => (
-          key === dataKeys[index]
-          && typeof dataValueFingerprints[key] === 'string'
-          && WINDOW_DATA_FINGERPRINT_RE.test(dataValueFingerprints[key])
-        ));
-      const sourceOk = event.type === 'window_update'
-        && typeof properties.dataSource === 'string'
-        && WINDOW_DATA_SOURCES.has(properties.dataSource);
-      const actionOk = typeof properties.action === 'string' && WINDOW_DATA_ACTIONS.has(properties.action);
-      const actorOk = (event.actor === 'host' || event.actor === 'guest')
-        && properties.actor === event.actor;
-      const windowOk = hasString(properties.windowId)
-        && event.text === `Window data updated: ${properties.windowId}`;
-      const capturedAtMs = properties.capturedAtMs;
-      const dataUpdateId = properties.windowDataUpdateId;
-      const idOk = typeof dataUpdateId === 'string'
-        && WINDOW_DATA_UPDATE_ID_RE.test(dataUpdateId)
-        && typeof capturedAtMs === 'number'
-        && Number.isInteger(capturedAtMs)
-        && capturedAtMs >= 0
-        && dataUpdateId === `window-data:${event.actor}:${capturedAtMs}:${properties.windowId}:${properties.action}`;
-      const contextOk = hasRoomSurface(properties.surface)
-        && hasString(properties.roomPhase)
-        && typeof properties.durableObjectReplayExpected === 'boolean';
-      if (
-        sourceOk
-        && actionOk
-        && actorOk
-        && windowOk
-        && idOk
-        && dataKeysOk
-        && fingerprintsOk
-        && contextOk
-      ) return;
-      ctx.addIssue({
-        code: z.ZodIssueCode.custom,
-        message: 'Window data evidence must include the client source, actor, stable event id, timestamp, data keys, value fingerprints, surface, and room phase.',
-        path: ['properties'],
-      });
-      return;
-    }
-    const statePatch = properties.statePatch;
-    const statePatchRecord = typeof statePatch === 'object' && statePatch !== null && !Array.isArray(statePatch)
-      ? statePatch as Record<string, unknown>
-      : null;
-    const stateKeys = Array.isArray(properties.stateKeys)
-      ? properties.stateKeys.filter((key): key is string => typeof key === 'string')
-      : [];
-    const patchEntries = statePatchRecord ? Object.entries(statePatchRecord) : [];
-    const patchOk = patchEntries.length > 0
-      && patchEntries.every(([key, value]) =>
-        WINDOW_STATE_KEYS.has(key)
-        && (typeof value === 'number' || typeof value === 'boolean')
-        && (typeof value !== 'number' || Number.isFinite(value)),
-      );
-    const sortedPatchKeys = patchEntries.map(([key]) => key).sort();
-    const stateKeysOk = stateKeys.length === sortedPatchKeys.length
-      && stateKeys.every((key, index) => key === sortedPatchKeys[index]);
-    const sourceOk = properties.source === 'window_state_client_submit'
-      && typeof properties.stateSource === 'string'
-      && WINDOW_STATE_SOURCES.has(properties.stateSource);
-    const actionOk = typeof properties.action === 'string' && WINDOW_STATE_ACTIONS.has(properties.action);
-    const actorOk = (event.actor === 'host' || event.actor === 'guest')
-      && properties.actor === event.actor;
-    const windowOk = hasString(properties.windowId)
-      && event.text === `Window state updated: ${properties.windowId}`;
-    const capturedAtMs = properties.capturedAtMs;
-    const stateChangeId = properties.windowStateChangeId;
-    const idOk = typeof stateChangeId === 'string'
-      && WINDOW_STATE_CHANGE_ID_RE.test(stateChangeId)
-      && typeof capturedAtMs === 'number'
-      && Number.isInteger(capturedAtMs)
-      && capturedAtMs >= 0
-      && stateChangeId === `window-state:${event.actor}:${capturedAtMs}:${properties.windowId}:${properties.action}`;
-    const contextOk = hasRoomSurface(properties.surface)
-      && hasString(properties.roomPhase)
-      && typeof properties.durableObjectReplayExpected === 'boolean';
-    if (sourceOk && actionOk && actorOk && windowOk && idOk && contextOk && patchOk && stateKeysOk) return;
-    ctx.addIssue({
-      code: z.ZodIssueCode.custom,
-      message: 'Window state evidence must include the client source, actor, stable event id, timestamp, action, exact state patch, surface, and room phase.',
-      path: ['properties'],
-    });
-    return;
-  }
-  if (event.type === 'room_surface_change') {
-    const sourceOk = properties.source === 'room_surface_control';
-    const actorOk = (event.actor === 'host' || event.actor === 'guest')
-      && properties.actor === event.actor;
-    const eventSourceOk = properties.surfaceControlEventSource === 'browser_room_surface_toggle';
-    const surfacesOk = hasRoomSurface(properties.surface)
-      && hasRoomSurface(properties.previousSurface)
-      && properties.surface !== properties.previousSurface;
-    const expectedAction = properties.surface === 'assessment' ? 'enter_assessment' : 'exit_assessment';
-    const actionOk = properties.action === expectedAction;
-    const roomPhaseOk = hasString(properties.roomPhase);
-    const capturedAtMs = properties.capturedAtMs;
-    const surfaceChangeId = properties.surfaceChangeId;
-    const idOk = typeof surfaceChangeId === 'string'
-      && SURFACE_CHANGE_ID_RE.test(surfaceChangeId)
-      && typeof capturedAtMs === 'number'
-      && Number.isInteger(capturedAtMs)
-      && capturedAtMs >= 0
-      && surfaceChangeId === `surface:${event.actor}:${capturedAtMs}:${properties.previousSurface}:${properties.surface}`;
-    const replayOk = properties.durableObjectReplayExpected === true;
-    if (sourceOk && actorOk && eventSourceOk && surfacesOk && actionOk && roomPhaseOk && idOk && replayOk) return;
-    ctx.addIssue({
-      code: z.ZodIssueCode.custom,
-      message: 'Room surface evidence must come from a browser room surface toggle with actor, previous/next surface, stable event id, timestamp, action, replay expectation, and room phase.',
       path: ['properties'],
     });
     return;
@@ -988,56 +713,6 @@ const sessionEventSchema = z.object({
       path: ['properties'],
     });
     return;
-  }
-  if (event.type === 'cursor_presence') {
-    const sourceOk = properties.source === 'assessment_cursor_presence_client_sample';
-    const actorOk = (event.actor === 'host' || event.actor === 'guest')
-      && properties.actor === event.actor;
-    const eventSourceOk = properties.cursorEventSource === 'browser_assessment_room_pointermove';
-    const contextOk = properties.surface === 'assessment' && hasString(properties.roomPhase);
-    const x = properties.normalizedX;
-    const y = properties.normalizedY;
-    const previousX = properties.previousNormalizedX;
-    const previousY = properties.previousNormalizedY;
-    const distance = properties.distanceFromPrevious;
-    const xOk = typeof x === 'number' && Number.isFinite(x) && x >= 0 && x <= 1;
-    const yOk = typeof y === 'number' && Number.isFinite(y) && y >= 0 && y <= 1;
-    const previousXOk = previousX === null || (
-      typeof previousX === 'number' && Number.isFinite(previousX) && previousX >= 0 && previousX <= 1
-    );
-    const previousYOk = previousY === null || (
-      typeof previousY === 'number' && Number.isFinite(previousY) && previousY >= 0 && previousY <= 1
-    );
-    const distanceOk = distance === null || hasFiniteNonNegativeNumber(distance);
-    const samplingOk = properties.evidenceSampling === 'presence_sample'
-      && properties.sampleIntervalMs === CURSOR_PRESENCE_SAMPLE_INTERVAL_MS
-      && properties.movementThreshold === CURSOR_PRESENCE_MOVEMENT_THRESHOLD
-      && properties.rawCursorMovesPersisted === false;
-    const sampleId = properties.cursorSampleId;
-    const sampledAtMs = properties.sampledAtMs;
-    const sampleIdOk = typeof sampleId === 'string'
-      && CURSOR_SAMPLE_ID_RE.test(sampleId)
-      && typeof sampledAtMs === 'number'
-      && Number.isInteger(sampledAtMs)
-      && sampleId.startsWith(`cursor:${event.actor}:${sampledAtMs}:`);
-    if (
-      sourceOk
-      && actorOk
-      && eventSourceOk
-      && contextOk
-      && xOk
-      && yOk
-      && previousXOk
-      && previousYOk
-      && distanceOk
-      && samplingOk
-      && sampleIdOk
-    ) return;
-    ctx.addIssue({
-      code: z.ZodIssueCode.custom,
-      message: 'Cursor presence evidence must be an actor-bound sampled legacy layout browser cursor event with stable sample provenance.',
-      path: ['properties'],
-    });
   }
   if (event.type === 'media_control') {
     const sourceOk = properties.source === 'video_room_media_controls';
@@ -1871,10 +1546,6 @@ async function buildRoomWorkspacePayload(
     challenge: buildRoomWorkspaceChallenge(interview, enabled, challengePacket),
     session: serializeWorkspaceSession(token, session),
   };
-}
-
-function initialRoomSurfaceForWorkspace(_workspace: RoomWorkspacePayload): 'standard' | 'assessment' {
-  return 'standard';
 }
 
 async function resolveRoom(db: D1Database, token: string): Promise<ResolvedRoom | null> {
@@ -3218,8 +2889,6 @@ meetingRooms.get('/:token/ws', async (c) => {
   if (c.req.header('Upgrade')?.toLowerCase() !== 'websocket') {
     return apiError(c, 'VALIDATION_ERROR', 'Expected WebSocket upgrade.');
   }
-  const workspace = await buildRoomWorkspacePayload(c.env.DB, token, room);
-
   const doId = c.env.VIDEO_ROOM.idFromName(room.session_id);
   const stub = c.env.VIDEO_ROOM.get(doId);
   await stub.fetch(new Request('https://do/ensure', {
@@ -3229,7 +2898,6 @@ meetingRooms.get('/:token/ws', async (c) => {
       meetingId: room.meeting_id,
       hostId: room.owner_id,
       resetEnded: room.room_status !== 'ENDED',
-      initialSurface: initialRoomSurfaceForWorkspace(workspace),
     }),
   }));
   return stub.fetch(new Request(`https://do/ws?role=${room.role}`, {

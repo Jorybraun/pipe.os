@@ -29,6 +29,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Removed — Assessment-room distractions
 
+- Removed the abandoned presentation-sync room event contract from room signaling, session-event ingestion, durable replay, source-ref projection, and tests. The room evidence layer now focuses on video, chat, workspace, terminal, code-server/file events, recording, transcription, commit submissions, and the real AI assistant bridge.
 - Scrubbed the last archived QA label that matched the retired room-assistant terminology, leaving tracked abandoned-skin searches clean while keeping the core assessment product vocabulary focused.
 - Removed the remaining active desktop-metaphor vocabulary from the video-room app by renaming local surfaces to assessment tools/panels, replacing Chat/Terminal/Submission components with panels, and updating new source-backed evidence strings from layout wording to panel wording.
 - Updated the open-source assessment contract to remove non-assessment collaboration and presentation-layer replay promises from the current product path.

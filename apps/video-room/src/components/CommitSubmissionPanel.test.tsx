@@ -7,6 +7,7 @@ import type {
   RoomCommitSubmissionRequest,
   RoomCommitSubmissionResponse,
   RoomWorkspaceChallengePacket,
+  RoomWorkspaceFinalizeResponse,
 } from '../types';
 
 const packet: RoomWorkspaceChallengePacket = {
@@ -166,7 +167,7 @@ describe('CommitSubmissionPanel', () => {
     const commitSha = 'b'.repeat(40);
     const onSubmit = vi.fn();
     const onProgressChange = vi.fn();
-    const onFinalizeWorkspace = vi.fn(async () => ({
+    const finalizeResponse: RoomWorkspaceFinalizeResponse = {
       ok: true,
       submitted: true,
       commit: {
@@ -209,7 +210,8 @@ describe('CommitSubmissionPanel', () => {
           occurredAt: '2026-06-29T20:02:00.000Z',
         },
       },
-    }));
+    };
+    const onFinalizeWorkspace = vi.fn(async () => finalizeResponse);
 
     render(
       <CommitSubmissionPanel

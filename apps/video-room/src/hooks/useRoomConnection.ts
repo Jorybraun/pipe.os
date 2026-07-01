@@ -1189,14 +1189,13 @@ export function useRoomConnection(
   token: string,
   role: RoomRole,
   active: boolean,
-  initialSurface: RoomSurface = 'standard',
   options: UseRoomConnectionOptions = {},
 ): RoomConnection {
   const [phase, setPhase] = useState<RoomPhase>('disconnected');
   const [localStream, setLocalStreamState] = useState<MediaStream | null>(null);
   const [remoteStream, setRemoteStream] = useState<MediaStream | null>(null);
   const [iceProvider, setIceProvider] = useState<IceServerProvider>('unknown');
-  const roomSurface = initialSurface;
+  const roomSurface: RoomSurface = 'standard';
   const [agentInteractionEvents, setAgentInteractionEvents] = useState<RoomAgentInteractionEvent[]>([]);
   const [chatMessages, setChatMessages] = useState<RoomChatMessage[]>([]);
   const chatMessagesRef = useRef<RoomChatMessage[]>([]);
