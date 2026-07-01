@@ -1658,8 +1658,8 @@ function Room({ token, metadata }: { token: string; metadata: RoomMetadata }): J
     />
   );
 
-  const renderSurfaceContent = (win: ToolSurfaceState): JSX.Element => {
-    switch (win.surfaceType) {
+  const renderSurfaceContent = (surface: ToolSurfaceState): JSX.Element => {
+    switch (surface.surfaceType) {
       case 'video':
         return (
           <div className="room-video-content">

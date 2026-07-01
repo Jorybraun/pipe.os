@@ -55,7 +55,7 @@ describe('StandardLayout', () => {
       <StandardLayout
         toolSurfaces={toolSurfaces}
         assessmentHeader={<div>assessment status header</div>}
-        renderSurfaceContent={(win) => <div>{win.surfaceType === 'workspace' ? 'code workspace' : 'video call'}</div>}
+        renderSurfaceContent={(surface) => <div>{surface.surfaceType === 'workspace' ? 'code workspace' : 'video call'}</div>}
         modeLabel="Dev-container assessment"
         primarySurface="workspace"
       />,
@@ -77,7 +77,7 @@ describe('StandardLayout', () => {
       <StandardLayout
         toolSurfaces={toolSurfaces}
         assessmentAside={<div>source-backed task brief</div>}
-        renderSurfaceContent={(win) => <div>{win.surfaceType === 'workspace' ? 'code workspace' : 'video call'}</div>}
+        renderSurfaceContent={(surface) => <div>{surface.surfaceType === 'workspace' ? 'code workspace' : 'video call'}</div>}
         modeLabel="Dev-container assessment"
         primarySurface="workspace"
       />,
@@ -87,7 +87,7 @@ describe('StandardLayout', () => {
     expect(screen.getByTestId('standard-assessment-aside').textContent).toContain('source-backed task brief');
   });
 
-  it('does not expose placement controls', () => {
+  it('keeps standard calls in a single primary product layout', () => {
     render(
       <StandardLayout
         toolSurfaces={makeSurfaceManager()}
@@ -95,9 +95,9 @@ describe('StandardLayout', () => {
       />,
     );
 
-    expect(screen.queryByRole('button', { name: /minimize/i })).toBeNull();
-    expect(screen.queryByRole('button', { name: /maximize/i })).toBeNull();
-    expect(screen.queryByRole('button', { name: /move/i })).toBeNull();
+    expect(screen.getByTestId('standard-primary-video').textContent).toContain('video');
+    expect(screen.queryByTestId('standard-tools-panel')).toBeNull();
+    expect(screen.queryByTestId('standard-workspace')).toBeNull();
   });
 
   it('renders utility tools as an assessment panel', () => {
@@ -110,11 +110,11 @@ describe('StandardLayout', () => {
     render(
       <StandardLayout
         toolSurfaces={toolSurfaces}
-        renderSurfaceContent={(win) => <div>{win.surfaceType} surface</div>}
+        renderSurfaceContent={(surface) => <div>{surface.surfaceType} surface</div>}
       />,
     );
 
     expect(screen.getByTestId('standard-tools-panel').textContent).toContain('terminal surface');
-    expect(screen.queryByRole('button', { name: /minimize/i })).toBeNull();
+    expect(screen.getByRole('button', { name: 'Close Container terminal' })).toBeTruthy();
   });
 });

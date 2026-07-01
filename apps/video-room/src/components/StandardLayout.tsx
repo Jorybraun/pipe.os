@@ -4,7 +4,7 @@ import type { ToolSurfaceManagerApi, ToolSurfaceState } from '../hooks/useToolSu
 
 interface StandardLayoutProps {
   toolSurfaces: ToolSurfaceManagerApi;
-  renderSurfaceContent: (win: ToolSurfaceState) => ReactNode;
+  renderSurfaceContent: (surface: ToolSurfaceState) => ReactNode;
   assessmentHeader?: ReactNode;
   assessmentAside?: ReactNode;
   recordingLabel?: string;

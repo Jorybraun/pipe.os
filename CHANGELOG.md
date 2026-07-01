@@ -37,6 +37,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Removed — Assessment-room distractions
 
+- Removed the final room experiment residue from standard-layout tests and render callback naming, keeping the room code focused on assessment surfaces instead of retired placement concepts.
 - Removed the remaining room panel placement model from the video-room app: assessment panels no longer carry coordinates, z-order, minimize/maximize, move, resize, restore, or shared placement state.
 - Current room evidence is limited to the core assessment surfaces: video, chat, workspace, terminal, code-server/file events, recording, transcription, commit submissions, and the real AI assistant bridge.
 - Scrubbed current room vocabulary, QA labels, planning docs, contract notes, smoke scripts, and evidence fixtures so product language stays anchored to open-source repo-task assessment.
