@@ -143,3 +143,91 @@ export type {
   EvidenceConflictReport,
   EvidenceConflictOptions,
 } from './evidenceConflicts';
+export { recordMatchDecision, loadMatchDecisionHistory } from './matchDecisionAudit';
+export type {
+  MatchDecisionVerdict,
+  MatchDecisionInput,
+  MatchDecisionResult,
+  MatchDecisionHistoryEntry,
+  MatchDecisionHistory,
+} from './matchDecisionAudit';
+export { loadPriorDecisionExclusions, buildDecisionExclusionDiagnostics } from './decisionWeightedRematch';
+export type {
+  DecisionExclusion,
+  DecisionExclusionResult,
+  DecisionExclusionDiagnostic,
+} from './decisionWeightedRematch';
+export { computeStalenessAlerts, loadCandidateStalenessAlerts } from './evidenceStalenessAlerts';
+export type {
+  AlertSeverity,
+  AlertCategory,
+  StalenessAlert,
+  StalenessAlertSummary,
+  StalenessAlertOptions,
+} from './evidenceStalenessAlerts';
+export { loadRepoDecompositionOverlay } from './repoDecompositionOverlay';
+export type {
+  RepoFileNode,
+  RepoSymbolNode,
+  RepoDemandNode,
+  RepoStructuralFactNode,
+  CandidateEvidenceOverlay,
+  RepoDecompositionOverlay,
+} from './repoDecompositionOverlay';
+export { runBatchRematch } from './batchRematch';
+export type {
+  BatchRematchCandidate,
+  BatchRematchResultEntry,
+  BatchRematchResult,
+} from './batchRematch';
+export { scoreMatchConfidence, computeMatchConfidence } from './matchConfidenceScoring';
+export type {
+  ConfidenceLevel,
+  DemandConfidence,
+  ConfidenceDimension,
+  MatchConfidenceReport,
+  MatchConfidenceOptions,
+} from './matchConfidenceScoring';
+export { generateUnifiedMatchReport } from './matchReportPipeline';
+export type {
+  MatchVerdict,
+  MatchReportSection,
+  MatchReportConfidence,
+  MatchReportGaps,
+  MatchReportStaleness,
+  MatchReportProvenance,
+  MatchReportDecisionHistory,
+  VerdictRationale,
+  UnifiedMatchReport,
+  MatchReportPipelineOptions,
+} from './matchReportPipeline';
+export { traverseLivingContextGraph } from './graphTraversal';
+export type {
+  GraphEntityType,
+  GraphNode,
+  GraphEdge,
+  EdgeSourceEvidence,
+  GraphTraversalResult,
+  GraphTraversalOptions,
+} from './graphTraversal';
+export { mergeConcepts, splitConcept, queryConceptEvolution } from './conceptEvolution';
+export type {
+  EvolutionEventType,
+  ConceptEvolutionEvent,
+  ConceptEvolutionTimeline,
+  SupersessionLink,
+  MergeConceptsInput,
+  MergeConceptsResult,
+  SplitConceptInput,
+  SplitConceptResult,
+  ConceptEvolutionOptions,
+} from './conceptEvolution';
+export { searchEvidence } from './evidenceSemanticSearch';
+export type {
+  SearchStrategy,
+  EvidenceHitType,
+  EvidenceSearchOptions,
+  EvidenceHitProvenance,
+  EvidenceSearchHit,
+  EvidenceSearchResult,
+} from './evidenceSemanticSearch';

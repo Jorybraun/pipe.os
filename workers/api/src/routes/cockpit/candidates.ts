@@ -1860,7 +1860,40 @@ candidateOps.get('/:candidateId/living-context/evidence-conflicts', requireGate(
   return c.json(report);
 });
 
+// GET /:candidateId/living-context/staleness-alerts — evidence freshness alerts
+candidateOps.get('/:candidateId/living-context/staleness-alerts', requireGate('living_context_read'), async (c) => {
+  const userId = c.var.userId;
+  const { candidateId } = c.req.param();
+  const db = c.env.DB;
+
+  const candidate = await db.prepare(
+    `SELECT c.id
+       FROM candidates c
+       LEFT JOIN pipelines p ON p.id = c.pipeline_id
+      WHERE c.id = ?1 AND (c.owner_id = ?2 OR p.owner_id = ?2)`,
+  ).bind(candidateId, userId).first<{ id: string }>();
+  if (!candidate) return apiError(c, 'NOT_FOUND', 'Candidate not found.');
+
+  const { loadCandidateStalenessAlerts } = await import('../../lib/livingContext/evidenceStalenessAlerts');
+  const report = await loadCandidateStalenessAlerts(db, candidateId);
+  if (!report) {
+    return c.json({
+      candidateId,
+      workspacePersonId: null,
+      criticalCount: 0,
+      warningCount: 0,
+      infoCount: 0,
+      overallHealth: 'healthy',
+      alerts: [],
+      computedAt: new Date().toISOString(),
+    });
+  }
+
+  return c.json(report);
+});
+
 // POST /:candidateId/living-context/rematch — recruiter triggers a fresh match run
+// Automatically excludes challenges that were previously rejected or accepted.
 candidateOps.post('/:candidateId/living-context/rematch', requireGate('living_context_read'), async (c) => {
   const userId = c.var.userId;
   const { candidateId } = c.req.param();
@@ -1889,12 +1922,21 @@ candidateOps.post('/:candidateId/living-context/rematch', requireGate('living_co
       reason: 'Candidate has no living context workspace identity yet.',
       evaluatedCount: 0,
       topChallenge: null,
+      priorDecisions: null,
     }, 200);
   }
 
-  const { matchCandidateToReviewChallenge } = await import('../../lib/challengeMatching/d1Matcher');
+  const [{ matchCandidateToReviewChallenge }, { loadPriorDecisionExclusions: loadExclusions }] = await Promise.all([
+    import('../../lib/challengeMatching/d1Matcher'),
+    import('../../lib/livingContext/decisionWeightedRematch'),
+  ]);
+
+  const decisionExclusions = await loadExclusions(db, candidateId);
   const match = await matchCandidateToReviewChallenge(db, candidateId, {
     temporalDecay: { halfLifeDays: 90 },
+    excludePacketIds: decisionExclusions.excludedPacketIds.length > 0
+      ? decisionExclusions.excludedPacketIds
+      : undefined,
   });
 
   const evaluated = match.diagnostics?.evaluatedChallenges ?? [];
@@ -1920,6 +1962,19 @@ candidateOps.post('/:candidateId/living-context/rematch', requireGate('living_co
       stretchCount: top.stretchCount,
       eligible: top.eligible,
     } : null,
+    priorDecisions: decisionExclusions.totalDecisions > 0
+      ? {
+          excludedCount: decisionExclusions.excludedPacketIds.length,
+          deferredCount: decisionExclusions.deferredCount,
+          totalDecisions: decisionExclusions.totalDecisions,
+          excludedChallenges: decisionExclusions.exclusions.map((ex) => ({
+            challengeId: ex.challengeId,
+            repoId: ex.repoId,
+            prNumber: ex.prNumber,
+            verdict: ex.verdict,
+          })),
+        }
+      : null,
   });
 });
 
@@ -2079,6 +2134,260 @@ candidateOps.post('/compare', requireGate('living_context_read'), async (c) => {
   });
 
   return c.json(report);
+});
+
+// POST /:candidateId/living-context/match-decision — record recruiter accept/reject/defer
+candidateOps.post('/:candidateId/living-context/match-decision', requireGate('living_context_read'), async (c) => {
+  const userId = c.var.userId;
+  const { candidateId } = c.req.param();
+  const db = c.env.DB;
+
+  const candidate = await db.prepare(
+    `SELECT c.id
+       FROM candidates c
+       LEFT JOIN pipelines p ON p.id = c.pipeline_id
+      WHERE c.id = ?1 AND (c.owner_id = ?2 OR p.owner_id = ?2)`,
+  ).bind(candidateId, userId).first<{ id: string }>();
+  if (!candidate) return apiError(c, 'NOT_FOUND', 'Candidate not found.');
+
+  const body = await c.req.json<{
+    matchRunId: string;
+    challengeId: string;
+    repoId: string;
+    prNumber: number;
+    verdict: string;
+    reason?: string;
+    citedAlignmentIds?: string[];
+    notes?: string;
+  }>();
+
+  if (!body.matchRunId || !body.challengeId || !body.repoId || !body.prNumber || !body.verdict) {
+    return apiError(c, 'VALIDATION_ERROR', 'matchRunId, challengeId, repoId, prNumber, and verdict are required.');
+  }
+  if (!['accepted', 'rejected', 'deferred'].includes(body.verdict)) {
+    return apiError(c, 'VALIDATION_ERROR', 'verdict must be accepted, rejected, or deferred.');
+  }
+
+  const { recordMatchDecision } = await import('../../lib/livingContext/matchDecisionAudit');
+  const result = await recordMatchDecision(db, {
+    candidateId,
+    matchRunId: body.matchRunId,
+    challengeId: body.challengeId,
+    repoId: body.repoId,
+    prNumber: body.prNumber,
+    verdict: body.verdict as 'accepted' | 'rejected' | 'deferred',
+    reason: body.reason,
+    citedAlignmentIds: body.citedAlignmentIds,
+    notes: body.notes,
+    recruiterId: userId,
+  });
+
+  return c.json(result, 201);
+});
+
+// GET /:candidateId/living-context/match-decisions — match decision audit trail
+candidateOps.get('/:candidateId/living-context/match-decisions', requireGate('living_context_read'), async (c) => {
+  const userId = c.var.userId;
+  const { candidateId } = c.req.param();
+  const db = c.env.DB;
+
+  const candidate = await db.prepare(
+    `SELECT c.id
+       FROM candidates c
+       LEFT JOIN pipelines p ON p.id = c.pipeline_id
+      WHERE c.id = ?1 AND (c.owner_id = ?2 OR p.owner_id = ?2)`,
+  ).bind(candidateId, userId).first<{ id: string }>();
+  if (!candidate) return apiError(c, 'NOT_FOUND', 'Candidate not found.');
+
+  const limit = Math.min(Number(c.req.query('limit') ?? 50), 200);
+  const { loadMatchDecisionHistory } = await import('../../lib/livingContext/matchDecisionAudit');
+  const history = await loadMatchDecisionHistory(db, candidateId, limit);
+  return c.json(history);
+});
+
+// GET /:candidateId/living-context/repo-decomposition — repository structural graph with candidate evidence overlay
+candidateOps.get('/:candidateId/living-context/repo-decomposition', requireGate('living_context_read'), async (c) => {
+  const userId = c.var.userId;
+  const { candidateId } = c.req.param();
+  const packetId = c.req.query('packetId');
+  const db = c.env.DB;
+
+  if (!packetId) {
+    return apiError(c, 'VALIDATION_ERROR', 'packetId query parameter is required.');
+  }
+
+  const candidate = await db.prepare(
+    `SELECT c.id
+       FROM candidates c
+       LEFT JOIN pipelines p ON p.id = c.pipeline_id
+      WHERE c.id = ?1 AND (c.owner_id = ?2 OR p.owner_id = ?2)`,
+  ).bind(candidateId, userId).first<{ id: string }>();
+  if (!candidate) return apiError(c, 'NOT_FOUND', 'Candidate not found.');
+
+  const { loadRepoDecompositionOverlay } = await import('../../lib/livingContext/repoDecompositionOverlay');
+  const overlay = await loadRepoDecompositionOverlay(db, packetId, candidateId);
+  if (!overlay) {
+    return apiError(c, 'NOT_FOUND', 'Challenge packet not found.');
+  }
+  return c.json(overlay);
+});
+
+// POST /batch-rematch — run decision-weighted rematch across multiple candidates
+candidateOps.post('/batch-rematch', requireGate('living_context_read'), async (c) => {
+  const userId = c.var.userId;
+  const db = c.env.DB;
+
+  const body = await c.req.json<{ candidateIds?: string[] }>().catch(() => ({ candidateIds: undefined }));
+  const candidateIds = body.candidateIds;
+  if (!candidateIds || !Array.isArray(candidateIds) || candidateIds.length === 0) {
+    return apiError(c, 'VALIDATION_ERROR', 'candidateIds array is required.');
+  }
+  if (candidateIds.length > 50) {
+    return apiError(c, 'VALIDATION_ERROR', 'Maximum 50 candidates per batch rematch.');
+  }
+
+  const { runBatchRematch } = await import('../../lib/livingContext/batchRematch');
+  const result = await runBatchRematch(db, candidateIds, userId);
+  return c.json(result);
+});
+
+// GET /:candidateId/living-context/match-confidence — multi-dimensional confidence scoring for a candidate-challenge match
+candidateOps.get('/:candidateId/living-context/match-confidence', requireGate('living_context_read'), async (c) => {
+  const userId = c.var.userId;
+  const { candidateId } = c.req.param();
+  const packetId = c.req.query('packetId');
+  const db = c.env.DB;
+
+  if (!packetId) {
+    return apiError(c, 'VALIDATION_ERROR', 'packetId query parameter is required.');
+  }
+
+  const candidate = await db.prepare(
+    `SELECT c.id
+       FROM candidates c
+       LEFT JOIN pipelines p ON p.id = c.pipeline_id
+      WHERE c.id = ?1 AND (c.owner_id = ?2 OR p.owner_id = ?2)`,
+  ).bind(candidateId, userId).first<{ id: string }>();
+  if (!candidate) return apiError(c, 'NOT_FOUND', 'Candidate not found.');
+
+  const { computeMatchConfidence } = await import('../../lib/livingContext/matchConfidenceScoring');
+  const report = await computeMatchConfidence(db, candidateId, packetId);
+  return c.json(report);
+});
+
+// GET /:candidateId/living-context/match-report — unified match report combining confidence, gaps, staleness, provenance
+candidateOps.get('/:candidateId/living-context/match-report', requireGate('living_context_read'), async (c) => {
+  const userId = c.var.userId;
+  const { candidateId } = c.req.param();
+  const packetId = c.req.query('packetId');
+  const matchRunId = c.req.query('matchRunId') ?? undefined;
+  const includeProvenance = c.req.query('includeProvenance') !== 'false';
+  const db = c.env.DB;
+
+  if (!packetId) {
+    return apiError(c, 'VALIDATION_ERROR', 'packetId query parameter is required.');
+  }
+
+  const candidate = await db.prepare(
+    `SELECT c.id
+       FROM candidates c
+       LEFT JOIN pipelines p ON p.id = c.pipeline_id
+      WHERE c.id = ?1 AND (c.owner_id = ?2 OR p.owner_id = ?2)`,
+  ).bind(candidateId, userId).first<{ id: string }>();
+  if (!candidate) return apiError(c, 'NOT_FOUND', 'Candidate not found.');
+
+  const { generateUnifiedMatchReport } = await import('../../lib/livingContext/matchReportPipeline');
+  const report = await generateUnifiedMatchReport(db, candidateId, packetId, {
+    matchRunId,
+    includeProvenance,
+  });
+  return c.json(report);
+});
+
+// GET /:candidateId/living-context/graph-traversal — navigable graph traversal from any entity
+candidateOps.get('/:candidateId/living-context/graph-traversal', requireGate('living_context_read'), async (c) => {
+  const userId = c.var.userId;
+  const { candidateId } = c.req.param();
+  const startEntityType = c.req.query('entityType');
+  const startEntityId = c.req.query('entityId');
+  const maxDepthParam = c.req.query('maxDepth');
+  const maxNodesParam = c.req.query('maxNodes');
+  const entityTypeFilterParam = c.req.query('entityTypeFilter');
+  const db = c.env.DB;
+
+  if (!startEntityType || !startEntityId) {
+    return apiError(c, 'VALIDATION_ERROR', 'entityType and entityId query parameters are required.');
+  }
+
+  const validEntityTypes = [
+    'person', 'workspace_person', 'interaction', 'artifact',
+    'assertion', 'concept', 'signal_evidence', 'source_span', 'match_run',
+  ];
+  if (!validEntityTypes.includes(startEntityType)) {
+    return apiError(c, 'VALIDATION_ERROR', `entityType must be one of: ${validEntityTypes.join(', ')}`);
+  }
+
+  const candidate = await db.prepare(
+    `SELECT c.id
+       FROM candidates c
+       LEFT JOIN pipelines p ON p.id = c.pipeline_id
+      WHERE c.id = ?1 AND (c.owner_id = ?2 OR p.owner_id = ?2)`,
+  ).bind(candidateId, userId).first<{ id: string }>();
+  if (!candidate) return apiError(c, 'NOT_FOUND', 'Candidate not found.');
+
+  const { traverseLivingContextGraph } = await import('../../lib/livingContext/graphTraversal');
+  type GraphEntityType = import('../../lib/livingContext/graphTraversal').GraphEntityType;
+
+  const options: import('../../lib/livingContext/graphTraversal').GraphTraversalOptions = {};
+  if (maxDepthParam) {
+    const parsed = parseInt(maxDepthParam, 10);
+    if (!isNaN(parsed) && parsed >= 0 && parsed <= 5) options.maxDepth = parsed;
+  }
+  if (maxNodesParam) {
+    const parsed = parseInt(maxNodesParam, 10);
+    if (!isNaN(parsed) && parsed > 0 && parsed <= 500) options.maxNodes = parsed;
+  }
+  if (entityTypeFilterParam) {
+    const types = entityTypeFilterParam.split(',').filter((t) => validEntityTypes.includes(t));
+    if (types.length > 0) options.entityTypeFilter = types as GraphEntityType[];
+  }
+
+  const result = await traverseLivingContextGraph(
+    db,
+    candidateId,
+    startEntityType as GraphEntityType,
+    startEntityId,
+    options,
+  );
+  return c.json(result);
+});
+
+// GET /:candidateId/pipeline-siblings — other candidates in the same pipeline
+candidateOps.get('/:candidateId/pipeline-siblings', async (c) => {
+  const userId = c.var.userId;
+  const { candidateId } = c.req.param();
+  const db = c.env.DB;
+
+  const candidate = await db.prepare(
+    `SELECT c.id, c.pipeline_id
+       FROM candidates c
+       LEFT JOIN pipelines p ON p.id = c.pipeline_id
+      WHERE c.id = ?1 AND (c.owner_id = ?2 OR p.owner_id = ?2)`,
+  ).bind(candidateId, userId).first<{ id: string; pipeline_id: string | null }>();
+  if (!candidate) return apiError(c, 'NOT_FOUND', 'Candidate not found.');
+  if (!candidate.pipeline_id) return c.json({ pipelineId: null, siblingIds: [] });
+
+  const siblings = await db.prepare(
+    `SELECT id FROM candidates
+      WHERE pipeline_id = ?1 AND id != ?2 AND status != 'ARCHIVED'
+      ORDER BY created_at DESC
+      LIMIT 20`,
+  ).bind(candidate.pipeline_id, candidateId).all<{ id: string }>();
+
+  return c.json({
+    pipelineId: candidate.pipeline_id,
+    siblingIds: (siblings.results ?? []).map((r) => r.id),
+  });
 });
 
 // GET /:candidateId — full profile with stages + challenge submissions
