@@ -27,6 +27,7 @@ export default defineConfig({
       'e2e/**',
       '.claude/**',
       'workers/**',
+      'apps/**',
     ],
   },
 })

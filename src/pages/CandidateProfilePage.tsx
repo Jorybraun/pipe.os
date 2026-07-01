@@ -47,6 +47,7 @@ import { CandidateEnrichmentTab } from "../components/Candidate/CandidateEnrichm
 import { CandidateOverviewTab } from "../components/Candidate/CandidateOverviewTab";
 import { SecureVideoPlayer } from "../components/Candidate/SecureVideoPlayer";
 import { LivingContextGraph } from "../components/Candidate/LivingContextGraph";
+import { usePipelineSiblings } from "../hooks/usePipelineSiblings";
 
 // ============================================================================
 // Local types
@@ -1117,6 +1118,7 @@ export default function CandidateProfilePage(): JSX.Element {
   const api = useApiClient();
   const { candidate, stages, phoneCalls, ingestion, standaloneReviewMatch, profileSections, cultureInterviewSessions, isLoading, error, refetch, updateSubmissionScore, updateSubmissionFeedback } =
     useCandidateProfile(id);
+  const { siblingIds: pipelineSiblingIds } = usePipelineSiblings(id ?? null);
 
   const [selectedTab, setSelectedTab] = useState<string | null>('PROFILE');
   const [viewingReviewSession, setViewingReviewSession] = useState<ReviewSessionListItem | null>(null);
@@ -1801,6 +1803,7 @@ export default function CandidateProfilePage(): JSX.Element {
           <LivingContextGraph
             candidateId={id}
             standaloneReviewMatch={standaloneReviewMatch}
+            comparisonCandidateIds={pipelineSiblingIds.length > 0 ? pipelineSiblingIds : null}
           />
         )}
 
