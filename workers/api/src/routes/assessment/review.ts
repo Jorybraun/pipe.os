@@ -570,8 +570,15 @@ async function buildPrContext(
 function sourceBackedReviewNotReadyResponse() {
   return {
     error: {
-      code: 'WAITING_FOR_MATCH',
-      message: 'A source-backed review challenge has not been selected yet.',
+      code: 'PROFILE_RECEIVED',
+      message: 'Your profile has been received. PIPE will email you when your code review is ready.',
+    },
+    challenge: {
+      id: 'profile-received',
+      type: 'PROFILE_RECEIVED',
+      title: 'Profile received',
+      instructions: 'Your profile has been received. PIPE will email you when your code review is ready.',
+      config: {},
     },
   };
 }

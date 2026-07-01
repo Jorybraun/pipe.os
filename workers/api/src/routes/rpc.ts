@@ -525,6 +525,31 @@ function candidateIntakeQueuedComplete(stageTitle = 'Profile received'): {
   };
 }
 
+function candidateSafeCodeReviewNotReadyResponse(): {
+  error: {
+    code: 'PROFILE_RECEIVED';
+    message: string;
+  };
+  challenge: ReturnType<typeof profileReceivedChallengeContent>;
+  isComplete: true;
+  stageId: string;
+  stageTitle: string;
+  mode: 'INTAKE';
+  timeLimit: null;
+  challenges: [];
+  currentIndex: 0;
+  message: string;
+} {
+  return {
+    error: {
+      code: 'PROFILE_RECEIVED',
+      message: 'Your profile has been received. PIPE will email you when your code review is ready.',
+    },
+    challenge: profileReceivedChallengeContent(),
+    ...candidateIntakeQueuedComplete(),
+  };
+}
+
 export function waitingStageConfigForGate(input: {
   candidateId: string;
   stageId: string;
@@ -3854,12 +3879,7 @@ rpcAuth.post('/submit-challenge-response', async (c) => {
       const match = await loadReadyStandaloneCodeReviewAssignment(c.env.DB, candidateId, standaloneReview);
       if (!match) {
         await maybeQueueRetryableStandaloneIngestion(c.env, optionalExecutionContext(c), candidateId);
-        return c.json({
-          success: true,
-          complete: true,
-          queued: true,
-          message: 'Code review assignment is not ready yet',
-        });
+        return c.json(candidateSafeCodeReviewNotReadyResponse(), 409);
       }
       const now = new Date().toISOString();
       const responseJson = typeof submission === 'string' ? submission : JSON.stringify(submission);
@@ -3942,7 +3962,7 @@ rpcAuth.post('/submit-challenge-response', async (c) => {
   const challenge = rows[dbOrder] as Record<string, unknown>;
 
   if (challenge.type === 'WAITING_FOR_MATCH') {
-    return c.json({ error: 'Challenge not ready. Please wait for matching to complete.' }, 409);
+    return c.json(candidateSafeCodeReviewNotReadyResponse(), 409);
   }
 
   const challengeId = challenge.id as string;

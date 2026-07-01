@@ -57,6 +57,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Fixed — CODE_REVIEW assessment runtime
 
+- Candidate-facing CODE_REVIEW RPCs now return the `Profile received` / `candidate-intake-queued` handoff when no source-backed PR is ready, instead of exposing `WAITING_FOR_MATCH` through direct submit or review-session calls.
 - Scheduled interview list migrations now ship D1 indexes for newest-first owner paging plus latest meeting, guest presence, and workspace-session lookups, reducing recruiter `/interviews` load time as assessment history grows.
 - The video-room test suite no longer carries retired novelty-room wording; assessment room identity is covered through positive PIPE assessment metadata and surface expectations.
 - Interview related-context previews now prioritize linked follow-ups, technical assessments, and transcript-backed conversations before lower-priority related rows, keeping the single-meeting page useful without blending every person interaction into the current meeting.

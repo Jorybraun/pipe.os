@@ -1638,10 +1638,17 @@ test.describe('§MVP.7 — Candidate submits standalone code review', () => {
     expect(prematureRes.status()).toBe(409);
     const prematureBody = await prematureRes.json() as {
       error?: { code?: string };
-      challenge?: { type?: string };
+      challenge?: { type?: string; id?: string; instructions?: string };
+      stageId?: string;
+      isComplete?: boolean;
     };
-    expect(prematureBody.error?.code).toBe('WAITING_FOR_MATCH');
-    expect(prematureBody.challenge?.type).toBe('WAITING_FOR_MATCH');
+    expect(prematureBody.error?.code).toBe('PROFILE_RECEIVED');
+    expect(prematureBody.challenge?.type).toBe('PROFILE_RECEIVED');
+    expect(prematureBody.challenge?.id).toBe('profile-received');
+    expect(prematureBody.challenge?.instructions).toContain('email you when your code review is ready');
+    expect(prematureBody.stageId).toBe('candidate-intake-queued');
+    expect(prematureBody.isComplete).toBe(true);
+    expect(JSON.stringify(prematureBody)).not.toContain('WAITING_FOR_MATCH');
 
     await submitStandaloneIntakeEvidence(request, sessionToken);
     const fixture = await seedStandaloneReviewMatchFixture(request, authToken, candidate);
