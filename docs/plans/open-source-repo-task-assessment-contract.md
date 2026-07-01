@@ -174,8 +174,8 @@ The controlling product rule remains:
   map, ICE provider, MIME types, and captured byte counts, with host-end
   auto-stop and manual stop using the same source-backed event path.
 - Standard-call and workspace-assessment rooms are selected by the scheduled
-  interview mode. The room no longer carries an alternate presentation-mode
-  toggle.
+  interview mode. The candidate surface is code-first and assessment-state
+  driven.
 - Terminal panels now capture completed dev-container commands and bounded
   output chunks as source-backed `meeting_session_event` evidence with
   workspace session and repo metadata.

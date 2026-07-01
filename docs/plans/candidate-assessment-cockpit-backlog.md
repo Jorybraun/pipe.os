@@ -11,8 +11,8 @@ Keep the candidate assessment flow centered on real open-source work.
 PIPE-OS should read as a real open-source coding assessment product. The
 candidate experience is an assessment cockpit: VS Code/dev workspace as the
 primary surface, task packet visible, video/chat/AI available, and Submit Work
-obvious. The architectural spine is the assessment event stream, not layout
-replay.
+obvious. The architectural spine is the assessment event stream, not client UI
+state.
 
 ## Target Outcomes
 
@@ -26,7 +26,7 @@ replay.
 - Submit Work is always visible or one click away, validates source-backed
   commit/test evidence, and makes the final state unambiguous.
 - Recruiter results continue to rely on the canonical assessment event spine,
-  not on replaying layout state.
+  not on replaying client layout state.
 
 ## Core Sync Boundary
 
@@ -46,11 +46,11 @@ Keep only evidence-critical sync in the default assessment flow:
 
 Defer or remove from the critical path:
 
-- synced layout position, size, focus, minimize, and maximize state,
+- synced client layout position, size, focus, minimize, and maximize state,
 - shared scratchpad state,
 - shared browser navigation/state unless a future assessment explicitly tests browser behavior,
 - full-layout collaboration semantics,
-- raw pointer trails and cursor replay beyond lightweight live presence,
+- UI-only collaboration effects that do not produce assessment evidence,
 - any candidate-required action that only exists inside a non-assessment UI.
 
 ## Non-Goals
@@ -58,7 +58,7 @@ Defer or remove from the critical path:
 - Do not rewrite the assessment event spine.
 - Do not expose internal assessment ids, D1 row ids, R2 keys, planted bugs, or
   server-only rubrics to candidate clients.
-- Do not make layout replay a prerequisite for scoring.
+- Do not make client UI state a prerequisite for scoring.
 - Do not replace CODE_REVIEW's standalone diff assessment flow.
 - Do not add fake AI assistants, fake Devin, simulated agent replies, or optimistic
   score claims.
@@ -68,13 +68,12 @@ Defer or remove from the critical path:
 ### Slice 0: Default-route proof
 
 Write a failing Playwright scenario before runtime changes: an
-`OPEN_SOURCE_BUG_FIX` or dev-container invite opens a code-first cockpit and
-does not require entering an alternate presentation layer to see the task, workspace, AI,
-chat, or Submit Work.
+`OPEN_SOURCE_BUG_FIX` or dev-container invite opens a code-first cockpit with
+the task, workspace, AI, chat, and Submit Work visible as assessment surfaces.
 
 Acceptance:
 
-- The URL and product copy describe an assessment, not an alternate presentation layer.
+- The URL and product copy describe a source-backed assessment.
 - No internal ids appear in the candidate DOM.
 - The test fails against any default route that hides the assessment behind non-assessment UI first.
 
@@ -163,7 +162,7 @@ Acceptance:
 | CAC-04 | Workspace evidence status strip | File/terminal/test/git/AI state shown from accepted evidence | Durable Object/API evidence replay test |
 | CAC-05 | Cockpit Submit Work | Final bundle available in the cockpit | End-to-end submit test from cockpit |
 | CAC-06 | Runtime boundary hardening | Room UI state removed from critical scoring path | Replay test proves scoring ignores room UI state |
-| CAC-07 | Recruiter result continuity | Results read assessment events, not layout replay | Recruiter result test with no layout replay events |
+| CAC-07 | Recruiter result continuity | Results read assessment events, not client layout state | Recruiter result test with no layout-state events |
 
 ## Design Notes
 

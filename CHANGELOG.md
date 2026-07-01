@@ -89,6 +89,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - Simplified layout tests and render callback naming so the room code stays focused on assessment work instead of alternate room modes.
 - Added an assessment-room boundary regression test that keeps retired novelty UI language out of shipped room files.
 - Expanded the assessment-room boundary guard to block retired brand and mode spellings.
+- Retired client-UI synchronization from the current product plan so the assessment room stays anchored to real repo-task evidence.
 - Removed obsolete assessment-panel coordinate and ordering state from the video-room app.
 - Collapsed video-room evidence capture to the standard assessment room path, removing the stale alternate replay path.
 - Current room evidence is limited to the core assessment sources: video, chat, workspace, terminal, code-server/file events, recording, transcription, commit submissions, and the real AI assistant bridge.
@@ -180,7 +181,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - Meeting-room basic-auth route regressions now use the real room-dev host when asserting credential injection, keeping the tests aligned with the dev-host-only auth hardening.
 - Failed, stopped, and expired dev-container workspaces now present an explicit Relaunch workspace recovery action in the room status strip, prejoin panel, and workspace panel instead of leaving hosts with a generic launch prompt.
 - Workspace terminal sessions now decode browser `TERMINAL_INPUT` control frames and normalize xterm carriage returns before writing to bash, so candidate terminal commands execute as commands instead of JSON blobs.
-- Workspace-enabled rooms now start in the standard code-first assessment surface and ignore obsolete layout replay events.
+- Workspace-enabled rooms now start in the standard code-first assessment surface and ignore obsolete client-UI state events.
 - Workspace stops now append source-backed dev-container stop evidence to linked assessment sessions and return refreshed progress, keeping container lifecycle actions in the same durable interview spine as launch and commit evidence.
 - Workspace launches now append source-backed dev-container launch evidence to linked assessment sessions and return refreshed progress immediately, so opening VS Code is part of the durable assessment spine instead of only browser telemetry.
 - Video rooms now refresh the visible assessment progress after source-backed room events are accepted, so chat, terminal, and Agent/agent evidence can move the status strip without waiting for a reload or commit submission.
