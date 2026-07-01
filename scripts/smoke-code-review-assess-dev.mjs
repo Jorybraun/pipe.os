@@ -601,6 +601,7 @@ function runRecruiterDetailBrowserSmoke({
   expectSubmission = false,
   expectScore = false,
   requireHyperedges = false,
+  expectPersonProfileDecision = false,
 }) {
   if (SKIP_BROWSER || SKIP_RECRUITER_BROWSER) {
     return {
@@ -635,6 +636,7 @@ function runRecruiterDetailBrowserSmoke({
         CODE_REVIEW_RECRUITER_EXPECT_SUBMISSION: expectSubmission ? '1' : '0',
         CODE_REVIEW_RECRUITER_EXPECT_SCORE: expectScore ? '1' : '0',
         CODE_REVIEW_RECRUITER_REQUIRE_HYPEREDGES: requireHyperedges ? '1' : '0',
+        CODE_REVIEW_RECRUITER_EXPECT_PERSON_PROFILE_DECISION: expectPersonProfileDecision ? '1' : '0',
       },
     },
   );
@@ -1292,6 +1294,7 @@ async function main() {
       expectSubmission: SUBMIT_REVIEW,
       expectScore: SUBMIT_REVIEW,
       requireHyperedges: !REPO_URL && !PR_NUMBER,
+      expectPersonProfileDecision: true,
     });
 
     console.log(JSON.stringify({

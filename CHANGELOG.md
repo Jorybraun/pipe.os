@@ -9,7 +9,9 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Fixed — CODE_REVIEW assessment runtime
 
+- The deployed CODE_REVIEW assess-link smoke now clicks from the recruiter assessment detail into the person profile and verifies the person-level decision cockpit, keeping the rollup proof attached to the routine app-dev gate.
 - The deployed CODE_REVIEW workspace smoke now defaults to the source-backed MUI popover challenge profile, so `npm run smoke:code-review-workspace-dev` proves a real repo/base-commit/finalizer/evaluation path without hidden env overrides.
+- The deployed CODE_REVIEW assessment smoke can now require the person-profile decision readout, proving submitted review evidence rolls up beyond the interview detail page.
 - CODE_REVIEW source-proof summaries now name the evidence that actually exists for each assessment, dedupe repeated quality-gate wording, and surface missing source bridges before lower-value calibration notes so manual PR assignments do not look like automatic candidate-fit proof.
 - Standalone CODE_REVIEW interview details no longer render the generic workspace assessment progress panel when only a repo/PR assignment exists, preventing completed scored reviews from showing stale “Not started” or “No assessment session” copy above the hiring-manager decision readout.
 - Person profiles opened from a selected CODE_REVIEW decision now treat that assessment as present technical evidence in the evidence-mix readout instead of incorrectly saying no source mix exists while the full graph stays unloaded.
