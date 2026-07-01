@@ -745,24 +745,11 @@ function standaloneEvidenceIsStale(status: string | null, updatedAt: string | nu
   return Date.now() - updatedMs >= STANDALONE_EVIDENCE_STALE_AFTER_MS;
 }
 
-function standaloneDecompositionIsActive(
-  status: string | null,
-  currentStep: string | null,
-  updatedAt: string | null,
-): boolean {
-  return isInProgressStandaloneIngestionStatus(status)
-    && currentStep === 'decompose_resume'
-    && !standaloneEvidenceIsStale(status, updatedAt);
-}
-
 function activeIngestionBlocksCodeReviewMatching(
   readiness: StandaloneReviewEvidenceReadiness,
 ): boolean {
-  return isInProgressStandaloneIngestionStatus(readiness.status)
-    && (
-      readiness.nodeCount <= 0
-      || standaloneDecompositionIsActive(readiness.status, readiness.currentStep, readiness.updatedAt)
-    );
+  return readiness.nodeCount <= 0
+    && isInProgressStandaloneIngestionStatus(readiness.status);
 }
 
 const STANDALONE_REVIEW_CHALLENGE_CONFIG = {
@@ -1979,23 +1966,6 @@ async function standaloneReviewEvidenceReadiness(
       ready: false,
       terminal: true,
       reason: row.error_text ?? 'candidate ingestion failed before source-backed evidence was created',
-      status,
-      currentStep,
-      nodeCount,
-      rawNodeCount,
-      updatedAt,
-      estimatedCompletionAt,
-    };
-  }
-
-  if (
-    nodeCount > 0
-    && standaloneDecompositionIsActive(status, currentStep, updatedAt)
-  ) {
-    return {
-      ready: false,
-      terminal: false,
-      reason: 'candidate evidence decomposition is still finalizing source-backed context',
       status,
       currentStep,
       nodeCount,

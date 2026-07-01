@@ -920,7 +920,13 @@ describe('POST /rpc/get-stage-config', () => {
     expect(matchCandidateToReviewChallenge).not.toHaveBeenCalled();
   });
 
-  it('defers role-backed CODE_REVIEW matching while resume decomposition is still active', async () => {
+  it('runs role-backed CODE_REVIEW matching when active resume decomposition already produced matchable evidence', async () => {
+    vi.mocked(matchCandidateToReviewChallenge).mockResolvedValueOnce({
+      status: 'MATCHED',
+      repoId: 973,
+      prNumber: 973,
+      explanation: roleBackedAutomaticMatchExplanation(973, 1),
+    } as Awaited<ReturnType<typeof matchCandidateToReviewChallenge>>);
     const db = fakeD1({
       firstResponders: [
         {
@@ -968,6 +974,7 @@ describe('POST /rpc/get-stage-config', () => {
             node_count: 18,
           },
         },
+        { match: 'SELECT github_url FROM qualified_repos', value: { github_url: 'https://github.com/mui/base-ui' } },
       ],
       allResponders: [
         {
@@ -1004,23 +1011,23 @@ describe('POST /rpc/get-stage-config', () => {
     expect(res.status).toBe(200);
     const body = await res.json() as {
       isComplete?: boolean;
-      stageId?: string;
-      message?: string;
       challenges?: Array<{ type: string; title?: string }>;
-      waitingChallenge?: unknown;
     };
-    expect(body).toMatchObject({
-      isComplete: true,
-      stageId: 'candidate-intake-queued',
-      message: expect.stringContaining('email you when your code review is ready'),
-      challenges: [],
-    });
-    expect(body.waitingChallenge).toBeUndefined();
-    expect(matchCandidateToReviewChallenge).not.toHaveBeenCalled();
+    expect(body.isComplete).not.toBe(true);
+    expect(body.challenges?.[0]).toMatchObject({ type: 'WELCOME' });
+    expect(body.challenges?.[1]).toMatchObject({ type: 'CODE_REVIEW' });
+    expect(matchCandidateToReviewChallenge).toHaveBeenCalledWith(
+      db,
+      'cand_1',
+      expect.objectContaining({
+        roleContextId: 'role_ctx_1',
+        roleSnapshotId: 'role-context:role_ctx_1:source-backed:simple-jd-v1',
+      }),
+    );
     expect(db.__calls.some((call) =>
       call.ran
       && call.sql.includes('INSERT INTO candidate_challenge_assignment')
-    )).toBe(false);
+    )).toBe(true);
   });
 
   it('runs role-backed CODE_REVIEW matching after active ingestion advances past resume decomposition', async () => {
