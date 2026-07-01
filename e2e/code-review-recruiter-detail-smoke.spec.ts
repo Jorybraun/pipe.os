@@ -270,6 +270,9 @@ test.describe('Feature: assessment recruiter detail smoke', () => {
     await expect(hiringReadout).toContainText('Score validity');
     await expect(hiringReadout).toContainText('Risk');
     await expect(hiringReadout).toContainText('Next action');
+    const assignmentTrust = page.getByTestId('interview-code-review-assignment-trust');
+    await expect(assignmentTrust).toBeVisible();
+    await expect(assignmentTrust).toContainText('Assignment trust');
     await expect(page.getByTestId('interview-code-review-next-step')).toBeVisible();
     const scoreValidity = page.getByTestId('interview-code-review-score-validity');
     await expect(scoreValidity).toBeVisible();
@@ -285,6 +288,7 @@ test.describe('Feature: assessment recruiter detail smoke', () => {
     if (EXPECTED_OUTCOME === 'blocked') {
       await expect(decision).toContainText(/No confident repo match yet|No safe challenge|No quality-gated source-backed PR challenge/i);
       await expect(decision).toContainText(/NEEDS MORE EVIDENCE|NO ROLE SAFE CHALLENGE|NO SAFE CHALLENGE|No safe challenge/i);
+      await expect(assignmentTrust).toContainText(/Needs evidence|No safe challenge/i);
       await expect(page.getByTestId('interview-code-review-next-step')).toContainText(
         /Schedule evidence call|Add role requirements|Select source-backed PR|Ingest repo challenge|Create technical follow-up|Review challenge assignment/,
       );
@@ -305,6 +309,8 @@ test.describe('Feature: assessment recruiter detail smoke', () => {
     }
 
     await expect(decision).toContainText('MATCHED');
+    await expect(assignmentTrust).toContainText(/Matched|Manual PR|Manual task|Reviewable task/);
+    await expect(assignmentTrust).not.toContainText('Assignment unknown');
     const explanation = page.getByTestId('interview-code-review-match-explanation');
     await expect(explanation).toBeVisible();
     await expect(explanation).toContainText('Why this challenge');
