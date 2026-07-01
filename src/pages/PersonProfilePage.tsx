@@ -619,8 +619,8 @@ function hasPendingCodeReviewAssignment(livingContext: LivingContextReadModel | 
 
 function isPendingCodeReviewDecision(decision: CodeReviewDecisionProjection | null): boolean {
   if (!decision) return false;
-  return decision.recommendation === 'Wait for candidate review'
-    || decision.nextAction === 'Wait for candidate submission';
+  return isWaitForAssessmentSignalAction(decision.recommendation)
+    || isWaitForAssessmentSignalAction(decision.nextAction);
 }
 
 function interactionCoverageSummary(
@@ -1217,11 +1217,22 @@ function nextActionText(
 
 function isCodeReviewAssessmentAction(action: string): boolean {
   const normalized = action.toLowerCase();
+  if (isWaitForAssessmentSignalAction(normalized)) return false;
   return normalized.includes('technical assessment')
     || normalized.includes('code-review')
     || normalized.includes('code review')
     || normalized.includes('repo challenge')
     || normalized.includes('review signal');
+}
+
+function isWaitForAssessmentSignalAction(action: string): boolean {
+  const normalized = action.toLowerCase();
+  if (!/\bwait\b/.test(normalized)) return false;
+  return normalized.includes('candidate review')
+    || normalized.includes('candidate submission')
+    || normalized.includes('review signal')
+    || normalized.includes('review evidence')
+    || normalized.includes('review comments');
 }
 
 function nextInterviewCtaLabel(

@@ -858,6 +858,45 @@ describe('PersonProfilePage', () => {
     expect(basis).not.toHaveTextContent('Source-backed match');
   });
 
+  it('does not turn wait-for-review wording into a duplicate code-review assessment CTA', async () => {
+    const summaryContext = makeLivingContext();
+    summaryContext.interactions = [];
+    summaryContext.artifacts = [];
+    summaryContext.contextRecords = [];
+    summaryContext.assertions = [];
+    summaryContext.signals = [];
+    summaryContext.relationships = [];
+
+    mocks.api.get
+      .mockResolvedValueOnce({ contact: makeContact() })
+      .mockResolvedValueOnce(summaryContext);
+
+    renderPage({
+      livingContext: summaryContext,
+      selectedCodeReviewDecision: {
+        ...(makeSelectedCodeReviewDecision() as Record<string, unknown>),
+        recommendation: 'Wait for review signal',
+        recommendationDetail: 'The PR assignment is ready, but the candidate has not submitted review evidence yet.',
+        uncertainty: 'Performance not scored',
+        uncertaintyDetail: 'The assignment is setup only until review comments and score evidence exist.',
+        missingContext: ['Candidate review transcript or source-backed review comments'],
+        assessmentValidity: 'Assignment ready, score missing',
+        assessmentValidityDetail: 'The repo challenge and match provenance are source-backed, but there is no performance signal yet.',
+        nextAction: 'Wait for review signal',
+        nextActionDetail: 'Do not create another code-review invite; evaluate once the candidate submits review evidence.',
+        scoreLabel: null,
+        scoreProvenanceLabel: null,
+      },
+    });
+    await flushAsyncUpdates();
+
+    const cockpit = screen.getByTestId('person-decision-cockpit');
+    expect(cockpit).toHaveTextContent('Wait for review signal');
+    expect(cockpit).toHaveTextContent('Do not create another code-review invite');
+    expect(screen.queryByTestId('person-next-action-cta')).not.toBeInTheDocument();
+    expect(screen.queryByRole('button', { name: 'Create code-review assessment' })).not.toBeInTheDocument();
+  });
+
   it('sanitizes stale selected code-review navigation state instead of crashing the profile', async () => {
     const summaryContext = makeLivingContext();
     summaryContext.interactions = [];
