@@ -299,6 +299,11 @@ function codeReviewDecisionFromNavigationState(state: unknown): CodeReviewDecisi
   const scoreLabel = optionalString(decision.scoreLabel);
   const proofItems = codeReviewProofItemsFromUnknown(decision.proofItems);
   const sourceProofSummary = optionalString(decision.sourceProofSummary);
+  const hasRouteSourceProof = hasCandidateRepoRouteProof(proofItems, sourceProofSummary);
+  const routeProofCount = optionalNumber(decision.proofCount);
+  const proofCount = hasRouteSourceProof
+    ? Math.max(proofItems.length, routeProofCount ?? 0)
+    : proofItems.length;
   return {
     decisionLabel: decision.decisionLabel,
     sessionId: optionalString(decision.sessionId),
@@ -319,7 +324,7 @@ function codeReviewDecisionFromNavigationState(state: unknown): CodeReviewDecisi
     narrative: optionalString(decision.narrative),
     strengths: stringArray(decision.strengths),
     probes: stringArray(decision.probes),
-    proofCount: optionalNumber(decision.proofCount) ?? proofItems.length,
+    proofCount,
     sourceProofSummary,
     proofItems,
     basisItems: codeReviewBasisItemsFromUnknown(
@@ -2107,12 +2112,18 @@ function CodeReviewDecisionCard({ decision }: { decision: CodeReviewDecisionProj
           <span style={DECISION_PROOF_HINT}>{sourceProofSummary}</span>
         </summary>
         <div style={DECISION_PROOF_LIST}>
-          {decision.proofItems.map((item) => (
-            <div key={item.id} style={DECISION_PROOF_ITEM}>
-              <div style={DECISION_FACT_LABEL}>{item.label}</div>
-              {item.text && <div style={DECISION_PROOF_TEXT}>{item.text}</div>}
+          {decision.proofItems.length > 0 ? (
+            decision.proofItems.map((item) => (
+              <div key={item.id} style={DECISION_PROOF_ITEM}>
+                <div style={DECISION_FACT_LABEL}>{item.label}</div>
+                {item.text && <div style={DECISION_PROOF_TEXT}>{item.text}</div>}
+              </div>
+            ))
+          ) : (
+            <div style={DECISION_PROOF_TEXT}>
+              No source proof items were preserved for this selected decision.
             </div>
-          ))}
+          )}
         </div>
       </details>
     </section>
