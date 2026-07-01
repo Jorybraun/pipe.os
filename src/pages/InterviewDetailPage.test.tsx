@@ -1635,7 +1635,7 @@ describe('InterviewDetailPage', () => {
     expect(hiringReadout).toHaveTextContent('Repo fit not proven');
     expect(hiringReadout).toHaveTextContent('Schedule evidence call');
     expect(hiringReadout).toHaveTextContent(SOURCE_BACKED_WORK_EVIDENCE_QUESTION);
-    expect(decision).toHaveTextContent('Resolve the missing source-backed evidence before relying on this code-review assignment.');
+    expect(decision).toHaveTextContent('Resolve the source-backed match quality gate before sending or trusting this code-review assignment.');
     expect(decision).toHaveTextContent('NEEDS MORE EVIDENCE');
     expect(decision).toHaveTextContent('resolve missing evidence');
     expect(decision).toHaveTextContent('Recommended next step');
@@ -1943,6 +1943,30 @@ describe('InterviewDetailPage', () => {
     expect(screen.queryByTestId('interview-person-context-timeline')).toBeNull();
     expect(screen.queryByText('Code Review Context Call Recommendation')).toBeNull();
     expect(screen.queryByText('Scheduled Interview Invite Delivery')).toBeNull();
+  });
+
+  it('keeps the single-meeting scope visible before person context exists', async () => {
+    mocks.api.get.mockResolvedValueOnce({
+      interview: makeInterview({
+        interviewType: 'CODE_REVIEW',
+        status: 'INVITED',
+        contactId: 'person-without-context',
+        recipientName: 'Sparse Candidate',
+        recipientEmail: 'sparse@example.com',
+        livingContext: null,
+        relatedEvidenceInterviews: [],
+      }),
+    });
+
+    renderDetail();
+
+    await flushAsyncUpdates();
+    const relationship = screen.getByTestId('interview-person-context-relationship');
+    expect(relationship).toHaveTextContent('Person context rollup');
+    expect(relationship).toHaveTextContent('0 evidence moments on the person profile');
+    expect(relationship).toHaveTextContent('This meeting remains scoped to its own invite, room, transcript, and assessment evidence.');
+    expect(screen.getByText('Person context will appear after PIPE has exact source evidence from the invite, transcript, assessment, or code-review material.')).toBeVisible();
+    expect(screen.queryByTestId('interview-related-evidence-interviews')).toBeNull();
   });
 
   it('labels repo-only code-review rows as setup gaps instead of assignments', async () => {

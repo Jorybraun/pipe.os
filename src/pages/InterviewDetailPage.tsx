@@ -4579,15 +4579,16 @@ export default function InterviewDetailPage(): JSX.Element {
           icon={<Network size={15} />}
           style={isCodeReviewInterview ? CODE_REVIEW_PERSON_CONTEXT_SECTION : undefined}
         >
-          {hasLivingContextEvidence && contextSummary ? (
-            <>
-              <div data-testid="interview-person-context-relationship" style={CONTEXT_RECORD}>
-                <div style={FIELD_LABEL}>Person context rollup</div>
-                <div style={TRANSCRIPT_TEXT}>{countLabel(contextSummary.interactionCount, 'evidence moment')} on the person profile</div>
-                <div style={CONTEXT_RECORD_NARRATIVE}>
-                  This meeting remains scoped to its own invite, room, transcript, and assessment evidence.
-                </div>
+          <>
+            <div data-testid="interview-person-context-relationship" style={CONTEXT_RECORD}>
+              <div style={FIELD_LABEL}>Person context rollup</div>
+              <div style={TRANSCRIPT_TEXT}>{countLabel(contextSummary?.interactionCount ?? 0, 'evidence moment')} on the person profile</div>
+              <div style={CONTEXT_RECORD_NARRATIVE}>
+                This meeting remains scoped to its own invite, room, transcript, and assessment evidence.
               </div>
+            </div>
+            {hasLivingContextEvidence && contextSummary ? (
+              <>
               {relatedEvidenceInterviews.length > 0 && (
                 <div data-testid="interview-related-evidence-interviews" style={CONTEXT_RECORD}>
                   <div style={FIELD_LABEL}>Other interviews for this person</div>
@@ -4674,12 +4675,13 @@ export default function InterviewDetailPage(): JSX.Element {
                   OPEN PERSON PROFILE
                 </button>
               )}
-            </>
-          ) : (
-            <div style={EMPTY_TEXT}>
-              Person context will appear after PIPE has exact source evidence from the invite, transcript, assessment, or code-review material.
-            </div>
-          )}
+              </>
+            ) : (
+              <div style={EMPTY_TEXT}>
+                Person context will appear after PIPE has exact source evidence from the invite, transcript, assessment, or code-review material.
+              </div>
+            )}
+          </>
         </Section>
 
         {showsReviewAssignmentPanel && (

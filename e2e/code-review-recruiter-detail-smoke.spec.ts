@@ -242,6 +242,7 @@ test.describe('Feature: assessment recruiter detail smoke', () => {
         await expect(inviteState).toContainText('ASSESSMENT');
         await expect(inviteState).toContainText(/Started, no submission|Profile handoff, no PR challenge|No assessment link sent/);
         await expect(page.getByRole('button', { name: /send assessment invite|resend assessment invite/i })).toBeVisible();
+        await expectInterviewScopeBoundary(page, { required: true });
         return;
       }
     }

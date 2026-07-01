@@ -26,6 +26,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Fixed — CODE_REVIEW assessment runtime
 
+- Interview detail pages now always show the single-meeting/person-rollup boundary cue, even before living-context evidence exists, so sparse CODE_REVIEW records do not look like they contain every related meeting.
 - Person-profile CODE_REVIEW browser smoke now asserts the relationship timeline boundary copy, keeping same-person interactions useful as context without implying the profile owns every meeting row by default.
 - CODE_REVIEW recruiter browser smoke now proves interview and person source-proof drawers stay collapsed by default, preserving source traceability without reopening noisy raw evidence in the hiring-manager readout.
 - Person-profile CODE_REVIEW browser smoke now asserts the deployed hiring cockpit renders recommendation, assessment validity, uncertainty, missing context, and next action before accepting a person-rollup proof.
@@ -53,7 +54,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - Room-dev now ships PIPE assessment-room shell metadata, keeping browser titles anchored to the core assessment product.
 - Weak CODE_REVIEW scores now propagate to the person profile as assignment-fairness decisions even when the compact submission projection is absent, preventing scored interviews from telling hiring managers to wait for a review that already produced a score.
 - Recruiter interview detail now fails soft on optional living-context, related-evidence, linked-meeting, invite-link, progress, and score/match projections, so the core CODE_REVIEW decision surface does not sit on an indefinite spinner when an auxiliary app-dev read stalls.
-- CODE_REVIEW and workspace-backed assessment invites now deliver `/assess` links without provisioning video rooms first, keeping assessment runtime separate from meeting surfaces and preventing room setup failures from blocking candidate handoff.
+- CODE_REVIEW invites still deliver assessment-only `/assess` links, while dev-container and open-source bug-fix assessment invites now create controlled workspace room links with video, recording, chat, terminal, and code-server evidence.
 - CODE_REVIEW progress and scoring now require a complete challenge packet contract — repo URL, base commit SHA, task, success criteria, and expected evidence — before treating a task as ready or scoreable.
 - Source-backed assessment evaluation now normalizes missing or unsupported AI recommendation strings to a safe human-review recommendation, records a diagnostic, and prevents recruiter pages from rendering arbitrary model text as hiring advice.
 - Person profile assessment validity copy now explicitly calls selected-interview workspace assessments source-backed signals, preserving the boundary between evidence and hiring decisions.
@@ -1012,7 +1013,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 ### Fixed — Standalone code review repo matching intake
 
 - Candidate CV decomposition now defaults stale Workers AI config to the current Gemma model instead of deprecated Llama 3.1 8B, preventing repo matching from failing into a candidate-facing needs-attention state.
-- Workspace-backed assessment emails now always deliver fresh `/assess/:token` links for CODE_REVIEW, DEV_CONTAINER_CHALLENGE, and OPEN_SOURCE_BUG_FIX invites, even if stale scheduling URLs exist on the interview row.
+- Assessment emails now ignore stale scheduling URLs: CODE_REVIEW delivers fresh `/assess/:token` links, while DEV_CONTAINER_CHALLENGE and OPEN_SOURCE_BUG_FIX deliver controlled workspace room links.
 - Resume-derived review evidence now preserves diverse source-backed repo-matching terms and the deterministic matcher now prefers specific source concepts over generic language overlap.
 - Standalone code-review matching now attempts repo selection as soon as source-backed text-intake evidence exists, even if richer enrichment is still pending, and no longer exposes a fake estimated matching timer.
 - Plain-text candidate intake now runs through the same CV parsing/decomposition contract as uploaded resumes before starting ingestion, so standalone code-review invites produce source-backed candidate evidence for deterministic repo matching.
