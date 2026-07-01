@@ -882,6 +882,8 @@ describe('PersonProfilePage', () => {
     expect(proof).not.toHaveTextContent('"overall"');
     expect(proof).not.toHaveTextContent('"growth_areas"');
     expect(proof).toHaveTextContent('transcript segment');
+    expect(screen.getByText('Decision evidence')).toBeInTheDocument();
+    expect(screen.getByText('Background evidence')).toBeInTheDocument();
     expect(screen.getByText('Code-review assessment evidence')).toBeInTheDocument();
     expect(screen.getByRole('button', { name: 'Open interaction' })).toBeInTheDocument();
     expect(screen.getByText('Resume evidence attached')).toBeInTheDocument();
@@ -1063,6 +1065,8 @@ describe('PersonProfilePage', () => {
     expect(cockpit).toHaveTextContent('Advance');
     expect(cockpit).toHaveTextContent('Usable source-backed signal from workspace assessment');
     expect(cockpit).toHaveTextContent('Graph rollup pending');
+    expect(screen.getByTestId('person-interaction-coverage')).toHaveTextContent('1 code review');
+    expect(screen.getByText('Decision evidence')).toBeInTheDocument();
     const decision = screen.getByTestId('person-code-review-decision');
     expect(decision).toHaveTextContent('Workspace assessment decision');
     expect(decision).toHaveTextContent('Candidate addressed the impatient click issue');

@@ -324,6 +324,45 @@ function evidenceSummaryText(livingContext: LivingContextReadModel | null): stri
   return `PIPE currently knows this relationship from ${parts.join(', ')}.`;
 }
 
+function interactionIndexText(interaction: LivingContextInteraction): string {
+  return [
+    interaction.interactionType,
+    optionalString(interaction.externalReference),
+    optionalString(interaction.metadata.mode),
+    optionalString(interaction.metadata.state),
+    optionalString(interaction.metadata.matchStatus),
+  ].filter((value): value is string => Boolean(value)).join(' ').toLowerCase();
+}
+
+function isResumeInteraction(interaction: LivingContextInteraction): boolean {
+  const text = interactionIndexText(interaction);
+  return text.includes('resume') || text.includes('cv');
+}
+
+function isConversationInteraction(interaction: LivingContextInteraction): boolean {
+  const text = interactionIndexText(interaction);
+  return text.includes('context_call')
+    || text.includes('meeting')
+    || text.includes('interview')
+    || text.includes('phone')
+    || text.includes('call');
+}
+
+function isTechnicalAssessmentInteraction(interaction: LivingContextInteraction): boolean {
+  const text = interactionIndexText(interaction);
+  if (text.includes('context_call')) return false;
+  return text.includes('code_review')
+    || text.includes('open_source')
+    || text.includes('dev_container')
+    || text.includes('bug_fix')
+    || text.includes('review-session');
+}
+
+function isOperationalInteraction(interaction: LivingContextInteraction): boolean {
+  const text = interactionIndexText(interaction);
+  return text.includes('invite') || text.includes('message') || text.includes('email');
+}
+
 function interactionCoverageCounts(interactions: LivingContextInteraction[]): InteractionCoverageCounts {
   const counts = {
     codeReviews: 0,
@@ -334,21 +373,13 @@ function interactionCoverageCounts(interactions: LivingContextInteraction[]): In
   };
 
   for (const interaction of interactions) {
-    const interactionType = interaction.interactionType.toLowerCase();
-    const reference = optionalString(interaction.externalReference)?.toLowerCase() ?? '';
-    if (interactionType.includes('code_review') || reference.startsWith('review-session')) {
+    if (isTechnicalAssessmentInteraction(interaction)) {
       counts.codeReviews += 1;
-    } else if (
-      interactionType.includes('meeting')
-      || interactionType.includes('interview')
-      || interactionType.includes('phone')
-      || interactionType.includes('call')
-      || reference.includes('meeting')
-    ) {
+    } else if (isConversationInteraction(interaction)) {
       counts.calls += 1;
-    } else if (interactionType.includes('resume') || reference.startsWith('resume:')) {
+    } else if (isResumeInteraction(interaction)) {
       counts.resumes += 1;
-    } else if (interactionType.includes('invite') || interactionType.includes('message') || reference.includes('invite')) {
+    } else if (isOperationalInteraction(interaction)) {
       counts.messages += 1;
     } else {
       counts.other += 1;
@@ -451,25 +482,28 @@ function contextRecordDisplayNarrative(record: LivingContextRecord): string | nu
 function interactionSourceLabel(interaction: LivingContextInteraction): string | null {
   const externalReference = optionalString(interaction.externalReference);
   if (!externalReference) return null;
-  const interactionType = interaction.interactionType.toLowerCase();
-  const reference = externalReference.toLowerCase();
 
-  if (reference.startsWith('resume:') || interactionType.includes('resume')) {
+  if (isResumeInteraction(interaction)) {
     return 'Resume evidence attached';
   }
-  if (interactionType.includes('code_review') || reference.startsWith('review-session')) {
+  if (isTechnicalAssessmentInteraction(interaction)) {
     return 'Code-review assessment evidence';
   }
-  if (interactionType.includes('meeting') || interactionType.includes('interview') || reference.includes('meeting')) {
+  if (isConversationInteraction(interaction)) {
     return 'Meeting evidence attached';
   }
-  if (interactionType.includes('phone') || interactionType.includes('call')) {
-    return 'Call evidence attached';
-  }
-  if (interactionType.includes('invite') || reference.includes('invite')) {
+  if (isOperationalInteraction(interaction)) {
     return 'Invite evidence attached';
   }
   return 'Source evidence attached';
+}
+
+function interactionDecisionRoleLabel(interaction: LivingContextInteraction): string {
+  if (isTechnicalAssessmentInteraction(interaction)) return 'Decision evidence';
+  if (isConversationInteraction(interaction)) return 'Calibration context';
+  if (isResumeInteraction(interaction)) return 'Background evidence';
+  if (isOperationalInteraction(interaction)) return 'Operational event';
+  return 'Supporting evidence';
 }
 
 function sourceArtifactTitle(artifact: LivingContextArtifact): string {
@@ -2131,6 +2165,9 @@ export default function PersonProfilePage(): JSX.Element {
                       Open interaction
                     </button>
                   )}
+                </div>
+                <div style={{ marginTop: 8, fontSize: 10, color: 'var(--pipe-accent)', letterSpacing: 0.8, textTransform: 'uppercase' }}>
+                  {interactionDecisionRoleLabel(interaction)}
                 </div>
                 {interactionSourceLabel(interaction) && (
                   <div style={{ marginTop: 6, fontSize: 10, color: 'var(--pipe-text-dim)', overflowWrap: 'anywhere' }}>
