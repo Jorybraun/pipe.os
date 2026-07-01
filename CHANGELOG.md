@@ -13,6 +13,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Fixed — Open-source assessment progress
 
+- Candidate dev-container commit panels now block manual commit submission and workspace finalization until the assigned source-backed challenge packet is complete, preventing standalone assessment paths from accepting unreviewable work.
 - Person-profile code-review decision cards now show an explicit `Usable signal`, `Calibration needed`, or `Not ready` state instead of always using a success icon, so hiring managers get a truthful first read before scanning the evidence.
 - Recruiter interview cards now render the assessment readiness contract as a required/confidence proof checklist, making missing challenge, commit, workspace, transcript, AI-use, or verification evidence visible without decoding raw source-ref counts.
 - Assessment-room source now has a regression guard against reintroducing retired novelty-room branding or affordances, keeping the room focused on the core candidate assessment product.

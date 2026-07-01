@@ -2,6 +2,7 @@ import { fireEvent, render, screen, waitFor } from '@testing-library/react';
 import { beforeEach, describe, expect, it, vi } from 'vitest';
 import { DevContainerPanel } from '../DevContainerPanel';
 import type { UseDevContainerSessionReturn } from '../../../hooks/useDevContainerSession';
+import type { CandidateAssessmentProgress } from '../../../lib/assessmentCommitSubmission';
 
 const destroyMock = vi.fn(async () => {});
 const launchMock = vi.fn(async () => {});
@@ -29,7 +30,9 @@ vi.mock('../../../contexts/SessionTokenContext', () => ({
 const baseCommitSha = '1111111111111111111111111111111111111111';
 const commitSha = '2222222222222222222222222222222222222222';
 
-function progressResponse() {
+function progressResponse(
+  overrides: Partial<CandidateAssessmentProgress> = {},
+): { progress: CandidateAssessmentProgress } {
   return {
     progress: {
       mode: 'OPEN_SOURCE_BUG_FIX',
@@ -46,8 +49,14 @@ function progressResponse() {
         required: [],
       },
       challengePacketContract: {
+        schemaVersion: 'challenge-packet-contract-v1',
         isComplete: true,
-        missing: [],
+        missingFields: [],
+        hasRepositoryUrl: true,
+        hasBaseCommitSha: true,
+        hasTask: true,
+        hasSuccessCriteria: true,
+        hasExpectedEvidence: true,
       },
       hasChallengePacket: true,
       hasWorkEvidence: true,
@@ -76,6 +85,7 @@ function progressResponse() {
       latestEvent: null,
       commit: null,
       evaluation: null,
+      ...overrides,
     },
   };
 }
@@ -264,5 +274,48 @@ describe('DevContainerPanel assessment submission', () => {
     expect(JSON.parse(String(finalizeCall?.[1]?.body))).toEqual({
       narrative: 'Fixed retry handling and committed the focused patch.',
     });
+  });
+
+  it('blocks commit submission and workspace finalization until the challenge packet is complete', async () => {
+    const fetchMock = vi.fn(async (input: RequestInfo | URL, _init?: RequestInit) => {
+      const url = input.toString();
+      if (url.endsWith('/rpc/assessment/progress')) {
+        return new Response(JSON.stringify(progressResponse({
+          nextActionLabel: 'Add success criteria and expected evidence before candidate work is accepted.',
+          challengePacketContract: {
+            schemaVersion: 'challenge-packet-contract-v1',
+            isComplete: false,
+            missingFields: ['success criteria', 'expected evidence'],
+            hasRepositoryUrl: true,
+            hasBaseCommitSha: true,
+            hasTask: true,
+            hasSuccessCriteria: false,
+            hasExpectedEvidence: false,
+          },
+        })), {
+          status: 200,
+          headers: { 'Content-Type': 'application/json' },
+        });
+      }
+      throw new Error(`Unexpected fetch ${url}`);
+    });
+    vi.stubGlobal('fetch', fetchMock);
+
+    render(<DevContainerPanel challengeId="challenge-1" />);
+
+    await screen.findByText('SUBMIT COMMIT');
+    fireEvent.click(screen.getByTestId('assessment-submit-toggle'));
+
+    const blocker = await screen.findByTestId('assessment-commit-packet-blocker');
+    expect(blocker).toHaveTextContent(
+      'Complete the source-backed challenge packet before submitting work. Missing success criteria, expected evidence.',
+    );
+    expect(screen.getByTestId('assessment-workspace-finalize-submit')).toBeDisabled();
+    expect(screen.getByTestId('assessment-commit-submit')).toBeDisabled();
+
+    const networkTargets = fetchMock.mock.calls.map(([input]) => input.toString());
+    expect(networkTargets).toEqual([
+      expect.stringContaining('/rpc/assessment/progress'),
+    ]);
   });
 });

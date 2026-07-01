@@ -48,12 +48,53 @@ export interface CandidateAssessmentProgress {
   stage: string;
   nextAction: string;
   nextActionLabel: string;
+  assignmentTrust?: JsonObject | null;
+  readiness?: {
+    label: string;
+    detail: string;
+    isReadyForEvaluation: boolean;
+    missingRequiredCount: number;
+    required: Array<{
+      id?: string;
+      label: string;
+      required?: boolean;
+      satisfied: boolean;
+      sourceRefTypes?: string[];
+      missingImpact?: string;
+    }>;
+    confidence?: Array<{
+      id?: string;
+      label: string;
+      required?: boolean;
+      satisfied: boolean;
+      sourceRefTypes?: string[];
+      missingImpact?: string;
+    }>;
+  } | null;
   hasChallengePacket: boolean;
   hasWorkEvidence: boolean;
+  hasMessageEvidence?: boolean;
   hasDevContainerEvidence: boolean;
+  hasToolUsageEvidence?: boolean;
   hasCommitSubmission: boolean;
+  hasFinalSubmission?: boolean;
+  hasAiInteraction?: boolean;
+  hasTranscriptEvidence?: boolean;
   hasTestEvidence: boolean;
   hasVerificationGap: boolean;
+  evidenceCounts?: Array<{ kind: string; count: number }>;
+  sourceRefCounts?: Array<{ kind: string; count: number }>;
+  evidenceSnippets?: unknown[];
+  challengePacketContract?: {
+    schemaVersion?: string;
+    isComplete: boolean;
+    missingFields: string[];
+    hasRepositoryUrl?: boolean;
+    hasBaseCommitSha?: boolean;
+    hasTask?: boolean;
+    hasSuccessCriteria?: boolean;
+    hasExpectedEvidence?: boolean;
+  } | null;
   challenge: {
     sourceRefType: string;
     evidenceRole: string;
@@ -61,6 +102,7 @@ export interface CandidateAssessmentProgress {
     contentHash: string;
     locator: JsonObject;
   } | null;
+  latestEvent?: JsonObject | null;
   commit: {
     repositoryUrl: string;
     forkRepositoryUrl: string | null;
@@ -75,6 +117,7 @@ export interface CandidateAssessmentProgress {
     changedFiles: CandidateCommitChangedFile[];
     occurredAt: string;
   } | null;
+  evaluation?: JsonObject | null;
 }
 
 export interface CandidateAssessmentProgressResponse {

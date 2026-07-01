@@ -58,6 +58,22 @@ function shortSha(value: string | null | undefined): string | null {
   return trimmed ? trimmed.slice(0, 12) : null;
 }
 
+function challengePacketSubmissionBlocker(progress: CandidateAssessmentProgress | null): string | null {
+  if (!progress) return 'Assessment session is not ready for commit submission.';
+  if (progress.challengePacketContract) {
+    if (progress.challengePacketContract.isComplete) return null;
+    const missingFields = progress.challengePacketContract.missingFields
+      .map((field) => field.trim())
+      .filter(Boolean);
+    return missingFields.length > 0
+      ? `Complete the source-backed challenge packet before submitting work. Missing ${missingFields.join(', ')}.`
+      : 'Complete the source-backed challenge packet before submitting work.';
+  }
+  return progress.hasChallengePacket
+    ? null
+    : 'Assign a complete source-backed challenge packet before submitting work.';
+}
+
 function fieldStyle(kind: 'input' | 'textarea' = 'input'): CSSProperties {
   return {
     width: '100%',
@@ -158,8 +174,9 @@ export function DevContainerPanel({ challengeId }: DevContainerPanelProps): JSX.
 
   const handleCommitSubmit = async (event: FormEvent<HTMLFormElement>): Promise<void> => {
     event.preventDefault();
-    if (!assessmentProgress) {
-      setCommitError('Assessment session is not ready for commit submission.');
+    const submissionBlocker = challengePacketSubmissionBlocker(assessmentProgress);
+    if (submissionBlocker) {
+      setCommitError(submissionBlocker);
       return;
     }
     setCommitSubmitting(true);
@@ -182,8 +199,9 @@ export function DevContainerPanel({ challengeId }: DevContainerPanelProps): JSX.
       setCommitError('Dev container session is not ready for workspace finalization.');
       return;
     }
-    if (!assessmentProgress) {
-      setCommitError('Assessment session is not ready for workspace finalization.');
+    const submissionBlocker = challengePacketSubmissionBlocker(assessmentProgress);
+    if (submissionBlocker) {
+      setCommitError(submissionBlocker);
       return;
     }
     setWorkspaceFinalizing(true);
@@ -251,8 +269,9 @@ export function DevContainerPanel({ challengeId }: DevContainerPanelProps): JSX.
   }
 
   if (state === 'READY' && containerUrl) {
-    const commitBlocked = !assessmentProgress || commitSubmitting;
-    const workspaceFinalizeBlocked = !assessmentProgress || !taskArn || workspaceFinalizing;
+    const submissionBlocker = challengePacketSubmissionBlocker(assessmentProgress);
+    const commitBlocked = Boolean(submissionBlocker) || commitSubmitting;
+    const workspaceFinalizeBlocked = Boolean(submissionBlocker) || !taskArn || workspaceFinalizing;
     const commitStatusLabel = assessmentLoading
       ? 'LOADING ASSESSMENT STATE'
       : assessmentProgress?.hasCommitSubmission
@@ -366,6 +385,21 @@ export function DevContainerPanel({ challengeId }: DevContainerPanelProps): JSX.
                 {assessmentError ?? (assessmentProgress?.nextActionLabel ?? 'No assessment session loaded')}
               </span>
             </div>
+            {submissionBlocker && (
+              <div
+                data-testid="assessment-commit-packet-blocker"
+                role="alert"
+                style={{
+                  gridColumn: '1 / -1',
+                  color: '#fbbf24',
+                  border: '1px solid rgba(251,191,36,0.45)',
+                  background: 'rgba(251,191,36,0.08)',
+                  padding: 8,
+                }}
+              >
+                {submissionBlocker}
+              </div>
+            )}
 
             <div
               style={{
