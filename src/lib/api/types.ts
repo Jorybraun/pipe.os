@@ -2185,3 +2185,59 @@ export interface MatchConfidenceReport {
   recommendations: string[];
   computedAt: string;
 }
+
+// ─── Unified Match Report ───────────────────────────────────────────────────
+
+export type MatchVerdict = 'strong_match' | 'likely_match' | 'needs_review' | 'weak_match' | 'insufficient_evidence';
+
+export interface VerdictRationale {
+  verdict: MatchVerdict;
+  score: number;
+  label: string;
+  primaryReasons: string[];
+  riskFactors: string[];
+}
+
+export interface MatchReportSection {
+  loaded: boolean;
+  errorMessage: string | null;
+}
+
+export interface MatchReportConfidence extends MatchReportSection {
+  report: MatchConfidenceReport | null;
+}
+
+export interface MatchReportGaps extends MatchReportSection {
+  report: EvidenceGapReport | null;
+}
+
+export interface MatchReportStaleness extends MatchReportSection {
+  summary: StalenessAlertSummary | null;
+}
+
+export interface MatchReportProvenance extends MatchReportSection {
+  chain: unknown;
+}
+
+export interface MatchReportDecisionHistory extends MatchReportSection {
+  exclusions: {
+    excludedPacketIds: string[];
+    exclusions: Array<{ packetId: string; verdict: string; decidedAt: string }>;
+    deferredCount: number;
+    totalDecisions: number;
+  } | null;
+}
+
+export interface UnifiedMatchReport {
+  candidateId: string;
+  challengePacketId: string;
+  matchRunId: string | null;
+  verdict: VerdictRationale;
+  confidence: MatchReportConfidence;
+  gaps: MatchReportGaps;
+  staleness: MatchReportStaleness;
+  provenance: MatchReportProvenance;
+  decisionHistory: MatchReportDecisionHistory;
+  generatedAt: string;
+  pipelineVersion: string;
+}

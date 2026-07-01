@@ -188,3 +188,16 @@ export type {
   MatchConfidenceReport,
   MatchConfidenceOptions,
 } from './matchConfidenceScoring';
+export { generateUnifiedMatchReport } from './matchReportPipeline';
+export type {
+  MatchVerdict,
+  MatchReportSection,
+  MatchReportConfidence,
+  MatchReportGaps,
+  MatchReportStaleness,
+  MatchReportProvenance,
+  MatchReportDecisionHistory,
+  VerdictRationale,
+  UnifiedMatchReport,
+  MatchReportPipelineOptions,
+} from './matchReportPipeline';

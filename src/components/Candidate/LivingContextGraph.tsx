@@ -61,6 +61,7 @@ import { useEvidenceTimeline } from '../../hooks/useEvidenceTimeline';
 import { useStalenessAlerts } from '../../hooks/useStalenessAlerts';
 import { useRepoDecomposition } from '../../hooks/useRepoDecomposition';
 import { useMatchConfidence } from '../../hooks/useMatchConfidence';
+import { useMatchReport } from '../../hooks/useMatchReport';
 import { useLivingContext } from '../../hooks/useLivingContext';
 import { buildLivingContextBranches } from '../../lib/livingContextTree';
 import { ContextRecordForest } from './ContextRecordTree';
@@ -2668,6 +2669,117 @@ function MatchConfidencePanel({
   );
 }
 
+function MatchReportPanel({
+  candidateId,
+  packetId,
+}: {
+  candidateId: string;
+  packetId: string | null;
+}): JSX.Element | null {
+  const { report, isLoading, error, refetch } = useMatchReport(candidateId, packetId);
+
+  if (!packetId) return null;
+  if (isLoading && !report) return null;
+  if (error || !report) return null;
+
+  const verdictColor: Record<string, string> = {
+    strong_match: 'var(--lc-signal, #10b981)',
+    likely_match: 'var(--lc-concept, #3b82f6)',
+    needs_review: 'var(--lc-gap-weak, #f59e0b)',
+    weak_match: 'var(--lc-gap-none, #ef4444)',
+    insufficient_evidence: 'var(--lc-structural, #6b7280)',
+  };
+
+  const verdictIcon: Record<string, string> = {
+    strong_match: '✓',
+    likely_match: '→',
+    needs_review: '?',
+    weak_match: '✗',
+    insufficient_evidence: '—',
+  };
+
+  const color = verdictColor[report.verdict.verdict] ?? verdictColor.needs_review;
+  const icon = verdictIcon[report.verdict.verdict] ?? '?';
+  const scorePercent = Math.round(report.verdict.score * 100);
+
+  return (
+    <section
+      className="living-context__panel"
+      data-testid="match-report-panel"
+    >
+      <div className="living-context__section-head">
+        <div style={{ display: 'flex', gap: 6, alignItems: 'center' }}>
+          <Zap size={13} color={color} />
+          <div className="living-context__section-title">Match report</div>
+          <span className="living-context__badge" style={{ background: color }}>
+            {report.verdict.label}
+          </span>
+        </div>
+        <button
+          type="button"
+          className="living-context__refresh"
+          onClick={() => void refetch()}
+          title="Refresh match report"
+          aria-label="Refresh match report"
+        >
+          <RefreshCw size={12} />
+        </button>
+      </div>
+
+      <div className="living-context__match-report-verdict" style={{ color }}>
+        <span className="living-context__match-report-icon">{icon}</span>
+        <span className="living-context__match-report-score">{scorePercent}%</span>
+        <span className="living-context__match-report-version">v{report.pipelineVersion}</span>
+      </div>
+
+      {report.verdict.primaryReasons.length > 0 && (
+        <div className="living-context__match-report-reasons">
+          {report.verdict.primaryReasons.map((reason, i) => (
+            <div key={i} className="living-context__match-report-reason">{reason}</div>
+          ))}
+        </div>
+      )}
+
+      {report.verdict.riskFactors.length > 0 && (
+        <div className="living-context__match-report-risks">
+          <div className="living-context__subsection-title">Risk factors</div>
+          {report.verdict.riskFactors.map((risk, i) => (
+            <div key={i} className="living-context__match-report-risk">
+              <AlertTriangle size={11} /> {risk}
+            </div>
+          ))}
+        </div>
+      )}
+
+      <div className="living-context__match-report-sections">
+        {report.confidence.loaded && report.confidence.report && (
+          <div className="living-context__match-report-section-badge" data-status="ok">
+            Confidence: {Math.round(report.confidence.report.compositeScore * 100)}%
+          </div>
+        )}
+        {report.gaps.loaded && report.gaps.report && (
+          <div className="living-context__match-report-section-badge" data-status="ok">
+            Coverage: {Math.round(report.gaps.report.summary.weightedCoverageScore * 100)}%
+          </div>
+        )}
+        {report.staleness.loaded && report.staleness.summary && (
+          <div
+            className="living-context__match-report-section-badge"
+            data-status={report.staleness.summary.overallHealth === 'healthy' ? 'ok' : 'warn'}
+          >
+            Health: {titleCase(report.staleness.summary.overallHealth)}
+          </div>
+        )}
+        {report.decisionHistory.loaded && report.decisionHistory.exclusions && (
+          <div className="living-context__match-report-section-badge" data-status="ok">
+            Prior decisions: {report.decisionHistory.exclusions.totalDecisions}
+          </div>
+        )}
+      </div>
+    </section>
+  );
+}
+
 function EvidenceReadinessPanel({
   candidateId,
 }: {
@@ -3547,6 +3659,7 @@ export function LivingContextGraph({
       <MatchDecisionPanel candidateId={candidateId} />
       <RepoDecompositionPanel candidateId={candidateId} packetId={challengePacketId} />
       <MatchConfidencePanel candidateId={candidateId} packetId={challengePacketId} />
+      <MatchReportPanel candidateId={candidateId} packetId={challengePacketId} />
       <CandidateComparisonPanel
         candidateId={candidateId}
         comparisonCandidateIds={comparisonCandidateIds ?? null}
