@@ -163,13 +163,22 @@ function githubPathParts(parsed: URL, label: string): string[] {
   return parts;
 }
 
-function validateGithubRepositoryUrl(value: string, label: string): string {
+function normalizedGithubRepositoryUrl(value: string, label: string): string {
   const parsed = parseHttpsUrl(value, label);
-  githubPathParts(parsed, label);
-  return value.trim();
+  const parts = githubPathParts(parsed, label);
+  const [owner, repoWithSuffix] = parts;
+  const repo = repoWithSuffix?.endsWith('.git') ? repoWithSuffix.slice(0, -4) : repoWithSuffix;
+  if (!owner || !repo) {
+    throw new Error(`${label} must include a GitHub owner and repository.`);
+  }
+  return `https://github.com/${owner}/${repo}`;
 }
 
-function validateGithubCommitUrl(value: string, commitSha: string): string {
+function validateGithubRepositoryUrl(value: string, label: string): string {
+  return normalizedGithubRepositoryUrl(value, label);
+}
+
+function commitUrlRepositoryUrl(value: string, commitSha: string): { commitUrl: string; repositoryUrl: string } {
   const parsed = parseHttpsUrl(value, 'Commit URL');
   const parts = githubPathParts(parsed, 'Commit URL');
   const commitIndex = parts.findIndex((part) => part === 'commit');
@@ -177,10 +186,32 @@ function validateGithubCommitUrl(value: string, commitSha: string): string {
   if (!urlSha || urlSha.toLowerCase() !== commitSha.toLowerCase()) {
     throw new Error('Commit URL must point to the submitted commit SHA.');
   }
-  return value.trim();
+  const [owner, repoWithSuffix] = parts;
+  const repo = repoWithSuffix?.endsWith('.git') ? repoWithSuffix.slice(0, -4) : repoWithSuffix;
+  if (!owner || !repo) {
+    throw new Error('Commit URL must include a GitHub owner and repository.');
+  }
+  parsed.search = '';
+  parsed.hash = '';
+  return {
+    commitUrl: parsed.toString(),
+    repositoryUrl: `https://github.com/${owner}/${repo}`,
+  };
 }
 
-function validateGithubPullRequestUrl(value: string): string {
+function validateGithubCommitUrl(
+  value: string,
+  commitSha: string,
+  allowedRepositoryUrls: readonly string[],
+): string {
+  const parsed = commitUrlRepositoryUrl(value, commitSha);
+  if (!new Set(allowedRepositoryUrls).has(parsed.repositoryUrl)) {
+    throw new Error('Commit URL must belong to the assigned repository or declared fork.');
+  }
+  return parsed.commitUrl;
+}
+
+function validateGithubPullRequestUrl(value: string, repositoryUrl: string): string {
   const parsed = parseHttpsUrl(value, 'Upstream PR URL');
   const parts = githubPathParts(parsed, 'Upstream PR URL');
   const pullIndex = parts.findIndex((part) => part === 'pull');
@@ -188,7 +219,17 @@ function validateGithubPullRequestUrl(value: string): string {
   if (!Number.isInteger(prNumber) || prNumber <= 0) {
     throw new Error('Upstream PR URL must point to a GitHub pull request.');
   }
-  return value.trim();
+  const [owner, repoWithSuffix] = parts;
+  const repo = repoWithSuffix?.endsWith('.git') ? repoWithSuffix.slice(0, -4) : repoWithSuffix;
+  if (!owner || !repo) {
+    throw new Error('Upstream PR URL must include a GitHub owner and repository.');
+  }
+  if (`https://github.com/${owner}/${repo}` !== repositoryUrl) {
+    throw new Error('Upstream PR URL must belong to the assigned repository.');
+  }
+  parsed.search = '';
+  parsed.hash = '';
+  return parsed.toString();
 }
 
 function validateAssessmentBranchName(branchName: string): string {
@@ -311,7 +352,13 @@ export async function buildCandidateCommitSubmissionPayload(
     ? validateGithubRepositoryUrl(forkRepositoryUrl, 'Fork URL')
     : null;
   const commitUrl = normalizeOptionalText(fields.commitUrl);
-  const validatedCommitUrl = commitUrl ? validateGithubCommitUrl(commitUrl, commitSha) : null;
+  const validatedCommitUrl = commitUrl
+    ? validateGithubCommitUrl(
+        commitUrl,
+        commitSha,
+        [validatedRepositoryUrl, validatedForkRepositoryUrl].filter((url): url is string => Boolean(url)),
+      )
+    : null;
   if (changedFiles.length === 0) throw new Error('At least one changed file is required.');
   if (!commitEvidenceText) throw new Error('Commit evidence text is required.');
   if (!commitEvidenceText.toLowerCase().includes(commitSha.toLowerCase())) {
@@ -329,7 +376,7 @@ export async function buildCandidateCommitSubmissionPayload(
     throw new Error('Upstream PR URL requires explicit candidate approval.');
   }
   const validatedUpstreamPullRequestUrl = upstreamPullRequestUrl
-    ? validateGithubPullRequestUrl(upstreamPullRequestUrl)
+    ? validateGithubPullRequestUrl(upstreamPullRequestUrl, validatedRepositoryUrl)
     : null;
 
   const sourceRepositoryUrl = validatedForkRepositoryUrl ?? validatedRepositoryUrl;

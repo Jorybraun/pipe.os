@@ -301,6 +301,11 @@ describe('commit submission payloads', () => {
 
     await expect(buildCommitSubmissionPayload({
       ...validFields,
+      commitUrl: `https://github.com/unrelated/source-backed-worker/commit/${'b'.repeat(40)}`,
+    })).rejects.toThrow('Commit URL must belong to the assigned repository or declared fork.');
+
+    await expect(buildCommitSubmissionPayload({
+      ...validFields,
       upstreamPullRequestUrl: 'https://github.com/pipe/source-backed-worker/issues/42',
       upstreamPrConsent: true,
     })).rejects.toThrow('Upstream PR URL must point to a GitHub pull request.');

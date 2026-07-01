@@ -25,9 +25,11 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - The deployed CODE_REVIEW smoke now waits for recruiter-detail projections with bounded API requests before launching Playwright, then retries once after projection readiness so app-dev verification fails with a useful reason instead of hanging on stale recruiter state.
 - The app-dev CODE_REVIEW reliability loop now parses the blocked-profile matrix summary from its explicit marker instead of accidentally treating a nested profile proof as the matrix result.
 - The deployed CODE_REVIEW recruiter smoke now asserts the pending-assignment person profile says to wait for candidate review and withhold hiring decisions until source-backed review comments arrive.
+- Added CODE_REVIEW commit-submission regressions proving candidate commit URLs must belong to the assigned repository or declared fork before they can count as assessment evidence.
 
 ### Fixed — CODE_REVIEW assessment runtime
 
+- Candidate commit-submission clients now reject optional commit URLs outside the assigned repository or declared fork before submission, matching the server-side assessment proof invariant.
 - App render errors from stale post-deploy dynamic chunks now auto-reload once per chunk URL before showing the manual recovery screen, reducing candidate/recruiter dead ends during CODE_REVIEW deploy rollovers.
 - Legacy review submission panels now require a connected submit service before showing success, removing the fake delayed success path from assessment UI code.
 - Person-profile CODE_REVIEW recommendations now require parsed candidate/repo match provenance before showing positive advance language, so assignment-only or stale route-state scores stay in missing-evidence calibration.

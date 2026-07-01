@@ -96,7 +96,7 @@ function validateGithubRepositoryUrl(value: string, label: string): string {
   return normalizedGithubRepositoryUrl(value, label);
 }
 
-function validateGithubCommitUrl(value: string, commitSha: string): string {
+function commitUrlRepositoryUrl(value: string, commitSha: string): { commitUrl: string; repositoryUrl: string } {
   const parsed = parseHttpsUrl(value, 'Commit URL');
   const parts = githubPathParts(parsed, 'Commit URL');
   const commitIndex = parts.findIndex((part) => part === 'commit');
@@ -104,7 +104,29 @@ function validateGithubCommitUrl(value: string, commitSha: string): string {
   if (!urlSha || urlSha.toLowerCase() !== commitSha.toLowerCase()) {
     throw new Error('Commit URL must point to the submitted commit SHA.');
   }
-  return value.trim();
+  const [owner, repoWithSuffix] = parts;
+  const repo = repoWithSuffix?.endsWith('.git') ? repoWithSuffix.slice(0, -4) : repoWithSuffix;
+  if (!owner || !repo) {
+    throw new Error('Commit URL must include a GitHub owner and repository.');
+  }
+  parsed.search = '';
+  parsed.hash = '';
+  return {
+    commitUrl: parsed.toString(),
+    repositoryUrl: `https://github.com/${owner}/${repo}`,
+  };
+}
+
+function validateGithubCommitUrl(
+  value: string,
+  commitSha: string,
+  allowedRepositoryUrls: readonly string[],
+): string {
+  const parsed = commitUrlRepositoryUrl(value, commitSha);
+  if (!new Set(allowedRepositoryUrls).has(parsed.repositoryUrl)) {
+    throw new Error('Commit URL must belong to the assigned repository or declared fork.');
+  }
+  return parsed.commitUrl;
 }
 
 function githubRepositoryUrlFromPullRequestUrl(value: string): string {
@@ -254,7 +276,13 @@ export async function buildCommitSubmissionPayload(
     ? validateGithubRepositoryUrl(forkRepositoryUrl, 'Fork URL')
     : null;
   const commitUrl = normalizeOptionalText(fields.commitUrl);
-  const validatedCommitUrl = commitUrl ? validateGithubCommitUrl(commitUrl, commitSha) : null;
+  const validatedCommitUrl = commitUrl
+    ? validateGithubCommitUrl(
+        commitUrl,
+        commitSha,
+        [validatedRepositoryUrl, validatedForkRepositoryUrl].filter((url): url is string => Boolean(url)),
+      )
+    : null;
   if (changedFiles.length === 0) throw new Error('At least one changed file is required.');
   if (!commitEvidenceText) throw new Error('Commit evidence text is required.');
   if (!commitEvidenceText.toLowerCase().includes(commitSha.toLowerCase())) {
