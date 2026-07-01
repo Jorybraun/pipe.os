@@ -7,6 +7,7 @@ export interface SubmissionPanelProps {
   annotations: Annotation[];
   onSubmitComplete: (result: { success: boolean; submittedAt: string }) => void;
   onError: (error: string) => void;
+  submitReview?: (payload: SubmissionPayload) => Promise<SubmissionResponse>;
   readOnly?: boolean;
 }
 
@@ -15,6 +16,13 @@ export interface SubmissionResponse {
   assessmentId: string;
   submittedAt: string;
   error?: { code: string; message: string };
+}
+
+export interface SubmissionPayload {
+  assessmentId: string;
+  annotations: Annotation[];
+  verdict: 'approve' | 'request_changes' | 'comment_only';
+  summary: string;
 }
 
 interface SubmissionState {
@@ -30,6 +38,7 @@ export function SubmissionPanel({
   annotations,
   onSubmitComplete,
   onError,
+  submitReview,
   readOnly = false,
 }: SubmissionPanelProps): JSX.Element {
   const resetTimeoutRef = useRef<ReturnType<typeof setTimeout> | null>(null);
@@ -59,15 +68,21 @@ export function SubmissionPanel({
     setState(prev => ({ ...prev, isLoading: true, error: null }));
 
     try {
-      // In a real implementation, this would call the submitCodeReview Lambda
-      // For now, simulate the API call
-      await new Promise(resolve => setTimeout(resolve, 800));
-
-      const response: SubmissionResponse = {
-        success: true,
+      if (!submitReview) {
+        throw new Error('Submission service is not connected');
+      }
+      const response = await submitReview({
         assessmentId,
-        submittedAt: new Date().toISOString(),
-      };
+        annotations,
+        verdict: state.verdict,
+        summary: state.summary.trim(),
+      });
+      if (!response.success) {
+        throw new Error(response.error?.message ?? 'Submission service rejected the review');
+      }
+      if (response.assessmentId !== assessmentId) {
+        throw new Error('Submission response did not match this assessment');
+      }
 
       setState(prev => ({ ...prev, isLoading: false, success: true }));
       onSubmitComplete({ success: true, submittedAt: response.submittedAt });

@@ -27,6 +27,8 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Fixed — CODE_REVIEW assessment runtime
 
+- App render errors from stale post-deploy dynamic chunks now auto-reload once per chunk URL before showing the manual recovery screen, reducing candidate/recruiter dead ends during CODE_REVIEW deploy rollovers.
+- Legacy review submission panels now require a connected submit service before showing success, removing the fake delayed success path from assessment UI code.
 - Person-profile CODE_REVIEW recommendations now require parsed candidate/repo match provenance before showing positive advance language, so assignment-only or stale route-state scores stay in missing-evidence calibration.
 - Recruiter interview cards now surface challenge-packet success criteria and expected evidence alongside repo, base commit, and task so open-source assessments read as concrete work packets before the candidate starts.
 - Commit-submission proof checklists now label captured tooling as `Tool activity` instead of carrying stale interaction language from the retired experiment.
