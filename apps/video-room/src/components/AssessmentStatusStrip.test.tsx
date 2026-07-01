@@ -104,7 +104,7 @@ const progress: RoomAssessmentProgressSnapshot = {
     required: [
       {
         id: 'challenge_packet',
-        label: 'Concrete challenge packet',
+        label: 'Complete challenge packet',
         required: true,
         satisfied: true,
         sourceRefTypes: ['open_source_challenge_packet'],

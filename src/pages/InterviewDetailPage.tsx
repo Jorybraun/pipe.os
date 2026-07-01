@@ -753,6 +753,15 @@ function workspaceAssessmentDecisionItem(progress: AssessmentProgressSnapshot | 
     };
   }
 
+  if (progress.challengePacketContract?.isComplete === false) {
+    return {
+      label: 'Decision',
+      value: 'Waiting for complete task',
+      detail: `The assigned packet is missing ${progress.challengePacketContract.missingFields.join(', ')}.`,
+      tone: 'blocked',
+    };
+  }
+
   if (progress.hasChallengePacket) {
     return {
       label: 'Decision',
@@ -802,6 +811,15 @@ function workspaceAssessmentFitItem(input: {
     };
   }
 
+  if (input.progress?.challengePacketContract?.isComplete === false) {
+    return {
+      label: 'Challenge fit',
+      value: 'Incomplete task packet',
+      detail: `Add ${input.progress.challengePacketContract.missingFields.join(', ')} before using this assessment.`,
+      tone: 'blocked',
+    };
+  }
+
   if (input.progress?.hasChallengePacket) {
     return {
       label: 'Challenge fit',
@@ -820,10 +838,13 @@ function workspaceAssessmentFitItem(input: {
 }
 
 function workspaceAssessmentProofItem(progress: AssessmentProgressSnapshot | null): WorkspaceAssessmentReadoutItem {
+  const challengeContractComplete = progress?.challengePacketContract
+    ? progress.challengePacketContract.isComplete
+    : Boolean(progress?.hasChallengePacket || assessmentSourceRefCount(progress, 'review_challenge_packet') > 0);
   const challengeCaptured = assessmentHasSatisfiedCoverage(
     progress,
     'challenge_packet',
-    Boolean(progress?.hasChallengePacket || assessmentSourceRefCount(progress, 'review_challenge_packet') > 0),
+    challengeContractComplete,
   );
   const commitCaptured = assessmentHasSatisfiedCoverage(
     progress,

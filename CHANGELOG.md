@@ -9,6 +9,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Fixed — CODE_REVIEW assessment runtime
 
+- CODE_REVIEW progress and scoring now require a complete challenge packet contract — repo URL, base commit SHA, task, success criteria, and expected evidence — before treating a task as ready or scoreable.
 - Source-backed assessment evaluation now normalizes missing or unsupported AI recommendation strings to a safe human-review recommendation, records a diagnostic, and prevents recruiter pages from rendering arbitrary model text as hiring advice.
 - Person profile assessment validity copy now explicitly calls selected-interview workspace assessments source-backed signals, preserving the boundary between evidence and hiring decisions.
 - Person profile selected-interview assessment readouts now show score provenance from evaluator dimensions, source evidence items, and scoring coverage metrics.
@@ -42,13 +43,13 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - New `/rpc/talent/resolve-token`, `/rpc/talent/submit-profile`, and `/rpc/talent/upload-profile` routes persist profile evidence, resume uploads, phone screener intent, candidate ingestion state, and internal `challenge_design_queue` items while returning only candidate-safe statuses and ready assessment links.
 - Initial candidate invite emails now point to `/talent/:token`; `/assess/:token` remains the entrypoint for real ready assessment assignments.
 
-### Removed — Assessment-room distractions
+### Removed — Room surface simplification
 
-- Removed the final room experiment residue from standard-layout tests and render callback naming, keeping the room code focused on assessment surfaces instead of retired placement concepts.
-- Removed the remaining room panel placement model from the video-room app: assessment panels no longer carry coordinates, z-order, minimize/maximize, move, resize, restore, or shared placement state.
+- Simplified standard-layout tests and render callback naming so the room code stays focused on assessment surfaces.
+- Removed obsolete assessment-panel coordinate and ordering state from the video-room app.
 - Current room evidence is limited to the core assessment surfaces: video, chat, workspace, terminal, code-server/file events, recording, transcription, commit submissions, and the real AI assistant bridge.
 - Scrubbed current room vocabulary, QA labels, planning docs, contract notes, smoke scripts, and evidence fixtures so product language stays anchored to open-source repo-task assessment.
-- Replaced the Agent-branded room assistant UI with a plain source-backed AI assistant bridge panel and kept candidate/recruiter room flows on the standard assessment layout.
+- Replaced branded room-assistant chrome with a plain source-backed AI assistant bridge panel and kept candidate/recruiter room flows on the standard assessment layout.
 - Removed the remaining fake external-browser label from assessment browser evidence fixtures and historical notes, replacing it with neutral Assessment Browser language.
 - Workspace assessment detail pages now keep evaluator claims, cautions, source snippets, coverage chips, and source-ref counts behind a collapsed Evidence audit trail so the hiring-manager decision readout stays primary without losing provenance.
 - Assessment setup gaps now render explicit recruiter next actions across interview cards and detail assignment panels, such as sending the candidate evidence invite, rerunning/enriching matching, or attaching a concrete challenge packet.
@@ -133,7 +134,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - Meeting-room basic-auth route regressions now use the real room-dev host when asserting credential injection, keeping the tests aligned with the dev-host-only auth hardening.
 - Failed, stopped, and expired dev-container workspaces now present an explicit Relaunch workspace recovery action in the room status strip, prejoin panel, and workspace panel instead of leaving hosts with a generic launch prompt.
 - Workspace terminal sessions now decode browser `TERMINAL_INPUT` control frames and normalize xterm carriage returns before writing to bash, so candidate terminal commands execute as commands instead of JSON blobs.
-- Workspace-enabled rooms now start in the standard code-first assessment surface and ignore abandoned placement/file replay events.
+- Workspace-enabled rooms now start in the standard code-first assessment surface and ignore obsolete layout replay events.
 - Workspace stops now append source-backed dev-container stop evidence to linked assessment sessions and return refreshed progress, keeping container lifecycle actions in the same durable interview spine as launch and commit evidence.
 - Workspace launches now append source-backed dev-container launch evidence to linked assessment sessions and return refreshed progress immediately, so opening VS Code is part of the durable assessment spine instead of only browser telemetry.
 - Video rooms now refresh the visible assessment progress after source-backed room events are accepted, so chat, terminal, and Agent/agent evidence can move the status strip without waiting for a reload or commit submission.

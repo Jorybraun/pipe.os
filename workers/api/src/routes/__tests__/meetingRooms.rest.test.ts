@@ -5026,7 +5026,17 @@ describe('meeting room recording living-context route', () => {
         repositoryUrl: 'https://github.com/pipe/source-backed-worker',
         baseCommitSha,
       }),
-      `Repo: https://github.com/pipe/source-backed-worker\nBase commit: ${baseCommitSha}\nTask: Fix the source-backed worker retry path.`,
+      [
+        'Repo: https://github.com/pipe/source-backed-worker',
+        `Base commit: ${baseCommitSha}`,
+        'Task: Fix the source-backed worker retry path.',
+        'Success criteria:',
+        '- Existing worker tests pass',
+        'Expected evidence:',
+        '- Commit SHA on assessment branch',
+        '- Code diff for the retry path fix',
+        '- Test command output',
+      ].join('\n'),
       'challenge-content-hash',
       now,
     );

@@ -59,6 +59,16 @@ const progress: RoomAssessmentProgressSnapshot = {
   stage: 'READY_FOR_EVALUATION',
   nextAction: 'START_EVALUATION',
   nextActionLabel: 'Start source-backed AI or human evaluation.',
+  challengePacketContract: {
+    schemaVersion: 'challenge-packet-contract-v1',
+    isComplete: true,
+    missingFields: [],
+    hasRepositoryUrl: true,
+    hasBaseCommitSha: true,
+    hasTask: true,
+    hasSuccessCriteria: true,
+    hasExpectedEvidence: true,
+  },
   hasChallengePacket: true,
   hasWorkEvidence: true,
   hasMessageEvidence: true,
@@ -97,7 +107,7 @@ const progress: RoomAssessmentProgressSnapshot = {
     required: [
       {
         id: 'challenge_packet',
-        label: 'Concrete challenge packet',
+        label: 'Complete challenge packet',
         required: true,
         satisfied: true,
         sourceRefTypes: ['open_source_challenge_packet'],
@@ -166,7 +176,7 @@ describe('AssessmentTaskBrief', () => {
     expect(screen.getByTestId('assessment-task-brief-readiness').textContent).toContain('Ready for evaluation');
     expect(briefText).toContain('Proof checklist');
     expect(briefText).toContain('Ready for source-backed review');
-    expect(briefText).toContain('Concrete challenge packet: Captured');
+    expect(briefText).toContain('Complete challenge packet: Captured');
     expect(briefText).toContain('Assessment branch commit: Captured');
     expect(briefText).toContain('Tests or verification note: Captured');
     expect(briefText).toContain('Candidate explanation: Captured');
@@ -226,7 +236,7 @@ describe('AssessmentTaskBrief', () => {
             required: [
               {
                 id: 'challenge_packet',
-                label: 'Concrete challenge packet',
+                label: 'Complete challenge packet',
                 required: true,
                 satisfied: true,
                 sourceRefTypes: ['open_source_challenge_packet'],
@@ -280,5 +290,62 @@ describe('AssessmentTaskBrief', () => {
     expect(proofText).toContain('Exact diff source: Missing');
     expect(proofText).toContain('Tests or verification note: Not captured');
     expect(proofText).toContain('Candidate explanation: Not captured');
+  });
+
+  it('shows exactly which challenge packet fields are missing', () => {
+    render(
+      <AssessmentTaskBrief
+        packet={{
+          ...packet,
+          exactText: [
+            'Repo: https://github.com/pipe/source-backed-worker',
+            'Base commit: dddddddddddddddddddddddddddddddddddddddd',
+            'Task: Fix the source-backed worker retry path.',
+            'Success: retry path is deterministic.',
+          ].join('\n'),
+        }}
+        workspace={workspace}
+        progress={{
+          ...progress,
+          stage: 'WAITING_FOR_CHALLENGE',
+          nextAction: 'ASSIGN_CHALLENGE',
+          nextActionLabel: 'Assign a complete open-source challenge packet.',
+          challengePacketContract: {
+            schemaVersion: 'challenge-packet-contract-v1',
+            isComplete: false,
+            missingFields: ['expected evidence'],
+            hasRepositoryUrl: true,
+            hasBaseCommitSha: true,
+            hasTask: true,
+            hasSuccessCriteria: true,
+            hasExpectedEvidence: false,
+          },
+          readiness: {
+            ...progress.readiness!,
+            status: 'WAITING_FOR_CHALLENGE',
+            label: 'Waiting for challenge',
+            detail: 'Assign a concrete repo URL, base commit, task, success criteria, and expected evidence before candidate work starts.',
+            isReadyForEvaluation: false,
+            missingRequiredCount: 1,
+            required: [
+              {
+                id: 'challenge_packet',
+                label: 'Complete challenge packet',
+                required: true,
+                satisfied: false,
+                sourceRefTypes: ['open_source_challenge_packet'],
+                missingImpact: 'Challenge packet is missing expected evidence.',
+              },
+            ],
+          },
+        }}
+        workspaceReady={false}
+      />,
+    );
+
+    const warning = screen.getByTestId('assessment-task-brief-contract-warning');
+    expect(warning.textContent).toContain('Task packet incomplete');
+    expect(warning.textContent).toContain('Missing expected evidence');
+    expect(screen.getByTestId('assessment-task-brief-proof').textContent).toContain('Complete challenge packet: Missing');
   });
 });

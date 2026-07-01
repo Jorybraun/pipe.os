@@ -118,6 +118,9 @@ export function AssessmentTaskBrief({
   const proofItems = progress ? proofChecklistItems(progress) : [];
   const missingRequiredProof = progress?.readiness?.missingRequiredCount
     ?? proofItems.filter((item) => item.required && !item.captured).length;
+  const incompletePacketFields = progress?.challengePacketContract?.isComplete === false
+    ? progress.challengePacketContract.missingFields
+    : [];
   const hasContract = Boolean(
     summary.task
     || summary.successCriteria.length > 0
@@ -176,6 +179,12 @@ export function AssessmentTaskBrief({
                 ? 'Required proof is complete.'
                 : `${progress.readiness.missingRequiredCount} required proof ${progress.readiness.missingRequiredCount === 1 ? 'item' : 'items'} missing.`}
             </small>
+          </div>
+        )}
+        {incompletePacketFields.length > 0 && (
+          <div className="assessment-task-brief-contract-warning" data-testid="assessment-task-brief-contract-warning">
+            <span>Task packet incomplete</span>
+            <small>Missing {incompletePacketFields.join(', ')}</small>
           </div>
         )}
       </section>

@@ -1299,6 +1299,10 @@ describe('GET /interviews/:id detail', () => {
       `Base commit: ${baseCommitSha}`,
       'Task: fix the popover cleanup regression.',
       'Success: commit a focused patch with tests.',
+      'Expected evidence:',
+      '- git commit SHA on a pipe-assessment branch',
+      '- code diff for the popover cleanup fix',
+      '- test output or verification note',
     ].join('\n');
     const commitText = `commit ${commitSha}\nAuthor: Candidate <candidate@example.com>\n\nFix popover cleanup.`;
     const diffText = 'diff --git a/src/popover.ts b/src/popover.ts\n+cleanupStaleHandler();';
@@ -1517,6 +1521,10 @@ describe('GET /interviews/:id detail', () => {
       `Base commit: ${baseCommitSha}`,
       'Task: fix the start-evaluation regression.',
       'Success: commit a focused patch with tests.',
+      'Expected evidence:',
+      '- git commit SHA on a pipe-assessment branch',
+      '- code diff for the start-evaluation fix',
+      '- test output or verification note',
     ].join('\n');
     const commitText = `commit ${commitSha}\nAuthor: Candidate <candidate@example.com>\n\nFix start evaluation.`;
     const diffText = [
@@ -1766,6 +1774,10 @@ describe('GET /interviews/:id detail', () => {
       `Base commit: ${baseCommitSha}`,
       'Task: fix the start-evaluation regression with a real patch.',
       'Success: commit a focused patch with tests.',
+      'Expected evidence:',
+      '- git commit SHA on a pipe-assessment branch',
+      '- code diff for the start-evaluation fix',
+      '- test output or verification note',
     ].join('\n');
     const commitText = `commit ${commitSha}\nAuthor: Candidate <candidate@example.com>\n\nFix start evaluation.`;
     const diffText = [
@@ -2165,6 +2177,10 @@ describe('GET /interviews/:id detail', () => {
       `Base commit: ${baseCommitSha}`,
       'Task: fix the assessment list progress regression.',
       'Success: commit a focused patch with tests.',
+      'Expected evidence:',
+      '- git commit SHA on a pipe-assessment branch',
+      '- code diff for the list progress fix',
+      '- test output or verification note',
     ].join('\n');
     const commitText = `commit ${commitSha}\nAuthor: Candidate <candidate@example.com>\n\nShow list progress.`;
     const diffText = 'diff --git a/src/list.ts b/src/list.ts\n+showAssessmentProgress();';

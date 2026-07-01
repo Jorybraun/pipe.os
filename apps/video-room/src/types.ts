@@ -171,6 +171,17 @@ export interface RoomAssessmentReadinessSnapshot {
   confidence: RoomAssessmentReadinessItem[];
 }
 
+export interface RoomAssessmentChallengePacketContract {
+  schemaVersion: 'challenge-packet-contract-v1';
+  isComplete: boolean;
+  missingFields: string[];
+  hasRepositoryUrl: boolean;
+  hasBaseCommitSha: boolean;
+  hasTask: boolean;
+  hasSuccessCriteria: boolean;
+  hasExpectedEvidence: boolean;
+}
+
 export interface RoomAssessmentProgressSnapshot {
   mode: string;
   state: string;
@@ -183,6 +194,7 @@ export interface RoomAssessmentProgressSnapshot {
     detail: string;
     tone: 'matched' | 'manual' | 'waiting' | 'blocked' | 'neutral';
   };
+  challengePacketContract?: RoomAssessmentChallengePacketContract;
   hasChallengePacket: boolean;
   hasWorkEvidence: boolean;
   hasMessageEvidence?: boolean;

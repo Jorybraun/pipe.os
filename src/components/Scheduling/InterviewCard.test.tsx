@@ -92,7 +92,7 @@ describe('InterviewCard assessment progress', () => {
           required: [
             {
               id: 'challenge_packet',
-              label: 'Concrete challenge packet',
+              label: 'Complete challenge packet',
               required: true,
               satisfied: true,
               sourceRefTypes: ['review_challenge_packet'],

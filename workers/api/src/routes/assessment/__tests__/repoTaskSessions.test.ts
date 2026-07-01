@@ -900,6 +900,12 @@ Fix stale popover listener cleanup.`;
         'Repo: https://github.com/open-source/widgets',
         `Base commit: ${assignedBaseCommitSha}`,
         'Task: Fix stale popover listener cleanup.',
+        'Success criteria:',
+        '- Commit a focused patch with passing popover tests.',
+        'Expected evidence:',
+        '- git commit SHA on a pipe-assessment branch',
+        '- code diff for the popover cleanup fix',
+        '- test output or verification note',
       ].join('\n');
       const challengeRef = await sourceRef(
         'open_source_challenge_packet',
@@ -1066,6 +1072,12 @@ Fix stale popover listener cleanup.`;
       'Repo: https://github.com/open-source/widgets',
       'Base commit: 3333333333333333333333333333333333333333',
       'Task: fix stale popover listener cleanup and add a regression test.',
+      'Success criteria:',
+      '- commit a focused patch with passing popover tests.',
+      'Expected evidence:',
+      '- git commit SHA on a pipe-assessment branch',
+      '- code diff for the popover cleanup fix',
+      '- test output for the regression',
     ].join('\n');
     const challengeResponse = await app.request(
       `/api/v1/assessment/repo-task/sessions/${session.id}/events`,
@@ -1146,6 +1158,102 @@ Fix stale popover listener cleanup.`;
     ]);
   });
 
+  it('keeps incomplete challenge packets waiting for recruiter completion', async () => {
+    const session = await createSession(app, env, {
+      ingestionKey: 'assessment-session:incomplete-challenge-packet',
+      mode: 'OPEN_SOURCE_BUG_FIX',
+      candidateId: 'candidate-incomplete-packet',
+    });
+
+    const challengeText = [
+      'Repo: https://github.com/open-source/widgets',
+      'Base commit: 3333333333333333333333333333333333333333',
+      'Task: fix stale popover listener cleanup and add a regression test.',
+      'Success: commit a focused patch with passing popover tests.',
+    ].join('\n');
+    const challengeResponse = await app.request(
+      `/api/v1/assessment/repo-task/sessions/${session.id}/events`,
+      jsonRequest({
+        ingestionKey: 'assessment-event:incomplete-challenge-packet',
+        kind: 'recruiter_note',
+        actorType: 'recruiter',
+        actorId: 'recruiter-1',
+        narrative: 'Recruiter assigned a source-backed open-source challenge packet with missing expected evidence.',
+        sourceRefs: [{
+          ...await sourceRef('review_challenge_packet', 'challenge-packet-incomplete', challengeText),
+          evidenceRole: 'assigned_challenge',
+          locator: {
+            repositoryUrl: 'https://github.com/open-source/widgets',
+            baseCommitSha: '3333333333333333333333333333333333333333',
+          },
+        }],
+      }),
+      env,
+    );
+    expect(challengeResponse.status).toBe(201);
+
+    const progressResponse = await app.request(
+      `/api/v1/assessment/repo-task/sessions/${session.id}/progress`,
+      { method: 'GET' },
+      env,
+    );
+    expect(progressResponse.status).toBe(200);
+    const body = await progressResponse.json() as {
+      progress: {
+        stage: string;
+        nextAction: string;
+        hasChallengePacket: boolean;
+        challengePacketContract: {
+          isComplete: boolean;
+          missingFields: string[];
+          hasRepositoryUrl: boolean;
+          hasBaseCommitSha: boolean;
+          hasTask: boolean;
+          hasSuccessCriteria: boolean;
+          hasExpectedEvidence: boolean;
+        };
+        readiness: {
+          status: string;
+          isReadyForEvaluation: boolean;
+          missingRequiredCount: number;
+          required: Array<{
+            id: string;
+            label: string;
+            satisfied: boolean;
+            missingImpact: string;
+          }>;
+        };
+      };
+    };
+
+    const challengeReadiness = body.progress.readiness.required.find(
+      (item) => item.id === 'challenge_packet',
+    );
+    expect(body.progress).toMatchObject({
+      stage: 'WAITING_FOR_CHALLENGE',
+      nextAction: 'ASSIGN_CHALLENGE',
+      hasChallengePacket: true,
+      challengePacketContract: {
+        isComplete: false,
+        missingFields: ['expected evidence'],
+        hasRepositoryUrl: true,
+        hasBaseCommitSha: true,
+        hasTask: true,
+        hasSuccessCriteria: true,
+        hasExpectedEvidence: false,
+      },
+      readiness: {
+        status: 'WAITING_FOR_CHALLENGE',
+        isReadyForEvaluation: false,
+      },
+    });
+    expect(challengeReadiness).toMatchObject({
+      label: 'Complete challenge packet',
+      satisfied: false,
+      missingImpact: expect.stringContaining('expected evidence'),
+    });
+  });
+
   it('summarizes source-backed repo-task progress from challenge assignment through evaluation', async () => {
     const session = await createSession(app, env, {
       ingestionKey: 'assessment-session:progress-snapshot',
@@ -1202,6 +1310,10 @@ Fix stale popover listener cleanup.`;
       'Base commit: 3333333333333333333333333333333333333333',
       'Task: fix stale popover listener cleanup and add a regression test.',
       'Success: commit a focused patch with passing popover tests.',
+      'Expected evidence:',
+      '- git commit SHA on a pipe-assessment branch',
+      '- code diff for the popover cleanup fix',
+      '- test output for the regression',
     ].join('\n');
     const challengeSourceRef = {
       ...await sourceRef('review_challenge_packet', 'challenge-packet-popover-cleanup', challengeText),

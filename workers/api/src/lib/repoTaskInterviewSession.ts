@@ -297,6 +297,17 @@ export interface AssessmentProgressSourceRef {
   locator: JsonObject;
 }
 
+export interface AssessmentProgressChallengePacketContract {
+  schemaVersion: 'challenge-packet-contract-v1';
+  isComplete: boolean;
+  missingFields: string[];
+  hasRepositoryUrl: boolean;
+  hasBaseCommitSha: boolean;
+  hasTask: boolean;
+  hasSuccessCriteria: boolean;
+  hasExpectedEvidence: boolean;
+}
+
 export interface AssessmentProgressLatestEvent {
   id: string;
   kind: string;
@@ -503,6 +514,7 @@ export interface AssessmentProgressSnapshot {
   sourceRefCounts: AssessmentEvidenceKindCount[];
   evidenceSnippets: AssessmentProgressEvidenceSnippet[];
   challenge: AssessmentProgressSourceRef | null;
+  challengePacketContract: AssessmentProgressChallengePacketContract;
   latestEvent: AssessmentProgressLatestEvent | null;
   commit: AssessmentProgressCommit | null;
   evaluation: AssessmentProgressEvaluation | null;
@@ -1026,6 +1038,108 @@ function hasEventKind(
   return counts.some((count) => kinds.includes(count.kind) && count.count > 0);
 }
 
+function challengePacketLineValue(exactText: string, labels: readonly string[]): string | null {
+  const escapedLabels = labels.map((label) => label.replace(/[.*+?^${}()|[\]\\]/g, '\\$&'));
+  const match = exactText.match(new RegExp(`^\\s*(?:${escapedLabels.join('|')})\\s*:\\s*(.+)$`, 'im'));
+  return match?.[1]?.trim() || null;
+}
+
+function normalizeChallengePacketListItem(value: string): string {
+  return value
+    .trim()
+    .replace(/^[-*]\s+/, '')
+    .replace(/^\d+[.)]\s+/, '')
+    .trim();
+}
+
+function challengePacketSectionItems(exactText: string, labels: readonly string[]): string[] {
+  const normalizedLabels = new Set(labels.map((label) => label.toLowerCase()));
+  const lines = exactText.split(/\r?\n/);
+  const items: string[] = [];
+  let inSection = false;
+
+  for (const rawLine of lines) {
+    const line = rawLine.trim();
+    if (!line) continue;
+    const heading = line.match(/^([A-Za-z][A-Za-z\s-]{2,})\s*:\s*$/);
+    if (heading?.[1]) {
+      const normalizedHeading = heading[1].trim().toLowerCase();
+      inSection = normalizedLabels.has(normalizedHeading);
+      continue;
+    }
+    if (!inSection) continue;
+    if (/^[A-Za-z][A-Za-z\s-]{2,}\s*:/.test(line) && !/^[-*]|\d+[.)]/.test(line)) {
+      inSection = false;
+      continue;
+    }
+    const item = normalizeChallengePacketListItem(line);
+    if (item) items.push(item);
+  }
+
+  return items;
+}
+
+function hasValidGitHubRepositoryUrl(value: string | null): boolean {
+  if (!value) return false;
+  try {
+    normalizeGitHubRepositoryUrl(value, 'challenge repositoryUrl');
+    return true;
+  } catch {
+    return false;
+  }
+}
+
+function challengePacketContract(
+  challenge: AssessmentProgressSourceRef | null,
+): AssessmentProgressChallengePacketContract {
+  if (!challenge) {
+    return {
+      schemaVersion: 'challenge-packet-contract-v1',
+      isComplete: false,
+      missingFields: ['repo URL', 'base commit SHA', 'task', 'success criteria', 'expected evidence'],
+      hasRepositoryUrl: false,
+      hasBaseCommitSha: false,
+      hasTask: false,
+      hasSuccessCriteria: false,
+      hasExpectedEvidence: false,
+    };
+  }
+
+  const repositoryUrl = stringLocatorValue(challenge.locator, 'repositoryUrl')
+    ?? stringLocatorValue(challenge.locator, 'githubRepoUrl')
+    ?? stringLocatorValue(challenge.locator, 'repoUrl')
+    ?? challengePacketLineValue(challenge.exactText, ['Repo', 'Repository']);
+  const baseCommitSha = stringLocatorValue(challenge.locator, 'baseCommitSha')
+    ?? stringLocatorValue(challenge.locator, 'baseCommit')
+    ?? challengePacketLineValue(challenge.exactText, ['Base commit', 'Base commit SHA', 'Base']);
+  const task = challengePacketLineValue(challenge.exactText, ['Task', 'Title']);
+  const successCriteria = [
+    ...challengePacketSectionItems(challenge.exactText, ['Success criteria']),
+    ...(challengePacketLineValue(challenge.exactText, ['Success'])
+      ? [challengePacketLineValue(challenge.exactText, ['Success']) as string]
+      : []),
+  ];
+  const expectedEvidence = challengePacketSectionItems(challenge.exactText, ['Expected evidence']);
+
+  const contract = {
+    schemaVersion: 'challenge-packet-contract-v1' as const,
+    isComplete: false,
+    missingFields: [] as string[],
+    hasRepositoryUrl: hasValidGitHubRepositoryUrl(repositoryUrl),
+    hasBaseCommitSha: Boolean(baseCommitSha && COMMIT_SHA_PATTERN.test(baseCommitSha)),
+    hasTask: Boolean(task),
+    hasSuccessCriteria: successCriteria.length > 0,
+    hasExpectedEvidence: expectedEvidence.length > 0,
+  };
+  if (!contract.hasRepositoryUrl) contract.missingFields.push('repo URL');
+  if (!contract.hasBaseCommitSha) contract.missingFields.push('base commit SHA');
+  if (!contract.hasTask) contract.missingFields.push('task');
+  if (!contract.hasSuccessCriteria) contract.missingFields.push('success criteria');
+  if (!contract.hasExpectedEvidence) contract.missingFields.push('expected evidence');
+  contract.isComplete = contract.missingFields.length === 0;
+  return contract;
+}
+
 function progressAssignmentTrust(input: {
   session: PersistedRepoTaskInterviewSession;
   challenge: AssessmentProgressSourceRef | null;
@@ -1106,7 +1220,7 @@ function progressNextActionLabel(action: AssessmentProgressNextAction): string {
 
 function progressStageAndAction(input: {
   session: PersistedRepoTaskInterviewSession;
-  hasChallengePacket: boolean;
+  hasCompleteChallengePacket: boolean;
   hasWorkEvidence: boolean;
   hasCommitSubmission: boolean;
   hasFinalSubmission: boolean;
@@ -1128,7 +1242,7 @@ function progressStageAndAction(input: {
     }
     return { stage: 'NEEDS_ATTENTION', nextAction: 'RESOLVE_DIAGNOSTIC' };
   }
-  if (!input.hasChallengePacket) {
+  if (!input.hasCompleteChallengePacket) {
     return { stage: 'WAITING_FOR_CHALLENGE', nextAction: 'ASSIGN_CHALLENGE' };
   }
   if (modeRequiresCommit(input.session.mode) && !input.hasCommitSubmission) {
@@ -1195,6 +1309,7 @@ function assessmentReadinessStatusDetail(input: {
 function buildAssessmentReadiness(input: {
   session: PersistedRepoTaskInterviewSession;
   hasChallengePacket: boolean;
+  challengePacketContract: AssessmentProgressChallengePacketContract;
   hasWorkEvidence: boolean;
   hasMessageEvidence: boolean;
   hasDevContainerEvidence: boolean;
@@ -1213,19 +1328,23 @@ function buildAssessmentReadiness(input: {
   const requiresCommit = modeRequiresCommit(input.session.mode);
   const hasCodeDiff = hasEventKind(input.sourceRefCounts, ['code_diff']);
   const hasGitCommit = hasEventKind(input.sourceRefCounts, ['git_commit']);
+  const challengeMissingImpact = input.hasChallengePacket
+    ? `Challenge packet is missing ${input.challengePacketContract.missingFields.join(', ')}.`
+      + ' PIPE cannot prove the assigned task contract yet.'
+    : 'Without a source-backed task packet, PIPE cannot prove what work was assigned.';
   const required: AssessmentProgressReadinessItem[] = [
     {
       id: 'challenge_packet',
-      label: 'Concrete challenge packet',
+      label: 'Complete challenge packet',
       required: true,
-      satisfied: input.hasChallengePacket,
+      satisfied: input.challengePacketContract.isComplete,
       sourceRefTypes: [
         'review_challenge_packet',
         'open_source_challenge_packet',
         'repo_task_challenge_packet',
         'challenge_packet',
       ],
-      missingImpact: 'Without a source-backed task packet, PIPE cannot prove what work was assigned.',
+      missingImpact: challengeMissingImpact,
     },
     {
       id: 'work_evidence',
@@ -1349,7 +1468,7 @@ function buildAssessmentReadiness(input: {
     status = 'NEEDS_ATTENTION';
   } else if (input.humanDecision || input.evaluation?.status === 'EVALUATED') {
     status = 'EVALUATED';
-  } else if (!input.hasChallengePacket) {
+  } else if (!input.challengePacketContract.isComplete) {
     status = 'WAITING_FOR_CHALLENGE';
   } else if (isReadyForEvaluation) {
     status = 'READY_FOR_EVALUATION';
@@ -1756,6 +1875,7 @@ export class RepoTaskInterviewSessionStore {
     const sourceRefCounts = await this.loadSourceRefCounts(session.id);
     const evidenceSnippets = await this.loadEvidenceSnippets(session.id);
     const challenge = await this.loadChallengeSourceRef(session.id);
+    const contract = challengePacketContract(challenge);
     const latestEvent = await this.loadLatestEvent(session.id);
     const commit = await this.loadLatestCommitSubmission(session.id);
     const evaluation = await this.loadLatestEvaluation(session.id);
@@ -1798,6 +1918,7 @@ export class RepoTaskInterviewSessionStore {
     const readiness = buildAssessmentReadiness({
       session,
       hasChallengePacket,
+      challengePacketContract: contract,
       hasWorkEvidence,
       hasMessageEvidence,
       hasDevContainerEvidence,
@@ -1815,7 +1936,7 @@ export class RepoTaskInterviewSessionStore {
     });
     const { stage, nextAction } = progressStageAndAction({
       session,
-      hasChallengePacket,
+      hasCompleteChallengePacket: contract.isComplete,
       hasWorkEvidence,
       hasCommitSubmission,
       hasFinalSubmission,
@@ -1845,6 +1966,7 @@ export class RepoTaskInterviewSessionStore {
       sourceRefCounts,
       evidenceSnippets,
       challenge,
+      challengePacketContract: contract,
       latestEvent,
       commit,
       evaluation,

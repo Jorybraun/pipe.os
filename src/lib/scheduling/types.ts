@@ -143,6 +143,17 @@ export interface AssessmentProgressReadinessSnapshot {
   confidence: AssessmentProgressReadinessItem[];
 }
 
+export interface AssessmentProgressChallengePacketContract {
+  schemaVersion: 'challenge-packet-contract-v1';
+  isComplete: boolean;
+  missingFields: string[];
+  hasRepositoryUrl: boolean;
+  hasBaseCommitSha: boolean;
+  hasTask: boolean;
+  hasSuccessCriteria: boolean;
+  hasExpectedEvidence: boolean;
+}
+
 export interface AssessmentProgressSnapshot {
   session: {
     id: string;
@@ -167,6 +178,7 @@ export interface AssessmentProgressSnapshot {
     tone: 'matched' | 'manual' | 'waiting' | 'blocked' | 'neutral';
   };
   readiness?: AssessmentProgressReadinessSnapshot;
+  challengePacketContract?: AssessmentProgressChallengePacketContract;
   hasChallengePacket: boolean;
   hasWorkEvidence: boolean;
   hasMessageEvidence?: boolean;
