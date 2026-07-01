@@ -1798,13 +1798,13 @@ describe('PersonProfilePage', () => {
     expect(decision).toHaveTextContent('3 source-backed proof items');
     expect(decision).not.toHaveTextContent('source-less person-profile praise');
     const basis = screen.getByTestId('person-code-review-decision-basis');
-    expect(basis).toHaveTextContent('Selected interview');
-    expect(basis).toHaveTextContent('Assessment evidence');
+    expect(basis).toHaveTextContent('Evaluation claims');
     expect(basis).toHaveTextContent('2 positive');
     expect(basis).not.toHaveTextContent('3 positive');
     expect(basis).toHaveTextContent('Human decision');
     expect(basis).toHaveTextContent('Advance');
     expect(basis).toHaveTextContent('Source proof');
+    expect(basis).toHaveTextContent('Assessment mode');
     expect(basis).not.toHaveTextContent('Match proof');
     expect(decision).not.toHaveTextContent('Collect first source-backed evidence');
   });

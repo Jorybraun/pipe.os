@@ -20,7 +20,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Fixed — Open-source assessment progress
 
-- Person-profile workspace assessment smokes now assert selected-interview assessment evidence, human decision, and source proof instead of requiring candidate-to-repo match proof when no match provenance exists.
+- Person-profile workspace assessment smokes now assert assessment evidence, human decision, and source proof instead of requiring candidate-to-repo match proof when no match provenance exists.
 - Recruiters can no longer record final human assessment decisions from diagnostic-only evaluator reports; the app now requires a completed source-backed `EVALUATED` report before closing the assessment loop.
 - Open-source assessment evaluation now produces a conservative source-backed fallback report when the AI evaluator returns no usable claims, keeping real challenge, commit, diff, test, and workspace evidence reviewable instead of blocking the session as diagnostic-only.
 - Interview assessment readouts now label conservative fallback evaluations as requiring human review instead of presenting source-backed but unproven commits as positive hiring decisions.

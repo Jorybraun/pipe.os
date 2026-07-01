@@ -138,13 +138,22 @@ async function expectPersonProfileDecision(page: Page): Promise<void> {
   await expect(personDecision).toContainText('Next action');
   const decisionBasis = page.getByTestId('person-code-review-decision-basis');
   await expect(decisionBasis).toBeVisible();
-  const isWorkspaceAssessmentBasis = await decisionBasis
+  const hasSelectedInterviewBasis = await decisionBasis
     .getByText('Selected interview')
     .first()
     .isVisible()
     .catch(() => false);
+  const hasWorkspaceEvaluationBasis = await decisionBasis
+    .getByText('Evaluation claims')
+    .first()
+    .isVisible()
+    .catch(() => false);
+  const isWorkspaceAssessmentBasis = hasSelectedInterviewBasis || hasWorkspaceEvaluationBasis;
   if (isWorkspaceAssessmentBasis) {
-    await expect(decisionBasis).toContainText('Assessment evidence');
+    if (hasSelectedInterviewBasis) {
+      await expect(decisionBasis).toContainText('Assessment evidence');
+    }
+    await expect(decisionBasis).toContainText('Evaluation claims');
     await expect(decisionBasis).toContainText('Human decision');
     await expect(decisionBasis).toContainText('Source proof');
     await expect(decisionBasis).not.toContainText('Match proof');
@@ -170,10 +179,14 @@ async function expectPersonProfileDecision(page: Page): Promise<void> {
     await expect(scoreValidity).toContainText('Score validity');
     await expect(scoreValidity).toContainText(/Valid because|Do not rely yet/);
     if (isWorkspaceAssessmentBasis) {
-      await expect(scoreValidity).toContainText('selected interview is captured');
       await expect(scoreValidity).toContainText('evaluation claims is captured');
       await expect(scoreValidity).toContainText('human decision is captured');
       await expect(scoreValidity).toContainText('source proof is captured');
+      if (hasSelectedInterviewBasis) {
+        await expect(scoreValidity).toContainText('selected interview is captured');
+      } else {
+        await expect(scoreValidity).toContainText('assessment mode is captured');
+      }
     } else {
       await expect(scoreValidity).toContainText(/score report is captured|score report is missing/);
     }
