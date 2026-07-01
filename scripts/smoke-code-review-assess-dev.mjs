@@ -732,6 +732,7 @@ function runRecruiterDetailPlaywright({
   expectScore = false,
   requireHyperedges = false,
   expectPersonProfileDecision = false,
+  expectPersonProfilePending = false,
 }) {
   if (SKIP_BROWSER || SKIP_RECRUITER_BROWSER) {
     return {
@@ -767,6 +768,7 @@ function runRecruiterDetailPlaywright({
         CODE_REVIEW_RECRUITER_EXPECT_SCORE: expectScore ? '1' : '0',
         CODE_REVIEW_RECRUITER_REQUIRE_HYPEREDGES: requireHyperedges ? '1' : '0',
         CODE_REVIEW_RECRUITER_EXPECT_PERSON_PROFILE_DECISION: expectPersonProfileDecision ? '1' : '0',
+        CODE_REVIEW_RECRUITER_EXPECT_PERSON_PROFILE_PENDING: expectPersonProfilePending ? '1' : '0',
       },
     },
   );
@@ -1461,7 +1463,8 @@ async function main() {
       expectSubmission: SUBMIT_REVIEW,
       expectScore: SUBMIT_REVIEW,
       requireHyperedges: !REPO_URL && !PR_NUMBER,
-      expectPersonProfileDecision: true,
+      expectPersonProfileDecision: SUBMIT_REVIEW,
+      expectPersonProfilePending: !SUBMIT_REVIEW,
     });
 
     console.log(JSON.stringify({

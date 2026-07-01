@@ -66,15 +66,17 @@ Run these in real browser automation whenever repo matching or CODE_REVIEW chang
 - `npm test -- --run infra/containers/code-server/entrypoint.test.js`
 - `(cd workers/api && npm test -- --run src/__tests__/DevContainerDO.test.ts -t "internet access")`
 - `(cd workers/api && npm test -- --run src/routes/__tests__/meetingRooms.rest.test.ts -t "launches a live workspace|without an agent")`
+- `npm run smoke:code-review-assess-dev` proves the deployed ready CODE_REVIEW path delivers `/assess`, renders the source-backed PR diff, opens recruiter detail, and keeps the person profile pending instead of overclaiming before submission.
 - `WORKSPACE_SMOKE_INTERVIEW_TYPE=OPEN_SOURCE_BUG_FIX ... npm run smoke:code-review-workspace-dev`
 - `npx vitest run src/pages/PersonProfilePage.test.tsx -t "does not blend a newer related match-only interview"` proves the person rollup binds score, transcript, and match proof by shared session/interaction before using a CODE_REVIEW result as the current recommendation.
 - `npm run smoke:assess-session-isolation` proves opening token B in a browser with stale token A sessionStorage resolves token B, stores candidate B, uses token B for stage config, and never fetches a challenge from candidate A.
 - `npm run smoke:assess-token-lifecycle-dev` creates two real app-dev CODE_REVIEW assessment links, opens token A then token B in one browser, and proves token B resolves/stores candidate B before claim without a used-link or matching-loop fallback. Ready challenge start/render remains covered by `npm run smoke:code-review-assess-dev`.
+- `npm run smoke:code-review-assess-dev:blocked` proves the deployed standalone CODE_REVIEW blocked path returns `PROFILE_RECEIVED` / `candidate-intake-queued`, opens recruiter detail, and rejects candidate-visible matching-loop copy.
 
 ## Immediate Gaps
 
 1. WebBridge is currently unavailable because the daemon reports `extension_connected:false`; browser proof must use Playwright or in-app browser until the extension reconnects.
 2. Candidate link lifecycle has mocked-RPC and real app-dev same-browser token A/token B proof; keep extending it only when the invite lifecycle adds new states such as regenerated or expired links.
-3. The waiting/matching state needs a no-infinite-spinner proof for missing evidence and missing repo prerequisites.
+3. The waiting/matching state now has a named deployed no-spinner proof for the standalone CODE_REVIEW blocked path; add a dedicated repo-catalog prerequisite fixture if challenge-packet coverage changes.
 4. Interview detail needs a manager-facing trust model display: matched/manual/needs evidence/no safe challenge/score unavailable/score valid.
 5. Person rollup still needs a deployed browser E2E where two related interviews exist, but the component regression now proves that only session/interaction-bound completed CODE_REVIEW evidence affects the current recommendation.

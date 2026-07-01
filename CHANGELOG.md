@@ -26,8 +26,11 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Fixed — CODE_REVIEW assessment runtime
 
+- Added a legacy D1 repair migration for `candidates.pipeline_id` so app-dev can create pipeline-free standalone CODE_REVIEW assessment invites.
 - The deployed `/assess` smoke suite now creates two real app-dev CODE_REVIEW invites and proves opening token B after token A in the same browser resolves/stores candidate B before either invite is claimed.
 - The deployed CODE_REVIEW assess smoke now treats non-submit mode as ready once the recruiter detail has an active matched assignment, while full-submit mode still requires completion, submission, and scoring proof.
+- Added a named deployed blocked-path CODE_REVIEW smoke command that proves standalone assessments stop at `PROFILE_RECEIVED` / `candidate-intake-queued` instead of showing a candidate-visible matching loop.
+- Recruiter detail smokes now verify the person profile does not overclaim an active, unsubmitted CODE_REVIEW as a person-level technical decision; full-submit mode still verifies the completed decision card.
 - The `/assess` browser smoke suite now proves same-browser stale candidate sessions are discarded when a different invite token is opened, so token B resolves and stores candidate B instead of leaking token A state.
 - Person-profile CODE_REVIEW rollups now bind score, transcript, and match proof by shared session or interaction before presenting a current recommendation, preventing a newer related match-only interview from being blended into an older completed review score.
 - The recruiter CODE_REVIEW browser smoke now requires matched interview pages to render the meeting/person boundary copy, proving app-dev keeps the interview scoped to its own evidence while treating same-person interviews as separate context.
@@ -106,7 +109,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - Removed abandoned action aliases from the real agent bridge.
 - The room now keeps focus on video, chat, workspace, terminal, Submit Work, recording, transcription, and the real AI assistant bridge.
 - Added a video-room regression guard that fails if retired novelty UI vocabulary returns to the shipped room source or public worker assets.
-- Wired the assessment-room boundary guard into package scripts so the retired 95/Clippy experience cannot silently re-enter the deployable room app.
+- Wired the assessment-room boundary guard into package scripts so retired novelty UI cannot silently re-enter the deployable room app.
 
 ### Added — Human assessment decisions
 

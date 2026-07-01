@@ -39,6 +39,10 @@ const EXPECT_PERSON_PROFILE_DECISION = envFlag(
   'ASSESSMENT_RECRUITER_EXPECT_PERSON_PROFILE_DECISION',
   'CODE_REVIEW_RECRUITER_EXPECT_PERSON_PROFILE_DECISION',
 );
+const EXPECT_PERSON_PROFILE_PENDING = envFlag(
+  'ASSESSMENT_RECRUITER_EXPECT_PERSON_PROFILE_PENDING',
+  'CODE_REVIEW_RECRUITER_EXPECT_PERSON_PROFILE_PENDING',
+);
 
 function expectedRepoLabel(repoUrl: string): string | null {
   if (!repoUrl) return null;
@@ -100,6 +104,27 @@ async function expectPersonProfileDecision(page: Page): Promise<void> {
   await expect(evidenceMix).toBeVisible();
   await expect(evidenceMix).toContainText('Evidence mix');
   await expect(evidenceMix).toContainText('Next best source');
+}
+
+async function expectPersonProfilePending(page: Page): Promise<void> {
+  if (!EXPECT_PERSON_PROFILE_PENDING) return;
+
+  const profileButton = page.getByTestId('interview-open-person-profile').first();
+  await expect(profileButton).toBeVisible();
+  await profileButton.click();
+
+  const cockpit = page.getByTestId('person-decision-cockpit');
+  await expect(cockpit).toBeVisible({ timeout: 45_000 });
+  await expect(cockpit).toContainText('Decision cockpit');
+  await expect(cockpit).toContainText('Keep collecting source-backed signal');
+  await expect(cockpit).toContainText('no complete code-review decision yet');
+  await expect(page.getByTestId('person-code-review-decision')).toHaveCount(0);
+
+  const evidenceMix = page.getByTestId('person-evidence-mix');
+  await expect(evidenceMix).toBeVisible();
+  await expect(evidenceMix).toContainText('Evidence mix');
+  await expect(evidenceMix).toContainText('technical assessment is missing');
+  await expect(evidenceMix).toContainText('Assign a source-backed technical assessment');
 }
 
 async function expectInterviewScopeBoundary(page: Page, options: { required?: boolean } = {}): Promise<void> {
@@ -193,6 +218,7 @@ test.describe('Feature: assessment recruiter detail smoke', () => {
         await expect(page.locator('body')).toContainText(/Evaluation|Evaluated/);
       }
       await expectPersonProfileDecision(page);
+      await expectPersonProfilePending(page);
       return;
     }
 
@@ -277,5 +303,6 @@ test.describe('Feature: assessment recruiter detail smoke', () => {
       await expect(page.getByTestId('interview-code-review-match-hyperedges')).toHaveCount(1);
     }
     await expectPersonProfileDecision(page);
+    await expectPersonProfilePending(page);
   });
 });
