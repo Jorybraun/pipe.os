@@ -150,6 +150,10 @@ The controlling product rule remains:
   browser actions. Assessment evidence should come from accepted room events,
   workspace telemetry, terminal/code activity, chat, transcript, AI bridge logs,
   and submitted commit/diff/test proof.
+- Submitted commit proof must tie the commit URL back to the assigned
+  repository or the candidate's declared fork. A GitHub commit URL from an
+  unrelated repository is rejected even when the commit SHA, diff source ref, and
+  source hashes are otherwise well-formed.
 - Accepted guest join/leave and recording start/stop room lifecycle events now
   persist as source-backed `meeting_session_event` evidence, with recording
   stop captured only when recording evidence was actually active.

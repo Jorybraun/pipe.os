@@ -658,6 +658,39 @@ function normalizeCommitUrl(value: string | null | undefined, commitSha: string)
   return url.toString();
 }
 
+function normalizedRepositoryUrlFromCommitUrl(value: string): string {
+  const url = new URL(value);
+  const segments = url.pathname.split('/').filter(Boolean);
+  if (segments.length !== 4 || segments[2] !== 'commit') {
+    throw new Error('commitUrl must be a GitHub HTTPS commit URL for commitSha');
+  }
+  const [owner, repoWithSuffix] = segments;
+  if (!owner || !repoWithSuffix) {
+    throw new Error('commitUrl must identify a GitHub owner and repository');
+  }
+  const repo = repoWithSuffix.endsWith('.git') ? repoWithSuffix.slice(0, -4) : repoWithSuffix;
+  if (!repo) {
+    throw new Error('commitUrl must identify a GitHub owner and repository');
+  }
+  return `https://github.com/${owner}/${repo}`;
+}
+
+function assertCommitUrlBelongsToSubmittedRepository(input: {
+  commitUrl: string | null;
+  repositoryUrl: string;
+  forkRepositoryUrl: string | null;
+}): void {
+  if (!input.commitUrl) return;
+  const commitRepositoryUrl = normalizedRepositoryUrlFromCommitUrl(input.commitUrl);
+  const allowedRepositoryUrls = new Set<string>([input.repositoryUrl]);
+  if (input.forkRepositoryUrl) {
+    allowedRepositoryUrls.add(input.forkRepositoryUrl);
+  }
+  if (!allowedRepositoryUrls.has(commitRepositoryUrl)) {
+    throw new Error('commitUrl must belong to repositoryUrl or forkRepositoryUrl');
+  }
+}
+
 function normalizePullRequestUrl(
   value: string | null | undefined,
   consent: boolean | undefined,
@@ -1211,6 +1244,11 @@ export class RepoTaskInterviewSessionStore {
       ? normalizeGitHubRepositoryUrl(input.forkRepositoryUrl, 'forkRepositoryUrl')
       : null;
     const commitUrl = normalizeCommitUrl(input.commitUrl, input.commitSha);
+    assertCommitUrlBelongsToSubmittedRepository({
+      commitUrl,
+      repositoryUrl,
+      forkRepositoryUrl,
+    });
     const upstreamPullRequestUrl = normalizePullRequestUrl(
       input.upstreamPullRequestUrl,
       input.upstreamPrConsent,

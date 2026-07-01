@@ -9,6 +9,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Fixed — CODE_REVIEW assessment runtime
 
+- Repo-task commit submissions now reject GitHub commit URLs that do not belong to the submitted repository or declared fork, preventing unrelated repos from masquerading as assessment work even when the SHA and source refs are shaped correctly.
 - Recruiter interview detail API prefetches now fall back to the normal request if the speculative dev-proxy fetch stalls, preventing CODE_REVIEW detail pages from sitting on an indefinite spinner when a matched assessment is already available.
 - The deployed CODE_REVIEW assess-link smoke now clicks from the recruiter assessment detail into the person profile and verifies the person-level decision cockpit, keeping the rollup proof attached to the routine app-dev gate.
 - The deployed CODE_REVIEW workspace smoke now defaults to the source-backed MUI popover challenge profile, so `npm run smoke:code-review-workspace-dev` proves a real repo/base-commit/finalizer/evaluation path without hidden env overrides.

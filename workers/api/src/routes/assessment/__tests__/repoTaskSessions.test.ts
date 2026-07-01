@@ -837,6 +837,52 @@ Fix stale popover listener cleanup.`;
     ).get(session.id)).toEqual({ count: 0 });
   });
 
+  it('rejects commit submissions whose commit URL belongs to an unrelated GitHub repository', async () => {
+    const session = await createSession(app, env, {
+      ingestionKey: 'assessment-session:commit-submission-unrelated-url',
+      mode: 'OPEN_SOURCE_BUG_FIX',
+    });
+    const baseCommitSha = '2222222222222222222222222222222222222222';
+    const commitSha = 'cccccccccccccccccccccccccccccccccccccccc';
+    const commitText = `commit ${commitSha}
+Author: Candidate <candidate@example.com>
+
+Fix stale popover listener cleanup.`;
+    const diffText = `diff --git a/src/popover.ts b/src/popover.ts
+--- a/src/popover.ts
++++ b/src/popover.ts
+@@ -1,2 +1,3 @@
++cleanupStaleHandler();`;
+
+    const response = await app.request(
+      `/api/v1/assessment/repo-task/sessions/${session.id}/commit-submissions`,
+      jsonRequest({
+        ingestionKey: 'assessment-event:commit-submission-unrelated-url',
+        actorType: 'candidate',
+        narrative: 'Candidate submitted a commit URL from an unrelated repository.',
+        repositoryUrl: 'https://github.com/open-source/widgets',
+        forkRepositoryUrl: 'https://github.com/candidate/widgets',
+        branchName: 'pipe-assessment/popover-cleanup',
+        baseCommitSha,
+        commitSha,
+        commitUrl: `https://github.com/unrelated/widgets/commit/${commitSha}`,
+        changedFiles: [{ path: 'src/popover.ts', status: 'modified' }],
+        sourceRefs: [
+          await sourceRef('git_commit', commitSha, commitText),
+          await sourceRef('code_diff', `${baseCommitSha}..${commitSha}`, diffText),
+        ],
+      }),
+      env,
+    );
+
+    expect(response.status).toBe(400);
+    const body = await response.json() as { error: { message: string } };
+    expect(body.error.message).toContain('commitUrl must belong to repositoryUrl or forkRepositoryUrl');
+    expect(sqlite.prepare(
+      'SELECT COUNT(*) AS count FROM assessment_evidence_events WHERE session_id = ?',
+    ).get(session.id)).toEqual({ count: 0 });
+  });
+
   it('rejects commit submissions that do not match the assigned challenge repo and base commit', async () => {
     async function createAssignedChallengeSession(idSuffix: string): Promise<{
       sessionId: string;
