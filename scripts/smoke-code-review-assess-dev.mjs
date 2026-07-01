@@ -818,6 +818,11 @@ async function waitForRecruiterDetailProjection(input) {
           ready: true,
           attempts: attempt,
           reason: readiness.reason,
+          assessmentSetupStatus: detail?.interview?.assessmentSetup?.status ?? null,
+          assessmentSetupKind: detail?.interview?.assessmentSetup?.kind ?? null,
+          assessmentSetupSource: detail?.interview?.assessmentSetup?.source ?? null,
+          githubRepoUrl: detail?.interview?.githubRepoUrl ?? null,
+          githubPrNumber: detail?.interview?.githubPrNumber ?? null,
         };
       }
     } catch (error) {
