@@ -279,6 +279,18 @@ The same deployed API/app pair also passed the roleless full-submit auto-match c
 
 The deployed manual override full-submit smoke passed for interview `c89541cb-3b52-4eb1-9652-6f4f5f9e4bef`, review session `2e007d00-5f99-4dd4-8d0c-b959b5d421ea`, and judge replay example `code_review_judge_example_647b6624f16a85fb8314808f879fe26b`, selecting `mui/base-ui#973`, rendering the recruiter-selected source-backed match reason without claiming CV fit, completing candidate browser comments and AI developer pushback, and completing recruiter/profile results with validator `PASSED`. Evidence hyperedges are expected to be `0` in this lane because manual override validates the selected PR's source-backed reviewability rather than inferring a candidate-to-repo match.
 
+Latest standalone `/assess` blocked-boundary proof: after deploying app-dev
+version `3413dea3-2899-40ac-afc0-8163e3a899ff`, the CODE_REVIEW matrix passed
+`3 / 3` CV-only profiles as candidate-safe queued handoffs rather than
+candidate-visible matching screens. The interviews
+`e33eb6dd-35e2-402b-9cb0-43fc93d9df64`,
+`b4e244fd-46ba-4e88-bdd0-71cbdbc8d089`, and
+`f8955b42-2d2b-40c8-931b-ab1c517d8de3` all returned `PROFILE_RECEIVED`,
+`candidate-intake-queued`, and authenticated recruiter browser smoke passed.
+Treat this as runtime-boundary proof only: it does not claim automatic repo-fit
+quality because standalone `/assess` must not run PR assignment in front of the
+candidate.
+
 ## 10. When Tests Break, Ask Why
 
 | Symptom | Likely Cause |

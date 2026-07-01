@@ -65,11 +65,25 @@ Command:
 npm run smoke:code-review-assess-dev:matrix
 ```
 
-Result: `3 / 3` profiles passed. Latest app-dev run after the workspace packet fix:
+Result: `3 / 3` profiles passed on 2026-07-01 after the standalone
+`/assess` boundary was tightened. All three CV-only profiles now prove that
+candidate evidence intake is separated from challenge assignment inside the
+CODE_REVIEW runtime:
 
-- `react-interaction-platform`: matched `https://github.com/mui/base-ui` PR `973`, quality gate `PASSED`, assessment quality `USABLE`, recruiter smoke passed, score persisted as `76 / strong`, review status `scored`, evidence hyperedge count `4`.
-- `accessibility-state-systems`: correctly blocked at `repo_matching`, reason `The deterministic repo matcher did not return a quality-gated, source-backed PR challenge.`, auto-refresh `false`, recruiter smoke passed.
-- `frontend-quality-infra`: correctly blocked at `repo_matching`, same no-safe-match behavior, auto-refresh `false`, recruiter smoke passed.
+- `react-interaction-platform`: `PROFILE_RECEIVED`,
+  `candidate-intake-queued`, recruiter browser smoke passed, interview
+  `e33eb6dd-35e2-402b-9cb0-43fc93d9df64`.
+- `accessibility-state-systems`: `PROFILE_RECEIVED`,
+  `candidate-intake-queued`, recruiter browser smoke passed, interview
+  `b4e244fd-46ba-4e88-bdd0-71cbdbc8d089`.
+- `frontend-quality-infra`: `PROFILE_RECEIVED`,
+  `candidate-intake-queued`, recruiter browser smoke passed, interview
+  `f8955b42-2d2b-40c8-931b-ab1c517d8de3`.
+
+This matrix is intentionally not a repo-fit quality score. It proves that
+standalone `/assess` no longer exposes candidate-visible matching progress,
+repo diagnostics, or an infinite waiting screen when no source-backed PR
+assignment is ready.
 
 ### Open-Source Workspace App-Dev Smoke
 
