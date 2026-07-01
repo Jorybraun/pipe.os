@@ -143,3 +143,40 @@ export type {
   EvidenceConflictReport,
   EvidenceConflictOptions,
 } from './evidenceConflicts';
+export { recordMatchDecision, loadMatchDecisionHistory } from './matchDecisionAudit';
+export type {
+  MatchDecisionVerdict,
+  MatchDecisionInput,
+  MatchDecisionResult,
+  MatchDecisionHistoryEntry,
+  MatchDecisionHistory,
+} from './matchDecisionAudit';
+export { loadPriorDecisionExclusions, buildDecisionExclusionDiagnostics } from './decisionWeightedRematch';
+export type {
+  DecisionExclusion,
+  DecisionExclusionResult,
+  DecisionExclusionDiagnostic,
+} from './decisionWeightedRematch';
+export { computeStalenessAlerts, loadCandidateStalenessAlerts } from './evidenceStalenessAlerts';
+export type {
+  AlertSeverity,
+  AlertCategory,
+  StalenessAlert,
+  StalenessAlertSummary,
+  StalenessAlertOptions,
+} from './evidenceStalenessAlerts';
+export { loadRepoDecompositionOverlay } from './repoDecompositionOverlay';
+export type {
+  RepoFileNode,
+  RepoSymbolNode,
+  RepoDemandNode,
+  RepoStructuralFactNode,
+  CandidateEvidenceOverlay,
+  RepoDecompositionOverlay,
+} from './repoDecompositionOverlay';
+export { runBatchRematch } from './batchRematch';
+export type {
+  BatchRematchCandidate,
+  BatchRematchResultEntry,
+  BatchRematchResult,
+} from './batchRematch';
