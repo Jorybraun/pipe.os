@@ -18,6 +18,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Fixed — Open-source assessment progress
 
+- Assessment progress APIs now filter legacy evaluator claims without exact source refs at the shared backend projection, so candidate, room, and recruiter clients receive the same source-backed claim previews.
 - Assessment-to-living-context ingestion now skips evaluator claims with no exact source refs instead of fabricating claim-narrative provenance for the person graph.
 - Candidate dev-container panels now explain the trusted workspace finalizer path and show recovery commands when uncommitted workspace changes block finalization.
 - Recruiter interview cards now show source-backed evaluator claim previews, diagnostic evidence types, and missing evidence-coverage gaps while filtering source-less positive claims from the card.

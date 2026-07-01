@@ -2555,6 +2555,7 @@ export class RepoTaskInterviewSessionStore {
          LEFT JOIN assessment_claim_source_refs sr ON sr.claim_id = c.id
         WHERE c.report_id = ?1
         GROUP BY c.id, c.polarity, c.dimension, c.narrative, c.confidence
+       HAVING COUNT(sr.id) > 0
         ORDER BY
           CASE c.polarity
             WHEN 'positive' THEN 0

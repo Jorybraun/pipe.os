@@ -2125,6 +2125,25 @@ Fix stale popover listener cleanup.`;
     const evaluationBody = await evaluationResponse.json() as {
       report: { id: string; status: string };
     };
+    sqlite.prepare(
+      `INSERT INTO assessment_evaluation_claims (
+         id,
+         report_id,
+         polarity,
+         dimension,
+         narrative,
+         confidence,
+         created_at
+       ) VALUES (?, ?, ?, ?, ?, ?, ?)`,
+    ).run(
+      'claim-legacy-uncited-progress',
+      evaluationBody.report.id,
+      'positive',
+      'commit_quality',
+      'Legacy evaluator praise without source refs must not leak into progress.',
+      0.99,
+      '2026-06-29T00:00:00.000Z',
+    );
 
     const evaluatedProgressResponse = await app.request(
       `/api/v1/assessment/repo-task/sessions/${session.id}/progress`,
@@ -2164,6 +2183,12 @@ Fix stale popover listener cleanup.`;
         }],
       },
     });
+    expect(evaluatedProgressBody.progress.evaluation.claims).toHaveLength(1);
+    expect(evaluatedProgressBody.progress.evaluation.claims).not.toEqual(expect.arrayContaining([
+      expect.objectContaining({
+        narrative: 'Legacy evaluator praise without source refs must not leak into progress.',
+      }),
+    ]));
 
     const humanDecisionSourceRef = await sourceRef(
       'assessment_evaluation_report',
