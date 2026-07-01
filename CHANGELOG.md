@@ -7,6 +7,16 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Added — Match confidence scoring (criteria #5, #6, #8)
+
+- `matchConfidenceScoring.ts`: Multi-dimensional confidence scoring for candidate-to-challenge matches. Combines coverage (demand concept overlap), recency (temporal decay), depth (corroborating source count), and consistency (strength variance) into a weighted composite score. Identifies stretch areas and produces actionable recommendations.
+- `GET /:candidateId/living-context/match-confidence?packetId=...`: API endpoint returning `MatchConfidenceReport` with composite score, per-dimension breakdown, per-demand confidence, stretch areas, strong matches, and recommendations. Gated by `living_context_read`.
+- `useMatchConfidence` hook: Frontend data hook for loading match confidence per candidate + packet.
+- `MatchConfidencePanel`: LivingContextGraph panel showing confidence dimensions with progress bars, stretch area callouts, and actionable recommendations.
+- `matchConfidenceScoring.test.ts`: 10-test suite (8 pure + 2 D1 integration) covering high/low/insufficient confidence, stale evidence, stretch identification, corroboration scoring, demand weighting, and edge cases.
+- `useMatchConfidence.test.ts`: 5-test hook suite covering null IDs, successful fetch, error handling, and re-fetch on candidate change.
+- Frontend types: `ConfidenceLevel`, `DemandConfidence`, `ConfidenceDimension`, `MatchConfidenceReport` added to `src/lib/api/types.ts`.
+
 ### Added — Repository decomposition overlay (criteria #4, #7)
 
 - `repoDecompositionOverlay.ts`: Loads a challenge packet's structural graph (files, symbols, demands, structural facts) and maps candidate evidence onto specific code regions. Computes per-file and per-demand alignment scores via concept overlap, with coverage summary (covered/partial/gap).

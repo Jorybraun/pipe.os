@@ -180,3 +180,11 @@ export type {
   BatchRematchResultEntry,
   BatchRematchResult,
 } from './batchRematch';
+export { scoreMatchConfidence, computeMatchConfidence } from './matchConfidenceScoring';
+export type {
+  ConfidenceLevel,
+  DemandConfidence,
+  ConfidenceDimension,
+  MatchConfidenceReport,
+  MatchConfidenceOptions,
+} from './matchConfidenceScoring';

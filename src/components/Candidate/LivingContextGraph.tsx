@@ -60,6 +60,7 @@ import { useCandidateComparison } from '../../hooks/useCandidateComparison';
 import { useEvidenceTimeline } from '../../hooks/useEvidenceTimeline';
 import { useStalenessAlerts } from '../../hooks/useStalenessAlerts';
 import { useRepoDecomposition } from '../../hooks/useRepoDecomposition';
+import { useMatchConfidence } from '../../hooks/useMatchConfidence';
 import { useLivingContext } from '../../hooks/useLivingContext';
 import { buildLivingContextBranches } from '../../lib/livingContextTree';
 import { ContextRecordForest } from './ContextRecordTree';
@@ -2567,6 +2568,106 @@ function RepoDecompositionPanel({
   );
 }
 
+function MatchConfidencePanel({
+  candidateId,
+  packetId,
+}: {
+  candidateId: string;
+  packetId: string | null;
+}): JSX.Element | null {
+  const { report, isLoading, error, refetch } = useMatchConfidence(candidateId, packetId);
+
+  if (!packetId) return null;
+  if (isLoading && !report) return null;
+  if (error || !report) return null;
+
+  const levelColor: Record<string, string> = {
+    high: 'var(--lc-signal, #10b981)',
+    moderate: 'var(--lc-concept, #3b82f6)',
+    low: 'var(--lc-gap-weak, #f59e0b)',
+    insufficient: 'var(--lc-gap-none, #ef4444)',
+  };
+
+  const compositePercent = Math.round(report.compositeScore * 100);
+
+  return (
+    <section
+      className="living-context__panel"
+      data-testid="match-confidence-panel"
+    >
+      <div className="living-context__section-head">
+        <div>
+          <div className="living-context__section-title">Match confidence</div>
+          <div className="living-context__eyebrow">
+            <span
+              className="living-context__badge"
+              style={{ background: levelColor[report.compositeLevel] ?? levelColor.low }}
+            >
+              {report.compositeLevel}
+            </span>
+            {compositePercent}% composite score
+          </div>
+        </div>
+        <button
+          type="button"
+          className="living-context__refresh"
+          onClick={() => void refetch()}
+          title="Refresh confidence"
+          aria-label="Refresh confidence"
+        >
+          <RefreshCw size={12} />
+        </button>
+      </div>
+
+      <div className="living-context__confidence-dimensions">
+        {report.dimensions.map((dim) => {
+          const pct = Math.round(dim.score * 100);
+          return (
+            <div key={dim.name} className="living-context__confidence-dimension">
+              <div className="living-context__confidence-dimension-head">
+                <span className="living-context__confidence-dimension-label">{dim.label}</span>
+                <span className="living-context__confidence-dimension-score">{pct}%</span>
+              </div>
+              <div className="living-context__repo-decomposition-bar">
+                <div
+                  className="living-context__repo-decomposition-bar-fill"
+                  style={{ width: `${pct}%` }}
+                />
+              </div>
+              <div className="living-context__confidence-dimension-detail">{dim.detail}</div>
+            </div>
+          );
+        })}
+      </div>
+
+      {report.stretchAreas.length > 0 && (
+        <div className="living-context__confidence-stretch">
+          <div className="living-context__subsection-title">Stretch areas</div>
+          {report.stretchAreas.slice(0, 5).map((s) => (
+            <div key={s.demandId} className="living-context__confidence-stretch-item">
+              <div className="living-context__confidence-stretch-narrative">{s.demandNarrative}</div>
+              {s.stretchReason && (
+                <div className="living-context__confidence-stretch-reason">{s.stretchReason}</div>
+              )}
+            </div>
+          ))}
+        </div>
+      )}
+
+      {report.recommendations.length > 0 && (
+        <div className="living-context__recommendations">
+          <div className="living-context__subsection-title">Recommendations</div>
+          <ul className="living-context__recommendation-list">
+            {report.recommendations.map((rec, i) => (
+              <li key={i} className="living-context__recommendation-item">{rec}</li>
+            ))}
+          </ul>
+        </div>
+      )}
+    </section>
+  );
+}
+
 function EvidenceReadinessPanel({
   candidateId,
 }: {
@@ -3445,6 +3546,7 @@ export function LivingContextGraph({
       <MatchHistoryPanel candidateId={candidateId} />
       <MatchDecisionPanel candidateId={candidateId} />
       <RepoDecompositionPanel candidateId={candidateId} packetId={challengePacketId} />
+      <MatchConfidencePanel candidateId={candidateId} packetId={challengePacketId} />
       <CandidateComparisonPanel
         candidateId={candidateId}
         comparisonCandidateIds={comparisonCandidateIds ?? null}

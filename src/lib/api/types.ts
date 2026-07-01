@@ -2141,3 +2141,47 @@ export interface BatchRematchResult {
   results: BatchRematchResultEntry[];
   skippedCandidateIds: string[];
 }
+
+// ─── Match confidence scoring ─────────────────────────────────────────────────
+
+export type MatchConfidenceLevel = 'high' | 'moderate' | 'low' | 'insufficient';
+
+export interface DemandConfidence {
+  demandId: string;
+  demandNarrative: string;
+  demandWeight: number;
+  demandConcepts: string[];
+  matchedConcepts: string[];
+  missingConcepts: string[];
+  coverageRatio: number;
+  averageRecency: number;
+  corroboratingSourceCount: number;
+  bestStrength: number;
+  effectiveStrength: number;
+  confidenceScore: number;
+  confidenceLevel: MatchConfidenceLevel;
+  isStretch: boolean;
+  stretchReason: string | null;
+}
+
+export interface ConfidenceDimension {
+  name: 'coverage' | 'recency' | 'depth' | 'consistency';
+  label: string;
+  score: number;
+  weight: number;
+  detail: string;
+}
+
+export interface MatchConfidenceReport {
+  candidateId: string;
+  workspacePersonId: string | null;
+  challengeId: string;
+  compositeScore: number;
+  compositeLevel: MatchConfidenceLevel;
+  dimensions: ConfidenceDimension[];
+  demands: DemandConfidence[];
+  stretchAreas: DemandConfidence[];
+  strongMatches: DemandConfidence[];
+  recommendations: string[];
+  computedAt: string;
+}

@@ -2251,6 +2251,30 @@ candidateOps.post('/batch-rematch', requireGate('living_context_read'), async (c
   return c.json(result);
 });
 
+// GET /:candidateId/living-context/match-confidence — multi-dimensional confidence scoring for a candidate-challenge match
+candidateOps.get('/:candidateId/living-context/match-confidence', requireGate('living_context_read'), async (c) => {
+  const userId = c.var.userId;
+  const { candidateId } = c.req.param();
+  const packetId = c.req.query('packetId');
+  const db = c.env.DB;
+
+  if (!packetId) {
+    return apiError(c, 'VALIDATION_ERROR', 'packetId query parameter is required.');
+  }
+
+  const candidate = await db.prepare(
+    `SELECT c.id
+       FROM candidates c
+       LEFT JOIN pipelines p ON p.id = c.pipeline_id
+      WHERE c.id = ?1 AND (c.owner_id = ?2 OR p.owner_id = ?2)`,
+  ).bind(candidateId, userId).first<{ id: string }>();
+  if (!candidate) return apiError(c, 'NOT_FOUND', 'Candidate not found.');
+
+  const { computeMatchConfidence } = await import('../../lib/livingContext/matchConfidenceScoring');
+  const report = await computeMatchConfidence(db, candidateId, packetId);
+  return c.json(report);
+});
+
 // GET /:candidateId/pipeline-siblings — other candidates in the same pipeline
 candidateOps.get('/:candidateId/pipeline-siblings', async (c) => {
   const userId = c.var.userId;

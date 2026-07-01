@@ -82,6 +82,11 @@ vi.mock('../../../hooks/useRepoDecomposition', () => ({
   useRepoDecomposition: () => ({ overlay: null, isLoading: false, error: null, refetch: vi.fn() }),
 }));
 
+vi.mock('../../../hooks/useMatchConfidence', () => ({
+  useMatchConfidence: () => ({ report: null, isLoading: false, error: null, refetch: vi.fn() }),
+
+}));
+
 function makeLivingContext(): LivingContextReadModel {
   return {
     person: {
