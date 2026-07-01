@@ -607,6 +607,7 @@ function makeSelectedCodeReviewDecision(): unknown {
     proofItems: [
       { id: 'assignment', label: 'assignment', text: 'acme/widgets PR #42' },
       { id: 'score', label: 'score report', text: '82/100 Strong' },
+      { id: 'match-proof', label: 'match proof', text: 'Rendered candidate evidence and repo evidence are bridged by exact source spans.' },
     ],
     basisItems: [
       { label: 'Score report', value: 'Scored', satisfied: true },
@@ -909,6 +910,45 @@ describe('PersonProfilePage', () => {
     expect(basis).toHaveTextContent('Match proof');
     expect(basis).toHaveTextContent('Missing');
     expect(basis).not.toHaveTextContent('8/12 Usable');
+  });
+
+  it('does not trust source-backed match route-state claims without candidate and repo proof', async () => {
+    const summaryContext = makeLivingContext();
+    summaryContext.interactions = [];
+    summaryContext.artifacts = [];
+    summaryContext.contextRecords = [];
+    summaryContext.assertions = [];
+    summaryContext.signals = [];
+    summaryContext.relationships = [];
+
+    mocks.api.get
+      .mockResolvedValueOnce({ contact: makeContact() })
+      .mockResolvedValueOnce(summaryContext);
+
+    renderPage({
+      livingContext: summaryContext,
+      selectedCodeReviewDecision: {
+        ...(makeSelectedCodeReviewDecision() as Record<string, unknown>),
+        proofItems: [
+          { id: 'assignment', label: 'assignment', text: 'acme/widgets PR #42' },
+          { id: 'score', label: 'score report', text: '82/100 Strong' },
+        ],
+        sourceProofSummary: 'repo evidence and scoring provenance',
+        basisItems: [
+          { label: 'Score report', value: 'Scored', satisfied: true },
+          { label: 'Match proof', value: 'Source-backed match', satisfied: true },
+        ],
+      },
+    });
+    await flushAsyncUpdates();
+
+    const basis = screen.getByTestId('person-code-review-decision-basis');
+    expect(basis).toHaveTextContent('Match proof');
+    expect(basis).toHaveTextContent('Missing');
+    expect(basis).not.toHaveTextContent('Source-backed match');
+    const proof = screen.getByTestId('person-code-review-source-proof');
+    const proofSummary = proof.querySelector('summary');
+    expect(proofSummary).not.toHaveTextContent('candidate-repo match proof');
   });
 
   it('renders direct profile loads from a lightweight summary and hydrates full graph on audit open', async () => {

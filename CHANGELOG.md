@@ -27,6 +27,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Fixed — CODE_REVIEW assessment runtime
 
+- Person-profile CODE_REVIEW route-state handoffs now only preserve `Source-backed match` basis claims when the selected decision also carries candidate/repo bridge proof text, otherwise match proof is downgraded to missing evidence.
 - Person-profile CODE_REVIEW route-state handoffs now sanitize stale or malformed selected-decision payloads before rendering, preventing crashes and defaulting untrusted match proof to missing evidence.
 - Removed the obsolete proactive assistant prompt/tray protocol from the assessment room runtime, Durable Object replay, session-event ingestion, and graph projections so only real workspace bridge evidence is accepted for agent actions.
 - Interview detail CODE_REVIEW handoffs now detect recruiter manual assignments from live assessment setup and matcher summary metadata, keeping person-profile match proof calibrated even when compact match projections omit validator mode.

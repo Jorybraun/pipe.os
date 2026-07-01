@@ -216,16 +216,46 @@ function codeReviewProofItemsFromUnknown(value: unknown): CodeReviewProofItem[] 
   });
 }
 
+function hasCandidateRepoRouteProof(
+  proofItems: CodeReviewProofItem[],
+  sourceProofSummary: string | null,
+): boolean {
+  const proofText = [
+    sourceProofSummary,
+    ...proofItems.flatMap((item) => [item.label, item.text]),
+  ].filter((part): part is string => Boolean(part)).join(' ').toLowerCase();
+  return /candidate[-/\s]+repo/.test(proofText)
+    || /candidate.*repo/.test(proofText)
+    || /repo.*candidate/.test(proofText)
+    || /source bridge/.test(proofText)
+    || /evidence bridge/.test(proofText)
+    || (/candidate evidence/.test(proofText) && /repo evidence/.test(proofText));
+}
+
 function codeReviewBasisItemsFromUnknown(
   value: unknown,
   scoreLabel: string | null,
+  proofItems: CodeReviewProofItem[],
+  sourceProofSummary: string | null,
 ): CodeReviewBasisItem[] {
+  const hasRouteSourceProof = hasCandidateRepoRouteProof(proofItems, sourceProofSummary);
   const items = Array.isArray(value)
     ? value.flatMap((item) => {
         if (!isRecord(item)) return [];
         const label = optionalString(item.label);
         const itemValue = optionalString(item.value);
         if (!label || !itemValue || typeof item.satisfied !== 'boolean') return [];
+        const isMatchProof = label.toLowerCase().includes('match');
+        const claimsSourceBackedMatch = item.satisfied
+          && isMatchProof
+          && /source-backed|candidate.*repo|repo.*candidate|source bridge|evidence bridge/i.test(itemValue);
+        if (claimsSourceBackedMatch && !hasRouteSourceProof) {
+          return [{
+            label,
+            value: 'Missing',
+            satisfied: false,
+          }];
+        }
         return [{
           label,
           value: itemValue,
@@ -268,6 +298,7 @@ function codeReviewDecisionFromNavigationState(state: unknown): CodeReviewDecisi
   }
   const scoreLabel = optionalString(decision.scoreLabel);
   const proofItems = codeReviewProofItemsFromUnknown(decision.proofItems);
+  const sourceProofSummary = optionalString(decision.sourceProofSummary);
   return {
     decisionLabel: decision.decisionLabel,
     sessionId: optionalString(decision.sessionId),
@@ -289,9 +320,14 @@ function codeReviewDecisionFromNavigationState(state: unknown): CodeReviewDecisi
     strengths: stringArray(decision.strengths),
     probes: stringArray(decision.probes),
     proofCount: optionalNumber(decision.proofCount) ?? proofItems.length,
-    sourceProofSummary: optionalString(decision.sourceProofSummary),
+    sourceProofSummary,
     proofItems,
-    basisItems: codeReviewBasisItemsFromUnknown(decision.basisItems, scoreLabel),
+    basisItems: codeReviewBasisItemsFromUnknown(
+      decision.basisItems,
+      scoreLabel,
+      proofItems,
+      sourceProofSummary,
+    ),
   };
 }
 
