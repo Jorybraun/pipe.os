@@ -57,6 +57,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Fixed — CODE_REVIEW assessment runtime
 
+- The video-room test suite no longer carries retired novelty-room wording; assessment room identity is covered through positive PIPE assessment metadata and surface expectations.
 - Interview related-context previews now prioritize linked follow-ups, technical assessments, and transcript-backed conversations before lower-priority related rows, keeping the single-meeting page useful without blending every person interaction into the current meeting.
 - Person-profile relationship timelines now classify invite/email rows as operational evidence and prioritize code-review, call, and resume evidence ahead of lower-priority operational rows, keeping hiring-manager context from being buried under delivery noise.
 - Interview detail match explanations now label manual assignment-only PR evidence as `Assignment proof` instead of `Valid because`, preventing recruiter-selected PRs from being mistaken for automatic candidate-repo fit proof.
