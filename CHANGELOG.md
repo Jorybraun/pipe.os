@@ -10,6 +10,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 ### Fixed — CODE_REVIEW assessment runtime
 
 - Source-backed assessment evaluation now normalizes missing or unsupported AI recommendation strings to a safe human-review recommendation, records a diagnostic, and prevents recruiter pages from rendering arbitrary model text as hiring advice.
+- Person profile assessment validity copy now explicitly calls selected-interview workspace assessments source-backed signals, preserving the boundary between evidence and hiring decisions.
 - Dev-container Durable Object alarms now repair the Container scheduler table and fall back to the stored TTL config when Cloudflare's scheduler still reports a missing table, preventing old or partially initialized CODE_REVIEW workspaces from throwing `container_schedules` errors during TTL/finalization alarms.
 - Dev-container session creation now stamps lifecycle timestamps explicitly and backfills older null timestamp rows, preventing workspace launch evidence from silently failing after D1 table-copy migrations stripped defaults.
 - Assessment progress now exposes a commit integrity signal that distinguishes live workspace-captured commits from manual evidence needing verification, and recruiter/candidate surfaces show the trust label and explanation instead of raw capture-source wording.

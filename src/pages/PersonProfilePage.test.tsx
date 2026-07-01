@@ -994,7 +994,7 @@ describe('PersonProfilePage', () => {
     expect(cockpit).toHaveTextContent('Current recommendation');
     expect(cockpit).toHaveTextContent('Advance from human-reviewed assessment');
     expect(cockpit).toHaveTextContent('Assessment validity');
-    expect(cockpit).toHaveTextContent('Usable workspace assessment signal');
+    expect(cockpit).toHaveTextContent('Usable source-backed workspace assessment signal');
     expect(cockpit).toHaveTextContent('Uncertainty');
     expect(cockpit).toHaveTextContent('Low remaining uncertainty');
     expect(cockpit).toHaveTextContent('Missing context');
@@ -1025,7 +1025,7 @@ describe('PersonProfilePage', () => {
     expect(screen.getByRole('heading', { name: 'Ada Reviewer' })).toBeInTheDocument();
     const cockpit = screen.getByTestId('person-decision-cockpit');
     expect(cockpit).toHaveTextContent('Advance from human-reviewed assessment');
-    expect(cockpit).toHaveTextContent('Usable workspace assessment signal');
+    expect(cockpit).toHaveTextContent('Usable source-backed workspace assessment signal');
     expect(screen.getByTestId('person-code-review-decision')).toHaveTextContent('Workspace assessment decision');
   });
 
@@ -1061,7 +1061,7 @@ describe('PersonProfilePage', () => {
 
     const cockpit = screen.getByTestId('person-decision-cockpit');
     expect(cockpit).toHaveTextContent('Advance');
-    expect(cockpit).toHaveTextContent('Usable workspace assessment signal');
+    expect(cockpit).toHaveTextContent('Usable source-backed workspace assessment signal');
     expect(cockpit).toHaveTextContent('Graph rollup pending');
     const decision = screen.getByTestId('person-code-review-decision');
     expect(decision).toHaveTextContent('Workspace assessment decision');
