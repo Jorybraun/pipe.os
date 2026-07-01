@@ -772,25 +772,93 @@ function scoreProvenanceLabel(provenance: CodeReviewScoreProvenance | null): str
   ].join(' · ');
 }
 
+function selectedAssessmentSourceRefCounts(
+  progress: AssessmentProgressSnapshot,
+): Array<{ kind: string; count: number }> {
+  const value = isRecord(progress) ? progress.sourceRefCounts : null;
+  if (!Array.isArray(value)) return [];
+  return value.flatMap((item) => {
+    if (!isRecord(item)) return [];
+    const count = wholeCount(item.count);
+    if (count === null) return [];
+    return [{
+      kind: optionalString(item.kind) ?? 'source',
+      count,
+    }];
+  });
+}
+
+function selectedAssessmentEvidenceSnippets(progress: AssessmentProgressSnapshot): Array<{
+  eventKind: string;
+  sourceRefType: string;
+  evidenceRole: string;
+  exactText: string;
+  occurredAt: string;
+}> {
+  const value = isRecord(progress) ? progress.evidenceSnippets : null;
+  if (!Array.isArray(value)) return [];
+  return value.flatMap((item) => {
+    if (!isRecord(item)) return [];
+    const sourceRefType = optionalString(item.sourceRefType);
+    const exactText = optionalString(item.exactText);
+    const occurredAt = optionalString(item.occurredAt);
+    if (!sourceRefType || !exactText || !occurredAt) return [];
+    return [{
+      eventKind: optionalString(item.eventKind) ?? 'assessment_evidence',
+      sourceRefType,
+      evidenceRole: optionalString(item.evidenceRole) ?? 'assessment_source',
+      exactText,
+      occurredAt,
+    }];
+  });
+}
+
+function selectedAssessmentEvaluationClaims(progress: AssessmentProgressSnapshot): Array<{
+  polarity: string;
+  dimension: string;
+  narrative: string;
+}> {
+  const evaluation = isRecord(progress.evaluation) ? progress.evaluation : null;
+  const claims = evaluation && Array.isArray(evaluation.claims) ? evaluation.claims : [];
+  return claims.flatMap((claim) => {
+    if (!isRecord(claim)) return [];
+    const polarity = optionalString(claim.polarity);
+    const dimension = optionalString(claim.dimension);
+    const narrative = optionalString(claim.narrative);
+    if (!polarity || !dimension || !narrative) return [];
+    return [{ polarity, dimension, narrative }];
+  });
+}
+
 function selectedAssessmentScoreProvenance(
   progress: AssessmentProgressSnapshot,
   sourceRefCount: number,
 ): CodeReviewScoreProvenance | null {
-  if (!progress.evaluation) return null;
+  const evaluation = isRecord(progress.evaluation) ? progress.evaluation : null;
+  if (!evaluation) return null;
+  const claims = selectedAssessmentEvaluationClaims(progress);
+  const sourceRefCounts = selectedAssessmentSourceRefCounts(progress);
+  const evidenceSnippets = selectedAssessmentEvidenceSnippets(progress);
   const claimDimensions = new Set(
-    (progress.evaluation.claims ?? [])
+    claims
       .map((claim) => claim.dimension.trim())
       .filter(Boolean),
   );
-  const coverage = progress.evaluation.evidenceCoverage ?? null;
-  const coverageMetricCount = (coverage?.requiredForEvaluation.length ?? 0)
-    + (coverage?.expectedForHighConfidence.length ?? 0);
-  const sourceTypeMetricCount = coverage
-    ? Object.keys(coverage.sourceRefTypeCounts).length
-    : progress.sourceRefCounts.length;
+  const coverage = isRecord(evaluation.evidenceCoverage) ? evaluation.evidenceCoverage : null;
+  const requiredForEvaluation = Array.isArray(coverage?.requiredForEvaluation)
+    ? coverage.requiredForEvaluation.length
+    : 0;
+  const expectedForHighConfidence = Array.isArray(coverage?.expectedForHighConfidence)
+    ? coverage.expectedForHighConfidence.length
+    : 0;
+  const sourceRefTypeCounts = isRecord(coverage?.sourceRefTypeCounts) ? coverage.sourceRefTypeCounts : null;
+  const coverageMetricCount = requiredForEvaluation + expectedForHighConfidence;
+  const sourceTypeMetricCount = sourceRefTypeCounts
+    ? Object.keys(sourceRefTypeCounts).length
+    : sourceRefCounts.length;
   return {
     rubricDimensionCount: Math.max(1, claimDimensions.size),
-    evidenceItemCount: Math.max(sourceRefCount, progress.evidenceSnippets?.length ?? 0),
+    evidenceItemCount: Math.max(sourceRefCount, evidenceSnippets.length),
     metricCount: Math.max(1, coverageMetricCount, sourceTypeMetricCount),
   };
 }
@@ -1685,26 +1753,33 @@ function deriveSelectedWorkspaceAssessmentDecision(
 ): CodeReviewDecisionProjection | null {
   if (!progress?.humanDecision && !progress?.evaluation) return null;
 
-  const sourceRefCount = progress.humanDecision?.sourceRefCount
-    ?? progress.evaluation?.evidenceCoverage?.sourceRefCount
-    ?? progress.sourceRefCounts.reduce((total, item) => total + item.count, 0)
-    ?? 0;
+  const humanDecisionRecord = isRecord(progress.humanDecision) ? progress.humanDecision : null;
+  const evaluationRecord = isRecord(progress.evaluation) ? progress.evaluation : null;
+  const evidenceCoverage = isRecord(evaluationRecord?.evidenceCoverage)
+    ? evaluationRecord.evidenceCoverage
+    : null;
+  const sourceRefCounts = selectedAssessmentSourceRefCounts(progress);
+  const evidenceSnippets = selectedAssessmentEvidenceSnippets(progress);
+  const sourceRefCount = wholeCount(humanDecisionRecord?.sourceRefCount)
+    ?? wholeCount(evidenceCoverage?.sourceRefCount)
+    ?? sourceRefCounts.reduce((total, item) => total + item.count, 0);
   const scoreProvenance = selectedAssessmentScoreProvenance(progress, sourceRefCount);
-  const proofItems = progress.evidenceSnippets?.slice(0, 6).map((snippet, index) => ({
+  const proofItems = evidenceSnippets.slice(0, 6).map((snippet, index) => ({
     id: `${progress.session.id}:${index}:${snippet.sourceRefType}:${snippet.occurredAt}`,
     label: snippet.sourceRefType.replace(/[_-]+/g, ' ').toLowerCase(),
     text: snippet.exactText.length > 180 ? `${snippet.exactText.slice(0, 180)}...` : snippet.exactText,
-  })) ?? [];
-  const positiveClaims = progress.evaluation?.claims?.filter((claim) => claim.polarity === 'positive') ?? [];
-  const negativeClaims = progress.evaluation?.claims?.filter((claim) => claim.polarity === 'negative') ?? [];
-  const humanDecision = progress.humanDecision?.decision ?? null;
-  const recommendation = progress.humanDecision
-    ? humanAssessmentDecisionLabel(progress.humanDecision.decision)
-    : assessmentEvaluationRecommendationLabel(progress.evaluation?.recommendation) ?? 'Review selected assessment';
-  const recommendationDetail = progress.humanDecision?.summary
-    ?? progress.evaluation?.summary
+  }));
+  const claims = selectedAssessmentEvaluationClaims(progress);
+  const positiveClaims = claims.filter((claim) => claim.polarity === 'positive');
+  const negativeClaims = claims.filter((claim) => claim.polarity === 'negative');
+  const humanDecision = optionalString(humanDecisionRecord?.decision);
+  const recommendation = humanDecision
+    ? humanAssessmentDecisionLabel(humanDecision)
+    : assessmentEvaluationRecommendationLabel(optionalString(evaluationRecord?.recommendation)) ?? 'Review selected assessment';
+  const recommendationDetail = optionalString(humanDecisionRecord?.summary)
+    ?? optionalString(evaluationRecord?.summary)
     ?? 'The selected interview has source-backed assessment evidence, but the accumulated person graph has not absorbed it yet.';
-  const hasCompleteProof = sourceRefCount >= 3 && Boolean(progress.evaluation);
+  const hasCompleteProof = sourceRefCount >= 3 && Boolean(evaluationRecord);
   const assessmentValidity = hasCompleteProof
     ? {
         value: 'Usable source-backed signal from workspace assessment',
@@ -1719,7 +1794,7 @@ function deriveSelectedWorkspaceAssessmentDecision(
         value: 'Assessment has cautions',
         detail: negativeClaims[0]?.narrative ?? 'The evaluator raised a caution that needs hiring-team calibration.',
       }
-    : progress.humanDecision && hasCompleteProof
+    : humanDecisionRecord && hasCompleteProof
       ? {
           value: 'Low remaining uncertainty',
           detail: 'The selected assessment has a human decision and source-backed evaluator evidence.',
@@ -1730,10 +1805,10 @@ function deriveSelectedWorkspaceAssessmentDecision(
         };
   const missingContext = negativeClaims.length > 0
     ? ['Review evaluator cautions before using this as final hiring signal']
-    : progress.humanDecision
+    : humanDecisionRecord
       ? ['Persist this selected assessment into the person graph rollup']
       : ['Record a human assessment decision after reviewing the selected interview evidence'];
-  const nextAction = progress.humanDecision
+  const nextAction = humanDecisionRecord
     ? {
         value: 'Review with hiring team',
         detail: 'Use this selected-interview assessment with the profile evidence while the graph rollup catches up.',
@@ -1742,6 +1817,10 @@ function deriveSelectedWorkspaceAssessmentDecision(
         value: 'Record human assessment decision',
         detail: 'Have a reviewer inspect the selected assessment evidence and record advance, hold, reject, or needs-more-evidence.',
       };
+
+  const challenge = isRecord(progress.challenge) ? progress.challenge : null;
+  const challengeLocator = isRecord(challenge?.locator) ? challenge.locator : null;
+  const challengeRepositoryUrl = optionalString(challengeLocator?.repositoryUrl);
 
   return {
     decisionLabel: 'Workspace assessment decision',
@@ -1758,13 +1837,11 @@ function deriveSelectedWorkspaceAssessmentDecision(
     nextActionDetail: nextAction.detail,
     scoreLabel: null,
     scoreProvenanceLabel: scoreProvenanceLabel(scoreProvenance),
-    challengeLabel: progress.challenge?.locator.repositoryUrl
-      ? String(progress.challenge.locator.repositoryUrl).replace(/^https:\/\/github\.com\//, '')
+    challengeLabel: challengeRepositoryUrl
+      ? challengeRepositoryUrl.replace(/^https:\/\/github\.com\//, '')
       : null,
-    challengeUrl: typeof progress.challenge?.locator.repositoryUrl === 'string'
-      ? progress.challenge.locator.repositoryUrl
-      : null,
-    narrative: progress.evaluation?.summary ?? progress.humanDecision?.summary ?? null,
+    challengeUrl: challengeRepositoryUrl,
+    narrative: optionalString(evaluationRecord?.summary) ?? optionalString(humanDecisionRecord?.summary),
     strengths: positiveClaims.map((claim) => claim.narrative).slice(0, 3),
     probes: negativeClaims.map((claim) => claim.narrative).slice(0, 2),
     proofCount: Math.max(sourceRefCount, proofItems.length),
@@ -1777,8 +1854,8 @@ function deriveSelectedWorkspaceAssessmentDecision(
       },
       {
         label: 'Evaluation claims',
-        value: positiveClaims.length > 0 ? `${positiveClaims.length} positive` : progress.evaluation ? 'Recorded' : 'Missing',
-        satisfied: Boolean(progress.evaluation),
+        value: positiveClaims.length > 0 ? `${positiveClaims.length} positive` : evaluationRecord ? 'Recorded' : 'Missing',
+        satisfied: Boolean(evaluationRecord),
       },
       {
         label: 'Human decision',

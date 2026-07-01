@@ -1577,6 +1577,46 @@ describe('PersonProfilePage', () => {
     expect(decision).toHaveTextContent('source-backed proof items');
   });
 
+  it('does not trust malformed selected assessment route-state evidence counts', async () => {
+    const graphOnlyContext = makeLivingContext();
+    graphOnlyContext.contextRecords = [];
+    graphOnlyContext.summary = {
+      ...graphOnlyContext.summary,
+      contextRecordCount: 0,
+      sourceSpanCount: 2,
+    };
+    mocks.api.get
+      .mockResolvedValueOnce({ contact: makeContact() })
+      .mockResolvedValueOnce(graphOnlyContext);
+
+    renderPage({
+      selectedAssessment: {
+        ...(makeSelectedAssessmentProgress() as unknown as Record<string, unknown>),
+        sourceRefCounts: '99 refs',
+        evidenceSnippets: null,
+        evaluation: {
+          id: 'evaluation-stale',
+          status: 'EVALUATED',
+          summary: 'Malformed route state should not create source proof.',
+          recommendation: 'advance',
+          createdAt: '2026-06-30T14:25:00.000Z',
+          claims: null,
+          diagnostics: null,
+        },
+      },
+    });
+    await flushAsyncUpdates();
+
+    const decision = screen.getByTestId('person-code-review-decision');
+    expect(decision).toHaveTextContent('Workspace assessment decision');
+    expect(decision).toHaveTextContent('0 source-backed proof items');
+    expect(decision).not.toHaveTextContent('99 refs');
+    expect(decision).not.toHaveTextContent('99 source-backed proof items');
+    const basis = screen.getByTestId('person-code-review-decision-basis');
+    expect(basis).toHaveTextContent('Source proof');
+    expect(basis).toHaveTextContent('Missing');
+  });
+
   it('shows a visible profile error instead of spinning forever when the person id is missing', async () => {
     renderPageWithoutPersonId();
     await flushAsyncUpdates();
