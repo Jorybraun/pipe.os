@@ -118,6 +118,15 @@ async function expectPersonProfileDecision(page: Page): Promise<void> {
   await expect(personDecision).toContainText('Uncertainty');
   await expect(personDecision).toContainText('Missing context');
   await expect(personDecision).toContainText('Next action');
+  const decisionBasis = page.getByTestId('person-code-review-decision-basis');
+  await expect(decisionBasis).toBeVisible();
+  await expect(decisionBasis).toContainText('Match proof');
+  if (EXPECTED_MATCH_MODE === 'manual_override') {
+    await expect(decisionBasis).toContainText('Assignment evidence only');
+    await expect(decisionBasis).not.toContainText('Source-backed match');
+  } else if (REQUIRE_HYPEREDGES) {
+    await expect(decisionBasis).toContainText('Source-backed match');
+  }
   const personSourceProof = page.getByTestId('person-code-review-source-proof');
   await expect(personSourceProof).toContainText('Source proof');
   await expectDetailsClosed(personSourceProof);

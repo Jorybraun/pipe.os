@@ -1397,9 +1397,21 @@ function codeReviewSignalBasisItems(input: {
   const scoreReady = Boolean(input.score && input.score.status === 'scored');
   const annotationCount = input.submission?.annotations.length ?? 0;
   const pushbackCount = input.submission?.defenseThreads.length ?? 0;
+  const sourceBridge = input.match?.validatorAgent?.sourceBridge ?? null;
+  const hasRenderedSourceBridge = input.proofCount > 0
+    || Boolean(
+      sourceBridge
+        && sourceBridge.provenanceComplete
+        && sourceBridge.candidateSourceCount > 0
+        && sourceBridge.repoSourceCount > 0,
+    );
+  const manualAssignment = input.match?.validatorAgent?.mode === 'manual_override';
   const qualityScore = input.match?.assessmentQuality
     ? `${input.match.assessmentQuality.score}/${input.match.assessmentQuality.maxScore} ${titleCaseToken(input.match.assessmentQuality.verdict.toLowerCase())}`
     : null;
+  const renderedMatchProofLabel = input.proofCount > 0
+    ? countLabel(input.proofCount, 'bridge')
+    : 'candidate/repo source bridge';
   return [
     {
       label: 'Score report',
@@ -1418,10 +1430,12 @@ function codeReviewSignalBasisItems(input: {
     },
     {
       label: 'Match proof',
-      value: input.proofCount > 0
-        ? countLabel(input.proofCount, 'bridge')
-        : qualityScore ?? 'Missing',
-      satisfied: input.proofCount > 0 || Boolean(input.match?.assessmentQuality),
+      value: hasRenderedSourceBridge
+        ? renderedMatchProofLabel
+        : manualAssignment
+          ? 'Assignment evidence only'
+          : qualityScore ?? 'Missing',
+      satisfied: hasRenderedSourceBridge,
     },
   ];
 }

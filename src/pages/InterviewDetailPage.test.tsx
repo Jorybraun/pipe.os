@@ -1384,6 +1384,7 @@ describe('InterviewDetailPage', () => {
       interview: makeInterview({
         interviewType: 'CODE_REVIEW',
         status: 'COMPLETED',
+        candidateId: 'candidate-manual-1',
         githubRepoUrl: 'https://github.com/mui/base-ui',
         githubPrNumber: 973,
         submissionJson: JSON.stringify({
@@ -1475,6 +1476,10 @@ describe('InterviewDetailPage', () => {
     const gateMentions = scoreTrust.textContent?.match(/usable match gate/g) ?? [];
     expect(gateMentions).toHaveLength(1);
     expect(scoreTrust).toHaveTextContent('no rendered source bridge');
+    const scoreSummary = screen.getByTestId('interview-code-review-score-summary');
+    expect(scoreSummary).toHaveTextContent('Match proof');
+    expect(scoreSummary).toHaveTextContent('Assignment evidence only');
+    expect(scoreSummary).not.toHaveTextContent('8/12 Usable');
     const explanation = screen.getByTestId('interview-code-review-match-explanation');
     expect(explanation).toHaveTextContent('Quality gate 8/12 Usable');
     expect(explanation).toHaveTextContent('no rendered source bridge is available');
@@ -1484,6 +1489,19 @@ describe('InterviewDetailPage', () => {
     expect(sourceProof).not.toHaveAttribute('open');
     expect(sourceProof?.querySelector('summary')).toHaveTextContent('repo challenge proof and scoring provenance');
     expect(sourceProof?.querySelector('summary')).not.toHaveTextContent('candidate, role, repo');
+
+    fireEvent.click(screen.getAllByTestId('interview-open-person-profile')[0]!);
+    const state = screen.getByTestId('person-route-state').textContent ?? '';
+    const routeState = JSON.parse(state) as {
+      selectedCodeReviewDecision?: {
+        basisItems?: Array<{ label: string; value: string; satisfied: boolean }>;
+      };
+    };
+    expect(routeState.selectedCodeReviewDecision?.basisItems).toContainEqual({
+      label: 'Match proof',
+      value: 'Assignment evidence only',
+      satisfied: false,
+    });
   });
 
   it('shows assessment progress as a quiet hiring-manager snapshot', async () => {

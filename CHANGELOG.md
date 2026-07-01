@@ -28,6 +28,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 ### Fixed — CODE_REVIEW assessment runtime
 
 - Removed the obsolete proactive assistant prompt/tray protocol from the assessment room runtime, Durable Object replay, session-event ingestion, and graph projections so only real workspace bridge evidence is accepted for agent actions.
+- Interview-to-person CODE_REVIEW handoffs now preserve manual assignment calibration by passing "Assignment evidence only" as the match-proof basis instead of treating an assessment-quality score as candidate-fit proof.
 - Person-profile CODE_REVIEW decisions now require rendered candidate and repo source-bridge evidence before labeling a PR assignment as a source-backed candidate-repo match, otherwise the readout calls it assignment evidence and surfaces the missing bridge.
 - Workspace finalization now runs only the container-configured verification command for `test_run` evidence and records a verification gap when none is configured, preventing candidate-selected commands from satisfying assessment proof.
 - Candidate and recruiter CODE_REVIEW surfaces now consistently describe implementation-author replies instead of exposing AI-developer or generic pushback wording in default instructions and trust signals.
