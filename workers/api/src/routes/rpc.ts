@@ -748,9 +748,7 @@ function standaloneEvidenceIsStale(status: string | null, updatedAt: string | nu
 function activeIngestionBlocksCodeReviewMatching(
   readiness: StandaloneReviewEvidenceReadiness,
 ): boolean {
-  return !readiness.ready
-    && readiness.nodeCount <= 0
-    && isInProgressStandaloneIngestionStatus(readiness.status);
+  return isInProgressStandaloneIngestionStatus(readiness.status);
 }
 
 const STANDALONE_REVIEW_CHALLENGE_CONFIG = {
@@ -1967,6 +1965,20 @@ async function standaloneReviewEvidenceReadiness(
       ready: false,
       terminal: true,
       reason: row.error_text ?? 'candidate ingestion failed before source-backed evidence was created',
+      status,
+      currentStep,
+      nodeCount,
+      rawNodeCount,
+      updatedAt,
+      estimatedCompletionAt,
+    };
+  }
+
+  if (nodeCount > 0 && isInProgressStandaloneIngestionStatus(status)) {
+    return {
+      ready: false,
+      terminal: false,
+      reason: 'candidate evidence ingestion is still finalizing source-backed context',
       status,
       currentStep,
       nodeCount,

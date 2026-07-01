@@ -821,7 +821,7 @@ describe('POST /rpc/get-stage-config', () => {
     expect(body.waitingChallenge).toBeUndefined();
   });
 
-  it('defers role-backed CODE_REVIEW matching while active candidate ingestion has no matchable evidence', async () => {
+  it('defers role-backed CODE_REVIEW matching while candidate evidence ingestion is still active', async () => {
     const db = fakeD1({
       firstResponders: [
         {
@@ -839,7 +839,7 @@ describe('POST /rpc/get-stage-config', () => {
           value: {
             resume_s3_key: 'text-intake/cand_1/role-backed',
             raw_node_count: 16,
-            node_count: 0,
+            node_count: 16,
           },
         },
         {
@@ -866,7 +866,7 @@ describe('POST /rpc/get-stage-config', () => {
             estimated_completion_at: '2026-06-28T16:59:40.000Z',
             updated_at: '2026-06-28T16:59:23.000Z',
             raw_node_count: 16,
-            node_count: 0,
+            node_count: 16,
           },
         },
       ],
@@ -920,7 +920,7 @@ describe('POST /rpc/get-stage-config', () => {
     expect(matchCandidateToReviewChallenge).not.toHaveBeenCalled();
   });
 
-  it('runs role-backed CODE_REVIEW matching when active ingestion already produced matchable evidence', async () => {
+  it('does not run role-backed CODE_REVIEW matching when active ingestion already produced partial evidence', async () => {
     vi.mocked(matchCandidateToReviewChallenge).mockResolvedValueOnce({
       status: 'MATCHED',
       repoId: 973,
@@ -1015,20 +1015,16 @@ describe('POST /rpc/get-stage-config', () => {
       challenges?: Array<{ type: string; title: string }>;
     };
     expect(body).toMatchObject({
-      isComplete: false,
-      stageId: 'stage_code_review',
-      challenges: [
-        { type: 'WELCOME', order: 0 },
-        { type: 'CODE_REVIEW', order: 1, title: 'Code Review' },
-      ],
+      isComplete: true,
+      stageId: 'candidate-intake-queued',
+      challenges: [],
+      message: 'Your profile has been received. PIPE will email you when your code review is ready.',
     });
-    expect(matchCandidateToReviewChallenge).toHaveBeenCalledOnce();
+    expect(matchCandidateToReviewChallenge).not.toHaveBeenCalled();
     expect(db.__calls.some((call) =>
       call.ran
       && call.sql.includes('INSERT INTO candidate_challenge_assignment')
-      && call.params.includes('https://github.com/mui/base-ui')
-      && call.params.includes(973)
-    )).toBe(true);
+    )).toBe(false);
   });
 
   it('retries stale Workers AI model failures from stored text-intake source on status refresh', async () => {
