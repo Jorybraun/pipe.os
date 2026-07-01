@@ -1393,6 +1393,7 @@ function codeReviewSignalBasisItems(input: {
   submission: CodeReviewSubmissionDetail | null;
   match: CodeReviewMatchDetail | null;
   proofCount: number;
+  assignmentIsManual: boolean;
 }): CodeReviewSignalBasisItem[] {
   const scoreReady = Boolean(input.score && input.score.status === 'scored');
   const annotationCount = input.submission?.annotations.length ?? 0;
@@ -1405,7 +1406,7 @@ function codeReviewSignalBasisItems(input: {
         && sourceBridge.candidateSourceCount > 0
         && sourceBridge.repoSourceCount > 0,
     );
-  const manualAssignment = input.match?.validatorAgent?.mode === 'manual_override';
+  const manualAssignment = input.assignmentIsManual || input.match?.validatorAgent?.mode === 'manual_override';
   const qualityScore = input.match?.assessmentQuality
     ? `${input.match.assessmentQuality.score}/${input.match.assessmentQuality.maxScore} ${titleCaseToken(input.match.assessmentQuality.verdict.toLowerCase())}`
     : null;
@@ -3263,11 +3264,16 @@ export default function InterviewDetailPage(): JSX.Element {
   const shouldShowEvidencePlan = codeReviewEvidencePlan.length > 0
     && !codeReviewEvidenceRefresh
     && !codeReviewEvidenceFollowUp;
+  const codeReviewAssignmentIsManual = interview.assessmentSetup?.kind === 'manual_open_source_task'
+    || interview.assessmentSetup?.source === 'recruiter_manual_override'
+    || codeReviewMatch?.validatorAgent?.mode === 'manual_override'
+    || /^manual override\b/i.test(codeReviewMatch?.summary ?? '');
   const codeReviewSignalBasis = codeReviewSignalBasisItems({
     score: codeReviewScore,
     submission: codeReviewSubmission,
     match: codeReviewMatch,
     proofCount: matchHyperedges.length,
+    assignmentIsManual: codeReviewAssignmentIsManual,
   });
   const codeReviewAssessmentValidity = codeReviewAssessmentValiditySummary({
     score: codeReviewScore,
