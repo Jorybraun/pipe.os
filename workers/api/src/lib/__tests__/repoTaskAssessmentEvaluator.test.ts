@@ -1,8 +1,112 @@
 import { describe, expect, it } from 'vitest';
 
-import { parseAiJson } from '../repoTaskAssessmentEvaluator';
+import {
+  buildDeterministicAssessmentFallback,
+  parseAiJson,
+  type SessionSourceRef,
+} from '../repoTaskAssessmentEvaluator';
+
+async function sha256Hex(value: string): Promise<string> {
+  const bytes = new TextEncoder().encode(value);
+  const digest = await crypto.subtle.digest('SHA-256', bytes);
+  return Array.from(new Uint8Array(digest), (byte) => byte.toString(16).padStart(2, '0')).join('');
+}
+
+async function sourceRef(input: {
+  type: string;
+  id: string;
+  role?: string;
+  exactText: string;
+  sequence?: number;
+}): Promise<SessionSourceRef> {
+  return {
+    eventId: `event-${input.sequence ?? 1}`,
+    eventKind: 'commit_submission',
+    eventSequence: input.sequence ?? 1,
+    key: `${input.type}:${input.id}:${input.role ?? 'support'}:`,
+    sourceRefType: input.type,
+    sourceRefId: input.id,
+    evidenceRole: input.role ?? 'support',
+    exactText: input.exactText,
+    contentHash: await sha256Hex(input.exactText),
+  };
+}
 
 describe('repo task assessment evaluator output parsing', () => {
+  it('builds conservative source-backed fallback claims when model claims are unusable', async () => {
+    const requestText = 'Recruiter requested source-backed evaluation.';
+    const fallback = buildDeterministicAssessmentFallback({
+      sessionId: 'assessment-session-fallback',
+      requestSourceRef: {
+        sourceRefType: 'assessment_evaluation_request',
+        sourceRefId: 'request-1',
+        exactText: requestText,
+        contentHash: await sha256Hex(requestText),
+      },
+      sourceRefs: [
+        await sourceRef({
+          type: 'open_source_challenge_packet',
+          id: 'challenge-1',
+          role: 'assigned_challenge',
+          sequence: 1,
+          exactText: [
+            'Repo: https://github.com/mui/base-ui',
+            'Base commit: 58dff8444fa56e4444a3a1dd991c76b49cf4ab7e',
+            'Task: Fix Base UI popover impatient click handling',
+            'Success criteria:',
+            '- Change popover behavior.',
+            'Expected evidence:',
+            '- git_commit',
+            '- code_diff',
+          ].join('\n'),
+        }),
+        await sourceRef({
+          type: 'git_commit',
+          id: '81c11363a3b6e31b34b3777fd150de7fe462c64f',
+          sequence: 2,
+          exactText: 'commit 81c11363a3b6e31b34b3777fd150de7fe462c64f\nfix popover impatient click handling',
+        }),
+        await sourceRef({
+          type: 'code_diff',
+          id: 'base..head',
+          sequence: 2,
+          exactText: 'diff --git a/packages/react/src/popover/root/usePopoverRoot.ts b/packages/react/src/popover/root/usePopoverRoot.ts\n+PATIENT_CLICK_THRESHOLD',
+        }),
+        await sourceRef({
+          type: 'test_run',
+          id: 'verification-1',
+          sequence: 2,
+          exactText: '$ git diff --check HEAD~1 HEAD\nexitCode: 0',
+        }),
+        await sourceRef({
+          type: 'terminal_command',
+          id: 'finalizer-1',
+          sequence: 2,
+          exactText: '$ git diff --check HEAD~1 HEAD',
+        }),
+      ],
+    });
+
+    expect(fallback).not.toBeNull();
+    expect(fallback?.summary).toContain('Fix Base UI popover impatient click handling');
+    expect(fallback?.recommendation).toBe('mixed_evidence_human_review');
+    expect(fallback?.claims).toEqual(expect.arrayContaining([
+      expect.objectContaining({
+        polarity: 'positive',
+        dimension: 'source_provenance',
+      }),
+      expect.objectContaining({
+        polarity: 'positive',
+        dimension: 'verification',
+      }),
+    ]));
+    expect(fallback?.claims.every((claim) => (claim.sourceRefs?.length ?? 0) > 0)).toBe(true);
+    expect(fallback?.diagnostics).toEqual(expect.arrayContaining([
+      expect.objectContaining({ code: 'MODEL_CLAIMS_UNUSABLE', severity: 'warning' }),
+      expect.objectContaining({ code: 'HUMAN_CORRECTNESS_REVIEW_REQUIRED', severity: 'warning' }),
+    ]));
+  });
+
   it('salvages complete source-cited claims from a truncated JSON response', () => {
     const output = parseAiJson(`{
   "summary": "The candidate implemented impatient click handling in the Popover component by modifying the root hook, constants, and tests.",

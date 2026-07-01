@@ -16,7 +16,7 @@ import { deterministicEntityId } from './livingContext';
 import type { AssessmentEvidenceSourceRefInput } from './assessmentLayer/persistence';
 import type { JsonObject, JsonValue } from './livingContext/types';
 
-interface SessionSourceRef extends AssessmentEvidenceSourceRefInput {
+export interface SessionSourceRef extends AssessmentEvidenceSourceRefInput {
   readonly eventId: string;
   readonly eventKind: string;
   readonly eventSequence: number;
@@ -426,6 +426,126 @@ function hasRequiredEvidence(sourceRefs: readonly SessionSourceRef[]): boolean {
   return hasChallenge
     && hasCompleteChallengeContract
     && [...REQUIRED_EVALUATION_REF_TYPES].every((type) => presentTypes.has(type));
+}
+
+function firstSourceRefOfType(
+  sourceRefs: readonly SessionSourceRef[],
+  sourceRefType: string,
+): SessionSourceRef | null {
+  return sourceRefs.find((ref) => ref.sourceRefType === sourceRefType) ?? null;
+}
+
+function sourceRefsOfTypes(
+  sourceRefs: readonly SessionSourceRef[],
+  sourceRefTypes: readonly string[],
+): SessionSourceRef[] {
+  const allowedTypes = new Set(sourceRefTypes);
+  return sourceRefs.filter((ref) => allowedTypes.has(ref.sourceRefType));
+}
+
+function hasSuccessfulVerification(sourceRefs: readonly SessionSourceRef[]): boolean {
+  return sourceRefsOfTypes(sourceRefs, ['test_run']).some((ref) => {
+    const exactText = ref.exactText ?? '';
+    return /\bexitCode:\s*0\b/i.test(exactText)
+      || /\bexit\s+code\s*[:=]\s*0\b/i.test(exactText)
+      || /\bpassed\b/i.test(exactText);
+  });
+}
+
+export function buildDeterministicAssessmentFallback(input: {
+  sessionId: string;
+  sourceRefs: readonly SessionSourceRef[];
+  requestSourceRef: AssessmentEvidenceSourceRefInput;
+}): {
+  summary: string;
+  recommendation: string;
+  claims: AssessmentEvaluationClaimInputCompat[];
+  diagnostics: AssessmentDiagnosticInput[];
+} | null {
+  const challengeRefs = sourceRefsOfTypes(input.sourceRefs, [...CHALLENGE_REF_TYPES])
+    .filter((ref) => CHALLENGE_REF_TYPES.has(ref.sourceRefType) || ref.evidenceRole === 'assigned_challenge');
+  const challengeRef = challengeRefs[0] ?? null;
+  const commitRef = firstSourceRefOfType(input.sourceRefs, 'git_commit');
+  const diffRef = firstSourceRefOfType(input.sourceRefs, 'code_diff');
+  if (!challengeRef || !commitRef || !diffRef) return null;
+
+  const claims: AssessmentEvaluationClaimInputCompat[] = [{
+    id: `repo_task_eval_${input.sessionId}_source_contract`.replace(/[^A-Za-z0-9:_-]/g, '_'),
+    polarity: 'positive',
+    dimension: 'source_provenance',
+    narrative: 'The assessment has a complete source-backed challenge packet, submitted commit, and exact code diff for review.',
+    confidence: 0.82,
+    sourceRefs: [challengeRef, commitRef, diffRef],
+  }, {
+    id: `repo_task_eval_${input.sessionId}_implementation_evidence`.replace(/[^A-Za-z0-9:_-]/g, '_'),
+    polarity: 'positive',
+    dimension: 'implementation_evidence',
+    narrative: 'The submitted implementation diff is captured as exact source evidence for assessment.',
+    confidence: 0.78,
+    sourceRefs: [diffRef],
+  }];
+
+  const verificationRef = firstSourceRefOfType(input.sourceRefs, 'test_run');
+  if (verificationRef && hasSuccessfulVerification(input.sourceRefs)) {
+    claims.push({
+      id: `repo_task_eval_${input.sessionId}_verification_evidence`.replace(/[^A-Za-z0-9:_-]/g, '_'),
+      polarity: 'positive',
+      dimension: 'verification',
+      narrative: 'The captured verification command completed successfully for the submitted workspace state.',
+      confidence: 0.72,
+      sourceRefs: [verificationRef],
+    });
+  }
+
+  const activityRefs = sourceRefsOfTypes(input.sourceRefs, [
+    'terminal_command',
+    'terminal_output',
+    'dev_container_workspace_state',
+    'code_server_file_observation',
+  ]).slice(0, 4);
+  if (activityRefs.length > 0) {
+    claims.push({
+      id: `repo_task_eval_${input.sessionId}_workspace_activity`.replace(/[^A-Za-z0-9:_-]/g, '_'),
+      polarity: 'positive',
+      dimension: 'workspace_process',
+      narrative: 'Workspace activity was captured alongside the final submitted commit evidence.',
+      confidence: 0.7,
+      sourceRefs: activityRefs,
+    });
+  }
+
+  const focus = challengeFocusSummary(input.sourceRefs);
+  const summary = sourceBackedEvaluationSummary(
+    'PIPE produced a conservative source-backed assessment report from captured challenge, commit, diff, verification, and workspace evidence.',
+    input.sourceRefs,
+  );
+
+  return {
+    summary,
+    recommendation: DEFAULT_RECOMMENDATION,
+    claims: claims.slice(0, 4),
+    diagnostics: [
+      diagnosticInput({
+        code: 'MODEL_CLAIMS_UNUSABLE',
+        severity: 'warning',
+        message: 'The AI evaluator did not return usable non-diagnostic claims, so PIPE generated conservative claims only from captured source evidence.',
+        retryable: false,
+        sourceRefs: [input.requestSourceRef],
+        details: {
+          fallback: 'deterministic_source_evidence',
+          recommendation: DEFAULT_RECOMMENDATION,
+          challengeFocus: focus,
+        },
+      }),
+      diagnosticInput({
+        code: 'HUMAN_CORRECTNESS_REVIEW_REQUIRED',
+        severity: 'warning',
+        message: 'A human reviewer should inspect the diff before treating the commit as proven upstream-correct.',
+        retryable: false,
+        sourceRefs: [diffRef],
+      }),
+    ],
+  };
 }
 
 function diagnosticInput(input: {
@@ -1155,6 +1275,55 @@ export async function evaluateRepoTaskAssessmentSession(
   const normalizedRecommendation = normalizeAiRecommendation(aiOutput.recommendation);
   const groundedClaims = claims.filter((claim) => claim.polarity !== 'diagnostic');
   if (groundedClaims.length === 0) {
+    const deterministicFallback = buildDeterministicAssessmentFallback({
+      sessionId: input.sessionId,
+      sourceRefs,
+      requestSourceRef: input.requestSourceRef,
+    });
+    if (deterministicFallback && deterministicFallback.claims.some((claim) => claim.polarity !== 'diagnostic')) {
+      const status: EvaluationReportStatus = 'EVALUATED';
+      const report = await input.store.createEvaluationReport({
+        sessionId: input.sessionId,
+        ingestionKey: `assessment-report:${input.sessionId}:deterministic-fallback:${await deterministicEntityId('content', rawResponse || deterministicFallback.summary)}`,
+        status,
+        summary: deterministicFallback.summary,
+        output: {
+          schemaVersion: 'repo-task-assessment-output-v1',
+          status,
+          mode: session.mode,
+          recommendation: deterministicFallback.recommendation,
+          provider: provider.name,
+          model: provider.model,
+          scheduledInterviewId: input.scheduledInterviewId,
+          requestEventId: input.requestEventId,
+          challengeFocus: challengeFocusSummary(sourceRefs),
+          evidenceCoverage,
+          claimIds: deterministicFallback.claims.map((claim) => claim.id),
+          diagnosticCodes: [
+            ...diagnostics.map((diagnostic) => diagnostic.code),
+            ...normalizedRecommendation.diagnostics.map((diagnostic) => diagnostic.code),
+            ...deterministicFallback.diagnostics.map((diagnostic) => diagnostic.code),
+          ],
+          fallback: 'deterministic_source_evidence',
+        },
+        claims: deterministicFallback.claims,
+        diagnostics: [
+          ...diagnostics,
+          ...normalizedRecommendation.diagnostics,
+          ...deterministicFallback.diagnostics,
+        ],
+      });
+
+      await input.store.transitionState({
+        sessionId: input.sessionId,
+        toState: 'EVALUATED',
+        reason: 'PIPE produced a conservative source-backed assessment report from captured evidence.',
+        createdBy: 'repo-task-assessment-evaluator',
+      });
+
+      return { kind: 'evaluated', report };
+    }
+
     return createDiagnostic({
       store: input.store,
       sessionId: input.sessionId,
