@@ -63,15 +63,21 @@ jobs:
           CLOUDFLARE_ACCOUNT_ID:      ${{ secrets.CLOUDFLARE_ACCOUNT_ID }}
           CLOUDFLARE_API_TOKEN:       ${{ secrets.CLOUDFLARE_API_TOKEN }}
           CLOUDFLARE_D1_DATABASE_ID:  ${{ secrets.CLOUDFLARE_D1_DATABASE_ID }}
+          MATCHING_EVALUATION_D1_DATABASE_ID: ${{ vars.MATCHING_EVALUATION_D1_DATABASE_ID }}
           MATCHING_EVALUATION_CORPUS_ID: ${{ vars.MATCHING_EVALUATION_CORPUS_ID }}
+          MATCHING_EVALUATION_STAGE: ${{ vars.MATCHING_EVALUATION_STAGE }}
         run: |
+          EVAL_STAGE="${MATCHING_EVALUATION_STAGE:-production}"
+          if [ -n "$MATCHING_EVALUATION_D1_DATABASE_ID" ]; then
+            export CLOUDFLARE_D1_DATABASE_ID="$MATCHING_EVALUATION_D1_DATABASE_ID"
+          fi
           if [ -z "$CLOUDFLARE_ACCOUNT_ID" ] || [ -z "$CLOUDFLARE_API_TOKEN" ] || [ -z "$CLOUDFLARE_D1_DATABASE_ID" ] || [ -z "$MATCHING_EVALUATION_CORPUS_ID" ]; then
             cat > matching-evaluation-readiness.json <<'JSON'
           {
             "ready": false,
             "status": "not_configured",
             "failures": [
-              "Set CLOUDFLARE_ACCOUNT_ID, CLOUDFLARE_API_TOKEN, CLOUDFLARE_D1_DATABASE_ID, and MATCHING_EVALUATION_CORPUS_ID to run the production matching evaluation readiness report."
+              "Set CLOUDFLARE_ACCOUNT_ID, CLOUDFLARE_API_TOKEN, CLOUDFLARE_D1_DATABASE_ID or MATCHING_EVALUATION_D1_DATABASE_ID, and MATCHING_EVALUATION_CORPUS_ID to run the matching evaluation readiness report."
             ]
           }
           JSON
@@ -81,6 +87,7 @@ jobs:
           fi
           npm run matching-eval:readiness -- \
             --corpus-id "$MATCHING_EVALUATION_CORPUS_ID" \
+            --stage "$EVAL_STAGE" \
             --json matching-evaluation-readiness.json \
             --report matching-evaluation-readiness.txt
           cat matching-evaluation-readiness.json

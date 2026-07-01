@@ -17,9 +17,11 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 - Added an internal living-context match-quality evaluation gate with compact match reports, labelled contrast cases, source-backed PR checks, and decision-weighted rematch exclusions, harvesting PR #171 backend primitives without exposing graph cockpit or matching diagnostics to candidates.
 - The internal match-quality evaluation CLI can now run against frozen `evaluation_corpora` rows via `--corpus-id` as well as compact JSON files, adapting existing candidate-role-challenge labels into the CODE_REVIEW packet-quality gate.
+- CI matching-evaluation readiness can now target a dedicated D1 database and rollout stage via `MATCHING_EVALUATION_D1_DATABASE_ID` and `MATCHING_EVALUATION_STAGE`, keeping app-dev CODE_REVIEW quality proof separate from the mostly empty production D1 while preserving the same frozen-corpus gate.
 
 ### Fixed — Open-source assessment progress
 
+- Recruiter interview lists now include a product-mode filter for standard calls, code review, dev-container, and open-source bug-fix assessments, making real assessment sessions easier to find without mixing them with calls.
 - Recruiter interview cards now show assessment room state alongside workspace state, including active rooms and waiting guests, so live assessment status is visible without opening the detail page.
 - CI now runs the assessment-room unit tests inside the room package instead of sweeping them through the root app Vitest runner, preserving room evidence-capture coverage without duplicate-React hook failures.
 - Person-profile workspace assessment smokes now assert assessment evidence, human decision, and source proof instead of requiring candidate-to-repo match proof when no match provenance exists.

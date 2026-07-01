@@ -384,6 +384,50 @@ describe('SchedulingDashboard interview ordering', () => {
     expect(cardNames()).toEqual(['Evaluated']);
   });
 
+  it('filters interviews by product mode so open-source assessments are easy to find', () => {
+    renderDashboard([
+      makeInterview({
+        id: 'open-source-assessment',
+        createdAt: '2026-06-28T10:00:00.000Z',
+        recipientName: 'Open source assessment',
+        interviewType: 'OPEN_SOURCE_BUG_FIX',
+      }),
+      makeInterview({
+        id: 'code-review-assessment',
+        createdAt: '2026-06-27T10:00:00.000Z',
+        recipientName: 'Code review assessment',
+        interviewType: 'CODE_REVIEW',
+      }),
+      makeInterview({
+        id: 'dev-container-assessment',
+        createdAt: '2026-06-26T10:00:00.000Z',
+        recipientName: 'Dev container assessment',
+        interviewType: 'DEV_CONTAINER_CHALLENGE',
+      }),
+      makeInterview({
+        id: 'standard-call',
+        createdAt: '2026-06-25T10:00:00.000Z',
+        recipientName: 'Standard call',
+        interviewType: 'VIDEO',
+      }),
+    ]);
+
+    expect(screen.getByRole('button', { name: /Open source\s*1/i })).toBeInTheDocument();
+    expect(screen.getByRole('button', { name: /Code review\s*1/i })).toBeInTheDocument();
+    expect(screen.getByRole('button', { name: /Dev container\s*1/i })).toBeInTheDocument();
+    expect(screen.getByRole('button', { name: /Standard calls\s*1/i })).toBeInTheDocument();
+
+    fireEvent.click(screen.getByRole('button', { name: /Open source\s*1/i }));
+    expect(cardNames()).toEqual(['Open source assessment']);
+    expect(screen.getByText('1 shown · 4 total')).toBeInTheDocument();
+
+    fireEvent.click(screen.getByRole('button', { name: /Code review\s*1/i }));
+    expect(cardNames()).toEqual(['Code review assessment']);
+
+    fireEvent.click(screen.getByRole('button', { name: /Standard calls\s*1/i }));
+    expect(cardNames()).toEqual(['Standard call']);
+  });
+
   it('opens the invite modal from a person next-action URL with prefilled context', () => {
     renderDashboard(
       interviews,

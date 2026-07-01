@@ -140,11 +140,17 @@ stored row contains the older `evaluation_corpora` schema, the CLI adapts
 candidate-role-challenge relevance labels into candidate-to-packet quality cases
 instead of creating a second unrelated corpus format.
 
-CI also runs the production matching-evaluation readiness report after worker
-unit tests. Missing Cloudflare credentials or `MATCHING_EVALUATION_CORPUS_ID`
-produce a loud `not_configured` artifact and do not block pull-request, local,
-or `main` push contexts. Once the production corpus is configured, a failed
-readiness result is a blocking CODE_REVIEW gate rather than advisory output.
+CI also runs the matching-evaluation readiness report after worker unit tests.
+Missing Cloudflare credentials or `MATCHING_EVALUATION_CORPUS_ID` produce a
+loud `not_configured` artifact and do not block pull-request, local, or `main`
+push contexts. Once a corpus is configured, a failed readiness result is a
+blocking CODE_REVIEW gate rather than advisory output. The gate defaults to the
+production D1 secret and `production` rollout stage, but can be pointed at the
+current app-dev data plane by setting `MATCHING_EVALUATION_D1_DATABASE_ID`
+(for example the `pipe-db-test` database used by `api-dev.hire-pipe.com`) and
+`MATCHING_EVALUATION_STAGE=shadow|canary|production`. This keeps app-dev
+CODE_REVIEW proof from being confused with the mostly empty production D1 while
+still using the same evaluator and frozen-corpus contract.
 
 The manual override full-submit app-dev lane passed after updating the smoke to
 assert the candidate-facing product language ("a recruiter selected this PR")

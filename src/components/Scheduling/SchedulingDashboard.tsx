@@ -21,6 +21,7 @@ type TimelineGroup = 'TODAY' | 'TOMORROW' | 'THIS_WEEK' | 'LATER' | 'PAST' | 'UN
 type InterviewSortMode = 'CREATED_DESC' | 'TIMELINE' | 'CREATED_ASC';
 type InterviewListGroup = TimelineGroup | 'CREATED_DESC' | 'CREATED_ASC';
 type AssessmentFilterMode = 'ALL' | 'ACTION_NEEDED' | 'READY_TO_EVALUATE' | 'NEEDS_ATTENTION' | 'EVALUATED';
+type InterviewTypeFilterMode = 'ALL' | 'STANDARD_CALLS' | 'CODE_REVIEW' | 'DEV_CONTAINER_CHALLENGE' | 'OPEN_SOURCE_BUG_FIX';
 
 interface InvitePrefill {
   recipientName: string;
@@ -132,6 +133,14 @@ const ASSESSMENT_FILTER_OPTIONS: ReadonlyArray<{ label: string; value: Assessmen
   { label: 'Evaluated', value: 'EVALUATED' },
 ];
 
+const INTERVIEW_TYPE_FILTER_OPTIONS: ReadonlyArray<{ label: string; value: InterviewTypeFilterMode }> = [
+  { label: 'All modes', value: 'ALL' },
+  { label: 'Standard calls', value: 'STANDARD_CALLS' },
+  { label: 'Code review', value: 'CODE_REVIEW' },
+  { label: 'Dev container', value: 'DEV_CONTAINER_CHALLENGE' },
+  { label: 'Open source', value: 'OPEN_SOURCE_BUG_FIX' },
+];
+
 function getGroupLabel(group: InterviewListGroup): string {
   return group in TIMELINE_LABELS
     ? TIMELINE_LABELS[group as TimelineGroup]
@@ -188,6 +197,24 @@ function matchesAssessmentFilter(interview: ScheduledInterview, filter: Assessme
     return bucket === 'READY_TO_EVALUATE' || bucket === 'NEEDS_ATTENTION';
   }
   return bucket === filter;
+}
+
+function interviewTypeFilterBucket(interview: ScheduledInterview): InterviewTypeFilterMode {
+  switch (interview.interviewType) {
+    case 'CODE_REVIEW':
+      return 'CODE_REVIEW';
+    case 'DEV_CONTAINER_CHALLENGE':
+      return 'DEV_CONTAINER_CHALLENGE';
+    case 'OPEN_SOURCE_BUG_FIX':
+      return 'OPEN_SOURCE_BUG_FIX';
+    default:
+      return 'STANDARD_CALLS';
+  }
+}
+
+function matchesInterviewTypeFilter(interview: ScheduledInterview, filter: InterviewTypeFilterMode): boolean {
+  if (filter === 'ALL') return true;
+  return interviewTypeFilterBucket(interview) === filter;
 }
 
 // ---------------------------------------------------------------------------
@@ -257,6 +284,7 @@ export function SchedulingDashboard(): JSX.Element {
     recruiterNotes: '',
   });
   const [sortMode, setSortMode] = useState<InterviewSortMode>('CREATED_DESC');
+  const [interviewTypeFilter, setInterviewTypeFilter] = useState<InterviewTypeFilterMode>('ALL');
   const [assessmentFilter, setAssessmentFilter] = useState<AssessmentFilterMode>('ALL');
   const [searchParams, setSearchParams] = useSearchParams();
   const [toasts, setToasts] = useState<ToastItem[]>([]);
@@ -334,13 +362,31 @@ export function SchedulingDashboard(): JSX.Element {
     return counts;
   }, [interviews]);
 
+  const interviewTypeFilterCounts = useMemo(() => {
+    const counts: Record<InterviewTypeFilterMode, number> = {
+      ALL: interviews.length,
+      STANDARD_CALLS: 0,
+      CODE_REVIEW: 0,
+      DEV_CONTAINER_CHALLENGE: 0,
+      OPEN_SOURCE_BUG_FIX: 0,
+    };
+    for (const interview of interviews) {
+      counts[interviewTypeFilterBucket(interview)] += 1;
+    }
+    return counts;
+  }, [interviews]);
+
   const visibleInterviews = useMemo(
-    () => interviews.filter((interview) => matchesAssessmentFilter(interview, assessmentFilter)),
-    [assessmentFilter, interviews],
+    () => interviews.filter((interview) =>
+      matchesInterviewTypeFilter(interview, interviewTypeFilter)
+      && matchesAssessmentFilter(interview, assessmentFilter)
+    ),
+    [assessmentFilter, interviewTypeFilter, interviews],
   );
   const loadedInterviewCount = interviews.length;
   const totalInterviewCount = Math.max(total, loadedInterviewCount);
-  const interviewCountLabel = assessmentFilter === 'ALL'
+  const hasActiveInterviewFilter = assessmentFilter !== 'ALL' || interviewTypeFilter !== 'ALL';
+  const interviewCountLabel = !hasActiveInterviewFilter
     ? hasMore
       ? `${loadedInterviewCount} loaded · ${totalInterviewCount} total`
       : `${loadedInterviewCount} total`
@@ -599,6 +645,50 @@ export function SchedulingDashboard(): JSX.Element {
                 >
                   <span>{option.label}</span>
                   <span style={{ color: active ? '#dbeafe' : 'var(--pipe-text-muted)' }}>{count}</span>
+                </button>
+              );
+            })}
+          </div>
+          <div
+            role="group"
+            aria-label="Interview mode filter"
+            style={{
+              display: 'flex',
+              flexWrap: 'wrap',
+              justifyContent: 'flex-end',
+              gap: 6,
+              maxWidth: 560,
+            }}
+          >
+            {INTERVIEW_TYPE_FILTER_OPTIONS.map((option) => {
+              const active = interviewTypeFilter === option.value;
+              const count = interviewTypeFilterCounts[option.value];
+              return (
+                <button
+                  key={option.value}
+                  type="button"
+                  aria-pressed={active}
+                  onClick={() => setInterviewTypeFilter(option.value)}
+                  style={{
+                    display: 'inline-flex',
+                    alignItems: 'center',
+                    gap: 6,
+                    minHeight: 30,
+                    padding: '0 10px',
+                    border: `1px solid ${active ? '#4ade80' : 'var(--pipe-border)'}`,
+                    borderRadius: 6,
+                    background: active ? 'rgba(74,222,128,0.12)' : 'transparent',
+                    color: active ? '#bbf7d0' : 'var(--pipe-text-dim)',
+                    fontFamily: '"Space Mono", monospace',
+                    fontSize: 10,
+                    fontWeight: 700,
+                    letterSpacing: '0.04em',
+                    cursor: 'pointer',
+                    whiteSpace: 'nowrap',
+                  }}
+                >
+                  <span>{option.label}</span>
+                  <span style={{ color: active ? '#dcfce7' : 'var(--pipe-text-muted)' }}>{count}</span>
                 </button>
               );
             })}
