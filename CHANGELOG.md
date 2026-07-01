@@ -59,6 +59,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Added — Assessment readiness
 
+- Workspace finalization now adds bounded `code_server_file_observation` source refs for changed files at the submitted `HEAD`, giving evaluators immutable blob/content evidence for code-server file activity without relying on mocked editor telemetry.
 - Candidate dev-container sessions now expose a server-owned workspace finalization endpoint that asks the bridge for source-backed commit evidence, persists it through the repo-task assessment store, and returns candidate-safe progress without internal assessment identifiers.
 - Workspace finalization can now return a source-backed commit submission payload without posting it to PIPE, giving smoke tests and bridge clients a safe dry-run path for validating captured commit, diff, command, and test evidence.
 - Candidate dev-container panels now expose the source-backed assessment commit drawer, letting candidates submit repository, branch, commit, diff, test or verification-gap evidence through the durable `/rpc/assessment/commit-submission` spine without leaving the workspace.

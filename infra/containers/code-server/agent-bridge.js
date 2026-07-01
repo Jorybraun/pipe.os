@@ -30,6 +30,7 @@ const WORKSPACE_SCAN_INTERVAL_MS = positiveIntEnv('WORKSPACE_SCAN_INTERVAL_MS', 
 const WORKSPACE_MAX_SCAN_FILES = positiveIntEnv('WORKSPACE_MAX_SCAN_FILES', 1500, 100);
 const WORKSPACE_MAX_HASH_BYTES = positiveIntEnv('WORKSPACE_MAX_HASH_BYTES', 1024 * 1024, 1024);
 const WORKSPACE_PREVIEW_BYTES = positiveIntEnv('WORKSPACE_PREVIEW_BYTES', 2048, 0);
+const WORKSPACE_FINALIZER_MAX_FILE_REFS = positiveIntEnv('WORKSPACE_FINALIZER_MAX_FILE_REFS', 20, 1);
 const AGENT_START_READY_TIMEOUT_MS = positiveIntEnv('AGENT_START_READY_TIMEOUT_MS', 15000, 1000);
 const AGENT_READY_AFTER_PRIMER_MS = positiveIntEnv('AGENT_READY_AFTER_PRIMER_MS', 3000, 25);
 const DEVIN_API_BASE_URL = String(process.env.DEVIN_API_BASE_URL || 'https://api.devin.ai/v3').replace(/\/+$/, '');
@@ -212,6 +213,23 @@ function sha256ContentHash(text) {
   return `sha256:${crypto.createHash('sha256').update(String(text)).digest('hex')}`;
 }
 
+function sha256BufferHash(buffer) {
+  return `sha256:${crypto.createHash('sha256').update(buffer).digest('hex')}`;
+}
+
+function shortFingerprint(value, length = 12) {
+  return crypto.createHash('sha256').update(String(value)).digest('hex').slice(0, length);
+}
+
+function safeSourceRefIdPart(value) {
+  const normalized = String(value || '')
+    .trim()
+    .replace(/[^a-zA-Z0-9._-]+/g, '_')
+    .replace(/^_+|_+$/g, '')
+    .slice(0, 80);
+  return normalized || 'file';
+}
+
 function jsonResponse(res, status, body) {
   res.writeHead(status, {
     'Content-Type': 'application/json',
@@ -272,6 +290,24 @@ function runCommand(command, args, {
 
 function runGit(args, options = {}) {
   return runCommand('git', args, options);
+}
+
+function tryRunGit(args, options = {}) {
+  const result = spawnSync('git', args, {
+    cwd: options.cwd || WORKSPACE,
+    env: options.env || process.env,
+    encoding: options.encoding ?? 'utf8',
+    maxBuffer: options.maxBuffer ?? 10 * 1024 * 1024,
+    timeout: options.timeoutMs ?? 30000,
+  });
+  return {
+    ok: !result.error && result.status === 0,
+    status: result.status,
+    signal: result.signal,
+    stdout: result.stdout || '',
+    stderr: result.stderr || '',
+    error: result.error ? result.error.message : null,
+  };
 }
 
 function parseChangedFiles(nameStatusText) {
@@ -350,6 +386,137 @@ function buildFinalizerCommandEvidenceText({ baseCommitSha, commitSha, testComma
   ].join('\n');
 }
 
+function parseLsTreeEntry(text) {
+  const match = String(text || '').match(/^(\d+)\s+(\w+)\s+([0-9a-f]{40})\t(.+)$/s);
+  if (!match) return null;
+  return {
+    mode: match[1],
+    objectType: match[2],
+    blobSha: match[3],
+    path: match[4],
+  };
+}
+
+function readGitBlobObservation(blobSha, commitish, filePath) {
+  const sizeResult = tryRunGit(['cat-file', '-s', blobSha]);
+  const sizeBytes = sizeResult.ok ? Number(String(sizeResult.stdout).trim()) : null;
+  if (typeof sizeBytes !== 'number' || !Number.isFinite(sizeBytes)) {
+    return {
+      sizeBytes: null,
+      fileContentHash: null,
+      contentPreview: null,
+      previewTruncated: false,
+      readError: redactDiagnosticText(sizeResult.error || sizeResult.stderr || 'Unable to read git blob size.'),
+    };
+  }
+  if (sizeBytes > WORKSPACE_MAX_HASH_BYTES) {
+    return {
+      sizeBytes,
+      fileContentHash: null,
+      contentPreview: null,
+      previewTruncated: true,
+      readError: `File is ${sizeBytes} bytes, above WORKSPACE_MAX_HASH_BYTES=${WORKSPACE_MAX_HASH_BYTES}.`,
+    };
+  }
+
+  const contentResult = tryRunGit(['show', `${commitish}:${filePath}`], {
+    encoding: 'buffer',
+    maxBuffer: WORKSPACE_MAX_HASH_BYTES + 1024,
+  });
+  if (!contentResult.ok || !Buffer.isBuffer(contentResult.stdout)) {
+    return {
+      sizeBytes,
+      fileContentHash: null,
+      contentPreview: null,
+      previewTruncated: false,
+      readError: redactDiagnosticText(contentResult.error || String(contentResult.stderr || '') || 'Unable to read git blob content.'),
+    };
+  }
+
+  const previewBytes = Math.min(WORKSPACE_PREVIEW_BYTES, contentResult.stdout.length);
+  return {
+    sizeBytes,
+    fileContentHash: sha256BufferHash(contentResult.stdout),
+    contentPreview: WORKSPACE_PREVIEW_BYTES > 0
+      ? contentResult.stdout.subarray(0, previewBytes).toString('utf8')
+      : null,
+    previewTruncated: contentResult.stdout.length > previewBytes,
+    readError: null,
+  };
+}
+
+function buildFileObservationSourceRefs({
+  changedFiles,
+  baseCommitSha,
+  commitSha,
+  repositoryUrl,
+  occurredAt,
+}) {
+  return changedFiles.slice(0, WORKSPACE_FINALIZER_MAX_FILE_REFS).map((change) => {
+    const targetCommit = change.status === 'deleted' ? baseCommitSha : commitSha;
+    const targetPath = change.status === 'deleted'
+      ? (change.previousPath || change.path)
+      : change.path;
+    const lsTree = parseLsTreeEntry(tryRunGit(['ls-tree', targetCommit, '--', targetPath]).stdout);
+    const blobObservation = lsTree?.blobSha
+      ? readGitBlobObservation(lsTree.blobSha, targetCommit, targetPath)
+      : {
+          sizeBytes: null,
+          fileContentHash: null,
+          contentPreview: null,
+          previewTruncated: false,
+          readError: `Unable to resolve ${targetPath} at ${targetCommit}.`,
+        };
+    const observation = {
+      sourceKind: 'code_server_workspace.file_observation',
+      observedBy: 'agent_bridge_workspace_finalize',
+      editorSurface: 'code-server',
+      workspaceRoot: WORKSPACE,
+      repositoryUrl,
+      path: change.path,
+      previousPath: change.previousPath ?? null,
+      action: change.status,
+      baseCommitSha,
+      commitSha,
+      observedCommitSha: targetCommit,
+      observedPath: targetPath,
+      gitMode: lsTree?.mode ?? null,
+      gitObjectType: lsTree?.objectType ?? null,
+      blobSha: lsTree?.blobSha ?? null,
+      sizeBytes: blobObservation.sizeBytes,
+      fileContentHash: blobObservation.fileContentHash,
+      contentPreview: blobObservation.contentPreview,
+      previewTruncated: blobObservation.previewTruncated,
+      readError: blobObservation.readError,
+      observedAt: occurredAt,
+      truncatedByMaxFileRefs: changedFiles.length > WORKSPACE_FINALIZER_MAX_FILE_REFS,
+      maxFileRefs: WORKSPACE_FINALIZER_MAX_FILE_REFS,
+    };
+    const exactText = JSON.stringify(observation, null, 2);
+    return {
+      sourceRefType: 'code_server_file_observation',
+      sourceRefId: `${commitSha}:file-observation:${safeSourceRefIdPart(change.path)}:${shortFingerprint(change.path)}`,
+      evidenceRole: 'workspace_file_observation',
+      locator: {
+        repositoryUrl,
+        baseCommitSha,
+        commitSha,
+        path: change.path,
+        previousPath: change.previousPath ?? null,
+        status: change.status,
+        blobSha: lsTree?.blobSha ?? null,
+        observedBy: 'agent_bridge_workspace_finalize',
+      },
+      exactText,
+      contentHash: sha256ContentHash(exactText),
+      metadata: {
+        source: 'agent_bridge_workspace_finalize',
+        sourceKind: 'code_server_workspace.file_observation',
+      },
+    };
+  });
+}
+
 async function buildWorkspaceCommitSubmission(body = {}) {
   runGit(['rev-parse', '--is-inside-work-tree']);
   const baseCommitSha = normalizeOptionalString(body.baseCommitSha)
@@ -393,6 +560,13 @@ async function buildWorkspaceCommitSubmission(body = {}) {
     baseCommitSha: baseCommitSha.toLowerCase(),
     commitSha,
     testCommand,
+  });
+  const fileObservationSourceRefs = buildFileObservationSourceRefs({
+    changedFiles,
+    baseCommitSha: baseCommitSha.toLowerCase(),
+    commitSha,
+    repositoryUrl: sourceRepositoryUrl,
+    occurredAt,
   });
   let verificationSourceRef;
   if (testCommand) {
@@ -501,6 +675,7 @@ async function buildWorkspaceCommitSubmission(body = {}) {
         },
       },
       verificationSourceRef,
+      ...fileObservationSourceRefs,
     ],
   };
 }

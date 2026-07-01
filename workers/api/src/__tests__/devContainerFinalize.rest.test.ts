@@ -201,6 +201,19 @@ describe('POST /rpc/dev-container/:sessionId/assessment/finalize', () => {
       '@@ -1,3 +1,4 @@',
       '+export const finalizer = "source-backed";',
     ].join('\n');
+    const fileObservationExactText = JSON.stringify({
+      sourceKind: 'code_server_workspace.file_observation',
+      observedBy: 'agent_bridge_workspace_finalize',
+      editorSurface: 'code-server',
+      repositoryUrl,
+      path: 'src/finalize.ts',
+      action: 'modified',
+      baseCommitSha,
+      commitSha,
+      blobSha: 'f'.repeat(40),
+      fileContentHash: await sha256ContentHash('export const finalizer = "source-backed";'),
+      observedAt: now,
+    }, null, 2);
 
     sqlite.prepare(
       `INSERT INTO scheduled_interviews (id, candidate_id, created_at, updated_at)
@@ -315,6 +328,13 @@ describe('POST /rpc/dev-container/:sessionId/assessment/finalize', () => {
             locator: { repositoryUrl, baseCommitSha, commitSha, internalAssessmentSessionId: assessmentSessionId },
             exactText: diffExactText,
           }),
+          await sourceRef({
+            sourceRefType: 'code_server_file_observation',
+            sourceRefId: `${commitSha}:file-observation:src_finalize.ts`,
+            evidenceRole: 'workspace_file_observation',
+            locator: { repositoryUrl, baseCommitSha, commitSha, path: 'src/finalize.ts' },
+            exactText: fileObservationExactText,
+          }),
         ],
       },
     };
@@ -390,6 +410,14 @@ describe('POST /rpc/dev-container/:sessionId/assessment/finalize', () => {
           AND kind = 'commit_submission'`,
     ).get(assessmentSessionId) as { count: number };
     expect(commitRow.count).toBe(1);
+    const fileObservationRow = sqlite.prepare(
+      `SELECT exact_text
+         FROM assessment_event_source_refs
+        WHERE source_ref_type = 'code_server_file_observation'
+        LIMIT 1`,
+    ).get() as { exact_text: string } | undefined;
+    expect(fileObservationRow?.exact_text).toContain('code_server_workspace.file_observation');
+    expect(fileObservationRow?.exact_text).toContain('src/finalize.ts');
 
     const serialized = JSON.stringify(body);
     expect(serialized).not.toContain(assessmentSessionId);

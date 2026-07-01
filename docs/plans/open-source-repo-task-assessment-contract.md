@@ -280,6 +280,11 @@ The controlling product rule remains:
   stores the commit through the repo-task assessment spine. Dirty or untracked
   worktrees are still refused so uncommitted editor changes cannot be mistaken
   for submitted work.
+- Workspace finalization also attaches bounded `code_server_file_observation`
+  source refs for changed files at the submitted commit. These observations are
+  derived from immutable git blobs, carry blob/content hashes and safe previews
+  when files are within the configured capture limit, and let the evaluator
+  distinguish observed file activity from unobserved editor telemetry.
 - Candidate Submit Work now turns that dirty-worktree refusal into an explicit
   recovery path: inspect `git status --short`, add intended files, commit the
   assessment branch work, then retry live workspace finalization.
