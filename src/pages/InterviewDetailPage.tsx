@@ -2386,6 +2386,34 @@ function relatedEvidenceDisplayName(related: NonNullable<ScheduledInterviewDetai
     ?? relatedEvidenceRelationshipLabel(related);
 }
 
+function relatedEvidenceTimestampMs(related: RelatedEvidenceInterview): number {
+  const value = related.scheduledAt ?? related.updatedAt ?? related.createdAt ?? '';
+  const timestamp = new Date(value).getTime();
+  return Number.isFinite(timestamp) ? timestamp : 0;
+}
+
+function relatedEvidencePriority(related: RelatedEvidenceInterview): number {
+  if (related.relationship === 'code_review_evidence_follow_up') return 0;
+  if (related.relationship === 'originating_code_review') return 1;
+  if (['CODE_REVIEW', 'DEV_CONTAINER_CHALLENGE', 'OPEN_SOURCE_BUG_FIX'].includes(related.interviewType ?? '')) return 2;
+  if (related.transcriptStatus === 'READY' || related.transcriptStatus === 'COMPLETED') return 3;
+  if (['VIDEO', 'SCREENING'].includes(related.interviewType ?? '')) return 4;
+  return 5;
+}
+
+function selectRelatedEvidencePreviews(
+  relatedInterviews: RelatedEvidenceInterview[],
+  limit: number,
+): RelatedEvidenceInterview[] {
+  return [...relatedInterviews]
+    .sort((left, right) => {
+      const priorityDelta = relatedEvidencePriority(left) - relatedEvidencePriority(right);
+      if (priorityDelta !== 0) return priorityDelta;
+      return relatedEvidenceTimestampMs(right) - relatedEvidenceTimestampMs(left);
+    })
+    .slice(0, limit);
+}
+
 function summarizeRelatedEvidenceInterviews(
   relatedInterviews: RelatedEvidenceInterview[],
   totalCount: number,
@@ -3106,7 +3134,7 @@ export default function InterviewDetailPage(): JSX.Element {
         ? `/candidates/${interview.candidateId}`
         : null;
   const relatedEvidenceTotal = interview.relatedEvidenceInterviews?.length ?? 0;
-  const relatedEvidenceInterviews = interview.relatedEvidenceInterviews?.slice(0, 4) ?? [];
+  const relatedEvidenceInterviews = selectRelatedEvidencePreviews(interview.relatedEvidenceInterviews ?? [], 4);
   const relatedEvidenceHiddenCount = Math.max(relatedEvidenceTotal - relatedEvidenceInterviews.length, 0);
   const relatedEvidenceDecision = summarizeRelatedEvidenceInterviews(
     relatedEvidenceInterviews,
@@ -4878,7 +4906,7 @@ export default function InterviewDetailPage(): JSX.Element {
                   <div style={RELATED_EVIDENCE_SCOPE}>
                     <span style={CONTEXT_RECORD_NARRATIVE}>
                       {relatedEvidenceHiddenCount > 0
-                        ? `Showing ${relatedEvidenceInterviews.length} of ${relatedEvidenceTotal} related context previews.`
+                        ? `Showing ${countLabel(relatedEvidenceInterviews.length, 'highest-value related context preview')} before ${countLabel(relatedEvidenceHiddenCount, 'lower-priority related interview')} kept on the person graph.`
                         : `Showing ${countLabel(relatedEvidenceInterviews.length, 'related context preview')}.`}
                     </span>
                     {personProfilePath && (

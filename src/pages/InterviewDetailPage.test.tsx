@@ -2098,6 +2098,42 @@ describe('InterviewDetailPage', () => {
         },
         relatedEvidenceInterviews: [
           {
+            id: 'interview-low-value-screening-1',
+            relationship: 'same_person_assessment',
+            interviewType: 'SCREENING',
+            meetingType: 'SCREENING_INTERVIEW',
+            status: 'INVITED',
+            scheduledAt: null,
+            candidateId: 'candidate-low-1',
+            contactId: null,
+            displayName: 'Low value screening 1',
+            primaryEmail: 'ada@example.com',
+            linkedMeetingId: null,
+            transcriptStatus: null,
+            assessmentSessionId: null,
+            assessmentSessionState: null,
+            createdAt: '2026-06-24T19:10:00.000Z',
+            updatedAt: '2026-06-24T19:10:00.000Z',
+          },
+          {
+            id: 'interview-low-value-screening-2',
+            relationship: 'same_person_assessment',
+            interviewType: 'SCREENING',
+            meetingType: 'SCREENING_INTERVIEW',
+            status: 'INVITED',
+            scheduledAt: null,
+            candidateId: 'candidate-low-2',
+            contactId: null,
+            displayName: 'Low value screening 2',
+            primaryEmail: 'ada@example.com',
+            linkedMeetingId: null,
+            transcriptStatus: null,
+            assessmentSessionId: null,
+            assessmentSessionState: null,
+            createdAt: '2026-06-24T19:20:00.000Z',
+            updatedAt: '2026-06-24T19:20:00.000Z',
+          },
+          {
             id: 'context-call-1',
             relationship: 'code_review_evidence_follow_up',
             interviewType: 'VIDEO',
@@ -2211,7 +2247,7 @@ describe('InterviewDetailPage', () => {
     expect(relatedSummary).toHaveTextContent('technical assessments');
     expect(relatedSummary).toHaveTextContent('1');
     expect(relatedSummary).toHaveTextContent('ready transcripts');
-    expect(related).toHaveTextContent('Showing 4 of 5 related context previews.');
+    expect(related).toHaveTextContent('Showing 4 highest-value related context previews before 3 lower-priority related interviews kept on the person graph.');
     expect(related).toHaveTextContent('Open full person graph');
     expect(related).toHaveTextContent('Evidence follow-up');
     expect(related).toHaveTextContent('assessment in progress');
@@ -2224,6 +2260,8 @@ describe('InterviewDetailPage', () => {
     expect(related).toHaveTextContent('Background call');
     expect(related).toHaveTextContent('Dev challenge');
     expect(related).not.toHaveTextContent('Hidden extra context');
+    expect(related).not.toHaveTextContent('Low value screening 1');
+    expect(related).not.toHaveTextContent('Low value screening 2');
     expect(related).not.toHaveTextContent('interview-second-code-review');
     fireEvent.click(screen.getAllByTestId('interview-open-person-profile')[0]!);
     expect(screen.getByTestId('person-route-echo')).toHaveTextContent('person-graph-1');
