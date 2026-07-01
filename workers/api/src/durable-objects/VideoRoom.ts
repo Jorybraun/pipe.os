@@ -24,19 +24,19 @@ import type { DurableObjectState } from '@cloudflare/workers-types';
 type VideoRole = 'RECRUITER' | 'CANDIDATE' | 'HOST' | 'GUEST';
 type SessionStatus = 'WAITING' | 'CALLING' | 'ACTIVE' | 'ENDED';
 type SignalStatus = SessionStatus | 'LEFT';
-type RoomSurface = 'standard';
+type RoomSurface = 'standard' | 'win95';
 const TERMINAL_FINGERPRINT_RE = /^terminal_[0-9a-f]{8}$/;
 const TERMINAL_COMMAND_ID_RE = /^.+:command:(host|guest):\d+:\d+:terminal_[0-9a-f]{8}$/;
 const ROOM_CHAT_MESSAGE_FINGERPRINT_RE = /^chat_[0-9a-f]{8}$/;
-const AGENT_PROMPT_FINGERPRINT_RE = /^agent_[0-9a-f]{8}$/;
-const BROWSER_PROMPT_ID_RE = /^[a-zA-Z0-9:_-]+:(host|guest):prompt:\d+:agent_[0-9a-f]{8}$/;
-const AGENT_ACTION_EVENT_ID_RE = /^agent-action:(host|guest|agent):\d+:[a-z_]+:[a-z_]+:[a-z_]+:[a-zA-Z0-9:_-]+$/;
+const CLIPPY_PROMPT_FINGERPRINT_RE = /^clippy_[0-9a-f]{8}$/;
+const BROWSER_PROMPT_ID_RE = /^[a-zA-Z0-9:_-]+:(host|guest):prompt:\d+:clippy_[0-9a-f]{8}$/;
+const CLIPPY_ACTION_EVENT_ID_RE = /^clippy-action:(host|guest|agent):\d+:[a-z_]+:[a-z_]+:[a-z_]+:[a-zA-Z0-9:_-]+$/;
 const AGENT_CHAT_RESPONSE_FINGERPRINT_RE = /^agent_[0-9a-f]{8}$/;
 const AGENT_CHAT_RESPONSE_ID_RE = /^agent-chat:[a-zA-Z0-9:_-]+:\d+:CHAT_RESPONSE:agent_[0-9a-f]{8}$/;
 const AGENT_STATUS_EVENT_ID_RE = /^agent-status:[a-zA-Z0-9:_-]+:\d+:[a-z_]+:[a-zA-Z0-9:_-]+:[a-zA-Z0-9:_-]+$/;
 const AGENT_STATUSES = new Set(['starting', 'idle', 'thinking', 'working', 'auth_needed', 'disconnected']);
 const AGENT_STATUS_MESSAGE_SOURCES = new Set(['agent_status', 'agent_stdout', 'agent_api_response', 'bridge_diagnostic', 'bridge_observation']);
-const AGENT_PROMPT_BLOCKED_REASONS = new Set([
+const CLIPPY_PROMPT_BLOCKED_REASONS = new Set([
   'workspace_required',
   'bridge_reconnecting',
   'agent_starting',
@@ -56,8 +56,56 @@ const RECORDING_FAILURE_SOURCES = new Set([
   'recording_upload_exception',
 ]);
 const MAX_RECORDING_FAILURE_MESSAGE_LENGTH = 240;
+const CURSOR_PRESENCE_SAMPLE_INTERVAL_MS = 15_000;
+const CURSOR_PRESENCE_MOVEMENT_THRESHOLD = 0.03;
+const CURSOR_SAMPLE_ID_RE = /^cursor:(host|guest):\d+:\d+:\d+$/;
 const FNV_32_OFFSET = 0x811c9dc5;
 const FNV_32_PRIME = 0x01000193;
+const ROOM_FILE_PROJECTION_EVIDENCE_METADATA_KEY = 'roomFileProjectionEvidence';
+const ROOM_FILE_PROJECTION_EVIDENCE_KEYS = [
+  'source',
+  'fileEventSource',
+  'fileChangeId',
+  'actor',
+  'operation',
+  'action',
+  'fileId',
+  'fileName',
+  'fileKind',
+  'mimeType',
+  'path',
+  'surface',
+  'roomPhase',
+  'capturedAtMs',
+  'durableObjectReplayExpected',
+  'contentLength',
+  'contentHash',
+  'fileCreatedAt',
+  'fileUpdatedAt',
+] as const;
+const WINDOW_LIFECYCLE_SOURCES = new Set([
+  'win95_desktop_ui',
+  'win95_file_system',
+  'win95_start_menu',
+  'win95_window_chrome',
+  'win95_taskbar',
+  'standard_assessment_ui',
+  'clippy_action',
+  'shared_state_sync',
+]);
+const WINDOW_STATE_SOURCES = new Set([
+  'win95_desktop_ui',
+  'win95_start_menu',
+  'win95_window_chrome',
+  'win95_taskbar',
+]);
+const WINDOW_DATA_SOURCES = new Set(['win95_window_data_sync', 'win95_file_delete_sync']);
+const START_MENU_EVENT_SOURCES = new Set([
+  'win95_start_button',
+  'win95_desktop_click',
+  'win95_start_menu_item',
+]);
+const START_MENU_EVENT_ID_RE = /^start-menu:(host|guest):\d+:(open|close):[a-z0-9_]+$/;
 const WORKSPACE_REDACTED_SECRET = '[REDACTED_SECRET]';
 const WORKSPACE_BARE_SECRET_RE = /\b(?:cog|ghp|gho|ghu|ghs|ghr|devin)_[A-Za-z0-9_-]{20,}\b/g;
 const WORKSPACE_GITHUB_PAT_RE = /\bgithub_pat_[A-Za-z0-9_]{20,}\b/g;
@@ -74,13 +122,16 @@ interface SignalMessage {
     | 'ICE_CANDIDATE'
     | 'HANGUP'
     | 'STATUS_UPDATE'
-    | 'ROOM_AGENT_PROMPT'
-    | 'ROOM_AGENT_INTERACTION'
+    | 'ROOM_DESKTOP_EVENT'
+    | 'ROOM_CLIPPY_PROMPT'
+    | 'ROOM_CLIPPY_INTERACTION'
     | 'ROOM_CHAT_MESSAGE'
+    | 'ROOM_CURSOR'
     | 'ROOM_MEDIA_CONTROL'
     | 'ROOM_RECORDING_STATE'
     | 'ROOM_CODE_SERVER_FILE_EVENT'
-    | 'ROOM_TERMINAL_EVENT';
+    | 'ROOM_TERMINAL_EVENT'
+    | 'ROOM_FILE_SYSTEM_EVENT';
   role?: VideoRole;
   status?: SignalStatus;
   payload?: unknown;
@@ -117,7 +168,7 @@ function hasOptionalBrowserPromptRef(evidence: Record<string, unknown>): boolean
   return typeof promptId === 'string'
     && BROWSER_PROMPT_ID_RE.test(promptId)
     && typeof promptFingerprint === 'string'
-    && AGENT_PROMPT_FINGERPRINT_RE.test(promptFingerprint)
+    && CLIPPY_PROMPT_FINGERPRINT_RE.test(promptFingerprint)
     && typeof promptTimestamp === 'number'
     && Number.isInteger(promptTimestamp)
     && promptTimestamp >= 0
@@ -125,6 +176,133 @@ function hasOptionalBrowserPromptRef(evidence: Record<string, unknown>): boolean
     && Number.isInteger(promptLength)
     && promptLength > 0
     && promptId.endsWith(`:${promptTimestamp}:${promptFingerprint}`);
+}
+
+type RoomDesktopWindowType =
+  | 'video'
+  | 'workspace'
+  | 'chat'
+  | 'tasks'
+  | 'snippet'
+  | 'browser'
+  | 'notepad'
+  | 'paint'
+  | 'terminal'
+  | 'custom';
+
+interface RoomDesktopWindow {
+  id: string;
+  windowType: RoomDesktopWindowType;
+  title: string;
+  icon?: string;
+  x?: number;
+  y?: number;
+  width?: number;
+  height?: number;
+  minimized?: boolean;
+  maximized?: boolean;
+  focused?: boolean;
+  data?: Record<string, unknown>;
+}
+
+type RoomDesktopEvent =
+  | {
+      id: string;
+      clientId: string;
+      createdAt: number;
+      kind: 'SET_ROOM_SURFACE';
+      surface: RoomSurface;
+      previousSurface?: RoomSurface;
+      action?: string;
+      source?: string;
+      surfaceControlEventSource?: string;
+      surfaceChangeId?: string;
+      capturedAtMs?: number;
+      roomPhase?: string;
+      durableObjectReplayExpected?: boolean;
+    }
+  | {
+      id: string;
+      clientId: string;
+      createdAt: number;
+      kind: 'OPEN_WINDOW';
+      window: RoomDesktopWindow;
+      evidence?: Record<string, unknown>;
+    }
+  | {
+      id: string;
+      clientId: string;
+      createdAt: number;
+      kind: 'START_MENU_STATE';
+      open: boolean;
+      evidence?: Record<string, unknown>;
+    }
+  | {
+      id: string;
+      clientId: string;
+      createdAt: number;
+      kind: 'CLOSE_WINDOW';
+      windowId: string;
+      evidence?: Record<string, unknown>;
+    }
+  | {
+      id: string;
+      clientId: string;
+      createdAt: number;
+      kind: 'UPDATE_WINDOW_DATA';
+      windowId: string;
+      data: Record<string, unknown>;
+      evidence?: Record<string, unknown>;
+    }
+  | {
+      id: string;
+      clientId: string;
+      createdAt: number;
+      kind: 'UPDATE_WINDOW_STATE';
+      windowId: string;
+      x?: number;
+      y?: number;
+      width?: number;
+      height?: number;
+      minimized?: boolean;
+      maximized?: boolean;
+      focused?: boolean;
+      evidence?: Record<string, unknown>;
+    }
+  | {
+      id: string;
+      clientId: string;
+      createdAt: number;
+      kind: 'WORKSPACE_STATE_CHANGED';
+      actor?: 'host' | 'guest';
+      workspaceStateEventId?: string;
+      capturedAtMs?: number;
+      status?: string | null;
+      workspaceSessionId?: string | null;
+      errorMessage?: string | null;
+      repoUrl?: string | null;
+      githubPrNumber?: number | null;
+      matchedRepoId?: number | null;
+      challengeStatus?: string | null;
+      challengeKind?: string | null;
+      challengeSource?: string | null;
+      challengeMessage?: string | null;
+      canLaunch?: boolean;
+      ttlSeconds?: number | null;
+      ttlSource?: string | null;
+      expiresAt?: string | null;
+      expiringSoon?: boolean;
+      source?: string;
+      workspaceEventSource?: string;
+      workspaceStateSource?: string;
+      workspaceTelemetryPersisted?: boolean;
+      proxyUrlPersisted?: boolean;
+    };
+
+interface RoomDesktopActivityEntry {
+  event: RoomDesktopEvent;
+  role: VideoRole;
+  recordedAt: number;
 }
 
 type RoomMediaControlKind = 'microphone' | 'camera';
@@ -182,21 +360,36 @@ interface RoomRecordingActivityEntry {
   recordedAt: number;
 }
 
-type RoomAgentPromptSource = 'system' | 'agent' | 'host' | 'guest';
+interface RoomCursorPresence {
+  clientId: string;
+  role: VideoRole;
+  x: number;
+  y: number;
+  updatedAt: number;
+  evidence?: Record<string, unknown>;
+}
 
-interface RoomAgentAction {
+interface RoomCursorActivityEntry {
+  cursor: RoomCursorPresence;
+  role: VideoRole;
+  recordedAt: number;
+}
+
+type RoomClippyPromptSource = 'system' | 'agent' | 'host' | 'guest';
+
+interface RoomClippyAction {
   id: string;
   label: string;
   disabled?: boolean;
 }
 
-interface RoomAgentPrompt {
+interface RoomClippyPrompt {
   id: string;
   clientId: string;
   createdAt: number;
-  source: RoomAgentPromptSource;
+  source: RoomClippyPromptSource;
   text: string;
-  promptEventSource?: 'browser_proactive_agent_prompt' | 'agent_bridge';
+  promptEventSource?: 'browser_proactive_clippy_prompt' | 'clippy_agent_bridge';
   promptTrigger?: string;
   surface?: RoomSurface;
   roomPhase?: string;
@@ -205,29 +398,11 @@ interface RoomAgentPrompt {
   agentResponseClaimed?: boolean;
   hold?: boolean;
   targetRoles?: VideoRole[];
-  actions?: RoomAgentAction[];
+  actions?: RoomClippyAction[];
 }
 
-interface RoomAgentPromptActivityEntry {
-  prompt: RoomAgentPrompt;
-  role: VideoRole;
-  recordedAt: number;
-}
-
-type RoomAgentInteractionEventType = 'ai_chat_user' | 'ai_chat_agent' | 'ai_agent_status' | 'agent_action';
-
-interface RoomAgentInteractionEvent {
-  id: string;
-  clientId: string;
-  createdAt: number;
-  eventType: RoomAgentInteractionEventType;
-  actor: 'host' | 'guest' | 'agent' | 'system';
-  text: string;
-  evidence?: Record<string, unknown>;
-}
-
-interface RoomAgentInteractionActivityEntry {
-  event: RoomAgentInteractionEvent;
+interface RoomClippyPromptActivityEntry {
+  prompt: RoomClippyPrompt;
   role: VideoRole;
   recordedAt: number;
 }
@@ -308,6 +483,45 @@ interface RoomTerminalActivityEntry {
   recordedAt: number;
 }
 
+type RoomFileKind = 'text' | 'paint' | 'json' | 'link';
+
+interface RoomFile {
+  id: string;
+  name: string;
+  kind: RoomFileKind;
+  content: string;
+  mimeType?: string;
+  metadata?: Record<string, unknown>;
+  createdAt: number;
+  updatedAt: number;
+  updatedBy?: VideoRole;
+}
+
+type RoomFileSystemEvent =
+  | {
+      id: string;
+      clientId: string;
+      createdAt: number;
+      kind: 'UPSERT_FILE';
+      file: RoomFile;
+      evidence?: Record<string, unknown>;
+    }
+  | {
+      id: string;
+      clientId: string;
+      createdAt: number;
+      kind: 'DELETE_FILE';
+      fileId: string;
+      file?: RoomFile;
+      evidence?: Record<string, unknown>;
+    };
+
+interface RoomFileSystemActivityEntry {
+  event: RoomFileSystemEvent;
+  role: VideoRole;
+  recordedAt: number;
+}
+
 interface VideoRoomMetadata {
   stageId?: string;
   candidateId?: string;
@@ -320,6 +534,7 @@ interface VideoRoomMetadata {
 export class VideoRoom {
   private state: DurableObjectState;
   private sessionStatus: SessionStatus = 'WAITING';
+  private roomSurface: RoomSurface = 'standard';
   private metadata: VideoRoomMetadata = {};
 
   constructor(state: DurableObjectState) {
@@ -331,6 +546,8 @@ export class VideoRoom {
       if (this.isSessionStatus(stored)) this.sessionStatus = stored;
       const meta = await state.storage.get<VideoRoomMetadata>('metadata');
       if (meta) this.metadata = meta;
+      const surface = await state.storage.get<unknown>('roomSurface');
+      if (this.isRoomSurface(surface)) this.roomSurface = surface;
       const offer = await state.storage.get<string>('lastOffer');
       if (offer) this._lastOffer = offer;
     });
@@ -377,11 +594,347 @@ export class VideoRoom {
     return Boolean(value) && typeof value === 'object' && !Array.isArray(value);
   }
 
-  private isRoomSurface(value: unknown): value is RoomSurface {
-    return value === 'standard';
+  private isRoomDesktopWindowType(value: unknown): value is RoomDesktopWindowType {
+    return typeof value === 'string'
+      && [
+        'video',
+        'workspace',
+        'chat',
+        'tasks',
+        'snippet',
+        'browser',
+        'notepad',
+        'paint',
+        'terminal',
+        'custom',
+      ].includes(value);
   }
 
-  private isRoomAgentPromptSource(value: unknown): value is RoomAgentPromptSource {
+  private isRoomSurface(value: unknown): value is RoomSurface {
+    return value === 'standard' || value === 'win95';
+  }
+
+  private optionalNumber(value: unknown): number | undefined {
+    return typeof value === 'number' && Number.isFinite(value) ? value : undefined;
+  }
+
+  private isUnitNumber(value: unknown): value is number {
+    return typeof value === 'number' && Number.isFinite(value) && value >= 0 && value <= 1;
+  }
+
+  private parseDesktopWindow(value: unknown): RoomDesktopWindow | null {
+    if (!this.isRecord(value)) return null;
+    if (
+      typeof value.id !== 'string'
+      || !this.isRoomDesktopWindowType(value.windowType)
+      || typeof value.title !== 'string'
+    ) {
+      return null;
+    }
+    return {
+      id: value.id,
+      windowType: value.windowType,
+      title: value.title,
+      icon: typeof value.icon === 'string' ? value.icon : undefined,
+      x: this.optionalNumber(value.x),
+      y: this.optionalNumber(value.y),
+      width: this.optionalNumber(value.width),
+      height: this.optionalNumber(value.height),
+      minimized: typeof value.minimized === 'boolean' ? value.minimized : undefined,
+      maximized: typeof value.maximized === 'boolean' ? value.maximized : undefined,
+      focused: typeof value.focused === 'boolean' ? value.focused : undefined,
+      data: this.isRecord(value.data) ? value.data : undefined,
+    };
+  }
+
+  private parseDesktopEvent(value: unknown): RoomDesktopEvent | null {
+    if (!this.isRecord(value)) return null;
+    if (
+      typeof value.id !== 'string'
+      || typeof value.clientId !== 'string'
+      || typeof value.createdAt !== 'number'
+    ) {
+      return null;
+    }
+    if (value.kind === 'OPEN_WINDOW') {
+      const windowConfig = this.parseDesktopWindow(value.window);
+      if (!windowConfig) return null;
+      return {
+        id: value.id,
+        clientId: value.clientId,
+        createdAt: value.createdAt,
+        kind: 'OPEN_WINDOW',
+        window: windowConfig,
+        evidence: this.isRecord(value.evidence) ? value.evidence : undefined,
+      };
+    }
+    if (value.kind === 'SET_ROOM_SURFACE' && this.isRoomSurface(value.surface)) {
+      return {
+        id: value.id,
+        clientId: value.clientId,
+        createdAt: value.createdAt,
+        kind: 'SET_ROOM_SURFACE',
+        surface: value.surface,
+        previousSurface: this.isRoomSurface(value.previousSurface) ? value.previousSurface : undefined,
+        action: typeof value.action === 'string' ? value.action : undefined,
+        source: typeof value.source === 'string' ? value.source : undefined,
+        surfaceControlEventSource: typeof value.surfaceControlEventSource === 'string'
+          ? value.surfaceControlEventSource
+          : undefined,
+        surfaceChangeId: typeof value.surfaceChangeId === 'string' ? value.surfaceChangeId : undefined,
+        capturedAtMs: this.optionalNumber(value.capturedAtMs),
+        roomPhase: typeof value.roomPhase === 'string' ? value.roomPhase : undefined,
+        durableObjectReplayExpected: typeof value.durableObjectReplayExpected === 'boolean'
+          ? value.durableObjectReplayExpected
+          : undefined,
+      };
+    }
+    if (value.kind === 'START_MENU_STATE' && typeof value.open === 'boolean') {
+      return {
+        id: value.id,
+        clientId: value.clientId,
+        createdAt: value.createdAt,
+        kind: 'START_MENU_STATE',
+        open: value.open,
+        evidence: this.isRecord(value.evidence) ? value.evidence : undefined,
+      };
+    }
+    if (value.kind === 'CLOSE_WINDOW' && typeof value.windowId === 'string') {
+      return {
+        id: value.id,
+        clientId: value.clientId,
+        createdAt: value.createdAt,
+        kind: 'CLOSE_WINDOW',
+        windowId: value.windowId,
+        evidence: this.isRecord(value.evidence) ? value.evidence : undefined,
+      };
+    }
+    if (value.kind === 'UPDATE_WINDOW_DATA' && typeof value.windowId === 'string' && this.isRecord(value.data)) {
+      return {
+        id: value.id,
+        clientId: value.clientId,
+        createdAt: value.createdAt,
+        kind: 'UPDATE_WINDOW_DATA',
+        windowId: value.windowId,
+        data: value.data,
+        evidence: this.isRecord(value.evidence) ? value.evidence : undefined,
+      };
+    }
+    if (value.kind === 'UPDATE_WINDOW_STATE' && typeof value.windowId === 'string') {
+      const event: RoomDesktopEvent = {
+        id: value.id,
+        clientId: value.clientId,
+        createdAt: value.createdAt,
+        kind: 'UPDATE_WINDOW_STATE',
+        windowId: value.windowId,
+        x: this.optionalNumber(value.x),
+        y: this.optionalNumber(value.y),
+        width: this.optionalNumber(value.width),
+        height: this.optionalNumber(value.height),
+        minimized: typeof value.minimized === 'boolean' ? value.minimized : undefined,
+        maximized: typeof value.maximized === 'boolean' ? value.maximized : undefined,
+        focused: typeof value.focused === 'boolean' ? value.focused : undefined,
+        evidence: this.isRecord(value.evidence) ? value.evidence : undefined,
+      };
+      if (
+        event.x === undefined
+        && event.y === undefined
+        && event.width === undefined
+        && event.height === undefined
+        && event.minimized === undefined
+        && event.maximized === undefined
+        && event.focused === undefined
+      ) {
+        return null;
+      }
+      return event;
+    }
+    if (value.kind === 'WORKSPACE_STATE_CHANGED') {
+      const status = typeof value.status === 'string' && value.status.length <= 80
+        ? value.status
+        : null;
+      return {
+        id: value.id,
+        clientId: value.clientId,
+        createdAt: value.createdAt,
+        kind: 'WORKSPACE_STATE_CHANGED',
+        actor: value.actor === 'host' || value.actor === 'guest' ? value.actor : undefined,
+        workspaceStateEventId: this.safeTextOrNull(value.workspaceStateEventId, 240) ?? undefined,
+        capturedAtMs: this.safeNumberOrNull(value.capturedAtMs) ?? undefined,
+        status,
+        workspaceSessionId: this.safeTextOrNull(value.workspaceSessionId, 160),
+        errorMessage: this.safeWorkspaceDiagnosticOrNull(value.errorMessage, 500),
+        repoUrl: this.safeTextOrNull(value.repoUrl, 500),
+        githubPrNumber: this.safeNumberOrNull(value.githubPrNumber),
+        matchedRepoId: this.safeNumberOrNull(value.matchedRepoId),
+        challengeStatus: this.safeTextOrNull(value.challengeStatus, 80),
+        challengeKind: this.safeTextOrNull(value.challengeKind, 80),
+        challengeSource: this.safeTextOrNull(value.challengeSource, 120),
+        challengeMessage: this.safeTextOrNull(value.challengeMessage, 500),
+        canLaunch: this.safeBoolean(value.canLaunch),
+        ttlSeconds: this.safeNumberOrNull(value.ttlSeconds),
+        ttlSource: this.safeTextOrNull(value.ttlSource, 80),
+        expiresAt: this.safeTextOrNull(value.expiresAt, 80),
+        expiringSoon: this.safeBoolean(value.expiringSoon),
+        source: this.safeTextOrNull(value.source, 80) ?? undefined,
+        workspaceEventSource: this.safeTextOrNull(value.workspaceEventSource, 80) ?? undefined,
+        workspaceStateSource: this.safeTextOrNull(value.workspaceStateSource, 80) ?? undefined,
+        workspaceTelemetryPersisted: this.safeBoolean(value.workspaceTelemetryPersisted),
+        proxyUrlPersisted: this.safeBoolean(value.proxyUrlPersisted),
+      };
+    }
+    return null;
+  }
+
+  private hasSourceBackedWorkspaceStateEvidence(
+    event: Extract<RoomDesktopEvent, { kind: 'WORKSPACE_STATE_CHANGED' }>,
+    actor: 'host' | 'guest',
+  ): boolean {
+    const status = typeof event.status === 'string' && event.status.length > 0 ? event.status : null;
+    const capturedAtMs = event.capturedAtMs;
+    const workspaceStateSource = event.workspaceStateSource;
+    const workspaceSessionId = typeof event.workspaceSessionId === 'string' && event.workspaceSessionId.length > 0
+      ? event.workspaceSessionId
+      : null;
+    const stateIdSession = workspaceSessionId ?? 'no-session';
+    return event.actor === actor
+      && status !== null
+      && event.source === 'browser_workspace_state_observer'
+      && event.workspaceEventSource === 'browser_workspace_state_observer'
+      && typeof workspaceStateSource === 'string'
+      && (
+        workspaceStateSource === 'initial_load'
+        || workspaceStateSource === 'launch'
+        || workspaceStateSource === 'refresh'
+        || workspaceStateSource === 'error'
+      )
+      && typeof capturedAtMs === 'number'
+      && Number.isInteger(capturedAtMs)
+      && capturedAtMs >= 0
+      && event.workspaceStateEventId === `workspace-state:${actor}:${capturedAtMs}:${workspaceStateSource}:${stateIdSession}:${status}`
+      && (status === 'ERROR' || workspaceSessionId !== null)
+      && event.workspaceTelemetryPersisted === true
+      && event.proxyUrlPersisted === false;
+  }
+
+  private hasSourceBackedDesktopEventEvidence(event: RoomDesktopEvent, role: VideoRole): boolean {
+    const actor = this.isHostRole(role) ? 'host' : 'guest';
+    if (event.kind === 'SET_ROOM_SURFACE') {
+      const expectedAction = event.surface === 'win95' ? 'enter_desktop' : 'exit_desktop';
+      return event.source === 'room_surface_control'
+        && event.surfaceControlEventSource === 'browser_room_surface_toggle'
+        && event.action === expectedAction
+        && event.previousSurface !== undefined
+        && event.previousSurface !== event.surface
+        && typeof event.surfaceChangeId === 'string'
+        && typeof event.capturedAtMs === 'number'
+        && Number.isFinite(event.capturedAtMs)
+        && event.surfaceChangeId === `surface:${actor}:${event.capturedAtMs}:${event.previousSurface}:${event.surface}`
+        && typeof event.roomPhase === 'string'
+        && event.durableObjectReplayExpected === true;
+    }
+    if (event.kind === 'WORKSPACE_STATE_CHANGED') {
+      return this.hasSourceBackedWorkspaceStateEvidence(event, actor);
+    }
+    const evidence = event.evidence;
+    if (!this.isRecord(evidence)) return false;
+    if (event.kind === 'START_MENU_STATE') {
+      const action = event.open ? 'open' : 'close';
+      const capturedAtMs = evidence.capturedAtMs;
+      const menuEventSource = evidence.menuEventSource;
+      const startMenuEventId = evidence.startMenuEventId;
+      return evidence.source === 'win95_start_menu_control'
+        && typeof menuEventSource === 'string'
+        && START_MENU_EVENT_SOURCES.has(menuEventSource)
+        && evidence.actor === actor
+        && evidence.menuId === 'start'
+        && evidence.action === action
+        && evidence.open === event.open
+        && typeof startMenuEventId === 'string'
+        && START_MENU_EVENT_ID_RE.test(startMenuEventId)
+        && typeof capturedAtMs === 'number'
+        && Number.isInteger(capturedAtMs)
+        && capturedAtMs >= 0
+        && startMenuEventId === `start-menu:${actor}:${capturedAtMs}:${action}:${menuEventSource}`
+        && evidence.surface === 'win95'
+        && typeof evidence.roomPhase === 'string'
+        && evidence.durableObjectReplayExpected === true;
+    }
+    if (event.kind === 'OPEN_WINDOW' || event.kind === 'CLOSE_WINDOW') {
+      const kind = event.kind === 'OPEN_WINDOW' ? 'open' : 'close';
+      const windowId = event.kind === 'OPEN_WINDOW' ? event.window.id : event.windowId;
+      return evidence.source === 'window_lifecycle_client_submit'
+        && typeof evidence.lifecycleSource === 'string'
+        && WINDOW_LIFECYCLE_SOURCES.has(evidence.lifecycleSource)
+        && evidence.lifecycleKind === kind
+        && evidence.actor === actor
+        && evidence.windowId === windowId
+        && typeof evidence.windowType === 'string'
+        && typeof evidence.windowTitle === 'string'
+        && typeof evidence.windowLifecycleId === 'string'
+        && typeof evidence.capturedAtMs === 'number'
+        && Number.isFinite(evidence.capturedAtMs)
+        && evidence.surface === 'win95'
+        && typeof evidence.roomPhase === 'string'
+        && evidence.durableObjectReplayExpected === true;
+    }
+    if (event.kind === 'UPDATE_WINDOW_DATA') {
+      const isBrowserNavigation = this.isRecord(event.data) && typeof event.data.currentUrl === 'string';
+      if (isBrowserNavigation) {
+        return evidence.source === 'room_browser_window'
+          && evidence.navigationSource === 'browser_window_client_submit'
+          && evidence.actor === actor
+          && evidence.windowId === event.windowId
+          && typeof evidence.browserNavigationId === 'string'
+          && typeof evidence.capturedAtMs === 'number'
+          && Number.isFinite(evidence.capturedAtMs)
+          && typeof evidence.navigationTrigger === 'string'
+          && typeof evidence.url === 'string'
+          && typeof evidence.urlFingerprint === 'string'
+          && evidence.surface === 'win95'
+          && typeof evidence.roomPhase === 'string'
+          && evidence.durableObjectReplayExpected === true;
+      }
+      return evidence.source === 'window_data_client_submit'
+        && typeof evidence.dataSource === 'string'
+        && WINDOW_DATA_SOURCES.has(evidence.dataSource)
+        && evidence.actor === actor
+        && evidence.windowId === event.windowId
+        && typeof evidence.windowDataUpdateId === 'string'
+        && typeof evidence.capturedAtMs === 'number'
+        && Number.isFinite(evidence.capturedAtMs)
+        && Array.isArray(evidence.dataKeys)
+        && evidence.dataKeys.length > 0
+        && this.isRecord(evidence.dataValueFingerprints)
+        && evidence.surface === 'win95'
+        && typeof evidence.roomPhase === 'string'
+        && evidence.durableObjectReplayExpected === true;
+    }
+    if (event.kind === 'UPDATE_WINDOW_STATE') {
+      return evidence.source === 'window_state_client_submit'
+        && typeof evidence.stateSource === 'string'
+        && WINDOW_STATE_SOURCES.has(evidence.stateSource)
+        && evidence.actor === actor
+        && evidence.windowId === event.windowId
+        && typeof evidence.windowStateChangeId === 'string'
+        && typeof evidence.capturedAtMs === 'number'
+        && Number.isFinite(evidence.capturedAtMs)
+        && typeof evidence.action === 'string'
+        && evidence.surface === 'win95'
+        && typeof evidence.roomPhase === 'string'
+        && evidence.durableObjectReplayExpected === true;
+    }
+    return false;
+  }
+
+  private parseDesktopWindows(value: unknown): RoomDesktopWindow[] {
+    if (!Array.isArray(value)) return [];
+    return value
+      .map((entry) => this.parseDesktopWindow(entry))
+      .filter((entry): entry is RoomDesktopWindow => entry !== null);
+  }
+
+  private isRoomClippyPromptSource(value: unknown): value is RoomClippyPromptSource {
     return value === 'system' || value === 'agent' || value === 'host' || value === 'guest';
   }
 
@@ -392,7 +945,7 @@ export class VideoRoom {
       || value === 'GUEST';
   }
 
-  private parseAgentAction(value: unknown): RoomAgentAction | null {
+  private parseClippyAction(value: unknown): RoomClippyAction | null {
     if (!this.isRecord(value)) return null;
     if (
       typeof value.id !== 'string'
@@ -411,7 +964,7 @@ export class VideoRoom {
     };
   }
 
-  private parseAgentPrompt(value: unknown): RoomAgentPrompt | null {
+  private parseClippyPrompt(value: unknown): RoomClippyPrompt | null {
     if (!this.isRecord(value)) return null;
     if (
       typeof value.id !== 'string'
@@ -428,8 +981,8 @@ export class VideoRoom {
     const actions = Array.isArray(value.actions)
       ? value.actions
           .slice(0, 4)
-          .map((entry) => this.parseAgentAction(entry))
-          .filter((entry): entry is RoomAgentAction => entry !== null)
+          .map((entry) => this.parseClippyAction(entry))
+          .filter((entry): entry is RoomClippyAction => entry !== null)
       : undefined;
     const targetRoles = Array.isArray(value.targetRoles)
       ? value.targetRoles.filter((entry): entry is VideoRole => this.isVideoRole(entry))
@@ -438,9 +991,9 @@ export class VideoRoom {
       id: value.id,
       clientId: value.clientId,
       createdAt: value.createdAt,
-      source: this.isRoomAgentPromptSource(value.source) ? value.source : 'system',
+      source: this.isRoomClippyPromptSource(value.source) ? value.source : 'system',
       text: value.text,
-      promptEventSource: value.promptEventSource === 'browser_proactive_agent_prompt' || value.promptEventSource === 'agent_bridge'
+      promptEventSource: value.promptEventSource === 'browser_proactive_clippy_prompt' || value.promptEventSource === 'clippy_agent_bridge'
         ? value.promptEventSource
         : undefined,
       promptTrigger: this.safeTextOrNull(value.promptTrigger, 120) ?? undefined,
@@ -455,302 +1008,28 @@ export class VideoRoom {
     };
   }
 
-  private hasSourceBackedAgentPromptEvidence(prompt: RoomAgentPrompt, role: VideoRole): boolean {
+  private hasSourceBackedClippyPromptEvidence(prompt: RoomClippyPrompt, role: VideoRole): boolean {
     const actor = this.isHostRole(role) ? 'host' : 'guest';
     return actor === 'host'
-      && prompt.promptEventSource === 'browser_proactive_agent_prompt'
+      && prompt.promptEventSource === 'browser_proactive_clippy_prompt'
       && (prompt.source === 'system' || prompt.source === 'host')
       && Number.isInteger(prompt.createdAt)
       && prompt.createdAt >= 0
       && typeof prompt.promptTrigger === 'string'
       && prompt.promptTrigger.length > 0
-      && prompt.surface === 'standard'
+      && (prompt.surface === 'standard' || prompt.surface === 'win95')
       && typeof prompt.roomPhase === 'string'
       && prompt.roomPhase.length > 0
       && prompt.agentResponseClaimed === false;
   }
 
-  private async getCurrentAgentPrompt(): Promise<RoomAgentPrompt | null> {
-    return this.parseAgentPrompt(await this.state.storage.get<unknown>('currentAgentPrompt'));
+  private async getDesktopWindows(): Promise<RoomDesktopWindow[]> {
+    return this.parseDesktopWindows(await this.state.storage.get<unknown>('desktopWindows'));
   }
 
-  private parseAgentPromptActivityEntry(value: unknown): RoomAgentPromptActivityEntry | null {
+  private parseDesktopActivityEntry(value: unknown): RoomDesktopActivityEntry | null {
     if (!this.isRecord(value)) return null;
-    const prompt = this.parseAgentPrompt(value.prompt);
-    if (
-      prompt === null
-      || !this.isVideoRole(value.role)
-      || typeof value.recordedAt !== 'number'
-      || !Number.isFinite(value.recordedAt)
-    ) {
-      return null;
-    }
-    return { prompt, role: value.role, recordedAt: value.recordedAt };
-  }
-
-  private parseAgentPromptActivityLog(value: unknown): RoomAgentPromptActivityEntry[] {
-    if (!Array.isArray(value)) return [];
-    return value
-      .map((entry) => this.parseAgentPromptActivityEntry(entry))
-      .filter((entry): entry is RoomAgentPromptActivityEntry => entry !== null);
-  }
-
-  private isRoomAgentInteractionEventType(value: unknown): value is RoomAgentInteractionEventType {
-    return value === 'ai_chat_user'
-      || value === 'ai_chat_agent'
-      || value === 'ai_agent_status'
-      || value === 'agent_action';
-  }
-
-  private safeAgentInteractionTextOrNull(eventType: RoomAgentInteractionEventType, value: unknown): string | undefined {
-    if (eventType === 'ai_chat_agent' || eventType === 'ai_agent_status') {
-      return this.safeWorkspaceDiagnosticOrNull(value, 8000) ?? undefined;
-    }
-    if (typeof value !== 'string' || value.trim().length === 0 || value.length > 8000) return undefined;
-    return value;
-  }
-
-  private parseAgentInteractionEvent(value: unknown): RoomAgentInteractionEvent | null {
-    if (!this.isRecord(value)) return null;
-    if (
-      !this.isSafeFileText(value.id, 160)
-      || !this.isSafeFileText(value.clientId, 160)
-      || typeof value.createdAt !== 'number'
-      || !Number.isFinite(value.createdAt)
-      || !this.isRoomAgentInteractionEventType(value.eventType)
-      || (
-        value.actor !== 'host'
-        && value.actor !== 'guest'
-        && value.actor !== 'agent'
-        && value.actor !== 'system'
-      )
-    ) {
-      return null;
-    }
-    const text = this.safeAgentInteractionTextOrNull(value.eventType, value.text);
-    if (!text) return null;
-    return {
-      id: value.id,
-      clientId: value.clientId,
-      createdAt: value.createdAt,
-      eventType: value.eventType,
-      actor: value.actor,
-      text,
-      evidence: this.isRecord(value.evidence) ? value.evidence : undefined,
-    };
-  }
-
-  private hasSourceBackedAgentInteractionEvidence(
-    event: RoomAgentInteractionEvent,
-    senderRole: VideoRole,
-  ): boolean {
-    const evidence = event.evidence;
-    if (!this.isRecord(evidence) || evidence.durableObjectReplayExpected !== true) return false;
-    const senderActor = this.isHostRole(senderRole) ? 'host' : 'guest';
-
-    if (event.eventType === 'ai_chat_user') {
-      const promptTimestamp = typeof evidence.promptTimestamp === 'number' && Number.isFinite(evidence.promptTimestamp)
-        ? evidence.promptTimestamp
-        : null;
-      const promptFingerprint = typeof evidence.promptFingerprint === 'string' ? evidence.promptFingerprint : null;
-      const workspaceSessionId = typeof evidence.workspaceSessionId === 'string' && evidence.workspaceSessionId.trim().length > 0
-        ? evidence.workspaceSessionId
-        : null;
-      const workspacePart = safeEvidenceIdPart(workspaceSessionId);
-      const deliveryStatus = evidence.bridgeDeliveryStatus === 'blocked' ? 'blocked' : 'queued';
-      const deliveryOk = deliveryStatus === 'blocked'
-        ? evidence.browserQueuedBridgeMessage === false
-          && AGENT_PROMPT_BLOCKED_REASONS.has(String(evidence.bridgeBlockedReason))
-        : evidence.browserQueuedBridgeMessage === true
-          && workspaceSessionId !== null
-          && typeof evidence.workspaceStatus === 'string';
-      return (event.actor === 'host' || event.actor === 'guest')
-        && event.actor === senderActor
-        && evidence.actor === event.actor
-        && evidence.source === 'agent_chat_client_submit'
-        && evidence.agentChatEventSource === 'browser_agent_chat_panel'
-        && evidence.bridgeMessageType === 'CHAT'
-        && evidence.bridgeProtocol === 'agent_dev_container_ws'
-        && (
-          evidence.bridgeDeliveryStatus === deliveryStatus
-          || (deliveryStatus === 'queued' && evidence.bridgeDeliveryStatus === undefined)
-        )
-        && deliveryOk
-        && evidence.bridgeDeliveryConfirmed === false
-        && evidence.deliveredToAgentBridge !== true
-        && evidence.agentResponseClaimed === false
-        && (evidence.agent === undefined || evidence.agent === null)
-        && promptTimestamp !== null
-        && promptTimestamp >= 0
-        && promptFingerprint !== null
-        && AGENT_PROMPT_FINGERPRINT_RE.test(promptFingerprint)
-        && evidence.promptLength === event.text.length
-        && evidence.promptId === `${workspacePart}:${event.actor}:prompt:${promptTimestamp}:${promptFingerprint}`
-        && evidence.surface === 'standard'
-        && typeof evidence.roomPhase === 'string'
-        && (evidence.workspaceStatus === null || typeof evidence.workspaceStatus === 'string')
-        && (evidence.repoUrl === null || typeof evidence.repoUrl === 'string');
-    }
-
-    if (event.eventType === 'ai_chat_agent') {
-      const capturedAtMs = typeof evidence.capturedAtMs === 'number' && Number.isInteger(evidence.capturedAtMs)
-        ? evidence.capturedAtMs
-        : null;
-      const agent = typeof evidence.agent === 'string' ? evidence.agent : null;
-      const fingerprint = typeof evidence.responseFingerprint === 'string' ? evidence.responseFingerprint : null;
-      const expectedId = capturedAtMs !== null && agent && fingerprint
-        ? `agent-chat:${safeEvidenceIdPart(agent)}:${capturedAtMs}:CHAT_RESPONSE:${fingerprint}`
-        : null;
-      const persistedOk = evidence.bridgePersisted === true
-        && typeof evidence.actionCount === 'number'
-        && Number.isFinite(evidence.actionCount)
-        && evidence.actionCount >= 0;
-      const fallbackOk = evidence.bridgePersisted === false
-        && evidence.persistenceFallback === 'browser_after_bridge_persist_failed'
-        && evidence.surface === 'standard'
-        && typeof evidence.roomPhase === 'string'
-        && typeof evidence.messageTimestamp === 'number'
-        && Number.isFinite(evidence.messageTimestamp)
-        && evidence.messageTimestamp >= 0
-        && evidence.agentResponseClaimed === true;
-      return event.actor === 'agent'
-        && evidence.source === 'agent_bridge'
-        && evidence.bridgeEventType === 'CHAT_RESPONSE'
-        && (
-          evidence.bridgeMessageSource === 'agent_stdout'
-          || evidence.bridgeMessageSource === 'agent_api_response'
-        )
-        && typeof evidence.observedAt === 'string'
-        && capturedAtMs !== null
-        && capturedAtMs >= 0
-        && agent !== null
-        && fingerprint !== null
-        && AGENT_CHAT_RESPONSE_FINGERPRINT_RE.test(fingerprint)
-        && evidence.responseLength === event.text.length
-        && typeof evidence.agentChatResponseId === 'string'
-        && AGENT_CHAT_RESPONSE_ID_RE.test(evidence.agentChatResponseId)
-        && evidence.agentChatResponseId === expectedId
-        && hasOptionalBrowserPromptRef(evidence)
-        && (persistedOk || fallbackOk);
-    }
-
-    if (event.eventType === 'ai_agent_status') {
-      const capturedAtMs = typeof evidence.capturedAtMs === 'number' && Number.isInteger(evidence.capturedAtMs)
-        ? evidence.capturedAtMs
-        : null;
-      const agent = typeof evidence.agent === 'string' ? evidence.agent : null;
-      const bridgeMessageSource = typeof evidence.bridgeMessageSource === 'string'
-        ? evidence.bridgeMessageSource
-        : null;
-      const status = typeof evidence.status === 'string' ? evidence.status : null;
-      const diagnosticSource = typeof evidence.diagnosticSource === 'string' ? evidence.diagnosticSource : null;
-      const expectedId = capturedAtMs !== null && agent && bridgeMessageSource
-        ? `agent-status:${safeEvidenceIdPart(agent)}:${capturedAtMs}:${bridgeMessageSource}:${safeEvidenceIdPart(status)}:${safeEvidenceIdPart(diagnosticSource)}`
-        : null;
-      const statusOk = status === null || AGENT_STATUSES.has(status);
-      const browserObservationOk = evidence.agentStatusEventSource === 'browser_agent_ws'
-        && evidence.surface === 'standard'
-        && typeof evidence.roomPhase === 'string'
-        && typeof evidence.messageTimestamp === 'number'
-        && Number.isFinite(evidence.messageTimestamp)
-        && evidence.messageTimestamp >= 0
-        && evidence.agentResponseClaimed === false
-        && (
-          (bridgeMessageSource === 'agent_status' && status !== null && AGENT_STATUSES.has(status))
-          || (bridgeMessageSource !== 'agent_status' && diagnosticSource !== null)
-        );
-      const persistedDiagnosticOk = bridgeMessageSource === 'bridge_diagnostic'
-        && evidence.bridgePersisted === true
-        && diagnosticSource !== null;
-      return event.actor === 'agent'
-        && evidence.source === 'agent_bridge'
-        && agent !== null
-        && statusOk
-        && typeof evidence.observedAt === 'string'
-        && capturedAtMs !== null
-        && capturedAtMs >= 0
-        && bridgeMessageSource !== null
-        && AGENT_STATUS_MESSAGE_SOURCES.has(bridgeMessageSource)
-        && typeof evidence.agentStatusEventId === 'string'
-        && AGENT_STATUS_EVENT_ID_RE.test(evidence.agentStatusEventId)
-        && evidence.agentStatusEventId === expectedId
-        && (browserObservationOk || persistedDiagnosticOk);
-    }
-
-    if (event.eventType === 'agent_action') {
-      const source = typeof evidence.source === 'string' ? evidence.source : null;
-      const capturedAtMs = typeof evidence.capturedAtMs === 'number' && Number.isInteger(evidence.capturedAtMs)
-        ? evidence.capturedAtMs
-        : null;
-      const origin = typeof evidence.origin === 'string' ? evidence.origin : null;
-      const executionStatus = typeof evidence.executionStatus === 'string' ? evidence.executionStatus : null;
-      const actionId = typeof evidence.actionId === 'string' ? evidence.actionId : null;
-      const expectedId = source && capturedAtMs !== null && origin && executionStatus && actionId
-        ? `agent-action:${event.actor}:${capturedAtMs}:${source}:${origin}:${executionStatus}:${safeEvidenceIdPart(actionId)}`
-        : null;
-      const idOk = typeof evidence.agentActionEventId === 'string'
-        && AGENT_ACTION_EVENT_ID_RE.test(evidence.agentActionEventId)
-        && evidence.agentActionEventId === expectedId;
-      const surfaceOk = evidence.surface === 'standard';
-      const roomContextOk = surfaceOk && typeof evidence.roomPhase === 'string';
-      if (source === 'agent_tray_ui' || source === 'agent_prompt_ui' || source === 'agent_chat_ui') {
-        const originOk = source === 'agent_tray_ui'
-          ? origin === 'tray' && evidence.actionSource === 'assessment_agent_tray'
-          : source === 'agent_chat_ui'
-            ? origin === 'chat' && evidence.actionSource === 'agent_chat_panel'
-            : (origin === 'prompt' && evidence.actionSource === 'agent_prompt_ui');
-        const statusOk = executionStatus === 'opened'
-          || executionStatus === 'closed'
-          || executionStatus === 'dismissed'
-          || executionStatus === 'executed';
-        return (event.actor === 'host' || event.actor === 'guest')
-          && event.actor === senderActor
-          && evidence.executedBy === event.actor
-          && actionId !== null
-          && capturedAtMs !== null
-          && capturedAtMs >= 0
-          && idOk
-          && roomContextOk
-          && originOk
-          && statusOk
-          && evidence.agentResponseClaimed === false
-          && (evidence.agent === undefined || evidence.agent === null);
-      }
-      if (source === 'agent_bridge') {
-        const commonOk = actionId !== null
-          && capturedAtMs !== null
-          && capturedAtMs >= 0
-          && idOk
-          && origin === 'agent'
-          && typeof evidence.agent === 'string'
-          && evidence.agent.trim().length > 0
-          && hasOptionalBrowserPromptRef(evidence)
-          && evidence.actionProtocol === 'agent_room_action_tag'
-          && evidence.bridgeEventType === 'ROOM_ACTION';
-        const suggestedOk = event.actor === 'agent'
-          && executionStatus === 'suggested'
-          && (evidence.actionSource === 'agent_stdout' || evidence.actionSource === 'agent_api_response')
-          && typeof evidence.observedAt === 'string'
-          && typeof evidence.bridgePersisted === 'boolean';
-        const executedOk = (event.actor === 'host' || event.actor === 'guest')
-          && event.actor === senderActor
-          && executionStatus === 'executed'
-          && evidence.executedBy === event.actor
-          && (evidence.actionSource === 'agent_stdout_action' || evidence.actionSource === 'agent_api_response_action')
-          && typeof evidence.agentActionObservedAt === 'string'
-          && typeof evidence.agentActionBridgePersisted === 'boolean'
-          && roomContextOk
-          && evidence.agentResponseClaimed === false;
-        return commonOk && (suggestedOk || executedOk);
-      }
-    }
-
-    return false;
-  }
-
-  private parseAgentInteractionActivityEntry(value: unknown): RoomAgentInteractionActivityEntry | null {
-    if (!this.isRecord(value)) return null;
-    const event = this.parseAgentInteractionEvent(value.event);
+    const event = this.parseDesktopEvent(value.event);
     if (
       event === null
       || !this.isVideoRole(value.role)
@@ -762,11 +1041,36 @@ export class VideoRoom {
     return { event, role: value.role, recordedAt: value.recordedAt };
   }
 
-  private parseAgentInteractionActivityLog(value: unknown): RoomAgentInteractionActivityEntry[] {
+  private parseDesktopActivityLog(value: unknown): RoomDesktopActivityEntry[] {
     if (!Array.isArray(value)) return [];
     return value
-      .map((entry) => this.parseAgentInteractionActivityEntry(entry))
-      .filter((entry): entry is RoomAgentInteractionActivityEntry => entry !== null);
+      .map((entry) => this.parseDesktopActivityEntry(entry))
+      .filter((entry): entry is RoomDesktopActivityEntry => entry !== null);
+  }
+
+  private async getCurrentClippyPrompt(): Promise<RoomClippyPrompt | null> {
+    return this.parseClippyPrompt(await this.state.storage.get<unknown>('currentClippyPrompt'));
+  }
+
+  private parseClippyPromptActivityEntry(value: unknown): RoomClippyPromptActivityEntry | null {
+    if (!this.isRecord(value)) return null;
+    const prompt = this.parseClippyPrompt(value.prompt);
+    if (
+      prompt === null
+      || !this.isVideoRole(value.role)
+      || typeof value.recordedAt !== 'number'
+      || !Number.isFinite(value.recordedAt)
+    ) {
+      return null;
+    }
+    return { prompt, role: value.role, recordedAt: value.recordedAt };
+  }
+
+  private parseClippyPromptActivityLog(value: unknown): RoomClippyPromptActivityEntry[] {
+    if (!Array.isArray(value)) return [];
+    return value
+      .map((entry) => this.parseClippyPromptActivityEntry(entry))
+      .filter((entry): entry is RoomClippyPromptActivityEntry => entry !== null);
   }
 
   private isRoomClippyInteractionEventType(value: unknown): value is RoomClippyInteractionEventType {
@@ -1081,7 +1385,7 @@ export class VideoRoom {
     const source = this.safeTextOrNull(value.source, 80);
     const chatEventSource = this.safeTextOrNull(value.chatEventSource, 120);
     const actor = value.actor === 'host' || value.actor === 'guest' ? value.actor : undefined;
-    const surface = value.surface === 'standard' ? value.surface : undefined;
+    const surface = value.surface === 'standard' || value.surface === 'win95' ? value.surface : undefined;
     const roomPhase = this.safeTextOrNull(value.roomPhase, 80);
     const deliveryStatus = this.parseChatDeliveryStatus(value.deliveryStatus);
     const roomMessageId = this.safeTextOrNull(value.roomMessageId, 120);
@@ -1131,7 +1435,7 @@ export class VideoRoom {
     const messageLength = evidence.messageLength;
     const messageFingerprint = evidence.messageFingerprint;
     return evidence.source === 'room_chat_client_submit'
-      && evidence.chatEventSource === 'browser_room_chat_panel'
+      && evidence.chatEventSource === 'browser_room_chat_window'
       && evidence.actor === actor
       && evidence.roomMessageId === message.id
       && evidence.clientId === message.clientId
@@ -1204,7 +1508,9 @@ export class VideoRoom {
     if (!this.isRecord(evidence)) return false;
     const actor = this.isHostRole(role) ? 'host' : 'guest';
     const action = event.enabled ? 'enabled' : 'disabled';
-    const controlSurface = 'standard_video_call';
+    const controlSurface = evidence.surface === 'win95'
+      ? 'win95_video_window'
+      : 'standard_video_call';
     return event.role === role
       && evidence.source === 'video_room_media_controls'
       && evidence.mediaControlEventSource === 'browser_video_control_button'
@@ -1214,7 +1520,7 @@ export class VideoRoom {
       && evidence.enabled === event.enabled
       && evidence.action === action
       && evidence.controlAction === 'toggle'
-      && evidence.surface === 'standard'
+      && (evidence.surface === 'standard' || evidence.surface === 'win95')
       && typeof evidence.roomPhase === 'string'
       && evidence.roomPhase.length > 0
       && evidence.controlSurface === controlSurface
@@ -1381,7 +1687,7 @@ export class VideoRoom {
       && RECORDING_STATE_EVENT_ID_RE.test(recordingStateEventId)
       && event.id === recordingStateEventId
       && recordingStateEventId === `recording:host:${capturedAtMs}:${event.lifecycleKind}:${event.status}`
-      && evidence.surface === 'standard'
+      && (evidence.surface === 'standard' || evidence.surface === 'win95')
       && typeof evidence.roomPhase === 'string'
       && evidence.roomPhase.length > 0
       && evidence.durableObjectReplayExpected === true
@@ -1512,6 +1818,99 @@ export class VideoRoom {
     await this.state.storage.put('recordingActivityLog', next);
   }
 
+  private parseCursorPresence(value: unknown, fallbackRole?: VideoRole): RoomCursorPresence | null {
+    if (!this.isRecord(value)) return null;
+    const role = this.isVideoRole(value.role) ? value.role : fallbackRole;
+    if (
+      !this.isSafeFileText(value.clientId, 160)
+      || !role
+      || !this.isUnitNumber(value.x)
+      || !this.isUnitNumber(value.y)
+      || typeof value.updatedAt !== 'number'
+      || !Number.isFinite(value.updatedAt)
+      || value.updatedAt < 0
+    ) {
+      return null;
+    }
+    return {
+      clientId: value.clientId,
+      role,
+      x: value.x,
+      y: value.y,
+      updatedAt: value.updatedAt,
+      evidence: this.isRecord(value.evidence) ? value.evidence : undefined,
+    };
+  }
+
+  private hasSourceBackedCursorEvidence(cursor: RoomCursorPresence, role: VideoRole): boolean {
+    const evidence = cursor.evidence;
+    if (!this.isRecord(evidence)) return false;
+    const actor = this.isHostRole(role) ? 'host' : 'guest';
+    const normalizedX = this.isUnitNumber(evidence.normalizedX) ? evidence.normalizedX : null;
+    const normalizedY = this.isUnitNumber(evidence.normalizedY) ? evidence.normalizedY : null;
+    const previousX = evidence.previousNormalizedX;
+    const previousY = evidence.previousNormalizedY;
+    const distance = evidence.distanceFromPrevious;
+    const sampledAtMs = evidence.sampledAtMs;
+    const cursorSampleId = evidence.cursorSampleId;
+    if (normalizedX === null || normalizedY === null) return false;
+    if (previousX !== null && !this.isUnitNumber(previousX)) return false;
+    if (previousY !== null && !this.isUnitNumber(previousY)) return false;
+    if (distance !== null && (typeof distance !== 'number' || !Number.isFinite(distance) || distance < 0)) {
+      return false;
+    }
+    if (typeof sampledAtMs !== 'number' || !Number.isInteger(sampledAtMs) || sampledAtMs < 0) {
+      return false;
+    }
+    const expectedSampleId = `cursor:${actor}:${sampledAtMs}:${Math.round(normalizedX * 1000)}:${Math.round(normalizedY * 1000)}`;
+    return cursor.role === role
+      && evidence.source === 'win95_cursor_presence_client_sample'
+      && evidence.cursorEventSource === 'browser_win95_desktop_pointermove'
+      && evidence.actor === actor
+      && evidence.surface === 'win95'
+      && typeof evidence.roomPhase === 'string'
+      && evidence.roomPhase.length > 0
+      && evidence.evidenceSampling === 'presence_sample'
+      && evidence.sampleIntervalMs === CURSOR_PRESENCE_SAMPLE_INTERVAL_MS
+      && evidence.movementThreshold === CURSOR_PRESENCE_MOVEMENT_THRESHOLD
+      && evidence.rawCursorMovesPersisted === false
+      && typeof cursorSampleId === 'string'
+      && CURSOR_SAMPLE_ID_RE.test(cursorSampleId)
+      && cursorSampleId === expectedSampleId
+      && Math.abs(cursor.x - normalizedX) <= 0.001
+      && Math.abs(cursor.y - normalizedY) <= 0.001;
+  }
+
+  private parseCursorActivityEntry(value: unknown): RoomCursorActivityEntry | null {
+    if (!this.isRecord(value)) return null;
+    const cursor = this.parseCursorPresence(value.cursor);
+    if (
+      cursor === null
+      || !this.isVideoRole(value.role)
+      || typeof value.recordedAt !== 'number'
+      || !Number.isFinite(value.recordedAt)
+    ) {
+      return null;
+    }
+    return { cursor, role: value.role, recordedAt: value.recordedAt };
+  }
+
+  private parseCursorActivityLog(value: unknown): RoomCursorActivityEntry[] {
+    if (!Array.isArray(value)) return [];
+    return value
+      .map((entry) => this.parseCursorActivityEntry(entry))
+      .filter((entry): entry is RoomCursorActivityEntry => entry !== null);
+  }
+
+  private async recordCursorActivity(cursor: RoomCursorPresence, role: VideoRole): Promise<void> {
+    const previous = this.parseCursorActivityLog(await this.state.storage.get<unknown>('cursorActivityLog'));
+    const next = [
+      ...previous.slice(-249),
+      { cursor, role, recordedAt: Date.now() },
+    ];
+    await this.state.storage.put('cursorActivityLog', next);
+  }
+
   private parseChatActivityEntry(value: unknown): RoomChatActivityEntry | null {
     if (!this.isRecord(value)) return null;
     const message = this.parseChatMessage(value.message);
@@ -1572,7 +1971,7 @@ export class VideoRoom {
       && CODE_SERVER_FILE_CHANGE_ID_RE.test(codeServerFileChangeId)
       && event.id === codeServerFileChangeId
       && evidence.source === 'code_server_workspace'
-      && evidence.observedBy === 'agent_bridge'
+      && evidence.observedBy === 'clippy_agent_bridge'
       && evidence.bridgeEventType === 'FILE_CHANGED'
       && evidence.editorSurface === 'code-server'
       && typeof evidence.path === 'string'
@@ -1586,7 +1985,7 @@ export class VideoRoom {
       && typeof evidence.observedAt === 'string'
       && evidence.observedAt.trim().length > 0
       && evidence.bridgePersisted === false
-      && evidence.surface === 'standard'
+      && (evidence.surface === 'standard' || evidence.surface === 'win95')
       && typeof evidence.roomPhase === 'string'
       && typeof evidence.workspaceStatus === 'string'
       && typeof evidence.workspaceSessionId === 'string'
@@ -1728,7 +2127,7 @@ export class VideoRoom {
       && terminalSessionId !== null
       && capturedAtMs !== null
       && capturedAtMs >= 0
-      && evidence.surface === 'standard'
+      && (evidence.surface === 'standard' || evidence.surface === 'win95')
       && typeof evidence.roomPhase === 'string'
       && typeof evidence.workspaceStatus === 'string'
       && typeof evidence.workspaceSessionId === 'string'
@@ -1794,6 +2193,10 @@ export class VideoRoom {
       .filter((entry): entry is RoomTerminalActivityEntry => entry !== null);
   }
 
+  private isRoomFileKind(value: unknown): value is RoomFileKind {
+    return value === 'text' || value === 'paint' || value === 'json' || value === 'link';
+  }
+
   private isSafeFileText(value: unknown, maxLength: number): value is string {
     return typeof value === 'string' && value.length > 0 && value.length <= maxLength;
   }
@@ -1828,33 +2231,235 @@ export class VideoRoom {
     return typeof value === 'boolean' ? value : undefined;
   }
 
-  private async persistAgentPrompt(prompt: RoomAgentPrompt): Promise<void> {
-    await this.state.storage.put('currentAgentPrompt', prompt);
+  private parseRoomFile(value: unknown): RoomFile | null {
+    if (!this.isRecord(value)) return null;
+    if (
+      !this.isSafeFileText(value.id, 120)
+      || !this.isSafeFileText(value.name, 160)
+      || !this.isRoomFileKind(value.kind)
+      || typeof value.content !== 'string'
+      || value.content.length > 512_000
+      || typeof value.createdAt !== 'number'
+      || typeof value.updatedAt !== 'number'
+      || !Number.isFinite(value.createdAt)
+      || !Number.isFinite(value.updatedAt)
+    ) {
+      return null;
+    }
+    const metadata = this.isRecord(value.metadata) ? value.metadata : undefined;
+    if (metadata) {
+      try {
+        if (JSON.stringify(metadata).length > 8192) return null;
+      } catch {
+        return null;
+      }
+    }
+    return {
+      id: value.id,
+      name: value.name,
+      kind: value.kind,
+      content: value.content,
+      mimeType: this.isSafeFileText(value.mimeType, 160) ? value.mimeType : undefined,
+      metadata,
+      createdAt: value.createdAt,
+      updatedAt: value.updatedAt,
+      updatedBy: this.isVideoRole(value.updatedBy) ? value.updatedBy : undefined,
+    };
   }
 
-  private async recordAgentPromptActivity(prompt: RoomAgentPrompt, role: VideoRole): Promise<void> {
-    const previous = this.parseAgentPromptActivityLog(
-      await this.state.storage.get<unknown>('agentPromptActivityLog'),
+  private parseFileSystemEvent(value: unknown): RoomFileSystemEvent | null {
+    if (!this.isRecord(value)) return null;
+    if (
+      !this.isSafeFileText(value.id, 120)
+      || !this.isSafeFileText(value.clientId, 120)
+      || typeof value.createdAt !== 'number'
+      || !Number.isFinite(value.createdAt)
+    ) {
+      return null;
+    }
+    if (value.kind === 'UPSERT_FILE') {
+      const file = this.parseRoomFile(value.file);
+      if (!file) return null;
+      return {
+        id: value.id,
+        clientId: value.clientId,
+        createdAt: value.createdAt,
+        kind: 'UPSERT_FILE',
+        file,
+        evidence: this.isRecord(value.evidence) ? value.evidence : undefined,
+      };
+    }
+    if (value.kind === 'DELETE_FILE' && this.isSafeFileText(value.fileId, 120)) {
+      const file = this.parseRoomFile(value.file);
+      return {
+        id: value.id,
+        clientId: value.clientId,
+        createdAt: value.createdAt,
+        kind: 'DELETE_FILE',
+        fileId: value.fileId,
+        file: file ?? undefined,
+        evidence: this.isRecord(value.evidence) ? value.evidence : undefined,
+      };
+    }
+    return null;
+  }
+
+  private parseRoomFiles(value: unknown): RoomFile[] {
+    if (!Array.isArray(value)) return [];
+    return value
+      .map((entry) => this.parseRoomFile(entry))
+      .filter((entry): entry is RoomFile => entry !== null);
+  }
+
+  private async getRoomFileSystem(): Promise<RoomFile[]> {
+    return this.parseRoomFiles(await this.state.storage.get<unknown>('roomFileSystem'));
+  }
+
+  private async enrichFileSystemEvent(event: RoomFileSystemEvent): Promise<RoomFileSystemEvent> {
+    if (event.kind !== 'DELETE_FILE') return event;
+    const files = await this.getRoomFileSystem();
+    const deletedFile = files.find((file) => file.id === event.fileId);
+    if (!deletedFile) {
+      return {
+        ...event,
+        file: undefined,
+      };
+    }
+    return { ...event, file: deletedFile };
+  }
+
+  private hasSourceBackedFileEvidence(event: RoomFileSystemEvent, role: VideoRole): boolean {
+    const evidence = event.evidence;
+    if (!this.isRecord(evidence)) return false;
+    const actor = this.isHostRole(role) ? 'host' : 'guest';
+    const operation = event.kind === 'DELETE_FILE' ? 'delete' : 'upsert';
+    const fileId = event.kind === 'DELETE_FILE' ? event.fileId : event.file.id;
+    return evidence.source === 'win95_shared_file_system'
+      && evidence.fileEventSource === 'browser_client_submit'
+      && evidence.actor === actor
+      && evidence.operation === operation
+      && evidence.fileId === fileId
+      && typeof evidence.fileChangeId === 'string'
+      && typeof evidence.capturedAtMs === 'number'
+      && Number.isFinite(evidence.capturedAtMs)
+      && evidence.surface === 'win95'
+      && typeof evidence.roomPhase === 'string'
+      && evidence.durableObjectReplayExpected === true;
+  }
+
+  private parseFileSystemActivityEntry(value: unknown): RoomFileSystemActivityEntry | null {
+    if (!this.isRecord(value)) return null;
+    const event = this.parseFileSystemEvent(value.event);
+    if (
+      event === null
+      || !this.isVideoRole(value.role)
+      || typeof value.recordedAt !== 'number'
+      || !Number.isFinite(value.recordedAt)
+    ) {
+      return null;
+    }
+    return { event, role: value.role, recordedAt: value.recordedAt };
+  }
+
+  private parseFileSystemActivityLog(value: unknown): RoomFileSystemActivityEntry[] {
+    if (!Array.isArray(value)) return [];
+    return value
+      .map((entry) => this.parseFileSystemActivityEntry(entry))
+      .filter((entry): entry is RoomFileSystemActivityEntry => entry !== null);
+  }
+
+  private async persistRoomSurface(surface: RoomSurface): Promise<void> {
+    this.roomSurface = surface;
+    await this.state.storage.put('roomSurface', surface);
+  }
+
+  private async persistDesktopEvent(event: RoomDesktopEvent): Promise<RoomDesktopWindow[]> {
+    if (event.kind === 'SET_ROOM_SURFACE') {
+      await this.persistRoomSurface(event.surface);
+      return this.getDesktopWindows();
+    }
+    if (event.kind === 'START_MENU_STATE') {
+      await this.state.storage.put('desktopStartMenuOpen', event.open);
+      return this.getDesktopWindows();
+    }
+    const windows = await this.getDesktopWindows();
+    if (event.kind === 'OPEN_WINDOW') {
+      const withoutExisting = windows.filter((windowConfig) => windowConfig.id !== event.window.id);
+      const nextWindows = [...withoutExisting, event.window];
+      await this.state.storage.put('desktopWindows', nextWindows);
+      return nextWindows;
+    }
+    if (event.kind === 'CLOSE_WINDOW') {
+      const nextWindows = windows.filter((windowConfig) => windowConfig.id !== event.windowId);
+      await this.state.storage.put('desktopWindows', nextWindows);
+      return nextWindows;
+    }
+    if (event.kind === 'WORKSPACE_STATE_CHANGED') {
+      return windows;
+    }
+    if (event.kind === 'UPDATE_WINDOW_STATE') {
+      const nextWindows = windows.map((windowConfig) => {
+        if (windowConfig.id !== event.windowId) {
+          return event.focused === true ? { ...windowConfig, focused: false } : windowConfig;
+        }
+        return {
+          ...windowConfig,
+          x: event.x ?? windowConfig.x,
+          y: event.y ?? windowConfig.y,
+          width: event.width ?? windowConfig.width,
+          height: event.height ?? windowConfig.height,
+          minimized: event.minimized ?? windowConfig.minimized,
+          maximized: event.maximized ?? windowConfig.maximized,
+          focused: event.focused ?? windowConfig.focused,
+        };
+      });
+      await this.state.storage.put('desktopWindows', nextWindows);
+      return nextWindows;
+    }
+    const nextWindows = windows.map((windowConfig) => (
+      windowConfig.id === event.windowId
+        ? { ...windowConfig, data: { ...windowConfig.data, ...event.data } }
+        : windowConfig
+    ));
+    await this.state.storage.put('desktopWindows', nextWindows);
+    return nextWindows;
+  }
+
+  private async sendDesktopEventRejected(ws: WebSocket, reason: string): Promise<void> {
+    const desktopStartMenuOpen = await this.state.storage.get<unknown>('desktopStartMenuOpen');
+    ws.send(JSON.stringify({
+      type: 'ROOM_DESKTOP_EVENT_REJECTED',
+      reason,
+      payload: {
+        windows: await this.getDesktopWindows(),
+        surface: this.roomSurface,
+        startMenuOpen: typeof desktopStartMenuOpen === 'boolean' ? desktopStartMenuOpen : false,
+      },
+    }));
+  }
+
+  private async recordDesktopActivity(event: RoomDesktopEvent, role: VideoRole): Promise<void> {
+    const previous = this.parseDesktopActivityLog(await this.state.storage.get<unknown>('desktopActivityLog'));
+    const next = [
+      ...previous.slice(-249),
+      { event, role, recordedAt: Date.now() },
+    ];
+    await this.state.storage.put('desktopActivityLog', next);
+  }
+
+  private async persistClippyPrompt(prompt: RoomClippyPrompt): Promise<void> {
+    await this.state.storage.put('currentClippyPrompt', prompt);
+  }
+
+  private async recordClippyPromptActivity(prompt: RoomClippyPrompt, role: VideoRole): Promise<void> {
+    const previous = this.parseClippyPromptActivityLog(
+      await this.state.storage.get<unknown>('clippyPromptActivityLog'),
     );
     const next = [
       ...previous.slice(-99),
       { prompt, role, recordedAt: Date.now() },
     ];
-    await this.state.storage.put('agentPromptActivityLog', next);
-  }
-
-  private async recordAgentInteractionActivity(
-    event: RoomAgentInteractionEvent,
-    role: VideoRole,
-  ): Promise<void> {
-    const previous = this.parseAgentInteractionActivityLog(
-      await this.state.storage.get<unknown>('agentInteractionActivityLog'),
-    );
-    const next = [
-      ...previous.slice(-249),
-      { event, role, recordedAt: Date.now() },
-    ];
-    await this.state.storage.put('agentInteractionActivityLog', next);
+    await this.state.storage.put('clippyPromptActivityLog', next);
   }
 
   private async recordClippyInteractionActivity(
@@ -1910,6 +2515,60 @@ export class VideoRoom {
       { event, role, recordedAt: Date.now() },
     ];
     await this.state.storage.put('terminalActivityLog', next);
+  }
+
+  private roomFileProjectionEvidenceFromEvent(event: RoomFileSystemEvent): Record<string, unknown> | undefined {
+    const evidence = event.evidence;
+    if (event.kind !== 'UPSERT_FILE' || !this.isRecord(evidence)) return undefined;
+    const projection: Record<string, unknown> = {};
+    for (const key of ROOM_FILE_PROJECTION_EVIDENCE_KEYS) {
+      if (evidence[key] !== undefined) {
+        projection[key] = evidence[key];
+      }
+    }
+    return projection;
+  }
+
+  private roomFileWithProjectionEvidence(file: RoomFile, event: RoomFileSystemEvent): RoomFile {
+    const evidence = this.roomFileProjectionEvidenceFromEvent(event);
+    if (!evidence) return file;
+    return {
+      ...file,
+      metadata: {
+        ...(file.metadata ?? {}),
+        [ROOM_FILE_PROJECTION_EVIDENCE_METADATA_KEY]: evidence,
+      },
+    };
+  }
+
+  private async persistFileSystemEvent(event: RoomFileSystemEvent, role: VideoRole): Promise<RoomFile[]> {
+    const files = await this.getRoomFileSystem();
+    if (event.kind === 'DELETE_FILE') {
+      const nextFiles = files.filter((file) => file.id !== event.fileId);
+      await this.state.storage.put('roomFileSystem', nextFiles);
+      return nextFiles;
+    }
+    const nextFile = this.roomFileWithProjectionEvidence({
+      ...event.file,
+      updatedBy: role,
+    }, event);
+    const nextFiles = [
+      ...files.filter((file) => file.id !== event.file.id),
+      nextFile,
+    ];
+    await this.state.storage.put('roomFileSystem', nextFiles);
+    return nextFiles;
+  }
+
+  private async recordFileSystemActivity(event: RoomFileSystemEvent, role: VideoRole): Promise<void> {
+    const previous = this.parseFileSystemActivityLog(
+      await this.state.storage.get<unknown>('fileSystemActivityLog'),
+    );
+    const next = [
+      ...previous.slice(-249),
+      { event, role, recordedAt: Date.now() },
+    ];
+    await this.state.storage.put('fileSystemActivityLog', next);
   }
 
   private async sendFileSystemEventRejected(ws: WebSocket, reason: string): Promise<void> {
@@ -2016,10 +2675,18 @@ export class VideoRoom {
         meetingId: string;
         hostId: string;
         resetEnded?: boolean;
+        initialSurface?: RoomSurface;
       };
       if (!this.metadata.meetingId) {
         this.metadata = { meetingId: body.meetingId, hostId: body.hostId };
         await this.state.storage.put('metadata', this.metadata);
+      }
+      const storedSurface = await this.state.storage.get<unknown>('roomSurface');
+      if (this.isRoomSurface(storedSurface)) {
+        this.roomSurface = storedSurface;
+      } else if (this.isRoomSurface(body.initialSurface)) {
+        this.roomSurface = body.initialSurface;
+        await this.state.storage.put('roomSurface', this.roomSurface);
       }
       const storedStatus = await this.state.storage.get<unknown>('status');
       const endedByHost = await this.state.storage.get<boolean>('endedByHost');
@@ -2053,6 +2720,9 @@ export class VideoRoom {
 
     if (request.method === 'GET' && url.pathname === '/activity-log') {
       return new Response(JSON.stringify({
+        desktopActivityLog: this.parseDesktopActivityLog(
+          await this.state.storage.get<unknown>('desktopActivityLog'),
+        ),
         chatActivityLog: this.parseChatActivityLog(
           await this.state.storage.get<unknown>('chatActivityLog'),
         ),
@@ -2062,17 +2732,23 @@ export class VideoRoom {
         terminalActivityLog: this.parseTerminalActivityLog(
           await this.state.storage.get<unknown>('terminalActivityLog'),
         ),
-        agentPromptActivityLog: this.parseAgentPromptActivityLog(
-          await this.state.storage.get<unknown>('agentPromptActivityLog'),
+        clippyPromptActivityLog: this.parseClippyPromptActivityLog(
+          await this.state.storage.get<unknown>('clippyPromptActivityLog'),
         ),
-        agentInteractionActivityLog: this.parseAgentInteractionActivityLog(
-          await this.state.storage.get<unknown>('agentInteractionActivityLog'),
+        clippyInteractionActivityLog: this.parseClippyInteractionActivityLog(
+          await this.state.storage.get<unknown>('clippyInteractionActivityLog'),
         ),
         mediaControlActivityLog: this.parseMediaControlActivityLog(
           await this.state.storage.get<unknown>('mediaControlActivityLog'),
         ),
         recordingActivityLog: this.parseRecordingActivityLog(
           await this.state.storage.get<unknown>('recordingActivityLog'),
+        ),
+        cursorActivityLog: this.parseCursorActivityLog(
+          await this.state.storage.get<unknown>('cursorActivityLog'),
+        ),
+        fileSystemActivityLog: this.parseFileSystemActivityLog(
+          await this.state.storage.get<unknown>('fileSystemActivityLog'),
         ),
       }), {
         headers: { 'Content-Type': 'application/json' },
@@ -2112,10 +2788,21 @@ export class VideoRoom {
         peers: peerCount,
       }));
 
-      const currentAgentPrompt = await this.getCurrentAgentPrompt();
+      const desktopWindows = await this.getDesktopWindows();
+      const desktopStartMenuOpen = await this.state.storage.get<unknown>('desktopStartMenuOpen');
       server.send(JSON.stringify({
-        type: 'ROOM_AGENT_STATE',
-        payload: { prompt: currentAgentPrompt },
+        type: 'ROOM_DESKTOP_STATE',
+        payload: {
+          windows: desktopWindows,
+          surface: this.roomSurface,
+          startMenuOpen: typeof desktopStartMenuOpen === 'boolean' ? desktopStartMenuOpen : false,
+        },
+      }));
+
+      const currentClippyPrompt = await this.getCurrentClippyPrompt();
+      server.send(JSON.stringify({
+        type: 'ROOM_CLIPPY_STATE',
+        payload: { prompt: currentClippyPrompt },
       }));
 
       const chatMessages = await this.getChatMessages();
@@ -2134,6 +2821,12 @@ export class VideoRoom {
       server.send(JSON.stringify({
         type: 'ROOM_RECORDING_STATE_SNAPSHOT',
         payload: { state: recordingState },
+      }));
+
+      const roomFileSystem = await this.getRoomFileSystem();
+      server.send(JSON.stringify({
+        type: 'ROOM_FILE_SYSTEM_STATE',
+        payload: { files: roomFileSystem },
       }));
 
       // Notify other peers that this role has connected
@@ -2250,72 +2943,96 @@ export class VideoRoom {
       return;
     }
 
-    if (message.type === 'ROOM_AGENT_PROMPT') {
+    if (message.type === 'ROOM_DESKTOP_EVENT') {
+      if (this.sessionStatus === 'ENDED') {
+        await this.sendDesktopEventRejected(ws, 'ROOM_ENDED');
+        return;
+      }
+      const event = this.parseDesktopEvent(message.payload);
+      if (!event) {
+        await this.sendDesktopEventRejected(ws, 'INVALID_EVENT');
+        return;
+      }
+      if (!this.hasSourceBackedDesktopEventEvidence(event, senderRole)) {
+        await this.sendDesktopEventRejected(ws, 'MISSING_SOURCE_EVIDENCE');
+        return;
+      }
+      await this.persistDesktopEvent(event);
+      await this.recordDesktopActivity(event, senderRole);
+      this.broadcastExcept(ws, JSON.stringify({
+        type: 'ROOM_DESKTOP_EVENT',
+        role: senderRole,
+        payload: event,
+      }));
+      return;
+    }
+
+    if (message.type === 'ROOM_CLIPPY_PROMPT') {
       if (this.sessionStatus === 'ENDED') {
         ws.send(JSON.stringify({
-          type: 'ROOM_AGENT_PROMPT_REJECTED',
+          type: 'ROOM_CLIPPY_PROMPT_REJECTED',
           reason: 'ROOM_ENDED',
         }));
         return;
       }
       if (!this.isHostRole(senderRole)) {
         ws.send(JSON.stringify({
-          type: 'ROOM_AGENT_PROMPT_REJECTED',
+          type: 'ROOM_CLIPPY_PROMPT_REJECTED',
           reason: 'ONLY_HOST_CAN_PROMPT',
         }));
         return;
       }
-      const prompt = this.parseAgentPrompt(message.payload);
+      const prompt = this.parseClippyPrompt(message.payload);
       if (!prompt) {
         ws.send(JSON.stringify({
-          type: 'ROOM_AGENT_PROMPT_REJECTED',
+          type: 'ROOM_CLIPPY_PROMPT_REJECTED',
           reason: 'INVALID_PROMPT',
         }));
         return;
       }
-      if (!this.hasSourceBackedAgentPromptEvidence(prompt, senderRole)) {
+      if (!this.hasSourceBackedClippyPromptEvidence(prompt, senderRole)) {
         ws.send(JSON.stringify({
-          type: 'ROOM_AGENT_PROMPT_REJECTED',
+          type: 'ROOM_CLIPPY_PROMPT_REJECTED',
           reason: 'MISSING_SOURCE_EVIDENCE',
         }));
         return;
       }
-      await this.persistAgentPrompt(prompt);
-      await this.recordAgentPromptActivity(prompt, senderRole);
+      await this.persistClippyPrompt(prompt);
+      await this.recordClippyPromptActivity(prompt, senderRole);
       this.broadcastExcept(ws, JSON.stringify({
-        type: 'ROOM_AGENT_PROMPT',
+        type: 'ROOM_CLIPPY_PROMPT',
         role: senderRole,
         payload: prompt,
       }));
       return;
     }
 
-    if (message.type === 'ROOM_AGENT_INTERACTION') {
+    if (message.type === 'ROOM_CLIPPY_INTERACTION') {
       if (this.sessionStatus === 'ENDED') {
         ws.send(JSON.stringify({
-          type: 'ROOM_AGENT_INTERACTION_REJECTED',
+          type: 'ROOM_CLIPPY_INTERACTION_REJECTED',
           reason: 'ROOM_ENDED',
         }));
         return;
       }
-      const event = this.parseAgentInteractionEvent(message.payload);
+      const event = this.parseClippyInteractionEvent(message.payload);
       if (!event) {
         ws.send(JSON.stringify({
-          type: 'ROOM_AGENT_INTERACTION_REJECTED',
+          type: 'ROOM_CLIPPY_INTERACTION_REJECTED',
           reason: 'INVALID_EVENT',
         }));
         return;
       }
-      if (!this.hasSourceBackedAgentInteractionEvidence(event, senderRole)) {
+      if (!this.hasSourceBackedClippyInteractionEvidence(event, senderRole)) {
         ws.send(JSON.stringify({
-          type: 'ROOM_AGENT_INTERACTION_REJECTED',
+          type: 'ROOM_CLIPPY_INTERACTION_REJECTED',
           reason: 'MISSING_SOURCE_EVIDENCE',
         }));
         return;
       }
-      await this.recordAgentInteractionActivity(event, senderRole);
+      await this.recordClippyInteractionActivity(event, senderRole);
       this.broadcastExcept(ws, JSON.stringify({
-        type: 'ROOM_AGENT_INTERACTION',
+        type: 'ROOM_CLIPPY_INTERACTION',
         role: senderRole,
         payload: event,
       }));
@@ -2512,6 +3229,31 @@ export class VideoRoom {
         type: 'ROOM_TERMINAL_EVENT',
         role: senderRole,
         payload: terminalEvent,
+      }));
+      return;
+    }
+
+    if (message.type === 'ROOM_FILE_SYSTEM_EVENT') {
+      if (this.sessionStatus === 'ENDED') {
+        await this.sendFileSystemEventRejected(ws, 'ROOM_ENDED');
+        return;
+      }
+      const event = this.parseFileSystemEvent(message.payload);
+      if (!event) {
+        await this.sendFileSystemEventRejected(ws, 'INVALID_EVENT');
+        return;
+      }
+      if (!this.hasSourceBackedFileEvidence(event, senderRole)) {
+        await this.sendFileSystemEventRejected(ws, 'MISSING_SOURCE_EVIDENCE');
+        return;
+      }
+      const enrichedEvent = await this.enrichFileSystemEvent(event);
+      await this.persistFileSystemEvent(enrichedEvent, senderRole);
+      await this.recordFileSystemActivity(enrichedEvent, senderRole);
+      this.broadcastExcept(ws, JSON.stringify({
+        type: 'ROOM_FILE_SYSTEM_EVENT',
+        role: senderRole,
+        payload: enrichedEvent,
       }));
       return;
     }

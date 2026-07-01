@@ -33,8 +33,8 @@ interface UseBookingNotificationsResult {
 
 export function useBookingNotifications(): UseBookingNotificationsResult {
   const bypassClerkToken = isDevProxyRecruiterAuthBypassEnabled();
-  const clerkAuth = bypassClerkToken ? null : useClerkAuth();
-  const getToken = clerkAuth?.getToken ?? (async () => null);
+  const { getToken: clerkGetToken } = useClerkAuth();
+  const getToken = bypassClerkToken ? (async () => null) : clerkGetToken;
   const getTokenRef = useRef(getToken);
 
   useEffect(() => {

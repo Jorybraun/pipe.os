@@ -2464,7 +2464,7 @@ export function LivingContextGraph({
   livingContextEndpoint,
   initialLivingContext,
   standaloneReviewMatch,
-  comparisonCandidateIds,
+  comparisonCandidateIds: _comparisonCandidateIds,
 }: {
   candidateId: string;
   livingContextEndpoint?: string;

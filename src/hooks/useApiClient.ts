@@ -95,21 +95,24 @@ export function warmApiClientToken(
  */
 export function useApiClient(): ApiClient {
   const bypassClerkToken = isDevProxyRecruiterAuthBypassEnabled();
-  if (bypassClerkToken) {
-    return useMemo(() => createApiClient({ getToken: () => null }), []);
-  }
-
   const { getToken, userId } = useClerkAuth();
   const getTokenRef = useRef(getToken);
   const userIdRef = useRef(userId);
 
   useEffect(() => {
-    getTokenRef.current = getToken;
-    userIdRef.current = userId;
-    syncSharedTokenUser(userId);
-  }, [getToken, userId]);
+    if (!bypassClerkToken) {
+      getTokenRef.current = getToken;
+      userIdRef.current = userId;
+      syncSharedTokenUser(userId);
+    }
+  }, [bypassClerkToken, getToken, userId]);
 
-  return useMemo(() => createApiClient({
-    getToken: () => resolveSharedToken(() => getTokenRef.current(), userIdRef.current),
-  }), []);
+  return useMemo(() => {
+    if (bypassClerkToken) {
+      return createApiClient({ getToken: () => null });
+    }
+    return createApiClient({
+      getToken: () => resolveSharedToken(() => getTokenRef.current(), userIdRef.current),
+    });
+  }, [bypassClerkToken]);
 }
