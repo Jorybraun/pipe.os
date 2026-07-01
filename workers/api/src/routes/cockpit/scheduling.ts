@@ -4122,7 +4122,7 @@ function inviteDeliverySourceText(input: {
   recipientEmail: string;
   subject: string;
   deliveredUrl: string;
-  roomUrl: string;
+  roomUrl: string | null;
   customMessage: string | null;
   emailSent: boolean;
   providerMessageId: string | null;
@@ -4133,7 +4133,7 @@ function inviteDeliverySourceText(input: {
     `Recipient email: ${input.recipientEmail}`,
     `Subject: ${input.subject}`,
     `Delivered URL: ${input.deliveredUrl}`,
-    `Room URL: ${input.roomUrl}`,
+    `Room URL: ${input.roomUrl ?? 'none'}`,
     `Custom message: ${input.customMessage ?? 'none'}`,
     `Email sent: ${input.emailSent ? 'yes' : 'no'}`,
     `Provider message id: ${input.providerMessageId ?? 'none'}`,
@@ -4147,11 +4147,11 @@ async function persistScheduledInterviewInviteDeliveryContext(
     contactId: string;
     ownerId: string;
     interviewId: string;
-    meetingId: string;
+    meetingId: string | null;
     recipientEmail: string;
     subject: string;
     deliveredUrl: string;
-    roomUrl: string;
+    roomUrl: string | null;
     customMessage: string | null;
     emailSent: boolean;
     providerMessageId: string | null;
@@ -4250,11 +4250,13 @@ async function persistScheduledInterviewInviteDeliveryContext(
         entityId: input.interviewId,
         relationship: 'source_event',
       },
-      {
-        entityType: 'meeting',
-        entityId: input.meetingId,
-        relationship: 'delivery_link_target',
-      },
+      ...(input.meetingId
+        ? [{
+            entityType: 'meeting',
+            entityId: input.meetingId,
+            relationship: 'delivery_link_target',
+          }]
+        : []),
       {
         entityType: 'contact',
         entityId: input.contactId,
@@ -6265,14 +6267,25 @@ schedulingAuth.post('/interviews/:id/invite', async (c) => {
 
   if (!interview) return apiError(c, 'NOT_FOUND', 'Interview not found.');
 
-  const roomLinks = await ensureScheduledInterviewRoomLinks(
-    db,
-    userId,
-    c.env,
-    interview,
-    email,
-  );
-  const meetingUrl = roomLinks.guestUrl;
+  const needsAssessmentLink = isWorkspaceAssessmentInterviewType(interview.interview_type);
+  const inviteRecipientName = (
+    interview.candidate_name
+    ?? interview.recipient_name
+    ?? email.split('@')[0]
+    ?? 'Candidate'
+  ).trim();
+  const roomLinks = needsAssessmentLink
+    ? null
+    : await ensureScheduledInterviewRoomLinks(
+        db,
+        userId,
+        c.env,
+        interview,
+        email,
+      );
+  const contactId = roomLinks?.contactId
+    ?? await ensureRecipientContact(db, userId, { name: inviteRecipientName, email });
+  const meetingUrl = roomLinks?.guestUrl ?? null;
   const recipientNameForScheduling = interview.candidate_name
     ?? interview.recipient_name
     ?? null;
@@ -6294,17 +6307,12 @@ schedulingAuth.post('/interviews/:id/invite', async (c) => {
   // For workspace-backed assessments, ensure a standalone
   // candidate exists so the email includes an assessment link that authenticates
   // the candidate and routes them to the code review / dev container challenge.
-  const needsAssessmentLink = isWorkspaceAssessmentInterviewType(interview.interview_type);
   let assessUrl: string | null = null;
   if (needsAssessmentLink && !interview.candidate_id) {
-    const recipientName = interview.candidate_name
-      ?? interview.recipient_name
-      ?? email.split('@')[0]
-      ?? 'Candidate';
     const { inviteToken } = await ensureStandaloneCandidateForInterview(
       db,
       userId,
-      { name: recipientName, email },
+      { name: inviteRecipientName, email },
       interview.id,
     );
     const baseUrl = c.env.APP_BASE_URL ?? 'https://pipe.build';
@@ -6332,6 +6340,9 @@ schedulingAuth.post('/interviews/:id/invite', async (c) => {
   // exist on the row from earlier flows.
   const effectiveSchedulingInviteUrl = needsAssessmentLink ? null : schedulingInviteUrl;
   const deliveredUrl = assessUrl ?? effectiveSchedulingInviteUrl ?? meetingUrl;
+  if (!deliveredUrl) {
+    return apiError(c, 'INTERNAL_ERROR', 'Could not create an invite link for this interview.');
+  }
   const inviteVerb = needsAssessmentLink ? 'start your assessment' : effectiveSchedulingInviteUrl ? 'schedule an interview' : 'join a video call';
   const inviteCta = needsAssessmentLink ? 'START ASSESSMENT' : effectiveSchedulingInviteUrl ? 'SCHEDULE INTERVIEW' : 'JOIN VIDEO CALL';
   const linkLabel = effectiveSchedulingInviteUrl ? 'Scheduling link' : 'Link';
@@ -6407,10 +6418,10 @@ schedulingAuth.post('/interviews/:id/invite', async (c) => {
       .bind(now, now, id)
       .run();
     await persistScheduledInterviewInviteDeliveryContext(db, {
-      contactId: roomLinks.contactId,
+      contactId,
       ownerId: userId,
       interviewId: id,
-      meetingId: roomLinks.meetingId,
+      meetingId: roomLinks?.meetingId ?? null,
       recipientEmail: email.trim().toLowerCase(),
       subject,
       deliveredUrl,
@@ -6426,13 +6437,15 @@ schedulingAuth.post('/interviews/:id/invite', async (c) => {
       meetingUrl,
       schedulingUrl: effectiveSchedulingInviteUrl,
       deliveredUrl,
-      room: {
-        id: roomLinks.roomId,
-        sessionId: roomLinks.sessionId,
-        hostUrl: roomLinks.hostUrl,
-        guestUrl: roomLinks.guestUrl,
-        expiresAt: roomLinks.expiresAt,
-      },
+      room: roomLinks
+        ? {
+            id: roomLinks.roomId,
+            sessionId: roomLinks.sessionId,
+            hostUrl: roomLinks.hostUrl,
+            guestUrl: roomLinks.guestUrl,
+            expiresAt: roomLinks.expiresAt,
+          }
+        : null,
     });
   }
 
@@ -6455,10 +6468,10 @@ schedulingAuth.post('/interviews/:id/invite', async (c) => {
       .bind(now, now, id)
       .run();
     await persistScheduledInterviewInviteDeliveryContext(db, {
-      contactId: roomLinks.contactId,
+      contactId,
       ownerId: userId,
       interviewId: id,
-      meetingId: roomLinks.meetingId,
+      meetingId: roomLinks?.meetingId ?? null,
       recipientEmail: email.trim().toLowerCase(),
       subject,
       deliveredUrl,
@@ -6475,13 +6488,15 @@ schedulingAuth.post('/interviews/:id/invite', async (c) => {
       meetingUrl,
       schedulingUrl: effectiveSchedulingInviteUrl,
       deliveredUrl,
-      room: {
-        id: roomLinks.roomId,
-        sessionId: roomLinks.sessionId,
-        hostUrl: roomLinks.hostUrl,
-        guestUrl: roomLinks.guestUrl,
-        expiresAt: roomLinks.expiresAt,
-      },
+      room: roomLinks
+        ? {
+            id: roomLinks.roomId,
+            sessionId: roomLinks.sessionId,
+            hostUrl: roomLinks.hostUrl,
+            guestUrl: roomLinks.guestUrl,
+            expiresAt: roomLinks.expiresAt,
+          }
+        : null,
     });
   }
 
@@ -6495,10 +6510,10 @@ schedulingAuth.post('/interviews/:id/invite', async (c) => {
       .bind(now, now, id)
       .run();
     await persistScheduledInterviewInviteDeliveryContext(db, {
-      contactId: roomLinks.contactId,
+      contactId,
       ownerId: userId,
       interviewId: id,
-      meetingId: roomLinks.meetingId,
+      meetingId: roomLinks?.meetingId ?? null,
       recipientEmail: email.trim().toLowerCase(),
       subject,
       deliveredUrl,
@@ -6514,13 +6529,15 @@ schedulingAuth.post('/interviews/:id/invite', async (c) => {
       meetingUrl,
       schedulingUrl: effectiveSchedulingInviteUrl,
       deliveredUrl,
-      room: {
-        id: roomLinks.roomId,
-        sessionId: roomLinks.sessionId,
-        hostUrl: roomLinks.hostUrl,
-        guestUrl: roomLinks.guestUrl,
-        expiresAt: roomLinks.expiresAt,
-      },
+      room: roomLinks
+        ? {
+            id: roomLinks.roomId,
+            sessionId: roomLinks.sessionId,
+            hostUrl: roomLinks.hostUrl,
+            guestUrl: roomLinks.guestUrl,
+            expiresAt: roomLinks.expiresAt,
+          }
+        : null,
     });
   }
 
@@ -6537,10 +6554,10 @@ schedulingAuth.post('/interviews/:id/invite', async (c) => {
   }
 
   await persistScheduledInterviewInviteDeliveryContext(db, {
-    contactId: roomLinks.contactId,
+    contactId,
     ownerId: userId,
     interviewId: id,
-    meetingId: roomLinks.meetingId,
+    meetingId: roomLinks?.meetingId ?? null,
     recipientEmail: email.trim().toLowerCase(),
     subject,
     deliveredUrl,
@@ -6558,13 +6575,15 @@ schedulingAuth.post('/interviews/:id/invite', async (c) => {
     schedulingUrl: effectiveSchedulingInviteUrl,
     deliveredUrl,
     provider: result.provider,
-    room: {
-      id: roomLinks.roomId,
-      sessionId: roomLinks.sessionId,
-      hostUrl: roomLinks.hostUrl,
-      guestUrl: roomLinks.guestUrl,
-      expiresAt: roomLinks.expiresAt,
-    },
+    room: roomLinks
+      ? {
+          id: roomLinks.roomId,
+          sessionId: roomLinks.sessionId,
+          hostUrl: roomLinks.hostUrl,
+          guestUrl: roomLinks.guestUrl,
+          expiresAt: roomLinks.expiresAt,
+        }
+      : null,
   });
 });
 

@@ -19,6 +19,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Fixed — CODE_REVIEW assessment runtime
 
+- CODE_REVIEW and workspace-backed assessment invites now deliver `/assess` links without provisioning video rooms first, keeping assessment runtime separate from meeting surfaces and preventing room setup failures from blocking candidate handoff.
 - CODE_REVIEW progress and scoring now require a complete challenge packet contract — repo URL, base commit SHA, task, success criteria, and expected evidence — before treating a task as ready or scoreable.
 - Source-backed assessment evaluation now normalizes missing or unsupported AI recommendation strings to a safe human-review recommendation, records a diagnostic, and prevents recruiter pages from rendering arbitrary model text as hiring advice.
 - Person profile assessment validity copy now explicitly calls selected-interview workspace assessments source-backed signals, preserving the boundary between evidence and hiring decisions.

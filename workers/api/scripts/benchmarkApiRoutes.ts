@@ -13,6 +13,8 @@ interface CliOptions {
   includeExternal: boolean;
   includeMutations: boolean;
   coverageReport: boolean;
+  coverageOnly: boolean;
+  coverageLimit: number;
   contacts: number;
   pipelines: number;
   repos: number;
@@ -57,6 +59,12 @@ interface SourceRoute {
   source: string;
 }
 
+interface CoverageReport {
+  discovered: number;
+  covered: number;
+  uncovered: number;
+}
+
 const DEFAULT_OPTIONS: CliOptions = {
   baseUrl: 'http://localhost:8787',
   samples: 7,
@@ -66,6 +74,8 @@ const DEFAULT_OPTIONS: CliOptions = {
   includeExternal: false,
   includeMutations: false,
   coverageReport: true,
+  coverageOnly: false,
+  coverageLimit: 25,
   contacts: 200_000,
   pipelines: 1_200,
   repos: 5_000,
@@ -83,11 +93,16 @@ const ROUTES: RouteSpec[] = [
   { name: 'pipeline overview', method: 'GET', path: '/api/v1/pipelines/bench-pipeline-1/overview', expectedStatuses: [200] },
   { name: 'pipeline ingestion list', method: 'GET', path: '/api/v1/pipelines/bench-pipeline-1/ingestion', expectedStatuses: [200] },
   { name: 'pipeline ingestion feedback list', method: 'GET', path: '/api/v1/pipelines/bench-pipeline-1/ingestion/bench-candidate-8/feedback', expectedStatuses: [200] },
+  { name: 'pipeline delete missing', method: 'DELETE', path: '/api/v1/pipelines/missing-pipeline', expectedStatuses: [404], mutation: true },
   { name: 'contacts list default', method: 'GET', path: '/api/v1/contacts', expectedStatuses: [200] },
   { name: 'contacts list page 2', method: 'GET', path: '/api/v1/contacts?page=2&limit=100', expectedStatuses: [200] },
   { name: 'meetings list', method: 'GET', path: '/api/v1/meetings', expectedStatuses: [200] },
   { name: 'meeting room context summary missing', method: 'GET', path: '/api/v1/meeting-rooms/missing-token/context-summary', expectedStatuses: [404] },
   { name: 'meeting room context graph missing', method: 'GET', path: '/api/v1/meeting-rooms/missing-token/context-graph', expectedStatuses: [404] },
+  { name: 'meeting room assessment progress missing', method: 'GET', path: '/api/v1/meeting-rooms/missing-token/assessment/progress', expectedStatuses: [404] },
+  { name: 'meeting room turn credentials missing', method: 'GET', path: '/api/v1/meeting-rooms/missing-token/turn-credentials', expectedStatuses: [404] },
+  { name: 'meeting room workspace missing', method: 'GET', path: '/api/v1/meeting-rooms/missing-token/workspace', expectedStatuses: [404] },
+  { name: 'meeting room websocket missing', method: 'GET', path: '/api/v1/meeting-rooms/missing-token/ws', expectedStatuses: [404] },
   { name: 'admin repos pending', method: 'GET', path: '/api/v1/admin/repos?status=pending&limit=50', expectedStatuses: [200] },
   { name: 'admin repos all 500', method: 'GET', path: '/api/v1/admin/repos?status=all&limit=500', expectedStatuses: [200] },
   { name: 'admin repos lookup existing', method: 'GET', path: '/api/v1/admin/repos/lookup?repoUrl=https%3A%2F%2Fgithub.com%2Fbench%2Frepo-0&suitability=any&minPass=1', expectedStatuses: [200] },
@@ -98,9 +113,11 @@ const ROUTES: RouteSpec[] = [
   { name: 'repo discovery job missing', method: 'GET', path: '/api/v1/repos/jobs/missing-job', expectedStatuses: [404] },
   { name: 'repo discovery detail missing', method: 'GET', path: '/api/v1/repos/missing-repo', expectedStatuses: [404] },
   { name: 'repo discovery by skills disabled', method: 'POST', path: '/api/v1/repos/discover-by-skills', expectedStatuses: [410] },
+  { name: 'github pulls validation', method: 'GET', path: '/api/v1/github/pulls', expectedStatuses: [422] },
   { name: 'agent session empty', method: 'GET', path: '/api/v1/agent/session?pipelineId=bench-pipeline-1', expectedStatuses: [200] },
   { name: 'email connection', method: 'GET', path: '/api/v1/email/connection', expectedStatuses: [200] },
   { name: 'scheduling connection', method: 'GET', path: '/api/v1/scheduling/connection', expectedStatuses: [200] },
+  { name: 'scheduling connection event types missing', method: 'GET', path: '/api/v1/scheduling/connection/missing-connection/event-types', expectedStatuses: [404] },
   { name: 'scheduling event types missing connection', method: 'GET', path: '/api/v1/scheduling/event-types', expectedStatuses: [404] },
   { name: 'scheduling interviews list', method: 'GET', path: '/api/v1/scheduling/interviews', expectedStatuses: [200] },
   { name: 'scheduling interview detail missing', method: 'GET', path: '/api/v1/scheduling/interviews/missing-interview', expectedStatuses: [404] },
@@ -108,6 +125,9 @@ const ROUTES: RouteSpec[] = [
   { name: 'scheduling events snapshot', method: 'GET', path: '/api/v1/scheduling/events', expectedStatuses: [200] },
   { name: 'phone connection', method: 'GET', path: '/api/v1/phone/connection', expectedStatuses: [200] },
   { name: 'phone calls list', method: 'GET', path: '/api/v1/phone/calls?candidateId=bench-candidate-1', expectedStatuses: [200] },
+  { name: 'phone call metadata missing', method: 'GET', path: '/api/v1/phone/calls/missing-call/metadata', expectedStatuses: [404] },
+  { name: 'phone call recording missing', method: 'GET', path: '/api/v1/phone/calls/missing-call/recording', expectedStatuses: [404] },
+  { name: 'phone call transcription missing', method: 'GET', path: '/api/v1/phone/calls/missing-call/transcription', expectedStatuses: [404] },
   { name: 'culture cost dashboard', method: 'GET', path: '/api/v1/screening/culture/cost-dashboard', expectedStatuses: [200] },
   { name: 'culture report missing', method: 'GET', path: '/api/v1/screening/culture/sessions/missing-session/report', expectedStatuses: [404] },
   { name: 'review judge examples', method: 'GET', path: '/api/v1/review-sessions/judge-examples', expectedStatuses: [200] },
@@ -133,6 +153,9 @@ const ROUTES: RouteSpec[] = [
     expectedStatuses: [200],
   },
   { name: 'candidate ingestion status', method: 'GET', path: '/api/v1/candidates/bench-candidate-1/ingestion-status', expectedStatuses: [200] },
+  { name: 'candidate living full', method: 'GET', path: '/api/v1/candidates/bench-candidate-1/living-context', expectedStatuses: [200] },
+  { name: 'candidate media validation', method: 'GET', path: '/api/v1/candidates/bench-candidate-1/media', expectedStatuses: [422] },
+  { name: 'candidate resume missing', method: 'GET', path: '/api/v1/candidates/bench-candidate-1/resume', expectedStatuses: [404] },
   { name: 'meeting room missing', method: 'GET', path: '/api/v1/meeting-rooms/missing-token', expectedStatuses: [404] },
   { name: 'rollout gate', method: 'GET', path: '/api/v1/internal/rollout-gate', expectedStatuses: [200] },
   { name: 'rollout gate gates', method: 'GET', path: '/api/v1/internal/rollout-gate/gates', expectedStatuses: [200] },
@@ -145,6 +168,12 @@ const ROUTES: RouteSpec[] = [
   { name: 'concept graph overview', method: 'GET', path: '/api/v1/internal/concept-graph?limit=20', expectedStatuses: [200] },
   { name: 'internal evidence readiness', method: 'GET', path: '/api/v1/internal/evidence-readiness?candidateId=bench-candidate-1', expectedStatuses: [200] },
   { name: 'internal evidence conflicts', method: 'GET', path: '/api/v1/internal/evidence-conflicts?candidateId=bench-candidate-1', expectedStatuses: [200] },
+  { name: 'internal candidate aggregated evidence', method: 'GET', path: '/api/v1/internal/candidate-aggregated-evidence?candidateId=bench-candidate-1', expectedStatuses: [200] },
+  { name: 'internal candidate evidence freshness', method: 'GET', path: '/api/v1/internal/candidate-evidence-freshness?candidateId=bench-candidate-1', expectedStatuses: [200] },
+  { name: 'internal evidence lineage', method: 'GET', path: '/api/v1/internal/evidence-lineage?candidateId=bench-candidate-1&limit=20', expectedStatuses: [200] },
+  { name: 'internal concept adjacency validation', method: 'GET', path: '/api/v1/internal/concept-adjacency-temporal', expectedStatuses: [400] },
+  { name: 'internal evidence gap validation', method: 'GET', path: '/api/v1/internal/evidence-gap-analysis?candidateId=bench-candidate-1', expectedStatuses: [400] },
+  { name: 'internal match provenance validation', method: 'GET', path: '/api/v1/internal/match-provenance-chain', expectedStatuses: [400] },
   {
     name: 'search repos query',
     method: 'POST',
@@ -167,8 +196,11 @@ const ROUTES: RouteSpec[] = [
     expectedStatuses: [200],
   },
   { name: 'stage detail with challenges', method: 'GET', path: '/api/v1/stages/bench-stage-1', expectedStatuses: [200] },
+  { name: 'stage delete missing', method: 'DELETE', path: '/api/v1/stages/missing-stage', expectedStatuses: [404], mutation: true },
   { name: 'challenge detail', method: 'GET', path: '/api/v1/challenges/bench-challenge-1', expectedStatuses: [200] },
+  { name: 'challenge delete missing', method: 'DELETE', path: '/api/v1/challenges/missing-challenge', expectedStatuses: [404], mutation: true },
   { name: 'candidate detail nested', method: 'GET', path: '/api/v1/candidates/bench-candidate-1', expectedStatuses: [200] },
+  { name: 'candidate delete missing', method: 'DELETE', path: '/api/v1/candidates/missing-candidate', expectedStatuses: [404], mutation: true },
   { name: 'candidate assignments empty', method: 'GET', path: '/api/v1/candidates/bench-candidate-1/assignments', expectedStatuses: [200] },
   { name: 'candidate living search', method: 'GET', path: '/api/v1/candidates/bench-candidate-1/living-context/search?q=typescript', expectedStatuses: [200] },
   { name: 'candidate living timeline', method: 'GET', path: '/api/v1/candidates/bench-candidate-1/living-context/timeline?limit=20', expectedStatuses: [200] },
@@ -185,6 +217,7 @@ const ROUTES: RouteSpec[] = [
     expectedStatuses: [200],
   },
   { name: 'contact detail', method: 'GET', path: '/api/v1/contacts/bench-contact-1', expectedStatuses: [200] },
+  { name: 'contact delete missing', method: 'DELETE', path: '/api/v1/contacts/missing-contact', expectedStatuses: [404], mutation: true },
   { name: 'contact living summary', method: 'GET', path: '/api/v1/contacts/bench-contact-1/living-context/summary', expectedStatuses: [200] },
   { name: 'contact living full', method: 'GET', path: '/api/v1/contacts/bench-contact-1/living-context', expectedStatuses: [200] },
   { name: 'contact living search', method: 'GET', path: '/api/v1/contacts/bench-contact-1/living-context/search?q=benchmark', expectedStatuses: [200] },
@@ -293,6 +326,15 @@ function parseArgs(argv: string[]): CliOptions {
       case '--include-mutations':
         options.includeMutations = true;
         break;
+      case '--coverage-only':
+        options.coverageOnly = true;
+        options.coverageReport = true;
+        break;
+      case '--coverage-limit':
+        if (!next) throw new Error('--coverage-limit requires a value');
+        options.coverageLimit = parseNonNegativeInt(next, options.coverageLimit);
+        i += 1;
+        break;
       case '--no-coverage-report':
         options.coverageReport = false;
         break;
@@ -311,6 +353,11 @@ function parsePositiveInt(raw: string, fallback: number): number {
   return Number.isFinite(parsed) && parsed > 0 ? parsed : fallback;
 }
 
+function parseNonNegativeInt(raw: string, fallback: number): number {
+  const parsed = Number.parseInt(raw, 10);
+  return Number.isFinite(parsed) && parsed >= 0 ? parsed : fallback;
+}
+
 function printHelp(): void {
   console.log(`Usage: npm run bench:routes -- [options]
 
@@ -319,6 +366,8 @@ Options:
   --seed-local           Seed the local Miniflare D1 database with benchmark rows
   --include-external     Include routes that call external providers / remote bindings
   --include-mutations    Include valid mutation routes such as simple JD creation
+  --coverage-only        Print source route inventory coverage and exit
+  --coverage-limit <n>   Uncovered source routes to print, 0 for all (default: 25)
   --no-coverage-report   Skip source route inventory coverage output
   --samples <n>          Timed samples per route after one warmup (default: 7)
   --threshold-ms <n>     Fail when any route sample reaches this latency (default: 5000)
@@ -504,7 +553,7 @@ function matchSourceRoute(spec: RouteSpec, sourceRoutes: SourceRoute[]): SourceR
   return candidates[0] ?? null;
 }
 
-function printCoverageReport(baseDir: string, routes: RouteSpec[]): void {
+function printCoverageReport(baseDir: string, routes: RouteSpec[], limit: number): CoverageReport {
   const sourceRoutes = discoverSourceRoutes(baseDir);
   const covered = new Set<string>();
 
@@ -516,11 +565,18 @@ function printCoverageReport(baseDir: string, routes: RouteSpec[]): void {
 
   const uncovered = sourceRoutes.filter((route) => !covered.has(`${route.method} ${route.path} ${route.source}`));
   console.log(`[bench:routes] source route coverage: ${covered.size}/${sourceRoutes.length} discovered handlers matched by ${routes.length} benchmark specs.`);
-  if (uncovered.length === 0) return;
-  console.log('[bench:routes] uncovered source routes (first 25):');
-  for (const route of uncovered.slice(0, 25)) {
+  if (uncovered.length === 0) {
+    return { discovered: sourceRoutes.length, covered: covered.size, uncovered: 0 };
+  }
+
+  const printed = limit === 0 ? uncovered : uncovered.slice(0, limit);
+  const label = limit === 0 ? 'all' : `first ${printed.length}`;
+  console.log(`[bench:routes] uncovered source routes (${label} of ${uncovered.length}):`);
+  for (const route of printed) {
     console.log(`  - ${route.method} ${route.path} (${route.source})`);
   }
+
+  return { discovered: sourceRoutes.length, covered: covered.size, uncovered: uncovered.length };
 }
 
 function readDevBypassUserId(baseDir: string): string {
@@ -860,14 +916,14 @@ async function benchmarkRoute(options: CliOptions, route: RouteSpec): Promise<Ro
 
 async function main(): Promise<void> {
   const options = parseArgs(process.argv.slice(2));
-  if (options.seedLocal) seedLocalDatabase(options);
-
   const routes = ROUTES.filter((route) => {
     if (route.external && !options.includeExternal) return false;
     if (route.mutation && !options.includeMutations) return false;
     return true;
   });
-  if (options.coverageReport) printCoverageReport(workerDir(), routes);
+  if (options.coverageReport) printCoverageReport(workerDir(), routes, options.coverageLimit);
+  if (options.coverageOnly) return;
+  if (options.seedLocal) seedLocalDatabase(options);
 
   const summaries: RouteSummary[] = [];
   for (const route of routes) {

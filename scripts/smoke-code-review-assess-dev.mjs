@@ -467,10 +467,12 @@ async function createCodeReviewInvite() {
     !canonicalUrl(deliveredUrl)?.includes('/room/'),
     `CODE_REVIEW delivered URL must not be a room URL: ${cleanUrl(deliveredUrl)}`,
   );
-  assert(
-    canonicalUrl(deliveredUrl) !== canonicalUrl(invited?.room?.guestUrl),
-    'CODE_REVIEW deliveredUrl must be distinct from the generated guest room URL.',
-  );
+  if (invited?.room?.guestUrl) {
+    assert(
+      canonicalUrl(deliveredUrl) !== canonicalUrl(invited.room.guestUrl),
+      'CODE_REVIEW deliveredUrl must be distinct from the generated guest room URL.',
+    );
+  }
 
   return { interviewId, recipientEmail, recipientName, deliveredUrl, inviteToken, invited };
 }

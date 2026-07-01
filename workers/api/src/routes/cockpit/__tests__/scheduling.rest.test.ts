@@ -5513,15 +5513,9 @@ describe('GET /interviews/:id detail', () => {
     const inviteBody = await inviteResponse.json() as {
       success: boolean;
       emailSent: boolean;
-      meetingUrl: string;
+      meetingUrl: string | null;
       deliveredUrl: string;
-      room: {
-        id: string;
-        sessionId: string;
-        hostUrl: string;
-        guestUrl: string;
-        expiresAt: string;
-      };
+      room: null;
     };
     expect(inviteBody).toMatchObject({
       success: true,
@@ -5530,15 +5524,8 @@ describe('GET /interviews/:id detail', () => {
     expect(inviteBody.deliveredUrl).toMatch(/^http:\/\/localhost:5173\/assess\/.+/);
     expect(inviteBody.deliveredUrl).not.toContain('/room/');
     expect(inviteBody.deliveredUrl).not.toContain('/video/');
-    expect(inviteBody.meetingUrl).toMatch(/^http:\/\/localhost:5175\/room\/.+/);
-    expect(inviteBody.room).toMatchObject({
-      id: expect.any(String),
-      sessionId: expect.any(String),
-      hostUrl: expect.stringMatching(/^http:\/\/localhost:5175\/room\/.+/),
-      guestUrl: inviteBody.meetingUrl,
-      expiresAt: expect.any(String),
-    });
-    expect(inviteBody.room.hostUrl).not.toBe(inviteBody.room.guestUrl);
+    expect(inviteBody.meetingUrl).toBeNull();
+    expect(inviteBody.room).toBeNull();
 
     const scheduledRow = sqlite!.prepare(
       `SELECT interview_type, meeting_url, invite_link_sent_at, email_sent_at
@@ -5551,16 +5538,15 @@ describe('GET /interviews/:id detail', () => {
       email_sent_at: string | null;
     };
     expect(scheduledRow.interview_type).toBe('CODE_REVIEW');
-    expect(scheduledRow.meeting_url).toBe(inviteBody.meetingUrl);
+    expect(scheduledRow.meeting_url).toBeNull();
     expect(scheduledRow.invite_link_sent_at).toEqual(expect.any(String));
     expect(scheduledRow.email_sent_at).toBeNull();
 
     expect(sqlite!.prepare(
       `SELECT COUNT(*) AS count
          FROM meetings
-        WHERE scheduled_interview_id = ?
-          AND meeting_url = ?`,
-    ).get(created.interview.id, inviteBody.meetingUrl)).toEqual({ count: 1 });
+        WHERE scheduled_interview_id = ?`,
+    ).get(created.interview.id)).toEqual({ count: 0 });
     expect(sqlite!.prepare(
       `SELECT COUNT(*) AS count
          FROM meeting_room_tokens mrt
@@ -5569,7 +5555,7 @@ describe('GET /interviews/:id detail', () => {
         WHERE m.scheduled_interview_id = ?
           AND mrt.role = 'GUEST'
           AND mrt.revoked_at IS NULL`,
-    ).get(created.interview.id)).toEqual({ count: 1 });
+    ).get(created.interview.id)).toEqual({ count: 0 });
 
     const graphRows = sqlite!.prepare(
       `SELECT cr.record_type,
@@ -5613,7 +5599,7 @@ describe('GET /interviews/:id detail', () => {
       'Recipient email: barbara@example.com',
       expect.stringMatching(/^Subject: Assessment invitation — Interview \(.+\)$/),
       `Delivered URL: ${inviteBody.deliveredUrl}`,
-      `Room URL: ${inviteBody.meetingUrl}`,
+      'Room URL: none',
       'Custom message: Please join prepared code review discussion.',
       'Email sent: no',
       'Provider message id: none',
@@ -5909,7 +5895,7 @@ describe('GET /interviews/:id detail', () => {
     const inviteBody = await inviteResponse.json() as {
       success: boolean;
       emailSent: boolean;
-      meetingUrl: string;
+      meetingUrl: string | null;
       schedulingUrl: string | null;
       deliveredUrl: string;
     };
@@ -5922,7 +5908,7 @@ describe('GET /interviews/:id detail', () => {
     expect(inviteBody.deliveredUrl).toMatch(/^http:\/\/localhost:5173\/assess\/.+/);
     expect(inviteBody.deliveredUrl).not.toBe(schedulingUrl);
     expect(inviteBody.deliveredUrl).not.toContain('/room/');
-    expect(inviteBody.meetingUrl).toMatch(/^http:\/\/localhost:5175\/room\/.+/);
+    expect(inviteBody.meetingUrl).toBeNull();
 
     const scheduledRow = sqlite!.prepare(
       `SELECT meeting_url, scheduling_provider, scheduling_url
@@ -5934,7 +5920,7 @@ describe('GET /interviews/:id detail', () => {
       scheduling_url: string | null;
     };
     expect(scheduledRow).toMatchObject({
-      meeting_url: inviteBody.meetingUrl,
+      meeting_url: null,
       scheduling_provider: 'CALENDLY',
       scheduling_url: schedulingUrl,
     });
@@ -5954,7 +5940,7 @@ describe('GET /interviews/:id detail', () => {
       'Recipient email: frances@example.com',
       'Subject: Assessment invitation — Interview',
       `Delivered URL: ${inviteBody.deliveredUrl}`,
-      `Room URL: ${inviteBody.meetingUrl}`,
+      'Room URL: none',
       'Email sent: no',
       'Provider message id: none',
     ]));
@@ -7142,6 +7128,107 @@ describe('POST /interviews dev-container challenge (HAS-80)', () => {
     });
   });
 
+  it('sends a CODE_REVIEW assessment link without requiring a video room destination', async () => {
+    seedDevContainerFixture();
+    const app = mountSchedulingApp({
+      APP_BASE_URL: 'https://app-dev.hire-pipe.com',
+      ENV: 'dev',
+      DEV_BASIC_AUTH_USER: 'pipetest',
+      DEV_BASIC_AUTH_PASSWORD: 'pipetest123',
+    } as Partial<Env>);
+
+    const createdResponse = await app.request('/interviews', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({
+        recipientName: 'Code Review Smoke',
+        recipientEmail: 'code-review-smoke@example.com',
+        meetingType: 'DIRECT_VIDEO_CALL',
+        interviewType: 'CODE_REVIEW',
+      }),
+    });
+    expect(createdResponse.status).toBe(201);
+    const created = await createdResponse.json() as {
+      interview: {
+        id: string;
+        interviewType: string;
+        candidateId: string | null;
+        assessmentSetup: {
+          status: string;
+          nextAction: string;
+        };
+      };
+    };
+    expect(created.interview).toMatchObject({
+      interviewType: 'CODE_REVIEW',
+      candidateId: null,
+      assessmentSetup: {
+        status: 'waiting_for_candidate_evidence',
+        nextAction: 'COLLECT_CANDIDATE_EVIDENCE',
+      },
+    });
+
+    const inviteResponse = await app.request(`/interviews/${created.interview.id}/invite`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({
+        email: 'code-review-smoke@example.com',
+        sendEmail: false,
+        message: 'Automated smoke for the async CODE_REVIEW assess-link path.',
+      }),
+    });
+    expect(inviteResponse.status).toBe(200);
+    const invited = await inviteResponse.json() as {
+      success: boolean;
+      emailSent: boolean;
+      deliveredUrl: string;
+      meetingUrl: string | null;
+      room: null;
+    };
+    expect(invited).toMatchObject({
+      success: true,
+      emailSent: false,
+    });
+    expect(invited.deliveredUrl).toContain('/assess/');
+    expect(invited.deliveredUrl).toContain('pipetest:pipetest123@app-dev.hire-pipe.com');
+    expect(invited.deliveredUrl).not.toContain('/room/');
+    expect(invited.meetingUrl).toBeNull();
+    expect(invited.room).toBeNull();
+
+    const row = sqlite!.prepare(
+      `SELECT c.invite_token, c.status, si.candidate_id, si.invite_link_sent_at
+         FROM scheduled_interviews si
+         JOIN candidates c ON c.id = si.candidate_id
+        WHERE si.id = ?`,
+    ).get(created.interview.id) as {
+      invite_token: string;
+      status: string;
+      candidate_id: string;
+      invite_link_sent_at: string | null;
+    } | undefined;
+    expect(row?.status).toBe('INVITED');
+    expect(row?.invite_token).not.toMatch(/^CLAIMED::/);
+    expect(row?.candidate_id).toBeTruthy();
+    expect(row?.invite_link_sent_at).toBeTruthy();
+
+    const deliveryContext = sqlite!.prepare(
+      `SELECT cr.narrative, cr.qualifiers_json, ss.exact_text
+         FROM context_records cr
+         JOIN context_record_source_spans crss ON crss.context_record_id = cr.id
+         JOIN source_spans ss ON ss.id = crss.source_span_id
+        WHERE cr.record_type = 'scheduled_interview_invite_delivery'
+        LIMIT 1`,
+    ).get() as { narrative: string; qualifiers_json: string; exact_text: string } | undefined;
+    expect(deliveryContext?.narrative).toContain('code-review-smoke@example.com');
+    expect(deliveryContext?.exact_text).toContain('Delivered URL: https://pipetest:pipetest123@app-dev.hire-pipe.com/assess/');
+    expect(deliveryContext?.exact_text).toContain('Room URL: none');
+    expect(deliveryContext?.exact_text).toContain('Email sent: no');
+    expect(JSON.parse(deliveryContext?.qualifiers_json ?? '{}')).toMatchObject({
+      scheduledInterviewId: created.interview.id,
+      emailSent: false,
+    });
+  });
+
   it('creates a person-first OPEN_SOURCE_BUG_FIX with explicit repo url + PR', async () => {
     seedDevContainerFixture();
     const app = mountSchedulingApp();
@@ -7775,7 +7862,7 @@ describe('POST /interviews dev-container challenge (HAS-80)', () => {
     const inviteBody = await inviteResponse.json() as {
       success: boolean;
       emailSent: boolean;
-      meetingUrl: string;
+      meetingUrl: string | null;
       deliveredUrl: string;
     };
 
@@ -7785,7 +7872,7 @@ describe('POST /interviews dev-container challenge (HAS-80)', () => {
     });
     expect(inviteBody.deliveredUrl).toMatch(/^http:\/\/localhost:5173\/assess\/.+/);
     expect(inviteBody.deliveredUrl).not.toContain('/room/');
-    expect(inviteBody.meetingUrl).toMatch(/^http:\/\/localhost:5175\/room\/.+/);
+    expect(inviteBody.meetingUrl).toBeNull();
 
     const row = sqlite!.prepare(
       `SELECT si.interview_type, si.candidate_id, si.github_repo_url, si.github_pr_number, c.invite_token
@@ -7928,7 +8015,7 @@ describe('POST /interviews dev-container challenge (HAS-80)', () => {
       applicationCount: number;
     };
     expect(graphCounts).toEqual({
-      meetingCount: 2,
+      meetingCount: 0,
       contextRecordCount: 4,
       applicationCount: 2,
     });
