@@ -49,7 +49,8 @@ second same-email CODE_REVIEW invite with no candidate submission. Recruiter
 browser proof must still show the interview as scoped to its own evidence, and
 the person profile must keep the current recommendation anchored to the completed
 scored review instead of blending the related unsubmitted assessment into the
-decision.
+decision. The unsubmitted related invite is allowed to appear as related context;
+it must not be counted as a completed/evidence-producing code-review result.
 
 Local validation on 2026-06-27 also proved the full-submit smoke no longer
 relies on the browser to create hidden assessment state. Ready-assignment
