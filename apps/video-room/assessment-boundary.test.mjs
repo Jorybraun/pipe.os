@@ -10,7 +10,7 @@ const scannedEntries = [
   'src',
 ];
 
-const encodedForbiddenPhrases = [
+const encodedRetiredExperiencePhrases = [
   [57, 53, 32, 117, 110, 116, 105, 108, 32, 105, 110, 102, 105, 110, 105, 116, 121],
   [57, 53, 32, 116, 111, 32, 105, 110, 102, 105, 110, 105, 116, 121],
   [57, 53, 32, 116, 105, 108, 32, 105, 110, 102, 105, 110, 105, 116, 121],
@@ -41,7 +41,7 @@ function regexFromPhrase(encodedPhrase) {
   return new RegExp(escapedPhrase.replace(/\s+/g, '[\\s_-]+'), 'i');
 }
 
-const forbiddenPatterns = encodedForbiddenPhrases.map(regexFromPhrase);
+const forbiddenPatterns = encodedRetiredExperiencePhrases.map(regexFromPhrase);
 
 function collectFiles(entry) {
   const absolutePath = join(root, entry);
@@ -50,8 +50,8 @@ function collectFiles(entry) {
   return readdirSync(absolutePath).flatMap((child) => collectFiles(join(entry, child)));
 }
 
-describe('video room product boundary', () => {
-  it('does not ship removed novelty-room surfaces', () => {
+describe('assessment room product boundary', () => {
+  it('ships only the core assessment room experience', () => {
     const violations = [];
     for (const entry of scannedEntries) {
       for (const file of collectFiles(entry)) {

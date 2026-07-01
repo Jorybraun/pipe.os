@@ -26,10 +26,11 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Fixed — CODE_REVIEW assessment runtime
 
+- Recruiter CODE_REVIEW detail smoke now rejects the stale “Do not advance from this signal yet” person-profile recommendation and accepts the assignment-fairness review wording instead, keeping deployed browser proof aligned with the current hiring-manager decision model.
 - The deployed CODE_REVIEW smoke now hard-fails blocked standalone handoffs that return candidate-visible `WAITING_FOR_MATCH`, preserving the `/assess` boundary by requiring the candidate-safe `PROFILE_RECEIVED` queued state instead.
 - Candidate `/assess` now preserves queued standalone CODE_REVIEW handoffs as a first-class “Profile received” state when the server returns `candidate-intake-queued`, keeping candidates out of the old matching dashboard and making it clear they are done until a source-backed review is assigned.
 - Person profiles now use the same assignment-fairness recommendation for weak graph-derived CODE_REVIEW scores as selected-interview CODE_REVIEW decisions, so hiring managers see a consistent “review fairness before rejecting” callout instead of a harsher unexplained stop signal.
-- Room-dev now ships the assessment-room shell metadata so stale novelty-room browser titles are replaced by the core PIPE assessment room identity.
+- Room-dev now ships PIPE assessment-room shell metadata, keeping browser titles anchored to the core assessment product.
 - Weak CODE_REVIEW scores now propagate to the person profile as assignment-fairness decisions even when the compact submission projection is absent, preventing scored interviews from telling hiring managers to wait for a review that already produced a score.
 - Recruiter interview detail now fails soft on optional living-context, related-evidence, linked-meeting, invite-link, progress, and score/match projections, so the core CODE_REVIEW decision surface does not sit on an indefinite spinner when an auxiliary app-dev read stalls.
 - CODE_REVIEW and workspace-backed assessment invites now deliver `/assess` links without provisioning video rooms first, keeping assessment runtime separate from meeting surfaces and preventing room setup failures from blocking candidate handoff.
@@ -75,8 +76,8 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 ### Removed — Assessment room simplification
 
 - Simplified layout tests and render callback naming so the room code stays focused on assessment work instead of alternate room modes.
-- Added a video-room residue regression test that blocks removed novelty-room language from returning to shipped room files.
-- Expanded the room residue regression guard to block alternate 95/infinity and mode spellings, including hyphenated variants.
+- Added an assessment-room boundary regression test that keeps retired novelty UI language out of shipped room files.
+- Expanded the assessment-room boundary guard to block retired brand and mode spellings.
 - Removed obsolete assessment-panel coordinate and ordering state from the video-room app.
 - Collapsed video-room evidence capture to the standard assessment room path, removing the stale alternate replay path.
 - Current room evidence is limited to the core assessment sources: video, chat, workspace, terminal, code-server/file events, recording, transcription, commit submissions, and the real AI assistant bridge.
@@ -89,7 +90,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - The video-room assessment shell now opens terminal and submission inside a focused assessment tools panel.
 - Removed abandoned action aliases from the real agent bridge.
 - The room now keeps focus on video, chat, workspace, terminal, Submit Work, recording, transcription, and the real AI assistant bridge.
-- Added a video-room regression guard that fails if removed novelty-room vocabulary returns to the shipped room source or public worker assets.
+- Added a video-room regression guard that fails if retired novelty UI vocabulary returns to the shipped room source or public worker assets.
 
 ### Added — Human assessment decisions
 
