@@ -7,7 +7,7 @@
  *   - the `code-server` container lifecycle via @cloudflare/containers
  *   - TTL warn-then-expire bisection via this.schedule() (Steps 10–11)
  *   - (Step 9) proxy passthrough to the container's :8080 for the code-server iframe
- *   - baked bridge/router support for AI assistant/Devin and code-server traffic
+ *   - baked bridge/router support for real agent and code-server traffic
  *
  * The DO is addressed by `sessionId` (idFromName). All internal routes use
  * the `/__*` prefix so they cannot collide with the proxy passthrough path
@@ -63,7 +63,7 @@ function buildEnvVars(payload: InitPayload): Record<string, string> {
 
 export class DevContainerDO extends Container<Env> {
   // The baked bridge/router owns the Cloudflare-facing port. It handles
-  // AI assistant/Devin endpoints directly and proxies everything else to code-server.
+  // Agent bridge endpoints directly and proxies everything else to code-server.
   defaultPort = 8080;
   requiredPorts = [8080];
 

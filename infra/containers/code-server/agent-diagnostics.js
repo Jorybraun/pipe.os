@@ -258,7 +258,7 @@ function agentPromptHandoffDiagnosticMessage({
   const baseMessage = agentDiagnosticMessage({
     agent: safeAgent,
     status,
-    message: `${safeAgent} ${promptLabel} ${delivered ? 'delivered' : 'was not delivered'} to ${targetLabel}.`,
+    message: `agent ${promptLabel} ${delivered ? 'delivered' : 'was not delivered'} to ${targetLabel}.`,
     diagnosticSource: safePromptType === 'context_primer'
       ? 'agent_context_primer_sent'
       : 'agent_prompt_sent',

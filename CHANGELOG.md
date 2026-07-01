@@ -107,6 +107,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Removed — Assessment room simplification
 
+- Reworded active agent evidence validators, diagnostics, comments, and tests around the neutral real agent bridge so current assessment surfaces no longer carry obsolete assistant-themed product language.
 - Expanded the assessment-room boundary guard across product source, docs, e2e tests, and scripts so the product stays focused on source-backed coding assessments.
 - Removed the browser-controlled AI helper launch path from the assessment room and invite form; workspace launches now stay focused on repo, terminal, code-server, chat, recording, transcript, commit, and submission evidence.
 - Simplified layout tests and render callback naming so the room code stays focused on assessment work instead of alternate room modes.

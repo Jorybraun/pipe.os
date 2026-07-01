@@ -858,7 +858,7 @@ describe('VideoRoom Durable Object signaling lifecycle', () => {
     expect(storage.has('agentPromptActivityLog')).toBe(false);
   });
 
-  it('broadcasts and records source-backed AI assistant/Devin interaction events', async () => {
+  it('broadcasts and records source-backed real agent interaction events', async () => {
     const host = new FakeSocket();
     const guest = new FakeSocket();
     const { state, storage } = makeState([
@@ -1049,7 +1049,7 @@ describe('VideoRoom Durable Object signaling lifecycle', () => {
     ]);
   });
 
-  it('redacts AI assistant/Devin status diagnostics before broadcast and storage', async () => {
+  it('redacts real agent bridge status diagnostics before broadcast and storage', async () => {
     const host = new FakeSocket();
     const guest = new FakeSocket();
     const { state, storage } = makeState([
@@ -1120,7 +1120,7 @@ describe('VideoRoom Durable Object signaling lifecycle', () => {
     expect(JSON.stringify(log)).not.toContain('ghp_bbbbbbbb');
   });
 
-  it('rejects AI assistant/Devin interaction events without source evidence', async () => {
+  it('rejects real agent interaction events without source evidence', async () => {
     const host = new FakeSocket();
     const guest = new FakeSocket();
     const { state, storage } = makeState([
@@ -1155,7 +1155,7 @@ describe('VideoRoom Durable Object signaling lifecycle', () => {
     expect(storage.has('agentInteractionActivityLog')).toBe(false);
   });
 
-  it('rejects AI assistant/Devin agent output with malformed browser prompt refs', async () => {
+  it('rejects real agent output with malformed browser prompt refs', async () => {
     const host = new FakeSocket();
     const guest = new FakeSocket();
     const { state, storage } = makeState([
@@ -1305,7 +1305,7 @@ describe('VideoRoom Durable Object signaling lifecycle', () => {
     expect(storage.has('agentInteractionActivityLog')).toBe(false);
   });
 
-  it('rejects AI assistant/Devin room actions without the exact bridge tag protocol', async () => {
+  it('rejects real agent room actions without the exact bridge tag protocol', async () => {
     const host = new FakeSocket();
     const guest = new FakeSocket();
     const { state, storage } = makeState([

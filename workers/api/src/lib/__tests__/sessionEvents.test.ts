@@ -1017,12 +1017,12 @@ describe('sessionEvents', () => {
       }
     });
 
-    it('preserves AI assistant/Devin bridge statuses and diagnostics as direct source refs', async () => {
+    it('preserves real agent bridge statuses and diagnostics as direct source refs', async () => {
       const { sqlite, db: realDb } = createSessionEvidenceDb();
       try {
         const statusText = 'devin is starting from the real container bridge.';
         const statusId = 'agent-status:devin:1782594720000:agent_status:starting:none';
-        const diagnosticText = 'devin chat prompt delivered to process stdin.';
+        const diagnosticText = 'agent chat prompt delivered to process stdin.';
         const diagnosticId = 'agent-status:devin:1782594000000:bridge_diagnostic:thinking:agent_prompt_sent';
         const events: SessionEvent[] = [
           {

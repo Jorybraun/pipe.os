@@ -661,7 +661,7 @@ describe('agent bridge readiness', () => {
     }
   });
 
-  it('does not fabricate a Devin bridge when AGENT_TYPE is missing', async () => {
+  it('does not fabricate an agent bridge when AGENT_TYPE is missing', async () => {
     const { port } = await startBridge(`
 process.stdin.setEncoding('utf8');
 process.stdin.once('data', () => process.stdout.write('This fake Devin process should not start.\\n'));

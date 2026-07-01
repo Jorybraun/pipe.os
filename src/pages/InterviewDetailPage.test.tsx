@@ -845,7 +845,7 @@ describe('InterviewDetailPage', () => {
               sourceRefTypes: ['ai_user_prompt', 'ai_agent_response'],
               satisfied: false,
               sourceRefKeys: [],
-              missingImpact: 'Treat AI usage as unobserved when assistant/Devin chat evidence is absent.',
+              missingImpact: 'Treat AI usage as unobserved when real agent bridge chat evidence is absent.',
             },
           ],
         },

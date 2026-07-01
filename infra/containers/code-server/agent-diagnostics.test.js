@@ -137,7 +137,7 @@ describe('agent diagnostics', () => {
       type: 'AGENT_DIAGNOSTIC',
       agent: 'devin',
       status: 'thinking',
-      message: 'devin chat prompt delivered to process stdin.',
+      message: 'agent chat prompt delivered to process stdin.',
       diagnosticSource: 'agent_prompt_sent',
       observedAt: '2026-06-27T20:00:00.000Z',
       promptType: 'chat_prompt',
@@ -181,7 +181,7 @@ describe('agent diagnostics', () => {
       type: 'AGENT_DIAGNOSTIC',
       agent: 'devin',
       status: 'idle',
-      message: 'devin context primer was not delivered to process stdin.',
+      message: 'agent context primer was not delivered to process stdin.',
       diagnosticSource: 'agent_context_primer_sent',
       observedAt: '2026-06-27T20:05:00.000Z',
       promptType: 'context_primer',
@@ -213,7 +213,7 @@ describe('agent diagnostics', () => {
 
     expect(agentDiagnosticSessionEvent(diagnostic)).toMatchObject({
       type: 'ai_agent_status',
-      text: 'devin chat prompt delivered to process stdin.',
+      text: 'agent chat prompt delivered to process stdin.',
       actor: 'agent',
       properties: {
         source: 'agent_bridge',

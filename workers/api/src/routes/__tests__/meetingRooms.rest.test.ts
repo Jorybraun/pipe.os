@@ -2062,7 +2062,7 @@ describe('meeting room recording living-context route', () => {
       headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify({
         type: 'ai_agent_status',
-        text: 'devin chat prompt delivered to process stdin.',
+        text: 'agent chat prompt delivered to process stdin.',
         actor: 'agent',
         properties: {
           source: 'agent_bridge',

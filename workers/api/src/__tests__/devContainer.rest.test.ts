@@ -523,7 +523,7 @@ describe('POST /rpc/dev-container/launch', () => {
     expect(updateCall).toBeTruthy();
   });
 
-  it('passes real Devin bridge configuration to the container without returning secrets', async () => {
+  it('passes real Devin provider configuration to the container without returning secrets', async () => {
     const db = fakeD1();
     const env = buildEnv({
       DB: db,

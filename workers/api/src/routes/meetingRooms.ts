@@ -354,7 +354,7 @@ const sessionEventSchema = z.object({
     if (sourceOk && actorOk && promptOk && (browserPromptOk || agentPromptOk)) return;
     ctx.addIssue({
       code: z.ZodIssueCode.custom,
-      message: 'AI assistant prompt evidence must come from the browser proactive prompt flow or real agent bridge with prompt identity, trigger, length, source, and room context.',
+      message: 'Agent prompt evidence must come from the browser proactive prompt flow or real agent bridge with prompt identity, trigger, length, source, and room context.',
       path: ['properties'],
     });
     return;
@@ -612,7 +612,7 @@ const sessionEventSchema = z.object({
     ) return;
     ctx.addIssue({
       code: z.ZodIssueCode.custom,
-      message: 'Agent status evidence must come from the AI assistant/Devin bridge with stable status id, capture timestamp, and observed status or persisted diagnostic provenance.',
+      message: 'Agent status evidence must come from the real agent bridge with stable status id, capture timestamp, and observed status or persisted diagnostic provenance.',
       path: ['properties'],
     });
     return;
@@ -667,7 +667,7 @@ const sessionEventSchema = z.object({
     ) return;
     ctx.addIssue({
       code: z.ZodIssueCode.custom,
-      message: 'Agent chat evidence must come from a real AI assistant/Devin bridge CHAT_RESPONSE with stable response id, capture timestamp, fingerprint, length, and persisted bridge or browser fallback provenance.',
+      message: 'Agent chat evidence must come from a real agent bridge CHAT_RESPONSE with stable response id, capture timestamp, fingerprint, length, and persisted bridge or browser fallback provenance.',
       path: ['properties'],
     });
     return;
