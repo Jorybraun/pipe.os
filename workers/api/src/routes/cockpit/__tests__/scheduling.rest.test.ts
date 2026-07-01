@@ -1430,6 +1430,13 @@ describe('GET /interviews/:id detail', () => {
         assessmentProgress: {
           stage: string;
           nextAction: string;
+          readiness: {
+            status: string;
+            isReadyForEvaluation: boolean;
+            isUsableHiringSignal: boolean;
+            missingRequiredCount: number;
+            confidence: Array<{ id: string; satisfied: boolean }>;
+          };
           hasChallengePacket: boolean;
           hasCommitSubmission: boolean;
           challenge: { sourceRefId: string } | null;
@@ -1457,6 +1464,12 @@ describe('GET /interviews/:id detail', () => {
     expect(body.interview.assessmentProgress).toMatchObject({
       stage: 'READY_FOR_EVALUATION',
       nextAction: 'START_EVALUATION',
+      readiness: {
+        status: 'READY_FOR_EVALUATION',
+        isReadyForEvaluation: true,
+        isUsableHiringSignal: false,
+        missingRequiredCount: 0,
+      },
       hasChallengePacket: true,
       hasCommitSubmission: true,
       challenge: { sourceRefId: 'challenge-packet-progress-detail' },
@@ -1473,6 +1486,10 @@ describe('GET /interviews/:id detail', () => {
         },
       },
     });
+    expect(body.interview.assessmentProgress?.readiness.confidence).toEqual(expect.arrayContaining([
+      expect.objectContaining({ id: 'workspace_captured_commit', satisfied: true }),
+      expect.objectContaining({ id: 'test_run', satisfied: false }),
+    ]));
     expect(body.interview.assessmentProgress?.evidenceSnippets).toEqual(expect.arrayContaining([
       expect.objectContaining({
         sourceRefType: 'review_challenge_packet',

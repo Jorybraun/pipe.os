@@ -452,12 +452,42 @@ export interface AssessmentProgressAssignmentTrust {
   tone: 'matched' | 'manual' | 'waiting' | 'blocked' | 'neutral';
 }
 
+export type AssessmentProgressReadinessStatus =
+  | 'WAITING_FOR_CHALLENGE'
+  | 'READY_TO_START'
+  | 'WORK_IN_PROGRESS'
+  | 'READY_FOR_EVALUATION'
+  | 'EVALUATED'
+  | 'NEEDS_ATTENTION'
+  | 'CANCELLED';
+
+export interface AssessmentProgressReadinessItem {
+  id: string;
+  label: string;
+  required: boolean;
+  satisfied: boolean;
+  sourceRefTypes: string[];
+  missingImpact: string;
+}
+
+export interface AssessmentProgressReadinessSnapshot {
+  status: AssessmentProgressReadinessStatus;
+  label: string;
+  detail: string;
+  isReadyForEvaluation: boolean;
+  isUsableHiringSignal: boolean;
+  missingRequiredCount: number;
+  required: AssessmentProgressReadinessItem[];
+  confidence: AssessmentProgressReadinessItem[];
+}
+
 export interface AssessmentProgressSnapshot {
   session: PersistedRepoTaskInterviewSession;
   stage: AssessmentProgressStage;
   nextAction: AssessmentProgressNextAction;
   nextActionLabel: string;
   assignmentTrust: AssessmentProgressAssignmentTrust;
+  readiness: AssessmentProgressReadinessSnapshot;
   hasChallengePacket: boolean;
   hasWorkEvidence: boolean;
   hasMessageEvidence: boolean;
@@ -1116,6 +1146,238 @@ function progressStageAndAction(input: {
   return { stage: 'CHALLENGE_READY', nextAction: 'OPEN_ROOM_OR_WORKSPACE' };
 }
 
+function assessmentReadinessStatusLabel(status: AssessmentProgressReadinessStatus): string {
+  switch (status) {
+    case 'WAITING_FOR_CHALLENGE':
+      return 'Waiting for challenge';
+    case 'READY_TO_START':
+      return 'Ready to start';
+    case 'WORK_IN_PROGRESS':
+      return 'Work evidence in progress';
+    case 'READY_FOR_EVALUATION':
+      return 'Ready for evaluation';
+    case 'EVALUATED':
+      return 'Evaluated';
+    case 'NEEDS_ATTENTION':
+      return 'Needs attention';
+    case 'CANCELLED':
+      return 'Cancelled';
+  }
+}
+
+function assessmentReadinessStatusDetail(input: {
+  status: AssessmentProgressReadinessStatus;
+  missingRequiredCount: number;
+  requiresCommit: boolean;
+  commit: AssessmentProgressCommit | null;
+  evaluation: AssessmentProgressEvaluation | null;
+  humanDecision: AssessmentProgressHumanDecision | null;
+}): string {
+  if (input.status === 'CANCELLED') return 'This assessment session was cancelled.';
+  if (input.status === 'NEEDS_ATTENTION') return 'Resolve the diagnostic before relying on this assessment.';
+  if (input.status === 'EVALUATED') {
+    if (input.humanDecision) return 'A human decision is recorded with source-backed evidence.';
+    if (input.evaluation?.status === 'EVALUATED') return 'A source-backed evaluation report is available for review.';
+    return 'The assessment has a terminal review state.';
+  }
+  if (input.status === 'WAITING_FOR_CHALLENGE') {
+    return 'Assign a concrete repo URL, base commit, task, success criteria, and expected evidence before candidate work starts.';
+  }
+  if (input.missingRequiredCount > 0) {
+    return `${input.missingRequiredCount} required proof ${input.missingRequiredCount === 1 ? 'item is' : 'items are'} still missing before evaluation.`;
+  }
+  if (input.requiresCommit && input.commit?.integrity.status !== 'workspace_captured') {
+    return 'Required evidence is captured, but commit provenance needs repository or workspace verification before final reliance.';
+  }
+  return 'Challenge, work evidence, and required source refs are captured; start source-backed AI or human evaluation.';
+}
+
+function buildAssessmentReadiness(input: {
+  session: PersistedRepoTaskInterviewSession;
+  hasChallengePacket: boolean;
+  hasWorkEvidence: boolean;
+  hasMessageEvidence: boolean;
+  hasDevContainerEvidence: boolean;
+  hasToolUsageEvidence: boolean;
+  hasCommitSubmission: boolean;
+  hasFinalSubmission: boolean;
+  hasAiInteraction: boolean;
+  hasTranscriptEvidence: boolean;
+  hasTestEvidence: boolean;
+  hasVerificationGap: boolean;
+  sourceRefCounts: readonly AssessmentEvidenceKindCount[];
+  commit: AssessmentProgressCommit | null;
+  evaluation: AssessmentProgressEvaluation | null;
+  humanDecision: AssessmentProgressHumanDecision | null;
+}): AssessmentProgressReadinessSnapshot {
+  const requiresCommit = modeRequiresCommit(input.session.mode);
+  const hasCodeDiff = hasEventKind(input.sourceRefCounts, ['code_diff']);
+  const hasGitCommit = hasEventKind(input.sourceRefCounts, ['git_commit']);
+  const required: AssessmentProgressReadinessItem[] = [
+    {
+      id: 'challenge_packet',
+      label: 'Concrete challenge packet',
+      required: true,
+      satisfied: input.hasChallengePacket,
+      sourceRefTypes: [
+        'review_challenge_packet',
+        'open_source_challenge_packet',
+        'repo_task_challenge_packet',
+        'challenge_packet',
+      ],
+      missingImpact: 'Without a source-backed task packet, PIPE cannot prove what work was assigned.',
+    },
+    {
+      id: 'work_evidence',
+      label: 'Candidate work evidence',
+      required: true,
+      satisfied: input.hasWorkEvidence,
+      sourceRefTypes: [
+        'terminal_output',
+        'test_run',
+        'code_diff',
+        'ai_usage_event',
+        'room_chat_message',
+        'meeting_transcript_segment',
+        'dev_container_workspace_state',
+        'code_server_file_observation',
+      ],
+      missingImpact: 'Without work evidence, the session only proves an assignment existed.',
+    },
+  ];
+
+  if (requiresCommit) {
+    required.push(
+      {
+        id: 'assessment_commit',
+        label: 'Assessment branch commit',
+        required: true,
+        satisfied: input.hasCommitSubmission && hasGitCommit,
+        sourceRefTypes: ['git_commit'],
+        missingImpact: 'A real commit hash is required before evaluating open-source implementation work.',
+      },
+      {
+        id: 'code_diff',
+        label: 'Exact code diff',
+        required: true,
+        satisfied: hasCodeDiff,
+        sourceRefTypes: ['code_diff'],
+        missingImpact: 'The evaluator must inspect the exact diff from base commit to submitted commit.',
+      },
+    );
+  }
+
+  const confidence: AssessmentProgressReadinessItem[] = [
+    {
+      id: 'workspace_captured_commit',
+      label: 'Workspace-captured commit',
+      required: false,
+      satisfied: !requiresCommit || input.commit?.integrity.status === 'workspace_captured',
+      sourceRefTypes: ['git_commit', 'dev_container_workspace_state'],
+      missingImpact: 'Manual commit evidence can start review, but workspace capture is needed for highest trust.',
+    },
+    {
+      id: 'test_run',
+      label: 'Test or verification evidence',
+      required: false,
+      satisfied: input.hasTestEvidence || input.hasVerificationGap,
+      sourceRefTypes: ['test_run', 'verification_gap'],
+      missingImpact: 'Missing test evidence lowers confidence; an explicit verification gap is better than silence.',
+    },
+    {
+      id: 'ai_usage_transparency',
+      label: 'AI-use transparency',
+      required: false,
+      satisfied: input.hasAiInteraction,
+      sourceRefTypes: ['ai_usage_event'],
+      missingImpact: 'If the candidate used AI, prompts and responses should be captured honestly.',
+    },
+    {
+      id: 'transcript_context',
+      label: 'Conversation transcript context',
+      required: false,
+      satisfied: input.hasTranscriptEvidence,
+      sourceRefTypes: ['meeting_transcript_segment'],
+      missingImpact: 'Transcript context helps explain reasoning, tradeoffs, and communication quality.',
+    },
+    {
+      id: 'room_chat_context',
+      label: 'Room chat context',
+      required: false,
+      satisfied: input.hasMessageEvidence,
+      sourceRefTypes: ['room_chat_message'],
+      missingImpact: 'Chat messages can preserve clarifications and collaboration evidence.',
+    },
+    {
+      id: 'workspace_activity',
+      label: 'Workspace and tool activity',
+      required: false,
+      satisfied: input.hasDevContainerEvidence || input.hasToolUsageEvidence,
+      sourceRefTypes: [
+        'dev_container_workspace_state',
+        'code_server_file_observation',
+        'terminal_command',
+        'room_media_control',
+      ],
+      missingImpact: 'Workspace telemetry helps distinguish real implementation work from a pasted final answer.',
+    },
+  ];
+
+  const missingRequiredCount = required.filter((item) => !item.satisfied).length;
+  const isReadyForEvaluation = missingRequiredCount === 0
+    && input.session.state !== 'CANCELLED'
+    && input.session.state !== 'DIAGNOSTIC'
+    && input.evaluation?.status !== 'PROVENANCE_INCOMPLETE'
+    && input.evaluation?.status !== 'AI_DEVELOPER_UNAVAILABLE'
+    && input.evaluation?.status !== 'BLOCKED';
+  const hasReviewedOutcome = Boolean(input.humanDecision || input.evaluation?.status === 'EVALUATED');
+  const commitHighTrust = !requiresCommit || input.commit?.integrity.status === 'workspace_captured';
+  const isUsableHiringSignal = isReadyForEvaluation && hasReviewedOutcome && commitHighTrust;
+
+  let status: AssessmentProgressReadinessStatus;
+  if (input.session.state === 'CANCELLED') {
+    status = 'CANCELLED';
+  } else if (
+    input.session.state === 'DIAGNOSTIC'
+    || input.evaluation?.status === 'PROVENANCE_INCOMPLETE'
+    || input.evaluation?.status === 'AI_DEVELOPER_UNAVAILABLE'
+    || input.evaluation?.status === 'BLOCKED'
+    || input.evaluation?.status === 'NEEDS_MORE_EVIDENCE'
+    || input.evaluation?.status === 'NO_ROLE_SAFE_CHALLENGE'
+    || input.evaluation?.status === 'NEEDS_HUMAN_REVIEW'
+  ) {
+    status = 'NEEDS_ATTENTION';
+  } else if (input.humanDecision || input.evaluation?.status === 'EVALUATED') {
+    status = 'EVALUATED';
+  } else if (!input.hasChallengePacket) {
+    status = 'WAITING_FOR_CHALLENGE';
+  } else if (isReadyForEvaluation) {
+    status = 'READY_FOR_EVALUATION';
+  } else if (input.hasWorkEvidence || input.hasCommitSubmission || input.hasFinalSubmission) {
+    status = 'WORK_IN_PROGRESS';
+  } else {
+    status = 'READY_TO_START';
+  }
+
+  return {
+    status,
+    label: assessmentReadinessStatusLabel(status),
+    detail: assessmentReadinessStatusDetail({
+      status,
+      missingRequiredCount,
+      requiresCommit,
+      commit: input.commit,
+      evaluation: input.evaluation,
+      humanDecision: input.humanDecision,
+    }),
+    isReadyForEvaluation,
+    isUsableHiringSignal,
+    missingRequiredCount,
+    required,
+    confidence,
+  };
+}
+
 export class RepoTaskInterviewSessionStore {
   readonly #store: AssessmentLayerStore;
 
@@ -1533,6 +1795,24 @@ export class RepoTaskInterviewSessionStore {
       || hasEventKind(sourceRefCounts, ['test_run']);
     const hasVerificationGap = hasEventKind(sourceRefCounts, ['verification_gap']);
     const hasChallengePacket = challenge !== null;
+    const readiness = buildAssessmentReadiness({
+      session,
+      hasChallengePacket,
+      hasWorkEvidence,
+      hasMessageEvidence,
+      hasDevContainerEvidence,
+      hasToolUsageEvidence,
+      hasCommitSubmission,
+      hasFinalSubmission,
+      hasAiInteraction,
+      hasTranscriptEvidence,
+      hasTestEvidence,
+      hasVerificationGap,
+      sourceRefCounts,
+      commit,
+      evaluation,
+      humanDecision,
+    });
     const { stage, nextAction } = progressStageAndAction({
       session,
       hasChallengePacket,
@@ -1549,6 +1829,7 @@ export class RepoTaskInterviewSessionStore {
       nextAction,
       nextActionLabel: progressNextActionLabel(nextAction),
       assignmentTrust: progressAssignmentTrust({ session, challenge }),
+      readiness,
       hasChallengePacket,
       hasWorkEvidence,
       hasMessageEvidence,

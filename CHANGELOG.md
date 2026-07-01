@@ -10,7 +10,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 ### Fixed — CODE_REVIEW assessment runtime
 
 - Assessment progress now exposes a commit integrity signal that distinguishes live workspace-captured commits from manual evidence needing verification, and recruiter/candidate surfaces show the trust label and explanation instead of raw capture-source wording.
-- App-dev API proxy responses are now rewrapped for cookie-authenticated dev sessions, preventing recruiter detail pages from hanging on a spinner when a CODE_REVIEW interview is queued for source-backed PR assignment.
+- App-dev API proxy responses are now buffered and forwarded with a clean API header set for cookie-authenticated dev sessions, preventing recruiter detail pages from hanging on a spinner when a CODE_REVIEW interview is queued for source-backed PR assignment.
 - Repo-task commit submissions now reject GitHub commit URLs that do not belong to the submitted repository or declared fork, preventing unrelated repos from masquerading as assessment work even when the SHA and source refs are shaped correctly.
 - Recruiter interview detail API prefetches now fall back to the normal request if the speculative dev-proxy fetch stalls, preventing CODE_REVIEW detail pages from sitting on an indefinite spinner when a matched assessment is already available.
 - The deployed CODE_REVIEW assess-link smoke now clicks from the recruiter assessment detail into the person profile and verifies the person-level decision cockpit, keeping the rollup proof attached to the routine app-dev gate.
@@ -24,6 +24,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Added — Assessment readiness
 
+- Repo-task progress now builds and serializes a canonical readiness snapshot server-side, separating evaluation readiness from usable hiring-signal trust and exposing the same required-proof/confidence checklist to recruiter and candidate surfaces.
 - Repo-task assessment progress now includes a durable assignment-trust summary (`matched`, `manual`, `source-backed`, or waiting) so recruiter lists, detail pages, room payloads, and candidate-safe progress can share the same non-overclaiming challenge-fit language.
 - Repo-task assessment progress now includes a canonical readiness snapshot with required proof, confidence signals, missing-proof counts, ready-for-evaluation state, and usable-hiring-signal state.
 - Candidate room task briefs, submission panels, and status strips now show the same source-backed readiness signal, so candidates can see whether challenge, work, commit, diff, tests/verification, and process evidence are captured before review.

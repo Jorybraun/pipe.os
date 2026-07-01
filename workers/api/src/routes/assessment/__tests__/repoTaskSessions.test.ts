@@ -1163,6 +1163,13 @@ Fix stale popover listener cleanup.`;
       progress: {
         stage: string;
         nextAction: string;
+        readiness: {
+          status: string;
+          isReadyForEvaluation: boolean;
+          isUsableHiringSignal: boolean;
+          missingRequiredCount: number;
+          required: Array<{ id: string; satisfied: boolean }>;
+        };
         assignmentTrust: {
           state: string;
           label: string;
@@ -1175,6 +1182,12 @@ Fix stale popover listener cleanup.`;
     expect(initialProgressBody.progress).toMatchObject({
       stage: 'WAITING_FOR_CHALLENGE',
       nextAction: 'ASSIGN_CHALLENGE',
+      readiness: {
+        status: 'WAITING_FOR_CHALLENGE',
+        isReadyForEvaluation: false,
+        isUsableHiringSignal: false,
+        missingRequiredCount: 4,
+      },
       assignmentTrust: {
         state: 'waiting_for_challenge',
         label: 'No challenge packet',
@@ -1223,6 +1236,13 @@ Fix stale popover listener cleanup.`;
       progress: {
         stage: string;
         nextAction: string;
+        readiness: {
+          status: string;
+          label: string;
+          isReadyForEvaluation: boolean;
+          missingRequiredCount: number;
+          required: Array<{ id: string; satisfied: boolean }>;
+        };
         assignmentTrust: {
           state: string;
           label: string;
@@ -1236,6 +1256,12 @@ Fix stale popover listener cleanup.`;
     expect(challengeProgressBody.progress).toMatchObject({
       stage: 'CHALLENGE_READY',
       nextAction: 'OPEN_ROOM_OR_WORKSPACE',
+      readiness: {
+        status: 'READY_TO_START',
+        label: 'Ready to start',
+        isReadyForEvaluation: false,
+        missingRequiredCount: 3,
+      },
       assignmentTrust: {
         state: 'source_backed_challenge',
         label: 'Source-backed challenge',
@@ -1310,6 +1336,16 @@ Fix stale popover listener cleanup.`;
       progress: {
         stage: string;
         nextAction: string;
+        readiness: {
+          status: string;
+          label: string;
+          detail: string;
+          isReadyForEvaluation: boolean;
+          isUsableHiringSignal: boolean;
+          missingRequiredCount: number;
+          required: Array<{ id: string; satisfied: boolean }>;
+          confidence: Array<{ id: string; satisfied: boolean }>;
+        };
         hasCommitSubmission: boolean;
         hasWorkEvidence: boolean;
         hasTestEvidence: boolean;
@@ -1335,6 +1371,14 @@ Fix stale popover listener cleanup.`;
     expect(commitProgressBody.progress).toMatchObject({
       stage: 'READY_FOR_EVALUATION',
       nextAction: 'START_EVALUATION',
+      readiness: {
+        status: 'READY_FOR_EVALUATION',
+        label: 'Ready for evaluation',
+        detail: 'Required evidence is captured, but commit provenance needs repository or workspace verification before final reliance.',
+        isReadyForEvaluation: true,
+        isUsableHiringSignal: false,
+        missingRequiredCount: 0,
+      },
       hasCommitSubmission: true,
       hasWorkEvidence: true,
       hasTestEvidence: true,
@@ -1363,6 +1407,16 @@ Fix stale popover listener cleanup.`;
       { kind: 'git_commit', count: 1 },
       { kind: 'review_challenge_packet', count: 1 },
       { kind: 'test_run', count: 1 },
+    ]));
+    expect(commitProgressBody.progress.readiness.required).toEqual(expect.arrayContaining([
+      expect.objectContaining({ id: 'challenge_packet', satisfied: true }),
+      expect.objectContaining({ id: 'work_evidence', satisfied: true }),
+      expect.objectContaining({ id: 'assessment_commit', satisfied: true }),
+      expect.objectContaining({ id: 'code_diff', satisfied: true }),
+    ]));
+    expect(commitProgressBody.progress.readiness.confidence).toEqual(expect.arrayContaining([
+      expect.objectContaining({ id: 'workspace_captured_commit', satisfied: false }),
+      expect.objectContaining({ id: 'test_run', satisfied: true }),
     ]));
 
     const evaluationResponse = await app.request(

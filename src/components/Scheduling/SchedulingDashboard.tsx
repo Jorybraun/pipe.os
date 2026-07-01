@@ -163,6 +163,9 @@ function firstNonBlank(...values: Array<string | null | undefined>): string | nu
 
 function assessmentFilterBucket(interview: ScheduledInterview): Exclude<AssessmentFilterMode, 'ALL' | 'ACTION_NEEDED'> | null {
   const progress = interview.assessmentProgress ?? null;
+  if (progress?.readiness?.status === 'EVALUATED' || progress?.readiness?.isUsableHiringSignal) return 'EVALUATED';
+  if (progress?.readiness?.status === 'NEEDS_ATTENTION') return 'NEEDS_ATTENTION';
+  if (progress?.readiness?.isReadyForEvaluation) return 'READY_TO_EVALUATE';
   if (progress?.evaluation?.status === 'EVALUATED') return 'EVALUATED';
   if (
     progress?.stage === 'NEEDS_ATTENTION'

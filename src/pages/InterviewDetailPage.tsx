@@ -2916,9 +2916,10 @@ export default function InterviewDetailPage(): JSX.Element {
     || Boolean(assessmentProgress)
     || (Boolean(assessmentAssignment) && !hasStandaloneCodeReviewReadout);
   const assessmentProgressStage = assessmentProgress
-    ? assessmentProgressStageLabel(assessmentProgress.stage)
+    ? assessmentProgress.readiness?.label ?? assessmentProgressStageLabel(assessmentProgress.stage)
     : 'Not started';
-  const assessmentProgressNextAction = assessmentProgress?.nextActionLabel
+  const assessmentProgressNextAction = assessmentProgress?.readiness?.detail
+    ?? assessmentProgress?.nextActionLabel
     ?? interview.assessmentSetup?.message
     ?? 'Open or configure the assessment room to start collecting evidence.';
   const assessmentProgressEvidence = assessmentProgress

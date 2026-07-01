@@ -82,6 +82,42 @@ describe('InterviewCard assessment progress', () => {
         stage: 'READY_FOR_EVALUATION',
         nextAction: 'START_EVALUATION',
         nextActionLabel: 'Start source-backed AI or human evaluation.',
+        readiness: {
+          status: 'READY_FOR_EVALUATION',
+          label: 'Ready for evaluation',
+          detail: 'Challenge, work evidence, and required source refs are captured; start source-backed AI or human evaluation.',
+          isReadyForEvaluation: true,
+          isUsableHiringSignal: false,
+          missingRequiredCount: 0,
+          required: [
+            {
+              id: 'challenge_packet',
+              label: 'Concrete challenge packet',
+              required: true,
+              satisfied: true,
+              sourceRefTypes: ['review_challenge_packet'],
+              missingImpact: 'Without a task packet, PIPE cannot prove what work was assigned.',
+            },
+            {
+              id: 'assessment_commit',
+              label: 'Assessment branch commit',
+              required: true,
+              satisfied: true,
+              sourceRefTypes: ['git_commit'],
+              missingImpact: 'A real commit hash is required before evaluation.',
+            },
+          ],
+          confidence: [
+            {
+              id: 'workspace_captured_commit',
+              label: 'Workspace-captured commit',
+              required: false,
+              satisfied: true,
+              sourceRefTypes: ['git_commit', 'dev_container_workspace_state'],
+              missingImpact: 'Manual commit evidence lowers trust.',
+            },
+          ],
+        },
         hasChallengePacket: true,
         hasWorkEvidence: true,
         hasMessageEvidence: true,
@@ -149,8 +185,7 @@ describe('InterviewCard assessment progress', () => {
       'Repo task was selected from source-backed candidate evidence and an approved challenge packet.',
     );
     expect(progress).toHaveTextContent('DECISION');
-    expect(progress).toHaveTextContent('Challenge and commit evidence are captured; run source-backed AI or human evaluation.');
-    expect(progress).toHaveTextContent('Start source-backed AI or human evaluation.');
+    expect(progress).toHaveTextContent('Challenge, work evidence, and required source refs are captured; start source-backed AI or human evaluation.');
     expect(progress).toHaveTextContent('challenge, chat, workspace telemetry, room actions, commit, AI use, transcript, tests');
     expect(progress).toHaveTextContent('WORKSPACE');
     expect(progress).toHaveTextContent('Ready · open-source/widgets · base 111111111111');

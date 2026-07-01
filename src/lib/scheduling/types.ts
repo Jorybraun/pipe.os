@@ -114,6 +114,35 @@ export interface AssessmentEvidenceCoverageSnapshot {
   expectedForHighConfidence: AssessmentEvidenceCoverageItem[];
 }
 
+export type AssessmentProgressReadinessStatus =
+  | 'WAITING_FOR_CHALLENGE'
+  | 'READY_TO_START'
+  | 'WORK_IN_PROGRESS'
+  | 'READY_FOR_EVALUATION'
+  | 'EVALUATED'
+  | 'NEEDS_ATTENTION'
+  | 'CANCELLED';
+
+export interface AssessmentProgressReadinessItem {
+  id: string;
+  label: string;
+  required: boolean;
+  satisfied: boolean;
+  sourceRefTypes: string[];
+  missingImpact: string;
+}
+
+export interface AssessmentProgressReadinessSnapshot {
+  status: AssessmentProgressReadinessStatus;
+  label: string;
+  detail: string;
+  isReadyForEvaluation: boolean;
+  isUsableHiringSignal: boolean;
+  missingRequiredCount: number;
+  required: AssessmentProgressReadinessItem[];
+  confidence: AssessmentProgressReadinessItem[];
+}
+
 export interface AssessmentProgressSnapshot {
   session: {
     id: string;
@@ -137,6 +166,7 @@ export interface AssessmentProgressSnapshot {
     detail: string;
     tone: 'matched' | 'manual' | 'waiting' | 'blocked' | 'neutral';
   };
+  readiness?: AssessmentProgressReadinessSnapshot;
   hasChallengePacket: boolean;
   hasWorkEvidence: boolean;
   hasMessageEvidence?: boolean;

@@ -2052,6 +2052,7 @@ interface RoomAssessmentProgressPayload {
   nextAction: AssessmentProgressSnapshot['nextAction'];
   nextActionLabel: string;
   assignmentTrust: AssessmentProgressSnapshot['assignmentTrust'];
+  readiness: AssessmentProgressSnapshot['readiness'];
   hasChallengePacket: boolean;
   hasWorkEvidence: boolean;
   hasMessageEvidence: boolean;
@@ -2133,6 +2134,7 @@ function serializeRoomAssessmentProgress(
     nextAction: progress.nextAction,
     nextActionLabel: progress.nextActionLabel,
     assignmentTrust: progress.assignmentTrust,
+    readiness: progress.readiness,
     hasChallengePacket: progress.hasChallengePacket,
     hasWorkEvidence: progress.hasWorkEvidence,
     hasMessageEvidence: progress.hasMessageEvidence,

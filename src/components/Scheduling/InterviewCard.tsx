@@ -246,6 +246,27 @@ function assessmentDecisionSummary(input: {
     };
   }
 
+  if (progress?.readiness) {
+    if (progress.readiness.status === 'NEEDS_ATTENTION') {
+      return {
+        value: progress.readiness.label,
+        detail: compactText(progress.readiness.detail, 150),
+      };
+    }
+    if (progress.readiness.isReadyForEvaluation) {
+      return {
+        value: progress.readiness.label,
+        detail: compactText(progress.readiness.detail, 150),
+      };
+    }
+    if (progress.readiness.status !== 'WAITING_FOR_CHALLENGE') {
+      return {
+        value: progress.readiness.label,
+        detail: compactText(progress.readiness.detail, 150),
+      };
+    }
+  }
+
   if (progress?.nextAction === 'RESOLVE_DIAGNOSTIC' || progress?.stage === 'NEEDS_ATTENTION') {
     return {
       value: 'Needs attention',
@@ -400,11 +421,12 @@ export function InterviewCard({
   const showsAssessmentSnapshot = isAssessmentInterviewType(interview.interviewType)
     || Boolean(assessmentProgress);
   const assessmentStageLabel = assessmentProgress
-    ? sentenceCaseToken(assessmentProgress.stage)
+    ? assessmentProgress.readiness?.label ?? sentenceCaseToken(assessmentProgress.stage)
     : assessmentSetup?.blocksPositiveAssessment
       ? 'Setup gap'
       : 'Assessment ready';
-  const assessmentNextAction = assessmentProgress?.nextActionLabel
+  const assessmentNextAction = assessmentProgress?.readiness?.detail
+    ?? assessmentProgress?.nextActionLabel
     ?? assessmentSetup?.message
     ?? 'Assessment evidence will appear after the session starts.';
   const assessmentEvidence = assessmentProgress
