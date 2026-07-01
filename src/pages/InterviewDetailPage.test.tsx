@@ -567,7 +567,7 @@ describe('InterviewDetailPage', () => {
         id: 'assessment-report-source-backed',
         status: 'EVALUATED',
         summary: 'Candidate made a focused source-backed change and cited the submitted diff evidence.',
-        recommendation: 'strong_evidence_to_advance',
+        recommendation: 'hire_now',
         createdAt: '2026-06-23T00:22:00.000Z',
         claims: [{
           id: 'claim-focused-diff',
@@ -684,12 +684,14 @@ describe('InterviewDetailPage', () => {
     const progress = screen.getByTestId('interview-assessment-progress');
     expect(progress).toHaveTextContent('Evaluated');
     expect(progress).toHaveTextContent('Review the assessment report and evidence.');
-    expect(progress).toHaveTextContent('Evaluated · Strong evidence to advance · Candidate made a focused source-backed change and cited the submitted diff evidence.');
+    expect(progress).toHaveTextContent('Evaluated · Unvalidated recommendation · Candidate made a focused source-backed change and cited the submitted diff evidence.');
+    expect(progress).not.toHaveTextContent('Hire now');
     const decision = screen.getByTestId('interview-workspace-assessment-decision-summary');
     expect(decision).toHaveTextContent('Assessment decision');
     expect(decision).toHaveTextContent('Hiring manager readout');
     expect(decision).toHaveTextContent('Decision');
-    expect(decision).toHaveTextContent('Strong evidence to advance');
+    expect(decision).toHaveTextContent('Unvalidated recommendation');
+    expect(decision).not.toHaveTextContent('Hire now');
     expect(decision).toHaveTextContent('Candidate made a focused source-backed change and cited the submitted diff evidence.');
     expect(decision).toHaveTextContent('Challenge fit');
     expect(decision).toHaveTextContent('Source-backed task');

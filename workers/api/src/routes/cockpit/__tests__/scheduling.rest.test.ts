@@ -1922,7 +1922,7 @@ describe('GET /interviews/:id detail', () => {
       response: `\`\`\`json
 {
   summary: "Candidate made a focused source-backed change and cited the submitted diff evidence.",
-  recommendation: "mixed_evidence_human_review",
+  recommendation: "hire_now",
   claims: [
     {
       id: "focused-diff",
@@ -1969,6 +1969,7 @@ describe('GET /interviews/:id detail', () => {
         evaluation: {
           status: string;
           summary: string;
+          recommendation?: string | null;
           evidenceCoverage?: {
             schemaVersion?: string;
             expectedForHighConfidence?: Array<{ label?: string; satisfied?: boolean }>;
@@ -2061,6 +2062,7 @@ describe('GET /interviews/:id detail', () => {
       evaluation: {
         status: 'EVALUATED',
         summary: 'Fix the start-evaluation regression with a real patch: Candidate made a focused source-backed change and cited the submitted diff evidence.',
+        recommendation: 'mixed_evidence_human_review',
         evidenceCoverage: {
           schemaVersion: 'assessment-evidence-coverage-v1',
           expectedForHighConfidence: expect.arrayContaining([
@@ -2075,6 +2077,13 @@ describe('GET /interviews/:id detail', () => {
             message: 'No test_run source ref was attached to the session.',
             sourceRefCount: 1,
             sourceRefTypes: ['code_diff'],
+          }),
+          expect.objectContaining({
+            code: 'MODEL_RECOMMENDATION_UNSUPPORTED',
+            severity: 'warning',
+            message: 'AI evaluator returned unsupported recommendation "hire_now"; PIPE defaulted to human review.',
+            sourceRefCount: 0,
+            sourceRefTypes: [],
           }),
         ],
       },
@@ -2113,8 +2122,10 @@ describe('GET /interviews/:id detail', () => {
         schemaVersion?: string;
         expectedForHighConfidence?: Array<{ label?: string; satisfied?: boolean }>;
       };
+      recommendation?: string | null;
     };
     expect(reportOutput.challengeFocus).toBe('Fix the start-evaluation regression with a real patch');
+    expect(reportOutput.recommendation).toBe('mixed_evidence_human_review');
     expect(reportOutput.evidenceCoverage).toMatchObject({
       schemaVersion: 'assessment-evidence-coverage-v1',
     });

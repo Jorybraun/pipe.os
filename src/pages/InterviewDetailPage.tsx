@@ -311,7 +311,18 @@ function assessmentAssignmentToneStyle(
 
 function assessmentEvaluationRecommendationLabel(recommendation: string | null | undefined): string | null {
   if (!recommendation) return null;
-  return sentenceCaseToken(recommendation);
+  switch (recommendation) {
+    case 'strong_evidence_to_advance':
+      return 'Strong evidence to advance';
+    case 'mixed_evidence_human_review':
+      return 'Human review needed';
+    case 'insufficient_evidence':
+      return 'Insufficient evidence';
+    case 'not_demonstrated':
+      return 'Not demonstrated';
+    default:
+      return 'Unvalidated recommendation';
+  }
 }
 
 function assessmentHumanDecisionLabel(decision: string): string {

@@ -88,6 +88,7 @@ const ALLOWED_RECOMMENDATIONS = new Set([
   'insufficient_evidence',
   'not_demonstrated',
 ]);
+const DEFAULT_RECOMMENDATION = 'mixed_evidence_human_review';
 type EvaluatorDiagnosticSeverity = 'info' | 'warning' | 'blocking';
 const MAX_SOURCE_REF_EXACT_TEXT_CHARS = 800;
 const MAX_AI_PROMPT_SOURCE_REFS = 16;
@@ -865,6 +866,39 @@ function normalizeAiDiagnostics(
   }).slice(0, 8);
 }
 
+function normalizeAiRecommendation(rawRecommendation: unknown): {
+  recommendation: string;
+  diagnostics: AssessmentDiagnosticInput[];
+} {
+  const recommendation = stringValue(rawRecommendation);
+  if (recommendation && ALLOWED_RECOMMENDATIONS.has(recommendation)) {
+    return { recommendation, diagnostics: [] };
+  }
+
+  const message = recommendation
+    ? `AI evaluator returned unsupported recommendation "${recommendation}"; PIPE defaulted to human review.`
+    : 'AI evaluator did not return an allowed recommendation; PIPE defaulted to human review.';
+
+  return {
+    recommendation: DEFAULT_RECOMMENDATION,
+    diagnostics: [
+      diagnosticInput({
+        code: recommendation
+          ? 'MODEL_RECOMMENDATION_UNSUPPORTED'
+          : 'MODEL_RECOMMENDATION_MISSING',
+        severity: 'warning',
+        message,
+        retryable: false,
+        details: {
+          returnedRecommendation: recommendation,
+          defaultRecommendation: DEFAULT_RECOMMENDATION,
+          allowedRecommendations: Array.from(ALLOWED_RECOMMENDATIONS),
+        },
+      }),
+    ],
+  };
+}
+
 async function recordAiInteraction(input: {
   store: RepoTaskInterviewSessionStore;
   sessionId: string;
@@ -1024,6 +1058,7 @@ export async function evaluateRepoTaskAssessmentSession(
 
   const claims = normalizeAiClaims(aiOutput.claims, sourceRefByKey, input.sessionId);
   const diagnostics = normalizeAiDiagnostics(aiOutput.diagnostics, sourceRefByKey);
+  const normalizedRecommendation = normalizeAiRecommendation(aiOutput.recommendation);
   const groundedClaims = claims.filter((claim) => claim.polarity !== 'diagnostic');
   if (groundedClaims.length === 0) {
     return createDiagnostic({
@@ -1044,7 +1079,7 @@ export async function evaluateRepoTaskAssessmentSession(
 
   const summary = sourceBackedEvaluationSummary(aiOutput.summary, sourceRefs);
   const challengeFocus = challengeFocusSummary(sourceRefs);
-  const recommendation = stringValue(aiOutput.recommendation) ?? 'mixed_evidence_human_review';
+  const recommendation = normalizedRecommendation.recommendation;
   const status: EvaluationReportStatus = 'EVALUATED';
   const report = await input.store.createEvaluationReport({
     sessionId: input.sessionId,
@@ -1066,7 +1101,10 @@ export async function evaluateRepoTaskAssessmentSession(
       diagnosticCodes: diagnostics.map((diagnostic) => diagnostic.code),
     },
     claims,
-    diagnostics,
+    diagnostics: [
+      ...diagnostics,
+      ...normalizedRecommendation.diagnostics,
+    ],
   });
 
   await input.store.transitionState({
