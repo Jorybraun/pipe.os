@@ -18,6 +18,12 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - `useEvidenceSearch` hook: Frontend data hook for semantic evidence search with strategy/filter options and clear state.
 - Frontend types: `ConceptEvolutionTimeline`, `ConceptEvolutionEvent`, `SupersessionLink`, `MergeConceptsResult`, `SplitConceptResult`, `EvidenceSearchResult`, `EvidenceSearchHit`, `EvidenceHitProvenance`, `SearchStrategy`, `EvidenceSearchOptions`.
 
+### Added — Batch evaluation harness (criterion #8)
+
+- `batchEvaluationHarness.ts`: Runs evaluation across multiple candidate-challenge pairs, computing unified match reports and comparing verdicts against expected expert labels. Produces per-pair diagnostics (confidence, verdict, errors, duration) and aggregate metrics (verdict accuracy, average confidence, verdict distribution). `loadEvaluationPairsFromCorpus` extracts candidate-challenge pairs from completed match runs.
+- `POST /:candidateId/living-context/batch-evaluation`: API endpoint for running batch evaluations (max 100 pairs). Accepts optional expectedVerdict for accuracy measurement and includeProvenance flag. Gated by `living_context_read`.
+- `batchEvaluationHarness.test.ts`: 6-test suite covering empty input, error handling, verdict distribution, expected verdict comparison, empty corpus, and corpus pair extraction.
+
 ### Added — Concept evolution tracking (criterion #3)
 
 - `conceptEvolution.ts`: Tracks concept merges, splits, and evolution over time. `mergeConcepts` consolidates multiple concepts into a survivor (repoints surfaces, adjacencies, assertion_concepts links, marks absorbed as superseded, records event). `splitConcept` moves a subset of surfaces to a new concept. `queryConceptEvolution` returns full evolution timeline, current aliases, and supersession chain with time filtering.

@@ -2534,6 +2534,44 @@ candidateOps.post('/:candidateId/living-context/batch-rematch', requireGate('liv
   return c.json(result);
 });
 
+// POST /:candidateId/living-context/batch-evaluation — run batch evaluation harness
+candidateOps.post('/:candidateId/living-context/batch-evaluation', requireGate('living_context_read'), async (c) => {
+  const db = c.env.DB;
+
+  const body = await c.req.json<{
+    pairs: Array<{
+      candidateId: string;
+      challengePacketId: string;
+      expectedVerdict?: string;
+    }>;
+    includeProvenance?: boolean;
+  }>();
+  if (!Array.isArray(body.pairs) || body.pairs.length === 0) {
+    return apiError(c, 'VALIDATION_ERROR', 'pairs array is required.');
+  }
+  if (body.pairs.length > 100) {
+    return apiError(c, 'VALIDATION_ERROR', 'Maximum 100 pairs per batch.');
+  }
+
+  const { runBatchEvaluation } = await import('../../lib/livingContext/batchEvaluationHarness');
+  type BatchEvaluationCandidate = import('../../lib/livingContext/batchEvaluationHarness').BatchEvaluationCandidate;
+  type MatchVerdict = import('../../lib/livingContext/matchReportPipeline').MatchVerdict;
+
+  const validVerdicts = ['strong_match', 'likely_match', 'needs_review', 'weak_match', 'insufficient_evidence'];
+  const candidates: BatchEvaluationCandidate[] = body.pairs.map((p) => ({
+    candidateId: p.candidateId,
+    challengePacketId: p.challengePacketId,
+    expectedVerdict: p.expectedVerdict && validVerdicts.includes(p.expectedVerdict)
+      ? p.expectedVerdict as MatchVerdict
+      : undefined,
+  }));
+
+  const result = await runBatchEvaluation(db, candidates, {
+    includeProvenance: body.includeProvenance,
+  });
+  return c.json(result);
+});
+
 // GET /:candidateId/pipeline-siblings — other candidates in the same pipeline
 candidateOps.get('/:candidateId/pipeline-siblings', async (c) => {
   const userId = c.var.userId;

@@ -223,6 +223,14 @@ export type {
   ConceptEvolutionOptions,
 } from './conceptEvolution';
 export { searchEvidence } from './evidenceSemanticSearch';
+export { runBatchEvaluation, loadEvaluationPairsFromCorpus } from './batchEvaluationHarness';
+export type {
+  BatchEvaluationCandidate,
+  BatchEvaluationPairResult,
+  BatchEvaluationMetrics,
+  BatchEvaluationResult,
+  BatchEvaluationOptions,
+} from './batchEvaluationHarness';
 export type {
   SearchStrategy,
   EvidenceHitType,
