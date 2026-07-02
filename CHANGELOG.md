@@ -37,6 +37,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - Labelled match-quality evaluations now compute and enforce expected reason categories, so a case cannot pass solely because the verdict is correct when the rationale is wrong.
 - Candidate `/assess` pages now fail closed to the safe profile-received handoff when a standalone code review leaks a `WELCOME` plus `WAITING_FOR_MATCH` stage, preventing the old matching dashboard from resurfacing while challenge readiness is handled upstream.
 - Standalone CODE_REVIEW intake no longer waits for full candidate profile ingestion before responding, keeping `/assess` on a bounded source-evidence handoff while profile discovery continues in the background.
+- Standalone CODE_REVIEW assignments can now repair a missing scheduled-interview repo/PR cache from the latest passed source-backed match run, so candidates do not stay on the profile-received handoff after a valid PR packet was already selected.
 
 ### Fixed — Open-source assessment progress
 

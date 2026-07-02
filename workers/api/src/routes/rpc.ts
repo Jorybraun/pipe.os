@@ -1028,6 +1028,12 @@ interface PersistedMatchRunRow {
   ranked_results_json: string | null;
 }
 
+interface PersistedStandaloneMatchAssignmentRow extends PersistedMatchRunRow {
+  repo_id: number;
+  pr_number: number;
+  github_url: string;
+}
+
 function isRecord(value: unknown): value is Record<string, unknown> {
   return typeof value === 'object' && value !== null && !Array.isArray(value);
 }
@@ -1720,7 +1726,7 @@ async function loadReadyStandaloneCodeReviewAssignment(
 ): Promise<StandaloneReviewMatchResult | null> {
   if (!assessment || 'interview_type' in assessment) return null;
   if (!assessment.github_repo_url || typeof assessment.github_pr_number !== 'number') {
-    return null;
+    return repairStandaloneReviewAssignmentFromMatchRun(db, candidateId, assessment.id);
   }
 
   const isSourceBacked = await hasSourceBackedReviewPacket(
@@ -1745,6 +1751,60 @@ async function loadReadyStandaloneCodeReviewAssignment(
     prNumber: assessment.github_pr_number,
     matchExplanation: cachedExplanation ?? sourceBackedManualReviewExplanation(assessment.github_pr_number),
   };
+}
+
+export async function repairStandaloneReviewAssignmentFromMatchRun(
+  db: D1Database,
+  candidateId: string,
+  interviewId: string,
+): Promise<StandaloneReviewMatchResult | null> {
+  const rows = await db.prepare(
+    `SELECT mr.status,
+            mr.ranked_results_json,
+            rcp.repo_id,
+            rcp.pr_number,
+            qr.github_url
+       FROM match_runs mr
+       JOIN review_challenge_packets rcp ON rcp.id = mr.selected_packet_id
+       JOIN qualified_repos qr ON qr.id = rcp.repo_id
+      WHERE mr.candidate_id = ?1
+        AND mr.status = 'MATCHED'
+        AND mr.selected_packet_id IS NOT NULL
+        AND rcp.production_ready = 1
+      ORDER BY mr.created_at DESC
+      LIMIT 5`,
+  ).bind(candidateId).all<PersistedStandaloneMatchAssignmentRow>();
+
+  for (const row of rows.results ?? []) {
+    if (!row.github_url || !Number.isFinite(row.repo_id) || !Number.isFinite(row.pr_number)) {
+      continue;
+    }
+    const matchExplanation = buildPersistedMatchRunExplanation(row, row.repo_id, row.pr_number);
+    if (!standaloneAutomaticMatchPasses(matchExplanation)) {
+      continue;
+    }
+    if (!await hasSourceBackedReviewPacket(db, row.github_url, row.pr_number)) {
+      continue;
+    }
+    await db.prepare(
+      `UPDATE scheduled_interviews
+          SET matched_repo_id = ?1,
+              github_repo_url = ?2,
+              github_pr_number = ?3,
+              updated_at = ?4
+        WHERE id = ?5
+          AND interview_type = 'CODE_REVIEW'
+          AND stage_id IS NULL
+          AND status NOT IN ('COMPLETED', 'CANCELLED')`,
+    ).bind(row.repo_id, row.github_url, row.pr_number, new Date().toISOString(), interviewId).run();
+    return {
+      repoUrl: row.github_url,
+      prNumber: row.pr_number,
+      matchExplanation,
+    };
+  }
+
+  return null;
 }
 
 async function recentlyAttemptedStandaloneReviewMatch(

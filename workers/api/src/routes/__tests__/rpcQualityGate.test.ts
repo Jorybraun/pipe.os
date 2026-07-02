@@ -4,6 +4,7 @@ import type { CandidateReviewChallengeMatch } from '../../lib/challengeMatching'
 import {
   matchStandaloneDevContainerAssessment,
   qualityGateFor,
+  repairStandaloneReviewAssignmentFromMatchRun,
   selectPreferredMatchExplanation,
   waitingStageConfigForGate,
 } from '../rpc';
@@ -327,6 +328,122 @@ describe('matchStandaloneDevContainerAssessment', () => {
     expect(calls.updates).toHaveLength(1);
     expect(calls.updates[0]?.slice(0, 3)).toEqual([
       41,
+      'https://github.com/mui/base-ui',
+      973,
+    ]);
+    expect(calls.updates[0]?.[4]).toBe('interview-1');
+  });
+});
+
+function persistedRankedMatch(): string {
+  return JSON.stringify([{
+    rank: 1,
+    challengeId: 'challenge_packet_973',
+    repoId: 973,
+    prNumber: 973,
+    score: 0.84,
+    eligible: true,
+    assessmentQuality: usableQualityWithoutComparableChallenge,
+    validatorAgent: {
+      ...passedValidator,
+      sourceBridge: {
+        ...passedValidator.sourceBridge,
+        repoId: '973',
+        roleSourceCount: 0,
+      },
+    },
+    alignments: [{
+      pairScore: 0.84,
+      roleSourceRefs: [],
+      candidateSourceRefs: [{
+        sourceRefType: 'source_span',
+        sourceRefId: 'candidate-source-span-1',
+        locator: 'resume:1',
+        exactText: 'Built React and TypeScript popover behavior with regression tests.',
+        contentHash: 'sha256:candidate-source-span-1',
+      }],
+      challengeSourceRefs: [{
+        sourceRefType: 'repo_source_span',
+        sourceRefId: 'repo-source-span-1',
+        locator: 'packages/react/src/popover/root/usePopoverRoot.ts:1',
+        exactText: 'Popover trigger click threshold implementation.',
+        contentHash: 'sha256:repo-source-span-1',
+      }],
+    }],
+    alignedDemandCount: 1,
+    stretchCount: 0,
+  }]);
+}
+
+function buildStandaloneRepairDb(calls: { updates: unknown[][] }): D1Database {
+  return {
+    prepare(sql: string) {
+      let bindings: unknown[] = [];
+      const statement = {
+        bind(...values: unknown[]) {
+          bindings = values;
+          return statement;
+        },
+        async first<T>() {
+          if (sql.includes('SELECT rcp.packet_json')) {
+            return { packet_json: JSON.stringify({ id: 'challenge_packet_973' }) } as T;
+          }
+          return null;
+        },
+        async all<T>() {
+          if (sql.includes('FROM match_runs mr')) {
+            return {
+              results: [{
+                status: 'MATCHED',
+                ranked_results_json: persistedRankedMatch(),
+                repo_id: 973,
+                pr_number: 973,
+                github_url: 'https://github.com/mui/base-ui',
+              }],
+            } as T;
+          }
+          return { results: [] } as T;
+        },
+        async run() {
+          if (sql.includes('UPDATE scheduled_interviews')) {
+            calls.updates.push(bindings);
+          }
+          return { success: true, results: [], meta: {} };
+        },
+      };
+      return statement;
+    },
+  } as unknown as D1Database;
+}
+
+describe('repairStandaloneReviewAssignmentFromMatchRun', () => {
+  it('hydrates a missing standalone code-review assignment from the latest passed source-backed match run', async () => {
+    const calls = { updates: [] as unknown[][] };
+    const db = buildStandaloneRepairDb(calls);
+
+    const result = await repairStandaloneReviewAssignmentFromMatchRun(
+      db,
+      'candidate-1',
+      'interview-1',
+    );
+
+    expect(result).toEqual(expect.objectContaining({
+      repoUrl: 'https://github.com/mui/base-ui',
+      prNumber: 973,
+    }));
+    expect(result?.matchExplanation?.qualityGate).toEqual({
+      verdict: 'PASSED',
+      checks: [
+        'candidate_source_evidence',
+        'repo_source_spans',
+        'assessment_quality_verified',
+        'contrast_separation_not_required_roleless',
+        'agent_validated_match',
+      ],
+    });
+    expect(calls.updates).toHaveLength(1);
+    expect(calls.updates[0]?.slice(0, 3)).toEqual([
+      973,
       'https://github.com/mui/base-ui',
       973,
     ]);
