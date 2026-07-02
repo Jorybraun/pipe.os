@@ -2394,6 +2394,7 @@ async function handleIntakePayload(
   options: {
     afterSourceBackedEvidence?: () => Promise<void>;
     afterTextIngestion?: () => Promise<void>;
+    awaitTextIngestion?: boolean;
   } = {},
 ): Promise<void> {
   let intakePayload: Record<string, unknown> = {};
@@ -2529,7 +2530,11 @@ async function handleIntakePayload(
       }
     };
 
-    executionCtx.waitUntil(runTextIngestion());
+    if (options.awaitTextIngestion) {
+      await runTextIngestion();
+    } else {
+      executionCtx.waitUntil(runTextIngestion());
+    }
   }
 
   // 2. Queue GitHub enrichment
@@ -3963,6 +3968,7 @@ rpcAuth.post('/submit-challenge-response', async (c) => {
       await handleIntakePayload(c.env, c.executionCtx, candidateId, submission, new Date().toISOString(), {
         afterSourceBackedEvidence: matchStandaloneReviewIfReady,
         afterTextIngestion: matchStandaloneReviewIfReady,
+        awaitTextIngestion: true,
       });
       const standaloneReview = await getPendingStandaloneReview(c.env.DB, candidateId);
       if (await hasReadyStandaloneCodeReviewAssignment(c.env.DB, candidateId, standaloneReview)) {
