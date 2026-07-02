@@ -70,7 +70,8 @@ export interface IngestionInput {
   skipPostDecompositionMaintenance?: boolean;
 }
 
-const CANDIDATE_DISCOVERY_AI_TIMEOUT_MS = 25_000;
+const CANDIDATE_DISCOVERY_AI_TIMEOUT_MS = 18_000;
+const MIN_CANDIDATE_DISCOVERY_ATTEMPT_BUDGET_MS = 1_500;
 const MAX_CANDIDATE_DISCOVERY_AI_ATTEMPTS = 3;
 
 class CandidateDiscoveryAttemptTimeoutError extends Error {
@@ -124,6 +125,11 @@ export async function discoverCandidateProfileWithProviderFallbacks(input: {
   const providers = input.providers.slice(0, input.maxAttempts);
   const failures: string[] = [];
   let attemptsRun = 0;
+  const startedAt = Date.now();
+  const minimumAttemptBudgetMs = Math.min(
+    MIN_CANDIDATE_DISCOVERY_ATTEMPT_BUDGET_MS,
+    Math.max(1, Math.floor(input.timeoutMs / 4)),
+  );
 
   if (providers.length === 0) {
     throw new Error('No candidate discovery AI provider is configured');
@@ -132,13 +138,20 @@ export async function discoverCandidateProfileWithProviderFallbacks(input: {
   for (let index = 0; index < providers.length; index += 1) {
     const provider = providers[index]!;
     const attempt = index + 1;
+    const remainingMs = input.timeoutMs - (Date.now() - startedAt);
+    if (remainingMs < minimumAttemptBudgetMs) {
+      failures.push(
+        `application budget exhausted before attempt ${attempt}: ${Math.max(0, remainingMs)}ms remaining`,
+      );
+      break;
+    }
     attemptsRun = attempt;
     const model = providerModelKey(provider);
     await input.onAttempt?.({ status: 'started', model, attempt });
     try {
       const result = await Promise.race([
         discoverCandidateProfile({ provider, parsed: input.parsed, resumeText: input.resumeText }),
-        timeoutAfter(input.timeoutMs, `Candidate Discovery AI ${model}`),
+        timeoutAfter(remainingMs, `Candidate Discovery AI ${model}`),
       ]);
       await input.onAttempt?.({ status: 'succeeded', model: result.modelUsed, attempt });
       return result;

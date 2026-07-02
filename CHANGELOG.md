@@ -50,6 +50,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Fixed — Open-source assessment progress
 
+- Candidate discovery AI now shares one strict wall-clock budget across model fallbacks, so a malformed first model response cannot start a second long call that gets cancelled by Worker background limits and leaves ingestion stuck in `discover_profile`.
 - Candidate discovery ingestion now tries a bounded sequence of current Workers AI models, stops cleanly after an application timeout, unwraps object-shaped provider responses, and records per-attempt telemetry before falling back to source-backed parsing, so dev no longer silently gives up or gets stuck after one slow or malformed model response.
 - LLM usage accounting now includes the current Workers AI `@cf/zai-org/glm-4.7-flash` default so candidate-ingestion metering does not fail on the replacement model.
 - Standalone assessment text intake now skips hot-path per-node embeddings after source-backed resume evidence is persisted, giving candidate-profile AI discovery time to complete before Worker background execution is cancelled.
