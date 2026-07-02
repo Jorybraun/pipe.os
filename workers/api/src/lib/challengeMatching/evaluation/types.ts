@@ -215,6 +215,38 @@ export interface DeterminismComparison {
   identical: boolean;
   fingerprint: string;
   comparisonFingerprint: string | null;
+  drift?: DeterminismDriftSummary;
+}
+
+export interface DeterminismChallengeSnapshot {
+  challengeId: string;
+  repoId: string;
+  prNumber: number;
+  rank: number | null;
+  recallRank: number;
+  score: number;
+  candidateEvidenceAlignment: number;
+  roleRelevance: number;
+  contextualSpecificity: number;
+  challengeQuality: number;
+  validationDeepeningValue: number;
+  alignedDemandCount: number;
+  stretchCount: number;
+  stretchDemandWeightRatio: number;
+  provenanceComplete: boolean;
+  eligible: boolean;
+  sharedConcepts: string[];
+}
+
+export interface DeterminismDriftSummary {
+  reason:
+    | 'missing_comparison'
+    | 'top_challenge_changed'
+    | 'ranked_result_changed'
+    | 'source_payload_changed';
+  primaryTopChallenge: DeterminismChallengeSnapshot | null;
+  comparisonTopChallenge: DeterminismChallengeSnapshot | null;
+  firstDifference: string;
 }
 
 export interface PacketIdentityMismatch {

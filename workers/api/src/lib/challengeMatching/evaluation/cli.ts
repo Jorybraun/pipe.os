@@ -357,14 +357,18 @@ export function generateHumanReadableReport(result: EvaluationResult): string {
     `Synthetic labels: ${result.metrics.syntheticFixtureCount}`,
   ];
   if (result.metrics.determinismComparisons.length > 0) {
+    const comparisonLines = result.metrics.determinismComparisons.flatMap((comparison) => {
+      const statusLine = `- ${comparison.candidateId}/${comparison.roleId}: ${comparison.matchRunId}`
+        + ` vs ${comparison.comparisonMatchRunId ?? '(missing)'}`
+        + ` => ${comparison.identical ? 'PASS' : 'FAIL'}`;
+      return comparison.drift
+        ? [statusLine, `  drift: ${comparison.drift.firstDifference}`]
+        : [statusLine];
+    });
     lines.push(
       '',
       'Determinism comparisons:',
-      ...result.metrics.determinismComparisons.map((comparison) =>
-        `- ${comparison.candidateId}/${comparison.roleId}: ${comparison.matchRunId}`
-        + ` vs ${comparison.comparisonMatchRunId ?? '(missing)'}`
-        + ` => ${comparison.identical ? 'PASS' : 'FAIL'}`
-      ),
+      ...comparisonLines,
     );
   }
   lines.push('', result.passed ? 'RESULT: PASS' : 'RESULT: FAIL');

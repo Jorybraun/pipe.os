@@ -711,6 +711,7 @@ describe('matching evaluation CLI', () => {
     directory = await mkdtemp(join(tmpdir(), 'pipe-evaluation-'));
     const databasePath = join(directory, 'evaluation.sqlite');
     const jsonPath = join(directory, 'result.json');
+    const reportPath = join(directory, 'result.txt');
 
     const sqlite = new Database(databasePath);
     sqlite.exec(`
@@ -764,6 +765,8 @@ describe('matching evaluation CLI', () => {
       'run-no-provenance',
       '--json',
       jsonPath,
+      '--report',
+      reportPath,
       '--allow-synthetic',
     ]);
 
@@ -773,6 +776,9 @@ describe('matching evaluation CLI', () => {
     expect(result.metrics.missingProvenanceCount).toBeGreaterThan(0);
     expect(result.failures).toEqual(
       expect.arrayContaining([expect.stringContaining('Missing provenance')]),
+    );
+    expect(await readFile(reportPath, 'utf8')).toContain(
+      'drift: missing comparison run for primary top challenge-1 repo-1#42',
     );
   });
 

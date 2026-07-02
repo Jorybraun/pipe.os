@@ -1,7 +1,9 @@
 import { evaluationCorpusLabelCounts, getExpectedPackets } from './corpus';
 import type {
   AcceptanceThresholds,
+  DeterminismChallengeSnapshot,
   DeterminismComparison,
+  DeterminismDriftSummary,
   EvaluationCorpus,
   EvaluationMetrics,
   EvaluationResult,
@@ -216,6 +218,195 @@ export function verifyByteIdenticalRerun(
   };
 }
 
+function topChallenge(
+  run: PersistedMatchRun,
+): PersistedRankedChallenge | undefined {
+  return [...run.rankedChallenges]
+    .sort((left, right) =>
+      (left.rank ?? Number.POSITIVE_INFINITY)
+      - (right.rank ?? Number.POSITIVE_INFINITY)
+      || left.recallRank - right.recallRank
+      || left.challengeId.localeCompare(right.challengeId)
+    )[0];
+}
+
+function challengeSnapshot(
+  challenge: PersistedRankedChallenge | undefined,
+): DeterminismChallengeSnapshot | null {
+  if (!challenge) return null;
+  const sharedConcepts = Array.from(new Set(
+    challenge.alignments.flatMap((alignment) => alignment.sharedConcepts),
+  )).sort();
+  return {
+    challengeId: challenge.challengeId,
+    repoId: challenge.repoId,
+    prNumber: challenge.prNumber,
+    rank: challenge.rank,
+    recallRank: challenge.recallRank,
+    score: challenge.score,
+    candidateEvidenceAlignment: challenge.candidateEvidenceAlignment,
+    roleRelevance: challenge.roleRelevance,
+    contextualSpecificity: challenge.contextualSpecificity,
+    challengeQuality: challenge.challengeQuality,
+    validationDeepeningValue: challenge.validationDeepeningValue,
+    alignedDemandCount: challenge.alignedDemandCount,
+    stretchCount: challenge.stretchCount,
+    stretchDemandWeightRatio: challenge.stretchDemandWeightRatio,
+    provenanceComplete: challenge.provenanceComplete,
+    eligible: challenge.eligible,
+    sharedConcepts,
+  };
+}
+
+function snapshotLabel(
+  snapshot: DeterminismChallengeSnapshot | null,
+): string {
+  if (!snapshot) return '(none)';
+  return `${snapshot.challengeId} ${snapshot.repoId}#${snapshot.prNumber}`
+    + ` rank=${snapshot.rank ?? 'unranked'}`
+    + ` score=${snapshot.score.toFixed(4)}`;
+}
+
+function formatValue(value: unknown): string {
+  if (typeof value === 'number') {
+    return Number.isInteger(value) ? String(value) : value.toFixed(4);
+  }
+  if (typeof value === 'string') return value;
+  if (typeof value === 'boolean') return String(value);
+  if (value === null) return 'null';
+  if (Array.isArray(value)) return value.join(',') || '(empty)';
+  return JSON.stringify(value);
+}
+
+function firstSnapshotDifference(
+  primary: DeterminismChallengeSnapshot,
+  comparison: DeterminismChallengeSnapshot,
+): string | null {
+  const keys: Array<keyof DeterminismChallengeSnapshot> = [
+    'challengeId',
+    'repoId',
+    'prNumber',
+    'rank',
+    'recallRank',
+    'score',
+    'candidateEvidenceAlignment',
+    'roleRelevance',
+    'contextualSpecificity',
+    'challengeQuality',
+    'validationDeepeningValue',
+    'alignedDemandCount',
+    'stretchCount',
+    'stretchDemandWeightRatio',
+    'provenanceComplete',
+    'eligible',
+    'sharedConcepts',
+  ];
+  for (const key of keys) {
+    const primaryValue = primary[key];
+    const comparisonValue = comparison[key];
+    const changed = Array.isArray(primaryValue) || Array.isArray(comparisonValue)
+      ? JSON.stringify(primaryValue) !== JSON.stringify(comparisonValue)
+      : primaryValue !== comparisonValue;
+    if (changed) {
+      return `${primary.challengeId}.${key}: ${formatValue(primaryValue)}`
+        + ` -> ${formatValue(comparisonValue)}`;
+    }
+  }
+  return null;
+}
+
+function determinismDriftSummary(
+  run: PersistedMatchRun,
+  comparison: PersistedMatchRun | undefined,
+): DeterminismDriftSummary {
+  const primaryTopChallenge = challengeSnapshot(topChallenge(run));
+  const comparisonTopChallenge = comparison
+    ? challengeSnapshot(topChallenge(comparison))
+    : null;
+
+  if (!comparison) {
+    return {
+      reason: 'missing_comparison',
+      primaryTopChallenge,
+      comparisonTopChallenge,
+      firstDifference: `missing comparison run for primary top ${snapshotLabel(primaryTopChallenge)}`,
+    };
+  }
+
+  if (
+    primaryTopChallenge?.challengeId !== comparisonTopChallenge?.challengeId
+    || primaryTopChallenge?.repoId !== comparisonTopChallenge?.repoId
+    || primaryTopChallenge?.prNumber !== comparisonTopChallenge?.prNumber
+  ) {
+    return {
+      reason: 'top_challenge_changed',
+      primaryTopChallenge,
+      comparisonTopChallenge,
+      firstDifference: `top challenge changed: ${snapshotLabel(primaryTopChallenge)}`
+        + ` -> ${snapshotLabel(comparisonTopChallenge)}`,
+    };
+  }
+
+  if (primaryTopChallenge && comparisonTopChallenge) {
+    const difference = firstSnapshotDifference(primaryTopChallenge, comparisonTopChallenge);
+    if (difference) {
+      return {
+        reason: 'ranked_result_changed',
+        primaryTopChallenge,
+        comparisonTopChallenge,
+        firstDifference: difference,
+      };
+    }
+  }
+
+  const primaryById = new Map(
+    run.rankedChallenges.map((challenge) => [challenge.challengeId, challengeSnapshot(challenge)]),
+  );
+  const comparisonById = new Map(
+    comparison.rankedChallenges.map((challenge) => [
+      challenge.challengeId,
+      challengeSnapshot(challenge),
+    ]),
+  );
+  for (const [challengeId, primarySnapshot] of primaryById.entries()) {
+    const comparisonSnapshot = comparisonById.get(challengeId);
+    if (!primarySnapshot || !comparisonSnapshot) {
+      return {
+        reason: 'ranked_result_changed',
+        primaryTopChallenge,
+        comparisonTopChallenge,
+        firstDifference: `challenge presence changed: ${challengeId}`,
+      };
+    }
+    const difference = firstSnapshotDifference(primarySnapshot, comparisonSnapshot);
+    if (difference) {
+      return {
+        reason: 'ranked_result_changed',
+        primaryTopChallenge,
+        comparisonTopChallenge,
+        firstDifference: difference,
+      };
+    }
+  }
+  for (const challengeId of comparisonById.keys()) {
+    if (!primaryById.has(challengeId)) {
+      return {
+        reason: 'ranked_result_changed',
+        primaryTopChallenge,
+        comparisonTopChallenge,
+        firstDifference: `comparison added challenge: ${challengeId}`,
+      };
+    }
+  }
+
+  return {
+    reason: 'source_payload_changed',
+    primaryTopChallenge,
+    comparisonTopChallenge,
+    firstDifference: 'source references, provenance payload, or alignment internals changed',
+  };
+}
+
 export function evaluateMatchRuns(
   corpus: EvaluationCorpus,
   matchRuns: PersistedMatchRun[],
@@ -336,6 +527,7 @@ export function evaluateMatchRuns(
         identical: false,
         fingerprint,
         comparisonFingerprint: null,
+        drift: determinismDriftSummary(run, undefined),
       });
       continue;
     }
@@ -349,6 +541,9 @@ export function evaluateMatchRuns(
       identical: verification.identical,
       fingerprint: verification.fingerprint,
       comparisonFingerprint: verification.comparisonFingerprint,
+      ...(verification.identical
+        ? {}
+        : { drift: determinismDriftSummary(run, comparison) }),
     });
     if (!verification.identical) byteIdenticalRerun = false;
   }

@@ -147,6 +147,10 @@ candidate/role/status run as the comparison when available. This keeps app-dev
 operator runs repeatable without manually assembling `--comparison-run-id`
 arguments while still surfacing true gaps: missing comparison history,
 non-identical reranks, missing packet coverage, and unreviewed draft labels.
+When a comparison fails, the human-readable report includes a compact
+`drift:` line that names the first actionable difference, such as a changed top
+challenge, score/alignment drift, changed shared concepts, or a missing
+comparison run.
 
 CI also runs the matching-evaluation readiness report after worker unit tests.
 Missing Cloudflare credentials or `MATCHING_EVALUATION_CORPUS_ID` produce a
