@@ -5,6 +5,7 @@ import { execFile } from 'node:child_process';
 import { promisify } from 'node:util';
 import dotenv from 'dotenv';
 import WebSocket from 'ws';
+import { chromium, expect } from '@playwright/test';
 
 dotenv.config({ path: '.env.local' });
 dotenv.config({ path: '.env' });
@@ -86,6 +87,7 @@ const BASE_COMMIT_SHA = process.env.WORKSPACE_SMOKE_BASE_COMMIT_SHA || CHANGE_PR
 const EXPECTED_BRIDGE_REVISION = process.env.WORKSPACE_SMOKE_EXPECTED_BRIDGE_REVISION
   || '2026-06-30-assessment-branch-v1';
 const REQUIRE_ROOM = process.env.WORKSPACE_SMOKE_REQUIRE_ROOM === '1';
+const SKIP_RECRUITER_BROWSER = process.env.WORKSPACE_SMOKE_SKIP_RECRUITER_BROWSER === '1';
 const REMOTE = !APP_BASE.includes('localhost') && !APP_BASE.includes('127.0.0.1');
 
 function assertEnv() {
@@ -344,6 +346,21 @@ function githubCompareUrl({ commitUrl, baseCommitSha, commitSha }) {
   }
 }
 
+function repoLabelFromUrl(rawUrl) {
+  if (typeof rawUrl !== 'string' || !rawUrl.trim()) return null;
+  try {
+    const url = new URL(rawUrl);
+    const parts = url.pathname
+      .replace(/\.git$/i, '')
+      .split('/')
+      .filter(Boolean);
+    if (parts.length >= 2) return `${parts[parts.length - 2]}/${parts[parts.length - 1]}`;
+  } catch {
+    return null;
+  }
+  return null;
+}
+
 async function assertRecruiterAssessmentProjection(interviewId, workspaceCommit, expectedBaseCommitSha) {
   const detail = await requestJson(APP_BASE, `/api/v1/scheduling/interviews/${interviewId}`);
   const progress = detail?.interview?.assessmentProgress ?? null;
@@ -403,6 +420,11 @@ function humanDecisionForRecommendation(recommendation) {
   return 'hold';
 }
 
+function humanDecisionLabel(decision) {
+  if (decision === 'needs_more_evidence') return 'Human: needs more evidence';
+  return `Human: ${decision}`;
+}
+
 async function recordHumanAssessmentDecision(interviewId, workspaceCommit, recommendation) {
   const decision = humanDecisionForRecommendation(recommendation);
   const commitShort = workspaceCommit.commitSha.slice(0, 12);
@@ -440,6 +462,48 @@ async function recordHumanAssessmentDecision(interviewId, workspaceCommit, recom
     sourceRefTypes: recorded.sourceRefTypes,
     nextAction: progress.nextAction,
   };
+}
+
+async function assertRecruiterReviewerReceiptBrowser(interviewId, workspaceCommit, submittedBranchName, humanDecision) {
+  if (SKIP_RECRUITER_BROWSER) {
+    return { skipped: true, reason: 'WORKSPACE_SMOKE_SKIP_RECRUITER_BROWSER=1' };
+  }
+
+  const browser = await chromium.launch({ headless: true });
+  const context = await browser.newContext({
+    ...(REMOTE ? { httpCredentials: { username: APP_BASIC_USER, password: APP_BASIC_PASSWORD } } : {}),
+    viewport: { width: 1440, height: 1000 },
+  });
+
+  try {
+    const page = await context.newPage();
+    await page.goto(`${APP_BASE}/interviews/${interviewId}?workspaceSmoke=${Date.now()}`, {
+      waitUntil: 'domcontentloaded',
+      timeout: 60_000,
+    });
+
+    const receipt = page.getByTestId('interview-assessment-reviewer-receipt');
+    await expect(receipt).toBeVisible({ timeout: 60_000 });
+    await expect(receipt).toContainText('Reviewer receipt');
+    await expect(receipt).toContainText('Final human decision tied back to the exact assessment report and commit evidence.');
+    await expect(receipt).toContainText('Final decision');
+    await expect(receipt).toContainText(humanDecisionLabel(humanDecision.decision));
+    await expect(receipt).toContainText('Decision anchor');
+    await expect(receipt).toContainText('Assessment evaluation report');
+    await expect(receipt).toContainText('Commit reviewed');
+    await expect(receipt).toContainText(workspaceCommit.commitSha.slice(0, 10));
+    const repoLabel = repoLabelFromUrl(REPO_URL);
+    if (repoLabel) await expect(receipt).toContainText(repoLabel);
+    if (submittedBranchName) await expect(receipt).toContainText(`Branch ${submittedBranchName}`);
+    await expect(receipt).toContainText('Recorded by');
+    await expect(receipt).toContainText('Human reviewer');
+    await expect(receipt).not.toContainText('dev-user');
+
+    return { skipped: false };
+  } finally {
+    await context.close();
+    await browser.close();
+  }
 }
 
 function sleep(ms) {
@@ -770,6 +834,12 @@ async function main() {
   if (recruiterProjection.humanDecision?.decision !== humanDecision.decision) {
     throw new Error(`Recruiter detail did not expose the recorded human decision: ${JSON.stringify(recruiterProjection.humanDecision)}`);
   }
+  const recruiterBrowser = await assertRecruiterReviewerReceiptBrowser(
+    interviewId,
+    workspaceCommit,
+    submittedBranchName,
+    humanDecision,
+  );
 
   console.log(JSON.stringify({
     ok: true,
@@ -812,6 +882,8 @@ async function main() {
     humanDecisionSourceRefCount: humanDecision.sourceRefCount,
     humanDecisionSourceRefTypes: humanDecision.sourceRefTypes,
     recruiterDetailReviewable: true,
+    recruiterReviewerReceiptVisible: !recruiterBrowser.skipped,
+    recruiterReviewerReceiptSkippedReason: recruiterBrowser.skipped ? recruiterBrowser.reason : null,
     recruiterCompareUrl: recruiterProjection.compareUrl,
     recruiterSourceRefCounts: recruiterProjection.sourceRefCounts,
   }, null, 2));

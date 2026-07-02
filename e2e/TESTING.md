@@ -320,7 +320,10 @@ workspace `HEAD`, requires `git_commit`, `code_diff`, `terminal_command`, and
 `test_run` source refs, then starts source-backed evaluation from the recruiter
 API, records a recruiter human decision against the evaluated report, and
 requires recruiter detail to expose that decision with
-`assessment_evaluation_report` source refs. Latest deployed proof on 2026-07-02 passed for interview
+`assessment_evaluation_report` source refs. It also opens the deployed
+app-dev recruiter detail page and verifies the reviewer receipt renders the
+final decision, source-report anchor, reviewed commit, repo/branch, and no raw
+reviewer ID. Latest deployed proof on 2026-07-02 passed for interview
 `7edae8fa-b310-4b5b-8e9e-fa9d584beca9`, repo `mui/base-ui`, workspace commit
 `50019c2a200627d5670fab1f926ed825bade4914`, bridge revision
 `2026-06-30-assessment-branch-v1`, and evaluation report
