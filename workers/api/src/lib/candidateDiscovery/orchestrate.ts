@@ -58,6 +58,7 @@ export interface IngestionInput {
   parsed: ParsedCV;
   resumeText: string;
   decompositionResult?: DecompositionResult | null;
+  afterSourceBackedEvidence?: () => Promise<void>;
 }
 
 /**
@@ -123,6 +124,14 @@ export async function runCandidateIngestion(input: IngestionInput): Promise<void
       eventType: 'decomposition_complete',
       payload: { nodeCount: decompResult.embeddings.length },
     });
+    if (input.afterSourceBackedEvidence) {
+      try {
+        await input.afterSourceBackedEvidence();
+      } catch (err) {
+        const msg = err instanceof Error ? err.message : String(err);
+        console.error('[ingestion] afterSourceBackedEvidence failed:', msg);
+      }
+    }
   } catch (err) {
     const msg = err instanceof Error ? err.message : String(err);
     console.warn('[ingestion] resumeDecomposition failed (non-blocking):', msg);

@@ -60,6 +60,9 @@ class MemoryQueryClient implements QueryClient {
     if (normalized.includes("c.polarity = 'positive'")) {
       return this.counts.get('sourceLessPositiveClaims') ?? 0;
     }
+    if (normalized.includes('FROM assessment_sessions')) {
+      return this.counts.get('assessmentSessions') ?? 1;
+    }
     return 0;
   }
 
@@ -115,6 +118,38 @@ describe('auditAssessmentEvidenceIngestion', () => {
     expect(audit.failures).toContain('Commit submissions has 1 raw event(s) not projected to person context');
   });
 
+  it('reports missing families as coverage gaps without failing the audit by default', async () => {
+    const client = completeClient();
+
+    const audit = await auditAssessmentEvidenceIngestion(client);
+    const commit = audit.families.find((family) => family.key === 'commit_submissions');
+
+    expect(commit?.status).toBe('missing');
+    expect(audit.status).toBe('ready');
+    expect(audit.failures).toEqual([]);
+    expect(audit.nextActions).toContain('Coverage gap: no commit submissions was found in the audited scope.');
+  });
+
+  it('can require every family when auditing full coverage cutovers', async () => {
+    const client = completeClient();
+
+    const audit = await auditAssessmentEvidenceIngestion(client, { requireAllFamilies: true });
+
+    expect(audit.status).toBe('not_ready');
+    expect(audit.failures).toContain('Commit submissions is missing from the assessment evidence spine');
+  });
+
+  it('fails scoped audits when the requested assessment session is missing', async () => {
+    const client = completeClient();
+    client.setCount('assessmentSessions', 0);
+
+    const audit = await auditAssessmentEvidenceIngestion(client, { sessionId: 'assessment-missing' });
+
+    expect(audit.status).toBe('not_ready');
+    expect(audit.scope.sessionId).toBe('assessment-missing');
+    expect(audit.failures).toContain('assessment session assessment-missing was not found');
+  });
+
   it('does not treat assessment-scoped context records as person projections', async () => {
     const client = completeClient();
     client.setCount('assessment:assessment_commit_submission', 1);
@@ -127,6 +162,10 @@ describe('auditAssessmentEvidenceIngestion', () => {
       assessmentScopedContextCount: 1,
       personProjectedContextCount: 0,
     });
+    expect(audit.status).toBe('not_ready');
+    expect(audit.failures).toContain(
+      'Commit submissions has captured source refs or assessment context not projected to person context',
+    );
   });
 
   it('flags duplicate projected edges and source-less positive claims', async () => {

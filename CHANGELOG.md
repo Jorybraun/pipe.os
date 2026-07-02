@@ -13,6 +13,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - Added `npm run smoke:open-source-workspace-dev` as the explicit dev proof command for the real open-source bug-fix workspace path, covering room launch, source-backed workspace finalization, commit evidence, and evaluator readiness.
 - Added explicit app-dev deployment scripts for `pipe-api-dev`, `pipe-app-dev`, and the assessment room, including an explicit room-dev Wrangler target, so manual assessment fixes ship to the same dev surfaces used by smoke tests.
 - Added `npm run assessment-evidence:audit` plus the assessment evidence ingestion audit contract, reporting captured, projected, missing, duplicated, source-less-positive, and unprojected raw assessment evidence across the required ingestion families.
+- Added `npm run assessment-evidence:replay -- --remote --session-id <id>` to replay one assessment session into living context and print interaction/context/source-ref proof counts for dev verification.
 
 ### Added — CODE_REVIEW assessment runtime
 
@@ -25,11 +26,16 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Fixed — CODE_REVIEW assessment runtime
 
+- Standalone text-intake CODE_REVIEW invites now attempt source-backed PR assignment immediately after resume decomposition produces matchable evidence, so app-dev auto-match can unblock without waiting for the slower discovery/profile tail to finish.
 - Labelled match-quality evaluations now compute and enforce expected reason categories, so a case cannot pass solely because the verdict is correct when the rationale is wrong.
 - Candidate `/assess` pages now fail closed to the safe profile-received handoff when a standalone code review leaks a `WELCOME` plus `WAITING_FOR_MATCH` stage, preventing the old matching dashboard from resurfacing while challenge readiness is handled upstream.
 
 ### Fixed — Open-source assessment progress
 
+- Living-context scheduled backfill now recovers stale `running` checkpoints before selecting ready tasks, so interrupted assessment evidence replays retry instead of freezing app-dev assessment projection.
+- Assessment evidence audits can now be scoped to one assessment session, report absent families as coverage gaps by default, and reserve failures for missing sessions, source-less positive claims, duplicate projected edges, or captured raw events that did not project to person context.
+- Assessment-to-living-context ingestion now projects evaluator reports themselves into person context with exact `assessment_evaluation_report` source refs, so report summaries are rebuildable person evidence rather than only assessment-scoped context.
+- Assessment evidence replay now preserves original `review_challenge_packet` refs when optional packet tables are absent, preventing one missing projection table from blocking later commit, diff, test, AI, report, or human-decision evidence from reaching person context.
 - The assessment evidence ingestion audit now checks explicit context record types per evidence family instead of deriving them from event kind names, reducing false captured/projected classifications.
 - The assessment evidence ingestion audit now separates raw assessment-session context record types from person-projected context record types, so `assessment_commit_submission` raw capture cannot be mistaken for `assessment:commit_submission` person evidence.
 - Recruiter detail smoke tests can now optionally open the delivered candidate assessment/workspace link from the detail page, proving disposable app-dev invites hand off to the candidate CODE_REVIEW or workspace surface instead of only verifying recruiter-side projections.

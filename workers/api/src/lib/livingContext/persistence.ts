@@ -162,6 +162,16 @@ async function requireRow(
   if (!row) throw new Error(`${label} does not exist`);
 }
 
+async function tableExists(db: D1Database, tableName: string): Promise<boolean> {
+  const row = await db.prepare(
+    `SELECT name
+       FROM sqlite_master
+      WHERE type = 'table'
+        AND name = ?1`,
+  ).bind(tableName).first<{ name: string }>();
+  return row !== null && row !== undefined;
+}
+
 async function requireSourceSpanForWorkspacePerson(
   db: D1Database,
   sourceSpanId: string,
@@ -246,6 +256,7 @@ async function requireContextSourceRef(
     return;
   }
   if (source.sourceRefType === 'review_challenge_packet') {
+    if (!await tableExists(db, 'review_challenge_packets')) return;
     const row = await db.prepare(
       'SELECT id, source_hash, packet_json FROM review_challenge_packets WHERE id = ?1',
     ).bind(source.sourceRefId).first<{

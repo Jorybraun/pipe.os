@@ -254,7 +254,7 @@ describe('ingestAssessmentToLivingContext', () => {
     expect(result).not.toBeNull();
     expect(result!.claimAssertionCount).toBe(1);
     expect(result!.episodeCount).toBe(1);
-    expect(result!.contextRecordCount).toBe(1);
+    expect(result!.contextRecordCount).toBe(2);
 
     const assertions = sqlite.prepare(
       `SELECT * FROM semantic_assertions WHERE predicate LIKE 'evaluation:%' ORDER BY observed_at`,
@@ -270,6 +270,23 @@ describe('ingestAssessmentToLivingContext', () => {
     expect(contextRecords.length).toBe(1);
     expect(contextRecords[0].predicate).toBe('positive');
     expect(contextRecords.some((record) => record.narrative === 'Did not add regression test for the fix')).toBe(false);
+
+    const reportRecord = sqlite.prepare(
+      `SELECT cr.record_type, cr.predicate, cr.narrative,
+              sr.source_ref_type, sr.source_ref_id, sr.evidence_role, sr.exact_text
+         FROM context_records cr
+         JOIN context_record_source_refs sr ON sr.context_record_id = cr.id
+        WHERE cr.ingestion_key = 'assessment_report_context:report-1'`,
+    ).get() as Record<string, unknown>;
+    expect(reportRecord).toEqual({
+      record_type: 'assessment_evaluation_report',
+      predicate: 'EVALUATED',
+      narrative: 'Strong debugging and code comprehension skills demonstrated',
+      source_ref_type: 'assessment_evaluation_report',
+      source_ref_id: 'report-1',
+      evidence_role: 'evaluation_report_summary',
+      exact_text: 'Strong debugging and code comprehension skills demonstrated',
+    });
   });
 
   it('is idempotent — running twice produces the same entity count', async () => {
@@ -493,7 +510,7 @@ describe('ingestAssessmentSessionRealTime', () => {
     expect(interaction.interaction_type).toBe('assessment:CODE_REVIEW');
   });
 
-  it('preserves commit, diff, test, and upstream PR source refs into person projection without replay duplicates', async () => {
+  it('preserves commit, diff, test, upstream PR, AI, report, and human decision source refs without replay duplicates', async () => {
     const now = '2026-06-02T13:00:00Z';
     sqlite.exec(`
       INSERT INTO assessment_sessions
@@ -515,6 +532,32 @@ describe('ingestAssessmentSessionRealTime', () => {
         '{"commitSha":"abc123","upstreamPrConsent":true}',
         '${now}',
         '${now}'
+      ),
+      (
+        'ev-rt-ai-1',
+        'key:ev-rt-ai-1',
+        'sess-rt-source-refs',
+        2,
+        'ai_interaction',
+        'ai_developer',
+        'devin',
+        'Candidate asked Devin about the failing regression and received a source-backed bridge response',
+        '{"provider":"devin"}',
+        '${now}',
+        '${now}'
+      ),
+      (
+        'ev-rt-human-1',
+        'key:ev-rt-human-1',
+        'sess-rt-source-refs',
+        3,
+        'human_assessment_decision',
+        'recruiter',
+        'reviewer-1',
+        'Human reviewer advances the candidate after checking source-backed report evidence',
+        '{"decision":"advance"}',
+        '${now}',
+        '${now}'
       );
     `);
     sqlite.exec(`
@@ -524,7 +567,24 @@ describe('ingestAssessmentSessionRealTime', () => {
         ('sr-rt-git-commit', 'ev-rt-commit-1', 'git_commit', 'abc123', 'submitted_commit', '{"commitSha":"abc123"}', 'commit abc123', 'sha256:commit-abc123', '{}', '${now}'),
         ('sr-rt-code-diff', 'ev-rt-commit-1', 'code_diff', 'base..abc123', 'submitted_diff', '{"base":"base","head":"abc123"}', 'diff --git a/src/fix.ts b/src/fix.ts', 'sha256:diff-abc123', '{}', '${now}'),
         ('sr-rt-test-run', 'ev-rt-commit-1', 'test_run', 'abc123:test', 'verification_test_output', '{"command":"npm test"}', 'npm test\\nPASS src/fix.test.ts', 'sha256:test-abc123', '{}', '${now}'),
-        ('sr-rt-upstream-pr', 'ev-rt-commit-1', 'upstream_pull_request', 'https://github.com/example/repo/pull/42', 'candidate_upstream_pr', '{"url":"https://github.com/example/repo/pull/42"}', 'Upstream PR #42', 'sha256:pr-42', '{}', '${now}');
+        ('sr-rt-upstream-pr', 'ev-rt-commit-1', 'upstream_pull_request', 'https://github.com/example/repo/pull/42', 'candidate_upstream_pr', '{"url":"https://github.com/example/repo/pull/42"}', 'Upstream PR #42', 'sha256:pr-42', '{}', '${now}'),
+        ('sr-rt-ai-prompt', 'ev-rt-ai-1', 'ai_user_prompt', 'prompt-abc123', 'ai_user_prompt', '{"provider":"devin"}', 'Why does the regression fail after cleanup?', 'sha256:ai-prompt', '{}', '${now}'),
+        ('sr-rt-ai-response', 'ev-rt-ai-1', 'ai_agent_response', 'response-abc123', 'ai_agent_response', '{"provider":"devin"}', 'The cleanup leaves a stale listener attached after unmount.', 'sha256:ai-response', '{}', '${now}'),
+        ('sr-rt-human-report', 'ev-rt-human-1', 'assessment_evaluation_report', 'report-rt-1', 'reviewed_report', '{"reportId":"report-rt-1"}', 'Automated evaluator found a source-backed focused fix.', 'sha256:report-summary', '{}', '${now}');
+    `);
+    sqlite.exec(`
+      INSERT INTO assessment_evaluation_reports
+        (id, ingestion_key, session_id, status, summary, output_json, created_at, updated_at)
+      VALUES (
+        'report-rt-1',
+        'key:report-rt-1',
+        'sess-rt-source-refs',
+        'EVALUATED',
+        'Automated evaluator found a source-backed focused fix.',
+        '{}',
+        '${now}',
+        '${now}'
+      );
     `);
 
     const first = await ingestAssessmentSessionRealTime(db, 'sess-rt-source-refs');
@@ -597,6 +657,55 @@ describe('ingestAssessmentSessionRealTime', () => {
       }),
     ]));
 
+    const aiRefs = sqlite.prepare(
+      `SELECT csr.source_ref_type, csr.source_ref_id, csr.evidence_role, csr.exact_text
+         FROM context_records cr
+         JOIN context_record_source_refs csr ON csr.context_record_id = cr.id
+        WHERE cr.ingestion_key = 'assessment_event_context:ev-rt-ai-1'
+        ORDER BY csr.source_ref_type`,
+    ).all() as Array<Record<string, unknown>>;
+    expect(aiRefs).toEqual(expect.arrayContaining([
+      expect.objectContaining({
+        source_ref_type: 'ai_agent_response',
+        source_ref_id: 'response-abc123',
+        evidence_role: 'ai_agent_response',
+        exact_text: 'The cleanup leaves a stale listener attached after unmount.',
+      }),
+      expect.objectContaining({
+        source_ref_type: 'ai_user_prompt',
+        source_ref_id: 'prompt-abc123',
+        evidence_role: 'ai_user_prompt',
+        exact_text: 'Why does the regression fail after cleanup?',
+      }),
+    ]));
+
+    const reportRef = sqlite.prepare(
+      `SELECT csr.source_ref_type, csr.source_ref_id, csr.evidence_role, csr.exact_text
+         FROM context_records cr
+         JOIN context_record_source_refs csr ON csr.context_record_id = cr.id
+        WHERE cr.ingestion_key = 'assessment_report_context:report-rt-1'`,
+    ).get() as Record<string, unknown>;
+    expect(reportRef).toEqual({
+      source_ref_type: 'assessment_evaluation_report',
+      source_ref_id: 'report-rt-1',
+      evidence_role: 'evaluation_report_summary',
+      exact_text: 'Automated evaluator found a source-backed focused fix.',
+    });
+
+    const humanDecisionRef = sqlite.prepare(
+      `SELECT csr.source_ref_type, csr.source_ref_id, csr.evidence_role, csr.exact_text
+         FROM context_records cr
+         JOIN context_record_source_refs csr ON csr.context_record_id = cr.id
+        WHERE cr.ingestion_key = 'assessment_event_context:ev-rt-human-1'
+          AND csr.source_ref_type = 'assessment_evaluation_report'`,
+    ).get() as Record<string, unknown>;
+    expect(humanDecisionRef).toEqual({
+      source_ref_type: 'assessment_evaluation_report',
+      source_ref_id: 'report-rt-1',
+      evidence_role: 'reviewed_report',
+      exact_text: 'Automated evaluator found a source-backed focused fix.',
+    });
+
     const duplicateGroups = sqlite.prepare(
       `SELECT source_ref_type, source_ref_id, evidence_role, COUNT(*) AS count
          FROM context_record_source_refs
@@ -605,5 +714,21 @@ describe('ingestAssessmentSessionRealTime', () => {
        HAVING COUNT(*) > 1`,
     ).all(contextRecord.id);
     expect(duplicateGroups).toEqual([]);
+
+    const projectedDuplicateGroups = sqlite.prepare(
+      `SELECT cr.workspace_person_id, cr.record_type, cr.narrative,
+              sr.source_ref_type, sr.source_ref_id, sr.evidence_role,
+              COUNT(*) AS count
+         FROM context_records cr
+         JOIN context_record_source_refs sr ON sr.context_record_id = cr.id
+        WHERE cr.workspace_person_id IS NOT NULL
+          AND cr.interaction_id IN (
+            SELECT id FROM interactions WHERE external_reference = 'sess-rt-source-refs'
+          )
+        GROUP BY cr.workspace_person_id, cr.record_type, cr.narrative,
+                 sr.source_ref_type, sr.source_ref_id, sr.evidence_role
+       HAVING COUNT(*) > 1`,
+    ).all();
+    expect(projectedDuplicateGroups).toEqual([]);
   });
 });

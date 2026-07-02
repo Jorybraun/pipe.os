@@ -506,6 +506,18 @@ describe('repo task assessment session routes', () => {
   });
 
   it('submits a final assessment bundle that stores every required artifact kind as source-backed evidence', async () => {
+    sqlite.prepare(
+      `INSERT INTO candidates (id, owner_id, pipeline_id, name, email, status)
+       VALUES (?, ?, ?, ?, ?, ?)`,
+    ).run(
+      'candidate-bundle',
+      'owner-bundle',
+      'pipeline-bundle',
+      'Bundle Candidate',
+      'bundle-candidate@example.com',
+      'active',
+    );
+
     const session = await createSession(app, env, {
       ingestionKey: 'assessment-session:final-bundle',
       mode: 'OPEN_SOURCE_BUG_FIX',
@@ -720,6 +732,63 @@ describe('repo task assessment session routes', () => {
         satisfied: true,
         sourceRefTypes: ['ai_user_prompt', 'ai_user_prompt_blocked', 'ai_agent_response'],
         missingImpact: 'If the candidate used AI, real prompts, blocked attempts, and agent responses should be captured honestly.',
+      }),
+    ]));
+
+    const projectedBundleRefs = sqlite.prepare(
+      `SELECT cr.record_type, sr.source_ref_type, sr.source_ref_id, sr.evidence_role, sr.exact_text
+         FROM context_records cr
+         JOIN interactions i ON i.id = cr.interaction_id
+         JOIN context_record_source_refs sr ON sr.context_record_id = cr.id
+        WHERE cr.workspace_person_id IS NOT NULL
+          AND i.external_reference = ?
+          AND sr.source_ref_type IN (
+            'ai_user_prompt',
+            'ai_user_prompt_blocked',
+            'code_diff',
+            'code_server_file_observation',
+            'room_chat_message',
+            'test_run',
+            'terminal_output'
+          )
+        ORDER BY cr.record_type, sr.source_ref_type`,
+    ).all(session.id) as Array<{
+      record_type: string;
+      source_ref_type: string;
+      source_ref_id: string;
+      evidence_role: string;
+      exact_text: string;
+    }>;
+    expect(projectedBundleRefs).toEqual(expect.arrayContaining([
+      expect.objectContaining({
+        record_type: 'assessment:ai_interaction',
+        source_ref_type: 'ai_user_prompt',
+        source_ref_id: 'ai-prompt-1',
+        exact_text: 'What happens if the component unmounts during pointer capture?',
+      }),
+      expect.objectContaining({
+        record_type: 'assessment:ai_interaction',
+        source_ref_type: 'ai_user_prompt_blocked',
+        source_ref_id: 'ai-prompt-blocked-1',
+        exact_text: 'Devin bridge reported auth_needed before answering.',
+      }),
+      expect.objectContaining({
+        record_type: 'assessment:test_run',
+        source_ref_type: 'test_run',
+        source_ref_id: 'test-run-1',
+        exact_text: 'PASS popover cleanup regression',
+      }),
+      expect.objectContaining({
+        record_type: 'assessment:terminal_output',
+        source_ref_type: 'terminal_output',
+        source_ref_id: 'terminal-2',
+        exact_text: 'FAIL popover stale listener remains attached',
+      }),
+      expect.objectContaining({
+        record_type: 'assessment:dev_container_event',
+        source_ref_type: 'code_server_file_observation',
+        source_ref_id: 'editor-save-1',
+        exact_text: 'Saved src/popover.ts after cleanup change.',
       }),
     ]));
   });
@@ -1853,6 +1922,18 @@ Fix stale popover listener cleanup.`;
   });
 
   it('summarizes source-backed repo-task progress from challenge assignment through evaluation', async () => {
+    sqlite.prepare(
+      `INSERT INTO candidates (id, owner_id, pipeline_id, name, email, status)
+       VALUES (?, ?, ?, ?, ?, ?)`,
+    ).run(
+      'candidate-progress',
+      'owner-progress',
+      'pipeline-progress',
+      'Progress Candidate',
+      'progress-candidate@example.com',
+      'active',
+    );
+
     const session = await createSession(app, env, {
       ingestionKey: 'assessment-session:progress-snapshot',
       mode: 'OPEN_SOURCE_BUG_FIX',
@@ -2310,6 +2391,80 @@ Fix stale popover listener cleanup.`;
     expect(humanDecisionBody.progress.evidenceCounts).toEqual(expect.arrayContaining([
       { kind: 'human_assessment_decision', count: 1 },
     ]));
+
+    const projectedSourceRefs = sqlite.prepare(
+      `SELECT cr.record_type, cr.narrative,
+              sr.source_ref_type, sr.source_ref_id, sr.evidence_role, sr.exact_text
+         FROM context_records cr
+         JOIN interactions i ON i.id = cr.interaction_id
+         JOIN context_record_source_refs sr ON sr.context_record_id = cr.id
+        WHERE cr.workspace_person_id IS NOT NULL
+          AND i.external_reference = ?
+          AND sr.source_ref_type IN (
+            'assessment_evaluation_report',
+            'code_diff',
+            'git_commit',
+            'review_challenge_packet',
+            'test_run'
+          )
+        ORDER BY cr.record_type, sr.source_ref_type, sr.evidence_role`,
+    ).all(session.id) as Array<{
+      record_type: string;
+      narrative: string;
+      source_ref_type: string;
+      source_ref_id: string;
+      evidence_role: string;
+      exact_text: string;
+    }>;
+    expect(projectedSourceRefs).toEqual(expect.arrayContaining([
+      expect.objectContaining({
+        record_type: 'assessment:commit_submission',
+        source_ref_type: 'git_commit',
+        source_ref_id: commitSha,
+        exact_text: commitText,
+      }),
+      expect.objectContaining({
+        record_type: 'assessment:commit_submission',
+        source_ref_type: 'code_diff',
+        source_ref_id: `${baseCommitSha}..${commitSha}`,
+        exact_text: diffText,
+      }),
+      expect.objectContaining({
+        record_type: 'assessment:commit_submission',
+        source_ref_type: 'test_run',
+        source_ref_id: `${commitSha}:test-run`,
+        exact_text: 'npm test -- popover\nPASS popover cleanup regression',
+      }),
+      expect.objectContaining({
+        record_type: 'assessment_evaluation_report',
+        source_ref_type: 'assessment_evaluation_report',
+        source_ref_id: evaluationBody.report.id,
+        evidence_role: 'evaluation_report_summary',
+        exact_text: 'Candidate produced a focused source-backed commit.',
+      }),
+      expect.objectContaining({
+        record_type: 'assessment:human_assessment_decision',
+        narrative: 'Human reviewer advances the candidate after checking the source-backed report.',
+        source_ref_type: 'assessment_evaluation_report',
+        source_ref_id: evaluationBody.report.id,
+        exact_text: 'Candidate produced a focused source-backed commit.',
+      }),
+    ]));
+
+    const duplicateProjectedEdges = sqlite.prepare(
+      `SELECT cr.workspace_person_id, cr.record_type, cr.narrative,
+              sr.source_ref_type, sr.source_ref_id, sr.evidence_role,
+              COUNT(*) AS count
+         FROM context_records cr
+         JOIN interactions i ON i.id = cr.interaction_id
+         JOIN context_record_source_refs sr ON sr.context_record_id = cr.id
+        WHERE cr.workspace_person_id IS NOT NULL
+          AND i.external_reference = ?
+        GROUP BY cr.workspace_person_id, cr.record_type, cr.narrative,
+                 sr.source_ref_type, sr.source_ref_id, sr.evidence_role
+       HAVING COUNT(*) > 1`,
+    ).all(session.id);
+    expect(duplicateProjectedEdges).toEqual([]);
   });
 
   it('surfaces source-backed verification gaps separately from real test evidence', async () => {

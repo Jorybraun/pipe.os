@@ -2347,6 +2347,7 @@ async function handleIntakePayload(
   submission: unknown,
   now: string,
   options: {
+    afterSourceBackedEvidence?: () => Promise<void>;
     afterTextIngestion?: () => Promise<void>;
   } = {},
 ): Promise<void> {
@@ -2426,18 +2427,41 @@ async function handleIntakePayload(
     } catch (err) {
       console.error(`[rpc/intake] failed to set synthetic resume key:`, err);
     }
+    let sourceBackedEvidenceHandled = false;
+    const triggerAfterSourceBackedEvidence = async (): Promise<void> => {
+      if (sourceBackedEvidenceHandled || !options.afterSourceBackedEvidence) return;
+      sourceBackedEvidenceHandled = true;
+      await options.afterSourceBackedEvidence();
+    };
+    const watchForSourceBackedEvidence = async (): Promise<void> => {
+      if (!options.afterSourceBackedEvidence) return;
+      const deadline = Date.now() + 120_000;
+      while (Date.now() < deadline) {
+        const readiness = await standaloneReviewEvidenceReadiness(env.DB, candidateId);
+        if (readiness.ready) {
+          await triggerAfterSourceBackedEvidence();
+          return;
+        }
+        if (readiness.terminal) return;
+        await new Promise((resolve) => setTimeout(resolve, 2_000));
+      }
+    };
     const runTextIngestion = async (): Promise<void> => {
       try {
         const parsedCV = buildRuleBasedParsedCV(resumeText);
         await persistParsedCV(env.DB, candidateId, parsedCV);
-        await runCandidateIngestion({
-          env,
-          db: env.DB,
-          candidateId,
-          parsed: parsedCV,
-          resumeText,
-          decompositionResult: null,
-        });
+        await Promise.allSettled([
+          runCandidateIngestion({
+            env,
+            db: env.DB,
+            candidateId,
+            parsed: parsedCV,
+            resumeText,
+            decompositionResult: null,
+            afterSourceBackedEvidence: triggerAfterSourceBackedEvidence,
+          }),
+          watchForSourceBackedEvidence(),
+        ]);
         console.log(`[rpc/intake] text-based ingestion completed for candidate ${candidateId}`);
         if (options.afterTextIngestion) {
           try {
@@ -3875,15 +3899,17 @@ rpcAuth.post('/submit-challenge-response', async (c) => {
   // Pipeline-free candidate (talent pool / standalone code review)
   if (!pipelineId) {
     if (parseIntakePayload(submission)) {
+      const matchStandaloneReviewIfReady = async (): Promise<void> => {
+        const review = await getPendingStandaloneReview(c.env.DB, candidateId);
+        if (review && !(await hasReadyStandaloneCodeReviewAssignment(c.env.DB, candidateId, review))) {
+          await matchStandaloneSourceBackedAssignment(c.env.DB, candidateId, review, {
+            logLabel: 'standaloneReview',
+          });
+        }
+      };
       await handleIntakePayload(c.env, c.executionCtx, candidateId, submission, new Date().toISOString(), {
-        afterTextIngestion: async () => {
-          const review = await getPendingStandaloneReview(c.env.DB, candidateId);
-          if (review && !(await hasReadyStandaloneCodeReviewAssignment(c.env.DB, candidateId, review))) {
-            await matchStandaloneSourceBackedAssignment(c.env.DB, candidateId, review, {
-              logLabel: 'standaloneReview',
-            });
-          }
-        },
+        afterSourceBackedEvidence: matchStandaloneReviewIfReady,
+        afterTextIngestion: matchStandaloneReviewIfReady,
       });
       const standaloneReview = await getPendingStandaloneReview(c.env.DB, candidateId);
       if (await hasReadyStandaloneCodeReviewAssignment(c.env.DB, candidateId, standaloneReview)) {

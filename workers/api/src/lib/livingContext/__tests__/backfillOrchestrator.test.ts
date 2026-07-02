@@ -105,6 +105,28 @@ describe('BackfillOrchestrator', () => {
     expect(await orchestrator.getReadyTasks()).toEqual(['identity']);
   });
 
+  it('recovers stale running tasks so crashed batches can retry', async () => {
+    const orchestrator = new BackfillOrchestrator(db, TASKS);
+    await orchestrator.ensureCheckpoints();
+
+    await orchestrator.markRunning('identity', 100);
+    await orchestrator.updateProgress('identity', 'cursor-25', 25, 0);
+    sqlite.prepare(
+      `UPDATE backfill_checkpoints
+          SET updated_at = '2026-06-30 15:00:00'
+        WHERE task_key = 'identity'`,
+    ).run();
+
+    await orchestrator.recoverStaleRunning('2026-06-30 15:30:00');
+
+    const status = await orchestrator.getStatus();
+    const identityTask = status.tasks.find((t) => t.taskKey === 'identity');
+    expect(identityTask?.status).toBe('pending');
+    expect(identityTask?.processed).toBe(25);
+    expect(identityTask?.cursor).toBe('cursor-25');
+    expect(await orchestrator.getReadyTasks()).toEqual(['identity']);
+  });
+
   it('resets all tasks back to pending', async () => {
     const orchestrator = new BackfillOrchestrator(db, TASKS);
     await orchestrator.ensureCheckpoints();

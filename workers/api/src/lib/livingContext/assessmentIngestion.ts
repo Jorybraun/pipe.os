@@ -141,6 +141,20 @@ function byteLength(value: string): number {
   return new TextEncoder().encode(value).byteLength;
 }
 
+async function tableExists(db: D1Database, tableName: string): Promise<boolean> {
+  try {
+    const row = await db.prepare(
+      `SELECT name
+         FROM sqlite_master
+        WHERE type = 'table'
+          AND name = ?1`,
+    ).bind(tableName).first<{ name: string }>();
+    return row !== null && row !== undefined;
+  } catch {
+    return false;
+  }
+}
+
 interface ReviewChallengePacketSourceRow {
   source_hash: string;
   packet_json: string;
@@ -152,7 +166,7 @@ async function normalizeAssessmentSourceRef(
 ): Promise<ContextRecordSourceInput> {
   let exactText = ref.exact_text;
   let contentHash = ref.content_hash;
-  if (ref.source_ref_type === 'review_challenge_packet') {
+  if (ref.source_ref_type === 'review_challenge_packet' && await tableExists(db, 'review_challenge_packets')) {
     const packet = await db.prepare(
       `SELECT source_hash, packet_json
          FROM review_challenge_packets
@@ -384,6 +398,65 @@ export async function ingestAssessmentToLivingContext(
 
   let claimAssertionCount = 0;
   for (const report of reports) {
+    const reportStatusTerm = openSemanticTerm(report.status);
+    const reportConcepts: ContextRecordConceptInput[] = [];
+    if (reportStatusTerm) {
+      const concept = await store.upsertConcept({
+        ingestionKey: `open-term:${reportStatusTerm.canonicalKey}`,
+        canonicalKey: reportStatusTerm.canonicalKey,
+        namespace: 'term',
+        label: reportStatusTerm.surface,
+        metadata: { source: 'assessment_ingestion' },
+      });
+      reportConcepts.push({
+        conceptId: concept.id,
+        relationship: 'evaluation_status',
+        weight: 1.0,
+      });
+    }
+
+    await store.upsertContextRecord({
+      ingestionKey: `assessment_report_context:${report.id}`,
+      workspacePersonId,
+      interactionId: interaction.id,
+      recordType: 'assessment_evaluation_report',
+      predicate: report.status,
+      narrative: report.summary,
+      qualifiers: {
+        mode: session.mode,
+        status: report.status,
+      },
+      confidence: null,
+      observedAt: report.created_at,
+      sources: [{
+        sourceRefType: 'assessment_evaluation_report',
+        sourceRefId: report.id,
+        evidenceRole: 'evaluation_report_summary',
+        locator: {
+          sessionId: session.id,
+          reportId: report.id,
+          status: report.status,
+        },
+        exactText: report.summary,
+        contentHash: await sha256(report.summary),
+        metadata: { status: report.status },
+      }],
+      entities: [
+        {
+          entityType: 'assessment_session',
+          entityId: session.id,
+          relationship: 'source_session',
+        },
+        {
+          entityType: 'assessment_evaluation_report',
+          entityId: report.id,
+          relationship: 'evaluation_report',
+        },
+      ],
+      concepts: reportConcepts,
+    });
+    contextRecordCount++;
+
     const reportClaims = claims.filter((c) => c.report_id === report.id);
     for (const claim of reportClaims) {
       const refs = claimSourceRefs.get(claim.id) ?? [];

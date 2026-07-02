@@ -1655,19 +1655,104 @@ describe('POST /rpc/submit-challenge-response', () => {
       queued: true,
     });
     expect(body.next).toBeUndefined();
-    expect(matchCandidateToReviewChallenge).not.toHaveBeenCalled();
-    expect(db.__calls.some((call) =>
-      call.ran
-      && call.sql.includes('UPDATE scheduled_interviews')
-      && call.params.includes(973)
-      && call.params.includes('https://github.com/mui/base-ui')
-    )).toBe(false);
     expect(runCandidateIngestion).toHaveBeenCalledWith(expect.objectContaining({
       candidateId: 'cand_1',
       resumeText: expect.stringContaining('source-backed code review experience'),
     }));
     resolveIngestion?.();
     await waitUntilAll();
+    expect(matchCandidateToReviewChallenge).toHaveBeenCalled();
+    expect(db.__calls.some((call) =>
+      call.ran
+      && call.sql.includes('UPDATE scheduled_interviews')
+      && call.params.includes(973)
+      && call.params.includes('https://github.com/mui/base-ui')
+    )).toBe(true);
+  });
+
+  it('matches standalone CODE_REVIEW after decomposition before full text ingestion completes', async () => {
+    vi.mocked(matchCandidateToReviewChallenge).mockResolvedValueOnce({
+      status: 'MATCHED',
+      repoId: 973,
+      prNumber: 973,
+      explanation: automaticMatchExplanation(973, 0),
+    } as Awaited<ReturnType<typeof matchCandidateToReviewChallenge>>);
+
+    const db = fakeD1({
+      firstResponders: [
+        {
+          match: 'SELECT invite_token, status FROM candidates WHERE id',
+          value: { invite_token: 'CLAIMED::invite-token', status: 'IN_PROGRESS' },
+        },
+        {
+          match: "interview_type = 'CODE_REVIEW'",
+          value: {
+            id: 'standalone_auto_match_early',
+            status: 'INVITED',
+            matched_repo_id: null,
+            github_repo_url: null,
+            github_pr_number: null,
+            submission_json: null,
+          },
+        },
+        {
+          match: 'LEFT JOIN candidate_ingestion',
+          value: {
+            resume_s3_key: 'text-intake/cand_1',
+            status: 'embedded',
+            current_step: 'embed_profile',
+            error_text: null,
+            node_count: 16,
+            raw_node_count: 16,
+          },
+        },
+        { match: 'SELECT github_url FROM qualified_repos', value: { github_url: 'https://github.com/mui/base-ui' } },
+      ],
+    });
+    const storage = { put: vi.fn(async () => null) } as unknown as R2Bucket;
+    const env = buildEnv({ DB: db, STORAGE: storage });
+    const { ctx, waitUntilAll } = buildCtx();
+    let resolveIngestion: (() => void) | null = null;
+    const ingestionPromise = new Promise<void>((resolve) => {
+      resolveIngestion = resolve;
+    });
+    vi.mocked(runCandidateIngestion).mockImplementationOnce(async () => ingestionPromise);
+
+    const requestPromise = rpcAuth.request(
+      '/submit-challenge-response',
+      {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json',
+          Authorization: await authHeaderWithoutPipeline(),
+        },
+        body: JSON.stringify({
+          order: 0,
+          submission: {
+            resumeText: 'Senior frontend engineer with React, TypeScript, accessibility, and source-backed code review experience.',
+          },
+        }),
+      },
+      env,
+      ctx,
+    );
+    const res = await Promise.race([
+      requestPromise,
+      new Promise<'timed-out'>((resolve) => {
+        setTimeout(() => resolve('timed-out'), 50);
+      }),
+    ]);
+
+    expect(res).not.toBe('timed-out');
+    if (res === 'timed-out') return;
+    expect(res.status).toBe(200);
+    const body = await res.json() as { success?: boolean; complete?: boolean; queued?: boolean };
+    expect(body).toMatchObject({
+      success: true,
+      complete: true,
+      queued: true,
+    });
+    await new Promise((resolve) => setTimeout(resolve, 0));
     expect(matchCandidateToReviewChallenge).toHaveBeenCalledOnce();
     expect(db.__calls.some((call) =>
       call.ran
@@ -1675,6 +1760,9 @@ describe('POST /rpc/submit-challenge-response', () => {
       && call.params.includes(973)
       && call.params.includes('https://github.com/mui/base-ui')
     )).toBe(true);
+
+    resolveIngestion?.();
+    await waitUntilAll();
   });
 
   it('returns profile received for standalone CODE_REVIEW submission attempts when no PR assignment is ready', async () => {

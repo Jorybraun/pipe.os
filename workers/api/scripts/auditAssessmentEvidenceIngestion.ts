@@ -57,6 +57,11 @@ interface EvidenceFamilyDefinition {
   sourceRefTypes: string[];
 }
 
+export interface AssessmentIngestionAuditOptions {
+  sessionId?: string;
+  requireAllFamilies?: boolean;
+}
+
 export interface EvidenceFamilyAudit {
   key: string;
   label: string;
@@ -72,6 +77,11 @@ export interface EvidenceFamilyAudit {
 export interface AssessmentIngestionAudit {
   status: 'ready' | 'not_ready';
   checkedAt: string;
+  scope: {
+    sessionId: string | null;
+    requireAllFamilies: boolean;
+  };
+  auditedAssessmentSessionCount: number;
   missingTables: string[];
   families: EvidenceFamilyAudit[];
   sourceLessPositiveClaimCount: number;
@@ -155,7 +165,15 @@ const EVIDENCE_FAMILIES: EvidenceFamilyDefinition[] = [
     eventKinds: ['ai_interaction', 'tool_usage'],
     assessmentContextRecordTypes: ['assessment_ai_interaction', 'assessment_tool_usage'],
     personContextRecordTypes: ['assessment:ai_interaction', 'assessment:tool_usage'],
-    sourceRefTypes: ['ai_prompt', 'ai_blocked_prompt', 'agent_response', 'ai_usage_event'],
+    sourceRefTypes: [
+      'ai_prompt',
+      'ai_blocked_prompt',
+      'ai_user_prompt',
+      'ai_user_prompt_blocked',
+      'agent_response',
+      'ai_agent_response',
+      'ai_usage_event',
+    ],
   },
   {
     key: 'terminal_commands_output',
@@ -263,6 +281,7 @@ async function tableExists(client: QueryClient, tableName: string): Promise<bool
 async function auditFamily(
   client: QueryClient,
   definition: EvidenceFamilyDefinition,
+  options: AssessmentIngestionAuditOptions = {},
 ): Promise<EvidenceFamilyAudit> {
   const eventKindSql = definition.eventKinds.length > 0 ? placeholders(definition.eventKinds) : "''";
   const assessmentContextTypeSql = definition.assessmentContextRecordTypes.length > 0
@@ -272,14 +291,25 @@ async function auditFamily(
     ? placeholders(definition.personContextRecordTypes)
     : "''";
   const sourceRefSql = definition.sourceRefTypes.length > 0 ? placeholders(definition.sourceRefTypes) : "''";
+  const sessionFilter = options.sessionId ? ' AND ev.session_id = ?' : '';
+  const eventTableSessionFilter = options.sessionId ? ' AND session_id = ?' : '';
+  const sessionParams = options.sessionId ? [options.sessionId] : [];
+  const assessmentScopeFilter = options.sessionId ? ' AND cr.scope_id = ?' : '';
+  const assessmentScopeParams = options.sessionId ? [options.sessionId] : [];
+  const personScopeFilter = options.sessionId
+    ? ` AND cr.interaction_id IN (
+          SELECT id FROM interactions WHERE external_reference = ?
+        )`
+    : '';
+  const personScopeParams = options.sessionId ? [options.sessionId] : [];
 
   const rawEventCount = definition.eventKinds.length > 0
     ? await count(
         client,
         `SELECT COUNT(*) AS count
            FROM assessment_evidence_events
-          WHERE kind IN (${eventKindSql})`,
-        definition.eventKinds,
+          WHERE kind IN (${eventKindSql})${eventTableSessionFilter}`,
+        [...definition.eventKinds, ...sessionParams],
       )
     : 0;
 
@@ -288,12 +318,19 @@ async function auditFamily(
         client,
         `SELECT COUNT(*) AS count
            FROM (
-             SELECT source_ref_type FROM assessment_event_source_refs
+             SELECT sr.source_ref_type
+               FROM assessment_event_source_refs sr
+               JOIN assessment_evidence_events ev ON ev.id = sr.event_id
+              WHERE 1 = 1${sessionFilter}
              UNION ALL
-             SELECT source_ref_type FROM assessment_claim_source_refs
+             SELECT csr.source_ref_type
+               FROM assessment_claim_source_refs csr
+               JOIN assessment_evaluation_claims c ON c.id = csr.claim_id
+               JOIN assessment_evaluation_reports ev ON ev.id = c.report_id
+              WHERE 1 = 1${sessionFilter}
            )
           WHERE source_ref_type IN (${sourceRefSql})`,
-        definition.sourceRefTypes,
+        [...sessionParams, ...sessionParams, ...definition.sourceRefTypes],
       )
     : 0;
 
@@ -303,11 +340,16 @@ async function auditFamily(
        FROM context_records cr
        LEFT JOIN context_record_source_refs sr ON sr.context_record_id = cr.id
       WHERE cr.scope_type = 'assessment_session'
+        ${assessmentScopeFilter}
         AND (
           cr.record_type IN (${assessmentContextTypeSql})
           OR sr.source_ref_type IN (${sourceRefSql})
         )`,
-    [...definition.assessmentContextRecordTypes, ...definition.sourceRefTypes],
+    [
+      ...assessmentScopeParams,
+      ...definition.assessmentContextRecordTypes,
+      ...definition.sourceRefTypes,
+    ],
   );
 
   const personProjectedContextCount = await count(
@@ -316,11 +358,16 @@ async function auditFamily(
        FROM context_records cr
        JOIN context_record_source_refs sr ON sr.context_record_id = cr.id
       WHERE cr.workspace_person_id IS NOT NULL
+        ${personScopeFilter}
         AND (
           cr.record_type IN (${personContextTypeSql})
           OR sr.source_ref_type IN (${sourceRefSql})
         )`,
-    [...definition.personContextRecordTypes, ...definition.sourceRefTypes],
+    [
+      ...personScopeParams,
+      ...definition.personContextRecordTypes,
+      ...definition.sourceRefTypes,
+    ],
   );
 
   const duplicateProjectedEdgeCount = await count(
@@ -331,8 +378,9 @@ async function auditFamily(
                 sr.source_ref_type, sr.source_ref_id, sr.evidence_role,
                 COUNT(*) AS duplicate_count
            FROM context_records cr
-           JOIN context_record_source_refs sr ON sr.context_record_id = cr.id
+          JOIN context_record_source_refs sr ON sr.context_record_id = cr.id
           WHERE cr.workspace_person_id IS NOT NULL
+            ${personScopeFilter}
             AND (
               cr.record_type IN (${personContextTypeSql})
               OR sr.source_ref_type IN (${sourceRefSql})
@@ -341,7 +389,11 @@ async function auditFamily(
                    sr.source_ref_type, sr.source_ref_id, sr.evidence_role
          HAVING COUNT(*) > 1
        )`,
-    [...definition.personContextRecordTypes, ...definition.sourceRefTypes],
+    [
+      ...personScopeParams,
+      ...definition.personContextRecordTypes,
+      ...definition.sourceRefTypes,
+    ],
   );
 
   const missingPersonProjectionCount = definition.eventKinds.length > 0
@@ -350,13 +402,14 @@ async function auditFamily(
         `SELECT COUNT(*) AS count
            FROM assessment_evidence_events ev
           WHERE ev.kind IN (${eventKindSql})
+            ${sessionFilter}
             AND NOT EXISTS (
               SELECT 1
                 FROM context_records cr
                WHERE cr.ingestion_key = 'assessment_event_context:' || ev.id
                  AND cr.workspace_person_id IS NOT NULL
             )`,
-        definition.eventKinds,
+        [...definition.eventKinds, ...sessionParams],
       )
     : 0;
 
@@ -381,7 +434,10 @@ async function auditFamily(
   };
 }
 
-export async function auditAssessmentEvidenceIngestion(client: QueryClient): Promise<AssessmentIngestionAudit> {
+export async function auditAssessmentEvidenceIngestion(
+  client: QueryClient,
+  options: AssessmentIngestionAuditOptions = {},
+): Promise<AssessmentIngestionAudit> {
   const missingTables: string[] = [];
   for (const tableName of REQUIRED_TABLES) {
     if (!await tableExists(client, tableName)) missingTables.push(tableName);
@@ -391,6 +447,11 @@ export async function auditAssessmentEvidenceIngestion(client: QueryClient): Pro
     return {
       status: 'not_ready',
       checkedAt: new Date().toISOString(),
+      scope: {
+        sessionId: options.sessionId ?? null,
+        requireAllFamilies: options.requireAllFamilies === true,
+      },
+      auditedAssessmentSessionCount: 0,
       missingTables,
       families: [],
       sourceLessPositiveClaimCount: 0,
@@ -400,17 +461,35 @@ export async function auditAssessmentEvidenceIngestion(client: QueryClient): Pro
     };
   }
 
-  const families = await Promise.all(EVIDENCE_FAMILIES.map((definition) => auditFamily(client, definition)));
+  const auditedAssessmentSessionCount = options.sessionId
+    ? await count(
+        client,
+        `SELECT COUNT(*) AS count
+           FROM assessment_sessions
+          WHERE id = ?`,
+        [options.sessionId],
+      )
+    : await count(
+        client,
+        `SELECT COUNT(*) AS count
+           FROM assessment_sessions`,
+      );
+  const families = await Promise.all(
+    EVIDENCE_FAMILIES.map((definition) => auditFamily(client, definition, options)),
+  );
   const sourceLessPositiveClaimCount = await count(
     client,
     `SELECT COUNT(*) AS count
        FROM assessment_evaluation_claims c
+       JOIN assessment_evaluation_reports r ON r.id = c.report_id
       WHERE c.polarity = 'positive'
+        ${options.sessionId ? 'AND r.session_id = ?' : ''}
         AND NOT EXISTS (
           SELECT 1
             FROM assessment_claim_source_refs sr
            WHERE sr.claim_id = c.id
         )`,
+    options.sessionId ? [options.sessionId] : [],
   );
   const duplicateProjectedEdgeCount = families.reduce(
     (sum, family) => sum + family.duplicateProjectedEdgeCount,
@@ -418,12 +497,18 @@ export async function auditAssessmentEvidenceIngestion(client: QueryClient): Pro
   );
 
   const failures = [
+    ...(options.sessionId && auditedAssessmentSessionCount === 0
+      ? [`assessment session ${options.sessionId} was not found`]
+      : []),
     ...families
-      .filter((family) => family.status === 'missing')
+      .filter((family) => options.requireAllFamilies === true && family.status === 'missing')
       .map((family) => `${family.label} is missing from the assessment evidence spine`),
     ...families
       .filter((family) => family.status === 'duplicated')
       .map((family) => `${family.label} has duplicate person-projected evidence edges`),
+    ...families
+      .filter((family) => family.status === 'captured' && family.missingPersonProjectionCount === 0)
+      .map((family) => `${family.label} has captured source refs or assessment context not projected to person context`),
     ...families
       .filter((family) => family.rawEventCount > 0 && family.missingPersonProjectionCount > 0)
       .map((family) => `${family.label} has ${family.missingPersonProjectionCount} raw event(s) not projected to person context`),
@@ -438,7 +523,7 @@ export async function auditAssessmentEvidenceIngestion(client: QueryClient): Pro
       .map((family) => `Run assessments_to_living_context backfill for captured ${family.label.toLowerCase()} records.`),
     ...families
       .filter((family) => family.status === 'missing')
-      .map((family) => `Add or repair capture for ${family.label.toLowerCase()}.`),
+      .map((family) => `Coverage gap: no ${family.label.toLowerCase()} was found in the audited scope.`),
     ...(sourceLessPositiveClaimCount > 0
       ? ['Repair evaluator output so positive claims are backed by exact assessment source refs, then replay ingestion.']
       : []),
@@ -447,6 +532,11 @@ export async function auditAssessmentEvidenceIngestion(client: QueryClient): Pro
   return {
     status: failures.length === 0 ? 'ready' : 'not_ready',
     checkedAt: new Date().toISOString(),
+    scope: {
+      sessionId: options.sessionId ?? null,
+      requireAllFamilies: options.requireAllFamilies === true,
+    },
+    auditedAssessmentSessionCount,
     missingTables,
     families,
     sourceLessPositiveClaimCount,
@@ -464,6 +554,8 @@ function usage(): string {
     '  --local               Audit local Wrangler D1 database (default)',
     '  --remote              Audit Cloudflare D1 via REST',
     '  --database-path PATH  Override local SQLite discovery',
+    '  --session-id ID       Limit counts and projection checks to one assessment session',
+    '  --require-all-families Treat missing evidence families as failures',
     '  --json                Print machine-readable JSON',
     '  --help, -h            Show this help',
   ].join('\n');
@@ -472,11 +564,13 @@ function usage(): string {
 interface CliOptions {
   target: 'local' | 'remote';
   databasePath?: string;
+  sessionId?: string;
+  requireAllFamilies: boolean;
   json: boolean;
 }
 
 function parseArgs(argv: string[]): CliOptions {
-  const options: CliOptions = { target: 'local', json: false };
+  const options: CliOptions = { target: 'local', requireAllFamilies: false, json: false };
   for (let index = 0; index < argv.length; index += 1) {
     const arg = argv[index]!;
     if (arg === '--local') {
@@ -485,6 +579,13 @@ function parseArgs(argv: string[]): CliOptions {
       options.target = 'remote';
     } else if (arg === '--json') {
       options.json = true;
+    } else if (arg === '--require-all-families') {
+      options.requireAllFamilies = true;
+    } else if (arg === '--session-id' || arg.startsWith('--session-id=')) {
+      const inline = arg.match(/^--session-id=(.+)$/)?.[1];
+      const value = inline ?? argv[++index];
+      if (!value || value.startsWith('--')) throw new Error('--session-id requires a value');
+      options.sessionId = value;
     } else if (arg === '--database-path' || arg.startsWith('--database-path=')) {
       const inline = arg.match(/^--database-path=(.+)$/)?.[1];
       const value = inline ?? argv[++index];
@@ -527,6 +628,8 @@ function printHuman(report: AssessmentIngestionAudit, databasePath: string): voi
   console.log('assessment evidence ingestion audit');
   console.log(`  status:                ${report.status}`);
   console.log(`  database:              ${databasePath}`);
+  console.log(`  session scope:         ${report.scope.sessionId ?? 'all'}`);
+  console.log(`  sessions audited:      ${report.auditedAssessmentSessionCount}`);
   console.log(`  source-less positives: ${report.sourceLessPositiveClaimCount}`);
   console.log(`  duplicate projections: ${report.duplicateProjectedEdgeCount}`);
   console.log('');
@@ -554,7 +657,10 @@ async function main(): Promise<void> {
   const database = opened?.database;
   try {
     const client: QueryClient = database ? new LocalQueryClient(database) : new D1Client(loadD1Config());
-    const report = await auditAssessmentEvidenceIngestion(client);
+    const report = await auditAssessmentEvidenceIngestion(client, {
+      sessionId: options.sessionId,
+      requireAllFamilies: options.requireAllFamilies,
+    });
     if (options.json) {
       console.log(JSON.stringify(report, null, 2));
     } else {

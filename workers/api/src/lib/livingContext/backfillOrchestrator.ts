@@ -149,6 +149,15 @@ export class BackfillOrchestrator {
     return ready;
   }
 
+  async recoverStaleRunning(cutoffUpdatedAt: string): Promise<void> {
+    await this.db.prepare(
+      `UPDATE backfill_checkpoints
+          SET status = 'pending', updated_at = datetime('now')
+        WHERE status = 'running'
+          AND updated_at < ?1`,
+    ).bind(cutoffUpdatedAt).run();
+  }
+
   async markRunning(taskKey: string, totalItems?: number): Promise<void> {
     await this.db.prepare(
       `UPDATE backfill_checkpoints

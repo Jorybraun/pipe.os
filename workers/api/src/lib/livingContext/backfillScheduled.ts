@@ -50,6 +50,11 @@ import { processProjectionOutbox } from './projection';
 import { checkGate } from './rolloutEnforcement';
 
 const BATCH_SIZE = 50;
+const STALE_RUNNING_CHECKPOINT_MS = 30 * 60 * 1000;
+
+function sqliteDateTime(value: Date): string {
+  return value.toISOString().replace('T', ' ').slice(0, 19);
+}
 
 export const BACKFILL_TASKS: BackfillTaskDefinition[] = [
   {
@@ -989,6 +994,7 @@ export async function runScheduledBackfill(env: Env): Promise<BackfillScheduledR
   }
 
   await orchestrator.ensureCheckpoints();
+  await orchestrator.recoverStaleRunning(sqliteDateTime(new Date(Date.now() - STALE_RUNNING_CHECKPOINT_MS)));
 
   const readyTasks = await orchestrator.getReadyTasks();
   const tasksExecuted: string[] = [];

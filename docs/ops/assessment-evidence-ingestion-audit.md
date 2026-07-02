@@ -49,6 +49,13 @@ The verifier audits these required families:
 - `duplicated`: duplicate person-projected edges were detected for the same
   person, record type, narrative, source ref, and evidence role.
 
+By default, missing families are reported as coverage gaps rather than audit
+failures. The audit fails when a requested session is missing, captured raw
+events/source refs/assessment context are not projected to person context,
+duplicate projected edges exist, or positive evaluator claims lack source refs.
+Use `--require-all-families` during full cutover checks when absence of any
+family should fail the command.
+
 ## Required Proof
 
 Run the local or remote audit after replay/backfill:
@@ -56,10 +63,37 @@ Run the local or remote audit after replay/backfill:
 ```bash
 cd workers/api
 npm run assessment-evidence:audit -- --local
+npm run assessment-evidence:audit -- --local --session-id <assessment_session_id>
+npm run assessment-evidence:audit -- --local --session-id <assessment_session_id> --require-all-families
 npm run assessment-evidence:audit -- --remote
+npm run assessment-evidence:audit -- --remote --session-id <assessment_session_id>
+npm run assessment-evidence:replay -- --remote --session-id <assessment_session_id>
 ```
 
 The goal is not that every environment has every evidence family populated, but
 that a real open-source assessment session shows captured and projected rows for
 the evidence it actually produced, has zero source-less positive claims, and has
 zero duplicate person-projected edges.
+
+## Current Local Proof
+
+As of 2026-07-02, local D1 has nine assessment sessions, all `REPO_MATCHING`.
+The unscoped audit command exits ready with:
+
+- `sourceLessPositiveClaimCount: 0`
+- `duplicateProjectedEdgeCount: 0`
+- meeting transcript evidence projected
+- coverage gaps for open-source assessment families such as commit, diff, test,
+  AI interaction, evaluator report, and human decision because no local
+  open-source assessment session exists yet
+
+A session-scoped audit of the latest local `REPO_MATCHING` session exits
+`not_ready` because transcript source refs are captured in assessment scope but
+not projected through that session's person interaction. That is a current
+local-data/projection gap, not proof of open-source assessment readiness.
+
+Targeted tests prove replay idempotency and exact source-ref preservation for
+commit, diff, test output, upstream PR refs, AI interactions, evaluator reports,
+and human decisions through the real-time ingestion path. The next dev-data
+proof is to replay or create one real `OPEN_SOURCE_BUG_FIX` session, then run
+the session-scoped audit command above.
