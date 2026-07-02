@@ -6,6 +6,7 @@
  *   CLOUDFLARE_D1_DATABASE_ID=<dev-db-id> npm run assessment-evidence:replay -- --remote --session-id <assessment_session_id>
  *   CLOUDFLARE_D1_DATABASE_ID=<dev-db-id> npm run assessment-evidence:replay -- --remote --all-missing --limit 25
  *   CLOUDFLARE_D1_DATABASE_ID=<dev-db-id> npm run assessment-evidence:replay -- --remote --all-missing --limit 25 --summary
+ *   CLOUDFLARE_D1_DATABASE_ID=<dev-db-id> npm run assessment-evidence:replay -- --remote --all-missing --limit 25 --summary --progress --exclude-state IN_PROGRESS
  *
  * The replay uses the same production ingestion path as real-time assessment
  * evaluation and scheduled backfill. Ingestion keys make reruns idempotent.
@@ -76,6 +77,8 @@ interface ReplayOptions {
   limit: number;
   json: boolean;
   summary: boolean;
+  progress: boolean;
+  excludeStates: string[];
 }
 
 interface CountRow {
@@ -118,6 +121,12 @@ interface DerivedClaimRow {
   count: number;
 }
 
+interface MissingReplayTarget {
+  sessionId: string;
+  state: string;
+  missingEventCount: number;
+}
+
 type ReplayResult = Awaited<ReturnType<typeof replaySession>>;
 
 function parseArgs(argv: string[]): ReplayOptions {
@@ -127,6 +136,8 @@ function parseArgs(argv: string[]): ReplayOptions {
   let limit = 25;
   let json = false;
   let summary = false;
+  let progress = false;
+  const excludeStates: string[] = [];
 
   for (let index = 0; index < argv.length; index++) {
     const arg = argv[index];
@@ -142,6 +153,13 @@ function parseArgs(argv: string[]): ReplayOptions {
       json = true;
     } else if (arg === '--summary') {
       summary = true;
+    } else if (arg === '--progress') {
+      progress = true;
+    } else if (arg === '--exclude-state' || arg.startsWith('--exclude-state=')) {
+      const inline = arg.match(/^--exclude-state=(.+)$/)?.[1];
+      const value = inline ?? argv[++index];
+      if (!value || value.startsWith('--')) throw new Error('--exclude-state requires a value');
+      excludeStates.push(value.toUpperCase());
     } else {
       throw new Error(`Unknown argument: ${arg}`);
     }
@@ -160,7 +178,11 @@ function parseArgs(argv: string[]): ReplayOptions {
     throw new Error('--limit must be an integer from 1 to 500.');
   }
 
-  return { target, sessionId, allMissing, limit, json, summary };
+  if (!allMissing && excludeStates.length > 0) {
+    throw new Error('--exclude-state can only be used with --all-missing.');
+  }
+
+  return { target, sessionId, allMissing, limit, json, summary, progress, excludeStates };
 }
 
 async function count(db: D1Database, sql: string, value: string): Promise<number> {
@@ -330,30 +352,57 @@ async function replaySession(db: D1Database, sessionId: string): Promise<{
   };
 }
 
-async function loadMissingReplaySessionIds(db: D1Database, limit: number): Promise<string[]> {
+function placeholders(count: number): string {
+  return Array.from({ length: count }, () => '?').join(', ');
+}
+
+function emitProgress(enabled: boolean, message: string, data: Record<string, string | number | boolean | null> = {}): void {
+  if (!enabled) return;
+  const suffix = Object.entries(data)
+    .map(([key, value]) => `${key}=${value}`)
+    .join(' ');
+  console.error(`[assessment-replay] ${message}${suffix ? ` ${suffix}` : ''}`);
+}
+
+async function loadMissingReplayTargets(
+  db: D1Database,
+  limit: number,
+  excludeStates: string[],
+): Promise<MissingReplayTarget[]> {
+  const excludeStateSql = excludeStates.length > 0
+    ? ` AND ass.state NOT IN (${placeholders(excludeStates.length)})`
+    : '';
   const rows = await db.prepare(
-    `SELECT DISTINCT ev.session_id
+    `SELECT ev.session_id,
+            ass.state,
+            COUNT(*) AS missing_event_count
        FROM assessment_evidence_events ev
        JOIN assessment_sessions ass ON ass.id = ev.session_id
        LEFT JOIN scheduled_interviews si ON si.id = ass.interview_id
        JOIN candidates c ON c.id = COALESCE(ass.candidate_id, si.candidate_id)
       WHERE (ass.candidate_id IS NOT NULL OR si.candidate_id IS NOT NULL)
         AND ass.state NOT IN ('INTAKE', 'CANCELLED')
+        ${excludeStateSql}
         AND NOT EXISTS (
           SELECT 1
             FROM context_records cr
            WHERE cr.ingestion_key = 'assessment_event_context:' || ev.id
              AND cr.workspace_person_id IS NOT NULL
         )
+      GROUP BY ev.session_id, ass.state
       ORDER BY ev.session_id
-      LIMIT ?1`,
-  ).bind(limit).all<{ session_id: string }>();
-  return (rows.results ?? []).map((row) => row.session_id);
+      LIMIT ?`,
+  ).bind(...excludeStates, limit).all<{ session_id: string; state: string; missing_event_count: number }>();
+  return (rows.results ?? []).map((row) => ({
+    sessionId: row.session_id,
+    state: row.state,
+    missingEventCount: Number(row.missing_event_count),
+  }));
 }
 
 function summarizeReplayResults(input: {
   requestedLimit: number;
-  sessionIds: string[];
+  targets: MissingReplayTarget[];
   results: ReplayResult[];
 }): {
   ok: boolean;
@@ -363,6 +412,7 @@ function summarizeReplayResults(input: {
   succeededCount: number;
   failedCount: number;
   sessionIds: string[];
+  skippedStates: string[];
   failures: Array<{ sessionId: string; reason: string }>;
   totals: {
     contextRecordsBefore: number;
@@ -374,6 +424,8 @@ function summarizeReplayResults(input: {
   };
   sessions: Array<{
     sessionId: string;
+    state: string | null;
+    selectedMissingEventCount: number | null;
     ok: boolean;
     interactionType: string | null;
     contextRecordsBefore: number;
@@ -386,8 +438,11 @@ function summarizeReplayResults(input: {
     latestSelectedPacketId: string | null;
   }>;
 } {
+  const targetBySessionId = new Map(input.targets.map((target) => [target.sessionId, target]));
   const sessions = input.results.map((entry) => ({
     sessionId: entry.sessionId,
+    state: targetBySessionId.get(entry.sessionId)?.state ?? null,
+    selectedMissingEventCount: targetBySessionId.get(entry.sessionId)?.missingEventCount ?? null,
     ok: entry.ok,
     interactionType: entry.proof?.interaction_type ?? null,
     contextRecordsBefore: entry.before.contextRecords,
@@ -413,7 +468,8 @@ function summarizeReplayResults(input: {
     processedCount: input.results.length,
     succeededCount: input.results.length - failures.length,
     failedCount: failures.length,
-    sessionIds: input.sessionIds,
+    sessionIds: input.targets.map((target) => target.sessionId),
+    skippedStates: [],
     failures,
     totals: {
       contextRecordsBefore: sessions.reduce((sum, entry) => sum + entry.contextRecordsBefore, 0),
@@ -432,19 +488,43 @@ async function main(): Promise<void> {
   const db = new RemoteD1(new D1Client(loadD1Config())) as unknown as D1Database;
 
   if (options.allMissing) {
-    const sessionIds = await loadMissingReplaySessionIds(db, options.limit);
+    const targets = await loadMissingReplayTargets(db, options.limit, options.excludeStates);
     const results = [];
-    for (const sessionId of sessionIds) {
-      results.push(await replaySession(db, sessionId));
+    emitProgress(options.progress, 'selected all-missing targets', {
+      count: targets.length,
+      requestedLimit: options.limit,
+      excludedStates: options.excludeStates.join(',') || 'none',
+    });
+    for (const target of targets) {
+      emitProgress(options.progress, 'start session', {
+        sessionId: target.sessionId,
+        state: target.state,
+        missingEvents: target.missingEventCount,
+      });
+      const startedAt = Date.now();
+      const result = await replaySession(db, target.sessionId);
+      results.push(result);
+      emitProgress(options.progress, 'done session', {
+        sessionId: target.sessionId,
+        ok: result.ok,
+        durationMs: Date.now() - startedAt,
+        contextRecordsAfter: result.after.contextRecords,
+        sourceRefsAfter: result.after.sourceRefs,
+        missingAfter: result.answers.missingPersonProjectionCount,
+      });
     }
     const result = options.summary
-      ? summarizeReplayResults({ requestedLimit: options.limit, sessionIds, results })
+      ? {
+          ...summarizeReplayResults({ requestedLimit: options.limit, targets, results }),
+          skippedStates: options.excludeStates,
+        }
       : {
           ok: results.every((entry) => entry.ok),
           mode: 'all-missing',
           requestedLimit: options.limit,
           processedCount: results.length,
-          sessionIds,
+          sessionIds: targets.map((target) => target.sessionId),
+          skippedStates: options.excludeStates,
           results,
         };
     console.log(JSON.stringify(result, null, 2));
