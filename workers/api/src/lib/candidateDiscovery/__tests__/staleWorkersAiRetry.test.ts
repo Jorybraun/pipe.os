@@ -159,6 +159,11 @@ describe('stale Workers AI candidate-ingestion retry', () => {
       current_step: null,
       updated_at: '2026-06-28T21:00:00.000Z',
     }, now)).toBe(false);
+    expect(isRetryableStalledInProgressIngestion({
+      status: 'pending',
+      current_step: 'talent_pool_profile_received',
+      updated_at: '2026-06-28T21:00:00.000Z',
+    }, now)).toBe(false);
   });
 
   it('retries text-intake evidence from the original R2 source', async () => {
@@ -381,7 +386,9 @@ describe('stale Workers AI candidate-ingestion retry', () => {
     });
     const selectCall = db.__calls.find((call) => call.sql.includes('FROM candidate_ingestion ci'))!;
     expect(selectCall.sql).not.toContain('LIKE');
+    expect(selectCall.sql).toContain("ci.current_step IN ('queued', 'retry_queued', 'parse_resume', 'decompose_resume', 'discover_profile', 'embed_profile', 'match_and_assign')");
     expect(selectCall.sql).toContain("CASE WHEN ci.status = 'pending' THEN 0 ELSE 1 END");
+    expect(selectCall.sql).toContain("CASE WHEN ci.status = 'pending' THEN ci.updated_at END DESC");
     expect(selectCall.params[1]).toBe(12);
     expect(runCandidateIngestion).toHaveBeenCalledTimes(2);
     expect(runCandidateIngestion).toHaveBeenCalledWith(expect.objectContaining({

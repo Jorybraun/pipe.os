@@ -10,6 +10,15 @@ const MAX_STALE_WORKERS_AI_RETRY_LIMIT = 5;
 const STALE_WORKERS_AI_RETRY_SCAN_MULTIPLIER = 6;
 const MAX_RETRY_EVENT_ERROR_CHARS = 700;
 const STALE_IN_PROGRESS_RETRY_AFTER_MS = 10 * 60 * 1000;
+const RETRYABLE_STALLED_INGESTION_STEPS = new Set([
+  'queued',
+  'retry_queued',
+  'parse_resume',
+  'decompose_resume',
+  'discover_profile',
+  'embed_profile',
+  'match_and_assign',
+]);
 
 type RetryTrigger = 'candidate_rpc' | 'scheduled_worker';
 type RetryReasonCode =
@@ -99,6 +108,7 @@ export function isRetryableStalledInProgressIngestion(row: {
 }, nowMs = Date.now()): boolean {
   if (row.status !== 'pending') return false;
   if (!row.current_step || !row.updated_at) return false;
+  if (!RETRYABLE_STALLED_INGESTION_STEPS.has(row.current_step)) return false;
   const updatedMs = Date.parse(row.updated_at);
   if (!Number.isFinite(updatedMs)) return false;
   return nowMs - updatedMs >= STALE_IN_PROGRESS_RETRY_AFTER_MS;
@@ -305,12 +315,14 @@ export async function processStaleWorkersAIModelIngestionRetries(
           OR (
             ci.status = 'pending'
             AND ci.current_step IS NOT NULL
+            AND ci.current_step IN ('queued', 'retry_queued', 'parse_resume', 'decompose_resume', 'discover_profile', 'embed_profile', 'match_and_assign')
             AND ci.updated_at IS NOT NULL
             AND ci.updated_at <= ?1
           )
         )
       ORDER BY
         CASE WHEN ci.status = 'pending' THEN 0 ELSE 1 END,
+        CASE WHEN ci.status = 'pending' THEN ci.updated_at END DESC,
         ci.updated_at ASC
       LIMIT ?2`,
   ).bind(staleCutoff, scanLimit).all<RetryableCandidateRow>();
