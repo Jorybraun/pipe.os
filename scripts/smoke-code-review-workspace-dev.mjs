@@ -544,8 +544,16 @@ async function assertRecruiterReviewerReceiptBrowser(interviewId, workspaceCommi
 }
 
 async function enterRoomFromPrejoinIfNeeded(page) {
-  const enterWithoutDevices = page.getByRole('button', { name: /enter without mic\/camera/i });
-  if (await enterWithoutDevices.isVisible({ timeout: 5_000 }).catch(() => false)) {
+  const taskBrief = page.getByTestId('assessment-task-brief');
+  const enterWithoutDevices = page.getByRole('button', { name: 'Enter without mic/camera' });
+  const firstReadySurface = await Promise.race([
+    taskBrief.waitFor({ state: 'attached', timeout: 60_000 }).then(() => 'task').catch(() => null),
+    enterWithoutDevices.waitFor({ state: 'visible', timeout: 60_000 }).then(() => 'prejoin').catch(() => null),
+  ]);
+
+  if (firstReadySurface === 'task') return;
+
+  if (firstReadySurface === 'prejoin') {
     await enterWithoutDevices.click();
     return;
   }
