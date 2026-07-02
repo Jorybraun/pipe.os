@@ -127,14 +127,17 @@ CLOUDFLARE_D1_DATABASE_ID=0abe92df-9296-46f5-9f9d-a1fb1bcd3be1 \
 
 Latest app-dev proof on 2026-07-02 used invite token
 `talent-audit-532e4287e-c1` after deploying Worker version
-`38c1b7d5-4508-46e8-97e2-a595da998e01` and replaying pasted-text profile
+`16445443-8142-4954-8eaa-e93e679f78b5` and replaying pasted-text profile
 submission plus the `e2e/fixtures/test-resume.pdf` profile upload with GitHub,
 LinkedIn, portfolio, and phone-screener fields. The stricter remote verifier
-returned `status: ready`, `candidateNodeCount: 2`,
-`candidateNodeExactSourceQuoteCount: 2`,
-`candidateNodeWithoutExactSourceCount: 0`, `artifactVersionCount: 10`,
-`sourceSpanCount: 34`, `documentProfileSourceSpanCount: 1`,
-`contextRecordCount: 9`, `contextSourceRefCount: 12`,
+returned `status: ready`, `candidateNodeCount: 74`,
+`candidateNodeExactSourceQuoteCount: 74`,
+`candidateNodeWithoutExactSourceCount: 0`,
+`duplicateCandidateNodeEvidenceCount: 0`,
+`candidateNodeSourceAnchorConflictCount: 0`,
+`artifactVersionCount: 11`, `sourceSpanCount: 37`,
+`documentProfileSourceSpanCount: 4`, `contextRecordCount: 77`,
+`contextSourceRefCount: 80`,
 `externalProfileRefContextCount: 3`,
 `phoneScreenerIntentContextCount: 1`, `rolelessApplicationCount: 0`,
 `rolelessPersonRoleCount: 0`, `sourceLessPositiveClaimCount: 0`, and
@@ -159,6 +162,16 @@ source_type: talent_pool_profile_intake
 source_reference: source_span:source_span_3cbee2c23e0d5612fe929ff8c671268f
 source_quote_validated: 1
 source_quote: Talent Audit exact candidate node proof for f47e6af23. Recently implemented source-backed candidate evidence ingestion for Talent Pool profile submissions and verified idempotent replay.
+```
+
+Remote resume-node sampling confirmed repeated titles cite distinct exact
+company-role source blocks instead of the first matching title:
+
+```text
+Morgan Stanley: Morgan Stanley\nSenior UI Developer
+Sycle: Sycle\nSenior UI Developer
+Orium: Orium\nFullstack Developer
+SSENSE: SSENSE\nFullstack Developer
 ```
 
 The current PDF profile key is
