@@ -72,11 +72,6 @@ export interface IngestionInput {
   candidateDiscoveryMaxAttempts?: number;
 }
 
-export type RolelessChallengeReadinessResult =
-  | { status: 'ready_to_assign'; packetId: string; matchRunId: string }
-  | { status: 'not_ready'; reason: string; matchRunId?: string }
-  | { status: 'skipped'; reason: string };
-
 const CANDIDATE_DISCOVERY_AI_TIMEOUT_MS = 18_000;
 const MIN_CANDIDATE_DISCOVERY_ATTEMPT_BUDGET_MS = 1_500;
 const MAX_CANDIDATE_DISCOVERY_AI_ATTEMPTS = 3;
@@ -402,7 +397,6 @@ export async function runCandidateIngestion(input: IngestionInput): Promise<void
   if (!candidatePipelineRow?.pipeline_id) {
     // Standalone candidate — ingestion stops at "embedded" (searchable in talent pool).
     console.log('[ingestion] No pipeline for candidate', candidateId, '— skipping match/assign');
-    const challengeReadiness = await tryPromoteRolelessChallengeReadiness(db, candidateId);
     await recordSessionEvent(db, {
       sessionId: `ingestion-${candidateId}`,
       sessionType: 'ingestion',
@@ -411,7 +405,10 @@ export async function runCandidateIngestion(input: IngestionInput): Promise<void
       payload: {
         step: 'embedded_no_pipeline',
         reason: 'talent_pool_only',
-        challengeReadiness,
+        challengeReadiness: {
+          status: 'skipped',
+          reason: 'roleless_candidate_requires_assessment_assignment_flow',
+        },
       },
     });
     return;
@@ -446,59 +443,6 @@ export async function runCandidateIngestion(input: IngestionInput): Promise<void
       eventType: 'error',
       payload: { step: 'match_and_assign', error: msg },
     });
-  }
-}
-
-export async function tryPromoteRolelessChallengeReadiness(
-  db: D1Database,
-  candidateId: string,
-): Promise<RolelessChallengeReadinessResult> {
-  try {
-    const queueRow = await db
-      .prepare(
-        `SELECT id
-           FROM challenge_design_queue
-          WHERE candidate_id = ?1
-            AND status IN ('queued', 'in_review', 'ready_to_assign')
-          LIMIT 1`,
-      )
-      .bind(candidateId)
-      .first<{ id: string }>();
-
-    if (!queueRow?.id) {
-      return { status: 'skipped', reason: 'no_active_design_queue_item' };
-    }
-
-    const match = await matchCandidateToReviewChallenge(db, candidateId);
-    const packetId = match.explanation?.challengeId ?? match.explanation?.selectedPr?.challengeId ?? null;
-    if (match.status !== 'MATCHED' || !packetId) {
-      return {
-        status: 'not_ready',
-        reason: `matcher_returned_${match.status.toLowerCase()}`,
-        matchRunId: match.matchRunId,
-      };
-    }
-
-    await db
-      .prepare(
-        `UPDATE challenge_design_queue
-            SET status = 'ready_to_assign',
-                validation_status = 'ready_to_assign',
-                ready_packet_id = ?1,
-                missing_signal = 'Source-backed challenge packet is ready for assessment assignment.',
-                inventory_failure_reason = 'Source-backed challenge packet selected by deterministic candidate-to-PR matcher.',
-                desired_assessment_signal = 'Assign this candidate to the ready code-review challenge packet.',
-                updated_at = ?2
-          WHERE id = ?3`,
-      )
-      .bind(packetId, new Date().toISOString(), queueRow.id)
-      .run();
-
-    return { status: 'ready_to_assign', packetId, matchRunId: match.matchRunId };
-  } catch (err) {
-    const message = err instanceof Error ? err.message : String(err);
-    console.warn(`[ingestion] roleless challenge readiness skipped for candidate=${candidateId}:`, message);
-    return { status: 'skipped', reason: message };
   }
 }
 

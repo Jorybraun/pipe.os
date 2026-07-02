@@ -9,8 +9,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Fixed — Talent Pool ingestion
 
-- Roleless Talent Pool ingestion now attempts deterministic source-backed challenge matching after profile AI/evidence ingestion completes and promotes the design queue to `ready_to_assign` only when a concrete review packet is selected.
-- Talent Pool profile submit/upload now creates the design queue before scheduling background ingestion, so fast roleless challenge matching cannot miss the queue row it needs to promote.
+- Talent Pool profile submit/upload now creates the design queue before scheduling background ingestion, preserving explicit challenge-design state while candidate AI/evidence ingestion runs.
 - Talent Pool text-profile ingestion now starts from source-backed rule-based parsing instead of waiting on the resume-decomposition LLM before candidate discovery, preventing submitted profiles from stalling at `talent_pool_profile_received`.
 - Scheduled candidate-ingestion repair now prioritizes recent document-backed and Talent Pool intake retries before stale text-smoke failures, so real uploaded candidates do not sit behind old AI discovery debris.
 - Candidate document PDF/DOCX retries now reuse pre-extracted source text and bounded parser-only decomposition before AI discovery, preventing uploaded-resume repairs from stalling in full decomposition before the AI/fallback step.
