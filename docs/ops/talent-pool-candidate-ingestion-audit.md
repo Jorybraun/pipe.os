@@ -191,18 +191,19 @@ CLOUDFLARE_D1_DATABASE_ID=0abe92df-9296-46f5-9f9d-a1fb1bcd3be1 \
 
 Latest app-dev proof on 2026-07-02 used invite token
 `talent-audit-532e4287e-c1` after deploying Worker version
-`88868bd7-bdc0-402e-9cac-c3ed3a56b8e7` and replaying candidate ingestion
-repairs against dev D1. The remote verifier returned `status: ready`,
+`ecf0b305-081c-4fbc-b01b-cbe97e56284b` and letting the scheduled
+Talent Pool repair replay the existing profile-upload R2 object against dev D1.
+The remote verifier returned `status: ready`,
 `candidateNodeCount: 74`, `candidateNodeExactSourceQuoteCount: 74`,
 `candidateNodeWithoutExactSourceCount: 0`,
 `duplicateCandidateNodeEvidenceCount: 0`,
 `candidateNodeSourceAnchorConflictCount: 0`,
 `candidateResumeStorageKeyCount: 1`, `candidateResumeMatchesIntakeCount: 1`,
 `failedRowCount: 0`, `errorTextRowCount: 0`,
-`artifactVersionCount: 11`, `sourceSpanCount: 37`,
+`artifactVersionCount: 12`, `sourceSpanCount: 37`,
 `sourceSpanTextMismatchCount: 0`, `sourceSpanHashMismatchCount: 0`,
 `documentProfileSourceSpanCount: 4`, `contextRecordCount: 80`,
-`profileUploadArtifactVersionCount: 0`,
+`profileUploadArtifactVersionCount: 1`,
 `contextSourceRefCount: 83`,
 `externalProfileRefContextCount: 3`,
 `phoneScreenerIntentContextCount: 1`, `rolelessApplicationCount: 0`,
@@ -210,11 +211,10 @@ repairs against dev D1. The remote verifier returned `status: ready`,
 `sourceLessPositiveClaimCount: 0`, `sourceLessDesignQueueSuggestionCount: 0`,
 and `duplicateProjectedEdgeCount: 0`.
 
-That app-dev candidate was created before profile-upload receipt backfill
-existed, so the strict filtered upload-receipt count is currently `0` until the
-deployed scheduled repair replays the existing content-hash R2 object. New
-uploads and repaired historical uploads create `profile_upload` receipt
-artifacts without turning blob capture into profile claims.
+The same remote D1 proof counted exactly one `profile_upload` receipt for
+`talent-intake/talent_audit_532e4287e_c1/9d990a07be4b85fe2907eca11f2a378669d5b03c0131dd506470922e894070f1-test-resume.pdf`,
+showing the scheduled repair backfilled the historical upload without adding
+source-less claims or duplicate person/context edges.
 
 Remote source-span sampling proved operational context refs preserve exact
 field text:
