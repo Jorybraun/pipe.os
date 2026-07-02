@@ -41,6 +41,7 @@ describe('GET / contacts list', () => {
         updated_at TEXT NOT NULL
       );
     `);
+    sqlite.exec(livingContextGraphMigration);
 
     const insert = sqlite.prepare(`
       INSERT INTO contacts (
@@ -116,6 +117,94 @@ describe('GET / contacts list', () => {
     expect(body.page).toBe(3);
     expect(body.limit).toBe(40);
     expect(body.hasMore).toBe(false);
+  });
+
+  it('includes roleless talent-pool people from the canonical person graph without duplicating contacts', async () => {
+    const createdAt = '2026-06-22T00:05:00.000Z';
+    sqlite.prepare(
+      `INSERT INTO people (
+         id, ingestion_key, display_name, primary_email, external_ids_json, created_at, updated_at
+       ) VALUES (?, ?, ?, ?, '{}', ?, ?)`,
+    ).run(
+      'person-talent-1',
+      'email:talent@example.com',
+      'Talent Pool Person',
+      'talent@example.com',
+      createdAt,
+      createdAt,
+    );
+    sqlite.prepare(
+      `INSERT INTO workspace_people (
+         id, ingestion_key, workspace_id, person_id, relationship_summary,
+         context_json, created_at, updated_at
+       ) VALUES (?, ?, ?, ?, ?, ?, ?, ?)`,
+    ).run(
+      'workspace-person-talent-1',
+      'workspace:test-user:person:person-talent-1',
+      'test-user',
+      'person-talent-1',
+      'Joined the roleless Talent Pool.',
+      JSON.stringify({
+        source: 'roleless_candidate_intake',
+        sources: ['roleless_candidate_intake'],
+        legacyCandidateIds: ['candidate-talent-1'],
+        talentPool: { status: 'active', roleless: true, candidateId: 'candidate-talent-1' },
+      }),
+      createdAt,
+      createdAt,
+    );
+
+    const duplicateCreatedAt = '2026-06-22T00:06:00.000Z';
+    sqlite.prepare(
+      `INSERT INTO people (
+         id, ingestion_key, display_name, primary_email, external_ids_json, created_at, updated_at
+       ) VALUES (?, ?, ?, ?, '{}', ?, ?)`,
+    ).run(
+      'person-contact-104',
+      'email:person-104@example.com',
+      'Existing Contact Candidate',
+      'person-104@example.com',
+      duplicateCreatedAt,
+      duplicateCreatedAt,
+    );
+    sqlite.prepare(
+      `INSERT INTO workspace_people (
+         id, ingestion_key, workspace_id, person_id, context_json, created_at, updated_at
+       ) VALUES (?, ?, ?, ?, ?, ?, ?)`,
+    ).run(
+      'workspace-person-contact-104',
+      'workspace:test-user:person:person-contact-104',
+      'test-user',
+      'person-contact-104',
+      JSON.stringify({
+        contactId: 'contact-104',
+        legacyCandidateIds: ['candidate-contact-104'],
+        talentPool: { status: 'active', roleless: true, candidateId: 'candidate-contact-104' },
+      }),
+      duplicateCreatedAt,
+      duplicateCreatedAt,
+    );
+
+    const response = await createApp().request('/?limit=110');
+
+    expect(response.status).toBe(200);
+    const body = await response.json() as {
+      contacts: Array<{ id: string; email: string; type: string; notes: string | null }>;
+      total: number;
+      hasMore: boolean;
+    };
+    expect(body.total).toBe(106);
+    expect(body.hasMore).toBe(false);
+    expect(body.contacts[0]).toMatchObject({
+      id: 'person-talent-1',
+      email: 'talent@example.com',
+      type: 'candidate',
+      notes: 'Joined the roleless Talent Pool.',
+    });
+    expect(body.contacts.filter((contact) => contact.email === 'person-104@example.com')).toHaveLength(1);
+    expect(body.contacts.find((contact) => contact.id === 'contact-104')).toMatchObject({
+      type: 'candidate',
+    });
   });
 });
 

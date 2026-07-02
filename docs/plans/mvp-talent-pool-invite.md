@@ -177,6 +177,37 @@ The `/talent/:token` route for pipeline-free candidates needs a simple flow:
 4. If no real challenge is ready → create an internal challenge-design queue item
 5. Candidate sees profile received / challenge preparing, not internal matching state
 
+### Current Ingestion / Person Contract
+
+As of 2026-07-02, a Talent Pool invite is still a real `candidates` row for
+token security, assessment readiness, and ingestion state, but it is not a
+separate person list. Profile submit/upload through `/rpc/talent/*` repairs the
+roleless person projection by upserting one `people` row and one
+`workspace_people` row keyed by owner plus normalized email. The projection
+marks `workspace_people.context_json.talentPool.status = "active"` and records
+the legacy candidate id without creating an `applications` row or `person_roles`
+row until there is a real role-backed process.
+
+`GET /api/v1/contacts` now lists explicit `contacts` plus canonical
+`workspace_people` records, suppressing duplicates by linked `contactId` or
+same owner/email. A Talent Pool person therefore appears in the People list as a
+candidate even when no legacy `contacts` row exists, and an existing contact is
+shown once if that same person later joins the Talent Pool.
+
+Proof command:
+
+```bash
+npm --prefix workers/api test -- \
+  src/routes/__tests__/talentPool.test.ts \
+  src/routes/cockpit/__tests__/contacts.rest.test.ts \
+  src/routes/cockpit/__tests__/candidates.rest.test.ts
+```
+
+Current gap: DOCX files are accepted and persisted as Talent Pool uploads, but
+background profile extraction currently runs for text content and PDF uploads.
+DOCX uploads need an extractor/backfill path before they can be claimed as fully
+projected profile evidence without accompanying pasted text.
+
 ---
 
 ## What's NOT Changing

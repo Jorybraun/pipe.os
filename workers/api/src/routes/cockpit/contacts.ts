@@ -110,6 +110,19 @@ function stringFromContext(context: Record<string, unknown>, key: string): strin
   return typeof value === 'string' && value.trim() ? value : null;
 }
 
+function isActiveTalentPoolContext(context: Record<string, unknown>): boolean {
+  const talentPool = context.talentPool;
+  if (
+    typeof talentPool === 'object'
+    && talentPool !== null
+    && !Array.isArray(talentPool)
+    && (talentPool as Record<string, unknown>).status === 'active'
+  ) {
+    return true;
+  }
+  return Array.isArray(context.legacyCandidateIds) && context.legacyCandidateIds.length > 0;
+}
+
 function workspacePersonToContact(row: WorkspacePersonRow): ContactRow {
   const context = parseContext(row.context_json);
   return {
@@ -122,11 +135,99 @@ function workspacePersonToContact(row: WorkspacePersonRow): ContactRow {
     phone: row.phone,
     linkedin: null,
     notes: row.relationship_summary,
-    type: 'person',
+    type: isActiveTalentPoolContext(context) ? 'candidate' : 'person',
     created_at: row.created_at,
     updated_at: row.updated_at,
   };
 }
+
+const unifiedPeopleListCte = `
+WITH contact_rows AS (
+  SELECT c.id,
+         c.owner_id,
+         c.email,
+         c.name,
+         c.company,
+         c.role,
+         c.phone,
+         c.linkedin,
+         c.notes,
+         CASE
+           WHEN EXISTS (
+             SELECT 1
+               FROM workspace_people wp
+               JOIN people p ON p.id = wp.person_id
+              WHERE wp.workspace_id = c.owner_id
+                AND (
+                  json_extract(wp.context_json, '$.contactId') = c.id
+                  OR (
+                    c.email IS NOT NULL
+                    AND p.primary_email IS NOT NULL
+                    AND lower(c.email) = lower(p.primary_email)
+                  )
+                )
+                AND (
+                  json_extract(wp.context_json, '$.talentPool.status') = 'active'
+                  OR json_type(wp.context_json, '$.legacyCandidateIds') = 'array'
+                )
+           ) THEN 'candidate'
+           ELSE c.type
+         END AS type,
+         c.created_at,
+         c.updated_at
+    FROM contacts c
+   WHERE c.owner_id = ?1
+),
+workspace_person_rows AS (
+  SELECT p.id,
+         wp.workspace_id AS owner_id,
+         COALESCE(p.primary_email, '') AS email,
+         p.display_name AS name,
+         json_extract(wp.context_json, '$.company') AS company,
+         COALESCE(
+           (
+             SELECT pr.label
+               FROM person_roles pr
+              WHERE pr.workspace_person_id = wp.id
+              ORDER BY pr.created_at DESC
+              LIMIT 1
+           ),
+           json_extract(wp.context_json, '$.role')
+         ) AS role,
+         p.primary_phone AS phone,
+         CAST(NULL AS TEXT) AS linkedin,
+         wp.relationship_summary AS notes,
+         CASE
+           WHEN json_extract(wp.context_json, '$.talentPool.status') = 'active'
+             OR json_type(wp.context_json, '$.legacyCandidateIds') = 'array'
+           THEN 'candidate'
+           ELSE 'person'
+         END AS type,
+         wp.created_at,
+         wp.updated_at
+    FROM workspace_people wp
+    JOIN people p ON p.id = wp.person_id
+   WHERE wp.workspace_id = ?1
+     AND NOT EXISTS (
+       SELECT 1
+         FROM contacts c
+        WHERE c.owner_id = wp.workspace_id
+          AND c.id = json_extract(wp.context_json, '$.contactId')
+     )
+     AND NOT EXISTS (
+       SELECT 1
+         FROM contacts c
+        WHERE c.owner_id = wp.workspace_id
+          AND c.email IS NOT NULL
+          AND p.primary_email IS NOT NULL
+          AND lower(c.email) = lower(p.primary_email)
+     )
+),
+unified_people AS (
+  SELECT * FROM contact_rows
+  UNION ALL
+  SELECT * FROM workspace_person_rows
+)`;
 
 async function loadWorkspacePersonAsContact(
   db: D1Database,
@@ -174,13 +275,18 @@ contacts.get('/', async (c) => {
   const offset = (page - 1) * limit;
 
   const countRow = await db
-    .prepare('SELECT COUNT(*) AS total FROM contacts WHERE owner_id = ?')
+    .prepare(`${unifiedPeopleListCte}
+      SELECT COUNT(*) AS total FROM unified_people`)
     .bind(userId)
     .first<{ total: number }>();
   const total = countRow?.total ?? 0;
 
   const { results } = await db
-    .prepare('SELECT * FROM contacts WHERE owner_id = ? ORDER BY created_at DESC LIMIT ? OFFSET ?')
+    .prepare(`${unifiedPeopleListCte}
+      SELECT id, owner_id, email, name, company, role, phone, linkedin, notes, type, created_at, updated_at
+        FROM unified_people
+       ORDER BY created_at DESC, id DESC
+       LIMIT ?2 OFFSET ?3`)
     .bind(userId, limit, offset)
     .all<ContactRow>();
 

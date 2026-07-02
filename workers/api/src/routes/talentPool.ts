@@ -3,6 +3,7 @@ import { z } from 'zod';
 import { buildRuleBasedParsedCV, parseResumeText, persistParsedCV } from '../lib/cvParser';
 import { runCandidateIngestion } from '../lib/candidateDiscovery/orchestrate';
 import { processResumeFromR2 } from '../lib/enrichment/resumeIngestion';
+import { ensureRolelessTalentPoolIdentity } from '../lib/talentPoolIdentity';
 import type { Env, Variables } from '../types';
 
 type TalentPoolStatus =
@@ -536,6 +537,17 @@ async function persistIntake(
     .run();
 
   await ensureCandidateIngestionQueued(c.env.DB, candidate.id, input, now);
+
+  if (candidate.email?.trim()) {
+    await ensureRolelessTalentPoolIdentity({
+      db: c.env.DB,
+      userId: candidate.owner_id,
+      candidateId: candidate.id,
+      name: candidate.name ?? candidate.email,
+      email: candidate.email,
+      now,
+    });
+  }
 }
 
 async function ensureChallengeDesignQueueItem(

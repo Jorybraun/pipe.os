@@ -20,10 +20,14 @@ import { buildProfileSections } from '../../lib/candidateDiscovery/buildProfileS
 import {
   ensureCandidateLivingContext,
   loadCandidateLivingContext,
-  LivingContextStore,
   searchSourceContent,
   requireGate,
 } from '../../lib/livingContext';
+import {
+  buildRolelessTalentPoolContext,
+  ensureRolelessTalentPoolIdentity,
+  TALENT_POOL_MEMBERSHIP_SCHEMA_BLOCKER,
+} from '../../lib/talentPoolIdentity';
 import {
   formatMatchNarrative,
   type MatchNarrative,
@@ -38,8 +42,13 @@ import {
   loadSourceBackedReviewPacketById,
 } from '../../lib/review/sourceBackedReviewDiff';
 import { INTERVIEW_TYPE_VALUES } from './scheduling';
-import type { JsonObject, JsonValue } from '../../lib/livingContext';
 import type { Env, Variables } from '../../types';
+
+export {
+  buildRolelessTalentPoolContext,
+  ensureRolelessTalentPoolIdentity,
+  TALENT_POOL_MEMBERSHIP_SCHEMA_BLOCKER,
+};
 
 // ─── Validation ──────────────────────────────────────────────────────────────
 
@@ -72,66 +81,6 @@ function sanitizeCandidateName(name: string): string {
 
 export function normalizeCandidateEmail(email: string): string {
   return email.trim().toLowerCase();
-}
-
-export const TALENT_POOL_MEMBERSHIP_SCHEMA_BLOCKER =
-  'Current D1 schema has no TalentPoolMembership table; roleless intake records membership state in workspace_people.context_json until that table exists.';
-
-function isJsonObject(value: JsonValue | undefined): value is JsonObject {
-  return typeof value === 'object' && value !== null && !Array.isArray(value);
-}
-
-function parseJsonObject(raw: string | null): JsonObject {
-  if (!raw) return {};
-  try {
-    const parsed = JSON.parse(raw) as JsonValue;
-    return isJsonObject(parsed) ? parsed : {};
-  } catch {
-    return {};
-  }
-}
-
-function stringList(value: JsonValue | undefined): string[] {
-  if (typeof value === 'string' && value.trim()) return [value.trim()];
-  if (!Array.isArray(value)) return [];
-  return value.flatMap((entry) =>
-    typeof entry === 'string' && entry.trim() ? [entry.trim()] : [],
-  );
-}
-
-function uniqueStrings(...values: string[][]): string[] {
-  return [...new Set(values.flat())].sort();
-}
-
-export function buildRolelessTalentPoolContext(
-  existingContext: JsonObject,
-  candidateId: string,
-  joinedAt: string,
-): JsonObject {
-  const existingTalentPool = isJsonObject(existingContext.talentPool)
-    ? existingContext.talentPool
-    : {};
-  return {
-    ...existingContext,
-    source: 'roleless_candidate_intake',
-    sources: uniqueStrings(
-      stringList(existingContext.sources),
-      stringList(existingContext.source),
-      ['roleless_candidate_intake'],
-    ),
-    legacyCandidateIds: uniqueStrings(
-      stringList(existingContext.legacyCandidateIds),
-      [candidateId],
-    ),
-    talentPool: {
-      ...existingTalentPool,
-      status: 'active',
-      roleless: true,
-      candidateId,
-      joinedAt: typeof existingTalentPool.joinedAt === 'string' ? existingTalentPool.joinedAt : joinedAt,
-      membershipSchemaBlocker: TALENT_POOL_MEMBERSHIP_SCHEMA_BLOCKER,
-    },
-  };
 }
 
 /** Maximum file size for CV uploads: 10 MB. */
@@ -1281,133 +1230,6 @@ const createStandaloneCandidateSchema = z.object({
     });
   }
 });
-
-async function sha256Hex(text: string): Promise<string> {
-  const bytes = new TextEncoder().encode(text);
-  const digest = await crypto.subtle.digest('SHA-256', bytes);
-  return [...new Uint8Array(digest)].map((byte) => byte.toString(16).padStart(2, '0')).join('');
-}
-
-async function loadWorkspacePersonContext(
-  db: D1Database,
-  workspaceId: string,
-  personId: string,
-): Promise<JsonObject> {
-  const existing = await db.prepare(
-    `SELECT context_json
-       FROM workspace_people
-      WHERE workspace_id = ?1 AND person_id = ?2
-      LIMIT 1`,
-  ).bind(workspaceId, personId).first<{ context_json: string | null }>();
-  return parseJsonObject(existing?.context_json ?? null);
-}
-
-async function persistRolelessMessageArtifact(input: {
-  store: LivingContextStore;
-  workspacePersonId: string;
-  candidateId: string;
-  message: string;
-  now: string;
-}): Promise<void> {
-  const message = input.message;
-  if (!message.trim()) return;
-
-  const contentHash = await sha256Hex(message);
-  const baseKey = `candidate:${input.candidateId}:roleless-message:${contentHash}`;
-  const interaction = await input.store.upsertInteraction({
-    ingestionKey: baseKey,
-    workspacePersonId: input.workspacePersonId,
-    interactionType: 'message',
-    externalReference: input.candidateId,
-    startedAt: input.now,
-    metadata: {
-      source: 'roleless_candidate_intake',
-      roleless: true,
-    },
-  });
-  const artifact = await input.store.upsertArtifact({
-    ingestionKey: baseKey,
-    workspacePersonId: input.workspacePersonId,
-    interactionId: interaction.id,
-    artifactType: 'message',
-    logicalKey: 'roleless_candidate_intake_message',
-    metadata: {
-      source: 'roleless_candidate_intake',
-      roleless: true,
-    },
-  });
-  const version = await input.store.createArtifactVersion({
-    ingestionKey: `${baseKey}:v1`,
-    artifactId: artifact.id,
-    versionNumber: 1,
-    contentHash,
-    mediaType: 'text/plain',
-    contentText: message,
-    byteLength: new TextEncoder().encode(message).byteLength,
-    metadata: {
-      source: 'roleless_candidate_intake',
-      roleless: true,
-    },
-  });
-  await input.store.createSourceSpan({
-    ingestionKey: `${baseKey}:span:full`,
-    artifactVersionId: version.id,
-    stableSegmentId: 'full-message',
-    charStart: 0,
-    charEnd: message.length,
-    exactText: message,
-    exactTextHash: contentHash,
-    metadata: {
-      source: 'roleless_candidate_intake',
-      roleless: true,
-    },
-  });
-}
-
-export async function ensureRolelessTalentPoolIdentity(input: {
-  db: D1Database;
-  userId: string;
-  candidateId: string;
-  name: string;
-  email: string;
-  message?: string;
-  now: string;
-}): Promise<{ personId: string; workspacePersonId: string }> {
-  const { db, userId, candidateId, name, email, message, now } = input;
-  const store = new LivingContextStore(db);
-  const existingPerson = await db.prepare(
-    `SELECT id, ingestion_key
-       FROM people
-      WHERE primary_email = ?1
-      ORDER BY created_at
-      LIMIT 1`,
-  ).bind(email).first<{ id: string; ingestion_key: string }>();
-
-  const person = await store.upsertPerson({
-    ingestionKey: existingPerson?.ingestion_key ?? `email:${email}`,
-    displayName: name,
-    primaryEmail: email,
-    externalIds: { legacyCandidateId: candidateId },
-  });
-
-  const existingContext = await loadWorkspacePersonContext(db, userId, person.id);
-  const workspacePerson = await store.upsertWorkspacePerson({
-    ingestionKey: `workspace:${userId}:person:${person.id}`,
-    workspaceId: userId,
-    personId: person.id,
-    context: buildRolelessTalentPoolContext(existingContext, candidateId, now),
-  });
-
-  await persistRolelessMessageArtifact({
-    store,
-    workspacePersonId: workspacePerson.id,
-    candidateId,
-    message: message ?? '',
-    now,
-  });
-
-  return { personId: person.id, workspacePersonId: workspacePerson.id };
-}
 
 // POST / — create a standalone candidate (talent pool, no pipeline)
 candidateOps.post('/', async (c) => {

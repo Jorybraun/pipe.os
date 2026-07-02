@@ -10,6 +10,10 @@ const talentPoolMigration = readFileSync(
   new URL('../../../migrations/0109_talent_pool_intake.sql', import.meta.url),
   'utf8',
 );
+const livingContextMigration = readFileSync(
+  new URL('../../../migrations/0082_living_context_graph.sql', import.meta.url),
+  'utf8',
+);
 
 interface MemoryR2 extends R2Bucket {
   puts: Map<string, string>;
@@ -96,6 +100,7 @@ function createSqlite(): BetterSqliteDb {
     );
   `);
   sqlite.exec(talentPoolMigration);
+  sqlite.exec(livingContextMigration);
   return sqlite;
 }
 
@@ -162,20 +167,21 @@ describe('talent pool candidate RPC', () => {
     seedCandidate(sqlite);
     const storage = createMemoryR2();
     const app = createApp();
+    const payload = {
+      inviteToken: 'invite-token',
+      resumeText: 'Senior frontend engineer with React, Cloudflare Workers, accessibility, and open-source review experience.',
+      githubUrl: 'https://github.com/jordan-talent',
+      linkedinUrl: 'https://linkedin.com/in/jordan-talent',
+      portfolioUrl: 'https://jordan.example.dev',
+      phoneScreenerConsent: true,
+      phoneNumber: '+15551234567',
+      timezone: 'America/Vancouver',
+      availability: 'Weekday afternoons after 2 PM.',
+    };
 
     const res = await app.request('/rpc/talent/submit-profile', {
       method: 'POST',
-      body: JSON.stringify({
-        inviteToken: 'invite-token',
-        resumeText: 'Senior frontend engineer with React, Cloudflare Workers, accessibility, and open-source review experience.',
-        githubUrl: 'https://github.com/jordan-talent',
-        linkedinUrl: 'https://linkedin.com/in/jordan-talent',
-        portfolioUrl: 'https://jordan.example.dev',
-        phoneScreenerConsent: true,
-        phoneNumber: '+15551234567',
-        timezone: 'America/Vancouver',
-        availability: 'Weekday afternoons after 2 PM.',
-      }),
+      body: JSON.stringify(payload),
       headers: { 'Content-Type': 'application/json' },
     }, createEnv(sqlite, storage));
 
@@ -246,6 +252,39 @@ describe('talent pool candidate RPC', () => {
     expect(JSON.parse(queue.suggested_repo_families)).toContain('frontend application code');
     expect(queue.proposed_challenge_type).toBe('CODE_REVIEW');
     expect(queue.validation_status).toBe('needs_design');
+
+    expect(sqlite.prepare('SELECT COUNT(*) AS count FROM people').get()).toEqual({ count: 1 });
+    expect(sqlite.prepare('SELECT COUNT(*) AS count FROM workspace_people').get()).toEqual({ count: 1 });
+    expect(sqlite.prepare('SELECT COUNT(*) AS count FROM applications').get()).toEqual({ count: 0 });
+    expect(sqlite.prepare('SELECT COUNT(*) AS count FROM person_roles').get()).toEqual({ count: 0 });
+    expect(sqlite.prepare(
+      `SELECT display_name, primary_email FROM people LIMIT 1`,
+    ).get()).toEqual({
+      display_name: 'Jordan Talent',
+      primary_email: 'jordan@example.com',
+    });
+    expect(JSON.parse(sqlite.prepare(
+      `SELECT context_json FROM workspace_people LIMIT 1`,
+    ).get()!.context_json as string)).toMatchObject({
+      source: 'roleless_candidate_intake',
+      sources: ['roleless_candidate_intake'],
+      legacyCandidateIds: ['candidate-1'],
+      talentPool: {
+        status: 'active',
+        roleless: true,
+        candidateId: 'candidate-1',
+      },
+    });
+
+    const replay = await app.request('/rpc/talent/submit-profile', {
+      method: 'POST',
+      body: JSON.stringify(payload),
+      headers: { 'Content-Type': 'application/json' },
+    }, createEnv(sqlite, storage));
+    expect(replay.status).toBe(200);
+    expect(sqlite.prepare('SELECT COUNT(*) AS count FROM people').get()).toEqual({ count: 1 });
+    expect(sqlite.prepare('SELECT COUNT(*) AS count FROM workspace_people').get()).toEqual({ count: 1 });
+    expect(sqlite.prepare('SELECT COUNT(*) AS count FROM challenge_design_queue').get()).toEqual({ count: 1 });
   });
 
   it('accepts token-scoped profile file uploads before an assessment session exists', async () => {
