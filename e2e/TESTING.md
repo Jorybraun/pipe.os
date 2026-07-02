@@ -279,7 +279,7 @@ Latest deployed app-dev proof: after deploying dev API version `043f0c50-1552-41
 
 The same deployed API/app pair also passed the roleless full-submit auto-match command for interview `43210dfe-d589-4229-841f-f9b9c9b9fe5e`, review session `ea8a07c9-9631-4ace-8f67-8f1cbdfb8f41`, and judge replay example `code_review_judge_example_ee8b8947c9838f1e25bd80e8714a1c25`, selecting `mui/base-ui#973`, returning `MATCHED`, passing the source-backed quality gate, measuring positive contrast separation against the next comparable challenge (`1/2`, selected challenge ahead by 2%), completing recruiter/profile results, and preserving 4 recruiter-visible evidence hyperedges.
 
-Latest manual app-dev proof on 2026-07-02: render-only smoke passed for interview `8bdd62f1-33d0-470b-88bb-9922134f5b26`, selecting `mui/base-ui#973` with `MATCHED`, `PASSED`, and `USABLE`; full-submit smoke passed for interview `ebece441-6d85-461e-b47c-57e8befcaf80`, review session `31bdc079-ec7f-46b6-a915-94362857ec71`, judge replay example `code_review_judge_example_4ba543531e73930d8b572cee2a83e5bf`, remote D1 score persistence `42`, review status `scored`, and completed pipeline through durable scoring.
+Latest manual app-dev proof on 2026-07-02: render-only smoke passed for interview `8bdd62f1-33d0-470b-88bb-9922134f5b26`, selecting `mui/base-ui#973` with `MATCHED`, `PASSED`, and `USABLE`; post-deploy full-submit smoke passed for interview `edb3b5ef-e6e8-45f4-a654-e4297dc00d2c`, review session `51ab6d6a-da7f-4ad6-9353-3f49ef3ddb3a`, judge replay example `code_review_judge_example_b454c70ea73f5446e32a58d9e0430020`, remote D1 score persistence `54`, review status `scored`, and completed pipeline through durable scoring.
 
 Earlier deployed app-dev proof on 2026-07-02 after manual dev deploy API
 `b3030783-70bd-4db9-a210-04e5201063d0`, app
@@ -366,7 +366,7 @@ quality because standalone `/assess` must not run PR assignment in front of the
 candidate.
 
 Latest single blocked-boundary proof on 2026-07-02 passed for interview
-`bd91b807-1778-4b4a-974a-6ae320659215`: the candidate handoff was
+`ffca150d-fd7e-4c08-9c9c-e60462d79233`: the candidate handoff was
 `PROFILE_RECEIVED` / `profile-received`, stage `candidate-intake-queued`, no
 room link was produced, no repo/PR was assigned, and recruiter readiness stayed
 `waiting_for_source_backed_match`.
