@@ -300,7 +300,19 @@ async function auditFamily(
     ? ` AND cr.interaction_id IN (
           SELECT id FROM interactions WHERE external_reference = ?
         )`
-    : '';
+    : ` AND cr.interaction_id IN (
+          SELECT i.id
+            FROM interactions i
+            JOIN assessment_sessions ass ON ass.id = i.external_reference
+        )`;
+  const missingProjectionEligibilityFilter = `
+    AND EXISTS (
+      SELECT 1
+        FROM assessment_sessions ass
+        LEFT JOIN scheduled_interviews si ON si.id = ass.interview_id
+       WHERE ass.id = ev.session_id
+         AND (ass.candidate_id IS NOT NULL OR si.candidate_id IS NOT NULL)
+    )`;
   const personScopeParams = options.sessionId ? [options.sessionId] : [];
 
   const rawEventCount = definition.eventKinds.length > 0
@@ -400,9 +412,10 @@ async function auditFamily(
     ? await count(
         client,
         `SELECT COUNT(*) AS count
-           FROM assessment_evidence_events ev
+          FROM assessment_evidence_events ev
           WHERE ev.kind IN (${eventKindSql})
             ${sessionFilter}
+            ${missingProjectionEligibilityFilter}
             AND NOT EXISTS (
               SELECT 1
                 FROM context_records cr

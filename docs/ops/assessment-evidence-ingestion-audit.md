@@ -69,6 +69,7 @@ npm run assessment-evidence:audit -- --remote
 npm run assessment-evidence:audit -- --remote --session-id <assessment_session_id>
 npm run assessment-evidence:audit -- --remote --session-id <assessment_session_id> --require-all-families
 npm run assessment-evidence:replay -- --remote --session-id <assessment_session_id>
+npm run assessment-evidence:replay -- --remote --all-missing --limit 25
 ```
 
 For app-dev, prefix remote proof commands with
@@ -130,3 +131,17 @@ The same replay proof reports no repo-matching side effect for this manual
 open-source assessment candidate (`matchRunCount: 0`). That is the current
 matching answer for this session: the assessment evidence is available to the
 person graph and recruiter surfaces, but no match run has consumed it yet.
+
+The bulk dev-data replay command was also run with `--all-missing --limit 2`.
+It repaired two candidate-backed historical `REPO_MATCHING` sessions:
+
+- `assessment_session_0085adca113d75b29aa133b9add90cdc`: 2 context records,
+  39 source refs, 4 candidate match runs, latest status `MATCHED`.
+- `assessment_session_2ab90b8d76b7531a7ec9179dac74a524`: 2 context records,
+  27 source refs, 2 candidate match runs, latest status `MATCHED`.
+
+The unscoped app-dev audit now reports `duplicateProjectedEdgeCount: 0` after
+scoping duplicate checks to assessment-origin interactions. It still reports
+candidate-backed historical sessions with missing person projections, so broad
+dev cutover remains a backlog/backfill task rather than a completed global
+state.

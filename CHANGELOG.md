@@ -9,6 +9,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Added — Open-source assessment setup
 
+- `assessment-evidence:replay` can now run `--all-missing --limit <n>` to backfill candidate-backed assessment sessions with missing person projections and report matching effects for each replayed candidate.
 - Open-source assessment session creation and replay now snapshot candidate profile evidence into the assessment spine with exact `candidate_profile` source refs, so profile context can be replayed into living context alongside challenge/workspace evidence.
 - Recruiter open-source assessment invites now show a live challenge-packet checklist for repo, exact base commit, task, success criteria, and expected evidence before creation, making manual tasks visibly concrete instead of a loose repo dump.
 - Added `npm run smoke:open-source-workspace-dev` as the explicit dev proof command for the real open-source bug-fix workspace path, covering room launch, source-backed workspace finalization, commit evidence, and evaluator readiness.
@@ -35,6 +36,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 ### Fixed — Open-source assessment progress
 
 - Recruiter interview lists now load assessment progress from batched summary queries instead of hydrating full per-session evidence detail for every card, preserving task/commit/evaluation signals while reducing list-page D1 work.
+- The assessment evidence audit now limits unscoped person-projection and duplicate checks to assessment-origin interactions, avoiding false duplicate reports from unrelated meeting-room context while still flagging candidate-backed raw assessment events that need replay.
 - Living-context scheduled backfill now recovers stale `running` checkpoints before selecting ready tasks, so interrupted assessment evidence replays retry instead of freezing app-dev assessment projection.
 - Assessment evidence audits can now be scoped to one assessment session, report absent families as coverage gaps by default, and reserve failures for missing sessions, source-less positive claims, duplicate projected edges, or captured raw events that did not project to person context.
 - Assessment-to-living-context ingestion now projects evaluator reports themselves into person context with exact `assessment_evaluation_report` source refs, so report summaries are rebuildable person evidence rather than only assessment-scoped context.
