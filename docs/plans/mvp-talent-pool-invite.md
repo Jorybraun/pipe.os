@@ -205,6 +205,11 @@ same file reuses the same source artifact path. PDF/DOCX background resume
 projection uses the roleless Talent Pool `workspace_people` identity and leaves
 `applications` / `person_roles` empty until a real role-backed process exists.
 
+GitHub, LinkedIn, portfolio, and phone-screener intent fields are projected as
+source-backed operational context records with exact submitted field spans.
+Those records prove what the candidate submitted and consented to; they do not
+validate external profile content, derive skills, or imply assessment readiness.
+
 Proof command:
 
 ```bash

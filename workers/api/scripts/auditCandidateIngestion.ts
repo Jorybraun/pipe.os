@@ -84,6 +84,8 @@ export interface CandidatePersonProjectionAudit {
   rolelessApplicationCount: number;
   rolelessPersonRoleCount: number;
   contextRecordCount: number;
+  externalProfileRefContextCount: number;
+  phoneScreenerIntentContextCount: number;
   signalEvidenceCount: number;
   readyChallengeAssignmentCount: number;
   designQueueCount: number;
@@ -144,6 +146,8 @@ interface ProjectionRow {
   roleless_application_count: number | null;
   roleless_person_role_count: number | null;
   context_record_count: number | null;
+  external_profile_ref_context_count: number | null;
+  phone_screener_intent_context_count: number | null;
   signal_evidence_count: number | null;
   ready_challenge_assignment_count: number | null;
   design_queue_count: number | null;
@@ -398,6 +402,14 @@ async function loadPersonProjection(
        (SELECT COUNT(DISTINCT cr.id)
           FROM linked_workspace_people lwp
           JOIN context_records cr ON cr.workspace_person_id = lwp.workspace_person_id) AS context_record_count,
+       (SELECT COUNT(DISTINCT cr.id)
+          FROM linked_workspace_people lwp
+          JOIN context_records cr ON cr.workspace_person_id = lwp.workspace_person_id
+         WHERE cr.record_type = 'talent_pool_external_profile_ref') AS external_profile_ref_context_count,
+       (SELECT COUNT(DISTINCT cr.id)
+          FROM linked_workspace_people lwp
+          JOIN context_records cr ON cr.workspace_person_id = lwp.workspace_person_id
+         WHERE cr.record_type = 'talent_pool_phone_screener_intent') AS phone_screener_intent_context_count,
        (SELECT COUNT(DISTINCT se.id)
           FROM linked_workspace_people lwp
           JOIN signal_evidence se ON se.workspace_person_id = lwp.workspace_person_id) AS signal_evidence_count,
@@ -420,6 +432,8 @@ async function loadPersonProjection(
     rolelessApplicationCount: toNumber(row?.roleless_application_count),
     rolelessPersonRoleCount: toNumber(row?.roleless_person_role_count),
     contextRecordCount: toNumber(row?.context_record_count),
+    externalProfileRefContextCount: toNumber(row?.external_profile_ref_context_count),
+    phoneScreenerIntentContextCount: toNumber(row?.phone_screener_intent_context_count),
     signalEvidenceCount: toNumber(row?.signal_evidence_count),
     readyChallengeAssignmentCount: toNumber(row?.ready_challenge_assignment_count),
     designQueueCount: toNumber(row?.design_queue_count),
@@ -527,6 +541,8 @@ export async function auditCandidateIngestion(
       rolelessApplicationCount: 0,
       rolelessPersonRoleCount: 0,
       contextRecordCount: 0,
+      externalProfileRefContextCount: 0,
+      phoneScreenerIntentContextCount: 0,
       signalEvidenceCount: 0,
       readyChallengeAssignmentCount: 0,
       designQueueCount: 0,
@@ -604,6 +620,12 @@ export async function auditCandidateIngestion(
     ...(sourceLessPositiveClaimCount > 0
       ? [`${sourceLessPositiveClaimCount} positive person-context claim(s) have no source refs or source spans`]
       : []),
+    ...(rawCapture.externalProfileRefCount > personProjection.externalProfileRefContextCount
+      ? [`${rawCapture.externalProfileRefCount - personProjection.externalProfileRefContextCount} external profile ref(s) lack source-backed operational context records`]
+      : []),
+    ...(rawCapture.phoneScreenerIntentCount > personProjection.phoneScreenerIntentContextCount
+      ? [`${rawCapture.phoneScreenerIntentCount - personProjection.phoneScreenerIntentContextCount} phone screener intent(s) lack source-backed operational context records`]
+      : []),
     ...(duplicateProjectedEdgeCount > 0
       ? [`${duplicateProjectedEdgeCount} duplicate person-projected context edge group(s) were found`]
       : []),
@@ -628,10 +650,10 @@ export async function auditCandidateIngestion(
     ...(sourceProof.candidateNodeWithoutExactSourceCount > 0
       ? ['Repair candidate-node decomposition so positive nodes carry validated source_quote offsets or remain non-projecting diagnostics.']
       : []),
-    ...(rawCapture.externalProfileRefCount > 0 && sourceProof.contextSourceRefCount === 0
-      ? ['Project GitHub/LinkedIn/portfolio refs into context records only when exact intake source refs survive.']
+    ...(rawCapture.externalProfileRefCount > personProjection.externalProfileRefContextCount
+      ? ['Project GitHub/LinkedIn/portfolio refs into operational context records with exact intake source refs.']
       : []),
-    ...(rawCapture.phoneScreenerIntentCount > 0 && sourceProof.contextSourceRefCount === 0
+    ...(rawCapture.phoneScreenerIntentCount > personProjection.phoneScreenerIntentContextCount
       ? ['Project phone screener intent as operational context with source refs instead of a default profile claim.']
       : []),
     ...(personProjection.readyChallengeAssignmentCount === 0 && personProjection.designQueueCount > 0
@@ -774,6 +796,8 @@ function printHuman(report: CandidateIngestionAudit, databasePath: string): void
   console.log(`  people:                ${report.personProjection.personCount}`);
   console.log(`  workspace people:      ${report.personProjection.workspacePersonCount}`);
   console.log(`  context records:       ${report.personProjection.contextRecordCount}`);
+  console.log(`  profile ref contexts:  ${report.personProjection.externalProfileRefContextCount}`);
+  console.log(`  phone intent contexts: ${report.personProjection.phoneScreenerIntentContextCount}`);
   console.log(`  signal evidence:       ${report.personProjection.signalEvidenceCount}`);
   console.log(`  ready assignments:     ${report.personProjection.readyChallengeAssignmentCount}`);
   console.log(`  design queue:          ${report.personProjection.designQueueCount}`);

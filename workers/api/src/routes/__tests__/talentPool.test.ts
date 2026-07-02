@@ -262,18 +262,43 @@ describe('talent pool candidate RPC', () => {
     expect(sqlite.prepare('SELECT COUNT(*) AS count FROM workspace_people').get()).toEqual({ count: 1 });
     expect(sqlite.prepare('SELECT COUNT(*) AS count FROM applications').get()).toEqual({ count: 0 });
     expect(sqlite.prepare('SELECT COUNT(*) AS count FROM person_roles').get()).toEqual({ count: 0 });
-    expect(sqlite.prepare('SELECT COUNT(*) AS count FROM interactions').get()).toEqual({ count: 1 });
-    expect(sqlite.prepare('SELECT COUNT(*) AS count FROM artifacts').get()).toEqual({ count: 1 });
-    expect(sqlite.prepare('SELECT COUNT(*) AS count FROM artifact_versions').get()).toEqual({ count: 1 });
-    expect(sqlite.prepare('SELECT COUNT(*) AS count FROM source_spans').get()).toEqual({ count: 1 });
-    expect(sqlite.prepare('SELECT COUNT(*) AS count FROM context_records').get()).toEqual({ count: 1 });
-    expect(sqlite.prepare('SELECT COUNT(*) AS count FROM context_record_source_refs').get()).toEqual({ count: 1 });
+    expect(sqlite.prepare('SELECT COUNT(*) AS count FROM interactions').get()).toEqual({ count: 2 });
+    expect(sqlite.prepare('SELECT COUNT(*) AS count FROM artifacts').get()).toEqual({ count: 2 });
+    expect(sqlite.prepare('SELECT COUNT(*) AS count FROM artifact_versions').get()).toEqual({ count: 2 });
+    expect(sqlite.prepare('SELECT COUNT(*) AS count FROM source_spans').get()).toEqual({ count: 8 });
+    expect(sqlite.prepare('SELECT COUNT(*) AS count FROM context_records').get()).toEqual({ count: 5 });
+    expect(sqlite.prepare('SELECT COUNT(*) AS count FROM context_record_source_refs').get()).toEqual({ count: 8 });
     expect(sqlite.prepare(
-      `SELECT exact_text FROM source_spans LIMIT 1`,
-    ).get()).toEqual({ exact_text: payload.resumeText });
+      `SELECT exact_text FROM source_spans WHERE exact_text = ? LIMIT 1`,
+    ).get(payload.resumeText)).toEqual({ exact_text: payload.resumeText });
+    expect(sqlite.prepare(
+      `SELECT COUNT(*) AS count
+         FROM context_records
+        WHERE record_type = 'talent_pool_external_profile_ref'`,
+    ).get()).toEqual({ count: 3 });
+    expect(sqlite.prepare(
+      `SELECT COUNT(*) AS count
+         FROM context_records
+        WHERE record_type = 'talent_pool_phone_screener_intent'`,
+    ).get()).toEqual({ count: 1 });
+    expect(sqlite.prepare(
+      `SELECT ss.exact_text
+         FROM context_records cr
+         JOIN context_record_source_refs crsr ON crsr.context_record_id = cr.id
+         JOIN source_spans ss ON ss.id = crsr.source_span_id
+        WHERE cr.predicate = 'submitted_github_profile_url'
+        LIMIT 1`,
+    ).get()).toEqual({ exact_text: 'githubUrl: https://github.com/jordan-talent' });
+    expect(sqlite.prepare(
+      `SELECT COUNT(*) AS count
+         FROM context_records cr
+         JOIN context_record_source_refs crsr ON crsr.context_record_id = cr.id
+        WHERE cr.record_type = 'talent_pool_phone_screener_intent'`,
+    ).get()).toEqual({ count: 4 });
     expect(sqlite.prepare(
       `SELECT record_type, predicate, narrative
          FROM context_records
+        WHERE record_type = 'talent_pool_profile_intake'
         LIMIT 1`,
     ).get()).toEqual({
       record_type: 'talent_pool_profile_intake',
@@ -307,12 +332,12 @@ describe('talent pool candidate RPC', () => {
     expect(replay.status).toBe(200);
     expect(sqlite.prepare('SELECT COUNT(*) AS count FROM people').get()).toEqual({ count: 1 });
     expect(sqlite.prepare('SELECT COUNT(*) AS count FROM workspace_people').get()).toEqual({ count: 1 });
-    expect(sqlite.prepare('SELECT COUNT(*) AS count FROM interactions').get()).toEqual({ count: 1 });
-    expect(sqlite.prepare('SELECT COUNT(*) AS count FROM artifacts').get()).toEqual({ count: 1 });
-    expect(sqlite.prepare('SELECT COUNT(*) AS count FROM artifact_versions').get()).toEqual({ count: 1 });
-    expect(sqlite.prepare('SELECT COUNT(*) AS count FROM source_spans').get()).toEqual({ count: 1 });
-    expect(sqlite.prepare('SELECT COUNT(*) AS count FROM context_records').get()).toEqual({ count: 1 });
-    expect(sqlite.prepare('SELECT COUNT(*) AS count FROM context_record_source_refs').get()).toEqual({ count: 1 });
+    expect(sqlite.prepare('SELECT COUNT(*) AS count FROM interactions').get()).toEqual({ count: 2 });
+    expect(sqlite.prepare('SELECT COUNT(*) AS count FROM artifacts').get()).toEqual({ count: 2 });
+    expect(sqlite.prepare('SELECT COUNT(*) AS count FROM artifact_versions').get()).toEqual({ count: 2 });
+    expect(sqlite.prepare('SELECT COUNT(*) AS count FROM source_spans').get()).toEqual({ count: 8 });
+    expect(sqlite.prepare('SELECT COUNT(*) AS count FROM context_records').get()).toEqual({ count: 5 });
+    expect(sqlite.prepare('SELECT COUNT(*) AS count FROM context_record_source_refs').get()).toEqual({ count: 8 });
     expect(sqlite.prepare('SELECT COUNT(*) AS count FROM challenge_design_queue').get()).toEqual({ count: 1 });
   });
 
@@ -371,8 +396,8 @@ describe('talent pool candidate RPC', () => {
     expect(replay.status).toBe(200);
     expect(storage.puts.size).toBe(1);
     expect([...storage.puts.keys()][0]).toBe(intake.profile_r2_key);
-    expect(sqlite.prepare('SELECT COUNT(*) AS count FROM context_records').get()).toEqual({ count: 1 });
-    expect(sqlite.prepare('SELECT COUNT(*) AS count FROM context_record_source_refs').get()).toEqual({ count: 1 });
+    expect(sqlite.prepare('SELECT COUNT(*) AS count FROM context_records').get()).toEqual({ count: 2 });
+    expect(sqlite.prepare('SELECT COUNT(*) AS count FROM context_record_source_refs').get()).toEqual({ count: 2 });
   });
 
   it('shows assessment entry only when a real challenge assignment exists', async () => {

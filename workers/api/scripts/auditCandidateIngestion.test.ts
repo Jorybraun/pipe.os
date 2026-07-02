@@ -183,6 +183,16 @@ function seedSourceBackedTalentPoolCandidate(db: Database.Database): void {
     VALUES ('context-record-1', 'workspace-person-1', 'talent_pool_profile_intake', 'submitted_profile', 'Candidate submitted source-backed Talent Pool profile evidence.', 1);
     INSERT INTO context_record_source_refs (context_record_id, source_ref_type, source_ref_id, evidence_role)
     VALUES ('context-record-1', 'source_span', 'source-span-1', 'source');
+    INSERT INTO context_records (id, workspace_person_id, record_type, predicate, narrative, polarity)
+    VALUES
+      ('context-record-github', 'workspace-person-1', 'talent_pool_external_profile_ref', 'submitted_github_profile_url', 'Candidate submitted GitHub profile URL.', 1),
+      ('context-record-portfolio', 'workspace-person-1', 'talent_pool_external_profile_ref', 'submitted_portfolio_url', 'Candidate submitted portfolio URL.', 1),
+      ('context-record-phone', 'workspace-person-1', 'talent_pool_phone_screener_intent', 'consented_to_phone_screener', 'Candidate consented to Talent Pool phone screener.', 1);
+    INSERT INTO context_record_source_refs (context_record_id, source_ref_type, source_ref_id, evidence_role)
+    VALUES
+      ('context-record-github', 'source_span', 'source-span-1', 'source'),
+      ('context-record-portfolio', 'source_span', 'source-span-1', 'source'),
+      ('context-record-phone', 'source_span', 'source-span-1', 'source');
     INSERT INTO challenge_design_queue (id, candidate_id, status)
     VALUES ('queue-1', 'candidate-1', 'queued');
   `);
@@ -227,7 +237,7 @@ describe('auditCandidateIngestion', () => {
     expect(audit.sourceProof).toMatchObject({
       artifactVersionCount: 1,
       sourceSpanCount: 1,
-      contextSourceRefCount: 1,
+      contextSourceRefCount: 4,
       candidateNodeWithoutExactSourceCount: 0,
     });
     expect(audit.personProjection).toMatchObject({
@@ -236,7 +246,9 @@ describe('auditCandidateIngestion', () => {
       talentPoolWorkspacePersonCount: 1,
       rolelessApplicationCount: 0,
       rolelessPersonRoleCount: 0,
-      contextRecordCount: 1,
+      contextRecordCount: 4,
+      externalProfileRefContextCount: 2,
+      phoneScreenerIntentContextCount: 1,
       designQueueCount: 1,
     });
     expect(audit.duplicateProjectedEdgeCount).toBe(0);
@@ -288,5 +300,28 @@ describe('auditCandidateIngestion', () => {
     expect(audit.failures).toContain('1 positive person-context claim(s) have no source refs or source spans');
     expect(audit.failures).toContain('1 positive candidate node(s) lack an exact validated resume source quote');
     expect(audit.failures).toContain('1 roleless Talent Pool candidate(s) have application rows before a role-backed process exists');
+  });
+
+  it('flags raw external refs and phone intent that lack source-backed operational context', async () => {
+    sqlite = new Database(':memory:');
+    createSchema(sqlite);
+    seedSourceBackedTalentPoolCandidate(sqlite);
+    sqlite.exec(`
+      DELETE FROM context_record_source_refs
+       WHERE context_record_id IN ('context-record-github', 'context-record-portfolio', 'context-record-phone');
+      DELETE FROM context_records
+       WHERE id IN ('context-record-github', 'context-record-portfolio', 'context-record-phone');
+    `);
+
+    const audit = await auditCandidateIngestion(new SqliteQueryClient(sqlite), {
+      inviteToken: 'invite-token',
+      requireContextRecords: true,
+    });
+
+    expect(audit.status).toBe('not_ready');
+    expect(audit.personProjection.externalProfileRefContextCount).toBe(0);
+    expect(audit.personProjection.phoneScreenerIntentContextCount).toBe(0);
+    expect(audit.failures).toContain('2 external profile ref(s) lack source-backed operational context records');
+    expect(audit.failures).toContain('1 phone screener intent(s) lack source-backed operational context records');
   });
 });

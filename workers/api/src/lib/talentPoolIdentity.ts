@@ -7,6 +7,16 @@ import {
 export const TALENT_POOL_MEMBERSHIP_SCHEMA_BLOCKER =
   'Current D1 schema has no TalentPoolMembership table; roleless intake records membership state in workspace_people.context_json until that table exists.';
 
+export interface TalentPoolOperationalContextInput {
+  githubUrl?: string | null;
+  linkedinUrl?: string | null;
+  portfolioUrl?: string | null;
+  phoneScreenerConsent?: boolean;
+  phoneNumber?: string | null;
+  timezone?: string | null;
+  availability?: string | null;
+}
+
 function isJsonObject(value: JsonValue | undefined): value is JsonObject {
   return typeof value === 'object' && value !== null && !Array.isArray(value);
 }
@@ -106,6 +116,227 @@ async function contextRecordTablesReady(db: D1Database): Promise<boolean> {
     if (!await tableExists(db, tableName)) return false;
   }
   return true;
+}
+
+interface IntakeFieldSpan {
+  key: string;
+  value: string;
+  line: string;
+  charStart: number;
+  charEnd: number;
+  spanId: string;
+}
+
+function optionalTrimmed(value: string | null | undefined): string | null {
+  const trimmed = value?.trim() ?? '';
+  return trimmed ? trimmed : null;
+}
+
+function buildOperationalFieldLines(input: TalentPoolOperationalContextInput): Array<{
+  key: string;
+  value: string;
+}> {
+  const fields: Array<{ key: string; value: string }> = [];
+  const githubUrl = optionalTrimmed(input.githubUrl);
+  const linkedinUrl = optionalTrimmed(input.linkedinUrl);
+  const portfolioUrl = optionalTrimmed(input.portfolioUrl);
+  const phoneNumber = optionalTrimmed(input.phoneNumber);
+  const timezone = optionalTrimmed(input.timezone);
+  const availability = optionalTrimmed(input.availability);
+
+  if (githubUrl) fields.push({ key: 'githubUrl', value: githubUrl });
+  if (linkedinUrl) fields.push({ key: 'linkedinUrl', value: linkedinUrl });
+  if (portfolioUrl) fields.push({ key: 'portfolioUrl', value: portfolioUrl });
+  if (input.phoneScreenerConsent === true) {
+    fields.push({ key: 'phoneScreenerConsent', value: 'true' });
+    if (phoneNumber) fields.push({ key: 'phoneNumber', value: phoneNumber });
+    if (timezone) fields.push({ key: 'timezone', value: timezone });
+    if (availability) fields.push({ key: 'availability', value: availability });
+  }
+  return fields;
+}
+
+function fieldSpansFromText(
+  content: string,
+  fields: Array<{ key: string; value: string }>,
+): Array<Omit<IntakeFieldSpan, 'spanId'>> {
+  let cursor = 0;
+  return fields.map((field) => {
+    const line = `${field.key}: ${field.value}`;
+    const charStart = cursor;
+    const charEnd = cursor + line.length;
+    cursor = charEnd + 1;
+    return {
+      key: field.key,
+      value: field.value,
+      line,
+      charStart,
+      charEnd: Math.min(charEnd, content.length),
+    };
+  });
+}
+
+async function persistRolelessOperationalContext(input: {
+  db: D1Database;
+  store: LivingContextStore;
+  workspacePersonId: string;
+  candidateId: string;
+  operationalContext?: TalentPoolOperationalContextInput;
+  now: string;
+}): Promise<void> {
+  const fields = buildOperationalFieldLines(input.operationalContext ?? {});
+  if (fields.length === 0) return;
+
+  const contentText = fields.map((field) => `${field.key}: ${field.value}`).join('\n');
+  const contentHash = await sha256Hex(contentText);
+  const baseKey = `candidate:${input.candidateId}:roleless-intake-fields:${contentHash}`;
+  const interaction = await input.store.upsertInteraction({
+    ingestionKey: `${baseKey}:interaction`,
+    workspacePersonId: input.workspacePersonId,
+    interactionType: 'form_submission',
+    externalReference: input.candidateId,
+    startedAt: input.now,
+    metadata: {
+      source: 'roleless_candidate_intake',
+      roleless: true,
+      evidenceKind: 'operational_intake_fields',
+    },
+  });
+  const artifact = await input.store.upsertArtifact({
+    ingestionKey: `${baseKey}:artifact`,
+    workspacePersonId: input.workspacePersonId,
+    interactionId: interaction.id,
+    artifactType: 'form_submission',
+    logicalKey: 'roleless_candidate_intake_fields',
+    metadata: {
+      source: 'roleless_candidate_intake',
+      roleless: true,
+      evidenceKind: 'operational_intake_fields',
+    },
+  });
+  const version = await input.store.createArtifactVersion({
+    ingestionKey: `${baseKey}:version:1`,
+    artifactId: artifact.id,
+    versionNumber: 1,
+    contentHash,
+    mediaType: 'text/plain',
+    contentText,
+    byteLength: new TextEncoder().encode(contentText).byteLength,
+    metadata: {
+      source: 'roleless_candidate_intake',
+      roleless: true,
+      evidenceKind: 'operational_intake_fields',
+    },
+  });
+
+  const spanEntries: IntakeFieldSpan[] = [];
+  for (const field of fieldSpansFromText(contentText, fields)) {
+    const span = await input.store.createSourceSpan({
+      ingestionKey: `${baseKey}:span:${field.key}`,
+      artifactVersionId: version.id,
+      stableSegmentId: field.key,
+      charStart: field.charStart,
+      charEnd: field.charEnd,
+      exactText: field.line,
+      metadata: {
+        source: 'roleless_candidate_intake',
+        roleless: true,
+        evidenceKind: 'operational_intake_field',
+        field: field.key,
+      },
+    });
+    spanEntries.push({ ...field, spanId: span.id });
+  }
+
+  if (!await contextRecordTablesReady(input.db)) return;
+
+  const spanByKey = new Map(spanEntries.map((entry) => [entry.key, entry]));
+  const externalRefs = [
+    ['github', 'githubUrl', 'submitted_github_profile_url', 'Candidate submitted GitHub profile URL.'],
+    ['linkedin', 'linkedinUrl', 'submitted_linkedin_profile_url', 'Candidate submitted LinkedIn profile URL.'],
+    ['portfolio', 'portfolioUrl', 'submitted_portfolio_url', 'Candidate submitted portfolio URL.'],
+  ] as const;
+
+  for (const [profileRefType, fieldKey, predicate, narrative] of externalRefs) {
+    const field = spanByKey.get(fieldKey);
+    if (!field) continue;
+    await input.store.upsertContextRecord({
+      ingestionKey: `candidate:${input.candidateId}:roleless-operational:profile-ref:${profileRefType}`,
+      workspacePersonId: input.workspacePersonId,
+      interactionId: interaction.id,
+      recordType: 'talent_pool_external_profile_ref',
+      predicate,
+      narrative,
+      qualifiers: {
+        source: 'roleless_candidate_intake',
+        roleless: true,
+        profileRefType,
+      },
+      confidence: 1,
+      polarity: 1,
+      extractionVersion: 'talent-pool-roleless-operational-v1',
+      observedAt: input.now,
+      sources: [{ sourceSpanId: field.spanId, evidenceRole: 'source' }],
+      entities: [
+        {
+          entityType: 'workspace_person',
+          entityId: input.workspacePersonId,
+          relationship: 'subject',
+        },
+        {
+          entityType: 'external_profile_ref',
+          relationship: profileRefType,
+          value: { url: field.value, profileRefType },
+        },
+      ],
+    });
+  }
+
+  const consent = spanByKey.get('phoneScreenerConsent');
+  if (consent) {
+    const phoneSources = ['phoneScreenerConsent', 'phoneNumber', 'timezone', 'availability']
+      .flatMap((fieldKey) => {
+        const field = spanByKey.get(fieldKey);
+        return field ? [{ sourceSpanId: field.spanId, evidenceRole: 'source' as const }] : [];
+      });
+    await input.store.upsertContextRecord({
+      ingestionKey: `candidate:${input.candidateId}:roleless-operational:phone-screener-intent`,
+      workspacePersonId: input.workspacePersonId,
+      interactionId: interaction.id,
+      recordType: 'talent_pool_phone_screener_intent',
+      predicate: 'consented_to_phone_screener',
+      narrative: 'Candidate consented to Talent Pool phone screener.',
+      qualifiers: {
+        source: 'roleless_candidate_intake',
+        roleless: true,
+        hasPhoneNumber: spanByKey.has('phoneNumber'),
+        hasTimezone: spanByKey.has('timezone'),
+        hasAvailability: spanByKey.has('availability'),
+      },
+      confidence: 1,
+      polarity: 1,
+      extractionVersion: 'talent-pool-roleless-operational-v1',
+      observedAt: input.now,
+      sources: phoneSources,
+      entities: [
+        {
+          entityType: 'workspace_person',
+          entityId: input.workspacePersonId,
+          relationship: 'subject',
+        },
+        {
+          entityType: 'phone_screener_intent',
+          relationship: 'operational_preference',
+          value: {
+            consent: true,
+            hasPhoneNumber: spanByKey.has('phoneNumber'),
+            hasTimezone: spanByKey.has('timezone'),
+            hasAvailability: spanByKey.has('availability'),
+          },
+        },
+      ],
+    });
+  }
 }
 
 async function persistRolelessMessageArtifact(input: {
@@ -210,9 +441,10 @@ export async function ensureRolelessTalentPoolIdentity(input: {
   name: string;
   email: string;
   message?: string;
+  operationalContext?: TalentPoolOperationalContextInput;
   now: string;
 }): Promise<{ personId: string; workspacePersonId: string }> {
-  const { db, userId, candidateId, name, email, message, now } = input;
+  const { db, userId, candidateId, name, email, message, operationalContext, now } = input;
   const normalizedEmail = email.trim().toLowerCase();
   const store = new LivingContextStore(db);
   const existingPerson = await db.prepare(
@@ -244,6 +476,14 @@ export async function ensureRolelessTalentPoolIdentity(input: {
     workspacePersonId: workspacePerson.id,
     candidateId,
     message: message ?? '',
+    now,
+  });
+  await persistRolelessOperationalContext({
+    db,
+    store,
+    workspacePersonId: workspacePerson.id,
+    candidateId,
+    operationalContext,
     now,
   });
 

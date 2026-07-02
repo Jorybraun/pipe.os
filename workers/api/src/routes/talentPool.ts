@@ -3,7 +3,10 @@ import { z } from 'zod';
 import { buildRuleBasedParsedCV, parseResumeText, persistParsedCV } from '../lib/cvParser';
 import { runCandidateIngestion } from '../lib/candidateDiscovery/orchestrate';
 import { processResumeFromR2 } from '../lib/enrichment/resumeIngestion';
-import { ensureRolelessTalentPoolIdentity } from '../lib/talentPoolIdentity';
+import {
+  ensureRolelessTalentPoolIdentity,
+  type TalentPoolOperationalContextInput,
+} from '../lib/talentPoolIdentity';
 import type { Env, Variables } from '../types';
 
 interface RolelessTalentPoolIdentity {
@@ -366,6 +369,18 @@ function formBoolean(formData: FormData, field: string): boolean {
   return value === 'true' || value === '1' || value === 'on';
 }
 
+function operationalContextFromInput(input: SubmitProfileInput): TalentPoolOperationalContextInput {
+  return {
+    githubUrl: input.githubUrl,
+    linkedinUrl: input.linkedinUrl,
+    portfolioUrl: input.portfolioUrl,
+    phoneScreenerConsent: input.phoneScreenerConsent,
+    phoneNumber: input.phoneNumber,
+    timezone: input.timezone,
+    availability: input.availability,
+  };
+}
+
 interface ProfileFileEntry {
   name: string;
   type: string;
@@ -564,6 +579,7 @@ async function persistIntake(
       name: candidate.name ?? candidate.email,
       email: candidate.email,
       message: sourceTextForPerson,
+      operationalContext: operationalContextFromInput(input),
       now,
     });
   }
