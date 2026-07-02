@@ -543,6 +543,60 @@ async function assertRecruiterReviewerReceiptBrowser(interviewId, workspaceCommi
   }
 }
 
+async function assertRecruiterListCardBrowser(interviewId, workspaceCommit, expectedBaseCommitSha, humanDecision) {
+  if (SKIP_RECRUITER_BROWSER) {
+    return { skipped: true, reason: 'WORKSPACE_SMOKE_SKIP_RECRUITER_BROWSER=1' };
+  }
+
+  const browser = await chromium.launch({ headless: true });
+  const context = await browser.newContext({
+    ...(REMOTE ? { httpCredentials: { username: APP_BASIC_USER, password: APP_BASIC_PASSWORD } } : {}),
+    viewport: { width: 1440, height: 1000 },
+  });
+
+  try {
+    const page = await context.newPage();
+    await page.goto(`${APP_BASE}/interviews?workspaceSmoke=${Date.now()}`, {
+      waitUntil: 'domcontentloaded',
+      timeout: 60_000,
+    });
+
+    const card = page.locator(`[data-testid="interview-card"][data-interview-id="${interviewId}"]`);
+    await expect(card).toBeVisible({ timeout: 60_000 });
+    await expect(card).toContainText('Workspace Smoke');
+    await expect(card).toContainText('Open-source bug fix');
+    await expect(card).toContainText('ASSESSMENT');
+    await expect(card).toContainText('Evaluated');
+    await expect(card).toContainText('DECISION');
+    await expect(card).toContainText(humanDecisionLabel(humanDecision.decision));
+    await expect(card).toContainText('NEXT');
+    await expect(card).toContainText('No further assessment action is required');
+    await expect(card).toContainText('REPO');
+    const repoLabel = repoLabelFromUrl(REPO_URL);
+    if (repoLabel) await expect(card).toContainText(repoLabel);
+    await expect(card).toContainText('BASE');
+    await expect(card).toContainText(expectedBaseCommitSha.slice(0, 12));
+    await expect(card).toContainText('TASK');
+    await expect(card).toContainText('Fix Base UI popover impatient click handling');
+    await expect(card).toContainText('EXPECTED');
+    await expect(card).toContainText('git_commit source ref');
+    await expect(card).toContainText('COMMIT');
+    await expect(card).toContainText(workspaceCommit.commitSha.slice(0, 12));
+    await expect(card).toContainText('COMMIT TRUST');
+    await expect(card).toContainText('Workspace-captured commit');
+    await expect(card).toContainText('Bound to assigned challenge');
+    await expect(card).toContainText('EVAL');
+    await expect(card).toContainText('Evaluated');
+    await expect(card).not.toContainText('assessment-session');
+    await expect(card).not.toContainText('assessment_evaluation_report_');
+
+    return { skipped: false };
+  } finally {
+    await context.close();
+    await browser.close();
+  }
+}
+
 async function enterRoomFromPrejoinIfNeeded(page) {
   const taskBrief = page.getByTestId('assessment-task-brief');
   const enterWithoutDevices = page.getByRole('button', { name: 'Enter without mic/camera' });
@@ -951,6 +1005,12 @@ async function main() {
     submittedBranchName,
     humanDecision,
   );
+  const recruiterListBrowser = await assertRecruiterListCardBrowser(
+    interviewId,
+    workspaceCommit,
+    expectedBaseCommitSha,
+    humanDecision,
+  );
 
   console.log(JSON.stringify({
     ok: true,
@@ -997,6 +1057,8 @@ async function main() {
     recruiterDetailReviewable: true,
     recruiterReviewerReceiptVisible: !recruiterBrowser.skipped,
     recruiterReviewerReceiptSkippedReason: recruiterBrowser.skipped ? recruiterBrowser.reason : null,
+    recruiterListCardVisible: !recruiterListBrowser.skipped,
+    recruiterListCardSkippedReason: recruiterListBrowser.skipped ? recruiterListBrowser.reason : null,
     recruiterCompareUrl: recruiterProjection.compareUrl,
     recruiterSourceRefCounts: recruiterProjection.sourceRefCounts,
   }, null, 2));

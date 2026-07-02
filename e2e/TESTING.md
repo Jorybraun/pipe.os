@@ -326,7 +326,9 @@ requires recruiter detail to expose that decision with
 `assessment_evaluation_report` source refs. It also opens the deployed
 app-dev recruiter detail page and verifies the reviewer receipt renders the
 final decision, source-report anchor, reviewed commit, repo/branch, and no raw
-reviewer ID. Latest deployed proof on 2026-07-02 passed for interview
+reviewer ID, then verifies the deployed interview list card shows the
+assessment mode, task, repo/base, source-backed commit trust, final decision,
+and next action. Latest deployed proof on 2026-07-02 passed for interview
 `e2f3b2d4-f430-471b-be50-9e140018187a`, repo `mui/base-ui`, candidate task
 brief visible, workspace commit
 `ace82b5d6b981c10d000c40fb5eaab3d125379d9`, bridge revision
