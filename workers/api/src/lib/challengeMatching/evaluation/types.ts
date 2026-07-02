@@ -187,6 +187,7 @@ export interface PersistedMatchRun {
   policyVersion: string;
   modelVersion: string | null;
   status: string;
+  createdAt?: number;
   rankedChallenges: PersistedRankedChallenge[];
 }
 

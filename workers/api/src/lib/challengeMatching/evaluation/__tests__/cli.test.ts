@@ -335,6 +335,47 @@ describe('matching evaluation CLI', () => {
     verification.close();
   });
 
+  it('auto-selects same-or-earlier pair runs for determinism comparison', async () => {
+    directory = await mkdtemp(join(tmpdir(), 'pipe-evaluation-'));
+    const databasePath = join(directory, 'evaluation.sqlite');
+    const jsonPath = join(directory, 'result.json');
+    const reportPath = join(directory, 'result.txt');
+    const expertCorpusPath = writeExpertCorpusFixture(directory);
+    const sqlite = new Database(databasePath);
+    seedMatchRuns(sqlite);
+    sqlite.close();
+
+    const exitCode = await runEvaluationCli([
+      '--local',
+      '--database-path',
+      databasePath,
+      '--corpus-id',
+      'expert-corpus-v1',
+      '--corpus-file',
+      expertCorpusPath,
+      '--auto-comparison-runs',
+      '--json',
+      jsonPath,
+      '--report',
+      reportPath,
+    ]);
+
+    expect(exitCode).toBe(0);
+    const result = JSON.parse(await readFile(jsonPath, 'utf8'));
+    expect(result).toMatchObject({
+      passed: true,
+      metrics: {
+        matchRunIds: ['run-comparison'],
+        comparisonMatchRunIds: ['run-primary'],
+        byteIdenticalRerun: true,
+        comparisonCoverage: 1,
+      },
+    });
+    expect(await readFile(reportPath, 'utf8')).toContain(
+      'run-comparison vs run-primary => PASS',
+    );
+  });
+
   it('refuses to persist fixture-mode synthetic evaluations', async () => {
     await expect(runEvaluationCli([
       '--local',
@@ -818,5 +859,13 @@ describe('matching evaluation CLI', () => {
       '--corpus-id', 'test',
       '--stage', 'invalid',
     ])).toThrow('--stage must be one of');
+  });
+
+  it('rejects combining explicit and automatic comparison runs', () => {
+    expect(() => parseEvaluationArgs([
+      '--corpus-id', 'test',
+      '--comparison-run-id', 'run-1',
+      '--auto-comparison-runs',
+    ])).toThrow('--auto-comparison-runs cannot be combined with --comparison-run-id');
   });
 });

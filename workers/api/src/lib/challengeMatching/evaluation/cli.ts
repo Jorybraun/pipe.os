@@ -13,6 +13,7 @@ export interface EvaluationOptions {
   corpusId: string;
   matchRunIds?: string[];
   comparisonMatchRunIds?: string[];
+  autoComparisonRuns?: boolean;
   thresholds?: Partial<AcceptanceThresholds>;
   persistResult?: boolean;
 }
@@ -27,6 +28,11 @@ interface MatchRunRow {
   model_version: string | null;
   status: string;
   ranked_results_json: string;
+  created_at: number;
+}
+
+interface MatchRunIdentityRow {
+  id: string;
 }
 
 function requiredString(
@@ -151,6 +157,9 @@ function parseRankedResults(json: string): PersistedRankedChallenge[] {
       repoId: requiredString(row, 'repoId', context),
       prNumber,
       sourceVersion: requiredString(row, 'sourceVersion', context),
+      ...(typeof row.packetContentHash === 'string' && row.packetContentHash.trim().length > 0
+        ? { packetContentHash: row.packetContentHash }
+        : {}),
       score: requiredNumber(row, 'score', context),
       candidateEvidenceAlignment: requiredNumber(
         row,
@@ -184,13 +193,45 @@ function parseRankedResults(json: string): PersistedRankedChallenge[] {
   });
 }
 
+async function comparisonRunIdsForPrimaryRuns(
+  db: D1Database,
+  primaryRuns: PersistedMatchRun[],
+): Promise<string[]> {
+  const ids: string[] = [];
+  const seen = new Set<string>();
+  for (const run of primaryRuns) {
+    const row = await db.prepare(
+      `SELECT id
+         FROM match_runs
+        WHERE candidate_id = ?1
+          AND (role_context_id = ?2 OR role_snapshot_id = ?2)
+          AND status = ?3
+          AND id <> ?4
+          AND (?5 IS NULL OR created_at <= ?5)
+        ORDER BY created_at DESC, id DESC
+        LIMIT 1`,
+    ).bind(
+      run.candidateId,
+      run.roleId,
+      run.status,
+      run.matchRunId,
+      run.createdAt ?? null,
+    ).first<MatchRunIdentityRow>();
+    if (row && !seen.has(row.id)) {
+      seen.add(row.id);
+      ids.push(row.id);
+    }
+  }
+  return ids;
+}
+
 export async function loadPersistedMatchRun(
   db: D1Database,
   matchRunId: string,
 ): Promise<PersistedMatchRun> {
   const row = await db.prepare(
     `SELECT id, candidate_id, role_context_id, candidate_snapshot_id, role_snapshot_id,
-            policy_version, model_version, status, ranked_results_json
+            policy_version, model_version, status, ranked_results_json, created_at
        FROM match_runs
       WHERE id = ?1`,
   ).bind(matchRunId).first<MatchRunRow>();
@@ -203,6 +244,7 @@ export async function loadPersistedMatchRun(
     policyVersion: row.policy_version,
     modelVersion: row.model_version,
     status: row.status,
+    ...(typeof row.created_at === 'number' ? { createdAt: row.created_at } : {}),
     rankedChallenges: parseRankedResults(row.ranked_results_json),
   };
 }
@@ -251,8 +293,13 @@ export async function runEvaluation(
   const matchRuns = await Promise.all(
     matchRunIds.map((id) => loadPersistedMatchRun(db, id)),
   );
+  const comparisonMatchRunIds = options.comparisonMatchRunIds?.length
+    ? options.comparisonMatchRunIds
+    : options.autoComparisonRuns
+      ? await comparisonRunIdsForPrimaryRuns(db, matchRuns)
+      : [];
   const comparisonRuns = await Promise.all(
-    (options.comparisonMatchRunIds ?? []).map((id) => loadPersistedMatchRun(db, id)),
+    comparisonMatchRunIds.map((id) => loadPersistedMatchRun(db, id)),
   );
   const thresholds = {
     ...DEFAULT_ACCEPTANCE_THRESHOLDS,

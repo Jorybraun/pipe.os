@@ -43,6 +43,7 @@ export interface EvaluationCliOptions {
   corpusFile?: string;
   matchRunIds: string[];
   comparisonMatchRunIds: string[];
+  autoComparisonRuns: boolean;
   jsonPath?: string;
   reportPath?: string;
   persist: boolean;
@@ -220,6 +221,11 @@ export function parseEvaluationArgs(argv: string[]): EvaluationCliOptions | null
   if (target === 'remote' && databasePath) {
     throw new Error('--database-path can only be used with --local');
   }
+  const comparisonMatchRunIds = valuesFor(argv, '--comparison-run-id');
+  const autoComparisonRuns = argv.includes('--auto-comparison-runs');
+  if (autoComparisonRuns && comparisonMatchRunIds.length > 0) {
+    throw new Error('--auto-comparison-runs cannot be combined with --comparison-run-id');
+  }
   return {
     target,
     ...(databasePath ? { databasePath } : {}),
@@ -228,7 +234,8 @@ export function parseEvaluationArgs(argv: string[]): EvaluationCliOptions | null
       ? { corpusFile: valueFor(argv, '--corpus-file')! }
       : {}),
     matchRunIds: valuesFor(argv, '--match-run-id'),
-    comparisonMatchRunIds: valuesFor(argv, '--comparison-run-id'),
+    comparisonMatchRunIds,
+    autoComparisonRuns,
     ...(valueFor(argv, '--json') ? { jsonPath: valueFor(argv, '--json')! } : {}),
     ...(valueFor(argv, '--report') ? { reportPath: valueFor(argv, '--report')! } : {}),
     persist: argv.includes('--persist'),
@@ -248,6 +255,9 @@ Options:
   --corpus-file <path>          Validate and freeze this corpus before evaluation
   --match-run-id <id>           Repeat or pass comma-separated IDs
   --comparison-run-id <id>      Independent reruns for byte-identical comparison
+  --auto-comparison-runs        Select one same-or-earlier candidate/role/status run
+                                for each primary run when explicit comparison
+                                IDs are not supplied
   --json <path>                 Write machine-readable result
   --report <path>               Write human-readable report
   --persist                     Persist the evaluation result in D1
@@ -346,6 +356,7 @@ export async function runEvaluationCli(argv: string[]): Promise<number> {
       corpusId: options.corpusId,
       matchRunIds: options.matchRunIds,
       comparisonMatchRunIds: options.comparisonMatchRunIds,
+      autoComparisonRuns: options.autoComparisonRuns,
       persistResult: options.persist,
       ...(options.allowSynthetic
         ? { thresholds: { requireExpertLabels: false } }
