@@ -35,6 +35,7 @@
     "smoke:agent-devin-chat-dev": "node scripts/smoke-agent-devin-chat-dev.mjs",
     "smoke:talent-pool-ingestion-dev": "node scripts/smoke-talent-pool-ingestion-dev.mjs",
     "smoke:talent-pool-upload-dev": "node scripts/smoke-talent-pool-ingestion-dev.mjs --mode=upload-text",
+    "smoke:talent-pool-docx-dev": "node scripts/smoke-talent-pool-ingestion-dev.mjs --mode=upload-docx",
     "turn:usage": "node scripts/check-cloudflare-turn-usage.mjs",
     "storybook": "storybook dev -p 6006",
     "build-storybook": "storybook build",

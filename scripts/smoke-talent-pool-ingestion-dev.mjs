@@ -44,10 +44,10 @@ function booleanArgument(name) {
   return process.argv.includes(name);
 }
 
-const allowedSmokeModes = new Set(['submit-text', 'upload-text']);
+const allowedSmokeModes = new Set(['submit-text', 'upload-text', 'upload-docx']);
 const smokeMode = argumentValue('--mode') ?? process.env.TALENT_POOL_SMOKE_MODE ?? 'submit-text';
 if (!allowedSmokeModes.has(smokeMode)) {
-  throw new Error(`Unsupported --mode "${smokeMode}". Use submit-text or upload-text.`);
+  throw new Error(`Unsupported --mode "${smokeMode}". Use submit-text, upload-text, or upload-docx.`);
 }
 
 const appBase = (
@@ -93,6 +93,77 @@ const profileText = [
   'Built TypeScript Workers APIs, React accessibility flows, and source-provenance test harnesses.',
   'This text is intentionally unique so exact source spans can be audited back to the submitted profile.',
 ].join(' ');
+
+const DOCX_CONTENT_TYPE = 'application/vnd.openxmlformats-officedocument.wordprocessingml.document';
+
+function buildStoredDocx(documentXml) {
+  const encoder = new TextEncoder();
+  const fileName = encoder.encode('word/document.xml');
+  const content = encoder.encode(documentXml);
+  const localHeaderLength = 30 + fileName.length + content.length;
+  const centralHeaderLength = 46 + fileName.length;
+  const eocdLength = 22;
+  const bytes = new Uint8Array(localHeaderLength + centralHeaderLength + eocdLength);
+  const view = new DataView(bytes.buffer);
+  let offset = 0;
+
+  view.setUint32(offset, 0x04034b50, true);
+  view.setUint16(offset + 4, 20, true);
+  view.setUint16(offset + 8, 0, true);
+  view.setUint32(offset + 14, 0, true);
+  view.setUint32(offset + 18, content.length, true);
+  view.setUint32(offset + 22, content.length, true);
+  view.setUint16(offset + 26, fileName.length, true);
+  bytes.set(fileName, offset + 30);
+  bytes.set(content, offset + 30 + fileName.length);
+
+  const centralOffset = localHeaderLength;
+  offset = centralOffset;
+  view.setUint32(offset, 0x02014b50, true);
+  view.setUint16(offset + 4, 20, true);
+  view.setUint16(offset + 6, 20, true);
+  view.setUint16(offset + 10, 0, true);
+  view.setUint32(offset + 16, 0, true);
+  view.setUint32(offset + 20, content.length, true);
+  view.setUint32(offset + 24, content.length, true);
+  view.setUint16(offset + 28, fileName.length, true);
+  view.setUint32(offset + 42, 0, true);
+  bytes.set(fileName, offset + 46);
+
+  offset = centralOffset + centralHeaderLength;
+  view.setUint32(offset, 0x06054b50, true);
+  view.setUint16(offset + 8, 1, true);
+  view.setUint16(offset + 10, 1, true);
+  view.setUint32(offset + 12, centralHeaderLength, true);
+  view.setUint32(offset + 16, centralOffset, true);
+
+  return bytes.buffer;
+}
+
+function smokeUploadFile() {
+  if (smokeMode === 'upload-docx') {
+    const paragraphs = [
+      `Talent Pool live ${smokeMode} smoke proof ${runId}.`,
+      'Recently implemented source-backed candidate evidence ingestion for public Talent Pool DOCX profile uploads.',
+      'Built Cloudflare Workers ingestion replay with TypeScript and exact source-span proof.',
+      'This DOCX text is intentionally unique so exact source spans can be audited back to the uploaded profile.',
+    ];
+    const documentXml = [
+      '<w:document xmlns:w="http://schemas.openxmlformats.org/wordprocessingml/2006/main"><w:body>',
+      ...paragraphs.map((paragraph) => `<w:p><w:r><w:t>${paragraph}</w:t></w:r></w:p>`),
+      '</w:body></w:document>',
+    ].join('');
+    return {
+      blob: new Blob([buildStoredDocx(documentXml)], { type: DOCX_CONTENT_TYPE }),
+      fileName: `talent-smoke-${runId}.docx`,
+    };
+  }
+
+  return {
+    blob: new Blob([profileText], { type: 'text/plain' }),
+    fileName: `talent-smoke-${runId}.txt`,
+  };
+}
 
 function basicAuthHeader() {
   const user = process.env.PIPE_DEV_BASIC_AUTH_USER
@@ -222,7 +293,9 @@ function auditIsReady(report) {
   if (report.rawCapture?.submittedIntakeCount !== 1) return false;
   if (report.sourceProof?.candidateNodeExactSourceQuoteCount < 1) return false;
   if (report.sourceProof?.contextSourceRefCount < 1) return false;
-  if (smokeMode === 'upload-text' && report.sourceProof?.profileUploadArtifactVersionCount < 1) return false;
+  if (smokeMode.startsWith('upload-') && report.sourceProof?.profileUploadArtifactVersionCount < 1) return false;
+  if (smokeMode === 'upload-docx' && report.rawCapture?.documentProfileStorageKeyCount !== 1) return false;
+  if (smokeMode === 'upload-docx' && report.sourceProof?.documentProfileSourceSpanCount < 1) return false;
   if (report.personProjection?.talentPoolWorkspacePersonCount !== 1) return false;
   if (report.sourceLessPositiveClaimCount !== 0) return false;
   if (report.duplicateProjectedEdgeCount !== 0) return false;
@@ -284,13 +357,15 @@ async function main() {
   }
 
   const submittedDashboard = smokeMode === 'upload-text'
+    || smokeMode === 'upload-docx'
     ? await (async () => {
+        const uploadFile = smokeUploadFile();
         const formData = new FormData();
         formData.set('inviteToken', inviteToken);
         formData.set(
           'file',
-          new Blob([profileText], { type: 'text/plain' }),
-          `talent-smoke-${runId}.txt`,
+          uploadFile.blob,
+          uploadFile.fileName,
         );
         formData.set('githubUrl', `https://github.com/talent-smoke-${smokeMode}-${runId}`);
         formData.set('linkedinUrl', `https://linkedin.com/in/talent-smoke-${smokeMode}-${runId}`);
@@ -330,6 +405,7 @@ async function main() {
     duplicateProjectedEdgeCount: report.duplicateProjectedEdgeCount,
     candidateNodeExactSourceQuoteCount: report.sourceProof.candidateNodeExactSourceQuoteCount,
     contextSourceRefCount: report.sourceProof.contextSourceRefCount,
+    documentProfileSourceSpanCount: report.sourceProof.documentProfileSourceSpanCount,
     profileUploadArtifactVersionCount: report.sourceProof.profileUploadArtifactVersionCount,
     talentPoolWorkspacePersonCount: report.personProjection.talentPoolWorkspacePersonCount,
     nextActions: report.nextActions,

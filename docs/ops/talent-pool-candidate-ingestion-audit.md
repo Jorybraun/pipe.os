@@ -197,6 +197,7 @@ npm test -- src/routes/cockpit/__tests__/contacts.rest.test.ts src/routes/cockpi
 npx playwright test e2e/talent-pool-intake.unauth.spec.ts --project=unauthenticated --reporter=line
 npm run smoke:talent-pool-ingestion-dev
 npm run smoke:talent-pool-upload-dev
+npm run smoke:talent-pool-docx-dev
 ```
 
 For app-dev, prefix remote proof commands with the dev D1 id:
@@ -260,6 +261,17 @@ smoke created a standalone roleless Talent Pool candidate, resolved invite token
 through `/rpc/talent/upload-profile`, and polled the remote audit with
 `--require-context-records`. The audit returned `status: ready`,
 `candidateNodeExactSourceQuoteCount: 58`, `contextSourceRefCount: 8`,
+`profileUploadArtifactVersionCount: 1`, `talentPoolWorkspacePersonCount: 1`,
+`sourceLessPositiveClaimCount: 0`, and `duplicateProjectedEdgeCount: 0`.
+
+Live app-dev DOCX upload proof on 2026-07-02 used
+`npm run smoke:talent-pool-docx-dev` against the same Worker version. The smoke
+created a standalone roleless Talent Pool candidate, resolved invite token
+`9dc0b091-c559-452b-9779-5d789ac5049a`, submitted a multipart DOCX profile
+through `/rpc/talent/upload-profile`, and required the remote audit to see both
+the original upload receipt and extracted document source span. The audit
+returned `status: ready`, `candidateNodeExactSourceQuoteCount: 55`,
+`contextSourceRefCount: 9`, `documentProfileSourceSpanCount: 1`,
 `profileUploadArtifactVersionCount: 1`, `talentPoolWorkspacePersonCount: 1`,
 `sourceLessPositiveClaimCount: 0`, and `duplicateProjectedEdgeCount: 0`.
 
