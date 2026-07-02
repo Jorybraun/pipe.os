@@ -387,6 +387,54 @@ async function assertRecruiterAssessmentProjection(interviewId, workspaceCommit,
   return {
     compareUrl,
     sourceRefCounts: progress.sourceRefCounts ?? [],
+    humanDecision: progress.humanDecision ?? null,
+  };
+}
+
+function humanDecisionForRecommendation(recommendation) {
+  if (recommendation === 'strong_evidence_to_advance') return 'advance';
+  if (recommendation === 'insufficient_evidence' || recommendation === 'not_demonstrated') {
+    return 'needs_more_evidence';
+  }
+  return 'hold';
+}
+
+async function recordHumanAssessmentDecision(interviewId, workspaceCommit, recommendation) {
+  const decision = humanDecisionForRecommendation(recommendation);
+  const commitShort = workspaceCommit.commitSha.slice(0, 12);
+  const summary = decision === 'advance'
+    ? `Advance after reviewing source-backed commit ${commitShort}, diff, test evidence, and evaluator report.`
+    : `Hold for reviewer calibration after inspecting source-backed commit ${commitShort}, diff, tests, and evaluator cautions.`;
+  const notes = [
+    'Workspace smoke records this decision through the same recruiter API used by the UI.',
+    'The decision must attach to the latest evaluated assessment report as source-backed evidence.',
+  ].join(' ');
+
+  const body = await requestJson(APP_BASE, `/api/v1/scheduling/interviews/${interviewId}/assessment/human-decision`, {
+    method: 'POST',
+    body: JSON.stringify({ decision, summary, notes }),
+  });
+  const recorded = body?.decision ?? null;
+  const progress = body?.progress ?? null;
+  if (recorded?.decision !== decision || progress?.humanDecision?.decision !== decision) {
+    throw new Error(`Human decision response did not echo the recorded decision: ${JSON.stringify(body)}`);
+  }
+  if (!Number.isInteger(recorded.sourceRefCount) || recorded.sourceRefCount < 1) {
+    throw new Error(`Human decision did not include source-backed report refs: ${JSON.stringify(recorded)}`);
+  }
+  if (!Array.isArray(recorded.sourceRefTypes) || !recorded.sourceRefTypes.includes('assessment_evaluation_report')) {
+    throw new Error(`Human decision was not anchored to the assessment evaluation report: ${JSON.stringify(recorded)}`);
+  }
+  if (progress.nextAction !== 'NONE' || progress.stage !== 'EVALUATED') {
+    throw new Error(`Human decision did not leave the assessment in a completed review state: ${JSON.stringify(progress)}`);
+  }
+
+  return {
+    decision,
+    summary,
+    sourceRefCount: recorded.sourceRefCount,
+    sourceRefTypes: recorded.sourceRefTypes,
+    nextAction: progress.nextAction,
   };
 }
 
@@ -705,11 +753,19 @@ async function main() {
       throw new Error(`Task-aligned workspace smoke evaluation summary missed challenged behavior terms ${missingTerms.join(', ')}: ${summary}`);
     }
   }
+  const humanDecision = await recordHumanAssessmentDecision(
+    interviewId,
+    workspaceCommit,
+    recommendation,
+  );
   const recruiterProjection = await assertRecruiterAssessmentProjection(
     interviewId,
     workspaceCommit,
     expectedBaseCommitSha,
   );
+  if (recruiterProjection.humanDecision?.decision !== humanDecision.decision) {
+    throw new Error(`Recruiter detail did not expose the recorded human decision: ${JSON.stringify(recruiterProjection.humanDecision)}`);
+  }
 
   console.log(JSON.stringify({
     ok: true,
@@ -746,6 +802,11 @@ async function main() {
     evaluationRecommendation: recommendation,
     evaluationSummary: evaluationProgress.evaluation?.summary ?? null,
     evaluationReportId: evaluationBody.report?.id ?? null,
+    humanDecisionRecorded: true,
+    humanDecision: humanDecision.decision,
+    humanDecisionNextAction: humanDecision.nextAction,
+    humanDecisionSourceRefCount: humanDecision.sourceRefCount,
+    humanDecisionSourceRefTypes: humanDecision.sourceRefTypes,
     recruiterDetailReviewable: true,
     recruiterCompareUrl: recruiterProjection.compareUrl,
     recruiterSourceRefCounts: recruiterProjection.sourceRefCounts,

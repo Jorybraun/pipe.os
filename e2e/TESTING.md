@@ -318,7 +318,9 @@ controlled room workspace, verifies the bridge, confirms unchanged work is
 blocked, creates a real commit inside the workspace, finalizes the live
 workspace `HEAD`, requires `git_commit`, `code_diff`, `terminal_command`, and
 `test_run` source refs, then starts source-backed evaluation from the recruiter
-API. Latest deployed proof on 2026-07-02 passed for interview
+API, records a recruiter human decision against the evaluated report, and
+requires recruiter detail to expose that decision with
+`assessment_evaluation_report` source refs. Latest deployed proof on 2026-07-02 passed for interview
 `7edae8fa-b310-4b5b-8e9e-fa9d584beca9`, repo `mui/base-ui`, workspace commit
 `50019c2a200627d5670fab1f926ed825bade4914`, bridge revision
 `2026-06-30-assessment-branch-v1`, and evaluation report
