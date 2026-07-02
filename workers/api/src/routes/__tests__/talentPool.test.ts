@@ -663,6 +663,98 @@ describe('talent pool candidate RPC', () => {
       storage_key: intake.profile_r2_key,
       media_type: 'text/plain',
     });
+    expect(sqlite.prepare(
+      `SELECT COUNT(*) AS count FROM interactions`,
+    ).get()).toEqual({ count: 3 });
+    expect(sqlite.prepare(
+      `SELECT COUNT(*) AS count FROM artifacts`,
+    ).get()).toEqual({ count: 3 });
+    expect(sqlite.prepare(
+      `SELECT COUNT(*) AS count FROM artifact_versions`,
+    ).get()).toEqual({ count: 3 });
+
+    const uploadedTextArtifactRows = sqlite.prepare(
+      `SELECT i.interaction_type,
+              a.artifact_type,
+              a.logical_key,
+              av.media_type,
+              av.storage_key,
+              av.content_text,
+              length(av.content_hash) AS hash_length,
+              json_extract(av.metadata_json, '$.evidenceKind') AS evidence_kind,
+              json_extract(av.metadata_json, '$.extractedTextAvailable') AS extracted_text_available,
+              json_extract(av.metadata_json, '$.originalFileName') AS original_file_name
+         FROM artifact_versions av
+         JOIN artifacts a ON a.id = av.artifact_id
+         JOIN interactions i ON i.id = a.interaction_id
+        WHERE av.storage_key = ?
+        ORDER BY a.artifact_type`,
+    ).all(intake.profile_r2_key);
+    expect(uploadedTextArtifactRows).toEqual([
+      {
+        interaction_type: 'message',
+        artifact_type: 'message',
+        logical_key: 'roleless_candidate_intake_message',
+        media_type: 'text/plain',
+        storage_key: intake.profile_r2_key,
+        content_text: 'Taylor has shipped TypeScript frontend systems, Workers APIs, and source-backed accessibility fixes.',
+        hash_length: 64,
+        evidence_kind: null,
+        extracted_text_available: null,
+        original_file_name: null,
+      },
+      {
+        interaction_type: 'file_upload',
+        artifact_type: 'profile_upload',
+        logical_key: 'roleless_candidate_profile_upload',
+        media_type: 'text/plain',
+        storage_key: intake.profile_r2_key,
+        content_text: null,
+        hash_length: 64,
+        evidence_kind: 'profile_upload_source',
+        extracted_text_available: 1,
+        original_file_name: 'taylor-profile.txt',
+      },
+    ]);
+    expect(sqlite.prepare(
+      `SELECT ss.exact_text, av.storage_key
+         FROM source_spans ss
+         JOIN artifact_versions av ON av.id = ss.artifact_version_id
+        WHERE av.storage_key = ?
+          AND ss.exact_text = ?
+        LIMIT 1`,
+    ).get(
+      intake.profile_r2_key,
+      'Taylor has shipped TypeScript frontend systems, Workers APIs, and source-backed accessibility fixes.',
+    )).toEqual({
+      exact_text: 'Taylor has shipped TypeScript frontend systems, Workers APIs, and source-backed accessibility fixes.',
+      storage_key: intake.profile_r2_key,
+    });
+    expect(sqlite.prepare(
+      `SELECT cr.record_type, cr.predicate, ss.exact_text, av.storage_key
+         FROM context_records cr
+         JOIN context_record_source_refs crsr ON crsr.context_record_id = cr.id
+         JOIN source_spans ss ON ss.id = crsr.source_span_id
+         JOIN artifact_versions av ON av.id = ss.artifact_version_id
+        WHERE cr.record_type = 'talent_pool_profile_intake'
+        LIMIT 1`,
+    ).get()).toEqual({
+      record_type: 'talent_pool_profile_intake',
+      predicate: 'submitted_profile_evidence',
+      exact_text: 'Taylor has shipped TypeScript frontend systems, Workers APIs, and source-backed accessibility fixes.',
+      storage_key: intake.profile_r2_key,
+    });
+    expect(sqlite.prepare(
+      `SELECT cn.node_type, av.storage_key
+         FROM candidate_nodes cn
+         JOIN source_spans ss ON cn.source_reference = 'source_span:' || ss.id
+         JOIN artifact_versions av ON av.id = ss.artifact_version_id
+        WHERE cn.candidate_id = 'candidate-1'
+        LIMIT 1`,
+    ).get()).toEqual({
+      node_type: 'TalentPoolProfileIntake',
+      storage_key: intake.profile_r2_key,
+    });
 
     const replayFormData = new FormData();
     replayFormData.set('inviteToken', 'invite-token');
@@ -679,6 +771,10 @@ describe('talent pool candidate RPC', () => {
     expect(replay.status).toBe(200);
     expect(storage.puts.size).toBe(1);
     expect([...storage.puts.keys()][0]).toBe(intake.profile_r2_key);
+    expect(sqlite.prepare('SELECT COUNT(*) AS count FROM interactions').get()).toEqual({ count: 3 });
+    expect(sqlite.prepare('SELECT COUNT(*) AS count FROM artifacts').get()).toEqual({ count: 3 });
+    expect(sqlite.prepare('SELECT COUNT(*) AS count FROM artifact_versions').get()).toEqual({ count: 3 });
+    expect(sqlite.prepare('SELECT COUNT(*) AS count FROM source_spans').get()).toEqual({ count: 2 });
     expect(sqlite.prepare('SELECT COUNT(*) AS count FROM candidate_nodes').get()).toEqual({ count: 1 });
     expect(sqlite.prepare(
       `SELECT json_extract(extracted_properties_json, '$.source_quote_validated') AS source_quote_validated,

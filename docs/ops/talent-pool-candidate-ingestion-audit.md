@@ -265,9 +265,12 @@ now covers `/rpc/talent/resolve-token`, `/rpc/talent/submit-profile`,
 errors. The shared assertion fixes the public dashboard shape and recursively
 rejects internal candidate, application, person/workspace-person, source-span,
 artifact, assignment, challenge, stage, pipeline, resume-key, and profile-key id
-fields plus known internal values. The app-dev invite returned
-`CHALLENGE_PREPARING` with zero ready challenges and no serialized internal id
-values.
+fields plus known internal values. The plain-text upload proof also verifies the
+`profile_upload` receipt, extracted profile text source span, profile context
+record, and `TalentPoolProfileIntake` candidate node all join back to the
+current uploaded profile storage key and stay idempotent on replay. The app-dev
+invite returned `CHALLENGE_PREPARING` with zero ready challenges and no
+serialized internal id values.
 
 ## Current Gaps
 
