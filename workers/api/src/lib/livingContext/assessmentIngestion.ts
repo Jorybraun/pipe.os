@@ -105,6 +105,15 @@ export interface AssessmentIngestionResult {
   contextRecordCount: number;
 }
 
+export interface AssessmentMissingEventIngestionResult {
+  sessionId: string;
+  interactionId: string;
+  selectedEventCount: number;
+  episodeCount: number;
+  assertionCount: number;
+  contextRecordCount: number;
+}
+
 async function resolveAssessmentCandidateId(
   db: D1Database,
   session: AssessmentSessionRow,
@@ -569,6 +578,223 @@ export async function ingestAssessmentToLivingContext(
     episodeCount,
     assertionCount,
     claimAssertionCount,
+    contextRecordCount,
+  };
+}
+
+async function upsertAssessmentEventProjection(input: {
+  db: D1Database;
+  store: LivingContextStore;
+  session: AssessmentSessionRow;
+  event: AssessmentEvidenceEventRow;
+  refs: AssessmentEventSourceRefRow[];
+  candidateId: string;
+  workspacePersonId: string;
+  interactionId: string;
+  sourceSpanId?: string | null;
+}): Promise<void> {
+  const {
+    db,
+    store,
+    session,
+    event,
+    refs,
+    candidateId,
+    workspacePersonId,
+    interactionId,
+    sourceSpanId = null,
+  } = input;
+  const episode = await store.upsertEpisode({
+    ingestionKey: `assessment_event:${event.id}`,
+    workspacePersonId,
+    interactionId,
+    narrative: event.narrative,
+    startedAt: event.occurred_at,
+    metadata: {
+      kind: event.kind,
+      actorType: event.actor_type,
+      actorId: event.actor_id,
+      sequence: event.sequence,
+    },
+  });
+
+  const assertion = await store.upsertAssertion({
+    ingestionKey: `assessment_event_assertion:${event.id}`,
+    workspacePersonId,
+    episodeId: episode.id,
+    subjectType: 'candidate',
+    subjectId: candidateId,
+    predicate: `assessment:${event.kind}`,
+    narrative: event.narrative,
+    qualifiers: {
+      actorType: event.actor_type,
+      actorId: event.actor_id,
+      mode: session.mode,
+      payload: safeParseJson(event.payload_json),
+    },
+    confidence: null,
+    observedAt: event.occurred_at,
+  });
+
+  const sources: ContextRecordSourceInput[] = [];
+  if (sourceSpanId) {
+    await store.linkAssertionSourceSpan(assertion.id, sourceSpanId);
+    sources.push({
+      sourceSpanId,
+      evidenceRole: 'primary',
+    });
+  }
+
+  for (const ref of refs) {
+    sources.push(await normalizeAssessmentSourceRef(db, ref));
+  }
+
+  if (sources.length === 0) {
+    sources.push({
+      sourceRefType: 'assessment_evidence_event',
+      sourceRefId: event.id,
+      evidenceRole: 'assessment_event',
+      locator: {
+        sessionId: session.id,
+        eventId: event.id,
+        sequence: event.sequence,
+        kind: event.kind,
+      },
+      exactText: event.narrative,
+      contentHash: await sha256(event.narrative),
+      metadata: {
+        actorType: event.actor_type,
+        actorId: event.actor_id,
+        occurredAt: event.occurred_at,
+      },
+    });
+  }
+
+  const entities: ContextRecordEntityInput[] = [{
+    entityType: 'assessment_session',
+    entityId: session.id,
+    relationship: 'source_session',
+  }];
+  const concepts: ContextRecordConceptInput[] = [];
+  const kindTerm = openSemanticTerm(event.kind);
+  if (kindTerm) {
+    const concept = await store.upsertConcept({
+      ingestionKey: `open-term:${kindTerm.canonicalKey}`,
+      canonicalKey: kindTerm.canonicalKey,
+      namespace: 'term',
+      label: kindTerm.surface,
+      metadata: { source: 'assessment_ingestion' },
+    });
+    concepts.push({
+      conceptId: concept.id,
+      relationship: 'event_kind',
+      weight: 1.0,
+    });
+  }
+
+  await store.upsertContextRecord({
+    ingestionKey: `assessment_event_context:${event.id}`,
+    workspacePersonId,
+    interactionId,
+    episodeId: episode.id,
+    assertionId: assertion.id,
+    recordType: `assessment:${event.kind}`,
+    narrative: event.narrative,
+    qualifiers: { mode: session.mode, sequence: event.sequence },
+    confidence: null,
+    observedAt: event.occurred_at,
+    sources,
+    entities,
+    concepts,
+  });
+}
+
+export async function ingestMissingAssessmentEventsToLivingContext(
+  db: D1Database,
+  sessionId: string,
+  limit = 500,
+): Promise<AssessmentMissingEventIngestionResult | null> {
+  const session = await db.prepare(
+    `SELECT id, interview_id, mode, state,
+            candidate_id, workspace_id, workspace_person_id,
+            application_id, metadata_json,
+            started_at, submitted_at, completed_at, created_at
+       FROM assessment_sessions WHERE id = ?1`,
+  ).bind(sessionId).first<AssessmentSessionRow>();
+  if (!session) return null;
+
+  const candidateId = await resolveAssessmentCandidateId(db, session);
+  if (!candidateId) return null;
+
+  const identity = await ensureCandidateLivingContext(db, candidateId);
+  if (!identity) return null;
+
+  const eventRows = await db.prepare(
+    `SELECT id, ingestion_key, session_id, sequence, kind, actor_type, actor_id,
+            narrative, payload_json, context_record_id, occurred_at
+       FROM assessment_evidence_events ev
+      WHERE ev.session_id = ?1
+        AND NOT EXISTS (
+          SELECT 1
+            FROM context_records cr
+           WHERE cr.ingestion_key = 'assessment_event_context:' || ev.id
+             AND cr.workspace_person_id IS NOT NULL
+        )
+      ORDER BY ev.sequence
+      LIMIT ?2`,
+  ).bind(sessionId, limit).all<AssessmentEvidenceEventRow>();
+  const events = eventRows.results ?? [];
+
+  const store = new LivingContextStore(db);
+  const { workspacePersonId } = identity;
+  const sessionMetadata = safeParseJson(session.metadata_json);
+  const interaction = await store.upsertInteraction({
+    ingestionKey: `assessment:${session.id}`,
+    workspacePersonId,
+    applicationId: identity.applicationId,
+    interactionType: `assessment:${session.mode}`,
+    externalReference: session.id,
+    startedAt: session.started_at ?? session.created_at,
+    endedAt: session.completed_at ?? session.submitted_at,
+    metadata: {
+      mode: session.mode,
+      state: session.state,
+      interviewId: session.interview_id,
+      ...sessionMetadata,
+    },
+  });
+
+  let episodeCount = 0;
+  let assertionCount = 0;
+  let contextRecordCount = 0;
+  for (const event of events) {
+    const refRows = await db.prepare(
+      `SELECT id, event_id, source_ref_type, source_ref_id, source_span_id,
+              evidence_role, locator_json, exact_text, content_hash, metadata_json
+         FROM assessment_event_source_refs
+        WHERE event_id = ?1`,
+    ).bind(event.id).all<AssessmentEventSourceRefRow>();
+    await upsertAssessmentEventProjection({
+      db,
+      store,
+      session,
+      event,
+      refs: refRows.results ?? [],
+      candidateId,
+      workspacePersonId,
+      interactionId: interaction.id,
+    });
+    episodeCount++;
+    assertionCount++;
+    contextRecordCount++;
+  }
+
+  return {
+    sessionId: session.id,
+    interactionId: interaction.id,
+    selectedEventCount: events.length,
+    episodeCount,
+    assertionCount,
     contextRecordCount,
   };
 }

@@ -69,9 +69,11 @@ npm run assessment-evidence:audit -- --remote
 npm run assessment-evidence:audit -- --remote --session-id <assessment_session_id>
 npm run assessment-evidence:audit -- --remote --session-id <assessment_session_id> --require-all-families
 npm run assessment-evidence:replay -- --remote --session-id <assessment_session_id>
+npm run assessment-evidence:replay -- --remote --session-id <assessment_session_id> --missing-events-only
 npm run assessment-evidence:replay -- --remote --all-missing --limit 25
 npm run assessment-evidence:replay -- --remote --all-missing --limit 25 --summary
 npm run assessment-evidence:replay -- --remote --all-missing --limit 25 --summary --progress --exclude-state IN_PROGRESS
+npm run assessment-evidence:replay -- --remote --all-missing --limit 25 --summary --progress --missing-events-only
 ```
 
 For app-dev, prefix remote proof commands with
@@ -215,3 +217,62 @@ for the remote replay loop and repeatedly hits D1 request timeouts. Treat
 remaining `IN_PROGRESS` rows as live-data backlog rather than completed
 historical debt; replay them after they settle or with a narrower active-session
 repair path.
+
+The narrower active-session repair path is now `--missing-events-only`. It
+projects only raw assessment events that still lack `assessment_event_context:*`
+person context and avoids rebuilding an already-large assessment transcript.
+The first timeout-heavy active row was repaired with:
+
+```bash
+CLOUDFLARE_D1_DATABASE_ID=0abe92df-9296-46f5-9f9d-a1fb1bcd3be1 \
+  npm run assessment-evidence:replay -- --remote \
+  --session-id assessment_session_3250c4945a65a1595ffe801d04e31caf \
+  --missing-events-only
+```
+
+That run succeeded in roughly 15 seconds, selected six missing events, moved
+the session from 95 to 101 context records and from 274 to 285 source refs, and
+reported `answers.missingPersonProjectionCount: 0`.
+
+The same mode was then run against live app-dev batches:
+
+- `--limit 20 --summary --progress --missing-events-only`: `processedCount: 20`,
+  `succeededCount: 20`, `failedCount: 0`, `sourceRefsAfter: 565`, and
+  `missingPersonProjectionsAfter: 0`.
+- `--limit 100 --summary --progress --missing-events-only`: repaired 23 normal
+  candidate-backed sessions, adding 46 context records and 198 source refs.
+  Thirteen old synthetic smoke sessions did not repair because their
+  `candidate_id` values had no corresponding `candidates` row, application, or
+  workspace person identity.
+- After aligning the audit and replay selector to require a real candidate row,
+  a follow-up live batch repaired four fresh `IN_PROGRESS` rows:
+  `processedCount: 4`, `succeededCount: 4`, `failedCount: 0`,
+  `contextRecordsAfter: 8`, `sourceRefsAfter: 148`, and
+  `missingPersonProjectionsAfter: 0`.
+- After deploying `pipe-api-dev`, app-dev produced one fresh
+  `EVALUATING` session while the deploy was running. The same command repaired
+  it with `processedCount: 1`, `succeededCount: 1`, `failedCount: 0`,
+  `contextRecordsAfter: 8`, `sourceRefsAfter: 17`, and
+  `missingPersonProjectionsAfter: 0`.
+
+The unscoped app-dev audit now exits `ready`:
+
+```bash
+D1_REQUEST_TIMEOUT_MS=60000 \
+CLOUDFLARE_D1_DATABASE_ID=0abe92df-9296-46f5-9f9d-a1fb1bcd3be1 \
+  npm run assessment-evidence:audit -- --remote
+```
+
+Final post-deploy app-dev proof on 2026-07-02:
+
+- `auditedAssessmentSessionCount: 696`
+- every evidence family status is `projected`
+- every family has `missingPersonProjectionCount: 0`
+- `sourceLessPositiveClaimCount: 0`
+- `duplicateProjectedEdgeCount: 0`
+- `failures: []`
+- `nextActions: []`
+
+Dangling synthetic smoke rows with no real `candidates` record remain in raw
+assessment tables, but they are not person-projectable evidence and are no
+longer counted as living-context debt.

@@ -310,6 +310,7 @@ async function auditFamily(
       SELECT 1
         FROM assessment_sessions ass
         LEFT JOIN scheduled_interviews si ON si.id = ass.interview_id
+        JOIN candidates c ON c.id = COALESCE(ass.candidate_id, si.candidate_id)
        WHERE ass.id = ev.session_id
          AND (ass.candidate_id IS NOT NULL OR si.candidate_id IS NOT NULL)
     )`;
