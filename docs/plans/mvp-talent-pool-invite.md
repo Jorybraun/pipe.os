@@ -230,6 +230,7 @@ npm --prefix workers/api test -- \
   src/routes/__tests__/talentPool.test.ts \
   src/routes/cockpit/__tests__/contacts.rest.test.ts \
   src/routes/cockpit/__tests__/candidates.rest.test.ts
+npx playwright test e2e/talent-pool-intake.unauth.spec.ts --project=unauthenticated --reporter=line
 
 cd workers/api
 npm run candidate-ingestion:audit -- --local --invite-token <token>

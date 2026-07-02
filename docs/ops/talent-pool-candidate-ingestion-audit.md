@@ -194,6 +194,7 @@ npm test -- src/routes/__tests__/talentPool.test.ts src/lib/candidateDiscovery/_
 npm test -- src/lib/livingContext/__tests__/compatibility.test.ts src/lib/livingContext/__tests__/candidateComparison.test.ts src/lib/livingContext/__tests__/evidenceReadiness.test.ts src/lib/livingContext/__tests__/matchConfidenceScoring.test.ts
 npm test -- src/lib/candidateDiscovery/__tests__/candidateNodes.test.ts src/lib/candidateDiscovery/__tests__/resumeDecomposition.test.ts scripts/auditCandidateIngestion.test.ts
 npm test -- src/routes/cockpit/__tests__/contacts.rest.test.ts src/routes/cockpit/__tests__/candidates.rest.test.ts src/lib/livingContext/__tests__/readModel.test.ts
+npx playwright test e2e/talent-pool-intake.unauth.spec.ts --project=unauthenticated --reporter=line
 ```
 
 For app-dev, prefix remote proof commands with the dev D1 id:
@@ -300,6 +301,13 @@ assert raw R2 capture metadata for plain text, DOCX, and unextractable PDF
 files, proving the immutable file artifact is retained even when no profile
 claims may be derived. The app-dev invite returned `CHALLENGE_PREPARING` with
 zero ready challenges and no serialized internal id values.
+
+Browser proof on 2026-07-02 uses
+`e2e/talent-pool-intake.unauth.spec.ts` with the unauthenticated Playwright
+project. It exercises the public `/talent/:token` page with mocked public RPC
+responses for pasted profile submit, file upload, and ready/completed dashboard
+states, proving the candidate-facing page can run without Clerk recruiter auth
+and never renders matching internals such as `WAITING_FOR_MATCH`.
 
 ## Current Gaps
 
