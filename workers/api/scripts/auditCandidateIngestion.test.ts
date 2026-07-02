@@ -95,7 +95,11 @@ function createSchema(db: Database.Database): void {
     );
     CREATE TABLE source_spans (
       id TEXT PRIMARY KEY,
-      artifact_version_id TEXT
+      artifact_version_id TEXT,
+      char_start INTEGER,
+      char_end INTEGER,
+      exact_text TEXT,
+      exact_text_hash TEXT
     );
     CREATE TABLE semantic_assertions (
       id TEXT PRIMARY KEY,
@@ -176,8 +180,15 @@ function seedSourceBackedTalentPoolCandidate(db: Database.Database): void {
     VALUES ('artifact-1', 'workspace-person-1', 'interaction-1');
     INSERT INTO artifact_versions (id, artifact_id, storage_key, content_text)
     VALUES ('artifact-version-1', 'artifact-1', NULL, 'Jordan shipped TypeScript Workers APIs.');
-    INSERT INTO source_spans (id, artifact_version_id)
-    VALUES ('source-span-1', 'artifact-version-1');
+    INSERT INTO source_spans (id, artifact_version_id, char_start, char_end, exact_text, exact_text_hash)
+    VALUES (
+      'source-span-1',
+      'artifact-version-1',
+      0,
+      39,
+      'Jordan shipped TypeScript Workers APIs.',
+      '687edcc54818080206251abe464c600f3e63820374b8b20b74985f81455531b6'
+    );
     INSERT INTO semantic_assertions (id, workspace_person_id, polarity)
     VALUES ('assertion-1', 'workspace-person-1', 1);
     INSERT INTO assertion_source_spans (assertion_id, source_span_id)
@@ -191,7 +202,7 @@ function seedSourceBackedTalentPoolCandidate(db: Database.Database): void {
       'talent_pool_profile_intake',
       'source_span:source-span-1',
       1,
-      '{"source_quote":"Jordan shipped TypeScript Workers APIs.","source_quote_validated":true,"source_quote_char_start":0,"source_quote_char_end":37}'
+      '{"source_quote":"Jordan shipped TypeScript Workers APIs.","source_quote_validated":true,"source_quote_char_start":0,"source_quote_char_end":39}'
     );
     INSERT INTO context_records (id, workspace_person_id, record_type, predicate, narrative, polarity)
     VALUES ('context-record-1', 'workspace-person-1', 'talent_pool_profile_intake', 'submitted_profile', 'Candidate submitted source-backed Talent Pool profile evidence.', 1);
@@ -253,6 +264,8 @@ describe('auditCandidateIngestion', () => {
       candidateNodeExactSourceQuoteCount: 1,
       artifactVersionCount: 1,
       sourceSpanCount: 1,
+      sourceSpanTextMismatchCount: 0,
+      sourceSpanHashMismatchCount: 0,
       contextSourceRefCount: 4,
       candidateNodeWithoutExactSourceCount: 0,
     });
@@ -495,6 +508,53 @@ describe('auditCandidateIngestion', () => {
     expect(audit.sourceProof.documentProfileSourceSpanCount).toBe(0);
     expect(audit.failures).toContain('1 PDF/DOCX Talent Pool profile upload(s) lack extracted source spans for the current profile key');
     expect(audit.nextActions).toContain('Replay or repair PDF/DOCX profile extraction so the current profile storage key has exact source spans.');
+  });
+
+  it('flags source spans whose exact text does not match artifact coordinates', async () => {
+    sqlite = new Database(':memory:');
+    createSchema(sqlite);
+    seedSourceBackedTalentPoolCandidate(sqlite);
+    sqlite.prepare(
+      `UPDATE source_spans
+          SET exact_text = 'Jordan shipped unrelated evidence.',
+              exact_text_hash = 'eb9227fea96f6233b079ce647091b14cf73786291ced7107b6a1b62f167f0e00',
+              char_start = 0,
+              char_end = 37
+        WHERE id = 'source-span-1'`,
+    ).run();
+
+    const audit = await auditCandidateIngestion(new SqliteQueryClient(sqlite), {
+      inviteToken: 'invite-token',
+      requireContextRecords: true,
+    });
+
+    expect(audit.status).toBe('not_ready');
+    expect(audit.sourceProof.sourceSpanTextMismatchCount).toBe(1);
+    expect(audit.sourceProof.sourceSpanHashMismatchCount).toBe(0);
+    expect(audit.failures).toContain('1 source span(s) do not match their artifact_version content_text slice');
+    expect(audit.nextActions).toContain('Repair source span coordinates so exact_text matches the immutable artifact content_text slice.');
+  });
+
+  it('flags source spans whose exact text hash does not match exact text', async () => {
+    sqlite = new Database(':memory:');
+    createSchema(sqlite);
+    seedSourceBackedTalentPoolCandidate(sqlite);
+    sqlite.prepare(
+      `UPDATE source_spans
+          SET exact_text_hash = 'wrong-hash'
+        WHERE id = 'source-span-1'`,
+    ).run();
+
+    const audit = await auditCandidateIngestion(new SqliteQueryClient(sqlite), {
+      inviteToken: 'invite-token',
+      requireContextRecords: true,
+    });
+
+    expect(audit.status).toBe('not_ready');
+    expect(audit.sourceProof.sourceSpanTextMismatchCount).toBe(0);
+    expect(audit.sourceProof.sourceSpanHashMismatchCount).toBe(1);
+    expect(audit.failures).toContain('1 source span(s) have exact_text_hash values that do not match exact_text');
+    expect(audit.nextActions).toContain('Repair source span hashes so exact_text_hash is the SHA-256 of exact_text.');
   });
 
   it('flags design-queue repo-family suggestions for unextracted document uploads', async () => {

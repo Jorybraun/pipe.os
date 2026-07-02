@@ -9,6 +9,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Fixed — Talent Pool ingestion
 
+- Candidate-ingestion audit now fails Talent Pool source spans whose stored exact text does not match the immutable artifact text at their character offsets or whose exact-text hash is invalid, catching broken provenance even when source refs exist.
 - Candidate-ingestion audit now fails design-queue repo-family suggestions for PDF/DOCX Talent Pool uploads that still lack extracted source spans, catching stale generic planning hints before they imply source-backed challenge fit.
 - Talent Pool PDF/DOCX uploads with no extractable source text now keep challenge-design metadata in an explicit missing-evidence state with no generic repo-family suggestion, preventing placeholder upload labels from becoming assessment planning signals.
 - Talent Pool resume decomposition now anchors repeated titles/labels to the matching source occurrence and the candidate-ingestion audit fails on duplicate active candidate-node evidence or conflicting source anchors.

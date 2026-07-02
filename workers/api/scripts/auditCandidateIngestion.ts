@@ -10,6 +10,7 @@
  */
 
 import dotenv from 'dotenv';
+import { createHash } from 'node:crypto';
 import { readdirSync } from 'node:fs';
 import { createRequire } from 'node:module';
 import { dirname, isAbsolute, resolve } from 'node:path';
@@ -77,6 +78,8 @@ export interface CandidateSourceProofAudit {
   candidateNodeSourceAnchorConflictCount: number;
   artifactVersionCount: number;
   sourceSpanCount: number;
+  sourceSpanTextMismatchCount: number;
+  sourceSpanHashMismatchCount: number;
   documentProfileSourceSpanCount: number;
   contextSourceRefCount: number;
 }
@@ -145,8 +148,14 @@ interface SourceProofRow {
   candidate_node_source_anchor_conflict_count: number | null;
   artifact_version_count: number | null;
   source_span_count: number | null;
+  source_span_text_mismatch_count: number | null;
   document_profile_source_span_count: number | null;
   context_source_ref_count: number | null;
+}
+
+interface SourceSpanHashRow {
+  exact_text: string | null;
+  exact_text_hash: string | null;
 }
 
 interface ProjectionRow {
@@ -188,6 +197,10 @@ const REQUIRED_TABLES = [
 
 function toNumber(value: number | null | undefined): number {
   return Number(value ?? 0);
+}
+
+function sha256Hex(text: string): string {
+  return createHash('sha256').update(text, 'utf8').digest('hex');
 }
 
 async function count(
@@ -439,6 +452,14 @@ async function loadSourceProof(
           FROM source_artifact_versions sav
           JOIN source_spans ss ON ss.artifact_version_id = sav.artifact_version_id) AS source_span_count,
        (SELECT COUNT(DISTINCT ss.id)
+          FROM source_artifact_versions sav
+          JOIN artifact_versions av ON av.id = sav.artifact_version_id
+          JOIN source_spans ss ON ss.artifact_version_id = av.id
+         WHERE av.content_text IS NOT NULL
+           AND ss.char_start IS NOT NULL
+           AND ss.char_end IS NOT NULL
+           AND ss.exact_text <> substr(av.content_text, ss.char_start + 1, ss.char_end - ss.char_start)) AS source_span_text_mismatch_count,
+       (SELECT COUNT(DISTINCT ss.id)
           FROM audited_candidates ac
           JOIN talent_pool_intakes t ON t.candidate_id = ac.id
           JOIN artifact_versions av ON av.storage_key = t.profile_r2_key
@@ -455,6 +476,7 @@ async function loadSourceProof(
     params,
   );
   const row = rows[0];
+  const sourceSpanHashMismatchCount = await loadSourceSpanHashMismatchCount(client, scopeSql, params);
   return {
     candidateNodeCount: toNumber(row?.candidate_node_count),
     candidateNodeExactSourceQuoteCount: toNumber(row?.candidate_node_exact_source_quote_count),
@@ -463,9 +485,28 @@ async function loadSourceProof(
     candidateNodeSourceAnchorConflictCount: toNumber(row?.candidate_node_source_anchor_conflict_count),
     artifactVersionCount: toNumber(row?.artifact_version_count),
     sourceSpanCount: toNumber(row?.source_span_count),
+    sourceSpanTextMismatchCount: toNumber(row?.source_span_text_mismatch_count),
+    sourceSpanHashMismatchCount,
     documentProfileSourceSpanCount: toNumber(row?.document_profile_source_span_count),
     contextSourceRefCount: toNumber(row?.context_source_ref_count),
   };
+}
+
+async function loadSourceSpanHashMismatchCount(
+  client: QueryClient,
+  scopeSql: string,
+  params: Array<string | number | null>,
+): Promise<number> {
+  const rows = await client.query<SourceSpanHashRow>(
+    `${scopeSql}
+     SELECT ss.exact_text, ss.exact_text_hash
+       FROM source_artifact_versions sav
+       JOIN source_spans ss ON ss.artifact_version_id = sav.artifact_version_id
+      WHERE ss.exact_text_hash IS NOT NULL
+        AND TRIM(ss.exact_text_hash) <> ''`,
+    params,
+  );
+  return rows.filter((row) => sha256Hex(row.exact_text ?? '') !== row.exact_text_hash?.toLowerCase()).length;
 }
 
 async function loadPersonProjection(
@@ -668,6 +709,8 @@ export async function auditCandidateIngestion(
       candidateNodeSourceAnchorConflictCount: 0,
       artifactVersionCount: 0,
       sourceSpanCount: 0,
+      sourceSpanTextMismatchCount: 0,
+      sourceSpanHashMismatchCount: 0,
       documentProfileSourceSpanCount: 0,
       contextSourceRefCount: 0,
     },
@@ -761,6 +804,12 @@ export async function auditCandidateIngestion(
     ...(rawCapture.documentProfileStorageKeyCount > 0 && sourceProof.documentProfileSourceSpanCount === 0
       ? [`${rawCapture.documentProfileStorageKeyCount} PDF/DOCX Talent Pool profile upload(s) lack extracted source spans for the current profile key`]
       : []),
+    ...(sourceProof.sourceSpanTextMismatchCount > 0
+      ? [`${sourceProof.sourceSpanTextMismatchCount} source span(s) do not match their artifact_version content_text slice`]
+      : []),
+    ...(sourceProof.sourceSpanHashMismatchCount > 0
+      ? [`${sourceProof.sourceSpanHashMismatchCount} source span(s) have exact_text_hash values that do not match exact_text`]
+      : []),
     ...(rawCapture.submittedIntakeCount > sourceProof.candidateNodeExactSourceQuoteCount
       ? [`${rawCapture.submittedIntakeCount - sourceProof.candidateNodeExactSourceQuoteCount} submitted Talent Pool intake(s) lack exact-source candidate-node projection`]
       : []),
@@ -808,6 +857,12 @@ export async function auditCandidateIngestion(
       : []),
     ...(rawCapture.documentProfileStorageKeyCount > 0 && sourceProof.documentProfileSourceSpanCount === 0
       ? ['Replay or repair PDF/DOCX profile extraction so the current profile storage key has exact source spans.']
+      : []),
+    ...(sourceProof.sourceSpanTextMismatchCount > 0
+      ? ['Repair source span coordinates so exact_text matches the immutable artifact content_text slice.']
+      : []),
+    ...(sourceProof.sourceSpanHashMismatchCount > 0
+      ? ['Repair source span hashes so exact_text_hash is the SHA-256 of exact_text.']
       : []),
     ...(rawCapture.submittedIntakeCount > sourceProof.candidateNodeExactSourceQuoteCount
       ? ['Replay or repair Talent Pool profile ingestion so each submitted profile creates an exact-source candidate node.']
@@ -972,6 +1027,8 @@ function printHuman(report: CandidateIngestionAudit, databasePath: string): void
   console.log(`  anchor conflicts:      ${report.sourceProof.candidateNodeSourceAnchorConflictCount}`);
   console.log(`  artifact versions:     ${report.sourceProof.artifactVersionCount}`);
   console.log(`  source spans:          ${report.sourceProof.sourceSpanCount}`);
+  console.log(`  span text mismatches:  ${report.sourceProof.sourceSpanTextMismatchCount}`);
+  console.log(`  span hash mismatches:  ${report.sourceProof.sourceSpanHashMismatchCount}`);
   console.log(`  document source spans: ${report.sourceProof.documentProfileSourceSpanCount}`);
   console.log(`  context source refs:   ${report.sourceProof.contextSourceRefCount}`);
   console.log('');

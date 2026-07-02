@@ -37,6 +37,10 @@ The verifier reports:
 - `candidate_ingestion` row/status coverage
 - candidate nodes with and without exact validated resume quotes
 - artifact versions, source spans, and context source refs
+- source span coordinate integrity: when an artifact has `content_text` and a
+  span has character offsets, `exact_text` must match that immutable slice
+- source span quote-hash integrity: `exact_text_hash` must be the SHA-256 of
+  `exact_text`
 - roleless `people` / `workspace_people` projection
 - accidental `applications` / `person_roles` for roleless Talent Pool members
 - PR-backed ready challenge assignments vs. incomplete assignment rows and
@@ -110,8 +114,10 @@ projection, missing exact source proof, missing exact-source candidate-node
 projection, PDF/DOCX profile storage keys without extracted source spans, raw
 external refs or phone intent without operational context records, source-less
 positive claims, duplicate projected edges, candidate nodes with no exact
-source quote, duplicate active candidate-node evidence, candidate-node source
-anchor conflicts, or roleless application/person-role rows.
+source quote, source spans whose exact text no longer matches their immutable
+artifact text slice or exact-text hash, duplicate active candidate-node
+evidence, candidate-node source anchor conflicts, or roleless
+application/person-role rows.
 
 Challenge assignment rows only count as ready when both `github_repo_url` and
 `github_pr_number` are present. Assignment rows without that PR-backed metadata
@@ -155,6 +161,7 @@ returned `status: ready`, `candidateNodeCount: 74`,
 `duplicateCandidateNodeEvidenceCount: 0`,
 `candidateNodeSourceAnchorConflictCount: 0`,
 `artifactVersionCount: 11`, `sourceSpanCount: 37`,
+`sourceSpanTextMismatchCount: 0`, `sourceSpanHashMismatchCount: 0`,
 `documentProfileSourceSpanCount: 4`, `contextRecordCount: 80`,
 `contextSourceRefCount: 83`,
 `externalProfileRefContextCount: 3`,
