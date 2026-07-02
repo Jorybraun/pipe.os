@@ -4,6 +4,7 @@ import { CloudflareAIProvider } from '../cloudflareAIProvider';
 import {
   DEFAULT_CLOUDFLARE_MODEL,
   createCandidateAgentProvider,
+  createCandidateAgentProviders,
   createGenerationProvider,
   createRoleAgentProvider,
 } from '../createProvider';
@@ -49,6 +50,20 @@ describe('createCandidateAgentProvider', () => {
 
     expect(provider).toBeInstanceOf(CloudflareAIProvider);
     expect((provider as CloudflareAIProvider).model).toBe(DEFAULT_CLOUDFLARE_MODEL);
+  });
+
+  it('builds an ordered current Workers AI failover list for candidate discovery', () => {
+    const providers = createCandidateAgentProviders({ AI: createAi() });
+    const models = providers
+      .filter((provider): provider is CloudflareAIProvider => provider instanceof CloudflareAIProvider)
+      .map((provider) => provider.model);
+
+    expect(models).toEqual([
+      DEFAULT_CLOUDFLARE_MODEL,
+      '@cf/openai/gpt-oss-20b',
+      '@cf/google/gemma-4-26b-a4b-it',
+      '@cf/qwen/qwen3-30b-a3b-fp8',
+    ]);
   });
 
   it('trims and remaps stale role-agent model overrides before repo discovery inference', async () => {
@@ -178,6 +193,21 @@ describe('createCandidateAgentProvider', () => {
 
     expect(completion?.content).toBe('{"candidate_searchable_profile":"ok"}');
     expect((provider as CloudflareAIProvider).getLastUsage()).toEqual({ inputTokens: 3, outputTokens: 4 });
+  });
+
+  it('reads object-shaped Workers AI response text before treating candidate output as empty', async () => {
+    const ai = {
+      run: vi.fn(async () => ({
+        response: {
+          text: '{"candidate_searchable_profile":"ok from nested text"}',
+        },
+      })),
+    } as unknown as Ai;
+    const provider = createCandidateAgentProvider({ AI: ai });
+
+    const completion = await provider?.complete([{ role: 'user', content: 'Return JSON.' }], { forceJson: true });
+
+    expect(completion?.content).toBe('{"candidate_searchable_profile":"ok from nested text"}');
   });
 });
 

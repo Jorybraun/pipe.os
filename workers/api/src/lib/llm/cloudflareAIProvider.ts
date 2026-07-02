@@ -155,6 +155,53 @@ function stripJsonFences(text: string): string {
   return trimmed;
 }
 
+function textFromWorkersAIValue(value: unknown): string {
+  if (typeof value === 'string') return value.trim();
+  if (!value || typeof value !== 'object') return '';
+
+  const record = value as Record<string, unknown>;
+  for (const key of ['response', 'text', 'content', 'generated_text', 'output_text', 'result']) {
+    const candidate = record[key];
+    if (typeof candidate === 'string' && candidate.trim().length > 0) {
+      return candidate.trim();
+    }
+    if (candidate && typeof candidate === 'object') {
+      const nested = textFromWorkersAIValue(candidate);
+      if (nested.length > 0) return nested;
+    }
+  }
+
+  const content = record.content;
+  if (Array.isArray(content)) {
+    const chunks = content
+      .map((item) => textFromWorkersAIValue(item))
+      .filter((chunk) => chunk.length > 0);
+    if (chunks.length > 0) return chunks.join('\n').trim();
+  }
+
+  const output = record.output;
+  if (Array.isArray(output)) {
+    const chunks = output
+      .map((item) => textFromWorkersAIValue(item))
+      .filter((chunk) => chunk.length > 0);
+    if (chunks.length > 0) return chunks.join('\n').trim();
+  }
+
+  const choices = record.choices;
+  if (Array.isArray(choices) && choices.length > 0) {
+    const first = choices[0] as Record<string, unknown> | undefined;
+    if (first) {
+      const message = first.message;
+      const messageText = textFromWorkersAIValue(message);
+      if (messageText.length > 0) return messageText;
+      const text = textFromWorkersAIValue(first.text);
+      if (text.length > 0) return text;
+    }
+  }
+
+  return '';
+}
+
 export class CloudflareAIProvider implements LLMProvider {
   readonly name = 'cloudflare-ai';
   readonly supportsTools = false;
@@ -241,10 +288,9 @@ export class CloudflareAIProvider implements LLMProvider {
       console.log('[cloudflareAIProvider] full result:', JSON.stringify(result).slice(0, 500));
     }
 
-    let rawText = '';
-    if (typeof result.response === 'string') {
-      rawText = result.response.trim();
-    } else if (Array.isArray(result.choices) && result.choices.length > 0) {
+    let rawText = textFromWorkersAIValue(result.response);
+    if (!rawText) rawText = textFromWorkersAIValue(result);
+    if (!rawText && Array.isArray(result.choices) && result.choices.length > 0) {
       const choice = result.choices[0]!;
       const msg = choice.message;
       if (typeof msg?.content === 'string' && msg.content.length > 0) {

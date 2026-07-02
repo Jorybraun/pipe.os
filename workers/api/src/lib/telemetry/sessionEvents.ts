@@ -34,6 +34,9 @@ export type EventType =
   | 'match_assigned'
   | 'decomposition_started'
   | 'decomposition_complete'
+  | 'candidate_discovery_ai_started'
+  | 'candidate_discovery_ai_succeeded'
+  | 'candidate_discovery_ai_failed'
   | 'ingestion_retry_queued'
   | 'ingestion_retry_failed';
 

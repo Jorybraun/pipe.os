@@ -44,6 +44,12 @@ export { DEFAULT_CLOUDFLARE_MODEL } from './cloudflareAIProvider';
 const DEFAULT_VERTEX_MODEL = 'google/gemini-1.5-flash-002';
 const DEFAULT_KIMI_MODEL = 'kimi-k2-6';
 const DEFAULT_KIMI_BASE_URL = 'https://api.moonshot.cn/v1';
+const CANDIDATE_WORKERS_AI_FALLBACK_MODELS = [
+  DEFAULT_CLOUDFLARE_MODEL,
+  '@cf/openai/gpt-oss-20b',
+  '@cf/google/gemma-4-26b-a4b-it',
+  '@cf/qwen/qwen3-30b-a3b-fp8',
+] as const;
 
 export interface ProviderEnv {
   GOOGLE_AI_API_KEY?: string;
@@ -231,6 +237,48 @@ export function createCandidateAgentProvider(env: ProviderEnv): LLMProvider | nu
   if (env.MOCK_AI === 'true') return null;
   const name = resolveProviderName(env.CANDIDATE_AGENT_PROVIDER, 'cloudflare-ai');
   return createProvider(env, name, env.CANDIDATE_AGENT_MODEL);
+}
+
+function providerIdentity(provider: LLMProvider): string {
+  const maybeKeyedProvider = provider as unknown as { getModelKey?: () => string };
+  if (typeof maybeKeyedProvider.getModelKey === 'function') {
+    try {
+      const key = maybeKeyedProvider.getModelKey().trim();
+      if (key.length > 0) return key;
+    } catch {
+      // Fall through to provider/model identity.
+    }
+  }
+  return `${provider.name}:${typeof provider.model === 'string' ? provider.model : 'unknown'}`;
+}
+
+function pushUniqueProvider(providers: LLMProvider[], provider: LLMProvider | null): void {
+  if (!provider) return;
+  const identity = providerIdentity(provider);
+  if (providers.some((existing) => providerIdentity(existing) === identity)) return;
+  providers.push(provider);
+}
+
+/**
+ * Candidate discovery is allowed to try multiple real providers/models before
+ * falling back to source-backed parsing. This does not fake a profile; it only
+ * gives current Workers AI models a chance when one model times out, returns
+ * empty content, or misses the JSON contract.
+ */
+export function createCandidateAgentProviders(env: ProviderEnv): LLMProvider[] {
+  if (env.MOCK_AI === 'true') return [];
+
+  const providers: LLMProvider[] = [];
+  pushUniqueProvider(providers, createCandidateAgentProvider(env));
+
+  if (env.AI) {
+    const configuredModel = env.CANDIDATE_AGENT_MODEL ?? env.CLOUDFLARE_AI_MODEL ?? DEFAULT_CLOUDFLARE_MODEL;
+    for (const model of [configuredModel, ...CANDIDATE_WORKERS_AI_FALLBACK_MODELS]) {
+      pushUniqueProvider(providers, new CloudflareAIProvider(env.AI, model));
+    }
+  }
+
+  return providers;
 }
 
 /**

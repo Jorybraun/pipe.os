@@ -24,7 +24,8 @@
 import type { Env } from '../../types';
 import type { ParsedCV } from '../cvParser';
 import type { DecompositionResult } from './candidateDecompositionPrompt';
-import { createCandidateAgentProvider } from '../llm/createProvider';
+import { createCandidateAgentProviders } from '../llm/createProvider';
+import type { LLMProvider } from '../llm/types';
 import { pickImplementationIssue } from '../match/autoStageBuilder';
 import { matchRepos, type MatchRequest } from '../repoDiscovery/matchRepos';
 import { matchCandidateToReviewChallenge } from '../challengeMatching/d1Matcher';
@@ -69,12 +70,78 @@ export interface IngestionInput {
   skipPostDecompositionMaintenance?: boolean;
 }
 
-const CANDIDATE_DISCOVERY_AI_TIMEOUT_MS = 12_000;
+const CANDIDATE_DISCOVERY_AI_TIMEOUT_MS = 25_000;
+const MAX_CANDIDATE_DISCOVERY_AI_ATTEMPTS = 3;
 
 function timeoutAfter(ms: number, label: string): Promise<never> {
   return new Promise((_, reject) => {
     setTimeout(() => reject(new Error(`${label} timed out after ${ms}ms`)), ms);
   });
+}
+
+type CandidateDiscoveryAttemptStatus = 'started' | 'succeeded' | 'failed';
+
+export interface CandidateDiscoveryAttemptEvent {
+  status: CandidateDiscoveryAttemptStatus;
+  model: string;
+  attempt: number;
+  error?: string;
+}
+
+function providerModelKey(provider: LLMProvider): string {
+  const maybeKeyedProvider = provider as unknown as { getModelKey?: () => string };
+  if (typeof maybeKeyedProvider.getModelKey === 'function') {
+    try {
+      const key = maybeKeyedProvider.getModelKey().trim();
+      if (key.length > 0) return key;
+    } catch {
+      // Fall through to provider/model identity.
+    }
+  }
+  const model = typeof provider.model === 'string' ? provider.model.trim() : '';
+  return model.length > 0 ? `${provider.name}/${model}` : provider.name;
+}
+
+function truncateForTelemetry(value: string, max = 600): string {
+  return value.length <= max ? value : `${value.slice(0, max - 1)}…`;
+}
+
+export async function discoverCandidateProfileWithProviderFallbacks(input: {
+  providers: readonly LLMProvider[];
+  parsed: ParsedCV;
+  resumeText: string;
+  timeoutMs: number;
+  maxAttempts: number;
+  onAttempt?: (event: CandidateDiscoveryAttemptEvent) => Promise<void> | void;
+}): Promise<CandidateDiscoveryResult> {
+  const providers = input.providers.slice(0, input.maxAttempts);
+  const failures: string[] = [];
+
+  if (providers.length === 0) {
+    throw new Error('No candidate discovery AI provider is configured');
+  }
+
+  for (let index = 0; index < providers.length; index += 1) {
+    const provider = providers[index]!;
+    const attempt = index + 1;
+    const model = providerModelKey(provider);
+    await input.onAttempt?.({ status: 'started', model, attempt });
+    try {
+      const result = await Promise.race([
+        discoverCandidateProfile({ provider, parsed: input.parsed, resumeText: input.resumeText }),
+        timeoutAfter(input.timeoutMs, `Candidate Discovery AI ${model}`),
+      ]);
+      await input.onAttempt?.({ status: 'succeeded', model: result.modelUsed, attempt });
+      return result;
+    } catch (err) {
+      const msg = err instanceof Error ? err.message : String(err);
+      const truncated = truncateForTelemetry(msg);
+      failures.push(`${model}: ${truncated}`);
+      await input.onAttempt?.({ status: 'failed', model, attempt, error: truncated });
+    }
+  }
+
+  throw new Error(`Candidate Discovery AI failed after ${providers.length} attempt(s): ${failures.join(' | ')}`);
 }
 
 /**
@@ -175,8 +242,8 @@ export async function runCandidateIngestion(input: IngestionInput): Promise<void
   // Step 2: Discover rich candidate profile
   let discoveryResult: CandidateDiscoveryResult;
   try {
-    const provider = createCandidateAgentProvider(env);
-    if (!provider) {
+    const providers = createCandidateAgentProviders(env);
+    if (providers.length === 0) {
       discoveryResult = await trackStep(db, candidateId, 'discover_profile', async () =>
         buildSourceBackedCandidateDiscoveryFallback({
           parsed,
@@ -187,10 +254,32 @@ export async function runCandidateIngestion(input: IngestionInput): Promise<void
     } else {
       try {
         discoveryResult = await trackStep(db, candidateId, 'discover_profile', () =>
-          Promise.race([
-            discoverCandidateProfile({ provider, parsed, resumeText }),
-            timeoutAfter(CANDIDATE_DISCOVERY_AI_TIMEOUT_MS, 'Candidate Discovery AI'),
-          ]),
+          discoverCandidateProfileWithProviderFallbacks({
+            providers,
+            parsed,
+            resumeText,
+            timeoutMs: CANDIDATE_DISCOVERY_AI_TIMEOUT_MS,
+            maxAttempts: MAX_CANDIDATE_DISCOVERY_AI_ATTEMPTS,
+            onAttempt: async (event) => {
+              try {
+                await recordSessionEvent(db, {
+                  sessionId: `ingestion-${candidateId}`,
+                  sessionType: 'ingestion',
+                  candidateId,
+                  eventType: `candidate_discovery_ai_${event.status}`,
+                  payload: {
+                    model: event.model,
+                    attempt: event.attempt,
+                    timeoutMs: CANDIDATE_DISCOVERY_AI_TIMEOUT_MS,
+                    ...(event.error ? { error: event.error } : {}),
+                  },
+                });
+              } catch (telemetryErr) {
+                const telemetryMsg = telemetryErr instanceof Error ? telemetryErr.message : String(telemetryErr);
+                console.warn('[ingestion] candidate discovery telemetry failed:', telemetryMsg);
+              }
+            },
+          }),
         );
       } catch (err) {
         const msg = err instanceof Error ? err.message : String(err);
