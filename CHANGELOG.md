@@ -9,6 +9,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Fixed — Talent Pool ingestion
 
+- Stalled Talent Pool profile receipts now replay from their original R2 source, including pasted `.txt` intakes, so candidate AI/evidence ingestion cannot remain indefinitely at `talent_pool_profile_received`.
 - Talent Pool profile submit/upload now repairs the roleless person projection, so dev-seeded and legacy `/talent/:token` candidates upsert one canonical `people`/`workspace_people` identity without fabricating role-backed applications or person roles.
 - The People list now includes canonical `workspace_people` Talent Pool members and suppresses same-email/contact duplicates, so ingested Talent Pool candidates appear in the unified person list instead of only in candidate-specific surfaces.
 - Talent Pool DOCX uploads now extract OOXML body text and run the same candidate-ingestion and living-context source projection path as PDF uploads instead of only storing the file.
@@ -18,6 +19,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - Talent Pool GitHub, LinkedIn, portfolio, and phone-screener intent fields now project into source-backed operational context records with exact intake field spans, and the candidate-ingestion audit fails if those raw fields remain unprojected.
 - Talent Pool profile submit/upload now creates an idempotent exact-source `TalentPoolProfileIntake` candidate node from submitted profile text, and the candidate-ingestion audit fails when submitted intakes lack exact-source candidate-node projection.
 - Talent Pool background text/PDF/DOCX decomposition now avoids legacy application/person-role mirroring and skips parser-only resume nodes that cannot be tied to an exact source quote.
+- Talent Pool profile uploads now link extracted profile text source spans to the uploaded profile storage key when extraction succeeds, and the candidate-ingestion audit flags PDF/DOCX profile keys that lack extracted source spans.
 
 ### Added — Open-source assessment setup
 

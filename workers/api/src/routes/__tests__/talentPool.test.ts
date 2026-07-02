@@ -415,6 +415,15 @@ describe('talent pool candidate RPC', () => {
          FROM candidates
         WHERE id = 'candidate-1'`,
     ).get()).toEqual({ resume_s3_key: intake.profile_r2_key });
+    expect(sqlite.prepare(
+      `SELECT storage_key, media_type
+         FROM artifact_versions
+        WHERE storage_key = ?
+        LIMIT 1`,
+    ).get(intake.profile_r2_key)).toEqual({
+      storage_key: intake.profile_r2_key,
+      media_type: 'text/plain',
+    });
 
     const replayFormData = new FormData();
     replayFormData.set('inviteToken', 'invite-token');

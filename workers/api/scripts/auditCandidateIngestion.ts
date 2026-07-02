@@ -58,6 +58,7 @@ export interface CandidateRawCaptureAudit {
   talentPoolIntakeCount: number;
   submittedIntakeCount: number;
   profileStorageKeyCount: number;
+  documentProfileStorageKeyCount: number;
   profileTextExcerptCount: number;
   externalProfileRefCount: number;
   phoneScreenerIntentCount: number;
@@ -74,6 +75,7 @@ export interface CandidateSourceProofAudit {
   candidateNodeWithoutExactSourceCount: number;
   artifactVersionCount: number;
   sourceSpanCount: number;
+  documentProfileSourceSpanCount: number;
   contextSourceRefCount: number;
 }
 
@@ -125,6 +127,7 @@ interface RawCaptureRow {
   talent_pool_intake_count: number | null;
   submitted_intake_count: number | null;
   profile_storage_key_count: number | null;
+  document_profile_storage_key_count: number | null;
   profile_text_excerpt_count: number | null;
   external_profile_ref_count: number | null;
   phone_screener_intent_count: number | null;
@@ -136,6 +139,7 @@ interface SourceProofRow {
   candidate_node_without_exact_source_count: number | null;
   artifact_version_count: number | null;
   source_span_count: number | null;
+  document_profile_source_span_count: number | null;
   context_source_ref_count: number | null;
 }
 
@@ -273,6 +277,14 @@ async function loadRawCapture(
        COUNT(DISTINCT t.candidate_id) AS talent_pool_intake_count,
        COUNT(DISTINCT CASE WHEN t.submitted_at IS NOT NULL THEN t.candidate_id END) AS submitted_intake_count,
        COUNT(DISTINCT CASE WHEN t.profile_r2_key IS NOT NULL AND TRIM(t.profile_r2_key) <> '' THEN t.candidate_id END) AS profile_storage_key_count,
+       COUNT(DISTINCT CASE
+         WHEN t.profile_r2_key IS NOT NULL
+          AND (
+            substr(LOWER(t.profile_r2_key), -4) = '.pdf'
+            OR substr(LOWER(t.profile_r2_key), -5) = '.docx'
+          )
+         THEN t.candidate_id
+       END) AS document_profile_storage_key_count,
        COUNT(DISTINCT CASE WHEN t.profile_text_excerpt IS NOT NULL AND TRIM(t.profile_text_excerpt) <> '' THEN t.candidate_id END) AS profile_text_excerpt_count,
        SUM(
          CASE WHEN t.github_url IS NOT NULL AND TRIM(t.github_url) <> '' THEN 1 ELSE 0 END
@@ -289,6 +301,7 @@ async function loadRawCapture(
     talentPoolIntakeCount: toNumber(row?.talent_pool_intake_count),
     submittedIntakeCount: toNumber(row?.submitted_intake_count),
     profileStorageKeyCount: toNumber(row?.profile_storage_key_count),
+    documentProfileStorageKeyCount: toNumber(row?.document_profile_storage_key_count),
     profileTextExcerptCount: toNumber(row?.profile_text_excerpt_count),
     externalProfileRefCount: toNumber(row?.external_profile_ref_count),
     phoneScreenerIntentCount: toNumber(row?.phone_screener_intent_count),
@@ -353,6 +366,16 @@ async function loadSourceProof(
        (SELECT COUNT(DISTINCT ss.id)
           FROM source_artifact_versions sav
           JOIN source_spans ss ON ss.artifact_version_id = sav.artifact_version_id) AS source_span_count,
+       (SELECT COUNT(DISTINCT ss.id)
+          FROM audited_candidates ac
+          JOIN talent_pool_intakes t ON t.candidate_id = ac.id
+          JOIN artifact_versions av ON av.storage_key = t.profile_r2_key
+          JOIN source_spans ss ON ss.artifact_version_id = av.id
+         WHERE t.profile_r2_key IS NOT NULL
+           AND (
+             substr(LOWER(t.profile_r2_key), -4) = '.pdf'
+             OR substr(LOWER(t.profile_r2_key), -5) = '.docx'
+           )) AS document_profile_source_span_count,
        (SELECT COUNT(DISTINCT crsr.context_record_id || ':' || crsr.source_ref_type || ':' || crsr.source_ref_id || ':' || crsr.evidence_role)
           FROM linked_workspace_people lwp
           JOIN context_records cr ON cr.workspace_person_id = lwp.workspace_person_id
@@ -366,6 +389,7 @@ async function loadSourceProof(
     candidateNodeWithoutExactSourceCount: toNumber(row?.candidate_node_without_exact_source_count),
     artifactVersionCount: toNumber(row?.artifact_version_count),
     sourceSpanCount: toNumber(row?.source_span_count),
+    documentProfileSourceSpanCount: toNumber(row?.document_profile_source_span_count),
     contextSourceRefCount: toNumber(row?.context_source_ref_count),
   };
 }
@@ -518,6 +542,7 @@ export async function auditCandidateIngestion(
       talentPoolIntakeCount: 0,
       submittedIntakeCount: 0,
       profileStorageKeyCount: 0,
+      documentProfileStorageKeyCount: 0,
       profileTextExcerptCount: 0,
       externalProfileRefCount: 0,
       phoneScreenerIntentCount: 0,
@@ -532,6 +557,7 @@ export async function auditCandidateIngestion(
       candidateNodeWithoutExactSourceCount: 0,
       artifactVersionCount: 0,
       sourceSpanCount: 0,
+      documentProfileSourceSpanCount: 0,
       contextSourceRefCount: 0,
     },
     personProjection: {
@@ -614,6 +640,9 @@ export async function auditCandidateIngestion(
       && sourceProof.candidateNodeExactSourceQuoteCount === 0
       ? ['submitted Talent Pool profile evidence has no exact source spans or exact candidate-node quotes']
       : []),
+    ...(rawCapture.documentProfileStorageKeyCount > 0 && sourceProof.documentProfileSourceSpanCount === 0
+      ? [`${rawCapture.documentProfileStorageKeyCount} PDF/DOCX Talent Pool profile upload(s) lack extracted source spans for the current profile key`]
+      : []),
     ...(rawCapture.submittedIntakeCount > sourceProof.candidateNodeExactSourceQuoteCount
       ? [`${rawCapture.submittedIntakeCount - sourceProof.candidateNodeExactSourceQuoteCount} submitted Talent Pool intake(s) lack exact-source candidate-node projection`]
       : []),
@@ -649,6 +678,9 @@ export async function auditCandidateIngestion(
       : []),
     ...(rawCapture.submittedIntakeCount > 0 && sourceProof.sourceSpanCount === 0
       ? ['Replay or repair profile ingestion so pasted text and extracted uploads create artifact_versions and source_spans.']
+      : []),
+    ...(rawCapture.documentProfileStorageKeyCount > 0 && sourceProof.documentProfileSourceSpanCount === 0
+      ? ['Replay or repair PDF/DOCX profile extraction so the current profile storage key has exact source spans.']
       : []),
     ...(rawCapture.submittedIntakeCount > sourceProof.candidateNodeExactSourceQuoteCount
       ? ['Replay or repair Talent Pool profile ingestion so each submitted profile creates an exact-source candidate node.']
@@ -787,6 +819,7 @@ function printHuman(report: CandidateIngestionAudit, databasePath: string): void
   console.log(`  intakes:               ${report.rawCapture.talentPoolIntakeCount}`);
   console.log(`  submitted:             ${report.rawCapture.submittedIntakeCount}`);
   console.log(`  storage keys:          ${report.rawCapture.profileStorageKeyCount}`);
+  console.log(`  document keys:         ${report.rawCapture.documentProfileStorageKeyCount}`);
   console.log(`  external refs:         ${report.rawCapture.externalProfileRefCount}`);
   console.log(`  phone intent:          ${report.rawCapture.phoneScreenerIntentCount}`);
   console.log('');
@@ -796,6 +829,7 @@ function printHuman(report: CandidateIngestionAudit, databasePath: string): void
   console.log(`  node quote gaps:       ${report.sourceProof.candidateNodeWithoutExactSourceCount}`);
   console.log(`  artifact versions:     ${report.sourceProof.artifactVersionCount}`);
   console.log(`  source spans:          ${report.sourceProof.sourceSpanCount}`);
+  console.log(`  document source spans: ${report.sourceProof.documentProfileSourceSpanCount}`);
   console.log(`  context source refs:   ${report.sourceProof.contextSourceRefCount}`);
   console.log('');
   console.log('Person projection:');

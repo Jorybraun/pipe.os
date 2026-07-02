@@ -352,4 +352,26 @@ describe('auditCandidateIngestion', () => {
     expect(audit.failures).toContain('1 submitted Talent Pool intake(s) lack exact-source candidate-node projection');
     expect(audit.nextActions).toContain('Replay or repair Talent Pool profile ingestion so each submitted profile creates an exact-source candidate node.');
   });
+
+  it('flags PDF/DOCX profile keys without extracted source spans', async () => {
+    sqlite = new Database(':memory:');
+    createSchema(sqlite);
+    seedSourceBackedTalentPoolCandidate(sqlite);
+    sqlite.prepare(
+      `UPDATE talent_pool_intakes
+          SET profile_r2_key = 'talent-intake/candidate-1/profile.pdf'
+        WHERE candidate_id = 'candidate-1'`,
+    ).run();
+
+    const audit = await auditCandidateIngestion(new SqliteQueryClient(sqlite), {
+      inviteToken: 'invite-token',
+      requireContextRecords: true,
+    });
+
+    expect(audit.status).toBe('not_ready');
+    expect(audit.rawCapture.documentProfileStorageKeyCount).toBe(1);
+    expect(audit.sourceProof.documentProfileSourceSpanCount).toBe(0);
+    expect(audit.failures).toContain('1 PDF/DOCX Talent Pool profile upload(s) lack extracted source spans for the current profile key');
+    expect(audit.nextActions).toContain('Replay or repair PDF/DOCX profile extraction so the current profile storage key has exact source spans.');
+  });
 });

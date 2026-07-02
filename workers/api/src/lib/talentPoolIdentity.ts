@@ -365,13 +365,18 @@ async function persistRolelessMessageArtifact(input: {
   workspacePersonId: string;
   candidateId: string;
   message: string;
+  storageKey?: string | null;
+  mediaType?: string | null;
   now: string;
 }): Promise<void> {
   const message = input.message;
   if (!message.trim()) return;
 
   const contentHash = await sha256Hex(message);
-  const baseKey = `candidate:${input.candidateId}:roleless-message:${contentHash}`;
+  const storageKeyHash = input.storageKey ? await sha256Hex(input.storageKey) : null;
+  const baseKey = storageKeyHash
+    ? `candidate:${input.candidateId}:roleless-message:${contentHash}:storage:${storageKeyHash}`
+    : `candidate:${input.candidateId}:roleless-message:${contentHash}`;
   const interaction = await input.store.upsertInteraction({
     ingestionKey: baseKey,
     workspacePersonId: input.workspacePersonId,
@@ -399,12 +404,14 @@ async function persistRolelessMessageArtifact(input: {
     artifactId: artifact.id,
     versionNumber: 1,
     contentHash,
-    mediaType: 'text/plain',
+    mediaType: input.mediaType ?? 'text/plain',
     contentText: message,
+    storageKey: input.storageKey ?? null,
     byteLength: new TextEncoder().encode(message).byteLength,
     metadata: {
       source: 'roleless_candidate_intake',
       roleless: true,
+      ...(input.storageKey ? { storageKey: input.storageKey } : {}),
     },
   });
   const span = await input.store.createSourceSpan({
@@ -565,10 +572,23 @@ export async function ensureRolelessTalentPoolIdentity(input: {
   name: string;
   email: string;
   message?: string;
+  messageStorageKey?: string | null;
+  messageMediaType?: string | null;
   operationalContext?: TalentPoolOperationalContextInput;
   now: string;
 }): Promise<{ personId: string; workspacePersonId: string }> {
-  const { db, userId, candidateId, name, email, message, operationalContext, now } = input;
+  const {
+    db,
+    userId,
+    candidateId,
+    name,
+    email,
+    message,
+    messageStorageKey,
+    messageMediaType,
+    operationalContext,
+    now,
+  } = input;
   const normalizedEmail = email.trim().toLowerCase();
   const store = new LivingContextStore(db);
   const existingPerson = await db.prepare(
@@ -600,6 +620,8 @@ export async function ensureRolelessTalentPoolIdentity(input: {
     workspacePersonId: workspacePerson.id,
     candidateId,
     message: message ?? '',
+    storageKey: messageStorageKey,
+    mediaType: messageMediaType,
     now,
   });
   await persistRolelessOperationalContext({

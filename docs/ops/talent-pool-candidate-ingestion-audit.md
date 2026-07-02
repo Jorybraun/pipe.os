@@ -50,12 +50,14 @@ and match signals still require source-backed resume decomposition.
 
 Uploaded profile files use content-hash storage keys, so replaying the same
 file reuses the same source artifact path. PDF/DOCX extraction still runs in
-background resume ingestion, but that projection now receives the roleless
-Talent Pool person identity and background decomposition runs with legacy
-candidate-node mirroring disabled, so it must not create `applications` or
-`person_roles` before a role-backed process exists. Parser-only resume nodes
-without exact source quotes are skipped instead of becoming positive candidate
-claims.
+background resume ingestion when foreground extraction is unavailable. When
+foreground text extraction succeeds, the profile text artifact version stores
+the uploaded profile storage key so source spans can be checked against the
+current file. Background projection receives the roleless Talent Pool person
+identity and background decomposition runs with legacy candidate-node mirroring
+disabled, so it must not create `applications` or `person_roles` before a
+role-backed process exists. Parser-only resume nodes without exact source
+quotes are skipped instead of becoming positive candidate claims.
 
 GitHub, LinkedIn, portfolio, phone-screener consent, phone number, timezone, and
 availability fields are stored as a normalized operational intake artifact with
@@ -67,9 +69,10 @@ profile content or derive skills/readiness.
 By default, the command fails on missing scoped candidates, submitted intakes
 without storage or ingestion state, missing active Talent Pool person
 projection, missing exact source proof, missing exact-source candidate-node
-projection, raw external refs or phone intent without operational context
-records, source-less positive claims, duplicate projected edges, candidate
-nodes with no exact source quote, or roleless application/person-role rows.
+projection, PDF/DOCX profile storage keys without extracted source spans, raw
+external refs or phone intent without operational context records, source-less
+positive claims, duplicate projected edges, candidate nodes with no exact
+source quote, or roleless application/person-role rows.
 
 Use `--require-context-records` when the proof must include claim-level person
 context records, not only roleless identity plus immutable source spans.

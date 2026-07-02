@@ -1,6 +1,11 @@
 import { Hono, type Context } from 'hono';
 import { z } from 'zod';
-import { buildRuleBasedParsedCV, parseResumeText, persistParsedCV } from '../lib/cvParser';
+import {
+  buildRuleBasedParsedCV,
+  extractTextFromResumeFile,
+  parseResumeText,
+  persistParsedCV,
+} from '../lib/cvParser';
 import { runCandidateIngestion } from '../lib/candidateDiscovery/orchestrate';
 import { processResumeFromR2 } from '../lib/enrichment/resumeIngestion';
 import {
@@ -511,7 +516,12 @@ async function persistIntake(
   candidate: CandidateRow,
   input: SubmitProfileInput,
   now: string,
-  options: { profileKey?: string; profileExcerpt?: string; sourceTextForPerson?: string } = {},
+  options: {
+    profileKey?: string;
+    profileExcerpt?: string;
+    sourceTextForPerson?: string;
+    sourceMediaTypeForPerson?: string;
+  } = {},
 ): Promise<RolelessTalentPoolIdentity | null> {
   const profileKey = options.profileKey ?? `talent-intake/${candidate.id}/${now.replace(/[:.]/g, '-')}.txt`;
   if (!options.profileKey) {
@@ -582,6 +592,10 @@ async function persistIntake(
       name: candidate.name ?? candidate.email,
       email: candidate.email,
       message: sourceTextForPerson,
+      messageStorageKey: options.profileKey && sourceTextForPerson ? profileKey : null,
+      messageMediaType: options.profileKey && sourceTextForPerson
+        ? options.sourceMediaTypeForPerson ?? 'text/plain'
+        : null,
       operationalContext: operationalContextFromInput(input),
       now,
     });
@@ -720,6 +734,22 @@ route.post('/upload-profile', async (c) => {
   if (contentType === 'text/plain' && resumeText.length === 0) {
     resumeText = new TextDecoder().decode(arrayBuffer).trim().slice(0, 50_000);
   }
+  if (
+    resumeText.length === 0
+    && (contentType === 'application/pdf'
+      || contentType === 'application/vnd.openxmlformats-officedocument.wordprocessingml.document')
+  ) {
+    try {
+      resumeText = (await extractTextFromResumeFile(arrayBuffer, contentType)).trim().slice(0, 50_000);
+    } catch (err) {
+      console.error('[talentPool/upload-profile] profile text extraction failed:', {
+        candidateId: candidate.id,
+        fileName: rawFileName,
+        contentType,
+        error: err instanceof Error ? err.message : String(err),
+      });
+    }
+  }
 
   const profileInput: SubmitProfileInput = {
     ...parsed.data,
@@ -738,6 +768,7 @@ route.post('/upload-profile', async (c) => {
     profileKey,
     profileExcerpt: resumeText.length >= 20 ? excerpt(resumeText) : `Uploaded ${rawFileName}`,
     sourceTextForPerson: resumeText.length >= 20 ? resumeText : undefined,
+    sourceMediaTypeForPerson: contentType,
   });
   queueProfileIngestion({
     c,
