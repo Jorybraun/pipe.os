@@ -16,6 +16,7 @@ import {
 import { runCandidateIngestion } from '../orchestrate';
 import { processResumeFromR2 } from '../../enrichment/resumeIngestion';
 import { ensureRolelessTalentPoolIdentity } from '../../talentPoolIdentity';
+import { extractTextFromResumeFile } from '../../cvParser';
 
 vi.mock('../orchestrate', async (importOriginal) => {
   const actual = await importOriginal<typeof import('../orchestrate')>();
@@ -30,6 +31,16 @@ vi.mock('../../enrichment/resumeIngestion', async (importOriginal) => {
   return {
     ...actual,
     processResumeFromR2: vi.fn(async () => ({ success: true, parsed: null })),
+  };
+});
+
+vi.mock('../../cvParser', async (importOriginal) => {
+  const actual = await importOriginal<typeof import('../../cvParser')>();
+  return {
+    ...actual,
+    extractTextFromResumeFile: vi.fn(async () =>
+      'PDF Candidate\nSenior TypeScript engineer shipping source-backed assessment systems.',
+    ),
   };
 });
 
@@ -88,12 +99,17 @@ function fakeD1(options: {
   } as unknown as FakeD1;
 }
 
-function fakeStorage(text: string | null): R2Bucket {
+function fakeStorage(
+  text: string | null,
+  contentType = 'text/plain;charset=utf-8',
+): R2Bucket {
   return {
     get: vi.fn(async () => text === null
       ? null
       : ({
           text: async () => text,
+          arrayBuffer: async () => new TextEncoder().encode(text).buffer,
+          httpMetadata: { contentType },
         })),
   } as unknown as R2Bucket;
 }
@@ -264,7 +280,7 @@ describe('stale Workers AI candidate-ingestion retry', () => {
 
   it('routes uploaded resume retries through the normal R2 resume processor', async () => {
     const db = fakeD1();
-    const env = buildEnv(db, fakeStorage('unused'));
+    const env = buildEnv(db, fakeStorage('unused', 'application/pdf'));
 
     await retryCandidateEvidenceIngestionFromSource(
       env,
@@ -313,16 +329,29 @@ describe('stale Workers AI candidate-ingestion retry', () => {
         phoneScreenerConsent: false,
       }),
     }));
-    expect(processResumeFromR2).toHaveBeenCalledWith({
+    expect(extractTextFromResumeFile).toHaveBeenCalledWith(
+      expect.any(ArrayBuffer),
+      'application/pdf',
+    );
+    expect(processResumeFromR2).toHaveBeenCalledWith(expect.objectContaining({
       env,
       db,
       candidateId: 'talent-pdf',
       r2Key: 'talent-intake/talent-pdf/resume.pdf',
+      preParsed: expect.objectContaining({
+        decompositionResult: null,
+        parsedCV: expect.objectContaining({
+          experiences: expect.any(Array),
+          educationBlocks: expect.any(Array),
+          credentials: expect.any(Array),
+          projects: expect.any(Array),
+        }),
+      }),
       livingContextIdentity: {
         personId: 'person-1',
         workspacePersonId: 'workspace-person-1',
       },
-    });
+    }));
   });
 
   it('queues and runs a candidate-scoped stale retry from the RPC path', async () => {

@@ -1,5 +1,10 @@
 import type { Env } from '../../types';
-import { buildRuleBasedParsedCV, persistParsedCV } from '../cvParser';
+import {
+  buildRuleBasedParsedCV,
+  extractTextFromResumeFile,
+  persistParsedCV,
+  type ParseResumeResult,
+} from '../cvParser';
 import { processResumeFromR2 } from '../enrichment/resumeIngestion';
 import type { ResumeLivingContextIdentity } from '../livingContext/resumeIngestion';
 import { ensureRolelessTalentPoolIdentity } from '../talentPoolIdentity';
@@ -31,6 +36,24 @@ function isTextSourceKey(resumeS3Key: string): boolean {
 
 function isTalentPoolSourceKey(resumeS3Key: string): boolean {
   return resumeS3Key.startsWith('talent-intake/');
+}
+
+function normalizeRetryDocumentContentType(contentType: string | null | undefined, resumeS3Key: string): string {
+  const normalized = (contentType ?? '').split(';')[0]?.trim().toLowerCase() ?? '';
+  if (normalized === 'application/pdf') return 'application/pdf';
+  if (normalized === 'application/vnd.openxmlformats-officedocument.wordprocessingml.document') {
+    return 'application/vnd.openxmlformats-officedocument.wordprocessingml.document';
+  }
+  if (resumeS3Key.toLowerCase().endsWith('.pdf')) return 'application/pdf';
+  if (resumeS3Key.toLowerCase().endsWith('.docx')) {
+    return 'application/vnd.openxmlformats-officedocument.wordprocessingml.document';
+  }
+  return normalized || 'application/octet-stream';
+}
+
+function isDocumentSourceKey(resumeS3Key: string): boolean {
+  const normalized = resumeS3Key.toLowerCase();
+  return normalized.endsWith('.pdf') || normalized.endsWith('.docx');
 }
 
 type RetryTrigger = 'candidate_rpc' | 'scheduled_worker';
@@ -351,6 +374,27 @@ export async function processTalentPoolRolelessApplicationRepairs(
   };
 }
 
+async function buildTalentPoolDocumentRetryPreParsed(
+  env: Env,
+  resumeS3Key: string,
+): Promise<ParseResumeResult | null> {
+  if (!isTalentPoolSourceKey(resumeS3Key) || !isDocumentSourceKey(resumeS3Key)) return null;
+  if (!env.STORAGE) return null;
+
+  const object = await env.STORAGE.get(resumeS3Key);
+  if (!object) return null;
+
+  const contentType = normalizeRetryDocumentContentType(object.httpMetadata?.contentType, resumeS3Key);
+  const arrayBuffer = await object.arrayBuffer();
+  const resumeText = (await extractTextFromResumeFile(arrayBuffer, contentType)).trim();
+  if (resumeText.length < 20) return null;
+
+  return {
+    parsedCV: buildRuleBasedParsedCV(resumeText),
+    decompositionResult: null,
+  };
+}
+
 export async function retryCandidateEvidenceIngestionFromSource(
   env: Env,
   candidateId: string,
@@ -411,11 +455,13 @@ export async function retryCandidateEvidenceIngestionFromSource(
     return;
   }
 
+  const preParsed = await buildTalentPoolDocumentRetryPreParsed(env, resumeS3Key);
   const result = await processResumeFromR2({
     env,
     db: env.DB,
     candidateId,
     r2Key: resumeS3Key,
+    ...(preParsed ? { preParsed } : {}),
     ...(isTalentPoolSourceKey(resumeS3Key) ? { livingContextIdentity: rolelessTalentPoolIdentity } : {}),
   });
   if (!result.success) {
