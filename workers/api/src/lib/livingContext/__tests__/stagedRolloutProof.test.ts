@@ -149,6 +149,9 @@ function expertCorpus(): EvaluationCorpus {
         challengeId,
         relevanceGrade: 'highly_relevant',
         eligibleChallengeIds: [challengeId],
+        explanation:
+          'The candidate has source-backed distributed queue ownership and the challenge packet '
+          + 'tests the same queue reliability, dead-letter, and source-backed PR review demands.',
         labelVersion: '1.0.0',
         labeledAt: '2026-06-28T11:00:00Z',
         labeledBy: 'expert-reviewer-senior',
@@ -496,6 +499,7 @@ describe('Staged rollout proof — criterion #8', () => {
     expect(label.labelProvenance!.rubricVersion).toBeTruthy();
     expect(label.labelProvenance!.reviewArtifactId).toBeTruthy();
     expect(label.labelProvenance!.locator).toBeTruthy();
+    expect(label.explanation).toContain('source-backed distributed queue ownership');
   });
 
   it('staged thresholds are strictly increasing across stages', () => {
