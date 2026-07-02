@@ -64,6 +64,7 @@ export interface ResumeDecompositionInput {
   env: Env;
   afterSourceBackedEvidence?: () => Promise<void>;
   maxNodeEmbeddings?: number;
+  skipPostDecompositionMaintenance?: boolean;
   /** @deprecated Vectorize upserts removed in Neo4j migration Phase 2. Kept for API compatibility. */
   vectorize?: VectorizeIndex;
 }
@@ -959,6 +960,9 @@ export async function decomposeResumeToGraph(
     result.nodesEmbedded = fallback.embedded;
     result.errors.push(...fallback.errors);
     result.embeddings = fallback.embeddings;
+    if (input.skipPostDecompositionMaintenance) {
+      return result;
+    }
 
     // Still update state and coverage
     try {
@@ -1041,6 +1045,10 @@ export async function decomposeResumeToGraph(
       console.warn('[resumeDecomposition] Embed failed for', insertedNode.node_type, ':', msg);
       result.errors.push(`Embed failed for ${insertedNode.node_type}: ${msg}`);
     }
+  }
+
+  if (input.skipPostDecompositionMaintenance) {
+    return result;
   }
 
   // Write to Neo4j

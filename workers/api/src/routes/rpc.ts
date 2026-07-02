@@ -2510,6 +2510,7 @@ async function handleIntakePayload(
             decompositionResult: null,
             afterSourceBackedEvidence: triggerAfterSourceBackedEvidence,
             maxNodeEmbeddings: 0,
+            skipPostDecompositionMaintenance: true,
           }),
           watchForSourceBackedEvidence(),
         ]);

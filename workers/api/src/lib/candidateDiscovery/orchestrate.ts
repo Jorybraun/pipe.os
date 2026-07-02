@@ -60,6 +60,7 @@ export interface IngestionInput {
   decompositionResult?: DecompositionResult | null;
   afterSourceBackedEvidence?: () => Promise<void>;
   maxNodeEmbeddings?: number;
+  skipPostDecompositionMaintenance?: boolean;
 }
 
 /**
@@ -123,6 +124,7 @@ export async function runCandidateIngestion(input: IngestionInput): Promise<void
         decompositionResult: input.decompositionResult,
         afterSourceBackedEvidence: triggerAfterSourceBackedEvidence,
         maxNodeEmbeddings: input.maxNodeEmbeddings,
+        skipPostDecompositionMaintenance: input.skipPostDecompositionMaintenance,
       }),
     );
     decompositionEmbeddings = decompResult.embeddings;
