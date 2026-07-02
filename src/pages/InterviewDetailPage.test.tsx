@@ -493,6 +493,8 @@ describe('InterviewDetailPage', () => {
 
     const progressPanel = screen.getByTestId('interview-assessment-progress');
     expect(progressPanel).toHaveTextContent('Workspace-captured commit');
+    expect(progressPanel).toHaveTextContent('Source-backed diff captured');
+    expect(progressPanel).toHaveTextContent('Stored in the assessment evidence trail: diff --git a/src/popover.ts b/src/popover.ts');
     expect(progressPanel).toHaveTextContent('Diff evidence');
     expect(screen.queryByRole('link', { name: 'Compare base to submitted commit' })).toBeNull();
   });

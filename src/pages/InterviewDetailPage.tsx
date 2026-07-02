@@ -3378,8 +3378,12 @@ export default function InterviewDetailPage(): JSX.Element {
   const assessmentWorkspaceSummary = workspaceSessionSummary(interview);
   const assessmentProgressSourceRefCounts = assessmentProgress?.sourceRefCounts ?? [];
   const assessmentEvidenceSnippets = assessmentProgress?.evidenceSnippets?.slice(0, 6) ?? [];
+  const assessmentSubmittedDiffSnippet = assessmentProgress?.evidenceSnippets?.find((snippet) =>
+    snippet.sourceRefType === 'code_diff'
+  ) ?? null;
   const assessmentRequiredProof = assessmentRequiredProofItems(assessmentProgress);
   const assessmentConfidenceSignals = assessmentConfidenceSignalItems(assessmentProgress);
+  const assessmentDiffSourceRefCount = assessmentSourceRefCount(assessmentProgress, 'code_diff');
   const assessmentCommitCompareUrl = githubCompareUrl({
     repositoryUrl: assessmentProgress?.commit?.repositoryUrl,
     forkRepositoryUrl: assessmentProgress?.commit?.forkRepositoryUrl,
@@ -3387,6 +3391,9 @@ export default function InterviewDetailPage(): JSX.Element {
     commitSha: assessmentProgress?.commit?.commitSha,
     commitUrl: assessmentProgress?.commit?.commitUrl,
   });
+  const assessmentWorkspaceDiffSummary = !assessmentCommitCompareUrl && assessmentDiffSourceRefCount > 0
+    ? compactEvidenceText(assessmentSubmittedDiffSnippet?.exactText ?? '', 220)
+    : null;
   const assessmentEvaluationClaims = assessmentProgress?.evaluation?.claims
     ?.filter((claim) => claim.sourceRefCount > 0)
     .slice(0, 3) ?? [];
@@ -4127,6 +4134,19 @@ export default function InterviewDetailPage(): JSX.Element {
                   <a href={assessmentCommitCompareUrl} target="_blank" rel="noopener noreferrer" style={INLINE_LINK}>
                     Compare base to submitted commit
                   </a>
+                </div>
+              )}
+              {!assessmentCommitCompareUrl && assessmentDiffSourceRefCount > 0 && (
+                <div style={{ ...EVIDENCE_ROW, alignItems: 'flex-start' }}>
+                  <span style={FIELD_LABEL}>Diff</span>
+                  <span style={{ ...FIELD_VALUE, lineHeight: 1.5 }}>
+                    <strong style={{ display: 'block', color: 'var(--pipe-text)' }}>
+                      Source-backed diff captured
+                    </strong>
+                    {assessmentWorkspaceDiffSummary
+                      ? `Stored in the assessment evidence trail: ${assessmentWorkspaceDiffSummary}`
+                      : 'Stored as immutable code_diff source evidence for this workspace-only commit.'}
+                  </span>
                 </div>
               )}
               {(assessmentProgress.commit?.integrity?.label ?? assessmentProgress.commit?.submissionSourceLabel) && (

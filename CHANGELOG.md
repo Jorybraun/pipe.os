@@ -27,6 +27,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Fixed — Open-source assessment progress
 
+- Recruiter assessment details now show an explicit source-backed diff row for workspace-only finalizer commits, so reviewers know the diff is captured even when no external GitHub compare link exists.
 - Recruiter assessment details no longer invent GitHub compare links for workspace-only finalizer commits; external compare links now require a real GitHub commit URL while source-backed diff evidence remains reviewable.
 - The app-dev open-source workspace smoke now verifies the recruiter detail projection exposes the evaluated, trusted, challenge-bound submitted commit plus reviewable source-backed diff, test, and commit evidence.
 - The app-dev open-source workspace smoke now asserts the stable `workspace_captured` and `bound_to_assigned_challenge` recruiter assessment contract names.
