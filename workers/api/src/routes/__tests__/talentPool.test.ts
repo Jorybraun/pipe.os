@@ -132,18 +132,30 @@ function createApp(): Hono<{ Bindings: Env; Variables: Variables }> {
   return app;
 }
 
-function seedCandidate(sqlite: BetterSqliteDb): void {
+interface SeedCandidateOptions {
+  id?: string;
+  ownerId?: string;
+  name?: string | null;
+  email?: string | null;
+  inviteToken?: string;
+}
+
+function seedCandidate(sqlite: BetterSqliteDb, options: SeedCandidateOptions = {}): void {
+  const candidateId = options.id ?? 'candidate-1';
+  const ownerId = options.ownerId ?? 'owner-1';
+  const name = options.name === undefined ? 'Jordan Talent' : options.name;
+  const email = options.email === undefined ? 'jordan@example.com' : options.email;
+  const inviteToken = options.inviteToken ?? 'invite-token';
   sqlite.prepare(
     `INSERT INTO candidates (
        id, owner_id, name, email, invite_token, status, pipeline_id,
        current_stage_id, resume_s3_key, phone_number, created_at, updated_at
      )
      VALUES (
-       'candidate-1', 'owner-1', 'Jordan Talent', 'jordan@example.com',
-       'invite-token', 'INVITED', NULL, NULL, NULL, NULL,
+       ?, ?, ?, ?, ?, 'INVITED', NULL, NULL, NULL, NULL,
        '2026-06-30T00:00:00.000Z', '2026-06-30T00:00:00.000Z'
      )`,
-  ).run();
+  ).bind(candidateId, ownerId, name, email, inviteToken).run();
 }
 
 describe('talent pool candidate RPC', () => {
@@ -374,6 +386,68 @@ describe('talent pool candidate RPC', () => {
     expect(sqlite.prepare('SELECT COUNT(*) AS count FROM context_record_source_refs').get()).toEqual({ count: 8 });
     expect(sqlite.prepare('SELECT COUNT(*) AS count FROM candidate_nodes').get()).toEqual({ count: 1 });
     expect(sqlite.prepare('SELECT COUNT(*) AS count FROM challenge_design_queue').get()).toEqual({ count: 1 });
+  });
+
+  it('projects email-less profile intake into the unified person graph idempotently', async () => {
+    sqlite = createSqlite();
+    seedCandidate(sqlite, { email: null });
+    const storage = createMemoryR2();
+    const app = createApp();
+    const payload = {
+      inviteToken: 'invite-token',
+      resumeText: 'Backend engineer with Cloudflare Workers, durable evidence ingestion, and source-backed graph projection experience.',
+      githubUrl: 'https://github.com/no-email-talent',
+    };
+
+    const res = await app.request('/rpc/talent/submit-profile', {
+      method: 'POST',
+      body: JSON.stringify(payload),
+      headers: { 'Content-Type': 'application/json' },
+    }, createEnv(sqlite, storage));
+
+    expect(res.status).toBe(200);
+    const body = await res.json() as TalentDashboardBody;
+    expect(body.status).toBe('CHALLENGE_PREPARING');
+    expect(body.candidateName).toBe('Jordan Talent');
+    expect(JSON.stringify(body)).not.toContain('candidate-1');
+
+    expect(sqlite.prepare('SELECT COUNT(*) AS count FROM people').get()).toEqual({ count: 1 });
+    expect(sqlite.prepare('SELECT COUNT(*) AS count FROM workspace_people').get()).toEqual({ count: 1 });
+    expect(sqlite.prepare('SELECT COUNT(*) AS count FROM applications').get()).toEqual({ count: 0 });
+    expect(sqlite.prepare('SELECT COUNT(*) AS count FROM person_roles').get()).toEqual({ count: 0 });
+    expect(sqlite.prepare(
+      `SELECT ingestion_key, display_name, primary_email FROM people LIMIT 1`,
+    ).get()).toEqual({
+      ingestion_key: 'candidate:candidate-1:roleless-person',
+      display_name: 'Jordan Talent',
+      primary_email: null,
+    });
+    expect(JSON.parse(sqlite.prepare(
+      `SELECT context_json FROM workspace_people LIMIT 1`,
+    ).get()!.context_json as string)).toMatchObject({
+      legacyCandidateIds: ['candidate-1'],
+      talentPool: {
+        status: 'active',
+        roleless: true,
+        candidateId: 'candidate-1',
+      },
+    });
+    expect(sqlite.prepare('SELECT COUNT(*) AS count FROM candidate_nodes').get()).toEqual({ count: 1 });
+    expect(sqlite.prepare('SELECT COUNT(*) AS count FROM context_records').get()).toEqual({ count: 2 });
+    expect(sqlite.prepare('SELECT COUNT(*) AS count FROM context_record_source_refs').get()).toEqual({ count: 2 });
+
+    const replay = await app.request('/rpc/talent/submit-profile', {
+      method: 'POST',
+      body: JSON.stringify(payload),
+      headers: { 'Content-Type': 'application/json' },
+    }, createEnv(sqlite, storage));
+
+    expect(replay.status).toBe(200);
+    expect(sqlite.prepare('SELECT COUNT(*) AS count FROM people').get()).toEqual({ count: 1 });
+    expect(sqlite.prepare('SELECT COUNT(*) AS count FROM workspace_people').get()).toEqual({ count: 1 });
+    expect(sqlite.prepare('SELECT COUNT(*) AS count FROM candidate_nodes').get()).toEqual({ count: 1 });
+    expect(sqlite.prepare('SELECT COUNT(*) AS count FROM context_records').get()).toEqual({ count: 2 });
+    expect(sqlite.prepare('SELECT COUNT(*) AS count FROM context_record_source_refs').get()).toEqual({ count: 2 });
   });
 
   it('accepts token-scoped profile file uploads before an assessment session exists', async () => {

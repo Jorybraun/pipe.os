@@ -271,14 +271,14 @@ async function repairRolelessTalentPoolOperationalContext(
   ).bind(candidateId).first<TalentPoolOperationalRetryRow>();
 
   const ownerId = row?.owner_id?.trim();
-  const email = row?.email?.trim();
-  if (!row || !ownerId || !email) return null;
+  const email = row?.email?.trim() || null;
+  if (!row || !ownerId) return null;
 
   return await ensureRolelessTalentPoolIdentity({
     db: env.DB,
     userId: ownerId,
     candidateId,
-    name: row.name?.trim() || email,
+    name: row.name?.trim() || email || 'Talent Pool Candidate',
     email,
     operationalContext: {
       githubUrl: row.github_url,

@@ -628,25 +628,22 @@ async function persistIntake(
 
   await ensureCandidateIngestionQueued(c.env.DB, candidate.id, input, now);
 
-  if (candidate.email?.trim()) {
-    const sourceTextForPerson = options.sourceTextForPerson ?? (!options.profileKey ? input.resumeText : undefined);
-    return await ensureRolelessTalentPoolIdentity({
-      db: c.env.DB,
-      userId: candidate.owner_id,
-      candidateId: candidate.id,
-      name: candidate.name ?? candidate.email,
-      email: candidate.email,
-      message: sourceTextForPerson,
-      messageStorageKey: options.profileKey && sourceTextForPerson ? profileKey : null,
-      messageMediaType: options.profileKey && sourceTextForPerson
-        ? options.sourceMediaTypeForPerson ?? 'text/plain'
-        : null,
-      operationalContext: operationalContextFromInput(input),
-      now,
-    });
-  }
-
-  return null;
+  const candidateEmail = candidate.email?.trim() || null;
+  const sourceTextForPerson = options.sourceTextForPerson ?? (!options.profileKey ? input.resumeText : undefined);
+  return await ensureRolelessTalentPoolIdentity({
+    db: c.env.DB,
+    userId: candidate.owner_id,
+    candidateId: candidate.id,
+    name: candidate.name?.trim() || candidateEmail || 'Talent Pool Candidate',
+    email: candidateEmail,
+    message: sourceTextForPerson,
+    messageStorageKey: options.profileKey && sourceTextForPerson ? profileKey : null,
+    messageMediaType: options.profileKey && sourceTextForPerson
+      ? options.sourceMediaTypeForPerson ?? 'text/plain'
+      : null,
+    operationalContext: operationalContextFromInput(input),
+    now,
+  });
 }
 
 async function ensureChallengeDesignQueueItem(

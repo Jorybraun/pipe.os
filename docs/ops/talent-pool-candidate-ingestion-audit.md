@@ -23,6 +23,12 @@ evidence-depth view must resolve the active `workspace_people` row from
 back to the legacy `applications` bridge. A read must not create application or
 candidate-role edges for a roleless Talent Pool member.
 
+Email is not required for the roleless Talent Pool person projection. When a
+candidate row has email, the projection keeps the email-keyed person merge; when
+email is absent, ingestion uses a deterministic candidate-keyed person identity
+so the candidate still appears in the unified person graph without creating a
+separate list or role-backed application.
+
 This follows the BRAIN hypergraph model: an intake run is a source-backed
 evidence bundle connecting candidate id, submitted profile artifact, extracted
 spans, ingestion state, person projection, and unresolved gaps. The person graph
@@ -148,6 +154,7 @@ npm run candidate-ingestion:audit -- --local --candidate-id <candidate_id>
 npm run candidate-ingestion:audit -- --local --email <email>
 npm run candidate-ingestion:audit -- --local --invite-token <token> --require-context-records
 npm run candidate-ingestion:audit -- --remote --invite-token <token>
+npm test -- src/routes/__tests__/talentPool.test.ts src/lib/candidateDiscovery/__tests__/staleWorkersAiRetry.test.ts
 npm test -- src/lib/candidateDiscovery/__tests__/candidateNodes.test.ts src/lib/candidateDiscovery/__tests__/resumeDecomposition.test.ts scripts/auditCandidateIngestion.test.ts
 npm test -- src/routes/cockpit/__tests__/contacts.rest.test.ts src/routes/cockpit/__tests__/candidates.rest.test.ts src/lib/livingContext/__tests__/readModel.test.ts
 ```
@@ -163,7 +170,7 @@ CLOUDFLARE_D1_DATABASE_ID=0abe92df-9296-46f5-9f9d-a1fb1bcd3be1 \
 
 Latest app-dev proof on 2026-07-02 used invite token
 `talent-audit-532e4287e-c1` after deploying Worker version
-`1e545d10-4188-4289-8bce-b093edd53886` and replaying candidate ingestion
+`a61c4d13-9c15-43f2-8dab-c8c7c8f4633f` and replaying candidate ingestion
 repairs against dev D1. The remote verifier returned `status: ready`,
 `candidateNodeCount: 74`, `candidateNodeExactSourceQuoteCount: 74`,
 `candidateNodeWithoutExactSourceCount: 0`,

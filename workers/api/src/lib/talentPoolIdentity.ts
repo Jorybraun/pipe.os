@@ -620,7 +620,7 @@ export async function ensureRolelessTalentPoolIdentity(input: {
   userId: string;
   candidateId: string;
   name: string;
-  email: string;
+  email?: string | null;
   message?: string;
   messageStorageKey?: string | null;
   messageMediaType?: string | null;
@@ -639,19 +639,33 @@ export async function ensureRolelessTalentPoolIdentity(input: {
     operationalContext,
     now,
   } = input;
-  const normalizedEmail = email.trim().toLowerCase();
+  const normalizedEmail = email?.trim().toLowerCase() || null;
+  const candidatePersonIngestionKey = `candidate:${candidateId}:roleless-person`;
   const store = new LivingContextStore(db);
-  const existingPerson = await db.prepare(
-    `SELECT id, ingestion_key
-       FROM people
-      WHERE primary_email = ?1
-      ORDER BY created_at
-      LIMIT 1`,
-  ).bind(normalizedEmail).first<{ id: string; ingestion_key: string }>();
+  const existingPersonByEmail = normalizedEmail
+    ? await db.prepare(
+        `SELECT id, ingestion_key
+           FROM people
+          WHERE primary_email = ?1
+          ORDER BY created_at
+          LIMIT 1`,
+      ).bind(normalizedEmail).first<{ id: string; ingestion_key: string }>()
+    : null;
+  const existingPersonByCandidate = existingPersonByEmail
+    ? null
+    : await db.prepare(
+        `SELECT id, ingestion_key
+           FROM people
+          WHERE ingestion_key = ?1
+          LIMIT 1`,
+      ).bind(candidatePersonIngestionKey).first<{ id: string; ingestion_key: string }>();
+  const personIngestionKey = existingPersonByEmail?.ingestion_key
+    ?? existingPersonByCandidate?.ingestion_key
+    ?? (normalizedEmail ? `email:${normalizedEmail}` : candidatePersonIngestionKey);
 
   const person = await store.upsertPerson({
-    ingestionKey: existingPerson?.ingestion_key ?? `email:${normalizedEmail}`,
-    displayName: name,
+    ingestionKey: personIngestionKey,
+    displayName: name.trim() || normalizedEmail || 'Talent Pool Candidate',
     primaryEmail: normalizedEmail,
     externalIds: { legacyCandidateId: candidateId },
   });

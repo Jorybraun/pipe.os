@@ -145,8 +145,8 @@ async function resolveRolelessTalentPoolResumeIdentity(input: {
 
   const userId = optionalTrimmed(row.owner_id);
   const email = optionalTrimmed(row.email);
-  if (!userId || !email) {
-    console.error('[resumeIngestion] roleless Talent Pool candidate is missing owner/email:', { candidateId });
+  if (!userId) {
+    console.error('[resumeIngestion] roleless Talent Pool candidate is missing owner:', { candidateId });
     return null;
   }
 
@@ -155,7 +155,7 @@ async function resolveRolelessTalentPoolResumeIdentity(input: {
       db,
       userId,
       candidateId,
-      name: optionalTrimmed(row.name) ?? email,
+      name: optionalTrimmed(row.name) ?? email ?? 'Talent Pool Candidate',
       email,
       message: optionalTrimmed(row.profile_text_excerpt) ?? undefined,
       messageStorageKey: optionalTrimmed(row.profile_r2_key) ?? r2Key,

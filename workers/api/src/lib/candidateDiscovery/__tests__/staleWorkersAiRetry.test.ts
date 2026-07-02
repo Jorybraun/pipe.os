@@ -379,6 +379,50 @@ describe('stale Workers AI candidate-ingestion retry', () => {
     }));
   });
 
+  it('passes candidate-keyed roleless identity into document retries when email is missing', async () => {
+    const db = fakeD1({
+      first: {
+        owner_id: 'owner-1',
+        name: 'No Email PDF Candidate',
+        email: null,
+        github_url: 'https://github.com/no-email-pdf-candidate',
+        linkedin_url: null,
+        portfolio_url: null,
+        phone_screener_consent: 0,
+        phone_number: null,
+        timezone: null,
+        availability: null,
+        submitted_at: '2026-07-02T19:37:48.430Z',
+        updated_at: '2026-07-02T19:37:48.430Z',
+      },
+    });
+    const env = buildEnv(db, fakeStorage('unused'));
+
+    await retryCandidateEvidenceIngestionFromSource(
+      env,
+      'talent-pdf-no-email',
+      'talent-intake/talent-pdf-no-email/resume.pdf',
+    );
+
+    expect(ensureRolelessTalentPoolIdentity).toHaveBeenCalledWith(expect.objectContaining({
+      candidateId: 'talent-pdf-no-email',
+      name: 'No Email PDF Candidate',
+      email: null,
+      operationalContext: expect.objectContaining({
+        githubUrl: 'https://github.com/no-email-pdf-candidate',
+        phoneScreenerConsent: false,
+      }),
+    }));
+    expect(processResumeFromR2).toHaveBeenCalledWith(expect.objectContaining({
+      candidateId: 'talent-pdf-no-email',
+      r2Key: 'talent-intake/talent-pdf-no-email/resume.pdf',
+      livingContextIdentity: {
+        personId: 'person-1',
+        workspacePersonId: 'workspace-person-1',
+      },
+    }));
+  });
+
   it('queues and runs a candidate-scoped stale retry from the RPC path', async () => {
     const db = fakeD1({
       first: {
