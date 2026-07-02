@@ -214,6 +214,12 @@ app-dev proxy when no API base override is set. If a caller explicitly targets
 `api-dev.hire-pipe.com`, the smoke omits dev HTTP Basic Auth for that API host
 while still using Basic Auth for app-dev candidate creation. This keeps the
 proof path close to candidate traffic but still allows direct API probes.
+After the ingestion audit reports ready, the smokes also verify recruiter reads
+unless `--skip-recruiter-reads` is passed: candidate living-context graph,
+unified People list, candidate source search, candidate evidence-depth, person
+source search, person evidence timeline, and person evidence-depth must all
+resolve the same canonical `workspace_people` projection and return the submitted
+exact source text.
 
 Latest app-dev proof on 2026-07-02 used invite token
 `talent-audit-532e4287e-c1` after deploying Worker version
@@ -273,14 +279,20 @@ through `/rpc/talent/upload-profile`, and polled the remote audit with
 Live app-dev DOCX upload proof on 2026-07-02 used
 `npm run smoke:talent-pool-docx-dev` against the same Worker version. The smoke
 created a standalone roleless Talent Pool candidate through app-dev, resolved
-invite token `d16057ff-fd7d-4548-a8e8-58f6b5b877cd`, submitted a multipart DOCX
+invite token `9bd66f0d-7839-48d5-93f8-a46365d35908`, submitted a multipart DOCX
 profile through the app-dev `/rpc/talent/upload-profile` proxy, and required the
 remote audit to see both the original upload receipt and extracted document
 source span. The audit returned `status: ready`,
-`candidateNodeExactSourceQuoteCount: 56`,
+`candidateNodeExactSourceQuoteCount: 65`,
 `contextSourceRefCount: 9`, `documentProfileSourceSpanCount: 1`,
 `profileUploadArtifactVersionCount: 1`, `talentPoolWorkspacePersonCount: 1`,
 `sourceLessPositiveClaimCount: 0`, and `duplicateProjectedEdgeCount: 0`.
+The same smoke proved recruiter reads against
+`person_a33d00a269b443de2ffd1025474393ac` /
+`workspace_person_7245884061f14c1bcbb109e92699e849`: unified People type was
+`candidate`, candidate and person source search each returned the exact DOCX
+source text, the person timeline returned 10 entries, and person evidence-depth
+reported 9 source spans and 6 context records.
 
 Remote source-span sampling proved operational context refs preserve exact
 field text:

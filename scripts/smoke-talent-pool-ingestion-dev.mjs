@@ -78,6 +78,7 @@ const databaseId = (
 ).trim();
 
 const failOnNextActions = booleanArgument('--fail-on-next-actions');
+const verifyRecruiterReads = !booleanArgument('--skip-recruiter-reads');
 const slug = new Date().toISOString().replace(/[^0-9]/g, '').slice(0, 14);
 const runId = `${slug}-${randomUUID().slice(0, 8)}`;
 const candidateName = argumentValue('--name') ?? `Talent Smoke ${runId}`;
@@ -255,6 +256,39 @@ async function requestMultipart(baseUrl, pathname, formData) {
   return body;
 }
 
+function assertString(value, label) {
+  if (typeof value !== 'string' || value.length === 0) {
+    throw new Error(`Expected ${label} to be a non-empty string.`);
+  }
+  return value;
+}
+
+function assertAtLeast(value, minimum, label) {
+  if (typeof value !== 'number' || value < minimum) {
+    throw new Error(`Expected ${label} to be at least ${minimum}, got ${value}.`);
+  }
+}
+
+function assertCandidateDashboardSafe(body, candidateId, label) {
+  const encoded = JSON.stringify(body);
+  const forbiddenTerms = [
+    candidateId,
+    'workspacePersonId',
+    'workspace_person',
+    'personId',
+    'sourceSpanId',
+    'artifactVersionId',
+    'profile_r2_key',
+    'resume_s3_key',
+    'applicationId',
+    'pipelineId',
+  ].filter((term) => term.length > 0);
+  const leakedTerm = forbiddenTerms.find((term) => encoded.includes(term));
+  if (leakedTerm) {
+    throw new Error(`${label} candidate dashboard exposed recruiter/internal evidence field "${leakedTerm}".`);
+  }
+}
+
 function extractJson(text) {
   const start = text.indexOf('{');
   const end = text.lastIndexOf('}');
@@ -339,6 +373,111 @@ async function pollAudit(inviteToken) {
   throw new Error(`Audit did not become ready:\n${JSON.stringify(lastReport, null, 2)}`);
 }
 
+function recruiterReadNeedle() {
+  if (smokeMode === 'upload-docx') return 'DOCX text is intentionally unique';
+  return 'source spans can be audited back';
+}
+
+async function verifyRecruiterEvidenceReads(candidateId) {
+  if (!verifyRecruiterReads) return null;
+
+  const needle = recruiterReadNeedle();
+  const encodedCandidateId = encodeURIComponent(candidateId);
+  const candidateGraph = await requestJson(
+    recruiterApiBase,
+    `/api/v1/candidates/${encodedCandidateId}/living-context`,
+  );
+  const person = candidateGraph?.livingContext?.person;
+  const personId = assertString(person?.personId, 'candidate living-context personId');
+  const workspacePersonId = assertString(
+    person?.workspacePersonId,
+    'candidate living-context workspacePersonId',
+  );
+  if (person?.applicationId !== null) {
+    throw new Error(`Expected roleless Talent Pool candidate to read without applicationId, got ${person?.applicationId}.`);
+  }
+  if (!JSON.stringify(candidateGraph).includes(needle)) {
+    throw new Error(`Candidate living-context graph did not include submitted source text "${needle}".`);
+  }
+
+  const contactsList = await requestJson(recruiterApiBase, '/api/v1/contacts?limit=200');
+  const unifiedPerson = Array.isArray(contactsList?.contacts)
+    ? contactsList.contacts.find((contact) => contact?.id === personId || contact?.email === candidateEmail)
+    : null;
+  if (!unifiedPerson) {
+    throw new Error('Unified People list did not include the ingested Talent Pool person.');
+  }
+  if (unifiedPerson.type !== 'candidate') {
+    throw new Error(`Unified People list returned type "${unifiedPerson.type}" instead of candidate.`);
+  }
+
+  const candidateSearch = await requestJson(
+    recruiterApiBase,
+    `/api/v1/candidates/${encodedCandidateId}/living-context/search?q=${encodeURIComponent(needle)}`,
+  );
+  if (candidateSearch?.personId !== workspacePersonId) {
+    throw new Error('Candidate source search did not resolve the canonical workspace person.');
+  }
+  if (!Array.isArray(candidateSearch?.hits) || !candidateSearch.hits.some((hit) => String(hit?.exactText ?? '').includes(needle))) {
+    throw new Error('Candidate source search did not return the submitted exact source text.');
+  }
+
+  const candidateEvidenceDepth = await requestJson(
+    recruiterApiBase,
+    `/api/v1/candidates/${encodedCandidateId}/living-context/evidence-depth`,
+  );
+  if (candidateEvidenceDepth?.workspacePersonId !== workspacePersonId) {
+    throw new Error('Candidate evidence-depth did not resolve the canonical workspace person.');
+  }
+  assertAtLeast(candidateEvidenceDepth?.totalSourceSpans, 1, 'candidate evidence-depth source spans');
+  assertAtLeast(candidateEvidenceDepth?.totalContextRecords, 1, 'candidate evidence-depth context records');
+
+  const encodedPersonId = encodeURIComponent(personId);
+  const personSearch = await requestJson(
+    recruiterApiBase,
+    `/api/v1/contacts/${encodedPersonId}/living-context/search?q=${encodeURIComponent(needle)}`,
+  );
+  if (personSearch?.personId !== workspacePersonId) {
+    throw new Error('Person source search did not resolve the canonical workspace person.');
+  }
+  if (!Array.isArray(personSearch?.hits) || !personSearch.hits.some((hit) => String(hit?.exactText ?? '').includes(needle))) {
+    throw new Error('Person source search did not return the submitted exact source text.');
+  }
+
+  const personTimeline = await requestJson(
+    recruiterApiBase,
+    `/api/v1/contacts/${encodedPersonId}/living-context/timeline`,
+  );
+  if (personTimeline?.workspacePersonId !== workspacePersonId) {
+    throw new Error('Person evidence timeline did not resolve the canonical workspace person.');
+  }
+  assertAtLeast(personTimeline?.totalEntries, 1, 'person evidence timeline entries');
+  if (!JSON.stringify(personTimeline?.entries ?? []).includes('Candidate submitted Talent Pool profile evidence.')) {
+    throw new Error('Person evidence timeline did not include the Talent Pool profile evidence event.');
+  }
+
+  const personEvidenceDepth = await requestJson(
+    recruiterApiBase,
+    `/api/v1/contacts/${encodedPersonId}/living-context/evidence-depth`,
+  );
+  if (personEvidenceDepth?.workspacePersonId !== workspacePersonId) {
+    throw new Error('Person evidence-depth did not resolve the canonical workspace person.');
+  }
+  assertAtLeast(personEvidenceDepth?.totalSourceSpans, 1, 'person evidence-depth source spans');
+  assertAtLeast(personEvidenceDepth?.totalContextRecords, 1, 'person evidence-depth context records');
+
+  return {
+    personId,
+    workspacePersonId,
+    unifiedPeopleType: unifiedPerson.type,
+    candidateSearchHits: candidateSearch.hits.length,
+    personSearchHits: personSearch.hits.length,
+    timelineEntries: personTimeline.totalEntries,
+    personEvidenceSourceSpans: personEvidenceDepth.totalSourceSpans,
+    personEvidenceContextRecords: personEvidenceDepth.totalContextRecords,
+  };
+}
+
 async function main() {
   assertConfigured();
   console.log('[talent-smoke] creating standalone Talent Pool candidate', {
@@ -362,6 +501,7 @@ async function main() {
   if (typeof inviteToken !== 'string' || inviteToken.length === 0) {
     throw new Error(`Candidate creation did not return inviteToken:\n${JSON.stringify(created, null, 2)}`);
   }
+  const candidateId = assertString(created?.candidate?.id, 'created candidate id');
 
   const initialDashboard = await requestJson(rpcBase, '/rpc/talent/resolve-token', {
     method: 'POST',
@@ -370,6 +510,7 @@ async function main() {
   if (initialDashboard?.status !== 'PROFILE_NEEDED') {
     throw new Error(`Expected PROFILE_NEEDED before submit, got ${initialDashboard?.status}`);
   }
+  assertCandidateDashboardSafe(initialDashboard, candidateId, 'resolve-token');
 
   const submittedDashboard = smokeMode === 'upload-text'
     || smokeMode === 'upload-docx'
@@ -411,8 +552,10 @@ async function main() {
   if (Array.isArray(submittedDashboard?.readyChallenges) && submittedDashboard.readyChallenges.length > 0) {
     throw new Error('Talent Pool smoke unexpectedly exposed ready challenges immediately after profile submit.');
   }
+  assertCandidateDashboardSafe(submittedDashboard, candidateId, 'submit-profile');
 
   const report = await pollAudit(inviteToken);
+  const recruiterReadProof = await verifyRecruiterEvidenceReads(candidateId);
   console.log('[talent-smoke] ready', {
     inviteToken,
     checkedAt: report.checkedAt,
@@ -423,6 +566,7 @@ async function main() {
     documentProfileSourceSpanCount: report.sourceProof.documentProfileSourceSpanCount,
     profileUploadArtifactVersionCount: report.sourceProof.profileUploadArtifactVersionCount,
     talentPoolWorkspacePersonCount: report.personProjection.talentPoolWorkspacePersonCount,
+    recruiterReadProof,
     nextActions: report.nextActions,
   });
 }
