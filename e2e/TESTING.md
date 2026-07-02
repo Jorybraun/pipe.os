@@ -279,7 +279,24 @@ Latest deployed app-dev proof: after deploying dev API version `043f0c50-1552-41
 
 The same deployed API/app pair also passed the roleless full-submit auto-match command for interview `43210dfe-d589-4229-841f-f9b9c9b9fe5e`, review session `ea8a07c9-9631-4ace-8f67-8f1cbdfb8f41`, and judge replay example `code_review_judge_example_ee8b8947c9838f1e25bd80e8714a1c25`, selecting `mui/base-ui#973`, returning `MATCHED`, passing the source-backed quality gate, measuring positive contrast separation against the next comparable challenge (`1/2`, selected challenge ahead by 2%), completing recruiter/profile results, and preserving 4 recruiter-visible evidence hyperedges.
 
-The deployed manual override full-submit smoke passed for interview `c89541cb-3b52-4eb1-9652-6f4f5f9e4bef`, review session `2e007d00-5f99-4dd4-8d0c-b959b5d421ea`, and judge replay example `code_review_judge_example_647b6624f16a85fb8314808f879fe26b`, selecting `mui/base-ui#973`, rendering the recruiter-selected source-backed match reason without claiming CV fit, completing candidate browser comments and AI developer pushback, and completing recruiter/profile results with validator `PASSED`. Evidence hyperedges are expected to be `0` in this lane because manual override validates the selected PR's source-backed reviewability rather than inferring a candidate-to-repo match.
+Latest deployed app-dev proof on 2026-07-02 after manual dev deploy API
+`b3030783-70bd-4db9-a210-04e5201063d0`, app
+`9dddf1fb-cb33-4da5-a5f4-f95676296417`, and room
+`483a654c-d756-40c5-a93a-256ce7b28710`: blocked standalone CODE_REVIEW
+interview `3dd276e9-4b57-4561-b953-8eb0a26d1936` returned
+`PROFILE_RECEIVED` and `candidate-intake-queued` with recruiter detail ready;
+manual ready-assignment interview `28051c6a-c5fd-450d-9ffe-16bd0df636e0`
+selected `mui/base-ui#973`, returned `MATCHED`, `PASSED`, and `USABLE`; manual
+full-submit interview `85364aa4-6418-41d3-a875-45917b2bd84c` persisted review
+session `12e417f9-0c06-4733-8011-69fe0730c1ff`, score `66`, band `adequate`,
+and judge replay example `code_review_judge_example_5e08463f6737e7d5d8e0672b81590518`.
+Role-backed auto-match interview `8ba42bd7-edd0-43ff-bf5b-fa62938a6c11`
+created role context `dbdfa6793478070d63a7432603d7973f`, selected
+`mui/base-ui#973`, returned `MATCHED`, `PASSED`, `STRONG`, and measured positive
+contrast separation (`1/2`, selected challenge ahead by 2%). Evidence hyperedges
+are expected to be `0` only in manual override lanes because manual override
+validates the selected PR's source-backed reviewability rather than inferring a
+candidate-to-repo match.
 
 Use `npm run smoke:open-source-workspace-dev` for the real open-source bug-fix
 workspace path. It creates an `OPEN_SOURCE_BUG_FIX` invite, launches the
@@ -287,12 +304,16 @@ controlled room workspace, verifies the bridge, confirms unchanged work is
 blocked, creates a real commit inside the workspace, finalizes the live
 workspace `HEAD`, requires `git_commit`, `code_diff`, `terminal_command`, and
 `test_run` source refs, then starts source-backed evaluation from the recruiter
-API. Latest deployed proof on 2026-07-01 passed for interview
-`294e05c3-999d-40a7-9a17-04c508ba98b2`, repo `mui/base-ui`, workspace commit
-`55f7825e6dd74ee9e5fcb2d698238142fb66ef37`, bridge revision
+API. Latest deployed proof on 2026-07-02 passed for interview
+`1228ff02-888c-48d3-9755-a458ec35e3cb`, repo `mui/base-ui`, workspace commit
+`b23fc9b740b53f90f5914e57a74769a5bdee7272`, bridge revision
 `2026-06-30-assessment-branch-v1`, and evaluation report
-`assessment_evaluation_report_155c83055a115a1dde5a030cc14a428f` with
-recommendation `strong_evidence_to_advance`.
+`assessment_evaluation_report_392d751ebaadcbc7cd30aa80a0f7fa23` with
+recommendation `strong_evidence_to_advance`. The recruiter projection was
+reviewable from source-backed `git_commit`, `code_diff`, `test_run`,
+`terminal_command`, and file-observation refs; `recruiterCompareUrl` was
+correctly `null` because workspace-only finalizer commits are not pushed to
+GitHub by default.
 
 Latest standalone `/assess` blocked-boundary proof: after deploying app-dev
 version `3413dea3-2899-40ac-afc0-8163e3a899ff`, the CODE_REVIEW matrix passed
