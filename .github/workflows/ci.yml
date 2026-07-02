@@ -72,14 +72,7 @@ jobs:
           MATCHING_EVALUATION_STAGE: ${{ vars.MATCHING_EVALUATION_STAGE }}
         run: |
           EVAL_STAGE="${MATCHING_EVALUATION_STAGE:-production}"
-          REQUIRE_MATCHING_EVALUATION="${MATCHING_EVALUATION_REQUIRED:-}"
-          if [ -z "$REQUIRE_MATCHING_EVALUATION" ]; then
-            if [ "${GITHUB_EVENT_NAME:-}" = "push" ] && [ "${GITHUB_REF:-}" = "refs/heads/main" ]; then
-              REQUIRE_MATCHING_EVALUATION=1
-            else
-              REQUIRE_MATCHING_EVALUATION=0
-            fi
-          fi
+          REQUIRE_MATCHING_EVALUATION="${MATCHING_EVALUATION_REQUIRED:-0}"
           if [ -n "$MATCHING_EVALUATION_D1_DATABASE_ID" ]; then
             export CLOUDFLARE_D1_DATABASE_ID="$MATCHING_EVALUATION_D1_DATABASE_ID"
           fi

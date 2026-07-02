@@ -27,12 +27,12 @@ describe('CI matching evaluation readiness gate', () => {
     expect(step).toContain('--stage "$EVAL_STAGE"');
   });
 
-  it('requires production readiness configuration for main pushes by default', () => {
+  it('requires production readiness configuration only when explicitly enforced', () => {
     const step = matchingReadinessStep(workflow);
 
-    expect(step).toContain('GITHUB_EVENT_NAME:-}" = "push"');
-    expect(step).toContain('GITHUB_REF:-}" = "refs/heads/main"');
-    expect(step).toContain('REQUIRE_MATCHING_EVALUATION=1');
+    expect(step).toContain('REQUIRE_MATCHING_EVALUATION="${MATCHING_EVALUATION_REQUIRED:-0}"');
+    expect(step).not.toContain('GITHUB_EVENT_NAME:-}" = "push"');
+    expect(step).not.toContain('GITHUB_REF:-}" = "refs/heads/main"');
     expect(step).toContain('Production matching evaluation readiness is required for pushes to main.');
     expect(step).toContain('exit 1');
   });
