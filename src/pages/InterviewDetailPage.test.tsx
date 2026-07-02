@@ -2709,6 +2709,7 @@ describe('InterviewDetailPage', () => {
     expect(linkPanel).toHaveTextContent('The candidate can use this link for profile intake only; PIPE will show a profile-received handoff until a source-backed PR is assigned.');
     expect(linkPanel).toHaveTextContent('CANDIDATE ASSESSMENT URL');
     expect(screen.getByDisplayValue(deliveredUrl)).toBeTruthy();
+    expect(screen.getByTestId('interview-assessment-link-input')).toHaveProperty('value', deliveredUrl);
 
     fireEvent.click(screen.getByText('COPY CANDIDATE LINK'));
     await flushAsyncUpdates();

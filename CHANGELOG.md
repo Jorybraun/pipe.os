@@ -12,6 +12,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - Recruiter open-source assessment invites now show a live challenge-packet checklist for repo, exact base commit, task, success criteria, and expected evidence before creation, making manual tasks visibly concrete instead of a loose repo dump.
 - Added `npm run smoke:open-source-workspace-dev` as the explicit dev proof command for the real open-source bug-fix workspace path, covering room launch, source-backed workspace finalization, commit evidence, and evaluator readiness.
 - Added explicit app-dev deployment scripts for `pipe-api-dev`, `pipe-app-dev`, and the assessment room, including an explicit room-dev Wrangler target, so manual assessment fixes ship to the same dev surfaces used by smoke tests.
+- Added `npm run assessment-evidence:audit` plus the assessment evidence ingestion audit contract, reporting captured, projected, missing, duplicated, source-less-positive, and unprojected raw assessment evidence across the required ingestion families.
 
 ### Added — CODE_REVIEW assessment runtime
 
@@ -29,6 +30,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Fixed — Open-source assessment progress
 
+- Recruiter detail smoke tests can now optionally open the delivered candidate assessment/workspace link from the detail page, proving disposable app-dev invites hand off to the candidate CODE_REVIEW or workspace surface instead of only verifying recruiter-side projections.
 - Conservative fallback evaluator reports now preserve source-backed AI-use observability and candidate-approved upstream PR tracking, so open-source assessments can show whether AI help and upstream contribution evidence were actually captured.
 - Assessment progress commit projections now include source-backed upstream PR URL and consent flags, so recruiter readouts can distinguish local workspace-only commits from candidate-approved upstream PRs.
 - Candidate RPC assessment progress now returns the same upstream PR tracking fields as room and recruiter progress APIs.

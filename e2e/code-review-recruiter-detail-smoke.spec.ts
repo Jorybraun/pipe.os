@@ -1,4 +1,4 @@
-import { expect, test, type Locator, type Page } from '@playwright/test';
+import { expect, test, type Browser, type Locator, type Page } from '@playwright/test';
 
 function envText(primaryName: string, legacyName: string, fallback = ''): string {
   return (process.env[primaryName] ?? process.env[legacyName] ?? fallback).trim();
@@ -54,6 +54,13 @@ const EXPECT_PERSON_PROFILE_RELATED_BOUNDARY = envFlag(
   'ASSESSMENT_RECRUITER_EXPECT_PERSON_PROFILE_RELATED_BOUNDARY',
   'CODE_REVIEW_RECRUITER_EXPECT_PERSON_PROFILE_RELATED_BOUNDARY',
 );
+const EXPECT_CANDIDATE_LINK = envFlag(
+  'ASSESSMENT_RECRUITER_EXPECT_CANDIDATE_LINK',
+  'CODE_REVIEW_RECRUITER_EXPECT_CANDIDATE_LINK',
+);
+const EXPECTED_CANDIDATE_LINK_KIND = (
+  envText('ASSESSMENT_RECRUITER_EXPECT_CANDIDATE_LINK_KIND', 'CODE_REVIEW_RECRUITER_EXPECT_CANDIDATE_LINK_KIND')
+).toLowerCase();
 const RELATED_BOUNDARY_REPO_URL = envText(
   'ASSESSMENT_RECRUITER_RELATED_BOUNDARY_REPO_URL',
   'CODE_REVIEW_RECRUITER_RELATED_BOUNDARY_REPO_URL',
@@ -62,6 +69,25 @@ const RELATED_BOUNDARY_PR_NUMBER = envText(
   'ASSESSMENT_RECRUITER_RELATED_BOUNDARY_PR_NUMBER',
   'CODE_REVIEW_RECRUITER_RELATED_BOUNDARY_PR_NUMBER',
 );
+const APP_BASIC_USER = process.env.PIPE_APP_DEV_BASIC_AUTH_USER
+  ?? process.env.APP_DEV_BASIC_AUTH_USER
+  ?? process.env.PIPE_DEV_BASIC_AUTH_USER
+  ?? process.env.DEV_BASIC_AUTH_USER
+  ?? '';
+const APP_BASIC_PASSWORD = process.env.PIPE_APP_DEV_BASIC_AUTH_PASSWORD
+  ?? process.env.APP_DEV_BASIC_AUTH_PASSWORD
+  ?? process.env.PIPE_DEV_BASIC_AUTH_PASSWORD
+  ?? process.env.DEV_BASIC_AUTH_PASSWORD
+  ?? '';
+const ROOM_BASIC_USER = process.env.PIPE_ROOM_DEV_BASIC_AUTH_USER
+  ?? process.env.ROOM_DEV_BASIC_AUTH_USER
+  ?? process.env.VIDEO_ROOM_DEV_AUTH_USER
+  ?? '';
+const ROOM_BASIC_PASSWORD = process.env.PIPE_ROOM_DEV_BASIC_AUTH_PASSWORD
+  ?? process.env.ROOM_DEV_BASIC_AUTH_PASSWORD
+  ?? process.env.VIDEO_ROOM_DEV_AUTH_PASSWORD
+  ?? '';
+const VIDEO_ROOM_BASE = process.env.VIDEO_ROOM_BASE ?? 'http://localhost:5175';
 
 function expectedRepoLabel(repoUrl: string): string | null {
   if (!repoUrl) return null;
@@ -76,6 +102,150 @@ async function expectDetailsClosed(details: Locator): Promise<void> {
   await expect(details).toBeVisible();
   const isOpen = await details.evaluate((node) => (node as HTMLDetailsElement).open);
   expect(isOpen).toBe(false);
+}
+
+function urlOrigin(value: string): string | null {
+  try {
+    return new URL(value).origin;
+  } catch {
+    return null;
+  }
+}
+
+function isLocalUrl(url: URL): boolean {
+  return url.hostname === 'localhost' || url.hostname === '127.0.0.1';
+}
+
+function candidateLinkKind(rawUrl: string): 'assessment' | 'workspace' {
+  const parsed = new URL(rawUrl);
+  if (/\/room\//.test(parsed.pathname)) return 'workspace';
+  if (urlOrigin(VIDEO_ROOM_BASE) === parsed.origin) return 'workspace';
+  return 'assessment';
+}
+
+function candidateLinkCredentials(rawUrl: string): { username: string; password: string } | undefined {
+  const parsed = new URL(rawUrl);
+  if (parsed.username || parsed.password) {
+    return {
+      username: decodeURIComponent(parsed.username),
+      password: decodeURIComponent(parsed.password),
+    };
+  }
+  if (isLocalUrl(parsed)) return undefined;
+  if (candidateLinkKind(rawUrl) === 'workspace') {
+    return ROOM_BASIC_USER && ROOM_BASIC_PASSWORD
+      ? { username: ROOM_BASIC_USER, password: ROOM_BASIC_PASSWORD }
+      : undefined;
+  }
+  return APP_BASIC_USER && APP_BASIC_PASSWORD
+    ? { username: APP_BASIC_USER, password: APP_BASIC_PASSWORD }
+    : undefined;
+}
+
+function candidateUrlWithoutCredentials(rawUrl: string): string {
+  const parsed = new URL(rawUrl);
+  parsed.username = '';
+  parsed.password = '';
+  parsed.searchParams.set('candidateLinkSmoke', String(Date.now()));
+  return parsed.toString();
+}
+
+async function startCandidateAssessmentIfPresent(page: Page): Promise<void> {
+  const startButtons = page.getByRole('button', { name: 'START_INTERVIEW' });
+  await startButtons.first().waitFor({ state: 'visible', timeout: 8_000 }).catch(() => undefined);
+  for (let attempt = 0; attempt < 3; attempt += 1) {
+    const count = await startButtons.count();
+    let clicked = false;
+    for (let index = 0; index < count; index += 1) {
+      const button = startButtons.nth(index);
+      if (!(await button.isVisible())) continue;
+      await button.click();
+      clicked = true;
+      break;
+    }
+    if (!clicked) return;
+    const advanced = await Promise.race([
+      page.getByTestId('code-review-challenge').waitFor({ state: 'visible', timeout: 6_000 }).then(() => true).catch(() => false),
+      page.getByTestId('assessment-submitted').waitFor({ state: 'visible', timeout: 6_000 }).then(() => true).catch(() => false),
+    ]);
+    if (advanced) return;
+  }
+}
+
+async function enterWorkspaceRoomIfNeeded(page: Page): Promise<void> {
+  const taskBrief = page.getByTestId('assessment-task-brief');
+  const enterWithoutDevices = page.getByRole('button', { name: 'Enter without mic/camera' });
+  const readySurface = await Promise.race([
+    taskBrief.waitFor({ state: 'attached', timeout: 45_000 }).then(() => 'task').catch(() => null),
+    enterWithoutDevices.waitFor({ state: 'visible', timeout: 45_000 }).then(() => 'prejoin').catch(() => null),
+  ]);
+  if (readySurface === 'task') return;
+  if (readySurface === 'prejoin') {
+    await enterWithoutDevices.click();
+    return;
+  }
+  const enterRoom = page.getByRole('button', { name: /enter room|join room|join/i });
+  if (await enterRoom.isVisible({ timeout: 2_000 }).catch(() => false)) {
+    await enterRoom.click();
+  }
+}
+
+async function expectCandidateLinkHandoff(page: Page, browser: Browser): Promise<void> {
+  if (!EXPECT_CANDIDATE_LINK) return;
+
+  const linkInput = page.getByTestId('interview-assessment-link-input');
+  await expect(linkInput).toBeVisible();
+  const rawUrl = (await linkInput.inputValue()).trim();
+  expect(rawUrl).toMatch(/^https?:\/\//);
+  const kind = candidateLinkKind(rawUrl);
+  if (EXPECTED_CANDIDATE_LINK_KIND) {
+    expect(kind).toBe(EXPECTED_CANDIDATE_LINK_KIND);
+  }
+
+  const credentials = candidateLinkCredentials(rawUrl);
+  const context = await browser.newContext({
+    ...(credentials ? { httpCredentials: credentials } : {}),
+    storageState: { cookies: [], origins: [] },
+    viewport: { width: 1440, height: 1000 },
+  });
+
+  try {
+    const candidatePage = await context.newPage();
+    await candidatePage.goto(candidateUrlWithoutCredentials(rawUrl), {
+      waitUntil: 'domcontentloaded',
+      timeout: 60_000,
+    });
+    await expect(candidatePage.locator('body')).not.toContainText('An unexpected error occurred');
+    await expect(candidatePage.locator('body')).not.toContainText('Interview not found');
+
+    if (kind === 'workspace') {
+      await enterWorkspaceRoomIfNeeded(candidatePage);
+      const assessmentSurface = candidatePage
+        .getByTestId('assessment-task-brief')
+        .or(candidatePage.getByTestId('commit-submission-readiness'))
+        .first();
+      await expect(assessmentSurface).toBeVisible({ timeout: 60_000 });
+      await expect(candidatePage.locator('body')).toContainText(/Assessment task|Submit Work|Open-source implementation/i);
+      await expect(candidatePage.locator('body')).not.toContainText(/Workspace failed|container is not running/i);
+      return;
+    }
+
+    await startCandidateAssessmentIfPresent(candidatePage);
+    if (EXPECTED_OUTCOME === 'blocked') {
+      const submitted = candidatePage.getByTestId('assessment-submitted');
+      await expect(submitted).toBeVisible({ timeout: 45_000 });
+      await expect(submitted).toContainText('Profile received.');
+      await expect(candidatePage.getByTestId('code-review-challenge')).toHaveCount(0);
+    } else {
+      const challenge = candidatePage.getByTestId('code-review-challenge');
+      await expect(challenge).toBeVisible({ timeout: 45_000 });
+      await expect(candidatePage.getByTestId('code-review-repo-link')).toBeVisible();
+      await expect(candidatePage.getByTestId('code-review-pr-link')).toBeVisible();
+    }
+    await expect(candidatePage.locator('body')).not.toContainText(/WAITING_FOR_MATCH|MATCHING IN PROGRESS|Building your personalized challenge|video room/i);
+  } finally {
+    await context.close();
+  }
 }
 
 async function expectHumanDecisionState(page: Page): Promise<void> {
@@ -293,7 +463,7 @@ test.describe('Feature: assessment recruiter detail smoke', () => {
     'Set ASSESSMENT_RECRUITER_INTERVIEW_ID or CODE_REVIEW_RECRUITER_INTERVIEW_ID to smoke a recruiter detail page.',
   );
 
-  test('renders the recruiter assessment decision without error, fallback, or matching loop', async ({ page }) => {
+  test('renders the recruiter assessment decision without error, fallback, or matching loop', async ({ page, browser }) => {
     test.setTimeout(90_000);
 
     await page.goto(`/interviews/${INTERVIEW_ID}`);
@@ -321,6 +491,7 @@ test.describe('Feature: assessment recruiter detail smoke', () => {
         await expect(inviteState).toContainText(/Started, no submission|Profile handoff, no PR challenge|No assessment link sent/);
         await expect(page.getByRole('button', { name: /send assessment invite|resend assessment invite/i })).toBeVisible();
         await expectInterviewScopeBoundary(page, { required: true });
+        await expectCandidateLinkHandoff(page, browser);
         return;
       }
     }
@@ -350,6 +521,7 @@ test.describe('Feature: assessment recruiter detail smoke', () => {
       if (EXPECTED_PR_NUMBER) {
         await expect(page.locator('body')).toContainText(`#${EXPECTED_PR_NUMBER}`);
       }
+      await expectCandidateLinkHandoff(page, browser);
       if (EXPECT_SCORE) {
         await expect(page.getByTestId('interview-assessment-evaluation-claims')).toBeVisible();
         await expect(page.locator('body')).toContainText(/Evaluation|Evaluated/);
@@ -411,6 +583,7 @@ test.describe('Feature: assessment recruiter detail smoke', () => {
         await expect(page.getByTestId('interview-code-review-context-call-cta')).toBeVisible();
       }
       await expect(page.getByTestId('interview-code-review-score-summary')).toHaveCount(0);
+      await expectCandidateLinkHandoff(page, browser);
       return;
     }
 
@@ -443,6 +616,7 @@ test.describe('Feature: assessment recruiter detail smoke', () => {
     if (EXPECTED_PR_NUMBER) {
       await expect(page.locator('body')).toContainText(`#${EXPECTED_PR_NUMBER}`);
     }
+    await expectCandidateLinkHandoff(page, browser);
 
     if (EXPECT_SCORE) {
       const score = page.getByTestId('interview-code-review-score-summary');

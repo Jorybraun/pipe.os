@@ -156,7 +156,7 @@ The smoke proves the candidate lands in CODE_REVIEW rather than a video room, th
 
 ## 10. CODE_REVIEW Recruiter Detail Smoke
 
-This smoke verifies the recruiter-side decision cockpit for an existing code-review or workspace assessment interview. It catches fallback loaders, infinite matching screens, missing next actions, missing score-validity state, missing workspace work packets, missing human-review state, and optional invite-recipient drift.
+This smoke verifies the recruiter-side decision cockpit for an existing code-review or workspace assessment interview. It catches fallback loaders, infinite matching screens, missing next actions, missing score-validity state, missing workspace work packets, missing human-review state, optional invite-recipient drift, and, when enabled, broken candidate handoff links from the recruiter detail page.
 When `ASSESSMENT_RECRUITER_EXPECT_PERSON_PROFILE_DECISION=1` and score proof is expected, it also clicks through to the person profile and verifies the CODE_REVIEW score-validity readout explains why the score is usable or why it must be withheld.
 
 ```bash
@@ -174,6 +174,8 @@ npx playwright test e2e/code-review-recruiter-detail-smoke.spec.ts --project=aut
 For matched code-review outcomes, set `ASSESSMENT_RECRUITER_EXPECT_OUTCOME=matched`, optionally add `ASSESSMENT_RECRUITER_EXPECT_SCORE=1`, `ASSESSMENT_RECRUITER_EXPECT_SUBMISSION=1`, `ASSESSMENT_RECRUITER_EXPECT_REPO_URL=<repo-url>`, and `ASSESSMENT_RECRUITER_EXPECT_PR_NUMBER=<number>`. Leave `ASSESSMENT_RECRUITER_EXPECT_INVITE_RECIPIENT_EMAIL` unset only when the fixture has no assessment invite panel.
 
 For `OPEN_SOURCE_BUG_FIX` or `DEV_CONTAINER_CHALLENGE` recruiter detail pages, reuse the same smoke with `ASSESSMENT_RECRUITER_EXPECT_REPO_URL=<repo-url>`, `ASSESSMENT_RECRUITER_EXPECT_SUBMISSION=1` after a commit has been submitted, `ASSESSMENT_RECRUITER_EXPECT_SCORE=1` after source-backed evaluation claims exist, `ASSESSMENT_RECRUITER_EXPECT_HUMAN_DECISION_FORM=1` when the reviewer decision form should be available, `ASSESSMENT_RECRUITER_EXPECT_HUMAN_DECISION=1` after the human decision has been recorded, or `ASSESSMENT_RECRUITER_EXPECT_PERSON_PROFILE_DECISION=1` to click through to the person profile and verify the workspace assessment rolls up into a person-level decision. The legacy `CODE_REVIEW_RECRUITER_*` environment names still work for existing scripts.
+
+Set `ASSESSMENT_RECRUITER_EXPECT_CANDIDATE_LINK=1` only for disposable dev invites when the smoke should open the delivered candidate link from the recruiter detail page. Use `ASSESSMENT_RECRUITER_EXPECT_CANDIDATE_LINK_KIND=assessment` for CODE_REVIEW `/assess` links or `workspace` for room links. This intentionally starts/joins the candidate surface, so do not enable it against a real one-use candidate link unless the test owns that link. For deployed workspace links, also provide the room-dev Basic Auth credentials with `PIPE_ROOM_DEV_BASIC_AUTH_USER/PASSWORD` or `VIDEO_ROOM_DEV_AUTH_USER/PASSWORD`.
 
 For the full app-dev flow, create a disposable CODE_REVIEW invite, submit intake evidence, wait for matching, and run the browser smoke in one command:
 

@@ -3939,6 +3939,7 @@ export default function InterviewDetailPage(): JSX.Element {
                 <span style={ROOM_GUEST_LINK_TEXT}>{assessmentInviteUrlLabel}</span>
                 <input
                   ref={assessmentLinkInputRef}
+                  data-testid="interview-assessment-link-input"
                   readOnly
                   value={assessmentInviteUrl}
                   onFocus={(event) => event.currentTarget.select()}
