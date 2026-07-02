@@ -70,6 +70,8 @@ export interface CandidateRawCaptureAudit {
 export interface CandidateIngestionStateAudit {
   rowCount: number;
   statuses: Array<{ status: string; count: number }>;
+  failedRowCount: number;
+  errorTextRowCount: number;
 }
 
 export interface CandidateSourceProofAudit {
@@ -130,6 +132,11 @@ interface CountRow {
 interface StatusRow {
   status: string | null;
   count: number;
+}
+
+interface IngestionStateSummaryRow {
+  failed_row_count: number | null;
+  error_text_row_count: number | null;
 }
 
 interface RawCaptureRow {
@@ -370,12 +377,30 @@ async function loadIngestionState(
       ORDER BY status`,
     params,
   );
+  const summaryRows = await client.query<IngestionStateSummaryRow>(
+    `${scopeSql}
+     SELECT
+       COUNT(DISTINCT CASE WHEN ci.status = 'failed' THEN ci.candidate_id END) AS failed_row_count,
+       COUNT(DISTINCT CASE
+         WHEN ci.error_text IS NOT NULL
+          AND TRIM(ci.error_text) <> ''
+         THEN ci.candidate_id
+       END) AS error_text_row_count
+       FROM audited_candidates ac
+       JOIN talent_pool_intakes t ON t.candidate_id = ac.id
+       LEFT JOIN candidate_ingestion ci ON ci.candidate_id = ac.id
+      WHERE t.submitted_at IS NOT NULL`,
+    params,
+  );
+  const summary = summaryRows[0];
   return {
     rowCount,
     statuses: statuses.map((row) => ({
       status: row.status ?? 'missing',
       count: toNumber(row.count),
     })),
+    failedRowCount: toNumber(summary?.failed_row_count),
+    errorTextRowCount: toNumber(summary?.error_text_row_count),
   };
 }
 
@@ -722,6 +747,8 @@ export async function auditCandidateIngestion(
     ingestionState: {
       rowCount: 0,
       statuses: [],
+      failedRowCount: 0,
+      errorTextRowCount: 0,
     },
     sourceProof: {
       candidateNodeCount: 0,
@@ -821,6 +848,12 @@ export async function auditCandidateIngestion(
     ...(rawCapture.submittedIntakeCount > ingestionState.rowCount
       ? [`${rawCapture.submittedIntakeCount - ingestionState.rowCount} submitted Talent Pool intake(s) lack candidate_ingestion state`]
       : []),
+    ...(ingestionState.failedRowCount > 0
+      ? [`${ingestionState.failedRowCount} submitted Talent Pool candidate_ingestion row(s) are failed`]
+      : []),
+    ...(ingestionState.errorTextRowCount > 0
+      ? [`${ingestionState.errorTextRowCount} submitted Talent Pool candidate_ingestion row(s) still carry error_text`]
+      : []),
     ...(rawCapture.submittedIntakeCount > personProjection.talentPoolWorkspacePersonCount
       ? [`${rawCapture.submittedIntakeCount - personProjection.talentPoolWorkspacePersonCount} submitted Talent Pool intake(s) lack active workspace_people Talent Pool projection`]
       : []),
@@ -882,6 +915,9 @@ export async function auditCandidateIngestion(
       : []),
     ...(rawCapture.submittedIntakeCount > 0 && sourceProof.sourceSpanCount === 0
       ? ['Replay or repair profile ingestion so pasted text and extracted uploads create artifact_versions and source_spans.']
+      : []),
+    ...(ingestionState.failedRowCount > 0 || ingestionState.errorTextRowCount > 0
+      ? ['Replay or repair failed Talent Pool candidate_ingestion rows before treating ingestion as ready.']
       : []),
     ...(rawCapture.documentProfileStorageKeyCount > 0 && sourceProof.documentProfileSourceSpanCount === 0
       ? ['Replay or repair PDF/DOCX profile extraction so the current profile storage key has exact source spans.']
@@ -1048,6 +1084,11 @@ function printHuman(report: CandidateIngestionAudit, databasePath: string): void
   console.log(`  document keys:         ${report.rawCapture.documentProfileStorageKeyCount}`);
   console.log(`  external refs:         ${report.rawCapture.externalProfileRefCount}`);
   console.log(`  phone intent:          ${report.rawCapture.phoneScreenerIntentCount}`);
+  console.log('');
+  console.log('Ingestion state:');
+  console.log(`  rows:                  ${report.ingestionState.rowCount}`);
+  console.log(`  failed rows:           ${report.ingestionState.failedRowCount}`);
+  console.log(`  rows with errors:      ${report.ingestionState.errorTextRowCount}`);
   console.log('');
   console.log('Source proof:');
   console.log(`  candidate nodes:       ${report.sourceProof.candidateNodeCount}`);

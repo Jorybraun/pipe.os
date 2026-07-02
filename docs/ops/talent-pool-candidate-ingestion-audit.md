@@ -36,7 +36,8 @@ The verifier reports:
 - candidate row `resume_s3_key` coverage and alignment with the current intake
   `profile_r2_key`
 - GitHub, LinkedIn, portfolio, and phone-screener raw capture
-- `candidate_ingestion` row/status coverage
+- `candidate_ingestion` row/status coverage, including failed rows and
+  lingering `error_text`
 - candidate nodes with and without exact validated resume quotes
 - artifact versions, source spans, and context source refs
 - source span coordinate integrity: when an artifact has `content_text` and a
@@ -115,15 +116,16 @@ profile content or derive skills/readiness.
 
 By default, the command fails on missing scoped candidates, submitted intakes
 without storage or ingestion state, candidate rows whose `resume_s3_key` is
-missing or stale relative to the current intake profile key, missing active
-Talent Pool person projection, missing exact source proof, missing exact-source
-candidate-node projection, PDF/DOCX profile storage keys without extracted
-source spans, raw external refs or phone intent without operational context
-records, source-less positive claims, duplicate projected edges, candidate
-nodes with no exact source quote, source spans whose exact text no longer
-matches their immutable artifact text slice or exact-text hash, duplicate
-active candidate-node evidence, candidate-node source anchor conflicts, or
-roleless application/person-role rows.
+missing or stale relative to the current intake profile key,
+`candidate_ingestion` rows that are failed or still carry `error_text`, missing
+active Talent Pool person projection, missing exact source proof, missing
+exact-source candidate-node projection, PDF/DOCX profile storage keys without
+extracted source spans, raw external refs or phone intent without operational
+context records, source-less positive claims, duplicate projected edges,
+candidate nodes with no exact source quote, source spans whose exact text no
+longer matches their immutable artifact text slice or exact-text hash,
+duplicate active candidate-node evidence, candidate-node source anchor
+conflicts, or roleless application/person-role rows.
 
 Challenge assignment rows only count as ready when both `github_repo_url` and
 `github_pr_number` are present. Assignment rows without that PR-backed metadata
@@ -160,17 +162,18 @@ Latest app-dev proof on 2026-07-02 used invite token
 `talent-audit-532e4287e-c1` after deploying Worker version
 `1e545d10-4188-4289-8bce-b093edd53886` and replaying candidate ingestion
 repairs against dev D1. The remote verifier returned `status: ready`,
-`candidateNodeCount: 86`, `candidateNodeExactSourceQuoteCount: 86`,
+`candidateNodeCount: 74`, `candidateNodeExactSourceQuoteCount: 74`,
 `candidateNodeWithoutExactSourceCount: 0`,
 `duplicateCandidateNodeEvidenceCount: 0`,
 `candidateNodeSourceAnchorConflictCount: 0`,
-`candidateResumeStorageKeyCount: 2`, `candidateResumeMatchesIntakeCount: 2`,
-`artifactVersionCount: 12`, `sourceSpanCount: 44`,
+`candidateResumeStorageKeyCount: 1`, `candidateResumeMatchesIntakeCount: 1`,
+`failedRowCount: 0`, `errorTextRowCount: 0`,
+`artifactVersionCount: 11`, `sourceSpanCount: 37`,
 `sourceSpanTextMismatchCount: 0`, `sourceSpanHashMismatchCount: 0`,
-`documentProfileSourceSpanCount: 4`, `contextRecordCount: 84`,
-`contextSourceRefCount: 90`,
-`externalProfileRefContextCount: 6`,
-`phoneScreenerIntentContextCount: 2`, `rolelessApplicationCount: 0`,
+`documentProfileSourceSpanCount: 4`, `contextRecordCount: 80`,
+`contextSourceRefCount: 83`,
+`externalProfileRefContextCount: 3`,
+`phoneScreenerIntentContextCount: 1`, `rolelessApplicationCount: 0`,
 `rolelessPersonRoleCount: 0`, `signalEvidenceCount: 240`,
 `sourceLessPositiveClaimCount: 0`, `sourceLessDesignQueueSuggestionCount: 0`,
 and `duplicateProjectedEdgeCount: 0`.

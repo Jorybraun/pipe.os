@@ -42,6 +42,7 @@ function createSchema(db: Database.Database): void {
       candidate_id TEXT PRIMARY KEY,
       status TEXT,
       current_step TEXT,
+      error_text TEXT,
       candidate_searchable_profile TEXT
     );
     CREATE TABLE candidate_nodes (
@@ -171,8 +172,8 @@ function seedSourceBackedTalentPoolCandidate(db: Database.Database): void {
       1,
       '2026-07-02T00:00:00.000Z'
     );
-    INSERT INTO candidate_ingestion (candidate_id, status, current_step, candidate_searchable_profile)
-    VALUES ('candidate-1', 'pending', 'talent_pool_profile_received', NULL);
+    INSERT INTO candidate_ingestion (candidate_id, status, current_step, error_text, candidate_searchable_profile)
+    VALUES ('candidate-1', 'pending', 'talent_pool_profile_received', NULL, NULL);
     INSERT INTO people (id, primary_email)
     VALUES ('person-1', 'jordan@example.com');
     INSERT INTO workspace_people (id, workspace_id, person_id, context_json)
@@ -359,6 +360,54 @@ describe('auditCandidateIngestion', () => {
     expect(audit.rawCapture.candidateResumeStorageKeyCount).toBe(1);
     expect(audit.rawCapture.candidateResumeMatchesIntakeCount).toBe(0);
     expect(audit.failures).toContain('1 Talent Pool candidate row resume_s3_key value(s) do not match current intake profile_r2_key');
+  });
+
+  it('flags failed candidate_ingestion state for submitted Talent Pool candidates', async () => {
+    sqlite = new Database(':memory:');
+    createSchema(sqlite);
+    seedSourceBackedTalentPoolCandidate(sqlite);
+    sqlite.prepare(
+      `UPDATE candidate_ingestion
+          SET status = 'failed',
+              current_step = 'discover_profile',
+              error_text = 'Discovery failed: request timeout'
+        WHERE candidate_id = 'candidate-1'`,
+    ).run();
+
+    const audit = await auditCandidateIngestion(new SqliteQueryClient(sqlite), {
+      inviteToken: 'invite-token',
+      requireContextRecords: true,
+    });
+
+    expect(audit.status).toBe('not_ready');
+    expect(audit.ingestionState.failedRowCount).toBe(1);
+    expect(audit.ingestionState.errorTextRowCount).toBe(1);
+    expect(audit.failures).toContain('1 submitted Talent Pool candidate_ingestion row(s) are failed');
+    expect(audit.failures).toContain('1 submitted Talent Pool candidate_ingestion row(s) still carry error_text');
+    expect(audit.nextActions).toContain('Replay or repair failed Talent Pool candidate_ingestion rows before treating ingestion as ready.');
+  });
+
+  it('flags lingering candidate_ingestion error text after state recovery', async () => {
+    sqlite = new Database(':memory:');
+    createSchema(sqlite);
+    seedSourceBackedTalentPoolCandidate(sqlite);
+    sqlite.prepare(
+      `UPDATE candidate_ingestion
+          SET status = 'embedded',
+              current_step = 'embed_profile',
+              error_text = 'Previous discovery failure'
+        WHERE candidate_id = 'candidate-1'`,
+    ).run();
+
+    const audit = await auditCandidateIngestion(new SqliteQueryClient(sqlite), {
+      inviteToken: 'invite-token',
+      requireContextRecords: true,
+    });
+
+    expect(audit.status).toBe('not_ready');
+    expect(audit.ingestionState.failedRowCount).toBe(0);
+    expect(audit.ingestionState.errorTextRowCount).toBe(1);
+    expect(audit.failures).toContain('1 submitted Talent Pool candidate_ingestion row(s) still carry error_text');
   });
 
   it('flags duplicate active candidate-node evidence groups', async () => {
