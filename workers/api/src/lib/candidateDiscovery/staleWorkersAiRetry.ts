@@ -13,7 +13,7 @@ import { runCandidateIngestion } from './orchestrate';
 import { markIngestionFailed } from './persist';
 
 const DEFAULT_STALE_WORKERS_AI_RETRY_LIMIT = 3;
-const MAX_STALE_WORKERS_AI_RETRY_LIMIT = 5;
+const MAX_STALE_WORKERS_AI_RETRY_LIMIT = 25;
 const STALE_WORKERS_AI_RETRY_SCAN_MULTIPLIER = 6;
 const MAX_RETRY_EVENT_ERROR_CHARS = 700;
 const STALE_IN_PROGRESS_RETRY_AFTER_MS = 10 * 60 * 1000;
@@ -127,6 +127,16 @@ export interface TalentPoolRolelessApplicationRepairResult {
   deletedApplications: number;
   deletedPersonRoles: number;
   failed: number;
+}
+
+export function resolveCandidateIngestionRetryLimit(env: Pick<Env, 'CANDIDATE_INGESTION_RETRY_LIMIT'>): number {
+  const raw = env.CANDIDATE_INGESTION_RETRY_LIMIT?.trim();
+  if (!raw) return DEFAULT_STALE_WORKERS_AI_RETRY_LIMIT;
+
+  const parsed = Number.parseInt(raw, 10);
+  if (!Number.isFinite(parsed)) return DEFAULT_STALE_WORKERS_AI_RETRY_LIMIT;
+
+  return Math.max(1, Math.min(parsed, MAX_STALE_WORKERS_AI_RETRY_LIMIT));
 }
 
 export interface QueuedStandaloneIngestionRetry {
@@ -561,7 +571,7 @@ export async function maybeQueueRetryableStandaloneIngestion(
 
 export async function processStaleWorkersAIModelIngestionRetries(
   env: Env,
-  limit = DEFAULT_STALE_WORKERS_AI_RETRY_LIMIT,
+  limit = resolveCandidateIngestionRetryLimit(env),
 ): Promise<StaleWorkersAIRetryResult> {
   const boundedLimit = Math.max(1, Math.min(limit, MAX_STALE_WORKERS_AI_RETRY_LIMIT));
   const scanLimit = boundedLimit * STALE_WORKERS_AI_RETRY_SCAN_MULTIPLIER;

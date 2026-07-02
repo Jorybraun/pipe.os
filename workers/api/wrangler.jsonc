@@ -118,7 +118,8 @@
 				"DEV_CONTAINER_DEFAULT_TTL_SECONDS": "3600",
 				"DEV_CONTAINER_MAX_TTL_SECONDS": "7200",
 				"DEV_CONTAINER_WARN_BEFORE_SECONDS": "60",
-				"PRIMARY_MATCH_STORE": "neo4j"
+				"PRIMARY_MATCH_STORE": "neo4j",
+				"CANDIDATE_INGESTION_RETRY_LIMIT": "12"
 			},
 			"d1_databases": [
 				{ "binding": "DB", "database_name": "pipe-db-test", "database_id": "0abe92df-9296-46f5-9f9d-a1fb1bcd3be1", "migrations_dir": "migrations" },

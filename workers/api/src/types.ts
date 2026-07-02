@@ -38,6 +38,8 @@ export interface Env {
   AI: Ai;
   /** Optional Workers AI text-generation model override. */
   CLOUDFLARE_AI_MODEL?: string;
+  /** Optional scheduled candidate-ingestion repair batch size. Defaults conservatively in code. */
+  CANDIDATE_INGESTION_RETRY_LIMIT?: string;
   /**
    * Vectorize index binding for repo_searchable_profile embeddings.
    * Used in discover.ts hybrid recall (STRATEGY Decision Log 2026-04-14).

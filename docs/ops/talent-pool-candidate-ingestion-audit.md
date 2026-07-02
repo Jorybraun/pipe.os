@@ -97,6 +97,9 @@ retries reuse pre-extracted text and bounded parser-only decomposition so the AI
 attempt can start inside the Worker background window. The fallback is allowed
 to keep ingestion moving, but the event stream must state whether AI started,
 succeeded, or failed instead of fabricating an AI-derived profile.
+Scheduled retry throughput defaults conservatively, while dev can raise it with
+`CANDIDATE_INGESTION_RETRY_LIMIT` to burn down stale AI-output failures without
+changing production behavior.
 
 Resume decomposition disambiguates repeated titles or labels by anchoring the
 selected source quote near the matching company, project, institution, or other

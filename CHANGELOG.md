@@ -10,6 +10,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 ### Fixed — Talent Pool ingestion
 
 - Candidate discovery now keeps shared `CLOUDFLARE_AI_MODEL` overrides as late fallbacks instead of treating them as candidate-specific primaries, so profile ingestion starts with the fast candidate model and stale Workers AI timeout failures are eligible for replay.
+- Dev candidate-ingestion repair now uses a configurable retry batch size, allowing stale AI discovery failures to burn down faster without raising production retry throughput by default.
 - Candidate-ingestion audit now fails submitted Talent Pool candidates whose `candidate_ingestion` row is failed or still carries `error_text`, so stale discovery failures remain repair gaps instead of looking ready.
 - Candidate-ingestion audit now verifies submitted Talent Pool candidate rows keep `resume_s3_key` aligned to the current intake `profile_r2_key`, catching stale retry/backfill source pointers.
 - Candidate-ingestion audit now fails Talent Pool source spans whose stored exact text does not match the immutable artifact text at their character offsets or whose exact-text hash is invalid, catching broken provenance even when source refs exist.

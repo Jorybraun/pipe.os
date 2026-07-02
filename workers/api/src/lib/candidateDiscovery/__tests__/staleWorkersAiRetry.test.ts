@@ -11,6 +11,7 @@ import {
   processStaleWorkersAIModelIngestionRetries,
   processTalentPoolOperationalContextRepairs,
   processTalentPoolRolelessApplicationRepairs,
+  resolveCandidateIngestionRetryLimit,
   retryCandidateEvidenceIngestionFromSource,
 } from '../staleWorkersAiRetry';
 import { runCandidateIngestion } from '../orchestrate';
@@ -200,6 +201,14 @@ describe('stale Workers AI candidate-ingestion retry', () => {
       current_step: 'talent_pool_profile_received',
       updated_at: '2026-06-28T21:00:00.000Z',
     }, now)).toBe(true);
+  });
+
+  it('resolves scheduled retry batch size from env with conservative bounds', () => {
+    expect(resolveCandidateIngestionRetryLimit({} as Env)).toBe(3);
+    expect(resolveCandidateIngestionRetryLimit({ CANDIDATE_INGESTION_RETRY_LIMIT: '12' } as Env)).toBe(12);
+    expect(resolveCandidateIngestionRetryLimit({ CANDIDATE_INGESTION_RETRY_LIMIT: '0' } as Env)).toBe(1);
+    expect(resolveCandidateIngestionRetryLimit({ CANDIDATE_INGESTION_RETRY_LIMIT: '99' } as Env)).toBe(25);
+    expect(resolveCandidateIngestionRetryLimit({ CANDIDATE_INGESTION_RETRY_LIMIT: 'not-a-number' } as Env)).toBe(3);
   });
 
   it('retries text-intake evidence from the original R2 source', async () => {
@@ -585,6 +594,34 @@ describe('stale Workers AI candidate-ingestion retry', () => {
         key: 'text-intake/oldest/source',
       },
     });
+  });
+
+  it('cron uses env configured retry throughput when no explicit limit is passed', async () => {
+    const db = fakeD1({
+      all: Array.from({ length: 6 }, (_, index) => ({
+        candidate_id: `candidate-${index}`,
+        resume_s3_key: `text-intake/candidate-${index}/source`,
+        status: 'failed',
+        current_step: 'discover_profile',
+        error_text: 'Discovery failed: Candidate Discovery response was not a JSON object',
+      })),
+    });
+    const env = {
+      ...buildEnv(db, fakeStorage(
+        'Backend engineer building queue workers, runtime recovery, and exact provenance tests.',
+      )),
+      CANDIDATE_INGESTION_RETRY_LIMIT: '4',
+    } as Env;
+
+    await expect(processStaleWorkersAIModelIngestionRetries(env)).resolves.toEqual({
+      scanned: 6,
+      queued: 4,
+      skipped: 2,
+      failed: 0,
+    });
+    const selectCall = db.__calls.find((call) => call.sql.includes('FROM candidate_ingestion ci'))!;
+    expect(selectCall.params[1]).toBe(24);
+    expect(runCandidateIngestion).toHaveBeenCalledTimes(4);
   });
 
   it('cron repairs missing Talent Pool operational context projections', async () => {
