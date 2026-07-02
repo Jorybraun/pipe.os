@@ -72,6 +72,7 @@ const SENIORITY_BANDS: SeniorityBand[] = ['junior', 'mid', 'senior', 'staff'];
 const MAX_SKILLS = 10;
 const MIN_PROFILE_CHARS = 400;
 const MAX_ARRAY_LEN = 10;
+const CANDIDATE_DISCOVERY_MAX_TOKENS = 900;
 
 const VALID_TENURE_PATTERNS = new Set(['stable', 'moderate', 'job-hopper', 'unknown'] as const);
 const VALID_PROGRESSION_VELOCITIES = new Set(['fast', 'normal', 'slow', 'unknown'] as const);
@@ -323,7 +324,7 @@ export async function discoverCandidateProfile(
       { role: 'system', content: CANDIDATE_DISCOVERY_SYSTEM_PROMPT },
       { role: 'user', content: userMessage },
     ],
-    { forceJson: true, maxTokens: 1400 },
+    { forceJson: true, maxTokens: CANDIDATE_DISCOVERY_MAX_TOKENS },
   );
 
   const rawText = completion.content ?? '';

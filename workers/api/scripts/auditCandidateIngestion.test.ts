@@ -129,7 +129,8 @@ function createSchema(db: Database.Database): void {
     CREATE TABLE challenge_design_queue (
       id TEXT PRIMARY KEY,
       candidate_id TEXT,
-      status TEXT
+      status TEXT,
+      suggested_repo_families TEXT
     );
     CREATE TABLE candidate_challenge_assignment (
       id TEXT PRIMARY KEY,
@@ -270,6 +271,7 @@ describe('auditCandidateIngestion', () => {
     });
     expect(audit.duplicateProjectedEdgeCount).toBe(0);
     expect(audit.sourceLessPositiveClaimCount).toBe(0);
+    expect(audit.sourceLessDesignQueueSuggestionCount).toBe(0);
   });
 
   it('reports assignment rows without repo and PR as assessment setup gaps', async () => {
@@ -493,5 +495,29 @@ describe('auditCandidateIngestion', () => {
     expect(audit.sourceProof.documentProfileSourceSpanCount).toBe(0);
     expect(audit.failures).toContain('1 PDF/DOCX Talent Pool profile upload(s) lack extracted source spans for the current profile key');
     expect(audit.nextActions).toContain('Replay or repair PDF/DOCX profile extraction so the current profile storage key has exact source spans.');
+  });
+
+  it('flags design-queue repo-family suggestions for unextracted document uploads', async () => {
+    sqlite = new Database(':memory:');
+    createSchema(sqlite);
+    seedSourceBackedTalentPoolCandidate(sqlite);
+    sqlite.exec(`
+      UPDATE talent_pool_intakes
+         SET profile_r2_key = 'talent-intake/candidate-1/profile.pdf'
+       WHERE candidate_id = 'candidate-1';
+      UPDATE challenge_design_queue
+         SET suggested_repo_families = '["general TypeScript application code"]'
+       WHERE candidate_id = 'candidate-1';
+    `);
+
+    const audit = await auditCandidateIngestion(new SqliteQueryClient(sqlite), {
+      inviteToken: 'invite-token',
+      requireContextRecords: true,
+    });
+
+    expect(audit.status).toBe('not_ready');
+    expect(audit.sourceLessDesignQueueSuggestionCount).toBe(1);
+    expect(audit.failures).toContain('1 design-queue repo-family suggestion(s) lack extracted PDF/DOCX source spans');
+    expect(audit.nextActions).toContain('Clear suggested repo families and keep challenge design in a missing-evidence state until PDF/DOCX profile extraction creates exact source spans.');
   });
 });

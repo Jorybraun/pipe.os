@@ -42,6 +42,8 @@ The verifier reports:
 - PR-backed ready challenge assignments vs. incomplete assignment rows and
   design-queue gaps
 - source-less positive person claims
+- source-less design-queue repo-family suggestions for unextracted document
+  uploads
 - duplicate person-projected context edges
 - duplicate active candidate-node evidence groups
 - source-anchor conflicts where multiple structured resume facts point at the
@@ -74,10 +76,13 @@ the design queue must stay in an explicit missing-evidence state: candidate
 summary says no extractable source text was available, suggested repo families
 are empty, and the next desired signal is source-backed profile/resume
 extraction. Placeholder upload labels must not become profile claims or generic
-challenge-selection hints.
-Candidate discovery tries the current fast Workers AI default before heavier
-fallback models, and Talent Pool document retries use a bounded two-attempt
-AI budget before falling back to source-only evidence. Document retries reuse
+challenge-selection hints. The audit fails any active design-queue row that
+still has repo-family suggestions for a current PDF/DOCX profile key with no
+extracted source spans.
+Candidate discovery tries the small current Workers AI
+`llama-3.2-3b-instruct` model with a tight JSON output budget before heavier
+fallback models, and Talent Pool document retries use a bounded two-attempt AI
+budget before falling back to source-only evidence. Document retries reuse
 pre-extracted text and bounded parser-only decomposition so the AI attempt can
 start inside the Worker background window. The fallback is allowed to keep
 ingestion moving, but the event stream must state whether AI started,
@@ -155,7 +160,8 @@ returned `status: ready`, `candidateNodeCount: 74`,
 `externalProfileRefContextCount: 3`,
 `phoneScreenerIntentContextCount: 1`, `rolelessApplicationCount: 0`,
 `rolelessPersonRoleCount: 0`, `signalEvidenceCount: 240`,
-`sourceLessPositiveClaimCount: 0`, and `duplicateProjectedEdgeCount: 0`.
+`sourceLessPositiveClaimCount: 0`, `sourceLessDesignQueueSuggestionCount: 0`,
+and `duplicateProjectedEdgeCount: 0`.
 
 Remote source-span sampling proved operational context refs preserve exact
 field text:

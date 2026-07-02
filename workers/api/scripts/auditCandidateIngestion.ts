@@ -112,6 +112,7 @@ export interface CandidateIngestionAudit {
   sourceProof: CandidateSourceProofAudit;
   personProjection: CandidatePersonProjectionAudit;
   sourceLessPositiveClaimCount: number;
+  sourceLessDesignQueueSuggestionCount: number;
   duplicateProjectedEdgeCount: number;
   failures: string[];
   nextActions: string[];
@@ -607,6 +608,35 @@ async function loadDuplicateProjectedEdgeCount(
   );
 }
 
+async function loadSourceLessDesignQueueSuggestionCount(
+  client: QueryClient,
+  scopeSql: string,
+  params: Array<string | number | null>,
+): Promise<number> {
+  return await count(
+    client,
+    `${scopeSql}
+     SELECT COUNT(DISTINCT cdq.id) AS count
+       FROM audited_candidates ac
+       JOIN talent_pool_intakes t ON t.candidate_id = ac.id
+       JOIN challenge_design_queue cdq ON cdq.candidate_id = ac.id
+      WHERE cdq.status IN ('queued', 'in_review', 'ready_to_assign')
+        AND t.profile_r2_key IS NOT NULL
+        AND (
+          substr(LOWER(t.profile_r2_key), -4) = '.pdf'
+          OR substr(LOWER(t.profile_r2_key), -5) = '.docx'
+        )
+        AND COALESCE(TRIM(cdq.suggested_repo_families), '') NOT IN ('', '[]')
+        AND NOT EXISTS (
+          SELECT 1
+            FROM artifact_versions av
+            JOIN source_spans ss ON ss.artifact_version_id = av.id
+           WHERE av.storage_key = t.profile_r2_key
+        )`,
+    params,
+  );
+}
+
 export async function auditCandidateIngestion(
   client: QueryClient,
   options: CandidateIngestionAuditOptions = {},
@@ -675,6 +705,7 @@ export async function auditCandidateIngestion(
       missingTables,
       ...emptyReport,
       sourceLessPositiveClaimCount: 0,
+      sourceLessDesignQueueSuggestionCount: 0,
       duplicateProjectedEdgeCount: 0,
       failures: [`missing candidate-ingestion tables: ${missingTables.join(', ')}`],
       nextActions: ['Apply Talent Pool, living-context, and context-record migrations before auditing candidate ingestion.'],
@@ -694,6 +725,11 @@ export async function auditCandidateIngestion(
   const sourceProof = await loadSourceProof(client, scopeDefinition.cte, scopeDefinition.params);
   const personProjection = await loadPersonProjection(client, scopeDefinition.cte, scopeDefinition.params);
   const sourceLessPositiveClaimCount = await loadSourceLessPositiveClaimCount(
+    client,
+    scopeDefinition.cte,
+    scopeDefinition.params,
+  );
+  const sourceLessDesignQueueSuggestionCount = await loadSourceLessDesignQueueSuggestionCount(
     client,
     scopeDefinition.cte,
     scopeDefinition.params,
@@ -740,6 +776,9 @@ export async function auditCandidateIngestion(
     ...(sourceLessPositiveClaimCount > 0
       ? [`${sourceLessPositiveClaimCount} positive person-context claim(s) have no source refs or source spans`]
       : []),
+    ...(sourceLessDesignQueueSuggestionCount > 0
+      ? [`${sourceLessDesignQueueSuggestionCount} design-queue repo-family suggestion(s) lack extracted PDF/DOCX source spans`]
+      : []),
     ...(rawCapture.externalProfileRefCount > personProjection.externalProfileRefContextCount
       ? [`${rawCapture.externalProfileRefCount - personProjection.externalProfileRefContextCount} external profile ref(s) lack source-backed operational context records`]
       : []),
@@ -782,6 +821,9 @@ export async function auditCandidateIngestion(
     ...(sourceProof.candidateNodeSourceAnchorConflictCount > 0
       ? ['Repair resume decomposition source anchoring so repeated titles or labels cite the matching source occurrence.']
       : []),
+    ...(sourceLessDesignQueueSuggestionCount > 0
+      ? ['Clear suggested repo families and keep challenge design in a missing-evidence state until PDF/DOCX profile extraction creates exact source spans.']
+      : []),
     ...(rawCapture.externalProfileRefCount > personProjection.externalProfileRefContextCount
       ? ['Project GitHub/LinkedIn/portfolio refs into operational context records with exact intake source refs.']
       : []),
@@ -809,6 +851,7 @@ export async function auditCandidateIngestion(
     sourceProof,
     personProjection,
     sourceLessPositiveClaimCount,
+    sourceLessDesignQueueSuggestionCount,
     duplicateProjectedEdgeCount,
     failures,
     nextActions: [...new Set(nextActions)],
@@ -910,6 +953,7 @@ function printHuman(report: CandidateIngestionAudit, databasePath: string): void
   console.log(`  candidate scope:       ${report.scope.candidateId ?? report.scope.inviteToken ?? report.scope.email ?? 'all talent pool intakes'}`);
   console.log(`  candidates audited:    ${report.auditedCandidateCount}`);
   console.log(`  source-less positives: ${report.sourceLessPositiveClaimCount}`);
+  console.log(`  source-less queue hints: ${report.sourceLessDesignQueueSuggestionCount}`);
   console.log(`  duplicate projections: ${report.duplicateProjectedEdgeCount}`);
   console.log('');
   console.log('Raw capture:');
