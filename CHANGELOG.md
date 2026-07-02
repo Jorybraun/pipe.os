@@ -11,6 +11,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 - Talent Pool PDF/DOCX retries now use deterministic source-text pre-parsing before the shared R2 resume helper, so stalled document ingestion can reach candidate discovery AI instead of freezing in the rich resume parser.
 - Living-context context-record source refs are now idempotent under replay/race conditions, preventing scheduled Talent Pool PDF retries from failing on duplicate source-ref inserts before candidate AI discovery can run.
+- Living-context context-record entities and concepts are now idempotent under replay/race conditions, preventing overlapping Talent Pool document retries from failing on duplicate child-row inserts.
 - Talent Pool PDF/DOCX resume ingestion now auto-resolves roleless Talent Pool person identity inside the shared R2 resume helper, preventing any unguarded caller or stale retry from recreating legacy application/person-role rows before a real role-backed process exists.
 - Scheduled Talent Pool repair now removes generated application/person-role rows for roleless Talent Pool candidates, keeping Talent Pool evidence separate until a real role-backed process exists.
 - Talent Pool ingestion retries and scheduled repair now restore source-backed GitHub/LinkedIn/portfolio and phone-screener operational context from the original intake row before or alongside profile AI/evidence ingestion.

@@ -967,7 +967,14 @@ export class LivingContextStore {
         `INSERT INTO context_record_entities (
            context_record_id, entity_key, entity_type, entity_id, relationship,
            value_json, confidence, metadata_json, created_at
-         ) VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7, ?8, ?9)`,
+         ) VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7, ?8, ?9)
+         ON CONFLICT(context_record_id, entity_key, relationship)
+         DO UPDATE SET
+           entity_type = excluded.entity_type,
+           entity_id = excluded.entity_id,
+           value_json = excluded.value_json,
+           confidence = excluded.confidence,
+           metadata_json = excluded.metadata_json`,
       ).bind(
         id,
         entity.entityKey,
@@ -985,7 +992,9 @@ export class LivingContextStore {
       await this.db.prepare(
         `INSERT INTO context_record_concepts (
            context_record_id, concept_id, relationship, weight, created_at
-         ) VALUES (?1, ?2, ?3, ?4, ?5)`,
+         ) VALUES (?1, ?2, ?3, ?4, ?5)
+         ON CONFLICT(context_record_id, concept_id, relationship)
+         DO UPDATE SET weight = excluded.weight`,
       ).bind(id, concept.conceptId, concept.relationship, concept.weight, now).run();
     }
 
