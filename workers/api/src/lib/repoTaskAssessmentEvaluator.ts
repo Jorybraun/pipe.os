@@ -124,6 +124,11 @@ const EXPECTED_HIGH_CONFIDENCE_REF_GROUPS = [
     ],
     missingImpact: 'Treat AI usage as unobserved when real agent bridge chat evidence is absent.',
   },
+  {
+    label: 'upstream_pr_tracking',
+    sourceRefTypes: ['upstream_pull_request'],
+    missingImpact: 'Default assessment commits do not require upstream PRs; treat upstream usefulness as unreviewed unless candidate-approved PR tracking is captured.',
+  },
 ] as const;
 
 function parseJsonObject(value: string | null): JsonObject {
@@ -497,6 +502,46 @@ export function buildDeterministicAssessmentFallback(input: {
     });
   }
 
+  const aiRefs = sourceRefsOfTypes(input.sourceRefs, [
+    'ai_user_prompt',
+    'ai_user_prompt_blocked',
+    'ai_agent_response',
+    'ai_agent_diagnostic',
+    'session_chat_agent',
+    'session_chat_user',
+    'ai_chat_user',
+    'ai_chat_agent',
+  ]).slice(0, 4);
+  if (aiRefs.length > 0) {
+    const hasAgentResponse = aiRefs.some((ref) =>
+      ref.sourceRefType === 'ai_agent_response' || ref.sourceRefType === 'session_chat_agent' || ref.sourceRefType === 'ai_chat_agent');
+    const hasBlockedPrompt = aiRefs.some((ref) => ref.sourceRefType === 'ai_user_prompt_blocked');
+    claims.push({
+      id: `repo_task_eval_${input.sessionId}_ai_use_observability`.replace(/[^A-Za-z0-9:_-]/g, '_'),
+      polarity: 'positive',
+      dimension: 'ai_use_observability',
+      narrative: hasAgentResponse
+        ? 'Candidate AI-assistance prompts and agent responses are captured as real source evidence for review.'
+        : hasBlockedPrompt
+          ? 'Blocked AI-assistance attempts are captured honestly instead of being treated as successful agent help.'
+          : 'Candidate AI-assistance activity is captured as real source evidence for review.',
+      confidence: 0.68,
+      sourceRefs: aiRefs,
+    });
+  }
+
+  const upstreamPullRequestRef = firstSourceRefOfType(input.sourceRefs, 'upstream_pull_request');
+  if (upstreamPullRequestRef) {
+    claims.push({
+      id: `repo_task_eval_${input.sessionId}_upstream_pr_tracking`.replace(/[^A-Za-z0-9:_-]/g, '_'),
+      polarity: 'positive',
+      dimension: 'upstream_pr_tracking',
+      narrative: 'Candidate-approved upstream pull request tracking is captured for reviewer inspection.',
+      confidence: 0.64,
+      sourceRefs: [upstreamPullRequestRef],
+    });
+  }
+
   const activityRefs = sourceRefsOfTypes(input.sourceRefs, [
     'terminal_command',
     'terminal_output',
@@ -523,7 +568,7 @@ export function buildDeterministicAssessmentFallback(input: {
   return {
     summary,
     recommendation: DEFAULT_RECOMMENDATION,
-    claims: claims.slice(0, 4),
+    claims: claims.slice(0, 6),
     diagnostics: [
       diagnosticInput({
         code: 'MODEL_CLAIMS_UNUSABLE',

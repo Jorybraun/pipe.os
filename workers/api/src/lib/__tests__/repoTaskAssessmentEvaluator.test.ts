@@ -79,6 +79,25 @@ describe('repo task assessment evaluator output parsing', () => {
           exactText: '$ git diff --check HEAD~1 HEAD\nexitCode: 0',
         }),
         await sourceRef({
+          type: 'ai_user_prompt',
+          id: 'prompt-1',
+          sequence: 2,
+          exactText: 'Can you inspect why the popover closes on impatient clicks before I change the hook?',
+        }),
+        await sourceRef({
+          type: 'ai_agent_response',
+          id: 'agent-response-1',
+          sequence: 2,
+          exactText: 'The issue appears to be in usePopoverRoot.ts where the close handler does not guard patient click timing.',
+        }),
+        await sourceRef({
+          type: 'upstream_pull_request',
+          id: 'https://github.com/mui/base-ui/pull/973',
+          role: 'optional_upstream_pr_tracking',
+          sequence: 2,
+          exactText: 'https://github.com/mui/base-ui/pull/973',
+        }),
+        await sourceRef({
           type: 'terminal_command',
           id: 'finalizer-1',
           sequence: 2,
@@ -98,6 +117,16 @@ describe('repo task assessment evaluator output parsing', () => {
       expect.objectContaining({
         polarity: 'positive',
         dimension: 'verification',
+      }),
+      expect.objectContaining({
+        polarity: 'positive',
+        dimension: 'ai_use_observability',
+        narrative: 'Candidate AI-assistance prompts and agent responses are captured as real source evidence for review.',
+      }),
+      expect.objectContaining({
+        polarity: 'positive',
+        dimension: 'upstream_pr_tracking',
+        narrative: 'Candidate-approved upstream pull request tracking is captured for reviewer inspection.',
       }),
     ]));
     expect(fallback?.claims.every((claim) => (claim.sourceRefs?.length ?? 0) > 0)).toBe(true);

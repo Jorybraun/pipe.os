@@ -28,6 +28,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Fixed — Open-source assessment progress
 
+- Conservative fallback evaluator reports now preserve source-backed AI-use observability and candidate-approved upstream PR tracking, so open-source assessments can show whether AI help and upstream contribution evidence were actually captured.
 - Assessment progress commit projections now include source-backed upstream PR URL and consent flags, so recruiter readouts can distinguish local workspace-only commits from candidate-approved upstream PRs.
 - Candidate RPC assessment progress now returns the same upstream PR tracking fields as room and recruiter progress APIs.
 - CODE_REVIEW invite tests now assert app-dev assess-link delivery without hard-coding Basic Auth credentials that CI masks.
