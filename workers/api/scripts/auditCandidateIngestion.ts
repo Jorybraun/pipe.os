@@ -85,6 +85,7 @@ export interface CandidateSourceProofAudit {
   sourceSpanTextMismatchCount: number;
   sourceSpanHashMismatchCount: number;
   documentProfileSourceSpanCount: number;
+  profileUploadArtifactVersionCount: number;
   contextSourceRefCount: number;
 }
 
@@ -161,6 +162,7 @@ interface SourceProofRow {
   source_span_count: number | null;
   source_span_text_mismatch_count: number | null;
   document_profile_source_span_count: number | null;
+  profile_upload_artifact_version_count: number | null;
   context_source_ref_count: number | null;
 }
 
@@ -514,6 +516,14 @@ async function loadSourceProof(
              substr(LOWER(t.profile_r2_key), -4) = '.pdf'
              OR substr(LOWER(t.profile_r2_key), -5) = '.docx'
            )) AS document_profile_source_span_count,
+       (SELECT COUNT(DISTINCT av.id)
+          FROM audited_candidates ac
+          JOIN talent_pool_intakes t ON t.candidate_id = ac.id
+          JOIN linked_workspace_people lwp ON lwp.candidate_id = ac.id
+          JOIN artifacts a ON a.workspace_person_id = lwp.workspace_person_id
+          JOIN artifact_versions av ON av.artifact_id = a.id
+         WHERE t.profile_r2_key IS NOT NULL
+           AND av.storage_key = t.profile_r2_key) AS profile_upload_artifact_version_count,
        (SELECT COUNT(DISTINCT crsr.context_record_id || ':' || crsr.source_ref_type || ':' || crsr.source_ref_id || ':' || crsr.evidence_role)
           FROM linked_workspace_people lwp
           JOIN context_records cr ON cr.workspace_person_id = lwp.workspace_person_id
@@ -533,6 +543,7 @@ async function loadSourceProof(
     sourceSpanTextMismatchCount: toNumber(row?.source_span_text_mismatch_count),
     sourceSpanHashMismatchCount,
     documentProfileSourceSpanCount: toNumber(row?.document_profile_source_span_count),
+    profileUploadArtifactVersionCount: toNumber(row?.profile_upload_artifact_version_count),
     contextSourceRefCount: toNumber(row?.context_source_ref_count),
   };
 }
@@ -761,6 +772,7 @@ export async function auditCandidateIngestion(
       sourceSpanTextMismatchCount: 0,
       sourceSpanHashMismatchCount: 0,
       documentProfileSourceSpanCount: 0,
+      profileUploadArtifactVersionCount: 0,
       contextSourceRefCount: 0,
     },
     personProjection: {
@@ -1101,6 +1113,7 @@ function printHuman(report: CandidateIngestionAudit, databasePath: string): void
   console.log(`  span text mismatches:  ${report.sourceProof.sourceSpanTextMismatchCount}`);
   console.log(`  span hash mismatches:  ${report.sourceProof.sourceSpanHashMismatchCount}`);
   console.log(`  document source spans: ${report.sourceProof.documentProfileSourceSpanCount}`);
+  console.log(`  upload artifact refs:  ${report.sourceProof.profileUploadArtifactVersionCount}`);
   console.log(`  context source refs:   ${report.sourceProof.contextSourceRefCount}`);
   console.log('');
   console.log('Person projection:');

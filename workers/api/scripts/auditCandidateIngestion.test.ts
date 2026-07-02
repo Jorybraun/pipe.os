@@ -277,6 +277,7 @@ describe('auditCandidateIngestion', () => {
       sourceSpanCount: 1,
       sourceSpanTextMismatchCount: 0,
       sourceSpanHashMismatchCount: 0,
+      profileUploadArtifactVersionCount: 0,
       contextSourceRefCount: 4,
       candidateNodeWithoutExactSourceCount: 0,
     });
@@ -598,6 +599,19 @@ describe('auditCandidateIngestion', () => {
           SET profile_r2_key = 'talent-intake/candidate-1/profile.pdf'
         WHERE candidate_id = 'candidate-1'`,
     ).run();
+    sqlite.prepare(
+      `UPDATE candidates
+          SET resume_s3_key = 'talent-intake/candidate-1/profile.pdf'
+        WHERE id = 'candidate-1'`,
+    ).run();
+    sqlite.exec(`
+      INSERT INTO interactions (id, workspace_person_id, interaction_type, external_reference, metadata_json)
+      VALUES ('interaction-upload', 'workspace-person-1', 'file_upload', 'candidate-1', '{"source":"roleless_candidate_intake"}');
+      INSERT INTO artifacts (id, workspace_person_id, interaction_id)
+      VALUES ('artifact-upload', 'workspace-person-1', 'interaction-upload');
+      INSERT INTO artifact_versions (id, artifact_id, storage_key, content_text)
+      VALUES ('artifact-version-upload', 'artifact-upload', 'talent-intake/candidate-1/profile.pdf', NULL);
+    `);
 
     const audit = await auditCandidateIngestion(new SqliteQueryClient(sqlite), {
       inviteToken: 'invite-token',
@@ -607,6 +621,7 @@ describe('auditCandidateIngestion', () => {
     expect(audit.status).toBe('not_ready');
     expect(audit.rawCapture.documentProfileStorageKeyCount).toBe(1);
     expect(audit.sourceProof.documentProfileSourceSpanCount).toBe(0);
+    expect(audit.sourceProof.profileUploadArtifactVersionCount).toBe(1);
     expect(audit.failures).toContain('1 PDF/DOCX Talent Pool profile upload(s) lack extracted source spans for the current profile key');
     expect(audit.nextActions).toContain('Replay or repair PDF/DOCX profile extraction so the current profile storage key has exact source spans.');
   });

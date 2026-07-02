@@ -55,6 +55,9 @@ The verifier reports:
   span has character offsets, `exact_text` must match that immutable slice
 - source span quote-hash integrity: `exact_text_hash` must be the SHA-256 of
   `exact_text`
+- uploaded profile artifact versions whose storage key matches the current
+  `talent_pool_intakes.profile_r2_key`, proving original blob capture even when
+  claim extraction is still missing
 - roleless `people` / `workspace_people` projection
 - accidental `applications` / `person_roles` for roleless Talent Pool members
 - PR-backed ready challenge assignments vs. incomplete assignment rows and
