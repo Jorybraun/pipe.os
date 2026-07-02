@@ -48,6 +48,7 @@ export interface BatchEvaluationPairResult {
   computedVerdict: MatchVerdict | null;
   expectedVerdict: MatchVerdict;
   verdictMatch: boolean;
+  reasonCategory: MatchQualityReasonCategory | null;
   scoreSeparation: number | null;
   minimumScoreSeparation: number | null;
   sourceBackedPr: boolean;
@@ -231,6 +232,24 @@ function failedReasonsFor(input: {
   return [...new Set(failures)];
 }
 
+function reasonCategoryFor(input: {
+  computedVerdict: MatchVerdict | null;
+  failedReasons: string[];
+}): MatchQualityReasonCategory | null {
+  if (input.failedReasons.includes('case_error')) return null;
+  if (input.failedReasons.includes('missing_source_backed_pr')) return 'source_backing';
+  if (input.failedReasons.includes('missing_repo_evidence')) return 'missing_repo_evidence';
+  if (input.failedReasons.includes('missing_candidate_evidence')) return 'missing_candidate_evidence';
+  if (input.failedReasons.includes('score_separation_too_flat')) return 'negative_contrast';
+  if (input.failedReasons.includes('positive_verdict_without_provenance')) return 'source_backing';
+  if (input.computedVerdict === 'insufficient_evidence') return 'insufficient_evidence';
+  if (isPositiveVerdict(input.computedVerdict)) return 'aligned';
+  if (input.computedVerdict === 'needs_review' || input.computedVerdict === 'weak_match') {
+    return 'needs_challenge_design';
+  }
+  return null;
+}
+
 /**
  * Runs labelled pair evaluation. Prefer runMatchQualityEvaluation for gates.
  */
@@ -306,6 +325,14 @@ export async function runBatchEvaluation(
           repoEvidencePresent,
           scoreSeparation,
         });
+    const reasonCategory = reasonCategoryFor({ computedVerdict, failedReasons });
+    if (
+      !error
+      && candidate.expectedReasonCategory !== undefined
+      && reasonCategory !== candidate.expectedReasonCategory
+    ) {
+      failedReasons.push('reason_category_mismatch');
+    }
 
     pairResults.push({
       caseId: caseIdFor(candidate, index),
@@ -318,6 +345,7 @@ export async function runBatchEvaluation(
       computedVerdict,
       expectedVerdict: candidate.expectedVerdict,
       verdictMatch,
+      reasonCategory,
       scoreSeparation,
       minimumScoreSeparation: candidate.minimumScoreSeparation ?? null,
       sourceBackedPr,
@@ -402,6 +430,12 @@ export async function runMatchQualityEvaluation(
   }
   if (batch.failedCases.length > 0) {
     gateFailures.push(`${batch.failedCases.length} labelled case${batch.failedCases.length === 1 ? '' : 's'} failed`);
+  }
+  const reasonMismatchCount = batch.failedCases.filter((result) =>
+    result.failedReasons.includes('reason_category_mismatch')
+  ).length;
+  if (reasonMismatchCount > 0) {
+    gateFailures.push(`${reasonMismatchCount} labelled case${reasonMismatchCount === 1 ? '' : 's'} failed reason-category expectations`);
   }
 
   return {

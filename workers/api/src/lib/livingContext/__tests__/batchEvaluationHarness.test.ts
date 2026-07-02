@@ -180,6 +180,7 @@ describe('batchEvaluationHarness', () => {
     expect(result.metrics.averageScoreSeparation).toBeGreaterThanOrEqual(0.2);
     expect(result.metrics.usableChallengeRate).toBe(1);
     expect(result.failedCases).toHaveLength(0);
+    expect(result.pairResults[0].reasonCategory).toBe('aligned');
     expect(result.pairResults[0].compactReport?.candidateEvidence.length).toBeGreaterThan(0);
     expect(result.pairResults[0].compactReport?.repoEvidence.length).toBeGreaterThan(0);
   });
@@ -226,6 +227,35 @@ describe('batchEvaluationHarness', () => {
     expect(result.metrics.totalPairs).toBe(1);
     expect(result.metrics.falsePositiveCount).toBe(0);
     expect(result.pairResults[0].computedVerdict).toBe('insufficient_evidence');
+    expect(result.pairResults[0].reasonCategory).toBe('insufficient_evidence');
     expect(result.pairResults[0].failedReasons).toEqual([]);
+  });
+
+  it('fails the gate when a labelled case has the right verdict for the wrong reason', async () => {
+    const db = createMockD1(sqlite) as unknown as D1Database;
+
+    const result = await runMatchQualityEvaluation(db, {
+      corpusId: 'reason-category-corpus',
+      cases: [{
+        caseId: 'wrong-reason-category',
+        candidateId: 'cand-negative',
+        challengePacketId: 'packet-typescript',
+        expectedVerdict: 'insufficient_evidence',
+        expectedReasonCategory: 'aligned',
+        requireCandidateEvidence: false,
+      }],
+      thresholds: {
+        minAccuracy: 1,
+        minAverageScoreSeparation: 0,
+        minUsableChallengeRate: 1,
+      },
+    });
+
+    expect(result.pairResults[0].computedVerdict).toBe('insufficient_evidence');
+    expect(result.pairResults[0].reasonCategory).toBe('insufficient_evidence');
+    expect(result.pairResults[0].verdictMatch).toBe(true);
+    expect(result.passed).toBe(false);
+    expect(result.failedCases[0].failedReasons).toContain('reason_category_mismatch');
+    expect(result.gateFailures).toContain('1 labelled case failed reason-category expectations');
   });
 });
