@@ -36,8 +36,15 @@ const candidateNodeIdempotencyMigration = readFileSync(
   'utf8',
 );
 
+interface MemoryR2PutRecord {
+  text: string | null;
+  byteLength: number;
+  contentType: string | undefined;
+  customMetadata: Record<string, string> | undefined;
+}
+
 interface MemoryR2 extends R2Bucket {
-  puts: Map<string, string>;
+  puts: Map<string, MemoryR2PutRecord>;
 }
 
 interface TalentDashboardBody {
@@ -136,11 +143,34 @@ function expectCandidateSafeDashboard(body: TalentDashboardBody, forbiddenValues
 }
 
 function createMemoryR2(): MemoryR2 {
-  const puts = new Map<string, string>();
+  const puts = new Map<string, MemoryR2PutRecord>();
   return {
     puts,
-    put: async (key: string, value: string | ArrayBuffer | ArrayBufferView | ReadableStream | Blob | null) => {
-      puts.set(key, typeof value === 'string' ? value : '');
+    put: async (
+      key: string,
+      value: string | ArrayBuffer | ArrayBufferView | ReadableStream | Blob | null,
+      options?: R2PutOptions,
+    ) => {
+      let text: string | null = null;
+      let byteLength = 0;
+      if (typeof value === 'string') {
+        text = value;
+        byteLength = new TextEncoder().encode(value).byteLength;
+      } else if (value instanceof ArrayBuffer) {
+        byteLength = value.byteLength;
+      } else if (ArrayBuffer.isView(value)) {
+        byteLength = value.byteLength;
+      } else if (value instanceof Blob) {
+        byteLength = value.size;
+      } else if (value) {
+        byteLength = -1;
+      }
+      puts.set(key, {
+        text,
+        byteLength,
+        contentType: options?.httpMetadata?.contentType,
+        customMetadata: options?.customMetadata,
+      });
       return null;
     },
   } as MemoryR2;
@@ -666,10 +696,9 @@ describe('talent pool candidate RPC', () => {
     const storage = createMemoryR2();
     const app = createApp();
     const formData = new FormData();
+    const uploadedText = 'Taylor has shipped TypeScript frontend systems, Workers APIs, and source-backed accessibility fixes.';
     formData.set('inviteToken', 'invite-token');
-    formData.set('file', new File([
-      'Taylor has shipped TypeScript frontend systems, Workers APIs, and source-backed accessibility fixes.',
-    ], 'taylor-profile.txt', { type: 'text/plain' }));
+    formData.set('file', new File([uploadedText], 'taylor-profile.txt', { type: 'text/plain' }));
     formData.set('githubUrl', 'https://github.com/taylor-upload');
 
     const res = await app.request('/rpc/talent/upload-profile', {
@@ -692,6 +721,14 @@ describe('talent pool candidate RPC', () => {
     expect(intake.profile_r2_key).toMatch(/^talent-intake\/candidate-1\/.*taylor-profile\.txt$/);
     expect(intake.profile_text_excerpt).toContain('Taylor has shipped TypeScript');
     expect(intake.github_url).toBe('https://github.com/taylor-upload');
+    expect(storage.puts.get(intake.profile_r2_key)).toMatchObject({
+      byteLength: new TextEncoder().encode(uploadedText).byteLength,
+      contentType: 'text/plain',
+      customMetadata: {
+        source: 'talent_pool_intake',
+        candidateId: 'candidate-1',
+      },
+    });
 
     expect(sqlite.prepare(
       `SELECT resume_s3_key
@@ -741,7 +778,7 @@ describe('talent pool candidate RPC', () => {
         logical_key: 'roleless_candidate_intake_message',
         media_type: 'text/plain',
         storage_key: intake.profile_r2_key,
-        content_text: 'Taylor has shipped TypeScript frontend systems, Workers APIs, and source-backed accessibility fixes.',
+        content_text: uploadedText,
         hash_length: 64,
         evidence_kind: null,
         extracted_text_available: null,
@@ -769,9 +806,9 @@ describe('talent pool candidate RPC', () => {
         LIMIT 1`,
     ).get(
       intake.profile_r2_key,
-      'Taylor has shipped TypeScript frontend systems, Workers APIs, and source-backed accessibility fixes.',
+      uploadedText,
     )).toEqual({
-      exact_text: 'Taylor has shipped TypeScript frontend systems, Workers APIs, and source-backed accessibility fixes.',
+      exact_text: uploadedText,
       storage_key: intake.profile_r2_key,
     });
     expect(sqlite.prepare(
@@ -785,7 +822,7 @@ describe('talent pool candidate RPC', () => {
     ).get()).toEqual({
       record_type: 'talent_pool_profile_intake',
       predicate: 'submitted_profile_evidence',
-      exact_text: 'Taylor has shipped TypeScript frontend systems, Workers APIs, and source-backed accessibility fixes.',
+      exact_text: uploadedText,
       storage_key: intake.profile_r2_key,
     });
     expect(sqlite.prepare(
@@ -802,9 +839,7 @@ describe('talent pool candidate RPC', () => {
 
     const replayFormData = new FormData();
     replayFormData.set('inviteToken', 'invite-token');
-    replayFormData.set('file', new File([
-      'Taylor has shipped TypeScript frontend systems, Workers APIs, and source-backed accessibility fixes.',
-    ], 'taylor-profile.txt', { type: 'text/plain' }));
+    replayFormData.set('file', new File([uploadedText], 'taylor-profile.txt', { type: 'text/plain' }));
     replayFormData.set('githubUrl', 'https://github.com/taylor-upload');
 
     const replay = await app.request('/rpc/talent/upload-profile', {
@@ -828,7 +863,7 @@ describe('talent pool candidate RPC', () => {
         LIMIT 1`,
     ).get()).toMatchObject({
       source_quote_validated: 1,
-      source_quote: 'Taylor has shipped TypeScript frontend systems, Workers APIs, and source-backed accessibility fixes.',
+      source_quote: uploadedText,
     });
     expect(sqlite.prepare('SELECT COUNT(*) AS count FROM context_records').get()).toEqual({ count: 2 });
     expect(sqlite.prepare('SELECT COUNT(*) AS count FROM context_record_source_refs').get()).toEqual({ count: 2 });
@@ -876,6 +911,14 @@ describe('talent pool candidate RPC', () => {
 
     const storedKey = [...storage.puts.keys()][0];
     expect(storedKey).toMatch(/^talent-intake\/candidate-1\/.*source-docs-profile\.docx$/);
+    expect(storage.puts.get(storedKey)).toMatchObject({
+      byteLength: docx.byteLength,
+      contentType: 'application/vnd.openxmlformats-officedocument.wordprocessingml.document',
+      customMetadata: {
+        source: 'talent_pool_intake',
+        candidateId: 'candidate-1',
+      },
+    });
     const intake = sqlite.prepare(
       `SELECT profile_r2_key, profile_text_excerpt
          FROM talent_pool_intakes
@@ -1023,6 +1066,14 @@ describe('talent pool candidate RPC', () => {
 
     const storedKey = [...storage.puts.keys()][0];
     expect(storedKey).toMatch(/^talent-intake\/candidate-1\/.*empty-profile\.pdf$/);
+    expect(storage.puts.get(storedKey)).toMatchObject({
+      byteLength: 14,
+      contentType: 'application/pdf',
+      customMetadata: {
+        source: 'talent_pool_intake',
+        candidateId: 'candidate-1',
+      },
+    });
     const intake = sqlite.prepare(
       `SELECT status, profile_r2_key, profile_text_excerpt
          FROM talent_pool_intakes

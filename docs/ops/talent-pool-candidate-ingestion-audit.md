@@ -289,9 +289,11 @@ record, and `TalentPoolProfileIntake` candidate node all join back to the
 current uploaded profile storage key and stay idempotent on replay. The DOCX
 upload proof exercises foreground OOXML text extraction and verifies the same
 storage-key join across receipt, source span, profile context record, and
-candidate node, also without duplicating on replay. The app-dev invite returned
-`CHALLENGE_PREPARING` with zero ready challenges and no serialized internal id
-values.
+candidate node, also without duplicating on replay. Upload route tests also
+assert raw R2 capture metadata for plain text, DOCX, and unextractable PDF
+files, proving the immutable file artifact is retained even when no profile
+claims may be derived. The app-dev invite returned `CHALLENGE_PREPARING` with
+zero ready challenges and no serialized internal id values.
 
 ## Current Gaps
 
