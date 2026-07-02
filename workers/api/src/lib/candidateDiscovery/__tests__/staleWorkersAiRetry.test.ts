@@ -608,10 +608,12 @@ describe('stale Workers AI candidate-ingestion retry', () => {
       failed: 0,
     });
     const selectCall = db.__calls.find((call) => call.sql.includes('FROM candidate_ingestion ci'))!;
-    expect(selectCall.sql).not.toContain('LIKE');
     expect(selectCall.sql).toContain("ci.current_step IN ('talent_pool_profile_received', 'queued', 'retry_queued', 'parse_resume', 'decompose_resume', 'discover_profile', 'embed_profile', 'match_and_assign')");
     expect(selectCall.sql).toContain("CASE WHEN ci.status = 'pending' THEN 0 ELSE 1 END");
+    expect(selectCall.sql).toContain("c.resume_s3_key LIKE 'candidate-documents/%'");
+    expect(selectCall.sql).toContain("c.resume_s3_key LIKE 'talent-intake/%'");
     expect(selectCall.sql).toContain("CASE WHEN ci.status = 'pending' THEN ci.updated_at END DESC");
+    expect(selectCall.sql).toContain("CASE WHEN ci.status = 'failed' THEN ci.updated_at END DESC");
     expect(selectCall.params[1]).toBe(18);
     expect(runCandidateIngestion).toHaveBeenCalledTimes(3);
     expect(runCandidateIngestion).toHaveBeenCalledWith(expect.objectContaining({

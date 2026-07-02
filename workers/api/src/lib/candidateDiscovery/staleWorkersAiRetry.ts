@@ -602,8 +602,18 @@ export async function processStaleWorkersAIModelIngestionRetries(
         )
       ORDER BY
         CASE WHEN ci.status = 'pending' THEN 0 ELSE 1 END,
+        CASE
+          WHEN ci.status = 'failed'
+           AND (
+             c.resume_s3_key LIKE 'candidate-documents/%'
+             OR c.resume_s3_key LIKE 'talent-intake/%'
+           )
+          THEN 0
+          WHEN ci.status = 'failed' THEN 1
+          ELSE 0
+        END,
         CASE WHEN ci.status = 'pending' THEN ci.updated_at END DESC,
-        ci.updated_at ASC
+        CASE WHEN ci.status = 'failed' THEN ci.updated_at END DESC
       LIMIT ?2`,
   ).bind(staleCutoff, scanLimit).all<RetryableCandidateRow>();
 
