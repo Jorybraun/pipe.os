@@ -9,6 +9,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Fixed — Talent Pool ingestion
 
+- Scheduled Talent Pool ingestion repair now recognizes the initial `talent_pool_profile_received` step and replays `.txt` Talent Pool sources through text ingestion instead of the document parser.
 - Stalled Talent Pool profile receipts now replay from their original R2 source, including pasted `.txt` intakes, so candidate AI/evidence ingestion cannot remain indefinitely at `talent_pool_profile_received`.
 - Talent Pool profile submit/upload now repairs the roleless person projection, so dev-seeded and legacy `/talent/:token` candidates upsert one canonical `people`/`workspace_people` identity without fabricating role-backed applications or person roles.
 - The People list now includes canonical `workspace_people` Talent Pool members and suppresses same-email/contact duplicates, so ingested Talent Pool candidates appear in the unified person list instead of only in candidate-specific surfaces.
