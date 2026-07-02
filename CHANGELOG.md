@@ -10,6 +10,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 ### Fixed — Talent Pool ingestion
 
 - Email-less Talent Pool profile submissions and document retries now still project into canonical `people` / `workspace_people` rows using a deterministic candidate-keyed identity, so ingested candidates appear in the unified person graph without fabricating applications or person roles.
+- Living-context evidence, freshness, readiness, comparison, confidence, conflict, lineage, provenance, and match-decision read helpers now resolve roleless Talent Pool `workspace_people` projections without requiring legacy application bridges.
 - Candidate discovery now keeps shared `CLOUDFLARE_AI_MODEL` overrides as late fallbacks instead of treating them as candidate-specific primaries, so profile ingestion starts with the fast candidate model and stale Workers AI timeout failures are eligible for replay.
 - Dev candidate-ingestion repair now uses a configurable retry batch size, allowing stale AI discovery failures to burn down faster without raising production retry throughput by default.
 - Candidate-ingestion audit now fails submitted Talent Pool candidates whose `candidate_ingestion` row is failed or still carries `error_text`, so stale discovery failures remain repair gaps instead of looking ready.

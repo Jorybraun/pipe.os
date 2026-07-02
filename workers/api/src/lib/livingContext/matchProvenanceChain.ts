@@ -13,6 +13,7 @@ import {
   DEFAULT_DECAY_CONFIG,
   type TemporalDecayConfig,
 } from '../challengeMatching/temporalDecay';
+import { resolveCandidateWorkspacePersonId } from './compatibility';
 
 export interface ProvenanceMatchDecision {
   matchRunId: string;
@@ -245,15 +246,9 @@ export async function loadMatchProvenanceChain(
     (packet?.demands ?? []).map((d) => [d.id, d]),
   );
 
-  const wpResult = await db.prepare(
-    `SELECT wp.id FROM workspace_people wp
-     JOIN applications app ON app.workspace_person_id = wp.id
-     JOIN candidates c ON c.id = app.legacy_candidate_id
-     WHERE c.id = ?
-     LIMIT 1`,
-  ).bind(matchRow.candidate_id).first<{ id: string }>();
+  const workspacePersonId = await resolveCandidateWorkspacePersonId(db, matchRow.candidate_id);
 
-  const assertionRows = wpResult
+  const assertionRows = workspacePersonId
     ? (await db.prepare(
         `SELECT sa.id AS assertion_id, sa.narrative, sa.predicate,
                 sa.confidence, sa.polarity, sa.observed_at,
@@ -267,7 +262,7 @@ export async function loadMatchProvenanceChain(
          LEFT JOIN source_spans ss ON ss.id = ass.source_span_id
          WHERE sa.workspace_person_id = ?
          ORDER BY sa.observed_at DESC`,
-      ).bind(wpResult.id).all<{
+      ).bind(workspacePersonId).all<{
         assertion_id: string;
         narrative: string;
         predicate: string;
@@ -295,7 +290,7 @@ export async function loadMatchProvenanceChain(
     }
   }
 
-  const artifactRows = wpResult
+  const artifactRows = workspacePersonId
     ? (await db.prepare(
         `SELECT a.id AS artifact_id, a.artifact_type, a.logical_key,
                 a.interaction_id,
@@ -305,7 +300,7 @@ export async function loadMatchProvenanceChain(
          JOIN artifact_versions av ON av.artifact_id = a.id
          JOIN source_spans ss ON ss.artifact_version_id = av.id
          WHERE a.workspace_person_id = ?`,
-      ).bind(wpResult.id).all<{
+      ).bind(workspacePersonId).all<{
         artifact_id: string;
         artifact_type: string;
         logical_key: string | null;
@@ -330,11 +325,11 @@ export async function loadMatchProvenanceChain(
     });
   }
 
-  const interactionRows = wpResult
+  const interactionRows = workspacePersonId
     ? (await db.prepare(
         `SELECT id, interaction_type, started_at, ended_at
          FROM interactions WHERE workspace_person_id = ?`,
-      ).bind(wpResult.id).all<{
+      ).bind(workspacePersonId).all<{
         id: string;
         interaction_type: string;
         started_at: string | null;

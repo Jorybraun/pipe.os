@@ -3,6 +3,7 @@ import {
   type TemporalDecayConfig,
   DEFAULT_DECAY_CONFIG,
 } from '../challengeMatching/temporalDecay';
+import { resolveCandidateWorkspacePersonId } from './compatibility';
 
 /**
  * Dimensions across which evidence readiness is measured.
@@ -183,19 +184,8 @@ export async function computeEvidenceReadiness(
     halfLifeDays,
   };
 
-  const wpRow = await db
-    .prepare(
-      `SELECT wp.id AS workspace_person_id
-       FROM workspace_people wp
-       JOIN applications a ON a.workspace_person_id = wp.id
-       WHERE a.legacy_candidate_id = ?1
-       LIMIT 1`,
-    )
-    .bind(candidateId)
-    .first<{ workspace_person_id: string }>();
-
-  if (!wpRow) return null;
-  const wpId = wpRow.workspace_person_id;
+  const wpId = await resolveCandidateWorkspacePersonId(db, candidateId);
+  if (!wpId) return null;
 
   const [interactionResult, conceptResult] = await Promise.all([
     db

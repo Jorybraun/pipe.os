@@ -13,6 +13,7 @@ import {
   DEFAULT_DECAY_CONFIG,
   type TemporalDecayConfig,
 } from '../challengeMatching/temporalDecay';
+import { resolveCandidateWorkspacePersonId } from './compatibility';
 
 export type CoverageLevel = 'strong' | 'partial' | 'weak' | 'none';
 
@@ -266,15 +267,8 @@ export async function loadCandidateEvidenceForGapAnalysis(
     ...decayConfig,
   };
 
-  const wpResult = await db.prepare(
-    `SELECT wp.id FROM workspace_people wp
-     JOIN applications app ON app.workspace_person_id = wp.id
-     JOIN candidates c ON c.id = app.legacy_candidate_id
-     WHERE c.id = ?
-     LIMIT 1`,
-  ).bind(candidateId).first<{ id: string }>();
-
-  if (!wpResult) {
+  const workspacePersonId = await resolveCandidateWorkspacePersonId(db, candidateId);
+  if (!workspacePersonId) {
     return { workspacePersonId: null, evidence: [] };
   }
 
@@ -296,7 +290,7 @@ export async function loadCandidateEvidenceForGapAnalysis(
      LEFT JOIN source_spans ss ON ss.id = ass.source_span_id
      WHERE sa.workspace_person_id = ?
      ORDER BY sa.observed_at DESC`,
-  ).bind(wpResult.id).all<{
+  ).bind(workspacePersonId).all<{
     assertion_id: string;
     narrative: string;
     concept_key: string | null;
@@ -317,7 +311,7 @@ export async function loadCandidateEvidenceForGapAnalysis(
     };
   });
 
-  return { workspacePersonId: wpResult.id, evidence };
+  return { workspacePersonId, evidence };
 }
 
 export async function analyzeEvidenceGapsForChallenge(

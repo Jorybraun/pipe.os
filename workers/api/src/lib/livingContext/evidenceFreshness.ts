@@ -10,6 +10,7 @@ import {
   DEFAULT_DECAY_CONFIG,
   type TemporalDecayConfig,
 } from '../challengeMatching/temporalDecay';
+import { resolveCandidateWorkspacePersonId } from './compatibility';
 
 export type FreshnessLevel = 'fresh' | 'recent' | 'aging' | 'stale';
 
@@ -146,15 +147,17 @@ export async function loadCandidateEvidenceFreshness(
     strength: number | null;
   }
 
+  const workspacePersonId = await resolveCandidateWorkspacePersonId(db, candidateId);
+  if (!workspacePersonId) return computeEvidenceFreshness([], decayConfig);
+
   const result = await db.prepare(
     `SELECT sa.id,
             COALESCE(sa.observed_at, sa.created_at) AS observed_at,
             (SELECT MAX(se.strength) FROM signal_evidence se WHERE se.assertion_id = sa.id) AS strength
-       FROM applications app
-       JOIN semantic_assertions sa ON sa.workspace_person_id = app.workspace_person_id
-      WHERE app.legacy_candidate_id = ?1
+       FROM semantic_assertions sa
+      WHERE sa.workspace_person_id = ?1
       ORDER BY COALESCE(sa.observed_at, sa.created_at) DESC`,
-  ).bind(candidateId).all<AssertionTimestampRow>();
+  ).bind(workspacePersonId).all<AssertionTimestampRow>();
 
   const entries: EvidenceRow[] = (result.results ?? []).map((row) => ({
     id: row.id,

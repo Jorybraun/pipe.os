@@ -19,6 +19,7 @@ import {
   DEFAULT_DECAY_CONFIG,
   type TemporalDecayConfig,
 } from '../challengeMatching/temporalDecay';
+import { resolveCandidateWorkspacePersonId } from './compatibility';
 
 /* ------------------------------------------------------------------ */
 /*  Types                                                              */
@@ -175,19 +176,8 @@ export async function detectEvidenceConflicts(
   const minAssertions =
     options.minAssertionsForConflict ?? DEFAULT_MIN_ASSERTIONS;
 
-  // Resolve workspace person
-  const wpRow = await db
-    .prepare(
-      `SELECT wp.id
-       FROM workspace_people wp
-       JOIN applications a ON a.workspace_person_id = wp.id
-       WHERE a.legacy_candidate_id = ?
-       LIMIT 1`,
-    )
-    .bind(candidateId)
-    .first<{ id: string }>();
-
-  if (!wpRow) {
+  const workspacePersonId = await resolveCandidateWorkspacePersonId(db, candidateId);
+  if (!workspacePersonId) {
     return {
       candidateId,
       workspacePersonId: null,
@@ -199,8 +189,6 @@ export async function detectEvidenceConflicts(
       analyzedAt: new Date(now).toISOString(),
     };
   }
-
-  const workspacePersonId = wpRow.id;
 
   // Load assertions with concept links and source spans
   const { results: rows } = await db

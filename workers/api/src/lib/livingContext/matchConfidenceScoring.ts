@@ -18,6 +18,7 @@ import {
   type TemporalDecayConfig,
 } from '../challengeMatching/temporalDecay';
 import type { D1Database } from '@cloudflare/workers-types';
+import { resolveCandidateWorkspacePersonId } from './compatibility';
 
 export type ConfidenceLevel = 'high' | 'moderate' | 'low' | 'insufficient';
 
@@ -385,13 +386,7 @@ export async function computeMatchConfidence(
     ...options.decay,
   };
 
-  const wpResult = await db.prepare(
-    `SELECT wp.id FROM workspace_people wp
-     JOIN applications app ON app.workspace_person_id = wp.id
-     JOIN candidates c ON c.id = app.legacy_candidate_id
-     WHERE c.id = ?
-     LIMIT 1`,
-  ).bind(candidateId).first<{ id: string }>();
+  const workspacePersonId = await resolveCandidateWorkspacePersonId(db, candidateId);
 
   const packetRow = await db.prepare(
     `SELECT packet_json FROM review_challenge_packets WHERE id = ?`,
@@ -419,7 +414,7 @@ export async function computeMatchConfidence(
   }));
 
   let evidence: EvidenceRow[] = [];
-  if (wpResult) {
+  if (workspacePersonId) {
     const rows = await db.prepare(
       `SELECT
          sa.id AS assertion_id,
@@ -437,7 +432,7 @@ export async function computeMatchConfidence(
        LEFT JOIN interactions i ON i.id = se.interaction_id
        WHERE sa.workspace_person_id = ?
        ORDER BY sa.observed_at DESC`,
-    ).bind(wpResult.id).all<EvidenceRow>();
+    ).bind(workspacePersonId).all<EvidenceRow>();
 
     evidence = rows.results ?? [];
   }
@@ -446,7 +441,7 @@ export async function computeMatchConfidence(
 
   return {
     candidateId,
-    workspacePersonId: wpResult?.id ?? null,
+    workspacePersonId,
     challengeId: challengePacketId,
     compositeScore: result.compositeScore,
     compositeLevel: result.compositeLevel,

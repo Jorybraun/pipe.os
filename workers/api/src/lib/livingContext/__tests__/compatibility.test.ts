@@ -8,6 +8,7 @@ import {
   ensureCandidateLivingContext,
   ensureContactLivingContext,
   mirrorCandidateNodeToLivingContext,
+  resolveCandidateWorkspacePersonId,
 } from '../compatibility';
 import { ingestPhoneCallToLivingContext } from '../phoneCall';
 import { loadCandidateLivingContext, loadContactLivingContext } from '../readModel';
@@ -125,6 +126,59 @@ describe('legacy contact/candidate identity compatibility', () => {
 
   afterEach(() => {
     sqlite.close();
+  });
+
+  it('resolves roleless Talent Pool workspace people without creating an application bridge', async () => {
+    sqlite.prepare(
+      `INSERT INTO candidates (id, owner_id, pipeline_id, name, email, status)
+       VALUES (?, ?, ?, ?, ?, ?)`,
+    ).run(
+      'roleless-candidate-1',
+      'workspace-1',
+      null,
+      'Roleless Candidate',
+      null,
+      'talent_pool',
+    );
+    sqlite.prepare(
+      `INSERT INTO people (
+         id, ingestion_key, display_name, primary_email, external_ids_json, created_at, updated_at
+       ) VALUES (?, ?, ?, ?, ?, ?, ?)`,
+    ).run(
+      'person-roleless-1',
+      'candidate:roleless-candidate-1:roleless-person',
+      'Roleless Candidate',
+      null,
+      JSON.stringify({ legacyCandidateId: 'roleless-candidate-1' }),
+      '2026-07-02T00:00:00.000Z',
+      '2026-07-02T00:00:00.000Z',
+    );
+    sqlite.prepare(
+      `INSERT INTO workspace_people (
+         id, ingestion_key, workspace_id, person_id, context_json, created_at, updated_at
+       ) VALUES (?, ?, ?, ?, ?, ?, ?)`,
+    ).run(
+      'workspace-person-roleless-1',
+      'workspace:workspace-1:person:person-roleless-1',
+      'workspace-1',
+      'person-roleless-1',
+      JSON.stringify({
+        talentPool: {
+          candidateId: 'roleless-candidate-1',
+          status: 'active',
+          roleless: true,
+        },
+        legacyCandidateIds: ['roleless-candidate-1'],
+      }),
+      '2026-07-02T00:00:00.000Z',
+      '2026-07-02T00:00:00.000Z',
+    );
+
+    await expect(resolveCandidateWorkspacePersonId(db, 'roleless-candidate-1')).resolves.toBe(
+      'workspace-person-roleless-1',
+    );
+    expect(sqlite.prepare('SELECT COUNT(*) AS count FROM applications').get()).toEqual({ count: 0 });
+    expect(sqlite.prepare('SELECT COUNT(*) AS count FROM person_roles').get()).toEqual({ count: 0 });
   });
 
   it('resolves a contact and roleless talent-pool candidate with the same normalized email to one workspace person read model', async () => {

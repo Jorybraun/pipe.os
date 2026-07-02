@@ -19,6 +19,7 @@ import {
   DEFAULT_DECAY_CONFIG,
   type TemporalDecayConfig,
 } from '../challengeMatching/temporalDecay';
+import { resolveCandidateWorkspacePersonId } from './compatibility';
 
 // ── Types ────────────────────────────────────────────────────────────────────
 
@@ -150,7 +151,11 @@ export async function compareCandidateEvidence(
         AND (c.owner_id = ?${candidateIds.length + 1} OR p.owner_id = ?${candidateIds.length + 1})`,
   ).bind(...candidateIds, userId).all<CandidateRow>();
 
-  const candidates = candidateRows.results ?? [];
+  const candidates = await Promise.all((candidateRows.results ?? []).map(async (candidate) => ({
+    ...candidate,
+    workspace_person_id: candidate.workspace_person_id
+      ?? await resolveCandidateWorkspacePersonId(db, candidate.id),
+  })));
   if (candidates.length === 0) {
     return {
       pipelineId: options?.pipelineId ?? null,

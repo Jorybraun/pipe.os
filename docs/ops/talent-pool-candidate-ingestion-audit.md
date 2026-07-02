@@ -29,6 +29,11 @@ email is absent, ingestion uses a deterministic candidate-keyed person identity
 so the candidate still appears in the unified person graph without creating a
 separate list or role-backed application.
 
+Living-context evidence panels and matching diagnostics must use the same
+read-only candidate-to-`workspace_people` resolver: legacy application bridge
+first when it exists, then the roleless Talent Pool context keys. They must not
+create an `application` just to read source-backed evidence.
+
 This follows the BRAIN hypergraph model: an intake run is a source-backed
 evidence bundle connecting candidate id, submitted profile artifact, extracted
 spans, ingestion state, person projection, and unresolved gaps. The person graph
@@ -155,6 +160,7 @@ npm run candidate-ingestion:audit -- --local --email <email>
 npm run candidate-ingestion:audit -- --local --invite-token <token> --require-context-records
 npm run candidate-ingestion:audit -- --remote --invite-token <token>
 npm test -- src/routes/__tests__/talentPool.test.ts src/lib/candidateDiscovery/__tests__/staleWorkersAiRetry.test.ts
+npm test -- src/lib/livingContext/__tests__/compatibility.test.ts src/lib/livingContext/__tests__/candidateComparison.test.ts src/lib/livingContext/__tests__/evidenceReadiness.test.ts src/lib/livingContext/__tests__/matchConfidenceScoring.test.ts
 npm test -- src/lib/candidateDiscovery/__tests__/candidateNodes.test.ts src/lib/candidateDiscovery/__tests__/resumeDecomposition.test.ts scripts/auditCandidateIngestion.test.ts
 npm test -- src/routes/cockpit/__tests__/contacts.rest.test.ts src/routes/cockpit/__tests__/candidates.rest.test.ts src/lib/livingContext/__tests__/readModel.test.ts
 ```

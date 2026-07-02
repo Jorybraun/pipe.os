@@ -28,9 +28,22 @@ interface LegacyContactIdentity {
   type: string;
 }
 
+interface ReadableD1PreparedStatement {
+  bind(...values: unknown[]): ReadableD1PreparedStatement;
+  first<T = unknown>(): Promise<T | null>;
+}
+
+interface ReadableD1Database {
+  prepare(query: string): ReadableD1PreparedStatement;
+}
+
 function identityKey(email: string | null, fallback: string): string {
   const normalized = email?.trim().toLowerCase();
   return normalized ? `email:${normalized}` : fallback;
+}
+
+function isMissingTableError(error: unknown, tableName: string): boolean {
+  return String(error instanceof Error ? error.message : error).includes(`no such table: ${tableName}`);
 }
 
 function jsonValue(value: unknown): JsonValue | undefined {
@@ -100,6 +113,53 @@ async function existingWorkspacePersonContext(
       LIMIT 1`,
   ).bind(ingestionKey).first<{ context_json: string | null }>();
   return parseContext(existing?.context_json ?? null);
+}
+
+export async function resolveCandidateWorkspacePersonId(
+  db: ReadableD1Database,
+  candidateId: string,
+): Promise<string | null> {
+  try {
+    const applicationIdentity = await db.prepare(
+      `SELECT workspace_person_id
+         FROM applications
+        WHERE legacy_candidate_id = ?1
+        LIMIT 1`,
+    ).bind(candidateId).first<{ workspace_person_id: string }>();
+    if (applicationIdentity?.workspace_person_id) return applicationIdentity.workspace_person_id;
+  } catch (error) {
+    if (!isMissingTableError(error, 'applications')) throw error;
+  }
+
+  try {
+    const rolelessIdentity = await db.prepare(
+      `SELECT wp.id
+         FROM candidates c
+         JOIN workspace_people wp ON wp.workspace_id = c.owner_id
+        WHERE c.id = ?1
+          AND (
+            json_extract(wp.context_json, '$.talentPool.candidateId') = c.id
+            OR EXISTS (
+              SELECT 1
+                FROM json_each(wp.context_json, '$.legacyCandidateIds') candidate_ids
+               WHERE candidate_ids.value = c.id
+            )
+          )
+        ORDER BY CASE WHEN json_extract(wp.context_json, '$.talentPool.roleless') = 1 THEN 0 ELSE 1 END,
+                 wp.created_at,
+                 wp.id
+        LIMIT 1`,
+    ).bind(candidateId).first<{ id: string }>();
+    return rolelessIdentity?.id ?? null;
+  } catch (error) {
+    if (
+      isMissingTableError(error, 'candidates')
+      || isMissingTableError(error, 'workspace_people')
+    ) {
+      return null;
+    }
+    throw error;
+  }
 }
 
 async function existingPersonIngestionKey(

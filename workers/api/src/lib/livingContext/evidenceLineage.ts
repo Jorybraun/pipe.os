@@ -15,6 +15,7 @@ import {
   DEFAULT_DECAY_CONFIG,
   type TemporalDecayConfig,
 } from '../challengeMatching/temporalDecay';
+import { resolveCandidateWorkspacePersonId } from './compatibility';
 
 export interface LineageSourceSpan {
   sourceSpanId: string;
@@ -175,11 +176,8 @@ export async function traceEvidenceLineage(
     ...options?.decayConfig,
   };
 
-  const personResult = await db.prepare(
-    `SELECT workspace_person_id FROM applications WHERE legacy_candidate_id = ?1 LIMIT 1`,
-  ).bind(candidateId).first<{ workspace_person_id: string }>();
-
-  if (!personResult) {
+  const personId = await resolveCandidateWorkspacePersonId(db, candidateId);
+  if (!personId) {
     return {
       candidateId,
       workspacePersonId: null,
@@ -188,8 +186,6 @@ export async function traceEvidenceLineage(
       conceptSummary: [],
     };
   }
-
-  const personId = personResult.workspace_person_id;
 
   const conceptFilter = options?.conceptKeys && options.conceptKeys.length > 0
     ? options.conceptKeys
