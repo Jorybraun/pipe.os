@@ -305,7 +305,12 @@ Follow-up deployed proof on 2026-07-02 after GitHub deploy commit
 `waiting_for_source_backed_match`; ready manual assignment interview
 `53f9d6a3-fd98-4761-ad00-f2f5cb1ed829` selected `mui/base-ui#973`, returned
 `MATCHED`, `PASSED`, and `USABLE`, and passed both candidate browser and
-authenticated recruiter browser smoke checks.
+authenticated recruiter browser smoke checks. The same deployed surface passed
+manual full-submit interview `a86083cf-c3b3-4a4f-a96b-532b79bb4739`, review
+session `b7afb85b-0030-4761-8dc1-84701eba5197`, judge replay example
+`code_review_judge_example_1dd71800d1777622866b3ecdf58ccf0e`, and remote score
+persistence with score `54`, band `adequate`, and completed recruiter/profile
+results.
 
 Use `npm run smoke:open-source-workspace-dev` for the real open-source bug-fix
 workspace path. It creates an `OPEN_SOURCE_BUG_FIX` invite, launches the
