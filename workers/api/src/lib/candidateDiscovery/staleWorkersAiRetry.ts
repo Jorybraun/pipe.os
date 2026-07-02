@@ -1,6 +1,8 @@
 import type { Env } from '../../types';
 import { buildRuleBasedParsedCV, persistParsedCV } from '../cvParser';
 import { processResumeFromR2 } from '../enrichment/resumeIngestion';
+import type { ResumeLivingContextIdentity } from '../livingContext/resumeIngestion';
+import { ensureRolelessTalentPoolIdentity } from '../talentPoolIdentity';
 import { recordSessionEvent } from '../telemetry/sessionEvents';
 import { runCandidateIngestion } from './orchestrate';
 import { markIngestionFailed } from './persist';
@@ -25,6 +27,10 @@ function isTextSourceKey(resumeS3Key: string): boolean {
   const normalized = resumeS3Key.toLowerCase();
   return resumeS3Key.startsWith('text-intake/')
     || (resumeS3Key.startsWith('talent-intake/') && normalized.endsWith('.txt'));
+}
+
+function isTalentPoolSourceKey(resumeS3Key: string): boolean {
+  return resumeS3Key.startsWith('talent-intake/');
 }
 
 type RetryTrigger = 'candidate_rpc' | 'scheduled_worker';
@@ -60,9 +66,31 @@ interface RetryableCandidateRow extends StaleWorkersAIRow {
   resume_s3_key: string;
 }
 
+interface TalentPoolOperationalRetryRow {
+  owner_id: string | null;
+  name: string | null;
+  email: string | null;
+  github_url: string | null;
+  linkedin_url: string | null;
+  portfolio_url: string | null;
+  phone_screener_consent: number | null;
+  phone_number: string | null;
+  timezone: string | null;
+  availability: string | null;
+  submitted_at: string | null;
+  updated_at: string | null;
+}
+
 export interface StaleWorkersAIRetryResult {
   scanned: number;
   queued: number;
+  skipped: number;
+  failed: number;
+}
+
+export interface TalentPoolOperationalContextRepairResult {
+  scanned: number;
+  repaired: number;
   skipped: number;
   failed: number;
 }
@@ -171,12 +199,110 @@ function retryContextForRow(row: StaleWorkersAIRow, trigger: RetryTrigger): (Ret
   return null;
 }
 
+async function repairRolelessTalentPoolOperationalContext(
+  env: Env,
+  candidateId: string,
+): Promise<ResumeLivingContextIdentity | null> {
+  const row = await env.DB.prepare(
+    `SELECT c.owner_id,
+            c.name,
+            c.email,
+            t.github_url,
+            t.linkedin_url,
+            t.portfolio_url,
+            t.phone_screener_consent,
+            t.phone_number,
+            t.timezone,
+            t.availability,
+            t.submitted_at,
+            t.updated_at
+       FROM candidates c
+       JOIN talent_pool_intakes t ON t.candidate_id = c.id
+      WHERE c.id = ?1
+        AND c.pipeline_id IS NULL
+      LIMIT 1`,
+  ).bind(candidateId).first<TalentPoolOperationalRetryRow>();
+
+  const ownerId = row?.owner_id?.trim();
+  const email = row?.email?.trim();
+  if (!row || !ownerId || !email) return null;
+
+  return await ensureRolelessTalentPoolIdentity({
+    db: env.DB,
+    userId: ownerId,
+    candidateId,
+    name: row.name?.trim() || email,
+    email,
+    operationalContext: {
+      githubUrl: row.github_url,
+      linkedinUrl: row.linkedin_url,
+      portfolioUrl: row.portfolio_url,
+      phoneScreenerConsent: row.phone_screener_consent === 1,
+      phoneNumber: row.phone_number,
+      timezone: row.timezone,
+      availability: row.availability,
+    },
+    now: row.submitted_at ?? row.updated_at ?? new Date().toISOString(),
+  });
+}
+
+export async function processTalentPoolOperationalContextRepairs(
+  env: Env,
+  limit = MAX_STALE_WORKERS_AI_RETRY_LIMIT,
+): Promise<TalentPoolOperationalContextRepairResult> {
+  const boundedLimit = Math.max(1, Math.min(limit, MAX_STALE_WORKERS_AI_RETRY_LIMIT));
+  const rows = await env.DB.prepare(
+    `SELECT c.id AS candidate_id
+       FROM talent_pool_intakes t
+       JOIN candidates c ON c.id = t.candidate_id
+      WHERE c.pipeline_id IS NULL
+        AND (
+          (t.github_url IS NOT NULL AND TRIM(t.github_url) <> '')
+          OR (t.linkedin_url IS NOT NULL AND TRIM(t.linkedin_url) <> '')
+          OR (t.portfolio_url IS NOT NULL AND TRIM(t.portfolio_url) <> '')
+          OR t.phone_screener_consent = 1
+        )
+      ORDER BY t.updated_at DESC
+      LIMIT ?1`,
+  ).bind(boundedLimit).all<{ candidate_id: string }>();
+
+  let repaired = 0;
+  let skipped = 0;
+  let failed = 0;
+
+  for (const row of rows.results ?? []) {
+    try {
+      const identity = await repairRolelessTalentPoolOperationalContext(env, row.candidate_id);
+      if (identity) {
+        repaired++;
+      } else {
+        skipped++;
+      }
+    } catch (err) {
+      failed++;
+      const msg = err instanceof Error ? err.message : String(err);
+      console.error(`[talentPoolOperationalContextRepair] failed for ${row.candidate_id}:`, msg);
+    }
+  }
+
+  return {
+    scanned: rows.results?.length ?? 0,
+    repaired,
+    skipped,
+    failed,
+  };
+}
+
 export async function retryCandidateEvidenceIngestionFromSource(
   env: Env,
   candidateId: string,
   resumeS3Key: string,
   context?: RetryContext,
 ): Promise<void> {
+  const rolelessTalentPoolIdentity = isTalentPoolSourceKey(resumeS3Key)
+    ? await repairRolelessTalentPoolOperationalContext(env, candidateId)
+    : null;
+
   if (isTextSourceKey(resumeS3Key)) {
     if (!env.STORAGE) {
       await markRetryFailed(
@@ -232,6 +358,7 @@ export async function retryCandidateEvidenceIngestionFromSource(
     db: env.DB,
     candidateId,
     r2Key: resumeS3Key,
+    ...(isTalentPoolSourceKey(resumeS3Key) ? { livingContextIdentity: rolelessTalentPoolIdentity } : {}),
   });
   if (!result.success) {
     await markRetryFailed(

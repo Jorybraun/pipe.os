@@ -9,10 +9,12 @@ import {
   isRetryableStalledInProgressIngestion,
   maybeQueueRetryableStandaloneIngestion,
   processStaleWorkersAIModelIngestionRetries,
+  processTalentPoolOperationalContextRepairs,
   retryCandidateEvidenceIngestionFromSource,
 } from '../staleWorkersAiRetry';
 import { runCandidateIngestion } from '../orchestrate';
 import { processResumeFromR2 } from '../../enrichment/resumeIngestion';
+import { ensureRolelessTalentPoolIdentity } from '../../talentPoolIdentity';
 
 vi.mock('../orchestrate', async (importOriginal) => {
   const actual = await importOriginal<typeof import('../orchestrate')>();
@@ -29,6 +31,13 @@ vi.mock('../../enrichment/resumeIngestion', async (importOriginal) => {
     processResumeFromR2: vi.fn(async () => ({ success: true, parsed: null })),
   };
 });
+
+vi.mock('../../talentPoolIdentity', () => ({
+  ensureRolelessTalentPoolIdentity: vi.fn(async () => ({
+    personId: 'person-1',
+    workspacePersonId: 'workspace-person-1',
+  })),
+}));
 
 interface PreparedCall {
   sql: string;
@@ -194,7 +203,22 @@ describe('stale Workers AI candidate-ingestion retry', () => {
   });
 
   it('retries Talent Pool text evidence from the original R2 source', async () => {
-    const db = fakeD1();
+    const db = fakeD1({
+      first: {
+        owner_id: 'owner-1',
+        name: 'Talent Candidate',
+        email: 'talent@example.com',
+        github_url: 'https://github.com/talent-candidate',
+        linkedin_url: 'https://linkedin.com/in/talent-candidate',
+        portfolio_url: 'https://talent.example.dev',
+        phone_screener_consent: 1,
+        phone_number: '+15551234567',
+        timezone: 'America/Vancouver',
+        availability: 'Weekday afternoons after 2 PM.',
+        submitted_at: '2026-07-02T18:22:39.331Z',
+        updated_at: '2026-07-02T18:22:39.331Z',
+      },
+    });
     const storage = fakeStorage(
       'Staff product engineer building source-backed hiring assessments and deterministic evidence replay.',
     );
@@ -207,6 +231,23 @@ describe('stale Workers AI candidate-ingestion retry', () => {
     );
 
     expect(storage.get).toHaveBeenCalledWith('talent-intake/talent-candidate-1/2026-07-02T18-22-39-331Z.txt');
+    expect(ensureRolelessTalentPoolIdentity).toHaveBeenCalledWith(expect.objectContaining({
+      db,
+      userId: 'owner-1',
+      candidateId: 'talent-candidate-1',
+      name: 'Talent Candidate',
+      email: 'talent@example.com',
+      operationalContext: {
+        githubUrl: 'https://github.com/talent-candidate',
+        linkedinUrl: 'https://linkedin.com/in/talent-candidate',
+        portfolioUrl: 'https://talent.example.dev',
+        phoneScreenerConsent: true,
+        phoneNumber: '+15551234567',
+        timezone: 'America/Vancouver',
+        availability: 'Weekday afternoons after 2 PM.',
+      },
+      now: '2026-07-02T18:22:39.331Z',
+    }));
     expect(runCandidateIngestion).toHaveBeenCalledWith(expect.objectContaining({
       env,
       db,
@@ -235,6 +276,51 @@ describe('stale Workers AI candidate-ingestion retry', () => {
       db,
       candidateId: 'candidate-pdf',
       r2Key: 'candidate-documents/candidate-pdf/resume.pdf',
+    });
+  });
+
+  it('passes roleless Talent Pool identity into document retries', async () => {
+    const db = fakeD1({
+      first: {
+        owner_id: 'owner-1',
+        name: 'PDF Candidate',
+        email: 'pdf@example.com',
+        github_url: 'https://github.com/pdf-candidate',
+        linkedin_url: null,
+        portfolio_url: null,
+        phone_screener_consent: 0,
+        phone_number: null,
+        timezone: null,
+        availability: null,
+        submitted_at: '2026-07-02T19:37:48.430Z',
+        updated_at: '2026-07-02T19:37:48.430Z',
+      },
+    });
+    const env = buildEnv(db, fakeStorage('unused'));
+
+    await retryCandidateEvidenceIngestionFromSource(
+      env,
+      'talent-pdf',
+      'talent-intake/talent-pdf/resume.pdf',
+    );
+
+    expect(ensureRolelessTalentPoolIdentity).toHaveBeenCalledWith(expect.objectContaining({
+      candidateId: 'talent-pdf',
+      email: 'pdf@example.com',
+      operationalContext: expect.objectContaining({
+        githubUrl: 'https://github.com/pdf-candidate',
+        phoneScreenerConsent: false,
+      }),
+    }));
+    expect(processResumeFromR2).toHaveBeenCalledWith({
+      env,
+      db,
+      candidateId: 'talent-pdf',
+      r2Key: 'talent-intake/talent-pdf/resume.pdf',
+      livingContextIdentity: {
+        personId: 'person-1',
+        workspacePersonId: 'workspace-person-1',
+      },
     });
   });
 
@@ -443,6 +529,48 @@ describe('stale Workers AI candidate-ingestion retry', () => {
         key: 'text-intake/oldest/source',
       },
     });
+  });
+
+  it('cron repairs missing Talent Pool operational context projections', async () => {
+    const db = fakeD1({
+      all: [
+        { candidate_id: 'talent-1' },
+        { candidate_id: 'talent-2' },
+      ],
+      first: {
+        owner_id: 'owner-1',
+        name: 'Talent Candidate',
+        email: 'talent@example.com',
+        github_url: 'https://github.com/talent-candidate',
+        linkedin_url: 'https://linkedin.com/in/talent-candidate',
+        portfolio_url: 'https://talent.example.dev',
+        phone_screener_consent: 1,
+        phone_number: '+15551234567',
+        timezone: 'America/Vancouver',
+        availability: 'Weekday afternoons after 2 PM.',
+        submitted_at: '2026-07-02T18:22:39.331Z',
+        updated_at: '2026-07-02T18:22:39.331Z',
+      },
+    });
+    const env = buildEnv(db, fakeStorage('unused'));
+
+    await expect(processTalentPoolOperationalContextRepairs(env, 2)).resolves.toEqual({
+      scanned: 2,
+      repaired: 2,
+      skipped: 0,
+      failed: 0,
+    });
+
+    const selectCall = db.__calls.find((call) => call.sql.includes('FROM talent_pool_intakes'))!;
+    expect(selectCall.params[0]).toBe(2);
+    expect(ensureRolelessTalentPoolIdentity).toHaveBeenCalledTimes(2);
+    expect(ensureRolelessTalentPoolIdentity).toHaveBeenCalledWith(expect.objectContaining({
+      candidateId: 'talent-1',
+      operationalContext: expect.objectContaining({
+        githubUrl: 'https://github.com/talent-candidate',
+        phoneScreenerConsent: true,
+      }),
+    }));
   });
 
   it('records append-only retry failure evidence when the original source is missing', async () => {
