@@ -68,7 +68,15 @@ For app-dev, prefix remote proof commands with the dev D1 id:
 ```bash
 CLOUDFLARE_D1_DATABASE_ID=0abe92df-9296-46f5-9f9d-a1fb1bcd3be1 \
   npm run candidate-ingestion:audit -- --remote --invite-token <token>
+CLOUDFLARE_D1_DATABASE_ID=0abe92df-9296-46f5-9f9d-a1fb1bcd3be1 \
+  npm run candidate-ingestion:audit -- --remote --invite-token <token> --require-context-records
 ```
+
+Latest app-dev proof on 2026-07-02 used invite token
+`talent-audit-532e4287e-c1` after replaying the same profile submission twice.
+The stricter remote verifier returned `status: ready`,
+`contextRecordCount: 1`, `contextSourceRefCount: 1`,
+`sourceLessPositiveClaimCount: 0`, and `duplicateProjectedEdgeCount: 0`.
 
 ## Current Gaps
 
