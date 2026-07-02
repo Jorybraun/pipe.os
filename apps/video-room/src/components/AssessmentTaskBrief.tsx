@@ -1,4 +1,4 @@
-import { CheckCircle2, CircleDashed, ClipboardCheck, GitBranch, SquareTerminal, Upload } from 'lucide-react';
+import { CheckCircle2, CircleDashed, ClipboardCheck, GitBranch, ShieldCheck, SquareTerminal, Upload } from 'lucide-react';
 import { summarizeChallengePacket } from '../lib/challengePacketSummary';
 import type { RoomAssessmentProgressSnapshot, RoomWorkspace, RoomWorkspaceChallengePacket } from '../types';
 
@@ -35,6 +35,38 @@ interface ProofChecklistItem {
   captured: boolean;
   detail: string;
   required: boolean;
+}
+
+interface SubmissionStatus {
+  label: string;
+  detail: string;
+  tone: 'ready' | 'review' | 'submitted';
+}
+
+function submissionStatus(progress: RoomAssessmentProgressSnapshot): SubmissionStatus | null {
+  if (!progress.hasCommitSubmission || !progress.commit?.commitSha) return null;
+
+  if (progress.evaluation?.status === 'EVALUATED') {
+    return {
+      label: 'Assessment report ready',
+      detail: 'Your commit and evidence trail have been evaluated. The recruiter can now review the source-backed report.',
+      tone: 'ready',
+    };
+  }
+
+  if (progress.nextAction === 'START_EVALUATION' || progress.readiness?.isReadyForEvaluation) {
+    return {
+      label: 'Submission captured',
+      detail: 'Your assessment branch commit, diff, and required source refs are captured. Evaluation can start from this evidence.',
+      tone: 'submitted',
+    };
+  }
+
+  return {
+    label: 'Commit recorded',
+    detail: progress.nextActionLabel,
+    tone: 'review',
+  };
 }
 
 function proofChecklistItems(progress: RoomAssessmentProgressSnapshot): ProofChecklistItem[] {
@@ -129,6 +161,13 @@ export function AssessmentTaskBrief({
   const proofItems = progress ? proofChecklistItems(progress) : [];
   const missingRequiredProof = progress?.readiness?.missingRequiredCount
     ?? proofItems.filter((item) => item.required && !item.captured).length;
+  const status = progress ? submissionStatus(progress) : null;
+  const submittedChangedFileCount = progress?.commit?.changedFiles.length ?? 0;
+  const submittedVerification = progress?.hasTestEvidence
+    ? 'Test evidence captured'
+    : progress?.hasVerificationGap
+      ? 'Verification gap captured'
+      : 'No test evidence captured';
   const canOpenSubmission = workspaceReady && !challengeSetupStep;
   const hasContract = Boolean(
     summary.task
@@ -197,6 +236,40 @@ export function AssessmentTaskBrief({
           </div>
         )}
       </section>
+
+      {status && progress?.commit?.commitSha && (
+        <section
+          className={`assessment-task-brief-submission is-${status.tone}`}
+          data-testid="assessment-task-brief-submission"
+          aria-label="Assessment submission status"
+        >
+          <div className="assessment-task-brief-submission-header">
+            <ShieldCheck size={15} />
+            <div>
+              <strong>{status.label}</strong>
+              <p>{status.detail}</p>
+            </div>
+          </div>
+          <dl>
+            <dt>Commit</dt>
+            <dd>{shortSha(progress.commit.commitSha)}</dd>
+            {progress.commit.branchName && (
+              <>
+                <dt>Branch</dt>
+                <dd>{progress.commit.branchName}</dd>
+              </>
+            )}
+            <dt>Files</dt>
+            <dd>
+              {submittedChangedFileCount === 0
+                ? 'Changed files not listed'
+                : `${submittedChangedFileCount} changed ${submittedChangedFileCount === 1 ? 'file' : 'files'}`}
+            </dd>
+            <dt>Verification</dt>
+            <dd>{submittedVerification}</dd>
+          </dl>
+        </section>
+      )}
 
       {progress && (
         <section

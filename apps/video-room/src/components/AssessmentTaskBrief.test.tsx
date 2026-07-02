@@ -174,6 +174,15 @@ describe('AssessmentTaskBrief', () => {
     expect(briefText).toContain('Commit SHA on assessment branch');
     expect(briefText).toContain('Test command output');
     expect(screen.getByTestId('assessment-task-brief-readiness').textContent).toContain('Ready for evaluation');
+    const submission = screen.getByTestId('assessment-task-brief-submission');
+    expect(submission.textContent).toContain('Submission captured');
+    expect(submission.textContent).toContain('Your assessment branch commit, diff, and required source refs are captured.');
+    expect(submission.textContent).toContain('Commit');
+    expect(submission.textContent).toContain('cccccccccc');
+    expect(submission.textContent).toContain('Branch');
+    expect(submission.textContent).toContain('pipe-assessment/retry-path');
+    expect(submission.textContent).toContain('1 changed file');
+    expect(submission.textContent).toContain('Test evidence captured');
     expect(briefText).toContain('Proof checklist');
     expect(briefText).toContain('Ready for source-backed review');
     expect(briefText).toContain('Complete challenge packet: Captured');
@@ -291,6 +300,39 @@ describe('AssessmentTaskBrief', () => {
     expect(proofText).toContain('Exact diff source: Missing');
     expect(proofText).toContain('Tests or verification note: Not captured');
     expect(proofText).toContain('Candidate explanation: Not captured');
+    expect(screen.queryByTestId('assessment-task-brief-submission')).toBeNull();
+  });
+
+  it('shows evaluated workspace submissions as report-ready without exposing recruiter-only scoring', () => {
+    render(
+      <AssessmentTaskBrief
+        packet={packet}
+        workspace={workspace}
+        progress={{
+          ...progress,
+          stage: 'EVALUATED',
+          nextAction: 'REVIEW_EVALUATION',
+          nextActionLabel: 'Review the source-backed assessment report.',
+          hasTestEvidence: false,
+          hasVerificationGap: true,
+          evaluation: {
+            status: 'EVALUATED',
+            summary: 'Source-backed report is ready.',
+            recommendation: 'strong_evidence_to_advance',
+            createdAt: '2026-06-29T22:03:00.000Z',
+          },
+        }}
+        workspaceReady
+      />,
+    );
+
+    const submission = screen.getByTestId('assessment-task-brief-submission');
+    expect(submission.textContent).toContain('Assessment report ready');
+    expect(submission.textContent).toContain('The recruiter can now review the source-backed report.');
+    expect(submission.textContent).toContain('Commit');
+    expect(submission.textContent).toContain('cccccccccc');
+    expect(submission.textContent).toContain('Verification gap captured');
+    expect(submission.textContent).not.toContain('strong_evidence_to_advance');
   });
 
   it('shows exactly which challenge packet fields are missing', () => {

@@ -3195,6 +3195,73 @@ button:focus-visible {
   line-height: 1.35;
 }
 
+.assessment-task-brief-submission {
+  display: grid;
+  gap: 10px;
+  padding: 12px;
+  border: 1px solid rgba(74, 222, 128, 0.28);
+  border-radius: 6px;
+  background: rgba(22, 101, 52, 0.18);
+}
+
+.assessment-task-brief-submission.is-review {
+  border-color: rgba(250, 204, 21, 0.32);
+  background: rgba(250, 204, 21, 0.10);
+}
+
+.assessment-task-brief-submission-header {
+  display: grid;
+  grid-template-columns: 18px minmax(0, 1fr);
+  gap: 8px;
+  align-items: start;
+}
+
+.assessment-task-brief-submission-header svg {
+  color: #86efac;
+}
+
+.assessment-task-brief-submission-header strong {
+  display: block;
+  color: #bbf7d0;
+  font-family: 'Space Mono', monospace;
+  font-size: 10px;
+  letter-spacing: 0.08em;
+  text-transform: uppercase;
+}
+
+.assessment-task-brief-submission-header p {
+  margin: 4px 0 0;
+  color: rgba(244, 248, 255, 0.78);
+  font-size: 12px;
+  line-height: 1.45;
+}
+
+.assessment-task-brief-submission dl {
+  display: grid;
+  grid-template-columns: max-content minmax(0, 1fr);
+  gap: 4px 9px;
+  margin: 0;
+  padding-top: 9px;
+  border-top: 1px solid rgba(255, 255, 255, 0.10);
+}
+
+.assessment-task-brief-submission dt {
+  color: rgba(191, 219, 254, 0.82);
+  font-family: 'Space Mono', monospace;
+  font-size: 10px;
+  font-weight: 700;
+  text-transform: uppercase;
+}
+
+.assessment-task-brief-submission dd {
+  margin: 0;
+  min-width: 0;
+  color: #f4f8ff;
+  font-size: 11px;
+  font-weight: 700;
+  overflow-wrap: anywhere;
+}
+
 .assessment-task-brief-proof {
   display: grid;
   gap: 9px;
