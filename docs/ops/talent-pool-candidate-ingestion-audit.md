@@ -209,6 +209,12 @@ CLOUDFLARE_D1_DATABASE_ID=0abe92df-9296-46f5-9f9d-a1fb1bcd3be1 \
   npm run candidate-ingestion:audit -- --remote --invite-token <token> --require-context-records
 ```
 
+The packaged dev smoke commands default Talent Pool RPC submission to the
+app-dev proxy when no API base override is set. If a caller explicitly targets
+`api-dev.hire-pipe.com`, the smoke omits dev HTTP Basic Auth for that API host
+while still using Basic Auth for app-dev candidate creation. This keeps the
+proof path close to candidate traffic but still allows direct API probes.
+
 Latest app-dev proof on 2026-07-02 used invite token
 `talent-audit-532e4287e-c1` after deploying Worker version
 `11303318-b79f-451b-93c9-ab1ec4eb4616`, which includes canonical person-id
@@ -266,11 +272,12 @@ through `/rpc/talent/upload-profile`, and polled the remote audit with
 
 Live app-dev DOCX upload proof on 2026-07-02 used
 `npm run smoke:talent-pool-docx-dev` against the same Worker version. The smoke
-created a standalone roleless Talent Pool candidate, resolved invite token
-`9dc0b091-c559-452b-9779-5d789ac5049a`, submitted a multipart DOCX profile
-through `/rpc/talent/upload-profile`, and required the remote audit to see both
-the original upload receipt and extracted document source span. The audit
-returned `status: ready`, `candidateNodeExactSourceQuoteCount: 55`,
+created a standalone roleless Talent Pool candidate through app-dev, resolved
+invite token `d16057ff-fd7d-4548-a8e8-58f6b5b877cd`, submitted a multipart DOCX
+profile through the app-dev `/rpc/talent/upload-profile` proxy, and required the
+remote audit to see both the original upload receipt and extracted document
+source span. The audit returned `status: ready`,
+`candidateNodeExactSourceQuoteCount: 56`,
 `contextSourceRefCount: 9`, `documentProfileSourceSpanCount: 1`,
 `profileUploadArtifactVersionCount: 1`, `talentPoolWorkspacePersonCount: 1`,
 `sourceLessPositiveClaimCount: 0`, and `duplicateProjectedEdgeCount: 0`.

@@ -9,6 +9,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Fixed — Talent Pool ingestion
 
+- Talent Pool dev smoke now defaults candidate RPC calls to the app-dev proxy and omits dev Basic Auth on direct `api-dev` RPC calls, so smoke proofs exercise the same proxy path candidates use while still supporting explicit API overrides.
 - Added `smoke:talent-pool-ingestion-dev` to create a dev Talent Pool candidate, submit public profile evidence, and poll the candidate-ingestion audit for source-backed person projection proof.
 - Added `smoke:talent-pool-upload-dev` to prove multipart plain-text Talent Pool uploads reach the same source-backed person projection, including the original upload artifact receipt.
 - Added `smoke:talent-pool-docx-dev` to prove live DOCX profile uploads extract exact source spans, preserve the upload artifact receipt, and stay free of source-less or duplicate projections.

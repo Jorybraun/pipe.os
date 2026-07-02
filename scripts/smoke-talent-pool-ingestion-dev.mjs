@@ -61,7 +61,7 @@ const rpcBase = (
   argumentValue('--rpc-base')
   ?? process.env.TALENT_POOL_SMOKE_RPC_BASE
   ?? process.env.API_BASE
-  ?? 'https://api-dev.hire-pipe.com'
+  ?? appBase
 ).replace(/\/$/, '');
 
 const recruiterApiBase = (
@@ -165,7 +165,26 @@ function smokeUploadFile() {
   };
 }
 
-function basicAuthHeader() {
+function hostnameForBase(baseUrl) {
+  try {
+    return new URL(baseUrl).hostname;
+  } catch {
+    return '';
+  }
+}
+
+function isLocalBase(baseUrl) {
+  return baseUrl.includes('localhost') || baseUrl.includes('127.0.0.1');
+}
+
+function shouldSendDevBasicAuth(baseUrl) {
+  const hostname = hostnameForBase(baseUrl);
+  if (hostname === 'api-dev.hire-pipe.com') return false;
+  return !isLocalBase(baseUrl);
+}
+
+function basicAuthHeader(baseUrl) {
+  if (!shouldSendDevBasicAuth(baseUrl)) return {};
   const user = process.env.PIPE_DEV_BASIC_AUTH_USER
     ?? process.env.DEV_BASIC_AUTH_USER
     ?? process.env.VIDEO_ROOM_DEV_AUTH_USER
@@ -178,13 +197,9 @@ function basicAuthHeader() {
   return { Authorization: `Basic ${Buffer.from(`${user}:${password}`).toString('base64')}` };
 }
 
-function isLocalBase(baseUrl) {
-  return baseUrl.includes('localhost') || baseUrl.includes('127.0.0.1');
-}
-
 function assertConfigured() {
-  if (isLocalBase(recruiterApiBase)) return;
-  const headers = basicAuthHeader();
+  if (!shouldSendDevBasicAuth(recruiterApiBase)) return;
+  const headers = basicAuthHeader(recruiterApiBase);
   if (!headers.Authorization) {
     throw new Error(
       'Set PIPE_DEV_BASIC_AUTH_USER and PIPE_DEV_BASIC_AUTH_PASSWORD to create dev Talent Pool candidates through app-dev.',
@@ -196,7 +211,7 @@ async function requestJson(baseUrl, pathname, options = {}) {
   const response = await fetch(`${baseUrl}${pathname}`, {
     method: options.method ?? 'GET',
     headers: {
-      ...basicAuthHeader(),
+      ...basicAuthHeader(baseUrl),
       ...(options.body ? { 'Content-Type': 'application/json' } : {}),
       ...(options.headers ?? {}),
     },
@@ -221,7 +236,7 @@ async function requestMultipart(baseUrl, pathname, formData) {
   const response = await fetch(`${baseUrl}${pathname}`, {
     method: 'POST',
     headers: {
-      ...basicAuthHeader(),
+      ...basicAuthHeader(baseUrl),
     },
     body: formData,
   });
