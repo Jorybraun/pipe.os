@@ -186,6 +186,10 @@ describe('stale Workers AI candidate-ingestion retry', () => {
       candidateId: 'candidate-1',
       resumeText: expect.stringContaining('Cloudflare Workers runtime tooling'),
       decompositionResult: null,
+      maxNodeEmbeddings: 0,
+      maxParserOnlyNodes: 12,
+      mirrorLivingContext: false,
+      skipPostDecompositionMaintenance: true,
     }));
   });
 

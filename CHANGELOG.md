@@ -52,6 +52,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Fixed — Open-source assessment progress
 
+- Text-intake candidate-ingestion retries now use the same bounded parser-only path as live `/assess` intake, preventing retries from stalling in heavy resume decomposition before AI discovery can finish or fall back.
 - Scheduled candidate-ingestion repair now only retries real stalled ingestion pipeline steps and prefers newest active stalls before old failed-output repairs, avoiding accidental Talent Pool marker retries and keeping current candidate tests moving.
 - Scheduled candidate-ingestion repair now prioritizes stalled in-progress rows before older failed-discovery backlog entries, so active candidates do not wait behind historical smoke-test repair debt.
 - Candidate discovery AI now shares one strict wall-clock budget across model fallbacks, so a malformed first model response cannot start a second long call that gets cancelled by Worker background limits and leaves ingestion stuck in `discover_profile`.

@@ -212,6 +212,10 @@ export async function retryCandidateEvidenceIngestionFromSource(
       parsed: parsedCV,
       resumeText,
       decompositionResult: null,
+      maxNodeEmbeddings: 0,
+      maxParserOnlyNodes: 12,
+      mirrorLivingContext: false,
+      skipPostDecompositionMaintenance: true,
     });
     return;
   }
