@@ -100,13 +100,15 @@ CLOUDFLARE_D1_DATABASE_ID=0abe92df-9296-46f5-9f9d-a1fb1bcd3be1 \
 
 Latest app-dev proof on 2026-07-02 used invite token
 `talent-audit-532e4287e-c1` after deploying Worker version
-`5edcc2d0-f033-4bcd-afff-26ee15c5c81d` and replaying pasted-text profile
-submission twice with GitHub, LinkedIn, portfolio, and phone-screener fields.
-The stricter remote verifier returned `status: ready`, `candidateNodeCount: 1`,
-`candidateNodeExactSourceQuoteCount: 1`,
-`candidateNodeWithoutExactSourceCount: 0`, `artifactVersionCount: 7`,
-`sourceSpanCount: 19`, `contextRecordCount: 8`,
-`contextSourceRefCount: 11`, `externalProfileRefContextCount: 3`,
+`a0e5512b-7ec1-4beb-9aa4-3d238b44c6e2` and replaying pasted-text profile
+submission plus the `e2e/fixtures/test-resume.pdf` profile upload with GitHub,
+LinkedIn, portfolio, and phone-screener fields. The stricter remote verifier
+returned `status: ready`, `candidateNodeCount: 2`,
+`candidateNodeExactSourceQuoteCount: 2`,
+`candidateNodeWithoutExactSourceCount: 0`, `artifactVersionCount: 10`,
+`sourceSpanCount: 34`, `documentProfileSourceSpanCount: 1`,
+`contextRecordCount: 9`, `contextSourceRefCount: 12`,
+`externalProfileRefContextCount: 3`,
 `phoneScreenerIntentContextCount: 1`, `rolelessApplicationCount: 0`,
 `rolelessPersonRoleCount: 0`, `sourceLessPositiveClaimCount: 0`, and
 `duplicateProjectedEdgeCount: 0`.
@@ -132,8 +134,10 @@ source_quote_validated: 1
 source_quote: Talent Audit exact candidate node proof for f47e6af23. Recently implemented source-backed candidate evidence ingestion for Talent Pool profile submissions and verified idempotent replay.
 ```
 
-The prior uploaded profile key was
-`talent-intake/talent_audit_532e4287e_c1/a596d3c57d58a703d9ce2df45300a38ad50d47a4bdb6697bf281f6f1afa763f9-talent-audit-upload.txt`.
+The current PDF profile key is
+`talent-intake/talent_audit_532e4287e_c1/9d990a07be4b85fe2907eca11f2a378669d5b03c0131dd506470922e894070f1-test-resume.pdf`.
+Remote source-span sampling confirmed at least one exact-text span is attached
+to an artifact version with that storage key.
 
 ## Current Gaps
 
