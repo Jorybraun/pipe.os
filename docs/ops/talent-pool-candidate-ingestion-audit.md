@@ -80,15 +80,20 @@ profile-evidence marker for graph consumers; richer skill, project, experience,
 and match signals still require source-backed resume decomposition.
 
 Uploaded profile files use content-hash storage keys, so replaying the same
-file reuses the same source artifact path. PDF/DOCX extraction still runs in
-background resume ingestion when foreground extraction is unavailable. When
-foreground text extraction succeeds, the profile text artifact version stores
-the uploaded profile storage key so source spans can be checked against the
-current file. Background projection receives the roleless Talent Pool person
-identity and background decomposition runs with legacy candidate-node mirroring
-disabled, so it must not create `applications` or `person_roles` before a
-role-backed process exists. Parser-only resume nodes without exact source
-quotes are skipped instead of becoming positive candidate claims.
+file reuses the same source artifact path. Each upload also creates an
+idempotent roleless person `profile_upload` artifact version for the original
+blob with storage key, content hash, media type, byte length, and filename.
+This artifact is source inventory only: if no exact text can be extracted, it
+must not create a source span, context record, candidate node, skill, readiness
+claim, or repo-family suggestion. PDF/DOCX extraction still runs in background
+resume ingestion when foreground extraction is unavailable. When foreground
+text extraction succeeds, the profile text artifact version stores the uploaded
+profile storage key so source spans can be checked against the current file.
+Background projection receives the roleless Talent Pool person identity and
+background decomposition runs with legacy candidate-node mirroring disabled, so
+it must not create `applications` or `person_roles` before a role-backed process
+exists. Parser-only resume nodes without exact source quotes are skipped instead
+of becoming positive candidate claims.
 If a PDF/DOCX upload is stored but no extractable source text is available yet,
 the design queue must stay in an explicit missing-evidence state: candidate
 summary says no extractable source text was available, suggested repo families
@@ -244,9 +249,10 @@ candidate id, application id, workspace-person id, or source-span id.
 ## Current Gaps
 
 - PDF/DOCX claim-level context appears only after document extraction and
-  background resume ingestion complete; failed extraction remains an explicit
-  challenge-design evidence gap with no repo-family inference, not a fabricated
-  skill/readiness claim.
+  background resume ingestion complete. The original uploaded blob is preserved
+  as a roleless person source artifact immediately, while failed extraction
+  remains an explicit challenge-design evidence gap with no repo-family
+  inference, not a fabricated skill/readiness claim.
 - External profile refs are source-backed intake facts only; fetching and
   validating profile content is a separate future evidence producer.
 - A design queue is not challenge readiness. A candidate should remain in

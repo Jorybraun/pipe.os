@@ -18,6 +18,15 @@ export interface TalentPoolOperationalContextInput {
   availability?: string | null;
 }
 
+export interface TalentPoolSourceArtifactInput {
+  storageKey: string;
+  mediaType: string;
+  contentHash: string;
+  byteLength: number;
+  originalFileName?: string | null;
+  extractedTextAvailable?: boolean;
+}
+
 function isJsonObject(value: JsonValue | undefined): value is JsonObject {
   return typeof value === 'object' && value !== null && !Array.isArray(value);
 }
@@ -520,6 +529,57 @@ async function persistRolelessMessageArtifact(input: {
   });
 }
 
+async function persistRolelessSourceArtifact(input: {
+  store: LivingContextStore;
+  workspacePersonId: string;
+  candidateId: string;
+  sourceArtifact?: TalentPoolSourceArtifactInput;
+  now: string;
+}): Promise<void> {
+  const sourceArtifact = input.sourceArtifact;
+  if (!sourceArtifact?.storageKey.trim()) return;
+
+  const storageKey = sourceArtifact.storageKey.trim();
+  const storageKeyHash = await sha256Hex(storageKey);
+  const baseKey = `candidate:${input.candidateId}:roleless-profile-upload:${sourceArtifact.contentHash}:storage:${storageKeyHash}`;
+  const metadata = {
+    source: 'roleless_candidate_intake',
+    roleless: true,
+    evidenceKind: 'profile_upload_source',
+    extractedTextAvailable: sourceArtifact.extractedTextAvailable === true,
+    ...(sourceArtifact.originalFileName ? { originalFileName: sourceArtifact.originalFileName } : {}),
+  };
+  const interaction = await input.store.upsertInteraction({
+    ingestionKey: `${baseKey}:interaction`,
+    workspacePersonId: input.workspacePersonId,
+    interactionType: 'file_upload',
+    externalReference: input.candidateId,
+    startedAt: input.now,
+    metadata,
+  });
+  const artifact = await input.store.upsertArtifact({
+    ingestionKey: `${baseKey}:artifact`,
+    workspacePersonId: input.workspacePersonId,
+    interactionId: interaction.id,
+    artifactType: 'profile_upload',
+    logicalKey: 'roleless_candidate_profile_upload',
+    metadata: {
+      ...metadata,
+      storageKey,
+    },
+  });
+  await input.store.createArtifactVersion({
+    ingestionKey: `${baseKey}:version:1`,
+    artifactId: artifact.id,
+    versionNumber: 1,
+    contentHash: sourceArtifact.contentHash,
+    mediaType: sourceArtifact.mediaType,
+    storageKey,
+    byteLength: sourceArtifact.byteLength,
+    metadata,
+  });
+}
+
 async function persistRolelessProfileCandidateNode(input: {
   db: D1Database;
   candidateId: string;
@@ -624,6 +684,7 @@ export async function ensureRolelessTalentPoolIdentity(input: {
   message?: string;
   messageStorageKey?: string | null;
   messageMediaType?: string | null;
+  sourceArtifact?: TalentPoolSourceArtifactInput;
   operationalContext?: TalentPoolOperationalContextInput;
   now: string;
 }): Promise<{ personId: string; workspacePersonId: string }> {
@@ -636,6 +697,7 @@ export async function ensureRolelessTalentPoolIdentity(input: {
     message,
     messageStorageKey,
     messageMediaType,
+    sourceArtifact,
     operationalContext,
     now,
   } = input;
@@ -686,6 +748,13 @@ export async function ensureRolelessTalentPoolIdentity(input: {
     message: message ?? '',
     storageKey: messageStorageKey,
     mediaType: messageMediaType,
+    now,
+  });
+  await persistRolelessSourceArtifact({
+    store,
+    workspacePersonId: workspacePerson.id,
+    candidateId,
+    sourceArtifact,
     now,
   });
   await persistRolelessOperationalContext({

@@ -601,6 +601,39 @@ describe('talent pool candidate RPC', () => {
     expect(sqlite.prepare('SELECT COUNT(*) AS count FROM workspace_people').get()).toEqual({ count: 1 });
     expect(sqlite.prepare('SELECT COUNT(*) AS count FROM applications').get()).toEqual({ count: 0 });
     expect(sqlite.prepare('SELECT COUNT(*) AS count FROM person_roles').get()).toEqual({ count: 0 });
+    expect(sqlite.prepare('SELECT COUNT(*) AS count FROM interactions').get()).toEqual({ count: 1 });
+    expect(sqlite.prepare('SELECT COUNT(*) AS count FROM artifacts').get()).toEqual({ count: 1 });
+    expect(sqlite.prepare('SELECT COUNT(*) AS count FROM artifact_versions').get()).toEqual({ count: 1 });
+    expect(sqlite.prepare(
+      `SELECT i.interaction_type,
+              a.artifact_type,
+              a.logical_key,
+              av.media_type,
+              av.storage_key,
+              av.byte_length,
+              av.content_text,
+              length(av.content_hash) AS hash_length,
+              json_extract(av.metadata_json, '$.evidenceKind') AS evidence_kind,
+              json_extract(av.metadata_json, '$.extractedTextAvailable') AS extracted_text_available,
+              json_extract(av.metadata_json, '$.originalFileName') AS original_file_name
+         FROM artifact_versions av
+         JOIN artifacts a ON a.id = av.artifact_id
+         JOIN interactions i ON i.id = a.interaction_id
+        LIMIT 1`,
+    ).get()).toEqual({
+      interaction_type: 'file_upload',
+      artifact_type: 'profile_upload',
+      logical_key: 'roleless_candidate_profile_upload',
+      media_type: 'application/pdf',
+      storage_key: storedKey,
+      byte_length: 14,
+      content_text: null,
+      hash_length: 64,
+      evidence_kind: 'profile_upload_source',
+      extracted_text_available: 0,
+      original_file_name: 'empty-profile.pdf',
+    });
+    expect(sqlite.prepare('SELECT COUNT(*) AS count FROM source_spans').get()).toEqual({ count: 0 });
     expect(sqlite.prepare('SELECT COUNT(*) AS count FROM candidate_nodes').get()).toEqual({ count: 0 });
     expect(sqlite.prepare('SELECT COUNT(*) AS count FROM context_records').get()).toEqual({ count: 0 });
 
@@ -616,6 +649,10 @@ describe('talent pool candidate RPC', () => {
     expect(replay.status).toBe(200);
     expect(storage.puts.size).toBe(1);
     expect(sqlite.prepare('SELECT COUNT(*) AS count FROM challenge_design_queue').get()).toEqual({ count: 1 });
+    expect(sqlite.prepare('SELECT COUNT(*) AS count FROM interactions').get()).toEqual({ count: 1 });
+    expect(sqlite.prepare('SELECT COUNT(*) AS count FROM artifacts').get()).toEqual({ count: 1 });
+    expect(sqlite.prepare('SELECT COUNT(*) AS count FROM artifact_versions').get()).toEqual({ count: 1 });
+    expect(sqlite.prepare('SELECT COUNT(*) AS count FROM source_spans').get()).toEqual({ count: 0 });
     expect(sqlite.prepare('SELECT COUNT(*) AS count FROM candidate_nodes').get()).toEqual({ count: 0 });
     expect(sqlite.prepare('SELECT COUNT(*) AS count FROM context_records').get()).toEqual({ count: 0 });
   });

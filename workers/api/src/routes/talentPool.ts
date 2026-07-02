@@ -10,6 +10,7 @@ import { runCandidateIngestion } from '../lib/candidateDiscovery/orchestrate';
 import { processResumeFromR2 } from '../lib/enrichment/resumeIngestion';
 import {
   ensureRolelessTalentPoolIdentity,
+  type TalentPoolSourceArtifactInput,
   type TalentPoolOperationalContextInput,
 } from '../lib/talentPoolIdentity';
 import type { Env, Variables } from '../types';
@@ -566,6 +567,7 @@ async function persistIntake(
     profileExcerpt?: string;
     sourceTextForPerson?: string;
     sourceMediaTypeForPerson?: string;
+    sourceArtifactForPerson?: TalentPoolSourceArtifactInput;
   } = {},
 ): Promise<RolelessTalentPoolIdentity | null> {
   const profileKey = options.profileKey ?? `talent-intake/${candidate.id}/${now.replace(/[:.]/g, '-')}.txt`;
@@ -641,6 +643,7 @@ async function persistIntake(
     messageMediaType: options.profileKey && sourceTextForPerson
       ? options.sourceMediaTypeForPerson ?? 'text/plain'
       : null,
+    sourceArtifact: options.sourceArtifactForPerson,
     operationalContext: operationalContextFromInput(input),
     now,
   });
@@ -822,6 +825,14 @@ route.post('/upload-profile', async (c) => {
     profileExcerpt: resumeText.length >= 20 ? excerpt(resumeText) : `Uploaded ${rawFileName}`,
     sourceTextForPerson: resumeText.length >= 20 ? resumeText : undefined,
     sourceMediaTypeForPerson: contentType,
+    sourceArtifactForPerson: {
+      storageKey: profileKey,
+      mediaType: contentType,
+      contentHash: fileHash,
+      byteLength: arrayBuffer.byteLength,
+      originalFileName: rawFileName,
+      extractedTextAvailable: resumeText.length >= 20,
+    },
   });
   queueProfileIngestion({
     c,
