@@ -705,6 +705,10 @@ export function InterviewCard({
     <>
       <div
         role="button"
+        data-testid="interview-card"
+        data-interview-id={interview.id}
+        data-interview-type={interview.interviewType ?? ''}
+        data-candidate-email={candidateEmail ?? ''}
         aria-label={`Open ${candidateName} interview details`}
         tabIndex={0}
         onClick={() => navigate(`/interviews/${interview.id}`)}

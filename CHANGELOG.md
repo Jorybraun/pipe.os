@@ -28,6 +28,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Fixed — Open-source assessment progress
 
+- Interview cards now expose stable smoke-test metadata for interview id, interview type, and candidate email, making recruiter-list browser proof less brittle while keeping the visual UI unchanged.
 - The deployed open-source workspace smoke now opens the candidate room before launch, waits for either the task brief or the no-camera/no-mic recovery path, and requires the assessment task brief to render the concrete repo, base commit, task, success criteria, and expected evidence, catching blank or misleading candidate rooms before dev is called healthy.
 - Recruiter assessment details now show a reviewer receipt after a human decision is recorded, tying the final decision to the reviewer, reviewed commit, branch/repo, recorded notes, and assessment-report source refs.
 - Recruiter assessment details now show an explicit source-backed diff row for workspace-only finalizer commits, so reviewers know the diff is captured even when no external GitHub compare link exists.

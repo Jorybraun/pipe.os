@@ -186,6 +186,11 @@ describe('InterviewCard assessment progress', () => {
       },
     });
 
+    const card = screen.getByTestId('interview-card');
+    expect(card).toHaveAttribute('data-interview-id', 'interview-1');
+    expect(card).toHaveAttribute('data-interview-type', 'OPEN_SOURCE_BUG_FIX');
+    expect(card).toHaveAttribute('data-candidate-email', 'ada@example.com');
+
     const progress = screen.getByTestId('interview-card-assessment-progress');
     expect(progress).toHaveTextContent('ASSESSMENT');
     expect(progress).toHaveTextContent('Ready for evaluation');
