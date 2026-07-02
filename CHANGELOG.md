@@ -15,10 +15,14 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Fixed — Talent Pool ingestion
 
+- Talent Pool dev smoke now infers the remote D1 database id from the target app/API environment, so `app-dev` audits the `dev` D1 database instead of accidentally falling back to the root `CLOUDFLARE_D1_DATABASE_ID`.
 - Talent Pool dev smoke now defaults candidate RPC calls to the app-dev proxy and omits dev Basic Auth on direct `api-dev` RPC calls, so smoke proofs exercise the same proxy path candidates use while still supporting explicit API overrides.
+- Talent Pool unextractable PDF/DOCX uploads now remain explicit missing-evidence gaps instead of queuing a doomed background resume parser that marks candidate ingestion failed.
 - Added `smoke:talent-pool-ingestion-dev` to create a dev Talent Pool candidate, submit public profile evidence, and poll the candidate-ingestion audit for source-backed person projection proof.
 - Added `smoke:talent-pool-upload-dev` to prove multipart plain-text Talent Pool uploads reach the same source-backed person projection, including the original upload artifact receipt.
 - Added `smoke:talent-pool-docx-dev` to prove live DOCX profile uploads extract exact source spans, preserve the upload artifact receipt, and stay free of source-less or duplicate projections.
+- Added `smoke:talent-pool-pdf-gap-dev` to prove unextractable PDF Talent Pool uploads preserve the raw upload receipt and person projection while remaining an explicit missing-evidence gap with no source-less positive claims or duplicate projected edges.
+- Unextractable Talent Pool PDF/DOCX background ingestion now remains a pending `profile_text_extraction_needed` evidence gap and no longer projects the uploaded filename placeholder as candidate profile evidence.
 - Talent Pool dev smokes now verify recruiter read surfaces after audit readiness: candidate living context, unified People list, candidate/person source search, person timeline, and evidence-depth must all resolve the same canonical workspace person.
 - Public Talent Pool intake Playwright proof now skips Clerk testing setup when recruiter auth env vars are absent, so unauthenticated `/talent/:token` browser tests can run locally.
 - Talent Pool dashboard readiness now requires the assigned repo/PR to materialize through a production-ready source-backed review challenge packet, and the candidate-ingestion audit reports PR-backed assignment rows without packet provenance as unproven readiness gaps.

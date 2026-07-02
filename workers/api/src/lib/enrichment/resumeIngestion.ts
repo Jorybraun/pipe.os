@@ -89,6 +89,39 @@ function optionalTrimmed(value: string | null | undefined): string | null {
   return trimmed ? trimmed : null;
 }
 
+function isDocumentProfileContentType(contentType: string): boolean {
+  return contentType === PDF_CONTENT_TYPE || contentType === DOCX_CONTENT_TYPE;
+}
+
+function uploadedProfileFileNameFromStorageKey(storageKey: string): string | null {
+  const leaf = storageKey.split('/').pop()?.trim() ?? '';
+  const match = /^[a-f0-9]{64}-(.+)$/i.exec(leaf);
+  return match?.[1]?.trim() || leaf || null;
+}
+
+function isUploadPlaceholderExcerpt(excerpt: string, r2Key: string): boolean {
+  const fileName = uploadedProfileFileNameFromStorageKey(r2Key);
+  const placeholders = [
+    fileName ? `Uploaded ${fileName}` : null,
+    fileName ? `Uploaded profile file: ${fileName}` : null,
+  ].filter((value): value is string => Boolean(value));
+
+  return placeholders.includes(excerpt.trim());
+}
+
+function sourceBackedTalentPoolMessage(input: {
+  row: RolelessTalentPoolResumeRow;
+  r2Key: string;
+  contentType: string;
+}): string | undefined {
+  const message = optionalTrimmed(input.row.profile_text_excerpt) ?? undefined;
+  if (!message) return undefined;
+  if (isDocumentProfileContentType(input.contentType) && isUploadPlaceholderExcerpt(message, input.r2Key)) {
+    return undefined;
+  }
+  return message;
+}
+
 function talentPoolOperationalContextFromRow(
   row: RolelessTalentPoolResumeRow,
 ): TalentPoolOperationalContextInput {
@@ -151,15 +184,16 @@ async function resolveRolelessTalentPoolResumeIdentity(input: {
   }
 
   try {
+    const message = sourceBackedTalentPoolMessage({ row, r2Key, contentType });
     const identity = await ensureRolelessTalentPoolIdentity({
       db,
       userId,
       candidateId,
       name: optionalTrimmed(row.name) ?? email ?? 'Talent Pool Candidate',
       email,
-      message: optionalTrimmed(row.profile_text_excerpt) ?? undefined,
-      messageStorageKey: optionalTrimmed(row.profile_r2_key) ?? r2Key,
-      messageMediaType: contentType,
+      message,
+      messageStorageKey: message ? optionalTrimmed(row.profile_r2_key) ?? r2Key : null,
+      messageMediaType: message ? contentType : null,
       operationalContext: talentPoolOperationalContextFromRow(row),
       now: new Date().toISOString(),
     });
@@ -210,6 +244,16 @@ async function failResumeIngestion(
   return { success: false, parsed: null, error: message };
 }
 
+async function markTalentPoolDocumentEvidenceGap(
+  db: D1Database,
+  candidateId: string,
+  message: string,
+  parsed: ProcessResumeResult['parsed'],
+): Promise<ProcessResumeResult> {
+  await markResumeIngestionPending(db, candidateId, 'profile_text_extraction_needed');
+  return { success: true, parsed, error: message };
+}
+
 /**
  * Process a resume stored in R2.
  *
@@ -240,6 +284,8 @@ export async function processResumeFromR2(
     const arrayBuffer = await object.arrayBuffer();
     const fileBuffer = arrayBuffer.slice(0);
     const contentType = normalizeResumeContentType(object.httpMetadata?.contentType, r2Key);
+    const isTalentPoolProfileDocument = r2Key.startsWith('talent-intake/')
+      && isDocumentProfileContentType(contentType);
     const livingContextIdentity = input.livingContextIdentity === undefined
       ? await resolveRolelessTalentPoolResumeIdentity({ db, candidateId, r2Key, contentType })
       : input.livingContextIdentity;
@@ -247,14 +293,35 @@ export async function processResumeFromR2(
     // 2. Parse resume (or use pre-parsed result)
     let parseResult = preParsed ?? null;
     if (!parseResult) {
-      parseResult = await parseResume({
-        fileBuffer,
-        contentType,
-        env,
-      });
+      try {
+        parseResult = await parseResume({
+          fileBuffer,
+          contentType,
+          env,
+        });
+      } catch (err) {
+        const msg = err instanceof Error ? err.message : String(err);
+        if (isTalentPoolProfileDocument) {
+          return await markTalentPoolDocumentEvidenceGap(
+            db,
+            candidateId,
+            `Resume parsing failed or produced no text for ${r2Key}: ${msg}`,
+            null,
+          );
+        }
+        throw err;
+      }
     }
 
     if (!parseResult) {
+      if (isTalentPoolProfileDocument) {
+        return await markTalentPoolDocumentEvidenceGap(
+          db,
+          candidateId,
+          `Resume parsing failed or produced no text for ${r2Key}.`,
+          null,
+        );
+      }
       return await failResumeIngestion(
         db,
         candidateId,
@@ -266,6 +333,14 @@ export async function processResumeFromR2(
     const decompositionResult = parseResult?.decompositionResult ?? null;
 
     if (!parsed) {
+      if (isTalentPoolProfileDocument) {
+        return await markTalentPoolDocumentEvidenceGap(
+          db,
+          candidateId,
+          `Resume parsing did not produce a candidate profile for ${r2Key}.`,
+          parseResult,
+        );
+      }
       return await failResumeIngestion(
         db,
         candidateId,
@@ -278,20 +353,37 @@ export async function processResumeFromR2(
 
     // 4. Run full ingestion pipeline from extracted source text.
     let resumeText = input.preExtractedResumeText?.trim() ?? '';
-    if (contentType === PDF_CONTENT_TYPE || contentType === DOCX_CONTENT_TYPE) {
-      try {
-        if (resumeText.length === 0) {
+    if (isDocumentProfileContentType(contentType)) {
+      if (resumeText.length === 0) {
+        try {
           resumeText = await extractTextFromResumeFile(arrayBuffer, contentType);
-        }
-        if (resumeText.trim().length < 20) {
-          const message = `Resume text extraction produced insufficient source evidence for ${r2Key}.`;
-          try {
-            await markIngestionFailed(db, candidateId, message);
-          } catch (err) {
-            console.error('[resumeIngestion] failed to mark insufficient evidence:', err instanceof Error ? err.message : String(err));
+        } catch (err) {
+          const msg = err instanceof Error ? err.message : String(err);
+          if (isTalentPoolProfileDocument) {
+            return await markTalentPoolDocumentEvidenceGap(
+              db,
+              candidateId,
+              `Resume text extraction failed for ${r2Key}: ${msg}`,
+              parseResult,
+            );
           }
-          return { success: true, parsed: parseResult, error: message };
+          throw err;
         }
+      }
+      if (resumeText.trim().length < 20) {
+        const message = `Resume text extraction produced insufficient source evidence for ${r2Key}.`;
+        if (isTalentPoolProfileDocument) {
+          return await markTalentPoolDocumentEvidenceGap(db, candidateId, message, parseResult);
+        }
+        try {
+          await markIngestionFailed(db, candidateId, message);
+        } catch (err) {
+          console.error('[resumeIngestion] failed to mark insufficient evidence:', err instanceof Error ? err.message : String(err));
+        }
+        return { success: true, parsed: parseResult, error: message };
+      }
+
+      try {
         await runCandidateIngestion({
           env,
           db,

@@ -10,6 +10,10 @@ const talentPoolIdentityMock = vi.hoisted(() => ({
   })),
 }));
 
+const candidateDiscoveryPersistMock = vi.hoisted(() => ({
+  markIngestionFailed: vi.fn(async () => undefined),
+}));
+
 vi.mock('../../cvParser', () => ({
   parseResume: vi.fn(async () => ({
     parsedCV: { skills: ['TypeScript'], experiences: [], educationBlocks: [], credentials: [], projects: [] },
@@ -23,6 +27,10 @@ vi.mock('../../cvParser', () => ({
 
 vi.mock('../../candidateDiscovery/orchestrate', () => ({
   runCandidateIngestion: vi.fn(async () => undefined),
+}));
+
+vi.mock('../../candidateDiscovery/persist', () => ({
+  markIngestionFailed: candidateDiscoveryPersistMock.markIngestionFailed,
 }));
 
 const mockIngestResume = vi.fn(async () => ({
@@ -62,28 +70,58 @@ function buildMockEnv(
   } as unknown as Env;
 }
 
-function buildRolelessTalentPoolDb(): D1Database {
+interface RolelessTalentPoolDbRow {
+  candidate_id: string;
+  owner_id: string;
+  name: string;
+  email: string;
+  profile_r2_key: string;
+  profile_text_excerpt: string;
+  github_url: string;
+  linkedin_url: string | null;
+  portfolio_url: string;
+  phone_screener_consent: number;
+  phone_number: string;
+  timezone: string;
+  availability: string;
+}
+
+interface MockRunCall {
+  sql: string;
+  args: unknown[];
+}
+
+function buildRolelessTalentPoolDb(
+  overrides: Partial<RolelessTalentPoolDbRow> = {},
+  runCalls: MockRunCall[] = [],
+): D1Database {
+  const row: RolelessTalentPoolDbRow = {
+    candidate_id: 'cand-roleless-auto',
+    owner_id: 'dev-user',
+    name: 'Jane Roleless',
+    email: 'jane@example.com',
+    profile_r2_key: 'talent-intake/cand-roleless-auto/profile.pdf',
+    profile_text_excerpt: 'Jane Roleless submitted a profile for Talent Pool matching.',
+    github_url: 'https://github.com/jane',
+    linkedin_url: null,
+    portfolio_url: 'https://jane.example.com',
+    phone_screener_consent: 1,
+    phone_number: '+15555550123',
+    timezone: 'America/Vancouver',
+    availability: 'Weekday mornings',
+    ...overrides,
+  };
+
   return {
     prepare: vi.fn((sql: string) => ({
-      bind: vi.fn(() => ({
-        run: vi.fn(async () => ({ success: true })),
+      bind: vi.fn((...args: unknown[]) => ({
+        run: vi.fn(async () => {
+          runCalls.push({ sql, args });
+          return { success: true };
+        }),
         first: vi.fn(async () => (
           sql.includes('FROM candidates c') && sql.includes('JOIN talent_pool_intakes t')
-            ? {
-                candidate_id: 'cand-roleless-auto',
-                owner_id: 'dev-user',
-                name: 'Jane Roleless',
-                email: 'jane@example.com',
-                profile_r2_key: 'talent-intake/cand-roleless-auto/profile.pdf',
-                profile_text_excerpt: 'Jane Roleless submitted a profile for Talent Pool matching.',
-                github_url: 'https://github.com/jane',
-                linkedin_url: null,
-                portfolio_url: 'https://jane.example.com',
-                phone_screener_consent: 1,
-                phone_number: '+15555550123',
-                timezone: 'America/Vancouver',
-                availability: 'Weekday mornings',
-              }
+            ? row
             : null
         )),
       })),
@@ -303,6 +341,48 @@ describe('processResumeFromR2 — living context integration', () => {
         },
       }),
     );
+  });
+
+  it('keeps unextractable Talent Pool documents as evidence gaps without placeholder profile projection', async () => {
+    const { parseResume } = await import('../../cvParser');
+    vi.mocked(parseResume).mockRejectedValueOnce(new Error('Invalid PDF structure.'));
+    const runCalls: MockRunCall[] = [];
+    const storageKey = `talent-intake/cand-roleless-auto/${'a'.repeat(64)}-empty-profile.pdf`;
+    db = buildRolelessTalentPoolDb({
+      profile_r2_key: storageKey,
+      profile_text_excerpt: 'Uploaded empty-profile.pdf',
+    }, runCalls);
+    const env = buildMockEnv(db);
+
+    const result = await processResumeFromR2({
+      env,
+      db,
+      candidateId: 'cand-roleless-auto',
+      r2Key: storageKey,
+    });
+
+    expect(result).toMatchObject({
+      success: true,
+      parsed: null,
+      error: expect.stringContaining('Resume parsing failed or produced no text'),
+    });
+    expect(candidateDiscoveryPersistMock.markIngestionFailed).not.toHaveBeenCalled();
+    expect(runCandidateIngestion).not.toHaveBeenCalled();
+    expect(mockIngestResume).not.toHaveBeenCalled();
+
+    const identityInput = talentPoolIdentityMock.ensureRolelessTalentPoolIdentity.mock.calls[0]?.[0] as {
+      message?: string;
+      messageStorageKey?: string | null;
+      messageMediaType?: string | null;
+    };
+    expect(identityInput.message).toBeUndefined();
+    expect(identityInput.messageStorageKey).toBeNull();
+    expect(identityInput.messageMediaType).toBeNull();
+    expect(runCalls.some((call) => (
+      call.sql.includes('candidate_ingestion')
+      && call.args[0] === 'cand-roleless-auto'
+      && call.args[1] === 'profile_text_extraction_needed'
+    ))).toBe(true);
   });
 
   it('fails closed when roleless Talent Pool identity repair throws', async () => {

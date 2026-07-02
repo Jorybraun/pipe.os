@@ -152,6 +152,7 @@ describe('candidate identity normalization', () => {
       );
     `);
     sqlite.exec(livingContextMigration);
+    sqlite.exec(contextRecordMigration);
     const db = createMockD1(sqlite);
     const store = new LivingContextStore(db, () => '2026-06-19T00:00:00.000Z');
     const person = await store.upsertPerson({
@@ -223,6 +224,7 @@ describe('candidate identity normalization', () => {
       name: 'Ada Candidate',
       email: 'ada@example.com',
       message: originalMessage,
+      projectMessageAsProfileEvidence: false,
       now: '2026-06-20T00:00:00.000Z',
     });
 
@@ -294,6 +296,7 @@ describe('candidate identity normalization', () => {
     expect(sqlite.prepare('SELECT COUNT(*) AS count FROM semantic_assertions').get()).toEqual({
       count: 0,
     });
+    expect(sqlite.prepare('SELECT COUNT(*) AS count FROM context_records').get()).toEqual({ count: 0 });
     expect(sqlite.prepare('SELECT COUNT(*) AS count FROM concepts').get()).toEqual({ count: 0 });
   });
 });

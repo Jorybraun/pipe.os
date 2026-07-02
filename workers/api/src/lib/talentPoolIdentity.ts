@@ -426,6 +426,7 @@ async function persistRolelessMessageArtifact(input: {
   message: string;
   storageKey?: string | null;
   mediaType?: string | null;
+  projectAsProfileEvidence: boolean;
   now: string;
 }): Promise<void> {
   const message = input.message;
@@ -486,6 +487,8 @@ async function persistRolelessMessageArtifact(input: {
       roleless: true,
     },
   });
+
+  if (!input.projectAsProfileEvidence) return;
 
   await persistRolelessProfileCandidateNode({
     db: input.db,
@@ -684,6 +687,7 @@ export async function ensureRolelessTalentPoolIdentity(input: {
   message?: string;
   messageStorageKey?: string | null;
   messageMediaType?: string | null;
+  projectMessageAsProfileEvidence?: boolean;
   sourceArtifact?: TalentPoolSourceArtifactInput;
   operationalContext?: TalentPoolOperationalContextInput;
   now: string;
@@ -697,6 +701,7 @@ export async function ensureRolelessTalentPoolIdentity(input: {
     message,
     messageStorageKey,
     messageMediaType,
+    projectMessageAsProfileEvidence,
     sourceArtifact,
     operationalContext,
     now,
@@ -748,6 +753,7 @@ export async function ensureRolelessTalentPoolIdentity(input: {
     message: message ?? '',
     storageKey: messageStorageKey,
     mediaType: messageMediaType,
+    projectAsProfileEvidence: projectMessageAsProfileEvidence !== false,
     now,
   });
   await persistRolelessSourceArtifact({

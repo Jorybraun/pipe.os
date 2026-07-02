@@ -1315,6 +1315,7 @@ candidateOps.post('/', async (c) => {
       name,
       email,
       message: customMessage,
+      projectMessageAsProfileEvidence: false,
       now,
     });
   } catch (err) {

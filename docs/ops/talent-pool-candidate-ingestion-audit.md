@@ -198,6 +198,7 @@ npx playwright test e2e/talent-pool-intake.unauth.spec.ts --project=unauthentica
 npm run smoke:talent-pool-ingestion-dev
 npm run smoke:talent-pool-upload-dev
 npm run smoke:talent-pool-docx-dev
+npm run smoke:talent-pool-pdf-gap-dev
 ```
 
 For app-dev, prefix remote proof commands with the dev D1 id:
@@ -213,13 +214,21 @@ The packaged dev smoke commands default Talent Pool RPC submission to the
 app-dev proxy when no API base override is set. If a caller explicitly targets
 `api-dev.hire-pipe.com`, the smoke omits dev HTTP Basic Auth for that API host
 while still using Basic Auth for app-dev candidate creation. This keeps the
-proof path close to candidate traffic but still allows direct API probes.
+proof path close to candidate traffic but still allows direct API probes. The
+smokes infer the remote D1 database id from the target app/API environment, so
+app-dev proofs audit the dev D1 database unless an explicit `--d1-database-id`
+or `TALENT_POOL_SMOKE_D1_DATABASE_ID` override is provided.
 After the ingestion audit reports ready, the smokes also verify recruiter reads
 unless `--skip-recruiter-reads` is passed: candidate living-context graph,
 unified People list, candidate source search, candidate evidence-depth, person
 source search, person evidence timeline, and person evidence-depth must all
 resolve the same canonical `workspace_people` projection and return the submitted
-exact source text.
+exact source text. `smoke:talent-pool-pdf-gap-dev` is intentionally different:
+it uploads an unextractable PDF and expects the audit to remain `not_ready`
+while proving raw blob capture, the profile-upload receipt, roleless person
+projection, zero source-less positive claims, zero source-less design suggestions,
+zero duplicate projected edges, no failed `candidate_ingestion` state, and no
+candidate-node projection from invite/upload placeholders.
 
 Latest app-dev proof on 2026-07-02 used invite token
 `talent-audit-532e4287e-c1` after deploying Worker version
@@ -293,6 +302,20 @@ The same smoke proved recruiter reads against
 `candidate`, candidate and person source search each returned the exact DOCX
 source text, the person timeline returned 10 entries, and person evidence-depth
 reported 9 source spans and 6 context records.
+
+Live app-dev unextractable PDF gap proof on 2026-07-02 used
+`npm run smoke:talent-pool-pdf-gap-dev` after deploying Worker version
+`96ea61a4-0387-42e2-b9a3-0d2259cc387a`. The smoke created a standalone roleless
+Talent Pool candidate through app-dev, resolved invite token
+`becb7e1e-50db-4667-b865-208faf1558ef`, submitted an intentionally invalid PDF
+through `/rpc/talent/upload-profile`, and required the remote audit to remain an
+explicit extraction gap instead of a failed ingestion row. The audit returned
+`status: not_ready`, `documentProfileStorageKeyCount: 1`,
+`profileUploadArtifactVersionCount: 1`, `documentProfileSourceSpanCount: 0`,
+`candidateNodeCount: 0`, `candidateNodeExactSourceQuoteCount: 0`,
+`contextSourceRefCount: 7`, `talentPoolWorkspacePersonCount: 1`,
+`designQueueCount: 1`, `sourceLessPositiveClaimCount: 0`,
+`sourceLessDesignQueueSuggestionCount: 0`, and `duplicateProjectedEdgeCount: 0`.
 
 Remote source-span sampling proved operational context refs preserve exact
 field text:

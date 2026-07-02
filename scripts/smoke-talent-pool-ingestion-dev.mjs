@@ -44,10 +44,10 @@ function booleanArgument(name) {
   return process.argv.includes(name);
 }
 
-const allowedSmokeModes = new Set(['submit-text', 'upload-text', 'upload-docx']);
+const allowedSmokeModes = new Set(['submit-text', 'upload-text', 'upload-docx', 'upload-pdf-gap']);
 const smokeMode = argumentValue('--mode') ?? process.env.TALENT_POOL_SMOKE_MODE ?? 'submit-text';
 if (!allowedSmokeModes.has(smokeMode)) {
-  throw new Error(`Unsupported --mode "${smokeMode}". Use submit-text, upload-text, or upload-docx.`);
+  throw new Error(`Unsupported --mode "${smokeMode}". Use submit-text, upload-text, upload-docx, or upload-pdf-gap.`);
 }
 
 const appBase = (
@@ -70,15 +70,50 @@ const recruiterApiBase = (
   ?? appBase
 ).replace(/\/$/, '');
 
+function hostnameForBase(baseUrl) {
+  try {
+    return new URL(baseUrl).hostname;
+  } catch {
+    return '';
+  }
+}
+
+function inferredD1EnvironmentName() {
+  const hostnames = [recruiterApiBase, rpcBase, appBase].map(hostnameForBase);
+  if (hostnames.some((hostname) => hostname === 'app-dev.hire-pipe.com' || hostname === 'api-dev.hire-pipe.com')) {
+    return 'dev';
+  }
+  if (hostnames.some((hostname) => hostname === 'pipe-app-test.pages.dev' || hostname === 'pipe-api-test.workers.dev')) {
+    return 'test';
+  }
+  if (hostnames.some((hostname) => hostname === 'app.hire-pipe.com' || hostname === 'api.hire-pipe.com')) {
+    return 'production';
+  }
+  return null;
+}
+
+function d1DatabaseIdForEnvironment(envName) {
+  const configPath = path.join(repoRoot, 'workers/api/wrangler.jsonc');
+  if (!envName || !existsSync(configPath)) return null;
+  const configText = readFileSync(configPath, 'utf8');
+  const match = configText.match(
+    new RegExp(`"${envName}"\\s*:\\s*\\{[\\s\\S]*?"d1_databases"\\s*:\\s*\\[[\\s\\S]*?"database_id"\\s*:\\s*"([^"]+)"`),
+  );
+  return match?.[1] ?? null;
+}
+
+const inferredD1DatabaseId = d1DatabaseIdForEnvironment(inferredD1EnvironmentName());
 const databaseId = (
   argumentValue('--d1-database-id')
   ?? process.env.TALENT_POOL_SMOKE_D1_DATABASE_ID
+  ?? inferredD1DatabaseId
   ?? process.env.CLOUDFLARE_D1_DATABASE_ID
   ?? ''
 ).trim();
 
 const failOnNextActions = booleanArgument('--fail-on-next-actions');
-const verifyRecruiterReads = !booleanArgument('--skip-recruiter-reads');
+const expectsEvidenceGap = smokeMode === 'upload-pdf-gap';
+const verifyRecruiterReads = !expectsEvidenceGap && !booleanArgument('--skip-recruiter-reads');
 const slug = new Date().toISOString().replace(/[^0-9]/g, '').slice(0, 14);
 const runId = `${slug}-${randomUUID().slice(0, 8)}`;
 const candidateName = argumentValue('--name') ?? `Talent Smoke ${runId}`;
@@ -142,6 +177,13 @@ function buildStoredDocx(documentXml) {
 }
 
 function smokeUploadFile() {
+  if (smokeMode === 'upload-pdf-gap') {
+    return {
+      blob: new Blob(['not a real pdf'], { type: 'application/pdf' }),
+      fileName: `talent-smoke-${runId}.pdf`,
+    };
+  }
+
   if (smokeMode === 'upload-docx') {
     const paragraphs = [
       `Talent Pool live ${smokeMode} smoke proof ${runId}.`,
@@ -164,14 +206,6 @@ function smokeUploadFile() {
     blob: new Blob([profileText], { type: 'text/plain' }),
     fileName: `talent-smoke-${runId}.txt`,
   };
-}
-
-function hostnameForBase(baseUrl) {
-  try {
-    return new URL(baseUrl).hostname;
-  } catch {
-    return '';
-  }
 }
 
 function isLocalBase(baseUrl) {
@@ -352,6 +386,45 @@ function auditIsReady(report) {
   return !failOnNextActions || (report.nextActions?.length ?? 0) === 0;
 }
 
+function listContains(list, expected) {
+  return Array.isArray(list) && list.includes(expected);
+}
+
+function auditHasExpectedEvidenceGap(report) {
+  if (report.status !== 'not_ready') return false;
+  if (report.rawCapture?.submittedIntakeCount !== 1) return false;
+  if (report.rawCapture?.documentProfileStorageKeyCount !== 1) return false;
+  if (report.ingestionState?.failedRowCount !== 0) return false;
+  if (report.ingestionState?.errorTextRowCount !== 0) return false;
+  if (report.sourceProof?.candidateNodeCount !== 0) return false;
+  if (report.sourceProof?.profileUploadArtifactVersionCount < 1) return false;
+  if (report.sourceProof?.documentProfileSourceSpanCount !== 0) return false;
+  if (report.sourceProof?.candidateNodeExactSourceQuoteCount !== 0) return false;
+  if (report.sourceProof?.contextSourceRefCount < 1) return false;
+  if (report.personProjection?.talentPoolWorkspacePersonCount !== 1) return false;
+  if (report.personProjection?.designQueueCount !== 1) return false;
+  if (report.sourceLessPositiveClaimCount !== 0) return false;
+  if (report.sourceLessDesignQueueSuggestionCount !== 0) return false;
+  if (report.duplicateProjectedEdgeCount !== 0) return false;
+  if (!listContains(
+    report.failures,
+    '1 PDF/DOCX Talent Pool profile upload(s) lack extracted source spans for the current profile key',
+  )) {
+    return false;
+  }
+  if (Array.isArray(report.failures) && report.failures.some((failure) => failure.includes('candidate_ingestion'))) {
+    return false;
+  }
+  return listContains(
+    report.nextActions,
+    'Replay or repair PDF/DOCX profile extraction so the current profile storage key has exact source spans.',
+  );
+}
+
+function auditMatchesExpectedState(report) {
+  return expectsEvidenceGap ? auditHasExpectedEvidenceGap(report) : auditIsReady(report);
+}
+
 function sleep(ms) {
   return new Promise((resolve) => {
     setTimeout(resolve, ms);
@@ -362,15 +435,15 @@ async function pollAudit(inviteToken) {
   let lastReport = null;
   for (let attempt = 1; attempt <= 8; attempt += 1) {
     lastReport = runAudit(inviteToken);
-    if (auditIsReady(lastReport)) return lastReport;
-    console.log(`[talent-smoke] audit not ready on attempt ${attempt}:`, {
+    if (auditMatchesExpectedState(lastReport)) return lastReport;
+    console.log(`[talent-smoke] audit did not match expected state on attempt ${attempt}:`, {
       status: lastReport.status,
       failures: lastReport.failures,
       nextActions: lastReport.nextActions,
     });
     await sleep(2500);
   }
-  throw new Error(`Audit did not become ready:\n${JSON.stringify(lastReport, null, 2)}`);
+  throw new Error(`Audit did not reach expected state:\n${JSON.stringify(lastReport, null, 2)}`);
 }
 
 function recruiterReadNeedle() {
@@ -514,6 +587,7 @@ async function main() {
 
   const submittedDashboard = smokeMode === 'upload-text'
     || smokeMode === 'upload-docx'
+    || smokeMode === 'upload-pdf-gap'
     ? await (async () => {
         const uploadFile = smokeUploadFile();
         const formData = new FormData();
@@ -556,17 +630,24 @@ async function main() {
 
   const report = await pollAudit(inviteToken);
   const recruiterReadProof = await verifyRecruiterEvidenceReads(candidateId);
-  console.log('[talent-smoke] ready', {
+  console.log(expectsEvidenceGap ? '[talent-smoke] expected evidence gap' : '[talent-smoke] ready', {
     inviteToken,
+    expectedEvidenceGap: expectsEvidenceGap,
+    status: report.status,
     checkedAt: report.checkedAt,
     sourceLessPositiveClaimCount: report.sourceLessPositiveClaimCount,
+    sourceLessDesignQueueSuggestionCount: report.sourceLessDesignQueueSuggestionCount,
     duplicateProjectedEdgeCount: report.duplicateProjectedEdgeCount,
+    candidateNodeCount: report.sourceProof.candidateNodeCount,
     candidateNodeExactSourceQuoteCount: report.sourceProof.candidateNodeExactSourceQuoteCount,
     contextSourceRefCount: report.sourceProof.contextSourceRefCount,
+    documentProfileStorageKeyCount: report.rawCapture.documentProfileStorageKeyCount,
     documentProfileSourceSpanCount: report.sourceProof.documentProfileSourceSpanCount,
     profileUploadArtifactVersionCount: report.sourceProof.profileUploadArtifactVersionCount,
     talentPoolWorkspacePersonCount: report.personProjection.talentPoolWorkspacePersonCount,
+    designQueueCount: report.personProjection.designQueueCount,
     recruiterReadProof,
+    failures: report.failures,
     nextActions: report.nextActions,
   });
 }
