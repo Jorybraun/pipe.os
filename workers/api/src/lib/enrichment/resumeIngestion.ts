@@ -34,6 +34,8 @@ export interface ProcessResumeInput {
   r2Key: string;
   /** Optional: if the caller already parsed the resume, skip re-parsing. */
   preParsed?: Awaited<ReturnType<typeof parseResume>> | null;
+  /** Optional: if the caller already extracted source text, skip extraction replay. */
+  preExtractedResumeText?: string | null;
   /**
    * Optional caller-provided person identity. Undefined keeps legacy candidate
    * application bridging; null skips living-context projection instead of
@@ -46,6 +48,9 @@ export interface ProcessResumeInput {
    */
   candidateDiscoveryTimeoutMs?: number;
   candidateDiscoveryMaxAttempts?: number;
+  maxNodeEmbeddings?: number;
+  maxParserOnlyNodes?: number;
+  skipPostDecompositionMaintenance?: boolean;
 }
 
 export interface ProcessResumeResult {
@@ -272,10 +277,12 @@ export async function processResumeFromR2(
     await persistParsedCV(db, candidateId, parsed);
 
     // 4. Run full ingestion pipeline from extracted source text.
-    let resumeText = '';
+    let resumeText = input.preExtractedResumeText?.trim() ?? '';
     if (contentType === PDF_CONTENT_TYPE || contentType === DOCX_CONTENT_TYPE) {
       try {
-        resumeText = await extractTextFromResumeFile(arrayBuffer, contentType);
+        if (resumeText.length === 0) {
+          resumeText = await extractTextFromResumeFile(arrayBuffer, contentType);
+        }
         if (resumeText.trim().length < 20) {
           const message = `Resume text extraction produced insufficient source evidence for ${r2Key}.`;
           try {
@@ -295,6 +302,9 @@ export async function processResumeFromR2(
           mirrorLivingContext: livingContextIdentity === undefined,
           candidateDiscoveryTimeoutMs: input.candidateDiscoveryTimeoutMs,
           candidateDiscoveryMaxAttempts: input.candidateDiscoveryMaxAttempts,
+          maxNodeEmbeddings: input.maxNodeEmbeddings,
+          maxParserOnlyNodes: input.maxParserOnlyNodes,
+          skipPostDecompositionMaintenance: input.skipPostDecompositionMaintenance,
         });
       } catch (err) {
         const msg = err instanceof Error ? err.message : String(err);

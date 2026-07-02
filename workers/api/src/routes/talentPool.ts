@@ -312,7 +312,9 @@ function excerpt(text: string): string {
   return normalized.length > 1200 ? `${normalized.slice(0, 1197)}...` : normalized;
 }
 
-function suggestedRepoFamilies(input: SubmitProfileInput): string[] {
+function suggestedRepoFamilies(input: SubmitProfileInput, sourceBackedProfileEvidence = true): string[] {
+  if (!sourceBackedProfileEvidence) return [];
+
   const haystack = [
     input.resumeText,
     input.githubUrl ?? '',
@@ -328,17 +330,60 @@ function suggestedRepoFamilies(input: SubmitProfileInput): string[] {
   return [...families];
 }
 
-function candidateSummary(candidate: CandidateRow, input: SubmitProfileInput): string {
+function candidateSummary(
+  candidate: CandidateRow,
+  input: SubmitProfileInput,
+  sourceBackedProfileEvidence = true,
+): string {
   const parts = [
     candidate.name ? `Candidate: ${candidate.name}` : null,
     candidate.email ? `Email: ${candidate.email}` : null,
-    `Profile excerpt: ${excerpt(input.resumeText)}`,
+    sourceBackedProfileEvidence
+      ? `Profile excerpt: ${excerpt(input.resumeText)}`
+      : 'Profile upload received, but no extractable source text was available.',
     input.githubUrl ? `GitHub: ${input.githubUrl}` : null,
     input.linkedinUrl ? `LinkedIn: ${input.linkedinUrl}` : null,
     input.portfolioUrl ? `Portfolio: ${input.portfolioUrl}` : null,
     input.phoneScreenerConsent ? 'Phone screener: candidate is open to a short phone screen.' : null,
   ];
   return parts.filter((part): part is string => Boolean(part)).join('\n');
+}
+
+interface ChallengeDesignQueueEvidenceOptions {
+  sourceBackedProfileEvidence?: boolean;
+}
+
+interface ChallengeDesignQueuePayload {
+  summary: string;
+  repoFamilies: string;
+  missingSignal: string;
+  inventoryFailureReason: string;
+  desiredAssessmentSignal: string;
+}
+
+function challengeDesignQueuePayload(
+  candidate: CandidateRow,
+  input: SubmitProfileInput,
+  options: ChallengeDesignQueueEvidenceOptions = {},
+): ChallengeDesignQueuePayload {
+  const sourceBackedProfileEvidence = options.sourceBackedProfileEvidence ?? true;
+  if (!sourceBackedProfileEvidence) {
+    return {
+      summary: candidateSummary(candidate, input, false),
+      repoFamilies: JSON.stringify([]),
+      missingSignal: 'Needs extractable source-backed profile evidence before challenge design.',
+      inventoryFailureReason: 'No exact profile or resume source text has been extracted from the uploaded artifact yet.',
+      desiredAssessmentSignal: 'Extract source-backed profile or resume evidence before selecting assessment inventory.',
+    };
+  }
+
+  return {
+    summary: candidateSummary(candidate, input, true),
+    repoFamilies: JSON.stringify(suggestedRepoFamilies(input, true)),
+    missingSignal: 'Needs a validated source-backed challenge assignment for the submitted candidate profile.',
+    inventoryFailureReason: 'No ready challenge assignment was available at intake completion.',
+    desiredAssessmentSignal: 'Assess code review judgment against source-backed production code once inventory is ready.',
+  };
 }
 
 function safeFileName(name: string): string {
@@ -609,6 +654,7 @@ async function ensureChallengeDesignQueueItem(
   candidate: CandidateRow,
   input: SubmitProfileInput,
   now: string,
+  options: ChallengeDesignQueueEvidenceOptions = {},
 ): Promise<void> {
   const existing = await db
     .prepare(
@@ -621,19 +667,29 @@ async function ensureChallengeDesignQueueItem(
     .bind(candidate.id)
     .first<{ id: string }>();
 
-  const summary = candidateSummary(candidate, input);
-  const repoFamilies = JSON.stringify(suggestedRepoFamilies(input));
+  const payload = challengeDesignQueuePayload(candidate, input, options);
 
   if (existing) {
     await db
       .prepare(
         `UPDATE challenge_design_queue
             SET candidate_summary = ?1,
-                suggested_repo_families = ?2,
-                updated_at = ?3
-          WHERE id = ?4`,
+                missing_signal = ?2,
+                inventory_failure_reason = ?3,
+                suggested_repo_families = ?4,
+                desired_assessment_signal = ?5,
+                updated_at = ?6
+          WHERE id = ?7`,
       )
-      .bind(summary, repoFamilies, now, existing.id)
+      .bind(
+        payload.summary,
+        payload.missingSignal,
+        payload.inventoryFailureReason,
+        payload.repoFamilies,
+        payload.desiredAssessmentSignal,
+        now,
+        existing.id,
+      )
       .run();
     return;
   }
@@ -653,11 +709,11 @@ async function ensureChallengeDesignQueueItem(
       crypto.randomUUID(),
       candidate.id,
       candidate.owner_id,
-      summary,
-      'Needs a validated source-backed challenge assignment for the submitted candidate profile.',
-      'No ready challenge assignment was available at intake completion.',
-      repoFamilies,
-      'Assess code review judgment against source-backed production code once inventory is ready.',
+      payload.summary,
+      payload.missingSignal,
+      payload.inventoryFailureReason,
+      payload.repoFamilies,
+      payload.desiredAssessmentSignal,
       now,
     )
     .run();
@@ -781,7 +837,9 @@ route.post('/upload-profile', async (c) => {
 
   const readyChallenges = await loadReadyChallenges(c.env.DB, candidate.id, candidate.invite_token);
   if (readyChallenges.length === 0) {
-    await ensureChallengeDesignQueueItem(c.env.DB, candidate, profileInput, now);
+    await ensureChallengeDesignQueueItem(c.env.DB, candidate, profileInput, now, {
+      sourceBackedProfileEvidence: resumeText.length >= 20,
+    });
   }
 
   const refreshed = await loadCandidateByInviteToken(c.env.DB, parsed.data.inviteToken);

@@ -69,10 +69,18 @@ identity and background decomposition runs with legacy candidate-node mirroring
 disabled, so it must not create `applications` or `person_roles` before a
 role-backed process exists. Parser-only resume nodes without exact source
 quotes are skipped instead of becoming positive candidate claims.
+If a PDF/DOCX upload is stored but no extractable source text is available yet,
+the design queue must stay in an explicit missing-evidence state: candidate
+summary says no extractable source text was available, suggested repo families
+are empty, and the next desired signal is source-backed profile/resume
+extraction. Placeholder upload labels must not become profile claims or generic
+challenge-selection hints.
 Candidate discovery tries the current fast Workers AI default before heavier
 fallback models, and Talent Pool document retries use a bounded two-attempt
-AI budget before falling back to source-only evidence. The fallback is allowed
-to keep ingestion moving, but the event stream must state whether AI started,
+AI budget before falling back to source-only evidence. Document retries reuse
+pre-extracted text and bounded parser-only decomposition so the AI attempt can
+start inside the Worker background window. The fallback is allowed to keep
+ingestion moving, but the event stream must state whether AI started,
 succeeded, or failed instead of fabricating an AI-derived profile.
 
 Resume decomposition disambiguates repeated titles or labels by anchoring the
@@ -133,7 +141,7 @@ CLOUDFLARE_D1_DATABASE_ID=0abe92df-9296-46f5-9f9d-a1fb1bcd3be1 \
 
 Latest app-dev proof on 2026-07-02 used invite token
 `talent-audit-532e4287e-c1` after deploying Worker version
-`16445443-8142-4954-8eaa-e93e679f78b5` and replaying pasted-text profile
+`af022747-0847-49bd-8ac1-052e2e3b6513` and replaying pasted-text profile
 submission plus the `e2e/fixtures/test-resume.pdf` profile upload with GitHub,
 LinkedIn, portfolio, and phone-screener fields. The stricter remote verifier
 returned `status: ready`, `candidateNodeCount: 74`,
@@ -142,12 +150,12 @@ returned `status: ready`, `candidateNodeCount: 74`,
 `duplicateCandidateNodeEvidenceCount: 0`,
 `candidateNodeSourceAnchorConflictCount: 0`,
 `artifactVersionCount: 11`, `sourceSpanCount: 37`,
-`documentProfileSourceSpanCount: 4`, `contextRecordCount: 77`,
-`contextSourceRefCount: 80`,
+`documentProfileSourceSpanCount: 4`, `contextRecordCount: 80`,
+`contextSourceRefCount: 83`,
 `externalProfileRefContextCount: 3`,
 `phoneScreenerIntentContextCount: 1`, `rolelessApplicationCount: 0`,
-`rolelessPersonRoleCount: 0`, `sourceLessPositiveClaimCount: 0`, and
-`duplicateProjectedEdgeCount: 0`.
+`rolelessPersonRoleCount: 0`, `signalEvidenceCount: 240`,
+`sourceLessPositiveClaimCount: 0`, and `duplicateProjectedEdgeCount: 0`.
 
 Remote source-span sampling proved operational context refs preserve exact
 field text:
@@ -199,8 +207,9 @@ candidate id, application id, workspace-person id, or source-span id.
 ## Current Gaps
 
 - PDF/DOCX claim-level context appears only after document extraction and
-  background resume ingestion complete; failed extraction must remain a gap,
-  not a fabricated skill/readiness claim.
+  background resume ingestion complete; failed extraction remains an explicit
+  challenge-design evidence gap with no repo-family inference, not a fabricated
+  skill/readiness claim.
 - External profile refs are source-backed intake facts only; fetching and
   validating profile content is a separate future evidence producer.
 - A design queue is not challenge readiness. A candidate should remain in

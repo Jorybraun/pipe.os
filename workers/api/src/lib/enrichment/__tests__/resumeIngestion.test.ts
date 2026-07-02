@@ -238,15 +238,23 @@ describe('processResumeFromR2 — living context integration', () => {
       db,
       candidateId: 'cand-bounded',
       r2Key: 'candidate-documents/cand-bounded/resume.pdf',
+      preExtractedResumeText: 'Pre-extracted resume text with enough source evidence for bounded ingestion.',
       candidateDiscoveryTimeoutMs: 7000,
       candidateDiscoveryMaxAttempts: 1,
+      maxNodeEmbeddings: 0,
+      maxParserOnlyNodes: 12,
+      skipPostDecompositionMaintenance: true,
     });
 
     expect(result.success).toBe(true);
     expect(runCandidateIngestion).toHaveBeenCalledWith(expect.objectContaining({
       candidateId: 'cand-bounded',
+      resumeText: 'Pre-extracted resume text with enough source evidence for bounded ingestion.',
       candidateDiscoveryTimeoutMs: 7000,
       candidateDiscoveryMaxAttempts: 1,
+      maxNodeEmbeddings: 0,
+      maxParserOnlyNodes: 12,
+      skipPostDecompositionMaintenance: true,
     }));
   });
 

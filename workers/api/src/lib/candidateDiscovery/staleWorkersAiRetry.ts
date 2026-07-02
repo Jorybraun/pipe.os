@@ -19,6 +19,8 @@ const MAX_RETRY_EVENT_ERROR_CHARS = 700;
 const STALE_IN_PROGRESS_RETRY_AFTER_MS = 10 * 60 * 1000;
 const TALENT_POOL_DOCUMENT_RETRY_DISCOVERY_TIMEOUT_MS = 18_000;
 const TALENT_POOL_DOCUMENT_RETRY_DISCOVERY_MAX_ATTEMPTS = 2;
+const TALENT_POOL_DOCUMENT_RETRY_MAX_NODE_EMBEDDINGS = 0;
+const TALENT_POOL_DOCUMENT_RETRY_MAX_PARSER_ONLY_NODES = 12;
 const RETRYABLE_STALLED_INGESTION_STEPS = new Set([
   'talent_pool_profile_received',
   'queued',
@@ -376,10 +378,15 @@ export async function processTalentPoolRolelessApplicationRepairs(
   };
 }
 
+interface TalentPoolDocumentRetryPreParsed {
+  parseResult: ParseResumeResult;
+  resumeText: string;
+}
+
 async function buildTalentPoolDocumentRetryPreParsed(
   env: Env,
   resumeS3Key: string,
-): Promise<ParseResumeResult | null> {
+): Promise<TalentPoolDocumentRetryPreParsed | null> {
   if (!isTalentPoolSourceKey(resumeS3Key) || !isDocumentSourceKey(resumeS3Key)) return null;
   if (!env.STORAGE) return null;
 
@@ -392,8 +399,11 @@ async function buildTalentPoolDocumentRetryPreParsed(
   if (resumeText.length < 20) return null;
 
   return {
-    parsedCV: buildRuleBasedParsedCV(resumeText),
-    decompositionResult: null,
+    parseResult: {
+      parsedCV: buildRuleBasedParsedCV(resumeText),
+      decompositionResult: null,
+    },
+    resumeText,
   };
 }
 
@@ -464,12 +474,18 @@ export async function retryCandidateEvidenceIngestionFromSource(
     db: env.DB,
     candidateId,
     r2Key: resumeS3Key,
-    ...(preParsed ? { preParsed } : {}),
+    ...(preParsed ? {
+      preParsed: preParsed.parseResult,
+      preExtractedResumeText: preParsed.resumeText,
+    } : {}),
     ...(isTalentPoolSourceKey(resumeS3Key) ? { livingContextIdentity: rolelessTalentPoolIdentity } : {}),
     ...(isTalentPoolDocumentRetry
       ? {
           candidateDiscoveryTimeoutMs: TALENT_POOL_DOCUMENT_RETRY_DISCOVERY_TIMEOUT_MS,
           candidateDiscoveryMaxAttempts: TALENT_POOL_DOCUMENT_RETRY_DISCOVERY_MAX_ATTEMPTS,
+          maxNodeEmbeddings: TALENT_POOL_DOCUMENT_RETRY_MAX_NODE_EMBEDDINGS,
+          maxParserOnlyNodes: TALENT_POOL_DOCUMENT_RETRY_MAX_PARSER_ONLY_NODES,
+          skipPostDecompositionMaintenance: true,
         }
       : {}),
   });

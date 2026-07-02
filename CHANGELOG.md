@@ -9,8 +9,10 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Fixed — Talent Pool ingestion
 
+- Talent Pool PDF/DOCX uploads with no extractable source text now keep challenge-design metadata in an explicit missing-evidence state with no generic repo-family suggestion, preventing placeholder upload labels from becoming assessment planning signals.
 - Talent Pool resume decomposition now anchors repeated titles/labels to the matching source occurrence and the candidate-ingestion audit fails on duplicate active candidate-node evidence or conflicting source anchors.
 - Candidate discovery now tries the current fast Workers AI default before heavier fallback models, and Talent Pool document retries get a bounded two-attempt AI budget so profile discovery does not fail just because the slowest model timed out first.
+- Talent Pool PDF/DOCX retries now reuse pre-extracted source text and bounded parser-only decomposition before AI discovery, preserving source-backed evidence without burning the Worker background window before the model call starts.
 - Talent Pool PDF/DOCX retries now use deterministic source-text pre-parsing before the shared R2 resume helper, so stalled document ingestion can reach candidate discovery AI instead of freezing in the rich resume parser.
 - Talent Pool PDF/DOCX retries now bound candidate-discovery AI before source-backed fallback, so candidate-triggered retries finish inside Worker background limits instead of hanging in `discover_profile`.
 - Living-context context-record source refs are now idempotent under replay/race conditions, preventing scheduled Talent Pool PDF retries from failing on duplicate source-ref inserts before candidate AI discovery can run.

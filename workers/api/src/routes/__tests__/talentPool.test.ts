@@ -455,6 +455,97 @@ describe('talent pool candidate RPC', () => {
     expect(sqlite.prepare('SELECT COUNT(*) AS count FROM context_record_source_refs').get()).toEqual({ count: 2 });
   });
 
+  it('keeps unextractable document uploads as explicit evidence gaps', async () => {
+    sqlite = createSqlite();
+    seedCandidate(sqlite);
+    const storage = createMemoryR2();
+    const app = createApp();
+    const formData = new FormData();
+    formData.set('inviteToken', 'invite-token');
+    formData.set('file', new File(['not a real pdf'], 'empty-profile.pdf', { type: 'application/pdf' }));
+
+    const res = await app.request('/rpc/talent/upload-profile', {
+      method: 'POST',
+      body: formData,
+    }, createEnv(sqlite, storage));
+
+    expect(res.status).toBe(200);
+    const body = await res.json() as TalentDashboardBody;
+    expect(body.status).toBe('CHALLENGE_PREPARING');
+    expect(body.readyChallenges).toEqual([]);
+    expect(JSON.stringify(body)).not.toContain('candidate-1');
+    expect(JSON.stringify(body)).not.toContain('WAITING_FOR_MATCH');
+
+    const storedKey = [...storage.puts.keys()][0];
+    expect(storedKey).toMatch(/^talent-intake\/candidate-1\/.*empty-profile\.pdf$/);
+    const intake = sqlite.prepare(
+      `SELECT status, profile_r2_key, profile_text_excerpt
+         FROM talent_pool_intakes
+        WHERE candidate_id = 'candidate-1'`,
+    ).get() as { status: string; profile_r2_key: string; profile_text_excerpt: string };
+    expect(intake).toEqual({
+      status: 'CHALLENGE_PREPARING',
+      profile_r2_key: storedKey,
+      profile_text_excerpt: 'Uploaded empty-profile.pdf',
+    });
+    expect(sqlite.prepare(
+      `SELECT resume_s3_key
+         FROM candidates
+        WHERE id = 'candidate-1'`,
+    ).get()).toEqual({ resume_s3_key: storedKey });
+    expect(sqlite.prepare(
+      `SELECT status, current_step, error_text
+         FROM candidate_ingestion
+        WHERE candidate_id = 'candidate-1'`,
+    ).get()).toEqual({
+      status: 'pending',
+      current_step: 'talent_pool_profile_received',
+      error_text: null,
+    });
+
+    const queue = sqlite.prepare(
+      `SELECT candidate_summary, missing_signal, inventory_failure_reason,
+              suggested_repo_families, desired_assessment_signal
+         FROM challenge_design_queue
+        WHERE candidate_id = 'candidate-1'`,
+    ).get() as {
+      candidate_summary: string;
+      missing_signal: string;
+      inventory_failure_reason: string;
+      suggested_repo_families: string;
+      desired_assessment_signal: string;
+    };
+    expect(queue.candidate_summary).toContain('Profile upload received, but no extractable source text was available.');
+    expect(queue.candidate_summary).not.toContain('Uploaded profile file');
+    expect(queue.missing_signal).toContain('extractable source-backed profile evidence');
+    expect(queue.inventory_failure_reason).toContain('No exact profile or resume source text');
+    expect(JSON.parse(queue.suggested_repo_families)).toEqual([]);
+    expect(queue.desired_assessment_signal).toContain('Extract source-backed profile or resume evidence');
+    expect(JSON.stringify(queue)).not.toContain('general TypeScript application code');
+
+    expect(sqlite.prepare('SELECT COUNT(*) AS count FROM people').get()).toEqual({ count: 1 });
+    expect(sqlite.prepare('SELECT COUNT(*) AS count FROM workspace_people').get()).toEqual({ count: 1 });
+    expect(sqlite.prepare('SELECT COUNT(*) AS count FROM applications').get()).toEqual({ count: 0 });
+    expect(sqlite.prepare('SELECT COUNT(*) AS count FROM person_roles').get()).toEqual({ count: 0 });
+    expect(sqlite.prepare('SELECT COUNT(*) AS count FROM candidate_nodes').get()).toEqual({ count: 0 });
+    expect(sqlite.prepare('SELECT COUNT(*) AS count FROM context_records').get()).toEqual({ count: 0 });
+
+    const replayFormData = new FormData();
+    replayFormData.set('inviteToken', 'invite-token');
+    replayFormData.set('file', new File(['not a real pdf'], 'empty-profile.pdf', { type: 'application/pdf' }));
+
+    const replay = await app.request('/rpc/talent/upload-profile', {
+      method: 'POST',
+      body: replayFormData,
+    }, createEnv(sqlite, storage));
+
+    expect(replay.status).toBe(200);
+    expect(storage.puts.size).toBe(1);
+    expect(sqlite.prepare('SELECT COUNT(*) AS count FROM challenge_design_queue').get()).toEqual({ count: 1 });
+    expect(sqlite.prepare('SELECT COUNT(*) AS count FROM candidate_nodes').get()).toEqual({ count: 0 });
+    expect(sqlite.prepare('SELECT COUNT(*) AS count FROM context_records').get()).toEqual({ count: 0 });
+  });
+
   it('shows assessment entry only when a real challenge assignment exists', async () => {
     sqlite = createSqlite();
     seedCandidate(sqlite);

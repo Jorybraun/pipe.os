@@ -340,6 +340,10 @@ describe('stale Workers AI candidate-ingestion retry', () => {
       r2Key: 'talent-intake/talent-pdf/resume.pdf',
       candidateDiscoveryTimeoutMs: 18000,
       candidateDiscoveryMaxAttempts: 2,
+      maxNodeEmbeddings: 0,
+      maxParserOnlyNodes: 12,
+      skipPostDecompositionMaintenance: true,
+      preExtractedResumeText: expect.stringContaining('TypeScript engineer'),
       preParsed: expect.objectContaining({
         decompositionResult: null,
         parsedCV: expect.objectContaining({
