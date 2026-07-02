@@ -10,6 +10,7 @@ jobs:
   check:
     name: Typecheck, Lint & Unit Tests
     runs-on: ubuntu-latest
+    timeout-minutes: 30
 
     steps:
       - name: Checkout
@@ -47,6 +48,7 @@ jobs:
         run: npm run lint
 
       - name: Unit tests (frontend)
+        timeout-minutes: 10
         run: npm run test
 
       - name: Unit tests (assessment room)
@@ -54,6 +56,7 @@ jobs:
         run: npm run test
 
       - name: Unit tests (worker)
+        timeout-minutes: 15
         working-directory: workers/api
         run: npx vitest run
 
