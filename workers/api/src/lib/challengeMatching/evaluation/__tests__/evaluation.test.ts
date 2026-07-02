@@ -1722,6 +1722,44 @@ describe('E2E: roleless person + simple JD + real repo packet + explained match'
     expect(metrics.packetIdentityMismatches).toHaveLength(0);
   });
 
+  it('does not compare expected packet hashes to individual source span hashes', () => {
+    const corpus = e2eCorpus();
+    corpus.expectedPackets![0] = {
+      ...corpus.expectedPackets![0]!,
+      packetContentHash: 'sha256:whole-packet-hash-not-a-source-span-hash',
+    };
+    const metrics = evaluateMatchRuns(corpus, [e2eMatchRun('run-e2e-primary')]);
+
+    expect(metrics.packetCoverage).toBe(1);
+    expect(metrics.missingPacketIds).toHaveLength(0);
+    expect(metrics.packetIdentityMismatches).toHaveLength(0);
+  });
+
+  it('detects packet identity drift when a persisted ranked result carries a different packet hash', () => {
+    const corpus = e2eCorpus();
+    corpus.expectedPackets![0] = {
+      ...corpus.expectedPackets![0]!,
+      packetContentHash: 'sha256:expected-whole-packet-hash',
+    };
+    const driftedRun: PersistedMatchRun = {
+      ...e2eMatchRun('run-e2e-packet-hash-drift'),
+      rankedChallenges: [{
+        ...e2eRankedChallenge(),
+        packetContentHash: 'sha256:actual-other-packet-hash',
+      }],
+    };
+    const metrics = evaluateMatchRuns(corpus, [driftedRun]);
+
+    expect(metrics.packetIdentityMismatches).toHaveLength(1);
+    expect(metrics.packetIdentityMismatches[0]).toMatchObject({
+      field: 'packetContentHash',
+      expected: 'sha256:expected-whole-packet-hash',
+      actual: 'sha256:actual-other-packet-hash',
+    });
+    expect(metrics.packetCoverage).toBe(0);
+    expect(metrics.missingPacketIds).toContain(challengeId);
+  });
+
   it('explains the candidate-to-PR match via alignment source references', () => {
     const corpus = e2eCorpus();
     const metrics = evaluateMatchRuns(corpus, [e2eMatchRun('run-e2e-primary')]);
