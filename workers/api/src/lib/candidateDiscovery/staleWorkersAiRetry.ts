@@ -95,6 +95,13 @@ export interface TalentPoolOperationalContextRepairResult {
   failed: number;
 }
 
+export interface TalentPoolRolelessApplicationRepairResult {
+  scanned: number;
+  deletedApplications: number;
+  deletedPersonRoles: number;
+  failed: number;
+}
+
 export interface QueuedStandaloneIngestionRetry {
   reason: string;
   reasonCode: RetryReasonCode;
@@ -289,6 +296,51 @@ export async function processTalentPoolOperationalContextRepairs(
     scanned: rows.results?.length ?? 0,
     repaired,
     skipped,
+    failed,
+  };
+}
+
+export async function processTalentPoolRolelessApplicationRepairs(
+  env: Env,
+  limit = MAX_STALE_WORKERS_AI_RETRY_LIMIT,
+): Promise<TalentPoolRolelessApplicationRepairResult> {
+  const boundedLimit = Math.max(1, Math.min(limit, MAX_STALE_WORKERS_AI_RETRY_LIMIT));
+  const rows = await env.DB.prepare(
+    `SELECT app.id AS application_id
+       FROM applications app
+       JOIN candidates c ON c.id = app.legacy_candidate_id
+       JOIN talent_pool_intakes t ON t.candidate_id = c.id
+      WHERE c.pipeline_id IS NULL
+      ORDER BY t.updated_at DESC
+      LIMIT ?1`,
+  ).bind(boundedLimit).all<{ application_id: string }>();
+
+  let deletedApplications = 0;
+  let deletedPersonRoles = 0;
+  let failed = 0;
+
+  for (const row of rows.results ?? []) {
+    try {
+      const roleResult = await env.DB.prepare(
+        `DELETE FROM person_roles WHERE application_id = ?1`,
+      ).bind(row.application_id).run();
+      deletedPersonRoles += Number(roleResult.meta?.changes ?? 0);
+
+      const appResult = await env.DB.prepare(
+        `DELETE FROM applications WHERE id = ?1`,
+      ).bind(row.application_id).run();
+      deletedApplications += Number(appResult.meta?.changes ?? 0);
+    } catch (err) {
+      failed++;
+      const msg = err instanceof Error ? err.message : String(err);
+      console.error(`[talentPoolRolelessApplicationRepair] failed for ${row.application_id}:`, msg);
+    }
+  }
+
+  return {
+    scanned: rows.results?.length ?? 0,
+    deletedApplications,
+    deletedPersonRoles,
     failed,
   };
 }

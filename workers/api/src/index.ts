@@ -56,6 +56,7 @@ import { processCodeReviewScoringBacklog } from './lib/review/scoringBacklog';
 import {
   processStaleWorkersAIModelIngestionRetries,
   processTalentPoolOperationalContextRepairs,
+  processTalentPoolRolelessApplicationRepairs,
 } from './lib/candidateDiscovery/staleWorkersAiRetry';
 import { runScheduledBackfill } from './lib/livingContext/backfillScheduled';
 import { PIPE_EMAIL_LOGO_PATH, pipeEmailLogoResponse } from './lib/emailAssets';
@@ -343,6 +344,7 @@ export default {
     ctx.waitUntil(processCodeReviewScoringBacklog(env));
     ctx.waitUntil(processStaleWorkersAIModelIngestionRetries(env));
     ctx.waitUntil(processTalentPoolOperationalContextRepairs(env));
+    ctx.waitUntil(processTalentPoolRolelessApplicationRepairs(env));
     ctx.waitUntil(runScheduledBackfill(env).catch((err) => {
       console.error('[scheduled] backfill error:', err);
     }));

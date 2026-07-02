@@ -10,6 +10,7 @@ import {
   maybeQueueRetryableStandaloneIngestion,
   processStaleWorkersAIModelIngestionRetries,
   processTalentPoolOperationalContextRepairs,
+  processTalentPoolRolelessApplicationRepairs,
   retryCandidateEvidenceIngestionFromSource,
 } from '../staleWorkersAiRetry';
 import { runCandidateIngestion } from '../orchestrate';
@@ -571,6 +572,34 @@ describe('stale Workers AI candidate-ingestion retry', () => {
         phoneScreenerConsent: true,
       }),
     }));
+  });
+
+  it('cron removes generated roleless Talent Pool application rows', async () => {
+    const db = fakeD1({
+      all: [
+        { application_id: 'application-1' },
+        { application_id: 'application-2' },
+      ],
+    });
+    const env = buildEnv(db, fakeStorage('unused'));
+
+    await expect(processTalentPoolRolelessApplicationRepairs(env, 2)).resolves.toEqual({
+      scanned: 2,
+      deletedApplications: 2,
+      deletedPersonRoles: 2,
+      failed: 0,
+    });
+
+    const selectCall = db.__calls.find((call) => call.sql.includes('FROM applications app'))!;
+    expect(selectCall.params[0]).toBe(2);
+    const deleteRoleCalls = db.__calls.filter((call) =>
+      call.ran && call.sql.includes('DELETE FROM person_roles')
+    );
+    const deleteApplicationCalls = db.__calls.filter((call) =>
+      call.ran && call.sql.includes('DELETE FROM applications')
+    );
+    expect(deleteRoleCalls.map((call) => call.params[0])).toEqual(['application-1', 'application-2']);
+    expect(deleteApplicationCalls.map((call) => call.params[0])).toEqual(['application-1', 'application-2']);
   });
 
   it('records append-only retry failure evidence when the original source is missing', async () => {
