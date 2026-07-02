@@ -195,6 +195,7 @@ npm test -- src/lib/livingContext/__tests__/compatibility.test.ts src/lib/living
 npm test -- src/lib/candidateDiscovery/__tests__/candidateNodes.test.ts src/lib/candidateDiscovery/__tests__/resumeDecomposition.test.ts scripts/auditCandidateIngestion.test.ts
 npm test -- src/routes/cockpit/__tests__/contacts.rest.test.ts src/routes/cockpit/__tests__/candidates.rest.test.ts src/lib/livingContext/__tests__/readModel.test.ts
 npx playwright test e2e/talent-pool-intake.unauth.spec.ts --project=unauthenticated --reporter=line
+npm run smoke:talent-pool-ingestion-dev
 ```
 
 For app-dev, prefix remote proof commands with the dev D1 id:
@@ -237,6 +238,17 @@ The same remote D1 proof counted exactly one `profile_upload` receipt for
 `talent-intake/talent_audit_532e4287e_c1/9d990a07be4b85fe2907eca11f2a378669d5b03c0131dd506470922e894070f1-test-resume.pdf`,
 showing the scheduled repair backfilled the historical upload without adding
 source-less claims or duplicate person/context edges.
+
+Live app-dev submit proof on 2026-07-02 used
+`npm run smoke:talent-pool-ingestion-dev` with app-dev Basic auth and dev D1
+credentials. The smoke created a standalone roleless Talent Pool candidate,
+resolved invite token `3a8eae90-b428-4129-8b52-6f38919dbb7f`, submitted pasted
+profile evidence through `/rpc/talent/submit-profile`, verified the public
+dashboard stayed `CHALLENGE_PREPARING` with no ready challenges, then polled
+`candidate-ingestion:audit -- --remote --require-context-records`. The audit
+returned `status: ready`, `candidateNodeExactSourceQuoteCount: 58`,
+`contextSourceRefCount: 9`, `talentPoolWorkspacePersonCount: 1`,
+`sourceLessPositiveClaimCount: 0`, and `duplicateProjectedEdgeCount: 0`.
 
 Remote source-span sampling proved operational context refs preserve exact
 field text:
