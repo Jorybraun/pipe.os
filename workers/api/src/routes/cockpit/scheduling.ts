@@ -3069,7 +3069,7 @@ async function loadScheduledAssessmentProgressByInterviewIds(
          )
         WHERE rn = 1
           AND interview_id IS NOT NULL`,
-    ).bind(...chunk).all<{ id: string; interview_id: string }>();
+    ).bind(...chunk).all<ScheduledAssessmentListSessionRow>();
 
     const sessions = (sessionResult.results ?? []).map((row) =>
       toScheduledAssessmentListSession(row));
@@ -3124,6 +3124,18 @@ async function loadScheduledAssessmentProgressByInterviewIds(
 }
 
 type ScheduledAssessmentListSession = AssessmentProgressSnapshot['session'];
+type ScheduledAssessmentListSessionRow = {
+  id: string;
+  ingestion_key: string;
+  interview_id: string | null;
+  mode: string;
+  state: string;
+  candidate_id: string | null;
+  workspace_id: string | null;
+  metadata_json: string | null;
+  created_at: string;
+  updated_at: string;
+};
 type ScheduledAssessmentListCount = AssessmentProgressSnapshot['evidenceCounts'][number];
 type ScheduledAssessmentListLatestEvent = NonNullable<AssessmentProgressSnapshot['latestEvent']>;
 type ScheduledAssessmentListChallenge = NonNullable<AssessmentProgressSnapshot['challenge']> & {
@@ -3139,18 +3151,7 @@ function scheduledAssessmentPlaceholders(count: number): string {
   return Array.from({ length: count }, (_, index) => `?${index + 1}`).join(', ');
 }
 
-function toScheduledAssessmentListSession(row: {
-  id: string;
-  ingestion_key: string;
-  interview_id: string | null;
-  mode: string;
-  state: string;
-  candidate_id: string | null;
-  workspace_id: string | null;
-  metadata_json: string | null;
-  created_at: string;
-  updated_at: string;
-}): ScheduledAssessmentListSession {
+function toScheduledAssessmentListSession(row: ScheduledAssessmentListSessionRow): ScheduledAssessmentListSession {
   const metadata = parseJsonObject(row.metadata_json);
   return {
     id: row.id,
@@ -3160,7 +3161,7 @@ function toScheduledAssessmentListSession(row: {
     workspaceId: row.workspace_id,
     workspacePersonId: optionalString(metadata.workspacePersonId) ?? null,
     applicationId: optionalString(metadata.applicationId) ?? null,
-    mode: row.mode,
+    mode: row.mode as ScheduledAssessmentListSession['mode'],
     state: scheduledAssessmentCanonicalState(row.state),
     createdAt: row.created_at,
     updatedAt: row.updated_at,
@@ -3309,7 +3310,7 @@ async function loadScheduledAssessmentChallengeRefs(
       evidenceRole: row.evidence_role,
       exactText: row.exact_text ?? '',
       contentHash: row.content_hash ?? '',
-      locator: parsedLocator.value,
+      locator: parsedLocator.value as JsonObject,
       hasInvalidLocatorJson: parsedLocator.invalid,
     });
   }
@@ -3445,7 +3446,7 @@ async function loadScheduledAssessmentEvaluations(
     const output = parseJsonObject(row.output_json);
     evaluations.set(row.session_id, {
       id: row.id,
-      status: row.status,
+      status: row.status as ScheduledAssessmentListEvaluation['status'],
       summary: row.summary,
       recommendation: optionalString(output.recommendation) ?? null,
       createdAt: row.created_at,
@@ -4184,7 +4185,9 @@ function normalizeScheduledAssessmentGitHubRepositoryUrl(value: string): string 
     if (url.protocol !== 'https:' || url.hostname.toLowerCase() !== 'github.com') return null;
     const segments = url.pathname.split('/').filter(Boolean);
     if (segments.length !== 2) return null;
-    const [owner, repoWithSuffix] = segments;
+    const owner = segments[0];
+    const repoWithSuffix = segments[1];
+    if (!owner || !repoWithSuffix) return null;
     const repo = repoWithSuffix.endsWith('.git') ? repoWithSuffix.slice(0, -4) : repoWithSuffix;
     if (!owner || !repo) return null;
     return `https://github.com/${owner}/${repo}`;
