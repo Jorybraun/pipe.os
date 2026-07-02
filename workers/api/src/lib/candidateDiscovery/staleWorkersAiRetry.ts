@@ -119,6 +119,13 @@ export interface StaleWorkersAIRetryResult {
   failed: number;
 }
 
+export interface PipelineCandidateIngestionRetryInput {
+  pipelineId: string;
+  ownerId: string;
+  limit?: number;
+  executionCtx?: ExecutionContext | null;
+}
+
 export interface TalentPoolOperationalContextRepairResult {
   scanned: number;
   repaired: number;
@@ -734,6 +741,118 @@ export async function processStaleWorkersAIModelIngestionRetries(
         originalStep: retryContext.originalStep,
         originalUpdatedAt: retryContext.originalUpdatedAt,
       });
+    }
+  }
+
+  return {
+    scanned: rows.results?.length ?? 0,
+    queued,
+    skipped,
+    failed,
+  };
+}
+
+export async function processPipelineCandidateIngestionRetries(
+  env: Env,
+  input: PipelineCandidateIngestionRetryInput,
+): Promise<StaleWorkersAIRetryResult> {
+  const boundedLimit = Math.max(
+    1,
+    Math.min(input.limit ?? resolveCandidateIngestionRetryLimit(env), MAX_STALE_WORKERS_AI_RETRY_LIMIT),
+  );
+  const scanLimit = boundedLimit * STALE_WORKERS_AI_RETRY_SCAN_MULTIPLIER;
+  const staleCutoff = new Date(Date.now() - STALE_IN_PROGRESS_RETRY_AFTER_MS).toISOString();
+  const rows = await env.DB.prepare(
+    `SELECT c.id AS candidate_id,
+            c.resume_s3_key,
+            ci.status,
+            ci.current_step,
+            ci.error_text,
+            ci.updated_at
+       FROM candidates c
+       JOIN pipelines p ON p.id = c.pipeline_id
+       LEFT JOIN candidate_ingestion ci ON ci.candidate_id = c.id
+      WHERE c.pipeline_id = ?1
+        AND p.owner_id = ?2
+        AND c.resume_s3_key IS NOT NULL
+        AND (
+          ci.candidate_id IS NULL
+          OR (
+            ci.status = 'failed'
+            AND ci.current_step = 'discover_profile'
+            AND ci.error_text IS NOT NULL
+          )
+          OR (
+            ci.status = 'pending'
+            AND ci.current_step IS NOT NULL
+            AND ci.current_step IN ('talent_pool_profile_received', 'queued', 'retry_queued', 'parse_resume', 'decompose_resume', 'discover_profile', 'embed_profile', 'match_and_assign')
+            AND ci.updated_at IS NOT NULL
+            AND ci.updated_at <= ?3
+          )
+        )
+      ORDER BY
+        CASE WHEN ci.candidate_id IS NULL THEN 0 ELSE 1 END,
+        CASE WHEN ci.status = 'pending' THEN 0 ELSE 1 END,
+        CASE
+          WHEN ci.status = 'failed'
+           AND (
+             c.resume_s3_key LIKE 'candidate-documents/%'
+             OR c.resume_s3_key LIKE 'talent-intake/%'
+           )
+          THEN 0
+          WHEN ci.status = 'failed' THEN 1
+          ELSE 0
+        END,
+        CASE WHEN ci.status = 'pending' THEN ci.updated_at END DESC,
+        CASE WHEN ci.status = 'failed' THEN ci.updated_at END DESC
+      LIMIT ?4`,
+  ).bind(input.pipelineId, input.ownerId, staleCutoff, scanLimit).all<RetryableCandidateRow>();
+
+  let queued = 0;
+  let skipped = 0;
+  let failed = 0;
+  for (const row of rows.results ?? []) {
+    const retryContext = retryContextForRow(row, 'candidate_rpc');
+    if (!row.resume_s3_key || !retryContext) {
+      skipped++;
+      continue;
+    }
+    const resumeS3Key = row.resume_s3_key;
+    if (queued >= boundedLimit) {
+      skipped++;
+      continue;
+    }
+
+    const retryPromise = queueAndRunRetry(env, row.candidate_id, resumeS3Key, {
+      trigger: retryContext.trigger,
+      reasonCode: retryContext.reasonCode,
+      originalErrorText: retryContext.originalErrorText,
+      originalStep: retryContext.originalStep,
+      originalUpdatedAt: retryContext.originalUpdatedAt,
+    }).catch(async (err) => {
+      const msg = err instanceof Error ? err.message : String(err);
+      console.error(`[pipelineIngestionRetry] retry failed for ${row.candidate_id}:`, msg);
+      await markRetryFailed(env, row.candidate_id, resumeS3Key, `Retry failed: ${msg}`, {
+        trigger: retryContext.trigger,
+        reasonCode: retryContext.reasonCode,
+        originalErrorText: retryContext.originalErrorText,
+        originalStep: retryContext.originalStep,
+        originalUpdatedAt: retryContext.originalUpdatedAt,
+      });
+      throw err;
+    });
+
+    if (input.executionCtx) {
+      input.executionCtx.waitUntil(retryPromise);
+      queued++;
+      continue;
+    }
+
+    try {
+      await retryPromise;
+      queued++;
+    } catch {
+      failed++;
     }
   }
 

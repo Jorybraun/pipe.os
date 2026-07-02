@@ -61,6 +61,9 @@ import {
   type AssessmentProgressSnapshot,
   type CommitSubmissionChangedFileStatus,
 } from '../lib/repoTaskInterviewSession';
+import {
+  ensureMatchedOpenSourceChallengeAssessmentSession,
+} from '../lib/openSourceChallengeSessions';
 import type { JsonObject, JsonValue } from '../lib/livingContext';
 
 // ─── Blocking gate for post-screener enrichment ─────────────────────────────
@@ -88,6 +91,8 @@ interface WaitingChallengeDiagnostics {
   updatedAt?: string | null;
   estimatedCompletionAt?: string | null;
   staleAfterSeconds?: number;
+  repoMatchingStatus?: WaitingPipelineStepStatus;
+  repoMatchingDetail?: string | null;
   pipeline?: WaitingPipelineStep[];
 }
 
@@ -993,10 +998,13 @@ interface CandidateSafeMatchExplanation {
 }
 
 interface StandaloneReviewMatchResult {
+  repoId: number | null;
   repoUrl: string;
   prNumber: number;
   matchExplanation: CandidateSafeMatchExplanation | null;
 }
+
+type StandaloneOpenSourceSessionMaterializer = typeof ensureMatchedOpenSourceChallengeAssessmentSession;
 
 type StandaloneSourceBackedAssignmentRow = Pick<
   StandaloneReviewRow | StandaloneDevContainerRow,
@@ -1747,6 +1755,7 @@ async function loadReadyStandaloneCodeReviewAssignment(
   }
 
   return {
+    repoId: assessment.matched_repo_id,
     repoUrl: assessment.github_repo_url,
     prNumber: assessment.github_pr_number,
     matchExplanation: cachedExplanation ?? sourceBackedManualReviewExplanation(assessment.github_pr_number),
@@ -1798,6 +1807,7 @@ export async function repairStandaloneReviewAssignmentFromMatchRun(
           AND status NOT IN ('COMPLETED', 'CANCELLED')`,
     ).bind(row.repo_id, row.github_url, row.pr_number, new Date().toISOString(), interviewId).run();
     return {
+      repoId: row.repo_id,
       repoUrl: row.github_url,
       prNumber: row.pr_number,
       matchExplanation,
@@ -2230,6 +2240,7 @@ async function matchStandaloneSourceBackedAssignment(
       if (cachedExplanation) {
         if (standaloneAutomaticMatchPasses(cachedExplanation)) {
           return {
+            repoId: interview.matched_repo_id,
             repoUrl: interview.github_repo_url,
             prNumber: interview.github_pr_number,
             matchExplanation: cachedExplanation,
@@ -2241,6 +2252,7 @@ async function matchStandaloneSourceBackedAssignment(
         await clearStandaloneReviewCachedMatch(db, interview.id);
       } else {
         return {
+          repoId: interview.matched_repo_id,
           repoUrl: interview.github_repo_url,
           prNumber: interview.github_pr_number,
           matchExplanation: sourceBackedManualReviewExplanation(interview.github_pr_number),
@@ -2286,10 +2298,41 @@ async function matchStandaloneSourceBackedAssignment(
      WHERE id = ?5`,
   ).bind(match.repoId, repo.github_url, match.prNumber, new Date().toISOString(), interview.id).run();
   return {
+    repoId: match.repoId,
     repoUrl: repo.github_url,
     prNumber: match.prNumber,
     matchExplanation,
   };
+}
+
+async function ensureStandaloneOpenSourceBugFixAssessmentSession(
+  db: D1Database,
+  candidateId: string,
+  interview: StandaloneDevContainerRow,
+  match: StandaloneReviewMatchResult | null,
+  materializer: StandaloneOpenSourceSessionMaterializer = ensureMatchedOpenSourceChallengeAssessmentSession,
+): Promise<boolean> {
+  if (interview.interview_type !== 'OPEN_SOURCE_BUG_FIX') return true;
+
+  const repositoryUrl = match?.repoUrl ?? interview.github_repo_url;
+  const githubPrNumber = match?.prNumber ?? interview.github_pr_number;
+  const matchedRepoId = match?.repoId ?? interview.matched_repo_id;
+  if (!repositoryUrl || typeof githubPrNumber !== 'number') return false;
+
+  const progress = await materializer(db, {
+    interviewId: interview.id,
+    candidateId,
+    matchedRepoId,
+    repositoryUrl,
+    githubPrNumber,
+  });
+  if (!progress?.hasChallengePacket || !progress.challengePacketContract.isComplete) {
+    console.warn(
+      `[standaloneDevContainer] open-source assignment ${interview.id} lacks a complete source-backed assessment challenge packet`,
+    );
+    return false;
+  }
+  return true;
 }
 
 export async function matchStandaloneDevContainerAssessment(
@@ -2297,11 +2340,20 @@ export async function matchStandaloneDevContainerAssessment(
   candidateId: string,
   interview: StandaloneDevContainerRow,
   matcher?: StandaloneReviewMatcher,
+  materializer?: StandaloneOpenSourceSessionMaterializer,
 ): Promise<StandaloneReviewMatchResult | null> {
-  return matchStandaloneSourceBackedAssignment(db, candidateId, interview, {
+  const match = await matchStandaloneSourceBackedAssignment(db, candidateId, interview, {
     logLabel: 'standaloneDevContainer',
     matcher,
   });
+  if (
+    match
+    && interview.interview_type === 'OPEN_SOURCE_BUG_FIX'
+    && !await ensureStandaloneOpenSourceBugFixAssessmentSession(db, candidateId, interview, match, materializer)
+  ) {
+    return null;
+  }
+  return match;
 }
 
 type SourceBackedReviewDiffResult = NonNullable<Awaited<ReturnType<typeof loadSourceBackedReviewDiff>>>;
@@ -3116,6 +3168,7 @@ rpcAuth.post('/get-stage-config', async (c) => {
     // evidence is still required for source-backed matching.
     if (!needsResume && standaloneAssessment && 'interview_type' in standaloneAssessment) {
       const isOpenSourceBugFix = standaloneAssessment.interview_type === 'OPEN_SOURCE_BUG_FIX';
+      let matchedOpenSourceAssignment: StandaloneReviewMatchResult | null = null;
       if (!standaloneAssessment.github_repo_url) {
         const retryQueued = await maybeQueueRetryableStandaloneIngestion(c.env, optionalExecutionContext(c), candidateId);
         const readiness = retryQueued
@@ -3132,6 +3185,18 @@ rpcAuth.post('/get-stage-config', async (c) => {
         if (!match) {
           return c.json(candidateIntakeQueuedComplete('Profile received'));
         }
+        matchedOpenSourceAssignment = match;
+      }
+      if (
+        isOpenSourceBugFix
+        && !await ensureStandaloneOpenSourceBugFixAssessmentSession(
+          c.env.DB,
+          candidateId,
+          standaloneAssessment,
+          matchedOpenSourceAssignment,
+        )
+      ) {
+        return c.json(candidateIntakeQueuedComplete('Profile received'));
       }
       return c.json({
         isComplete: false,
@@ -3440,6 +3505,7 @@ rpcAuth.post('/get-challenge', async (c) => {
     if (standaloneAssessment && 'interview_type' in standaloneAssessment) {
       let repoUrl = standaloneAssessment.github_repo_url;
       let prNumber = standaloneAssessment.github_pr_number;
+      let matchedOpenSourceAssignment: StandaloneReviewMatchResult | null = null;
       if (!repoUrl) {
         const retryQueued = await maybeQueueRetryableStandaloneIngestion(c.env, optionalExecutionContext(c), candidateId);
         if (retryQueued) {
@@ -3469,8 +3535,30 @@ rpcAuth.post('/get-challenge', async (c) => {
         }
         repoUrl = match.repoUrl;
         prNumber = match.prNumber;
+        matchedOpenSourceAssignment = match;
       }
       const isOpenSourceBugFix = standaloneAssessment.interview_type === 'OPEN_SOURCE_BUG_FIX';
+      if (
+        isOpenSourceBugFix
+        && !await ensureStandaloneOpenSourceBugFixAssessmentSession(
+          c.env.DB,
+          candidateId,
+          standaloneAssessment,
+          matchedOpenSourceAssignment,
+        )
+      ) {
+        const reason = 'The matched open-source task does not have a complete source-backed assessment challenge packet yet.';
+        return c.json(standaloneWaitingChallenge({
+          state: 'blocked',
+          autoRefresh: false,
+          reason,
+          diagnostics: {
+            phase: 'repo_matching',
+            repoMatchingStatus: 'blocked',
+            repoMatchingDetail: reason,
+          },
+        }));
+      }
       return c.json({
         id: `standalone-dev-container-${standaloneAssessment.id}`,
         type: 'CODE_IMPLEMENTATION',

@@ -138,6 +138,12 @@ The controlling product rule remains:
   or fork, with any upstream PR gated behind later review.
 - Candidate assessment routing currently serves it through the existing
   dev-container `CODE_IMPLEMENTATION` runtime.
+- Standalone `OPEN_SOURCE_BUG_FIX` auto-matching now has to materialize the
+  matched repo/PR into a canonical assessment session from a production-ready
+  review challenge packet before the candidate can receive a ready challenge.
+  If the packet is missing repo provenance, concept links, exact commits, PR
+  identity, success criteria, or expected evidence, the candidate remains at the
+  safe profile-received handoff instead of seeing a generic repo dump.
 - Meeting-room workspace provisioning treats it as a workspace-backed interview.
 - Host room end now replays the authoritative Durable Object chat, media,
   recording, workspace, terminal, and code-server activity logs into

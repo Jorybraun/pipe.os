@@ -133,6 +133,12 @@ succeeded, or failed instead of fabricating an AI-derived profile.
 Scheduled retry throughput defaults conservatively, while dev can raise it with
 `CANDIDATE_INGESTION_RETRY_LIMIT` to burn down stale AI-output failures without
 changing production behavior.
+Recruiter-owned pipeline repair can also be triggered deliberately with
+`POST /api/v1/pipelines/:pipelineId/ingestion/retry-failed`. The route only
+selects candidates in the authenticated recruiter's pipeline with an original
+`resume_s3_key`, then replays missing, failed, or stale ingestion from that R2
+source. It must not synthesize profiles for rows whose source evidence is
+missing.
 
 Resume decomposition disambiguates repeated titles or labels by anchoring the
 selected source quote near the matching company, project, institution, or other

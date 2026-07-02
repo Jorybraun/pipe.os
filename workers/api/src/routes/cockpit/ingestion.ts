@@ -17,6 +17,7 @@ import { authMiddleware } from '../../middleware/auth';
 import { apiError } from '../../middleware/errors';
 import { parseResume, extractTextFromPDF } from '../../lib/cvParser';
 import { runCandidateIngestion } from '../../lib/candidateDiscovery/orchestrate';
+import { processPipelineCandidateIngestionRetries } from '../../lib/candidateDiscovery/staleWorkersAiRetry';
 import type { Env, Variables } from '../../types';
 
 const feedbackSchema = z.object({
@@ -26,6 +27,10 @@ const feedbackSchema = z.object({
   roleRepoAlignment: z.number().optional(),
   candidateRepoFit: z.number().optional(),
   roleCandidateCosine: z.number().optional(),
+});
+
+const retryFailedSchema = z.object({
+  limit: z.number().int().min(1).max(25).optional(),
 });
 
 const ingestion = new Hono<{ Bindings: Env; Variables: Variables }>();
@@ -258,6 +263,65 @@ ingestion.get('/:pipelineId/ingestion/:candidateId/feedback', async (c) => {
   }));
 
   return c.json({ feedback });
+});
+
+// ─── POST /:pipelineId/ingestion/retry-failed ───────────────────────────────
+
+ingestion.post('/:pipelineId/ingestion/retry-failed', async (c) => {
+  const userId = c.var.userId;
+  const { pipelineId } = c.req.param();
+
+  const pipeline = await c.env.DB
+    .prepare('SELECT id FROM pipelines WHERE id = ?1 AND owner_id = ?2')
+    .bind(pipelineId, userId)
+    .first<{ id: string }>();
+
+  if (!pipeline) {
+    return apiError(c, 'NOT_FOUND', 'Pipeline not found.');
+  }
+
+  let body: unknown = {};
+  const contentType = c.req.header('content-type') ?? '';
+  if (contentType.includes('application/json')) {
+    try {
+      body = await c.req.json();
+    } catch {
+      return apiError(c, 'BAD_REQUEST', 'Invalid JSON body.');
+    }
+  }
+
+  const parsed = retryFailedSchema.safeParse(body);
+  if (!parsed.success) {
+    return apiError(c, 'BAD_REQUEST', parsed.error.message);
+  }
+
+  let executionCtx: ExecutionContext | null = null;
+  try {
+    executionCtx = c.executionCtx;
+  } catch {
+    executionCtx = null;
+  }
+
+  const retryInput: {
+    pipelineId: string;
+    ownerId: string;
+    limit?: number;
+    executionCtx?: ExecutionContext | null;
+  } = {
+    pipelineId,
+    ownerId: userId,
+    executionCtx,
+  };
+  if (parsed.data.limit !== undefined) {
+    retryInput.limit = parsed.data.limit;
+  }
+
+  const result = await processPipelineCandidateIngestionRetries(c.env, retryInput);
+
+  return c.json({
+    success: true,
+    result,
+  });
 });
 
 // ─── POST /:pipelineId/ingestion/:candidateId/reingest ──────────────────────

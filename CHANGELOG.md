@@ -9,6 +9,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Fixed — Talent Pool ingestion
 
+- Recruiter pipeline ingestion now exposes an owned `POST /api/v1/pipelines/:pipelineId/ingestion/retry-failed` repair action that replays failed, missing, or stalled candidate ingestion from the original R2 source evidence instead of waiting on unreliable dev cron behavior.
 - Talent Pool profile submit/upload now creates the design queue before scheduling background ingestion, preserving explicit challenge-design state while candidate AI/evidence ingestion runs.
 - Talent Pool text-profile ingestion now starts from source-backed rule-based parsing instead of waiting on the resume-decomposition LLM before candidate discovery, preventing submitted profiles from stalling at `talent_pool_profile_received`.
 - Scheduled candidate-ingestion repair now prioritizes recent document-backed and Talent Pool intake retries before stale text-smoke failures, so real uploaded candidates do not sit behind old AI discovery debris.
@@ -58,6 +59,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Added — Open-source assessment setup
 
+- Standalone `OPEN_SOURCE_BUG_FIX` matching now materializes the selected repo/PR into a source-backed assessment session from a production-ready review challenge packet before returning a ready challenge, and fails closed to the candidate-safe intake handoff when packet provenance is incomplete.
 - `assessment-evidence:replay` now supports `--missing-events-only`, projecting only assessment events that still lack person context so active `IN_PROGRESS` sessions can be repaired without rebuilding an entire large session transcript.
 - `assessment-evidence:audit` and `assessment-evidence:replay -- --remote --all-missing` now use the same real-candidate eligibility for person projection, so old synthetic smoke rows with dangling candidate ids do not masquerade as repairable person-context debt.
 - `assessment-evidence:replay -- --remote --all-missing` now supports `--progress` and repeatable `--exclude-state <STATE>` filters with per-session state/missing-event counts, so app-dev historical backfill can report the current session and skip active `IN_PROGRESS` assessments while completed rows are repaired.

@@ -8,6 +8,7 @@ import {
   isRetryableStaleWorkersAIModelFailure,
   isRetryableStalledInProgressIngestion,
   maybeQueueRetryableStandaloneIngestion,
+  processPipelineCandidateIngestionRetries,
   processStaleWorkersAIModelIngestionRetries,
   processTalentPoolOperationalContextRepairs,
   processTalentPoolRolelessApplicationRepairs,
@@ -707,6 +708,65 @@ describe('stale Workers AI candidate-ingestion retry', () => {
     const selectCall = db.__calls.find((call) => call.sql.includes('FROM candidate_ingestion ci'))!;
     expect(selectCall.params[1]).toBe(24);
     expect(runCandidateIngestion).toHaveBeenCalledTimes(4);
+  });
+
+  it('retries failed pipeline candidate ingestion from original source evidence', async () => {
+    const db = fakeD1({
+      all: [
+        {
+          candidate_id: 'pipeline-candidate-1',
+          resume_s3_key: 'text-intake/pipeline-candidate-1/source',
+          status: 'failed',
+          current_step: 'discover_profile',
+          error_text: 'Discovery failed: Candidate Discovery response was not a JSON object',
+          updated_at: '2026-07-01T22:00:00.000Z',
+        },
+        {
+          candidate_id: 'pipeline-candidate-2',
+          resume_s3_key: 'text-intake/pipeline-candidate-2/source',
+          status: null,
+          current_step: null,
+          error_text: null,
+          updated_at: null,
+        },
+        {
+          candidate_id: 'non-retryable',
+          resume_s3_key: 'text-intake/non-retryable/source',
+          status: 'embedded',
+          current_step: 'embed_profile',
+          error_text: null,
+          updated_at: '2026-07-01T22:00:00.000Z',
+        },
+      ],
+    });
+    const env = buildEnv(db, fakeStorage(
+      'Pipeline candidate evidence. Built React TypeScript workflows, fixed queue retry bugs, and wrote Vitest coverage.',
+    ));
+
+    await expect(processPipelineCandidateIngestionRetries(env, {
+      pipelineId: 'pipeline-1',
+      ownerId: 'owner-1',
+      limit: 2,
+      executionCtx: null,
+    })).resolves.toEqual({
+      scanned: 3,
+      queued: 2,
+      skipped: 1,
+      failed: 0,
+    });
+
+    const selectCall = db.__calls.find((call) => call.sql.includes('JOIN pipelines p ON p.id = c.pipeline_id'))!;
+    expect(selectCall.params.slice(0, 2)).toEqual(['pipeline-1', 'owner-1']);
+    expect(selectCall.sql).toContain('c.resume_s3_key IS NOT NULL');
+    expect(runCandidateIngestion).toHaveBeenCalledTimes(2);
+    expect(runCandidateIngestion).toHaveBeenCalledWith(expect.objectContaining({
+      candidateId: 'pipeline-candidate-1',
+      resumeText: expect.stringContaining('Pipeline candidate evidence'),
+      skipPostDecompositionMaintenance: true,
+    }));
+    expect(runCandidateIngestion).toHaveBeenCalledWith(expect.objectContaining({
+      candidateId: 'pipeline-candidate-2',
+    }));
   });
 
   it('cron repairs missing Talent Pool operational context projections', async () => {

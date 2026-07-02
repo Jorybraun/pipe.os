@@ -333,6 +333,74 @@ describe('matchStandaloneDevContainerAssessment', () => {
     ]);
     expect(calls.updates[0]?.[4]).toBe('interview-1');
   });
+
+  it('materializes a matched open-source bug-fix challenge session before returning ready', async () => {
+    const calls = { updates: [] as unknown[][] };
+    const db = buildStandaloneAssignmentDb(calls);
+    const materialized: unknown[] = [];
+
+    const result = await matchStandaloneDevContainerAssessment(
+      db,
+      'candidate-1',
+      {
+        id: 'interview-open-source-1',
+        status: 'INVITED',
+        created_at: '2026-06-29T11:00:00.000Z',
+        interview_type: 'OPEN_SOURCE_BUG_FIX',
+        matched_repo_id: null,
+        github_repo_url: null,
+        github_pr_number: null,
+        submission_json: null,
+      },
+      async () => sourceBackedMatch(),
+      async (_db, input) => {
+        materialized.push(input);
+        return {
+          hasChallengePacket: true,
+          challengePacketContract: { isComplete: true },
+        } as never;
+      },
+    );
+
+    expect(result).toEqual(expect.objectContaining({
+      repoId: 41,
+      repoUrl: 'https://github.com/mui/base-ui',
+      prNumber: 973,
+    }));
+    expect(materialized).toHaveLength(1);
+    expect(materialized[0]).toMatchObject({
+      interviewId: 'interview-open-source-1',
+      candidateId: 'candidate-1',
+      matchedRepoId: 41,
+      repositoryUrl: 'https://github.com/mui/base-ui',
+      githubPrNumber: 973,
+    });
+  });
+
+  it('keeps matched open-source bug-fix assignments blocked when no source-backed session can be materialized', async () => {
+    const calls = { updates: [] as unknown[][] };
+    const db = buildStandaloneAssignmentDb(calls);
+
+    const result = await matchStandaloneDevContainerAssessment(
+      db,
+      'candidate-1',
+      {
+        id: 'interview-open-source-missing-packet',
+        status: 'INVITED',
+        created_at: '2026-06-29T11:00:00.000Z',
+        interview_type: 'OPEN_SOURCE_BUG_FIX',
+        matched_repo_id: null,
+        github_repo_url: null,
+        github_pr_number: null,
+        submission_json: null,
+      },
+      async () => sourceBackedMatch(),
+      async () => null,
+    );
+
+    expect(result).toBeNull();
+    expect(calls.updates).toHaveLength(1);
+  });
 });
 
 function persistedRankedMatch(): string {
