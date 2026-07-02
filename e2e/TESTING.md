@@ -329,11 +329,11 @@ final decision, source-report anchor, reviewed commit, repo/branch, and no raw
 reviewer ID, then verifies the deployed interview list card shows the
 assessment mode, task, repo/base, source-backed commit trust, final decision,
 and next action. Latest deployed proof on 2026-07-02 passed for interview
-`4c0ed403-fd13-46c0-a009-8289f072f7f6`, repo `mui/base-ui`, candidate task
+`8a89e2a2-3803-4652-adc9-c38027d069f6`, repo `mui/base-ui`, candidate task
 brief visible, recruiter list card visible, workspace commit
-`1e43246f4a1b2aa6603fdda14efe3742ee383a79`, bridge revision
+`e4a4f2b9d60625470230b6c0e594b90816a764aa`, bridge revision
 `2026-06-30-assessment-branch-v1`, and evaluation report
-`assessment_evaluation_report_e10daf315d5ec085513a7748588d012c` with
+`assessment_evaluation_report_9710c858486da5298ec7950fb7eeca8d` with
 recommendation `strong_evidence_to_advance`. The recruiter projection was
 reviewable from source-backed `git_commit`, `code_diff`, `test_run`,
 `terminal_command`, AI usage, challenge-packet, workspace launch, and
