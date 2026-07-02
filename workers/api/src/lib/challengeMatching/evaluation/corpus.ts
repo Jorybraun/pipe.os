@@ -200,8 +200,20 @@ export function validateCorpus(corpus: EvaluationCorpus): void {
     if (!nonEmptyString(packet.repoId)) {
       failures.push(`expected packet is missing repoId: ${packet.challengeId}`);
     }
+    if (packet.repoFullName !== undefined && !nonEmptyString(packet.repoFullName)) {
+      failures.push(`expected packet repoFullName must be non-empty: ${packet.challengeId}`);
+    }
+    if (packet.repoUrl !== undefined && !nonEmptyString(packet.repoUrl)) {
+      failures.push(`expected packet repoUrl must be non-empty: ${packet.challengeId}`);
+    }
     if (!Number.isInteger(packet.prNumber) || packet.prNumber <= 0) {
       failures.push(`expected packet prNumber must be a positive integer: ${packet.challengeId}`);
+    }
+    if (packet.prUrl !== undefined && !nonEmptyString(packet.prUrl)) {
+      failures.push(`expected packet prUrl must be non-empty: ${packet.challengeId}`);
+    }
+    if (packet.prTitle !== undefined && !nonEmptyString(packet.prTitle)) {
+      failures.push(`expected packet prTitle must be non-empty: ${packet.challengeId}`);
     }
     if (!nonEmptyString(packet.sourceVersion)) {
       failures.push(`expected packet is missing sourceVersion: ${packet.challengeId}`);

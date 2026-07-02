@@ -489,6 +489,172 @@ describe('corpusSeeder', () => {
     expect(result.warnings.some((w) => w.includes('role-orphan'))).toBe(true);
   });
 
+  it('falls back to role snapshots when optional role-context tables are missing', async () => {
+    seedMatchData(sqlite);
+    sqlite.exec(`
+      DROP TABLE role_source_references;
+      DROP TABLE role_context_documents;
+    `);
+
+    const result = await seedCorpusFromMatchRuns(db);
+
+    expect(result.matchRunCount).toBe(1);
+    expect(result.roleCount).toBe(1);
+    expect(result.corpus.roleRequirements).toHaveLength(1);
+    expect(result.corpus.roleRequirements[0]).toMatchObject({
+      roleId: 'role-1',
+      requiredLanguages: [],
+    });
+    expect(result.corpus.roleRequirements[0]!.sourceReferences[0]).toMatchObject({
+      sourceRefType: 'role_snapshot',
+      sourceRefId: 'role-1',
+    });
+    expect(result.warnings).toContain(
+      'role_context_documents table is unavailable; using role snapshot fallback for role requirements',
+    );
+    expect(result.warnings).toContain(
+      'role_source_references table is unavailable; role source refs omitted',
+    );
+  });
+
+  it('reads challenge packets from the deployed packet schema without source_version', async () => {
+    seedMatchData(sqlite);
+    sqlite.exec(`
+      DROP TABLE review_challenge_packets;
+      CREATE TABLE review_challenge_packets (
+        id TEXT PRIMARY KEY,
+        repo_snapshot_id TEXT NOT NULL,
+        repo_id INTEGER NOT NULL,
+        pr_number INTEGER NOT NULL,
+        packet_version TEXT NOT NULL,
+        source_hash TEXT NOT NULL,
+        packet_json TEXT NOT NULL,
+        production_ready INTEGER NOT NULL DEFAULT 1,
+        quality_score REAL NOT NULL DEFAULT 1
+      );
+    `);
+    sqlite.prepare(
+      `INSERT INTO review_challenge_packets (
+         id, repo_snapshot_id, repo_id, pr_number, packet_version,
+         source_hash, packet_json, production_ready, quality_score
+       ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)`,
+    ).run(
+      'packet-1',
+      'repo-snapshot-1',
+      123,
+      42,
+      'packet-v1',
+      'sha256:packet-from-source-hash',
+      JSON.stringify({
+        repository: {
+          owner: 'mui',
+          name: 'base-ui',
+          canonicalUrl: 'https://github.com/mui/base-ui',
+        },
+        pullRequest: {
+          url: 'https://github.com/mui/base-ui/pull/42',
+          title: 'Repair Kafka Streams retry code',
+        },
+        demands: [{
+          id: 'packet-demand-1',
+          narrative: 'Review Kafka Streams retry code in the source-backed PR.',
+          conceptKeys: ['term:kafka-streams'],
+          sourceSpanIds: ['repo-span-1'],
+          changedSymbolIds: ['symbol-1'],
+          contentHash: 'sha256:repo-span',
+        }],
+      }),
+      1,
+      0.95,
+    );
+
+    const result = await seedCorpusFromMatchRuns(db);
+
+    expect(result.corpus.expectedPackets).toHaveLength(1);
+    expect(result.corpus.expectedPackets![0]).toMatchObject({
+      challengeId: 'packet-1',
+      repoId: 'repo-1',
+      repoFullName: 'mui/base-ui',
+      repoUrl: 'https://github.com/mui/base-ui',
+      prNumber: 42,
+      prUrl: 'https://github.com/mui/base-ui/pull/42',
+      prTitle: 'Repair Kafka Streams retry code',
+      sourceVersion: 'v1.0.0',
+      packetContentHash: 'sha256:packet-from-source-hash',
+    });
+    expect(result.corpus.expectedPackets![0]!.demands[0]).toMatchObject({
+      demandId: 'packet-demand-1',
+      concepts: ['term:kafka-streams'],
+    });
+    expect(result.corpus.expectedPackets![0]!.demands[0]!.sourceRefs[0]).toMatchObject({
+      sourceRefType: 'repo_source_span',
+      sourceRefId: 'repo-span-1',
+      sourceSpanId: 'repo-span-1',
+      exactText: 'Review Kafka Streams retry code in the source-backed PR.',
+    });
+  });
+
+  it('does not list low-scoring irrelevant seeded labels as eligible challenges', async () => {
+    seedMatchData(sqlite);
+    sqlite.prepare(
+      `UPDATE match_runs
+          SET ranked_results_json = ?
+        WHERE id = 'mr-1'`,
+    ).run(JSON.stringify([{
+      rank: 1,
+      recallRank: 1,
+      challengeId: 'packet-1',
+      repoId: 'repo-1',
+      prNumber: 42,
+      sourceVersion: 'v1.0.0',
+      score: 0.3,
+      candidateEvidenceAlignment: 0.3,
+      roleRelevance: 0.3,
+      contextualSpecificity: 0.3,
+      challengeQuality: 0.9,
+      validationDeepeningValue: 0.3,
+      alignedDemandCount: 1,
+      stretchCount: 0,
+      stretchDemandWeightRatio: 0,
+      provenanceComplete: true,
+      eligible: true,
+      alignments: [],
+      rejectionReasons: [],
+    }, {
+      rank: 2,
+      recallRank: 2,
+      challengeId: 'packet-2',
+      repoId: 'repo-2',
+      prNumber: 43,
+      sourceVersion: 'v2.0.0',
+      score: 0.2,
+      candidateEvidenceAlignment: 0.2,
+      roleRelevance: 0.2,
+      contextualSpecificity: 0.2,
+      challengeQuality: 0.8,
+      validationDeepeningValue: 0.2,
+      alignedDemandCount: 1,
+      stretchCount: 0,
+      stretchDemandWeightRatio: 0,
+      provenanceComplete: true,
+      eligible: true,
+      alignments: [],
+      rejectionReasons: [],
+    }]));
+
+    const result = await seedCorpusFromMatchRuns(db);
+
+    expect(result.corpus.expertLabels[0]).toMatchObject({
+      challengeId: 'packet-1',
+      relevanceGrade: 'irrelevant',
+      eligibleChallengeIds: [],
+    });
+    expect(result.corpus.metadata.totalChallenges).toBe(1);
+    expect(result.warnings.some((warning) =>
+      warning.includes('metadata.totalChallenges does not match'),
+    )).toBe(false);
+  });
+
   it('respects statusFilter option', async () => {
     seedMatchData(sqlite);
 

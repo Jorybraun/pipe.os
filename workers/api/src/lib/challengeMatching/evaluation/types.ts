@@ -104,7 +104,11 @@ export interface ExpectedDemandReference {
 export interface ExpectedChallengePacket {
   challengeId: string;
   repoId: string;
+  repoFullName?: string;
+  repoUrl?: string;
   prNumber: number;
+  prUrl?: string;
+  prTitle?: string;
   sourceVersion: string;
   packetContentHash?: string;
   demands?: ExpectedDemandReference[];

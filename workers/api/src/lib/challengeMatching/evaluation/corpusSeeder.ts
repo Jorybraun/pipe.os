@@ -98,11 +98,33 @@ interface RoleSourceRefRow {
 
 interface ChallengePacketRow {
   id: string;
-  repo_id: string;
+  repo_id: string | number;
   pr_number: number;
-  source_version: string;
+  source_version: string | null;
+  packet_version: string | null;
   content_hash: string | null;
+  packet_json: string | null;
   demands_json: string | null;
+}
+
+interface ChallengePacketJson {
+  repository?: {
+    owner?: string;
+    name?: string;
+    canonicalUrl?: string;
+  };
+  pullRequest?: {
+    url?: string;
+    title?: string;
+  };
+  demands?: Array<{
+    demandId?: string;
+    id?: string;
+    concepts?: string[];
+    conceptKeys?: string[];
+    sourceRefs?: unknown[];
+    sourceReferences?: unknown[];
+  }>;
 }
 
 function safeJsonParse<T>(json: string | null, fallback: T): T {
@@ -121,6 +143,129 @@ function safeJsonParseOptional(json: string | null): string[] | undefined {
   } catch {
     return undefined;
   }
+}
+
+async function tableExists(db: D1Database, tableName: string): Promise<boolean> {
+  const row = await db.prepare(
+    `SELECT name
+       FROM sqlite_master
+      WHERE type = 'table'
+        AND name = ?1`,
+  ).bind(tableName).first<{ name: string }>();
+  return Boolean(row);
+}
+
+async function tableColumnNames(db: D1Database, tableName: string): Promise<Set<string>> {
+  if (!await tableExists(db, tableName)) return new Set();
+  const rows = await db.prepare(`PRAGMA table_info(${tableName})`).all<{ name: string }>();
+  return new Set((rows.results ?? []).map((row) => row.name));
+}
+
+function selectColumn(
+  columns: Set<string>,
+  preferred: string,
+  alias: string,
+  fallback: string | null = null,
+): string {
+  if (columns.has(preferred)) return `${preferred} AS ${alias}`;
+  return fallback ? `${fallback} AS ${alias}` : `NULL AS ${alias}`;
+}
+
+function packetDemands(row: ChallengePacketRow): Array<{
+  demandId: string;
+  concepts: string[];
+  sourceRefs: ExpectedDemandReference['sourceRefs'];
+}> {
+  const directDemands = safeJsonParse<Array<{
+    demandId: string;
+    concepts: string[];
+    sourceRefs: unknown[];
+  }>>(row.demands_json, []);
+  if (directDemands.length > 0) {
+    return directDemands.map((demand) => ({
+      demandId: demand.demandId,
+      concepts: demand.concepts,
+      sourceRefs: demand.sourceRefs as ExpectedDemandReference['sourceRefs'],
+    }));
+  }
+
+  const packet = safeJsonParse<ChallengePacketJson>(row.packet_json, {});
+  return (packet.demands ?? []).map((demand, index) => {
+    const explicitSourceRefs = demand.sourceRefs ?? demand.sourceReferences ?? [];
+    return {
+      demandId: demand.demandId ?? demand.id ?? `demand-${index + 1}`,
+      concepts: demand.concepts ?? demand.conceptKeys ?? [],
+      sourceRefs: explicitSourceRefs.length > 0
+        ? explicitSourceRefs as ExpectedDemandReference['sourceRefs']
+        : sourceRefsFromDemand(row, demand, index),
+    };
+  });
+}
+
+function packetIdentityMetadata(row: ChallengePacketRow): Pick<
+  ExpectedChallengePacket,
+  'repoFullName' | 'repoUrl' | 'prUrl' | 'prTitle'
+> {
+  const packet = safeJsonParse<ChallengePacketJson>(row.packet_json, {});
+  const owner = packet.repository?.owner?.trim();
+  const name = packet.repository?.name?.trim();
+  const repoFullName = owner && name ? `${owner}/${name}` : undefined;
+  const repoUrl = packet.repository?.canonicalUrl?.trim();
+  const prUrl = packet.pullRequest?.url?.trim();
+  const prTitle = packet.pullRequest?.title?.trim();
+  return {
+    ...(repoFullName ? { repoFullName } : {}),
+    ...(repoUrl ? { repoUrl } : {}),
+    ...(prUrl ? { prUrl } : {}),
+    ...(prTitle ? { prTitle } : {}),
+  };
+}
+
+function sourceRefsFromDemand(
+  row: ChallengePacketRow,
+  demand: {
+    demandId?: string;
+    id?: string;
+    narrative?: string;
+    contentHash?: string;
+    sourceSpanIds?: string[];
+    changedSymbolIds?: string[];
+  },
+  index: number,
+): ExpectedDemandReference['sourceRefs'] {
+  const exactText = demand.narrative
+    ?? `Challenge demand ${demand.demandId ?? demand.id ?? index + 1}`;
+  const contentHash = demand.contentHash
+    ?? row.content_hash
+    ?? `sha256:${row.id}`;
+  const artifactVersion = row.source_version
+    ?? row.packet_version
+    ?? 'unknown-source-version';
+  const spanRefs = (demand.sourceSpanIds ?? []).map((sourceSpanId) => ({
+    artifactId: row.id,
+    artifactVersion,
+    contentHash,
+    startOffset: 0,
+    endOffset: Math.max(1, exactText.length),
+    sourceRefType: 'repo_source_span',
+    sourceRefId: sourceSpanId,
+    sourceSpanId,
+    locator: `${row.id}:${sourceSpanId}`,
+    exactText,
+  }));
+  if (spanRefs.length > 0) return spanRefs;
+
+  return (demand.changedSymbolIds ?? []).map((symbolId) => ({
+    artifactId: row.id,
+    artifactVersion,
+    contentHash,
+    startOffset: 0,
+    endOffset: Math.max(1, exactText.length),
+    sourceRefType: 'repo_changed_symbol',
+    sourceRefId: symbolId,
+    locator: `${row.id}:${symbolId}`,
+    exactText,
+  }));
 }
 
 export async function seedCorpusFromMatchRuns(
@@ -247,21 +392,38 @@ export async function seedCorpusFromMatchRuns(
   }
 
   // Step 4: Load role requirements
+  const hasRoleContextDocuments = await tableExists(db, 'role_context_documents');
+  const hasRoleSourceReferences = await tableExists(db, 'role_source_references');
+  if (!hasRoleContextDocuments) {
+    warnings.push(
+      'role_context_documents table is unavailable; using role snapshot fallback for role requirements',
+    );
+  }
+  if (!hasRoleSourceReferences) {
+    warnings.push(
+      'role_source_references table is unavailable; role source refs omitted',
+    );
+  }
+
   const roleRequirements: RoleRequirements[] = [];
   for (const roleId of roleIds) {
-    const roleRow = await db.prepare(
-      `SELECT id, required_languages_json, relevant_concepts_json,
-              required_concepts_json, forbidden_concepts_json
-         FROM role_context_documents
-        WHERE id = ?1`,
-    ).bind(roleId).first<RoleContextRow>();
+    const roleRow = hasRoleContextDocuments
+      ? await db.prepare(
+        `SELECT id, required_languages_json, relevant_concepts_json,
+                required_concepts_json, forbidden_concepts_json
+           FROM role_context_documents
+          WHERE id = ?1`,
+      ).bind(roleId).first<RoleContextRow>()
+      : null;
 
-    const sourceRefs = await db.prepare(
-      `SELECT entity_id, locator, concept_keys_json,
-              source_ref_type, source_ref_id, exact_text, content_hash
-         FROM role_source_references
-        WHERE role_context_id = ?1`,
-    ).bind(roleId).all<RoleSourceRefRow>();
+    const sourceRefs = hasRoleSourceReferences
+      ? await db.prepare(
+        `SELECT entity_id, locator, concept_keys_json,
+                source_ref_type, source_ref_id, exact_text, content_hash
+           FROM role_source_references
+          WHERE role_context_id = ?1`,
+      ).bind(roleId).all<RoleSourceRefRow>()
+      : { results: [] };
 
     const roleSourceRefs = (sourceRefs.results ?? []).map((ref) => ({
       entityId: ref.entity_id,
@@ -303,33 +465,48 @@ export async function seedCorpusFromMatchRuns(
 
   // Step 5: Load challenge packets for expected packets
   const selectedPacketIds = new Set<string>();
-  const allChallengeIds = new Set<string>();
+  const selectedChallengesByPacketId = new Map<string, PersistedRankedChallenge>();
   for (const run of matchRuns) {
-    for (const challenge of run.rankedChallenges) {
-      allChallengeIds.add(challenge.challengeId);
-    }
     const selected = run.rankedChallenges.find((c) => c.rank === 1);
-    if (selected) selectedPacketIds.add(selected.challengeId);
+    if (selected) {
+      selectedPacketIds.add(selected.challengeId);
+      selectedChallengesByPacketId.set(selected.challengeId, selected);
+    }
   }
+
+  const packetColumns = await tableColumnNames(db, 'review_challenge_packets');
+  const sourceVersionColumn = selectColumn(packetColumns, 'source_version', 'source_version', 'packet_version');
+  const packetVersionColumn = selectColumn(packetColumns, 'packet_version', 'packet_version');
+  const contentHashColumn = selectColumn(packetColumns, 'content_hash', 'content_hash', 'source_hash');
+  const demandsColumn = selectColumn(packetColumns, 'demands_json', 'demands_json');
+  const packetJsonColumn = selectColumn(packetColumns, 'packet_json', 'packet_json');
 
   const expectedPackets: ExpectedChallengePacket[] = [];
   for (const packetId of selectedPacketIds) {
     const packetRow = await db.prepare(
-      `SELECT id, repo_id, pr_number, source_version, content_hash, demands_json
+      `SELECT id, repo_id, pr_number,
+              ${sourceVersionColumn},
+              ${packetVersionColumn},
+              ${contentHashColumn},
+              ${demandsColumn},
+              ${packetJsonColumn}
          FROM review_challenge_packets
         WHERE id = ?1`,
     ).bind(packetId).first<ChallengePacketRow>();
 
     if (packetRow) {
-      const demands = safeJsonParse<Array<{ demandId: string; concepts: string[]; sourceRefs: unknown[] }>>(
-        packetRow.demands_json,
-        [],
-      );
+      const selectedChallenge = selectedChallengesByPacketId.get(packetId);
+      const demands = packetDemands(packetRow);
+      const identityMetadata = packetIdentityMetadata(packetRow);
       expectedPackets.push({
         challengeId: packetRow.id,
-        repoId: packetRow.repo_id,
+        repoId: selectedChallenge?.repoId ?? String(packetRow.repo_id),
+        ...identityMetadata,
         prNumber: packetRow.pr_number,
-        sourceVersion: packetRow.source_version,
+        sourceVersion: selectedChallenge?.sourceVersion
+          ?? packetRow.source_version
+          ?? packetRow.packet_version
+          ?? 'unknown-source-version',
         packetContentHash: packetRow.content_hash ?? undefined,
         demands: demands.map((d) => ({
           demandId: d.demandId,
@@ -349,7 +526,7 @@ export async function seedCorpusFromMatchRuns(
     if (!selected) continue;
 
     const eligibleIds = run.rankedChallenges
-      .filter((c) => c.eligible && c.score > 0)
+      .filter((c) => c.eligible && isEligibleGrade(gradeFromScore(c.score)))
       .map((c) => c.challengeId);
 
     const triple = JSON.stringify([run.candidateId, run.roleId, selected.challengeId]);
@@ -374,7 +551,12 @@ export async function seedCorpusFromMatchRuns(
 
   // Step 7: Assemble corpus
   const corpusId = `seeded-${Date.now()}-${candidateIds.length}c-${roleIds.length}r`;
-  const challengeCount = allChallengeIds.size;
+  const labelledChallengeIds = new Set<string>();
+  for (const label of expertLabels) {
+    labelledChallengeIds.add(label.challengeId);
+    label.eligibleChallengeIds.forEach((id) => labelledChallengeIds.add(id));
+  }
+  const challengeCount = labelledChallengeIds.size;
 
   const corpus: EvaluationCorpus = {
     version: EVALUATION_CORPUS_VERSION,
@@ -417,6 +599,10 @@ function gradeFromScore(score: number): RelevanceGrade {
   if (score >= 0.6) return 'relevant';
   if (score >= 0.4) return 'borderline';
   return 'irrelevant';
+}
+
+function isEligibleGrade(grade: RelevanceGrade): boolean {
+  return grade === 'highly_relevant' || grade === 'relevant' || grade === 'borderline';
 }
 
 /**
