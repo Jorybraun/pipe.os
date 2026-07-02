@@ -365,6 +365,12 @@ Treat this as runtime-boundary proof only: it does not claim automatic repo-fit
 quality because standalone `/assess` must not run PR assignment in front of the
 candidate.
 
+Latest single blocked-boundary proof on 2026-07-02 passed for interview
+`bd91b807-1778-4b4a-974a-6ae320659215`: the candidate handoff was
+`PROFILE_RECEIVED` / `profile-received`, stage `candidate-intake-queued`, no
+room link was produced, no repo/PR was assigned, and recruiter readiness stayed
+`waiting_for_source_backed_match`.
+
 ## 10. When Tests Break, Ask Why
 
 | Symptom | Likely Cause |
