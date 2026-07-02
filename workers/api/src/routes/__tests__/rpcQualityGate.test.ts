@@ -2,6 +2,7 @@ import { describe, expect, it } from 'vitest';
 import type { D1Database } from '@cloudflare/workers-types';
 import type { CandidateReviewChallengeMatch } from '../../lib/challengeMatching';
 import {
+  demoteUnsafeAutomaticMatchRun,
   matchStandaloneDevContainerAssessment,
   qualityGateFor,
   repairStandaloneReviewAssignmentFromMatchRun,
@@ -94,6 +95,37 @@ describe('qualityGateFor', () => {
         'agent_validated_match',
       ],
     });
+  });
+});
+
+describe('demoteUnsafeAutomaticMatchRun', () => {
+  it('marks an unsafe automatic match run non-ready and clears the selected packet', async () => {
+    const calls = { updates: [] as unknown[][] };
+    const db = {
+      prepare(sql: string) {
+        let bindings: unknown[] = [];
+        const statement = {
+          bind(...values: unknown[]) {
+            bindings = values;
+            return statement;
+          },
+          async run() {
+            if (sql.includes('UPDATE match_runs')) {
+              calls.updates.push([sql, ...bindings]);
+            }
+            return { success: true, results: [], meta: {} };
+          },
+        };
+        return statement;
+      },
+    } as unknown as D1Database;
+
+    await demoteUnsafeAutomaticMatchRun(db, 'match-run-needs-review');
+
+    expect(calls.updates).toHaveLength(1);
+    expect(calls.updates[0]?.[0]).toContain("status = 'NEEDS_MORE_EVIDENCE'");
+    expect(calls.updates[0]?.[0]).toContain('selected_packet_id = NULL');
+    expect(calls.updates[0]?.[1]).toBe('match-run-needs-review');
   });
 });
 

@@ -284,6 +284,7 @@ async function checkMatchingGate(
 
     const matchExplanation = sanitizeMatchExplanation(match.explanation);
     if (!standaloneAutomaticMatchPasses(matchExplanation)) {
+      await demoteUnsafeAutomaticMatchRun(db, match.matchRunId);
       const readiness = await standaloneReviewEvidenceReadiness(db, candidateId);
       return waitingForMatch('Deterministic challenge matcher needs recruiter review', {
         terminal: true,
@@ -1398,6 +1399,20 @@ function standaloneAutomaticMatchPasses(
     && contrastAccepted;
 }
 
+export async function demoteUnsafeAutomaticMatchRun(
+  db: D1Database,
+  matchRunId: string | null | undefined,
+): Promise<void> {
+  if (!matchRunId) return;
+  await db.prepare(
+    `UPDATE match_runs
+        SET status = 'NEEDS_MORE_EVIDENCE',
+            selected_packet_id = NULL
+      WHERE id = ?1
+        AND status = 'MATCHED'`,
+  ).bind(matchRunId).run();
+}
+
 function sanitizeMatchExplanation(explanation: MatchExplanation | undefined): CandidateSafeMatchExplanation | null {
   if (!explanation) return null;
   const evidence = explanation.evidence.flatMap((entry) => {
@@ -2344,6 +2359,7 @@ async function matchStandaloneSourceBackedAssignment(
   }
   const matchExplanation = sanitizeMatchExplanation(match.explanation);
   if (!standaloneAutomaticMatchPasses(matchExplanation)) {
+    await demoteUnsafeAutomaticMatchRun(db, match.matchRunId);
     console.warn(
       `[${options.logLabel}] deterministic matcher selected ${match.repoId}#${match.prNumber} for ${candidateId}, but standalone quality gate did not pass (gate=${matchExplanation?.qualityGate.verdict ?? 'missing'}, contrast=${contrastSeparationScore(matchExplanation) ?? 'missing'})`,
     );
