@@ -329,16 +329,16 @@ final decision, source-report anchor, reviewed commit, repo/branch, and no raw
 reviewer ID, then verifies the deployed interview list card shows the
 assessment mode, task, repo/base, source-backed commit trust, final decision,
 and next action. Latest deployed proof on 2026-07-02 passed for interview
-`e2f3b2d4-f430-471b-be50-9e140018187a`, repo `mui/base-ui`, candidate task
-brief visible, workspace commit
-`ace82b5d6b981c10d000c40fb5eaab3d125379d9`, bridge revision
+`4c0ed403-fd13-46c0-a009-8289f072f7f6`, repo `mui/base-ui`, candidate task
+brief visible, recruiter list card visible, workspace commit
+`1e43246f4a1b2aa6603fdda14efe3742ee383a79`, bridge revision
 `2026-06-30-assessment-branch-v1`, and evaluation report
-`assessment_evaluation_report_fbc7e16aa279a288f142d08a6b1a8017` with
-recommendation `mixed_evidence_human_review`. The recruiter projection was
+`assessment_evaluation_report_e10daf315d5ec085513a7748588d012c` with
+recommendation `strong_evidence_to_advance`. The recruiter projection was
 reviewable from source-backed `git_commit`, `code_diff`, `test_run`,
-`terminal_command`, AI usage, meeting-session, challenge-packet, workspace
-launch, and file-observation refs; `recruiterCompareUrl` was correctly `null`
-because workspace-only finalizer commits are not pushed to GitHub by default.
+`terminal_command`, AI usage, challenge-packet, workspace launch, and
+file-observation refs; `recruiterCompareUrl` was correctly `null` because
+workspace-only finalizer commits are not pushed to GitHub by default.
 
 Latest standalone `/assess` blocked-boundary proof: after deploying app-dev
 version `3413dea3-2899-40ac-afc0-8163e3a899ff`, the CODE_REVIEW matrix passed
