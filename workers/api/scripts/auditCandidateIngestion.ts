@@ -523,7 +523,12 @@ async function loadSourceProof(
           JOIN artifacts a ON a.workspace_person_id = lwp.workspace_person_id
           JOIN artifact_versions av ON av.artifact_id = a.id
          WHERE t.profile_r2_key IS NOT NULL
-           AND av.storage_key = t.profile_r2_key) AS profile_upload_artifact_version_count,
+           AND av.storage_key = t.profile_r2_key
+           AND (
+             a.artifact_type = 'profile_upload'
+             OR a.logical_key = 'roleless_candidate_profile_upload'
+             OR json_extract(a.metadata_json, '$.evidenceKind') = 'profile_upload_source'
+           )) AS profile_upload_artifact_version_count,
        (SELECT COUNT(DISTINCT crsr.context_record_id || ':' || crsr.source_ref_type || ':' || crsr.source_ref_id || ':' || crsr.evidence_role)
           FROM linked_workspace_people lwp
           JOIN context_records cr ON cr.workspace_person_id = lwp.workspace_person_id

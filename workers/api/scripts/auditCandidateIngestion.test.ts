@@ -87,7 +87,10 @@ function createSchema(db: Database.Database): void {
     CREATE TABLE artifacts (
       id TEXT PRIMARY KEY,
       workspace_person_id TEXT,
-      interaction_id TEXT
+      interaction_id TEXT,
+      artifact_type TEXT,
+      logical_key TEXT,
+      metadata_json TEXT
     );
     CREATE TABLE artifact_versions (
       id TEXT PRIMARY KEY,
@@ -607,8 +610,8 @@ describe('auditCandidateIngestion', () => {
     sqlite.exec(`
       INSERT INTO interactions (id, workspace_person_id, interaction_type, external_reference, metadata_json)
       VALUES ('interaction-upload', 'workspace-person-1', 'file_upload', 'candidate-1', '{"source":"roleless_candidate_intake"}');
-      INSERT INTO artifacts (id, workspace_person_id, interaction_id)
-      VALUES ('artifact-upload', 'workspace-person-1', 'interaction-upload');
+      INSERT INTO artifacts (id, workspace_person_id, interaction_id, artifact_type, logical_key, metadata_json)
+      VALUES ('artifact-upload', 'workspace-person-1', 'interaction-upload', 'profile_upload', 'roleless_candidate_profile_upload', '{"evidenceKind":"profile_upload_source"}');
       INSERT INTO artifact_versions (id, artifact_id, storage_key, content_text)
       VALUES ('artifact-version-upload', 'artifact-upload', 'talent-intake/candidate-1/profile.pdf', NULL);
     `);
