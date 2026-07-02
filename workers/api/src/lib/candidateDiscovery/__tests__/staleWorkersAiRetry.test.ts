@@ -163,7 +163,7 @@ describe('stale Workers AI candidate-ingestion retry', () => {
       status: 'pending',
       current_step: 'talent_pool_profile_received',
       updated_at: '2026-06-28T21:00:00.000Z',
-    }, now)).toBe(false);
+    }, now)).toBe(true);
   });
 
   it('retries text-intake evidence from the original R2 source', async () => {
@@ -185,6 +185,33 @@ describe('stale Workers AI candidate-ingestion retry', () => {
       db,
       candidateId: 'candidate-1',
       resumeText: expect.stringContaining('Cloudflare Workers runtime tooling'),
+      decompositionResult: null,
+      maxNodeEmbeddings: 0,
+      maxParserOnlyNodes: 12,
+      mirrorLivingContext: false,
+      skipPostDecompositionMaintenance: true,
+    }));
+  });
+
+  it('retries Talent Pool text evidence from the original R2 source', async () => {
+    const db = fakeD1();
+    const storage = fakeStorage(
+      'Staff product engineer building source-backed hiring assessments and deterministic evidence replay.',
+    );
+    const env = buildEnv(db, storage);
+
+    await retryCandidateEvidenceIngestionFromSource(
+      env,
+      'talent-candidate-1',
+      'talent-intake/talent-candidate-1/2026-07-02T18-22-39-331Z.txt',
+    );
+
+    expect(storage.get).toHaveBeenCalledWith('talent-intake/talent-candidate-1/2026-07-02T18-22-39-331Z.txt');
+    expect(runCandidateIngestion).toHaveBeenCalledWith(expect.objectContaining({
+      env,
+      db,
+      candidateId: 'talent-candidate-1',
+      resumeText: expect.stringContaining('source-backed hiring assessments'),
       decompositionResult: null,
       maxNodeEmbeddings: 0,
       maxParserOnlyNodes: 12,
@@ -260,7 +287,7 @@ describe('stale Workers AI candidate-ingestion retry', () => {
       first: {
         resume_s3_key: 'text-intake/stalled/source',
         status: 'pending',
-        current_step: 'decompose_resume',
+        current_step: 'talent_pool_profile_received',
         error_text: null,
         updated_at: '2026-06-28T18:00:00.000Z',
       },
@@ -272,7 +299,7 @@ describe('stale Workers AI candidate-ingestion retry', () => {
     await expect(maybeQueueRetryableStandaloneIngestion(env, null, 'stalled')).resolves.toMatchObject({
       reason: STALLED_INGESTION_RETRY_REASON,
       reasonCode: 'stalled_candidate_evidence_ingestion',
-      originalStep: 'decompose_resume',
+      originalStep: 'talent_pool_profile_received',
       originalUpdatedAt: '2026-06-28T18:00:00.000Z',
     });
 
@@ -286,7 +313,7 @@ describe('stale Workers AI candidate-ingestion retry', () => {
     expect(JSON.parse(retryEventCall!.params[5] as string)).toMatchObject({
       trigger: 'candidate_rpc',
       reason: 'stalled_candidate_evidence_ingestion',
-      originalStep: 'decompose_resume',
+      originalStep: 'talent_pool_profile_received',
       originalUpdatedAt: '2026-06-28T18:00:00.000Z',
       sourceRef: {
         type: 'text_intake_r2_object',
@@ -390,7 +417,7 @@ describe('stale Workers AI candidate-ingestion retry', () => {
     });
     const selectCall = db.__calls.find((call) => call.sql.includes('FROM candidate_ingestion ci'))!;
     expect(selectCall.sql).not.toContain('LIKE');
-    expect(selectCall.sql).toContain("ci.current_step IN ('queued', 'retry_queued', 'parse_resume', 'decompose_resume', 'discover_profile', 'embed_profile', 'match_and_assign')");
+    expect(selectCall.sql).toContain("ci.current_step IN ('talent_pool_profile_received', 'queued', 'retry_queued', 'parse_resume', 'decompose_resume', 'discover_profile', 'embed_profile', 'match_and_assign')");
     expect(selectCall.sql).toContain("CASE WHEN ci.status = 'pending' THEN 0 ELSE 1 END");
     expect(selectCall.sql).toContain("CASE WHEN ci.status = 'pending' THEN ci.updated_at END DESC");
     expect(selectCall.params[1]).toBe(12);

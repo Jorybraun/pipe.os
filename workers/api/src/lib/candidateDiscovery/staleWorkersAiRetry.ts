@@ -11,6 +11,7 @@ const STALE_WORKERS_AI_RETRY_SCAN_MULTIPLIER = 6;
 const MAX_RETRY_EVENT_ERROR_CHARS = 700;
 const STALE_IN_PROGRESS_RETRY_AFTER_MS = 10 * 60 * 1000;
 const RETRYABLE_STALLED_INGESTION_STEPS = new Set([
+  'talent_pool_profile_received',
   'queued',
   'retry_queued',
   'parse_resume',
@@ -19,6 +20,12 @@ const RETRYABLE_STALLED_INGESTION_STEPS = new Set([
   'embed_profile',
   'match_and_assign',
 ]);
+
+function isTextSourceKey(resumeS3Key: string): boolean {
+  const normalized = resumeS3Key.toLowerCase();
+  return resumeS3Key.startsWith('text-intake/')
+    || (resumeS3Key.startsWith('talent-intake/') && normalized.endsWith('.txt'));
+}
 
 type RetryTrigger = 'candidate_rpc' | 'scheduled_worker';
 type RetryReasonCode =
@@ -170,7 +177,7 @@ export async function retryCandidateEvidenceIngestionFromSource(
   resumeS3Key: string,
   context?: RetryContext,
 ): Promise<void> {
-  if (resumeS3Key.startsWith('text-intake/')) {
+  if (isTextSourceKey(resumeS3Key)) {
     if (!env.STORAGE) {
       await markRetryFailed(
         env,
@@ -319,7 +326,7 @@ export async function processStaleWorkersAIModelIngestionRetries(
           OR (
             ci.status = 'pending'
             AND ci.current_step IS NOT NULL
-            AND ci.current_step IN ('queued', 'retry_queued', 'parse_resume', 'decompose_resume', 'discover_profile', 'embed_profile', 'match_and_assign')
+            AND ci.current_step IN ('talent_pool_profile_received', 'queued', 'retry_queued', 'parse_resume', 'decompose_resume', 'discover_profile', 'embed_profile', 'match_and_assign')
             AND ci.updated_at IS NOT NULL
             AND ci.updated_at <= ?1
           )
@@ -452,7 +459,7 @@ function ingestionSessionId(candidateId: string): string {
 }
 
 function sourceTypeForKey(resumeS3Key: string): 'text_intake_r2_object' | 'resume_r2_object' {
-  return resumeS3Key.startsWith('text-intake/')
+  return isTextSourceKey(resumeS3Key)
     ? 'text_intake_r2_object'
     : 'resume_r2_object';
 }
