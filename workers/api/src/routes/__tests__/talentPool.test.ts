@@ -55,6 +55,86 @@ interface TalentDashboardBody {
   completedChallenges: Array<{ title: string; completedAt: string | null; summary: string }>;
 }
 
+const FORBIDDEN_CANDIDATE_RESPONSE_KEYS = new Set([
+  'id',
+  'candidateId',
+  'candidate_id',
+  'applicationId',
+  'application_id',
+  'workspacePersonId',
+  'workspace_person_id',
+  'personId',
+  'person_id',
+  'sourceSpanId',
+  'source_span_id',
+  'artifactId',
+  'artifact_id',
+  'artifactVersionId',
+  'artifact_version_id',
+  'assignmentId',
+  'assignment_id',
+  'challengeId',
+  'challenge_id',
+  'stageId',
+  'stage_id',
+  'pipelineId',
+  'pipeline_id',
+  'resumeS3Key',
+  'resume_s3_key',
+  'profileR2Key',
+  'profile_r2_key',
+]);
+
+function collectObjectKeys(value: unknown): string[] {
+  if (Array.isArray(value)) return value.flatMap((entry) => collectObjectKeys(entry));
+  if (typeof value !== 'object' || value === null) return [];
+  return Object.entries(value as Record<string, unknown>).flatMap(([key, child]) => [
+    key,
+    ...collectObjectKeys(child),
+  ]);
+}
+
+function expectNoInternalCandidatePayload(value: unknown, forbiddenValues: string[] = []): void {
+  for (const key of collectObjectKeys(value)) {
+    expect(FORBIDDEN_CANDIDATE_RESPONSE_KEYS.has(key)).toBe(false);
+  }
+
+  const serialized = JSON.stringify(value);
+  for (const forbiddenValue of forbiddenValues) {
+    expect(serialized).not.toContain(forbiddenValue);
+  }
+  expect(serialized).not.toContain('WAITING_FOR_MATCH');
+  expect(serialized).not.toContain('Repo matching');
+  expect(serialized).not.toContain('workspace-person');
+  expect(serialized).not.toContain('source_span');
+  expect(serialized).not.toContain('artifact_version');
+}
+
+function expectCandidateSafeDashboard(body: TalentDashboardBody, forbiddenValues: string[] = []): void {
+  expect(Object.keys(body).sort()).toEqual([
+    'candidateName',
+    'completedChallenges',
+    'phoneScreener',
+    'profileReceivedAt',
+    'readyChallenges',
+    'status',
+  ]);
+  expect(Object.keys(body.phoneScreener).sort()).toEqual([
+    'availability',
+    'consent',
+    'phoneNumber',
+    'status',
+    'timezone',
+  ]);
+  for (const challenge of body.readyChallenges) {
+    expect(Object.keys(challenge).sort()).toEqual(['entryUrl', 'summary', 'title', 'type']);
+  }
+  for (const challenge of body.completedChallenges) {
+    expect(Object.keys(challenge).sort()).toEqual(['completedAt', 'summary', 'title']);
+  }
+  expectNoInternalCandidatePayload(body, forbiddenValues);
+}
+
 function createMemoryR2(): MemoryR2 {
   const puts = new Map<string, string>();
   return {
@@ -216,10 +296,29 @@ describe('talent pool candidate RPC', () => {
     expect(body.candidateName).toBe('Jordan Talent');
     expect(body.readyChallenges).toEqual([]);
     expect(body.completedChallenges).toEqual([]);
-    const serialized = JSON.stringify(body);
-    expect(serialized).not.toContain('candidate-1');
-    expect(serialized).not.toContain('WAITING_FOR_MATCH');
-    expect(serialized).not.toContain('Repo matching');
+    expectCandidateSafeDashboard(body, ['candidate-1']);
+  });
+
+  it('returns candidate-safe errors without exposing internal ids', async () => {
+    sqlite = createSqlite();
+    seedCandidate(sqlite);
+
+    const app = createApp();
+    const res = await app.request('/rpc/talent/resolve-token', {
+      method: 'POST',
+      body: JSON.stringify({ inviteToken: 'missing-token' }),
+      headers: { 'Content-Type': 'application/json' },
+    }, createEnv(sqlite));
+
+    expect(res.status).toBe(404);
+    const body = await res.json();
+    expect(body).toEqual({
+      error: {
+        code: 'NOT_FOUND',
+        message: 'Invite not found.',
+      },
+    });
+    expectNoInternalCandidatePayload(body, ['candidate-1', 'owner-1']);
   });
 
   it('persists profile intake, phone screener consent, and a private design queue item', async () => {
@@ -257,8 +356,7 @@ describe('talent pool candidate RPC', () => {
       availability: 'Weekday afternoons after 2 PM.',
     });
     expect(body.readyChallenges).toEqual([]);
-    expect(JSON.stringify(body)).not.toContain('candidate-1');
-    expect(JSON.stringify(body)).not.toContain('WAITING_FOR_MATCH');
+    expectCandidateSafeDashboard(body, ['candidate-1', 'owner-1']);
 
     expect(storage.puts.size).toBe(1);
     const intake = sqlite.prepare(
@@ -477,7 +575,7 @@ describe('talent pool candidate RPC', () => {
     const body = await res.json() as TalentDashboardBody;
     expect(body.status).toBe('CHALLENGE_PREPARING');
     expect(body.candidateName).toBe('Jordan Talent');
-    expect(JSON.stringify(body)).not.toContain('candidate-1');
+    expectCandidateSafeDashboard(body, ['candidate-1', 'owner-1']);
 
     expect(sqlite.prepare('SELECT COUNT(*) AS count FROM people').get()).toEqual({ count: 1 });
     expect(sqlite.prepare('SELECT COUNT(*) AS count FROM workspace_people').get()).toEqual({ count: 1 });
@@ -539,8 +637,7 @@ describe('talent pool candidate RPC', () => {
     const body = await res.json() as TalentDashboardBody;
     expect(body.status).toBe('CHALLENGE_PREPARING');
     expect(body.candidateName).toBe('Jordan Talent');
-    expect(JSON.stringify(body)).not.toContain('candidate-1');
-    expect(JSON.stringify(body)).not.toContain('WAITING_FOR_MATCH');
+    expectCandidateSafeDashboard(body, ['candidate-1', 'owner-1']);
 
     expect([...storage.puts.keys()][0]).toMatch(/^talent-intake\/candidate-1\/.*taylor-profile\.txt$/);
     const intake = sqlite.prepare(
@@ -615,8 +712,7 @@ describe('talent pool candidate RPC', () => {
     const body = await res.json() as TalentDashboardBody;
     expect(body.status).toBe('CHALLENGE_PREPARING');
     expect(body.readyChallenges).toEqual([]);
-    expect(JSON.stringify(body)).not.toContain('candidate-1');
-    expect(JSON.stringify(body)).not.toContain('WAITING_FOR_MATCH');
+    expectCandidateSafeDashboard(body, ['candidate-1', 'owner-1']);
 
     const storedKey = [...storage.puts.keys()][0];
     expect(storedKey).toMatch(/^talent-intake\/candidate-1\/.*empty-profile\.pdf$/);
@@ -758,7 +854,6 @@ describe('talent pool candidate RPC', () => {
       entryUrl: '/assess/invite-token',
       summary: 'Ready for mui/base-ui PR #973.',
     }]);
-    expect(JSON.stringify(body)).not.toContain('assignment-1');
-    expect(JSON.stringify(body)).not.toContain('challenge-1');
+    expectCandidateSafeDashboard(body, ['candidate-1', 'assignment-1', 'challenge-1', 'stage-1']);
   });
 });

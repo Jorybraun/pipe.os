@@ -259,9 +259,15 @@ source search, and evidence-depth reads return the same canonical
 `workspace_people` person with exact submitted source text while `applications`
 remain at zero and no extra candidate role is inserted.
 
-Candidate-facing app-dev proof for the same invite token returned
-`CHALLENGE_PREPARING` with zero ready challenges and no serialized internal
-candidate id, application id, workspace-person id, or source-span id.
+Candidate-facing route proof in `src/routes/__tests__/talentPool.test.ts`
+now covers `/rpc/talent/resolve-token`, `/rpc/talent/submit-profile`,
+`/rpc/talent/upload-profile`, ready-assignment dashboards, and safe not-found
+errors. The shared assertion fixes the public dashboard shape and recursively
+rejects internal candidate, application, person/workspace-person, source-span,
+artifact, assignment, challenge, stage, pipeline, resume-key, and profile-key id
+fields plus known internal values. The app-dev invite returned
+`CHALLENGE_PREPARING` with zero ready challenges and no serialized internal id
+values.
 
 ## Current Gaps
 
