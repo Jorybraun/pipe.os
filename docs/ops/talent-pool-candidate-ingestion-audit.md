@@ -184,7 +184,7 @@ CLOUDFLARE_D1_DATABASE_ID=0abe92df-9296-46f5-9f9d-a1fb1bcd3be1 \
 
 Latest app-dev proof on 2026-07-02 used invite token
 `talent-audit-532e4287e-c1` after deploying Worker version
-`890bbd92-7762-4be8-b8a6-f8019eacaf77` and replaying candidate ingestion
+`88868bd7-bdc0-402e-9cac-c3ed3a56b8e7` and replaying candidate ingestion
 repairs against dev D1. The remote verifier returned `status: ready`,
 `candidateNodeCount: 74`, `candidateNodeExactSourceQuoteCount: 74`,
 `candidateNodeWithoutExactSourceCount: 0`,
@@ -195,6 +195,7 @@ repairs against dev D1. The remote verifier returned `status: ready`,
 `artifactVersionCount: 11`, `sourceSpanCount: 37`,
 `sourceSpanTextMismatchCount: 0`, `sourceSpanHashMismatchCount: 0`,
 `documentProfileSourceSpanCount: 4`, `contextRecordCount: 80`,
+`profileUploadArtifactVersionCount: 2`,
 `contextSourceRefCount: 83`,
 `externalProfileRefContextCount: 3`,
 `phoneScreenerIntentContextCount: 1`, `rolelessApplicationCount: 0`,
