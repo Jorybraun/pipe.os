@@ -412,9 +412,24 @@ function assessmentClaimConfidenceLabel(confidence: number | null | undefined): 
   return `${Math.round(confidence * 100)}% confidence`;
 }
 
+function assessmentSourceRefTypeLabel(sourceRefType: string): string {
+  switch (sourceRefType) {
+    case 'ai_user_prompt':
+      return 'AI prompt';
+    case 'ai_user_prompt_blocked':
+      return 'Blocked AI prompt';
+    case 'ai_agent_response':
+      return 'Agent response';
+    case 'ai_usage_event':
+      return 'AI evaluator trace';
+    default:
+      return sentenceCaseToken(sourceRefType);
+  }
+}
+
 function assessmentClaimSourceSummary(claim: { sourceRefCount: number; sourceRefTypes: string[] }): string {
   const count = `${claim.sourceRefCount} source ${claim.sourceRefCount === 1 ? 'ref' : 'refs'}`;
-  const types = claim.sourceRefTypes.map(sentenceCaseToken).join(', ');
+  const types = claim.sourceRefTypes.map(assessmentSourceRefTypeLabel).join(', ');
   return types ? `${count}: ${types}` : count;
 }
 
@@ -710,6 +725,12 @@ function assessmentEvidenceSnippetLabel(sourceRefType: string): string {
     case 'terminal_command':
     case 'terminal_output':
       return 'Terminal evidence';
+    case 'ai_user_prompt':
+      return 'AI prompt evidence';
+    case 'ai_user_prompt_blocked':
+      return 'Blocked AI prompt evidence';
+    case 'ai_agent_response':
+      return 'Agent response evidence';
     case 'ai_usage_event':
       return 'AI evaluator trace';
     case 'room_chat_message':
@@ -788,6 +809,12 @@ function assessmentSourceRefCount(progress: AssessmentProgressSnapshot | null, k
 function sourceRefCountLabel(count: number, singular: string, plural = `${singular}s`): string | null {
   if (count <= 0) return null;
   return `${count} ${count === 1 ? singular : plural}`;
+}
+
+function readableList(parts: string[]): string {
+  if (parts.length <= 1) return parts[0] ?? '';
+  if (parts.length === 2) return `${parts[0]} and ${parts[1]}`;
+  return `${parts.slice(0, -1).join(', ')}, and ${parts[parts.length - 1]}`;
 }
 
 function assessmentHasSatisfiedCoverage(
@@ -1083,14 +1110,16 @@ function workspaceAssessmentWorkPacket(progress: AssessmentProgressSnapshot | nu
 
   const changedFiles = assessmentChangedFiles(progress);
   const aiPromptCount = assessmentSourceRefCount(progress, 'ai_user_prompt');
+  const aiBlockedPromptCount = assessmentSourceRefCount(progress, 'ai_user_prompt_blocked');
   const aiResponseCount = assessmentSourceRefCount(progress, 'ai_agent_response');
   const aiEvidenceParts = [
     sourceRefCountLabel(aiPromptCount, 'prompt'),
+    sourceRefCountLabel(aiBlockedPromptCount, 'blocked prompt'),
     sourceRefCountLabel(aiResponseCount, 'agent response'),
   ].filter((item): item is string => Boolean(item));
   const aiTransparencyDetail = progress.hasAiInteraction
     ? aiEvidenceParts.length > 0
-      ? `${aiEvidenceParts.join(' and ')} captured from the real agent bridge.`
+      ? `${readableList(aiEvidenceParts)} captured from the real agent bridge.`
       : 'AI prompts, responses, or bridge traces are part of the source-backed evidence trail.'
     : 'No candidate AI-assistance evidence is attached; treat AI use as unobserved, not absent.';
   const filePreview = changedFiles
@@ -4428,7 +4457,7 @@ export default function InterviewDetailPage(): JSX.Element {
                                 </span>
                                 <span style={ASSESSMENT_CLAIM_HEAD}>
                                   <span>{item.satisfied ? 'Captured' : 'Missing'}</span>
-                                  <span>{item.sourceRefTypes.map(sentenceCaseToken).join(', ')}</span>
+                                  <span>{item.sourceRefTypes.map(assessmentSourceRefTypeLabel).join(', ')}</span>
                                 </span>
                                 {!item.satisfied && item.missingImpact.trim().length > 0 && (
                                   <span style={ASSESSMENT_CLAIM_NARRATIVE}>{item.missingImpact}</span>
@@ -4454,7 +4483,7 @@ export default function InterviewDetailPage(): JSX.Element {
                                 </span>
                                 <span style={ASSESSMENT_CLAIM_HEAD}>
                                   <span>{item.satisfied ? 'Captured' : 'Missing'}</span>
-                                  <span>{item.sourceRefTypes.map(sentenceCaseToken).join(', ')}</span>
+                                  <span>{item.sourceRefTypes.map(assessmentSourceRefTypeLabel).join(', ')}</span>
                                 </span>
                                 {!item.satisfied && item.missingImpact.trim().length > 0 && (
                                   <span style={ASSESSMENT_CLAIM_NARRATIVE}>{item.missingImpact}</span>

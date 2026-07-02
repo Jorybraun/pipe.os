@@ -260,10 +260,25 @@ type AssessmentEvaluationDiagnostic = NonNullable<AssessmentEvaluation['diagnost
 type AssessmentEvidenceCoverage = NonNullable<AssessmentEvaluation['evidenceCoverage']>;
 type AssessmentEvidenceCoverageItem = AssessmentEvidenceCoverage['requiredForEvaluation'][number];
 
+function assessmentSourceRefTypeLabel(sourceRefType: string): string {
+  switch (sourceRefType) {
+    case 'ai_user_prompt':
+      return 'AI prompt';
+    case 'ai_user_prompt_blocked':
+      return 'Blocked AI prompt';
+    case 'ai_agent_response':
+      return 'Agent response';
+    case 'ai_usage_event':
+      return 'AI evaluator trace';
+    default:
+      return sentenceCaseToken(sourceRefType);
+  }
+}
+
 function sourceRefSummary(count: number, types: string[]): string {
   const refLabel = `${count} source ref${count === 1 ? '' : 's'}`;
   const visibleTypes = types
-    .map((type) => sentenceCaseToken(type))
+    .map(assessmentSourceRefTypeLabel)
     .slice(0, 3);
   if (visibleTypes.length === 0) return refLabel;
   const suffix = types.length > visibleTypes.length ? ' +' : '';

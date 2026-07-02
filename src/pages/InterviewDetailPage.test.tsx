@@ -251,6 +251,7 @@ describe('InterviewDetailPage', () => {
             { kind: 'code_diff', count: 1 },
             { kind: 'test_run', count: 1 },
             { kind: 'ai_user_prompt', count: 2 },
+            { kind: 'ai_user_prompt_blocked', count: 1 },
             { kind: 'ai_agent_response', count: 1 },
           ],
           evidenceSnippets: [
@@ -371,7 +372,7 @@ describe('InterviewDetailPage', () => {
     expect(workPacket).toHaveTextContent('Tests captured');
     expect(workPacket).toHaveTextContent('AI transparency');
     expect(workPacket).toHaveTextContent('AI use observed');
-    expect(workPacket).toHaveTextContent('2 prompts and 1 agent response captured from the real agent bridge.');
+    expect(workPacket).toHaveTextContent('2 prompts, 1 blocked prompt, and 1 agent response captured from the real agent bridge.');
     expect(workPacket).toHaveTextContent('Human review');
     expect(workPacket).toHaveTextContent('Run evaluation');
     const contract = screen.getByTestId('interview-assessment-challenge-contract');
@@ -678,8 +679,8 @@ describe('InterviewDetailPage', () => {
                 label: 'AI-use transparency',
                 required: false,
                 satisfied: false,
-                sourceRefTypes: ['ai_usage_event'],
-                missingImpact: 'If the candidate used AI, prompts and responses should be captured honestly.',
+                sourceRefTypes: ['ai_user_prompt', 'ai_user_prompt_blocked', 'ai_agent_response'],
+                missingImpact: 'If the candidate used AI, real prompts, blocked attempts, and agent responses should be captured honestly.',
               },
             ],
           },
@@ -759,6 +760,7 @@ describe('InterviewDetailPage', () => {
     expect(checklist).toHaveTextContent('Confidence signals');
     expect(checklist).toHaveTextContent('Workspace-captured commit');
     expect(checklist).toHaveTextContent('AI-use transparency');
+    expect(checklist).toHaveTextContent('If the candidate used AI, real prompts, blocked attempts, and agent responses should be captured honestly.');
     expect(progress).not.toHaveTextContent('assessment-session-missing-proof');
     expect(progress).not.toHaveTextContent('challenge-packet-hidden');
     expect(progress).not.toHaveTextContent('assessment-event-hidden');

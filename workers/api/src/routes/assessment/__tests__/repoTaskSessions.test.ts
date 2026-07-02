@@ -569,10 +569,13 @@ describe('repo task assessment session routes', () => {
         ingestionKey: 'assessment-event:bundle-ai-interaction',
         kind: 'ai_interaction',
         actorType: 'ai_developer',
-        actorId: 'openai:repo-task-interviewer',
-        narrative: 'AI interviewer challenged the edge-case behavior.',
-        payload: { provider: 'openai', model: 'configured-real-provider' },
-        sourceRefs: [await sourceRef('ai_usage_event', 'ai-turn-1', 'What happens if the component unmounts during pointer capture?')],
+        actorId: 'devin',
+        narrative: 'Candidate asked the real agent bridge about edge-case behavior and received an authenticated bridge state.',
+        payload: { provider: 'devin', bridgeStatus: 'auth_needed' },
+        sourceRefs: [
+          await sourceRef('ai_user_prompt', 'ai-prompt-1', 'What happens if the component unmounts during pointer capture?'),
+          await sourceRef('ai_user_prompt_blocked', 'ai-prompt-blocked-1', 'Devin bridge reported auth_needed before answering.'),
+        ],
       },
       {
         ingestionKey: 'assessment-event:bundle-tool-usage',
@@ -692,6 +695,10 @@ describe('repo task assessment session routes', () => {
         hasAiInteraction: boolean;
         hasTranscriptEvidence: boolean;
         hasTestEvidence: boolean;
+        sourceRefCounts: Array<{ kind: string; count: number }>;
+        readiness: {
+          confidence: Array<{ id: string; satisfied: boolean; sourceRefTypes: string[]; missingImpact: string }>;
+        };
       };
     };
     expect(progressBody.progress).toMatchObject({
@@ -703,6 +710,18 @@ describe('repo task assessment session routes', () => {
       hasTranscriptEvidence: true,
       hasTestEvidence: true,
     });
+    expect(progressBody.progress.sourceRefCounts).toEqual(expect.arrayContaining([
+      { kind: 'ai_user_prompt', count: 1 },
+      { kind: 'ai_user_prompt_blocked', count: 1 },
+    ]));
+    expect(progressBody.progress.readiness.confidence).toEqual(expect.arrayContaining([
+      expect.objectContaining({
+        id: 'ai_usage_transparency',
+        satisfied: true,
+        sourceRefTypes: ['ai_user_prompt', 'ai_user_prompt_blocked', 'ai_agent_response'],
+        missingImpact: 'If the candidate used AI, real prompts, blocked attempts, and agent responses should be captured honestly.',
+      }),
+    ]));
   });
 
   it('submits a real commit as source-backed assessment evidence and marks the session final', async () => {

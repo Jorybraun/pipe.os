@@ -561,9 +561,17 @@ const ASSESSMENT_PROGRESS_SNIPPET_TYPES = [
   'test_run',
   'terminal_command',
   'terminal_output',
+  'ai_user_prompt',
+  'ai_user_prompt_blocked',
+  'ai_agent_response',
   'ai_usage_event',
   'room_chat_message',
   'meeting_transcript_segment',
+] as const;
+const AI_INTERACTION_SOURCE_REF_TYPES = [
+  'ai_user_prompt',
+  'ai_user_prompt_blocked',
+  'ai_agent_response',
 ] as const;
 const MAX_ASSESSMENT_PROGRESS_SNIPPETS = 6;
 const MAX_ASSESSMENT_PROGRESS_SNIPPET_CHARS = 1_200;
@@ -1575,8 +1583,8 @@ function buildAssessmentReadiness(input: {
       label: 'AI-use transparency',
       required: false,
       satisfied: input.hasAiInteraction,
-      sourceRefTypes: ['ai_usage_event'],
-      missingImpact: 'If the candidate used AI, prompts and responses should be captured honestly.',
+      sourceRefTypes: [...AI_INTERACTION_SOURCE_REF_TYPES],
+      missingImpact: 'If the candidate used AI, real prompts, blocked attempts, and agent responses should be captured honestly.',
     },
     {
       id: 'transcript_context',
@@ -2067,7 +2075,8 @@ export class RepoTaskInterviewSessionStore {
     ]);
     const hasCommitSubmission = commit !== null;
     const hasFinalSubmission = hasEventKind(evidenceCounts, ['final_submission']);
-    const hasAiInteraction = hasEventKind(evidenceCounts, ['ai_interaction']);
+    const hasAiInteraction = hasEventKind(evidenceCounts, ['ai_interaction'])
+      || hasEventKind(sourceRefCounts, AI_INTERACTION_SOURCE_REF_TYPES);
     const hasMessageEvidence = hasEventKind(evidenceCounts, ['message'])
       || hasEventKind(sourceRefCounts, ['room_chat_message']);
     const hasDevContainerEvidence = hasEventKind(evidenceCounts, ['dev_container_event'])
@@ -2197,6 +2206,9 @@ export class RepoTaskInterviewSessionStore {
             'test_run',
             'terminal_command',
             'terminal_output',
+            'ai_user_prompt',
+            'ai_user_prompt_blocked',
+            'ai_agent_response',
             'ai_usage_event',
             'room_chat_message',
             'meeting_transcript_segment'
@@ -2214,6 +2226,9 @@ export class RepoTaskInterviewSessionStore {
             WHEN 'test_run' THEN 3
             WHEN 'terminal_command' THEN 4
             WHEN 'terminal_output' THEN 4
+            WHEN 'ai_user_prompt' THEN 5
+            WHEN 'ai_user_prompt_blocked' THEN 5
+            WHEN 'ai_agent_response' THEN 5
             WHEN 'ai_usage_event' THEN 5
             WHEN 'room_chat_message' THEN 6
             WHEN 'meeting_transcript_segment' THEN 7

@@ -963,7 +963,7 @@ describe('InterviewCard assessment progress', () => {
               narrative: 'The candidate isolated the regression to the widget loader and changed only the relevant file.',
               confidence: 0.82,
               sourceRefCount: 2,
-              sourceRefTypes: ['git_commit', 'code_diff'],
+              sourceRefTypes: ['ai_user_prompt_blocked', 'ai_agent_response'],
             },
             {
               id: 'assessment-claim-uncited-secret',
@@ -994,7 +994,7 @@ describe('InterviewCard assessment progress', () => {
     expect(progress).toHaveTextContent('CLAIMS');
     expect(progress).toHaveTextContent('Repo understanding · Positive · 82%');
     expect(progress).toHaveTextContent('The candidate isolated the regression to the widget loader');
-    expect(progress).toHaveTextContent('2 source refs: Git commit, Code diff');
+    expect(progress).toHaveTextContent('2 source refs: Blocked AI prompt, Agent response');
     expect(progress).toHaveTextContent('GAPS');
     expect(progress).toHaveTextContent('Missing: Test or verification evidence');
     expect(progress).toHaveTextContent('Missing: Transcript explanation');
