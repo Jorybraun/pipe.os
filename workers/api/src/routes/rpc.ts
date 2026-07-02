@@ -2394,7 +2394,7 @@ async function handleIntakePayload(
   options: {
     afterSourceBackedEvidence?: () => Promise<void>;
     afterTextIngestion?: () => Promise<void>;
-    awaitTextIngestion?: boolean;
+    awaitTextIngestionHandoff?: boolean;
   } = {},
 ): Promise<void> {
   let intakePayload: Record<string, unknown> = {};
@@ -2474,9 +2474,19 @@ async function handleIntakePayload(
       console.error(`[rpc/intake] failed to set synthetic resume key:`, err);
     }
     let sourceBackedEvidenceHandled = false;
+    let resolveSourceBackedHandoff: (() => void) | null = null;
+    const sourceBackedHandoff = new Promise<void>((resolve) => {
+      resolveSourceBackedHandoff = resolve;
+    });
+    const markSourceBackedHandoff = (): void => {
+      resolveSourceBackedHandoff?.();
+      resolveSourceBackedHandoff = null;
+    };
     const triggerAfterSourceBackedEvidence = async (): Promise<void> => {
-      if (sourceBackedEvidenceHandled || !options.afterSourceBackedEvidence) return;
+      if (sourceBackedEvidenceHandled) return;
       sourceBackedEvidenceHandled = true;
+      markSourceBackedHandoff();
+      if (!options.afterSourceBackedEvidence) return;
       executionCtx.waitUntil(
         options.afterSourceBackedEvidence().catch((err) => {
           const msg = err instanceof Error ? err.message : String(err);
@@ -2530,10 +2540,13 @@ async function handleIntakePayload(
       }
     };
 
-    if (options.awaitTextIngestion) {
-      await runTextIngestion();
-    } else {
-      executionCtx.waitUntil(runTextIngestion());
+    const textIngestionPromise = runTextIngestion();
+    executionCtx.waitUntil(textIngestionPromise);
+    if (options.awaitTextIngestionHandoff) {
+      await Promise.race([
+        sourceBackedHandoff,
+        new Promise<void>((resolve) => setTimeout(resolve, 25)),
+      ]);
     }
   }
 
@@ -3968,7 +3981,7 @@ rpcAuth.post('/submit-challenge-response', async (c) => {
       await handleIntakePayload(c.env, c.executionCtx, candidateId, submission, new Date().toISOString(), {
         afterSourceBackedEvidence: matchStandaloneReviewIfReady,
         afterTextIngestion: matchStandaloneReviewIfReady,
-        awaitTextIngestion: true,
+        awaitTextIngestionHandoff: true,
       });
       const standaloneReview = await getPendingStandaloneReview(c.env.DB, candidateId);
       if (await hasReadyStandaloneCodeReviewAssignment(c.env.DB, candidateId, standaloneReview)) {
