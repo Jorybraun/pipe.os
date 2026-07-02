@@ -15,7 +15,10 @@ import type { Env } from '../../types';
 import { parseResume, persistParsedCV, extractTextFromResumeFile } from '../cvParser';
 import { runCandidateIngestion } from '../candidateDiscovery/orchestrate';
 import { markIngestionFailed } from '../candidateDiscovery/persist';
-import { ingestResumeToLivingContext } from '../livingContext/resumeIngestion';
+import {
+  ingestResumeToLivingContext,
+  type ResumeLivingContextIdentity,
+} from '../livingContext/resumeIngestion';
 
 const PDF_CONTENT_TYPE = 'application/pdf';
 const DOCX_CONTENT_TYPE = 'application/vnd.openxmlformats-officedocument.wordprocessingml.document';
@@ -27,6 +30,12 @@ export interface ProcessResumeInput {
   r2Key: string;
   /** Optional: if the caller already parsed the resume, skip re-parsing. */
   preParsed?: Awaited<ReturnType<typeof parseResume>> | null;
+  /**
+   * Optional caller-provided person identity. Undefined keeps legacy candidate
+   * application bridging; null skips living-context projection instead of
+   * fabricating an application for roleless Talent Pool intake.
+   */
+  livingContextIdentity?: ResumeLivingContextIdentity | null;
 }
 
 export interface ProcessResumeResult {
@@ -191,6 +200,7 @@ export async function processResumeFromR2(
           mediaType: contentType,
           resumeText,
           uploadedAt: new Date().toISOString(),
+          identity: input.livingContextIdentity,
         });
       } catch (err) {
         const msg = err instanceof Error ? err.message : String(err);

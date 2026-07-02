@@ -355,6 +355,24 @@ describe('talent pool candidate RPC', () => {
          FROM candidates
         WHERE id = 'candidate-1'`,
     ).get()).toEqual({ resume_s3_key: intake.profile_r2_key });
+
+    const replayFormData = new FormData();
+    replayFormData.set('inviteToken', 'invite-token');
+    replayFormData.set('file', new File([
+      'Taylor has shipped TypeScript frontend systems, Workers APIs, and source-backed accessibility fixes.',
+    ], 'taylor-profile.txt', { type: 'text/plain' }));
+    replayFormData.set('githubUrl', 'https://github.com/taylor-upload');
+
+    const replay = await app.request('/rpc/talent/upload-profile', {
+      method: 'POST',
+      body: replayFormData,
+    }, createEnv(sqlite, storage));
+
+    expect(replay.status).toBe(200);
+    expect(storage.puts.size).toBe(1);
+    expect([...storage.puts.keys()][0]).toBe(intake.profile_r2_key);
+    expect(sqlite.prepare('SELECT COUNT(*) AS count FROM context_records').get()).toEqual({ count: 1 });
+    expect(sqlite.prepare('SELECT COUNT(*) AS count FROM context_record_source_refs').get()).toEqual({ count: 1 });
   });
 
   it('shows assessment entry only when a real challenge assignment exists', async () => {

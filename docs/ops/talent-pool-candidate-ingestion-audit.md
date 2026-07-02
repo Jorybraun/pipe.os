@@ -42,6 +42,12 @@ source span when the context-record schema is present. This context record only
 proves that profile evidence was submitted; it does not claim skills,
 seniority, readiness, or match quality.
 
+Uploaded profile files use content-hash storage keys, so replaying the same
+file reuses the same source artifact path. PDF/DOCX extraction still runs in
+background resume ingestion, but that projection now receives the roleless
+Talent Pool person identity and must not create `applications` or
+`person_roles` before a role-backed process exists.
+
 By default, the command fails on missing scoped candidates, submitted intakes
 without storage or ingestion state, missing active Talent Pool person
 projection, missing exact source proof, source-less positive claims, duplicate
@@ -81,7 +87,8 @@ The stricter remote verifier returned `status: ready`,
 ## Current Gaps
 
 - PDF/DOCX claim-level context appears only after document extraction and
-  background resume ingestion complete.
+  background resume ingestion complete; failed extraction must remain a gap,
+  not a fabricated skill/readiness claim.
 - GitHub, LinkedIn, portfolio, and phone-screener intent are captured as intake
   fields; the audit still expects future source-ref-preserving operational
   context projection for those fields.

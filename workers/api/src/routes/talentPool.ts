@@ -6,6 +6,11 @@ import { processResumeFromR2 } from '../lib/enrichment/resumeIngestion';
 import { ensureRolelessTalentPoolIdentity } from '../lib/talentPoolIdentity';
 import type { Env, Variables } from '../types';
 
+interface RolelessTalentPoolIdentity {
+  personId: string;
+  workspacePersonId: string;
+}
+
 type TalentPoolStatus =
   | 'PROFILE_NEEDED'
   | 'PROFILE_RECEIVED'
@@ -333,6 +338,13 @@ function safeFileName(name: string): string {
   return normalized.slice(0, 160) || 'profile';
 }
 
+async function sha256Hex(buffer: ArrayBuffer): Promise<string> {
+  const digest = await crypto.subtle.digest('SHA-256', buffer);
+  return [...new Uint8Array(digest)]
+    .map((byte) => byte.toString(16).padStart(2, '0'))
+    .join('');
+}
+
 function normalizeProfileContentType(contentType: string, fileName: string): string {
   const normalized = contentType.split(';')[0]?.trim().toLowerCase() ?? '';
   if (normalized) return normalized;
@@ -415,6 +427,7 @@ function queueProfileIngestion(input: {
   profileKey: string;
   contentType: string;
   resumeText: string;
+  livingContextIdentity?: RolelessTalentPoolIdentity | null;
 }): void {
   const trimmedText = input.resumeText.trim();
   if (trimmedText.length >= 20) {
@@ -442,6 +455,7 @@ function queueProfileIngestion(input: {
         db: input.c.env.DB,
         candidateId: input.candidateId,
         r2Key: input.profileKey,
+        livingContextIdentity: input.livingContextIdentity ?? null,
       }),
     );
   }
@@ -480,7 +494,7 @@ async function persistIntake(
   input: SubmitProfileInput,
   now: string,
   options: { profileKey?: string; profileExcerpt?: string; sourceTextForPerson?: string } = {},
-): Promise<void> {
+): Promise<RolelessTalentPoolIdentity | null> {
   const profileKey = options.profileKey ?? `talent-intake/${candidate.id}/${now.replace(/[:.]/g, '-')}.txt`;
   if (!options.profileKey) {
     await c.env.STORAGE.put(profileKey, input.resumeText, {
@@ -543,7 +557,7 @@ async function persistIntake(
 
   if (candidate.email?.trim()) {
     const sourceTextForPerson = options.sourceTextForPerson ?? (!options.profileKey ? input.resumeText : undefined);
-    await ensureRolelessTalentPoolIdentity({
+    return await ensureRolelessTalentPoolIdentity({
       db: c.env.DB,
       userId: candidate.owner_id,
       candidateId: candidate.id,
@@ -553,6 +567,8 @@ async function persistIntake(
       now,
     });
   }
+
+  return null;
 }
 
 async function ensureChallengeDesignQueueItem(
@@ -678,8 +694,9 @@ route.post('/upload-profile', async (c) => {
 
   const now = new Date().toISOString();
   const rawFileName = safeFileName(fileEntry.name);
-  const profileKey = `talent-intake/${candidate.id}/${now.replace(/[:.]/g, '-')}-${rawFileName}`;
   const arrayBuffer = await fileEntry.arrayBuffer();
+  const fileHash = await sha256Hex(arrayBuffer);
+  const profileKey = `talent-intake/${candidate.id}/${fileHash}-${rawFileName}`;
   let resumeText = parsed.data.resumeText.trim();
   if (contentType === 'text/plain' && resumeText.length === 0) {
     resumeText = new TextDecoder().decode(arrayBuffer).trim().slice(0, 50_000);
@@ -698,7 +715,7 @@ route.post('/upload-profile', async (c) => {
     },
   });
 
-  await persistIntake(c, candidate, profileInput, now, {
+  const livingContextIdentity = await persistIntake(c, candidate, profileInput, now, {
     profileKey,
     profileExcerpt: resumeText.length >= 20 ? excerpt(resumeText) : `Uploaded ${rawFileName}`,
     sourceTextForPerson: resumeText.length >= 20 ? resumeText : undefined,
@@ -709,6 +726,7 @@ route.post('/upload-profile', async (c) => {
     profileKey,
     contentType,
     resumeText,
+    livingContextIdentity,
   });
 
   const readyChallenges = await loadReadyChallenges(c.env.DB, candidate.id, candidate.invite_token);

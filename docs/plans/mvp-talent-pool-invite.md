@@ -200,6 +200,11 @@ submitted text source span when the context-record schema is present. That
 record proves intake evidence was submitted; it does not derive skills,
 seniority, match readiness, or challenge readiness.
 
+Uploaded profile files are stored under content-hash keys so a retry of the
+same file reuses the same source artifact path. PDF/DOCX background resume
+projection uses the roleless Talent Pool `workspace_people` identity and leaves
+`applications` / `person_roles` empty until a real role-backed process exists.
+
 Proof command:
 
 ```bash

@@ -148,4 +148,33 @@ describe('processResumeFromR2 — living context integration', () => {
       }),
     );
   });
+
+  it('passes supplied roleless Talent Pool identity into living context ingestion', async () => {
+    const env = buildMockEnv(db);
+    const result = await processResumeFromR2({
+      env,
+      db,
+      candidateId: 'cand-roleless',
+      r2Key: 'talent-intake/cand-roleless/profile.pdf',
+      livingContextIdentity: {
+        personId: 'person-roleless',
+        workspacePersonId: 'wp-roleless',
+        applicationId: null,
+      },
+    });
+
+    expect(result.success).toBe(true);
+    expect(mockIngestResume).toHaveBeenCalledWith(
+      db,
+      expect.objectContaining({
+        candidateId: 'cand-roleless',
+        storageKey: 'talent-intake/cand-roleless/profile.pdf',
+        identity: {
+          personId: 'person-roleless',
+          workspacePersonId: 'wp-roleless',
+          applicationId: null,
+        },
+      }),
+    );
+  });
 });
