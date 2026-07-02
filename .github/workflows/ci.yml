@@ -65,9 +65,18 @@ jobs:
           CLOUDFLARE_D1_DATABASE_ID:  ${{ secrets.CLOUDFLARE_D1_DATABASE_ID }}
           MATCHING_EVALUATION_D1_DATABASE_ID: ${{ vars.MATCHING_EVALUATION_D1_DATABASE_ID }}
           MATCHING_EVALUATION_CORPUS_ID: ${{ vars.MATCHING_EVALUATION_CORPUS_ID }}
+          MATCHING_EVALUATION_REQUIRED: ${{ vars.MATCHING_EVALUATION_REQUIRED }}
           MATCHING_EVALUATION_STAGE: ${{ vars.MATCHING_EVALUATION_STAGE }}
         run: |
           EVAL_STAGE="${MATCHING_EVALUATION_STAGE:-production}"
+          REQUIRE_MATCHING_EVALUATION="${MATCHING_EVALUATION_REQUIRED:-}"
+          if [ -z "$REQUIRE_MATCHING_EVALUATION" ]; then
+            if [ "${GITHUB_EVENT_NAME:-}" = "push" ] && [ "${GITHUB_REF:-}" = "refs/heads/main" ]; then
+              REQUIRE_MATCHING_EVALUATION=1
+            else
+              REQUIRE_MATCHING_EVALUATION=0
+            fi
+          fi
           if [ -n "$MATCHING_EVALUATION_D1_DATABASE_ID" ]; then
             export CLOUDFLARE_D1_DATABASE_ID="$MATCHING_EVALUATION_D1_DATABASE_ID"
           fi
@@ -82,6 +91,10 @@ jobs:
           }
           JSON
             cat matching-evaluation-readiness.json
+            if [ "$REQUIRE_MATCHING_EVALUATION" = "1" ] || [ "$REQUIRE_MATCHING_EVALUATION" = "true" ]; then
+              echo "Production matching evaluation readiness is required for pushes to main."
+              exit 1
+            fi
             echo "Production matching evaluation readiness is not configured; uploaded non-blocking readiness report."
             exit 0
           fi

@@ -21,12 +21,23 @@ describe('CI matching evaluation readiness gate', () => {
     expect(step).not.toContain('continue-on-error');
     expect(step).toContain('npm run matching-eval:readiness');
     expect(step).toContain('MATCHING_EVALUATION_D1_DATABASE_ID');
+    expect(step).toContain('MATCHING_EVALUATION_REQUIRED');
     expect(step).toContain('EVAL_STAGE="${MATCHING_EVALUATION_STAGE:-production}"');
     expect(step).toContain('export CLOUDFLARE_D1_DATABASE_ID="$MATCHING_EVALUATION_D1_DATABASE_ID"');
     expect(step).toContain('--stage "$EVAL_STAGE"');
   });
 
-  it('emits a non-blocking artifact when the production matching readiness gate is not configured', () => {
+  it('requires production readiness configuration for main pushes by default', () => {
+    const step = matchingReadinessStep(workflow);
+
+    expect(step).toContain('GITHUB_EVENT_NAME:-}" = "push"');
+    expect(step).toContain('GITHUB_REF:-}" = "refs/heads/main"');
+    expect(step).toContain('REQUIRE_MATCHING_EVALUATION=1');
+    expect(step).toContain('Production matching evaluation readiness is required for pushes to main.');
+    expect(step).toContain('exit 1');
+  });
+
+  it('emits a non-blocking artifact when the production matching readiness gate is not enforced', () => {
     const step = matchingReadinessStep(workflow);
 
     expect(step).toContain('exit 0');
@@ -37,7 +48,5 @@ describe('CI matching evaluation readiness gate', () => {
     expect(step).toContain(
       'CLOUDFLARE_D1_DATABASE_ID or MATCHING_EVALUATION_D1_DATABASE_ID',
     );
-    expect(step).not.toContain('Production matching evaluation readiness is required for pushes to main.');
-    expect(step).not.toContain('exit 1');
   });
 });
