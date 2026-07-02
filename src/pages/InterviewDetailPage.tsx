@@ -1180,6 +1180,51 @@ function workspaceAssessmentWorkPacket(progress: AssessmentProgressSnapshot | nu
   ];
 }
 
+function workspaceAssessmentReviewerReceipt(progress: AssessmentProgressSnapshot | null): WorkspaceAssessmentReadoutItem[] {
+  const decision = progress?.humanDecision ?? null;
+  const commit = progress?.commit ?? null;
+  if (!decision || !commit) return [];
+
+  const sourceTypes = decision.sourceRefTypes.length > 0
+    ? decision.sourceRefTypes.map(sentenceCaseToken).join(', ')
+    : 'No source ref types returned';
+  const repo = repoLabelFromUrl(commit.repositoryUrl) ?? 'Repository not captured';
+  const branch = commit.branchName ? `Branch ${commit.branchName}` : 'Branch not captured';
+  const commitDetail = [
+    repo,
+    branch,
+    commit.integrity?.label ?? commit.submissionSourceLabel ?? null,
+    commit.challengeBinding?.label ?? null,
+  ].filter((item): item is string => Boolean(item)).join(' · ');
+
+  return [
+    {
+      label: 'Final decision',
+      value: assessmentHumanDecisionLabel(decision.decision),
+      detail: decision.summary,
+      tone: decision.decision === 'advance' ? 'positive' : 'watch',
+    },
+    {
+      label: 'Decision anchor',
+      value: `${decision.sourceRefCount} source ${decision.sourceRefCount === 1 ? 'ref' : 'refs'}`,
+      detail: `Anchored to ${sourceTypes}.`,
+      tone: decision.sourceRefCount > 0 ? 'positive' : 'blocked',
+    },
+    {
+      label: 'Commit reviewed',
+      value: shortCommitSha(commit.commitSha),
+      detail: commitDetail,
+      tone: commit.integrity?.tone === 'verified' && commit.challengeBinding?.tone === 'verified' ? 'positive' : 'watch',
+    },
+    {
+      label: 'Recorded by',
+      value: 'Human reviewer',
+      detail: `Recorded ${formatDate(decision.occurredAt, 'Recorded time unavailable')}${decision.notes ? ` · ${decision.notes}` : ''}`,
+      tone: 'neutral',
+    },
+  ];
+}
+
 function workspaceAssessmentHiringReadout(input: {
   progress: AssessmentProgressSnapshot | null;
   setup: AssessmentSetupProjection | null | undefined;
@@ -3403,6 +3448,7 @@ export default function InterviewDetailPage(): JSX.Element {
     assessmentProgress?.evaluation?.status === 'EVALUATED' && !assessmentProgress.humanDecision,
   );
   const assessmentWorkPacket = workspaceAssessmentWorkPacket(assessmentProgress);
+  const assessmentReviewerReceipt = workspaceAssessmentReviewerReceipt(assessmentProgress);
   const workspaceAssessmentReadout = workspaceAssessmentHiringReadout({
     progress: assessmentProgress,
     setup: interview.assessmentSetup,
@@ -4037,6 +4083,29 @@ export default function InterviewDetailPage(): JSX.Element {
                   <div style={FIELD_LABEL}>Candidate work packet</div>
                   <div style={DECISION_COCKPIT_GRID}>
                     {assessmentWorkPacket.map((item) => (
+                      <div
+                        key={item.label}
+                        style={{
+                          ...DECISION_COCKPIT_ITEM,
+                          ...DECISION_NEXT_STEP_TONE[item.tone],
+                        }}
+                      >
+                        <div style={FIELD_LABEL}>{item.label}</div>
+                        <div style={DECISION_COCKPIT_VALUE}>{item.value}</div>
+                        <div style={DECISION_COCKPIT_DETAIL}>{item.detail}</div>
+                      </div>
+                    ))}
+                  </div>
+                </div>
+              )}
+              {assessmentReviewerReceipt.length > 0 && (
+                <div data-testid="interview-assessment-reviewer-receipt" style={DECISION_COCKPIT}>
+                  <div style={FIELD_LABEL}>Reviewer receipt</div>
+                  <div style={ROOM_LINK_TEXT}>
+                    Final human decision tied back to the exact assessment report and commit evidence.
+                  </div>
+                  <div style={DECISION_COCKPIT_GRID}>
+                    {assessmentReviewerReceipt.map((item) => (
                       <div
                         key={item.label}
                         style={{
