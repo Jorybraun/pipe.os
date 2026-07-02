@@ -158,7 +158,7 @@ CLOUDFLARE_D1_DATABASE_ID=0abe92df-9296-46f5-9f9d-a1fb1bcd3be1 \
 
 Latest app-dev proof on 2026-07-02 used invite token
 `talent-audit-532e4287e-c1` after deploying Worker version
-`d2d1f599-8d74-42b0-b160-900dd07041b7` and replaying pasted-text profile
+`ad1a9b5e-cb0d-4dec-b412-348d85b24c7e` and replaying pasted-text profile
 submission plus the `e2e/fixtures/test-resume.pdf` profile upload with GitHub,
 LinkedIn, portfolio, and phone-screener fields. The stricter remote verifier
 returned `status: ready`, `candidateNodeCount: 74`,
