@@ -2476,7 +2476,12 @@ async function handleIntakePayload(
     const triggerAfterSourceBackedEvidence = async (): Promise<void> => {
       if (sourceBackedEvidenceHandled || !options.afterSourceBackedEvidence) return;
       sourceBackedEvidenceHandled = true;
-      await options.afterSourceBackedEvidence();
+      executionCtx.waitUntil(
+        options.afterSourceBackedEvidence().catch((err) => {
+          const msg = err instanceof Error ? err.message : String(err);
+          console.error(`[rpc/intake] source-backed post-ingestion action failed for ${candidateId}:`, msg);
+        }),
+      );
     };
     const watchForSourceBackedEvidence = async (): Promise<void> => {
       if (!options.afterSourceBackedEvidence) return;
