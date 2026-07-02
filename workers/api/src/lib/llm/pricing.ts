@@ -4,7 +4,7 @@
  * All cost calculations flow through `computeCallCost`. Adding a new model
  * requires a single entry in MODEL_PRICING.
  *
- * Pricing sources (2026-Q2, current as of 2026-04-17):
+ * Pricing sources (current as of 2026-07-02):
  *   Cloudflare Workers AI: https://developers.cloudflare.com/workers-ai/platform/pricing/
  *   Vertex AI:             https://cloud.google.com/vertex-ai/generative-ai/pricing
  */
@@ -57,6 +57,13 @@ export const MODEL_PRICING: Record<string, ModelPrice> = {
     outputUsdPerM: 0.30,
     neuronsPerMInput: 9091,
     neuronsPerMOutput: 27273,
+  },
+  '@cf/zai-org/glm-4.7-flash': {
+    provider: 'cloudflare-ai',
+    inputUsdPerM: 0.06,
+    outputUsdPerM: 0.40,
+    neuronsPerMInput: 5500,
+    neuronsPerMOutput: 36400,
   },
   '@cf/meta/llama-3.1-8b-instruct': {
     provider: 'cloudflare-ai',

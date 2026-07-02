@@ -47,6 +47,15 @@ describe('computeCallCost', () => {
     expect(result).toBe(0);
   });
 
+  it('computes cost for the current Workers AI default GLM model', () => {
+    const expected = (10_000 / 1_000_000) * 0.06 + (5_000 / 1_000_000) * 0.40;
+    const result = computeCallCost('@cf/zai-org/glm-4.7-flash', {
+      inputTokens: 10_000,
+      outputTokens: 5_000,
+    });
+    expect(result).toBeCloseTo(expected, 10);
+  });
+
   // ── Whisper: audio-based pricing ────────────────────────────────────────────
 
   it('computes cost for Whisper with exactly 60 audio seconds', () => {

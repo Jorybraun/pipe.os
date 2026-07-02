@@ -38,6 +38,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Fixed — Open-source assessment progress
 
+- LLM usage accounting now includes the current Workers AI `@cf/zai-org/glm-4.7-flash` default so candidate-ingestion metering does not fail on the replacement model.
 - Candidate evidence ingestion now uses a structured-output-friendly Workers AI default, removes fenced JSON from the candidate-discovery prompt, unwraps nested Workers AI responses, retries failed discovery-output contracts, and exposes source-backed resume evidence before bounded embedding work can stall the `/assess` handoff.
 - Batched recruiter interview-list assessment progress summaries now use explicit typed row projections, keeping Worker strict typing green for the list-card performance path.
 - Recruiter interview lists now load assessment progress from batched summary queries instead of hydrating full per-session evidence detail for every card, preserving task/commit/evaluation signals while reducing list-page D1 work.
