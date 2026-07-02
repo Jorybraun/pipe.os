@@ -45,9 +45,9 @@ const DEFAULT_VERTEX_MODEL = 'google/gemini-1.5-flash-002';
 const DEFAULT_KIMI_MODEL = 'kimi-k2-6';
 const DEFAULT_KIMI_BASE_URL = 'https://api.moonshot.cn/v1';
 const CANDIDATE_WORKERS_AI_FALLBACK_MODELS = [
-  '@cf/qwen/qwen3-30b-a3b-fp8',
-  '@cf/google/gemma-4-26b-a4b-it',
   DEFAULT_CLOUDFLARE_MODEL,
+  '@cf/google/gemma-4-26b-a4b-it',
+  '@cf/qwen/qwen3-30b-a3b-fp8',
 ] as const;
 
 export interface ProviderEnv {

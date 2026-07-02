@@ -69,6 +69,12 @@ identity and background decomposition runs with legacy candidate-node mirroring
 disabled, so it must not create `applications` or `person_roles` before a
 role-backed process exists. Parser-only resume nodes without exact source
 quotes are skipped instead of becoming positive candidate claims.
+Candidate discovery tries the current fast Workers AI default before heavier
+fallback models, and Talent Pool document retries use a bounded two-attempt
+AI budget before falling back to source-only evidence. The fallback is allowed
+to keep ingestion moving, but the event stream must state whether AI started,
+succeeded, or failed instead of fabricating an AI-derived profile.
+
 Resume decomposition disambiguates repeated titles or labels by anchoring the
 selected source quote near the matching company, project, institution, or other
 structured context; repeated labels must not all cite the first matching text

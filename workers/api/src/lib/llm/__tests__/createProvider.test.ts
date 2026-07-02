@@ -59,9 +59,9 @@ describe('createCandidateAgentProvider', () => {
       .map((provider) => provider.model);
 
     expect(models).toEqual([
-      '@cf/qwen/qwen3-30b-a3b-fp8',
-      '@cf/google/gemma-4-26b-a4b-it',
       DEFAULT_CLOUDFLARE_MODEL,
+      '@cf/google/gemma-4-26b-a4b-it',
+      '@cf/qwen/qwen3-30b-a3b-fp8',
     ]);
   });
 
