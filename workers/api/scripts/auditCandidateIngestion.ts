@@ -90,6 +90,7 @@ export interface CandidatePersonProjectionAudit {
   phoneScreenerIntentContextCount: number;
   signalEvidenceCount: number;
   readyChallengeAssignmentCount: number;
+  incompleteChallengeAssignmentCount: number;
   designQueueCount: number;
 }
 
@@ -154,6 +155,7 @@ interface ProjectionRow {
   phone_screener_intent_context_count: number | null;
   signal_evidence_count: number | null;
   ready_challenge_assignment_count: number | null;
+  incomplete_challenge_assignment_count: number | null;
   design_queue_count: number | null;
 }
 
@@ -442,6 +444,11 @@ async function loadPersonProjection(
           JOIN candidate_challenge_assignment cca ON cca.candidate_id = ac.id
          WHERE cca.github_repo_url IS NOT NULL
            AND cca.github_pr_number IS NOT NULL) AS ready_challenge_assignment_count,
+       (SELECT COUNT(DISTINCT cca.id)
+          FROM audited_candidates ac
+          JOIN candidate_challenge_assignment cca ON cca.candidate_id = ac.id
+         WHERE cca.github_repo_url IS NULL
+            OR cca.github_pr_number IS NULL) AS incomplete_challenge_assignment_count,
        (SELECT COUNT(DISTINCT cdq.id)
           FROM audited_candidates ac
           JOIN challenge_design_queue cdq ON cdq.candidate_id = ac.id
@@ -460,6 +467,7 @@ async function loadPersonProjection(
     phoneScreenerIntentContextCount: toNumber(row?.phone_screener_intent_context_count),
     signalEvidenceCount: toNumber(row?.signal_evidence_count),
     readyChallengeAssignmentCount: toNumber(row?.ready_challenge_assignment_count),
+    incompleteChallengeAssignmentCount: toNumber(row?.incomplete_challenge_assignment_count),
     designQueueCount: toNumber(row?.design_queue_count),
   };
 }
@@ -571,6 +579,7 @@ export async function auditCandidateIngestion(
       phoneScreenerIntentContextCount: 0,
       signalEvidenceCount: 0,
       readyChallengeAssignmentCount: 0,
+      incompleteChallengeAssignmentCount: 0,
       designQueueCount: 0,
     },
   };
@@ -696,6 +705,9 @@ export async function auditCandidateIngestion(
       : []),
     ...(personProjection.readyChallengeAssignmentCount === 0 && personProjection.designQueueCount > 0
       ? ['Challenge readiness is correctly still a design-queue gap; do not expose a ready assessment until a source-backed assignment exists.']
+      : []),
+    ...(personProjection.incompleteChallengeAssignmentCount > 0
+      ? [`${personProjection.incompleteChallengeAssignmentCount} challenge assignment row(s) lack repo URL or PR number and cannot safely become Talent Pool assessment readiness.`]
       : []),
     ...(personProjection.contextRecordCount === 0
       ? ['Run candidate profile/resume projection or retry background ingestion if person read models need claim-level context now.']
@@ -840,6 +852,7 @@ function printHuman(report: CandidateIngestionAudit, databasePath: string): void
   console.log(`  phone intent contexts: ${report.personProjection.phoneScreenerIntentContextCount}`);
   console.log(`  signal evidence:       ${report.personProjection.signalEvidenceCount}`);
   console.log(`  ready assignments:     ${report.personProjection.readyChallengeAssignmentCount}`);
+  console.log(`  incomplete assignments: ${report.personProjection.incompleteChallengeAssignmentCount}`);
   console.log(`  design queue:          ${report.personProjection.designQueueCount}`);
   if (report.failures.length > 0) {
     console.log('');

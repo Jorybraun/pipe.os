@@ -11,6 +11,8 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 - Scheduled Talent Pool repair now removes generated application/person-role rows for roleless Talent Pool candidates, keeping Talent Pool evidence separate until a real role-backed process exists.
 - Talent Pool ingestion retries and scheduled repair now restore source-backed GitHub/LinkedIn/portfolio and phone-screener operational context from the original intake row before or alongside profile AI/evidence ingestion.
+- Talent Pool candidate-ingestion audit now reports challenge assignment rows that lack repo URL or PR number separately from PR-backed ready assignments, so partial assignment state remains an assessment setup gap instead of implied readiness.
+- Roleless Talent Pool identity repair now detaches and removes synthetic legacy application/person-role bridges, and scheduled living-context backfill skips roleless Talent Pool intakes so cron cannot recreate those edges.
 - Scheduled Talent Pool ingestion repair now recognizes the initial `talent_pool_profile_received` step and replays `.txt` Talent Pool sources through text ingestion instead of the document parser.
 - Stalled Talent Pool profile receipts now replay from their original R2 source, including pasted `.txt` intakes, so candidate AI/evidence ingestion cannot remain indefinitely at `talent_pool_profile_received`.
 - Talent Pool profile submit/upload now repairs the roleless person projection, so dev-seeded and legacy `/talent/:token` candidates upsert one canonical `people`/`workspace_people` identity without fabricating role-backed applications or person roles.

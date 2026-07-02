@@ -268,6 +268,12 @@ export async function processTalentPoolOperationalContextRepairs(
           OR (t.linkedin_url IS NOT NULL AND TRIM(t.linkedin_url) <> '')
           OR (t.portfolio_url IS NOT NULL AND TRIM(t.portfolio_url) <> '')
           OR t.phone_screener_consent = 1
+          OR EXISTS (
+            SELECT 1
+              FROM applications app
+             WHERE app.legacy_candidate_id = c.id
+               AND app.pipeline_id IS NULL
+          )
         )
       ORDER BY t.updated_at DESC
       LIMIT ?1`,

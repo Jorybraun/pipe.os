@@ -564,6 +564,7 @@ describe('stale Workers AI candidate-ingestion retry', () => {
 
     const selectCall = db.__calls.find((call) => call.sql.includes('FROM talent_pool_intakes'))!;
     expect(selectCall.params[0]).toBe(2);
+    expect(selectCall.sql).toContain('FROM applications app');
     expect(ensureRolelessTalentPoolIdentity).toHaveBeenCalledTimes(2);
     expect(ensureRolelessTalentPoolIdentity).toHaveBeenCalledWith(expect.objectContaining({
       candidateId: 'talent-1',

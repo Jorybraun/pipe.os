@@ -133,6 +133,56 @@ async function contextRecordTablesReady(db: D1Database): Promise<boolean> {
   return true;
 }
 
+async function removeRolelessLegacyApplicationBridge(input: {
+  db: D1Database;
+  candidateId: string;
+}): Promise<void> {
+  const { db, candidateId } = input;
+  if (!await tableExists(db, 'applications')) return;
+
+  const rows = await db.prepare(
+    `SELECT id
+       FROM applications
+      WHERE legacy_candidate_id = ?1
+        AND pipeline_id IS NULL`,
+  ).bind(candidateId).all<{ id: string }>();
+  const applicationIds = (rows.results ?? []).map((row) => row.id);
+  if (applicationIds.length === 0) return;
+
+  const hasInteractionsApplication = await tableColumnExists(db, 'interactions', 'application_id');
+  const hasContextRecordsApplication = await tableColumnExists(db, 'context_records', 'application_id');
+  const hasPersonRoles = await tableExists(db, 'person_roles');
+
+  for (const applicationId of applicationIds) {
+    if (hasInteractionsApplication) {
+      await db.prepare(
+        `UPDATE interactions
+            SET application_id = NULL
+          WHERE application_id = ?1`,
+      ).bind(applicationId).run();
+    }
+    if (hasContextRecordsApplication) {
+      await db.prepare(
+        `UPDATE context_records
+            SET application_id = NULL
+          WHERE application_id = ?1`,
+      ).bind(applicationId).run();
+    }
+    if (hasPersonRoles) {
+      await db.prepare(
+        `DELETE FROM person_roles
+          WHERE application_id = ?1`,
+      ).bind(applicationId).run();
+    }
+    await db.prepare(
+      `DELETE FROM applications
+        WHERE id = ?1
+          AND legacy_candidate_id = ?2
+          AND pipeline_id IS NULL`,
+    ).bind(applicationId, candidateId).run();
+  }
+}
+
 function epochFromIso(value: string): number {
   const millis = Date.parse(value);
   return Number.isFinite(millis) ? Math.floor(millis / 1000) : Math.floor(Date.now() / 1000);
@@ -632,6 +682,7 @@ export async function ensureRolelessTalentPoolIdentity(input: {
     operationalContext,
     now,
   });
+  await removeRolelessLegacyApplicationBridge({ db, candidateId });
 
   return { personId: person.id, workspacePersonId: workspacePerson.id };
 }

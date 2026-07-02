@@ -39,7 +39,8 @@ The verifier reports:
 - artifact versions, source spans, and context source refs
 - roleless `people` / `workspace_people` projection
 - accidental `applications` / `person_roles` for roleless Talent Pool members
-- ready challenge assignments vs. design-queue gaps
+- PR-backed ready challenge assignments vs. incomplete assignment rows and
+  design-queue gaps
 - source-less positive person claims
 - duplicate person-projected context edges
 
@@ -65,6 +66,10 @@ identity and background decomposition runs with legacy candidate-node mirroring
 disabled, so it must not create `applications` or `person_roles` before a
 role-backed process exists. Parser-only resume nodes without exact source
 quotes are skipped instead of becoming positive candidate claims.
+Scheduled living-context backfill must also skip roleless Talent Pool intake
+candidates; if an older job already fabricated a legacy application/person-role
+bridge, roleless identity repair detaches interaction/context rows from that
+application and removes the synthetic bridge.
 
 GitHub, LinkedIn, portfolio, phone-screener consent, phone number, timezone, and
 availability fields are stored as a normalized operational intake artifact with
@@ -80,6 +85,11 @@ projection, PDF/DOCX profile storage keys without extracted source spans, raw
 external refs or phone intent without operational context records, source-less
 positive claims, duplicate projected edges, candidate nodes with no exact
 source quote, or roleless application/person-role rows.
+
+Challenge assignment rows only count as ready when both `github_repo_url` and
+`github_pr_number` are present. Assignment rows without that PR-backed metadata
+are reported as assessment setup gaps and must not drive Talent Pool
+`CHALLENGE_READY`.
 
 Use `--require-context-records` when the proof must include claim-level person
 context records, not only roleless identity plus immutable source spans.

@@ -260,10 +260,34 @@ describe('auditCandidateIngestion', () => {
       contextRecordCount: 4,
       externalProfileRefContextCount: 2,
       phoneScreenerIntentContextCount: 1,
+      readyChallengeAssignmentCount: 0,
+      incompleteChallengeAssignmentCount: 0,
       designQueueCount: 1,
     });
     expect(audit.duplicateProjectedEdgeCount).toBe(0);
     expect(audit.sourceLessPositiveClaimCount).toBe(0);
+  });
+
+  it('reports assignment rows without repo and PR as assessment setup gaps', async () => {
+    sqlite = new Database(':memory:');
+    createSchema(sqlite);
+    seedSourceBackedTalentPoolCandidate(sqlite);
+    sqlite.prepare(
+      `INSERT INTO candidate_challenge_assignment (id, candidate_id, github_repo_url, github_pr_number)
+       VALUES ('assignment-incomplete', 'candidate-1', NULL, NULL)`,
+    ).run();
+
+    const audit = await auditCandidateIngestion(new SqliteQueryClient(sqlite), {
+      inviteToken: 'invite-token',
+      requireContextRecords: true,
+    });
+
+    expect(audit.status).toBe('ready');
+    expect(audit.personProjection.readyChallengeAssignmentCount).toBe(0);
+    expect(audit.personProjection.incompleteChallengeAssignmentCount).toBe(1);
+    expect(audit.nextActions).toContain(
+      '1 challenge assignment row(s) lack repo URL or PR number and cannot safely become Talent Pool assessment readiness.',
+    );
   });
 
   it('fails scoped audits when no candidate matches', async () => {
