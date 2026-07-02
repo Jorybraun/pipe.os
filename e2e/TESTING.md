@@ -313,7 +313,9 @@ persistence with score `54`, band `adequate`, and completed recruiter/profile
 results.
 
 Use `npm run smoke:open-source-workspace-dev` for the real open-source bug-fix
-workspace path. It creates an `OPEN_SOURCE_BUG_FIX` invite, launches the
+workspace path. It creates an `OPEN_SOURCE_BUG_FIX` invite, opens the deployed
+guest room in a browser, requires the candidate task brief to show the concrete
+repo, base commit, task, success criteria, and expected evidence, launches the
 controlled room workspace, verifies the bridge, confirms unchanged work is
 blocked, creates a real commit inside the workspace, finalizes the live
 workspace `HEAD`, requires `git_commit`, `code_diff`, `terminal_command`, and

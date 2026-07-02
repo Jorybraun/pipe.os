@@ -88,6 +88,7 @@ const EXPECTED_BRIDGE_REVISION = process.env.WORKSPACE_SMOKE_EXPECTED_BRIDGE_REV
   || '2026-06-30-assessment-branch-v1';
 const REQUIRE_ROOM = process.env.WORKSPACE_SMOKE_REQUIRE_ROOM === '1';
 const SKIP_RECRUITER_BROWSER = process.env.WORKSPACE_SMOKE_SKIP_RECRUITER_BROWSER === '1';
+const SKIP_CANDIDATE_BROWSER = process.env.WORKSPACE_SMOKE_SKIP_CANDIDATE_BROWSER === '1';
 const REMOTE = !APP_BASE.includes('localhost') && !APP_BASE.includes('127.0.0.1');
 
 function assertEnv() {
@@ -171,6 +172,15 @@ function authHeadersFromUrl(rawUrl) {
   const user = decodeURIComponent(url.username);
   const password = decodeURIComponent(url.password);
   return basicAuthHeaders(user, password);
+}
+
+function authCredentialsFromUrl(rawUrl) {
+  const url = new URL(rawUrl);
+  if (!url.username && !url.password) return null;
+  return {
+    username: decodeURIComponent(url.username),
+    password: decodeURIComponent(url.password),
+  };
 }
 
 function mergedRoomAuthHeaders(roomHeaders = {}) {
@@ -332,6 +342,13 @@ function cleanRoomUrl(rawUrl) {
   url.username = '';
   url.password = '';
   return url.toString().replace(/\/room\/.+$/, '/room/<token>');
+}
+
+function roomUrlWithoutCredentials(rawUrl) {
+  const url = new URL(rawUrl);
+  url.username = '';
+  url.password = '';
+  return url.toString();
 }
 
 function cleanMaybeAssessUrl(rawUrl) {
@@ -518,6 +535,56 @@ async function assertRecruiterReviewerReceiptBrowser(interviewId, workspaceCommi
     await expect(receipt).toContainText('Recorded by');
     await expect(receipt).toContainText('Human reviewer');
     await expect(receipt).not.toContainText('dev-user');
+
+    return { skipped: false };
+  } finally {
+    await context.close();
+    await browser.close();
+  }
+}
+
+async function assertCandidateTaskBriefBrowser(guestUrl, expectedRepoUrl, expectedBaseCommitSha) {
+  if (SKIP_CANDIDATE_BROWSER) {
+    return { skipped: true, reason: 'WORKSPACE_SMOKE_SKIP_CANDIDATE_BROWSER=1' };
+  }
+
+  const roomCredentials = authCredentialsFromUrl(guestUrl);
+  const browser = await chromium.launch({ headless: true });
+  const context = await browser.newContext({
+    ...(REMOTE && roomCredentials
+      ? { httpCredentials: roomCredentials }
+      : {}),
+    viewport: { width: 1440, height: 1000 },
+  });
+
+  try {
+    const page = await context.newPage();
+    const url = new URL(roomUrlWithoutCredentials(guestUrl));
+    url.searchParams.set('workspaceSmoke', String(Date.now()));
+    await page.goto(url.toString(), {
+      waitUntil: 'domcontentloaded',
+      timeout: 60_000,
+    });
+
+    const brief = page.getByTestId('assessment-task-brief');
+    await expect(brief).toBeVisible({ timeout: 60_000 });
+    await expect(brief).toContainText('Assessment task');
+    await expect(brief).toContainText('Open-source implementation');
+    const repoLabel = repoLabelFromUrl(expectedRepoUrl);
+    if (repoLabel) await expect(brief).toContainText(repoLabel);
+    if (expectedBaseCommitSha) {
+      await expect(brief).toContainText(expectedBaseCommitSha.slice(0, 10));
+    }
+    await expect(brief).toContainText('Task');
+    await expect(brief).toContainText('Success criteria');
+    await expect(brief).toContainText('Expected evidence');
+
+    if (CHANGE_PROFILE) {
+      await expect(brief).toContainText('popover');
+      await expect(brief).toContainText('500');
+      await expect(brief).toContainText('git_commit');
+      await expect(brief).toContainText('code_diff');
+    }
 
     return { skipped: false };
   } finally {
@@ -730,6 +797,11 @@ async function main() {
       throw new Error(`Workspace packet base commit mismatch: ${JSON.stringify(challenge?.packet)}`);
     }
   }
+  const candidateBrowser = await assertCandidateTaskBriefBrowser(
+    invited.room.guestUrl,
+    expectedRepoUrl,
+    expectedBaseCommitSha,
+  );
 
   const readySession = await launchWorkspaceUntilReady(hostToken, roomAuthHeaders);
   if (!readySession.proxyPath) {
@@ -874,6 +946,8 @@ async function main() {
       ?? null,
     challengeStatus: workspace.challenge?.status ?? null,
     challengeSource: workspace.challenge?.source ?? null,
+    candidateTaskBriefVisible: !candidateBrowser.skipped,
+    candidateTaskBriefSkippedReason: candidateBrowser.skipped ? candidateBrowser.reason : null,
     workspaceStatus: readySession.status,
     proxyPathReady: Boolean(readySession.proxyPath),
     bridgeHealthReady: true,
