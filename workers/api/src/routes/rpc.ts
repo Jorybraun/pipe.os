@@ -1747,6 +1747,51 @@ async function loadReadyStandaloneCodeReviewAssignment(
   };
 }
 
+async function recentlyAttemptedStandaloneReviewMatch(
+  db: D1Database,
+  candidateId: string,
+  nowMs = Date.now(),
+): Promise<boolean> {
+  const latest = await db.prepare(
+    `SELECT created_at
+       FROM match_runs
+      WHERE candidate_id = ?1
+      ORDER BY created_at DESC
+      LIMIT 1`,
+  ).bind(candidateId).first<{ created_at: number | null }>().catch(() => null);
+  if (typeof latest?.created_at !== 'number') return false;
+  return nowMs - latest.created_at * 1000 < 5 * 60 * 1000;
+}
+
+async function maybeQueueStandaloneReviewAssignment(
+  env: Env,
+  executionCtx: ExecutionContext | null,
+  candidateId: string,
+): Promise<boolean> {
+  const readiness = await standaloneReviewEvidenceReadiness(env.DB, candidateId);
+  if (!readiness.ready) return false;
+  if (await recentlyAttemptedStandaloneReviewMatch(env.DB, candidateId)) return false;
+
+  const assignPromise = (async () => {
+    const review = await getPendingStandaloneReview(env.DB, candidateId);
+    if (!review) return;
+    if (await hasReadyStandaloneCodeReviewAssignment(env.DB, candidateId, review)) return;
+    await matchStandaloneSourceBackedAssignment(env.DB, candidateId, review, {
+      logLabel: 'standaloneReviewStageConfig',
+    });
+  })().catch((err) => {
+    const msg = err instanceof Error ? err.message : String(err);
+    console.error(`[standaloneReviewStageConfig] auto-assignment failed for ${candidateId}:`, msg);
+  });
+
+  if (executionCtx) {
+    executionCtx.waitUntil(assignPromise);
+  } else {
+    await assignPromise;
+  }
+  return true;
+}
+
 async function assessmentSessionsTableExists(db: D1Database): Promise<boolean> {
   const row = await db.prepare(
     `SELECT name
@@ -2955,6 +3000,7 @@ rpcAuth.post('/get-stage-config', async (c) => {
       );
       if (!hasReadyAssignment) {
         await maybeQueueRetryableStandaloneIngestion(c.env, optionalExecutionContext(c), candidateId);
+        await maybeQueueStandaloneReviewAssignment(c.env, optionalExecutionContext(c), candidateId);
         return c.json(candidateIntakeQueuedComplete('Profile received'));
       }
       return c.json({

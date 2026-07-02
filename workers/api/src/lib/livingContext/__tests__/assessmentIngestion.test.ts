@@ -7,6 +7,7 @@ import {
   loadAssessmentSessionData,
   ingestAssessmentSessionRealTime,
 } from '../assessmentIngestion';
+import { recordAssessmentCandidateProfileEvidence } from '../../assessmentLayer/candidateProfileEvidence';
 import type {
   AssessmentSessionRow,
   AssessmentEvidenceEventRow,
@@ -508,6 +509,92 @@ describe('ingestAssessmentSessionRealTime', () => {
     ).get() as Record<string, unknown>;
     expect(interaction).toBeTruthy();
     expect(interaction.interaction_type).toBe('assessment:CODE_REVIEW');
+  });
+
+  it('projects candidate profile snapshots into person context with exact source refs idempotently', async () => {
+    const now = '2026-06-02T12:30:00Z';
+    sqlite.exec(`
+      INSERT INTO assessment_sessions
+        (id, ingestion_key, mode, state, candidate_id, workspace_id, metadata_json, started_at, created_at, updated_at)
+      VALUES ('sess-rt-profile', 'key:sess-rt-profile', 'OPEN_SOURCE_BUG_FIX', 'IN_PROGRESS', 'cand-rt-1', 'owner-1', '{}', '${now}', '${now}', '${now}');
+    `);
+
+    const firstEvent = await recordAssessmentCandidateProfileEvidence(db, {
+      sessionId: 'sess-rt-profile',
+      occurredAt: now,
+    });
+    const secondEvent = await recordAssessmentCandidateProfileEvidence(db, {
+      sessionId: 'sess-rt-profile',
+      occurredAt: now,
+    });
+    expect(firstEvent).not.toBeNull();
+    expect(secondEvent?.id).toBe(firstEvent?.id);
+
+    const rawProfileRefs = sqlite.prepare(
+      `SELECT sr.source_ref_type, sr.source_ref_id, sr.evidence_role, sr.exact_text, e.kind
+         FROM assessment_event_source_refs sr
+         JOIN assessment_evidence_events e ON e.id = sr.event_id
+        WHERE e.session_id = 'sess-rt-profile'
+          AND sr.source_ref_type = 'candidate_profile'`,
+    ).all() as Array<{
+      source_ref_type: string;
+      source_ref_id: string;
+      evidence_role: string;
+      exact_text: string;
+      kind: string;
+    }>;
+    expect(rawProfileRefs).toHaveLength(1);
+    expect(rawProfileRefs[0]).toMatchObject({
+      source_ref_type: 'candidate_profile',
+      evidence_role: 'candidate_profile_snapshot',
+      kind: 'candidate_profile',
+    });
+    expect(rawProfileRefs[0].exact_text).toContain('Name: Bob');
+    expect(rawProfileRefs[0].exact_text).toContain('Email: bob@test.dev');
+
+    await ingestAssessmentSessionRealTime(db, 'sess-rt-profile');
+    await ingestAssessmentSessionRealTime(db, 'sess-rt-profile');
+
+    const projectedProfileRefs = sqlite.prepare(
+      `SELECT cr.record_type, cr.workspace_person_id,
+              csr.source_ref_type, csr.source_ref_id, csr.evidence_role, csr.exact_text
+         FROM context_records cr
+         JOIN context_record_source_refs csr ON csr.context_record_id = cr.id
+        WHERE cr.ingestion_key = ?
+          AND csr.source_ref_type = 'candidate_profile'`,
+    ).all(`assessment_event_context:${firstEvent?.id}`) as Array<{
+      record_type: string;
+      workspace_person_id: string | null;
+      source_ref_type: string;
+      source_ref_id: string;
+      evidence_role: string;
+      exact_text: string;
+    }>;
+    expect(projectedProfileRefs).toHaveLength(1);
+    expect(projectedProfileRefs[0]).toMatchObject({
+      record_type: 'assessment:candidate_profile',
+      source_ref_type: 'candidate_profile',
+      evidence_role: 'candidate_profile_snapshot',
+    });
+    expect(projectedProfileRefs[0].workspace_person_id).toBeTruthy();
+    expect(projectedProfileRefs[0].source_ref_id).toBe(rawProfileRefs[0].source_ref_id);
+    expect(projectedProfileRefs[0].exact_text).toBe(rawProfileRefs[0].exact_text);
+
+    const duplicateGroups = sqlite.prepare(
+      `SELECT cr.workspace_person_id, cr.record_type, sr.source_ref_type, sr.source_ref_id,
+              sr.evidence_role, COUNT(*) AS count
+         FROM context_records cr
+         JOIN context_record_source_refs sr ON sr.context_record_id = cr.id
+        WHERE cr.workspace_person_id IS NOT NULL
+          AND cr.interaction_id IN (
+            SELECT id FROM interactions WHERE external_reference = 'sess-rt-profile'
+          )
+          AND sr.source_ref_type = 'candidate_profile'
+        GROUP BY cr.workspace_person_id, cr.record_type, sr.source_ref_type,
+                 sr.source_ref_id, sr.evidence_role
+       HAVING COUNT(*) > 1`,
+    ).all();
+    expect(duplicateGroups).toEqual([]);
   });
 
   it('preserves commit, diff, test, upstream PR, AI, report, and human decision source refs without replay duplicates', async () => {

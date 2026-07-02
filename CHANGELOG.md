@@ -27,6 +27,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Fixed — CODE_REVIEW assessment runtime
 
+- Standalone CODE_REVIEW status checks now queue source-backed PR assignment when candidate evidence is already ready, keeping `/assess` on the safe profile-received handoff while preventing ready candidates from staying idle.
 - Standalone text-intake CODE_REVIEW invites now attempt source-backed PR assignment immediately after resume decomposition produces matchable evidence, so app-dev auto-match can unblock without waiting for the slower discovery/profile tail to finish.
 - Labelled match-quality evaluations now compute and enforce expected reason categories, so a case cannot pass solely because the verdict is correct when the rationale is wrong.
 - Candidate `/assess` pages now fail closed to the safe profile-received handoff when a standalone code review leaks a `WELCOME` plus `WAITING_FOR_MATCH` stage, preventing the old matching dashboard from resurfacing while challenge readiness is handled upstream.

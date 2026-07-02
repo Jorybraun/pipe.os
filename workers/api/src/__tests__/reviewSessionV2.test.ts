@@ -1427,6 +1427,97 @@ describe('POST /rpc/get-stage-config', () => {
       decompositionResult: null,
     }));
   });
+
+  it('queues standalone CODE_REVIEW assignment from stage-config once source-backed evidence is already ready', async () => {
+    vi.mocked(matchCandidateToReviewChallenge).mockResolvedValueOnce({
+      status: 'MATCHED',
+      repoId: 973,
+      prNumber: 973,
+      explanation: automaticMatchExplanation(973, 0),
+    } as Awaited<ReturnType<typeof matchCandidateToReviewChallenge>>);
+
+    const db = fakeD1({
+      firstResponders: [
+        {
+          match: 'FROM candidates WHERE id',
+          value: {
+            id: 'cand_1',
+            pipeline_id: null,
+            owner_id: 'owner_1',
+            current_stage_id: null,
+            resume_s3_key: 'text-intake/cand_1/ready',
+          },
+        },
+        {
+          match: 'FROM candidates c WHERE c.id',
+          value: {
+            resume_s3_key: 'text-intake/cand_1/ready',
+            raw_node_count: 16,
+            node_count: 16,
+          },
+        },
+        {
+          match: "interview_type = 'CODE_REVIEW'",
+          value: {
+            id: 'standalone_stage_config_match',
+            status: 'INVITED',
+            created_at: '2026-07-02T16:00:00.000Z',
+            matched_repo_id: null,
+            github_repo_url: null,
+            github_pr_number: null,
+            submission_json: null,
+          },
+        },
+        {
+          match: 'LEFT JOIN candidate_ingestion',
+          value: {
+            resume_s3_key: 'text-intake/cand_1/ready',
+            status: 'pending',
+            current_step: 'decompose_resume',
+            error_text: null,
+            node_count: 16,
+            raw_node_count: 16,
+            updated_at: '2026-07-02T16:00:05.000Z',
+          },
+        },
+        { match: 'FROM match_runs', value: null },
+        { match: 'SELECT github_url FROM qualified_repos', value: { github_url: 'https://github.com/mui/base-ui' } },
+      ],
+    });
+    const env = buildEnv({ DB: db });
+    const { ctx, waitUntilAll } = buildCtx();
+
+    const res = await rpcAuth.request(
+      '/get-stage-config',
+      {
+        method: 'POST',
+        headers: { Authorization: await authHeaderWithoutPipeline() },
+      },
+      env,
+      ctx,
+    );
+
+    expect(res.status).toBe(200);
+    const body = await res.json() as {
+      isComplete?: boolean;
+      stageId?: string;
+      message?: string;
+    };
+    expect(body).toMatchObject({
+      isComplete: true,
+      stageId: 'candidate-intake-queued',
+      message: expect.stringContaining('email you when your code review is ready'),
+    });
+
+    await waitUntilAll();
+    expect(matchCandidateToReviewChallenge).toHaveBeenCalledOnce();
+    expect(db.__calls.some((call) =>
+      call.ran
+      && call.sql.includes('UPDATE scheduled_interviews')
+      && call.params.includes(973)
+      && call.params.includes('https://github.com/mui/base-ui')
+    )).toBe(true);
+  });
 });
 
 // ─── POST /rpc/submit-challenge-response ─────────────────────────────────────

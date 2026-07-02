@@ -42,12 +42,12 @@ const RELATED_BOUNDARY_PR_NUMBER = Number(
 );
 
 const DEFAULT_RESUME_TEXT = [
-  'Senior frontend platform engineer with deep React and TypeScript experience.',
-  'Recently implemented popover trigger click handling in usePopoverRoot for a large component library.',
-  'Designed a patient click threshold so impatient trigger clicks do not immediately close hover-open popovers.',
-  'Reviewed popup trigger id ownership bugs where rendered DOM ids diverged from internal registries and active-trigger state.',
-  'Comfortable assessing accessibility state, user interaction timing, implicit active trigger ownership, JavaScript test runner regression tests, and maintainability trade-offs.',
-  'I routinely explain review decisions to implementation authors and defend risk-based request-changes calls.',
+  'Senior frontend platform engineer shipping React and TypeScript popup infrastructure for a component library.',
+  'Recently implemented usePopoverRoot hover and click handoff logic with clickEnabled, clickEnabledTimeoutRef, PATIENT_CLICK_THRESHOLD, and ReactDOM.flushSync.',
+  'Reviewed onOpenChange handling for hover, safe-polygon, click, and escape-key transitions so impatient trigger clicks do not unexpectedly close popovers.',
+  'Debugged popupStoreUtils ownership bugs around activeTriggerId, triggerCount, queueMicrotask reconciliation, and rendered DOM ids diverging from internal trigger registries.',
+  'Wrote JavaScript test runner regressions for multi-trigger handoff, implicit active trigger ownership, accessibility state, and maintainability trade-offs.',
+  'I routinely explain request-changes review decisions to implementation authors and defend risk-based bug calls with concrete evidence.',
 ].join(' ');
 
 const RESUME_TEXT = (process.env.CODE_REVIEW_SMOKE_RESUME_TEXT || DEFAULT_RESUME_TEXT).trim();
