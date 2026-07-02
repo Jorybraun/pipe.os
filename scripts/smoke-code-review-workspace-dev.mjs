@@ -366,7 +366,11 @@ async function assertRecruiterAssessmentProjection(interviewId, workspaceCommit,
   if (commit.challengeBinding?.status !== 'bound_to_assigned_challenge' || commit.challengeBinding?.tone !== 'verified') {
     throw new Error(`Recruiter detail did not bind the commit to the assigned challenge: ${JSON.stringify(commit.challengeBinding)}`);
   }
-  if (progress.stage !== 'EVALUATED' || progress.nextAction !== 'REVIEW_EVALUATION') {
+  const hasRecordedHumanDecision = progress.humanDecision?.decision;
+  const isExpectedEvaluatedState = progress.stage === 'EVALUATED'
+    && (progress.nextAction === 'REVIEW_EVALUATION'
+      || (progress.nextAction === 'NONE' && hasRecordedHumanDecision));
+  if (!isExpectedEvaluatedState) {
     throw new Error(`Recruiter detail did not expose the evaluated review state: ${JSON.stringify(progress)}`);
   }
   const compareUrl = githubCompareUrl({
