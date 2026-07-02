@@ -390,12 +390,19 @@ function listContains(list, expected) {
   return Array.isArray(list) && list.includes(expected);
 }
 
+function countByField(list, field, expected) {
+  if (!Array.isArray(list)) return 0;
+  const match = list.find((item) => item?.[field] === expected);
+  return typeof match?.count === 'number' ? match.count : 0;
+}
+
 function auditHasExpectedEvidenceGap(report) {
   if (report.status !== 'not_ready') return false;
   if (report.rawCapture?.submittedIntakeCount !== 1) return false;
   if (report.rawCapture?.documentProfileStorageKeyCount !== 1) return false;
   if (report.ingestionState?.failedRowCount !== 0) return false;
   if (report.ingestionState?.errorTextRowCount !== 0) return false;
+  if (countByField(report.ingestionState?.steps, 'currentStep', 'profile_text_extraction_needed') !== 1) return false;
   if (report.sourceProof?.candidateNodeCount !== 0) return false;
   if (report.sourceProof?.profileUploadArtifactVersionCount < 1) return false;
   if (report.sourceProof?.documentProfileSourceSpanCount !== 0) return false;
@@ -635,6 +642,7 @@ async function main() {
     expectedEvidenceGap: expectsEvidenceGap,
     status: report.status,
     checkedAt: report.checkedAt,
+    ingestionSteps: report.ingestionState.steps,
     sourceLessPositiveClaimCount: report.sourceLessPositiveClaimCount,
     sourceLessDesignQueueSuggestionCount: report.sourceLessDesignQueueSuggestionCount,
     duplicateProjectedEdgeCount: report.duplicateProjectedEdgeCount,

@@ -18,6 +18,8 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - Talent Pool dev smoke now infers the remote D1 database id from the target app/API environment, so `app-dev` audits the `dev` D1 database instead of accidentally falling back to the root `CLOUDFLARE_D1_DATABASE_ID`.
 - Talent Pool dev smoke now defaults candidate RPC calls to the app-dev proxy and omits dev Basic Auth on direct `api-dev` RPC calls, so smoke proofs exercise the same proxy path candidates use while still supporting explicit API overrides.
 - Talent Pool unextractable PDF/DOCX uploads now remain explicit missing-evidence gaps instead of queuing a doomed background resume parser that marks candidate ingestion failed.
+- Talent Pool upload routing now skips background document parsing when foreground extraction already proved an uploaded PDF/DOCX has no usable source text, preserving the pending `profile_text_extraction_needed` evidence-gap state.
+- Candidate-ingestion audit output now includes current-step counts, making missing-evidence states such as `profile_text_extraction_needed` visible in smoke proofs.
 - Added `smoke:talent-pool-ingestion-dev` to create a dev Talent Pool candidate, submit public profile evidence, and poll the candidate-ingestion audit for source-backed person projection proof.
 - Added `smoke:talent-pool-upload-dev` to prove multipart plain-text Talent Pool uploads reach the same source-backed person projection, including the original upload artifact receipt.
 - Added `smoke:talent-pool-docx-dev` to prove live DOCX profile uploads extract exact source spans, preserve the upload artifact receipt, and stay free of source-less or duplicate projections.

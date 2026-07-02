@@ -499,6 +499,7 @@ function queueProfileIngestion(input: {
   contentType: string;
   resumeText: string;
   livingContextIdentity?: RolelessTalentPoolIdentity | null;
+  sourceTextUnavailable?: boolean;
 }): void {
   const trimmedText = input.resumeText.trim();
   if (trimmedText.length >= 20) {
@@ -516,8 +517,11 @@ function queueProfileIngestion(input: {
   }
 
   if (
-    input.contentType === 'application/pdf'
-    || input.contentType === 'application/vnd.openxmlformats-officedocument.wordprocessingml.document'
+    !input.sourceTextUnavailable
+    && (
+      input.contentType === 'application/pdf'
+      || input.contentType === 'application/vnd.openxmlformats-officedocument.wordprocessingml.document'
+    )
   ) {
     queueBackgroundTask(
       input.c,
@@ -557,6 +561,24 @@ async function ensureCandidateIngestionQueued(
          updated_at = excluded.updated_at`,
     )
     .bind(candidateId, input.githubUrl ?? null, input.linkedinUrl ?? null, now)
+    .run();
+}
+
+async function markProfileTextExtractionNeeded(
+  db: D1Database,
+  candidateId: string,
+  now: string,
+): Promise<void> {
+  await db
+    .prepare(
+      `UPDATE candidate_ingestion
+          SET status = CASE WHEN status = 'failed' THEN 'pending' ELSE status END,
+              current_step = 'profile_text_extraction_needed',
+              error_text = NULL,
+              updated_at = ?1
+        WHERE candidate_id = ?2`,
+    )
+    .bind(now, candidateId)
     .run();
 }
 
@@ -790,6 +812,7 @@ route.post('/upload-profile', async (c) => {
   const fileHash = await sha256Hex(arrayBuffer);
   const profileKey = `talent-intake/${candidate.id}/${fileHash}-${rawFileName}`;
   let resumeText = parsed.data.resumeText.trim();
+  let foregroundDocumentExtractionAttempted = false;
   if (contentType === 'text/plain' && resumeText.length === 0) {
     resumeText = new TextDecoder().decode(arrayBuffer).trim().slice(0, 50_000);
   }
@@ -798,6 +821,7 @@ route.post('/upload-profile', async (c) => {
     && (contentType === 'application/pdf'
       || contentType === 'application/vnd.openxmlformats-officedocument.wordprocessingml.document')
   ) {
+    foregroundDocumentExtractionAttempted = true;
     try {
       resumeText = (await extractTextFromResumeFile(arrayBuffer, contentType)).trim().slice(0, 50_000);
     } catch (err) {
@@ -809,6 +833,7 @@ route.post('/upload-profile', async (c) => {
       });
     }
   }
+  const sourceTextUnavailable = foregroundDocumentExtractionAttempted && resumeText.length < 20;
 
   const profileInput: SubmitProfileInput = {
     ...parsed.data,
@@ -837,6 +862,9 @@ route.post('/upload-profile', async (c) => {
       extractedTextAvailable: resumeText.length >= 20,
     },
   });
+  if (sourceTextUnavailable) {
+    await markProfileTextExtractionNeeded(c.env.DB, candidate.id, now);
+  }
 
   const readyChallenges = await loadReadyChallenges(c.env.DB, candidate.id, candidate.invite_token);
   if (readyChallenges.length === 0) {
@@ -851,6 +879,7 @@ route.post('/upload-profile', async (c) => {
     contentType,
     resumeText,
     livingContextIdentity,
+    sourceTextUnavailable,
   });
 
   const refreshed = await loadCandidateByInviteToken(c.env.DB, parsed.data.inviteToken);

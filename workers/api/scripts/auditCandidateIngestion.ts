@@ -71,6 +71,7 @@ export interface CandidateRawCaptureAudit {
 export interface CandidateIngestionStateAudit {
   rowCount: number;
   statuses: Array<{ status: string; count: number }>;
+  steps: Array<{ currentStep: string; count: number }>;
   failedRowCount: number;
   errorTextRowCount: number;
 }
@@ -134,6 +135,11 @@ interface CountRow {
 
 interface StatusRow {
   status: string | null;
+  count: number;
+}
+
+interface CurrentStepRow {
+  current_step: string | null;
   count: number;
 }
 
@@ -404,6 +410,16 @@ async function loadIngestionState(
       ORDER BY status`,
     params,
   );
+  const steps = await client.query<CurrentStepRow>(
+    `${scopeSql}
+     SELECT COALESCE(NULLIF(TRIM(ci.current_step), ''), 'missing') AS current_step,
+            COUNT(*) AS count
+       FROM audited_candidates ac
+       LEFT JOIN candidate_ingestion ci ON ci.candidate_id = ac.id
+      GROUP BY COALESCE(NULLIF(TRIM(ci.current_step), ''), 'missing')
+      ORDER BY current_step`,
+    params,
+  );
   const summaryRows = await client.query<IngestionStateSummaryRow>(
     `${scopeSql}
      SELECT
@@ -424,6 +440,10 @@ async function loadIngestionState(
     rowCount,
     statuses: statuses.map((row) => ({
       status: row.status ?? 'missing',
+      count: toNumber(row.count),
+    })),
+    steps: steps.map((row) => ({
+      currentStep: row.current_step ?? 'missing',
       count: toNumber(row.count),
     })),
     failedRowCount: toNumber(summary?.failed_row_count),
@@ -861,6 +881,7 @@ export async function auditCandidateIngestion(
     ingestionState: {
       rowCount: 0,
       statuses: [],
+      steps: [],
       failedRowCount: 0,
       errorTextRowCount: 0,
     },
@@ -1208,6 +1229,7 @@ function printHuman(report: CandidateIngestionAudit, databasePath: string): void
   console.log(`  rows:                  ${report.ingestionState.rowCount}`);
   console.log(`  failed rows:           ${report.ingestionState.failedRowCount}`);
   console.log(`  rows with errors:      ${report.ingestionState.errorTextRowCount}`);
+  console.log(`  current steps:         ${report.ingestionState.steps.map((row) => `${row.currentStep}:${row.count}`).join(', ') || 'none'}`);
   console.log('');
   console.log('Source proof:');
   console.log(`  candidate nodes:       ${report.sourceProof.candidateNodeCount}`);

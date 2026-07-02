@@ -4,6 +4,7 @@ import { Hono } from 'hono';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import { createMockD1, type BetterSqliteDb } from '../../__tests__/helpers/mockD1';
 import { runCandidateIngestion } from '../../lib/candidateDiscovery/orchestrate';
+import { processResumeFromR2 } from '../../lib/enrichment/resumeIngestion';
 import { talentPoolPublic } from '../talentPool';
 import type { Env, Variables } from '../../types';
 
@@ -12,6 +13,14 @@ vi.mock('../../lib/candidateDiscovery/orchestrate', async (importOriginal) => {
   return {
     ...actual,
     runCandidateIngestion: vi.fn(async () => undefined),
+  };
+});
+
+vi.mock('../../lib/enrichment/resumeIngestion', async (importOriginal) => {
+  const actual = await importOriginal<typeof import('../../lib/enrichment/resumeIngestion')>();
+  return {
+    ...actual,
+    processResumeFromR2: vi.fn(async () => ({ success: true, parsed: null })),
   };
 });
 
@@ -1188,6 +1197,7 @@ describe('talent pool candidate RPC', () => {
     seedCandidate(sqlite);
     const storage = createMemoryR2();
     const app = createApp();
+    const { ctx, waitUntilAll } = buildCtx();
     const formData = new FormData();
     formData.set('inviteToken', 'invite-token');
     formData.set('file', new File(['not a real pdf'], 'empty-profile.pdf', { type: 'application/pdf' }));
@@ -1195,9 +1205,11 @@ describe('talent pool candidate RPC', () => {
     const res = await app.request('/rpc/talent/upload-profile', {
       method: 'POST',
       body: formData,
-    }, createEnv(sqlite, storage));
+    }, createEnv(sqlite, storage), ctx);
 
     expect(res.status).toBe(200);
+    await waitUntilAll();
+    expect(processResumeFromR2).not.toHaveBeenCalled();
     const body = await res.json() as TalentDashboardBody;
     expect(body.status).toBe('CHALLENGE_PREPARING');
     expect(body.readyChallenges).toEqual([]);
@@ -1234,7 +1246,7 @@ describe('talent pool candidate RPC', () => {
         WHERE candidate_id = 'candidate-1'`,
     ).get()).toEqual({
       status: 'pending',
-      current_step: 'talent_pool_profile_received',
+      current_step: 'profile_text_extraction_needed',
       error_text: null,
     });
 

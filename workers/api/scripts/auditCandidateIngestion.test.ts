@@ -362,6 +362,9 @@ describe('auditCandidateIngestion', () => {
       externalProfileRefCount: 2,
       phoneScreenerIntentCount: 1,
     });
+    expect(audit.ingestionState.steps).toEqual([
+      { currentStep: 'talent_pool_profile_received', count: 1 },
+    ]);
     expect(audit.sourceProof).toMatchObject({
       candidateNodeCount: 1,
       candidateNodeExactSourceQuoteCount: 1,
@@ -524,6 +527,9 @@ describe('auditCandidateIngestion', () => {
     expect(audit.status).toBe('not_ready');
     expect(audit.ingestionState.failedRowCount).toBe(1);
     expect(audit.ingestionState.errorTextRowCount).toBe(1);
+    expect(audit.ingestionState.steps).toEqual([
+      { currentStep: 'discover_profile', count: 1 },
+    ]);
     expect(audit.failures).toContain('1 submitted Talent Pool candidate_ingestion row(s) are failed');
     expect(audit.failures).toContain('1 submitted Talent Pool candidate_ingestion row(s) still carry error_text');
     expect(audit.nextActions).toContain('Replay or repair failed Talent Pool candidate_ingestion rows before treating ingestion as ready.');
@@ -745,6 +751,11 @@ describe('auditCandidateIngestion', () => {
           SET resume_s3_key = 'talent-intake/candidate-1/profile.pdf'
         WHERE id = 'candidate-1'`,
     ).run();
+    sqlite.prepare(
+      `UPDATE candidate_ingestion
+          SET current_step = 'profile_text_extraction_needed'
+        WHERE candidate_id = 'candidate-1'`,
+    ).run();
     sqlite.exec(`
       INSERT INTO interactions (id, workspace_person_id, interaction_type, external_reference, metadata_json)
       VALUES ('interaction-upload', 'workspace-person-1', 'file_upload', 'candidate-1', '{"source":"roleless_candidate_intake"}');
@@ -761,6 +772,9 @@ describe('auditCandidateIngestion', () => {
 
     expect(audit.status).toBe('not_ready');
     expect(audit.rawCapture.documentProfileStorageKeyCount).toBe(1);
+    expect(audit.ingestionState.steps).toEqual([
+      { currentStep: 'profile_text_extraction_needed', count: 1 },
+    ]);
     expect(audit.sourceProof.documentProfileSourceSpanCount).toBe(0);
     expect(audit.sourceProof.profileUploadArtifactVersionCount).toBe(1);
     expect(audit.failures).toContain('1 PDF/DOCX Talent Pool profile upload(s) lack extracted source spans for the current profile key');

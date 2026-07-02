@@ -70,6 +70,22 @@ function assert(condition, message) {
   if (!condition) throw new Error(message);
 }
 
+function sleep(ms) {
+  return new Promise((resolve) => {
+    setTimeout(resolve, ms);
+  });
+}
+
+async function pollInterviewDetail(interviewId) {
+  let lastDetail = null;
+  for (let attempt = 1; attempt <= 8; attempt += 1) {
+    lastDetail = await requestJson(`/api/v1/scheduling/interviews/${interviewId}`);
+    if (!EXPECT_EMAIL_SENT || lastDetail?.interview?.emailSentAt) return lastDetail;
+    await sleep(1500);
+  }
+  return lastDetail;
+}
+
 async function main() {
   assertEnv();
 
@@ -96,10 +112,11 @@ async function main() {
   assert(invited?.room?.guestUrl === invited.meetingUrl, 'Invite meetingUrl must be the canonical guest room link.');
   assert(invited?.room?.hostUrl && invited.room.hostUrl !== invited.room.guestUrl, 'Host and guest room links must be distinct.');
   if (EXPECT_EMAIL_SENT) {
-    assert(invited.emailSent === true, `Expected Cloudflare email delivery, got: ${JSON.stringify(invited)}`);
+    assert(invited.emailSent === false, `Invite POST should return before background email completes: ${JSON.stringify(invited)}`);
+    assert(invited.emailQueued === true, `Expected background email delivery to be queued, got: ${JSON.stringify(invited)}`);
   }
 
-  const detail = await requestJson(`/api/v1/scheduling/interviews/${interviewId}`);
+  const detail = await pollInterviewDetail(interviewId);
   const interview = detail?.interview;
   assert(interview?.id === interviewId, 'Detail response returned the wrong interview.');
   assert(
@@ -125,6 +142,7 @@ async function main() {
     ok: true,
     interviewId,
     emailSent: invited.emailSent,
+    emailQueued: invited.emailQueued ?? false,
     provider: invited.provider ?? null,
     meetingUrl: cleanRoomUrl(invited.meetingUrl),
     hostUrl: cleanRoomUrl(invited.room.hostUrl),

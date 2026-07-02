@@ -96,8 +96,11 @@ blob with storage key, content hash, media type, byte length, and filename.
 This artifact is source inventory only: if no exact text can be extracted, it
 must not create a source span, context record, candidate node, skill, readiness
 claim, or repo-family suggestion. PDF/DOCX extraction still runs in background
-resume ingestion when foreground extraction is unavailable. When foreground
-text extraction succeeds, the profile text artifact version stores the uploaded
+resume ingestion when foreground extraction is unavailable, but the upload route
+does not queue a doomed background parser after foreground extraction already
+proved the file has no usable source text; `candidate_ingestion.current_step`
+stays as the pending `profile_text_extraction_needed` gap. When foreground text
+extraction succeeds, the profile text artifact version stores the uploaded
 profile storage key so source spans can be checked against the current file.
 Scheduled Talent Pool repair also treats missing `profile_upload` receipts as
 repairable projection state. For content-hash upload keys shaped like
@@ -228,7 +231,9 @@ it uploads an unextractable PDF and expects the audit to remain `not_ready`
 while proving raw blob capture, the profile-upload receipt, roleless person
 projection, zero source-less positive claims, zero source-less design suggestions,
 zero duplicate projected edges, no failed `candidate_ingestion` state, and no
-candidate-node projection from invite/upload placeholders.
+candidate-node projection from invite/upload placeholders. It also requires the
+scoped `candidate_ingestion.current_step` to be
+`profile_text_extraction_needed`.
 
 Latest app-dev proof on 2026-07-02 used invite token
 `talent-audit-532e4287e-c1` after deploying Worker version
@@ -313,8 +318,10 @@ explicit extraction gap instead of a failed ingestion row. The audit returned
 `status: not_ready`, `documentProfileStorageKeyCount: 1`,
 `profileUploadArtifactVersionCount: 1`, `documentProfileSourceSpanCount: 0`,
 `candidateNodeCount: 0`, `candidateNodeExactSourceQuoteCount: 0`,
-`contextSourceRefCount: 7`, `talentPoolWorkspacePersonCount: 1`,
-`designQueueCount: 1`, `sourceLessPositiveClaimCount: 0`,
+`contextSourceRefCount: 7`, `ingestionSteps:
+[{currentStep: "profile_text_extraction_needed", count: 1}]`,
+`talentPoolWorkspacePersonCount: 1`, `designQueueCount: 1`,
+`sourceLessPositiveClaimCount: 0`,
 `sourceLessDesignQueueSuggestionCount: 0`, and `duplicateProjectedEdgeCount: 0`.
 
 Remote source-span sampling proved operational context refs preserve exact
