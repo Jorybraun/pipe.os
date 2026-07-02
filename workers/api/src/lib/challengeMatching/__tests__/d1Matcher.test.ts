@@ -3,6 +3,7 @@ import { createRequire } from 'node:module';
 import { afterEach, beforeEach, describe, expect, it } from 'vitest';
 import {
   deriveCorpusGenericConcepts,
+  matchContrastSeparation,
   matchCandidateToReviewChallenge,
 } from '../d1Matcher';
 import type { ChallengePacket } from '../types';
@@ -62,6 +63,22 @@ const assessmentLayerMigration = readFileSync(
   new URL('../../../../migrations/0102_assessment_layer.sql', import.meta.url),
   'utf8',
 );
+
+describe('matchContrastSeparation', () => {
+  it('uses candidate-evidence separation when blended final scores are flattened by role constants', () => {
+    expect(matchContrastSeparation(
+      { finalScore: 0.5371535955087716, candidateEvidenceAlignment: 0.10430719101754309 },
+      { finalScore: 0.518449074074074, candidateEvidenceAlignment: 0.06689814814814814 },
+    )).toBeCloseTo(0.03740904286939495, 8);
+  });
+
+  it('returns null when there is no comparable challenge', () => {
+    expect(matchContrastSeparation(
+      { finalScore: 0.5371535955087716, candidateEvidenceAlignment: 0.10430719101754309 },
+      null,
+    )).toBeNull();
+  });
+});
 
 type SqlValue = string | number | null;
 
