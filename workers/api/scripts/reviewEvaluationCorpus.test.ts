@@ -446,6 +446,12 @@ describe('evaluation corpus review CLI', () => {
     const summary = JSON.parse(await readFile(summaryPath, 'utf8')) as {
       sourceCorpusId: string;
       draftPersisted: boolean;
+      readinessSummary: {
+        nextAction: string;
+        labelsNeedingHumanReview: string[];
+        labelsMissingExpectedPacket: string[];
+        labelsMissingRepoDemandEvidence: string[];
+      };
       seeded: {
         matchRunCount: number;
         labelCount: number;
@@ -465,6 +471,12 @@ describe('evaluation corpus review CLI', () => {
       expertLabelCount: 0,
       expectedPacketCount: 1,
       warnings: [],
+    }));
+    expect(summary.readinessSummary).toEqual(expect.objectContaining({
+      nextAction: 'complete_expert_review',
+      labelsNeedingHumanReview: ['seeded-match-run-1-packet-1'],
+      labelsMissingExpectedPacket: [],
+      labelsMissingRepoDemandEvidence: [],
     }));
     expect(summary.nextAction).toBe('complete_expert_review');
 
@@ -580,7 +592,12 @@ describe('evaluation corpus review CLI', () => {
     expect(template.labels[0]?.explanation).toContain('TODO');
     expect(JSON.parse(await readFile(summaryPath, 'utf8'))).toEqual(expect.objectContaining({
       sourceCorpusId: 'sample-corpus-v1',
-      nextAction: 'complete_expert_review',
+      readinessSummary: expect.objectContaining({
+        nextAction: 'fix_corpus_source_evidence',
+        labelsMissingExpectedPacket: ['label-1'],
+        labelsMissingRepoDemandEvidence: ['label-1'],
+      }),
+      nextAction: 'fix_corpus_source_evidence',
     }));
   });
 
@@ -634,7 +651,13 @@ describe('evaluation corpus review CLI', () => {
     expect(JSON.parse(await readFile(summaryPath, 'utf8'))).toEqual(expect.objectContaining({
       reviewedCorpusId: 'sample-corpus-v1-expert-reviewed',
       productionReady: true,
-      nextAction: 'run_evaluation',
+      readinessSummary: expect.objectContaining({
+        nextAction: 'fix_corpus_source_evidence',
+        labelsNeedingHumanReview: [],
+        labelsMissingExpectedPacket: ['label-1'],
+        labelsMissingRepoDemandEvidence: ['label-1'],
+      }),
+      nextAction: 'fix_corpus_source_evidence',
     }));
   });
 

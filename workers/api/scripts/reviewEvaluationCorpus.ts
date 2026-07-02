@@ -14,6 +14,7 @@ import {
   seedCorpusFromMatchRuns,
   type ApplyExpertCorpusReviewInput,
   type CorpusReviewPacket,
+  type CorpusReviewReadinessSummary,
   type CorpusSeederResult,
   type EvaluationCorpus,
   type ExpertLabelReview,
@@ -96,9 +97,10 @@ export interface CorpusReviewCliSummary {
   persisted?: boolean;
   productionReady?: boolean;
   productionReadinessFailures?: string[];
+  readinessSummary?: CorpusReviewReadinessSummary;
   expertLabelCount?: number;
   syntheticFixtureCount?: number;
-  nextAction: 'review_exported' | 'complete_expert_review' | 'run_evaluation';
+  nextAction: 'review_exported' | 'complete_expert_review' | 'fix_corpus_source_evidence' | 'run_evaluation';
 }
 
 const scriptDir = dirname(fileURLToPath(import.meta.url));
@@ -444,6 +446,14 @@ function templateReviewLabel(item: CorpusReviewPacket['items'][number]): ExpertL
   };
 }
 
+function cliNextActionFromReadiness(
+  readiness: CorpusReviewReadinessSummary,
+): CorpusReviewCliSummary['nextAction'] {
+  return readiness.nextAction === 'ready_for_evaluation'
+    ? 'run_evaluation'
+    : readiness.nextAction;
+}
+
 export function buildExpertReviewTemplate(
   packet: CorpusReviewPacket,
   defaults?: {
@@ -530,7 +540,8 @@ export async function runCorpusReviewCli(argv: string[]): Promise<number> {
     const packet = buildCorpusReviewPacket(source);
     const summary: CorpusReviewCliSummary = {
       sourceCorpusId: sourceCorpusId(source),
-      nextAction: 'review_exported',
+      readinessSummary: packet.readinessSummary,
+      nextAction: cliNextActionFromReadiness(packet.readinessSummary),
     };
     if (loadedSource.seedResult) {
       summary.seeded = summarizeSeededCorpus(loadedSource.seedResult);
@@ -557,7 +568,7 @@ export async function runCorpusReviewCli(argv: string[]): Promise<number> {
         ...(options.rubricVersion ? { rubricVersion: options.rubricVersion } : {}),
       }));
       summary.reviewTemplatePath = resolve(apiRoot, options.reviewTemplatePath);
-      summary.nextAction = 'complete_expert_review';
+      summary.nextAction = cliNextActionFromReadiness(packet.readinessSummary);
     }
 
     if (options.reviewFile) {
@@ -569,13 +580,17 @@ export async function runCorpusReviewCli(argv: string[]): Promise<number> {
       }
       assertCompletedReview(review);
       const result = await applyExpertCorpusReview(source, review);
+      const reviewedPacket = buildCorpusReviewPacket(result.corpus);
       summary.reviewFile = resolve(apiRoot, options.reviewFile);
       summary.reviewedCorpusId = result.corpus.corpusId;
       summary.productionReady = result.productionReady;
       summary.productionReadinessFailures = result.productionReadinessFailures;
+      summary.readinessSummary = reviewedPacket.readinessSummary;
       summary.expertLabelCount = result.expertLabelCount;
       summary.syntheticFixtureCount = result.syntheticFixtureCount;
-      summary.nextAction = result.productionReady ? 'run_evaluation' : 'complete_expert_review';
+      summary.nextAction = result.productionReady
+        ? cliNextActionFromReadiness(reviewedPacket.readinessSummary)
+        : 'complete_expert_review';
 
       if (options.reviewedCorpusPath) {
         writeJsonFile(options.reviewedCorpusPath, result.corpus);
