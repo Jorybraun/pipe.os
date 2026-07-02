@@ -543,6 +543,19 @@ async function assertRecruiterReviewerReceiptBrowser(interviewId, workspaceCommi
   }
 }
 
+async function enterRoomFromPrejoinIfNeeded(page) {
+  const enterWithoutDevices = page.getByRole('button', { name: /enter without mic\/camera/i });
+  if (await enterWithoutDevices.isVisible({ timeout: 5_000 }).catch(() => false)) {
+    await enterWithoutDevices.click();
+    return;
+  }
+
+  const enterRoom = page.getByRole('button', { name: /enter room|join room|join/i });
+  if (await enterRoom.isVisible({ timeout: 2_000 }).catch(() => false)) {
+    await enterRoom.click();
+  }
+}
+
 async function assertCandidateTaskBriefBrowser(guestUrl, expectedRepoUrl, expectedBaseCommitSha) {
   if (SKIP_CANDIDATE_BROWSER) {
     return { skipped: true, reason: 'WORKSPACE_SMOKE_SKIP_CANDIDATE_BROWSER=1' };
@@ -565,6 +578,7 @@ async function assertCandidateTaskBriefBrowser(guestUrl, expectedRepoUrl, expect
       waitUntil: 'domcontentloaded',
       timeout: 60_000,
     });
+    await enterRoomFromPrejoinIfNeeded(page);
 
     const brief = page.getByTestId('assessment-task-brief');
     await expect(brief).toBeVisible({ timeout: 60_000 });
