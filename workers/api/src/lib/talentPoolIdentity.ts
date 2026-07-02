@@ -84,7 +84,32 @@ async function loadWorkspacePersonContext(
   return parseJsonObject(existing?.context_json ?? null);
 }
 
+async function tableExists(db: D1Database, tableName: string): Promise<boolean> {
+  const row = await db.prepare(
+    `SELECT name
+       FROM sqlite_master
+      WHERE type = 'table'
+        AND name = ?1
+      LIMIT 1`,
+  ).bind(tableName).first<{ name: string }>();
+  return Boolean(row);
+}
+
+async function contextRecordTablesReady(db: D1Database): Promise<boolean> {
+  for (const tableName of [
+    'context_records',
+    'context_record_source_refs',
+    'context_record_source_spans',
+    'context_record_entities',
+    'context_record_concepts',
+  ]) {
+    if (!await tableExists(db, tableName)) return false;
+  }
+  return true;
+}
+
 async function persistRolelessMessageArtifact(input: {
+  db: D1Database;
   store: LivingContextStore;
   workspacePersonId: string;
   candidateId: string;
@@ -131,7 +156,7 @@ async function persistRolelessMessageArtifact(input: {
       roleless: true,
     },
   });
-  await input.store.createSourceSpan({
+  const span = await input.store.createSourceSpan({
     ingestionKey: `${baseKey}:span:full`,
     artifactVersionId: version.id,
     stableSegmentId: 'full-message',
@@ -143,6 +168,38 @@ async function persistRolelessMessageArtifact(input: {
       source: 'roleless_candidate_intake',
       roleless: true,
     },
+  });
+
+  if (!await contextRecordTablesReady(input.db)) return;
+
+  await input.store.upsertContextRecord({
+    ingestionKey: `${baseKey}:context-record:profile-intake`,
+    workspacePersonId: input.workspacePersonId,
+    interactionId: interaction.id,
+    recordType: 'talent_pool_profile_intake',
+    predicate: 'submitted_profile_evidence',
+    narrative: 'Candidate submitted Talent Pool profile evidence.',
+    qualifiers: {
+      source: 'roleless_candidate_intake',
+      roleless: true,
+    },
+    confidence: 1,
+    polarity: 1,
+    extractionVersion: 'talent-pool-roleless-intake-v1',
+    observedAt: input.now,
+    sources: [{ sourceSpanId: span.id, evidenceRole: 'source' }],
+    entities: [
+      {
+        entityType: 'workspace_person',
+        entityId: input.workspacePersonId,
+        relationship: 'subject',
+      },
+      {
+        entityType: 'artifact',
+        entityId: artifact.id,
+        relationship: 'source_artifact',
+      },
+    ],
   });
 }
 
@@ -182,6 +239,7 @@ export async function ensureRolelessTalentPoolIdentity(input: {
   });
 
   await persistRolelessMessageArtifact({
+    db,
     store,
     workspacePersonId: workspacePerson.id,
     candidateId,

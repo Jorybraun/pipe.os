@@ -36,6 +36,12 @@ The verifier reports:
 - source-less positive person claims
 - duplicate person-projected context edges
 
+Pasted profile text and decoded text uploads create a roleless
+`talent_pool_profile_intake` context record backed by the exact submitted text
+source span when the context-record schema is present. This context record only
+proves that profile evidence was submitted; it does not claim skills,
+seniority, readiness, or match quality.
+
 By default, the command fails on missing scoped candidates, submitted intakes
 without storage or ingestion state, missing active Talent Pool person
 projection, missing exact source proof, source-less positive claims, duplicate

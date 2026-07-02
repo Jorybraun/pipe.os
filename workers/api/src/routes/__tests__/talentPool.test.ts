@@ -14,6 +14,10 @@ const livingContextMigration = readFileSync(
   new URL('../../../migrations/0082_living_context_graph.sql', import.meta.url),
   'utf8',
 );
+const contextRecordsMigration = readFileSync(
+  new URL('../../../migrations/0095_context_records.sql', import.meta.url),
+  'utf8',
+);
 
 interface MemoryR2 extends R2Bucket {
   puts: Map<string, string>;
@@ -101,6 +105,7 @@ function createSqlite(): BetterSqliteDb {
   `);
   sqlite.exec(talentPoolMigration);
   sqlite.exec(livingContextMigration);
+  sqlite.exec(contextRecordsMigration);
   return sqlite;
 }
 
@@ -261,9 +266,20 @@ describe('talent pool candidate RPC', () => {
     expect(sqlite.prepare('SELECT COUNT(*) AS count FROM artifacts').get()).toEqual({ count: 1 });
     expect(sqlite.prepare('SELECT COUNT(*) AS count FROM artifact_versions').get()).toEqual({ count: 1 });
     expect(sqlite.prepare('SELECT COUNT(*) AS count FROM source_spans').get()).toEqual({ count: 1 });
+    expect(sqlite.prepare('SELECT COUNT(*) AS count FROM context_records').get()).toEqual({ count: 1 });
+    expect(sqlite.prepare('SELECT COUNT(*) AS count FROM context_record_source_refs').get()).toEqual({ count: 1 });
     expect(sqlite.prepare(
       `SELECT exact_text FROM source_spans LIMIT 1`,
     ).get()).toEqual({ exact_text: payload.resumeText });
+    expect(sqlite.prepare(
+      `SELECT record_type, predicate, narrative
+         FROM context_records
+        LIMIT 1`,
+    ).get()).toEqual({
+      record_type: 'talent_pool_profile_intake',
+      predicate: 'submitted_profile_evidence',
+      narrative: 'Candidate submitted Talent Pool profile evidence.',
+    });
     expect(sqlite.prepare(
       `SELECT display_name, primary_email FROM people LIMIT 1`,
     ).get()).toEqual({
@@ -295,6 +311,8 @@ describe('talent pool candidate RPC', () => {
     expect(sqlite.prepare('SELECT COUNT(*) AS count FROM artifacts').get()).toEqual({ count: 1 });
     expect(sqlite.prepare('SELECT COUNT(*) AS count FROM artifact_versions').get()).toEqual({ count: 1 });
     expect(sqlite.prepare('SELECT COUNT(*) AS count FROM source_spans').get()).toEqual({ count: 1 });
+    expect(sqlite.prepare('SELECT COUNT(*) AS count FROM context_records').get()).toEqual({ count: 1 });
+    expect(sqlite.prepare('SELECT COUNT(*) AS count FROM context_record_source_refs').get()).toEqual({ count: 1 });
     expect(sqlite.prepare('SELECT COUNT(*) AS count FROM challenge_design_queue').get()).toEqual({ count: 1 });
   });
 

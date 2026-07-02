@@ -194,6 +194,12 @@ same owner/email. A Talent Pool person therefore appears in the People list as a
 candidate even when no legacy `contacts` row exists, and an existing contact is
 shown once if that same person later joins the Talent Pool.
 
+Pasted profile text and decoded text uploads also create one
+`talent_pool_profile_intake` person context record, backed by the exact
+submitted text source span when the context-record schema is present. That
+record proves intake evidence was submitted; it does not derive skills,
+seniority, match readiness, or challenge readiness.
+
 Proof command:
 
 ```bash
