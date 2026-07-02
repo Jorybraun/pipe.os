@@ -1847,6 +1847,8 @@ function serializeCandidateAssessmentProgress(
           baseCommitSha: progress.commit.baseCommitSha,
           commitSha: progress.commit.commitSha,
           commitUrl: progress.commit.commitUrl,
+          upstreamPullRequestUrl: progress.commit.upstreamPullRequestUrl,
+          upstreamPrConsent: progress.commit.upstreamPrConsent,
           submissionSource: progress.commit.submissionSource,
           submissionSourceLabel: progress.commit.submissionSourceLabel,
           integrity: progress.commit.integrity,
@@ -3806,6 +3808,8 @@ rpcAuth.post('/assessment/commit-submission', async (c) => {
         branchName: progress.commit?.branchName ?? body.data.branchName,
         commitSha: progress.commit?.commitSha ?? commitSha,
         commitUrl: progress.commit?.commitUrl ?? body.data.commitUrl ?? null,
+        upstreamPullRequestUrl: progress.commit?.upstreamPullRequestUrl ?? body.data.upstreamPullRequestUrl ?? null,
+        upstreamPrConsent: progress.commit?.upstreamPrConsent ?? body.data.upstreamPrConsent === true,
       },
       progress: serializeCandidateAssessmentProgress(progress),
     }, 201);
