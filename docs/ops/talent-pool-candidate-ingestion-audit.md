@@ -108,7 +108,7 @@ CLOUDFLARE_D1_DATABASE_ID=0abe92df-9296-46f5-9f9d-a1fb1bcd3be1 \
 
 Latest app-dev proof on 2026-07-02 used invite token
 `talent-audit-532e4287e-c1` after deploying Worker version
-`a0e5512b-7ec1-4beb-9aa4-3d238b44c6e2` and replaying pasted-text profile
+`1e9f936d-9303-42a3-9124-628ae58d3a2e` and replaying pasted-text profile
 submission plus the `e2e/fixtures/test-resume.pdf` profile upload with GitHub,
 LinkedIn, portfolio, and phone-screener fields. The stricter remote verifier
 returned `status: ready`, `candidateNodeCount: 2`,
@@ -153,6 +153,10 @@ contact and roleless Talent Pool candidate, then verifies candidate graph,
 source search, and evidence-depth reads return the same canonical
 `workspace_people` person with exact submitted source text while `applications`
 remain at zero and no extra candidate role is inserted.
+
+Candidate-facing app-dev proof for the same invite token returned
+`CHALLENGE_PREPARING` with zero ready challenges and no serialized internal
+candidate id, application id, workspace-person id, or source-span id.
 
 ## Current Gaps
 
