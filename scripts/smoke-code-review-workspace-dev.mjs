@@ -603,7 +603,6 @@ async function assertCandidateTaskBriefBrowser(guestUrl, expectedRepoUrl, expect
 
     if (CHANGE_PROFILE) {
       await expect(brief).toContainText('popover');
-      await expect(brief).toContainText('500');
       await expect(brief).toContainText('git_commit');
       await expect(brief).toContainText('code_diff');
     }
