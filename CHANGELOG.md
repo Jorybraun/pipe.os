@@ -21,6 +21,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - Talent Pool profile submit/upload now creates an idempotent exact-source `TalentPoolProfileIntake` candidate node from submitted profile text, and the candidate-ingestion audit fails when submitted intakes lack exact-source candidate-node projection.
 - Talent Pool background text/PDF/DOCX decomposition now avoids legacy application/person-role mirroring and skips parser-only resume nodes that cannot be tied to an exact source quote.
 - Talent Pool profile uploads now link extracted profile text source spans to the uploaded profile storage key when extraction succeeds, and the candidate-ingestion audit flags PDF/DOCX profile keys that lack extracted source spans.
+- Recruiter Talent Pool candidate living-context reads now resolve active roleless `workspace_people` projections directly for graph/search/timeline/evidence-depth and avoid creating legacy application or candidate-role edges just because a recruiter opens the person evidence.
 
 ### Added — Open-source assessment setup
 

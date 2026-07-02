@@ -16,6 +16,13 @@ Talent Pool ingestion has three layers:
   person-scoped living-context records. These are rebuildable projections, not
   the source of truth.
 
+Recruiter/person reads must use that canonical person projection. Opening a
+roleless Talent Pool candidate detail, graph, source search, timeline, or
+evidence-depth view must resolve the active `workspace_people` row from
+`context_json.talentPool.candidateId` / `legacyCandidateIds` before falling
+back to the legacy `applications` bridge. A read must not create application or
+candidate-role edges for a roleless Talent Pool member.
+
 This follows the BRAIN hypergraph model: an intake run is a source-backed
 evidence bundle connecting candidate id, submitted profile artifact, extracted
 spans, ingestion state, person projection, and unresolved gaps. The person graph
@@ -87,6 +94,7 @@ npm run candidate-ingestion:audit -- --local --candidate-id <candidate_id>
 npm run candidate-ingestion:audit -- --local --email <email>
 npm run candidate-ingestion:audit -- --local --invite-token <token> --require-context-records
 npm run candidate-ingestion:audit -- --remote --invite-token <token>
+npm test -- src/routes/cockpit/__tests__/contacts.rest.test.ts src/routes/cockpit/__tests__/candidates.rest.test.ts src/lib/livingContext/__tests__/readModel.test.ts
 ```
 
 For app-dev, prefix remote proof commands with the dev D1 id:
@@ -138,6 +146,13 @@ The current PDF profile key is
 `talent-intake/talent_audit_532e4287e_c1/9d990a07be4b85fe2907eca11f2a378669d5b03c0131dd506470922e894070f1-test-resume.pdf`.
 Remote source-span sampling confirmed at least one exact-text span is attached
 to an artifact version with that storage key.
+
+Local recruiter/person read proof on 2026-07-02 uses
+`src/routes/cockpit/__tests__/contacts.rest.test.ts` to create a same-email
+contact and roleless Talent Pool candidate, then verifies candidate graph,
+source search, and evidence-depth reads return the same canonical
+`workspace_people` person with exact submitted source text while `applications`
+remain at zero and no extra candidate role is inserted.
 
 ## Current Gaps
 

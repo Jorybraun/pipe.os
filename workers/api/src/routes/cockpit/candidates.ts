@@ -20,6 +20,7 @@ import { buildProfileSections } from '../../lib/candidateDiscovery/buildProfileS
 import {
   ensureCandidateLivingContext,
   loadCandidateLivingContext,
+  loadCandidateLivingContextIdentity,
   searchSourceContent,
   requireGate,
 } from '../../lib/livingContext';
@@ -1402,8 +1403,11 @@ candidateOps.get('/:candidateId/living-context', requireGate('living_context_rea
   ).bind(candidateId, userId).first<{ id: string }>();
   if (!candidate) return apiError(c, 'NOT_FOUND', 'Candidate not found.');
 
-  await ensureCandidateLivingContext(db, candidateId);
-  const livingContext = await loadCandidateLivingContext(db, candidateId);
+  let livingContext = await loadCandidateLivingContext(db, candidateId);
+  if (!livingContext) {
+    await ensureCandidateLivingContext(db, candidateId);
+    livingContext = await loadCandidateLivingContext(db, candidateId);
+  }
   if (!livingContext) {
     return apiError(c, 'NOT_FOUND', 'Living context not found.');
   }
@@ -1425,16 +1429,10 @@ candidateOps.get('/:candidateId/living-context/search', requireGate('living_cont
   ).bind(candidateId, userId).first<{ id: string }>();
   if (!candidate) return apiError(c, 'NOT_FOUND', 'Candidate not found.');
 
-  const wp = await db.prepare(
-    `SELECT wp.id
-       FROM applications app
-       JOIN workspace_people wp ON wp.id = app.workspace_person_id
-      WHERE app.legacy_candidate_id = ?1
-      LIMIT 1`,
-  ).bind(candidateId).first<{ id: string }>();
-  if (!wp) return c.json({ personId: candidateId, query, hits: [] });
+  const identity = await loadCandidateLivingContextIdentity(db, candidateId);
+  if (!identity) return c.json({ personId: candidateId, query, hits: [] });
 
-  const result = await searchSourceContent(db, wp.id, query);
+  const result = await searchSourceContent(db, identity.workspacePersonId, query);
   return c.json(result);
 });
 
@@ -1455,18 +1453,12 @@ candidateOps.get('/:candidateId/living-context/timeline', requireGate('living_co
   ).bind(candidateId, userId).first<{ id: string }>();
   if (!candidate) return apiError(c, 'NOT_FOUND', 'Candidate not found.');
 
-  const wp = await db.prepare(
-    `SELECT wp.id
-       FROM applications app
-       JOIN workspace_people wp ON wp.id = app.workspace_person_id
-      WHERE app.legacy_candidate_id = ?1
-      LIMIT 1`,
-  ).bind(candidateId).first<{ id: string }>();
-  if (!wp) return c.json({ workspacePersonId: null, totalEntries: 0, entries: [] });
+  const identity = await loadCandidateLivingContextIdentity(db, candidateId);
+  if (!identity) return c.json({ workspacePersonId: null, totalEntries: 0, entries: [] });
 
   const { loadPersonEvidenceTimeline } = await import('../../lib/livingContext');
   const limit = limitParam ? Math.min(parseInt(limitParam, 10) || 100, 500) : 100;
-  const timeline = await loadPersonEvidenceTimeline(db, wp.id, { limit, before, after });
+  const timeline = await loadPersonEvidenceTimeline(db, identity.workspacePersonId, { limit, before, after });
   return c.json(timeline);
 });
 
@@ -1548,14 +1540,8 @@ candidateOps.get('/:candidateId/living-context/evidence-depth', requireGate('liv
   ).bind(candidateId, userId).first<{ id: string }>();
   if (!candidate) return apiError(c, 'NOT_FOUND', 'Candidate not found.');
 
-  const wp = await db.prepare(
-    `SELECT wp.id
-       FROM applications app
-       JOIN workspace_people wp ON wp.id = app.workspace_person_id
-      WHERE app.legacy_candidate_id = ?1
-      LIMIT 1`,
-  ).bind(candidateId).first<{ id: string }>();
-  if (!wp) {
+  const identity = await loadCandidateLivingContextIdentity(db, candidateId);
+  if (!identity) {
     return c.json({
       candidateId,
       workspacePersonId: null,
@@ -1576,20 +1562,20 @@ candidateOps.get('/:candidateId/living-context/evidence-depth', requireGate('liv
         WHERE workspace_person_id = ?1
         GROUP BY interaction_type
         ORDER BY cnt DESC`,
-    ).bind(wp.id).all<{ interaction_type: string; cnt: number }>(),
+    ).bind(identity.workspacePersonId).all<{ interaction_type: string; cnt: number }>(),
     db.prepare(
       `SELECT COUNT(*) AS cnt FROM semantic_assertions WHERE workspace_person_id = ?1`,
-    ).bind(wp.id).first<{ cnt: number }>(),
+    ).bind(identity.workspacePersonId).first<{ cnt: number }>(),
     db.prepare(
       `SELECT COUNT(*) AS cnt
          FROM source_spans ss
          JOIN artifact_versions av ON av.id = ss.artifact_version_id
          JOIN artifacts a ON a.id = av.artifact_id
         WHERE a.workspace_person_id = ?1`,
-    ).bind(wp.id).first<{ cnt: number }>(),
+    ).bind(identity.workspacePersonId).first<{ cnt: number }>(),
     db.prepare(
       `SELECT COUNT(*) AS cnt FROM context_records WHERE workspace_person_id = ?1`,
-    ).bind(wp.id).first<{ cnt: number }>(),
+    ).bind(identity.workspacePersonId).first<{ cnt: number }>(),
     db.prepare(
       `SELECT c.canonical_key, c.label, COUNT(DISTINCT ac.assertion_id) AS evidence_count
          FROM concepts c
@@ -1599,7 +1585,7 @@ candidateOps.get('/:candidateId/living-context/evidence-depth', requireGate('liv
         GROUP BY c.id, c.canonical_key, c.label
         ORDER BY evidence_count DESC
         LIMIT 20`,
-    ).bind(wp.id).all<{ canonical_key: string; label: string; evidence_count: number }>(),
+    ).bind(identity.workspacePersonId).all<{ canonical_key: string; label: string; evidence_count: number }>(),
   ]);
 
   const sources: Record<string, number> = {};
@@ -1615,7 +1601,7 @@ candidateOps.get('/:candidateId/living-context/evidence-depth', requireGate('liv
 
   return c.json({
     candidateId,
-    workspacePersonId: wp.id,
+    workspacePersonId: identity.workspacePersonId,
     sourceDiversity,
     totalInteractions,
     totalAssertions: assertionCount?.cnt ?? 0,
@@ -2683,9 +2669,12 @@ candidateOps.get('/:candidateId', async (c) => {
     } as any, matchData, calendar);
   }
 
-  let identity: { personId: string; workspacePersonId: string; applicationId: string } | null = null;
+  let identity: { personId: string; workspacePersonId: string; applicationId: string | null } | null = null;
   try {
-    identity = await ensureCandidateLivingContext(db, candidateId);
+    identity = await loadCandidateLivingContextIdentity(db, candidateId);
+    if (!identity) {
+      identity = await ensureCandidateLivingContext(db, candidateId);
+    }
   } catch (err) {
     console.warn('[candidates] Candidate/person identity bridge unavailable:', err);
   }

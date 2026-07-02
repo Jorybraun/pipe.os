@@ -485,13 +485,49 @@ describe('GET /:id/living-context', () => {
     expect(candidateGraphRead.status).toBe(200);
     const candidateGraph = await candidateGraphRead.json() as {
       livingContext: {
-        person: { personId: string; workspacePersonId: string; primaryEmail: string | null };
+        person: {
+          personId: string;
+          workspacePersonId: string;
+          applicationId: string | null;
+          primaryEmail: string | null;
+        };
       };
     };
     expect(candidateGraph.livingContext.person).toMatchObject({
       personId: firstContactGraph.person?.personId,
       workspacePersonId: firstContactGraph.person?.workspacePersonId,
+      applicationId: null,
       primaryEmail: 'ada@example.com',
+    });
+    expect(sqlite.prepare('SELECT COUNT(*) AS count FROM applications').get()).toEqual({ count: 0 });
+    expect(sqlite.prepare('SELECT COUNT(*) AS count FROM person_roles').get()).toEqual({ count: 1 });
+
+    const candidateSearch = await app.request(
+      `/candidates/${createdCandidateBody.candidate.id}/living-context/search?q=Roleless`,
+    );
+    expect(candidateSearch.status).toBe(200);
+    const searchBody = await candidateSearch.json() as {
+      personId: string;
+      hits: Array<{ exactText: string; sourceSpanId: string }>;
+    };
+    expect(searchBody.personId).toBe(firstContactGraph.person?.workspacePersonId);
+    expect(searchBody.hits.some((hit) => hit.exactText.includes('Roleless smoke evidence'))).toBe(true);
+
+    const evidenceDepth = await app.request(
+      `/candidates/${createdCandidateBody.candidate.id}/living-context/evidence-depth`,
+    );
+    expect(evidenceDepth.status).toBe(200);
+    const evidenceDepthBody = await evidenceDepth.json() as {
+      workspacePersonId: string | null;
+      totalInteractions: number;
+      totalSourceSpans: number;
+      totalContextRecords: number;
+    };
+    expect(evidenceDepthBody).toMatchObject({
+      workspacePersonId: firstContactGraph.person?.workspacePersonId,
+      totalInteractions: 1,
+      totalSourceSpans: 1,
+      totalContextRecords: 1,
     });
 
     const secondContactRead = await app.request('/contact-1/living-context');
