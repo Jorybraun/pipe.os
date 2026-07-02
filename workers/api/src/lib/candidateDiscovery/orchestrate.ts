@@ -67,6 +67,14 @@ export interface IngestionInput {
   skipPostDecompositionMaintenance?: boolean;
 }
 
+const CANDIDATE_DISCOVERY_AI_TIMEOUT_MS = 12_000;
+
+function timeoutAfter(ms: number, label: string): Promise<never> {
+  return new Promise((_, reject) => {
+    setTimeout(() => reject(new Error(`${label} timed out after ${ms}ms`)), ms);
+  });
+}
+
 /**
  * Run the full ingestion pipeline. Never throws — failures are logged and
  * recorded in candidate_ingestion.status = 'failed'.
@@ -175,7 +183,10 @@ export async function runCandidateIngestion(input: IngestionInput): Promise<void
     } else {
       try {
         discoveryResult = await trackStep(db, candidateId, 'discover_profile', () =>
-          discoverCandidateProfile({ provider, parsed, resumeText }),
+          Promise.race([
+            discoverCandidateProfile({ provider, parsed, resumeText }),
+            timeoutAfter(CANDIDATE_DISCOVERY_AI_TIMEOUT_MS, 'Candidate Discovery AI'),
+          ]),
         );
       } catch (err) {
         const msg = err instanceof Error ? err.message : String(err);

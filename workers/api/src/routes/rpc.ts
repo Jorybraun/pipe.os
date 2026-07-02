@@ -2395,6 +2395,7 @@ async function handleIntakePayload(
     afterSourceBackedEvidence?: () => Promise<void>;
     afterTextIngestion?: () => Promise<void>;
     awaitTextIngestionHandoff?: boolean;
+    awaitTextIngestionProfile?: boolean;
   } = {},
 ): Promise<void> {
   let intakePayload: Record<string, unknown> = {};
@@ -2511,27 +2512,45 @@ async function handleIntakePayload(
       try {
         const parsedCV = buildRuleBasedParsedCV(resumeText);
         await persistParsedCV(env.DB, candidateId, parsedCV);
-        await Promise.allSettled([
-          runCandidateIngestion({
-            env,
-            db: env.DB,
-            candidateId,
-            parsed: parsedCV,
-            resumeText,
-            decompositionResult: null,
-            afterSourceBackedEvidence: triggerAfterSourceBackedEvidence,
-            maxNodeEmbeddings: 0,
-            skipPostDecompositionMaintenance: true,
-          }),
-          watchForSourceBackedEvidence(),
-        ]);
+        const candidateIngestionPromise = runCandidateIngestion({
+          env,
+          db: env.DB,
+          candidateId,
+          parsed: parsedCV,
+          resumeText,
+          decompositionResult: null,
+          afterSourceBackedEvidence: triggerAfterSourceBackedEvidence,
+          maxNodeEmbeddings: 0,
+          skipPostDecompositionMaintenance: true,
+        });
+        const sourceBackedWatchPromise = watchForSourceBackedEvidence().catch((err) => {
+          const msg = err instanceof Error ? err.message : String(err);
+          console.error(`[rpc/intake] source-backed evidence watch failed for ${candidateId}:`, msg);
+        });
+
+        if (options.awaitTextIngestionProfile) {
+          await candidateIngestionPromise;
+          executionCtx.waitUntil(sourceBackedWatchPromise);
+        } else {
+          await Promise.allSettled([
+            candidateIngestionPromise,
+            sourceBackedWatchPromise,
+          ]);
+        }
         console.log(`[rpc/intake] text-based ingestion completed for candidate ${candidateId}`);
         if (options.afterTextIngestion) {
-          try {
-            await options.afterTextIngestion();
-          } catch (err) {
-            const msg = err instanceof Error ? err.message : String(err);
-            console.error(`[rpc/intake] post-ingestion action failed for ${candidateId}:`, msg);
+          const runAfterTextIngestion = async (): Promise<void> => {
+            try {
+              await options.afterTextIngestion?.();
+            } catch (err) {
+              const msg = err instanceof Error ? err.message : String(err);
+              console.error(`[rpc/intake] post-ingestion action failed for ${candidateId}:`, msg);
+            }
+          };
+          if (options.awaitTextIngestionProfile) {
+            executionCtx.waitUntil(runAfterTextIngestion());
+          } else {
+            await runAfterTextIngestion();
           }
         }
       } catch (err) {
@@ -2541,11 +2560,15 @@ async function handleIntakePayload(
     };
 
     const textIngestionPromise = runTextIngestion();
-    executionCtx.waitUntil(textIngestionPromise);
-    if (options.awaitTextIngestionHandoff) {
+    if (options.awaitTextIngestionProfile) {
+      await textIngestionPromise;
+    } else {
+      executionCtx.waitUntil(textIngestionPromise);
+    }
+    if (!options.awaitTextIngestionProfile && options.awaitTextIngestionHandoff) {
       await Promise.race([
         sourceBackedHandoff,
-        new Promise<void>((resolve) => setTimeout(resolve, 25)),
+        new Promise<void>((resolve) => setTimeout(resolve, 12_000)),
       ]);
     }
   }
@@ -3982,6 +4005,7 @@ rpcAuth.post('/submit-challenge-response', async (c) => {
         afterSourceBackedEvidence: matchStandaloneReviewIfReady,
         afterTextIngestion: matchStandaloneReviewIfReady,
         awaitTextIngestionHandoff: true,
+        awaitTextIngestionProfile: true,
       });
       const standaloneReview = await getPendingStandaloneReview(c.env.DB, candidateId);
       if (await hasReadyStandaloneCodeReviewAssignment(c.env.DB, candidateId, standaloneReview)) {
