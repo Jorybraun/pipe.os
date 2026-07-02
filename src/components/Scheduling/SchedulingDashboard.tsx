@@ -33,6 +33,7 @@ interface InvitePrefill {
 interface InviteResponse {
   success: boolean;
   emailSent: boolean;
+  emailQueued?: boolean;
   meetingUrl: string;
   schedulingUrl?: string | null;
   deliveredUrl?: string | null;
@@ -876,6 +877,7 @@ export function SchedulingDashboard(): JSX.Element {
             id: result.interview.id,
             meetingUrl: resolveInviteCreationGuestLink(inviteResult),
             emailSent: inviteResult?.emailSent ?? false,
+            emailQueued: inviteResult?.emailQueued ?? false,
             provider: inviteResult?.provider,
             emailError: inviteResult?.emailError ?? inviteError,
             assessmentSetup: result.interview.assessmentSetup ?? null,

@@ -5672,6 +5672,17 @@ function queueScheduledBookingConfirmation(
   );
 }
 
+function queueBestEffortBackgroundTask(
+  c: { executionCtx: ExecutionContext },
+  task: Promise<unknown>,
+): void {
+  try {
+    c.executionCtx.waitUntil(task);
+  } catch {
+    void task;
+  }
+}
+
 interface CalendlyInvitee {
   uri?: string;
   name?: string;
@@ -7822,66 +7833,16 @@ schedulingAuth.post('/interviews/:id/invite', async (c) => {
     });
   }
 
-  let result: Awaited<ReturnType<typeof sendTransactionalEmail>> | null = null;
-  try {
-    result = await sendTransactionalEmail(c.env, {
-      to: email,
-      subject,
-      html,
-    });
-  } catch (err) {
-    const emailError = err instanceof Error ? err.message : String(err);
-    console.error('[scheduling/invite] Email send failed:', err);
-    await db
-      .prepare(
-        `UPDATE scheduled_interviews
-         SET invite_link_sent_at = ?, updated_at = ?
-         WHERE id = ?`,
-      )
-      .bind(now, now, id)
-      .run();
-    await persistScheduledInterviewInviteDeliveryContext(db, {
-      contactId,
-      ownerId: userId,
-      interviewId: id,
-      meetingId: roomLinks?.meetingId ?? null,
-      recipientEmail: email.trim().toLowerCase(),
-      subject,
-      deliveredUrl,
-      roomUrl: meetingUrl,
-      customMessage: customMessage ?? null,
-      emailSent: false,
-      providerMessageId: null,
-      createdAt: now,
-    });
-    return c.json({
-      success: true,
-      emailSent: false,
-      emailError,
-      meetingUrl,
-      schedulingUrl: effectiveSchedulingInviteUrl,
-      deliveredUrl,
-      room: roomLinks
-        ? {
-            id: roomLinks.roomId,
-            sessionId: roomLinks.sessionId,
-            hostUrl: roomLinks.hostUrl,
-            guestUrl: roomLinks.guestUrl,
-            expiresAt: roomLinks.expiresAt,
-          }
-        : null,
-    });
-  }
+  await db
+    .prepare(
+      `UPDATE scheduled_interviews
+       SET invite_link_sent_at = ?, updated_at = ?
+       WHERE id = ?`,
+    )
+    .bind(now, now, id)
+    .run();
 
-  if (!result) {
-    await db
-      .prepare(
-        `UPDATE scheduled_interviews
-         SET invite_link_sent_at = ?, updated_at = ?
-         WHERE id = ?`,
-      )
-      .bind(now, now, id)
-      .run();
+  if (!c.env.EMAIL && !c.env.RESEND_API_KEY) {
     await persistScheduledInterviewInviteDeliveryContext(db, {
       contactId,
       ownerId: userId,
@@ -7914,40 +7875,83 @@ schedulingAuth.post('/interviews/:id/invite', async (c) => {
     });
   }
 
-  // Update the interview to track the invite
-  if (result) {
-    await db
-      .prepare(
-        `UPDATE scheduled_interviews
-         SET invite_link_sent_at = ?, email_sent_at = ?, updated_at = ?
-         WHERE id = ?`
-      )
-      .bind(now, now, now, id)
-      .run();
-  }
-
-  await persistScheduledInterviewInviteDeliveryContext(db, {
-    contactId,
-    ownerId: userId,
-    interviewId: id,
-    meetingId: roomLinks?.meetingId ?? null,
-    recipientEmail: email.trim().toLowerCase(),
-    subject,
-    deliveredUrl,
-    roomUrl: meetingUrl,
-    customMessage: customMessage ?? null,
-    emailSent: Boolean(result),
-    providerMessageId: result.id,
-    createdAt: now,
+  const emailDeliveryTask = (async () => {
+    try {
+      const result = await sendTransactionalEmail(c.env, {
+        to: email,
+        subject,
+        html,
+      });
+      if (!result) {
+        await persistScheduledInterviewInviteDeliveryContext(db, {
+          contactId,
+          ownerId: userId,
+          interviewId: id,
+          meetingId: roomLinks?.meetingId ?? null,
+          recipientEmail: email.trim().toLowerCase(),
+          subject,
+          deliveredUrl,
+          roomUrl: meetingUrl,
+          customMessage: customMessage ?? null,
+          emailSent: false,
+          providerMessageId: null,
+          createdAt: new Date().toISOString(),
+        });
+        return;
+      }
+      const completedAt = new Date().toISOString();
+      await db
+        .prepare(
+          `UPDATE scheduled_interviews
+           SET email_sent_at = ?, updated_at = ?
+           WHERE id = ?`,
+        )
+        .bind(completedAt, completedAt, id)
+        .run();
+      await persistScheduledInterviewInviteDeliveryContext(db, {
+        contactId,
+        ownerId: userId,
+        interviewId: id,
+        meetingId: roomLinks?.meetingId ?? null,
+        recipientEmail: email.trim().toLowerCase(),
+        subject,
+        deliveredUrl,
+        roomUrl: meetingUrl,
+        customMessage: customMessage ?? null,
+        emailSent: true,
+        providerMessageId: result.id,
+        createdAt: completedAt,
+      });
+    } catch (err) {
+      const failedAt = new Date().toISOString();
+      console.error('[scheduling/invite] Email send failed:', err);
+      await persistScheduledInterviewInviteDeliveryContext(db, {
+        contactId,
+        ownerId: userId,
+        interviewId: id,
+        meetingId: roomLinks?.meetingId ?? null,
+        recipientEmail: email.trim().toLowerCase(),
+        subject,
+        deliveredUrl,
+        roomUrl: meetingUrl,
+        customMessage: customMessage ?? null,
+        emailSent: false,
+        providerMessageId: null,
+        createdAt: failedAt,
+      });
+    }
+  })().catch((err) => {
+    console.error('[scheduling/invite] Background email delivery task failed:', err);
   });
+  queueBestEffortBackgroundTask(c, emailDeliveryTask);
 
   return c.json({
     success: true,
-    emailSent: true,
+    emailSent: false,
+    emailQueued: true,
     meetingUrl,
     schedulingUrl: effectiveSchedulingInviteUrl,
     deliveredUrl,
-    provider: result.provider,
     room: roomLinks
       ? {
           id: roomLinks.roomId,

@@ -42,6 +42,7 @@ interface InviteCreationModalProps {
     id: string;
     meetingUrl?: string | null;
     emailSent?: boolean;
+    emailQueued?: boolean;
     provider?: string | undefined;
     emailError?: string | undefined;
     assessmentSetup?: AssessmentSetupProjection | null;
@@ -56,6 +57,7 @@ interface CreatedInviteState {
   id: string;
   meetingUrl: string | null;
   emailSent: boolean | null;
+  emailQueued: boolean;
   provider?: string | undefined;
   emailError?: string | undefined;
   assessmentSetup?: AssessmentSetupProjection | null;
@@ -382,6 +384,7 @@ export function InviteCreationModal({
         id: result.id,
         meetingUrl: result.meetingUrl ?? null,
         emailSent: typeof result.emailSent === 'boolean' ? result.emailSent : null,
+        emailQueued: Boolean(result.emailQueued),
         provider: result.provider,
         emailError: result.emailError,
         assessmentSetup: result.assessmentSetup ?? null,
@@ -496,6 +499,8 @@ export function InviteCreationModal({
               <div style={{ fontSize: 11, color: createdInvite.emailSent ? '#4ade80' : 'var(--pipe-text-dim)', marginBottom: 12, fontFamily: '"Space Mono", monospace', lineHeight: 1.5 }}>
                 {createdInvite.emailSent === true
                   ? `Invite email sent${createdInvite.provider ? ` via ${createdInvite.provider}` : ''}.`
+                  : createdInvite.emailQueued
+                    ? `${linkLabel} is ready, and the invite email is sending in the background.`
                   : createdInvite.emailError
                     ? `${linkLabel} is ready, but email delivery failed. Copy and send it manually.`
                     : `${linkLabel} is ready. Copy it or send it from the interview page.`}

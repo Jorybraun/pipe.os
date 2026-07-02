@@ -5826,6 +5826,7 @@ describe('GET /interviews/:id detail', () => {
 
   it('sends scheduled interview invites through the Cloudflare email binding when configured', async () => {
     seedInterviewDetailFixture();
+    let releaseEmail: (value: { messageId: string }) => void = () => {};
     const sentMessages: Array<{
       to: unknown;
       from: unknown;
@@ -5837,7 +5838,9 @@ describe('GET /interviews/:id detail', () => {
       EMAIL: {
         send: async (message) => {
           sentMessages.push(message);
-          return { messageId: 'cf-message-1' };
+          return new Promise((resolve) => {
+            releaseEmail = resolve;
+          });
         },
       },
       OUTBOUND_EMAIL_FROM: 'no-reply@hire-pipe.com',
@@ -5861,15 +5864,17 @@ describe('GET /interviews/:id detail', () => {
       interview: { id: string };
     };
 
+    const { ctx, waitUntilAll } = buildCtx();
     const inviteResponse = await app.request(`/interviews/${created.interview.id}/invite`, {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify({ email: 'margaret@example.com' }),
-    });
+    }, undefined, ctx);
     expect(inviteResponse.status).toBe(200);
     const inviteBody = await inviteResponse.json() as {
       success: boolean;
       emailSent: boolean;
+      emailQueued: boolean;
       provider: string;
       meetingUrl: string;
       deliveredUrl: string;
@@ -5878,8 +5883,8 @@ describe('GET /interviews/:id detail', () => {
 
     expect(inviteBody).toMatchObject({
       success: true,
-      emailSent: true,
-      provider: 'cloudflare',
+      emailSent: false,
+      emailQueued: true,
     });
     expect(inviteBody.room.guestUrl).toBe(inviteBody.meetingUrl);
     expect(inviteBody.deliveredUrl).toBe(inviteBody.meetingUrl);
@@ -5894,7 +5899,23 @@ describe('GET /interviews/:id detail', () => {
     expect(sentMessages[0]?.html).toContain('/assets/email/pipe-logo.png');
     expect(sentMessages[0]?.html).not.toContain('data:image');
 
-    const scheduledRow = sqlite!.prepare(
+    let scheduledRow = sqlite!.prepare(
+      `SELECT meeting_url, invite_link_sent_at, email_sent_at
+         FROM scheduled_interviews
+        WHERE id = ?`,
+    ).get(created.interview.id) as {
+      meeting_url: string | null;
+      invite_link_sent_at: string | null;
+      email_sent_at: string | null;
+    };
+    expect(scheduledRow.meeting_url).toBe(inviteBody.meetingUrl);
+    expect(scheduledRow.invite_link_sent_at).toEqual(expect.any(String));
+    expect(scheduledRow.email_sent_at).toBeNull();
+
+    releaseEmail({ messageId: 'cf-message-1' });
+    await waitUntilAll();
+
+    scheduledRow = sqlite!.prepare(
       `SELECT meeting_url, invite_link_sent_at, email_sent_at
          FROM scheduled_interviews
         WHERE id = ?`,
@@ -5963,15 +5984,17 @@ describe('GET /interviews/:id detail', () => {
       interview: { id: string };
     };
 
+    const { ctx, waitUntilAll } = buildCtx();
     const inviteResponse = await app.request(`/interviews/${created.interview.id}/invite`, {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify({ email: 'grace@example.com' }),
-    });
+    }, undefined, ctx);
     expect(inviteResponse.status).toBe(200);
     const inviteBody = await inviteResponse.json() as {
       success: boolean;
       emailSent: boolean;
+      emailQueued: boolean;
       provider: string;
       meetingUrl: string;
       schedulingUrl: string;
@@ -5981,8 +6004,8 @@ describe('GET /interviews/:id detail', () => {
 
     expect(inviteBody).toMatchObject({
       success: true,
-      emailSent: true,
-      provider: 'cloudflare',
+      emailSent: false,
+      emailQueued: true,
     });
     expect(inviteBody.schedulingUrl).toBe(inviteBody.deliveredUrl);
     const deliveredSchedulingUrl = new URL(inviteBody.deliveredUrl);
@@ -6008,6 +6031,8 @@ describe('GET /interviews/:id detail', () => {
     expect(sentMessages[0]?.html).not.toContain(inviteBody.meetingUrl);
     expect(sentMessages[0]?.html).toContain('/assets/email/pipe-logo.png');
     expect(sentMessages[0]?.html).not.toContain('data:image');
+
+    await waitUntilAll();
 
     const scheduledRow = sqlite!.prepare(
       `SELECT meeting_url, scheduling_provider, scheduling_url
