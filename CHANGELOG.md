@@ -32,6 +32,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Fixed — CODE_REVIEW assessment runtime
 
+- CODE_REVIEW now demotes automatic match runs that fail the candidate-safe quality gate, clearing their selected packet so later `/assess` repairs cannot revive a low-confidence near-tie as a ready challenge.
 - Role-backed CODE_REVIEW match contrast now considers candidate-evidence separation as well as blended final-score separation, preventing role/context constants from flattening otherwise source-backed candidate-specific matches into false near-ties.
 - Stage-backed CODE_REVIEW can now hydrate a missing candidate challenge assignment from the latest passed, role-scoped, source-backed `match_runs` result before a stale candidate-ingestion row forces the safe profile-received handoff.
 - Standalone CODE_REVIEW ingestion now retries stale or failed candidate-evidence runs from the original resume source, remaps deprecated Workers AI models to the current default, and preserves richer raw review evidence for repo matching.
