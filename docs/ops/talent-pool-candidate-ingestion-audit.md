@@ -169,10 +169,13 @@ longer matches their immutable artifact text slice or exact-text hash,
 duplicate active candidate-node evidence, candidate-node source anchor
 conflicts, or roleless application/person-role rows.
 
-Challenge assignment rows only count as ready when both `github_repo_url` and
-`github_pr_number` are present. Assignment rows without that PR-backed metadata
-are reported as assessment setup gaps and must not drive Talent Pool
-`CHALLENGE_READY`.
+Challenge assignment rows only count as ready when they have `github_repo_url`,
+`github_pr_number`, and a materializable production-ready
+`review_challenge_packets` row whose repo context record carries
+`repo_source_span` source refs and concept links. Assignment rows without repo/PR
+metadata are reported as incomplete setup gaps; PR-backed rows without packet
+provenance are reported as unproven assignment gaps. Neither state may drive
+Talent Pool `CHALLENGE_READY`.
 
 Use `--require-context-records` when the proof must include claim-level person
 context records, not only roleless identity plus immutable source spans.
@@ -204,10 +207,11 @@ CLOUDFLARE_D1_DATABASE_ID=0abe92df-9296-46f5-9f9d-a1fb1bcd3be1 \
 
 Latest app-dev proof on 2026-07-02 used invite token
 `talent-audit-532e4287e-c1` after deploying Worker version
-`266bbc13-354c-4086-ad11-97a701aefc1e`, which includes canonical person-id
-source search, evidence timeline, and evidence-depth reads for unified People
-rows. The scheduled Talent Pool repair had replayed the existing
-profile-upload R2 object against dev D1.
+`11303318-b79f-451b-93c9-ab1ec4eb4616`, which includes canonical person-id
+source search, evidence timeline, evidence-depth reads for unified People rows,
+and packet-provenance gating for Talent Pool challenge readiness. The scheduled
+Talent Pool repair had replayed the existing profile-upload R2 object against
+dev D1.
 The remote verifier returned `status: ready`,
 `candidateNodeCount: 74`, `candidateNodeExactSourceQuoteCount: 74`,
 `candidateNodeWithoutExactSourceCount: 0`,
@@ -223,6 +227,8 @@ The remote verifier returned `status: ready`,
 `externalProfileRefContextCount: 3`,
 `phoneScreenerIntentContextCount: 1`, `rolelessApplicationCount: 0`,
 `rolelessPersonRoleCount: 0`, `signalEvidenceCount: 240`,
+`readyChallengeAssignmentCount: 0`, `unprovenChallengeAssignmentCount: 0`,
+`incompleteChallengeAssignmentCount: 0`, `designQueueCount: 1`,
 `sourceLessPositiveClaimCount: 0`, `sourceLessDesignQueueSuggestionCount: 0`,
 and `duplicateProjectedEdgeCount: 0`.
 
@@ -305,4 +311,5 @@ zero ready challenges and no serialized internal id values.
 - External profile refs are source-backed intake facts only; fetching and
   validating profile content is a separate future evidence producer.
 - A design queue is not challenge readiness. A candidate should remain in
-  `CHALLENGE_PREPARING` until a real source-backed assignment exists.
+  `CHALLENGE_PREPARING` until a real assignment is backed by a production-ready
+  review challenge packet with repo source refs and concept links.

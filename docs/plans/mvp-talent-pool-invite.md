@@ -166,7 +166,9 @@ Logic:
 
 **Candidate assessment page (`/assess/:token`)**:
 - Reserved for real ready assessment work
-- Opened from the Talent Pool dashboard only when a source-backed assignment exists
+- Opened from the Talent Pool dashboard only when a source-backed assignment has
+  a production-ready review challenge packet with repo source refs and concept
+  links
 
 ### Phase 4: Profile Capture for Pipeline-Free Candidates
 
@@ -214,6 +216,12 @@ GitHub, LinkedIn, portfolio, and phone-screener intent fields are projected as
 source-backed operational context records with exact submitted field spans.
 Those records prove what the candidate submitted and consented to; they do not
 validate external profile content, derive skills, or imply assessment readiness.
+
+Talent Pool `CHALLENGE_READY` requires more than a
+`candidate_challenge_assignment` row. The dashboard only exposes `/assess/:token`
+when the assigned repo/PR materializes through a production-ready
+`review_challenge_packets` row whose repo packet context has immutable source refs
+and concept links.
 
 Proof command:
 

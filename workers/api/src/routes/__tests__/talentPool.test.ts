@@ -336,9 +336,148 @@ function seedCandidate(sqlite: BetterSqliteDb, options: SeedCandidateOptions = {
      )
      VALUES (
        ?, ?, ?, ?, ?, 'INVITED', NULL, NULL, NULL, NULL,
-       '2026-06-30T00:00:00.000Z', '2026-06-30T00:00:00.000Z'
+      '2026-06-30T00:00:00.000Z', '2026-06-30T00:00:00.000Z'
      )`,
   ).bind(candidateId, ownerId, name, email, inviteToken).run();
+}
+
+function seedSubmittedTalentPoolIntake(sqlite: BetterSqliteDb, candidateId = 'candidate-1'): void {
+  sqlite.prepare(
+    `INSERT INTO talent_pool_intakes (
+       candidate_id, status, profile_r2_key, profile_text_excerpt, submitted_at
+     )
+     VALUES (
+       ?, 'CHALLENGE_PREPARING', 'talent-intake/candidate-1/profile.txt',
+       'Jordan shipped TypeScript Workers APIs.',
+       '2026-06-30T02:00:00.000Z'
+     )`,
+  ).bind(candidateId).run();
+  sqlite.prepare(
+    `UPDATE candidates
+        SET resume_s3_key = 'talent-intake/candidate-1/profile.txt'
+      WHERE id = ?`,
+  ).bind(candidateId).run();
+}
+
+function challengePacketJson(): string {
+  return JSON.stringify({
+    id: 'challenge-packet-973',
+    repoSnapshotId: 'repo-snapshot-1',
+    pullRequest: {
+      number: 973,
+      url: 'https://github.com/mui/base-ui/pull/973',
+      title: 'Fix popover retry scheduling',
+      baseSha: 'aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa',
+      headSha: 'bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb',
+    },
+    demands: [{
+      narrative: 'Repair retry scheduling so terminal events are emitted exactly once.',
+    }],
+    demandFamilies: ['runtime_reliability'],
+    contentHash: 'sha256:challenge-packet-973',
+  });
+}
+
+function seedOpenSourceChallengePacketTables(sqlite: BetterSqliteDb): void {
+  sqlite.exec(`
+    CREATE TABLE IF NOT EXISTS qualified_repos (
+      id INTEGER PRIMARY KEY,
+      github_url TEXT NOT NULL UNIQUE,
+      full_name TEXT NOT NULL
+    );
+
+    CREATE TABLE IF NOT EXISTS review_challenge_packets (
+      id TEXT PRIMARY KEY,
+      repo_snapshot_id TEXT NOT NULL,
+      repo_id INTEGER NOT NULL,
+      pr_number INTEGER NOT NULL,
+      packet_version TEXT NOT NULL DEFAULT 'test',
+      source_hash TEXT NOT NULL,
+      production_ready INTEGER NOT NULL,
+      quality_score REAL NOT NULL,
+      packet_json TEXT NOT NULL
+    );
+  `);
+}
+
+function seedSourceBackedChallengePacket(sqlite: BetterSqliteDb): void {
+  seedOpenSourceChallengePacketTables(sqlite);
+  sqlite.prepare(
+    `INSERT INTO qualified_repos (id, github_url, full_name)
+     VALUES (41, 'https://github.com/mui/base-ui', 'mui/base-ui')`,
+  ).run();
+  sqlite.prepare(
+    `INSERT INTO review_challenge_packets (
+       id, repo_snapshot_id, repo_id, pr_number, source_hash,
+       production_ready, quality_score, packet_json
+     )
+     VALUES (
+       'challenge-packet-973', 'repo-snapshot-1', 41, 973,
+       'sha256:challenge-packet-973', 1, 0.91, ?
+     )`,
+  ).bind(challengePacketJson()).run();
+  sqlite.prepare(
+    `INSERT INTO context_records (
+       id, ingestion_key, scope_type, scope_id, record_type, narrative,
+       qualifiers_json, polarity, created_at, updated_at
+     )
+     VALUES (
+       'challenge-packet-context-973',
+       'repo-challenge-packet-context:challenge-packet-973',
+       'repo_snapshot',
+       'repo-snapshot-1',
+       'repo_challenge_packet',
+       'Source-backed review challenge packet.',
+       '{}',
+       1,
+       '2026-06-30T02:00:00.000Z',
+       '2026-06-30T02:00:00.000Z'
+     )`,
+  ).run();
+  sqlite.prepare(
+    `INSERT INTO context_record_source_refs (
+       context_record_id, source_ref_type, source_ref_id, evidence_role,
+       locator_json, metadata_json, created_at
+     )
+     VALUES (
+       'challenge-packet-context-973',
+       'repo_source_span',
+       'repo-source-span-1',
+       'source',
+       '{}',
+       '{}',
+       '2026-06-30T02:00:00.000Z'
+     )`,
+  ).run();
+  sqlite.prepare(
+    `INSERT INTO concepts (
+       id, ingestion_key, canonical_key, namespace, label,
+       aliases_json, metadata_json, created_at, updated_at
+     )
+     VALUES (
+       'concept-runtime-reliability',
+       'test:runtime-reliability',
+       'runtime_reliability',
+       'repo_demand_family',
+       'Runtime reliability',
+       '[]',
+       '{}',
+       '2026-06-30T02:00:00.000Z',
+       '2026-06-30T02:00:00.000Z'
+     )`,
+  ).run();
+  sqlite.prepare(
+    `INSERT INTO context_record_concepts (
+       context_record_id, concept_id, relationship, weight, created_at
+     )
+     VALUES (
+       'challenge-packet-context-973',
+       'concept-runtime-reliability',
+       'about',
+       1,
+       '2026-06-30T02:00:00.000Z'
+     )`,
+  ).run();
 }
 
 describe('talent pool candidate RPC', () => {
@@ -1179,9 +1318,44 @@ describe('talent pool candidate RPC', () => {
     expect(sqlite.prepare('SELECT COUNT(*) AS count FROM context_records').get()).toEqual({ count: 0 });
   });
 
-  it('shows assessment entry only when a real challenge assignment exists', async () => {
+  it('keeps PR-backed assignments preparing until a source-backed challenge packet exists', async () => {
     sqlite = createSqlite();
     seedCandidate(sqlite);
+    seedSubmittedTalentPoolIntake(sqlite);
+    seedOpenSourceChallengePacketTables(sqlite);
+    sqlite.prepare(
+      `INSERT INTO challenges (id, title, type)
+       VALUES ('challenge-1', 'Source-backed review', 'CODE_REVIEW')`,
+    ).run();
+    sqlite.prepare(
+      `INSERT INTO candidate_challenge_assignment (
+         id, candidate_id, stage_id, challenge_id, github_repo_url, github_pr_number, assigned_at
+       )
+       VALUES (
+         'assignment-1', 'candidate-1', 'stage-1', 'challenge-1',
+         'https://github.com/mui/base-ui', 973, '2026-06-30T01:00:00.000Z'
+       )`,
+    ).run();
+
+    const app = createApp();
+    const res = await app.request('/rpc/talent/resolve-token', {
+      method: 'POST',
+      body: JSON.stringify({ inviteToken: 'invite-token' }),
+      headers: { 'Content-Type': 'application/json' },
+    }, createEnv(sqlite));
+
+    expect(res.status).toBe(200);
+    const body = await res.json() as TalentDashboardBody;
+    expect(body.status).toBe('CHALLENGE_PREPARING');
+    expect(body.readyChallenges).toEqual([]);
+    expectCandidateSafeDashboard(body, ['candidate-1', 'assignment-1', 'challenge-1', 'stage-1']);
+  });
+
+  it('shows assessment entry only when a challenge assignment has source-backed packet proof', async () => {
+    sqlite = createSqlite();
+    seedCandidate(sqlite);
+    seedSubmittedTalentPoolIntake(sqlite);
+    seedSourceBackedChallengePacket(sqlite);
     sqlite.prepare(
       `INSERT INTO challenges (id, title, type)
        VALUES ('challenge-1', 'Source-backed review', 'CODE_REVIEW')`,
@@ -1207,11 +1381,19 @@ describe('talent pool candidate RPC', () => {
     const body = await res.json() as TalentDashboardBody;
     expect(body.status).toBe('CHALLENGE_READY');
     expect(body.readyChallenges).toEqual([{
-      title: 'Source-backed review',
+      title: 'Fix popover retry scheduling',
       type: 'CODE_REVIEW',
       entryUrl: '/assess/invite-token',
       summary: 'Ready for mui/base-ui PR #973.',
     }]);
-    expectCandidateSafeDashboard(body, ['candidate-1', 'assignment-1', 'challenge-1', 'stage-1']);
+    expectCandidateSafeDashboard(body, [
+      'candidate-1',
+      'assignment-1',
+      'challenge-1',
+      'stage-1',
+      'challenge-packet-973',
+      'challenge-packet-context-973',
+      'repo-source-span-1',
+    ]);
   });
 });

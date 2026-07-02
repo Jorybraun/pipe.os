@@ -9,6 +9,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Fixed — Talent Pool ingestion
 
+- Talent Pool dashboard readiness now requires the assigned repo/PR to materialize through a production-ready source-backed review challenge packet, and the candidate-ingestion audit reports PR-backed assignment rows without packet provenance as unproven readiness gaps.
 - Recruiter pipeline ingestion now exposes an owned `POST /api/v1/pipelines/:pipelineId/ingestion/retry-failed` repair action that replays failed, missing, or stalled candidate ingestion from the original R2 source evidence instead of waiting on unreliable dev cron behavior.
 - Talent Pool profile submit/upload now creates the design queue before scheduling background ingestion, preserving explicit challenge-design state while candidate AI/evidence ingestion runs.
 - Talent Pool text-profile ingestion now starts from source-backed rule-based parsing instead of waiting on the resume-decomposition LLM before candidate discovery, preventing submitted profiles from stalling at `talent_pool_profile_received`.

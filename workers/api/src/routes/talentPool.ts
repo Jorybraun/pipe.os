@@ -7,6 +7,7 @@ import {
 } from '../lib/cvParser';
 import { runCandidateIngestion } from '../lib/candidateDiscovery/orchestrate';
 import { processResumeFromR2 } from '../lib/enrichment/resumeIngestion';
+import { loadMatchedOpenSourceChallengePacket } from '../lib/openSourceChallengeSessions';
 import {
   ensureRolelessTalentPoolIdentity,
   type TalentPoolSourceArtifactInput,
@@ -197,6 +198,16 @@ async function loadIntake(db: D1Database, candidateId: string): Promise<IntakeRo
     .first<IntakeRow>();
 }
 
+function readyChallengeSummary(repositoryUrl: string, githubPrNumber: number): string {
+  let repoName = 'the assigned repository';
+  try {
+    repoName = new URL(repositoryUrl).pathname.replace(/^\//, '') || repoName;
+  } catch {
+    repoName = 'the assigned repository';
+  }
+  return `Ready for ${repoName} PR #${githubPrNumber}.`;
+}
+
 async function loadReadyChallenges(
   db: D1Database,
   candidateId: string,
@@ -216,25 +227,22 @@ async function loadReadyChallenges(
     .bind(candidateId)
     .all<ReadyChallengeRow>();
 
-  return (result.results ?? []).map((row) => {
-    let repoName = 'the assigned repository';
-    if (row.github_repo_url) {
-      try {
-        repoName = new URL(row.github_repo_url).pathname.replace(/^\//, '') || repoName;
-      } catch {
-        repoName = 'the assigned repository';
-      }
-    }
+  const readyChallenges: ReadyChallenge[] = [];
+  for (const row of result.results ?? []) {
+    const packet = await loadMatchedOpenSourceChallengePacket(db, {
+      repositoryUrl: row.github_repo_url,
+      githubPrNumber: row.github_pr_number,
+    });
+    if (!packet) continue;
 
-    return {
-      title: row.title ?? 'Code review challenge',
+    readyChallenges.push({
+      title: packet.title || row.title || 'Code review challenge',
       type: row.type ?? 'CODE_REVIEW',
       entryUrl: `/assess/${encodeURIComponent(inviteToken)}`,
-      summary: row.github_pr_number
-        ? `Ready for ${repoName} PR #${row.github_pr_number}.`
-        : 'Ready to start.',
-    };
-  });
+      summary: readyChallengeSummary(packet.repositoryUrl, packet.githubPrNumber),
+    });
+  }
+  return readyChallenges;
 }
 
 async function loadCompletedChallenges(

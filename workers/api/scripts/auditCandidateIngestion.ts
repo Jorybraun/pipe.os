@@ -15,6 +15,7 @@ import { readdirSync } from 'node:fs';
 import { createRequire } from 'node:module';
 import { dirname, isAbsolute, resolve } from 'node:path';
 import { fileURLToPath } from 'node:url';
+import { materializeMatchedOpenSourcePacket } from '../src/lib/openSourceChallengeSessions';
 import { D1Client, loadD1Config } from './crawl-repos/shared/d1Client.js';
 
 const scriptDir = dirname(fileURLToPath(import.meta.url));
@@ -100,6 +101,7 @@ export interface CandidatePersonProjectionAudit {
   phoneScreenerIntentContextCount: number;
   signalEvidenceCount: number;
   readyChallengeAssignmentCount: number;
+  unprovenChallengeAssignmentCount: number;
   incompleteChallengeAssignmentCount: number;
   designQueueCount: number;
 }
@@ -181,9 +183,29 @@ interface ProjectionRow {
   external_profile_ref_context_count: number | null;
   phone_screener_intent_context_count: number | null;
   signal_evidence_count: number | null;
-  ready_challenge_assignment_count: number | null;
-  incomplete_challenge_assignment_count: number | null;
   design_queue_count: number | null;
+}
+
+interface ChallengeAssignmentProofRow {
+  assignment_id: string | null;
+  github_repo_url: string | null;
+  github_pr_number: number | null;
+  id: string | null;
+  repo_snapshot_id: string | null;
+  pr_number: number | null;
+  source_hash: string | null;
+  packet_json: string | null;
+  github_url: string | null;
+  quality_score: number | null;
+  context_record_id: string | null;
+  repo_source_ref_count: number | null;
+  concept_link_count: number | null;
+}
+
+interface ChallengeAssignmentProofCounts {
+  readyChallengeAssignmentCount: number;
+  unprovenChallengeAssignmentCount: number;
+  incompleteChallengeAssignmentCount: number;
 }
 
 const REQUIRED_TABLES = [
@@ -204,8 +226,11 @@ const REQUIRED_TABLES = [
   'signal_evidence',
   'context_records',
   'context_record_source_refs',
+  'context_record_concepts',
   'challenge_design_queue',
   'candidate_challenge_assignment',
+  'qualified_repos',
+  'review_challenge_packets',
 ];
 
 function toNumber(value: number | null | undefined): number {
@@ -570,6 +595,87 @@ async function loadSourceSpanHashMismatchCount(
   return rows.filter((row) => sha256Hex(row.exact_text ?? '') !== row.exact_text_hash?.toLowerCase()).length;
 }
 
+async function loadChallengeAssignmentProofCounts(
+  client: QueryClient,
+  scopeSql: string,
+  params: Array<string | number | null>,
+): Promise<ChallengeAssignmentProofCounts> {
+  const rows = await client.query<ChallengeAssignmentProofRow>(
+    `${scopeSql}
+     SELECT cca.id AS assignment_id,
+            cca.github_repo_url,
+            cca.github_pr_number,
+            rcp.id,
+            rcp.repo_snapshot_id,
+            rcp.pr_number,
+            rcp.source_hash,
+            rcp.packet_json,
+            rcp.quality_score,
+            qr.github_url,
+            cr.id AS context_record_id,
+            (
+              SELECT COUNT(*)
+                FROM context_record_source_refs crsr
+               WHERE crsr.context_record_id = cr.id
+                 AND crsr.source_ref_type = 'repo_source_span'
+            ) AS repo_source_ref_count,
+            (
+              SELECT COUNT(*)
+                FROM context_record_concepts crc
+               WHERE crc.context_record_id = cr.id
+            ) AS concept_link_count
+       FROM audited_candidates ac
+       JOIN candidate_challenge_assignment cca ON cca.candidate_id = ac.id
+       LEFT JOIN qualified_repos qr ON qr.github_url = cca.github_repo_url
+       LEFT JOIN review_challenge_packets rcp
+         ON rcp.repo_id = qr.id
+        AND rcp.pr_number = cca.github_pr_number
+        AND rcp.production_ready = 1
+        AND rcp.quality_score >= 0.70
+       LEFT JOIN context_records cr
+         ON cr.ingestion_key = 'repo-challenge-packet-context:' || rcp.id
+        AND cr.scope_type = 'repo_snapshot'
+        AND cr.scope_id = rcp.repo_snapshot_id
+        AND cr.record_type = 'repo_challenge_packet'`,
+    params,
+  );
+
+  const completeAssignmentIds = new Set<string>();
+  const incompleteAssignmentIds = new Set<string>();
+  const sourceBackedAssignmentIds = new Set<string>();
+
+  for (const row of rows) {
+    if (!row.assignment_id) continue;
+    if (!row.github_repo_url || row.github_pr_number === null) {
+      incompleteAssignmentIds.add(row.assignment_id);
+      continue;
+    }
+
+    completeAssignmentIds.add(row.assignment_id);
+    if (!row.id || !row.packet_json) continue;
+    const packet = materializeMatchedOpenSourcePacket({
+      id: row.id,
+      repo_snapshot_id: row.repo_snapshot_id,
+      pr_number: row.pr_number,
+      source_hash: row.source_hash,
+      packet_json: row.packet_json,
+      github_url: row.github_url,
+      quality_score: row.quality_score,
+      context_record_id: row.context_record_id,
+      repo_source_ref_count: row.repo_source_ref_count,
+      concept_link_count: row.concept_link_count,
+    });
+    if (packet) sourceBackedAssignmentIds.add(row.assignment_id);
+  }
+
+  return {
+    readyChallengeAssignmentCount: sourceBackedAssignmentIds.size,
+    unprovenChallengeAssignmentCount: [...completeAssignmentIds]
+      .filter((assignmentId) => !sourceBackedAssignmentIds.has(assignmentId)).length,
+    incompleteChallengeAssignmentCount: incompleteAssignmentIds.size,
+  };
+}
+
 async function loadPersonProjection(
   client: QueryClient,
   scopeSql: string,
@@ -613,16 +719,6 @@ async function loadPersonProjection(
        (SELECT COUNT(DISTINCT se.id)
           FROM linked_workspace_people lwp
           JOIN signal_evidence se ON se.workspace_person_id = lwp.workspace_person_id) AS signal_evidence_count,
-       (SELECT COUNT(DISTINCT cca.id)
-          FROM audited_candidates ac
-          JOIN candidate_challenge_assignment cca ON cca.candidate_id = ac.id
-         WHERE cca.github_repo_url IS NOT NULL
-           AND cca.github_pr_number IS NOT NULL) AS ready_challenge_assignment_count,
-       (SELECT COUNT(DISTINCT cca.id)
-          FROM audited_candidates ac
-          JOIN candidate_challenge_assignment cca ON cca.candidate_id = ac.id
-         WHERE cca.github_repo_url IS NULL
-            OR cca.github_pr_number IS NULL) AS incomplete_challenge_assignment_count,
        (SELECT COUNT(DISTINCT cdq.id)
           FROM audited_candidates ac
           JOIN challenge_design_queue cdq ON cdq.candidate_id = ac.id
@@ -630,6 +726,7 @@ async function loadPersonProjection(
     params,
   );
   const row = rows[0];
+  const challengeAssignmentProofCounts = await loadChallengeAssignmentProofCounts(client, scopeSql, params);
   return {
     personCount: toNumber(row?.person_count),
     workspacePersonCount: toNumber(row?.workspace_person_count),
@@ -640,8 +737,9 @@ async function loadPersonProjection(
     externalProfileRefContextCount: toNumber(row?.external_profile_ref_context_count),
     phoneScreenerIntentContextCount: toNumber(row?.phone_screener_intent_context_count),
     signalEvidenceCount: toNumber(row?.signal_evidence_count),
-    readyChallengeAssignmentCount: toNumber(row?.ready_challenge_assignment_count),
-    incompleteChallengeAssignmentCount: toNumber(row?.incomplete_challenge_assignment_count),
+    readyChallengeAssignmentCount: challengeAssignmentProofCounts.readyChallengeAssignmentCount,
+    unprovenChallengeAssignmentCount: challengeAssignmentProofCounts.unprovenChallengeAssignmentCount,
+    incompleteChallengeAssignmentCount: challengeAssignmentProofCounts.incompleteChallengeAssignmentCount,
     designQueueCount: toNumber(row?.design_queue_count),
   };
 }
@@ -791,6 +889,7 @@ export async function auditCandidateIngestion(
       phoneScreenerIntentContextCount: 0,
       signalEvidenceCount: 0,
       readyChallengeAssignmentCount: 0,
+      unprovenChallengeAssignmentCount: 0,
       incompleteChallengeAssignmentCount: 0,
       designQueueCount: 0,
     },
@@ -969,6 +1068,9 @@ export async function auditCandidateIngestion(
     ...(personProjection.readyChallengeAssignmentCount === 0 && personProjection.designQueueCount > 0
       ? ['Challenge readiness is correctly still a design-queue gap; do not expose a ready assessment until a source-backed assignment exists.']
       : []),
+    ...(personProjection.unprovenChallengeAssignmentCount > 0
+      ? [`${personProjection.unprovenChallengeAssignmentCount} PR-backed challenge assignment row(s) lack source-backed review packet proof and cannot safely become Talent Pool assessment readiness.`]
+      : []),
     ...(personProjection.incompleteChallengeAssignmentCount > 0
       ? [`${personProjection.incompleteChallengeAssignmentCount} challenge assignment row(s) lack repo URL or PR number and cannot safely become Talent Pool assessment readiness.`]
       : []),
@@ -1129,6 +1231,7 @@ function printHuman(report: CandidateIngestionAudit, databasePath: string): void
   console.log(`  phone intent contexts: ${report.personProjection.phoneScreenerIntentContextCount}`);
   console.log(`  signal evidence:       ${report.personProjection.signalEvidenceCount}`);
   console.log(`  ready assignments:     ${report.personProjection.readyChallengeAssignmentCount}`);
+  console.log(`  unproven assignments:  ${report.personProjection.unprovenChallengeAssignmentCount}`);
   console.log(`  incomplete assignments: ${report.personProjection.incompleteChallengeAssignmentCount}`);
   console.log(`  design queue:          ${report.personProjection.designQueueCount}`);
   if (report.failures.length > 0) {

@@ -123,6 +123,9 @@ function createSchema(db: Database.Database): void {
     );
     CREATE TABLE context_records (
       id TEXT PRIMARY KEY,
+      ingestion_key TEXT,
+      scope_type TEXT,
+      scope_id TEXT,
       workspace_person_id TEXT,
       record_type TEXT,
       predicate TEXT,
@@ -135,6 +138,12 @@ function createSchema(db: Database.Database): void {
       source_ref_id TEXT,
       evidence_role TEXT
     );
+    CREATE TABLE context_record_concepts (
+      context_record_id TEXT,
+      concept_id TEXT,
+      relationship TEXT,
+      weight REAL
+    );
     CREATE TABLE challenge_design_queue (
       id TEXT PRIMARY KEY,
       candidate_id TEXT,
@@ -146,6 +155,21 @@ function createSchema(db: Database.Database): void {
       candidate_id TEXT,
       github_repo_url TEXT,
       github_pr_number INTEGER
+    );
+    CREATE TABLE qualified_repos (
+      id INTEGER PRIMARY KEY,
+      github_url TEXT,
+      full_name TEXT
+    );
+    CREATE TABLE review_challenge_packets (
+      id TEXT PRIMARY KEY,
+      repo_snapshot_id TEXT,
+      repo_id INTEGER,
+      pr_number INTEGER,
+      source_hash TEXT,
+      production_ready INTEGER,
+      quality_score REAL,
+      packet_json TEXT
     );
   `);
 }
@@ -235,6 +259,71 @@ function seedSourceBackedTalentPoolCandidate(db: Database.Database): void {
   `);
 }
 
+function challengePacketJson(): string {
+  return JSON.stringify({
+    id: 'challenge-packet-973',
+    repoSnapshotId: 'repo-snapshot-1',
+    pullRequest: {
+      number: 973,
+      url: 'https://github.com/mui/base-ui/pull/973',
+      title: 'Fix popover retry scheduling',
+      baseSha: 'aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa',
+      headSha: 'bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb',
+    },
+    demands: [{
+      narrative: 'Repair retry scheduling so terminal events are emitted exactly once.',
+    }],
+    demandFamilies: ['runtime_reliability'],
+    contentHash: 'sha256:challenge-packet-973',
+  });
+}
+
+function seedSourceBackedChallengePacket(db: Database.Database): void {
+  db.prepare(
+    `INSERT INTO qualified_repos (id, github_url, full_name)
+     VALUES (41, 'https://github.com/mui/base-ui', 'mui/base-ui')`,
+  ).run();
+  db.prepare(
+    `INSERT INTO review_challenge_packets (
+       id, repo_snapshot_id, repo_id, pr_number, source_hash,
+       production_ready, quality_score, packet_json
+     )
+     VALUES (
+       'challenge-packet-973', 'repo-snapshot-1', 41, 973,
+       'sha256:challenge-packet-973', 1, 0.91, ?
+     )`,
+  ).run(challengePacketJson());
+  db.prepare(
+    `INSERT INTO context_records (
+       id, ingestion_key, scope_type, scope_id, record_type, narrative, polarity
+     )
+     VALUES (
+       'challenge-packet-context-973',
+       'repo-challenge-packet-context:challenge-packet-973',
+       'repo_snapshot',
+       'repo-snapshot-1',
+       'repo_challenge_packet',
+       'Source-backed review challenge packet.',
+       1
+     )`,
+  ).run();
+  db.prepare(
+    `INSERT INTO context_record_source_refs (
+       context_record_id, source_ref_type, source_ref_id, evidence_role
+     )
+     VALUES (
+       'challenge-packet-context-973',
+       'repo_source_span',
+       'repo-source-span-1',
+       'source'
+     )`,
+  ).run();
+  db.prepare(
+    `INSERT INTO context_record_concepts (context_record_id, concept_id, relationship, weight)
+     VALUES ('challenge-packet-context-973', 'concept-runtime-reliability', 'about', 1)`,
+  ).run();
+}
+
 describe('auditCandidateIngestion', () => {
   let sqlite: Database.Database | null = null;
 
@@ -294,6 +383,7 @@ describe('auditCandidateIngestion', () => {
       externalProfileRefContextCount: 2,
       phoneScreenerIntentContextCount: 1,
       readyChallengeAssignmentCount: 0,
+      unprovenChallengeAssignmentCount: 0,
       incompleteChallengeAssignmentCount: 0,
       designQueueCount: 1,
     });
@@ -318,9 +408,57 @@ describe('auditCandidateIngestion', () => {
 
     expect(audit.status).toBe('ready');
     expect(audit.personProjection.readyChallengeAssignmentCount).toBe(0);
+    expect(audit.personProjection.unprovenChallengeAssignmentCount).toBe(0);
     expect(audit.personProjection.incompleteChallengeAssignmentCount).toBe(1);
     expect(audit.nextActions).toContain(
       '1 challenge assignment row(s) lack repo URL or PR number and cannot safely become Talent Pool assessment readiness.',
+    );
+  });
+
+  it('reports PR-backed assignment rows without packet proof as unproven readiness gaps', async () => {
+    sqlite = new Database(':memory:');
+    createSchema(sqlite);
+    seedSourceBackedTalentPoolCandidate(sqlite);
+    sqlite.prepare(
+      `INSERT INTO candidate_challenge_assignment (id, candidate_id, github_repo_url, github_pr_number)
+       VALUES ('assignment-unproven', 'candidate-1', 'https://github.com/mui/base-ui', 973)`,
+    ).run();
+
+    const audit = await auditCandidateIngestion(new SqliteQueryClient(sqlite), {
+      inviteToken: 'invite-token',
+      requireContextRecords: true,
+    });
+
+    expect(audit.status).toBe('ready');
+    expect(audit.personProjection.readyChallengeAssignmentCount).toBe(0);
+    expect(audit.personProjection.unprovenChallengeAssignmentCount).toBe(1);
+    expect(audit.personProjection.incompleteChallengeAssignmentCount).toBe(0);
+    expect(audit.nextActions).toContain(
+      '1 PR-backed challenge assignment row(s) lack source-backed review packet proof and cannot safely become Talent Pool assessment readiness.',
+    );
+  });
+
+  it('counts only source-backed review packet assignments as ready', async () => {
+    sqlite = new Database(':memory:');
+    createSchema(sqlite);
+    seedSourceBackedTalentPoolCandidate(sqlite);
+    seedSourceBackedChallengePacket(sqlite);
+    sqlite.prepare(
+      `INSERT INTO candidate_challenge_assignment (id, candidate_id, github_repo_url, github_pr_number)
+       VALUES ('assignment-ready', 'candidate-1', 'https://github.com/mui/base-ui', 973)`,
+    ).run();
+
+    const audit = await auditCandidateIngestion(new SqliteQueryClient(sqlite), {
+      inviteToken: 'invite-token',
+      requireContextRecords: true,
+    });
+
+    expect(audit.status).toBe('ready');
+    expect(audit.personProjection.readyChallengeAssignmentCount).toBe(1);
+    expect(audit.personProjection.unprovenChallengeAssignmentCount).toBe(0);
+    expect(audit.personProjection.incompleteChallengeAssignmentCount).toBe(0);
+    expect(audit.nextActions).not.toContain(
+      '1 PR-backed challenge assignment row(s) lack source-backed review packet proof and cannot safely become Talent Pool assessment readiness.',
     );
   });
 
