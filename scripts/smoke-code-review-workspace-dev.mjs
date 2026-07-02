@@ -324,20 +324,20 @@ function cleanMaybeAssessUrl(rawUrl) {
   }
 }
 
-function githubCompareUrl({ repositoryUrl, forkRepositoryUrl, baseCommitSha, commitSha }) {
-  const repoUrl = forkRepositoryUrl || repositoryUrl;
+function githubCompareUrl({ commitUrl, baseCommitSha, commitSha }) {
   const base = typeof baseCommitSha === 'string' ? baseCommitSha.trim() : '';
   const head = typeof commitSha === 'string' ? commitSha.trim() : '';
-  if (!repoUrl || !/^[a-f0-9]{7,40}$/i.test(base) || !/^[a-f0-9]{7,40}$/i.test(head)) return null;
+  const externalCommitUrl = typeof commitUrl === 'string' ? commitUrl.trim() : '';
+  if (!externalCommitUrl || !/^[a-f0-9]{7,40}$/i.test(base) || !/^[a-f0-9]{7,40}$/i.test(head)) return null;
 
   try {
-    const url = new URL(repoUrl);
+    const url = new URL(externalCommitUrl);
     if (url.hostname !== 'github.com') return null;
     const parts = url.pathname
       .replace(/\.git$/i, '')
       .split('/')
       .filter(Boolean);
-    if (parts.length < 2) return null;
+    if (parts.length < 4 || parts[2] !== 'commit' || parts[3].toLowerCase() !== head.toLowerCase()) return null;
     return `https://github.com/${parts[0]}/${parts[1]}/compare/${base}...${head}`;
   } catch {
     return null;
@@ -370,13 +370,18 @@ async function assertRecruiterAssessmentProjection(interviewId, workspaceCommit,
     throw new Error(`Recruiter detail did not expose the evaluated review state: ${JSON.stringify(progress)}`);
   }
   const compareUrl = githubCompareUrl({
-    repositoryUrl: commit.repositoryUrl,
-    forkRepositoryUrl: commit.forkRepositoryUrl,
+    commitUrl: commit.commitUrl,
     baseCommitSha: commit.baseCommitSha,
     commitSha: commit.commitSha,
   });
-  if (!compareUrl) {
-    throw new Error(`Recruiter detail cannot produce a GitHub compare URL from commit metadata: ${JSON.stringify(commit)}`);
+  const sourceRefTypes = new Set((progress.sourceRefCounts ?? []).map((row) => row.kind));
+  for (const requiredSourceRefType of ['git_commit', 'code_diff', 'test_run']) {
+    if (!sourceRefTypes.has(requiredSourceRefType)) {
+      throw new Error(`Recruiter detail is missing ${requiredSourceRefType} proof for source-backed review: ${JSON.stringify(progress.sourceRefCounts)}`);
+    }
+  }
+  if (commit.commitUrl && !compareUrl) {
+    throw new Error(`Recruiter detail cannot produce a GitHub compare URL from external commit metadata: ${JSON.stringify(commit)}`);
   }
 
   return {

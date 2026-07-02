@@ -157,7 +157,14 @@ function isStandaloneCodeReviewWaitingHandoff(
   if (currentType !== 'WAITING_FOR_MATCH') return false;
   const stageId = stageConfig?.stageId?.toLowerCase() ?? '';
   const challengeTypes = stageConfig?.challenges?.map((challenge) => challenge.type) ?? [];
-  return stageId === 'standalone-code-review' && challengeTypes.includes('CODE_REVIEW');
+  const upcomingTypes = stageConfig?.upcoming?.map((challenge) => challenge.type) ?? [];
+  const stageTitle = stageConfig?.stageTitle?.toLowerCase() ?? '';
+  const isCodeReviewStage = stageId === 'standalone-code-review'
+    || stageId.includes('code-review')
+    || stageTitle.includes('code review')
+    || challengeTypes.includes('CODE_REVIEW')
+    || upcomingTypes.includes('CODE_REVIEW');
+  return isCodeReviewStage;
 }
 
 // ============================================================================

@@ -397,6 +397,106 @@ describe('InterviewDetailPage', () => {
     expect(progress).not.toHaveTextContent('challenge-packet-popover');
   });
 
+  it('does not invent a GitHub compare link for workspace-only commits', async () => {
+    const progress: NonNullable<ScheduledInterviewDetail['assessmentProgress']> = {
+      session: {
+        id: 'assessment-session-workspace-only',
+        ingestionKey: 'assessment-session:workspace-only',
+        interviewId: 'interview-1',
+        candidateId: 'candidate-1',
+        workspaceId: 'workspace-1',
+        workspacePersonId: null,
+        applicationId: null,
+        mode: 'OPEN_SOURCE_BUG_FIX',
+        state: 'FINAL_SUBMITTED',
+        createdAt: '2026-06-23T00:00:00.000Z',
+        updatedAt: '2026-06-23T00:20:00.000Z',
+      },
+      stage: 'READY_FOR_EVALUATION',
+      nextAction: 'START_EVALUATION',
+      nextActionLabel: 'Start source-backed AI or human evaluation.',
+      hasChallengePacket: true,
+      hasWorkEvidence: true,
+      hasMessageEvidence: true,
+      hasDevContainerEvidence: true,
+      hasToolUsageEvidence: true,
+      hasCommitSubmission: true,
+      hasFinalSubmission: false,
+      hasAiInteraction: true,
+      hasTranscriptEvidence: true,
+      hasTestEvidence: true,
+      evidenceCounts: [{ kind: 'commit_submission', count: 1 }],
+      sourceRefCounts: [
+        { kind: 'git_commit', count: 1 },
+        { kind: 'code_diff', count: 1 },
+        { kind: 'test_run', count: 1 },
+      ],
+      evidenceSnippets: [{
+        eventKind: 'commit_submission',
+        sourceRefType: 'code_diff',
+        evidenceRole: 'submitted_diff',
+        exactText: 'diff --git a/src/popover.ts b/src/popover.ts',
+        occurredAt: '2026-06-23T00:18:00.000Z',
+      }],
+      challenge: {
+        sourceRefType: 'open_source_challenge_packet',
+        sourceRefId: 'challenge-packet-workspace-only',
+        evidenceRole: 'assigned_challenge',
+        exactText: 'Repo: https://github.com/open-source/widgets\nBase commit: 1111111111111111111111111111111111111111\nTask: fix the popover cleanup regression.',
+        locator: {
+          repositoryUrl: 'https://github.com/open-source/widgets',
+          baseCommitSha: '1111111111111111111111111111111111111111',
+        },
+      },
+      latestEvent: {
+        id: 'assessment-event-workspace-only',
+        kind: 'commit_submission',
+        sequence: 2,
+        occurredAt: '2026-06-23T00:18:00.000Z',
+      },
+      commit: {
+        eventId: 'assessment-event-workspace-only',
+        repositoryUrl: 'https://github.com/open-source/widgets',
+        forkRepositoryUrl: null,
+        branchName: 'pipe-assessment',
+        baseCommitSha: '1111111111111111111111111111111111111111',
+        commitSha: 'abcdef1234567890abcdef1234567890abcdef12',
+        commitUrl: null,
+        submissionSource: 'live_workspace',
+        submissionSourceLabel: 'Live workspace finalizer',
+        integrity: {
+          status: 'workspace_captured',
+          label: 'Workspace-captured commit',
+          detail: 'Captured by the live dev-container finalizer from the workspace HEAD and exact source refs.',
+          tone: 'verified',
+        },
+        challengeBinding: {
+          status: 'bound_to_assigned_challenge',
+          label: 'Bound to assigned challenge',
+          detail: 'Submitted repository and base commit match the assigned source-backed challenge packet.',
+          tone: 'verified',
+        },
+        changedFiles: [{ path: 'src/popover.ts', status: 'modified' }],
+        occurredAt: '2026-06-23T00:18:00.000Z',
+      },
+      evaluation: null,
+    };
+    mocks.api.get.mockResolvedValueOnce({
+      interview: makeInterview({
+        interviewType: 'OPEN_SOURCE_BUG_FIX',
+        assessmentProgress: progress,
+      }),
+    });
+
+    renderDetail();
+    await flushAsyncUpdates();
+
+    const progressPanel = screen.getByTestId('interview-assessment-progress');
+    expect(progressPanel).toHaveTextContent('Workspace-captured commit');
+    expect(progressPanel).toHaveTextContent('Diff evidence');
+    expect(screen.queryByRole('link', { name: 'Compare base to submitted commit' })).toBeNull();
+  });
+
   it('treats missing AI bridge evidence as unobserved instead of absent in the work packet', async () => {
     mocks.api.get.mockResolvedValueOnce({
       interview: makeInterview({

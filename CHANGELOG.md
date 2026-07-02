@@ -21,9 +21,14 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - Draft corpora seeded from real match runs now persist through the frozen `evaluation_corpora` schema with immutable hashes, and seeded draft labels no longer count as expert labels until reviewer/source provenance is attached.
 - The internal evaluation-corpus seed endpoint now reports corpus hash, draft/expert/synthetic label counts, production-readiness failures, and the required next action so operator-created match corpora cannot be mistaken for expert-labelled gates.
 
+### Fixed — CODE_REVIEW assessment runtime
+
+- Candidate `/assess` pages now fail closed to the safe profile-received handoff when a standalone code review leaks a `WELCOME` plus `WAITING_FOR_MATCH` stage, preventing the old matching dashboard from resurfacing while challenge readiness is handled upstream.
+
 ### Fixed — Open-source assessment progress
 
-- The app-dev open-source workspace smoke now verifies the recruiter detail projection exposes the evaluated, trusted, challenge-bound submitted commit and a reviewable GitHub compare URL.
+- Recruiter assessment details no longer invent GitHub compare links for workspace-only finalizer commits; external compare links now require a real GitHub commit URL while source-backed diff evidence remains reviewable.
+- The app-dev open-source workspace smoke now verifies the recruiter detail projection exposes the evaluated, trusted, challenge-bound submitted commit plus reviewable source-backed diff, test, and commit evidence.
 - The app-dev open-source workspace smoke now asserts the stable `workspace_captured` and `bound_to_assigned_challenge` recruiter assessment contract names.
 - The app-dev open-source workspace smoke now retries the real workspace launch once when the dev container lands in Cloudflare's transient container-not-running state.
 - Interview assessment details now show a direct GitHub compare link from the assigned base commit to the submitted assessment commit when source-backed commit metadata is available.

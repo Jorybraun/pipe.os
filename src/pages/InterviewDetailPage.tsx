@@ -458,22 +458,24 @@ function githubCompareUrl(input: {
   forkRepositoryUrl?: string | null | undefined;
   baseCommitSha: string | null | undefined;
   commitSha: string | null | undefined;
+  commitUrl?: string | null | undefined;
 }): string | null {
-  const repoUrl = input.forkRepositoryUrl ?? input.repositoryUrl;
   const base = input.baseCommitSha?.trim();
   const head = input.commitSha?.trim();
-  if (!repoUrl || !base || !head) return null;
+  const commitUrl = input.commitUrl?.trim();
+  if (!commitUrl || !base || !head) return null;
   if (!/^[a-f0-9]{7,40}$/i.test(base) || !/^[a-f0-9]{7,40}$/i.test(head)) return null;
 
   try {
-    const url = new URL(repoUrl);
+    const url = new URL(commitUrl);
     if (url.hostname !== 'github.com') return null;
     const parts = url.pathname
       .replace(/\.git$/i, '')
       .split('/')
       .filter(Boolean);
-    if (parts.length < 2) return null;
-    return `https://github.com/${parts[0]}/${parts[1]}/compare/${base}...${head}`;
+    const [owner, repo, type, sha] = parts;
+    if (!owner || !repo || type !== 'commit' || !sha || sha.toLowerCase() !== head.toLowerCase()) return null;
+    return `https://github.com/${owner}/${repo}/compare/${base}...${head}`;
   } catch {
     return null;
   }
@@ -3383,6 +3385,7 @@ export default function InterviewDetailPage(): JSX.Element {
     forkRepositoryUrl: assessmentProgress?.commit?.forkRepositoryUrl,
     baseCommitSha: assessmentProgress?.commit?.baseCommitSha,
     commitSha: assessmentProgress?.commit?.commitSha,
+    commitUrl: assessmentProgress?.commit?.commitUrl,
   });
   const assessmentEvaluationClaims = assessmentProgress?.evaluation?.claims
     ?.filter((claim) => claim.sourceRefCount > 0)
