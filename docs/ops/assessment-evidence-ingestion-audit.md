@@ -70,6 +70,7 @@ npm run assessment-evidence:audit -- --remote --session-id <assessment_session_i
 npm run assessment-evidence:audit -- --remote --session-id <assessment_session_id> --require-all-families
 npm run assessment-evidence:replay -- --remote --session-id <assessment_session_id>
 npm run assessment-evidence:replay -- --remote --all-missing --limit 25
+npm run assessment-evidence:replay -- --remote --all-missing --limit 25 --summary
 ```
 
 For app-dev, prefix remote proof commands with
@@ -156,3 +157,8 @@ scoping duplicate checks to assessment-origin interactions. It still reports
 candidate-backed historical sessions with missing person projections, so broad
 dev cutover remains a backlog/backfill task rather than a completed global
 state.
+
+Use `--summary` for larger bounded app-dev replay batches. The compact output
+preserves the processed session ids, success/failure counts, before/after
+context/source-ref totals, remaining missing person projections, and matching
+effect counts without printing each full per-session proof object.

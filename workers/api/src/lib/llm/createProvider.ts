@@ -25,7 +25,7 @@
  *   KIMI_MODEL             = default Kimi model (default: kimi-k2-6)
  *
  * Shared Cloudflare credentials:
- *   CLOUDFLARE_AI_MODEL    = default Workers AI model (default: @cf/google/gemma-4-26b-a4b-it)
+ *   CLOUDFLARE_AI_MODEL    = default Workers AI model (default: @cf/zai-org/glm-4.7-flash)
  *   AI                     = Cloudflare Workers AI binding
  *
  * When 'MOCK_AI=true', culture/copilot/candidate agents return null. Candidate

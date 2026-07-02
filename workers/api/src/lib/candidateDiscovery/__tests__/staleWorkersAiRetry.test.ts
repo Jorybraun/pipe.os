@@ -4,6 +4,7 @@ import type { Env } from '../../../types';
 import {
   MISSING_INGESTION_RETRY_REASON,
   STALLED_INGESTION_RETRY_REASON,
+  isRetryableCandidateDiscoveryOutputFailure,
   isRetryableStaleWorkersAIModelFailure,
   isRetryableStalledInProgressIngestion,
   maybeQueueRetryableStandaloneIngestion,
@@ -114,6 +115,24 @@ describe('stale Workers AI candidate-ingestion retry', () => {
       status: 'pending',
       current_step: 'discover_profile',
       error_text: '5028: deprecated',
+    })).toBe(false);
+  });
+
+  it('classifies candidate discovery output contract failures as retryable after prompt/model fixes', () => {
+    expect(isRetryableCandidateDiscoveryOutputFailure({
+      status: 'failed',
+      current_step: 'discover_profile',
+      error_text: 'Discovery failed: Candidate Discovery response was not a JSON object',
+    })).toBe(true);
+    expect(isRetryableCandidateDiscoveryOutputFailure({
+      status: 'failed',
+      current_step: 'discover_profile',
+      error_text: 'Discovery failed: Candidate Discovery profile too short: got 0 chars, need >= 400',
+    })).toBe(true);
+    expect(isRetryableCandidateDiscoveryOutputFailure({
+      status: 'failed',
+      current_step: 'embed_profile',
+      error_text: 'Embed failed: Candidate Discovery response was not a JSON object',
     })).toBe(false);
   });
 
@@ -356,15 +375,18 @@ describe('stale Workers AI candidate-ingestion retry', () => {
 
     await expect(processStaleWorkersAIModelIngestionRetries(env, 2)).resolves.toEqual({
       scanned: 3,
-      queued: 2,
-      skipped: 1,
+      queued: 3,
+      skipped: 0,
       failed: 0,
     });
     const selectCall = db.__calls.find((call) => call.sql.includes('FROM candidate_ingestion ci'))!;
     expect(selectCall.params[1]).toBe(2);
-    expect(runCandidateIngestion).toHaveBeenCalledTimes(2);
+    expect(runCandidateIngestion).toHaveBeenCalledTimes(3);
     expect(runCandidateIngestion).toHaveBeenCalledWith(expect.objectContaining({
       candidateId: 'oldest',
+    }));
+    expect(runCandidateIngestion).toHaveBeenCalledWith(expect.objectContaining({
+      candidateId: 'bad-json',
     }));
     expect(runCandidateIngestion).toHaveBeenCalledWith(expect.objectContaining({
       candidateId: 'stalled',

@@ -9,6 +9,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Added — Open-source assessment setup
 
+- `assessment-evidence:replay -- --remote --all-missing --summary` now emits compact bounded-backfill proof with processed session ids, success/failure counts, context/source-ref totals, missing projection counts, and matching effects for app-dev replay batches.
 - `assessment-evidence:replay` now emits a DoD answer block covering what happened, who acted, source proof types, derived claims, missing person projections, and matching effects for the replayed assessment.
 - `assessment-evidence:replay` can now run `--all-missing --limit <n>` to backfill candidate-backed assessment sessions with missing person projections and report matching effects for each replayed candidate.
 - Open-source assessment session creation and replay now snapshot candidate profile evidence into the assessment spine with exact `candidate_profile` source refs, so profile context can be replayed into living context alongside challenge/workspace evidence.
@@ -29,6 +30,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Fixed — CODE_REVIEW assessment runtime
 
+- Standalone CODE_REVIEW ingestion now retries stale or failed candidate-evidence runs from the original resume source, remaps deprecated Workers AI models to the current default, and preserves richer raw review evidence for repo matching.
 - Standalone CODE_REVIEW status checks now queue source-backed PR assignment when candidate evidence is already ready, keeping `/assess` on the safe profile-received handoff while preventing ready candidates from staying idle.
 - Standalone text-intake CODE_REVIEW invites now attempt source-backed PR assignment immediately after resume decomposition produces matchable evidence, so app-dev auto-match can unblock without waiting for the slower discovery/profile tail to finish.
 - Labelled match-quality evaluations now compute and enforce expected reason categories, so a case cannot pass solely because the verdict is correct when the rationale is wrong.
@@ -36,6 +38,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Fixed — Open-source assessment progress
 
+- Candidate evidence ingestion now uses a structured-output-friendly Workers AI default, removes fenced JSON from the candidate-discovery prompt, unwraps nested Workers AI responses, retries failed discovery-output contracts, and exposes source-backed resume evidence before bounded embedding work can stall the `/assess` handoff.
 - Batched recruiter interview-list assessment progress summaries now use explicit typed row projections, keeping Worker strict typing green for the list-card performance path.
 - Recruiter interview lists now load assessment progress from batched summary queries instead of hydrating full per-session evidence detail for every card, preserving task/commit/evaluation signals while reducing list-page D1 work.
 - The assessment evidence audit now limits unscoped person-projection and duplicate checks to assessment-origin interactions, avoiding false duplicate reports from unrelated meeting-room context while still flagging candidate-backed raw assessment events that need replay.

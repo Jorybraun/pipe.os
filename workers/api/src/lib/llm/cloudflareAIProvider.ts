@@ -1,7 +1,7 @@
 /**
  * Cloudflare Workers AI provider — wraps env.AI.run() for text generation.
  *
- * Default model: @cf/google/gemma-4-26b-a4b-it
+ * Default model: @cf/zai-org/glm-4.7-flash
  * Override via CLOUDFLARE_AI_MODEL env var.
  *
  * The binding is already live in wrangler.toml — transcribe.ts uses the same
@@ -17,7 +17,7 @@
 
 import type { LLMProvider, LLMMessage, LLMCompletion, CompleteOptions, LLMUsage } from './types';
 
-export const DEFAULT_CLOUDFLARE_MODEL = '@cf/google/gemma-4-26b-a4b-it';
+export const DEFAULT_CLOUDFLARE_MODEL = '@cf/zai-org/glm-4.7-flash';
 
 // Cloudflare Workers AI changelog, 2026-05-08:
 // these models were deprecated on 2026-05-30. Normalize stale env overrides
@@ -82,12 +82,24 @@ interface CFChatChoice {
 interface CFChatResponse {
   response?: string;
   choices?: CFChatChoice[];
+  result?: CFChatResponse;
   // Workers AI also exposes usage when available
   usage?: {
     prompt_tokens?: number;
     completion_tokens?: number;
     total_tokens?: number;
   };
+}
+
+function unwrapCFChatResponse(result: CFChatResponse): CFChatResponse {
+  if (result.result && typeof result.result === 'object') {
+    const unwrapped: CFChatResponse = { ...result.result };
+    if (!unwrapped.usage && result.usage) {
+      unwrapped.usage = result.usage;
+    }
+    return unwrapped;
+  }
+  return result;
 }
 
 /** Translate standardized LLMMessage[] into Workers AI chat messages. */
@@ -219,7 +231,7 @@ export class CloudflareAIProvider implements LLMProvider {
     // `stripJsonFences` post-processing is more portable.
 
     let result: CFChatResponse;
-    result = (await this.runModel(input)) as CFChatResponse;
+    result = unwrapCFChatResponse((await this.runModel(input)) as CFChatResponse);
 
     // Workers AI may return { response: "..." } or newer chat format with
     // { result: { response: "..." } } or { choices: [{ message: { content } }] }.
@@ -241,10 +253,13 @@ export class CloudflareAIProvider implements LLMProvider {
         // Some reasoning models (e.g. Gemma 4) return thinking text in
         // message.reasoning when content is null. Fall back to it so callers
         // get *something* instead of an opaque "empty response" error.
-        console.warn(
-          `[cloudflareAIProvider] model ${this.model} returned empty content; falling back to message.reasoning (finish_reason=${choice.finish_reason ?? 'unknown'})`
-        );
-        rawText = msg.reasoning.trim();
+        const reasoning = msg.reasoning.trim();
+        if (!forceJson || reasoning.includes('{')) {
+          console.warn(
+            `[cloudflareAIProvider] model ${this.model} returned empty content; falling back to message.reasoning (finish_reason=${choice.finish_reason ?? 'unknown'})`
+          );
+          rawText = reasoning;
+        }
       }
     }
     if (!rawText) {

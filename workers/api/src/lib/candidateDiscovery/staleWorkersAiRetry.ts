@@ -13,10 +13,12 @@ const STALE_IN_PROGRESS_RETRY_AFTER_MS = 10 * 60 * 1000;
 type RetryTrigger = 'candidate_rpc' | 'scheduled_worker';
 type RetryReasonCode =
   | 'stale_workers_ai_model_failure'
+  | 'candidate_discovery_output_contract_failure'
   | 'stalled_candidate_evidence_ingestion'
   | 'missing_candidate_evidence_ingestion';
 
 export const STALE_WORKERS_AI_RETRY_REASON = 'Retrying candidate evidence ingestion after a stale Workers AI model failure.';
+export const CANDIDATE_DISCOVERY_OUTPUT_RETRY_REASON = 'Retrying candidate evidence ingestion after the AI discovery output failed the structured JSON contract.';
 export const STALLED_INGESTION_RETRY_REASON = 'Retrying candidate evidence ingestion from the original source after the previous run stalled.';
 export const MISSING_INGESTION_RETRY_REASON = 'Starting candidate evidence ingestion from the uploaded resume because no ingestion run was recorded.';
 
@@ -72,6 +74,23 @@ export function isRetryableStaleWorkersAIModelFailure(row: {
     || errorText.includes('decommissioned');
 }
 
+export function isRetryableCandidateDiscoveryOutputFailure(row: {
+  status: string | null;
+  current_step: string | null;
+  error_text: string | null;
+}): boolean {
+  if (row.status !== 'failed') return false;
+  const errorText = (row.error_text ?? '').toLowerCase();
+  if (!errorText) return false;
+  const currentStep = row.current_step ?? '';
+  const failedDuringDiscovery = currentStep === 'discover_profile'
+    || errorText.includes('discovery failed');
+  if (!failedDuringDiscovery) return false;
+  return errorText.includes('candidate discovery response was not a json object')
+    || errorText.includes('candidate discovery profile too short: got 0 chars')
+    || errorText.includes('cloudflare workers ai returned empty response');
+}
+
 export function isRetryableStalledInProgressIngestion(row: {
   status: string | null;
   current_step: string | null;
@@ -103,6 +122,17 @@ function retryContextForRow(row: StaleWorkersAIRow, trigger: RetryTrigger): (Ret
       trigger,
       reasonCode: 'stale_workers_ai_model_failure',
       publicReason: STALE_WORKERS_AI_RETRY_REASON,
+      originalErrorText: row.error_text,
+      originalStep: row.current_step,
+      originalUpdatedAt: row.updated_at ?? null,
+    };
+  }
+
+  if (isRetryableCandidateDiscoveryOutputFailure(row)) {
+    return {
+      trigger,
+      reasonCode: 'candidate_discovery_output_contract_failure',
+      publicReason: CANDIDATE_DISCOVERY_OUTPUT_RETRY_REASON,
       originalErrorText: row.error_text,
       originalStep: row.current_step,
       originalUpdatedAt: row.updated_at ?? null,
@@ -272,6 +302,9 @@ export async function processStaleWorkersAIModelIngestionRetries(
               ci.error_text LIKE '%5028%'
               OR lower(ci.error_text) LIKE '%deprecated%'
               OR lower(ci.error_text) LIKE '%decommissioned%'
+              OR lower(ci.error_text) LIKE '%candidate discovery response was not a json object%'
+              OR lower(ci.error_text) LIKE '%candidate discovery profile too short: got 0 chars%'
+              OR lower(ci.error_text) LIKE '%cloudflare workers ai returned empty response%'
             )
           )
           OR (

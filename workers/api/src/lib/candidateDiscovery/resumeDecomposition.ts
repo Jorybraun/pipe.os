@@ -62,6 +62,7 @@ export interface ResumeDecompositionInput {
   /** Pre-computed decomposition from cvParser.ts. If null/undefined, falls back to parser-only nodes. */
   decompositionResult?: DecompositionResult | null;
   env: Env;
+  afterSourceBackedEvidence?: () => Promise<void>;
   /** @deprecated Vectorize upserts removed in Neo4j migration Phase 2. Kept for API compatibility. */
   vectorize?: VectorizeIndex;
 }
@@ -79,6 +80,7 @@ const DECOMPOSITION_VERSION = 'adr041-v1';
 const DEFAULT_CONFIDENCE = 0.5;
 const RAW_REVIEW_EVIDENCE_CONFIDENCE = 0.85;
 const RAW_REVIEW_EVIDENCE_NODE_LIMIT = 64;
+const MAX_NODE_EMBEDDINGS_PER_INGESTION = 24;
 const RAW_REVIEW_EVIDENCE_QUOTE_LIMIT = 8;
 const RAW_REVIEW_EVIDENCE_MIN_CHARS = 24;
 
@@ -602,6 +604,7 @@ async function writeParserOnlyNodes(
   parsedCV: ParsedCV,
   resumeText: string,
   env: Env,
+  afterSourceBackedEvidence?: () => Promise<void>,
 ): Promise<{ inserted: number; embedded: number; errors: string[]; embeddings: number[][] }> {
   const errors: string[] = [];
   let inserted = 0;
@@ -788,7 +791,16 @@ async function writeParserOnlyNodes(
     }
   }
 
-  for (const insertedNode of candidateNodes) {
+  if (candidateNodes.length > 0 && afterSourceBackedEvidence) {
+    try {
+      await afterSourceBackedEvidence();
+    } catch (callbackErr) {
+      const msg = callbackErr instanceof Error ? callbackErr.message : String(callbackErr);
+      errors.push(`Source-backed evidence callback failed: ${msg}`);
+    }
+  }
+
+  for (const insertedNode of candidateNodes.slice(0, MAX_NODE_EMBEDDINGS_PER_INGESTION)) {
     try {
       const embedding = await embedCandidateNode(insertedNode.narrative_text, env as unknown as Parameters<typeof embedCandidateNode>[1]);
       const embeddingJson = JSON.stringify(embedding);
@@ -932,7 +944,14 @@ export async function decomposeResumeToGraph(
   } else {
     // No decomposition — fall back to parser-only nodes with lower confidence
     console.log('[resumeDecomposition] No decomposition result provided; falling back to parser-only nodes');
-    const fallback = await writeParserOnlyNodes(db, candidateId, parsedCV, resumeText, env);
+    const fallback = await writeParserOnlyNodes(
+      db,
+      candidateId,
+      parsedCV,
+      resumeText,
+      env,
+      input.afterSourceBackedEvidence,
+    );
     result.nodesInserted = fallback.inserted;
     result.nodesEmbedded = fallback.embedded;
     result.errors.push(...fallback.errors);
@@ -993,7 +1012,17 @@ export async function decomposeResumeToGraph(
     }
   }
 
-  for (const insertedNode of candidateNodes) {
+  if (candidateNodes.length > 0 && input.afterSourceBackedEvidence) {
+    try {
+      await input.afterSourceBackedEvidence();
+    } catch (callbackErr) {
+      const msg = callbackErr instanceof Error ? callbackErr.message : String(callbackErr);
+      console.warn('[resumeDecomposition] source-backed evidence callback failed:', msg);
+      result.errors.push(`Source-backed evidence callback failed: ${msg}`);
+    }
+  }
+
+  for (const insertedNode of candidateNodes.slice(0, MAX_NODE_EMBEDDINGS_PER_INGESTION)) {
     try {
       const embedding = await embedCandidateNode(insertedNode.narrative_text, env as unknown as Parameters<typeof embedCandidateNode>[1]);
       const embeddingJson = JSON.stringify(embedding);

@@ -347,6 +347,37 @@ describe('decomposeResumeToGraph', () => {
     expect(canonicalTerms).toContain('term:vitest-regression-tests');
   });
 
+  it('signals source-backed evidence readiness before parser-only embeddings run', async () => {
+    const db = mockDb();
+    const ready = vi.fn(async () => undefined);
+    const parsedCV: ParsedCV = {
+      name: 'Repo Match Candidate',
+      skills: ['TypeScript'],
+      experiences: [],
+      educationBlocks: [],
+      credentials: [],
+      projects: [],
+    };
+
+    await decomposeResumeToGraph({
+      db,
+      candidateId: 'candidate-ready-before-embed',
+      resumeText: 'Senior TypeScript engineer reviewing request routing bugs and Vitest regression tests.',
+      parsedCV,
+      env: mockEnv,
+      decompositionResult: null,
+      afterSourceBackedEvidence: ready,
+    });
+
+    expect(ready).toHaveBeenCalledTimes(1);
+    expect(Math.max(...vi.mocked(insertCandidateNode).mock.invocationCallOrder)).toBeLessThan(
+      vi.mocked(ready).mock.invocationCallOrder[0]!,
+    );
+    expect(vi.mocked(ready).mock.invocationCallOrder[0]!).toBeLessThan(
+      Math.min(...vi.mocked(embedCandidateNode).mock.invocationCallOrder),
+    );
+  });
+
   it('falls back to parser-only nodes when decompositionResult is null', async () => {
     const db = mockDb();
     const parsedCV: ParsedCV = {

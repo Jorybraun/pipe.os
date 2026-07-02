@@ -46,21 +46,12 @@ and structure.
    invent specifics, metrics, or years of experience that are not present in
    the facts block.
 
-   AFTER the prose narrative, append a labeled JSON block containing the
-   structured signals from parts 2-4 below. Use this exact format:
-
-   --- structured depth ---
-   \`\`\`json
-   {
-     "key_concepts": { ... },
-     "career_context": { ... },
-     "situation_signature": { ... }
-   }
-   \`\`\`
-
-   The embedding model reads the entire string (prose + JSON), so the
-   structured depth reinforces the semantic signal without breaking the
-   narrative flow.
+   AFTER the prose narrative, append one plain-text paragraph beginning
+   "Structured depth:" that names the strongest source-backed concepts from
+   parts 2-4 below. Do not put markdown code fences, raw multiline JSON, or
+   unescaped quotes inside this string. The embedding model reads the entire
+   string, so the structured depth reinforces the semantic signal without
+   making the outer JSON invalid.
 
 2. key_concepts: a structured object for programmatic matching:
    - mustHaveSkills: string[] (max 10) — technologies the candidate has
@@ -111,11 +102,11 @@ and structure.
    - impact_signals: string[] (max 3) — concrete outcomes they've achieved
      (e.g. "reduced latency 40%", "scaled to 1M users", "cut CI time 60%")
 
-Output ONLY valid JSON. No preamble. No markdown fences around the outer
-object. The shape is:
+Output ONLY valid JSON. No preamble. Do not include markdown code fences
+anywhere in the output. The shape is:
 
 {
-  "candidate_searchable_profile": "... prose ...\\n\\n--- structured depth ---\\n${'```'}json\\n{...}\\n${'```'}",
+  "candidate_searchable_profile": "... prose ... Structured depth: key_concepts include TypeScript and React; career_context includes growth-stage product teams; situation_signature includes reliability and test-focused refactoring.",
   "key_concepts": {
     "mustHaveSkills": [...],
     "niceToHaveSkills": [...],

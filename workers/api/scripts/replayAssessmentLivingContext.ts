@@ -5,6 +5,7 @@
  * Remote:
  *   CLOUDFLARE_D1_DATABASE_ID=<dev-db-id> npm run assessment-evidence:replay -- --remote --session-id <assessment_session_id>
  *   CLOUDFLARE_D1_DATABASE_ID=<dev-db-id> npm run assessment-evidence:replay -- --remote --all-missing --limit 25
+ *   CLOUDFLARE_D1_DATABASE_ID=<dev-db-id> npm run assessment-evidence:replay -- --remote --all-missing --limit 25 --summary
  *
  * The replay uses the same production ingestion path as real-time assessment
  * evaluation and scheduled backfill. Ingestion keys make reruns idempotent.
@@ -74,6 +75,7 @@ interface ReplayOptions {
   allMissing: boolean;
   limit: number;
   json: boolean;
+  summary: boolean;
 }
 
 interface CountRow {
@@ -116,12 +118,15 @@ interface DerivedClaimRow {
   count: number;
 }
 
+type ReplayResult = Awaited<ReturnType<typeof replaySession>>;
+
 function parseArgs(argv: string[]): ReplayOptions {
   let target: ReplayOptions['target'] | null = null;
   let sessionId: string | undefined;
   let allMissing = false;
   let limit = 25;
   let json = false;
+  let summary = false;
 
   for (let index = 0; index < argv.length; index++) {
     const arg = argv[index];
@@ -135,6 +140,8 @@ function parseArgs(argv: string[]): ReplayOptions {
       limit = Number(argv[++index] ?? '');
     } else if (arg === '--json') {
       json = true;
+    } else if (arg === '--summary') {
+      summary = true;
     } else {
       throw new Error(`Unknown argument: ${arg}`);
     }
@@ -153,7 +160,7 @@ function parseArgs(argv: string[]): ReplayOptions {
     throw new Error('--limit must be an integer from 1 to 500.');
   }
 
-  return { target, sessionId, allMissing, limit, json };
+  return { target, sessionId, allMissing, limit, json, summary };
 }
 
 async function count(db: D1Database, sql: string, value: string): Promise<number> {
@@ -344,6 +351,82 @@ async function loadMissingReplaySessionIds(db: D1Database, limit: number): Promi
   return (rows.results ?? []).map((row) => row.session_id);
 }
 
+function summarizeReplayResults(input: {
+  requestedLimit: number;
+  sessionIds: string[];
+  results: ReplayResult[];
+}): {
+  ok: boolean;
+  mode: 'all-missing';
+  requestedLimit: number;
+  processedCount: number;
+  succeededCount: number;
+  failedCount: number;
+  sessionIds: string[];
+  failures: Array<{ sessionId: string; reason: string }>;
+  totals: {
+    contextRecordsBefore: number;
+    contextRecordsAfter: number;
+    sourceRefsBefore: number;
+    sourceRefsAfter: number;
+    missingPersonProjectionsAfter: number;
+    matchRunCount: number;
+  };
+  sessions: Array<{
+    sessionId: string;
+    ok: boolean;
+    interactionType: string | null;
+    contextRecordsBefore: number;
+    contextRecordsAfter: number;
+    sourceRefsBefore: number;
+    sourceRefsAfter: number;
+    missingPersonProjectionCount: number;
+    candidateId: string | null;
+    matchRunCount: number;
+    latestSelectedPacketId: string | null;
+  }>;
+} {
+  const sessions = input.results.map((entry) => ({
+    sessionId: entry.sessionId,
+    ok: entry.ok,
+    interactionType: entry.proof?.interaction_type ?? null,
+    contextRecordsBefore: entry.before.contextRecords,
+    contextRecordsAfter: entry.after.contextRecords,
+    sourceRefsBefore: entry.before.sourceRefs,
+    sourceRefsAfter: entry.after.sourceRefs,
+    missingPersonProjectionCount: entry.answers.missingPersonProjectionCount,
+    candidateId: entry.matchingEffects.candidateId,
+    matchRunCount: entry.matchingEffects.matchRunCount,
+    latestSelectedPacketId: entry.matchingEffects.latestMatchRuns[0]?.selected_packet_id ?? null,
+  }));
+  const failures = input.results
+    .filter((entry) => !entry.ok)
+    .map((entry) => ({
+      sessionId: entry.sessionId,
+      reason: entry.proof === null ? 'missing assessment interaction proof' : 'replay produced no source refs',
+    }));
+
+  return {
+    ok: failures.length === 0,
+    mode: 'all-missing',
+    requestedLimit: input.requestedLimit,
+    processedCount: input.results.length,
+    succeededCount: input.results.length - failures.length,
+    failedCount: failures.length,
+    sessionIds: input.sessionIds,
+    failures,
+    totals: {
+      contextRecordsBefore: sessions.reduce((sum, entry) => sum + entry.contextRecordsBefore, 0),
+      contextRecordsAfter: sessions.reduce((sum, entry) => sum + entry.contextRecordsAfter, 0),
+      sourceRefsBefore: sessions.reduce((sum, entry) => sum + entry.sourceRefsBefore, 0),
+      sourceRefsAfter: sessions.reduce((sum, entry) => sum + entry.sourceRefsAfter, 0),
+      missingPersonProjectionsAfter: sessions.reduce((sum, entry) => sum + entry.missingPersonProjectionCount, 0),
+      matchRunCount: sessions.reduce((sum, entry) => sum + entry.matchRunCount, 0),
+    },
+    sessions,
+  };
+}
+
 async function main(): Promise<void> {
   const options = parseArgs(process.argv.slice(2));
   const db = new RemoteD1(new D1Client(loadD1Config())) as unknown as D1Database;
@@ -354,14 +437,16 @@ async function main(): Promise<void> {
     for (const sessionId of sessionIds) {
       results.push(await replaySession(db, sessionId));
     }
-    const result = {
-      ok: results.every((entry) => entry.ok),
-      mode: 'all-missing',
-      requestedLimit: options.limit,
-      processedCount: results.length,
-      sessionIds,
-      results,
-    };
+    const result = options.summary
+      ? summarizeReplayResults({ requestedLimit: options.limit, sessionIds, results })
+      : {
+          ok: results.every((entry) => entry.ok),
+          mode: 'all-missing',
+          requestedLimit: options.limit,
+          processedCount: results.length,
+          sessionIds,
+          results,
+        };
     console.log(JSON.stringify(result, null, 2));
     if (!result.ok) process.exitCode = 1;
     return;

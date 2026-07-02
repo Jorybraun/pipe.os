@@ -18,7 +18,7 @@ describe('createCandidateAgentProvider', () => {
 
     expect(provider).toBeInstanceOf(CloudflareAIProvider);
     expect((provider as CloudflareAIProvider).model).toBe(DEFAULT_CLOUDFLARE_MODEL);
-    expect(DEFAULT_CLOUDFLARE_MODEL).toBe('@cf/google/gemma-4-26b-a4b-it');
+    expect(DEFAULT_CLOUDFLARE_MODEL).toBe('@cf/zai-org/glm-4.7-flash');
   });
 
   it('keeps explicit candidate model overrides intact', () => {
@@ -161,6 +161,23 @@ describe('createCandidateAgentProvider', () => {
     );
     expect((provider as CloudflareAIProvider).getModelKey()).toBe(`workers-ai/${DEFAULT_CLOUDFLARE_MODEL}`);
     expect((provider as CloudflareAIProvider).getLastUsage()).toEqual({ inputTokens: 7, outputTokens: 5 });
+  });
+
+  it('unwraps nested Workers AI result envelopes before parsing completions', async () => {
+    const ai = {
+      run: vi.fn(async () => ({
+        result: {
+          response: '{"candidate_searchable_profile":"ok"}',
+          usage: { prompt_tokens: 3, completion_tokens: 4 },
+        },
+      })),
+    } as unknown as Ai;
+    const provider = createCandidateAgentProvider({ AI: ai });
+
+    const completion = await provider?.complete([{ role: 'user', content: 'Return JSON.' }], { forceJson: true });
+
+    expect(completion?.content).toBe('{"candidate_searchable_profile":"ok"}');
+    expect((provider as CloudflareAIProvider).getLastUsage()).toEqual({ inputTokens: 3, outputTokens: 4 });
   });
 });
 

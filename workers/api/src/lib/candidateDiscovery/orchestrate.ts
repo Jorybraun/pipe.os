@@ -98,6 +98,12 @@ export async function runCandidateIngestion(input: IngestionInput): Promise<void
   // still has source-backed candidate evidence when a profile/model provider is
   // unavailable or slow.
   let decompositionEmbeddings: number[][] = [];
+  let sourceBackedEvidenceHandled = false;
+  const triggerAfterSourceBackedEvidence = async (): Promise<void> => {
+    if (sourceBackedEvidenceHandled || !input.afterSourceBackedEvidence) return;
+    sourceBackedEvidenceHandled = true;
+    await input.afterSourceBackedEvidence();
+  };
   try {
     await recordSessionEvent(db, {
       sessionId: `ingestion-${candidateId}`,
@@ -114,6 +120,7 @@ export async function runCandidateIngestion(input: IngestionInput): Promise<void
         parsedCV: parsed,
         env,
         decompositionResult: input.decompositionResult,
+        afterSourceBackedEvidence: triggerAfterSourceBackedEvidence,
       }),
     );
     decompositionEmbeddings = decompResult.embeddings;
@@ -122,15 +129,16 @@ export async function runCandidateIngestion(input: IngestionInput): Promise<void
       sessionType: 'ingestion',
       candidateId,
       eventType: 'decomposition_complete',
-      payload: { nodeCount: decompResult.embeddings.length },
+      payload: {
+        nodeCount: decompResult.nodesInserted,
+        embeddedNodeCount: decompResult.nodesEmbedded,
+      },
     });
-    if (input.afterSourceBackedEvidence) {
-      try {
-        await input.afterSourceBackedEvidence();
-      } catch (err) {
-        const msg = err instanceof Error ? err.message : String(err);
-        console.error('[ingestion] afterSourceBackedEvidence failed:', msg);
-      }
+    try {
+      await triggerAfterSourceBackedEvidence();
+    } catch (err) {
+      const msg = err instanceof Error ? err.message : String(err);
+      console.error('[ingestion] afterSourceBackedEvidence failed:', msg);
     }
   } catch (err) {
     const msg = err instanceof Error ? err.message : String(err);
