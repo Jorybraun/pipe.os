@@ -107,6 +107,26 @@ interface ChallengePacketRow {
   demands_json: string | null;
 }
 
+interface ChallengePacketJson {
+  repository?: {
+    owner?: string;
+    name?: string;
+    canonicalUrl?: string;
+  };
+  pullRequest?: {
+    url?: string;
+    title?: string;
+  };
+  demands?: Array<{
+    demandId?: string;
+    id?: string;
+    concepts?: string[];
+    conceptKeys?: string[];
+    sourceRefs?: unknown[];
+    sourceReferences?: unknown[];
+  }>;
+}
+
 function safeJsonParse<T>(json: string | null, fallback: T): T {
   if (!json) return fallback;
   try {
@@ -169,14 +189,7 @@ function packetDemands(row: ChallengePacketRow): Array<{
     }));
   }
 
-  const packet = safeJsonParse<{ demands?: Array<{
-    demandId?: string;
-    id?: string;
-    concepts?: string[];
-    conceptKeys?: string[];
-    sourceRefs?: unknown[];
-    sourceReferences?: unknown[];
-  }> }>(row.packet_json, {});
+  const packet = safeJsonParse<ChallengePacketJson>(row.packet_json, {});
   return (packet.demands ?? []).map((demand, index) => {
     const explicitSourceRefs = demand.sourceRefs ?? demand.sourceReferences ?? [];
     return {
@@ -187,6 +200,25 @@ function packetDemands(row: ChallengePacketRow): Array<{
         : sourceRefsFromDemand(row, demand, index),
     };
   });
+}
+
+function packetIdentityMetadata(row: ChallengePacketRow): Pick<
+  ExpectedChallengePacket,
+  'repoFullName' | 'repoUrl' | 'prUrl' | 'prTitle'
+> {
+  const packet = safeJsonParse<ChallengePacketJson>(row.packet_json, {});
+  const owner = packet.repository?.owner?.trim();
+  const name = packet.repository?.name?.trim();
+  const repoFullName = owner && name ? `${owner}/${name}` : undefined;
+  const repoUrl = packet.repository?.canonicalUrl?.trim();
+  const prUrl = packet.pullRequest?.url?.trim();
+  const prTitle = packet.pullRequest?.title?.trim();
+  return {
+    ...(repoFullName ? { repoFullName } : {}),
+    ...(repoUrl ? { repoUrl } : {}),
+    ...(prUrl ? { prUrl } : {}),
+    ...(prTitle ? { prTitle } : {}),
+  };
 }
 
 function sourceRefsFromDemand(
@@ -465,9 +497,11 @@ export async function seedCorpusFromMatchRuns(
     if (packetRow) {
       const selectedChallenge = selectedChallengesByPacketId.get(packetId);
       const demands = packetDemands(packetRow);
+      const identityMetadata = packetIdentityMetadata(packetRow);
       expectedPackets.push({
         challengeId: packetRow.id,
         repoId: selectedChallenge?.repoId ?? String(packetRow.repo_id),
+        ...identityMetadata,
         prNumber: packetRow.pr_number,
         sourceVersion: selectedChallenge?.sourceVersion
           ?? packetRow.source_version

@@ -546,6 +546,15 @@ describe('corpusSeeder', () => {
       'packet-v1',
       'sha256:packet-from-source-hash',
       JSON.stringify({
+        repository: {
+          owner: 'mui',
+          name: 'base-ui',
+          canonicalUrl: 'https://github.com/mui/base-ui',
+        },
+        pullRequest: {
+          url: 'https://github.com/mui/base-ui/pull/42',
+          title: 'Repair Kafka Streams retry code',
+        },
         demands: [{
           id: 'packet-demand-1',
           narrative: 'Review Kafka Streams retry code in the source-backed PR.',
@@ -565,7 +574,11 @@ describe('corpusSeeder', () => {
     expect(result.corpus.expectedPackets![0]).toMatchObject({
       challengeId: 'packet-1',
       repoId: 'repo-1',
+      repoFullName: 'mui/base-ui',
+      repoUrl: 'https://github.com/mui/base-ui',
       prNumber: 42,
+      prUrl: 'https://github.com/mui/base-ui/pull/42',
+      prTitle: 'Repair Kafka Streams retry code',
       sourceVersion: 'v1.0.0',
       packetContentHash: 'sha256:packet-from-source-hash',
     });

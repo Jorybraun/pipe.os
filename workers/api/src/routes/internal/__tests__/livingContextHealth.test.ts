@@ -931,6 +931,256 @@ describe('POST /evaluation-corpus-seed', () => {
     expect(body.productionReady).toBe(false);
     expect(body.nextAction).toBe('attach_expert_label_provenance');
   });
+
+  it('exports a compact review packet for a seeded draft corpus', async () => {
+    const db = createMockD1(sqlite);
+    const app = new Hono();
+    app.route('/', livingContextHealth);
+
+    const seedRes = await app.request('/evaluation-corpus-seed', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ limit: 1 }),
+    }, { DB: db });
+    expect(seedRes.status).toBe(200);
+    const seedBody = await seedRes.json() as { corpusId: string };
+
+    const res = await app.request(
+      `/evaluation-corpus-review-packet?corpusId=${encodeURIComponent(seedBody.corpusId)}`,
+      undefined,
+      { DB: db },
+    );
+    expect(res.status).toBe(200);
+
+    const body = await res.json() as {
+      ok: boolean;
+      corpusHash: string;
+      reviewPacket: {
+        productionReady: boolean;
+        productionReadinessFailures: string[];
+        items: Array<{
+          labelId: string;
+          draft: { labeledBy: string; relevanceGrade: string };
+          candidateEvidence: Array<{ narrative: string; evidenceReferences: unknown[] }>;
+          roleRequirements: { sourceReferences: unknown[] } | null;
+          expectedPacket: { repoId: string; prNumber: number; demands: Array<{ sourceRefs: unknown[] }> } | null;
+        }>;
+      };
+    };
+    expect(body.ok).toBe(true);
+    expect(body.corpusHash).toMatch(/^[a-f0-9]{64}$/);
+    expect(body.reviewPacket.productionReady).toBe(false);
+    expect(body.reviewPacket.productionReadinessFailures).toContain(
+      'expert label is missing reviewer/source provenance: seeded-match-run-seed-1-packet-seed-1',
+    );
+    expect(body.reviewPacket.items).toHaveLength(1);
+    expect(body.reviewPacket.items[0]!.draft.labeledBy).toBe('corpus-seeder');
+    expect(body.reviewPacket.items[0]!.candidateEvidence[0]!.narrative).toContain('React TypeScript');
+    expect(body.reviewPacket.items[0]!.candidateEvidence[0]!.evidenceReferences).toHaveLength(1);
+    expect(body.reviewPacket.items[0]!.roleRequirements!.sourceReferences).toHaveLength(1);
+    expect(body.reviewPacket.items[0]!.expectedPacket).toMatchObject({
+      repoId: 'mui/base-ui',
+      prNumber: 973,
+    });
+    expect(body.reviewPacket.items[0]!.expectedPacket!.demands[0]!.sourceRefs).toHaveLength(1);
+  });
+
+  it('persists expert review as a new frozen corpus with reviewer provenance', async () => {
+    const db = createMockD1(sqlite);
+    const app = new Hono();
+    app.route('/', livingContextHealth);
+
+    const seedRes = await app.request('/evaluation-corpus-seed', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ limit: 1 }),
+    }, { DB: db });
+    expect(seedRes.status).toBe(200);
+    const seedBody = await seedRes.json() as { corpusId: string; corpusHash: string };
+
+    const res = await app.request('/evaluation-corpus-expert-review', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({
+        sourceCorpusId: seedBody.corpusId,
+        reviewedCorpusId: 'reviewed-seed-corpus-1',
+        reviewerId: 'expert-reviewer-1',
+        reviewerRole: 'principal-engineer',
+        reviewArtifactId: 'review-artifact-1',
+        reviewArtifactVersion: 'v1',
+        rubricVersion: 'match-rubric-v1',
+        reviewedAt: '2026-07-02T20:00:00.000Z',
+        labels: [{
+          labelId: 'seeded-match-run-seed-1-packet-seed-1',
+          relevanceGrade: 'highly_relevant',
+          eligibleChallengeIds: ['packet-seed-1'],
+          explanation: 'Candidate React popover review evidence directly maps to the source-backed Base UI PR demand.',
+        }],
+      }),
+    }, { DB: db });
+    expect(res.status).toBe(200);
+
+    const body = await res.json() as {
+      ok: boolean;
+      sourceCorpusId: string;
+      sourceCorpusHash: string;
+      reviewedCorpusId: string;
+      corpusHash: string;
+      persisted: boolean;
+      expertLabelCount: number;
+      syntheticFixtureCount: number;
+      productionReady: boolean;
+      productionReadinessFailures: string[];
+      nextAction: string;
+    };
+    expect(body.ok).toBe(true);
+    expect(body.sourceCorpusId).toBe(seedBody.corpusId);
+    expect(body.sourceCorpusHash).toBe(seedBody.corpusHash);
+    expect(body.reviewedCorpusId).toBe('reviewed-seed-corpus-1');
+    expect(body.corpusHash).toMatch(/^[a-f0-9]{64}$/);
+    expect(body.persisted).toBe(true);
+    expect(body.expertLabelCount).toBe(1);
+    expect(body.syntheticFixtureCount).toBe(0);
+    expect(body.productionReady).toBe(true);
+    expect(body.productionReadinessFailures).toEqual([]);
+    expect(body.nextAction).toBe('run_evaluation');
+
+    const rows = sqlite.prepare(
+      `SELECT corpus_id, expert_label_count, corpus_json
+         FROM evaluation_corpora
+        ORDER BY corpus_id`,
+    ).all() as Array<{ corpus_id: string; expert_label_count: number; corpus_json: string }>;
+    expect(rows.map((row) => row.corpus_id).sort()).toEqual([
+      'reviewed-seed-corpus-1',
+      seedBody.corpusId,
+    ].sort());
+    const draftRow = rows.find((row) => row.corpus_id === seedBody.corpusId)!;
+    const reviewedRow = rows.find((row) => row.corpus_id === 'reviewed-seed-corpus-1')!;
+    expect(draftRow.expert_label_count).toBe(0);
+    expect(reviewedRow.expert_label_count).toBe(1);
+
+    const reviewedCorpus = JSON.parse(reviewedRow.corpus_json) as {
+      expertLabels: Array<{
+        labeledBy: string;
+        labelProvenance: { reviewerId: string; contentHash: string; locator: string };
+      }>;
+    };
+    expect(reviewedCorpus.expertLabels[0]!.labeledBy).toBe('expert-reviewer-1');
+    expect(reviewedCorpus.expertLabels[0]!.labelProvenance).toMatchObject({
+      reviewerId: 'expert-reviewer-1',
+      locator: 'review-artifact-1#seeded-match-run-seed-1-packet-seed-1',
+    });
+    expect(reviewedCorpus.expertLabels[0]!.labelProvenance.contentHash).toMatch(/^sha256:/);
+  });
+
+  it('can dry-run expert review without writing a reviewed corpus row', async () => {
+    const db = createMockD1(sqlite);
+    const app = new Hono();
+    app.route('/', livingContextHealth);
+
+    const seedRes = await app.request('/evaluation-corpus-seed', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ limit: 1 }),
+    }, { DB: db });
+    expect(seedRes.status).toBe(200);
+    const seedBody = await seedRes.json() as { corpusId: string };
+
+    const res = await app.request('/evaluation-corpus-expert-review', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({
+        sourceCorpusId: seedBody.corpusId,
+        reviewedCorpusId: 'reviewed-dry-run-corpus-1',
+        reviewerId: 'expert-reviewer-1',
+        reviewArtifactId: 'review-artifact-1',
+        reviewArtifactVersion: 'v1',
+        rubricVersion: 'match-rubric-v1',
+        dryRun: true,
+        labels: [{
+          labelId: 'seeded-match-run-seed-1-packet-seed-1',
+          relevanceGrade: 'highly_relevant',
+          eligibleChallengeIds: ['packet-seed-1'],
+          explanation: 'Dry run confirms this label would become production-ready without persisting it.',
+        }],
+      }),
+    }, { DB: db });
+    expect(res.status).toBe(200);
+
+    const body = await res.json() as {
+      ok: boolean;
+      reviewedCorpusId: string;
+      corpusHash: string;
+      persisted: boolean;
+      dryRun: boolean;
+      productionReady: boolean;
+    };
+    expect(body.ok).toBe(true);
+    expect(body.reviewedCorpusId).toBe('reviewed-dry-run-corpus-1');
+    expect(body.corpusHash).toMatch(/^[a-f0-9]{64}$/);
+    expect(body.persisted).toBe(false);
+    expect(body.dryRun).toBe(true);
+    expect(body.productionReady).toBe(true);
+
+    const reviewedRow = sqlite.prepare(
+      `SELECT corpus_id FROM evaluation_corpora WHERE corpus_id = 'reviewed-dry-run-corpus-1'`,
+    ).get();
+    expect(reviewedRow).toBeUndefined();
+  });
+
+  it('reports repeated expert review persistence idempotently for the same reviewed corpus', async () => {
+    const db = createMockD1(sqlite);
+    const app = new Hono();
+    app.route('/', livingContextHealth);
+
+    const seedRes = await app.request('/evaluation-corpus-seed', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ limit: 1 }),
+    }, { DB: db });
+    expect(seedRes.status).toBe(200);
+    const seedBody = await seedRes.json() as { corpusId: string };
+
+    const reviewBody = {
+      sourceCorpusId: seedBody.corpusId,
+      reviewedCorpusId: 'reviewed-idempotent-corpus-1',
+      reviewerId: 'expert-reviewer-1',
+      reviewArtifactId: 'review-artifact-1',
+      reviewArtifactVersion: 'v1',
+      rubricVersion: 'match-rubric-v1',
+      reviewedAt: '2026-07-02T20:00:00.000Z',
+      labels: [{
+        labelId: 'seeded-match-run-seed-1-packet-seed-1',
+        relevanceGrade: 'highly_relevant',
+        eligibleChallengeIds: ['packet-seed-1'],
+        explanation: 'Repeated review confirms idempotent corpus persistence.',
+      }],
+    };
+
+    const firstRes = await app.request('/evaluation-corpus-expert-review', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify(reviewBody),
+    }, { DB: db });
+    expect(firstRes.status).toBe(200);
+    const firstBody = await firstRes.json() as { corpusHash: string; persisted: boolean };
+    expect(firstBody.persisted).toBe(true);
+
+    const secondRes = await app.request('/evaluation-corpus-expert-review', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify(reviewBody),
+    }, { DB: db });
+    expect(secondRes.status).toBe(200);
+    const secondBody = await secondRes.json() as { corpusHash: string; persisted: boolean };
+    expect(secondBody.persisted).toBe(false);
+    expect(secondBody.corpusHash).toBe(firstBody.corpusHash);
+
+    const count = sqlite.prepare(
+      `SELECT COUNT(*) AS count FROM evaluation_corpora WHERE corpus_id = 'reviewed-idempotent-corpus-1'`,
+    ).get() as { count: number };
+    expect(count.count).toBe(1);
+  });
 });
 
 describe('POST /person-identity-link', () => {
