@@ -834,6 +834,13 @@ route.post('/upload-profile', async (c) => {
       extractedTextAvailable: resumeText.length >= 20,
     },
   });
+
+  const readyChallenges = await loadReadyChallenges(c.env.DB, candidate.id, candidate.invite_token);
+  if (readyChallenges.length === 0) {
+    await ensureChallengeDesignQueueItem(c.env.DB, candidate, profileInput, now, {
+      sourceBackedProfileEvidence: resumeText.length >= 20,
+    });
+  }
   queueProfileIngestion({
     c,
     candidateId: candidate.id,
@@ -842,13 +849,6 @@ route.post('/upload-profile', async (c) => {
     resumeText,
     livingContextIdentity,
   });
-
-  const readyChallenges = await loadReadyChallenges(c.env.DB, candidate.id, candidate.invite_token);
-  if (readyChallenges.length === 0) {
-    await ensureChallengeDesignQueueItem(c.env.DB, candidate, profileInput, now, {
-      sourceBackedProfileEvidence: resumeText.length >= 20,
-    });
-  }
 
   const refreshed = await loadCandidateByInviteToken(c.env.DB, parsed.data.inviteToken);
   if (!refreshed) return errorResponse(c, 'NOT_FOUND', 'Invite not found.', 404);
@@ -872,6 +872,11 @@ route.post('/submit-profile', async (c) => {
 
   const now = new Date().toISOString();
   await persistIntake(c, candidate, parsed.data, now);
+
+  const readyChallenges = await loadReadyChallenges(c.env.DB, candidate.id, candidate.invite_token);
+  if (readyChallenges.length === 0) {
+    await ensureChallengeDesignQueueItem(c.env.DB, candidate, parsed.data, now);
+  }
   queueProfileIngestion({
     c,
     candidateId: candidate.id,
@@ -879,11 +884,6 @@ route.post('/submit-profile', async (c) => {
     contentType: 'text/plain',
     resumeText: parsed.data.resumeText,
   });
-
-  const readyChallenges = await loadReadyChallenges(c.env.DB, candidate.id, candidate.invite_token);
-  if (readyChallenges.length === 0) {
-    await ensureChallengeDesignQueueItem(c.env.DB, candidate, parsed.data, now);
-  }
 
   const refreshed = await loadCandidateByInviteToken(c.env.DB, parsed.data.inviteToken);
   if (!refreshed) return errorResponse(c, 'NOT_FOUND', 'Invite not found.', 404);
