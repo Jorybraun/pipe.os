@@ -88,6 +88,25 @@ function createMockD1WithNumberedParamLimit(sqlite: BetterSqliteDb, maxParam: nu
   } as D1Database;
 }
 
+function observeD1Queries(db: D1Database, queries: string[]): D1Database {
+  return {
+    prepare(query: string): D1PreparedStatement {
+      queries.push(query);
+      return db.prepare(query);
+    },
+    batch(statements: D1PreparedStatement[]): Promise<D1Result[]> {
+      return db.batch(statements);
+    },
+    exec(query: string): Promise<D1ExecResult> {
+      queries.push(query);
+      return db.exec(query);
+    },
+    dump(): Promise<ArrayBuffer> {
+      return db.dump();
+    },
+  } as D1Database;
+}
+
 async function seedEvidencePlanMatcherContext(
   sqlite: BetterSqliteDb,
   input: {
@@ -2355,8 +2374,14 @@ describe('GET /interviews/:id detail', () => {
     );
 
     const errorSpy = vi.spyOn(console, 'error').mockImplementation(() => {});
+    const observedQueries: string[] = [];
     try {
-      const app = mountSchedulingApp({ DB: createMockD1WithNumberedParamLimit(sqlite!, 100) });
+      const app = mountSchedulingApp({
+        DB: observeD1Queries(
+          createMockD1WithNumberedParamLimit(sqlite!, 100),
+          observedQueries,
+        ),
+      });
       const response = await app.request('/interviews');
       expect(response.status).toBe(200);
       const body = await response.json() as {
@@ -2410,6 +2435,10 @@ describe('GET /interviews/:id detail', () => {
           assessmentSessionId: 'assessment-session-progress-list-corrupt',
         }),
       );
+      expect(observedQueries.some((query) =>
+        query.includes('GROUP BY e.session_id, sr.source_ref_type'))).toBe(true);
+      expect(observedQueries.some((query) =>
+        query.includes('sr.exact_text IS NOT NULL'))).toBe(false);
     } finally {
       errorSpy.mockRestore();
     }

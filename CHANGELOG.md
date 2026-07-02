@@ -34,6 +34,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Fixed — Open-source assessment progress
 
+- Recruiter interview lists now load assessment progress from batched summary queries instead of hydrating full per-session evidence detail for every card, preserving task/commit/evaluation signals while reducing list-page D1 work.
 - Living-context scheduled backfill now recovers stale `running` checkpoints before selecting ready tasks, so interrupted assessment evidence replays retry instead of freezing app-dev assessment projection.
 - Assessment evidence audits can now be scoped to one assessment session, report absent families as coverage gaps by default, and reserve failures for missing sessions, source-less positive claims, duplicate projected edges, or captured raw events that did not project to person context.
 - Assessment-to-living-context ingestion now projects evaluator reports themselves into person context with exact `assessment_evaluation_report` source refs, so report summaries are rebuildable person evidence rather than only assessment-scoped context.
