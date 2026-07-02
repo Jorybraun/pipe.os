@@ -2,6 +2,7 @@ import { describe, expect, it } from 'vitest';
 
 import {
   buildDeterministicAssessmentFallback,
+  createRepoTaskAssessmentProviders,
   parseAiJson,
   type SessionSourceRef,
 } from '../repoTaskAssessmentEvaluator';
@@ -33,6 +34,32 @@ async function sourceRef(input: {
 }
 
 describe('repo task assessment evaluator output parsing', () => {
+  it('uses current Workers AI models before the legacy default for repo-task assessment', () => {
+    const providers = createRepoTaskAssessmentProviders({
+      AI: { run: async () => ({ response: '{}' }) } as unknown as Ai,
+    });
+
+    expect(providers.map((provider) => provider.model)).toEqual([
+      '@cf/qwen/qwen3-30b-a3b-fp8',
+      '@cf/google/gemma-4-26b-a4b-it',
+      '@cf/zai-org/glm-4.7-flash',
+    ]);
+  });
+
+  it('respects an explicit Workers AI evaluator model while preserving failover', () => {
+    const providers = createRepoTaskAssessmentProviders({
+      AI: { run: async () => ({ response: '{}' }) } as unknown as Ai,
+      CLOUDFLARE_AI_MODEL: '@cf/example/custom-evaluator',
+    });
+
+    expect(providers.map((provider) => provider.model)).toEqual([
+      '@cf/example/custom-evaluator',
+      '@cf/qwen/qwen3-30b-a3b-fp8',
+      '@cf/google/gemma-4-26b-a4b-it',
+      '@cf/zai-org/glm-4.7-flash',
+    ]);
+  });
+
   it('builds conservative source-backed fallback claims when model claims are unusable', async () => {
     const requestText = 'Recruiter requested source-backed evaluation.';
     const fallback = buildDeterministicAssessmentFallback({
