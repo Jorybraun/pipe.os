@@ -204,7 +204,7 @@ CLOUDFLARE_D1_DATABASE_ID=0abe92df-9296-46f5-9f9d-a1fb1bcd3be1 \
 
 Latest app-dev proof on 2026-07-02 used invite token
 `talent-audit-532e4287e-c1` after deploying Worker version
-`d5cf3c95-c24e-4924-9efb-ebee8a9d240d`, which includes canonical person-id
+`266bbc13-354c-4086-ad11-97a701aefc1e`, which includes canonical person-id
 source search, evidence timeline, and evidence-depth reads for unified People
 rows. The scheduled Talent Pool repair had replayed the existing
 profile-upload R2 object against dev D1.
