@@ -41,6 +41,7 @@ import {
   type JsonObject,
 } from '../../lib/livingContext';
 import { AssessmentLayerStore, type AssessmentEvidenceSourceRefInput } from '../../lib/assessmentLayer/persistence';
+import { recordAssessmentCandidateProfileEvidence } from '../../lib/assessmentLayer/candidateProfileEvidence';
 import {
   RepoTaskInterviewSessionStore,
   type AssessmentProgressSnapshot,
@@ -3423,6 +3424,12 @@ async function createManualOpenSourceChallengeAssessmentSession(
     occurredAt: input.createdAt,
     sourceRefs: [sourceRef],
   });
+  await recordAssessmentCandidateProfileEvidence(db, {
+    sessionId: session.id,
+    candidateId: input.candidateId,
+    actorId: input.userId,
+    occurredAt: input.createdAt,
+  });
 
   return store.loadProgress(session.id);
 }
@@ -3507,6 +3514,12 @@ async function createMatchedOpenSourceChallengeAssessmentSession(
     },
     occurredAt: input.createdAt,
     sourceRefs: [sourceRef],
+  });
+  await recordAssessmentCandidateProfileEvidence(db, {
+    sessionId: session.id,
+    candidateId: input.candidateId,
+    actorId: input.userId,
+    occurredAt: input.createdAt,
   });
 
   return store.loadProgress(session.id);

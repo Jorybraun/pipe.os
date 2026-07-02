@@ -7705,13 +7705,16 @@ describe('POST /interviews dev-container challenge (HAS-80)', () => {
       headers: { 'Content-Type': 'application/json' },
     }));
     vi.stubGlobal('fetch', fetchMock);
+    sqlite!.prepare(
+      `INSERT INTO candidates (id, owner_id, pipeline_id, status, name, email, created_at, updated_at)
+       VALUES ('candidate-1', 'owner-1', NULL, 'ACTIVE', 'Ada Lovelace', 'ada@example.com', datetime('now'), datetime('now'))`,
+    ).run();
 
     const response = await app.request('/interviews', {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify({
-        recipientName: 'Grace Hopper',
-        recipientEmail: 'grace@example.com',
+        candidateId: 'candidate-1',
         meetingType: 'DIRECT_VIDEO_CALL',
         interviewType: 'OPEN_SOURCE_BUG_FIX',
         githubRepoUrl: 'https://github.com/hash-pipe/open-source-task',
@@ -7849,6 +7852,27 @@ describe('POST /interviews dev-container challenge (HAS-80)', () => {
     expect(sourceRef?.source_ref_id).toContain(body.interview.id);
     expect(sourceRef?.content_hash).toMatch(/^content_/);
     expect(sourceRef?.exact_text).toContain('Expected evidence:');
+
+    const candidateProfileRef = sqlite!.prepare(
+      `SELECT sr.source_ref_type, sr.evidence_role, sr.exact_text, e.kind
+         FROM assessment_event_source_refs sr
+         JOIN assessment_evidence_events e ON e.id = sr.event_id
+        WHERE e.session_id = ?
+          AND sr.source_ref_type = 'candidate_profile'
+        LIMIT 1`,
+    ).get(session?.id) as {
+      source_ref_type: string;
+      evidence_role: string;
+      exact_text: string;
+      kind: string;
+    } | undefined;
+    expect(candidateProfileRef).toMatchObject({
+      source_ref_type: 'candidate_profile',
+      evidence_role: 'candidate_profile_snapshot',
+      kind: 'candidate_profile',
+    });
+    expect(candidateProfileRef?.exact_text).toContain('Name: Ada Lovelace');
+    expect(candidateProfileRef?.exact_text).toContain('Email: ada@example.com');
   });
 
   it('rejects manual open-source challenge packets when the base commit is not reachable in the repo', async () => {

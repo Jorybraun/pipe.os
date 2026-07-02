@@ -13,6 +13,7 @@ import dotenv from 'dotenv';
 import { dirname, resolve } from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { ingestAssessmentSessionRealTime } from '../src/lib/livingContext/assessmentIngestion';
+import { recordAssessmentCandidateProfileEvidence } from '../src/lib/assessmentLayer/candidateProfileEvidence';
 import { D1Client, loadD1Config } from './crawl-repos/shared/d1Client.js';
 
 const scriptDir = dirname(fileURLToPath(import.meta.url));
@@ -84,6 +85,17 @@ interface ProofRow {
   evaluation_report_record_count: number;
 }
 
+interface MatchRunProofRow {
+  id: string;
+  status: string;
+  selected_packet_id: string | null;
+  created_at: number;
+}
+
+interface CandidateIdRow {
+  candidate_id: string | null;
+}
+
 function parseArgs(argv: string[]): ReplayOptions {
   let target: ReplayOptions['target'] | null = null;
   let sessionId = '';
@@ -138,6 +150,37 @@ async function loadProof(db: D1Database, sessionId: string): Promise<ProofRow | 
   ).bind(sessionId).first<ProofRow>();
 }
 
+async function resolveSessionCandidateId(db: D1Database, sessionId: string): Promise<string | null> {
+  const row = await db.prepare(
+    `SELECT COALESCE(ass.candidate_id, si.candidate_id) AS candidate_id
+       FROM assessment_sessions ass
+       LEFT JOIN scheduled_interviews si ON si.id = ass.interview_id
+      WHERE ass.id = ?1
+      LIMIT 1`,
+  ).bind(sessionId).first<CandidateIdRow>();
+  return row?.candidate_id ?? null;
+}
+
+async function loadMatchingEffects(db: D1Database, candidateId: string | null): Promise<{
+  candidateId: string | null;
+  matchRunCount: number;
+  latestMatchRuns: MatchRunProofRow[];
+}> {
+  if (!candidateId) return { candidateId: null, matchRunCount: 0, latestMatchRuns: [] };
+  const rows = await db.prepare(
+    `SELECT id, status, selected_packet_id, created_at
+       FROM match_runs
+      WHERE candidate_id = ?1
+      ORDER BY created_at DESC
+      LIMIT 5`,
+  ).bind(candidateId).all<MatchRunProofRow>();
+  return {
+    candidateId,
+    matchRunCount: (rows.results ?? []).length,
+    latestMatchRuns: rows.results ?? [],
+  };
+}
+
 async function main(): Promise<void> {
   const options = parseArgs(process.argv.slice(2));
   const db = new RemoteD1(new D1Client(loadD1Config())) as unknown as D1Database;
@@ -148,8 +191,11 @@ async function main(): Promise<void> {
     sourceRefs: await count(db, `SELECT COUNT(*) AS count FROM context_record_source_refs WHERE context_record_id IN (SELECT cr.id FROM context_records cr JOIN interactions i ON i.id = cr.interaction_id WHERE i.external_reference = ?1)`, options.sessionId),
   };
 
+  await recordAssessmentCandidateProfileEvidence(db, { sessionId: options.sessionId });
   const replay = await ingestAssessmentSessionRealTime(db, options.sessionId);
   const proof = await loadProof(db, options.sessionId);
+  const candidateId = await resolveSessionCandidateId(db, options.sessionId);
+  const matchingEffects = await loadMatchingEffects(db, candidateId);
 
   const after = {
     interactions: await count(db, `SELECT COUNT(*) AS count FROM interactions WHERE external_reference = ?1`, options.sessionId),
@@ -164,6 +210,7 @@ async function main(): Promise<void> {
     before,
     after,
     proof,
+    matchingEffects,
   };
 
   if (options.json) {

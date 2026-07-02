@@ -67,6 +67,7 @@ npm run assessment-evidence:audit -- --local --session-id <assessment_session_id
 npm run assessment-evidence:audit -- --local --session-id <assessment_session_id> --require-all-families
 npm run assessment-evidence:audit -- --remote
 npm run assessment-evidence:audit -- --remote --session-id <assessment_session_id>
+npm run assessment-evidence:audit -- --remote --session-id <assessment_session_id> --require-all-families
 npm run assessment-evidence:replay -- --remote --session-id <assessment_session_id>
 ```
 
@@ -93,8 +94,9 @@ not projected through that session's person interaction. That is a current
 local-data/projection gap, not proof of open-source assessment readiness.
 
 Targeted tests prove replay idempotency and exact source-ref preservation for
-commit, diff, test output, upstream PR refs, AI interactions, evaluator reports,
-and human decisions through the real-time ingestion path.
+candidate profile snapshots, commit, diff, test output, upstream PR refs, AI
+interactions, evaluator reports, and human decisions through the real-time
+ingestion path.
 
 The app-dev proof session `assessment_session_92da0777bbb5370d1c054a19719fe3cd`
 was replayed with:
@@ -108,11 +110,19 @@ CLOUDFLARE_D1_DATABASE_ID=0abe92df-9296-46f5-9f9d-a1fb1bcd3be1 \
 Replay proof:
 
 - `interaction_type: assessment:OPEN_SOURCE_BUG_FIX`
-- `context_record_count: 14`
-- `source_ref_count: 37`
+- `context_record_count: 15`
+- `source_ref_count: 39`
 - `evaluation_report_record_count: 5`
+- `matchingEffects.matchRunCount: 0`
 
-The scoped remote audit for that same session exits ready with
-`sourceLessPositiveClaimCount: 0`, `duplicateProjectedEdgeCount: 0`, and no
-failures. Candidate profile/resume evidence remains a coverage gap for that
-specific session because the smoke path did not attach a resume artifact.
+The strict scoped remote audit for that same session exits ready with
+`--require-all-families`, `sourceLessPositiveClaimCount: 0`,
+`duplicateProjectedEdgeCount: 0`, no failures, and no next actions. Candidate
+profile evidence is now captured and projected through one raw event, one exact
+`candidate_profile` source ref, one assessment-scoped context record, and one
+person-projected context record.
+
+The same replay proof reports no repo-matching side effect for this manual
+open-source assessment candidate (`matchRunCount: 0`). That is the current
+matching answer for this session: the assessment evidence is available to the
+person graph and recruiter surfaces, but no match run has consumed it yet.
