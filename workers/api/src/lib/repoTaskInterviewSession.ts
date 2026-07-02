@@ -355,6 +355,8 @@ export interface AssessmentProgressCommit {
   baseCommitSha: string | null;
   commitSha: string | null;
   commitUrl: string | null;
+  upstreamPullRequestUrl: string | null;
+  upstreamPrConsent: boolean;
   submissionSource: 'live_workspace' | 'manual_fallback' | 'mixed' | 'unknown';
   submissionSourceLabel: string;
   integrity: AssessmentProgressCommitIntegrity;
@@ -2437,6 +2439,8 @@ export class RepoTaskInterviewSessionStore {
       baseCommitSha,
       commitSha: jsonStringValue(payload.commitSha),
       commitUrl: jsonStringValue(payload.commitUrl),
+      upstreamPullRequestUrl: jsonStringValue(payload.upstreamPullRequestUrl),
+      upstreamPrConsent: jsonBooleanValue(payload.upstreamPrConsent) === true,
       submissionSource,
       submissionSourceLabel: commitSubmissionSourceLabel(submissionSource),
       integrity: commitSubmissionIntegrity(submissionSource),

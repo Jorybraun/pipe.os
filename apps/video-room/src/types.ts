@@ -130,6 +130,8 @@ export interface RoomAssessmentProgressCommit {
   baseCommitSha: string | null;
   commitSha: string | null;
   commitUrl: string | null;
+  upstreamPullRequestUrl?: string | null;
+  upstreamPrConsent?: boolean;
   submissionSource?: 'live_workspace' | 'manual_fallback' | 'mixed' | 'unknown';
   submissionSourceLabel?: string;
   integrity?: {
@@ -258,6 +260,8 @@ export interface RoomCommitSubmissionResponse {
     branchName: string;
     commitSha: string;
     commitUrl: string | null;
+    upstreamPullRequestUrl?: string | null;
+    upstreamPrConsent?: boolean;
   };
   progress: RoomAssessmentProgressSnapshot;
 }

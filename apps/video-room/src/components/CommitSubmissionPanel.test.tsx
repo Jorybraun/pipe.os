@@ -252,6 +252,8 @@ describe('CommitSubmissionPanel', () => {
           baseCommitSha: 'd'.repeat(40),
           commitSha,
           commitUrl: null,
+          upstreamPullRequestUrl: 'https://github.com/pipe/source-backed-worker/pull/42',
+          upstreamPrConsent: true,
           submissionSource: 'live_workspace',
           submissionSourceLabel: 'Live workspace finalizer',
           integrity: {
@@ -324,6 +326,9 @@ describe('CommitSubmissionPanel', () => {
     );
     expect(screen.getByTestId('commit-submission-progress-challenge-binding').textContent).toContain(
       'Bound to assigned challenge',
+    );
+    expect(screen.getByTestId('commit-submission-progress-upstream-pr').textContent).toContain(
+      'https://github.com/pipe/source-backed-worker/pull/42 · candidate-approved tracking',
     );
   });
 

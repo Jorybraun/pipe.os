@@ -917,6 +917,25 @@ Fix stale popover listener cleanup.`;
       source_ref_id: upstreamPullRequestUrl,
       exact_text: upstreamPullRequestUrl,
     });
+
+    const progressResponse = await app.request(
+      `/api/v1/assessment/repo-task/sessions/${session.id}/progress`,
+      { method: 'GET' },
+      env,
+    );
+    expect(progressResponse.status).toBe(200);
+    const progressBody = await progressResponse.json() as {
+      progress: {
+        commit: {
+          upstreamPullRequestUrl: string | null;
+          upstreamPrConsent: boolean;
+        } | null;
+      };
+    };
+    expect(progressBody.progress.commit).toMatchObject({
+      upstreamPullRequestUrl,
+      upstreamPrConsent: true,
+    });
   });
 
   it('rejects upstream PR tracking for unrelated or source-less pull requests', async () => {

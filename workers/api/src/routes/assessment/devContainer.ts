@@ -273,6 +273,8 @@ function serializeCandidateAssessmentProgress(
           baseCommitSha: progress.commit.baseCommitSha,
           commitSha: progress.commit.commitSha,
           commitUrl: progress.commit.commitUrl,
+          upstreamPullRequestUrl: progress.commit.upstreamPullRequestUrl,
+          upstreamPrConsent: progress.commit.upstreamPrConsent,
           submissionSource: progress.commit.submissionSource,
           submissionSourceLabel: progress.commit.submissionSourceLabel,
           integrity: progress.commit.integrity,
@@ -783,6 +785,8 @@ devContainer.post('/:sessionId/assessment/finalize', async (c) => {
         branchName: updatedProgress.commit?.branchName ?? payload.branchName,
         commitSha: updatedProgress.commit?.commitSha ?? commitSha,
         commitUrl: updatedProgress.commit?.commitUrl ?? payload.commitUrl ?? null,
+        upstreamPullRequestUrl: updatedProgress.commit?.upstreamPullRequestUrl ?? payload.upstreamPullRequestUrl ?? null,
+        upstreamPrConsent: updatedProgress.commit?.upstreamPrConsent ?? payload.upstreamPrConsent === true,
       },
       progress: serializeCandidateAssessmentProgress(updatedProgress),
     }, 201);

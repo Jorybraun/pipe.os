@@ -1135,6 +1135,9 @@ function workspaceAssessmentWorkPacket(progress: AssessmentProgressSnapshot | nu
     progress.commit.integrity?.label ?? progress.commit.submissionSourceLabel ?? null,
     progress.commit.challengeBinding?.label ?? null,
     progress.commit.branchName ? `Branch ${progress.commit.branchName}` : null,
+    progress.commit.upstreamPullRequestUrl && progress.commit.upstreamPrConsent
+      ? `Upstream PR tracked with candidate consent: ${progress.commit.upstreamPullRequestUrl.replace(/^https:\/\/github\.com\//, '')}`
+      : null,
     changedFileDetail,
   ].filter((item): item is string => Boolean(item)).join(' · ');
 
@@ -1198,6 +1201,16 @@ function workspaceAssessmentWorkPacket(progress: AssessmentProgressSnapshot | nu
         ? 'Test output is present as source-backed evidence for the submitted work.'
         : 'Treat implementation quality as lower-confidence until test output or a source-backed explanation is reviewed.',
       tone: progress.hasTestEvidence ? 'positive' : 'watch',
+    },
+    {
+      label: 'Upstream PR',
+      value: progress.commit.upstreamPullRequestUrl && progress.commit.upstreamPrConsent
+        ? 'Tracked with consent'
+        : 'Not submitted upstream',
+      detail: progress.commit.upstreamPullRequestUrl && progress.commit.upstreamPrConsent
+        ? `${progress.commit.upstreamPullRequestUrl} is stored as optional source-backed upstream tracking.`
+        : 'Default assessment output remains the fork or assessment branch; upstream PRs require later review and explicit consent.',
+      tone: progress.commit.upstreamPullRequestUrl && progress.commit.upstreamPrConsent ? 'positive' : 'neutral',
     },
     {
       label: 'AI transparency',

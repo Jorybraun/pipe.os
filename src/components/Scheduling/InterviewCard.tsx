@@ -686,6 +686,10 @@ export function InterviewCard({
       ?? null,
   );
   const assessmentCommitLabel = shortCommitSha(assessmentProgress?.commit?.commitSha);
+  const assessmentUpstreamPullRequestUrl = assessmentProgress?.commit?.upstreamPullRequestUrl ?? null;
+  const assessmentUpstreamPullRequestLabel = assessmentUpstreamPullRequestUrl && assessmentProgress?.commit?.upstreamPrConsent
+    ? assessmentUpstreamPullRequestUrl.replace(/^https:\/\/github\.com\//, '')
+    : null;
   const assessmentCommitIntegrityLabel = assessmentProgress?.commit?.integrity?.label
     ?? assessmentProgress?.commit?.submissionSourceLabel
     ?? null;
@@ -985,6 +989,16 @@ export function InterviewCard({
                   </div>
                   <div style={{ minWidth: 0, fontSize: 10, color: 'var(--pipe-text-dim)', overflowWrap: 'anywhere' }}>
                     {[assessmentCommitLabel, assessmentCommitIntegrityLabel, assessmentChallengeBindingLabel].filter(Boolean).join(' · ')}
+                  </div>
+                </>
+              )}
+              {assessmentUpstreamPullRequestLabel && (
+                <>
+                  <div style={{ fontSize: 9, color: '#93c5fd', letterSpacing: '0.12em', fontWeight: 700 }}>
+                    UPSTREAM PR
+                  </div>
+                  <div style={{ minWidth: 0, fontSize: 10, color: '#bfdbfe', overflowWrap: 'anywhere' }}>
+                    {assessmentUpstreamPullRequestLabel} · candidate-approved tracking
                   </div>
                 </>
               )}

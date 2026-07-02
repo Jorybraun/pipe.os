@@ -224,6 +224,8 @@ export interface AssessmentProgressSnapshot {
     baseCommitSha: string | null;
     commitSha: string | null;
     commitUrl: string | null;
+    upstreamPullRequestUrl?: string | null;
+    upstreamPrConsent?: boolean;
     submissionSource?: 'live_workspace' | 'manual_fallback' | 'mixed' | 'unknown';
     submissionSourceLabel?: string;
     integrity?: {

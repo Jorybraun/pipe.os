@@ -110,6 +110,8 @@ export interface CandidateAssessmentProgress {
     baseCommitSha: string;
     commitSha: string;
     commitUrl: string | null;
+    upstreamPullRequestUrl?: string | null;
+    upstreamPrConsent?: boolean;
     submissionSource: string;
     submissionSourceLabel: string;
     integrity: { label: string; detail: string } | null;
@@ -131,6 +133,8 @@ export interface CandidateCommitSubmissionResponse {
     branchName: string;
     commitSha: string;
     commitUrl: string | null;
+    upstreamPullRequestUrl?: string | null;
+    upstreamPrConsent?: boolean;
   };
   progress: CandidateAssessmentProgress;
 }

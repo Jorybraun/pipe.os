@@ -165,6 +165,8 @@ describe('InterviewCard assessment progress', () => {
           baseCommitSha: '1111111111111111111111111111111111111111',
           commitSha: 'abcdef1234567890abcdef1234567890abcdef12',
           commitUrl: 'https://github.com/candidate/widgets/commit/abcdef1234567890abcdef1234567890abcdef12',
+          upstreamPullRequestUrl: 'https://github.com/open-source/widgets/pull/72',
+          upstreamPrConsent: true,
           submissionSource: 'live_workspace',
           submissionSourceLabel: 'Live workspace finalizer',
           integrity: {
@@ -220,6 +222,8 @@ describe('InterviewCard assessment progress', () => {
     expect(progress).toHaveTextContent('EXPECTED');
     expect(progress).toHaveTextContent('Commit SHA on assessment branch');
     expect(progress).toHaveTextContent('abcdef123456');
+    expect(progress).toHaveTextContent('UPSTREAM PR');
+    expect(progress).toHaveTextContent('open-source/widgets/pull/72 · candidate-approved tracking');
     expect(progress).toHaveTextContent('Workspace-captured commit');
     expect(progress).toHaveTextContent('COMMIT TRUST');
     expect(progress).toHaveTextContent('Workspace-captured commit · Bound to assigned challenge');
@@ -734,6 +738,8 @@ describe('InterviewCard assessment progress', () => {
           baseCommitSha: '3333333333333333333333333333333333333333',
           commitSha: '123456abcdef123456abcdef123456abcdef1234',
           commitUrl: 'https://github.com/candidate/widgets/commit/123456abcdef123456abcdef123456abcdef1234',
+          upstreamPullRequestUrl: 'https://github.com/open-source/widgets/pull/42',
+          upstreamPrConsent: true,
           changedFiles: [{ path: 'src/widget.ts', status: 'modified' }],
           occurredAt: '2026-06-23T00:18:00.000Z',
         },
@@ -835,6 +841,8 @@ describe('InterviewCard assessment progress', () => {
           baseCommitSha: '3333333333333333333333333333333333333333',
           commitSha: '123456abcdef123456abcdef123456abcdef1234',
           commitUrl: 'https://github.com/candidate/widgets/commit/123456abcdef123456abcdef123456abcdef1234',
+          upstreamPullRequestUrl: 'https://github.com/open-source/widgets/pull/42',
+          upstreamPrConsent: true,
           changedFiles: [{ path: 'src/widget.ts', status: 'modified' }],
           occurredAt: '2026-06-23T00:18:00.000Z',
         },
@@ -910,6 +918,8 @@ describe('InterviewCard assessment progress', () => {
           baseCommitSha: '3333333333333333333333333333333333333333',
           commitSha: '123456abcdef123456abcdef123456abcdef1234',
           commitUrl: 'https://github.com/candidate/widgets/commit/123456abcdef123456abcdef123456abcdef1234',
+          upstreamPullRequestUrl: 'https://github.com/open-source/widgets/pull/42',
+          upstreamPrConsent: true,
           changedFiles: [{ path: 'src/widget.ts', status: 'modified' }],
           occurredAt: '2026-06-23T00:18:00.000Z',
         },
@@ -995,6 +1005,8 @@ describe('InterviewCard assessment progress', () => {
     expect(progress).toHaveTextContent('Repo understanding · Positive · 82%');
     expect(progress).toHaveTextContent('The candidate isolated the regression to the widget loader');
     expect(progress).toHaveTextContent('2 source refs: Blocked AI prompt, Agent response');
+    expect(progress).toHaveTextContent('UPSTREAM PR');
+    expect(progress).toHaveTextContent('open-source/widgets/pull/42 · candidate-approved tracking');
     expect(progress).toHaveTextContent('GAPS');
     expect(progress).toHaveTextContent('Missing: Test or verification evidence');
     expect(progress).toHaveTextContent('Missing: Transcript explanation');

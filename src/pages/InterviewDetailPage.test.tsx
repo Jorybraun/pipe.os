@@ -311,6 +311,8 @@ describe('InterviewDetailPage', () => {
             baseCommitSha: '1111111111111111111111111111111111111111',
             commitSha: 'abcdef1234567890abcdef1234567890abcdef12',
             commitUrl: 'https://github.com/candidate/widgets/commit/abcdef1234567890abcdef1234567890abcdef12',
+            upstreamPullRequestUrl: 'https://github.com/open-source/widgets/pull/42',
+            upstreamPrConsent: true,
             submissionSource: 'live_workspace',
             submissionSourceLabel: 'Live workspace finalizer',
             integrity: {
@@ -367,6 +369,9 @@ describe('InterviewDetailPage', () => {
     expect(workPacket).toHaveTextContent('Workspace-captured commit');
     expect(workPacket).toHaveTextContent('Bound to assigned challenge');
     expect(workPacket).toHaveTextContent('Branch pipe-assessment/popover-cleanup');
+    expect(workPacket).toHaveTextContent('Upstream PR tracked with candidate consent: open-source/widgets/pull/42');
+    expect(workPacket).toHaveTextContent('Tracked with consent');
+    expect(workPacket).toHaveTextContent('https://github.com/open-source/widgets/pull/42 is stored as optional source-backed upstream tracking.');
     expect(workPacket).toHaveTextContent('1 changed file: src/popover.ts · Modified');
     expect(workPacket).toHaveTextContent('Verification');
     expect(workPacket).toHaveTextContent('Tests captured');

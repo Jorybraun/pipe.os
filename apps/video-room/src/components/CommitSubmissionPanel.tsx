@@ -374,6 +374,14 @@ function AssessmentProgressPanel({
                 <dd>{baseSha}</dd>
               </>
             )}
+            {progress.commit.upstreamPullRequestUrl && progress.commit.upstreamPrConsent && (
+              <>
+                <dt>Upstream PR</dt>
+                <dd data-testid="commit-submission-progress-upstream-pr">
+                  {progress.commit.upstreamPullRequestUrl} · candidate-approved tracking
+                </dd>
+              </>
+            )}
             <dt>Changed files</dt>
             <dd>{changedFileCount}</dd>
           </>
