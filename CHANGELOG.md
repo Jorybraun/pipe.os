@@ -60,6 +60,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 ### Added — Open-source assessment setup
 
 - Standalone `OPEN_SOURCE_BUG_FIX` matching now materializes the selected repo/PR into a source-backed assessment session from a production-ready review challenge packet before returning a ready challenge, and fails closed to the candidate-safe intake handoff when packet provenance is incomplete.
+- The open-source workspace smoke now allows matched repo challenge packets to use their real source-backed task titles instead of expecting the manual smoke fixture title.
 - `assessment-evidence:replay` now supports `--missing-events-only`, projecting only assessment events that still lack person context so active `IN_PROGRESS` sessions can be repaired without rebuilding an entire large session transcript.
 - `assessment-evidence:audit` and `assessment-evidence:replay -- --remote --all-missing` now use the same real-candidate eligibility for person projection, so old synthetic smoke rows with dangling candidate ids do not masquerade as repairable person-context debt.
 - `assessment-evidence:replay -- --remote --all-missing` now supports `--progress` and repeatable `--exclude-state <STATE>` filters with per-session state/missing-event counts, so app-dev historical backfill can report the current session and skip active `IN_PROGRESS` assessments while completed rows are repaired.

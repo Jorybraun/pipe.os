@@ -543,7 +543,13 @@ async function assertRecruiterReviewerReceiptBrowser(interviewId, workspaceCommi
   }
 }
 
-async function assertRecruiterListCardBrowser(interviewId, workspaceCommit, expectedBaseCommitSha, humanDecision) {
+async function assertRecruiterListCardBrowser(
+  interviewId,
+  workspaceCommit,
+  expectedBaseCommitSha,
+  humanDecision,
+  expectedTaskTitle,
+) {
   if (SKIP_RECRUITER_BROWSER) {
     return { skipped: true, reason: 'WORKSPACE_SMOKE_SKIP_RECRUITER_BROWSER=1' };
   }
@@ -577,7 +583,9 @@ async function assertRecruiterListCardBrowser(interviewId, workspaceCommit, expe
     await expect(card).toContainText('BASE');
     await expect(card).toContainText(expectedBaseCommitSha.slice(0, 12));
     await expect(card).toContainText('TASK');
-    await expect(card).toContainText('Fix Base UI popover impatient click handling');
+    if (expectedTaskTitle) {
+      await expect(card).toContainText(expectedTaskTitle);
+    }
     await expect(card).toContainText('EXPECTED');
     await expect(card).toContainText('git_commit source ref');
     await expect(card).toContainText('COMMIT');
@@ -1010,6 +1018,9 @@ async function main() {
     workspaceCommit,
     expectedBaseCommitSha,
     humanDecision,
+    useMatchedRepo
+      ? null
+      : CHANGE_PROFILE?.challengeTitle ?? 'Fix deterministic smoke ordering',
   );
 
   console.log(JSON.stringify({
