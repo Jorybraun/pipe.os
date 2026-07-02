@@ -2,8 +2,15 @@
  * EnrichmentStatusSection — status badge + metadata rows.
  */
 
-import { Github, AlertCircle, CheckCircle, XCircle, Clock } from 'lucide-react';
+import { Github, AlertCircle, CheckCircle, XCircle, Clock, RefreshCw } from 'lucide-react';
 import { LiquidMetalCard, SubTitle } from '../../';
+
+interface IngestionRetryResult {
+  scanned: number;
+  queued: number;
+  skipped: number;
+  failed: number;
+}
 
 interface EnrichmentStatusSectionProps {
   props: {
@@ -19,6 +26,10 @@ interface EnrichmentStatusSectionProps {
     enrichmentJobStatus?: string | null;
     githubUrl?: string | null;
   };
+  onRetryFailedIngestion?: (() => Promise<void>) | undefined;
+  isRetryingIngestion?: boolean | undefined;
+  retryIngestionError?: string | null | undefined;
+  retryIngestionResult?: IngestionRetryResult | null | undefined;
 }
 
 function getStatusBadge(status: string) {
@@ -116,7 +127,13 @@ function MetaRow({ label, value }: { label: string; value: React.ReactNode }): J
   );
 }
 
-export function EnrichmentStatusSection({ props }: EnrichmentStatusSectionProps): JSX.Element {
+export function EnrichmentStatusSection({
+  props,
+  onRetryFailedIngestion,
+  isRetryingIngestion = false,
+  retryIngestionError = null,
+  retryIngestionResult = null,
+}: EnrichmentStatusSectionProps): JSX.Element {
   const {
     status = 'pending',
     modelUsed,
@@ -189,28 +206,74 @@ export function EnrichmentStatusSection({ props }: EnrichmentStatusSectionProps)
         </div>
 
         {errorText && (
-          <div
-            style={{
-              display: 'flex',
-              alignItems: 'flex-start',
-              gap: 8,
-              padding: '12px 16px',
-              background: 'rgba(248,113,113,0.06)',
-              border: '1px solid rgba(248,113,113,0.15)',
-              borderRadius: 6,
-            }}
-          >
-            <AlertCircle size={14} color="#f87171" style={{ marginTop: 2, flexShrink: 0 }} />
-            <span
+          <div>
+            <div
               style={{
-                fontSize: 11,
-                color: '#f87171',
-                lineHeight: 1.5,
-                fontFamily: '"Space Mono", monospace',
+                display: 'flex',
+                alignItems: 'flex-start',
+                gap: 8,
+                padding: '12px 16px',
+                background: 'rgba(248,113,113,0.06)',
+                border: '1px solid rgba(248,113,113,0.15)',
+                borderRadius: 6,
               }}
             >
-              {errorText}
-            </span>
+              <AlertCircle size={14} color="#f87171" style={{ marginTop: 2, flexShrink: 0 }} />
+              <span
+                style={{
+                  fontSize: 11,
+                  color: '#f87171',
+                  lineHeight: 1.5,
+                  fontFamily: '"Space Mono", monospace',
+                  flex: 1,
+                }}
+              >
+                {errorText}
+              </span>
+              {onRetryFailedIngestion && (
+                <button
+                  type="button"
+                  onClick={() => void onRetryFailedIngestion()}
+                  disabled={isRetryingIngestion}
+                  style={{
+                    display: 'inline-flex',
+                    alignItems: 'center',
+                    gap: 7,
+                    padding: '7px 10px',
+                    background: 'rgba(255,255,255,0.06)',
+                    border: '1px solid rgba(255,255,255,0.14)',
+                    borderRadius: 4,
+                    color: 'var(--pipe-text)',
+                    fontSize: 8,
+                    fontWeight: 800,
+                    letterSpacing: '0.12em',
+                    fontFamily: '"Space Mono", monospace',
+                    cursor: isRetryingIngestion ? 'wait' : 'pointer',
+                    opacity: isRetryingIngestion ? 0.62 : 1,
+                    flexShrink: 0,
+                  }}
+                >
+                  <RefreshCw
+                    size={11}
+                    style={{ animation: isRetryingIngestion ? 'spin 1s linear infinite' : undefined }}
+                  />
+                  RETRY_FAILED
+                </button>
+              )}
+            </div>
+            {(retryIngestionError || retryIngestionResult) && (
+              <div
+                style={{
+                  marginTop: 8,
+                  fontSize: 10,
+                  color: retryIngestionError ? '#fca5a5' : 'var(--pipe-text-dim)',
+                  fontFamily: '"Space Mono", monospace',
+                }}
+              >
+                {retryIngestionError
+                  ?? `Scanned ${retryIngestionResult?.scanned ?? 0}; queued ${retryIngestionResult?.queued ?? 0}; skipped ${retryIngestionResult?.skipped ?? 0}; failed ${retryIngestionResult?.failed ?? 0}.`}
+              </div>
+            )}
           </div>
         )}
       </div>

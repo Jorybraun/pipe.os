@@ -47,6 +47,7 @@ import { CandidateEnrichmentTab } from "../components/Candidate/CandidateEnrichm
 import { CandidateOverviewTab } from "../components/Candidate/CandidateOverviewTab";
 import { SecureVideoPlayer } from "../components/Candidate/SecureVideoPlayer";
 import { LivingContextGraph } from "../components/Candidate/LivingContextGraph";
+import type { PipelineIngestionRetryResult } from "../hooks/usePipelineIngestion";
 
 // ============================================================================
 // Local types
@@ -1129,6 +1130,9 @@ export default function CandidateProfilePage(): JSX.Element {
   const resumeInputRef = useRef<HTMLInputElement>(null);
   const [uploadingResume, setUploadingResume] = useState(false);
   const [uploadResumeResult, setUploadResumeResult] = useState<'success' | 'error' | null>(null);
+  const [retryingIngestion, setRetryingIngestion] = useState(false);
+  const [retryIngestionError, setRetryIngestionError] = useState<string | null>(null);
+  const [retryIngestionResult, setRetryIngestionResult] = useState<PipelineIngestionRetryResult | null>(null);
 
   const handleResendInvite = useCallback(async (): Promise<void> => {
     if (!id) return;
@@ -1159,6 +1163,30 @@ export default function CandidateProfilePage(): JSX.Element {
       console.error('[CandidateProfilePage] Save phone failed:', err);
     }
   }, [id, phoneInput, api, refetch]);
+
+  const handleRetryFailedIngestion = useCallback(async (): Promise<void> => {
+    if (!candidate?.pipelineId) {
+      setRetryIngestionError('Pipeline-backed candidate ingestion is required for this repair action.');
+      return;
+    }
+
+    setRetryingIngestion(true);
+    setRetryIngestionError(null);
+    try {
+      const response = await api.post<{
+        success: boolean;
+        result: PipelineIngestionRetryResult;
+      }>(`/api/v1/pipelines/${candidate.pipelineId}/ingestion/retry-failed`, { limit: 10 });
+      setRetryIngestionResult(response.result);
+      await refetch();
+    } catch (err) {
+      const message = err instanceof Error ? err.message : 'Failed to retry candidate ingestion.';
+      console.error('[CandidateProfilePage] Retry failed candidate ingestion failed:', err);
+      setRetryIngestionError(message);
+    } finally {
+      setRetryingIngestion(false);
+    }
+  }, [api, candidate?.pipelineId, refetch]);
 
   const handleUploadResume = useCallback(async (file: File): Promise<void> => {
     if (!id) return;
@@ -1794,6 +1822,14 @@ export default function CandidateProfilePage(): JSX.Element {
             profileSections={profileSections}
             cultureInterviewSessions={cultureInterviewSessions}
             candidateId={id!}
+            onRetryFailedIngestion={
+              ingestion?.status === 'failed' && candidate.pipelineId
+                ? handleRetryFailedIngestion
+                : undefined
+            }
+            isRetryingIngestion={retryingIngestion}
+            retryIngestionError={retryIngestionError}
+            retryIngestionResult={retryIngestionResult}
           />
         )}
 
@@ -1848,7 +1884,17 @@ export default function CandidateProfilePage(): JSX.Element {
 
         {/* ENRICHMENT tab */}
         {selectedTab === "ENRICHMENT" && profileSections.length > 0 && (
-          <CandidateEnrichmentTab sections={profileSections} />
+          <CandidateEnrichmentTab
+            sections={profileSections}
+            onRetryFailedIngestion={
+              ingestion?.status === 'failed' && candidate.pipelineId
+                ? handleRetryFailedIngestion
+                : undefined
+            }
+            isRetryingIngestion={retryingIngestion}
+            retryIngestionError={retryIngestionError}
+            retryIngestionResult={retryIngestionResult}
+          />
         )}
 
         {/* Stage content */}
