@@ -280,6 +280,9 @@ export function productionCorpusFailures(corpus: EvaluationCorpus): string[] {
 
   for (const label of corpus.expertLabels) {
     const provenance = label.labelProvenance;
+    if (!label.explanation || label.explanation.trim().length === 0) {
+      failures.push(`expert label requires a human rationale: ${label.labelId}`);
+    }
     if (!provenance) {
       failures.push(`expert label is missing reviewer/source provenance: ${label.labelId}`);
       continue;
@@ -306,6 +309,7 @@ export function hasExpertLabelProvenance(label: ExpertLabel): boolean {
   if (!provenance) return false;
   return label.labeledBy !== 'synthetic-fixture'
     && label.labeledBy !== 'corpus-seeder'
+    && Boolean(label.explanation?.trim())
     && Boolean(provenance.reviewerId)
     && Boolean(provenance.reviewArtifactId)
     && Boolean(provenance.reviewArtifactVersion)

@@ -32,6 +32,9 @@ function expertCorpusJson(): string {
     ...label,
     labelId: `expert-label-${index + 1}`,
     labeledBy: 'expert-reviewer-1',
+    explanation:
+      'Expert reviewer confirmed the candidate evidence aligns with the declared repo challenge '
+      + 'and that the selected PR is an appropriate source-backed assessment.',
     labelProvenance: {
       reviewerId: 'expert-reviewer-1',
       reviewerRole: 'senior-engineering-reviewer',

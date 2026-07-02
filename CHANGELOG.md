@@ -20,6 +20,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - CI matching-evaluation readiness can now target a dedicated D1 database and rollout stage via `MATCHING_EVALUATION_D1_DATABASE_ID` and `MATCHING_EVALUATION_STAGE`, keeping app-dev CODE_REVIEW quality proof separate from the mostly empty production D1 while preserving the same frozen-corpus gate.
 - Draft corpora seeded from real match runs now persist through the frozen `evaluation_corpora` schema with immutable hashes, and seeded draft labels no longer count as expert labels until reviewer/source provenance is attached.
 - The internal evaluation-corpus seed endpoint now reports corpus hash, draft/expert/synthetic label counts, production-readiness failures, and the required next action so operator-created match corpora cannot be mistaken for expert-labelled gates.
+- Production match-quality corpora now require each expert label to include a human rationale in addition to reviewer/source provenance, preventing metadata-only labels from opening CODE_REVIEW rollout gates.
 
 ### Fixed — CODE_REVIEW assessment runtime
 

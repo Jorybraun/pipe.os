@@ -12,6 +12,7 @@ import {
   getCandidateEvidence,
   getRoleRequirements,
   getAllChallengeIds,
+  productionCorpusFailures,
   CorpusValidationError,
 } from '../corpus';
 import {
@@ -123,6 +124,66 @@ describe('Corpus Validation', () => {
     };
 
     expect(() => loadCorpus(JSON.stringify(corpus))).not.toThrow();
+  });
+
+  it('requires production expert labels to include human rationale', () => {
+    const corpus: EvaluationCorpus = {
+      version: EVALUATION_CORPUS_VERSION,
+      corpusId: 'production-corpus-missing-rationale',
+      createdAt: '2026-06-13T00:00:00Z',
+      description: 'Production corpus with expert metadata but no rationale',
+      candidateEvidence: [
+        {
+          candidateId: 'candidate-1',
+          evidenceId: 'evidence-1',
+          episodeId: 'episode-1',
+          narrative: 'Built durable task queues for delayed retries.',
+          concepts: ['term:durable-task-queues'],
+          evidenceReferences: [sourceRef('candidate-queue')],
+        },
+      ],
+      roleRequirements: [
+        {
+          roleId: 'role-1',
+          requiredLanguages: ['typescript'],
+          relevantConcepts: ['term:durable-task-queues'],
+          sourceReferences: [roleSource('queue-role', ['term:durable-task-queues'])],
+        },
+      ],
+      expertLabels: [
+        {
+          labelId: 'expert-label-without-rationale',
+          candidateId: 'candidate-1',
+          roleId: 'role-1',
+          challengeId: 'challenge-1',
+          relevanceGrade: 'highly_relevant',
+          eligibleChallengeIds: ['challenge-1'],
+          labelVersion: '1.0.0',
+          labeledAt: '2026-06-13T00:00:00Z',
+          labeledBy: 'expert-reviewer-1',
+          labelProvenance: {
+            reviewerId: 'expert-reviewer-1',
+            reviewerRole: 'senior-engineering-reviewer',
+            reviewArtifactId: 'expert-review-artifact-1',
+            reviewArtifactVersion: 'v1',
+            contentHash: 'sha256:expert-review-artifact-1',
+            locator: 'expert-review:artifact-1',
+            rubricVersion: 'candidate-pr-match-rubric-v1',
+          },
+        },
+      ],
+      metadata: {
+        totalLabels: 1,
+        totalCandidates: 1,
+        totalRoles: 1,
+        totalChallenges: 1,
+        syntheticFixtureCount: 0,
+      },
+    };
+
+    expect(productionCorpusFailures(corpus)).toContain(
+      'expert label requires a human rationale: expert-label-without-rationale',
+    );
   });
 
   it('should reject corpus with version mismatch', () => {
@@ -1496,6 +1557,9 @@ describe('E2E: roleless person + simple JD + real repo packet + explained match'
           challengeId,
           relevanceGrade: 'highly_relevant',
           eligibleChallengeIds: [challengeId],
+          explanation:
+            'Alice has source-backed Kafka/payment-event experience that maps directly to the '
+            + 'repo packet demand for exactly-once payment event processing.',
           labelVersion: '1.0.0',
           labeledAt: '2026-06-24T00:00:00Z',
           labeledBy: 'expert-reviewer-1',
