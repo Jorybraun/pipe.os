@@ -375,21 +375,19 @@ describe('stale Workers AI candidate-ingestion retry', () => {
 
     await expect(processStaleWorkersAIModelIngestionRetries(env, 2)).resolves.toEqual({
       scanned: 3,
-      queued: 3,
-      skipped: 0,
+      queued: 2,
+      skipped: 1,
       failed: 0,
     });
     const selectCall = db.__calls.find((call) => call.sql.includes('FROM candidate_ingestion ci'))!;
-    expect(selectCall.params[1]).toBe(2);
-    expect(runCandidateIngestion).toHaveBeenCalledTimes(3);
+    expect(selectCall.sql).not.toContain('LIKE');
+    expect(selectCall.params[1]).toBe(12);
+    expect(runCandidateIngestion).toHaveBeenCalledTimes(2);
     expect(runCandidateIngestion).toHaveBeenCalledWith(expect.objectContaining({
       candidateId: 'oldest',
     }));
     expect(runCandidateIngestion).toHaveBeenCalledWith(expect.objectContaining({
       candidateId: 'bad-json',
-    }));
-    expect(runCandidateIngestion).toHaveBeenCalledWith(expect.objectContaining({
-      candidateId: 'stalled',
     }));
     const retryEventCall = db.__calls.find((call) =>
       call.ran

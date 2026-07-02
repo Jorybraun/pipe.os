@@ -378,6 +378,36 @@ describe('decomposeResumeToGraph', () => {
     );
   });
 
+  it('can skip parser-only node embeddings after source-backed evidence is persisted', async () => {
+    const db = mockDb();
+    const ready = vi.fn(async () => undefined);
+    const parsedCV: ParsedCV = {
+      name: 'Repo Match Candidate',
+      skills: ['TypeScript'],
+      experiences: [],
+      educationBlocks: [],
+      credentials: [],
+      projects: [],
+    };
+
+    const result = await decomposeResumeToGraph({
+      db,
+      candidateId: 'candidate-skip-node-embeddings',
+      resumeText: 'Senior TypeScript engineer reviewing request routing bugs and Vitest regression tests.',
+      parsedCV,
+      env: mockEnv,
+      decompositionResult: null,
+      afterSourceBackedEvidence: ready,
+      maxNodeEmbeddings: 0,
+    });
+
+    expect(result.nodesInserted).toBeGreaterThan(0);
+    expect(result.nodesEmbedded).toBe(0);
+    expect(ready).toHaveBeenCalledTimes(1);
+    expect(insertCandidateNode).toHaveBeenCalled();
+    expect(embedCandidateNode).not.toHaveBeenCalled();
+  });
+
   it('falls back to parser-only nodes when decompositionResult is null', async () => {
     const db = mockDb();
     const parsedCV: ParsedCV = {

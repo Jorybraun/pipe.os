@@ -2504,6 +2504,7 @@ async function handleIntakePayload(
             resumeText,
             decompositionResult: null,
             afterSourceBackedEvidence: triggerAfterSourceBackedEvidence,
+            maxNodeEmbeddings: 0,
           }),
           watchForSourceBackedEvidence(),
         ]);

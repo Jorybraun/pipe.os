@@ -7,6 +7,7 @@ import { markIngestionFailed } from './persist';
 
 const DEFAULT_STALE_WORKERS_AI_RETRY_LIMIT = 3;
 const MAX_STALE_WORKERS_AI_RETRY_LIMIT = 5;
+const STALE_WORKERS_AI_RETRY_SCAN_MULTIPLIER = 6;
 const MAX_RETRY_EVENT_ERROR_CHARS = 700;
 const STALE_IN_PROGRESS_RETRY_AFTER_MS = 10 * 60 * 1000;
 
@@ -283,6 +284,7 @@ export async function processStaleWorkersAIModelIngestionRetries(
   limit = DEFAULT_STALE_WORKERS_AI_RETRY_LIMIT,
 ): Promise<StaleWorkersAIRetryResult> {
   const boundedLimit = Math.max(1, Math.min(limit, MAX_STALE_WORKERS_AI_RETRY_LIMIT));
+  const scanLimit = boundedLimit * STALE_WORKERS_AI_RETRY_SCAN_MULTIPLIER;
   const staleCutoff = new Date(Date.now() - STALE_IN_PROGRESS_RETRY_AFTER_MS).toISOString();
   const rows = await env.DB.prepare(
     `SELECT c.id AS candidate_id,
@@ -298,14 +300,7 @@ export async function processStaleWorkersAIModelIngestionRetries(
           (
             ci.status = 'failed'
             AND ci.current_step = 'discover_profile'
-            AND (
-              ci.error_text LIKE '%5028%'
-              OR lower(ci.error_text) LIKE '%deprecated%'
-              OR lower(ci.error_text) LIKE '%decommissioned%'
-              OR lower(ci.error_text) LIKE '%candidate discovery response was not a json object%'
-              OR lower(ci.error_text) LIKE '%candidate discovery profile too short: got 0 chars%'
-              OR lower(ci.error_text) LIKE '%cloudflare workers ai returned empty response%'
-            )
+            AND ci.error_text IS NOT NULL
           )
           OR (
             ci.status = 'pending'
@@ -316,7 +311,7 @@ export async function processStaleWorkersAIModelIngestionRetries(
         )
       ORDER BY ci.updated_at ASC
       LIMIT ?2`,
-  ).bind(staleCutoff, boundedLimit).all<RetryableCandidateRow>();
+  ).bind(staleCutoff, scanLimit).all<RetryableCandidateRow>();
 
   let queued = 0;
   let skipped = 0;
@@ -324,6 +319,10 @@ export async function processStaleWorkersAIModelIngestionRetries(
   for (const row of rows.results ?? []) {
     const retryContext = retryContextForRow(row, 'scheduled_worker');
     if (!row.resume_s3_key || !retryContext) {
+      skipped++;
+      continue;
+    }
+    if (queued >= boundedLimit) {
       skipped++;
       continue;
     }

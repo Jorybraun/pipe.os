@@ -9,6 +9,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Added — Open-source assessment setup
 
+- `assessment-evidence:replay -- --remote --all-missing` now supports `--progress` and repeatable `--exclude-state <STATE>` filters, so app-dev historical backfill can report the current session and skip active `IN_PROGRESS` assessments while completed rows are repaired.
 - `assessment-evidence:replay -- --remote --all-missing --summary` now emits compact bounded-backfill proof with processed session ids, success/failure counts, context/source-ref totals, missing projection counts, and matching effects for app-dev replay batches.
 - `assessment-evidence:replay` now emits a DoD answer block covering what happened, who acted, source proof types, derived claims, missing person projections, and matching effects for the replayed assessment.
 - `assessment-evidence:replay` can now run `--all-missing --limit <n>` to backfill candidate-backed assessment sessions with missing person projections and report matching effects for each replayed candidate.
@@ -39,6 +40,8 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 ### Fixed — Open-source assessment progress
 
 - LLM usage accounting now includes the current Workers AI `@cf/zai-org/glm-4.7-flash` default so candidate-ingestion metering does not fail on the replacement model.
+- Standalone assessment text intake now skips hot-path per-node embeddings after source-backed resume evidence is persisted, giving candidate-profile AI discovery time to complete before Worker background execution is cancelled.
+- Scheduled candidate-ingestion retries now avoid fragile D1 `LIKE` pattern chains and classify retryable AI/profile failures in TypeScript, preventing the dev retry cron from crashing while it repairs stale rows.
 - Candidate evidence ingestion now uses a structured-output-friendly Workers AI default, removes fenced JSON from the candidate-discovery prompt, unwraps nested Workers AI responses, retries failed discovery-output contracts, and exposes source-backed resume evidence before bounded embedding work can stall the `/assess` handoff.
 - Batched recruiter interview-list assessment progress summaries now use explicit typed row projections, keeping Worker strict typing green for the list-card performance path.
 - Recruiter interview lists now load assessment progress from batched summary queries instead of hydrating full per-session evidence detail for every card, preserving task/commit/evaluation signals while reducing list-page D1 work.

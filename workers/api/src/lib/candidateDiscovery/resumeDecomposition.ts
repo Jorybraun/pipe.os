@@ -63,6 +63,7 @@ export interface ResumeDecompositionInput {
   decompositionResult?: DecompositionResult | null;
   env: Env;
   afterSourceBackedEvidence?: () => Promise<void>;
+  maxNodeEmbeddings?: number;
   /** @deprecated Vectorize upserts removed in Neo4j migration Phase 2. Kept for API compatibility. */
   vectorize?: VectorizeIndex;
 }
@@ -605,6 +606,7 @@ async function writeParserOnlyNodes(
   resumeText: string,
   env: Env,
   afterSourceBackedEvidence?: () => Promise<void>,
+  maxNodeEmbeddings = MAX_NODE_EMBEDDINGS_PER_INGESTION,
 ): Promise<{ inserted: number; embedded: number; errors: string[]; embeddings: number[][] }> {
   const errors: string[] = [];
   let inserted = 0;
@@ -800,7 +802,7 @@ async function writeParserOnlyNodes(
     }
   }
 
-  for (const insertedNode of candidateNodes.slice(0, MAX_NODE_EMBEDDINGS_PER_INGESTION)) {
+  for (const insertedNode of candidateNodes.slice(0, maxNodeEmbeddings)) {
     try {
       const embedding = await embedCandidateNode(insertedNode.narrative_text, env as unknown as Parameters<typeof embedCandidateNode>[1]);
       const embeddingJson = JSON.stringify(embedding);
@@ -951,6 +953,7 @@ export async function decomposeResumeToGraph(
       resumeText,
       env,
       input.afterSourceBackedEvidence,
+      input.maxNodeEmbeddings,
     );
     result.nodesInserted = fallback.inserted;
     result.nodesEmbedded = fallback.embedded;
@@ -1022,7 +1025,8 @@ export async function decomposeResumeToGraph(
     }
   }
 
-  for (const insertedNode of candidateNodes.slice(0, MAX_NODE_EMBEDDINGS_PER_INGESTION)) {
+  const maxNodeEmbeddings = input.maxNodeEmbeddings ?? MAX_NODE_EMBEDDINGS_PER_INGESTION;
+  for (const insertedNode of candidateNodes.slice(0, maxNodeEmbeddings)) {
     try {
       const embedding = await embedCandidateNode(insertedNode.narrative_text, env as unknown as Parameters<typeof embedCandidateNode>[1]);
       const embeddingJson = JSON.stringify(embedding);
