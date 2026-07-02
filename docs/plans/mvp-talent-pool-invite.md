@@ -203,10 +203,9 @@ npm --prefix workers/api test -- \
   src/routes/cockpit/__tests__/candidates.rest.test.ts
 ```
 
-Current gap: DOCX files are accepted and persisted as Talent Pool uploads, but
-background profile extraction currently runs for text content and PDF uploads.
-DOCX uploads need an extractor/backfill path before they can be claimed as fully
-projected profile evidence without accompanying pasted text.
+DOCX uploads are parsed from OOXML body text and use the same profile-ingestion
+and living-context projection path as PDF uploads. Legacy binary `.doc` files
+remain unsupported and should not be advertised as source-projectable evidence.
 
 ---
 

@@ -8,7 +8,7 @@ vi.mock('../../cvParser', () => ({
     decompositionResult: null,
   })),
   persistParsedCV: vi.fn(async () => undefined),
-  extractTextFromPDF: vi.fn(async () =>
+  extractTextFromResumeFile: vi.fn(async () =>
     'Jane Doe\nSenior Software Engineer with 8 years of experience building distributed systems.\n\nExperience\nLed migration from monolith to microservices at Acme Corp.',
   ),
 }));
@@ -34,13 +34,16 @@ vi.mock('../../livingContext/resumeIngestion', () => ({
   ingestResumeToLivingContext: (...args: unknown[]) => mockIngestResume(...args),
 }));
 
-function buildMockEnv(db: D1Database): Env {
+function buildMockEnv(
+  db: D1Database,
+  contentType = 'application/pdf',
+): Env {
   return {
     DB: db,
     STORAGE: {
       get: vi.fn(async () => ({
         arrayBuffer: async () => new ArrayBuffer(10),
-        httpMetadata: { contentType: 'application/pdf' },
+        httpMetadata: { contentType },
       })),
     },
     MOCK_AI: 'true',
@@ -78,8 +81,8 @@ describe('processResumeFromR2 — living context integration', () => {
   });
 
   it('skips living context ingestion when resume text is too short', async () => {
-    const { extractTextFromPDF } = await import('../../cvParser');
-    vi.mocked(extractTextFromPDF).mockResolvedValueOnce('short');
+    const { extractTextFromResumeFile } = await import('../../cvParser');
+    vi.mocked(extractTextFromResumeFile).mockResolvedValueOnce('short');
 
     const env = buildMockEnv(db);
     const result = await processResumeFromR2({
@@ -121,5 +124,28 @@ describe('processResumeFromR2 — living context integration', () => {
     expect(call).toBeDefined();
     const input = call[1] as { resumeText: string };
     expect(input.resumeText.length).toBeGreaterThanOrEqual(20);
+  });
+
+  it('processes DOCX uploads into living context with source media type', async () => {
+    const env = buildMockEnv(
+      db,
+      'application/vnd.openxmlformats-officedocument.wordprocessingml.document',
+    );
+    const result = await processResumeFromR2({
+      env,
+      db,
+      candidateId: 'cand-docx',
+      r2Key: 'candidate-documents/cand-docx/profile.docx',
+    });
+
+    expect(result.success).toBe(true);
+    expect(mockIngestResume).toHaveBeenCalledWith(
+      db,
+      expect.objectContaining({
+        candidateId: 'cand-docx',
+        storageKey: 'candidate-documents/cand-docx/profile.docx',
+        mediaType: 'application/vnd.openxmlformats-officedocument.wordprocessingml.document',
+      }),
+    );
   });
 });

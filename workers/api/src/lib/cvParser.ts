@@ -25,6 +25,9 @@ import {
   type DecompositionResult,
 } from './candidateDiscovery/candidateDecompositionPrompt';
 
+const PDF_CONTENT_TYPE = 'application/pdf';
+const DOCX_CONTENT_TYPE = 'application/vnd.openxmlformats-officedocument.wordprocessingml.document';
+
 // ─── Types ──────────────────────────────────────────────────────────────────
 
 export interface ParsedExperience {
@@ -99,6 +102,153 @@ export async function extractTextFromPDF(buffer: ArrayBuffer): Promise<string> {
     console.error('[cvParser] PDF extraction failed:', msg);
     throw err;
   }
+}
+
+interface ZipEntry {
+  fileName: string;
+  compressionMethod: number;
+  compressedSize: number;
+  localHeaderOffset: number;
+}
+
+function findZipEndOfCentralDirectory(view: DataView): number {
+  const minOffset = Math.max(0, view.byteLength - 0xffff - 22);
+  for (let offset = view.byteLength - 22; offset >= minOffset; offset -= 1) {
+    if (view.getUint32(offset, true) === 0x06054b50) return offset;
+  }
+  return -1;
+}
+
+function readZipEntries(buffer: ArrayBuffer): Map<string, ZipEntry> {
+  const view = new DataView(buffer);
+  const eocdOffset = findZipEndOfCentralDirectory(view);
+  if (eocdOffset < 0) throw new Error('DOCX zip central directory not found');
+
+  const entryCount = view.getUint16(eocdOffset + 10, true);
+  const centralDirectoryOffset = view.getUint32(eocdOffset + 16, true);
+  const decoder = new TextDecoder();
+  const entries = new Map<string, ZipEntry>();
+  let offset = centralDirectoryOffset;
+
+  for (let index = 0; index < entryCount; index += 1) {
+    if (offset + 46 > view.byteLength || view.getUint32(offset, true) !== 0x02014b50) {
+      throw new Error('DOCX zip central directory is malformed');
+    }
+    const compressionMethod = view.getUint16(offset + 10, true);
+    const compressedSize = view.getUint32(offset + 20, true);
+    const fileNameLength = view.getUint16(offset + 28, true);
+    const extraLength = view.getUint16(offset + 30, true);
+    const commentLength = view.getUint16(offset + 32, true);
+    const localHeaderOffset = view.getUint32(offset + 42, true);
+    const fileNameStart = offset + 46;
+    const fileName = decoder.decode(buffer.slice(fileNameStart, fileNameStart + fileNameLength));
+    entries.set(fileName, {
+      fileName,
+      compressionMethod,
+      compressedSize,
+      localHeaderOffset,
+    });
+    offset = fileNameStart + fileNameLength + extraLength + commentLength;
+  }
+
+  return entries;
+}
+
+async function inflateZipEntry(buffer: ArrayBuffer, entry: ZipEntry): Promise<ArrayBuffer> {
+  const view = new DataView(buffer);
+  const localOffset = entry.localHeaderOffset;
+  if (localOffset + 30 > view.byteLength || view.getUint32(localOffset, true) !== 0x04034b50) {
+    throw new Error(`DOCX zip local header is malformed for ${entry.fileName}`);
+  }
+
+  const fileNameLength = view.getUint16(localOffset + 26, true);
+  const extraLength = view.getUint16(localOffset + 28, true);
+  const dataStart = localOffset + 30 + fileNameLength + extraLength;
+  const compressed = buffer.slice(dataStart, dataStart + entry.compressedSize);
+
+  if (entry.compressionMethod === 0) return compressed;
+  if (entry.compressionMethod !== 8) {
+    throw new Error(`Unsupported DOCX zip compression method ${entry.compressionMethod}`);
+  }
+
+  const stream = new Blob([compressed]).stream().pipeThrough(new DecompressionStream('deflate-raw'));
+  return await new Response(stream).arrayBuffer();
+}
+
+function decodeXmlEntities(value: string): string {
+  return value.replace(/&(#x[0-9a-f]+|#\d+|amp|lt|gt|quot|apos);/gi, (entity, raw: string) => {
+    const normalized = raw.toLowerCase();
+    if (normalized === 'amp') return '&';
+    if (normalized === 'lt') return '<';
+    if (normalized === 'gt') return '>';
+    if (normalized === 'quot') return '"';
+    if (normalized === 'apos') return '\'';
+    if (normalized.startsWith('#x')) {
+      return String.fromCodePoint(Number.parseInt(normalized.slice(2), 16));
+    }
+    if (normalized.startsWith('#')) {
+      return String.fromCodePoint(Number.parseInt(normalized.slice(1), 10));
+    }
+    return entity;
+  });
+}
+
+function extractTextFromWordXml(xml: string): string {
+  const parts: string[] = [];
+  const tokenRe = /<w:t\b[^>]*>([\s\S]*?)<\/w:t>|<w:tab\b[^>]*\/>|<w:br\b[^>]*\/>|<\/w:p>/g;
+  let match: RegExpExecArray | null;
+  while ((match = tokenRe.exec(xml)) !== null) {
+    if (match[1] !== undefined) {
+      parts.push(decodeXmlEntities(match[1]));
+    } else if (match[0].startsWith('<w:tab')) {
+      parts.push('\t');
+    } else {
+      parts.push('\n');
+    }
+  }
+  return parts.join('')
+    .replace(/\r/g, '')
+    .replace(/[ \t]+\n/g, '\n')
+    .replace(/\n{3,}/g, '\n\n')
+    .trim();
+}
+
+export async function extractTextFromDOCX(buffer: ArrayBuffer): Promise<string> {
+  const entries = readZipEntries(buffer.slice(0));
+  const candidates = [
+    'word/document.xml',
+    ...[...entries.keys()]
+      .filter((name) => /^word\/(?:header|footer|footnotes|endnotes)\d*\.xml$/.test(name))
+      .sort(),
+  ];
+  const decoder = new TextDecoder();
+  const textParts: string[] = [];
+
+  for (const fileName of candidates) {
+    const entry = entries.get(fileName);
+    if (!entry) continue;
+    const xmlBuffer = await inflateZipEntry(buffer, entry);
+    const xml = decoder.decode(xmlBuffer);
+    const text = extractTextFromWordXml(xml);
+    if (text) textParts.push(text);
+  }
+
+  const cleaned = textParts.join('\n\n').trim();
+  console.log(`[cvParser] DOCX extraction: ${cleaned.length} chars, ${textParts.length} part(s)`);
+  if (cleaned.length === 0) {
+    console.warn('[cvParser] DOCX extraction returned empty text');
+  }
+  return cleaned;
+}
+
+export async function extractTextFromResumeFile(
+  buffer: ArrayBuffer,
+  contentType: string,
+): Promise<string> {
+  const normalized = contentType.split(';')[0]?.trim().toLowerCase() ?? '';
+  if (normalized === PDF_CONTENT_TYPE) return await extractTextFromPDF(buffer);
+  if (normalized === DOCX_CONTENT_TYPE) return await extractTextFromDOCX(buffer);
+  throw new Error(`Unsupported resume content type ${contentType}`);
 }
 
 // ─── Rule-Based Structured Extraction ───────────────────────────────────────
@@ -868,17 +1018,17 @@ export async function parseResumeText(input: ParseResumeTextInput): Promise<Pars
  * Returns null if parsing is unavailable (no provider) or fails gracefully.
  */
 export async function parseResume(input: ParseResumeInput): Promise<ParseResumeResult | null> {
-  // Only PDFs are supported for text extraction currently
-  if (input.contentType !== 'application/pdf') {
-    console.warn('[cvParser] Non-PDF file — skipping parsing:', input.contentType);
+  const contentType = input.contentType.split(';')[0]?.trim().toLowerCase() ?? '';
+  if (contentType !== PDF_CONTENT_TYPE && contentType !== DOCX_CONTENT_TYPE) {
+    console.warn('[cvParser] Unsupported resume file — skipping parsing:', input.contentType);
     return null;
   }
 
   try {
-    const text = await extractTextFromPDF(input.fileBuffer);
+    const text = await extractTextFromResumeFile(input.fileBuffer, contentType);
 
     if (!text || text.trim().length < 20) {
-      console.warn('[cvParser] Insufficient text extracted from PDF:', text.length, 'chars');
+      console.warn('[cvParser] Insufficient text extracted from resume:', text.length, 'chars');
       return null;
     }
 

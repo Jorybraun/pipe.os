@@ -430,10 +430,13 @@ function queueProfileIngestion(input: {
     return;
   }
 
-  if (input.contentType === 'application/pdf') {
+  if (
+    input.contentType === 'application/pdf'
+    || input.contentType === 'application/vnd.openxmlformats-officedocument.wordprocessingml.document'
+  ) {
     queueBackgroundTask(
       input.c,
-      'pdf-ingestion',
+      'document-ingestion',
       () => processResumeFromR2({
         env: input.c.env,
         db: input.c.env.DB,

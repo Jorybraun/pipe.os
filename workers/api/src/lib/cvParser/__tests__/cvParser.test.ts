@@ -171,6 +171,50 @@ describe('ParsedCV structure', () => {
 });
 
 describe('parseResume', () => {
+  function buildStoredDocx(documentXml: string): ArrayBuffer {
+    const encoder = new TextEncoder();
+    const fileName = encoder.encode('word/document.xml');
+    const content = encoder.encode(documentXml);
+    const localHeaderLength = 30 + fileName.length + content.length;
+    const centralHeaderLength = 46 + fileName.length;
+    const eocdLength = 22;
+    const bytes = new Uint8Array(localHeaderLength + centralHeaderLength + eocdLength);
+    const view = new DataView(bytes.buffer);
+    let offset = 0;
+
+    view.setUint32(offset, 0x04034b50, true);
+    view.setUint16(offset + 4, 20, true);
+    view.setUint16(offset + 8, 0, true);
+    view.setUint32(offset + 14, 0, true);
+    view.setUint32(offset + 18, content.length, true);
+    view.setUint32(offset + 22, content.length, true);
+    view.setUint16(offset + 26, fileName.length, true);
+    bytes.set(fileName, offset + 30);
+    bytes.set(content, offset + 30 + fileName.length);
+
+    const centralOffset = localHeaderLength;
+    offset = centralOffset;
+    view.setUint32(offset, 0x02014b50, true);
+    view.setUint16(offset + 4, 20, true);
+    view.setUint16(offset + 6, 20, true);
+    view.setUint16(offset + 10, 0, true);
+    view.setUint32(offset + 16, 0, true);
+    view.setUint32(offset + 20, content.length, true);
+    view.setUint32(offset + 24, content.length, true);
+    view.setUint16(offset + 28, fileName.length, true);
+    view.setUint32(offset + 42, 0, true);
+    bytes.set(fileName, offset + 46);
+
+    offset = centralOffset + centralHeaderLength;
+    view.setUint32(offset, 0x06054b50, true);
+    view.setUint16(offset + 8, 1, true);
+    view.setUint16(offset + 10, 1, true);
+    view.setUint32(offset + 12, centralHeaderLength, true);
+    view.setUint32(offset + 16, centralOffset, true);
+
+    return bytes.buffer;
+  }
+
   it('falls back to source-text-only parsing when no AI provider is available', async () => {
     const result = await parseResumeText({
       resumeText: `
@@ -252,13 +296,37 @@ Maintained deployment workflows and incident tooling.
     expect(result!.parsedCV.experiences[0]!.company).toBe('Real Resume Co');
   });
 
-  it('returns null for non-PDF files', async () => {
+  it('returns null for unsupported resume files', async () => {
     const result = await parseResume({
       fileBuffer: new ArrayBuffer(0),
-      contentType: 'application/docx',
+      contentType: 'application/msword',
       env: {},
     });
     expect(result).toBeNull();
+  });
+
+  it('extracts DOCX body text for source-backed parsing', async () => {
+    const docx = buildStoredDocx(`
+      <w:document xmlns:w="http://schemas.openxmlformats.org/wordprocessingml/2006/main">
+        <w:body>
+          <w:p><w:r><w:t>Experience</w:t></w:r></w:p>
+          <w:p><w:r><w:t>Source Docs</w:t></w:r></w:p>
+          <w:p><w:r><w:t>Backend Engineer — January 2021 – Present</w:t></w:r></w:p>
+          <w:p><w:r><w:t>Built Cloudflare Workers ingestion replay with TypeScript.</w:t></w:r></w:p>
+        </w:body>
+      </w:document>
+    `);
+
+    const result = await parseResume({
+      fileBuffer: docx,
+      contentType: 'application/vnd.openxmlformats-officedocument.wordprocessingml.document',
+      env: {},
+    });
+
+    expect(result).not.toBeNull();
+    expect(result!.parsedCV.experiences).toHaveLength(1);
+    expect(result!.parsedCV.experiences[0]!.company).toBe('Source Docs');
+    expect(result!.parsedCV.experiences[0]!.description).toContain('ingestion replay');
   });
 
   it('falls back to rule-based extraction when no AI provider is available', async () => {

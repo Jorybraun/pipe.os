@@ -12,10 +12,13 @@
  */
 
 import type { Env } from '../../types';
-import { parseResume, persistParsedCV, extractTextFromPDF } from '../cvParser';
+import { parseResume, persistParsedCV, extractTextFromResumeFile } from '../cvParser';
 import { runCandidateIngestion } from '../candidateDiscovery/orchestrate';
 import { markIngestionFailed } from '../candidateDiscovery/persist';
 import { ingestResumeToLivingContext } from '../livingContext/resumeIngestion';
+
+const PDF_CONTENT_TYPE = 'application/pdf';
+const DOCX_CONTENT_TYPE = 'application/vnd.openxmlformats-officedocument.wordprocessingml.document';
 
 export interface ProcessResumeInput {
   env: Env;
@@ -34,8 +37,10 @@ export interface ProcessResumeResult {
 
 function normalizeResumeContentType(contentType: string | null | undefined, r2Key: string): string {
   const normalized = (contentType ?? '').split(';')[0]?.trim().toLowerCase() ?? '';
-  if (normalized === 'application/pdf') return 'application/pdf';
-  if (r2Key.toLowerCase().endsWith('.pdf')) return 'application/pdf';
+  if (normalized === PDF_CONTENT_TYPE) return PDF_CONTENT_TYPE;
+  if (normalized === DOCX_CONTENT_TYPE) return DOCX_CONTENT_TYPE;
+  if (r2Key.toLowerCase().endsWith('.pdf')) return PDF_CONTENT_TYPE;
+  if (r2Key.toLowerCase().endsWith('.docx')) return DOCX_CONTENT_TYPE;
   return normalized || 'application/octet-stream';
 }
 
@@ -136,11 +141,11 @@ export async function processResumeFromR2(
     // 3. Persist parsed CV
     await persistParsedCV(db, candidateId, parsed);
 
-    // 4. Run full ingestion pipeline (PDF only — DOCX ingestion can be added later)
+    // 4. Run full ingestion pipeline from extracted source text.
     let resumeText = '';
-    if (contentType === 'application/pdf') {
+    if (contentType === PDF_CONTENT_TYPE || contentType === DOCX_CONTENT_TYPE) {
       try {
-        resumeText = await extractTextFromPDF(arrayBuffer);
+        resumeText = await extractTextFromResumeFile(arrayBuffer, contentType);
         if (resumeText.trim().length < 20) {
           const message = `Resume text extraction produced insufficient source evidence for ${r2Key}.`;
           try {
