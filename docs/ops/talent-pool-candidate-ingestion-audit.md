@@ -23,6 +23,13 @@ evidence-depth view must resolve the active `workspace_people` row from
 back to the legacy `applications` bridge. A read must not create application or
 candidate-role edges for a roleless Talent Pool member.
 
+The unified People list is also part of the ingestion contract. If a Talent
+Pool intake creates a canonical `people` / `workspace_people` projection, the
+list returns that person in the same collection as contacts, and the returned
+person id must open the profile, living-context graph, source search, evidence
+timeline, and evidence-depth reads. Source-backed evidence tools must not
+depend on a separate candidate-only list or a legacy contact row.
+
 Email is not required for the roleless Talent Pool person projection. When a
 candidate row has email, the projection keeps the email-keyed person merge; when
 email is absent, ingestion uses a deterministic candidate-keyed person identity
@@ -257,7 +264,10 @@ Local recruiter/person read proof on 2026-07-02 uses
 contact and roleless Talent Pool candidate, then verifies candidate graph,
 source search, and evidence-depth reads return the same canonical
 `workspace_people` person with exact submitted source text while `applications`
-remain at zero and no extra candidate role is inserted.
+remain at zero and no extra candidate role is inserted. The same test now
+asserts a unified People-list Talent Pool row opens by canonical person id and
+that person-id source search, evidence timeline, and evidence-depth reads
+resolve the same `workspace_people` evidence projection.
 
 Candidate-facing route proof in `src/routes/__tests__/talentPool.test.ts`
 now covers `/rpc/talent/resolve-token`, `/rpc/talent/submit-profile`,

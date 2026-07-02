@@ -86,6 +86,11 @@ interface WorkspacePersonRow {
   updated_at: string;
 }
 
+interface SourceReadTarget {
+  exists: boolean;
+  workspacePersonId: string | null;
+}
+
 function parsePositiveInt(value: string | undefined, fallback: number, max: number): number {
   if (!value) return fallback;
   const parsed = Number.parseInt(value, 10);
@@ -259,6 +264,41 @@ async function loadWorkspacePersonAsContact(
   ).bind(ownerId, personId).first<WorkspacePersonRow>();
 
   return row ? workspacePersonToContact(row) : null;
+}
+
+async function resolveSourceReadTarget(
+  db: D1Database,
+  ownerId: string,
+  id: string,
+): Promise<SourceReadTarget> {
+  const contact = await db
+    .prepare('SELECT id FROM contacts WHERE id = ?1 AND owner_id = ?2')
+    .bind(id, ownerId)
+    .first<{ id: string }>();
+
+  if (contact) {
+    const workspacePerson = await db.prepare(
+      `SELECT wp.id
+         FROM workspace_people wp
+        WHERE wp.workspace_id = ?1
+          AND json_extract(wp.context_json, '$.contactId') = ?2
+        LIMIT 1`,
+    ).bind(ownerId, id).first<{ id: string }>();
+    return { exists: true, workspacePersonId: workspacePerson?.id ?? null };
+  }
+
+  const workspacePerson = await db.prepare(
+    `SELECT wp.id
+       FROM workspace_people wp
+       JOIN people p ON p.id = wp.person_id
+      WHERE wp.workspace_id = ?1
+        AND p.id = ?2
+      LIMIT 1`,
+  ).bind(ownerId, id).first<{ id: string }>();
+
+  return workspacePerson
+    ? { exists: true, workspacePersonId: workspacePerson.id }
+    : { exists: false, workspacePersonId: null };
 }
 
 // ─── Router ──────────────────────────────────────────────────────────────────
@@ -461,21 +501,11 @@ contacts.get('/:id/living-context/search', requireGate('living_context_read'), a
   const db = c.env.DB;
   const query = c.req.query('q') ?? '';
 
-  const contact = await db
-    .prepare('SELECT id FROM contacts WHERE id = ? AND owner_id = ?')
-    .bind(id, userId)
-    .first<{ id: string }>();
-  if (!contact) return apiError(c, 'NOT_FOUND', 'Contact not found.');
+  const target = await resolveSourceReadTarget(db, userId, id);
+  if (!target.exists) return apiError(c, 'NOT_FOUND', 'Person not found.');
+  if (!target.workspacePersonId) return c.json({ personId: id, query, hits: [] });
 
-  const wp = await db.prepare(
-    `SELECT wp.id
-       FROM workspace_people wp
-      WHERE json_extract(wp.context_json, '$.contactId') = ?1
-      LIMIT 1`,
-  ).bind(id).first<{ id: string }>();
-  if (!wp) return c.json({ personId: id, query, hits: [] });
-
-  const result = await searchSourceContent(db, wp.id, query);
+  const result = await searchSourceContent(db, target.workspacePersonId, query);
   return c.json(result);
 });
 
@@ -488,23 +518,13 @@ contacts.get('/:id/living-context/timeline', requireGate('living_context_read'),
   const before = c.req.query('before') ?? undefined;
   const after = c.req.query('after') ?? undefined;
 
-  const contact = await db
-    .prepare('SELECT id FROM contacts WHERE id = ? AND owner_id = ?')
-    .bind(id, userId)
-    .first<{ id: string }>();
-  if (!contact) return apiError(c, 'NOT_FOUND', 'Contact not found.');
-
-  const wp = await db.prepare(
-    `SELECT wp.id
-       FROM workspace_people wp
-      WHERE json_extract(wp.context_json, '$.contactId') = ?1
-      LIMIT 1`,
-  ).bind(id).first<{ id: string }>();
-  if (!wp) return c.json({ workspacePersonId: null, totalEntries: 0, entries: [] });
+  const target = await resolveSourceReadTarget(db, userId, id);
+  if (!target.exists) return apiError(c, 'NOT_FOUND', 'Person not found.');
+  if (!target.workspacePersonId) return c.json({ workspacePersonId: null, totalEntries: 0, entries: [] });
 
   const { loadPersonEvidenceTimeline } = await import('../../lib/livingContext');
   const limit = limitParam ? Math.min(parseInt(limitParam, 10) || 100, 500) : 100;
-  const timeline = await loadPersonEvidenceTimeline(db, wp.id, { limit, before, after });
+  const timeline = await loadPersonEvidenceTimeline(db, target.workspacePersonId, { limit, before, after });
   return c.json(timeline);
 });
 
@@ -514,19 +534,9 @@ contacts.get('/:id/living-context/evidence-depth', requireGate('living_context_r
   const { id } = c.req.param();
   const db = c.env.DB;
 
-  const contact = await db
-    .prepare('SELECT id FROM contacts WHERE id = ? AND owner_id = ?')
-    .bind(id, userId)
-    .first<{ id: string }>();
-  if (!contact) return apiError(c, 'NOT_FOUND', 'Contact not found.');
-
-  const wp = await db.prepare(
-    `SELECT wp.id
-       FROM workspace_people wp
-      WHERE json_extract(wp.context_json, '$.contactId') = ?1
-      LIMIT 1`,
-  ).bind(id).first<{ id: string }>();
-  if (!wp) {
+  const target = await resolveSourceReadTarget(db, userId, id);
+  if (!target.exists) return apiError(c, 'NOT_FOUND', 'Person not found.');
+  if (!target.workspacePersonId) {
     return c.json({
       contactId: id,
       workspacePersonId: null,
@@ -547,20 +557,20 @@ contacts.get('/:id/living-context/evidence-depth', requireGate('living_context_r
         WHERE workspace_person_id = ?1
         GROUP BY interaction_type
         ORDER BY cnt DESC`,
-    ).bind(wp.id).all<{ interaction_type: string; cnt: number }>(),
+    ).bind(target.workspacePersonId).all<{ interaction_type: string; cnt: number }>(),
     db.prepare(
       `SELECT COUNT(*) AS cnt FROM semantic_assertions WHERE workspace_person_id = ?1`,
-    ).bind(wp.id).first<{ cnt: number }>(),
+    ).bind(target.workspacePersonId).first<{ cnt: number }>(),
     db.prepare(
       `SELECT COUNT(*) AS cnt
          FROM source_spans ss
          JOIN artifact_versions av ON av.id = ss.artifact_version_id
          JOIN artifacts a ON a.id = av.artifact_id
         WHERE a.workspace_person_id = ?1`,
-    ).bind(wp.id).first<{ cnt: number }>(),
+    ).bind(target.workspacePersonId).first<{ cnt: number }>(),
     db.prepare(
       `SELECT COUNT(*) AS cnt FROM context_records WHERE workspace_person_id = ?1`,
-    ).bind(wp.id).first<{ cnt: number }>(),
+    ).bind(target.workspacePersonId).first<{ cnt: number }>(),
     db.prepare(
       `SELECT c.canonical_key, c.label, COUNT(DISTINCT ac.assertion_id) AS evidence_count
          FROM concepts c
@@ -570,7 +580,7 @@ contacts.get('/:id/living-context/evidence-depth', requireGate('living_context_r
         GROUP BY c.id, c.canonical_key, c.label
         ORDER BY evidence_count DESC
         LIMIT 20`,
-    ).bind(wp.id).all<{ canonical_key: string; label: string; evidence_count: number }>(),
+    ).bind(target.workspacePersonId).all<{ canonical_key: string; label: string; evidence_count: number }>(),
   ]);
 
   const sources: Record<string, number> = {};
@@ -586,7 +596,7 @@ contacts.get('/:id/living-context/evidence-depth', requireGate('living_context_r
 
   return c.json({
     contactId: id,
-    workspacePersonId: wp.id,
+    workspacePersonId: target.workspacePersonId,
     sourceDiversity,
     totalInteractions,
     totalAssertions: assertionCount?.cnt ?? 0,

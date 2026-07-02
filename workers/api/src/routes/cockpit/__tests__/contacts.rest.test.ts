@@ -185,7 +185,8 @@ describe('GET / contacts list', () => {
       duplicateCreatedAt,
     );
 
-    const response = await createApp().request('/?limit=110');
+    const app = createApp();
+    const response = await app.request('/?limit=110');
 
     expect(response.status).toBe(200);
     const body = await response.json() as {
@@ -204,6 +205,19 @@ describe('GET / contacts list', () => {
     expect(body.contacts.filter((contact) => contact.email === 'person-104@example.com')).toHaveLength(1);
     expect(body.contacts.find((contact) => contact.id === 'contact-104')).toMatchObject({
       type: 'candidate',
+    });
+
+    const profileResponse = await app.request('/person-talent-1');
+    expect(profileResponse.status).toBe(200);
+    const profileBody = await profileResponse.json() as {
+      contact: { id: string; email: string; name: string | null; type: string; notes: string | null };
+    };
+    expect(profileBody.contact).toMatchObject({
+      id: 'person-talent-1',
+      email: 'talent@example.com',
+      name: 'Talent Pool Person',
+      type: 'candidate',
+      notes: 'Joined the roleless Talent Pool.',
     });
   });
 });
@@ -524,6 +538,47 @@ describe('GET /:id/living-context', () => {
       totalContextRecords: number;
     };
     expect(evidenceDepthBody).toMatchObject({
+      workspacePersonId: firstContactGraph.person?.workspacePersonId,
+      totalInteractions: 1,
+      totalSourceSpans: 1,
+      totalContextRecords: 1,
+    });
+
+    const personSearch = await app.request(
+      `/${firstContactGraph.person?.personId}/living-context/search?q=Roleless`,
+    );
+    expect(personSearch.status).toBe(200);
+    const personSearchBody = await personSearch.json() as {
+      personId: string;
+      hits: Array<{ exactText: string; sourceSpanId: string }>;
+    };
+    expect(personSearchBody.personId).toBe(firstContactGraph.person?.workspacePersonId);
+    expect(personSearchBody.hits.some((hit) => hit.exactText.includes('Roleless smoke evidence'))).toBe(true);
+
+    const personTimeline = await app.request(
+      `/${firstContactGraph.person?.personId}/living-context/timeline`,
+    );
+    expect(personTimeline.status).toBe(200);
+    const personTimelineBody = await personTimeline.json() as {
+      workspacePersonId: string;
+      totalEntries: number;
+      entries: Array<{ kind: string; sourceType?: string; description?: string }>;
+    };
+    expect(personTimelineBody.workspacePersonId).toBe(firstContactGraph.person?.workspacePersonId);
+    expect(personTimelineBody.totalEntries).toBeGreaterThanOrEqual(1);
+    expect(JSON.stringify(personTimelineBody.entries)).toContain('Candidate submitted Talent Pool profile evidence.');
+
+    const personEvidenceDepth = await app.request(
+      `/${firstContactGraph.person?.personId}/living-context/evidence-depth`,
+    );
+    expect(personEvidenceDepth.status).toBe(200);
+    const personEvidenceDepthBody = await personEvidenceDepth.json() as {
+      workspacePersonId: string | null;
+      totalInteractions: number;
+      totalSourceSpans: number;
+      totalContextRecords: number;
+    };
+    expect(personEvidenceDepthBody).toMatchObject({
       workspacePersonId: firstContactGraph.person?.workspacePersonId,
       totalInteractions: 1,
       totalSourceSpans: 1,
