@@ -18,6 +18,7 @@ import { runScheduledBackfill, BACKFILL_TASKS } from '../../lib/livingContext/ba
 import { BackfillOrchestrator } from '../../lib/livingContext/backfillOrchestrator';
 import { checkGate } from '../../lib/livingContext/rolloutEnforcement';
 import { seedCorpusFromMatchRuns, persistSeededCorpus } from '../../lib/challengeMatching/evaluation/corpusSeeder';
+import { evaluationCorpusLabelCounts, productionCorpusFailures } from '../../lib/challengeMatching/evaluation/corpus';
 import { runEvaluation, generateHumanReadableReport } from '../../lib/challengeMatching/evaluation/cli';
 import type { AcceptanceThresholds } from '../../lib/challengeMatching/evaluation/types';
 import {
@@ -732,20 +733,34 @@ app.post('/evaluation-corpus-seed', async (c) => {
   });
 
   let persisted = false;
+  let corpusHash: string | null = null;
   if (body.persist !== false) {
     const persistResult = await persistSeededCorpus(c.env.DB, result.corpus);
     persisted = persistResult.persisted;
+    corpusHash = persistResult.corpusHash;
   }
+  const { expertLabelCount, syntheticFixtureCount } = evaluationCorpusLabelCounts(result.corpus);
+  const labelCount = result.corpus.expertLabels.length;
+  const draftLabelCount = labelCount - expertLabelCount - syntheticFixtureCount;
+  const productionReadinessFailures = productionCorpusFailures(result.corpus);
+  const productionReady = productionReadinessFailures.length === 0;
 
   return c.json({
     corpusId: result.corpus.corpusId,
+    corpusHash,
     persisted,
     matchRunCount: result.matchRunCount,
     candidateCount: result.candidateCount,
     roleCount: result.roleCount,
     challengeCount: result.challengeCount,
-    labelCount: result.corpus.expertLabels.length,
+    labelCount,
+    draftLabelCount,
+    expertLabelCount,
+    syntheticFixtureCount,
     expectedPacketCount: result.corpus.expectedPackets?.length ?? 0,
+    productionReady,
+    productionReadinessFailures,
+    nextAction: productionReady ? 'run_evaluation' : 'attach_expert_label_provenance',
     warnings: result.warnings,
   });
 });

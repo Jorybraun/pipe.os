@@ -21,6 +21,10 @@ const gatesMigration = readFileSync(
   new URL('../../../../migrations/0107_rollout_gates.sql', import.meta.url),
   'utf8',
 );
+const evaluationMigration = readFileSync(
+  new URL('../../../../migrations/0093_matching_evaluation.sql', import.meta.url),
+  'utf8',
+);
 
 function buildExecutionContext(): { ctx: ExecutionContext; waitUntilAll: () => Promise<void> } {
   const promises: Promise<unknown>[] = [];
@@ -640,6 +644,292 @@ describe('GET /evaluation-readiness', () => {
     const body = await res.json() as { ok: boolean; reason: string };
     expect(body.ok).toBe(false);
     expect(body.reason).toContain('Invalid stage');
+  });
+});
+
+function setupEvaluationCorpusSeedSchema(sqlite: BetterSqliteDb): void {
+  sqlite.exec(`
+    CREATE TABLE IF NOT EXISTS match_runs (
+      id TEXT PRIMARY KEY,
+      candidate_id TEXT NOT NULL,
+      application_id TEXT,
+      role_context_id TEXT,
+      role_snapshot_id TEXT NOT NULL DEFAULT 'standalone-code-review-v1',
+      candidate_snapshot_id TEXT NOT NULL,
+      policy_version TEXT NOT NULL DEFAULT '1.0.0',
+      model_version TEXT,
+      status TEXT NOT NULL,
+      selected_packet_id TEXT,
+      ranked_results_json TEXT NOT NULL DEFAULT '[]',
+      created_at TEXT NOT NULL DEFAULT (datetime('now'))
+    );
+
+    CREATE TABLE IF NOT EXISTS people (
+      id TEXT PRIMARY KEY,
+      display_name TEXT,
+      primary_email TEXT,
+      created_at TEXT NOT NULL DEFAULT (datetime('now'))
+    );
+
+    CREATE TABLE IF NOT EXISTS workspace_people (
+      id TEXT PRIMARY KEY,
+      person_id TEXT NOT NULL,
+      workspace_id TEXT NOT NULL DEFAULT 'ws-1',
+      created_at TEXT NOT NULL DEFAULT (datetime('now'))
+    );
+
+    CREATE TABLE IF NOT EXISTS applications (
+      id TEXT PRIMARY KEY,
+      workspace_person_id TEXT NOT NULL,
+      legacy_candidate_id TEXT,
+      created_at TEXT NOT NULL DEFAULT (datetime('now'))
+    );
+
+    CREATE TABLE IF NOT EXISTS interactions (
+      id TEXT PRIMARY KEY,
+      workspace_person_id TEXT NOT NULL,
+      interaction_type TEXT NOT NULL,
+      created_at TEXT NOT NULL DEFAULT (datetime('now'))
+    );
+
+    CREATE TABLE IF NOT EXISTS artifacts (
+      id TEXT PRIMARY KEY,
+      interaction_id TEXT,
+      artifact_type TEXT NOT NULL,
+      created_at TEXT NOT NULL DEFAULT (datetime('now'))
+    );
+
+    CREATE TABLE IF NOT EXISTS artifact_versions (
+      id TEXT PRIMARY KEY,
+      artifact_id TEXT NOT NULL,
+      version_number INTEGER NOT NULL DEFAULT 1,
+      content_hash TEXT NOT NULL,
+      created_at TEXT NOT NULL DEFAULT (datetime('now'))
+    );
+
+    CREATE TABLE IF NOT EXISTS source_spans (
+      id TEXT PRIMARY KEY,
+      artifact_version_id TEXT NOT NULL,
+      exact_text TEXT NOT NULL,
+      byte_start INTEGER,
+      byte_end INTEGER,
+      char_start INTEGER,
+      char_end INTEGER,
+      line_start INTEGER,
+      line_end INTEGER,
+      created_at TEXT NOT NULL DEFAULT (datetime('now'))
+    );
+
+    CREATE TABLE IF NOT EXISTS episodes (
+      id TEXT PRIMARY KEY,
+      workspace_person_id TEXT NOT NULL,
+      interaction_id TEXT,
+      narrative TEXT,
+      created_at TEXT NOT NULL DEFAULT (datetime('now'))
+    );
+
+    CREATE TABLE IF NOT EXISTS semantic_assertions (
+      id TEXT PRIMARY KEY,
+      episode_id TEXT,
+      narrative TEXT NOT NULL,
+      created_at TEXT NOT NULL DEFAULT (datetime('now'))
+    );
+
+    CREATE TABLE IF NOT EXISTS assertion_source_spans (
+      assertion_id TEXT NOT NULL,
+      source_span_id TEXT NOT NULL,
+      PRIMARY KEY (assertion_id, source_span_id)
+    );
+
+    CREATE TABLE IF NOT EXISTS concepts (
+      id TEXT PRIMARY KEY,
+      canonical_key TEXT NOT NULL UNIQUE,
+      namespace TEXT NOT NULL DEFAULT 'open',
+      label TEXT NOT NULL
+    );
+
+    CREATE TABLE IF NOT EXISTS assertion_concepts (
+      assertion_id TEXT NOT NULL,
+      concept_id TEXT NOT NULL,
+      PRIMARY KEY (assertion_id, concept_id)
+    );
+
+    CREATE TABLE IF NOT EXISTS role_context_documents (
+      id TEXT PRIMARY KEY,
+      required_languages_json TEXT,
+      relevant_concepts_json TEXT,
+      required_concepts_json TEXT,
+      forbidden_concepts_json TEXT
+    );
+
+    CREATE TABLE IF NOT EXISTS role_source_references (
+      id TEXT PRIMARY KEY,
+      role_context_id TEXT NOT NULL,
+      entity_id TEXT NOT NULL,
+      locator TEXT NOT NULL,
+      concept_keys_json TEXT NOT NULL DEFAULT '[]',
+      source_ref_type TEXT NOT NULL,
+      source_ref_id TEXT NOT NULL,
+      exact_text TEXT NOT NULL,
+      content_hash TEXT NOT NULL
+    );
+
+    CREATE TABLE IF NOT EXISTS review_challenge_packets (
+      id TEXT PRIMARY KEY,
+      repo_id TEXT NOT NULL,
+      pr_number INTEGER NOT NULL,
+      source_version TEXT NOT NULL,
+      content_hash TEXT,
+      demands_json TEXT
+    );
+  `);
+  sqlite.exec(evaluationMigration);
+}
+
+function seedEvaluationCorpusRouteData(sqlite: BetterSqliteDb): void {
+  sqlite.exec(`
+    INSERT INTO people (id, display_name, primary_email)
+    VALUES ('person-seed-1', 'Seed Candidate', 'seed@test.dev');
+
+    INSERT INTO workspace_people (id, person_id, workspace_id)
+    VALUES ('wp-seed-1', 'person-seed-1', 'ws-1');
+
+    INSERT INTO applications (id, workspace_person_id, legacy_candidate_id)
+    VALUES ('app-seed-1', 'wp-seed-1', 'candidate-seed-1');
+
+    INSERT INTO interactions (id, workspace_person_id, interaction_type)
+    VALUES ('interaction-seed-1', 'wp-seed-1', 'resume_upload');
+
+    INSERT INTO artifacts (id, interaction_id, artifact_type)
+    VALUES ('artifact-seed-1', 'interaction-seed-1', 'resume');
+
+    INSERT INTO artifact_versions (id, artifact_id, version_number, content_hash)
+    VALUES ('artifact-version-seed-1', 'artifact-seed-1', 1, 'sha256:candidate-seed');
+
+    INSERT INTO source_spans (id, artifact_version_id, exact_text, char_start, char_end)
+    VALUES ('span-seed-1', 'artifact-version-seed-1', 'Reviewed React popover trigger regressions with TypeScript tests', 0, 63);
+
+    INSERT INTO episodes (id, workspace_person_id, interaction_id, narrative)
+    VALUES ('episode-seed-1', 'wp-seed-1', 'interaction-seed-1', 'Resume evidence');
+
+    INSERT INTO semantic_assertions (id, episode_id, narrative)
+    VALUES ('assertion-seed-1', 'episode-seed-1', 'Demonstrates React TypeScript review judgement');
+
+    INSERT INTO assertion_source_spans (assertion_id, source_span_id)
+    VALUES ('assertion-seed-1', 'span-seed-1');
+
+    INSERT INTO concepts (id, canonical_key, namespace, label)
+    VALUES ('concept-seed-1', 'term:react-popover', 'open', 'React popover');
+
+    INSERT INTO assertion_concepts (assertion_id, concept_id)
+    VALUES ('assertion-seed-1', 'concept-seed-1');
+
+    INSERT INTO role_context_documents (id, required_languages_json, relevant_concepts_json)
+    VALUES ('role-seed-1', '["typescript"]', '["term:react-popover"]');
+
+    INSERT INTO role_source_references (
+      id, role_context_id, entity_id, locator, concept_keys_json,
+      source_ref_type, source_ref_id, exact_text, content_hash
+    )
+    VALUES (
+      'role-ref-seed-1', 'role-seed-1', 'role-seed-1', 'requirements',
+      '["term:react-popover"]', 'role_context', 'role-ref-seed-1',
+      'Needs React popover review judgement', 'sha256:role-seed'
+    );
+
+    INSERT INTO review_challenge_packets (
+      id, repo_id, pr_number, source_version, content_hash, demands_json
+    )
+    VALUES (
+      'packet-seed-1', 'mui/base-ui', 973, 'v1', 'sha256:packet-seed',
+      '[{"demandId":"demand-seed-1","concepts":["term:react-popover"],"sourceRefs":[{"artifactId":"repo-artifact-seed","artifactVersion":"repo-version-seed","contentHash":"sha256:repo-seed","sourceRefType":"repo_span","sourceRefId":"repo-span-seed","exactText":"Popover trigger regression source","startOffset":0,"endOffset":33}]}]'
+    );
+  `);
+
+  sqlite.prepare(
+    `INSERT INTO match_runs (
+       id, candidate_id, role_context_id, candidate_snapshot_id, role_snapshot_id,
+       policy_version, status, selected_packet_id, ranked_results_json
+     ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)`,
+  ).run(
+    'match-run-seed-1',
+    'candidate-seed-1',
+    'role-seed-1',
+    'candidate-snapshot-seed-1',
+    'standalone-code-review-v1',
+    '1.0.0',
+    'MATCHED',
+    'packet-seed-1',
+    JSON.stringify([{
+      rank: 1,
+      recallRank: 1,
+      challengeId: 'packet-seed-1',
+      repoId: 'mui/base-ui',
+      prNumber: 973,
+      sourceVersion: 'v1',
+      score: 0.86,
+      candidateEvidenceAlignment: 0.9,
+      roleRelevance: 0.85,
+      contextualSpecificity: 0.8,
+      challengeQuality: 0.9,
+      validationDeepeningValue: 0.7,
+      alignedDemandCount: 1,
+      stretchCount: 0,
+      stretchDemandWeightRatio: 0,
+      provenanceComplete: true,
+      eligible: true,
+      alignments: [],
+      rejectionReasons: [],
+    }]),
+  );
+}
+
+describe('POST /evaluation-corpus-seed', () => {
+  let sqlite: BetterSqliteDb;
+
+  beforeEach(() => {
+    sqlite = new Database(':memory:');
+    sqlite.exec('PRAGMA foreign_keys = ON;');
+    setupEvaluationCorpusSeedSchema(sqlite);
+    seedEvaluationCorpusRouteData(sqlite);
+  });
+
+  afterEach(() => {
+    sqlite.close();
+  });
+
+  it('returns draft label readiness instead of implying a production expert corpus', async () => {
+    const db = createMockD1(sqlite);
+    const app = new Hono();
+    app.route('/', livingContextHealth);
+
+    const res = await app.request('/evaluation-corpus-seed', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ limit: 1 }),
+    }, { DB: db });
+    expect(res.status).toBe(200);
+
+    const body = await res.json() as {
+      corpusId: string;
+      corpusHash: string | null;
+      persisted: boolean;
+      labelCount: number;
+      draftLabelCount: number;
+      expertLabelCount: number;
+      syntheticFixtureCount: number;
+      productionReady: boolean;
+      nextAction: string;
+    };
+    expect(body.persisted).toBe(true);
+    expect(body.corpusId).toMatch(/^seeded-/);
+    expect(body.corpusHash).toMatch(/^[a-f0-9]{64}$/);
+    expect(body.labelCount).toBe(1);
+    expect(body.draftLabelCount).toBe(1);
+    expect(body.expertLabelCount).toBe(0);
+    expect(body.syntheticFixtureCount).toBe(0);
+    expect(body.productionReady).toBe(false);
+    expect(body.nextAction).toBe('attach_expert_label_provenance');
   });
 });
 

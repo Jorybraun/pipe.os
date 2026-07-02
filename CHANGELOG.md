@@ -19,11 +19,13 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - The internal match-quality evaluation CLI can now run against frozen `evaluation_corpora` rows via `--corpus-id` as well as compact JSON files, adapting existing candidate-role-challenge labels into the CODE_REVIEW packet-quality gate.
 - CI matching-evaluation readiness can now target a dedicated D1 database and rollout stage via `MATCHING_EVALUATION_D1_DATABASE_ID` and `MATCHING_EVALUATION_STAGE`, keeping app-dev CODE_REVIEW quality proof separate from the mostly empty production D1 while preserving the same frozen-corpus gate.
 - Draft corpora seeded from real match runs now persist through the frozen `evaluation_corpora` schema with immutable hashes, and seeded draft labels no longer count as expert labels until reviewer/source provenance is attached.
+- The internal evaluation-corpus seed endpoint now reports corpus hash, draft/expert/synthetic label counts, production-readiness failures, and the required next action so operator-created match corpora cannot be mistaken for expert-labelled gates.
 
 ### Fixed — Open-source assessment progress
 
 - The app-dev open-source workspace smoke now verifies the recruiter detail projection exposes the evaluated, trusted, challenge-bound submitted commit and a reviewable GitHub compare URL.
 - The app-dev open-source workspace smoke now asserts the stable `workspace_captured` and `bound_to_assigned_challenge` recruiter assessment contract names.
+- The app-dev open-source workspace smoke now retries the real workspace launch once when the dev container lands in Cloudflare's transient container-not-running state.
 - Interview assessment details now show a direct GitHub compare link from the assigned base commit to the submitted assessment commit when source-backed commit metadata is available.
 - Recruiter interview lists now include a product-mode filter for standard calls, code review, dev-container, and open-source bug-fix assessments, making real assessment sessions easier to find without mixing them with calls.
 - Recruiter interview cards now show assessment room state alongside workspace state, including active rooms and waiting guests, so live assessment status is visible without opening the detail page.

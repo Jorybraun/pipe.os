@@ -404,6 +404,35 @@ async function pollWorkspaceReady(token, headers = {}) {
   throw new Error(`Workspace did not become ready. Last state: ${JSON.stringify(last)}`);
 }
 
+async function launchWorkspace(token, headers = {}) {
+  const launched = await requestJson(ROOM_BASE, `/api/v1/meeting-rooms/${token}/workspace/launch`, {
+    method: 'POST',
+    headers,
+  });
+  if (!launched?.workspace?.session?.sessionId) {
+    throw new Error(`Launch response missing session: ${JSON.stringify(launched)}`);
+  }
+  return launched;
+}
+
+async function launchWorkspaceUntilReady(token, headers = {}) {
+  let lastError = null;
+  for (let attempt = 1; attempt <= 2; attempt += 1) {
+    await launchWorkspace(token, headers);
+    try {
+      return await pollWorkspaceReady(token, headers);
+    } catch (error) {
+      lastError = error;
+      const message = error instanceof Error ? error.message : String(error);
+      if (attempt >= 2 || !message.includes('container is not running')) {
+        throw error;
+      }
+      await sleep(5_000);
+    }
+  }
+  throw lastError ?? new Error('Workspace did not become ready.');
+}
+
 async function main() {
   assertEnv();
 
@@ -561,15 +590,7 @@ async function main() {
     }
   }
 
-  const launched = await requestJson(ROOM_BASE, `/api/v1/meeting-rooms/${hostToken}/workspace/launch`, {
-    method: 'POST',
-    headers: roomAuthHeaders,
-  });
-  if (!launched?.workspace?.session?.sessionId) {
-    throw new Error(`Launch response missing session: ${JSON.stringify(launched)}`);
-  }
-
-  const readySession = await pollWorkspaceReady(hostToken, roomAuthHeaders);
+  const readySession = await launchWorkspaceUntilReady(hostToken, roomAuthHeaders);
   if (!readySession.proxyPath) {
     throw new Error(`Ready workspace did not expose a proxy path: ${JSON.stringify(readySession)}`);
   }
