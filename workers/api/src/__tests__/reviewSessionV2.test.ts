@@ -1269,6 +1269,110 @@ describe('POST /rpc/get-stage-config', () => {
     )).toBe(true);
   });
 
+  it('demotes persisted role-backed CODE_REVIEW near-ties before stale ingestion blocks them', async () => {
+    const db = fakeD1({
+      firstResponders: [
+        {
+          match: 'FROM candidates WHERE id',
+          value: {
+            id: 'cand_1',
+            pipeline_id: 'pipe_1',
+            owner_id: 'owner_1',
+            current_stage_id: null,
+            resume_s3_key: 'text-intake/cand_1/stale-near-tie',
+          },
+        },
+        {
+          match: 'SELECT match_philosophy FROM pipeline_match_config',
+          value: { match_philosophy: 'tailored' },
+        },
+        { match: 'FROM candidate_challenge_assignment', value: null },
+        {
+          match: 'FROM role_contexts',
+          value: {
+            id: 'role_ctx_1',
+            persona_json: null,
+            rcd_json: JSON.stringify({ rcd_version: 'simple-jd-v1' }),
+            job_description_md: 'React TypeScript usePopoverRoot rendered trigger id ownership.',
+            non_negotiable_skills_json: JSON.stringify(['React', 'TypeScript', 'usePopoverRoot']),
+          },
+        },
+        {
+          match: 'LEFT JOIN candidate_ingestion',
+          value: {
+            resume_s3_key: 'text-intake/cand_1/stale-near-tie',
+            status: 'pending',
+            current_step: 'discover_profile',
+            error_text: null,
+            estimated_completion_at: null,
+            updated_at: '2026-07-02T18:25:46.411Z',
+            raw_node_count: 0,
+            node_count: 0,
+          },
+        },
+      ],
+      allResponders: [
+        {
+          match: 'FROM stages s',
+          value: [{
+            stage_id: 'stage_code_review',
+            stage_title: 'Code Review',
+            stage_order: 0,
+            stage_mode: 'ASYNC',
+            time_limit: null,
+            screening_input_mode: null,
+            video_config: null,
+            challenge_id: 'challenge_code_review',
+            challenge_type: 'CODE_REVIEW',
+            challenge_title: 'Code Review',
+            challenge_order: 0,
+            challenge_config: '{}',
+            challenge_instructions: 'Review the matched PR.',
+          }],
+        },
+        {
+          match: 'FROM match_runs mr',
+          value: [{
+            match_run_id: 'match_run_near_tie',
+            status: 'MATCHED',
+            ranked_results_json: JSON.stringify([roleBackedPersistedRankedResult(973, 0)]),
+            repo_id: 973,
+            pr_number: 973,
+            github_url: 'https://github.com/mui/base-ui',
+          }],
+        },
+      ],
+    });
+    const env = buildEnv({ DB: db });
+
+    const res = await rpcAuth.request(
+      '/get-stage-config',
+      {
+        method: 'POST',
+        headers: { Authorization: await authHeader('cand_1', 'pipe_1') },
+      },
+      env,
+    );
+
+    expect(res.status).toBe(200);
+    const body = await res.json() as { isComplete?: boolean; stageId?: string };
+    expect(body).toMatchObject({
+      isComplete: true,
+      stageId: 'candidate-intake-queued',
+    });
+    expect(matchCandidateToReviewChallenge).not.toHaveBeenCalled();
+    expect(db.__calls.some((call) =>
+      call.ran
+      && call.sql.includes('INSERT INTO candidate_challenge_assignment')
+    )).toBe(false);
+    expect(db.__calls.some((call) =>
+      call.ran
+      && call.sql.includes("status = 'NEEDS_MORE_EVIDENCE'")
+      && call.sql.includes('selected_packet_id = NULL')
+      && call.params.includes('match_run_near_tie')
+    )).toBe(true);
+  });
+
   it('retries stale Workers AI model failures from stored text-intake source on status refresh', async () => {
     const resumeText = 'Senior TypeScript engineer building Cloudflare Workers runtime tooling, request routing, source-mapped stack traces, and Vitest regression tests.';
     const storage = {
