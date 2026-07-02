@@ -59,6 +59,8 @@ export interface CandidateRawCaptureAudit {
   talentPoolIntakeCount: number;
   submittedIntakeCount: number;
   profileStorageKeyCount: number;
+  candidateResumeStorageKeyCount: number;
+  candidateResumeMatchesIntakeCount: number;
   documentProfileStorageKeyCount: number;
   profileTextExcerptCount: number;
   externalProfileRefCount: number;
@@ -134,6 +136,8 @@ interface RawCaptureRow {
   talent_pool_intake_count: number | null;
   submitted_intake_count: number | null;
   profile_storage_key_count: number | null;
+  candidate_resume_storage_key_count: number | null;
+  candidate_resume_matches_intake_count: number | null;
   document_profile_storage_key_count: number | null;
   profile_text_excerpt_count: number | null;
   external_profile_ref_count: number | null;
@@ -298,6 +302,19 @@ async function loadRawCapture(
        COUNT(DISTINCT CASE WHEN t.submitted_at IS NOT NULL THEN t.candidate_id END) AS submitted_intake_count,
        COUNT(DISTINCT CASE WHEN t.profile_r2_key IS NOT NULL AND TRIM(t.profile_r2_key) <> '' THEN t.candidate_id END) AS profile_storage_key_count,
        COUNT(DISTINCT CASE
+         WHEN t.submitted_at IS NOT NULL
+          AND c.resume_s3_key IS NOT NULL
+          AND TRIM(c.resume_s3_key) <> ''
+         THEN t.candidate_id
+       END) AS candidate_resume_storage_key_count,
+       COUNT(DISTINCT CASE
+         WHEN t.submitted_at IS NOT NULL
+          AND t.profile_r2_key IS NOT NULL
+          AND TRIM(t.profile_r2_key) <> ''
+          AND c.resume_s3_key = t.profile_r2_key
+         THEN t.candidate_id
+       END) AS candidate_resume_matches_intake_count,
+       COUNT(DISTINCT CASE
          WHEN t.profile_r2_key IS NOT NULL
           AND (
             substr(LOWER(t.profile_r2_key), -4) = '.pdf'
@@ -313,6 +330,7 @@ async function loadRawCapture(
        ) AS external_profile_ref_count,
        COUNT(DISTINCT CASE WHEN t.phone_screener_consent = 1 THEN t.candidate_id END) AS phone_screener_intent_count
       FROM audited_candidates ac
+      JOIN candidates c ON c.id = ac.id
       LEFT JOIN talent_pool_intakes t ON t.candidate_id = ac.id`,
     params,
   );
@@ -321,6 +339,8 @@ async function loadRawCapture(
     talentPoolIntakeCount: toNumber(row?.talent_pool_intake_count),
     submittedIntakeCount: toNumber(row?.submitted_intake_count),
     profileStorageKeyCount: toNumber(row?.profile_storage_key_count),
+    candidateResumeStorageKeyCount: toNumber(row?.candidate_resume_storage_key_count),
+    candidateResumeMatchesIntakeCount: toNumber(row?.candidate_resume_matches_intake_count),
     documentProfileStorageKeyCount: toNumber(row?.document_profile_storage_key_count),
     profileTextExcerptCount: toNumber(row?.profile_text_excerpt_count),
     externalProfileRefCount: toNumber(row?.external_profile_ref_count),
@@ -692,6 +712,8 @@ export async function auditCandidateIngestion(
       talentPoolIntakeCount: 0,
       submittedIntakeCount: 0,
       profileStorageKeyCount: 0,
+      candidateResumeStorageKeyCount: 0,
+      candidateResumeMatchesIntakeCount: 0,
       documentProfileStorageKeyCount: 0,
       profileTextExcerptCount: 0,
       externalProfileRefCount: 0,
@@ -789,6 +811,12 @@ export async function auditCandidateIngestion(
       : []),
     ...(rawCapture.submittedIntakeCount > rawCapture.profileStorageKeyCount
       ? [`${rawCapture.submittedIntakeCount - rawCapture.profileStorageKeyCount} submitted Talent Pool intake(s) lack a profile storage key`]
+      : []),
+    ...(rawCapture.submittedIntakeCount > rawCapture.candidateResumeStorageKeyCount
+      ? [`${rawCapture.submittedIntakeCount - rawCapture.candidateResumeStorageKeyCount} submitted Talent Pool candidate row(s) lack resume_s3_key`]
+      : []),
+    ...(rawCapture.profileStorageKeyCount > rawCapture.candidateResumeMatchesIntakeCount
+      ? [`${rawCapture.profileStorageKeyCount - rawCapture.candidateResumeMatchesIntakeCount} Talent Pool candidate row resume_s3_key value(s) do not match current intake profile_r2_key`]
       : []),
     ...(rawCapture.submittedIntakeCount > ingestionState.rowCount
       ? [`${rawCapture.submittedIntakeCount - ingestionState.rowCount} submitted Talent Pool intake(s) lack candidate_ingestion state`]
@@ -1015,6 +1043,8 @@ function printHuman(report: CandidateIngestionAudit, databasePath: string): void
   console.log(`  intakes:               ${report.rawCapture.talentPoolIntakeCount}`);
   console.log(`  submitted:             ${report.rawCapture.submittedIntakeCount}`);
   console.log(`  storage keys:          ${report.rawCapture.profileStorageKeyCount}`);
+  console.log(`  candidate resume keys: ${report.rawCapture.candidateResumeStorageKeyCount}`);
+  console.log(`  resume key matches:    ${report.rawCapture.candidateResumeMatchesIntakeCount}`);
   console.log(`  document keys:         ${report.rawCapture.documentProfileStorageKeyCount}`);
   console.log(`  external refs:         ${report.rawCapture.externalProfileRefCount}`);
   console.log(`  phone intent:          ${report.rawCapture.phoneScreenerIntentCount}`);

@@ -33,6 +33,8 @@ is useful only when it preserves exact provenance back to that bundle.
 The verifier reports:
 
 - submitted Talent Pool intakes and profile storage keys
+- candidate row `resume_s3_key` coverage and alignment with the current intake
+  `profile_r2_key`
 - GitHub, LinkedIn, portfolio, and phone-screener raw capture
 - `candidate_ingestion` row/status coverage
 - candidate nodes with and without exact validated resume quotes
@@ -85,11 +87,14 @@ still has repo-family suggestions for a current PDF/DOCX profile key with no
 extracted source spans.
 Candidate discovery tries the small current Workers AI
 `llama-3.2-3b-instruct` model with a tight JSON output budget before heavier
-fallback models, and Talent Pool document retries use a bounded two-attempt AI
-budget before falling back to source-only evidence. Document retries reuse
-pre-extracted text and bounded parser-only decomposition so the AI attempt can
-start inside the Worker background window. The fallback is allowed to keep
-ingestion moving, but the event stream must state whether AI started,
+fallback models. Shared `CLOUDFLARE_AI_MODEL` overrides are late fallback
+models, not candidate-specific primaries; only `CANDIDATE_AGENT_*` settings can
+lead candidate discovery. Timeout, empty-output, and JSON-contract failures are
+retryable from the original source. Talent Pool document retries use a bounded
+two-attempt AI budget before falling back to source-only evidence. Document
+retries reuse pre-extracted text and bounded parser-only decomposition so the AI
+attempt can start inside the Worker background window. The fallback is allowed
+to keep ingestion moving, but the event stream must state whether AI started,
 succeeded, or failed instead of fabricating an AI-derived profile.
 
 Resume decomposition disambiguates repeated titles or labels by anchoring the
@@ -109,15 +114,16 @@ records are operational evidence only; they do not validate the external
 profile content or derive skills/readiness.
 
 By default, the command fails on missing scoped candidates, submitted intakes
-without storage or ingestion state, missing active Talent Pool person
-projection, missing exact source proof, missing exact-source candidate-node
-projection, PDF/DOCX profile storage keys without extracted source spans, raw
-external refs or phone intent without operational context records, source-less
-positive claims, duplicate projected edges, candidate nodes with no exact
-source quote, source spans whose exact text no longer matches their immutable
-artifact text slice or exact-text hash, duplicate active candidate-node
-evidence, candidate-node source anchor conflicts, or roleless
-application/person-role rows.
+without storage or ingestion state, candidate rows whose `resume_s3_key` is
+missing or stale relative to the current intake profile key, missing active
+Talent Pool person projection, missing exact source proof, missing exact-source
+candidate-node projection, PDF/DOCX profile storage keys without extracted
+source spans, raw external refs or phone intent without operational context
+records, source-less positive claims, duplicate projected edges, candidate
+nodes with no exact source quote, source spans whose exact text no longer
+matches their immutable artifact text slice or exact-text hash, duplicate
+active candidate-node evidence, candidate-node source anchor conflicts, or
+roleless application/person-role rows.
 
 Challenge assignment rows only count as ready when both `github_repo_url` and
 `github_pr_number` are present. Assignment rows without that PR-backed metadata
@@ -160,6 +166,7 @@ returned `status: ready`, `candidateNodeCount: 74`,
 `candidateNodeWithoutExactSourceCount: 0`,
 `duplicateCandidateNodeEvidenceCount: 0`,
 `candidateNodeSourceAnchorConflictCount: 0`,
+`candidateResumeStorageKeyCount: 1`, `candidateResumeMatchesIntakeCount: 1`,
 `artifactVersionCount: 11`, `sourceSpanCount: 37`,
 `sourceSpanTextMismatchCount: 0`, `sourceSpanHashMismatchCount: 0`,
 `documentProfileSourceSpanCount: 4`, `contextRecordCount: 80`,

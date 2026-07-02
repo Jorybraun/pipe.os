@@ -157,6 +157,16 @@ describe('stale Workers AI candidate-ingestion retry', () => {
     })).toBe(true);
     expect(isRetryableCandidateDiscoveryOutputFailure({
       status: 'failed',
+      current_step: 'discover_profile',
+      error_text: 'Discovery failed: Cloudflare Workers AI call failed for model @cf/zai-org/glm-4.7-flash: 3046: Request timeout',
+    })).toBe(true);
+    expect(isRetryableCandidateDiscoveryOutputFailure({
+      status: 'failed',
+      current_step: 'discover_profile',
+      error_text: 'Discovery failed: Candidate Discovery AI workers-ai/@cf/zai-org/glm-4.7-flash timed out after 18000ms',
+    })).toBe(true);
+    expect(isRetryableCandidateDiscoveryOutputFailure({
+      status: 'failed',
       current_step: 'embed_profile',
       error_text: 'Embed failed: Candidate Discovery response was not a JSON object',
     })).toBe(false);
@@ -518,6 +528,13 @@ describe('stale Workers AI candidate-ingestion retry', () => {
           error_text: 'Discovery failed: Candidate Discovery response was not a JSON object',
         },
         {
+          candidate_id: 'request-timeout',
+          resume_s3_key: 'text-intake/request-timeout/source',
+          status: 'failed',
+          current_step: 'discover_profile',
+          error_text: 'Discovery failed: Cloudflare Workers AI call failed for model @cf/zai-org/glm-4.7-flash: 3046: Request timeout',
+        },
+        {
           candidate_id: 'stalled',
           resume_s3_key: 'text-intake/stalled/source',
           status: 'pending',
@@ -531,9 +548,9 @@ describe('stale Workers AI candidate-ingestion retry', () => {
       'Backend engineer building queue workers, runtime recovery, and exact provenance tests.',
     ));
 
-    await expect(processStaleWorkersAIModelIngestionRetries(env, 2)).resolves.toEqual({
-      scanned: 3,
-      queued: 2,
+    await expect(processStaleWorkersAIModelIngestionRetries(env, 3)).resolves.toEqual({
+      scanned: 4,
+      queued: 3,
       skipped: 1,
       failed: 0,
     });
@@ -542,13 +559,16 @@ describe('stale Workers AI candidate-ingestion retry', () => {
     expect(selectCall.sql).toContain("ci.current_step IN ('talent_pool_profile_received', 'queued', 'retry_queued', 'parse_resume', 'decompose_resume', 'discover_profile', 'embed_profile', 'match_and_assign')");
     expect(selectCall.sql).toContain("CASE WHEN ci.status = 'pending' THEN 0 ELSE 1 END");
     expect(selectCall.sql).toContain("CASE WHEN ci.status = 'pending' THEN ci.updated_at END DESC");
-    expect(selectCall.params[1]).toBe(12);
-    expect(runCandidateIngestion).toHaveBeenCalledTimes(2);
+    expect(selectCall.params[1]).toBe(18);
+    expect(runCandidateIngestion).toHaveBeenCalledTimes(3);
     expect(runCandidateIngestion).toHaveBeenCalledWith(expect.objectContaining({
       candidateId: 'oldest',
     }));
     expect(runCandidateIngestion).toHaveBeenCalledWith(expect.objectContaining({
       candidateId: 'bad-json',
+    }));
+    expect(runCandidateIngestion).toHaveBeenCalledWith(expect.objectContaining({
+      candidateId: 'request-timeout',
     }));
     const retryEventCall = db.__calls.find((call) =>
       call.ran

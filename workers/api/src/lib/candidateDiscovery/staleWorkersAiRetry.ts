@@ -167,7 +167,10 @@ export function isRetryableCandidateDiscoveryOutputFailure(row: {
   if (!failedDuringDiscovery) return false;
   return errorText.includes('candidate discovery response was not a json object')
     || errorText.includes('candidate discovery profile too short: got 0 chars')
-    || errorText.includes('cloudflare workers ai returned empty response');
+    || errorText.includes('cloudflare workers ai returned empty response')
+    || errorText.includes('request timeout')
+    || errorText.includes('timed out after')
+    || errorText.includes('candidate discovery ai failed after');
 }
 
 export function isRetryableStalledInProgressIngestion(row: {

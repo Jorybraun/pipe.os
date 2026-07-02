@@ -25,6 +25,7 @@ function createSchema(db: Database.Database): void {
       owner_id TEXT,
       email TEXT,
       invite_token TEXT,
+      resume_s3_key TEXT,
       pipeline_id TEXT
     );
     CREATE TABLE talent_pool_intakes (
@@ -147,8 +148,15 @@ function createSchema(db: Database.Database): void {
 
 function seedSourceBackedTalentPoolCandidate(db: Database.Database): void {
   db.exec(`
-    INSERT INTO candidates (id, owner_id, email, invite_token, pipeline_id)
-    VALUES ('candidate-1', 'owner-1', 'jordan@example.com', 'invite-token', NULL);
+    INSERT INTO candidates (id, owner_id, email, invite_token, resume_s3_key, pipeline_id)
+    VALUES (
+      'candidate-1',
+      'owner-1',
+      'jordan@example.com',
+      'invite-token',
+      'talent-intake/candidate-1/profile.txt',
+      NULL
+    );
     INSERT INTO talent_pool_intakes (
       candidate_id, profile_r2_key, profile_text_excerpt, github_url,
       linkedin_url, portfolio_url, phone_screener_consent, submitted_at
@@ -256,6 +264,8 @@ describe('auditCandidateIngestion', () => {
     expect(audit.rawCapture).toMatchObject({
       submittedIntakeCount: 1,
       profileStorageKeyCount: 1,
+      candidateResumeStorageKeyCount: 1,
+      candidateResumeMatchesIntakeCount: 1,
       externalProfileRefCount: 2,
       phoneScreenerIntentCount: 1,
     });
@@ -307,6 +317,48 @@ describe('auditCandidateIngestion', () => {
     expect(audit.nextActions).toContain(
       '1 challenge assignment row(s) lack repo URL or PR number and cannot safely become Talent Pool assessment readiness.',
     );
+  });
+
+  it('flags submitted Talent Pool candidates whose candidate row lacks a resume storage key', async () => {
+    sqlite = new Database(':memory:');
+    createSchema(sqlite);
+    seedSourceBackedTalentPoolCandidate(sqlite);
+    sqlite.prepare(
+      `UPDATE candidates
+          SET resume_s3_key = NULL
+        WHERE id = 'candidate-1'`,
+    ).run();
+
+    const audit = await auditCandidateIngestion(new SqliteQueryClient(sqlite), {
+      inviteToken: 'invite-token',
+      requireContextRecords: true,
+    });
+
+    expect(audit.status).toBe('not_ready');
+    expect(audit.rawCapture.candidateResumeStorageKeyCount).toBe(0);
+    expect(audit.rawCapture.candidateResumeMatchesIntakeCount).toBe(0);
+    expect(audit.failures).toContain('1 submitted Talent Pool candidate row(s) lack resume_s3_key');
+  });
+
+  it('flags candidate resume storage keys that drift from the latest intake profile key', async () => {
+    sqlite = new Database(':memory:');
+    createSchema(sqlite);
+    seedSourceBackedTalentPoolCandidate(sqlite);
+    sqlite.prepare(
+      `UPDATE candidates
+          SET resume_s3_key = 'talent-intake/candidate-1/stale-profile.txt'
+        WHERE id = 'candidate-1'`,
+    ).run();
+
+    const audit = await auditCandidateIngestion(new SqliteQueryClient(sqlite), {
+      inviteToken: 'invite-token',
+      requireContextRecords: true,
+    });
+
+    expect(audit.status).toBe('not_ready');
+    expect(audit.rawCapture.candidateResumeStorageKeyCount).toBe(1);
+    expect(audit.rawCapture.candidateResumeMatchesIntakeCount).toBe(0);
+    expect(audit.failures).toContain('1 Talent Pool candidate row resume_s3_key value(s) do not match current intake profile_r2_key');
   });
 
   it('flags duplicate active candidate-node evidence groups', async () => {

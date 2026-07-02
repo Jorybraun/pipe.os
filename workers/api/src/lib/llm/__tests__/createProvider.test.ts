@@ -60,10 +60,45 @@ describe('createCandidateAgentProvider', () => {
 
     expect(models).toEqual([
       '@cf/meta/llama-3.2-3b-instruct',
-      DEFAULT_CLOUDFLARE_MODEL,
-      '@cf/google/gemma-4-26b-a4b-it',
       '@cf/qwen/qwen3-30b-a3b-fp8',
+      '@cf/google/gemma-4-26b-a4b-it',
+      DEFAULT_CLOUDFLARE_MODEL,
     ]);
+  });
+
+  it('keeps shared Cloudflare model overrides as late candidate fallbacks', () => {
+    const providers = createCandidateAgentProviders({
+      AI: createAi(),
+      CLOUDFLARE_AI_MODEL: '@cf/example/shared-slow-model',
+    });
+    const models = providers
+      .filter((provider): provider is CloudflareAIProvider => provider instanceof CloudflareAIProvider)
+      .map((provider) => provider.model);
+
+    expect(models).toEqual([
+      '@cf/meta/llama-3.2-3b-instruct',
+      '@cf/qwen/qwen3-30b-a3b-fp8',
+      '@cf/google/gemma-4-26b-a4b-it',
+      DEFAULT_CLOUDFLARE_MODEL,
+      '@cf/example/shared-slow-model',
+    ]);
+  });
+
+  it('keeps explicit candidate model overrides first', () => {
+    const providers = createCandidateAgentProviders({
+      AI: createAi(),
+      CANDIDATE_AGENT_MODEL: '@cf/example/candidate-specific-model',
+      CLOUDFLARE_AI_MODEL: '@cf/example/shared-slow-model',
+    });
+    const models = providers
+      .filter((provider): provider is CloudflareAIProvider => provider instanceof CloudflareAIProvider)
+      .map((provider) => provider.model);
+
+    expect(models.slice(0, 2)).toEqual([
+      '@cf/example/candidate-specific-model',
+      '@cf/meta/llama-3.2-3b-instruct',
+    ]);
+    expect(models.at(-1)).toBe('@cf/example/shared-slow-model');
   });
 
   it('trims and remaps stale role-agent model overrides before repo discovery inference', async () => {
