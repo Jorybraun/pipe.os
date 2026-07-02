@@ -75,7 +75,7 @@ that a real open-source assessment session shows captured and projected rows for
 the evidence it actually produced, has zero source-less positive claims, and has
 zero duplicate person-projected edges.
 
-## Current Local Proof
+## Current Proof
 
 As of 2026-07-02, local D1 has nine assessment sessions, all `REPO_MATCHING`.
 The unscoped audit command exits ready with:
@@ -94,6 +94,25 @@ local-data/projection gap, not proof of open-source assessment readiness.
 
 Targeted tests prove replay idempotency and exact source-ref preservation for
 commit, diff, test output, upstream PR refs, AI interactions, evaluator reports,
-and human decisions through the real-time ingestion path. The next dev-data
-proof is to replay or create one real `OPEN_SOURCE_BUG_FIX` session, then run
-the session-scoped audit command above.
+and human decisions through the real-time ingestion path.
+
+The app-dev proof session `assessment_session_92da0777bbb5370d1c054a19719fe3cd`
+was replayed with:
+
+```bash
+CLOUDFLARE_D1_DATABASE_ID=0abe92df-9296-46f5-9f9d-a1fb1bcd3be1 \
+  npm run assessment-evidence:replay -- --remote \
+  --session-id assessment_session_92da0777bbb5370d1c054a19719fe3cd
+```
+
+Replay proof:
+
+- `interaction_type: assessment:OPEN_SOURCE_BUG_FIX`
+- `context_record_count: 14`
+- `source_ref_count: 37`
+- `evaluation_report_record_count: 5`
+
+The scoped remote audit for that same session exits ready with
+`sourceLessPositiveClaimCount: 0`, `duplicateProjectedEdgeCount: 0`, and no
+failures. Candidate profile/resume evidence remains a coverage gap for that
+specific session because the smoke path did not attach a resume artifact.
