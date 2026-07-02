@@ -7,6 +7,11 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Fixed — Interview scheduling
+
+- New interview creation now keeps a visible pending state, blocks accidental modal dismissal while submitting, surfaces create failures without clearing form input, stops waiting on the list refresh before showing success, and returns a recoverable message when invite delivery is slow.
+- Scheduling live-update hooks now cap retained SSE notification history and clear toast timers on unmount, preventing the interviews route from growing browser memory indefinitely during noisy dev sessions.
+
 ### Fixed — Talent Pool ingestion
 
 - Talent Pool dev smoke now defaults candidate RPC calls to the app-dev proxy and omits dev Basic Auth on direct `api-dev` RPC calls, so smoke proofs exercise the same proxy path candidates use while still supporting explicit API overrides.

@@ -1,4 +1,4 @@
-import { fireEvent, render, screen } from '@testing-library/react';
+import { fireEvent, render, screen, waitFor } from '@testing-library/react';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import { MemoryRouter } from 'react-router-dom';
 import { resolveInviteCreationGuestLink, SchedulingDashboard } from './SchedulingDashboard';
@@ -7,6 +7,7 @@ import type { ScheduledInterview } from '../../lib/scheduling/types';
 const mocks = vi.hoisted(() => ({
   useScheduledInterviews: vi.fn(),
   useBookingNotifications: vi.fn(),
+  onInviteCreated: vi.fn(),
   api: {
     post: vi.fn(),
   },
@@ -54,6 +55,12 @@ vi.mock('./InviteCreationModal', () => ({
     initialRecipientEmail?: string;
     initialInterviewType?: string;
     initialRecruiterNotes?: string;
+    onCreateInvite: (data: {
+      recipientName: string;
+      recipientEmail: string;
+      meetingType: string;
+      interviewType: string;
+    }) => Promise<unknown>;
   }) => props.isOpen ? (
     <div
       data-testid="invite-modal"
@@ -61,7 +68,20 @@ vi.mock('./InviteCreationModal', () => ({
       data-recipient-email={props.initialRecipientEmail ?? ''}
       data-interview-type={props.initialInterviewType ?? ''}
       data-recruiter-notes={props.initialRecruiterNotes ?? ''}
-    />
+    >
+      <button
+        type="button"
+        data-testid="mock-create-invite"
+        onClick={() => {
+          void props.onCreateInvite({
+            recipientName: props.initialRecipientName || 'Ada Reviewer',
+            recipientEmail: props.initialRecipientEmail || 'ada@example.com',
+            meetingType: 'DIRECT_VIDEO_CALL',
+            interviewType: props.initialInterviewType || 'VIDEO',
+          }).then(mocks.onInviteCreated);
+        }}
+      />
+    </div>
   ) : null,
 }));
 
@@ -190,6 +210,7 @@ describe('SchedulingDashboard interview ordering', () => {
     vi.setSystemTime(new Date('2026-06-29T12:00:00.000Z'));
     mocks.useScheduledInterviews.mockReset();
     mocks.useBookingNotifications.mockReset();
+    mocks.onInviteCreated.mockReset();
     mocks.api.post.mockReset();
   });
 
@@ -439,6 +460,48 @@ describe('SchedulingDashboard interview ordering', () => {
     expect(modal).toHaveAttribute('data-recipient-email', 'ada@example.com');
     expect(modal).toHaveAttribute('data-interview-type', 'VIDEO');
     expect(modal).toHaveAttribute('data-recruiter-notes', 'Probe repo matching confidence');
+  });
+
+  it('returns invite creation success without waiting for the list refresh', async () => {
+    vi.useRealTimers();
+    const refetch = vi.fn().mockReturnValue(new Promise(() => {}));
+    mocks.api.post
+      .mockResolvedValueOnce({ interview: { id: 'interview-1', assessmentSetup: null } })
+      .mockResolvedValueOnce({
+        success: true,
+        emailSent: true,
+        meetingUrl: 'https://room-dev.hire-pipe.com/room/token',
+      });
+
+    renderDashboard([], '/interviews?new=1', { refetch });
+    fireEvent.click(screen.getByTestId('mock-create-invite'));
+
+    await waitFor(() => expect(mocks.onInviteCreated).toHaveBeenCalledWith(expect.objectContaining({
+      id: 'interview-1',
+      meetingUrl: 'https://room-dev.hire-pipe.com/room/token',
+      emailSent: true,
+    })));
+    expect(refetch).toHaveBeenCalledTimes(1);
+  });
+
+  it('returns created interview feedback when invite delivery is slow', async () => {
+    const refetch = vi.fn().mockResolvedValue(undefined);
+    mocks.api.post
+      .mockResolvedValueOnce({ interview: { id: 'interview-slow-invite', assessmentSetup: null } })
+      .mockReturnValueOnce(new Promise(() => {}));
+
+    renderDashboard([], '/interviews?new=1', { refetch });
+    fireEvent.click(screen.getByTestId('mock-create-invite'));
+
+    await vi.advanceTimersByTimeAsync(8000);
+    await Promise.resolve();
+    await Promise.resolve();
+    expect(mocks.onInviteCreated).toHaveBeenCalledWith(expect.objectContaining({
+      id: 'interview-slow-invite',
+      emailSent: false,
+      emailError: expect.stringContaining('taking longer than expected'),
+    }));
+    expect(refetch).toHaveBeenCalledTimes(1);
   });
 });
 

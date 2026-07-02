@@ -9,6 +9,8 @@ import {
 } from '../../lib/scheduling/types';
 import { useSchedulingConnection } from '../../hooks/useSchedulingConnection';
 
+const CREATE_INVITE_STATUS_TEXT = 'Creating interview and preparing invite delivery...';
+
 interface InviteCreationData {
   recipientName: string;
   recipientEmail: string;
@@ -400,6 +402,7 @@ export function InviteCreationModal({
   };
 
   const handleClose = () => {
+    if (isCreating) return;
     setRecipientName('');
     setRecipientEmail('');
     setRecruiterNotes('');
@@ -439,13 +442,14 @@ export function InviteCreationModal({
         onClick={(e) => e.stopPropagation()}
         style={{
           width: '100%',
-          maxWidth: 480,
-          maxHeight: 'calc(100vh - 48px)',
+          maxWidth: 720,
+          maxHeight: 'calc(100vh - 40px)',
           overflowY: 'auto',
           background: 'var(--pipe-bg)',
           border: '1px solid var(--pipe-border)',
-          borderRadius: 12,
-          padding: 32,
+          borderRadius: 8,
+          padding: 28,
+          boxShadow: '0 24px 80px rgba(0,0,0,0.55)',
         }}
       >
         {/* Header */}
@@ -460,7 +464,14 @@ export function InviteCreationModal({
           </div>
           <button
             onClick={handleClose}
-            style={{ background: 'transparent', border: 'none', color: 'var(--pipe-text-dim)', cursor: 'pointer' }}
+            disabled={isCreating}
+            style={{
+              background: 'transparent',
+              border: 'none',
+              color: 'var(--pipe-text-dim)',
+              cursor: isCreating ? 'wait' : 'pointer',
+              opacity: isCreating ? 0.45 : 1,
+            }}
             aria-label="Close"
           >
             <X size={18} />
@@ -588,7 +599,7 @@ export function InviteCreationModal({
             {/* Meeting type selector */}
             <div style={{ marginBottom: 20 }}>
               <label style={labelStyle}>INTERVIEW TYPE</label>
-              <div style={{ display: 'grid', gridTemplateColumns: 'repeat(2, minmax(0, 1fr))', gap: 8 }}>
+              <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(190px, 1fr))', gap: 8 }}>
                 {INTERVIEW_MODES.map((type) => (
                   <button
                     key={type.value}
@@ -705,28 +716,28 @@ export function InviteCreationModal({
               )}
             </div>
 
-            {/* Recipient name */}
-            <div style={{ marginBottom: 20 }}>
-              <label style={labelStyle}>PERSON NAME</label>
-              <input
-                type="text"
-                value={recipientName}
-                onChange={(e) => setRecipientName(e.target.value)}
-                placeholder="Jane Doe"
-                style={inputStyle}
-              />
-            </div>
+            <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(220px, 1fr))', gap: 12, marginBottom: 20 }}>
+              <div>
+                <label style={labelStyle}>PERSON NAME</label>
+                <input
+                  type="text"
+                  value={recipientName}
+                  onChange={(e) => setRecipientName(e.target.value)}
+                  placeholder="Jane Doe"
+                  style={inputStyle}
+                />
+              </div>
 
-            {/* Recipient email */}
-            <div style={{ marginBottom: 20 }}>
-              <label style={labelStyle}>PERSON EMAIL</label>
-              <input
-                type="email"
-                value={recipientEmail}
-                onChange={(e) => setRecipientEmail(e.target.value)}
-                placeholder="jane@example.com"
-                style={inputStyle}
-              />
+              <div>
+                <label style={labelStyle}>PERSON EMAIL</label>
+                <input
+                  type="email"
+                  value={recipientEmail}
+                  onChange={(e) => setRecipientEmail(e.target.value)}
+                  placeholder="jane@example.com"
+                  style={inputStyle}
+                />
+              </div>
             </div>
 
             <div style={{ marginBottom: 20 }}>
@@ -870,16 +881,50 @@ export function InviteCreationModal({
               </div>
             )}
 
+            {isCreating && (
+              <div
+                role="status"
+                aria-live="polite"
+                style={{
+                  padding: 12,
+                  background: 'rgba(96,165,250,0.1)',
+                  border: '1px solid rgba(96,165,250,0.22)',
+                  borderRadius: 4,
+                  color: '#93c5fd',
+                  fontSize: 11,
+                  fontFamily: '"Space Mono", monospace',
+                  marginBottom: 16,
+                  lineHeight: 1.5,
+                }}
+              >
+                {CREATE_INVITE_STATUS_TEXT}
+              </div>
+            )}
+
             {createError && (
-              <p style={{ color: '#f87171', fontSize: 12, fontFamily: '"Space Mono", monospace', marginBottom: 16 }}>
+              <div
+                role="alert"
+                style={{
+                  padding: 12,
+                  background: 'rgba(248,113,113,0.1)',
+                  border: '1px solid rgba(248,113,113,0.28)',
+                  borderRadius: 4,
+                  color: '#fca5a5',
+                  fontSize: 12,
+                  fontFamily: '"Space Mono", monospace',
+                  marginBottom: 16,
+                  lineHeight: 1.5,
+                }}
+              >
                 {createError}
-              </p>
+              </div>
             )}
 
             {/* Actions */}
             <div style={{ display: 'flex', gap: 12, justifyContent: 'flex-end' }}>
               <button
                 onClick={handleClose}
+                disabled={isCreating}
                 style={{
                   padding: '10px 20px',
                   background: 'transparent',
@@ -888,8 +933,9 @@ export function InviteCreationModal({
                   fontSize: 10,
                   letterSpacing: '0.1em',
                   fontFamily: '"Space Mono", monospace',
-                  cursor: 'pointer',
+                  cursor: isCreating ? 'wait' : 'pointer',
                   borderRadius: 4,
+                  opacity: isCreating ? 0.55 : 1,
                 }}
               >
                 CANCEL
@@ -897,6 +943,7 @@ export function InviteCreationModal({
               <button
                 onClick={handleCreate}
                 disabled={!canCreate || isCreating}
+                aria-busy={isCreating}
                 style={{
                   padding: '10px 20px',
                   background: canCreate ? 'rgba(96,165,250,0.15)' : 'var(--pipe-surface)',
@@ -905,7 +952,7 @@ export function InviteCreationModal({
                   fontSize: 10,
                   letterSpacing: '0.1em',
                   fontFamily: '"Space Mono", monospace',
-                  cursor: canCreate ? 'pointer' : 'default',
+                  cursor: isCreating ? 'wait' : canCreate ? 'pointer' : 'default',
                   borderRadius: 4,
                   transition: 'all 0.2s',
                 }}

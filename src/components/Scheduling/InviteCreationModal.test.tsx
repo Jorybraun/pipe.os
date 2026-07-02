@@ -11,6 +11,73 @@ vi.mock('../../hooks/useSchedulingConnection', () => ({
 }));
 
 describe('InviteCreationModal open-source challenge packets', () => {
+  it('keeps a visible pending state and prevents accidental close while creating', async () => {
+    mocks.useSchedulingConnection.mockReturnValue({
+      connection: null,
+    });
+    let resolveCreate: (value: { id: string; meetingUrl: string; emailSent: boolean }) => void = () => {};
+    const onClose = vi.fn();
+    const onCreateInvite = vi.fn().mockReturnValue(new Promise((resolve) => {
+      resolveCreate = resolve;
+    }));
+
+    render(
+      <InviteCreationModal
+        isOpen
+        onClose={onClose}
+        onCreateInvite={onCreateInvite}
+      />,
+    );
+
+    fireEvent.change(screen.getByPlaceholderText('Jane Doe'), {
+      target: { value: 'Ada Lovelace' },
+    });
+    fireEvent.change(screen.getByPlaceholderText('jane@example.com'), {
+      target: { value: 'ada@example.com' },
+    });
+    fireEvent.click(screen.getByRole('button', { name: 'CREATE ROOM INVITE' }));
+
+    expect(screen.getByRole('status')).toHaveTextContent('Creating interview and preparing invite delivery');
+    fireEvent.click(screen.getByRole('button', { name: 'CANCEL' }));
+    expect(onClose).not.toHaveBeenCalled();
+    expect(screen.getByPlaceholderText('Jane Doe')).toHaveValue('Ada Lovelace');
+
+    resolveCreate({
+      id: 'interview-1',
+      meetingUrl: 'https://room-dev.hire-pipe.com/room/token',
+      emailSent: true,
+    });
+
+    await waitFor(() => expect(screen.getByText('Invite Ready')).toBeInTheDocument());
+  });
+
+  it('surfaces create failures as an alert without resetting the form', async () => {
+    mocks.useSchedulingConnection.mockReturnValue({
+      connection: null,
+    });
+    const onCreateInvite = vi.fn().mockRejectedValue(new Error('Worker timed out while creating invite'));
+
+    render(
+      <InviteCreationModal
+        isOpen
+        onClose={vi.fn()}
+        onCreateInvite={onCreateInvite}
+      />,
+    );
+
+    fireEvent.change(screen.getByPlaceholderText('Jane Doe'), {
+      target: { value: 'Grace Hopper' },
+    });
+    fireEvent.change(screen.getByPlaceholderText('jane@example.com'), {
+      target: { value: 'grace@example.com' },
+    });
+    fireEvent.click(screen.getByRole('button', { name: 'CREATE ROOM INVITE' }));
+
+    await waitFor(() => expect(screen.getByRole('alert')).toHaveTextContent('Worker timed out while creating invite'));
+    expect(screen.getByPlaceholderText('Jane Doe')).toHaveValue('Grace Hopper');
+    expect(screen.getByPlaceholderText('jane@example.com')).toHaveValue('grace@example.com');
+  });
+
   it('prefills person context when opened from a profile next action', () => {
     mocks.useSchedulingConnection.mockReturnValue({
       connection: null,

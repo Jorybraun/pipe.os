@@ -141,6 +141,18 @@ const INTERVIEW_TYPE_FILTER_OPTIONS: ReadonlyArray<{ label: string; value: Inter
   { label: 'Open source', value: 'OPEN_SOURCE_BUG_FIX' },
 ];
 
+const INVITE_DELIVERY_TIMEOUT_MS = 8000;
+const MAX_SEEN_NOTIFICATION_KEYS = 200;
+
+function withTimeout<T>(promise: Promise<T>, timeoutMs: number, message: string): Promise<T> {
+  return new Promise<T>((resolve, reject) => {
+    const timeoutId = window.setTimeout(() => reject(new Error(message)), timeoutMs);
+    promise
+      .then(resolve, reject)
+      .finally(() => window.clearTimeout(timeoutId));
+  });
+}
+
 function getGroupLabel(group: InterviewListGroup): string {
   return group in TIMELINE_LABELS
     ? TIMELINE_LABELS[group as TimelineGroup]
@@ -289,6 +301,7 @@ export function SchedulingDashboard(): JSX.Element {
   const [searchParams, setSearchParams] = useSearchParams();
   const [toasts, setToasts] = useState<ToastItem[]>([]);
   const seenNotificationIds = useRef<Set<string>>(new Set());
+  const toastTimeoutsRef = useRef<Set<number>>(new Set());
 
   useEffect(() => {
     if (searchParams.get('new') !== '1') return;
@@ -318,6 +331,12 @@ export function SchedulingDashboard(): JSX.Element {
       const key = `${n.interviewId}-${n.updatedAt}`;
       if (seenNotificationIds.current.has(key)) continue;
       seenNotificationIds.current.add(key);
+      if (seenNotificationIds.current.size > MAX_SEEN_NOTIFICATION_KEYS) {
+        const oldestKey = seenNotificationIds.current.values().next().value;
+        if (typeof oldestKey === 'string') {
+          seenNotificationIds.current.delete(oldestKey);
+        }
+      }
       newToasts.push({ id: key, notification: n });
     }
 
@@ -327,12 +346,21 @@ export function SchedulingDashboard(): JSX.Element {
       void refetch();
       // Auto-dismiss each toast after 8 seconds
       for (const t of newToasts) {
-        setTimeout(() => {
+        const timeoutId = window.setTimeout(() => {
           setToasts((prev) => prev.filter((x) => x.id !== t.id));
+          toastTimeoutsRef.current.delete(timeoutId);
         }, 8000);
+        toastTimeoutsRef.current.add(timeoutId);
       }
     }
   }, [notifications, refetch]);
+
+  useEffect(() => () => {
+    for (const timeoutId of toastTimeoutsRef.current) {
+      window.clearTimeout(timeoutId);
+    }
+    toastTimeoutsRef.current.clear();
+  }, []);
 
   const startAssessmentEvaluation = useCallback(async (interviewId: string): Promise<StartAssessmentEvaluationResponse> => {
     const result = await api.post<StartAssessmentEvaluationResponse>(
@@ -806,6 +834,11 @@ export function SchedulingDashboard(): JSX.Element {
           schedulingUrl?: string;
           githubRepoUrl?: string | null;
           githubPrNumber?: number | null;
+          challengeBaseCommitSha?: string;
+          challengeTitle?: string;
+          challengeInstructions?: string;
+          challengeSuccessCriteria?: string[];
+          challengeExpectedEvidence?: string[];
           features?: {
             videoEnabled: boolean;
             workspaceEnabled: boolean;
@@ -825,14 +858,20 @@ export function SchedulingDashboard(): JSX.Element {
           let inviteResult: InviteResponse | null = null;
           let inviteError: string | undefined;
           try {
-            inviteResult = await api.post<InviteResponse>(
-              `/api/v1/scheduling/interviews/${result.interview.id}/invite`,
-              { email: data.recipientEmail },
+            inviteResult = await withTimeout(
+              api.post<InviteResponse>(
+                `/api/v1/scheduling/interviews/${result.interview.id}/invite`,
+                { email: data.recipientEmail },
+              ),
+              INVITE_DELIVERY_TIMEOUT_MS,
+              'Interview created, but invite delivery is taking longer than expected. Open the interview to copy or resend the link.',
             );
           } catch (err) {
             inviteError = err instanceof Error ? err.message : 'Invite email could not be sent.';
           }
-          await refetch();
+          void refetch().catch((err: unknown) => {
+            console.error('[SchedulingDashboard] Failed to refresh interviews after invite creation:', err);
+          });
           return {
             id: result.interview.id,
             meetingUrl: resolveInviteCreationGuestLink(inviteResult),
