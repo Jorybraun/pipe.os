@@ -84,6 +84,290 @@ function insertCorpus(
   );
 }
 
+function setupSeedSchema(db: InstanceType<typeof Database>): void {
+  db.exec(`
+    CREATE TABLE match_runs (
+      id TEXT PRIMARY KEY,
+      candidate_id TEXT NOT NULL,
+      role_context_id TEXT,
+      role_snapshot_id TEXT NOT NULL DEFAULT 'standalone-code-review-v1',
+      candidate_snapshot_id TEXT NOT NULL,
+      policy_version TEXT NOT NULL DEFAULT '1.0.0',
+      model_version TEXT,
+      status TEXT NOT NULL,
+      selected_packet_id TEXT,
+      ranked_results_json TEXT NOT NULL DEFAULT '[]',
+      created_at TEXT NOT NULL DEFAULT (datetime('now'))
+    );
+
+    CREATE TABLE people (
+      id TEXT PRIMARY KEY,
+      display_name TEXT,
+      primary_email TEXT
+    );
+
+    CREATE TABLE workspace_people (
+      id TEXT PRIMARY KEY,
+      person_id TEXT NOT NULL,
+      workspace_id TEXT NOT NULL DEFAULT 'ws-1'
+    );
+
+    CREATE TABLE applications (
+      id TEXT PRIMARY KEY,
+      workspace_person_id TEXT NOT NULL,
+      legacy_candidate_id TEXT
+    );
+
+    CREATE TABLE interactions (
+      id TEXT PRIMARY KEY,
+      workspace_person_id TEXT NOT NULL,
+      interaction_type TEXT NOT NULL
+    );
+
+    CREATE TABLE artifacts (
+      id TEXT PRIMARY KEY,
+      interaction_id TEXT,
+      artifact_type TEXT NOT NULL
+    );
+
+    CREATE TABLE artifact_versions (
+      id TEXT PRIMARY KEY,
+      artifact_id TEXT NOT NULL,
+      version_number INTEGER NOT NULL DEFAULT 1,
+      content_hash TEXT NOT NULL
+    );
+
+    CREATE TABLE source_spans (
+      id TEXT PRIMARY KEY,
+      artifact_version_id TEXT NOT NULL,
+      byte_start INTEGER,
+      byte_end INTEGER,
+      char_start INTEGER,
+      char_end INTEGER,
+      line_start INTEGER,
+      line_end INTEGER,
+      exact_text TEXT NOT NULL,
+      exact_text_hash TEXT NOT NULL DEFAULT ''
+    );
+
+    CREATE TABLE episodes (
+      id TEXT PRIMARY KEY,
+      workspace_person_id TEXT NOT NULL,
+      interaction_id TEXT,
+      narrative TEXT
+    );
+
+    CREATE TABLE semantic_assertions (
+      id TEXT PRIMARY KEY,
+      episode_id TEXT,
+      narrative TEXT NOT NULL
+    );
+
+    CREATE TABLE assertion_source_spans (
+      assertion_id TEXT NOT NULL,
+      source_span_id TEXT NOT NULL,
+      PRIMARY KEY (assertion_id, source_span_id)
+    );
+
+    CREATE TABLE concepts (
+      id TEXT PRIMARY KEY,
+      canonical_key TEXT NOT NULL UNIQUE,
+      namespace TEXT NOT NULL DEFAULT 'open',
+      label TEXT NOT NULL
+    );
+
+    CREATE TABLE assertion_concepts (
+      assertion_id TEXT NOT NULL,
+      concept_id TEXT NOT NULL,
+      relationship TEXT NOT NULL DEFAULT 'demonstrates',
+      weight REAL NOT NULL DEFAULT 1.0,
+      PRIMARY KEY (assertion_id, concept_id)
+    );
+
+    CREATE TABLE role_context_documents (
+      id TEXT PRIMARY KEY,
+      required_languages_json TEXT,
+      relevant_concepts_json TEXT,
+      required_concepts_json TEXT,
+      forbidden_concepts_json TEXT
+    );
+
+    CREATE TABLE role_source_references (
+      id TEXT PRIMARY KEY,
+      role_context_id TEXT NOT NULL,
+      entity_id TEXT NOT NULL,
+      locator TEXT NOT NULL,
+      concept_keys_json TEXT NOT NULL DEFAULT '[]',
+      source_ref_type TEXT NOT NULL,
+      source_ref_id TEXT NOT NULL,
+      exact_text TEXT NOT NULL,
+      content_hash TEXT NOT NULL
+    );
+
+    CREATE TABLE review_challenge_packets (
+      id TEXT PRIMARY KEY,
+      repo_id TEXT NOT NULL,
+      pr_number INTEGER NOT NULL,
+      source_version TEXT NOT NULL,
+      content_hash TEXT,
+      demands_json TEXT
+    );
+  `);
+  db.exec(evaluationMigration);
+}
+
+function seedSourceBackedMatchRun(db: InstanceType<typeof Database>): void {
+  db.prepare('INSERT INTO people (id, display_name, primary_email) VALUES (?, ?, ?)').run(
+    'person-1',
+    'Alice Review',
+    'alice@example.test',
+  );
+  db.prepare('INSERT INTO workspace_people (id, person_id, workspace_id) VALUES (?, ?, ?)').run(
+    'wp-1',
+    'person-1',
+    'ws-1',
+  );
+  db.prepare('INSERT INTO applications (id, workspace_person_id, legacy_candidate_id) VALUES (?, ?, ?)').run(
+    'app-1',
+    'wp-1',
+    'candidate-1',
+  );
+  db.prepare('INSERT INTO interactions (id, workspace_person_id, interaction_type) VALUES (?, ?, ?)').run(
+    'interaction-1',
+    'wp-1',
+    'resume',
+  );
+  db.prepare('INSERT INTO artifacts (id, interaction_id, artifact_type) VALUES (?, ?, ?)').run(
+    'artifact-1',
+    'interaction-1',
+    'resume',
+  );
+  db.prepare('INSERT INTO artifact_versions (id, artifact_id, version_number, content_hash) VALUES (?, ?, ?, ?)').run(
+    'artifact-version-1',
+    'artifact-1',
+    1,
+    'sha256:candidate-source',
+  );
+  db.prepare('INSERT INTO source_spans (id, artifact_version_id, char_start, char_end, exact_text, exact_text_hash) VALUES (?, ?, ?, ?, ?, ?)').run(
+    'source-span-1',
+    'artifact-version-1',
+    0,
+    58,
+    'Reviewed React accessibility state and TypeScript event logic.',
+    'sha256:span',
+  );
+  db.prepare('INSERT INTO episodes (id, workspace_person_id, interaction_id, narrative) VALUES (?, ?, ?, ?)').run(
+    'episode-1',
+    'wp-1',
+    'interaction-1',
+    'Candidate source-backed resume evidence',
+  );
+  db.prepare('INSERT INTO semantic_assertions (id, episode_id, narrative) VALUES (?, ?, ?)').run(
+    'assertion-1',
+    'episode-1',
+    'Demonstrates React accessibility state review with TypeScript event handling.',
+  );
+  db.prepare('INSERT INTO assertion_source_spans (assertion_id, source_span_id) VALUES (?, ?)').run(
+    'assertion-1',
+    'source-span-1',
+  );
+  db.prepare('INSERT INTO concepts (id, canonical_key, namespace, label) VALUES (?, ?, ?, ?)').run(
+    'concept-1',
+    'term:react-accessibility-state',
+    'open',
+    'React accessibility state',
+  );
+  db.prepare('INSERT INTO assertion_concepts (assertion_id, concept_id) VALUES (?, ?)').run(
+    'assertion-1',
+    'concept-1',
+  );
+  db.prepare(
+    'INSERT INTO role_context_documents (id, required_languages_json, relevant_concepts_json) VALUES (?, ?, ?)',
+  ).run(
+    'role-1',
+    '["typescript"]',
+    '["term:react-accessibility-state"]',
+  );
+  db.prepare(
+    `INSERT INTO role_source_references (
+       id, role_context_id, entity_id, locator, concept_keys_json,
+       source_ref_type, source_ref_id, exact_text, content_hash
+     ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)`,
+  ).run(
+    'role-ref-1',
+    'role-1',
+    'role-1',
+    'role:requirements',
+    '["term:react-accessibility-state"]',
+    'role_context',
+    'role-ref-1',
+    'Needs TypeScript accessibility state review experience.',
+    'sha256:role',
+  );
+  db.prepare(
+    'INSERT INTO review_challenge_packets (id, repo_id, pr_number, source_version, content_hash, demands_json) VALUES (?, ?, ?, ?, ?, ?)',
+  ).run(
+    'packet-1',
+    'mui/base-ui',
+    973,
+    'commit-sha-1',
+    'sha256:packet',
+    JSON.stringify([{
+      demandId: 'demand-1',
+      concepts: ['term:react-accessibility-state'],
+      sourceRefs: [{
+        artifactId: 'packet-1',
+        artifactVersion: 'commit-sha-1',
+        contentHash: 'sha256:packet',
+        sourceRefType: 'repo_source_span',
+        sourceRefId: 'repo-span-1',
+        sourceSpanId: 'repo-span-1',
+        exactText: 'Review the popover state transition and accessibility semantics.',
+        startOffset: 0,
+        endOffset: 62,
+      }],
+    }]),
+  );
+  db.prepare(
+    `INSERT INTO match_runs (
+       id, candidate_id, role_context_id, role_snapshot_id,
+       candidate_snapshot_id, policy_version, status, selected_packet_id,
+       ranked_results_json, created_at
+     ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
+  ).run(
+    'match-run-1',
+    'candidate-1',
+    'role-1',
+    'standalone-code-review-v1',
+    'candidate-snapshot-1',
+    'candidate-pr-v1',
+    'MATCHED',
+    'packet-1',
+    JSON.stringify([{
+      rank: 1,
+      recallRank: 1,
+      challengeId: 'packet-1',
+      repoId: 'mui/base-ui',
+      prNumber: 973,
+      sourceVersion: 'commit-sha-1',
+      score: 0.88,
+      candidateEvidenceAlignment: 0.9,
+      roleRelevance: 0.86,
+      contextualSpecificity: 0.82,
+      challengeQuality: 0.91,
+      validationDeepeningValue: 0.72,
+      alignedDemandCount: 1,
+      stretchCount: 0,
+      stretchDemandWeightRatio: 0,
+      provenanceComplete: true,
+      eligible: true,
+      alignments: [],
+      rejectionReasons: [],
+    }]),
+    '2026-07-02T21:30:00.000Z',
+  );
+}
+
 describe('evaluation corpus review CLI', () => {
   let directory: string | undefined;
 
@@ -106,6 +390,114 @@ describe('evaluation corpus review CLI', () => {
       reviewTemplatePath: '/tmp/review-template.json',
       persist: false,
     }));
+  });
+
+  it('parses seed-from-match-runs options for draft corpus review exports', () => {
+    expect(parseCorpusReviewArgs([
+      '--database-path',
+      '/tmp/evaluation.sqlite',
+      '--seed-from-match-runs',
+      '--seed-limit',
+      '3',
+      '--seed-status',
+      'MATCHED',
+      '--persist-draft',
+      '--review-packet',
+      '/tmp/review-packet.json',
+    ])).toEqual(expect.objectContaining({
+      databasePath: '/tmp/evaluation.sqlite',
+      seedFromMatchRuns: true,
+      seedLimit: 3,
+      seedStatusFilter: 'MATCHED',
+      persistDraft: true,
+      reviewPacketPath: '/tmp/review-packet.json',
+    }));
+  });
+
+  it('seeds a draft corpus from real match runs and exports review artifacts', async () => {
+    directory = await mkdtemp(join(tmpdir(), 'pipe-corpus-review-'));
+    const databasePath = join(directory, 'evaluation.sqlite');
+    const reviewPacketPath = join(directory, 'seeded-review-packet.json');
+    const reviewTemplatePath = join(directory, 'seeded-review-template.json');
+    const summaryPath = join(directory, 'seeded-summary.json');
+    const sqlite = new Database(databasePath);
+    setupSeedSchema(sqlite);
+    seedSourceBackedMatchRun(sqlite);
+    sqlite.close();
+
+    const exitCode = await runCorpusReviewCli([
+      '--database-path',
+      databasePath,
+      '--seed-from-match-runs',
+      '--seed-limit',
+      '1',
+      '--seed-description',
+      'Draft CODE_REVIEW corpus seeded from app-dev-style match runs',
+      '--persist-draft',
+      '--review-packet',
+      reviewPacketPath,
+      '--review-template',
+      reviewTemplatePath,
+      '--json',
+      summaryPath,
+    ]);
+
+    expect(exitCode).toBe(0);
+    const summary = JSON.parse(await readFile(summaryPath, 'utf8')) as {
+      sourceCorpusId: string;
+      draftPersisted: boolean;
+      seeded: {
+        matchRunCount: number;
+        labelCount: number;
+        draftLabelCount: number;
+        expertLabelCount: number;
+        expectedPacketCount: number;
+        warnings: string[];
+      };
+      nextAction: string;
+    };
+    expect(summary.sourceCorpusId).toMatch(/^seeded-/);
+    expect(summary.draftPersisted).toBe(true);
+    expect(summary.seeded).toEqual(expect.objectContaining({
+      matchRunCount: 1,
+      labelCount: 1,
+      draftLabelCount: 1,
+      expertLabelCount: 0,
+      expectedPacketCount: 1,
+      warnings: [],
+    }));
+    expect(summary.nextAction).toBe('complete_expert_review');
+
+    const packet = JSON.parse(await readFile(reviewPacketPath, 'utf8')) as {
+      items: Array<{
+        candidateEvidence: Array<{ evidenceReferences: Array<{ exactText: string }> }>;
+        expectedPacket: { repoId: string; prNumber: number };
+      }>;
+    };
+    expect(packet.items[0]?.candidateEvidence[0]?.evidenceReferences[0]?.exactText)
+      .toContain('Reviewed React accessibility state');
+    expect(packet.items[0]?.expectedPacket).toEqual(expect.objectContaining({
+      repoId: 'mui/base-ui',
+      prNumber: 973,
+    }));
+
+    const template = JSON.parse(await readFile(reviewTemplatePath, 'utf8')) as ExpertReviewFile;
+    expect(template.sourceCorpusId).toBe(summary.sourceCorpusId);
+    expect(template.labels[0]).toEqual(expect.objectContaining({
+      labelId: 'seeded-match-run-1-packet-1',
+      explanation: expect.stringContaining('TODO'),
+    }));
+
+    const verification = new Database(databasePath);
+    expect(verification.prepare(
+      `SELECT expert_label_count, synthetic_fixture_count
+         FROM evaluation_corpora
+        WHERE corpus_id = ?`,
+    ).get(summary.sourceCorpusId)).toEqual({
+      expert_label_count: 0,
+      synthetic_fixture_count: 0,
+    });
+    verification.close();
   });
 
   it('builds a source-backed expert review template with explicit placeholders', () => {
