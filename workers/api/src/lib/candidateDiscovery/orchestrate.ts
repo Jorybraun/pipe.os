@@ -64,6 +64,8 @@ export interface IngestionInput {
   decompositionResult?: DecompositionResult | null;
   afterSourceBackedEvidence?: () => Promise<void>;
   maxNodeEmbeddings?: number;
+  maxParserOnlyNodes?: number;
+  mirrorLivingContext?: boolean;
   skipPostDecompositionMaintenance?: boolean;
 }
 
@@ -136,6 +138,8 @@ export async function runCandidateIngestion(input: IngestionInput): Promise<void
         decompositionResult: input.decompositionResult,
         afterSourceBackedEvidence: triggerAfterSourceBackedEvidence,
         maxNodeEmbeddings: input.maxNodeEmbeddings,
+        maxParserOnlyNodes: input.maxParserOnlyNodes,
+        mirrorLivingContext: input.mirrorLivingContext,
         skipPostDecompositionMaintenance: input.skipPostDecompositionMaintenance,
       }),
     );
