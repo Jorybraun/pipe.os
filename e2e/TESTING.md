@@ -279,7 +279,7 @@ Latest deployed app-dev proof: after deploying dev API version `043f0c50-1552-41
 
 The same deployed API/app pair also passed the roleless full-submit auto-match command for interview `43210dfe-d589-4229-841f-f9b9c9b9fe5e`, review session `ea8a07c9-9631-4ace-8f67-8f1cbdfb8f41`, and judge replay example `code_review_judge_example_ee8b8947c9838f1e25bd80e8714a1c25`, selecting `mui/base-ui#973`, returning `MATCHED`, passing the source-backed quality gate, measuring positive contrast separation against the next comparable challenge (`1/2`, selected challenge ahead by 2%), completing recruiter/profile results, and preserving 4 recruiter-visible evidence hyperedges.
 
-Latest deployed app-dev proof on 2026-07-02 after manual dev deploy API
+Earlier deployed app-dev proof on 2026-07-02 after manual dev deploy API
 `b3030783-70bd-4db9-a210-04e5201063d0`, app
 `9dddf1fb-cb33-4da5-a5f4-f95676296417`, and room
 `483a654c-d756-40c5-a93a-256ce7b28710`: blocked standalone CODE_REVIEW
@@ -298,6 +298,15 @@ are expected to be `0` only in manual override lanes because manual override
 validates the selected PR's source-backed reviewability rather than inferring a
 candidate-to-repo match.
 
+Follow-up deployed proof on 2026-07-02 after GitHub deploy commit
+`c0eb2e548`: blocked standalone CODE_REVIEW interview
+`6aa44a54-c997-4c01-8008-16521843918d` returned `PROFILE_RECEIVED`,
+`candidate-intake-queued`, no room URL, and recruiter projection
+`waiting_for_source_backed_match`; ready manual assignment interview
+`53f9d6a3-fd98-4761-ad00-f2f5cb1ed829` selected `mui/base-ui#973`, returned
+`MATCHED`, `PASSED`, and `USABLE`, and passed both candidate browser and
+authenticated recruiter browser smoke checks.
+
 Use `npm run smoke:open-source-workspace-dev` for the real open-source bug-fix
 workspace path. It creates an `OPEN_SOURCE_BUG_FIX` invite, launches the
 controlled room workspace, verifies the bridge, confirms unchanged work is
@@ -305,10 +314,10 @@ blocked, creates a real commit inside the workspace, finalizes the live
 workspace `HEAD`, requires `git_commit`, `code_diff`, `terminal_command`, and
 `test_run` source refs, then starts source-backed evaluation from the recruiter
 API. Latest deployed proof on 2026-07-02 passed for interview
-`1228ff02-888c-48d3-9755-a458ec35e3cb`, repo `mui/base-ui`, workspace commit
-`b23fc9b740b53f90f5914e57a74769a5bdee7272`, bridge revision
+`7edae8fa-b310-4b5b-8e9e-fa9d584beca9`, repo `mui/base-ui`, workspace commit
+`50019c2a200627d5670fab1f926ed825bade4914`, bridge revision
 `2026-06-30-assessment-branch-v1`, and evaluation report
-`assessment_evaluation_report_392d751ebaadcbc7cd30aa80a0f7fa23` with
+`assessment_evaluation_report_71b8391233e6a54d74519dcf8ab3bcbe` with
 recommendation `strong_evidence_to_advance`. The recruiter projection was
 reviewable from source-backed `git_commit`, `code_diff`, `test_run`,
 `terminal_command`, and file-observation refs; `recruiterCompareUrl` was
