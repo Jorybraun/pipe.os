@@ -15,6 +15,7 @@
 import { useState, useCallback, useMemo } from 'react';
 import { useParams, useNavigate } from 'react-router-dom';
 import {
+  AlertTriangle,
   ArrowLeft,
   FileText,
   Activity,
@@ -54,6 +55,13 @@ import { useStageMutations } from '../hooks/useStageMutations';
 import { useCandidateMutations } from '../hooks/useCandidateMutations';
 import { usePipelineIngestion, type PipelineIngestionItem } from '../hooks/usePipelineIngestion';
 import type { OverviewStage, OverviewCandidate } from '../lib/api/types';
+
+function ingestionColor(status: PipelineIngestionItem['status']): string {
+  if (status === 'matched') return '#10b981';
+  if (status === 'failed') return '#f87171';
+  if (status === 'embedded' || status === 'profile_generated') return '#60a5fa';
+  return '#9ca3af';
+}
 
 // ─── StageHeaderCard (copied verbatim from the old OverviewPage) ────────────
 
@@ -278,6 +286,11 @@ function CandidateKanbanCard({
   };
 
   const statusColor = getStatusColor();
+  const ingestionTitle = ingestion?.status === 'failed'
+    ? ingestion.errorText ?? 'Candidate AI ingestion failed.'
+    : ingestion?.status
+      ? `Candidate AI ingestion ${ingestion.status}.`
+      : undefined;
 
   return (
     <div ref={setNodeRef} style={style} {...attributes}>
@@ -397,20 +410,36 @@ function CandidateKanbanCard({
 
               {/* Enrichment indicator */}
               {ingestion && (
-                <div style={{ display: 'flex', alignItems: 'center', gap: 6 }}>
+                <div
+                  aria-label={`Candidate AI ingestion ${ingestion.status}`}
+                  title={ingestionTitle}
+                  style={{ display: 'flex', alignItems: 'center', gap: 6 }}
+                >
                   <div
                     style={{
                       width: 6,
                       height: 6,
                       borderRadius: '50%',
-                      background:
-                        ingestion.status === 'matched'
-                          ? '#10b981'
-                          : ingestion.status === 'failed'
-                            ? '#f87171'
-                            : '#9ca3af',
+                      background: ingestionColor(ingestion.status),
                     }}
                   />
+                  {ingestion.status === 'failed' && (
+                    <span
+                      style={{
+                        fontSize: 8,
+                        fontWeight: 800,
+                        color: '#fca5a5',
+                        fontFamily: 'Space Mono',
+                        letterSpacing: '0.06em',
+                        padding: '1px 5px',
+                        background: 'rgba(248,113,113,0.08)',
+                        border: '1px solid rgba(248,113,113,0.18)',
+                        borderRadius: 3,
+                      }}
+                    >
+                      AI_FAILED
+                    </span>
+                  )}
                   {ingestion.status === 'matched' && ingestion.triangulatedScore !== null && (
                     <span
                       style={{
@@ -531,7 +560,13 @@ export default function KanbanPage(): JSX.Element {
     useOverviewData(id);
   const { reorderStages, deleteStage } = useStageMutations();
   const { updateCandidate, refreshLink } = useCandidateMutations();
-  const { items: ingestionItems } = usePipelineIngestion(id);
+  const {
+    items: ingestionItems,
+    retryFailed,
+    isRetrying,
+    retryError,
+    lastRetryResult,
+  } = usePipelineIngestion(id);
 
   const ingestionByCandidate = useMemo(() => {
     const map = new Map<string, PipelineIngestionItem>();
@@ -540,6 +575,11 @@ export default function KanbanPage(): JSX.Element {
     }
     return map;
   }, [ingestionItems]);
+
+  const failedIngestionCount = useMemo(
+    () => ingestionItems.filter((item) => item.status === 'failed').length,
+    [ingestionItems],
+  );
 
   const [localStages, setLocalStages] = useState<OverviewStage[] | null>(null);
   const [activeCandidate, setActiveCandidate] =
@@ -562,6 +602,10 @@ export default function KanbanPage(): JSX.Element {
     },
     [refreshLink, refetch],
   );
+
+  const handleRetryFailedIngestion = useCallback(async (): Promise<void> => {
+    await retryFailed(10);
+  }, [retryFailed]);
 
   const handleDeleteStage = async (
     stageId: string,
@@ -748,6 +792,90 @@ export default function KanbanPage(): JSX.Element {
             </h1>
           </div>
         </div>
+
+        {(failedIngestionCount > 0 || retryError || lastRetryResult) && (
+          <div
+            data-testid="pipeline-ingestion-repair-banner"
+            style={{
+              display: 'flex',
+              alignItems: 'center',
+              gap: 12,
+              padding: '12px 14px',
+              marginBottom: 18,
+              borderRadius: 8,
+              border: retryError
+                ? '1px solid rgba(248,113,113,0.22)'
+                : '1px solid rgba(251,191,36,0.18)',
+              background: retryError
+                ? 'rgba(248,113,113,0.06)'
+                : 'rgba(251,191,36,0.05)',
+            }}
+          >
+            <AlertTriangle size={16} color={retryError ? '#f87171' : '#fbbf24'} />
+            <div style={{ flex: 1, minWidth: 0 }}>
+              <div
+                style={{
+                  fontSize: 10,
+                  fontWeight: 800,
+                  letterSpacing: '0.12em',
+                  color: retryError ? '#fca5a5' : '#fbbf24',
+                  fontFamily: '"Space Mono", monospace',
+                }}
+              >
+                {retryError
+                  ? 'AI_INGESTION_RETRY_FAILED'
+                  : failedIngestionCount > 0
+                    ? `AI_INGESTION_FAILED_${failedIngestionCount}`
+                    : `AI_INGESTION_QUEUED_${lastRetryResult?.queued ?? 0}`}
+              </div>
+              <div
+                style={{
+                  marginTop: 4,
+                  fontSize: 11,
+                  color: 'var(--pipe-text-dim)',
+                  fontFamily: '"Space Mono", monospace',
+                  whiteSpace: 'nowrap',
+                  overflow: 'hidden',
+                  textOverflow: 'ellipsis',
+                }}
+              >
+                {retryError?.message
+                  ?? (lastRetryResult
+                    ? `Scanned ${lastRetryResult.scanned}; queued ${lastRetryResult.queued}; skipped ${lastRetryResult.skipped}; failed ${lastRetryResult.failed}.`
+                    : 'Retry source-backed candidate ingestion from stored resume evidence.')}
+              </div>
+            </div>
+            {failedIngestionCount > 0 && (
+              <button
+                type="button"
+                onClick={() => void handleRetryFailedIngestion()}
+                disabled={isRetrying}
+                style={{
+                  display: 'flex',
+                  alignItems: 'center',
+                  gap: 8,
+                  padding: '8px 12px',
+                  background: 'rgba(255,255,255,0.06)',
+                  border: '1px solid rgba(255,255,255,0.14)',
+                  borderRadius: 4,
+                  color: 'var(--pipe-text)',
+                  fontSize: 9,
+                  fontWeight: 800,
+                  letterSpacing: '0.12em',
+                  fontFamily: '"Space Mono", monospace',
+                  cursor: isRetrying ? 'wait' : 'pointer',
+                  opacity: isRetrying ? 0.62 : 1,
+                }}
+              >
+                <RefreshCw
+                  size={12}
+                  style={{ animation: isRetrying ? 'spin 1s linear infinite' : undefined }}
+                />
+                RETRY_FAILED
+              </button>
+            )}
+          </div>
+        )}
 
         {/* Board */}
         <div
