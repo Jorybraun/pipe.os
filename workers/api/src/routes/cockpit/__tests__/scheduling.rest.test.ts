@@ -7287,6 +7287,8 @@ describe('POST /interviews dev-container challenge (HAS-80)', () => {
       ENV: 'dev',
       DEV_BASIC_AUTH_USER: 'pipetest',
       DEV_BASIC_AUTH_PASSWORD: 'pipetest123',
+      VIDEO_ROOM_DEV_AUTH_USER: 'room-user',
+      VIDEO_ROOM_DEV_AUTH_PASSWORD: 'pipe-room-2026',
     } as Partial<Env>);
 
     const createdResponse = await app.request('/interviews', {
@@ -7389,6 +7391,8 @@ describe('POST /interviews dev-container challenge (HAS-80)', () => {
       ENV: 'dev',
       DEV_BASIC_AUTH_USER: 'pipetest',
       DEV_BASIC_AUTH_PASSWORD: 'pipetest123',
+      VIDEO_ROOM_DEV_AUTH_USER: 'room-user',
+      VIDEO_ROOM_DEV_AUTH_PASSWORD: 'pipe-room-2026',
     } as Partial<Env>);
 
     const createResponse = await app.request('/interviews', {
@@ -7452,7 +7456,7 @@ describe('POST /interviews dev-container challenge (HAS-80)', () => {
       emailSent: false,
     });
     expect(invited.deliveredUrl).toContain('/room/');
-    expect(invited.deliveredUrl).toContain('pipetest:pipetest123@room-dev.hire-pipe.com');
+    expect(invited.deliveredUrl).toContain('room-user:pipe-room-2026@room-dev.hire-pipe.com');
     expect(invited.deliveredUrl).not.toContain('/assess/');
     expect(invited.meetingUrl).toBe(invited.deliveredUrl);
     expect(invited.room?.guestUrl).toBe(invited.deliveredUrl);
@@ -7495,8 +7499,8 @@ describe('POST /interviews dev-container challenge (HAS-80)', () => {
         LIMIT 1`,
     ).get() as { narrative: string; qualifiers_json: string; exact_text: string } | undefined;
     expect(deliveryContext?.narrative).toContain('open-source-workspace@example.com');
-    expect(deliveryContext?.exact_text).toContain('Delivered URL: https://pipetest:pipetest123@room-dev.hire-pipe.com/room/');
-    expect(deliveryContext?.exact_text).toContain('Room URL: https://pipetest:pipetest123@room-dev.hire-pipe.com/room/');
+    expect(deliveryContext?.exact_text).toContain('Delivered URL: https://room-user:pipe-room-2026@room-dev.hire-pipe.com/room/');
+    expect(deliveryContext?.exact_text).toContain('Room URL: https://room-user:pipe-room-2026@room-dev.hire-pipe.com/room/');
     expect(deliveryContext?.exact_text).toContain('Email sent: no');
     expect(JSON.parse(deliveryContext?.qualifiers_json ?? '{}')).toMatchObject({
       scheduledInterviewId: created.interview.id,
