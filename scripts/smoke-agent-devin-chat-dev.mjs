@@ -1,38 +1,81 @@
+import dotenv from 'dotenv';
+import WebSocket from 'ws';
+
+dotenv.config({ path: '.env.local' });
+dotenv.config({ path: '.env' });
+
 const ROOM_BASE = (process.env.ROOM_BASE || 'https://room-dev.hire-pipe.com').replace(/\/$/, '');
-const APP_BASE = (process.env.APP_BASE || ROOM_BASE).replace(/\/$/, '');
-const BASIC_USER = process.env.PIPE_DEV_BASIC_AUTH_USER || process.env.DEV_BASIC_AUTH_USER || '';
-const BASIC_PASSWORD = process.env.PIPE_DEV_BASIC_AUTH_PASSWORD || process.env.DEV_BASIC_AUTH_PASSWORD || '';
+const APP_BASE = (process.env.APP_BASE || 'https://app-dev.hire-pipe.com').replace(/\/$/, '');
+const APP_BASIC_USER = process.env.PIPE_APP_DEV_BASIC_AUTH_USER
+  || process.env.APP_DEV_BASIC_AUTH_USER
+  || process.env.PIPE_DEV_BASIC_AUTH_USER
+  || process.env.DEV_BASIC_AUTH_USER
+  || '';
+const APP_BASIC_PASSWORD = process.env.PIPE_APP_DEV_BASIC_AUTH_PASSWORD
+  || process.env.APP_DEV_BASIC_AUTH_PASSWORD
+  || process.env.PIPE_DEV_BASIC_AUTH_PASSWORD
+  || process.env.DEV_BASIC_AUTH_PASSWORD
+  || '';
+const ROOM_BASIC_USER = process.env.PIPE_ROOM_DEV_BASIC_AUTH_USER
+  || process.env.ROOM_DEV_BASIC_AUTH_USER
+  || process.env.VIDEO_ROOM_DEV_AUTH_USER
+  || process.env.PIPE_DEV_BASIC_AUTH_USER
+  || process.env.DEV_BASIC_AUTH_USER
+  || '';
+const ROOM_BASIC_PASSWORD = process.env.PIPE_ROOM_DEV_BASIC_AUTH_PASSWORD
+  || process.env.ROOM_DEV_BASIC_AUTH_PASSWORD
+  || process.env.VIDEO_ROOM_DEV_AUTH_PASSWORD
+  || process.env.PIPE_DEV_BASIC_AUTH_PASSWORD
+  || process.env.DEV_BASIC_AUTH_PASSWORD
+  || '';
 const REPO_URL = process.env.AGENT_SMOKE_REPO_URL || 'https://github.com/octocat/Hello-World';
 const PR_NUMBER = Number(process.env.AGENT_SMOKE_PR_NUMBER || '1');
 const EXPECTED_RESPONSE = process.env.AGENT_SMOKE_EXPECTED_RESPONSE || 'PIPE_AGENT_SMOKE_OK';
+const EXPECT_AUTH_NEEDED = process.env.AGENT_SMOKE_EXPECT_AUTH_NEEDED === '1';
 const PROMPT_TEXT =
   process.env.AGENT_SMOKE_PROMPT
   || `Say exactly ${EXPECTED_RESPONSE} and no other words.`;
 const REMOTE = !ROOM_BASE.includes('localhost') && !ROOM_BASE.includes('127.0.0.1');
 
 function assertEnv() {
-  if (typeof WebSocket !== 'function') {
-    throw new Error('This smoke requires a Node runtime with global WebSocket support.');
-  }
   if (!REMOTE) return;
-  if (!BASIC_USER || !BASIC_PASSWORD) {
+  if (!APP_BASIC_USER || !APP_BASIC_PASSWORD) {
     throw new Error(
-      'Set PIPE_DEV_BASIC_AUTH_USER and PIPE_DEV_BASIC_AUTH_PASSWORD to smoke deployed room-dev.',
+      'Set PIPE_APP_DEV_BASIC_AUTH_USER/PASSWORD or PIPE_DEV_BASIC_AUTH_USER/PASSWORD to smoke deployed app-dev.',
+    );
+  }
+  if (!ROOM_BASIC_USER || !ROOM_BASIC_PASSWORD) {
+    throw new Error(
+      'Set PIPE_ROOM_DEV_BASIC_AUTH_USER/PASSWORD or VIDEO_ROOM_DEV_AUTH_USER/PASSWORD to smoke deployed room-dev.',
     );
   }
 }
 
-function authHeaders() {
-  if (!BASIC_USER && !BASIC_PASSWORD) return {};
-  const value = Buffer.from(`${BASIC_USER}:${BASIC_PASSWORD}`).toString('base64');
+function basicAuthHeaders(user, password) {
+  if (!user && !password) return {};
+  const value = Buffer.from(`${user}:${password}`).toString('base64');
   return { Authorization: `Basic ${value}` };
+}
+
+function authHeadersFor(base) {
+  return base === ROOM_BASE
+    ? basicAuthHeaders(ROOM_BASIC_USER, ROOM_BASIC_PASSWORD)
+    : basicAuthHeaders(APP_BASIC_USER, APP_BASIC_PASSWORD);
+}
+
+function authHeadersFromUrl(rawUrl) {
+  const url = new URL(rawUrl);
+  if (!url.username && !url.password) return {};
+  const user = decodeURIComponent(url.username);
+  const password = decodeURIComponent(url.password);
+  return basicAuthHeaders(user, password);
 }
 
 async function requestJson(base, path, init = {}) {
   const response = await fetch(`${base}${path}`, {
     ...init,
     headers: {
-      ...authHeaders(),
+      ...authHeadersFor(base),
       ...(init.body ? { 'Content-Type': 'application/json' } : {}),
       ...(init.headers ?? {}),
     },
@@ -70,11 +113,13 @@ function sleep(ms) {
   return new Promise((resolve) => setTimeout(resolve, ms));
 }
 
-async function pollWorkspaceReady(token) {
+async function pollWorkspaceReady(token, headers = {}) {
   const deadline = Date.now() + 120_000;
   let last = null;
   while (Date.now() < deadline) {
-    const body = await requestJson(ROOM_BASE, `/api/v1/meeting-rooms/${token}/workspace`);
+    const body = await requestJson(ROOM_BASE, `/api/v1/meeting-rooms/${token}/workspace`, {
+      headers,
+    });
     last = body.workspace?.session ?? null;
     if (last?.status === 'READY' || last?.status === 'SLEEPING') return last;
     if (last?.status === 'ERROR') break;
@@ -99,10 +144,9 @@ function boundedMessage(message) {
   return next;
 }
 
-function connectAgent(wsUrl) {
+function connectAgent(wsUrl, headers) {
   return new Promise((resolve, reject) => {
     const messages = [];
-    const headers = authHeaders();
     const ws = new WebSocket(wsUrl, Object.keys(headers).length > 0 ? { headers } : undefined);
     let ready = false;
     const timer = setTimeout(() => {
@@ -110,8 +154,8 @@ function connectAgent(wsUrl) {
       resolve(messages);
     }, 90_000);
 
-    ws.addEventListener('message', (event) => {
-      const parsed = parseMessage(event.data);
+    ws.on('message', (data) => {
+      const parsed = parseMessage(data);
       messages.push(parsed);
       if (parsed.type === 'AGENT_READY' && !ready) {
         ready = true;
@@ -133,9 +177,13 @@ function connectAgent(wsUrl) {
         }, 1_000);
       }
     });
-    ws.addEventListener('error', () => {
+    ws.on('error', (error) => {
       clearTimeout(timer);
-      reject(new Error('Agent WebSocket failed.'));
+      reject(error);
+    });
+    ws.on('unexpected-response', (_request, response) => {
+      clearTimeout(timer);
+      reject(new Error(`Agent WebSocket upgrade failed (${response.statusCode}).`));
     });
   });
 }
@@ -167,21 +215,56 @@ async function main() {
     }),
   });
   const hostToken = tokenFromRoomUrl(invited?.room?.hostUrl ?? '');
+  const roomAuthHeaders = authHeadersFromUrl(invited?.room?.hostUrl ?? '');
 
   const launched = await requestJson(ROOM_BASE, `/api/v1/meeting-rooms/${hostToken}/workspace/launch`, {
     method: 'POST',
+    body: JSON.stringify({ agentType: 'devin' }),
+    headers: roomAuthHeaders,
   });
   if (!launched?.workspace?.session?.sessionId) {
     throw new Error(`Launch response missing session: ${JSON.stringify(launched)}`);
   }
 
-  const readySession = await pollWorkspaceReady(hostToken);
+  const readySession = await pollWorkspaceReady(hostToken, roomAuthHeaders);
   const wsUrl = `${ROOM_BASE.replace(/^http/, 'ws')}/api/v1/meeting-rooms/${hostToken}/agent/${readySession.sessionId}/ws`;
-  const messages = await connectAgent(wsUrl);
+  const messages = await connectAgent(wsUrl, {
+    ...authHeadersFor(ROOM_BASE),
+    ...roomAuthHeaders,
+  });
   const chatResponse = messages.find((message) => message.type === 'CHAT_RESPONSE');
+  const authNeeded = messages.find((message) => message.type === 'AUTH_NEEDED');
+  const statusMessages = messages.filter((message) => message.type === 'AGENT_STATUS');
   const persistedDiagnostics = messages.filter((message) =>
     message.type === 'AGENT_DIAGNOSTIC' && message.persisted === true
   );
+
+  if (EXPECT_AUTH_NEEDED) {
+    if (!authNeeded) {
+      throw new Error(`Expected Devin auth-needed state, got: ${JSON.stringify(messages.map(boundedMessage))}`);
+    }
+    if (chatResponse) {
+      throw new Error(`Expected no Devin chat response while auth is needed, got: ${JSON.stringify(boundedMessage(chatResponse))}`);
+    }
+    if (!statusMessages.some((message) => message.status === 'auth_needed')) {
+      throw new Error(`Expected auth_needed status, got: ${JSON.stringify(messages.map(boundedMessage))}`);
+    }
+    console.log(JSON.stringify({
+      ok: true,
+      expectedAuthNeeded: true,
+      interviewId,
+      hostUrl: cleanRoomUrl(invited.room.hostUrl),
+      guestUrl: cleanRoomUrl(invited.room.guestUrl),
+      repoUrl: REPO_URL,
+      githubPrNumber: PR_NUMBER,
+      workspaceStatus: readySession.status,
+      agentReady: false,
+      authNeeded: true,
+      statuses: statusMessages.map((message) => message.status),
+      authMessage: authNeeded.message,
+    }, null, 2));
+    return;
+  }
 
   if (!messages.some((message) => message.type === 'AGENT_READY')) {
     throw new Error(`Devin agent bridge never became ready: ${JSON.stringify(messages.map(boundedMessage))}`);

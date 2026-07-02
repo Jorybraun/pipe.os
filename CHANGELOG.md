@@ -28,6 +28,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Fixed — Open-source assessment progress
 
+- Devin-agent chat smoke validation now loads dev env files, supports separate app-dev and room-dev Basic Auth credentials, explicitly launches the real `devin` bridge instead of expecting an invented default agent, and can prove the honest `auth_needed` state without fake replies.
 - Interview cards now expose stable smoke-test metadata for interview id, interview type, and candidate email, and the deployed open-source workspace smoke verifies the post-evaluation list card shows the assessment mode, task, repo/base, source-backed commit trust, final decision, and next action.
 - The deployed open-source workspace smoke now opens the candidate room before launch, waits for either the task brief or the no-camera/no-mic recovery path, and requires the assessment task brief to render the concrete repo, base commit, task, success criteria, and expected evidence, catching blank or misleading candidate rooms before dev is called healthy.
 - Recruiter assessment details now show a reviewer receipt after a human decision is recorded, tying the final decision to the reviewer, reviewed commit, branch/repo, recorded notes, and assessment-report source refs.
