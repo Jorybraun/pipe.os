@@ -94,12 +94,13 @@ CLOUDFLARE_D1_DATABASE_ID=0abe92df-9296-46f5-9f9d-a1fb1bcd3be1 \
 
 Latest app-dev proof on 2026-07-02 used invite token
 `talent-audit-532e4287e-c1` after deploying Worker version
-`462f32f3-231a-4b0c-8680-6b710ce19bf9` and replaying pasted-text profile
+`5edcc2d0-f033-4bcd-afff-26ee15c5c81d` and replaying pasted-text profile
 submission twice with GitHub, LinkedIn, portfolio, and phone-screener fields.
-The stricter remote verifier returned `status: ready`,
-`artifactVersionCount: 5`, `sourceSpanCount: 11`,
-`contextRecordCount: 7`, `contextSourceRefCount: 10`,
-`externalProfileRefContextCount: 3`,
+The stricter remote verifier returned `status: ready`, `candidateNodeCount: 1`,
+`candidateNodeExactSourceQuoteCount: 1`,
+`candidateNodeWithoutExactSourceCount: 0`, `artifactVersionCount: 7`,
+`sourceSpanCount: 19`, `contextRecordCount: 8`,
+`contextSourceRefCount: 11`, `externalProfileRefContextCount: 3`,
 `phoneScreenerIntentContextCount: 1`, `rolelessApplicationCount: 0`,
 `rolelessPersonRoleCount: 0`, `sourceLessPositiveClaimCount: 0`, and
 `duplicateProjectedEdgeCount: 0`.
@@ -113,6 +114,16 @@ phoneScreenerConsent: true
 phoneNumber: +15551234567
 timezone: America/Vancouver
 availability: Weekday afternoons after 2 PM.
+```
+
+Remote candidate-node sampling also returned:
+
+```text
+node_type: TalentPoolProfileIntake
+source_type: talent_pool_profile_intake
+source_reference: source_span:source_span_3cbee2c23e0d5612fe929ff8c671268f
+source_quote_validated: 1
+source_quote: Talent Audit exact candidate node proof for f47e6af23. Recently implemented source-backed candidate evidence ingestion for Talent Pool profile submissions and verified idempotent replay.
 ```
 
 The prior uploaded profile key was
