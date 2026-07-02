@@ -99,6 +99,23 @@ interface CandidateIdRow {
   candidate_id: string | null;
 }
 
+interface EventKindActorRow {
+  kind: string;
+  actor_type: string;
+  count: number;
+}
+
+interface SourceProofTypeRow {
+  source_ref_type: string;
+  count: number;
+}
+
+interface DerivedClaimRow {
+  polarity: string;
+  dimension: string;
+  count: number;
+}
+
 function parseArgs(argv: string[]): ReplayOptions {
   let target: ReplayOptions['target'] | null = null;
   let sessionId: string | undefined;
@@ -196,6 +213,75 @@ async function loadMatchingEffects(db: D1Database, candidateId: string | null): 
   };
 }
 
+async function loadAnswerSummary(db: D1Database, sessionId: string): Promise<{
+  whatHappened: EventKindActorRow[];
+  whoDidIt: Array<{ actorType: string; count: number }>;
+  sourceProofTypes: SourceProofTypeRow[];
+  derivedClaims: DerivedClaimRow[];
+  missingPersonProjectionCount: number;
+}> {
+  const [events, sourceProofTypes, derivedClaims, missingProjection] = await Promise.all([
+    db.prepare(
+      `SELECT kind, actor_type, COUNT(*) AS count
+         FROM assessment_evidence_events
+        WHERE session_id = ?1
+        GROUP BY kind, actor_type
+        ORDER BY kind, actor_type`,
+    ).bind(sessionId).all<EventKindActorRow>(),
+    db.prepare(
+      `SELECT source_ref_type, COUNT(*) AS count
+         FROM (
+           SELECT sr.source_ref_type
+             FROM assessment_event_source_refs sr
+             JOIN assessment_evidence_events ev ON ev.id = sr.event_id
+            WHERE ev.session_id = ?1
+           UNION ALL
+           SELECT csr.source_ref_type
+             FROM assessment_claim_source_refs csr
+             JOIN assessment_evaluation_claims c ON c.id = csr.claim_id
+             JOIN assessment_evaluation_reports r ON r.id = c.report_id
+            WHERE r.session_id = ?1
+         )
+        GROUP BY source_ref_type
+        ORDER BY source_ref_type`,
+    ).bind(sessionId).all<SourceProofTypeRow>(),
+    db.prepare(
+      `SELECT c.polarity, c.dimension, COUNT(*) AS count
+         FROM assessment_evaluation_claims c
+         JOIN assessment_evaluation_reports r ON r.id = c.report_id
+        WHERE r.session_id = ?1
+        GROUP BY c.polarity, c.dimension
+        ORDER BY c.polarity, c.dimension`,
+    ).bind(sessionId).all<DerivedClaimRow>(),
+    db.prepare(
+      `SELECT COUNT(*) AS count
+         FROM assessment_evidence_events ev
+        WHERE ev.session_id = ?1
+          AND NOT EXISTS (
+            SELECT 1
+              FROM context_records cr
+             WHERE cr.ingestion_key = 'assessment_event_context:' || ev.id
+               AND cr.workspace_person_id IS NOT NULL
+          )`,
+    ).bind(sessionId).first<CountRow>(),
+  ]);
+
+  const actorCounts = new Map<string, number>();
+  for (const row of events.results ?? []) {
+    actorCounts.set(row.actor_type, (actorCounts.get(row.actor_type) ?? 0) + Number(row.count));
+  }
+
+  return {
+    whatHappened: events.results ?? [],
+    whoDidIt: [...actorCounts.entries()]
+      .map(([actorType, count]) => ({ actorType, count }))
+      .sort((a, b) => a.actorType.localeCompare(b.actorType)),
+    sourceProofTypes: sourceProofTypes.results ?? [],
+    derivedClaims: derivedClaims.results ?? [],
+    missingPersonProjectionCount: Number(missingProjection?.count ?? 0),
+  };
+}
+
 async function replaySession(db: D1Database, sessionId: string): Promise<{
   ok: boolean;
   sessionId: string;
@@ -203,6 +289,7 @@ async function replaySession(db: D1Database, sessionId: string): Promise<{
   before: { interactions: number; contextRecords: number; sourceRefs: number };
   after: { interactions: number; contextRecords: number; sourceRefs: number };
   proof: ProofRow | null;
+  answers: Awaited<ReturnType<typeof loadAnswerSummary>>;
   matchingEffects: Awaited<ReturnType<typeof loadMatchingEffects>>;
 }> {
   const before = {
@@ -215,6 +302,7 @@ async function replaySession(db: D1Database, sessionId: string): Promise<{
   const replay = await ingestAssessmentSessionRealTime(db, sessionId);
   const proof = await loadProof(db, sessionId);
   const candidateId = await resolveSessionCandidateId(db, sessionId);
+  const answers = await loadAnswerSummary(db, sessionId);
   const matchingEffects = await loadMatchingEffects(db, candidateId);
 
   const after = {
@@ -230,6 +318,7 @@ async function replaySession(db: D1Database, sessionId: string): Promise<{
     before,
     after,
     proof,
+    answers,
     matchingEffects,
   };
 }

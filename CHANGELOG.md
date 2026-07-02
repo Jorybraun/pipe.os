@@ -9,6 +9,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Added — Open-source assessment setup
 
+- `assessment-evidence:replay` now emits a DoD answer block covering what happened, who acted, source proof types, derived claims, missing person projections, and matching effects for the replayed assessment.
 - `assessment-evidence:replay` can now run `--all-missing --limit <n>` to backfill candidate-backed assessment sessions with missing person projections and report matching effects for each replayed candidate.
 - Open-source assessment session creation and replay now snapshot candidate profile evidence into the assessment spine with exact `candidate_profile` source refs, so profile context can be replayed into living context alongside challenge/workspace evidence.
 - Recruiter open-source assessment invites now show a live challenge-packet checklist for repo, exact base commit, task, success criteria, and expected evidence before creation, making manual tasks visibly concrete instead of a loose repo dump.

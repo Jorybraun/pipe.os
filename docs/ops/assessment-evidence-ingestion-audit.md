@@ -118,7 +118,18 @@ Replay proof:
 - `context_record_count: 15`
 - `source_ref_count: 39`
 - `evaluation_report_record_count: 5`
+- `answers.missingPersonProjectionCount: 0`
 - `matchingEffects.matchRunCount: 0`
+
+The replay proof's `answers` block is the Definition-of-Done verifier for a
+session. It reports:
+
+- `whatHappened`: assessment event-kind and actor-type counts
+- `whoDidIt`: actor-type counts
+- `sourceProofTypes`: immutable source-ref type counts
+- `derivedClaims`: evaluator claim polarity/dimension counts
+- `missingPersonProjectionCount`: raw events still lacking person projection
+- `matchingEffects`: candidate match-run count and latest selected packet ids
 
 The strict scoped remote audit for that same session exits ready with
 `--require-all-families`, `sourceLessPositiveClaimCount: 0`,
