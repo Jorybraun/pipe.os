@@ -1034,6 +1034,7 @@ const STANDALONE_RETRY_REASON = STALE_WORKERS_AI_RETRY_REASON;
 const STANDALONE_EVIDENCE_STALE_AFTER_MS = 10 * 60 * 1000;
 
 interface PersistedMatchRunRow {
+  match_run_id?: string | null;
   status: string;
   ranked_results_json: string | null;
 }
@@ -1789,7 +1790,8 @@ export async function repairStandaloneReviewAssignmentFromMatchRun(
   interviewId: string,
 ): Promise<StandaloneReviewMatchResult | null> {
   const rows = await db.prepare(
-    `SELECT mr.status,
+    `SELECT mr.id AS match_run_id,
+            mr.status,
             mr.ranked_results_json,
             rcp.repo_id,
             rcp.pr_number,
@@ -1811,6 +1813,7 @@ export async function repairStandaloneReviewAssignmentFromMatchRun(
     }
     const matchExplanation = buildPersistedMatchRunExplanation(row, row.repo_id, row.pr_number);
     if (!standaloneAutomaticMatchPasses(matchExplanation)) {
+      await demoteUnsafeAutomaticMatchRun(db, row.match_run_id);
       continue;
     }
     if (!await hasSourceBackedReviewPacket(db, row.github_url, row.pr_number)) {
@@ -1847,7 +1850,8 @@ async function repairStageCodeReviewAssignmentFromMatchRun(
   },
 ): Promise<boolean> {
   const rows = await db.prepare(
-    `SELECT mr.status,
+    `SELECT mr.id AS match_run_id,
+            mr.status,
             mr.ranked_results_json,
             rcp.repo_id,
             rcp.pr_number,
@@ -1874,6 +1878,7 @@ async function repairStageCodeReviewAssignmentFromMatchRun(
 
     const matchExplanation = buildPersistedMatchRunExplanation(row, repoId, prNumber);
     if (!standaloneAutomaticMatchPasses(matchExplanation)) {
+      await demoteUnsafeAutomaticMatchRun(db, row.match_run_id);
       continue;
     }
     if (!await hasSourceBackedReviewPacket(db, githubRepoUrl, prNumber)) {
