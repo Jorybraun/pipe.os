@@ -3,6 +3,7 @@ import {
   getCandidateEvidence,
   getExpectedPacket,
   getRoleRequirements,
+  hasExpertLabelProvenance,
   productionCorpusFailures,
   validateCorpus,
 } from './corpus';
@@ -37,6 +38,16 @@ export interface CorpusReviewPacketItem {
   reviewQuestions: string[];
 }
 
+export interface CorpusReviewReadinessSummary {
+  nextAction: 'complete_expert_review' | 'fix_corpus_source_evidence' | 'ready_for_evaluation';
+  draftLabelCount: number;
+  labelsNeedingHumanReview: string[];
+  labelsMissingCandidateEvidence: string[];
+  labelsMissingRoleRequirements: string[];
+  labelsMissingExpectedPacket: string[];
+  labelsMissingRepoDemandEvidence: string[];
+}
+
 export interface CorpusReviewPacket {
   corpusId: string;
   description: string;
@@ -46,6 +57,7 @@ export interface CorpusReviewPacket {
   syntheticFixtureCount: number;
   productionReady: boolean;
   productionReadinessFailures: string[];
+  readinessSummary: CorpusReviewReadinessSummary;
   instructions: string[];
   items: CorpusReviewPacketItem[];
 }
@@ -159,10 +171,62 @@ function validateReviewInput(
   }
 }
 
+function packetHasDemandEvidence(packet: ExpectedChallengePacket | undefined): boolean {
+  return Boolean(
+    packet
+    && Array.isArray(packet.demands)
+    && packet.demands.some((demand) =>
+      Array.isArray(demand.sourceRefs) && demand.sourceRefs.length > 0,
+    ),
+  );
+}
+
+function buildReadinessSummary(corpus: EvaluationCorpus): CorpusReviewReadinessSummary {
+  const labelsNeedingHumanReview = corpus.expertLabels
+    .filter((label) => !hasExpertLabelProvenance(label))
+    .map((label) => label.labelId)
+    .sort();
+  const labelsMissingCandidateEvidence = corpus.expertLabels
+    .filter((label) => getCandidateEvidence(corpus, label.candidateId).length === 0)
+    .map((label) => label.labelId)
+    .sort();
+  const labelsMissingRoleRequirements = corpus.expertLabels
+    .filter((label) => !getRoleRequirements(corpus, label.roleId))
+    .map((label) => label.labelId)
+    .sort();
+  const labelsMissingExpectedPacket = corpus.expertLabels
+    .filter((label) => !getExpectedPacket(corpus, label.challengeId))
+    .map((label) => label.labelId)
+    .sort();
+  const labelsMissingRepoDemandEvidence = corpus.expertLabels
+    .filter((label) => !packetHasDemandEvidence(getExpectedPacket(corpus, label.challengeId)))
+    .map((label) => label.labelId)
+    .sort();
+  const sourceFailures = labelsMissingCandidateEvidence.length
+    + labelsMissingRoleRequirements.length
+    + labelsMissingExpectedPacket.length
+    + labelsMissingRepoDemandEvidence.length;
+
+  return {
+    nextAction: sourceFailures > 0
+      ? 'fix_corpus_source_evidence'
+      : labelsNeedingHumanReview.length > 0
+        ? 'complete_expert_review'
+        : 'ready_for_evaluation',
+    draftLabelCount: labelsNeedingHumanReview.length,
+    labelsNeedingHumanReview,
+    labelsMissingCandidateEvidence,
+    labelsMissingRoleRequirements,
+    labelsMissingExpectedPacket,
+    labelsMissingRepoDemandEvidence,
+  };
+}
+
 export function buildCorpusReviewPacket(corpus: EvaluationCorpus): CorpusReviewPacket {
   validateCorpus(corpus);
   const counts = evaluationCorpusLabelCounts(corpus);
   const productionReadinessFailures = productionCorpusFailures(corpus);
+  const readinessSummary = buildReadinessSummary(corpus);
   return {
     corpusId: corpus.corpusId,
     description: corpus.description,
@@ -172,6 +236,7 @@ export function buildCorpusReviewPacket(corpus: EvaluationCorpus): CorpusReviewP
     syntheticFixtureCount: counts.syntheticFixtureCount,
     productionReady: productionReadinessFailures.length === 0,
     productionReadinessFailures,
+    readinessSummary,
     instructions: [
       'Review each candidate-role-challenge label against the source evidence below.',
       'Confirm the candidate evidence, role requirement, and repo PR demand are source-backed and appropriate.',

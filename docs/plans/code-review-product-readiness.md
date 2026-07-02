@@ -152,6 +152,12 @@ When a comparison fails, the human-readable report includes a compact
 challenge, score/alignment drift, changed shared concepts, or a missing
 comparison run.
 
+Corpus review exports also include a `readinessSummary` that separates source
+evidence repair from human labelling work. A packet with missing expected PR
+evidence or repo demand source spans is not ready for expert review as a rollout
+gate; operators should first repair the source-backed challenge packet, then
+complete the review template with reviewer/source provenance.
+
 CI also runs the matching-evaluation readiness report after worker unit tests.
 Missing Cloudflare credentials or `MATCHING_EVALUATION_CORPUS_ID` produce a
 loud `not_configured` artifact and do not block pull-request, local, or `main`
