@@ -168,3 +168,21 @@ Use `--progress` when running remote batches so each selected session is printed
 to stderr before and after replay. If an active assessment is still producing
 room or AI events, use `--exclude-state IN_PROGRESS` to backfill completed
 historical sessions first instead of parking the batch behind an active row.
+
+On 2026-07-02, the filtered app-dev replay was run with:
+
+```bash
+CLOUDFLARE_D1_DATABASE_ID=0abe92df-9296-46f5-9f9d-a1fb1bcd3be1 \
+  npm run assessment-evidence:replay -- --remote --all-missing \
+  --limit 20 --summary --progress --exclude-state IN_PROGRESS
+```
+
+That batch replayed 20 non-`IN_PROGRESS` historical sessions successfully:
+`processedCount: 20`, `succeededCount: 20`, `failedCount: 0`,
+`contextRecordsAfter: 132`, `sourceRefsAfter: 293`, and
+`missingPersonProjectionsAfter: 0`.
+
+The follow-up unscoped app-dev audit still exits `not_ready`, but continues to
+report `sourceLessPositiveClaimCount: 0` and `duplicateProjectedEdgeCount: 0`.
+The broad app-dev historical backlog remains incomplete; the filtered replay
+command is the current bounded repair loop for completed rows.
