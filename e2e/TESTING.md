@@ -346,7 +346,7 @@ reply when credentials are missing. The smoke creates a dev-container interview,
 launches the workspace with explicit `agentType: "devin"`, connects to the
 room agent WebSocket, and passes only when the bridge reports `auth_needed` with
 no `CHAT_RESPONSE`. Latest deployed proof on 2026-07-02 passed for interview
-`a56ad608-43f9-420e-bc74-b058604794e6`, workspace status `READY`, statuses
+`245e2258-5f99-424d-85e3-812a161eb63d`, workspace status `READY`, statuses
 `disconnected -> starting -> starting -> disconnected -> auth_needed`, and the
 real Devin CLI auth message. The default smoke mode still requires a real Devin
 API/CLI response and should fail if the bridge cannot answer.
