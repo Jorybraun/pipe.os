@@ -297,7 +297,7 @@ describe('stale Workers AI candidate-ingestion retry', () => {
     }));
   });
 
-  it('routes uploaded resume retries through the normal R2 resume processor', async () => {
+  it('routes uploaded resume retries through bounded pre-extracted document recovery', async () => {
     const db = fakeD1();
     const env = buildEnv(db, fakeStorage('unused', 'application/pdf'));
 
@@ -307,12 +307,31 @@ describe('stale Workers AI candidate-ingestion retry', () => {
       'candidate-documents/candidate-pdf/resume.pdf',
     );
 
-    expect(processResumeFromR2).toHaveBeenCalledWith({
+    expect(extractTextFromResumeFile).toHaveBeenCalledWith(
+      expect.any(ArrayBuffer),
+      'application/pdf',
+    );
+    expect(processResumeFromR2).toHaveBeenCalledWith(expect.objectContaining({
       env,
       db,
       candidateId: 'candidate-pdf',
       r2Key: 'candidate-documents/candidate-pdf/resume.pdf',
-    });
+      candidateDiscoveryTimeoutMs: 18000,
+      candidateDiscoveryMaxAttempts: 2,
+      maxNodeEmbeddings: 0,
+      maxParserOnlyNodes: 12,
+      skipPostDecompositionMaintenance: true,
+      preExtractedResumeText: expect.stringContaining('TypeScript engineer'),
+      preParsed: expect.objectContaining({
+        decompositionResult: null,
+        parsedCV: expect.objectContaining({
+          experiences: expect.any(Array),
+          educationBlocks: expect.any(Array),
+          credentials: expect.any(Array),
+          projects: expect.any(Array),
+        }),
+      }),
+    }));
   });
 
   it('passes roleless Talent Pool identity into document retries', async () => {
@@ -555,12 +574,27 @@ describe('stale Workers AI candidate-ingestion retry', () => {
         key: 'candidate-documents/candidate-missing/resume.pdf',
       },
     });
-    expect(processResumeFromR2).toHaveBeenCalledWith({
+    expect(processResumeFromR2).toHaveBeenCalledWith(expect.objectContaining({
       env,
       db,
       candidateId: 'candidate-missing',
       r2Key: 'candidate-documents/candidate-missing/resume.pdf',
-    });
+      candidateDiscoveryTimeoutMs: 18000,
+      candidateDiscoveryMaxAttempts: 2,
+      maxNodeEmbeddings: 0,
+      maxParserOnlyNodes: 12,
+      skipPostDecompositionMaintenance: true,
+      preExtractedResumeText: expect.stringContaining('TypeScript engineer'),
+      preParsed: expect.objectContaining({
+        decompositionResult: null,
+        parsedCV: expect.objectContaining({
+          experiences: expect.any(Array),
+          educationBlocks: expect.any(Array),
+          credentials: expect.any(Array),
+          projects: expect.any(Array),
+        }),
+      }),
+    }));
   });
 
   it('cron processes a bounded batch of stale discovery failures', async () => {

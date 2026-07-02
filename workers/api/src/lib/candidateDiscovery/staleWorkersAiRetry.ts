@@ -17,10 +17,10 @@ const MAX_STALE_WORKERS_AI_RETRY_LIMIT = 25;
 const STALE_WORKERS_AI_RETRY_SCAN_MULTIPLIER = 6;
 const MAX_RETRY_EVENT_ERROR_CHARS = 700;
 const STALE_IN_PROGRESS_RETRY_AFTER_MS = 10 * 60 * 1000;
-const TALENT_POOL_DOCUMENT_RETRY_DISCOVERY_TIMEOUT_MS = 18_000;
-const TALENT_POOL_DOCUMENT_RETRY_DISCOVERY_MAX_ATTEMPTS = 2;
-const TALENT_POOL_DOCUMENT_RETRY_MAX_NODE_EMBEDDINGS = 0;
-const TALENT_POOL_DOCUMENT_RETRY_MAX_PARSER_ONLY_NODES = 12;
+const DOCUMENT_RETRY_DISCOVERY_TIMEOUT_MS = 18_000;
+const DOCUMENT_RETRY_DISCOVERY_MAX_ATTEMPTS = 2;
+const DOCUMENT_RETRY_MAX_NODE_EMBEDDINGS = 0;
+const DOCUMENT_RETRY_MAX_PARSER_ONLY_NODES = 12;
 const RETRYABLE_STALLED_INGESTION_STEPS = new Set([
   'talent_pool_profile_received',
   'queued',
@@ -396,11 +396,11 @@ interface TalentPoolDocumentRetryPreParsed {
   resumeText: string;
 }
 
-async function buildTalentPoolDocumentRetryPreParsed(
+async function buildDocumentRetryPreParsed(
   env: Env,
   resumeS3Key: string,
 ): Promise<TalentPoolDocumentRetryPreParsed | null> {
-  if (!isTalentPoolSourceKey(resumeS3Key) || !isDocumentSourceKey(resumeS3Key)) return null;
+  if (!isDocumentSourceKey(resumeS3Key)) return null;
   if (!env.STORAGE) return null;
 
   const object = await env.STORAGE.get(resumeS3Key);
@@ -480,8 +480,8 @@ export async function retryCandidateEvidenceIngestionFromSource(
     return;
   }
 
-  const preParsed = await buildTalentPoolDocumentRetryPreParsed(env, resumeS3Key);
-  const isTalentPoolDocumentRetry = isTalentPoolSourceKey(resumeS3Key) && isDocumentSourceKey(resumeS3Key);
+  const preParsed = await buildDocumentRetryPreParsed(env, resumeS3Key);
+  const isDocumentRetry = isDocumentSourceKey(resumeS3Key);
   const result = await processResumeFromR2({
     env,
     db: env.DB,
@@ -492,12 +492,12 @@ export async function retryCandidateEvidenceIngestionFromSource(
       preExtractedResumeText: preParsed.resumeText,
     } : {}),
     ...(isTalentPoolSourceKey(resumeS3Key) ? { livingContextIdentity: rolelessTalentPoolIdentity } : {}),
-    ...(isTalentPoolDocumentRetry
+    ...(isDocumentRetry
       ? {
-          candidateDiscoveryTimeoutMs: TALENT_POOL_DOCUMENT_RETRY_DISCOVERY_TIMEOUT_MS,
-          candidateDiscoveryMaxAttempts: TALENT_POOL_DOCUMENT_RETRY_DISCOVERY_MAX_ATTEMPTS,
-          maxNodeEmbeddings: TALENT_POOL_DOCUMENT_RETRY_MAX_NODE_EMBEDDINGS,
-          maxParserOnlyNodes: TALENT_POOL_DOCUMENT_RETRY_MAX_PARSER_ONLY_NODES,
+          candidateDiscoveryTimeoutMs: DOCUMENT_RETRY_DISCOVERY_TIMEOUT_MS,
+          candidateDiscoveryMaxAttempts: DOCUMENT_RETRY_DISCOVERY_MAX_ATTEMPTS,
+          maxNodeEmbeddings: DOCUMENT_RETRY_MAX_NODE_EMBEDDINGS,
+          maxParserOnlyNodes: DOCUMENT_RETRY_MAX_PARSER_ONLY_NODES,
           skipPostDecompositionMaintenance: true,
         }
       : {}),

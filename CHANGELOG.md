@@ -10,6 +10,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 ### Fixed — Talent Pool ingestion
 
 - Scheduled candidate-ingestion repair now prioritizes recent document-backed and Talent Pool intake retries before stale text-smoke failures, so real uploaded candidates do not sit behind old AI discovery debris.
+- Candidate document PDF/DOCX retries now reuse pre-extracted source text and bounded parser-only decomposition before AI discovery, preventing uploaded-resume repairs from stalling in full decomposition before the AI/fallback step.
 - Email-less Talent Pool profile submissions and document retries now still project into canonical `people` / `workspace_people` rows using a deterministic candidate-keyed identity, so ingested candidates appear in the unified person graph without fabricating applications or person roles.
 - Living-context evidence, freshness, readiness, comparison, confidence, conflict, lineage, provenance, and match-decision read helpers now resolve roleless Talent Pool `workspace_people` projections without requiring legacy application bridges.
 - Talent Pool profile uploads now persist the original uploaded file as an idempotent roleless person artifact/version even when PDF/DOCX text extraction fails, preserving the immutable source blob without creating source-less profile claims.
