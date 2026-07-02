@@ -17,6 +17,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - Talent Pool profile uploads now use content-hash storage keys and pass the roleless person identity into PDF/DOCX resume context projection, so upload replay does not duplicate person evidence or create application/role rows before a role-backed process exists.
 - Talent Pool GitHub, LinkedIn, portfolio, and phone-screener intent fields now project into source-backed operational context records with exact intake field spans, and the candidate-ingestion audit fails if those raw fields remain unprojected.
 - Talent Pool profile submit/upload now creates an idempotent exact-source `TalentPoolProfileIntake` candidate node from submitted profile text, and the candidate-ingestion audit fails when submitted intakes lack exact-source candidate-node projection.
+- Talent Pool background text/PDF/DOCX decomposition now avoids legacy application/person-role mirroring and skips parser-only resume nodes that cannot be tied to an exact source quote.
 
 ### Added — Open-source assessment setup
 

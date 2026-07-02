@@ -441,7 +441,7 @@ describe('decomposeResumeToGraph', () => {
     const result = await decomposeResumeToGraph({
       db,
       candidateId: 'candidate-456',
-      resumeText: 'short text',
+      resumeText: 'TypeScript engineer. Led backend migration.',
       parsedCV,
       env: mockEnv,
       decompositionResult: null,
@@ -470,11 +470,54 @@ describe('decomposeResumeToGraph', () => {
     const result = await decomposeResumeToGraph({
       db,
       candidateId: 'candidate-789',
-      resumeText: 'short text',
+      resumeText: 'TypeScript engineer. Led backend migration.',
       parsedCV,
       env: mockEnv,
     });
 
     expect(result.nodesInserted).toBeGreaterThan(0);
+  });
+
+  it('does not persist parser-only resume nodes without exact source quotes', async () => {
+    const db = mockDb();
+    const parsedCV: ParsedCV = {
+      name: 'Jane Doe',
+      skills: ['Rust'],
+      experiences: [
+        {
+          company: 'Acme Corp',
+          role: 'Senior Engineer',
+          description: 'Led backend migration.',
+        },
+      ],
+      educationBlocks: [],
+      credentials: [],
+      projects: [],
+    };
+
+    await decomposeResumeToGraph({
+      db,
+      candidateId: 'candidate-source-filter',
+      resumeText: 'TypeScript engineer. Led backend migration.',
+      parsedCV,
+      env: mockEnv,
+      decompositionResult: null,
+    });
+
+    const resumeNodes = vi.mocked(insertCandidateNode).mock.calls
+      .map((call) => call[1])
+      .filter((node) => node.source_type === 'resume');
+    expect(resumeNodes.length).toBeGreaterThan(0);
+    expect(resumeNodes.every((node) => {
+      const properties = JSON.parse(String(node.extracted_properties_json)) as {
+        source_quote?: string;
+        source_quote_validated?: boolean;
+      };
+      return properties.source_quote_validated === true
+        && typeof properties.source_quote === 'string'
+        && properties.source_quote.length > 0;
+    })).toBe(true);
+    expect(resumeNodes.some((node) => node.node_type === 'Skill'
+      && node.narrative_text === 'rust')).toBe(false);
   });
 });

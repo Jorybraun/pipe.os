@@ -171,6 +171,7 @@ export async function processResumeFromR2(
           parsed: parsed ?? { skills: [], experiences: [], educationBlocks: [], credentials: [], projects: [] },
           resumeText,
           decompositionResult,
+          mirrorLivingContext: input.livingContextIdentity === undefined,
         });
       } catch (err) {
         const msg = err instanceof Error ? err.message : String(err);

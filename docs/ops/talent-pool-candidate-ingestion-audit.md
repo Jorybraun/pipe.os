@@ -51,8 +51,11 @@ and match signals still require source-backed resume decomposition.
 Uploaded profile files use content-hash storage keys, so replaying the same
 file reuses the same source artifact path. PDF/DOCX extraction still runs in
 background resume ingestion, but that projection now receives the roleless
-Talent Pool person identity and must not create `applications` or
-`person_roles` before a role-backed process exists.
+Talent Pool person identity and background decomposition runs with legacy
+candidate-node mirroring disabled, so it must not create `applications` or
+`person_roles` before a role-backed process exists. Parser-only resume nodes
+without exact source quotes are skipped instead of becoming positive candidate
+claims.
 
 GitHub, LinkedIn, portfolio, phone-screener consent, phone number, timezone, and
 availability fields are stored as a normalized operational intake artifact with

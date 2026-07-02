@@ -164,14 +164,50 @@ function sourceQuoteProperties(resumeText: string, sourceQuote?: string): {
 } {
   const quote = sourceQuote?.trim();
   if (!quote) return {};
-  const index = resumeText.indexOf(quote);
+  let index = resumeText.indexOf(quote);
+  let exactQuote = quote;
+  if (index < 0) {
+    index = resumeText.toLowerCase().indexOf(quote.toLowerCase());
+    if (index >= 0) {
+      exactQuote = resumeText.slice(index, index + quote.length);
+    }
+  }
   if (index < 0) return {};
   return {
-    source_quote: quote,
+    source_quote: exactQuote,
     source_quote_validated: true,
     source_quote_char_start: index,
-    source_quote_char_end: index + quote.length,
+    source_quote_char_end: index + exactQuote.length,
   };
+}
+
+function sourceQuotePropertiesFromCandidates(
+  resumeText: string,
+  candidates: Array<string | null | undefined>,
+): ReturnType<typeof sourceQuoteProperties> {
+  for (const candidate of candidates) {
+    const properties = sourceQuoteProperties(resumeText, candidate ?? undefined);
+    if (properties.source_quote_validated === true) return properties;
+  }
+  return {};
+}
+
+function hasExactCandidateNodeSource(
+  node: Omit<CandidateNode, 'id' | 'created_at' | 'updated_at'>,
+): boolean {
+  if (node.source_type !== 'resume') return true;
+  if (node.source_reference?.trim()) return true;
+  try {
+    const properties = JSON.parse(node.extracted_properties_json ?? '{}') as {
+      source_quote?: unknown;
+      source_quote_validated?: unknown;
+    };
+    return properties.source_quote_validated === true
+      && typeof properties.source_quote === 'string'
+      && properties.source_quote.trim().length > 0;
+  } catch {
+    return false;
+  }
 }
 
 function rawReviewEvidenceLevel(quote: string): string {
@@ -632,6 +668,8 @@ async function writeParserOnlyNodes(
     : [];
   for (let i = 0; i < canonicalSkills.length; i++) {
     const skill = canonicalSkills[i]!;
+    const sourceProperties = sourceQuotePropertiesFromCandidates(resumeText, [skill]);
+    if (sourceProperties.source_quote_validated !== true) continue;
     nodesToInsert.push({
       candidate_id: candidateId,
       node_type: 'Skill',
@@ -642,6 +680,7 @@ async function writeParserOnlyNodes(
         source: 'cv_parser_fallback',
         years_exposure: null,
         semantic_terms: mergeSemanticTerms(undefined, [skill], 'mentioned'),
+        ...sourceProperties,
         index: i,
       }),
       embedding_json: null,
@@ -657,6 +696,12 @@ async function writeParserOnlyNodes(
 
   for (let i = 0; i < parsedCV.experiences.length; i++) {
     const exp = parsedCV.experiences[i]!;
+    const sourceProperties = sourceQuotePropertiesFromCandidates(resumeText, [
+      exp.description,
+      exp.role,
+      exp.company,
+    ]);
+    if (sourceProperties.source_quote_validated !== true) continue;
     nodesToInsert.push({
       candidate_id: candidateId,
       node_type: 'Experience',
@@ -672,6 +717,7 @@ async function writeParserOnlyNodes(
           extractOpenIdentifierTerms([exp.role, exp.description], 24).map((term) => term.surface),
           'demonstrated',
         ),
+        ...sourceProperties,
         index: i,
       }),
       embedding_json: null,
@@ -687,6 +733,12 @@ async function writeParserOnlyNodes(
 
   for (let i = 0; i < parsedCV.educationBlocks.length; i++) {
     const edu = parsedCV.educationBlocks[i]!;
+    const sourceProperties = sourceQuotePropertiesFromCandidates(resumeText, [
+      edu.institution,
+      edu.degree,
+      edu.field,
+    ]);
+    if (sourceProperties.source_quote_validated !== true) continue;
     nodesToInsert.push({
       candidate_id: candidateId,
       node_type: 'Education',
@@ -696,6 +748,7 @@ async function writeParserOnlyNodes(
         degree: edu.degree,
         field: edu.field,
         year: edu.year,
+        ...sourceProperties,
         index: i,
       }),
       embedding_json: null,
@@ -711,6 +764,11 @@ async function writeParserOnlyNodes(
 
   for (let i = 0; i < parsedCV.credentials.length; i++) {
     const cred = parsedCV.credentials[i]!;
+    const sourceProperties = sourceQuotePropertiesFromCandidates(resumeText, [
+      cred.name,
+      cred.issuer,
+    ]);
+    if (sourceProperties.source_quote_validated !== true) continue;
     nodesToInsert.push({
       candidate_id: candidateId,
       node_type: 'Credential',
@@ -719,6 +777,7 @@ async function writeParserOnlyNodes(
         name: cred.name,
         issuer: cred.issuer,
         year: cred.year,
+        ...sourceProperties,
         index: i,
       }),
       embedding_json: null,
@@ -734,6 +793,12 @@ async function writeParserOnlyNodes(
 
   for (let i = 0; i < parsedCV.projects.length; i++) {
     const proj = parsedCV.projects[i]!;
+    const sourceProperties = sourceQuotePropertiesFromCandidates(resumeText, [
+      proj.description,
+      proj.name,
+      proj.url,
+    ]);
+    if (sourceProperties.source_quote_validated !== true) continue;
     nodesToInsert.push({
       candidate_id: candidateId,
       node_type: 'Project',
@@ -747,6 +812,7 @@ async function writeParserOnlyNodes(
           extractOpenIdentifierTerms([proj.name, proj.description], 24).map((term) => term.surface),
           'demonstrated',
         ),
+        ...sourceProperties,
         index: i,
       }),
       embedding_json: null,
@@ -789,7 +855,7 @@ async function writeParserOnlyNodes(
 
   // Persist every node before embedding so source-backed evidence survives AI
   // outages or slow embedding calls.
-  for (const node of nodesToInsert) {
+  for (const node of nodesToInsert.filter(hasExactCandidateNodeSource)) {
     try {
       const insertedNode = await insertCandidateNode(_db, node, { mirrorLivingContext });
       candidateNodes.push(insertedNode);
@@ -1016,7 +1082,7 @@ export async function decomposeResumeToGraph(
   // Step 3: Persist every node before embedding so source-backed evidence
   // survives AI outages or slow embedding calls.
   const candidateNodes: CandidateNode[] = [];
-  for (const node of nodesToInsert) {
+  for (const node of nodesToInsert.filter(hasExactCandidateNodeSource)) {
     try {
       const insertedNode = await insertCandidateNode(db, node, {
         mirrorLivingContext: input.mirrorLivingContext,

@@ -1,5 +1,6 @@
 import { beforeEach, describe, expect, it, vi } from 'vitest';
 import { processResumeFromR2 } from '../resumeIngestion';
+import { runCandidateIngestion } from '../../candidateDiscovery/orchestrate';
 import type { Env } from '../../../types';
 
 vi.mock('../../cvParser', () => ({
@@ -69,6 +70,10 @@ describe('processResumeFromR2 — living context integration', () => {
 
     expect(result.success).toBe(true);
     expect(mockIngestResume).toHaveBeenCalledOnce();
+    expect(runCandidateIngestion).toHaveBeenCalledWith(expect.objectContaining({
+      candidateId: 'cand-123',
+      mirrorLivingContext: true,
+    }));
     expect(mockIngestResume).toHaveBeenCalledWith(
       db,
       expect.objectContaining({
@@ -164,6 +169,10 @@ describe('processResumeFromR2 — living context integration', () => {
     });
 
     expect(result.success).toBe(true);
+    expect(runCandidateIngestion).toHaveBeenCalledWith(expect.objectContaining({
+      candidateId: 'cand-roleless',
+      mirrorLivingContext: false,
+    }));
     expect(mockIngestResume).toHaveBeenCalledWith(
       db,
       expect.objectContaining({

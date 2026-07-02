@@ -419,6 +419,7 @@ async function ingestTextProfile(input: {
   env: Env;
   candidateId: string;
   resumeText: string;
+  mirrorLivingContext?: boolean;
 }): Promise<void> {
   const parsed = await parseResumeText({
     resumeText: input.resumeText,
@@ -433,6 +434,7 @@ async function ingestTextProfile(input: {
     parsed: parsedCV,
     resumeText: input.resumeText,
     decompositionResult: parsed?.decompositionResult ?? null,
+    mirrorLivingContext: input.mirrorLivingContext ?? false,
   });
 }
 
@@ -453,6 +455,7 @@ function queueProfileIngestion(input: {
         env: input.c.env,
         candidateId: input.candidateId,
         resumeText: trimmedText,
+        mirrorLivingContext: false,
       }),
     );
     return;
