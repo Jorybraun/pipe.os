@@ -2521,6 +2521,8 @@ async function handleIntakePayload(
           decompositionResult: null,
           afterSourceBackedEvidence: triggerAfterSourceBackedEvidence,
           maxNodeEmbeddings: 0,
+          maxParserOnlyNodes: 12,
+          mirrorLivingContext: false,
           skipPostDecompositionMaintenance: true,
         });
         const sourceBackedWatchPromise = watchForSourceBackedEvidence().catch((err) => {

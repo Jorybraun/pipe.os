@@ -64,6 +64,8 @@ export interface ResumeDecompositionInput {
   env: Env;
   afterSourceBackedEvidence?: () => Promise<void>;
   maxNodeEmbeddings?: number;
+  maxParserOnlyNodes?: number;
+  mirrorLivingContext?: boolean;
   skipPostDecompositionMaintenance?: boolean;
   /** @deprecated Vectorize upserts removed in Neo4j migration Phase 2. Kept for API compatibility. */
   vectorize?: VectorizeIndex;
@@ -346,6 +348,7 @@ function rawReviewEvidenceTermPriority(term: OpenSemanticTermRecord): number {
 function rawReviewEvidenceNodes(
   candidateId: string,
   resumeText: string,
+  limit = RAW_REVIEW_EVIDENCE_NODE_LIMIT,
 ): Array<Omit<CandidateNode, 'id' | 'created_at' | 'updated_at'>> {
   const nodes: Array<Omit<CandidateNode, 'id' | 'created_at' | 'updated_at'>> = [];
   const capturedAt = nowEpoch();
@@ -362,7 +365,7 @@ function rawReviewEvidenceNodes(
     };
   });
 
-  while (nodes.length < RAW_REVIEW_EVIDENCE_NODE_LIMIT) {
+  while (nodes.length < limit) {
     let addedInRound = false;
     for (const entry of quoteTerms) {
       while (entry.nextIndex < entry.terms.length) {
@@ -392,7 +395,7 @@ function rawReviewEvidenceNodes(
           decomposition_version: DECOMPOSITION_VERSION,
         });
         addedInRound = true;
-        if (nodes.length >= RAW_REVIEW_EVIDENCE_NODE_LIMIT) return nodes;
+        if (nodes.length >= limit) return nodes;
         break;
       }
     }
@@ -609,6 +612,8 @@ async function writeParserOnlyNodes(
   afterSourceBackedEvidence?: () => Promise<void>,
   maxNodeEmbeddings = MAX_NODE_EMBEDDINGS_PER_INGESTION,
   skipPostDecompositionMaintenance = false,
+  maxParserOnlyNodes = RAW_REVIEW_EVIDENCE_NODE_LIMIT,
+  mirrorLivingContext = true,
 ): Promise<{ inserted: number; embedded: number; errors: string[]; embeddings: number[][] }> {
   const errors: string[] = [];
   let inserted = 0;
@@ -618,7 +623,7 @@ async function writeParserOnlyNodes(
   const now = nowEpoch();
 
   const nodesToInsert: Array<Omit<CandidateNode, 'id' | 'created_at' | 'updated_at'>> = [
-    ...rawReviewEvidenceNodes(candidateId, resumeText),
+    ...rawReviewEvidenceNodes(candidateId, resumeText, maxParserOnlyNodes),
   ];
 
   // Canonicalize parser-extracted skills and create Skill nodes
@@ -786,7 +791,7 @@ async function writeParserOnlyNodes(
   // outages or slow embedding calls.
   for (const node of nodesToInsert) {
     try {
-      const insertedNode = await insertCandidateNode(_db, node);
+      const insertedNode = await insertCandidateNode(_db, node, { mirrorLivingContext });
       candidateNodes.push(insertedNode);
       inserted++;
     } catch (insertErr) {
@@ -889,7 +894,7 @@ export async function decomposeResumeToGraph(
 
   // Step 2: Build node list
   const nodesToInsert: Array<Omit<CandidateNode, 'id' | 'created_at' | 'updated_at'>> = [
-    ...rawReviewEvidenceNodes(candidateId, resumeText),
+    ...rawReviewEvidenceNodes(candidateId, resumeText, input.maxParserOnlyNodes),
   ];
 
   if (decomposition) {
@@ -957,6 +962,8 @@ export async function decomposeResumeToGraph(
       input.afterSourceBackedEvidence,
       input.maxNodeEmbeddings,
       input.skipPostDecompositionMaintenance,
+      input.maxParserOnlyNodes,
+      input.mirrorLivingContext,
     );
     result.nodesInserted = fallback.inserted;
     result.nodesEmbedded = fallback.embedded;
@@ -1011,7 +1018,9 @@ export async function decomposeResumeToGraph(
   const candidateNodes: CandidateNode[] = [];
   for (const node of nodesToInsert) {
     try {
-      const insertedNode = await insertCandidateNode(db, node);
+      const insertedNode = await insertCandidateNode(db, node, {
+        mirrorLivingContext: input.mirrorLivingContext,
+      });
       candidateNodes.push(insertedNode);
       result.nodesInserted++;
     } catch (insertErr) {

@@ -404,13 +404,19 @@ describe('decomposeResumeToGraph', () => {
       decompositionResult: null,
       afterSourceBackedEvidence: ready,
       maxNodeEmbeddings: 0,
+      maxParserOnlyNodes: 4,
+      mirrorLivingContext: false,
       skipPostDecompositionMaintenance: true,
     });
 
     expect(result.nodesInserted).toBeGreaterThan(0);
+    expect(result.nodesInserted).toBeLessThanOrEqual(5);
     expect(result.nodesEmbedded).toBe(0);
     expect(ready).toHaveBeenCalledTimes(1);
     expect(insertCandidateNode).toHaveBeenCalled();
+    expect(vi.mocked(insertCandidateNode).mock.calls.every((call) =>
+      call[2]?.mirrorLivingContext === false
+    )).toBe(true);
     expect(embedCandidateNode).not.toHaveBeenCalled();
     expect(writeCandidateGraph).not.toHaveBeenCalled();
   });
