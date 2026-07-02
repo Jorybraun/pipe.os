@@ -40,6 +40,12 @@ export interface ProcessResumeInput {
    * fabricating an application for roleless Talent Pool intake.
    */
   livingContextIdentity?: ResumeLivingContextIdentity | null;
+  /**
+   * Optional bounds for background candidate discovery. Stale retry paths can
+   * keep this lower than live uploads so they finish inside Worker waitUntil.
+   */
+  candidateDiscoveryTimeoutMs?: number;
+  candidateDiscoveryMaxAttempts?: number;
 }
 
 export interface ProcessResumeResult {
@@ -287,6 +293,8 @@ export async function processResumeFromR2(
           resumeText,
           decompositionResult,
           mirrorLivingContext: livingContextIdentity === undefined,
+          candidateDiscoveryTimeoutMs: input.candidateDiscoveryTimeoutMs,
+          candidateDiscoveryMaxAttempts: input.candidateDiscoveryMaxAttempts,
         });
       } catch (err) {
         const msg = err instanceof Error ? err.message : String(err);

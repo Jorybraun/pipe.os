@@ -17,6 +17,8 @@ const MAX_STALE_WORKERS_AI_RETRY_LIMIT = 5;
 const STALE_WORKERS_AI_RETRY_SCAN_MULTIPLIER = 6;
 const MAX_RETRY_EVENT_ERROR_CHARS = 700;
 const STALE_IN_PROGRESS_RETRY_AFTER_MS = 10 * 60 * 1000;
+const TALENT_POOL_DOCUMENT_RETRY_DISCOVERY_TIMEOUT_MS = 12_000;
+const TALENT_POOL_DOCUMENT_RETRY_DISCOVERY_MAX_ATTEMPTS = 1;
 const RETRYABLE_STALLED_INGESTION_STEPS = new Set([
   'talent_pool_profile_received',
   'queued',
@@ -456,6 +458,7 @@ export async function retryCandidateEvidenceIngestionFromSource(
   }
 
   const preParsed = await buildTalentPoolDocumentRetryPreParsed(env, resumeS3Key);
+  const isTalentPoolDocumentRetry = isTalentPoolSourceKey(resumeS3Key) && isDocumentSourceKey(resumeS3Key);
   const result = await processResumeFromR2({
     env,
     db: env.DB,
@@ -463,6 +466,12 @@ export async function retryCandidateEvidenceIngestionFromSource(
     r2Key: resumeS3Key,
     ...(preParsed ? { preParsed } : {}),
     ...(isTalentPoolSourceKey(resumeS3Key) ? { livingContextIdentity: rolelessTalentPoolIdentity } : {}),
+    ...(isTalentPoolDocumentRetry
+      ? {
+          candidateDiscoveryTimeoutMs: TALENT_POOL_DOCUMENT_RETRY_DISCOVERY_TIMEOUT_MS,
+          candidateDiscoveryMaxAttempts: TALENT_POOL_DOCUMENT_RETRY_DISCOVERY_MAX_ATTEMPTS,
+        }
+      : {}),
   });
   if (!result.success) {
     await markRetryFailed(

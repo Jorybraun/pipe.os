@@ -338,6 +338,8 @@ describe('stale Workers AI candidate-ingestion retry', () => {
       db,
       candidateId: 'talent-pdf',
       r2Key: 'talent-intake/talent-pdf/resume.pdf',
+      candidateDiscoveryTimeoutMs: 12000,
+      candidateDiscoveryMaxAttempts: 1,
       preParsed: expect.objectContaining({
         decompositionResult: null,
         parsedCV: expect.objectContaining({

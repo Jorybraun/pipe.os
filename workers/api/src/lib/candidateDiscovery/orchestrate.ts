@@ -68,6 +68,8 @@ export interface IngestionInput {
   maxParserOnlyNodes?: number;
   mirrorLivingContext?: boolean;
   skipPostDecompositionMaintenance?: boolean;
+  candidateDiscoveryTimeoutMs?: number;
+  candidateDiscoveryMaxAttempts?: number;
 }
 
 const CANDIDATE_DISCOVERY_AI_TIMEOUT_MS = 18_000;
@@ -173,6 +175,8 @@ export async function discoverCandidateProfileWithProviderFallbacks(input: {
  */
 export async function runCandidateIngestion(input: IngestionInput): Promise<void> {
   const { env, db, candidateId, parsed, resumeText } = input;
+  const candidateDiscoveryTimeoutMs = input.candidateDiscoveryTimeoutMs ?? CANDIDATE_DISCOVERY_AI_TIMEOUT_MS;
+  const candidateDiscoveryMaxAttempts = input.candidateDiscoveryMaxAttempts ?? MAX_CANDIDATE_DISCOVERY_AI_ATTEMPTS;
 
   // Step 1: Reset ingestion state
   try {
@@ -281,8 +285,8 @@ export async function runCandidateIngestion(input: IngestionInput): Promise<void
             providers,
             parsed,
             resumeText,
-            timeoutMs: CANDIDATE_DISCOVERY_AI_TIMEOUT_MS,
-            maxAttempts: MAX_CANDIDATE_DISCOVERY_AI_ATTEMPTS,
+            timeoutMs: candidateDiscoveryTimeoutMs,
+            maxAttempts: candidateDiscoveryMaxAttempts,
             onAttempt: async (event) => {
               try {
                 await recordSessionEvent(db, {
@@ -293,7 +297,7 @@ export async function runCandidateIngestion(input: IngestionInput): Promise<void
                   payload: {
                     model: event.model,
                     attempt: event.attempt,
-                    timeoutMs: CANDIDATE_DISCOVERY_AI_TIMEOUT_MS,
+                    timeoutMs: candidateDiscoveryTimeoutMs,
                     ...(event.error ? { error: event.error } : {}),
                   },
                 });

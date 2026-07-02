@@ -231,6 +231,25 @@ describe('processResumeFromR2 — living context integration', () => {
     );
   });
 
+  it('passes candidate discovery bounds into the ingestion orchestrator', async () => {
+    const env = buildMockEnv(db);
+    const result = await processResumeFromR2({
+      env,
+      db,
+      candidateId: 'cand-bounded',
+      r2Key: 'candidate-documents/cand-bounded/resume.pdf',
+      candidateDiscoveryTimeoutMs: 7000,
+      candidateDiscoveryMaxAttempts: 1,
+    });
+
+    expect(result.success).toBe(true);
+    expect(runCandidateIngestion).toHaveBeenCalledWith(expect.objectContaining({
+      candidateId: 'cand-bounded',
+      candidateDiscoveryTimeoutMs: 7000,
+      candidateDiscoveryMaxAttempts: 1,
+    }));
+  });
+
   it('auto-resolves roleless Talent Pool identity before document ingestion can mirror legacy applications', async () => {
     db = buildRolelessTalentPoolDb();
     const env = buildMockEnv(db);
