@@ -79,10 +79,14 @@ CLOUDFLARE_D1_DATABASE_ID=0abe92df-9296-46f5-9f9d-a1fb1bcd3be1 \
 ```
 
 Latest app-dev proof on 2026-07-02 used invite token
-`talent-audit-532e4287e-c1` after replaying the same profile submission twice.
-The stricter remote verifier returned `status: ready`,
-`contextRecordCount: 1`, `contextSourceRefCount: 1`,
-`sourceLessPositiveClaimCount: 0`, and `duplicateProjectedEdgeCount: 0`.
+`talent-audit-532e4287e-c1` after replaying pasted-text submission and then
+replaying the same uploaded text profile twice. The stricter remote verifier
+returned `status: ready`, `artifactVersionCount: 3`, `sourceSpanCount: 3`,
+`contextRecordCount: 2`, `contextSourceRefCount: 2`,
+`rolelessApplicationCount: 0`, `rolelessPersonRoleCount: 0`,
+`sourceLessPositiveClaimCount: 0`, and `duplicateProjectedEdgeCount: 0`. The
+current uploaded profile key was
+`talent-intake/talent_audit_532e4287e_c1/a596d3c57d58a703d9ce2df45300a38ad50d47a4bdb6697bf281f6f1afa763f9-talent-audit-upload.txt`.
 
 ## Current Gaps
 
