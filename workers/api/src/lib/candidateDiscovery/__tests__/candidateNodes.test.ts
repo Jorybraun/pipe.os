@@ -1,17 +1,14 @@
-/**
- * Candidate node helper tests.
- *
- * Covers supersedeCandidateNode (including self-supersede guard) and
- * embedCandidateNodes (including batching, validation, and edge cases).
- */
-
-import { describe, it, expect, vi } from 'vitest';
+import Database from 'better-sqlite3';
+import { afterEach, describe, expect, it, vi } from 'vitest';
+import type { D1Database } from '@cloudflare/workers-types';
+import type { CandidateNode } from '../../../types';
 import {
-  supersedeCandidateNode,
   embedCandidateNodes,
+  insertCandidateNode,
+  supersedeCandidateNode,
 } from '../candidateNodes';
 
-// ─── D1 stubs ────────────────────────────────────────────────────────────────
+type SqlValue = string | number | null;
 
 function makeStubDb(): {
   db: D1Database;
@@ -26,7 +23,6 @@ function makeStubDb(): {
         bindings.push(...args);
         return stmt;
       },
-      // Expose internals so batch can capture them
       _sql: sql,
       _bindings: bindings,
     } as unknown as D1PreparedStatement;
@@ -37,9 +33,8 @@ function makeStubDb(): {
     prepare,
     batch: vi.fn(async (statements: D1PreparedStatement[]) => {
       const call = statements.map((stmt) => {
-        // eslint-disable-next-line @typescript-eslint/no-explicit-any
-        const s = stmt as any;
-        return { sql: s._sql as string, bindings: s._bindings as unknown[] };
+        const s = stmt as unknown as { _sql: string; _bindings: unknown[] };
+        return { sql: s._sql, bindings: s._bindings };
       });
       batchCalls.push(call);
     }),
@@ -47,8 +42,6 @@ function makeStubDb(): {
 
   return { db, batchCalls };
 }
-
-// ─── AI stubs ─────────────────────────────────────────────────────────────────
 
 function makeStubAi(
   vectors: number[][] | null,
@@ -67,9 +60,7 @@ function makeStubAi(
   const ai = {
     run: vi.fn(async (_model: string, input: { text: string[] }) => {
       calls.push({ model: _model, input });
-      if (vectors === null) {
-        return {};
-      }
+      if (vectors === null) return {};
       const start = callIndex;
       const end = callIndex + input.text.length;
       callIndex = end;
@@ -84,7 +75,63 @@ function makeValidVector(): number[] {
   return new Array(1024).fill(0).map((_, i) => i / 1024);
 }
 
-// ─── supersedeCandidateNode ───────────────────────────────────────────────────
+class SqliteD1Statement {
+  constructor(
+    private readonly statement: Database.Statement,
+    private readonly values: SqlValue[] = [],
+  ) {}
+
+  bind(...values: SqlValue[]): SqliteD1Statement {
+    return new SqliteD1Statement(this.statement, values);
+  }
+
+  async run(): Promise<{ success: boolean }> {
+    this.statement.run(...this.values);
+    return { success: true };
+  }
+
+  async first<T = unknown>(): Promise<T | null> {
+    return (this.statement.get(...this.values) ?? null) as T | null;
+  }
+
+  async all<T = unknown>(): Promise<{ results: T[] }> {
+    return { results: this.statement.all(...this.values) as T[] };
+  }
+}
+
+class SqliteD1Database {
+  constructor(private readonly database: Database.Database) {}
+
+  prepare(sql: string): SqliteD1Statement {
+    return new SqliteD1Statement(this.database.prepare(sql.replace(/\?\d+/g, '?')));
+  }
+}
+
+function createCandidateNodeSchema(db: Database.Database): void {
+  db.exec(`
+    CREATE TABLE candidate_nodes (
+      id TEXT PRIMARY KEY,
+      candidate_id TEXT NOT NULL,
+      node_type TEXT NOT NULL,
+      narrative_text TEXT NOT NULL,
+      extracted_properties_json TEXT,
+      embedding_json TEXT,
+      source_type TEXT NOT NULL,
+      source_reference TEXT,
+      captured_at INTEGER NOT NULL,
+      confidence REAL,
+      supersedes TEXT,
+      superseded_at INTEGER,
+      decomposition_version TEXT,
+      ingestion_key TEXT,
+      created_at INTEGER NOT NULL DEFAULT (unixepoch()),
+      updated_at INTEGER NOT NULL DEFAULT (unixepoch())
+    );
+    CREATE UNIQUE INDEX idx_candidate_nodes_ingestion_key
+      ON candidate_nodes(ingestion_key)
+      WHERE ingestion_key IS NOT NULL;
+  `);
+}
 
 describe('supersedeCandidateNode', () => {
   it('batches the two update statements', async () => {
@@ -110,8 +157,6 @@ describe('supersedeCandidateNode', () => {
   });
 });
 
-// ─── embedCandidateNodes ──────────────────────────────────────────────────────
-
 describe('embedCandidateNodes', () => {
   it('returns embeddings for multiple texts', async () => {
     const vectors = [makeValidVector(), makeValidVector()];
@@ -134,7 +179,7 @@ describe('embedCandidateNodes', () => {
     const result = await embedCandidateNodes(texts, { AI });
 
     expect(result).toHaveLength(25);
-    expect(calls).toHaveLength(3); // 10 + 10 + 5
+    expect(calls).toHaveLength(3);
     expect(calls[0]!.input.text).toHaveLength(10);
     expect(calls[1]!.input.text).toHaveLength(10);
     expect(calls[2]!.input.text).toHaveLength(5);
@@ -181,5 +226,76 @@ describe('embedCandidateNodes', () => {
     await expect(
       embedCandidateNodes(['hello'], { AI }),
     ).rejects.toThrow(/non-finite/);
+  });
+});
+
+describe('insertCandidateNode', () => {
+  let sqlite: Database.Database | null = null;
+
+  afterEach(() => {
+    sqlite?.close();
+    sqlite = null;
+  });
+
+  it('replays the same source-backed candidate node without duplicating active evidence rows', async () => {
+    sqlite = new Database(':memory:');
+    createCandidateNodeSchema(sqlite);
+    const db = new SqliteD1Database(sqlite) as unknown as D1Database;
+    const node: Omit<CandidateNode, 'id' | 'created_at' | 'updated_at'> = {
+      candidate_id: 'candidate-replay',
+      node_type: 'Experience',
+      narrative_text: 'Senior Engineer at Acme Corp',
+      extracted_properties_json: JSON.stringify({
+        company: 'Acme Corp',
+        role: 'Senior Engineer',
+        source_quote: 'Senior Engineer',
+        source_quote_validated: true,
+        source_quote_char_start: 10,
+        source_quote_char_end: 25,
+      }),
+      embedding_json: null,
+      source_type: 'resume',
+      source_reference: null,
+      captured_at: 100,
+      confidence: 0.8,
+      supersedes: null,
+      superseded_at: null,
+      decomposition_version: 'adr041-v1',
+    };
+
+    const first = await insertCandidateNode(db, node, { mirrorLivingContext: false });
+    const second = await insertCandidateNode(
+      db,
+      { ...node, captured_at: 200, confidence: 0.9 },
+      { mirrorLivingContext: false },
+    );
+
+    const rows = sqlite.prepare(`
+      SELECT id, ingestion_key, captured_at, confidence, superseded_at
+        FROM candidate_nodes
+       WHERE candidate_id = 'candidate-replay'
+    `).all() as Array<{
+      id: string;
+      ingestion_key: string | null;
+      captured_at: number;
+      confidence: number;
+      superseded_at: number | null;
+    }>;
+    expect(second.id).toBe(first.id);
+    expect(rows).toHaveLength(1);
+    expect(rows[0]).toMatchObject({
+      id: first.id,
+      captured_at: 200,
+      confidence: 0.9,
+      superseded_at: null,
+    });
+    expect(rows[0]?.ingestion_key).toBe([
+      'candidate-replay',
+      'resume',
+      '',
+      'Experience',
+      'Senior Engineer at Acme Corp',
+      'adr041-v1',
+    ].join('\u0000'));
   });
 });

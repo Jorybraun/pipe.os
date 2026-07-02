@@ -46,10 +46,14 @@ function createSchema(db: Database.Database): void {
     CREATE TABLE candidate_nodes (
       id TEXT PRIMARY KEY,
       candidate_id TEXT,
+      ingestion_key TEXT,
+      node_type TEXT,
+      narrative_text TEXT,
       source_type TEXT,
       source_reference TEXT,
       confidence REAL,
-      extracted_properties_json TEXT
+      extracted_properties_json TEXT,
+      superseded_at INTEGER
     );
     CREATE TABLE people (
       id TEXT PRIMARY KEY,
@@ -288,6 +292,98 @@ describe('auditCandidateIngestion', () => {
     expect(audit.nextActions).toContain(
       '1 challenge assignment row(s) lack repo URL or PR number and cannot safely become Talent Pool assessment readiness.',
     );
+  });
+
+  it('flags duplicate active candidate-node evidence groups', async () => {
+    sqlite = new Database(':memory:');
+    createSchema(sqlite);
+    seedSourceBackedTalentPoolCandidate(sqlite);
+    sqlite.exec(`
+      INSERT INTO candidate_nodes (
+        id, candidate_id, node_type, narrative_text, source_type, source_reference,
+        confidence, extracted_properties_json, superseded_at
+      )
+      VALUES
+        (
+          'candidate-node-exp-1',
+          'candidate-1',
+          'Experience',
+          'Senior Engineer at Acme Corp',
+          'resume',
+          NULL,
+          0.8,
+          '{"company":"Acme Corp","role":"Senior Engineer","source_quote":"Senior Engineer","source_quote_validated":true,"source_quote_char_start":10,"source_quote_char_end":25}',
+          NULL
+        ),
+        (
+          'candidate-node-exp-2',
+          'candidate-1',
+          'Experience',
+          'Senior Engineer at Acme Corp',
+          'resume',
+          NULL,
+          0.8,
+          '{"company":"Acme Corp","role":"Senior Engineer","source_quote":"Senior Engineer","source_quote_validated":true,"source_quote_char_start":10,"source_quote_char_end":25}',
+          NULL
+        );
+    `);
+
+    const audit = await auditCandidateIngestion(new SqliteQueryClient(sqlite), {
+      inviteToken: 'invite-token',
+      requireContextRecords: true,
+    });
+
+    expect(audit.status).toBe('not_ready');
+    expect(audit.sourceProof.duplicateCandidateNodeEvidenceCount).toBe(1);
+    expect(audit.sourceProof.candidateNodeSourceAnchorConflictCount).toBe(0);
+    expect(audit.failures).toContain('1 duplicate active candidate-node evidence group(s) were found');
+    expect(audit.nextActions).toContain('Replay or repair candidate-node ingestion so active source-backed evidence rows are idempotent.');
+  });
+
+  it('flags active candidate nodes whose structured facts cite the same resume anchor', async () => {
+    sqlite = new Database(':memory:');
+    createSchema(sqlite);
+    seedSourceBackedTalentPoolCandidate(sqlite);
+    sqlite.exec(`
+      INSERT INTO candidate_nodes (
+        id, candidate_id, node_type, narrative_text, source_type, source_reference,
+        confidence, extracted_properties_json, superseded_at
+      )
+      VALUES
+        (
+          'candidate-node-morgan',
+          'candidate-1',
+          'Experience',
+          'Senior UI Developer at Morgan Stanley',
+          'resume',
+          NULL,
+          0.8,
+          '{"company":"Morgan Stanley","role":"Senior UI Developer","source_quote":"Senior UI Developer","source_quote_validated":true,"source_quote_char_start":94,"source_quote_char_end":113}',
+          NULL
+        ),
+        (
+          'candidate-node-sycle',
+          'candidate-1',
+          'Experience',
+          'Senior UI Developer at Sycle',
+          'resume',
+          NULL,
+          0.8,
+          '{"company":"Sycle","role":"Senior UI Developer","source_quote":"Senior UI Developer","source_quote_validated":true,"source_quote_char_start":94,"source_quote_char_end":113}',
+          NULL
+        );
+    `);
+
+    const audit = await auditCandidateIngestion(new SqliteQueryClient(sqlite), {
+      inviteToken: 'invite-token',
+      requireContextRecords: true,
+    });
+
+    expect(audit.status).toBe('not_ready');
+    expect(audit.sourceProof.duplicateCandidateNodeEvidenceCount).toBe(0);
+    expect(audit.sourceProof.candidateNodeSourceAnchorConflictCount).toBe(1);
+    expect(audit.failures).toContain('1 active candidate-node source anchor conflict group(s) were found');
+    expect(audit.nextActions).toContain('Repair resume decomposition source anchoring so repeated titles or labels cite the matching source occurrence.');
   });
 
   it('fails scoped audits when no candidate matches', async () => {

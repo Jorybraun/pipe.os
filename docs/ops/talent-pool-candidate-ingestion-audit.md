@@ -43,6 +43,9 @@ The verifier reports:
   design-queue gaps
 - source-less positive person claims
 - duplicate person-projected context edges
+- duplicate active candidate-node evidence groups
+- source-anchor conflicts where multiple structured resume facts point at the
+  same exact quote offsets
 
 Pasted profile text and decoded text uploads create a roleless
 `talent_pool_profile_intake` context record backed by the exact submitted text
@@ -66,6 +69,10 @@ identity and background decomposition runs with legacy candidate-node mirroring
 disabled, so it must not create `applications` or `person_roles` before a
 role-backed process exists. Parser-only resume nodes without exact source
 quotes are skipped instead of becoming positive candidate claims.
+Resume decomposition disambiguates repeated titles or labels by anchoring the
+selected source quote near the matching company, project, institution, or other
+structured context; repeated labels must not all cite the first matching text
+span in the profile.
 Scheduled living-context backfill must also skip roleless Talent Pool intake
 candidates; if an older job already fabricated a legacy application/person-role
 bridge, roleless identity repair detaches interaction/context rows from that
@@ -84,7 +91,8 @@ projection, missing exact source proof, missing exact-source candidate-node
 projection, PDF/DOCX profile storage keys without extracted source spans, raw
 external refs or phone intent without operational context records, source-less
 positive claims, duplicate projected edges, candidate nodes with no exact
-source quote, or roleless application/person-role rows.
+source quote, duplicate active candidate-node evidence, candidate-node source
+anchor conflicts, or roleless application/person-role rows.
 
 Challenge assignment rows only count as ready when both `github_repo_url` and
 `github_pr_number` are present. Assignment rows without that PR-backed metadata
@@ -104,6 +112,7 @@ npm run candidate-ingestion:audit -- --local --candidate-id <candidate_id>
 npm run candidate-ingestion:audit -- --local --email <email>
 npm run candidate-ingestion:audit -- --local --invite-token <token> --require-context-records
 npm run candidate-ingestion:audit -- --remote --invite-token <token>
+npm test -- src/lib/candidateDiscovery/__tests__/candidateNodes.test.ts src/lib/candidateDiscovery/__tests__/resumeDecomposition.test.ts scripts/auditCandidateIngestion.test.ts
 npm test -- src/routes/cockpit/__tests__/contacts.rest.test.ts src/routes/cockpit/__tests__/candidates.rest.test.ts src/lib/livingContext/__tests__/readModel.test.ts
 ```
 

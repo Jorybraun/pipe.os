@@ -156,7 +156,73 @@ function mergeSemanticTerms(
   return [...terms.values()];
 }
 
-function sourceQuoteProperties(resumeText: string, sourceQuote?: string): {
+function textOccurrences(haystack: string, needle: string): Array<{ index: number; text: string }> {
+  const trimmedNeedle = needle.trim();
+  if (!trimmedNeedle) return [];
+  const lowerHaystack = haystack.toLowerCase();
+  const lowerNeedle = trimmedNeedle.toLowerCase();
+  const occurrences: Array<{ index: number; text: string }> = [];
+  let offset = 0;
+  while (offset <= lowerHaystack.length) {
+    const index = lowerHaystack.indexOf(lowerNeedle, offset);
+    if (index < 0) break;
+    occurrences.push({
+      index,
+      text: haystack.slice(index, index + trimmedNeedle.length),
+    });
+    offset = index + Math.max(1, lowerNeedle.length);
+  }
+  return occurrences;
+}
+
+function sourceQuotePropertiesFromOccurrence(
+  occurrence: { index: number; text: string },
+): {
+  source_quote?: string;
+  source_quote_validated?: boolean;
+  source_quote_char_start?: number;
+  source_quote_char_end?: number;
+} {
+  return {
+    source_quote: occurrence.text,
+    source_quote_validated: true,
+    source_quote_char_start: occurrence.index,
+    source_quote_char_end: occurrence.index + occurrence.text.length,
+  };
+}
+
+function anchorOccurrences(resumeText: string, anchors: Array<string | null | undefined>): number[] {
+  const seenAnchors = new Set<string>();
+  const positions: number[] = [];
+  for (const anchor of anchors) {
+    const normalized = anchor?.trim();
+    if (!normalized) continue;
+    const key = normalized.toLowerCase();
+    if (seenAnchors.has(key)) continue;
+    seenAnchors.add(key);
+    positions.push(...textOccurrences(resumeText, normalized).map((occurrence) => occurrence.index));
+  }
+  return positions;
+}
+
+function nearestAnchorDistance(
+  occurrence: { index: number; text: string },
+  anchors: readonly number[],
+): number {
+  if (anchors.length === 0) return Number.POSITIVE_INFINITY;
+  const start = occurrence.index;
+  const end = occurrence.index + occurrence.text.length;
+  return Math.min(...anchors.map((anchor) => {
+    if (anchor >= start && anchor <= end) return 0;
+    return Math.min(Math.abs(anchor - start), Math.abs(anchor - end));
+  }));
+}
+
+function sourceQuoteProperties(
+  resumeText: string,
+  sourceQuote?: string,
+  anchors: Array<string | null | undefined> = [],
+): {
   source_quote?: string;
   source_quote_validated?: boolean;
   source_quote_char_start?: number;
@@ -164,32 +230,84 @@ function sourceQuoteProperties(resumeText: string, sourceQuote?: string): {
 } {
   const quote = sourceQuote?.trim();
   if (!quote) return {};
-  let index = resumeText.indexOf(quote);
-  let exactQuote = quote;
-  if (index < 0) {
-    index = resumeText.toLowerCase().indexOf(quote.toLowerCase());
-    if (index >= 0) {
-      exactQuote = resumeText.slice(index, index + quote.length);
-    }
+  const occurrences = textOccurrences(resumeText, quote);
+  if (occurrences.length === 0) return {};
+  if (occurrences.length === 1 || anchors.length === 0) {
+    return sourceQuotePropertiesFromOccurrence(occurrences[0]!);
   }
-  if (index < 0) return {};
-  return {
-    source_quote: exactQuote,
-    source_quote_validated: true,
-    source_quote_char_start: index,
-    source_quote_char_end: index + exactQuote.length,
-  };
+
+  const anchorPositions = anchorOccurrences(resumeText, anchors);
+  if (anchorPositions.length === 0) {
+    return sourceQuotePropertiesFromOccurrence(occurrences[0]!);
+  }
+
+  const closest = occurrences.reduce((best, occurrence) => {
+    const bestDistance = nearestAnchorDistance(best, anchorPositions);
+    const occurrenceDistance = nearestAnchorDistance(occurrence, anchorPositions);
+    return occurrenceDistance < bestDistance ? occurrence : best;
+  });
+  return sourceQuotePropertiesFromOccurrence(closest);
 }
 
 function sourceQuotePropertiesFromCandidates(
   resumeText: string,
   candidates: Array<string | null | undefined>,
+  anchors: Array<string | null | undefined> = [],
 ): ReturnType<typeof sourceQuoteProperties> {
   for (const candidate of candidates) {
-    const properties = sourceQuoteProperties(resumeText, candidate ?? undefined);
+    const properties = sourceQuoteProperties(resumeText, candidate ?? undefined, anchors);
     if (properties.source_quote_validated === true) return properties;
   }
   return {};
+}
+
+function sourceQuotePropertiesFromAnchorBlock(
+  resumeText: string,
+  firstAnchor: string | null | undefined,
+  secondAnchor: string | null | undefined,
+  maxSpanLength = 500,
+): ReturnType<typeof sourceQuoteProperties> {
+  const firstOccurrences = textOccurrences(resumeText, firstAnchor?.trim() ?? '');
+  const secondOccurrences = textOccurrences(resumeText, secondAnchor?.trim() ?? '');
+  if (firstOccurrences.length === 0 || secondOccurrences.length === 0) return {};
+
+  let best: { index: number; text: string } | null = null;
+  for (const first of firstOccurrences) {
+    for (const second of secondOccurrences) {
+      const start = Math.min(first.index, second.index);
+      const end = Math.max(first.index + first.text.length, second.index + second.text.length);
+      if (end - start > maxSpanLength) continue;
+      if (!best || end - start < best.text.length) {
+        best = {
+          index: start,
+          text: resumeText.slice(start, end),
+        };
+      }
+    }
+  }
+
+  return best ? sourceQuotePropertiesFromOccurrence(best) : {};
+}
+
+function experienceSourceQuoteProperties(
+  resumeText: string,
+  exp: Pick<DecomposedExperience, 'company' | 'role' | 'narrative' | 'source_quote'>,
+): ReturnType<typeof sourceQuoteProperties> {
+  const anchoredBlock = sourceQuotePropertiesFromAnchorBlock(resumeText, exp.company, exp.role);
+  if (anchoredBlock.source_quote_validated === true) return anchoredBlock;
+
+  return sourceQuotePropertiesFromCandidates(
+    resumeText,
+    [
+      exp.source_quote,
+      exp.narrative,
+      `${exp.role} at ${exp.company}`,
+      `${exp.company} ${exp.role}`,
+      exp.company,
+      exp.role,
+    ],
+    [exp.company, exp.narrative],
+  );
 }
 
 function hasExactCandidateNodeSource(
@@ -466,7 +584,7 @@ function experienceToNode(
         exp.skills_demonstrated,
         'demonstrated',
       ),
-      ...sourceQuoteProperties(resumeText, exp.source_quote),
+      ...experienceSourceQuoteProperties(resumeText, exp),
       index,
     }),
     embedding_json: null,
@@ -500,7 +618,16 @@ function projectToNode(
         proj.skills_demonstrated,
         'demonstrated',
       ),
-      ...sourceQuoteProperties(resumeText, proj.source_quote),
+      ...sourceQuotePropertiesFromCandidates(
+        resumeText,
+        [
+          proj.source_quote,
+          proj.description,
+          proj.name,
+          proj.url,
+        ],
+        [proj.name, proj.url, proj.description],
+      ),
       index,
     }),
     embedding_json: null,
@@ -535,7 +662,11 @@ function skillToNode(
         [skill.name],
         'mentioned',
       ),
-      ...sourceQuoteProperties(resumeText, skill.source_quote),
+      ...sourceQuotePropertiesFromCandidates(
+        resumeText,
+        [skill.source_quote, skill.name],
+        [skill.name, skill.evidence_source],
+      ),
       index,
     }),
     embedding_json: null,
@@ -565,7 +696,18 @@ function educationToNode(
       field: edu.field,
       year: edu.year,
       semantic_terms: mergeSemanticTerms(edu.semantic_terms, [], 'mentioned'),
-      ...sourceQuoteProperties(resumeText, edu.source_quote),
+      ...sourceQuotePropertiesFromCandidates(
+        resumeText,
+        [
+          edu.source_quote,
+          `${edu.degree}${edu.field ? ` in ${edu.field}` : ''}`,
+          edu.institution,
+          edu.field,
+          edu.degree,
+          edu.year,
+        ],
+        [edu.institution, edu.degree, edu.field, edu.year],
+      ),
       index,
     }),
     embedding_json: null,
@@ -594,7 +736,17 @@ function credentialToNode(
       issuer: cred.issuer,
       year: cred.year,
       semantic_terms: mergeSemanticTerms(cred.semantic_terms, [], 'mentioned'),
-      ...sourceQuoteProperties(resumeText, cred.source_quote),
+      ...sourceQuotePropertiesFromCandidates(
+        resumeText,
+        [
+          cred.source_quote,
+          `${cred.name}${cred.issuer ? ` ${cred.issuer}` : ''}`,
+          cred.name,
+          cred.issuer,
+          cred.year,
+        ],
+        [cred.name, cred.issuer, cred.year],
+      ),
       index,
     }),
     embedding_json: null,
@@ -626,7 +778,10 @@ function careerArcToNode(
       ownership_progression: decomposition.ownership_progression,
       impact_themes: decomposition.impact_themes,
       semantic_terms: mergeSemanticTerms(arc.semantic_terms, [], 'mentioned'),
-      ...sourceQuoteProperties(resumeText, arc.source_quote),
+      ...sourceQuoteProperties(resumeText, arc.source_quote, [
+        arc.narrative,
+        ...arc.transitions.flatMap((transition) => [transition.from, transition.to, transition.at_company]),
+      ]),
     }),
     embedding_json: null,
     source_type: 'resume',
@@ -696,11 +851,12 @@ async function writeParserOnlyNodes(
 
   for (let i = 0; i < parsedCV.experiences.length; i++) {
     const exp = parsedCV.experiences[i]!;
-    const sourceProperties = sourceQuotePropertiesFromCandidates(resumeText, [
-      exp.description,
-      exp.role,
-      exp.company,
-    ]);
+    const sourceProperties = experienceSourceQuoteProperties(resumeText, {
+      company: exp.company,
+      role: exp.role,
+      narrative: exp.description,
+      source_quote: exp.description,
+    });
     if (sourceProperties.source_quote_validated !== true) continue;
     nodesToInsert.push({
       candidate_id: candidateId,
@@ -737,7 +893,7 @@ async function writeParserOnlyNodes(
       edu.institution,
       edu.degree,
       edu.field,
-    ]);
+    ], [edu.institution, edu.degree, edu.field, edu.year]);
     if (sourceProperties.source_quote_validated !== true) continue;
     nodesToInsert.push({
       candidate_id: candidateId,
@@ -767,7 +923,7 @@ async function writeParserOnlyNodes(
     const sourceProperties = sourceQuotePropertiesFromCandidates(resumeText, [
       cred.name,
       cred.issuer,
-    ]);
+    ], [cred.name, cred.issuer, cred.year]);
     if (sourceProperties.source_quote_validated !== true) continue;
     nodesToInsert.push({
       candidate_id: candidateId,
@@ -797,7 +953,7 @@ async function writeParserOnlyNodes(
       proj.description,
       proj.name,
       proj.url,
-    ]);
+    ], [proj.name, proj.description, proj.url]);
     if (sourceProperties.source_quote_validated !== true) continue;
     nodesToInsert.push({
       candidate_id: candidateId,

@@ -73,6 +73,8 @@ export interface CandidateSourceProofAudit {
   candidateNodeCount: number;
   candidateNodeExactSourceQuoteCount: number;
   candidateNodeWithoutExactSourceCount: number;
+  duplicateCandidateNodeEvidenceCount: number;
+  candidateNodeSourceAnchorConflictCount: number;
   artifactVersionCount: number;
   sourceSpanCount: number;
   documentProfileSourceSpanCount: number;
@@ -138,6 +140,8 @@ interface SourceProofRow {
   candidate_node_count: number | null;
   candidate_node_exact_source_quote_count: number | null;
   candidate_node_without_exact_source_count: number | null;
+  duplicate_candidate_node_evidence_count: number | null;
+  candidate_node_source_anchor_conflict_count: number | null;
   artifact_version_count: number | null;
   source_span_count: number | null;
   document_profile_source_span_count: number | null;
@@ -351,18 +355,83 @@ async function loadSourceProof(
      SELECT
        (SELECT COUNT(DISTINCT cn.id)
           FROM audited_candidates ac
-          JOIN candidate_nodes cn ON cn.candidate_id = ac.id) AS candidate_node_count,
+          JOIN candidate_nodes cn ON cn.candidate_id = ac.id
+         WHERE cn.superseded_at IS NULL) AS candidate_node_count,
        (SELECT COUNT(DISTINCT cn.id)
           FROM audited_candidates ac
           JOIN candidate_nodes cn ON cn.candidate_id = ac.id
-         WHERE json_extract(cn.extracted_properties_json, '$.source_quote_validated') = 1) AS candidate_node_exact_source_quote_count,
+         WHERE cn.superseded_at IS NULL
+           AND json_extract(cn.extracted_properties_json, '$.source_quote_validated') = 1) AS candidate_node_exact_source_quote_count,
        (SELECT COUNT(DISTINCT cn.id)
           FROM audited_candidates ac
           JOIN candidate_nodes cn ON cn.candidate_id = ac.id
-         WHERE COALESCE(cn.confidence, 0) > 0
+         WHERE cn.superseded_at IS NULL
+           AND COALESCE(cn.confidence, 0) > 0
            AND cn.source_type = 'resume'
            AND COALESCE(json_extract(cn.extracted_properties_json, '$.source_quote_validated'), 0) <> 1
            AND (cn.source_reference IS NULL OR TRIM(cn.source_reference) = '')) AS candidate_node_without_exact_source_count,
+       (SELECT COUNT(*) FROM (
+          SELECT
+            cn.candidate_id,
+            cn.node_type,
+            cn.source_type,
+            COALESCE(cn.source_reference, '') AS source_reference,
+            COALESCE(json_extract(cn.extracted_properties_json, '$.source_span_id'), '') AS source_span_id,
+            COALESCE(json_extract(cn.extracted_properties_json, '$.exact_text_hash'), '') AS exact_text_hash,
+            COALESCE(json_extract(cn.extracted_properties_json, '$.source_quote_char_start'), '') AS source_quote_char_start,
+            COALESCE(json_extract(cn.extracted_properties_json, '$.source_quote_char_end'), '') AS source_quote_char_end,
+            COALESCE(json_extract(cn.extracted_properties_json, '$.term_canonical_key'), '') || '|' ||
+            COALESCE(json_extract(cn.extracted_properties_json, '$.canonical_slug'), '') || '|' ||
+            COALESCE(json_extract(cn.extracted_properties_json, '$.name'), '') || '|' ||
+            COALESCE(json_extract(cn.extracted_properties_json, '$.company'), '') || '|' ||
+            COALESCE(json_extract(cn.extracted_properties_json, '$.role'), '') || '|' ||
+            COALESCE(json_extract(cn.extracted_properties_json, '$.institution'), '') || '|' ||
+            COALESCE(json_extract(cn.extracted_properties_json, '$.degree'), '') || '|' ||
+            COALESCE(cn.narrative_text, '') AS extracted_fact_key,
+            COUNT(*) AS duplicate_count
+          FROM audited_candidates ac
+          JOIN candidate_nodes cn ON cn.candidate_id = ac.id
+         WHERE cn.superseded_at IS NULL
+           AND COALESCE(cn.confidence, 0) > 0
+         GROUP BY
+            cn.candidate_id,
+            cn.node_type,
+            cn.source_type,
+            COALESCE(cn.source_reference, ''),
+            COALESCE(json_extract(cn.extracted_properties_json, '$.source_span_id'), ''),
+            COALESCE(json_extract(cn.extracted_properties_json, '$.exact_text_hash'), ''),
+            COALESCE(json_extract(cn.extracted_properties_json, '$.source_quote_char_start'), ''),
+            COALESCE(json_extract(cn.extracted_properties_json, '$.source_quote_char_end'), ''),
+            extracted_fact_key
+        HAVING COUNT(*) > 1
+       )) AS duplicate_candidate_node_evidence_count,
+       (SELECT COUNT(*) FROM (
+          SELECT
+            cn.candidate_id,
+            cn.node_type,
+            json_extract(cn.extracted_properties_json, '$.source_quote_char_start') AS source_quote_char_start,
+            json_extract(cn.extracted_properties_json, '$.source_quote_char_end') AS source_quote_char_end,
+            COUNT(DISTINCT
+              COALESCE(json_extract(cn.extracted_properties_json, '$.company'), '') || '|' ||
+              COALESCE(json_extract(cn.extracted_properties_json, '$.role'), '') || '|' ||
+              COALESCE(json_extract(cn.extracted_properties_json, '$.name'), '') || '|' ||
+              COALESCE(json_extract(cn.extracted_properties_json, '$.institution'), '') || '|' ||
+              COALESCE(json_extract(cn.extracted_properties_json, '$.degree'), '')
+            ) AS extracted_fact_count
+          FROM audited_candidates ac
+          JOIN candidate_nodes cn ON cn.candidate_id = ac.id
+         WHERE cn.superseded_at IS NULL
+           AND cn.source_type = 'resume'
+           AND cn.node_type IN ('Experience', 'Project', 'Education', 'Credential')
+           AND json_extract(cn.extracted_properties_json, '$.source_quote_validated') = 1
+         GROUP BY
+            cn.candidate_id,
+            cn.node_type,
+            json_extract(cn.extracted_properties_json, '$.source_quote_char_start'),
+            json_extract(cn.extracted_properties_json, '$.source_quote_char_end')
+        HAVING COUNT(*) > 1
+           AND extracted_fact_count > 1
+       )) AS candidate_node_source_anchor_conflict_count,
        (SELECT COUNT(DISTINCT artifact_version_id)
           FROM source_artifact_versions) AS artifact_version_count,
        (SELECT COUNT(DISTINCT ss.id)
@@ -389,6 +458,8 @@ async function loadSourceProof(
     candidateNodeCount: toNumber(row?.candidate_node_count),
     candidateNodeExactSourceQuoteCount: toNumber(row?.candidate_node_exact_source_quote_count),
     candidateNodeWithoutExactSourceCount: toNumber(row?.candidate_node_without_exact_source_count),
+    duplicateCandidateNodeEvidenceCount: toNumber(row?.duplicate_candidate_node_evidence_count),
+    candidateNodeSourceAnchorConflictCount: toNumber(row?.candidate_node_source_anchor_conflict_count),
     artifactVersionCount: toNumber(row?.artifact_version_count),
     sourceSpanCount: toNumber(row?.source_span_count),
     documentProfileSourceSpanCount: toNumber(row?.document_profile_source_span_count),
@@ -563,6 +634,8 @@ export async function auditCandidateIngestion(
       candidateNodeCount: 0,
       candidateNodeExactSourceQuoteCount: 0,
       candidateNodeWithoutExactSourceCount: 0,
+      duplicateCandidateNodeEvidenceCount: 0,
+      candidateNodeSourceAnchorConflictCount: 0,
       artifactVersionCount: 0,
       sourceSpanCount: 0,
       documentProfileSourceSpanCount: 0,
@@ -658,6 +731,12 @@ export async function auditCandidateIngestion(
     ...(sourceProof.candidateNodeWithoutExactSourceCount > 0
       ? [`${sourceProof.candidateNodeWithoutExactSourceCount} positive candidate node(s) lack an exact validated resume source quote`]
       : []),
+    ...(sourceProof.duplicateCandidateNodeEvidenceCount > 0
+      ? [`${sourceProof.duplicateCandidateNodeEvidenceCount} duplicate active candidate-node evidence group(s) were found`]
+      : []),
+    ...(sourceProof.candidateNodeSourceAnchorConflictCount > 0
+      ? [`${sourceProof.candidateNodeSourceAnchorConflictCount} active candidate-node source anchor conflict group(s) were found`]
+      : []),
     ...(sourceLessPositiveClaimCount > 0
       ? [`${sourceLessPositiveClaimCount} positive person-context claim(s) have no source refs or source spans`]
       : []),
@@ -696,6 +775,12 @@ export async function auditCandidateIngestion(
       : []),
     ...(sourceProof.candidateNodeWithoutExactSourceCount > 0
       ? ['Repair candidate-node decomposition so positive nodes carry validated source_quote offsets or remain non-projecting diagnostics.']
+      : []),
+    ...(sourceProof.duplicateCandidateNodeEvidenceCount > 0
+      ? ['Replay or repair candidate-node ingestion so active source-backed evidence rows are idempotent.']
+      : []),
+    ...(sourceProof.candidateNodeSourceAnchorConflictCount > 0
+      ? ['Repair resume decomposition source anchoring so repeated titles or labels cite the matching source occurrence.']
       : []),
     ...(rawCapture.externalProfileRefCount > personProjection.externalProfileRefContextCount
       ? ['Project GitHub/LinkedIn/portfolio refs into operational context records with exact intake source refs.']
@@ -839,6 +924,8 @@ function printHuman(report: CandidateIngestionAudit, databasePath: string): void
   console.log(`  candidate nodes:       ${report.sourceProof.candidateNodeCount}`);
   console.log(`  exact node quotes:     ${report.sourceProof.candidateNodeExactSourceQuoteCount}`);
   console.log(`  node quote gaps:       ${report.sourceProof.candidateNodeWithoutExactSourceCount}`);
+  console.log(`  duplicate nodes:       ${report.sourceProof.duplicateCandidateNodeEvidenceCount}`);
+  console.log(`  anchor conflicts:      ${report.sourceProof.candidateNodeSourceAnchorConflictCount}`);
   console.log(`  artifact versions:     ${report.sourceProof.artifactVersionCount}`);
   console.log(`  source spans:          ${report.sourceProof.sourceSpanCount}`);
   console.log(`  document source spans: ${report.sourceProof.documentProfileSourceSpanCount}`);
