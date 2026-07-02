@@ -18,6 +18,14 @@ const contextRecordsMigration = readFileSync(
   new URL('../../../migrations/0095_context_records.sql', import.meta.url),
   'utf8',
 );
+const candidateNodesMigration = readFileSync(
+  new URL('../../../migrations/0052_candidate_nodes.sql', import.meta.url),
+  'utf8',
+);
+const candidateNodeIdempotencyMigration = readFileSync(
+  new URL('../../../migrations/0085_candidate_node_idempotency.sql', import.meta.url),
+  'utf8',
+);
 
 interface MemoryR2 extends R2Bucket {
   puts: Map<string, string>;
@@ -106,6 +114,8 @@ function createSqlite(): BetterSqliteDb {
   sqlite.exec(talentPoolMigration);
   sqlite.exec(livingContextMigration);
   sqlite.exec(contextRecordsMigration);
+  sqlite.exec(candidateNodesMigration);
+  sqlite.exec(candidateNodeIdempotencyMigration);
   return sqlite;
 }
 
@@ -268,9 +278,33 @@ describe('talent pool candidate RPC', () => {
     expect(sqlite.prepare('SELECT COUNT(*) AS count FROM source_spans').get()).toEqual({ count: 8 });
     expect(sqlite.prepare('SELECT COUNT(*) AS count FROM context_records').get()).toEqual({ count: 5 });
     expect(sqlite.prepare('SELECT COUNT(*) AS count FROM context_record_source_refs').get()).toEqual({ count: 8 });
+    expect(sqlite.prepare('SELECT COUNT(*) AS count FROM candidate_nodes').get()).toEqual({ count: 1 });
     expect(sqlite.prepare(
       `SELECT exact_text FROM source_spans WHERE exact_text = ? LIMIT 1`,
     ).get(payload.resumeText)).toEqual({ exact_text: payload.resumeText });
+    expect(sqlite.prepare(
+      `SELECT node_type, narrative_text, source_type, source_reference,
+              json_extract(extracted_properties_json, '$.source_quote_validated') AS source_quote_validated,
+              json_extract(extracted_properties_json, '$.source_quote') AS source_quote,
+              json_extract(extracted_properties_json, '$.source_span_id') AS source_span_id
+         FROM candidate_nodes
+        WHERE candidate_id = 'candidate-1'
+        LIMIT 1`,
+    ).get()).toMatchObject({
+      node_type: 'TalentPoolProfileIntake',
+      narrative_text: 'Candidate submitted Talent Pool profile evidence.',
+      source_type: 'talent_pool_profile_intake',
+      source_quote_validated: 1,
+      source_quote: payload.resumeText,
+    });
+    const profileNodeRef = sqlite.prepare(
+      `SELECT source_reference,
+              json_extract(extracted_properties_json, '$.source_span_id') AS source_span_id
+         FROM candidate_nodes
+        WHERE candidate_id = 'candidate-1'
+        LIMIT 1`,
+    ).get() as { source_reference: string; source_span_id: string };
+    expect(profileNodeRef.source_reference).toBe(`source_span:${profileNodeRef.source_span_id}`);
     expect(sqlite.prepare(
       `SELECT COUNT(*) AS count
          FROM context_records
@@ -338,6 +372,7 @@ describe('talent pool candidate RPC', () => {
     expect(sqlite.prepare('SELECT COUNT(*) AS count FROM source_spans').get()).toEqual({ count: 8 });
     expect(sqlite.prepare('SELECT COUNT(*) AS count FROM context_records').get()).toEqual({ count: 5 });
     expect(sqlite.prepare('SELECT COUNT(*) AS count FROM context_record_source_refs').get()).toEqual({ count: 8 });
+    expect(sqlite.prepare('SELECT COUNT(*) AS count FROM candidate_nodes').get()).toEqual({ count: 1 });
     expect(sqlite.prepare('SELECT COUNT(*) AS count FROM challenge_design_queue').get()).toEqual({ count: 1 });
   });
 
@@ -396,6 +431,17 @@ describe('talent pool candidate RPC', () => {
     expect(replay.status).toBe(200);
     expect(storage.puts.size).toBe(1);
     expect([...storage.puts.keys()][0]).toBe(intake.profile_r2_key);
+    expect(sqlite.prepare('SELECT COUNT(*) AS count FROM candidate_nodes').get()).toEqual({ count: 1 });
+    expect(sqlite.prepare(
+      `SELECT json_extract(extracted_properties_json, '$.source_quote_validated') AS source_quote_validated,
+              json_extract(extracted_properties_json, '$.source_quote') AS source_quote
+         FROM candidate_nodes
+        WHERE candidate_id = 'candidate-1'
+        LIMIT 1`,
+    ).get()).toMatchObject({
+      source_quote_validated: 1,
+      source_quote: 'Taylor has shipped TypeScript frontend systems, Workers APIs, and source-backed accessibility fixes.',
+    });
     expect(sqlite.prepare('SELECT COUNT(*) AS count FROM context_records').get()).toEqual({ count: 2 });
     expect(sqlite.prepare('SELECT COUNT(*) AS count FROM context_record_source_refs').get()).toEqual({ count: 2 });
   });

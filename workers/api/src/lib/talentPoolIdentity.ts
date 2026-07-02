@@ -1,4 +1,5 @@
 import {
+  deterministicEntityId,
   LivingContextStore,
   type JsonObject,
   type JsonValue,
@@ -105,6 +106,20 @@ async function tableExists(db: D1Database, tableName: string): Promise<boolean> 
   return Boolean(row);
 }
 
+async function tableColumnExists(
+  db: D1Database,
+  tableName: string,
+  columnName: string,
+): Promise<boolean> {
+  const row = await db.prepare(
+    `SELECT name
+       FROM pragma_table_info(?1)
+      WHERE name = ?2
+      LIMIT 1`,
+  ).bind(tableName, columnName).first<{ name: string }>();
+  return Boolean(row);
+}
+
 async function contextRecordTablesReady(db: D1Database): Promise<boolean> {
   for (const tableName of [
     'context_records',
@@ -116,6 +131,11 @@ async function contextRecordTablesReady(db: D1Database): Promise<boolean> {
     if (!await tableExists(db, tableName)) return false;
   }
   return true;
+}
+
+function epochFromIso(value: string): number {
+  const millis = Date.parse(value);
+  return Number.isFinite(millis) ? Math.floor(millis / 1000) : Math.floor(Date.now() / 1000);
 }
 
 interface IntakeFieldSpan {
@@ -401,6 +421,15 @@ async function persistRolelessMessageArtifact(input: {
     },
   });
 
+  await persistRolelessProfileCandidateNode({
+    db: input.db,
+    candidateId: input.candidateId,
+    message,
+    contentHash,
+    sourceSpanId: span.id,
+    now: input.now,
+  });
+
   if (!await contextRecordTablesReady(input.db)) return;
 
   await input.store.upsertContextRecord({
@@ -432,6 +461,101 @@ async function persistRolelessMessageArtifact(input: {
       },
     ],
   });
+}
+
+async function persistRolelessProfileCandidateNode(input: {
+  db: D1Database;
+  candidateId: string;
+  message: string;
+  contentHash: string;
+  sourceSpanId: string;
+  now: string;
+}): Promise<void> {
+  const sourceText = input.message.trim();
+  if (!sourceText || !await tableExists(input.db, 'candidate_nodes')) return;
+
+  const ingestionKey = `candidate:${input.candidateId}:talent-pool-profile-node:${input.contentHash}`;
+  const id = await deterministicEntityId('candidate_node', ingestionKey);
+  const sourceQuote = sourceText.slice(0, 4000);
+  const capturedAt = epochFromIso(input.now);
+  const sourceReference = `source_span:${input.sourceSpanId}`;
+  const narrative = 'Candidate submitted Talent Pool profile evidence.';
+  const properties = JSON.stringify({
+    source: 'roleless_candidate_intake',
+    roleless: true,
+    evidence_kind: 'profile_text_intake',
+    source_span_id: input.sourceSpanId,
+    source_quote: sourceQuote,
+    source_quote_validated: true,
+    source_quote_char_start: 0,
+    source_quote_char_end: sourceQuote.length,
+    exact_text_hash: input.contentHash,
+  });
+  const hasIngestionKey = await tableColumnExists(input.db, 'candidate_nodes', 'ingestion_key');
+
+  if (hasIngestionKey) {
+    await input.db.prepare(
+      `INSERT INTO candidate_nodes (
+         id, candidate_id, node_type, narrative_text,
+         extracted_properties_json, embedding_json, source_type,
+         source_reference, captured_at, confidence,
+         supersedes, superseded_at, decomposition_version, ingestion_key,
+         created_at, updated_at
+       ) VALUES (
+         ?1, ?2, 'TalentPoolProfileIntake', ?3,
+         ?4, NULL, 'talent_pool_profile_intake',
+         ?5, ?6, 1,
+         NULL, NULL, 'talent-pool-roleless-intake-v1', ?7,
+         unixepoch(), unixepoch()
+       )
+       ON CONFLICT(id) DO UPDATE SET
+         narrative_text = excluded.narrative_text,
+         extracted_properties_json = excluded.extracted_properties_json,
+         source_reference = excluded.source_reference,
+         captured_at = excluded.captured_at,
+         confidence = excluded.confidence,
+         updated_at = unixepoch()`,
+    ).bind(
+      id,
+      input.candidateId,
+      narrative,
+      properties,
+      sourceReference,
+      capturedAt,
+      ingestionKey,
+    ).run();
+    return;
+  }
+
+  await input.db.prepare(
+    `INSERT INTO candidate_nodes (
+       id, candidate_id, node_type, narrative_text,
+       extracted_properties_json, embedding_json, source_type,
+       source_reference, captured_at, confidence,
+       supersedes, superseded_at, decomposition_version,
+       created_at, updated_at
+     ) VALUES (
+       ?1, ?2, 'TalentPoolProfileIntake', ?3,
+       ?4, NULL, 'talent_pool_profile_intake',
+       ?5, ?6, 1,
+       NULL, NULL, 'talent-pool-roleless-intake-v1',
+       unixepoch(), unixepoch()
+     )
+     ON CONFLICT(id) DO UPDATE SET
+       narrative_text = excluded.narrative_text,
+       extracted_properties_json = excluded.extracted_properties_json,
+       source_reference = excluded.source_reference,
+       captured_at = excluded.captured_at,
+       confidence = excluded.confidence,
+       updated_at = unixepoch()`,
+  ).bind(
+    id,
+    input.candidateId,
+    narrative,
+    properties,
+    sourceReference,
+    capturedAt,
+  ).run();
 }
 
 export async function ensureRolelessTalentPoolIdentity(input: {

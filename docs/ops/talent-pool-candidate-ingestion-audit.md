@@ -42,6 +42,12 @@ source span when the context-record schema is present. This context record only
 proves that profile evidence was submitted; it does not claim skills,
 seniority, readiness, or match quality.
 
+The same submitted profile text also creates one idempotent
+`TalentPoolProfileIntake` candidate node with a validated exact source quote and
+the source span id in `source_reference`. This compatibility node is a durable
+profile-evidence marker for graph consumers; richer skill, project, experience,
+and match signals still require source-backed resume decomposition.
+
 Uploaded profile files use content-hash storage keys, so replaying the same
 file reuses the same source artifact path. PDF/DOCX extraction still runs in
 background resume ingestion, but that projection now receives the roleless
@@ -57,10 +63,10 @@ profile content or derive skills/readiness.
 
 By default, the command fails on missing scoped candidates, submitted intakes
 without storage or ingestion state, missing active Talent Pool person
-projection, missing exact source proof, raw external refs or phone intent
-without operational context records, source-less positive claims, duplicate
-projected edges, candidate nodes with no exact source quote, or roleless
-application/person-role rows.
+projection, missing exact source proof, missing exact-source candidate-node
+projection, raw external refs or phone intent without operational context
+records, source-less positive claims, duplicate projected edges, candidate
+nodes with no exact source quote, or roleless application/person-role rows.
 
 Use `--require-context-records` when the proof must include claim-level person
 context records, not only roleless identity plus immutable source spans.

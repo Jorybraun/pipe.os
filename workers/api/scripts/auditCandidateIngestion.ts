@@ -614,6 +614,9 @@ export async function auditCandidateIngestion(
       && sourceProof.candidateNodeExactSourceQuoteCount === 0
       ? ['submitted Talent Pool profile evidence has no exact source spans or exact candidate-node quotes']
       : []),
+    ...(rawCapture.submittedIntakeCount > sourceProof.candidateNodeExactSourceQuoteCount
+      ? [`${rawCapture.submittedIntakeCount - sourceProof.candidateNodeExactSourceQuoteCount} submitted Talent Pool intake(s) lack exact-source candidate-node projection`]
+      : []),
     ...(sourceProof.candidateNodeWithoutExactSourceCount > 0
       ? [`${sourceProof.candidateNodeWithoutExactSourceCount} positive candidate node(s) lack an exact validated resume source quote`]
       : []),
@@ -646,6 +649,9 @@ export async function auditCandidateIngestion(
       : []),
     ...(rawCapture.submittedIntakeCount > 0 && sourceProof.sourceSpanCount === 0
       ? ['Replay or repair profile ingestion so pasted text and extracted uploads create artifact_versions and source_spans.']
+      : []),
+    ...(rawCapture.submittedIntakeCount > sourceProof.candidateNodeExactSourceQuoteCount
+      ? ['Replay or repair Talent Pool profile ingestion so each submitted profile creates an exact-source candidate node.']
       : []),
     ...(sourceProof.candidateNodeWithoutExactSourceCount > 0
       ? ['Repair candidate-node decomposition so positive nodes carry validated source_quote offsets or remain non-projecting diagnostics.']

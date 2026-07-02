@@ -179,6 +179,15 @@ function seedSourceBackedTalentPoolCandidate(db: Database.Database): void {
     VALUES ('assertion-1', 'source-span-1');
     INSERT INTO signal_evidence (id, workspace_person_id, assertion_id, strength)
     VALUES ('signal-1', 'workspace-person-1', 'assertion-1', 0.8);
+    INSERT INTO candidate_nodes (id, candidate_id, source_type, source_reference, confidence, extracted_properties_json)
+    VALUES (
+      'candidate-node-profile',
+      'candidate-1',
+      'talent_pool_profile_intake',
+      'source_span:source-span-1',
+      1,
+      '{"source_quote":"Jordan shipped TypeScript Workers APIs.","source_quote_validated":true,"source_quote_char_start":0,"source_quote_char_end":37}'
+    );
     INSERT INTO context_records (id, workspace_person_id, record_type, predicate, narrative, polarity)
     VALUES ('context-record-1', 'workspace-person-1', 'talent_pool_profile_intake', 'submitted_profile', 'Candidate submitted source-backed Talent Pool profile evidence.', 1);
     INSERT INTO context_record_source_refs (context_record_id, source_ref_type, source_ref_id, evidence_role)
@@ -235,6 +244,8 @@ describe('auditCandidateIngestion', () => {
       phoneScreenerIntentCount: 1,
     });
     expect(audit.sourceProof).toMatchObject({
+      candidateNodeCount: 1,
+      candidateNodeExactSourceQuoteCount: 1,
       artifactVersionCount: 1,
       sourceSpanCount: 1,
       contextSourceRefCount: 4,
@@ -323,5 +334,22 @@ describe('auditCandidateIngestion', () => {
     expect(audit.personProjection.phoneScreenerIntentContextCount).toBe(0);
     expect(audit.failures).toContain('2 external profile ref(s) lack source-backed operational context records');
     expect(audit.failures).toContain('1 phone screener intent(s) lack source-backed operational context records');
+  });
+
+  it('flags submitted profiles that lack exact-source candidate-node projection', async () => {
+    sqlite = new Database(':memory:');
+    createSchema(sqlite);
+    seedSourceBackedTalentPoolCandidate(sqlite);
+    sqlite.prepare(`DELETE FROM candidate_nodes WHERE candidate_id = 'candidate-1'`).run();
+
+    const audit = await auditCandidateIngestion(new SqliteQueryClient(sqlite), {
+      inviteToken: 'invite-token',
+      requireContextRecords: true,
+    });
+
+    expect(audit.status).toBe('not_ready');
+    expect(audit.sourceProof.candidateNodeExactSourceQuoteCount).toBe(0);
+    expect(audit.failures).toContain('1 submitted Talent Pool intake(s) lack exact-source candidate-node projection');
+    expect(audit.nextActions).toContain('Replay or repair Talent Pool profile ingestion so each submitted profile creates an exact-source candidate node.');
   });
 });
