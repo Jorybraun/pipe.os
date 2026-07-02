@@ -492,4 +492,118 @@ describe('ingestAssessmentSessionRealTime', () => {
     expect(interaction).toBeTruthy();
     expect(interaction.interaction_type).toBe('assessment:CODE_REVIEW');
   });
+
+  it('preserves commit, diff, test, and upstream PR source refs into person projection without replay duplicates', async () => {
+    const now = '2026-06-02T13:00:00Z';
+    sqlite.exec(`
+      INSERT INTO assessment_sessions
+        (id, ingestion_key, mode, state, candidate_id, workspace_id, metadata_json, started_at, created_at, updated_at)
+      VALUES ('sess-rt-source-refs', 'key:sess-rt-source-refs', 'OPEN_SOURCE_BUG_FIX', 'EVALUATED', 'cand-rt-1', 'owner-1', '{}', '${now}', '${now}', '${now}');
+    `);
+    sqlite.exec(`
+      INSERT INTO assessment_evidence_events
+        (id, ingestion_key, session_id, sequence, kind, actor_type, actor_id, narrative, payload_json, occurred_at, created_at)
+      VALUES (
+        'ev-rt-commit-1',
+        'key:ev-rt-commit-1',
+        'sess-rt-source-refs',
+        1,
+        'commit_submission',
+        'candidate',
+        'cand-rt-1',
+        'Candidate submitted commit abc123 with diff, verification output, and upstream PR consent',
+        '{"commitSha":"abc123","upstreamPrConsent":true}',
+        '${now}',
+        '${now}'
+      );
+    `);
+    sqlite.exec(`
+      INSERT INTO assessment_event_source_refs
+        (id, event_id, source_ref_type, source_ref_id, evidence_role, locator_json, exact_text, content_hash, metadata_json, created_at)
+      VALUES
+        ('sr-rt-git-commit', 'ev-rt-commit-1', 'git_commit', 'abc123', 'submitted_commit', '{"commitSha":"abc123"}', 'commit abc123', 'sha256:commit-abc123', '{}', '${now}'),
+        ('sr-rt-code-diff', 'ev-rt-commit-1', 'code_diff', 'base..abc123', 'submitted_diff', '{"base":"base","head":"abc123"}', 'diff --git a/src/fix.ts b/src/fix.ts', 'sha256:diff-abc123', '{}', '${now}'),
+        ('sr-rt-test-run', 'ev-rt-commit-1', 'test_run', 'abc123:test', 'verification_test_output', '{"command":"npm test"}', 'npm test\\nPASS src/fix.test.ts', 'sha256:test-abc123', '{}', '${now}'),
+        ('sr-rt-upstream-pr', 'ev-rt-commit-1', 'upstream_pull_request', 'https://github.com/example/repo/pull/42', 'candidate_upstream_pr', '{"url":"https://github.com/example/repo/pull/42"}', 'Upstream PR #42', 'sha256:pr-42', '{}', '${now}');
+    `);
+
+    const first = await ingestAssessmentSessionRealTime(db, 'sess-rt-source-refs');
+    const second = await ingestAssessmentSessionRealTime(db, 'sess-rt-source-refs');
+
+    expect(first).not.toBeNull();
+    expect(second).not.toBeNull();
+
+    const contextRecord = sqlite.prepare(
+      `SELECT id, workspace_person_id, record_type, narrative
+         FROM context_records
+        WHERE ingestion_key = 'assessment_event_context:ev-rt-commit-1'`,
+    ).get() as {
+      id: string;
+      workspace_person_id: string | null;
+      record_type: string;
+      narrative: string;
+    };
+    expect(contextRecord).toMatchObject({
+      record_type: 'assessment:commit_submission',
+      narrative: 'Candidate submitted commit abc123 with diff, verification output, and upstream PR consent',
+    });
+    expect(contextRecord.workspace_person_id).toBeTruthy();
+
+    const projectedRefs = sqlite.prepare(
+      `SELECT source_ref_type, source_ref_id, evidence_role, exact_text, content_hash
+         FROM context_record_source_refs
+        WHERE context_record_id = ?
+        ORDER BY source_ref_type, evidence_role`,
+    ).all(contextRecord.id) as Array<{
+      source_ref_type: string;
+      source_ref_id: string;
+      evidence_role: string;
+      exact_text: string | null;
+      content_hash: string | null;
+    }>;
+    expect(projectedRefs).toHaveLength(5);
+    expect(projectedRefs).toEqual(expect.arrayContaining([
+      expect.objectContaining({
+        source_ref_type: 'code_diff',
+        source_ref_id: 'base..abc123',
+        evidence_role: 'submitted_diff',
+        exact_text: 'diff --git a/src/fix.ts b/src/fix.ts',
+        content_hash: 'sha256:diff-abc123',
+      }),
+      expect.objectContaining({
+        source_ref_type: 'git_commit',
+        source_ref_id: 'abc123',
+        evidence_role: 'submitted_commit',
+        exact_text: 'commit abc123',
+        content_hash: 'sha256:commit-abc123',
+      }),
+      expect.objectContaining({
+        source_ref_type: 'source_span',
+        evidence_role: 'primary',
+      }),
+      expect.objectContaining({
+        source_ref_type: 'test_run',
+        source_ref_id: 'abc123:test',
+        evidence_role: 'verification_test_output',
+        exact_text: 'npm test\\nPASS src/fix.test.ts',
+        content_hash: 'sha256:test-abc123',
+      }),
+      expect.objectContaining({
+        source_ref_type: 'upstream_pull_request',
+        source_ref_id: 'https://github.com/example/repo/pull/42',
+        evidence_role: 'candidate_upstream_pr',
+        exact_text: 'Upstream PR #42',
+        content_hash: 'sha256:pr-42',
+      }),
+    ]));
+
+    const duplicateGroups = sqlite.prepare(
+      `SELECT source_ref_type, source_ref_id, evidence_role, COUNT(*) AS count
+         FROM context_record_source_refs
+        WHERE context_record_id = ?
+        GROUP BY source_ref_type, source_ref_id, evidence_role
+       HAVING COUNT(*) > 1`,
+    ).all(contextRecord.id);
+    expect(duplicateGroups).toEqual([]);
+  });
 });

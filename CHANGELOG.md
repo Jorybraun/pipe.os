@@ -31,6 +31,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 ### Fixed — Open-source assessment progress
 
 - The assessment evidence ingestion audit now checks explicit context record types per evidence family instead of deriving them from event kind names, reducing false captured/projected classifications.
+- The assessment evidence ingestion audit now separates raw assessment-session context record types from person-projected context record types, so `assessment_commit_submission` raw capture cannot be mistaken for `assessment:commit_submission` person evidence.
 - Recruiter detail smoke tests can now optionally open the delivered candidate assessment/workspace link from the detail page, proving disposable app-dev invites hand off to the candidate CODE_REVIEW or workspace surface instead of only verifying recruiter-side projections.
 - Conservative fallback evaluator reports now preserve source-backed AI-use observability and candidate-approved upstream PR tracking, so open-source assessments can show whether AI help and upstream contribution evidence were actually captured.
 - Assessment progress commit projections now include source-backed upstream PR URL and consent flags, so recruiter readouts can distinguish local workspace-only commits from candidate-approved upstream PRs.

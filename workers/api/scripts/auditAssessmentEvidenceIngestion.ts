@@ -52,7 +52,8 @@ interface EvidenceFamilyDefinition {
   key: string;
   label: string;
   eventKinds: string[];
-  contextRecordTypes: string[];
+  assessmentContextRecordTypes: string[];
+  personContextRecordTypes: string[];
   sourceRefTypes: string[];
 }
 
@@ -99,55 +100,81 @@ const EVIDENCE_FAMILIES: EvidenceFamilyDefinition[] = [
     key: 'candidate_profile_resume',
     label: 'Candidate profile / resume evidence',
     eventKinds: ['candidate_profile', 'resume_upload', 'profile_intake', 'profile_text'],
-    contextRecordTypes: ['resume', 'resume_section', 'candidate_profile', 'candidate_profile_claim'],
+    assessmentContextRecordTypes: [
+      'assessment_candidate_profile',
+      'assessment_resume_upload',
+      'assessment_profile_intake',
+      'assessment_profile_text',
+    ],
+    personContextRecordTypes: ['resume', 'resume_section', 'candidate_profile', 'candidate_profile_claim'],
     sourceRefTypes: ['resume', 'candidate_profile', 'candidate_profile_text'],
   },
   {
     key: 'meeting_transcripts',
     label: 'Meeting transcripts',
     eventKinds: ['transcript_span'],
-    contextRecordTypes: ['meeting_transcript', 'meeting_transcript_assertion', 'assessment:transcript_span'],
+    assessmentContextRecordTypes: ['assessment_transcript_span'],
+    personContextRecordTypes: ['meeting_transcript', 'meeting_transcript_assertion', 'assessment:transcript_span'],
     sourceRefTypes: ['meeting_transcript', 'transcript_span', 'source_span'],
   },
   {
     key: 'video_room_events',
     label: 'Video-room events',
     eventKinds: ['dev_container_event', 'media_control', 'recording_event', 'room_lifecycle'],
-    contextRecordTypes: [
+    assessmentContextRecordTypes: [
+      'assessment_dev_container_event',
+      'assessment_media_control',
+      'assessment_recording_event',
+      'assessment_room_lifecycle',
+    ],
+    personContextRecordTypes: [
       'assessment:dev_container_event',
       'assessment:media_control',
       'assessment:recording_event',
       'assessment:room_lifecycle',
       'meeting_session_event',
     ],
-    sourceRefTypes: ['meeting_session_event', 'dev_container_workspace_launch', 'dev_container_workspace_stop'],
+    sourceRefTypes: [
+      'meeting_session_event',
+      'dev_container_workspace_launch',
+      'dev_container_workspace_stop',
+      'room_media_control',
+    ],
   },
   {
     key: 'chat',
     label: 'Chat',
     eventKinds: ['message'],
-    contextRecordTypes: ['assessment:message', 'chat_message', 'meeting_session_event'],
-    sourceRefTypes: ['meeting_session_event', 'chat_message'],
+    assessmentContextRecordTypes: ['assessment_message'],
+    personContextRecordTypes: ['assessment:message', 'chat_message', 'meeting_session_event'],
+    sourceRefTypes: ['meeting_session_event', 'chat_message', 'room_chat_message'],
   },
   {
     key: 'clippy_devin_interactions',
     label: 'Clippy / Devin interactions',
     eventKinds: ['ai_interaction', 'tool_usage'],
-    contextRecordTypes: ['assessment:ai_interaction', 'assessment:tool_usage'],
+    assessmentContextRecordTypes: ['assessment_ai_interaction', 'assessment_tool_usage'],
+    personContextRecordTypes: ['assessment:ai_interaction', 'assessment:tool_usage'],
     sourceRefTypes: ['ai_prompt', 'ai_blocked_prompt', 'agent_response', 'ai_usage_event'],
   },
   {
     key: 'terminal_commands_output',
     label: 'Terminal commands / output',
     eventKinds: ['terminal_output'],
-    contextRecordTypes: ['assessment:terminal_output', 'meeting_session_event'],
+    assessmentContextRecordTypes: ['assessment_terminal_output'],
+    personContextRecordTypes: ['assessment:terminal_output', 'meeting_session_event'],
     sourceRefTypes: ['terminal_command', 'terminal_output', 'meeting_session_event'],
   },
   {
     key: 'code_server_file_activity',
     label: 'Code-server / file activity',
     eventKinds: ['code_editor_open', 'workspace_file_save', 'code_diff'],
-    contextRecordTypes: [
+    assessmentContextRecordTypes: [
+      'assessment_code_editor_open',
+      'assessment_workspace_file_save',
+      'assessment_code_diff',
+    ],
+    personContextRecordTypes: [
       'assessment:code_editor_open',
       'assessment:workspace_file_save',
       'assessment:code_diff',
@@ -159,49 +186,56 @@ const EVIDENCE_FAMILIES: EvidenceFamilyDefinition[] = [
     key: 'commit_submissions',
     label: 'Commit submissions',
     eventKinds: ['commit_submission', 'final_submission'],
-    contextRecordTypes: ['assessment:commit_submission', 'assessment:final_submission'],
+    assessmentContextRecordTypes: ['assessment_commit_submission', 'assessment_final_submission'],
+    personContextRecordTypes: ['assessment:commit_submission', 'assessment:final_submission'],
     sourceRefTypes: ['git_commit'],
   },
   {
     key: 'diffs',
     label: 'Diffs',
     eventKinds: ['code_diff', 'commit_submission', 'final_submission'],
-    contextRecordTypes: ['assessment:code_diff', 'assessment:commit_submission', 'assessment:final_submission'],
+    assessmentContextRecordTypes: ['assessment_code_diff', 'assessment_commit_submission', 'assessment_final_submission'],
+    personContextRecordTypes: ['assessment:code_diff', 'assessment:commit_submission', 'assessment:final_submission'],
     sourceRefTypes: ['code_diff'],
   },
   {
     key: 'test_output',
     label: 'Test output',
     eventKinds: ['test_run', 'terminal_output'],
-    contextRecordTypes: ['assessment:test_run', 'assessment:terminal_output'],
+    assessmentContextRecordTypes: ['assessment_test_run', 'assessment_terminal_output'],
+    personContextRecordTypes: ['assessment:test_run', 'assessment:terminal_output'],
     sourceRefTypes: ['test_run'],
   },
   {
     key: 'upstream_pr_refs',
     label: 'Upstream PR refs',
     eventKinds: ['commit_submission', 'final_submission'],
-    contextRecordTypes: ['assessment:commit_submission', 'assessment:final_submission'],
+    assessmentContextRecordTypes: ['assessment_commit_submission', 'assessment_final_submission'],
+    personContextRecordTypes: ['assessment:commit_submission', 'assessment:final_submission'],
     sourceRefTypes: ['upstream_pull_request', 'github_pull_request'],
   },
   {
     key: 'evaluator_reports',
     label: 'Evaluator reports',
     eventKinds: [],
-    contextRecordTypes: ['assessment_evaluation_report'],
+    assessmentContextRecordTypes: ['assessment_evaluation_report'],
+    personContextRecordTypes: ['assessment_evaluation_report'],
     sourceRefTypes: ['assessment_evaluation_report'],
   },
   {
     key: 'human_reviewer_decisions',
     label: 'Human reviewer decisions',
     eventKinds: ['human_assessment_decision'],
-    contextRecordTypes: ['assessment:human_assessment_decision', 'human_assessment_decision'],
+    assessmentContextRecordTypes: ['assessment_human_assessment_decision'],
+    personContextRecordTypes: ['assessment:human_assessment_decision', 'human_assessment_decision'],
     sourceRefTypes: ['human_assessment_decision', 'assessment_evaluation_report'],
   },
   {
     key: 'code_review_annotations',
     label: 'Code-review annotations',
     eventKinds: ['recruiter_note', 'code_review_annotation'],
-    contextRecordTypes: ['assessment:recruiter_note', 'assessment:code_review_annotation', 'code_review_annotation'],
+    assessmentContextRecordTypes: ['assessment_recruiter_note', 'assessment_code_review_annotation'],
+    personContextRecordTypes: ['assessment:recruiter_note', 'assessment:code_review_annotation', 'code_review_annotation'],
     sourceRefTypes: ['code_review_annotation', 'review_annotation', 'code_diff'],
   },
 ];
@@ -231,7 +265,12 @@ async function auditFamily(
   definition: EvidenceFamilyDefinition,
 ): Promise<EvidenceFamilyAudit> {
   const eventKindSql = definition.eventKinds.length > 0 ? placeholders(definition.eventKinds) : "''";
-  const contextTypeSql = definition.contextRecordTypes.length > 0 ? placeholders(definition.contextRecordTypes) : "''";
+  const assessmentContextTypeSql = definition.assessmentContextRecordTypes.length > 0
+    ? placeholders(definition.assessmentContextRecordTypes)
+    : "''";
+  const personContextTypeSql = definition.personContextRecordTypes.length > 0
+    ? placeholders(definition.personContextRecordTypes)
+    : "''";
   const sourceRefSql = definition.sourceRefTypes.length > 0 ? placeholders(definition.sourceRefTypes) : "''";
 
   const rawEventCount = definition.eventKinds.length > 0
@@ -265,10 +304,10 @@ async function auditFamily(
        LEFT JOIN context_record_source_refs sr ON sr.context_record_id = cr.id
       WHERE cr.scope_type = 'assessment_session'
         AND (
-          cr.record_type IN (${contextTypeSql})
+          cr.record_type IN (${assessmentContextTypeSql})
           OR sr.source_ref_type IN (${sourceRefSql})
         )`,
-    [...definition.contextRecordTypes, ...definition.sourceRefTypes],
+    [...definition.assessmentContextRecordTypes, ...definition.sourceRefTypes],
   );
 
   const personProjectedContextCount = await count(
@@ -278,10 +317,10 @@ async function auditFamily(
        JOIN context_record_source_refs sr ON sr.context_record_id = cr.id
       WHERE cr.workspace_person_id IS NOT NULL
         AND (
-          cr.record_type IN (${contextTypeSql})
+          cr.record_type IN (${personContextTypeSql})
           OR sr.source_ref_type IN (${sourceRefSql})
         )`,
-    [...definition.contextRecordTypes, ...definition.sourceRefTypes],
+    [...definition.personContextRecordTypes, ...definition.sourceRefTypes],
   );
 
   const duplicateProjectedEdgeCount = await count(
@@ -295,14 +334,14 @@ async function auditFamily(
            JOIN context_record_source_refs sr ON sr.context_record_id = cr.id
           WHERE cr.workspace_person_id IS NOT NULL
             AND (
-              cr.record_type IN (${contextTypeSql})
+              cr.record_type IN (${personContextTypeSql})
               OR sr.source_ref_type IN (${sourceRefSql})
             )
           GROUP BY cr.workspace_person_id, cr.record_type, cr.narrative,
                    sr.source_ref_type, sr.source_ref_id, sr.evidence_role
          HAVING COUNT(*) > 1
        )`,
-    [...definition.contextRecordTypes, ...definition.sourceRefTypes],
+    [...definition.personContextRecordTypes, ...definition.sourceRefTypes],
   );
 
   const missingPersonProjectionCount = definition.eventKinds.length > 0

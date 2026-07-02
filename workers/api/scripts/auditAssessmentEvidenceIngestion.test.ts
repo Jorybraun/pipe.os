@@ -101,6 +101,7 @@ describe('auditAssessmentEvidenceIngestion', () => {
     const client = completeClient();
     client.setCount('raw:commit_submission', 1);
     client.setCount('ref:git_commit', 1);
+    client.setCount('assessment:assessment_commit_submission', 1);
     client.setCount('missingProjection:commit_submission', 1);
     client.setCount('person:assessment:code_diff', 1);
     client.setCount('person:code_diff', 1);
@@ -112,6 +113,20 @@ describe('auditAssessmentEvidenceIngestion', () => {
     expect(commit?.status).toBe('captured');
     expect(diff?.status).toBe('projected');
     expect(audit.failures).toContain('Commit submissions has 1 raw event(s) not projected to person context');
+  });
+
+  it('does not treat assessment-scoped context records as person projections', async () => {
+    const client = completeClient();
+    client.setCount('assessment:assessment_commit_submission', 1);
+
+    const audit = await auditAssessmentEvidenceIngestion(client);
+    const commit = audit.families.find((family) => family.key === 'commit_submissions');
+
+    expect(commit).toMatchObject({
+      status: 'captured',
+      assessmentScopedContextCount: 1,
+      personProjectedContextCount: 0,
+    });
   });
 
   it('flags duplicate projected edges and source-less positive claims', async () => {
