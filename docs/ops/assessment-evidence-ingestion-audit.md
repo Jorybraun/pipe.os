@@ -186,3 +186,32 @@ The follow-up unscoped app-dev audit still exits `not_ready`, but continues to
 report `sourceLessPositiveClaimCount: 0` and `duplicateProjectedEdgeCount: 0`.
 The broad app-dev historical backlog remains incomplete; the filtered replay
 command is the current bounded repair loop for completed rows.
+
+Later on 2026-07-02, the filtered replay loop was run repeatedly over all
+non-`IN_PROGRESS` missing rows. The completed historical batches succeeded
+without replay failures:
+
+- `--limit 25 --summary --progress --exclude-state IN_PROGRESS`:
+  `processedCount: 25`, `succeededCount: 25`, `sourceRefsAfter: 317`.
+- `--limit 15 --summary --progress --exclude-state IN_PROGRESS`:
+  `processedCount: 15`, `succeededCount: 15`, `sourceRefsAfter: 205`.
+- `--limit 30 --summary --progress --exclude-state IN_PROGRESS`:
+  `processedCount: 30`, `succeededCount: 30`, `sourceRefsAfter: 345`.
+- `--limit 40 --summary --progress --exclude-state IN_PROGRESS`:
+  `processedCount: 40`, `succeededCount: 40`, `sourceRefsAfter: 514`.
+- final non-active sweep:
+  `processedCount: 23`, `succeededCount: 23`, `sourceRefsAfter: 333`.
+
+After those runs, the missing-session distribution was only active work:
+`IN_PROGRESS` had `session_count: 46` and `missing_event_count: 100`; no
+`DIAGNOSTIC`, `EVALUATED`, or `FINAL_SUBMITTED` sessions remained in the
+missing queue. The unscoped app-dev audit still exits `not_ready` because active
+sessions can continue producing evidence, but it continues to report
+`sourceLessPositiveClaimCount: 0` and `duplicateProjectedEdgeCount: 0`.
+
+An attempted unfiltered replay confirmed the first active row,
+`assessment_session_3250c4945a65a1595ffe801d04e31caf`, is still too expensive
+for the remote replay loop and repeatedly hits D1 request timeouts. Treat
+remaining `IN_PROGRESS` rows as live-data backlog rather than completed
+historical debt; replay them after they settle or with a narrower active-session
+repair path.
