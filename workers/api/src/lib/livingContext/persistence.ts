@@ -931,7 +931,14 @@ export class LivingContextStore {
         `INSERT INTO context_record_source_refs (
            context_record_id, source_ref_type, source_ref_id, source_span_id,
            evidence_role, locator_json, exact_text, content_hash, metadata_json, created_at
-         ) VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7, ?8, ?9, ?10)`,
+         ) VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7, ?8, ?9, ?10)
+         ON CONFLICT(context_record_id, source_ref_type, source_ref_id, evidence_role)
+         DO UPDATE SET
+           source_span_id = excluded.source_span_id,
+           locator_json = excluded.locator_json,
+           exact_text = excluded.exact_text,
+           content_hash = excluded.content_hash,
+           metadata_json = excluded.metadata_json`,
       ).bind(
         id,
         source.sourceRefType,
@@ -948,7 +955,9 @@ export class LivingContextStore {
         await this.db.prepare(
           `INSERT INTO context_record_source_spans (
              context_record_id, source_span_id, evidence_role, created_at
-           ) VALUES (?1, ?2, ?3, ?4)`,
+           ) VALUES (?1, ?2, ?3, ?4)
+           ON CONFLICT(context_record_id, source_span_id, evidence_role)
+           DO UPDATE SET created_at = excluded.created_at`,
         ).bind(id, source.sourceSpanId, source.evidenceRole, now).run();
       }
     }
