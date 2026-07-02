@@ -76,4 +76,43 @@ describe('discoverCandidateProfileWithProviderFallbacks', () => {
       '2:succeeded:working-json-model',
     ]);
   });
+
+  it('stops after an application timeout instead of starting overlapping Workers AI calls', async () => {
+    let secondProviderCalled = false;
+    const events: CandidateDiscoveryAttemptEvent[] = [];
+    const neverReturns: LLMProvider = {
+      name: 'slow-model',
+      model: 'slow-model',
+      supportsTools: false,
+      async complete() {
+        return new Promise<never>(() => undefined);
+      },
+    };
+    const secondProvider: LLMProvider = {
+      name: 'second-model',
+      model: 'second-model',
+      supportsTools: false,
+      async complete() {
+        secondProviderCalled = true;
+        return { content: '{}' };
+      },
+    };
+
+    await expect(discoverCandidateProfileWithProviderFallbacks({
+      providers: [neverReturns, secondProvider],
+      parsed: { skills: ['TypeScript'] },
+      resumeText: 'Built TypeScript systems.',
+      timeoutMs: 5,
+      maxAttempts: 2,
+      onAttempt: (event) => {
+        events.push(event);
+      },
+    })).rejects.toThrow(/failed after 1 attempt/i);
+
+    expect(secondProviderCalled).toBe(false);
+    expect(events.map((event) => `${event.attempt}:${event.status}:${event.model}`)).toEqual([
+      '1:started:slow-model/slow-model',
+      '1:failed:slow-model/slow-model',
+    ]);
+  });
 });

@@ -45,10 +45,9 @@ const DEFAULT_VERTEX_MODEL = 'google/gemini-1.5-flash-002';
 const DEFAULT_KIMI_MODEL = 'kimi-k2-6';
 const DEFAULT_KIMI_BASE_URL = 'https://api.moonshot.cn/v1';
 const CANDIDATE_WORKERS_AI_FALLBACK_MODELS = [
-  DEFAULT_CLOUDFLARE_MODEL,
-  '@cf/openai/gpt-oss-20b',
-  '@cf/google/gemma-4-26b-a4b-it',
   '@cf/qwen/qwen3-30b-a3b-fp8',
+  '@cf/google/gemma-4-26b-a4b-it',
+  DEFAULT_CLOUDFLARE_MODEL,
 ] as const;
 
 export interface ProviderEnv {
@@ -269,11 +268,20 @@ export function createCandidateAgentProviders(env: ProviderEnv): LLMProvider[] {
   if (env.MOCK_AI === 'true') return [];
 
   const providers: LLMProvider[] = [];
-  pushUniqueProvider(providers, createCandidateAgentProvider(env));
+  const hasExplicitCandidateProvider = Boolean(
+    env.CANDIDATE_AGENT_PROVIDER
+      || env.CANDIDATE_AGENT_MODEL
+      || env.CLOUDFLARE_AI_MODEL,
+  );
+  if (hasExplicitCandidateProvider) {
+    pushUniqueProvider(providers, createCandidateAgentProvider(env));
+  }
 
   if (env.AI) {
-    const configuredModel = env.CANDIDATE_AGENT_MODEL ?? env.CLOUDFLARE_AI_MODEL ?? DEFAULT_CLOUDFLARE_MODEL;
-    for (const model of [configuredModel, ...CANDIDATE_WORKERS_AI_FALLBACK_MODELS]) {
+    const configuredModels = hasExplicitCandidateProvider
+      ? [env.CANDIDATE_AGENT_MODEL ?? env.CLOUDFLARE_AI_MODEL ?? DEFAULT_CLOUDFLARE_MODEL]
+      : [];
+    for (const model of [...configuredModels, ...CANDIDATE_WORKERS_AI_FALLBACK_MODELS]) {
       pushUniqueProvider(providers, new CloudflareAIProvider(env.AI, model));
     }
   }

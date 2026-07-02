@@ -73,9 +73,16 @@ export interface IngestionInput {
 const CANDIDATE_DISCOVERY_AI_TIMEOUT_MS = 25_000;
 const MAX_CANDIDATE_DISCOVERY_AI_ATTEMPTS = 3;
 
+class CandidateDiscoveryAttemptTimeoutError extends Error {
+  constructor(label: string, readonly timeoutMs: number) {
+    super(`${label} timed out after ${timeoutMs}ms`);
+    this.name = 'CandidateDiscoveryAttemptTimeoutError';
+  }
+}
+
 function timeoutAfter(ms: number, label: string): Promise<never> {
   return new Promise((_, reject) => {
-    setTimeout(() => reject(new Error(`${label} timed out after ${ms}ms`)), ms);
+    setTimeout(() => reject(new CandidateDiscoveryAttemptTimeoutError(label, ms)), ms);
   });
 }
 
@@ -116,6 +123,7 @@ export async function discoverCandidateProfileWithProviderFallbacks(input: {
 }): Promise<CandidateDiscoveryResult> {
   const providers = input.providers.slice(0, input.maxAttempts);
   const failures: string[] = [];
+  let attemptsRun = 0;
 
   if (providers.length === 0) {
     throw new Error('No candidate discovery AI provider is configured');
@@ -124,6 +132,7 @@ export async function discoverCandidateProfileWithProviderFallbacks(input: {
   for (let index = 0; index < providers.length; index += 1) {
     const provider = providers[index]!;
     const attempt = index + 1;
+    attemptsRun = attempt;
     const model = providerModelKey(provider);
     await input.onAttempt?.({ status: 'started', model, attempt });
     try {
@@ -138,10 +147,11 @@ export async function discoverCandidateProfileWithProviderFallbacks(input: {
       const truncated = truncateForTelemetry(msg);
       failures.push(`${model}: ${truncated}`);
       await input.onAttempt?.({ status: 'failed', model, attempt, error: truncated });
+      if (err instanceof CandidateDiscoveryAttemptTimeoutError) break;
     }
   }
 
-  throw new Error(`Candidate Discovery AI failed after ${providers.length} attempt(s): ${failures.join(' | ')}`);
+  throw new Error(`Candidate Discovery AI failed after ${attemptsRun} attempt(s): ${failures.join(' | ')}`);
 }
 
 /**
