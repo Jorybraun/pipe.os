@@ -1,10 +1,19 @@
 import { readFileSync } from 'node:fs';
 import Database from 'better-sqlite3';
 import { Hono } from 'hono';
-import { afterEach, describe, expect, it } from 'vitest';
+import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import { createMockD1, type BetterSqliteDb } from '../../__tests__/helpers/mockD1';
+import { runCandidateIngestion } from '../../lib/candidateDiscovery/orchestrate';
 import { talentPoolPublic } from '../talentPool';
 import type { Env, Variables } from '../../types';
+
+vi.mock('../../lib/candidateDiscovery/orchestrate', async (importOriginal) => {
+  const actual = await importOriginal<typeof import('../../lib/candidateDiscovery/orchestrate')>();
+  return {
+    ...actual,
+    runCandidateIngestion: vi.fn(async () => undefined),
+  };
+});
 
 const talentPoolMigration = readFileSync(
   new URL('../../../migrations/0109_talent_pool_intake.sql', import.meta.url),
@@ -72,6 +81,10 @@ function createSqlite(): BetterSqliteDb {
       current_stage_id TEXT,
       resume_s3_key TEXT,
       phone_number TEXT,
+      skills TEXT,
+      years_of_experience INTEGER,
+      current_role TEXT,
+      education TEXT,
       created_at TEXT,
       updated_at TEXT
     );
@@ -132,6 +145,22 @@ function createApp(): Hono<{ Bindings: Env; Variables: Variables }> {
   return app;
 }
 
+function buildCtx(): { ctx: ExecutionContext; waitUntilAll: () => Promise<void> } {
+  const promises: Promise<unknown>[] = [];
+  const ctx = {
+    waitUntil: (promise: Promise<unknown>) => {
+      promises.push(promise);
+    },
+    passThroughOnException: () => {},
+  } as unknown as ExecutionContext;
+  return {
+    ctx,
+    waitUntilAll: async () => {
+      await Promise.all(promises);
+    },
+  };
+}
+
 interface SeedCandidateOptions {
   id?: string;
   ownerId?: string;
@@ -160,6 +189,10 @@ function seedCandidate(sqlite: BetterSqliteDb, options: SeedCandidateOptions = {
 
 describe('talent pool candidate RPC', () => {
   let sqlite: BetterSqliteDb | null = null;
+
+  beforeEach(() => {
+    vi.clearAllMocks();
+  });
 
   afterEach(() => {
     sqlite?.close();
@@ -386,6 +419,41 @@ describe('talent pool candidate RPC', () => {
     expect(sqlite.prepare('SELECT COUNT(*) AS count FROM context_record_source_refs').get()).toEqual({ count: 8 });
     expect(sqlite.prepare('SELECT COUNT(*) AS count FROM candidate_nodes').get()).toEqual({ count: 1 });
     expect(sqlite.prepare('SELECT COUNT(*) AS count FROM challenge_design_queue').get()).toEqual({ count: 1 });
+  });
+
+  it('schedules text profile ingestion directly from submitted source text', async () => {
+    sqlite = createSqlite();
+    seedCandidate(sqlite);
+    const storage = createMemoryR2();
+    const app = createApp();
+    const { ctx, waitUntilAll } = buildCtx();
+    const payload = {
+      inviteToken: 'invite-token',
+      resumeText: 'Senior frontend engineer with React, TypeScript, Cloudflare Workers, accessibility fixes, source-backed tests, and open-source review experience.',
+      githubUrl: 'https://github.com/jordan-talent',
+      linkedinUrl: 'https://linkedin.com/in/jordan-talent',
+      phoneScreenerConsent: false,
+    };
+
+    const res = await app.request('/rpc/talent/submit-profile', {
+      method: 'POST',
+      body: JSON.stringify(payload),
+      headers: { 'Content-Type': 'application/json' },
+    }, createEnv(sqlite, storage), ctx);
+
+    expect(res.status).toBe(200);
+    await waitUntilAll();
+
+    expect(runCandidateIngestion).toHaveBeenCalledWith(expect.objectContaining({
+      candidateId: 'candidate-1',
+      resumeText: payload.resumeText,
+      decompositionResult: null,
+      mirrorLivingContext: false,
+      parsed: expect.objectContaining({
+        skills: expect.any(Array),
+        experiences: expect.any(Array),
+      }),
+    }));
   });
 
   it('projects email-less profile intake into the unified person graph idempotently', async () => {

@@ -3,7 +3,6 @@ import { z } from 'zod';
 import {
   buildRuleBasedParsedCV,
   extractTextFromResumeFile,
-  parseResumeText,
   persistParsedCV,
 } from '../lib/cvParser';
 import { runCandidateIngestion } from '../lib/candidateDiscovery/orchestrate';
@@ -472,11 +471,7 @@ async function ingestTextProfile(input: {
   resumeText: string;
   mirrorLivingContext?: boolean;
 }): Promise<void> {
-  const parsed = await parseResumeText({
-    resumeText: input.resumeText,
-    env: input.env,
-  });
-  const parsedCV = parsed?.parsedCV ?? buildRuleBasedParsedCV(input.resumeText);
+  const parsedCV = buildRuleBasedParsedCV(input.resumeText);
   await persistParsedCV(input.env.DB, input.candidateId, parsedCV);
   await runCandidateIngestion({
     env: input.env,
@@ -484,7 +479,7 @@ async function ingestTextProfile(input: {
     candidateId: input.candidateId,
     parsed: parsedCV,
     resumeText: input.resumeText,
-    decompositionResult: parsed?.decompositionResult ?? null,
+    decompositionResult: null,
     mirrorLivingContext: input.mirrorLivingContext ?? false,
   });
 }
