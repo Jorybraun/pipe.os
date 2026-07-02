@@ -327,15 +327,16 @@ requires recruiter detail to expose that decision with
 app-dev recruiter detail page and verifies the reviewer receipt renders the
 final decision, source-report anchor, reviewed commit, repo/branch, and no raw
 reviewer ID. Latest deployed proof on 2026-07-02 passed for interview
-`7edae8fa-b310-4b5b-8e9e-fa9d584beca9`, repo `mui/base-ui`, workspace commit
-`50019c2a200627d5670fab1f926ed825bade4914`, bridge revision
+`e2f3b2d4-f430-471b-be50-9e140018187a`, repo `mui/base-ui`, candidate task
+brief visible, workspace commit
+`ace82b5d6b981c10d000c40fb5eaab3d125379d9`, bridge revision
 `2026-06-30-assessment-branch-v1`, and evaluation report
-`assessment_evaluation_report_71b8391233e6a54d74519dcf8ab3bcbe` with
-recommendation `strong_evidence_to_advance`. The recruiter projection was
+`assessment_evaluation_report_fbc7e16aa279a288f142d08a6b1a8017` with
+recommendation `mixed_evidence_human_review`. The recruiter projection was
 reviewable from source-backed `git_commit`, `code_diff`, `test_run`,
-`terminal_command`, and file-observation refs; `recruiterCompareUrl` was
-correctly `null` because workspace-only finalizer commits are not pushed to
-GitHub by default.
+`terminal_command`, AI usage, meeting-session, challenge-packet, workspace
+launch, and file-observation refs; `recruiterCompareUrl` was correctly `null`
+because workspace-only finalizer commits are not pushed to GitHub by default.
 
 Latest standalone `/assess` blocked-boundary proof: after deploying app-dev
 version `3413dea3-2899-40ac-afc0-8163e3a899ff`, the CODE_REVIEW matrix passed
