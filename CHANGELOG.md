@@ -35,7 +35,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Fixed — Open-source assessment progress
 
-- Batched recruiter interview-list assessment progress summaries now satisfy Worker strict typing, restoring CI for the list-card performance path.
+- Batched recruiter interview-list assessment progress summaries now use explicit typed row projections, keeping Worker strict typing green for the list-card performance path.
 - Recruiter interview lists now load assessment progress from batched summary queries instead of hydrating full per-session evidence detail for every card, preserving task/commit/evaluation signals while reducing list-page D1 work.
 - The assessment evidence audit now limits unscoped person-projection and duplicate checks to assessment-origin interactions, avoiding false duplicate reports from unrelated meeting-room context while still flagging candidate-backed raw assessment events that need replay.
 - Living-context scheduled backfill now recovers stale `running` checkpoints before selecting ready tasks, so interrupted assessment evidence replays retry instead of freezing app-dev assessment projection.
