@@ -300,6 +300,26 @@ async function requestJson(base, path, init = {}) {
   return body;
 }
 
+async function startAssessmentEvaluationWithRetry(interviewId) {
+  let lastError = null;
+  for (let attempt = 1; attempt <= 2; attempt += 1) {
+    try {
+      return await requestJson(APP_BASE, `/api/v1/scheduling/interviews/${interviewId}/assessment/start-evaluation`, {
+        method: 'POST',
+      });
+    } catch (error) {
+      lastError = error;
+      if (attempt === 2) break;
+      const message = error instanceof Error ? error.message : String(error);
+      if (!message.includes('/assessment/start-evaluation failed (500)')) {
+        throw error;
+      }
+      await sleep(2_000);
+    }
+  }
+  throw lastError;
+}
+
 function tokenFromRoomUrl(rawUrl) {
   const url = new URL(rawUrl);
   const match = url.pathname.match(/\/room\/([^/]+)/);
@@ -794,9 +814,7 @@ async function main() {
   if (submittedBody?.progress?.hasCommitSubmission !== true) {
     throw new Error(`Workspace progress did not reflect the committed submission: ${JSON.stringify(submittedBody?.progress)}`);
   }
-  const evaluationBody = await requestJson(APP_BASE, `/api/v1/scheduling/interviews/${interviewId}/assessment/start-evaluation`, {
-    method: 'POST',
-  });
+  const evaluationBody = await startAssessmentEvaluationWithRetry(interviewId);
   const evaluationProgress = evaluationBody?.progress ?? null;
   if (evaluationProgress?.stage !== 'EVALUATED' || evaluationProgress?.nextAction !== 'REVIEW_EVALUATION') {
     throw new Error(`Workspace assessment evaluation did not produce a reviewable report: ${JSON.stringify(evaluationBody)}`);
