@@ -191,7 +191,7 @@ CLOUDFLARE_D1_DATABASE_ID=0abe92df-9296-46f5-9f9d-a1fb1bcd3be1 \
 
 Latest app-dev proof on 2026-07-02 used invite token
 `talent-audit-532e4287e-c1` after deploying Worker version
-`ecf0b305-081c-4fbc-b01b-cbe97e56284b` and letting the scheduled
+`d0f557e2-c2af-4d99-aad4-27c9702ae465` and letting the scheduled
 Talent Pool repair replay the existing profile-upload R2 object against dev D1.
 The remote verifier returned `status: ready`,
 `candidateNodeCount: 74`, `candidateNodeExactSourceQuoteCount: 74`,
