@@ -157,6 +157,8 @@ evidence repair from human labelling work. A packet with missing expected PR
 evidence or repo demand source spans is not ready for expert review as a rollout
 gate; operators should first repair the source-backed challenge packet, then
 complete the review template with reviewer/source provenance.
+The CLI JSON summary mirrors that same next action so automation and reviewers
+do not accidentally promote a source-incomplete corpus.
 
 CI also runs the matching-evaluation readiness report after worker unit tests.
 Missing Cloudflare credentials or `MATCHING_EVALUATION_CORPUS_ID` produce a
