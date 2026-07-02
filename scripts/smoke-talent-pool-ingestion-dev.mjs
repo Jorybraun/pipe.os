@@ -44,6 +44,12 @@ function booleanArgument(name) {
   return process.argv.includes(name);
 }
 
+const allowedSmokeModes = new Set(['submit-text', 'upload-text']);
+const smokeMode = argumentValue('--mode') ?? process.env.TALENT_POOL_SMOKE_MODE ?? 'submit-text';
+if (!allowedSmokeModes.has(smokeMode)) {
+  throw new Error(`Unsupported --mode "${smokeMode}". Use submit-text or upload-text.`);
+}
+
 const appBase = (
   argumentValue('--app-base')
   ?? process.env.TALENT_POOL_SMOKE_APP_BASE
@@ -78,11 +84,11 @@ const candidateName = argumentValue('--name') ?? `Talent Smoke ${runId}`;
 const candidateEmail = (
   argumentValue('--email')
   ?? process.env.TALENT_POOL_SMOKE_EMAIL
-  ?? `talent-smoke-${runId}@example.test`
+  ?? `talent-smoke-${smokeMode}-${runId}@example.test`
 ).toLowerCase();
 
 const profileText = [
-  `Talent Pool live smoke proof ${runId}.`,
+  `Talent Pool live ${smokeMode} smoke proof ${runId}.`,
   'Recently implemented source-backed candidate evidence ingestion for public Talent Pool profile submissions.',
   'Built TypeScript Workers APIs, React accessibility flows, and source-provenance test harnesses.',
   'This text is intentionally unique so exact source spans can be audited back to the submitted profile.',
@@ -140,6 +146,29 @@ async function requestJson(baseUrl, pathname, options = {}) {
   return body;
 }
 
+async function requestMultipart(baseUrl, pathname, formData) {
+  const response = await fetch(`${baseUrl}${pathname}`, {
+    method: 'POST',
+    headers: {
+      ...basicAuthHeader(),
+    },
+    body: formData,
+  });
+  const text = await response.text();
+  let body = null;
+  if (text) {
+    try {
+      body = JSON.parse(text);
+    } catch {
+      body = { raw: text };
+    }
+  }
+  if (!response.ok) {
+    throw new Error(`POST ${baseUrl}${pathname} failed ${response.status}: ${text}`);
+  }
+  return body;
+}
+
 function extractJson(text) {
   const start = text.indexOf('{');
   const end = text.lastIndexOf('}');
@@ -176,6 +205,13 @@ function runAudit(inviteToken) {
     },
   );
   if (result.status !== 0) {
+    if (result.stdout.trim()) {
+      try {
+        return extractJson(result.stdout);
+      } catch {
+        // Fall through to include stdout/stderr in the failure.
+      }
+    }
     throw new Error(`Audit command failed:\n${result.stdout}\n${result.stderr}`);
   }
   return extractJson(result.stdout);
@@ -186,6 +222,7 @@ function auditIsReady(report) {
   if (report.rawCapture?.submittedIntakeCount !== 1) return false;
   if (report.sourceProof?.candidateNodeExactSourceQuoteCount < 1) return false;
   if (report.sourceProof?.contextSourceRefCount < 1) return false;
+  if (smokeMode === 'upload-text' && report.sourceProof?.profileUploadArtifactVersionCount < 1) return false;
   if (report.personProjection?.talentPoolWorkspacePersonCount !== 1) return false;
   if (report.sourceLessPositiveClaimCount !== 0) return false;
   if (report.duplicateProjectedEdgeCount !== 0) return false;
@@ -220,6 +257,7 @@ async function main() {
     recruiterApiBase,
     rpcBase,
     email: candidateEmail,
+    mode: smokeMode,
   });
 
   const created = await requestJson(recruiterApiBase, '/api/v1/candidates', {
@@ -245,20 +283,38 @@ async function main() {
     throw new Error(`Expected PROFILE_NEEDED before submit, got ${initialDashboard?.status}`);
   }
 
-  const submittedDashboard = await requestJson(rpcBase, '/rpc/talent/submit-profile', {
-    method: 'POST',
-    body: {
-      inviteToken,
-      resumeText: profileText,
-      githubUrl: `https://github.com/talent-smoke-${runId}`,
-      linkedinUrl: `https://linkedin.com/in/talent-smoke-${runId}`,
-      portfolioUrl: `https://talent-smoke-${runId}.example.dev`,
-      phoneScreenerConsent: true,
-      phoneNumber: '+15551234567',
-      timezone: 'America/Vancouver',
-      availability: 'Weekday afternoons after 2 PM.',
-    },
-  });
+  const submittedDashboard = smokeMode === 'upload-text'
+    ? await (async () => {
+        const formData = new FormData();
+        formData.set('inviteToken', inviteToken);
+        formData.set(
+          'file',
+          new Blob([profileText], { type: 'text/plain' }),
+          `talent-smoke-${runId}.txt`,
+        );
+        formData.set('githubUrl', `https://github.com/talent-smoke-${smokeMode}-${runId}`);
+        formData.set('linkedinUrl', `https://linkedin.com/in/talent-smoke-${smokeMode}-${runId}`);
+        formData.set('portfolioUrl', `https://talent-smoke-${smokeMode}-${runId}.example.dev`);
+        formData.set('phoneScreenerConsent', 'true');
+        formData.set('phoneNumber', '+15551234567');
+        formData.set('timezone', 'America/Vancouver');
+        formData.set('availability', 'Weekday afternoons after 2 PM.');
+        return requestMultipart(rpcBase, '/rpc/talent/upload-profile', formData);
+      })()
+    : await requestJson(rpcBase, '/rpc/talent/submit-profile', {
+        method: 'POST',
+        body: {
+          inviteToken,
+          resumeText: profileText,
+          githubUrl: `https://github.com/talent-smoke-${runId}`,
+          linkedinUrl: `https://linkedin.com/in/talent-smoke-${runId}`,
+          portfolioUrl: `https://talent-smoke-${runId}.example.dev`,
+          phoneScreenerConsent: true,
+          phoneNumber: '+15551234567',
+          timezone: 'America/Vancouver',
+          availability: 'Weekday afternoons after 2 PM.',
+        },
+      });
   if (submittedDashboard?.status !== 'CHALLENGE_PREPARING') {
     throw new Error(`Expected CHALLENGE_PREPARING after submit, got ${submittedDashboard?.status}`);
   }
@@ -274,6 +330,7 @@ async function main() {
     duplicateProjectedEdgeCount: report.duplicateProjectedEdgeCount,
     candidateNodeExactSourceQuoteCount: report.sourceProof.candidateNodeExactSourceQuoteCount,
     contextSourceRefCount: report.sourceProof.contextSourceRefCount,
+    profileUploadArtifactVersionCount: report.sourceProof.profileUploadArtifactVersionCount,
     talentPoolWorkspacePersonCount: report.personProjection.talentPoolWorkspacePersonCount,
     nextActions: report.nextActions,
   });

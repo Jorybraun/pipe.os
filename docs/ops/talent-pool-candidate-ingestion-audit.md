@@ -196,6 +196,7 @@ npm test -- src/lib/candidateDiscovery/__tests__/candidateNodes.test.ts src/lib/
 npm test -- src/routes/cockpit/__tests__/contacts.rest.test.ts src/routes/cockpit/__tests__/candidates.rest.test.ts src/lib/livingContext/__tests__/readModel.test.ts
 npx playwright test e2e/talent-pool-intake.unauth.spec.ts --project=unauthenticated --reporter=line
 npm run smoke:talent-pool-ingestion-dev
+npm run smoke:talent-pool-upload-dev
 ```
 
 For app-dev, prefix remote proof commands with the dev D1 id:
@@ -242,12 +243,24 @@ source-less claims or duplicate person/context edges.
 Live app-dev submit proof on 2026-07-02 used
 `npm run smoke:talent-pool-ingestion-dev` with app-dev Basic auth and dev D1
 credentials. The smoke created a standalone roleless Talent Pool candidate,
-resolved invite token `3a8eae90-b428-4129-8b52-6f38919dbb7f`, submitted pasted
-profile evidence through `/rpc/talent/submit-profile`, verified the public
-dashboard stayed `CHALLENGE_PREPARING` with no ready challenges, then polled
+resolved invite token `bd7829ab-b071-49c0-9284-d6d0fd59775f` after deploying
+Worker version `9da26c65-e388-42ae-aa44-184e6e15121e`, submitted pasted profile
+evidence through `/rpc/talent/submit-profile`, verified the public dashboard
+stayed `CHALLENGE_PREPARING` with no ready challenges, then polled
 `candidate-ingestion:audit -- --remote --require-context-records`. The audit
-returned `status: ready`, `candidateNodeExactSourceQuoteCount: 58`,
-`contextSourceRefCount: 9`, `talentPoolWorkspacePersonCount: 1`,
+returned `status: ready`, `candidateNodeExactSourceQuoteCount: 52`,
+`contextSourceRefCount: 9`, `profileUploadArtifactVersionCount: 0`,
+`talentPoolWorkspacePersonCount: 1`, `sourceLessPositiveClaimCount: 0`, and
+`duplicateProjectedEdgeCount: 0`.
+
+Live app-dev upload proof on 2026-07-02 used
+`npm run smoke:talent-pool-upload-dev` against the same Worker version. The
+smoke created a standalone roleless Talent Pool candidate, resolved invite token
+`7e740609-6aac-41f5-a5c9-bdc60ba278bd`, submitted a multipart plain-text profile
+through `/rpc/talent/upload-profile`, and polled the remote audit with
+`--require-context-records`. The audit returned `status: ready`,
+`candidateNodeExactSourceQuoteCount: 58`, `contextSourceRefCount: 8`,
+`profileUploadArtifactVersionCount: 1`, `talentPoolWorkspacePersonCount: 1`,
 `sourceLessPositiveClaimCount: 0`, and `duplicateProjectedEdgeCount: 0`.
 
 Remote source-span sampling proved operational context refs preserve exact

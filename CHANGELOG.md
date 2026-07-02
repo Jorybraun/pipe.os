@@ -10,6 +10,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 ### Fixed — Talent Pool ingestion
 
 - Added `smoke:talent-pool-ingestion-dev` to create a dev Talent Pool candidate, submit public profile evidence, and poll the candidate-ingestion audit for source-backed person projection proof.
+- Added `smoke:talent-pool-upload-dev` to prove multipart plain-text Talent Pool uploads reach the same source-backed person projection, including the original upload artifact receipt.
 - Public Talent Pool intake Playwright proof now skips Clerk testing setup when recruiter auth env vars are absent, so unauthenticated `/talent/:token` browser tests can run locally.
 - Talent Pool dashboard readiness now requires the assigned repo/PR to materialize through a production-ready source-backed review challenge packet, and the candidate-ingestion audit reports PR-backed assignment rows without packet provenance as unproven readiness gaps.
 - Recruiter pipeline candidate lists and candidate enrichment status now surface failed AI ingestion with the stored error text and a `RETRY_FAILED` action that calls the source-backed repair endpoint, so stalled candidates can be requeued from the app instead of requiring a terminal API call.
