@@ -204,6 +204,11 @@ Uploaded profile files are stored under content-hash keys so a retry of the
 same file reuses the same source artifact path. PDF/DOCX background resume
 projection uses the roleless Talent Pool `workspace_people` identity and leaves
 `applications` / `person_roles` empty until a real role-backed process exists.
+The original uploaded blob is projected as a `profile_upload` source artifact
+receipt with exact storage key/hash/media metadata. Scheduled Talent Pool repair
+can backfill that receipt from existing content-hash R2 objects and skips
+already-receipted uploads, while pasted profile text remains text-source
+evidence rather than a file-upload receipt.
 
 GitHub, LinkedIn, portfolio, and phone-screener intent fields are projected as
 source-backed operational context records with exact submitted field spans.

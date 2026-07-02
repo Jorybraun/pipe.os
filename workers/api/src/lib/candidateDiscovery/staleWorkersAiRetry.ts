@@ -7,7 +7,10 @@ import {
 } from '../cvParser';
 import { processResumeFromR2 } from '../enrichment/resumeIngestion';
 import type { ResumeLivingContextIdentity } from '../livingContext/resumeIngestion';
-import { ensureRolelessTalentPoolIdentity } from '../talentPoolIdentity';
+import {
+  ensureRolelessTalentPoolIdentity,
+  type TalentPoolSourceArtifactInput,
+} from '../talentPoolIdentity';
 import { recordSessionEvent } from '../telemetry/sessionEvents';
 import { runCandidateIngestion } from './orchestrate';
 import { markIngestionFailed } from './persist';
@@ -97,6 +100,7 @@ interface TalentPoolOperationalRetryRow {
   owner_id: string | null;
   name: string | null;
   email: string | null;
+  profile_r2_key: string | null;
   github_url: string | null;
   linkedin_url: string | null;
   portfolio_url: string | null;
@@ -246,6 +250,81 @@ function retryContextForRow(row: StaleWorkersAIRow, trigger: RetryTrigger): (Ret
   return null;
 }
 
+function normalizeTalentPoolArtifactContentType(contentType: string | null | undefined, storageKey: string): string {
+  const normalized = (contentType ?? '').split(';')[0]?.trim().toLowerCase() ?? '';
+  if (normalized) return normalized;
+  const lowerKey = storageKey.toLowerCase();
+  if (lowerKey.endsWith('.pdf')) return 'application/pdf';
+  if (lowerKey.endsWith('.docx')) {
+    return 'application/vnd.openxmlformats-officedocument.wordprocessingml.document';
+  }
+  if (lowerKey.endsWith('.txt')) return 'text/plain';
+  return 'application/octet-stream';
+}
+
+function uploadedProfileFileNameFromStorageKey(storageKey: string): string | null {
+  const leaf = storageKey.split('/').pop()?.trim() ?? '';
+  const match = /^[a-f0-9]{64}-(.+)$/i.exec(leaf);
+  return match?.[1]?.trim() || null;
+}
+
+async function sha256Hex(buffer: ArrayBuffer): Promise<string> {
+  const digest = await crypto.subtle.digest('SHA-256', buffer);
+  return [...new Uint8Array(digest)]
+    .map((byte) => byte.toString(16).padStart(2, '0'))
+    .join('');
+}
+
+async function profileUploadReceiptExists(db: D1Database, storageKey: string): Promise<boolean> {
+  const row = await db.prepare(
+    `SELECT COUNT(*) AS receipt_count
+       FROM artifact_versions av
+       JOIN artifacts a ON a.id = av.artifact_id
+      WHERE av.storage_key = ?1
+        AND (
+          a.artifact_type = 'profile_upload'
+          OR a.logical_key = 'roleless_candidate_profile_upload'
+          OR json_extract(a.metadata_json, '$.evidenceKind') = 'profile_upload_source'
+        )`,
+  ).bind(storageKey).first<{ receipt_count: number | null }>();
+  return Number(row?.receipt_count ?? 0) > 0;
+}
+
+async function profileStorageHasSourceSpans(db: D1Database, storageKey: string): Promise<boolean> {
+  const row = await db.prepare(
+    `SELECT COUNT(*) AS source_span_count
+       FROM source_spans ss
+       JOIN artifact_versions av ON av.id = ss.artifact_version_id
+      WHERE av.storage_key = ?1`,
+  ).bind(storageKey).first<{ source_span_count: number | null }>();
+  return Number(row?.source_span_count ?? 0) > 0;
+}
+
+async function buildMissingTalentPoolProfileUploadSourceArtifact(
+  env: Env,
+  row: TalentPoolOperationalRetryRow,
+): Promise<TalentPoolSourceArtifactInput | undefined> {
+  const storageKey = row.profile_r2_key?.trim();
+  if (!storageKey || !env.STORAGE) return undefined;
+
+  const originalFileName = uploadedProfileFileNameFromStorageKey(storageKey);
+  if (!originalFileName) return undefined;
+  if (await profileUploadReceiptExists(env.DB, storageKey)) return undefined;
+
+  const object = await env.STORAGE.get(storageKey);
+  if (!object) return undefined;
+
+  const bytes = await object.arrayBuffer();
+  return {
+    storageKey,
+    mediaType: normalizeTalentPoolArtifactContentType(object.httpMetadata?.contentType, storageKey),
+    contentHash: await sha256Hex(bytes),
+    byteLength: bytes.byteLength,
+    originalFileName,
+    extractedTextAvailable: await profileStorageHasSourceSpans(env.DB, storageKey),
+  };
+}
+
 async function repairRolelessTalentPoolOperationalContext(
   env: Env,
   candidateId: string,
@@ -254,6 +333,7 @@ async function repairRolelessTalentPoolOperationalContext(
     `SELECT c.owner_id,
             c.name,
             c.email,
+            t.profile_r2_key,
             t.github_url,
             t.linkedin_url,
             t.portfolio_url,
@@ -273,6 +353,7 @@ async function repairRolelessTalentPoolOperationalContext(
   const ownerId = row?.owner_id?.trim();
   const email = row?.email?.trim() || null;
   if (!row || !ownerId) return null;
+  const sourceArtifact = await buildMissingTalentPoolProfileUploadSourceArtifact(env, row);
 
   return await ensureRolelessTalentPoolIdentity({
     db: env.DB,
@@ -289,6 +370,7 @@ async function repairRolelessTalentPoolOperationalContext(
       timezone: row.timezone,
       availability: row.availability,
     },
+    sourceArtifact,
     now: row.submitted_at ?? row.updated_at ?? new Date().toISOString(),
   });
 }
@@ -308,6 +390,7 @@ export async function processTalentPoolOperationalContextRepairs(
           OR (t.linkedin_url IS NOT NULL AND TRIM(t.linkedin_url) <> '')
           OR (t.portfolio_url IS NOT NULL AND TRIM(t.portfolio_url) <> '')
           OR t.phone_screener_consent = 1
+          OR (t.profile_r2_key IS NOT NULL AND TRIM(t.profile_r2_key) <> '')
           OR EXISTS (
             SELECT 1
               FROM applications app

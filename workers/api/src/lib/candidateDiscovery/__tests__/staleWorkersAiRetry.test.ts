@@ -63,7 +63,7 @@ interface FakeD1 extends D1Database {
 }
 
 function fakeD1(options: {
-  first?: unknown;
+  first?: unknown | ((call: PreparedCall) => unknown);
   all?: unknown[];
 } = {}): FakeD1 {
   const calls: PreparedCall[] = [];
@@ -76,7 +76,12 @@ function fakeD1(options: {
         call.params = params;
         return stmt;
       },
-      first: async () => options.first ?? null,
+      first: async () => {
+        if (typeof options.first === 'function') {
+          return options.first(call) ?? null;
+        }
+        return options.first ?? null;
+      },
       all: async () => ({
         results: options.all ?? [],
         success: true,
@@ -745,6 +750,102 @@ describe('stale Workers AI candidate-ingestion retry', () => {
         phoneScreenerConsent: true,
       }),
     }));
+  });
+
+  it('cron backfills missing Talent Pool upload receipt artifacts from the original R2 object', async () => {
+    const storageKey = 'talent-intake/talent-upload/0123456789abcdef0123456789abcdef0123456789abcdef0123456789abcdef-profile.pdf';
+    const objectBytes = 'pdf bytes for immutable Talent Pool upload receipt';
+    const db = fakeD1({
+      all: [
+        { candidate_id: 'talent-upload' },
+      ],
+      first: (call) => {
+        if (call.sql.includes('receipt_count')) return { receipt_count: 0 };
+        if (call.sql.includes('source_span_count')) return { source_span_count: 2 };
+        return {
+          owner_id: 'owner-1',
+          name: 'Uploaded Candidate',
+          email: null,
+          profile_r2_key: storageKey,
+          github_url: null,
+          linkedin_url: null,
+          portfolio_url: null,
+          phone_screener_consent: 0,
+          phone_number: null,
+          timezone: null,
+          availability: null,
+          submitted_at: '2026-07-02T18:22:39.331Z',
+          updated_at: '2026-07-02T18:22:39.331Z',
+        };
+      },
+    });
+    const storage = fakeStorage(objectBytes, 'application/pdf');
+    const env = buildEnv(db, storage);
+
+    await expect(processTalentPoolOperationalContextRepairs(env, 1)).resolves.toEqual({
+      scanned: 1,
+      repaired: 1,
+      skipped: 0,
+      failed: 0,
+    });
+
+    expect(storage.get).toHaveBeenCalledWith(storageKey);
+    const identityInput = vi.mocked(ensureRolelessTalentPoolIdentity).mock.calls[0]?.[0];
+    expect(identityInput).toMatchObject({
+      candidateId: 'talent-upload',
+      name: 'Uploaded Candidate',
+      email: null,
+      sourceArtifact: {
+        storageKey,
+        mediaType: 'application/pdf',
+        byteLength: new TextEncoder().encode(objectBytes).byteLength,
+        originalFileName: 'profile.pdf',
+        extractedTextAvailable: true,
+      },
+    });
+    expect(identityInput?.sourceArtifact?.contentHash).toMatch(/^[a-f0-9]{64}$/);
+    const scanCall = db.__calls.find((call) => call.sql.includes('FROM talent_pool_intakes'))!;
+    expect(scanCall.sql).toContain('t.profile_r2_key');
+  });
+
+  it('cron skips Talent Pool upload receipt backfill when the profile upload artifact already exists', async () => {
+    const storageKey = 'talent-intake/talent-upload/0123456789abcdef0123456789abcdef0123456789abcdef0123456789abcdef-profile.pdf';
+    const db = fakeD1({
+      all: [
+        { candidate_id: 'talent-upload' },
+      ],
+      first: (call) => {
+        if (call.sql.includes('receipt_count')) return { receipt_count: 1 };
+        return {
+          owner_id: 'owner-1',
+          name: 'Uploaded Candidate',
+          email: 'uploaded@example.com',
+          profile_r2_key: storageKey,
+          github_url: null,
+          linkedin_url: null,
+          portfolio_url: null,
+          phone_screener_consent: 0,
+          phone_number: null,
+          timezone: null,
+          availability: null,
+          submitted_at: '2026-07-02T18:22:39.331Z',
+          updated_at: '2026-07-02T18:22:39.331Z',
+        };
+      },
+    });
+    const storage = fakeStorage('should not be read', 'application/pdf');
+    const env = buildEnv(db, storage);
+
+    await expect(processTalentPoolOperationalContextRepairs(env, 1)).resolves.toEqual({
+      scanned: 1,
+      repaired: 1,
+      skipped: 0,
+      failed: 0,
+    });
+
+    expect(storage.get).not.toHaveBeenCalled();
+    const identityInput = vi.mocked(ensureRolelessTalentPoolIdentity).mock.calls[0]?.[0];
+    expect(identityInput?.sourceArtifact).toBeUndefined();
   });
 
   it('cron removes generated roleless Talent Pool application rows', async () => {

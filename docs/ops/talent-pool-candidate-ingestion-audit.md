@@ -92,6 +92,13 @@ claim, or repo-family suggestion. PDF/DOCX extraction still runs in background
 resume ingestion when foreground extraction is unavailable. When foreground
 text extraction succeeds, the profile text artifact version stores the uploaded
 profile storage key so source spans can be checked against the current file.
+Scheduled Talent Pool repair also treats missing `profile_upload` receipts as
+repairable projection state. For content-hash upload keys shaped like
+`talent-intake/<candidate>/<sha256>-<filename>`, it can fetch the existing R2
+object, compute the immutable byte hash/length/media type, and call the same
+roleless person projection path with `sourceArtifact`. It skips pasted text
+intakes and skips any storage key that already has a profile-upload receipt, so
+cron/backfill replay does not duplicate artifact versions or person edges.
 Background projection receives the roleless Talent Pool person identity and
 background decomposition runs with legacy candidate-node mirroring disabled, so
 it must not create `applications` or `person_roles` before a role-backed process
@@ -195,13 +202,19 @@ repairs against dev D1. The remote verifier returned `status: ready`,
 `artifactVersionCount: 11`, `sourceSpanCount: 37`,
 `sourceSpanTextMismatchCount: 0`, `sourceSpanHashMismatchCount: 0`,
 `documentProfileSourceSpanCount: 4`, `contextRecordCount: 80`,
-`profileUploadArtifactVersionCount: 2`,
+`profileUploadArtifactVersionCount: 0`,
 `contextSourceRefCount: 83`,
 `externalProfileRefContextCount: 3`,
 `phoneScreenerIntentContextCount: 1`, `rolelessApplicationCount: 0`,
 `rolelessPersonRoleCount: 0`, `signalEvidenceCount: 240`,
 `sourceLessPositiveClaimCount: 0`, `sourceLessDesignQueueSuggestionCount: 0`,
 and `duplicateProjectedEdgeCount: 0`.
+
+That app-dev candidate was created before profile-upload receipt backfill
+existed, so the strict filtered upload-receipt count is currently `0` until the
+deployed scheduled repair replays the existing content-hash R2 object. New
+uploads and repaired historical uploads create `profile_upload` receipt
+artifacts without turning blob capture into profile claims.
 
 Remote source-span sampling proved operational context refs preserve exact
 field text:
