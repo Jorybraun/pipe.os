@@ -406,21 +406,16 @@ export function evaluateMatchRuns(
       }
       if (
         expected.packetContentHash !== undefined
-        && result.alignments.length > 0
+        && result.packetContentHash !== undefined
+        && result.packetContentHash !== expected.packetContentHash
       ) {
-        const actualHash = result.alignments
-          .flatMap((alignment) => alignment.challengeSourceRefs)
-          .map((ref) => ref.contentHash)
-          .find((hash) => hash === expected.packetContentHash);
-        if (actualHash === undefined) {
-          packetIdentityMismatches.push({
-            challengeId: result.challengeId,
-            field: 'packetContentHash',
-            expected: expected.packetContentHash,
-            actual: '(not found in challenge source refs)',
-            matchRunId: run.matchRunId,
-          });
-        }
+        packetIdentityMismatches.push({
+          challengeId: result.challengeId,
+          field: 'packetContentHash',
+          expected: expected.packetContentHash,
+          actual: result.packetContentHash,
+          matchRunId: run.matchRunId,
+        });
       }
     }
   }

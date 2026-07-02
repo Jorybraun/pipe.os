@@ -37,6 +37,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Fixed — CODE_REVIEW assessment runtime
 
+- Matching evaluation packet coverage now compares whole-packet content hashes only when persisted match results carry a packet hash, avoiding false identity mismatches against individual repo source-span hashes while still detecting explicit packet-hash drift.
 - Matching evaluation corpus seeding now tolerates deployments where optional role-context tables or older challenge-packet columns are absent, falling back to role snapshot and ranked-match packet evidence with explicit warnings instead of 500ing before draft corpus review can begin.
 - CODE_REVIEW now demotes automatic match runs that fail the candidate-safe quality gate, clearing their selected packet so later `/assess` repairs cannot revive a low-confidence near-tie as a ready challenge.
 - Role-backed CODE_REVIEW match contrast now considers candidate-evidence separation as well as blended final-score separation, preventing role/context constants from flattening otherwise source-backed candidate-specific matches into false near-ties.

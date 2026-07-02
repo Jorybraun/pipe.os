@@ -162,6 +162,7 @@ export interface PersistedRankedChallenge {
   repoId: string;
   prNumber: number;
   sourceVersion: string;
+  packetContentHash?: string;
   score: number;
   candidateEvidenceAlignment: number;
   roleRelevance: number;
