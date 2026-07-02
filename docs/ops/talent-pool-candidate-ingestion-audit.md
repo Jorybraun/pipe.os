@@ -158,21 +158,19 @@ CLOUDFLARE_D1_DATABASE_ID=0abe92df-9296-46f5-9f9d-a1fb1bcd3be1 \
 
 Latest app-dev proof on 2026-07-02 used invite token
 `talent-audit-532e4287e-c1` after deploying Worker version
-`ad1a9b5e-cb0d-4dec-b412-348d85b24c7e` and replaying pasted-text profile
-submission plus the `e2e/fixtures/test-resume.pdf` profile upload with GitHub,
-LinkedIn, portfolio, and phone-screener fields. The stricter remote verifier
-returned `status: ready`, `candidateNodeCount: 74`,
-`candidateNodeExactSourceQuoteCount: 74`,
+`1e545d10-4188-4289-8bce-b093edd53886` and replaying candidate ingestion
+repairs against dev D1. The remote verifier returned `status: ready`,
+`candidateNodeCount: 86`, `candidateNodeExactSourceQuoteCount: 86`,
 `candidateNodeWithoutExactSourceCount: 0`,
 `duplicateCandidateNodeEvidenceCount: 0`,
 `candidateNodeSourceAnchorConflictCount: 0`,
-`candidateResumeStorageKeyCount: 1`, `candidateResumeMatchesIntakeCount: 1`,
-`artifactVersionCount: 11`, `sourceSpanCount: 37`,
+`candidateResumeStorageKeyCount: 2`, `candidateResumeMatchesIntakeCount: 2`,
+`artifactVersionCount: 12`, `sourceSpanCount: 44`,
 `sourceSpanTextMismatchCount: 0`, `sourceSpanHashMismatchCount: 0`,
-`documentProfileSourceSpanCount: 4`, `contextRecordCount: 80`,
-`contextSourceRefCount: 83`,
-`externalProfileRefContextCount: 3`,
-`phoneScreenerIntentContextCount: 1`, `rolelessApplicationCount: 0`,
+`documentProfileSourceSpanCount: 4`, `contextRecordCount: 84`,
+`contextSourceRefCount: 90`,
+`externalProfileRefContextCount: 6`,
+`phoneScreenerIntentContextCount: 2`, `rolelessApplicationCount: 0`,
 `rolelessPersonRoleCount: 0`, `signalEvidenceCount: 240`,
 `sourceLessPositiveClaimCount: 0`, `sourceLessDesignQueueSuggestionCount: 0`,
 and `duplicateProjectedEdgeCount: 0`.
