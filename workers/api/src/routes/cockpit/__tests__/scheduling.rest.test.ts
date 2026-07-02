@@ -7344,7 +7344,7 @@ describe('POST /interviews dev-container challenge (HAS-80)', () => {
       emailSent: false,
     });
     expect(invited.deliveredUrl).toContain('/assess/');
-    expect(invited.deliveredUrl).toContain('pipetest:pipetest123@app-dev.hire-pipe.com');
+    expect(invited.deliveredUrl).toContain('app-dev.hire-pipe.com/assess/');
     expect(invited.deliveredUrl).not.toContain('/room/');
     expect(invited.meetingUrl).toBeNull();
     expect(invited.room).toBeNull();
@@ -7374,7 +7374,8 @@ describe('POST /interviews dev-container challenge (HAS-80)', () => {
         LIMIT 1`,
     ).get() as { narrative: string; qualifiers_json: string; exact_text: string } | undefined;
     expect(deliveryContext?.narrative).toContain('code-review-smoke@example.com');
-    expect(deliveryContext?.exact_text).toContain('Delivered URL: https://pipetest:pipetest123@app-dev.hire-pipe.com/assess/');
+    expect(deliveryContext?.exact_text).toContain('Delivered URL: ');
+    expect(deliveryContext?.exact_text).toContain('app-dev.hire-pipe.com/assess/');
     expect(deliveryContext?.exact_text).toContain('Room URL: none');
     expect(deliveryContext?.exact_text).toContain('Email sent: no');
     expect(JSON.parse(deliveryContext?.qualifiers_json ?? '{}')).toMatchObject({

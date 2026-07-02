@@ -30,6 +30,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 - Assessment progress commit projections now include source-backed upstream PR URL and consent flags, so recruiter readouts can distinguish local workspace-only commits from candidate-approved upstream PRs.
 - Candidate RPC assessment progress now returns the same upstream PR tracking fields as room and recruiter progress APIs.
+- CODE_REVIEW invite tests now assert app-dev assess-link delivery without hard-coding Basic Auth credentials that CI masks.
 - Dev room invite coverage now proves app-dev can generate room-dev links with the separate live room Basic Auth credentials instead of accidentally reusing app-dev credentials that the room worker rejects.
 - Assessment progress now treats real agent bridge prompt, blocked-prompt, and response source refs as AI-use transparency, and recruiter surfaces label those refs as AI prompts, blocked AI prompts, and agent responses instead of raw enum names.
 - Devin-agent chat smoke validation now loads dev env files, supports separate app-dev and room-dev Basic Auth credentials, explicitly launches the real `devin` bridge, probes bridge status on WebSocket open, and can prove the honest `auth_needed` state without fake replies.
