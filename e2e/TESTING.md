@@ -342,6 +342,16 @@ reviewable from source-backed `git_commit`, `code_diff`, `test_run`,
 file-observation refs; `recruiterCompareUrl` was correctly `null` because
 workspace-only finalizer commits are not pushed to GitHub by default.
 
+Latest deployed upstream-PR progress proof on 2026-07-02 passed for assessment
+session `assessment_session_d6172ba3d55b5035f0ecb250985c814a`: the live
+repo-task API accepted a complete `open_source_challenge_packet`, a source-backed
+assessment commit on branch `pipe-assessment/live-upstream-progress`, and an
+`upstream_pull_request` source ref with explicit candidate consent. The deployed
+`/api/v1/assessment/repo-task/sessions/:id/progress` response preserved
+`upstreamPullRequestUrl: https://github.com/open-source/widgets/pull/4242`,
+`upstreamPrConsent: true`, stage `READY_FOR_EVALUATION`, and next action
+`START_EVALUATION`.
+
 Use `AGENT_SMOKE_EXPECT_AUTH_NEEDED=1 npm run smoke:agent-devin-chat-dev` to
 prove the deployed room launches the real Devin bridge without fabricating a
 reply when credentials are missing. The smoke creates a dev-container interview,
