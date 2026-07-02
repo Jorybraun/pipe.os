@@ -851,6 +851,10 @@ describe('Determinism Verification', () => {
         comparisonMatchRunId: null,
         identical: false,
         comparisonFingerprint: null,
+        drift: expect.objectContaining({
+          reason: 'missing_comparison',
+          firstDifference: expect.stringContaining('missing comparison run'),
+        }),
       }),
     ]);
   });
@@ -867,6 +871,10 @@ describe('Determinism Verification', () => {
       expect.objectContaining({
         comparisonMatchRunId: 'run-comparison',
         identical: false,
+        drift: expect.objectContaining({
+          reason: 'ranked_result_changed',
+          firstDifference: 'challenge-1.alignedDemandCount: 1 -> 2',
+        }),
       }),
     );
     expect(metrics.determinismComparisons[0]?.fingerprint).not.toBe(
@@ -897,6 +905,10 @@ describe('Determinism Verification', () => {
       expect.objectContaining({
         comparisonMatchRunId: 'run-comparison',
         identical: false,
+        drift: expect.objectContaining({
+          reason: 'ranked_result_changed',
+          firstDifference: 'challenge-1.sharedConcepts: term:kafka -> term:redis',
+        }),
       }),
     );
     expect(metrics.determinismComparisons[0]?.fingerprint).toContain(
