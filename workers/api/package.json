@@ -19,6 +19,7 @@
     "review-graph:backfill-remote": "tsx scripts/backfillReviewChallengePackets.ts --remote",
     "review-graph:backfill-report-gate": "tsx scripts/checkReviewGraphBackfillReport.ts",
     "matching-eval:readiness": "tsx scripts/evaluateMatching.ts --remote --check-latest-production-pass",
+    "matching-eval:review": "tsx scripts/reviewEvaluationCorpus.ts",
     "living-context:match-quality": "tsx scripts/runMatchQualityEvaluation.ts",
     "review-judge:verify": "tsx scripts/verifyCodeReviewJudgeExamples.ts --require-replay-ready --json",
     "review-packets:repair-profiles": "tsx scripts/backfillReviewPacketReviewProfiles.ts",
