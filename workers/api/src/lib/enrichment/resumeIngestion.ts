@@ -19,6 +19,10 @@ import {
   ingestResumeToLivingContext,
   type ResumeLivingContextIdentity,
 } from '../livingContext/resumeIngestion';
+import {
+  ensureRolelessTalentPoolIdentity,
+  type TalentPoolOperationalContextInput,
+} from '../talentPoolIdentity';
 
 const PDF_CONTENT_TYPE = 'application/pdf';
 const DOCX_CONTENT_TYPE = 'application/vnd.openxmlformats-officedocument.wordprocessingml.document';
@@ -44,6 +48,22 @@ export interface ProcessResumeResult {
   error?: string;
 }
 
+interface RolelessTalentPoolResumeRow {
+  candidate_id: string;
+  owner_id: string | null;
+  name: string | null;
+  email: string | null;
+  profile_r2_key: string | null;
+  profile_text_excerpt: string | null;
+  github_url: string | null;
+  linkedin_url: string | null;
+  portfolio_url: string | null;
+  phone_screener_consent: number | null;
+  phone_number: string | null;
+  timezone: string | null;
+  availability: string | null;
+}
+
 function normalizeResumeContentType(contentType: string | null | undefined, r2Key: string): string {
   const normalized = (contentType ?? '').split(';')[0]?.trim().toLowerCase() ?? '';
   if (normalized === PDF_CONTENT_TYPE) return PDF_CONTENT_TYPE;
@@ -51,6 +71,98 @@ function normalizeResumeContentType(contentType: string | null | undefined, r2Ke
   if (r2Key.toLowerCase().endsWith('.pdf')) return PDF_CONTENT_TYPE;
   if (r2Key.toLowerCase().endsWith('.docx')) return DOCX_CONTENT_TYPE;
   return normalized || 'application/octet-stream';
+}
+
+function optionalTrimmed(value: string | null | undefined): string | null {
+  const trimmed = value?.trim() ?? '';
+  return trimmed ? trimmed : null;
+}
+
+function talentPoolOperationalContextFromRow(
+  row: RolelessTalentPoolResumeRow,
+): TalentPoolOperationalContextInput {
+  return {
+    githubUrl: optionalTrimmed(row.github_url),
+    linkedinUrl: optionalTrimmed(row.linkedin_url),
+    portfolioUrl: optionalTrimmed(row.portfolio_url),
+    phoneScreenerConsent: row.phone_screener_consent === 1,
+    phoneNumber: optionalTrimmed(row.phone_number),
+    timezone: optionalTrimmed(row.timezone),
+    availability: optionalTrimmed(row.availability),
+  };
+}
+
+async function resolveRolelessTalentPoolResumeIdentity(input: {
+  db: D1Database;
+  candidateId: string;
+  r2Key: string;
+  contentType: string;
+}): Promise<ResumeLivingContextIdentity | null | undefined> {
+  const { db, candidateId, r2Key, contentType } = input;
+  let row: RolelessTalentPoolResumeRow | null = null;
+  try {
+    row = await db.prepare(
+      `SELECT
+         c.id AS candidate_id,
+         c.owner_id,
+         c.name,
+         c.email,
+         t.profile_r2_key,
+         t.profile_text_excerpt,
+         t.github_url,
+         t.linkedin_url,
+         t.portfolio_url,
+         t.phone_screener_consent,
+         t.phone_number,
+         t.timezone,
+         t.availability
+       FROM candidates c
+       JOIN talent_pool_intakes t ON t.candidate_id = c.id
+      WHERE c.id = ?1
+        AND c.pipeline_id IS NULL
+      LIMIT 1`,
+    ).bind(candidateId).first<RolelessTalentPoolResumeRow>();
+  } catch (err) {
+    console.error(
+      '[resumeIngestion] failed to check roleless Talent Pool identity:',
+      err instanceof Error ? err.message : String(err),
+    );
+    return undefined;
+  }
+
+  if (!row) return undefined;
+
+  const userId = optionalTrimmed(row.owner_id);
+  const email = optionalTrimmed(row.email);
+  if (!userId || !email) {
+    console.error('[resumeIngestion] roleless Talent Pool candidate is missing owner/email:', { candidateId });
+    return null;
+  }
+
+  try {
+    const identity = await ensureRolelessTalentPoolIdentity({
+      db,
+      userId,
+      candidateId,
+      name: optionalTrimmed(row.name) ?? email,
+      email,
+      message: optionalTrimmed(row.profile_text_excerpt) ?? undefined,
+      messageStorageKey: optionalTrimmed(row.profile_r2_key) ?? r2Key,
+      messageMediaType: contentType,
+      operationalContext: talentPoolOperationalContextFromRow(row),
+      now: new Date().toISOString(),
+    });
+    return {
+      ...identity,
+      applicationId: null,
+    };
+  } catch (err) {
+    console.error(
+      '[resumeIngestion] failed to ensure roleless Talent Pool identity:',
+      err instanceof Error ? err.message : String(err),
+    );
+    return null;
+  }
 }
 
 async function markResumeIngestionPending(
@@ -117,6 +229,9 @@ export async function processResumeFromR2(
     const arrayBuffer = await object.arrayBuffer();
     const fileBuffer = arrayBuffer.slice(0);
     const contentType = normalizeResumeContentType(object.httpMetadata?.contentType, r2Key);
+    const livingContextIdentity = input.livingContextIdentity === undefined
+      ? await resolveRolelessTalentPoolResumeIdentity({ db, candidateId, r2Key, contentType })
+      : input.livingContextIdentity;
 
     // 2. Parse resume (or use pre-parsed result)
     let parseResult = preParsed ?? null;
@@ -171,7 +286,7 @@ export async function processResumeFromR2(
           parsed: parsed ?? { skills: [], experiences: [], educationBlocks: [], credentials: [], projects: [] },
           resumeText,
           decompositionResult,
-          mirrorLivingContext: input.livingContextIdentity === undefined,
+          mirrorLivingContext: livingContextIdentity === undefined,
         });
       } catch (err) {
         const msg = err instanceof Error ? err.message : String(err);
@@ -201,7 +316,7 @@ export async function processResumeFromR2(
           mediaType: contentType,
           resumeText,
           uploadedAt: new Date().toISOString(),
-          identity: input.livingContextIdentity,
+          identity: livingContextIdentity,
         });
       } catch (err) {
         const msg = err instanceof Error ? err.message : String(err);
