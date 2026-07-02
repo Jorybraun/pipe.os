@@ -146,6 +146,50 @@ function createMemoryR2(): MemoryR2 {
   } as MemoryR2;
 }
 
+function buildStoredDocx(documentXml: string): ArrayBuffer {
+  const encoder = new TextEncoder();
+  const fileName = encoder.encode('word/document.xml');
+  const content = encoder.encode(documentXml);
+  const localHeaderLength = 30 + fileName.length + content.length;
+  const centralHeaderLength = 46 + fileName.length;
+  const eocdLength = 22;
+  const bytes = new Uint8Array(localHeaderLength + centralHeaderLength + eocdLength);
+  const view = new DataView(bytes.buffer);
+  let offset = 0;
+
+  view.setUint32(offset, 0x04034b50, true);
+  view.setUint16(offset + 4, 20, true);
+  view.setUint16(offset + 8, 0, true);
+  view.setUint32(offset + 14, 0, true);
+  view.setUint32(offset + 18, content.length, true);
+  view.setUint32(offset + 22, content.length, true);
+  view.setUint16(offset + 26, fileName.length, true);
+  bytes.set(fileName, offset + 30);
+  bytes.set(content, offset + 30 + fileName.length);
+
+  const centralOffset = localHeaderLength;
+  offset = centralOffset;
+  view.setUint32(offset, 0x02014b50, true);
+  view.setUint16(offset + 4, 20, true);
+  view.setUint16(offset + 6, 20, true);
+  view.setUint16(offset + 10, 0, true);
+  view.setUint32(offset + 16, 0, true);
+  view.setUint32(offset + 20, content.length, true);
+  view.setUint32(offset + 24, content.length, true);
+  view.setUint16(offset + 28, fileName.length, true);
+  view.setUint32(offset + 42, 0, true);
+  bytes.set(fileName, offset + 46);
+
+  offset = centralOffset + centralHeaderLength;
+  view.setUint32(offset, 0x06054b50, true);
+  view.setUint16(offset + 8, 1, true);
+  view.setUint16(offset + 10, 1, true);
+  view.setUint32(offset + 12, centralHeaderLength, true);
+  view.setUint32(offset + 16, centralOffset, true);
+
+  return bytes.buffer;
+}
+
 function createSqlite(): BetterSqliteDb {
   const sqlite = new Database(':memory:');
   sqlite.exec('PRAGMA foreign_keys = ON;');
@@ -788,6 +832,173 @@ describe('talent pool candidate RPC', () => {
     });
     expect(sqlite.prepare('SELECT COUNT(*) AS count FROM context_records').get()).toEqual({ count: 2 });
     expect(sqlite.prepare('SELECT COUNT(*) AS count FROM context_record_source_refs').get()).toEqual({ count: 2 });
+  });
+
+  it('projects extracted DOCX uploads into source-backed person evidence idempotently', async () => {
+    sqlite = createSqlite();
+    seedCandidate(sqlite);
+    const storage = createMemoryR2();
+    const app = createApp();
+    const expectedDocxText = [
+      'Experience',
+      'Source Docs',
+      'Backend Engineer — January 2021 – Present',
+      'Built Cloudflare Workers ingestion replay with TypeScript.',
+    ].join('\n');
+    const docx = buildStoredDocx(`
+      <w:document xmlns:w="http://schemas.openxmlformats.org/wordprocessingml/2006/main">
+        <w:body>
+          <w:p><w:r><w:t>Experience</w:t></w:r></w:p>
+          <w:p><w:r><w:t>Source Docs</w:t></w:r></w:p>
+          <w:p><w:r><w:t>Backend Engineer — January 2021 – Present</w:t></w:r></w:p>
+          <w:p><w:r><w:t>Built Cloudflare Workers ingestion replay with TypeScript.</w:t></w:r></w:p>
+        </w:body>
+      </w:document>
+    `);
+    const formData = new FormData();
+    formData.set('inviteToken', 'invite-token');
+    formData.set(
+      'file',
+      new File([docx], 'source-docs-profile.docx', {
+        type: 'application/vnd.openxmlformats-officedocument.wordprocessingml.document',
+      }),
+    );
+
+    const res = await app.request('/rpc/talent/upload-profile', {
+      method: 'POST',
+      body: formData,
+    }, createEnv(sqlite, storage));
+
+    expect(res.status).toBe(200);
+    const body = await res.json() as TalentDashboardBody;
+    expect(body.status).toBe('CHALLENGE_PREPARING');
+    expectCandidateSafeDashboard(body, ['candidate-1', 'owner-1']);
+
+    const storedKey = [...storage.puts.keys()][0];
+    expect(storedKey).toMatch(/^talent-intake\/candidate-1\/.*source-docs-profile\.docx$/);
+    const intake = sqlite.prepare(
+      `SELECT profile_r2_key, profile_text_excerpt
+         FROM talent_pool_intakes
+        WHERE candidate_id = 'candidate-1'`,
+    ).get() as { profile_r2_key: string; profile_text_excerpt: string };
+    expect(intake.profile_r2_key).toBe(storedKey);
+    expect(intake.profile_text_excerpt).toContain('Built Cloudflare Workers ingestion replay');
+    expect(sqlite.prepare(
+      `SELECT resume_s3_key
+         FROM candidates
+        WHERE id = 'candidate-1'`,
+    ).get()).toEqual({ resume_s3_key: storedKey });
+
+    const docxArtifactRows = sqlite.prepare(
+      `SELECT i.interaction_type,
+              a.artifact_type,
+              a.logical_key,
+              av.media_type,
+              av.storage_key,
+              av.content_text,
+              length(av.content_hash) AS hash_length,
+              json_extract(av.metadata_json, '$.evidenceKind') AS evidence_kind,
+              json_extract(av.metadata_json, '$.extractedTextAvailable') AS extracted_text_available,
+              json_extract(av.metadata_json, '$.originalFileName') AS original_file_name
+         FROM artifact_versions av
+         JOIN artifacts a ON a.id = av.artifact_id
+         JOIN interactions i ON i.id = a.interaction_id
+        WHERE av.storage_key = ?
+        ORDER BY a.artifact_type`,
+    ).all(storedKey);
+    expect(docxArtifactRows).toEqual([
+      {
+        interaction_type: 'message',
+        artifact_type: 'message',
+        logical_key: 'roleless_candidate_intake_message',
+        media_type: 'application/vnd.openxmlformats-officedocument.wordprocessingml.document',
+        storage_key: storedKey,
+        content_text: expectedDocxText,
+        hash_length: 64,
+        evidence_kind: null,
+        extracted_text_available: null,
+        original_file_name: null,
+      },
+      {
+        interaction_type: 'file_upload',
+        artifact_type: 'profile_upload',
+        logical_key: 'roleless_candidate_profile_upload',
+        media_type: 'application/vnd.openxmlformats-officedocument.wordprocessingml.document',
+        storage_key: storedKey,
+        content_text: null,
+        hash_length: 64,
+        evidence_kind: 'profile_upload_source',
+        extracted_text_available: 1,
+        original_file_name: 'source-docs-profile.docx',
+      },
+    ]);
+    expect(sqlite.prepare(
+      `SELECT ss.exact_text, av.storage_key
+         FROM source_spans ss
+         JOIN artifact_versions av ON av.id = ss.artifact_version_id
+        WHERE av.storage_key = ?
+          AND ss.exact_text = ?
+        LIMIT 1`,
+    ).get(storedKey, expectedDocxText)).toEqual({
+      exact_text: expectedDocxText,
+      storage_key: storedKey,
+    });
+    expect(sqlite.prepare(
+      `SELECT cr.record_type, cr.predicate, ss.exact_text, av.storage_key
+         FROM context_records cr
+         JOIN context_record_source_refs crsr ON crsr.context_record_id = cr.id
+         JOIN source_spans ss ON ss.id = crsr.source_span_id
+         JOIN artifact_versions av ON av.id = ss.artifact_version_id
+        WHERE cr.record_type = 'talent_pool_profile_intake'
+        LIMIT 1`,
+    ).get()).toEqual({
+      record_type: 'talent_pool_profile_intake',
+      predicate: 'submitted_profile_evidence',
+      exact_text: expectedDocxText,
+      storage_key: storedKey,
+    });
+    expect(sqlite.prepare(
+      `SELECT cn.node_type,
+              av.storage_key,
+              json_extract(cn.extracted_properties_json, '$.source_quote_validated') AS source_quote_validated,
+              json_extract(cn.extracted_properties_json, '$.source_quote') AS source_quote
+         FROM candidate_nodes cn
+         JOIN source_spans ss ON cn.source_reference = 'source_span:' || ss.id
+         JOIN artifact_versions av ON av.id = ss.artifact_version_id
+        WHERE cn.candidate_id = 'candidate-1'
+        LIMIT 1`,
+    ).get()).toEqual({
+      node_type: 'TalentPoolProfileIntake',
+      storage_key: storedKey,
+      source_quote_validated: 1,
+      source_quote: expectedDocxText,
+    });
+
+    const replayFormData = new FormData();
+    replayFormData.set('inviteToken', 'invite-token');
+    replayFormData.set(
+      'file',
+      new File([docx], 'source-docs-profile.docx', {
+        type: 'application/vnd.openxmlformats-officedocument.wordprocessingml.document',
+      }),
+    );
+
+    const replay = await app.request('/rpc/talent/upload-profile', {
+      method: 'POST',
+      body: replayFormData,
+    }, createEnv(sqlite, storage));
+
+    expect(replay.status).toBe(200);
+    expect(storage.puts.size).toBe(1);
+    expect([...storage.puts.keys()][0]).toBe(storedKey);
+    expect(sqlite.prepare('SELECT COUNT(*) AS count FROM interactions').get()).toEqual({ count: 2 });
+    expect(sqlite.prepare('SELECT COUNT(*) AS count FROM artifacts').get()).toEqual({ count: 2 });
+    expect(sqlite.prepare('SELECT COUNT(*) AS count FROM artifact_versions').get()).toEqual({ count: 2 });
+    expect(sqlite.prepare('SELECT COUNT(*) AS count FROM source_spans').get()).toEqual({ count: 1 });
+    expect(sqlite.prepare('SELECT COUNT(*) AS count FROM candidate_nodes').get()).toEqual({ count: 1 });
+    expect(sqlite.prepare('SELECT COUNT(*) AS count FROM context_records').get()).toEqual({ count: 1 });
+    expect(sqlite.prepare('SELECT COUNT(*) AS count FROM context_record_source_refs').get()).toEqual({ count: 1 });
+    expect(sqlite.prepare('SELECT COUNT(*) AS count FROM challenge_design_queue').get()).toEqual({ count: 1 });
   });
 
   it('keeps unextractable document uploads as explicit evidence gaps', async () => {
