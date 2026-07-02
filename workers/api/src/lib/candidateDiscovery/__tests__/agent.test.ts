@@ -6,7 +6,7 @@
  */
 
 import { describe, it, expect } from 'vitest';
-import { discoverCandidateProfile } from '../agent';
+import { buildSourceBackedCandidateDiscoveryFallback, discoverCandidateProfile } from '../agent';
 import type { LLMProvider } from '../../llm/types';
 
 function makeStubProvider(response: unknown, name = 'stub-gemma'): LLMProvider {
@@ -292,5 +292,40 @@ describe('discoverCandidateProfile', () => {
     await expect(
       discoverCandidateProfile({ provider, parsed: { skills: [] } }),
     ).rejects.toThrow(/empty content/i);
+  });
+
+  it('builds a clearly labelled source-backed fallback profile without model claims', () => {
+    const result = buildSourceBackedCandidateDiscoveryFallback({
+      reason: 'Candidate Discovery AI failed: empty response',
+      parsed: {
+        name: 'Avery Candidate',
+        skills: ['TypeScript', 'React'],
+        currentRole: 'Frontend Engineer',
+        experiences: [
+          {
+            company: 'Acme',
+            role: 'Frontend Engineer',
+            description: 'Implemented React accessibility fixes with regression tests.',
+          },
+        ],
+        educationBlocks: [],
+        credentials: [],
+        projects: [
+          {
+            name: 'Open Review',
+            description: 'Reviewed routing bugs and wrote Vitest coverage.',
+          },
+        ],
+      },
+      resumeText:
+        'Avery Candidate implemented React accessibility fixes, reviewed routing bugs, and wrote Vitest regression coverage for an open source frontend project.',
+    });
+
+    expect(result.modelUsed).toBe('source-backed-fallback');
+    expect(result.profileVersion).toContain('source-backed-fallback');
+    expect(result.candidateSearchableProfile).toContain('Source-backed candidate profile fallback');
+    expect(result.candidateSearchableProfile).toContain('Implemented React accessibility fixes');
+    expect(result.keyConcepts.seniority).toBeNull();
+    expect(result.keyConcepts.mustHaveSkills).toContain('typescript');
   });
 });

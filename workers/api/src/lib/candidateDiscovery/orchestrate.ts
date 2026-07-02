@@ -29,7 +29,11 @@ import { pickImplementationIssue } from '../match/autoStageBuilder';
 import { matchRepos, type MatchRequest } from '../repoDiscovery/matchRepos';
 import { matchCandidateToReviewChallenge } from '../challengeMatching/d1Matcher';
 import { loadRoleChallengeSemantics } from '../challengeMatching/roleGuardrails';
-import { discoverCandidateProfile, type CandidateDiscoveryResult } from './agent';
+import {
+  buildSourceBackedCandidateDiscoveryFallback,
+  discoverCandidateProfile,
+  type CandidateDiscoveryResult,
+} from './agent';
 import { embedAndUpsertCandidate, upsertCandidateVector } from './embed';
 import {
   upsertPendingIngestion,
@@ -161,21 +165,31 @@ export async function runCandidateIngestion(input: IngestionInput): Promise<void
   try {
     const provider = createCandidateAgentProvider(env);
     if (!provider) {
-      await markIngestionFailedWithStep(
-        db,
-        candidateId,
-        'Candidate agent provider unavailable (MOCK_AI or missing config)',
-        'discover_profile',
+      discoveryResult = await trackStep(db, candidateId, 'discover_profile', async () =>
+        buildSourceBackedCandidateDiscoveryFallback({
+          parsed,
+          resumeText,
+          reason: 'Candidate agent provider unavailable (MOCK_AI or missing config)',
+        }),
       );
-      return;
+    } else {
+      try {
+        discoveryResult = await trackStep(db, candidateId, 'discover_profile', () =>
+          discoverCandidateProfile({ provider, parsed, resumeText }),
+        );
+      } catch (err) {
+        const msg = err instanceof Error ? err.message : String(err);
+        console.error('[ingestion] discoverCandidateProfile failed:', msg);
+        discoveryResult = buildSourceBackedCandidateDiscoveryFallback({
+          parsed,
+          resumeText,
+          reason: `Candidate Discovery AI failed: ${msg}`,
+        });
+      }
     }
-
-    discoveryResult = await trackStep(db, candidateId, 'discover_profile', () =>
-      discoverCandidateProfile({ provider, parsed, resumeText }),
-    );
   } catch (err) {
     const msg = err instanceof Error ? err.message : String(err);
-    console.error('[ingestion] discoverCandidateProfile failed:', msg);
+    console.error('[ingestion] source-backed candidate discovery fallback failed:', msg);
     await markIngestionFailedWithStep(db, candidateId, `Discovery failed: ${msg}`, 'discover_profile');
     return;
   }

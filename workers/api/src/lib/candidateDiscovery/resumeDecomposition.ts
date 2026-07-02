@@ -608,6 +608,7 @@ async function writeParserOnlyNodes(
   env: Env,
   afterSourceBackedEvidence?: () => Promise<void>,
   maxNodeEmbeddings = MAX_NODE_EMBEDDINGS_PER_INGESTION,
+  skipPostDecompositionMaintenance = false,
 ): Promise<{ inserted: number; embedded: number; errors: string[]; embeddings: number[][] }> {
   const errors: string[] = [];
   let inserted = 0;
@@ -820,7 +821,7 @@ async function writeParserOnlyNodes(
   }
 
   // Write to Neo4j
-  if (candidateNodes.length > 0) {
+  if (!skipPostDecompositionMaintenance && candidateNodes.length > 0) {
     try {
       await writeCandidateGraph({ candidateId, nodes: candidateNodes, env });
     } catch (writeErr) {
@@ -955,6 +956,7 @@ export async function decomposeResumeToGraph(
       env,
       input.afterSourceBackedEvidence,
       input.maxNodeEmbeddings,
+      input.skipPostDecompositionMaintenance,
     );
     result.nodesInserted = fallback.inserted;
     result.nodesEmbedded = fallback.embedded;

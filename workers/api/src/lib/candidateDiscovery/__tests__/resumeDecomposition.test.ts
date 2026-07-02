@@ -3,6 +3,7 @@ import { decomposeResumeToGraph } from '../resumeDecomposition';
 import type { ParsedCV } from '../../cvParser';
 import type { DecompositionResult } from '../candidateDecompositionPrompt';
 import { embedCandidateNode, insertCandidateNode } from '../candidateNodes';
+import { writeCandidateGraph } from '../../neo4j/writeCandidateGraph';
 
 vi.mock('../candidateNodes', () => ({
   insertCandidateNode: vi.fn(async (_db, node) => ({
@@ -20,6 +21,10 @@ vi.mock('../candidateCoverage', () => ({
 
 vi.mock('../../skills/slugifySkills', () => ({
   slugifySkills: vi.fn(async (_db, skills: string[]) => skills.map((s) => s.toLowerCase())),
+}));
+
+vi.mock('../../neo4j/writeCandidateGraph', () => ({
+  writeCandidateGraph: vi.fn(async () => undefined),
 }));
 
 const mockEnv = {
@@ -399,6 +404,7 @@ describe('decomposeResumeToGraph', () => {
       decompositionResult: null,
       afterSourceBackedEvidence: ready,
       maxNodeEmbeddings: 0,
+      skipPostDecompositionMaintenance: true,
     });
 
     expect(result.nodesInserted).toBeGreaterThan(0);
@@ -406,6 +412,7 @@ describe('decomposeResumeToGraph', () => {
     expect(ready).toHaveBeenCalledTimes(1);
     expect(insertCandidateNode).toHaveBeenCalled();
     expect(embedCandidateNode).not.toHaveBeenCalled();
+    expect(writeCandidateGraph).not.toHaveBeenCalled();
   });
 
   it('falls back to parser-only nodes when decompositionResult is null', async () => {

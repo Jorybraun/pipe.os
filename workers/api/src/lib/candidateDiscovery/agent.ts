@@ -22,6 +22,7 @@ import {
   buildCandidateDiscoveryUserMessage,
   type CandidateDiscoveryFacts,
 } from './prompts';
+import { extractOpenIdentifierTerms } from '../livingContext/openTerms';
 
 export type SeniorityBand = 'junior' | 'mid' | 'senior' | 'staff';
 
@@ -201,6 +202,108 @@ function modelKeyForProvider(provider: LLMProvider): string {
 
   const model = typeof provider.model === 'string' ? provider.model.trim() : '';
   return model.length > 0 ? model : provider.name;
+}
+
+function uniqueLowercaseStrings(values: readonly string[], max: number): string[] {
+  const out: string[] = [];
+  for (const value of values) {
+    const trimmed = value.trim().toLowerCase();
+    if (trimmed.length === 0) continue;
+    if (!out.includes(trimmed)) out.push(trimmed);
+    if (out.length >= max) break;
+  }
+  return out;
+}
+
+function sourceBackedProfileText(parsed: ParsedCV, resumeText: string): string {
+  const resumeExcerpt = resumeText.trim().replace(/\s+/g, ' ').slice(0, 1800);
+  const experienceLines = parsed.experiences
+    .slice(0, 6)
+    .map((experience) =>
+      [
+        experience.role,
+        experience.company ? `at ${experience.company}` : '',
+        experience.description,
+      ]
+        .filter(Boolean)
+        .join(' ')
+        .trim(),
+    )
+    .filter((line) => line.length > 0);
+  const projectLines = parsed.projects
+    .slice(0, 4)
+    .map((project) => `${project.name}: ${project.description}`.trim())
+    .filter((line) => line.length > 0);
+  const credentialLines = parsed.credentials
+    .slice(0, 4)
+    .map((credential) => [credential.name, credential.issuer].filter(Boolean).join(' — '))
+    .filter((line) => line.length > 0);
+
+  const sections = [
+    'Source-backed candidate profile fallback.',
+    'Generated from candidate-supplied resume evidence and parser-derived fields only.',
+    parsed.name ? `Candidate name from parsed evidence: ${parsed.name}.` : '',
+    parsed.currentRole ? `Current role from parsed evidence: ${parsed.currentRole}.` : '',
+    parsed.yearsOfExperience !== undefined
+      ? `Years of experience from parsed evidence: ${parsed.yearsOfExperience}.`
+      : '',
+    parsed.skills.length > 0 ? `Parsed skills: ${parsed.skills.join(', ')}.` : '',
+    experienceLines.length > 0 ? `Parsed experience evidence: ${experienceLines.join(' | ')}.` : '',
+    projectLines.length > 0 ? `Parsed project evidence: ${projectLines.join(' | ')}.` : '',
+    credentialLines.length > 0 ? `Parsed credentials: ${credentialLines.join(' | ')}.` : '',
+    resumeExcerpt.length > 0 ? `Resume text excerpt: ${resumeExcerpt}` : '',
+  ].filter((section) => section.length > 0);
+
+  const profile = sections.join('\n\n');
+  if (profile.length >= MIN_PROFILE_CHARS) return profile;
+  return `${profile}\n\nThe fallback profile is intentionally conservative: it preserves only candidate-supplied resume evidence and parser-derived fields, without adding unsupported seniority, domain, or performance claims.`;
+}
+
+export function buildSourceBackedCandidateDiscoveryFallback(input: {
+  parsed: ParsedCV;
+  resumeText?: string | null;
+  reason: string;
+}): CandidateDiscoveryResult {
+  const resumeText = input.resumeText ?? '';
+  const openTerms = extractOpenIdentifierTerms([resumeText, ...input.parsed.skills], MAX_SKILLS)
+    .map((term) => term.surface);
+  const skills = uniqueLowercaseStrings([...input.parsed.skills, ...openTerms], MAX_SKILLS);
+  const searchableProfile = sourceBackedProfileText(input.parsed, resumeText);
+
+  return {
+    candidateSearchableProfile: searchableProfile,
+    keyConcepts: {
+      mustHaveSkills: skills.slice(0, 5),
+      niceToHaveSkills: skills.slice(5, MAX_SKILLS),
+      seniority: null,
+      primary_language: null,
+      detected_domain: null,
+    },
+    careerContext: {
+      company_stages: [],
+      company_size_exposure: [],
+      tenure_pattern: 'unknown',
+      progression_velocity: 'unknown',
+      ownership_depth: 'unknown',
+      system_scale_exposure: [],
+      greenfield_ratio: null,
+    },
+    situationSignature: {
+      primary_challenge_types: [],
+      architecture_exposure: [],
+      test_culture_exposure: 'unknown',
+      review_culture: 'unknown',
+      impact_signals: [],
+    },
+    profileVersion: `${CANDIDATE_DISCOVERY_PROMPT_VERSION}:source-backed-fallback`,
+    modelUsed: 'source-backed-fallback',
+    rawText: JSON.stringify({
+      fallback: true,
+      reason: input.reason,
+      resumeTextLength: resumeText.length,
+      parsedSkills: input.parsed.skills,
+    }),
+  };
 }
 
 export async function discoverCandidateProfile(
