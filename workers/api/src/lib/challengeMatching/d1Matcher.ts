@@ -995,6 +995,24 @@ export interface CandidateReviewChallengeMatch {
   diagnostics?: ChallengeMatchDiagnostics;
 }
 
+export interface MatchContrastSeparationInput {
+  finalScore: number;
+  candidateEvidenceAlignment: number;
+}
+
+export function matchContrastSeparation(
+  current: MatchContrastSeparationInput,
+  next: MatchContrastSeparationInput | null,
+): number | null {
+  if (!next) return null;
+  const finalScoreSeparation = Math.max(0, current.finalScore - next.finalScore);
+  const candidateEvidenceSeparation = Math.max(
+    0,
+    current.candidateEvidenceAlignment - next.candidateEvidenceAlignment,
+  );
+  return Math.max(finalScoreSeparation, candidateEvidenceSeparation);
+}
+
 /**
  * Minimum number of interactions required before matching proceeds.
  * Below this threshold the matcher returns NEEDS_MORE_EVIDENCE.
@@ -1863,7 +1881,7 @@ export async function matchCandidateToReviewChallenge(
     );
     scoreSeparationByChallengeId.set(
       alignment.challenge.id,
-      next ? Math.max(0, alignment.finalScore - next.finalScore) : null,
+      matchContrastSeparation(alignment, next ?? null),
     );
   });
   const selectedScoreSeparation = selected

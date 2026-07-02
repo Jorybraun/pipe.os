@@ -199,23 +199,6 @@ async function checkMatchingGate(
   }
 
   if (nextChallengeType === 'CODE_REVIEW') {
-    const readiness = await standaloneReviewEvidenceReadiness(db, candidateId);
-    if (activeIngestionBlocksCodeReviewMatching(readiness)) {
-      return waitingForMatch(
-        readiness.terminal
-          ? readiness.reason ?? 'Candidate evidence ingestion needs recruiter attention before matching.'
-          : 'Candidate evidence ingestion is still running.',
-        {
-          terminal: readiness.terminal,
-          diagnostics: diagnosticsForStandaloneReviewReadiness(readiness, {
-            phase: 'candidate_evidence',
-            repoMatchingStatus: 'pending',
-            repoMatchingDetail: 'Matching is deferred until candidate evidence ingestion finishes.',
-          }),
-        },
-      );
-    }
-
     const roleContext = await db.prepare(
       `SELECT id, persona_json, rcd_json, job_description_md, non_negotiable_skills_json
          FROM role_contexts
@@ -231,6 +214,32 @@ async function checkMatchingGate(
     }>();
     if (!roleContext) {
       return waitingForMatch('Role context is not ready for deterministic challenge matching');
+    }
+
+    if (await repairStageCodeReviewAssignmentFromMatchRun(db, {
+      candidateId,
+      roleContextId: roleContext.id,
+      stageId,
+      challengeId,
+    })) {
+      return { blocked: false };
+    }
+
+    const readiness = await standaloneReviewEvidenceReadiness(db, candidateId);
+    if (activeIngestionBlocksCodeReviewMatching(readiness)) {
+      return waitingForMatch(
+        readiness.terminal
+          ? readiness.reason ?? 'Candidate evidence ingestion needs recruiter attention before matching.'
+          : 'Candidate evidence ingestion is still running.',
+        {
+          terminal: readiness.terminal,
+          diagnostics: diagnosticsForStandaloneReviewReadiness(readiness, {
+            phase: 'candidate_evidence',
+            repoMatchingStatus: 'pending',
+            repoMatchingDetail: 'Matching is deferred until candidate evidence ingestion finishes.',
+          }),
+        },
+      );
     }
 
     const roleSemantics = await loadRoleChallengeSemantics(db, {
@@ -1034,6 +1043,12 @@ interface PersistedStandaloneMatchAssignmentRow extends PersistedMatchRunRow {
   github_url: string;
 }
 
+interface PersistedStageMatchAssignmentRow extends PersistedMatchRunRow {
+  repo_id: number | string | null;
+  pr_number: number | string | null;
+  github_url: string | null;
+}
+
 function isRecord(value: unknown): value is Record<string, unknown> {
   return typeof value === 'object' && value !== null && !Array.isArray(value);
 }
@@ -1805,6 +1820,65 @@ export async function repairStandaloneReviewAssignmentFromMatchRun(
   }
 
   return null;
+}
+
+async function repairStageCodeReviewAssignmentFromMatchRun(
+  db: D1Database,
+  input: {
+    candidateId: string;
+    roleContextId: string;
+    stageId: string;
+    challengeId: string;
+  },
+): Promise<boolean> {
+  const rows = await db.prepare(
+    `SELECT mr.status,
+            mr.ranked_results_json,
+            rcp.repo_id,
+            rcp.pr_number,
+            qr.github_url
+       FROM match_runs mr
+       JOIN review_challenge_packets rcp ON rcp.id = mr.selected_packet_id
+       JOIN qualified_repos qr ON qr.id = rcp.repo_id
+      WHERE mr.candidate_id = ?1
+        AND mr.role_context_id = ?2
+        AND mr.status = 'MATCHED'
+        AND mr.selected_packet_id IS NOT NULL
+        AND rcp.production_ready = 1
+      ORDER BY mr.created_at DESC
+      LIMIT 5`,
+  ).bind(input.candidateId, input.roleContextId).all<PersistedStageMatchAssignmentRow>();
+
+  for (const row of rows.results ?? []) {
+    const repoId = optionalPersistedNumber(row.repo_id);
+    const prNumber = optionalPersistedNumber(row.pr_number);
+    const githubRepoUrl = optionalString(row.github_url);
+    if (!repoId || !prNumber || !githubRepoUrl) {
+      continue;
+    }
+
+    const matchExplanation = buildPersistedMatchRunExplanation(row, repoId, prNumber);
+    if (!standaloneAutomaticMatchPasses(matchExplanation)) {
+      continue;
+    }
+    if (!await hasSourceBackedReviewPacket(db, githubRepoUrl, prNumber)) {
+      continue;
+    }
+
+    await upsertCandidateChallengeAssignment(db, {
+      id: crypto.randomUUID(),
+      candidateId: input.candidateId,
+      stageId: input.stageId,
+      challengeId: input.challengeId,
+      repoId,
+      githubRepoUrl,
+      githubPrNumber: prNumber,
+      issueNumber: null,
+    });
+    return true;
+  }
+
+  return false;
 }
 
 async function recentlyAttemptedStandaloneReviewMatch(

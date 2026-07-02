@@ -400,6 +400,30 @@ function persistedRankedResult(prNumber: number, contrastScore: number): Record<
   };
 }
 
+function roleBackedPersistedRankedResult(prNumber: number, contrastScore: number): Record<string, unknown> {
+  const roleSourceRef = {
+    sourceRefType: 'role_context',
+    locator: 'role_context:job_description',
+    exactText: 'The role requires React, TypeScript, accessibility, and regression-test review.',
+    conceptKeys: ['react', 'typescript', 'accessibility', 'regression-testing'],
+  };
+  const validator = matchValidator(prNumber);
+  return {
+    ...persistedRankedResult(prNumber, contrastScore),
+    alignments: [{
+      ...evidenceAlignment(),
+      roleSourceRefs: [roleSourceRef],
+    }],
+    validatorAgent: {
+      ...validator,
+      sourceBridge: {
+        ...(validator.sourceBridge as Record<string, unknown>),
+        roleSourceCount: 1,
+      },
+    },
+  };
+}
+
 function automaticMatchExplanation(prNumber: number, contrastScore: number): Record<string, unknown> {
   return {
     status: 'MATCHED',
@@ -1136,6 +1160,109 @@ describe('POST /rpc/get-stage-config', () => {
         roleContextId: 'role_ctx_1',
       }),
     );
+    expect(db.__calls.some((call) =>
+      call.ran
+      && call.sql.includes('INSERT INTO candidate_challenge_assignment')
+    )).toBe(true);
+  });
+
+  it('hydrates role-backed CODE_REVIEW assignment from a passed persisted match before stale ingestion blocks it', async () => {
+    const db = fakeD1({
+      firstResponders: [
+        {
+          match: 'FROM candidates WHERE id',
+          value: {
+            id: 'cand_1',
+            pipeline_id: 'pipe_1',
+            owner_id: 'owner_1',
+            current_stage_id: null,
+            resume_s3_key: 'text-intake/cand_1/stale-but-matched',
+          },
+        },
+        {
+          match: 'SELECT match_philosophy FROM pipeline_match_config',
+          value: { match_philosophy: 'tailored' },
+        },
+        { match: 'FROM candidate_challenge_assignment', value: null },
+        {
+          match: 'FROM role_contexts',
+          value: {
+            id: 'role_ctx_1',
+            persona_json: null,
+            rcd_json: JSON.stringify({ rcd_version: 'simple-jd-v1' }),
+            job_description_md: 'React TypeScript usePopoverRoot rendered trigger id ownership.',
+            non_negotiable_skills_json: JSON.stringify(['React', 'TypeScript', 'usePopoverRoot']),
+          },
+        },
+        {
+          match: 'LEFT JOIN candidate_ingestion',
+          value: {
+            resume_s3_key: 'text-intake/cand_1/stale-but-matched',
+            status: 'pending',
+            current_step: 'discover_profile',
+            error_text: null,
+            estimated_completion_at: null,
+            updated_at: '2026-07-02T18:25:46.411Z',
+            raw_node_count: 0,
+            node_count: 0,
+          },
+        },
+        { match: 'FROM review_challenge_packets', value: { packet_json: JSON.stringify(sourceBackedPacket('repo-span-stage-repair')) } },
+      ],
+      allResponders: [
+        {
+          match: 'FROM stages s',
+          value: [{
+            stage_id: 'stage_code_review',
+            stage_title: 'Code Review',
+            stage_order: 0,
+            stage_mode: 'ASYNC',
+            time_limit: null,
+            screening_input_mode: null,
+            video_config: null,
+            challenge_id: 'challenge_code_review',
+            challenge_type: 'CODE_REVIEW',
+            challenge_title: 'Code Review',
+            challenge_order: 0,
+            challenge_config: '{}',
+            challenge_instructions: 'Review the matched PR.',
+          }],
+        },
+        {
+          match: 'FROM match_runs mr',
+          value: [{
+            status: 'MATCHED',
+            ranked_results_json: JSON.stringify([roleBackedPersistedRankedResult(973, 1)]),
+            repo_id: 973,
+            pr_number: 973,
+            github_url: 'https://github.com/mui/base-ui',
+          }],
+        },
+      ],
+    });
+    const env = buildEnv({ DB: db });
+
+    const res = await rpcAuth.request(
+      '/get-stage-config',
+      {
+        method: 'POST',
+        headers: { Authorization: await authHeader('cand_1', 'pipe_1') },
+      },
+      env,
+    );
+
+    expect(res.status).toBe(200);
+    const body = await res.json() as {
+      isComplete?: boolean;
+      stageId?: string;
+      challenges?: Array<{ type: string; title: string }>;
+    };
+    expect(body).toMatchObject({
+      isComplete: false,
+      stageId: 'stage_code_review',
+      challenges: expect.arrayContaining([{ type: 'CODE_REVIEW', title: 'Code Review', order: 1 }]),
+    });
+    expect(matchCandidateToReviewChallenge).not.toHaveBeenCalled();
     expect(db.__calls.some((call) =>
       call.ran
       && call.sql.includes('INSERT INTO candidate_challenge_assignment')

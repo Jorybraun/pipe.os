@@ -1262,7 +1262,7 @@ async function createDiagnostic(input: {
 
 async function createDeterministicFallbackEvaluation(input: {
   store: RepoTaskInterviewSessionStore;
-  session: Awaited<RepoTaskInterviewSessionStore['loadSession']>;
+  session: Awaited<ReturnType<RepoTaskInterviewSessionStore['loadSession']>>;
   sessionId: string;
   scheduledInterviewId: string;
   requestEventId: string;

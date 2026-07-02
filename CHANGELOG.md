@@ -32,6 +32,8 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Fixed — CODE_REVIEW assessment runtime
 
+- Role-backed CODE_REVIEW match contrast now considers candidate-evidence separation as well as blended final-score separation, preventing role/context constants from flattening otherwise source-backed candidate-specific matches into false near-ties.
+- Stage-backed CODE_REVIEW can now hydrate a missing candidate challenge assignment from the latest passed, role-scoped, source-backed `match_runs` result before a stale candidate-ingestion row forces the safe profile-received handoff.
 - Standalone CODE_REVIEW ingestion now retries stale or failed candidate-evidence runs from the original resume source, remaps deprecated Workers AI models to the current default, and preserves richer raw review evidence for repo matching.
 - Standalone CODE_REVIEW status checks now queue source-backed PR assignment when candidate evidence is already ready, keeping `/assess` on the safe profile-received handoff while preventing ready candidates from staying idle.
 - Standalone text-intake CODE_REVIEW invites now attempt source-backed PR assignment immediately after resume decomposition produces matchable evidence, so app-dev auto-match can unblock without waiting for the slower discovery/profile tail to finish.
@@ -42,6 +44,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Fixed — Open-source assessment progress
 
+- Repo-task assessment evaluator fallback now types its loaded session value correctly, keeping worker typecheck green after deterministic evaluator failover changes.
 - Repo-task assessment evaluation now tries current Workers AI models before the slower legacy GLM default and produces a conservative source-backed human-review report if real AI evaluation fails after complete commit/diff/test evidence is captured.
 - Candidate discovery ingestion now tries a bounded sequence of current Workers AI models, stops cleanly after an application timeout, unwraps object-shaped provider responses, and records per-attempt telemetry before falling back to source-backed parsing, so dev no longer silently gives up or gets stuck after one slow or malformed model response.
 - LLM usage accounting now includes the current Workers AI `@cf/zai-org/glm-4.7-flash` default so candidate-ingestion metering does not fail on the replacement model.
