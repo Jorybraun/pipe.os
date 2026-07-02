@@ -140,6 +140,14 @@ stored row contains the older `evaluation_corpora` schema, the CLI adapts
 candidate-role-challenge relevance labels into candidate-to-packet quality cases
 instead of creating a second unrelated corpus format.
 
+For determinism proof, prefer `--auto-comparison-runs` when evaluating a frozen
+corpus against D1 match history. The evaluator loads the latest primary run for
+each labelled candidate/role pair, then selects one same-or-earlier
+candidate/role/status run as the comparison when available. This keeps app-dev
+operator runs repeatable without manually assembling `--comparison-run-id`
+arguments while still surfacing true gaps: missing comparison history,
+non-identical reranks, missing packet coverage, and unreviewed draft labels.
+
 CI also runs the matching-evaluation readiness report after worker unit tests.
 Missing Cloudflare credentials or `MATCHING_EVALUATION_CORPUS_ID` produce a
 loud `not_configured` artifact and do not block pull-request, local, or `main`
