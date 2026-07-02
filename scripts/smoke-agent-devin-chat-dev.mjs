@@ -154,6 +154,10 @@ function connectAgent(wsUrl, headers) {
       resolve(messages);
     }, 90_000);
 
+    ws.on('open', () => {
+      ws.send(JSON.stringify({ type: 'GET_STATUS' }));
+    });
+
     ws.on('message', (data) => {
       const parsed = parseMessage(data);
       messages.push(parsed);
