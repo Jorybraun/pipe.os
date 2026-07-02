@@ -201,11 +201,22 @@ npm --prefix workers/api test -- \
   src/routes/__tests__/talentPool.test.ts \
   src/routes/cockpit/__tests__/contacts.rest.test.ts \
   src/routes/cockpit/__tests__/candidates.rest.test.ts
+
+cd workers/api
+npm run candidate-ingestion:audit -- --local --invite-token <token>
+npm run candidate-ingestion:audit -- --remote --invite-token <token>
 ```
 
 DOCX uploads are parsed from OOXML body text and use the same profile-ingestion
 and living-context projection path as PDF uploads. Legacy binary `.doc` files
 remain unsupported and should not be advertised as source-projectable evidence.
+
+The candidate-ingestion audit contract lives in
+`docs/ops/talent-pool-candidate-ingestion-audit.md`. It fails on submitted
+intakes without storage or ingestion state, missing active Talent Pool person
+projection, missing exact source proof, duplicate projected context edges,
+source-less positive claims, candidate nodes without validated source quotes,
+or accidental roleless `applications` / `person_roles` rows.
 
 ---
 

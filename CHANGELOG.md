@@ -12,6 +12,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - Talent Pool profile submit/upload now repairs the roleless person projection, so dev-seeded and legacy `/talent/:token` candidates upsert one canonical `people`/`workspace_people` identity without fabricating role-backed applications or person roles.
 - The People list now includes canonical `workspace_people` Talent Pool members and suppresses same-email/contact duplicates, so ingested Talent Pool candidates appear in the unified person list instead of only in candidate-specific surfaces.
 - Talent Pool DOCX uploads now extract OOXML body text and run the same candidate-ingestion and living-context source projection path as PDF uploads instead of only storing the file.
+- Added `candidate-ingestion:audit` to verify Talent Pool raw intake capture, candidate-ingestion state, exact source spans/source refs, roleless person projection, duplicate projected edges, and source-less positive candidate/person claims.
 
 ### Added — Open-source assessment setup
 

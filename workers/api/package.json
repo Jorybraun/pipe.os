@@ -22,6 +22,7 @@
     "living-context:match-quality": "tsx scripts/runMatchQualityEvaluation.ts",
     "review-judge:verify": "tsx scripts/verifyCodeReviewJudgeExamples.ts --require-replay-ready --json",
     "review-packets:repair-profiles": "tsx scripts/backfillReviewPacketReviewProfiles.ts",
+    "candidate-ingestion:audit": "tsx scripts/auditCandidateIngestion.ts --json",
     "assessment-evidence:audit": "tsx scripts/auditAssessmentEvidenceIngestion.ts --json",
     "assessment-evidence:replay": "tsx scripts/replayAssessmentLivingContext.ts --json"
   },

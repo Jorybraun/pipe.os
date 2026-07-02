@@ -479,7 +479,7 @@ async function persistIntake(
   candidate: CandidateRow,
   input: SubmitProfileInput,
   now: string,
-  options: { profileKey?: string; profileExcerpt?: string } = {},
+  options: { profileKey?: string; profileExcerpt?: string; sourceTextForPerson?: string } = {},
 ): Promise<void> {
   const profileKey = options.profileKey ?? `talent-intake/${candidate.id}/${now.replace(/[:.]/g, '-')}.txt`;
   if (!options.profileKey) {
@@ -542,12 +542,14 @@ async function persistIntake(
   await ensureCandidateIngestionQueued(c.env.DB, candidate.id, input, now);
 
   if (candidate.email?.trim()) {
+    const sourceTextForPerson = options.sourceTextForPerson ?? (!options.profileKey ? input.resumeText : undefined);
     await ensureRolelessTalentPoolIdentity({
       db: c.env.DB,
       userId: candidate.owner_id,
       candidateId: candidate.id,
       name: candidate.name ?? candidate.email,
       email: candidate.email,
+      message: sourceTextForPerson,
       now,
     });
   }
@@ -699,6 +701,7 @@ route.post('/upload-profile', async (c) => {
   await persistIntake(c, candidate, profileInput, now, {
     profileKey,
     profileExcerpt: resumeText.length >= 20 ? excerpt(resumeText) : `Uploaded ${rawFileName}`,
+    sourceTextForPerson: resumeText.length >= 20 ? resumeText : undefined,
   });
   queueProfileIngestion({
     c,
