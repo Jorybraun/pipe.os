@@ -309,7 +309,9 @@ export async function processStaleWorkersAIModelIngestionRetries(
             AND ci.updated_at <= ?1
           )
         )
-      ORDER BY ci.updated_at ASC
+      ORDER BY
+        CASE WHEN ci.status = 'pending' THEN 0 ELSE 1 END,
+        ci.updated_at ASC
       LIMIT ?2`,
   ).bind(staleCutoff, scanLimit).all<RetryableCandidateRow>();
 
