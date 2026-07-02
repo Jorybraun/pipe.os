@@ -469,11 +469,23 @@ describe('evaluation corpus review CLI', () => {
     expect(summary.nextAction).toBe('complete_expert_review');
 
     const packet = JSON.parse(await readFile(reviewPacketPath, 'utf8')) as {
+      readinessSummary: {
+        nextAction: string;
+        labelsNeedingHumanReview: string[];
+        labelsMissingExpectedPacket: string[];
+        labelsMissingRepoDemandEvidence: string[];
+      };
       items: Array<{
         candidateEvidence: Array<{ evidenceReferences: Array<{ exactText: string }> }>;
         expectedPacket: { repoId: string; prNumber: number };
       }>;
     };
+    expect(packet.readinessSummary).toEqual(expect.objectContaining({
+      nextAction: 'complete_expert_review',
+      labelsNeedingHumanReview: ['seeded-match-run-1-packet-1'],
+      labelsMissingExpectedPacket: [],
+      labelsMissingRepoDemandEvidence: [],
+    }));
     expect(packet.items[0]?.candidateEvidence[0]?.evidenceReferences[0]?.exactText)
       .toContain('Reviewed React accessibility state');
     expect(packet.items[0]?.expectedPacket).toEqual(expect.objectContaining({
@@ -540,9 +552,23 @@ describe('evaluation corpus review CLI', () => {
     expect(exitCode).toBe(0);
     const packet = JSON.parse(await readFile(reviewPacketPath, 'utf8')) as {
       corpusId: string;
+      readinessSummary: {
+        nextAction: string;
+        draftLabelCount: number;
+        labelsNeedingHumanReview: string[];
+        labelsMissingExpectedPacket: string[];
+        labelsMissingRepoDemandEvidence: string[];
+      };
       items: Array<{ labelId: string; reviewQuestions: string[] }>;
     };
     expect(packet.corpusId).toBe('sample-corpus-v1');
+    expect(packet.readinessSummary).toEqual(expect.objectContaining({
+      nextAction: 'fix_corpus_source_evidence',
+      draftLabelCount: 1,
+      labelsNeedingHumanReview: ['label-1'],
+      labelsMissingExpectedPacket: ['label-1'],
+      labelsMissingRepoDemandEvidence: ['label-1'],
+    }));
     expect(packet.items[0]).toEqual(expect.objectContaining({
       labelId: 'label-1',
       reviewQuestions: expect.arrayContaining([
