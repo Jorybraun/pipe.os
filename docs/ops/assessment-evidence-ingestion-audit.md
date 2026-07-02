@@ -71,6 +71,10 @@ npm run assessment-evidence:audit -- --remote --session-id <assessment_session_i
 npm run assessment-evidence:replay -- --remote --session-id <assessment_session_id>
 ```
 
+For app-dev, prefix remote proof commands with
+`CLOUDFLARE_D1_DATABASE_ID=0abe92df-9296-46f5-9f9d-a1fb1bcd3be1`; otherwise
+the shell may audit a different configured D1 target.
+
 The goal is not that every environment has every evidence family populated, but
 that a real open-source assessment session shows captured and projected rows for
 the evidence it actually produced, has zero source-less positive claims, and has
