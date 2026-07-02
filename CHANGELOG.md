@@ -9,6 +9,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Added — Open-source assessment setup
 
+- Added composite D1 indexes for recruiter assessment summary projections, keeping `/api/v1/scheduling/interviews` focused on the visible page as assessment sessions, events, source refs, evaluations, and challenge assignments grow.
 - `assessment-evidence:replay -- --remote --all-missing` now supports `--progress` and repeatable `--exclude-state <STATE>` filters with per-session state/missing-event counts, so app-dev historical backfill can report the current session and skip active `IN_PROGRESS` assessments while completed rows are repaired.
 - `assessment-evidence:replay -- --remote --all-missing --summary` now emits compact bounded-backfill proof with processed session ids, success/failure counts, context/source-ref totals, missing projection counts, and matching effects for app-dev replay batches.
 - `assessment-evidence:replay` now emits a DoD answer block covering what happened, who acted, source proof types, derived claims, missing person projections, and matching effects for the replayed assessment.
