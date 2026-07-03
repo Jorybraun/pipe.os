@@ -600,7 +600,21 @@ through the public `/talent/:token` form, and returned `status: ready`,
 the object was 379 bytes and SHA-256
 `b71e362c0c73bf690bc6da42a8d171616fe0c760d970db3ba77845b0579b98b2`, matching
 both the content-addressed storage-key prefix and submitted source bytes. The
-DOCX smoke created invite token `f3ca666d-a4c7-497a-b9a6-48eac885e37a`,
+plain-text upload smoke created invite token
+`2dfa07c1-d030-42e1-b77f-d68c9bf694d1`, submitted a `.txt` profile file through
+the public `/talent/:token` form, and returned `status: ready`,
+`candidateNodeExactSourceQuoteCount: 13`, `contextSourceRefCount: 8`,
+`profileUploadArtifactVersionCount: 1`,
+`externalProfileRefSourceTextMismatchCount: 0`,
+`phoneScreenerIntentSourceTextMismatchCount: 0`,
+`sourceLessPositiveClaimCount: 0`, and `duplicateProjectedEdgeCount: 0`. It
+fetched the exact R2 key
+`talent-intake/9b7a7aac-a8de-4f62-be0a-ac35a3498467/3e7a3617de681aacc93a2b5545c98c7df19989e10cc86b05c51bb51b8ef4fdcb-talent-smoke-20260703171423-ab4880e8.txt`;
+the object was 379 bytes and SHA-256
+`3e7a3617de681aacc93a2b5545c98c7df19989e10cc86b05c51bb51b8ef4fdcb`, matching
+the storage-key prefix and submitted source bytes while preserving the upload
+receipt. The DOCX smoke created invite token
+`f3ca666d-a4c7-497a-b9a6-48eac885e37a`,
 submitted the document through the public `/talent/:token` form, and returned
 `status: ready`,
 `candidateNodeExactSourceQuoteCount: 13`, `contextSourceRefCount: 8`,
