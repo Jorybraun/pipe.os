@@ -28,8 +28,11 @@ const ROOM_BASIC_PASSWORD = process.env.PIPE_ROOM_DEV_BASIC_AUTH_PASSWORD
   || process.env.PIPE_DEV_BASIC_AUTH_PASSWORD
   || process.env.DEV_BASIC_AUTH_PASSWORD
   || '';
+const INTERVIEW_TYPE = process.env.AGENT_SMOKE_INTERVIEW_TYPE || 'OPEN_SOURCE_BUG_FIX';
 const REPO_URL = process.env.AGENT_SMOKE_REPO_URL || 'https://github.com/octocat/Hello-World';
-const PR_NUMBER = Number(process.env.AGENT_SMOKE_PR_NUMBER || '1');
+const RAW_PR_NUMBER = process.env.AGENT_SMOKE_PR_NUMBER || '';
+const PR_NUMBER = RAW_PR_NUMBER ? Number(RAW_PR_NUMBER) : null;
+const BASE_COMMIT_SHA = process.env.AGENT_SMOKE_BASE_COMMIT_SHA || '7fd1a60b01f91b314f59955a4e4d4e80d8edf11d';
 const EXPECTED_RESPONSE = process.env.AGENT_SMOKE_EXPECTED_RESPONSE || 'PIPE_AGENT_SMOKE_OK';
 const EXPECT_AUTH_NEEDED = process.env.AGENT_SMOKE_EXPECT_AUTH_NEEDED === '1';
 const PROMPT_TEXT =
@@ -38,6 +41,15 @@ const PROMPT_TEXT =
 const REMOTE = !ROOM_BASE.includes('localhost') && !ROOM_BASE.includes('127.0.0.1');
 
 function assertEnv() {
+  if (INTERVIEW_TYPE !== 'OPEN_SOURCE_BUG_FIX' && INTERVIEW_TYPE !== 'DEV_CONTAINER_CHALLENGE') {
+    throw new Error('AGENT_SMOKE_INTERVIEW_TYPE must be OPEN_SOURCE_BUG_FIX or DEV_CONTAINER_CHALLENGE.');
+  }
+  if (RAW_PR_NUMBER && (!Number.isInteger(PR_NUMBER) || PR_NUMBER <= 0)) {
+    throw new Error('AGENT_SMOKE_PR_NUMBER must be a positive integer when provided.');
+  }
+  if (INTERVIEW_TYPE === 'OPEN_SOURCE_BUG_FIX' && !/^[a-f0-9]{40}$/i.test(BASE_COMMIT_SHA)) {
+    throw new Error('AGENT_SMOKE_BASE_COMMIT_SHA must be a real 40-character commit SHA for OPEN_SOURCE_BUG_FIX.');
+  }
   if (!REMOTE) return;
   if (!APP_BASIC_USER || !APP_BASIC_PASSWORD) {
     throw new Error(
@@ -150,6 +162,12 @@ function sourceRefCount(rows, kind) {
     : 0;
 }
 
+function bridgeStateSourceRefCount(rows) {
+  return sourceRefCount(rows, 'agent_status')
+    + sourceRefCount(rows, 'ai_agent_diagnostic')
+    + sourceRefCount(rows, 'agent_diagnostic');
+}
+
 async function pollAssessmentProgress(interviewId, predicate, label) {
   const deadline = Date.now() + 30_000;
   let lastProgress = null;
@@ -215,19 +233,41 @@ async function main() {
 
   const unique = Date.now();
   const recipientEmail = `agent-devin-smoke-${unique}@pipe-test.dev`;
+  const openSourceTaskFields = INTERVIEW_TYPE === 'OPEN_SOURCE_BUG_FIX'
+    ? {
+        challengeBaseCommitSha: BASE_COMMIT_SHA,
+        challengeTitle: 'Verify Devin bridge status evidence',
+        challengeInstructions: 'Use the controlled workspace to inspect the repository and ask Devin for help. The smoke verifies that real bridge auth/status evidence is captured without fabricating agent help.',
+        challengeSuccessCriteria: [
+          'The candidate room launches a controlled workspace for the exact repository.',
+          'The Devin bridge status is captured as source-backed assessment evidence.',
+          'No agent response is counted when the real bridge reports auth is needed.',
+        ],
+        challengeExpectedEvidence: [
+          'dev_container_workspace_launch source ref',
+          'agent_status source ref for the real Devin bridge state',
+          'ai_agent_response source ref only when a real Devin response is returned',
+        ],
+        challengeVerificationCommand: 'git status --short',
+      }
+    : {};
   const created = await requestJson(APP_BASE, '/api/v1/scheduling/interviews', {
     method: 'POST',
     body: JSON.stringify({
       recipientName: 'Agent Devin Smoke',
       recipientEmail,
       meetingType: 'DIRECT_VIDEO_CALL',
-      interviewType: 'DEV_CONTAINER_CHALLENGE',
+      interviewType: INTERVIEW_TYPE,
       githubRepoUrl: REPO_URL,
-      githubPrNumber: PR_NUMBER,
+      ...(PR_NUMBER ? { githubPrNumber: PR_NUMBER } : {}),
+      ...openSourceTaskFields,
     }),
   });
   const interviewId = created?.interview?.id;
   if (!interviewId) throw new Error(`Create response missing interview id: ${JSON.stringify(created)}`);
+  if (INTERVIEW_TYPE === 'OPEN_SOURCE_BUG_FIX' && !created?.interview?.assessmentProgress?.challenge) {
+    throw new Error(`Open-source Devin smoke did not create an assessment challenge: ${JSON.stringify(created?.interview)}`);
+  }
 
   const invited = await requestJson(APP_BASE, `/api/v1/scheduling/interviews/${interviewId}/invite`, {
     method: 'POST',
@@ -274,8 +314,8 @@ async function main() {
     const progress = await pollAssessmentProgress(
       interviewId,
       (candidate) => candidate?.hasAiInteraction === true
-        && sourceRefCount(candidate?.sourceRefCounts, 'agent_status') >= 1,
-      'Devin auth-needed agent_status evidence',
+        && bridgeStateSourceRefCount(candidate?.sourceRefCounts) >= 1,
+      'Devin auth-needed bridge state evidence',
     );
     const sourceRefCounts = progress?.sourceRefCounts ?? [];
     if (sourceRefCount(sourceRefCounts, 'ai_agent_response') > 0) {
@@ -289,11 +329,15 @@ async function main() {
       guestUrl: cleanRoomUrl(invited.room.guestUrl),
       repoUrl: REPO_URL,
       githubPrNumber: PR_NUMBER,
+      interviewType: INTERVIEW_TYPE,
       workspaceStatus: readySession.status,
       agentReady: false,
       authNeeded: true,
       assessmentAiInteraction: progress.hasAiInteraction,
+      assessmentBridgeStateCount: bridgeStateSourceRefCount(sourceRefCounts),
       assessmentAgentStatusCount: sourceRefCount(sourceRefCounts, 'agent_status'),
+      assessmentAgentDiagnosticCount: sourceRefCount(sourceRefCounts, 'ai_agent_diagnostic')
+        + sourceRefCount(sourceRefCounts, 'agent_diagnostic'),
       statuses: statusMessages.map((message) => message.status),
       authMessage: authNeeded.message,
     }, null, 2));
@@ -333,6 +377,7 @@ async function main() {
     guestUrl: cleanRoomUrl(invited.room.guestUrl),
     repoUrl: REPO_URL,
     githubPrNumber: PR_NUMBER,
+    interviewType: INTERVIEW_TYPE,
     workspaceStatus: readySession.status,
     agentReady: true,
     chatSource: chatResponse.source,
