@@ -7,6 +7,10 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Fixed — CODE_REVIEW scoring
+
+- Judge-example verification now audits the real remote dev D1 database (`pipe-db-test`) through Wrangler instead of only local Miniflare SQLite files, so the production CODE_REVIEW scoring loop validates the same labelled examples created by the app-dev smoke.
+
 ### Fixed — Interview scheduling
 
 - Recruiter interview list/detail assessment setup now explains when role-backed CODE_REVIEW matching found a source-backed PR but withheld automatic assignment because the match quality gate failed, so AI ingestion no longer looks silently stuck at the generic profile-received handoff.

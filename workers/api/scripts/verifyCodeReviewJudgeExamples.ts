@@ -8,6 +8,7 @@
  */
 
 import dotenv from 'dotenv';
+import { spawnSync } from 'node:child_process';
 import { existsSync, readdirSync } from 'node:fs';
 import { createRequire } from 'node:module';
 import { dirname, resolve } from 'node:path';
@@ -80,6 +81,9 @@ interface AuditOptions {
 
 interface CliOptions {
   databasePath?: string;
+  remote: boolean;
+  remoteDatabaseName: string;
+  remoteEnv: string;
   limit: number;
   json: boolean;
   requireReplayReady: boolean;
@@ -95,12 +99,19 @@ interface SqliteDatabase {
   close?: () => void;
 }
 
+interface WranglerD1JsonEnvelope {
+  results?: unknown[];
+}
+
 function usage(): string {
   return [
     'Usage: npx tsx scripts/verifyCodeReviewJudgeExamples.ts [options]',
     '',
     'Options:',
     '  --database-path PATH     Audit one local SQLite database instead of all local DBs',
+    '  --remote                 Audit a remote D1 database via Wrangler instead of local Miniflare DBs',
+    '  --remote-database NAME   Remote D1 database name (default pipe-db-test)',
+    '  --remote-env ENV         Wrangler environment for the remote D1 query (default dev)',
     '  --limit N                Maximum examples to read per database (default 200)',
     '  --require-replay-ready   Exit non-zero unless at least one example is replay-ready',
     '  --require-calibration    Exit non-zero unless at least one labelled example is calibration-ready',
@@ -111,6 +122,9 @@ function usage(): string {
 
 function parseArgs(argv: string[]): CliOptions {
   const options: CliOptions = {
+    remote: false,
+    remoteDatabaseName: 'pipe-db-test',
+    remoteEnv: 'dev',
     limit: 200,
     json: false,
     requireReplayReady: false,
@@ -124,6 +138,20 @@ function parseArgs(argv: string[]): CliOptions {
       const value = inline ?? argv[index + 1];
       if (!value || value.startsWith('--')) throw new Error('--database-path requires a value');
       options.databasePath = value;
+      if (!inline) index += 1;
+    } else if (arg === '--remote') {
+      options.remote = true;
+    } else if (arg === '--remote-database' || arg.startsWith('--remote-database=')) {
+      const inline = arg.match(/^--remote-database=(.+)$/)?.[1];
+      const value = inline ?? argv[index + 1];
+      if (!value || value.startsWith('--')) throw new Error('--remote-database requires a value');
+      options.remoteDatabaseName = value;
+      if (!inline) index += 1;
+    } else if (arg === '--remote-env' || arg.startsWith('--remote-env=')) {
+      const inline = arg.match(/^--remote-env=(.+)$/)?.[1];
+      const value = inline ?? argv[index + 1];
+      if (!value || value.startsWith('--')) throw new Error('--remote-env requires a value');
+      options.remoteEnv = value;
       if (!inline) index += 1;
     } else if (arg === '--limit' || arg.startsWith('--limit=')) {
       const inline = arg.match(/^--limit=(.+)$/)?.[1];
@@ -402,6 +430,73 @@ function loadRows(database: SqliteDatabase, limit: number): JudgeExampleRow[] {
   });
 }
 
+export function parseWranglerD1Rows(payload: unknown): JudgeExampleRow[] {
+  if (!Array.isArray(payload)) return [];
+  return payload.flatMap((entry) => {
+    if (!isRecord(entry)) return [];
+    const results = Array.isArray((entry as WranglerD1JsonEnvelope).results)
+      ? (entry as WranglerD1JsonEnvelope).results
+      : [];
+    return results.flatMap((row) => {
+      const normalized = normalizeRow(row);
+      return normalized ? [normalized] : [];
+    });
+  });
+}
+
+export function loadRemoteRows(
+  databaseName: string,
+  remoteEnv: string,
+  limit: number,
+): JudgeExampleRow[] {
+  const result = spawnSync(
+    'npx',
+    [
+      'wrangler',
+      'd1',
+      'execute',
+      databaseName,
+      '--env',
+      remoteEnv,
+      '--remote',
+      '--json',
+      '--command',
+      [
+        'SELECT id,',
+        '       session_id,',
+        '       status,',
+        '       prompt_input_json,',
+        '       expected_output_json,',
+        '       judge_feedback_json,',
+        '       provenance_json,',
+        '       updated_at',
+        '  FROM code_review_judge_examples',
+        ' ORDER BY updated_at DESC',
+        ` LIMIT ${Math.max(1, Math.min(limit, 1000))}`,
+      ].join('\n'),
+    ],
+    {
+      cwd: apiRoot,
+      encoding: 'utf8',
+      maxBuffer: 20 * 1024 * 1024,
+      env: {
+        ...process.env,
+        NO_COLOR: '1',
+      },
+    },
+  );
+
+  if (result.status !== 0) {
+    const stderr = typeof result.stderr === 'string' ? result.stderr.trim() : '';
+    const stdout = typeof result.stdout === 'string' ? result.stdout.trim() : '';
+    throw new Error(stderr || stdout || `wrangler exited with status ${result.status ?? 'unknown'}`);
+  }
+
+  const stdout = typeof result.stdout === 'string' ? result.stdout.trim() : '';
+  const payload = stdout ? JSON.parse(stdout) as unknown : [];
+  return parseWranglerD1Rows(payload);
+}
+
 export interface DatabaseJudgeExampleAudit {
   databasePath: string;
   audit: JudgeExampleAudit;
@@ -429,6 +524,29 @@ async function auditDatabase(path: string, limit: number): Promise<DatabaseJudge
   } finally {
     close();
   }
+}
+
+async function auditRemoteDatabase(
+  databaseName: string,
+  remoteEnv: string,
+  limit: number,
+): Promise<DatabaseJudgeExampleAudit> {
+  let rows: JudgeExampleRow[] = [];
+  let loadFailure: string | null = null;
+  try {
+    rows = loadRemoteRows(databaseName, remoteEnv, limit);
+  } catch (error) {
+    loadFailure = error instanceof Error ? error.message : String(error);
+  }
+  const audit = auditCodeReviewJudgeExamples(rows);
+  if (loadFailure) {
+    audit.failures.push(`failed to read code_review_judge_examples: ${loadFailure}`);
+    audit.nextActions.push('Verify Wrangler credentials and the target remote D1 environment.');
+  }
+  return {
+    databasePath: `remote:${databaseName}/env:${remoteEnv}`,
+    audit,
+  };
 }
 
 function printHuman(results: DatabaseJudgeExampleAudit[]): void {
@@ -473,8 +591,11 @@ function printHuman(results: DatabaseJudgeExampleAudit[]): void {
 
 async function main(): Promise<void> {
   const options = parseArgs(process.argv.slice(2));
-  const databasePaths = discoverLocalDatabases(options.databasePath);
-  const results = await Promise.all(databasePaths.map((path) => auditDatabase(path, options.limit)));
+  const results = options.remote
+    ? [await auditRemoteDatabase(options.remoteDatabaseName, options.remoteEnv, options.limit)]
+    : await Promise.all(
+      discoverLocalDatabases(options.databasePath).map((path) => auditDatabase(path, options.limit)),
+    );
 
   if (options.json) {
     console.log(JSON.stringify({ databases: results }, null, 2));

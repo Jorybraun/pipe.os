@@ -20,7 +20,7 @@
     "review-graph:backfill-report-gate": "tsx scripts/checkReviewGraphBackfillReport.ts",
     "matching-eval:readiness": "tsx scripts/evaluateMatching.ts --remote --check-latest-production-pass",
     "living-context:match-quality": "tsx scripts/runMatchQualityEvaluation.ts",
-    "review-judge:verify": "tsx scripts/verifyCodeReviewJudgeExamples.ts --require-replay-ready --json",
+    "review-judge:verify": "tsx scripts/verifyCodeReviewJudgeExamples.ts --remote --remote-database pipe-db-test --remote-env dev --require-replay-ready --json",
     "review-packets:repair-profiles": "tsx scripts/backfillReviewPacketReviewProfiles.ts",
     "candidate-ingestion:audit": "tsx scripts/auditCandidateIngestion.ts --json",
     "assessment-evidence:audit": "tsx scripts/auditAssessmentEvidenceIngestion.ts --json",
