@@ -45,6 +45,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Fixed — CODE_REVIEW assessment runtime
 
+- CODE_REVIEW production corpus readiness now rejects positive-only expert-reviewed corpora until they include a non-positive/insufficient-evidence label plus an explicit contrast candidate and minimum score separation, while still allowing reviewed artifacts to persist for operator follow-up.
 - The internal CODE_REVIEW match-quality gate now requires at least one insufficient-evidence negative case, one explicit contrast candidate, and reason-category expectations, preventing positive-only corpora from passing as production-quality proof.
 - CODE_REVIEW match-health skew checks now analyze only matches that recalled the current production-ready packet breadth, warning on stale/narrow historical runs instead of failing the expanded corpus for old app-dev selections.
 - Source-backed review challenge packet backfills now batch large living-context source-ref/entity/concept rewrites and serialize remote D1 batch statements, preventing large real PR packets from stalling after partial span/fact writes.
