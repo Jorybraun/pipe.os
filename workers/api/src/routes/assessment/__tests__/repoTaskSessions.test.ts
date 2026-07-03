@@ -2308,6 +2308,36 @@ Fix stale popover listener cleanup.`;
         narrative: 'Legacy evaluator praise without source refs must not leak into progress.',
       }),
     ]));
+    sqlite.prepare(
+      `UPDATE assessment_sessions
+          SET state = 'EVALUATING'
+        WHERE id = ?`,
+    ).run(session.id);
+    const staleSessionProgressResponse = await app.request(
+      `/api/v1/assessment/repo-task/sessions/${session.id}/progress`,
+      { method: 'GET' },
+      env,
+    );
+    expect(staleSessionProgressResponse.status).toBe(200);
+    const staleSessionProgressBody = await staleSessionProgressResponse.json() as {
+      progress: {
+        stage: string;
+        nextAction: string;
+        evaluation: { status: string } | null;
+      };
+    };
+    expect(staleSessionProgressBody.progress).toMatchObject({
+      stage: 'EVALUATED',
+      nextAction: 'REVIEW_EVALUATION',
+      evaluation: {
+        status: 'EVALUATED',
+      },
+    });
+    sqlite.prepare(
+      `UPDATE assessment_sessions
+          SET state = 'EVALUATED'
+        WHERE id = ?`,
+    ).run(session.id);
 
     const humanDecisionSourceRef = await sourceRef(
       'assessment_evaluation_report',

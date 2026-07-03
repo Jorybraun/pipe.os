@@ -9,11 +9,13 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Fixed — CODE_REVIEW scoring
 
+- Challenge-match quality scoring now narrows rounded contrast separation directly, keeping the Worker strict type gate green while preserving the rounded 2% quality boundary.
 - Judge-example verification now audits the real remote dev D1 database (`pipe-db-test`) through Wrangler instead of only local Miniflare SQLite files, so the production CODE_REVIEW scoring loop validates the same labelled examples created by the app-dev smoke.
 - Role-backed CODE_REVIEW matching now scores rounded 2% challenge-separation leads as measurable contrast, so app-dev auto-match no longer blocks a recruiter-visible “2% lead” candidate-safe assignment at the gate boundary.
 
 ### Fixed — Interview scheduling
 
+- Assessment progress now shows a reviewable evaluated report when a report has persisted but the async session state is still `EVALUATING`, preventing stale “evaluation running” UI after background completion.
 - Candidate assessment cockpit smoke now scopes duplicate status-strip checks to the main room header, avoiding false failures when the video PiP mirrors the same assessment status.
 - Open-source workspace dev smoke now verifies the candidate-visible assessment cockpit after the workspace is ready, including repo/base commit, AI-use state, evidence coverage, and Submit Work.
 - Candidate dev-container assessments now keep the source-backed task packet, repo/base commit locator, evidence coverage, AI-use state, and Submit Work action visible above the code workspace, so the cockpit does not hide assessment readiness inside a drawer.

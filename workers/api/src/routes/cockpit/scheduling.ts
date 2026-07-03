@@ -3861,12 +3861,12 @@ function scheduledAssessmentProgressStageAndAction(input: {
 }): { stage: ScheduledAssessmentListStage; nextAction: ScheduledAssessmentListNextAction } {
   if (input.session.state === 'CANCELLED') return { stage: 'CANCELLED', nextAction: 'NONE' };
   if (input.humanDecision) return { stage: 'EVALUATED', nextAction: 'NONE' };
+  if (input.evaluation?.status === 'EVALUATED') return { stage: 'EVALUATED', nextAction: 'REVIEW_EVALUATION' };
   if (input.session.state === 'DIAGNOSTIC') return { stage: 'NEEDS_ATTENTION', nextAction: 'RESOLVE_DIAGNOSTIC' };
-  if (input.session.state === 'EVALUATING') return { stage: 'EVALUATING', nextAction: 'WAIT_FOR_EVALUATION' };
   if (input.evaluation) {
-    if (input.evaluation.status === 'EVALUATED') return { stage: 'EVALUATED', nextAction: 'REVIEW_EVALUATION' };
     return { stage: 'NEEDS_ATTENTION', nextAction: 'RESOLVE_DIAGNOSTIC' };
   }
+  if (input.session.state === 'EVALUATING') return { stage: 'EVALUATING', nextAction: 'WAIT_FOR_EVALUATION' };
   if (!input.hasCompleteChallengePacket) return { stage: 'WAITING_FOR_CHALLENGE', nextAction: 'ASSIGN_CHALLENGE' };
   if (scheduledAssessmentModeRequiresCommit(input.session.mode) && !input.hasBoundCommitSubmission) {
     if (input.hasWorkEvidence || input.hasFinalSubmission) return { stage: 'WORK_IN_PROGRESS', nextAction: 'SUBMIT_COMMIT' };

@@ -2276,6 +2276,34 @@ describe('GET /interviews/:id detail', () => {
     expect(sqlite!.prepare(
       `SELECT state FROM assessment_sessions WHERE id = ?`,
     ).get('assessment-session-ai-evaluation')).toEqual({ state: 'EVALUATED' });
+    sqlite!.prepare(
+      `UPDATE assessment_sessions
+          SET state = 'EVALUATING'
+        WHERE id = ?`,
+    ).run('assessment-session-ai-evaluation');
+    const staleStateDetailResponse = await app.request('/interviews/interview-1');
+    expect(staleStateDetailResponse.status).toBe(200);
+    const staleStateDetailBody = await staleStateDetailResponse.json() as {
+      interview: {
+        assessmentProgress: {
+          stage: string;
+          nextAction: string;
+          evaluation: { status: string } | null;
+        } | null;
+      };
+    };
+    expect(staleStateDetailBody.interview.assessmentProgress).toMatchObject({
+      stage: 'EVALUATED',
+      nextAction: 'REVIEW_EVALUATION',
+      evaluation: {
+        status: 'EVALUATED',
+      },
+    });
+    sqlite!.prepare(
+      `UPDATE assessment_sessions
+          SET state = 'EVALUATED'
+        WHERE id = ?`,
+    ).run('assessment-session-ai-evaluation');
     expect(sqlite!.prepare(
       `SELECT COUNT(*) AS count
          FROM assessment_evidence_events

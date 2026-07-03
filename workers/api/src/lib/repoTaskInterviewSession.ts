@@ -1397,17 +1397,17 @@ function progressStageAndAction(input: {
   if (input.humanDecision) {
     return { stage: 'EVALUATED', nextAction: 'NONE' };
   }
+  if (input.evaluation?.status === 'EVALUATED') {
+    return { stage: 'EVALUATED', nextAction: 'REVIEW_EVALUATION' };
+  }
   if (input.session.state === 'DIAGNOSTIC') {
+    return { stage: 'NEEDS_ATTENTION', nextAction: 'RESOLVE_DIAGNOSTIC' };
+  }
+  if (input.evaluation) {
     return { stage: 'NEEDS_ATTENTION', nextAction: 'RESOLVE_DIAGNOSTIC' };
   }
   if (input.session.state === 'EVALUATING') {
     return { stage: 'EVALUATING', nextAction: 'WAIT_FOR_EVALUATION' };
-  }
-  if (input.evaluation) {
-    if (input.evaluation.status === 'EVALUATED') {
-      return { stage: 'EVALUATED', nextAction: 'REVIEW_EVALUATION' };
-    }
-    return { stage: 'NEEDS_ATTENTION', nextAction: 'RESOLVE_DIAGNOSTIC' };
   }
   if (!input.hasCompleteChallengePacket) {
     return { stage: 'WAITING_FOR_CHALLENGE', nextAction: 'ASSIGN_CHALLENGE' };

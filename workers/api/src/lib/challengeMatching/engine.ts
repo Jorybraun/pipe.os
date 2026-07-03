@@ -1026,7 +1026,7 @@ function buildAssessmentQuality(
     {
       id: 'contrast_separation',
       label: 'Contrast separation',
-      score: separation === null
+      score: roundedSeparationPercent === null
         ? 0
         : roundedSeparationPercent >= 8
           ? 2
