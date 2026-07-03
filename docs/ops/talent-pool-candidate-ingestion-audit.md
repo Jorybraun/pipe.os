@@ -334,6 +334,13 @@ Talent Pool document upload is normalized to `profile_text_extraction_needed`
 after the raw upload receipt and operational intake facts are preserved. This is
 state repair only; it must not create profile candidate nodes or source spans
 without extracted text.
+After deploying Worker version `93998eca-df9c-4aa7-8123-bd836a0c0340`, the
+2026-07-03T20:00:52Z bounded remote audit
+`CLOUDFLARE_D1_DATABASE_ID=0abe92df-9296-46f5-9f9d-a1fb1bcd3be1 npm --prefix workers/api run candidate-ingestion:audit -- --remote --limit 5 --require-context-records`
+reported `failedRowCount: 0`, `errorTextRowCount: 0`,
+`sourceLessPositiveClaimCount: 0`, and `duplicateProjectedEdgeCount: 0`. The
+window remains `not_ready` only because two PDF/DOCX uploads correctly stay at
+`profile_text_extraction_needed` without exact-source profile candidate nodes.
 
 Current app-dev HEAD check on 2026-07-02 local time, checked at
 2026-07-03T01:25Z through 2026-07-03T01:27Z, ran after deploying Worker version
@@ -940,11 +947,10 @@ all 4 unauthenticated browser scenarios passed.
   older roleless message spans because their current uploaded PDFs have no
   extracted source spans; they need document extraction or an artifact-level
   receipt model, not fabricated source spans. New scoped browser smokes audit
-  clean. The 2026-07-03 `--limit 5` app-dev audit proves zero source-less
-  positives and zero duplicate projected edges inside the recent window, but one
-  recent PDF/DOCX intake is still failed at `parse_resume` and lacks exact-source
-  candidate nodes. A scheduled repair now converts historical unextractable
-  Talent Pool document parse failures into `profile_text_extraction_needed`
-  evidence gaps without inventing extracted source text. Use `--limit` for
-  recent-window app-dev health checks because full remote unscoped proof can
-  still exceed D1 CPU limits.
+  clean. The 2026-07-03 post-deploy `--limit 5` app-dev audit proves zero
+  source-less positives, zero duplicate projected edges, zero failed ingestion
+  rows, and zero error-text rows inside the recent window. Two recent PDF/DOCX
+  intakes remain explicit `profile_text_extraction_needed` evidence gaps and
+  lack exact-source candidate nodes by design because no extracted text exists.
+  Use `--limit` for recent-window app-dev health checks because full remote
+  unscoped proof can still exceed D1 CPU limits.
