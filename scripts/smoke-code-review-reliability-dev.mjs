@@ -231,10 +231,32 @@ function summarizeAssessSmoke(proof) {
     recruiterAssessmentSetupStatus: proof?.recruiterBrowserSmoke?.readiness?.assessmentSetupStatus ?? null,
     recruiterAssessmentSetupKind: proof?.recruiterBrowserSmoke?.readiness?.assessmentSetupKind ?? null,
     recruiterAssessmentSetupSource: proof?.recruiterBrowserSmoke?.readiness?.assessmentSetupSource ?? null,
+    recruiterInterviewStatus: proof?.submissionSmoke?.recruiterResults?.interviewStatus ?? null,
+    recruiterProfileInterviewStatus: proof?.submissionSmoke?.recruiterResults?.profileInterviewStatus ?? null,
+    recruiterProfileSubmitted: proof?.submissionSmoke?.recruiterResults?.profileSubmitted ?? null,
+    recruiterMatchStatus: proof?.submissionSmoke?.recruiterResults?.codeReviewMatchStatus ?? null,
+    validatorVerdict: proof?.submissionSmoke?.recruiterResults?.validatorVerdict ?? null,
+    roleSourceCount: proof?.submissionSmoke?.recruiterResults?.roleSourceCount ?? null,
     reviewSessionId: proof?.submissionSmoke?.reviewSessionId ?? null,
+    agentResponseCount: proof?.submissionSmoke?.agentResponseCount ?? null,
+    threadCount: proof?.submissionSmoke?.threadCount ?? null,
     reviewScore: proof?.submissionSmoke?.scorePersistence?.reviewScore ?? null,
     reviewBand: proof?.submissionSmoke?.scorePersistence?.reviewBand ?? null,
     scoreStatus: proof?.submissionSmoke?.scorePersistence?.reviewStatus ?? null,
+    challengeSubmissionScore: proof?.submissionSmoke?.scorePersistence?.challengeSubmissionScore ?? null,
+    assessmentScore: proof?.submissionSmoke?.scorePersistence?.assessmentScore ?? null,
+    scoreD1Target: proof?.submissionSmoke?.scorePersistence?.d1Target ?? null,
+    reviewStatusPhase: proof?.submissionSmoke?.reviewStatusPipeline?.phase ?? null,
+    reviewStatusCurrentRound: proof?.submissionSmoke?.reviewStatusPipeline?.currentRound ?? null,
+    reviewStatusMaxRounds: proof?.submissionSmoke?.reviewStatusPipeline?.maxRounds ?? null,
+    reviewStatusScoreOverall: proof?.submissionSmoke?.reviewStatusPipeline?.scoreOverall ?? null,
+    reviewStatusScoreBand: proof?.submissionSmoke?.reviewStatusPipeline?.scoreBand ?? null,
+    reviewPipelineReviewStatus: Array.isArray(proof?.submissionSmoke?.reviewStatusPipeline?.pipeline)
+      ? (proof.submissionSmoke.reviewStatusPipeline.pipeline.find((step) => step?.id === 'review')?.status ?? null)
+      : null,
+    reviewPipelineScoringStatus: Array.isArray(proof?.submissionSmoke?.reviewStatusPipeline?.pipeline)
+      ? (proof.submissionSmoke.reviewStatusPipeline.pipeline.find((step) => step?.id === 'scoring')?.status ?? null)
+      : null,
     evidenceHyperedgeCount: proof?.submissionSmoke?.recruiterResults?.evidenceHyperedgeCount ?? null,
     personRoleRepoHyperedge: proof?.submissionSmoke?.recruiterResults?.personRoleRepoHyperedge ?? null,
   };
@@ -363,12 +385,30 @@ export function validateLaneSummary(laneId, summary) {
       require(summary?.recruiterBrowserSmokeSkipped === false, 'role-backed-full-submit recruiter browser smoke must run');
       require(summary?.recruiterReadinessReady === true, 'role-backed-full-submit recruiter readiness must be proven');
       require(summary?.recruiterAssessmentSetupStatus === 'reviewable_task_assigned', 'role-backed-full-submit recruiter setup must be reviewable_task_assigned');
+      require(summary?.recruiterInterviewStatus === 'COMPLETED', 'role-backed-full-submit recruiter interview status must be COMPLETED');
+      require(summary?.recruiterProfileInterviewStatus === 'COMPLETED', 'role-backed-full-submit person profile interview status must be COMPLETED');
+      require(summary?.recruiterProfileSubmitted === true, 'role-backed-full-submit recruiter profile must expose submitted result');
+      require(summary?.recruiterMatchStatus === 'MATCHED', 'role-backed-full-submit recruiter match status must be MATCHED');
+      require(summary?.validatorVerdict === 'PASSED', 'role-backed-full-submit recruiter validator verdict must be PASSED');
+      require(finiteNumberAtLeast(summary?.roleSourceCount, 1), 'role-backed-full-submit must expose role source proof');
       require(Boolean(summary?.repoUrl), 'role-backed-full-submit must include repoUrl');
       require(finiteNumberAtLeast(summary?.prNumber, 1), 'role-backed-full-submit must include a positive prNumber');
       require(Boolean(summary?.reviewSessionId), 'role-backed-full-submit must persist review session id');
+      require(finiteNumberAtLeast(summary?.agentResponseCount, 1), 'role-backed-full-submit must include author pushback response');
+      require(finiteNumberAtLeast(summary?.threadCount, 1), 'role-backed-full-submit must include review thread');
       require(summary?.scoreStatus === 'scored', 'role-backed-full-submit score status must be scored');
       require(finiteNumberAtLeast(summary?.reviewScore, 0), 'role-backed-full-submit must persist numeric score');
       require(Boolean(summary?.reviewBand), 'role-backed-full-submit must persist review band');
+      require(finiteNumberAtLeast(summary?.challengeSubmissionScore, 0), 'role-backed-full-submit must persist challenge submission score');
+      require(finiteNumberAtLeast(summary?.assessmentScore, 0), 'role-backed-full-submit must persist assessment score');
+      require(summary?.scoreD1Target === 'remote', 'role-backed-full-submit scoring proof must target remote D1');
+      require(summary?.reviewStatusPhase === 'scoring', 'role-backed-full-submit review pipeline phase must be scoring');
+      require(finiteNumberAtLeast(summary?.reviewStatusCurrentRound, 2), 'role-backed-full-submit must reach at least round 2');
+      require(finiteNumberAtLeast(summary?.reviewStatusMaxRounds, 2), 'role-backed-full-submit must report max rounds');
+      require(Number(summary?.reviewStatusScoreOverall) === Number(summary?.reviewScore), 'role-backed-full-submit review pipeline score must match persisted score');
+      require(summary?.reviewStatusScoreBand === summary?.reviewBand, 'role-backed-full-submit review pipeline band must match persisted band');
+      require(summary?.reviewPipelineReviewStatus === 'complete', 'role-backed-full-submit review pipeline review step must be complete');
+      require(summary?.reviewPipelineScoringStatus === 'complete', 'role-backed-full-submit review pipeline scoring step must be complete');
       require(finiteNumberAtLeast(summary?.evidenceHyperedgeCount, 1), 'role-backed-full-submit must expose evidence hyperedges');
       require(summary?.personRoleRepoHyperedge === true, 'role-backed-full-submit must expose person-role-repo bridge');
       break;

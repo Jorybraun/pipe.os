@@ -224,6 +224,10 @@ match-quality lane at a different CODE_REVIEW evaluation database.
 The suite summary validator also fails candidate/recruiter-facing lanes when
 the candidate browser smoke or recruiter browser smoke is skipped, so a green
 suite proves the app-dev UI path ran instead of only direct RPC/API checks.
+For the role-backed full-submit lane, the suite also requires completed
+recruiter and person-profile statuses, submitted profile state, a passed
+validator verdict, role-source proof, author pushback/thread evidence, remote D1
+score persistence, and complete review/scoring pipeline steps.
 In isolated worktrees that already have `playwright/.auth/user.json`, set
 `PLAYWRIGHT_SKIP_CLERK_GLOBAL_SETUP=1` to reuse that recruiter session without
 running the Clerk setup dependency again.

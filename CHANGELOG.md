@@ -23,6 +23,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Added — CODE_REVIEW assessment runtime
 
+- CODE_REVIEW role-backed full-submit reliability now fails unless the parsed proof includes completed recruiter/person readouts, submitted profile state, passed validator verdict, role-source proof, author pushback/thread evidence, remote D1 scoring, and completed review/scoring pipeline steps.
 - CODE_REVIEW reliability summaries now carry candidate and recruiter browser-smoke skip/readiness proof, and the suite fails if app-dev browser proof is skipped for candidate/recruiter-facing runtime lanes.
 - The CODE_REVIEW reliability suite now validates lane-specific summary contracts, failing the wrapper if parsed proof no longer shows manual `MATCHED` PRs, `PROFILE_RECEIVED` handoffs, scored role-backed submissions, non-MUI Workers SDK matching, or zero-failure match-quality readiness.
 - The full app-dev CODE_REVIEW reliability suite now includes the manual source-backed PR ready-assignment smoke by default, so recruiter-selected `mui/base-ui#973` readiness is proven alongside blocked handoff, automatic matching, scoring, and match-quality gates.
