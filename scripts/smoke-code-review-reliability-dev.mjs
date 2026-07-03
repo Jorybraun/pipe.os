@@ -374,16 +374,45 @@ function summarizeTokenLifecycle(proof) {
   };
 }
 
+function isPositiveMatchVerdict(verdict) {
+  return verdict === 'strong_match' || verdict === 'likely_match';
+}
+
 function summarizeMatchQuality(proof) {
+  const caseResults = Array.isArray(proof?.caseResults) ? proof.caseResults : [];
+  const failedCases = Array.isArray(proof?.failedCases) ? proof.failedCases : null;
+  const positiveCases = caseResults.filter((result) =>
+    isPositiveMatchVerdict(result?.expectedVerdict));
+  const sourceBackedPrCaseCount = caseResults.filter((result) =>
+    result?.sourceBackedPr === true).length;
+  const candidateEvidencePositiveCaseCount = positiveCases.filter((result) =>
+    result?.candidateEvidencePresent === true).length;
+  const repoEvidenceCaseCount = caseResults.filter((result) =>
+    result?.repoEvidencePresent === true).length;
+  const usableChallengeCaseCount = caseResults.filter((result) =>
+    result?.usableChallenge === true).length;
   return {
     ok: proof?.passed === true,
     corpusId: proof?.corpusId ?? null,
     totalPairs: proof?.metrics?.totalPairs ?? null,
+    successfulPairs: proof?.metrics?.successfulPairs ?? null,
+    failedPairs: proof?.metrics?.failedPairs ?? null,
+    negativeCaseCount: proof?.metrics?.negativeCaseCount ?? null,
+    insufficientEvidenceCaseCount: proof?.metrics?.insufficientEvidenceCaseCount ?? null,
+    contrastCaseCount: proof?.metrics?.contrastCaseCount ?? null,
+    reasonCategoryExpectationCount: proof?.metrics?.reasonCategoryExpectationCount ?? null,
     accuracy: proof?.metrics?.verdictAccuracy ?? null,
     falsePositiveCount: proof?.metrics?.falsePositiveCount ?? null,
     falseNegativeCount: proof?.metrics?.falseNegativeCount ?? null,
     averageScoreSeparation: proof?.metrics?.averageScoreSeparation ?? null,
     usableChallengeRate: proof?.metrics?.usableChallengeRate ?? null,
+    caseResultsCount: caseResults.length,
+    failedCaseCount: Array.isArray(failedCases) ? failedCases.length : null,
+    positiveCaseCount: positiveCases.length,
+    sourceBackedPrCaseCount,
+    candidateEvidencePositiveCaseCount,
+    repoEvidenceCaseCount,
+    usableChallengeCaseCount,
     gateFailures: proof?.gateFailures ?? null,
   };
 }
@@ -675,13 +704,27 @@ export function validateLaneSummary(laneId, summary) {
       require(noFailures(summary?.failures), 'packet-catalog-readiness failures must be empty');
       break;
     case 'match-quality-readiness':
+      require(summary?.ok === true, 'match-quality-readiness must pass the internal gate');
       require(Boolean(summary?.corpusId), 'match-quality-readiness must include corpusId');
-      require(finiteNumberAtLeast(summary?.totalPairs, 1), 'match-quality-readiness must include evaluated pairs');
+      require(finiteNumberAtLeast(summary?.totalPairs, 3), 'match-quality-readiness must include labelled positive, negative, and contrast pairs');
+      require(Number(summary?.successfulPairs) === Number(summary?.totalPairs), 'match-quality-readiness all labelled pairs must execute successfully');
+      require(Number(summary?.failedPairs) === 0, 'match-quality-readiness failedPairs must be 0');
+      require(finiteNumberAtLeast(summary?.negativeCaseCount, 1), 'match-quality-readiness must include negative labelled cases');
+      require(finiteNumberAtLeast(summary?.insufficientEvidenceCaseCount, 1), 'match-quality-readiness must include insufficient-evidence labelled cases');
+      require(finiteNumberAtLeast(summary?.contrastCaseCount, 1), 'match-quality-readiness must include contrast cases');
+      require(finiteNumberAtLeast(summary?.reasonCategoryExpectationCount, 1), 'match-quality-readiness must include reason-category expectations');
       require(Number(summary?.accuracy) === 1, 'match-quality-readiness accuracy must be 1');
       require(Number(summary?.falsePositiveCount) === 0, 'match-quality-readiness falsePositiveCount must be 0');
       require(Number(summary?.falseNegativeCount) === 0, 'match-quality-readiness falseNegativeCount must be 0');
       require(finiteNumberAtLeast(summary?.averageScoreSeparation, 0.01), 'match-quality-readiness averageScoreSeparation must be positive');
       require(Number(summary?.usableChallengeRate) === 1, 'match-quality-readiness usableChallengeRate must be 1');
+      require(Number(summary?.caseResultsCount) === Number(summary?.totalPairs), 'match-quality-readiness must summarize every labelled case result');
+      require(Number(summary?.failedCaseCount) === 0, 'match-quality-readiness failedCases must be empty');
+      require(finiteNumberAtLeast(summary?.positiveCaseCount, 1), 'match-quality-readiness must include positive labelled cases');
+      require(Number(summary?.sourceBackedPrCaseCount) === Number(summary?.totalPairs), 'match-quality-readiness every labelled case must use a source-backed PR challenge');
+      require(Number(summary?.repoEvidenceCaseCount) === Number(summary?.totalPairs), 'match-quality-readiness every labelled case must include repo-side provenance');
+      require(Number(summary?.usableChallengeCaseCount) === Number(summary?.totalPairs), 'match-quality-readiness every labelled case must be usable as a challenge');
+      require(Number(summary?.candidateEvidencePositiveCaseCount) === Number(summary?.positiveCaseCount), 'match-quality-readiness every positive labelled case must include candidate-side evidence');
       require(noFailures(summary?.gateFailures), 'match-quality-readiness gateFailures must be empty');
       break;
     default:
