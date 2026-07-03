@@ -9,6 +9,7 @@ import {
   backfillReviewChallengePackets,
   buildBackfillCliReport,
   checkGitHubApiConnectivity,
+  d1DatabaseAdapter,
   type Options,
   type PullRequestRefs,
   type QueryClient,
@@ -51,6 +52,49 @@ class BetterQueryClient implements QueryClient {
     return [];
   }
 }
+
+describe('d1DatabaseAdapter', () => {
+  it('executes batch statements serially so remote D1 writes do not fan out concurrently', async () => {
+    let inFlight = 0;
+    let maxInFlight = 0;
+    const events: string[] = [];
+    const client: QueryClient = {
+      async query<T>(sql: string): Promise<T[]> {
+        inFlight++;
+        maxInFlight = Math.max(maxInFlight, inFlight);
+        events.push(`start:${sql}`);
+        await new Promise((resolve) => setTimeout(resolve, 5));
+        events.push(`end:${sql}`);
+        inFlight--;
+        return [];
+      },
+    };
+
+    const logs: string[] = [];
+    const db = d1DatabaseAdapter(client, {
+      log: (message?: unknown) => {
+        logs.push(String(message));
+      },
+    });
+
+    await db.batch([
+      db.prepare('INSERT first').bind('first'),
+      db.prepare('INSERT second').bind('second'),
+      db.prepare('INSERT third').bind('third'),
+    ]);
+
+    expect(maxInFlight).toBe(1);
+    expect(events).toEqual([
+      'start:INSERT first',
+      'end:INSERT first',
+      'start:INSERT second',
+      'end:INSERT second',
+      'start:INSERT third',
+      'end:INSERT third',
+    ]);
+    expect(logs).toEqual(['[challenge-backfill] executing D1 write batch size=3']);
+  });
+});
 
 function hunkLines(prefix: string, count: number): Array<{
   type: 'added';
