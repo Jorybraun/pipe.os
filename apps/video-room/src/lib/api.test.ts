@@ -175,6 +175,8 @@ describe('finalizeRoomWorkspaceAssessment', () => {
 
     await expect(finalizeRoomWorkspaceAssessment('room-token', 'workspace-session-1', {
       narrative: 'Submitted retry fix.',
+      testCommand: 'npm test -- retry',
+      verificationNotes: 'Targeted retry test passed in the workspace.',
     })).resolves.toMatchObject({
       submitted: true,
       commit: { commitSha: 'b'.repeat(40) },
@@ -192,6 +194,8 @@ describe('finalizeRoomWorkspaceAssessment', () => {
     });
     expect(JSON.parse(String(fetchSpy.mock.calls[0]?.[1]?.body))).toEqual({
       narrative: 'Submitted retry fix.',
+      testCommand: 'npm test -- retry',
+      verificationNotes: 'Targeted retry test passed in the workspace.',
     });
     fetchSpy.mockRestore();
   });

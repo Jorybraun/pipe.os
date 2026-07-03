@@ -353,7 +353,11 @@ describe('POST /rpc/dev-container/:sessionId/assessment/finalize', () => {
           Authorization: await authHeader(candidateId),
           'Content-Type': 'application/json',
         },
-        body: JSON.stringify({ narrative: 'Finish my workspace assessment.' }),
+        body: JSON.stringify({
+          narrative: 'Finish my workspace assessment.',
+          testCommand: 'npm test -- finalize',
+          verificationNotes: 'Focused finalizer test passed in the workspace.',
+        }),
       },
       env,
       buildCtx(),
@@ -401,6 +405,8 @@ describe('POST /rpc/dev-container/:sessionId/assessment/finalize', () => {
       repositoryUrl,
       baseCommitSha,
       narrative: 'Finish my workspace assessment.',
+      testCommand: 'npm test -- finalize',
+      verificationNotes: 'Focused finalizer test passed in the workspace.',
     });
 
     const commitRow = sqlite.prepare(

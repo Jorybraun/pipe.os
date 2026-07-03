@@ -290,7 +290,12 @@ describe('CommitSubmissionPanel', () => {
     fireEvent.change(screen.getByTestId('workspace-finalize-narrative'), {
       target: { value: 'Submitted retry fix from the assessment branch.' },
     });
-    expect(screen.queryByTestId('workspace-finalize-test-command')).toBeNull();
+    fireEvent.change(screen.getByTestId('workspace-finalize-test-command'), {
+      target: { value: 'npm test -- retry' },
+    });
+    fireEvent.change(screen.getByTestId('workspace-finalize-verification-notes'), {
+      target: { value: 'Targeted retry test passed in the workspace.' },
+    });
     expect(screen.getByTestId('workspace-finalize-trust-contract').textContent).toContain(
       'Verifies repository and base commit against the assigned challenge packet.',
     );
@@ -299,6 +304,8 @@ describe('CommitSubmissionPanel', () => {
     await waitFor(() => expect(onFinalizeWorkspace).toHaveBeenCalledTimes(1));
     expect(onFinalizeWorkspace).toHaveBeenCalledWith({
       narrative: 'Submitted retry fix from the assessment branch.',
+      testCommand: 'npm test -- retry',
+      verificationNotes: 'Targeted retry test passed in the workspace.',
     });
     expect(onSubmit).not.toHaveBeenCalled();
     expect(onProgressChange).toHaveBeenCalledWith(expect.objectContaining({

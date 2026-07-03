@@ -268,6 +268,8 @@ export interface RoomCommitSubmissionResponse {
 
 export interface RoomWorkspaceFinalizeRequest {
   narrative?: string;
+  testCommand?: string;
+  verificationNotes?: string;
 }
 
 export interface RoomWorkspaceFinalizeResponse {

@@ -466,6 +466,8 @@ export function CommitSubmissionPanel({
   const [workspaceFinalizeResult, setWorkspaceFinalizeResult] = useState<RoomWorkspaceFinalizeResponse | null>(null);
   const [workspaceFinalizeFields, setWorkspaceFinalizeFields] = useState<Required<RoomWorkspaceFinalizeRequest>>({
     narrative: '',
+    testCommand: '',
+    verificationNotes: '',
   });
   const displayedProgress = workspaceFinalizeResult?.progress ?? result?.progress ?? assessmentProgress;
   const challengeDisabledReason = challengePacketDisabledReason(challengePacket, displayedProgress);
@@ -521,7 +523,11 @@ export function CommitSubmissionPanel({
     try {
       const payload: RoomWorkspaceFinalizeRequest = {};
       const narrative = workspaceFinalizeFields.narrative.trim();
+      const testCommand = workspaceFinalizeFields.testCommand.trim();
+      const verificationNotes = workspaceFinalizeFields.verificationNotes.trim();
       if (narrative) payload.narrative = narrative;
+      if (testCommand) payload.testCommand = testCommand;
+      if (verificationNotes) payload.verificationNotes = verificationNotes;
       const response = await onFinalizeWorkspace(payload);
       setWorkspaceFinalizeResult(response);
       if (response.progress) onProgressChange?.(response.progress);
@@ -580,6 +586,27 @@ export function CommitSubmissionPanel({
             disabled={Boolean(workspaceFinalizeBlockedReason) || finalizing || submitting}
             rows={2}
             data-testid="workspace-finalize-narrative"
+          />
+        </label>
+        <label>
+          <span>Verification command</span>
+          <input
+            value={workspaceFinalizeFields.testCommand}
+            onChange={(event) => setWorkspaceFinalizeField('testCommand', event.target.value)}
+            placeholder="npm test -- retry"
+            disabled={Boolean(workspaceFinalizeBlockedReason) || finalizing || submitting}
+            data-testid="workspace-finalize-test-command"
+          />
+        </label>
+        <label>
+          <span>Missing-test note</span>
+          <textarea
+            value={workspaceFinalizeFields.verificationNotes}
+            onChange={(event) => setWorkspaceFinalizeField('verificationNotes', event.target.value)}
+            placeholder="If tests could not run, say exactly why."
+            disabled={Boolean(workspaceFinalizeBlockedReason) || finalizing || submitting}
+            rows={2}
+            data-testid="workspace-finalize-verification-notes"
           />
         </label>
         <button
