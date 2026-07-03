@@ -134,6 +134,9 @@ export function buildReliabilityLanes({
         id: 'manual-ready',
         label: 'Manual source-backed PR ready assignment',
         command: ['npm', 'run', 'smoke:code-review-assess-dev'],
+        env: {
+          CODE_REVIEW_SMOKE_RECRUITER_CANDIDATE_LINK: '1',
+        },
         parser: 'assess-smoke',
       },
     ],
@@ -205,6 +208,9 @@ function summarizeAssessSmoke(proof) {
     matchStatus: proof?.matchStatus ?? null,
     qualityGate: proof?.qualityGate ?? null,
     assessmentQuality: proof?.assessmentQuality ?? null,
+    candidateLinkState: proof?.candidateLinkProof?.state ?? null,
+    candidateLinkSessionStatus: proof?.candidateLinkProof?.sessionStatus ?? null,
+    candidateLinkSetupStatus: proof?.candidateLinkProof?.setupStatus ?? null,
     candidateHandoffType: proof?.candidateHandoff?.type ?? null,
     candidateHandoffStageId: proof?.candidateHandoff?.stageId ?? null,
     reviewSessionId: proof?.submissionSmoke?.reviewSessionId ?? null,
@@ -282,6 +288,7 @@ export function runReliabilityLane({
   const startedMs = Date.now();
   const childEnv = {
     ...env,
+    ...(lane.env ?? {}),
     CODE_REVIEW_SMOKE_REQUEST_TIMEOUT_MS: env.CODE_REVIEW_SMOKE_REQUEST_TIMEOUT_MS ?? '150000',
   };
   const result = spawnSync(lane.command[0], lane.command.slice(1), {
@@ -317,6 +324,7 @@ export function runReliabilityLane({
     startedAt,
     finishedAt,
     command: lane.command.join(' '),
+    laneEnv: lane.env ?? null,
     stdoutPath,
     stderrPath,
     parsed: proof.parsed,

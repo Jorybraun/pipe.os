@@ -23,6 +23,9 @@ describe('CODE_REVIEW reliability suite contract', () => {
       'match-quality-readiness',
     ]);
     expect(lanes[0].command.join(' ')).toBe('npm run smoke:code-review-assess-dev');
+    expect(lanes[0].env).toEqual({
+      CODE_REVIEW_SMOKE_RECRUITER_CANDIDATE_LINK: '1',
+    });
     expect(lanes[1].command.join(' ')).toBe('npm run smoke:code-review-assess-dev:blocked');
     expect(lanes[2].command.join(' ')).toBe('npm run smoke:code-review-assess-dev:role-backed-full-submit');
     expect(lanes[3].command.join(' ')).toBe('npm run smoke:code-review-assess-dev:workers-matrix');
@@ -78,6 +81,12 @@ describe('CODE_REVIEW reliability suite contract', () => {
       matchStatus: 'MATCHED',
       qualityGate: 'PASSED',
       assessmentQuality: 'USABLE',
+      candidateLinkProof: {
+        verified: true,
+        state: 'active',
+        sessionStatus: 'INVITED',
+        setupStatus: 'reviewable_task_assigned',
+      },
     }, null, 2));
 
     expect(manualReady).toMatchObject({
@@ -91,6 +100,9 @@ describe('CODE_REVIEW reliability suite contract', () => {
         matchStatus: 'MATCHED',
         qualityGate: 'PASSED',
         assessmentQuality: 'USABLE',
+        candidateLinkState: 'active',
+        candidateLinkSessionStatus: 'INVITED',
+        candidateLinkSetupStatus: 'reviewable_task_assigned',
       },
     });
 

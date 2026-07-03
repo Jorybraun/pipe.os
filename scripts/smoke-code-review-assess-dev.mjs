@@ -33,6 +33,7 @@ const REQUEST_TIMEOUT_MS = Math.max(
 const SEND_EMAIL = process.env.CODE_REVIEW_SMOKE_SEND_EMAIL === '1';
 const SKIP_BROWSER = process.env.CODE_REVIEW_SMOKE_SKIP_BROWSER === '1';
 const SKIP_RECRUITER_BROWSER = process.env.CODE_REVIEW_SMOKE_SKIP_RECRUITER_BROWSER === '1';
+const VERIFY_RECRUITER_CANDIDATE_LINK = process.env.CODE_REVIEW_SMOKE_RECRUITER_CANDIDATE_LINK === '1';
 const AUTO_MATCH = process.env.CODE_REVIEW_SMOKE_AUTO_MATCH === '1';
 const ROLE_BACKED_EXPLICIT = process.env.CODE_REVIEW_SMOKE_ROLE_BACKED === '1';
 const SUBMIT_REVIEW = process.env.CODE_REVIEW_SMOKE_SUBMIT === '1'
@@ -701,6 +702,49 @@ async function resolveInvite(inviteToken) {
   });
 }
 
+async function verifyFreshRecruiterCandidateAssessmentLink({
+  interviewId,
+  deliveredUrl,
+  session,
+}) {
+  const detail = await requestJsonWithTimeout(
+    `/api/v1/scheduling/interviews/${interviewId}`,
+    {},
+    { timeoutMs: 12_000 },
+  );
+  const setup = detail?.interview?.assessmentSetup ?? null;
+  assert(setup, `Recruiter detail missing assessment setup for candidate link proof: ${JSON.stringify(detail).slice(0, 1200)}`);
+  assert(
+    typeof setup.lastDeliveredUrl === 'string' && setup.lastDeliveredUrl.length > 0,
+    `Recruiter detail missing delivered candidate assessment URL: ${JSON.stringify(setup)}`,
+  );
+  assert(
+    canonicalUrl(setup.lastDeliveredUrl) === canonicalUrl(deliveredUrl),
+    `Recruiter candidate assessment URL does not match delivered invite URL: ${JSON.stringify({
+      recruiterUrl: cleanUrl(setup.lastDeliveredUrl),
+      deliveredUrl: cleanUrl(deliveredUrl),
+    })}`,
+  );
+  assert(
+    setup.lastDeliveredUrlState === 'active',
+    `Expected fresh recruiter candidate assessment URL to be active before intake, got ${setup.lastDeliveredUrlState}: ${JSON.stringify(setup)}`,
+  );
+  assertAssessUrl(setup.lastDeliveredUrl);
+  assert(
+    typeof session?.sessionToken === 'string' && session.sessionToken.length > 0,
+    `Resolved invite did not return a candidate session token before intake: ${JSON.stringify(session)}`,
+  );
+
+  return {
+    verified: true,
+    state: setup.lastDeliveredUrlState,
+    recruiterUrl: cleanUrl(setup.lastDeliveredUrl),
+    sessionStatus: session.status ?? null,
+    setupStatus: setup.status ?? null,
+    setupKind: setup.kind ?? null,
+  };
+}
+
 async function submitIntake(sessionToken) {
   const intake = await requestJson('/rpc/submit-challenge-response', {
     method: 'POST',
@@ -896,12 +940,13 @@ export function buildCodeReviewAssessBrowserSmokeEnv({
   };
 }
 
-function recruiterDetailReady(interview, {
+export function recruiterDetailReady(interview, {
   expectedOutcome,
   expectedRepoUrl = '',
   expectedPrNumber = '',
   expectSubmission = false,
   expectScore = false,
+  allowInvitedForCandidateLink = false,
 }) {
   if (!interview || typeof interview !== 'object') {
     return { ready: false, reason: 'detail missing interview object' };
@@ -926,7 +971,9 @@ function recruiterDetailReady(interview, {
 
   const acceptableStatuses = expectSubmission || expectScore
     ? ['COMPLETED']
-    : ['ACTIVE', 'COMPLETED'];
+    : allowInvitedForCandidateLink
+      ? ['INVITED', 'ACTIVE', 'COMPLETED']
+      : ['ACTIVE', 'COMPLETED'];
   if (!acceptableStatuses.includes(interview.status)) {
     return {
       ready: false,
@@ -1001,6 +1048,8 @@ function runRecruiterDetailPlaywright({
   expectPersonProfileDecision = false,
   expectPersonProfilePending = false,
   expectPersonProfileRelatedBoundary = false,
+  expectCandidateLink = false,
+  expectedCandidateLinkKind = '',
 }) {
   if (SKIP_BROWSER || SKIP_RECRUITER_BROWSER) {
     return {
@@ -1017,25 +1066,24 @@ function runRecruiterDetailPlaywright({
     {
       cwd: process.cwd(),
       stdio: 'inherit',
-      env: {
-        ...process.env,
-        APP_BASE,
-        API_BASE,
-        VIDEO_ROOM_BASE,
-        CODE_REVIEW_RECRUITER_INTERVIEW_ID: interviewId,
-        CODE_REVIEW_RECRUITER_EXPECT_OUTCOME: expectedOutcome,
-        CODE_REVIEW_RECRUITER_EXPECT_MATCH_MODE: currentMatchMode(),
-        CODE_REVIEW_RECRUITER_EXPECT_REPO_URL: expectedRepoUrl,
-        CODE_REVIEW_RECRUITER_EXPECT_PR_NUMBER: String(expectedPrNumber ?? ''),
-        CODE_REVIEW_RECRUITER_EXPECT_SUBMISSION: expectSubmission ? '1' : '0',
-        CODE_REVIEW_RECRUITER_EXPECT_SCORE: expectScore ? '1' : '0',
-        CODE_REVIEW_RECRUITER_REQUIRE_HYPEREDGES: requireHyperedges ? '1' : '0',
-        CODE_REVIEW_RECRUITER_EXPECT_PERSON_PROFILE_DECISION: expectPersonProfileDecision ? '1' : '0',
-        CODE_REVIEW_RECRUITER_EXPECT_PERSON_PROFILE_PENDING: expectPersonProfilePending ? '1' : '0',
-        CODE_REVIEW_RECRUITER_EXPECT_PERSON_PROFILE_RELATED_BOUNDARY: expectPersonProfileRelatedBoundary ? '1' : '0',
-        CODE_REVIEW_RECRUITER_RELATED_BOUNDARY_REPO_URL: RELATED_BOUNDARY_REPO_URL,
-        CODE_REVIEW_RECRUITER_RELATED_BOUNDARY_PR_NUMBER: String(RELATED_BOUNDARY_PR_NUMBER),
-      },
+      env: buildRecruiterDetailPlaywrightEnv({
+        baseEnv: process.env,
+        appBase: APP_BASE,
+        apiBase: API_BASE,
+        videoRoomBase: VIDEO_ROOM_BASE,
+        interviewId,
+        expectedOutcome,
+        expectedRepoUrl,
+        expectedPrNumber,
+        expectSubmission,
+        expectScore,
+        requireHyperedges,
+        expectPersonProfileDecision,
+        expectPersonProfilePending,
+        expectPersonProfileRelatedBoundary,
+        expectCandidateLink,
+        expectedCandidateLinkKind,
+      }),
     },
   );
   if (result.error) throw result.error;
@@ -1043,6 +1091,56 @@ function runRecruiterDetailPlaywright({
     throw new Error(`Playwright recruiter detail smoke failed with exit code ${result.status}`);
   }
   return { skipped: false };
+}
+
+export function buildRecruiterDetailPlaywrightEnv({
+  baseEnv = process.env,
+  appBase = APP_BASE,
+  apiBase = API_BASE,
+  videoRoomBase = VIDEO_ROOM_BASE,
+  interviewId,
+  expectedOutcome,
+  expectedRepoUrl = '',
+  expectedPrNumber = '',
+  expectSubmission = false,
+  expectScore = false,
+  requireHyperedges = false,
+  expectPersonProfileDecision = false,
+  expectPersonProfilePending = false,
+  expectPersonProfileRelatedBoundary = false,
+  expectCandidateLink = false,
+  expectedCandidateLinkKind = '',
+} = {}) {
+  const { user: browserBasicAuthUser, password: browserBasicAuthPassword } = resolveAppDevBasicAuth(baseEnv);
+  return {
+    ...baseEnv,
+    ...(browserBasicAuthUser && browserBasicAuthPassword
+      ? {
+          PIPE_APP_DEV_BASIC_AUTH_USER: browserBasicAuthUser,
+          PIPE_APP_DEV_BASIC_AUTH_PASSWORD: browserBasicAuthPassword,
+          PIPE_DEV_BASIC_AUTH_USER: browserBasicAuthUser,
+          PIPE_DEV_BASIC_AUTH_PASSWORD: browserBasicAuthPassword,
+        }
+      : {}),
+    APP_BASE: appBase,
+    API_BASE: apiBase,
+    VIDEO_ROOM_BASE: videoRoomBase,
+    CODE_REVIEW_RECRUITER_INTERVIEW_ID: interviewId,
+    CODE_REVIEW_RECRUITER_EXPECT_OUTCOME: expectedOutcome,
+    CODE_REVIEW_RECRUITER_EXPECT_MATCH_MODE: currentMatchMode(),
+    CODE_REVIEW_RECRUITER_EXPECT_REPO_URL: expectedRepoUrl,
+    CODE_REVIEW_RECRUITER_EXPECT_PR_NUMBER: String(expectedPrNumber ?? ''),
+    CODE_REVIEW_RECRUITER_EXPECT_SUBMISSION: expectSubmission ? '1' : '0',
+    CODE_REVIEW_RECRUITER_EXPECT_SCORE: expectScore ? '1' : '0',
+    CODE_REVIEW_RECRUITER_REQUIRE_HYPEREDGES: requireHyperedges ? '1' : '0',
+    CODE_REVIEW_RECRUITER_EXPECT_PERSON_PROFILE_DECISION: expectPersonProfileDecision ? '1' : '0',
+    CODE_REVIEW_RECRUITER_EXPECT_PERSON_PROFILE_PENDING: expectPersonProfilePending ? '1' : '0',
+    CODE_REVIEW_RECRUITER_EXPECT_PERSON_PROFILE_RELATED_BOUNDARY: expectPersonProfileRelatedBoundary ? '1' : '0',
+    CODE_REVIEW_RECRUITER_EXPECT_CANDIDATE_LINK: expectCandidateLink ? '1' : '0',
+    CODE_REVIEW_RECRUITER_EXPECT_CANDIDATE_LINK_KIND: expectedCandidateLinkKind,
+    CODE_REVIEW_RECRUITER_RELATED_BOUNDARY_REPO_URL: RELATED_BOUNDARY_REPO_URL,
+    CODE_REVIEW_RECRUITER_RELATED_BOUNDARY_PR_NUMBER: String(RELATED_BOUNDARY_PR_NUMBER),
+  };
 }
 
 export function buildRecruiterDetailPlaywrightArgs(env = process.env) {
@@ -1648,6 +1746,13 @@ async function main() {
   try {
     const session = await resolveInvite(invite.inviteToken);
     assert(session?.sessionToken, `resolve-token response missing session token: ${JSON.stringify(session)}`);
+    const preIntakeCandidateLink = VERIFY_RECRUITER_CANDIDATE_LINK
+      ? await verifyFreshRecruiterCandidateAssessmentLink({
+          interviewId: invite.interviewId,
+          deliveredUrl: invite.deliveredUrl,
+          session,
+        })
+      : null;
 
     await submitIntake(session.sessionToken);
     const initialStageConfig = EXPECT_BLOCKED_MATCH
@@ -1704,6 +1809,7 @@ async function main() {
         },
         browserSmoke,
         recruiterBrowserSmoke,
+        candidateLinkProof: preIntakeCandidateLink,
         stageConfig: {
           initialStageId: initialStageConfig.stageId,
           initialIsComplete: initialStageConfig.isComplete ?? null,
@@ -1803,6 +1909,7 @@ async function main() {
       matchMode: currentMatchMode(),
       deliveredUrl: cleanUrl(invite.deliveredUrl),
       roomGuestUrl: cleanUrl(invite.invited?.room?.guestUrl),
+      candidateLinkProof: preIntakeCandidateLink,
       repoUrl: challenge.githubRepoUrl,
       prNumber: challenge.githubPrNumber,
       matchSummary: challenge.matchExplanation?.summary ?? null,

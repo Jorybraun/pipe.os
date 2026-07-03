@@ -3,7 +3,9 @@ import { describe, expect, it } from 'vitest';
 import {
   assertPersonRelatedBoundaryProfile,
   buildCodeReviewAssessBrowserSmokeEnv,
+  buildRecruiterDetailPlaywrightEnv,
   buildRecruiterDetailPlaywrightArgs,
+  recruiterDetailReady,
   recruiterProjectionVerificationMode,
   resolveAppDevBasicAuth,
   resolveCodeReviewSmokeD1Target,
@@ -128,6 +130,60 @@ describe('CODE_REVIEW assess smoke app-dev Basic Auth resolution', () => {
     expect(buildRecruiterDetailPlaywrightArgs({
       PLAYWRIGHT_SKIP_CLERK_GLOBAL_SETUP: '1',
     })).toContain('--no-deps');
+  });
+
+  it('can require the recruiter candidate link to resolve before the assessment surface smoke', () => {
+    expect(buildRecruiterDetailPlaywrightEnv({
+      baseEnv: {
+        APP_DEV_BASIC_AUTH_USER: 'app-user',
+        APP_DEV_BASIC_AUTH_PASSWORD: 'app-pass',
+      },
+      appBase: 'https://app-dev.hire-pipe.com',
+      apiBase: 'https://api-dev.hire-pipe.com',
+      videoRoomBase: 'https://room-dev.hire-pipe.com',
+      interviewId: 'interview-with-link',
+      expectedOutcome: 'matched',
+      expectedRepoUrl: 'https://github.com/mui/base-ui',
+      expectedPrNumber: 973,
+      expectCandidateLink: true,
+      expectedCandidateLinkKind: 'assessment',
+    })).toMatchObject({
+      CODE_REVIEW_RECRUITER_INTERVIEW_ID: 'interview-with-link',
+      PIPE_APP_DEV_BASIC_AUTH_USER: 'app-user',
+      PIPE_APP_DEV_BASIC_AUTH_PASSWORD: 'app-pass',
+      PIPE_DEV_BASIC_AUTH_USER: 'app-user',
+      PIPE_DEV_BASIC_AUTH_PASSWORD: 'app-pass',
+      CODE_REVIEW_RECRUITER_EXPECT_CANDIDATE_LINK: '1',
+      CODE_REVIEW_RECRUITER_EXPECT_CANDIDATE_LINK_KIND: 'assessment',
+    });
+  });
+
+  it('allows invited recruiter detail readiness only for pre-candidate link proof', () => {
+    const invitedMatch = {
+      status: 'INVITED',
+      githubRepoUrl: 'https://github.com/mui/base-ui',
+      githubPrNumber: 973,
+      codeReviewMatch: { status: 'MATCHED' },
+    };
+
+    expect(recruiterDetailReady(invitedMatch, {
+      expectedOutcome: 'matched',
+      expectedRepoUrl: 'https://github.com/mui/base-ui',
+      expectedPrNumber: 973,
+    })).toMatchObject({
+      ready: false,
+      reason: 'interview status is INVITED',
+    });
+
+    expect(recruiterDetailReady(invitedMatch, {
+      expectedOutcome: 'matched',
+      expectedRepoUrl: 'https://github.com/mui/base-ui',
+      expectedPrNumber: 973,
+      allowInvitedForCandidateLink: true,
+    })).toMatchObject({
+      ready: true,
+      reason: 'matched recruiter projection ready',
+    });
   });
 
   it('still verifies recruiter projection when only recruiter browser proof is skipped', () => {

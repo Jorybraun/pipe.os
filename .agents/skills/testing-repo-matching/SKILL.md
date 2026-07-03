@@ -40,7 +40,7 @@ npm run smoke:code-review-assess-dev:workers-matrix
 ```
 
 Expected proof:
-- reliability suite runs manual source-backed ready assignment, blocked handoff, role-backed full-submit/scoring, Workers SDK non-MUI breadth, and latest expert-labelled match-quality readiness
+- reliability suite runs manual source-backed ready assignment with one-use-safe recruiter candidate-link resolution proof, blocked handoff, role-backed full-submit/scoring, Workers SDK non-MUI breadth, and latest expert-labelled match-quality readiness
 - delivered URL is `/assess/:token`, not a room URL
 - source-backed PR is `https://github.com/mui/base-ui` PR `973` by default
 - `matchMode` is `manual_override`

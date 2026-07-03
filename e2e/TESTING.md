@@ -175,7 +175,7 @@ For matched code-review outcomes, set `ASSESSMENT_RECRUITER_EXPECT_OUTCOME=match
 
 For `OPEN_SOURCE_BUG_FIX` or `DEV_CONTAINER_CHALLENGE` recruiter detail pages, reuse the same smoke with `ASSESSMENT_RECRUITER_EXPECT_REPO_URL=<repo-url>`, `ASSESSMENT_RECRUITER_EXPECT_SUBMISSION=1` after a commit has been submitted, `ASSESSMENT_RECRUITER_EXPECT_SCORE=1` after source-backed evaluation claims exist, `ASSESSMENT_RECRUITER_EXPECT_HUMAN_DECISION_FORM=1` when the reviewer decision form should be available, `ASSESSMENT_RECRUITER_EXPECT_HUMAN_DECISION=1` after the human decision has been recorded, or `ASSESSMENT_RECRUITER_EXPECT_PERSON_PROFILE_DECISION=1` to click through to the person profile and verify the workspace assessment rolls up into a person-level decision. The legacy `CODE_REVIEW_RECRUITER_*` environment names still work for existing scripts.
 
-Set `ASSESSMENT_RECRUITER_EXPECT_CANDIDATE_LINK=1` only for disposable dev invites when the smoke should open the delivered candidate link from the recruiter detail page. Use `ASSESSMENT_RECRUITER_EXPECT_CANDIDATE_LINK_KIND=assessment` for CODE_REVIEW `/assess` links or `workspace` for room links. This intentionally starts/joins the candidate surface, so do not enable it against a real one-use candidate link unless the test owns that link. For deployed workspace links, also provide the room-dev Basic Auth credentials with `PIPE_ROOM_DEV_BASIC_AUTH_USER/PASSWORD` or `VIDEO_ROOM_DEV_AUTH_USER/PASSWORD`.
+Set `ASSESSMENT_RECRUITER_EXPECT_CANDIDATE_LINK=1` only for disposable dev invites when the smoke should validate the delivered candidate link from the recruiter detail page. For CODE_REVIEW `/assess` links, `ASSESSMENT_RECRUITER_EXPECT_CANDIDATE_LINK_KIND=assessment` resolves the invite token through `/rpc/resolve-token` without claiming the one-use link; the direct candidate smoke owns starting the assessment. For room links, `ASSESSMENT_RECRUITER_EXPECT_CANDIDATE_LINK_KIND=workspace` opens/joins the workspace surface, so use disposable links and provide room-dev Basic Auth credentials with `PIPE_ROOM_DEV_BASIC_AUTH_USER/PASSWORD` or `VIDEO_ROOM_DEV_AUTH_USER/PASSWORD`.
 
 For the full app-dev flow, create a disposable CODE_REVIEW invite, submit intake evidence, wait for matching, and run the browser smoke in one command:
 
@@ -211,11 +211,11 @@ npm run smoke:code-review-assess-dev:role-backed-full-submit
 The manual ready-assignment commands should select `https://github.com/mui/base-ui` PR `#973`, return `MATCHED`, pass the source-backed quality gate, render a Pierre diff, and avoid any video-room UI. Manual mode is expected to report `assessmentQuality: "USABLE"` because it validates the recruiter-selected source-backed PR without inferring CV fit. The blocked auto-match command should return `PROFILE_RECEIVED`, complete the candidate stage as `candidate-intake-queued`, and prove the recruiter sees assessment progress instead of a candidate-visible matching loop.
 
 Use `npm run smoke:code-review-reliability-dev` for the full app-dev reliability
-suite. It runs the manual source-backed ready assignment, blocked
-`PROFILE_RECEIVED` handoff, role-backed full-submit and scoring smoke, non-MUI
-Workers SDK matching matrix, and latest expert-labelled match-quality readiness
-gate. It writes lane stdout/stderr and summary artifacts under
-`tmp/code-review-reliability/`. Use
+suite. It runs the manual source-backed ready assignment, including recruiter
+one-use-safe candidate-link resolution proof, blocked `PROFILE_RECEIVED` handoff, role-backed
+full-submit and scoring smoke, non-MUI Workers SDK matching matrix, and latest
+expert-labelled match-quality readiness gate. It writes lane stdout/stderr and
+summary artifacts under `tmp/code-review-reliability/`. Use
 `CODE_REVIEW_RELIABILITY_LANES=manual-ready,blocked-handoff,workers-sdk-matrix` for focused
 diagnosis, or `CODE_REVIEW_RELIABILITY_D1_DATABASE_ID=<d1-id>` to point the
 match-quality lane at a different CODE_REVIEW evaluation database.
@@ -224,17 +224,18 @@ In isolated worktrees that already have `playwright/.auth/user.json`, set
 running the Clerk setup dependency again.
 
 Latest suite proof on 2026-07-03 passed all 5 lanes with artifact
-`tmp/code-review-reliability/2026-07-03T11-38-03-045Z-suite.summary.json`:
-manual ready-assignment interview `a20ac679-b7db-4b34-9506-770272642bdc`
+`tmp/code-review-reliability/2026-07-03T12-21-05-262Z-suite.summary.json`:
+manual ready-assignment interview `d76a2528-062e-4e90-991b-f940f495b387`
 served `mui/base-ui#973` with `manual_override`, `MATCHED`, validator `PASSED`,
-and `USABLE` assessment quality; blocked handoff interview
-`16b3998a-2323-45c2-8000-a2290895446d` returned `PROFILE_RECEIVED` /
+`USABLE` assessment quality, and pre-intake candidate-link proof
+`state=active`, `sessionStatus=INVITED`; blocked handoff interview
+`9a4293c2-1d20-4e08-aa23-7847d923e9ce` returned `PROFILE_RECEIVED` /
 `candidate-intake-queued`; role-backed full-submit interview
-`db261441-b143-466c-bf5e-7495437df40a` selected `mui/base-ui#973`, submitted
-review session `26544248-d6f2-44ac-9bce-6d2481d57925`, persisted score `38`
-(`weak`), and exposed 4 evidence hyperedges plus a person-role-repo bridge;
-Workers SDK matrix interview `6a97941f-2d92-44ff-87e1-95f765388bf9` selected
-`cloudflare/workers-sdk#14118` with `STRONG` quality and contrast score `2/2`;
+`040564ae-2ccb-4ad3-975c-732ee3888803` selected `mui/base-ui#973`, submitted
+review session `2003974b-528a-435d-8037-97745681bf4d`, persisted score `62`
+(`adequate`), and exposed 4 evidence hyperedges plus a person-role-repo bridge;
+Workers SDK matrix interview `9b80a349-b0eb-4108-87a5-1de79693affe` selected
+`cloudflare/workers-sdk#14150` with `STRONG` quality and contrast score `2/2`;
 match-quality readiness passed corpus
 `seeded-1783074402522-3c-3r-expert-codex-supplemental-contrast` with accuracy
 `1`, false positives `0`, false negatives `0`, usable challenge rate `1`, and

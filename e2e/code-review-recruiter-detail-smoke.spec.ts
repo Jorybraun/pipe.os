@@ -1,4 +1,5 @@
-import { expect, test, type Browser, type Locator, type Page } from '@playwright/test';
+import { Buffer } from 'node:buffer';
+import { expect, test, type Browser, type BrowserContext, type Locator, type Page } from '@playwright/test';
 
 function envText(primaryName: string, legacyName: string, fallback = ''): string {
   return (process.env[primaryName] ?? process.env[legacyName] ?? fallback).trim();
@@ -72,23 +73,23 @@ const RELATED_BOUNDARY_PR_NUMBER = envText(
   'CODE_REVIEW_RECRUITER_RELATED_BOUNDARY_PR_NUMBER',
 );
 const APP_BASIC_USER = process.env.PIPE_APP_DEV_BASIC_AUTH_USER
-  ?? process.env.APP_DEV_BASIC_AUTH_USER
-  ?? process.env.PIPE_DEV_BASIC_AUTH_USER
-  ?? process.env.DEV_BASIC_AUTH_USER
-  ?? '';
+  || process.env.APP_DEV_BASIC_AUTH_USER
+  || process.env.PIPE_DEV_BASIC_AUTH_USER
+  || process.env.DEV_BASIC_AUTH_USER
+  || '';
 const APP_BASIC_PASSWORD = process.env.PIPE_APP_DEV_BASIC_AUTH_PASSWORD
-  ?? process.env.APP_DEV_BASIC_AUTH_PASSWORD
-  ?? process.env.PIPE_DEV_BASIC_AUTH_PASSWORD
-  ?? process.env.DEV_BASIC_AUTH_PASSWORD
-  ?? '';
+  || process.env.APP_DEV_BASIC_AUTH_PASSWORD
+  || process.env.PIPE_DEV_BASIC_AUTH_PASSWORD
+  || process.env.DEV_BASIC_AUTH_PASSWORD
+  || '';
 const ROOM_BASIC_USER = process.env.PIPE_ROOM_DEV_BASIC_AUTH_USER
-  ?? process.env.ROOM_DEV_BASIC_AUTH_USER
-  ?? process.env.VIDEO_ROOM_DEV_AUTH_USER
-  ?? '';
+  || process.env.ROOM_DEV_BASIC_AUTH_USER
+  || process.env.VIDEO_ROOM_DEV_AUTH_USER
+  || '';
 const ROOM_BASIC_PASSWORD = process.env.PIPE_ROOM_DEV_BASIC_AUTH_PASSWORD
-  ?? process.env.ROOM_DEV_BASIC_AUTH_PASSWORD
-  ?? process.env.VIDEO_ROOM_DEV_AUTH_PASSWORD
-  ?? '';
+  || process.env.ROOM_DEV_BASIC_AUTH_PASSWORD
+  || process.env.VIDEO_ROOM_DEV_AUTH_PASSWORD
+  || '';
 const VIDEO_ROOM_BASE = process.env.VIDEO_ROOM_BASE ?? 'http://localhost:5175';
 
 function expectedRepoLabel(repoUrl: string): string | null {
@@ -144,12 +145,27 @@ function candidateLinkCredentials(rawUrl: string): { username: string; password:
     : undefined;
 }
 
-function candidateUrlWithoutCredentials(rawUrl: string): string {
+function candidateUrlForSmoke(rawUrl: string, credentials: { username: string; password: string } | undefined): string {
   const parsed = new URL(rawUrl);
-  parsed.username = '';
-  parsed.password = '';
+  parsed.username = credentials?.username ?? '';
+  parsed.password = credentials?.password ?? '';
   parsed.searchParams.set('candidateLinkSmoke', String(Date.now()));
   return parsed.toString();
+}
+
+function assessmentInviteTokenFromUrl(rawUrl: string): string {
+  const parsed = new URL(rawUrl);
+  const match = parsed.pathname.match(/^\/assess\/([^/]+)$/);
+  if (!match?.[1]) {
+    throw new Error(`Expected recruiter candidate assessment link to use /assess/:token, got ${parsed.pathname}`);
+  }
+  return decodeURIComponent(match[1]);
+}
+
+function basicAuthHeader(credentials: { username: string; password: string } | undefined): Record<string, string> | undefined {
+  if (!credentials) return undefined;
+  const token = Buffer.from(`${credentials.username}:${credentials.password}`).toString('base64');
+  return { Authorization: `Basic ${token}` };
 }
 
 async function startCandidateAssessmentIfPresent(page: Page): Promise<void> {
@@ -192,6 +208,31 @@ async function enterWorkspaceRoomIfNeeded(page: Page): Promise<void> {
   }
 }
 
+async function expectAssessmentCandidateLinkResolves(page: Page, rawUrl: string): Promise<void> {
+  const parsed = new URL(rawUrl);
+  const inviteToken = assessmentInviteTokenFromUrl(rawUrl);
+  const result = await page.evaluate(async ({ origin, inviteToken: token }) => {
+    const response = await fetch(`${origin}/rpc/resolve-token`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ inviteToken: token }),
+    });
+    let body: unknown = null;
+    try {
+      body = await response.json();
+    } catch {
+      body = null;
+    }
+    return { ok: response.ok, status: response.status, body };
+  }, { origin: parsed.origin, inviteToken });
+
+  expect(result.status, JSON.stringify(result.body)).toBe(200);
+  const body = result.body as Record<string, unknown> | null;
+  expect(typeof body?.sessionToken).toBe('string');
+  expect(typeof body?.id).toBe('string');
+  expect(['INVITED', 'ACTIVE', 'IN_PROGRESS']).toContain(body?.status);
+}
+
 async function expectCandidateLinkHandoff(page: Page, browser: Browser): Promise<void> {
   if (!EXPECT_CANDIDATE_LINK) return;
 
@@ -204,16 +245,29 @@ async function expectCandidateLinkHandoff(page: Page, browser: Browser): Promise
     expect(kind).toBe(EXPECTED_CANDIDATE_LINK_KIND);
   }
 
+  if (kind === 'assessment') {
+    await expectAssessmentCandidateLinkResolves(page, rawUrl);
+    return;
+  }
+
   const credentials = candidateLinkCredentials(rawUrl);
-  const context = await browser.newContext({
-    ...(credentials ? { httpCredentials: credentials } : {}),
-    storageState: { cookies: [], origins: [] },
-    viewport: { width: 1440, height: 1000 },
-  });
+  if (!isLocalUrl(new URL(rawUrl)) && !credentials) {
+    throw new Error('Candidate link smoke needs dev Basic Auth credentials for remote assessment/workspace links.');
+  }
+  let context: BrowserContext | null = null;
+  let candidatePage: Page | null = null;
 
   try {
-    const candidatePage = await context.newPage();
-    await candidatePage.goto(candidateUrlWithoutCredentials(rawUrl), {
+    const extraHTTPHeaders = basicAuthHeader(credentials);
+    context = await browser.newContext({
+      ...(credentials ? { httpCredentials: credentials } : {}),
+      ...(extraHTTPHeaders ? { extraHTTPHeaders } : {}),
+      storageState: { cookies: [], origins: [] },
+      viewport: { width: 1440, height: 1000 },
+    });
+    candidatePage = await context.newPage();
+
+    await candidatePage.goto(candidateUrlForSmoke(rawUrl, credentials), {
       waitUntil: 'domcontentloaded',
       timeout: 60_000,
     });
@@ -246,7 +300,8 @@ async function expectCandidateLinkHandoff(page: Page, browser: Browser): Promise
     }
     await expect(candidatePage.locator('body')).not.toContainText(/WAITING_FOR_MATCH|MATCHING IN PROGRESS|Building your personalized challenge|video room/i);
   } finally {
-    await context.close();
+    await candidatePage?.close().catch(() => undefined);
+    await context?.close().catch(() => undefined);
   }
 }
 
