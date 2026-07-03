@@ -204,6 +204,7 @@ function summarizeSmoke(profile, parsed, durationMs) {
       : null,
     candidateBrowserSmokeSkipped: parsed?.browserSmoke?.skipped ?? null,
     recruiterBrowserSmokeSkipped: parsed?.recruiterBrowserSmoke?.skipped ?? null,
+    recruiterReadoutContract: parsed?.recruiterBrowserSmoke?.readoutContract ?? null,
     recruiterMatchStatus: parsed?.submissionSmoke?.recruiterResults?.codeReviewMatchStatus ?? null,
     evidenceHyperedgeCount: parsed?.submissionSmoke?.recruiterResults?.evidenceHyperedgeCount ?? null,
     candidateHandoffType: parsed?.candidateHandoff?.type ?? null,

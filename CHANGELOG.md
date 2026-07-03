@@ -23,6 +23,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Added — CODE_REVIEW assessment runtime
 
+- CODE_REVIEW recruiter browser smokes now emit matched, blocked, or scored hiring-manager readout contract proof into reliability summaries, and the suite fails if those compact readout contracts are missing.
 - CODE_REVIEW reliability validation now fails partial Workers SDK matrix runs and labelled match-quality corpora with flat average score separation, keeping breadth and discrimination proof from degrading behind a green summary.
 - CODE_REVIEW role-backed full-submit reliability now fails unless the parsed proof includes completed recruiter/person readouts, submitted profile state, passed validator verdict, role-source proof, author pushback/thread evidence, remote D1 scoring, and completed review/scoring pipeline steps.
 - CODE_REVIEW reliability summaries now carry candidate and recruiter browser-smoke skip/readiness proof, and the suite fails if app-dev browser proof is skipped for candidate/recruiter-facing runtime lanes.

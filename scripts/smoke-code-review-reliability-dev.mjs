@@ -227,6 +227,7 @@ function summarizeAssessSmoke(proof) {
     candidateHandoffChallengeCount: proof?.candidateHandoff?.challengeCount ?? null,
     candidateBrowserSmokeSkipped: proof?.browserSmoke?.skipped ?? null,
     recruiterBrowserSmokeSkipped: proof?.recruiterBrowserSmoke?.skipped ?? null,
+    recruiterReadoutContract: proof?.recruiterBrowserSmoke?.readoutContract ?? null,
     recruiterReadinessReady: proof?.recruiterBrowserSmoke?.readiness?.ready ?? null,
     recruiterAssessmentSetupStatus: proof?.recruiterBrowserSmoke?.readiness?.assessmentSetupStatus ?? null,
     recruiterAssessmentSetupKind: proof?.recruiterBrowserSmoke?.readiness?.assessmentSetupKind ?? null,
@@ -279,6 +280,7 @@ function summarizeMatrix(proof) {
     contrastScore: first?.contrastScore ?? null,
     candidateBrowserSmokeSkipped: first?.candidateBrowserSmokeSkipped ?? null,
     recruiterBrowserSmokeSkipped: first?.recruiterBrowserSmokeSkipped ?? null,
+    recruiterReadoutContract: first?.recruiterReadoutContract ?? null,
   };
 }
 
@@ -345,6 +347,7 @@ export function validateLaneSummary(laneId, summary) {
       require(summary?.candidateLinkSetupStatus === 'reviewable_task_assigned', 'manual-ready setup status must be reviewable_task_assigned');
       require(summary?.candidateBrowserSmokeSkipped === false, 'manual-ready candidate browser smoke must run');
       require(summary?.recruiterBrowserSmokeSkipped === false, 'manual-ready recruiter browser smoke must run');
+      require(summary?.recruiterReadoutContract === 'matched-code-review-hiring-manager-readout', 'manual-ready recruiter smoke must prove matched hiring-manager readout contract');
       require(summary?.recruiterReadinessReady === true, 'manual-ready recruiter readiness must be proven');
       require(summary?.recruiterAssessmentSetupStatus === 'reviewable_task_assigned', 'manual-ready recruiter setup must be reviewable_task_assigned');
       require(Boolean(summary?.repoUrl), 'manual-ready must include repoUrl');
@@ -358,6 +361,7 @@ export function validateLaneSummary(laneId, summary) {
       require(Number(summary?.candidateHandoffChallengeCount) === 0, 'no-cv-handoff must expose zero candidate challenges');
       require(summary?.candidateBrowserSmokeSkipped === false, 'no-cv-handoff candidate browser smoke must run');
       require(summary?.recruiterBrowserSmokeSkipped === false, 'no-cv-handoff recruiter browser smoke must run');
+      require(summary?.recruiterReadoutContract === 'blocked-code-review-action-readout', 'no-cv-handoff recruiter smoke must prove blocked action readout contract');
       require(summary?.recruiterReadinessReady === true, 'no-cv-handoff recruiter readiness must be proven');
       require(summary?.recruiterAssessmentSetupStatus === 'waiting_for_source_backed_match', 'no-cv-handoff recruiter setup must wait for source-backed match');
       require(summary?.repoUrl === null, 'no-cv-handoff must not assign a repo');
@@ -370,6 +374,7 @@ export function validateLaneSummary(laneId, summary) {
       require(summary?.candidateHandoffStageId === 'candidate-intake-queued', 'blocked-handoff stage must be candidate-intake-queued');
       require(summary?.candidateBrowserSmokeSkipped === false, 'blocked-handoff candidate browser smoke must run');
       require(summary?.recruiterBrowserSmokeSkipped === false, 'blocked-handoff recruiter browser smoke must run');
+      require(summary?.recruiterReadoutContract === 'blocked-code-review-action-readout', 'blocked-handoff recruiter smoke must prove blocked action readout contract');
       require(summary?.recruiterReadinessReady === true, 'blocked-handoff recruiter readiness must be proven');
       require(summary?.recruiterAssessmentSetupStatus === 'waiting_for_source_backed_match', 'blocked-handoff recruiter setup must wait for source-backed match');
       require(summary?.repoUrl === null, 'blocked-handoff must not assign a repo');
@@ -383,6 +388,7 @@ export function validateLaneSummary(laneId, summary) {
       require(Boolean(summary?.assessmentQuality), 'role-backed-full-submit must report assessment quality');
       require(summary?.candidateBrowserSmokeSkipped === false, 'role-backed-full-submit candidate browser smoke must run');
       require(summary?.recruiterBrowserSmokeSkipped === false, 'role-backed-full-submit recruiter browser smoke must run');
+      require(summary?.recruiterReadoutContract === 'scored-code-review-hiring-manager-readout', 'role-backed-full-submit recruiter smoke must prove scored hiring-manager readout contract');
       require(summary?.recruiterReadinessReady === true, 'role-backed-full-submit recruiter readiness must be proven');
       require(summary?.recruiterAssessmentSetupStatus === 'reviewable_task_assigned', 'role-backed-full-submit recruiter setup must be reviewable_task_assigned');
       require(summary?.recruiterInterviewStatus === 'COMPLETED', 'role-backed-full-submit recruiter interview status must be COMPLETED');
@@ -425,6 +431,7 @@ export function validateLaneSummary(laneId, summary) {
       require(finiteNumberAtLeast(summary?.contrastScore, 1), 'workers-sdk-matrix contrast score must be at least 1');
       require(summary?.candidateBrowserSmokeSkipped === false, 'workers-sdk-matrix candidate browser smoke must run');
       require(summary?.recruiterBrowserSmokeSkipped === false, 'workers-sdk-matrix recruiter browser smoke must run');
+      require(summary?.recruiterReadoutContract === 'matched-code-review-hiring-manager-readout', 'workers-sdk-matrix recruiter smoke must prove matched hiring-manager readout contract');
       break;
     case 'match-quality-readiness':
       require(Boolean(summary?.corpusId), 'match-quality-readiness must include corpusId');

@@ -1133,7 +1133,12 @@ function runRecruiterDetailPlaywright({
   if (result.status !== 0) {
     throw new Error(`Playwright recruiter detail smoke failed with exit code ${result.status}`);
   }
-  return { skipped: false };
+  const readoutContract = expectedOutcome === 'blocked'
+    ? 'blocked-code-review-action-readout'
+    : expectSubmission || expectScore
+      ? 'scored-code-review-hiring-manager-readout'
+      : 'matched-code-review-hiring-manager-readout';
+  return { skipped: false, readoutContract };
 }
 
 export function buildRecruiterDetailPlaywrightEnv({
