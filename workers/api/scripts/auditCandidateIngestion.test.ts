@@ -440,6 +440,8 @@ describe('auditCandidateIngestion', () => {
       sourceSpanTextMismatchCount: 0,
       sourceSpanHashMismatchCount: 0,
       profileUploadArtifactVersionCount: 0,
+      documentProfileExtractionGapCount: 0,
+      documentProfileMissingExtractionProofCount: 0,
       contextSourceRefCount: 7,
       candidateNodeWithoutExactSourceCount: 0,
       candidateNodeSourceSpanMissingCount: 0,
@@ -1073,10 +1075,18 @@ describe('auditCandidateIngestion', () => {
     expect(audit.failures).toContain('1 submitted Talent Pool intake(s) lack exact-source candidate-node projection');
   });
 
-  it('flags PDF/DOCX profile keys without extracted source spans', async () => {
+  it('reports receipt-backed PDF/DOCX extraction gaps without generic candidate-node gaps', async () => {
     sqlite = new Database(':memory:');
     createSchema(sqlite);
     seedSourceBackedTalentPoolCandidate(sqlite);
+    sqlite.exec(`
+      DELETE FROM candidate_nodes WHERE candidate_id = 'candidate-1';
+      DELETE FROM signal_evidence;
+      DELETE FROM assertion_source_spans;
+      DELETE FROM semantic_assertions;
+      DELETE FROM context_record_source_refs WHERE context_record_id = 'context-record-1';
+      DELETE FROM context_records WHERE id = 'context-record-1';
+    `);
     sqlite.prepare(
       `UPDATE talent_pool_intakes
           SET profile_r2_key = 'talent-intake/candidate-1/profile.pdf'
@@ -1111,10 +1121,57 @@ describe('auditCandidateIngestion', () => {
     expect(audit.ingestionState.steps).toEqual([
       { currentStep: 'profile_text_extraction_needed', count: 1 },
     ]);
+    expect(audit.sourceProof.candidateNodeExactSourceQuoteCount).toBe(0);
+    expect(audit.sourceProof.submittedIntakeWithoutExactCandidateNodeCount).toBe(0);
     expect(audit.sourceProof.documentProfileSourceSpanCount).toBe(0);
+    expect(audit.sourceProof.documentProfileExtractionGapCount).toBe(1);
+    expect(audit.sourceProof.documentProfileMissingExtractionProofCount).toBe(0);
     expect(audit.sourceProof.profileUploadArtifactVersionCount).toBe(1);
-    expect(audit.failures).toContain('1 PDF/DOCX Talent Pool profile upload(s) lack extracted source spans for the current profile key');
-    expect(audit.nextActions).toContain('Replay or repair PDF/DOCX profile extraction so the current profile storage key has exact source spans.');
+    expect(audit.failures).toContain('1 PDF/DOCX Talent Pool profile upload(s) are explicit profile_text_extraction_needed evidence gaps with raw upload receipts and no extracted profile text');
+    expect(audit.failures).not.toContain('1 submitted Talent Pool intake(s) lack exact-source candidate-node projection');
+    expect(audit.nextActions).toContain('Run document extraction/backfill before projecting profile claims from PDF/DOCX uploads; keep the raw upload receipt as the only evidence until text exists.');
+  });
+
+  it('flags PDF/DOCX profile keys with neither extracted spans nor explicit gap proof', async () => {
+    sqlite = new Database(':memory:');
+    createSchema(sqlite);
+    seedSourceBackedTalentPoolCandidate(sqlite);
+    sqlite.exec(`
+      DELETE FROM candidate_nodes WHERE candidate_id = 'candidate-1';
+      DELETE FROM signal_evidence;
+      DELETE FROM assertion_source_spans;
+      DELETE FROM semantic_assertions;
+      DELETE FROM context_record_source_refs WHERE context_record_id = 'context-record-1';
+      DELETE FROM context_records WHERE id = 'context-record-1';
+    `);
+    sqlite.prepare(
+      `UPDATE talent_pool_intakes
+          SET profile_r2_key = 'talent-intake/candidate-1/profile.pdf'
+        WHERE candidate_id = 'candidate-1'`,
+    ).run();
+    sqlite.prepare(
+      `UPDATE candidates
+          SET resume_s3_key = 'talent-intake/candidate-1/profile.pdf'
+        WHERE id = 'candidate-1'`,
+    ).run();
+    sqlite.prepare(
+      `UPDATE candidate_ingestion
+          SET current_step = 'parse_resume'
+        WHERE candidate_id = 'candidate-1'`,
+    ).run();
+
+    const audit = await auditCandidateIngestion(new SqliteQueryClient(sqlite), {
+      inviteToken: 'invite-token',
+      requireContextRecords: true,
+    });
+
+    expect(audit.status).toBe('not_ready');
+    expect(audit.sourceProof.documentProfileSourceSpanCount).toBe(0);
+    expect(audit.sourceProof.documentProfileExtractionGapCount).toBe(0);
+    expect(audit.sourceProof.documentProfileMissingExtractionProofCount).toBe(1);
+    expect(audit.sourceProof.submittedIntakeWithoutExactCandidateNodeCount).toBe(1);
+    expect(audit.failures).toContain('1 PDF/DOCX Talent Pool profile upload(s) have neither extracted source spans nor an explicit profile_text_extraction_needed upload receipt gap');
+    expect(audit.nextActions).toContain('Repair PDF/DOCX profile ingestion so each current document key has extracted source spans or an explicit profile_text_extraction_needed upload receipt gap.');
   });
 
   it('flags source spans whose exact text does not match artifact coordinates', async () => {

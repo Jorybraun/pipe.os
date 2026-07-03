@@ -43,6 +43,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Fixed — Talent Pool ingestion
 
+- Candidate-ingestion audit and Talent Pool PDF-gap smokes now classify receipt-backed unextractable PDF/DOCX uploads as explicit `profile_text_extraction_needed` document gaps instead of generic missing exact-source candidate-node projections.
 - Scheduled Talent Pool repair now normalizes historical unextractable PDF/DOCX `parse_resume` failures into the explicit `profile_text_extraction_needed` evidence-gap state instead of leaving them as failed ingestion rows.
 - Talent Pool dev smokes now fail unless recruiter candidate and canonical person graphs expose the submitted profile context record with exact `source_span` provenance, strengthening the raw-source-to-person-read proof.
 - Candidate-ingestion audit now supports `--limit` for bounded unscoped Talent Pool checks, letting app-dev verify recent source-backed ingestion windows without running whole-database D1 proof queries.

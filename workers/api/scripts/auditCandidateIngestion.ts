@@ -93,6 +93,8 @@ export interface CandidateSourceProofAudit {
   sourceSpanTextMismatchCount: number;
   sourceSpanHashMismatchCount: number;
   documentProfileSourceSpanCount: number;
+  documentProfileExtractionGapCount: number;
+  documentProfileMissingExtractionProofCount: number;
   profileUploadArtifactVersionCount: number;
   contextSourceRefCount: number;
 }
@@ -186,6 +188,8 @@ interface SourceProofRow {
   source_span_count: number | null;
   source_span_text_mismatch_count: number | null;
   document_profile_source_span_count: number | null;
+  document_profile_extraction_gap_count: number | null;
+  document_profile_missing_extraction_proof_count: number | null;
   profile_upload_artifact_version_count: number | null;
   context_source_ref_count: number | null;
 }
@@ -609,6 +613,40 @@ async function loadSourceProof(
           FROM audited_candidates ac
           JOIN talent_pool_intakes t ON t.candidate_id = ac.id
          WHERE t.submitted_at IS NOT NULL
+           AND NOT (
+             t.profile_r2_key IS NOT NULL
+             AND (
+               substr(LOWER(t.profile_r2_key), -4) = '.pdf'
+               OR substr(LOWER(t.profile_r2_key), -5) = '.docx'
+             )
+             AND EXISTS (
+               SELECT 1
+                 FROM candidate_ingestion ci
+                WHERE ci.candidate_id = ac.id
+                  AND ci.status = 'pending'
+                  AND ci.current_step = 'profile_text_extraction_needed'
+                  AND (ci.error_text IS NULL OR TRIM(ci.error_text) = '')
+             )
+             AND EXISTS (
+               SELECT 1
+                 FROM linked_workspace_people lwp
+                 JOIN artifacts a ON a.workspace_person_id = lwp.workspace_person_id
+                 JOIN artifact_versions av ON av.artifact_id = a.id
+                WHERE lwp.candidate_id = ac.id
+                  AND av.storage_key = t.profile_r2_key
+                  AND (
+                    a.artifact_type = 'profile_upload'
+                    OR a.logical_key = 'roleless_candidate_profile_upload'
+                    OR json_extract(a.metadata_json, '$.evidenceKind') = 'profile_upload_source'
+                  )
+             )
+             AND NOT EXISTS (
+               SELECT 1
+                 FROM artifact_versions av
+                 JOIN source_spans ss ON ss.artifact_version_id = av.id
+                WHERE av.storage_key = t.profile_r2_key
+             )
+           )
            AND NOT EXISTS (
              SELECT 1
                FROM candidate_nodes cn
@@ -745,6 +783,76 @@ async function loadSourceProof(
              substr(LOWER(t.profile_r2_key), -4) = '.pdf'
              OR substr(LOWER(t.profile_r2_key), -5) = '.docx'
            )) AS document_profile_source_span_count,
+       (SELECT COUNT(DISTINCT ac.id)
+          FROM audited_candidates ac
+          JOIN talent_pool_intakes t ON t.candidate_id = ac.id
+          JOIN candidate_ingestion ci ON ci.candidate_id = ac.id
+         WHERE t.submitted_at IS NOT NULL
+           AND t.profile_r2_key IS NOT NULL
+           AND (
+             substr(LOWER(t.profile_r2_key), -4) = '.pdf'
+             OR substr(LOWER(t.profile_r2_key), -5) = '.docx'
+           )
+           AND ci.status = 'pending'
+           AND ci.current_step = 'profile_text_extraction_needed'
+           AND (ci.error_text IS NULL OR TRIM(ci.error_text) = '')
+           AND EXISTS (
+             SELECT 1
+               FROM linked_workspace_people lwp
+               JOIN artifacts a ON a.workspace_person_id = lwp.workspace_person_id
+               JOIN artifact_versions av ON av.artifact_id = a.id
+              WHERE lwp.candidate_id = ac.id
+                AND av.storage_key = t.profile_r2_key
+                AND (
+                  a.artifact_type = 'profile_upload'
+                  OR a.logical_key = 'roleless_candidate_profile_upload'
+                  OR json_extract(a.metadata_json, '$.evidenceKind') = 'profile_upload_source'
+                )
+           )
+           AND NOT EXISTS (
+             SELECT 1
+               FROM artifact_versions av
+               JOIN source_spans ss ON ss.artifact_version_id = av.id
+              WHERE av.storage_key = t.profile_r2_key
+           )) AS document_profile_extraction_gap_count,
+       (SELECT COUNT(DISTINCT ac.id)
+          FROM audited_candidates ac
+          JOIN talent_pool_intakes t ON t.candidate_id = ac.id
+         WHERE t.submitted_at IS NOT NULL
+           AND t.profile_r2_key IS NOT NULL
+           AND (
+             substr(LOWER(t.profile_r2_key), -4) = '.pdf'
+             OR substr(LOWER(t.profile_r2_key), -5) = '.docx'
+           )
+           AND NOT EXISTS (
+             SELECT 1
+               FROM artifact_versions av
+               JOIN source_spans ss ON ss.artifact_version_id = av.id
+              WHERE av.storage_key = t.profile_r2_key
+           )
+           AND NOT (
+             EXISTS (
+               SELECT 1
+                 FROM candidate_ingestion ci
+                WHERE ci.candidate_id = ac.id
+                  AND ci.status = 'pending'
+                  AND ci.current_step = 'profile_text_extraction_needed'
+                  AND (ci.error_text IS NULL OR TRIM(ci.error_text) = '')
+             )
+             AND EXISTS (
+               SELECT 1
+                 FROM linked_workspace_people lwp
+                 JOIN artifacts a ON a.workspace_person_id = lwp.workspace_person_id
+                 JOIN artifact_versions av ON av.artifact_id = a.id
+                WHERE lwp.candidate_id = ac.id
+                  AND av.storage_key = t.profile_r2_key
+                  AND (
+                    a.artifact_type = 'profile_upload'
+                    OR a.logical_key = 'roleless_candidate_profile_upload'
+                    OR json_extract(a.metadata_json, '$.evidenceKind') = 'profile_upload_source'
+                  )
+             )
+           )) AS document_profile_missing_extraction_proof_count,
        (SELECT COUNT(DISTINCT av.id)
           FROM audited_candidates ac
           JOIN talent_pool_intakes t ON t.candidate_id = ac.id
@@ -780,6 +888,8 @@ async function loadSourceProof(
     sourceSpanTextMismatchCount: toNumber(row?.source_span_text_mismatch_count),
     sourceSpanHashMismatchCount,
     documentProfileSourceSpanCount: toNumber(row?.document_profile_source_span_count),
+    documentProfileExtractionGapCount: toNumber(row?.document_profile_extraction_gap_count),
+    documentProfileMissingExtractionProofCount: toNumber(row?.document_profile_missing_extraction_proof_count),
     profileUploadArtifactVersionCount: toNumber(row?.profile_upload_artifact_version_count),
     contextSourceRefCount: toNumber(row?.context_source_ref_count),
   };
@@ -1259,6 +1369,8 @@ export async function auditCandidateIngestion(
       sourceSpanTextMismatchCount: 0,
       sourceSpanHashMismatchCount: 0,
       documentProfileSourceSpanCount: 0,
+      documentProfileExtractionGapCount: 0,
+      documentProfileMissingExtractionProofCount: 0,
       profileUploadArtifactVersionCount: 0,
       contextSourceRefCount: 0,
     },
@@ -1377,8 +1489,11 @@ export async function auditCandidateIngestion(
       && sourceProof.candidateNodeExactSourceQuoteCount === 0
       ? ['submitted Talent Pool profile evidence has no exact source spans or exact candidate-node quotes']
       : []),
-    ...(rawCapture.documentProfileStorageKeyCount > 0 && sourceProof.documentProfileSourceSpanCount === 0
-      ? [`${rawCapture.documentProfileStorageKeyCount} PDF/DOCX Talent Pool profile upload(s) lack extracted source spans for the current profile key`]
+    ...(sourceProof.documentProfileMissingExtractionProofCount > 0
+      ? [`${sourceProof.documentProfileMissingExtractionProofCount} PDF/DOCX Talent Pool profile upload(s) have neither extracted source spans nor an explicit profile_text_extraction_needed upload receipt gap`]
+      : []),
+    ...(sourceProof.documentProfileExtractionGapCount > 0
+      ? [`${sourceProof.documentProfileExtractionGapCount} PDF/DOCX Talent Pool profile upload(s) are explicit profile_text_extraction_needed evidence gaps with raw upload receipts and no extracted profile text`]
       : []),
     ...(sourceProof.sourceSpanTextMismatchCount > 0
       ? [`${sourceProof.sourceSpanTextMismatchCount} source span(s) do not match their artifact_version content_text slice`]
@@ -1446,8 +1561,11 @@ export async function auditCandidateIngestion(
     ...(ingestionState.failedRowCount > 0 || ingestionState.errorTextRowCount > 0
       ? ['Replay or repair failed Talent Pool candidate_ingestion rows before treating ingestion as ready.']
       : []),
-    ...(rawCapture.documentProfileStorageKeyCount > 0 && sourceProof.documentProfileSourceSpanCount === 0
-      ? ['Replay or repair PDF/DOCX profile extraction so the current profile storage key has exact source spans.']
+    ...(sourceProof.documentProfileMissingExtractionProofCount > 0
+      ? ['Repair PDF/DOCX profile ingestion so each current document key has extracted source spans or an explicit profile_text_extraction_needed upload receipt gap.']
+      : []),
+    ...(sourceProof.documentProfileExtractionGapCount > 0
+      ? ['Run document extraction/backfill before projecting profile claims from PDF/DOCX uploads; keep the raw upload receipt as the only evidence until text exists.']
       : []),
     ...(rawCapture.nonContentAddressedProfileStorageKeyCount > 0
       ? ['Replay or repair Talent Pool profile source capture so profile_r2_key and resume_s3_key use content-hash storage paths.']
@@ -1663,6 +1781,8 @@ function printHuman(report: CandidateIngestionAudit, databasePath: string): void
   console.log(`  span text mismatches:  ${report.sourceProof.sourceSpanTextMismatchCount}`);
   console.log(`  span hash mismatches:  ${report.sourceProof.sourceSpanHashMismatchCount}`);
   console.log(`  document source spans: ${report.sourceProof.documentProfileSourceSpanCount}`);
+  console.log(`  document gap receipts: ${report.sourceProof.documentProfileExtractionGapCount}`);
+  console.log(`  document proof gaps:   ${report.sourceProof.documentProfileMissingExtractionProofCount}`);
   console.log(`  upload artifact refs:  ${report.sourceProof.profileUploadArtifactVersionCount}`);
   console.log(`  context source refs:   ${report.sourceProof.contextSourceRefCount}`);
   console.log('');

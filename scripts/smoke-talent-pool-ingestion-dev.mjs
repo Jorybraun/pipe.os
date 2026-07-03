@@ -615,8 +615,10 @@ function auditHasExpectedEvidenceGap(report) {
   if (report.sourceProof?.candidateNodeCount !== 0) return false;
   if (report.sourceProof?.profileUploadArtifactVersionCount < 1) return false;
   if (report.sourceProof?.documentProfileSourceSpanCount !== 0) return false;
+  if (report.sourceProof?.documentProfileExtractionGapCount !== 1) return false;
+  if (report.sourceProof?.documentProfileMissingExtractionProofCount !== 0) return false;
   if (report.sourceProof?.candidateNodeExactSourceQuoteCount !== 0) return false;
-  if (report.sourceProof?.submittedIntakeWithoutExactCandidateNodeCount !== 1) return false;
+  if (report.sourceProof?.submittedIntakeWithoutExactCandidateNodeCount !== 0) return false;
   if (report.sourceProof?.contextSourceRefCount < 1) return false;
   if (report.personProjection?.talentPoolWorkspacePersonCount !== 1) return false;
   if (report.personProjection?.designQueueCount !== 1) return false;
@@ -625,7 +627,7 @@ function auditHasExpectedEvidenceGap(report) {
   if (report.duplicateProjectedEdgeCount !== 0) return false;
   if (!listContains(
     report.failures,
-    '1 PDF/DOCX Talent Pool profile upload(s) lack extracted source spans for the current profile key',
+    '1 PDF/DOCX Talent Pool profile upload(s) are explicit profile_text_extraction_needed evidence gaps with raw upload receipts and no extracted profile text',
   )) {
     return false;
   }
@@ -634,7 +636,7 @@ function auditHasExpectedEvidenceGap(report) {
   }
   return listContains(
     report.nextActions,
-    'Replay or repair PDF/DOCX profile extraction so the current profile storage key has exact source spans.',
+    'Run document extraction/backfill before projecting profile claims from PDF/DOCX uploads; keep the raw upload receipt as the only evidence until text exists.',
   );
 }
 
@@ -973,6 +975,8 @@ async function main() {
     nonContentAddressedProfileStorageKeyCount: report.rawCapture.nonContentAddressedProfileStorageKeyCount,
     documentProfileStorageKeyCount: report.rawCapture.documentProfileStorageKeyCount,
     documentProfileSourceSpanCount: report.sourceProof.documentProfileSourceSpanCount,
+    documentProfileExtractionGapCount: report.sourceProof.documentProfileExtractionGapCount,
+    documentProfileMissingExtractionProofCount: report.sourceProof.documentProfileMissingExtractionProofCount,
     profileUploadArtifactVersionCount: report.sourceProof.profileUploadArtifactVersionCount,
     sourceObjectProof,
     talentPoolWorkspacePersonCount: report.personProjection.talentPoolWorkspacePersonCount,
