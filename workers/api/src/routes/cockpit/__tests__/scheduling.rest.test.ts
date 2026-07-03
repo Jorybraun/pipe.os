@@ -2611,6 +2611,7 @@ describe('GET /interviews/:id detail', () => {
                 githubPrNumber: number | null;
                 baseCommitSha: string | null;
                 task: string | null;
+                assessmentFit: string[];
                 matchProof: string[];
                 successCriteria: string[];
                 expectedEvidence: string[];
@@ -2659,6 +2660,7 @@ describe('GET /interviews/:id detail', () => {
           githubPrNumber: null,
           baseCommitSha,
           task: 'fix the assessment list progress regression.',
+          assessmentFit: [],
           matchProof: [],
           successCriteria: ['commit a focused patch with tests.'],
           expectedEvidence: [
@@ -7441,6 +7443,21 @@ describe('POST /interviews dev-container challenge (HAS-80)', () => {
         metrics: { demandDiversity: 1 },
         gates: [],
       },
+      reviewProfile: {
+        source: 'deterministic_engineering_prior',
+        difficultyBand: 'focused',
+        expectedSeniority: 'senior',
+        expectedTimeMinutes: 45,
+        basis: {
+          changedFileCount: 2,
+          changedLineCount: 128,
+          sourceHunkCount: 9,
+          testChangeCount: 1,
+          demandFamilyCount: 1,
+          hasIssueContext: true,
+        },
+        rationale: 'focused review calibrated for senior candidates; 45 minute target; 2 files; 128 changed lines; 9 source hunks; 1 demand family; 1 test change; issue context.',
+      },
       contentHash: sourceHash,
     };
 
@@ -7992,6 +8009,10 @@ describe('POST /interviews dev-container challenge (HAS-80)', () => {
     expect(body.interview.assessmentProgress?.challenge?.exactText).toContain('Review packet quality 92% from source-backed repo analysis.');
     expect(body.interview.assessmentProgress?.challenge?.exactText).toContain('1 source-backed repo demand in the selected PR packet.');
     expect(body.interview.assessmentProgress?.challenge?.exactText).toContain('Demand families: retry logic.');
+    expect(body.interview.assessmentProgress?.challenge?.exactText).toContain('Assessment fit:');
+    expect(body.interview.assessmentProgress?.challenge?.exactText).toContain('focused review calibrated for senior candidates.');
+    expect(body.interview.assessmentProgress?.challenge?.exactText).toContain('45 minute target from deterministic engineering prior.');
+    expect(body.interview.assessmentProgress?.challenge?.exactText).toContain('Sizing: 2 changed files, 128 changed lines, 9 source hunks, 1 demand family.');
     expect(body.interview.assessmentProgress?.challenge?.exactText).toContain('Repair retry scheduling so terminal events are emitted exactly once.');
 
     const row = sqlite!.prepare(
@@ -8522,6 +8543,10 @@ describe('POST /interviews dev-container challenge (HAS-80)', () => {
       'Verification command: git diff --check HEAD~1 HEAD && git diff --name-only HEAD~1 HEAD',
       'Source-backed demands:',
       '- Repair retry scheduling so terminal events are emitted exactly once.',
+      'Assessment fit:',
+      '- focused review calibrated for senior candidates.',
+      '- 45 minute target from deterministic engineering prior.',
+      '- Sizing: 2 changed files, 128 changed lines, 9 source hunks, 1 demand family.',
       'Expected evidence:',
       '- git_commit source ref for the submitted assessment commit',
       '- code_diff source ref for the exact baseCommitSha..commitSha candidate patch',

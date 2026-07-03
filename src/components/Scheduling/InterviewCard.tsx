@@ -835,6 +835,9 @@ export function InterviewCard({
   const assessmentMatchProofLabel = assessmentChallenge?.matchProof.length
     ? compactText(assessmentChallenge.matchProof.join(' · '), 180)
     : null;
+  const assessmentFitLabel = assessmentChallenge?.assessmentFit.length
+    ? compactText(assessmentChallenge.assessmentFit.join(' · '), 180)
+    : null;
   const assessmentEvaluationLabel = assessmentProgress?.evaluation?.status
     ? sentenceCaseToken(assessmentProgress.evaluation.status)
     : null;
@@ -1008,6 +1011,16 @@ export function InterviewCard({
                   </div>
                   <div style={{ minWidth: 0, fontSize: 10, color: 'var(--pipe-text-dim)', overflowWrap: 'anywhere' }}>
                     {assessmentMatchProofLabel}
+                  </div>
+                </>
+              )}
+              {assessmentFitLabel && (
+                <>
+                  <div style={{ fontSize: 9, color: '#93c5fd', letterSpacing: '0.12em', fontWeight: 700 }}>
+                    FIT
+                  </div>
+                  <div style={{ minWidth: 0, fontSize: 10, color: 'var(--pipe-text-dim)', overflowWrap: 'anywhere' }}>
+                    {assessmentFitLabel}
                   </div>
                 </>
               )}

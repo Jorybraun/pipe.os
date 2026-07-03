@@ -146,6 +146,11 @@ describe('open-source challenge sessions', () => {
         'git_commit source ref for the submitted assessment commit',
         'code_diff source ref for the exact baseCommitSha..commitSha candidate patch',
       ]),
+      reviewProfile: {
+        difficultyBand: 'focused',
+        expectedSeniority: 'senior',
+        expectedTimeMinutes: 90,
+      },
     });
     expect(packet?.instructions).toContain('Source-backed demands:');
     expect(packet?.successCriteria).toContain('The solution addresses packet demands: runtime reliability.');
@@ -238,6 +243,11 @@ describe('open-source challenge sessions', () => {
     expect(JSON.stringify(eventCalls[0])).toContain('Review packet quality 91% from source-backed repo analysis.');
     expect(JSON.stringify(eventCalls[0])).toContain('1 source-backed repo demand in the selected PR packet.');
     expect(JSON.stringify(eventCalls[0])).toContain('Demand families: runtime reliability.');
+    expect(JSON.stringify(eventCalls[0])).toContain('Assessment fit:');
+    expect(JSON.stringify(eventCalls[0])).toContain('focused review calibrated for senior candidates.');
+    expect(JSON.stringify(eventCalls[0])).toContain('90 minute target from deterministic engineering prior.');
+    expect(JSON.stringify(eventCalls[0])).toContain('Sizing: 1 changed file, 12 changed lines, 1 source hunk, 1 demand family.');
+    expect(JSON.stringify(eventCalls[0])).toContain('No test changes in the source-backed PR packet; require candidate verification evidence.');
     expect(eventCalls[0]).toMatchObject({
       sourceRefs: [expect.objectContaining({
         sourceRefType: 'review_challenge_packet',

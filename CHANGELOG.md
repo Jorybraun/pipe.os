@@ -9,12 +9,14 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Fixed — CODE_REVIEW scoring
 
+- Source-backed assessment diagnostics now dedupe by code and severity while keeping the strongest source-backed diagnostic, preventing duplicate missing-test warnings in recruiter reports.
 - Challenge-match quality scoring now narrows rounded contrast separation directly, keeping the Worker strict type gate green while preserving the rounded 2% quality boundary.
 - Judge-example verification now audits the real remote dev D1 database (`pipe-db-test`) through Wrangler instead of only local Miniflare SQLite files, so the production CODE_REVIEW scoring loop validates the same labelled examples created by the app-dev smoke.
 - Role-backed CODE_REVIEW matching now scores rounded 2% challenge-separation leads as measurable contrast, so app-dev auto-match no longer blocks a recruiter-visible “2% lead” candidate-safe assignment at the gate boundary.
 
 ### Fixed — Interview scheduling
 
+- PIPE-matched open-source assessment packets now carry deterministic assessment-fit calibration into recruiter list/detail readouts, including difficulty, seniority, target time, and sizing facts from the source-backed review profile.
 - Recruiter interview cards now show source-backed challenge match proof from summary-only assessment packets, so the list view explains why PIPE assigned a repo task without exposing internal source ref IDs.
 - Source-backed assessment evaluation now drops unsupported positive model claims for tests, verification, or AI use when the cited source refs do not prove that evidence, and reports missing `test_run` proof as a recruiter-visible diagnostic.
 - Recruiter interview pagination now honors server-side newest, oldest, and scheduled-time sort modes instead of reordering only the currently loaded page.

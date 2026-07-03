@@ -172,6 +172,7 @@ export interface AssessmentProgressChallengeSummary {
   githubPrNumber: number | null;
   baseCommitSha: string | null;
   task: string | null;
+  assessmentFit: string[];
   matchProof: string[];
   successCriteria: string[];
   expectedEvidence: string[];

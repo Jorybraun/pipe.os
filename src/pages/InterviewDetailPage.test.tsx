@@ -296,6 +296,10 @@ describe('InterviewDetailPage', () => {
               'Match proof:',
               '- Review packet quality 92% from source-backed repo analysis.',
               '- 2 source-backed repo demands in the selected PR packet.',
+              'Assessment fit:',
+              '- focused review calibrated for senior candidates.',
+              '- 45 minute target from deterministic engineering prior.',
+              '- Sizing: 2 changed files, 128 changed lines, 9 source hunks, 4 demand families.',
               'Success criteria:',
               '- Keep hover-open behavior intact.',
               '- Add a regression test for impatient trigger clicks.',
@@ -410,6 +414,10 @@ describe('InterviewDetailPage', () => {
     expect(contract).toHaveTextContent('Match proof');
     expect(contract).toHaveTextContent('Review packet quality 92% from source-backed repo analysis.');
     expect(contract).toHaveTextContent('2 source-backed repo demands in the selected PR packet.');
+    expect(contract).toHaveTextContent('Assessment fit');
+    expect(contract).toHaveTextContent('focused review calibrated for senior candidates.');
+    expect(contract).toHaveTextContent('45 minute target from deterministic engineering prior.');
+    expect(contract).toHaveTextContent('Sizing: 2 changed files, 128 changed lines, 9 source hunks, 4 demand families.');
     expect(contract).toHaveTextContent('Success criteria');
     expect(contract).toHaveTextContent('Keep hover-open behavior intact.');
     expect(contract).toHaveTextContent('Add a regression test for impatient trigger clicks.');

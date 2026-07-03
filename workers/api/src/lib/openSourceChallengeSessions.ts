@@ -1,7 +1,7 @@
 import { recordAssessmentCandidateProfileEvidence } from './assessmentLayer/candidateProfileEvidence';
 import type { AssessmentEvidenceSourceRefInput } from './assessmentLayer/persistence';
 import type { JsonObject } from './livingContext';
-import type { ChallengePacket } from './repoSemanticGraph';
+import type { ChallengePacket, ChallengeReviewProfile } from './repoSemanticGraph';
 import {
   RepoTaskInterviewSessionStore,
   type AssessmentProgressSnapshot,
@@ -28,6 +28,7 @@ export interface MatchedOpenSourceChallengePacket {
   qualityScore: number | null;
   demandCount: number;
   demandFamilies: string[];
+  reviewProfile: ChallengeReviewProfile;
 }
 
 export interface OpenSourceChallengeSessionStore {
@@ -65,6 +66,29 @@ function packetDemandFamilies(packet: ChallengePacket): string[] {
   return Array.isArray(packet.demandFamilies)
     ? packet.demandFamilies.map((family) => String(family)).filter(Boolean)
     : [];
+}
+
+function isRecord(value: unknown): value is Record<string, unknown> {
+  return typeof value === 'object' && value !== null && !Array.isArray(value);
+}
+
+function isChallengeReviewProfile(value: unknown): value is ChallengeReviewProfile {
+  if (!isRecord(value)) return false;
+  if (value.source !== 'deterministic_engineering_prior') return false;
+  if (!['introductory', 'focused', 'advanced', 'oversized'].includes(String(value.difficultyBand))) return false;
+  if (!['mid', 'senior', 'staff'].includes(String(value.expectedSeniority))) return false;
+  if (typeof value.expectedTimeMinutes !== 'number' || !Number.isFinite(value.expectedTimeMinutes)) return false;
+  if (typeof value.rationale !== 'string' || value.rationale.trim().length === 0) return false;
+  if (!isRecord(value.basis)) return false;
+  const numericBasis = [
+    value.basis.changedFileCount,
+    value.basis.changedLineCount,
+    value.basis.sourceHunkCount,
+    value.basis.testChangeCount,
+    value.basis.demandFamilyCount,
+  ];
+  return numericBasis.every((item) => typeof item === 'number' && Number.isFinite(item))
+    && typeof value.basis.hasIssueContext === 'boolean';
 }
 
 function matchedPacketInstructions(packet: ChallengePacket): string {
@@ -121,6 +145,21 @@ function matchedPacketMatchProof(input: MatchedOpenSourceChallengePacket): strin
   ];
 }
 
+function matchedPacketAssessmentFit(profile: ChallengeReviewProfile): string[] {
+  const basis = profile.basis;
+  return [
+    `${profile.difficultyBand} review calibrated for ${profile.expectedSeniority} candidates.`,
+    `${profile.expectedTimeMinutes} minute target from deterministic engineering prior.`,
+    `Sizing: ${basis.changedFileCount} changed ${basis.changedFileCount === 1 ? 'file' : 'files'}, ${basis.changedLineCount} changed ${basis.changedLineCount === 1 ? 'line' : 'lines'}, ${basis.sourceHunkCount} source ${basis.sourceHunkCount === 1 ? 'hunk' : 'hunks'}, ${basis.demandFamilyCount} demand ${basis.demandFamilyCount === 1 ? 'family' : 'families'}.`,
+    basis.testChangeCount > 0
+      ? `${basis.testChangeCount} test ${basis.testChangeCount === 1 ? 'change' : 'changes'} present in the source-backed PR packet.`
+      : 'No test changes in the source-backed PR packet; require candidate verification evidence.',
+    basis.hasIssueContext
+      ? 'Issue context is present in the source-backed PR packet.'
+      : 'No issue context in the source-backed PR packet; assess from code demand evidence.',
+  ];
+}
+
 export function materializeMatchedOpenSourcePacket(
   row: MatchedOpenSourcePacketRow,
 ): MatchedOpenSourceChallengePacket | null {
@@ -153,6 +192,8 @@ export function materializeMatchedOpenSourcePacket(
   }
 
   const demandFamilies = packetDemandFamilies(packet);
+  const reviewProfile = isChallengeReviewProfile(packet.reviewProfile) ? packet.reviewProfile : null;
+  if (!reviewProfile) return null;
   return {
     packetId: packet.id,
     repositoryUrl: row.github_url,
@@ -170,6 +211,7 @@ export function materializeMatchedOpenSourcePacket(
     qualityScore: row.quality_score,
     demandCount: packetDemands(packet).length,
     demandFamilies,
+    reviewProfile,
   };
 }
 
@@ -249,6 +291,8 @@ function buildMatchedOpenSourceChallengeExactText(
     `Verification command: ${input.verificationCommand}`,
     'Match proof:',
     ...matchedPacketMatchProof(input).map((proof) => `- ${proof}`),
+    'Assessment fit:',
+    ...matchedPacketAssessmentFit(input.reviewProfile).map((fit) => `- ${fit}`),
     'Success criteria:',
     ...input.successCriteria.map((criterion) => `- ${criterion}`),
     'Expected evidence:',

@@ -1239,12 +1239,21 @@ function unsupportedPositiveClaimDiagnostic(
 function dedupeDiagnostics(
   diagnostics: readonly AssessmentDiagnosticInput[],
 ): AssessmentDiagnosticInput[] {
-  const seen = new Set<string>();
   const output: AssessmentDiagnosticInput[] = [];
+  const indexByKey = new Map<string, number>();
   for (const diagnostic of diagnostics) {
-    const key = `${diagnostic.code}:${diagnostic.severity}:${diagnostic.message}`;
-    if (seen.has(key)) continue;
-    seen.add(key);
+    const key = `${diagnostic.code}:${diagnostic.severity}`;
+    const existingIndex = indexByKey.get(key);
+    if (existingIndex !== undefined) {
+      const existing = output[existingIndex];
+      const existingSourceRefCount = existing?.sourceRefs?.length ?? 0;
+      const nextSourceRefCount = diagnostic.sourceRefs?.length ?? 0;
+      if (existing && nextSourceRefCount > existingSourceRefCount) {
+        output[existingIndex] = diagnostic;
+      }
+      continue;
+    }
+    indexByKey.set(key, output.length);
     output.push(diagnostic);
   }
   return output;

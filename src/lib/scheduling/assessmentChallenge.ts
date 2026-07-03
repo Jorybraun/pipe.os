@@ -11,6 +11,7 @@ export interface AssessmentChallengeSummary {
   githubPrNumber: number | null;
   baseCommitSha: string | null;
   task: string | null;
+  assessmentFit: string[];
   matchProof: string[];
   successCriteria: string[];
   expectedEvidence: string[];
@@ -49,7 +50,10 @@ function cleanListItem(line: string): string | null {
   return cleaned.length > 0 ? cleaned : null;
 }
 
-function collectSectionItems(lines: string[], header: 'match proof' | 'success criteria' | 'expected evidence'): string[] {
+function collectSectionItems(
+  lines: string[],
+  header: 'assessment fit' | 'match proof' | 'success criteria' | 'expected evidence',
+): string[] {
   const items: string[] = [];
   let collecting = false;
 
@@ -86,6 +90,9 @@ export function summarizeAssessmentChallenge(
     baseCommitSha: summaryInput.baseCommitSha
       ?? locatorString(challenge.locator, ['baseCommitSha', 'baseCommit']),
     task: summaryInput.task ?? null,
+    assessmentFit: summaryInput.assessmentFit?.length
+      ? [...summaryInput.assessmentFit]
+      : collectSectionItems(lines, 'assessment fit'),
     matchProof: summaryInput.matchProof?.length
       ? [...summaryInput.matchProof]
       : collectSectionItems(lines, 'match proof'),
@@ -123,6 +130,7 @@ export function summarizeAssessmentChallenge(
     || summary.githubPrNumber
     || summary.baseCommitSha
     || summary.task
+    || summary.assessmentFit.length > 0
     || summary.matchProof.length > 0
     || summary.successCriteria.length > 0
     || summary.expectedEvidence.length > 0

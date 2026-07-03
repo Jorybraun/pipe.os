@@ -775,6 +775,10 @@ describe('InterviewCard assessment progress', () => {
             githubPrNumber: 321,
             baseCommitSha: '4444444444444444444444444444444444444444',
             task: 'Fix the matched assignment fallback.',
+            assessmentFit: [
+              'focused review calibrated for senior candidates.',
+              '45 minute target from deterministic engineering prior.',
+            ],
             matchProof: [
               'Review packet quality 91% from source-backed repo analysis.',
               '2 source-backed repo demands in the selected PR packet.',
@@ -803,6 +807,9 @@ describe('InterviewCard assessment progress', () => {
     expect(progress).toHaveTextContent('MATCH PROOF');
     expect(progress).toHaveTextContent('Review packet quality 91% from source-backed repo analysis.');
     expect(progress).toHaveTextContent('2 source-backed repo demands in the selected PR packet.');
+    expect(progress).toHaveTextContent('FIT');
+    expect(progress).toHaveTextContent('focused review calibrated for senior candidates.');
+    expect(progress).toHaveTextContent('45 minute target from deterministic engineering prior.');
     expect(progress).toHaveTextContent('PR #321');
     expect(progress).not.toHaveTextContent('challenge-packet-progress-trust');
     expect(progress).not.toHaveTextContent('assessment-session-progress-trust');

@@ -726,6 +726,8 @@ async function assertRecruiterListCardBrowser(
       await expect(card).toContainText('MATCH PROOF');
       await expect(card).toContainText('Review packet quality');
       await expect(card).toContainText('source-backed repo demand');
+      await expect(card).toContainText('FIT');
+      await expect(card).toContainText('minute target from deterministic engineering prior');
       if (matchedAssignmentProofText) {
         await expect(card).toContainText(matchedAssignmentProofText);
       }
