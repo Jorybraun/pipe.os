@@ -919,6 +919,7 @@ describe('stale Workers AI candidate-ingestion retry', () => {
     expect(receiptCheckCall.sql).toContain("crsr.source_ref_type = 'artifact_version'");
     const scanCall = db.__calls.find((call) => call.sql.includes('FROM talent_pool_intakes'))!;
     expect(scanCall.sql).toContain('t.profile_r2_key');
+    expect(scanCall.sql).toContain("cr.record_type = 'talent_pool_profile_upload_receipt'");
   });
 
   it('cron replays pasted Talent Pool profile text as source-backed profile evidence, not an upload receipt', async () => {

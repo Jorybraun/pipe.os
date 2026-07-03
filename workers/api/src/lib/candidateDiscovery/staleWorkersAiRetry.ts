@@ -553,6 +553,31 @@ export async function processTalentPoolOperationalContextRepairs(
            )
           THEN 0 ELSE 1
         END,
+        CASE WHEN t.profile_r2_key IS NOT NULL
+          AND TRIM(t.profile_r2_key) <> ''
+          AND EXISTS (
+            SELECT 1
+              FROM workspace_people wp
+              JOIN artifacts a ON a.workspace_person_id = wp.id
+              JOIN artifact_versions av ON av.artifact_id = a.id
+             WHERE json_extract(wp.context_json, '$.talentPool.candidateId') = c.id
+               AND av.storage_key = t.profile_r2_key
+               AND (
+                 a.artifact_type = 'profile_upload'
+                 OR a.logical_key = 'roleless_candidate_profile_upload'
+                 OR json_extract(a.metadata_json, '$.evidenceKind') = 'profile_upload_source'
+               )
+               AND NOT EXISTS (
+                 SELECT 1
+                   FROM context_records cr
+                   JOIN context_record_source_refs crsr ON crsr.context_record_id = cr.id
+                  WHERE cr.workspace_person_id = wp.id
+                    AND cr.record_type = 'talent_pool_profile_upload_receipt'
+                    AND crsr.source_ref_type = 'artifact_version'
+                    AND crsr.source_ref_id = av.id
+               )
+          )
+        THEN 0 ELSE 1 END,
         CASE WHEN EXISTS (
           SELECT 1
             FROM candidate_nodes cn
