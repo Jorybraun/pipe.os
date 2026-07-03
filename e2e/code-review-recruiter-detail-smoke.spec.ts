@@ -38,6 +38,8 @@ const EXPECT_HUMAN_DECISION = envFlag(
   'ASSESSMENT_RECRUITER_EXPECT_HUMAN_DECISION',
   'CODE_REVIEW_RECRUITER_EXPECT_HUMAN_DECISION',
 );
+const HIRING_READOUT_INTERNAL_ID_PATTERN =
+  /match-run|challenge_packet|assessment_session|review-session|candidate-atom|repo-demand|source-span|sourceRefId|sourceSpanId|source_ref|source-ref|packet-[a-z0-9-]{4,}/i;
 const RECORD_HUMAN_DECISION = envFlag(
   'ASSESSMENT_RECRUITER_RECORD_HUMAN_DECISION',
   'CODE_REVIEW_RECRUITER_RECORD_HUMAN_DECISION',
@@ -548,6 +550,10 @@ test.describe('Feature: assessment recruiter detail smoke', () => {
     await expect(hiringReadout).toContainText('Score validity');
     await expect(hiringReadout).toContainText('Risk');
     await expect(hiringReadout).toContainText('Next action');
+    const hiringReadoutCards = hiringReadout.locator(':scope > div').nth(1).locator(':scope > div');
+    await expect(hiringReadoutCards).toHaveCount(5);
+    await expect(hiringReadout).not.toContainText(HIRING_READOUT_INTERNAL_ID_PATTERN);
+    await expect(hiringReadout).not.toContainText(/Evidence trace|Source proof|MATCH_PROOF|WHY_THIS_PR/i);
     const assignmentTrust = page.getByTestId('interview-code-review-assignment-trust');
     await expect(assignmentTrust).toBeVisible();
     await expect(assignmentTrust).toContainText('Assignment trust');
