@@ -150,6 +150,20 @@ function createNodeSqliteD1(sqlite: NodeSqliteDatabase): D1Database {
       };
       return prepared;
     },
+    async batch<T = unknown>(statements: D1PreparedStatement[]): Promise<D1Result<T>[]> {
+      const results: D1Result<T>[] = [];
+      sqlite.exec('BEGIN');
+      try {
+        for (const statement of statements) {
+          results.push(await statement.run<T>());
+        }
+        sqlite.exec('COMMIT');
+      } catch (error) {
+        sqlite.exec('ROLLBACK');
+        throw error;
+      }
+      return results;
+    },
   } as unknown as D1Database;
 }
 

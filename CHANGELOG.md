@@ -50,6 +50,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Fixed — CODE_REVIEW assessment runtime
 
+- CODE_REVIEW challenge ranking now prioritizes candidate/role fit among eligible source-backed packets before static packet polish, reducing corpus collapse where one high-quality generic PR wins over a more candidate-specific review challenge.
 - CODE_REVIEW expert corpus reviews now reject positive labels that omit a contrast candidate and minimum score separation, preventing incomplete “reviewed” matches from being persisted as quality evidence.
 - CODE_REVIEW corpus review summaries now surface `expand_corpus_packet_breadth` when a source-backed corpus still has only one usable PR packet, preventing operators from treating expert review alone as the fix for a narrow matching gate.
 - Standalone CODE_REVIEW `/assess` intake and stage-config polling no longer create automatic PR assignments from CV evidence; CV-only candidates stay on the safe profile-received handoff until an upstream process assigns a source-backed review challenge.
