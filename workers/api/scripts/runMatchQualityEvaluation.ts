@@ -284,7 +284,7 @@ function reasonForGrade(grade: RelevanceGrade): MatchQualityReasonCategory {
     case 'relevant':
       return 'aligned';
     case 'borderline':
-      return 'negative_contrast';
+      return 'needs_challenge_design';
     case 'irrelevant':
     case 'forbidden':
       return 'insufficient_evidence';

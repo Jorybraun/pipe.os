@@ -64,6 +64,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Fixed — CODE_REVIEW assessment runtime
 
+- CODE_REVIEW match-quality scoring now uses conservative semantic concept matching for adjacent source-backed evidence, filters generated source-path fragments out of scoreable demand concepts, parses packet `conceptKeys` in gap analysis, and maps borderline expert labels to challenge-design review reasons, letting the app-dev expert-reviewed corpus pass with discriminating Workers/MUI verdicts.
 - CODE_REVIEW matching-evaluation readiness now reports `corpus-seeder` labels as draft labels requiring expert review, instead of listing them as fake expert labels with missing provenance.
 - CODE_REVIEW app-dev assess smokes now accept the same app-specific Basic Auth aliases as the other deployed smokes and can be imported in unit tests without launching a real candidate invite.
 - CODE_REVIEW match-health audits now prefer `MATCHING_EVALUATION_D1_DATABASE_ID` over the generic `CLOUDFLARE_D1_DATABASE_ID`, preventing app-dev/eval gates from silently checking the wrong D1 when `.env` contains both.

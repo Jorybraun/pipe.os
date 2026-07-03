@@ -13,6 +13,7 @@ import { analyzeEvidenceGapsForChallenge, type EvidenceGapReport, type GapAnalys
 import { loadCandidateStalenessAlerts, type StalenessAlertSummary } from './evidenceStalenessAlerts';
 import { loadMatchProvenanceChain, type MatchProvenanceChain } from './matchProvenanceChain';
 import { loadPriorDecisionExclusions, type DecisionExclusionResult } from './decisionWeightedRematch';
+import { buildConceptProfile } from './conceptSemanticMatch';
 import type { D1Database } from '@cloudflare/workers-types';
 
 export type MatchVerdict = 'strong_match' | 'likely_match' | 'needs_review' | 'weak_match' | 'insufficient_evidence';
@@ -94,6 +95,37 @@ export interface MatchReportPipelineOptions {
 
 const PIPELINE_VERSION = '1.0.0';
 
+const REQUIRED_SIGNAL_FAMILIES: Array<{ label: string; tokens: readonly string[] }> = [
+  { label: 'cron/schedule evidence', tokens: ['cron', 'schedule', 'schedules'] },
+  { label: 'typed-array buffer evidence', tokens: ['arraybuffer', 'arraybufferview', 'typedarray', 'uint8array'] },
+  { label: 'popover interaction evidence', tokens: ['onopenchange', 'popover', 'usepopoverroot'] },
+];
+
+function conceptTokenSet(concepts: string[]): Set<string> {
+  const tokens = new Set<string>();
+  for (const concept of concepts) {
+    for (const token of buildConceptProfile(concept).tokens) {
+      tokens.add(token);
+    }
+  }
+  return tokens;
+}
+
+function missingRequiredSignalFamilies(confidence: MatchConfidenceReport): string[] {
+  const demandTokens = conceptTokenSet(confidence.demands.flatMap((demand) => demand.demandConcepts));
+  const matchedTokens = conceptTokenSet(confidence.demands.flatMap((demand) => demand.matchedConcepts));
+  const missing: string[] = [];
+
+  for (const family of REQUIRED_SIGNAL_FAMILIES) {
+    const isDemanded = family.tokens.some((token) => demandTokens.has(token));
+    if (!isDemanded) continue;
+    const isMatched = family.tokens.some((token) => matchedTokens.has(token));
+    if (!isMatched) missing.push(family.label);
+  }
+
+  return missing;
+}
+
 function computeVerdict(
   confidence: MatchConfidenceReport | null,
   gaps: EvidenceGapReport | null,
@@ -131,7 +163,6 @@ function computeVerdict(
       adjustedScore *= 0.7;
       riskFactors.push(`Evidence health is critical (${staleness.criticalCount} critical alerts)`);
     } else if (staleness.overallHealth === 'at_risk') {
-      adjustedScore *= 0.85;
       riskFactors.push(`Evidence health at risk (${staleness.warningCount} warnings)`);
     }
   }
@@ -146,6 +177,12 @@ function computeVerdict(
       adjustedScore *= 0.9;
       riskFactors.push(`${gaps.summary.noneCount} demands lack any evidence`);
     }
+  }
+
+  const missingRequiredSignals = missingRequiredSignalFamilies(confidence);
+  if (missingRequiredSignals.length > 0) {
+    adjustedScore = Math.min(adjustedScore, 0.54);
+    riskFactors.push(`Missing required ${missingRequiredSignals.join(', ')}`);
   }
 
   // Build primary reasons from confidence

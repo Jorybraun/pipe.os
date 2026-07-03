@@ -76,7 +76,7 @@ function evaluationCorpus(): EvaluationCorpus {
         roleId: 'role-frontend',
         challengeId: 'packet-973',
         relevanceGrade: 'highly_relevant',
-        eligibleChallengeIds: ['packet-973'],
+        eligibleChallengeIds: ['packet-973', 'packet-adjacent'],
         negativeCandidateId: 'candidate-negative',
         minimumScoreSeparation: 0.12,
         labelVersion: '1.0.0',
@@ -90,10 +90,22 @@ function evaluationCorpus(): EvaluationCorpus {
         roleId: 'role-frontend',
         challengeId: 'packet-unrelated',
         relevanceGrade: 'irrelevant',
-        eligibleChallengeIds: ['packet-973'],
+        eligibleChallengeIds: ['packet-973', 'packet-adjacent'],
         labelVersion: '1.0.0',
         labeledAt: '2026-07-01T00:00:00.000Z',
         labeledBy: 'expert-reviewer',
+      },
+      {
+        labelId: 'label-borderline',
+        candidateId: 'candidate-fit',
+        roleId: 'role-frontend',
+        challengeId: 'packet-adjacent',
+        relevanceGrade: 'borderline',
+        eligibleChallengeIds: ['packet-973', 'packet-adjacent'],
+        labelVersion: '1.0.0',
+        labeledAt: '2026-07-01T00:00:00.000Z',
+        labeledBy: 'expert-reviewer',
+        explanation: 'Candidate is adjacent but the challenge should be more specific.',
       },
     ],
     expectedPackets: [{
@@ -103,10 +115,10 @@ function evaluationCorpus(): EvaluationCorpus {
       sourceVersion: 'test',
     }],
     metadata: {
-      totalLabels: 2,
+      totalLabels: 3,
       totalCandidates: 2,
       totalRoles: 1,
-      totalChallenges: 2,
+      totalChallenges: 3,
       syntheticFixtureCount: 0,
       totalExpectedPackets: 1,
     },
@@ -328,6 +340,13 @@ describe('runMatchQualityEvaluation corpus loading', () => {
         expectedReasonCategory: 'insufficient_evidence',
         requireCandidateEvidence: false,
       }),
+      expect.objectContaining({
+        caseId: 'label-borderline',
+        challengePacketId: 'packet-adjacent',
+        expectedVerdict: 'needs_review',
+        expectedReasonCategory: 'needs_challenge_design',
+        requireCandidateEvidence: false,
+      }),
     ]);
   });
 
@@ -337,6 +356,7 @@ describe('runMatchQualityEvaluation corpus loading', () => {
     expect(corpus.cases.map((testCase) => testCase.caseId)).toEqual([
       'label-positive',
       'label-negative',
+      'label-borderline',
     ]);
   });
 });
