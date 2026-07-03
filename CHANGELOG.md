@@ -15,6 +15,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Fixed — Interview scheduling
 
+- The assessment room now auto-relaunches once for known transient dev-container start races, so hosts are not stuck manually recovering a workspace after Cloudflare reports the container is not running.
 - Dev API deploys now bind `api-dev.hire-pipe.com` to the current Worker and scheduled-interview detail tests assert source-backed challenge title/description survive the detail projection.
 - Interview detail pages now lead open-source assessment dossiers with the assigned task title, candidate identity, and objective description instead of burying the challenge under a generic person-name header.
 - Open-source assessment invites now persist and project recruiter-facing title and description copy from the assigned challenge packet, so repeated candidate meetings are legible in list/detail views.
