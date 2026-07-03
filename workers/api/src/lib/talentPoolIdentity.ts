@@ -192,6 +192,13 @@ async function removeRolelessLegacyApplicationBridge(input: {
   }
 }
 
+export async function removeRolelessTalentPoolApplicationBridge(input: {
+  db: D1Database;
+  candidateId: string;
+}): Promise<void> {
+  await removeRolelessLegacyApplicationBridge(input);
+}
+
 function epochFromIso(value: string): number {
   const millis = Date.parse(value);
   return Number.isFinite(millis) ? Math.floor(millis / 1000) : Math.floor(Date.now() / 1000);
@@ -771,7 +778,7 @@ export async function ensureRolelessTalentPoolIdentity(input: {
     operationalContext,
     now,
   });
-  await removeRolelessLegacyApplicationBridge({ db, candidateId });
+  await removeRolelessTalentPoolApplicationBridge({ db, candidateId });
 
   return { personId: person.id, workspacePersonId: workspacePerson.id };
 }

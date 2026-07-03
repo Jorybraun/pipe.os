@@ -906,18 +906,54 @@ describe('talent pool candidate RPC', () => {
     seedCandidate(sqlite);
     const storage = createMemoryR2();
     const app = createApp();
+    const { ctx, waitUntilAll } = buildCtx();
     const formData = new FormData();
     const uploadedText = 'Taylor has shipped TypeScript frontend systems, Workers APIs, and source-backed accessibility fixes.';
     formData.set('inviteToken', 'invite-token');
     formData.set('file', new File([uploadedText], 'taylor-profile.txt', { type: 'text/plain' }));
     formData.set('githubUrl', 'https://github.com/taylor-upload');
+    vi.mocked(runCandidateIngestion).mockImplementationOnce(async ({ db, candidateId }) => {
+      const row = await db.prepare(
+        `SELECT id
+           FROM workspace_people
+          WHERE json_extract(context_json, '$.talentPool.candidateId') = ?1
+          LIMIT 1`,
+      ).bind(candidateId).first<{ id: string }>();
+      if (!row) throw new Error('missing roleless workspace person');
+      await db.prepare(
+        `INSERT INTO applications (
+           id, ingestion_key, workspace_person_id, legacy_candidate_id,
+           pipeline_id, status, context_json, created_at, updated_at
+         )
+         VALUES (
+           'background-legacy-application',
+           'background-legacy-application',
+           ?1, ?2, NULL, 'legacy', '{}',
+           '2026-07-03T00:00:00.000Z', '2026-07-03T00:00:00.000Z'
+         )`,
+      ).bind(row.id, candidateId).run();
+      await db.prepare(
+        `INSERT INTO person_roles (
+           id, ingestion_key, workspace_person_id, application_id, role_type,
+           label, attributes_json, created_at, updated_at
+         )
+         VALUES (
+           'background-legacy-role',
+           'background-legacy-role',
+           ?1, 'background-legacy-application', 'candidate',
+           'Legacy roleless bridge', '{}',
+           '2026-07-03T00:00:00.000Z', '2026-07-03T00:00:00.000Z'
+         )`,
+      ).bind(row.id).run();
+    });
 
     const res = await app.request('/rpc/talent/upload-profile', {
       method: 'POST',
       body: formData,
-    }, createEnv(sqlite, storage));
+    }, createEnv(sqlite, storage), ctx);
 
     expect(res.status).toBe(200);
+    await waitUntilAll();
     const body = await res.json() as TalentDashboardBody;
     expect(body.status).toBe('CHALLENGE_PREPARING');
     expect(body.candidateName).toBe('Jordan Talent');
@@ -1047,6 +1083,8 @@ describe('talent pool candidate RPC', () => {
       node_type: 'TalentPoolProfileIntake',
       storage_key: intake.profile_r2_key,
     });
+    expect(sqlite.prepare('SELECT COUNT(*) AS count FROM applications').get()).toEqual({ count: 0 });
+    expect(sqlite.prepare('SELECT COUNT(*) AS count FROM person_roles').get()).toEqual({ count: 0 });
 
     const replayFormData = new FormData();
     replayFormData.set('inviteToken', 'invite-token');

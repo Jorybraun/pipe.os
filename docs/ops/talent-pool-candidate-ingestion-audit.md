@@ -121,8 +121,11 @@ cron/backfill replay does not duplicate artifact versions or person edges.
 Background projection receives the roleless Talent Pool person identity and
 background decomposition runs with legacy candidate-node mirroring disabled, so
 it must not create `applications` or `person_roles` before a role-backed process
-exists. Parser-only resume nodes without exact source quotes are skipped instead
-of becoming positive candidate claims.
+exists. Async profile ingestion also re-runs the roleless bridge cleanup after
+background text/document processing, so any legacy application bridge minted by
+shared ingestion code is removed before recruiter/person reads can treat the
+Talent Pool member as a role-backed applicant. Parser-only resume nodes without
+exact source quotes are skipped instead of becoming positive candidate claims.
 If a PDF/DOCX upload is stored but no extractable source text is available yet,
 the design queue must stay in an explicit missing-evidence state: candidate
 summary says no extractable source text was available, suggested repo families

@@ -10,6 +10,7 @@ import { processResumeFromR2 } from '../lib/enrichment/resumeIngestion';
 import { loadMatchedOpenSourceChallengePacket } from '../lib/openSourceChallengeSessions';
 import {
   ensureRolelessTalentPoolIdentity,
+  removeRolelessTalentPoolApplicationBridge,
   type TalentPoolSourceArtifactInput,
   type TalentPoolOperationalContextInput,
 } from '../lib/talentPoolIdentity';
@@ -520,12 +521,18 @@ function queueProfileIngestion(input: {
     queueBackgroundTask(
       input.c,
       'text-ingestion',
-      () => ingestTextProfile({
-        env: input.c.env,
-        candidateId: input.candidateId,
-        resumeText: trimmedText,
-        mirrorLivingContext: false,
-      }),
+      async () => {
+        await ingestTextProfile({
+          env: input.c.env,
+          candidateId: input.candidateId,
+          resumeText: trimmedText,
+          mirrorLivingContext: false,
+        });
+        await removeRolelessTalentPoolApplicationBridge({
+          db: input.c.env.DB,
+          candidateId: input.candidateId,
+        });
+      },
     );
     return;
   }
@@ -540,13 +547,19 @@ function queueProfileIngestion(input: {
     queueBackgroundTask(
       input.c,
       'document-ingestion',
-      () => processResumeFromR2({
-        env: input.c.env,
-        db: input.c.env.DB,
-        candidateId: input.candidateId,
-        r2Key: input.profileKey,
-        livingContextIdentity: input.livingContextIdentity ?? null,
-      }),
+      async () => {
+        await processResumeFromR2({
+          env: input.c.env,
+          db: input.c.env.DB,
+          candidateId: input.candidateId,
+          r2Key: input.profileKey,
+          livingContextIdentity: input.livingContextIdentity ?? null,
+        });
+        await removeRolelessTalentPoolApplicationBridge({
+          db: input.c.env.DB,
+          candidateId: input.candidateId,
+        });
+      },
     );
   }
 }
