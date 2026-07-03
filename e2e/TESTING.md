@@ -201,6 +201,7 @@ Validated app-dev examples:
 
 ```bash
 npm run smoke:code-review-reliability-dev
+npm run smoke:assess-token-lifecycle-dev
 npm run smoke:code-review-assess-dev
 CODE_REVIEW_SMOKE_AUTO_MATCH=1 CODE_REVIEW_SMOKE_NO_CV_BOUNDARY=1 CODE_REVIEW_EXPECT_BLOCKED_MATCH=1 npm run smoke:code-review-assess-dev
 CODE_REVIEW_SMOKE_SUBMIT=1 npm run smoke:code-review-assess-dev
@@ -213,12 +214,14 @@ The manual ready-assignment commands should select `https://github.com/mui/base-
 
 Use `npm run smoke:code-review-reliability-dev` for the full app-dev reliability
 suite. It runs the manual source-backed ready assignment, including recruiter
-one-use-safe candidate-link resolution proof, fresh no-CV `PROFILE_RECEIVED` handoff,
-blocked `PROFILE_RECEIVED` handoff after submitted evidence, role-backed
-full-submit and scoring smoke, non-MUI Workers SDK matching matrix, and latest
-expert-labelled match-quality readiness gate. It writes lane stdout/stderr and
-summary artifacts under `tmp/code-review-reliability/`. Use
-`CODE_REVIEW_RELIABILITY_LANES=manual-ready,blocked-handoff,workers-sdk-matrix` for focused
+one-use-safe candidate-link resolution proof, same-browser `/assess` token A/B
+lifecycle isolation, fresh no-CV `PROFILE_RECEIVED` handoff, blocked
+`PROFILE_RECEIVED` handoff after submitted evidence, role-backed full-submit
+and scoring smoke, completed-person-boundary proof, non-MUI Workers SDK matching
+matrix, source-backed packet-catalog breadth, and latest expert-labelled
+match-quality readiness gate. It writes lane stdout/stderr and summary artifacts
+under `tmp/code-review-reliability/`. Use
+`CODE_REVIEW_RELIABILITY_LANES=manual-ready,token-lifecycle,blocked-handoff,workers-sdk-matrix` for focused
 diagnosis, or `CODE_REVIEW_RELIABILITY_D1_DATABASE_ID=<d1-id>` to point the
 match-quality lane at a different CODE_REVIEW evaluation database.
 The suite summary validator also fails candidate/recruiter-facing lanes when
@@ -233,6 +236,12 @@ the expected `recruiterReadoutContract`
 `scored-code-review-hiring-manager-readout`, or
 `blocked-code-review-action-readout`). Treat a missing contract as a failed
 browser proof even if the child Playwright process exited zero.
+Latest full app-dev reliability proof on 2026-07-03 passed 9/9 with artifact
+`tmp/code-review-reliability/2026-07-03T14-23-06-218Z-suite.summary.json`.
+The run covered manual-ready `mui/base-ui#973`, same-browser token lifecycle,
+no-CV and blocked `PROFILE_RECEIVED` handoffs, role-backed full-submit scoring,
+person-boundary recommendation isolation, non-MUI `cloudflare/workers-sdk#14118`
+matching, packet catalog breadth, and expert-labelled match-quality readiness.
 For the role-backed full-submit lane, the suite also requires completed
 recruiter and person-profile statuses, submitted profile state, a passed
 validator verdict, role-source proof, author pushback/thread evidence, remote D1
@@ -569,11 +578,13 @@ pairs with verdict accuracy `1`, false positives `0`, false negatives `0`,
 average score separation `0.6503333333333333`, usable challenge rate `1`, and
 no gate failures.
 
-Latest deployed `/assess` token lifecycle proof on 2026-07-03 passed via
-`npm run smoke:assess-token-lifecycle-dev`: two real app-dev CODE_REVIEW
-assessment links were created for interviews
-`367ae007-5b1c-4c77-a94c-26f3c6e17062` and
-`5ed1c573-8f61-4b93-bc11-6bab27d08dbd`; opening token A then token B in the
+Latest deployed `/assess` token lifecycle proof on 2026-07-03 passed via the
+default `npm run smoke:code-review-reliability-dev` suite: `token-lifecycle`
+created two real app-dev CODE_REVIEW assessment links for interviews
+`ba959665-8769-4c24-8e70-18253f490be6` and
+`0b56464c-4df9-4983-a6d4-177f713de22c`, candidates
+`254580b1-d121-4a6e-8a98-b01b7424e074` and
+`925d2e01-ec92-4704-9be2-cd2297dee982`; opening token A then token B in the
 same browser stored candidate B, did not leak the stale pre-start session, did
 not show a used-link state, and did not show the matching/waiting screen.
 

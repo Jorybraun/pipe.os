@@ -23,6 +23,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Added — CODE_REVIEW assessment runtime
 
+- The default CODE_REVIEW reliability suite now includes a same-browser `/assess` token lifecycle lane, proving two real app-dev assessment links resolve to separate candidates without stale session bleed, used-link copy, or candidate-visible matching progress.
 - Added `npm run smoke:code-review-packet-catalog-dev` and a default CODE_REVIEW reliability lane that fails if app-dev loses source-backed packet catalog breadth, requiring at least 3 production-ready PR packets across 3 repos and at least 2 persisted `reviewProfile`-ready packets.
 - The default CODE_REVIEW reliability suite now includes the full-submit person-boundary smoke, failing if a related same-person unsubmitted CODE_REVIEW can displace the completed scored review on the person profile.
 - CODE_REVIEW candidate browser smokes now emit explicit ready-review or profile-received surface contracts into reliability summaries, and the suite fails if a lane cannot prove the expected `/assess` surface.

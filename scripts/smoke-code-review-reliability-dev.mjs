@@ -9,6 +9,7 @@ const DEFAULT_OUT_DIR = 'tmp/code-review-reliability';
 const DEFAULT_DEV_D1_DATABASE_ID = '0abe92df-9296-46f5-9f9d-a1fb1bcd3be1';
 const DEFAULT_LANE_IDS = [
   'manual-ready',
+  'token-lifecycle',
   'no-cv-handoff',
   'blocked-handoff',
   'role-backed-full-submit',
@@ -141,6 +142,15 @@ export function buildReliabilityLanes({
           CODE_REVIEW_SMOKE_RECRUITER_CANDIDATE_LINK: '1',
         },
         parser: 'assess-smoke',
+      },
+    ],
+    [
+      'token-lifecycle',
+      {
+        id: 'token-lifecycle',
+        label: 'Same-browser /assess token lifecycle isolation',
+        command: ['npm', 'run', 'smoke:assess-token-lifecycle-dev'],
+        parser: 'token-lifecycle',
       },
     ],
     [
@@ -323,6 +333,23 @@ function summarizeMatrix(proof) {
   };
 }
 
+function summarizeTokenLifecycle(proof) {
+  return {
+    ok: proof?.ok === true,
+    repoUrl: proof?.repoUrl ?? null,
+    prNumber: proof?.prNumber ?? null,
+    tokenAInterviewId: proof?.tokenA?.interviewId ?? null,
+    tokenACandidateId: proof?.tokenA?.candidateId ?? null,
+    tokenACandidateName: proof?.tokenA?.candidateName ?? null,
+    tokenADeliveredUrl: proof?.tokenA?.deliveredUrl ?? null,
+    tokenBInterviewId: proof?.tokenB?.interviewId ?? null,
+    tokenBCandidateId: proof?.tokenB?.candidateId ?? null,
+    tokenBCandidateName: proof?.tokenB?.candidateName ?? null,
+    tokenBDeliveredUrl: proof?.tokenB?.deliveredUrl ?? null,
+    browserSmokeSkipped: proof?.browserSmoke?.skipped ?? null,
+  };
+}
+
 function summarizeMatchQuality(proof) {
   return {
     ok: proof?.passed === true,
@@ -356,6 +383,12 @@ function summarizePacketCatalog(proof) {
 export function summarizeLaneProof(parser, stdout) {
   const proof = parser === 'matrix'
     ? extractMatrixSummary(stdout)
+    : parser === 'token-lifecycle'
+      ? extractLastJsonObject(stdout, (candidate) =>
+          candidate.ok === true
+          && candidate.tokenA
+          && candidate.tokenB
+          && candidate.browserSmoke)
     : parser === 'match-quality'
       ? extractLastJsonObject(stdout, (candidate) =>
           typeof candidate.corpusId === 'string'
@@ -376,6 +409,7 @@ export function summarizeLaneProof(parser, stdout) {
   if (!proof) return { parsed: false, summary: null };
 
   if (parser === 'matrix') return { parsed: true, summary: summarizeMatrix(proof) };
+  if (parser === 'token-lifecycle') return { parsed: true, summary: summarizeTokenLifecycle(proof) };
   if (parser === 'match-quality') return { parsed: true, summary: summarizeMatchQuality(proof) };
   if (parser === 'packet-catalog') return { parsed: true, summary: summarizePacketCatalog(proof) };
   return { parsed: true, summary: summarizeAssessSmoke(proof) };
@@ -414,6 +448,22 @@ export function validateLaneSummary(laneId, summary) {
       require(summary?.recruiterAssessmentSetupStatus === 'reviewable_task_assigned', 'manual-ready recruiter setup must be reviewable_task_assigned');
       require(Boolean(summary?.repoUrl), 'manual-ready must include repoUrl');
       require(finiteNumberAtLeast(summary?.prNumber, 1), 'manual-ready must include a positive prNumber');
+      break;
+    case 'token-lifecycle':
+      require(Boolean(summary?.repoUrl), 'token-lifecycle must include repoUrl');
+      require(finiteNumberAtLeast(summary?.prNumber, 1), 'token-lifecycle must include a positive prNumber');
+      require(Boolean(summary?.tokenAInterviewId), 'token-lifecycle must include token A interview id');
+      require(Boolean(summary?.tokenBInterviewId), 'token-lifecycle must include token B interview id');
+      require(summary?.tokenAInterviewId !== summary?.tokenBInterviewId, 'token-lifecycle token A and token B interview ids must differ');
+      require(Boolean(summary?.tokenACandidateId), 'token-lifecycle must include token A candidate id');
+      require(Boolean(summary?.tokenBCandidateId), 'token-lifecycle must include token B candidate id');
+      require(summary?.tokenACandidateId !== summary?.tokenBCandidateId, 'token-lifecycle token A and token B candidate ids must differ');
+      require(Boolean(summary?.tokenACandidateName), 'token-lifecycle must include token A candidate name');
+      require(Boolean(summary?.tokenBCandidateName), 'token-lifecycle must include token B candidate name');
+      require(summary?.tokenACandidateName !== summary?.tokenBCandidateName, 'token-lifecycle token A and token B candidate names must differ');
+      require(String(summary?.tokenADeliveredUrl ?? '').includes('/assess/<token>'), 'token-lifecycle token A URL must be a redacted /assess link');
+      require(String(summary?.tokenBDeliveredUrl ?? '').includes('/assess/<token>'), 'token-lifecycle token B URL must be a redacted /assess link');
+      require(summary?.browserSmokeSkipped === false, 'token-lifecycle browser smoke must run');
       break;
     case 'no-cv-handoff':
       require(summary?.matchMode === 'auto_match', 'no-cv-handoff must use auto_match setup');

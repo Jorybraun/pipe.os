@@ -522,6 +522,12 @@ lane. This proves a completed scored CODE_REVIEW remains the selected
 person-profile recommendation even when a newer same-person CODE_REVIEW invite
 exists with a different repo/PR and no candidate submission.
 
+Status 2026-07-03 follow-up 2: the default app-dev reliability suite now also
+promotes `npm run smoke:assess-token-lifecycle-dev` into a required lane. The
+latest 9/9 run proved two real `/assess` links opened in the same browser
+resolve to separate candidates, keep token B active after token A, and avoid
+used-link or matching-progress fallback screens.
+
 ## Production Readiness Gate
 
 Do not mark CODE_REVIEW product-complete until all of this is true:

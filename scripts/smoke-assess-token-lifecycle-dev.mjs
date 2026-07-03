@@ -1,14 +1,22 @@
 import { spawnSync } from 'node:child_process';
 import dotenv from 'dotenv';
 
-dotenv.config({ path: '.env.local' });
-dotenv.config({ path: '.env' });
+dotenv.config({ path: '.env.local', quiet: true });
+dotenv.config({ path: '.env', quiet: true });
 
 const APP_BASE = (process.env.APP_BASE || 'https://app-dev.hire-pipe.com').replace(/\/$/, '');
 const API_BASE = (process.env.API_BASE || 'https://api-dev.hire-pipe.com').replace(/\/$/, '');
 const RECRUITER_API_BASE = (process.env.RECRUITER_API_BASE || APP_BASE).replace(/\/$/, '');
-const BASIC_USER = process.env.PIPE_DEV_BASIC_AUTH_USER || process.env.DEV_BASIC_AUTH_USER || '';
-const BASIC_PASSWORD = process.env.PIPE_DEV_BASIC_AUTH_PASSWORD || process.env.DEV_BASIC_AUTH_PASSWORD || '';
+const BASIC_USER = process.env.PIPE_APP_DEV_BASIC_AUTH_USER
+  || process.env.APP_DEV_BASIC_AUTH_USER
+  || process.env.PIPE_DEV_BASIC_AUTH_USER
+  || process.env.DEV_BASIC_AUTH_USER
+  || '';
+const BASIC_PASSWORD = process.env.PIPE_APP_DEV_BASIC_AUTH_PASSWORD
+  || process.env.APP_DEV_BASIC_AUTH_PASSWORD
+  || process.env.PIPE_DEV_BASIC_AUTH_PASSWORD
+  || process.env.DEV_BASIC_AUTH_PASSWORD
+  || '';
 const REPO_URL = (process.env.ASSESS_TOKEN_LIFECYCLE_REPO_URL || 'https://github.com/mui/base-ui').trim();
 const PR_NUMBER = Number((process.env.ASSESS_TOKEN_LIFECYCLE_PR_NUMBER || '973').trim());
 

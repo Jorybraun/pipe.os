@@ -18,6 +18,7 @@ describe('CODE_REVIEW reliability suite contract', () => {
 
     expect(lanes.map((lane) => lane.id)).toEqual([
       'manual-ready',
+      'token-lifecycle',
       'no-cv-handoff',
       'blocked-handoff',
       'role-backed-full-submit',
@@ -30,16 +31,17 @@ describe('CODE_REVIEW reliability suite contract', () => {
     expect(lanes[0].env).toEqual({
       CODE_REVIEW_SMOKE_RECRUITER_CANDIDATE_LINK: '1',
     });
-    expect(lanes[1].command.join(' ')).toBe('npm run smoke:code-review-assess-dev:no-cv-boundary');
-    expect(lanes[2].command.join(' ')).toBe('npm run smoke:code-review-assess-dev:blocked');
-    expect(lanes[3].command.join(' ')).toBe('npm run smoke:code-review-assess-dev:role-backed-full-submit');
-    expect(lanes[4].command.join(' ')).toBe('npm run smoke:code-review-assess-dev:person-boundary');
-    expect(lanes[5].command).toEqual([
+    expect(lanes[1].command.join(' ')).toBe('npm run smoke:assess-token-lifecycle-dev');
+    expect(lanes[2].command.join(' ')).toBe('npm run smoke:code-review-assess-dev:no-cv-boundary');
+    expect(lanes[3].command.join(' ')).toBe('npm run smoke:code-review-assess-dev:blocked');
+    expect(lanes[4].command.join(' ')).toBe('npm run smoke:code-review-assess-dev:role-backed-full-submit');
+    expect(lanes[5].command.join(' ')).toBe('npm run smoke:code-review-assess-dev:person-boundary');
+    expect(lanes[6].command).toEqual([
       'npm',
       'run',
       'smoke:code-review-assess-dev:workers-matrix',
     ]);
-    expect(lanes[6].command).toEqual([
+    expect(lanes[7].command).toEqual([
       'npm',
       'run',
       'smoke:code-review-packet-catalog-dev',
@@ -48,7 +50,7 @@ describe('CODE_REVIEW reliability suite contract', () => {
       'app-dev-d1',
       '--require-pass',
     ]);
-    expect(lanes[7].command).toEqual([
+    expect(lanes[8].command).toEqual([
       'npm',
       '--prefix',
       'workers/api',
@@ -301,7 +303,41 @@ describe('CODE_REVIEW reliability suite contract', () => {
     });
   });
 
-  it('extracts and summarizes matrix and match-quality proof', () => {
+  it('extracts and summarizes token lifecycle, matrix, and match-quality proof', () => {
+    expect(summarizeLaneProof('token-lifecycle', JSON.stringify({
+      ok: true,
+      repoUrl: 'https://github.com/mui/base-ui',
+      prNumber: 973,
+      tokenA: {
+        interviewId: 'token-a-interview',
+        candidateId: 'token-a-candidate',
+        candidateName: 'Token A Lifecycle Candidate',
+        deliveredUrl: 'https://app-dev.hire-pipe.com/assess/<token>',
+      },
+      tokenB: {
+        interviewId: 'token-b-interview',
+        candidateId: 'token-b-candidate',
+        candidateName: 'Token B Lifecycle Candidate',
+        deliveredUrl: 'https://app-dev.hire-pipe.com/assess/<token>',
+      },
+      browserSmoke: {
+        skipped: false,
+      },
+    }, null, 2)).summary).toMatchObject({
+      ok: true,
+      repoUrl: 'https://github.com/mui/base-ui',
+      prNumber: 973,
+      tokenAInterviewId: 'token-a-interview',
+      tokenACandidateId: 'token-a-candidate',
+      tokenACandidateName: 'Token A Lifecycle Candidate',
+      tokenADeliveredUrl: 'https://app-dev.hire-pipe.com/assess/<token>',
+      tokenBInterviewId: 'token-b-interview',
+      tokenBCandidateId: 'token-b-candidate',
+      tokenBCandidateName: 'Token B Lifecycle Candidate',
+      tokenBDeliveredUrl: 'https://app-dev.hire-pipe.com/assess/<token>',
+      browserSmokeSkipped: false,
+    });
+
     const matrixText = [
       'noise',
       '===== CODE_REVIEW app-dev profile matrix summary =====',
@@ -411,6 +447,21 @@ describe('CODE_REVIEW reliability suite contract', () => {
       recruiterReadoutContract: 'matched-code-review-hiring-manager-readout',
       recruiterReadinessReady: true,
       recruiterAssessmentSetupStatus: 'reviewable_task_assigned',
+    })).toEqual({ ok: true, failures: [] });
+
+    expect(validateLaneSummary('token-lifecycle', {
+      ok: true,
+      repoUrl: 'https://github.com/mui/base-ui',
+      prNumber: 973,
+      tokenAInterviewId: 'token-a-interview',
+      tokenACandidateId: 'token-a-candidate',
+      tokenACandidateName: 'Token A Lifecycle Candidate',
+      tokenADeliveredUrl: 'https://app-dev.hire-pipe.com/assess/<token>',
+      tokenBInterviewId: 'token-b-interview',
+      tokenBCandidateId: 'token-b-candidate',
+      tokenBCandidateName: 'Token B Lifecycle Candidate',
+      tokenBDeliveredUrl: 'https://app-dev.hire-pipe.com/assess/<token>',
+      browserSmokeSkipped: false,
     })).toEqual({ ok: true, failures: [] });
 
     expect(validateLaneSummary('no-cv-handoff', {
@@ -585,6 +636,30 @@ describe('CODE_REVIEW reliability suite contract', () => {
         'no-cv-handoff candidate browser smoke must run',
         'no-cv-handoff must not assign a repo',
         'no-cv-handoff must not assign a PR',
+      ]),
+    });
+
+    expect(validateLaneSummary('token-lifecycle', {
+      ok: true,
+      repoUrl: 'https://github.com/mui/base-ui',
+      prNumber: 973,
+      tokenAInterviewId: 'same-interview',
+      tokenACandidateId: 'same-candidate',
+      tokenACandidateName: 'Same Candidate',
+      tokenADeliveredUrl: 'https://app-dev.hire-pipe.com/assess/<token>',
+      tokenBInterviewId: 'same-interview',
+      tokenBCandidateId: 'same-candidate',
+      tokenBCandidateName: 'Same Candidate',
+      tokenBDeliveredUrl: 'https://app-dev.hire-pipe.com/not-assess/<token>',
+      browserSmokeSkipped: true,
+    })).toMatchObject({
+      ok: false,
+      failures: expect.arrayContaining([
+        'token-lifecycle token A and token B interview ids must differ',
+        'token-lifecycle token A and token B candidate ids must differ',
+        'token-lifecycle token A and token B candidate names must differ',
+        'token-lifecycle token B URL must be a redacted /assess link',
+        'token-lifecycle browser smoke must run',
       ]),
     });
 
