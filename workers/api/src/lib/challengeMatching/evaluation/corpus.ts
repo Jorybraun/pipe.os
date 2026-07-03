@@ -323,6 +323,22 @@ export function productionCorpusFailures(corpus: EvaluationCorpus): string[] {
   if (syntheticLabels.length > 0 || corpus.metadata.syntheticFixtureCount > 0) {
     failures.push('production corpus cannot contain synthetic fixture labels');
   }
+  const sourceBackedExpectedPacketCount = new Set(
+    (corpus.expectedPackets ?? [])
+      .filter((packet) =>
+        Number.isInteger(packet.prNumber)
+        && packet.prNumber > 0
+        && Array.isArray(packet.demands)
+        && packet.demands.some((demand) =>
+          Array.isArray(demand.sourceRefs)
+          && demand.sourceRefs.some(sourceRefComplete)
+        )
+      )
+      .map((packet) => packet.challengeId),
+  ).size;
+  if (sourceBackedExpectedPacketCount < 2) {
+    failures.push('production corpus requires at least two source-backed expected PR challenge packets');
+  }
 
   for (const label of corpus.expertLabels) {
     const provenance = label.labelProvenance;

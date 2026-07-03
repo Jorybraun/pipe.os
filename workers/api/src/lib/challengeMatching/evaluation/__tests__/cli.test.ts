@@ -64,6 +64,27 @@ function expertCorpusJson(): string {
     },
   }));
   const positiveLabel = corpus.expertLabels[0]!;
+  positiveLabel.eligibleChallengeIds = [
+    positiveLabel.challengeId,
+    'challenge-2',
+  ];
+  const secondPositiveLabel: ExpertLabel = {
+    ...positiveLabel,
+    labelId: 'expert-label-2',
+    challengeId: 'challenge-2',
+    explanation:
+      'Expert reviewer confirmed the candidate evidence also aligns with a second '
+      + 'source-backed PR packet, proving the corpus is not a one-challenge gate.',
+    labelProvenance: {
+      reviewerId: 'expert-reviewer-1',
+      reviewerRole: 'senior-engineering-reviewer',
+      reviewArtifactId: 'expert-review-artifact-2',
+      reviewArtifactVersion: 'expert-review-version-2',
+      contentHash: 'sha256:expert-review-2',
+      locator: 'expert-review:2',
+      rubricVersion: 'candidate-pr-match-rubric-v1',
+    },
+  };
   const negativeLabel: ExpertLabel = {
     labelId: 'expert-label-negative-1',
     candidateId: negativeCandidateId,
@@ -87,19 +108,44 @@ function expertCorpusJson(): string {
       rubricVersion: 'candidate-pr-match-rubric-v1',
     },
   };
-  corpus.expertLabels = [...corpus.expertLabels, negativeLabel];
+  corpus.expertLabels = [...corpus.expertLabels, secondPositiveLabel, negativeLabel];
   corpus.metadata.syntheticFixtureCount = 0;
   corpus.metadata.totalLabels = corpus.expertLabels.length;
   corpus.metadata.totalCandidates = corpus.candidateEvidence.length;
   // Declare expected packets matching the seeded match runs so the production
   // rollout gate's packet coverage requirement is satisfied.
-  corpus.expectedPackets = [{
-    challengeId: 'challenge-1',
-    repoId: 'repo-1',
-    prNumber: 42,
-    sourceVersion: 'commit-abc',
-  }];
-  corpus.metadata.totalExpectedPackets = 1;
+  corpus.expectedPackets = [
+    {
+      challengeId: 'challenge-1',
+      repoId: 'repo-1',
+      prNumber: 42,
+      sourceVersion: 'commit-abc',
+      demands: [{
+        demandId: 'demand-1',
+        concepts: ['term:quantum-cryptography'],
+        sourceRefs: [sourceRef({
+          artifactId: 'repo-artifact-1',
+          artifactVersion: 'commit-abc',
+        })],
+      }],
+    },
+    {
+      challengeId: 'challenge-2',
+      repoId: 'repo-2',
+      prNumber: 84,
+      sourceVersion: 'commit-def',
+      demands: [{
+        demandId: 'demand-2',
+        concepts: ['term:quantum-cryptography'],
+        sourceRefs: [sourceRef({
+          artifactId: 'repo-artifact-2',
+          artifactVersion: 'commit-def',
+        })],
+      }],
+    },
+  ];
+  corpus.metadata.totalChallenges = 2;
+  corpus.metadata.totalExpectedPackets = 2;
   return JSON.stringify(corpus);
 }
 
@@ -126,7 +172,7 @@ function sourceRef(overrides?: Partial<Record<string, unknown>>) {
 }
 
 function rankedResults(overrides?: Partial<Record<string, unknown>>): string {
-  return JSON.stringify([{
+  const first = {
     rank: 1,
     recallRank: 1,
     challengeId: 'challenge-1',
@@ -159,7 +205,41 @@ function rankedResults(overrides?: Partial<Record<string, unknown>>): string {
     }],
     rejectionReasons: [],
     ...overrides,
-  }]);
+  };
+  const second = {
+    rank: 2,
+    recallRank: 2,
+    challengeId: 'challenge-2',
+    repoId: 'repo-2',
+    prNumber: 84,
+    sourceVersion: 'commit-def',
+    score: 0.8,
+    candidateEvidenceAlignment: 0.8,
+    roleRelevance: 0.8,
+    contextualSpecificity: 0.8,
+    challengeQuality: 0.8,
+    validationDeepeningValue: 0.8,
+    alignedDemandCount: 1,
+    stretchCount: 0,
+    stretchDemandWeightRatio: 0,
+    provenanceComplete: true,
+    eligible: true,
+    alignments: [{
+      atomId: 'atom-2',
+      demandId: 'demand-2',
+      pairScore: 0.8,
+      stretch: null,
+      sharedConcepts: ['term:quantum-cryptography'],
+      roleSourceRefs: [],
+      candidateSourceRefs: [sourceRef()],
+      challengeSourceRefs: [sourceRef({
+        artifactId: 'repo-artifact-2',
+        artifactVersion: 'commit-def',
+      })],
+    }],
+    rejectionReasons: [],
+  };
+  return JSON.stringify([first, second]);
 }
 
 function seedMatchRuns(db: InstanceType<typeof Database>): void {
@@ -271,9 +351,9 @@ function persistedResultFixture(overrides?: {
     irrelevantInTop3: 0,
     forbiddenInResults: 0,
     syntheticFixtureCount: overrides?.syntheticFixtureCount ?? 0,
-    expertLabelCount: overrides?.expertLabelCount ?? 2,
+    expertLabelCount: overrides?.expertLabelCount ?? 3,
     labelResults: [],
-    expectedPacketCount: overrides?.expectedPacketCount ?? 1,
+    expectedPacketCount: overrides?.expectedPacketCount ?? 2,
     packetCoverage: overrides?.packetCoverage ?? 1,
     pairCoverage: overrides?.pairCoverage ?? 1,
     comparisonCoverage: overrides?.comparisonCoverage ?? 1,
@@ -498,7 +578,7 @@ describe('matching evaluation CLI', () => {
       ready: true,
       corpusId: 'expert-corpus-v1',
       metrics: {
-        expertLabelCount: 2,
+        expertLabelCount: 3,
         syntheticFixtureCount: 0,
         byteIdenticalRerun: true,
       },

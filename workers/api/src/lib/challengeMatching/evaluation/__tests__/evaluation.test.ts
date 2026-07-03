@@ -258,6 +258,117 @@ describe('Corpus Validation', () => {
     );
   });
 
+  it('requires production corpora to cover at least two source-backed challenge packets', () => {
+    const expertProvenance = {
+      reviewerId: 'expert-reviewer-1',
+      reviewerRole: 'senior-engineering-reviewer',
+      reviewArtifactId: 'expert-review-artifact-1',
+      reviewArtifactVersion: 'v1',
+      contentHash: 'sha256:expert-review-artifact-1',
+      locator: 'expert-review:artifact-1',
+      rubricVersion: 'candidate-pr-match-rubric-v1',
+    };
+    const corpus: EvaluationCorpus = {
+      version: EVALUATION_CORPUS_VERSION,
+      corpusId: 'production-corpus-one-packet',
+      createdAt: '2026-06-13T00:00:00Z',
+      description: 'Production corpus that proves only one PR packet',
+      candidateEvidence: [
+        {
+          candidateId: 'candidate-positive',
+          evidenceId: 'evidence-positive',
+          episodeId: 'episode-positive',
+          narrative: 'Reviewed React popover timing and regression coverage.',
+          concepts: ['term:react-popover', 'term:interaction-timing'],
+          evidenceReferences: [sourceRef('candidate-positive-packet-breadth')],
+        },
+        {
+          candidateId: 'candidate-negative',
+          evidenceId: 'evidence-negative',
+          episodeId: 'episode-negative',
+          narrative: 'Owned unrelated analytics notebooks.',
+          concepts: ['term:analytics-notebooks'],
+          evidenceReferences: [sourceRef('candidate-negative-packet-breadth')],
+        },
+      ],
+      roleRequirements: [
+        {
+          roleId: 'role-frontend-review',
+          requiredLanguages: ['typescript'],
+          relevantConcepts: ['term:react-popover'],
+          sourceReferences: [roleSource('role-popover-breadth', ['term:react-popover'])],
+        },
+      ],
+      expertLabels: [
+        {
+          labelId: 'expert-label-positive-one-packet',
+          candidateId: 'candidate-positive',
+          roleId: 'role-frontend-review',
+          challengeId: 'challenge-popover-pr',
+          relevanceGrade: 'highly_relevant',
+          eligibleChallengeIds: ['challenge-popover-pr'],
+          negativeCandidateId: 'candidate-negative',
+          minimumScoreSeparation: 0.2,
+          explanation:
+            'Expert reviewer confirmed the candidate evidence maps directly to the popover timing PR.',
+          labelVersion: 'candidate-pr-match-rubric-v1',
+          labeledAt: '2026-06-13T00:00:00Z',
+          labeledBy: 'expert-reviewer-1',
+          labelProvenance: expertProvenance,
+        },
+        {
+          labelId: 'expert-label-negative-one-packet',
+          candidateId: 'candidate-negative',
+          roleId: 'role-frontend-review',
+          challengeId: 'challenge-popover-pr',
+          relevanceGrade: 'irrelevant',
+          eligibleChallengeIds: [],
+          explanation:
+            'Expert reviewer confirmed the contrast candidate lacks source-backed popover review evidence.',
+          labelVersion: 'candidate-pr-match-rubric-v1',
+          labeledAt: '2026-06-13T00:00:00Z',
+          labeledBy: 'expert-reviewer-1',
+          labelProvenance: {
+            ...expertProvenance,
+            reviewArtifactId: 'expert-review-artifact-2',
+            contentHash: 'sha256:expert-review-artifact-2',
+            locator: 'expert-review:artifact-2',
+          },
+        },
+      ],
+      expectedPackets: [
+        {
+          challengeId: 'challenge-popover-pr',
+          repoId: 'github.com/mui/base-ui',
+          repoFullName: 'mui/base-ui',
+          repoUrl: 'https://github.com/mui/base-ui',
+          prNumber: 973,
+          prUrl: 'https://github.com/mui/base-ui/pull/973',
+          sourceVersion: 'sha-popover',
+          demands: [
+            {
+              demandId: 'demand-popover-timing',
+              concepts: ['term:react-popover', 'term:interaction-timing'],
+              sourceRefs: [sourceRef('challenge-popover-breadth')],
+            },
+          ],
+        },
+      ],
+      metadata: {
+        totalLabels: 2,
+        totalCandidates: 2,
+        totalRoles: 1,
+        totalChallenges: 1,
+        syntheticFixtureCount: 0,
+        totalExpectedPackets: 1,
+      },
+    };
+
+    expect(productionCorpusFailures(corpus)).toContain(
+      'production corpus requires at least two source-backed expected PR challenge packets',
+    );
+  });
+
   it('should reject corpus with version mismatch', () => {
     const corpus: EvaluationCorpus = {
       version: '0.0.0' as const,
