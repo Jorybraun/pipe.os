@@ -429,6 +429,8 @@ function assessmentSourceRefTypeLabel(sourceRefType: string): string {
     case 'ai_agent_diagnostic':
     case 'agent_diagnostic':
       return 'Agent diagnostic';
+    case 'agent_status':
+      return 'Agent status';
     case 'ai_usage_event':
       return 'AI evaluator trace';
     default:
@@ -747,6 +749,8 @@ function assessmentEvidenceSnippetLabel(sourceRefType: string): string {
     case 'ai_agent_diagnostic':
     case 'agent_diagnostic':
       return 'Agent diagnostic evidence';
+    case 'agent_status':
+      return 'Agent status evidence';
     case 'ai_usage_event':
       return 'AI evaluator trace';
     case 'room_chat_message':
@@ -1180,14 +1184,17 @@ function workspaceAssessmentWorkPacket(progress: AssessmentProgressSnapshot | nu
     + assessmentSourceRefCount(progress, 'agent_response');
   const aiDiagnosticCount = assessmentSourceRefCount(progress, 'ai_agent_diagnostic')
     + assessmentSourceRefCount(progress, 'agent_diagnostic');
+  const aiStatusCount = assessmentSourceRefCount(progress, 'agent_status');
   const aiEvidenceParts = [
     sourceRefCountLabel(aiPromptCount, 'prompt'),
     sourceRefCountLabel(aiBlockedPromptCount, 'blocked prompt'),
     sourceRefCountLabel(aiResponseCount, 'agent response'),
     sourceRefCountLabel(aiDiagnosticCount, 'bridge diagnostic'),
+    sourceRefCountLabel(aiStatusCount, 'bridge status', 'bridge statuses'),
   ].filter((item): item is string => Boolean(item));
-  const hasAiEvidence = progress.hasAiInteraction || aiEvidenceParts.length > 0;
-  const aiTransparencyDetail = hasAiEvidence
+  const hasAiAssistanceEvidence = aiPromptCount + aiBlockedPromptCount + aiResponseCount > 0;
+  const hasAiBridgeEvidence = progress.hasAiInteraction || aiEvidenceParts.length > 0;
+  const aiTransparencyDetail = hasAiBridgeEvidence
     ? aiEvidenceParts.length > 0
       ? `${readableList(aiEvidenceParts)} captured from the real agent bridge.`
       : 'AI prompts, responses, or bridge traces are part of the source-backed evidence trail.'
@@ -1286,9 +1293,13 @@ function workspaceAssessmentWorkPacket(progress: AssessmentProgressSnapshot | nu
     workspaceAssessmentCollaborationItem(progress),
     {
       label: 'AI transparency',
-      value: hasAiEvidence ? 'AI use observed' : 'No AI evidence captured',
+      value: hasAiAssistanceEvidence
+        ? 'AI use observed'
+        : hasAiBridgeEvidence
+          ? 'AI bridge observed'
+          : 'No AI evidence captured',
       detail: aiTransparencyDetail,
-      tone: hasAiEvidence ? 'neutral' : 'watch',
+      tone: hasAiBridgeEvidence ? 'neutral' : 'watch',
     },
     reviewItem,
   ];

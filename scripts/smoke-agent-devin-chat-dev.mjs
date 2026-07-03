@@ -150,6 +150,18 @@ function sourceRefCount(rows, kind) {
     : 0;
 }
 
+async function pollAssessmentProgress(interviewId, predicate, label) {
+  const deadline = Date.now() + 30_000;
+  let lastProgress = null;
+  while (Date.now() < deadline) {
+    const detail = await requestJson(APP_BASE, `/api/v1/scheduling/interviews/${interviewId}`);
+    lastProgress = detail?.interview?.assessmentProgress ?? null;
+    if (predicate(lastProgress)) return lastProgress;
+    await sleep(1_000);
+  }
+  throw new Error(`${label} did not appear in recruiter assessment progress: ${JSON.stringify(lastProgress)}`);
+}
+
 function connectAgent(wsUrl, headers) {
   return new Promise((resolve, reject) => {
     const messages = [];
@@ -259,6 +271,16 @@ async function main() {
     if (!statusMessages.some((message) => message.status === 'auth_needed')) {
       throw new Error(`Expected auth_needed status, got: ${JSON.stringify(messages.map(boundedMessage))}`);
     }
+    const progress = await pollAssessmentProgress(
+      interviewId,
+      (candidate) => candidate?.hasAiInteraction === true
+        && sourceRefCount(candidate?.sourceRefCounts, 'agent_status') >= 1,
+      'Devin auth-needed agent_status evidence',
+    );
+    const sourceRefCounts = progress?.sourceRefCounts ?? [];
+    if (sourceRefCount(sourceRefCounts, 'ai_agent_response') > 0) {
+      throw new Error(`Auth-needed bridge state should not count as an agent response: ${JSON.stringify(sourceRefCounts)}`);
+    }
     console.log(JSON.stringify({
       ok: true,
       expectedAuthNeeded: true,
@@ -270,6 +292,8 @@ async function main() {
       workspaceStatus: readySession.status,
       agentReady: false,
       authNeeded: true,
+      assessmentAiInteraction: progress.hasAiInteraction,
+      assessmentAgentStatusCount: sourceRefCount(sourceRefCounts, 'agent_status'),
       statuses: statusMessages.map((message) => message.status),
       authMessage: authNeeded.message,
     }, null, 2));
@@ -294,15 +318,13 @@ async function main() {
   if (persistedDiagnostics.length === 0) {
     throw new Error('No persisted Devin agent bridge diagnostics were observed.');
   }
-  const detail = await requestJson(APP_BASE, `/api/v1/scheduling/interviews/${interviewId}`);
-  const progress = detail?.interview?.assessmentProgress ?? null;
+  const progress = await pollAssessmentProgress(
+    interviewId,
+    (candidate) => candidate?.hasAiInteraction === true
+      && sourceRefCount(candidate?.sourceRefCounts, 'ai_agent_response') >= 1,
+    'Devin agent response evidence',
+  );
   const sourceRefCounts = progress?.sourceRefCounts ?? [];
-  if (progress?.hasAiInteraction !== true) {
-    throw new Error(`Devin agent response did not mark assessment AI interaction: ${JSON.stringify(progress)}`);
-  }
-  if (sourceRefCount(sourceRefCounts, 'ai_agent_response') < 1) {
-    throw new Error(`Devin agent response was not counted as ai_agent_response assessment evidence: ${JSON.stringify(sourceRefCounts)}`);
-  }
 
   console.log(JSON.stringify({
     ok: true,

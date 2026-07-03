@@ -15,6 +15,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Fixed — Interview scheduling
 
+- Agent bridge status evidence such as Devin `auth_needed` now counts as AI transparency without being mislabeled as AI assistance, and the Devin smoke verifies recruiter progress captures the real blocked bridge state.
 - Real agent bridge replies now persist as `ai_agent_response` assessment evidence, and recruiter/candidate AI summaries count both current and legacy agent bridge refs so Devin usage remains observable without fake replies.
 - Recruiter assessment cards and detail work packets now surface terminal, workspace-launch, and code-server file-observation source refs as process telemetry, making how the candidate worked visible alongside the final commit.
 - Recruiter assessment cards and detail dossiers now surface source-backed room chat/session evidence as candidate collaboration proof instead of hiding it inside generic evidence counts.

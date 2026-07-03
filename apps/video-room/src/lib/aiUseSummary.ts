@@ -22,6 +22,7 @@ export function summarizeAssessmentAiUse(progress: RoomAssessmentProgressSnapsho
   const blockedPrompts = sourceRefCount(progress, 'ai_user_prompt_blocked');
   const bridgeDiagnostics = sourceRefCount(progress, 'ai_agent_diagnostic')
     + sourceRefCount(progress, 'agent_diagnostic');
+  const bridgeStatuses = sourceRefCount(progress, 'agent_status');
   const usageEvents = sourceRefCount(progress, 'ai_usage_event');
 
   if (agentResponses > 0) {
@@ -58,6 +59,15 @@ export function summarizeAssessmentAiUse(progress: RoomAssessmentProgressSnapsho
       coverageLabel: 'AI bridge diagnostic',
       detail: `${unitLabel(bridgeDiagnostics, 'bridge diagnostic')} captured; no agent response is counted as assistance.`,
       tone: 'blocked',
+    };
+  }
+
+  if (bridgeStatuses > 0) {
+    return {
+      label: 'AI bridge status',
+      coverageLabel: 'AI bridge status',
+      detail: `${unitLabel(bridgeStatuses, 'bridge status', 'bridge statuses')} captured; no agent response is counted as assistance.`,
+      tone: 'waiting',
     };
   }
 

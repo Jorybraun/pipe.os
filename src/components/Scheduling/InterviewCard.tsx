@@ -269,6 +269,8 @@ function assessmentSourceRefTypeLabel(sourceRefType: string): string {
     case 'ai_agent_diagnostic':
     case 'agent_diagnostic':
       return 'Agent diagnostic';
+    case 'agent_status':
+      return 'Agent status';
     case 'ai_usage_event':
       return 'AI evaluator trace';
     default:

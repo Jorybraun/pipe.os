@@ -221,6 +221,32 @@ describe('AssessmentStatusStrip', () => {
     );
   });
 
+  it('surfaces agent bridge status without counting it as completed AI help', () => {
+    render(
+      <AssessmentStatusStrip
+        meetingType="DEV_CONTAINER_CHALLENGE"
+        workspace={workspace()}
+        assessmentProgress={{
+          ...progress,
+          hasAiInteraction: true,
+          sourceRefCounts: [
+            { kind: 'agent_status', count: 1 },
+            { kind: 'test_run', count: 1 },
+          ],
+        }}
+      />,
+    );
+
+    expect(screen.getByTestId('assessment-ai-usage-state').textContent).toContain('AI bridge status');
+    expect(screen.getByTestId('assessment-ai-usage-state').getAttribute('title')).toBe(
+      '1 bridge status captured; no agent response is counted as assistance.',
+    );
+    expect(screen.getByTestId('assessment-ai-usage-state').textContent).not.toContain('AI response captured');
+    expect(screen.getByTestId('assessment-progress-coverage').textContent).toContain(
+      'challenge, chat, workspace, tool activity, commit, AI bridge status, tests',
+    );
+  });
+
   it('surfaces verification gaps in live room progress coverage', () => {
     render(
       <AssessmentStatusStrip

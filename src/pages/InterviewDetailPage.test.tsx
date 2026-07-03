@@ -617,6 +617,89 @@ describe('InterviewDetailPage', () => {
     expect(workPacket).not.toHaveTextContent('agent response captured');
   });
 
+  it('distinguishes agent bridge status from candidate AI assistance in the work packet', async () => {
+    mocks.api.get.mockResolvedValueOnce({
+      interview: makeInterview({
+        interviewType: 'OPEN_SOURCE_BUG_FIX',
+        status: 'COMPLETED',
+        assessmentProgress: {
+          session: {
+            id: 'assessment-session-agent-status',
+            ingestionKey: 'assessment-session:agent-status',
+            interviewId: 'interview-1',
+            candidateId: 'candidate-1',
+            workspaceId: 'workspace-1',
+            workspacePersonId: null,
+            applicationId: null,
+            mode: 'OPEN_SOURCE_BUG_FIX',
+            state: 'FINAL_SUBMITTED',
+            createdAt: '2026-06-23T00:00:00.000Z',
+            updatedAt: '2026-06-23T00:20:00.000Z',
+          },
+          stage: 'READY_FOR_EVALUATION',
+          nextAction: 'START_EVALUATION',
+          nextActionLabel: 'Start source-backed AI or human evaluation.',
+          hasChallengePacket: true,
+          hasWorkEvidence: true,
+          hasMessageEvidence: false,
+          hasDevContainerEvidence: true,
+          hasToolUsageEvidence: true,
+          hasCommitSubmission: true,
+          hasFinalSubmission: true,
+          hasAiInteraction: true,
+          hasTranscriptEvidence: false,
+          hasTestEvidence: true,
+          evidenceCounts: [
+            { kind: 'ai_interaction', count: 1 },
+            { kind: 'commit_submission', count: 1 },
+          ],
+          sourceRefCounts: [
+            { kind: 'review_challenge_packet', count: 1 },
+            { kind: 'git_commit', count: 1 },
+            { kind: 'code_diff', count: 1 },
+            { kind: 'test_run', count: 1 },
+            { kind: 'agent_status', count: 1 },
+          ],
+          challenge: {
+            sourceRefType: 'review_challenge_packet',
+            sourceRefId: 'challenge-packet-agent-status',
+            evidenceRole: 'assigned_challenge',
+            exactText: 'Task: fix the agent bridge transparency copy.',
+            locator: { repositoryUrl: 'https://github.com/open-source/widgets' },
+          },
+          latestEvent: {
+            id: 'assessment-event-agent-status',
+            kind: 'commit_submission',
+            sequence: 2,
+            occurredAt: '2026-06-23T00:18:00.000Z',
+          },
+          commit: {
+            eventId: 'assessment-event-agent-status',
+            repositoryUrl: 'https://github.com/open-source/widgets',
+            forkRepositoryUrl: 'https://github.com/candidate/widgets',
+            branchName: 'pipe-assessment/agent-status-copy',
+            baseCommitSha: '3333333333333333333333333333333333333333',
+            commitSha: 'cccccccccccccccccccccccccccccccccccccccc',
+            commitUrl: 'https://github.com/candidate/widgets/commit/cccccccccccccccccccccccccccccccccccccccc',
+            changedFiles: [{ path: 'src/transparency.ts', status: 'modified' }],
+            occurredAt: '2026-06-23T00:18:00.000Z',
+          },
+          evaluation: null,
+        },
+      }),
+    });
+
+    renderDetail();
+    await flushAsyncUpdates();
+
+    const workPacket = screen.getByTestId('interview-assessment-work-packet');
+    expect(workPacket).toHaveTextContent('AI transparency');
+    expect(workPacket).toHaveTextContent('AI bridge observed');
+    expect(workPacket).toHaveTextContent('1 bridge status captured from the real agent bridge.');
+    expect(workPacket).not.toHaveTextContent('AI use observed');
+    expect(workPacket).not.toHaveTextContent('agent response captured');
+  });
+
   it('shows the exact missing proof checklist before an open-source workspace can be evaluated', async () => {
     mocks.api.get.mockResolvedValueOnce({
       interview: makeInterview({

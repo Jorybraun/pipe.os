@@ -569,6 +569,10 @@ const ASSESSMENT_PROGRESS_SNIPPET_TYPES = [
   'ai_user_prompt',
   'ai_user_prompt_blocked',
   'ai_agent_response',
+  'ai_agent_diagnostic',
+  'agent_status',
+  'agent_response',
+  'agent_diagnostic',
   'ai_usage_event',
   'room_chat_message',
   'meeting_transcript_segment',
@@ -577,6 +581,10 @@ const AI_INTERACTION_SOURCE_REF_TYPES = [
   'ai_user_prompt',
   'ai_user_prompt_blocked',
   'ai_agent_response',
+  'ai_agent_diagnostic',
+  'agent_status',
+  'agent_response',
+  'agent_diagnostic',
 ] as const;
 const MAX_ASSESSMENT_PROGRESS_SNIPPETS = 6;
 const MAX_ASSESSMENT_PROGRESS_SNIPPET_CHARS = 1_200;
@@ -2225,6 +2233,10 @@ export class RepoTaskInterviewSessionStore {
             'ai_user_prompt',
             'ai_user_prompt_blocked',
             'ai_agent_response',
+            'ai_agent_diagnostic',
+            'agent_status',
+            'agent_response',
+            'agent_diagnostic',
             'ai_usage_event',
             'room_chat_message',
             'meeting_transcript_segment'
@@ -2245,6 +2257,10 @@ export class RepoTaskInterviewSessionStore {
             WHEN 'ai_user_prompt' THEN 5
             WHEN 'ai_user_prompt_blocked' THEN 5
             WHEN 'ai_agent_response' THEN 5
+            WHEN 'ai_agent_diagnostic' THEN 5
+            WHEN 'agent_status' THEN 5
+            WHEN 'agent_response' THEN 5
+            WHEN 'agent_diagnostic' THEN 5
             WHEN 'ai_usage_event' THEN 5
             WHEN 'room_chat_message' THEN 6
             WHEN 'meeting_transcript_segment' THEN 7

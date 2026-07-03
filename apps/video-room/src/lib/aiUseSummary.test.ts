@@ -67,4 +67,17 @@ describe('summarizeAssessmentAiUse', () => {
       tone: 'blocked',
     });
   });
+
+  it('surfaces bridge statuses without counting them as agent help', () => {
+    const summary = summarizeAssessmentAiUse(progressWithSourceRefs([
+      { kind: 'agent_status', count: 2 },
+    ]));
+
+    expect(summary).toMatchObject({
+      label: 'AI bridge status',
+      coverageLabel: 'AI bridge status',
+      detail: '2 bridge statuses captured; no agent response is counted as assistance.',
+      tone: 'waiting',
+    });
+  });
 });
