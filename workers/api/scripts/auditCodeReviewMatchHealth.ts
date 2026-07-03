@@ -63,6 +63,7 @@ function parseOptions(args: string[]): CliOptions {
     thresholds: {
       minProductionReadyPackets: numberFor(args, '--min-production-ready-packets'),
       minProductionReadyRepos: numberFor(args, '--min-production-ready-repos'),
+      minSelectedProductionReadyPackets: numberFor(args, '--min-selected-production-ready-packets'),
       maxSelectedPacketShare: numberFor(args, '--max-selected-packet-share'),
       minCurrentBreadthMatchesForSkew: numberFor(args, '--min-current-breadth-matches-for-skew'),
     },
@@ -171,6 +172,7 @@ function printHumanSummary(audit: CodeReviewMatchHealthAudit): void {
   console.log(`currentBreadthSelectedMatches: ${audit.currentBreadthSelectedMatchCount}`);
   console.log(`staleOrNarrowSelectedMatches: ${audit.staleOrNarrowSelectedMatchCount}`);
   console.log(`roleBackedUnsafeMatches: ${audit.roleBackedUnsafeMatchCount}`);
+  console.log(`selectedProductionReadyPackets: ${audit.selectedProductionReadyPacketCount}`);
   console.log(`topSelectedPacket: ${skew ? `${skew.packetId} (${skew.count}, ${Math.round(skew.share * 100)}%)` : 'none'}`);
   if (audit.selectedPacketDistribution.length > 0) {
     console.log('selectedPacketDistribution:');
@@ -180,6 +182,13 @@ function printHumanSummary(audit: CodeReviewMatchHealthAudit): void {
       console.log(
         `- ${entry.packetId}: ${entry.count} (${Math.round(entry.share * 100)}%) ${repo} ${pr}`,
       );
+    }
+  }
+  if (audit.unselectedProductionReadyPackets.length > 0) {
+    console.log('unselectedProductionReadyPackets:');
+    for (const packet of audit.unselectedProductionReadyPackets.slice(0, 5)) {
+      const repo = packet.repoUrl ?? packet.repoId;
+      console.log(`- ${packet.packetId}: ${repo} PR ${packet.prNumber}`);
     }
   }
   console.log(`nextAction: ${audit.nextAction}`);
