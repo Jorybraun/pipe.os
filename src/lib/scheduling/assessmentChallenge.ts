@@ -134,7 +134,7 @@ export function summarizeAssessmentAssignment(
     if (setup.status === 'reviewable_task_assigned') {
       return {
         label: 'PIPE-matched challenge',
-        detail: 'Repo task was selected from source-backed candidate evidence and an approved challenge packet.',
+        detail: setup.message ?? 'Repo task was selected from source-backed candidate evidence and an approved challenge packet.',
         tone: 'matched',
       };
     }
@@ -209,8 +209,19 @@ export function summarizeResolvedAssessmentAssignment(input: {
   assignmentTrust: AssessmentAssignmentTrust | null | undefined;
 }): AssessmentAssignmentSummary | null {
   const progressAssignment = summarizeAssessmentAssignmentTrust(input.assignmentTrust);
+  const setupAssignment = summarizeAssessmentAssignment(input.setup);
   if (input.assignmentTrust?.state === 'matched_challenge') {
+    if (
+      progressAssignment
+      && setupAssignment?.tone === 'matched'
+      && setupAssignment.detail !== progressAssignment.detail
+    ) {
+      return {
+        ...progressAssignment,
+        detail: `${progressAssignment.detail} ${setupAssignment.detail}`,
+      };
+    }
     return progressAssignment;
   }
-  return summarizeAssessmentAssignment(input.setup) ?? progressAssignment;
+  return setupAssignment ?? progressAssignment;
 }

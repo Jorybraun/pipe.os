@@ -266,9 +266,7 @@ describe('InterviewCard assessment progress', () => {
     expect(progress).toHaveTextContent('Ready for evaluation');
     expect(progress).toHaveTextContent('ASSIGNMENT');
     expect(progress).toHaveTextContent('PIPE-matched challenge');
-    expect(progress).toHaveTextContent(
-      'Repo task was selected from source-backed candidate evidence and an approved challenge packet.',
-    );
+    expect(progress).toHaveTextContent('PIPE matched a reviewable open-source task.');
     expect(progress).toHaveTextContent('DECISION');
     expect(progress).toHaveTextContent('Challenge, work evidence, and required source refs are captured; start source-backed AI or human evaluation.');
     expect(progress).toHaveTextContent('challenge, chat, workspace telemetry, tool activity, commit, AI use, transcript, tests');
@@ -303,6 +301,40 @@ describe('InterviewCard assessment progress', () => {
     expect(progress).not.toHaveTextContent('assessment-session-card');
     expect(progress).not.toHaveTextContent('challenge-packet-card');
     expect(progress).not.toHaveTextContent('abcdef1234567890abcdef1234567890abcdef12');
+  });
+
+  it('keeps auto-match quality gate proof visible on recruiter list cards', () => {
+    renderCard({
+      id: 'interview-auto-match-proof',
+      createdAt: '2026-06-23T00:00:00.000Z',
+      updatedAt: '2026-06-23T00:20:00.000Z',
+      status: 'INVITED',
+      interviewType: 'OPEN_SOURCE_BUG_FIX',
+      meetingType: 'DIRECT_VIDEO_CALL',
+      scheduledAt: null,
+      githubRepoUrl: 'https://github.com/mui/base-ui',
+      githubPrNumber: 973,
+      assessmentSetup: {
+        status: 'reviewable_task_assigned',
+        kind: 'github_pr',
+        source: 'matched_repo_id',
+        blocksPositiveAssessment: false,
+        message: 'PIPE found a source-backed candidate challenge at https://github.com/mui/base-ui #973. It passed the auto-assignment quality gate. Assessment quality: USABLE 9/12. It leads the next comparable challenge by 2%.',
+        nextAction: 'OPEN_ROOM_OR_WORKSPACE',
+        nextActionLabel: 'Review the latest match run and open the assessment room.',
+      },
+      assessmentProgress: null,
+    });
+
+    const progress = screen.getByTestId('interview-card-assessment-progress');
+    expect(progress).toHaveTextContent('PIPE-matched challenge');
+    expect(progress).toHaveTextContent('https://github.com/mui/base-ui #973');
+    expect(progress).toHaveTextContent('auto-assignment quality gate');
+    expect(progress).toHaveTextContent('Assessment quality: USABLE 9/12');
+    expect(progress).toHaveTextContent('leads the next comparable challenge by 2%');
+    expect(progress).toHaveTextContent('Review the latest match run and open the assessment room.');
+    expect(progress).not.toHaveTextContent('assessment-session');
+    expect(progress).not.toHaveTextContent('match_run_');
   });
 
   it('shows workspace-only captured diffs as recruiter-reviewable artifacts', () => {

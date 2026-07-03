@@ -15,6 +15,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Fixed — Interview scheduling
 
+- Recruiter assessment assignment summaries now preserve source-backed auto-match quality-gate proof instead of replacing matched repo challenges with generic copy.
 - Candidate assessment rooms now surface source-backed evaluator diagnostics, including unavailable AI evaluators, instead of hiding blocked evaluation states behind generic progress copy.
 - Candidate assessment rooms now distinguish real agent responses, blocked AI prompts, bridge traces, and no AI evidence in the cockpit instead of flattening every case into generic AI-use captured copy.
 - Recruiter interview cards now flag whether submitted assessment work has a review artifact, distinguishing external GitHub commits from source-backed captured workspace diffs and missing diff proof.

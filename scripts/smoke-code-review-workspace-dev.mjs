@@ -580,6 +580,7 @@ async function assertRecruiterReviewerReceiptBrowser(
   submittedBranchName,
   humanDecision,
   recruiterProjection,
+  matchedAssignmentProofText,
 ) {
   if (SKIP_RECRUITER_BROWSER) {
     return { skipped: true, reason: 'WORKSPACE_SMOKE_SKIP_RECRUITER_BROWSER=1' };
@@ -603,6 +604,9 @@ async function assertRecruiterReviewerReceiptBrowser(
     if (MATCHED_REPO_ID !== null) {
       await expect(assignment).toContainText('PIPE-matched challenge');
       await expect(assignment).toContainText('source-backed candidate evidence');
+      if (matchedAssignmentProofText) {
+        await expect(assignment).toContainText(matchedAssignmentProofText);
+      }
       await expect(assignment).not.toContainText('Manual task assignment');
     } else if (INTERVIEW_TYPE === 'OPEN_SOURCE_BUG_FIX') {
       await expect(assignment).toContainText('Manual task assignment');
@@ -654,6 +658,7 @@ async function assertRecruiterListCardBrowser(
   humanDecision,
   expectedTaskTitle,
   recruiterProjection,
+  matchedAssignmentProofText,
 ) {
   if (SKIP_RECRUITER_BROWSER) {
     return { skipped: true, reason: 'WORKSPACE_SMOKE_SKIP_RECRUITER_BROWSER=1' };
@@ -694,6 +699,9 @@ async function assertRecruiterListCardBrowser(
     if (MATCHED_REPO_ID !== null) {
       await expect(card).toContainText('PIPE-matched challenge');
       await expect(card).toContainText('source-backed candidate evidence');
+      if (matchedAssignmentProofText) {
+        await expect(card).toContainText(matchedAssignmentProofText);
+      }
       await expect(card).not.toContainText('Manual task assignment');
     } else if (INTERVIEW_TYPE === 'OPEN_SOURCE_BUG_FIX') {
       await expect(card).toContainText('Manual task assignment');
@@ -939,8 +947,12 @@ async function main() {
   const expectedBaseCommitSha = useMatchedRepo
     ? created?.interview?.assessmentProgress?.challenge?.locator?.baseCommitSha ?? ''
     : BASE_COMMIT_SHA;
+  let matchedAssignmentProofText = null;
   if (INTERVIEW_TYPE === 'OPEN_SOURCE_BUG_FIX') {
     const setup = created?.interview?.assessmentSetup;
+    matchedAssignmentProofText = useMatchedRepo && typeof setup?.message === 'string'
+      ? setup.message
+      : null;
     const expectedSetupKind = useMatchedRepo ? 'auto_match' : 'manual_open_source_task';
     if (setup?.kind !== expectedSetupKind || setup?.status !== 'reviewable_task_assigned') {
       throw new Error(`Open-source task setup was not ready: ${JSON.stringify(setup)}`);
@@ -1171,6 +1183,7 @@ async function main() {
     submittedBranchName,
     humanDecision,
     recruiterProjection,
+    matchedAssignmentProofText,
   );
   const recruiterListBrowser = await assertRecruiterListCardBrowser(
     interviewId,
@@ -1181,6 +1194,7 @@ async function main() {
       ? null
       : CHANGE_PROFILE?.challengeTitle ?? 'Fix deterministic smoke ordering',
     recruiterProjection,
+    matchedAssignmentProofText,
   );
 
   console.log(JSON.stringify({

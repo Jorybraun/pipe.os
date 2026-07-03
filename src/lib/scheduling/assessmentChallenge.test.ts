@@ -16,6 +16,27 @@ const manualSetup: AssessmentSetupProjection = {
 };
 
 describe('summarizeResolvedAssessmentAssignment', () => {
+  it('keeps source-backed auto-match quality proof in matched assignment summaries', () => {
+    const assignment = summarizeResolvedAssessmentAssignment({
+      setup: {
+        status: 'reviewable_task_assigned',
+        kind: 'github_pr',
+        source: 'matched_repo_id',
+        blocksPositiveAssessment: false,
+        message: 'PIPE found a source-backed candidate challenge at https://github.com/mui/base-ui #973. It passed the auto-assignment quality gate. Assessment quality: USABLE 9/12. It leads the next comparable challenge by 2%.',
+        nextAction: 'OPEN_ROOM_OR_WORKSPACE',
+        nextActionLabel: 'Review the latest match run before starting.',
+      },
+      assignmentTrust: null,
+    });
+
+    expect(assignment).toEqual({
+      label: 'PIPE-matched challenge',
+      detail: 'PIPE found a source-backed candidate challenge at https://github.com/mui/base-ui #973. It passed the auto-assignment quality gate. Assessment quality: USABLE 9/12. It leads the next comparable challenge by 2%.',
+      tone: 'matched',
+    });
+  });
+
   it('lets matched durable assessment trust override stale manual setup labels', () => {
     const assignment = summarizeResolvedAssessmentAssignment({
       setup: manualSetup,
@@ -30,6 +51,30 @@ describe('summarizeResolvedAssessmentAssignment', () => {
     expect(assignment).toEqual({
       label: 'PIPE-matched challenge',
       detail: 'PIPE selected this task from source-backed candidate evidence, role context, and repository demand.',
+      tone: 'matched',
+    });
+  });
+
+  it('combines durable matched trust with richer matched setup proof when both agree', () => {
+    const assignment = summarizeResolvedAssessmentAssignment({
+      setup: {
+        status: 'reviewable_task_assigned',
+        kind: 'auto_match',
+        source: 'matched_repo_id',
+        blocksPositiveAssessment: false,
+        message: 'PIPE found a source-backed candidate challenge at https://github.com/mui/base-ui #973. It passed the auto-assignment quality gate. Assessment quality: USABLE 9/12.',
+      },
+      assignmentTrust: {
+        state: 'matched_challenge',
+        label: 'PIPE-matched challenge',
+        detail: 'PIPE selected this task from source-backed candidate evidence, role context, and repository demand.',
+        tone: 'matched',
+      } satisfies NonNullable<AssessmentProgressSnapshot['assignmentTrust']>,
+    });
+
+    expect(assignment).toEqual({
+      label: 'PIPE-matched challenge',
+      detail: 'PIPE selected this task from source-backed candidate evidence, role context, and repository demand. PIPE found a source-backed candidate challenge at https://github.com/mui/base-ui #973. It passed the auto-assignment quality gate. Assessment quality: USABLE 9/12.',
       tone: 'matched',
     });
   });
