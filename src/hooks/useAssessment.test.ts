@@ -121,6 +121,122 @@ describe('useAssessment', () => {
     );
   });
 
+  it('treats profile-received stage conflicts as queued handoffs, not claimed links', async () => {
+    sessionStorage.setItem('pipe_session_token', 'session-token');
+    sessionStorage.setItem('pipe_session_invite_token', 'invite-token');
+    sessionStorage.setItem('pipe_session_candidate', JSON.stringify({
+      id: 'candidate-1',
+      pipelineId: null,
+      status: 'IN_PROGRESS',
+      name: 'Ada Candidate',
+    }));
+
+    const fetchMock = vi.fn()
+      .mockResolvedValueOnce({
+        ok: false,
+        status: 409,
+        json: async () => ({
+          error: {
+            code: 'PROFILE_RECEIVED',
+            message: 'Your profile has been received. PIPE will email you when your code review is ready.',
+          },
+          challenge: {
+            id: 'profile-received',
+            type: 'PROFILE_RECEIVED',
+            instructions: 'Your profile has been received. PIPE will email you when your code review is ready.',
+          },
+        }),
+      } as Response);
+    globalThis.fetch = fetchMock;
+
+    const { result } = renderHook(() => useAssessment('invite-token'));
+
+    await waitFor(() => expect(result.current.candidate?.id).toBe('candidate-1'));
+
+    await act(async () => {
+      await result.current.onStart();
+    });
+
+    await waitFor(() => expect(result.current.isSubmitted).toBe(true));
+    expect(result.current.error).toBeNull();
+    expect(result.current.stageConfig?.stageId).toBe('candidate-intake-queued');
+    expect(result.current.challengeContent?.type).toBe('PROFILE_RECEIVED');
+    expect(result.current.challengeContent?.instructions).toContain('email you when your code review is ready');
+    expect(fetchMock).toHaveBeenCalledTimes(1);
+  });
+
+  it('treats profile-received submit conflicts as queued handoffs, not claimed links', async () => {
+    sessionStorage.setItem('pipe_session_token', 'session-token');
+    sessionStorage.setItem('pipe_session_invite_token', 'invite-token');
+    sessionStorage.setItem('pipe_session_candidate', JSON.stringify({
+      id: 'candidate-1',
+      pipelineId: null,
+      status: 'IN_PROGRESS',
+      name: 'Ada Candidate',
+    }));
+
+    const fetchMock = vi.fn()
+      .mockResolvedValueOnce({
+        ok: true,
+        json: async () => ({
+          isComplete: false,
+          stageId: 'standalone-code-review',
+          candidateId: 'candidate-1',
+          stageTitle: 'Code Review',
+          mode: 'ASYNC',
+          challenges: [{ type: 'CODE_REVIEW', order: 0, title: 'Code Review' }],
+          currentIndex: 0,
+        }),
+      } as Response)
+      .mockResolvedValueOnce({
+        ok: true,
+        json: async () => ({
+          id: 'challenge-1',
+          type: 'CODE_REVIEW',
+          title: 'Code Review',
+          instructions: 'Review the source-backed pull request.',
+          cachedDiffJson: { files: [] },
+        }),
+      } as Response)
+      .mockResolvedValueOnce({
+        ok: false,
+        status: 409,
+        json: async () => ({
+          error: {
+            code: 'PROFILE_RECEIVED',
+            message: 'Your profile has been received. PIPE will email you when your code review is ready.',
+          },
+          challenge: {
+            id: 'profile-received',
+            type: 'PROFILE_RECEIVED',
+            instructions: 'Your profile has been received. PIPE will email you when your code review is ready.',
+          },
+        }),
+      } as Response);
+    globalThis.fetch = fetchMock;
+
+    const { result } = renderHook(() => useAssessment('invite-token'));
+
+    await waitFor(() => expect(result.current.candidate?.id).toBe('candidate-1'));
+
+    await act(async () => {
+      await result.current.onStart();
+    });
+
+    await waitFor(() => expect(result.current.challengeContent?.type).toBe('CODE_REVIEW'));
+
+    await act(async () => {
+      await result.current.submitChallenge({ annotations: {} });
+    });
+
+    await waitFor(() => expect(result.current.isSubmitted).toBe(true));
+    expect(result.current.error).toBeNull();
+    expect(result.current.stageConfig?.stageId).toBe('candidate-intake-queued');
+    expect(result.current.challengeContent?.type).toBe('PROFILE_RECEIVED');
+    expect(result.current.challengeContent?.instructions).toContain('email you when your code review is ready');
+    expect(fetchMock).toHaveBeenCalledTimes(3);
+  });
+
   it('opens the real code review challenge instead of trapping ready assessments on welcome', async () => {
     sessionStorage.setItem('pipe_session_token', 'session-token');
     sessionStorage.setItem('pipe_session_invite_token', 'invite-token');
