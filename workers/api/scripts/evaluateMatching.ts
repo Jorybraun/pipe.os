@@ -14,7 +14,7 @@ import {
   loadCorpus,
   runEvaluation,
 } from '../src/lib/challengeMatching/evaluation';
-import { D1Client, loadD1Config } from './crawl-repos/shared/d1Client.js';
+import { D1Client } from './crawl-repos/shared/d1Client.js';
 
 type SqlValue = string | number | null;
 
@@ -39,6 +39,7 @@ interface D1Like {
 export interface EvaluationCliOptions {
   target: 'local' | 'remote';
   databasePath?: string;
+  databaseId?: string;
   corpusId: string;
   corpusFile?: string;
   matchRunIds: string[];
@@ -193,6 +194,34 @@ function discoverLocalDatabase(explicitPath?: string): string {
   return candidates[0]!;
 }
 
+function requiredEnv(name: string): string {
+  const value = process.env[name];
+  if (!value) throw new Error(`Missing required env var: ${name}`);
+  return value;
+}
+
+function remoteDatabaseId(explicitDatabaseId?: string): string {
+  const databaseId = explicitDatabaseId
+    ?? process.env['MATCHING_EVALUATION_D1_DATABASE_ID']
+    ?? process.env['CLOUDFLARE_D1_DATABASE_ID']
+    ?? '';
+  if (!databaseId) {
+    throw new Error(
+      'Missing required D1 database id; set MATCHING_EVALUATION_D1_DATABASE_ID, '
+      + 'CLOUDFLARE_D1_DATABASE_ID, or pass --database-id.',
+    );
+  }
+  return databaseId;
+}
+
+function remoteD1(explicitDatabaseId?: string): D1Like {
+  return new RemoteD1(new D1Client({
+    accountId: requiredEnv('CLOUDFLARE_ACCOUNT_ID'),
+    apiToken: requiredEnv('CLOUDFLARE_API_TOKEN'),
+    databaseId: remoteDatabaseId(explicitDatabaseId),
+  }));
+}
+
 function valuesFor(argv: string[], flag: string): string[] {
   const values: string[] = [];
   for (let index = 0; index < argv.length; index++) {
@@ -218,8 +247,12 @@ export function parseEvaluationArgs(argv: string[]): EvaluationCliOptions | null
   if (!corpusId) throw new Error('--corpus-id is required');
   const target = argv.includes('--remote') ? 'remote' : 'local';
   const databasePath = valueFor(argv, '--database-path');
+  const databaseId = valueFor(argv, '--database-id');
   if (target === 'remote' && databasePath) {
     throw new Error('--database-path can only be used with --local');
+  }
+  if (target === 'local' && databaseId) {
+    throw new Error('--database-id requires --remote');
   }
   const comparisonMatchRunIds = valuesFor(argv, '--comparison-run-id');
   const autoComparisonRuns = argv.includes('--auto-comparison-runs');
@@ -229,6 +262,7 @@ export function parseEvaluationArgs(argv: string[]): EvaluationCliOptions | null
   return {
     target,
     ...(databasePath ? { databasePath } : {}),
+    ...(databaseId ? { databaseId } : {}),
     corpusId,
     ...(valueFor(argv, '--corpus-file')
       ? { corpusFile: valueFor(argv, '--corpus-file')! }
@@ -252,6 +286,7 @@ export function evaluationHelp(): string {
 Options:
   --local | --remote
   --database-path <path>
+  --database-id <id>           Remote D1 database id; defaults to MATCHING_EVALUATION_D1_DATABASE_ID then CLOUDFLARE_D1_DATABASE_ID
   --corpus-file <path>          Validate and freeze this corpus before evaluation
   --match-run-id <id>           Repeat or pass comma-separated IDs
   --comparison-run-id <id>      Independent reruns for byte-identical comparison
@@ -329,7 +364,7 @@ export async function runEvaluationCli(argv: string[]): Promise<number> {
   let localDatabase: BetterSqliteDb | undefined;
   let db: D1Like;
   if (options.target === 'remote') {
-    db = new RemoteD1(new D1Client(loadD1Config()));
+    db = remoteD1(options.databaseId);
   } else {
     localDatabase = new Database(discoverLocalDatabase(options.databasePath));
     db = new LocalD1(localDatabase);

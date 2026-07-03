@@ -924,6 +924,31 @@ describe('matching evaluation CLI', () => {
     ])).toThrow('--stage must be one of');
   });
 
+  it('parses a remote app-dev database id for evaluation readiness checks', () => {
+    expect(parseEvaluationArgs([
+      '--remote',
+      '--database-id',
+      'app-dev-d1',
+      '--corpus-id',
+      'expert-corpus-v1',
+      '--check-latest-production-pass',
+    ])).toEqual(expect.objectContaining({
+      target: 'remote',
+      databaseId: 'app-dev-d1',
+      corpusId: 'expert-corpus-v1',
+      checkLatestProductionPass: true,
+    }));
+  });
+
+  it('rejects remote database ids in local evaluation mode', () => {
+    expect(() => parseEvaluationArgs([
+      '--database-id',
+      'app-dev-d1',
+      '--corpus-id',
+      'expert-corpus-v1',
+    ])).toThrow('--database-id requires --remote');
+  });
+
   it('rejects combining explicit and automatic comparison runs', () => {
     expect(() => parseEvaluationArgs([
       '--corpus-id', 'test',
