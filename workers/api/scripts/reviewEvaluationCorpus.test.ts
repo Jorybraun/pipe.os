@@ -11,7 +11,12 @@ import {
   runCorpusReviewCli,
   type ExpertReviewFile,
 } from './reviewEvaluationCorpus';
-import { buildCorpusReviewPacket, loadCorpus, type EvaluationCorpus } from '../src/lib/challengeMatching/evaluation';
+import {
+  buildCorpusReviewPacket,
+  EVALUATION_CORPUS_VERSION,
+  loadCorpus,
+  type EvaluationCorpus,
+} from '../src/lib/challengeMatching/evaluation';
 
 const evaluationMigration = readFileSync(
   new URL('../migrations/0093_matching_evaluation.sql', import.meta.url),
@@ -47,6 +52,158 @@ function loadFixtureCorpusWithContrast(): EvaluationCorpus {
     totalCandidates: 2,
   };
   return corpus;
+}
+
+function sourceBackedSinglePacketCorpus(): EvaluationCorpus {
+  return {
+    version: EVALUATION_CORPUS_VERSION,
+    corpusId: 'single-packet-source-backed-corpus',
+    createdAt: '2026-07-02T21:00:00.000Z',
+    description: 'Source-backed corpus that still needs challenge packet breadth.',
+    candidateEvidence: [
+      {
+        candidateId: 'candidate-fit',
+        evidenceId: 'evidence-fit-react',
+        episodeId: 'episode-fit-react',
+        narrative: 'Candidate owns React interaction state and accessibility regressions.',
+        concepts: ['term:react', 'term:accessibility', 'term:interaction-state'],
+        evidenceReferences: [
+          {
+            artifactId: 'resume-fit',
+            artifactVersion: 'resume-fit-v1',
+            sourceRefType: 'resume',
+            sourceRefId: 'resume-fit-span-1',
+            contentHash: 'sha256:fit-source',
+            exactText: 'Owned React interaction state and accessibility regressions.',
+            startOffset: 0,
+            endOffset: 58,
+          },
+        ],
+      },
+      {
+        candidateId: 'candidate-negative',
+        evidenceId: 'evidence-negative-data',
+        episodeId: 'episode-negative-data',
+        narrative: 'Candidate has unrelated data platform operations evidence.',
+        concepts: ['term:python', 'term:data-pipeline'],
+        evidenceReferences: [
+          {
+            artifactId: 'resume-negative',
+            artifactVersion: 'resume-negative-v1',
+            sourceRefType: 'resume',
+            sourceRefId: 'resume-negative-span-1',
+            contentHash: 'sha256:negative-source',
+            exactText: 'Maintained unrelated data platform operations.',
+            startOffset: 0,
+            endOffset: 45,
+          },
+        ],
+      },
+    ],
+    roleRequirements: [
+      {
+        roleId: 'role-frontend',
+        requiredLanguages: ['TypeScript'],
+        relevantConcepts: ['term:react', 'term:accessibility'],
+        sourceReferences: [
+          {
+            entityId: 'role-frontend-doc',
+            locator: 'roles/frontend.md#L1-L3',
+            conceptKeys: ['term:react', 'term:accessibility'],
+            sourceRefType: 'role_description',
+            sourceRefId: 'role-frontend-span-1',
+            exactText: 'Frontend engineer for React accessibility interaction systems.',
+            contentHash: 'sha256:role-source',
+          },
+        ],
+      },
+    ],
+    expectedPackets: [
+      {
+        challengeId: 'challenge-react-accessibility',
+        repoId: 'mui/base-ui',
+        repoFullName: 'mui/base-ui',
+        repoUrl: 'https://github.com/mui/base-ui',
+        prNumber: 973,
+        prUrl: 'https://github.com/mui/base-ui/pull/973',
+        prTitle: 'Fix interaction state regression',
+        sourceVersion: 'test-source-v1',
+        packetContentHash: 'sha256:packet-source',
+        demands: [
+          {
+            demandId: 'demand-react-accessibility',
+            concepts: ['term:react', 'term:accessibility'],
+            sourceRefs: [
+              {
+                artifactId: 'repo-packet-973',
+                artifactVersion: 'repo-packet-973-v1',
+                sourceRefType: 'github_pr_diff',
+                sourceRefId: 'mui-base-ui-973-diff',
+                contentHash: 'sha256:repo-demand-source',
+                exactText: 'Fix interaction state regression in accessibility behavior.',
+                startOffset: 0,
+                endOffset: 61,
+              },
+            ],
+          },
+        ],
+      },
+    ],
+    expertLabels: [
+      {
+        labelId: 'label-fit-positive',
+        candidateId: 'candidate-fit',
+        roleId: 'role-frontend',
+        challengeId: 'challenge-react-accessibility',
+        relevanceGrade: 'highly_relevant',
+        eligibleChallengeIds: ['challenge-react-accessibility'],
+        negativeCandidateId: 'candidate-negative',
+        minimumScoreSeparation: 0.12,
+        explanation: 'Human reviewer confirmed this PR tests the candidate evidence.',
+        labelVersion: '1.0.0',
+        labeledAt: '2026-07-02T21:05:00.000Z',
+        labeledBy: 'expert-reviewer-1',
+        labelProvenance: {
+          reviewerId: 'expert-reviewer-1',
+          reviewerRole: 'senior-engineering-reviewer',
+          reviewArtifactId: 'review-artifact-single-packet',
+          reviewArtifactVersion: 'v1',
+          contentHash: 'sha256:positive-label-source',
+          locator: 'review-artifact-single-packet#label-fit-positive',
+          rubricVersion: 'candidate-pr-match-rubric-v1',
+        },
+      },
+      {
+        labelId: 'label-negative-contrast',
+        candidateId: 'candidate-negative',
+        roleId: 'role-frontend',
+        challengeId: 'challenge-react-accessibility',
+        relevanceGrade: 'irrelevant',
+        eligibleChallengeIds: [],
+        explanation: 'Human reviewer confirmed the contrast candidate should not match this PR.',
+        labelVersion: '1.0.0',
+        labeledAt: '2026-07-02T21:06:00.000Z',
+        labeledBy: 'expert-reviewer-1',
+        labelProvenance: {
+          reviewerId: 'expert-reviewer-1',
+          reviewerRole: 'senior-engineering-reviewer',
+          reviewArtifactId: 'review-artifact-single-packet',
+          reviewArtifactVersion: 'v1',
+          contentHash: 'sha256:negative-label-source',
+          locator: 'review-artifact-single-packet#label-negative-contrast',
+          rubricVersion: 'candidate-pr-match-rubric-v1',
+        },
+      },
+    ],
+    metadata: {
+      totalLabels: 2,
+      totalCandidates: 2,
+      totalRoles: 1,
+      totalChallenges: 1,
+      syntheticFixtureCount: 0,
+      totalExpectedPackets: 1,
+    },
+  };
 }
 
 function completedReview(
@@ -524,12 +681,12 @@ describe('evaluation corpus review CLI', () => {
       warnings: [],
     }));
     expect(summary.readinessSummary).toEqual(expect.objectContaining({
-      nextAction: 'complete_expert_review',
+      nextAction: 'expand_corpus_packet_breadth',
       labelsNeedingHumanReview: ['seeded-match-run-1-packet-1'],
       labelsMissingExpectedPacket: [],
       labelsMissingRepoDemandEvidence: [],
     }));
-    expect(summary.nextAction).toBe('complete_expert_review');
+    expect(summary.nextAction).toBe('expand_corpus_packet_breadth');
 
     const packet = JSON.parse(await readFile(reviewPacketPath, 'utf8')) as {
       readinessSummary: {
@@ -544,7 +701,7 @@ describe('evaluation corpus review CLI', () => {
       }>;
     };
     expect(packet.readinessSummary).toEqual(expect.objectContaining({
-      nextAction: 'complete_expert_review',
+      nextAction: 'expand_corpus_packet_breadth',
       labelsNeedingHumanReview: ['seeded-match-run-1-packet-1'],
       labelsMissingExpectedPacket: [],
       labelsMissingRepoDemandEvidence: [],
@@ -615,6 +772,25 @@ describe('evaluation corpus review CLI', () => {
     expect(template.labels[0]).toEqual(expect.objectContaining({
       negativeCandidateId: 'candidate-negative',
       minimumScoreSeparation: 0.12,
+    }));
+  });
+
+  it('points source-backed one-packet corpora at packet breadth expansion', () => {
+    const packet = buildCorpusReviewPacket(sourceBackedSinglePacketCorpus());
+
+    expect(packet.productionReady).toBe(false);
+    expect(packet.productionReadinessFailures).toEqual([
+      'production corpus requires at least two source-backed expected PR challenge packets',
+    ]);
+    expect(packet.readinessSummary).toEqual(expect.objectContaining({
+      nextAction: 'expand_corpus_packet_breadth',
+      labelsNeedingHumanReview: [],
+      labelsMissingCandidateEvidence: [],
+      labelsMissingRoleRequirements: [],
+      labelsMissingExpectedPacket: [],
+      labelsMissingRepoDemandEvidence: [],
+      negativeLabelCount: 1,
+      contrastLabelCount: 1,
     }));
   });
 
@@ -728,6 +904,7 @@ describe('evaluation corpus review CLI', () => {
       productionReadinessFailures: expect.arrayContaining([
         'production corpus requires at least one insufficient-evidence or non-positive contrast label',
         'production corpus requires at least one explicit negativeCandidateId contrast label',
+        'production corpus requires at least two source-backed expected PR challenge packets',
         'positive expert label requires contrast candidate and minimum score separation: label-1',
       ]),
       readinessSummary: expect.objectContaining({
@@ -736,7 +913,7 @@ describe('evaluation corpus review CLI', () => {
         labelsMissingExpectedPacket: ['label-1'],
         labelsMissingRepoDemandEvidence: ['label-1'],
       }),
-      nextAction: 'complete_expert_review',
+      nextAction: 'fix_corpus_source_evidence',
     }));
   });
 
