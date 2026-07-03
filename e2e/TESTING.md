@@ -95,7 +95,7 @@ await page.locator('[data-testid="start-interview-btn"]').click();
 test.beforeAll(async ({ browser, request }) => {
   // 1. Authenticate as recruiter
   // 2. Seed pipeline → stage → challenge → candidate via API
-  // 3. Resolve candidate token via API (claims it)
+  // 3. Resolve candidate token via API (session only; does not claim the link)
   // 4. Prime backend state (get-stage-config creates assessment row)
   // 5. Store session token for injection into page sessionStorage
 });
@@ -383,13 +383,22 @@ Latest single blocked-boundary proof on 2026-07-02 passed for interview
 room link was produced, no repo/PR was assigned, and recruiter readiness stayed
 `waiting_for_source_backed_match`.
 
+Latest deployed `/assess` token lifecycle proof on 2026-07-03 passed via
+`npm run smoke:assess-token-lifecycle-dev`: two real app-dev CODE_REVIEW
+assessment links were created for interviews
+`367ae007-5b1c-4c77-a94c-26f3c6e17062` and
+`5ed1c573-8f61-4b93-bc11-6bab27d08dbd`; opening token A then token B in the
+same browser stored candidate B, did not leak the stale pre-start session, did
+not show a used-link state, and did not show the matching/waiting screen.
+
 ## 10. When Tests Break, Ask Why
 
 | Symptom | Likely Cause |
 |---------|-------------|
 | Element not found | Missing `data-testid` or wrong selector |
 | Timeout waiting for element | Backend error, mock not matching, or real bug |
-| "Invalid invite token" | Token already claimed in `beforeAll` + page trying to claim again |
+| "Invalid invite token" | Wrong/stale token, or a test still assumes `resolve-token` claims the link |
+| "This invite link has already been used" | The candidate already clicked start and `/rpc/start-assessment` claimed the link |
 | "No assessment found" | Forgot to call `get-stage-config` before `init` |
 | Mock not intercepting request | URL pattern doesn't match (check trailing slashes, query params) |
 | Test passes locally but not in CI | Race condition — you have a `setTimeout` or `waitForTimeout` somewhere |
