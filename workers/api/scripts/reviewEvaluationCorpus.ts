@@ -442,6 +442,12 @@ function templateReviewLabel(item: CorpusReviewPacket['items'][number]): ExpertL
     labelId: item.labelId,
     relevanceGrade: item.draft.relevanceGrade,
     eligibleChallengeIds: item.draft.eligibleChallengeIds,
+    ...(item.draft.negativeCandidateId
+      ? { negativeCandidateId: item.draft.negativeCandidateId }
+      : {}),
+    ...(item.draft.minimumScoreSeparation !== null
+      ? { minimumScoreSeparation: item.draft.minimumScoreSeparation }
+      : {}),
     explanation: `TODO: replace with source-backed human rationale for ${item.labelId}`,
   };
 }

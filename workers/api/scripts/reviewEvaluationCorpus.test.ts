@@ -26,6 +26,29 @@ function loadFixtureCorpus(): EvaluationCorpus {
   return loadCorpus(readFileSync(corpusFixture, 'utf8'));
 }
 
+function loadFixtureCorpusWithContrast(): EvaluationCorpus {
+  const corpus = structuredClone(loadFixtureCorpus());
+  const fitEvidence = corpus.candidateEvidence[0]!;
+  corpus.candidateEvidence.push({
+    ...fitEvidence,
+    candidateId: 'candidate-negative',
+    evidenceId: 'evidence-negative',
+    episodeId: 'episode-negative',
+    narrative: 'Negative contrast candidate with unrelated backend operations evidence.',
+    concepts: ['term:python', 'term:data-pipeline'],
+  });
+  corpus.expertLabels[0] = {
+    ...corpus.expertLabels[0]!,
+    negativeCandidateId: 'candidate-negative',
+    minimumScoreSeparation: 0.12,
+  };
+  corpus.metadata = {
+    ...corpus.metadata,
+    totalCandidates: 2,
+  };
+  return corpus;
+}
+
 function completedReview(
   template: ExpertReviewFile,
   overrides?: Partial<ExpertReviewFile>,
@@ -542,6 +565,29 @@ describe('evaluation corpus review CLI', () => {
         explanation: expect.stringContaining('TODO: replace'),
       }),
     ]);
+  });
+
+  it('preserves expert-reviewed contrast fields in review packets and templates', () => {
+    const packet = buildCorpusReviewPacket(loadFixtureCorpusWithContrast());
+    const template = buildExpertReviewTemplate(packet);
+
+    expect(packet.readinessSummary).toEqual(expect.objectContaining({
+      contrastLabelCount: 1,
+      labelsMissingContrastCandidate: [],
+    }));
+    expect(packet.items[0]).toEqual(expect.objectContaining({
+      draft: expect.objectContaining({
+        negativeCandidateId: 'candidate-negative',
+        minimumScoreSeparation: 0.12,
+      }),
+      reviewQuestions: expect.arrayContaining([
+        expect.stringContaining('negative candidate'),
+      ]),
+    }));
+    expect(template.labels[0]).toEqual(expect.objectContaining({
+      negativeCandidateId: 'candidate-negative',
+      minimumScoreSeparation: 0.12,
+    }));
   });
 
   it('exports review packets and editable review templates from a corpus file', async () => {

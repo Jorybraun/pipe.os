@@ -70,6 +70,15 @@ export interface ExpertLabel {
   forbiddenRoles?: string[];
   guardrailViolations?: GuardrailViolation[];
   permittedStretchPaths?: StretchPath[];
+  /**
+   * Candidate expected to score meaningfully lower for this challenge.
+   *
+   * Used by the CODE_REVIEW match-quality gate to prove a label is not just a
+   * happy-path match: the selected candidate must separate from this contrast
+   * candidate by at least minimumScoreSeparation.
+   */
+  negativeCandidateId?: string;
+  minimumScoreSeparation?: number;
   explanation?: string;
   labelVersion: string;
   labeledAt: string;
