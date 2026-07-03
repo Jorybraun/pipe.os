@@ -260,6 +260,7 @@ describe('InterviewDetailPage', () => {
             { kind: 'ai_user_prompt', count: 2 },
             { kind: 'ai_user_prompt_blocked', count: 1 },
             { kind: 'ai_agent_response', count: 1 },
+            { kind: 'ai_agent_diagnostic', count: 1 },
           ],
           evidenceSnippets: [
             {
@@ -395,7 +396,7 @@ describe('InterviewDetailPage', () => {
     expect(workPacket).toHaveTextContent('1 room chat message and 3 room session events tied to the assessment evidence trail.');
     expect(workPacket).toHaveTextContent('AI transparency');
     expect(workPacket).toHaveTextContent('AI use observed');
-    expect(workPacket).toHaveTextContent('2 prompts, 1 blocked prompt, and 1 agent response captured from the real agent bridge.');
+    expect(workPacket).toHaveTextContent('2 prompts, 1 blocked prompt, 1 agent response, and 1 bridge diagnostic captured from the real agent bridge.');
     expect(workPacket).toHaveTextContent('Human review');
     expect(workPacket).toHaveTextContent('Run evaluation');
     const contract = screen.getByTestId('interview-assessment-challenge-contract');

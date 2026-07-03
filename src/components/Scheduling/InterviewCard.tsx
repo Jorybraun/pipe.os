@@ -264,7 +264,11 @@ function assessmentSourceRefTypeLabel(sourceRefType: string): string {
     case 'ai_user_prompt_blocked':
       return 'Blocked AI prompt';
     case 'ai_agent_response':
+    case 'agent_response':
       return 'Agent response';
+    case 'ai_agent_diagnostic':
+    case 'agent_diagnostic':
+      return 'Agent diagnostic';
     case 'ai_usage_event':
       return 'AI evaluator trace';
     default:

@@ -788,7 +788,7 @@ describe('sessionEvents', () => {
                 'room_chat_message',
                 'ai_user_prompt',
                 'ai_user_prompt_blocked',
-                'agent_response'
+                'ai_agent_response'
               )
             ORDER BY csr.source_ref_type`,
         ).all() as Array<{
@@ -801,9 +801,9 @@ describe('sessionEvents', () => {
 
         expect(contextSources).toEqual([
           {
-            source_ref_type: 'agent_response',
+            source_ref_type: 'ai_agent_response',
             source_ref_id: agentResponseId,
-            evidence_role: 'agent_response',
+            evidence_role: 'ai_agent_response',
             exact_text: agentText,
             content_hash: await sha256Hex(agentText),
           },
@@ -833,7 +833,7 @@ describe('sessionEvents', () => {
         const agentResponseSource = sqlite.prepare(
           `SELECT locator_json, metadata_json
              FROM context_record_source_refs
-            WHERE source_ref_type = 'agent_response'
+            WHERE source_ref_type = 'ai_agent_response'
               AND source_ref_id = ?`,
         ).get(agentResponseId) as {
           locator_json: string;
@@ -857,7 +857,7 @@ describe('sessionEvents', () => {
               'agent_proactive_prompt',
               'ai_user_prompt',
               'ai_user_prompt_blocked',
-              'agent_response'
+              'ai_agent_response'
             )
             ORDER BY source_ref_type`,
         ).all() as Array<{
@@ -872,7 +872,7 @@ describe('sessionEvents', () => {
         const assessmentAgentResponseSource = sqlite.prepare(
           `SELECT locator_json, metadata_json
              FROM assessment_event_source_refs
-            WHERE source_ref_type = 'agent_response'
+            WHERE source_ref_type = 'ai_agent_response'
               AND source_ref_id = ?`,
         ).get(agentResponseId) as {
           locator_json: string;
@@ -1048,10 +1048,10 @@ describe('sessionEvents', () => {
         const contextSources = sqlite.prepare(
           `SELECT csr.source_ref_type, csr.source_ref_id, csr.evidence_role,
                   csr.exact_text, csr.content_hash
-             FROM context_record_source_refs csr
+            FROM context_record_source_refs csr
              JOIN context_records cr ON cr.id = csr.context_record_id
             WHERE cr.record_type = 'meeting_session_event'
-              AND csr.source_ref_type IN ('agent_status', 'agent_diagnostic')
+              AND csr.source_ref_type IN ('agent_status', 'ai_agent_diagnostic')
             ORDER BY csr.source_ref_type`,
         ).all() as Array<{
           source_ref_type: string;
@@ -1063,25 +1063,25 @@ describe('sessionEvents', () => {
 
         expect(contextSources).toEqual([
           {
-            source_ref_type: 'agent_diagnostic',
-            source_ref_id: diagnosticId,
-            evidence_role: 'agent_diagnostic',
-            exact_text: diagnosticText,
-            content_hash: await sha256Hex(diagnosticText),
-          },
-          {
             source_ref_type: 'agent_status',
             source_ref_id: statusId,
             evidence_role: 'agent_status',
             exact_text: statusText,
             content_hash: await sha256Hex(statusText),
           },
+          {
+            source_ref_type: 'ai_agent_diagnostic',
+            source_ref_id: diagnosticId,
+            evidence_role: 'ai_agent_diagnostic',
+            exact_text: diagnosticText,
+            content_hash: await sha256Hex(diagnosticText),
+          },
         ]);
 
         const assessmentSources = sqlite.prepare(
           `SELECT source_ref_type, source_ref_id, evidence_role, exact_text, content_hash
              FROM assessment_event_source_refs
-            WHERE source_ref_type IN ('agent_status', 'agent_diagnostic')
+            WHERE source_ref_type IN ('agent_status', 'ai_agent_diagnostic')
             ORDER BY source_ref_type`,
         ).all() as Array<{
           source_ref_type: string;

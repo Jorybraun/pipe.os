@@ -1496,9 +1496,9 @@ async function chatTextSourceRef(input: {
     if (!AGENT_CHAT_RESPONSE_ID_RE.test(agentChatResponseId)) return null;
     if (agentChatResponseId !== `agent-chat:${safeEvidenceIdPart(agent)}:${capturedAtMs}:CHAT_RESPONSE:${responseFingerprint}`) return null;
     return {
-      sourceRefType: 'agent_response',
+      sourceRefType: 'ai_agent_response',
       sourceRefId: agentChatResponseId,
-      evidenceRole: 'agent_response',
+      evidenceRole: 'ai_agent_response',
       locator: {
         sessionId: input.event.sessionId,
         candidateId: input.event.candidateId,
@@ -1558,9 +1558,9 @@ async function chatTextSourceRef(input: {
 
     const diagnosticBacked = bridgeMessageSource === 'bridge_diagnostic';
     return {
-      sourceRefType: diagnosticBacked ? 'agent_diagnostic' : 'agent_status',
+      sourceRefType: diagnosticBacked ? 'ai_agent_diagnostic' : 'agent_status',
       sourceRefId: agentStatusEventId,
-      evidenceRole: diagnosticBacked ? 'agent_diagnostic' : 'agent_status',
+      evidenceRole: diagnosticBacked ? 'ai_agent_diagnostic' : 'agent_status',
       locator: {
         sessionId: input.event.sessionId,
         candidateId: input.event.candidateId,

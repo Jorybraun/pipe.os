@@ -144,6 +144,12 @@ function boundedMessage(message) {
   return next;
 }
 
+function sourceRefCount(rows, kind) {
+  return Array.isArray(rows)
+    ? rows.find((row) => row?.kind === kind)?.count ?? 0
+    : 0;
+}
+
 function connectAgent(wsUrl, headers) {
   return new Promise((resolve, reject) => {
     const messages = [];
@@ -288,6 +294,15 @@ async function main() {
   if (persistedDiagnostics.length === 0) {
     throw new Error('No persisted Devin agent bridge diagnostics were observed.');
   }
+  const detail = await requestJson(APP_BASE, `/api/v1/scheduling/interviews/${interviewId}`);
+  const progress = detail?.interview?.assessmentProgress ?? null;
+  const sourceRefCounts = progress?.sourceRefCounts ?? [];
+  if (progress?.hasAiInteraction !== true) {
+    throw new Error(`Devin agent response did not mark assessment AI interaction: ${JSON.stringify(progress)}`);
+  }
+  if (sourceRefCount(sourceRefCounts, 'ai_agent_response') < 1) {
+    throw new Error(`Devin agent response was not counted as ai_agent_response assessment evidence: ${JSON.stringify(sourceRefCounts)}`);
+  }
 
   console.log(JSON.stringify({
     ok: true,
@@ -300,6 +315,8 @@ async function main() {
     agentReady: true,
     chatSource: chatResponse.source,
     chatPersisted: chatResponse.persisted,
+    assessmentAiInteraction: progress.hasAiInteraction,
+    assessmentAgentResponseCount: sourceRefCount(sourceRefCounts, 'ai_agent_response'),
     diagnosticPersistedCount: persistedDiagnostics.length,
     responseText: chatResponse.text,
   }, null, 2));

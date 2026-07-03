@@ -1124,8 +1124,8 @@ describe('InterviewCard assessment progress', () => {
               dimension: 'repo_understanding',
               narrative: 'The candidate isolated the regression to the widget loader and changed only the relevant file.',
               confidence: 0.82,
-              sourceRefCount: 2,
-              sourceRefTypes: ['ai_user_prompt_blocked', 'ai_agent_response'],
+              sourceRefCount: 3,
+              sourceRefTypes: ['ai_user_prompt_blocked', 'ai_agent_response', 'ai_agent_diagnostic'],
             },
             {
               id: 'assessment-claim-uncited-secret',
@@ -1156,7 +1156,7 @@ describe('InterviewCard assessment progress', () => {
     expect(progress).toHaveTextContent('CLAIMS');
     expect(progress).toHaveTextContent('Repo understanding · Positive · 82%');
     expect(progress).toHaveTextContent('The candidate isolated the regression to the widget loader');
-    expect(progress).toHaveTextContent('2 source refs: Blocked AI prompt, Agent response');
+    expect(progress).toHaveTextContent('3 source refs: Blocked AI prompt, Agent response, Agent diagnostic');
     expect(progress).toHaveTextContent('UPSTREAM PR');
     expect(progress).toHaveTextContent('open-source/widgets/pull/42 · candidate-approved tracking');
     expect(progress).toHaveTextContent('GAPS');

@@ -424,7 +424,11 @@ function assessmentSourceRefTypeLabel(sourceRefType: string): string {
     case 'ai_user_prompt_blocked':
       return 'Blocked AI prompt';
     case 'ai_agent_response':
+    case 'agent_response':
       return 'Agent response';
+    case 'ai_agent_diagnostic':
+    case 'agent_diagnostic':
+      return 'Agent diagnostic';
     case 'ai_usage_event':
       return 'AI evaluator trace';
     default:
@@ -738,7 +742,11 @@ function assessmentEvidenceSnippetLabel(sourceRefType: string): string {
     case 'ai_user_prompt_blocked':
       return 'Blocked AI prompt evidence';
     case 'ai_agent_response':
+    case 'agent_response':
       return 'Agent response evidence';
+    case 'ai_agent_diagnostic':
+    case 'agent_diagnostic':
+      return 'Agent diagnostic evidence';
     case 'ai_usage_event':
       return 'AI evaluator trace';
     case 'room_chat_message':
@@ -1168,13 +1176,18 @@ function workspaceAssessmentWorkPacket(progress: AssessmentProgressSnapshot | nu
   const changedFiles = assessmentChangedFiles(progress);
   const aiPromptCount = assessmentSourceRefCount(progress, 'ai_user_prompt');
   const aiBlockedPromptCount = assessmentSourceRefCount(progress, 'ai_user_prompt_blocked');
-  const aiResponseCount = assessmentSourceRefCount(progress, 'ai_agent_response');
+  const aiResponseCount = assessmentSourceRefCount(progress, 'ai_agent_response')
+    + assessmentSourceRefCount(progress, 'agent_response');
+  const aiDiagnosticCount = assessmentSourceRefCount(progress, 'ai_agent_diagnostic')
+    + assessmentSourceRefCount(progress, 'agent_diagnostic');
   const aiEvidenceParts = [
     sourceRefCountLabel(aiPromptCount, 'prompt'),
     sourceRefCountLabel(aiBlockedPromptCount, 'blocked prompt'),
     sourceRefCountLabel(aiResponseCount, 'agent response'),
+    sourceRefCountLabel(aiDiagnosticCount, 'bridge diagnostic'),
   ].filter((item): item is string => Boolean(item));
-  const aiTransparencyDetail = progress.hasAiInteraction
+  const hasAiEvidence = progress.hasAiInteraction || aiEvidenceParts.length > 0;
+  const aiTransparencyDetail = hasAiEvidence
     ? aiEvidenceParts.length > 0
       ? `${readableList(aiEvidenceParts)} captured from the real agent bridge.`
       : 'AI prompts, responses, or bridge traces are part of the source-backed evidence trail.'
@@ -1273,9 +1286,9 @@ function workspaceAssessmentWorkPacket(progress: AssessmentProgressSnapshot | nu
     workspaceAssessmentCollaborationItem(progress),
     {
       label: 'AI transparency',
-      value: progress.hasAiInteraction ? 'AI use observed' : 'No AI evidence captured',
+      value: hasAiEvidence ? 'AI use observed' : 'No AI evidence captured',
       detail: aiTransparencyDetail,
-      tone: progress.hasAiInteraction ? 'neutral' : 'watch',
+      tone: hasAiEvidence ? 'neutral' : 'watch',
     },
     reviewItem,
   ];

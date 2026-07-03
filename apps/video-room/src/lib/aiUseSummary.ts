@@ -16,10 +16,12 @@ function unitLabel(count: number, singular: string, plural = `${singular}s`): st
 }
 
 export function summarizeAssessmentAiUse(progress: RoomAssessmentProgressSnapshot): AssessmentAiUseSummary {
-  const agentResponses = sourceRefCount(progress, 'ai_agent_response');
+  const agentResponses = sourceRefCount(progress, 'ai_agent_response')
+    + sourceRefCount(progress, 'agent_response');
   const sentPrompts = sourceRefCount(progress, 'ai_user_prompt');
   const blockedPrompts = sourceRefCount(progress, 'ai_user_prompt_blocked');
-  const bridgeDiagnostics = sourceRefCount(progress, 'agent_diagnostic');
+  const bridgeDiagnostics = sourceRefCount(progress, 'ai_agent_diagnostic')
+    + sourceRefCount(progress, 'agent_diagnostic');
   const usageEvents = sourceRefCount(progress, 'ai_usage_event');
 
   if (agentResponses > 0) {
