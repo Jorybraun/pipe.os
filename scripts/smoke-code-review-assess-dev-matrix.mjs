@@ -51,6 +51,48 @@ const PROFILE_MATRIX = [
       ].join(' '),
     },
   },
+  {
+    id: 'workers-sdk-runtime',
+    label: 'Workers SDK runtime engineer',
+    expectedOutcome: 'matched',
+    defaultIncluded: false,
+    submitReview: false,
+    expectedRepoUrl: 'https://github.com/cloudflare/workers-sdk',
+    expectedPrNumbers: [14118, 14150],
+    env: {
+      CODE_REVIEW_SMOKE_GITHUB_HANDLE: 'code-review-smoke-workers-specific',
+      CODE_REVIEW_SMOKE_ROLE_TITLE: 'Senior Workers SDK Runtime Engineer',
+      CODE_REVIEW_SMOKE_ROLE_TERMS: [
+        'Cloudflare Workers SDK',
+        'wrangler',
+        'workflows',
+        'Durable Object SQL storage',
+        'typed array',
+        'ArrayBuffer',
+        'Uint8Array',
+        'step output',
+        'local dev',
+        'regression tests',
+      ].join(','),
+      CODE_REVIEW_SMOKE_ROLE_JD: [
+        '## Role Title',
+        'Senior Workers SDK Runtime Engineer',
+        '',
+        '## Role Scope',
+        'The role reviews Cloudflare Workers SDK and wrangler workflows pull requests that touch local dev behavior, Durable Object SQL storage, typed array serialization, ArrayBuffer views, Uint8Array step output persistence, and regression tests for local dev parity with production.',
+      ].join('\n'),
+      CODE_REVIEW_SMOKE_RESUME_TEXT: [
+        'Staff platform engineer focused on Cloudflare Workers SDK runtimes, wrangler local dev, workflows step execution, Durable Object SQL storage, and TypeScript SDK tooling.',
+        'Debugged Uint8Array and ArrayBuffer typed array view serialization bugs where sliced typed arrays dragged oversized backing buffers into persistence layers.',
+        'Added regression tests for local dev parity, step output byte limits, storage.put behavior, and production-compatible workflow execution.',
+        'Reviews focus on source-backed runtime correctness, typed array normalization, persistence failure modes, and whether regression tests cover tight-buffer and sliced-buffer paths.',
+      ].join(' '),
+      CODE_REVIEW_SMOKE_REVIEW_SUMMARY: [
+        'Request changes: the Workflows persistence behavior is relevant to this candidate profile,',
+        'and the PR needs exact regression coverage around typed-array backing buffers before merge.',
+      ].join(' '),
+    },
+  },
 ];
 
 const PROFILE_FILTER = new Set(
@@ -87,9 +129,10 @@ function extractSmokeJson(stdout) {
 }
 
 function profileRuns() {
+  const defaultProfiles = PROFILE_MATRIX.filter((profile) => profile.defaultIncluded !== false);
   const selected = PROFILE_FILTER.size > 0
     ? PROFILE_MATRIX.filter((profile) => PROFILE_FILTER.has(profile.id))
-    : PROFILE_MATRIX;
+    : defaultProfiles;
   if (selected.length === 0) {
     throw new Error(
       `No CODE_REVIEW smoke profiles matched CODE_REVIEW_SMOKE_MATRIX_PROFILES=${JSON.stringify([...PROFILE_FILTER])}`,
@@ -110,10 +153,11 @@ function profileRuns() {
 
 function smokeEnvFor(profile) {
   const expectedOutcome = profile.expectedOutcome ?? 'matched';
+  const submitReview = profile.submitReview ?? expectedOutcome !== 'blocked';
   const env = {
     ...process.env,
     CODE_REVIEW_SMOKE_AUTO_MATCH: '1',
-    CODE_REVIEW_SMOKE_SUBMIT: expectedOutcome === 'blocked' ? '0' : '1',
+    CODE_REVIEW_SMOKE_SUBMIT: submitReview ? '1' : '0',
     CODE_REVIEW_SMOKE_REPO_URL: '',
     CODE_REVIEW_SMOKE_PR_NUMBER: '',
     CODE_REVIEW_SMOKE_ROLE_BACKED: '',
@@ -143,6 +187,9 @@ function summarizeSmoke(profile, parsed, durationMs) {
     matchMode: parsed?.matchMode ?? null,
     repoUrl: parsed?.repoUrl ?? null,
     prNumber: parsed?.prNumber ?? null,
+    expectedRepoUrl: profile.expectedRepoUrl ?? null,
+    expectedPrNumber: profile.expectedPrNumber ?? null,
+    expectedPrNumbers: profile.expectedPrNumbers ?? null,
     matchStatus: parsed?.matchStatus ?? null,
     qualityGate: parsed?.qualityGate ?? null,
     assessmentQuality: parsed?.assessmentQuality ?? null,
@@ -208,6 +255,25 @@ function runProfile(profile) {
       ...summary,
       ok: false,
       error: 'smoke passed but final JSON proof could not be parsed',
+    };
+  }
+  const expectationFailures = [];
+  if (profile.expectedRepoUrl && parsed.repoUrl !== profile.expectedRepoUrl) {
+    expectationFailures.push(`expected repo ${profile.expectedRepoUrl}, got ${parsed.repoUrl ?? 'null'}`);
+  }
+  const expectedPrNumbers = Array.isArray(profile.expectedPrNumbers)
+    ? profile.expectedPrNumbers
+    : profile.expectedPrNumber
+      ? [profile.expectedPrNumber]
+      : [];
+  if (expectedPrNumbers.length > 0 && !expectedPrNumbers.includes(parsed.prNumber)) {
+    expectationFailures.push(`expected PR ${expectedPrNumbers.join(' or ')}, got ${parsed.prNumber ?? 'null'}`);
+  }
+  if (expectationFailures.length > 0) {
+    return {
+      ...summary,
+      ok: false,
+      error: expectationFailures.join('; '),
     };
   }
   return summary;
