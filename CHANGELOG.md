@@ -23,6 +23,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Added — CODE_REVIEW assessment runtime
 
+- CODE_REVIEW judge-example verification can now audit remote D1 with `--remote --database-id`, so deployed full-submit/scoring calibration proof is inspectable instead of local-only.
 - The CODE_REVIEW expert-seed smoke now validates the exported review packet itself, failing if source-backed draft corpora have too few eligible candidate-to-PR labels or omit contrast-candidate suggestions needed for expert-labelled quality gates.
 - Added `npm run smoke:code-review-expert-seed-dev`, a remote app-dev operator smoke that seeds a source-backed CODE_REVIEW expert-review draft corpus from role-backed real match runs, exports review packet/template artifacts, and fails on warnings, missing provenance, synthetic labels, fake expert labels, or insufficient packet breadth.
 - Added an opt-in Workers SDK role-backed app-dev smoke matrix profile that fails unless automatic CODE_REVIEW matching selects a source-backed non-MUI `cloudflare/workers-sdk` review packet.
