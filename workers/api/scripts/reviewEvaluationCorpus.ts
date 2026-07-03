@@ -72,6 +72,12 @@ export interface CorpusReviewCliOptions {
 
 export interface ExpertReviewFile extends ApplyExpertCorpusReviewInput {
   sourceCorpusId?: string;
+  labels: ExpertReviewTemplateLabel[];
+}
+
+export interface ExpertReviewTemplateLabel extends ExpertLabelReview {
+  suggestedNegativeCandidateIds?: string[];
+  suggestedMinimumScoreSeparation?: number;
 }
 
 export interface CorpusReviewCliSummary {
@@ -481,7 +487,9 @@ function assertCompletedReview(input: ExpertReviewFile): void {
   }
 }
 
-function templateReviewLabel(item: CorpusReviewPacket['items'][number]): ExpertLabelReview {
+function templateReviewLabel(item: CorpusReviewPacket['items'][number]): ExpertReviewTemplateLabel {
+  const suggestedNegativeCandidateIds = item.suggestedContrastCandidates
+    .map((candidate) => candidate.candidateId);
   return {
     labelId: item.labelId,
     relevanceGrade: item.draft.relevanceGrade,
@@ -491,6 +499,12 @@ function templateReviewLabel(item: CorpusReviewPacket['items'][number]): ExpertL
       : {}),
     ...(item.draft.minimumScoreSeparation !== null
       ? { minimumScoreSeparation: item.draft.minimumScoreSeparation }
+      : {}),
+    ...(suggestedNegativeCandidateIds.length > 0
+      ? { suggestedNegativeCandidateIds }
+      : {}),
+    ...(suggestedNegativeCandidateIds.length > 0 && item.draft.minimumScoreSeparation === null
+      ? { suggestedMinimumScoreSeparation: 0.1 }
       : {}),
     explanation: `TODO: replace with source-backed human rationale for ${item.labelId}`,
   };
