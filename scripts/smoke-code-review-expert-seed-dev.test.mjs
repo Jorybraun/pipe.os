@@ -2,6 +2,7 @@ import { describe, expect, it } from 'vitest';
 
 import {
   buildReviewCliArgs,
+  validateExpertReviewMarkdown,
   validateExpertSeedPacket,
   validateExpertSeedSummary,
 } from './smoke-code-review-expert-seed-dev.mjs';
@@ -23,6 +24,7 @@ function readySummary(overrides = {}) {
     },
     reviewPacketPath: '/tmp/review-packet.json',
     reviewTemplatePath: '/tmp/review-template.json',
+    reviewMarkdownPath: '/tmp/review.md',
     readinessSummary: {
       nextAction: 'complete_expert_review',
       draftLabelCount: 4,
@@ -144,6 +146,34 @@ describe('CODE_REVIEW expert seed smoke contract', () => {
     });
   });
 
+  it('accepts a readable expert review markdown artifact with editable label instructions', () => {
+    const markdown = [
+      '# CODE_REVIEW Expert Corpus Review',
+      '## Reviewer Instructions',
+      '### Candidate Evidence',
+      '### Role Requirements',
+      '### Repo / PR Challenge',
+      '### Suggested Contrast Candidates',
+      'Edit `labels[0].explanation` in the JSON template.',
+      'Edit `labels[1].explanation` in the JSON template.',
+      'Edit `labels[2].explanation` in the JSON template.',
+    ].join('\n\n');
+
+    expect(validateExpertReviewMarkdown(markdown, { minLabels: 3 })).toEqual({
+      ok: true,
+      failures: [],
+      metrics: { editableLabelCount: 3 },
+    });
+  });
+
+  it('rejects expert review markdown without source evidence sections', () => {
+    const result = validateExpertReviewMarkdown('# CODE_REVIEW Expert Corpus Review', { minLabels: 3 });
+
+    expect(result.ok).toBe(false);
+    expect(result.failures).toContain('review markdown must include "### Candidate Evidence"');
+    expect(result.failures).toContain('editableLabelCount must be >= 3; got 0');
+  });
+
   it('rejects expert review packets with only irrelevant draft labels', () => {
     const result = validateExpertSeedPacket(readyPacket({
       items: readyPacket().items.map((item) => ({
@@ -187,6 +217,7 @@ describe('CODE_REVIEW expert seed smoke contract', () => {
       seedSelectionPoolLimit: 250,
       reviewPacketPath: '/tmp/packet.json',
       reviewTemplatePath: '/tmp/template.json',
+      reviewMarkdownPath: '/tmp/review.md',
       summaryPath: '/tmp/summary.json',
       seedDescription: 'CODE_REVIEW expert seed smoke',
     })).toEqual([
@@ -208,6 +239,8 @@ describe('CODE_REVIEW expert seed smoke contract', () => {
       '/tmp/packet.json',
       '--review-template',
       '/tmp/template.json',
+      '--review-markdown',
+      '/tmp/review.md',
       '--json',
       '/tmp/summary.json',
     ]);

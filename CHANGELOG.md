@@ -50,6 +50,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - Production match-quality corpora now require each expert label to include a human rationale in addition to reviewer/source provenance, preventing metadata-only labels from opening CODE_REVIEW rollout gates.
 - CODE_REVIEW corpus seeding now inspects a larger recent match-run pool and selects packet-diverse rows before applying the requested seed limit, so expert review packets do not collapse onto one dominant PR when broader source-backed challenges exist.
 - CODE_REVIEW corpus review packets and editable templates now include suggested contrast candidates, giving reviewers concrete negative-candidate choices and a suggested minimum score separation when completing match-quality labels.
+- CODE_REVIEW expert-review exports now include a human-readable markdown packet with candidate evidence, role requirements, repo/PR demands, suggested contrast candidates, and exact JSON fields to edit before a draft corpus can become a labelled quality gate.
 
 ### Fixed — CODE_REVIEW assessment runtime
 
