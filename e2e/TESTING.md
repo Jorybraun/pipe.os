@@ -514,6 +514,20 @@ candidate browser proof was not skipped with
 recruiter browser proof was not skipped with
 `recruiterReadoutContract=matched-code-review-hiring-manager-readout`.
 
+Latest focused role-backed full-submit reliability proof on 2026-07-03 passed
+with artifact
+`tmp/code-review-reliability/2026-07-03T13-29-56-491Z-suite.summary.json` for
+interview `62867967-8cab-4be9-b8cf-927737f5a2cf`: automatic role-backed matching
+selected `mui/base-ui#973`, returned `MATCHED`, validator `PASSED`, and `STRONG`
+assessment quality; candidate browser proof was not skipped with
+`candidateSurfaceContract=source-backed-code-review-with-review-round`;
+authenticated recruiter browser proof was not skipped with
+`recruiterReadoutContract=scored-code-review-hiring-manager-readout`; review
+session `f438bae9-2eef-4759-ae42-14c786b78bdf` produced 1 AI developer response,
+2 review threads, remote D1 score persistence `59` / `adequate`, completed
+review/scoring pipeline steps, 4 evidence hyperedges, and a person-role-repo
+bridge.
+
 Latest full-submit person-boundary app-dev proof on 2026-07-03 passed for
 interview `e8285690-59ab-4c94-8d05-bcbcee6a2da2`, review session
 `247b3e64-0c8c-4fe1-bada-c7605c93d3cf`, and judge replay example
