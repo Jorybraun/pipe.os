@@ -382,7 +382,7 @@ not use that lane as evidence that repo matching selected the best challenge.
 The browser smoke reads `CODE_REVIEW_EXPECT_MATCH_PROOF_VERDICT` from the setup
 script so it can assert either `PASSED` or an intentional `NEEDS_REVIEW` state.
 
-The full-submit smoke bootstraps stage config once before polling and again after the source-backed PR assignment is ready. Standalone CODE_REVIEW blocked-handoff smokes must return `PROFILE_RECEIVED` plus the `candidate-intake-queued` complete stage; they should never accept candidate-visible `WAITING_FOR_MATCH`. Ready CODE_REVIEW smokes also fail immediately if `/rpc/get-challenge` returns `WAITING_FOR_MATCH`, so the old matching dashboard cannot hide behind a later successful assignment. The client also fails closed to the same `Profile received` handoff if a standalone CODE_REVIEW stage config accidentally returns `WAITING_FOR_MATCH`, so the old matching dashboard cannot reappear in `/assess` while the backend boundary is being repaired. Ready-assignment smokes must expose `WELCOME` + `CODE_REVIEW`, which creates the assessment row required by `/rpc/review/session/init`.
+The full-submit smoke bootstraps stage config once before polling and again after the source-backed PR assignment is ready. Standalone CODE_REVIEW blocked-handoff smokes must return `PROFILE_RECEIVED` plus the `candidate-intake-queued` complete stage; they should never accept candidate-visible `WAITING_FOR_MATCH`. Ready CODE_REVIEW smokes also fail immediately if `/rpc/get-challenge` returns `WAITING_FOR_MATCH`, so the old matching dashboard cannot hide behind a later successful assignment. The client also fails closed to the same `Profile received` handoff if any candidate `/assess` stage config accidentally returns `WAITING_FOR_MATCH`, so the old matching dashboard cannot reappear while the backend boundary is being repaired. Ready-assignment smokes must expose `WELCOME` + `CODE_REVIEW`, which creates the assessment row required by `/rpc/review/session/init`.
 
 Latest deployed app-dev proof: after deploying dev API version `043f0c50-1552-4114-9aff-e3f3de1b6b23`, the manual full-submit smoke passed for `mui/base-ui#973` with recruiter-visible `codeReviewMatchStatus: "MATCHED"`, validator `PASSED`, browser inline Pierre comment, AI developer response, completed recruiter/profile results, and judge replay example `code_review_judge_example_c5c31416e69b945c1f2f67256a7ac134`. A later manual full-submit smoke after the recruiter defense-thread UI deployed passed for interview `f351c4f1-c324-4524-bac8-0efe00dc948b`, review session `4090c1fa-91cf-42e4-8534-5e429f038e54`, and judge replay example `code_review_judge_example_98833208c471ec6fc5fa777979d417b9`; an in-app browser check of `/interviews/f351c4f1-c324-4524-bac8-0efe00dc948b` confirmed the recruiter page renders `AI developer defense` with candidate annotations, AI developer pushback, and the final AI developer change response. The roleless full-submit auto-match smoke also passed for `mui/base-ui#973` with measured contrast separation score `1/2`, four evidence hyperedges, recruiter-visible validator `PASSED`, browser pushback, and judge replay example `code_review_judge_example_8c90fdfa5a8d5e6825b42f0a4a5aa8f8`. After deploying dev API version `e1b98750-0f61-407a-9e5d-c2e299cef507` and dev app shell version `3fec1ccc-3311-44c7-8cb2-313a2c06bcc2`, the role-backed full-submit command passed for interview `d8d65789-a653-4617-8ad4-1658a6653bb1`, review session `2149cfd1-3030-4f85-99fa-589c6dbb93d8`, and judge replay example `code_review_judge_example_bb02405ddcb09edd24f6618756dfe496`, selecting `mui/base-ui#973`, rendering readable match reason, `ASSESSMENT_FIT`, validator, hypergraph evidence, and Pierre diff, submitting visible candidate comments, receiving AI developer pushback, and completing recruiter results with 4 evidence hyperedges plus a person-role-repo hyperedge.
 
@@ -507,6 +507,17 @@ interview `59be7706-ac64-479c-876c-7210d9432cf4` with
 `PROFILE_RECEIVED` / `profile-received`, stage `candidate-intake-queued`,
 the unauthenticated browser smoke passed without Clerk test setup, no room link
 was produced, and no matching dashboard was shown.
+
+Latest post-frontend-boundary deploy proof on 2026-07-03: app-dev shell version
+`eb3db879-37df-4ec9-bf52-4284402e1caf` passed the blocked CODE_REVIEW smoke for
+interview `dde26c4f-9645-4e2d-9c04-d133d2fb10ee` with
+`CODE_REVIEW_SMOKE_AUTO_MATCH=1`, `CODE_REVIEW_EXPECT_BLOCKED_MATCH=1`, and
+`CODE_REVIEW_SMOKE_SKIP_RECRUITER_BROWSER=1`. The candidate handoff was
+`PROFILE_RECEIVED` / `profile-received`, stage `candidate-intake-queued`, the
+browser surface contract was `profile-received-candidate-handoff`, and recruiter
+API readiness reported `waiting_for_source_backed_match` with no repo/PR
+assigned. Recruiter browser proof was skipped only because this temp worktree
+does not have Clerk test environment variables.
 
 Latest role-backed ready-assignment app-dev proof on 2026-07-03 passed for
 interview `d3ab9d0b-1786-4ad5-b2af-ac379bdb76ba`: the matcher selected

@@ -52,12 +52,13 @@ Run these in real browser automation whenever repo matching or CODE_REVIEW chang
 3. Candidate opens `/assess/:token`; link is not marked used until explicit start.
 4. Candidate starts assessment; opening the raw link in a clean session now shows the correct claimed/started state.
 5. Candidate opens a CODE_REVIEW link with no ready assignment and sees `PROFILE_RECEIVED` / `candidate-intake-queued`, not decomposition, matching progress, or a generic spinner.
-6. Automatic match either exposes a source-backed code review before the candidate runtime starts or fails closed with a recruiter-owned missing-evidence/actionable diagnostic.
-7. Manual task exposes repo URL, exact base commit, task, success criteria, and expected evidence.
-8. Workspace launch reaches `READY` and opens a real proxy path for the selected repo/base commit.
-9. Candidate completes review or repo-task submission.
-10. Recruiter interview detail shows verdict, annotations or task evidence, score validity, match trust state, and next action.
-11. Person profile rollup updates only from source-backed completed evidence and keeps related meetings separate.
+6. If any `/assess` runtime accidentally receives `WAITING_FOR_MATCH`, the client fails closed to the profile-received handoff instead of rendering a candidate-visible matching dashboard.
+7. Automatic match either exposes a source-backed code review before the candidate runtime starts or fails closed with a recruiter-owned missing-evidence/actionable diagnostic.
+8. Manual task exposes repo URL, exact base commit, task, success criteria, and expected evidence.
+9. Workspace launch reaches `READY` and opens a real proxy path for the selected repo/base commit.
+10. Candidate completes review or repo-task submission.
+11. Recruiter interview detail shows verdict, annotations or task evidence, score validity, match trust state, and next action.
+12. Person profile rollup updates only from source-backed completed evidence and keeps related meetings separate.
 
 ## Current Proven Checks
 
@@ -76,6 +77,7 @@ Run these in real browser automation whenever repo matching or CODE_REVIEW chang
 - `npm run smoke:assess-token-lifecycle-dev` creates two real app-dev CODE_REVIEW assessment links, opens token A then token B in one browser, and proves token B resolves/stores candidate B before claim without a used-link or matching-loop fallback. This is now a default `npm run smoke:code-review-reliability-dev` lane; ready challenge start/render remains covered by `npm run smoke:code-review-assess-dev`.
 - `npm --prefix workers/api run review-judge:verify -- --remote --database-id <app-dev-d1> --limit 20 --require-calibration --json` is now a default `npm run smoke:code-review-reliability-dev` lane. The latest app-dev proof found 20 labelled, replayable, calibration-ready CODE_REVIEW judge examples with zero invalid statuses, zero verifier failures, zero next actions, and an example containing candidate comments plus AI developer pushback.
 - `npm run smoke:code-review-assess-dev:blocked` proves the deployed standalone CODE_REVIEW blocked path returns `PROFILE_RECEIVED` / `candidate-intake-queued`, opens recruiter detail, and rejects candidate-visible matching-loop copy.
+- `npx vitest run src/pages/CandidateAssessmentPage.test.tsx` proves the `/assess` React runtime fails closed from any leaked `WAITING_FOR_MATCH` challenge into `Profile received`, not only stages explicitly labelled standalone CODE_REVIEW.
 - Ready CODE_REVIEW app-dev smokes fail immediately if `/rpc/get-challenge` returns `WAITING_FOR_MATCH`, preventing a transient matching dashboard from being hidden by a later ready assignment.
 - `npm run smoke:code-review-packet-catalog-dev -- --database-id <app-dev-d1> --require-pass` proves app-dev has enough source-backed CODE_REVIEW packet breadth before matching is trusted: at least 3 production-ready PR packets across 3 repos and at least 2 persisted `reviewProfile`-ready packets. The 2026-07-03 proof found 8 ready packets across `cloudflare/workers-sdk`, `mui/base-ui`, and `vercel/swr`, with 5 persisted review profiles.
 - `npm run smoke:code-review-assess-dev:person-boundary` proves the completed CODE_REVIEW person-profile rollup keeps the selected recommendation anchored to the submitted scored review even when a newer same-person CODE_REVIEW invite exists with a different repo/PR and no candidate submission.

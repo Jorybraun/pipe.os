@@ -539,6 +539,11 @@ example containing both candidate comments and AI developer pushback. This makes
 judge replay/calibration proof a default CODE_REVIEW runtime gate rather than a
 manual operator check.
 
+Status 2026-07-03 follow-up 4: the `/assess` React runtime no longer has a
+candidate-visible `WAITING_FOR_MATCH` render path. If any backend path leaks a
+waiting matcher challenge, the candidate sees the same `Profile received`
+handoff and email-next copy instead of the old personalized matching dashboard.
+
 ## Production Readiness Gate
 
 Do not mark CODE_REVIEW product-complete until all of this is true:
@@ -547,6 +552,8 @@ Do not mark CODE_REVIEW product-complete until all of this is true:
 - Roleless and role-backed match proofs pass in app-dev.
 - Candidate UI shows readable match reason, real diff, annotations, AI
   pushback, verdict, and completion.
+- Candidate UI never renders the old matching/decomposition dashboard; leaked
+  `WAITING_FOR_MATCH` states fail closed to `Profile received`.
 - Recruiter UI shows source-backed match proof, submission, annotations,
   AI pushback transcript, and score/gap explanation.
 - At least three real source-backed packets exist for contrast.

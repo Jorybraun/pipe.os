@@ -16,7 +16,6 @@ import type { CodeReviewMatchExplanation } from '../components/Panels/ProblemPan
 import { FollowUpQuestionsPanel } from '../components/Assessment/FollowUpQuestionsPanel';
 import { IntakeChallenge } from '../components/Assessment/IntakeChallenge';
 import { WelcomeScreen } from '../components/Assessment/WelcomeScreen';
-import { WaitingForMatch, type WaitingForMatchDiagnostics } from '../components/Assessment/WaitingForMatch';
 import { resolveStageConfig } from '../lib/challenge/resolveStageConfig';
 import { normalizeDiffJson } from '../lib/challenge/componentMap';
 import type { RawStage, RawChallenge } from '../lib/challenge/resolveStageConfig';
@@ -150,23 +149,6 @@ function buildRawStage(
   };
 }
 
-function isStandaloneCodeReviewWaitingHandoff(
-  stageConfig: StageConfigDTO | null,
-  currentType: string | undefined,
-): boolean {
-  if (currentType !== 'WAITING_FOR_MATCH') return false;
-  const stageId = stageConfig?.stageId?.toLowerCase() ?? '';
-  const challengeTypes = stageConfig?.challenges?.map((challenge) => challenge.type) ?? [];
-  const upcomingTypes = stageConfig?.upcoming?.map((challenge) => challenge.type) ?? [];
-  const stageTitle = stageConfig?.stageTitle?.toLowerCase() ?? '';
-  const isCodeReviewStage = stageId === 'standalone-code-review'
-    || stageId.includes('code-review')
-    || stageTitle.includes('code review')
-    || challengeTypes.includes('CODE_REVIEW')
-    || upcomingTypes.includes('CODE_REVIEW');
-  return isCodeReviewStage;
-}
-
 // ============================================================================
 // Component
 // ============================================================================
@@ -194,7 +176,6 @@ export default function CandidateAssessmentPage({ hideHeader = false }: Candidat
     onStart,
     claimAssessmentStart,
     reset,
-    refresh,
     sessionToken,
   } = useAssessment(token || '');
 
@@ -219,7 +200,7 @@ export default function CandidateAssessmentPage({ hideHeader = false }: Candidat
   }, [stageConfig, challengeContent, currentOrder]);
 
   const currentType = challengeContent?.type ?? stageConfig?.challenges?.[currentOrder]?.type;
-  const shouldFailClosedToProfileReceived = isStandaloneCodeReviewWaitingHandoff(stageConfig, currentType);
+  const shouldFailClosedToProfileReceived = currentType === 'WAITING_FOR_MATCH';
 
   // Review session v2 state (CODE_REVIEW golden path)
   const [reviewSessionMeta, setReviewSessionMeta] = useState<{
@@ -469,41 +450,6 @@ export default function CandidateAssessmentPage({ hideHeader = false }: Candidat
         isStarting={assessmentStartLoading}
         startError={assessmentStartError}
       />
-    );
-  }
-
-  // ---------------------------------------------------------------------------
-  // WAITING_FOR_MATCH — full-page waiting state, bypasses StageShell
-  // ---------------------------------------------------------------------------
-
-  if (currentType === 'WAITING_FOR_MATCH' && challengeContent) {
-    const waitConfig = typeof challengeContent.config === 'object' && challengeContent.config !== null
-      ? (challengeContent.config as Record<string, unknown>)
-      : {};
-    const waitState = waitConfig.state === 'blocked' || waitConfig.state === 'pending'
-      ? waitConfig.state
-      : undefined;
-    const waitReason = typeof waitConfig.reason === 'string' ? waitConfig.reason : undefined;
-    const waitDiagnostics = typeof waitConfig.diagnostics === 'object' && waitConfig.diagnostics !== null && !Array.isArray(waitConfig.diagnostics)
-      ? (waitConfig.diagnostics as WaitingForMatchDiagnostics)
-      : undefined;
-    return (
-      <div style={{ height: '100vh', overflow: 'hidden', background: '#0c0c0e' }}>
-        <ChromeMeshGrid />
-        <WaitingForMatch
-          title={challengeContent.title ?? 'Building your personalized challenge'}
-          instructions={challengeContent.instructions ?? 'We are analyzing your profile to find the best open-source project match. This takes a few moments.'}
-          config={{
-            autoRefresh: waitConfig.autoRefresh === true,
-            refreshIntervalSeconds: typeof waitConfig.refreshIntervalSeconds === 'number' ? waitConfig.refreshIntervalSeconds : 30,
-            ...(waitState ? { state: waitState } : {}),
-            ...(waitReason ? { reason: waitReason } : {}),
-            ...(waitDiagnostics ? { diagnostics: waitDiagnostics } : {}),
-          }}
-          onRefresh={refresh}
-          sessionToken={sessionToken}
-        />
-      </div>
     );
   }
 
