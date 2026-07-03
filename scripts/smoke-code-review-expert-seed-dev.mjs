@@ -31,10 +31,9 @@ function requiredEnv(name) {
   return value;
 }
 
-function resolveDatabaseId() {
-  return process.env.CODE_REVIEW_EXPERT_SEED_D1_DATABASE_ID
-    || process.env.MATCHING_EVALUATION_D1_DATABASE_ID
-    || process.env.CLOUDFLARE_D1_DATABASE_ID
+export function resolveExpertSeedDatabaseId(env = process.env) {
+  return env.CODE_REVIEW_EXPERT_SEED_D1_DATABASE_ID
+    || env.MATCHING_EVALUATION_D1_DATABASE_ID
     || '';
 }
 
@@ -289,11 +288,12 @@ function assertReadableArtifact(path, label) {
 function main() {
   requiredEnv('CLOUDFLARE_ACCOUNT_ID');
   requiredEnv('CLOUDFLARE_API_TOKEN');
-  const databaseId = resolveDatabaseId();
+  const databaseId = resolveExpertSeedDatabaseId();
   if (!databaseId) {
     throw new Error(
       'Missing D1 database id; set CODE_REVIEW_EXPERT_SEED_D1_DATABASE_ID, '
-      + 'MATCHING_EVALUATION_D1_DATABASE_ID, or CLOUDFLARE_D1_DATABASE_ID.',
+      + 'or MATCHING_EVALUATION_D1_DATABASE_ID. This smoke must target the CODE_REVIEW '
+      + 'evaluation database, not the generic app D1.',
     );
   }
 
