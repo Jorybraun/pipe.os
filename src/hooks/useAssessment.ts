@@ -502,6 +502,13 @@ export function useAssessment(inviteToken: string): UseAssessmentReturn {
       });
     } catch (err) {
       const error = err instanceof Error ? err : new Error('Failed to start assessment');
+      if (error instanceof ProfileReceivedHandoffError) {
+        setState((prev) => ({
+          ...prev,
+          ...profileReceivedState(error.handoffMessage),
+        }));
+        return;
+      }
       console.error('[useAssessment] start-assessment failed:', error);
       setState((prev) => ({ ...prev, error }));
       throw error;

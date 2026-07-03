@@ -237,6 +237,50 @@ describe('useAssessment', () => {
     expect(fetchMock).toHaveBeenCalledTimes(3);
   });
 
+  it('treats profile-received start conflicts as queued handoffs, not start failures', async () => {
+    sessionStorage.setItem('pipe_session_token', 'session-token');
+    sessionStorage.setItem('pipe_session_invite_token', 'invite-token');
+    sessionStorage.setItem('pipe_session_candidate', JSON.stringify({
+      id: 'candidate-1',
+      pipelineId: null,
+      status: 'INVITED',
+      name: 'Ada Candidate',
+    }));
+
+    const fetchMock = vi.fn()
+      .mockResolvedValueOnce({
+        ok: false,
+        status: 409,
+        json: async () => ({
+          error: {
+            code: 'PROFILE_RECEIVED',
+            message: 'Your profile has been received. PIPE will email you when your code review is ready.',
+          },
+          challenge: {
+            id: 'profile-received',
+            type: 'PROFILE_RECEIVED',
+            instructions: 'Your profile has been received. PIPE will email you when your code review is ready.',
+          },
+        }),
+      } as Response);
+    globalThis.fetch = fetchMock;
+
+    const { result } = renderHook(() => useAssessment('invite-token'));
+
+    await waitFor(() => expect(result.current.candidate?.id).toBe('candidate-1'));
+
+    await act(async () => {
+      await expect(result.current.claimAssessmentStart()).resolves.toBeUndefined();
+    });
+
+    await waitFor(() => expect(result.current.isSubmitted).toBe(true));
+    expect(result.current.error).toBeNull();
+    expect(result.current.stageConfig?.stageId).toBe('candidate-intake-queued');
+    expect(result.current.challengeContent?.type).toBe('PROFILE_RECEIVED');
+    expect(result.current.challengeContent?.instructions).toContain('email you when your code review is ready');
+    expect(fetchMock).toHaveBeenCalledTimes(1);
+  });
+
   it('opens the real code review challenge instead of trapping ready assessments on welcome', async () => {
     sessionStorage.setItem('pipe_session_token', 'session-token');
     sessionStorage.setItem('pipe_session_invite_token', 'invite-token');
