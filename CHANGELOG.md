@@ -23,6 +23,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Added — CODE_REVIEW assessment runtime
 
+- Added `matching-eval:health` to audit CODE_REVIEW source-backed packet breadth, selected-packet skew, and role-backed unsafe match runs against remote D1 before treating automatic matching as production-reliable.
 - Added an internal living-context match-quality evaluation gate with compact match reports, labelled contrast cases, source-backed PR checks, and decision-weighted rematch exclusions, harvesting PR #171 backend primitives without exposing graph cockpit or matching diagnostics to candidates.
 - The internal match-quality evaluation CLI can now run against frozen `evaluation_corpora` rows via `--corpus-id` as well as compact JSON files, adapting existing candidate-role-challenge labels into the CODE_REVIEW packet-quality gate.
 - Matching evaluation can now auto-select one same-or-earlier candidate/role/status match run per evaluated pair with `--auto-comparison-runs`, making determinism coverage repeatable without hand-picking comparison IDs.
