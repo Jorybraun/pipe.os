@@ -737,11 +737,12 @@ app.post('/living-context-backfill-trigger', async (c) => {
  * evidence, role requirements, and challenge packets from persisted match_runs,
  * generates draft labels for expert review, and persists the corpus.
  *
- * Body: { limit?: number, statusFilter?: string, roleContextId?: string, description?: string, persist?: boolean }
+ * Body: { limit?: number, selectionPoolLimit?: number, statusFilter?: string, roleContextId?: string, description?: string, persist?: boolean }
  */
 app.post('/evaluation-corpus-seed', async (c) => {
   interface SeedRequestBody {
     limit?: number;
+    selectionPoolLimit?: number;
     statusFilter?: string;
     roleContextId?: string;
     description?: string;
@@ -751,6 +752,7 @@ app.post('/evaluation-corpus-seed', async (c) => {
 
   const result = await seedCorpusFromMatchRuns(c.env.DB, {
     limit: body.limit,
+    selectionPoolLimit: body.selectionPoolLimit,
     statusFilter: body.statusFilter,
     roleContextId: body.roleContextId,
     description: body.description,
@@ -768,6 +770,7 @@ app.post('/evaluation-corpus-seed', async (c) => {
   const draftLabelCount = labelCount - expertLabelCount - syntheticFixtureCount;
   const productionReadinessFailures = productionCorpusFailures(result.corpus);
   const productionReady = productionReadinessFailures.length === 0;
+  const reviewPacket = buildCorpusReviewPacket(result.corpus);
 
   return c.json({
     corpusId: result.corpus.corpusId,
@@ -784,7 +787,8 @@ app.post('/evaluation-corpus-seed', async (c) => {
     expectedPacketCount: result.corpus.expectedPackets?.length ?? 0,
     productionReady,
     productionReadinessFailures,
-    nextAction: productionReady ? 'run_evaluation' : 'attach_expert_label_provenance',
+    nextAction: productionReady ? 'run_evaluation' : reviewPacket.readinessSummary.nextAction,
+    readinessSummary: reviewPacket.readinessSummary,
     warnings: result.warnings,
   });
 });
@@ -838,6 +842,7 @@ app.post('/evaluation-corpus-expert-review', async (c) => {
     const row = await loadStoredEvaluationCorpus(c.env.DB, body.sourceCorpusId);
     const sourceCorpus = loadCorpus(row.corpus_json);
     const result = await applyExpertCorpusReview(sourceCorpus, body);
+    const reviewPacket = buildCorpusReviewPacket(result.corpus);
     const dryRun = body.dryRun === true;
     let persisted = false;
     const corpusHash = dryRun
@@ -858,7 +863,8 @@ app.post('/evaluation-corpus-expert-review', async (c) => {
       syntheticFixtureCount: result.syntheticFixtureCount,
       productionReady: result.productionReady,
       productionReadinessFailures: result.productionReadinessFailures,
-      nextAction: result.productionReady ? 'run_evaluation' : 'complete_expert_label_review',
+      nextAction: result.productionReady ? 'run_evaluation' : reviewPacket.readinessSummary.nextAction,
+      readinessSummary: reviewPacket.readinessSummary,
     });
   } catch (error) {
     return c.json({

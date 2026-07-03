@@ -28,6 +28,8 @@ import { sha256 } from '../../repoSemanticGraph/hash';
 export interface CorpusSeederOptions {
   /** Maximum number of match runs to include. Default 50. */
   limit?: number;
+  /** Number of recent match-run rows to inspect before selecting a packet-diverse subset. Default 500. */
+  selectionPoolLimit?: number;
   /** Only include match runs with this status. Default 'MATCHED'. */
   statusFilter?: string;
   /** Optional role context ID filter. */
@@ -171,6 +173,42 @@ function selectColumn(
   return fallback ? `${fallback} AS ${alias}` : `NULL AS ${alias}`;
 }
 
+function matchRunPacketKey(row: MatchRunListRow): string {
+  const packetId = row.selected_packet_id?.trim();
+  return packetId ? `packet:${packetId}` : `unselected:${row.id}`;
+}
+
+function selectPacketDiverseMatchRunRows(
+  rows: MatchRunListRow[],
+  limit: number,
+): MatchRunListRow[] {
+  if (rows.length <= limit) return rows;
+
+  const groups = new Map<string, MatchRunListRow[]>();
+  for (const row of rows) {
+    const key = matchRunPacketKey(row);
+    const group = groups.get(key) ?? [];
+    group.push(row);
+    groups.set(key, group);
+  }
+
+  const selected: MatchRunListRow[] = [];
+  const remainingGroups = Array.from(groups.values());
+  while (selected.length < limit) {
+    let addedThisRound = false;
+    for (const group of remainingGroups) {
+      const next = group.shift();
+      if (!next) continue;
+      selected.push(next);
+      addedThisRound = true;
+      if (selected.length >= limit) break;
+    }
+    if (!addedThisRound) break;
+  }
+
+  return selected;
+}
+
 function packetDemands(row: ChallengePacketRow): Array<{
   demandId: string;
   concepts: string[];
@@ -273,6 +311,7 @@ export async function seedCorpusFromMatchRuns(
   options: CorpusSeederOptions = {},
 ): Promise<CorpusSeederResult> {
   const limit = options.limit ?? 50;
+  const selectionPoolLimit = Math.max(limit, options.selectionPoolLimit ?? 500);
   const statusFilter = options.statusFilter ?? 'MATCHED';
   const warnings: string[] = [];
 
@@ -285,18 +324,19 @@ export async function seedCorpusFromMatchRuns(
           AND role_context_id = ?2
         ORDER BY created_at DESC
         LIMIT ?3`,
-    ).bind(statusFilter, options.roleContextId, limit)
+    ).bind(statusFilter, options.roleContextId, selectionPoolLimit)
     : db.prepare(
       `SELECT id, candidate_id, role_context_id, role_snapshot_id, status, selected_packet_id, created_at
          FROM match_runs
         WHERE status = ?1
         ORDER BY created_at DESC
         LIMIT ?2`,
-    ).bind(statusFilter, limit);
+    ).bind(statusFilter, selectionPoolLimit);
 
   const matchRunRows = await matchRunQuery.all<MatchRunListRow>();
+  const selectedMatchRunRows = selectPacketDiverseMatchRunRows(matchRunRows.results ?? [], limit);
   const matchRuns: PersistedMatchRun[] = [];
-  for (const row of matchRunRows.results ?? []) {
+  for (const row of selectedMatchRunRows) {
     try {
       const run = await loadPersistedMatchRun(db, row.id);
       matchRuns.push(run);
@@ -369,7 +409,7 @@ export async function seedCorpusFromMatchRuns(
 
       candidateEvidence.push({
         candidateId,
-        evidenceId: row.assertion_id,
+        evidenceId: `${candidateId}:${row.assertion_id}`,
         episodeId: row.episode_id,
         narrative: row.narrative,
         concepts: conceptsByAssertion.get(row.assertion_id) ?? [],

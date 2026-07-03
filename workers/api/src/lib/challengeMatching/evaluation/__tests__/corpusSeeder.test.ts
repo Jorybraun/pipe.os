@@ -368,6 +368,45 @@ function seedMatchData(sqlite: NodeSqliteDatabase): void {
   );
 }
 
+function rankedChallenge(
+  challengeId: string,
+  rank: number,
+  score = 0.85,
+): Record<string, unknown> {
+  return {
+    rank,
+    recallRank: rank,
+    challengeId,
+    repoId: challengeId.replace('packet', 'repo'),
+    prNumber: 40 + rank,
+    sourceVersion: 'v1.0.0',
+    score,
+    candidateEvidenceAlignment: score,
+    roleRelevance: score,
+    contextualSpecificity: score,
+    challengeQuality: 0.9,
+    validationDeepeningValue: 0.6,
+    alignedDemandCount: 1,
+    stretchCount: 0,
+    stretchDemandWeightRatio: 0,
+    provenanceComplete: true,
+    eligible: true,
+    alignments: [],
+    rejectionReasons: [],
+  };
+}
+
+function addChallengePacket(
+  sqlite: NodeSqliteDatabase,
+  packetId: string,
+  prNumber: number,
+): void {
+  sqlite.prepare(
+    `INSERT INTO review_challenge_packets (id, repo_id, pr_number, source_version, content_hash)
+     VALUES (?, ?, ?, ?, ?)`,
+  ).run(packetId, packetId.replace('packet', 'repo'), prNumber, 'v1.0.0', `sha256:${packetId}`);
+}
+
 describe('corpusSeeder', () => {
   let sqlite: NodeSqliteDatabase;
   let db: D1Database;
@@ -653,6 +692,129 @@ describe('corpusSeeder', () => {
     expect(result.warnings.some((warning) =>
       warning.includes('metadata.totalChallenges does not match'),
     )).toBe(false);
+  });
+
+  it('diversifies limited seed corpora across selected PR packets before filling by recency', async () => {
+    seedMatchData(sqlite);
+    addChallengePacket(sqlite, 'packet-2', 43);
+    sqlite.prepare(
+      `UPDATE match_runs
+          SET created_at = ?, ranked_results_json = ?
+        WHERE id = 'mr-1'`,
+    ).run(
+      '2026-07-02T21:02:00.000Z',
+      JSON.stringify([
+        rankedChallenge('packet-1', 1, 0.86),
+        rankedChallenge('packet-2', 2, 0.83),
+      ]),
+    );
+    sqlite.prepare(
+      `INSERT INTO match_runs (
+         id, candidate_id, role_context_id, candidate_snapshot_id,
+         role_snapshot_id, policy_version, status, selected_packet_id,
+         ranked_results_json, created_at
+       ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
+    ).run(
+      'mr-2',
+      'candidate-1',
+      'role-1',
+      'candidate:candidate-1:v2',
+      'standalone-code-review-v1',
+      '1.0.0',
+      'MATCHED',
+      'packet-1',
+      JSON.stringify([
+        rankedChallenge('packet-1', 1, 0.87),
+        rankedChallenge('packet-2', 2, 0.84),
+      ]),
+      '2026-07-02T21:03:00.000Z',
+    );
+    sqlite.prepare(
+      `INSERT INTO match_runs (
+         id, candidate_id, role_context_id, candidate_snapshot_id,
+         role_snapshot_id, policy_version, status, selected_packet_id,
+         ranked_results_json, created_at
+       ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
+    ).run(
+      'mr-3',
+      'candidate-1',
+      'role-1',
+      'candidate:candidate-1:v3',
+      'standalone-code-review-v1',
+      '1.0.0',
+      'MATCHED',
+      'packet-2',
+      JSON.stringify([
+        rankedChallenge('packet-2', 1, 0.88),
+        rankedChallenge('packet-1', 2, 0.84),
+      ]),
+      '2026-07-02T21:01:00.000Z',
+    );
+
+    const result = await seedCorpusFromMatchRuns(db, { limit: 2 });
+
+    expect(result.matchRunCount).toBe(2);
+    expect(result.corpus.expertLabels.map((label) => label.challengeId).sort()).toEqual([
+      'packet-1',
+      'packet-2',
+    ]);
+    expect(result.corpus.expectedPackets?.map((packet) => packet.challengeId).sort()).toEqual([
+      'packet-1',
+      'packet-2',
+    ]);
+    expect(result.corpus.metadata.totalExpectedPackets).toBe(2);
+  });
+
+  it('namespaces shared living-context assertions by candidate in seeded corpora', async () => {
+    seedMatchData(sqlite);
+    addChallengePacket(sqlite, 'packet-2', 43);
+    sqlite.prepare(
+      `INSERT INTO applications (id, workspace_person_id, legacy_candidate_id)
+       VALUES (?, ?, ?)`,
+    ).run('app-2', 'wp-1', 'candidate-2');
+    sqlite.prepare(
+      `UPDATE match_runs
+          SET created_at = ?, ranked_results_json = ?
+        WHERE id = 'mr-1'`,
+    ).run(
+      '2026-07-02T21:02:00.000Z',
+      JSON.stringify([
+        rankedChallenge('packet-1', 1, 0.86),
+        rankedChallenge('packet-2', 2, 0.83),
+      ]),
+    );
+    sqlite.prepare(
+      `INSERT INTO match_runs (
+         id, candidate_id, role_context_id, candidate_snapshot_id,
+         role_snapshot_id, policy_version, status, selected_packet_id,
+         ranked_results_json, created_at
+       ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
+    ).run(
+      'mr-shared-assertion',
+      'candidate-2',
+      'role-1',
+      'candidate:candidate-2:v1',
+      'standalone-code-review-v1',
+      '1.0.0',
+      'MATCHED',
+      'packet-2',
+      JSON.stringify([
+        rankedChallenge('packet-2', 1, 0.88),
+        rankedChallenge('packet-1', 2, 0.84),
+      ]),
+      '2026-07-02T21:01:00.000Z',
+    );
+
+    const result = await seedCorpusFromMatchRuns(db, { limit: 2 });
+
+    expect(() => validateCorpus(result.corpus)).not.toThrow();
+    expect(result.corpus.candidateEvidence.map((evidence) => evidence.evidenceId).sort()).toEqual([
+      'candidate-1:sa-1',
+      'candidate-2:sa-1',
+    ]);
+    expect(result.corpus.candidateEvidence.every((evidence) =>
+      evidence.evidenceReferences[0]?.sourceRefId === 'ss-1',
+    )).toBe(true);
   });
 
   it('respects statusFilter option', async () => {
