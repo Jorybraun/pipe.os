@@ -14,6 +14,7 @@ const DEFAULT_LANE_IDS = [
   'blocked-handoff',
   'role-backed-full-submit',
   'person-boundary',
+  'judge-example-readiness',
   'workers-sdk-matrix',
   'packet-catalog-readiness',
   'match-quality-readiness',
@@ -187,6 +188,29 @@ export function buildReliabilityLanes({
         label: 'Non-MUI Workers SDK automatic matching breadth',
         command: ['npm', 'run', 'smoke:code-review-assess-dev:workers-matrix'],
         parser: 'matrix',
+      },
+    ],
+    [
+      'judge-example-readiness',
+      {
+        id: 'judge-example-readiness',
+        label: 'CODE_REVIEW judge replay and calibration example readiness',
+        command: [
+          'npm',
+          '--prefix',
+          'workers/api',
+          'run',
+          'review-judge:verify',
+          '--',
+          '--remote',
+          '--database-id',
+          databaseId,
+          '--limit',
+          '20',
+          '--require-calibration',
+          '--json',
+        ],
+        parser: 'judge-examples',
       },
     ],
     [
@@ -380,6 +404,38 @@ function summarizePacketCatalog(proof) {
   };
 }
 
+function summarizeJudgeExamples(proof) {
+  const database = Array.isArray(proof?.databases) ? proof.databases[0] : null;
+  const audit = database?.audit ?? null;
+  const firstExample = Array.isArray(audit?.examples) ? audit.examples[0] : null;
+  return {
+    ok: audit?.replayReady === true
+      && audit?.calibrationReady === true
+      && noFailures(audit?.failures ?? []),
+    databasePath: database?.databasePath ?? null,
+    status: audit?.status ?? null,
+    replayReady: audit?.replayReady ?? null,
+    calibrationReady: audit?.calibrationReady ?? null,
+    totalExamples: audit?.counts?.total ?? null,
+    readyExamples: audit?.counts?.ready ?? null,
+    labelledExamples: audit?.counts?.labelled ?? null,
+    archivedExamples: audit?.counts?.archived ?? null,
+    invalidStatusExamples: audit?.counts?.invalidStatus ?? null,
+    replayableExamples: audit?.counts?.replayable ?? null,
+    calibrationReadyExamples: audit?.counts?.calibrationReady ?? null,
+    failureModes: Array.isArray(audit?.failureModes) ? audit.failureModes : [],
+    failures: Array.isArray(audit?.failures) ? audit.failures : null,
+    nextActions: Array.isArray(audit?.nextActions) ? audit.nextActions : [],
+    exampleId: firstExample?.id ?? null,
+    exampleSessionId: firstExample?.sessionId ?? null,
+    exampleStatus: firstExample?.status ?? null,
+    exampleCommentCount: firstExample?.commentCount ?? null,
+    examplePushbackCount: firstExample?.pushbackCount ?? null,
+    exampleReplayable: firstExample?.replayable ?? null,
+    exampleCalibrationReady: firstExample?.calibrationReady ?? null,
+  };
+}
+
 export function summarizeLaneProof(parser, stdout) {
   const proof = parser === 'matrix'
     ? extractMatrixSummary(stdout)
@@ -399,6 +455,10 @@ export function summarizeLaneProof(parser, stdout) {
             candidate.metrics
             && Array.isArray(candidate.repos)
             && typeof candidate.ok === 'boolean')
+      : parser === 'judge-examples'
+        ? extractLastJsonObject(stdout, (candidate) =>
+            Array.isArray(candidate.databases)
+            && candidate.databases.some((database) => database?.audit))
       : extractLastJsonObject(stdout, (candidate) =>
           candidate.ok === true
           && (
@@ -412,6 +472,7 @@ export function summarizeLaneProof(parser, stdout) {
   if (parser === 'token-lifecycle') return { parsed: true, summary: summarizeTokenLifecycle(proof) };
   if (parser === 'match-quality') return { parsed: true, summary: summarizeMatchQuality(proof) };
   if (parser === 'packet-catalog') return { parsed: true, summary: summarizePacketCatalog(proof) };
+  if (parser === 'judge-examples') return { parsed: true, summary: summarizeJudgeExamples(proof) };
   return { parsed: true, summary: summarizeAssessSmoke(proof) };
 }
 
@@ -568,6 +629,25 @@ export function validateLaneSummary(laneId, summary) {
         'person-boundary related interview must not be promoted as the selected recommendation',
       );
       require(finiteNumberAtLeast(summary?.relatedBoundaryScheduledCodeReviewCount, 1), 'person-boundary must expose at least one CODE_REVIEW row on the person graph');
+      break;
+    case 'judge-example-readiness':
+      require(Boolean(summary?.databasePath), 'judge-example-readiness must include databasePath');
+      require(summary?.status === 'calibration_ready', 'judge-example-readiness status must be calibration_ready');
+      require(summary?.replayReady === true, 'judge-example-readiness must be replay-ready');
+      require(summary?.calibrationReady === true, 'judge-example-readiness must be calibration-ready');
+      require(finiteNumberAtLeast(summary?.totalExamples, 1), 'judge-example-readiness must include stored examples');
+      require(finiteNumberAtLeast(summary?.labelledExamples, 1), 'judge-example-readiness must include labelled examples');
+      require(finiteNumberAtLeast(summary?.replayableExamples, 1), 'judge-example-readiness must include replayable examples');
+      require(finiteNumberAtLeast(summary?.calibrationReadyExamples, 1), 'judge-example-readiness must include calibration-ready examples');
+      require(Number(summary?.invalidStatusExamples) === 0, 'judge-example-readiness invalid statuses must be 0');
+      require(noFailures(summary?.failures), 'judge-example-readiness failures must be empty');
+      require(Array.isArray(summary?.nextActions) && summary.nextActions.length === 0, 'judge-example-readiness next actions must be empty');
+      require(Boolean(summary?.exampleId), 'judge-example-readiness must include an example id');
+      require(Boolean(summary?.exampleSessionId), 'judge-example-readiness must include an example session id');
+      require(summary?.exampleReplayable === true, 'judge-example-readiness first example must be replayable');
+      require(summary?.exampleCalibrationReady === true, 'judge-example-readiness first example must be calibration-ready');
+      require(finiteNumberAtLeast(summary?.exampleCommentCount, 1), 'judge-example-readiness first example must include candidate comments');
+      require(finiteNumberAtLeast(summary?.examplePushbackCount, 1), 'judge-example-readiness first example must include AI pushback');
       break;
     case 'workers-sdk-matrix':
       require(finiteNumberAtLeast(summary?.profileCount, 1), 'workers-sdk-matrix must evaluate at least one profile');

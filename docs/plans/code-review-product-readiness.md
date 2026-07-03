@@ -524,9 +524,20 @@ exists with a different repo/PR and no candidate submission.
 
 Status 2026-07-03 follow-up 2: the default app-dev reliability suite now also
 promotes `npm run smoke:assess-token-lifecycle-dev` into a required lane. The
-latest 9/9 run proved two real `/assess` links opened in the same browser
+first 9/9 run proved two real `/assess` links opened in the same browser
 resolve to separate candidates, keep token B active after token A, and avoid
-used-link or matching-progress fallback screens.
+used-link or matching-progress fallback screens; the lane remains covered by
+the latest 10/10 reliability run.
+
+Status 2026-07-03 follow-up 3: the default app-dev reliability suite now also
+promotes `npm --prefix workers/api run review-judge:verify -- --remote
+--database-id <app-dev-d1> --limit 20 --require-calibration --json` into the
+`judge-example-readiness` lane. The latest 10/10 run proved app-dev has 20
+labelled, replayable, calibration-ready CODE_REVIEW judge examples with zero
+invalid statuses, zero verifier failures, zero next actions, and a sample
+example containing both candidate comments and AI developer pushback. This makes
+judge replay/calibration proof a default CODE_REVIEW runtime gate rather than a
+manual operator check.
 
 ## Production Readiness Gate
 
@@ -542,8 +553,10 @@ Do not mark CODE_REVIEW product-complete until all of this is true:
 - At least two real overlay-ready packets have persisted `reviewProfile`
   assessment-fit metadata; runtime fallback profiles are not enough for a
   product-readiness claim.
-- Judge examples are collected and replayable.
-- Labelled judge examples exist for at least one calibration batch.
+- Judge examples are collected, replayable, and pass the default
+  `judge-example-readiness` lane.
+- Labelled judge examples exist for at least one calibration batch, including
+  candidate comments and AI developer pushback.
 - Full browser E2E covers invite -> assess -> review -> pushback -> submit ->
   recruiter result.
 - The production/staging smoke runs against deployed infrastructure with no

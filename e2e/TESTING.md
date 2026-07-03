@@ -218,12 +218,13 @@ one-use-safe candidate-link resolution proof, same-browser `/assess` token A/B
 lifecycle isolation, fresh no-CV `PROFILE_RECEIVED` handoff, blocked
 `PROFILE_RECEIVED` handoff after submitted evidence, role-backed full-submit
 and scoring smoke, completed-person-boundary proof, non-MUI Workers SDK matching
-matrix, source-backed packet-catalog breadth, and latest expert-labelled
-match-quality readiness gate. It writes lane stdout/stderr and summary artifacts
+matrix, judge replay/calibration example readiness, source-backed
+packet-catalog breadth, and latest expert-labelled match-quality readiness
+gate. It writes lane stdout/stderr and summary artifacts
 under `tmp/code-review-reliability/`. Use
-`CODE_REVIEW_RELIABILITY_LANES=manual-ready,token-lifecycle,blocked-handoff,workers-sdk-matrix` for focused
-diagnosis, or `CODE_REVIEW_RELIABILITY_D1_DATABASE_ID=<d1-id>` to point the
-match-quality lane at a different CODE_REVIEW evaluation database.
+`CODE_REVIEW_RELIABILITY_LANES=manual-ready,token-lifecycle,judge-example-readiness,blocked-handoff,workers-sdk-matrix`
+for focused diagnosis, or `CODE_REVIEW_RELIABILITY_D1_DATABASE_ID=<d1-id>` to
+point the match-quality lane at a different CODE_REVIEW evaluation database.
 The suite summary validator also fails candidate/recruiter-facing lanes when
 the candidate browser smoke or recruiter browser smoke is skipped, so a green
 suite proves the app-dev UI path ran instead of only direct RPC/API checks.
@@ -236,12 +237,16 @@ the expected `recruiterReadoutContract`
 `scored-code-review-hiring-manager-readout`, or
 `blocked-code-review-action-readout`). Treat a missing contract as a failed
 browser proof even if the child Playwright process exited zero.
-Latest full app-dev reliability proof on 2026-07-03 passed 9/9 with artifact
-`tmp/code-review-reliability/2026-07-03T14-23-06-218Z-suite.summary.json`.
+Latest full app-dev reliability proof on 2026-07-03 passed 10/10 with artifact
+`tmp/code-review-reliability/2026-07-03T14-37-36-374Z-suite.summary.json`.
 The run covered manual-ready `mui/base-ui#973`, same-browser token lifecycle,
 no-CV and blocked `PROFILE_RECEIVED` handoffs, role-backed full-submit scoring,
 person-boundary recommendation isolation, non-MUI `cloudflare/workers-sdk#14118`
-matching, packet catalog breadth, and expert-labelled match-quality readiness.
+matching, judge replay/calibration readiness, packet catalog breadth, and
+expert-labelled match-quality readiness. The judge lane proved remote app-dev
+D1 has 20 labelled, replayable, calibration-ready examples, zero invalid
+statuses, zero failures, zero next actions, and a sample example with both
+candidate comments and AI pushback.
 For the role-backed full-submit lane, the suite also requires completed
 recruiter and person-profile statuses, submitted profile state, a passed
 validator verdict, role-source proof, author pushback/thread evidence, remote D1

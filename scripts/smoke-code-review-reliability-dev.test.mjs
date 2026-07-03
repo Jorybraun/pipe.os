@@ -23,6 +23,7 @@ describe('CODE_REVIEW reliability suite contract', () => {
       'blocked-handoff',
       'role-backed-full-submit',
       'person-boundary',
+      'judge-example-readiness',
       'workers-sdk-matrix',
       'packet-catalog-readiness',
       'match-quality-readiness',
@@ -38,10 +39,25 @@ describe('CODE_REVIEW reliability suite contract', () => {
     expect(lanes[5].command.join(' ')).toBe('npm run smoke:code-review-assess-dev:person-boundary');
     expect(lanes[6].command).toEqual([
       'npm',
+      '--prefix',
+      'workers/api',
+      'run',
+      'review-judge:verify',
+      '--',
+      '--remote',
+      '--database-id',
+      'app-dev-d1',
+      '--limit',
+      '20',
+      '--require-calibration',
+      '--json',
+    ]);
+    expect(lanes[7].command).toEqual([
+      'npm',
       'run',
       'smoke:code-review-assess-dev:workers-matrix',
     ]);
-    expect(lanes[7].command).toEqual([
+    expect(lanes[8].command).toEqual([
       'npm',
       'run',
       'smoke:code-review-packet-catalog-dev',
@@ -50,7 +66,7 @@ describe('CODE_REVIEW reliability suite contract', () => {
       'app-dev-d1',
       '--require-pass',
     ]);
-    expect(lanes[8].command).toEqual([
+    expect(lanes[9].command).toEqual([
       'npm',
       '--prefix',
       'workers/api',
@@ -303,7 +319,7 @@ describe('CODE_REVIEW reliability suite contract', () => {
     });
   });
 
-  it('extracts and summarizes token lifecycle, matrix, and match-quality proof', () => {
+  it('extracts and summarizes token lifecycle, matrix, judge, and match-quality proof', () => {
     expect(summarizeLaneProof('token-lifecycle', JSON.stringify({
       ok: true,
       repoUrl: 'https://github.com/mui/base-ui',
@@ -399,6 +415,60 @@ describe('CODE_REVIEW reliability suite contract', () => {
       falseNegativeCount: 0,
       usableChallengeRate: 1,
       gateFailures: [],
+    });
+
+    expect(summarizeLaneProof('judge-examples', JSON.stringify({
+      databases: [{
+        databasePath: 'remote:app-dev-d1',
+        audit: {
+          status: 'calibration_ready',
+          replayReady: true,
+          calibrationReady: true,
+          counts: {
+            total: 20,
+            ready: 0,
+            labelled: 20,
+            archived: 0,
+            invalidStatus: 0,
+            replayable: 20,
+            calibrationReady: 20,
+          },
+          failureModes: ['severity_calibration_wrong'],
+          examples: [{
+            id: 'code_review_judge_example_1',
+            sessionId: 'review-session-1',
+            status: 'LABELLED',
+            replayable: true,
+            labelled: true,
+            calibrationReady: true,
+            commentCount: 2,
+            pushbackCount: 2,
+            missing: [],
+          }],
+          failures: [],
+          nextActions: [],
+        },
+      }],
+    }, null, 2)).summary).toMatchObject({
+      ok: true,
+      databasePath: 'remote:app-dev-d1',
+      status: 'calibration_ready',
+      replayReady: true,
+      calibrationReady: true,
+      totalExamples: 20,
+      labelledExamples: 20,
+      replayableExamples: 20,
+      calibrationReadyExamples: 20,
+      invalidStatusExamples: 0,
+      failureModes: ['severity_calibration_wrong'],
+      failures: [],
+      nextActions: [],
+      exampleId: 'code_review_judge_example_1',
+      exampleSessionId: 'review-session-1',
+      exampleCommentCount: 2,
+      examplePushbackCount: 2,
+      exampleReplayable: true,
+      exampleCalibrationReady: true,
     });
 
     expect(summarizeLaneProof('packet-catalog', JSON.stringify({
@@ -574,6 +644,27 @@ describe('CODE_REVIEW reliability suite contract', () => {
       relatedBoundaryScheduledCodeReviewCount: 1,
     })).toEqual({ ok: true, failures: [] });
 
+    expect(validateLaneSummary('judge-example-readiness', {
+      ok: true,
+      databasePath: 'remote:app-dev-d1',
+      status: 'calibration_ready',
+      replayReady: true,
+      calibrationReady: true,
+      totalExamples: 20,
+      labelledExamples: 20,
+      invalidStatusExamples: 0,
+      replayableExamples: 20,
+      calibrationReadyExamples: 20,
+      failures: [],
+      nextActions: [],
+      exampleId: 'code_review_judge_example_1',
+      exampleSessionId: 'review-session-1',
+      exampleReplayable: true,
+      exampleCalibrationReady: true,
+      exampleCommentCount: 2,
+      examplePushbackCount: 2,
+    })).toEqual({ ok: true, failures: [] });
+
     expect(validateLaneSummary('workers-sdk-matrix', {
       ok: true,
       profileCount: 1,
@@ -660,6 +751,39 @@ describe('CODE_REVIEW reliability suite contract', () => {
         'token-lifecycle token A and token B candidate names must differ',
         'token-lifecycle token B URL must be a redacted /assess link',
         'token-lifecycle browser smoke must run',
+      ]),
+    });
+
+    expect(validateLaneSummary('judge-example-readiness', {
+      ok: true,
+      databasePath: 'remote:app-dev-d1',
+      status: 'replay_ready',
+      replayReady: true,
+      calibrationReady: false,
+      totalExamples: 1,
+      labelledExamples: 0,
+      invalidStatusExamples: 0,
+      replayableExamples: 1,
+      calibrationReadyExamples: 0,
+      failures: ['fewer than 1 calibration-ready judge example(s) are available'],
+      nextActions: ['Apply recruiter score overrides or human labels until at least one replay-ready example is LABELLED.'],
+      exampleId: 'code_review_judge_example_1',
+      exampleSessionId: 'review-session-1',
+      exampleReplayable: true,
+      exampleCalibrationReady: false,
+      exampleCommentCount: 1,
+      examplePushbackCount: 0,
+    })).toMatchObject({
+      ok: false,
+      failures: expect.arrayContaining([
+        'judge-example-readiness status must be calibration_ready',
+        'judge-example-readiness must be calibration-ready',
+        'judge-example-readiness must include labelled examples',
+        'judge-example-readiness must include calibration-ready examples',
+        'judge-example-readiness failures must be empty',
+        'judge-example-readiness next actions must be empty',
+        'judge-example-readiness first example must be calibration-ready',
+        'judge-example-readiness first example must include AI pushback',
       ]),
     });
 
