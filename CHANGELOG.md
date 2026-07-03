@@ -23,6 +23,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Added — CODE_REVIEW assessment runtime
 
+- CODE_REVIEW match-health unused-packet diagnostics now include ranked appearance counts, eligible counts, best rank, and score/alignment averages, separating recall gaps from ranking/eligibility problems.
 - CODE_REVIEW match-health audits now enforce selected production-ready packet coverage and list unused ready packets, preventing a broad corpus from passing while automatic matches exercise only one or two PRs.
 - CODE_REVIEW match-health audits now return and print selected-packet distribution with repo/PR context, making challenge-corpus skew failures actionable for rebalancing.
 - CODE_REVIEW evaluation corpora and expert review templates now carry `negativeCandidateId` plus `minimumScoreSeparation`, letting stored labelled corpora produce real contrast cases for the match-quality gate.

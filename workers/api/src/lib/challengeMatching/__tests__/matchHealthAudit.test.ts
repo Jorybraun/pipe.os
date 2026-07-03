@@ -132,7 +132,14 @@ describe('auditCodeReviewMatchHealth', () => {
       matches: [
         match(1, 'packet-1', { recalledPacketCount: 8 }),
         match(2, 'packet-1', { recalledPacketCount: 8 }),
-        match(3, 'packet-2', { recalledPacketCount: 8 }),
+        match(3, 'packet-2', {
+          recalledPacketCount: 8,
+          rankedPackets: [
+            { packetId: 'packet-2', rank: 1, score: 0.42, candidateEvidenceAlignment: 0.14, roleRelevance: 0, eligible: true },
+            { packetId: 'packet-3', rank: 2, score: 0.39, candidateEvidenceAlignment: 0.13, roleRelevance: 0, eligible: true },
+            { packetId: 'packet-4', rank: null, score: 0.31, candidateEvidenceAlignment: 0.04, roleRelevance: 0, eligible: false },
+          ],
+        }),
         match(4, 'packet-2', { recalledPacketCount: 8 }),
         match(5, 'packet-2', { recalledPacketCount: 8 }),
       ],
@@ -151,6 +158,12 @@ describe('auditCodeReviewMatchHealth', () => {
         repoUrl: 'https://github.com/example/repo-2',
         prNumber: 1003,
         productionReady: true,
+        rankedAppearanceCount: 1,
+        eligibleAppearanceCount: 1,
+        bestRank: 2,
+        averageRank: 2,
+        maxScore: 0.39,
+        averageScore: 0.39,
       }),
       expect.objectContaining({
         packetId: 'packet-4',
@@ -158,6 +171,12 @@ describe('auditCodeReviewMatchHealth', () => {
         repoUrl: 'https://github.com/example/repo-0',
         prNumber: 1004,
         productionReady: true,
+        rankedAppearanceCount: 1,
+        eligibleAppearanceCount: 0,
+        bestRank: null,
+        averageRank: null,
+        maxScore: 0.31,
+        averageScore: 0.31,
       }),
     ]));
     expect(audit.failures).toContain(
