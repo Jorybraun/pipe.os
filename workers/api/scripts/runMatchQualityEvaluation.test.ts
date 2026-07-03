@@ -5,6 +5,7 @@ import {
   parseOptions,
   parseMatchQualityCorpusJson,
   resolveLatestExpertCorpusId,
+  resolveRemoteDatabaseId,
   validateOptions,
 } from './runMatchQualityEvaluation';
 import type { EvaluationCorpus } from '../src/lib/challengeMatching/evaluation';
@@ -176,6 +177,20 @@ describe('runMatchQualityEvaluation corpus loading', () => {
     expect(() => validateOptions(options)).not.toThrow();
   });
 
+  it('prefers the dedicated matching-evaluation D1 over the generic app D1', () => {
+    expect(resolveRemoteDatabaseId(undefined, {
+      MATCHING_EVALUATION_D1_DATABASE_ID: 'eval-db-id',
+      CLOUDFLARE_D1_DATABASE_ID: 'app-db-id',
+    })).toBe('eval-db-id');
+  });
+
+  it('lets explicit database id override remote D1 env defaults', () => {
+    expect(resolveRemoteDatabaseId('explicit-db-id', {
+      MATCHING_EVALUATION_D1_DATABASE_ID: 'eval-db-id',
+      CLOUDFLARE_D1_DATABASE_ID: 'app-db-id',
+    })).toBe('explicit-db-id');
+  });
+
   it('rejects ambiguous local and remote database options', () => {
     const options = parseOptions([
       '--remote',
@@ -242,6 +257,20 @@ describe('runMatchQualityEvaluation corpus loading', () => {
       syntheticFixtureCount: 1,
       allowDraftCorpus: false,
     })).toThrow('synthetic-corpus has 1 synthetic fixture labels');
+  });
+
+  it('rejects expert-labelled corpora that still fail production-readiness checks', () => {
+    expect(() => assertStoredCorpusCanRunMatchQualityGate({
+      corpusId: 'expert-one-packet-corpus',
+      expertLabelCount: 3,
+      syntheticFixtureCount: 0,
+      allowDraftCorpus: false,
+      productionReadinessFailures: [
+        'production corpus requires at least two source-backed expected PR challenge packets',
+      ],
+    })).toThrow(
+      'expert-one-packet-corpus is not production-ready for the match-quality gate: production corpus requires at least two source-backed expected PR challenge packets',
+    );
   });
 
   it('requires draft corpus inspection to stay out of require-pass gates', () => {

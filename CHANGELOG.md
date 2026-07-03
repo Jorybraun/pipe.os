@@ -64,6 +64,8 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Fixed — CODE_REVIEW assessment runtime
 
+- `living-context:match-quality` now enforces frozen-corpus production-readiness failures before running the batch gate, so expert-labelled but malformed corpora cannot bypass packet breadth, positive/negative label, contrast, or provenance requirements.
+- `living-context:match-quality:readiness` now prefers `MATCHING_EVALUATION_D1_DATABASE_ID` over the generic app D1 id when no `--database-id` flag is passed, keeping CODE_REVIEW quality proof pointed at the evaluation database by default.
 - CODE_REVIEW expert-seed smoke now loads `.env.local` and `.env` like the other deployed smokes, keeping the source-backed corpus review gate runnable from normal developer shells.
 - CODE_REVIEW full-submit person-boundary smokes now verify the person-profile recommendation by API when recruiter browser proof is skipped, ensuring related same-person interviews stay context instead of replacing the submitted review decision.
 - CODE_REVIEW assess smokes now still verify recruiter detail projection readiness when only recruiter browser proof is skipped, preserving hiring-manager readout evidence in clean worktrees without Clerk browser credentials.
