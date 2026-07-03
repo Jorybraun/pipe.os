@@ -72,6 +72,18 @@ function isDocumentSourceKey(resumeS3Key: string): boolean {
   return normalized.endsWith('.pdf') || normalized.endsWith('.docx');
 }
 
+function isTalentPoolDocumentEvidenceGapFailure(row: TalentPoolOperationalRetryRow): boolean {
+  const profileKey = row.profile_r2_key?.trim() ?? '';
+  if (!isDocumentSourceKey(profileKey)) return false;
+  if (row.ingestion_status !== 'failed') return false;
+  if (row.ingestion_current_step !== 'parse_resume') return false;
+  const errorText = row.ingestion_error_text?.toLowerCase() ?? '';
+  return errorText.includes('resume parsing failed or produced no text')
+    || errorText.includes('resume parsing did not produce a candidate profile')
+    || errorText.includes('resume text extraction failed')
+    || errorText.includes('resume text extraction produced insufficient source evidence');
+}
+
 type RetryTrigger = 'candidate_rpc' | 'scheduled_worker';
 type RetryReasonCode =
   | 'stale_workers_ai_model_failure'
@@ -119,6 +131,9 @@ interface TalentPoolOperationalRetryRow {
   availability: string | null;
   submitted_at: string | null;
   updated_at: string | null;
+  ingestion_status?: string | null;
+  ingestion_current_step?: string | null;
+  ingestion_error_text?: string | null;
 }
 
 interface TalentPoolProfileMessageSource {
@@ -407,6 +422,24 @@ async function buildTalentPoolProfileMessageSource(
   };
 }
 
+async function repairTalentPoolDocumentEvidenceGapState(
+  env: Env,
+  candidateId: string,
+  row: TalentPoolOperationalRetryRow,
+): Promise<void> {
+  if (!isTalentPoolDocumentEvidenceGapFailure(row)) return;
+  await env.DB.prepare(
+    `UPDATE candidate_ingestion
+        SET status = 'pending',
+            current_step = 'profile_text_extraction_needed',
+            error_text = NULL,
+            updated_at = ?1
+      WHERE candidate_id = ?2
+        AND status = 'failed'
+        AND current_step = 'parse_resume'`,
+  ).bind(new Date().toISOString(), candidateId).run();
+}
+
 async function repairRolelessTalentPoolOperationalContext(
   env: Env,
   candidateId: string,
@@ -424,9 +457,13 @@ async function repairRolelessTalentPoolOperationalContext(
             t.timezone,
             t.availability,
             t.submitted_at,
-            t.updated_at
+            t.updated_at,
+            ci.status AS ingestion_status,
+            ci.current_step AS ingestion_current_step,
+            ci.error_text AS ingestion_error_text
        FROM candidates c
        JOIN talent_pool_intakes t ON t.candidate_id = c.id
+       LEFT JOIN candidate_ingestion ci ON ci.candidate_id = c.id
       WHERE c.id = ?1
         AND c.pipeline_id IS NULL
       LIMIT 1`,
@@ -462,6 +499,7 @@ async function repairRolelessTalentPoolOperationalContext(
   });
   await repairCandidateResumeNodeSourceRefs(env.DB, candidateId);
   await repairCandidateProfileIntakeNodeSourceRefs(env.DB, candidateId);
+  await repairTalentPoolDocumentEvidenceGapState(env, candidateId, row);
   return identity;
 }
 
@@ -482,6 +520,7 @@ export async function processTalentPoolOperationalContextRepairs(
     `SELECT c.id AS candidate_id
        FROM talent_pool_intakes t
        JOIN candidates c ON c.id = t.candidate_id
+       LEFT JOIN candidate_ingestion ci ON ci.candidate_id = c.id
       WHERE c.pipeline_id IS NULL
         AND (
           (t.github_url IS NOT NULL AND TRIM(t.github_url) <> '')
@@ -497,6 +536,16 @@ export async function processTalentPoolOperationalContextRepairs(
           )
         )
       ORDER BY
+        CASE
+          WHEN ci.status = 'failed'
+           AND ci.current_step = 'parse_resume'
+           AND t.profile_r2_key IS NOT NULL
+           AND (
+             substr(LOWER(t.profile_r2_key), -4) = '.pdf'
+             OR substr(LOWER(t.profile_r2_key), -5) = '.docx'
+           )
+          THEN 0 ELSE 1
+        END,
         CASE WHEN EXISTS (
           SELECT 1
             FROM candidate_nodes cn

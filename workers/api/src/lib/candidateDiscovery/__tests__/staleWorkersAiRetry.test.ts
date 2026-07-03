@@ -1018,6 +1018,72 @@ describe('stale Workers AI candidate-ingestion retry', () => {
     expect(identityInput?.sourceArtifact).toBeUndefined();
   });
 
+  it('cron repairs historical unextractable Talent Pool document failures into explicit evidence gaps', async () => {
+    const repairedAt = '2026-07-03T18:10:00.000Z';
+    vi.useFakeTimers();
+    vi.setSystemTime(new Date(repairedAt));
+    const storageKey = 'talent-intake/talent-gap/32ed5017fce95db1619dfd80fe7ffe1e51ec4dfb98e43e3266d265836f6ae62b-profile.pdf';
+    const db = fakeD1({
+      all: [
+        { candidate_id: 'talent-gap' },
+      ],
+      first: (call) => {
+        if (call.sql.includes('receipt_count')) return { receipt_count: 1 };
+        return {
+          owner_id: 'owner-1',
+          name: 'Gap Candidate',
+          email: 'gap@example.com',
+          profile_r2_key: storageKey,
+          github_url: null,
+          linkedin_url: null,
+          portfolio_url: null,
+          phone_screener_consent: 0,
+          phone_number: null,
+          timezone: null,
+          availability: null,
+          submitted_at: '2026-07-03T17:53:11.483Z',
+          updated_at: '2026-07-03T17:53:11.483Z',
+          ingestion_status: 'failed',
+          ingestion_current_step: 'parse_resume',
+          ingestion_error_text: `Retry failed: Resume parsing failed or produced no text for ${storageKey}.`,
+        };
+      },
+    });
+    const env = buildEnv(db, fakeStorage('not a real pdf', 'application/pdf'));
+
+    try {
+      await expect(processTalentPoolOperationalContextRepairs(env, 1)).resolves.toEqual({
+        scanned: 1,
+        repaired: 1,
+        skipped: 0,
+        failed: 0,
+      });
+    } finally {
+      vi.useRealTimers();
+    }
+
+    const selectCall = db.__calls.find((call) =>
+      call.sql.includes('FROM talent_pool_intakes t')
+      && call.sql.includes('LEFT JOIN candidate_ingestion ci')
+    )!;
+    expect(selectCall.sql).toContain("ci.status = 'failed'");
+    expect(selectCall.sql).toContain("ci.current_step = 'parse_resume'");
+    const gapRepairCall = db.__calls.find((call) =>
+      call.ran
+      && call.sql.includes("current_step = 'profile_text_extraction_needed'")
+      && call.sql.includes("error_text = NULL")
+    );
+    expect(gapRepairCall?.params[0]).toBe(repairedAt);
+    expect(gapRepairCall?.params[1]).toBe('talent-gap');
+    const identityInput = vi.mocked(ensureRolelessTalentPoolIdentity).mock.calls[0]?.[0];
+    expect(identityInput).toMatchObject({
+      candidateId: 'talent-gap',
+      name: 'Gap Candidate',
+      email: 'gap@example.com',
+    });
+    expect(identityInput?.message).toBeUndefined();
+  });
+
   it('cron removes generated roleless Talent Pool application rows', async () => {
     const db = fakeD1({
       all: [
