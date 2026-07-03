@@ -35,6 +35,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Fixed — Talent Pool ingestion
 
+- Added `candidate-ingestion:repair-source-refs` to deliberately dry-run or backfill Talent Pool candidate-node source refs from existing current profile source spans, giving operators a bounded alternative to waiting for cron burn-down.
 - Scheduled Talent Pool repair now runs a bounded D1-only candidate-node projection repair for existing current profile source spans before R2-backed replay, accelerating historical source-ref burn-down without creating new source evidence.
 - Scheduled Talent Pool repair now prioritizes intakes with missing or stale candidate-node source-span refs, so audit-blocking historical rows burn down before already-clean recent submissions.
 - Scheduled Talent Pool operational-context repair now replays text profile R2 objects into source-backed person/profile evidence and immediately repairs exact candidate-node source refs, letting historical dev intakes burn down stale or missing profile-source audit gaps idempotently.

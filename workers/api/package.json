@@ -23,6 +23,7 @@
     "review-judge:verify": "tsx scripts/verifyCodeReviewJudgeExamples.ts --remote --remote-database pipe-db-test --remote-env dev --require-replay-ready --json",
     "review-packets:repair-profiles": "tsx scripts/backfillReviewPacketReviewProfiles.ts",
     "candidate-ingestion:audit": "tsx scripts/auditCandidateIngestion.ts --json",
+    "candidate-ingestion:repair-source-refs": "tsx scripts/repairTalentPoolSourceRefs.ts --json",
     "assessment-evidence:audit": "tsx scripts/auditAssessmentEvidenceIngestion.ts --json",
     "assessment-evidence:replay": "tsx scripts/replayAssessmentLivingContext.ts --json"
   },

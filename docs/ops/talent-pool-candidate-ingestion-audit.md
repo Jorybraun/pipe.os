@@ -140,6 +140,11 @@ span. This is projection repair, not source creation: the raw artifact version
 and source span must already exist, and the repair only writes the missing
 `source_span:<id>` reference plus `source_span_id` property onto validated exact
 resume nodes.
+Operators can run the same projection repair deliberately with
+`npm run candidate-ingestion:repair-source-refs -- --local|--remote`. Use
+`--dry-run` first to count repairable rows. The command reports bounded
+before/after repairable counts with `--count-limit` and is safe to repeat
+because repaired nodes leave the repairable set.
 Background projection receives the roleless Talent Pool person identity and
 background decomposition runs with legacy candidate-node mirroring disabled, so
 it must not create `applications` or `person_roles` before a role-backed process
@@ -241,10 +246,13 @@ npm run candidate-ingestion:audit -- --local --candidate-id <candidate_id>
 npm run candidate-ingestion:audit -- --local --email <email>
 npm run candidate-ingestion:audit -- --local --invite-token <token> --require-context-records
 npm run candidate-ingestion:audit -- --remote --invite-token <token>
+npm run candidate-ingestion:repair-source-refs -- --local --dry-run
+npm run candidate-ingestion:repair-source-refs -- --remote --dry-run --count-limit 500
 npm test -- src/lib/__tests__/talentPoolIdentity.test.ts
 npm test -- src/routes/__tests__/talentPool.test.ts src/lib/candidateDiscovery/__tests__/staleWorkersAiRetry.test.ts
 npm test -- src/lib/livingContext/__tests__/compatibility.test.ts src/lib/livingContext/__tests__/candidateComparison.test.ts src/lib/livingContext/__tests__/evidenceReadiness.test.ts src/lib/livingContext/__tests__/matchConfidenceScoring.test.ts
 npm test -- src/lib/candidateDiscovery/__tests__/candidateNodes.test.ts src/lib/candidateDiscovery/__tests__/resumeDecomposition.test.ts scripts/auditCandidateIngestion.test.ts
+npm test -- scripts/repairTalentPoolSourceRefs.test.ts
 npm test -- src/routes/cockpit/__tests__/contacts.rest.test.ts src/routes/cockpit/__tests__/candidates.rest.test.ts src/lib/livingContext/__tests__/readModel.test.ts
 npx playwright test e2e/talent-pool-intake.unauth.spec.ts --project=unauthenticated --reporter=line
 npm run smoke:talent-pool-browser-dev
@@ -264,6 +272,8 @@ CLOUDFLARE_D1_DATABASE_ID=0abe92df-9296-46f5-9f9d-a1fb1bcd3be1 \
   npm run candidate-ingestion:audit -- --remote --invite-token <token>
 CLOUDFLARE_D1_DATABASE_ID=0abe92df-9296-46f5-9f9d-a1fb1bcd3be1 \
   npm run candidate-ingestion:audit -- --remote --invite-token <token> --require-context-records
+CLOUDFLARE_D1_DATABASE_ID=0abe92df-9296-46f5-9f9d-a1fb1bcd3be1 \
+  npm run candidate-ingestion:repair-source-refs -- --remote --dry-run --count-limit 500
 ```
 
 The packaged dev smoke commands default Talent Pool RPC submission to the
@@ -824,6 +834,21 @@ not create a fake upload receipt for pasted text, and invokes exact candidate-no
 source-ref repair after identity replay. `src/lib/candidateDiscovery/__tests__/candidateNodes.test.ts`
 also proves the D1-only bulk source-ref repair is idempotent and skips nodes
 whose current profile artifact has no matching source span.
+`scripts/repairTalentPoolSourceRefs.test.ts` proves the operator command is
+dry-run safe, writes only repairable existing-span projections, and becomes a
+no-op on replay.
+
+App-dev operator backfill proof on 2026-07-03 used
+`CLOUDFLARE_D1_DATABASE_ID=0abe92df-9296-46f5-9f9d-a1fb1bcd3be1 npm --prefix workers/api run candidate-ingestion:repair-source-refs -- --remote --dry-run --count-limit 500`
+and reported `beforeRepairableCount: 500` without writes. The bounded write
+command
+`CLOUDFLARE_D1_DATABASE_ID=0abe92df-9296-46f5-9f9d-a1fb1bcd3be1 npm --prefix workers/api run candidate-ingestion:repair-source-refs -- --remote --batch-size 250 --max-batches 4 --count-limit 500`
+then reported `scanned: 443`, `repaired: 443`, and bounded
+`afterRepairableCount: 0`. Compact remote counters moved
+`missing_source_ref_count` from `1666` to `550` and
+`stale_profile_source_count` from `41` to `34`. The scoped real pasted-profile
+audit for invite `cac8e887-67af-461a-88c2-857ccf9d4cb8` remained `ready` with
+`sourceLessPositiveClaimCount: 0` and `duplicateProjectedEdgeCount: 0`.
 
 Browser proof on 2026-07-02 uses
 `e2e/talent-pool-intake.unauth.spec.ts` with the unauthenticated Playwright

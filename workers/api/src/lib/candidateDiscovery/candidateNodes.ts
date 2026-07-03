@@ -37,6 +37,50 @@ export interface CandidateNodeSourceRepairResult {
   repaired: number;
 }
 
+export async function countTalentPoolResumeNodeSourceRefRepairCandidates(
+  db: D1Database,
+  limit = 1000,
+): Promise<number> {
+  if (!await candidateSourceTablesReady(db)) return 0;
+
+  const parsedLimit = Number.isFinite(limit) ? Math.floor(limit) : 1000;
+  const boundedLimit = Math.max(1, Math.min(parsedLimit, 5000));
+  const row = await db.prepare(
+    `WITH candidates_with_current_spans AS (
+       SELECT DISTINCT t.candidate_id
+         FROM talent_pool_intakes t
+         JOIN artifact_versions av ON av.storage_key = t.profile_r2_key
+         JOIN source_spans ss ON ss.artifact_version_id = av.id
+        WHERE t.submitted_at IS NOT NULL
+          AND t.profile_r2_key IS NOT NULL
+          AND TRIM(t.profile_r2_key) <> ''
+     )
+     SELECT COUNT(*) AS count
+       FROM (
+         SELECT cn.id
+           FROM candidate_nodes cn
+           JOIN talent_pool_intakes t ON t.candidate_id = cn.candidate_id
+           JOIN candidates_with_current_spans cs ON cs.candidate_id = cn.candidate_id
+          WHERE t.submitted_at IS NOT NULL
+            AND t.profile_r2_key IS NOT NULL
+            AND TRIM(t.profile_r2_key) <> ''
+            AND cn.source_type = 'resume'
+            AND cn.superseded_at IS NULL
+            AND json_extract(cn.extracted_properties_json, '$.source_quote_validated') = 1
+            AND COALESCE(json_extract(cn.extracted_properties_json, '$.source_span_id'), '') = ''
+            AND (
+              cn.source_reference IS NULL
+              OR cn.source_reference NOT LIKE 'source_span:%'
+            )
+            AND json_type(cn.extracted_properties_json, '$.source_quote_char_start') IN ('integer', 'real')
+            AND json_type(cn.extracted_properties_json, '$.source_quote_char_end') IN ('integer', 'real')
+          LIMIT ?1
+       ) repairable`,
+  ).bind(boundedLimit).first<{ count: number | null }>();
+
+  return Number(row?.count ?? 0);
+}
+
 export async function insertCandidateNode(
   db: D1Database,
   node: CandidateNodeInput,
@@ -318,12 +362,22 @@ export async function repairTalentPoolResumeNodeSourceRefs(
   const parsedLimit = Number.isFinite(limit) ? Math.floor(limit) : 250;
   const boundedLimit = Math.max(1, Math.min(parsedLimit, 1000));
   const rows = await db.prepare(
-    `SELECT cn.id,
+    `WITH candidates_with_current_spans AS (
+       SELECT DISTINCT t.candidate_id
+         FROM talent_pool_intakes t
+         JOIN artifact_versions av ON av.storage_key = t.profile_r2_key
+         JOIN source_spans ss ON ss.artifact_version_id = av.id
+        WHERE t.submitted_at IS NOT NULL
+          AND t.profile_r2_key IS NOT NULL
+          AND TRIM(t.profile_r2_key) <> ''
+     )
+     SELECT cn.id,
             cn.candidate_id,
             cn.source_reference,
             cn.extracted_properties_json
        FROM candidate_nodes cn
        JOIN talent_pool_intakes t ON t.candidate_id = cn.candidate_id
+       JOIN candidates_with_current_spans cs ON cs.candidate_id = cn.candidate_id
       WHERE t.submitted_at IS NOT NULL
         AND t.profile_r2_key IS NOT NULL
         AND TRIM(t.profile_r2_key) <> ''
@@ -337,14 +391,6 @@ export async function repairTalentPoolResumeNodeSourceRefs(
         )
         AND json_type(cn.extracted_properties_json, '$.source_quote_char_start') IN ('integer', 'real')
         AND json_type(cn.extracted_properties_json, '$.source_quote_char_end') IN ('integer', 'real')
-        AND EXISTS (
-          SELECT 1
-            FROM artifact_versions av
-            JOIN source_spans ss ON ss.artifact_version_id = av.id
-           WHERE av.storage_key = t.profile_r2_key
-             AND ss.char_start <= json_extract(cn.extracted_properties_json, '$.source_quote_char_start')
-             AND ss.char_end >= json_extract(cn.extracted_properties_json, '$.source_quote_char_end')
-        )
       ORDER BY t.updated_at DESC, cn.captured_at ASC, cn.id ASC
       LIMIT ?1`,
   ).bind(boundedLimit).all<CandidateNodeSourceRepairCandidateRow>();
