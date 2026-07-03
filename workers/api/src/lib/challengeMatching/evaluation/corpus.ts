@@ -302,9 +302,19 @@ export function productionCorpusFailures(corpus: EvaluationCorpus): string[] {
   if (corpus.expertLabels.length === 0) {
     failures.push('production corpus requires at least one expert label');
   }
-  const positiveLabels = corpus.expertLabels.filter(positiveLabel);
-  const negativeLabels = corpus.expertLabels.filter((label) => !positiveLabel(label));
-  const contrastLabels = corpus.expertLabels.filter((label) =>
+  const draftLabels = corpus.expertLabels.filter((label) => label.labeledBy === 'corpus-seeder');
+  const expertBackedLabels = corpus.expertLabels.filter(hasExpertLabelProvenance);
+  if (draftLabels.length > 0) {
+    failures.push(
+      `production corpus contains ${draftLabels.length} draft corpus-seeder label(s); complete expert review before production evaluation`,
+    );
+  }
+  if (corpus.expertLabels.length > 0 && expertBackedLabels.length === 0) {
+    failures.push('production corpus requires at least one expert-reviewed label with reviewer/source provenance');
+  }
+  const positiveLabels = expertBackedLabels.filter(positiveLabel);
+  const negativeLabels = expertBackedLabels.filter((label) => !positiveLabel(label));
+  const contrastLabels = expertBackedLabels.filter((label) =>
     nonEmptyString(label.negativeCandidateId)
       && label.minimumScoreSeparation !== undefined
   );
@@ -341,6 +351,7 @@ export function productionCorpusFailures(corpus: EvaluationCorpus): string[] {
   }
 
   for (const label of corpus.expertLabels) {
+    if (label.labeledBy === 'corpus-seeder') continue;
     const provenance = label.labelProvenance;
     if (!label.explanation || label.explanation.trim().length === 0) {
       failures.push(`expert label requires a human rationale: ${label.labelId}`);

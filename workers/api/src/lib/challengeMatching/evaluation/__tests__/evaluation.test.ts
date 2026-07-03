@@ -258,6 +258,85 @@ describe('Corpus Validation', () => {
     );
   });
 
+  it('reports draft corpus-seeder labels as drafts, not missing expert provenance', () => {
+    const corpus: EvaluationCorpus = {
+      version: EVALUATION_CORPUS_VERSION,
+      corpusId: 'draft-corpus-needs-review',
+      createdAt: '2026-07-03T00:00:00Z',
+      description: 'Draft corpus seeded from match runs before expert review.',
+      candidateEvidence: [
+        {
+          candidateId: 'candidate-1',
+          evidenceId: 'evidence-1',
+          episodeId: 'episode-1',
+          narrative: 'Reviewed React popover timing and regression coverage.',
+          concepts: ['term:react-popover', 'term:interaction-timing'],
+          evidenceReferences: [sourceRef('candidate-draft')],
+        },
+      ],
+      roleRequirements: [
+        {
+          roleId: 'role-frontend-review',
+          requiredLanguages: ['typescript'],
+          relevantConcepts: ['term:react-popover'],
+          sourceReferences: [roleSource('role-draft', ['term:react-popover'])],
+        },
+      ],
+      expertLabels: [
+        {
+          labelId: 'seeded-draft-label-1',
+          candidateId: 'candidate-1',
+          roleId: 'role-frontend-review',
+          challengeId: 'challenge-popover-pr',
+          relevanceGrade: 'borderline',
+          eligibleChallengeIds: ['challenge-popover-pr'],
+          explanation: 'Draft label created from current match run evidence.',
+          labelVersion: 'candidate-pr-match-rubric-v1',
+          labeledAt: '2026-07-03T00:00:00Z',
+          labeledBy: 'corpus-seeder',
+        },
+      ],
+      expectedPackets: [
+        {
+          challengeId: 'challenge-popover-pr',
+          repoId: 'github.com/mui/base-ui',
+          repoFullName: 'mui/base-ui',
+          repoUrl: 'https://github.com/mui/base-ui',
+          prNumber: 973,
+          prUrl: 'https://github.com/mui/base-ui/pull/973',
+          sourceVersion: 'sha-popover',
+          demands: [
+            {
+              demandId: 'demand-popover-timing',
+              concepts: ['term:react-popover', 'term:interaction-timing'],
+              sourceRefs: [sourceRef('challenge-draft')],
+            },
+          ],
+        },
+      ],
+      metadata: {
+        totalLabels: 1,
+        totalCandidates: 1,
+        totalRoles: 1,
+        totalChallenges: 1,
+        syntheticFixtureCount: 0,
+        totalExpectedPackets: 1,
+      },
+    };
+
+    const failures = productionCorpusFailures(corpus);
+
+    expect(failures).toContain(
+      'production corpus contains 1 draft corpus-seeder label(s); complete expert review before production evaluation',
+    );
+    expect(failures).toContain(
+      'production corpus requires at least one expert-reviewed label with reviewer/source provenance',
+    );
+    expect(failures).not.toContain(
+      'expert label is missing reviewer/source provenance: seeded-draft-label-1',
+    );
+  });
+
   it('requires production corpora to cover at least two source-backed challenge packets', () => {
     const expertProvenance = {
       reviewerId: 'expert-reviewer-1',
