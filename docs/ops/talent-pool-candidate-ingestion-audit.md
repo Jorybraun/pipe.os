@@ -122,6 +122,15 @@ intakes, including synthetic `<sha>-profile.txt` text keys without storage-key
 source spans, and skips any storage key that already has a profile-upload
 receipt, so cron/backfill replay does not duplicate artifact versions or person
 edges or invent file-upload evidence from a form paste.
+The same scheduled repair also replays text-like current profile R2 objects
+through `ensureRolelessTalentPoolIdentity` with `messageStorageKey` set to
+`talent_pool_intakes.profile_r2_key`. That refreshes historical pasted/text
+profile nodes and person context records onto the current immutable source span.
+After identity replay, repair runs `repairCandidateResumeNodeSourceRefs` so
+validated exact resume nodes can attach `source_span:<id>` refs to the current
+profile source instead of staying source-less or stale. Document blobs are not
+treated as text-profile claims by this repair; PDF/DOCX evidence still requires
+successful extraction.
 Background projection receives the roleless Talent Pool person identity and
 background decomposition runs with legacy candidate-node mirroring disabled, so
 it must not create `applications` or `person_roles` before a role-backed process
@@ -798,6 +807,13 @@ context records, source refs, and the compatibility candidate node stay
 idempotent; duplicate projected edges remain zero; and stale roleless
 application/person-role bridges are removed.
 
+Scheduled repair proof in
+`src/lib/candidateDiscovery/__tests__/staleWorkersAiRetry.test.ts` now proves
+that replaying a pasted/text profile reads the current R2 object, passes the
+exact `messageStorageKey` and text media type into roleless identity repair, does
+not create a fake upload receipt for pasted text, and invokes exact candidate-node
+source-ref repair after identity replay.
+
 Browser proof on 2026-07-02 uses
 `e2e/talent-pool-intake.unauth.spec.ts` with the unauthenticated Playwright
 project. It exercises the public `/talent/:token` page with mocked public RPC
@@ -824,3 +840,8 @@ all 4 unauthenticated browser scenarios passed.
 - A design queue is not challenge readiness. A candidate should remain in
   `CHALLENGE_PREPARING` until a real assignment is backed by a production-ready
   review challenge packet with repo source refs and concept links.
+- Unscoped app-dev still contains historical pre-fix Talent Pool intakes with
+  stale or missing candidate-node source refs. New scoped browser smokes audit
+  clean; the scheduled repair/backfill path is the burn-down mechanism for old
+  rows, and unscoped audit should be treated as ready only after that debt is
+  cleared.
