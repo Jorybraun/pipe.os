@@ -641,7 +641,11 @@ Browser proof on 2026-07-02 uses
 project. It exercises the public `/talent/:token` page with mocked public RPC
 responses for pasted profile submit, file upload, and ready/completed dashboard
 states, proving the candidate-facing page can run without Clerk recruiter auth
-and never renders matching internals such as `WAITING_FOR_MATCH`.
+and never renders matching internals such as `WAITING_FOR_MATCH`. The same
+browser proof also injects accidental internal candidate, application,
+workspace-person, person, source-span, artifact-version, assignment, challenge,
+stage, resume-key, and profile-key fields into the mocked public dashboard
+payload and asserts none of those values render in the candidate browser.
 
 ## Current Gaps
 
