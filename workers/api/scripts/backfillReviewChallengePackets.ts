@@ -284,6 +284,9 @@ function usage(): string {
     '  --force               Rebuild rows that already have a v1 packet',
     '  --json                Print machine-readable JSON to stdout',
     '  --help, -h            Show this help',
+    '',
+    'Environment:',
+    '  D1_REQUEST_TIMEOUT_MS  Per-statement D1 REST timeout for remote writes; large source-backed packets may need 60000+',
   ].join('\n');
 }
 
@@ -894,7 +897,10 @@ export async function buildNormalizedInput(
   };
 }
 
-export function d1DatabaseAdapter(client: QueryClient): D1Database {
+export function d1DatabaseAdapter(
+  client: QueryClient,
+  log: Pick<Console, 'log'> | null = null,
+): D1Database {
   return {
     prepare(sql: string) {
       let params: Array<string | number | null> = [];
@@ -922,12 +928,19 @@ export function d1DatabaseAdapter(client: QueryClient): D1Database {
       return statement;
     },
     async batch(statements: D1PreparedStatement[]) {
-      await Promise.all(statements.map((statement) => {
+      if (statements.length > 0) {
+        log?.log(`[challenge-backfill] executing D1 write batch size=${statements.length}`);
+      }
+      for (const statement of statements) {
         const adapted = statement as D1PreparedStatement & {
           __runBatch?: () => Promise<unknown>;
         };
-        return adapted.__runBatch ? adapted.__runBatch() : statement.run();
-      }));
+        if (adapted.__runBatch) {
+          await adapted.__runBatch();
+        } else {
+          await statement.run();
+        }
+      }
       return statements.map(() => ({ success: true, meta: {}, results: [] }));
     },
   } as unknown as D1Database;
@@ -1146,7 +1159,7 @@ export async function backfillReviewChallengePackets(
     fetchDiff = fetchGitHubDiff,
     fetchRefs = fetchPullRequestRefs,
   } = input;
-  const db = input.db ?? d1DatabaseAdapter(client);
+  const db = input.db ?? d1DatabaseAdapter(client, log);
   const packetTableExists = await tableExists(client, 'review_challenge_packets');
   if (!options.dryRun) {
     const missingGraphTables = await missingReviewChallengeGraphTables(client);
@@ -1183,6 +1196,11 @@ export async function backfillReviewChallengePackets(
   log.log(
     `[challenge-backfill] selected ${rows.length} row(s), mode=${options.dryRun ? 'dry-run' : 'write'}, batch=${options.batchSize}`,
   );
+  if (options.target === 'remote' && !options.dryRun) {
+    log.log(
+      `[challenge-backfill] remote D1 request timeout=${process.env['D1_REQUEST_TIMEOUT_MS'] ?? '15000'}ms`,
+    );
+  }
 
   for (let index = 0; index < rows.length; index++) {
     const row = rows[index]!;
@@ -1337,7 +1355,7 @@ async function run(options: Options): Promise<void> {
   try {
     result = await backfillReviewChallengePackets({
       client,
-      db: d1DatabaseAdapter(client),
+      db: d1DatabaseAdapter(client, progressLog),
       options,
       token: process.env['GITHUB_TOKEN'],
       log: progressLog,
