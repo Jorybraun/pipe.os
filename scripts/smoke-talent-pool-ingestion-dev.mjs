@@ -375,6 +375,7 @@ function auditIsReady(report) {
   if (report.status !== 'ready') return false;
   if (report.rawCapture?.submittedIntakeCount !== 1) return false;
   if (report.sourceProof?.candidateNodeExactSourceQuoteCount < 1) return false;
+  if (report.sourceProof?.submittedIntakeWithoutExactCandidateNodeCount !== 0) return false;
   if (report.sourceProof?.contextSourceRefCount < 1) return false;
   if (smokeMode.startsWith('upload-') && report.sourceProof?.profileUploadArtifactVersionCount < 1) return false;
   if (smokeMode === 'upload-docx' && report.rawCapture?.documentProfileStorageKeyCount !== 1) return false;
@@ -407,6 +408,7 @@ function auditHasExpectedEvidenceGap(report) {
   if (report.sourceProof?.profileUploadArtifactVersionCount < 1) return false;
   if (report.sourceProof?.documentProfileSourceSpanCount !== 0) return false;
   if (report.sourceProof?.candidateNodeExactSourceQuoteCount !== 0) return false;
+  if (report.sourceProof?.submittedIntakeWithoutExactCandidateNodeCount !== 1) return false;
   if (report.sourceProof?.contextSourceRefCount < 1) return false;
   if (report.personProjection?.talentPoolWorkspacePersonCount !== 1) return false;
   if (report.personProjection?.designQueueCount !== 1) return false;
@@ -648,6 +650,7 @@ async function main() {
     duplicateProjectedEdgeCount: report.duplicateProjectedEdgeCount,
     candidateNodeCount: report.sourceProof.candidateNodeCount,
     candidateNodeExactSourceQuoteCount: report.sourceProof.candidateNodeExactSourceQuoteCount,
+    submittedIntakeWithoutExactCandidateNodeCount: report.sourceProof.submittedIntakeWithoutExactCandidateNodeCount,
     contextSourceRefCount: report.sourceProof.contextSourceRefCount,
     documentProfileStorageKeyCount: report.rawCapture.documentProfileStorageKeyCount,
     documentProfileSourceSpanCount: report.sourceProof.documentProfileSourceSpanCount,

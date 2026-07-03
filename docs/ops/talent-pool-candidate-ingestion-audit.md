@@ -238,13 +238,15 @@ unless `--skip-recruiter-reads` is passed: candidate living-context graph,
 unified People list, candidate source search, candidate evidence-depth, person
 source search, person evidence timeline, and person evidence-depth must all
 resolve the same canonical `workspace_people` projection and return the submitted
-exact source text. `smoke:talent-pool-pdf-gap-dev` is intentionally different:
+exact source text. Ready smokes also require
+`submittedIntakeWithoutExactCandidateNodeCount` to be zero.
+`smoke:talent-pool-pdf-gap-dev` is intentionally different:
 it uploads an unextractable PDF and expects the audit to remain `not_ready`
 while proving raw blob capture, the profile-upload receipt, roleless person
 projection, zero source-less positive claims, zero source-less design suggestions,
 zero duplicate projected edges, no failed `candidate_ingestion` state, and no
-candidate-node projection from invite/upload placeholders. It also requires the
-scoped `candidate_ingestion.current_step` to be
+candidate-node projection from invite/upload placeholders. It also requires one
+per-candidate exact-node gap and the scoped `candidate_ingestion.current_step` to be
 `profile_text_extraction_needed`.
 
 Latest app-dev all-mode bounded proof on 2026-07-02 local time, checked at

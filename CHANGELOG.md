@@ -9,6 +9,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Fixed — Interview scheduling
 
+- Recruiter interview list/detail assessment setup now explains when role-backed CODE_REVIEW matching found a source-backed PR but withheld automatic assignment because the match quality gate failed, so AI ingestion no longer looks silently stuck at the generic profile-received handoff.
 - Scheduled interview invite delivery now returns the room or assessment link immediately and queues provider email sending in the Worker background, removing slow email-provider latency from the create modal's critical path.
 - New interview creation now keeps a visible pending state, blocks accidental modal dismissal while submitting, surfaces create failures without clearing form input, stops waiting on the list refresh before showing success, and returns a recoverable message when invite delivery is slow.
 - Scheduling live-update hooks now cap retained SSE notification history and clear toast timers on unmount, preventing the interviews route from growing browser memory indefinitely during noisy dev sessions.
@@ -37,6 +38,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - Talent Pool profile replay now preserves completed `candidate_ingestion.current_step` values instead of downgrading embedded, enriched, or matched rows back to the received-profile step.
 - Candidate-ingestion audit now reports an unscoped zero-candidate run as `not_ready`, preventing empty local/dev data from satisfying ingestion proof gates.
 - Candidate-ingestion audit now checks exact-source candidate-node projection per submitted Talent Pool candidate, so one richly parsed candidate cannot hide another candidate with no source-backed node.
+- Talent Pool dev smokes now require and print the per-candidate exact-node gap count from the ingestion audit.
 - Scheduled candidate-ingestion repair now prioritizes recent document-backed and Talent Pool intake retries before stale text-smoke failures, so real uploaded candidates do not sit behind old AI discovery debris.
 - Candidate document PDF/DOCX retries now reuse pre-extracted source text and bounded parser-only decomposition before AI discovery, preventing uploaded-resume repairs from stalling in full decomposition before the AI/fallback step.
 - Email-less Talent Pool profile submissions and document retries now still project into canonical `people` / `workspace_people` rows using a deterministic candidate-keyed identity, so ingested candidates appear in the unified person graph without fabricating applications or person roles.
