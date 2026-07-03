@@ -19,6 +19,7 @@ import {
   type EvaluationCorpus,
   type ExpertLabelReview,
 } from '../src/lib/challengeMatching/evaluation';
+import { sha256 } from '../src/lib/repoSemanticGraph/hash';
 import { D1Client } from './crawl-repos/shared/d1Client.js';
 
 type SqlValue = string | number | null;
@@ -74,6 +75,7 @@ export interface CorpusReviewCliOptions {
 
 export interface ExpertReviewFile extends ApplyExpertCorpusReviewInput {
   sourceCorpusId?: string;
+  sourceCorpusHash?: string;
   labels: ExpertReviewTemplateLabel[];
 }
 
@@ -98,6 +100,7 @@ export interface CorpusReviewCliSummary {
   };
   draftPersisted?: boolean;
   draftCorpusHash?: string;
+  sourceCorpusHash?: string;
   reviewPacketPath?: string;
   reviewTemplatePath?: string;
   reviewMarkdownPath?: string;
@@ -444,6 +447,10 @@ function sourceCorpusId(corpus: EvaluationCorpus): string {
   return corpus.corpusId;
 }
 
+async function sourceCorpusHash(corpus: EvaluationCorpus): Promise<string> {
+  return (await sha256(JSON.stringify(corpus))).slice('sha256:'.length);
+}
+
 async function loadStoredCorpus(db: D1Like, corpusId: string): Promise<EvaluationCorpus> {
   const row = await db.prepare(
     `SELECT corpus_json
@@ -538,10 +545,12 @@ export function buildExpertReviewTemplate(
     reviewArtifactId?: string;
     reviewArtifactVersion?: string;
     rubricVersion?: string;
+    sourceCorpusHash?: string;
   },
 ): ExpertReviewFile {
   return {
     sourceCorpusId: packet.corpusId,
+    ...(defaults?.sourceCorpusHash ? { sourceCorpusHash: defaults.sourceCorpusHash } : {}),
     reviewerId: defaults?.reviewerId ?? TODO_REVIEWER_ID,
     ...(defaults?.reviewerRole ? { reviewerRole: defaults.reviewerRole } : {}),
     reviewArtifactId: defaults?.reviewArtifactId ?? `${packet.corpusId}-expert-review`,
@@ -769,9 +778,11 @@ export async function runCorpusReviewCli(argv: string[]): Promise<number> {
   try {
     const loadedSource = await loadSourceCorpus(options, connection?.db ?? null);
     const source = loadedSource.corpus;
+    const sourceHash = await sourceCorpusHash(source);
     const packet = buildCorpusReviewPacket(source);
     const summary: CorpusReviewCliSummary = {
       sourceCorpusId: sourceCorpusId(source),
+      sourceCorpusHash: sourceHash,
       readinessSummary: packet.readinessSummary,
       nextAction: cliNextActionFromReadiness(packet.readinessSummary),
     };
@@ -798,6 +809,7 @@ export async function runCorpusReviewCli(argv: string[]): Promise<number> {
         ...(options.reviewArtifactId ? { reviewArtifactId: options.reviewArtifactId } : {}),
         ...(options.reviewArtifactVersion ? { reviewArtifactVersion: options.reviewArtifactVersion } : {}),
         ...(options.rubricVersion ? { rubricVersion: options.rubricVersion } : {}),
+        sourceCorpusHash: sourceHash,
       })
       : null;
 
@@ -818,6 +830,11 @@ export async function runCorpusReviewCli(argv: string[]): Promise<number> {
       if (review.sourceCorpusId && review.sourceCorpusId !== source.corpusId) {
         throw new Error(
           `review file sourceCorpusId "${review.sourceCorpusId}" does not match source corpus "${source.corpusId}"`,
+        );
+      }
+      if (review.sourceCorpusHash && review.sourceCorpusHash !== sourceHash) {
+        throw new Error(
+          `review file sourceCorpusHash "${review.sourceCorpusHash}" does not match source corpus hash "${sourceHash}"`,
         );
       }
       assertCompletedReview(review);
