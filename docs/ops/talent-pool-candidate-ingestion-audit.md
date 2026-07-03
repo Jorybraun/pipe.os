@@ -362,6 +362,22 @@ invite token `d8273834-9e7e-42b2-9013-17c73e0e0546` returned
 `profileUploadReceiptContextCount: 1`,
 `submittedIntakeWithoutExactCandidateNodeCount: 0`,
 `sourceLessPositiveClaimCount: 0`, and `duplicateProjectedEdgeCount: 0`.
+The 2026-07-03T20:37Z `npm run smoke:talent-pool-docx-dev` scoped proof for
+invite token `2f28314d-bce8-4174-9570-585c31f6dd40` returned `status: ready`,
+`documentProfileSourceSpanCount: 1`, `documentProfileExtractionGapCount: 0`,
+`documentProfileMissingExtractionProofCount: 0`,
+`profileUploadReceiptContextCount: 1`,
+`submittedIntakeWithoutExactCandidateNodeCount: 0`,
+`sourceLessPositiveClaimCount: 0`, and `duplicateProjectedEdgeCount: 0`.
+The source object proof showed `keyHashMatchesObject: true` and
+`objectMatchesSubmittedSource: true`; recruiter reads resolved the unified
+People candidate plus the canonical person living-context graph, source search,
+timeline, and evidence-depth views.
+The direct scoped audit command
+`CLOUDFLARE_D1_DATABASE_ID=0abe92df-9296-46f5-9f9d-a1fb1bcd3be1 npm --prefix workers/api run candidate-ingestion:audit -- --remote --invite-token 2f28314d-bce8-4174-9570-585c31f6dd40 --require-context-records`
+returned `status: ready`, `candidateNodeExactSourceQuoteCount: 13`,
+`contextSourceRefCount: 9`, `sourceSpanTextMismatchCount: 0`,
+`sourceSpanHashMismatchCount: 0`, and no failures.
 
 Current app-dev HEAD check on 2026-07-02 local time, checked at
 2026-07-03T01:25Z through 2026-07-03T01:27Z, ran after deploying Worker version
