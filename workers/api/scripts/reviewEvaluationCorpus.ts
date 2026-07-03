@@ -336,9 +336,10 @@ export function parseCorpusReviewArgs(argv: string[]): CorpusReviewCliOptions | 
   const sourceCorpusFile = valueFor(argv, '--source-corpus-file');
   const latestDraftCorpus = argv.includes('--latest-draft-corpus');
   const seedFromMatchRuns = argv.includes('--seed-from-match-runs');
+  const reviewFile = valueFor(argv, '--review-file');
   const sourceModes = [Boolean(sourceCorpusId), Boolean(sourceCorpusFile), latestDraftCorpus, seedFromMatchRuns]
     .filter(Boolean).length;
-  if (sourceModes === 0) {
+  if (sourceModes === 0 && !reviewFile) {
     throw new Error('--source-corpus-id, --source-corpus-file, --latest-draft-corpus, or --seed-from-match-runs is required');
   }
   if (sourceModes > 1) {
@@ -373,7 +374,7 @@ export function parseCorpusReviewArgs(argv: string[]): CorpusReviewCliOptions | 
     ...(valueFor(argv, '--review-packet') ? { reviewPacketPath: valueFor(argv, '--review-packet')! } : {}),
     ...(valueFor(argv, '--review-template') ? { reviewTemplatePath: valueFor(argv, '--review-template')! } : {}),
     ...(valueFor(argv, '--review-markdown') ? { reviewMarkdownPath: valueFor(argv, '--review-markdown')! } : {}),
-    ...(valueFor(argv, '--review-file') ? { reviewFile: valueFor(argv, '--review-file')! } : {}),
+    ...(reviewFile ? { reviewFile } : {}),
     ...(valueFor(argv, '--reviewed-corpus') ? { reviewedCorpusPath: valueFor(argv, '--reviewed-corpus')! } : {}),
     ...(valueFor(argv, '--json') ? { jsonPath: valueFor(argv, '--json')! } : {}),
     ...(valueFor(argv, '--reviewer-id') ? { reviewerId: valueFor(argv, '--reviewer-id')! } : {}),
@@ -394,9 +395,6 @@ export function parseCorpusReviewArgs(argv: string[]): CorpusReviewCliOptions | 
   if (options.latestDraftCorpus && options.reviewFile) {
     throw new Error('--review-file cannot be combined with --latest-draft-corpus; pass the exported --source-corpus-id so the reviewed corpus is stable');
   }
-  if (options.persist && !options.sourceCorpusId) {
-    throw new Error('--persist requires --source-corpus-id so the source frozen corpus remains auditable');
-  }
   if (options.persist && !options.reviewFile) {
     throw new Error('--persist requires --review-file');
   }
@@ -412,6 +410,7 @@ export function corpusReviewHelp(): string {
   npx tsx scripts/reviewEvaluationCorpus.ts --source-corpus-file <path> [options]
   npx tsx scripts/reviewEvaluationCorpus.ts --latest-draft-corpus [options]
   npx tsx scripts/reviewEvaluationCorpus.ts --seed-from-match-runs [options]
+  npx tsx scripts/reviewEvaluationCorpus.ts --review-file <path> [options]
 
 Options:
   --local | --remote
@@ -429,7 +428,7 @@ Options:
   --review-packet <path>              Write source-backed expert review packet
   --review-template <path>            Write editable expert review payload template
   --review-markdown <path>            Write human-readable expert review brief
-  --review-file <path>                Apply completed expert review payload
+  --review-file <path>                Apply completed expert review payload; sourceCorpusId can be read from this file
   --reviewed-corpus <path>            Write reviewed frozen corpus JSON
   --persist                           Persist reviewed corpus to evaluation_corpora
   --json <path>                       Write machine-readable summary
@@ -789,12 +788,18 @@ async function loadSourceCorpus(
     });
     return { corpus: seedResult.corpus, seedResult };
   }
-  if (!options.sourceCorpusId) throw new Error('--source-corpus-id or --seed-from-match-runs is required');
-  if (!db) throw new Error('--source-corpus-id requires D1 access');
-  const corpus = await loadStoredCorpus(db, options.sourceCorpusId);
-  if (corpus.corpusId !== options.sourceCorpusId) {
+  const sourceCorpusIdFromReview = !options.sourceCorpusId && options.reviewFile
+    ? parseReviewFile(options.reviewFile).sourceCorpusId
+    : undefined;
+  const storedSourceCorpusId = options.sourceCorpusId ?? sourceCorpusIdFromReview;
+  if (!storedSourceCorpusId) {
+    throw new Error('--source-corpus-id or review file sourceCorpusId is required');
+  }
+  if (!db) throw new Error('stored source corpus requires D1 access');
+  const corpus = await loadStoredCorpus(db, storedSourceCorpusId);
+  if (corpus.corpusId !== storedSourceCorpusId) {
     throw new Error(
-      `stored corpus row "${options.sourceCorpusId}" contains corpus "${corpus.corpusId}"`,
+      `stored corpus row "${storedSourceCorpusId}" contains corpus "${corpus.corpusId}"`,
     );
   }
   return { corpus };
@@ -807,7 +812,14 @@ export async function runCorpusReviewCli(argv: string[]): Promise<number> {
     return 0;
   }
 
-  const needsD1 = Boolean(options.sourceCorpusId || options.latestDraftCorpus || options.seedFromMatchRuns || options.persist || options.persistDraft);
+  const needsD1 = Boolean(
+    options.sourceCorpusId
+    || options.latestDraftCorpus
+    || options.seedFromMatchRuns
+    || options.persist
+    || options.persistDraft
+    || (options.reviewFile && !options.sourceCorpusFile),
+  );
   const connection = needsD1 ? await openD1(options) : null;
   try {
     const loadedSource = await loadSourceCorpus(options, connection?.db ?? null);
