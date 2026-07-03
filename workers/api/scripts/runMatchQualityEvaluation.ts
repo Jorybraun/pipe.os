@@ -5,6 +5,7 @@
  * Usage:
  *   npx tsx scripts/runMatchQualityEvaluation.ts --database-path .wrangler/.../db.sqlite --corpus-file ./corpus.json --require-pass
  *   npx tsx scripts/runMatchQualityEvaluation.ts --remote --database-id <d1-id> --corpus-id <stored-corpus> --require-pass
+ *   npx tsx scripts/runMatchQualityEvaluation.ts --remote --database-id <d1-id> --corpus-id <draft-corpus> --allow-draft-corpus
  */
 
 import Database from 'better-sqlite3';
@@ -14,6 +15,7 @@ import { pathToFileURL } from 'node:url';
 import type { D1Database } from '@cloudflare/workers-types';
 import { D1Client } from './crawl-repos/shared/d1Client.js';
 import {
+  evaluationCorpusLabelCounts,
   loadCorpus as loadFrozenEvaluationCorpus,
   type EvaluationCorpus,
   type RelevanceGrade,
@@ -57,6 +59,15 @@ interface MatchQualityCorpusFile {
 
 interface FrozenCorpusRow {
   corpus_json: string;
+  expert_label_count: number;
+  synthetic_fixture_count: number;
+}
+
+interface StoredCorpusGateInput {
+  corpusId: string;
+  expertLabelCount: number;
+  syntheticFixtureCount: number;
+  allowDraftCorpus: boolean;
 }
 
 export interface CliOptions {
@@ -66,6 +77,7 @@ export interface CliOptions {
   corpusId?: string;
   remote: boolean;
   requirePass: boolean;
+  allowDraftCorpus: boolean;
   json: boolean;
 }
 
@@ -183,6 +195,7 @@ export function parseOptions(argv: string[]): CliOptions {
     corpusId: valueFor(argv, '--corpus-id'),
     remote: hasFlag(argv, '--remote'),
     requirePass: hasFlag(argv, '--require-pass'),
+    allowDraftCorpus: hasFlag(argv, '--allow-draft-corpus'),
     json: hasFlag(argv, '--json'),
   };
 }
@@ -202,6 +215,9 @@ export function validateOptions(options: CliOptions): void {
   }
   if (options.databaseId && !options.remote) {
     throw new Error('--database-id requires --remote');
+  }
+  if (options.allowDraftCorpus && options.requirePass) {
+    throw new Error('--allow-draft-corpus cannot be combined with --require-pass');
   }
 }
 
@@ -288,24 +304,57 @@ export function parseMatchQualityCorpusJson(json: string): MatchQualityCorpusFil
   return matchQualityCasesFromEvaluationCorpus(evaluationCorpus);
 }
 
+export function assertStoredCorpusCanRunMatchQualityGate(input: StoredCorpusGateInput): void {
+  if (input.allowDraftCorpus) return;
+  if (input.expertLabelCount <= 0) {
+    throw new Error(
+      `${input.corpusId} has ${input.expertLabelCount} expert labels; complete expert review before running the match-quality gate`,
+    );
+  }
+  if (input.syntheticFixtureCount > 0) {
+    throw new Error(
+      `${input.corpusId} has ${input.syntheticFixtureCount} synthetic fixture labels; use an expert-labelled corpus for the match-quality gate`,
+    );
+  }
+}
+
 function loadCorpusFile(path: string): MatchQualityCorpusFile {
   const parsed = JSON.parse(readFileSync(resolve(path), 'utf8')) as MatchQualityCorpusFile;
   if (isMatchQualityCorpusFile(parsed)) return parsed;
   return parseMatchQualityCorpusJson(JSON.stringify(parsed));
 }
 
-async function loadStoredCorpus(db: D1Database, corpusId: string): Promise<MatchQualityCorpusFile> {
+async function loadStoredCorpus(
+  db: D1Database,
+  corpusId: string,
+  options: { allowDraftCorpus: boolean },
+): Promise<MatchQualityCorpusFile> {
   const row = await db.prepare(
-    'SELECT corpus_json FROM evaluation_corpora WHERE corpus_id = ?1',
+    `SELECT corpus_json, expert_label_count, synthetic_fixture_count
+       FROM evaluation_corpora
+      WHERE corpus_id = ?1`,
   ).bind(corpusId).first<FrozenCorpusRow>();
   if (!row) {
     throw new Error(`stored evaluation corpus not found: ${corpusId}`);
   }
-  const corpus = parseMatchQualityCorpusJson(row.corpus_json);
-  if (corpus.corpusId !== corpusId) {
-    throw new Error(`stored corpus row "${corpusId}" contains corpus "${corpus.corpusId}"`);
+  const evaluationCorpus = loadFrozenEvaluationCorpus(row.corpus_json);
+  if (evaluationCorpus.corpusId !== corpusId) {
+    throw new Error(`stored corpus row "${corpusId}" contains corpus "${evaluationCorpus.corpusId}"`);
   }
-  return corpus;
+  const counts = evaluationCorpusLabelCounts(evaluationCorpus);
+  if (
+    counts.expertLabelCount !== row.expert_label_count
+    || counts.syntheticFixtureCount !== row.synthetic_fixture_count
+  ) {
+    throw new Error(`stored corpus row "${corpusId}" label counts do not match corpus JSON`);
+  }
+  assertStoredCorpusCanRunMatchQualityGate({
+    corpusId,
+    expertLabelCount: counts.expertLabelCount,
+    syntheticFixtureCount: counts.syntheticFixtureCount,
+    allowDraftCorpus: options.allowDraftCorpus,
+  });
+  return matchQualityCasesFromEvaluationCorpus(evaluationCorpus);
 }
 
 async function main(): Promise<void> {
@@ -319,7 +368,9 @@ async function main(): Promise<void> {
   try {
     const corpus = options.corpusFile
       ? loadCorpusFile(options.corpusFile)
-      : await loadStoredCorpus(db, options.corpusId!);
+      : await loadStoredCorpus(db, options.corpusId!, {
+          allowDraftCorpus: options.allowDraftCorpus,
+        });
     const result = await runMatchQualityEvaluation(
       db,
       {

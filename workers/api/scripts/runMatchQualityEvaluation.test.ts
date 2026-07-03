@@ -1,5 +1,6 @@
 import { describe, expect, it } from 'vitest';
 import {
+  assertStoredCorpusCanRunMatchQualityGate,
   matchQualityCasesFromEvaluationCorpus,
   parseOptions,
   parseMatchQualityCorpusJson,
@@ -129,6 +130,7 @@ describe('runMatchQualityEvaluation corpus loading', () => {
       corpusId: 'reviewed-code-review-corpus',
       remote: true,
       requirePass: true,
+      allowDraftCorpus: false,
       json: true,
     });
     expect(() => validateOptions(options)).not.toThrow();
@@ -153,6 +155,38 @@ describe('runMatchQualityEvaluation corpus loading', () => {
     ]);
 
     expect(() => validateOptions(options)).toThrow('--corpus-file or --corpus-id is required');
+  });
+
+  it('rejects stored draft corpora before running the production match-quality gate', () => {
+    expect(() => assertStoredCorpusCanRunMatchQualityGate({
+      corpusId: 'draft-corpus',
+      expertLabelCount: 0,
+      syntheticFixtureCount: 0,
+      allowDraftCorpus: false,
+    })).toThrow('draft-corpus has 0 expert labels');
+  });
+
+  it('rejects stored synthetic corpora before running the production match-quality gate', () => {
+    expect(() => assertStoredCorpusCanRunMatchQualityGate({
+      corpusId: 'synthetic-corpus',
+      expertLabelCount: 3,
+      syntheticFixtureCount: 1,
+      allowDraftCorpus: false,
+    })).toThrow('synthetic-corpus has 1 synthetic fixture labels');
+  });
+
+  it('requires draft corpus inspection to stay out of require-pass gates', () => {
+    const options = parseOptions([
+      '--remote',
+      '--database-id=app-dev-db-id',
+      '--corpus-id',
+      'draft-corpus',
+      '--allow-draft-corpus',
+      '--require-pass',
+    ]);
+
+    expect(options.allowDraftCorpus).toBe(true);
+    expect(() => validateOptions(options)).toThrow('--allow-draft-corpus cannot be combined with --require-pass');
   });
 
   it('keeps compact match-quality corpus files unchanged', () => {
