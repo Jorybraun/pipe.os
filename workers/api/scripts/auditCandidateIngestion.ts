@@ -345,10 +345,29 @@ async function loadRawCapture(
   scopeSql: string,
   params: Array<string | number | null>,
 ): Promise<CandidateRawCaptureAudit> {
+  const profileKeyHash = "LOWER(substr(t.profile_r2_key, LENGTH('talent-intake/' || t.candidate_id || '/') + 1, 64))";
+  const nonHexProfileKeyHashCharacters = [
+    '0',
+    '1',
+    '2',
+    '3',
+    '4',
+    '5',
+    '6',
+    '7',
+    '8',
+    '9',
+    'a',
+    'b',
+    'c',
+    'd',
+    'e',
+    'f',
+  ].reduce((expression, character) => `REPLACE(${expression}, '${character}', '')`, profileKeyHash);
   const contentAddressedProfileKeyPredicate = `
     t.profile_r2_key LIKE 'talent-intake/' || t.candidate_id || '/%'
     AND LENGTH(substr(t.profile_r2_key, LENGTH('talent-intake/' || t.candidate_id || '/') + 1, 64)) = 64
-    AND LOWER(substr(t.profile_r2_key, LENGTH('talent-intake/' || t.candidate_id || '/') + 1, 64)) NOT GLOB '*[^0-9a-f]*'
+    AND LENGTH(${nonHexProfileKeyHashCharacters}) = 0
     AND substr(t.profile_r2_key, LENGTH('talent-intake/' || t.candidate_id || '/') + 65, 1) = '-'
   `;
   const rows = await client.query<RawCaptureRow>(
