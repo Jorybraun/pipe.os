@@ -4,6 +4,7 @@ import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import { createMockD1, type BetterSqliteDb } from '../../__tests__/helpers/mockD1';
 import {
   evaluateRepoTaskAssessmentSession,
+  processStaleRepoTaskAssessmentEvaluations,
 } from '../repoTaskAssessmentEvaluator';
 import {
   RepoTaskInterviewSessionStore,
@@ -47,6 +48,127 @@ async function sourceRef(input: {
     locator: input.locator ?? { label: input.id },
     exactText: input.exactText,
     contentHash: await sha256Hex(input.exactText),
+  };
+}
+
+async function createReadyAssessmentFixture(
+  store: RepoTaskInterviewSessionStore,
+  suffix: string,
+): Promise<{
+  sessionId: string;
+  scheduledInterviewId: string;
+  requestEventId: string;
+  requestSourceRef: AssessmentEvidenceSourceRefInput;
+}> {
+  const repositoryUrl = 'https://github.com/mui/base-ui';
+  const baseCommitSha = '58dff8444fa56e4444a3a1dd991c76b49cf4ab7e';
+  const commitSha = (await sha256Hex(`commit-${suffix}`)).slice(0, 40);
+  const scheduledInterviewId = `scheduled-interview-${suffix}`;
+  const session = await store.createSession({
+    ingestionKey: `assessment-session:${suffix}`,
+    interviewId: scheduledInterviewId,
+    candidateId: `candidate-${suffix}`,
+    workspaceId: 'workspace-1',
+    mode: 'OPEN_SOURCE_BUG_FIX',
+    createdBy: 'test',
+  });
+
+  await store.recordEvent({
+    sessionId: session.id,
+    ingestionKey: `assessment-event:${suffix}:challenge-packet`,
+    kind: 'recruiter_note',
+    actorType: 'recruiter',
+    actorId: 'recruiter-1',
+    narrative: 'Recruiter assigned a complete source-backed open-source challenge packet.',
+    payload: { repositoryUrl, baseCommitSha },
+    sourceRefs: [await sourceRef({
+      type: 'open_source_challenge_packet',
+      id: `challenge-packet-${suffix}`,
+      evidenceRole: 'assigned_challenge',
+      locator: {
+        repositoryUrl,
+        baseCommitSha,
+        challengeTitle: 'Fix Base UI popover impatient click handling',
+      },
+      exactText: [
+        `Repo: ${repositoryUrl}`,
+        `Base commit: ${baseCommitSha}`,
+        'Task: Fix Base UI popover impatient click handling',
+        'Success criteria:',
+        '- Preserve existing popover behavior while preventing premature close.',
+        '- Add a targeted regression test for impatient clicks.',
+        'Expected evidence:',
+        '- git_commit',
+        '- code_diff',
+        '- test_run',
+      ].join('\n'),
+    })],
+  });
+
+  await store.submitCommit({
+    sessionId: session.id,
+    ingestionKey: `assessment-event:${suffix}:commit-submission`,
+    actorType: 'candidate',
+    actorId: `candidate-${suffix}`,
+    narrative: 'Candidate submitted a focused popover fix commit.',
+    repositoryUrl,
+    branchName: 'pipe-assessment/popover-click-fix',
+    baseCommitSha,
+    commitSha,
+    commitUrl: `${repositoryUrl}/commit/${commitSha}`,
+    changedFiles: [
+      {
+        path: 'packages/react/src/popover/root/usePopoverRoot.ts',
+        status: 'modified',
+        additions: 4,
+        deletions: 1,
+      },
+    ],
+    sourceRefs: [
+      await sourceRef({
+        type: 'git_commit',
+        id: commitSha,
+        exactText: `commit ${commitSha}\nFix popover impatient click handling`,
+      }),
+      await sourceRef({
+        type: 'code_diff',
+        id: `${baseCommitSha}..${commitSha}`,
+        locator: { baseCommitSha, commitSha },
+        exactText: [
+          'diff --git a/packages/react/src/popover/root/usePopoverRoot.ts b/packages/react/src/popover/root/usePopoverRoot.ts',
+          '+const PATIENT_CLICK_THRESHOLD = 300;',
+        ].join('\n'),
+      }),
+      await sourceRef({
+        type: 'test_run',
+        id: `verification-${suffix}`,
+        evidenceRole: 'verification_test_output',
+        exactText: '$ git diff --check HEAD~1 HEAD\nexitCode: 0',
+      }),
+    ],
+  });
+
+  const requestSourceRef = await sourceRef({
+    type: 'assessment_evaluation_request',
+    id: `assessment-event:${suffix}:evaluation-request`,
+    exactText: 'Recruiter requested a source-backed assessment evaluation.',
+  });
+  const requestEvent = await store.recordEvent({
+    sessionId: session.id,
+    ingestionKey: `assessment-event:${suffix}:evaluation-request`,
+    kind: 'recruiter_note',
+    actorType: 'recruiter',
+    actorId: 'recruiter-1',
+    narrative: 'Recruiter requested source-backed assessment evaluation.',
+    payload: { action: 'evaluate_repo_task_assessment' },
+    sourceRefs: [requestSourceRef],
+  });
+
+  return {
+    sessionId: session.id,
+    scheduledInterviewId,
+    requestEventId: requestEvent.id,
+    requestSourceRef,
   };
 }
 
@@ -249,5 +371,105 @@ describe('repo task assessment evaluator integration', () => {
       expect.objectContaining({ code: 'HUMAN_CORRECTNESS_REVIEW_REQUIRED', severity: 'warning' }),
     ]));
     expect(diagnostics.some((diagnostic) => diagnostic.code === 'AI_DEVELOPER_UNAVAILABLE')).toBe(false);
+  });
+
+  it('evaluates with conservative source-backed fallback when the AI call exceeds the Worker time budget', async () => {
+    const fixture = await createReadyAssessmentFixture(store, 'timeout');
+    const aiRun = vi.fn(() => new Promise(() => {}));
+
+    const result = await evaluateRepoTaskAssessmentSession({
+      db,
+      store,
+      env: {
+        AI: { run: aiRun } as unknown as Ai,
+        CLOUDFLARE_AI_MODEL: '@cf/meta/llama-3.2-3b-instruct',
+        REPO_TASK_EVALUATOR_AI_TIMEOUT_MS: '1',
+      },
+      sessionId: fixture.sessionId,
+      scheduledInterviewId: fixture.scheduledInterviewId,
+      requestedBy: 'recruiter-1',
+      requestedAt: '2026-07-03T00:02:00.000Z',
+      requestEventId: fixture.requestEventId,
+      requestSourceRef: fixture.requestSourceRef,
+    });
+
+    expect(result.kind).toBe('evaluated');
+    expect(aiRun).toHaveBeenCalledTimes(1);
+
+    const sessionRow = sqlite.prepare(
+      `SELECT state FROM assessment_sessions WHERE id = ?`,
+    ).get(fixture.sessionId) as { state: string };
+    expect(sessionRow.state).toBe('EVALUATED');
+
+    const report = sqlite.prepare(
+      `SELECT id, status, output_json
+         FROM assessment_evaluation_reports
+        WHERE session_id = ?
+        ORDER BY created_at DESC
+        LIMIT 1`,
+    ).get(fixture.sessionId) as { id: string; status: string; output_json: string };
+    expect(report.status).toBe('EVALUATED');
+    expect(JSON.parse(report.output_json)).toMatchObject({
+      fallback: 'deterministic_source_evidence',
+      fallbackReasonCode: 'MODEL_RESPONSE_TIMEOUT',
+      recommendation: 'mixed_evidence_human_review',
+    });
+
+    const diagnostics = sqlite.prepare(
+      `SELECT code, severity
+         FROM assessment_diagnostics
+        WHERE report_id = ?
+        ORDER BY code`,
+    ).all(report.id) as Array<{ code: string; severity: string }>;
+    expect(diagnostics).toEqual(expect.arrayContaining([
+      expect.objectContaining({ code: 'MODEL_RESPONSE_TIMEOUT', severity: 'warning' }),
+      expect.objectContaining({ code: 'HUMAN_CORRECTNESS_REVIEW_REQUIRED', severity: 'warning' }),
+    ]));
+  });
+
+  it('recovers stale running evaluation sessions from the scheduled worker path', async () => {
+    const fixture = await createReadyAssessmentFixture(store, 'scheduled-recovery');
+    await store.transitionState({
+      sessionId: fixture.sessionId,
+      toState: 'EVALUATING',
+      reason: 'Simulate a request-started evaluation that outlived the request path.',
+      eventId: fixture.requestEventId,
+      createdBy: 'test',
+    });
+    sqlite.prepare(
+      `UPDATE assessment_sessions
+          SET updated_at = ?
+        WHERE id = ?`,
+    ).run('2026-07-03T00:00:00.000Z', fixture.sessionId);
+
+    const aiRun = vi.fn(async () => ({
+      response: 'This response is intentionally not JSON, forcing the same source-backed fallback used by live recovery.',
+    }));
+    const result = await processStaleRepoTaskAssessmentEvaluations({
+      DB: db,
+      AI: { run: aiRun } as unknown as Ai,
+      CLOUDFLARE_AI_MODEL: '@cf/meta/llama-3.2-3b-instruct',
+    }, {
+      staleMs: 0,
+      limit: 5,
+      now: '2026-07-03T00:05:00.000Z',
+    });
+
+    expect(result).toEqual({
+      scanned: 1,
+      evaluated: 1,
+      diagnostics: 0,
+      failed: 0,
+    });
+    expect(aiRun).toHaveBeenCalledTimes(1);
+    expect(sqlite.prepare(
+      `SELECT state FROM assessment_sessions WHERE id = ?`,
+    ).get(fixture.sessionId)).toEqual({ state: 'EVALUATED' });
+    expect(sqlite.prepare(
+      `SELECT COUNT(*) AS count
+         FROM assessment_evaluation_reports
+        WHERE session_id = ?
+          AND status = 'EVALUATED'`,
+    ).get(fixture.sessionId)).toEqual({ count: 1 });
   });
 });

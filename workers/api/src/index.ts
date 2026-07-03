@@ -60,6 +60,7 @@ import {
 } from './lib/candidateDiscovery/staleWorkersAiRetry';
 import { runScheduledBackfill } from './lib/livingContext/backfillScheduled';
 import { PIPE_EMAIL_LOGO_PATH, pipeEmailLogoResponse } from './lib/emailAssets';
+import { processStaleRepoTaskAssessmentEvaluations } from './lib/repoTaskAssessmentEvaluator';
 
 // Unified Agent Runtime plugin registration (ADR-034)
 import { registerAllPlugins } from './lib/agents';
@@ -345,6 +346,9 @@ export default {
     ctx.waitUntil(processStaleWorkersAIModelIngestionRetries(env));
     ctx.waitUntil(processTalentPoolOperationalContextRepairs(env));
     ctx.waitUntil(processTalentPoolRolelessApplicationRepairs(env));
+    ctx.waitUntil(processStaleRepoTaskAssessmentEvaluations(env).catch((err) => {
+      console.error('[scheduled] stale assessment evaluation recovery error:', err);
+    }));
     ctx.waitUntil(runScheduledBackfill(env).catch((err) => {
       console.error('[scheduled] backfill error:', err);
     }));

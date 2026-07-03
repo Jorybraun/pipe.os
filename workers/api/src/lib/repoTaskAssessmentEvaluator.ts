@@ -58,6 +58,7 @@ export interface EvaluateRepoTaskAssessmentInput {
   env: {
     AI?: Ai;
     CLOUDFLARE_AI_MODEL?: string;
+    REPO_TASK_EVALUATOR_AI_TIMEOUT_MS?: string;
   };
   sessionId: string;
   scheduledInterviewId: string;
@@ -93,6 +94,18 @@ type EvaluatorDiagnosticSeverity = 'info' | 'warning' | 'blocking';
 const MAX_SOURCE_REF_EXACT_TEXT_CHARS = 800;
 const MAX_AI_PROMPT_SOURCE_REFS = 16;
 const MAX_EVALUATION_SUMMARY_CHARS = 320;
+const DEFAULT_AI_EVALUATION_TIMEOUT_MS = 20_000;
+const MIN_AI_EVALUATION_TIMEOUT_MS = 1_000;
+const MAX_AI_EVALUATION_TIMEOUT_MS = 55_000;
+const DEFAULT_STALE_EVALUATION_MS = 60_000;
+const DEFAULT_STALE_EVALUATION_LIMIT = 2;
+
+class RepoTaskAiTimeoutError extends Error {
+  constructor(readonly timeoutMs: number) {
+    super(`repo-task assessment AI evaluation exceeded ${timeoutMs}ms`);
+    this.name = 'RepoTaskAiTimeoutError';
+  }
+}
 
 const EXPECTED_HIGH_CONFIDENCE_REF_GROUPS = [
   {
@@ -136,6 +149,31 @@ function parseJsonObject(value: string | null): JsonObject {
   const parsed = JSON.parse(value) as JsonValue;
   if (parsed === null || Array.isArray(parsed) || typeof parsed !== 'object') return {};
   return parsed;
+}
+
+function configuredAiEvaluationTimeoutMs(env: EvaluateRepoTaskAssessmentInput['env']): number {
+  const raw = Number(env.REPO_TASK_EVALUATOR_AI_TIMEOUT_MS ?? '');
+  if (!Number.isFinite(raw) || raw <= 0) return DEFAULT_AI_EVALUATION_TIMEOUT_MS;
+  return Math.min(
+    MAX_AI_EVALUATION_TIMEOUT_MS,
+    Math.max(MIN_AI_EVALUATION_TIMEOUT_MS, Math.floor(raw)),
+  );
+}
+
+async function withAiTimeout<T>(promise: Promise<T>, timeoutMs: number): Promise<T> {
+  let timeoutId: ReturnType<typeof setTimeout> | null = null;
+  try {
+    return await Promise.race([
+      promise,
+      new Promise<T>((_, reject) => {
+        timeoutId = setTimeout(() => {
+          reject(new RepoTaskAiTimeoutError(timeoutMs));
+        }, timeoutMs);
+      }),
+    ]);
+  } finally {
+    if (timeoutId !== null) clearTimeout(timeoutId);
+  }
 }
 
 function stringValue(value: unknown): string | null {
@@ -1346,12 +1384,50 @@ export async function evaluateRepoTaskAssessmentSession(
   let aiOutput: AiAssessmentOutput;
   let rawResponse = '';
   try {
-    const completion = await provider.complete([
+    const completionPromise = provider.complete([
       { role: 'system', content: systemPrompt },
       { role: 'user', content: userPrompt },
     ], { forceJson: true, maxTokens: 4096 });
+    completionPromise.catch(() => undefined);
+    const completion = await withAiTimeout(
+      completionPromise,
+      configuredAiEvaluationTimeoutMs(input.env),
+    );
     rawResponse = completion.content ?? '';
   } catch (error) {
+    if (error instanceof RepoTaskAiTimeoutError) {
+      const fallback = await createDeterministicFallbackReport({
+        store: input.store,
+        sessionId: input.sessionId,
+        sessionMode: session.mode,
+        scheduledInterviewId: input.scheduledInterviewId,
+        requestEventId: input.requestEventId,
+        requestSourceRef: input.requestSourceRef,
+        sourceRefs,
+        evidenceCoverage,
+        provider,
+        rawResponse,
+        fallbackReason: 'The AI evaluator exceeded the Worker time budget after source-backed evidence was captured.',
+        fallbackReasonCode: 'MODEL_RESPONSE_TIMEOUT',
+        diagnostics: [
+          diagnosticInput({
+            code: 'MODEL_RESPONSE_TIMEOUT',
+            severity: 'warning',
+            message: `The AI evaluator exceeded ${error.timeoutMs}ms, so PIPE generated conservative claims only from captured source evidence.`,
+            provider: provider.name,
+            retryable: true,
+            sourceRefs: [input.requestSourceRef],
+            details: {
+              scheduledInterviewId: input.scheduledInterviewId,
+              model: provider.model,
+              timeoutMs: error.timeoutMs,
+              fallback: 'deterministic_source_evidence',
+            },
+          }),
+        ],
+      });
+      if (fallback) return fallback;
+    }
     return createDiagnostic({
       store: input.store,
       sessionId: input.sessionId,
@@ -1509,4 +1585,142 @@ export async function evaluateRepoTaskAssessmentSession(
   });
 
   return { kind: 'evaluated', report };
+}
+
+export interface ProcessStaleRepoTaskAssessmentEvaluationsResult {
+  scanned: number;
+  evaluated: number;
+  diagnostics: number;
+  failed: number;
+}
+
+export async function processStaleRepoTaskAssessmentEvaluations(
+  env: {
+    DB: D1Database;
+    AI?: Ai;
+    CLOUDFLARE_AI_MODEL?: string;
+    REPO_TASK_EVALUATOR_AI_TIMEOUT_MS?: string;
+  },
+  options: {
+    staleMs?: number;
+    limit?: number;
+    now?: string;
+  } = {},
+): Promise<ProcessStaleRepoTaskAssessmentEvaluationsResult> {
+  const now = options.now ?? new Date().toISOString();
+  const staleMs = Number.isFinite(options.staleMs) && options.staleMs !== undefined
+    ? Math.max(0, options.staleMs)
+    : DEFAULT_STALE_EVALUATION_MS;
+  const limit = Number.isInteger(options.limit) && options.limit !== undefined
+    ? Math.max(1, Math.min(10, options.limit))
+    : DEFAULT_STALE_EVALUATION_LIMIT;
+  const staleBefore = new Date(Date.parse(now) - staleMs).toISOString();
+  const rows = await env.DB.prepare(
+    `SELECT s.id AS session_id,
+            s.interview_id,
+            e.id AS request_event_id,
+            e.actor_id AS requested_by,
+            e.occurred_at AS requested_at,
+            sr.source_ref_type,
+            sr.source_ref_id,
+            sr.source_span_id,
+            sr.evidence_role,
+            sr.locator_json,
+            sr.exact_text,
+            sr.content_hash,
+            sr.metadata_json
+       FROM assessment_sessions s
+       JOIN assessment_evidence_events e
+         ON e.session_id = s.id
+        AND e.kind = 'recruiter_note'
+       JOIN assessment_event_source_refs sr
+         ON sr.event_id = e.id
+        AND sr.source_ref_type = 'assessment_evaluation_request'
+      WHERE s.state IN ('EVALUATING', 'EVALUATION_PENDING')
+        AND s.updated_at <= ?1
+        AND NOT EXISTS (
+          SELECT 1
+            FROM assessment_evaluation_reports r
+           WHERE r.session_id = s.id
+             AND r.status = 'EVALUATED'
+        )
+      ORDER BY s.updated_at ASC
+      LIMIT ?2`,
+  ).bind(staleBefore, limit).all<{
+    session_id: string;
+    interview_id: string | null;
+    request_event_id: string;
+    requested_by: string | null;
+    requested_at: string | null;
+    source_ref_type: string;
+    source_ref_id: string;
+    source_span_id: string | null;
+    evidence_role: string | null;
+    locator_json: string | null;
+    exact_text: string | null;
+    content_hash: string | null;
+    metadata_json: string | null;
+  }>();
+
+  const store = new RepoTaskInterviewSessionStore(env.DB);
+  let evaluated = 0;
+  let diagnostics = 0;
+  let failed = 0;
+
+  for (const row of rows.results ?? []) {
+    const requestSourceRef: AssessmentEvidenceSourceRefInput = {
+      sourceRefType: row.source_ref_type,
+      sourceRefId: row.source_ref_id,
+      sourceSpanId: row.source_span_id,
+      evidenceRole: row.evidence_role ?? 'evaluation_request',
+      locator: parseJsonObject(row.locator_json),
+      exactText: row.exact_text,
+      contentHash: row.content_hash,
+      metadata: parseJsonObject(row.metadata_json),
+    };
+
+    try {
+      const result = await evaluateRepoTaskAssessmentSession({
+        db: env.DB,
+        store,
+        env,
+        sessionId: row.session_id,
+        scheduledInterviewId: row.interview_id ?? row.session_id,
+        requestedBy: row.requested_by ?? 'scheduled-assessment-evaluator',
+        requestedAt: row.requested_at ?? now,
+        requestEventId: row.request_event_id,
+        requestSourceRef,
+      });
+      if (result.kind === 'evaluated') evaluated += 1;
+      else diagnostics += 1;
+    } catch (error) {
+      failed += 1;
+      console.error('[repoTaskAssessmentEvaluator/processStale] failed:', {
+        sessionId: row.session_id,
+        interviewId: row.interview_id,
+        error: error instanceof Error ? error.message : String(error),
+      });
+      try {
+        await store.transitionState({
+          sessionId: row.session_id,
+          toState: 'DIAGNOSTIC',
+          reason: 'Scheduled source-backed assessment evaluation recovery failed.',
+          eventId: row.request_event_id,
+          createdBy: 'scheduled-assessment-evaluator',
+        });
+      } catch (transitionError) {
+        console.error('[repoTaskAssessmentEvaluator/processStale] diagnostic transition failed:', {
+          sessionId: row.session_id,
+          error: transitionError instanceof Error ? transitionError.message : String(transitionError),
+        });
+      }
+    }
+  }
+
+  return {
+    scanned: rows.results?.length ?? 0,
+    evaluated,
+    diagnostics,
+    failed,
+  };
 }
