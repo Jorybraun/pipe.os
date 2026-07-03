@@ -238,7 +238,48 @@ candidate-node projection from invite/upload placeholders. It also requires the
 scoped `candidate_ingestion.current_step` to be
 `profile_text_extraction_needed`.
 
-Latest bounded live text-ingestion proof on 2026-07-02 local time, checked at
+Latest app-dev all-mode bounded proof on 2026-07-02 local time, checked at
+2026-07-03T00:05Z and 2026-07-03T00:06Z, ran after deploying Worker version
+`c0df3dcb-d5e9-4c54-bb79-271ec8f04c20`:
+
+- `npm run smoke:talent-pool-ingestion-dev` submitted pasted profile text for
+  invite token `a9d07221-846e-4410-8d12-92a94bff9a74` and returned
+  `status: ready`, `ingestionSteps: [{currentStep: "embed_profile", count: 1}]`,
+  `candidateNodeExactSourceQuoteCount: 13`, `contextSourceRefCount: 8`,
+  `talentPoolWorkspacePersonCount: 1`, `sourceLessPositiveClaimCount: 0`,
+  `sourceLessDesignQueueSuggestionCount: 0`, and
+  `duplicateProjectedEdgeCount: 0`. Recruiter reads resolved unified People type
+  `candidate`, found the candidate/person source text, returned 8 timeline
+  entries, and reported 9 source spans plus 5 context records.
+- `npm run smoke:talent-pool-upload-dev` submitted a multipart text profile for
+  invite token `11cded20-d4c5-4121-a788-867da3e2e46d` and returned
+  `status: ready`, `ingestionSteps: [{currentStep: "embed_profile", count: 1}]`,
+  `candidateNodeExactSourceQuoteCount: 13`, `contextSourceRefCount: 8`,
+  `profileUploadArtifactVersionCount: 1`, `talentPoolWorkspacePersonCount: 1`,
+  `sourceLessPositiveClaimCount: 0`, `sourceLessDesignQueueSuggestionCount: 0`,
+  and `duplicateProjectedEdgeCount: 0`. Recruiter reads resolved the same
+  roleless person projection and reported 9 source spans plus 5 context records.
+- `npm run smoke:talent-pool-docx-dev` submitted a multipart DOCX profile for
+  invite token `d05f3121-add6-4d7f-a500-f41513ea67d9` and returned
+  `status: ready`, `ingestionSteps: [{currentStep: "embed_profile", count: 1}]`,
+  `candidateNodeExactSourceQuoteCount: 13`, `contextSourceRefCount: 8`,
+  `documentProfileSourceSpanCount: 1`, `profileUploadArtifactVersionCount: 1`,
+  `talentPoolWorkspacePersonCount: 1`, `sourceLessPositiveClaimCount: 0`,
+  `sourceLessDesignQueueSuggestionCount: 0`, and
+  `duplicateProjectedEdgeCount: 0`. Recruiter reads resolved unified People type
+  `candidate`, found the uploaded DOCX source text, returned 9 timeline entries,
+  and reported 9 source spans plus 5 context records.
+- `npm run smoke:talent-pool-pdf-gap-dev` submitted an intentionally invalid
+  PDF for invite token `12400ab2-1ca7-4be4-8257-b515da8db476` and returned
+  `status: not_ready`, `ingestionSteps:
+  [{currentStep: "profile_text_extraction_needed", count: 1}]`,
+  `documentProfileStorageKeyCount: 1`, `profileUploadArtifactVersionCount: 1`,
+  `candidateNodeCount: 0`, `contextSourceRefCount: 7`,
+  `talentPoolWorkspacePersonCount: 1`, `designQueueCount: 1`,
+  `sourceLessPositiveClaimCount: 0`, `sourceLessDesignQueueSuggestionCount: 0`,
+  and `duplicateProjectedEdgeCount: 0`.
+
+Prior bounded live text-ingestion proof on 2026-07-02 local time, checked at
 2026-07-03T00:04Z, ran after deploying Worker version
 `3fffc61b-d725-40ed-ba88-3fbf71a08a6b`:
 
