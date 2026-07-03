@@ -19,7 +19,7 @@ import {
   type EvaluationCorpus,
   type ExpertLabelReview,
 } from '../src/lib/challengeMatching/evaluation';
-import { D1Client, loadD1Config } from './crawl-repos/shared/d1Client.js';
+import { D1Client } from './crawl-repos/shared/d1Client.js';
 
 type SqlValue = string | number | null;
 type BetterSqliteDb = InstanceType<typeof Database>;
@@ -47,6 +47,7 @@ interface StoredCorpusRow {
 export interface CorpusReviewCliOptions {
   target: 'local' | 'remote';
   databasePath?: string;
+  databaseId?: string;
   sourceCorpusId?: string;
   sourceCorpusFile?: string;
   seedFromMatchRuns: boolean;
@@ -245,6 +246,34 @@ function discoverLocalDatabase(explicitPath?: string): string {
   return candidates[0]!;
 }
 
+function requiredEnv(name: string): string {
+  const value = process.env[name];
+  if (!value) throw new Error(`Missing required env var: ${name}`);
+  return value;
+}
+
+function remoteDatabaseId(explicitDatabaseId?: string): string {
+  const databaseId = explicitDatabaseId
+    ?? process.env['MATCHING_EVALUATION_D1_DATABASE_ID']
+    ?? process.env['CLOUDFLARE_D1_DATABASE_ID']
+    ?? '';
+  if (!databaseId) {
+    throw new Error(
+      'Missing required D1 database id; set MATCHING_EVALUATION_D1_DATABASE_ID, '
+      + 'CLOUDFLARE_D1_DATABASE_ID, or pass --database-id.',
+    );
+  }
+  return databaseId;
+}
+
+function remoteD1(explicitDatabaseId?: string): D1Like {
+  return new RemoteD1(new D1Client({
+    accountId: requiredEnv('CLOUDFLARE_ACCOUNT_ID'),
+    apiToken: requiredEnv('CLOUDFLARE_API_TOKEN'),
+    databaseId: remoteDatabaseId(explicitDatabaseId),
+  }));
+}
+
 function valuesFor(argv: string[], flag: string): string[] {
   const values: string[] = [];
   for (let index = 0; index < argv.length; index++) {
@@ -294,8 +323,12 @@ export function parseCorpusReviewArgs(argv: string[]): CorpusReviewCliOptions | 
     throw new Error('pass only one source mode: --source-corpus-id, --source-corpus-file, or --seed-from-match-runs');
   }
   const databasePath = valueFor(argv, '--database-path');
+  const databaseId = valueFor(argv, '--database-id');
   if (target === 'remote' && databasePath) {
     throw new Error('--database-path can only be used with --local');
+  }
+  if (target === 'local' && databaseId) {
+    throw new Error('--database-id requires --remote');
   }
   const seedLimit = positiveIntegerFor(argv, '--seed-limit');
   const options: CorpusReviewCliOptions = {
@@ -304,6 +337,7 @@ export function parseCorpusReviewArgs(argv: string[]): CorpusReviewCliOptions | 
     persistDraft: argv.includes('--persist-draft'),
     seedFromMatchRuns,
     ...(databasePath ? { databasePath } : {}),
+    ...(databaseId ? { databaseId } : {}),
     ...(sourceCorpusId ? { sourceCorpusId } : {}),
     ...(sourceCorpusFile ? { sourceCorpusFile } : {}),
     ...(seedLimit ? { seedLimit } : {}),
@@ -351,6 +385,7 @@ export function corpusReviewHelp(): string {
 Options:
   --local | --remote
   --database-path <path>
+  --database-id <id>                 Remote D1 database id; defaults to MATCHING_EVALUATION_D1_DATABASE_ID then CLOUDFLARE_D1_DATABASE_ID
   --seed-from-match-runs              Build a draft corpus from real persisted match_runs
   --seed-limit <n>                    Match run limit for seeding (default: 50)
   --seed-status <status>              Match run status for seeding (default: MATCHED)
@@ -494,7 +529,7 @@ async function openD1(
 ): Promise<{ db: D1Like; close(): void }> {
   if (options.target === 'remote') {
     return {
-      db: new RemoteD1(new D1Client(loadD1Config())),
+      db: remoteD1(options.databaseId),
       close: () => {},
     };
   }

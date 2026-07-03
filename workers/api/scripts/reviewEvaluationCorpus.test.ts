@@ -415,6 +415,34 @@ describe('evaluation corpus review CLI', () => {
     }));
   });
 
+  it('parses a remote app-dev database id for stored corpus review exports', () => {
+    expect(parseCorpusReviewArgs([
+      '--remote',
+      '--database-id',
+      'app-dev-d1',
+      '--source-corpus-id',
+      'seeded-corpus-1',
+      '--review-packet',
+      '/tmp/review-packet.json',
+    ])).toEqual(expect.objectContaining({
+      target: 'remote',
+      databaseId: 'app-dev-d1',
+      sourceCorpusId: 'seeded-corpus-1',
+      reviewPacketPath: '/tmp/review-packet.json',
+    }));
+  });
+
+  it('rejects remote database ids in local corpus review mode', () => {
+    expect(() => parseCorpusReviewArgs([
+      '--database-id',
+      'app-dev-d1',
+      '--source-corpus-file',
+      corpusFixture.pathname,
+      '--review-packet',
+      '/tmp/review-packet.json',
+    ])).toThrow('--database-id requires --remote');
+  });
+
   it('parses seed-from-match-runs options for draft corpus review exports', () => {
     expect(parseCorpusReviewArgs([
       '--database-path',
