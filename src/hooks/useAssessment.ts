@@ -215,6 +215,12 @@ function profileReceivedMessageFromPayload(payload: unknown): string | null {
   return '';
 }
 
+function normalizeInviteToken(inviteToken: string): string {
+  return inviteToken.startsWith('CLAIMED::')
+    ? inviteToken.slice('CLAIMED::'.length)
+    : inviteToken;
+}
+
 // ============================================================================
 // API helpers — direct Workers RPC calls
 // ============================================================================
@@ -296,33 +302,25 @@ export function useAssessment(inviteToken: string): UseAssessmentReturn {
 
   // ── Resolve token on mount ──────────────────────────────────────────────
   const fetchData = useCallback(async () => {
+    const normalizedInviteToken = inviteToken ? normalizeInviteToken(inviteToken) : inviteToken;
     const cachedToken = sessionStorage.getItem('pipe_session_token');
     const cachedCandidateJson = sessionStorage.getItem('pipe_session_candidate');
     const cachedInviteToken = sessionStorage.getItem('pipe_session_invite_token');
 
-    if (inviteToken?.startsWith('CLAIMED::')) {
-      sessionStorage.removeItem('pipe_session_token');
-      sessionStorage.removeItem('pipe_session_candidate');
-      sessionStorage.removeItem('pipe_session_invite_token');
-      sessionTokenRef.current = null;
-      setState((prev) => ({ ...prev, isLoading: false, error: new Error('TOKEN_ALREADY_CLAIMED') }));
-      return;
-    }
-
     const cachedSessionMatchesInvite = Boolean(
       cachedToken
       && cachedCandidateJson
-      && (!inviteToken || cachedInviteToken === inviteToken),
+      && (!normalizedInviteToken || cachedInviteToken === normalizedInviteToken),
     );
 
-    if (inviteToken && cachedToken && cachedCandidateJson && cachedInviteToken !== inviteToken) {
+    if (normalizedInviteToken && cachedToken && cachedCandidateJson && cachedInviteToken !== normalizedInviteToken) {
       sessionStorage.removeItem('pipe_session_token');
       sessionStorage.removeItem('pipe_session_candidate');
       sessionStorage.removeItem('pipe_session_invite_token');
     }
 
     // Allow empty inviteToken when a cached session exists (demo/self-reg flow)
-    if (!inviteToken && !(cachedToken && cachedCandidateJson)) {
+    if (!normalizedInviteToken && !(cachedToken && cachedCandidateJson)) {
       setState((prev) => ({ ...prev, isLoading: false, error: new Error('Missing invite token') }));
       return;
     }
@@ -358,12 +356,12 @@ export function useAssessment(inviteToken: string): UseAssessmentReturn {
           status: string;
           name: string | null;
           sessionToken: string;
-        }>('/rpc/resolve-token', { inviteToken });
+        }>('/rpc/resolve-token', { inviteToken: normalizedInviteToken });
 
         sessionTokenRef.current = resolved.sessionToken;
         sessionStorage.setItem('pipe_session_token', resolved.sessionToken);
-        if (inviteToken) {
-          sessionStorage.setItem('pipe_session_invite_token', inviteToken);
+        if (normalizedInviteToken) {
+          sessionStorage.setItem('pipe_session_invite_token', normalizedInviteToken);
         }
 
         candidate = {

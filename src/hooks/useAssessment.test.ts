@@ -8,6 +8,35 @@ describe('useAssessment', () => {
     vi.restoreAllMocks();
   });
 
+  it('resolves claimed-looking invite URLs through the Worker using the raw token', async () => {
+    const fetchMock = vi.fn()
+      .mockResolvedValueOnce({
+        ok: true,
+        json: async () => ({
+          id: 'candidate-1',
+          pipelineId: null,
+          status: 'INVITED',
+          name: 'Ada Candidate',
+          sessionToken: 'session-token',
+        }),
+      } as Response);
+    globalThis.fetch = fetchMock;
+
+    const { result } = renderHook(() => useAssessment('CLAIMED::invite-token'));
+
+    await waitFor(() => expect(result.current.candidate?.id).toBe('candidate-1'));
+
+    expect(result.current.error).toBeNull();
+    expect(sessionStorage.getItem('pipe_session_invite_token')).toBe('invite-token');
+    expect(fetchMock).toHaveBeenCalledTimes(1);
+    expect(fetchMock).toHaveBeenCalledWith(
+      expect.stringContaining('/rpc/resolve-token'),
+      expect.objectContaining({
+        body: JSON.stringify({ inviteToken: 'invite-token' }),
+      }),
+    );
+  });
+
   it('ends the candidate-facing flow when CV intake is accepted for background ingestion', async () => {
     sessionStorage.setItem('pipe_session_token', 'session-token');
     sessionStorage.setItem('pipe_session_invite_token', 'invite-token');
