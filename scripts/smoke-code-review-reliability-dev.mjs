@@ -8,6 +8,7 @@ const DEFAULT_CHILD_TIMEOUT_MS = 900_000;
 const DEFAULT_OUT_DIR = 'tmp/code-review-reliability';
 const DEFAULT_DEV_D1_DATABASE_ID = '0abe92df-9296-46f5-9f9d-a1fb1bcd3be1';
 const DEFAULT_LANE_IDS = [
+  'manual-ready',
   'blocked-handoff',
   'role-backed-full-submit',
   'workers-sdk-matrix',
@@ -127,6 +128,15 @@ export function buildReliabilityLanes({
   databaseId = resolveAppDevDatabaseId({ env }),
 } = {}) {
   const laneMap = new Map([
+    [
+      'manual-ready',
+      {
+        id: 'manual-ready',
+        label: 'Manual source-backed PR ready assignment',
+        command: ['npm', 'run', 'smoke:code-review-assess-dev'],
+        parser: 'assess-smoke',
+      },
+    ],
     [
       'blocked-handoff',
       {

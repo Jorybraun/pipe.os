@@ -23,6 +23,7 @@ description: How to test candidate repo matching and standalone CODE_REVIEW inte
 4. Servers: `(cd workers/api && npx wrangler dev --port 8787)` and `npm run dev` (web :5173).
 
 Manual ready-assignment smokes do not require Neo4j auto-match readiness because they validate a recruiter-selected source-backed PR without claiming CV fit.
+In isolated worktrees with an existing `playwright/.auth/user.json`, set `PLAYWRIGHT_SKIP_CLERK_GLOBAL_SETUP=1` to reuse the recruiter session without rerunning Clerk setup.
 
 ## Test flows
 
@@ -39,7 +40,7 @@ npm run smoke:code-review-assess-dev:workers-matrix
 ```
 
 Expected proof:
-- reliability suite runs blocked handoff, role-backed full-submit/scoring, Workers SDK non-MUI breadth, and latest expert-labelled match-quality readiness
+- reliability suite runs manual source-backed ready assignment, blocked handoff, role-backed full-submit/scoring, Workers SDK non-MUI breadth, and latest expert-labelled match-quality readiness
 - delivered URL is `/assess/:token`, not a room URL
 - source-backed PR is `https://github.com/mui/base-ui` PR `973` by default
 - `matchMode` is `manual_override`

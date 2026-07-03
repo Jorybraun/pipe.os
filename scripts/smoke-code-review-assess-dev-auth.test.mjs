@@ -3,9 +3,11 @@ import { describe, expect, it } from 'vitest';
 import {
   assertPersonRelatedBoundaryProfile,
   buildCodeReviewAssessBrowserSmokeEnv,
+  buildRecruiterDetailPlaywrightArgs,
   recruiterProjectionVerificationMode,
   resolveAppDevBasicAuth,
   resolveCodeReviewSmokeD1Target,
+  shouldSkipPlaywrightProjectDependencies,
 } from './smoke-code-review-assess-dev.mjs';
 import { shouldSkipClerkGlobalSetup } from '../e2e/global.setup.ts';
 
@@ -80,7 +82,10 @@ describe('CODE_REVIEW assess smoke app-dev Basic Auth resolution', () => {
 
   it('marks unauthenticated assess browser smokes as not needing Clerk setup', () => {
     expect(buildCodeReviewAssessBrowserSmokeEnv({
-      baseEnv: {},
+      baseEnv: {
+        PIPE_APP_DEV_BASIC_AUTH_USER: 'app-user',
+        PIPE_APP_DEV_BASIC_AUTH_PASSWORD: 'app-pass',
+      },
       appBase: 'https://app-dev.hire-pipe.com',
       apiBase: 'https://api-dev.hire-pipe.com',
       videoRoomBase: 'https://room-dev.hire-pipe.com',
@@ -101,6 +106,8 @@ describe('CODE_REVIEW assess smoke app-dev Basic Auth resolution', () => {
       submitReview: false,
     })).toMatchObject({
       PIPE_SKIP_CLERK_GLOBAL_SETUP: '1',
+      PIPE_DEV_BASIC_AUTH_USER: 'app-user',
+      PIPE_DEV_BASIC_AUTH_PASSWORD: 'app-pass',
       CODE_REVIEW_ASSESS_TOKEN: 'https://app-dev.hire-pipe.com/assess/invite-token',
       CODE_REVIEW_SESSION_TOKEN: 'candidate-session-token',
     });
@@ -111,6 +118,16 @@ describe('CODE_REVIEW assess smoke app-dev Basic Auth resolution', () => {
     expect(shouldSkipClerkGlobalSetup({
       PIPE_SKIP_CLERK_GLOBAL_SETUP: '1',
     })).toBe(true);
+  });
+
+  it('can reuse an existing recruiter storage state without running the Clerk setup project', () => {
+    expect(shouldSkipPlaywrightProjectDependencies({})).toBe(false);
+    expect(shouldSkipPlaywrightProjectDependencies({
+      PLAYWRIGHT_SKIP_CLERK_GLOBAL_SETUP: '1',
+    })).toBe(true);
+    expect(buildRecruiterDetailPlaywrightArgs({
+      PLAYWRIGHT_SKIP_CLERK_GLOBAL_SETUP: '1',
+    })).toContain('--no-deps');
   });
 
   it('still verifies recruiter projection when only recruiter browser proof is skipped', () => {

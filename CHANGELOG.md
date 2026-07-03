@@ -23,6 +23,9 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Added — CODE_REVIEW assessment runtime
 
+- The full app-dev CODE_REVIEW reliability suite now includes the manual source-backed PR ready-assignment smoke by default, so recruiter-selected `mui/base-ui#973` readiness is proven alongside blocked handoff, automatic matching, scoring, and match-quality gates.
+- CODE_REVIEW app-dev browser smokes now honor the same `PIPE_APP_DEV_BASIC_AUTH_*` and `APP_DEV_BASIC_AUTH_*` aliases as the setup API calls, preventing candidate `/assess` proof from stopping at the Basic Auth wall.
+- CODE_REVIEW recruiter browser smokes can now reuse an existing Playwright recruiter storage state with `PLAYWRIGHT_SKIP_CLERK_GLOBAL_SETUP=1`, skipping the Clerk setup project without weakening the recruiter detail browser assertion.
 - Added `npm run smoke:code-review-reliability-dev`, a full app-dev reliability suite that runs the candidate-safe blocked handoff, role-backed full-submit/scoring, non-MUI Workers SDK matching, and latest expert-labelled match-quality readiness gate with stored lane artifacts.
 - Documented the latest `workers-matrix` app-dev proof that automatic CODE_REVIEW matching can select a non-MUI `cloudflare/workers-sdk` source-backed PR with a passed quality gate.
 - Added `npm run smoke:code-review-assess-dev:role-backed-full-submit` as the first-class deployed proof for automatic role-backed matching, candidate review submission, scoring persistence, and recruiter readout.

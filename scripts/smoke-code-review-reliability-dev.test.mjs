@@ -16,15 +16,17 @@ describe('CODE_REVIEW reliability suite contract', () => {
     });
 
     expect(lanes.map((lane) => lane.id)).toEqual([
+      'manual-ready',
       'blocked-handoff',
       'role-backed-full-submit',
       'workers-sdk-matrix',
       'match-quality-readiness',
     ]);
-    expect(lanes[0].command.join(' ')).toBe('npm run smoke:code-review-assess-dev:blocked');
-    expect(lanes[1].command.join(' ')).toBe('npm run smoke:code-review-assess-dev:role-backed-full-submit');
-    expect(lanes[2].command.join(' ')).toBe('npm run smoke:code-review-assess-dev:workers-matrix');
-    expect(lanes[3].command).toEqual([
+    expect(lanes[0].command.join(' ')).toBe('npm run smoke:code-review-assess-dev');
+    expect(lanes[1].command.join(' ')).toBe('npm run smoke:code-review-assess-dev:blocked');
+    expect(lanes[2].command.join(' ')).toBe('npm run smoke:code-review-assess-dev:role-backed-full-submit');
+    expect(lanes[3].command.join(' ')).toBe('npm run smoke:code-review-assess-dev:workers-matrix');
+    expect(lanes[4].command).toEqual([
       'npm',
       '--prefix',
       'workers/api',
@@ -66,7 +68,32 @@ describe('CODE_REVIEW reliability suite contract', () => {
     })).toBe('dev-db-from-wrangler');
   });
 
-  it('summarizes blocked handoff and role-backed full-submit smoke proof', () => {
+  it('summarizes manual ready, blocked handoff, and role-backed full-submit smoke proof', () => {
+    const manualReady = summarizeLaneProof('assess-smoke', JSON.stringify({
+      ok: true,
+      interviewId: 'manual-ready-interview',
+      matchMode: 'manual_override',
+      repoUrl: 'https://github.com/mui/base-ui',
+      prNumber: 973,
+      matchStatus: 'MATCHED',
+      qualityGate: 'PASSED',
+      assessmentQuality: 'USABLE',
+    }, null, 2));
+
+    expect(manualReady).toMatchObject({
+      parsed: true,
+      summary: {
+        ok: true,
+        interviewId: 'manual-ready-interview',
+        matchMode: 'manual_override',
+        repoUrl: 'https://github.com/mui/base-ui',
+        prNumber: 973,
+        matchStatus: 'MATCHED',
+        qualityGate: 'PASSED',
+        assessmentQuality: 'USABLE',
+      },
+    });
+
     const blocked = summarizeLaneProof('assess-smoke', JSON.stringify({
       ok: true,
       interviewId: 'blocked-interview',

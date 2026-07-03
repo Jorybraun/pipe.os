@@ -869,9 +869,16 @@ export function buildCodeReviewAssessBrowserSmokeEnv({
     status: session.status ?? 'IN_PROGRESS',
     name: session.name ?? 'CODE_REVIEW Smoke Candidate',
   });
+  const { user: browserBasicAuthUser, password: browserBasicAuthPassword } = resolveAppDevBasicAuth(baseEnv);
 
   return {
     ...baseEnv,
+    ...(browserBasicAuthUser && browserBasicAuthPassword
+      ? {
+          PIPE_DEV_BASIC_AUTH_USER: browserBasicAuthUser,
+          PIPE_DEV_BASIC_AUTH_PASSWORD: browserBasicAuthPassword,
+        }
+      : {}),
     APP_BASE: appBase,
     API_BASE: apiBase,
     VIDEO_ROOM_BASE: videoRoomBase,
@@ -1006,13 +1013,7 @@ function runRecruiterDetailPlaywright({
 
   const result = spawnSync(
     'npx',
-    [
-      'playwright',
-      'test',
-      'e2e/code-review-recruiter-detail-smoke.spec.ts',
-      '--project=authenticated',
-      '--reporter=line',
-    ],
+    buildRecruiterDetailPlaywrightArgs(process.env),
     {
       cwd: process.cwd(),
       stdio: 'inherit',
@@ -1042,6 +1043,22 @@ function runRecruiterDetailPlaywright({
     throw new Error(`Playwright recruiter detail smoke failed with exit code ${result.status}`);
   }
   return { skipped: false };
+}
+
+export function buildRecruiterDetailPlaywrightArgs(env = process.env) {
+  return [
+    'playwright',
+    'test',
+    'e2e/code-review-recruiter-detail-smoke.spec.ts',
+    '--project=authenticated',
+    '--reporter=line',
+    ...(shouldSkipPlaywrightProjectDependencies(env) ? ['--no-deps'] : []),
+  ];
+}
+
+export function shouldSkipPlaywrightProjectDependencies(env = process.env) {
+  return env.PIPE_SKIP_CLERK_GLOBAL_SETUP === '1'
+    || env.PLAYWRIGHT_SKIP_CLERK_GLOBAL_SETUP === '1';
 }
 
 async function runRecruiterDetailBrowserSmoke(input) {

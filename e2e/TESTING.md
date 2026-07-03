@@ -211,21 +211,29 @@ npm run smoke:code-review-assess-dev:role-backed-full-submit
 The manual ready-assignment commands should select `https://github.com/mui/base-ui` PR `#973`, return `MATCHED`, pass the source-backed quality gate, render a Pierre diff, and avoid any video-room UI. Manual mode is expected to report `assessmentQuality: "USABLE"` because it validates the recruiter-selected source-backed PR without inferring CV fit. The blocked auto-match command should return `PROFILE_RECEIVED`, complete the candidate stage as `candidate-intake-queued`, and prove the recruiter sees assessment progress instead of a candidate-visible matching loop.
 
 Use `npm run smoke:code-review-reliability-dev` for the full app-dev reliability
-suite. It runs the blocked `PROFILE_RECEIVED` handoff, role-backed full-submit
-and scoring smoke, non-MUI Workers SDK matching matrix, and latest
-expert-labelled match-quality readiness gate. It writes lane stdout/stderr and
-summary artifacts under `tmp/code-review-reliability/`. Use
-`CODE_REVIEW_RELIABILITY_LANES=blocked-handoff,workers-sdk-matrix` for focused
+suite. It runs the manual source-backed ready assignment, blocked
+`PROFILE_RECEIVED` handoff, role-backed full-submit and scoring smoke, non-MUI
+Workers SDK matching matrix, and latest expert-labelled match-quality readiness
+gate. It writes lane stdout/stderr and summary artifacts under
+`tmp/code-review-reliability/`. Use
+`CODE_REVIEW_RELIABILITY_LANES=manual-ready,blocked-handoff,workers-sdk-matrix` for focused
 diagnosis, or `CODE_REVIEW_RELIABILITY_D1_DATABASE_ID=<d1-id>` to point the
 match-quality lane at a different CODE_REVIEW evaluation database.
+In isolated worktrees that already have `playwright/.auth/user.json`, set
+`PLAYWRIGHT_SKIP_CLERK_GLOBAL_SETUP=1` to reuse that recruiter session without
+running the Clerk setup dependency again.
 
-Latest suite proof on 2026-07-03 passed all 4 lanes: blocked handoff interview
-`7d6003b8-7070-4186-bafb-9f2036cf1991` returned `PROFILE_RECEIVED` /
+Latest suite proof on 2026-07-03 passed all 5 lanes with artifact
+`tmp/code-review-reliability/2026-07-03T11-38-03-045Z-suite.summary.json`:
+manual ready-assignment interview `a20ac679-b7db-4b34-9506-770272642bdc`
+served `mui/base-ui#973` with `manual_override`, `MATCHED`, validator `PASSED`,
+and `USABLE` assessment quality; blocked handoff interview
+`16b3998a-2323-45c2-8000-a2290895446d` returned `PROFILE_RECEIVED` /
 `candidate-intake-queued`; role-backed full-submit interview
-`ddfaffbc-adba-4ec5-a2a6-4734c0d75c0f` selected `mui/base-ui#973`, submitted
-review session `d96b45f5-2509-4177-8b69-869e4360096b`, persisted score `42`
+`db261441-b143-466c-bf5e-7495437df40a` selected `mui/base-ui#973`, submitted
+review session `26544248-d6f2-44ac-9bce-6d2481d57925`, persisted score `38`
 (`weak`), and exposed 4 evidence hyperedges plus a person-role-repo bridge;
-Workers SDK matrix interview `554ba3a3-c129-409a-a0fb-2d27f04349d0` selected
+Workers SDK matrix interview `6a97941f-2d92-44ff-87e1-95f765388bf9` selected
 `cloudflare/workers-sdk#14118` with `STRONG` quality and contrast score `2/2`;
 match-quality readiness passed corpus
 `seeded-1783074402522-3c-3r-expert-codex-supplemental-contrast` with accuracy
