@@ -505,6 +505,17 @@ corpus, so local matching proof now has two calibrated real overlay-ready
 beyond one coherent Base UI family and remote/app-dev packet repair or rebuild
 with the same persisted profile contract.
 
+Status 2026-07-03: app-dev packet breadth is now measured by
+`npm run smoke:code-review-packet-catalog-dev` and the default
+`smoke:code-review-reliability-dev` suite includes the
+`packet-catalog-readiness` lane. The latest app-dev catalog proof returned 10
+total packets, 8 production-ready packets, 3 production-ready repos
+(`cloudflare/workers-sdk`, `mui/base-ui`, `vercel/swr`), 8 production-ready
+PRs, and 5 persisted `reviewProfile`-ready packets. This closes the prior
+remote packet-breadth ambiguity; the remaining readiness work is to keep this
+gate green while expanding calibrated labels and production/staging smoke
+coverage.
+
 ## Production Readiness Gate
 
 Do not mark CODE_REVIEW product-complete until all of this is true:

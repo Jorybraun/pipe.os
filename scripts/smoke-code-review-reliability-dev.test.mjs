@@ -22,6 +22,7 @@ describe('CODE_REVIEW reliability suite contract', () => {
       'blocked-handoff',
       'role-backed-full-submit',
       'workers-sdk-matrix',
+      'packet-catalog-readiness',
       'match-quality-readiness',
     ]);
     expect(lanes[0].command.join(' ')).toBe('npm run smoke:code-review-assess-dev');
@@ -33,6 +34,15 @@ describe('CODE_REVIEW reliability suite contract', () => {
     expect(lanes[3].command.join(' ')).toBe('npm run smoke:code-review-assess-dev:role-backed-full-submit');
     expect(lanes[4].command.join(' ')).toBe('npm run smoke:code-review-assess-dev:workers-matrix');
     expect(lanes[5].command).toEqual([
+      'npm',
+      'run',
+      'smoke:code-review-packet-catalog-dev',
+      '--',
+      '--database-id',
+      'app-dev-d1',
+      '--require-pass',
+    ]);
+    expect(lanes[6].command).toEqual([
       'npm',
       '--prefix',
       'workers/api',
@@ -328,6 +338,33 @@ describe('CODE_REVIEW reliability suite contract', () => {
       usableChallengeRate: 1,
       gateFailures: [],
     });
+
+    expect(summarizeLaneProof('packet-catalog', JSON.stringify({
+      ok: true,
+      databaseId: 'app-dev-d1',
+      metrics: {
+        totalPackets: 10,
+        productionReadyPackets: 8,
+        productionReadyRepoCount: 3,
+        productionReadyPullRequestCount: 8,
+        reviewProfileReadyPackets: 5,
+      },
+      repos: [
+        { repoName: 'mui/base-ui' },
+        { repoName: 'cloudflare/workers-sdk' },
+        { repoName: 'vercel/swr' },
+      ],
+      failures: [],
+    }, null, 2)).summary).toMatchObject({
+      ok: true,
+      databaseId: 'app-dev-d1',
+      productionReadyPackets: 8,
+      productionReadyRepoCount: 3,
+      productionReadyPullRequestCount: 8,
+      reviewProfileReadyPackets: 5,
+      repoNames: ['mui/base-ui', 'cloudflare/workers-sdk', 'vercel/swr'],
+      failures: [],
+    });
   });
 
   it('validates lane summaries against lane-specific CODE_REVIEW proof contracts', () => {
@@ -442,6 +479,18 @@ describe('CODE_REVIEW reliability suite contract', () => {
       recruiterReadoutContract: 'matched-code-review-hiring-manager-readout',
     })).toEqual({ ok: true, failures: [] });
 
+    expect(validateLaneSummary('packet-catalog-readiness', {
+      ok: true,
+      databaseId: 'app-dev-d1',
+      totalPackets: 10,
+      productionReadyPackets: 8,
+      productionReadyRepoCount: 3,
+      productionReadyPullRequestCount: 8,
+      reviewProfileReadyPackets: 5,
+      repoNames: ['mui/base-ui', 'cloudflare/workers-sdk', 'vercel/swr'],
+      failures: [],
+    })).toEqual({ ok: true, failures: [] });
+
     expect(validateLaneSummary('match-quality-readiness', {
       ok: true,
       corpusId: 'expert-corpus',
@@ -534,6 +583,28 @@ describe('CODE_REVIEW reliability suite contract', () => {
       ok: false,
       failures: expect.arrayContaining([
         'match-quality-readiness averageScoreSeparation must be positive',
+      ]),
+    });
+
+    expect(validateLaneSummary('packet-catalog-readiness', {
+      ok: true,
+      databaseId: 'app-dev-d1',
+      totalPackets: 2,
+      productionReadyPackets: 2,
+      productionReadyRepoCount: 1,
+      productionReadyPullRequestCount: 2,
+      reviewProfileReadyPackets: 1,
+      repoNames: ['mui/base-ui'],
+      failures: ['catalog too thin'],
+    })).toMatchObject({
+      ok: false,
+      failures: expect.arrayContaining([
+        'packet-catalog-readiness must have at least 3 production-ready packets',
+        'packet-catalog-readiness must have at least 3 production-ready repos',
+        'packet-catalog-readiness must have at least 3 production-ready PRs',
+        'packet-catalog-readiness must have at least 2 persisted reviewProfile-ready packets',
+        'packet-catalog-readiness must list at least 3 production-ready repo names',
+        'packet-catalog-readiness failures must be empty',
       ]),
     });
 

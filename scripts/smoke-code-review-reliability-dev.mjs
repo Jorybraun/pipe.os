@@ -13,6 +13,7 @@ const DEFAULT_LANE_IDS = [
   'blocked-handoff',
   'role-backed-full-submit',
   'workers-sdk-matrix',
+  'packet-catalog-readiness',
   'match-quality-readiness',
 ];
 
@@ -195,6 +196,23 @@ export function buildReliabilityLanes({
         parser: 'match-quality',
       },
     ],
+    [
+      'packet-catalog-readiness',
+      {
+        id: 'packet-catalog-readiness',
+        label: 'Source-backed PR packet catalog breadth gate',
+        command: [
+          'npm',
+          'run',
+          'smoke:code-review-packet-catalog-dev',
+          '--',
+          '--database-id',
+          databaseId,
+          '--require-pass',
+        ],
+        parser: 'packet-catalog',
+      },
+    ],
   ]);
 
   return selectedLaneIds(env).map((id) => {
@@ -300,6 +318,22 @@ function summarizeMatchQuality(proof) {
   };
 }
 
+function summarizePacketCatalog(proof) {
+  return {
+    ok: proof?.ok === true,
+    databaseId: proof?.databaseId ?? null,
+    totalPackets: proof?.metrics?.totalPackets ?? null,
+    productionReadyPackets: proof?.metrics?.productionReadyPackets ?? null,
+    productionReadyRepoCount: proof?.metrics?.productionReadyRepoCount ?? null,
+    productionReadyPullRequestCount: proof?.metrics?.productionReadyPullRequestCount ?? null,
+    reviewProfileReadyPackets: proof?.metrics?.reviewProfileReadyPackets ?? null,
+    repoNames: Array.isArray(proof?.repos)
+      ? proof.repos.map((repo) => repo?.repoName).filter(Boolean)
+      : [],
+    failures: proof?.failures ?? null,
+  };
+}
+
 export function summarizeLaneProof(parser, stdout) {
   const proof = parser === 'matrix'
     ? extractMatrixSummary(stdout)
@@ -308,6 +342,11 @@ export function summarizeLaneProof(parser, stdout) {
           typeof candidate.corpusId === 'string'
           && candidate.metrics
           && typeof candidate.passed === 'boolean')
+      : parser === 'packet-catalog'
+        ? extractLastJsonObject(stdout, (candidate) =>
+            candidate.metrics
+            && Array.isArray(candidate.repos)
+            && typeof candidate.ok === 'boolean')
       : extractLastJsonObject(stdout, (candidate) =>
           candidate.ok === true
           && (
@@ -319,6 +358,7 @@ export function summarizeLaneProof(parser, stdout) {
 
   if (parser === 'matrix') return { parsed: true, summary: summarizeMatrix(proof) };
   if (parser === 'match-quality') return { parsed: true, summary: summarizeMatchQuality(proof) };
+  if (parser === 'packet-catalog') return { parsed: true, summary: summarizePacketCatalog(proof) };
   return { parsed: true, summary: summarizeAssessSmoke(proof) };
 }
 
@@ -439,6 +479,15 @@ export function validateLaneSummary(laneId, summary) {
       require(summary?.candidateSurfaceContract === 'source-backed-code-review-challenge', 'workers-sdk-matrix candidate browser smoke must prove source-backed code-review surface');
       require(summary?.recruiterBrowserSmokeSkipped === false, 'workers-sdk-matrix recruiter browser smoke must run');
       require(summary?.recruiterReadoutContract === 'matched-code-review-hiring-manager-readout', 'workers-sdk-matrix recruiter smoke must prove matched hiring-manager readout contract');
+      break;
+    case 'packet-catalog-readiness':
+      require(Boolean(summary?.databaseId), 'packet-catalog-readiness must include the evaluated D1 database id');
+      require(finiteNumberAtLeast(summary?.productionReadyPackets, 3), 'packet-catalog-readiness must have at least 3 production-ready packets');
+      require(finiteNumberAtLeast(summary?.productionReadyRepoCount, 3), 'packet-catalog-readiness must have at least 3 production-ready repos');
+      require(finiteNumberAtLeast(summary?.productionReadyPullRequestCount, 3), 'packet-catalog-readiness must have at least 3 production-ready PRs');
+      require(finiteNumberAtLeast(summary?.reviewProfileReadyPackets, 2), 'packet-catalog-readiness must have at least 2 persisted reviewProfile-ready packets');
+      require(Array.isArray(summary?.repoNames) && summary.repoNames.length >= 3, 'packet-catalog-readiness must list at least 3 production-ready repo names');
+      require(noFailures(summary?.failures), 'packet-catalog-readiness failures must be empty');
       break;
     case 'match-quality-readiness':
       require(Boolean(summary?.corpusId), 'match-quality-readiness must include corpusId');

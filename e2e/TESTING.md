@@ -244,24 +244,28 @@ In isolated worktrees that already have `playwright/.auth/user.json`, set
 `PLAYWRIGHT_SKIP_CLERK_GLOBAL_SETUP=1` to reuse that recruiter session without
 running the Clerk setup dependency again.
 
-Latest full suite proof on 2026-07-03 passed all 6 lanes with artifact
-`tmp/code-review-reliability/2026-07-03T13-40-27-755Z-suite.summary.json`:
-manual ready-assignment interview `ba98331a-49d5-4040-bc27-52a7c65e8b50`
+Latest full suite proof on 2026-07-03 passed all 7 lanes with artifact
+`tmp/code-review-reliability/2026-07-03T13-54-16-144Z-suite.summary.json`:
+manual ready-assignment interview `384f0230-d4f1-4846-9ce8-95dfa7d19b73`
 served `mui/base-ui#973` with `manual_override`, `MATCHED`, validator `PASSED`,
 `USABLE` assessment quality, pre-intake candidate-link proof `state=active`,
 `sessionStatus=INVITED`, and `setupStatus=reviewable_task_assigned`; fresh no-CV
-handoff interview `385a8173-00be-4202-9c4b-82796241f335` returned
+handoff interview `8efab62c-4aea-4d37-84cc-86e0217c85c7` returned
 `PROFILE_RECEIVED` / `candidate-intake-queued`, title `Profile received`, and 0
 candidate challenges before any resume submission; blocked handoff interview
-`01100716-2459-4411-8d7b-c5f1d69f8d40` returned `PROFILE_RECEIVED` /
+`37f43268-204e-44a3-a1d0-5d5aad602d7b` returned `PROFILE_RECEIVED` /
 `candidate-intake-queued` after intake evidence with no source-backed PR ready;
-role-backed full-submit interview `87e7b3ea-f34a-4ae2-8a2f-189d3bf2075d`
+role-backed full-submit interview `a0cc5aff-6bbe-4563-875a-63579f512825`
 selected `mui/base-ui#973`, submitted review session
-`1c9cb91b-175e-4128-8d10-0edf90fa3e24`, persisted remote D1 score `53`
+`2cb6b29e-c034-4e5d-b1df-ed9542eae8cf`, persisted remote D1 score `51`
 (`adequate`), completed review/scoring pipeline steps, and exposed 4 evidence
 hyperedges plus a person-role-repo bridge; Workers SDK matrix interview
-`ebbc7ac7-285f-4f85-91fc-74cb7b72b3ff` selected
+`ce7c7b03-e889-42a2-814d-7c5578a2c73a` selected
 `cloudflare/workers-sdk#14118` with `STRONG` quality and contrast score `2/2`;
+packet catalog readiness passed app-dev D1 `0abe92df-9296-46f5-9f9d-a1fb1bcd3be1`
+with 10 total packets, 8 production-ready packets, 3 production-ready repos,
+8 production-ready PRs, 5 persisted `reviewProfile`-ready packets, and repo
+names `cloudflare/workers-sdk`, `mui/base-ui`, and `vercel/swr`;
 match-quality readiness passed corpus
 `seeded-1783074402522-3c-3r-expert-codex-supplemental-contrast` with 6 pairs,
 accuracy `1`, false positives `0`, false negatives `0`, average score

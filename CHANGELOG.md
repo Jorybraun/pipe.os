@@ -23,6 +23,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Added — CODE_REVIEW assessment runtime
 
+- Added `npm run smoke:code-review-packet-catalog-dev` and a default CODE_REVIEW reliability lane that fails if app-dev loses source-backed packet catalog breadth, requiring at least 3 production-ready PR packets across 3 repos and at least 2 persisted `reviewProfile`-ready packets.
 - CODE_REVIEW candidate browser smokes now emit explicit ready-review or profile-received surface contracts into reliability summaries, and the suite fails if a lane cannot prove the expected `/assess` surface.
 - CODE_REVIEW recruiter browser smokes now emit matched, blocked, or scored hiring-manager readout contract proof into reliability summaries, and the suite fails if those compact readout contracts are missing.
 - CODE_REVIEW reliability validation now fails partial Workers SDK matrix runs and labelled match-quality corpora with flat average score separation, keeping breadth and discrimination proof from degrading behind a green summary.
