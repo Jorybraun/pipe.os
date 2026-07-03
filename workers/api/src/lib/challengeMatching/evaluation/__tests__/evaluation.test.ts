@@ -701,6 +701,127 @@ describe('Evaluation Metrics', () => {
     expect(metrics.labelResults[0]?.guardrailViolations).toContain('missing_provenance');
     expect(metrics.labelResults[0]?.passed).toBe(false);
   });
+
+  it('fails a positive label when the contrast candidate scores too close on the same challenge', () => {
+    const corpus: EvaluationCorpus = {
+      version: EVALUATION_CORPUS_VERSION,
+      corpusId: 'test-score-separation',
+      createdAt: '2026-06-13T00:00:00Z',
+      description: 'Positive label with a same-challenge contrast candidate',
+      candidateEvidence: [
+        {
+          candidateId: 'candidate-positive',
+          evidenceId: 'evidence-positive',
+          episodeId: 'episode-positive',
+          narrative: 'Owned React popover interaction timing and regression coverage.',
+          concepts: ['term:react-popover', 'term:interaction-timing'],
+          evidenceReferences: [sourceRef('candidate-positive')],
+        },
+        {
+          candidateId: 'candidate-negative',
+          evidenceId: 'evidence-negative',
+          episodeId: 'episode-negative',
+          narrative: 'Worked on unrelated marketing site copy and static pages.',
+          concepts: ['term:content-pages'],
+          evidenceReferences: [sourceRef('candidate-negative')],
+        },
+      ],
+      roleRequirements: [
+        {
+          roleId: 'role-frontend-review',
+          requiredLanguages: ['typescript'],
+          relevantConcepts: ['term:react-popover', 'term:interaction-timing'],
+          sourceReferences: [roleSource('role-popover', ['term:react-popover'])],
+        },
+      ],
+      expertLabels: [
+        {
+          labelId: 'label-positive-needs-separation',
+          candidateId: 'candidate-positive',
+          roleId: 'role-frontend-review',
+          challengeId: 'challenge-popover-pr',
+          relevanceGrade: 'highly_relevant',
+          eligibleChallengeIds: ['challenge-popover-pr'],
+          negativeCandidateId: 'candidate-negative',
+          minimumScoreSeparation: 0.2,
+          labelVersion: '1.0.0',
+          labeledAt: '2026-06-13T00:00:00Z',
+          labeledBy: 'synthetic-fixture',
+        },
+      ],
+      metadata: {
+        totalLabels: 1,
+        totalCandidates: 2,
+        totalRoles: 1,
+        totalChallenges: 1,
+        syntheticFixtureCount: 1,
+      },
+    };
+
+    function runFor(candidateId: string, score: number): PersistedMatchRun {
+      return {
+        matchRunId: `run-${candidateId}`,
+        candidateId,
+        roleId: 'role-frontend-review',
+        candidateSnapshotId: `snapshot-${candidateId}`,
+        policyVersion: 'candidate-pr-v1',
+        modelVersion: null,
+        status: 'MATCHED',
+        rankedChallenges: [
+          {
+            rank: 1,
+            recallRank: 1,
+            challengeId: 'challenge-popover-pr',
+            repoId: 'repo-popover',
+            prNumber: 973,
+            sourceVersion: 'v1',
+            score,
+            candidateEvidenceAlignment: score,
+            roleRelevance: score,
+            contextualSpecificity: score,
+            challengeQuality: 0.9,
+            validationDeepeningValue: 0.8,
+            alignedDemandCount: 1,
+            stretchCount: 0,
+            stretchDemandWeightRatio: 0,
+            provenanceComplete: true,
+            eligible: true,
+            alignments: [{
+              atomId: `atom-${candidateId}`,
+              demandId: 'demand-popover',
+              pairScore: score,
+              weightedScore: score,
+              stretch: null,
+              sharedConcepts: ['term:react-popover'],
+              roleSourceRefs: [roleSource('role-popover', ['term:react-popover'])],
+              candidateSourceRefs: [sourceRef(`candidate-ref-${candidateId}`)],
+              challengeSourceRefs: [sourceRef('challenge-popover')],
+            }],
+            rejectionReasons: [],
+          },
+        ],
+      };
+    }
+
+    const metrics = evaluateMatchRuns(corpus, [
+      runFor('candidate-positive', 0.7),
+      runFor('candidate-negative', 0.62),
+    ]);
+    const labelResult = metrics.labelResults[0];
+
+    expect(labelResult?.passed).toBe(false);
+    expect(labelResult?.failureReason).toContain('score separation');
+
+    const result = checkAcceptanceThresholds(metrics, {
+      ...DEFAULT_ACCEPTANCE_THRESHOLDS,
+      requireByteIdenticalRerun: false,
+      requireExpertLabels: false,
+    });
+    expect(result.passed).toBe(false);
+    expect(result.failures.some((failure) =>
+      failure.includes('label-positive-needs-separation')
+    )).toBe(true);
+  });
 });
 
 describe('Determinism Verification', () => {

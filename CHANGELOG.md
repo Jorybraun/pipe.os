@@ -45,6 +45,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Fixed — CODE_REVIEW assessment runtime
 
+- CODE_REVIEW matching evaluations now enforce each positive expert label's contrast-candidate score separation and fail rollout acceptance when any individual label evaluation fails, preventing near-tie opposing CVs from passing on aggregate metrics alone.
 - CODE_REVIEW production corpus readiness now requires at least one `highly_relevant` or `relevant` expert label, preventing all-negative corpora from passing as useful matcher quality gates.
 - CODE_REVIEW matching-evaluation review/readiness CLIs now accept `--database-id` and honor `MATCHING_EVALUATION_D1_DATABASE_ID` before `CLOUDFLARE_D1_DATABASE_ID`, preventing app-dev corpus review and readiness checks from accidentally querying the wrong D1 database.
 - CODE_REVIEW production corpus readiness now rejects positive-only expert-reviewed corpora until they include a non-positive/insufficient-evidence label plus an explicit contrast candidate and minimum score separation, while still allowing reviewed artifacts to persist for operator follow-up.
