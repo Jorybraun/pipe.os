@@ -12,7 +12,10 @@ import {
   type TalentPoolSourceArtifactInput,
 } from '../talentPoolIdentity';
 import { recordSessionEvent } from '../telemetry/sessionEvents';
-import { repairCandidateResumeNodeSourceRefs } from './candidateNodes';
+import {
+  repairCandidateResumeNodeSourceRefs,
+  repairTalentPoolResumeNodeSourceRefs,
+} from './candidateNodes';
 import { runCandidateIngestion } from './orchestrate';
 import { markIngestionFailed } from './persist';
 
@@ -464,6 +467,13 @@ export async function processTalentPoolOperationalContextRepairs(
   limit = MAX_STALE_WORKERS_AI_RETRY_LIMIT,
 ): Promise<TalentPoolOperationalContextRepairResult> {
   const boundedLimit = Math.max(1, Math.min(limit, MAX_STALE_WORKERS_AI_RETRY_LIMIT));
+  try {
+    await repairTalentPoolResumeNodeSourceRefs(env.DB, boundedLimit * 16);
+  } catch (err) {
+    const msg = err instanceof Error ? err.message : String(err);
+    console.error('[talentPoolOperationalContextRepair] source-ref projection repair failed:', msg);
+  }
+
   const rows = await env.DB.prepare(
     `SELECT c.id AS candidate_id
        FROM talent_pool_intakes t

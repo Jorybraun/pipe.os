@@ -6,6 +6,7 @@ import {
   embedCandidateNodes,
   insertCandidateNode,
   repairCandidateResumeNodeSourceRefs,
+  repairTalentPoolResumeNodeSourceRefs,
   supersedeCandidateNode,
 } from '../candidateNodes';
 
@@ -139,7 +140,8 @@ function createTalentPoolSourceSchema(db: Database.Database): void {
     CREATE TABLE talent_pool_intakes (
       candidate_id TEXT PRIMARY KEY,
       profile_r2_key TEXT,
-      submitted_at TEXT
+      submitted_at TEXT,
+      updated_at TEXT
     );
     CREATE TABLE artifact_versions (
       id TEXT PRIMARY KEY,
@@ -476,5 +478,72 @@ describe('insertCandidateNode', () => {
       source_reference: 'source_span:source-span-repair-profile',
       source_span_id: 'source-span-repair-profile',
     });
+  });
+
+  it('bulk repairs Talent Pool exact resume nodes that already have current profile spans', async () => {
+    sqlite = new Database(':memory:');
+    createCandidateNodeSchema(sqlite);
+    createTalentPoolSourceSchema(sqlite);
+    sqlite.exec(`
+      INSERT INTO talent_pool_intakes (candidate_id, profile_r2_key, submitted_at, updated_at)
+      VALUES
+        ('candidate-bulk-1', 'talent-intake/candidate-bulk-1/profile.txt', '2026-07-03T00:00:00.000Z', '2026-07-03T00:00:00.000Z'),
+        ('candidate-bulk-2', 'talent-intake/candidate-bulk-2/profile.txt', '2026-07-03T00:00:00.000Z', '2026-07-03T00:00:00.000Z');
+      INSERT INTO artifact_versions (id, storage_key, content_text)
+      VALUES
+        ('artifact-version-bulk-1', 'talent-intake/candidate-bulk-1/profile.txt', 'Built source-backed Talent Pool ingestion.'),
+        ('artifact-version-bulk-2', 'talent-intake/candidate-bulk-2/profile.txt', 'No matching source span yet.');
+      INSERT INTO source_spans (id, artifact_version_id, char_start, char_end, exact_text)
+      VALUES ('source-span-bulk-1', 'artifact-version-bulk-1', 0, 39, 'Built source-backed Talent Pool ingestion.');
+      INSERT INTO candidate_nodes (
+        id, candidate_id, node_type, narrative_text, extracted_properties_json,
+        embedding_json, source_type, source_reference, captured_at, confidence,
+        supersedes, superseded_at, decomposition_version, ingestion_key
+      ) VALUES
+      (
+        'candidate-node-bulk-1', 'candidate-bulk-1', 'ReviewEvidence',
+        'Candidate supplied review evidence for bulk repair.',
+        '{"source_quote":"Built source-backed Talent Pool ingestion.","source_quote_validated":true,"source_quote_char_start":0,"source_quote_char_end":39}',
+        NULL, 'resume', 'resume:review-evidence:0', 100, 0.85,
+        NULL, NULL, 'adr041-v1', 'candidate-bulk-1-ingestion-key'
+      ),
+      (
+        'candidate-node-bulk-2', 'candidate-bulk-2', 'ReviewEvidence',
+        'Candidate supplied review evidence without a matching span.',
+        '{"source_quote":"Missing source span.","source_quote_validated":true,"source_quote_char_start":0,"source_quote_char_end":20}',
+        NULL, 'resume', 'resume:review-evidence:0', 100, 0.85,
+        NULL, NULL, 'adr041-v1', 'candidate-bulk-2-ingestion-key'
+      );
+    `);
+    const db = new SqliteD1Database(sqlite) as unknown as D1Database;
+
+    await expect(repairTalentPoolResumeNodeSourceRefs(db, 25))
+      .resolves.toEqual({ scanned: 1, repaired: 1 });
+    await expect(repairTalentPoolResumeNodeSourceRefs(db, 25))
+      .resolves.toEqual({ scanned: 0, repaired: 0 });
+
+    const rows = sqlite.prepare(`
+      SELECT id,
+             source_reference,
+             json_extract(extracted_properties_json, '$.source_span_id') AS source_span_id
+        FROM candidate_nodes
+       ORDER BY id
+    `).all() as Array<{
+      id: string;
+      source_reference: string;
+      source_span_id: string | null;
+    }>;
+    expect(rows).toEqual([
+      {
+        id: 'candidate-node-bulk-1',
+        source_reference: 'source_span:source-span-bulk-1',
+        source_span_id: 'source-span-bulk-1',
+      },
+      {
+        id: 'candidate-node-bulk-2',
+        source_reference: 'resume:review-evidence:0',
+        source_span_id: null,
+      },
+    ]);
   });
 });

@@ -19,7 +19,10 @@ import { runCandidateIngestion } from '../orchestrate';
 import { processResumeFromR2 } from '../../enrichment/resumeIngestion';
 import { ensureRolelessTalentPoolIdentity } from '../../talentPoolIdentity';
 import { extractTextFromResumeFile } from '../../cvParser';
-import { repairCandidateResumeNodeSourceRefs } from '../candidateNodes';
+import {
+  repairCandidateResumeNodeSourceRefs,
+  repairTalentPoolResumeNodeSourceRefs,
+} from '../candidateNodes';
 
 vi.mock('../orchestrate', async (importOriginal) => {
   const actual = await importOriginal<typeof import('../orchestrate')>();
@@ -59,6 +62,7 @@ vi.mock('../candidateNodes', async (importOriginal) => {
   return {
     ...actual,
     repairCandidateResumeNodeSourceRefs: vi.fn(async () => ({ scanned: 0, repaired: 0 })),
+    repairTalentPoolResumeNodeSourceRefs: vi.fn(async () => ({ scanned: 0, repaired: 0 })),
   };
 });
 
@@ -836,6 +840,7 @@ describe('stale Workers AI candidate-ingestion retry', () => {
     expect(repairCandidateResumeNodeSourceRefs).toHaveBeenCalledTimes(2);
     expect(repairCandidateResumeNodeSourceRefs).toHaveBeenCalledWith(db, 'talent-1');
     expect(repairCandidateResumeNodeSourceRefs).toHaveBeenCalledWith(db, 'talent-2');
+    expect(repairTalentPoolResumeNodeSourceRefs).toHaveBeenCalledWith(db, 32);
   });
 
   it('cron backfills missing Talent Pool upload receipt artifacts from the original R2 object', async () => {

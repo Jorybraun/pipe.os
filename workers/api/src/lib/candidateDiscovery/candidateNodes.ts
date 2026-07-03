@@ -28,6 +28,10 @@ interface CandidateNodeSourceRepairRow {
   extracted_properties_json: string | null;
 }
 
+interface CandidateNodeSourceRepairCandidateRow extends CandidateNodeSourceRepairRow {
+  candidate_id: string;
+}
+
 export interface CandidateNodeSourceRepairResult {
   scanned: number;
   repaired: number;
@@ -298,6 +302,106 @@ export async function repairCandidateResumeNodeSourceRefs(
       }),
       row.id,
       candidateId,
+    ).run();
+    repaired++;
+  }
+
+  return { scanned: rows.results?.length ?? 0, repaired };
+}
+
+export async function repairTalentPoolResumeNodeSourceRefs(
+  db: D1Database,
+  limit = 250,
+): Promise<CandidateNodeSourceRepairResult> {
+  if (!await candidateSourceTablesReady(db)) return { scanned: 0, repaired: 0 };
+
+  const parsedLimit = Number.isFinite(limit) ? Math.floor(limit) : 250;
+  const boundedLimit = Math.max(1, Math.min(parsedLimit, 1000));
+  const rows = await db.prepare(
+    `SELECT cn.id,
+            cn.candidate_id,
+            cn.source_reference,
+            cn.extracted_properties_json
+       FROM candidate_nodes cn
+       JOIN talent_pool_intakes t ON t.candidate_id = cn.candidate_id
+      WHERE t.submitted_at IS NOT NULL
+        AND t.profile_r2_key IS NOT NULL
+        AND TRIM(t.profile_r2_key) <> ''
+        AND cn.source_type = 'resume'
+        AND cn.superseded_at IS NULL
+        AND json_extract(cn.extracted_properties_json, '$.source_quote_validated') = 1
+        AND COALESCE(json_extract(cn.extracted_properties_json, '$.source_span_id'), '') = ''
+        AND (
+          cn.source_reference IS NULL
+          OR cn.source_reference NOT LIKE 'source_span:%'
+        )
+        AND json_type(cn.extracted_properties_json, '$.source_quote_char_start') IN ('integer', 'real')
+        AND json_type(cn.extracted_properties_json, '$.source_quote_char_end') IN ('integer', 'real')
+        AND EXISTS (
+          SELECT 1
+            FROM artifact_versions av
+            JOIN source_spans ss ON ss.artifact_version_id = av.id
+           WHERE av.storage_key = t.profile_r2_key
+             AND ss.char_start <= json_extract(cn.extracted_properties_json, '$.source_quote_char_start')
+             AND ss.char_end >= json_extract(cn.extracted_properties_json, '$.source_quote_char_end')
+        )
+      ORDER BY t.updated_at DESC, cn.captured_at ASC, cn.id ASC
+      LIMIT ?1`,
+  ).bind(boundedLimit).all<CandidateNodeSourceRepairCandidateRow>();
+
+  let repaired = 0;
+  for (const row of rows.results ?? []) {
+    const properties = parseSourceProperties(row.extracted_properties_json);
+    if (!properties) continue;
+    if (hasExistingSourceSpanReference(
+      {
+        candidate_id: row.candidate_id,
+        node_type: 'Experience',
+        narrative_text: '',
+        extracted_properties_json: row.extracted_properties_json,
+        embedding_json: null,
+        source_type: 'resume',
+        source_reference: row.source_reference,
+        captured_at: 0,
+        confidence: null,
+        supersedes: null,
+        superseded_at: null,
+        decomposition_version: null,
+      },
+      properties,
+    )) continue;
+
+    const charStart = finiteNumber(properties.source_quote_char_start);
+    const charEnd = finiteNumber(properties.source_quote_char_end);
+    const sourceQuote = typeof properties.source_quote === 'string' ? properties.source_quote : '';
+    if (charStart === null || charEnd === null || charEnd <= charStart) continue;
+
+    const span = await findCurrentProfileSourceSpan({
+      db,
+      candidateId: row.candidate_id,
+      charStart,
+      charEnd,
+      sourceQuote,
+    });
+    if (!span?.id) continue;
+
+    await db.prepare(
+      `UPDATE candidate_nodes
+          SET source_reference = ?1,
+              extracted_properties_json = ?2,
+              updated_at = unixepoch()
+        WHERE id = ?3
+          AND candidate_id = ?4
+          AND superseded_at IS NULL
+          AND COALESCE(json_extract(extracted_properties_json, '$.source_span_id'), '') = ''`,
+    ).bind(
+      `source_span:${span.id}`,
+      JSON.stringify({
+        ...properties,
+        source_span_id: span.id,
+      }),
+      row.id,
+      row.candidate_id,
     ).run();
     repaired++;
   }

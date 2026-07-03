@@ -134,6 +134,12 @@ successful extraction.
 The scheduled repair batch orders candidates with missing resume source-span
 refs or stale profile source spans ahead of already-clean recent submissions, so
 unscoped audit debt burns down before cron spends work on healthy intakes.
+Before R2-backed identity replay, cron also runs a bounded D1-only repair over
+candidate nodes whose current profile artifact already has a covering source
+span. This is projection repair, not source creation: the raw artifact version
+and source span must already exist, and the repair only writes the missing
+`source_span:<id>` reference plus `source_span_id` property onto validated exact
+resume nodes.
 Background projection receives the roleless Talent Pool person identity and
 background decomposition runs with legacy candidate-node mirroring disabled, so
 it must not create `applications` or `person_roles` before a role-backed process
@@ -815,7 +821,9 @@ Scheduled repair proof in
 that replaying a pasted/text profile reads the current R2 object, passes the
 exact `messageStorageKey` and text media type into roleless identity repair, does
 not create a fake upload receipt for pasted text, and invokes exact candidate-node
-source-ref repair after identity replay.
+source-ref repair after identity replay. `src/lib/candidateDiscovery/__tests__/candidateNodes.test.ts`
+also proves the D1-only bulk source-ref repair is idempotent and skips nodes
+whose current profile artifact has no matching source span.
 
 Browser proof on 2026-07-02 uses
 `e2e/talent-pool-intake.unauth.spec.ts` with the unauthenticated Playwright
