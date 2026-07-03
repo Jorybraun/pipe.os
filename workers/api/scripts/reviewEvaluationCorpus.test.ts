@@ -237,12 +237,21 @@ function completedReview(
     rubricVersion: 'candidate-pr-match-rubric-v1',
     reviewedAt: '2026-07-02T20:00:00.000Z',
     reviewedCorpusId: 'sample-corpus-v1-expert-reviewed',
-    labels: template.labels.map((label) => ({
-      ...label,
-      explanation:
-        'Human reviewer confirmed the candidate evidence, role requirement, '
-        + 'and selected source-backed challenge are appropriate for this CODE_REVIEW gate.',
-    })),
+    labels: template.labels.map((label) => {
+      const suggestedNegativeCandidateId = label.suggestedNegativeCandidateIds?.[0];
+      return {
+        ...label,
+        ...(label.negativeCandidateId === undefined && suggestedNegativeCandidateId
+          ? { negativeCandidateId: suggestedNegativeCandidateId }
+          : {}),
+        ...(label.minimumScoreSeparation === undefined && suggestedNegativeCandidateId
+          ? { minimumScoreSeparation: label.suggestedMinimumScoreSeparation ?? 0.1 }
+          : {}),
+        explanation:
+          'Human reviewer confirmed the candidate evidence, role requirement, '
+          + 'and selected source-backed challenge are appropriate for this CODE_REVIEW gate.',
+      };
+    }),
     ...overrides,
   };
 }
@@ -908,17 +917,39 @@ describe('evaluation corpus review CLI', () => {
     ])).rejects.toThrow('Expert review file is incomplete');
   });
 
-  it('applies a completed expert review and keeps the corpus blocked until source and contrast evidence are complete', async () => {
+  it('rejects positive expert reviews without contrast candidate and score separation', async () => {
     directory = await mkdtemp(join(tmpdir(), 'pipe-corpus-review-'));
     const reviewFilePath = join(directory, 'review.json');
     const reviewedCorpusPath = join(directory, 'reviewed-corpus.json');
-    const summaryPath = join(directory, 'summary.json');
     const template = buildExpertReviewTemplate(buildCorpusReviewPacket(loadFixtureCorpus()));
+    writeFileSync(reviewFilePath, JSON.stringify(completedReview(template), null, 2));
+
+    await expect(runCorpusReviewCli([
+      '--source-corpus-file',
+      corpusFixture.pathname,
+      '--review-file',
+      reviewFilePath,
+      '--reviewed-corpus',
+      reviewedCorpusPath,
+    ])).rejects.toThrow(
+      'reviewed positive label requires contrast candidate and minimum score separation: label-1',
+    );
+  });
+
+  it('applies a completed expert review and keeps the corpus blocked until source and contrast evidence are complete', async () => {
+    directory = await mkdtemp(join(tmpdir(), 'pipe-corpus-review-'));
+    const sourceCorpusPath = join(directory, 'source-corpus.json');
+    const reviewFilePath = join(directory, 'review.json');
+    const reviewedCorpusPath = join(directory, 'reviewed-corpus.json');
+    const summaryPath = join(directory, 'summary.json');
+    const sourceCorpus = loadFixtureCorpusWithUnlabelledContrastCandidate();
+    writeFileSync(sourceCorpusPath, JSON.stringify(sourceCorpus, null, 2));
+    const template = buildExpertReviewTemplate(buildCorpusReviewPacket(sourceCorpus));
     writeFileSync(reviewFilePath, JSON.stringify(completedReview(template), null, 2));
 
     const exitCode = await runCorpusReviewCli([
       '--source-corpus-file',
-      corpusFixture.pathname,
+      sourceCorpusPath,
       '--review-file',
       reviewFilePath,
       '--reviewed-corpus',
@@ -943,13 +974,12 @@ describe('evaluation corpus review CLI', () => {
       productionReady: false,
       productionReadinessFailures: expect.arrayContaining([
         'production corpus requires at least one insufficient-evidence or non-positive contrast label',
-        'production corpus requires at least one explicit negativeCandidateId contrast label',
         'production corpus requires at least two source-backed expected PR challenge packets',
-        'positive expert label requires contrast candidate and minimum score separation: label-1',
       ]),
       readinessSummary: expect.objectContaining({
         nextAction: 'fix_corpus_source_evidence',
         labelsNeedingHumanReview: [],
+        labelsMissingContrastCandidate: [],
         labelsMissingExpectedPacket: ['label-1'],
         labelsMissingRepoDemandEvidence: ['label-1'],
       }),
@@ -963,19 +993,21 @@ describe('evaluation corpus review CLI', () => {
     const reviewFilePath = join(directory, 'review.json');
     const firstSummaryPath = join(directory, 'summary-first.json');
     const secondSummaryPath = join(directory, 'summary-second.json');
+    const sourceCorpus = loadFixtureCorpusWithUnlabelledContrastCandidate();
+    const sourceCorpusJson = JSON.stringify(sourceCorpus, null, 2);
     const sqlite = new Database(databasePath);
     sqlite.exec(evaluationMigration);
-    insertCorpus(sqlite, readFileSync(corpusFixture, 'utf8'));
+    insertCorpus(sqlite, sourceCorpusJson);
     sqlite.close();
 
-    const template = buildExpertReviewTemplate(buildCorpusReviewPacket(loadFixtureCorpus()));
+    const template = buildExpertReviewTemplate(buildCorpusReviewPacket(sourceCorpus));
     writeFileSync(reviewFilePath, JSON.stringify(completedReview(template), null, 2));
 
     const firstExit = await runCorpusReviewCli([
       '--database-path',
       databasePath,
       '--source-corpus-id',
-      'sample-corpus-v1',
+      sourceCorpus.corpusId,
       '--review-file',
       reviewFilePath,
       '--persist',
@@ -986,7 +1018,7 @@ describe('evaluation corpus review CLI', () => {
       '--database-path',
       databasePath,
       '--source-corpus-id',
-      'sample-corpus-v1',
+      sourceCorpus.corpusId,
       '--review-file',
       reviewFilePath,
       '--persist',
@@ -1012,7 +1044,7 @@ describe('evaluation corpus review CLI', () => {
         ORDER BY corpus_id`,
     ).all()).toEqual([
       {
-        corpus_id: 'sample-corpus-v1',
+        corpus_id: sourceCorpus.corpusId,
         expert_label_count: 0,
         synthetic_fixture_count: 1,
       },

@@ -824,6 +824,42 @@ function seedEvaluationCorpusRouteData(sqlite: BetterSqliteDb): void {
     INSERT INTO assertion_concepts (assertion_id, concept_id)
     VALUES ('assertion-seed-1', 'concept-seed-1');
 
+    INSERT INTO people (id, display_name, primary_email)
+    VALUES ('person-seed-negative', 'Negative Contrast Candidate', 'negative@test.dev');
+
+    INSERT INTO workspace_people (id, person_id, workspace_id)
+    VALUES ('wp-seed-negative', 'person-seed-negative', 'ws-1');
+
+    INSERT INTO applications (id, workspace_person_id, legacy_candidate_id)
+    VALUES ('app-seed-negative', 'wp-seed-negative', 'candidate-seed-negative');
+
+    INSERT INTO interactions (id, workspace_person_id, interaction_type)
+    VALUES ('interaction-seed-negative', 'wp-seed-negative', 'resume_upload');
+
+    INSERT INTO artifacts (id, interaction_id, artifact_type)
+    VALUES ('artifact-seed-negative', 'interaction-seed-negative', 'resume');
+
+    INSERT INTO artifact_versions (id, artifact_id, version_number, content_hash)
+    VALUES ('artifact-version-seed-negative', 'artifact-seed-negative', 1, 'sha256:candidate-seed-negative');
+
+    INSERT INTO source_spans (id, artifact_version_id, exact_text, char_start, char_end)
+    VALUES ('span-seed-negative', 'artifact-version-seed-negative', 'Maintained batch data pipelines and infrastructure runbooks', 0, 57);
+
+    INSERT INTO episodes (id, workspace_person_id, interaction_id, narrative)
+    VALUES ('episode-seed-negative', 'wp-seed-negative', 'interaction-seed-negative', 'Resume evidence');
+
+    INSERT INTO semantic_assertions (id, episode_id, narrative)
+    VALUES ('assertion-seed-negative', 'episode-seed-negative', 'Demonstrates data pipeline operations rather than React review judgement');
+
+    INSERT INTO assertion_source_spans (assertion_id, source_span_id)
+    VALUES ('assertion-seed-negative', 'span-seed-negative');
+
+    INSERT INTO concepts (id, canonical_key, namespace, label)
+    VALUES ('concept-seed-negative', 'term:data-pipeline', 'open', 'Data pipeline');
+
+    INSERT INTO assertion_concepts (assertion_id, concept_id)
+    VALUES ('assertion-seed-negative', 'concept-seed-negative');
+
     INSERT INTO role_context_documents (id, required_languages_json, relevant_concepts_json)
     VALUES ('role-seed-1', '["typescript"]', '["term:react-popover"]');
 
@@ -881,6 +917,43 @@ function seedEvaluationCorpusRouteData(sqlite: BetterSqliteDb): void {
       alignments: [],
       rejectionReasons: [],
     }]),
+  );
+  sqlite.prepare(
+    `INSERT INTO match_runs (
+       id, candidate_id, role_context_id, candidate_snapshot_id, role_snapshot_id,
+       policy_version, status, selected_packet_id, ranked_results_json, created_at
+     ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
+  ).run(
+    'match-run-seed-negative',
+    'candidate-seed-negative',
+    'role-seed-1',
+    'candidate-snapshot-seed-negative',
+    'standalone-code-review-v1',
+    '1.0.0',
+    'MATCHED',
+    'packet-seed-1',
+    JSON.stringify([{
+      rank: 1,
+      recallRank: 1,
+      challengeId: 'packet-seed-1',
+      repoId: 'mui/base-ui',
+      prNumber: 973,
+      sourceVersion: 'v1',
+      score: 0.22,
+      candidateEvidenceAlignment: 0.2,
+      roleRelevance: 0.2,
+      contextualSpecificity: 0.2,
+      challengeQuality: 0.9,
+      validationDeepeningValue: 0.4,
+      alignedDemandCount: 0,
+      stretchCount: 0,
+      stretchDemandWeightRatio: 0,
+      provenanceComplete: true,
+      eligible: false,
+      alignments: [],
+      rejectionReasons: ['Candidate evidence is about data pipelines, not React popover review.'],
+    }]),
+    '2026-07-02T19:00:00.000Z',
   );
 }
 
@@ -942,7 +1015,7 @@ describe('POST /evaluation-corpus-seed', () => {
     const seedRes = await app.request('/evaluation-corpus-seed', {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({ limit: 1 }),
+      body: JSON.stringify({ limit: 2 }),
     }, { DB: db });
     expect(seedRes.status).toBe(200);
     const seedBody = await seedRes.json() as { corpusId: string };
@@ -975,7 +1048,10 @@ describe('POST /evaluation-corpus-seed', () => {
     expect(body.reviewPacket.productionReadinessFailures).toContain(
       'expert label is missing reviewer/source provenance: seeded-match-run-seed-1-packet-seed-1',
     );
-    expect(body.reviewPacket.items).toHaveLength(1);
+    expect(body.reviewPacket.productionReadinessFailures).toContain(
+      'expert label is missing reviewer/source provenance: seeded-match-run-seed-negative-packet-seed-1',
+    );
+    expect(body.reviewPacket.items).toHaveLength(2);
     expect(body.reviewPacket.items[0]!.draft.labeledBy).toBe('corpus-seeder');
     expect(body.reviewPacket.items[0]!.candidateEvidence[0]!.narrative).toContain('React TypeScript');
     expect(body.reviewPacket.items[0]!.candidateEvidence[0]!.evidenceReferences).toHaveLength(1);
@@ -995,7 +1071,7 @@ describe('POST /evaluation-corpus-seed', () => {
     const seedRes = await app.request('/evaluation-corpus-seed', {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({ limit: 1 }),
+      body: JSON.stringify({ limit: 2 }),
     }, { DB: db });
     expect(seedRes.status).toBe(200);
     const seedBody = await seedRes.json() as { corpusId: string; corpusHash: string };
@@ -1016,7 +1092,14 @@ describe('POST /evaluation-corpus-seed', () => {
           labelId: 'seeded-match-run-seed-1-packet-seed-1',
           relevanceGrade: 'highly_relevant',
           eligibleChallengeIds: ['packet-seed-1'],
+          negativeCandidateId: 'candidate-seed-negative',
+          minimumScoreSeparation: 0.12,
           explanation: 'Candidate React popover review evidence directly maps to the source-backed Base UI PR demand.',
+        }, {
+          labelId: 'seeded-match-run-seed-negative-packet-seed-1',
+          relevanceGrade: 'irrelevant',
+          eligibleChallengeIds: [],
+          explanation: 'Contrast candidate evidence is about data pipelines, not React popover review.',
         }],
       }),
     }, { DB: db });
@@ -1042,15 +1125,12 @@ describe('POST /evaluation-corpus-seed', () => {
     expect(body.reviewedCorpusId).toBe('reviewed-seed-corpus-1');
     expect(body.corpusHash).toMatch(/^[a-f0-9]{64}$/);
     expect(body.persisted).toBe(true);
-    expect(body.expertLabelCount).toBe(1);
+    expect(body.expertLabelCount).toBe(2);
     expect(body.syntheticFixtureCount).toBe(0);
     expect(body.productionReady).toBe(false);
-    expect(body.productionReadinessFailures).toEqual(expect.arrayContaining([
-      'production corpus requires at least one insufficient-evidence or non-positive contrast label',
-      'production corpus requires at least one explicit negativeCandidateId contrast label',
+    expect(body.productionReadinessFailures).toEqual([
       'production corpus requires at least two source-backed expected PR challenge packets',
-      'positive expert label requires contrast candidate and minimum score separation: seeded-match-run-seed-1-packet-seed-1',
-    ]));
+    ]);
     expect(body.nextAction).toBe('expand_corpus_packet_breadth');
     expect(body.readinessSummary.nextAction).toBe('expand_corpus_packet_breadth');
 
@@ -1066,7 +1146,7 @@ describe('POST /evaluation-corpus-seed', () => {
     const draftRow = rows.find((row) => row.corpus_id === seedBody.corpusId)!;
     const reviewedRow = rows.find((row) => row.corpus_id === 'reviewed-seed-corpus-1')!;
     expect(draftRow.expert_label_count).toBe(0);
-    expect(reviewedRow.expert_label_count).toBe(1);
+    expect(reviewedRow.expert_label_count).toBe(2);
 
     const reviewedCorpus = JSON.parse(reviewedRow.corpus_json) as {
       expertLabels: Array<{
@@ -1082,6 +1162,48 @@ describe('POST /evaluation-corpus-seed', () => {
     expect(reviewedCorpus.expertLabels[0]!.labelProvenance.contentHash).toMatch(/^sha256:/);
   });
 
+  it('rejects positive expert reviews without contrast candidate and score separation', async () => {
+    const db = createMockD1(sqlite);
+    const app = new Hono();
+    app.route('/', livingContextHealth);
+
+    const seedRes = await app.request('/evaluation-corpus-seed', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ limit: 2 }),
+    }, { DB: db });
+    expect(seedRes.status).toBe(200);
+    const seedBody = await seedRes.json() as { corpusId: string };
+
+    const res = await app.request('/evaluation-corpus-expert-review', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({
+        sourceCorpusId: seedBody.corpusId,
+        reviewedCorpusId: 'reviewed-seed-corpus-missing-contrast',
+        reviewerId: 'expert-reviewer-1',
+        reviewerRole: 'principal-engineer',
+        reviewArtifactId: 'review-artifact-1',
+        reviewArtifactVersion: 'v1',
+        rubricVersion: 'match-rubric-v1',
+        reviewedAt: '2026-07-02T20:00:00.000Z',
+        labels: [{
+          labelId: 'seeded-match-run-seed-1-packet-seed-1',
+          relevanceGrade: 'highly_relevant',
+          eligibleChallengeIds: ['packet-seed-1'],
+          explanation: 'Candidate React popover review evidence directly maps to the source-backed Base UI PR demand.',
+        }],
+      }),
+    }, { DB: db });
+    expect(res.status).toBe(422);
+
+    const body = await res.json() as { ok: boolean; reason: string };
+    expect(body.ok).toBe(false);
+    expect(body.reason).toContain(
+      'reviewed positive label requires contrast candidate and minimum score separation: seeded-match-run-seed-1-packet-seed-1',
+    );
+  });
+
   it('can dry-run expert review without writing a reviewed corpus row', async () => {
     const db = createMockD1(sqlite);
     const app = new Hono();
@@ -1090,7 +1212,7 @@ describe('POST /evaluation-corpus-seed', () => {
     const seedRes = await app.request('/evaluation-corpus-seed', {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({ limit: 1 }),
+      body: JSON.stringify({ limit: 2 }),
     }, { DB: db });
     expect(seedRes.status).toBe(200);
     const seedBody = await seedRes.json() as { corpusId: string };
@@ -1110,7 +1232,14 @@ describe('POST /evaluation-corpus-seed', () => {
           labelId: 'seeded-match-run-seed-1-packet-seed-1',
           relevanceGrade: 'highly_relevant',
           eligibleChallengeIds: ['packet-seed-1'],
+          negativeCandidateId: 'candidate-seed-negative',
+          minimumScoreSeparation: 0.12,
           explanation: 'Dry run confirms this label would become production-ready without persisting it.',
+        }, {
+          labelId: 'seeded-match-run-seed-negative-packet-seed-1',
+          relevanceGrade: 'irrelevant',
+          eligibleChallengeIds: [],
+          explanation: 'Dry run confirms this contrast candidate should not match the React popover PR.',
         }],
       }),
     }, { DB: db });
@@ -1145,7 +1274,7 @@ describe('POST /evaluation-corpus-seed', () => {
     const seedRes = await app.request('/evaluation-corpus-seed', {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({ limit: 1 }),
+      body: JSON.stringify({ limit: 2 }),
     }, { DB: db });
     expect(seedRes.status).toBe(200);
     const seedBody = await seedRes.json() as { corpusId: string };
@@ -1162,7 +1291,14 @@ describe('POST /evaluation-corpus-seed', () => {
         labelId: 'seeded-match-run-seed-1-packet-seed-1',
         relevanceGrade: 'highly_relevant',
         eligibleChallengeIds: ['packet-seed-1'],
+        negativeCandidateId: 'candidate-seed-negative',
+        minimumScoreSeparation: 0.12,
         explanation: 'Repeated review confirms idempotent corpus persistence.',
+      }, {
+        labelId: 'seeded-match-run-seed-negative-packet-seed-1',
+        relevanceGrade: 'irrelevant',
+        eligibleChallengeIds: [],
+        explanation: 'Repeated review confirms the contrast candidate remains a non-match.',
       }],
     };
 
