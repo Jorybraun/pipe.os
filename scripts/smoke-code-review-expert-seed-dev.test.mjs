@@ -2,6 +2,7 @@ import { describe, expect, it } from 'vitest';
 
 import {
   buildReviewCliArgs,
+  resolveExpertSeedDatabaseId,
   resolveExpertSeedOutputDir,
   validateExpertReviewMarkdown,
   validateExpertSeedPacket,
@@ -91,6 +92,21 @@ describe('CODE_REVIEW expert seed smoke contract', () => {
     expect(resolveExpertSeedOutputDir({
       CODE_REVIEW_EXPERT_SEED_OUTPUT_DIR: '/var/tmp/pipe-review',
     }, () => 12345, '/repo/root')).toBe('/var/tmp/pipe-review');
+  });
+
+  it('requires a CODE_REVIEW evaluation D1 instead of falling back to the generic app D1', () => {
+    expect(resolveExpertSeedDatabaseId({
+      CODE_REVIEW_EXPERT_SEED_D1_DATABASE_ID: 'expert-seed-db',
+      MATCHING_EVALUATION_D1_DATABASE_ID: 'matching-eval-db',
+      CLOUDFLARE_D1_DATABASE_ID: 'generic-app-db',
+    })).toBe('expert-seed-db');
+    expect(resolveExpertSeedDatabaseId({
+      MATCHING_EVALUATION_D1_DATABASE_ID: 'matching-eval-db',
+      CLOUDFLARE_D1_DATABASE_ID: 'generic-app-db',
+    })).toBe('matching-eval-db');
+    expect(resolveExpertSeedDatabaseId({
+      CLOUDFLARE_D1_DATABASE_ID: 'generic-app-db',
+    })).toBe('');
   });
 
   it('accepts a warning-free source-backed draft corpus with enough packet breadth', () => {
