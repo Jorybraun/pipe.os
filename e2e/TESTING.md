@@ -503,6 +503,17 @@ skipped with `candidateSurfaceContract=profile-received-candidate-handoff`, and
 authenticated recruiter browser proof was not skipped with
 `recruiterReadoutContract=blocked-code-review-action-readout`.
 
+Latest focused manual-ready reliability proof on 2026-07-03 passed with artifact
+`tmp/code-review-reliability/2026-07-03T13-26-05-163Z-suite.summary.json` for
+interview `e9930ef8-a574-43c0-9a55-67d661ba6550`: the ready assignment selected
+`mui/base-ui#973`, returned `manual_override`, `MATCHED`, validator `PASSED`,
+and `USABLE` assessment quality; pre-intake candidate-link proof stayed
+`state=active`, `sessionStatus=INVITED`, and `setupStatus=reviewable_task_assigned`;
+candidate browser proof was not skipped with
+`candidateSurfaceContract=source-backed-code-review-challenge`, and authenticated
+recruiter browser proof was not skipped with
+`recruiterReadoutContract=matched-code-review-hiring-manager-readout`.
+
 Latest full-submit person-boundary app-dev proof on 2026-07-03 passed for
 interview `e8285690-59ab-4c94-8d05-bcbcee6a2da2`, review session
 `247b3e64-0c8c-4fe1-bada-c7605c93d3cf`, and judge replay example
