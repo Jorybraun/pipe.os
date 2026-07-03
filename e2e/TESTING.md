@@ -245,29 +245,31 @@ In isolated worktrees that already have `playwright/.auth/user.json`, set
 running the Clerk setup dependency again.
 
 Latest full suite proof on 2026-07-03 passed all 6 lanes with artifact
-`tmp/code-review-reliability/2026-07-03T13-08-35-615Z-suite.summary.json`:
-manual ready-assignment interview `0d0a6460-e23b-44c3-896a-fdb5f7780c63`
+`tmp/code-review-reliability/2026-07-03T13-40-27-755Z-suite.summary.json`:
+manual ready-assignment interview `ba98331a-49d5-4040-bc27-52a7c65e8b50`
 served `mui/base-ui#973` with `manual_override`, `MATCHED`, validator `PASSED`,
-`USABLE` assessment quality, and pre-intake candidate-link proof
-`state=active`, `sessionStatus=INVITED`; fresh no-CV handoff interview
-`594481a0-e65b-48be-a596-9f106f2073a9` returned `PROFILE_RECEIVED` /
-`candidate-intake-queued` before any resume submission; blocked handoff
-interview `c38c9c26-bff7-4ad7-a529-8ee811a76e95` returned
-`PROFILE_RECEIVED` / `candidate-intake-queued` after intake evidence with no
-source-backed PR ready; role-backed full-submit interview
-`7e28442d-f86b-4973-96fa-e5ece9b9590e` selected `mui/base-ui#973`, submitted
-review session `a5d6a49e-c5a7-4a19-9c5c-584458eacaff`, persisted score `80`
-(`strong`), and exposed 4 evidence hyperedges plus a person-role-repo bridge;
-Workers SDK matrix interview `13b6fd24-5664-41b4-9fb4-5795f31c277a` selected
+`USABLE` assessment quality, pre-intake candidate-link proof `state=active`,
+`sessionStatus=INVITED`, and `setupStatus=reviewable_task_assigned`; fresh no-CV
+handoff interview `385a8173-00be-4202-9c4b-82796241f335` returned
+`PROFILE_RECEIVED` / `candidate-intake-queued`, title `Profile received`, and 0
+candidate challenges before any resume submission; blocked handoff interview
+`01100716-2459-4411-8d7b-c5f1d69f8d40` returned `PROFILE_RECEIVED` /
+`candidate-intake-queued` after intake evidence with no source-backed PR ready;
+role-backed full-submit interview `87e7b3ea-f34a-4ae2-8a2f-189d3bf2075d`
+selected `mui/base-ui#973`, submitted review session
+`1c9cb91b-175e-4128-8d10-0edf90fa3e24`, persisted remote D1 score `53`
+(`adequate`), completed review/scoring pipeline steps, and exposed 4 evidence
+hyperedges plus a person-role-repo bridge; Workers SDK matrix interview
+`ebbc7ac7-285f-4f85-91fc-74cb7b72b3ff` selected
 `cloudflare/workers-sdk#14118` with `STRONG` quality and contrast score `2/2`;
 match-quality readiness passed corpus
-`seeded-1783074402522-3c-3r-expert-codex-supplemental-contrast` with accuracy
-`1`, false positives `0`, false negatives `0`, usable challenge rate `1`, and
-no gate failures. Every candidate/recruiter-facing lane reported
-`candidateBrowserSmokeSkipped=false` and `recruiterBrowserSmokeSkipped=false`,
-and the role-backed full-submit summary includes the required recruiter/person
-readout, author pushback, remote D1 scoring, and review/scoring pipeline proof
-fields.
+`seeded-1783074402522-3c-3r-expert-codex-supplemental-contrast` with 6 pairs,
+accuracy `1`, false positives `0`, false negatives `0`, average score
+separation `0.6503333333333333`, usable challenge rate `1`, and no gate
+failures. Every candidate/recruiter-facing lane reported
+`candidateBrowserSmokeSkipped=false`, `recruiterBrowserSmokeSkipped=false`, and
+the expected `candidateSurfaceContract` plus `recruiterReadoutContract` for its
+lane.
 
 Set `CODE_REVIEW_SMOKE_SUBMIT=1`, or use `npm run smoke:code-review-assess-dev:role-backed-full-submit`, for the stronger end-to-end gate. That mode keeps the browser assess smoke, drives the visible candidate UI to add an inline diff comment, submits the first review round in the browser, waits for the author response/thread, then completes with `request_changes`, submits the review-session reference through `/rpc/submit-challenge-response`, verifies both `/api/v1/scheduling/interviews/:id` and `/api/v1/candidates/:id` expose the completed recruiter result, fails if scheduled detail loses transcript rounds, reviewer comments, or AI developer responses, checks the judge-example replay queue contains the review session with candidate comments, AI pushback, `human_label_queue`, and `cross_model_calibration` metadata, and polls D1 until `review_sessions.score_report`, `challenge_submissions.score_report_json`, `challenge_submissions.score`, and `assessments.score` are durable. The score-persistence check uses local `pipe-db` for localhost and remote `pipe-db-test` for app-dev; override with `CODE_REVIEW_SMOKE_D1_DATABASE` only when deliberately targeting another D1 database.
 
