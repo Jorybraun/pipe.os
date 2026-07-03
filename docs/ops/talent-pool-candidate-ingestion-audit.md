@@ -82,6 +82,20 @@ The verifier reports:
 - source-anchor conflicts where multiple structured resume facts point at the
   same exact quote offsets
 
+## Goal Coverage Map
+
+Use this map to decide what a green audit proves and what still needs a scoped
+proof:
+
+| Goal requirement | Current proof surface | Remaining gap semantics |
+| --- | --- | --- |
+| `/talent/:token` public intake | `smoke:talent-pool-browser-dev`, `smoke:talent-pool-browser-upload-dev`, `smoke:talent-pool-browser-docx-dev`, `smoke:talent-pool-browser-pdf-dev`, and unauthenticated Playwright candidate-safe dashboard coverage | Browser smokes prove candidate traffic and recruiter/person reads; broad remote audits may still be windowed with `--limit` because full unscoped D1 can exceed CPU. |
+| `/rpc/talent/resolve-token` dashboard contract | `src/routes/__tests__/talentPool.test.ts` proves safe dashboards, no internal ids, fail-closed challenge readiness, and source-backed ready challenge exposure | A design queue is not readiness; `readyChallenges` must stay empty until a production-ready review packet has source refs and concept links. |
+| `/rpc/talent/submit-profile` pasted text | Route tests and `smoke:talent-pool-ingestion-dev` prove content-addressed source storage, exact source spans, candidate nodes, person context, external refs, phone intent, and idempotent replay | External URLs are source-backed submitted facts only; fetching/validating their remote profile content is a separate future source producer. |
+| `/rpc/talent/upload-profile` text/DOCX/PDF | Route tests plus upload/DOCX/PDF smokes prove raw R2 blobs, upload artifact versions, extracted source spans when text exists, upload receipts, recruiter/person reads, and replay idempotency | Unextractable PDF/DOCX uploads must remain `profile_text_extraction_needed` with an upload receipt and no fabricated claims. |
+| Person/living-context projection | `talentPoolIdentity` tests, audit person projection counts, recruiter/person read smokes, and duplicate-edge checks prove roleless `people` / `workspace_people` projection without synthetic applications | Person graph records are rebuildable projections; raw artifacts, spans, and ingestion rows remain the evidence bundle source of truth. |
+| Repo matching and assessment setup | Audit challenge-assignment counters and route tests distinguish production-ready packet-backed assignments from incomplete or unproven rows | Missing packet/repo provenance is an explicit design/setup gap, not `CHALLENGE_READY`. |
+
 Pasted profile text and decoded text uploads create a roleless
 `talent_pool_profile_intake` context record backed by the exact submitted text
 source span when the context-record schema is present. This context record only
