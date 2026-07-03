@@ -249,6 +249,19 @@ candidate-node projection from invite/upload placeholders. It also requires one
 per-candidate exact-node gap and the scoped `candidate_ingestion.current_step` to be
 `profile_text_extraction_needed`.
 
+Current app-dev HEAD check on 2026-07-02 local time, checked at
+2026-07-03T00:47Z, ran after deploying Worker version
+`8ce0c586-76d2-4ab8-8a16-905b8aa94c16`:
+
+- `npm run smoke:talent-pool-ingestion-dev` submitted pasted profile text for
+  invite token `fadeb8ae-b0b1-4168-a12c-8977065028d6` and returned
+  `status: ready`, `candidateNodeExactSourceQuoteCount: 13`,
+  `submittedIntakeWithoutExactCandidateNodeCount: 0`,
+  `sourceLessPositiveClaimCount: 0`, `sourceLessDesignQueueSuggestionCount: 0`,
+  and `duplicateProjectedEdgeCount: 0`. Recruiter reads resolved unified People
+  type `candidate`, found candidate/person source text, returned 8 timeline
+  entries, and reported 9 source spans plus 5 context records.
+
 Latest app-dev all-mode proof on 2026-07-02 local time, checked at
 2026-07-03T00:41Z through 2026-07-03T00:44Z, ran after a clean HEAD deploy of
 Worker version `b35f6fff-cd35-4d6b-afae-96ea15c59c15`:
