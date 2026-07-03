@@ -12,6 +12,7 @@ const DEFAULT_LANE_IDS = [
   'no-cv-handoff',
   'blocked-handoff',
   'role-backed-full-submit',
+  'person-boundary',
   'workers-sdk-matrix',
   'packet-catalog-readiness',
   'match-quality-readiness',
@@ -179,6 +180,15 @@ export function buildReliabilityLanes({
       },
     ],
     [
+      'person-boundary',
+      {
+        id: 'person-boundary',
+        label: 'Completed CODE_REVIEW person-profile evidence boundary',
+        command: ['npm', 'run', 'smoke:code-review-assess-dev:person-boundary'],
+        parser: 'assess-smoke',
+      },
+    ],
+    [
       'match-quality-readiness',
       {
         id: 'match-quality-readiness',
@@ -279,6 +289,15 @@ function summarizeAssessSmoke(proof) {
       : null,
     evidenceHyperedgeCount: proof?.submissionSmoke?.recruiterResults?.evidenceHyperedgeCount ?? null,
     personRoleRepoHyperedge: proof?.submissionSmoke?.recruiterResults?.personRoleRepoHyperedge ?? null,
+    relatedBoundaryVerified: proof?.relatedBoundaryProfile?.verified ?? null,
+    relatedBoundarySelectedInterviewId: proof?.relatedBoundaryProfile?.selectedInterviewId ?? null,
+    relatedBoundaryRelatedInterviewId: proof?.relatedBoundaryProfile?.relatedInterviewId ?? null,
+    relatedBoundarySelectedRepoUrl: proof?.relatedBoundaryProfile?.selectedRepoUrl ?? null,
+    relatedBoundarySelectedPrNumber: proof?.relatedBoundaryProfile?.selectedPrNumber ?? null,
+    relatedBoundaryRelatedRepoUrl: proof?.relatedBoundaryProfile?.relatedRepoUrl ?? null,
+    relatedBoundaryRelatedPrNumber: proof?.relatedBoundaryProfile?.relatedPrNumber ?? null,
+    relatedBoundarySource: proof?.relatedBoundaryProfile?.relatedSource ?? null,
+    relatedBoundaryScheduledCodeReviewCount: proof?.relatedBoundaryProfile?.scheduledCodeReviewCount ?? null,
   };
 }
 
@@ -463,6 +482,42 @@ export function validateLaneSummary(laneId, summary) {
       require(summary?.reviewPipelineScoringStatus === 'complete', 'role-backed-full-submit review pipeline scoring step must be complete');
       require(finiteNumberAtLeast(summary?.evidenceHyperedgeCount, 1), 'role-backed-full-submit must expose evidence hyperedges');
       require(summary?.personRoleRepoHyperedge === true, 'role-backed-full-submit must expose person-role-repo bridge');
+      break;
+    case 'person-boundary':
+      require(summary?.matchMode === 'manual_override', 'person-boundary must use manual_override');
+      require(summary?.matchStatus === 'MATCHED', 'person-boundary must be MATCHED');
+      require(summary?.qualityGate === 'PASSED', 'person-boundary quality gate must pass');
+      require(summary?.assessmentQuality === 'USABLE', 'person-boundary assessment quality must be USABLE');
+      require(summary?.candidateBrowserSmokeSkipped === false, 'person-boundary candidate browser smoke must run');
+      require(summary?.candidateSurfaceContract === 'source-backed-code-review-with-review-round', 'person-boundary candidate browser smoke must prove source-backed review-round surface');
+      require(summary?.recruiterBrowserSmokeSkipped === false, 'person-boundary recruiter browser smoke must run');
+      require(summary?.recruiterReadoutContract === 'scored-code-review-hiring-manager-readout', 'person-boundary recruiter smoke must prove scored hiring-manager readout contract');
+      require(summary?.recruiterInterviewStatus === 'COMPLETED', 'person-boundary recruiter interview status must be COMPLETED');
+      require(summary?.recruiterProfileInterviewStatus === 'COMPLETED', 'person-boundary person profile interview status must be COMPLETED');
+      require(summary?.recruiterProfileSubmitted === true, 'person-boundary recruiter profile must expose submitted result');
+      require(summary?.recruiterMatchStatus === 'MATCHED', 'person-boundary recruiter match status must be MATCHED');
+      require(summary?.validatorVerdict === 'PASSED', 'person-boundary recruiter validator verdict must be PASSED');
+      require(Boolean(summary?.repoUrl), 'person-boundary must include selected repoUrl');
+      require(finiteNumberAtLeast(summary?.prNumber, 1), 'person-boundary must include selected prNumber');
+      require(Boolean(summary?.reviewSessionId), 'person-boundary must persist review session id');
+      require(finiteNumberAtLeast(summary?.agentResponseCount, 1), 'person-boundary must include author pushback response');
+      require(finiteNumberAtLeast(summary?.threadCount, 1), 'person-boundary must include review thread');
+      require(summary?.scoreStatus === 'scored', 'person-boundary score status must be scored');
+      require(finiteNumberAtLeast(summary?.reviewScore, 0), 'person-boundary must persist numeric score');
+      require(summary?.scoreD1Target === 'remote', 'person-boundary scoring proof must target remote D1');
+      require(summary?.reviewPipelineReviewStatus === 'complete', 'person-boundary review pipeline review step must be complete');
+      require(summary?.reviewPipelineScoringStatus === 'complete', 'person-boundary review pipeline scoring step must be complete');
+      require(summary?.relatedBoundaryVerified === true, 'person-boundary must verify same-person related interview boundary');
+      require(summary?.relatedBoundarySelectedInterviewId === summary?.interviewId, 'person-boundary selected profile decision must point at the submitted interview');
+      require(Boolean(summary?.relatedBoundaryRelatedInterviewId), 'person-boundary must include the related unsubmitted interview id');
+      require(summary?.relatedBoundarySelectedRepoUrl === summary?.repoUrl, 'person-boundary selected profile repo must match the submitted review repo');
+      require(String(summary?.relatedBoundarySelectedPrNumber ?? '') === String(summary?.prNumber ?? ''), 'person-boundary selected profile PR must match the submitted review PR');
+      require(
+        summary?.relatedBoundaryRelatedRepoUrl !== summary?.repoUrl
+          || String(summary?.relatedBoundaryRelatedPrNumber ?? '') !== String(summary?.prNumber ?? ''),
+        'person-boundary related interview must not be promoted as the selected recommendation',
+      );
+      require(finiteNumberAtLeast(summary?.relatedBoundaryScheduledCodeReviewCount, 1), 'person-boundary must expose at least one CODE_REVIEW row on the person graph');
       break;
     case 'workers-sdk-matrix':
       require(finiteNumberAtLeast(summary?.profileCount, 1), 'workers-sdk-matrix must evaluate at least one profile');

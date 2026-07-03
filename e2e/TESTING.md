@@ -244,23 +244,28 @@ In isolated worktrees that already have `playwright/.auth/user.json`, set
 `PLAYWRIGHT_SKIP_CLERK_GLOBAL_SETUP=1` to reuse that recruiter session without
 running the Clerk setup dependency again.
 
-Latest full suite proof on 2026-07-03 passed all 7 lanes with artifact
-`tmp/code-review-reliability/2026-07-03T13-54-16-144Z-suite.summary.json`:
-manual ready-assignment interview `384f0230-d4f1-4846-9ce8-95dfa7d19b73`
+Latest full suite proof on 2026-07-03 passed all 8 lanes with artifact
+`tmp/code-review-reliability/2026-07-03T14-07-49-339Z-suite.summary.json`:
+manual ready-assignment interview `4d346613-5e3b-432f-9a08-38297601dc5c`
 served `mui/base-ui#973` with `manual_override`, `MATCHED`, validator `PASSED`,
 `USABLE` assessment quality, pre-intake candidate-link proof `state=active`,
 `sessionStatus=INVITED`, and `setupStatus=reviewable_task_assigned`; fresh no-CV
-handoff interview `8efab62c-4aea-4d37-84cc-86e0217c85c7` returned
+handoff interview `9387578f-c7ab-4d4e-95f4-f78ab3ea13df` returned
 `PROFILE_RECEIVED` / `candidate-intake-queued`, title `Profile received`, and 0
 candidate challenges before any resume submission; blocked handoff interview
-`37f43268-204e-44a3-a1d0-5d5aad602d7b` returned `PROFILE_RECEIVED` /
+`086c1766-bda9-43ea-acaf-1de0cf9f1d09` returned `PROFILE_RECEIVED` /
 `candidate-intake-queued` after intake evidence with no source-backed PR ready;
-role-backed full-submit interview `a0cc5aff-6bbe-4563-875a-63579f512825`
+role-backed full-submit interview `0b891aa7-c47a-4647-8b11-1f1ffcec34d2`
 selected `mui/base-ui#973`, submitted review session
-`2cb6b29e-c034-4e5d-b1df-ed9542eae8cf`, persisted remote D1 score `51`
+`3880d8e9-d902-46d3-9fa9-5c89515acf81`, persisted remote D1 score `64`
 (`adequate`), completed review/scoring pipeline steps, and exposed 4 evidence
-hyperedges plus a person-role-repo bridge; Workers SDK matrix interview
-`ce7c7b03-e889-42a2-814d-7c5578a2c73a` selected
+hyperedges plus a person-role-repo bridge; person-boundary interview
+`fb73325c-b72a-4d8a-998b-b7d4da6f7a76` selected `mui/base-ui#973`,
+persisted remote D1 score `54`, and proved the person profile stayed anchored
+to that submitted scored review while related same-person interview
+`0a4f7faf-006c-4b7c-97b3-b980563ed241` remained an unsubmitted
+`facebook/react#1` context row; Workers SDK matrix interview
+`58946a41-acb4-4c82-8a1f-4a86b31a0058` selected
 `cloudflare/workers-sdk#14118` with `STRONG` quality and contrast score `2/2`;
 packet catalog readiness passed app-dev D1 `0abe92df-9296-46f5-9f9d-a1fb1bcd3be1`
 with 10 total packets, 8 production-ready packets, 3 production-ready repos,

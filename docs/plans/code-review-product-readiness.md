@@ -516,6 +516,12 @@ remote packet-breadth ambiguity; the remaining readiness work is to keep this
 gate green while expanding calibrated labels and production/staging smoke
 coverage.
 
+Status 2026-07-03 follow-up: the default app-dev reliability suite also
+promotes `npm run smoke:code-review-assess-dev:person-boundary` into a required
+lane. This proves a completed scored CODE_REVIEW remains the selected
+person-profile recommendation even when a newer same-person CODE_REVIEW invite
+exists with a different repo/PR and no candidate submission.
+
 ## Production Readiness Gate
 
 Do not mark CODE_REVIEW product-complete until all of this is true:

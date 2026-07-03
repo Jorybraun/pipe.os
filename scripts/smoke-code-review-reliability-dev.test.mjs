@@ -21,6 +21,7 @@ describe('CODE_REVIEW reliability suite contract', () => {
       'no-cv-handoff',
       'blocked-handoff',
       'role-backed-full-submit',
+      'person-boundary',
       'workers-sdk-matrix',
       'packet-catalog-readiness',
       'match-quality-readiness',
@@ -32,8 +33,13 @@ describe('CODE_REVIEW reliability suite contract', () => {
     expect(lanes[1].command.join(' ')).toBe('npm run smoke:code-review-assess-dev:no-cv-boundary');
     expect(lanes[2].command.join(' ')).toBe('npm run smoke:code-review-assess-dev:blocked');
     expect(lanes[3].command.join(' ')).toBe('npm run smoke:code-review-assess-dev:role-backed-full-submit');
-    expect(lanes[4].command.join(' ')).toBe('npm run smoke:code-review-assess-dev:workers-matrix');
+    expect(lanes[4].command.join(' ')).toBe('npm run smoke:code-review-assess-dev:person-boundary');
     expect(lanes[5].command).toEqual([
+      'npm',
+      'run',
+      'smoke:code-review-assess-dev:workers-matrix',
+    ]);
+    expect(lanes[6].command).toEqual([
       'npm',
       'run',
       'smoke:code-review-packet-catalog-dev',
@@ -42,7 +48,7 @@ describe('CODE_REVIEW reliability suite contract', () => {
       'app-dev-d1',
       '--require-pass',
     ]);
-    expect(lanes[6].command).toEqual([
+    expect(lanes[7].command).toEqual([
       'npm',
       '--prefix',
       'workers/api',
@@ -235,6 +241,17 @@ describe('CODE_REVIEW reliability suite contract', () => {
           personRoleRepoHyperedge: true,
         },
       },
+      relatedBoundaryProfile: {
+        verified: true,
+        selectedInterviewId: 'ready-interview',
+        relatedInterviewId: 'related-interview',
+        relatedSource: 'interview_detail',
+        selectedRepoUrl: 'https://github.com/mui/base-ui',
+        selectedPrNumber: 973,
+        relatedRepoUrl: 'https://github.com/facebook/react',
+        relatedPrNumber: 1,
+        scheduledCodeReviewCount: 1,
+      },
     }, null, 2));
 
     expect(fullSubmit.summary).toMatchObject({
@@ -260,6 +277,15 @@ describe('CODE_REVIEW reliability suite contract', () => {
       roleSourceCount: 1,
       evidenceHyperedgeCount: 4,
       personRoleRepoHyperedge: true,
+      relatedBoundaryVerified: true,
+      relatedBoundarySelectedInterviewId: 'ready-interview',
+      relatedBoundaryRelatedInterviewId: 'related-interview',
+      relatedBoundarySelectedRepoUrl: 'https://github.com/mui/base-ui',
+      relatedBoundarySelectedPrNumber: 973,
+      relatedBoundaryRelatedRepoUrl: 'https://github.com/facebook/react',
+      relatedBoundaryRelatedPrNumber: 1,
+      relatedBoundarySource: 'interview_detail',
+      relatedBoundaryScheduledCodeReviewCount: 1,
       agentResponseCount: 1,
       threadCount: 1,
       challengeSubmissionScore: 71,
@@ -461,6 +487,42 @@ describe('CODE_REVIEW reliability suite contract', () => {
       personRoleRepoHyperedge: true,
     })).toEqual({ ok: true, failures: [] });
 
+    expect(validateLaneSummary('person-boundary', {
+      ok: true,
+      interviewId: 'selected-interview',
+      matchMode: 'manual_override',
+      repoUrl: 'https://github.com/mui/base-ui',
+      prNumber: 973,
+      matchStatus: 'MATCHED',
+      qualityGate: 'PASSED',
+      assessmentQuality: 'USABLE',
+      candidateBrowserSmokeSkipped: false,
+      candidateSurfaceContract: 'source-backed-code-review-with-review-round',
+      recruiterBrowserSmokeSkipped: false,
+      recruiterReadoutContract: 'scored-code-review-hiring-manager-readout',
+      recruiterInterviewStatus: 'COMPLETED',
+      recruiterProfileInterviewStatus: 'COMPLETED',
+      recruiterProfileSubmitted: true,
+      recruiterMatchStatus: 'MATCHED',
+      validatorVerdict: 'PASSED',
+      reviewSessionId: 'review-session-1',
+      agentResponseCount: 1,
+      threadCount: 2,
+      reviewScore: 50,
+      scoreStatus: 'scored',
+      scoreD1Target: 'remote',
+      reviewPipelineReviewStatus: 'complete',
+      reviewPipelineScoringStatus: 'complete',
+      relatedBoundaryVerified: true,
+      relatedBoundarySelectedInterviewId: 'selected-interview',
+      relatedBoundaryRelatedInterviewId: 'related-interview',
+      relatedBoundarySelectedRepoUrl: 'https://github.com/mui/base-ui',
+      relatedBoundarySelectedPrNumber: 973,
+      relatedBoundaryRelatedRepoUrl: 'https://github.com/facebook/react',
+      relatedBoundaryRelatedPrNumber: 1,
+      relatedBoundaryScheduledCodeReviewCount: 1,
+    })).toEqual({ ok: true, failures: [] });
+
     expect(validateLaneSummary('workers-sdk-matrix', {
       ok: true,
       profileCount: 1,
@@ -605,6 +667,90 @@ describe('CODE_REVIEW reliability suite contract', () => {
         'packet-catalog-readiness must have at least 2 persisted reviewProfile-ready packets',
         'packet-catalog-readiness must list at least 3 production-ready repo names',
         'packet-catalog-readiness failures must be empty',
+      ]),
+    });
+
+    expect(validateLaneSummary('person-boundary', {
+      ok: true,
+      interviewId: 'selected-interview',
+      matchMode: 'manual_override',
+      repoUrl: 'https://github.com/mui/base-ui',
+      prNumber: 973,
+      matchStatus: 'MATCHED',
+      qualityGate: 'PASSED',
+      assessmentQuality: 'USABLE',
+      candidateBrowserSmokeSkipped: false,
+      candidateSurfaceContract: 'source-backed-code-review-with-review-round',
+      recruiterBrowserSmokeSkipped: false,
+      recruiterReadoutContract: 'scored-code-review-hiring-manager-readout',
+      recruiterInterviewStatus: 'COMPLETED',
+      recruiterProfileInterviewStatus: 'COMPLETED',
+      recruiterProfileSubmitted: true,
+      recruiterMatchStatus: 'MATCHED',
+      validatorVerdict: 'PASSED',
+      reviewSessionId: 'review-session-1',
+      agentResponseCount: 1,
+      threadCount: 2,
+      reviewScore: 50,
+      scoreStatus: 'scored',
+      scoreD1Target: 'remote',
+      reviewPipelineReviewStatus: 'complete',
+      reviewPipelineScoringStatus: 'complete',
+      relatedBoundaryVerified: true,
+      relatedBoundarySelectedInterviewId: 'related-interview',
+      relatedBoundaryRelatedInterviewId: 'related-interview',
+      relatedBoundarySelectedRepoUrl: 'https://github.com/facebook/react',
+      relatedBoundarySelectedPrNumber: 1,
+      relatedBoundaryRelatedRepoUrl: 'https://github.com/facebook/react',
+      relatedBoundaryRelatedPrNumber: 1,
+      relatedBoundaryScheduledCodeReviewCount: 1,
+    })).toMatchObject({
+      ok: false,
+      failures: expect.arrayContaining([
+        'person-boundary selected profile decision must point at the submitted interview',
+        'person-boundary selected profile repo must match the submitted review repo',
+        'person-boundary selected profile PR must match the submitted review PR',
+      ]),
+    });
+
+    expect(validateLaneSummary('person-boundary', {
+      ok: true,
+      interviewId: 'selected-interview',
+      matchMode: 'manual_override',
+      repoUrl: 'https://github.com/facebook/react',
+      prNumber: 1,
+      matchStatus: 'MATCHED',
+      qualityGate: 'PASSED',
+      assessmentQuality: 'USABLE',
+      candidateBrowserSmokeSkipped: false,
+      candidateSurfaceContract: 'source-backed-code-review-with-review-round',
+      recruiterBrowserSmokeSkipped: false,
+      recruiterReadoutContract: 'scored-code-review-hiring-manager-readout',
+      recruiterInterviewStatus: 'COMPLETED',
+      recruiterProfileInterviewStatus: 'COMPLETED',
+      recruiterProfileSubmitted: true,
+      recruiterMatchStatus: 'MATCHED',
+      validatorVerdict: 'PASSED',
+      reviewSessionId: 'review-session-1',
+      agentResponseCount: 1,
+      threadCount: 2,
+      reviewScore: 50,
+      scoreStatus: 'scored',
+      scoreD1Target: 'remote',
+      reviewPipelineReviewStatus: 'complete',
+      reviewPipelineScoringStatus: 'complete',
+      relatedBoundaryVerified: true,
+      relatedBoundarySelectedInterviewId: 'selected-interview',
+      relatedBoundaryRelatedInterviewId: 'related-interview',
+      relatedBoundarySelectedRepoUrl: 'https://github.com/facebook/react',
+      relatedBoundarySelectedPrNumber: 1,
+      relatedBoundaryRelatedRepoUrl: 'https://github.com/facebook/react',
+      relatedBoundaryRelatedPrNumber: 1,
+      relatedBoundaryScheduledCodeReviewCount: 1,
+    })).toMatchObject({
+      ok: false,
+      failures: expect.arrayContaining([
+        'person-boundary related interview must not be promoted as the selected recommendation',
       ]),
     });
 
