@@ -1,6 +1,7 @@
 import { describe, expect, it } from 'vitest';
 
 import {
+  assertPersonRelatedBoundaryProfile,
   buildCodeReviewAssessBrowserSmokeEnv,
   recruiterProjectionVerificationMode,
   resolveAppDevBasicAuth,
@@ -125,5 +126,77 @@ describe('CODE_REVIEW assess smoke app-dev Basic Auth resolution', () => {
       skipBrowser: true,
       skipRecruiterBrowser: false,
     })).toBe('skip_all');
+  });
+
+  it('keeps related same-person interviews out of the selected code-review recommendation', () => {
+    expect(() => assertPersonRelatedBoundaryProfile({
+      profile: {
+        scheduledInterviews: [
+          {
+            id: 'selected-interview',
+            interviewType: 'CODE_REVIEW',
+            status: 'COMPLETED',
+            githubRepoUrl: 'https://github.com/mui/base-ui',
+            githubPrNumber: 973,
+          },
+          {
+            id: 'related-interview',
+            interviewType: 'CODE_REVIEW',
+            status: 'INVITED',
+            githubRepoUrl: 'https://github.com/facebook/react',
+            githubPrNumber: 1,
+          },
+        ],
+        standaloneReviewMatch: {
+          interviewId: 'selected-interview',
+          submitted: true,
+          matchStatus: 'MATCHED',
+          repoUrl: 'https://github.com/mui/base-ui',
+          prNumber: 973,
+        },
+      },
+      selectedInterviewId: 'selected-interview',
+      selectedInterviewDetail: {
+        id: 'selected-interview',
+        status: 'COMPLETED',
+        relatedEvidenceInterviews: [{
+          id: 'related-interview',
+          relationship: 'same_person_assessment',
+        }],
+      },
+      selectedRepoUrl: 'https://github.com/mui/base-ui',
+      selectedPrNumber: 973,
+      relatedBoundaryInterview: {
+        interviewId: 'related-interview',
+        repoUrl: 'https://github.com/facebook/react',
+        prNumber: 1,
+      },
+    })).not.toThrow();
+  });
+
+  it('fails when the person recommendation promotes the related interview instead of the submitted review', () => {
+    expect(() => assertPersonRelatedBoundaryProfile({
+      profile: {
+        scheduledInterviews: [
+          { id: 'selected-interview', interviewType: 'CODE_REVIEW', status: 'COMPLETED' },
+          { id: 'related-interview', interviewType: 'CODE_REVIEW', status: 'INVITED' },
+        ],
+        standaloneReviewMatch: {
+          interviewId: 'related-interview',
+          submitted: false,
+          matchStatus: 'MATCHED',
+          repoUrl: 'https://github.com/facebook/react',
+          prNumber: 1,
+        },
+      },
+      selectedInterviewId: 'selected-interview',
+      selectedRepoUrl: 'https://github.com/mui/base-ui',
+      selectedPrNumber: 973,
+      relatedBoundaryInterview: {
+        interviewId: 'related-interview',
+        repoUrl: 'https://github.com/facebook/react',
+        prNumber: 1,
+      },
+    })).toThrow('selected code-review recommendation');
   });
 });

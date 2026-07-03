@@ -423,6 +423,17 @@ candidate handoff was `PROFILE_RECEIVED` / `profile-received`, stage
 `candidate-intake-queued`, the candidate browser smoke passed, and recruiter API
 readiness reported `waiting_for_source_backed_match` with no repo/PR assigned.
 
+Latest full-submit person-boundary app-dev proof on 2026-07-03 passed for
+interview `e8285690-59ab-4c94-8d05-bcbcee6a2da2`, review session
+`247b3e64-0c8c-4fe1-bada-c7605c93d3cf`, and judge replay example
+`code_review_judge_example_3d5b0fc3ea2580f1305da4f9ee6c9cb9`: the candidate
+browser rendered `mui/base-ui#973`, scoring persisted `52` / `adequate` to
+remote D1, assessment evidence persisted 2 events, 2 event source refs, 1
+report, 1 claim, and 2 claim source refs, and the API-level person-boundary
+proof kept the submitted `mui/base-ui#973` recommendation selected while the
+related same-person `facebook/react#1` interview remained related context from
+interview detail.
+
 Latest deployed `/assess` token lifecycle proof on 2026-07-03 passed via
 `npm run smoke:assess-token-lifecycle-dev`: two real app-dev CODE_REVIEW
 assessment links were created for interviews
