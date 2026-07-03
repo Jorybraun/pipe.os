@@ -106,6 +106,8 @@ const TALENT_POOL_LIVE_MAX_NODE_EMBEDDINGS = 0;
 const TALENT_POOL_LIVE_MAX_PARSER_ONLY_NODES = 12;
 const TALENT_POOL_LIVE_DISCOVERY_TIMEOUT_MS = 8_000;
 const TALENT_POOL_LIVE_DISCOVERY_MAX_ATTEMPTS = 2;
+const TALENT_POOL_PASTED_PROFILE_SOURCE_KIND = 'pasted_profile_text';
+const TALENT_POOL_UPLOADED_PROFILE_SOURCE_KIND = 'uploaded_profile_file';
 const ALLOWED_PROFILE_MIME_TYPES = new Set([
   'application/pdf',
   'application/vnd.openxmlformats-officedocument.wordprocessingml.document',
@@ -632,6 +634,7 @@ async function persistIntake(
       customMetadata: {
         source: 'talent_pool_intake',
         candidateId: candidate.id,
+        sourceKind: TALENT_POOL_PASTED_PROFILE_SOURCE_KIND,
       },
     });
   }
@@ -878,6 +881,8 @@ route.post('/upload-profile', async (c) => {
     customMetadata: {
       source: 'talent_pool_intake',
       candidateId: candidate.id,
+      sourceKind: TALENT_POOL_UPLOADED_PROFILE_SOURCE_KIND,
+      originalFileName: rawFileName,
     },
   });
 

@@ -605,6 +605,7 @@ describe('talent pool candidate RPC', () => {
       customMetadata: {
         source: 'talent_pool_intake',
         candidateId: 'candidate-1',
+        sourceKind: 'pasted_profile_text',
       },
     });
 
@@ -974,6 +975,8 @@ describe('talent pool candidate RPC', () => {
       customMetadata: {
         source: 'talent_pool_intake',
         candidateId: 'candidate-1',
+        sourceKind: 'uploaded_profile_file',
+        originalFileName: 'taylor-profile.txt',
       },
     });
 
@@ -1166,6 +1169,8 @@ describe('talent pool candidate RPC', () => {
       customMetadata: {
         source: 'talent_pool_intake',
         candidateId: 'candidate-1',
+        sourceKind: 'uploaded_profile_file',
+        originalFileName: 'source-docs-profile.docx',
       },
     });
     const intake = sqlite.prepare(
@@ -1324,6 +1329,8 @@ describe('talent pool candidate RPC', () => {
       customMetadata: {
         source: 'talent_pool_intake',
         candidateId: 'candidate-1',
+        sourceKind: 'uploaded_profile_file',
+        originalFileName: 'empty-profile.pdf',
       },
     });
     const intake = sqlite.prepare(

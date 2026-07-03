@@ -24,6 +24,8 @@ const DOCUMENT_RETRY_DISCOVERY_TIMEOUT_MS = 18_000;
 const DOCUMENT_RETRY_DISCOVERY_MAX_ATTEMPTS = 2;
 const DOCUMENT_RETRY_MAX_NODE_EMBEDDINGS = 0;
 const DOCUMENT_RETRY_MAX_PARSER_ONLY_NODES = 12;
+const TALENT_POOL_PASTED_PROFILE_SOURCE_KIND = 'pasted_profile_text';
+const TALENT_POOL_UPLOADED_PROFILE_SOURCE_KIND = 'uploaded_profile_file';
 const RETRYABLE_STALLED_INGESTION_STEPS = new Set([
   'talent_pool_profile_received',
   'queued',
@@ -275,6 +277,16 @@ function uploadedProfileFileNameFromStorageKey(storageKey: string): string | nul
   return match?.[1]?.trim() || null;
 }
 
+function sourceKindFromCustomMetadata(metadata: Record<string, string> | undefined): string | null {
+  const sourceKind = metadata?.sourceKind?.trim();
+  return sourceKind ? sourceKind : null;
+}
+
+function isSyntheticPastedTextProfileKey(storageKey: string, originalFileName: string): boolean {
+  return originalFileName.toLowerCase() === 'profile.txt'
+    && /\/[a-f0-9]{64}-profile\.txt$/i.test(storageKey);
+}
+
 async function sha256Hex(buffer: ArrayBuffer): Promise<string> {
   const digest = await crypto.subtle.digest('SHA-256', buffer);
   return [...new Uint8Array(digest)]
@@ -322,13 +334,24 @@ async function buildMissingTalentPoolProfileUploadSourceArtifact(
   if (!object) return undefined;
 
   const bytes = await object.arrayBuffer();
+  const sourceKind = sourceKindFromCustomMetadata(object.customMetadata);
+  const extractedTextAvailable = await profileStorageHasSourceSpans(env.DB, storageKey);
+  if (sourceKind === TALENT_POOL_PASTED_PROFILE_SOURCE_KIND) return undefined;
+  if (
+    sourceKind !== TALENT_POOL_UPLOADED_PROFILE_SOURCE_KIND
+    && isSyntheticPastedTextProfileKey(storageKey, originalFileName)
+    && !extractedTextAvailable
+  ) {
+    return undefined;
+  }
+
   return {
     storageKey,
     mediaType: normalizeTalentPoolArtifactContentType(object.httpMetadata?.contentType, storageKey),
     contentHash: await sha256Hex(bytes),
     byteLength: bytes.byteLength,
     originalFileName,
-    extractedTextAvailable: await profileStorageHasSourceSpans(env.DB, storageKey),
+    extractedTextAvailable,
   };
 }
 

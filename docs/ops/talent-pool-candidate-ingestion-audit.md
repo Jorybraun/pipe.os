@@ -100,8 +100,10 @@ also creates an
 idempotent roleless person `profile_upload` artifact version for the original
 blob with storage key, content hash, media type, byte length, and filename.
 Pasted profile text is also written to the private Talent Pool R2 source path,
-and pasted/uploaded profile objects carry private `talent_pool_intake` and
-candidate metadata for raw evidence inventory.
+and pasted/uploaded profile objects carry private `talent_pool_intake`,
+candidate, and source-kind metadata for raw evidence inventory. The source kind
+keeps pasted profile text and uploaded files distinct even when both use
+content-hash `talent-intake/<candidate>/<sha>-...` keys.
 This artifact is source inventory only: if no exact text can be extracted, it
 must not create a source span, context record, candidate node, skill, readiness
 claim, or repo-family suggestion. PDF/DOCX extraction still runs in background
@@ -116,8 +118,10 @@ repairable projection state. For content-hash upload keys shaped like
 `talent-intake/<candidate>/<sha256>-<filename>`, it can fetch the existing R2
 object, compute the immutable byte hash/length/media type, and call the same
 roleless person projection path with `sourceArtifact`. It skips pasted text
-intakes and skips any storage key that already has a profile-upload receipt, so
-cron/backfill replay does not duplicate artifact versions or person edges.
+intakes, including synthetic `<sha>-profile.txt` text keys without storage-key
+source spans, and skips any storage key that already has a profile-upload
+receipt, so cron/backfill replay does not duplicate artifact versions or person
+edges or invent file-upload evidence from a form paste.
 Background projection receives the roleless Talent Pool person identity and
 background decomposition runs with legacy candidate-node mirroring disabled, so
 it must not create `applications` or `person_roles` before a role-backed process

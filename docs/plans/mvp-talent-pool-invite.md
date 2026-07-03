@@ -209,8 +209,9 @@ projection uses the roleless Talent Pool `workspace_people` identity and leaves
 The original uploaded blob is projected as a `profile_upload` source artifact
 receipt with exact storage key/hash/media metadata. Scheduled Talent Pool repair
 can backfill that receipt from existing content-hash R2 objects and skips
-already-receipted uploads, while pasted profile text remains text-source
-evidence rather than a file-upload receipt.
+already-receipted uploads. Raw R2 objects carry private source-kind metadata so
+pasted profile text remains text-source evidence rather than a file-upload
+receipt during replay or repair.
 
 GitHub, LinkedIn, portfolio, and phone-screener intent fields are projected as
 source-backed operational context records with exact submitted field spans.

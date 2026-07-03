@@ -23,6 +23,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Fixed — Talent Pool ingestion
 
+- Talent Pool R2 profile objects now stamp whether the raw source came from pasted text or an uploaded file, and scheduled upload-receipt repair skips pasted text keys instead of inventing file-upload evidence during replay.
 - Talent Pool dev smoke now infers the remote D1 database id from the target app/API environment, so `app-dev` audits the `dev` D1 database instead of accidentally falling back to the root `CLOUDFLARE_D1_DATABASE_ID`.
 - Talent Pool dev smoke now defaults candidate RPC calls to the app-dev proxy and omits dev Basic Auth on direct `api-dev` RPC calls, so smoke proofs exercise the same proxy path candidates use while still supporting explicit API overrides.
 - Talent Pool unextractable PDF/DOCX uploads now remain explicit missing-evidence gaps instead of queuing a doomed background resume parser that marks candidate ingestion failed.

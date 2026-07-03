@@ -109,6 +109,7 @@ function fakeD1(options: {
 function fakeStorage(
   text: string | null,
   contentType = 'text/plain;charset=utf-8',
+  customMetadata?: Record<string, string>,
 ): R2Bucket {
   return {
     get: vi.fn(async () => text === null
@@ -117,6 +118,7 @@ function fakeStorage(
           text: async () => text,
           arrayBuffer: async () => new TextEncoder().encode(text).buffer,
           httpMetadata: { contentType },
+          customMetadata,
         })),
   } as unknown as R2Bucket;
 }
@@ -266,13 +268,15 @@ describe('stale Workers AI candidate-ingestion retry', () => {
     );
     const env = buildEnv(db, storage);
 
+    const profileStorageKey = 'talent-intake/talent-candidate-1/0123456789abcdef0123456789abcdef0123456789abcdef0123456789abcdef-profile.txt';
+
     await retryCandidateEvidenceIngestionFromSource(
       env,
       'talent-candidate-1',
-      'talent-intake/talent-candidate-1/2026-07-02T18-22-39-331Z.txt',
+      profileStorageKey,
     );
 
-    expect(storage.get).toHaveBeenCalledWith('talent-intake/talent-candidate-1/2026-07-02T18-22-39-331Z.txt');
+    expect(storage.get).toHaveBeenCalledWith(profileStorageKey);
     expect(ensureRolelessTalentPoolIdentity).toHaveBeenCalledWith(expect.objectContaining({
       db,
       userId: 'owner-1',
@@ -839,7 +843,12 @@ describe('stale Workers AI candidate-ingestion retry', () => {
         };
       },
     });
-    const storage = fakeStorage(objectBytes, 'application/pdf');
+    const storage = fakeStorage(objectBytes, 'application/pdf', {
+      source: 'talent_pool_intake',
+      candidateId: 'talent-upload',
+      sourceKind: 'uploaded_profile_file',
+      originalFileName: 'profile.pdf',
+    });
     const env = buildEnv(db, storage);
 
     await expect(processTalentPoolOperationalContextRepairs(env, 1)).resolves.toEqual({
@@ -866,6 +875,60 @@ describe('stale Workers AI candidate-ingestion retry', () => {
     expect(identityInput?.sourceArtifact?.contentHash).toMatch(/^[a-f0-9]{64}$/);
     const scanCall = db.__calls.find((call) => call.sql.includes('FROM talent_pool_intakes'))!;
     expect(scanCall.sql).toContain('t.profile_r2_key');
+  });
+
+  it('cron does not turn pasted Talent Pool profile text into an upload receipt', async () => {
+    const storageKey = 'talent-intake/talent-pasted/0123456789abcdef0123456789abcdef0123456789abcdef0123456789abcdef-profile.txt';
+    const db = fakeD1({
+      all: [
+        { candidate_id: 'talent-pasted' },
+      ],
+      first: (call) => {
+        if (call.sql.includes('receipt_count')) return { receipt_count: 0 };
+        if (call.sql.includes('source_span_count')) return { source_span_count: 0 };
+        return {
+          owner_id: 'owner-1',
+          name: 'Pasted Candidate',
+          email: 'pasted@example.com',
+          profile_r2_key: storageKey,
+          github_url: null,
+          linkedin_url: null,
+          portfolio_url: null,
+          phone_screener_consent: 0,
+          phone_number: null,
+          timezone: null,
+          availability: null,
+          submitted_at: '2026-07-02T18:22:39.331Z',
+          updated_at: '2026-07-02T18:22:39.331Z',
+        };
+      },
+    });
+    const storage = fakeStorage(
+      'Pasted profile text is raw source evidence, not a file-upload receipt.',
+      'text/plain;charset=utf-8',
+      {
+        source: 'talent_pool_intake',
+        candidateId: 'talent-pasted',
+        sourceKind: 'pasted_profile_text',
+      },
+    );
+    const env = buildEnv(db, storage);
+
+    await expect(processTalentPoolOperationalContextRepairs(env, 1)).resolves.toEqual({
+      scanned: 1,
+      repaired: 1,
+      skipped: 0,
+      failed: 0,
+    });
+
+    expect(storage.get).toHaveBeenCalledWith(storageKey);
+    const identityInput = vi.mocked(ensureRolelessTalentPoolIdentity).mock.calls[0]?.[0];
+    expect(identityInput).toMatchObject({
+      candidateId: 'talent-pasted',
+      name: 'Pasted Candidate',
+      email: 'pasted@example.com',
+    });
+    expect(identityInput?.sourceArtifact).toBeUndefined();
   });
 
   it('cron skips Talent Pool upload receipt backfill when the profile upload artifact already exists', async () => {
