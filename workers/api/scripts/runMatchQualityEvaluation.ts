@@ -24,8 +24,10 @@ import {
 } from '../src/lib/challengeMatching/evaluation';
 import {
   runMatchQualityEvaluation,
+  type BatchEvaluationPairResult,
   type BatchEvaluationCandidate,
   type MatchQualityReasonCategory,
+  type MatchQualityEvaluationResult,
   type MatchQualityEvaluationThresholds,
 } from '../src/lib/livingContext/batchEvaluationHarness';
 import type { MatchVerdict } from '../src/lib/livingContext/matchReportPipeline';
@@ -90,6 +92,38 @@ export interface CliOptions {
   requirePass: boolean;
   allowDraftCorpus: boolean;
   json: boolean;
+  summaryJson: boolean;
+}
+
+interface MatchQualityPairSummary {
+  caseId: string;
+  candidateId: string;
+  challengePacketId: string;
+  negativeCandidateId: string | null;
+  expectedVerdict: MatchVerdict;
+  computedVerdict: MatchVerdict | null;
+  verdictMatch: boolean;
+  reasonCategory: MatchQualityReasonCategory | null;
+  scoreSeparation: number | null;
+  minimumScoreSeparation: number | null;
+  sourceBackedPr: boolean;
+  candidateEvidencePresent: boolean;
+  repoEvidencePresent: boolean;
+  usableChallenge: boolean;
+  failedReasons: string[];
+  error: string | null;
+  durationMs: number;
+}
+
+export interface MatchQualityEvaluationSummary {
+  corpusId: string;
+  batchId: string;
+  passed: boolean;
+  metrics: MatchQualityEvaluationResult['metrics'];
+  thresholds: MatchQualityEvaluationThresholds;
+  gateFailures: string[];
+  failedCases: MatchQualityPairSummary[];
+  caseResults: MatchQualityPairSummary[];
 }
 
 class LocalStatement implements StatementLike {
@@ -209,6 +243,7 @@ export function parseOptions(argv: string[]): CliOptions {
     requirePass: hasFlag(argv, '--require-pass'),
     allowDraftCorpus: hasFlag(argv, '--allow-draft-corpus'),
     json: hasFlag(argv, '--json'),
+    summaryJson: hasFlag(argv, '--summary-json'),
   };
 }
 
@@ -238,6 +273,9 @@ export function validateOptions(options: CliOptions): void {
   }
   if (options.allowDraftCorpus && options.requirePass) {
     throw new Error('--allow-draft-corpus cannot be combined with --require-pass');
+  }
+  if (options.json && options.summaryJson) {
+    throw new Error('pass only one output mode: --json or --summary-json');
   }
 }
 
@@ -426,6 +464,43 @@ export async function resolveLatestExpertCorpusId(db: D1Database): Promise<strin
   );
 }
 
+function summarizePairResult(result: BatchEvaluationPairResult): MatchQualityPairSummary {
+  return {
+    caseId: result.caseId,
+    candidateId: result.candidateId,
+    challengePacketId: result.challengePacketId,
+    negativeCandidateId: result.negativeCandidateId,
+    expectedVerdict: result.expectedVerdict,
+    computedVerdict: result.computedVerdict,
+    verdictMatch: result.verdictMatch,
+    reasonCategory: result.reasonCategory,
+    scoreSeparation: result.scoreSeparation,
+    minimumScoreSeparation: result.minimumScoreSeparation,
+    sourceBackedPr: result.sourceBackedPr,
+    candidateEvidencePresent: result.candidateEvidencePresent,
+    repoEvidencePresent: result.repoEvidencePresent,
+    usableChallenge: result.usableChallenge,
+    failedReasons: result.failedReasons,
+    error: result.error,
+    durationMs: result.durationMs,
+  };
+}
+
+export function summarizeMatchQualityResult(
+  result: MatchQualityEvaluationResult,
+): MatchQualityEvaluationSummary {
+  return {
+    corpusId: result.corpusId,
+    batchId: result.batchId,
+    passed: result.passed,
+    metrics: result.metrics,
+    thresholds: result.thresholds,
+    gateFailures: result.gateFailures,
+    failedCases: result.failedCases.map(summarizePairResult),
+    caseResults: result.pairResults.map(summarizePairResult),
+  };
+}
+
 async function main(): Promise<void> {
   const options = parseOptions(process.argv.slice(2));
   validateOptions(options);
@@ -452,7 +527,9 @@ async function main(): Promise<void> {
       },
     );
 
-    if (options.json) {
+    if (options.summaryJson) {
+      console.log(JSON.stringify(summarizeMatchQualityResult(result), null, 2));
+    } else if (options.json) {
       console.log(JSON.stringify(result, null, 2));
     } else {
       console.log(`${result.passed ? 'PASS' : 'FAIL'} ${result.corpusId}`);

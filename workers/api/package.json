@@ -22,7 +22,7 @@
     "matching-eval:review": "tsx scripts/reviewEvaluationCorpus.ts",
     "matching-eval:health": "tsx scripts/auditCodeReviewMatchHealth.ts --remote",
     "living-context:match-quality": "tsx scripts/runMatchQualityEvaluation.ts",
-    "living-context:match-quality:readiness": "tsx scripts/runMatchQualityEvaluation.ts --remote --latest-expert-corpus --require-pass --json",
+    "living-context:match-quality:readiness": "tsx scripts/runMatchQualityEvaluation.ts --remote --latest-expert-corpus --require-pass --summary-json",
     "review-judge:verify": "tsx scripts/verifyCodeReviewJudgeExamples.ts --require-replay-ready --json",
     "review-packets:repair-profiles": "tsx scripts/backfillReviewPacketReviewProfiles.ts",
     "assessment-evidence:audit": "tsx scripts/auditAssessmentEvidenceIngestion.ts --json",

@@ -24,6 +24,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 ### Added — CODE_REVIEW assessment runtime
 
 - CI now uploads a living-context match-quality readiness artifact and can block on it with `MATCH_QUALITY_REQUIRED` once an expert-labelled CODE_REVIEW corpus is available.
+- `living-context:match-quality:readiness` now emits a compact summary artifact with metrics, gate failures, and per-case proof booleans instead of full nested confidence/source reports.
 - `living-context:match-quality` can now auto-select the latest expert-labelled CODE_REVIEW corpus with `--latest-expert-corpus`, or fail with the latest draft corpus summary when no reviewed corpus exists.
 - `living-context:match-quality` now rejects stored draft or synthetic CODE_REVIEW corpora by default, with an explicit `--allow-draft-corpus` inspection mode that cannot be combined with `--require-pass`.
 - Completed `matching-eval:review` review files can now supply their own `sourceCorpusId`, while the CLI still verifies the embedded source hash before persisting reviewed corpora.
