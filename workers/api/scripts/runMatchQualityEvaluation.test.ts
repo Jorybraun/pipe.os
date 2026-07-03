@@ -1,7 +1,9 @@
 import { describe, expect, it } from 'vitest';
 import {
   matchQualityCasesFromEvaluationCorpus,
+  parseOptions,
   parseMatchQualityCorpusJson,
+  validateOptions,
 } from './runMatchQualityEvaluation';
 import type { EvaluationCorpus } from '../src/lib/challengeMatching/evaluation';
 
@@ -87,6 +89,50 @@ function evaluationCorpus(): EvaluationCorpus {
 }
 
 describe('runMatchQualityEvaluation corpus loading', () => {
+  it('parses remote app-dev D1 options for stored corpus evaluation', () => {
+    const options = parseOptions([
+      '--remote',
+      '--database-id',
+      'app-dev-db-id',
+      '--corpus-id',
+      'reviewed-code-review-corpus',
+      '--require-pass',
+      '--json',
+    ]);
+
+    expect(options).toEqual({
+      databasePath: undefined,
+      databaseId: 'app-dev-db-id',
+      corpusFile: undefined,
+      corpusId: 'reviewed-code-review-corpus',
+      remote: true,
+      requirePass: true,
+      json: true,
+    });
+    expect(() => validateOptions(options)).not.toThrow();
+  });
+
+  it('rejects ambiguous local and remote database options', () => {
+    const options = parseOptions([
+      '--remote',
+      '--database-path',
+      './local.sqlite',
+      '--corpus-id',
+      'corpus-1',
+    ]);
+
+    expect(() => validateOptions(options)).toThrow('pass only one of --remote or --database-path');
+  });
+
+  it('requires a corpus source for remote match-quality evaluation', () => {
+    const options = parseOptions([
+      '--remote',
+      '--database-id=app-dev-db-id',
+    ]);
+
+    expect(() => validateOptions(options)).toThrow('--corpus-file or --corpus-id is required');
+  });
+
   it('keeps compact match-quality corpus files unchanged', () => {
     const corpus = parseMatchQualityCorpusJson(JSON.stringify({
       corpusId: 'compact-corpus',

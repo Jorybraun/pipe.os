@@ -4,6 +4,7 @@
  *
  * Usage:
  *   npx tsx scripts/runMatchQualityEvaluation.ts --database-path .wrangler/.../db.sqlite --corpus-file ./corpus.json --require-pass
+ *   npx tsx scripts/runMatchQualityEvaluation.ts --remote --database-id <d1-id> --corpus-id <stored-corpus> --require-pass
  */
 
 import Database from 'better-sqlite3';
@@ -11,6 +12,7 @@ import { readFileSync } from 'node:fs';
 import { resolve } from 'node:path';
 import { pathToFileURL } from 'node:url';
 import type { D1Database } from '@cloudflare/workers-types';
+import { D1Client } from './crawl-repos/shared/d1Client.js';
 import {
   loadCorpus as loadFrozenEvaluationCorpus,
   type EvaluationCorpus,
@@ -26,6 +28,13 @@ import type { MatchVerdict } from '../src/lib/livingContext/matchReportPipeline'
 
 type SqlValue = string | number | null;
 type BetterSqliteDb = InstanceType<typeof Database>;
+
+interface QueryClient {
+  query<T = Record<string, unknown>>(
+    sql: string,
+    params?: SqlValue[],
+  ): Promise<T[]>;
+}
 
 interface QueryResult<T> {
   results: T[];
@@ -48,6 +57,16 @@ interface MatchQualityCorpusFile {
 
 interface FrozenCorpusRow {
   corpus_json: string;
+}
+
+export interface CliOptions {
+  databasePath?: string;
+  databaseId?: string;
+  corpusFile?: string;
+  corpusId?: string;
+  remote: boolean;
+  requirePass: boolean;
+  json: boolean;
 }
 
 class LocalStatement implements StatementLike {
@@ -107,6 +126,44 @@ class LocalD1 {
   }
 }
 
+class RemoteStatement implements StatementLike {
+  private values: SqlValue[] = [];
+
+  constructor(
+    private readonly client: QueryClient,
+    private readonly sql: string,
+  ) {}
+
+  bind(...values: SqlValue[]): StatementLike {
+    this.values = values;
+    return this;
+  }
+
+  async first<T>(): Promise<T | null> {
+    return (await this.client.query<T>(this.sql, this.values))[0] ?? null;
+  }
+
+  async all<T>(): Promise<QueryResult<T>> {
+    return {
+      results: await this.client.query<T>(this.sql, this.values),
+      success: true,
+    };
+  }
+
+  async run(): Promise<QueryResult<never>> {
+    await this.client.query(this.sql, this.values);
+    return { results: [], success: true };
+  }
+}
+
+class RemoteD1 {
+  constructor(private readonly client: QueryClient) {}
+
+  prepare(sql: string): StatementLike {
+    return new RemoteStatement(this.client, sql);
+  }
+}
+
 function valueFor(argv: string[], flag: string): string | undefined {
   const inline = argv.find((arg) => arg.startsWith(`${flag}=`));
   if (inline) return inline.slice(flag.length + 1);
@@ -116,6 +173,54 @@ function valueFor(argv: string[], flag: string): string | undefined {
 
 function hasFlag(argv: string[], flag: string): boolean {
   return argv.includes(flag);
+}
+
+export function parseOptions(argv: string[]): CliOptions {
+  return {
+    databasePath: valueFor(argv, '--database-path'),
+    databaseId: valueFor(argv, '--database-id'),
+    corpusFile: valueFor(argv, '--corpus-file'),
+    corpusId: valueFor(argv, '--corpus-id'),
+    remote: hasFlag(argv, '--remote'),
+    requirePass: hasFlag(argv, '--require-pass'),
+    json: hasFlag(argv, '--json'),
+  };
+}
+
+export function validateOptions(options: CliOptions): void {
+  if (options.remote && options.databasePath) {
+    throw new Error('pass only one of --remote or --database-path');
+  }
+  if (!options.remote && !options.databasePath) {
+    throw new Error('--database-path or --remote is required');
+  }
+  if (!options.corpusFile && !options.corpusId) {
+    throw new Error('--corpus-file or --corpus-id is required');
+  }
+  if (options.corpusFile && options.corpusId) {
+    throw new Error('pass only one of --corpus-file or --corpus-id');
+  }
+  if (options.databaseId && !options.remote) {
+    throw new Error('--database-id requires --remote');
+  }
+}
+
+function requiredEnv(name: string): string {
+  const value = process.env[name];
+  if (!value) throw new Error(`Missing required env var: ${name}`);
+  return value;
+}
+
+function remoteD1(databaseId: string | undefined): D1Database {
+  const resolvedDatabaseId = databaseId ?? process.env['CLOUDFLARE_D1_DATABASE_ID'] ?? '';
+  if (!resolvedDatabaseId) {
+    throw new Error('Missing required D1 database id; set CLOUDFLARE_D1_DATABASE_ID or pass --database-id.');
+  }
+  return new RemoteD1(new D1Client({
+    accountId: requiredEnv('CLOUDFLARE_ACCOUNT_ID'),
+    apiToken: requiredEnv('CLOUDFLARE_API_TOKEN'),
+    databaseId: resolvedDatabaseId,
+  })) as unknown as D1Database;
 }
 
 function isMatchQualityCorpusFile(value: unknown): value is MatchQualityCorpusFile {
@@ -202,24 +307,17 @@ async function loadStoredCorpus(db: D1Database, corpusId: string): Promise<Match
 }
 
 async function main(): Promise<void> {
-  const databasePath = valueFor(process.argv, '--database-path');
-  const corpusFile = valueFor(process.argv, '--corpus-file');
-  const corpusId = valueFor(process.argv, '--corpus-id');
-  const requirePass = hasFlag(process.argv, '--require-pass');
-  const json = hasFlag(process.argv, '--json');
-  if (!databasePath || (!corpusFile && !corpusId)) {
-    throw new Error('--database-path and either --corpus-file or --corpus-id are required');
-  }
-  if (corpusFile && corpusId) {
-    throw new Error('pass only one of --corpus-file or --corpus-id');
-  }
+  const options = parseOptions(process.argv.slice(2));
+  validateOptions(options);
 
-  const sqlite = new Database(resolve(databasePath));
-  const db = new LocalD1(sqlite) as unknown as D1Database;
+  const sqlite = options.remote ? null : new Database(resolve(options.databasePath!));
+  const db = options.remote
+    ? remoteD1(options.databaseId)
+    : new LocalD1(sqlite!) as unknown as D1Database;
   try {
-    const corpus = corpusFile
-      ? loadCorpusFile(corpusFile)
-      : await loadStoredCorpus(db, corpusId!);
+    const corpus = options.corpusFile
+      ? loadCorpusFile(options.corpusFile)
+      : await loadStoredCorpus(db, options.corpusId!);
     const result = await runMatchQualityEvaluation(
       db,
       {
@@ -229,7 +327,7 @@ async function main(): Promise<void> {
       },
     );
 
-    if (json) {
+    if (options.json) {
       console.log(JSON.stringify(result, null, 2));
     } else {
       console.log(`${result.passed ? 'PASS' : 'FAIL'} ${result.corpusId}`);
@@ -238,9 +336,9 @@ async function main(): Promise<void> {
       for (const failure of result.gateFailures) console.log(`- ${failure}`);
     }
 
-    if (requirePass && !result.passed) process.exitCode = 1;
+    if (options.requirePass && !result.passed) process.exitCode = 1;
   } finally {
-    sqlite.close();
+    sqlite?.close();
   }
 }
 
