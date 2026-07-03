@@ -1,7 +1,7 @@
 # Talent Pool Candidate Ingestion Audit
 
 **Status:** Active proof command
-**Last updated:** 2026-07-02
+**Last updated:** 2026-07-03
 **Command:** `cd workers/api && npm run candidate-ingestion:audit -- --local`
 
 ## Contract
@@ -259,6 +259,52 @@ zero duplicate projected edges, no failed `candidate_ingestion` state, and no
 candidate-node projection from invite/upload placeholders. It also requires one
 per-candidate exact-node gap and the scoped `candidate_ingestion.current_step` to be
 `profile_text_extraction_needed`.
+
+Current app-dev HEAD check on 2026-07-02 local time, checked at
+2026-07-03T01:25Z through 2026-07-03T01:27Z, ran after deploying Worker version
+`ad6c6c92-8aff-43ee-9231-2b1ac43860e9`:
+
+- `npm run smoke:talent-pool-ingestion-dev` submitted pasted profile text for
+  invite token `da35092e-b422-45fa-8ed9-1a9d88a7efeb` and returned
+  `status: ready`, `contentAddressedProfileStorageKeyCount: 1`,
+  `nonContentAddressedProfileStorageKeyCount: 0`,
+  `candidateNodeExactSourceQuoteCount: 13`,
+  `submittedIntakeWithoutExactCandidateNodeCount: 0`,
+  `sourceLessPositiveClaimCount: 0`, `sourceLessDesignQueueSuggestionCount: 0`,
+  and `duplicateProjectedEdgeCount: 0`. Recruiter reads resolved unified People
+  type `candidate`, found candidate/person source text, returned 8 timeline
+  entries, and reported 9 source spans plus 5 context records.
+- `npm run smoke:talent-pool-upload-dev` submitted a multipart text profile for
+  invite token `57ee8bf4-10d4-484d-b69f-21f24f70f6c8` and returned
+  `status: ready`, `contentAddressedProfileStorageKeyCount: 1`,
+  `nonContentAddressedProfileStorageKeyCount: 0`,
+  `profileUploadArtifactVersionCount: 1`,
+  `submittedIntakeWithoutExactCandidateNodeCount: 0`,
+  `sourceLessPositiveClaimCount: 0`, `sourceLessDesignQueueSuggestionCount: 0`,
+  and `duplicateProjectedEdgeCount: 0`. Recruiter reads resolved unified People
+  type `candidate`, found candidate/person source text, returned 9 timeline
+  entries, and reported 9 source spans plus 5 context records.
+- `npm run smoke:talent-pool-docx-dev` submitted a multipart DOCX profile for
+  invite token `2e5098f1-17bb-42bd-845f-4a6a441afbfd` and returned
+  `status: ready`, `contentAddressedProfileStorageKeyCount: 1`,
+  `nonContentAddressedProfileStorageKeyCount: 0`,
+  `documentProfileSourceSpanCount: 1`,
+  `profileUploadArtifactVersionCount: 1`,
+  `submittedIntakeWithoutExactCandidateNodeCount: 0`,
+  `sourceLessPositiveClaimCount: 0`, `sourceLessDesignQueueSuggestionCount: 0`,
+  and `duplicateProjectedEdgeCount: 0`. Recruiter reads resolved unified People
+  type `candidate`, found candidate/person source text, returned 9 timeline
+  entries, and reported 9 source spans plus 5 context records.
+- `npm run smoke:talent-pool-pdf-gap-dev` submitted an intentionally invalid
+  PDF for invite token `55334e3f-616e-4451-8d78-1b8d291db338` and returned
+  `status: not_ready`, `ingestionSteps:
+  [{currentStep: "profile_text_extraction_needed", count: 1}]`,
+  `contentAddressedProfileStorageKeyCount: 1`,
+  `nonContentAddressedProfileStorageKeyCount: 0`,
+  `profileUploadArtifactVersionCount: 1`,
+  `submittedIntakeWithoutExactCandidateNodeCount: 1`,
+  `sourceLessPositiveClaimCount: 0`, `sourceLessDesignQueueSuggestionCount: 0`,
+  and `duplicateProjectedEdgeCount: 0`.
 
 Current app-dev HEAD check on 2026-07-02 local time, checked at
 2026-07-03T00:47Z, ran after deploying Worker version
