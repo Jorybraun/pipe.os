@@ -84,6 +84,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Fixed — CODE_REVIEW assessment runtime
 
+- Added server-side regression coverage proving pipeline-backed CODE_REVIEW stage config returns the safe `candidate-intake-queued` handoff when role context is missing, without serving `WAITING_FOR_MATCH` or falling back to Neo4j repo recall.
 - Candidate `/assess` now fails closed from any leaked `WAITING_FOR_MATCH` challenge into the safe `Profile received` handoff, removing the frontend path that could render the old personalized matching dashboard.
 - Standalone CODE_REVIEW `/assess` now returns the safe `PROFILE_RECEIVED` handoff for fresh no-CV invites before any candidate intake submission, and the app-dev reliability suite has a dedicated no-CV boundary lane that fails on CV upload, matching, or waiting-screen leaks.
 - CODE_REVIEW matching-eval review summaries and expert-seed smoke output now include production-readiness status and failure strings before review, making missing insufficient-evidence or contrast coverage visible directly in terminal proof.

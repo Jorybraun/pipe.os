@@ -953,6 +953,89 @@ describe('POST /rpc/get-stage-config', () => {
     expect(matchCandidateToReviewChallenge).not.toHaveBeenCalled();
   });
 
+  it('keeps pipeline CODE_REVIEW queued when role context is missing instead of exposing matcher waits', async () => {
+    const db = fakeD1({
+      firstResponders: [
+        {
+          match: 'FROM candidates WHERE id',
+          value: {
+            id: 'cand_1',
+            pipeline_id: 'pipe_1',
+            owner_id: 'owner_1',
+            current_stage_id: null,
+            resume_s3_key: 'text-intake/cand_1/role-backed',
+          },
+        },
+        {
+          match: 'FROM candidates c WHERE c.id',
+          value: {
+            resume_s3_key: 'text-intake/cand_1/role-backed',
+            raw_node_count: 18,
+            node_count: 18,
+          },
+        },
+        {
+          match: 'SELECT match_philosophy FROM pipeline_match_config',
+          value: { match_philosophy: 'tailored' },
+        },
+        {
+          match: 'FROM role_contexts',
+          value: null,
+        },
+      ],
+      allResponders: [
+        {
+          match: 'FROM stages s',
+          value: [{
+            stage_id: 'stage_code_review',
+            stage_title: 'Code Review',
+            stage_order: 0,
+            stage_mode: 'ASYNC',
+            time_limit: null,
+            screening_input_mode: null,
+            video_config: null,
+            challenge_id: 'challenge_code_review',
+            challenge_type: 'CODE_REVIEW',
+            challenge_title: 'Code Review',
+            challenge_order: 0,
+            challenge_config: '{}',
+            challenge_instructions: 'Review the matched PR.',
+          }],
+        },
+      ],
+    });
+    const env = buildEnv({ DB: db, PRIMARY_MATCH_STORE: 'neo4j' } as Partial<Env & { DB: FakeD1 }>);
+
+    const res = await rpcAuth.request(
+      '/get-stage-config',
+      {
+        method: 'POST',
+        headers: { Authorization: await authHeader('cand_1', 'pipe_1') },
+      },
+      env,
+    );
+
+    expect(res.status).toBe(200);
+    const body = await res.json() as {
+      isComplete?: boolean;
+      stageId?: string;
+      message?: string;
+      challenges?: Array<{ type: string; title?: string }>;
+      waitingChallenge?: unknown;
+    };
+    expect(body).toMatchObject({
+      isComplete: true,
+      stageId: 'candidate-intake-queued',
+      message: expect.stringContaining('email you when your code review is ready'),
+      challenges: [],
+    });
+    expect(JSON.stringify(body)).not.toContain('WAITING_FOR_MATCH');
+    expect(body.waitingChallenge).toBeUndefined();
+    expect(matchCandidateToReviewChallenge).not.toHaveBeenCalled();
+    expect(matchReposByGroundedEdges).not.toHaveBeenCalled();
+    expect(matchReposForCandidateNeo4j).not.toHaveBeenCalled();
+  });
+
   it('runs role-backed CODE_REVIEW matching when active resume decomposition already produced matchable evidence', async () => {
     vi.mocked(matchCandidateToReviewChallenge).mockResolvedValueOnce({
       status: 'MATCHED',
