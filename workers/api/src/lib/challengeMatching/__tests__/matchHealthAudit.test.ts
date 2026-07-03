@@ -88,11 +88,11 @@ describe('auditCodeReviewMatchHealth', () => {
     const audit = auditCodeReviewMatchHealth({
       packets: Array.from({ length: 9 }, (_, index) => packet(index + 1, `repo-${index % 3}`)),
       matches: [
-        match(1, 'packet-1'),
-        match(2, 'packet-1'),
-        match(3, 'packet-1'),
-        match(4, 'packet-1'),
-        match(5, 'packet-2'),
+        match(1, 'packet-1', { recalledPacketCount: 9 }),
+        match(2, 'packet-1', { recalledPacketCount: 9 }),
+        match(3, 'packet-1', { recalledPacketCount: 9 }),
+        match(4, 'packet-1', { recalledPacketCount: 9 }),
+        match(5, 'packet-2', { recalledPacketCount: 9 }),
       ],
       thresholds: { maxSelectedPacketShare: 0.75 },
     });
@@ -104,5 +104,44 @@ describe('auditCodeReviewMatchHealth', () => {
       share: 0.8,
     });
     expect(audit.nextAction).toBe('rebalance_challenge_corpus');
+  });
+
+  it('does not fail current health on historical matches that used a narrower packet corpus', () => {
+    const audit = auditCodeReviewMatchHealth({
+      packets: Array.from({ length: 8 }, (_, index) => packet(index + 1, `repo-${index % 3}`)),
+      matches: [
+        ...Array.from({ length: 10 }, (_, index) =>
+          match(index + 1, 'packet-1', {
+            recalledPacketCount: 5,
+            roleContextId: null,
+          })
+        ),
+        match(11, 'packet-1', {
+          recalledPacketCount: 8,
+          roleContextId: null,
+        }),
+      ],
+      thresholds: {
+        maxSelectedPacketShare: 0.75,
+        minCurrentBreadthMatchesForSkew: 5,
+      },
+    });
+
+    expect(audit.ok).toBe(true);
+    expect(audit.failures).toEqual([]);
+    expect(audit.currentBreadthSelectedMatchCount).toBe(1);
+    expect(audit.staleOrNarrowSelectedMatchCount).toBe(10);
+    expect(audit.selectedPacketSkew).toEqual({
+      packetId: 'packet-1',
+      count: 1,
+      share: 1,
+    });
+    expect(audit.warnings).toContain(
+      '10 matched run(s) recalled fewer than the current 8 production-ready packet(s) and were excluded from selected-packet skew analysis.',
+    );
+    expect(audit.warnings).toContain(
+      'Only 1 current-breadth matched run(s) were available for selected-packet skew analysis; need at least 5 to fail skew.',
+    );
+    expect(audit.nextAction).toBe('run_labelled_evaluation');
   });
 });

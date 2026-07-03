@@ -12,12 +12,14 @@ export interface CodeReviewMatchHealthRow {
   selectedPacketId: string | null;
   status: string;
   contrastScore: number | null;
+  recalledPacketCount?: number | null;
 }
 
 export interface CodeReviewMatchHealthThresholds {
   minProductionReadyPackets: number;
   minProductionReadyRepos: number;
   maxSelectedPacketShare: number;
+  minCurrentBreadthMatchesForSkew: number;
 }
 
 export interface SelectedPacketHealthSummary {
@@ -37,6 +39,8 @@ export interface CodeReviewMatchHealthAudit {
   productionReadyPacketCount: number;
   productionReadyRepoCount: number;
   selectedMatchCount: number;
+  currentBreadthSelectedMatchCount: number;
+  staleOrNarrowSelectedMatchCount: number;
   roleBackedUnsafeMatchCount: number;
   selectedPacketSkew: SelectedPacketHealthSummary | null;
   failures: string[];
@@ -49,6 +53,7 @@ const DEFAULT_THRESHOLDS: CodeReviewMatchHealthThresholds = {
   minProductionReadyPackets: 8,
   minProductionReadyRepos: 3,
   maxSelectedPacketShare: 0.75,
+  minCurrentBreadthMatchesForSkew: 5,
 };
 
 function normalizeThresholds(
@@ -58,6 +63,8 @@ function normalizeThresholds(
     minProductionReadyPackets: thresholds?.minProductionReadyPackets ?? DEFAULT_THRESHOLDS.minProductionReadyPackets,
     minProductionReadyRepos: thresholds?.minProductionReadyRepos ?? DEFAULT_THRESHOLDS.minProductionReadyRepos,
     maxSelectedPacketShare: thresholds?.maxSelectedPacketShare ?? DEFAULT_THRESHOLDS.maxSelectedPacketShare,
+    minCurrentBreadthMatchesForSkew: thresholds?.minCurrentBreadthMatchesForSkew
+      ?? DEFAULT_THRESHOLDS.minCurrentBreadthMatchesForSkew,
   };
 }
 
@@ -99,10 +106,16 @@ export function auditCodeReviewMatchHealth(input: {
   const selectedMatches = input.matches.filter((match) =>
     match.status === 'MATCHED' && match.selectedPacketId
   );
+  const currentBreadthSelectedMatches = selectedMatches.filter((match) =>
+    match.recalledPacketCount === undefined
+      || match.recalledPacketCount === null
+      || match.recalledPacketCount >= productionReadyPackets.length
+  );
+  const staleOrNarrowSelectedMatchCount = selectedMatches.length - currentBreadthSelectedMatches.length;
   const roleBackedUnsafeMatchCount = selectedMatches.filter((match) =>
     match.roleContextId !== null && (match.contrastScore ?? 0) <= 0
   ).length;
-  const skew = selectedPacketSkew(input.matches);
+  const skew = selectedPacketSkew(currentBreadthSelectedMatches);
   const failures: string[] = [];
   const warnings: string[] = [];
 
@@ -119,7 +132,11 @@ export function auditCodeReviewMatchHealth(input: {
       `Only ${productionReadyRepoCount} production-ready repo(s); need at least ${thresholds.minProductionReadyRepos}.`,
     );
   }
-  if (skew && skew.share > thresholds.maxSelectedPacketShare) {
+  if (
+    currentBreadthSelectedMatches.length >= thresholds.minCurrentBreadthMatchesForSkew
+    && skew
+    && skew.share > thresholds.maxSelectedPacketShare
+  ) {
     failures.push(
       `Selected packet ${skew.packetId} owns ${Math.round(skew.share * 100)}% of matched runs; max is ${Math.round(thresholds.maxSelectedPacketShare * 100)}%.`,
     );
@@ -127,13 +144,28 @@ export function auditCodeReviewMatchHealth(input: {
   if (selectedMatches.length === 0) {
     warnings.push('No matched runs were available for selected-packet skew analysis.');
   }
+  if (staleOrNarrowSelectedMatchCount > 0) {
+    warnings.push(
+      `${staleOrNarrowSelectedMatchCount} matched run(s) recalled fewer than the current ${productionReadyPackets.length} production-ready packet(s) and were excluded from selected-packet skew analysis.`,
+    );
+  }
+  if (
+    selectedMatches.length > 0
+    && currentBreadthSelectedMatches.length < thresholds.minCurrentBreadthMatchesForSkew
+  ) {
+    warnings.push(
+      `Only ${currentBreadthSelectedMatches.length} current-breadth matched run(s) were available for selected-packet skew analysis; need at least ${thresholds.minCurrentBreadthMatchesForSkew} to fail skew.`,
+    );
+  }
 
   const nextAction: CodeReviewMatchHealthNextAction = roleBackedUnsafeMatchCount > 0
     ? 'demote_unsafe_role_backed_matches'
     : productionReadyPackets.length < thresholds.minProductionReadyPackets
       || productionReadyRepoCount < thresholds.minProductionReadyRepos
       ? 'add_source_backed_challenge_packets'
-      : skew && skew.share > thresholds.maxSelectedPacketShare
+      : currentBreadthSelectedMatches.length >= thresholds.minCurrentBreadthMatchesForSkew
+        && skew
+        && skew.share > thresholds.maxSelectedPacketShare
         ? 'rebalance_challenge_corpus'
         : 'run_labelled_evaluation';
 
@@ -142,6 +174,8 @@ export function auditCodeReviewMatchHealth(input: {
     productionReadyPacketCount: productionReadyPackets.length,
     productionReadyRepoCount,
     selectedMatchCount: selectedMatches.length,
+    currentBreadthSelectedMatchCount: currentBreadthSelectedMatches.length,
+    staleOrNarrowSelectedMatchCount,
     roleBackedUnsafeMatchCount,
     selectedPacketSkew: skew,
     failures,
