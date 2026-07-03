@@ -53,6 +53,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Fixed — CODE_REVIEW assessment runtime
 
+- CODE_REVIEW app-dev assess smokes now accept the same app-specific Basic Auth aliases as the other deployed smokes and can be imported in unit tests without launching a real candidate invite.
 - CODE_REVIEW match-health audits now prefer `MATCHING_EVALUATION_D1_DATABASE_ID` over the generic `CLOUDFLARE_D1_DATABASE_ID`, preventing app-dev/eval gates from silently checking the wrong D1 when `.env` contains both.
 - CODE_REVIEW corpus seeding now reads deployed `role_contexts`/`context_records`/`role_nodes` role provenance, falling back to hashed job-description text when context-record source refs are absent, so app-dev expert-review seeds no longer use stub role sources.
 - CODE_REVIEW corpus seeding now reuses one eligible challenge set per candidate/role pair across repeated match runs, preventing packet-diverse expert-review seeds from failing validation before human review.

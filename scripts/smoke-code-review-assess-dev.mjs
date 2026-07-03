@@ -1,4 +1,6 @@
 import { spawnSync } from 'node:child_process';
+import { resolve } from 'node:path';
+import { pathToFileURL } from 'node:url';
 import dotenv from 'dotenv';
 
 dotenv.config({ path: '.env.local' });
@@ -9,8 +11,21 @@ const API_BASE = (process.env.API_BASE || 'https://api-dev.hire-pipe.com').repla
 const RECRUITER_API_BASE = (process.env.RECRUITER_API_BASE || APP_BASE).replace(/\/$/, '');
 const RPC_BASE = (process.env.RPC_BASE || API_BASE).replace(/\/$/, '');
 const VIDEO_ROOM_BASE = (process.env.VIDEO_ROOM_BASE || process.env.ROOM_BASE || 'https://room-dev.hire-pipe.com').replace(/\/$/, '');
-const BASIC_USER = process.env.PIPE_DEV_BASIC_AUTH_USER || process.env.DEV_BASIC_AUTH_USER || '';
-const BASIC_PASSWORD = process.env.PIPE_DEV_BASIC_AUTH_PASSWORD || process.env.DEV_BASIC_AUTH_PASSWORD || '';
+export function resolveAppDevBasicAuth(env = process.env) {
+  return {
+    user: env.PIPE_APP_DEV_BASIC_AUTH_USER
+      || env.APP_DEV_BASIC_AUTH_USER
+      || env.PIPE_DEV_BASIC_AUTH_USER
+      || env.DEV_BASIC_AUTH_USER
+      || '',
+    password: env.PIPE_APP_DEV_BASIC_AUTH_PASSWORD
+      || env.APP_DEV_BASIC_AUTH_PASSWORD
+      || env.PIPE_DEV_BASIC_AUTH_PASSWORD
+      || env.DEV_BASIC_AUTH_PASSWORD
+      || '',
+  };
+}
+const { user: BASIC_USER, password: BASIC_PASSWORD } = resolveAppDevBasicAuth();
 const REQUEST_TIMEOUT_MS = Math.max(
   1,
   Number.parseInt(process.env.CODE_REVIEW_SMOKE_REQUEST_TIMEOUT_MS || '60000', 10) || 60_000,
@@ -95,7 +110,7 @@ function assertEnv() {
   const remote = !APP_BASE.includes('localhost') && !APP_BASE.includes('127.0.0.1');
   if (remote && (!BASIC_USER || !BASIC_PASSWORD)) {
     throw new Error(
-      'Set PIPE_DEV_BASIC_AUTH_USER and PIPE_DEV_BASIC_AUTH_PASSWORD to smoke deployed app-dev.',
+      'Set PIPE_APP_DEV_BASIC_AUTH_USER/PASSWORD, APP_DEV_BASIC_AUTH_USER/PASSWORD, or PIPE_DEV_BASIC_AUTH_USER/PASSWORD to smoke deployed app-dev.',
     );
   }
   if (Boolean(REPO_URL) !== Boolean(PR_NUMBER)) {
@@ -1657,7 +1672,10 @@ async function main() {
   }
 }
 
-main().catch((error) => {
-  console.error(error);
-  process.exit(1);
-});
+const invokedPath = process.argv[1] ? pathToFileURL(resolve(process.argv[1])).href : '';
+if (import.meta.url === invokedPath) {
+  main().catch((error) => {
+    console.error(error);
+    process.exit(1);
+  });
+}
