@@ -10,8 +10,10 @@ description: How to test candidate repo matching and standalone CODE_REVIEW inte
 `/assess/:token` is the CODE_REVIEW assessment runtime, not the ingestion or repo-matching app.
 
 - If a source-backed repo/PR assignment already exists, `/assess` should render the CODE_REVIEW challenge.
-- If the candidate only submitted profile/CV evidence and no assignment is ready, `/assess` should end in the candidate-safe `PROFILE_RECEIVED` handoff and the stage config should be `candidate-intake-queued`.
+- If the candidate has no upstream CV/profile evidence yet, `/assess` should still end in the candidate-safe `PROFILE_RECEIVED` handoff. It must not become a CV upload/intake form.
+- If the candidate submitted profile/CV evidence and no assignment is ready, `/assess` should also end in the candidate-safe `PROFILE_RECEIVED` handoff and the stage config should be `candidate-intake-queued`.
 - A standalone CODE_REVIEW blocked handoff must never show candidate-visible `WAITING_FOR_MATCH`, "Building your personalized challenge", repo-matching diagnostics, decomposition steps, or quality gates.
+- A standalone CODE_REVIEW handoff must never show candidate-facing "Upload Your CV" / "Profile & Resume"; Talent Pool owns that upstream intake surface.
 - Use Talent Pool / intake work for profile capture and challenge-design queue behavior. Do not rebuild that behavior inside the CODE_REVIEW runtime.
 
 ## Prerequisites for automatic matching quality evals
@@ -57,6 +59,7 @@ Expected proof:
 Use the blocked auto-match lane to prove `/assess` does not become a candidate-visible matching app:
 
 ```bash
+CODE_REVIEW_SMOKE_AUTO_MATCH=1 CODE_REVIEW_SMOKE_NO_CV_BOUNDARY=1 CODE_REVIEW_EXPECT_BLOCKED_MATCH=1 npm run smoke:code-review-assess-dev
 CODE_REVIEW_SMOKE_AUTO_MATCH=1 CODE_REVIEW_EXPECT_BLOCKED_MATCH=1 npm run smoke:code-review-assess-dev
 ```
 
@@ -66,7 +69,7 @@ Expected proof:
 - stage config is complete with `stageId: "candidate-intake-queued"`
 - instructions include "email you when your code review is ready"
 - recruiter detail opens and shows assessment progress
-- no page contains `WAITING_FOR_MATCH`, "Building your personalized challenge", or "MATCHING IN PROGRESS"
+- no page contains `WAITING_FOR_MATCH`, "Building your personalized challenge", "MATCHING IN PROGRESS", "Upload Your CV", or "Profile & Resume"
 
 ### Local UI/manual flow
 

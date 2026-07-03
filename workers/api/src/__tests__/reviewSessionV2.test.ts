@@ -508,7 +508,7 @@ beforeEach(() => {
 // ─── POST /rpc/get-stage-config ──────────────────────────────────────────────
 
 describe('POST /rpc/get-stage-config', () => {
-  it('routes telemetry-only standalone CODE_REVIEW candidates to CV intake instead of matching', async () => {
+  it('routes telemetry-only standalone CODE_REVIEW candidates to profile received instead of CV intake or matching', async () => {
     const db = fakeD1({
       firstResponders: [
         {
@@ -562,21 +562,24 @@ describe('POST /rpc/get-stage-config', () => {
 
     expect(res.status).toBe(200);
     const body = await res.json() as {
+      isComplete?: boolean;
       stageId?: string;
+      stageTitle?: string;
       mode?: string;
+      message?: string;
       challenges?: Array<{ type: string; title: string }>;
-      upcoming?: Array<{ type: string; title?: string }>;
     };
-    expect(body.stageId).toBe('talent-pool-intake');
+    expect(body.stageId).toBe('candidate-intake-queued');
+    expect(body.stageTitle).toBe('Profile received');
+    expect(body.isComplete).toBe(true);
     expect(body.mode).toBe('INTAKE');
-    expect(body.challenges?.[0]).toMatchObject({
-      type: 'INTAKE',
-      title: 'Profile & Resume',
-    });
-    expect(body.upcoming?.[0]).toMatchObject({ type: 'CODE_REVIEW' });
+    expect(body.message).toContain('email you when your code review is ready');
+    expect(body.challenges).toEqual([]);
+    expect(JSON.stringify(body)).not.toContain('Profile & Resume');
+    expect(JSON.stringify(body)).not.toContain('WAITING_FOR_MATCH');
   });
 
-  it('uses the newest standalone interview type while waiting for CV intake', async () => {
+  it('keeps newest standalone CODE_REVIEW candidates out of CV intake while waiting for upstream profile evidence', async () => {
     const db = fakeD1({
       firstResponders: [
         {
@@ -637,16 +640,22 @@ describe('POST /rpc/get-stage-config', () => {
 
     expect(res.status).toBe(200);
     const body = await res.json() as {
+      isComplete?: boolean;
+      stageId?: string;
       stageTitle?: string;
+      mode?: string;
+      message?: string;
       challenges?: Array<{ type: string; title: string }>;
-      upcoming?: Array<{ type: string; title?: string }>;
     };
-    expect(body.stageTitle).toBe('Upload Your CV');
-    expect(body.challenges?.[0]).toMatchObject({ type: 'INTAKE' });
-    expect(body.upcoming?.[0]).toMatchObject({
-      type: 'CODE_REVIEW',
-      title: 'Code Review',
-    });
+    expect(body.stageId).toBe('candidate-intake-queued');
+    expect(body.stageTitle).toBe('Profile received');
+    expect(body.isComplete).toBe(true);
+    expect(body.mode).toBe('INTAKE');
+    expect(body.message).toContain('email you when your code review is ready');
+    expect(body.challenges).toEqual([]);
+    expect(JSON.stringify(body)).not.toContain('Upload Your CV');
+    expect(JSON.stringify(body)).not.toContain('Profile & Resume');
+    expect(JSON.stringify(body)).not.toContain('WAITING_FOR_MATCH');
   });
 
   it('ends standalone CODE_REVIEW candidate intake while source-backed evidence builds in the background', async () => {
@@ -2694,6 +2703,62 @@ describe('POST /rpc/get-challenge', () => {
       type: 'PROFILE_RECEIVED',
     });
     expect(body.instructions).toContain('email you when your code review is ready');
+    expect(matchCandidateToReviewChallenge).not.toHaveBeenCalled();
+  });
+
+  it('keeps no-CV standalone CODE_REVIEW candidates out of candidate-facing intake upload', async () => {
+    const db = fakeD1({
+      firstResponders: [
+        {
+          match: "interview_type = 'CODE_REVIEW'",
+          value: {
+            id: 'standalone_no_cv',
+            status: 'INVITED',
+            created_at: '2026-06-27T22:00:00.000Z',
+            matched_repo_id: null,
+            github_repo_url: null,
+            github_pr_number: null,
+            submission_json: null,
+          },
+        },
+        {
+          match: "interview_type IN ('DEV_CONTAINER_CHALLENGE', 'OPEN_SOURCE_BUG_FIX')",
+          value: null,
+        },
+        {
+          match: 'FROM candidates c WHERE c.id',
+          value: {
+            resume_s3_key: null,
+            raw_node_count: 0,
+            node_count: 0,
+          },
+        },
+      ],
+    });
+    const env = buildEnv({ DB: db });
+
+    const res = await rpcAuth.request(
+      '/get-challenge',
+      {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json',
+          Authorization: await authHeaderWithoutPipeline(),
+        },
+        body: JSON.stringify({ order: 0 }),
+      },
+      env,
+    );
+
+    expect(res.status).toBe(200);
+    const body = await res.json() as { type: string; id: string; instructions?: string };
+    expect(body).toMatchObject({
+      id: 'profile-received',
+      type: 'PROFILE_RECEIVED',
+    });
+    expect(body.instructions).toContain('email you when your code review is ready');
+    expect(JSON.stringify(body)).not.toContain('Upload Your CV');
+    expect(JSON.stringify(body)).not.toContain('WAITING_FOR_MATCH');
     expect(matchCandidateToReviewChallenge).not.toHaveBeenCalled();
   });
 

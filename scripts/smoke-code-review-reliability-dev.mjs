@@ -9,6 +9,7 @@ const DEFAULT_OUT_DIR = 'tmp/code-review-reliability';
 const DEFAULT_DEV_D1_DATABASE_ID = '0abe92df-9296-46f5-9f9d-a1fb1bcd3be1';
 const DEFAULT_LANE_IDS = [
   'manual-ready',
+  'no-cv-handoff',
   'blocked-handoff',
   'role-backed-full-submit',
   'workers-sdk-matrix',
@@ -137,6 +138,15 @@ export function buildReliabilityLanes({
         env: {
           CODE_REVIEW_SMOKE_RECRUITER_CANDIDATE_LINK: '1',
         },
+        parser: 'assess-smoke',
+      },
+    ],
+    [
+      'no-cv-handoff',
+      {
+        id: 'no-cv-handoff',
+        label: 'Fresh no-CV CODE_REVIEW /assess profile-received handoff',
+        command: ['npm', 'run', 'smoke:code-review-assess-dev:no-cv-boundary'],
         parser: 'assess-smoke',
       },
     ],

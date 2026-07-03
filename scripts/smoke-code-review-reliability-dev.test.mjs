@@ -17,6 +17,7 @@ describe('CODE_REVIEW reliability suite contract', () => {
 
     expect(lanes.map((lane) => lane.id)).toEqual([
       'manual-ready',
+      'no-cv-handoff',
       'blocked-handoff',
       'role-backed-full-submit',
       'workers-sdk-matrix',
@@ -26,10 +27,11 @@ describe('CODE_REVIEW reliability suite contract', () => {
     expect(lanes[0].env).toEqual({
       CODE_REVIEW_SMOKE_RECRUITER_CANDIDATE_LINK: '1',
     });
-    expect(lanes[1].command.join(' ')).toBe('npm run smoke:code-review-assess-dev:blocked');
-    expect(lanes[2].command.join(' ')).toBe('npm run smoke:code-review-assess-dev:role-backed-full-submit');
-    expect(lanes[3].command.join(' ')).toBe('npm run smoke:code-review-assess-dev:workers-matrix');
-    expect(lanes[4].command).toEqual([
+    expect(lanes[1].command.join(' ')).toBe('npm run smoke:code-review-assess-dev:no-cv-boundary');
+    expect(lanes[2].command.join(' ')).toBe('npm run smoke:code-review-assess-dev:blocked');
+    expect(lanes[3].command.join(' ')).toBe('npm run smoke:code-review-assess-dev:role-backed-full-submit');
+    expect(lanes[4].command.join(' ')).toBe('npm run smoke:code-review-assess-dev:workers-matrix');
+    expect(lanes[5].command).toEqual([
       'npm',
       '--prefix',
       'workers/api',

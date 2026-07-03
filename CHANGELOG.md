@@ -74,6 +74,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Fixed — CODE_REVIEW assessment runtime
 
+- Standalone CODE_REVIEW `/assess` now returns the safe `PROFILE_RECEIVED` handoff for fresh no-CV invites before any candidate intake submission, and the app-dev reliability suite has a dedicated no-CV boundary lane that fails on CV upload, matching, or waiting-screen leaks.
 - CODE_REVIEW matching-eval review summaries and expert-seed smoke output now include production-readiness status and failure strings before review, making missing insufficient-evidence or contrast coverage visible directly in terminal proof.
 - CODE_REVIEW expert-review markdown now prints exact production-readiness failures, so reviewers see missing insufficient-evidence or packet-breadth coverage without having to inspect JSON/CI output.
 - CODE_REVIEW production corpus readiness now requires at least one true irrelevant/forbidden insufficient-evidence expert label and surfaces that count in review packets, preventing borderline/challenge-design labels from being mistaken for no-evidence safety proof.
