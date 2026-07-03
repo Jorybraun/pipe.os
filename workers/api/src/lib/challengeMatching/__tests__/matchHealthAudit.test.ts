@@ -126,6 +126,46 @@ describe('auditCodeReviewMatchHealth', () => {
     expect(audit.nextAction).toBe('rebalance_challenge_corpus');
   });
 
+  it('fails when current-breadth matches do not exercise enough production-ready packets', () => {
+    const audit = auditCodeReviewMatchHealth({
+      packets: Array.from({ length: 8 }, (_, index) => packet(index + 1, `repo-${index % 3}`)),
+      matches: [
+        match(1, 'packet-1', { recalledPacketCount: 8 }),
+        match(2, 'packet-1', { recalledPacketCount: 8 }),
+        match(3, 'packet-2', { recalledPacketCount: 8 }),
+        match(4, 'packet-2', { recalledPacketCount: 8 }),
+        match(5, 'packet-2', { recalledPacketCount: 8 }),
+      ],
+      thresholds: {
+        maxSelectedPacketShare: 0.9,
+        minSelectedProductionReadyPackets: 3,
+      },
+    });
+
+    expect(audit.ok).toBe(false);
+    expect(audit.selectedProductionReadyPacketCount).toBe(2);
+    expect(audit.unselectedProductionReadyPackets).toEqual(expect.arrayContaining([
+      expect.objectContaining({
+        packetId: 'packet-3',
+        repoId: 'repo-2',
+        repoUrl: 'https://github.com/example/repo-2',
+        prNumber: 1003,
+        productionReady: true,
+      }),
+      expect.objectContaining({
+        packetId: 'packet-4',
+        repoId: 'repo-0',
+        repoUrl: 'https://github.com/example/repo-0',
+        prNumber: 1004,
+        productionReady: true,
+      }),
+    ]));
+    expect(audit.failures).toContain(
+      'Only 2 production-ready packet(s) were selected by current-breadth matches; need at least 3.',
+    );
+    expect(audit.nextAction).toBe('rebalance_challenge_corpus');
+  });
+
   it('does not fail current health on historical matches that used a narrower packet corpus', () => {
     const audit = auditCodeReviewMatchHealth({
       packets: Array.from({ length: 8 }, (_, index) => packet(index + 1, `repo-${index % 3}`)),

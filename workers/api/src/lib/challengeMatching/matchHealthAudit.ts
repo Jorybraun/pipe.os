@@ -18,6 +18,7 @@ export interface CodeReviewMatchHealthRow {
 export interface CodeReviewMatchHealthThresholds {
   minProductionReadyPackets: number;
   minProductionReadyRepos: number;
+  minSelectedProductionReadyPackets: number;
   maxSelectedPacketShare: number;
   minCurrentBreadthMatchesForSkew: number;
 }
@@ -33,6 +34,14 @@ export interface SelectedPacketHealthDistributionEntry extends SelectedPacketHea
   repoUrl: string | null;
   prNumber: number | null;
   productionReady: boolean;
+}
+
+export interface ProductionReadyPacketHealthSummary {
+  packetId: string;
+  repoId: string;
+  repoUrl: string | null;
+  prNumber: number;
+  productionReady: true;
 }
 
 export type CodeReviewMatchHealthNextAction =
@@ -51,6 +60,8 @@ export interface CodeReviewMatchHealthAudit {
   roleBackedUnsafeMatchCount: number;
   selectedPacketSkew: SelectedPacketHealthSummary | null;
   selectedPacketDistribution: SelectedPacketHealthDistributionEntry[];
+  selectedProductionReadyPacketCount: number;
+  unselectedProductionReadyPackets: ProductionReadyPacketHealthSummary[];
   failures: string[];
   warnings: string[];
   nextAction: CodeReviewMatchHealthNextAction;
@@ -60,6 +71,7 @@ export interface CodeReviewMatchHealthAudit {
 const DEFAULT_THRESHOLDS: CodeReviewMatchHealthThresholds = {
   minProductionReadyPackets: 8,
   minProductionReadyRepos: 3,
+  minSelectedProductionReadyPackets: 3,
   maxSelectedPacketShare: 0.75,
   minCurrentBreadthMatchesForSkew: 5,
 };
@@ -70,6 +82,8 @@ function normalizeThresholds(
   return {
     minProductionReadyPackets: thresholds?.minProductionReadyPackets ?? DEFAULT_THRESHOLDS.minProductionReadyPackets,
     minProductionReadyRepos: thresholds?.minProductionReadyRepos ?? DEFAULT_THRESHOLDS.minProductionReadyRepos,
+    minSelectedProductionReadyPackets: thresholds?.minSelectedProductionReadyPackets
+      ?? DEFAULT_THRESHOLDS.minSelectedProductionReadyPackets,
     maxSelectedPacketShare: thresholds?.maxSelectedPacketShare ?? DEFAULT_THRESHOLDS.maxSelectedPacketShare,
     minCurrentBreadthMatchesForSkew: thresholds?.minCurrentBreadthMatchesForSkew
       ?? DEFAULT_THRESHOLDS.minCurrentBreadthMatchesForSkew,
@@ -108,6 +122,18 @@ function selectedPacketDistribution(
     });
 }
 
+function productionPacketSummary(
+  packet: CodeReviewPacketHealthRow,
+): ProductionReadyPacketHealthSummary {
+  return {
+    packetId: packet.packetId,
+    repoId: packet.repoId,
+    repoUrl: packet.repoUrl,
+    prNumber: packet.prNumber,
+    productionReady: true,
+  };
+}
+
 export function auditCodeReviewMatchHealth(input: {
   packets: CodeReviewPacketHealthRow[];
   matches: CodeReviewMatchHealthRow[];
@@ -131,6 +157,20 @@ export function auditCodeReviewMatchHealth(input: {
     match.roleContextId !== null && (match.contrastScore ?? 0) <= 0
   ).length;
   const distribution = selectedPacketDistribution(currentBreadthSelectedMatches, input.packets);
+  const selectedProductionReadyPacketIds = new Set(
+    distribution
+      .filter((entry) => entry.productionReady)
+      .map((entry) => entry.packetId),
+  );
+  const selectedProductionReadyPacketCount = selectedProductionReadyPacketIds.size;
+  const unselectedProductionReadyPackets = productionReadyPackets
+    .filter((packet) => !selectedProductionReadyPacketIds.has(packet.packetId))
+    .map(productionPacketSummary)
+    .sort((left, right) =>
+      left.repoId.localeCompare(right.repoId)
+      || left.prNumber - right.prNumber
+      || left.packetId.localeCompare(right.packetId)
+    );
   const skew = distribution[0]
     ? {
       packetId: distribution[0].packetId,
@@ -163,6 +203,14 @@ export function auditCodeReviewMatchHealth(input: {
       `Selected packet ${skew.packetId} owns ${Math.round(skew.share * 100)}% of matched runs; max is ${Math.round(thresholds.maxSelectedPacketShare * 100)}%.`,
     );
   }
+  if (
+    currentBreadthSelectedMatches.length >= thresholds.minCurrentBreadthMatchesForSkew
+    && selectedProductionReadyPacketCount < thresholds.minSelectedProductionReadyPackets
+  ) {
+    failures.push(
+      `Only ${selectedProductionReadyPacketCount} production-ready packet(s) were selected by current-breadth matches; need at least ${thresholds.minSelectedProductionReadyPackets}.`,
+    );
+  }
   if (selectedMatches.length === 0) {
     warnings.push('No matched runs were available for selected-packet skew analysis.');
   }
@@ -187,7 +235,10 @@ export function auditCodeReviewMatchHealth(input: {
       ? 'add_source_backed_challenge_packets'
       : currentBreadthSelectedMatches.length >= thresholds.minCurrentBreadthMatchesForSkew
         && skew
-        && skew.share > thresholds.maxSelectedPacketShare
+        && (
+          skew.share > thresholds.maxSelectedPacketShare
+          || selectedProductionReadyPacketCount < thresholds.minSelectedProductionReadyPackets
+        )
         ? 'rebalance_challenge_corpus'
         : 'run_labelled_evaluation';
 
@@ -201,6 +252,8 @@ export function auditCodeReviewMatchHealth(input: {
     roleBackedUnsafeMatchCount,
     selectedPacketSkew: skew,
     selectedPacketDistribution: distribution,
+    selectedProductionReadyPacketCount,
+    unselectedProductionReadyPackets,
     failures,
     warnings,
     nextAction,
