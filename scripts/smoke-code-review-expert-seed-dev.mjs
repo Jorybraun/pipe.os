@@ -90,6 +90,12 @@ export function validateExpertSeedSummary(summary, thresholds = {}) {
   if (summary.nextAction !== 'complete_expert_review') {
     failures.push(`nextAction must be complete_expert_review; got ${String(summary.nextAction)}`);
   }
+  if (summary.draftPersisted !== true) {
+    failures.push(`draftPersisted must be true so expert review has an immutable source corpus; got ${String(summary.draftPersisted)}`);
+  }
+  if (typeof summary.draftCorpusHash !== 'string' || summary.draftCorpusHash.length === 0) {
+    failures.push('draftCorpusHash is required');
+  }
   if (readiness?.nextAction !== 'complete_expert_review') {
     failures.push(`readinessSummary.nextAction must be complete_expert_review; got ${String(readiness?.nextAction)}`);
   }
@@ -241,6 +247,7 @@ export function buildReviewCliArgs(options) {
     String(options.seedSelectionPoolLimit),
     '--seed-description',
     options.seedDescription,
+    '--persist-draft',
     '--review-packet',
     options.reviewPacketPath,
     '--review-template',
@@ -343,6 +350,8 @@ function main() {
     reviewPacketPath: summary.reviewPacketPath ?? options.reviewPacketPath,
     reviewTemplatePath: summary.reviewTemplatePath ?? options.reviewTemplatePath,
     reviewMarkdownPath: summary.reviewMarkdownPath ?? options.reviewMarkdownPath,
+    draftPersisted: summary.draftPersisted === true,
+    draftCorpusHash: summary.draftCorpusHash ?? null,
     thresholds,
     seeded: summary.seeded ?? null,
     nextAction: summary.nextAction ?? null,
