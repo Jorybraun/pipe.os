@@ -40,6 +40,74 @@ function renderCard(
   );
 }
 
+function reviewArtifactInterview(options: {
+  id: string;
+  commitUrl: string | null;
+  sourceRefCounts: Array<{ kind: string; count: number }>;
+}): ScheduledInterview {
+  const commitSha = 'bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb';
+  return {
+    id: options.id,
+    createdAt: '2026-06-23T00:00:00.000Z',
+    updatedAt: '2026-06-23T00:20:00.000Z',
+    status: 'INVITED',
+    interviewType: 'OPEN_SOURCE_BUG_FIX',
+    meetingType: 'DIRECT_VIDEO_CALL',
+    scheduledAt: null,
+    assessmentProgress: {
+      session: {
+        id: `assessment-session-${options.id}`,
+        ingestionKey: `assessment-session:${options.id}`,
+        interviewId: options.id,
+        candidateId: 'candidate-1',
+        workspaceId: 'workspace-1',
+        workspacePersonId: null,
+        applicationId: null,
+        mode: 'OPEN_SOURCE_BUG_FIX',
+        state: 'FINAL_SUBMITTED',
+        createdAt: '2026-06-23T00:00:00.000Z',
+        updatedAt: '2026-06-23T00:20:00.000Z',
+      },
+      stage: 'READY_FOR_EVALUATION',
+      nextAction: 'START_EVALUATION',
+      nextActionLabel: 'Start source-backed AI or human evaluation.',
+      hasChallengePacket: true,
+      hasWorkEvidence: true,
+      hasMessageEvidence: false,
+      hasDevContainerEvidence: true,
+      hasToolUsageEvidence: true,
+      hasCommitSubmission: true,
+      hasFinalSubmission: false,
+      hasAiInteraction: false,
+      hasTranscriptEvidence: false,
+      hasTestEvidence: false,
+      evidenceCounts: [{ kind: 'commit_submission', count: 1 }],
+      sourceRefCounts: options.sourceRefCounts,
+      challenge: null,
+      latestEvent: {
+        id: `assessment-event-${options.id}`,
+        kind: 'commit_submission',
+        sequence: 2,
+        occurredAt: '2026-06-23T00:18:00.000Z',
+      },
+      commit: {
+        eventId: `assessment-event-${options.id}`,
+        repositoryUrl: 'https://github.com/open-source/widgets',
+        forkRepositoryUrl: 'https://github.com/candidate/widgets',
+        branchName: 'pipe-assessment/widgets',
+        baseCommitSha: '3333333333333333333333333333333333333333',
+        commitSha,
+        commitUrl: options.commitUrl,
+        submissionSource: 'live_workspace',
+        submissionSourceLabel: 'Live workspace finalizer',
+        changedFiles: [{ path: 'src/widget.ts', status: 'modified' }],
+        occurredAt: '2026-06-23T00:18:00.000Z',
+      },
+      evaluation: null,
+    },
+  };
+}
+
 describe('InterviewCard assessment progress', () => {
   it('shows source-backed stage, next action, and evidence readiness without raw ids', () => {
     renderCard({
@@ -224,6 +292,9 @@ describe('InterviewCard assessment progress', () => {
     expect(progress).toHaveTextContent('abcdef123456');
     expect(progress).toHaveTextContent('UPSTREAM PR');
     expect(progress).toHaveTextContent('open-source/widgets/pull/72 · candidate-approved tracking');
+    expect(progress).toHaveTextContent('REVIEW ARTIFACT');
+    expect(progress).toHaveTextContent('GitHub commit available');
+    expect(progress).toHaveTextContent('External commit URL is captured; open detail to compare base to submitted work.');
     expect(progress).toHaveTextContent('Workspace-captured commit');
     expect(progress).toHaveTextContent('COMMIT TRUST');
     expect(progress).toHaveTextContent('Workspace-captured commit · Bound to assigned challenge');
@@ -232,6 +303,37 @@ describe('InterviewCard assessment progress', () => {
     expect(progress).not.toHaveTextContent('assessment-session-card');
     expect(progress).not.toHaveTextContent('challenge-packet-card');
     expect(progress).not.toHaveTextContent('abcdef1234567890abcdef1234567890abcdef12');
+  });
+
+  it('shows workspace-only captured diffs as recruiter-reviewable artifacts', () => {
+    renderCard(reviewArtifactInterview({
+      id: 'interview-captured-diff-artifact',
+      commitUrl: null,
+      sourceRefCounts: [
+        { kind: 'git_commit', count: 1 },
+        { kind: 'code_diff', count: 1 },
+      ],
+    }));
+
+    const progress = screen.getByTestId('interview-card-assessment-progress');
+    expect(progress).toHaveTextContent('REVIEW ARTIFACT');
+    expect(progress).toHaveTextContent('Captured diff available');
+    expect(progress).toHaveTextContent('Workspace-only commit has exact code_diff source evidence ready for review.');
+    expect(progress).not.toHaveTextContent('bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb');
+  });
+
+  it('warns when a submitted commit has no recruiter-reviewable artifact proof', () => {
+    renderCard(reviewArtifactInterview({
+      id: 'interview-missing-review-artifact',
+      commitUrl: null,
+      sourceRefCounts: [{ kind: 'git_commit', count: 1 }],
+    }));
+
+    const progress = screen.getByTestId('interview-card-assessment-progress');
+    expect(progress).toHaveTextContent('REVIEW ARTIFACT');
+    expect(progress).toHaveTextContent('Review artifact missing');
+    expect(progress).toHaveTextContent('Commit exists, but PIPE has no remote commit URL or captured code_diff source evidence.');
+    expect(progress).not.toHaveTextContent('bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb');
   });
 
   it('shows the assigned open-source task before candidate work starts', () => {

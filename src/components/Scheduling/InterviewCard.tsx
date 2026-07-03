@@ -227,6 +227,12 @@ interface AssessmentPacketContractSummary {
   tone: 'verified' | 'warning' | 'neutral';
 }
 
+interface AssessmentReviewArtifactSummary {
+  label: string;
+  detail: string;
+  tone: 'verified' | 'warning' | 'neutral';
+}
+
 interface AssessmentProofChecklistSummary {
   required: string[];
   confidence: string[];
@@ -464,6 +470,41 @@ function assessmentCommitTrustColor(tone: AssessmentCommitTrustSummary['tone']):
   }
 }
 
+function assessmentSourceRefCount(
+  progress: ScheduledInterview['assessmentProgress'] | null | undefined,
+  kind: string,
+): number {
+  return progress?.sourceRefCounts?.find((row) => row.kind === kind)?.count ?? 0;
+}
+
+function assessmentReviewArtifactSummary(
+  progress: ScheduledInterview['assessmentProgress'] | null | undefined,
+): AssessmentReviewArtifactSummary | null {
+  const commit = progress?.commit ?? null;
+  if (!commit) return null;
+  if (commit.commitUrl) {
+    return {
+      label: 'GitHub commit available',
+      detail: 'External commit URL is captured; open detail to compare base to submitted work.',
+      tone: 'verified',
+    };
+  }
+
+  if (assessmentSourceRefCount(progress, 'code_diff') > 0) {
+    return {
+      label: 'Captured diff available',
+      detail: 'Workspace-only commit has exact code_diff source evidence ready for review.',
+      tone: 'verified',
+    };
+  }
+
+  return {
+    label: 'Review artifact missing',
+    detail: 'Commit exists, but PIPE has no remote commit URL or captured code_diff source evidence.',
+    tone: 'warning',
+  };
+}
+
 function assessmentPacketContractSummary(
   contract: NonNullable<ScheduledInterview['assessmentProgress']>['challengePacketContract'] | null | undefined,
 ): AssessmentPacketContractSummary | null {
@@ -683,6 +724,7 @@ export function InterviewCard({
     ?? null;
   const assessmentChallengeBindingLabel = assessmentProgress?.commit?.challengeBinding?.label ?? null;
   const assessmentCommitTrust = assessmentCommitTrustSummary(assessmentProgress?.commit);
+  const assessmentReviewArtifact = assessmentReviewArtifactSummary(assessmentProgress);
   const assessmentPacketContract = assessmentPacketContractSummary(assessmentProgress?.challengePacketContract);
   const assessmentCriteriaLabel = assessmentChallenge?.successCriteria.length
     ? compactText(assessmentChallenge.successCriteria.join(' · '), 150)
@@ -997,6 +1039,21 @@ export function InterviewCard({
                   </div>
                   <div style={{ minWidth: 0, fontSize: 10, color: '#bfdbfe', overflowWrap: 'anywhere' }}>
                     {assessmentUpstreamPullRequestLabel} · candidate-approved tracking
+                  </div>
+                </>
+              )}
+              {assessmentReviewArtifact && (
+                <>
+                  <div style={{ fontSize: 9, color: assessmentCommitTrustColor(assessmentReviewArtifact.tone), letterSpacing: '0.12em', fontWeight: 700 }}>
+                    REVIEW ARTIFACT
+                  </div>
+                  <div style={{ minWidth: 0, overflowWrap: 'anywhere' }}>
+                    <div style={{ fontSize: 10, color: assessmentCommitTrustColor(assessmentReviewArtifact.tone), fontWeight: 700 }}>
+                      {assessmentReviewArtifact.label}
+                    </div>
+                    <div style={{ fontSize: 10, color: 'var(--pipe-text-dim)' }}>
+                      {assessmentReviewArtifact.detail}
+                    </div>
                   </div>
                 </>
               )}

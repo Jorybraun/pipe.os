@@ -653,6 +653,7 @@ async function assertRecruiterListCardBrowser(
   expectedBaseCommitSha,
   humanDecision,
   expectedTaskTitle,
+  recruiterProjection,
 ) {
   if (SKIP_RECRUITER_BROWSER) {
     return { skipped: true, reason: 'WORKSPACE_SMOKE_SKIP_RECRUITER_BROWSER=1' };
@@ -705,6 +706,14 @@ async function assertRecruiterListCardBrowser(
     await expect(card).toContainText('COMMIT TRUST');
     await expect(card).toContainText('Workspace-captured commit');
     await expect(card).toContainText('Bound to assigned challenge');
+    await expect(card).toContainText('REVIEW ARTIFACT');
+    if (recruiterProjection.compareUrl) {
+      await expect(card).toContainText('GitHub commit available');
+      await expect(card).toContainText('External commit URL is captured');
+    } else {
+      await expect(card).toContainText('Captured diff available');
+      await expect(card).toContainText('Workspace-only commit has exact code_diff source evidence ready for review.');
+    }
     await expect(card).toContainText('EVAL');
     await expect(card).toContainText('Evaluated');
     await expect(card).not.toContainText('assessment-session');
@@ -1171,6 +1180,7 @@ async function main() {
     useMatchedRepo
       ? null
       : CHANGE_PROFILE?.challengeTitle ?? 'Fix deterministic smoke ordering',
+    recruiterProjection,
   );
 
   console.log(JSON.stringify({
