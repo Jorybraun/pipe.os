@@ -1216,6 +1216,71 @@ async function createDiagnostic(input: {
   return { kind: 'diagnostic', diagnostic };
 }
 
+async function createDeterministicFallbackReport(input: {
+  store: RepoTaskInterviewSessionStore;
+  sessionId: string;
+  sessionMode: RepoTaskInterviewMode;
+  scheduledInterviewId: string;
+  requestEventId: string;
+  requestSourceRef: AssessmentEvidenceSourceRefInput;
+  sourceRefs: readonly SessionSourceRef[];
+  evidenceCoverage: JsonObject;
+  provider: LLMProvider;
+  rawResponse: string;
+  diagnostics?: readonly AssessmentDiagnosticInput[];
+  fallbackReason: string;
+  fallbackReasonCode: string;
+}): Promise<RepoTaskAssessmentEvaluationResult | null> {
+  const deterministicFallback = buildDeterministicAssessmentFallback({
+    sessionId: input.sessionId,
+    sourceRefs: input.sourceRefs,
+    requestSourceRef: input.requestSourceRef,
+  });
+  if (!deterministicFallback?.claims.some((claim) => claim.polarity !== 'diagnostic')) {
+    return null;
+  }
+
+  const diagnostics = [
+    ...(input.diagnostics ?? []),
+    ...deterministicFallback.diagnostics,
+  ];
+  const status: EvaluationReportStatus = 'EVALUATED';
+  const report = await input.store.createEvaluationReport({
+    sessionId: input.sessionId,
+    ingestionKey: `assessment-report:${input.sessionId}:deterministic-fallback:${await deterministicEntityId('content', input.rawResponse || deterministicFallback.summary)}`,
+    status,
+    summary: deterministicFallback.summary,
+    output: {
+      schemaVersion: 'repo-task-assessment-output-v1',
+      status,
+      mode: input.sessionMode,
+      recommendation: deterministicFallback.recommendation,
+      provider: input.provider.name,
+      model: input.provider.model,
+      scheduledInterviewId: input.scheduledInterviewId,
+      requestEventId: input.requestEventId,
+      challengeFocus: challengeFocusSummary(input.sourceRefs),
+      evidenceCoverage: input.evidenceCoverage,
+      claimIds: deterministicFallback.claims.map((claim) => claim.id),
+      diagnosticCodes: diagnostics.map((diagnostic) => diagnostic.code),
+      fallback: 'deterministic_source_evidence',
+      fallbackReason: input.fallbackReason,
+      fallbackReasonCode: input.fallbackReasonCode,
+    },
+    claims: deterministicFallback.claims,
+    diagnostics,
+  });
+
+  await input.store.transitionState({
+    sessionId: input.sessionId,
+    toState: 'EVALUATED',
+    reason: 'PIPE produced a conservative source-backed assessment report from captured evidence.',
+    createdBy: 'repo-task-assessment-evaluator',
+  });
+
+  return { kind: 'evaluated', report };
+}
+
 export async function evaluateRepoTaskAssessmentSession(
   input: EvaluateRepoTaskAssessmentInput,
 ): Promise<RepoTaskAssessmentEvaluationResult> {
@@ -1286,17 +1351,6 @@ export async function evaluateRepoTaskAssessmentSession(
       { role: 'user', content: userPrompt },
     ], { forceJson: true, maxTokens: 4096 });
     rawResponse = completion.content ?? '';
-    await recordAiInteraction({
-      store: input.store,
-      sessionId: input.sessionId,
-      requestedAt: input.requestedAt,
-      requestedBy: input.requestedBy,
-      provider,
-      prompt: promptTrace,
-      response: rawResponse,
-      evidenceCoverage,
-    });
-    aiOutput = parseAiJson(rawResponse);
   } catch (error) {
     return createDiagnostic({
       store: input.store,
@@ -1315,59 +1369,91 @@ export async function evaluateRepoTaskAssessmentSession(
     });
   }
 
+  await recordAiInteraction({
+    store: input.store,
+    sessionId: input.sessionId,
+    requestedAt: input.requestedAt,
+    requestedBy: input.requestedBy,
+    provider,
+    prompt: promptTrace,
+    response: rawResponse,
+    evidenceCoverage,
+  });
+
+  try {
+    aiOutput = parseAiJson(rawResponse);
+  } catch (error) {
+    const message = error instanceof Error ? error.message : String(error);
+    const fallback = await createDeterministicFallbackReport({
+      store: input.store,
+      sessionId: input.sessionId,
+      sessionMode: session.mode,
+      scheduledInterviewId: input.scheduledInterviewId,
+      requestEventId: input.requestEventId,
+      requestSourceRef: input.requestSourceRef,
+      sourceRefs,
+      evidenceCoverage,
+      provider,
+      rawResponse,
+      fallbackReason: 'The AI evaluator returned unparseable text after source-backed evidence was captured.',
+      fallbackReasonCode: 'MODEL_RESPONSE_UNPARSEABLE',
+      diagnostics: [
+        diagnosticInput({
+          code: 'MODEL_RESPONSE_UNPARSEABLE',
+          severity: 'warning',
+          message: `The AI evaluator response could not be parsed, so PIPE generated conservative claims only from captured source evidence: ${message}`,
+          provider: provider.name,
+          retryable: false,
+          sourceRefs: [input.requestSourceRef],
+          details: {
+            scheduledInterviewId: input.scheduledInterviewId,
+            model: provider.model,
+            fallback: 'deterministic_source_evidence',
+          },
+        }),
+      ],
+    });
+    if (fallback) return fallback;
+
+    return createDiagnostic({
+      store: input.store,
+      sessionId: input.sessionId,
+      diagnostic: diagnosticInput({
+        code: 'EVALUATION_NEEDS_HUMAN_REVIEW',
+        message: `The AI evaluator response could not be parsed and PIPE could not build a deterministic evidence report: ${message}`,
+        sourceRefs: [input.requestSourceRef],
+        details: {
+          scheduledInterviewId: input.scheduledInterviewId,
+          model: provider.model,
+        },
+      }),
+    });
+  }
+
   const claims = normalizeAiClaims(aiOutput.claims, sourceRefByKey, input.sessionId);
   const diagnostics = normalizeAiDiagnostics(aiOutput.diagnostics, sourceRefByKey);
   const normalizedRecommendation = normalizeAiRecommendation(aiOutput.recommendation);
   const groundedClaims = claims.filter((claim) => claim.polarity !== 'diagnostic');
   if (groundedClaims.length === 0) {
-    const deterministicFallback = buildDeterministicAssessmentFallback({
+    const fallback = await createDeterministicFallbackReport({
+      store: input.store,
       sessionId: input.sessionId,
-      sourceRefs,
+      sessionMode: session.mode,
+      scheduledInterviewId: input.scheduledInterviewId,
+      requestEventId: input.requestEventId,
       requestSourceRef: input.requestSourceRef,
+      sourceRefs,
+      evidenceCoverage,
+      provider,
+      rawResponse,
+      fallbackReason: 'The AI evaluator returned no usable non-diagnostic claims backed by exact source evidence.',
+      fallbackReasonCode: 'MODEL_CLAIMS_UNUSABLE',
+      diagnostics: [
+        ...diagnostics,
+        ...normalizedRecommendation.diagnostics,
+      ],
     });
-    if (deterministicFallback && deterministicFallback.claims.some((claim) => claim.polarity !== 'diagnostic')) {
-      const status: EvaluationReportStatus = 'EVALUATED';
-      const report = await input.store.createEvaluationReport({
-        sessionId: input.sessionId,
-        ingestionKey: `assessment-report:${input.sessionId}:deterministic-fallback:${await deterministicEntityId('content', rawResponse || deterministicFallback.summary)}`,
-        status,
-        summary: deterministicFallback.summary,
-        output: {
-          schemaVersion: 'repo-task-assessment-output-v1',
-          status,
-          mode: session.mode,
-          recommendation: deterministicFallback.recommendation,
-          provider: provider.name,
-          model: provider.model,
-          scheduledInterviewId: input.scheduledInterviewId,
-          requestEventId: input.requestEventId,
-          challengeFocus: challengeFocusSummary(sourceRefs),
-          evidenceCoverage,
-          claimIds: deterministicFallback.claims.map((claim) => claim.id),
-          diagnosticCodes: [
-            ...diagnostics.map((diagnostic) => diagnostic.code),
-            ...normalizedRecommendation.diagnostics.map((diagnostic) => diagnostic.code),
-            ...deterministicFallback.diagnostics.map((diagnostic) => diagnostic.code),
-          ],
-          fallback: 'deterministic_source_evidence',
-        },
-        claims: deterministicFallback.claims,
-        diagnostics: [
-          ...diagnostics,
-          ...normalizedRecommendation.diagnostics,
-          ...deterministicFallback.diagnostics,
-        ],
-      });
-
-      await input.store.transitionState({
-        sessionId: input.sessionId,
-        toState: 'EVALUATED',
-        reason: 'PIPE produced a conservative source-backed assessment report from captured evidence.',
-        createdBy: 'repo-task-assessment-evaluator',
-      });
-
-      return { kind: 'evaluated', report };
-    }
+    if (fallback) return fallback;
 
     return createDiagnostic({
       store: input.store,
