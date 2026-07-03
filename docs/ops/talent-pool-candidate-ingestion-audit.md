@@ -261,6 +261,31 @@ Current app-dev HEAD check on 2026-07-02 local time, checked at
   and `duplicateProjectedEdgeCount: 0`. Recruiter reads resolved unified People
   type `candidate`, found candidate/person source text, returned 8 timeline
   entries, and reported 9 source spans plus 5 context records.
+- `npm run smoke:talent-pool-upload-dev` submitted a multipart text profile for
+  invite token `44f1f9c8-91f2-4bf4-b71d-7de01620734f` and returned
+  `status: ready`, `profileUploadArtifactVersionCount: 1`,
+  `submittedIntakeWithoutExactCandidateNodeCount: 0`,
+  `sourceLessPositiveClaimCount: 0`, `sourceLessDesignQueueSuggestionCount: 0`,
+  and `duplicateProjectedEdgeCount: 0`. Recruiter reads resolved unified People
+  type `candidate`, found candidate/person source text, returned 9 timeline
+  entries, and reported 9 source spans plus 5 context records.
+- `npm run smoke:talent-pool-docx-dev` submitted a multipart DOCX profile for
+  invite token `b8958ae6-c377-4230-b685-f3b4386f78a3` and returned
+  `status: ready`, `documentProfileSourceSpanCount: 1`,
+  `profileUploadArtifactVersionCount: 1`,
+  `submittedIntakeWithoutExactCandidateNodeCount: 0`,
+  `sourceLessPositiveClaimCount: 0`, `sourceLessDesignQueueSuggestionCount: 0`,
+  and `duplicateProjectedEdgeCount: 0`. Recruiter reads resolved unified People
+  type `candidate`, found candidate/person source text, returned 9 timeline
+  entries, and reported 9 source spans plus 5 context records.
+- `npm run smoke:talent-pool-pdf-gap-dev` submitted an intentionally invalid
+  PDF for invite token `b91d808c-fc9f-42f9-80f0-be2e61869fcc` and returned
+  `status: not_ready`, `ingestionSteps:
+  [{currentStep: "profile_text_extraction_needed", count: 1}]`,
+  `profileUploadArtifactVersionCount: 1`,
+  `submittedIntakeWithoutExactCandidateNodeCount: 1`,
+  `sourceLessPositiveClaimCount: 0`, `sourceLessDesignQueueSuggestionCount: 0`,
+  and `duplicateProjectedEdgeCount: 0`.
 
 Latest app-dev all-mode proof on 2026-07-02 local time, checked at
 2026-07-03T00:41Z through 2026-07-03T00:44Z, ran after a clean HEAD deploy of
