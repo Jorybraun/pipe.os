@@ -434,6 +434,14 @@ proof kept the submitted `mui/base-ui#973` recommendation selected while the
 related same-person `facebook/react#1` interview remained related context from
 interview detail.
 
+Latest expert-seed app-dev proof on 2026-07-03 passed against `pipe-db-test`
+(`MATCHING_EVALUATION_D1_DATABASE_ID=0abe92df-9296-46f5-9f9d-a1fb1bcd3be1`):
+source corpus `seeded-1783071801113-4c-4r`, corpus hash
+`426390ab95640e0c4c82e8ef8de93fd92355b2fa4df0b83691de5b5d9db93b58`, 6
+match runs, 4 candidates, 4 roles, 4 challenges, 6 draft labels, 0 expert
+labels, 0 synthetic fixtures, 3 expected packets, no warnings, 6 editable
+expert-review items, and next action `complete_expert_review`.
+
 Latest deployed `/assess` token lifecycle proof on 2026-07-03 passed via
 `npm run smoke:assess-token-lifecycle-dev`: two real app-dev CODE_REVIEW
 assessment links were created for interviews
