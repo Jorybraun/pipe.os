@@ -13,6 +13,16 @@ export interface CodeReviewMatchHealthRow {
   status: string;
   contrastScore: number | null;
   recalledPacketCount?: number | null;
+  rankedPackets?: RankedPacketHealthEntry[];
+}
+
+export interface RankedPacketHealthEntry {
+  packetId: string;
+  rank: number | null;
+  score: number | null;
+  candidateEvidenceAlignment: number | null;
+  roleRelevance: number | null;
+  eligible: boolean;
 }
 
 export interface CodeReviewMatchHealthThresholds {
@@ -42,6 +52,14 @@ export interface ProductionReadyPacketHealthSummary {
   repoUrl: string | null;
   prNumber: number;
   productionReady: true;
+  rankedAppearanceCount: number;
+  eligibleAppearanceCount: number;
+  bestRank: number | null;
+  averageRank: number | null;
+  maxScore: number | null;
+  averageScore: number | null;
+  averageCandidateEvidenceAlignment: number | null;
+  averageRoleRelevance: number | null;
 }
 
 export type CodeReviewMatchHealthNextAction =
@@ -124,6 +142,7 @@ function selectedPacketDistribution(
 
 function productionPacketSummary(
   packet: CodeReviewPacketHealthRow,
+  stats: RankedPacketStats | undefined,
 ): ProductionReadyPacketHealthSummary {
   return {
     packetId: packet.packetId,
@@ -131,7 +150,113 @@ function productionPacketSummary(
     repoUrl: packet.repoUrl,
     prNumber: packet.prNumber,
     productionReady: true,
+    rankedAppearanceCount: stats?.rankedAppearanceCount ?? 0,
+    eligibleAppearanceCount: stats?.eligibleAppearanceCount ?? 0,
+    bestRank: stats?.bestRank ?? null,
+    averageRank: stats?.averageRank ?? null,
+    maxScore: stats?.maxScore ?? null,
+    averageScore: stats?.averageScore ?? null,
+    averageCandidateEvidenceAlignment: stats?.averageCandidateEvidenceAlignment ?? null,
+    averageRoleRelevance: stats?.averageRoleRelevance ?? null,
   };
+}
+
+interface RankedPacketStats {
+  rankedAppearanceCount: number;
+  eligibleAppearanceCount: number;
+  bestRank: number | null;
+  averageRank: number | null;
+  maxScore: number | null;
+  averageScore: number | null;
+  averageCandidateEvidenceAlignment: number | null;
+  averageRoleRelevance: number | null;
+}
+
+interface RankedPacketStatsAccumulator {
+  rankedAppearanceCount: number;
+  eligibleAppearanceCount: number;
+  bestRank: number | null;
+  rankTotal: number;
+  rankCount: number;
+  maxScore: number | null;
+  scoreTotal: number;
+  scoreCount: number;
+  candidateAlignmentTotal: number;
+  candidateAlignmentCount: number;
+  roleRelevanceTotal: number;
+  roleRelevanceCount: number;
+}
+
+function finiteNumber(value: number | null | undefined): value is number {
+  return typeof value === 'number' && Number.isFinite(value);
+}
+
+function rankedPacketStatsById(
+  matches: CodeReviewMatchHealthRow[],
+): Map<string, RankedPacketStats> {
+  const accumulators = new Map<string, RankedPacketStatsAccumulator>();
+  for (const match of matches) {
+    for (const ranked of match.rankedPackets ?? []) {
+      const existing = accumulators.get(ranked.packetId) ?? {
+        rankedAppearanceCount: 0,
+        eligibleAppearanceCount: 0,
+        bestRank: null,
+        rankTotal: 0,
+        rankCount: 0,
+        maxScore: null,
+        scoreTotal: 0,
+        scoreCount: 0,
+        candidateAlignmentTotal: 0,
+        candidateAlignmentCount: 0,
+        roleRelevanceTotal: 0,
+        roleRelevanceCount: 0,
+      };
+      existing.rankedAppearanceCount += 1;
+      if (ranked.eligible) existing.eligibleAppearanceCount += 1;
+      if (finiteNumber(ranked.rank)) {
+        existing.bestRank = existing.bestRank === null
+          ? ranked.rank
+          : Math.min(existing.bestRank, ranked.rank);
+        existing.rankTotal += ranked.rank;
+        existing.rankCount += 1;
+      }
+      if (finiteNumber(ranked.score)) {
+        existing.maxScore = existing.maxScore === null
+          ? ranked.score
+          : Math.max(existing.maxScore, ranked.score);
+        existing.scoreTotal += ranked.score;
+        existing.scoreCount += 1;
+      }
+      if (finiteNumber(ranked.candidateEvidenceAlignment)) {
+        existing.candidateAlignmentTotal += ranked.candidateEvidenceAlignment;
+        existing.candidateAlignmentCount += 1;
+      }
+      if (finiteNumber(ranked.roleRelevance)) {
+        existing.roleRelevanceTotal += ranked.roleRelevance;
+        existing.roleRelevanceCount += 1;
+      }
+      accumulators.set(ranked.packetId, existing);
+    }
+  }
+
+  const stats = new Map<string, RankedPacketStats>();
+  for (const [packetId, accumulator] of accumulators) {
+    stats.set(packetId, {
+      rankedAppearanceCount: accumulator.rankedAppearanceCount,
+      eligibleAppearanceCount: accumulator.eligibleAppearanceCount,
+      bestRank: accumulator.bestRank,
+      averageRank: accumulator.rankCount > 0 ? accumulator.rankTotal / accumulator.rankCount : null,
+      maxScore: accumulator.maxScore,
+      averageScore: accumulator.scoreCount > 0 ? accumulator.scoreTotal / accumulator.scoreCount : null,
+      averageCandidateEvidenceAlignment: accumulator.candidateAlignmentCount > 0
+        ? accumulator.candidateAlignmentTotal / accumulator.candidateAlignmentCount
+        : null,
+      averageRoleRelevance: accumulator.roleRelevanceCount > 0
+        ? accumulator.roleRelevanceTotal / accumulator.roleRelevanceCount
+        : null,
+    });
+  }
+  return stats;
 }
 
 export function auditCodeReviewMatchHealth(input: {
@@ -157,6 +282,7 @@ export function auditCodeReviewMatchHealth(input: {
     match.roleContextId !== null && (match.contrastScore ?? 0) <= 0
   ).length;
   const distribution = selectedPacketDistribution(currentBreadthSelectedMatches, input.packets);
+  const rankedStatsByPacketId = rankedPacketStatsById(currentBreadthSelectedMatches);
   const selectedProductionReadyPacketIds = new Set(
     distribution
       .filter((entry) => entry.productionReady)
@@ -165,7 +291,7 @@ export function auditCodeReviewMatchHealth(input: {
   const selectedProductionReadyPacketCount = selectedProductionReadyPacketIds.size;
   const unselectedProductionReadyPackets = productionReadyPackets
     .filter((packet) => !selectedProductionReadyPacketIds.has(packet.packetId))
-    .map(productionPacketSummary)
+    .map((packet) => productionPacketSummary(packet, rankedStatsByPacketId.get(packet.packetId)))
     .sort((left, right) =>
       left.repoId.localeCompare(right.repoId)
       || left.prNumber - right.prNumber

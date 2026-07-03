@@ -6,6 +6,7 @@ import {
   type CodeReviewMatchHealthRow,
   type CodeReviewMatchHealthThresholds,
   type CodeReviewPacketHealthRow,
+  type RankedPacketHealthEntry,
 } from '../src/lib/challengeMatching/matchHealthAudit';
 import { D1Client } from './crawl-repos/shared/d1Client.js';
 
@@ -26,6 +27,7 @@ interface MatchRow {
   status: string;
   contrastScore: SqlNumber;
   recalledPacketCount: SqlNumber;
+  rankedResultsJson: string | null;
 }
 
 interface CliOptions {
@@ -122,7 +124,41 @@ function matchFromRow(row: MatchRow): CodeReviewMatchHealthRow {
     status: row.status,
     contrastScore,
     recalledPacketCount: row.recalledPacketCount === null ? null : toNumber(row.recalledPacketCount),
+    rankedPackets: rankedPacketsFromJson(row.rankedResultsJson),
   };
+}
+
+function optionalNumber(value: unknown): number | null {
+  if (typeof value === 'number' && Number.isFinite(value)) return value;
+  if (typeof value === 'string') {
+    const parsed = Number(value);
+    if (Number.isFinite(parsed)) return parsed;
+  }
+  return null;
+}
+
+function rankedPacketsFromJson(value: string | null): RankedPacketHealthEntry[] {
+  if (!value) return [];
+  try {
+    const parsed = JSON.parse(value) as unknown;
+    if (!Array.isArray(parsed)) return [];
+    return parsed.flatMap((entry): RankedPacketHealthEntry[] => {
+      if (!entry || typeof entry !== 'object') return [];
+      const item = entry as Record<string, unknown>;
+      const packetId = typeof item['challengeId'] === 'string' ? item['challengeId'] : '';
+      if (!packetId) return [];
+      return [{
+        packetId,
+        rank: optionalNumber(item['rank']),
+        score: optionalNumber(item['score']),
+        candidateEvidenceAlignment: optionalNumber(item['candidateEvidenceAlignment']),
+        roleRelevance: optionalNumber(item['roleRelevance']),
+        eligible: item['eligible'] === true,
+      }];
+    });
+  } catch {
+    return [];
+  }
 }
 
 async function loadPackets(client: D1Client): Promise<CodeReviewPacketHealthRow[]> {
@@ -145,6 +181,7 @@ async function loadSelectedMatches(client: D1Client): Promise<CodeReviewMatchHea
             mr.role_context_id AS roleContextId,
             mr.selected_packet_id AS selectedPacketId,
             mr.status AS status,
+            mr.ranked_results_json AS rankedResultsJson,
             json_array_length(mr.recalled_packets_json) AS recalledPacketCount,
             (
               SELECT json_extract(metric.value, '$.score')
@@ -188,7 +225,11 @@ function printHumanSummary(audit: CodeReviewMatchHealthAudit): void {
     console.log('unselectedProductionReadyPackets:');
     for (const packet of audit.unselectedProductionReadyPackets.slice(0, 5)) {
       const repo = packet.repoUrl ?? packet.repoId;
-      console.log(`- ${packet.packetId}: ${repo} PR ${packet.prNumber}`);
+      const rank = packet.bestRank === null ? 'not eligible-ranked' : `best rank ${packet.bestRank}`;
+      const score = packet.maxScore === null ? 'no score' : `max score ${packet.maxScore.toFixed(3)}`;
+      console.log(
+        `- ${packet.packetId}: ${repo} PR ${packet.prNumber}; ranked ${packet.rankedAppearanceCount}, eligible ${packet.eligibleAppearanceCount}, ${rank}, ${score}`,
+      );
     }
   }
   console.log(`nextAction: ${audit.nextAction}`);
