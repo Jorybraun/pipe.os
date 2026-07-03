@@ -60,6 +60,8 @@ export interface CandidateRawCaptureAudit {
   talentPoolIntakeCount: number;
   submittedIntakeCount: number;
   profileStorageKeyCount: number;
+  contentAddressedProfileStorageKeyCount: number;
+  nonContentAddressedProfileStorageKeyCount: number;
   candidateResumeStorageKeyCount: number;
   candidateResumeMatchesIntakeCount: number;
   documentProfileStorageKeyCount: number;
@@ -155,6 +157,8 @@ interface RawCaptureRow {
   talent_pool_intake_count: number | null;
   submitted_intake_count: number | null;
   profile_storage_key_count: number | null;
+  content_addressed_profile_storage_key_count: number | null;
+  non_content_addressed_profile_storage_key_count: number | null;
   candidate_resume_storage_key_count: number | null;
   candidate_resume_matches_intake_count: number | null;
   document_profile_storage_key_count: number | null;
@@ -341,12 +345,30 @@ async function loadRawCapture(
   scopeSql: string,
   params: Array<string | number | null>,
 ): Promise<CandidateRawCaptureAudit> {
+  const contentAddressedProfileKeyPredicate = `
+    t.profile_r2_key LIKE 'talent-intake/' || t.candidate_id || '/%'
+    AND LENGTH(substr(t.profile_r2_key, LENGTH('talent-intake/' || t.candidate_id || '/') + 1, 64)) = 64
+    AND LOWER(substr(t.profile_r2_key, LENGTH('talent-intake/' || t.candidate_id || '/') + 1, 64)) NOT GLOB '*[^0-9a-f]*'
+    AND substr(t.profile_r2_key, LENGTH('talent-intake/' || t.candidate_id || '/') + 65, 1) = '-'
+  `;
   const rows = await client.query<RawCaptureRow>(
     `${scopeSql}
      SELECT
        COUNT(DISTINCT t.candidate_id) AS talent_pool_intake_count,
        COUNT(DISTINCT CASE WHEN t.submitted_at IS NOT NULL THEN t.candidate_id END) AS submitted_intake_count,
        COUNT(DISTINCT CASE WHEN t.profile_r2_key IS NOT NULL AND TRIM(t.profile_r2_key) <> '' THEN t.candidate_id END) AS profile_storage_key_count,
+       COUNT(DISTINCT CASE
+         WHEN t.profile_r2_key IS NOT NULL
+          AND TRIM(t.profile_r2_key) <> ''
+          AND ${contentAddressedProfileKeyPredicate}
+         THEN t.candidate_id
+       END) AS content_addressed_profile_storage_key_count,
+       COUNT(DISTINCT CASE
+         WHEN t.profile_r2_key IS NOT NULL
+          AND TRIM(t.profile_r2_key) <> ''
+          AND NOT (${contentAddressedProfileKeyPredicate})
+         THEN t.candidate_id
+       END) AS non_content_addressed_profile_storage_key_count,
        COUNT(DISTINCT CASE
          WHEN t.submitted_at IS NOT NULL
           AND c.resume_s3_key IS NOT NULL
@@ -385,6 +407,8 @@ async function loadRawCapture(
     talentPoolIntakeCount: toNumber(row?.talent_pool_intake_count),
     submittedIntakeCount: toNumber(row?.submitted_intake_count),
     profileStorageKeyCount: toNumber(row?.profile_storage_key_count),
+    contentAddressedProfileStorageKeyCount: toNumber(row?.content_addressed_profile_storage_key_count),
+    nonContentAddressedProfileStorageKeyCount: toNumber(row?.non_content_addressed_profile_storage_key_count),
     candidateResumeStorageKeyCount: toNumber(row?.candidate_resume_storage_key_count),
     candidateResumeMatchesIntakeCount: toNumber(row?.candidate_resume_matches_intake_count),
     documentProfileStorageKeyCount: toNumber(row?.document_profile_storage_key_count),
@@ -950,6 +974,8 @@ export async function auditCandidateIngestion(
       talentPoolIntakeCount: 0,
       submittedIntakeCount: 0,
       profileStorageKeyCount: 0,
+      contentAddressedProfileStorageKeyCount: 0,
+      nonContentAddressedProfileStorageKeyCount: 0,
       candidateResumeStorageKeyCount: 0,
       candidateResumeMatchesIntakeCount: 0,
       documentProfileStorageKeyCount: 0,
@@ -1067,6 +1093,9 @@ export async function auditCandidateIngestion(
     ...(rawCapture.profileStorageKeyCount > rawCapture.candidateResumeMatchesIntakeCount
       ? [`${rawCapture.profileStorageKeyCount - rawCapture.candidateResumeMatchesIntakeCount} Talent Pool candidate row resume_s3_key value(s) do not match current intake profile_r2_key`]
       : []),
+    ...(rawCapture.nonContentAddressedProfileStorageKeyCount > 0
+      ? [`${rawCapture.nonContentAddressedProfileStorageKeyCount} Talent Pool profile storage key(s) are not content-addressed`]
+      : []),
     ...(rawCapture.submittedIntakeCount > ingestionState.rowCount
       ? [`${rawCapture.submittedIntakeCount - ingestionState.rowCount} submitted Talent Pool intake(s) lack candidate_ingestion state`]
       : []),
@@ -1143,6 +1172,9 @@ export async function auditCandidateIngestion(
       : []),
     ...(rawCapture.documentProfileStorageKeyCount > 0 && sourceProof.documentProfileSourceSpanCount === 0
       ? ['Replay or repair PDF/DOCX profile extraction so the current profile storage key has exact source spans.']
+      : []),
+    ...(rawCapture.nonContentAddressedProfileStorageKeyCount > 0
+      ? ['Replay or repair Talent Pool profile source capture so profile_r2_key and resume_s3_key use content-hash storage paths.']
       : []),
     ...(sourceProof.sourceSpanTextMismatchCount > 0
       ? ['Repair source span coordinates so exact_text matches the immutable artifact content_text slice.']
@@ -1304,6 +1336,8 @@ function printHuman(report: CandidateIngestionAudit, databasePath: string): void
   console.log(`  intakes:               ${report.rawCapture.talentPoolIntakeCount}`);
   console.log(`  submitted:             ${report.rawCapture.submittedIntakeCount}`);
   console.log(`  storage keys:          ${report.rawCapture.profileStorageKeyCount}`);
+  console.log(`  content-hash keys:     ${report.rawCapture.contentAddressedProfileStorageKeyCount}`);
+  console.log(`  non-hash keys:         ${report.rawCapture.nonContentAddressedProfileStorageKeyCount}`);
   console.log(`  candidate resume keys: ${report.rawCapture.candidateResumeStorageKeyCount}`);
   console.log(`  resume key matches:    ${report.rawCapture.candidateResumeMatchesIntakeCount}`);
   console.log(`  document keys:         ${report.rawCapture.documentProfileStorageKeyCount}`);

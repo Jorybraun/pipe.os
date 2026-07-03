@@ -51,6 +51,8 @@ is useful only when it preserves exact provenance back to that bundle.
 The verifier reports:
 
 - submitted Talent Pool intakes and profile storage keys
+- content-addressed profile storage keys, plus any non-hash source keys that
+  would create duplicate raw pointers on replay
 - candidate row `resume_s3_key` coverage and alignment with the current intake
   `profile_r2_key`
 - GitHub, LinkedIn, portfolio, and phone-screener raw capture
@@ -178,7 +180,7 @@ cannot mask a missing LinkedIn, portfolio, or phone-screener intent projection.
 By default, the command fails on an unscoped run with no Talent Pool candidates,
 missing scoped candidates, submitted intakes without storage or ingestion state,
 candidate rows whose `resume_s3_key` is missing or stale relative to the current
-intake profile key,
+intake profile key, profile storage keys that are not content-addressed,
 `candidate_ingestion` rows that are failed or still carry `error_text`, missing
 active Talent Pool person projection, missing exact source proof, missing
 exact-source candidate-node projection, PDF/DOCX profile storage keys without

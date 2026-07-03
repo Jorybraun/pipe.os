@@ -42,6 +42,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - Candidate-ingestion audit now verifies GitHub, LinkedIn, portfolio, and phone-screener operational context by raw intake field predicate with source refs instead of accepting aggregate context-record counts.
 - Talent Pool pasted-profile R2 capture now stores private candidate metadata, matching uploaded profile objects for raw evidence provenance.
 - Talent Pool pasted-profile R2 capture now uses content-hash storage keys, so replaying the same submitted profile text preserves the same raw source pointer instead of minting timestamped duplicates.
+- Candidate-ingestion audit and app-dev smokes now fail profile storage keys that are not content-addressed, proving raw Talent Pool source pointers remain replay-stable.
 - Scheduled candidate-ingestion repair now prioritizes recent document-backed and Talent Pool intake retries before stale text-smoke failures, so real uploaded candidates do not sit behind old AI discovery debris.
 - Candidate document PDF/DOCX retries now reuse pre-extracted source text and bounded parser-only decomposition before AI discovery, preventing uploaded-resume repairs from stalling in full decomposition before the AI/fallback step.
 - Email-less Talent Pool profile submissions and document retries now still project into canonical `people` / `workspace_people` rows using a deterministic candidate-keyed identity, so ingested candidates appear in the unified person graph without fabricating applications or person roles.

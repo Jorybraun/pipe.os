@@ -18,6 +18,8 @@ class SqliteQueryClient implements QueryClient {
   }
 }
 
+const CONTENT_ADDRESSED_PROFILE_KEY = 'talent-intake/candidate-1/687edcc54818080206251abe464c600f3e63820374b8b20b74985f81455531b6-profile.txt';
+
 function createSchema(db: Database.Database): void {
   db.exec(`
     CREATE TABLE candidates (
@@ -182,7 +184,7 @@ function seedSourceBackedTalentPoolCandidate(db: Database.Database): void {
       'owner-1',
       'jordan@example.com',
       'invite-token',
-      'talent-intake/candidate-1/profile.txt',
+      '${CONTENT_ADDRESSED_PROFILE_KEY}',
       NULL
     );
     INSERT INTO talent_pool_intakes (
@@ -191,7 +193,7 @@ function seedSourceBackedTalentPoolCandidate(db: Database.Database): void {
     )
     VALUES (
       'candidate-1',
-      'talent-intake/candidate-1/profile.txt',
+      '${CONTENT_ADDRESSED_PROFILE_KEY}',
       'Jordan shipped TypeScript Workers APIs.',
       'https://github.com/jordan',
       NULL,
@@ -369,6 +371,8 @@ describe('auditCandidateIngestion', () => {
     expect(audit.rawCapture).toMatchObject({
       submittedIntakeCount: 1,
       profileStorageKeyCount: 1,
+      contentAddressedProfileStorageKeyCount: 1,
+      nonContentAddressedProfileStorageKeyCount: 0,
       candidateResumeStorageKeyCount: 1,
       candidateResumeMatchesIntakeCount: 1,
       externalProfileRefCount: 2,
@@ -520,6 +524,33 @@ describe('auditCandidateIngestion', () => {
     expect(audit.rawCapture.candidateResumeStorageKeyCount).toBe(1);
     expect(audit.rawCapture.candidateResumeMatchesIntakeCount).toBe(0);
     expect(audit.failures).toContain('1 Talent Pool candidate row resume_s3_key value(s) do not match current intake profile_r2_key');
+  });
+
+  it('flags profile storage keys that are not content addressed', async () => {
+    sqlite = new Database(':memory:');
+    createSchema(sqlite);
+    seedSourceBackedTalentPoolCandidate(sqlite);
+    sqlite.exec(`
+      UPDATE talent_pool_intakes
+         SET profile_r2_key = 'talent-intake/candidate-1/2026-07-02T00-00-00-000Z.txt'
+       WHERE candidate_id = 'candidate-1';
+      UPDATE candidates
+         SET resume_s3_key = 'talent-intake/candidate-1/2026-07-02T00-00-00-000Z.txt'
+       WHERE id = 'candidate-1';
+    `);
+
+    const audit = await auditCandidateIngestion(new SqliteQueryClient(sqlite), {
+      inviteToken: 'invite-token',
+      requireContextRecords: true,
+    });
+
+    expect(audit.status).toBe('not_ready');
+    expect(audit.rawCapture.profileStorageKeyCount).toBe(1);
+    expect(audit.rawCapture.candidateResumeMatchesIntakeCount).toBe(1);
+    expect(audit.rawCapture.contentAddressedProfileStorageKeyCount).toBe(0);
+    expect(audit.rawCapture.nonContentAddressedProfileStorageKeyCount).toBe(1);
+    expect(audit.failures).toContain('1 Talent Pool profile storage key(s) are not content-addressed');
+    expect(audit.nextActions).toContain('Replay or repair Talent Pool profile source capture so profile_r2_key and resume_s3_key use content-hash storage paths.');
   });
 
   it('flags failed candidate_ingestion state for submitted Talent Pool candidates', async () => {

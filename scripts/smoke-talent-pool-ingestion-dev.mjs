@@ -374,6 +374,8 @@ function runAudit(inviteToken) {
 function auditIsReady(report) {
   if (report.status !== 'ready') return false;
   if (report.rawCapture?.submittedIntakeCount !== 1) return false;
+  if (report.rawCapture?.contentAddressedProfileStorageKeyCount !== 1) return false;
+  if (report.rawCapture?.nonContentAddressedProfileStorageKeyCount !== 0) return false;
   if (report.sourceProof?.candidateNodeExactSourceQuoteCount < 1) return false;
   if (report.sourceProof?.submittedIntakeWithoutExactCandidateNodeCount !== 0) return false;
   if (report.sourceProof?.contextSourceRefCount < 1) return false;
@@ -400,6 +402,8 @@ function countByField(list, field, expected) {
 function auditHasExpectedEvidenceGap(report) {
   if (report.status !== 'not_ready') return false;
   if (report.rawCapture?.submittedIntakeCount !== 1) return false;
+  if (report.rawCapture?.contentAddressedProfileStorageKeyCount !== 1) return false;
+  if (report.rawCapture?.nonContentAddressedProfileStorageKeyCount !== 0) return false;
   if (report.rawCapture?.documentProfileStorageKeyCount !== 1) return false;
   if (report.ingestionState?.failedRowCount !== 0) return false;
   if (report.ingestionState?.errorTextRowCount !== 0) return false;
@@ -652,6 +656,8 @@ async function main() {
     candidateNodeExactSourceQuoteCount: report.sourceProof.candidateNodeExactSourceQuoteCount,
     submittedIntakeWithoutExactCandidateNodeCount: report.sourceProof.submittedIntakeWithoutExactCandidateNodeCount,
     contextSourceRefCount: report.sourceProof.contextSourceRefCount,
+    contentAddressedProfileStorageKeyCount: report.rawCapture.contentAddressedProfileStorageKeyCount,
+    nonContentAddressedProfileStorageKeyCount: report.rawCapture.nonContentAddressedProfileStorageKeyCount,
     documentProfileStorageKeyCount: report.rawCapture.documentProfileStorageKeyCount,
     documentProfileSourceSpanCount: report.sourceProof.documentProfileSourceSpanCount,
     profileUploadArtifactVersionCount: report.sourceProof.profileUploadArtifactVersionCount,
