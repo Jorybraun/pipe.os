@@ -7,6 +7,7 @@ import {
   rankReviewChallenges,
   recallReviewChallenges,
   type CandidateSignal,
+  type ChallengeAlignment,
   type ChallengeDemand,
   type ChallengePacket,
   type ConceptAdjacency,
@@ -119,6 +120,31 @@ function challenge(
       deterministic: 0.95,
       contextualSpecificity: 0.9,
     },
+    ...overrides,
+  };
+}
+
+function rankableAlignment(
+  packet: ChallengePacket,
+  overrides: Partial<ChallengeAlignment> = {},
+): ChallengeAlignment {
+  return {
+    challenge: packet,
+    alignments: [],
+    unmatchedDemandIds: [],
+    candidateEvidenceAlignment: 0,
+    roleRelevance: 0,
+    contextualSpecificity: packet.quality.contextualSpecificity,
+    challengeQuality: packet.quality.deterministic,
+    validationDeepeningValue: 0,
+    finalScore: 0,
+    stretchCount: 0,
+    stretchDemandWeightRatio: 0,
+    hasNonGenericAlignment: true,
+    hasHighWeightRoleRequirement: false,
+    provenanceComplete: true,
+    eligible: true,
+    rejectionReasons: [],
     ...overrides,
   };
 }
@@ -743,6 +769,64 @@ describe('alignCandidateToChallenge', () => {
 });
 
 describe('ranking and explanations', () => {
+  it('prefers candidate-specific fit over static packet polish after eligibility', () => {
+    const compiled = compile([
+      signal('runtime-sdk', {
+        concepts: ['term:workers-sdk', 'term:runtime'],
+        problems: [],
+        mechanisms: ['term:runtime'],
+        domains: ['term:serverless'],
+        businessObjects: [],
+        ownershipActions: ['reviewed'],
+      }),
+    ]);
+    const polishedGeneric = challenge('polished-generic', [
+      demand('generic', 1, {
+        concepts: ['term:typescript', 'term:runtime'],
+        problems: [],
+        mechanisms: ['term:runtime'],
+        domains: [],
+        businessObjects: [],
+        ownershipActions: ['reviewed'],
+        roleRequirement: false,
+        highWeightRoleRequirement: false,
+      }),
+    ], {
+      quality: { deterministic: 1, contextualSpecificity: 1 },
+    });
+    const candidateSpecific = challenge('candidate-specific', [
+      demand('workers', 1, {
+        concepts: ['term:workers-sdk', 'term:runtime'],
+        problems: [],
+        mechanisms: ['term:runtime'],
+        domains: ['term:serverless'],
+        businessObjects: [],
+        ownershipActions: ['reviewed'],
+        roleRequirement: false,
+        highWeightRoleRequirement: false,
+      }),
+    ], {
+      quality: { deterministic: 0.85, contextualSpecificity: 0.75 },
+    });
+
+    const ranked = rankReviewChallenges(compiled.query, [
+      rankableAlignment(polishedGeneric, {
+        candidateEvidenceAlignment: 0.45,
+        validationDeepeningValue: 0.45,
+        finalScore: 0.61,
+      }),
+      rankableAlignment(candidateSpecific, {
+        candidateEvidenceAlignment: 0.60,
+        validationDeepeningValue: 0.60,
+        finalScore: 0.58,
+      }),
+    ]);
+
+    expect(ranked.status).toBe('MATCHED');
+    expect(ranked.matches[0]!.alignment.challenge.id).toBe('candidate-specific');
+    expect(ranked.matches[1]!.alignment.challenge.id).toBe('polished-generic');
+  });
+
   it('uses deterministic final tie-breaks by repo id then PR number', () => {
     const { compiled, packet } = directEligibleFixture();
     const packetB = { ...packet, id: 'b', repoId: 'repo-b', prNumber: 1 };
