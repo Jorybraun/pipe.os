@@ -739,6 +739,10 @@ describe('evaluation corpus review CLI', () => {
     expect(exitCode).toBe(0);
     const summary = JSON.parse(await readFile(summaryPath, 'utf8')) as CorpusReviewCliSummary;
     expect(summary.sourceCorpusId).toBe('draft-corpus-z');
+    expect(summary.productionReady).toBe(false);
+    expect(summary.productionReadinessFailures).toContain(
+      'production corpus contains 1 draft corpus-seeder label(s); complete expert review before production evaluation',
+    );
     expect(summary.reviewPacketPath).toBe(reviewPacketPath);
     expect(summary.reviewTemplatePath).toBe(reviewTemplatePath);
 
@@ -782,6 +786,8 @@ describe('evaluation corpus review CLI', () => {
     const summary = JSON.parse(await readFile(summaryPath, 'utf8')) as {
       sourceCorpusId: string;
       draftPersisted: boolean;
+      productionReady: boolean;
+      productionReadinessFailures: string[];
       readinessSummary: {
         nextAction: string;
         labelsNeedingHumanReview: string[];
@@ -800,6 +806,11 @@ describe('evaluation corpus review CLI', () => {
     };
     expect(summary.sourceCorpusId).toMatch(/^seeded-/);
     expect(summary.draftPersisted).toBe(true);
+    expect(summary.productionReady).toBe(false);
+    expect(summary.productionReadinessFailures).toEqual(expect.arrayContaining([
+      'production corpus contains 1 draft corpus-seeder label(s); complete expert review before production evaluation',
+      'production corpus requires at least one irrelevant or forbidden insufficient-evidence expert label',
+    ]));
     expect(summary.seeded).toEqual(expect.objectContaining({
       matchRunCount: 1,
       labelCount: 1,

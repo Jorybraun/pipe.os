@@ -30,6 +30,10 @@ function readySummary(overrides = {}) {
     reviewPacketPath: '/tmp/review-packet.json',
     reviewTemplatePath: '/tmp/review-template.json',
     reviewMarkdownPath: '/tmp/review.md',
+    productionReady: false,
+    productionReadinessFailures: [
+      'production corpus contains 4 draft corpus-seeder label(s); complete expert review before production evaluation',
+    ],
     readinessSummary: {
       nextAction: 'complete_expert_review',
       draftLabelCount: 4,

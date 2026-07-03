@@ -831,6 +831,8 @@ export async function runCorpusReviewCli(argv: string[]): Promise<number> {
     const summary: CorpusReviewCliSummary = {
       sourceCorpusId: sourceCorpusId(source),
       sourceCorpusHash: sourceHash,
+      productionReady: packet.productionReady,
+      productionReadinessFailures: packet.productionReadinessFailures,
       readinessSummary: packet.readinessSummary,
       nextAction: cliNextActionFromReadiness(packet.readinessSummary),
     };
@@ -915,7 +917,7 @@ export async function runCorpusReviewCli(argv: string[]): Promise<number> {
     } else {
       process.stdout.write(`${JSON.stringify(summary, null, 2)}\n`);
     }
-    return summary.productionReady === false ? 1 : 0;
+    return options.reviewFile && summary.productionReady === false ? 1 : 0;
   } finally {
     connection?.close();
   }
