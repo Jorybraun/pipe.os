@@ -503,6 +503,29 @@ type GitHubCommitVerificationResult =
 
 const GITHUB_COMMIT_VERIFY_MAX_ATTEMPTS = 3;
 
+async function verifyGitHubCommitPageReachable(input: {
+  owner: string;
+  repo: string;
+  commitSha: string;
+}): Promise<GitHubCommitVerificationResult> {
+  const url = `https://github.com/${encodeURIComponent(input.owner)}/${encodeURIComponent(input.repo)}/commit/${input.commitSha.toLowerCase()}`;
+  const headers: Record<string, string> = {
+    Accept: 'text/html',
+    'User-Agent': 'PIPE-OS-assessment-validator',
+  };
+
+  try {
+    const response = await fetch(url, { headers, method: 'HEAD' });
+    if (response.ok) return { ok: true };
+    if (response.status === 404) {
+      return { ok: false, reason: 'not_found', status: response.status };
+    }
+    return { ok: false, reason: 'unavailable', status: response.status };
+  } catch {
+    return { ok: false, reason: 'unavailable' };
+  }
+}
+
 async function verifyGitHubCommitReachable(input: {
   repositoryUrl: string;
   commitSha: string;
@@ -544,7 +567,16 @@ async function verifyGitHubCommitReachable(input: {
     lastUnavailableStatus = response.status;
   }
 
-  return { ok: false, reason: 'unavailable', status: lastUnavailableStatus };
+  const pageVerification = await verifyGitHubCommitPageReachable({
+    owner,
+    repo,
+    commitSha: input.commitSha,
+  });
+  if (pageVerification.ok || pageVerification.reason === 'not_found') {
+    return pageVerification;
+  }
+
+  return { ok: false, reason: 'unavailable', status: pageVerification.status ?? lastUnavailableStatus };
 }
 
 const createInterviewSchema = z.object({

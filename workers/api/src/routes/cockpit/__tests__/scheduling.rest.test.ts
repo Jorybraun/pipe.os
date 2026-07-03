@@ -8112,6 +8112,79 @@ describe('POST /interviews dev-container challenge (HAS-80)', () => {
     });
   });
 
+  it('falls back to GitHub commit pages when API verification is temporarily unavailable', async () => {
+    seedDevContainerFixture();
+    const app = mountSchedulingApp();
+    const baseCommitSha = '1234567890abcdef1234567890abcdef12345678';
+    const fetchMock = vi.fn()
+      .mockResolvedValueOnce(new Response(JSON.stringify({ message: 'Service unavailable' }), {
+        status: 503,
+        headers: { 'Content-Type': 'application/json' },
+      }))
+      .mockResolvedValueOnce(new Response(JSON.stringify({ message: 'Gateway timeout' }), {
+        status: 504,
+        headers: { 'Content-Type': 'application/json' },
+      }))
+      .mockResolvedValueOnce(new Response(JSON.stringify({ message: 'Rate limited' }), {
+        status: 429,
+        headers: { 'Content-Type': 'application/json' },
+      }))
+      .mockResolvedValueOnce(new Response('', { status: 200 }));
+    vi.stubGlobal('fetch', fetchMock);
+
+    const response = await app.request('/interviews', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({
+        recipientName: 'Grace Hopper',
+        recipientEmail: 'grace.page-fallback@example.com',
+        meetingType: 'DIRECT_VIDEO_CALL',
+        interviewType: 'OPEN_SOURCE_BUG_FIX',
+        githubRepoUrl: 'https://github.com/hash-pipe/open-source-task',
+        challengeBaseCommitSha: baseCommitSha,
+        challengeTitle: 'Fix public commit-page assessment setup verification',
+        challengeInstructions: 'Keep the challenge source-backed when GitHub API verification has a temporary outage.',
+        challengeSuccessCriteria: [
+          'A public commit page can verify a valid source-backed challenge when the GitHub API is temporarily unavailable.',
+        ],
+        challengeExpectedEvidence: [
+          'git_commit source ref for the submitted commit',
+          'code_diff source ref for the candidate patch',
+        ],
+      }),
+    });
+
+    expect(response.status).toBe(201);
+    expect(fetchMock).toHaveBeenCalledTimes(4);
+    expect(fetchMock).toHaveBeenNthCalledWith(
+      4,
+      `https://github.com/hash-pipe/open-source-task/commit/${baseCommitSha}`,
+      expect.objectContaining({ method: 'HEAD' }),
+    );
+    const body = await response.json() as {
+      interview: {
+        assessmentSetup: {
+          status: string;
+          kind: string;
+        };
+        assessmentProgress: {
+          challenge: {
+            sourceRefType: string;
+            locator: { baseCommitSha?: string };
+          } | null;
+        } | null;
+      };
+    };
+    expect(body.interview.assessmentSetup).toMatchObject({
+      status: 'reviewable_task_assigned',
+      kind: 'manual_open_source_task',
+    });
+    expect(body.interview.assessmentProgress?.challenge).toMatchObject({
+      sourceRefType: 'open_source_challenge_packet',
+      locator: { baseCommitSha },
+    });
+  });
+
   it('rejects manual open-source challenge packets when the base commit is not reachable in the repo', async () => {
     seedDevContainerFixture();
     const app = mountSchedulingApp();
