@@ -8121,6 +8121,21 @@ describe('POST /interviews dev-container challenge (HAS-80)', () => {
       description: 'Reproduce the failing start-evaluation path, make the smallest production-ready fix, and preserve source-backed assessment evidence.',
     });
 
+    const detailResponse = await app.request(`/interviews/${body.interview.id}`);
+    expect(detailResponse.status).toBe(200);
+    const detailBody = await detailResponse.json() as {
+      interview: {
+        title: string | null;
+        description: string | null;
+        assessmentProgress: {
+          hasChallengePacket: boolean;
+        } | null;
+      };
+    };
+    expect(detailBody.interview.title).toBe('Fix the failing assessment evaluator start state');
+    expect(detailBody.interview.description).toBe('Reproduce the failing start-evaluation path, make the smallest production-ready fix, and preserve source-backed assessment evidence.');
+    expect(detailBody.interview.assessmentProgress?.hasChallengePacket).toBe(true);
+
     const sourceRef = sqlite!.prepare(
       `SELECT sr.source_ref_type, sr.source_ref_id, sr.evidence_role,
               sr.exact_text, sr.content_hash

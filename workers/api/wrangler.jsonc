@@ -107,6 +107,12 @@
 	"env": {
 		"dev": {
 			"name": "pipe-api-dev",
+			"routes": [
+				{
+					"pattern": "api-dev.hire-pipe.com/*",
+					"zone_name": "hire-pipe.com"
+				}
+			],
 			"vars": {
 				"APP_BASE_URL": "https://app-dev.hire-pipe.com",
 				"API_BASE_URL": "https://api-dev.hire-pipe.com",
