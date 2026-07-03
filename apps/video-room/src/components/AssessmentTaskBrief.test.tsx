@@ -303,6 +303,30 @@ describe('AssessmentTaskBrief', () => {
     expect(screen.queryByTestId('assessment-task-brief-submission')).toBeNull();
   });
 
+  it('explains blocked AI prompts without counting them as agent help', () => {
+    render(
+      <AssessmentTaskBrief
+        packet={packet}
+        workspace={workspace}
+        progress={{
+          ...progress,
+          hasAiInteraction: true,
+          sourceRefCounts: [
+            { kind: 'ai_user_prompt_blocked', count: 1 },
+            { kind: 'test_run', count: 1 },
+          ],
+          readiness: undefined,
+        }}
+        workspaceReady
+      />,
+    );
+
+    const proof = screen.getByTestId('assessment-task-brief-proof');
+    expect(proof.textContent).toContain('AI use transparency: Captured');
+    expect(proof.textContent).toContain('A prompt was blocked or the bridge was unavailable; no agent response is counted as assistance.');
+    expect(proof.textContent).not.toContain('Agent messages or responses are captured as assessment evidence.');
+  });
+
   it('shows evaluated workspace submissions as report-ready without exposing recruiter-only scoring', () => {
     render(
       <AssessmentTaskBrief

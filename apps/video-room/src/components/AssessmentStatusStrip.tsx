@@ -12,6 +12,7 @@ import {
 } from 'lucide-react';
 import type { RoomAssessmentProgressSnapshot, RoomWorkspace } from '../types';
 import { summarizeChallengePacket } from '../lib/challengePacketSummary';
+import { summarizeAssessmentAiUse } from '../lib/aiUseSummary';
 
 export type AssessmentRoomMode = 'standard_call' | 'code_review' | 'dev_container_assessment';
 
@@ -112,6 +113,7 @@ function shortSha(value: string | null | undefined): string | null {
 }
 
 function assessmentProgressEvidenceLabels(progress: RoomAssessmentProgressSnapshot): string {
+  const aiUse = summarizeAssessmentAiUse(progress);
   const hasGranularWorkEvidence = Boolean(
     progress.hasMessageEvidence
     || progress.hasDevContainerEvidence
@@ -128,7 +130,7 @@ function assessmentProgressEvidenceLabels(progress: RoomAssessmentProgressSnapsh
     progress.hasToolUsageEvidence ? 'tool activity' : null,
     progress.hasWorkEvidence && !hasGranularWorkEvidence ? 'work' : null,
     progress.hasCommitSubmission ? 'commit' : null,
-    progress.hasAiInteraction ? 'AI use' : null,
+    aiUse.coverageLabel,
     progress.hasTranscriptEvidence ? 'transcript' : null,
     progress.hasTestEvidence ? 'tests' : null,
     progress.hasVerificationGap ? 'verification gap' : null,
@@ -181,6 +183,7 @@ export function AssessmentStatusStrip({
       ? 'Review the assigned code with source-backed notes'
       : 'Use video, chat, and recording');
   const progressCommitSha = shortSha(assessmentProgress?.commit?.commitSha ?? null);
+  const aiUse = assessmentProgress ? summarizeAssessmentAiUse(assessmentProgress) : null;
 
   return (
     <section
@@ -221,11 +224,12 @@ export function AssessmentStatusStrip({
         )}
         {mode !== 'standard_call' && assessmentProgress && (
           <span
-            className={`assessment-status-pill is-${assessmentProgress.hasAiInteraction ? 'progress' : 'waiting'}`}
+            className={`assessment-status-pill is-${aiUse?.tone === 'captured' ? 'progress' : aiUse?.tone ?? 'waiting'}`}
             data-testid="assessment-ai-usage-state"
+            title={aiUse?.detail}
           >
             <Bot size={12} />
-            {assessmentProgress.hasAiInteraction ? 'AI use captured' : 'No AI use captured'}
+            {aiUse?.label}
           </span>
         )}
         {assessmentProgress?.readiness && (

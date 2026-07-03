@@ -157,16 +157,23 @@ describe('AssessmentStatusStrip', () => {
       <AssessmentStatusStrip
         meetingType="DEV_CONTAINER_CHALLENGE"
         workspace={workspace()}
-        assessmentProgress={progress}
+        assessmentProgress={{
+          ...progress,
+          sourceRefCounts: [
+            { kind: 'ai_user_prompt', count: 1 },
+            { kind: 'ai_agent_response', count: 1 },
+            { kind: 'test_run', count: 1 },
+          ],
+        }}
       />,
     );
 
     expect(screen.getByTestId('assessment-progress-stage').textContent).toContain('Ready For Evaluation');
     expect(screen.getByTestId('assessment-readiness').textContent).toContain('Ready to evaluate');
     expect(screen.getByTestId('assessment-progress-commit').textContent).toContain('Commit cccccccc');
-    expect(screen.getByTestId('assessment-ai-usage-state').textContent).toContain('AI use captured');
+    expect(screen.getByTestId('assessment-ai-usage-state').textContent).toContain('AI response captured');
     expect(screen.getByText('Start source-backed AI or human evaluation.')).not.toBeNull();
-    expect(screen.getByTestId('assessment-progress-coverage').textContent).toContain('challenge, chat, workspace, tool activity, commit, AI use, tests');
+    expect(screen.getByTestId('assessment-progress-coverage').textContent).toContain('challenge, chat, workspace, tool activity, commit, AI response, tests');
   });
 
   it('makes the absence of AI usage visible instead of implying it was captured', () => {
@@ -186,6 +193,32 @@ describe('AssessmentStatusStrip', () => {
       'challenge, chat, workspace, tool activity, commit, tests',
     );
     expect(screen.getByTestId('assessment-progress-coverage').textContent).not.toContain('AI use');
+  });
+
+  it('shows blocked AI prompts as diagnostics instead of completed AI help', () => {
+    render(
+      <AssessmentStatusStrip
+        meetingType="DEV_CONTAINER_CHALLENGE"
+        workspace={workspace()}
+        assessmentProgress={{
+          ...progress,
+          hasAiInteraction: true,
+          sourceRefCounts: [
+            { kind: 'ai_user_prompt_blocked', count: 1 },
+            { kind: 'test_run', count: 1 },
+          ],
+        }}
+      />,
+    );
+
+    expect(screen.getByTestId('assessment-ai-usage-state').textContent).toContain('AI prompt blocked');
+    expect(screen.getByTestId('assessment-ai-usage-state').getAttribute('title')).toBe(
+      '1 blocked prompt captured. A prompt was blocked or the bridge was unavailable; no agent response is counted as assistance.',
+    );
+    expect(screen.getByTestId('assessment-ai-usage-state').textContent).not.toContain('AI use captured');
+    expect(screen.getByTestId('assessment-progress-coverage').textContent).toContain(
+      'challenge, chat, workspace, tool activity, commit, AI prompt blocked, tests',
+    );
   });
 
   it('surfaces verification gaps in live room progress coverage', () => {
@@ -221,7 +254,7 @@ describe('AssessmentStatusStrip', () => {
     );
 
     const coverage = screen.getByTestId('assessment-progress-coverage');
-    expect(coverage.textContent).toContain('challenge, chat, workspace, tool activity, commit, AI use, verification gap');
+    expect(coverage.textContent).toContain('challenge, chat, workspace, tool activity, commit, AI trace, verification gap');
     expect(coverage.textContent).not.toContain('tests');
   });
 

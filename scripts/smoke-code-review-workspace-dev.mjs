@@ -805,7 +805,7 @@ async function assertCandidateTaskBriefBrowser(
       timeout: 60_000,
     });
     await expect(assessmentHeader.getByTestId('assessment-ai-usage-state')).toContainText(
-      /AI use captured|No AI use captured/,
+      /AI response captured|AI prompt captured|AI prompt blocked|AI bridge trace captured|No AI use captured/,
       { timeout: 60_000 },
     );
 

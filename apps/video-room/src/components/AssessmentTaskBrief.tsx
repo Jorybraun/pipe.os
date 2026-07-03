@@ -1,5 +1,6 @@
 import { CheckCircle2, CircleDashed, ClipboardCheck, GitBranch, ShieldCheck, SquareTerminal, Upload } from 'lucide-react';
 import { summarizeChallengePacket } from '../lib/challengePacketSummary';
+import { summarizeAssessmentAiUse } from '../lib/aiUseSummary';
 import type { RoomAssessmentProgressSnapshot, RoomWorkspace, RoomWorkspaceChallengePacket } from '../types';
 
 interface AssessmentTaskBriefProps {
@@ -83,6 +84,7 @@ function proofChecklistItems(progress: RoomAssessmentProgressSnapshot): ProofChe
   }
 
   const testOrGapCaptured = progress.hasTestEvidence || progress.hasVerificationGap === true;
+  const aiUse = summarizeAssessmentAiUse(progress);
   return [
     {
       label: 'Challenge packet',
@@ -119,9 +121,7 @@ function proofChecklistItems(progress: RoomAssessmentProgressSnapshot): ProofChe
     {
       label: 'AI use transparency',
       captured: progress.hasAiInteraction,
-      detail: progress.hasAiInteraction
-        ? 'Agent messages or responses are captured as assessment evidence.'
-        : 'Use AI if helpful; only real agent interactions will be recorded.',
+      detail: progress.hasAiInteraction ? aiUse.detail : 'Use AI if helpful; only real agent interactions will be recorded.',
       required: false,
     },
     {
