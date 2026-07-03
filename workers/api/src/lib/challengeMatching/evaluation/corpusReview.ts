@@ -19,6 +19,8 @@ import type {
 import { sha256, stableJson } from '../../repoSemanticGraph/hash';
 
 const REVIEWED_CORPUS_SUFFIX_LENGTH = 12;
+const PACKET_BREADTH_FAILURE =
+  'production corpus requires at least two source-backed expected PR challenge packets';
 
 export interface CorpusReviewPacketItem {
   labelId: string;
@@ -41,7 +43,11 @@ export interface CorpusReviewPacketItem {
 }
 
 export interface CorpusReviewReadinessSummary {
-  nextAction: 'complete_expert_review' | 'fix_corpus_source_evidence' | 'ready_for_evaluation';
+  nextAction:
+    | 'complete_expert_review'
+    | 'expand_corpus_packet_breadth'
+    | 'fix_corpus_source_evidence'
+    | 'ready_for_evaluation';
   draftLabelCount: number;
   labelsNeedingHumanReview: string[];
   negativeLabelCount: number;
@@ -207,7 +213,10 @@ function packetHasDemandEvidence(packet: ExpectedChallengePacket | undefined): b
   );
 }
 
-function buildReadinessSummary(corpus: EvaluationCorpus): CorpusReviewReadinessSummary {
+function buildReadinessSummary(
+  corpus: EvaluationCorpus,
+  productionReadinessFailures: string[],
+): CorpusReviewReadinessSummary {
   const labelsNeedingHumanReview = corpus.expertLabels
     .filter((label) => !hasExpertLabelProvenance(label))
     .map((label) => label.labelId)
@@ -250,13 +259,16 @@ function buildReadinessSummary(corpus: EvaluationCorpus): CorpusReviewReadinessS
     + labelsMissingContrastCandidate.length
     + (negativeLabelCount === 0 ? 1 : 0)
     + (contrastLabelCount === 0 ? 1 : 0);
+  const packetBreadthFailure = productionReadinessFailures.includes(PACKET_BREADTH_FAILURE);
 
   return {
     nextAction: sourceFailures > 0
       ? 'fix_corpus_source_evidence'
-      : reviewCompletenessFailures > 0
-        ? 'complete_expert_review'
-        : 'ready_for_evaluation',
+      : packetBreadthFailure
+        ? 'expand_corpus_packet_breadth'
+        : reviewCompletenessFailures > 0
+          ? 'complete_expert_review'
+          : 'ready_for_evaluation',
     draftLabelCount: labelsNeedingHumanReview.length,
     labelsNeedingHumanReview,
     negativeLabelCount,
@@ -273,7 +285,7 @@ export function buildCorpusReviewPacket(corpus: EvaluationCorpus): CorpusReviewP
   validateCorpus(corpus);
   const counts = evaluationCorpusLabelCounts(corpus);
   const productionReadinessFailures = productionCorpusFailures(corpus);
-  const readinessSummary = buildReadinessSummary(corpus);
+  const readinessSummary = buildReadinessSummary(corpus, productionReadinessFailures);
   return {
     corpusId: corpus.corpusId,
     description: corpus.description,

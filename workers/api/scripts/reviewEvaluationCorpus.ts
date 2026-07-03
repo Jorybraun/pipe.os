@@ -101,7 +101,12 @@ export interface CorpusReviewCliSummary {
   readinessSummary?: CorpusReviewReadinessSummary;
   expertLabelCount?: number;
   syntheticFixtureCount?: number;
-  nextAction: 'review_exported' | 'complete_expert_review' | 'fix_corpus_source_evidence' | 'run_evaluation';
+  nextAction:
+    | 'review_exported'
+    | 'complete_expert_review'
+    | 'expand_corpus_packet_breadth'
+    | 'fix_corpus_source_evidence'
+    | 'run_evaluation';
 }
 
 const scriptDir = dirname(fileURLToPath(import.meta.url));
@@ -629,9 +634,7 @@ export async function runCorpusReviewCli(argv: string[]): Promise<number> {
       summary.readinessSummary = reviewedPacket.readinessSummary;
       summary.expertLabelCount = result.expertLabelCount;
       summary.syntheticFixtureCount = result.syntheticFixtureCount;
-      summary.nextAction = result.productionReady
-        ? cliNextActionFromReadiness(reviewedPacket.readinessSummary)
-        : 'complete_expert_review';
+      summary.nextAction = cliNextActionFromReadiness(reviewedPacket.readinessSummary);
 
       if (options.reviewedCorpusPath) {
         writeJsonFile(options.reviewedCorpusPath, result.corpus);
