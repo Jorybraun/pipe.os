@@ -723,6 +723,9 @@ async function assertRecruiterListCardBrowser(
     if (MATCHED_REPO_ID !== null) {
       await expect(card).toContainText('PIPE-matched challenge');
       await expect(card).toContainText('source-backed candidate evidence');
+      await expect(card).toContainText('MATCH PROOF');
+      await expect(card).toContainText('Review packet quality');
+      await expect(card).toContainText('source-backed repo demand');
       if (matchedAssignmentProofText) {
         await expect(card).toContainText(matchedAssignmentProofText);
       }

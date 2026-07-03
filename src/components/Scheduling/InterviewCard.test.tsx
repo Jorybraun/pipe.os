@@ -763,15 +763,24 @@ describe('InterviewCard assessment progress', () => {
           sourceRefType: 'review_challenge_packet',
           sourceRefId: 'challenge-packet-progress-trust',
           evidenceRole: 'assigned_challenge',
-          exactText: [
-            'Repo: https://github.com/open-source/widgets',
-            'Base commit: 4444444444444444444444444444444444444444',
-            'Task: Fix the matched assignment fallback.',
-          ].join('\n'),
+          exactText: null,
           locator: {
             repositoryUrl: 'https://github.com/open-source/widgets',
+            githubPrNumber: 321,
             matchedRepoId: 42,
             baseCommitSha: '4444444444444444444444444444444444444444',
+          },
+          summary: {
+            repositoryUrl: 'https://github.com/open-source/widgets',
+            githubPrNumber: 321,
+            baseCommitSha: '4444444444444444444444444444444444444444',
+            task: 'Fix the matched assignment fallback.',
+            matchProof: [
+              'Review packet quality 91% from source-backed repo analysis.',
+              '2 source-backed repo demands in the selected PR packet.',
+            ],
+            successCriteria: [],
+            expectedEvidence: [],
           },
         },
         latestEvent: {
@@ -791,6 +800,10 @@ describe('InterviewCard assessment progress', () => {
     expect(progress).toHaveTextContent(
       'PIPE selected this task from source-backed candidate evidence, role context, and repository demand.',
     );
+    expect(progress).toHaveTextContent('MATCH PROOF');
+    expect(progress).toHaveTextContent('Review packet quality 91% from source-backed repo analysis.');
+    expect(progress).toHaveTextContent('2 source-backed repo demands in the selected PR packet.');
+    expect(progress).toHaveTextContent('PR #321');
     expect(progress).not.toHaveTextContent('challenge-packet-progress-trust');
     expect(progress).not.toHaveTextContent('assessment-session-progress-trust');
   });

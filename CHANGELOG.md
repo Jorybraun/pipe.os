@@ -15,6 +15,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Fixed — Interview scheduling
 
+- Recruiter interview cards now show source-backed challenge match proof from summary-only assessment packets, so the list view explains why PIPE assigned a repo task without exposing internal source ref IDs.
 - Source-backed assessment evaluation now drops unsupported positive model claims for tests, verification, or AI use when the cited source refs do not prove that evidence, and reports missing `test_run` proof as a recruiter-visible diagnostic.
 - Recruiter interview pagination now honors server-side newest, oldest, and scheduled-time sort modes instead of reordering only the currently loaded page.
 - Open-source workspace dev smoke now reloads the candidate room after source-backed evaluation and requires the deployed cockpit to show Report Ready instead of Submit Work.
