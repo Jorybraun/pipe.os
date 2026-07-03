@@ -28,6 +28,13 @@ export interface SelectedPacketHealthSummary {
   share: number;
 }
 
+export interface SelectedPacketHealthDistributionEntry extends SelectedPacketHealthSummary {
+  repoId: string | null;
+  repoUrl: string | null;
+  prNumber: number | null;
+  productionReady: boolean;
+}
+
 export type CodeReviewMatchHealthNextAction =
   | 'demote_unsafe_role_backed_matches'
   | 'add_source_backed_challenge_packets'
@@ -43,6 +50,7 @@ export interface CodeReviewMatchHealthAudit {
   staleOrNarrowSelectedMatchCount: number;
   roleBackedUnsafeMatchCount: number;
   selectedPacketSkew: SelectedPacketHealthSummary | null;
+  selectedPacketDistribution: SelectedPacketHealthDistributionEntry[];
   failures: string[];
   warnings: string[];
   nextAction: CodeReviewMatchHealthNextAction;
@@ -68,29 +76,36 @@ function normalizeThresholds(
   };
 }
 
-function selectedPacketSkew(
+function selectedPacketDistribution(
   matches: CodeReviewMatchHealthRow[],
-): SelectedPacketHealthSummary | null {
+  packets: CodeReviewPacketHealthRow[],
+): SelectedPacketHealthDistributionEntry[] {
   const selected = matches.filter((match) =>
     match.status === 'MATCHED' && match.selectedPacketId
   );
-  if (selected.length === 0) return null;
+  if (selected.length === 0) return [];
 
+  const packetById = new Map(packets.map((packet) => [packet.packetId, packet]));
   const counts = new Map<string, number>();
   for (const match of selected) {
     if (!match.selectedPacketId) continue;
     counts.set(match.selectedPacketId, (counts.get(match.selectedPacketId) ?? 0) + 1);
   }
 
-  const [packetId, count] = [...counts.entries()].sort((left, right) =>
-    right[1] - left[1] || left[0].localeCompare(right[0])
-  )[0]!;
-
-  return {
-    packetId,
-    count,
-    share: count / selected.length,
-  };
+  return [...counts.entries()]
+    .sort((left, right) => right[1] - left[1] || left[0].localeCompare(right[0]))
+    .map(([packetId, count]) => {
+      const packet = packetById.get(packetId);
+      return {
+        packetId,
+        count,
+        share: count / selected.length,
+        repoId: packet?.repoId ?? null,
+        repoUrl: packet?.repoUrl ?? null,
+        prNumber: packet?.prNumber ?? null,
+        productionReady: packet?.productionReady ?? false,
+      };
+    });
 }
 
 export function auditCodeReviewMatchHealth(input: {
@@ -115,7 +130,14 @@ export function auditCodeReviewMatchHealth(input: {
   const roleBackedUnsafeMatchCount = selectedMatches.filter((match) =>
     match.roleContextId !== null && (match.contrastScore ?? 0) <= 0
   ).length;
-  const skew = selectedPacketSkew(currentBreadthSelectedMatches);
+  const distribution = selectedPacketDistribution(currentBreadthSelectedMatches, input.packets);
+  const skew = distribution[0]
+    ? {
+      packetId: distribution[0].packetId,
+      count: distribution[0].count,
+      share: distribution[0].share,
+    }
+    : null;
   const failures: string[] = [];
   const warnings: string[] = [];
 
@@ -178,6 +200,7 @@ export function auditCodeReviewMatchHealth(input: {
     staleOrNarrowSelectedMatchCount,
     roleBackedUnsafeMatchCount,
     selectedPacketSkew: skew,
+    selectedPacketDistribution: distribution,
     failures,
     warnings,
     nextAction,
