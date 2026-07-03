@@ -1,6 +1,7 @@
 import { describe, expect, it } from 'vitest';
 import {
   auditCodeReviewJudgeExamples,
+  createRemoteQueryClient,
   loadRemoteRows,
   parseArgs,
   type JudgeExampleRow,
@@ -108,6 +109,20 @@ describe('verifyCodeReviewJudgeExamples', () => {
         status: 'READY',
       }),
     ]);
+  });
+
+  it('uses Wrangler D1 when remote verification lacks REST credentials', () => {
+    const client = createRemoteQueryClient('app-dev-db-id', {
+      env: {
+        CODE_REVIEW_RELIABILITY_D1_DATABASE_NAME: 'pipe-db',
+      },
+      wranglerOptions: {
+        command: 'wrangler',
+        configPaths: [],
+      },
+    });
+
+    expect(client.constructor.name).toBe('WranglerD1Client');
   });
 
   it('reports an empty queue as not ready with next action guidance', () => {

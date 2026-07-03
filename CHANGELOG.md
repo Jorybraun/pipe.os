@@ -24,6 +24,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 ### Added — CODE_REVIEW assessment runtime
 
 - CODE_REVIEW packet-catalog and match-quality readiness tooling can now run against remote app-dev D1 through an authenticated Wrangler session when raw Cloudflare REST API token env vars are not exported, keeping source-backed PR and labelled matching gates runnable from normal operator shells.
+- CODE_REVIEW judge-example remote verification now shares the same Wrangler D1 fallback, keeping replay/calibration readiness proof runnable from normal operator shells without raw Cloudflare REST API token env vars.
 - CODE_REVIEW candidate smokes now reject `Repo matching` and `Challenge needs attention` copy on ready and profile-received `/assess` surfaces, tightening proof that matching diagnostics stay out of the runtime.
 - `/assess/CLAIMED::...` URLs now resolve through the Worker with the raw token instead of being rejected client-side, letting the backend repair pre-start claimed prefixes while still rejecting truly started invites.
 - Candidate assessment start now treats server `PROFILE_RECEIVED` conflicts as queued handoffs, preventing stale "unable to start" errors when a CODE_REVIEW invite has moved into background readiness.
