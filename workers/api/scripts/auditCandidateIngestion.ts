@@ -79,6 +79,7 @@ export interface CandidateIngestionStateAudit {
 export interface CandidateSourceProofAudit {
   candidateNodeCount: number;
   candidateNodeExactSourceQuoteCount: number;
+  submittedIntakeWithoutExactCandidateNodeCount: number;
   candidateNodeWithoutExactSourceCount: number;
   duplicateCandidateNodeEvidenceCount: number;
   candidateNodeSourceAnchorConflictCount: number;
@@ -163,6 +164,7 @@ interface RawCaptureRow {
 interface SourceProofRow {
   candidate_node_count: number | null;
   candidate_node_exact_source_quote_count: number | null;
+  submitted_intake_without_exact_candidate_node_count: number | null;
   candidate_node_without_exact_source_count: number | null;
   duplicate_candidate_node_evidence_count: number | null;
   candidate_node_source_anchor_conflict_count: number | null;
@@ -468,6 +470,17 @@ async function loadSourceProof(
           JOIN candidate_nodes cn ON cn.candidate_id = ac.id
          WHERE cn.superseded_at IS NULL
            AND json_extract(cn.extracted_properties_json, '$.source_quote_validated') = 1) AS candidate_node_exact_source_quote_count,
+       (SELECT COUNT(DISTINCT ac.id)
+          FROM audited_candidates ac
+          JOIN talent_pool_intakes t ON t.candidate_id = ac.id
+         WHERE t.submitted_at IS NOT NULL
+           AND NOT EXISTS (
+             SELECT 1
+               FROM candidate_nodes cn
+              WHERE cn.candidate_id = ac.id
+                AND cn.superseded_at IS NULL
+                AND json_extract(cn.extracted_properties_json, '$.source_quote_validated') = 1
+           )) AS submitted_intake_without_exact_candidate_node_count,
        (SELECT COUNT(DISTINCT cn.id)
           FROM audited_candidates ac
           JOIN candidate_nodes cn ON cn.candidate_id = ac.id
@@ -585,6 +598,7 @@ async function loadSourceProof(
   return {
     candidateNodeCount: toNumber(row?.candidate_node_count),
     candidateNodeExactSourceQuoteCount: toNumber(row?.candidate_node_exact_source_quote_count),
+    submittedIntakeWithoutExactCandidateNodeCount: toNumber(row?.submitted_intake_without_exact_candidate_node_count),
     candidateNodeWithoutExactSourceCount: toNumber(row?.candidate_node_without_exact_source_count),
     duplicateCandidateNodeEvidenceCount: toNumber(row?.duplicate_candidate_node_evidence_count),
     candidateNodeSourceAnchorConflictCount: toNumber(row?.candidate_node_source_anchor_conflict_count),
@@ -888,6 +902,7 @@ export async function auditCandidateIngestion(
     sourceProof: {
       candidateNodeCount: 0,
       candidateNodeExactSourceQuoteCount: 0,
+      submittedIntakeWithoutExactCandidateNodeCount: 0,
       candidateNodeWithoutExactSourceCount: 0,
       duplicateCandidateNodeEvidenceCount: 0,
       candidateNodeSourceAnchorConflictCount: 0,
@@ -1011,8 +1026,8 @@ export async function auditCandidateIngestion(
     ...(sourceProof.sourceSpanHashMismatchCount > 0
       ? [`${sourceProof.sourceSpanHashMismatchCount} source span(s) have exact_text_hash values that do not match exact_text`]
       : []),
-    ...(rawCapture.submittedIntakeCount > sourceProof.candidateNodeExactSourceQuoteCount
-      ? [`${rawCapture.submittedIntakeCount - sourceProof.candidateNodeExactSourceQuoteCount} submitted Talent Pool intake(s) lack exact-source candidate-node projection`]
+    ...(sourceProof.submittedIntakeWithoutExactCandidateNodeCount > 0
+      ? [`${sourceProof.submittedIntakeWithoutExactCandidateNodeCount} submitted Talent Pool intake(s) lack exact-source candidate-node projection`]
       : []),
     ...(sourceProof.candidateNodeWithoutExactSourceCount > 0
       ? [`${sourceProof.candidateNodeWithoutExactSourceCount} positive candidate node(s) lack an exact validated resume source quote`]
@@ -1068,7 +1083,7 @@ export async function auditCandidateIngestion(
     ...(sourceProof.sourceSpanHashMismatchCount > 0
       ? ['Repair source span hashes so exact_text_hash is the SHA-256 of exact_text.']
       : []),
-    ...(rawCapture.submittedIntakeCount > sourceProof.candidateNodeExactSourceQuoteCount
+    ...(sourceProof.submittedIntakeWithoutExactCandidateNodeCount > 0
       ? ['Replay or repair Talent Pool profile ingestion so each submitted profile creates an exact-source candidate node.']
       : []),
     ...(sourceProof.candidateNodeWithoutExactSourceCount > 0
@@ -1237,6 +1252,7 @@ function printHuman(report: CandidateIngestionAudit, databasePath: string): void
   console.log('Source proof:');
   console.log(`  candidate nodes:       ${report.sourceProof.candidateNodeCount}`);
   console.log(`  exact node quotes:     ${report.sourceProof.candidateNodeExactSourceQuoteCount}`);
+  console.log(`  submitted node gaps:   ${report.sourceProof.submittedIntakeWithoutExactCandidateNodeCount}`);
   console.log(`  node quote gaps:       ${report.sourceProof.candidateNodeWithoutExactSourceCount}`);
   console.log(`  duplicate nodes:       ${report.sourceProof.duplicateCandidateNodeEvidenceCount}`);
   console.log(`  anchor conflicts:      ${report.sourceProof.candidateNodeSourceAnchorConflictCount}`);

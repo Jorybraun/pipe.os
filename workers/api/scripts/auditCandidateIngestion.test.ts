@@ -380,6 +380,7 @@ describe('auditCandidateIngestion', () => {
     expect(audit.sourceProof).toMatchObject({
       candidateNodeCount: 1,
       candidateNodeExactSourceQuoteCount: 1,
+      submittedIntakeWithoutExactCandidateNodeCount: 0,
       artifactVersionCount: 1,
       sourceSpanCount: 1,
       sourceSpanTextMismatchCount: 0,
@@ -745,8 +746,72 @@ describe('auditCandidateIngestion', () => {
 
     expect(audit.status).toBe('not_ready');
     expect(audit.sourceProof.candidateNodeExactSourceQuoteCount).toBe(0);
+    expect(audit.sourceProof.submittedIntakeWithoutExactCandidateNodeCount).toBe(1);
     expect(audit.failures).toContain('1 submitted Talent Pool intake(s) lack exact-source candidate-node projection');
     expect(audit.nextActions).toContain('Replay or repair Talent Pool profile ingestion so each submitted profile creates an exact-source candidate node.');
+  });
+
+  it('flags submitted candidates without exact-source nodes even when another candidate has extra exact nodes', async () => {
+    sqlite = new Database(':memory:');
+    createSchema(sqlite);
+    seedSourceBackedTalentPoolCandidate(sqlite);
+    sqlite.exec(`
+      INSERT INTO candidate_nodes (
+        id, candidate_id, source_type, source_reference, confidence, extracted_properties_json
+      )
+      VALUES (
+        'candidate-node-profile-extra',
+        'candidate-1',
+        'talent_pool_profile_intake',
+        'source_span:source-span-1:extra',
+        1,
+        '{"source_quote":"Jordan shipped TypeScript Workers APIs.","source_quote_validated":true,"source_quote_char_start":1,"source_quote_char_end":39,"exact_text_hash":"extra"}'
+      );
+      INSERT INTO candidates (
+        id, owner_id, email, invite_token, resume_s3_key, pipeline_id
+      )
+      VALUES (
+        'candidate-2',
+        'owner-1',
+        'casey@example.com',
+        'invite-token-2',
+        'talent-intake/candidate-2/profile.txt',
+        NULL
+      );
+      INSERT INTO talent_pool_intakes (
+        candidate_id, profile_r2_key, profile_text_excerpt, github_url,
+        linkedin_url, portfolio_url, phone_screener_consent, submitted_at
+      )
+      VALUES (
+        'candidate-2',
+        'talent-intake/candidate-2/profile.txt',
+        'Casey submitted profile evidence.',
+        NULL,
+        NULL,
+        NULL,
+        0,
+        '2026-07-02T00:00:00.000Z'
+      );
+      INSERT INTO candidate_ingestion (candidate_id, status, current_step, error_text, candidate_searchable_profile)
+      VALUES ('candidate-2', 'pending', 'talent_pool_profile_received', NULL, NULL);
+      INSERT INTO people (id, primary_email)
+      VALUES ('person-2', 'casey@example.com');
+      INSERT INTO workspace_people (id, workspace_id, person_id, context_json)
+      VALUES (
+        'workspace-person-2',
+        'owner-1',
+        'person-2',
+        '{"talentPool":{"candidateId":"candidate-2","status":"active","roleless":true},"legacyCandidateIds":["candidate-2"]}'
+      );
+    `);
+
+    const audit = await auditCandidateIngestion(new SqliteQueryClient(sqlite));
+
+    expect(audit.status).toBe('not_ready');
+    expect(audit.auditedCandidateCount).toBe(2);
+    expect(audit.sourceProof.candidateNodeExactSourceQuoteCount).toBe(2);
+    expect(audit.sourceProof.submittedIntakeWithoutExactCandidateNodeCount).toBe(1);
+    expect(audit.failures).toContain('1 submitted Talent Pool intake(s) lack exact-source candidate-node projection');
   });
 
   it('flags PDF/DOCX profile keys without extracted source spans', async () => {

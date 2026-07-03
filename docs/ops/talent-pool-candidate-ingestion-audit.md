@@ -88,6 +88,9 @@ The same submitted profile text also creates one idempotent
 the source span id in `source_reference`. This compatibility node is a durable
 profile-evidence marker for graph consumers; richer skill, project, experience,
 and match signals still require source-backed resume decomposition.
+The audit checks this projection per submitted candidate, not only as an
+aggregate count, so a candidate with many exact-source nodes cannot mask another
+submitted candidate with no exact-source candidate-node projection.
 
 Uploaded profile files use content-hash storage keys, so replaying the same
 file reuses the same source artifact path. Each upload also creates an
