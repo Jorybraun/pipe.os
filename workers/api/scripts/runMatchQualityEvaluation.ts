@@ -268,6 +268,8 @@ export function matchQualityCasesFromEvaluationCorpus(corpus: EvaluationCorpus):
       expectedVerdict,
       expectedReasonCategory: reasonForGrade(label.relevanceGrade),
       expertLabel: label.explanation ?? `${label.relevanceGrade} by ${label.labeledBy}`,
+      negativeCandidateId: label.negativeCandidateId,
+      minimumScoreSeparation: label.minimumScoreSeparation,
       requireCandidateEvidence: positive,
       requireRepoEvidence: true,
       requireSourceBackedPr: true,

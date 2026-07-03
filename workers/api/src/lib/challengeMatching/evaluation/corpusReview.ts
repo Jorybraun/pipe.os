@@ -28,6 +28,8 @@ export interface CorpusReviewPacketItem {
   draft: {
     relevanceGrade: RelevanceGrade;
     eligibleChallengeIds: string[];
+    negativeCandidateId: string | null;
+    minimumScoreSeparation: number | null;
     explanation: string | null;
     labeledBy: string;
     labelVersion: string;
@@ -42,6 +44,9 @@ export interface CorpusReviewReadinessSummary {
   nextAction: 'complete_expert_review' | 'fix_corpus_source_evidence' | 'ready_for_evaluation';
   draftLabelCount: number;
   labelsNeedingHumanReview: string[];
+  negativeLabelCount: number;
+  contrastLabelCount: number;
+  labelsMissingContrastCandidate: string[];
   labelsMissingCandidateEvidence: string[];
   labelsMissingRoleRequirements: string[];
   labelsMissingExpectedPacket: string[];
@@ -70,6 +75,8 @@ export interface ExpertLabelReview {
   guardrailViolations?: GuardrailViolation[];
   permittedStretchPaths?: StretchPath[];
   forbiddenRoles?: string[];
+  negativeCandidateId?: string;
+  minimumScoreSeparation?: number;
 }
 
 export interface ApplyExpertCorpusReviewInput {
@@ -97,6 +104,10 @@ function nonEmpty(value: unknown): value is string {
 
 function isEligibleGrade(grade: RelevanceGrade): boolean {
   return grade === 'highly_relevant' || grade === 'relevant' || grade === 'borderline';
+}
+
+function isPositiveGrade(grade: RelevanceGrade): boolean {
+  return grade === 'highly_relevant' || grade === 'relevant';
 }
 
 function labelChallengeSet(labels: ExpertLabel[]): number {
@@ -158,6 +169,21 @@ function validateReviewInput(
     ) {
       failures.push(`forbidden reviewed label requires guardrailViolations: ${review.labelId}`);
     }
+    if (review.negativeCandidateId !== undefined && !nonEmpty(review.negativeCandidateId)) {
+      failures.push(`reviewed label negativeCandidateId must be non-empty when provided: ${review.labelId}`);
+    }
+    if (
+      review.minimumScoreSeparation !== undefined
+      && (!Number.isFinite(review.minimumScoreSeparation) || review.minimumScoreSeparation < 0)
+    ) {
+      failures.push(`reviewed label minimumScoreSeparation must be a non-negative finite number: ${review.labelId}`);
+    }
+    if (review.negativeCandidateId !== undefined && review.minimumScoreSeparation === undefined) {
+      failures.push(`reviewed label with negativeCandidateId requires minimumScoreSeparation: ${review.labelId}`);
+    }
+    if (review.minimumScoreSeparation !== undefined && review.negativeCandidateId === undefined) {
+      failures.push(`reviewed label with minimumScoreSeparation requires negativeCandidateId: ${review.labelId}`);
+    }
   }
 
   for (const labelId of sourceLabelIds) {
@@ -186,6 +212,20 @@ function buildReadinessSummary(corpus: EvaluationCorpus): CorpusReviewReadinessS
     .filter((label) => !hasExpertLabelProvenance(label))
     .map((label) => label.labelId)
     .sort();
+  const negativeLabelCount = corpus.expertLabels.filter((label) =>
+    !isPositiveGrade(label.relevanceGrade)
+  ).length;
+  const contrastLabelCount = corpus.expertLabels.filter((label) =>
+    nonEmpty(label.negativeCandidateId)
+      && label.minimumScoreSeparation !== undefined
+  ).length;
+  const labelsMissingContrastCandidate = corpus.expertLabels
+    .filter((label) =>
+      isPositiveGrade(label.relevanceGrade)
+        && (!nonEmpty(label.negativeCandidateId) || label.minimumScoreSeparation === undefined)
+    )
+    .map((label) => label.labelId)
+    .sort();
   const labelsMissingCandidateEvidence = corpus.expertLabels
     .filter((label) => getCandidateEvidence(corpus, label.candidateId).length === 0)
     .map((label) => label.labelId)
@@ -206,15 +246,22 @@ function buildReadinessSummary(corpus: EvaluationCorpus): CorpusReviewReadinessS
     + labelsMissingRoleRequirements.length
     + labelsMissingExpectedPacket.length
     + labelsMissingRepoDemandEvidence.length;
+  const reviewCompletenessFailures = labelsNeedingHumanReview.length
+    + labelsMissingContrastCandidate.length
+    + (negativeLabelCount === 0 ? 1 : 0)
+    + (contrastLabelCount === 0 ? 1 : 0);
 
   return {
     nextAction: sourceFailures > 0
       ? 'fix_corpus_source_evidence'
-      : labelsNeedingHumanReview.length > 0
+      : reviewCompletenessFailures > 0
         ? 'complete_expert_review'
         : 'ready_for_evaluation',
     draftLabelCount: labelsNeedingHumanReview.length,
     labelsNeedingHumanReview,
+    negativeLabelCount,
+    contrastLabelCount,
+    labelsMissingContrastCandidate,
     labelsMissingCandidateEvidence,
     labelsMissingRoleRequirements,
     labelsMissingExpectedPacket,
@@ -250,6 +297,8 @@ export function buildCorpusReviewPacket(corpus: EvaluationCorpus): CorpusReviewP
       draft: {
         relevanceGrade: label.relevanceGrade,
         eligibleChallengeIds: label.eligibleChallengeIds,
+        negativeCandidateId: label.negativeCandidateId ?? null,
+        minimumScoreSeparation: label.minimumScoreSeparation ?? null,
         explanation: label.explanation ?? null,
         labeledBy: label.labeledBy,
         labelVersion: label.labelVersion,
@@ -260,6 +309,7 @@ export function buildCorpusReviewPacket(corpus: EvaluationCorpus): CorpusReviewP
       reviewQuestions: [
         'Does the candidate evidence actually support this challenge selection?',
         'Does the repo PR demand test the role-relevant skill rather than a generic adjacent skill?',
+        'Which negative candidate should score materially lower on this challenge, and by what minimum separation?',
         'Should this challenge be eligible, borderline, irrelevant, or forbidden for this candidate?',
         'What source-backed reason should future rollout gates use for this label?',
       ],
@@ -300,6 +350,8 @@ export async function applyExpertCorpusReview(
       forbiddenRoles: review.forbiddenRoles,
       guardrailViolations: review.guardrailViolations,
       permittedStretchPaths: review.permittedStretchPaths,
+      negativeCandidateId: review.negativeCandidateId,
+      minimumScoreSeparation: review.minimumScoreSeparation,
       explanation: review.explanation.trim(),
       labelVersion: input.rubricVersion,
       labeledAt: reviewedAt,

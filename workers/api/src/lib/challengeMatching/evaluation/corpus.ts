@@ -156,6 +156,21 @@ export function validateCorpus(corpus: EvaluationCorpus): void {
     if (!validGrades.has(label.relevanceGrade)) {
       failures.push(`label has invalid relevanceGrade: ${String(label.relevanceGrade)}`);
     }
+    if (label.negativeCandidateId !== undefined && !candidateIds.has(label.negativeCandidateId)) {
+      failures.push(`label references unknown negative candidate: ${label.labelId}`);
+    }
+    if (
+      label.minimumScoreSeparation !== undefined
+      && (!Number.isFinite(label.minimumScoreSeparation) || label.minimumScoreSeparation < 0)
+    ) {
+      failures.push(`label minimumScoreSeparation must be a non-negative finite number: ${label.labelId}`);
+    }
+    if (label.negativeCandidateId !== undefined && label.minimumScoreSeparation === undefined) {
+      failures.push(`label with negativeCandidateId requires minimumScoreSeparation: ${label.labelId}`);
+    }
+    if (label.minimumScoreSeparation !== undefined && label.negativeCandidateId === undefined) {
+      failures.push(`label with minimumScoreSeparation requires negativeCandidateId: ${label.labelId}`);
+    }
     if (!label.labeledBy || !label.labelVersion || !label.labeledAt) {
       failures.push(`label is missing labeling provenance: ${label.labelId}`);
     }
