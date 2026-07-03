@@ -23,6 +23,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Added — CODE_REVIEW assessment runtime
 
+- `living-context:match-quality` now rejects stored draft or synthetic CODE_REVIEW corpora by default, with an explicit `--allow-draft-corpus` inspection mode that cannot be combined with `--require-pass`.
 - Completed `matching-eval:review` review files can now supply their own `sourceCorpusId`, while the CLI still verifies the embedded source hash before persisting reviewed corpora.
 - `matching-eval:review` can now export the latest persisted draft corpus with `--latest-draft-corpus`, avoiding accidental reseeding when operators need the current expert-review handoff packet.
 - Matching-evaluation readiness now auto-selects the latest expert-labelled corpus for `--check-latest-production-pass` and reports an actionable failure when app-dev only has draft corpora.
