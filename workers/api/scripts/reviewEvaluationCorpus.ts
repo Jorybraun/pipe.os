@@ -42,6 +42,7 @@ interface D1Like {
 }
 
 interface StoredCorpusRow {
+  corpus_id?: string;
   corpus_json: string;
 }
 
@@ -51,6 +52,7 @@ export interface CorpusReviewCliOptions {
   databaseId?: string;
   sourceCorpusId?: string;
   sourceCorpusFile?: string;
+  latestDraftCorpus: boolean;
   seedFromMatchRuns: boolean;
   seedLimit?: number;
   seedSelectionPoolLimit?: number;
@@ -332,14 +334,15 @@ export function parseCorpusReviewArgs(argv: string[]): CorpusReviewCliOptions | 
   const target = argv.includes('--remote') ? 'remote' : 'local';
   const sourceCorpusId = valueFor(argv, '--source-corpus-id');
   const sourceCorpusFile = valueFor(argv, '--source-corpus-file');
+  const latestDraftCorpus = argv.includes('--latest-draft-corpus');
   const seedFromMatchRuns = argv.includes('--seed-from-match-runs');
-  const sourceModes = [Boolean(sourceCorpusId), Boolean(sourceCorpusFile), seedFromMatchRuns]
+  const sourceModes = [Boolean(sourceCorpusId), Boolean(sourceCorpusFile), latestDraftCorpus, seedFromMatchRuns]
     .filter(Boolean).length;
   if (sourceModes === 0) {
-    throw new Error('--source-corpus-id, --source-corpus-file, or --seed-from-match-runs is required');
+    throw new Error('--source-corpus-id, --source-corpus-file, --latest-draft-corpus, or --seed-from-match-runs is required');
   }
   if (sourceModes > 1) {
-    throw new Error('pass only one source mode: --source-corpus-id, --source-corpus-file, or --seed-from-match-runs');
+    throw new Error('pass only one source mode: --source-corpus-id, --source-corpus-file, --latest-draft-corpus, or --seed-from-match-runs');
   }
   const databasePath = valueFor(argv, '--database-path');
   const databaseId = valueFor(argv, '--database-id');
@@ -355,6 +358,7 @@ export function parseCorpusReviewArgs(argv: string[]): CorpusReviewCliOptions | 
     target,
     persist: argv.includes('--persist'),
     persistDraft: argv.includes('--persist-draft'),
+    latestDraftCorpus,
     seedFromMatchRuns,
     ...(databasePath ? { databasePath } : {}),
     ...(databaseId ? { databaseId } : {}),
@@ -387,6 +391,9 @@ export function parseCorpusReviewArgs(argv: string[]): CorpusReviewCliOptions | 
   if (options.seedFromMatchRuns && options.reviewFile) {
     throw new Error('--review-file cannot be combined with --seed-from-match-runs; first persist/export the draft, then review it');
   }
+  if (options.latestDraftCorpus && options.reviewFile) {
+    throw new Error('--review-file cannot be combined with --latest-draft-corpus; pass the exported --source-corpus-id so the reviewed corpus is stable');
+  }
   if (options.persist && !options.sourceCorpusId) {
     throw new Error('--persist requires --source-corpus-id so the source frozen corpus remains auditable');
   }
@@ -403,12 +410,14 @@ export function corpusReviewHelp(): string {
   return `Usage:
   npx tsx scripts/reviewEvaluationCorpus.ts --source-corpus-id <id> [options]
   npx tsx scripts/reviewEvaluationCorpus.ts --source-corpus-file <path> [options]
+  npx tsx scripts/reviewEvaluationCorpus.ts --latest-draft-corpus [options]
   npx tsx scripts/reviewEvaluationCorpus.ts --seed-from-match-runs [options]
 
 Options:
   --local | --remote
   --database-path <path>
   --database-id <id>                 Remote D1 database id; defaults to MATCHING_EVALUATION_D1_DATABASE_ID then CLOUDFLARE_D1_DATABASE_ID
+  --latest-draft-corpus              Export the newest persisted draft corpus with no expert/synthetic labels
   --seed-from-match-runs              Build a draft corpus from real persisted match_runs
   --seed-limit <n>                    Match run limit for seeding (default: 50)
   --seed-selection-pool-limit <n>     Recent match-run rows inspected for packet-diverse seeding (default: 500)
@@ -461,6 +470,27 @@ async function loadStoredCorpus(db: D1Like, corpusId: string): Promise<Evaluatio
     throw new Error(`evaluation corpus not found: ${corpusId}`);
   }
   return loadCorpus(row.corpus_json);
+}
+
+async function loadLatestDraftCorpus(db: D1Like): Promise<EvaluationCorpus> {
+  const row = await db.prepare(
+    `SELECT corpus_id, corpus_json
+       FROM evaluation_corpora
+      WHERE expert_label_count = 0
+        AND synthetic_fixture_count = 0
+      ORDER BY created_at DESC, corpus_id DESC
+      LIMIT 1`,
+  ).first<StoredCorpusRow>();
+  if (!row) {
+    throw new Error(
+      'no persisted draft evaluation corpus found; seed one with --seed-from-match-runs --persist-draft first',
+    );
+  }
+  const corpus = loadCorpus(row.corpus_json);
+  if (row.corpus_id && corpus.corpusId !== row.corpus_id) {
+    throw new Error(`stored corpus row "${row.corpus_id}" contains corpus "${corpus.corpusId}"`);
+  }
+  return corpus;
 }
 
 function loadCorpusFile(path: string): EvaluationCorpus {
@@ -743,6 +773,10 @@ async function loadSourceCorpus(
   db: D1Like | null,
 ): Promise<{ corpus: EvaluationCorpus; seedResult?: CorpusSeederResult }> {
   if (options.sourceCorpusFile) return { corpus: loadCorpusFile(options.sourceCorpusFile) };
+  if (options.latestDraftCorpus) {
+    if (!db) throw new Error('--latest-draft-corpus requires D1 access');
+    return { corpus: await loadLatestDraftCorpus(db) };
+  }
   if (options.seedFromMatchRuns) {
     if (!db) throw new Error('--seed-from-match-runs requires D1 access');
     const seedResult = await seedCorpusFromMatchRuns(db as unknown as D1Database, {
@@ -773,7 +807,7 @@ export async function runCorpusReviewCli(argv: string[]): Promise<number> {
     return 0;
   }
 
-  const needsD1 = Boolean(options.sourceCorpusId || options.seedFromMatchRuns || options.persist || options.persistDraft);
+  const needsD1 = Boolean(options.sourceCorpusId || options.latestDraftCorpus || options.seedFromMatchRuns || options.persist || options.persistDraft);
   const connection = needsD1 ? await openD1(options) : null;
   try {
     const loadedSource = await loadSourceCorpus(options, connection?.db ?? null);
