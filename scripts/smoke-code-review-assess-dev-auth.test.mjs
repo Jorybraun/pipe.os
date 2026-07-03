@@ -1,6 +1,9 @@
 import { describe, expect, it } from 'vitest';
 
-import { resolveAppDevBasicAuth } from './smoke-code-review-assess-dev.mjs';
+import {
+  resolveAppDevBasicAuth,
+  resolveCodeReviewSmokeD1Target,
+} from './smoke-code-review-assess-dev.mjs';
 
 describe('CODE_REVIEW assess smoke app-dev Basic Auth resolution', () => {
   it('prefers app-dev-specific credentials over generic dev credentials', () => {
@@ -32,6 +35,42 @@ describe('CODE_REVIEW assess smoke app-dev Basic Auth resolution', () => {
     })).toEqual({
       user: 'legacy-user',
       password: 'legacy-pass',
+    });
+  });
+
+  it('uses remote D1 verification for deployed app-dev smokes', () => {
+    expect(resolveCodeReviewSmokeD1Target({
+      apiBase: 'https://api-dev.hire-pipe.com',
+      rpcBase: 'https://api-dev.hire-pipe.com',
+      env: {},
+    })).toEqual({
+      remote: true,
+      databaseName: 'pipe-db-test',
+      label: 'remote',
+    });
+  });
+
+  it('keeps local D1 verification for localhost smokes', () => {
+    expect(resolveCodeReviewSmokeD1Target({
+      apiBase: 'http://localhost:8787',
+      rpcBase: 'http://localhost:8787',
+      env: {},
+    })).toEqual({
+      remote: false,
+      databaseName: 'pipe-db',
+      label: 'local',
+    });
+  });
+
+  it('honors explicit CODE_REVIEW smoke D1 database names for both targets', () => {
+    expect(resolveCodeReviewSmokeD1Target({
+      apiBase: 'https://api-dev.hire-pipe.com',
+      rpcBase: 'https://api-dev.hire-pipe.com',
+      env: { CODE_REVIEW_SMOKE_D1_DATABASE: 'pipe-db-custom' },
+    })).toEqual({
+      remote: true,
+      databaseName: 'pipe-db-custom',
+      label: 'remote',
     });
   });
 });

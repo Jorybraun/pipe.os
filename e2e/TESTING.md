@@ -283,6 +283,16 @@ The same deployed API/app pair also passed the roleless full-submit auto-match c
 
 Latest manual app-dev proof on 2026-07-02: render-only smoke passed for interview `8bdd62f1-33d0-470b-88bb-9922134f5b26`, selecting `mui/base-ui#973` with `MATCHED`, `PASSED`, and `USABLE`; post-deploy full-submit smoke passed for interview `edb3b5ef-e6e8-45f4-a654-e4297dc00d2c`, review session `51ab6d6a-da7f-4ad6-9353-3f49ef3ddb3a`, judge replay example `code_review_judge_example_b454c70ea73f5446e32a58d9e0430020`, remote D1 score persistence `54`, review status `scored`, and completed pipeline through durable scoring.
 
+Latest full-submit app-dev proof on 2026-07-03: manual override
+`mui/base-ui#973` passed for interview
+`84e5ccca-ec80-42d6-8678-4dc6559569d1`, review session
+`ab168b6f-fba9-4cb9-a728-30deaf57035e`, judge replay example
+`code_review_judge_example_85a19e9c6823fbb57df9b455711d0a87`, candidate
+browser, authenticated recruiter browser, score persistence `62`, review status
+`scored`, completed review-status pipeline, and remote assessment evidence proof:
+2 evidence events, 2 event source refs, 1 evaluation report, 1 evaluation claim,
+and 2 claim source refs in remote D1.
+
 Earlier deployed app-dev proof on 2026-07-02 after manual dev deploy API
 `b3030783-70bd-4db9-a210-04e5201063d0`, app
 `9dddf1fb-cb33-4da5-a5f4-f95676296417`, and room
