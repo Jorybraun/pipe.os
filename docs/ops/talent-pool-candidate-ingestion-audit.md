@@ -398,6 +398,23 @@ evidence-depth reads. The direct scoped audit command
 returned `ingestionState.statuses: embedded`, `candidateNodeSourceSpanMissingCount: 0`,
 `sourceSpanTextMismatchCount: 0`, `sourceSpanHashMismatchCount: 0`, and no
 failures.
+The 2026-07-03T21:03Z `npm run smoke:talent-pool-browser-pdf-dev` public-route
+proof for invite token `e87d5ae7-a616-43ac-8d81-247a4baa0bc3` uploaded an
+extractable PDF through `/talent/:token` and returned `status: ready`,
+`documentProfileStorageKeyCount: 1`, `documentProfileSourceSpanCount: 1`,
+`documentProfileExtractionGapCount: 0`,
+`documentProfileMissingExtractionProofCount: 0`,
+`profileUploadArtifactVersionCount: 1`, `profileUploadReceiptContextCount: 1`,
+`candidateNodeExactSourceQuoteCount: 13`, `contextSourceRefCount: 9`,
+`sourceLessPositiveClaimCount: 0`, and `duplicateProjectedEdgeCount: 0`. The
+source object proof showed `keyHashMatchesObject: true` and
+`objectMatchesSubmittedSource: true`; recruiter reads resolved unified People
+type `candidate`, the canonical person graph, source search, timeline, and
+evidence-depth reads. The direct scoped audit command
+`CLOUDFLARE_D1_DATABASE_ID=0abe92df-9296-46f5-9f9d-a1fb1bcd3be1 npm --prefix workers/api run candidate-ingestion:audit -- --remote --invite-token e87d5ae7-a616-43ac-8d81-247a4baa0bc3 --require-context-records`
+returned `ingestionState.statuses: embedded`, `candidateNodeSourceSpanMissingCount: 0`,
+`sourceSpanTextMismatchCount: 0`, `sourceSpanHashMismatchCount: 0`, and no
+failures.
 
 Current app-dev HEAD check on 2026-07-02 local time, checked at
 2026-07-03T01:25Z through 2026-07-03T01:27Z, ran after deploying Worker version
@@ -1004,13 +1021,14 @@ all 4 unauthenticated browser scenarios passed.
   older roleless message spans because their current uploaded PDFs have no
   extracted source spans; newer upload paths and scheduled repair project an
   artifact-level receipt context for current uploads instead of fabricated
-  source spans. New scoped browser smokes audit clean. The 2026-07-03
+  source spans. New scoped browser smokes audit clean. The 2026-07-03T21:05Z
   post-deploy `--limit 5` app-dev audit proves zero
   source-less positives, zero duplicate projected edges, zero failed ingestion
   rows, zero error-text rows, zero generic submitted candidate-node gaps, four
+  embedded document-upload intakes with claim-level source spans, five
   upload-receipt context records, and zero document rows missing extraction
-  proof inside the recent window. Four
-  recent PDF/DOCX intakes remain explicit `profile_text_extraction_needed`
-  receipt-backed evidence gaps because no extracted text exists. Use `--limit`
+  proof inside the recent window. One
+  recent PDF/DOCX intake remains an explicit `profile_text_extraction_needed`
+  receipt-backed evidence gap because no extracted text exists. Use `--limit`
   for recent-window app-dev health checks because full remote unscoped proof can
   still exceed D1 CPU limits.
