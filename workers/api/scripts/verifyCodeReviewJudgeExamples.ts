@@ -13,6 +13,8 @@ import { createRequire } from 'node:module';
 import { dirname, resolve } from 'node:path';
 import { fileURLToPath } from 'node:url';
 
+import { D1Client } from './crawl-repos/shared/d1Client.js';
+
 const scriptDir = dirname(fileURLToPath(import.meta.url));
 dotenv.config({ path: resolve(scriptDir, '..', '.dev.vars'), quiet: true });
 const apiRoot = resolve(scriptDir, '..');
@@ -80,6 +82,8 @@ interface AuditOptions {
 
 interface CliOptions {
   databasePath?: string;
+  remote: boolean;
+  databaseId?: string;
   limit: number;
   json: boolean;
   requireReplayReady: boolean;
@@ -95,12 +99,18 @@ interface SqliteDatabase {
   close?: () => void;
 }
 
+interface RemoteQueryClient {
+  query<T = Record<string, unknown>>(sql: string, params?: (string | number | null)[]): Promise<T[]>;
+}
+
 function usage(): string {
   return [
     'Usage: npx tsx scripts/verifyCodeReviewJudgeExamples.ts [options]',
     '',
     'Options:',
     '  --database-path PATH     Audit one local SQLite database instead of all local DBs',
+    '  --remote                 Audit a remote D1 database through the Cloudflare API',
+    '  --database-id ID         Remote D1 database id (or CODE_REVIEW_JUDGE_EXAMPLES_D1_DATABASE_ID)',
     '  --limit N                Maximum examples to read per database (default 200)',
     '  --require-replay-ready   Exit non-zero unless at least one example is replay-ready',
     '  --require-calibration    Exit non-zero unless at least one labelled example is calibration-ready',
@@ -109,8 +119,9 @@ function usage(): string {
   ].join('\n');
 }
 
-function parseArgs(argv: string[]): CliOptions {
+export function parseArgs(argv: string[]): CliOptions {
   const options: CliOptions = {
+    remote: false,
     limit: 200,
     json: false,
     requireReplayReady: false,
@@ -124,6 +135,14 @@ function parseArgs(argv: string[]): CliOptions {
       const value = inline ?? argv[index + 1];
       if (!value || value.startsWith('--')) throw new Error('--database-path requires a value');
       options.databasePath = value;
+      if (!inline) index += 1;
+    } else if (arg === '--remote') {
+      options.remote = true;
+    } else if (arg === '--database-id' || arg.startsWith('--database-id=')) {
+      const inline = arg.match(/^--database-id=(.+)$/)?.[1];
+      const value = inline ?? argv[index + 1];
+      if (!value || value.startsWith('--')) throw new Error('--database-id requires a value');
+      options.databaseId = value;
       if (!inline) index += 1;
     } else if (arg === '--limit' || arg.startsWith('--limit=')) {
       const inline = arg.match(/^--limit=(.+)$/)?.[1];
@@ -147,7 +166,22 @@ function parseArgs(argv: string[]): CliOptions {
     }
   }
 
+  if (options.remote && options.databasePath) {
+    throw new Error('--remote cannot be combined with --database-path');
+  }
+  if (!options.remote && options.databaseId) {
+    throw new Error('--database-id requires --remote');
+  }
+
   return options;
+}
+
+function resolveRemoteDatabaseId(options: CliOptions): string {
+  return options.databaseId
+    || process.env['CODE_REVIEW_JUDGE_EXAMPLES_D1_DATABASE_ID']
+    || process.env['MATCHING_EVALUATION_D1_DATABASE_ID']
+    || process.env['CLOUDFLARE_D1_DATABASE_ID']
+    || '';
 }
 
 function isRecord(value: unknown): value is Record<string, unknown> {
@@ -402,6 +436,26 @@ function loadRows(database: SqliteDatabase, limit: number): JudgeExampleRow[] {
   });
 }
 
+export async function loadRemoteRows(client: RemoteQueryClient, limit: number): Promise<JudgeExampleRow[]> {
+  const rows = await client.query(`
+    SELECT id,
+           session_id,
+           status,
+           prompt_input_json,
+           expected_output_json,
+           judge_feedback_json,
+           provenance_json,
+           updated_at
+      FROM code_review_judge_examples
+     ORDER BY updated_at DESC
+     LIMIT ?1
+  `, [limit]);
+  return rows.flatMap((row) => {
+    const normalized = normalizeRow(row);
+    return normalized ? [normalized] : [];
+  });
+}
+
 export interface DatabaseJudgeExampleAudit {
   databasePath: string;
   audit: JudgeExampleAudit;
@@ -431,10 +485,41 @@ async function auditDatabase(path: string, limit: number): Promise<DatabaseJudge
   }
 }
 
+async function auditRemoteDatabase(databaseId: string, limit: number): Promise<DatabaseJudgeExampleAudit> {
+  const accountId = process.env['CLOUDFLARE_ACCOUNT_ID'] ?? '';
+  const apiToken = process.env['CLOUDFLARE_API_TOKEN'] ?? '';
+  if (!accountId) throw new Error('Missing required env var: CLOUDFLARE_ACCOUNT_ID');
+  if (!apiToken) throw new Error('Missing required env var: CLOUDFLARE_API_TOKEN');
+  if (!databaseId) {
+    throw new Error(
+      'Missing D1 database id; pass --database-id or set CODE_REVIEW_JUDGE_EXAMPLES_D1_DATABASE_ID, '
+      + 'MATCHING_EVALUATION_D1_DATABASE_ID, or CLOUDFLARE_D1_DATABASE_ID.',
+    );
+  }
+
+  const client = new D1Client({ accountId, apiToken, databaseId });
+  let rows: JudgeExampleRow[] = [];
+  let loadFailure: string | null = null;
+  try {
+    rows = await loadRemoteRows(client, limit);
+  } catch (error) {
+    loadFailure = error instanceof Error ? error.message : String(error);
+  }
+  const audit = auditCodeReviewJudgeExamples(rows);
+  if (loadFailure) {
+    audit.failures.push(`failed to read remote code_review_judge_examples: ${loadFailure}`);
+    audit.nextActions.push('Apply migration 0100_code_review_judge_examples.sql to this remote D1 database.');
+  }
+  return {
+    databasePath: `remote:${databaseId}`,
+    audit,
+  };
+}
+
 function printHuman(results: DatabaseJudgeExampleAudit[]): void {
   console.log('CODE_REVIEW judge example proof');
   if (results.length === 0) {
-    console.log('  status: no local D1 databases found');
+    console.log('  status: no D1 databases found');
     return;
   }
   for (const result of results) {
@@ -473,8 +558,9 @@ function printHuman(results: DatabaseJudgeExampleAudit[]): void {
 
 async function main(): Promise<void> {
   const options = parseArgs(process.argv.slice(2));
-  const databasePaths = discoverLocalDatabases(options.databasePath);
-  const results = await Promise.all(databasePaths.map((path) => auditDatabase(path, options.limit)));
+  const results = options.remote
+    ? [await auditRemoteDatabase(resolveRemoteDatabaseId(options), options.limit)]
+    : await Promise.all(discoverLocalDatabases(options.databasePath).map((path) => auditDatabase(path, options.limit)));
 
   if (options.json) {
     console.log(JSON.stringify({ databases: results }, null, 2));
