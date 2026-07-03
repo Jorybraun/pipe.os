@@ -76,8 +76,11 @@ const CHANGE_PROFILE = TASK_ALIGNED_PROFILES[CHANGE_MODE] ?? null;
 const REPO_URL = process.env.WORKSPACE_SMOKE_REPO_URL || CHANGE_PROFILE?.repositoryUrl || 'https://github.com/octocat/Hello-World';
 const RAW_PR_NUMBER = process.env.WORKSPACE_SMOKE_PR_NUMBER || (INTERVIEW_TYPE === 'OPEN_SOURCE_BUG_FIX' ? '' : '1');
 const PR_NUMBER = RAW_PR_NUMBER ? Number(RAW_PR_NUMBER) : null;
+const FORCE_MANUAL_PACKET = process.env.WORKSPACE_SMOKE_USE_MANUAL_PACKET === '1'
+  || process.env.WORKSPACE_SMOKE_FORCE_MANUAL_PACKET === '1';
 const RAW_MATCHED_REPO_ID = process.env.WORKSPACE_SMOKE_MATCHED_REPO_ID
-  || (process.env.WORKSPACE_SMOKE_USE_MATCHED_REPO === '1'
+  || (!FORCE_MANUAL_PACKET
+    && (process.env.WORKSPACE_SMOKE_USE_MATCHED_REPO !== '0')
     && INTERVIEW_TYPE === 'OPEN_SOURCE_BUG_FIX'
     && CHANGE_PROFILE?.matchedRepoId
     ? String(CHANGE_PROFILE.matchedRepoId)
@@ -103,6 +106,13 @@ function assertEnv() {
   }
   if (CHANGE_PROFILE && INTERVIEW_TYPE !== 'OPEN_SOURCE_BUG_FIX') {
     throw new Error(`${CHANGE_MODE} is a task-aligned OPEN_SOURCE_BUG_FIX smoke profile; set WORKSPACE_SMOKE_INTERVIEW_TYPE=OPEN_SOURCE_BUG_FIX.`);
+  }
+  if (
+    CHANGE_PROFILE
+    && FORCE_MANUAL_PACKET
+    && process.env.WORKSPACE_SMOKE_MATCHED_REPO_ID
+  ) {
+    throw new Error('WORKSPACE_SMOKE_USE_MANUAL_PACKET cannot be combined with WORKSPACE_SMOKE_MATCHED_REPO_ID.');
   }
   if (
     CHANGE_PROFILE
@@ -561,6 +571,17 @@ async function assertRecruiterReviewerReceiptBrowser(interviewId, workspaceCommi
       timeout: 60_000,
     });
 
+    const assignment = page.getByTestId('interview-assessment-assignment');
+    await expect(assignment).toBeVisible({ timeout: 60_000 });
+    if (MATCHED_REPO_ID !== null) {
+      await expect(assignment).toContainText('PIPE-matched challenge');
+      await expect(assignment).toContainText('source-backed candidate evidence');
+      await expect(assignment).not.toContainText('Manual task assignment');
+    } else if (INTERVIEW_TYPE === 'OPEN_SOURCE_BUG_FIX') {
+      await expect(assignment).toContainText('Manual task assignment');
+      await expect(assignment).toContainText('not as proof that PIPE automatically matched');
+    }
+
     const receipt = page.getByTestId('interview-assessment-reviewer-receipt');
     await expect(receipt).toBeVisible({ timeout: 60_000 });
     await expect(receipt).toContainText('Reviewer receipt');
@@ -627,6 +648,14 @@ async function assertRecruiterListCardBrowser(
     await expect(card).toContainText('TASK');
     if (expectedTaskTitle) {
       await expect(card).toContainText(expectedTaskTitle);
+    }
+    if (MATCHED_REPO_ID !== null) {
+      await expect(card).toContainText('PIPE-matched challenge');
+      await expect(card).toContainText('source-backed candidate evidence');
+      await expect(card).not.toContainText('Manual task assignment');
+    } else if (INTERVIEW_TYPE === 'OPEN_SOURCE_BUG_FIX') {
+      await expect(card).toContainText('Manual task assignment');
+      await expect(card).toContainText('not as proof that PIPE automatically matched');
     }
     await expect(card).toContainText('EXPECTED');
     await expect(card).toContainText('git_commit source ref');

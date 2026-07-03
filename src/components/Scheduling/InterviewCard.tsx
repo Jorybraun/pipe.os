@@ -8,8 +8,8 @@ import { InviteToCallModal } from './InviteToCallModal';
 import { useApiClient } from '../../hooks/useApiClient';
 import type { InterviewStatus } from '../../lib/scheduling/types';
 import {
-  summarizeAssessmentAssignment,
   summarizeAssessmentChallenge,
+  summarizeResolvedAssessmentAssignment,
   type AssessmentAssignmentSummary,
 } from '../../lib/scheduling/assessmentChallenge';
 
@@ -194,7 +194,7 @@ function assessmentEvidenceSummary(input: {
 }
 
 function assessmentAssignmentColor(
-  tone: NonNullable<ReturnType<typeof summarizeAssessmentAssignment>>['tone'],
+  tone: AssessmentAssignmentSummary['tone'],
 ): string {
   switch (tone) {
     case 'matched':
@@ -208,33 +208,6 @@ function assessmentAssignmentColor(
     default:
       return 'var(--pipe-text)';
   }
-}
-
-function assessmentAssignmentFromProgressTrust(
-  trust: NonNullable<ScheduledInterview['assessmentProgress']>['assignmentTrust'],
-): AssessmentAssignmentSummary | null {
-  if (!trust || typeof trust !== 'object') return null;
-  const candidate = trust as {
-    label?: unknown;
-    detail?: unknown;
-    tone?: unknown;
-  };
-  if (typeof candidate.label !== 'string' || typeof candidate.detail !== 'string') return null;
-  const tone = candidate.tone;
-  if (
-    tone !== 'matched'
-    && tone !== 'manual'
-    && tone !== 'waiting'
-    && tone !== 'blocked'
-    && tone !== 'neutral'
-  ) {
-    return null;
-  }
-  return {
-    label: candidate.label,
-    detail: candidate.detail,
-    tone,
-  };
 }
 
 interface AssessmentDecisionSummary {
@@ -666,8 +639,10 @@ export function InterviewCard({
     interview.status === 'INVITED' && !hasInviteDelivery ? 'Ready' : undefined;
   const assessmentProgress = interview.assessmentProgress ?? null;
   const assessmentSetup = interview.assessmentSetup ?? null;
-  const assessmentAssignment = summarizeAssessmentAssignment(assessmentSetup)
-    ?? assessmentAssignmentFromProgressTrust(assessmentProgress?.assignmentTrust);
+  const assessmentAssignment = summarizeResolvedAssessmentAssignment({
+    setup: assessmentSetup,
+    assignmentTrust: assessmentProgress?.assignmentTrust,
+  });
   const showsAssessmentSnapshot = isAssessmentInterviewType(interview.interviewType)
     || Boolean(assessmentProgress);
   const assessmentStageLabel = assessmentProgress

@@ -1,4 +1,4 @@
-import type { AssessmentSetupProjection } from './types';
+import type { AssessmentProgressSnapshot, AssessmentSetupProjection } from './types';
 
 export interface AssessmentChallengeSource {
   exactText: string;
@@ -19,6 +19,8 @@ export interface AssessmentAssignmentSummary {
   detail: string;
   tone: 'matched' | 'manual' | 'waiting' | 'blocked' | 'neutral';
 }
+
+type AssessmentAssignmentTrust = NonNullable<AssessmentProgressSnapshot['assignmentTrust']>;
 
 function locatorString(locator: Record<string, unknown>, keys: string[]): string | null {
   for (const key of keys) {
@@ -180,4 +182,26 @@ export function summarizeAssessmentAssignment(
     detail: setup.message ?? 'Assessment setup state is available.',
     tone: setup.blocksPositiveAssessment ? 'blocked' : 'neutral',
   };
+}
+
+export function summarizeAssessmentAssignmentTrust(
+  trust: AssessmentAssignmentTrust | null | undefined,
+): AssessmentAssignmentSummary | null {
+  if (!trust) return null;
+  return {
+    label: trust.label,
+    detail: trust.detail,
+    tone: trust.tone,
+  };
+}
+
+export function summarizeResolvedAssessmentAssignment(input: {
+  setup: AssessmentSetupProjection | null | undefined;
+  assignmentTrust: AssessmentAssignmentTrust | null | undefined;
+}): AssessmentAssignmentSummary | null {
+  const progressAssignment = summarizeAssessmentAssignmentTrust(input.assignmentTrust);
+  if (input.assignmentTrust?.state === 'matched_challenge') {
+    return progressAssignment;
+  }
+  return summarizeAssessmentAssignment(input.setup) ?? progressAssignment;
 }

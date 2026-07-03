@@ -17,7 +17,10 @@ import {
 } from 'lucide-react';
 import { useApiClient } from '../hooks/useApiClient';
 import { asCodeReviewReviewProfile, ReviewProfileCard } from '../components/Assessment/CodeReviewChallenge';
-import { summarizeAssessmentAssignment } from '../lib/scheduling/assessmentChallenge';
+import {
+  summarizeResolvedAssessmentAssignment,
+  type AssessmentAssignmentSummary,
+} from '../lib/scheduling/assessmentChallenge';
 import type {
   AssessmentEvidenceCoverageItem,
   AssessmentProgressSnapshot,
@@ -314,7 +317,7 @@ function assessmentEvaluationStatusLabel(status: string): string {
 }
 
 function assessmentAssignmentToneStyle(
-  tone: NonNullable<ReturnType<typeof summarizeAssessmentAssignment>>['tone'],
+  tone: AssessmentAssignmentSummary['tone'],
 ): CSSProperties {
   switch (tone) {
     case 'matched':
@@ -3452,7 +3455,10 @@ export default function InterviewDetailPage(): JSX.Element {
   const assessmentInviteUrlLabel = canCopyAssessmentInvite
     ? (assessmentInviteIsWorkspace ? 'CANDIDATE WORKSPACE ROOM URL' : 'CANDIDATE ASSESSMENT URL')
     : (assessmentInviteIsWorkspace ? 'LAST CANDIDATE WORKSPACE ROOM URL' : 'LAST CANDIDATE ASSESSMENT URL');
-  const assessmentAssignment = summarizeAssessmentAssignment(interview.assessmentSetup);
+  const assessmentAssignment = summarizeResolvedAssessmentAssignment({
+    setup: interview.assessmentSetup,
+    assignmentTrust: assessmentProgress?.assignmentTrust,
+  });
   const hasStandaloneCodeReviewReadout = isCodeReviewInterview && Boolean(
     interview.codeReviewMatch
       || interview.codeReviewScore
