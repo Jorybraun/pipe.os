@@ -286,6 +286,93 @@ export function summarizeLaneProof(parser, stdout) {
   return { parsed: true, summary: summarizeAssessSmoke(proof) };
 }
 
+function finiteNumberAtLeast(value, minimum) {
+  return Number.isFinite(Number(value)) && Number(value) >= minimum;
+}
+
+function noFailures(value) {
+  return Array.isArray(value) && value.length === 0;
+}
+
+export function validateLaneSummary(laneId, summary) {
+  const failures = [];
+  const require = (condition, message) => {
+    if (!condition) failures.push(message);
+  };
+
+  require(summary?.ok === true, 'summary ok must be true');
+
+  switch (laneId) {
+    case 'manual-ready':
+      require(summary?.matchMode === 'manual_override', 'manual-ready must use manual_override');
+      require(summary?.matchStatus === 'MATCHED', 'manual-ready must be MATCHED');
+      require(summary?.qualityGate === 'PASSED', 'manual-ready quality gate must pass');
+      require(summary?.assessmentQuality === 'USABLE', 'manual-ready assessment quality must be USABLE');
+      require(summary?.candidateLinkState === 'active', 'manual-ready candidate link must remain active before browser smoke');
+      require(summary?.candidateLinkSessionStatus === 'INVITED', 'manual-ready resolved session must remain INVITED before intake');
+      require(summary?.candidateLinkSetupStatus === 'reviewable_task_assigned', 'manual-ready setup status must be reviewable_task_assigned');
+      require(Boolean(summary?.repoUrl), 'manual-ready must include repoUrl');
+      require(finiteNumberAtLeast(summary?.prNumber, 1), 'manual-ready must include a positive prNumber');
+      break;
+    case 'no-cv-handoff':
+      require(summary?.matchMode === 'auto_match', 'no-cv-handoff must use auto_match setup');
+      require(summary?.candidateHandoffType === 'PROFILE_RECEIVED', 'no-cv-handoff must return PROFILE_RECEIVED');
+      require(summary?.candidateHandoffStageId === 'candidate-intake-queued', 'no-cv-handoff stage must be candidate-intake-queued');
+      require(summary?.repoUrl === null, 'no-cv-handoff must not assign a repo');
+      require(summary?.prNumber === null, 'no-cv-handoff must not assign a PR');
+      require(summary?.reviewSessionId === null, 'no-cv-handoff must not create a review session');
+      break;
+    case 'blocked-handoff':
+      require(summary?.matchMode === 'auto_match', 'blocked-handoff must use auto_match setup');
+      require(summary?.candidateHandoffType === 'PROFILE_RECEIVED', 'blocked-handoff must return PROFILE_RECEIVED');
+      require(summary?.candidateHandoffStageId === 'candidate-intake-queued', 'blocked-handoff stage must be candidate-intake-queued');
+      require(summary?.repoUrl === null, 'blocked-handoff must not assign a repo');
+      require(summary?.prNumber === null, 'blocked-handoff must not assign a PR');
+      require(summary?.reviewSessionId === null, 'blocked-handoff must not create a review session');
+      break;
+    case 'role-backed-full-submit':
+      require(summary?.matchMode === 'role_backed_auto_match', 'role-backed-full-submit must use role_backed_auto_match');
+      require(summary?.matchStatus === 'MATCHED', 'role-backed-full-submit must be MATCHED');
+      require(summary?.qualityGate === 'PASSED', 'role-backed-full-submit quality gate must pass');
+      require(Boolean(summary?.assessmentQuality), 'role-backed-full-submit must report assessment quality');
+      require(Boolean(summary?.repoUrl), 'role-backed-full-submit must include repoUrl');
+      require(finiteNumberAtLeast(summary?.prNumber, 1), 'role-backed-full-submit must include a positive prNumber');
+      require(Boolean(summary?.reviewSessionId), 'role-backed-full-submit must persist review session id');
+      require(summary?.scoreStatus === 'scored', 'role-backed-full-submit score status must be scored');
+      require(finiteNumberAtLeast(summary?.reviewScore, 0), 'role-backed-full-submit must persist numeric score');
+      require(Boolean(summary?.reviewBand), 'role-backed-full-submit must persist review band');
+      require(finiteNumberAtLeast(summary?.evidenceHyperedgeCount, 1), 'role-backed-full-submit must expose evidence hyperedges');
+      require(summary?.personRoleRepoHyperedge === true, 'role-backed-full-submit must expose person-role-repo bridge');
+      break;
+    case 'workers-sdk-matrix':
+      require(summary?.profileId === 'workers-sdk-runtime', 'workers-sdk-matrix must run the Workers SDK profile');
+      require(summary?.repoUrl === 'https://github.com/cloudflare/workers-sdk', 'workers-sdk-matrix must select cloudflare/workers-sdk');
+      require(finiteNumberAtLeast(summary?.prNumber, 1), 'workers-sdk-matrix must include a positive prNumber');
+      require(summary?.matchStatus === 'MATCHED', 'workers-sdk-matrix must be MATCHED');
+      require(summary?.qualityGate === 'PASSED', 'workers-sdk-matrix quality gate must pass');
+      require(summary?.assessmentQuality === 'STRONG', 'workers-sdk-matrix assessment quality must be STRONG');
+      require(finiteNumberAtLeast(summary?.contrastScore, 1), 'workers-sdk-matrix contrast score must be at least 1');
+      break;
+    case 'match-quality-readiness':
+      require(Boolean(summary?.corpusId), 'match-quality-readiness must include corpusId');
+      require(finiteNumberAtLeast(summary?.totalPairs, 1), 'match-quality-readiness must include evaluated pairs');
+      require(Number(summary?.accuracy) === 1, 'match-quality-readiness accuracy must be 1');
+      require(Number(summary?.falsePositiveCount) === 0, 'match-quality-readiness falsePositiveCount must be 0');
+      require(Number(summary?.falseNegativeCount) === 0, 'match-quality-readiness falseNegativeCount must be 0');
+      require(Number(summary?.usableChallengeRate) === 1, 'match-quality-readiness usableChallengeRate must be 1');
+      require(noFailures(summary?.gateFailures), 'match-quality-readiness gateFailures must be empty');
+      break;
+    default:
+      require(false, `unknown reliability lane ${JSON.stringify(laneId)}`);
+      break;
+  }
+
+  return {
+    ok: failures.length === 0,
+    failures,
+  };
+}
+
 export function runReliabilityLane({
   lane,
   env = process.env,
@@ -319,10 +406,11 @@ export function runReliabilityLane({
   writeFileSync(stderrPath, stderr);
 
   const proof = summarizeLaneProof(lane.parser, stdout);
+  const summaryValidation = validateLaneSummary(lane.id, proof.summary);
   const ok = result.status === 0
     && !result.error
     && proof.parsed
-    && proof.summary?.ok === true;
+    && summaryValidation.ok;
   const laneResult = {
     id: lane.id,
     label: lane.label,
@@ -339,6 +427,7 @@ export function runReliabilityLane({
     stderrPath,
     parsed: proof.parsed,
     summary: proof.summary,
+    summaryValidation,
   };
   writeFileSync(`${base}.summary.json`, JSON.stringify(laneResult, null, 2));
   return laneResult;

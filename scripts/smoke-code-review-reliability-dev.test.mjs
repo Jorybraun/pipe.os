@@ -6,6 +6,7 @@ import {
   resolveAppDevDatabaseId,
   selectedLaneIds,
   summarizeLaneProof,
+  validateLaneSummary,
 } from './smoke-code-review-reliability-dev.mjs';
 
 describe('CODE_REVIEW reliability suite contract', () => {
@@ -220,6 +221,115 @@ describe('CODE_REVIEW reliability suite contract', () => {
       falseNegativeCount: 0,
       usableChallengeRate: 1,
       gateFailures: [],
+    });
+  });
+
+  it('validates lane summaries against lane-specific CODE_REVIEW proof contracts', () => {
+    expect(validateLaneSummary('manual-ready', {
+      ok: true,
+      matchMode: 'manual_override',
+      repoUrl: 'https://github.com/mui/base-ui',
+      prNumber: 973,
+      matchStatus: 'MATCHED',
+      qualityGate: 'PASSED',
+      assessmentQuality: 'USABLE',
+      candidateLinkState: 'active',
+      candidateLinkSessionStatus: 'INVITED',
+      candidateLinkSetupStatus: 'reviewable_task_assigned',
+    })).toEqual({ ok: true, failures: [] });
+
+    expect(validateLaneSummary('no-cv-handoff', {
+      ok: true,
+      matchMode: 'auto_match',
+      repoUrl: null,
+      prNumber: null,
+      candidateHandoffType: 'PROFILE_RECEIVED',
+      candidateHandoffStageId: 'candidate-intake-queued',
+      reviewSessionId: null,
+    })).toEqual({ ok: true, failures: [] });
+
+    expect(validateLaneSummary('blocked-handoff', {
+      ok: true,
+      matchMode: 'auto_match',
+      repoUrl: null,
+      prNumber: null,
+      candidateHandoffType: 'PROFILE_RECEIVED',
+      candidateHandoffStageId: 'candidate-intake-queued',
+      reviewSessionId: null,
+    })).toEqual({ ok: true, failures: [] });
+
+    expect(validateLaneSummary('role-backed-full-submit', {
+      ok: true,
+      matchMode: 'role_backed_auto_match',
+      repoUrl: 'https://github.com/mui/base-ui',
+      prNumber: 973,
+      matchStatus: 'MATCHED',
+      qualityGate: 'PASSED',
+      assessmentQuality: 'STRONG',
+      reviewSessionId: 'review-session-1',
+      reviewScore: 47,
+      reviewBand: 'adequate',
+      scoreStatus: 'scored',
+      evidenceHyperedgeCount: 4,
+      personRoleRepoHyperedge: true,
+    })).toEqual({ ok: true, failures: [] });
+
+    expect(validateLaneSummary('workers-sdk-matrix', {
+      ok: true,
+      profileId: 'workers-sdk-runtime',
+      repoUrl: 'https://github.com/cloudflare/workers-sdk',
+      prNumber: 14118,
+      matchStatus: 'MATCHED',
+      qualityGate: 'PASSED',
+      assessmentQuality: 'STRONG',
+      contrastScore: 2,
+    })).toEqual({ ok: true, failures: [] });
+
+    expect(validateLaneSummary('match-quality-readiness', {
+      ok: true,
+      corpusId: 'expert-corpus',
+      totalPairs: 6,
+      accuracy: 1,
+      falsePositiveCount: 0,
+      falseNegativeCount: 0,
+      usableChallengeRate: 1,
+      gateFailures: [],
+    })).toEqual({ ok: true, failures: [] });
+  });
+
+  it('rejects parsed lane summaries that do not prove the expected lane behavior', () => {
+    expect(validateLaneSummary('no-cv-handoff', {
+      ok: true,
+      matchMode: 'auto_match',
+      repoUrl: 'https://github.com/mui/base-ui',
+      prNumber: 973,
+      candidateHandoffType: null,
+      candidateHandoffStageId: null,
+      reviewSessionId: null,
+    })).toMatchObject({
+      ok: false,
+      failures: expect.arrayContaining([
+        'no-cv-handoff must return PROFILE_RECEIVED',
+        'no-cv-handoff stage must be candidate-intake-queued',
+        'no-cv-handoff must not assign a repo',
+        'no-cv-handoff must not assign a PR',
+      ]),
+    });
+
+    expect(validateLaneSummary('workers-sdk-matrix', {
+      ok: true,
+      profileId: 'workers-sdk-runtime',
+      repoUrl: 'https://github.com/mui/base-ui',
+      prNumber: 973,
+      matchStatus: 'MATCHED',
+      qualityGate: 'PASSED',
+      assessmentQuality: 'STRONG',
+      contrastScore: 2,
+    })).toMatchObject({
+      ok: false,
+      failures: expect.arrayContaining([
+        'workers-sdk-matrix must select cloudflare/workers-sdk',
+      ]),
     });
   });
 });
