@@ -218,6 +218,7 @@ describe('batchEvaluationHarness', () => {
     expect(result.metrics.falsePositiveCount).toBe(0);
     expect(result.metrics.falseNegativeCount).toBe(0);
     expect(result.metrics.negativeCaseCount).toBe(1);
+    expect(result.metrics.insufficientEvidenceCaseCount).toBe(1);
     expect(result.metrics.contrastCaseCount).toBe(1);
     expect(result.metrics.reasonCategoryExpectationCount).toBe(2);
     expect(result.metrics.averageScoreSeparation).toBeGreaterThanOrEqual(0.2);
@@ -272,6 +273,7 @@ describe('batchEvaluationHarness', () => {
         minAverageScoreSeparation: 0.2,
         minUsableChallengeRate: 1,
         minNegativeCaseCount: 0,
+        minInsufficientEvidenceCaseCount: 0,
       },
     });
 
@@ -327,7 +329,7 @@ describe('batchEvaluationHarness', () => {
     expect(result.gateFailures).toContain('1 labelled case failed reason-category expectations');
   });
 
-  it('fails the gate when the corpus has no insufficient-evidence negative case', async () => {
+  it('fails the gate when the corpus has no negative case', async () => {
     const db = createMockD1(sqlite) as unknown as D1Database;
 
     const result = await runMatchQualityEvaluation(db, {
@@ -350,7 +352,41 @@ describe('batchEvaluationHarness', () => {
 
     expect(result.passed).toBe(false);
     expect(result.metrics.negativeCaseCount).toBe(0);
+    expect(result.metrics.insufficientEvidenceCaseCount).toBe(0);
     expect(result.gateFailures).toContain('negative cases 0 below 1');
+    expect(result.gateFailures).toContain('insufficient-evidence cases 0 below 1');
+  });
+
+  it('fails the gate when non-positive cases never prove insufficient evidence', async () => {
+    const db = createMockD1(sqlite) as unknown as D1Database;
+    seedCronSchedulePacket(sqlite);
+    seedCandidate(sqlite, 'cand-workflows-adjacent', 'wp-workflows-adjacent');
+    seedEvidence(sqlite, 'wp-workflows-adjacent', 'workflow', 'code_review', 0.95);
+    seedEvidence(sqlite, 'wp-workflows-adjacent', 'wrangler', 'assessment', 0.9);
+
+    const result = await runMatchQualityEvaluation(db, {
+      corpusId: 'needs-review-only-negative-corpus',
+      cases: [{
+        caseId: 'needs-review-is-not-insufficient',
+        candidateId: 'cand-workflows-adjacent',
+        challengePacketId: 'packet-cron-schedule',
+        expectedVerdict: 'needs_review',
+        expectedReasonCategory: 'needs_challenge_design',
+      }],
+      thresholds: {
+        minAccuracy: 1,
+        minAverageScoreSeparation: 0,
+        minUsableChallengeRate: 1,
+        minContrastCaseCount: 0,
+      },
+    });
+
+    expect(result.pairResults[0].computedVerdict).toBe('needs_review');
+    expect(result.pairResults[0].failedReasons).toEqual([]);
+    expect(result.metrics.negativeCaseCount).toBe(1);
+    expect(result.metrics.insufficientEvidenceCaseCount).toBe(0);
+    expect(result.passed).toBe(false);
+    expect(result.gateFailures).toContain('insufficient-evidence cases 0 below 1');
   });
 
   it('fails the gate when the corpus has no explicit contrast candidate', async () => {
@@ -384,6 +420,7 @@ describe('batchEvaluationHarness', () => {
 
     expect(result.passed).toBe(false);
     expect(result.metrics.negativeCaseCount).toBe(1);
+    expect(result.metrics.insufficientEvidenceCaseCount).toBe(1);
     expect(result.metrics.contrastCaseCount).toBe(0);
     expect(result.gateFailures).toContain('contrast cases 0 below 1');
   });

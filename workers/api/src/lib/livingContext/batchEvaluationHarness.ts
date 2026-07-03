@@ -65,6 +65,7 @@ export interface BatchEvaluationMetrics {
   successfulPairs: number;
   failedPairs: number;
   negativeCaseCount: number;
+  insufficientEvidenceCaseCount: number;
   contrastCaseCount: number;
   reasonCategoryExpectationCount: number;
   verdictAccuracy: number;
@@ -91,6 +92,7 @@ export interface MatchQualityEvaluationThresholds {
   minAverageScoreSeparation: number;
   minUsableChallengeRate: number;
   minNegativeCaseCount: number;
+  minInsufficientEvidenceCaseCount: number;
   minContrastCaseCount: number;
   minReasonCategoryExpectationCount: number;
 }
@@ -125,6 +127,7 @@ const DEFAULT_THRESHOLDS: MatchQualityEvaluationThresholds = {
   minAverageScoreSeparation: 0.08,
   minUsableChallengeRate: 0.95,
   minNegativeCaseCount: 1,
+  minInsufficientEvidenceCaseCount: 1,
   minContrastCaseCount: 1,
   minReasonCategoryExpectationCount: 1,
 };
@@ -381,6 +384,9 @@ export async function runBatchEvaluation(
   const negativeCaseCount = candidates.filter((candidate) =>
     !isPositiveVerdict(candidate.expectedVerdict)
   ).length;
+  const insufficientEvidenceCaseCount = candidates.filter((candidate) =>
+    candidate.expectedVerdict === 'insufficient_evidence'
+  ).length;
   const contrastCaseCount = candidates.filter((candidate) =>
     Boolean(candidate.negativeCandidateId)
       && candidate.minimumScoreSeparation !== undefined
@@ -394,6 +400,7 @@ export async function runBatchEvaluation(
     successfulPairs: successfulPairs.length,
     failedPairs: pairResults.filter((result) => result.error !== null).length,
     negativeCaseCount,
+    insufficientEvidenceCaseCount,
     contrastCaseCount,
     reasonCategoryExpectationCount,
     verdictAccuracy: successfulPairs.length > 0 ? verdictMatches / successfulPairs.length : 0,
@@ -452,6 +459,11 @@ export async function runMatchQualityEvaluation(
   }
   if (batch.metrics.negativeCaseCount < thresholds.minNegativeCaseCount) {
     gateFailures.push(`negative cases ${batch.metrics.negativeCaseCount} below ${thresholds.minNegativeCaseCount}`);
+  }
+  if (batch.metrics.insufficientEvidenceCaseCount < thresholds.minInsufficientEvidenceCaseCount) {
+    gateFailures.push(
+      `insufficient-evidence cases ${batch.metrics.insufficientEvidenceCaseCount} below ${thresholds.minInsufficientEvidenceCaseCount}`,
+    );
   }
   if (batch.metrics.contrastCaseCount < thresholds.minContrastCaseCount) {
     gateFailures.push(`contrast cases ${batch.metrics.contrastCaseCount} below ${thresholds.minContrastCaseCount}`);
