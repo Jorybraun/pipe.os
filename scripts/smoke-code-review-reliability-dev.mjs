@@ -24,6 +24,26 @@ function stripAnsi(value) {
   return value.replace(/\u001b\[[0-9;?]*[ -/]*[@-~]/g, '');
 }
 
+function redactOutput(value) {
+  return value
+    .replace(/(CLOUDFLARE_API_TOKEN|RESEND_API_KEY|CLERK_SECRET_KEY|AUTH_TOKEN|PASSWORD|SECRET)=\S+/gi, '$1=<redacted>')
+    .replace(/(Bearer\s+)[A-Za-z0-9._~+/=-]{12,}/gi, '$1<redacted>');
+}
+
+export function compactOutputPreview(value, {
+  maxLines = 8,
+  maxChars = 2000,
+} = {}) {
+  const clean = redactOutput(stripAnsi(value || ''));
+  const lines = clean
+    .split(/\r?\n/)
+    .map((line) => line.trimEnd())
+    .filter((line) => line.trim().length > 0);
+  const preview = lines.slice(-maxLines).join('\n');
+  if (preview.length <= maxChars) return preview || null;
+  return `...${preview.slice(preview.length - maxChars)}`;
+}
+
 function timestamp() {
   return new Date().toISOString().replace(/[:.]/g, '-');
 }
@@ -776,6 +796,8 @@ export function runReliabilityLane({
     && !result.error
     && proof.parsed
     && summaryValidation.ok;
+  const stdoutPreview = ok ? null : compactOutputPreview(stdout);
+  const stderrPreview = ok ? null : compactOutputPreview(stderr);
   const laneResult = {
     id: lane.id,
     label: lane.label,
@@ -790,6 +812,8 @@ export function runReliabilityLane({
     laneEnv: lane.env ?? null,
     stdoutPath,
     stderrPath,
+    stdoutPreview,
+    stderrPreview,
     parsed: proof.parsed,
     summary: proof.summary,
     summaryValidation,
@@ -831,6 +855,8 @@ function main() {
       ok: result.ok,
       durationMs: result.durationMs,
       stdoutPath: result.stdoutPath,
+      stderrPreview: result.stderrPreview,
+      stdoutPreview: result.stdoutPreview,
       summary: result.summary,
     }, null, 2)}\n`);
     if (!result.ok) break;
@@ -860,6 +886,8 @@ function main() {
       id: result.id,
       ok: result.ok,
       stdoutPath: result.stdoutPath,
+      stderrPreview: result.stderrPreview,
+      stdoutPreview: result.stdoutPreview,
       summary: result.summary,
     })),
   }, null, 2)}\n`);

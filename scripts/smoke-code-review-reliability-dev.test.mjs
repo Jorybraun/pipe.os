@@ -1,9 +1,14 @@
 import { describe, expect, it } from 'vitest';
+import { mkdtempSync } from 'node:fs';
+import { tmpdir } from 'node:os';
+import { join } from 'node:path';
 
 import {
   buildReliabilityLanes,
+  compactOutputPreview,
   extractMatrixSummary,
   resolveAppDevDatabaseId,
+  runReliabilityLane,
   selectedLaneIds,
   summarizeLaneProof,
   validateLaneSummary,
@@ -86,6 +91,51 @@ describe('CODE_REVIEW reliability suite contract', () => {
       env: { CODE_REVIEW_RELIABILITY_LANES: 'not-a-lane' },
       databaseId: 'app-dev-d1',
     })).toThrow(/Unknown CODE_REVIEW reliability lane/);
+  });
+
+  it('keeps failed lane diagnostics compact and redacted in suite summaries', () => {
+    expect(compactOutputPreview([
+      'line 1',
+      'CLOUDFLARE_API_TOKEN=super-secret-token',
+      'Authorization: Bearer abcdefghijklmnopqrstuvwxyz',
+      'Missing required env var: CLOUDFLARE_ACCOUNT_ID',
+    ].join('\n'), { maxLines: 3 })).toBe([
+      'CLOUDFLARE_API_TOKEN=<redacted>',
+      'Authorization: Bearer <redacted>',
+      'Missing required env var: CLOUDFLARE_ACCOUNT_ID',
+    ].join('\n'));
+
+    const outDir = mkdtempSync(join(tmpdir(), 'pipe-code-review-reliability-'));
+    const result = runReliabilityLane({
+      lane: {
+        id: 'match-quality-readiness',
+        label: 'Failed remote match-quality gate',
+        command: [
+          process.execPath,
+          '-e',
+          [
+            'console.log("starting remote gate")',
+            'console.error("Missing required env var: CLOUDFLARE_ACCOUNT_ID")',
+            'process.exit(1)',
+          ].join(';'),
+        ],
+        parser: 'match-quality',
+      },
+      env: {
+        PATH: process.env.PATH ?? '',
+      },
+      outDir,
+      childTimeoutMs: 10_000,
+    });
+
+    expect(result).toMatchObject({
+      ok: false,
+      exitCode: 1,
+      parsed: false,
+      summary: null,
+      stdoutPreview: 'starting remote gate',
+      stderrPreview: 'Missing required env var: CLOUDFLARE_ACCOUNT_ID',
+    });
   });
 
   it('resolves the CODE_REVIEW evaluation D1 without falling back to production', () => {
