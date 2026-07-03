@@ -166,9 +166,10 @@ one exact source span per submitted field. The projected
 records are operational evidence only; they do not validate the external
 profile content or derive skills/readiness.
 
-By default, the command fails on missing scoped candidates, submitted intakes
-without storage or ingestion state, candidate rows whose `resume_s3_key` is
-missing or stale relative to the current intake profile key,
+By default, the command fails on an unscoped run with no Talent Pool candidates,
+missing scoped candidates, submitted intakes without storage or ingestion state,
+candidate rows whose `resume_s3_key` is missing or stale relative to the current
+intake profile key,
 `candidate_ingestion` rows that are failed or still carry `error_text`, missing
 active Talent Pool person projection, missing exact source proof, missing
 exact-source candidate-node projection, PDF/DOCX profile storage keys without

@@ -973,6 +973,9 @@ export async function auditCandidateIngestion(
     ...(scoped(options) && auditedCandidateCount === 0
       ? ['no candidate matched the requested audit scope']
       : []),
+    ...(!scoped(options) && auditedCandidateCount === 0
+      ? ['no Talent Pool candidates were found to audit']
+      : []),
     ...(rawCapture.submittedIntakeCount > rawCapture.profileStorageKeyCount
       ? [`${rawCapture.submittedIntakeCount - rawCapture.profileStorageKeyCount} submitted Talent Pool intake(s) lack a profile storage key`]
       : []),

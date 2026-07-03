@@ -342,6 +342,18 @@ describe('auditCandidateIngestion', () => {
     expect(audit.failures[0]).toContain('missing candidate-ingestion tables');
   });
 
+  it('does not report ready when there are no Talent Pool candidates to audit', async () => {
+    sqlite = new Database(':memory:');
+    createSchema(sqlite);
+
+    const audit = await auditCandidateIngestion(new SqliteQueryClient(sqlite));
+
+    expect(audit.status).toBe('not_ready');
+    expect(audit.auditedCandidateCount).toBe(0);
+    expect(audit.failures).toContain('no Talent Pool candidates were found to audit');
+    expect(audit.nextActions).toContain('Submit at least one Talent Pool candidate through /talent/:token before expecting audit proof.');
+  });
+
   it('reports a source-backed roleless Talent Pool candidate as ready', async () => {
     sqlite = new Database(':memory:');
     createSchema(sqlite);
