@@ -632,6 +632,7 @@ describe('evaluation corpus review CLI', () => {
       '--database-path',
       '/tmp/evaluation.sqlite',
       '--seed-from-match-runs',
+      '--require-role-context',
       '--seed-limit',
       '3',
       '--seed-selection-pool-limit',
@@ -644,6 +645,7 @@ describe('evaluation corpus review CLI', () => {
     ])).toEqual(expect.objectContaining({
       databasePath: '/tmp/evaluation.sqlite',
       seedFromMatchRuns: true,
+      requireRoleContext: true,
       seedLimit: 3,
       seedSelectionPoolLimit: 25,
       seedStatusFilter: 'MATCHED',

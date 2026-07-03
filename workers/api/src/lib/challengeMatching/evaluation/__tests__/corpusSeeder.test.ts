@@ -994,6 +994,42 @@ describe('corpusSeeder', () => {
     expect(() => validateCorpus(result.corpus)).not.toThrow();
   });
 
+  it('can require role-backed match runs for expert-review seeding', async () => {
+    seedMatchData(sqlite);
+    sqlite.prepare(
+      `INSERT INTO match_runs (
+         id, candidate_id, role_context_id, candidate_snapshot_id,
+         role_snapshot_id, policy_version, status, selected_packet_id,
+         ranked_results_json, created_at
+       ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
+    ).run(
+      'mr-standalone-default-role',
+      'candidate-1',
+      null,
+      'candidate:candidate-1:v2',
+      'standalone-code-review-v1',
+      '1.0.0',
+      'MATCHED',
+      'packet-1',
+      JSON.stringify([rankedChallenge('packet-1', 1, 0.9)]),
+      '2026-07-02T22:05:00.000Z',
+    );
+
+    const result = await seedCorpusFromMatchRuns(db, {
+      limit: 5,
+      requireRoleContext: true,
+    });
+
+    expect(result.matchRunCount).toBe(1);
+    expect(result.roleCount).toBe(1);
+    expect(result.corpus.expertLabels.map((label) => label.labelId)).toEqual([
+      'seeded-mr-1-packet-1',
+    ]);
+    expect(result.warnings).not.toContain(
+      'Role standalone-code-review-v1 has no role_context_documents row; using stub',
+    );
+  });
+
   it('namespaces shared living-context assertions by candidate in seeded corpora', async () => {
     seedMatchData(sqlite);
     addChallengePacket(sqlite, 'packet-2', 43);

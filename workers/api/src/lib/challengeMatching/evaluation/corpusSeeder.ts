@@ -36,6 +36,8 @@ export interface CorpusSeederOptions {
   statusFilter?: string;
   /** Optional role context ID filter. */
   roleContextId?: string;
+  /** Require match runs to have an explicit role_context_id. */
+  requireRoleContext?: boolean;
   /** Description for the generated corpus. */
   description?: string;
 }
@@ -372,6 +374,15 @@ export async function seedCorpusFromMatchRuns(
         ORDER BY created_at DESC
         LIMIT ?3`,
     ).bind(statusFilter, options.roleContextId, selectionPoolLimit)
+    : options.requireRoleContext
+      ? db.prepare(
+        `SELECT id, candidate_id, role_context_id, role_snapshot_id, status, selected_packet_id, created_at
+           FROM match_runs
+          WHERE status = ?1
+            AND role_context_id IS NOT NULL
+          ORDER BY created_at DESC
+          LIMIT ?2`,
+      ).bind(statusFilter, selectionPoolLimit)
     : db.prepare(
       `SELECT id, candidate_id, role_context_id, role_snapshot_id, status, selected_packet_id, created_at
          FROM match_runs

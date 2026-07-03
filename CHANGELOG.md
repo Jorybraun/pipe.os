@@ -23,6 +23,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Added — CODE_REVIEW assessment runtime
 
+- Added `npm run smoke:code-review-expert-seed-dev`, a remote app-dev operator smoke that seeds a source-backed CODE_REVIEW expert-review draft corpus from role-backed real match runs, exports review packet/template artifacts, and fails on warnings, missing provenance, synthetic labels, fake expert labels, or insufficient packet breadth.
 - Added an opt-in Workers SDK role-backed app-dev smoke matrix profile that fails unless automatic CODE_REVIEW matching selects a source-backed non-MUI `cloudflare/workers-sdk` review packet.
 - CODE_REVIEW match-health unused-packet diagnostics now include ranked appearance counts, eligible counts, best rank, and score/alignment averages, separating recall gaps from ranking/eligibility problems.
 - CODE_REVIEW match-health audits now enforce selected production-ready packet coverage and list unused ready packets, preventing a broad corpus from passing while automatic matches exercise only one or two PRs.
