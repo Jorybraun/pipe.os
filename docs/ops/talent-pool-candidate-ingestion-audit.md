@@ -588,10 +588,21 @@ explicit extraction gap instead of a failed ingestion row. The audit returned
 `sourceLessDesignQueueSuggestionCount: 0`, and `duplicateProjectedEdgeCount: 0`.
 
 Live app-dev browser source-object proof on 2026-07-03 used
-`npm run smoke:talent-pool-browser-docx-dev` and
-`npm run smoke:talent-pool-browser-pdf-gap-dev`. The DOCX smoke created invite
-token `f3ca666d-a4c7-497a-b9a6-48eac885e37a`, submitted the document through
-the public `/talent/:token` form, and returned `status: ready`,
+`npm run smoke:talent-pool-browser-dev`,
+`npm run smoke:talent-pool-browser-docx-dev`, and
+`npm run smoke:talent-pool-browser-pdf-gap-dev`. The pasted-text smoke created
+invite token `9bd22665-2659-4af4-a8b4-57a1e5912940`, submitted profile text
+through the public `/talent/:token` form, and returned `status: ready`,
+`candidateNodeExactSourceQuoteCount: 13`, `contextSourceRefCount: 8`,
+`profileUploadArtifactVersionCount: 0`, `sourceLessPositiveClaimCount: 0`, and
+`duplicateProjectedEdgeCount: 0`. It fetched the exact R2 key
+`talent-intake/1a7c80f8-0416-4e92-a36e-7005f447d5fc/b71e362c0c73bf690bc6da42a8d171616fe0c760d970db3ba77845b0579b98b2-profile.txt`;
+the object was 379 bytes and SHA-256
+`b71e362c0c73bf690bc6da42a8d171616fe0c760d970db3ba77845b0579b98b2`, matching
+both the content-addressed storage-key prefix and submitted source bytes. The
+DOCX smoke created invite token `f3ca666d-a4c7-497a-b9a6-48eac885e37a`,
+submitted the document through the public `/talent/:token` form, and returned
+`status: ready`,
 `candidateNodeExactSourceQuoteCount: 13`, `contextSourceRefCount: 8`,
 `documentProfileSourceSpanCount: 1`, `profileUploadArtifactVersionCount: 1`,
 `externalProfileRefSourceTextMismatchCount: 0`,
