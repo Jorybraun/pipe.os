@@ -6,6 +6,7 @@ import {
   parseMatchQualityCorpusJson,
   resolveLatestExpertCorpusId,
   resolveRemoteDatabaseId,
+  summarizeMatchQualityResult,
   validateOptions,
 } from './runMatchQualityEvaluation';
 import type { EvaluationCorpus } from '../src/lib/challengeMatching/evaluation';
@@ -173,8 +174,41 @@ describe('runMatchQualityEvaluation corpus loading', () => {
       requirePass: true,
       allowDraftCorpus: false,
       json: true,
+      summaryJson: false,
     });
     expect(() => validateOptions(options)).not.toThrow();
+  });
+
+  it('parses compact summary JSON output for readiness artifacts', () => {
+    const options = parseOptions([
+      '--remote',
+      '--database-id',
+      'app-dev-db-id',
+      '--latest-expert-corpus',
+      '--require-pass',
+      '--summary-json',
+    ]);
+
+    expect(options).toEqual(expect.objectContaining({
+      latestExpertCorpus: true,
+      requirePass: true,
+      json: false,
+      summaryJson: true,
+    }));
+    expect(() => validateOptions(options)).not.toThrow();
+  });
+
+  it('rejects ambiguous JSON output modes', () => {
+    const options = parseOptions([
+      '--remote',
+      '--database-id',
+      'app-dev-db-id',
+      '--latest-expert-corpus',
+      '--json',
+      '--summary-json',
+    ]);
+
+    expect(() => validateOptions(options)).toThrow('pass only one output mode: --json or --summary-json');
   });
 
   it('prefers the dedicated matching-evaluation D1 over the generic app D1', () => {
@@ -387,5 +421,83 @@ describe('runMatchQualityEvaluation corpus loading', () => {
       'label-negative',
       'label-borderline',
     ]);
+  });
+
+  it('summarizes match-quality results without nested evidence reports', () => {
+    const summary = summarizeMatchQualityResult({
+      batchId: 'batch-1',
+      corpusId: 'corpus-1',
+      passed: true,
+      thresholds: {
+        minAccuracy: 0.9,
+        maxFalsePositiveCount: 0,
+        maxFalseNegativeCount: 0,
+        minAverageScoreSeparation: 0.08,
+        minUsableChallengeRate: 0.95,
+        minNegativeCaseCount: 1,
+        minContrastCaseCount: 1,
+        minReasonCategoryExpectationCount: 1,
+      },
+      gateFailures: [],
+      metrics: {
+        totalPairs: 1,
+        successfulPairs: 1,
+        failedPairs: 0,
+        negativeCaseCount: 0,
+        contrastCaseCount: 1,
+        reasonCategoryExpectationCount: 1,
+        verdictAccuracy: 1,
+        falsePositiveCount: 0,
+        falseNegativeCount: 0,
+        averageConfidence: 0.91,
+        averageScoreSeparation: 0.22,
+        usableChallengeRate: 1,
+        verdictDistribution: {
+          strong_match: 1,
+          likely_match: 0,
+          needs_review: 0,
+          weak_match: 0,
+          insufficient_evidence: 0,
+        },
+        evaluatedAt: '2026-07-03T00:00:00.000Z',
+      },
+      failedCases: [],
+      pairResults: [{
+        caseId: 'case-1',
+        candidateId: 'candidate-1',
+        challengePacketId: 'packet-1',
+        negativeCandidateId: 'candidate-2',
+        confidenceReport: null,
+        unifiedReport: null,
+        compactReport: null,
+        computedVerdict: 'strong_match',
+        expectedVerdict: 'strong_match',
+        verdictMatch: true,
+        reasonCategory: 'aligned',
+        scoreSeparation: 0.22,
+        minimumScoreSeparation: 0.1,
+        sourceBackedPr: true,
+        candidateEvidencePresent: true,
+        repoEvidencePresent: true,
+        usableChallenge: true,
+        failedReasons: [],
+        error: null,
+        durationMs: 12,
+      }],
+    });
+
+    expect(summary).toEqual(expect.objectContaining({
+      corpusId: 'corpus-1',
+      passed: true,
+      caseResults: [expect.objectContaining({
+        caseId: 'case-1',
+        sourceBackedPr: true,
+        candidateEvidencePresent: true,
+        repoEvidencePresent: true,
+      })],
+    }));
+    expect(JSON.stringify(summary)).not.toContain('confidenceReport');
+    expect(JSON.stringify(summary)).not.toContain('compactReport');
+    expect(JSON.stringify(summary)).not.toContain('unifiedReport');
   });
 });
