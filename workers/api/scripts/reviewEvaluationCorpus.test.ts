@@ -10,6 +10,7 @@ import {
   buildExpertReviewMarkdown,
   parseCorpusReviewArgs,
   runCorpusReviewCli,
+  type CorpusReviewCliSummary,
   type ExpertReviewFile,
 } from './reviewEvaluationCorpus';
 import {
@@ -617,6 +618,25 @@ describe('evaluation corpus review CLI', () => {
     }));
   });
 
+  it('parses latest draft corpus review exports', () => {
+    expect(parseCorpusReviewArgs([
+      '--remote',
+      '--database-id',
+      'app-dev-d1',
+      '--latest-draft-corpus',
+      '--review-packet',
+      '/tmp/review-packet.json',
+      '--review-template',
+      '/tmp/review-template.json',
+    ])).toEqual(expect.objectContaining({
+      target: 'remote',
+      databaseId: 'app-dev-d1',
+      latestDraftCorpus: true,
+      reviewPacketPath: '/tmp/review-packet.json',
+      reviewTemplatePath: '/tmp/review-template.json',
+    }));
+  });
+
   it('rejects remote database ids in local corpus review mode', () => {
     expect(() => parseCorpusReviewArgs([
       '--database-id',
@@ -653,6 +673,65 @@ describe('evaluation corpus review CLI', () => {
       persistDraft: true,
       reviewPacketPath: '/tmp/review-packet.json',
     }));
+  });
+
+  it('exports the newest persisted draft corpus without seeding another draft', async () => {
+    directory = await mkdtemp(join(tmpdir(), 'pipe-corpus-review-'));
+    const databasePath = join(directory, 'evaluation.sqlite');
+    const reviewPacketPath = join(directory, 'latest-review-packet.json');
+    const reviewTemplatePath = join(directory, 'latest-review-template.json');
+    const summaryPath = join(directory, 'latest-summary.json');
+    const oldDraft = structuredClone(loadFixtureCorpus());
+    oldDraft.corpusId = 'draft-corpus-a';
+    oldDraft.expertLabels = oldDraft.expertLabels.map((label) => {
+      const { labelProvenance: _labelProvenance, ...rest } = label;
+      return { ...rest, labeledBy: 'corpus-seeder' };
+    });
+    oldDraft.metadata.syntheticFixtureCount = 0;
+    const newDraft = structuredClone(oldDraft);
+    newDraft.corpusId = 'draft-corpus-z';
+    const expertCorpus = loadFixtureCorpusWithContrast();
+    expertCorpus.corpusId = 'expert-corpus-z';
+    const syntheticCorpus = structuredClone(loadFixtureCorpus());
+    syntheticCorpus.corpusId = 'synthetic-corpus-z';
+    syntheticCorpus.expertLabels = syntheticCorpus.expertLabels.map((label) => ({
+      ...label,
+      labeledBy: 'synthetic-fixture',
+    }));
+    syntheticCorpus.metadata.syntheticFixtureCount = syntheticCorpus.expertLabels.length;
+
+    const sqlite = new Database(databasePath);
+    setupSeedSchema(sqlite);
+    insertCorpus(sqlite, JSON.stringify(oldDraft));
+    insertCorpus(sqlite, JSON.stringify(newDraft));
+    insertCorpus(sqlite, JSON.stringify(expertCorpus));
+    insertCorpus(sqlite, JSON.stringify(syntheticCorpus));
+    sqlite.close();
+
+    const exitCode = await runCorpusReviewCli([
+      '--database-path',
+      databasePath,
+      '--latest-draft-corpus',
+      '--review-packet',
+      reviewPacketPath,
+      '--review-template',
+      reviewTemplatePath,
+      '--json',
+      summaryPath,
+    ]);
+
+    expect(exitCode).toBe(0);
+    const summary = JSON.parse(await readFile(summaryPath, 'utf8')) as CorpusReviewCliSummary;
+    expect(summary.sourceCorpusId).toBe('draft-corpus-z');
+    expect(summary.reviewPacketPath).toBe(reviewPacketPath);
+    expect(summary.reviewTemplatePath).toBe(reviewTemplatePath);
+
+    const packet = JSON.parse(await readFile(reviewPacketPath, 'utf8')) as { corpusId: string };
+    expect(packet.corpusId).toBe('draft-corpus-z');
+
+    const template = JSON.parse(await readFile(reviewTemplatePath, 'utf8')) as ExpertReviewFile;
+    expect(template.sourceCorpusId).toBe('draft-corpus-z');
+    expect(template.sourceCorpusHash).toBe(summary.sourceCorpusHash);
   });
 
   it('seeds a draft corpus from real match runs and exports review artifacts', async () => {
