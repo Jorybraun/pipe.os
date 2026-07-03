@@ -23,6 +23,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Added — CODE_REVIEW assessment runtime
 
+- Completed `matching-eval:review` review files can now supply their own `sourceCorpusId`, while the CLI still verifies the embedded source hash before persisting reviewed corpora.
 - `matching-eval:review` can now export the latest persisted draft corpus with `--latest-draft-corpus`, avoiding accidental reseeding when operators need the current expert-review handoff packet.
 - Matching-evaluation readiness now auto-selects the latest expert-labelled corpus for `--check-latest-production-pass` and reports an actionable failure when app-dev only has draft corpora.
 - CODE_REVIEW judge-example verification can now audit remote D1 with `--remote --database-id`, so deployed full-submit/scoring calibration proof is inspectable instead of local-only.

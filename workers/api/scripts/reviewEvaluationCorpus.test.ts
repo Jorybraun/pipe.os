@@ -637,6 +637,22 @@ describe('evaluation corpus review CLI', () => {
     }));
   });
 
+  it('allows completed review files to provide the source corpus id', () => {
+    expect(parseCorpusReviewArgs([
+      '--remote',
+      '--database-id',
+      'app-dev-d1',
+      '--review-file',
+      '/tmp/review.json',
+      '--persist',
+    ])).toEqual(expect.objectContaining({
+      target: 'remote',
+      databaseId: 'app-dev-d1',
+      reviewFile: '/tmp/review.json',
+      persist: true,
+    }));
+  });
+
   it('rejects remote database ids in local corpus review mode', () => {
     expect(() => parseCorpusReviewArgs([
       '--database-id',
@@ -1213,5 +1229,41 @@ describe('evaluation corpus review CLI', () => {
       },
     ]);
     verification.close();
+  });
+
+  it('persists a completed review using the source corpus id embedded in the review file', async () => {
+    directory = await mkdtemp(join(tmpdir(), 'pipe-corpus-review-'));
+    const databasePath = join(directory, 'evaluation.sqlite');
+    const reviewFilePath = join(directory, 'review.json');
+    const summaryPath = join(directory, 'summary.json');
+    const sourceCorpus = loadFixtureCorpusWithUnlabelledContrastCandidate();
+    const sourceCorpusJson = JSON.stringify(sourceCorpus, null, 2);
+    const sqlite = new Database(databasePath);
+    sqlite.exec(evaluationMigration);
+    insertCorpus(sqlite, sourceCorpusJson);
+    sqlite.close();
+
+    const template = buildExpertReviewTemplate(buildCorpusReviewPacket(sourceCorpus));
+    writeFileSync(reviewFilePath, JSON.stringify(completedReview(template), null, 2));
+
+    const exitCode = await runCorpusReviewCli([
+      '--database-path',
+      databasePath,
+      '--review-file',
+      reviewFilePath,
+      '--persist',
+      '--json',
+      summaryPath,
+    ]);
+
+    expect(exitCode).toBe(1);
+    expect(JSON.parse(await readFile(summaryPath, 'utf8'))).toEqual(expect.objectContaining({
+      sourceCorpusId: sourceCorpus.corpusId,
+      reviewedCorpusId: 'sample-corpus-v1-expert-reviewed',
+      persisted: true,
+      expertLabelCount: 1,
+      syntheticFixtureCount: 0,
+      productionReady: false,
+    }));
   });
 });
