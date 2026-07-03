@@ -212,6 +212,10 @@ export interface LabelEvaluationResult {
   guardrailViolations: GuardrailViolation[];
   stretchPathsUsed: StretchPath[];
   provenanceComplete: boolean;
+  contrastCandidateId?: string;
+  contrastScore?: number | null;
+  scoreSeparation?: number | null;
+  minimumScoreSeparation?: number;
   passed: boolean;
   failureReason?: string;
 }

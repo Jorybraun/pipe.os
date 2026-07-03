@@ -90,9 +90,11 @@ function stretchPaths(result: PersistedRankedChallenge | undefined): StretchPath
 function labelEvaluation(
   label: ExpertLabel,
   result: PersistedRankedChallenge | undefined,
+  contrastRun?: PersistedMatchRun,
 ): LabelEvaluationResult {
   const actualRank = result?.eligible ? result.rank : null;
   const actualRecallRank = result?.recallRank ?? null;
+  const actualScore = result?.score ?? null;
   const provenanceComplete = result ? resultProvenanceComplete(result) : true;
   const violations: GuardrailViolation[] = [];
   if (label.relevanceGrade === 'forbidden' && actualRank !== null) {
@@ -124,6 +126,28 @@ function labelEvaluation(
     failureReason = 'eligible challenge is missing exact source provenance';
   }
 
+  let contrastScore: number | null | undefined;
+  let scoreSeparation: number | null | undefined;
+  if (
+    label.negativeCandidateId
+    && label.minimumScoreSeparation !== undefined
+  ) {
+    if (!contrastRun) {
+      contrastScore = null;
+      scoreSeparation = null;
+      failureReason ??= `contrast candidate run missing for ${label.negativeCandidateId}/${label.roleId}`;
+    } else {
+      const contrastResult = contrastRun.rankedChallenges.find(
+        (candidateResult) => candidateResult.challengeId === label.challengeId,
+      );
+      contrastScore = contrastResult?.score ?? 0;
+      scoreSeparation = (actualScore ?? 0) - contrastScore;
+      if (scoreSeparation + 1e-12 < label.minimumScoreSeparation) {
+        failureReason ??= `score separation ${scoreSeparation.toFixed(4)} below required ${label.minimumScoreSeparation.toFixed(4)} against contrast candidate ${label.negativeCandidateId}`;
+      }
+    }
+  }
+
   return {
     labelId: label.labelId,
     candidateId: label.candidateId,
@@ -132,10 +156,18 @@ function labelEvaluation(
     expectedGrade: label.relevanceGrade,
     actualRank,
     actualRecallRank,
-    actualScore: result?.score ?? null,
+    actualScore,
     guardrailViolations: Array.from(new Set(violations)),
     stretchPathsUsed: stretchPaths(result),
     provenanceComplete,
+    ...(label.negativeCandidateId
+      ? { contrastCandidateId: label.negativeCandidateId }
+      : {}),
+    ...(contrastScore !== undefined ? { contrastScore } : {}),
+    ...(scoreSeparation !== undefined ? { scoreSeparation } : {}),
+    ...(label.minimumScoreSeparation !== undefined
+      ? { minimumScoreSeparation: label.minimumScoreSeparation }
+      : {}),
     passed: failureReason === undefined,
     ...(failureReason ? { failureReason } : {}),
   };
@@ -441,7 +473,15 @@ export function evaluateMatchRuns(
     const run = runs.get(key);
     if (!run) {
       missingMatchRunCount++;
-      labelResults.push(...labels.map((label) => labelEvaluation(label, undefined)));
+      labelResults.push(...labels.map((label) =>
+        labelEvaluation(
+          label,
+          undefined,
+          label.negativeCandidateId
+            ? runs.get(pairKey(label.negativeCandidateId, label.roleId))
+            : undefined,
+        )
+      ));
       continue;
     }
     evaluatedPairCount++;
@@ -493,7 +533,13 @@ export function evaluateMatchRuns(
     }
 
     for (const label of labels) {
-      const evaluation = labelEvaluation(label, resultById.get(label.challengeId));
+      const evaluation = labelEvaluation(
+        label,
+        resultById.get(label.challengeId),
+        label.negativeCandidateId
+          ? runs.get(pairKey(label.negativeCandidateId, label.roleId))
+          : undefined,
+      );
       labelResults.push(evaluation);
       guardrailViolationCount += evaluation.guardrailViolations.filter(
         (violation) =>
@@ -681,6 +727,15 @@ export function checkAcceptanceThresholds(
 ): EvaluationResult {
   const failures: string[] = [];
   const warnings: string[] = [];
+  const failedLabels = metrics.labelResults.filter((result) => !result.passed);
+  if (failedLabels.length > 0) {
+    failures.push(
+      `${failedLabels.length} label evaluation(s) failed: ${failedLabels
+        .slice(0, 5)
+        .map((result) => `${result.labelId}${result.failureReason ? ` (${result.failureReason})` : ''}`)
+        .join('; ')}`,
+    );
+  }
   if (metrics.recallAt50 < thresholds.minRecallAt50) {
     failures.push(`Recall@50 ${metrics.recallAt50} below ${thresholds.minRecallAt50}`);
   }
