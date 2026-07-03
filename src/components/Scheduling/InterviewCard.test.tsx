@@ -199,7 +199,11 @@ describe('InterviewCard assessment progress', () => {
         hasTranscriptEvidence: true,
         hasTestEvidence: true,
         evidenceCounts: [{ kind: 'commit_submission', count: 1 }],
-        sourceRefCounts: [{ kind: 'test_run', count: 1 }],
+        sourceRefCounts: [
+          { kind: 'test_run', count: 1 },
+          { kind: 'room_chat_message', count: 1 },
+          { kind: 'meeting_session_event', count: 2 },
+        ],
         challenge: {
           sourceRefType: 'review_challenge_packet',
           sourceRefId: 'challenge-packet-card',
@@ -277,6 +281,9 @@ describe('InterviewCard assessment progress', () => {
     expect(progress).toHaveTextContent('Ready · open-source/widgets · base 111111111111');
     expect(progress).toHaveTextContent('ROOM');
     expect(progress).toHaveTextContent('Active · guest waiting');
+    expect(progress).toHaveTextContent('CHAT');
+    expect(progress).toHaveTextContent('Room chat captured');
+    expect(progress).toHaveTextContent('1 room chat message and 2 room session events tied to the assessment evidence trail.');
     expect(progress).toHaveTextContent('open-source/widgets');
     expect(progress).toHaveTextContent('PR #72');
     expect(progress).toHaveTextContent('BASE');

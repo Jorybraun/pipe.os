@@ -252,6 +252,8 @@ describe('InterviewDetailPage', () => {
             { kind: 'git_commit', count: 1 },
             { kind: 'code_diff', count: 1 },
             { kind: 'test_run', count: 1 },
+            { kind: 'room_chat_message', count: 1 },
+            { kind: 'meeting_session_event', count: 3 },
             { kind: 'ai_user_prompt', count: 2 },
             { kind: 'ai_user_prompt_blocked', count: 1 },
             { kind: 'ai_agent_response', count: 1 },
@@ -353,9 +355,7 @@ describe('InterviewDetailPage', () => {
     const assignment = screen.getByTestId('interview-assessment-assignment');
     expect(assignment).toHaveTextContent('Assignment');
     expect(assignment).toHaveTextContent('PIPE-matched challenge');
-    expect(assignment).toHaveTextContent(
-      'Repo task was selected from source-backed candidate evidence and an approved challenge packet.',
-    );
+    expect(assignment).toHaveTextContent('PIPE matched a reviewable open-source task.');
     expect(progress).toHaveTextContent('Start source-backed AI or human evaluation.');
     expect(progress).toHaveTextContent('challenge, chat, workspace telemetry, tool activity, commit, AI use, transcript, tests');
     expect(progress).toHaveTextContent('Workspace');
@@ -384,6 +384,9 @@ describe('InterviewDetailPage', () => {
     expect(workPacket).toHaveTextContent('1 changed file: src/popover.ts · Modified');
     expect(workPacket).toHaveTextContent('Verification');
     expect(workPacket).toHaveTextContent('Tests captured');
+    expect(workPacket).toHaveTextContent('Collaboration');
+    expect(workPacket).toHaveTextContent('Room chat captured');
+    expect(workPacket).toHaveTextContent('1 room chat message and 3 room session events tied to the assessment evidence trail.');
     expect(workPacket).toHaveTextContent('AI transparency');
     expect(workPacket).toHaveTextContent('AI use observed');
     expect(workPacket).toHaveTextContent('2 prompts, 1 blocked prompt, and 1 agent response captured from the real agent bridge.');

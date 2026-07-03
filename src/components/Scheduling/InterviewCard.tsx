@@ -233,6 +233,12 @@ interface AssessmentReviewArtifactSummary {
   tone: 'verified' | 'warning' | 'neutral';
 }
 
+interface AssessmentCollaborationSummary {
+  label: string;
+  detail: string;
+  tone: 'verified' | 'warning' | 'neutral';
+}
+
 interface AssessmentProofChecklistSummary {
   required: string[];
   confidence: string[];
@@ -475,6 +481,49 @@ function assessmentSourceRefCount(
   kind: string,
 ): number {
   return progress?.sourceRefCounts?.find((row) => row.kind === kind)?.count ?? 0;
+}
+
+function sourceRefCountLabel(count: number, singular: string, plural = `${singular}s`): string | null {
+  if (count <= 0) return null;
+  return `${count} ${count === 1 ? singular : plural}`;
+}
+
+function readableList(parts: string[]): string {
+  if (parts.length <= 1) return parts[0] ?? '';
+  if (parts.length === 2) return `${parts[0]} and ${parts[1]}`;
+  return `${parts.slice(0, -1).join(', ')}, and ${parts[parts.length - 1]}`;
+}
+
+function assessmentCollaborationSummary(
+  progress: ScheduledInterview['assessmentProgress'] | null | undefined,
+  options: { includeMissing?: boolean } = {},
+): AssessmentCollaborationSummary | null {
+  if (!progress) return null;
+
+  const chatMessageCount = assessmentSourceRefCount(progress, 'room_chat_message');
+  const sessionEventCount = assessmentSourceRefCount(progress, 'meeting_session_event');
+  const collaborationParts = [
+    sourceRefCountLabel(chatMessageCount, 'room chat message'),
+    sourceRefCountLabel(sessionEventCount, 'room session event'),
+  ].filter((item): item is string => Boolean(item));
+
+  if (progress.hasMessageEvidence || collaborationParts.length > 0) {
+    return {
+      label: 'Room chat captured',
+      detail: collaborationParts.length > 0
+        ? `${readableList(collaborationParts)} tied to the assessment evidence trail.`
+        : 'Candidate and recruiter messages are present as source-backed assessment evidence.',
+      tone: 'verified',
+    };
+  }
+
+  if (!options.includeMissing) return null;
+
+  return {
+    label: 'No chat evidence captured',
+    detail: 'Candidate collaboration is unobserved for this assessment session.',
+    tone: 'warning',
+  };
 }
 
 function assessmentReviewArtifactSummary(
@@ -725,6 +774,7 @@ export function InterviewCard({
   const assessmentChallengeBindingLabel = assessmentProgress?.commit?.challengeBinding?.label ?? null;
   const assessmentCommitTrust = assessmentCommitTrustSummary(assessmentProgress?.commit);
   const assessmentReviewArtifact = assessmentReviewArtifactSummary(assessmentProgress);
+  const assessmentCollaboration = assessmentCollaborationSummary(assessmentProgress);
   const assessmentPacketContract = assessmentPacketContractSummary(assessmentProgress?.challengePacketContract);
   const assessmentCriteriaLabel = assessmentChallenge?.successCriteria.length
     ? compactText(assessmentChallenge.successCriteria.join(' · '), 150)
@@ -969,6 +1019,21 @@ export function InterviewCard({
                   </div>
                   <div style={{ minWidth: 0, fontSize: 10, color: guestWaiting ? '#10b981' : 'var(--pipe-text-dim)', overflowWrap: 'anywhere' }}>
                     {roomSummary}
+                  </div>
+                </>
+              )}
+              {assessmentCollaboration && (
+                <>
+                  <div style={{ fontSize: 9, color: assessmentCommitTrustColor(assessmentCollaboration.tone), letterSpacing: '0.12em', fontWeight: 700 }}>
+                    CHAT
+                  </div>
+                  <div style={{ minWidth: 0, overflowWrap: 'anywhere' }}>
+                    <div style={{ fontSize: 10, color: assessmentCommitTrustColor(assessmentCollaboration.tone), fontWeight: 700 }}>
+                      {assessmentCollaboration.label}
+                    </div>
+                    <div style={{ fontSize: 10, color: 'var(--pipe-text-dim)' }}>
+                      {assessmentCollaboration.detail}
+                    </div>
                   </div>
                 </>
               )}

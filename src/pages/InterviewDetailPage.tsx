@@ -1115,6 +1115,26 @@ function workspaceAssessmentNextActionItem(progress: AssessmentProgressSnapshot 
   };
 }
 
+function workspaceAssessmentCollaborationItem(progress: AssessmentProgressSnapshot): WorkspaceAssessmentReadoutItem {
+  const chatMessageCount = assessmentSourceRefCount(progress, 'room_chat_message');
+  const sessionEventCount = assessmentSourceRefCount(progress, 'meeting_session_event');
+  const collaborationParts = [
+    sourceRefCountLabel(chatMessageCount, 'room chat message'),
+    sourceRefCountLabel(sessionEventCount, 'room session event'),
+  ].filter((item): item is string => Boolean(item));
+
+  return {
+    label: 'Collaboration',
+    value: progress.hasMessageEvidence ? 'Room chat captured' : 'No chat evidence captured',
+    detail: progress.hasMessageEvidence
+      ? collaborationParts.length > 0
+        ? `${readableList(collaborationParts)} tied to the assessment evidence trail.`
+        : 'Candidate and recruiter messages are present as source-backed assessment evidence.'
+      : 'Candidate collaboration is unobserved for this assessment session.',
+    tone: progress.hasMessageEvidence ? 'positive' : 'watch',
+  };
+}
+
 function workspaceAssessmentWorkPacket(progress: AssessmentProgressSnapshot | null): WorkspaceAssessmentReadoutItem[] {
   if (!progress?.commit) return [];
 
@@ -1222,6 +1242,7 @@ function workspaceAssessmentWorkPacket(progress: AssessmentProgressSnapshot | nu
         : 'Default assessment output remains the fork or assessment branch; upstream PRs require later review and explicit consent.',
       tone: progress.commit.upstreamPullRequestUrl && progress.commit.upstreamPrConsent ? 'positive' : 'neutral',
     },
+    workspaceAssessmentCollaborationItem(progress),
     {
       label: 'AI transparency',
       value: progress.hasAiInteraction ? 'AI use observed' : 'No AI evidence captured',
