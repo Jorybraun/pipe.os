@@ -78,17 +78,28 @@ function requiredEnv(name: string): string {
   return value;
 }
 
+export function resolveCodeReviewMatchHealthDatabaseId(
+  options: Pick<CliOptions, 'databaseId'>,
+  env: Record<string, string | undefined> = process.env,
+): string {
+  const databaseId = options.databaseId
+    ?? env['MATCHING_EVALUATION_D1_DATABASE_ID']
+    ?? env['CLOUDFLARE_D1_DATABASE_ID']
+    ?? '';
+  if (!databaseId) {
+    throw new Error(
+      'Missing required D1 database id; set MATCHING_EVALUATION_D1_DATABASE_ID, '
+      + 'CLOUDFLARE_D1_DATABASE_ID, or pass --database-id.',
+    );
+  }
+  return databaseId;
+}
+
 function remoteD1Client(options: CliOptions): D1Client {
   if (!options.remote) {
     throw new Error('Only --remote is currently supported for CODE_REVIEW match-health audits.');
   }
-  const databaseId = options.databaseId
-    ?? process.env['CLOUDFLARE_D1_DATABASE_ID']
-    ?? process.env['MATCHING_EVALUATION_D1_DATABASE_ID']
-    ?? '';
-  if (!databaseId) {
-    throw new Error('Missing required D1 database id; set CLOUDFLARE_D1_DATABASE_ID, MATCHING_EVALUATION_D1_DATABASE_ID, or pass --database-id.');
-  }
+  const databaseId = resolveCodeReviewMatchHealthDatabaseId(options);
   return new D1Client({
     accountId: requiredEnv('CLOUDFLARE_ACCOUNT_ID'),
     apiToken: requiredEnv('CLOUDFLARE_API_TOKEN'),
