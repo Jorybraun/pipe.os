@@ -5,6 +5,7 @@ import {
   rankReviewChallenges,
   recallReviewChallenges,
 } from './engine';
+import { candidateSafeQualityGateFor } from './candidateSafeQualityGate';
 import type {
   CandidateSignal,
   ChallengePacket,
@@ -1564,6 +1565,39 @@ function buildMatchValidatorDecision(input: {
   };
 }
 
+function automaticSelectionPassesCandidateSafeGate(input: {
+  status: CandidateReviewChallengeMatch['status'];
+  selected: ReturnType<typeof alignCandidateToChallenge> | undefined;
+  roleSources: RoleSourceReference[];
+  validatorAgent: MatchValidatorDecision;
+  scoreSeparation: number | null;
+}): boolean {
+  if (input.status !== 'MATCHED' || !input.selected) return false;
+  const assessmentQuality = explainChallengeMatch(input.selected, {
+    scoreSeparation: input.scoreSeparation,
+  }).assessmentQuality;
+  const candidateSourceCount = uniqueSourceCount(
+    input.selected.alignments.flatMap((entry) => entry.atom.sourceRefs),
+  );
+  const repoSourceCount = uniqueSourceCount(
+    input.selected.alignments.flatMap((entry) => entry.demand.sourceRefs),
+  );
+  const roleSourceCount = uniqueRoleSourceCount(
+    selectedRoleSourcesForAlignment(input.selected, input.roleSources),
+  );
+
+  return candidateSafeQualityGateFor({
+    status: input.status,
+    candidateSourceCount,
+    repoSourceCount,
+    roleSourceCount,
+    validatorVerdict: input.validatorAgent.verdict,
+    assessmentQualityVerdict: assessmentQuality?.verdict,
+    assessmentQualityMetrics: assessmentQuality?.metrics,
+    requireContrastSeparation: roleSourceCount > 0,
+  }).verdict === 'PASSED';
+}
+
 function diagnosticMissingEvidence(input: {
   status: CandidateReviewChallengeMatch['status'];
   compiledStatus: ReturnType<typeof compileCandidateMatchQuery>['status'];
@@ -1863,7 +1897,7 @@ export async function matchCandidateToReviewChallenge(
     alignCandidateToChallenge({ query: compiled.query, challenge, adjacency: stretchAdjacency }),
   );
   const ranked = rankReviewChallenges(compiled.query, alignments);
-  const selected = ranked.matches[0]?.alignment;
+  const rankedSelected = ranked.matches[0]?.alignment;
   const eligibleRankByChallengeId = new Map(
     ranked.matches.map((match) => [match.alignment.challenge.id, match.rank]),
   );
@@ -1884,10 +1918,7 @@ export async function matchCandidateToReviewChallenge(
       matchContrastSeparation(alignment, next ?? null),
     );
   });
-  const selectedScoreSeparation = selected
-    ? scoreSeparationByChallengeId.get(selected.challenge.id) ?? null
-    : null;
-  const status = compiled.status === 'NEEDS_MORE_EVIDENCE'
+  const rankedStatus = compiled.status === 'NEEDS_MORE_EVIDENCE'
     ? 'NEEDS_MORE_EVIDENCE'
     : ranked.status;
   const challengeById = new Map(challenges.map((challenge) => [challenge.id, challenge]));
@@ -1934,12 +1965,38 @@ export async function matchCandidateToReviewChallenge(
     `SELECT id FROM applications WHERE legacy_candidate_id = ?1`,
   ).bind(candidateId).first<{ id: string }>();
   const roleSourcesForRun = normalizeRoleSourcesForExplanation(options.roleSourceReferences ?? []);
-  const selectedValidatorAgent = buildMatchValidatorDecision({
+  const rankedSelectedScoreSeparation = rankedSelected
+    ? scoreSeparationByChallengeId.get(rankedSelected.challenge.id) ?? null
+    : null;
+  const rankedSelectedValidatorAgent = buildMatchValidatorDecision({
     matchRunId,
-    status,
-    selected,
+    status: rankedStatus,
+    selected: rankedSelected,
     roleSources: roleSourcesForRun,
   });
+  const selected = automaticSelectionPassesCandidateSafeGate({
+    status: rankedStatus,
+    selected: rankedSelected,
+    roleSources: roleSourcesForRun,
+    validatorAgent: rankedSelectedValidatorAgent,
+    scoreSeparation: rankedSelectedScoreSeparation,
+  })
+    ? rankedSelected
+    : undefined;
+  const selectedScoreSeparation = selected
+    ? scoreSeparationByChallengeId.get(selected.challenge.id) ?? null
+    : null;
+  const status = rankedStatus === 'MATCHED' && rankedSelected && !selected
+    ? 'NEEDS_MORE_EVIDENCE'
+    : rankedStatus;
+  const selectedValidatorAgent = selected
+    ? rankedSelectedValidatorAgent
+    : buildMatchValidatorDecision({
+        matchRunId,
+        status,
+        selected,
+        roleSources: roleSourcesForRun,
+      });
   const validatorAgentByChallengeId = new Map(
     evaluated.map((alignment) => [
       alignment.challenge.id,
