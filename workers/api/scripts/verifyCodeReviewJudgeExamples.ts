@@ -13,7 +13,11 @@ import { createRequire } from 'node:module';
 import { dirname, resolve } from 'node:path';
 import { fileURLToPath } from 'node:url';
 
-import { D1Client } from './crawl-repos/shared/d1Client.js';
+import {
+  D1Client,
+  WranglerD1Client,
+  type WranglerD1ClientOptions,
+} from './crawl-repos/shared/d1Client.js';
 
 const scriptDir = dirname(fileURLToPath(import.meta.url));
 dotenv.config({ path: resolve(scriptDir, '..', '.dev.vars'), quiet: true });
@@ -101,6 +105,27 @@ interface SqliteDatabase {
 
 interface RemoteQueryClient {
   query<T = Record<string, unknown>>(sql: string, params?: (string | number | null)[]): Promise<T[]>;
+}
+
+interface RemoteQueryClientOptions {
+  env?: NodeJS.ProcessEnv;
+  wranglerOptions?: WranglerD1ClientOptions;
+}
+
+export function createRemoteQueryClient(
+  databaseId: string,
+  options: RemoteQueryClientOptions = {},
+): RemoteQueryClient {
+  const env = options.env ?? process.env;
+  const accountId = env['CLOUDFLARE_ACCOUNT_ID'] ?? '';
+  const apiToken = env['CLOUDFLARE_API_TOKEN'] ?? '';
+  if (accountId && apiToken) {
+    return new D1Client({ accountId, apiToken, databaseId });
+  }
+  return new WranglerD1Client(databaseId, {
+    ...options.wranglerOptions,
+    env,
+  });
 }
 
 function usage(): string {
@@ -486,10 +511,6 @@ async function auditDatabase(path: string, limit: number): Promise<DatabaseJudge
 }
 
 async function auditRemoteDatabase(databaseId: string, limit: number): Promise<DatabaseJudgeExampleAudit> {
-  const accountId = process.env['CLOUDFLARE_ACCOUNT_ID'] ?? '';
-  const apiToken = process.env['CLOUDFLARE_API_TOKEN'] ?? '';
-  if (!accountId) throw new Error('Missing required env var: CLOUDFLARE_ACCOUNT_ID');
-  if (!apiToken) throw new Error('Missing required env var: CLOUDFLARE_API_TOKEN');
   if (!databaseId) {
     throw new Error(
       'Missing D1 database id; pass --database-id or set CODE_REVIEW_JUDGE_EXAMPLES_D1_DATABASE_ID, '
@@ -497,7 +518,7 @@ async function auditRemoteDatabase(databaseId: string, limit: number): Promise<D
     );
   }
 
-  const client = new D1Client({ accountId, apiToken, databaseId });
+  const client = createRemoteQueryClient(databaseId);
   let rows: JudgeExampleRow[] = [];
   let loadFailure: string | null = null;
   try {
