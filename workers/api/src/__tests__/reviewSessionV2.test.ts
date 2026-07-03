@@ -1659,7 +1659,7 @@ describe('POST /rpc/get-stage-config', () => {
     }));
   });
 
-  it('queues standalone CODE_REVIEW assignment from stage-config once source-backed evidence is already ready', async () => {
+  it('keeps standalone CODE_REVIEW queued from stage-config even when source-backed evidence is already ready', async () => {
     vi.mocked(matchCandidateToReviewChallenge).mockResolvedValueOnce({
       status: 'MATCHED',
       repoId: 973,
@@ -1741,13 +1741,13 @@ describe('POST /rpc/get-stage-config', () => {
     });
 
     await waitUntilAll();
-    expect(matchCandidateToReviewChallenge).toHaveBeenCalledOnce();
+    expect(matchCandidateToReviewChallenge).not.toHaveBeenCalled();
     expect(db.__calls.some((call) =>
       call.ran
       && call.sql.includes('UPDATE scheduled_interviews')
       && call.params.includes(973)
       && call.params.includes('https://github.com/mui/base-ui')
-    )).toBe(true);
+    )).toBe(false);
   });
 });
 
@@ -1894,7 +1894,7 @@ describe('POST /rpc/submit-challenge-response', () => {
     await waitUntilAll();
   });
 
-  it('queues after intake when standalone CODE_REVIEW has no precomputed PR assignment', async () => {
+  it('queues after intake without matching when standalone CODE_REVIEW has no precomputed PR assignment', async () => {
     vi.mocked(matchCandidateToReviewChallenge).mockResolvedValueOnce({
       status: 'MATCHED',
       repoId: 973,
@@ -1983,16 +1983,16 @@ describe('POST /rpc/submit-challenge-response', () => {
     }));
     resolveIngestion?.();
     await waitUntilAll();
-    expect(matchCandidateToReviewChallenge).toHaveBeenCalled();
+    expect(matchCandidateToReviewChallenge).not.toHaveBeenCalled();
     expect(db.__calls.some((call) =>
       call.ran
       && call.sql.includes('UPDATE scheduled_interviews')
       && call.params.includes(973)
       && call.params.includes('https://github.com/mui/base-ui')
-    )).toBe(true);
+    )).toBe(false);
   });
 
-  it('matches standalone CODE_REVIEW after decomposition before full text ingestion completes', async () => {
+  it('keeps standalone CODE_REVIEW queued after decomposition before full text ingestion completes', async () => {
     vi.mocked(matchCandidateToReviewChallenge).mockResolvedValueOnce({
       status: 'MATCHED',
       repoId: 973,
@@ -2075,13 +2075,13 @@ describe('POST /rpc/submit-challenge-response', () => {
       queued: true,
     });
     await new Promise((resolve) => setTimeout(resolve, 0));
-    expect(matchCandidateToReviewChallenge).toHaveBeenCalledOnce();
+    expect(matchCandidateToReviewChallenge).not.toHaveBeenCalled();
     expect(db.__calls.some((call) =>
       call.ran
       && call.sql.includes('UPDATE scheduled_interviews')
       && call.params.includes(973)
       && call.params.includes('https://github.com/mui/base-ui')
-    )).toBe(true);
+    )).toBe(false);
 
     resolveIngestion?.();
     await waitUntilAll();
