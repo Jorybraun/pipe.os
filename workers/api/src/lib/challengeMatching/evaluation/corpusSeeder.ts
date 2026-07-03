@@ -558,6 +558,7 @@ export async function seedCorpusFromMatchRuns(
   }
 
   // Step 6: Generate draft expert labels from match results
+  const eligibleChallengeIdsByPair = eligibleChallengeIdsForPairs(matchRuns);
   const expertLabels: ExpertLabel[] = [];
   const labeledTriples = new Set<string>();
 
@@ -565,15 +566,12 @@ export async function seedCorpusFromMatchRuns(
     const selected = run.rankedChallenges.find((c) => c.rank === 1);
     if (!selected) continue;
 
-    const eligibleIds = run.rankedChallenges
-      .filter((c) => c.eligible && isEligibleGrade(gradeFromScore(c.score)))
-      .map((c) => c.challengeId);
-
     const triple = JSON.stringify([run.candidateId, run.roleId, selected.challengeId]);
     if (labeledTriples.has(triple)) continue;
     labeledTriples.add(triple);
 
     const grade = gradeFromScore(selected.score);
+    const eligibleIds = [...(eligibleChallengeIdsByPair.get(pairKey(run.candidateId, run.roleId)) ?? [])].sort();
 
     expertLabels.push({
       labelId: `seeded-${run.matchRunId}-${selected.challengeId}`,
@@ -632,6 +630,57 @@ export async function seedCorpusFromMatchRuns(
     challengeCount,
     warnings,
   };
+}
+
+function pairKey(candidateId: string, roleId: string): string {
+  return JSON.stringify([candidateId, roleId]);
+}
+
+function eligibleChallengeIdsForPairs(matchRuns: PersistedMatchRun[]): Map<string, Set<string>> {
+  const eligibleByPair = new Map<string, Set<string>>();
+  const positiveSelectedByPair = new Map<string, Set<string>>();
+  const negativeSelectedByPair = new Map<string, Set<string>>();
+
+  for (const run of matchRuns) {
+    const pair = pairKey(run.candidateId, run.roleId);
+    const eligible = eligibleByPair.get(pair) ?? new Set<string>();
+    const positiveSelected = positiveSelectedByPair.get(pair) ?? new Set<string>();
+    const negativeSelected = negativeSelectedByPair.get(pair) ?? new Set<string>();
+
+    for (const challenge of run.rankedChallenges) {
+      if (challenge.eligible && isEligibleGrade(gradeFromScore(challenge.score))) {
+        eligible.add(challenge.challengeId);
+      }
+    }
+
+    const selected = run.rankedChallenges.find((c) => c.rank === 1);
+    if (selected) {
+      const selectedGrade = gradeFromScore(selected.score);
+      if (isEligibleGrade(selectedGrade)) {
+        positiveSelected.add(selected.challengeId);
+      } else {
+        negativeSelected.add(selected.challengeId);
+      }
+    }
+
+    eligibleByPair.set(pair, eligible);
+    positiveSelectedByPair.set(pair, positiveSelected);
+    negativeSelectedByPair.set(pair, negativeSelected);
+  }
+
+  for (const [pair, selectedIds] of positiveSelectedByPair) {
+    const eligible = eligibleByPair.get(pair) ?? new Set<string>();
+    selectedIds.forEach((id) => eligible.add(id));
+    eligibleByPair.set(pair, eligible);
+  }
+
+  for (const [pair, selectedIds] of negativeSelectedByPair) {
+    const eligible = eligibleByPair.get(pair) ?? new Set<string>();
+    selectedIds.forEach((id) => eligible.delete(id));
+    eligibleByPair.set(pair, eligible);
+  }
+
+  return eligibleByPair;
 }
 
 function gradeFromScore(score: number): RelevanceGrade {
