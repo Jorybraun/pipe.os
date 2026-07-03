@@ -103,7 +103,7 @@ describe('useScheduledInterviews', () => {
 
     expect(apiMocks.get).toHaveBeenNthCalledWith(
       1,
-      '/api/v1/scheduling/interviews?limit=20&offset=0',
+      '/api/v1/scheduling/interviews?limit=20&offset=0&sort=created_desc',
     );
     expect(result.current.interviews.map((interview) => interview.id)).toEqual(['first-page-1']);
     expect(result.current.total).toBe(45);
@@ -115,11 +115,59 @@ describe('useScheduledInterviews', () => {
 
     expect(apiMocks.get).toHaveBeenNthCalledWith(
       2,
-      '/api/v1/scheduling/interviews?limit=20&offset=20',
+      '/api/v1/scheduling/interviews?limit=20&offset=20&sort=created_desc',
     );
     expect(result.current.interviews.map((interview) => interview.id)).toEqual([
       'first-page-1',
       'second-page-1',
+    ]);
+  });
+
+  it('requests the selected server sort for first page and load-more calls', async () => {
+    apiMocks.get
+      .mockResolvedValueOnce({
+        interviews: [apiInterview('oldest-page-1', '2026-06-01T10:00:00.000Z')],
+        pagination: {
+          total: 21,
+          limit: 20,
+          offset: 0,
+          sort: 'created_asc',
+          nextOffset: 20,
+          hasMore: true,
+        },
+      })
+      .mockResolvedValueOnce({
+        interviews: [apiInterview('oldest-page-2', '2026-06-02T10:00:00.000Z')],
+        pagination: {
+          total: 21,
+          limit: 20,
+          offset: 20,
+          sort: 'created_asc',
+          nextOffset: null,
+          hasMore: false,
+        },
+      });
+
+    const { result } = renderHook(() => useScheduledInterviews({ sort: 'created_asc' }));
+
+    await waitFor(() => expect(result.current.isLoading).toBe(false));
+
+    expect(apiMocks.get).toHaveBeenNthCalledWith(
+      1,
+      '/api/v1/scheduling/interviews?limit=20&offset=0&sort=created_asc',
+    );
+
+    await act(async () => {
+      await result.current.loadMore();
+    });
+
+    expect(apiMocks.get).toHaveBeenNthCalledWith(
+      2,
+      '/api/v1/scheduling/interviews?limit=20&offset=20&sort=created_asc',
+    );
+    expect(result.current.interviews.map((interview) => interview.id)).toEqual([
+      'oldest-page-1',
+      'oldest-page-2',
     ]);
   });
 });

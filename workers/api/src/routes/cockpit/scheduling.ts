@@ -123,6 +123,7 @@ function getProviderConfig(providerId: string, env: Env): ProviderOAuthConfig | 
 
 const SCHEDULED_INTERVIEWS_DEFAULT_LIMIT = 20;
 const SCHEDULED_INTERVIEWS_MAX_LIMIT = 100;
+type ScheduledInterviewsSort = 'created_desc' | 'created_asc' | 'scheduled_asc';
 
 function parsePositiveInt(value: string | undefined, fallback: number, max: number): number {
   if (!value) return fallback;
@@ -136,6 +137,23 @@ function parseNonNegativeInt(value: string | undefined, fallback: number): numbe
   const parsed = Number.parseInt(value, 10);
   if (!Number.isFinite(parsed)) return fallback;
   return Math.max(0, parsed);
+}
+
+function parseScheduledInterviewsSort(value: string | undefined): ScheduledInterviewsSort {
+  if (value === 'created_asc' || value === 'scheduled_asc') return value;
+  return 'created_desc';
+}
+
+function scheduledInterviewsOrderByClause(sort: ScheduledInterviewsSort): string {
+  switch (sort) {
+    case 'created_asc':
+      return 'si.created_at ASC, si.id ASC';
+    case 'scheduled_asc':
+      return 'si.scheduled_at IS NULL ASC, si.scheduled_at ASC, si.created_at DESC, si.id ASC';
+    case 'created_desc':
+    default:
+      return 'si.created_at DESC, si.id ASC';
+  }
 }
 
 const connectSchema = z.object({
@@ -6470,6 +6488,8 @@ schedulingAuth.get('/interviews', async (c) => {
     SCHEDULED_INTERVIEWS_MAX_LIMIT,
   );
   const offset = parseNonNegativeInt(c.req.query('offset'), 0);
+  const sort = parseScheduledInterviewsSort(c.req.query('sort'));
+  const orderByClause = scheduledInterviewsOrderByClause(sort);
   const hasWorkspaceSessions = await tableExists(db, 'dev_container_sessions');
   const workspaceSessionSelect = hasWorkspaceSessions
     ? `dcs.status AS workspace_status,
@@ -6567,7 +6587,7 @@ schedulingAuth.get('/interviews', async (c) => {
        LEFT JOIN meeting_rooms mr ON mr.meeting_id = m.id
        ${workspaceSessionJoin}
        WHERE si.owner_id = ?
-       ORDER BY si.created_at DESC, si.id ASC
+       ORDER BY ${orderByClause}
        LIMIT ? OFFSET ?`
     )
     .bind(userId, limit, offset)
@@ -6707,6 +6727,7 @@ schedulingAuth.get('/interviews', async (c) => {
       total,
       limit,
       offset,
+      sort,
       nextOffset,
       hasMore: nextOffset !== null,
     },

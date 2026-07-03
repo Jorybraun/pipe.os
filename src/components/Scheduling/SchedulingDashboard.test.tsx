@@ -221,11 +221,13 @@ describe('SchedulingDashboard interview ordering', () => {
   it('defaults to most recently created interviews and can switch back to timeline ordering', () => {
     renderDashboard(interviews);
 
+    expect(mocks.useScheduledInterviews).toHaveBeenLastCalledWith({ sort: 'created_desc' });
     expect(screen.getByText('NEWEST CREATED')).toBeInTheDocument();
     expect(cardNames()).toEqual(['Newest invite', 'Middle invite', 'Oldest invite']);
 
     fireEvent.click(screen.getByRole('button', { name: 'Timeline' }));
 
+    expect(mocks.useScheduledInterviews).toHaveBeenLastCalledWith({ sort: 'scheduled_asc' });
     expect(screen.getByText('TODAY')).toBeInTheDocument();
     expect(screen.getByText('TOMORROW')).toBeInTheDocument();
     expect(screen.getByText('UNSCHEDULED')).toBeInTheDocument();
@@ -237,6 +239,7 @@ describe('SchedulingDashboard interview ordering', () => {
 
     fireEvent.click(screen.getByRole('button', { name: 'Oldest' }));
 
+    expect(mocks.useScheduledInterviews).toHaveBeenLastCalledWith({ sort: 'created_asc' });
     expect(screen.getByText('OLDEST CREATED')).toBeInTheDocument();
     expect(cardNames()).toEqual(['Oldest invite', 'Middle invite', 'Newest invite']);
   });

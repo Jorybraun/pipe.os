@@ -11,13 +11,19 @@ import type {
 import { useRoomStatusNotifications } from './useRoomStatusNotifications';
 
 const INTERVIEW_PAGE_LIMIT = 20;
+type ScheduledInterviewsSort = 'created_desc' | 'created_asc' | 'scheduled_asc';
 
 interface ScheduledInterviewsPagination {
   total: number;
   limit: number;
   offset: number;
+  sort?: ScheduledInterviewsSort;
   nextOffset: number | null;
   hasMore: boolean;
+}
+
+interface UseScheduledInterviewsOptions {
+  sort?: ScheduledInterviewsSort;
 }
 
 interface UseScheduledInterviewsResult {
@@ -45,9 +51,10 @@ interface UseScheduledInterviewsResult {
  * useScheduledInterviews — fetches paged ScheduledInterviews
  * owned by the authenticated recruiter via Cloudflare Worker API.
  */
-export function useScheduledInterviews(): UseScheduledInterviewsResult {
+export function useScheduledInterviews(options: UseScheduledInterviewsOptions = {}): UseScheduledInterviewsResult {
   const api: ApiClient = useApiClient();
   const { updates: roomStatusUpdates } = useRoomStatusNotifications();
+  const sort = options.sort ?? 'created_desc';
 
   const [interviews, setInterviews] = useState<ScheduledInterview[]>([]);
   const [isLoading, setIsLoading] = useState(true);
@@ -113,7 +120,7 @@ export function useScheduledInterviews(): UseScheduledInterviewsResult {
           workspaceSession?: WorkspaceSessionSummary | null;
         }>;
         pagination?: ScheduledInterviewsPagination;
-      }>(`/api/v1/scheduling/interviews?limit=${INTERVIEW_PAGE_LIMIT}&offset=${offset}`);
+      }>(`/api/v1/scheduling/interviews?limit=${INTERVIEW_PAGE_LIMIT}&offset=${offset}&sort=${sort}`);
 
       const nextPage = result.interviews.map((r) => ({
           id: r.id,
@@ -165,6 +172,7 @@ export function useScheduledInterviews(): UseScheduledInterviewsResult {
         total: merged.length,
         limit: INTERVIEW_PAGE_LIMIT,
         offset,
+        sort,
         nextOffset: null,
         hasMore: false,
       };
@@ -184,7 +192,7 @@ export function useScheduledInterviews(): UseScheduledInterviewsResult {
         setIsLoading(false);
       }
     }
-  }, [api]);
+  }, [api, sort]);
 
   // Load interviews immediately. Calendly bookings arrive from provider webhooks;
   // live room presence/status updates arrive through useRoomStatusNotifications.

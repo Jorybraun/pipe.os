@@ -15,6 +15,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Fixed — Interview scheduling
 
+- Recruiter interview pagination now honors server-side newest, oldest, and scheduled-time sort modes instead of reordering only the currently loaded page.
 - Open-source workspace dev smoke now reloads the candidate room after source-backed evaluation and requires the deployed cockpit to show Report Ready instead of Submit Work.
 - Candidate assessment rooms now switch captured open-source work from Submit Work to Review Submission or Report Ready and lock duplicate commit submission/finalization once source-backed commit evidence is captured.
 - PIPE-matched open-source challenge packets now expose source-backed match proof in recruiter detail, candidate task brief, packet panel, submit panel, list summaries, and dev smokes, making the selected repo task explain why it was chosen without exposing internal identifiers.

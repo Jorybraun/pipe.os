@@ -20,6 +20,7 @@ import type {
 type TimelineGroup = 'TODAY' | 'TOMORROW' | 'THIS_WEEK' | 'LATER' | 'PAST' | 'UNSCHEDULED';
 type InterviewSortMode = 'CREATED_DESC' | 'TIMELINE' | 'CREATED_ASC';
 type InterviewListGroup = TimelineGroup | 'CREATED_DESC' | 'CREATED_ASC';
+type InterviewListApiSort = 'created_desc' | 'created_asc' | 'scheduled_asc';
 type AssessmentFilterMode = 'ALL' | 'ACTION_NEEDED' | 'READY_TO_EVALUATE' | 'NEEDS_ATTENTION' | 'EVALUATED';
 type InterviewTypeFilterMode = 'ALL' | 'STANDARD_CALLS' | 'CODE_REVIEW' | 'DEV_CONTAINER_CHALLENGE' | 'OPEN_SOURCE_BUG_FIX';
 
@@ -127,6 +128,12 @@ const SORT_OPTIONS: ReadonlyArray<{ label: string; value: InterviewSortMode }> =
   { label: 'Timeline', value: 'TIMELINE' },
   { label: 'Oldest', value: 'CREATED_ASC' },
 ];
+
+function interviewSortModeToApiSort(sortMode: InterviewSortMode): InterviewListApiSort {
+  if (sortMode === 'CREATED_ASC') return 'created_asc';
+  if (sortMode === 'TIMELINE') return 'scheduled_asc';
+  return 'created_desc';
+}
 
 const ASSESSMENT_FILTER_OPTIONS: ReadonlyArray<{ label: string; value: AssessmentFilterMode }> = [
   { label: 'All', value: 'ALL' },
@@ -277,6 +284,7 @@ function statusMessage(notification: BookingNotification): string {
 }
 
 export function SchedulingDashboard(): JSX.Element {
+  const [sortMode, setSortMode] = useState<InterviewSortMode>('CREATED_DESC');
   const {
     interviews,
     isLoading,
@@ -288,7 +296,7 @@ export function SchedulingDashboard(): JSX.Element {
     sendInvite,
     refetch,
     loadMore = async () => undefined,
-  } = useScheduledInterviews();
+  } = useScheduledInterviews({ sort: interviewSortModeToApiSort(sortMode) });
   const { notifications, isConnected } = useBookingNotifications();
   const api = useApiClient();
   const [showInviteModal, setShowInviteModal] = useState(false);
@@ -298,7 +306,6 @@ export function SchedulingDashboard(): JSX.Element {
     interviewType: 'VIDEO',
     recruiterNotes: '',
   });
-  const [sortMode, setSortMode] = useState<InterviewSortMode>('CREATED_DESC');
   const [interviewTypeFilter, setInterviewTypeFilter] = useState<InterviewTypeFilterMode>('ALL');
   const [assessmentFilter, setAssessmentFilter] = useState<AssessmentFilterMode>('ALL');
   const [searchParams, setSearchParams] = useSearchParams();

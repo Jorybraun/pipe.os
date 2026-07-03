@@ -2623,6 +2623,7 @@ describe('GET /interviews/:id detail', () => {
           total: number;
           limit: number;
           offset: number;
+          sort?: string;
           nextOffset: number | null;
           hasMore: boolean;
         };
@@ -2632,6 +2633,7 @@ describe('GET /interviews/:id detail', () => {
         total: expect.any(Number),
         limit: 20,
         offset: 0,
+        sort: 'created_desc',
         nextOffset: 20,
         hasMore: true,
       });
@@ -2686,6 +2688,25 @@ describe('GET /interviews/:id detail', () => {
       expect(sessionLookupQuery).toBeTruthy();
       expect(sessionLookupQuery).toContain('WHERE interview_id IN (?1, ?2)');
       expect(sessionLookupQuery).not.toContain('?3');
+
+      const oldestResponse = await app.request('/interviews?limit=20&offset=0&sort=created_asc');
+      expect(oldestResponse.status).toBe(200);
+      const oldestBody = await oldestResponse.json() as {
+        interviews: Array<{ id: string; createdAt: string }>;
+        pagination: { limit: number; offset: number; sort?: string; nextOffset: number | null; hasMore: boolean };
+      };
+      expect(oldestBody.pagination).toMatchObject({
+        limit: 20,
+        offset: 0,
+        sort: 'created_asc',
+        nextOffset: 20,
+        hasMore: true,
+      });
+      const createdTimes = oldestBody.interviews.map((item) => new Date(item.createdAt).getTime());
+      expect(createdTimes).toEqual([...createdTimes].sort((a, b) => a - b));
+      const oldestIds = oldestBody.interviews.map((item) => item.id);
+      expect(oldestIds.indexOf('interview-1')).toBeLessThan(oldestIds.indexOf('interview-list-filler-000'));
+      expect(oldestIds).not.toContain('interview-list-corrupt-progress');
     } finally {
       errorSpy.mockRestore();
     }
