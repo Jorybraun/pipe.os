@@ -228,6 +228,9 @@ For the role-backed full-submit lane, the suite also requires completed
 recruiter and person-profile statuses, submitted profile state, a passed
 validator verdict, role-source proof, author pushback/thread evidence, remote D1
 score persistence, and complete review/scoring pipeline steps.
+The Workers SDK matrix lane must pass every evaluated profile with zero
+failures, and the match-quality lane must keep positive average score separation
+so broad-match proof cannot go flat while still reporting accuracy.
 In isolated worktrees that already have `playwright/.auth/user.json`, set
 `PLAYWRIGHT_SKIP_CLERK_GLOBAL_SETUP=1` to reuse that recruiter session without
 running the Clerk setup dependency again.

@@ -396,6 +396,9 @@ describe('CODE_REVIEW reliability suite contract', () => {
 
     expect(validateLaneSummary('workers-sdk-matrix', {
       ok: true,
+      profileCount: 1,
+      passed: 1,
+      failed: 0,
       profileId: 'workers-sdk-runtime',
       repoUrl: 'https://github.com/cloudflare/workers-sdk',
       prNumber: 14118,
@@ -414,6 +417,7 @@ describe('CODE_REVIEW reliability suite contract', () => {
       accuracy: 1,
       falsePositiveCount: 0,
       falseNegativeCount: 0,
+      averageScoreSeparation: 0.65,
       usableChallengeRate: 1,
       gateFailures: [],
     })).toEqual({ ok: true, failures: [] });
@@ -443,6 +447,9 @@ describe('CODE_REVIEW reliability suite contract', () => {
 
     expect(validateLaneSummary('workers-sdk-matrix', {
       ok: true,
+      profileCount: 1,
+      passed: 1,
+      failed: 0,
       profileId: 'workers-sdk-runtime',
       repoUrl: 'https://github.com/mui/base-ui',
       prNumber: 973,
@@ -456,6 +463,45 @@ describe('CODE_REVIEW reliability suite contract', () => {
       ok: false,
       failures: expect.arrayContaining([
         'workers-sdk-matrix must select cloudflare/workers-sdk',
+      ]),
+    });
+
+    expect(validateLaneSummary('workers-sdk-matrix', {
+      ok: true,
+      profileCount: 2,
+      passed: 1,
+      failed: 1,
+      profileId: 'workers-sdk-runtime',
+      repoUrl: 'https://github.com/cloudflare/workers-sdk',
+      prNumber: 14118,
+      matchStatus: 'MATCHED',
+      qualityGate: 'PASSED',
+      assessmentQuality: 'STRONG',
+      contrastScore: 2,
+      candidateBrowserSmokeSkipped: false,
+      recruiterBrowserSmokeSkipped: false,
+    })).toMatchObject({
+      ok: false,
+      failures: expect.arrayContaining([
+        'workers-sdk-matrix failed profile count must be 0',
+        'workers-sdk-matrix must pass every evaluated profile',
+      ]),
+    });
+
+    expect(validateLaneSummary('match-quality-readiness', {
+      ok: true,
+      corpusId: 'expert-corpus',
+      totalPairs: 6,
+      accuracy: 1,
+      falsePositiveCount: 0,
+      falseNegativeCount: 0,
+      averageScoreSeparation: 0,
+      usableChallengeRate: 1,
+      gateFailures: [],
+    })).toMatchObject({
+      ok: false,
+      failures: expect.arrayContaining([
+        'match-quality-readiness averageScoreSeparation must be positive',
       ]),
     });
 

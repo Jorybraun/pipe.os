@@ -413,6 +413,9 @@ export function validateLaneSummary(laneId, summary) {
       require(summary?.personRoleRepoHyperedge === true, 'role-backed-full-submit must expose person-role-repo bridge');
       break;
     case 'workers-sdk-matrix':
+      require(finiteNumberAtLeast(summary?.profileCount, 1), 'workers-sdk-matrix must evaluate at least one profile');
+      require(Number(summary?.failed) === 0, 'workers-sdk-matrix failed profile count must be 0');
+      require(Number(summary?.passed) === Number(summary?.profileCount), 'workers-sdk-matrix must pass every evaluated profile');
       require(summary?.profileId === 'workers-sdk-runtime', 'workers-sdk-matrix must run the Workers SDK profile');
       require(summary?.repoUrl === 'https://github.com/cloudflare/workers-sdk', 'workers-sdk-matrix must select cloudflare/workers-sdk');
       require(finiteNumberAtLeast(summary?.prNumber, 1), 'workers-sdk-matrix must include a positive prNumber');
@@ -429,6 +432,7 @@ export function validateLaneSummary(laneId, summary) {
       require(Number(summary?.accuracy) === 1, 'match-quality-readiness accuracy must be 1');
       require(Number(summary?.falsePositiveCount) === 0, 'match-quality-readiness falsePositiveCount must be 0');
       require(Number(summary?.falseNegativeCount) === 0, 'match-quality-readiness falseNegativeCount must be 0');
+      require(finiteNumberAtLeast(summary?.averageScoreSeparation, 0.01), 'match-quality-readiness averageScoreSeparation must be positive');
       require(Number(summary?.usableChallengeRate) === 1, 'match-quality-readiness usableChallengeRate must be 1');
       require(noFailures(summary?.gateFailures), 'match-quality-readiness gateFailures must be empty');
       break;
