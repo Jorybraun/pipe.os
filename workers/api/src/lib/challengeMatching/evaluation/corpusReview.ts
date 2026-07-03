@@ -71,6 +71,7 @@ export interface CorpusReviewReadinessSummary {
   draftLabelCount: number;
   labelsNeedingHumanReview: string[];
   negativeLabelCount: number;
+  insufficientEvidenceLabelCount: number;
   contrastLabelCount: number;
   labelsMissingContrastCandidate: string[];
   labelsMissingCandidateEvidence: string[];
@@ -420,6 +421,9 @@ function buildReadinessSummary(
   const negativeLabelCount = corpus.expertLabels.filter((label) =>
     !isPositiveGrade(label.relevanceGrade)
   ).length;
+  const insufficientEvidenceLabelCount = corpus.expertLabels.filter((label) =>
+    label.relevanceGrade === 'irrelevant' || label.relevanceGrade === 'forbidden'
+  ).length;
   const contrastLabelCount = corpus.expertLabels.filter((label) =>
     nonEmpty(label.negativeCandidateId)
       && label.minimumScoreSeparation !== undefined
@@ -454,6 +458,7 @@ function buildReadinessSummary(
   const reviewCompletenessFailures = labelsNeedingHumanReview.length
     + labelsMissingContrastCandidate.length
     + (negativeLabelCount === 0 ? 1 : 0)
+    + (insufficientEvidenceLabelCount === 0 ? 1 : 0)
     + (contrastLabelCount === 0 ? 1 : 0);
   const packetBreadthFailure = productionReadinessFailures.includes(PACKET_BREADTH_FAILURE);
 
@@ -468,6 +473,7 @@ function buildReadinessSummary(
     draftLabelCount: labelsNeedingHumanReview.length,
     labelsNeedingHumanReview,
     negativeLabelCount,
+    insufficientEvidenceLabelCount,
     contrastLabelCount,
     labelsMissingContrastCandidate,
     labelsMissingCandidateEvidence,

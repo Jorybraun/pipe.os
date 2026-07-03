@@ -258,6 +258,133 @@ describe('Corpus Validation', () => {
     );
   });
 
+  it('requires production corpora to include a true insufficient-evidence expert label', () => {
+    const provenance = (id: string) => ({
+      reviewerId: 'expert-reviewer-1',
+      reviewerRole: 'senior-engineering-reviewer',
+      reviewArtifactId: `expert-review-artifact-${id}`,
+      reviewArtifactVersion: 'v1',
+      contentHash: `sha256:expert-review-artifact-${id}`,
+      locator: `expert-review:artifact-${id}`,
+      rubricVersion: 'candidate-pr-match-rubric-v1',
+    });
+    const corpus: EvaluationCorpus = {
+      version: EVALUATION_CORPUS_VERSION,
+      corpusId: 'production-corpus-without-insufficient-evidence-label',
+      createdAt: '2026-07-03T00:00:00Z',
+      description: 'Production corpus with positive and borderline labels but no true no-evidence proof',
+      candidateEvidence: [
+        {
+          candidateId: 'candidate-fit',
+          evidenceId: 'evidence-fit',
+          episodeId: 'episode-fit',
+          narrative: 'Owned React accessibility regression fixes with source-backed review evidence.',
+          concepts: ['term:react-accessibility'],
+          evidenceReferences: [sourceRef('candidate-fit')],
+        },
+        {
+          candidateId: 'candidate-borderline',
+          evidenceId: 'evidence-borderline',
+          episodeId: 'episode-borderline',
+          narrative: 'Discussed frontend testing but did not show ownership of accessibility regressions.',
+          concepts: ['term:frontend-testing'],
+          evidenceReferences: [sourceRef('candidate-borderline')],
+        },
+      ],
+      roleRequirements: [
+        {
+          roleId: 'role-frontend',
+          requiredLanguages: ['typescript'],
+          relevantConcepts: ['term:react-accessibility'],
+          sourceReferences: [roleSource('role-frontend', ['term:react-accessibility'])],
+        },
+      ],
+      expectedPackets: [
+        {
+          challengeId: 'challenge-react-accessibility',
+          repoId: 'github.com/mui/base-ui',
+          repoFullName: 'mui/base-ui',
+          repoUrl: 'https://github.com/mui/base-ui',
+          prNumber: 973,
+          prUrl: 'https://github.com/mui/base-ui/pull/973',
+          sourceVersion: 'source-react-accessibility',
+          demands: [
+            {
+              demandId: 'demand-react-accessibility',
+              concepts: ['term:react-accessibility'],
+              sourceRefs: [sourceRef('challenge-react-accessibility')],
+            },
+          ],
+        },
+        {
+          challengeId: 'challenge-frontend-testing',
+          repoId: 'github.com/vercel/swr',
+          repoFullName: 'vercel/swr',
+          repoUrl: 'https://github.com/vercel/swr',
+          prNumber: 3200,
+          prUrl: 'https://github.com/vercel/swr/pull/3200',
+          sourceVersion: 'source-frontend-testing',
+          demands: [
+            {
+              demandId: 'demand-frontend-testing',
+              concepts: ['term:frontend-testing'],
+              sourceRefs: [sourceRef('challenge-frontend-testing')],
+            },
+          ],
+        },
+      ],
+      expertLabels: [
+        {
+          labelId: 'label-fit-positive',
+          candidateId: 'candidate-fit',
+          roleId: 'role-frontend',
+          challengeId: 'challenge-react-accessibility',
+          relevanceGrade: 'highly_relevant',
+          eligibleChallengeIds: ['challenge-react-accessibility'],
+          negativeCandidateId: 'candidate-borderline',
+          minimumScoreSeparation: 0.12,
+          explanation: 'Expert reviewer confirmed this is a strong source-backed match.',
+          labelVersion: '1.0.0',
+          labeledAt: '2026-07-03T00:00:00Z',
+          labeledBy: 'expert-reviewer-1',
+          labelProvenance: provenance('positive'),
+        },
+        {
+          labelId: 'label-borderline-review',
+          candidateId: 'candidate-borderline',
+          roleId: 'role-frontend',
+          challengeId: 'challenge-frontend-testing',
+          relevanceGrade: 'borderline',
+          eligibleChallengeIds: ['challenge-frontend-testing'],
+          negativeCandidateId: 'candidate-fit',
+          minimumScoreSeparation: 0.05,
+          explanation: 'Expert reviewer marked this as challenge-design review, not no-evidence proof.',
+          labelVersion: '1.0.0',
+          labeledAt: '2026-07-03T00:00:00Z',
+          labeledBy: 'expert-reviewer-1',
+          labelProvenance: provenance('borderline'),
+        },
+      ],
+      metadata: {
+        totalLabels: 2,
+        totalCandidates: 2,
+        totalRoles: 1,
+        totalChallenges: 2,
+        syntheticFixtureCount: 0,
+        totalExpectedPackets: 2,
+      },
+    };
+
+    const failures = productionCorpusFailures(corpus);
+
+    expect(failures).toContain(
+      'production corpus requires at least one irrelevant or forbidden insufficient-evidence expert label',
+    );
+    expect(failures).not.toContain(
+      'production corpus requires at least one insufficient-evidence or non-positive contrast label',
+    );
+  });
+
   it('reports draft corpus-seeder labels as drafts, not missing expert provenance', () => {
     const corpus: EvaluationCorpus = {
       version: EVALUATION_CORPUS_VERSION,

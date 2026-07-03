@@ -128,6 +128,7 @@ export function validateExpertSeedSummary(summary, thresholds = {}) {
   failIfBelow(failures, 'draftLabelCount', numberValue(seeded?.draftLabelCount), limits.minLabels);
   failIfBelow(failures, 'expectedPacketCount', numberValue(seeded?.expectedPacketCount), limits.minExpectedPackets);
   failIfBelow(failures, 'labelsNeedingHumanReview', arrayLength(readiness?.labelsNeedingHumanReview), limits.minLabels);
+  failIfBelow(failures, 'insufficientEvidenceLabelCount', numberValue(readiness?.insufficientEvidenceLabelCount), 0);
 
   if (numberValue(seeded?.expertLabelCount) !== 0) {
     failures.push(`expertLabelCount must be 0 for an expert-seed smoke; got ${String(seeded?.expertLabelCount)}`);

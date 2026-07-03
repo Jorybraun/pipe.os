@@ -35,6 +35,7 @@ function readySummary(overrides = {}) {
       draftLabelCount: 4,
       labelsNeedingHumanReview: ['a', 'b', 'c', 'd'],
       negativeLabelCount: 1,
+      insufficientEvidenceLabelCount: 0,
       contrastLabelCount: 4,
       labelsMissingContrastCandidate: [],
       labelsMissingCandidateEvidence: [],
