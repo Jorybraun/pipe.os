@@ -954,16 +954,25 @@ function runRecruiterDetailPlaywright({
 }
 
 async function runRecruiterDetailBrowserSmoke(input) {
-  if (SKIP_BROWSER || SKIP_RECRUITER_BROWSER) {
+  const mode = recruiterProjectionVerificationMode({
+    skipBrowser: SKIP_BROWSER,
+    skipRecruiterBrowser: SKIP_RECRUITER_BROWSER,
+  });
+  if (mode === 'skip_all') {
     return {
       skipped: true,
-      reason: SKIP_BROWSER
-        ? 'CODE_REVIEW_SMOKE_SKIP_BROWSER=1'
-        : 'CODE_REVIEW_SMOKE_SKIP_RECRUITER_BROWSER=1',
+      reason: 'CODE_REVIEW_SMOKE_SKIP_BROWSER=1',
     };
   }
 
   const readiness = await waitForRecruiterDetailProjection(input);
+  if (mode === 'api_only') {
+    return {
+      skipped: true,
+      reason: 'CODE_REVIEW_SMOKE_SKIP_RECRUITER_BROWSER=1',
+      readiness,
+    };
+  }
   try {
     return {
       ...runRecruiterDetailPlaywright(input),
@@ -988,6 +997,15 @@ async function runRecruiterDetailBrowserSmoke(input) {
       throw new Error(`${message}; first recruiter smoke failure: ${firstError}`);
     }
   }
+}
+
+export function recruiterProjectionVerificationMode({
+  skipBrowser,
+  skipRecruiterBrowser,
+}) {
+  if (skipBrowser) return 'skip_all';
+  if (skipRecruiterBrowser) return 'api_only';
+  return 'browser';
 }
 
 async function initReviewSession(sessionToken, challenge) {

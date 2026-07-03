@@ -2,6 +2,7 @@ import { describe, expect, it } from 'vitest';
 
 import {
   buildCodeReviewAssessBrowserSmokeEnv,
+  recruiterProjectionVerificationMode,
   resolveAppDevBasicAuth,
   resolveCodeReviewSmokeD1Target,
 } from './smoke-code-review-assess-dev.mjs';
@@ -109,5 +110,20 @@ describe('CODE_REVIEW assess smoke app-dev Basic Auth resolution', () => {
     expect(shouldSkipClerkGlobalSetup({
       PIPE_SKIP_CLERK_GLOBAL_SETUP: '1',
     })).toBe(true);
+  });
+
+  it('still verifies recruiter projection when only recruiter browser proof is skipped', () => {
+    expect(recruiterProjectionVerificationMode({
+      skipBrowser: false,
+      skipRecruiterBrowser: false,
+    })).toBe('browser');
+    expect(recruiterProjectionVerificationMode({
+      skipBrowser: false,
+      skipRecruiterBrowser: true,
+    })).toBe('api_only');
+    expect(recruiterProjectionVerificationMode({
+      skipBrowser: true,
+      skipRecruiterBrowser: false,
+    })).toBe('skip_all');
   });
 });

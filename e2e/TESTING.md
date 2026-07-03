@@ -191,7 +191,9 @@ The unauthenticated candidate `/assess` browser smoke now opts out of Clerk
 global setup because it uses the candidate session token directly. Authenticated
 recruiter browser smokes still require the normal Clerk test environment unless
 `CODE_REVIEW_SMOKE_SKIP_RECRUITER_BROWSER=1` is set for candidate-boundary-only
-proof.
+proof. With that flag, the smoke still waits for the recruiter detail API
+projection and reports the compact readiness packet; only the browser click path
+is skipped.
 
 For app-dev, recruiter setup goes through `APP_BASE`/`RECRUITER_API_BASE` so the authenticated dev app proxy can inject its internal secret, while candidate `/rpc` calls use `API_BASE`/`RPC_BASE` so the candidate bearer token is not replaced by HTTP Basic auth.
 
@@ -406,6 +408,20 @@ interview `59be7706-ac64-479c-876c-7210d9432cf4` with
 `PROFILE_RECEIVED` / `profile-received`, stage `candidate-intake-queued`,
 the unauthenticated browser smoke passed without Clerk test setup, no room link
 was produced, and no matching dashboard was shown.
+
+Latest role-backed ready-assignment app-dev proof on 2026-07-03 passed for
+interview `d3ab9d0b-1786-4ad5-b2af-ac379bdb76ba`: the matcher selected
+`https://github.com/mui/base-ui` PR `#973`, returned `MATCHED`, `PASSED`, and
+`STRONG`, matched 6 source-backed demands with 0 stretch demands, measured
+contrast separation against the next comparable challenge, rendered the
+candidate CODE_REVIEW browser surface, and verified recruiter API readiness as
+`reviewable_task_assigned` from `candidate_challenge_assignment`.
+
+Latest blocked-boundary app-dev proof with recruiter projection fallback on
+2026-07-03 passed for interview `6cbaec1c-8718-41de-9500-fb230b17d35a`: the
+candidate handoff was `PROFILE_RECEIVED` / `profile-received`, stage
+`candidate-intake-queued`, the candidate browser smoke passed, and recruiter API
+readiness reported `waiting_for_source_backed_match` with no repo/PR assigned.
 
 Latest deployed `/assess` token lifecycle proof on 2026-07-03 passed via
 `npm run smoke:assess-token-lifecycle-dev`: two real app-dev CODE_REVIEW
