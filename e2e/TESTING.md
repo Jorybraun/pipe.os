@@ -225,28 +225,22 @@ In isolated worktrees that already have `playwright/.auth/user.json`, set
 `PLAYWRIGHT_SKIP_CLERK_GLOBAL_SETUP=1` to reuse that recruiter session without
 running the Clerk setup dependency again.
 
-Latest fresh no-CV boundary app-dev proof on 2026-07-03 passed for interview
-`2ed78146-57fa-423b-902e-609513026284` via
-`CODE_REVIEW_RELIABILITY_LANES=no-cv-handoff npm run smoke:code-review-reliability-dev`.
-The candidate handoff was `PROFILE_RECEIVED` / `profile-received`, stage
-`candidate-intake-queued`, challenge count `0`, recruiter readiness was
-`waiting_for_source_backed_match`, the candidate and recruiter browser smokes
-passed, and the suite artifact was
-`tmp/code-review-reliability/2026-07-03T12-38-07-549Z-suite.summary.json`.
-
-Latest pre-no-CV-lane suite proof on 2026-07-03 passed all 5 lanes with artifact
-`tmp/code-review-reliability/2026-07-03T12-21-05-262Z-suite.summary.json`:
-manual ready-assignment interview `d76a2528-062e-4e90-991b-f940f495b387`
+Latest full suite proof on 2026-07-03 passed all 6 lanes with artifact
+`tmp/code-review-reliability/2026-07-03T12-47-05-031Z-suite.summary.json`:
+manual ready-assignment interview `fd9a8b6a-c460-436c-ad7e-ca91028a6d73`
 served `mui/base-ui#973` with `manual_override`, `MATCHED`, validator `PASSED`,
 `USABLE` assessment quality, and pre-intake candidate-link proof
-`state=active`, `sessionStatus=INVITED`; blocked handoff interview
-`9a4293c2-1d20-4e08-aa23-7847d923e9ce` returned `PROFILE_RECEIVED` /
-`candidate-intake-queued`; role-backed full-submit interview
-`040564ae-2ccb-4ad3-975c-732ee3888803` selected `mui/base-ui#973`, submitted
-review session `2003974b-528a-435d-8037-97745681bf4d`, persisted score `62`
+`state=active`, `sessionStatus=INVITED`; fresh no-CV handoff interview
+`659e4405-6c2b-441a-bf6f-30882defe65f` returned `PROFILE_RECEIVED` /
+`candidate-intake-queued` before any resume submission; blocked handoff
+interview `aef917fe-c79f-4768-847a-e11c844514e8` returned
+`PROFILE_RECEIVED` / `candidate-intake-queued` after intake evidence with no
+source-backed PR ready; role-backed full-submit interview
+`c6873ec4-9c29-41da-94be-80ee80a84994` selected `mui/base-ui#973`, submitted
+review session `6afb7fbd-f4a0-43bb-9f4b-8e60203c3f0c`, persisted score `47`
 (`adequate`), and exposed 4 evidence hyperedges plus a person-role-repo bridge;
-Workers SDK matrix interview `9b80a349-b0eb-4108-87a5-1de79693affe` selected
-`cloudflare/workers-sdk#14150` with `STRONG` quality and contrast score `2/2`;
+Workers SDK matrix interview `81aa9639-e1ec-4314-b2ea-a29cde0acc8e` selected
+`cloudflare/workers-sdk#14118` with `STRONG` quality and contrast score `2/2`;
 match-quality readiness passed corpus
 `seeded-1783074402522-3c-3r-expert-codex-supplemental-contrast` with accuracy
 `1`, false positives `0`, false negatives `0`, usable challenge rate `1`, and
