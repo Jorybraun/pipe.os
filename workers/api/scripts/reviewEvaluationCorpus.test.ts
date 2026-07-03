@@ -922,6 +922,8 @@ describe('evaluation corpus review CLI', () => {
     expect(markdown).toContain('Fix interaction state regression in accessibility behavior.');
     expect(markdown).toContain('candidate-negative');
     expect(markdown).toContain('Edit `labels[0].explanation`');
+    expect(markdown).toContain('Production readiness failures');
+    expect(markdown).toContain('production corpus requires at least two source-backed expected PR challenge packets');
   });
 
   it('preserves expert-reviewed contrast fields in review packets and templates', () => {
