@@ -3862,6 +3862,7 @@ function scheduledAssessmentProgressStageAndAction(input: {
   if (input.session.state === 'CANCELLED') return { stage: 'CANCELLED', nextAction: 'NONE' };
   if (input.humanDecision) return { stage: 'EVALUATED', nextAction: 'NONE' };
   if (input.session.state === 'DIAGNOSTIC') return { stage: 'NEEDS_ATTENTION', nextAction: 'RESOLVE_DIAGNOSTIC' };
+  if (input.session.state === 'EVALUATING') return { stage: 'EVALUATING', nextAction: 'WAIT_FOR_EVALUATION' };
   if (input.evaluation) {
     if (input.evaluation.status === 'EVALUATED') return { stage: 'EVALUATED', nextAction: 'REVIEW_EVALUATION' };
     return { stage: 'NEEDS_ATTENTION', nextAction: 'RESOLVE_DIAGNOSTIC' };
@@ -3890,6 +3891,8 @@ function scheduledAssessmentProgressNextActionLabel(action: ScheduledAssessmentL
       return 'Submit a source-backed assessment commit.';
     case 'START_EVALUATION':
       return 'Start source-backed AI or human evaluation.';
+    case 'WAIT_FOR_EVALUATION':
+      return 'Source-backed evaluation is running.';
     case 'REVIEW_EVALUATION':
       return 'Review the assessment report and evidence.';
     case 'RESOLVE_DIAGNOSTIC':
@@ -4045,6 +4048,8 @@ function scheduledAssessmentReadinessStatus(input: {
       return 'WORK_IN_PROGRESS';
     case 'READY_FOR_EVALUATION':
       return input.missingRequiredCount > 0 ? 'WORK_IN_PROGRESS' : 'READY_FOR_EVALUATION';
+    case 'EVALUATING':
+      return 'EVALUATING';
     case 'EVALUATED':
       return 'EVALUATED';
     case 'NEEDS_ATTENTION':
@@ -4066,6 +4071,8 @@ function scheduledAssessmentReadinessStatusLabel(
       return 'Work evidence in progress';
     case 'READY_FOR_EVALUATION':
       return 'Ready for evaluation';
+    case 'EVALUATING':
+      return 'Evaluation running';
     case 'EVALUATED':
       return 'Evaluated';
     case 'NEEDS_ATTENTION':
@@ -4085,6 +4092,7 @@ function scheduledAssessmentReadinessStatusDetail(input: {
 }): string {
   if (input.status === 'CANCELLED') return 'This assessment session was cancelled.';
   if (input.status === 'NEEDS_ATTENTION') return 'Resolve the diagnostic before relying on this assessment.';
+  if (input.status === 'EVALUATING') return 'PIPE is evaluating the source-backed commit, diff, tests, transcript, chat, terminal, and AI-use evidence.';
   if (input.status === 'EVALUATED') {
     if (input.humanDecision) return 'A human decision is recorded with source-backed evidence.';
     if (input.evaluation?.status === 'EVALUATED') return 'A source-backed evaluation report is available for review.';
@@ -6965,6 +6973,14 @@ schedulingAuth.post('/interviews/:id/assessment/start-evaluation', async (c) => 
   try {
     const currentProgress = await store.loadProgress(sessionId);
     if (currentProgress.nextAction !== 'START_EVALUATION') {
+      if (currentProgress.nextAction === 'WAIT_FOR_EVALUATION') {
+        return c.json({
+          progress: currentProgress,
+          report: null,
+          diagnostic: null,
+          accepted: true,
+        }, 202);
+      }
       return apiError(
         c,
         'CONFLICT',
@@ -7018,7 +7034,7 @@ schedulingAuth.post('/interviews/:id/assessment/start-evaluation', async (c) => 
       createdBy: userId,
     });
 
-    const evaluation = await evaluateRepoTaskAssessmentSession({
+    const evaluationJob = evaluateRepoTaskAssessmentSession({
       db,
       store,
       env: c.env,
@@ -7028,14 +7044,37 @@ schedulingAuth.post('/interviews/:id/assessment/start-evaluation', async (c) => 
       requestedAt,
       requestEventId: requestEvent.id,
       requestSourceRef,
+    }).catch(async (error) => {
+      console.error('[scheduling/startAssessmentEvaluation] background evaluation failed:', {
+        interviewId: id,
+        assessmentSessionId: sessionId,
+        error: error instanceof Error ? error.message : String(error),
+      });
+      await store.transitionState({
+        sessionId,
+        toState: 'DIAGNOSTIC',
+        reason: 'Source-backed assessment evaluation failed before producing a report.',
+        eventId: requestEvent.id,
+        createdBy: userId,
+      });
     });
 
+    let backgrounded = false;
+    const executionCtx = c.executionCtx as ExecutionContext | undefined;
+    if (executionCtx && typeof executionCtx.waitUntil === 'function') {
+      executionCtx.waitUntil(evaluationJob);
+      backgrounded = true;
+    } else {
+      await evaluationJob;
+    }
     const progress = await store.loadProgress(sessionId);
     return c.json({
       progress,
-      report: evaluation.kind === 'evaluated' ? evaluation.report : null,
-      diagnostic: evaluation.kind === 'diagnostic' ? evaluation.diagnostic : null,
-    });
+      report: null,
+      diagnostic: null,
+      accepted: true,
+      backgrounded,
+    }, backgrounded ? 202 : 200);
   } catch (error) {
     console.error('[scheduling/startAssessmentEvaluation] failed:', {
       interviewId: id,

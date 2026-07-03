@@ -310,24 +310,66 @@ async function requestJson(base, path, init = {}) {
   return body;
 }
 
+function isTransientFetchError(error) {
+  const message = error instanceof Error ? error.message : String(error);
+  const causeCode = error instanceof Error && error.cause && typeof error.cause === 'object'
+    ? error.cause.code
+    : null;
+  const errorName = error instanceof Error ? error.name : '';
+  return message.includes('fetch failed')
+    || message.includes('timed out')
+    || message.includes('timeout')
+    || errorName === 'AbortError'
+    || causeCode === 'UND_ERR_SOCKET'
+    || causeCode === 'ECONNRESET'
+    || causeCode === 'EPIPE'
+    || causeCode === 'ECONNREFUSED';
+}
+
 async function startAssessmentEvaluationWithRetry(interviewId) {
   let lastError = null;
-  for (let attempt = 1; attempt <= 2; attempt += 1) {
+  const maxAttempts = 3;
+  for (let attempt = 1; attempt <= maxAttempts; attempt += 1) {
     try {
       return await requestJson(APP_BASE, `/api/v1/scheduling/interviews/${interviewId}/assessment/start-evaluation`, {
         method: 'POST',
       });
     } catch (error) {
       lastError = error;
-      if (attempt === 2) break;
+      if (attempt === maxAttempts) break;
       const message = error instanceof Error ? error.message : String(error);
-      if (!message.includes('/assessment/start-evaluation failed (500)')) {
+      if (
+        !message.includes('/assessment/start-evaluation failed (500)')
+        && !isTransientFetchError(error)
+      ) {
         throw error;
       }
-      await sleep(2_000);
+      await sleep(1_000 * attempt);
     }
   }
   throw lastError;
+}
+
+async function pollAssessmentEvaluationComplete(interviewId) {
+  const deadline = Date.now() + 300_000;
+  let lastProgress = null;
+  while (Date.now() < deadline) {
+    const detail = await requestJson(APP_BASE, `/api/v1/scheduling/interviews/${interviewId}`);
+    const progress = detail?.interview?.assessmentProgress ?? null;
+    lastProgress = progress;
+    if (
+      progress?.stage === 'EVALUATED'
+      && progress?.nextAction === 'REVIEW_EVALUATION'
+      && progress?.evaluation?.status === 'EVALUATED'
+    ) {
+      return progress;
+    }
+    if (progress?.stage === 'NEEDS_ATTENTION' || progress?.nextAction === 'RESOLVE_DIAGNOSTIC') {
+      throw new Error(`Workspace assessment evaluation reached a diagnostic state: ${JSON.stringify(progress)}`);
+    }
+    await sleep(5_000);
+  }
+  throw new Error(`Workspace assessment evaluation did not complete. Last progress: ${JSON.stringify(lastProgress)}`);
 }
 
 function tokenFromRoomUrl(rawUrl) {
@@ -969,25 +1011,28 @@ async function main() {
   if (submittedBody?.progress?.hasCommitSubmission !== true) {
     throw new Error(`Workspace progress did not reflect the committed submission: ${JSON.stringify(submittedBody?.progress)}`);
   }
-  const evaluationBody = await startAssessmentEvaluationWithRetry(interviewId);
-  const evaluationProgress = evaluationBody?.progress ?? null;
-  if (evaluationProgress?.stage !== 'EVALUATED' || evaluationProgress?.nextAction !== 'REVIEW_EVALUATION') {
-    throw new Error(`Workspace assessment evaluation did not produce a reviewable report: ${JSON.stringify(evaluationBody)}`);
+  const evaluationStartBody = await startAssessmentEvaluationWithRetry(interviewId);
+  const evaluationStartProgress = evaluationStartBody?.progress ?? null;
+  let evaluationProgress = evaluationStartProgress;
+  if (
+    evaluationStartProgress?.stage === 'EVALUATING'
+    && evaluationStartProgress?.nextAction === 'WAIT_FOR_EVALUATION'
+  ) {
+    evaluationProgress = await pollAssessmentEvaluationComplete(interviewId);
   }
-  if (evaluationBody?.report?.status !== 'EVALUATED' || evaluationBody?.diagnostic !== null) {
-    throw new Error(`Workspace assessment evaluation was not a clean source-backed report: ${JSON.stringify(evaluationBody)}`);
+  if (evaluationProgress?.stage !== 'EVALUATED' || evaluationProgress?.nextAction !== 'REVIEW_EVALUATION') {
+    throw new Error(`Workspace assessment evaluation did not produce a reviewable report: ${JSON.stringify(evaluationStartBody)}`);
   }
   if (evaluationProgress?.evaluation?.status !== 'EVALUATED') {
     throw new Error(`Workspace assessment progress did not expose evaluated status: ${JSON.stringify(evaluationProgress?.evaluation)}`);
   }
   const recommendation = evaluationProgress?.evaluation?.recommendation
-    ?? evaluationBody?.report?.output?.recommendation
     ?? null;
   if (CHANGE_PROFILE) {
     const acceptedRecommendations = new Set(CHANGE_PROFILE.acceptedRecommendations);
-    const summary = `${evaluationProgress?.evaluation?.summary ?? ''} ${evaluationBody?.report?.summary ?? ''}`.toLowerCase();
+    const summary = `${evaluationProgress?.evaluation?.summary ?? ''}`.toLowerCase();
     if (!acceptedRecommendations.has(recommendation)) {
-      throw new Error(`Task-aligned workspace smoke did not receive a useful evaluator recommendation: ${JSON.stringify(evaluationBody?.report?.output)}`);
+      throw new Error(`Task-aligned workspace smoke did not receive a useful evaluator recommendation: ${JSON.stringify(evaluationProgress?.evaluation)}`);
     }
     const missingTerms = CHANGE_PROFILE.summaryTerms.filter((term) => !summary.includes(term));
     if (missingTerms.length > 0) {
@@ -1059,7 +1104,7 @@ async function main() {
     evaluationStatus: evaluationProgress.evaluation?.status ?? null,
     evaluationRecommendation: recommendation,
     evaluationSummary: evaluationProgress.evaluation?.summary ?? null,
-    evaluationReportId: evaluationBody.report?.id ?? null,
+    evaluationReportId: evaluationProgress.evaluation?.id ?? null,
     humanDecisionRecorded: true,
     humanDecision: humanDecision.decision,
     humanDecisionNextAction: humanDecision.nextAction,

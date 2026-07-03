@@ -36,11 +36,17 @@ interface InterviewCardProps {
 }
 
 interface AssessmentEvaluationStartResult {
+  progress?: {
+    stage: string;
+    nextAction: string;
+  };
   report?: unknown | null;
   diagnostic?: {
     code?: string;
     severity?: string;
   } | null;
+  accepted?: boolean;
+  backgrounded?: boolean;
 }
 
 const FIFTEEN_MINUTES_MS = 15 * 60 * 1000;
@@ -551,6 +557,9 @@ function assessmentEvaluationStartNotice(result: AssessmentEvaluationStartResult
       .replace(/\bapi\b/g, 'API')
       .replace(/\bApi\b/g, 'API');
     return `Evaluation needs attention: ${diagnosticLabel}.`;
+  }
+  if (result?.progress?.stage === 'EVALUATING' || result?.progress?.nextAction === 'WAIT_FOR_EVALUATION') {
+    return 'Source-backed assessment evaluation is running.';
   }
   return 'Source-backed assessment evaluation requested.';
 }

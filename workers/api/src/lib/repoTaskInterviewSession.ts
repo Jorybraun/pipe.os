@@ -269,6 +269,7 @@ export type AssessmentProgressStage =
   | 'CHALLENGE_READY'
   | 'WORK_IN_PROGRESS'
   | 'READY_FOR_EVALUATION'
+  | 'EVALUATING'
   | 'EVALUATED'
   | 'NEEDS_ATTENTION'
   | 'CANCELLED';
@@ -279,6 +280,7 @@ export type AssessmentProgressNextAction =
   | 'CAPTURE_WORK_EVIDENCE'
   | 'SUBMIT_COMMIT'
   | 'START_EVALUATION'
+  | 'WAIT_FOR_EVALUATION'
   | 'REVIEW_EVALUATION'
   | 'RESOLVE_DIAGNOSTIC'
   | 'NONE';
@@ -490,6 +492,7 @@ export type AssessmentProgressReadinessStatus =
   | 'READY_TO_START'
   | 'WORK_IN_PROGRESS'
   | 'READY_FOR_EVALUATION'
+  | 'EVALUATING'
   | 'EVALUATED'
   | 'NEEDS_ATTENTION'
   | 'CANCELLED';
@@ -1367,6 +1370,8 @@ function progressNextActionLabel(action: AssessmentProgressNextAction): string {
       return 'Submit a source-backed assessment commit.';
     case 'START_EVALUATION':
       return 'Start source-backed AI or human evaluation.';
+    case 'WAIT_FOR_EVALUATION':
+      return 'Source-backed evaluation is running.';
     case 'REVIEW_EVALUATION':
       return 'Review the assessment report and evidence.';
     case 'RESOLVE_DIAGNOSTIC':
@@ -1394,6 +1399,9 @@ function progressStageAndAction(input: {
   }
   if (input.session.state === 'DIAGNOSTIC') {
     return { stage: 'NEEDS_ATTENTION', nextAction: 'RESOLVE_DIAGNOSTIC' };
+  }
+  if (input.session.state === 'EVALUATING') {
+    return { stage: 'EVALUATING', nextAction: 'WAIT_FOR_EVALUATION' };
   }
   if (input.evaluation) {
     if (input.evaluation.status === 'EVALUATED') {
@@ -1429,6 +1437,8 @@ function assessmentReadinessStatusLabel(status: AssessmentProgressReadinessStatu
       return 'Work evidence in progress';
     case 'READY_FOR_EVALUATION':
       return 'Ready for evaluation';
+    case 'EVALUATING':
+      return 'Evaluation running';
     case 'EVALUATED':
       return 'Evaluated';
     case 'NEEDS_ATTENTION':
@@ -1448,6 +1458,7 @@ function assessmentReadinessStatusDetail(input: {
 }): string {
   if (input.status === 'CANCELLED') return 'This assessment session was cancelled.';
   if (input.status === 'NEEDS_ATTENTION') return 'Resolve the diagnostic before relying on this assessment.';
+  if (input.status === 'EVALUATING') return 'PIPE is evaluating the source-backed commit, diff, tests, transcript, chat, terminal, and AI-use evidence.';
   if (input.status === 'EVALUATED') {
     if (input.humanDecision) return 'A human decision is recorded with source-backed evidence.';
     if (input.evaluation?.status === 'EVALUATED') return 'A source-backed evaluation report is available for review.';
@@ -1623,6 +1634,7 @@ function buildAssessmentReadiness(input: {
   const isReadyForEvaluation = missingRequiredCount === 0
     && input.session.state !== 'CANCELLED'
     && input.session.state !== 'DIAGNOSTIC'
+    && input.session.state !== 'EVALUATING'
     && input.evaluation?.status !== 'PROVENANCE_INCOMPLETE'
     && input.evaluation?.status !== 'AI_DEVELOPER_UNAVAILABLE'
     && input.evaluation?.status !== 'BLOCKED';
@@ -1633,6 +1645,8 @@ function buildAssessmentReadiness(input: {
   let status: AssessmentProgressReadinessStatus;
   if (input.session.state === 'CANCELLED') {
     status = 'CANCELLED';
+  } else if (input.session.state === 'EVALUATING') {
+    status = 'EVALUATING';
   } else if (
     input.session.state === 'DIAGNOSTIC'
     || input.evaluation?.status === 'PROVENANCE_INCOMPLETE'

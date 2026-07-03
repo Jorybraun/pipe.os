@@ -1789,10 +1789,11 @@ describe('GET /interviews/:id detail', () => {
     );
 
     const app = mountSchedulingApp();
+    const { ctx, waitUntilAll } = buildCtx();
     const response = await app.request('/interviews/interview-1/assessment/start-evaluation', {
       method: 'POST',
-    });
-    expect(response.status).toBe(200);
+    }, undefined, ctx);
+    expect(response.status).toBe(202);
     const body = await response.json() as {
       progress: {
         stage: string;
@@ -1800,16 +1801,37 @@ describe('GET /interviews/:id detail', () => {
         evaluation: { status: string; summary: string } | null;
         evidenceCounts: Array<{ kind: string; count: number }>;
       };
-      diagnostic: { code: string; severity: string };
+      diagnostic: null;
       report: null;
+      accepted: boolean;
+      backgrounded: boolean;
     };
 
-    expect(body.diagnostic).toMatchObject({
-      code: 'AI_DEVELOPER_UNAVAILABLE',
-      severity: 'blocking',
-    });
+    expect(body.accepted).toBe(true);
+    expect(body.backgrounded).toBe(true);
     expect(body.report).toBeNull();
+    expect(body.diagnostic).toBeNull();
     expect(body.progress).toMatchObject({
+      stage: 'EVALUATING',
+      nextAction: 'WAIT_FOR_EVALUATION',
+      evaluation: null,
+    });
+
+    await waitUntilAll();
+    const detailResponse = await app.request('/interviews/interview-1');
+    expect(detailResponse.status).toBe(200);
+    const detailBody = await detailResponse.json() as {
+      interview: {
+        assessmentProgress: {
+          stage: string;
+          nextAction: string;
+          evaluation: { status: string; summary: string } | null;
+          evidenceCounts: Array<{ kind: string; count: number }>;
+        } | null;
+      };
+    };
+    const finalProgress = detailBody.interview.assessmentProgress;
+    expect(finalProgress).toMatchObject({
       stage: 'NEEDS_ATTENTION',
       nextAction: 'RESOLVE_DIAGNOSTIC',
       evaluation: {
@@ -1817,7 +1839,7 @@ describe('GET /interviews/:id detail', () => {
         summary: 'Workers AI is not configured for source-backed repo-task evaluation.',
       },
     });
-    expect(body.progress.evidenceCounts).toEqual(expect.arrayContaining([
+    expect(finalProgress?.evidenceCounts).toEqual(expect.arrayContaining([
       { kind: 'commit_submission', count: 1 },
       { kind: 'recruiter_note', count: 2 },
     ]));
@@ -2074,10 +2096,11 @@ describe('GET /interviews/:id detail', () => {
       AI: { run: aiRun } as unknown as Ai,
       CLOUDFLARE_AI_MODEL: '@cf/google/gemma-4-26b-a4b-it',
     });
+    const { ctx, waitUntilAll } = buildCtx();
     const response = await app.request('/interviews/interview-1/assessment/start-evaluation', {
       method: 'POST',
-    });
-    expect(response.status).toBe(200);
+    }, undefined, ctx);
+    expect(response.status).toBe(202);
     const body = await response.json() as {
       progress: {
         stage: string;
@@ -2101,10 +2124,24 @@ describe('GET /interviews/:id detail', () => {
         } | null;
         evidenceCounts: Array<{ kind: string; count: number }>;
       };
-      report: { id: string; sessionId: string; status: string; contextRecordId: string | null } | null;
+      report: null;
       diagnostic: null;
+      accepted: boolean;
+      backgrounded: boolean;
     };
 
+    expect(body.accepted).toBe(true);
+    expect(body.backgrounded).toBe(true);
+    expect(body.report).toBeNull();
+    expect(body.diagnostic).toBeNull();
+    expect(body.progress).toMatchObject({
+      stage: 'EVALUATING',
+      nextAction: 'WAIT_FOR_EVALUATION',
+      hasAiInteraction: false,
+      evaluation: null,
+    });
+
+    await waitUntilAll();
     expect(aiRun).toHaveBeenCalledTimes(1);
     expect(JSON.stringify(aiRun.mock.calls[0])).toContain(diffSourceRefKey);
     const aiInput = aiRun.mock.calls[0]?.[1] as {
@@ -2167,12 +2204,37 @@ describe('GET /interviews/:id detail', () => {
     const promptedDiffRef = userPromptPayload.sourceRefs?.find((sourceRef) => sourceRef.key === diffSourceRefKey);
     expect(promptedDiffRef?.exactText?.length).toBeLessThanOrEqual(800);
     expect(promptedDiffRef?.exactText).toContain('[truncated]');
-    expect(body.diagnostic).toBeNull();
-    expect(body.report).toMatchObject({
-      sessionId: 'assessment-session-ai-evaluation',
-      status: 'EVALUATED',
-    });
-    expect(body.progress).toMatchObject({
+
+    const detailResponse = await app.request('/interviews/interview-1');
+    expect(detailResponse.status).toBe(200);
+    const detailBody = await detailResponse.json() as {
+      interview: {
+        assessmentProgress: {
+          stage: string;
+          nextAction: string;
+          hasAiInteraction: boolean;
+          evaluation: {
+            status: string;
+            summary: string;
+            recommendation?: string | null;
+            evidenceCoverage?: {
+              schemaVersion?: string;
+              expectedForHighConfidence?: Array<{ label?: string; satisfied?: boolean }>;
+            } | null;
+            diagnostics?: Array<{
+              code: string;
+              severity: string;
+              message: string;
+              sourceRefCount: number;
+              sourceRefTypes: string[];
+            }>;
+          } | null;
+          evidenceCounts: Array<{ kind: string; count: number }>;
+        } | null;
+      };
+    };
+    const finalProgress = detailBody.interview.assessmentProgress;
+    expect(finalProgress).toMatchObject({
       stage: 'EVALUATED',
       nextAction: 'REVIEW_EVALUATION',
       hasAiInteraction: true,
@@ -2205,7 +2267,7 @@ describe('GET /interviews/:id detail', () => {
         ],
       },
     });
-    expect(body.progress.evidenceCounts).toEqual(expect.arrayContaining([
+    expect(finalProgress?.evidenceCounts).toEqual(expect.arrayContaining([
       { kind: 'ai_interaction', count: 1 },
       { kind: 'commit_submission', count: 1 },
       { kind: 'recruiter_note', count: 2 },

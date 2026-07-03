@@ -93,6 +93,7 @@ export type AssessmentProgressStage =
   | 'CHALLENGE_READY'
   | 'WORK_IN_PROGRESS'
   | 'READY_FOR_EVALUATION'
+  | 'EVALUATING'
   | 'EVALUATED'
   | 'NEEDS_ATTENTION'
   | 'CANCELLED';
@@ -103,6 +104,7 @@ export type AssessmentProgressNextAction =
   | 'CAPTURE_WORK_EVIDENCE'
   | 'SUBMIT_COMMIT'
   | 'START_EVALUATION'
+  | 'WAIT_FOR_EVALUATION'
   | 'REVIEW_EVALUATION'
   | 'RESOLVE_DIAGNOSTIC'
   | 'NONE';
@@ -129,6 +131,7 @@ export type AssessmentProgressReadinessStatus =
   | 'READY_TO_START'
   | 'WORK_IN_PROGRESS'
   | 'READY_FOR_EVALUATION'
+  | 'EVALUATING'
   | 'EVALUATED'
   | 'NEEDS_ATTENTION'
   | 'CANCELLED';

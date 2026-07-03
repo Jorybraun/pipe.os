@@ -119,6 +119,8 @@ interface StartAssessmentEvaluationResponse {
     code: string;
     severity: string;
   } | null;
+  accepted?: boolean;
+  backgrounded?: boolean;
 }
 
 type HumanAssessmentDecisionValue = NonNullable<NonNullable<AssessmentProgressSnapshot['humanDecision']>>['decision'];
@@ -439,6 +441,9 @@ function assessmentEvaluationNoticeForResult(result: StartAssessmentEvaluationRe
   }
   if (result.diagnostic) {
     return `Evaluation needs attention: ${result.progress.evaluation?.summary ?? result.diagnostic.code}.`;
+  }
+  if (result.progress.stage === 'EVALUATING' || result.progress.nextAction === 'WAIT_FOR_EVALUATION') {
+    return 'Source-backed assessment evaluation is running. Progress will update when the report is ready.';
   }
   return 'Source-backed assessment evaluation started.';
 }
@@ -839,6 +844,8 @@ function workspaceAssessmentNextActionTitle(progress: AssessmentProgressSnapshot
       return 'Submit commit';
     case 'START_EVALUATION':
       return 'Start evaluation';
+    case 'WAIT_FOR_EVALUATION':
+      return 'Evaluation running';
     case 'REVIEW_EVALUATION':
       return 'Review evaluation';
     case 'RESOLVE_DIAGNOSTIC':

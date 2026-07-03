@@ -56,6 +56,8 @@ interface StartAssessmentEvaluationResponse {
     code: string;
     severity: string;
   } | null;
+  accepted?: boolean;
+  backgrounded?: boolean;
 }
 
 export function resolveInviteCreationGuestLink(
