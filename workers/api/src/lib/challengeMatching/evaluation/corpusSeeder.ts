@@ -23,6 +23,8 @@ import { EVALUATION_CORPUS_VERSION } from './types';
 import { evaluationCorpusLabelCounts, validateCorpus } from './corpus';
 import { loadPersistedMatchRun } from './cli';
 import type { PersistedMatchRun, PersistedRankedChallenge } from './types';
+import { loadRoleChallengeSemantics } from '../roleGuardrails';
+import type { RoleSourceReference } from '../types';
 import { sha256 } from '../../repoSemanticGraph/hash';
 
 export interface CorpusSeederOptions {
@@ -80,12 +82,20 @@ interface AssertionConceptRow {
   concept_key: string;
 }
 
-interface RoleContextRow {
+interface RoleContextDocumentRow {
   id: string;
   required_languages_json: string | null;
   relevant_concepts_json: string | null;
   required_concepts_json: string | null;
   forbidden_concepts_json: string | null;
+}
+
+interface CurrentRoleContextRow {
+  id: string;
+  rcd_version: string | null;
+  rcd_json: string | null;
+  job_description_md: string | null;
+  non_negotiable_skills_json: string | null;
 }
 
 interface RoleSourceRefRow {
@@ -171,6 +181,43 @@ function selectColumn(
 ): string {
   if (columns.has(preferred)) return `${preferred} AS ${alias}`;
   return fallback ? `${fallback} AS ${alias}` : `NULL AS ${alias}`;
+}
+
+function completeRoleSourceReferences(sources: RoleSourceReference[]): RoleSourceReference[] {
+  return sources
+    .filter((source) =>
+      Boolean(source.sourceRefType && source.sourceRefId && source.exactText && source.contentHash)
+    )
+    .map((source) => {
+      const normalized: RoleSourceReference = {
+        entityId: source.entityId,
+        locator: source.locator,
+        conceptKeys: [...new Set(source.conceptKeys)].sort(),
+        sourceRefType: source.sourceRefType,
+        sourceRefId: source.sourceRefId,
+        exactText: source.exactText,
+        contentHash: source.contentHash,
+      };
+      if (source.sourceSpanId) normalized.sourceSpanId = source.sourceSpanId;
+      return normalized;
+    });
+}
+
+async function roleJobDescriptionSource(
+  role: CurrentRoleContextRow,
+  conceptKeys: string[],
+): Promise<RoleSourceReference | null> {
+  const exactText = role.job_description_md?.trim();
+  if (!exactText) return null;
+  return {
+    entityId: `role-context:${role.id}:job-description`,
+    locator: 'job_description_md',
+    conceptKeys: [...new Set(conceptKeys)].sort(),
+    sourceRefType: 'role_context',
+    sourceRefId: role.id,
+    exactText,
+    contentHash: await sha256(exactText),
+  };
 }
 
 function matchRunPacketKey(row: MatchRunListRow): string {
@@ -432,14 +479,20 @@ export async function seedCorpusFromMatchRuns(
   }
 
   // Step 4: Load role requirements
+  const hasCurrentRoleContextTables = await tableExists(db, 'role_contexts')
+    && await tableExists(db, 'role_nodes')
+    && await tableExists(db, 'context_records')
+    && await tableExists(db, 'context_record_concepts')
+    && await tableExists(db, 'context_record_source_refs')
+    && await tableExists(db, 'concepts');
   const hasRoleContextDocuments = await tableExists(db, 'role_context_documents');
   const hasRoleSourceReferences = await tableExists(db, 'role_source_references');
-  if (!hasRoleContextDocuments) {
+  if (!hasCurrentRoleContextTables && !hasRoleContextDocuments) {
     warnings.push(
       'role_context_documents table is unavailable; using role snapshot fallback for role requirements',
     );
   }
-  if (!hasRoleSourceReferences) {
+  if (!hasCurrentRoleContextTables && !hasRoleSourceReferences) {
     warnings.push(
       'role_source_references table is unavailable; role source refs omitted',
     );
@@ -447,13 +500,50 @@ export async function seedCorpusFromMatchRuns(
 
   const roleRequirements: RoleRequirements[] = [];
   for (const roleId of roleIds) {
+    if (hasCurrentRoleContextTables) {
+      const currentRoleRow = await db.prepare(
+        `SELECT id, rcd_version, rcd_json, job_description_md, non_negotiable_skills_json
+           FROM role_contexts
+          WHERE id = ?1`,
+      ).bind(roleId).first<CurrentRoleContextRow>();
+
+      if (currentRoleRow) {
+        const semantics = await loadRoleChallengeSemantics(db, currentRoleRow);
+        let sourceReferences = completeRoleSourceReferences(semantics.sources);
+        if (sourceReferences.length === 0) {
+          const jobDescriptionSource = await roleJobDescriptionSource(
+            currentRoleRow,
+            semantics.relevantConcepts,
+          );
+          if (jobDescriptionSource) sourceReferences = [jobDescriptionSource];
+        }
+        if (semantics.sources.length > 0 && sourceReferences.length === 0) {
+          warnings.push(
+            `Role ${roleId} has deployed role semantics but no complete role source references`,
+          );
+        }
+        roleRequirements.push({
+          roleId,
+          requiredLanguages: [],
+          ...(semantics.relevantConcepts.length > 0
+            ? { relevantConcepts: semantics.relevantConcepts }
+            : {}),
+          ...(semantics.requiredConcepts.length > 0
+            ? { requiredConcepts: semantics.requiredConcepts }
+            : {}),
+          sourceReferences,
+        });
+        continue;
+      }
+    }
+
     const roleRow = hasRoleContextDocuments
       ? await db.prepare(
         `SELECT id, required_languages_json, relevant_concepts_json,
                 required_concepts_json, forbidden_concepts_json
            FROM role_context_documents
           WHERE id = ?1`,
-      ).bind(roleId).first<RoleContextRow>()
+      ).bind(roleId).first<RoleContextDocumentRow>()
       : null;
 
     const sourceRefs = hasRoleSourceReferences

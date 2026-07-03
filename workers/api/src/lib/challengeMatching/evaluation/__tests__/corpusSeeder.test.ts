@@ -556,6 +556,234 @@ describe('corpusSeeder', () => {
     );
   });
 
+  it('loads source-backed role requirements from deployed role context records', async () => {
+    seedMatchData(sqlite);
+    sqlite.exec(`
+      DROP TABLE role_source_references;
+      DROP TABLE role_context_documents;
+
+      CREATE TABLE role_contexts (
+        id TEXT PRIMARY KEY,
+        rcd_version TEXT,
+        rcd_json TEXT,
+        job_description_md TEXT,
+        non_negotiable_skills_json TEXT
+      );
+
+      CREATE TABLE role_nodes (
+        id TEXT PRIMARY KEY,
+        role_context_id TEXT NOT NULL,
+        rcd_version TEXT NOT NULL,
+        node_type TEXT NOT NULL,
+        narrative_text TEXT NOT NULL,
+        extracted_properties_json TEXT,
+        source_section TEXT,
+        superseded_at INTEGER
+      );
+
+      CREATE TABLE context_records (
+        id TEXT PRIMARY KEY,
+        scope_type TEXT NOT NULL,
+        scope_id TEXT NOT NULL,
+        record_type TEXT NOT NULL,
+        narrative TEXT NOT NULL,
+        extraction_version TEXT
+      );
+
+      CREATE TABLE context_record_concepts (
+        context_record_id TEXT NOT NULL,
+        concept_id TEXT NOT NULL,
+        relationship TEXT NOT NULL DEFAULT 'supports',
+        weight REAL NOT NULL DEFAULT 1
+      );
+
+      CREATE TABLE context_record_source_refs (
+        context_record_id TEXT NOT NULL,
+        source_ref_type TEXT NOT NULL,
+        source_ref_id TEXT NOT NULL,
+        source_span_id TEXT,
+        exact_text TEXT,
+        content_hash TEXT
+      );
+    `);
+    sqlite.prepare(
+      `INSERT INTO role_contexts (
+         id, rcd_version, rcd_json, job_description_md, non_negotiable_skills_json
+       ) VALUES (?, ?, ?, ?, ?)`,
+    ).run(
+      'role-1',
+      'rcd-v1',
+      '{}',
+      'Must have Kafka Streams experience for event-sourced TypeScript systems.',
+      '["Kafka Streams"]',
+    );
+    sqlite.prepare(
+      `INSERT INTO role_nodes (
+         id, role_context_id, rcd_version, node_type, narrative_text,
+         extracted_properties_json, source_section, superseded_at
+       ) VALUES (?, ?, ?, ?, ?, ?, ?, ?)`,
+    ).run(
+      'role-node-1',
+      'role-1',
+      'rcd-v1',
+      'TechnicalStack',
+      'Requires Kafka Streams production ownership.',
+      JSON.stringify({
+        semantic_terms: [
+          { surface: 'Kafka Streams', canonical_key: 'term:kafka-streams' },
+        ],
+      }),
+      'job_description_md',
+      null,
+    );
+    sqlite.prepare(
+      `INSERT INTO context_records (
+         id, scope_type, scope_id, record_type, narrative, extraction_version
+       ) VALUES (?, ?, ?, ?, ?, ?)`,
+    ).run(
+      'role-context-record-1',
+      'role_context',
+      'role-1',
+      'role_requirement',
+      'Role requires Kafka Streams experience.',
+      'rcd-v1',
+    );
+    sqlite.prepare(
+      `INSERT INTO context_record_concepts (
+         context_record_id, concept_id, relationship, weight
+       ) VALUES (?, ?, ?, ?)`,
+    ).run('role-context-record-1', 'c-1', 'requires', 1);
+    sqlite.prepare(
+      `INSERT INTO context_record_source_refs (
+         context_record_id, source_ref_type, source_ref_id, source_span_id,
+         exact_text, content_hash
+       ) VALUES (?, ?, ?, ?, ?, ?)`,
+    ).run(
+      'role-context-record-1',
+      'source_span',
+      'role-source-span-1',
+      'role-source-span-1',
+      'Must have Kafka Streams experience',
+      'sha256:role-source-current',
+    );
+
+    const result = await seedCorpusFromMatchRuns(db);
+
+    expect(() => validateCorpus(result.corpus)).not.toThrow();
+    expect(result.corpus.roleRequirements[0]).toMatchObject({
+      roleId: 'role-1',
+      relevantConcepts: ['term:kafka-streams'],
+    });
+    expect(result.corpus.roleRequirements[0]!.sourceReferences).toEqual(
+      expect.arrayContaining([
+        expect.objectContaining({
+          sourceRefType: 'source_span',
+          sourceRefId: 'role-source-span-1',
+          sourceSpanId: 'role-source-span-1',
+          exactText: 'Must have Kafka Streams experience',
+          contentHash: 'sha256:role-source-current',
+          conceptKeys: ['term:kafka-streams'],
+        }),
+      ]),
+    );
+    expect(result.warnings).not.toContain(
+      'role_context_documents table is unavailable; using role snapshot fallback for role requirements',
+    );
+    expect(result.warnings).not.toContain(
+      'role_source_references table is unavailable; role source refs omitted',
+    );
+  });
+
+  it('uses role job description text as source provenance when deployed context refs are absent', async () => {
+    seedMatchData(sqlite);
+    sqlite.exec(`
+      DROP TABLE role_source_references;
+      DROP TABLE role_context_documents;
+
+      CREATE TABLE role_contexts (
+        id TEXT PRIMARY KEY,
+        rcd_version TEXT,
+        rcd_json TEXT,
+        job_description_md TEXT,
+        non_negotiable_skills_json TEXT
+      );
+
+      CREATE TABLE role_nodes (
+        id TEXT PRIMARY KEY,
+        role_context_id TEXT NOT NULL,
+        rcd_version TEXT NOT NULL,
+        node_type TEXT NOT NULL,
+        narrative_text TEXT NOT NULL,
+        extracted_properties_json TEXT,
+        source_section TEXT,
+        superseded_at INTEGER
+      );
+
+      CREATE TABLE context_records (
+        id TEXT PRIMARY KEY,
+        scope_type TEXT NOT NULL,
+        scope_id TEXT NOT NULL,
+        record_type TEXT NOT NULL,
+        narrative TEXT NOT NULL,
+        extraction_version TEXT
+      );
+
+      CREATE TABLE context_record_concepts (
+        context_record_id TEXT NOT NULL,
+        concept_id TEXT NOT NULL,
+        relationship TEXT NOT NULL DEFAULT 'supports',
+        weight REAL NOT NULL DEFAULT 1
+      );
+
+      CREATE TABLE context_record_source_refs (
+        context_record_id TEXT NOT NULL,
+        source_ref_type TEXT NOT NULL,
+        source_ref_id TEXT NOT NULL,
+        source_span_id TEXT,
+        exact_text TEXT,
+        content_hash TEXT
+      );
+    `);
+    const jobDescription = 'Must have Kafka Streams experience for event-sourced TypeScript systems.';
+    sqlite.prepare(
+      `INSERT INTO role_contexts (
+         id, rcd_version, rcd_json, job_description_md, non_negotiable_skills_json
+       ) VALUES (?, ?, ?, ?, ?)`,
+    ).run('role-1', 'rcd-v1', '{}', jobDescription, '["Kafka Streams"]');
+    sqlite.prepare(
+      `INSERT INTO role_nodes (
+         id, role_context_id, rcd_version, node_type, narrative_text,
+         extracted_properties_json, source_section, superseded_at
+       ) VALUES (?, ?, ?, ?, ?, ?, ?, ?)`,
+    ).run(
+      'role-node-1',
+      'role-1',
+      'rcd-v1',
+      'TechnicalStack',
+      'Requires Kafka Streams production ownership.',
+      JSON.stringify({
+        semantic_terms: [
+          { surface: 'Kafka Streams', canonical_key: 'term:kafka-streams' },
+        ],
+      }),
+      'job_description_md',
+      null,
+    );
+
+    const result = await seedCorpusFromMatchRuns(db);
+
+    expect(() => validateCorpus(result.corpus)).not.toThrow();
+    expect(result.corpus.roleRequirements[0]!.sourceReferences).toEqual([
+      expect.objectContaining({
+        sourceRefType: 'role_context',
+        sourceRefId: 'role-1',
+        exactText: jobDescription,
+        contentHash: expect.stringMatching(/^sha256:/),
+        conceptKeys: ['term:kafka-streams'],
+      }),
+    ]);
+  });
+
   it('reads challenge packets from the deployed packet schema without source_version', async () => {
     seedMatchData(sqlite);
     sqlite.exec(`

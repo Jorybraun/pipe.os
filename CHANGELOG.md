@@ -51,6 +51,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Fixed — CODE_REVIEW assessment runtime
 
+- CODE_REVIEW corpus seeding now reads deployed `role_contexts`/`context_records`/`role_nodes` role provenance, falling back to hashed job-description text when context-record source refs are absent, so app-dev expert-review seeds no longer use stub role sources.
 - CODE_REVIEW corpus seeding now reuses one eligible challenge set per candidate/role pair across repeated match runs, preventing packet-diverse expert-review seeds from failing validation before human review.
 - CODE_REVIEW challenge ranking now prioritizes candidate/role fit among eligible source-backed packets before static packet polish, reducing corpus collapse where one high-quality generic PR wins over a more candidate-specific review challenge.
 - CODE_REVIEW expert corpus reviews now reject positive labels that omit a contrast candidate and minimum score separation, preventing incomplete “reviewed” matches from being persisted as quality evidence.
