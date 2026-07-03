@@ -565,7 +565,10 @@ async function ensureCandidateIngestionQueued(
          END,
          github_url = COALESCE(excluded.github_url, github_url),
          linkedin_url = COALESCE(excluded.linkedin_url, linkedin_url),
-         current_step = 'talent_pool_profile_received',
+         current_step = CASE
+           WHEN status IN ('embedded', 'enriched', 'matched') THEN COALESCE(current_step, excluded.current_step)
+           ELSE excluded.current_step
+         END,
          error_text = NULL,
          updated_at = excluded.updated_at`,
     )

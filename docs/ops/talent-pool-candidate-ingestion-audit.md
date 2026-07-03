@@ -136,6 +136,10 @@ succeeded, or failed instead of fabricating an AI-derived profile.
 Live Talent Pool pasted-text and extracted-text upload ingestion use the same
 bounded, source-backed decomposition knobs before candidate discovery, avoiding
 full candidate-node embedding fan-out inside the Worker background window.
+Replaying submitted profile evidence may refresh source URLs and clear stale
+errors, but it must preserve successful `candidate_ingestion.current_step`
+values for candidates already at `embedded`, `enriched`, or `matched` so audits
+do not present completed evidence as newly received.
 Scheduled retry throughput defaults conservatively, while dev can raise it with
 `CANDIDATE_INGESTION_RETRY_LIMIT` to burn down stale AI-output failures without
 changing production behavior.

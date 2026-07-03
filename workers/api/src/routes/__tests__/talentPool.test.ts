@@ -781,6 +781,49 @@ describe('talent pool candidate RPC', () => {
     }));
   });
 
+  it('preserves completed ingestion progress when submitted profile evidence is replayed', async () => {
+    sqlite = createSqlite();
+    seedCandidate(sqlite);
+    sqlite.prepare(
+      `INSERT INTO candidate_ingestion (
+         candidate_id, status, github_url, linkedin_url, current_step, error_text,
+         created_at, updated_at
+       )
+       VALUES (
+         'candidate-1', 'embedded', 'https://github.com/jordan-original', NULL,
+         'embed_profile', NULL,
+         '2026-06-30T01:00:00.000Z', '2026-06-30T01:00:00.000Z'
+       )`,
+    ).run();
+    const storage = createMemoryR2();
+    const app = createApp();
+    const payload = {
+      inviteToken: 'invite-token',
+      resumeText: 'Replay source-backed profile text with TypeScript, Workers, accessibility, and evidence ingestion experience.',
+      githubUrl: 'https://github.com/jordan-replay',
+      linkedinUrl: 'https://linkedin.com/in/jordan-replay',
+    };
+
+    const res = await app.request('/rpc/talent/submit-profile', {
+      method: 'POST',
+      body: JSON.stringify(payload),
+      headers: { 'Content-Type': 'application/json' },
+    }, createEnv(sqlite, storage));
+
+    expect(res.status).toBe(200);
+    expect(sqlite.prepare(
+      `SELECT status, github_url, linkedin_url, current_step, error_text
+         FROM candidate_ingestion
+        WHERE candidate_id = 'candidate-1'`,
+    ).get()).toEqual({
+      status: 'embedded',
+      github_url: 'https://github.com/jordan-replay',
+      linkedin_url: 'https://linkedin.com/in/jordan-replay',
+      current_step: 'embed_profile',
+      error_text: null,
+    });
+  });
+
   it('projects email-less profile intake into the unified person graph idempotently', async () => {
     sqlite = createSqlite();
     seedCandidate(sqlite, { email: null });
