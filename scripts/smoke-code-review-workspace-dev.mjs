@@ -626,6 +626,17 @@ async function assertRecruiterReviewerReceiptBrowser(
       await expect(assignment).toContainText('not as proof that PIPE automatically matched');
     }
 
+    const validity = page.getByTestId('interview-workspace-assessment-validity-proof');
+    await expect(validity).toBeVisible({ timeout: 60_000 });
+    await expect(validity).toContainText('Score validity');
+    await expect(validity).toContainText('Valid because');
+    await expect(validity).toContainText('source-backed');
+    await expect(validity).toContainText('Evidence basis');
+    await expect(validity).toContainText('git commit');
+    await expect(validity).toContainText('code diff');
+    await expect(validity).toContainText('Use as');
+    await expect(validity).toContainText('Use with recorded human decision');
+
     const receipt = page.getByTestId('interview-assessment-reviewer-receipt');
     await expect(receipt).toBeVisible({ timeout: 60_000 });
     await expect(receipt).toContainText('Reviewer receipt');
