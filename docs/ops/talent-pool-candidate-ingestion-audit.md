@@ -343,21 +343,23 @@ Talent Pool document upload is normalized to `profile_text_extraction_needed`
 after the raw upload receipt and operational intake facts are preserved. This is
 state repair only; it must not create profile candidate nodes or source spans
 without extracted text.
-After deploying Worker version `93998eca-df9c-4aa7-8123-bd836a0c0340`, the
-2026-07-03T20:11:54Z bounded remote audit
+After deploying Worker version `6f5ca36b-0e87-4c6a-978f-153e65fba319`, the
+2026-07-03T20:31:37Z bounded remote audit
 `CLOUDFLARE_D1_DATABASE_ID=0abe92df-9296-46f5-9f9d-a1fb1bcd3be1 npm --prefix workers/api run candidate-ingestion:audit -- --remote --limit 5 --require-context-records`
 reported `failedRowCount: 0`, `errorTextRowCount: 0`,
 `sourceLessPositiveClaimCount: 0`, `duplicateProjectedEdgeCount: 0`,
 `submittedIntakeWithoutExactCandidateNodeCount: 0`,
-`documentProfileExtractionGapCount: 3`, and
-`documentProfileMissingExtractionProofCount: 0`. The window remains `not_ready`
-only because three PDF/DOCX uploads correctly stay at
+`documentProfileExtractionGapCount: 4`,
+`documentProfileMissingExtractionProofCount: 0`, and
+`profileUploadReceiptContextCount: 4`. The window remains `not_ready` only
+because four PDF/DOCX uploads correctly stay at
 `profile_text_extraction_needed` receipt-backed evidence gaps with no extracted
 profile text.
-The 2026-07-03T20:11Z `npm run smoke:talent-pool-pdf-gap-dev` scoped proof for
-invite token `a9ed5eb5-600c-4438-9e14-1a3b126879d3` returned
+The 2026-07-03T20:20Z `npm run smoke:talent-pool-pdf-gap-dev` scoped proof for
+invite token `d8273834-9e7e-42b2-9013-17c73e0e0546` returned
 `documentProfileExtractionGapCount: 1`,
 `documentProfileMissingExtractionProofCount: 0`,
+`profileUploadReceiptContextCount: 1`,
 `submittedIntakeWithoutExactCandidateNodeCount: 0`,
 `sourceLessPositiveClaimCount: 0`, and `duplicateProjectedEdgeCount: 0`.
 
@@ -969,8 +971,9 @@ all 4 unauthenticated browser scenarios passed.
   source spans. New scoped browser smokes audit clean. The 2026-07-03
   post-deploy `--limit 5` app-dev audit proves zero
   source-less positives, zero duplicate projected edges, zero failed ingestion
-  rows, zero error-text rows, zero generic submitted candidate-node gaps, and
-  zero document rows missing extraction proof inside the recent window. Three
+  rows, zero error-text rows, zero generic submitted candidate-node gaps, four
+  upload-receipt context records, and zero document rows missing extraction
+  proof inside the recent window. Four
   recent PDF/DOCX intakes remain explicit `profile_text_extraction_needed`
   receipt-backed evidence gaps because no extracted text exists. Use `--limit`
   for recent-window app-dev health checks because full remote unscoped proof can
