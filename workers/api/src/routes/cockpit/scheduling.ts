@@ -73,6 +73,8 @@ interface ProviderEventTypeSummary {
   schedulingUrl: string;
 }
 
+const MATCHED_ASSESSMENT_ASSIGNMENT_DETAIL = 'PIPE selected a concrete GitHub PR from source-backed candidate evidence and repository demands. Use the assignment as match-fit evidence alongside the candidate review.';
+
 interface CalendlyUserResource {
   uri?: string;
   name?: string;
@@ -371,7 +373,7 @@ function buildScheduledAssessmentSetup(input: {
       kind: 'auto_match',
       source: input.matchedRepoSource ?? 'matched_repo_id',
       blocksPositiveAssessment: false,
-      message: 'PIPE selected a concrete GitHub PR from source-backed candidate evidence and repository demands. Use the assignment as match-fit evidence alongside the candidate review.',
+      message: MATCHED_ASSESSMENT_ASSIGNMENT_DETAIL,
       nextAction: 'OPEN_ROOM_OR_WORKSPACE',
       nextActionLabel: 'Open the assessment room and capture the candidate work against the matched PR task.',
       lastDeliveredUrl,
@@ -3208,7 +3210,22 @@ async function loadScheduledAssessmentProgress(
   const sessionId = await loadScheduledAssessmentSessionId(db, interviewId);
   if (!sessionId) return null;
 
-  return new RepoTaskInterviewSessionStore(db).loadProgress(sessionId);
+  const progress = await new RepoTaskInterviewSessionStore(db).loadProgress(sessionId);
+  return normalizeScheduledAssessmentProgressAssignmentTrust(progress);
+}
+
+function normalizeScheduledAssessmentProgressAssignmentTrust(
+  progress: AssessmentProgressSnapshot | null,
+): AssessmentProgressSnapshot | null {
+  if (progress?.assignmentTrust?.state !== 'matched_challenge') return progress;
+  if (progress.assignmentTrust.detail === MATCHED_ASSESSMENT_ASSIGNMENT_DETAIL) return progress;
+  return {
+    ...progress,
+    assignmentTrust: {
+      ...progress.assignmentTrust,
+      detail: MATCHED_ASSESSMENT_ASSIGNMENT_DETAIL,
+    },
+  };
 }
 
 async function loadScheduledAssessmentProgressByInterviewIds(
@@ -4186,7 +4203,7 @@ function scheduledAssessmentAssignmentTrust(input: {
     return {
       state: 'matched_challenge',
       label: 'PIPE-matched challenge',
-      detail: 'PIPE selected this task from source-backed candidate evidence, role context, and repository demand.',
+      detail: MATCHED_ASSESSMENT_ASSIGNMENT_DETAIL,
       tone: 'matched',
     };
   }
@@ -7537,6 +7554,7 @@ schedulingAuth.post('/interviews', async (c) => {
       createdAt: now,
     });
   }
+  assessmentProgress = normalizeScheduledAssessmentProgressAssignmentTrust(assessmentProgress);
 
   return c.json({
     interview: {

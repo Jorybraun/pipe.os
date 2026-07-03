@@ -7916,6 +7916,11 @@ describe('POST /interviews dev-container challenge (HAS-80)', () => {
         assessmentProgress: {
           stage: string;
           hasChallengePacket: boolean;
+          assignmentTrust?: {
+            state: string;
+            label: string;
+            detail: string;
+          };
           challenge: {
             sourceRefType: string;
             sourceRefId: string;
@@ -7942,6 +7947,11 @@ describe('POST /interviews dev-container challenge (HAS-80)', () => {
     expect(body.interview.assessmentProgress).toMatchObject({
       stage: 'CHALLENGE_READY',
       hasChallengePacket: true,
+      assignmentTrust: {
+        state: 'matched_challenge',
+        label: 'PIPE-matched challenge',
+        detail: expect.stringContaining('PIPE selected a concrete GitHub PR from source-backed candidate evidence and repository demands.'),
+      },
       challenge: {
         sourceRefType: 'review_challenge_packet',
         sourceRefId: packet.packetId,
