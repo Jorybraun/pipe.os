@@ -1,6 +1,7 @@
-import { describe, expect, it } from 'vitest';
+import { describe, expect, it, vi } from 'vitest';
 
 import {
+  fetchPacketCatalog,
   parseOptions,
   summarizePacketCatalog,
 } from './smoke-code-review-packet-catalog-dev.mjs';
@@ -81,6 +82,54 @@ describe('CODE_REVIEW packet catalog readiness smoke', () => {
       ],
       failures: [],
     });
+  });
+
+  it('falls back to Wrangler D1 query when API token env is missing', async () => {
+    const fetchImpl = vi.fn(async () => {
+      throw new Error('REST path should not be used without API token');
+    });
+    const wranglerQueryImpl = vi.fn(async ({ sql }) => {
+      if (sql.includes('FROM review_challenge_packets rcp')) {
+        return [
+          {
+            repoName: 'cloudflare/workers-sdk',
+            repoId: 79,
+            productionReadyPackets: 3,
+            productionReadyPullRequests: 3,
+            reviewProfileReadyPackets: 3,
+          },
+        ];
+      }
+      return [
+        {
+          totalPackets: 10,
+          productionReadyPackets: 8,
+          productionReadyRepoCount: 3,
+          productionReadyPullRequestCount: 8,
+          reviewProfileReadyPackets: 5,
+        },
+      ];
+    });
+
+    await expect(fetchPacketCatalog({
+      databaseId: 'app-dev-d1',
+      env: { CLOUDFLARE_ACCOUNT_ID: 'acct' },
+      fetchImpl,
+      wranglerQueryImpl,
+    })).resolves.toMatchObject({
+      metrics: {
+        productionReadyPackets: 8,
+        productionReadyRepoCount: 3,
+      },
+      repos: [
+        {
+          repoName: 'cloudflare/workers-sdk',
+          repoId: 79,
+        },
+      ],
+    });
+    expect(fetchImpl).not.toHaveBeenCalled();
+    expect(wranglerQueryImpl).toHaveBeenCalledTimes(2);
   });
 
   it('fails closed when the catalog collapses to one repo or lacks persisted review profiles', () => {

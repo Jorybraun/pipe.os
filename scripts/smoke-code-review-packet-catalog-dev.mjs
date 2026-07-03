@@ -1,6 +1,8 @@
 #!/usr/bin/env node
 
 import dotenv from 'dotenv';
+import { existsSync, readFileSync } from 'node:fs';
+import { spawnSync } from 'node:child_process';
 import { resolve } from 'node:path';
 import { pathToFileURL } from 'node:url';
 
@@ -62,7 +64,105 @@ function requiredEnv(env, name) {
   return value;
 }
 
-async function d1Query({ sql, databaseId, env = process.env, fetchImpl = fetch }) {
+function hasRestCredentials(env) {
+  return Boolean(env.CLOUDFLARE_ACCOUNT_ID && env.CLOUDFLARE_API_TOKEN);
+}
+
+export function resolveWranglerDatabaseName({
+  databaseId,
+  env = process.env,
+  configPath = 'workers/api/wrangler.jsonc',
+  readFile = readFileSync,
+} = {}) {
+  const explicit = env.CODE_REVIEW_RELIABILITY_D1_DATABASE_NAME
+    || env.MATCHING_EVALUATION_D1_DATABASE_NAME
+    || env.CLOUDFLARE_D1_DATABASE_NAME;
+  if (explicit) return explicit;
+
+  try {
+    const config = readFile(configPath, 'utf8');
+    const databaseBlocks = config.match(/\{[^{}]*"database_name"[^{}]*"database_id"[^{}]*\}/g) ?? [];
+    for (const block of databaseBlocks) {
+      const name = block.match(/"database_name"\s*:\s*"([^"]+)"/)?.[1];
+      const id = block.match(/"database_id"\s*:\s*"([^"]+)"/)?.[1];
+      if (name && id && id === databaseId) return name;
+    }
+  } catch {
+    // Fall through to the app-dev database name used by this smoke.
+  }
+
+  return databaseId || 'pipe-db-test';
+}
+
+function resolveWranglerBin(env = process.env) {
+  if (env.WRANGLER_BIN) return env.WRANGLER_BIN;
+  const localBin = process.platform === 'win32'
+    ? 'workers/api/node_modules/.bin/wrangler.cmd'
+    : 'workers/api/node_modules/.bin/wrangler';
+  return existsSync(localBin) ? localBin : 'wrangler';
+}
+
+export async function wranglerD1Query({
+  sql,
+  databaseId,
+  env = process.env,
+  spawnSyncImpl = spawnSync,
+} = {}) {
+  if (!databaseId) {
+    throw new Error(
+      'Missing required D1 database id; pass --database-id or set CODE_REVIEW_RELIABILITY_D1_DATABASE_ID.',
+    );
+  }
+
+  const databaseName = resolveWranglerDatabaseName({ databaseId, env });
+  const result = spawnSyncImpl(resolveWranglerBin(env), [
+    'd1',
+    'execute',
+    databaseName,
+    '--env',
+    'dev',
+    '--remote',
+    '--json',
+    '--command',
+    sql,
+  ], {
+    cwd: process.cwd(),
+    env: { ...process.env, ...env },
+    encoding: 'utf8',
+    maxBuffer: 10 * 1024 * 1024,
+  });
+
+  if (result.error) throw result.error;
+  if (result.status !== 0) {
+    const detail = result.stderr || result.stdout || `exit code ${result.status}`;
+    throw new Error(`Wrangler D1 query failed: ${detail.slice(0, 1000)}`);
+  }
+
+  let body;
+  try {
+    body = JSON.parse(result.stdout);
+  } catch {
+    throw new Error(`Wrangler D1 returned non-JSON output: ${String(result.stdout).slice(0, 300)}`);
+  }
+
+  const statement = Array.isArray(body) ? body[0] : null;
+  if (statement?.success !== true) {
+    throw new Error(`Wrangler D1 statement failed: ${JSON.stringify(statement ?? body).slice(0, 300)}`);
+  }
+  return Array.isArray(statement.results) ? statement.results : [];
+}
+
+async function d1Query({
+  sql,
+  databaseId,
+  env = process.env,
+  fetchImpl = fetch,
+  wranglerQueryImpl = wranglerD1Query,
+}) {
+  if (!hasRestCredentials(env)) {
+    return wranglerQueryImpl({ sql, databaseId, env });
+  }
+
   const accountId = requiredEnv(env, 'CLOUDFLARE_ACCOUNT_ID');
   const apiToken = requiredEnv(env, 'CLOUDFLARE_API_TOKEN');
   if (!databaseId) {
@@ -101,11 +201,17 @@ async function d1Query({ sql, databaseId, env = process.env, fetchImpl = fetch }
   return Array.isArray(result.results) ? result.results : [];
 }
 
-export async function fetchPacketCatalog({ databaseId, env = process.env, fetchImpl = fetch }) {
+export async function fetchPacketCatalog({
+  databaseId,
+  env = process.env,
+  fetchImpl = fetch,
+  wranglerQueryImpl = wranglerD1Query,
+}) {
   const metricsRows = await d1Query({
     databaseId,
     env,
     fetchImpl,
+    wranglerQueryImpl,
     sql: `
       SELECT
         COUNT(*) AS totalPackets,
@@ -127,6 +233,7 @@ export async function fetchPacketCatalog({ databaseId, env = process.env, fetchI
     databaseId,
     env,
     fetchImpl,
+    wranglerQueryImpl,
     sql: `
       SELECT
         COALESCE(qr.full_name, 'repo:' || rcp.repo_id) AS repoName,

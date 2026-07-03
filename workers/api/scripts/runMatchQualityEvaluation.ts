@@ -14,7 +14,10 @@ import { readFileSync } from 'node:fs';
 import { resolve } from 'node:path';
 import { pathToFileURL } from 'node:url';
 import type { D1Database } from '@cloudflare/workers-types';
-import { D1Client } from './crawl-repos/shared/d1Client.js';
+import {
+  D1Client,
+  WranglerD1Client,
+} from './crawl-repos/shared/d1Client.js';
 import {
   evaluationCorpusLabelCounts,
   loadCorpus as loadFrozenEvaluationCorpus,
@@ -285,6 +288,10 @@ function requiredEnv(name: string): string {
   return value;
 }
 
+function hasRestD1Credentials(env: NodeJS.ProcessEnv = process.env): boolean {
+  return Boolean(env['CLOUDFLARE_ACCOUNT_ID'] && env['CLOUDFLARE_API_TOKEN']);
+}
+
 export function resolveRemoteDatabaseId(
   databaseId: string | undefined,
   env: NodeJS.ProcessEnv = process.env,
@@ -304,11 +311,14 @@ export function resolveRemoteDatabaseId(
 
 function remoteD1(databaseId: string | undefined): D1Database {
   const resolvedDatabaseId = resolveRemoteDatabaseId(databaseId);
-  return new RemoteD1(new D1Client({
-    accountId: requiredEnv('CLOUDFLARE_ACCOUNT_ID'),
-    apiToken: requiredEnv('CLOUDFLARE_API_TOKEN'),
-    databaseId: resolvedDatabaseId,
-  })) as unknown as D1Database;
+  const client = hasRestD1Credentials()
+    ? new D1Client({
+      accountId: requiredEnv('CLOUDFLARE_ACCOUNT_ID'),
+      apiToken: requiredEnv('CLOUDFLARE_API_TOKEN'),
+      databaseId: resolvedDatabaseId,
+    })
+    : new WranglerD1Client(resolvedDatabaseId);
+  return new RemoteD1(client) as unknown as D1Database;
 }
 
 function isMatchQualityCorpusFile(value: unknown): value is MatchQualityCorpusFile {

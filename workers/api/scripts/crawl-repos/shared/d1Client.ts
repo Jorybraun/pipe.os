@@ -13,6 +13,8 @@
 
 import { logger } from './logger.js';
 import type { D1Config } from './types.js';
+import { existsSync, readFileSync } from 'node:fs';
+import { spawnSync } from 'node:child_process';
 
 const MAX_ATTEMPTS = 6;
 const BASE_BACKOFF_MS = 500;
@@ -52,6 +54,15 @@ export function loadD1Config(): D1Config {
 export interface D1ClientOptions {
   requestTimeoutMs?: number;
   fetchImpl?: typeof fetch;
+}
+
+export interface WranglerD1ClientOptions {
+  command?: string;
+  envName?: string;
+  env?: NodeJS.ProcessEnv;
+  cwd?: string;
+  configPaths?: string[];
+  spawnSyncImpl?: typeof spawnSync;
 }
 
 function resolveRequestTimeoutMs(value: number | undefined): number {
@@ -180,6 +191,164 @@ export class D1Client {
     for (let i = 0; i < statements.length; i += chunkSize) {
       const chunk = statements.slice(i, i + chunkSize);
       logger.debug('[d1] Executing chunk', { offset: i, size: chunk.length });
+      await this.batch(chunk);
+    }
+  }
+}
+
+function sqlLiteral(value: string | number | null): string {
+  if (value === null) return 'NULL';
+  if (typeof value === 'number') {
+    if (!Number.isFinite(value)) throw new Error(`Cannot bind non-finite number to D1 query: ${value}`);
+    return String(value);
+  }
+  return `'${value.replace(/'/g, "''")}'`;
+}
+
+export function bindD1Sql(
+  sql: string,
+  params: (string | number | null)[] = [],
+): string {
+  if (params.length === 0) return sql;
+  if (/\?\d+/.test(sql)) {
+    return sql.replace(/\?(\d+)/g, (_match, rawIndex: string) => {
+      const value = params[Number(rawIndex) - 1];
+      if (value === undefined) throw new Error(`Missing D1 query parameter ?${rawIndex}`);
+      return sqlLiteral(value);
+    });
+  }
+  let nextParam = 0;
+  return sql.replace(/\?/g, () => {
+    const value = params[nextParam];
+    nextParam += 1;
+    if (value === undefined) throw new Error(`Missing D1 query parameter ?${nextParam}`);
+    return sqlLiteral(value);
+  });
+}
+
+function resolveWranglerCommand(env: NodeJS.ProcessEnv): string {
+  if (env['WRANGLER_BIN']) return env['WRANGLER_BIN'];
+  const candidates = process.platform === 'win32'
+    ? ['node_modules/.bin/wrangler.cmd', 'workers/api/node_modules/.bin/wrangler.cmd']
+    : ['node_modules/.bin/wrangler', 'workers/api/node_modules/.bin/wrangler'];
+  return candidates.find((candidate) => existsSync(candidate)) ?? 'wrangler';
+}
+
+export function resolveWranglerD1DatabaseName(
+  databaseIdOrName: string,
+  {
+    env = process.env,
+    configPaths = ['wrangler.jsonc', 'workers/api/wrangler.jsonc'],
+    readFile = readFileSync,
+  }: {
+    env?: NodeJS.ProcessEnv;
+    configPaths?: string[];
+    readFile?: typeof readFileSync;
+  } = {},
+): string {
+  const explicit = env['CODE_REVIEW_RELIABILITY_D1_DATABASE_NAME']
+    ?? env['MATCHING_EVALUATION_D1_DATABASE_NAME']
+    ?? env['CLOUDFLARE_D1_DATABASE_NAME'];
+  if (explicit) return explicit;
+
+  for (const configPath of configPaths) {
+    try {
+      const config = readFile(configPath, 'utf8');
+      const databaseBlocks = config.match(/\{[^{}]*"database_name"[^{}]*"database_id"[^{}]*\}/g) ?? [];
+      for (const block of databaseBlocks) {
+        const name = block.match(/"database_name"\s*:\s*"([^"]+)"/)?.[1];
+        const id = block.match(/"database_id"\s*:\s*"([^"]+)"/)?.[1];
+        if (name && id && id === databaseIdOrName) return name;
+      }
+    } catch {
+      // Try the next possible config location.
+    }
+  }
+
+  return databaseIdOrName;
+}
+
+export class WranglerD1Client {
+  private readonly command: string;
+  private readonly envName: string;
+  private readonly env: NodeJS.ProcessEnv;
+  private readonly cwd: string;
+  private readonly databaseName: string;
+  private readonly spawnSyncImpl: typeof spawnSync;
+
+  constructor(databaseIdOrName: string, options: WranglerD1ClientOptions = {}) {
+    this.env = options.env ?? process.env;
+    this.command = options.command ?? resolveWranglerCommand(this.env);
+    this.envName = options.envName ?? this.env['WRANGLER_D1_ENV'] ?? 'dev';
+    this.cwd = options.cwd ?? process.cwd();
+    this.databaseName = resolveWranglerD1DatabaseName(databaseIdOrName, {
+      env: this.env,
+      configPaths: options.configPaths,
+    });
+    this.spawnSyncImpl = options.spawnSyncImpl ?? spawnSync;
+    logger.debug('[d1] Wrangler client ready', { databaseName: this.databaseName });
+  }
+
+  async query<T = Record<string, unknown>>(
+    sql: string,
+    params: (string | number | null)[] = [],
+  ): Promise<T[]> {
+    const boundSql = bindD1Sql(sql, params);
+    const result = this.spawnSyncImpl(this.command, [
+      'd1',
+      'execute',
+      this.databaseName,
+      '--env',
+      this.envName,
+      '--remote',
+      '--json',
+      '--command',
+      boundSql,
+    ], {
+      cwd: this.cwd,
+      env: { ...process.env, ...this.env },
+      encoding: 'utf8',
+      maxBuffer: 10 * 1024 * 1024,
+    });
+
+    if (result.error) throw result.error;
+    if (result.status !== 0) {
+      const detail = result.stderr || result.stdout || `exit code ${result.status}`;
+      throw new Error(`Wrangler D1 query failed: ${detail.slice(0, 1000)}`);
+    }
+
+    let body: unknown;
+    try {
+      body = JSON.parse(result.stdout);
+    } catch {
+      throw new Error(`Wrangler D1 returned non-JSON output: ${String(result.stdout).slice(0, 300)}`);
+    }
+    const statement = Array.isArray(body) ? body[0] : null;
+    if (
+      !statement
+      || typeof statement !== 'object'
+      || (statement as { success?: unknown }).success !== true
+    ) {
+      throw new Error(`Wrangler D1 statement failed: ${JSON.stringify(statement ?? body).slice(0, 300)}`);
+    }
+    const results = (statement as { results?: unknown }).results;
+    return Array.isArray(results) ? results as T[] : [];
+  }
+
+  async batch(statements: Array<{ sql: string; params?: (string | number | null)[] }>): Promise<void> {
+    if (statements.length === 0) return;
+    for (const statement of statements) {
+      await this.query(statement.sql, statement.params ?? []);
+    }
+  }
+
+  async upsertChunked(
+    statements: Array<{ sql: string; params?: (string | number | null)[] }>,
+    chunkSize = 50,
+  ): Promise<void> {
+    for (let i = 0; i < statements.length; i += chunkSize) {
+      const chunk = statements.slice(i, i + chunkSize);
+      logger.debug('[d1] Executing Wrangler chunk', { offset: i, size: chunk.length });
       await this.batch(chunk);
     }
   }
