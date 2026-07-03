@@ -1217,12 +1217,21 @@ function isLocalBase(url) {
   return url.includes('localhost') || url.includes('127.0.0.1') || url.includes('[::1]');
 }
 
-function sqlString(value) {
-  return `'${String(value).replaceAll("'", "''")}'`;
+export function resolveCodeReviewSmokeD1Target({
+  apiBase = API_BASE,
+  rpcBase = RPC_BASE,
+  env = process.env,
+} = {}) {
+  const remote = !isLocalBase(apiBase) && !isLocalBase(rpcBase);
+  return {
+    remote,
+    databaseName: env.CODE_REVIEW_SMOKE_D1_DATABASE || (remote ? 'pipe-db-test' : 'pipe-db'),
+    label: remote ? 'remote' : 'local',
+  };
 }
 
-function localD1Query(command) {
-  return d1Query(command, { remote: false });
+function sqlString(value) {
+  return `'${String(value).replaceAll("'", "''")}'`;
 }
 
 function smokeD1DatabaseName(remote) {
@@ -1259,15 +1268,12 @@ function d1Query(command, { remote }) {
 }
 
 function scoreD1Query(command) {
-  const remote = !isLocalBase(API_BASE) && !isLocalBase(RPC_BASE);
-  return d1Query(command, { remote });
+  const target = resolveCodeReviewSmokeD1Target();
+  return d1Query(command, { remote: target.remote });
 }
 
-async function verifyLocalAssessmentEvidence(reviewSessionId) {
-  if (!isLocalBase(API_BASE) && !isLocalBase(RPC_BASE)) {
-    return { skipped: true, reason: 'local D1 verification only runs against localhost smoke targets' };
-  }
-
+async function verifyAssessmentEvidence(reviewSessionId) {
+  const target = resolveCodeReviewSmokeD1Target();
   const sessionKey = `assessment-session:code-review:${reviewSessionId}`;
   const command = `
     WITH target_session AS (
@@ -1307,7 +1313,7 @@ async function verifyLocalAssessmentEvidence(reviewSessionId) {
   const deadline = Date.now() + 60_000;
   let latest = null;
   while (Date.now() < deadline) {
-    latest = localD1Query(command)[0] ?? null;
+    latest = d1Query(command, { remote: target.remote })[0] ?? null;
     if (
       latest?.state === 'EVALUATED'
       && Number(latest.event_count) >= 2
@@ -1326,12 +1332,15 @@ async function verifyLocalAssessmentEvidence(reviewSessionId) {
         claimCount: Number(latest.claim_count),
         claimSourceRefCount: Number(latest.claim_source_ref_count),
         eventKinds: typeof latest.event_kinds === 'string' ? latest.event_kinds.split(',') : [],
+        d1Target: target.label,
       };
     }
     await sleep(2_000);
   }
 
-  throw new Error(`Assessment evidence did not become durable for review session ${reviewSessionId}: ${JSON.stringify(latest)}`);
+  throw new Error(
+    `Assessment evidence did not become durable in ${target.label} D1 for review session ${reviewSessionId}: ${JSON.stringify(latest)}`,
+  );
 }
 
 async function verifyScorePersistence(reviewSessionId) {
@@ -1452,7 +1461,7 @@ async function runFullSubmissionSmoke({ session, challenge, interviewId }) {
     annotation: firstRound.annotation,
   });
   const judgeExample = await verifyJudgeExample(init.sessionId);
-  const assessmentEvidence = await verifyLocalAssessmentEvidence(init.sessionId);
+  const assessmentEvidence = await verifyAssessmentEvidence(init.sessionId);
   const scorePersistence = await verifyScorePersistence(init.sessionId);
   const reviewStatusPipeline = await verifyReviewStatusPipeline(session.sessionToken, init.sessionId);
 
