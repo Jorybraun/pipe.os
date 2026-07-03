@@ -23,6 +23,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Added — CODE_REVIEW assessment runtime
 
+- CODE_REVIEW candidate smokes now reject `Repo matching` and `Challenge needs attention` copy on ready and profile-received `/assess` surfaces, tightening proof that matching diagnostics stay out of the runtime.
 - `/assess/CLAIMED::...` URLs now resolve through the Worker with the raw token instead of being rejected client-side, letting the backend repair pre-start claimed prefixes while still rejecting truly started invites.
 - Candidate assessment start now treats server `PROFILE_RECEIVED` conflicts as queued handoffs, preventing stale "unable to start" errors when a CODE_REVIEW invite has moved into background readiness.
 - The assessment hook now treats server `PROFILE_RECEIVED` conflicts as candidate-safe queued handoffs instead of generic claimed-link errors, covering both stage load and premature submit guards.

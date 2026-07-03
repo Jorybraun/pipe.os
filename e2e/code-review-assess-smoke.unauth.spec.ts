@@ -172,7 +172,7 @@ test.describe('CODE_REVIEW assess-link smoke', () => {
 
     const codeReview = page.getByTestId('code-review-challenge');
     await expect(codeReview).toBeVisible({ timeout: 45_000 });
-    await expect(page.locator('body')).not.toContainText(/WAITING_FOR_MATCH|MATCHING IN PROGRESS|Building your personalized challenge/i);
+    await expect(page.locator('body')).not.toContainText(/WAITING_FOR_MATCH|MATCHING IN PROGRESS|Building your personalized challenge|Repo matching|Challenge needs attention/i);
 
     const repoLink = page.getByTestId('code-review-repo-link');
     const prLink = page.getByTestId('code-review-pr-link');

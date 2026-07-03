@@ -815,7 +815,10 @@ function assertProfileReceivedHandoff({ stageConfig, challenge }) {
     !serialized.includes('WAITING_FOR_MATCH')
       && !serialized.includes('Upload Your CV')
       && !serialized.includes('Profile & Resume')
-      && !serialized.includes('Building your personalized challenge'),
+      && !serialized.includes('Building your personalized challenge')
+      && !serialized.includes('MATCHING IN PROGRESS')
+      && !serialized.includes('Repo matching')
+      && !serialized.includes('Challenge needs attention'),
     `Candidate handoff leaked intake or matching UI state: ${serialized.slice(0, 1200)}`,
   );
 }
@@ -885,7 +888,15 @@ async function pollCodeReviewChallenge(sessionToken, order = 0, options = {}) {
     if (last?.type === 'WAITING_FOR_MATCH') {
       throw new Error(`CODE_REVIEW /assess must not expose candidate-visible WAITING_FOR_MATCH; expected ready CODE_REVIEW or PROFILE_RECEIVED handoff: ${JSON.stringify(last).slice(0, 800)}`);
     }
-    throw new Error(`Expected CODE_REVIEW or PROFILE_RECEIVED handoff, got: ${JSON.stringify(last).slice(0, 800)}`);
+    const serialized = JSON.stringify(last);
+    assert(
+      !serialized.includes('Building your personalized challenge')
+        && !serialized.includes('MATCHING IN PROGRESS')
+        && !serialized.includes('Repo matching')
+        && !serialized.includes('Challenge needs attention'),
+      `CODE_REVIEW /assess leaked candidate-visible matching diagnostics: ${serialized.slice(0, 800)}`,
+    );
+    throw new Error(`Expected CODE_REVIEW or PROFILE_RECEIVED handoff, got: ${serialized.slice(0, 800)}`);
   }
   throw new Error(`CODE_REVIEW challenge did not become ready. Last response: ${JSON.stringify(last).slice(0, 1200)}`);
 }
